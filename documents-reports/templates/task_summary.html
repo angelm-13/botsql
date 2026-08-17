@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ t('documents.task_summary.title') }}</title>
+  <link rel="stylesheet" href="document.css" />
+</head>
+<body>
+  <main class="document-page">
+    <header class="document-header">
+      <h1>{{ t('documents.task_summary.title') }}</h1>
+      <div class="document-meta">{{ t('documents.generated_at') }}: {{ generated_at }}</div>
+    </header>
+    <section class="document-content">
+      <div class="field-grid">
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.task.id_task') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_task'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.task.task_code') }}</span>
+        <span class="field-value">{{ format_value(record.get('task_code'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.task.start_date') }}</span>
+        <span class="field-value">{{ format_value(record.get('start_date'), 'date') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.task.duration') }}</span>
+        <span class="field-value">{{ format_value(record.get('duration'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.task.type') }}</span>
+        <span class="field-value">{{ format_value(record.get('type'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.task.owner') }}</span>
+        <span class="field-value">{{ format_value(record.get('owner'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.task.analyst') }}</span>
+        <span class="field-value">{{ format_value(record.get('analyst'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.task.dependency') }}</span>
+        <span class="field-value">{{ format_value(record.get('dependency'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.task.leader') }}</span>
+        <span class="field-value">{{ format_value(record.get('leader'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.task.validation') }}</span>
+        <span class="field-value">{{ format_value(record.get('validation'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.task.task_description') }}</span>
+        <span class="field-value">{{ format_value(record.get('task_description'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.task.estimated_effort') }}</span>
+        <span class="field-value">{{ format_value(record.get('estimated_effort'), 'text') }}</span>
+      </section>
+      </div>
+    </section>
+    <footer class="document-footer">
+      <span>{{ t('documents.powered_by') }}</span>
+      <span>task_summary</span>
+    </footer>
+  </main>
+</body>
+</html>

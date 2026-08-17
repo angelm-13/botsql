@@ -1,0 +1,3 @@
+/* Compatibility shim for generated extension imports.
+   Table and Kanban styles are defined in app.css by the frontend generator. */
+@import "./app.css";

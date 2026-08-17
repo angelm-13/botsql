@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ t('documents.bank_account_summary.title') }}</title>
+  <link rel="stylesheet" href="document.css" />
+</head>
+<body>
+  <main class="document-page">
+    <header class="document-header">
+      <h1>{{ t('documents.bank_account_summary.title') }}</h1>
+      <div class="document-meta">{{ t('documents.generated_at') }}: {{ generated_at }}</div>
+    </header>
+    <section class="document-content">
+      <div class="field-grid">
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.bank_account.id_bank_account') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_bank_account'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.bank_account.id_bank') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_bank'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.bank_account.bank_account_description') }}</span>
+        <span class="field-value">{{ format_value(record.get('bank_account_description'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.bank_account.branch') }}</span>
+        <span class="field-value">{{ format_value(record.get('branch'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.bank_account.type') }}</span>
+        <span class="field-value">{{ format_value(record.get('type'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.bank_account.ordinary_interest') }}</span>
+        <span class="field-value">{{ format_value(record.get('ordinary_interest'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.bank_account.moratorium_interest') }}</span>
+        <span class="field-value">{{ format_value(record.get('moratorium_interest'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.bank_account.anuality') }}</span>
+        <span class="field-value">{{ format_value(record.get('anuality'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.bank_account.reimbursement') }}</span>
+        <span class="field-value">{{ format_value(record.get('reimbursement'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.bank_account.created_by') }}</span>
+        <span class="field-value">{{ format_value(record.get('created_by'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.bank_account.creation_date') }}</span>
+        <span class="field-value">{{ format_value(record.get('creation_date'), 'date') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.bank_account.last_update_date') }}</span>
+        <span class="field-value">{{ format_value(record.get('last_update_date'), 'date') }}</span>
+      </section>
+      </div>
+    </section>
+    <footer class="document-footer">
+      <span>{{ t('documents.powered_by') }}</span>
+      <span>bank_account_summary</span>
+    </footer>
+  </main>
+</body>
+</html>

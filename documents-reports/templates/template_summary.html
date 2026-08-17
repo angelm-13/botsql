@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ t('documents.template_summary.title') }}</title>
+  <link rel="stylesheet" href="document.css" />
+</head>
+<body>
+  <main class="document-page">
+    <header class="document-header">
+      <h1>{{ t('documents.template_summary.title') }}</h1>
+      <div class="document-meta">{{ t('documents.generated_at') }}: {{ generated_at }}</div>
+    </header>
+    <section class="document-content">
+      <div class="field-grid">
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.template.id_template') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_template'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.template.template_description') }}</span>
+        <span class="field-value">{{ format_value(record.get('template_description'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.template.created_by') }}</span>
+        <span class="field-value">{{ format_value(record.get('created_by'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.template.creation_date') }}</span>
+        <span class="field-value">{{ format_value(record.get('creation_date'), 'date') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.template.last_update_date') }}</span>
+        <span class="field-value">{{ format_value(record.get('last_update_date'), 'date') }}</span>
+      </section>
+      </div>
+    </section>
+    <footer class="document-footer">
+      <span>{{ t('documents.powered_by') }}</span>
+      <span>template_summary</span>
+    </footer>
+  </main>
+</body>
+</html>

@@ -1,0 +1,76 @@
+from __future__ import annotations
+from datetime import date, datetime
+from decimal import Decimal
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import String, Integer, BigInteger, SmallInteger, Boolean, Date, DateTime, Float, Numeric, ForeignKey, Text, JSON, Enum, LargeBinary, UniqueConstraint, func
+from app.models.base import Base
+
+
+def to_json_value(value):
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, bytes):
+        return value.hex()
+    return value
+
+
+class CustomerSupplier(Base):
+    __tablename__ = 'customer_supplier'
+
+    id_customer_supplier: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, nullable=False)
+    postal_code: Mapped[object] = mapped_column(String(10), nullable=True)
+    name: Mapped[object] = mapped_column(String(150), nullable=False)
+    title: Mapped[object] = mapped_column(String(50), nullable=True)
+    contact_name: Mapped[object] = mapped_column(String(150), nullable=True)
+    phone: Mapped[object] = mapped_column(String(30), nullable=True)
+    email: Mapped[object] = mapped_column(String(100), nullable=True)
+    web_site: Mapped[object] = mapped_column(String(50), nullable=True)
+    street: Mapped[object] = mapped_column(String(100), nullable=True)
+    number_ext: Mapped[object] = mapped_column(String(5), nullable=True)
+    number_int: Mapped[object] = mapped_column(String(5), nullable=True)
+    neighborhood: Mapped[object] = mapped_column(String(50), nullable=True)
+    city: Mapped[object] = mapped_column(String(50), nullable=True)
+    geographic_state: Mapped[object] = mapped_column(String(20), nullable=True)
+    fiscal_type: Mapped[object] = mapped_column(String(150), nullable=True)
+    last_fiscal_certification_date: Mapped[object] = mapped_column(DateTime, nullable=True)
+    tax_id: Mapped[object] = mapped_column(String(50), nullable=True)
+    type: Mapped[object] = mapped_column(Enum('client', 'supplier', name='customer_supplier_type_enum', native_enum=False, validate_strings=True, create_constraint=True), nullable=True)
+    id_user: Mapped[int] = mapped_column(Integer, ForeignKey('user.id_user'), nullable=False)
+    created_by: Mapped[int] = mapped_column(Integer, nullable=False)
+    creation_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    last_update_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+    deletion_date: Mapped[object] = mapped_column(DateTime, nullable=True)
+    path_logo: Mapped[object] = mapped_column(String(150), nullable=True)
+
+    def serialize(self) -> dict:
+        return {
+            'id_customer_supplier': to_json_value(self.id_customer_supplier),
+            'postal_code': to_json_value(self.postal_code),
+            'name': to_json_value(self.name),
+            'title': to_json_value(self.title),
+            'contact_name': to_json_value(self.contact_name),
+            'phone': to_json_value(self.phone),
+            'email': to_json_value(self.email),
+            'web_site': to_json_value(self.web_site),
+            'street': to_json_value(self.street),
+            'number_ext': to_json_value(self.number_ext),
+            'number_int': to_json_value(self.number_int),
+            'neighborhood': to_json_value(self.neighborhood),
+            'city': to_json_value(self.city),
+            'geographic_state': to_json_value(self.geographic_state),
+            'fiscal_type': to_json_value(self.fiscal_type),
+            'last_fiscal_certification_date': to_json_value(self.last_fiscal_certification_date),
+            'tax_id': to_json_value(self.tax_id),
+            'type': to_json_value(self.type),
+            'id_user': to_json_value(self.id_user),
+            'created_by': to_json_value(self.created_by),
+            'creation_date': to_json_value(self.creation_date),
+            'last_update_date': to_json_value(self.last_update_date),
+            'deletion_date': to_json_value(self.deletion_date),
+            'path_logo': to_json_value(self.path_logo),
+        }
+
+    def serialize_summary(self) -> dict:
+        return {'id_customer_supplier': self.id_customer_supplier}

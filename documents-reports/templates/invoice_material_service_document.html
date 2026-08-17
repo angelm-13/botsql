@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ t('documents.invoice_material_service_document.title') }}</title>
+  <link rel="stylesheet" href="document.css" />
+</head>
+<body>
+  <main class="document-page">
+    <header class="document-header">
+      <h1>{{ t('documents.invoice_material_service_document.title') }}</h1>
+      <div class="document-meta">{{ t('documents.generated_at') }}: {{ generated_at }}</div>
+    </header>
+    <section class="document-content">
+      <div class="field-grid">
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice_material_service.id_invoice_material_service') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_invoice_material_service'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice_material_service.id_invoice') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_invoice'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice_material_service.id_material') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_material'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice_material_service.id_service') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_service'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice_material_service.invoice_material_service_description') }}</span>
+        <span class="field-value">{{ format_value(record.get('invoice_material_service_description'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice_material_service.max_requirement_date') }}</span>
+        <span class="field-value">{{ format_value(record.get('max_requirement_date'), 'date') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice_material_service.is_directly_related_to_product_service_creation') }}</span>
+        <span class="field-value">{{ format_value(record.get('is_directly_related_to_product_service_creation'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice_material_service.id_authorized') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_authorized'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice_material_service.id_status') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_status'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice_material_service.id_buyer') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_buyer'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice_material_service.id_customer_supplier') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_customer_supplier'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice_material_service.gross_price') }}</span>
+        <span class="field-value">{{ format_value(record.get('gross_price'), 'currency') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice_material_service.quantity') }}</span>
+        <span class="field-value">{{ format_value(record.get('quantity'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice_material_service.created_by') }}</span>
+        <span class="field-value">{{ format_value(record.get('created_by'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice_material_service.creation_date') }}</span>
+        <span class="field-value">{{ format_value(record.get('creation_date'), 'date') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice_material_service.last_update_date') }}</span>
+        <span class="field-value">{{ format_value(record.get('last_update_date'), 'date') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice_material_service.id_product') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_product'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice_material_service.line_type') }}</span>
+        <span class="field-value">{{ format_value(record.get('line_type'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice_material_service.tax_applicable') }}</span>
+        <span class="field-value">{{ format_value(record.get('tax_applicable'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice_material_service.line_tax') }}</span>
+        <span class="field-value">{{ format_value(record.get('line_tax'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice_material_service.line_total') }}</span>
+        <span class="field-value">{{ format_value(record.get('line_total'), 'currency') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice_material_service.id_unit') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_unit'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice_material_service.authorization_status') }}</span>
+        <span class="field-value">{{ format_value(record.get('authorization_status'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice_material_service.authorization_note') }}</span>
+        <span class="field-value">{{ format_value(record.get('authorization_note'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice_material_service.authorization_date') }}</span>
+        <span class="field-value">{{ format_value(record.get('authorization_date'), 'date') }}</span>
+      </section>
+      </div>
+    </section>
+    <footer class="document-footer">
+      <span>{{ t('documents.powered_by') }}</span>
+      <span>invoice_material_service_document</span>
+    </footer>
+  </main>
+</body>
+</html>

@@ -1,0 +1,326 @@
+from __future__ import annotations
+from datetime import datetime, timedelta, UTC
+import hashlib
+import os
+import bcrypt
+import jwt
+import pyotp
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from flask import Blueprint, jsonify, request
+from sqlalchemy import select
+from app.models.session import transaction_context
+from app.models import User, UserMfa
+from app.utils.auth import SECRET_KEY, token_required
+
+bp_auth = Blueprint('auth', __name__, url_prefix='/auth')
+JWT_ALGORITHM = 'HS256'
+MFA_TEMP_MINUTES = int(os.getenv('MFA_TEMP_TOKEN_MINUTES', '5'))
+ACCESS_TOKEN_MINUTES = int(os.getenv('ACCESS_TOKEN_MINUTES', '480'))
+ISSUER_NAME = os.getenv('MFA_ISSUER_NAME') or os.getenv('MFA_ISSUER') or 'TYAKXA ERP CRM SCM'
+
+
+def _mfa_encryption_key() -> bytes:
+    key_source = os.getenv('MFA_ENCRYPTION_KEY') or os.getenv('SECRET_KEY') or SECRET_KEY
+    return hashlib.sha256(str(key_source).encode('utf-8')).digest()
+
+
+def _mfa_to_bytes(value) -> bytes | None:
+    if value is None:
+        return None
+    if isinstance(value, memoryview):
+        return value.tobytes()
+    if isinstance(value, bytes):
+        return value
+    if isinstance(value, bytearray):
+        return bytes(value)
+    if isinstance(value, str):
+        return value.encode('utf-8')
+    try:
+        return bytes(value)
+    except Exception:
+        return None
+
+
+def _mfa_encrypt_secret(secret_text: str) -> tuple[bytes, bytes]:
+    nonce = os.urandom(12)
+    encrypted = AESGCM(_mfa_encryption_key()).encrypt(nonce, secret_text.encode('utf-8'), None)
+    return encrypted, nonce
+
+
+def _mfa_decrypt_secret(mfa: UserMfa) -> str:
+    encrypted = _mfa_to_bytes(getattr(mfa, 'secret', None))
+    nonce = _mfa_to_bytes(getattr(mfa, 'secret_iv', None))
+    if not encrypted:
+        return ''
+    if nonce:
+        try:
+            return AESGCM(_mfa_encryption_key()).decrypt(nonce, encrypted, None).decode('utf-8')
+        except Exception:
+            # Backward compatibility: existing databases may contain a plain text
+            # secret in the VARBINARY column from older generated projects.
+            pass
+    try:
+        return encrypted.decode('utf-8')
+    except Exception:
+        return ''
+
+
+def _mfa_apply_defaults(mfa: UserMfa, *, reset_attempts: bool = False) -> None:
+    now = datetime.now(UTC).replace(tzinfo=None)
+    if hasattr(mfa, 'failed_attempts') and (reset_attempts or getattr(mfa, 'failed_attempts', None) is None):
+        mfa.failed_attempts = 0
+    if hasattr(mfa, 'backup_codes') and getattr(mfa, 'backup_codes', None) is None:
+        mfa.backup_codes = {}
+    if hasattr(mfa, 'created_at') and getattr(mfa, 'created_at', None) is None:
+        mfa.created_at = now
+    if hasattr(mfa, 'updated_at'):
+        mfa.updated_at = now
+
+
+def _issue_token(payload: dict, minutes: int) -> str:
+    data = dict(payload)
+    data['exp'] = datetime.now(UTC) + timedelta(minutes=minutes)
+    return jwt.encode(data, SECRET_KEY, algorithm=JWT_ALGORITHM)
+
+
+def _truthy(value: str | None) -> bool:
+    return str(value or '').strip().lower() in {'1', 'true', 'yes', 'y', 'si', 'sí', 'on'}
+
+
+def _bootstrap_admin_username() -> str:
+    return (os.getenv('BOOTSTRAP_ADMIN_USERNAME') or 'admin1').strip() or 'admin1'
+
+
+def _is_bootstrap_admin(user: User) -> bool:
+    if not _truthy(os.getenv('BOOTSTRAP_ADMIN_ENABLED', 'true')):
+        return False
+    return (
+        str(getattr(user, 'username', '') or '') == _bootstrap_admin_username()
+        and str(getattr(user, 'user_type', '') or '').lower() == 'admin'
+    )
+
+
+def _user_payload(user: User, *, mfa_enabled: bool = False) -> dict:
+    bootstrap_admin = _is_bootstrap_admin(user)
+    return {
+        'id_user': getattr(user, 'id_user', None),
+        'username': getattr(user, 'username', ''),
+        'user_type': getattr(user, 'user_type', 'user'),
+        'id_permission': getattr(user, 'id_permission', None),
+        # Computed from BOOTSTRAP_ADMIN_* configuration; not a database column.
+        'is_bootstrap_admin': bootstrap_admin,
+        'is_superuser': bootstrap_admin,
+        # Computed from user_mfa.enabled; not a column on user.
+        'mfa_enabled': bool(mfa_enabled),
+    }
+
+
+def _request_is_bootstrap_admin(user_data: dict) -> bool:
+    return bool(user_data.get('is_bootstrap_admin') or user_data.get('is_superuser'))
+
+
+def _normalize_user_type(value) -> str:
+    return str(value or '').strip().lower()
+
+
+def _company_admin_types() -> set[str]:
+    raw = os.getenv('COMPANY_ADMIN_USER_TYPES', 'admin')
+    return {item.strip().lower() for item in raw.split(',') if item.strip()} or {'admin'}
+
+
+def _request_is_company_admin(user_data: dict) -> bool:
+    return _normalize_user_type(user_data.get('user_type')) in _company_admin_types()
+
+
+def _user_hierarchy_rank_from_type(user_type) -> int:
+    ranks = {'admin': 80, 'client': 50, 'supplier': 50, 'employee': 40, 'user': 20, '': 10}
+    raw = os.getenv('USER_HIERARCHY_RANKS', '')
+    for part in raw.split(','):
+        if ':' not in part:
+            continue
+        key, value = part.split(':', 1)
+        try:
+            ranks[key.strip().lower()] = int(value.strip())
+        except (TypeError, ValueError):
+            continue
+    return ranks.get(_normalize_user_type(user_type), ranks.get('', 10))
+
+
+def _request_can_manage_target_user(user_data: dict, target: User) -> bool:
+    if _request_is_bootstrap_admin(user_data):
+        return True
+    if not target or _is_bootstrap_admin(target):
+        return False
+    # Company admins can reset/manage other normal admins and lower users.
+    if _request_is_company_admin(user_data):
+        return True
+    actor_rank = _user_hierarchy_rank_from_type(user_data.get('user_type'))
+    target_rank = _user_hierarchy_rank_from_type(getattr(target, 'user_type', None))
+    return actor_rank > target_rank
+
+
+def _verify_password(raw_password: str, stored_value: str) -> bool:
+    if not raw_password or not stored_value:
+        return False
+    try:
+        # Preferred path: bcrypt hash
+        return bcrypt.checkpw(raw_password.encode('utf-8'), stored_value.encode('utf-8'))
+    except Exception:
+        # Backward compatibility for legacy plain-text seeds
+        return raw_password == stored_value
+
+
+@bp_auth.route('/login', methods=['POST'])
+def login():
+    data = request.get_json() or {}
+    username = str(data.get('username') or '').strip()
+    password = str(data.get('password') or '')
+    if not username or not password:
+        return jsonify({'error_key': 'errors.auth_missing_credentials'}), 400
+
+    with transaction_context() as db:
+        user = db.scalars(select(User).where(User.username == username)).first()
+        if user and _normalize_user_type(getattr(user, 'user_type', None)) == 'web_shopper':
+            return jsonify({'error_key': 'errors.auth_invalid_credentials'}), 401
+        stored_password = getattr(user, 'password', None) or getattr(user, 'password_hash', '')
+        if not user or not _verify_password(password, stored_password):
+            return jsonify({'error_key': 'errors.auth_invalid_credentials'}), 401
+
+        mfa = db.scalars(select(UserMfa).where(UserMfa.id_user == user.id_user, UserMfa.enabled == True)).first()
+        if mfa:
+            user_payload = _user_payload(user, mfa_enabled=True)
+            temp_token = _issue_token({**user_payload, 'mfa_step': True}, MFA_TEMP_MINUTES)
+            return jsonify({'mfa_required': True, 'temp_token': temp_token, 'message_key': 'auth.mfa_required'})
+
+        user_payload = _user_payload(user, mfa_enabled=False)
+        access_token = _issue_token(user_payload, ACCESS_TOKEN_MINUTES)
+        return jsonify({'mfa_required': False, 'token': access_token, 'user': user_payload, 'message_key': 'auth.login_success'})
+
+
+@bp_auth.route('/mfa/verify-login', methods=['POST'])
+def verify_login_mfa():
+    data = request.get_json() or {}
+    temp_token = str(data.get('temp_token') or '')
+    code = str(data.get('code') or '').replace(' ', '')
+    if not temp_token or not code:
+        return jsonify({'error_key': 'errors.mfa_missing_code'}), 400
+
+    try:
+        payload = jwt.decode(temp_token, SECRET_KEY, algorithms=[JWT_ALGORITHM])
+    except Exception:
+        return jsonify({'error_key': 'errors.invalid_token'}), 401
+    if not payload.get('mfa_step'):
+        return jsonify({'error_key': 'errors.invalid_token'}), 401
+
+    with transaction_context() as db:
+        user = db.get(User, payload.get('id_user'))
+        mfa = db.scalars(select(UserMfa).where(UserMfa.id_user == payload.get('id_user'), UserMfa.enabled == True)).first()
+        if not user or not mfa:
+            return jsonify({'error_key': 'errors.mfa_not_enabled'}), 404
+        secret = _mfa_decrypt_secret(mfa)
+        if not secret:
+            return jsonify({'error_key': 'errors.mfa_not_configured'}), 404
+        totp = pyotp.TOTP(secret)
+        if not totp.verify(code, valid_window=1):
+            return jsonify({'error_key': 'errors.mfa_invalid_code'}), 401
+        user_payload = _user_payload(user, mfa_enabled=True)
+        access_token = _issue_token(user_payload, ACCESS_TOKEN_MINUTES)
+        return jsonify({'token': access_token, 'user': user_payload, 'message_key': 'auth.login_success'})
+
+
+@bp_auth.route('/mfa/setup', methods=['POST'])
+@token_required
+def setup_mfa(user_data):
+    is_bootstrap = _request_is_bootstrap_admin(user_data)
+    with transaction_context() as db:
+        existing_mfa = db.scalars(select(UserMfa).where(UserMfa.id_user == user_data.get('id_user'))).first()
+        if existing_mfa and existing_mfa.enabled and not is_bootstrap:
+            return jsonify({'error_key': 'auth.mfa_already_enabled'}), 409
+
+    secret = pyotp.random_base32()
+    encrypted_secret, secret_iv = _mfa_encrypt_secret(secret)
+    username = user_data.get('username') or f"user-{user_data.get('id_user')}"
+    uri = pyotp.totp.TOTP(secret).provisioning_uri(name=username, issuer_name=ISSUER_NAME)
+    with transaction_context() as db:
+        mfa = db.scalars(select(UserMfa).where(UserMfa.id_user == user_data.get('id_user'))).first()
+        if not mfa:
+            mfa = UserMfa(id_user=user_data.get('id_user'), secret=encrypted_secret, secret_iv=secret_iv, enabled=False)
+            _mfa_apply_defaults(mfa, reset_attempts=True)
+            db.add(mfa)
+        else:
+            mfa.secret = encrypted_secret
+            mfa.secret_iv = secret_iv
+            mfa.enabled = False
+            _mfa_apply_defaults(mfa, reset_attempts=True)
+        db.flush()
+    return jsonify({'secret': secret, 'otpauth_uri': uri, 'message_key': 'auth.mfa_setup_created'})
+
+
+@bp_auth.route('/mfa/enable', methods=['POST'])
+@token_required
+def enable_mfa(user_data):
+    data = request.get_json() or {}
+    code = str(data.get('code') or '').replace(' ', '')
+    is_bootstrap = _request_is_bootstrap_admin(user_data)
+    with transaction_context() as db:
+        mfa = db.scalars(select(UserMfa).where(UserMfa.id_user == user_data.get('id_user'))).first()
+        if not mfa:
+            return jsonify({'error_key': 'errors.mfa_not_configured'}), 404
+        if mfa.enabled and not is_bootstrap:
+            return jsonify({'error_key': 'auth.mfa_already_enabled'}), 409
+        secret = _mfa_decrypt_secret(mfa)
+        if not secret:
+            return jsonify({'error_key': 'errors.mfa_not_configured'}), 404
+        if not pyotp.TOTP(secret).verify(code, valid_window=1):
+            return jsonify({'error_key': 'errors.mfa_invalid_code'}), 401
+        mfa.enabled = True
+        _mfa_apply_defaults(mfa)
+        db.flush()
+    return jsonify({'message_key': 'auth.mfa_enabled'})
+
+
+@bp_auth.route('/mfa/reset/<int:target_user_id>', methods=['POST'])
+@token_required
+def reset_user_mfa(user_data, target_user_id):
+    if not (str(user_data.get('user_type') or '').strip().lower() == 'admin' or _request_is_bootstrap_admin(user_data)):
+        return jsonify({'error_key': 'errors.forbidden'}), 403
+    with transaction_context() as db:
+        target = db.get(User, target_user_id)
+        if not target:
+            return jsonify({'error_key': 'errors.resource_not_found'}), 404
+        if _is_bootstrap_admin(target) and not _request_is_bootstrap_admin(user_data):
+            return jsonify({'error_key': 'errors.resource_not_found'}), 404
+        if not _request_can_manage_target_user(user_data, target):
+            return jsonify({'error_key': 'errors.user_hierarchy_denied'}), 403
+        mfa = db.scalars(select(UserMfa).where(UserMfa.id_user == target_user_id)).first()
+        if mfa:
+            mfa.enabled = False
+            if hasattr(mfa, 'secret'):
+                mfa.secret = b''
+            if hasattr(mfa, 'secret_iv'):
+                mfa.secret_iv = b''
+            if hasattr(mfa, 'failed_attempts'):
+                mfa.failed_attempts = 0
+            if hasattr(mfa, 'locked_until'):
+                mfa.locked_until = None
+            if hasattr(mfa, 'last_used_at'):
+                mfa.last_used_at = None
+            if hasattr(mfa, 'backup_codes'):
+                mfa.backup_codes = {}
+            _mfa_apply_defaults(mfa, reset_attempts=True)
+        db.flush()
+    return jsonify({'message_key': 'auth.mfa_reset_success'})
+
+
+@bp_auth.route('/mfa/disable', methods=['POST'])
+@token_required
+def disable_mfa(user_data):
+    if not _request_is_bootstrap_admin(user_data):
+        return jsonify({'error_key': 'errors.forbidden'}), 403
+    with transaction_context() as db:
+        mfa = db.scalars(select(UserMfa).where(UserMfa.id_user == user_data.get('id_user'))).first()
+        if mfa:
+            mfa.enabled = False
+            _mfa_apply_defaults(mfa)
+            db.flush()
+    return jsonify({'message_key': 'auth.mfa_disabled'})

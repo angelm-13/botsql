@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ t('documents.user_summary.title') }}</title>
+  <link rel="stylesheet" href="document.css" />
+</head>
+<body>
+  <main class="document-page">
+    <header class="document-header">
+      <h1>{{ t('documents.user_summary.title') }}</h1>
+      <div class="document-meta">{{ t('documents.generated_at') }}: {{ generated_at }}</div>
+    </header>
+    <section class="document-content">
+      <div class="field-grid">
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.user.id_user') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_user'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.user.created_by') }}</span>
+        <span class="field-value">{{ format_value(record.get('created_by'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.user.creation_date') }}</span>
+        <span class="field-value">{{ format_value(record.get('creation_date'), 'date') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.user.date_born') }}</span>
+        <span class="field-value">{{ format_value(record.get('date_born'), 'date') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.user.date_start') }}</span>
+        <span class="field-value">{{ format_value(record.get('date_start'), 'date') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.user.email') }}</span>
+        <span class="field-value">{{ format_value(record.get('email'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.user.first_name') }}</span>
+        <span class="field-value">{{ format_value(record.get('first_name'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.user.id_permission') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_permission'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.user.full_name') }}</span>
+        <span class="field-value">{{ format_value(record.get('full_name'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.user.id_proyect') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_proyect'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.user.last_name_father') }}</span>
+        <span class="field-value">{{ format_value(record.get('last_name_father'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.user.last_name_mother') }}</span>
+        <span class="field-value">{{ format_value(record.get('last_name_mother'), 'text') }}</span>
+      </section>
+      </div>
+    </section>
+    <footer class="document-footer">
+      <span>{{ t('documents.powered_by') }}</span>
+      <span>user_summary</span>
+    </footer>
+  </main>
+</body>
+</html>

@@ -1,0 +1,21 @@
+/* Compatibility shim for generated extension imports.
+   Button styles are defined in app.css by the frontend generator. */
+@import "./app.css";
+
+.btn {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  border-radius: 14px;
+  padding: 10px 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.btn-primary {
+  background: #1b7a60;
+  color: #fff;
+  border-color: #1b7a60;
+}

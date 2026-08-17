@@ -1,0 +1,129 @@
+
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>{{ record.requirement_folio }}</title>
+  <style>
+    @page { size: letter; margin: 16mm; }
+    body { font-family: Arial, sans-serif; color: #0f172a; font-size: 12px; }
+    h1, h2, h3, p { margin: 0; }
+    .header { display: flex; justify-content: space-between; gap: 16px; border-bottom: 3px solid #0f3554; padding-bottom: 12px; margin-bottom: 16px; }
+    .brand { font-size: 22px; font-weight: 800; color: #0f3554; }
+    .folio { text-align: right; }
+    .folio strong { display: block; font-size: 18px; }
+    .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 12px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 12px; }
+    .card { border: 1px solid #d7e0ea; border-radius: 10px; padding: 10px; background: #f8fafc; }
+    .card h3 { font-size: 13px; color: #0f3554; margin-bottom: 8px; }
+    .label { display: block; text-transform: uppercase; font-size: 9px; letter-spacing: .04em; color: #64748b; font-weight: 700; margin-bottom: 2px; }
+    .value { font-weight: 700; }
+    .logo-img { max-width: 120px; max-height: 60px; object-fit: contain; display: block; margin-bottom: 8px; }
+    .row { margin-top: 6px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+    th { background: #f1f5f9; color: #475569; text-transform: uppercase; font-size: 9px; letter-spacing: .04em; }
+    th, td { border-bottom: 1px solid #d7e0ea; padding: 7px; text-align: left; vertical-align: top; }
+    .num { text-align: right; white-space: nowrap; }
+    .status { display: inline-block; border-radius: 999px; padding: 6px 10px; background: #dcfce7; color: #166534; font-weight: 800; }
+    .totals { margin-top: 14px; margin-left: auto; width: 280px; }
+    .totals div { display: flex; justify-content: space-between; border: 1px solid #d7e0ea; border-radius: 8px; padding: 7px 10px; margin-bottom: 6px; background: #f8fafc; }
+    .total { font-size: 14px; color: #0f3554; }
+    .note { margin-top: 12px; border: 1px solid #d7e0ea; border-radius: 10px; padding: 10px; background: #fff; }
+    .signatures { display: grid; grid-template-columns: repeat(2, 1fr); gap: 22px; margin-top: 28px; }
+    .signature { border-top: 1px solid #64748b; padding-top: 8px; text-align: center; color: #475569; }
+    .muted { color: #64748b; }
+  </style>
+</head>
+<body>
+  <section class="header">
+    <div>
+      <div class="brand">TYAKXA</div>
+      <p class="muted">Requerimiento / Orden de compra por partida autorizada</p>
+    </div>
+    <div class="folio">
+      <span class="label">Folio requerimiento</span>
+      <strong>{{ record.requirement_folio }}</strong>
+      <div class="row"><span class="label">Autorizacion</span><span class="status">{{ record.authorization_status_label }}</span></div>
+    </div>
+  </section>
+
+  <section class="grid-3">
+    <div class="card"><span class="label">Documento origen</span><strong>{{ record.invoice_folio }}</strong><div class="row">{{ record.invoice_status_label }}</div></div>
+    <div class="card"><span class="label">Fecha emision</span><strong>{{ record.invoice_date_label }}</strong><div class="row"><span class="label">Vencimiento</span>{{ record.invoice_expiration_label }}</div></div>
+    <div class="card"><span class="label">Proyecto</span><strong>{{ record.project_label }}</strong><div class="row">{{ record.project_description_label }}</div></div>
+  </section>
+
+  <section class="grid-2">
+    <div class="card">
+      <h3>Empresa emisora / compradora</h3>
+      {% if record.issuer.logo_uri %}<img class="logo-img" src="{{ record.issuer.logo_uri }}" alt="Logo empresa emisora">{% endif %}
+      <p class="value">{{ record.issuer.display_name }}</p>
+      <div class="row"><span class="label">RFC</span>{{ record.issuer.tax_id }}</div>
+      <div class="row"><span class="label">Direccion</span>{{ record.issuer.address_line }}</div>
+      <div class="row"><span class="label">Contacto</span>{{ record.issuer.contact_line }}</div>
+      <div class="row"><span class="label">Correo</span>{{ record.issuer.email }}</div>
+    </div>
+    <div class="card">
+      <h3>Cliente / proveedor relacionado</h3>
+      {% if record.receiver.logo_uri %}<img class="logo-img" src="{{ record.receiver.logo_uri }}" alt="Logo cliente proveedor">{% endif %}
+      <p class="value">{{ record.receiver.display_name }}</p>
+      <div class="row"><span class="label">RFC</span>{{ record.receiver.tax_id }}</div>
+      <div class="row"><span class="label">Direccion</span>{{ record.receiver.address_line }}</div>
+      <div class="row"><span class="label">Contacto</span>{{ record.receiver.contact_line }}</div>
+      <div class="row"><span class="label">Correo</span>{{ record.receiver.email }}</div>
+    </div>
+  </section>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Tipo</th>
+        <th>Referencia</th>
+        <th>Concepto</th>
+        <th class="num">Cantidad</th>
+        <th>Unidad</th>
+        <th class="num">Precio unitario</th>
+        <th class="num">Subtotal</th>
+        <th class="num">IVA</th>
+        <th class="num">Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>{{ record.line_type_label }}</td>
+        <td>{{ record.line_reference_label }}</td>
+        <td>{{ record.line_description_label }}</td>
+        <td class="num">{{ record.quantity_label }}</td>
+        <td>{{ record.unit_label }}</td>
+        <td class="num">{{ record.gross_price_label }}</td>
+        <td class="num">{{ record.line_subtotal_label }}</td>
+        <td class="num">{{ record.line_tax_label }}</td>
+        <td class="num">{{ record.line_total_label }}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <section class="totals">
+    <div><span>Subtotal</span><strong>{{ record.line_subtotal_label }}</strong></div>
+    <div><span>IVA</span><strong>{{ record.line_tax_label }}</strong></div>
+    <div class="total"><span>Total</span><strong>{{ record.line_total_label }}</strong></div>
+  </section>
+
+  <section class="grid-3">
+    <div class="card"><span class="label">Autorizo</span><strong>{{ record.authorized_by_label }}</strong></div>
+    <div class="card"><span class="label">Fecha autorizacion</span><strong>{{ record.authorization_date_label }}</strong></div>
+    <div class="card"><span class="label">Moneda</span><strong>{{ record.invoice_currency }}</strong></div>
+  </section>
+
+  <section class="note">
+    <span class="label">Nota de autorizacion</span>
+    <p>{{ record.authorization_note_label }}</p>
+    <div class="row"><span class="label">Condiciones comerciales</span>{{ record.invoice_terms }}</div>
+  </section>
+
+  <section class="signatures">
+    <div class="signature">Solicito / Compras</div>
+    <div class="signature">Autorizo</div>
+  </section>
+</body>
+</html>

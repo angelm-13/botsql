@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ t('documents.payroll_movement_document.title') }}</title>
+  <link rel="stylesheet" href="document.css" />
+</head>
+<body>
+  <main class="document-page">
+    <header class="document-header">
+      <h1>{{ t('documents.payroll_movement_document.title') }}</h1>
+      <div class="document-meta">{{ t('documents.generated_at') }}: {{ generated_at }}</div>
+    </header>
+    <section class="document-content">
+      <div class="field-grid">
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.payroll_movement.id_payroll_movement') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_payroll_movement'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.payroll_movement.id_payroll_detail') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_payroll_detail'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.payroll_movement.id_payroll_concept') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_payroll_concept'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.payroll_movement.amount') }}</span>
+        <span class="field-value">{{ format_value(record.get('amount'), 'currency') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.payroll_movement.created_by') }}</span>
+        <span class="field-value">{{ format_value(record.get('created_by'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.payroll_movement.creation_date') }}</span>
+        <span class="field-value">{{ format_value(record.get('creation_date'), 'date') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.payroll_movement.last_update_date') }}</span>
+        <span class="field-value">{{ format_value(record.get('last_update_date'), 'date') }}</span>
+      </section>
+      </div>
+    </section>
+    <footer class="document-footer">
+      <span>{{ t('documents.powered_by') }}</span>
+      <span>payroll_movement_document</span>
+    </footer>
+  </main>
+</body>
+</html>

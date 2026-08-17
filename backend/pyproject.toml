@@ -1,0 +1,18 @@
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+[tool.isort]
+profile = "black"
+line_length = 100
+[tool.pycodestyle]
+max-line-length = 100
+ignore = ["E203", "W503"]
+exclude = ".git,.venv,venv,__pycache__,migrations,build,dist"
+[tool.coverage.run]
+branch = true
+source = ["app"]
+omit = ["tests/*", "*/migrations/*"]
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+fail_under = 60

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ t('documents.customer_supplier_summary.title') }}</title>
+  <link rel="stylesheet" href="document.css" />
+</head>
+<body>
+  <main class="document-page">
+    <header class="document-header">
+      <h1>{{ t('documents.customer_supplier_summary.title') }}</h1>
+      <div class="document-meta">{{ t('documents.generated_at') }}: {{ generated_at }}</div>
+    </header>
+    <section class="document-content">
+      <div class="field-grid">
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.customer_supplier.id_customer_supplier') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_customer_supplier'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.customer_supplier.postal_code') }}</span>
+        <span class="field-value">{{ format_value(record.get('postal_code'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.customer_supplier.name') }}</span>
+        <span class="field-value">{{ format_value(record.get('name'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.customer_supplier.title') }}</span>
+        <span class="field-value">{{ format_value(record.get('title'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.customer_supplier.contact_name') }}</span>
+        <span class="field-value">{{ format_value(record.get('contact_name'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.customer_supplier.phone') }}</span>
+        <span class="field-value">{{ format_value(record.get('phone'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.customer_supplier.email') }}</span>
+        <span class="field-value">{{ format_value(record.get('email'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.customer_supplier.web_site') }}</span>
+        <span class="field-value">{{ format_value(record.get('web_site'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.customer_supplier.street') }}</span>
+        <span class="field-value">{{ format_value(record.get('street'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.customer_supplier.number_ext') }}</span>
+        <span class="field-value">{{ format_value(record.get('number_ext'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.customer_supplier.number_int') }}</span>
+        <span class="field-value">{{ format_value(record.get('number_int'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.customer_supplier.neighborhood') }}</span>
+        <span class="field-value">{{ format_value(record.get('neighborhood'), 'text') }}</span>
+      </section>
+      </div>
+    </section>
+    <footer class="document-footer">
+      <span>{{ t('documents.powered_by') }}</span>
+      <span>customer_supplier_summary</span>
+    </footer>
+  </main>
+</body>
+</html>

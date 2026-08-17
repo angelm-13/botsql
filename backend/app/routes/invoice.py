@@ -1,0 +1,515 @@
+from __future__ import annotations
+from flask import Blueprint, jsonify, request
+from app.services.invoice_service import InvoiceService
+from app.utils.auth import token_required, require_entity_permission
+from app.utils.errors import AppError
+from datetime import datetime
+from app.services.invoice_material_service_service import InvoiceMaterialServiceService
+
+
+bp_invoice = Blueprint('invoice', __name__, url_prefix='/invoice')
+ALLOWED_FIELDS = ['id_invoice', 'date_emision', 'date_expiration', 'subtotal', 'tax', 'total', 'invoice_status', 'payment_method', 'note', 'id_customer_supplier', 'fiscal_reference', 'serie_csd', 'internationalization', 'currency', 'type_exchange_rate', 'tax_certification_supplier', 'fiscal_certify_serie', 'certification_date', 'cfdi_code', 'sat_code', 'sat_certification_code', 'id_status', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'nombre_emisor', 'lugar_expedicion', 'tipo_de_comprobante', 'rfc_receptor', 'nombre_receptor', 'regimen_fiscal_receptor', 'domicilio_fiscal_receptor', 'id_proveedor_de_sello', 'folio_fiscal', 'exportacion', 'folio', 'no_certificado_sat', 'sello_sat', 'sello_certificacion_sat', 'no_certificado', 'descuento', 'metodo_pago', 'condiciones_pago', 'id_issuer_customer_supplier', 'id_proyect', 'apply_tax', 'tax_rate', 'commercial_terms']
+
+TECHNICAL_RESPONSE_FIELDS = {'id_invoice'}
+FIELD_READ_BIT = 2
+
+
+def _actor_has_unrestricted_field_access(user_data: dict) -> bool:
+    return bool(
+        user_data.get('is_superuser')
+        or user_data.get('is_bootstrap_admin')
+        or user_data.get('user_type') == 'admin'
+    )
+
+
+def _safe_int_value(value):
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _visible_response_fields_for_actor(user_data: dict) -> set[str]:
+    if _actor_has_unrestricted_field_access(user_data):
+        return set(ALLOWED_FIELDS)
+
+    permission_id = _safe_int_value(user_data.get('id_permission') or user_data.get('permission_id'))
+    if not permission_id:
+        return set(TECHNICAL_RESPONSE_FIELDS)
+
+    from app.models.field import Field
+    from app.models.nm_field_permission import NmFieldPermission
+    from app.models.session import transaction_context
+
+    visible = set()
+    with transaction_context() as db_session:
+        rows = (
+            db_session.query(NmFieldPermission, Field)
+            .join(Field, NmFieldPermission.id_field == Field.id_field)
+            .filter(NmFieldPermission.id_permission == permission_id)
+            .filter(NmFieldPermission.deletion_date.is_(None))
+            .filter(Field.table_name == 'invoice')
+            .filter(Field.deletion_date.is_(None))
+            .all()
+        )
+        for permission_row, field_row in rows:
+            try:
+                control_type = int(permission_row.control_type)
+            except (TypeError, ValueError):
+                continue
+            if (control_type & FIELD_READ_BIT) == FIELD_READ_BIT:
+                visible.add(field_row.field_name)
+
+    # La llave primaria puede viajar en la respuesta para navegacion interna,
+    # acciones de fila y rutas REST, aunque el frontend no la pinte si no fue
+    # marcada como visible en el gestor.
+    return visible | set(TECHNICAL_RESPONSE_FIELDS)
+
+
+def _filter_payload_for_actor(payload: dict, user_data: dict) -> dict:
+    payload = dict(payload or {})
+    if _actor_has_unrestricted_field_access(user_data):
+        return payload
+    writable_fields = _visible_response_fields_for_actor(user_data) - set(TECHNICAL_RESPONSE_FIELDS)
+    return {key: value for key, value in payload.items() if key in writable_fields}
+
+
+def _project_record_payload(record: dict | None, visible_fields: set[str]) -> dict | None:
+    if record is None:
+        return record
+    return {key: value for key, value in dict(record).items() if key in visible_fields}
+
+
+def _project_list_payload(payload: dict, visible_fields: set[str]) -> dict:
+    result = dict(payload or {})
+    result['items'] = [
+        _project_record_payload(item, visible_fields)
+        for item in result.get('items', [])
+    ]
+    return result
+
+
+def _jsonify_projected_record(user_data: dict, record: dict | None, status: int | None = None):
+    payload = _project_record_payload(record, _visible_response_fields_for_actor(user_data))
+    response = jsonify(payload)
+    return (response, status) if status is not None else response
+
+
+def _jsonify_projected_list(user_data: dict, payload: dict):
+    return jsonify(_project_list_payload(payload, _visible_response_fields_for_actor(user_data)))
+
+
+
+@bp_invoice.route('/', methods=['GET'])
+@token_required
+@require_entity_permission('invoice', 'read')
+def list_invoice(user_data):
+    page = int(request.args.get('page', 1))
+    per_page = int(request.args.get('per_page', 20))
+    sort = request.args.get('sort')
+    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort'} and k in ALLOWED_FIELDS}
+    return _jsonify_projected_list(user_data, InvoiceService.list(page=page, per_page=per_page, filters=filters, sort=sort))
+
+
+@bp_invoice.route('/<id_invoice>', methods=['GET'])
+@token_required
+@require_entity_permission('invoice', 'read')
+def get_invoice(user_data, id_invoice):
+    return _jsonify_projected_record(user_data, InvoiceService.get(id_invoice))
+
+
+@bp_invoice.route('/', methods=['POST'])
+@token_required
+@require_entity_permission('invoice', 'create')
+def create_invoice(user_data):
+    payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
+    return _jsonify_projected_record(user_data, InvoiceService.create(payload, user_id=user_data.get('id_user')), status=201)
+
+
+@bp_invoice.route('/<id_invoice>', methods=['PUT'])
+@token_required
+@require_entity_permission('invoice', 'update')
+def update_invoice(user_data, id_invoice):
+    payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
+    return _jsonify_projected_record(user_data, InvoiceService.update(id_invoice, payload, user_id=user_data.get('id_user')))
+
+
+@bp_invoice.route('/<id_invoice>', methods=['DELETE'])
+@token_required
+@require_entity_permission('invoice', 'delete')
+def delete_invoice(user_data, id_invoice):
+    return jsonify(InvoiceService.delete(id_invoice, user_id=user_data.get('id_user')))
+
+
+@bp_invoice.route('/line-authorization/<id_invoice_material_service>', methods=['PATCH'])
+@token_required
+@require_entity_permission('invoice', 'update')
+def update_invoice_line_authorization(user_data, id_invoice_material_service):
+    data = request.get_json(silent=True) or {}
+    authorization_status = str(data.get('authorization_status') or '').strip().lower()
+    allowed_statuses = {'pending', 'authorized', 'rejected'}
+
+    if authorization_status not in allowed_statuses:
+        raise AppError(
+            'validations.invoice_material_service.authorization_status.invalid',
+            400,
+            {'allowed': sorted(allowed_statuses)}
+        )
+
+    payload = {
+        'authorization_status': authorization_status,
+        'authorization_note': data.get('authorization_note') or None,
+        'id_authorized': user_data.get('id_user') or 1,
+    }
+
+    if authorization_status in {'authorized', 'rejected'}:
+        payload['authorization_date'] = datetime.utcnow()
+    else:
+        payload['authorization_date'] = None
+
+    updated = InvoiceMaterialServiceService.update(
+        id_invoice_material_service,
+        payload,
+        user_id=user_data.get('id_user')
+    )
+
+    return jsonify({
+        'id_invoice_material_service': updated.get('id_invoice_material_service'),
+        'id_invoice': updated.get('id_invoice'),
+        'authorization_status': updated.get('authorization_status'),
+        'authorization_note': updated.get('authorization_note'),
+        'authorization_date': updated.get('authorization_date'),
+        'id_authorized': updated.get('id_authorized'),
+    })
+
+@bp_invoice.route('/convert-quotation/<id_invoice>', methods=['PATCH'])
+@token_required
+@require_entity_permission('invoice', 'update')
+def convert_quotation_invoice(user_data, id_invoice):
+    data = request.get_json(silent=True) or {}
+    invoice = InvoiceService.get(id_invoice)
+    if not invoice:
+        raise AppError('errors.resource_not_found', 404)
+
+    current_status = str(invoice.get('invoice_status') or '').strip()
+    if current_status.lower() != 'cotizacion':
+        raise AppError(
+            'validations.invoice.quotation_conversion.invalid_status',
+            400,
+            {'current_status': current_status, 'required_status': 'Cotizacion'}
+        )
+
+    try:
+        invoice_id_value = int(id_invoice)
+    except (TypeError, ValueError):
+        raise AppError('validations.invoice.quotation_conversion.invalid_invoice_id', 400, {'id_invoice': id_invoice})
+
+    from app.models import InvoiceMaterialService
+    from app.models.session import transaction_context
+
+    with transaction_context() as db_session:
+        line_rows = (
+            db_session.query(InvoiceMaterialService)
+            .filter(InvoiceMaterialService.id_invoice == invoice_id_value)
+            .order_by(InvoiceMaterialService.id_invoice_material_service.asc())
+            .all()
+        )
+
+    lines = [
+        row.serialize() if hasattr(row, 'serialize') else {
+            column.name: getattr(row, column.name)
+            for column in row.__table__.columns
+        }
+        for row in line_rows
+    ]
+    authorized_lines = [
+        line for line in lines
+        if str(line.get('authorization_status') or '').strip().lower() == 'authorized'
+    ]
+
+    if not authorized_lines:
+        raise AppError(
+            'validations.invoice.quotation_conversion.no_authorized_lines',
+            400,
+            {'id_invoice': id_invoice}
+        )
+
+    def money_value(value):
+        try:
+            if value in (None, ''):
+                return 0.0
+            return float(value)
+        except (TypeError, ValueError):
+            return 0.0
+
+    authorized_subtotal = 0.0
+    authorized_tax = 0.0
+    for line in authorized_lines:
+        line_total = money_value(line.get('line_total'))
+        if line_total == 0.0:
+            line_total = money_value(line.get('gross_price')) * money_value(line.get('quantity'))
+        authorized_subtotal += line_total
+        authorized_tax += money_value(line.get('line_tax'))
+
+    authorized_total = authorized_subtotal + authorized_tax
+    conversion_note = str(
+        data.get('conversion_note')
+        or 'Convertida desde cotizacion usando solo partidas autorizadas.'
+    ).strip()
+    existing_note = str(invoice.get('note') or '').strip()
+    note = (existing_note + '\n' + conversion_note).strip() if existing_note else conversion_note
+
+    payload = {
+        'invoice_status': 'pendiente',
+        'subtotal': f'{authorized_subtotal:.2f}',
+        'tax': f'{authorized_tax:.2f}',
+        'total': f'{authorized_total:.2f}',
+        'note': note,
+    }
+
+    updated = InvoiceService.update(id_invoice, payload, user_id=user_data.get('id_user'))
+
+    return jsonify({
+        'id_invoice': updated.get('id_invoice'),
+        'previous_status': current_status,
+        'invoice_status': updated.get('invoice_status'),
+        'authorized_lines_count': len(authorized_lines),
+        'excluded_lines_count': len(lines) - len(authorized_lines),
+        'subtotal': updated.get('subtotal'),
+        'tax': updated.get('tax'),
+        'total': updated.get('total'),
+        'purchase_requirement_grouped_url': f'/documents/purchase_requirement_grouped/{id_invoice}?format=pdf',
+        'message_key': 'success.invoice.quotation_converted',
+    })
+
+
+import xml.etree.ElementTree as _ET
+import os as _os
+from flask import current_app as _current_app
+from werkzeug.utils import secure_filename as _secure_filename
+
+from sqlalchemy import select as _select
+from app.models.session import transaction_context as _transaction_context
+try:
+    from app.models import CustomerSupplier as _CustomerSupplier, Proyect as _Proyect
+except Exception:  # modelos opcionales segun CSV
+    _CustomerSupplier = None
+    _Proyect = None
+
+
+def _int_or_none(value):
+    try:
+        if value in (None, ''):
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _resolve_cfdi_customer_supplier_id(cfdi_data, id_proyect=None, tipo_movimiento='gasto', user_id=None):
+    """Devuelve un id_customer_supplier existente o crea uno minimo desde el XML."""
+    if _CustomerSupplier is None:
+        return request.form.get('id_customer_supplier') or 1
+
+    requested_id = _int_or_none(request.form.get('id_customer_supplier'))
+    project_id = _int_or_none(id_proyect)
+    actor_id = _int_or_none(user_id) or 1
+    movement = str(tipo_movimiento or '').strip().lower()
+    use_emisor = movement in ('gasto', 'egreso', 'expense', 'supplier', 'proveedor')
+    tax_id = (cfdi_data.get('rfc_emisor') if use_emisor else cfdi_data.get('rfc_receptor')) or cfdi_data.get('rfc_emisor') or cfdi_data.get('rfc_receptor')
+    name = (cfdi_data.get('nombre_emisor') if use_emisor else cfdi_data.get('nombre_receptor')) or tax_id or 'Proveedor/Cliente CFDI'
+    partner_type = 'supplier' if use_emisor else 'client'
+
+    with _transaction_context() as db:
+        if requested_id:
+            existing = db.get(_CustomerSupplier, requested_id)
+            if existing:
+                return existing.id_customer_supplier
+
+        if project_id and _Proyect is not None:
+            project = db.get(_Proyect, project_id)
+            if project and getattr(project, 'id_customer_supplier', None):
+                existing = db.get(_CustomerSupplier, project.id_customer_supplier)
+                if existing:
+                    return existing.id_customer_supplier
+
+        if tax_id:
+            existing = db.scalars(_select(_CustomerSupplier).where(_CustomerSupplier.tax_id == tax_id)).first()
+            if existing:
+                return existing.id_customer_supplier
+
+        item = _CustomerSupplier(
+            name=str(name or 'Proveedor/Cliente CFDI')[:150],
+            title=str(name or 'CFDI')[:50],
+            contact_name=str(name or 'CFDI')[:150],
+            tax_id=str(tax_id or 'XAXX010101000')[:50],
+            type=partner_type,
+            id_user=actor_id,
+            created_by=actor_id,
+        )
+        db.add(item)
+        db.flush()
+        return item.id_customer_supplier
+
+
+
+# issue_12_phase7_save_original_cfdi_xml
+def _cfdi_xml_storage_path(invoice_id):
+    upload_root = _current_app.config.get('UPLOAD_ROOT') or _os.path.abspath(_os.path.join(_os.path.dirname(__file__), '..', '..', '..', 'uploads'))
+    folder = _os.path.join(upload_root, 'cfdi_xml')
+    _os.makedirs(folder, exist_ok=True)
+    return _os.path.join(folder, 'invoice_' + str(invoice_id) + '.xml')
+
+
+def _save_original_cfdi_xml(invoice_id, xml_bytes):
+    if not invoice_id or not xml_bytes:
+        return None
+    path = _cfdi_xml_storage_path(invoice_id)
+    with open(path, 'wb') as handle:
+        handle.write(xml_bytes)
+    return path
+
+def _parse_cfdi(xml_bytes):
+    """Extrae campos principales de CFDI 3.3/4.0 sin depender de prefijos XML."""
+    try:
+        root = _ET.fromstring(xml_bytes)
+    except _ET.ParseError as exc:
+        raise ValueError(f'XML inválido: {exc}')
+
+    def local_name(tag):
+        return tag.split('}', 1)[-1] if '}' in tag else tag
+
+    def att(elem, *names):
+        if elem is None:
+            return None
+        lowered = {k.lower(): v for k, v in elem.attrib.items()}
+        for name in names:
+            value = elem.get(name)
+            if value is not None:
+                return value
+            value = lowered.get(name.lower())
+            if value is not None:
+                return value
+        return None
+
+    def first(name):
+        for elem in root.iter():
+            if local_name(elem.tag) == name:
+                return elem
+        return None
+
+    emisor = first('Emisor')
+    receptor = first('Receptor')
+    tfd = first('TimbreFiscalDigital')
+
+    data = {
+        'subtotal': att(root, 'SubTotal'),
+        'total': att(root, 'Total'),
+        'descuento': att(root, 'Descuento'),
+        'currency': att(root, 'Moneda') or 'MXN',
+        'type_exchange_rate': att(root, 'TipoCambio'),
+        'payment_method': att(root, 'FormaPago'),
+        'metodo_pago': att(root, 'MetodoPago'),
+        'lugar_expedicion': att(root, 'LugarExpedicion'),
+        'tipo_de_comprobante': att(root, 'TipoDeComprobante'),
+        'exportacion': att(root, 'Exportacion'),
+        'folio': att(root, 'Folio'),
+        'no_certificado': att(root, 'NoCertificado'),
+        'condiciones_pago': att(root, 'CondicionesDePago'),
+        'fecha': att(root, 'Fecha'),
+        'sello': att(root, 'Sello'),
+        'rfc_emisor': att(emisor, 'Rfc'),
+        'nombre_emisor': att(emisor, 'Nombre'),
+        'rfc_receptor': att(receptor, 'Rfc'),
+        'nombre_receptor': att(receptor, 'Nombre'),
+        'regimen_fiscal_receptor': att(receptor, 'RegimenFiscalReceptor'),
+        'domicilio_fiscal_receptor': att(receptor, 'DomicilioFiscalReceptor'),
+        'uuid': att(tfd, 'UUID'),
+        'no_certificado_sat': att(tfd, 'NoCertificadoSAT'),
+        'sello_sat': att(tfd, 'SelloSAT'),
+        'rfc_proveedor_certificacion': att(tfd, 'RfcProvCertif'),
+        'certification_date': att(tfd, 'FechaTimbrado'),
+    }
+    try:
+        subtotal = float(data.get('subtotal') or 0)
+        total = float(data.get('total') or 0)
+        data['tax'] = str(max(total - subtotal, 0))
+    except (ValueError, TypeError):
+        data['tax'] = None
+    return data
+
+
+@bp_invoice.route('/upload-xml', methods=['POST'])
+@token_required
+@require_entity_permission('invoice', 'create')
+def upload_xml_invoice(user_data):
+    files = request.files.getlist('files')
+    if not files and 'file' in request.files:
+        files = [request.files['file']]
+    if not files:
+        return jsonify({'error_key': 'errors.no_files_provided', 'message': 'No se recibieron archivos XML'}), 400
+
+    id_proyect = request.form.get('id_proyect') or request.form.get('proyect_id')
+    tipo_movimiento = request.form.get('tipo_movimiento') or request.form.get('invoice_type') or 'gasto'
+    user_id = user_data.get('id_user')
+    results = []
+
+    for uploaded_file in files:
+        filename = _secure_filename(uploaded_file.filename or 'unknown.xml')
+        if not filename.lower().endswith('.xml'):
+            results.append({'file': filename, 'status': 'error', 'message': 'El archivo debe ser XML'})
+            continue
+        try:
+            xml_bytes = uploaded_file.read()
+            cfdi_data = _parse_cfdi(xml_bytes)
+            payload = {}
+            payload['folio_fiscal'] = cfdi_data.get('uuid')
+            payload['cfdi_code'] = cfdi_data.get('uuid')
+            payload['nombre_emisor'] = cfdi_data.get('nombre_emisor')
+            payload['rfc_receptor'] = cfdi_data.get('rfc_receptor')
+            payload['nombre_receptor'] = cfdi_data.get('nombre_receptor')
+            payload['subtotal'] = cfdi_data.get('subtotal')
+            payload['tax'] = cfdi_data.get('tax')
+            payload['total'] = cfdi_data.get('total')
+            payload['currency'] = cfdi_data.get('currency', 'MXN')
+            payload['tipo_de_comprobante'] = cfdi_data.get('tipo_de_comprobante')
+            payload['payment_method'] = cfdi_data.get('payment_method')
+            payload['metodo_pago'] = cfdi_data.get('metodo_pago')
+            payload['lugar_expedicion'] = cfdi_data.get('lugar_expedicion')
+            payload['exportacion'] = cfdi_data.get('exportacion')
+            payload['folio'] = cfdi_data.get('folio')
+            payload['no_certificado'] = cfdi_data.get('no_certificado')
+            payload['condiciones_pago'] = cfdi_data.get('condiciones_pago')
+            payload['date_emision'] = cfdi_data.get('fecha')
+            payload['date_expiration'] = cfdi_data.get('fecha')
+            payload['apply_tax'] = True
+            payload['tax_rate'] = request.form.get('tax_rate') or 16
+            payload['no_certificado_sat'] = cfdi_data.get('no_certificado_sat')
+            payload['sello_sat'] = cfdi_data.get('sello_sat')
+            payload['certification_date'] = cfdi_data.get('certification_date')
+            payload['sat_certification_code'] = cfdi_data.get('uuid')
+            payload['tax_certification_supplier'] = request.form.get('tax_certification_supplier') or 1
+            payload['invoice_status'] = request.form.get('invoice_status') or 'pendiente'
+            payload['note'] = 'Cargado desde XML: ' + filename
+            if id_proyect:
+                payload['id_proyect'] = int(id_proyect)
+            payload['id_customer_supplier'] = _resolve_cfdi_customer_supplier_id(cfdi_data, id_proyect=id_proyect, tipo_movimiento=tipo_movimiento, user_id=user_id)
+            payload.setdefault('id_issuer_customer_supplier', request.form.get('id_issuer_customer_supplier') or 1)
+            payload.setdefault('id_status', request.form.get('id_status') or 1)
+            payload = {k: v for k, v in payload.items() if v not in (None, '')}
+            invoice = InvoiceService.create(payload, user_id=user_id)
+            invoice_id = invoice.get('id_invoice')
+            xml_path = _save_original_cfdi_xml(invoice_id, xml_bytes)
+            results.append({'file': filename, 'status': 'created', 'id_invoice': invoice_id, 'xml_saved': bool(xml_path), 'data': invoice})
+        except ValueError as exc:
+            results.append({'file': filename, 'status': 'error', 'message': str(exc)})
+        except AppError as exc:
+            results.append({'file': filename, 'status': 'error', 'message': exc.message_key, 'meta': exc.meta})
+        except Exception as exc:
+            results.append({'file': filename, 'status': 'error', 'message': str(exc)})
+    created = [r for r in results if r['status'] == 'created']
+    errors = [r for r in results if r['status'] == 'error']
+    response = {'created': len(created), 'errors': len(errors), 'results': results}
+    if errors:
+        response['message'] = '; '.join([f"{r.get('file')}: {r.get('message')} {r.get('meta', '')}" for r in errors])
+    return jsonify(response), (201 if created else 422)

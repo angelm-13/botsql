@@ -1,0 +1,129 @@
+
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Cotización {{ record.folio }}</title>
+  <style>
+    @page { size: letter; margin: 18mm; }
+    body { font-family: Arial, sans-serif; color: #0f172a; font-size: 12px; }
+    h1, h2, h3, p { margin: 0; }
+    .header { display: flex; justify-content: space-between; gap: 16px; border-bottom: 3px solid #0f3554; padding-bottom: 12px; margin-bottom: 16px; }
+    .brand { font-size: 22px; font-weight: 800; color: #0f3554; }
+    .folio { text-align: right; }
+    .folio strong { display: block; font-size: 18px; }
+    .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 12px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 12px; }
+    .card { border: 1px solid #d7e0ea; border-radius: 10px; padding: 10px; background: #f8fafc; }
+    .card h3 { font-size: 13px; color: #0f3554; margin-bottom: 8px; }
+    .label { display: block; text-transform: uppercase; font-size: 9px; letter-spacing: .04em; color: #64748b; font-weight: 700; margin-bottom: 2px; }
+    .value { font-weight: 700; }
+    .logo-img { max-width: 120px; max-height: 60px; object-fit: contain; display: block; margin-bottom: 8px; }
+    .row { margin-top: 6px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+    th { background: #f1f5f9; color: #475569; text-transform: uppercase; font-size: 9px; letter-spacing: .04em; }
+    th, td { border-bottom: 1px solid #d7e0ea; padding: 7px; text-align: left; vertical-align: top; }
+    .num { text-align: right; white-space: nowrap; }
+    .totals { margin-top: 14px; margin-left: auto; width: 260px; }
+    .totals div { display: flex; justify-content: space-between; border: 1px solid #d7e0ea; border-radius: 8px; padding: 7px 10px; margin-bottom: 6px; background: #f8fafc; }
+    .total { font-size: 14px; color: #0f3554; }
+    .note { margin-top: 12px; }
+    .muted { color: #64748b; }
+  </style>
+</head>
+<body>
+  <section class="header">
+    <div>
+      <div class="brand">TYAKXA</div>
+      <p class="muted">Cotización comercial</p>
+    </div>
+    <div class="folio">
+      <span class="label">Folio</span>
+      <strong>{{ record.folio }}</strong>
+      <div class="row"><span class="label">Estatus</span><span class="value">{{ record.status_label }}</span></div>
+    </div>
+  </section>
+
+  <section class="grid-2">
+    <div class="card">
+      <h3>Datos de empresa emisora</h3>
+      {% if record.issuer.logo_uri %}<img class="logo-img" src="{{ record.issuer.logo_uri }}" alt="Logo empresa emisora">{% endif %}
+      <p class="value">{{ record.issuer.display_name }}</p>
+      <div class="row"><span class="label">RFC</span>{{ record.issuer.tax_id }}</div>
+      <div class="row"><span class="label">Tipo fiscal</span>{{ record.issuer.fiscal_type }}</div>
+      <div class="row"><span class="label">Dirección</span>{{ record.issuer.address_line }}</div>
+      <div class="row"><span class="label">Contacto</span>{{ record.issuer.contact_line }}</div>
+      <div class="row"><span class="label">Correo</span>{{ record.issuer.email }}</div>
+      <div class="row"><span class="label">Sitio web</span>{{ record.issuer.web_site }}</div>
+    </div>
+    <div class="card">
+      <h3>Datos de cliente receptor</h3>
+      {% if record.receiver.logo_uri %}<img class="logo-img" src="{{ record.receiver.logo_uri }}" alt="Logo cliente receptor">{% endif %}
+      <p class="value">{{ record.receiver.display_name }}</p>
+      <div class="row"><span class="label">RFC</span>{{ record.receiver.tax_id }}</div>
+      <div class="row"><span class="label">Tipo fiscal</span>{{ record.receiver.fiscal_type }}</div>
+      <div class="row"><span class="label">Dirección</span>{{ record.receiver.address_line }}</div>
+      <div class="row"><span class="label">Contacto</span>{{ record.receiver.contact_line }}</div>
+      <div class="row"><span class="label">Correo</span>{{ record.receiver.email }}</div>
+      <div class="row"><span class="label">Sitio web</span>{{ record.receiver.web_site }}</div>
+    </div>
+  </section>
+
+  <section class="grid-4">
+    <div class="card"><span class="label">Proveedor certificación fiscal</span><strong>{{ record.fiscal_supplier.display_name }}</strong></div>
+    <div class="card"><span class="label">Proyecto relacionado</span><strong>{{ record.project_label }}</strong></div>
+    <div class="card"><span class="label">Fecha emisión</span><strong>{{ record.date_emision_label }}</strong></div>
+    <div class="card"><span class="label">Fecha vencimiento</span><strong>{{ record.date_expiration_label }}</strong></div>
+    <div class="card"><span class="label">Moneda</span><strong>{{ record.currency or "MXN" }}</strong></div>
+    <div class="card"><span class="label">Condiciones comerciales</span><strong>{{ record.commercial_terms or "—" }}</strong></div>
+  </section>
+
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Tipo de partida</th>
+        <th>Referencia</th>
+        <th>Concepto</th>
+        <th class="num">Cantidad</th>
+        <th>Unidad</th>
+        <th class="num">Precio unitario</th>
+        <th class="num">Subtotal</th>
+        <th class="num">IVA</th>
+        <th class="num">Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if record.has_items %}
+        {% for item in record.line_items %}
+        <tr>
+          <td>{{ item.line_number }}</td>
+          <td>{{ item.type_label }}</td>
+          <td>{{ item.reference_label }}</td>
+          <td>{{ item.description_label }}</td>
+          <td class="num">{{ item.quantity_label }}</td>
+          <td>{{ item.unit_label }}</td>
+          <td class="num">{{ item.gross_price_label }}</td>
+          <td class="num">{{ item.line_subtotal_label }}</td>
+          <td class="num">{{ item.line_tax_label }}</td>
+          <td class="num">{{ item.line_total_label }}</td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr><td colspan="10" class="muted">Sin partidas registradas.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+
+  <section class="totals">
+    <div><span>Subtotal</span><strong>{{ record.subtotal_label }}</strong></div>
+    <div><span>IVA</span><strong>{{ record.tax_label }}</strong></div>
+    <div class="total"><span>Total</span><strong>{{ record.total_label }}</strong></div>
+  </section>
+
+  <section class="note">
+    <span class="label">Nota</span>
+    <p>{{ record.note or "—" }}</p>
+  </section>
+</body>
+</html>

@@ -1,0 +1,848 @@
+import { useEffect, useMemo, useState } from "react";
+import { Plus, RefreshCw, Search, Trash2, Pencil } from "lucide-react";
+import { useI18n } from "../i18n";
+import { getAllProduct, createProduct, updateProduct, deleteProduct, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, uploadProductImage, getAllBrand, getAllProductFamily, getAllInventoryStatus, getAllInvoice, getAllLocation, getAllMaterial } from "../api";
+import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
+
+const emptyForm = { id_invoice: "", id_location: "", id_material: "", gross_price: "", color: "", is_directly_related_to_product_service: false, product_status: "", path_imagen: "", product_code: "", note: "", descripcion: "", cantidad: "", id_marca: "", id_familia: "" };
+const validationRules = allValidationRules["product"] || {};
+const ENTITY_KEY = "product";
+const ACTION_CREATE = 1;
+const ACTION_READ = 2;
+const ACTION_UPDATE = 4;
+const ACTION_DELETE = 8;
+const FIELD_VISIBLE_BIT = 2;
+const ALL_FIELD_NAMES = ['id_product', 'id_invoice', 'id_location', 'id_material', 'gross_price', 'color', 'is_directly_related_to_product_service', 'product_status', 'path_imagen', 'product_code'];
+
+function hasBit(value, bit) {
+  return (Number(value || 0) & bit) === bit;
+}
+
+function normalizeList(data) {
+  return Array.isArray(data) ? data : (data?.items || data?.data || []);
+}
+
+function readCurrentUser() {
+  try { return JSON.parse(localStorage.getItem("user") || "{}"); } catch (_) { return {}; }
+}
+
+export default function ProductPage() {
+  const { lang, t } = useI18n();
+  const [items, setItems] = useState([]);
+  const [formData, setFormData] = useState(emptyForm);
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [editingId, setEditingId] = useState(null);
+  const [query, setQuery] = useState("");
+  const [view, setView] = useState("table");
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
+  const [loading, setLoading] = useState(false);
+  const [errorKey, setErrorKey] = useState("");
+  const [errorMeta, setErrorMeta] = useState(null);
+  const [noticeKey, setNoticeKey] = useState("");
+  const [selectedImageFile, setSelectedImageFile] = useState(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState("");
+  const currentUser = useMemo(() => readCurrentUser(), []);
+  const isSuperUser = Boolean(currentUser?.is_superuser || currentUser?.is_bootstrap_admin || currentUser?.username === "admin1");
+  const currentRoleId = currentUser?.id_permission;
+  const [modulePermission, setModulePermission] = useState(null);
+  const [visibleFieldNames, setVisibleFieldNames] = useState(new Set());
+  const [permissionReady, setPermissionReady] = useState(false);
+  const canRead = canUseAction(ACTION_READ);
+  const canCreate = canUseAction(ACTION_CREATE);
+  const canUpdate = canUseAction(ACTION_UPDATE);
+  const canDelete = canUseAction(ACTION_DELETE);
+  const canSubmitForm = editingId ? canUpdate : canCreate;
+  const showRowActions = canRead && (canUpdate || canDelete);
+  const [invoiceOptions, setInvoiceOptions] = useState([]);
+  const [locationOptions, setLocationOptions] = useState([]);
+  const [materialOptions, setMaterialOptions] = useState([]);
+  const [brandOptions, setBrandOptions] = useState([]);
+  const [productFamilyOptions, setProductFamilyOptions] = useState([]);
+  const [inventoryStatusOptions, setInventoryStatusOptions] = useState([]);
+
+  async function loadData() {
+    if (!permissionReady || !canRead) {
+      setItems([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true); setErrorKey(""); setErrorMeta(null);
+    try {
+      const data = await getAllProduct({ page, per_page: perPage });
+      setItems(Array.isArray(data) ? data : (data.items || data.data || []));
+    } catch (error) {
+      setErrorKey(error.message || "errors.request_failed");
+      setErrorMeta(error.payload?.meta || null);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { loadData(); }, [page, perPage, permissionReady, canRead]);
+  useEffect(() => {
+    async function loadFormOptions() {
+      if (!permissionReady || (!canSubmitForm && !canRead)) return;
+      if (canSeeField("id_invoice")) {
+        try {
+          const invoiceData = await getAllInvoice({ page: 1, per_page: 100 });
+          setInvoiceOptions(Array.isArray(invoiceData) ? invoiceData : (invoiceData.items || []));
+        } catch (_) {
+          setInvoiceOptions([]);
+        }
+      }
+      if (canSeeField("id_location")) {
+        try {
+          const locationData = await getAllLocation({ page: 1, per_page: 100 });
+          setLocationOptions(Array.isArray(locationData) ? locationData : (locationData.items || []));
+        } catch (_) {
+          setLocationOptions([]);
+        }
+      }
+      if (canSeeField("id_material")) {
+        try {
+          const materialData = await getAllMaterial({ page: 1, per_page: 100 });
+          setMaterialOptions(Array.isArray(materialData) ? materialData : (materialData.items || []));
+        } catch (_) {
+          setMaterialOptions([]);
+        }
+      }
+      if (canSeeField("id_marca")) {
+        try {
+          const brandData = await getAllBrand({ page: 1, per_page: 500 });
+          setBrandOptions(Array.isArray(brandData) ? brandData : (brandData.items || []));
+        } catch (_) {
+          setBrandOptions([]);
+        }
+      }
+      if (canSeeField("id_familia")) {
+        try {
+          const productFamilyData = await getAllProductFamily({ page: 1, per_page: 500 });
+          setProductFamilyOptions(Array.isArray(productFamilyData) ? productFamilyData : (productFamilyData.items || []));
+        } catch (_) {
+          setProductFamilyOptions([]);
+        }
+      }
+      if (canSeeField("product_status")) {
+        try {
+          const inventoryStatusData = await getAllInventoryStatus({ page: 1, per_page: 500, entity_scope: "product", flow_scope: "inventory" });
+          const inventoryStatusItems = Array.isArray(inventoryStatusData) ? inventoryStatusData : (inventoryStatusData.items || []);
+          setInventoryStatusOptions(inventoryStatusItems.filter((item) => {
+            const active = item.is_active === true || item.is_active === "true" || item.is_active === 1 || item.is_active === "1";
+            return active && String(item.entity_scope || "").toLowerCase() === "product" && String(item.flow_scope || "").toLowerCase() === "inventory";
+          }));
+        } catch (_) {
+          setInventoryStatusOptions([]);
+        }
+      }
+    }
+    loadFormOptions();
+  }, [permissionReady, canSubmitForm, canRead, visibleFieldNames]);
+
+  useEffect(() => {
+    async function loadRolePermissions() {
+      if (isSuperUser) {
+        setModulePermission({ control_type: 15 });
+        setVisibleFieldNames(new Set(ALL_FIELD_NAMES));
+        setPermissionReady(true);
+        return;
+      }
+      if (!currentRoleId) {
+        setModulePermission(null);
+        setVisibleFieldNames(new Set());
+        setPermissionReady(true);
+        return;
+      }
+      try {
+        const [entityPermissionData, fieldPermissionData, fieldData] = await Promise.all([
+          getAllEntityPermission({ per_page: 5000 }),
+          getAllNmFieldPermission({ per_page: 5000 }),
+          getAllField({ per_page: 5000 })
+        ]);
+        const entityPermissions = normalizeList(entityPermissionData);
+        const fieldPermissions = normalizeList(fieldPermissionData);
+        const fieldsMeta = normalizeList(fieldData);
+        const moduleRow = entityPermissions.find((row) =>
+          String(row.id_permission ?? "") === String(currentRoleId) &&
+          String(row.entity_name ?? "") === ENTITY_KEY
+        );
+        setModulePermission(moduleRow || null);
+        const fieldNameById = new Map();
+        fieldsMeta.forEach((field) => {
+          if (String(field.table_name || "") === ENTITY_KEY && field.id_field) {
+            fieldNameById.set(String(field.id_field), String(field.field_name || ""));
+          }
+        });
+        const allowed = new Set();
+        fieldPermissions.forEach((row) => {
+          if (String(row.id_permission ?? "") !== String(currentRoleId)) return;
+          if (!hasBit(row.control_type, FIELD_VISIBLE_BIT)) return;
+          const fieldName = fieldNameById.get(String(row.id_field));
+          if (fieldName) allowed.add(fieldName);
+        });
+        setVisibleFieldNames(allowed);
+      } catch (error) {
+        setModulePermission(null);
+        setVisibleFieldNames(new Set());
+      } finally {
+        setPermissionReady(true);
+      }
+    }
+    loadRolePermissions();
+  }, [currentRoleId, isSuperUser]);
+
+  function canUseAction(bit) {
+    if (isSuperUser) return true;
+    return hasBit(modulePermission?.control_type, bit);
+  }
+
+  function canSeeField(fieldName) {
+    if (isSuperUser) return true;
+    if (!permissionReady) return false;
+    return visibleFieldNames.has(fieldName);
+  }
+
+
+  function buildImageUrl(value) {
+    if (!value) return "";
+    const text = String(value);
+    if (/^https?:\/\//i.test(text)) return text;
+    const base = import.meta.env.VITE_API_BASE_URL || "http://localhost:5001";
+    return `${base.replace(/\/+$/, "")}/${text.replace(/^\/+/, "")}`;
+  }
+
+  function clearProductImageSelection() {
+    setSelectedImageFile(null);
+    setImagePreviewUrl("");
+  }
+
+  function handleProductImageFileChange(event) {
+    const file = event.target.files?.[0] || null;
+    setSelectedImageFile(file);
+    setImagePreviewUrl(file ? URL.createObjectURL(file) : "");
+    setFieldErrors((prev) => {
+      if (!prev.path_imagen) return prev;
+      const next = { ...prev };
+      delete next.path_imagen;
+      return next;
+    });
+  }
+
+  function productKanbanDisplayLabel(options, idField, entityName, value) {
+    if (value === null || value === undefined || value === "") return "";
+    const match = (options || []).find((item) => String(item?.[idField] ?? item?.id ?? "") === String(value));
+    return match ? getOptionLabel(match, entityName) : formatTableValue(value);
+  }
+
+  function productInventoryStatusLabel(item) {
+    if (!item) return "";
+    const description = item.inventory_status_description || item.inventory_status_code || "";
+    const department = item.department_description || item.id_department_label || "";
+    return [description, department].filter(Boolean).join(" - ");
+  }
+
+  function productStatusMeta(value) {
+    if (value === null || value === undefined || value === "") return null;
+    const target = String(value).trim().toLowerCase();
+    return (inventoryStatusOptions || []).find((item) => {
+      const code = String(item?.inventory_status_code ?? "").trim().toLowerCase();
+      const description = String(item?.inventory_status_description ?? "").trim().toLowerCase();
+      return code === target || description === target;
+    }) || null;
+  }
+
+  function productStatusDisplayLabel(value) {
+    if (value === null || value === undefined || value === "") return "";
+    const match = productStatusMeta(value);
+    return match ? productInventoryStatusLabel(match) : formatTableValue(value);
+  }
+
+  function productStatusColor(value) {
+    const color = String(productStatusMeta(value)?.color || "").trim();
+    return /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(color) ? color : "";
+  }
+
+  function productHexToRgba(hex, alpha) {
+    const raw = String(hex || "").replace("#", "");
+    const normalized = raw.length === 3 ? raw.split("").map((char) => char + char).join("") : raw.slice(0, 6);
+    if (!/^[0-9a-f]{6}$/i.test(normalized)) return "";
+    const value = parseInt(normalized, 16);
+    const red = (value >> 16) & 255;
+    const green = (value >> 8) & 255;
+    const blue = value & 255;
+    return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+  }
+
+  function productStatusBadgeStyle(value) {
+    const color = productStatusColor(value);
+    const baseStyle = {
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      border: "1px solid #cbd5e1",
+      borderRadius: "999px",
+      padding: "6px 10px",
+      fontWeight: 800,
+      fontSize: "12px",
+      lineHeight: 1.1,
+      background: "#f8fafc",
+      color: "#0f172a",
+      whiteSpace: "nowrap",
+    };
+    if (!color) return baseStyle;
+    return {
+      ...baseStyle,
+      borderColor: color,
+      background: productHexToRgba(color, 0.14) || baseStyle.background,
+      boxShadow: `inset 4px 0 0 ${color}`,
+    };
+  }
+
+  function productStatusCardStyle(value) {
+    const color = productStatusColor(value);
+    return color ? { borderLeftColor: color } : {};
+  }
+
+  function handleChange(event) {
+    const { name, type, checked, value } = event.target;
+    setFormData((prev) => ({ ...prev, [name]: type === "checkbox" ? checked : value }));
+    setFieldErrors((prev) => {
+      if (!prev[name]) return prev;
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
+  }
+
+  function isBlankValue(value) {
+    return value === null || value === undefined || (typeof value === "string" && value.trim() === "");
+  }
+
+  function buildSubmitPayload() {
+    const payload = { ...formData };
+    if (ENTITY_KEY === "user" && editingId && isBlankValue(payload.password)) {
+      delete payload.password;
+    }
+    delete payload.path_imagen;
+    return payload;
+  }
+
+  function formatFieldError(fieldName) {
+    const messageKey = fieldErrors[fieldName];
+    if (!messageKey) return "";
+    const fieldLabel = t(`fields.product.${fieldName}`, fieldName);
+    if (messageKey === "validations.user.password.strong" || String(messageKey).endsWith(".password.strong")) {
+      return t("errors.password_strong", "La contraseña debe tener mínimo 8 caracteres e incluir mayúscula, minúscula, número y símbolo.");
+    }
+    if (messageKey === "validations.user.password.required") {
+      return t("errors.password_required", "La contraseña es obligatoria al crear un usuario.");
+    }
+    if (messageKey === "validations.user.username.required") {
+      return t("errors.username_required", "El nombre de usuario es obligatorio.");
+    }
+    if (String(messageKey).endsWith(".required")) return `${t("errors.required_field", "Campo obligatorio")}: ${fieldLabel}`;
+    return t(messageKey, messageKey);
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setErrorKey("");
+    setErrorMeta(null);
+    setNoticeKey("");
+    const submitPayload = buildSubmitPayload();
+    const validation = validateForm("product", submitPayload, validationRules);
+    const nextFieldErrors = { ...validation.errors };
+    if (ENTITY_KEY === "user" && !editingId) {
+      if (isBlankValue(submitPayload.username)) nextFieldErrors.username = "validations.user.username.required";
+      if (isBlankValue(submitPayload.password)) nextFieldErrors.password = "validations.user.password.required";
+    }
+    if (Object.keys(nextFieldErrors).length > 0) {
+      setFieldErrors(nextFieldErrors);
+      setErrorKey("errors.validation_failed");
+      return;
+    }
+    setFieldErrors({});
+    try {
+      if (editingId && !canUpdate) return;
+      if (!editingId && !canCreate) return;
+      let savedRecord = null;
+      if (editingId) {
+        savedRecord = await updateProduct(editingId, submitPayload);
+        if (selectedImageFile && canSeeField("path_imagen")) {
+          savedRecord = await uploadProductImage(editingId, selectedImageFile);
+        }
+      } else {
+        savedRecord = await createProduct(submitPayload);
+        const createdId = savedRecord?.id_product ?? savedRecord?.id;
+        if (selectedImageFile && canSeeField("path_imagen") && createdId) {
+          savedRecord = await uploadProductImage(createdId, selectedImageFile);
+        }
+      }
+      setFormData(emptyForm); setEditingId(null); clearProductImageSelection(); await loadData();
+    } catch (error) {
+      const meta = error.payload?.meta || null;
+      setErrorKey(error.message || "errors.request_failed");
+      setErrorMeta(meta);
+      if (meta?.field) setFieldErrors((prev) => ({ ...prev, [meta.field]: error.message || "errors.invalid_field" }));
+    }
+  }
+
+  function startEdit(item) {
+    if (!canUpdate) return;
+    setEditingId(item.id_product);
+    const editData = { ...emptyForm, ...item };
+    if (ENTITY_KEY === "user") editData.password = "";
+    setFormData(editData);
+    setSelectedImageFile(null);
+    setImagePreviewUrl(item.path_imagen ? buildImageUrl(item.path_imagen) : "");
+    setFieldErrors({});
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function removeItem(item) {
+    if (!canDelete) return;
+    if (!window.confirm(t("common.confirm_delete"))) return;
+    try { await deleteProduct(item.id_product); await loadData(); } catch (error) { setErrorKey(error.message || "errors.request_failed"); setErrorMeta(error.payload?.meta || null); }
+  }
+
+
+
+  async function resetMfaForItem(item) {
+    if (ENTITY_KEY !== "user") return;
+    const targetId = item.id_user ?? item.id;
+    if (!targetId) return;
+    if (!window.confirm(t("common.mfa_reset_confirm", "¿Restablecer MFA de este usuario?"))) return;
+    setErrorKey("");
+    setErrorMeta(null);
+    setNoticeKey("");
+    try {
+      await resetUserMfa(targetId);
+      setNoticeKey("common.mfa_reset_success");
+      await loadData();
+    } catch (error) {
+      setErrorKey(error.message || "common.mfa_reset_error");
+      setErrorMeta(error.payload?.meta || null);
+    }
+  }
+
+  function formatTableValue(value) {
+    if (value === null || value === undefined) return "";
+    const locale = lang === "ja" ? "ja-JP" : lang === "en" ? "en-US" : lang === "pt" ? "pt-BR" : lang === "de" ? "de-DE" : "es-MX";
+    if (typeof value === "boolean") {
+      const labels = {
+        es: { yes: "Sí", no: "No" },
+        en: { yes: "Yes", no: "No" },
+        pt: { yes: "Sim", no: "Não" },
+        de: { yes: "Ja", no: "Nein" },
+        ja: { yes: "はい", no: "いいえ" },
+      };
+      const selected = labels[lang] || labels.es;
+      return value ? selected.yes : selected.no;
+    }
+    if (typeof value === "number") return new Intl.NumberFormat(locale).format(value);
+    if (typeof value === "string" && /^[0-9]{4}-[0-9]{2}-[0-9]{2}T/.test(value)) {
+      const date = new Date(value);
+      if (!Number.isNaN(date.getTime())) {
+        const hasTime = !/T00:00(?::00)?/.test(value);
+        return new Intl.DateTimeFormat(locale, hasTime ? { dateStyle: "medium", timeStyle: "short" } : { dateStyle: "medium" }).format(date);
+      }
+    }
+    if (Array.isArray(value)) return value.map((item) => formatTableValue(item)).filter(Boolean).join(", ");
+    if (typeof value === "object") {
+      try {
+        return Object.entries(value)
+          .filter(([, val]) => val !== null && val !== undefined && val !== "")
+          .slice(0, 6)
+          .map(([key, val]) => `${key}: ${typeof val === "object" ? JSON.stringify(val) : String(val)}`)
+          .join(", ");
+      } catch (_) {
+        return String(value);
+      }
+    }
+    return String(value);
+  }
+
+  function getOptionLabel(item, entityName = "") {
+    if (!item) return "";
+    const normalized = String(entityName || "").toLowerCase();
+    const specificFields = {
+      user: ["full_name", "username", "email", "first_name", "last_name_father"],
+      permission: ["permission_description"],
+      department: ["department_description"],
+      subdepartment: ["subdepartment_description"],
+      level: ["level_description"],
+      bank: ["bank_name"],
+      brand: ["brand_description", "brand_name"],
+      unit: ["unit_name", "unit_code", "unit_description", "symbol"],
+      material: ["material_description", "material_code"],
+      product: ["product_code", "descripcion", "note"],
+      product_family: ["product_family_description", "type"],
+      location: ["location_description"],
+      location_type: ["location_type_description"],
+      status: ["status_description", "category"],
+      incident_type: ["incident_type_description"],
+      payroll_concept: ["payroll_concept_description", "payroll_code"],
+      proyect: ["proyect_description", "title"],
+      project: ["project_description", "title"],
+      service: ["service_description"],
+      customer_supplier: ["name", "business_name", "commercial_name", "contact_name", "title"],
+      field: ["field_name", "table_name"],
+      template: ["template_description"],
+      survey_question: ["question", "title"],
+      survey_multiple_answer: ["survey_answer_description"],
+      task: ["task_description", "task_code", "title"],
+    };
+    const candidates = [
+      ...(specificFields[normalized] || []),
+      `${normalized}_description`,
+      `${normalized}_name`,
+      `${normalized}_code`,
+      "description",
+      "name",
+      "title",
+      "code",
+      "email",
+      "username",
+      "full_name",
+      "business_name",
+      "commercial_name",
+      "contact_name",
+    ];
+    for (const key of candidates) {
+      const value = item[key];
+      if (value !== null && value !== undefined && String(value).trim() !== "") return String(value);
+    }
+    const idKey = normalized ? `id_${normalized}` : "";
+    const idValue = idKey ? item[idKey] : undefined;
+    return String(idValue ?? item.id ?? "");
+  }
+
+  function formatEntityCatalogLabel(entityName, fallback = "") {
+    if (!entityName) return "";
+    return t(`menu.${entityName}`, fallback || entityName);
+  }
+
+  function formatControlTypeLabel(value) {
+    const numeric = Number(value);
+    const labels = [];
+    if ((numeric & 1) === 1) labels.push(t("common.create", "Crear"));
+    if ((numeric & 2) === 2) labels.push(t("common.read", "Leer"));
+    if ((numeric & 4) === 4) labels.push(t("common.update", "Actualizar"));
+    if ((numeric & 8) === 8) labels.push(t("common.delete", "Eliminar"));
+    if (!labels.length) return String(value ?? "");
+    const description = numeric === 15 ? t("common.crud_full", "CRUD completo") : labels.join(" + ");
+    return `${numeric} - ${description}`;
+  }
+
+  // issue_12_phase3b_invoice_project_link_summary
+  function invoiceProjectLabel(invoice) {
+    if (ENTITY_KEY !== "invoice") return "";
+    const rawProjectId = invoice?.id_proyect;
+    if (rawProjectId === null || rawProjectId === undefined || String(rawProjectId).trim() === "") return "Sin proyecto";
+    const project = proyectOptions.find((item) => String(item.id_proyect ?? item.id ?? "") === String(rawProjectId));
+    return project ? getOptionLabel(project, "proyect") : `Proyecto #${rawProjectId}`;
+  }
+
+  function invoiceLinkStatus(invoice) {
+    const rawProjectId = invoice?.id_proyect;
+    return rawProjectId === null || rawProjectId === undefined || String(rawProjectId).trim() === "" ? "Sin vincular" : "Vinculada";
+  }
+
+  function invoiceDisplayFolio(invoice) {
+    return String(invoice?.folio || invoice?.folio_fiscal || invoice?.cfdi_code || invoice?.id_invoice || "—");
+  }
+
+  function invoiceMoney(value) {
+    const locale = lang === "ja" ? "ja-JP" : lang === "en" ? "en-US" : lang === "pt" ? "pt-BR" : lang === "de" ? "de-DE" : "es-MX";
+    const n = Number(value || 0);
+    return n.toLocaleString(locale, { style: "currency", currency: "MXN" });
+  }
+
+  function invoiceLinkedCount() {
+    return filtered.filter((item) => item.id_proyect !== null && item.id_proyect !== undefined && String(item.id_proyect).trim() !== "").length;
+  }
+
+  function renderInvoiceProjectSummary() {
+    if (ENTITY_KEY !== "invoice" || !canRead || !filtered.length) return null;
+    const linked = invoiceLinkedCount();
+    const unlinked = filtered.length - linked;
+    return (
+      <div className="table-card invoice-project-card">
+        <div className="invoice-project-header">
+          <div>
+            <strong>Facturas / Proyecto</strong>
+            <p className="muted">Identifica facturas cargadas desde XML y corrige su proyecto desde el formulario existente.</p>
+          </div>
+          <div className="invoice-project-metrics">
+            <span><strong>{filtered.length}</strong>Total</span>
+            <span><strong>{linked}</strong>Vinculadas</span>
+            <span><strong>{unlinked}</strong>Sin proyecto</span>
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table className="invoice-project-table">
+            <thead>
+              <tr>
+                <th>Factura / UUID</th>
+                <th>Emisor</th>
+                <th>Receptor</th>
+                <th>Total</th>
+                <th>Proyecto</th>
+                <th>Vinculación</th>
+                <th>Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((item) => (
+                <tr key={`invoice-link-${item.id_invoice}`}>
+                  <td><strong>{invoiceDisplayFolio(item)}</strong><p className="cell-value">{item.folio_fiscal || item.cfdi_code || "—"}</p></td>
+                  <td><span>{item.nombre_emisor || "—"}</span></td>
+                  <td><span>{item.nombre_receptor || item.id_customer_supplier || "—"}</span></td>
+                  <td><strong>{invoiceMoney(item.total)}</strong></td>
+                  <td><span>{invoiceProjectLabel(item)}</span></td>
+                  <td><span className={item.id_proyect ? "invoice-link-badge linked" : "invoice-link-badge unlinked"}>{invoiceLinkStatus(item)}</span></td>
+                  <td>{canUpdate ? <button type="button" className="button small" onClick={() => startEdit(item)}>Editar relación</button> : <span className="muted">Sin permiso</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  function renderError() {
+    if (!errorKey) return "";
+    const fieldLabel = errorMeta?.field ? t(`fields.product.${errorMeta.field}`, errorMeta.field) : "";
+    if (errorKey === "errors.field_too_long" && errorMeta?.field) {
+      return `${t(errorKey, errorKey)}: ${fieldLabel} (${errorMeta.actual_length}/${errorMeta.max_length})`;
+    }
+    if (errorKey === "errors.invalid_field" && errorMeta?.field) {
+      return `${t(errorKey, errorKey)}: ${fieldLabel}`;
+    }
+    return t(errorKey, errorKey);
+  }
+
+  const filtered = useMemo(() => {
+    const needle = query.toLowerCase().trim();
+    if (!needle) return items;
+    return items.filter((item) => {
+      const values = Object.values(item || {}).map((value) => String(value ?? ""));
+      if (canSeeField("product_status")) values.push(productStatusDisplayLabel(item.product_status));
+      if (canSeeField("id_location")) values.push(productKanbanDisplayLabel(locationOptions, "id_location", "location", item.id_location));
+      if (canSeeField("id_material")) values.push(productKanbanDisplayLabel(materialOptions, "id_material", "material", item.id_material));
+      if (canSeeField("id_marca")) values.push(productKanbanDisplayLabel(brandOptions, "id_brand", "brand", item.id_marca));
+      if (canSeeField("id_familia")) values.push(productKanbanDisplayLabel(productFamilyOptions, "id_product_family", "product_family", item.id_familia));
+      return values.join(" ").toLowerCase().includes(needle);
+    });
+  }, [items, query, inventoryStatusOptions, locationOptions, materialOptions, brandOptions, productFamilyOptions]);
+
+  const groups = useMemo(() => filtered.reduce((acc, item) => {
+    const key = String(item.product_status ?? t("common.unclassified"));
+    acc[key] = acc[key] || []; acc[key].push(item); return acc;
+  }, {}), [filtered, lang]);
+
+  return (
+    <section className="entity-page">
+      <div className="page-heading">
+        <div><p className="eyebrow">{t("common.module")}</p><h2>{t("menu.product")}</h2></div>
+        <button className="button ghost" onClick={loadData} disabled={!canRead}><RefreshCw size={16} />{loading ? t("common.loading") : t("common.refresh")}</button>
+      </div>
+
+      {canSubmitForm && <form className="form-card" onSubmit={handleSubmit}>
+        <div className="form-header"><Plus size={18} /><strong>{editingId ? t("common.edit") : t("common.new")}</strong></div>
+        <div className="form-grid">
+          {canSeeField("id_invoice") && (
+          <label className="field">
+            <span>{t("fields.product.id_invoice")}</span>
+            <select name="id_invoice" value={formData.id_invoice ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors["id_invoice"])} {...inputPropsForField("id_invoice", validationRules["id_invoice"], "select")}>
+              <option value="">{t("common.select_option", "Selecciona una opción")}</option>
+              {invoiceOptions.map((item) => (
+                <option key={item.id_invoice ?? item.id ?? JSON.stringify(item)} value={item.id_invoice ?? item.id ?? ""}>
+                  {getOptionLabel(item, "invoice")}
+                </option>
+              ))}
+            </select>
+            {fieldErrors["id_invoice"] && <span className="field-error">{formatFieldError("id_invoice")}</span>}
+          </label>
+          )}
+          {canSeeField("id_location") && (
+          <label className="field">
+            <span>{t("fields.product.id_location")}</span>
+            <select name="id_location" value={formData.id_location ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors["id_location"])} {...inputPropsForField("id_location", validationRules["id_location"], "select")}>
+              <option value="">{t("common.select_option", "Selecciona una opción")}</option>
+              {locationOptions.map((item) => (
+                <option key={item.id_location ?? item.id ?? JSON.stringify(item)} value={item.id_location ?? item.id ?? ""}>
+                  {getOptionLabel(item, "location")}
+                </option>
+              ))}
+            </select>
+            {fieldErrors["id_location"] && <span className="field-error">{formatFieldError("id_location")}</span>}
+          </label>
+          )}
+          {canSeeField("id_material") && (
+          <label className="field">
+            <span>{t("fields.product.id_material")}</span>
+            <select name="id_material" value={formData.id_material ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors["id_material"])} {...inputPropsForField("id_material", validationRules["id_material"], "select")}>
+              <option value="">{t("common.select_option", "Selecciona una opción")}</option>
+              {materialOptions.map((item) => (
+                <option key={item.id_material ?? item.id ?? JSON.stringify(item)} value={item.id_material ?? item.id ?? ""}>
+                  {getOptionLabel(item, "material")}
+                </option>
+              ))}
+            </select>
+            {fieldErrors["id_material"] && <span className="field-error">{formatFieldError("id_material")}</span>}
+          </label>
+          )}
+          {canSeeField("gross_price") && (
+          <label className="field">
+            <span>{t("fields.product.gross_price")}</span>
+            <input name="gross_price" type="number" value={formData.gross_price ?? ""} onChange={handleChange} placeholder={t("fields.product.gross_price")} aria-invalid={Boolean(fieldErrors["gross_price"])} {...inputPropsForField("gross_price", validationRules["gross_price"], "number")} />
+            {fieldErrors["gross_price"] && <span className="field-error">{formatFieldError("gross_price")}</span>}
+          </label>
+          )}
+          {canSeeField("color") && (
+          <label className="field">
+            <span>{t("fields.product.color")}</span>
+            <input name="color" type="text" maxLength={100} value={formData.color ?? ""} onChange={handleChange} placeholder={t("fields.product.color")} aria-invalid={Boolean(fieldErrors["color"])} {...inputPropsForField("color", validationRules["color"], "text")} />
+            {fieldErrors["color"] && <span className="field-error">{formatFieldError("color")}</span>}
+          </label>
+          )}
+          {canSeeField("is_directly_related_to_product_service") && (
+          <label className="field checkbox-field">
+            <span>{t("fields.product.is_directly_related_to_product_service")}</span>
+            <input name="is_directly_related_to_product_service" type="checkbox" checked={Boolean(formData.is_directly_related_to_product_service)} onChange={handleChange} aria-invalid={Boolean(fieldErrors["is_directly_related_to_product_service"])} {...inputPropsForField("is_directly_related_to_product_service", validationRules["is_directly_related_to_product_service"], "checkbox")} />
+            {fieldErrors["is_directly_related_to_product_service"] && <span className="field-error">{formatFieldError("is_directly_related_to_product_service")}</span>}
+          </label>
+          )}
+          {canSeeField("product_status") && (
+          <label className="field">
+            <span>{t("fields.product.product_status")}</span>
+            <select name="product_status" value={formData.product_status ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors["product_status"])} {...inputPropsForField("product_status", validationRules["product_status"], "select")}>
+              <option value="">{t("common.select_option", "Selecciona una opción")}</option>
+              {inventoryStatusOptions.map((item) => (
+                <option key={item.id_inventory_status ?? item.inventory_status_code ?? JSON.stringify(item)} value={item.inventory_status_code ?? ""}>
+                  {productInventoryStatusLabel(item)}
+                </option>
+              ))}
+            </select>
+            {fieldErrors["product_status"] && <span className="field-error">{formatFieldError("product_status")}</span>}
+          </label>
+          )}
+          {canSeeField("path_imagen") && (
+          <label className="field image-field">
+            <span>{t("common.image", "Imagen")}</span>
+            <input name="path_imagen_file" type="file" accept="image/png,image/jpeg,image/webp" onChange={handleProductImageFileChange} aria-invalid={Boolean(fieldErrors["path_imagen"])} />
+            <small>{t("common.select_image", "Selecciona una imagen JPG, PNG o WEBP")}</small>
+            {imagePreviewUrl && <img className="image-preview" src={imagePreviewUrl} alt={t("common.image", "Imagen")} />}
+            {formData.path_imagen && !imagePreviewUrl && <small>{formData.path_imagen}</small>}
+            {fieldErrors["path_imagen"] && <span className="field-error">{formatFieldError("path_imagen")}</span>}
+          </label>
+          )}
+          {canSeeField("product_code") && (
+          <label className="field">
+            <span>{t("fields.product.product_code")}</span>
+            <input name="product_code" type="text" maxLength={30} value={formData.product_code ?? ""} onChange={handleChange} placeholder={t("fields.product.product_code")} aria-invalid={Boolean(fieldErrors["product_code"])} {...inputPropsForField("product_code", validationRules["product_code"], "text")} />
+            {fieldErrors["product_code"] && <span className="field-error">{formatFieldError("product_code")}</span>}
+          </label>
+          )}
+          {canSeeField("note") && (
+          <label className="field">
+            <span>{t("fields.product.note")}</span>
+            <input name="note" type="text" maxLength={300} value={formData.note ?? ""} onChange={handleChange} placeholder={t("fields.product.note")} aria-invalid={Boolean(fieldErrors["note"])} {...inputPropsForField("note", validationRules["note"], "text")} />
+            {fieldErrors["note"] && <span className="field-error">{formatFieldError("note")}</span>}
+          </label>
+          )}
+          {canSeeField("descripcion") && (
+          <label className="field">
+            <span>{t("fields.product.descripcion")}</span>
+            <input name="descripcion" type="text" maxLength={250} value={formData.descripcion ?? ""} onChange={handleChange} placeholder={t("fields.product.descripcion")} aria-invalid={Boolean(fieldErrors["descripcion"])} {...inputPropsForField("descripcion", validationRules["descripcion"], "text")} />
+            {fieldErrors["descripcion"] && <span className="field-error">{formatFieldError("descripcion")}</span>}
+          </label>
+          )}
+          {canSeeField("cantidad") && (
+          <label className="field">
+            <span>{t("fields.product.cantidad")}</span>
+            <input name="cantidad" type="number" value={formData.cantidad ?? ""} onChange={handleChange} placeholder={t("fields.product.cantidad")} aria-invalid={Boolean(fieldErrors["cantidad"])} {...inputPropsForField("cantidad", validationRules["cantidad"], "number")} />
+            {fieldErrors["cantidad"] && <span className="field-error">{formatFieldError("cantidad")}</span>}
+          </label>
+          )}
+          {canSeeField("id_marca") && (
+          <label className="field">
+            <span>{t("fields.product.id_marca")}</span>
+            <input name="id_marca" type="number" value={formData.id_marca ?? ""} onChange={handleChange} placeholder={t("fields.product.id_marca")} aria-invalid={Boolean(fieldErrors["id_marca"])} {...inputPropsForField("id_marca", validationRules["id_marca"], "number")} />
+            {fieldErrors["id_marca"] && <span className="field-error">{formatFieldError("id_marca")}</span>}
+          </label>
+          )}
+          {canSeeField("id_familia") && (
+          <label className="field">
+            <span>{t("fields.product.id_familia")}</span>
+            <input name="id_familia" type="number" value={formData.id_familia ?? ""} onChange={handleChange} placeholder={t("fields.product.id_familia")} aria-invalid={Boolean(fieldErrors["id_familia"])} {...inputPropsForField("id_familia", validationRules["id_familia"], "number")} />
+            {fieldErrors["id_familia"] && <span className="field-error">{formatFieldError("id_familia")}</span>}
+          </label>
+          )}
+        </div>
+        <div className="form-actions">
+          <button className="button primary" type="submit">{t("common.save")}</button>
+          <button className="button" type="button" onClick={() => { setFormData(emptyForm); setEditingId(null); setFieldErrors({}); clearProductImageSelection(); }}>{t("common.cancel")}</button>
+        </div>
+      </form>}
+
+      {canRead && <div className="toolbar">
+        <div className="search-box"><Search size={16} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("common.search")} /></div>
+        <select value={perPage} onChange={(e) => { setPerPage(Number(e.target.value)); setPage(1); }}>
+          <option value="10">10 {t("common.per_page")}</option><option value="25">25 {t("common.per_page")}</option><option value="50">50 {t("common.per_page")}</option>
+        </select>
+        <button className={view === "table" ? "button active" : "button"} onClick={() => setView("table")}>{t("common.table")}</button>
+        <button className={view === "kanban" ? "button active" : "button"} onClick={() => setView("kanban")}>{t("common.kanban")}</button>
+      </div>}
+
+      {errorKey && <div className="alert error">{renderError()}</div>}
+      {loading && <div className="alert">{t("common.loading")}</div>}
+      {permissionReady && !canRead && !canCreate && <div className="empty"><strong>{t("security.permission.read_denied", "Sin permiso de lectura")}</strong><p>{t("common.module_hidden_hint", "Este módulo no tiene acciones seleccionadas; quedará oculto y sus campos no se mostrarán.")}</p></div>}
+      {canRead && !loading && filtered.length === 0 && <div className="empty"><strong>{t("common.empty_title")}</strong><p>{t("common.empty_body")}</p></div>}
+
+      {view === "table" && renderInvoiceProjectSummary()}
+
+      {canRead && view === "table" && filtered.length > 0 && <div className="table-card"><table><thead><tr>{showRowActions && <th>{t("common.actions")}</th>}
+              {canSeeField("id_product") && <th>{t("fields.product.id_product")}</th>}
+              {canSeeField("id_invoice") && <th>{t("fields.product.id_invoice")}</th>}
+              {canSeeField("id_location") && <th>{t("fields.product.id_location")}</th>}
+              {canSeeField("id_material") && <th>{t("fields.product.id_material")}</th>}
+              {canSeeField("gross_price") && <th>{t("fields.product.gross_price")}</th>}
+              {canSeeField("color") && <th>{t("fields.product.color")}</th>}
+              {canSeeField("is_directly_related_to_product_service") && <th>{t("fields.product.is_directly_related_to_product_service")}</th>}
+              {canSeeField("product_status") && <th>{t("fields.product.product_status")}</th>}
+              {canSeeField("path_imagen") && <th>{t("fields.product.path_imagen")}</th>}
+              {canSeeField("product_code") && <th>{t("fields.product.product_code")}</th>}
+        </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_product}>{showRowActions && <td className="row-actions">{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</td>}
+              {canSeeField("id_product") && <td><pre className="cell-value">{formatTableValue(item.id_product)}</pre></td>}
+              {canSeeField("id_invoice") && <td><pre className="cell-value">{productKanbanDisplayLabel(invoiceOptions, "id_invoice", "invoice", item.id_invoice)}</pre></td>}
+              {canSeeField("id_location") && <td><pre className="cell-value">{productKanbanDisplayLabel(locationOptions, "id_location", "location", item.id_location)}</pre></td>}
+              {canSeeField("id_material") && <td><pre className="cell-value">{productKanbanDisplayLabel(materialOptions, "id_material", "material", item.id_material)}</pre></td>}
+              {canSeeField("gross_price") && <td><pre className="cell-value">{formatTableValue(item.gross_price)}</pre></td>}
+              {canSeeField("color") && <td><pre className="cell-value">{formatTableValue(item.color)}</pre></td>}
+              {canSeeField("is_directly_related_to_product_service") && <td><pre className="cell-value">{formatTableValue(item.is_directly_related_to_product_service)}</pre></td>}
+              {canSeeField("product_status") && <td><span style={productStatusBadgeStyle(item.product_status)}>{productStatusDisplayLabel(item.product_status)}</span></td>}
+              {canSeeField("path_imagen") && <td>{item.path_imagen ? <img className="table-image" src={buildImageUrl(item.path_imagen)} alt={t("common.image", "Imagen")} /> : <span className="muted">-</span>}</td>}
+              {canSeeField("product_code") && <td><pre className="cell-value">{formatTableValue(item.product_code)}</pre></td>}
+        </tr>)}</tbody></table></div>}
+
+      {canRead && view === "kanban" && filtered.length > 0 && <div className="kanban">{Object.entries(groups).map(([key, groupItems]) => <div className="kanban-column" key={key}><h3>{key} <span>{groupItems.length}</span></h3>{groupItems.map((item) => <article className="kanban-card product-kanban-card" style={productStatusCardStyle(item.product_status)} key={item.id_product}>{canSeeField("path_imagen") && item.path_imagen && <img className="kanban-image" src={buildImageUrl(item.path_imagen)} alt={t("common.image", "Imagen")} />}<strong>{String(item.product_code ?? item.id_product)}</strong><small>#{item.id_product}</small><div className="product-kanban-details product-kanban-compact">
+          {canSeeField("product_status") && item.product_status && <p><span>{t("fields.product.product_status", "Estado")}:</span> <strong style={productStatusBadgeStyle(item.product_status)}>{productStatusDisplayLabel(item.product_status)}</strong></p>}
+          {canSeeField("descripcion") && item.descripcion && <p className="wide"><span>{t("fields.product.descripcion", "Descripcion")}:</span> <strong>{formatTableValue(item.descripcion)}</strong></p>}
+          {canSeeField("id_location") && item.id_location && <p><span>{t("fields.product.id_location", "Ubicacion")}:</span> <strong>{productKanbanDisplayLabel(locationOptions, "id_location", "location", item.id_location)}</strong></p>}
+          {canSeeField("id_material") && item.id_material && <p><span>{t("fields.product.id_material", "Material")}:</span> <strong>{productKanbanDisplayLabel(materialOptions, "id_material", "material", item.id_material)}</strong></p>}
+          {canSeeField("id_marca") && item.id_marca && <p><span>{t("fields.product.id_marca", "Marca")}:</span> <strong>{productKanbanDisplayLabel(brandOptions, "id_brand", "brand", item.id_marca)}</strong></p>}
+          {canSeeField("id_familia") && item.id_familia && <p><span>{t("fields.product.id_familia", "Familia")}:</span> <strong>{productKanbanDisplayLabel(productFamilyOptions, "id_product_family", "product_family", item.id_familia)}</strong></p>}
+          {canSeeField("product_code") && item.product_code && <p><span>{t("fields.product.product_code", "Codigo")}:</span> <strong>{formatTableValue(item.product_code)}</strong></p>}
+          {canSeeField("color") && item.color && <p><span>{t("fields.product.color", "Color")}:</span> <strong>{formatTableValue(item.color)}</strong></p>}
+          {canSeeField("cantidad") && item.cantidad !== null && item.cantidad !== undefined && item.cantidad !== "" && <p><span>{t("fields.product.cantidad", "Cantidad")}:</span> <strong>{formatTableValue(item.cantidad)}</strong></p>}
+          {canSeeField("last_update_date") && item.last_update_date && <p><span>{t("fields.product.last_update_date", "Actualizacion")}:</span> <strong>{formatTableValue(item.last_update_date)}</strong></p>}
+          {canSeeField("note") && item.note && <p className="wide"><span>{t("fields.product.note", "Nota")}:</span> <strong>{formatTableValue(item.note)}</strong></p>}
+        </div>{showRowActions && <div>{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</div>}</article>)}</div>)}</div>}
+
+      <div className="pagination"><button className="button" disabled={page <= 1} onClick={() => setPage(page - 1)}>{t("common.previous")}</button><span>{t("common.page")} {page}</span><button className="button" onClick={() => setPage(page + 1)}>{t("common.next")}</button></div>
+    </section>
+  );
+}

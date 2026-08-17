@@ -1,0 +1,13 @@
+document_key,module,title_key,template_type,output_format,primary_entity,version,storage_path,requires_approval,i18n_namespace,retention_policy,signature_required
+invoice_pdf,erp_finance,documents.invoice_pdf.title,pdf_html,PDF,invoice,1.0.0,documents/erp_finance/invoice_pdf/{yyyy}/{id}.pdf,TRUE,documents.invoice_pdf,7y,TRUE
+invoice_xml_cfdi,erp_finance,documents.invoice_xml_cfdi.title,xml_cfdi,XML,invoice,1.0.0,documents/erp_finance/invoice_xml_cfdi/{yyyy}/{id}.xml,TRUE,documents.invoice_xml_cfdi,7y,TRUE
+purchase_requirement,scm,documents.purchase_requirement.title,pdf_html,PDF,invoice_material_service,1.0.0,documents/scm/purchase_requirement/{yyyy}/{id}.pdf,TRUE,documents.purchase_requirement,3y,TRUE
+purchase_requirement_grouped,scm,documents.purchase_requirement_grouped.title,pdf_html,PDF,invoice,1.0.0,documents/scm/purchase_requirement_grouped/{yyyy}/{id}.pdf,TRUE,documents.purchase_requirement_grouped,3y,TRUE
+inventory_movement_receipt,scm,documents.inventory_movement_receipt.title,pdf_html,PDF,movement,1.0.0,documents/scm/inventory_movement_receipt/{yyyy}/{id}.pdf,FALSE,documents.inventory_movement_receipt,3y,FALSE
+customer_statement,crm,documents.customer_statement.title,pdf_html,PDF,customer_supplier,1.0.0,documents/crm/customer_statement/{yyyy}/{id}.pdf,FALSE,documents.customer_statement,3y,FALSE
+project_status_report,erp_operations,documents.project_status_report.title,pdf_html,PDF,proyect,1.0.0,documents/erp_operations/project_status_report/{yyyy}/{id}.pdf,FALSE,documents.project_status_report,3y,FALSE
+incident_resolution_report,erp_operations,documents.incident_resolution_report.title,pdf_html,PDF,incident,1.0.0,documents/erp_operations/incident_resolution_report/{yyyy}/{id}.pdf,FALSE,documents.incident_resolution_report,3y,FALSE
+payroll_receipt,erp_hr,documents.payroll_receipt.title,pdf_html,PDF,payroll_detail,1.0.0,documents/erp_hr/payroll_receipt/{yyyy}/{id}.pdf,TRUE,documents.payroll_receipt,3y,TRUE
+fiscal_policy,erp_finance,documents.fiscal_policy.title,pdf_html,PDF,fiscal_stamp,1.0.0,documents/erp_finance/fiscal_policy/{yyyy}/{id}.pdf,TRUE,documents.fiscal_policy,7y,TRUE
+audit_event_export,erp_core,documents.audit_event_export.title,csv_export,CSV,event_log,1.0.0,documents/erp_core/audit_event_export/{yyyy}/{id}.csv,FALSE,documents.audit_event_export,3y,FALSE
+quotation_pdf,erp_finance,documents.quotation_pdf.title,pdf_html,PDF,invoice,1.0.0,documents/erp_finance/quotation_pdf/{yyyy}/{id}.pdf,FALSE,documents.quotation_pdf,3y,FALSE

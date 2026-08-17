@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ t('documents.invoice_document.title') }}</title>
+  <link rel="stylesheet" href="document.css" />
+</head>
+<body>
+  <main class="document-page">
+    <header class="document-header">
+      <h1>{{ t('documents.invoice_document.title') }}</h1>
+      <div class="document-meta">{{ t('documents.generated_at') }}: {{ generated_at }}</div>
+    </header>
+    <section class="document-content">
+      <div class="field-grid">
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.id_invoice') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_invoice'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.date_emision') }}</span>
+        <span class="field-value">{{ format_value(record.get('date_emision'), 'date') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.date_expiration') }}</span>
+        <span class="field-value">{{ format_value(record.get('date_expiration'), 'date') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.subtotal') }}</span>
+        <span class="field-value">{{ format_value(record.get('subtotal'), 'currency') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.tax') }}</span>
+        <span class="field-value">{{ format_value(record.get('tax'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.total') }}</span>
+        <span class="field-value">{{ format_value(record.get('total'), 'currency') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.invoice_status') }}</span>
+        <span class="field-value">{{ format_value(record.get('invoice_status'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.payment_method') }}</span>
+        <span class="field-value">{{ format_value(record.get('payment_method'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.note') }}</span>
+        <span class="field-value">{{ format_value(record.get('note'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.id_customer_supplier') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_customer_supplier'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.fiscal_reference') }}</span>
+        <span class="field-value">{{ format_value(record.get('fiscal_reference'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.serie_csd') }}</span>
+        <span class="field-value">{{ format_value(record.get('serie_csd'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.internationalization') }}</span>
+        <span class="field-value">{{ format_value(record.get('internationalization'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.currency') }}</span>
+        <span class="field-value">{{ format_value(record.get('currency'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.type_exchange_rate') }}</span>
+        <span class="field-value">{{ format_value(record.get('type_exchange_rate'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.tax_certification_supplier') }}</span>
+        <span class="field-value">{{ format_value(record.get('tax_certification_supplier'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.fiscal_certify_serie') }}</span>
+        <span class="field-value">{{ format_value(record.get('fiscal_certify_serie'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.certification_date') }}</span>
+        <span class="field-value">{{ format_value(record.get('certification_date'), 'date') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.cfdi_code') }}</span>
+        <span class="field-value">{{ format_value(record.get('cfdi_code'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.sat_code') }}</span>
+        <span class="field-value">{{ format_value(record.get('sat_code'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.sat_certification_code') }}</span>
+        <span class="field-value">{{ format_value(record.get('sat_certification_code'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.id_status') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_status'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.created_by') }}</span>
+        <span class="field-value">{{ format_value(record.get('created_by'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.creation_date') }}</span>
+        <span class="field-value">{{ format_value(record.get('creation_date'), 'date') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.last_update_date') }}</span>
+        <span class="field-value">{{ format_value(record.get('last_update_date'), 'date') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.nombre_emisor') }}</span>
+        <span class="field-value">{{ format_value(record.get('nombre_emisor'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.lugar_expedicion') }}</span>
+        <span class="field-value">{{ format_value(record.get('lugar_expedicion'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.tipo_de_comprobante') }}</span>
+        <span class="field-value">{{ format_value(record.get('tipo_de_comprobante'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.rfc_receptor') }}</span>
+        <span class="field-value">{{ format_value(record.get('rfc_receptor'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.nombre_receptor') }}</span>
+        <span class="field-value">{{ format_value(record.get('nombre_receptor'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.regimen_fiscal_receptor') }}</span>
+        <span class="field-value">{{ format_value(record.get('regimen_fiscal_receptor'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.domicilio_fiscal_receptor') }}</span>
+        <span class="field-value">{{ format_value(record.get('domicilio_fiscal_receptor'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.id_proveedor_de_sello') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_proveedor_de_sello'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.folio_fiscal') }}</span>
+        <span class="field-value">{{ format_value(record.get('folio_fiscal'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.exportacion') }}</span>
+        <span class="field-value">{{ format_value(record.get('exportacion'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.folio') }}</span>
+        <span class="field-value">{{ format_value(record.get('folio'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.no_certificado_sat') }}</span>
+        <span class="field-value">{{ format_value(record.get('no_certificado_sat'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.sello_sat') }}</span>
+        <span class="field-value">{{ format_value(record.get('sello_sat'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.sello_certificacion_sat') }}</span>
+        <span class="field-value">{{ format_value(record.get('sello_certificacion_sat'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.no_certificado') }}</span>
+        <span class="field-value">{{ format_value(record.get('no_certificado'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.descuento') }}</span>
+        <span class="field-value">{{ format_value(record.get('descuento'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.metodo_pago') }}</span>
+        <span class="field-value">{{ format_value(record.get('metodo_pago'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.condiciones_pago') }}</span>
+        <span class="field-value">{{ format_value(record.get('condiciones_pago'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.id_issuer_customer_supplier') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_issuer_customer_supplier'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.id_proyect') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_proyect'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.apply_tax') }}</span>
+        <span class="field-value">{{ format_value(record.get('apply_tax'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.tax_rate') }}</span>
+        <span class="field-value">{{ format_value(record.get('tax_rate'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.invoice.commercial_terms') }}</span>
+        <span class="field-value">{{ format_value(record.get('commercial_terms'), 'text') }}</span>
+      </section>
+      </div>
+    </section>
+    <footer class="document-footer">
+      <span>{{ t('documents.powered_by') }}</span>
+      <span>invoice_document</span>
+    </footer>
+  </main>
+</body>
+</html>

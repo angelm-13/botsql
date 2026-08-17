@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ t('documents.product_summary.title') }}</title>
+  <link rel="stylesheet" href="document.css" />
+</head>
+<body>
+  <main class="document-page">
+    <header class="document-header">
+      <h1>{{ t('documents.product_summary.title') }}</h1>
+      <div class="document-meta">{{ t('documents.generated_at') }}: {{ generated_at }}</div>
+    </header>
+    <section class="document-content">
+      <div class="field-grid">
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.product.id_product') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_product'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.product.id_invoice') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_invoice'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.product.id_location') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_location'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.product.id_material') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_material'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.product.gross_price') }}</span>
+        <span class="field-value">{{ format_value(record.get('gross_price'), 'currency') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.product.color') }}</span>
+        <span class="field-value">{{ format_value(record.get('color'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.product.is_directly_related_to_product_service') }}</span>
+        <span class="field-value">{{ format_value(record.get('is_directly_related_to_product_service'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.product.product_status') }}</span>
+        <span class="field-value">{{ format_value(record.get('product_status'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.product.path_imagen') }}</span>
+        <span class="field-value">{{ format_value(record.get('path_imagen'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.product.product_code') }}</span>
+        <span class="field-value">{{ format_value(record.get('product_code'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.product.note') }}</span>
+        <span class="field-value">{{ format_value(record.get('note'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.product.created_by') }}</span>
+        <span class="field-value">{{ format_value(record.get('created_by'), 'text') }}</span>
+      </section>
+      </div>
+    </section>
+    <footer class="document-footer">
+      <span>{{ t('documents.powered_by') }}</span>
+      <span>product_summary</span>
+    </footer>
+  </main>
+</body>
+</html>

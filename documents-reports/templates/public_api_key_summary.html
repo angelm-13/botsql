@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ t('documents.public_api_key_summary.title') }}</title>
+  <link rel="stylesheet" href="document.css" />
+</head>
+<body>
+  <main class="document-page">
+    <header class="document-header">
+      <h1>{{ t('documents.public_api_key_summary.title') }}</h1>
+      <div class="document-meta">{{ t('documents.generated_at') }}: {{ generated_at }}</div>
+    </header>
+    <section class="document-content">
+      <div class="field-grid">
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.public_api_key.id_public_api_key') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_public_api_key'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.public_api_key.label') }}</span>
+        <span class="field-value">{{ format_value(record.get('label'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.public_api_key.key_hash') }}</span>
+        <span class="field-value">{{ format_value(record.get('key_hash'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.public_api_key.key_prefix') }}</span>
+        <span class="field-value">{{ format_value(record.get('key_prefix'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.public_api_key.allowed_domains') }}</span>
+        <span class="field-value">{{ format_value(record.get('allowed_domains'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.public_api_key.rate_limit_per_min') }}</span>
+        <span class="field-value">{{ format_value(record.get('rate_limit_per_min'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.public_api_key.is_active') }}</span>
+        <span class="field-value">{{ format_value(record.get('is_active'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.public_api_key.last_used_at') }}</span>
+        <span class="field-value">{{ format_value(record.get('last_used_at'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.public_api_key.created_by') }}</span>
+        <span class="field-value">{{ format_value(record.get('created_by'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.public_api_key.creation_date') }}</span>
+        <span class="field-value">{{ format_value(record.get('creation_date'), 'date') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.public_api_key.last_update_date') }}</span>
+        <span class="field-value">{{ format_value(record.get('last_update_date'), 'date') }}</span>
+      </section>
+      </div>
+    </section>
+    <footer class="document-footer">
+      <span>{{ t('documents.powered_by') }}</span>
+      <span>public_api_key_summary</span>
+    </footer>
+  </main>
+</body>
+</html>

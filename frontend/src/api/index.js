@@ -1,0 +1,364 @@
+import { request } from "./client";
+
+export const login = (payload) => request("/auth/login", { method: "POST", body: payload, skipAuth: true });
+export const verifyMfaLogin = (payload) => request("/auth/mfa/verify-login", { method: "POST", body: payload, skipAuth: true });
+export const setupMfa = () => request("/auth/mfa/setup", { method: "POST" });
+export const enableMfa = (payload) => request("/auth/mfa/enable", { method: "POST", body: payload });
+export const disableMfa = (payload) => request("/auth/mfa/disable", { method: "POST", body: payload });
+export const resetUserMfa = (targetUserId) => request(`/auth/mfa/reset/${targetUserId}`, { method: "POST" });
+export const uploadProductImage = (id, file) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  return request(`/product/${id}/image`, { method: "POST", body: formData });
+};
+export const getPermissionCatalog = () => request("/security/permission-catalog");
+
+function readStoredUserForPermissions() {
+  try { return JSON.parse(localStorage.getItem("user") || "null") || {}; } catch (_) { return {}; }
+}
+
+function isPrivilegedPermissionUser() {
+  const user = readStoredUserForPermissions();
+  const bootstrapUsername = import.meta.env.VITE_BOOTSTRAP_ADMIN_USERNAME || "admin1";
+  return Boolean(
+    user?.is_superuser ||
+    user?.is_bootstrap_admin ||
+    user?.username === bootstrapUsername ||
+    String(user?.user_type || "").toLowerCase() === "admin"
+  );
+}
+
+let myPermissionsCache = null;
+const MY_PERMISSIONS_CACHE_MS = 250;
+export const clearMyPermissionsCache = () => { myPermissionsCache = null; };
+export const getMyPermissions = () => {
+  const user = readStoredUserForPermissions();
+  const cacheKey = `${user?.id_user || ""}:${user?.id_permission || ""}:${user?.username || ""}`;
+  const now = Date.now();
+  if (myPermissionsCache?.key === cacheKey && myPermissionsCache.expiresAt > now) return Promise.resolve(myPermissionsCache.payload);
+  return request("/security/my-permissions").then((payload) => {
+    myPermissionsCache = { key: cacheKey, payload, expiresAt: Date.now() + MY_PERMISSIONS_CACHE_MS };
+    return payload;
+  });
+};
+export const logout = () => { clearMyPermissionsCache(); localStorage.removeItem("token"); localStorage.removeItem("user"); localStorage.removeItem("mfa_temp_token"); };
+
+export const getAllBank = (params = {}) => request("/bank/", { params });
+export const getBank = (id) => request(`/bank/${id}`);
+export const createBank = (payload) => request("/bank/", { method: "POST", body: payload });
+export const updateBank = (id, payload) => request(`/bank/${id}`, { method: "PUT", body: payload });
+export const deleteBank = (id) => request(`/bank/${id}`, { method: "DELETE" });
+
+export const getAllBankAccount = (params = {}) => request("/bank_account/", { params });
+export const getBankAccount = (id) => request(`/bank_account/${id}`);
+export const createBankAccount = (payload) => request("/bank_account/", { method: "POST", body: payload });
+export const updateBankAccount = (id, payload) => request(`/bank_account/${id}`, { method: "PUT", body: payload });
+export const deleteBankAccount = (id) => request(`/bank_account/${id}`, { method: "DELETE" });
+
+export const getAllBrand = (params = {}) => request("/brand/", { params });
+export const getBrand = (id) => request(`/brand/${id}`);
+export const createBrand = (payload) => request("/brand/", { method: "POST", body: payload });
+export const updateBrand = (id, payload) => request(`/brand/${id}`, { method: "PUT", body: payload });
+export const deleteBrand = (id) => request(`/brand/${id}`, { method: "DELETE" });
+
+export const getAllCustomerSupplier = (params = {}) => request("/customer_supplier/", { params });
+export const getCustomerSupplier = (id) => request(`/customer_supplier/${id}`);
+export const createCustomerSupplier = (payload) => request("/customer_supplier/", { method: "POST", body: payload });
+export const updateCustomerSupplier = (id, payload) => request(`/customer_supplier/${id}`, { method: "PUT", body: payload });
+export const deleteCustomerSupplier = (id) => request(`/customer_supplier/${id}`, { method: "DELETE" });
+
+export const getAllDepartment = (params = {}) => request("/department/", { params });
+export const getDepartment = (id) => request(`/department/${id}`);
+export const createDepartment = (payload) => request("/department/", { method: "POST", body: payload });
+export const updateDepartment = (id, payload) => request(`/department/${id}`, { method: "PUT", body: payload });
+export const deleteDepartment = (id) => request(`/department/${id}`, { method: "DELETE" });
+
+export const getAllEntityPermission = (params = {}) => isPrivilegedPermissionUser() ? request("/entity_permission/", { params }) : getMyPermissions().then((payload) => ({ items: payload.entity_permissions || [], page: 1, pages: 1, per_page: (payload.entity_permissions || []).length, total: (payload.entity_permissions || []).length }));
+export const getEntityPermission = (id) => request(`/entity_permission/${id}`);
+export const createEntityPermission = (payload) => request("/entity_permission/", { method: "POST", body: payload });
+export const updateEntityPermission = (id, payload) => request(`/entity_permission/${id}`, { method: "PUT", body: payload });
+export const deleteEntityPermission = (id) => request(`/entity_permission/${id}`, { method: "DELETE" });
+
+export const getAllEventLog = (params = {}) => request("/event_log/", { params });
+export const getEventLog = (id) => request(`/event_log/${id}`);
+export const createEventLog = (payload) => request("/event_log/", { method: "POST", body: payload });
+export const updateEventLog = (id, payload) => request(`/event_log/${id}`, { method: "PUT", body: payload });
+export const deleteEventLog = (id) => request(`/event_log/${id}`, { method: "DELETE" });
+
+export const getAllField = (params = {}) => isPrivilegedPermissionUser() ? request("/field/", { params }) : getMyPermissions().then((payload) => ({ items: payload.fields || [], page: 1, pages: 1, per_page: (payload.fields || []).length, total: (payload.fields || []).length }));
+export const getField = (id) => request(`/field/${id}`);
+export const createField = (payload) => request("/field/", { method: "POST", body: payload });
+export const updateField = (id, payload) => request(`/field/${id}`, { method: "PUT", body: payload });
+export const deleteField = (id) => request(`/field/${id}`, { method: "DELETE" });
+
+export const getAllFiscalAccount = (params = {}) => request("/fiscal_account/", { params });
+export const getFiscalAccount = (id) => request(`/fiscal_account/${id}`);
+export const createFiscalAccount = (payload) => request("/fiscal_account/", { method: "POST", body: payload });
+export const updateFiscalAccount = (id, payload) => request(`/fiscal_account/${id}`, { method: "PUT", body: payload });
+export const deleteFiscalAccount = (id) => request(`/fiscal_account/${id}`, { method: "DELETE" });
+
+export const getAllFiscalRecord = (params = {}) => request("/fiscal_record/", { params });
+export const getFiscalRecord = (id) => request(`/fiscal_record/${id}`);
+export const createFiscalRecord = (payload) => request("/fiscal_record/", { method: "POST", body: payload });
+export const updateFiscalRecord = (id, payload) => request(`/fiscal_record/${id}`, { method: "PUT", body: payload });
+export const deleteFiscalRecord = (id) => request(`/fiscal_record/${id}`, { method: "DELETE" });
+
+export const getAllFiscalStamp = (params = {}) => request("/fiscal_stamp/", { params });
+export const getFiscalStamp = (id) => request(`/fiscal_stamp/${id}`);
+export const createFiscalStamp = (payload) => request("/fiscal_stamp/", { method: "POST", body: payload });
+export const updateFiscalStamp = (id, payload) => request(`/fiscal_stamp/${id}`, { method: "PUT", body: payload });
+export const deleteFiscalStamp = (id) => request(`/fiscal_stamp/${id}`, { method: "DELETE" });
+
+export const getAllIncident = (params = {}) => request("/incident/", { params });
+export const getIncident = (id) => request(`/incident/${id}`);
+export const createIncident = (payload) => request("/incident/", { method: "POST", body: payload });
+export const updateIncident = (id, payload) => request(`/incident/${id}`, { method: "PUT", body: payload });
+export const deleteIncident = (id) => request(`/incident/${id}`, { method: "DELETE" });
+
+export const getAllIncidentDetail = (params = {}) => request("/incident_detail/", { params });
+export const getIncidentDetail = (id) => request(`/incident_detail/${id}`);
+export const createIncidentDetail = (payload) => request("/incident_detail/", { method: "POST", body: payload });
+export const updateIncidentDetail = (id, payload) => request(`/incident_detail/${id}`, { method: "PUT", body: payload });
+export const deleteIncidentDetail = (id) => request(`/incident_detail/${id}`, { method: "DELETE" });
+
+export const getAllIncidentType = (params = {}) => request("/incident_type/", { params });
+export const getIncidentType = (id) => request(`/incident_type/${id}`);
+export const createIncidentType = (payload) => request("/incident_type/", { method: "POST", body: payload });
+export const updateIncidentType = (id, payload) => request(`/incident_type/${id}`, { method: "PUT", body: payload });
+export const deleteIncidentType = (id) => request(`/incident_type/${id}`, { method: "DELETE" });
+
+export const getAllInventoryStatus = (params = {}) => request("/inventory_status/", { params });
+export const getInventoryStatus = (id) => request(`/inventory_status/${id}`);
+export const createInventoryStatus = (payload) => request("/inventory_status/", { method: "POST", body: payload });
+export const updateInventoryStatus = (id, payload) => request(`/inventory_status/${id}`, { method: "PUT", body: payload });
+export const deleteInventoryStatus = (id) => request(`/inventory_status/${id}`, { method: "DELETE" });
+
+export const getAllInvoice = (params = {}) => request("/invoice/", { params });
+export const getInvoice = (id) => request(`/invoice/${id}`);
+export const createInvoice = (payload) => request("/invoice/", { method: "POST", body: payload });
+export const updateInvoice = (id, payload) => request(`/invoice/${id}`, { method: "PUT", body: payload });
+export const deleteInvoice = (id) => request(`/invoice/${id}`, { method: "DELETE" });
+
+export const getAllInvoiceMaterialService = (params = {}) => request("/invoice_material_service/", { params });
+export const getInvoiceMaterialService = (id) => request(`/invoice_material_service/${id}`);
+export const createInvoiceMaterialService = (payload) => request("/invoice_material_service/", { method: "POST", body: payload });
+export const updateInvoiceMaterialService = (id, payload) => request(`/invoice_material_service/${id}`, { method: "PUT", body: payload });
+export const deleteInvoiceMaterialService = (id) => request(`/invoice_material_service/${id}`, { method: "DELETE" });
+
+export const getAllLevel = (params = {}) => request("/level/", { params });
+export const getLevel = (id) => request(`/level/${id}`);
+export const createLevel = (payload) => request("/level/", { method: "POST", body: payload });
+export const updateLevel = (id, payload) => request(`/level/${id}`, { method: "PUT", body: payload });
+export const deleteLevel = (id) => request(`/level/${id}`, { method: "DELETE" });
+
+export const getAllLocation = (params = {}) => request("/location/", { params });
+export const getLocation = (id) => request(`/location/${id}`);
+export const createLocation = (payload) => request("/location/", { method: "POST", body: payload });
+export const updateLocation = (id, payload) => request(`/location/${id}`, { method: "PUT", body: payload });
+export const deleteLocation = (id) => request(`/location/${id}`, { method: "DELETE" });
+
+export const getAllLocationType = (params = {}) => request("/location_type/", { params });
+export const getLocationType = (id) => request(`/location_type/${id}`);
+export const createLocationType = (payload) => request("/location_type/", { method: "POST", body: payload });
+export const updateLocationType = (id, payload) => request(`/location_type/${id}`, { method: "PUT", body: payload });
+export const deleteLocationType = (id) => request(`/location_type/${id}`, { method: "DELETE" });
+
+export const getAllMaterial = (params = {}) => request("/material/", { params });
+export const getMaterial = (id) => request(`/material/${id}`);
+export const createMaterial = (payload) => request("/material/", { method: "POST", body: payload });
+export const updateMaterial = (id, payload) => request(`/material/${id}`, { method: "PUT", body: payload });
+export const deleteMaterial = (id) => request(`/material/${id}`, { method: "DELETE" });
+
+export const getAllMaterialComponent = (params = {}) => request("/material_component/", { params });
+export const getMaterialComponent = (id) => request(`/material_component/${id}`);
+export const createMaterialComponent = (payload) => request("/material_component/", { method: "POST", body: payload });
+export const updateMaterialComponent = (id, payload) => request(`/material_component/${id}`, { method: "PUT", body: payload });
+export const deleteMaterialComponent = (id) => request(`/material_component/${id}`, { method: "DELETE" });
+
+export const getAllMovement = (params = {}) => request("/movement/", { params });
+export const getMovement = (id) => request(`/movement/${id}`);
+export const createMovement = (payload) => request("/movement/", { method: "POST", body: payload });
+export const updateMovement = (id, payload) => request(`/movement/${id}`, { method: "PUT", body: payload });
+export const deleteMovement = (id) => request(`/movement/${id}`, { method: "DELETE" });
+
+export const getAllNmFieldPermission = (params = {}) => isPrivilegedPermissionUser() ? request("/nm_field_permission/", { params }) : getMyPermissions().then((payload) => ({ items: payload.field_permissions || [], page: 1, pages: 1, per_page: (payload.field_permissions || []).length, total: (payload.field_permissions || []).length }));
+export const getNmFieldPermission = (id) => request(`/nm_field_permission/${id}`);
+export const createNmFieldPermission = (payload) => request("/nm_field_permission/", { method: "POST", body: payload });
+export const updateNmFieldPermission = (id, payload) => request(`/nm_field_permission/${id}`, { method: "PUT", body: payload });
+export const deleteNmFieldPermission = (id) => request(`/nm_field_permission/${id}`, { method: "DELETE" });
+
+export const getAllNmIncidentProduct = (params = {}) => request("/nm_incident_product/", { params });
+export const getNmIncidentProduct = (id) => request(`/nm_incident_product/${id}`);
+export const createNmIncidentProduct = (payload) => request("/nm_incident_product/", { method: "POST", body: payload });
+export const updateNmIncidentProduct = (id, payload) => request(`/nm_incident_product/${id}`, { method: "PUT", body: payload });
+export const deleteNmIncidentProduct = (id) => request(`/nm_incident_product/${id}`, { method: "DELETE" });
+
+export const getAllNmSurveyUser = (params = {}) => request("/nm_survey_user/", { params });
+export const getNmSurveyUser = (id) => request(`/nm_survey_user/${id}`);
+export const createNmSurveyUser = (payload) => request("/nm_survey_user/", { method: "POST", body: payload });
+export const updateNmSurveyUser = (id, payload) => request(`/nm_survey_user/${id}`, { method: "PUT", body: payload });
+export const deleteNmSurveyUser = (id) => request(`/nm_survey_user/${id}`, { method: "DELETE" });
+
+export const getAllNmTemplateTask = (params = {}) => request("/nm_template_task/", { params });
+export const getNmTemplateTask = (id) => request(`/nm_template_task/${id}`);
+export const createNmTemplateTask = (payload) => request("/nm_template_task/", { method: "POST", body: payload });
+export const updateNmTemplateTask = (id, payload) => request(`/nm_template_task/${id}`, { method: "PUT", body: payload });
+export const deleteNmTemplateTask = (id) => request(`/nm_template_task/${id}`, { method: "DELETE" });
+
+export const getAllPayrollConcept = (params = {}) => request("/payroll_concept/", { params });
+export const getPayrollConcept = (id) => request(`/payroll_concept/${id}`);
+export const createPayrollConcept = (payload) => request("/payroll_concept/", { method: "POST", body: payload });
+export const updatePayrollConcept = (id, payload) => request(`/payroll_concept/${id}`, { method: "PUT", body: payload });
+export const deletePayrollConcept = (id) => request(`/payroll_concept/${id}`, { method: "DELETE" });
+
+export const getAllPayrollDetail = (params = {}) => request("/payroll_detail/", { params });
+export const getPayrollDetail = (id) => request(`/payroll_detail/${id}`);
+export const createPayrollDetail = (payload) => request("/payroll_detail/", { method: "POST", body: payload });
+export const updatePayrollDetail = (id, payload) => request(`/payroll_detail/${id}`, { method: "PUT", body: payload });
+export const deletePayrollDetail = (id) => request(`/payroll_detail/${id}`, { method: "DELETE" });
+
+export const getAllPayrollMovement = (params = {}) => request("/payroll_movement/", { params });
+export const getPayrollMovement = (id) => request(`/payroll_movement/${id}`);
+export const createPayrollMovement = (payload) => request("/payroll_movement/", { method: "POST", body: payload });
+export const updatePayrollMovement = (id, payload) => request(`/payroll_movement/${id}`, { method: "PUT", body: payload });
+export const deletePayrollMovement = (id) => request(`/payroll_movement/${id}`, { method: "DELETE" });
+
+export const getAllPayrollPeriod = (params = {}) => request("/payroll_period/", { params });
+export const getPayrollPeriod = (id) => request(`/payroll_period/${id}`);
+export const createPayrollPeriod = (payload) => request("/payroll_period/", { method: "POST", body: payload });
+export const updatePayrollPeriod = (id, payload) => request(`/payroll_period/${id}`, { method: "PUT", body: payload });
+export const deletePayrollPeriod = (id) => request(`/payroll_period/${id}`, { method: "DELETE" });
+
+export const getAllPermission = (params = {}) => request("/permission/", { params });
+export const getPermission = (id) => request(`/permission/${id}`);
+export const createPermission = (payload) => request("/permission/", { method: "POST", body: payload });
+export const updatePermission = (id, payload) => request(`/permission/${id}`, { method: "PUT", body: payload });
+export const deletePermission = (id) => request(`/permission/${id}`, { method: "DELETE" });
+
+export const getAllProduct = (params = {}) => request("/product/", { params });
+export const getProduct = (id) => request(`/product/${id}`);
+export const createProduct = (payload) => request("/product/", { method: "POST", body: payload });
+export const updateProduct = (id, payload) => request(`/product/${id}`, { method: "PUT", body: payload });
+export const deleteProduct = (id) => request(`/product/${id}`, { method: "DELETE" });
+
+export const getAllProductFamily = (params = {}) => request("/product_family/", { params });
+export const getProductFamily = (id) => request(`/product_family/${id}`);
+export const createProductFamily = (payload) => request("/product_family/", { method: "POST", body: payload });
+export const updateProductFamily = (id, payload) => request(`/product_family/${id}`, { method: "PUT", body: payload });
+export const deleteProductFamily = (id) => request(`/product_family/${id}`, { method: "DELETE" });
+
+export const getAllProductSaleConfig = (params = {}) => request("/product_sale_config/", { params });
+export const getProductSaleConfig = (id) => request(`/product_sale_config/${id}`);
+export const createProductSaleConfig = (payload) => request("/product_sale_config/", { method: "POST", body: payload });
+export const updateProductSaleConfig = (id, payload) => request(`/product_sale_config/${id}`, { method: "PUT", body: payload });
+export const deleteProductSaleConfig = (id) => request(`/product_sale_config/${id}`, { method: "DELETE" });
+
+export const getAllProyect = (params = {}) => request("/proyect/", { params });
+export const getProyect = (id) => request(`/proyect/${id}`);
+export const createProyect = (payload) => request("/proyect/", { method: "POST", body: payload });
+export const updateProyect = (id, payload) => request(`/proyect/${id}`, { method: "PUT", body: payload });
+export const deleteProyect = (id) => request(`/proyect/${id}`, { method: "DELETE" });
+
+export const getAllPublicApiKey = (params = {}) => request("/public_api_key/", { params });
+export const getPublicApiKey = (id) => request(`/public_api_key/${id}`);
+export const createPublicApiKey = (payload) => request("/public_api_key/", { method: "POST", body: payload });
+export const updatePublicApiKey = (id, payload) => request(`/public_api_key/${id}`, { method: "PUT", body: payload });
+export const deletePublicApiKey = (id) => request(`/public_api_key/${id}`, { method: "DELETE" });
+
+export const getAllService = (params = {}) => request("/service/", { params });
+export const getService = (id) => request(`/service/${id}`);
+export const createService = (payload) => request("/service/", { method: "POST", body: payload });
+export const updateService = (id, payload) => request(`/service/${id}`, { method: "PUT", body: payload });
+export const deleteService = (id) => request(`/service/${id}`, { method: "DELETE" });
+
+export const getAllStatus = (params = {}) => request("/status/", { params });
+export const getStatus = (id) => request(`/status/${id}`);
+export const createStatus = (payload) => request("/status/", { method: "POST", body: payload });
+export const updateStatus = (id, payload) => request(`/status/${id}`, { method: "PUT", body: payload });
+export const deleteStatus = (id) => request(`/status/${id}`, { method: "DELETE" });
+
+export const getAllSubdepartment = (params = {}) => request("/subdepartment/", { params });
+export const getSubdepartment = (id) => request(`/subdepartment/${id}`);
+export const createSubdepartment = (payload) => request("/subdepartment/", { method: "POST", body: payload });
+export const updateSubdepartment = (id, payload) => request(`/subdepartment/${id}`, { method: "PUT", body: payload });
+export const deleteSubdepartment = (id) => request(`/subdepartment/${id}`, { method: "DELETE" });
+
+export const getAllSurveyMultipleAnswer = (params = {}) => request("/survey_multiple_answer/", { params });
+export const getSurveyMultipleAnswer = (id) => request(`/survey_multiple_answer/${id}`);
+export const createSurveyMultipleAnswer = (payload) => request("/survey_multiple_answer/", { method: "POST", body: payload });
+export const updateSurveyMultipleAnswer = (id, payload) => request(`/survey_multiple_answer/${id}`, { method: "PUT", body: payload });
+export const deleteSurveyMultipleAnswer = (id) => request(`/survey_multiple_answer/${id}`, { method: "DELETE" });
+
+export const getAllSurveyQuestion = (params = {}) => request("/survey_question/", { params });
+export const getSurveyQuestion = (id) => request(`/survey_question/${id}`);
+export const createSurveyQuestion = (payload) => request("/survey_question/", { method: "POST", body: payload });
+export const updateSurveyQuestion = (id, payload) => request(`/survey_question/${id}`, { method: "PUT", body: payload });
+export const deleteSurveyQuestion = (id) => request(`/survey_question/${id}`, { method: "DELETE" });
+
+export const getAllTask = (params = {}) => request("/task/", { params });
+export const getTask = (id) => request(`/task/${id}`);
+export const createTask = (payload) => request("/task/", { method: "POST", body: payload });
+export const updateTask = (id, payload) => request(`/task/${id}`, { method: "PUT", body: payload });
+export const deleteTask = (id) => request(`/task/${id}`, { method: "DELETE" });
+
+export const getAllTaskNote = (params = {}) => request("/task_note/", { params });
+export const getTaskNote = (id) => request(`/task_note/${id}`);
+export const createTaskNote = (payload) => request("/task_note/", { method: "POST", body: payload });
+export const updateTaskNote = (id, payload) => request(`/task_note/${id}`, { method: "PUT", body: payload });
+export const deleteTaskNote = (id) => request(`/task_note/${id}`, { method: "DELETE" });
+
+export const getAllTaskType = (params = {}) => request("/task_type/", { params });
+export const getTaskType = (id) => request(`/task_type/${id}`);
+export const createTaskType = (payload) => request("/task_type/", { method: "POST", body: payload });
+export const updateTaskType = (id, payload) => request(`/task_type/${id}`, { method: "PUT", body: payload });
+export const deleteTaskType = (id) => request(`/task_type/${id}`, { method: "DELETE" });
+
+export const getAllTemplate = (params = {}) => request("/template/", { params });
+export const getTemplate = (id) => request(`/template/${id}`);
+export const createTemplate = (payload) => request("/template/", { method: "POST", body: payload });
+export const updateTemplate = (id, payload) => request(`/template/${id}`, { method: "PUT", body: payload });
+export const deleteTemplate = (id) => request(`/template/${id}`, { method: "DELETE" });
+
+export const getAllTheme = (params = {}) => request("/theme/", { params });
+export const getTheme = (id) => request(`/theme/${id}`);
+export const createTheme = (payload) => request("/theme/", { method: "POST", body: payload });
+export const updateTheme = (id, payload) => request(`/theme/${id}`, { method: "PUT", body: payload });
+export const deleteTheme = (id) => request(`/theme/${id}`, { method: "DELETE" });
+
+export const getAllTicket = (params = {}) => request("/ticket/", { params });
+export const getTicket = (id) => request(`/ticket/${id}`);
+export const createTicket = (payload) => request("/ticket/", { method: "POST", body: payload });
+export const updateTicket = (id, payload) => request(`/ticket/${id}`, { method: "PUT", body: payload });
+export const deleteTicket = (id) => request(`/ticket/${id}`, { method: "DELETE" });
+
+export const getAllUnit = (params = {}) => request("/unit/", { params });
+export const getUnit = (id) => request(`/unit/${id}`);
+export const createUnit = (payload) => request("/unit/", { method: "POST", body: payload });
+export const updateUnit = (id, payload) => request(`/unit/${id}`, { method: "PUT", body: payload });
+export const deleteUnit = (id) => request(`/unit/${id}`, { method: "DELETE" });
+
+export const getAllUser = (params = {}) => request("/user/", { params });
+export const getUser = (id) => request(`/user/${id}`);
+export const createUser = (payload) => request("/user/", { method: "POST", body: payload });
+export const updateUser = (id, payload) => request(`/user/${id}`, { method: "PUT", body: payload });
+export const deleteUser = (id) => request(`/user/${id}`, { method: "DELETE" });
+
+export const getAllUserMfa = (params = {}) => request("/user_mfa/", { params });
+export const getUserMfa = (id) => request(`/user_mfa/${id}`);
+export const createUserMfa = (payload) => request("/user_mfa/", { method: "POST", body: payload });
+export const updateUserMfa = (id, payload) => request(`/user_mfa/${id}`, { method: "PUT", body: payload });
+export const deleteUserMfa = (id) => request(`/user_mfa/${id}`, { method: "DELETE" });
+export const updateInvoiceLineAuthorization = (id, payload) => request(`/invoice/line-authorization/${id}`, { method: "PATCH", body: payload });
+export const getSalesCatalogProducts = (params = {}) => request("/sales-catalog/products", { params });
+export const previewSalesCatalogProductPrice = (id) => request(`/sales-catalog/products/${id}/preview-price`);
+export const upsertSalesCatalogProductConfig = (id, payload) => request(`/sales-catalog/products/${id}/config`, { method: "PATCH", body: payload });
+export const bulkSalesCatalogMargin = (payload) => request("/sales-catalog/products/bulk-margin", { method: "POST", body: payload });
+export const bulkSalesCatalogPublish = (payload) => request("/sales-catalog/products/bulk-publish", { method: "POST", body: payload });
+export const getSalesCatalogApiKeys = () => request("/sales-catalog/api-keys");
+export const createSalesCatalogApiKey = (payload) => request("/sales-catalog/api-keys", { method: "POST", body: payload });
+export const updateSalesCatalogApiKey = (id, payload) => request(`/sales-catalog/api-keys/${id}`, { method: "PATCH", body: payload });
+export const revokeSalesCatalogApiKey = (id) => request(`/sales-catalog/api-keys/${id}/revoke`, { method: "POST" });
+export const getWebShoppers = (params = {}) => request("/web-shoppers", { params });
+export const getWebShopper = (id) => request(`/web-shoppers/${id}`);
+export const deactivateWebShopper = (id) => request(`/web-shoppers/${id}/deactivate`, { method: "PATCH" });
+export const reactivateWebShopper = (id) => request(`/web-shoppers/${id}/reactivate`, { method: "PATCH" });

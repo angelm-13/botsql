@@ -1,0 +1,20 @@
+{
+  "jobs.health.ok": "Celery está operativo",
+  "jobs.entity.unknown_entity": "Entidad no reconocida para tarea asíncrona",
+  "jobs.entity.metrics_recalculated": "Métricas de entidad recalculadas",
+  "jobs.entity.integrity_audited": "Integridad de entidad auditada",
+  "jobs.entity.all_audits_scheduled": "Auditorías de entidades programadas",
+  "jobs.erp.accounting_period_closed": "Periodo contable cerrado",
+  "jobs.erp.invoice_totals_recalculated": "Totales de factura recalculados",
+  "jobs.erp.payroll_run_generated": "Nómina generada",
+  "jobs.erp.bank_accounts_reconciled": "Cuentas bancarias conciliadas",
+  "jobs.crm.customer_health_scored": "Salud del cliente evaluada",
+  "jobs.crm.customer_segments_synced": "Segmentos de clientes sincronizados",
+  "jobs.crm.followups_scheduled": "Seguimientos programados",
+  "jobs.scm.inventory_recalculated": "Inventario recalculado",
+  "jobs.scm.stock_risk_detected": "Riesgo de inventario detectado",
+  "jobs.scm.replenishment_planned": "Reabastecimiento planificado",
+  "jobs.scm.supplier_scorecards_synced": "Scorecards de proveedores sincronizados",
+  "jobs.maintenance.cleanup_completed": "Limpieza de mantenimiento completada",
+  "jobs.maintenance.search_indexes_rebuilt": "Índices de búsqueda reconstruidos"
+}

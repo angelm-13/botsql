@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{ t('documents.fiscal_account_summary.title') }}</title>
+  <link rel="stylesheet" href="document.css" />
+</head>
+<body>
+  <main class="document-page">
+    <header class="document-header">
+      <h1>{{ t('documents.fiscal_account_summary.title') }}</h1>
+      <div class="document-meta">{{ t('documents.generated_at') }}: {{ generated_at }}</div>
+    </header>
+    <section class="document-content">
+      <div class="field-grid">
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.fiscal_account.id_fiscal_account') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_fiscal_account'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.fiscal_account.fiscal_account_description') }}</span>
+        <span class="field-value">{{ format_value(record.get('fiscal_account_description'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.fiscal_account.balance') }}</span>
+        <span class="field-value">{{ format_value(record.get('balance'), 'currency') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.fiscal_account.id_fiscal_account_reference') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_fiscal_account_reference'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.fiscal_account.created_by') }}</span>
+        <span class="field-value">{{ format_value(record.get('created_by'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.fiscal_account.creation_date') }}</span>
+        <span class="field-value">{{ format_value(record.get('creation_date'), 'date') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.fiscal_account.last_update_date') }}</span>
+        <span class="field-value">{{ format_value(record.get('last_update_date'), 'date') }}</span>
+      </section>
+      </div>
+    </section>
+    <footer class="document-footer">
+      <span>{{ t('documents.powered_by') }}</span>
+      <span>fiscal_account_summary</span>
+    </footer>
+  </main>
+</body>
+</html>

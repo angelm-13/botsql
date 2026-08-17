@@ -1,0 +1,14 @@
+# TYAKXA maintenance cron example
+# Ajusta rutas absolutas antes de instalar con: crontab crontab.example
+
+# Backup diario 02:00
+0 2 * * * /absolute/path/to/project/maintenance/backup_postgres.sh >> /absolute/path/to/project/maintenance/backup.log 2>&1
+
+# Rotación diaria 03:00
+0 3 * * * /absolute/path/to/project/maintenance/rotate_backups.sh >> /absolute/path/to/project/maintenance/rotate.log 2>&1
+
+# Healthcheck cada 15 minutos
+*/15 * * * * /absolute/path/to/project/maintenance/healthcheck.sh >> /absolute/path/to/project/maintenance/healthcheck.log 2>&1
+
+# Vacuum semanal domingo 04:00
+0 4 * * 0 /absolute/path/to/project/maintenance/vacuum_analyze.sh >> /absolute/path/to/project/maintenance/vacuum.log 2>&1
