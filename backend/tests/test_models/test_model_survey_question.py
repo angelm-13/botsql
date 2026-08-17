@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from datetime import datetime
 from tests.conftest import BackendTestCase
+from tests.model_factory import build_model
+from app.models.session import transaction_context
 from app.models.survey_question import SurveyQuestion
 
 
 class TestSurveyQuestionModel(BackendTestCase):
     def test_create_serialize_summary_delete_survey_question(self):
         with transaction_context() as session:
-            item = SurveyQuestion(
+            item = build_model(SurveyQuestion,
             question='test_question',
             question_type='single_option',
             owner=1,

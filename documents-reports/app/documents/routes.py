@@ -6,10 +6,9 @@ from flask import Blueprint, jsonify, make_response, request, send_file
 from .manifest import DOCUMENTS
 from .service import DocumentError, DocumentService
 
-bp_documents = Blueprint('documents', __name__, url_prefix='/documents')
-
 
 def create_documents_blueprint(templates_dir: str | Path, record_loader):
+    bp_documents = Blueprint('documents', __name__, url_prefix='/documents')
     service = DocumentService(templates_dir=templates_dir)
 
     @bp_documents.route('/manifest', methods=['GET'])

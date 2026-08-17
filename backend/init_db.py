@@ -222,7 +222,8 @@ def init_database():
                         for table_name in bootstrap_tables:
                             conn.execute(text(f'ALTER TABLE "{table_name}" DISABLE TRIGGER ALL'))
                         try:
-                            _insert_seed_row(conn, "status", "id_status", {
+                            bootstrap_rows = [
+                                ("status", "id_status", {
                                 "id_status": 1,
                                 "status_description": "active",
                                 "name": "active",
@@ -233,8 +234,8 @@ def init_database():
                                 "creation_date": now_value,
                                 "last_update_date": now_value,
                                 "deletion_date": None,
-                            })
-                            _insert_seed_row(conn, "permission", "id_permission", {
+                                }),
+                                ("permission", "id_permission", {
                                 "id_permission": 1,
                                 "permission_description": "Administrator",
                                 "permission_name": "Administrator",
@@ -249,8 +250,8 @@ def init_database():
                                 "creation_date": now_value,
                                 "last_update_date": now_value,
                                 "deletion_date": None,
-                            })
-                            _insert_seed_row(conn, "proyect", "id_proyect", {
+                                }),
+                                ("proyect", "id_proyect", {
                                 "id_proyect": 1,
                                 "title": "Default Project",
                                 "name": "Default Project",
@@ -262,8 +263,8 @@ def init_database():
                                 "creation_date": now_value,
                                 "last_update_date": now_value,
                                 "deletion_date": None,
-                            })
-                            _insert_seed_row(conn, "user", "id_user", {
+                                }),
+                                ("user", "id_user", {
                                 "id_user": 1,
                                 "username": bootstrap_username,
                                 "password": hashed,
@@ -294,7 +295,14 @@ def init_database():
                                 "date_start": now_value,
                                 "hire_date": now_value,
                                 "deletion_date": None,
-                            })
+                                }),
+                            ]
+                            for table_name, pk_name, payload in bootstrap_rows:
+                                try:
+                                    with conn.begin_nested():
+                                        _insert_seed_row(conn, table_name, pk_name, payload)
+                                except Exception as row_error:
+                                    print(f"⚠️  Bootstrap {table_name} row warning (non-fatal): {row_error}")
                         finally:
                             for table_name in reversed(bootstrap_tables):
                                 conn.execute(text(f'ALTER TABLE "{table_name}" ENABLE TRIGGER ALL'))

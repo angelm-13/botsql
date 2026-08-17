@@ -2,17 +2,19 @@ from __future__ import annotations
 
 from datetime import datetime
 from tests.conftest import BackendTestCase
+from tests.model_factory import build_model
+from app.models.session import transaction_context
 from app.models.incident import Incident
 
 
 class TestIncidentModel(BackendTestCase):
     def test_create_serialize_summary_delete_incident(self):
         with transaction_context() as session:
-            item = Incident(
-            incident_date='datetime.now()',
+            item = build_model(Incident,
+            incident_date='2026-01-15T12:00:00',
             note='test note',
             incident_status='test state',
-            close_date='datetime.now()',
+            close_date='2026-01-15T12:00:00',
             created_by=1
             )
             session.add(item)

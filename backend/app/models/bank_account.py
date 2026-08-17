@@ -28,6 +28,7 @@ class BankAccount(Base):
     moratorium_interest: Mapped[float] = mapped_column(Numeric(10,2), nullable=True)
     anuality: Mapped[float] = mapped_column(Numeric(10,2), nullable=True)
     reimbursement: Mapped[float] = mapped_column(Numeric(10,2), nullable=True)
+    id_proyect: Mapped[int] = mapped_column(Integer, ForeignKey('proyect.id_proyect'), nullable=True)
     created_by: Mapped[int] = mapped_column(Integer, nullable=False)
     creation_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now())
     last_update_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
@@ -44,6 +45,7 @@ class BankAccount(Base):
             'moratorium_interest': to_json_value(self.moratorium_interest),
             'anuality': to_json_value(self.anuality),
             'reimbursement': to_json_value(self.reimbursement),
+            'id_proyect': to_json_value(self.id_proyect),
             'created_by': to_json_value(self.created_by),
             'creation_date': to_json_value(self.creation_date),
             'last_update_date': to_json_value(self.last_update_date),

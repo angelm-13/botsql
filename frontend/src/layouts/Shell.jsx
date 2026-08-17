@@ -1,6 +1,6 @@
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { LayoutDashboard, LogOut, ShieldCheck } from "lucide-react";
-import { useEffect, useState } from "react";
+import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { ChevronDown, LayoutDashboard, LogOut, Settings, ShieldCheck } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getAllEntityPermission } from "../api";
 import { useI18n } from "../i18n";
 
@@ -23,6 +23,7 @@ const navItems = [
   { path: "/incident_type", key: "menu.incident_type" },
   { path: "/inventory_status", key: "menu.inventory_status" },
   { path: "/invoice", key: "menu.invoice" },
+  { path: "/invoice/manual", key: "menu.manual_invoice", label: "Factura manual", entityName: "invoice" },
   { path: "/quotation", key: "menu.quotation", label: "Cotizaciones", entityName: "invoice" },
   { path: "/authorization_tracking", key: "menu.authorization_tracking", label: "Autorización / Seguimiento", entityName: "invoice" },
   { path: "/invoice_material_service", key: "menu.invoice_material_service" },
@@ -68,7 +69,11 @@ export default function Shell() {
   const [, forceRender] = useState(0);
   const [roleEntityPermissions, setRoleEntityPermissions] = useState([]);
   const [rolePermissionsLoaded, setRolePermissionsLoaded] = useState(false);
+  const [openGroups, setOpenGroups] = useState({});
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsRef = useRef(null);
   const navigate = useNavigate();
+  const location = useLocation();
   const { lang, t, setLanguage } = useI18n();
   const currentUser = JSON.parse(localStorage.getItem("user") || "null");
   const bootstrapUsername = import.meta.env.VITE_BOOTSTRAP_ADMIN_USERNAME || "admin1";
@@ -80,11 +85,6 @@ export default function Shell() {
     let mounted = true;
     const roleId = Number(currentUser?.id_permission || 0);
     setRolePermissionsLoaded(false);
-    if (isBootstrapAdmin) {
-      setRoleEntityPermissions([]);
-      setRolePermissionsLoaded(true);
-      return () => { mounted = false; };
-    }
     if (!roleId) {
       setRoleEntityPermissions([]);
       setRolePermissionsLoaded(true);
@@ -111,6 +111,43 @@ export default function Shell() {
   }
 
   const visibleNavItems = navItems.filter(canSeeNavItem);
+  const permissionByEntity = useMemo(() => new Map(roleEntityPermissions.map((row) => [String(row.entity_name || ""), row])), [roleEntityPermissions]);
+
+  function defaultGroup(item) {
+    const path = item.path;
+    if (["/bank", "/bank_account", "/movement"].includes(path)) return "Bancos";
+    if (path.startsWith("/invoice") || path.startsWith("/fiscal") || path === "/quotation" || path === "/authorization_tracking") return "Contabilidad";
+    if (path.startsWith("/payroll")) return "Recursos humanos";
+    if (["/proyect", "/incident", "/incident_detail", "/task", "/task_note", "/service", "/template"].includes(path)) return "Operaciones";
+    if (["/material", "/location", "/product", "/inventory_status", "/unit", "/brand"].includes(path)) return "Inventario";
+    return "Configuración";
+  }
+
+  function navigationFor(item) {
+    const entityName = item.entityName || String(item.path || "").replace(/^\//, "");
+    const permission = permissionByEntity.get(entityName);
+    const isCanonicalPath = item.path === `/${entityName}`;
+    return {
+      ...item,
+      location: permission?.menu_location || (item.adminOnly ? "settings" : "sidebar"),
+      group: permission?.menu_group || defaultGroup(item),
+      order: Number(permission?.menu_order ?? 100),
+      displayLabel: isCanonicalPath && permission?.menu_label ? permission.menu_label : t(item.key, item.label || item.key)
+    };
+  }
+
+  const fixedSidebarItems = visibleNavItems.filter((item) => item.exact || item.path === "/mfa-setup");
+  const configuredItems = visibleNavItems.filter((item) => !item.exact && item.path !== "/mfa-setup").map(navigationFor);
+  const sidebarGroups = useMemo(() => {
+    const groups = new Map();
+    configuredItems.filter((item) => item.location === "sidebar").forEach((item) => {
+      if (!groups.has(item.group)) groups.set(item.group, []);
+      groups.get(item.group).push(item);
+    });
+    return [...groups.entries()].map(([label, items]) => ({ label, items: items.sort((a, b) => a.order - b.order || a.displayLabel.localeCompare(b.displayLabel)) }));
+  }, [configuredItems]);
+  const settingsItems = configuredItems.filter((item) => item.location === "settings").sort((a, b) => a.order - b.order || a.displayLabel.localeCompare(b.displayLabel));
+
   useEffect(() => {
     const handler = () => forceRender((v) => v + 1);
     const expired = () => navigate("/login", { replace: true });
@@ -118,6 +155,13 @@ export default function Shell() {
     window.addEventListener("tyakxa-auth-expired", expired);
     return () => { window.removeEventListener("tyakxa-language-change", handler); window.removeEventListener("tyakxa-auth-expired", expired); };
   }, [navigate]);
+  useEffect(() => {
+    function closeSettings(event) {
+      if (settingsRef.current && !settingsRef.current.contains(event.target)) setSettingsOpen(false);
+    }
+    document.addEventListener("mousedown", closeSettings);
+    return () => document.removeEventListener("mousedown", closeSettings);
+  }, []);
   const handleLogout = () => {
     localStorage.removeItem("token"); localStorage.removeItem("user"); localStorage.removeItem("mfa_temp_token");
     navigate("/login", { replace: true });
@@ -127,12 +171,19 @@ export default function Shell() {
       <aside className="sidebar">
         <div className="brand"><img src="/tyakxa-logo.png" alt={t("common.app_title")} className="brand-logo" /><span>{t("common.app_title")}</span></div>
         <nav className="nav">
-          {visibleNavItems.map((item, index) => (
+          {fixedSidebarItems.map((item, index) => (
             <NavLink key={item.path} to={item.path} end={item.exact} className={({ isActive }) => isActive ? "nav-link active" : "nav-link"}>
               {index === 0 ? <LayoutDashboard size={18} /> : item.path === "/mfa-setup" ? <ShieldCheck size={18} /> : <span className="dot" />}
               <span>{t(item.key, item.label || item.key)}</span>
             </NavLink>
           ))}
+          {sidebarGroups.map((group) => {
+            const isOpen = openGroups[group.label] ?? group.items.some((item) => location.pathname === item.path);
+            return <div className="shell-nav-group" key={group.label}>
+              <button type="button" className="shell-nav-group-toggle" onClick={() => setOpenGroups((current) => ({ ...current, [group.label]: !isOpen }))}><span>{group.label}</span><ChevronDown size={16} className={isOpen ? "open" : ""} /></button>
+              {isOpen && <div className="shell-nav-submenu">{group.items.map((item) => <NavLink key={item.path} to={item.path} className={({ isActive }) => isActive ? "nav-link active" : "nav-link"}><span className="dot" /><span>{item.displayLabel}</span></NavLink>)}</div>}
+            </div>;
+          })}
         </nav>
       </aside>
       <main className="main">
@@ -141,7 +192,13 @@ export default function Shell() {
           <div className="topbar-actions">
             <span className="session-pill">{t("common.secure_session", "Sesión protegida")}{currentUser?.username ? ` · ${currentUser.username}` : ""}</span>
             <label className="language-picker">{t("common.language")}<select value={lang} onChange={(e) => setLanguage(e.target.value)}><option value="es">ES</option><option value="en">EN</option><option value="pt">PT</option><option value="de">DE</option><option value="ja">日本語</option></select></label>
-            <button className="button ghost" onClick={handleLogout}><LogOut size={16} />{t("common.logout", "Cerrar sesión")}</button>
+            <div className="session-actions">
+              <div className="settings-menu" ref={settingsRef}>
+                <button className="button ghost settings-trigger" title="Opciones" aria-label="Opciones" aria-expanded={settingsOpen} onClick={() => setSettingsOpen((value) => !value)}><Settings size={18} /></button>
+                {settingsOpen && <div className="settings-popover">{settingsItems.length ? settingsItems.map((item) => <NavLink key={item.path} to={item.path} onClick={() => setSettingsOpen(false)}>{item.displayLabel}</NavLink>) : <span className="settings-empty">Sin opciones configuradas</span>}</div>}
+              </div>
+              <button className="button ghost" onClick={handleLogout}><LogOut size={16} />{t("common.logout", "Cerrar sesión")}</button>
+            </div>
           </div>
         </header>
         <nav className="quick-nav" aria-label={t("common.quick_access", "Accesos rápidos")}>

@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from datetime import datetime
 from tests.conftest import BackendTestCase
+from tests.model_factory import build_model
+from app.models.session import transaction_context
 from app.models.user_mfa import UserMfa
 
 
 class TestUserMfaModel(BackendTestCase):
     def test_create_serialize_summary_delete_user_mfa(self):
         with transaction_context() as session:
-            item = UserMfa(
+            item = build_model(UserMfa,
             secret='test_user',
             secret_iv='test_user',
             enabled=True,

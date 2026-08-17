@@ -1,6 +1,7 @@
 from app.models.base import Base
 from app.models.bank import Bank
 from app.models.bank_account import BankAccount
+from app.models.bank_statement import BankStatement, BankStatementMovement
 from app.models.brand import Brand
 from app.models.customer_supplier import CustomerSupplier
 from app.models.department import Department
@@ -14,6 +15,7 @@ from app.models.incident import Incident
 from app.models.incident_detail import IncidentDetail
 from app.models.incident_type import IncidentType
 from app.models.inventory_status import InventoryStatus
+from app.models.inventory_ledger import InventoryLedger
 from app.models.invoice import Invoice
 from app.models.invoice_material_service import InvoiceMaterialService
 from app.models.level import Level
@@ -36,9 +38,11 @@ from app.models.product import Product
 from app.models.product_family import ProductFamily
 from app.models.product_sale_config import ProductSaleConfig
 from app.models.proyect import Proyect
+from app.models.quotation_comment import QuotationComment
 from app.models.public_api_key import PublicApiKey
 from app.models.service import Service
 from app.models.status import Status
+from app.models.stamping_operation import StampingOperation
 from app.models.subdepartment import Subdepartment
 from app.models.survey_multiple_answer import SurveyMultipleAnswer
 from app.models.survey_question import SurveyQuestion
@@ -52,4 +56,4 @@ from app.models.unit import Unit
 from app.models.user import User
 from app.models.user_mfa import UserMfa
 
-__all__ = ['Base', 'Bank', 'BankAccount', 'Brand', 'CustomerSupplier', 'Department', 'EntityPermission', 'EventLog', 'Field', 'FiscalAccount', 'FiscalRecord', 'FiscalStamp', 'Incident', 'IncidentDetail', 'IncidentType', 'InventoryStatus', 'Invoice', 'InvoiceMaterialService', 'Level', 'Location', 'LocationType', 'Material', 'MaterialComponent', 'Movement', 'NmFieldPermission', 'NmIncidentProduct', 'NmSurveyUser', 'NmTemplateTask', 'PasswordResetToken', 'PayrollConcept', 'PayrollDetail', 'PayrollMovement', 'PayrollPeriod', 'Permission', 'Product', 'ProductFamily', 'ProductSaleConfig', 'Proyect', 'PublicApiKey', 'Service', 'Status', 'Subdepartment', 'SurveyMultipleAnswer', 'SurveyQuestion', 'Task', 'TaskNote', 'TaskType', 'Template', 'Theme', 'Ticket', 'Unit', 'User', 'UserMfa']
+__all__ = ['Base', 'Bank', 'BankAccount', 'BankStatement', 'BankStatementMovement', 'Brand', 'CustomerSupplier', 'Department', 'EntityPermission', 'EventLog', 'Field', 'FiscalAccount', 'FiscalRecord', 'FiscalStamp', 'Incident', 'IncidentDetail', 'IncidentType', 'InventoryLedger', 'InventoryStatus', 'Invoice', 'InvoiceMaterialService', 'Level', 'Location', 'LocationType', 'Material', 'MaterialComponent', 'Movement', 'NmFieldPermission', 'NmIncidentProduct', 'NmSurveyUser', 'NmTemplateTask', 'PasswordResetToken', 'PayrollConcept', 'PayrollDetail', 'PayrollMovement', 'PayrollPeriod', 'Permission', 'Product', 'ProductFamily', 'ProductSaleConfig', 'Proyect', 'PublicApiKey', 'QuotationComment', 'Service', 'StampingOperation', 'Status', 'Subdepartment', 'SurveyMultipleAnswer', 'SurveyQuestion', 'Task', 'TaskNote', 'TaskType', 'Template', 'Theme', 'Ticket', 'Unit', 'User', 'UserMfa']

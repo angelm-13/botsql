@@ -6,6 +6,7 @@ import RolePermissionManagerPage from "./pages/RolePermissionManagerPage.jsx";
 import QuotationPage from "./pages/QuotationPage.jsx";
 import AuthorizationTrackingPage from "./pages/AuthorizationTrackingPage.jsx";
 import CatalogoWebPage from "./pages/CatalogoWebPage.jsx";
+import ClientPortalPage from "./pages/ClientPortalPage.jsx";
 import WebShoppersPage from "./pages/WebShoppersPage.jsx";
 import BankPage from "./pages/BankPage.jsx";
 import BankAccountPage from "./pages/BankAccountPage.jsx";
@@ -24,6 +25,7 @@ import IncidentTypePage from "./pages/IncidentTypePage.jsx";
 import InventoryStatusPage from "./pages/InventoryStatusPage.jsx";
 import InvoicePage from "./pages/InvoicePage.jsx";
 import InvoiceMaterialServicePage from "./pages/InvoiceMaterialServicePage.jsx";
+import ManualInvoicePage from "./pages/ManualInvoicePage.jsx";
 import LevelPage from "./pages/LevelPage.jsx";
 import LocationPage from "./pages/LocationPage.jsx";
 import LocationTypePage from "./pages/LocationTypePage.jsx";
@@ -118,6 +120,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/portal-cliente" element={<ClientPortalPage />} />
         <Route path="/" element={<ProtectedRoute><Shell /></ProtectedRoute>}>
           <Route index element={<Dashboard />} />
           <Route path="/mfa-setup" element={<MfaSetupPage />} />
@@ -143,6 +146,7 @@ export default function App() {
           <Route path="/inventory_status" element={<RoleAccessRoute entityName="inventory_status"><InventoryStatusPage /></RoleAccessRoute>} />
           <Route path="/kanban" element={<Kanban />} />
           <Route path="/invoice" element={<RoleAccessRoute entityName="invoice"><InvoicePage /></RoleAccessRoute>} />
+          <Route path="/invoice/manual" element={<RoleAccessRoute entityName="invoice"><ManualInvoicePage /></RoleAccessRoute>} />
           <Route path="/invoice_material_service" element={<RoleAccessRoute entityName="invoice_material_service"><InvoiceMaterialServicePage /></RoleAccessRoute>} />
           <Route path="/level" element={<RoleAccessRoute entityName="level"><LevelPage /></RoleAccessRoute>} />
           <Route path="/location" element={<RoleAccessRoute entityName="location"><LocationPage /></RoleAccessRoute>} />

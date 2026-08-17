@@ -3,8 +3,10 @@ from __future__ import annotations
 import os
 import sys
 import unittest
+import warnings
 from pathlib import Path
 from datetime import datetime
+from sqlalchemy.exc import SAWarning
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -29,6 +31,16 @@ else:
     IMPORT_ERROR = None
 
 
+def reset_test_database():
+    if engine.dialect.name == 'sqlite':
+        engine.dispose()
+    else:
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', SAWarning)
+            Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+
+
 class BackendTestCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -39,11 +51,15 @@ class BackendTestCase(unittest.TestCase):
         Base.metadata.create_all(bind=engine)
 
     def setUp(self):
-        Base.metadata.drop_all(bind=engine)
-        Base.metadata.create_all(bind=engine)
+        reset_test_database()
 
     def tearDown(self):
-        Base.metadata.drop_all(bind=engine)
+        if engine.dialect.name == 'sqlite':
+            engine.dispose()
+        else:
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore', SAWarning)
+                Base.metadata.drop_all(bind=engine)
 
     def json(self, response):
         return response.get_json() or {}

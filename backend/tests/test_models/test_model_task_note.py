@@ -2,14 +2,16 @@ from __future__ import annotations
 
 from datetime import datetime
 from tests.conftest import BackendTestCase
+from tests.model_factory import build_model
+from app.models.session import transaction_context
 from app.models.task_note import TaskNote
 
 
 class TestTaskNoteModel(BackendTestCase):
     def test_create_serialize_summary_delete_task_note(self):
         with transaction_context() as session:
-            item = TaskNote(
-            date='datetime.now()',
+            item = build_model(TaskNote,
+            date='2026-01-15T12:00:00',
             task_note_description='test description',
             created_by=1
             )

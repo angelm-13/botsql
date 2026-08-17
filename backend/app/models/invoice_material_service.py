@@ -45,6 +45,14 @@ class InvoiceMaterialService(Base):
     authorization_status: Mapped[object] = mapped_column(Enum('pending', 'authorized', 'rejected', name='invoice_material_service_authorization_status_enum', native_enum=False, validate_strings=True, create_constraint=True), nullable=False)
     authorization_note: Mapped[object] = mapped_column(String(500), nullable=True)
     authorization_date: Mapped[object] = mapped_column(DateTime, nullable=True)
+    id_task: Mapped[int] = mapped_column(Integer, ForeignKey('task.id_task'), nullable=True)
+    discount: Mapped[float] = mapped_column(Numeric(10,2), nullable=True)
+    sat_product_key: Mapped[object] = mapped_column(String(20), nullable=True)
+    sat_unit_key: Mapped[object] = mapped_column(String(10), nullable=True)
+    tax_object: Mapped[object] = mapped_column(String(5), nullable=True)
+    tax_rate: Mapped[float] = mapped_column(Numeric(7,4), nullable=True)
+    isr_retention_rate: Mapped[float] = mapped_column(Numeric(7,4), nullable=True)
+    iva_retention_rate: Mapped[float] = mapped_column(Numeric(7,4), nullable=True)
 
     def serialize(self) -> dict:
         return {
@@ -74,6 +82,14 @@ class InvoiceMaterialService(Base):
             'authorization_status': to_json_value(self.authorization_status),
             'authorization_note': to_json_value(self.authorization_note),
             'authorization_date': to_json_value(self.authorization_date),
+            'id_task': to_json_value(self.id_task),
+            'discount': to_json_value(self.discount),
+            'sat_product_key': to_json_value(self.sat_product_key),
+            'sat_unit_key': to_json_value(self.sat_unit_key),
+            'tax_object': to_json_value(self.tax_object),
+            'tax_rate': to_json_value(self.tax_rate),
+            'isr_retention_rate': to_json_value(self.isr_retention_rate),
+            'iva_retention_rate': to_json_value(self.iva_retention_rate),
         }
 
     def serialize_summary(self) -> dict:

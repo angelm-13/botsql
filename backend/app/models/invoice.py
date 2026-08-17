@@ -2,7 +2,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import String, Integer, BigInteger, SmallInteger, Boolean, Date, DateTime, Float, Numeric, ForeignKey, Text, JSON, Enum, LargeBinary, UniqueConstraint, func
+from sqlalchemy import String, Integer, BigInteger, SmallInteger, Boolean, Date, DateTime, Float, Numeric, ForeignKey, Text, JSON, Enum, LargeBinary, UniqueConstraint, Index, func
 from app.models.base import Base
 
 
@@ -18,6 +18,7 @@ def to_json_value(value):
 
 class Invoice(Base):
     __tablename__ = 'invoice'
+    __table_args__ = (Index('uq_invoice_folio_fiscal', 'folio_fiscal', unique=True),)
 
     id_invoice: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, nullable=False)
     date_emision: Mapped[object] = mapped_column(DateTime, nullable=True)
@@ -68,6 +69,11 @@ class Invoice(Base):
     apply_tax: Mapped[bool] = mapped_column(Boolean, nullable=False)
     tax_rate: Mapped[float] = mapped_column(Numeric(5,2), nullable=True)
     commercial_terms: Mapped[object] = mapped_column(String(500), nullable=True)
+    uso_cfdi: Mapped[object] = mapped_column(String(10), nullable=True)
+    forma_pago: Mapped[object] = mapped_column(String(10), nullable=True)
+    isr_retention: Mapped[float] = mapped_column(Numeric(10,2), nullable=True)
+    iva_retention: Mapped[float] = mapped_column(Numeric(10,2), nullable=True)
+    manual_capture: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     def serialize(self) -> dict:
         return {
@@ -120,6 +126,11 @@ class Invoice(Base):
             'apply_tax': to_json_value(self.apply_tax),
             'tax_rate': to_json_value(self.tax_rate),
             'commercial_terms': to_json_value(self.commercial_terms),
+            'uso_cfdi': to_json_value(self.uso_cfdi),
+            'forma_pago': to_json_value(self.forma_pago),
+            'isr_retention': to_json_value(self.isr_retention),
+            'iva_retention': to_json_value(self.iva_retention),
+            'manual_capture': to_json_value(self.manual_capture),
         }
 
     def serialize_summary(self) -> dict:

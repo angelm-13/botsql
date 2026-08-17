@@ -32,10 +32,6 @@ def _is_superuser(user_data: dict) -> bool:
     return bool(user_data.get('is_superuser') or user_data.get('is_bootstrap_admin'))
 
 
-def _is_company_admin(user_data: dict) -> bool:
-    return str(user_data.get('user_type') or '').strip().lower() == 'admin'
-
-
 def _get_permission_id(user_data: dict):
     value = user_data.get('id_permission') or user_data.get('permission_id')
     try:
@@ -50,12 +46,6 @@ def _has_entity_permission(user_data: dict, entity_name: str, action: str) -> bo
 
     if entity_name in BOOTSTRAP_ONLY_ENTITIES:
         return False
-
-    # El administrador de empresa debe poder operar la aplicacion sin quedar bloqueado
-    # por errores de configuracion de su propio rol. Los modulos bootstrap-only
-    # siguen reservados para el superusuario interno y se bloquearon arriba.
-    if _is_company_admin(user_data):
-        return True
 
     bit = PERMISSION_BITS.get(action)
     if bit is None:

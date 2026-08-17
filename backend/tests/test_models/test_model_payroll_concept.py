@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from datetime import datetime
 from tests.conftest import BackendTestCase
+from tests.model_factory import build_model
+from app.models.session import transaction_context
 from app.models.payroll_concept import PayrollConcept
 
 
 class TestPayrollConceptModel(BackendTestCase):
     def test_create_serialize_summary_delete_payroll_concept(self):
         with transaction_context() as session:
-            item = PayrollConcept(
+            item = build_model(PayrollConcept,
             payroll_code='test title',
             payroll_concept_description='test title',
             type='earning',

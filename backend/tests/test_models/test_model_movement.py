@@ -2,14 +2,16 @@ from __future__ import annotations
 
 from datetime import datetime
 from tests.conftest import BackendTestCase
+from tests.model_factory import build_model
+from app.models.session import transaction_context
 from app.models.movement import Movement
 
 
 class TestMovementModel(BackendTestCase):
     def test_create_serialize_summary_delete_movement(self):
         with transaction_context() as session:
-            item = Movement(
-            date='datetime.now()',
+            item = build_model(Movement,
+            date='2026-01-15T12:00:00',
             type='income',
             amount=10.5,
             currency='mxn',

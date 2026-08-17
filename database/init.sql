@@ -722,6 +722,10 @@ CREATE TABLE IF NOT EXISTS "entity_permission" (
   "id_permission" INTEGER NOT NULL DEFAULT 1,
   "entity_name" VARCHAR(120) NOT NULL,
   "control_type" TEXT NOT NULL DEFAULT '15' CHECK ("control_type" IN ('1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15')),
+  "menu_location" VARCHAR(20) NOT NULL DEFAULT 'sidebar' CHECK ("menu_location" IN ('sidebar', 'settings', 'hidden')),
+  "menu_group" VARCHAR(80) NULL,
+  "menu_label" VARCHAR(100) NULL,
+  "menu_order" INTEGER NOT NULL DEFAULT 100,
   "created_by" INTEGER NOT NULL DEFAULT 1,
   "creation_date" TIMESTAMP NULL,
   "last_update_date" TIMESTAMP NULL,
@@ -905,6 +909,7 @@ CREATE INDEX IF NOT EXISTS "idx_nm_survey_user_status" ON "nm_survey_user" ("sta
 CREATE INDEX IF NOT EXISTS "idx_nm_survey_user_created_by" ON "nm_survey_user" ("created_by");
 CREATE INDEX IF NOT EXISTS "idx_entity_permission_id_permission" ON "entity_permission" ("id_permission");
 CREATE INDEX IF NOT EXISTS "idx_entity_permission_entity_name" ON "entity_permission" ("entity_name");
+CREATE INDEX IF NOT EXISTS "ix_entity_permission_navigation" ON "entity_permission" ("id_permission", "menu_location", "menu_group", "menu_order") WHERE "deletion_date" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_entity_permission_created_by" ON "entity_permission" ("created_by");
 CREATE INDEX IF NOT EXISTS "idx_inventory_status_inventory_status_code" ON "inventory_status" ("inventory_status_code");
 CREATE INDEX IF NOT EXISTS "idx_inventory_status_inventory_status_description" ON "inventory_status" ("inventory_status_description");

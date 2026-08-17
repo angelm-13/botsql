@@ -2,15 +2,17 @@ from __future__ import annotations
 
 from datetime import datetime
 from tests.conftest import BackendTestCase
+from tests.model_factory import build_model
+from app.models.session import transaction_context
 from app.models.invoice import Invoice
 
 
 class TestInvoiceModel(BackendTestCase):
     def test_create_serialize_summary_delete_invoice(self):
         with transaction_context() as session:
-            item = Invoice(
-            date_emision='datetime.now()',
-            date_expiration='datetime.now()',
+            item = build_model(Invoice,
+            date_emision='2026-01-15T12:00:00',
+            date_expiration='2026-01-15T12:00:00',
             subtotal=10.5,
             tax=10.5,
             total=10.5,
@@ -24,7 +26,7 @@ class TestInvoiceModel(BackendTestCase):
             type_exchange_rate=10.5,
             tax_certification_supplier=1,
             fiscal_certify_serie='test fiscal_certify_serie',
-            certification_date='datetime.now()',
+            certification_date='2026-01-15T12:00:00',
             cfdi_code='test cfdi_code',
             sat_code='test sat_code',
             sat_certification_code='test sat_certification_code',

@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from datetime import datetime
 from tests.conftest import BackendTestCase
+from tests.model_factory import build_model
+from app.models.session import transaction_context
 from app.models.status import Status
 
 
 class TestStatusModel(BackendTestCase):
     def test_create_serialize_summary_delete_status(self):
         with transaction_context() as session:
-            item = Status(
+            item = build_model(Status,
             status_description='test name',
             category='test name',
             is_terminal=True,

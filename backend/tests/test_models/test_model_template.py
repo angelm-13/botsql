@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from datetime import datetime
 from tests.conftest import BackendTestCase
+from tests.model_factory import build_model
+from app.models.session import transaction_context
 from app.models.template import Template
 
 
 class TestTemplateModel(BackendTestCase):
     def test_create_serialize_summary_delete_template(self):
         with transaction_context() as session:
-            item = Template(
+            item = build_model(Template,
             template_description='test permission description',
             created_by=1
             )

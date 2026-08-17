@@ -1,11 +1,12 @@
 from __future__ import annotations
 from flask import Blueprint, jsonify, request
 from app.services.invoice_material_service_service import InvoiceMaterialServiceService
+from app.services.quotation_service import link_line_to_task
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
 
 bp_invoice_material_service = Blueprint('invoice_material_service', __name__, url_prefix='/invoice_material_service')
-ALLOWED_FIELDS = ['id_invoice_material_service', 'id_invoice', 'id_material', 'id_service', 'invoice_material_service_description', 'max_requirement_date', 'is_directly_related_to_product_service_creation', 'id_authorized', 'id_status', 'id_buyer', 'id_customer_supplier', 'gross_price', 'quantity', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'id_product', 'line_type', 'tax_applicable', 'line_tax', 'line_total', 'id_unit', 'authorization_status', 'authorization_note', 'authorization_date']
+ALLOWED_FIELDS = ['id_invoice_material_service', 'id_invoice', 'id_material', 'id_service', 'invoice_material_service_description', 'max_requirement_date', 'is_directly_related_to_product_service_creation', 'id_authorized', 'id_status', 'id_buyer', 'id_customer_supplier', 'gross_price', 'quantity', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'id_product', 'line_type', 'tax_applicable', 'line_tax', 'line_total', 'id_unit', 'authorization_status', 'authorization_note', 'authorization_date', 'id_task']
 
 TECHNICAL_RESPONSE_FIELDS = {'id_invoice_material_service'}
 FIELD_READ_BIT = 2
@@ -129,6 +130,19 @@ def create_invoice_material_service(user_data):
 def update_invoice_material_service(user_data, id_invoice_material_service):
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
     return _jsonify_projected_record(user_data, InvoiceMaterialServiceService.update(id_invoice_material_service, payload, user_id=user_data.get('id_user')))
+
+
+@bp_invoice_material_service.route('/<id_invoice_material_service>/task', methods=['PUT'])
+@token_required
+@require_entity_permission('task', 'update')
+def link_invoice_line_task(user_data, id_invoice_material_service):
+    task_id = (request.get_json(silent=True) or {}).get('id_task')
+    if not task_id:
+        raise AppError('errors.invalid_field', 400, {'field': 'id_task'})
+    return _jsonify_projected_record(
+        user_data,
+        link_line_to_task(id_invoice_material_service, task_id, user_data),
+    )
 
 
 @bp_invoice_material_service.route('/<id_invoice_material_service>', methods=['DELETE'])

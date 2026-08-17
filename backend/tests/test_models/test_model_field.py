@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from datetime import datetime
 from tests.conftest import BackendTestCase
+from tests.model_factory import build_model
+from app.models.session import transaction_context
 from app.models.field import Field
 
 
 class TestFieldModel(BackendTestCase):
     def test_create_serialize_summary_delete_field(self):
         with transaction_context() as session:
-            item = Field(
+            item = build_model(Field,
             created_by=1,
             table_name='user',
             field_name='id_user'

@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from datetime import datetime
 from tests.conftest import BackendTestCase
+from tests.model_factory import build_model
+from app.models.session import transaction_context
 from app.models.bank_account import BankAccount
 
 
 class TestBankAccountModel(BackendTestCase):
     def test_create_serialize_summary_delete_bank_account(self):
         with transaction_context() as session:
-            item = BankAccount(
+            item = build_model(BankAccount,
             bank_account_description='test description',
             branch='test branch',
             type='test type',

@@ -104,6 +104,7 @@ def _user_payload(user: User, *, mfa_enabled: bool = False) -> dict:
     bootstrap_admin = _is_bootstrap_admin(user)
     return {
         'id_user': getattr(user, 'id_user', None),
+        'id_proyect': getattr(user, 'id_proyect', None),
         'username': getattr(user, 'username', ''),
         'user_type': getattr(user, 'user_type', 'user'),
         'id_permission': getattr(user, 'id_permission', None),
@@ -170,21 +171,25 @@ def _verify_password(raw_password: str, stored_value: str) -> bool:
         return raw_password == stored_value
 
 
+def _login_error(error_key: str, status_code: int):
+    return jsonify({'error': error_key, 'error_key': error_key}), status_code
+
+
 @bp_auth.route('/login', methods=['POST'])
 def login():
     data = request.get_json() or {}
     username = str(data.get('username') or '').strip()
     password = str(data.get('password') or '')
     if not username or not password:
-        return jsonify({'error_key': 'errors.auth_missing_credentials'}), 400
+        return _login_error('errors.auth_missing_credentials', 400)
 
     with transaction_context() as db:
         user = db.scalars(select(User).where(User.username == username)).first()
         if user and _normalize_user_type(getattr(user, 'user_type', None)) == 'web_shopper':
-            return jsonify({'error_key': 'errors.auth_invalid_credentials'}), 401
+            return _login_error('errors.auth_invalid_credentials', 401)
         stored_password = getattr(user, 'password', None) or getattr(user, 'password_hash', '')
         if not user or not _verify_password(password, stored_password):
-            return jsonify({'error_key': 'errors.auth_invalid_credentials'}), 401
+            return _login_error('errors.auth_invalid_credentials', 401)
 
         mfa = db.scalars(select(UserMfa).where(UserMfa.id_user == user.id_user, UserMfa.enabled == True)).first()
         if mfa:

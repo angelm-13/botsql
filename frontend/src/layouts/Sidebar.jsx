@@ -22,6 +22,7 @@ export default function Sidebar() {
       label: t("menu.group.fiscal", "FISCAL"),
       items: [
           { path: "/invoice", labelKey: "menu.invoice" },
+          { path: "/invoice/manual", labelKey: "menu.manual_invoice", label: "Factura manual" },
           { path: "/fiscal_account", labelKey: "menu.fiscal_account" },
           { path: "/fiscal_stamp", labelKey: "menu.fiscal_stamp" },
           { path: "/fiscal_record", labelKey: "menu.fiscal_record" },
@@ -113,7 +114,7 @@ export default function Sidebar() {
                     to={item.path}
                     className={({ isActive }) => isActive ? "nav-item active" : "nav-item"}
                   >
-                    {t(item.labelKey)}
+                    {t(item.labelKey, item.label)}
                   </NavLink>
                 ))}
               </div>

@@ -138,6 +138,8 @@ export const getInvoice = (id) => request(`/invoice/${id}`);
 export const createInvoice = (payload) => request("/invoice/", { method: "POST", body: payload });
 export const updateInvoice = (id, payload) => request(`/invoice/${id}`, { method: "PUT", body: payload });
 export const deleteInvoice = (id) => request(`/invoice/${id}`, { method: "DELETE" });
+export const previewManualInvoice = (payload) => request("/invoice/manual/preview", { method: "POST", body: payload });
+export const createManualInvoice = (payload) => request("/invoice/manual", { method: "POST", body: payload });
 
 export const getAllInvoiceMaterialService = (params = {}) => request("/invoice_material_service/", { params });
 export const getInvoiceMaterialService = (id) => request(`/invoice_material_service/${id}`);

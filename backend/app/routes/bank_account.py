@@ -5,7 +5,7 @@ from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
 
 bp_bank_account = Blueprint('bank_account', __name__, url_prefix='/bank_account')
-ALLOWED_FIELDS = ['id_bank_account', 'id_bank', 'bank_account_description', 'branch', 'type', 'ordinary_interest', 'moratorium_interest', 'anuality', 'reimbursement', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
+ALLOWED_FIELDS = ['id_bank_account', 'id_bank', 'bank_account_description', 'branch', 'type', 'ordinary_interest', 'moratorium_interest', 'anuality', 'reimbursement', 'id_proyect', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
 
 TECHNICAL_RESPONSE_FIELDS = {'id_bank_account'}
 FIELD_READ_BIT = 2

@@ -1,10 +1,13 @@
 from __future__ import annotations
 from flask import Blueprint, jsonify, request
 from app.services.invoice_service import InvoiceService
+from app.services.cfdi_xml import parse_cfdi
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
 from datetime import datetime
 from app.services.invoice_material_service_service import InvoiceMaterialServiceService
+from app.services.quotation_service import calculate_totals, validate_transition
+from app.services.manual_invoice_service import create_manual_invoice, preview_manual_invoice, validate_manual_invoice_context
 
 
 bp_invoice = Blueprint('invoice', __name__, url_prefix='/invoice')
@@ -126,12 +129,44 @@ def create_invoice(user_data):
     return _jsonify_projected_record(user_data, InvoiceService.create(payload, user_id=user_data.get('id_user')), status=201)
 
 
+@bp_invoice.route('/manual/preview', methods=['POST'])
+@token_required
+@require_entity_permission('invoice', 'create')
+def preview_manual_invoice_route(user_data):
+    payload = request.get_json(silent=True) or {}
+    validate_manual_invoice_context(payload, user_data)
+    return jsonify(preview_manual_invoice(payload))
+
+
+@bp_invoice.route('/manual', methods=['POST'])
+@token_required
+@require_entity_permission('invoice', 'create')
+def create_manual_invoice_route(user_data):
+    return jsonify(create_manual_invoice(request.get_json(silent=True) or {}, user_data)), 201
+
+
 @bp_invoice.route('/<id_invoice>', methods=['PUT'])
 @token_required
 @require_entity_permission('invoice', 'update')
 def update_invoice(user_data, id_invoice):
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
     return _jsonify_projected_record(user_data, InvoiceService.update(id_invoice, payload, user_id=user_data.get('id_user')))
+
+
+@bp_invoice.route('/<id_invoice>/quotation-transition', methods=['PATCH'])
+@token_required
+@require_entity_permission('invoice', 'update')
+def transition_quotation(user_data, id_invoice):
+    invoice = InvoiceService.get(id_invoice)
+    if not invoice:
+        raise AppError('errors.resource_not_found', 404)
+    target_status = validate_transition(invoice.get('invoice_status'), (request.get_json(silent=True) or {}).get('status'))
+    updated = InvoiceService.update(
+        id_invoice,
+        {'invoice_status': target_status},
+        user_id=user_data.get('id_user'),
+    )
+    return jsonify({'id_invoice': updated.get('id_invoice'), 'invoice_status': updated.get('invoice_status')})
 
 
 @bp_invoice.route('/<id_invoice>', methods=['DELETE'])
@@ -234,24 +269,7 @@ def convert_quotation_invoice(user_data, id_invoice):
             {'id_invoice': id_invoice}
         )
 
-    def money_value(value):
-        try:
-            if value in (None, ''):
-                return 0.0
-            return float(value)
-        except (TypeError, ValueError):
-            return 0.0
-
-    authorized_subtotal = 0.0
-    authorized_tax = 0.0
-    for line in authorized_lines:
-        line_total = money_value(line.get('line_total'))
-        if line_total == 0.0:
-            line_total = money_value(line.get('gross_price')) * money_value(line.get('quantity'))
-        authorized_subtotal += line_total
-        authorized_tax += money_value(line.get('line_tax'))
-
-    authorized_total = authorized_subtotal + authorized_tax
+    totals = calculate_totals(authorized_lines, invoice.get('tax_rate') if invoice.get('apply_tax') else 0)
     conversion_note = str(
         data.get('conversion_note')
         or 'Convertida desde cotizacion usando solo partidas autorizadas.'
@@ -261,9 +279,9 @@ def convert_quotation_invoice(user_data, id_invoice):
 
     payload = {
         'invoice_status': 'pendiente',
-        'subtotal': f'{authorized_subtotal:.2f}',
-        'tax': f'{authorized_tax:.2f}',
-        'total': f'{authorized_total:.2f}',
+        'subtotal': str(totals['subtotal']),
+        'tax': str(totals['tax']),
+        'total': str(totals['total']),
         'note': note,
     }
 
@@ -283,7 +301,6 @@ def convert_quotation_invoice(user_data, id_invoice):
     })
 
 
-import xml.etree.ElementTree as _ET
 import os as _os
 from flask import current_app as _current_app
 from werkzeug.utils import secure_filename as _secure_filename
@@ -369,76 +386,6 @@ def _save_original_cfdi_xml(invoice_id, xml_bytes):
         handle.write(xml_bytes)
     return path
 
-def _parse_cfdi(xml_bytes):
-    """Extrae campos principales de CFDI 3.3/4.0 sin depender de prefijos XML."""
-    try:
-        root = _ET.fromstring(xml_bytes)
-    except _ET.ParseError as exc:
-        raise ValueError(f'XML inválido: {exc}')
-
-    def local_name(tag):
-        return tag.split('}', 1)[-1] if '}' in tag else tag
-
-    def att(elem, *names):
-        if elem is None:
-            return None
-        lowered = {k.lower(): v for k, v in elem.attrib.items()}
-        for name in names:
-            value = elem.get(name)
-            if value is not None:
-                return value
-            value = lowered.get(name.lower())
-            if value is not None:
-                return value
-        return None
-
-    def first(name):
-        for elem in root.iter():
-            if local_name(elem.tag) == name:
-                return elem
-        return None
-
-    emisor = first('Emisor')
-    receptor = first('Receptor')
-    tfd = first('TimbreFiscalDigital')
-
-    data = {
-        'subtotal': att(root, 'SubTotal'),
-        'total': att(root, 'Total'),
-        'descuento': att(root, 'Descuento'),
-        'currency': att(root, 'Moneda') or 'MXN',
-        'type_exchange_rate': att(root, 'TipoCambio'),
-        'payment_method': att(root, 'FormaPago'),
-        'metodo_pago': att(root, 'MetodoPago'),
-        'lugar_expedicion': att(root, 'LugarExpedicion'),
-        'tipo_de_comprobante': att(root, 'TipoDeComprobante'),
-        'exportacion': att(root, 'Exportacion'),
-        'folio': att(root, 'Folio'),
-        'no_certificado': att(root, 'NoCertificado'),
-        'condiciones_pago': att(root, 'CondicionesDePago'),
-        'fecha': att(root, 'Fecha'),
-        'sello': att(root, 'Sello'),
-        'rfc_emisor': att(emisor, 'Rfc'),
-        'nombre_emisor': att(emisor, 'Nombre'),
-        'rfc_receptor': att(receptor, 'Rfc'),
-        'nombre_receptor': att(receptor, 'Nombre'),
-        'regimen_fiscal_receptor': att(receptor, 'RegimenFiscalReceptor'),
-        'domicilio_fiscal_receptor': att(receptor, 'DomicilioFiscalReceptor'),
-        'uuid': att(tfd, 'UUID'),
-        'no_certificado_sat': att(tfd, 'NoCertificadoSAT'),
-        'sello_sat': att(tfd, 'SelloSAT'),
-        'rfc_proveedor_certificacion': att(tfd, 'RfcProvCertif'),
-        'certification_date': att(tfd, 'FechaTimbrado'),
-    }
-    try:
-        subtotal = float(data.get('subtotal') or 0)
-        total = float(data.get('total') or 0)
-        data['tax'] = str(max(total - subtotal, 0))
-    except (ValueError, TypeError):
-        data['tax'] = None
-    return data
-
-
 @bp_invoice.route('/upload-xml', methods=['POST'])
 @token_required
 @require_entity_permission('invoice', 'create')
@@ -461,7 +408,13 @@ def upload_xml_invoice(user_data):
             continue
         try:
             xml_bytes = uploaded_file.read()
-            cfdi_data = _parse_cfdi(xml_bytes)
+            cfdi_data = parse_cfdi(xml_bytes)
+            with _transaction_context() as db:
+                duplicate = db.scalars(
+                    _select(Invoice).where(Invoice.folio_fiscal == cfdi_data['uuid'])
+                ).first()
+            if duplicate:
+                raise ValueError('El CFDI ya fue importado')
             payload = {}
             payload['folio_fiscal'] = cfdi_data.get('uuid')
             payload['cfdi_code'] = cfdi_data.get('uuid')

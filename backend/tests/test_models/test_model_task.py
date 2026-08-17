@@ -2,15 +2,17 @@ from __future__ import annotations
 
 from datetime import datetime
 from tests.conftest import BackendTestCase
+from tests.model_factory import build_model
+from app.models.session import transaction_context
 from app.models.task import Task
 
 
 class TestTaskModel(BackendTestCase):
     def test_create_serialize_summary_delete_task(self):
         with transaction_context() as session:
-            item = Task(
+            item = build_model(Task,
             task_code='C1',
-            start_date='datetime.now()',
+            start_date='2026-01-15T12:00:00',
             duration=10.5,
             type='business',
             owner=1,

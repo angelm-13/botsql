@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from datetime import datetime
 from tests.conftest import BackendTestCase
+from tests.model_factory import build_model
+from app.models.session import transaction_context
 from app.models.location_type import LocationType
 
 
 class TestLocationTypeModel(BackendTestCase):
     def test_create_serialize_summary_delete_location_type(self):
         with transaction_context() as session:
-            item = LocationType(
+            item = build_model(LocationType,
             location_type_description='test description',
             created_by=1
             )

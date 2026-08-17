@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from datetime import datetime
 from tests.conftest import BackendTestCase
+from tests.model_factory import build_model
+from app.models.session import transaction_context
 from app.models.brand import Brand
 
 
 class TestBrandModel(BackendTestCase):
     def test_create_serialize_summary_delete_brand(self):
         with transaction_context() as session:
-            item = Brand(
+            item = build_model(Brand,
             brand_description='test description',
             created_by=1
             )

@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from datetime import datetime
 from tests.conftest import BackendTestCase
+from tests.model_factory import build_model
+from app.models.session import transaction_context
 from app.models.customer_supplier import CustomerSupplier
 
 
 class TestCustomerSupplierModel(BackendTestCase):
     def test_create_serialize_summary_delete_customer_supplier(self):
         with transaction_context() as session:
-            item = CustomerSupplier(
+            item = build_model(CustomerSupplier,
             postal_code='00000',
             name='test razon_social',
             title='test title',
@@ -23,7 +25,7 @@ class TestCustomerSupplierModel(BackendTestCase):
             city='test city',
             geographic_state='test state',
             fiscal_type='test fiscal_type',
-            last_fiscal_certification_date='datetime.now()',
+            last_fiscal_certification_date='2026-01-15T12:00:00',
             tax_id='test tax_id',
             type='client',
             created_by=1,

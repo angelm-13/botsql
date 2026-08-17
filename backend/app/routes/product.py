@@ -1,6 +1,7 @@
 from __future__ import annotations
 from flask import Blueprint, jsonify, request
 from app.services.product_service import ProductService
+from app.services.inventory_service import apply_inventory_movement
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
 import os
@@ -148,13 +149,14 @@ def list_product(user_data):
     per_page = int(request.args.get('per_page', 20))
     sort = request.args.get('sort')
     filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort'} and k in ALLOWED_FIELDS}
-    return _jsonify_projected_list(user_data, ProductService.list(page=page, per_page=per_page, filters=filters, sort=sort))
+    return _jsonify_projected_list(user_data, ProductService.list_scoped(user_data, page=page, per_page=per_page, filters=filters, sort=sort))
 
 
 @bp_product.route('/<id_product>', methods=['GET'])
 @token_required
 @require_entity_permission('product', 'read')
 def get_product(user_data, id_product):
+    ProductService.require_record_scope(id_product, user_data)
     return _jsonify_projected_record(user_data, ProductService.get(id_product))
 
 
@@ -163,6 +165,7 @@ def get_product(user_data, id_product):
 @require_entity_permission('product', 'create')
 def create_product(user_data):
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
+    ProductService.require_invoice_scope(payload.get('id_invoice'), user_data)
     return _jsonify_projected_record(user_data, ProductService.create(payload, user_id=user_data.get('id_user')), status=201)
 
 
@@ -171,13 +174,26 @@ def create_product(user_data):
 @require_entity_permission('product', 'update')
 def update_product(user_data, id_product):
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
+    ProductService.require_record_scope(id_product, user_data)
+    if 'id_invoice' in payload:
+        ProductService.require_invoice_scope(payload.get('id_invoice'), user_data)
     return _jsonify_projected_record(user_data, ProductService.update(id_product, payload, user_id=user_data.get('id_user')))
+
+
+@bp_product.route('/<id_product>/inventory-movements', methods=['POST'])
+@token_required
+@require_entity_permission('product', 'update')
+def create_inventory_movement(user_data, id_product):
+    ProductService.require_record_scope(id_product, user_data)
+    movement, created = apply_inventory_movement(id_product, request.get_json() or {}, user_data)
+    return jsonify({'movement': movement, 'idempotent_replay': not created}), (201 if created else 200)
 
 
 @bp_product.route('/<id_product>', methods=['DELETE'])
 @token_required
 @require_entity_permission('product', 'delete')
 def delete_product(user_data, id_product):
+    ProductService.require_record_scope(id_product, user_data)
     return jsonify(ProductService.delete(id_product, user_id=user_data.get('id_user')))
 
 
@@ -185,6 +201,7 @@ def delete_product(user_data, id_product):
 @token_required
 @require_entity_permission('product', 'update')
 def upload_product_image(user_data, id_product):
+    ProductService.require_record_scope(id_product, user_data)
     if request.content_length and request.content_length > _PRODUCT_IMAGE_MAX_BYTES:
         raise AppError('errors.image_too_large', 413, {'max_mb': 5})
     if 'file' not in request.files:

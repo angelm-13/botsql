@@ -65,6 +65,9 @@ from app.routes.entity_permission import bp_entity_permission
 from app.routes.inventory_status import bp_inventory_status
 from app.routes.product_sale_config import bp_product_sale_config
 from app.routes.public_api_key import bp_public_api_key
+from app.routes.stamping import bp_stamping
+from app.routes.client_portal import bp_client_portal
+from app.routes.bank_statements import bp_bank_statements
 
 def _documents_reports_app_path() -> str:
     return os.getenv('DOCUMENTS_REPORTS_APP_PATH', '/documents-reports/app')
@@ -585,6 +588,9 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_inventory_status)
     app.register_blueprint(bp_product_sale_config)
     app.register_blueprint(bp_public_api_key)
+    app.register_blueprint(bp_stamping)
+    app.register_blueprint(bp_client_portal)
+    app.register_blueprint(bp_bank_statements)
     _register_documents_blueprint(app)
 
     @app.route('/uploads/products/<path:filename>')

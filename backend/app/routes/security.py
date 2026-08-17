@@ -8788,6 +8788,10 @@ def my_permissions(user_data):
                 'id_permission': row.id_permission,
                 'entity_name': row.entity_name,
                 'control_type': row.control_type,
+                'menu_location': row.menu_location,
+                'menu_group': row.menu_group,
+                'menu_label': row.menu_label,
+                'menu_order': row.menu_order,
             })
 
         field_permissions = []

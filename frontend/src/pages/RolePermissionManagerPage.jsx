@@ -95,6 +95,7 @@ export default function RolePermissionManagerPage() {
   const [selectedRoleId, setSelectedRoleId] = useState("");
   const [selectedEntity, setSelectedEntity] = useState("");
   const [entityMatrix, setEntityMatrix] = useState({});
+  const [navigationMatrix, setNavigationMatrix] = useState({});
   const [fieldMatrix, setFieldMatrix] = useState({});
   const [roleFormOpen, setRoleFormOpen] = useState(false);
   const [editingRoleId, setEditingRoleId] = useState(null);
@@ -149,13 +150,20 @@ export default function RolePermissionManagerPage() {
 
   useEffect(() => {
     if (!selectedRoleId) {
-      setEntityMatrix({}); setFieldMatrix({});
+      setEntityMatrix({}); setNavigationMatrix({}); setFieldMatrix({});
       return;
     }
     const roleId = Number(selectedRoleId);
     const nextEntityMatrix = {};
+    const nextNavigationMatrix = {};
     entityPermissions.filter((row) => Number(row.id_permission) === roleId).forEach((row) => {
       nextEntityMatrix[row.entity_name] = Number(row.control_type || 0);
+      nextNavigationMatrix[row.entity_name] = {
+        menu_location: row.menu_location || "sidebar",
+        menu_group: row.menu_group || "",
+        menu_label: row.menu_label || "",
+        menu_order: Number(row.menu_order ?? 100)
+      };
     });
     const fieldsById = new Map();
     fields.forEach((field) => {
@@ -170,6 +178,7 @@ export default function RolePermissionManagerPage() {
       if (registry) nextFieldMatrix[`virtual:${fieldRegistryKey(registry.table, registry.name)}`] = Number(row.control_type || 0);
     });
     setEntityMatrix(nextEntityMatrix);
+    setNavigationMatrix(nextNavigationMatrix);
     setFieldMatrix(nextFieldMatrix);
   }, [selectedRoleId, entityPermissions, fieldPermissions, fields]);
 
@@ -359,6 +368,20 @@ export default function RolePermissionManagerPage() {
     setSelectedEntity(entityName);
   }
 
+  function setNavigationValue(entityName, field, value) {
+    setNavigationMatrix((prev) => ({
+      ...prev,
+      [entityName]: {
+        menu_location: "sidebar",
+        menu_group: "",
+        menu_label: "",
+        menu_order: 100,
+        ...(prev[entityName] || {}),
+        [field]: field === "menu_order" ? Number(value || 0) : value
+      }
+    }));
+  }
+
   function setFieldVisible(fieldKey) {
     if (!fieldKey) return;
     setFieldMatrix((prev) => {
@@ -433,7 +456,16 @@ export default function RolePermissionManagerPage() {
     const roleId = roleIdNumber();
     const existing = entityPermissions.find((row) => Number(row.id_permission) === roleId && row.entity_name === entityName);
     if (controlType > 0) {
-      const payload = { id_permission: roleId, entity_name: entityName, control_type: controlType };
+      const navigation = navigationMatrix[entityName] || {};
+      const payload = {
+        id_permission: roleId,
+        entity_name: entityName,
+        control_type: controlType,
+        menu_location: navigation.menu_location || "sidebar",
+        menu_group: String(navigation.menu_group || "").trim() || null,
+        menu_label: String(navigation.menu_label || "").trim() || null,
+        menu_order: Number(navigation.menu_order ?? 100)
+      };
       if (existing?.id_entity_permission) await updateEntityPermission(existing.id_entity_permission, payload);
       else await createEntityPermission(payload);
     } else if (existing?.id_entity_permission) {
@@ -587,16 +619,22 @@ export default function RolePermissionManagerPage() {
             </div>
             <table>
               <thead>
-                <tr><th>{t("common.module", "Módulo")}</th>{ENTITY_ACTIONS.map((action) => <th key={action.key}>{t(`common.${action.key}`, action.label)}</th>)}</tr>
+                <tr><th>{t("common.module", "Módulo")}</th>{ENTITY_ACTIONS.map((action) => <th key={action.key}>{t(`common.${action.key}`, action.label)}</th>)}<th>Ubicación</th><th>Grupo</th><th>Etiqueta</th><th>Orden</th></tr>
               </thead>
               <tbody>
                 {catalog.map((entity) => {
                   const entityName = getEntityName(entity);
                   const value = Number(entityMatrix[entityName] || 0);
+                  const navigation = navigationMatrix[entityName] || {};
+                  const navigationDisabled = !selectedRoleId || value === 0;
                   return (
                     <tr key={entityName} className={selectedEntity === entityName ? "selected-row" : ""} onClick={() => setSelectedEntity(entityName)}>
                       <td><strong>{entityLabel(entity)}</strong>{value === 0 && <small className="muted-text"> {t("common.hidden_module", "Oculto")}</small>}</td>
                       {ENTITY_ACTIONS.map((action) => <td key={action.key}><input type="checkbox" checked={hasBit(value, action.bit)} onChange={() => setEntityBit(entityName, action.bit)} onClick={(event) => event.stopPropagation()} disabled={!selectedRoleId} /></td>)}
+                      <td><select aria-label={`Ubicación de ${entityLabel(entity)}`} value={navigation.menu_location || "sidebar"} onChange={(event) => setNavigationValue(entityName, "menu_location", event.target.value)} onClick={(event) => event.stopPropagation()} disabled={navigationDisabled}><option value="sidebar">Menú vertical</option><option value="settings">Engrane</option><option value="hidden">No mostrar</option></select></td>
+                      <td><input aria-label={`Grupo de ${entityLabel(entity)}`} placeholder="Ej. Contabilidad" value={navigation.menu_group || ""} onChange={(event) => setNavigationValue(entityName, "menu_group", event.target.value)} onClick={(event) => event.stopPropagation()} disabled={navigationDisabled} /></td>
+                      <td><input aria-label={`Etiqueta de ${entityLabel(entity)}`} placeholder={entityLabel(entity)} value={navigation.menu_label || ""} onChange={(event) => setNavigationValue(entityName, "menu_label", event.target.value)} onClick={(event) => event.stopPropagation()} disabled={navigationDisabled} /></td>
+                      <td><input className="menu-order-input" aria-label={`Orden de ${entityLabel(entity)}`} type="number" min="0" value={navigation.menu_order ?? 100} onChange={(event) => setNavigationValue(entityName, "menu_order", event.target.value)} onClick={(event) => event.stopPropagation()} disabled={navigationDisabled} /></td>
                     </tr>
                   );
                 })}

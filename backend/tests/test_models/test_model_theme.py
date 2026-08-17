@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from datetime import datetime
 from tests.conftest import BackendTestCase
+from tests.model_factory import build_model
+from app.models.session import transaction_context
 from app.models.theme import Theme
 
 
 class TestThemeModel(BackendTestCase):
     def test_create_serialize_summary_delete_theme(self):
         with transaction_context() as session:
-            item = Theme(
+            item = build_model(Theme,
             created_by=1,
             tenant_id=1,
             primary_color='#0D47A1',

@@ -2,16 +2,18 @@ from __future__ import annotations
 
 from datetime import datetime
 from tests.conftest import BackendTestCase
+from tests.model_factory import build_model
+from app.models.session import transaction_context
 from app.models.user import User
 
 
 class TestUserModel(BackendTestCase):
     def test_create_serialize_summary_delete_user(self):
         with transaction_context() as session:
-            item = User(
+            item = build_model(User,
             created_by=1,
-            date_born='datetime.now()',
-            date_start='datetime.now()',
+            date_born='2026-01-15T12:00:00',
+            date_start='2026-01-15T12:00:00',
             email='test email',
             first_name='test first_name',
             full_name='test first_name',
@@ -24,7 +26,7 @@ class TestUserModel(BackendTestCase):
             ssn='test ssn',
             supervisor='test_supervisor',
             base_salary=10.5,
-            hire_date='datetime.now()',
+            hire_date='2026-01-15T12:00:00',
             tax_id='test tax_id',
             title='test title',
             user_type='admin',

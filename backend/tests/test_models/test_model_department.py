@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from datetime import datetime
 from tests.conftest import BackendTestCase
+from tests.model_factory import build_model
+from app.models.session import transaction_context
 from app.models.department import Department
 
 
 class TestDepartmentModel(BackendTestCase):
     def test_create_serialize_summary_delete_department(self):
         with transaction_context() as session:
-            item = Department(
+            item = build_model(Department,
             department_description='test description',
             created_by=1
             )
