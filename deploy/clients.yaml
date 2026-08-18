@@ -1,0 +1,19 @@
+# Fuente de verdad de qué clientes están activos.
+#
+# GitHub Actions (.github/workflows/build-images.yml) lee este archivo
+# para saber para cuáles clientes generar imagen de frontend — una por
+# cliente, porque VITE_API_BASE_URL queda horneado en el build de Vite
+# y cada cliente tiene su propio subdominio api-<cliente>-<env>.
+#
+# Agregar una entrada aquí y hacer push a main es todo lo que se
+# necesita para que el pipeline empiece a construirle imagen a un
+# cliente nuevo. Esto NO crea nada en el clúster — eso sigue siendo
+# manual (ver el runbook: k8s/overlays/<cliente>-<env>/).
+#
+# Ejemplo (descomentar y ajustar al dar de alta el primer cliente):
+# clients:
+#   - name: acme       # subdominio resultante: acme-prod.tyakxa.com.mx
+#     env: prod
+#   - name: acme
+#     env: staging
+clients: []

@@ -1,0 +1,110 @@
+# backend, celery-worker y celery-beat comparten la misma imagen de
+# worker (celery-worker y celery-beat literalmente reusan la imagen
+# "worker" — solo cambia el `command`), igual que hoy en
+# docker-compose.yml.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+        - name: backend
+          # kustomize `images:` lo sustituye por ghcr.io/.../tyakxa-tny-backend:<sha>
+          image: BACKEND_IMAGE_PLACEHOLDER
+          envFrom:
+            - secretRef:
+                name: app-secrets
+          ports:
+            - containerPort: 5001
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5001
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+spec:
+  selector:
+    app: backend
+  ports:
+    - port: 5001
+      targetPort: 5001
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: celery-worker
+  template:
+    metadata:
+      labels:
+        app: celery-worker
+    spec:
+      containers:
+        - name: celery-worker
+          image: WORKER_IMAGE_PLACEHOLDER
+          command: ["celery", "-A", "celery_worker.celery", "worker", "--loglevel=INFO"]
+          envFrom:
+            - secretRef:
+                name: app-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 400m
+              memory: 256Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-beat
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # beat guarda su propio estado de scheduler en disco local del pod; dos réplicas duplicarían tareas
+  selector:
+    matchLabels:
+      app: celery-beat
+  template:
+    metadata:
+      labels:
+        app: celery-beat
+    spec:
+      containers:
+        - name: celery-beat
+          image: WORKER_IMAGE_PLACEHOLDER
+          command: ["celery", "-A", "celery_worker.celery", "beat", "--loglevel=INFO"]
+          envFrom:
+            - secretRef:
+                name: app-secrets
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 96Mi

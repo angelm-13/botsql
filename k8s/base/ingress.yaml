@@ -1,0 +1,44 @@
+# Dos hosts, no dos paths: como cada cliente tiene su propio
+# subdominio api-*, no hace falta ordenar rutas /api antes de / (esa
+# regla del clúster es solo para el patrón de un solo origen, como
+# el nginx local de docker-compose.yml). Cada host apunta completo a
+# un único Service.
+#
+# ingressClassName y cert-manager.io/cluster-issuer consumen recursos
+# que YA existen a nivel de clúster (IngressClass "nginx",
+# ClusterIssuers "letsencrypt-prod"/"letsencrypt-staging") — este
+# archivo no los crea ni los modifica.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tyakxa-tny
+  annotations:
+    cert-manager.io/cluster-issuer: ISSUER_PLACEHOLDER # letsencrypt-prod o letsencrypt-staging según env
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: ["APP_HOST_PLACEHOLDER"]
+      secretName: app-tls
+    - hosts: ["API_HOST_PLACEHOLDER"]
+      secretName: api-tls
+  rules:
+    - host: APP_HOST_PLACEHOLDER
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80
+    - host: API_HOST_PLACEHOLDER
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 5001

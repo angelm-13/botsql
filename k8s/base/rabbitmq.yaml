@@ -1,0 +1,57 @@
+# Deployment simple (no StatefulSet): si el pod muere y reaparece con
+# la cola vacía, Celery reintenta las tareas — RabbitMQ no es una
+# fuente de verdad como Postgres, así que no necesita disco persistente
+# ni identidad estable.
+#
+# Sin Ingress: el panel de administración (puerto 15672) no se expone
+# públicamente por cliente — reduce superficie de ataque. Para revisar
+# colas se usa `kubectl port-forward` puntual.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rabbitmq
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: rabbitmq
+  template:
+    metadata:
+      labels:
+        app: rabbitmq
+    spec:
+      containers:
+        - name: rabbitmq
+          image: rabbitmq:3.13-management-alpine
+          envFrom:
+            - secretRef:
+                name: app-secrets # RABBITMQ_DEFAULT_USER / RABBITMQ_DEFAULT_PASS
+          ports:
+            - containerPort: 5672
+            - containerPort: 15672
+          resources:
+            requests:
+              cpu: 100m
+              memory: 150Mi
+            limits:
+              cpu: 400m
+              memory: 320Mi
+          readinessProbe:
+            exec:
+              command: ["rabbitmq-diagnostics", "check_running"]
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+spec:
+  selector:
+    app: rabbitmq
+  ports:
+    - name: amqp
+      port: 5672
+    - name: mgmt
+      port: 15672

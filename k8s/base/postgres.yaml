@@ -1,0 +1,69 @@
+# StatefulSet en vez de Deployment: le da al pod un nombre estable
+# (postgres-0) y una identidad de red predecible, útil para un
+# servicio con estado aunque aquí solo tengamos 1 réplica.
+#
+# 1 réplica + local-path (ReadWriteOnce, atado al nodo): no se puede
+# tener dos pods de Postgres corriendo a la vez sobre el mismo disco,
+# así que Kubernetes debe apagar el pod viejo antes de levantar el
+# nuevo en cualquier actualización — con 1 réplica esto ya se cumple
+# de forma natural con RollingUpdate.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          # Reemplazado por el overlay con la imagen db-init:<sha> que
+          # corresponda (ver infra/docker/db-init.Dockerfile).
+          image: DB_INIT_IMAGE_PLACEHOLDER
+          envFrom:
+            - secretRef:
+                name: app-secrets # DB_NAME, DB_USER, DB_PASSWORD del cliente
+          ports:
+            - containerPort: 5432
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 384Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "$(DB_USER)"]
+            periodSeconds: 10
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: local-path
+        resources:
+          requests:
+            storage: 5Gi # ajusta por cliente si el volumen crece más
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+  clusterIP: None # headless: el StatefulSet no necesita balanceo, solo resolución de nombre
