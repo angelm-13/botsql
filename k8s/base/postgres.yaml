@@ -30,15 +30,13 @@ spec:
           # Reemplazado por el overlay con la imagen db-init:<sha> que
           # corresponda (ver infra/docker/db-init.Dockerfile).
           image: DB_INIT_IMAGE_PLACEHOLDER
-          envFrom:
-            - secretRef:
-                name: app-secrets # DB_NAME, DB_USER, DB_PASSWORD del cliente (los usa el backend)
+          # Sin envFrom a propósito: este contenedor es el motor de Postgres
+          # de terceros, no la app — solo necesita sus propias POSTGRES_*,
+          # traducidas aquí desde el mismo Secret. Inyectarle el resto de
+          # app-secrets (JWT_SECRET, MFA_ENCRYPTION_KEY, credenciales de
+          # RabbitMQ...) le daría acceso a secretos que no usa y que no
+          # debería poder leer si este contenedor se ve comprometido.
           env:
-            # La imagen oficial de postgres no lee DB_NAME/DB_USER/DB_PASSWORD
-            # (esos son los nombres que usa el backend) — necesita sus propias
-            # variables POSTGRES_*, así que se traducen aquí desde el mismo
-            # Secret. Sin esto, el contenedor no inicializa la base y truena
-            # con "superuser password is not specified".
             - name: POSTGRES_DB
               valueFrom: { secretKeyRef: { name: app-secrets, key: DB_NAME } }
             - name: POSTGRES_USER
@@ -57,10 +55,24 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
+          # "$(DB_USER)" NO se sustituye aquí: la expansión $(VAR) de
+          # Kubernetes solo aplica a command/args del contenedor principal,
+          # no a exec.command de un probe (kubernetes/kubernetes#40846) — sin
+          # el "sh -c", pg_isready recibiría el string literal "$(DB_USER)"
+          # como usuario. Con el shell, $POSTGRES_USER sí es una variable de
+          # entorno real de este contenedor y se expande de verdad.
           readinessProbe:
             exec:
-              command: ["pg_isready", "-U", "$(DB_USER)"]
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\""]
+            timeoutSeconds: 5
             periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\""]
+            timeoutSeconds: 5
+            periodSeconds: 20
+            failureThreshold: 3
+            initialDelaySeconds: 15
   volumeClaimTemplates:
     - metadata:
         name: data

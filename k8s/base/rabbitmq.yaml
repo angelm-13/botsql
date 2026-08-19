@@ -28,9 +28,16 @@ spec:
       containers:
         - name: rabbitmq
           image: rabbitmq:3.13-management-alpine
-          envFrom:
-            - secretRef:
-                name: app-secrets # RABBITMQ_DEFAULT_USER / RABBITMQ_DEFAULT_PASS
+          # Sin envFrom a propósito: RabbitMQ solo necesita sus propias
+          # RABBITMQ_DEFAULT_*. Inyectarle el resto de app-secrets (DB_
+          # PASSWORD, JWT_SECRET, MFA_ENCRYPTION_KEY...) le daría acceso a
+          # secretos que no usa y que no debería poder leer si este
+          # contenedor (proceso de terceros) se ve comprometido.
+          env:
+            - name: RABBITMQ_DEFAULT_USER
+              valueFrom: { secretKeyRef: { name: app-secrets, key: RABBITMQ_DEFAULT_USER } }
+            - name: RABBITMQ_DEFAULT_PASS
+              valueFrom: { secretKeyRef: { name: app-secrets, key: RABBITMQ_DEFAULT_PASS } }
           ports:
             - containerPort: 5672
             - containerPort: 15672
@@ -52,6 +59,16 @@ spec:
             timeoutSeconds: 10
             periodSeconds: 15
             initialDelaySeconds: 20
+          livenessProbe:
+            # "ping" es más liviano que "check_running" (no valida que las
+            # colas/plugins estén operativos, solo que el nodo responde) —
+            # suficiente para decidir si hay que reiniciar el contenedor.
+            exec:
+              command: ["rabbitmq-diagnostics", "ping"]
+            timeoutSeconds: 10
+            periodSeconds: 20
+            failureThreshold: 3
+            initialDelaySeconds: 30
 ---
 apiVersion: v1
 kind: Service

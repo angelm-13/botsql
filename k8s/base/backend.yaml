@@ -42,7 +42,19 @@ spec:
             httpGet:
               path: /health
               port: 5001
+            timeoutSeconds: 5
             periodSeconds: 10
+          livenessProbe:
+            # Mismo endpoint que el readinessProbe, con umbrales más laxos:
+            # si /health deja de responder de forma sostenida (colgado, no
+            # solo un pico de carga), se reinicia el contenedor solo.
+            httpGet:
+              path: /health
+              port: 5001
+            timeoutSeconds: 5
+            periodSeconds: 20
+            failureThreshold: 3
+            initialDelaySeconds: 15
 ---
 apiVersion: v1
 kind: Service
@@ -69,11 +81,8 @@ spec:
       labels:
         app: celery-worker
     spec:
-      # Kubernetes inyecta variables tipo BACKEND_PORT=tcp://<ip>:5001 por
-      # cada Service del namespace (compatibilidad con "Docker links").
-      # Choca con BACKEND_PORT que el propio entrypoint.sh espera como
-      # número de puerto — lo desactivamos para que el único BACKEND_PORT
-      # que exista sea el que definimos nosotros (o su default 5001).
+      # Ver nota en el Deployment "backend" de este mismo archivo: evita que
+      # Kubernetes inyecte BACKEND_PORT=tcp://<ip>:5001 desde el Service.
       enableServiceLinks: false
       containers:
         - name: celery-worker
@@ -89,6 +98,16 @@ spec:
             limits:
               cpu: 400m
               memory: 256Mi
+          livenessProbe:
+            # No hay endpoint HTTP en un worker de Celery — "inspect ping"
+            # confirma que el proceso sigue respondiendo a control commands
+            # vía el broker, no solo que el contenedor está vivo.
+            exec:
+              command: ["celery", "-A", "celery_worker.celery", "inspect", "ping", "--timeout=8"]
+            timeoutSeconds: 10
+            periodSeconds: 30
+            failureThreshold: 3
+            initialDelaySeconds: 30
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -106,14 +125,17 @@ spec:
       labels:
         app: celery-beat
     spec:
-      # Kubernetes inyecta variables tipo BACKEND_PORT=tcp://<ip>:5001 por
-      # cada Service del namespace (compatibilidad con "Docker links").
-      # Choca con BACKEND_PORT que el propio entrypoint.sh espera como
-      # número de puerto — lo desactivamos para que el único BACKEND_PORT
-      # que exista sea el que definimos nosotros (o su default 5001).
+      # Ver nota en el Deployment "backend" de este mismo archivo: evita que
+      # Kubernetes inyecte BACKEND_PORT=tcp://<ip>:5001 desde el Service.
       enableServiceLinks: false
       containers:
         - name: celery-beat
+          # Sin livenessProbe propia a propósito: beat no expone nada por
+          # red ni responde a "celery inspect" (eso es para workers). Si el
+          # proceso truena, el contenedor termina y restartPolicy lo levanta
+          # solo — el caso que sí nos falta cubrir (colgado sin salir del
+          # proceso) no tiene un chequeo liviano y confiable sin agregar
+          # tooling extra; queda como pendiente si se vuelve un problema real.
           image: WORKER_IMAGE_PLACEHOLDER
           command: ["celery", "-A", "celery_worker.celery", "beat", "--loglevel=INFO"]
           envFrom:
