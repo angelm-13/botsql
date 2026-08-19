@@ -44,7 +44,14 @@ spec:
           readinessProbe:
             exec:
               command: ["rabbitmq-diagnostics", "check_running"]
-            periodSeconds: 10
+            # rabbitmq-diagnostics arranca su propio nodo Erlang de corta
+            # vida para consultar al broker — con timeoutSeconds: 1 (el
+            # default de Kubernetes) casi siempre truena por timeout antes
+            # de terminar, sobre todo con solo 100m de CPU. No es que el
+            # check falle, es que nunca lo dejamos terminar.
+            timeoutSeconds: 10
+            periodSeconds: 15
+            initialDelaySeconds: 20
 ---
 apiVersion: v1
 kind: Service
