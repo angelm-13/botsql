@@ -8,10 +8,19 @@
 #      horneado en el build de Vite y cada cliente tiene su propio
 #      subdominio api-<cliente>-<env>.tyakxa.com.mx.
 #
-# Este workflow solo construye y publica imágenes en ghcr.io/tyakxa.
-# No aplica nada al clúster: actualizar el tag en el overlay y correr
-# `kubectl apply -k` se deja manual a propósito, para no perder el
-# hábito de "cambiar la etiqueta en el manifiesto y commitear".
+# Este workflow construye y publica imágenes en ghcr.io/tyakxa.
+#
+# Para namespaces de CLIENTES reales, aplicar al clúster sigue siendo
+# manual a propósito (actualizar el tag en el overlay, commitear, y
+# `kubectl apply -k` a mano) — no perder el hábito de "cambiar la
+# etiqueta en el manifiesto y commitear" antes de tener semanas de
+# evidencia de que el pipeline no rompe nada.
+#
+# tyakxa-dev es la excepción: es el entorno interno de pruebas (no un
+# cliente real, ver deploy/clients.yaml), así que el job
+# "deploy-tyakxa-dev" de abajo sí actualiza el overlay y aplica solo,
+# en cada push — es justo el lugar de bajo riesgo pensado para curtir
+# la automatización antes de confiar en ella para un cliente real.
 name: build-images
 
 on:
@@ -52,6 +61,8 @@ jobs:
   # Imágenes client-agnósticas: se construyen una sola vez por commit.
   backend-and-worker:
     runs-on: ubuntu-latest
+    outputs:
+      sha_short: ${{ steps.meta.outputs.sha_short }} # lo usa deploy-tyakxa-dev
     steps:
       - uses: actions/checkout@v4
 
@@ -124,3 +135,57 @@ jobs:
           build-args: |
             VITE_API_BASE_URL=https://api-${{ matrix.name }}-${{ matrix.env }}.tyakxa.com.mx
           tags: ghcr.io/tyakxa/tyakxa-tny-frontend:${{ steps.meta.outputs.sha_short }}-${{ matrix.name }}-${{ matrix.env }}
+
+  # CD completo, pero SOLO para tyakxa-dev (ver el comentario del
+  # encabezado de este archivo — cualquier cliente real sigue siendo
+  # manual). Actualiza el tag en el overlay, lo commitea de vuelta al
+  # repo (así el manifiesto siempre refleja lo que está corriendo, sin
+  # depender de `kubectl set image`), y por último dispara el apply en
+  # el servidor por SSH.
+  deploy-tyakxa-dev:
+    needs: [backend-and-worker, frontend-por-cliente]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # necesario para poder commitear el tag nuevo de vuelta al repo
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Actualizar el tag de las 4 imágenes en el overlay de tyakxa-dev
+        env:
+          SHA: ${{ needs.backend-and-worker.outputs.sha_short }}
+        run: |
+          set -euo pipefail
+          OVERLAY=k8s/overlays/tyakxa-dev/kustomization.yaml
+          yq -i '(.images[] | select(.name == "DB_INIT_IMAGE_PLACEHOLDER")).newTag = strenv(SHA)' "$OVERLAY"
+          yq -i '(.images[] | select(.name == "BACKEND_IMAGE_PLACEHOLDER")).newTag = strenv(SHA)' "$OVERLAY"
+          yq -i '(.images[] | select(.name == "WORKER_IMAGE_PLACEHOLDER")).newTag = strenv(SHA)' "$OVERLAY"
+          yq -i '(.images[] | select(.name == "FRONTEND_IMAGE_PLACEHOLDER")).newTag = strenv(SHA) + "-tyakxa-dev"' "$OVERLAY"
+
+      - name: Commitear el tag nuevo
+        env:
+          SHA: ${{ needs.backend-and-worker.outputs.sha_short }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add k8s/overlays/tyakxa-dev/kustomization.yaml
+          if git diff --cached --quiet; then
+            echo "El overlay ya tenía este tag, nada que commitear."
+          else
+            git commit -m "deploy(tyakxa-dev): actualizar a ${SHA}"
+            git push
+          fi
+
+      - name: Aplicar en el servidor
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+          SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
+        run: |
+          set -euo pipefail
+          install -m 600 -D /dev/null ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          # El comando que se manda aquí es irrelevante: en el servidor,
+          # authorized_keys fuerza SIEMPRE /home/alanp/deploy-tyakxa-dev.sh
+          # para esta llave, sin importar qué se pida en la conexión.
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "$SSH_USER@$SSH_HOST" true
