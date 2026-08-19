@@ -22,6 +22,9 @@ spec:
       labels:
         app: rabbitmq
     spec:
+      # Ver nota en backend.yaml: evita que Kubernetes inyecte variables
+      # tipo <SERVICE>_PORT de otros Services del namespace.
+      enableServiceLinks: false
       containers:
         - name: rabbitmq
           image: rabbitmq:3.13-management-alpine

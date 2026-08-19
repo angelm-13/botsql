@@ -22,6 +22,9 @@ spec:
       labels:
         app: postgres
     spec:
+      # Ver nota en backend.yaml: evita que Kubernetes inyecte variables
+      # tipo <SERVICE>_PORT de otros Services del namespace.
+      enableServiceLinks: false
       containers:
         - name: postgres
           # Reemplazado por el overlay con la imagen db-init:<sha> que

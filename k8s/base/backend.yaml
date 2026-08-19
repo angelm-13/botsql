@@ -16,6 +16,12 @@ spec:
       labels:
         app: backend
     spec:
+      # Kubernetes inyecta variables tipo BACKEND_PORT=tcp://<ip>:5001 por
+      # cada Service del namespace (compatibilidad con "Docker links").
+      # Choca con BACKEND_PORT que el propio entrypoint.sh espera como
+      # número de puerto — lo desactivamos para que el único BACKEND_PORT
+      # que exista sea el que definimos nosotros (o su default 5001).
+      enableServiceLinks: false
       containers:
         - name: backend
           # kustomize `images:` lo sustituye por ghcr.io/.../tyakxa-tny-backend:<sha>
@@ -63,6 +69,12 @@ spec:
       labels:
         app: celery-worker
     spec:
+      # Kubernetes inyecta variables tipo BACKEND_PORT=tcp://<ip>:5001 por
+      # cada Service del namespace (compatibilidad con "Docker links").
+      # Choca con BACKEND_PORT que el propio entrypoint.sh espera como
+      # número de puerto — lo desactivamos para que el único BACKEND_PORT
+      # que exista sea el que definimos nosotros (o su default 5001).
+      enableServiceLinks: false
       containers:
         - name: celery-worker
           image: WORKER_IMAGE_PLACEHOLDER
@@ -94,6 +106,12 @@ spec:
       labels:
         app: celery-beat
     spec:
+      # Kubernetes inyecta variables tipo BACKEND_PORT=tcp://<ip>:5001 por
+      # cada Service del namespace (compatibilidad con "Docker links").
+      # Choca con BACKEND_PORT que el propio entrypoint.sh espera como
+      # número de puerto — lo desactivamos para que el único BACKEND_PORT
+      # que exista sea el que definimos nosotros (o su default 5001).
+      enableServiceLinks: false
       containers:
         - name: celery-beat
           image: WORKER_IMAGE_PLACEHOLDER

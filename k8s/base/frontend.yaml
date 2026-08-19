@@ -15,6 +15,9 @@ spec:
       labels:
         app: frontend
     spec:
+      # Ver nota en backend.yaml: evita que Kubernetes inyecte variables
+      # tipo <SERVICE>_PORT de otros Services del namespace.
+      enableServiceLinks: false
       containers:
         - name: frontend
           # kustomize `images:` lo sustituye por
