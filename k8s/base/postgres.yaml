@@ -29,7 +29,19 @@ spec:
           image: DB_INIT_IMAGE_PLACEHOLDER
           envFrom:
             - secretRef:
-                name: app-secrets # DB_NAME, DB_USER, DB_PASSWORD del cliente
+                name: app-secrets # DB_NAME, DB_USER, DB_PASSWORD del cliente (los usa el backend)
+          env:
+            # La imagen oficial de postgres no lee DB_NAME/DB_USER/DB_PASSWORD
+            # (esos son los nombres que usa el backend) — necesita sus propias
+            # variables POSTGRES_*, así que se traducen aquí desde el mismo
+            # Secret. Sin esto, el contenedor no inicializa la base y truena
+            # con "superuser password is not specified".
+            - name: POSTGRES_DB
+              valueFrom: { secretKeyRef: { name: app-secrets, key: DB_NAME } }
+            - name: POSTGRES_USER
+              valueFrom: { secretKeyRef: { name: app-secrets, key: DB_USER } }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: app-secrets, key: DB_PASSWORD } }
           ports:
             - containerPort: 5432
           resources:
