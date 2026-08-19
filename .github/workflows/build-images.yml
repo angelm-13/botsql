@@ -173,7 +173,16 @@ jobs:
             echo "El overlay ya tenía este tag, nada que commitear."
           else
             git commit -m "deploy(tyakxa-dev): actualizar a ${SHA}"
-            git push
+            # git fetch + rebase antes de empujar: un "re-run" de un workflow
+            # viejo reusa el commit ORIGINAL que lo disparó, no la punta
+            # actual de la rama — sin esto, el push queda "atrasado" respecto
+            # al remoto (rejected, fetch first) si la rama avanzó desde
+            # entonces. Con el rebase, si el cambio ya existe upstream
+            # (mismo SHA ya aplicado), el commit queda vacío y se descarta
+            # solo; si no existe, se reaplica limpio sobre lo más reciente.
+            git fetch origin "${GITHUB_REF_NAME}"
+            git rebase "origin/${GITHUB_REF_NAME}"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
           fi
 
       - name: Aplicar en el servidor
