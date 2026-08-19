@@ -1,4 +1,4 @@
-# Construye lo que cambia con cada commit a main:
+# Construye lo que cambia con cada commit:
 #
 #   1. backend + worker + db-init  -> una sola vez, son iguales para
 #      todos los clientes (la configuración por cliente entra en
@@ -16,7 +16,19 @@ name: build-images
 
 on:
   push:
-    branches: [main]
+    # Por ahora el despliegue se hace desde initAlan, no desde main
+    # (todavía no hay PR) — se deja "main" en la lista para que el
+    # día que se mergee, este mismo trigger siga funcionando sin
+    # tocar nada. Quitar "initAlan" cuando esa rama deje de ser la
+    # fuente de los despliegues.
+    branches: [main, initAlan]
+  # workflow_dispatch queda para cuando este archivo ya viva en main:
+  # GitHub solo permite dispararlo a mano (CLI/API) desde OTRAS ramas
+  # si el workflow ya existe en la rama default — hoy, con initAlan
+  # como rama de trabajo, este trigger no es utilizable todavía. El
+  # trigger de "push" de arriba es el que de verdad funciona mientras
+  # tanto.
+  workflow_dispatch: {}
 
 permissions:
   contents: read
