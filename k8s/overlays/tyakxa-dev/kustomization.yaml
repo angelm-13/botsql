@@ -9,16 +9,16 @@ resources:
 images:
   - name: DB_INIT_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-db-init
-    newTag: "0a00c2f"
+    newTag: "386dd5d"
   - name: BACKEND_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-backend
-    newTag: "0a00c2f"
+    newTag: "386dd5d"
   - name: WORKER_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-worker
-    newTag: "0a00c2f"
+    newTag: "386dd5d"
   - name: FRONTEND_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-frontend
-    newTag: "0a00c2f-tyakxa-dev"
+    newTag: "386dd5d-tyakxa-dev"
 # letsencrypt-staging a propósito: es la primera vez que se aplica este
 # overlay, así que es probable que haya que reintentar (DNS, typos, etc.)
 # antes de que quede bien. Cambiar a letsencrypt-prod solo cuando ya haya
