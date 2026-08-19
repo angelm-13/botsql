@@ -5,15 +5,15 @@
 # cliente, porque VITE_API_BASE_URL queda horneado en el build de Vite
 # y cada cliente tiene su propio subdominio api-<cliente>-<env>.
 #
-# Agregar una entrada aquí y hacer push a main es todo lo que se
-# necesita para que el pipeline empiece a construirle imagen a un
-# cliente nuevo. Esto NO crea nada en el clúster — eso sigue siendo
-# manual (ver el runbook: k8s/overlays/<cliente>-<env>/).
+# Agregar una entrada aquí y hacer push es todo lo que se necesita
+# para que el pipeline empiece a construirle imagen a un cliente
+# nuevo. Esto NO crea nada en el clúster — eso sigue siendo manual
+# (ver el runbook: k8s/overlays/<cliente>-<env>/).
 #
-# Ejemplo (descomentar y ajustar al dar de alta el primer cliente):
-# clients:
-#   - name: acme       # subdominio resultante: acme-prod.tyakxa.com.mx
-#     env: prod
-#   - name: acme
-#     env: staging
-clients: []
+# "tyakxa" / "dev" no es un cliente real: es el entorno interno de
+# pruebas para validar todo el flujo de despliegue antes de dar de
+# alta al primer cliente real. Namespace y dominios resultantes:
+# tyakxa-dev.tyakxa.com.mx / api-tyakxa-dev.tyakxa.com.mx
+clients:
+  - name: tyakxa
+    env: dev
