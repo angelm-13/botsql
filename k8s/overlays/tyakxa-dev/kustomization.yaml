@@ -4,8 +4,6 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: tyakxa-dev
-resources:
-  - ../../base
 images:
   - name: DB_INIT_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-db-init
@@ -19,27 +17,20 @@ images:
   - name: FRONTEND_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-frontend
     newTag: "386dd5d-tyakxa-dev"
-# letsencrypt-staging a propósito: es la primera vez que se aplica este
-# overlay, así que es probable que haya que reintentar (DNS, typos, etc.)
-# antes de que quede bien. Cambiar a letsencrypt-prod solo cuando ya haya
-# certificado válido emitido en staging y todo funcione.
+
+# El dominio real que dieron para pruebas (sistema-test.torredigital.com.mx)
+# es UN SOLO dominio, no el patrón de dos subdominios de base/ingress.yaml
+# — por eso ese Ingress del base se elimina aquí y se agrega
+# ingress-single-origin.yaml en su lugar (ver ese archivo para el porqué
+# de los dos objetos Ingress).
+resources:
+  - ../../base
+  - ingress-single-origin.yaml
+
 patches:
-  - target:
+  - patch: |-
+      apiVersion: networking.k8s.io/v1
       kind: Ingress
-      name: tyakxa-tny
-    patch: |-
-      - op: replace
-        path: /metadata/annotations/cert-manager.io~1cluster-issuer
-        value: letsencrypt-staging
-      - op: replace
-        path: /spec/tls/0/hosts/0
-        value: tyakxa-dev.tyakxa.com.mx
-      - op: replace
-        path: /spec/tls/1/hosts/0
-        value: api-tyakxa-dev.tyakxa.com.mx
-      - op: replace
-        path: /spec/rules/0/host
-        value: tyakxa-dev.tyakxa.com.mx
-      - op: replace
-        path: /spec/rules/1/host
-        value: api-tyakxa-dev.tyakxa.com.mx
+      metadata:
+        name: tyakxa-tny
+      $patch: delete

@@ -132,8 +132,11 @@ jobs:
           file: infra/docker/frontend.Dockerfile
           target: prod
           push: true
+          # api_base_url viene tal cual de deploy/clients.yaml (ver el
+          # comentario ahí) — puede ser la URL de dos subdominios de un
+          # cliente real, o vacío para un solo origen con /api relativo.
           build-args: |
-            VITE_API_BASE_URL=https://api-${{ matrix.name }}-${{ matrix.env }}.tyakxa.com.mx
+            VITE_API_BASE_URL=${{ matrix.api_base_url }}
           tags: ghcr.io/tyakxa/tyakxa-tny-frontend:${{ steps.meta.outputs.sha_short }}-${{ matrix.name }}-${{ matrix.env }}
 
   # CD completo, pero SOLO para tyakxa-dev (ver el comentario del
