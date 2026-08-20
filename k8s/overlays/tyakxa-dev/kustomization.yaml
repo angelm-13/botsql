@@ -17,7 +17,7 @@ images:
   - name: FRONTEND_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-frontend
     newTag: "4873db6-tyakxa-dev"
-# El dominio real que dieron para pruebas (sistema-test.torredigital.com.mx)
+# El dominio real que dieron para pruebas (sistema-test.torredigital.mx)
 # es UN SOLO dominio, no el patrón de dos subdominios de base/ingress.yaml
 # — por eso ese Ingress del base se elimina aquí y se agrega
 # ingress-single-origin.yaml en su lugar (ver ese archivo para el porqué

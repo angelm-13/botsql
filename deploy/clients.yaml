@@ -21,7 +21,7 @@
 # "tyakxa" / "dev" no es un cliente real: es el entorno interno de
 # pruebas para validar todo el flujo de despliegue antes de dar de
 # alta al primer cliente real. Dominio real (un solo origen, dado por
-# Tanya): sistema-test.torredigital.com.mx — no tyakxa.com.mx.
+# Tanya): sistema-test.torredigital.mx — no tyakxa.com.mx.
 clients:
   - name: tyakxa
     env: dev

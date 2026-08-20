@@ -1,4 +1,4 @@
-# Overlay de tyakxa-dev con UN SOLO dominio (torredigital.com.mx), no dos
+# Overlay de tyakxa-dev con UN SOLO dominio (torredigital.mx), no dos
 # subdominios como en base/ingress.yaml — ese patrón de dos subdominios es
 # para el ERP con clientes reales bajo tyakxa.com.mx. Aquí solo se dio un
 # dominio, así que replicamos el patrón de "un solo origen con /api" que
@@ -20,10 +20,10 @@ metadata:
 spec:
   ingressClassName: nginx
   tls:
-    - hosts: ["sistema-test.torredigital.com.mx"]
+    - hosts: ["sistema-test.torredigital.mx"]
       secretName: sistema-test-tls
   rules:
-    - host: sistema-test.torredigital.com.mx
+    - host: sistema-test.torredigital.mx
       http:
         paths:
           # Mismos accesos directos que ya expone el nginx local, sin
@@ -51,10 +51,10 @@ metadata:
 spec:
   ingressClassName: nginx
   tls:
-    - hosts: ["sistema-test.torredigital.com.mx"]
+    - hosts: ["sistema-test.torredigital.mx"]
       secretName: sistema-test-tls # mismo Secret que ya gestiona el otro Ingress
   rules:
-    - host: sistema-test.torredigital.com.mx
+    - host: sistema-test.torredigital.mx
       http:
         paths:
           # /api/lo-que-sea -> el backend recibe /lo-que-sea (sin el
