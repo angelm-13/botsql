@@ -167,12 +167,31 @@ spec:
             # No hay endpoint HTTP en un worker de Celery — "inspect ping"
             # confirma que el proceso sigue respondiendo a control commands
             # vía el broker, no solo que el contenedor está vivo.
+            #
+            # Los umbrales de antes (timeoutSeconds 10, periodSeconds 30)
+            # mataban a un worker SANO cada ~30 s: el evento decía
+            # "command timed out ... after 10s" y el log del contenedor
+            # terminaba en "ready." + "Warm shutdown", o sea que el proceso
+            # estaba bien. El coste del chequeo no es el ping en sí, es
+            # arrancar otro intérprete de Python que importa toda la app
+            # (Flask + modelos) con 400m de CPU — eso solo ya se acercaba
+            # a los 10 s.
+            #
+            # -d celery@$(hostname) limita la espera a ESTE worker: sin
+            # destino, el comando aguarda su --timeout completo por si
+            # contesta algún otro nodo. Va con "sh -c" porque hace falta
+            # una shell real para expandir $(hostname) — la sustitución
+            # $(VAR) de Kubernetes no aplica a exec.command (misma razón
+            # que el probe de postgres.yaml).
             exec:
-              command: ["celery", "-A", "celery_worker.celery", "inspect", "ping", "--timeout=8"]
-            timeoutSeconds: 10
-            periodSeconds: 30
+              command:
+                - sh
+                - -c
+                - celery -A celery_worker.celery inspect ping -d "celery@$(hostname)" --timeout=15
+            timeoutSeconds: 30
+            periodSeconds: 60
             failureThreshold: 3
-            initialDelaySeconds: 30
+            initialDelaySeconds: 60
 ---
 apiVersion: apps/v1
 kind: Deployment
