@@ -22,6 +22,71 @@ spec:
       # número de puerto — lo desactivamos para que el único BACKEND_PORT
       # que exista sea el que definimos nosotros (o su default 5001).
       enableServiceLinks: false
+      # Aplica database/migrations/*.sql ANTES de que arranque el backend.
+      #
+      # Por qué existe: init.sql solo se ejecuta cuando el volumen de
+      # Postgres nace vacío (/docker-entrypoint-initdb.d), así que los ALTER
+      # posteriores nunca llegaban a una base ya creada. El modelo quedaba
+      # adelantado respecto al esquema y cualquier SELECT sobre una columna
+      # nueva reventaba con UndefinedColumn -> 500 errors.internal_server_error.
+      #
+      # Por qué un initContainer y no un Job: corre en cada arranque del pod,
+      # así que el esquema se auto-repara en cada despliegue y cada namespace
+      # nuevo nace completo, sin un paso manual que se pueda olvidar. Un Job
+      # tendría que borrarse y recrearse en cada apply (campos inmutables).
+      #
+      # Es seguro repetirlo: las 9 migraciones son idempotentes
+      # (IF NOT EXISTS, y los ADD CONSTRAINT van dentro de
+      # DO $$ ... EXCEPTION WHEN duplicate_object THEN NULL; END $$).
+      initContainers:
+        - name: db-migrate
+          # Misma imagen db-init que usa Postgres: ya trae psql, pg_isready
+          # y las migraciones en /migrations (ver infra/docker/db-init.Dockerfile).
+          image: DB_INIT_IMAGE_PLACEHOLDER
+          env:
+            - name: PGHOST
+              value: postgres
+            - name: PGDATABASE
+              valueFrom: { secretKeyRef: { name: app-secrets, key: DB_NAME } }
+            - name: PGUSER
+              valueFrom: { secretKeyRef: { name: app-secrets, key: DB_USER } }
+            - name: PGPASSWORD
+              valueFrom: { secretKeyRef: { name: app-secrets, key: DB_PASSWORD } }
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              # Postgres puede tardar en estar listo (volumen local-path,
+              # primer arranque con el esquema completo). Se espera hasta
+              # 180 s y si no, se falla ruidosamente: Kubernetes reintenta
+              # el initContainer y el motivo queda en los logs, en vez de
+              # quedarse colgado en silencio.
+              i=0
+              until pg_isready -q; do
+                i=$((i + 3))
+                if [ "$i" -ge 180 ]; then
+                  echo "db-migrate: Postgres no respondio en 180s, abortando"
+                  exit 1
+                fi
+                echo "db-migrate: esperando a Postgres..."
+                sleep 3
+              done
+              # Orden lexicografico = orden cronologico, por el prefijo de
+              # timestamp en el nombre. ON_ERROR_STOP=1 para que un error
+              # real detenga el arranque en vez de dejar el esquema a medias.
+              for f in /migrations/*.sql; do
+                echo "db-migrate: aplicando $(basename "$f")"
+                psql -v ON_ERROR_STOP=1 -q -f "$f"
+              done
+              echo "db-migrate: esquema al dia"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 300m
+              memory: 128Mi
       containers:
         - name: backend
           # kustomize `images:` lo sustituye por ghcr.io/.../tyakxa-tny-backend:<sha>

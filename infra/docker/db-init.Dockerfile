@@ -20,3 +20,14 @@ COPY database/init.sql /docker-entrypoint-initdb.d/01-init.sql
 # real se crea con `python init_db.py` después de desplegar (ver el
 # runbook, paso "Confirma el certificado y crea el admin real").
 COPY database/sync_fields.sql /docker-entrypoint-initdb.d/02-sync-fields.sql
+
+# Las migraciones van FUERA de /docker-entrypoint-initdb.d/ a propósito.
+# Ahí solo se ejecutarían la primera vez que el volumen está vacío, y el
+# problema que resuelven es justamente el contrario: una base que YA existe
+# y se quedó con el esquema de init.sql, sin los ALTER posteriores. Quien
+# las aplica es el initContainer del backend (ver k8s/base/backend.yaml),
+# que corre en cada arranque contra el Postgres ya levantado.
+#
+# Esta imagen es postgres:16-alpine, así que ya trae psql y pg_isready —
+# no hace falta otra imagen para el initContainer.
+COPY database/migrations/ /migrations/
