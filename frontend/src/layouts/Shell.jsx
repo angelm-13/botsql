@@ -40,6 +40,7 @@ const navItems = [
   { path: "/payroll_detail", key: "menu.payroll_detail" },
   { path: "/payroll_movement", key: "menu.payroll_movement" },
   { path: "/payroll_period", key: "menu.payroll_period" },
+  { path: "/kronos", key: "menu.kronos", label: "Asistencias", entityName: "payroll_period" },
   { path: "/permission", key: "menu.permission" },
   { path: "/product", key: "menu.product" },
   { path: "/product_family", key: "menu.product_family" },
@@ -117,7 +118,7 @@ export default function Shell() {
     const path = item.path;
     if (["/bank", "/bank_account", "/movement"].includes(path)) return "Bancos";
     if (path.startsWith("/invoice") || path.startsWith("/fiscal") || path === "/quotation" || path === "/authorization_tracking") return "Contabilidad";
-    if (path.startsWith("/payroll")) return "Recursos humanos";
+    if (path.startsWith("/payroll") || path === "/kronos") return "Recursos humanos";
     if (["/proyect", "/incident", "/incident_detail", "/task", "/task_note", "/service", "/template"].includes(path)) return "Operaciones";
     if (["/material", "/location", "/product", "/inventory_status", "/unit", "/brand"].includes(path)) return "Inventario";
     return "Configuración";

@@ -161,7 +161,8 @@
     "quotation": "Quotations",
     "authorization_tracking": "Authorization / Tracking",
     "catalogo_web": "Web Catalog",
-    "web_shoppers": "Web Shoppers"
+    "web_shoppers": "Web Shoppers",
+    "kronos": "Attendance"
   },
   "quotation": {
     "title": "Quotations",

@@ -60,6 +60,7 @@ import TicketPage from "./pages/TicketPage.jsx";
 import UnitPage from "./pages/UnitPage.jsx";
 import UserPage from "./pages/UserPage.jsx";
 import UserMfaPage from "./pages/UserMfaPage.jsx";
+import KronosPage from "./pages/KronosPage.jsx";
 import Kanban from './components/Kanban.jsx';
 import LoginPage from "./auth/LoginPage";
 import ProtectedRoute from "./auth/ProtectedRoute";
@@ -162,6 +163,7 @@ export default function App() {
           <Route path="/payroll_detail" element={<RoleAccessRoute entityName="payroll_detail"><PayrollDetailPage /></RoleAccessRoute>} />
           <Route path="/payroll_movement" element={<RoleAccessRoute entityName="payroll_movement"><PayrollMovementPage /></RoleAccessRoute>} />
           <Route path="/payroll_period" element={<RoleAccessRoute entityName="payroll_period"><PayrollPeriodPage /></RoleAccessRoute>} />
+          <Route path="/kronos" element={<RoleAccessRoute entityName="payroll_period"><KronosPage /></RoleAccessRoute>} />
           <Route path="/permission" element={<RoleAccessRoute entityName="permission"><PermissionPage /></RoleAccessRoute>} />
           <Route path="/product" element={<RoleAccessRoute entityName="product"><ProductPage /></RoleAccessRoute>} />
           <Route path="/product_family" element={<RoleAccessRoute entityName="product_family"><ProductFamilyPage /></RoleAccessRoute>} />

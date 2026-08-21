@@ -161,7 +161,8 @@
     "quotation": "Cotizaciones",
     "authorization_tracking": "Autorización / Seguimiento",
     "catalogo_web": "Catálogo Web",
-    "web_shoppers": "Compradores Web"
+    "web_shoppers": "Compradores Web",
+    "kronos": "Asistencias"
   },
   "quotation": {
     "title": "Cotizaciones",

@@ -161,7 +161,8 @@
     "quotation": "Angebote",
     "authorization_tracking": "Autorisierung / Nachverfolgung",
     "catalogo_web": "Webkatalog",
-    "web_shoppers": "Web-Käufer"
+    "web_shoppers": "Web-Käufer",
+    "kronos": "Anwesenheit"
   },
   "quotation": {
     "title": "Angebote",

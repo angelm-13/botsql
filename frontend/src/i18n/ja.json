@@ -161,7 +161,8 @@
     "quotation": "見積",
     "authorization_tracking": "承認 / 追跡",
     "catalogo_web": "Webカタログ",
-    "web_shoppers": "Web購入者"
+    "web_shoppers": "Web購入者",
+    "kronos": "勤怠"
   },
   "quotation": {
     "title": "見積",

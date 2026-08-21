@@ -364,3 +364,7 @@ export const getWebShoppers = (params = {}) => request("/web-shoppers", { params
 export const getWebShopper = (id) => request(`/web-shoppers/${id}`);
 export const deactivateWebShopper = (id) => request(`/web-shoppers/${id}/deactivate`, { method: "PATCH" });
 export const reactivateWebShopper = (id) => request(`/web-shoppers/${id}/reactivate`, { method: "PATCH" });
+export const getKronosAttendance = (payload) => request("/kronos/attendance", { method: "POST", body: payload });
+export const getKronosPeople = (payload) => request("/kronos/people", { method: "POST", body: payload });
+export const saveKronosPerson = (payload) => request("/kronos/people", { method: "PUT", body: payload });
+export const deleteKronosPerson = (employeeNo, payload) => request(`/kronos/people/${encodeURIComponent(employeeNo)}`, { method: "DELETE", body: payload });

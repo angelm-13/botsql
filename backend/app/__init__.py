@@ -68,6 +68,7 @@ from app.routes.public_api_key import bp_public_api_key
 from app.routes.stamping import bp_stamping
 from app.routes.client_portal import bp_client_portal
 from app.routes.bank_statements import bp_bank_statements
+from app.routes.kronos import bp_kronos
 
 def _documents_reports_app_path() -> str:
     return os.getenv('DOCUMENTS_REPORTS_APP_PATH', '/documents-reports/app')
@@ -591,6 +592,7 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_stamping)
     app.register_blueprint(bp_client_portal)
     app.register_blueprint(bp_bank_statements)
+    app.register_blueprint(bp_kronos)
     _register_documents_blueprint(app)
 
     @app.route('/uploads/products/<path:filename>')
