@@ -27,6 +27,7 @@ class Invoice(Base):
     tax: Mapped[float] = mapped_column(Numeric(10,2), nullable=True)
     total: Mapped[float] = mapped_column(Numeric(10,2), nullable=True)
     invoice_status: Mapped[object] = mapped_column(String(20), nullable=True)
+    invoice_direction: Mapped[object] = mapped_column(String(20), nullable=True)
     payment_method: Mapped[object] = mapped_column(String(50), nullable=True)
     note: Mapped[object] = mapped_column(String(300), nullable=True)
     id_customer_supplier: Mapped[int] = mapped_column(Integer, ForeignKey('customer_supplier.id_customer_supplier'), nullable=False)
@@ -84,6 +85,7 @@ class Invoice(Base):
             'tax': to_json_value(self.tax),
             'total': to_json_value(self.total),
             'invoice_status': to_json_value(self.invoice_status),
+            'invoice_direction': to_json_value(self.invoice_direction),
             'payment_method': to_json_value(self.payment_method),
             'note': to_json_value(self.note),
             'id_customer_supplier': to_json_value(self.id_customer_supplier),

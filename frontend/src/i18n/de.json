@@ -101,6 +101,8 @@
     "field_visibility_hint": "Markieren Sie die Felder, die für diese Rolle sichtbar sein sollen. Nicht markierte Felder bleiben ausgeblendet.",
     "module_hidden_hint": "Für dieses Modul sind keine Aktionen ausgewählt; es bleibt ausgeblendet und seine Felder werden nicht angezeigt.",
     "no_fields_available": "Für dieses Modul sind keine konfigurierbaren Felder verfügbar.",
+    "actions_only_module": "Berechtigungen nach Aktion verwaltet",
+    "actions_only_hint": "Dieser Arbeitsbereich bietet keine Feldberechtigungen. Verwenden Sie Erstellen, Lesen, Aktualisieren und Löschen in der Tabelle oben.",
     "mfa_reset": "MFA zurücksetzen",
     "mfa_reset_confirm": "MFA für diesen Benutzer zurücksetzen?",
     "mfa_reset_success": "MFA erfolgreich zurückgesetzt",
@@ -162,7 +164,12 @@
     "authorization_tracking": "Autorisierung / Nachverfolgung",
     "catalogo_web": "Webkatalog",
     "web_shoppers": "Web-Käufer",
-    "kronos": "Anwesenheit"
+    "kronos": "Anwesenheit",
+    "kronos_device": "Geräteverbindung",
+    "restaurant_waiter": "Service",
+    "restaurant_cashier": "Kasse",
+    "restaurant_kitchen": "Küche",
+    "restaurant_admin": "Admin"
   },
   "quotation": {
     "title": "Angebote",
@@ -425,6 +432,7 @@
       "last_fiscal_certification_date": "Letzte Steuer Zertifizierung Datum",
       "tax_id": "Steuer ID",
       "type": "Typ",
+      "is_principal": "Hauptunternehmen",
       "id_user": "ID Benutzer",
       "created_by": "Erstellt von",
       "creation_date": "Erstellungsdatum",

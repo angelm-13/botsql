@@ -1,6 +1,7 @@
 import React, { useDeferredValue, useMemo, useRef, useState } from "react";
 import { Download, Pencil, Plus, RefreshCw, Search, Trash2, UsersRound } from "lucide-react";
 import { deleteKronosPerson, getKronosAttendance, getKronosPeople, saveKronosPerson } from "../api";
+import { loadKronosConnection } from "../utils/kronosConnection";
 import "../styles/kronos.css";
 
 function localDate(date) {
@@ -9,8 +10,6 @@ function localDate(date) {
 }
 
 const today = new Date();
-const initialConnection = { deviceUrl: "", username: "admin", password: "", sessionTag: "", cookie: "", allowSelfSigned: false };
-
 function formatTime(value) {
   return value ? String(value).slice(11, 19) : "—";
 }
@@ -42,8 +41,7 @@ function emptyPerson() {
 export default function KronosPage() {
   const personDialog = useRef(null);
   const [view, setView] = useState("attendance");
-  const [connectionOpen, setConnectionOpen] = useState(true);
-  const [connection, setConnection] = useState(initialConnection);
+  const [connection] = useState(loadKronosConnection);
   const [period, setPeriod] = useState({ startDate: localDate(new Date(today.getFullYear(), today.getMonth(), 1)), endDate: localDate(today), timezone: "-06:00" });
   const [report, setReport] = useState([]);
   const [statistics, setStatistics] = useState([]);
@@ -60,15 +58,9 @@ export default function KronosPage() {
   const filteredReport = useMemo(() => report.filter((row) => String(row.employee).toLocaleLowerCase("es").includes(deferredQuery) || String(row.name).toLocaleLowerCase("es").includes(deferredQuery)), [report, deferredQuery]);
   const filteredPeople = useMemo(() => people.filter((person) => String(person.employeeNo).toLocaleLowerCase("es").includes(deferredQuery) || String(person.name).toLocaleLowerCase("es").includes(deferredQuery)), [people, deferredQuery]);
 
-  function updateConnection(event) {
-    const { name, type, checked, value } = event.target;
-    setConnection((current) => ({ ...current, [name]: type === "checkbox" ? checked : value }));
-  }
-
   function ensureConnection() {
     if (connection.deviceUrl && connection.username && connection.password) return true;
-    setConnectionOpen(true);
-    setError("Completa la URL, el usuario y la contraseña del dispositivo.");
+    setError("Configura la conexión al dispositivo desde el engrane de configuración.");
     return false;
   }
 
@@ -160,17 +152,6 @@ export default function KronosPage() {
         <button type="button" role="tab" aria-selected={view === "attendance"} className={view === "attendance" ? "active" : ""} onClick={() => { setView("attendance"); setQuery(""); }}>Asistencias</button>
         <button type="button" role="tab" aria-selected={view === "people"} className={view === "people" ? "active" : ""} onClick={() => { setView("people"); setQuery(""); }}>Personas</button>
       </div>
-      <section className="form-card kronos-connection">
-        <button type="button" className="kronos-section-toggle" aria-expanded={connectionOpen} onClick={() => setConnectionOpen((open) => !open)}>Conexión al dispositivo <span>{connectionOpen ? "Ocultar" : "Configurar"}</span></button>
-        {connectionOpen && <div className="kronos-form-grid">
-          <label className="field kronos-url">URL del dispositivo<input required type="url" name="deviceUrl" value={connection.deviceUrl} onChange={updateConnection} placeholder="https://192.168.0.203/ISAPI/AccessControl/AcsEvent?format=json" /></label>
-          <label className="field">Usuario<input required name="username" autoComplete="username" value={connection.username} onChange={updateConnection} /></label>
-          <label className="field">Contraseña<input required type="password" name="password" autoComplete="current-password" value={connection.password} onChange={updateConnection} /></label>
-          <label className="field">SessionTag <small>Opcional</small><input name="sessionTag" value={connection.sessionTag} onChange={updateConnection} /></label>
-          <label className="field">Cookie <small>Opcional</small><input name="cookie" value={connection.cookie} onChange={updateConnection} /></label>
-          <label className="kronos-check"><input type="checkbox" name="allowSelfSigned" checked={connection.allowSelfSigned} onChange={updateConnection} /> Permitir certificado autofirmado</label>
-        </div>}
-      </section>
       {error && <div className="alert error" role="alert">{error}</div>}
       {view === "attendance" ? <>
         <form className="form-card kronos-filter" onSubmit={loadAttendance}>

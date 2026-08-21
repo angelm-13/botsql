@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { createInvoice, createInvoiceMaterialService, deleteInvoiceMaterialService, getAllCustomerSupplier, getAllInvoice, getAllInvoiceMaterialService, getAllMaterial, getAllProduct, getAllProyect, getAllService, getAllUnit, updateInvoice } from "../api";
+import { createInvoice, createInvoiceMaterialService, deleteInvoiceMaterialService, downloadInvoicePdf, getAllCustomerSupplier, getAllInvoice, getAllInvoiceMaterialService, getAllMaterial, getAllProduct, getAllProyect, getAllService, getAllUnit, updateInvoice } from "../api";
 import { useI18n } from "../i18n";
 
 function asArray(payload) {
@@ -477,17 +477,20 @@ export default function QuotationPage() {
     return quotationItems.filter((item) => Number(item.id_invoice) === Number(invoiceId)).length;
   }
 
-  function printQuotationPdf() {
+  async function printQuotationPdf() {
     if (!selectedQuotation?.id_invoice) return;
-    const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:5001";
-    const normalizedBaseUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
-    const pdfUrl = `${normalizedBaseUrl}/documents/quotation_pdf/${selectedQuotation.id_invoice}?format=pdf`;
-    const pdfWindow = window.open(pdfUrl, "_blank", "noopener,noreferrer");
-    if (!pdfWindow) {
-      setError(t("quotation.pdf_popup_blocked", "El navegador bloqueó la ventana del PDF. Permite ventanas emergentes e inténtalo de nuevo."));
-      return;
+    setError("");
+    try {
+      const blob = await downloadInvoicePdf(selectedQuotation.id_invoice, "quotation");
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `Cotizacion-${selectedQuotation.id_invoice}.pdf`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (requestError) {
+      setError(resolveError(requestError));
     }
-    pdfWindow.focus();
   }
 
   return (

@@ -1,7 +1,13 @@
 from __future__ import annotations
-from flask import Blueprint, jsonify, request
+from io import BytesIO
+
+from flask import Blueprint, jsonify, request, send_file
+from app.models import Invoice
 from app.services.invoice_service import InvoiceService
 from app.services.cfdi_xml import parse_cfdi
+from app.services.invoice_artifacts import invoice_xml_path
+from app.services.invoice_xml_classification import classify_invoice_direction, normalize_rfc
+from app.services.invoice_xml_lines import persist_xml_lines
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
 from datetime import datetime
@@ -11,7 +17,7 @@ from app.services.manual_invoice_service import create_manual_invoice, preview_m
 
 
 bp_invoice = Blueprint('invoice', __name__, url_prefix='/invoice')
-ALLOWED_FIELDS = ['id_invoice', 'date_emision', 'date_expiration', 'subtotal', 'tax', 'total', 'invoice_status', 'payment_method', 'note', 'id_customer_supplier', 'fiscal_reference', 'serie_csd', 'internationalization', 'currency', 'type_exchange_rate', 'tax_certification_supplier', 'fiscal_certify_serie', 'certification_date', 'cfdi_code', 'sat_code', 'sat_certification_code', 'id_status', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'nombre_emisor', 'lugar_expedicion', 'tipo_de_comprobante', 'rfc_receptor', 'nombre_receptor', 'regimen_fiscal_receptor', 'domicilio_fiscal_receptor', 'id_proveedor_de_sello', 'folio_fiscal', 'exportacion', 'folio', 'no_certificado_sat', 'sello_sat', 'sello_certificacion_sat', 'no_certificado', 'descuento', 'metodo_pago', 'condiciones_pago', 'id_issuer_customer_supplier', 'id_proyect', 'apply_tax', 'tax_rate', 'commercial_terms']
+ALLOWED_FIELDS = ['id_invoice', 'date_emision', 'date_expiration', 'subtotal', 'tax', 'total', 'invoice_status', 'invoice_direction', 'payment_method', 'note', 'id_customer_supplier', 'fiscal_reference', 'serie_csd', 'internationalization', 'currency', 'type_exchange_rate', 'tax_certification_supplier', 'fiscal_certify_serie', 'certification_date', 'cfdi_code', 'sat_code', 'sat_certification_code', 'id_status', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'nombre_emisor', 'lugar_expedicion', 'tipo_de_comprobante', 'rfc_receptor', 'nombre_receptor', 'regimen_fiscal_receptor', 'domicilio_fiscal_receptor', 'id_proveedor_de_sello', 'folio_fiscal', 'exportacion', 'folio', 'no_certificado_sat', 'sello_sat', 'sello_certificacion_sat', 'no_certificado', 'descuento', 'metodo_pago', 'condiciones_pago', 'id_issuer_customer_supplier', 'id_proyect', 'apply_tax', 'tax_rate', 'commercial_terms']
 
 TECHNICAL_RESPONSE_FIELDS = {'id_invoice'}
 FIELD_READ_BIT = 2
@@ -119,6 +125,71 @@ def list_invoice(user_data):
 @require_entity_permission('invoice', 'read')
 def get_invoice(user_data, id_invoice):
     return _jsonify_projected_record(user_data, InvoiceService.get(id_invoice))
+
+
+@bp_invoice.route('/<id_invoice>/lines', methods=['GET'])
+@token_required
+@require_entity_permission('invoice', 'read')
+def get_invoice_lines(user_data, id_invoice):
+    from app.models import InvoiceMaterialService
+    from app.models.session import transaction_context
+
+    invoice_id = _safe_int_value(id_invoice)
+    with transaction_context() as db:
+        if not db.get(Invoice, invoice_id):
+            raise AppError('errors.resource_not_found', 404)
+        lines = db.query(InvoiceMaterialService).filter(
+            InvoiceMaterialService.id_invoice == invoice_id,
+            InvoiceMaterialService.deletion_date.is_(None),
+        ).order_by(InvoiceMaterialService.id_invoice_material_service).all()
+        return jsonify({'items': [line.serialize() for line in lines], 'total': len(lines)})
+
+
+def _invoice_document_access(id_invoice, user_data):
+    from app.models.session import transaction_context
+
+    with transaction_context() as db:
+        invoice = db.get(Invoice, _safe_int_value(id_invoice))
+        if not invoice:
+            raise AppError('errors.resource_not_found', 404)
+        unrestricted = bool(user_data.get('is_superuser') or user_data.get('is_bootstrap_admin'))
+        actor_project = user_data.get('id_proyect') or user_data.get('project_id')
+        if not unrestricted and str(actor_project) != str(invoice.id_proyect):
+            raise AppError('errors.resource_not_found', 404)
+        return invoice.invoice_status
+
+
+@bp_invoice.route('/<id_invoice>/xml', methods=['GET'])
+@token_required
+@require_entity_permission('invoice', 'read')
+def download_invoice_xml(user_data, id_invoice):
+    _invoice_document_access(id_invoice, user_data)
+    path = invoice_xml_path(id_invoice, _current_app.config.get('UPLOAD_ROOT'))
+    if not path.is_file():
+        raise AppError('invoice.xml_not_available', 404)
+    return send_file(path, mimetype='application/xml', as_attachment=True, download_name=f'CFDI-{id_invoice}.xml')
+
+
+@bp_invoice.route('/<id_invoice>/pdf', methods=['GET'])
+@token_required
+@require_entity_permission('invoice', 'read')
+def download_invoice_pdf(user_data, id_invoice):
+    invoice_status = _invoice_document_access(id_invoice, user_data)
+    requested_document = str(request.args.get('document') or '').strip().lower()
+    document_key = 'quotation_pdf' if requested_document == 'quotation' or (not requested_document and str(invoice_status).lower() == 'cotizacion') else 'invoice_pdf'
+    try:
+        from app import _documents_templates_dir, _load_quotation_document_record
+        from documents.service import DocumentService
+
+        payload = DocumentService(_documents_templates_dir()).render_pdf_bytes(
+            document_key,
+            _load_quotation_document_record(id_invoice),
+            request.args.get('lang', 'es'),
+        )
+    except Exception as exc:
+        raise AppError('invoice.pdf_generation_failed', 500, {'reason': str(exc)}) from exc
+    prefix = 'Cotizacion' if document_key == 'quotation_pdf' else 'Factura'
+    return send_file(BytesIO(payload), mimetype='application/pdf', as_attachment=True, download_name=f'{prefix}-{id_invoice}.pdf')
 
 
 @bp_invoice.route('/', methods=['POST'])
@@ -308,10 +379,9 @@ from werkzeug.utils import secure_filename as _secure_filename
 from sqlalchemy import select as _select
 from app.models.session import transaction_context as _transaction_context
 try:
-    from app.models import CustomerSupplier as _CustomerSupplier, Proyect as _Proyect
+    from app.models import CustomerSupplier as _CustomerSupplier
 except Exception:  # modelos opcionales segun CSV
     _CustomerSupplier = None
-    _Proyect = None
 
 
 def _int_or_none(value):
@@ -323,50 +393,63 @@ def _int_or_none(value):
         return None
 
 
-def _resolve_cfdi_customer_supplier_id(cfdi_data, id_proyect=None, tipo_movimiento='gasto', user_id=None):
-    """Devuelve un id_customer_supplier existente o crea uno minimo desde el XML."""
+def _principal_company():
     if _CustomerSupplier is None:
-        return request.form.get('id_customer_supplier') or 1
-
-    requested_id = _int_or_none(request.form.get('id_customer_supplier'))
-    project_id = _int_or_none(id_proyect)
-    actor_id = _int_or_none(user_id) or 1
-    movement = str(tipo_movimiento or '').strip().lower()
-    use_emisor = movement in ('gasto', 'egreso', 'expense', 'supplier', 'proveedor')
-    tax_id = (cfdi_data.get('rfc_emisor') if use_emisor else cfdi_data.get('rfc_receptor')) or cfdi_data.get('rfc_emisor') or cfdi_data.get('rfc_receptor')
-    name = (cfdi_data.get('nombre_emisor') if use_emisor else cfdi_data.get('nombre_receptor')) or tax_id or 'Proveedor/Cliente CFDI'
-    partner_type = 'supplier' if use_emisor else 'client'
-
+        return None
     with _transaction_context() as db:
-        if requested_id:
-            existing = db.get(_CustomerSupplier, requested_id)
-            if existing:
-                return existing.id_customer_supplier
+        item = db.scalars(
+            _select(_CustomerSupplier).where(
+                _CustomerSupplier.is_principal.is_(True),
+                _CustomerSupplier.deletion_date.is_(None),
+            )
+        ).first()
+        return item.serialize() if item else None
 
-        if project_id and _Proyect is not None:
-            project = db.get(_Proyect, project_id)
-            if project and getattr(project, 'id_customer_supplier', None):
-                existing = db.get(_CustomerSupplier, project.id_customer_supplier)
-                if existing:
-                    return existing.id_customer_supplier
 
-        if tax_id:
-            existing = db.scalars(_select(_CustomerSupplier).where(_CustomerSupplier.tax_id == tax_id)).first()
-            if existing:
-                return existing.id_customer_supplier
+def _resolve_cfdi_party(db, tax_id, name, partner_type, actor_id):
+    normalized_tax_id = normalize_rfc(tax_id)
+    candidates = db.scalars(
+        _select(_CustomerSupplier).where(_CustomerSupplier.deletion_date.is_(None))
+    ).all()
+    existing = next(
+        (item for item in candidates if normalize_rfc(item.tax_id) == normalized_tax_id),
+        None,
+    ) if normalized_tax_id else None
+    if existing:
+        return existing
+    item = _CustomerSupplier(
+        name=str(name or normalized_tax_id or 'Empresa CFDI')[:150],
+        title=str(name or 'CFDI')[:50],
+        contact_name=str(name or 'CFDI')[:150],
+        tax_id=str(normalized_tax_id or 'XAXX010101000')[:50],
+        type=partner_type,
+        id_user=actor_id,
+        created_by=actor_id,
+    )
+    db.add(item)
+    db.flush()
+    return item
 
-        item = _CustomerSupplier(
-            name=str(name or 'Proveedor/Cliente CFDI')[:150],
-            title=str(name or 'CFDI')[:50],
-            contact_name=str(name or 'CFDI')[:150],
-            tax_id=str(tax_id or 'XAXX010101000')[:50],
-            type=partner_type,
-            id_user=actor_id,
-            created_by=actor_id,
-        )
-        db.add(item)
-        db.flush()
-        return item.id_customer_supplier
+
+def _resolve_cfdi_parties(cfdi_data, principal, direction, user_id=None):
+    actor_id = _int_or_none(user_id) or 1
+    principal_id = principal['id_customer_supplier']
+    with _transaction_context() as db:
+        issuer = None
+        if direction == 'venta':
+            issuer = db.get(_CustomerSupplier, principal_id)
+            counterparty = _resolve_cfdi_party(
+                db, cfdi_data.get('rfc_receptor'), cfdi_data.get('nombre_receptor'), 'client', actor_id
+            )
+        else:
+            issuer = _resolve_cfdi_party(
+                db, cfdi_data.get('rfc_emisor'), cfdi_data.get('nombre_emisor'), 'supplier', actor_id
+            )
+            counterparty = issuer
+        return {
+            'id_customer_supplier': counterparty.id_customer_supplier,
+            'id_issuer_customer_supplier': issuer.id_customer_supplier,
+        }
 
 
 
@@ -397,8 +480,13 @@ def upload_xml_invoice(user_data):
         return jsonify({'error_key': 'errors.no_files_provided', 'message': 'No se recibieron archivos XML'}), 400
 
     id_proyect = request.form.get('id_proyect') or request.form.get('proyect_id')
-    tipo_movimiento = request.form.get('tipo_movimiento') or request.form.get('invoice_type') or 'gasto'
     user_id = user_data.get('id_user')
+    principal = _principal_company()
+    if not principal or not normalize_rfc(principal.get('tax_id')):
+        return jsonify({
+            'error_key': 'invoice.principal_company_required',
+            'message': 'Define una empresa principal con RFC en Empresas antes de cargar facturas XML.',
+        }), 409
     results = []
 
     for uploaded_file in files:
@@ -409,12 +497,18 @@ def upload_xml_invoice(user_data):
         try:
             xml_bytes = uploaded_file.read()
             cfdi_data = parse_cfdi(xml_bytes)
+            direction = classify_invoice_direction(
+                principal.get('tax_id'),
+                cfdi_data.get('rfc_emisor'),
+                cfdi_data.get('rfc_receptor'),
+            )
             with _transaction_context() as db:
                 duplicate = db.scalars(
                     _select(Invoice).where(Invoice.folio_fiscal == cfdi_data['uuid'])
                 ).first()
             if duplicate:
                 raise ValueError('El CFDI ya fue importado')
+            parties = _resolve_cfdi_parties(cfdi_data, principal, direction, user_id=user_id)
             payload = {}
             payload['folio_fiscal'] = cfdi_data.get('uuid')
             payload['cfdi_code'] = cfdi_data.get('uuid')
@@ -443,17 +537,18 @@ def upload_xml_invoice(user_data):
             payload['sat_certification_code'] = cfdi_data.get('uuid')
             payload['tax_certification_supplier'] = request.form.get('tax_certification_supplier') or 1
             payload['invoice_status'] = request.form.get('invoice_status') or 'pendiente'
-            payload['note'] = 'Cargado desde XML: ' + filename
+            payload['invoice_direction'] = direction
+            payload['note'] = f'Cargado desde XML: {filename}. Clasificación: {direction}.'
             if id_proyect:
                 payload['id_proyect'] = int(id_proyect)
-            payload['id_customer_supplier'] = _resolve_cfdi_customer_supplier_id(cfdi_data, id_proyect=id_proyect, tipo_movimiento=tipo_movimiento, user_id=user_id)
-            payload.setdefault('id_issuer_customer_supplier', request.form.get('id_issuer_customer_supplier') or 1)
+            payload.update(parties)
             payload.setdefault('id_status', request.form.get('id_status') or 1)
             payload = {k: v for k, v in payload.items() if v not in (None, '')}
             invoice = InvoiceService.create(payload, user_id=user_id)
             invoice_id = invoice.get('id_invoice')
+            lines = persist_xml_lines(invoice, cfdi_data.get('conceptos', []), user_id=user_id)
             xml_path = _save_original_cfdi_xml(invoice_id, xml_bytes)
-            results.append({'file': filename, 'status': 'created', 'id_invoice': invoice_id, 'xml_saved': bool(xml_path), 'data': invoice})
+            results.append({'file': filename, 'status': 'created', 'id_invoice': invoice_id, 'invoice_direction': direction, 'items_count': len(lines), 'xml_saved': bool(xml_path), 'data': invoice})
         except ValueError as exc:
             results.append({'file': filename, 'status': 'error', 'message': str(exc)})
         except AppError as exc:

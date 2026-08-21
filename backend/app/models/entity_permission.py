@@ -18,6 +18,7 @@ class EntityPermission(Base):
     control_type: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=15)
     menu_location: Mapped[str] = mapped_column(String(20), nullable=False, default="sidebar")
     menu_group: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    menu_group_icon: Mapped[str | None] = mapped_column(String(40), nullable=True)
     menu_label: Mapped[str | None] = mapped_column(String(100), nullable=True)
     menu_order: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
     created_by: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
@@ -33,6 +34,7 @@ class EntityPermission(Base):
             "control_type": self.control_type,
             "menu_location": self.menu_location,
             "menu_group": self.menu_group,
+            "menu_group_icon": self.menu_group_icon,
             "menu_label": self.menu_label,
             "menu_order": self.menu_order,
         }
@@ -43,6 +45,7 @@ class EntityPermission(Base):
             "entity_name": self.entity_name,
             "menu_location": self.menu_location,
             "menu_group": self.menu_group,
+            "menu_group_icon": self.menu_group_icon,
             "menu_label": self.menu_label,
             "menu_order": self.menu_order,
         }

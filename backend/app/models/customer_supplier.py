@@ -37,6 +37,7 @@ class CustomerSupplier(Base):
     last_fiscal_certification_date: Mapped[object] = mapped_column(DateTime, nullable=True)
     tax_id: Mapped[object] = mapped_column(String(50), nullable=True)
     type: Mapped[object] = mapped_column(Enum('client', 'supplier', name='customer_supplier_type_enum', native_enum=False, validate_strings=True, create_constraint=True), nullable=True)
+    is_principal: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     id_user: Mapped[int] = mapped_column(Integer, ForeignKey('user.id_user'), nullable=False)
     created_by: Mapped[int] = mapped_column(Integer, nullable=False)
     creation_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now())
@@ -64,6 +65,7 @@ class CustomerSupplier(Base):
             'last_fiscal_certification_date': to_json_value(self.last_fiscal_certification_date),
             'tax_id': to_json_value(self.tax_id),
             'type': to_json_value(self.type),
+            'is_principal': to_json_value(self.is_principal),
             'id_user': to_json_value(self.id_user),
             'created_by': to_json_value(self.created_by),
             'creation_date': to_json_value(self.creation_date),

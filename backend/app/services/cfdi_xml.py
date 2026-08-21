@@ -35,6 +35,42 @@ def _money(value, field):
         raise ValueError(f"CFDI con {field} invalido") from exc
 
 
+def _concepts(root):
+    concepts = []
+    for element in root.iter():
+        if _local_name(element.tag) != "Concepto":
+            continue
+        amount = _money(_attribute(element, "Importe"), "Importe de concepto")
+        discount = _money(_attribute(element, "Descuento"), "Descuento de concepto")
+        transferred_tax = Decimal("0")
+        retained_tax = Decimal("0")
+        tax_rate = None
+        for tax in element.iter():
+            tax_name = _local_name(tax.tag)
+            tax_amount = _money(_attribute(tax, "Importe"), "Impuesto de concepto")
+            if tax_name == "Traslado":
+                transferred_tax += tax_amount
+                if _attribute(tax, "Impuesto") == "002":
+                    tax_rate = _attribute(tax, "TasaOCuota")
+            elif tax_name == "Retencion":
+                retained_tax += tax_amount
+        concepts.append({
+            "description": _attribute(element, "Descripcion") or "Sin descripcion",
+            "quantity": format(_money(_attribute(element, "Cantidad"), "Cantidad de concepto"), "f"),
+            "unit_price": format(_money(_attribute(element, "ValorUnitario"), "ValorUnitario de concepto"), "f"),
+            "subtotal": format(amount, "f"),
+            "discount": format(discount, "f"),
+            "tax": format(transferred_tax, "f"),
+            "retained_tax": format(retained_tax, "f"),
+            "total": format(amount - discount + transferred_tax - retained_tax, "f"),
+            "sat_product_key": _attribute(element, "ClaveProdServ") or "01010101",
+            "sat_unit_key": _attribute(element, "ClaveUnidad"),
+            "tax_object": _attribute(element, "ObjetoImp"),
+            "tax_rate": tax_rate,
+        })
+    return concepts
+
+
 def parse_cfdi(xml_bytes, max_bytes=None):
     max_size = max_bytes or int(os.getenv("CFDI_XML_MAX_BYTES", DEFAULT_MAX_XML_BYTES))
     if not xml_bytes:
@@ -97,4 +133,5 @@ def parse_cfdi(xml_bytes, max_bytes=None):
         "sello_sat": _attribute(timbre, "SelloSAT"),
         "rfc_proveedor_certificacion": _attribute(timbre, "RfcProvCertif"),
         "certification_date": _attribute(timbre, "FechaTimbrado"),
+        "conceptos": _concepts(root),
     }

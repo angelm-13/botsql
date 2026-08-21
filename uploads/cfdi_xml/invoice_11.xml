@@ -1,0 +1,37 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.sat.gob.mx/cfd/4 http://www.sat.gob.mx/sitio_internet/cfd/4/cfdv40.xsd" Version="4.0" Serie="4KHGDJI" Folio="82947" Fecha="2026-07-27T15:55:26" Exportacion="01" Sello="weNBYBtzT3WzeB1vsb4RBmcrWpRq74wBe7t/vZu0AQYpO04cECJTlv4tU2bV0dfEmHaXP7j/2cQv0UhY0lWqpfWvrkZvizteSHYCKWZNjN3HrKon2/yNmBUEr9+FDNIortEe6mm7DkPkb8WZm+VHedyKN57N0hQMXGuT43aPIhm+RXSH090DwFk8ruPVylfpbdk184k8DGh/qgJumrJTlLOetoGkKsRAEHySqCVuME76EW06+q+TW9KWilRE3VPpgCgKLuMVwKjeUuxbxasEVF1MM4SAZ4zUqyeAaxvHArIpKZioG2OFXnV87lNKhIkN2sw8qQ/a+J+nVsiRuL+csw==" FormaPago="28" NoCertificado="00001000000715333650" Certificado="MIIGFjCCA/6gAwIBAgIUMDAwMDEwMDAwMDA3MTUzMzM2NTAwDQYJKoZIhvcNAQELBQAwggGVMTUwMwYDVQQDDCxBQyBERUwgU0VSVklDSU8gREUgQURNSU5JU1RSQUNJT04gVFJJQlVUQVJJQTEuMCwGA1UECgwlU0VSVklDSU8gREUgQURNSU5JU1RSQUNJT04gVFJJQlVUQVJJQTEaMBgGA1UECwwRU0FULUlFUyBBdXRob3JpdHkxMjAwBgkqhkiG9w0BCQEWI3NlcnZpY2lvc2FsY29udHJpYnV5ZW50ZUBzYXQuZ29iLm14MSYwJAYDVQQJDB1Bdi4gSGlkYWxnbyA3NywgQ29sLiBHdWVycmVybzEOMAwGA1UEEQwFMDYzMDAxCzAJBgNVBAYTAk1YMQ0wCwYDVQQIDARDRE1YMRMwEQYDVQQHDApDVUFVSFRFTU9DMRUwEwYDVQQtEwxTQVQ5NzA3MDFOTjMxXDBaBgkqhkiG9w0BCQITTXJlc3BvbnNhYmxlOiBBRE1JTklTVFJBQ0lPTiBDRU5UUkFMIERFIFNFUlZJQ0lPUyBUUklCVVRBUklPUyBBTCBDT05UUklCVVlFTlRFMB4XDTI1MDQzMDE2MzEzOVoXDTI5MDQzMDE2MzEzOVowgdMxKDAmBgNVBAMTH0hPTUUgREVQT1QgTUVYSUNPIFMgREUgUkwgREUgQ1YxKDAmBgNVBCkTH0hPTUUgREVQT1QgTUVYSUNPIFMgREUgUkwgREUgQ1YxKDAmBgNVBAoTH0hPTUUgREVQT1QgTUVYSUNPIFMgREUgUkwgREUgQ1YxJTAjBgNVBC0THEhETTAwMTAxN0FTMSAvIEdVU002MjA4MjlFVUExHjAcBgNVBAUTFSAvIEdVU002MjA4MjlITkVUTFIwMzEMMAoGA1UECxMDSERNMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxuvm07+u4w6QozQRpX7yKqJSw3p1S6jspG4Mf5SAg2V+fn6OOLNO4HWl7Qx3fcsjH4Q01/Py9Bl2FcXN2gaWaGVEhWd4auMIgqVGYGsFLRa83K/kqvA6RjNsQWZvtlo+1IQpKPSkoVz8Ttdis4I+NWQ1L4QE5cTblleruegiH4SwrRF5X/kbJoJ7ReE6pQ7rB2CwES3VFDZlqkvkUYP6xLbSq9CqPfJsZgsgWJXml8cznn0/BGQVJD/xQoMto7HBqigUl0mLgIUvivC8htzVpZi8+FrrptgQYaf1PKM2xcK9dRlYeiyC8Mdg3wwrMF7U3183UCdpipbxn9J+paIe/QIDAQABox0wGzAMBgNVHRMBAf8EAjAAMAsGA1UdDwQEAwIGwDANBgkqhkiG9w0BAQsFAAOCAgEAV0KN8A7XilKXkZDEQmvLGxqym542NE4jqlxm8GpQzsNT5bYLtZRSOTMlQAvGBFh6k8kCFOY3ys42ziPFGxOz5C5cA64bEf9ArGQkIEFtYFK5DbBgZmGoz1dX/Dnq3NAhvPDhM2F5CSTxRdT/KHkt2c+uTIRzmTigB+N8Fu+k5VJtHGE7HMuT28shcI4JT+w7uCOzBGGZDXAAZx2F1vsCLz5LutD6el7IKpmOjkoq1e9l7GyBbT4ueB4stEDh7qFv/nldJEldS1v3HyS6tERBtEYlqC7pHFG2+/Y1fFb0y9orweayW4Swj8BhHp4rrB24YIkUeTYeCA+8okRlDLnTDm1UwVtKHDbYninpzwl2i3QQ6NZF1ZyrlcKwD2k8wIrKrAHm76X9LDjUCsf50Mfd5BFcvdT1HXvAtoYVj3w70/3cvYqjxHq3nktq8qRj9qlx/HfyO1HrCibi541EoVcu8TR1/XogYe0qNadP44HOV4DgMrLVTT61toW7P09NvyPUFr/zDxEDfILQBuSemYdvTngDkQcoVMw+Zwu+HB7wFy2ixMCHJaqw1N6QNWUmIEGWOefz8U74n4+zVI3OBFuAJRGQX7cdRiupzPGKDOTkYDjZ6qfJepaQ/M8vq/5XXcbMNiApnwHEcugRRET2KldyGIhjt//W5uNcxThmqHgCDY8=" CondicionesDePago="PAGADO" SubTotal="224.14" Moneda="MXN" TipoCambio="1" Total="260.00" TipoDeComprobante="I" MetodoPago="PUE" LugarExpedicion="37530">
+  <cfdi:Emisor Nombre="HOME DEPOT MEXICO" Rfc="HDM001017AS1" RegimenFiscal="601" />
+  <cfdi:Receptor Rfc="TDT260306G60" Nombre="TORRE DIGITAL-CONSORCIO TECNOLOGICO" UsoCFDI="G03" DomicilioFiscalReceptor="37500" RegimenFiscalReceptor="601" />
+  <cfdi:Conceptos>
+    <cfdi:Concepto ClaveProdServ="31162103" NoIdentificacion="977985" Cantidad="1.00" ClaveUnidad="H87" Unidad="PIEZA" Descripcion="TAQUETE PARA YESO NYLON C/ TORNILLO" ValorUnitario="149.14" Importe="149.14" ObjetoImp="02">
+      <cfdi:Impuestos>
+        <cfdi:Traslados>
+          <cfdi:Traslado Base="149.14" Impuesto="002" TipoFactor="Tasa" TasaOCuota="0.160000" Importe="23.86" />
+        </cfdi:Traslados>
+      </cfdi:Impuestos>
+    </cfdi:Concepto>
+    <cfdi:Concepto ClaveProdServ="31201502" NoIdentificacion="862736" Cantidad="1.00" ClaveUnidad="H87" Unidad="PIEZA" Descripcion="CINTA DE AISLAR DE 16.76 MTS" ValorUnitario="13.79" Importe="13.79" ObjetoImp="02">
+      <cfdi:Impuestos>
+        <cfdi:Traslados>
+          <cfdi:Traslado Base="13.79" Impuesto="002" TipoFactor="Tasa" TasaOCuota="0.160000" Importe="2.21" />
+        </cfdi:Traslados>
+      </cfdi:Impuestos>
+    </cfdi:Concepto>
+    <cfdi:Concepto ClaveProdServ="39131714" NoIdentificacion="112032" Cantidad="1.00" ClaveUnidad="H87" Unidad="PIEZA" Descripcion="CANALETA 13X7 MM. 2 MTS DE LARGO" ValorUnitario="61.21" Importe="61.21" ObjetoImp="02">
+      <cfdi:Impuestos>
+        <cfdi:Traslados>
+          <cfdi:Traslado Base="61.21" Impuesto="002" TipoFactor="Tasa" TasaOCuota="0.160000" Importe="9.79" />
+        </cfdi:Traslados>
+      </cfdi:Impuestos>
+    </cfdi:Concepto>
+  </cfdi:Conceptos>
+  <cfdi:Impuestos TotalImpuestosTrasladados="35.86">
+    <cfdi:Traslados>
+      <cfdi:Traslado Impuesto="002" TipoFactor="Tasa" TasaOCuota="0.160000" Base="224.14" Importe="35.86" />
+    </cfdi:Traslados>
+  </cfdi:Impuestos>
+  <cfdi:Complemento>
+    <tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" xsi:schemaLocation="http://www.sat.gob.mx/TimbreFiscalDigital http://www.sat.gob.mx/sitio_internet/cfd/TimbreFiscalDigital/TimbreFiscalDigitalv11.xsd" Version="1.1" UUID="566022c6-a2bf-41d9-b46d-cf1a84af96d0" FechaTimbrado="2026-07-27T15:55:33" RfcProvCertif="AUR100128NN3" SelloSAT="Zre2ZkpFnVXgjfpqXMqiZwb6FhWYjvuHu+UE54+kVbqIMQinrStMS+YmMP5UC/BsH2aimUxj6fHqNfOKFtaeOjuKAroqQv3EvR6EaI0axT5v45lD0XAsqlZFSyqKZ5MxCoiiIquUjlCH7uAjvqSgklFGp2zYCFhupqcCw72mEHdgKpBx+Mr+1hpuL9gpiGIEQKtMl9gmgVli774WtW1YjftpOWY9+vsc5Br+JyAWi+kjoDfvqkSA/W5Wr06wOO/T7G/xfFN/vjKtRFGLtwp3IT1lyiCxCztm/0V2csk4/Rm/te2j+LtAUDaFQmB32NtgC5345ieIdBBMINern3MP1w==" SelloCFD="weNBYBtzT3WzeB1vsb4RBmcrWpRq74wBe7t/vZu0AQYpO04cECJTlv4tU2bV0dfEmHaXP7j/2cQv0UhY0lWqpfWvrkZvizteSHYCKWZNjN3HrKon2/yNmBUEr9+FDNIortEe6mm7DkPkb8WZm+VHedyKN57N0hQMXGuT43aPIhm+RXSH090DwFk8ruPVylfpbdk184k8DGh/qgJumrJTlLOetoGkKsRAEHySqCVuME76EW06+q+TW9KWilRE3VPpgCgKLuMVwKjeUuxbxasEVF1MM4SAZ4zUqyeAaxvHArIpKZioG2OFXnV87lNKhIkN2sw8qQ/a+J+nVsiRuL+csw==" NoCertificadoSAT="00001000000710611637" />
+  </cfdi:Complemento>
+</cfdi:Comprobante>
+

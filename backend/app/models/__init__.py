@@ -39,6 +39,19 @@ from app.models.product_family import ProductFamily
 from app.models.product_sale_config import ProductSaleConfig
 from app.models.proyect import Proyect
 from app.models.quotation_comment import QuotationComment
+from app.models.restaurant import (
+	RestaurantCashSession,
+	RestaurantDish,
+	RestaurantGuisado,
+	RestaurantInventoryItem,
+	RestaurantOrder,
+	RestaurantOrderItem,
+	RestaurantRecipeItem,
+	RestaurantReservation,
+	RestaurantTable,
+	RestaurantVisit,
+	RestaurantWaiter,
+)
 from app.models.public_api_key import PublicApiKey
 from app.models.service import Service
 from app.models.status import Status
@@ -56,4 +69,4 @@ from app.models.unit import Unit
 from app.models.user import User
 from app.models.user_mfa import UserMfa
 
-__all__ = ['Base', 'Bank', 'BankAccount', 'BankStatement', 'BankStatementMovement', 'Brand', 'CustomerSupplier', 'Department', 'EntityPermission', 'EventLog', 'Field', 'FiscalAccount', 'FiscalRecord', 'FiscalStamp', 'Incident', 'IncidentDetail', 'IncidentType', 'InventoryLedger', 'InventoryStatus', 'Invoice', 'InvoiceMaterialService', 'Level', 'Location', 'LocationType', 'Material', 'MaterialComponent', 'Movement', 'NmFieldPermission', 'NmIncidentProduct', 'NmSurveyUser', 'NmTemplateTask', 'PasswordResetToken', 'PayrollConcept', 'PayrollDetail', 'PayrollMovement', 'PayrollPeriod', 'Permission', 'Product', 'ProductFamily', 'ProductSaleConfig', 'Proyect', 'PublicApiKey', 'QuotationComment', 'Service', 'StampingOperation', 'Status', 'Subdepartment', 'SurveyMultipleAnswer', 'SurveyQuestion', 'Task', 'TaskNote', 'TaskType', 'Template', 'Theme', 'Ticket', 'Unit', 'User', 'UserMfa']
+__all__ = ['Base', 'Bank', 'BankAccount', 'BankStatement', 'BankStatementMovement', 'Brand', 'CustomerSupplier', 'Department', 'EntityPermission', 'EventLog', 'Field', 'FiscalAccount', 'FiscalRecord', 'FiscalStamp', 'Incident', 'IncidentDetail', 'IncidentType', 'InventoryLedger', 'InventoryStatus', 'Invoice', 'InvoiceMaterialService', 'Level', 'Location', 'LocationType', 'Material', 'MaterialComponent', 'Movement', 'NmFieldPermission', 'NmIncidentProduct', 'NmSurveyUser', 'NmTemplateTask', 'PasswordResetToken', 'PayrollConcept', 'PayrollDetail', 'PayrollMovement', 'PayrollPeriod', 'Permission', 'Product', 'ProductFamily', 'ProductSaleConfig', 'Proyect', 'PublicApiKey', 'QuotationComment', 'RestaurantCashSession', 'RestaurantDish', 'RestaurantGuisado', 'RestaurantInventoryItem', 'RestaurantOrder', 'RestaurantOrderItem', 'RestaurantRecipeItem', 'RestaurantReservation', 'RestaurantTable', 'RestaurantVisit', 'RestaurantWaiter', 'Service', 'StampingOperation', 'Status', 'Subdepartment', 'SurveyMultipleAnswer', 'SurveyQuestion', 'Task', 'TaskNote', 'TaskType', 'Template', 'Theme', 'Ticket', 'Unit', 'User', 'UserMfa']

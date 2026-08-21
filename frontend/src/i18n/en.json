@@ -101,6 +101,8 @@
     "field_visibility_hint": "Select the fields visible to this role. Unselected fields will remain hidden.",
     "module_hidden_hint": "This module has no selected actions; it will stay hidden and its fields will not be shown.",
     "no_fields_available": "No configurable fields are available for this module.",
+    "actions_only_module": "Permissions managed by action",
+    "actions_only_hint": "This workspace does not expose field permissions. Use Create, Read, Update, and Delete in the table above to control its functions.",
     "mfa_reset": "Reset MFA",
     "mfa_reset_confirm": "Reset MFA for this user?",
     "mfa_reset_success": "MFA reset successfully",
@@ -162,7 +164,12 @@
     "authorization_tracking": "Authorization / Tracking",
     "catalogo_web": "Web Catalog",
     "web_shoppers": "Web Shoppers",
-    "kronos": "Attendance"
+    "kronos": "Attendance",
+    "kronos_device": "Device connection",
+    "restaurant_waiter": "Waiters",
+    "restaurant_cashier": "Cashier",
+    "restaurant_kitchen": "Kitchen",
+    "restaurant_admin": "Admin"
   },
   "quotation": {
     "title": "Quotations",
@@ -428,6 +435,7 @@
       "last_fiscal_certification_date": "Last Fiscal Certification Date",
       "tax_id": "Tax Id",
       "type": "Type",
+      "is_principal": "Principal Company",
       "id_user": "Id User",
       "created_by": "Created By",
       "creation_date": "Creation Date",

@@ -4,7 +4,7 @@ import { useI18n } from "../i18n";
 import { getAllCustomerSupplier, createCustomerSupplier, updateCustomerSupplier, deleteCustomerSupplier, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllUser } from "../api";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 
-const emptyForm = { postal_code: "", name: "", title: "", contact_name: "", phone: "", email: "", web_site: "", street: "", number_ext: "", number_int: "", neighborhood: "", city: "", geographic_state: "", fiscal_type: "", last_fiscal_certification_date: "", tax_id: "", type: "", id_user: "", path_logo: "" };
+const emptyForm = { postal_code: "", name: "", title: "", contact_name: "", phone: "", email: "", web_site: "", street: "", number_ext: "", number_int: "", neighborhood: "", city: "", geographic_state: "", fiscal_type: "", last_fiscal_certification_date: "", tax_id: "", type: "", is_principal: false, id_user: "", path_logo: "" };
 const validationRules = allValidationRules["customer_supplier"] || {};
 const ENTITY_KEY = "customer_supplier";
 const ACTION_CREATE = 1;
@@ -204,6 +204,9 @@ export default function CustomerSupplierPage() {
     if (ENTITY_KEY === "user" && !editingId) {
       if (isBlankValue(submitPayload.username)) nextFieldErrors.username = "validations.user.username.required";
       if (isBlankValue(submitPayload.password)) nextFieldErrors.password = "validations.user.password.required";
+    }
+    if (submitPayload.is_principal && isBlankValue(submitPayload.tax_id)) {
+      nextFieldErrors.tax_id = "validations.customer_supplier.principal_tax_id.required";
     }
     if (Object.keys(nextFieldErrors).length > 0) {
       setFieldErrors(nextFieldErrors);
@@ -604,6 +607,13 @@ export default function CustomerSupplierPage() {
             {fieldErrors["type"] && <span className="field-error">{formatFieldError("type")}</span>}
           </label>
           )}
+          {canSeeField("is_principal") && (
+          <label className="checkbox-inline principal-company-field">
+            <input name="is_principal" type="checkbox" checked={Boolean(formData.is_principal)} onChange={handleChange} />
+            <span>{t("fields.customer_supplier.is_principal", "Empresa principal")}</span>
+            <small>{t("common.principal_company_hint", "Su RFC se usará para clasificar automáticamente facturas XML como compras o ventas.")}</small>
+          </label>
+          )}
           {canSeeField("id_user") && (
           <label className="field">
             <span>{t("fields.user.vendor", "Vendedor")}</span>
@@ -662,7 +672,7 @@ export default function CustomerSupplierPage() {
         </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_customer_supplier}>{showRowActions && <td className="row-actions">{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</td>}
               {canSeeField("id_customer_supplier") && <td><pre className="cell-value">{formatTableValue(item.id_customer_supplier)}</pre></td>}
               {canSeeField("postal_code") && <td><pre className="cell-value">{formatTableValue(item.postal_code)}</pre></td>}
-              {canSeeField("name") && <td><pre className="cell-value">{formatTableValue(item.name)}</pre></td>}
+              {canSeeField("name") && <td><pre className="cell-value">{formatTableValue(item.name)}{item.is_principal ? ` · ${t("fields.customer_supplier.is_principal", "Empresa principal")}` : ""}</pre></td>}
               {canSeeField("title") && <td><pre className="cell-value">{formatTableValue(item.title)}</pre></td>}
               {canSeeField("contact_name") && <td><pre className="cell-value">{formatTableValue(item.contact_name)}</pre></td>}
               {canSeeField("phone") && <td><pre className="cell-value">{formatTableValue(item.phone)}</pre></td>}
@@ -672,7 +682,7 @@ export default function CustomerSupplierPage() {
               {canSeeField("number_ext") && <td><pre className="cell-value">{formatTableValue(item.number_ext)}</pre></td>}
         </tr>)}</tbody></table></div>}
 
-      {canRead && view === "kanban" && filtered.length > 0 && <div className="kanban">{Object.entries(groups).map(([key, groupItems]) => <div className="kanban-column" key={key}><h3>{key} <span>{groupItems.length}</span></h3>{groupItems.map((item) => <article className="kanban-card" key={item.id_customer_supplier}><strong>{String(item.name ?? item.id_customer_supplier)}</strong><small>#{item.id_customer_supplier}</small>{showRowActions && <div>{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</div>}</article>)}</div>)}</div>}
+      {canRead && view === "kanban" && filtered.length > 0 && <div className="kanban">{Object.entries(groups).map(([key, groupItems]) => <div className="kanban-column" key={key}><h3>{key} <span>{groupItems.length}</span></h3>{groupItems.map((item) => <article className="kanban-card" key={item.id_customer_supplier}><strong>{String(item.name ?? item.id_customer_supplier)}</strong>{item.is_principal && <span className="principal-company-badge">{t("fields.customer_supplier.is_principal", "Empresa principal")}</span>}<small>#{item.id_customer_supplier}</small>{showRowActions && <div>{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</div>}</article>)}</div>)}</div>}
 
       <div className="pagination"><button className="button" disabled={page <= 1} onClick={() => setPage(page - 1)}>{t("common.previous")}</button><span>{t("common.page")} {page}</span><button className="button" onClick={() => setPage(page + 1)}>{t("common.next")}</button></div>
     </section>

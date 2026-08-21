@@ -101,6 +101,8 @@
     "field_visibility_hint": "このロールに表示するフィールドを選択してください。未選択のフィールドは非表示になります。",
     "module_hidden_hint": "このモジュールには操作が選択されていないため、非表示になり、フィールドも表示されません。",
     "no_fields_available": "このモジュールに設定可能なフィールドはありません。",
+    "actions_only_module": "操作単位で管理される権限",
+    "actions_only_hint": "このワークスペースにはフィールド単位の権限はありません。上の表で作成、読み取り、更新、削除を設定してください。",
     "mfa_reset": "MFAをリセット",
     "mfa_reset_confirm": "このユーザーのMFAをリセットしますか？",
     "mfa_reset_success": "MFAをリセットしました",
@@ -162,7 +164,12 @@
     "authorization_tracking": "承認 / 追跡",
     "catalogo_web": "Webカタログ",
     "web_shoppers": "Web購入者",
-    "kronos": "勤怠"
+    "kronos": "勤怠",
+    "kronos_device": "デバイス接続",
+    "restaurant_waiter": "ホール",
+    "restaurant_cashier": "レジ",
+    "restaurant_kitchen": "キッチン",
+    "restaurant_admin": "管理"
   },
   "quotation": {
     "title": "見積",
@@ -428,6 +435,7 @@
       "last_fiscal_certification_date": "最終 税務 Certification 日付",
       "tax_id": "税 ID",
       "type": "種類",
+      "is_principal": "主要企業",
       "id_user": "ID ユーザー",
       "created_by": "作成者",
       "creation_date": "作成日",

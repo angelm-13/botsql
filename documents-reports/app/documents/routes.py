@@ -7,7 +7,7 @@ from .manifest import DOCUMENTS
 from .service import DocumentError, DocumentService
 
 
-def create_documents_blueprint(templates_dir: str | Path, record_loader):
+def create_documents_blueprint(templates_dir: str | Path, record_loader, access_checker=None):
     bp_documents = Blueprint('documents', __name__, url_prefix='/documents')
     service = DocumentService(templates_dir=templates_dir)
 
@@ -23,6 +23,10 @@ def create_documents_blueprint(templates_dir: str | Path, record_loader):
             doc = DOCUMENTS.get(document_key)
             if not doc:
                 raise DocumentError('document.not_found', {'document_key': document_key})
+            if access_checker:
+                allowed, status_code = access_checker(doc, record_id)
+                if not allowed:
+                    return jsonify({'error_key': 'errors.auth_required' if status_code == 401 else 'errors.permission_denied'}), status_code
             record = record_loader(doc['entity'], record_id)
             # issue_12_phase7_serve_original_xml
             if fmt == 'xml' and document_key == 'invoice_xml_cfdi':

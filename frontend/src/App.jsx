@@ -1,3 +1,4 @@
+/* eslint-disable react/prop-types */
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Shell from "./layouts/Shell";
 import Dashboard from "./pages/Dashboard";
@@ -61,10 +62,15 @@ import UnitPage from "./pages/UnitPage.jsx";
 import UserPage from "./pages/UserPage.jsx";
 import UserMfaPage from "./pages/UserMfaPage.jsx";
 import KronosPage from "./pages/KronosPage.jsx";
+import KronosDevicePage from "./pages/KronosDevicePage.jsx";
+import RestaurantWaiterPage from "./pages/restaurant/RestaurantWaiterPage.jsx";
+import RestaurantKitchenPage from "./pages/restaurant/RestaurantKitchenPage.jsx";
+import RestaurantCashierPage from "./pages/restaurant/RestaurantCashierPage.jsx";
+import RestaurantAdminPage from "./pages/restaurant/RestaurantAdminPage.jsx";
 import Kanban from './components/Kanban.jsx';
 import LoginPage from "./auth/LoginPage";
 import ProtectedRoute from "./auth/ProtectedRoute";
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { getAllEntityPermission } from "./api";
 import "./styles/app.css";
 
@@ -164,6 +170,11 @@ export default function App() {
           <Route path="/payroll_movement" element={<RoleAccessRoute entityName="payroll_movement"><PayrollMovementPage /></RoleAccessRoute>} />
           <Route path="/payroll_period" element={<RoleAccessRoute entityName="payroll_period"><PayrollPeriodPage /></RoleAccessRoute>} />
           <Route path="/kronos" element={<RoleAccessRoute entityName="payroll_period"><KronosPage /></RoleAccessRoute>} />
+          <Route path="/kronos/device" element={<RoleAccessRoute entityName="kronos_device"><KronosDevicePage /></RoleAccessRoute>} />
+          <Route path="/restaurant/waiter" element={<RoleAccessRoute entityName="restaurant_waiter"><RestaurantWaiterPage /></RoleAccessRoute>} />
+          <Route path="/restaurant/cashier" element={<RoleAccessRoute entityName="restaurant_cashier"><RestaurantCashierPage /></RoleAccessRoute>} />
+          <Route path="/restaurant/kitchen" element={<RoleAccessRoute entityName="restaurant_kitchen"><RestaurantKitchenPage /></RoleAccessRoute>} />
+          <Route path="/restaurant/admin" element={<RoleAccessRoute entityName="restaurant_admin"><RestaurantAdminPage /></RoleAccessRoute>} />
           <Route path="/permission" element={<RoleAccessRoute entityName="permission"><PermissionPage /></RoleAccessRoute>} />
           <Route path="/product" element={<RoleAccessRoute entityName="product"><ProductPage /></RoleAccessRoute>} />
           <Route path="/product_family" element={<RoleAccessRoute entityName="product_family"><ProductFamilyPage /></RoleAccessRoute>} />

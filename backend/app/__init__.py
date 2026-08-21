@@ -1,7 +1,8 @@
 from __future__ import annotations
 import os
 import sys
-from flask import Flask, jsonify, send_from_directory
+import jwt
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from flask_babel import Babel
 from werkzeug.exceptions import HTTPException
@@ -69,6 +70,7 @@ from app.routes.stamping import bp_stamping
 from app.routes.client_portal import bp_client_portal
 from app.routes.bank_statements import bp_bank_statements
 from app.routes.kronos import bp_kronos
+from app.routes.restaurant import bp_restaurant
 
 def _documents_reports_app_path() -> str:
     return os.getenv('DOCUMENTS_REPORTS_APP_PATH', '/documents-reports/app')
@@ -510,10 +512,40 @@ def _register_documents_blueprint(app: Flask) -> None:
 
     try:
         from documents.routes import create_documents_blueprint
+
+        def authorize_document(doc, record_id):
+            if doc.get('entity') != 'invoice':
+                return True, 200
+            from app.models.invoice import Invoice
+            from app.models.session import transaction_context
+            from app.utils.auth import PUBLIC_JWT_SCOPE, SECRET_KEY, _has_entity_permission
+
+            token = request.headers.get('Authorization', '').replace('Bearer ', '')
+            if not token:
+                return False, 401
+            try:
+                user_data = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
+            except Exception:
+                return False, 401
+            if str(user_data.get('scope') or '').strip().lower() == str(PUBLIC_JWT_SCOPE).strip().lower():
+                return False, 401
+            if not _has_entity_permission(user_data, 'invoice', 'read'):
+                return False, 403
+            with transaction_context() as db:
+                invoice = db.get(Invoice, int(record_id))
+                if not invoice:
+                    return False, 403
+                unrestricted = bool(user_data.get('is_superuser') or user_data.get('is_bootstrap_admin'))
+                actor_project = user_data.get('id_proyect') or user_data.get('project_id')
+                if not unrestricted and str(actor_project) != str(invoice.id_proyect):
+                    return False, 403
+            return True, 200
+
         app.register_blueprint(
             create_documents_blueprint(
                 templates_dir=documents_templates,
                 record_loader=_load_document_record,
+                access_checker=authorize_document,
             )
         )
     except Exception as exc:
@@ -593,6 +625,7 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_client_portal)
     app.register_blueprint(bp_bank_statements)
     app.register_blueprint(bp_kronos)
+    app.register_blueprint(bp_restaurant)
     _register_documents_blueprint(app)
 
     @app.route('/uploads/products/<path:filename>')

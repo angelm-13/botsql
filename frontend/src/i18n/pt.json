@@ -101,6 +101,8 @@
     "field_visibility_hint": "Marque os campos que ficarão visíveis para esta função. Os não marcados ficarão ocultos.",
     "module_hidden_hint": "Este módulo não tem ações selecionadas; ficará oculto e seus campos não serão exibidos.",
     "no_fields_available": "Não há campos configuráveis para este módulo.",
+    "actions_only_module": "Permissões gerenciadas por ação",
+    "actions_only_hint": "Este espaço de trabalho não expõe permissões por campo. Use Criar, Ler, Atualizar e Excluir na tabela acima para controlar suas funções.",
     "mfa_reset": "Redefinir MFA",
     "mfa_reset_confirm": "Redefinir MFA deste usuário?",
     "mfa_reset_success": "MFA redefinido com sucesso",
@@ -162,7 +164,12 @@
     "authorization_tracking": "Autorização / Acompanhamento",
     "catalogo_web": "Catálogo Web",
     "web_shoppers": "Compradores Web",
-    "kronos": "Presenças"
+    "kronos": "Presenças",
+    "kronos_device": "Conexão do dispositivo",
+    "restaurant_waiter": "Garçons",
+    "restaurant_cashier": "Caixa",
+    "restaurant_kitchen": "Cozinha",
+    "restaurant_admin": "Admin"
   },
   "quotation": {
     "title": "Cotações",
@@ -426,6 +433,7 @@
       "last_fiscal_certification_date": "Última Fiscal Certificação Data",
       "tax_id": "Imposto ID",
       "type": "Tipo",
+      "is_principal": "Empresa principal",
       "id_user": "ID Usuário",
       "created_by": "Criado por",
       "creation_date": "Data de criação",

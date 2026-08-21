@@ -101,6 +101,8 @@
     "field_visibility_hint": "Marca los campos que serán visibles para este rol. Los no marcados quedarán ocultos.",
     "module_hidden_hint": "Este módulo no tiene acciones seleccionadas; quedará oculto y sus campos no se mostrarán.",
     "no_fields_available": "No hay campos configurables para este módulo.",
+    "actions_only_module": "Permisos administrados por acción",
+    "actions_only_hint": "Este espacio de trabajo no expone permisos por campo. Usa Crear, Leer, Actualizar y Eliminar en la tabla superior para controlar sus funciones.",
     "mfa_reset": "Restablecer MFA",
     "mfa_reset_confirm": "¿Restablecer MFA de este usuario?",
     "mfa_reset_success": "MFA restablecido correctamente",
@@ -162,7 +164,12 @@
     "authorization_tracking": "Autorización / Seguimiento",
     "catalogo_web": "Catálogo Web",
     "web_shoppers": "Compradores Web",
-    "kronos": "Asistencias"
+    "kronos": "Asistencias",
+    "kronos_device": "Conexión al dispositivo",
+    "restaurant_waiter": "Meseros",
+    "restaurant_cashier": "Caja",
+    "restaurant_kitchen": "Cocina",
+    "restaurant_admin": "Admin"
   },
   "quotation": {
     "title": "Cotizaciones",
@@ -429,6 +436,7 @@
       "last_fiscal_certification_date": "Última Fiscal Certificación Fecha",
       "tax_id": "Impuesto ID",
       "type": "Tipo",
+      "is_principal": "Empresa principal",
       "id_user": "ID Usuario",
       "created_by": "Creado por",
       "creation_date": "Fecha de creación",

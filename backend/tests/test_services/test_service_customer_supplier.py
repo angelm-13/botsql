@@ -3,6 +3,7 @@ from __future__ import annotations
 from tests.conftest import BackendTestCase
 from tests.model_factory import build_payload
 from app.services.customer_supplier_service import CustomerSupplierService
+from app.utils.errors import AppError
 
 
 class TestCustomerSupplierService(BackendTestCase):
@@ -12,3 +13,24 @@ class TestCustomerSupplierService(BackendTestCase):
         page = CustomerSupplierService.list(page=1, per_page=10, filters={}, sort=None)
         self.assertIn("items", page)
         self.assertIn("total", page)
+
+    def test_setting_principal_clears_previous_company(self):
+        first = CustomerSupplierService.create(build_payload(CustomerSupplierService, {
+            'name': 'Empresa Uno', 'tax_id': 'AAA010101AAA', 'type': 'client', 'is_principal': True,
+        }))
+        second = CustomerSupplierService.create(build_payload(CustomerSupplierService, {
+            'name': 'Empresa Dos', 'tax_id': 'BBB010101BBB', 'type': 'client', 'is_principal': True,
+        }))
+
+        page = CustomerSupplierService.list(page=1, per_page=10, filters={}, sort=None)
+        principals = [item for item in page['items'] if item['is_principal']]
+        self.assertEqual([second['id_customer_supplier']], [item['id_customer_supplier'] for item in principals])
+        self.assertNotEqual(first['id_customer_supplier'], second['id_customer_supplier'])
+
+    def test_principal_company_requires_tax_id(self):
+        payload = build_payload(CustomerSupplierService, {
+            'name': 'Empresa sin RFC', 'tax_id': '', 'type': 'client', 'is_principal': True,
+        })
+        with self.assertRaises(AppError) as raised:
+            CustomerSupplierService.create(payload)
+        self.assertEqual('validations.customer_supplier.principal_tax_id.required', raised.exception.message_key)

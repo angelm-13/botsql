@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Plus, Pencil, Save, ShieldCheck, Trash2, X } from "lucide-react";
+import React, { useEffect, useMemo, useState } from "react";
+import { Boxes, ClipboardList, FileText, Landmark, LayoutDashboard, Plus, Pencil, Save, Settings, ShieldCheck, SlidersHorizontal, Trash2, Users, Utensils, X } from "lucide-react";
 import {
   getPermissionCatalog,
   getAllPermission,
@@ -33,6 +33,27 @@ const ENTITY_ACTIONS = [
 const FIELD_VISIBLE_BIT = 2;
 const INTERNAL_PERMISSION_ENTITIES = new Set(["entity_permission", "nm_field_permission", "user_mfa", "event_log"]);
 const SYSTEM_FIELD_NAMES = new Set(["created_by", "creation_date", "last_update_date", "deletion_date"]);
+const GROUP_ICON_OPTIONS = [
+  { id: "landmark", label: "Banco", Icon: Landmark },
+  { id: "file-text", label: "Documento", Icon: FileText },
+  { id: "users", label: "Personas", Icon: Users },
+  { id: "utensils", label: "Restaurante", Icon: Utensils },
+  { id: "clipboard-list", label: "Operaciones", Icon: ClipboardList },
+  { id: "boxes", label: "Inventario", Icon: Boxes },
+  { id: "sliders-horizontal", label: "Controles", Icon: SlidersHorizontal },
+  { id: "shield-check", label: "Seguridad", Icon: ShieldCheck },
+  { id: "layout-dashboard", label: "Panel", Icon: LayoutDashboard },
+  { id: "settings", label: "Configuración", Icon: Settings }
+];
+const DEFAULT_GROUP_ICON_IDS = {
+  "Bancos": "landmark",
+  "Contabilidad": "file-text",
+  "Recursos humanos": "users",
+  "Restaurante": "utensils",
+  "Operaciones": "clipboard-list",
+  "Inventario": "boxes",
+  "Configuración": "sliders-horizontal"
+};
 
 function asItems(payload) {
   if (Array.isArray(payload)) return payload;
@@ -161,6 +182,7 @@ export default function RolePermissionManagerPage() {
       nextNavigationMatrix[row.entity_name] = {
         menu_location: row.menu_location || "sidebar",
         menu_group: row.menu_group || "",
+        menu_group_icon: row.menu_group_icon || "",
         menu_label: row.menu_label || "",
         menu_order: Number(row.menu_order ?? 100)
       };
@@ -228,6 +250,26 @@ export default function RolePermissionManagerPage() {
   };
 
   const selectedFields = useMemo(() => catalogFieldsForEntity(selectedEntity), [catalog, fieldsByKey, selectedEntity]);
+  const selectedEntityUsesActionsOnly = selectedCatalogEntity?.permission_scope === "actions_only";
+
+  const navigationGroups = useMemo(() => {
+    const groups = new Map();
+    catalog.forEach((entity) => {
+      const entityName = getEntityName(entity);
+      const navigation = navigationMatrix[entityName] || {};
+      const groupName = String(navigation.menu_group || "").trim();
+      if (!groupName || Number(entityMatrix[entityName] || 0) <= 0 || (navigation.menu_location || "sidebar") !== "sidebar") return;
+      const current = groups.get(groupName) || {
+        name: groupName,
+        icon: navigation.menu_group_icon || DEFAULT_GROUP_ICON_IDS[groupName] || "sliders-horizontal",
+        modules: 0
+      };
+      current.modules += 1;
+      if (navigation.menu_group_icon) current.icon = navigation.menu_group_icon;
+      groups.set(groupName, current);
+    });
+    return [...groups.values()].sort((left, right) => left.name.localeCompare(right.name));
+  }, [catalog, entityMatrix, navigationMatrix]);
 
   const allManagedFields = useMemo(() => {
     const rows = [];
@@ -374,12 +416,24 @@ export default function RolePermissionManagerPage() {
       [entityName]: {
         menu_location: "sidebar",
         menu_group: "",
+        menu_group_icon: "",
         menu_label: "",
         menu_order: 100,
         ...(prev[entityName] || {}),
         [field]: field === "menu_order" ? Number(value || 0) : value
       }
     }));
+  }
+
+  function updateNavigationGroup(groupName, changes) {
+    setNavigationMatrix((prev) => {
+      const next = { ...prev };
+      Object.entries(prev).forEach(([entityName, navigation]) => {
+        if (String(navigation.menu_group || "").trim() !== groupName) return;
+        next[entityName] = { ...navigation, ...changes };
+      });
+      return next;
+    });
   }
 
   function setFieldVisible(fieldKey) {
@@ -439,6 +493,7 @@ export default function RolePermissionManagerPage() {
       const controlType = Number(entityMatrix[entityName] || 0);
       if (!entityName || controlType <= 0) return;
       const entityFields = catalogFieldsForEntity(entityName);
+      if (!entityFields.length) return;
       const visibleCount = entityFields.filter((field) => hasBit(fieldMatrix[getFieldKey(field)], FIELD_VISIBLE_BIT)).length;
       if (visibleCount === 0) invalidEntities.push(entityLabel(entity));
     });
@@ -463,6 +518,7 @@ export default function RolePermissionManagerPage() {
         control_type: controlType,
         menu_location: navigation.menu_location || "sidebar",
         menu_group: String(navigation.menu_group || "").trim() || null,
+        menu_group_icon: String(navigation.menu_group_icon || "").trim() || null,
         menu_label: String(navigation.menu_label || "").trim() || null,
         menu_order: Number(navigation.menu_order ?? 100)
       };
@@ -589,15 +645,31 @@ export default function RolePermissionManagerPage() {
           <form className="form-card" onSubmit={handleSaveRole}>
             <div className="form-header"><strong>{editingRoleId ? t("common.edit_role", "Editar rol") : t("common.new_role", "Nuevo rol")}</strong><button className="button ghost" type="button" onClick={() => setRoleFormOpen(false)}><X size={16} /></button></div>
             <div className="form-grid">
-              <label className="field"><span>{t("common.role_description", "Nombre o descripción del rol")}</span><input value={roleForm.permission_description} onChange={(event) => setRoleForm((prev) => ({ ...prev, permission_description: event.target.value }))} /></label>
-              <label className="field"><span>{t("fields.permission.authorized_by", "Autorizado por")}</span><select value={roleForm.authorized_by} onChange={(event) => setRoleForm((prev) => ({ ...prev, authorized_by: event.target.value }))}><option value="">{t("common.select_option", "Selecciona una opción")}</option>{users.map((item) => <option key={item.id_user ?? item.id} value={item.id_user ?? item.id}>{item.username || item.full_name || item.email || item.id_user || item.id}</option>)}</select></label>
-              <label className="field"><span>{t("fields.permission.id_department", "Departamento")}</span><select value={roleForm.id_department} onChange={(event) => setRoleForm((prev) => ({ ...prev, id_department: event.target.value }))}><option value="">{t("common.select_option", "Selecciona una opción")}</option>{departments.map((item) => <option key={item.id_department ?? item.id} value={item.id_department ?? item.id}>{item.department_description || item.name || item.id_department || item.id}</option>)}</select></label>
-              <label className="field"><span>{t("fields.permission.id_subdepartment", "Subdepartamento")}</span><select value={roleForm.id_subdepartment} onChange={(event) => setRoleForm((prev) => ({ ...prev, id_subdepartment: event.target.value }))}><option value="">{t("common.select_option", "Selecciona una opción")}</option>{subdepartments.map((item) => <option key={item.id_subdepartment ?? item.id} value={item.id_subdepartment ?? item.id}>{item.subdepartment_description || item.name || item.id_subdepartment || item.id}</option>)}</select></label>
-              <label className="field"><span>{t("fields.permission.id_level", "Nivel")}</span><select value={roleForm.id_level} onChange={(event) => setRoleForm((prev) => ({ ...prev, id_level: event.target.value }))}><option value="">{t("common.select_option", "Selecciona una opción")}</option>{levels.map((item) => <option key={item.id_level ?? item.id} value={item.id_level ?? item.id}>{item.level_description || item.name || item.id_level || item.id}</option>)}</select></label>
+              <label className="field"><span>{t("common.role_description", "Nombre o descripción del rol")}</span><input required value={roleForm.permission_description} onChange={(event) => setRoleForm((prev) => ({ ...prev, permission_description: event.target.value }))} /></label>
+              <label className="field"><span>{t("fields.permission.authorized_by", "Autorizado por")}</span><select required value={roleForm.authorized_by} onChange={(event) => setRoleForm((prev) => ({ ...prev, authorized_by: event.target.value }))}><option value="">{t("common.select_option", "Selecciona una opción")}</option>{users.map((item) => <option key={item.id_user ?? item.id} value={item.id_user ?? item.id}>{item.username || item.full_name || item.email || item.id_user || item.id}</option>)}</select></label>
+              <label className="field"><span>{t("fields.permission.id_department", "Departamento")}</span><select required value={roleForm.id_department} onChange={(event) => setRoleForm((prev) => ({ ...prev, id_department: event.target.value }))}><option value="">{t("common.select_option", "Selecciona una opción")}</option>{departments.map((item) => <option key={item.id_department ?? item.id} value={item.id_department ?? item.id}>{item.department_description || item.name || item.id_department || item.id}</option>)}</select></label>
+              <label className="field"><span>{t("fields.permission.id_subdepartment", "Subdepartamento")}</span><select required value={roleForm.id_subdepartment} onChange={(event) => setRoleForm((prev) => ({ ...prev, id_subdepartment: event.target.value }))}><option value="">{t("common.select_option", "Selecciona una opción")}</option>{subdepartments.map((item) => <option key={item.id_subdepartment ?? item.id} value={item.id_subdepartment ?? item.id}>{item.subdepartment_description || item.name || item.id_subdepartment || item.id}</option>)}</select></label>
+              <label className="field"><span>{t("fields.permission.id_level", "Nivel")}</span><select required value={roleForm.id_level} onChange={(event) => setRoleForm((prev) => ({ ...prev, id_level: event.target.value }))}><option value="">{t("common.select_option", "Selecciona una opción")}</option>{levels.map((item) => <option key={item.id_level ?? item.id} value={item.id_level ?? item.id}>{item.level_description || item.name || item.id_level || item.id}</option>)}</select></label>
             </div>
             <div className="form-actions"><button className="button primary" type="submit" disabled={savingRole}>{savingRole ? t("common.loading", "Cargando...") : t("common.save_role", "Guardar rol")}</button><button className="button" type="button" onClick={() => setRoleFormOpen(false)}>{t("common.cancel", "Cancelar")}</button></div>
           </form>
         )}
+      </article>
+
+      <article className="form-card navigation-group-manager">
+        <div className="form-header"><SlidersHorizontal size={20} /><strong>{t("common.navigation_groups", "Grupos del menú")}</strong></div>
+        <p className="muted-text">{t("common.navigation_groups_hint", "Cambia el nombre y el icono que representa cada grupo cuando la barra lateral está comprimida.")}</p>
+        {!selectedRoleId ? <div className="empty">{t("common.select_role", "Selecciona un rol/perfil")}</div> : navigationGroups.length ? <div className="navigation-group-list">{navigationGroups.map((group) => (
+            <section className="navigation-group-row" key={group.name}>
+              <label className="field navigation-group-name">
+                <span>{t("common.group_name", "Nombre del grupo")} · {group.modules} {group.modules === 1 ? "módulo" : "módulos"}</span>
+                <input defaultValue={group.name} maxLength={80} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); event.currentTarget.blur(); } }} onBlur={(event) => { const nextName = event.target.value.trim(); if (nextName && nextName !== group.name) updateNavigationGroup(group.name, { menu_group: nextName }); else event.target.value = group.name; }} />
+              </label>
+              <div className="navigation-icon-picker" role="group" aria-label={`Icono para ${group.name}`}>
+                {GROUP_ICON_OPTIONS.map(({ id, label, Icon }) => <button key={id} type="button" className={group.icon === id ? "active" : ""} title={label} aria-label={label} aria-pressed={group.icon === id} onClick={() => updateNavigationGroup(group.name, { menu_group_icon: id })}><Icon size={19} /></button>)}
+              </div>
+            </section>
+        ))}</div> : <div className="empty">{t("common.no_navigation_groups", "Activa módulos en el menú vertical y asigna un grupo para administrarlo aquí.")}</div>}
       </article>
 
       {loading ? <div className="empty">{t("common.loading", "Cargando...")}</div> : (
@@ -646,14 +718,14 @@ export default function RolePermissionManagerPage() {
             <div className="form-header"><ShieldCheck size={20} /><strong>{selectedCatalogEntity ? entityLabel(selectedCatalogEntity) : t("common.defined_fields", "Campos definidos")}</strong></div>
             {!selectedEntity ? <p>{t("common.no_module_selected", "Selecciona un módulo para configurar sus campos.")}</p> : (
               <div className="field-permission-list">
-                <p className="muted-text">{Number(entityMatrix[selectedEntity] || 0) > 0 ? t("common.field_visibility_hint", "Marca los campos que serán visibles para este rol. Los no marcados quedarán ocultos.") : t("common.module_hidden_hint", "Este módulo no tiene acciones seleccionadas; quedará oculto y sus campos no se mostrarán.")}</p>
-                <div className="field-bulk-actions">
+                {selectedEntityUsesActionsOnly ? <div className="empty"><strong>{t("common.actions_only_module", "Permisos administrados por acción")}</strong><p>{t("common.actions_only_hint", "Este espacio de trabajo no expone permisos por campo. Usa Crear, Leer, Actualizar y Eliminar en la tabla superior para controlar sus funciones.")}</p></div> : <p className="muted-text">{Number(entityMatrix[selectedEntity] || 0) > 0 ? t("common.field_visibility_hint", "Marca los campos que serán visibles para este rol. Los no marcados quedarán ocultos.") : t("common.module_hidden_hint", "Este módulo no tiene acciones seleccionadas; quedará oculto y sus campos no se mostrarán.")}</p>}
+                {!selectedEntityUsesActionsOnly && <div className="field-bulk-actions">
                   <button className="button" type="button" onClick={() => setAllFieldsForSelectedEntity(true)} disabled={!selectedRoleId || Number(entityMatrix[selectedEntity] || 0) <= 0 || selectedFields.length === 0}>{t("common.select_all_fields", "Seleccionar todos los campos")}</button>
                   <button className="button" type="button" onClick={() => setAllFieldsForSelectedEntity(false)} disabled={!selectedRoleId || Number(entityMatrix[selectedEntity] || 0) <= 0 || selectedFields.length === 0}>{t("common.clear_fields", "Quitar campos")}</button>
-                </div>
-                <div className="field-permission-header"><span>{t("common.defined_fields", "Campos definidos")}</span><span>{t("common.visible", "Ver")}</span></div>
-                {selectedFields.length === 0 && <div className="empty">{t("common.no_fields_available", "No hay campos configurables para este módulo.")}</div>}
-                {selectedFields.map((field) => {
+                </div>}
+                {!selectedEntityUsesActionsOnly && <div className="field-permission-header"><span>{t("common.defined_fields", "Campos definidos")}</span><span>{t("common.visible", "Ver")}</span></div>}
+                {!selectedEntityUsesActionsOnly && selectedFields.length === 0 && <div className="empty">{t("common.no_fields_available", "No hay campos configurables para este módulo.")}</div>}
+                {!selectedEntityUsesActionsOnly && selectedFields.map((field) => {
                   const fieldKey = getFieldKey(field);
                   const value = Number(fieldMatrix[fieldKey] || 0);
                   const entityEnabled = Number(entityMatrix[selectedEntity] || 0) > 0;

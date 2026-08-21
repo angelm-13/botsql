@@ -125,6 +125,7 @@ CREATE TABLE IF NOT EXISTS "customer_supplier" (
   "last_fiscal_certification_date" TIMESTAMP NULL,
   "tax_id" VARCHAR(50) NULL,
   "type" TEXT NULL CHECK ("type" IN ('client', 'supplier')),
+  "is_principal" BOOLEAN NOT NULL DEFAULT FALSE,
   "id_user" INTEGER NOT NULL DEFAULT 1,
   "created_by" INTEGER NOT NULL DEFAULT 1,
   "creation_date" TIMESTAMP NULL,
@@ -161,6 +162,7 @@ CREATE TABLE IF NOT EXISTS "bank" (
 CREATE TABLE IF NOT EXISTS "bank_account" (
   "id_bank_account" SERIAL NOT NULL,
   "id_bank" INTEGER NOT NULL DEFAULT 1,
+  "id_proyect" INTEGER NULL,
   "bank_account_description" VARCHAR(200) NOT NULL,
   "branch" VARCHAR(30) NULL,
   "type" VARCHAR(30) NULL,
@@ -183,6 +185,7 @@ CREATE TABLE IF NOT EXISTS "invoice" (
   "tax" NUMERIC(10,2) NULL,
   "total" NUMERIC(10,2) NULL,
   "invoice_status" VARCHAR(20) NULL,
+  "invoice_direction" VARCHAR(20) NULL CHECK ("invoice_direction" IN ('venta', 'compra', 'sin_clasificar')),
   "payment_method" VARCHAR(50) NULL,
   "note" VARCHAR(300) NULL,
   "id_customer_supplier" INTEGER NOT NULL DEFAULT 1,
@@ -724,6 +727,7 @@ CREATE TABLE IF NOT EXISTS "entity_permission" (
   "control_type" TEXT NOT NULL DEFAULT '15' CHECK ("control_type" IN ('1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15')),
   "menu_location" VARCHAR(20) NOT NULL DEFAULT 'sidebar' CHECK ("menu_location" IN ('sidebar', 'settings', 'hidden')),
   "menu_group" VARCHAR(80) NULL,
+  "menu_group_icon" VARCHAR(40) NULL,
   "menu_label" VARCHAR(100) NULL,
   "menu_order" INTEGER NOT NULL DEFAULT 100,
   "created_by" INTEGER NOT NULL DEFAULT 1,
@@ -1018,6 +1022,10 @@ EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 DO $$ BEGIN
   ALTER TABLE "bank_account" ADD CONSTRAINT "fk_bank_account_id_bank" FOREIGN KEY ("id_bank") REFERENCES "bank"("id_bank") DEFERRABLE INITIALLY DEFERRED;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE "bank_account" ADD CONSTRAINT "fk_bank_account_id_proyect" FOREIGN KEY ("id_proyect") REFERENCES "proyect"("id_proyect") DEFERRABLE INITIALLY DEFERRED;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 DO $$ BEGIN
@@ -1416,5 +1424,51 @@ DO $$ BEGIN
   ALTER TABLE "password_reset_token" ADD CONSTRAINT "fk_password_reset_token_id_user" FOREIGN KEY ("id_user") REFERENCES "user"("id_user") DEFERRABLE INITIALLY DEFERRED;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
+
+CREATE TABLE IF NOT EXISTS "bank_statement" (
+  "id_bank_statement" SERIAL PRIMARY KEY,
+  "id_bank_account" INTEGER NOT NULL REFERENCES "bank_account"("id_bank_account"),
+  "id_proyect" INTEGER NOT NULL REFERENCES "proyect"("id_proyect"),
+  "file_hash" VARCHAR(64) NOT NULL UNIQUE,
+  "original_filename" VARCHAR(255) NOT NULL,
+  "period_start" DATE NULL,
+  "period_end" DATE NULL,
+  "total_debits" NUMERIC(14,2) NOT NULL,
+  "total_credits" NUMERIC(14,2) NOT NULL,
+  "status" VARCHAR(30) NOT NULL,
+  "starting_balance" NUMERIC(14,2) NULL,
+  "ending_balance" NUMERIC(14,2) NULL,
+  "average_balance" NUMERIC(14,2) NULL,
+  "parser_name" VARCHAR(80) NULL,
+  "extraction_confidence" NUMERIC(5,2) NULL,
+  "extraction_errors" JSONB NULL,
+  "reconciliation_data" JSONB NULL,
+  "created_by" INTEGER NOT NULL,
+  "creation_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "bank_statement_movement" (
+  "id_bank_statement_movement" SERIAL PRIMARY KEY,
+  "id_bank_statement" INTEGER NOT NULL REFERENCES "bank_statement"("id_bank_statement"),
+  "movement_date" DATE NOT NULL,
+  "description" VARCHAR(500) NOT NULL,
+  "debit" NUMERIC(14,2) NOT NULL DEFAULT 0,
+  "credit" NUMERIC(14,2) NOT NULL DEFAULT 0,
+  "sequence_number" INTEGER NULL,
+  "settlement_date" DATE NULL,
+  "code" VARCHAR(30) NULL,
+  "reference" VARCHAR(100) NULL,
+  "order_number" VARCHAR(100) NULL,
+  "origin_bank" VARCHAR(100) NULL,
+  "origin_account" VARCHAR(50) NULL,
+  "beneficiary" VARCHAR(200) NULL,
+  "balance" NUMERIC(14,2) NULL,
+  "reconciliation_note" VARCHAR(500) NULL,
+  "id_invoice" INTEGER NULL REFERENCES "invoice"("id_invoice"),
+  CHECK (("debit" > 0 AND "credit" = 0) OR ("credit" > 0 AND "debit" = 0))
+);
+
+CREATE INDEX IF NOT EXISTS "ix_bank_statement_movement_statement" ON "bank_statement_movement" ("id_bank_statement");
+CREATE UNIQUE INDEX IF NOT EXISTS "uq_bank_statement_movement_row" ON "bank_statement_movement" ("id_bank_statement", "sequence_number") WHERE "sequence_number" IS NOT NULL;
 
 COMMIT;

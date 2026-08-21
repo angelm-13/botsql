@@ -250,6 +250,78 @@ INSERT INTO "password_reset_token" ("id_password_reset_token", "id_user", "token
 VALUES (1, 1, 'disabled_token_hash', '2026-01-01 00:00:00', '2026-01-01 00:00:00', '127.0.0.1', '2026-01-01 00:00:00')
 ON CONFLICT ("id_password_reset_token") DO NOTHING;
 
+-- Device connection is a virtual module and defaults to the settings gear.
+INSERT INTO "entity_permission" ("id_permission", "entity_name", "control_type", "menu_location", "menu_group", "menu_label", "menu_order", "created_by")
+VALUES (1, 'kronos_device', 2, 'settings', 'Recursos humanos', 'Conexión al dispositivo', 30, 1)
+ON CONFLICT ("id_permission", "entity_name") DO UPDATE SET
+  "menu_location" = EXCLUDED."menu_location",
+  "menu_group" = EXCLUDED."menu_group",
+  "menu_label" = EXCLUDED."menu_label",
+  "menu_order" = EXCLUDED."menu_order",
+  "deletion_date" = NULL;
+
+-- Restaurant profiles. Users are assigned through the existing Tyakxa user/role UI.
+INSERT INTO "permission" ("id_permission", "created_by", "authorized_by", "permission_description", "id_department", "id_subdepartment", "id_level") VALUES
+  (10, 1, 1, 'Mesero', 1, 1, 1),
+  (11, 1, 1, 'Cocina', 1, 1, 1),
+  (12, 1, 1, 'Caja Restaurante', 1, 1, 1),
+  (13, 1, 1, 'Admin Restaurante', 1, 1, 1)
+ON CONFLICT ("id_permission") DO NOTHING;
+
+INSERT INTO "entity_permission" ("id_permission", "entity_name", "control_type", "menu_location", "menu_group", "menu_label", "menu_order", "created_by") VALUES
+  (1, 'restaurant_waiter', 15, 'sidebar', 'Restaurante', 'Meseros', 10, 1),
+  (1, 'restaurant_cashier', 15, 'sidebar', 'Restaurante', 'Caja', 20, 1),
+  (1, 'restaurant_kitchen', 15, 'sidebar', 'Restaurante', 'Cocina', 30, 1),
+  (1, 'restaurant_admin', 15, 'sidebar', 'Restaurante', 'Admin', 40, 1),
+  (10, 'restaurant_waiter', 15, 'sidebar', 'Restaurante', 'Meseros', 10, 1),
+  (11, 'restaurant_kitchen', 6, 'sidebar', 'Restaurante', 'Cocina', 30, 1),
+  (12, 'restaurant_cashier', 7, 'sidebar', 'Restaurante', 'Caja', 20, 1),
+  (13, 'restaurant_waiter', 15, 'sidebar', 'Restaurante', 'Meseros', 10, 1),
+  (13, 'restaurant_cashier', 15, 'sidebar', 'Restaurante', 'Caja', 20, 1),
+  (13, 'restaurant_kitchen', 15, 'sidebar', 'Restaurante', 'Cocina', 30, 1),
+  (13, 'restaurant_admin', 15, 'sidebar', 'Restaurante', 'Admin', 40, 1)
+ON CONFLICT ("id_permission", "entity_name") DO UPDATE SET
+  "control_type" = EXCLUDED."control_type",
+  "menu_location" = EXCLUDED."menu_location",
+  "menu_group" = EXCLUDED."menu_group",
+  "menu_label" = EXCLUDED."menu_label",
+  "menu_order" = EXCLUDED."menu_order",
+  "deletion_date" = NULL;
+
+INSERT INTO "restaurant_table" ("id_restaurant_table", "id_proyect", "number", "capacity", "location_description", "is_active", "created_by")
+SELECT number, 1, number, 4, CASE WHEN number <= 8 THEN 'Salón principal' ELSE 'Terraza' END, TRUE, 1
+FROM generate_series(1, 15) AS number
+ON CONFLICT ("id_restaurant_table") DO NOTHING;
+
+INSERT INTO "restaurant_guisado" ("id_restaurant_guisado", "id_proyect", "name", "is_active", "created_by") VALUES
+  (1, 1, 'Picadillo', TRUE, 1),
+  (2, 1, 'Rajas con crema', TRUE, 1),
+  (3, 1, 'Frijoles con chorizo', TRUE, 1),
+  (4, 1, 'Chicharrón en salsa verde', TRUE, 1),
+  (5, 1, 'Papa con chorizo', TRUE, 1),
+  (6, 1, 'Mole', TRUE, 1),
+  (7, 1, 'Tinga de pollo', TRUE, 1),
+  (8, 1, 'Chicharrón prensado', TRUE, 1)
+ON CONFLICT ("id_restaurant_guisado") DO NOTHING;
+
+INSERT INTO "restaurant_dish" ("id_restaurant_dish", "id_proyect", "title", "description", "icon", "category", "price", "production_cost", "requires_guisado", "schedule", "is_active", "created_by") VALUES
+  (1, 1, 'Taco de guisado', 'Tortilla y guisado a elegir', 'taco', 'taco', 18.00, 7.00, TRUE, 'all', TRUE, 1),
+  (2, 1, 'Gordita de guisado', 'Gordita de maíz y guisado', 'sandwich', 'gordita', 22.00, 9.00, TRUE, 'all', TRUE, 1),
+  (3, 1, 'Quesadilla de guisado', 'Quesadilla con guisado a elegir', 'sandwich', 'quesadilla', 25.00, 11.00, TRUE, 'all', TRUE, 1),
+  (4, 1, 'Pozole', 'Platillo del día', 'soup', 'platillo_dia', 85.00, 36.00, FALSE, 'weekend', TRUE, 1),
+  (5, 1, 'Flan', 'Flan de la casa', 'cake', 'postre', 45.00, 16.00, FALSE, 'all', TRUE, 1),
+  (6, 1, 'Pastel', 'Rebanada de pastel', 'cake', 'postre', 50.00, 20.00, FALSE, 'all', TRUE, 1),
+  (7, 1, 'Arroz con leche', 'Postre tradicional', 'cake', 'postre', 40.00, 14.00, FALSE, 'all', TRUE, 1),
+  (8, 1, 'Gelatina', 'Gelatina del día', 'cake', 'postre', 35.00, 10.00, FALSE, 'all', TRUE, 1),
+  (9, 1, 'Agua de jamaica', 'Vaso de agua fresca', 'glass-water', 'agua', 25.00, 6.00, FALSE, 'weekday', TRUE, 1),
+  (10, 1, 'Agua de horchata', 'Vaso de agua fresca', 'glass-water', 'agua', 25.00, 7.00, FALSE, 'weekend', TRUE, 1),
+  (11, 1, 'Coca-Cola', 'Refresco', 'cup-soda', 'refresco', 30.00, 14.00, FALSE, 'all', TRUE, 1),
+  (12, 1, 'Sprite', 'Refresco', 'cup-soda', 'refresco', 28.00, 13.00, FALSE, 'all', TRUE, 1),
+  (13, 1, 'Café de olla', 'Café tradicional', 'coffee', 'cafe', 30.00, 8.00, FALSE, 'all', TRUE, 1),
+  (14, 1, 'Paleta', 'Dulce', 'candy', 'dulce', 12.00, 5.00, FALSE, 'all', TRUE, 1),
+  (15, 1, 'Cocada', 'Dulce tradicional', 'candy', 'dulce', 18.00, 7.00, FALSE, 'all', TRUE, 1)
+ON CONFLICT ("id_restaurant_dish") DO NOTHING;
+
 -- Keep PostgreSQL SERIAL sequences aligned after deterministic seed IDs
 DO $$
 DECLARE r record;

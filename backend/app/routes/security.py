@@ -1491,6 +1491,20 @@ _PERMISSION_CATALOG = json.loads(r'''{
           "is_system_field": false
         },
         {
+          "field_name": "is_principal",
+          "label": "Principal Company",
+          "type": "boolean",
+          "raw_type": "boolean",
+          "is_primary": false,
+          "is_foreign": false,
+          "reference_table": null,
+          "reference_field": null,
+          "is_representative": false,
+          "is_required": true,
+          "is_encrypted": false,
+          "is_system_field": false
+        },
+        {
           "field_name": "id_user",
           "label": "Id User",
           "type": "integer",
@@ -2116,6 +2130,20 @@ _PERMISSION_CATALOG = json.loads(r'''{
           "field_name": "invoice_status",
           "label": "Invoice Status",
           "type": "string",
+          "raw_type": "varchar",
+          "is_primary": false,
+          "is_foreign": false,
+          "reference_table": null,
+          "reference_field": null,
+          "is_representative": false,
+          "is_required": false,
+          "is_encrypted": false,
+          "is_system_field": false
+        },
+        {
+          "field_name": "invoice_direction",
+          "label": "Invoice Direction",
+          "type": "enum",
           "raw_type": "varchar",
           "is_primary": false,
           "is_foreign": false,
@@ -8712,6 +8740,26 @@ def _is_admin_actor(user_data: dict) -> bool:
 
 def _catalog_for_actor(user_data: dict) -> dict:
     catalog = deepcopy(_PERMISSION_CATALOG)
+    virtual_entities = (
+        ('kronos_device', 'Conexión al dispositivo', 'human_resources'),
+        ('restaurant_waiter', 'Meseros', 'restaurant'),
+        ('restaurant_cashier', 'Caja', 'restaurant'),
+        ('restaurant_kitchen', 'Cocina', 'restaurant'),
+        ('restaurant_admin', 'Administración de restaurante', 'restaurant'),
+    )
+    for entity_name, label, domain in virtual_entities:
+        catalog.setdefault('entities', []).append({
+            'entity_name': entity_name,
+            'label': label,
+            'module': domain,
+            'domain': domain,
+            'primary_key': None,
+            'representative_field': None,
+            'is_bootstrap_only': False,
+            'is_permission_source': False,
+            'permission_scope': 'actions_only',
+            'fields': [],
+        })
     if not (user_data.get('is_superuser') or user_data.get('is_bootstrap_admin')):
         catalog['entities'] = [
             entity for entity in catalog.get('entities', [])
@@ -8790,6 +8838,7 @@ def my_permissions(user_data):
                 'control_type': row.control_type,
                 'menu_location': row.menu_location,
                 'menu_group': row.menu_group,
+                'menu_group_icon': row.menu_group_icon,
                 'menu_label': row.menu_label,
                 'menu_order': row.menu_order,
             })

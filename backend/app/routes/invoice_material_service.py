@@ -6,7 +6,7 @@ from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
 
 bp_invoice_material_service = Blueprint('invoice_material_service', __name__, url_prefix='/invoice_material_service')
-ALLOWED_FIELDS = ['id_invoice_material_service', 'id_invoice', 'id_material', 'id_service', 'invoice_material_service_description', 'max_requirement_date', 'is_directly_related_to_product_service_creation', 'id_authorized', 'id_status', 'id_buyer', 'id_customer_supplier', 'gross_price', 'quantity', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'id_product', 'line_type', 'tax_applicable', 'line_tax', 'line_total', 'id_unit', 'authorization_status', 'authorization_note', 'authorization_date', 'id_task']
+ALLOWED_FIELDS = ['id_invoice_material_service', 'id_invoice', 'id_material', 'id_service', 'invoice_material_service_description', 'max_requirement_date', 'is_directly_related_to_product_service_creation', 'id_authorized', 'id_status', 'id_buyer', 'id_customer_supplier', 'gross_price', 'quantity', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'id_product', 'line_type', 'tax_applicable', 'line_tax', 'line_total', 'id_unit', 'authorization_status', 'authorization_note', 'authorization_date', 'id_task', 'discount', 'sat_product_key', 'sat_unit_key', 'tax_object', 'tax_rate', 'isr_retention_rate', 'iva_retention_rate']
 
 TECHNICAL_RESPONSE_FIELDS = {'id_invoice_material_service'}
 FIELD_READ_BIT = 2

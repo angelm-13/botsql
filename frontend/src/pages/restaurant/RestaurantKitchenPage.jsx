@@ -1,0 +1,14 @@
+import React, { useEffect, useState } from "react";
+import { CheckCircle2, ChefHat, Flame } from "lucide-react";
+import { getRestaurantKitchenBoard, updateRestaurantKitchenOrder } from "../../api";
+import { EmptyState, Notice, RestaurantHeader } from "./RestaurantUi";
+import "../../styles/restaurant.css";
+
+const lanes = [{ status: "pedido", title: "Por preparar", icon: ChefHat, next: "en_preparacion", action: "Comenzar" }, { status: "en_preparacion", title: "En preparación", icon: Flame, next: "listo_para_entrega", action: "Marcar listo" }, { status: "listo_para_entrega", title: "Listo para entregar", icon: CheckCircle2 }];
+export default function RestaurantKitchenPage() {
+  const [orders, setOrders] = useState([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(null);
+  const load = async () => { setLoading(true); try { setOrders((await getRestaurantKitchenBoard()).items || []); setError(null); } catch (reason) { setError(reason); } finally { setLoading(false); } };
+  useEffect(() => { load(); const timer = window.setInterval(load, 30000); return () => window.clearInterval(timer); }, []);
+  const advance = async (order, status) => { try { await updateRestaurantKitchenOrder(order.id_restaurant_order, status); await load(); } catch (reason) { setError(reason); } };
+  return <main className="rest-page rest-kitchen"><RestaurantHeader eyebrow="Restaurante · Producción" title="Tablero de cocina" detail="Comandas ordenadas por etapa y antigüedad. Se actualiza cada 30 segundos." loading={loading} onRefresh={load} /><Notice error={error} /><div className="rest-kitchen-board">{lanes.map((lane) => { const items = orders.filter((order) => order.status === lane.status); const Icon = lane.icon; return <section className={`rest-kitchen-lane lane-${lane.status}`} key={lane.status}><header><Icon size={21} /><h2>{lane.title}</h2><span>{items.length}</span></header><div>{items.map((order) => <article className="rest-kitchen-ticket" key={order.id_restaurant_order}><div className="rest-kitchen-ticket-head"><strong>Mesa {order.visit?.table?.number}</strong><span>Comensal {order.diner_index}</span></div><ul>{order.items.map((item) => <li key={item.id_restaurant_order_item}><b>{item.quantity}×</b><span>{item.dish?.title}<small>{[item.guisado_1?.name, item.guisado_2?.name, item.note].filter(Boolean).join(" · ")}</small></span></li>)}</ul>{lane.next && <button className="rest-primary" onClick={() => advance(order, lane.next)}>{lane.action}</button>}</article>)}{!items.length && <EmptyState>Sin comandas en esta etapa.</EmptyState>}</div></section>; })}</div></main>;
+}

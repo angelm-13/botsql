@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { FileCheck2, FileText, Plus, Trash2 } from "lucide-react";
-import { createManualInvoice, getAllCustomerSupplier, getAllProyect, previewManualInvoice } from "../api";
+import { BadgeCheck, Download, FileCheck2, FileText, Plus, Trash2 } from "lucide-react";
+import { createManualInvoice, downloadInvoicePdf, downloadInvoiceXml, getAllCustomerSupplier, getAllProyect, previewManualInvoice, stampInvoice } from "../api";
 
 function asArray(payload) {
   if (Array.isArray(payload?.items)) return payload.items;
@@ -37,6 +37,7 @@ export default function ManualInvoicePage() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [createdInvoice, setCreatedInvoice] = useState(null);
   const [form, setForm] = useState({
     id_proyect: currentUser.id_proyect || "",
     id_customer_supplier: "",
@@ -105,12 +106,45 @@ export default function ManualInvoicePage() {
     try {
       const result = await createManualInvoice(payload());
       setMessage(`Factura manual #${result.invoice.id_invoice} guardada correctamente.`);
+      setCreatedInvoice(result.invoice);
       setConcepts([newConcept()]);
       setPreview(null);
     } catch (requestError) {
       setError(readableError(requestError));
     } finally {
       setBusy(false);
+    }
+  }
+
+  function saveBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleStamp() {
+    setBusy(true);
+    setError("");
+    try {
+      const result = await stampInvoice(createdInvoice.id_invoice);
+      setCreatedInvoice((current) => ({ ...current, folio_fiscal: result.operation.provider_reference }));
+      setMessage(`Factura #${createdInvoice.id_invoice} timbrada correctamente.`);
+    } catch (requestError) {
+      setError(readableError(requestError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDownload(type) {
+    try {
+      const blob = type === "xml" ? await downloadInvoiceXml(createdInvoice.id_invoice) : await downloadInvoicePdf(createdInvoice.id_invoice);
+      saveBlob(blob, `${type === "xml" ? "CFDI" : "Factura"}-${createdInvoice.id_invoice}.${type}`);
+    } catch (requestError) {
+      setError(readableError(requestError));
     }
   }
 
@@ -161,6 +195,7 @@ export default function ManualInvoicePage() {
 
         {error && <div className="alert error">{error}</div>}
         {message && <div className="alert success">{message}</div>}
+        {createdInvoice && <div className="form-actions">{!createdInvoice.folio_fiscal && <button className="button primary" type="button" disabled={busy} onClick={handleStamp}><BadgeCheck size={16} />Timbrar</button>}<button className="button" type="button" onClick={() => handleDownload("pdf")}><FileText size={16} />PDF</button>{createdInvoice.folio_fiscal && <button className="button" type="button" onClick={() => handleDownload("xml")}><Download size={16} />XML</button>}</div>}
         {preview && <div className="quotation-totals"><span>Subtotal <strong>{money(preview.subtotal)}</strong></span><span>Descuento <strong>{money(preview.discount)}</strong></span><span>IVA <strong>{money(preview.iva)}</strong></span><span>Ret. ISR <strong>-{money(preview.isr_retention)}</strong></span><span>Ret. IVA <strong>-{money(preview.iva_retention)}</strong></span><span>Total <strong>{money(preview.total)}</strong></span></div>}
         {preview?.errors?.length > 0 && <div className="alert error">{preview.errors.join(" · ")}</div>}
         <div className="form-actions"><button className="button" type="button" disabled={busy} onClick={handlePreview}><FileCheck2 size={16} />Vista previa</button><button className="button primary" type="submit" disabled={busy || !preview?.can_create}>Guardar factura</button></div>

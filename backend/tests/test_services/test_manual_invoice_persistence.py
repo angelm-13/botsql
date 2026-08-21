@@ -14,7 +14,7 @@ class TestManualInvoicePersistence(BackendTestCase):
         super().setUp()
         with transaction_context() as db:
             db.add_all([
-                CustomerSupplier(id_customer_supplier=10, name='Emisor', tax_id='AAA010101AAA', postal_code='37000', type='supplier', id_user=1, created_by=1),
+                CustomerSupplier(id_customer_supplier=10, name='Emisor', tax_id='AAA010101AAA', postal_code='37000', fiscal_type='601', type='supplier', id_user=1, created_by=1),
                 CustomerSupplier(id_customer_supplier=20, name='Cliente', tax_id='BBB010101BBB', postal_code='37100', fiscal_type='601', type='client', id_user=1, created_by=1),
                 Proyect(id_proyect=30, id_customer_supplier=20, leader=1, proyect_description='Proyecto cliente', created_by=1),
                 Status(id_status=40, status_description='Activo', category='invoice', is_terminal=False, sort_order='asc', created_by=1),

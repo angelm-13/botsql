@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
-import { Plus, RefreshCw, Search, Trash2, Pencil } from "lucide-react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { BadgeCheck, ChevronDown, ChevronRight, Download, FileText, Plus, RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
-import { getAllInvoice, createInvoice, updateInvoice, deleteInvoice, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllCustomerSupplier, getAllStatus, getAllProyect } from "../api";
+import { deleteInvoice, downloadInvoicePdf, downloadInvoiceXml, getAllCustomerSupplier, getAllEntityPermission, getAllField, getAllInvoice, getAllNmFieldPermission, getAllProyect, getAllStatus, getInvoiceLines, resetUserMfa, stampInvoice, createInvoice, updateInvoice } from "../api";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 import InvoiceUploadWidget from "../components/InvoiceUploadWidget.jsx";
 
@@ -53,10 +53,14 @@ export default function InvoicePage() {
   const canUpdate = canUseAction(ACTION_UPDATE);
   const canDelete = canUseAction(ACTION_DELETE);
   const canSubmitForm = editingId ? canUpdate : canCreate;
-  const showRowActions = canRead && (canUpdate || canDelete);
+  const showRowActions = canRead;
   const [customerSupplierOptions, setCustomerSupplierOptions] = useState([]);
   const [statusOptions, setStatusOptions] = useState([]);
   const [proyectOptions, setProyectOptions] = useState([]);
+  const [expandedInvoiceId, setExpandedInvoiceId] = useState(null);
+  const [invoiceLines, setInvoiceLines] = useState({});
+  const [invoiceLinesLoading, setInvoiceLinesLoading] = useState(null);
+  const [invoiceLinesError, setInvoiceLinesError] = useState({});
 
   async function loadData() {
     if (!permissionReady || !canRead) {
@@ -261,6 +265,39 @@ export default function InvoicePage() {
     try { await deleteInvoice(item.id_invoice); await loadData(); } catch (error) { setErrorKey(error.message || "errors.request_failed"); setErrorMeta(error.payload?.meta || null); }
   }
 
+  function saveBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleStamp(item) {
+    setErrorKey("");
+    setNoticeKey("");
+    try {
+      await stampInvoice(item.id_invoice);
+      setNoticeKey("Factura timbrada correctamente.");
+      await loadData();
+    } catch (error) {
+      setErrorKey(error.message || "errors.request_failed");
+      setErrorMeta(error.payload?.meta || null);
+    }
+  }
+
+  async function handleDocument(item, type) {
+    setErrorKey("");
+    try {
+      const blob = type === "xml" ? await downloadInvoiceXml(item.id_invoice) : await downloadInvoicePdf(item.id_invoice);
+      saveBlob(blob, `${type === "xml" ? "CFDI" : "Factura"}-${item.id_invoice}.${type}`);
+    } catch (error) {
+      setErrorKey(error.message || "errors.request_failed");
+      setErrorMeta(error.payload?.meta || null);
+    }
+  }
+
 
 
   async function resetMfaForItem(item) {
@@ -418,6 +455,25 @@ export default function InvoicePage() {
     return filtered.filter((item) => item.id_proyect !== null && item.id_proyect !== undefined && String(item.id_proyect).trim() !== "").length;
   }
 
+  async function toggleInvoiceLines(invoiceId) {
+    if (expandedInvoiceId === invoiceId) {
+      setExpandedInvoiceId(null);
+      return;
+    }
+    setExpandedInvoiceId(invoiceId);
+    if (invoiceLines[invoiceId]) return;
+    setInvoiceLinesLoading(invoiceId);
+    setInvoiceLinesError((current) => ({ ...current, [invoiceId]: "" }));
+    try {
+      const response = await getInvoiceLines(invoiceId);
+      setInvoiceLines((current) => ({ ...current, [invoiceId]: response.items || [] }));
+    } catch (error) {
+      setInvoiceLinesError((current) => ({ ...current, [invoiceId]: error.message || "No fue posible cargar las partidas." }));
+    } finally {
+      setInvoiceLinesLoading(null);
+    }
+  }
+
   function renderInvoiceProjectSummary() {
     if (ENTITY_KEY !== "invoice" || !canRead || !filtered.length) return null;
     const linked = invoiceLinkedCount();
@@ -450,15 +506,20 @@ export default function InvoicePage() {
             </thead>
             <tbody>
               {filtered.map((item) => (
-                <tr key={`invoice-link-${item.id_invoice}`}>
-                  <td><strong>{invoiceDisplayFolio(item)}</strong><p className="cell-value">{item.folio_fiscal || item.cfdi_code || "—"}</p></td>
+                <Fragment key={`invoice-link-${item.id_invoice}`}>
+                <tr>
+                  <td className="invoice-identity-cell"><button type="button" className="invoice-lines-toggle" onClick={() => toggleInvoiceLines(item.id_invoice)} aria-expanded={expandedInvoiceId === item.id_invoice} title="Ver partidas">{expandedInvoiceId === item.id_invoice ? <ChevronDown size={17} /> : <ChevronRight size={17} />}</button><span><strong>{invoiceDisplayFolio(item)}</strong><p className="cell-value">{item.folio_fiscal || item.cfdi_code || "—"}</p></span></td>
                   <td><span>{item.nombre_emisor || "—"}</span></td>
                   <td><span>{item.nombre_receptor || item.id_customer_supplier || "—"}</span></td>
                   <td><strong>{invoiceMoney(item.total)}</strong></td>
                   <td><span>{invoiceProjectLabel(item)}</span></td>
                   <td><span className={item.id_proyect ? "invoice-link-badge linked" : "invoice-link-badge unlinked"}>{invoiceLinkStatus(item)}</span></td>
-                  <td>{canUpdate ? <button type="button" className="button small" onClick={() => startEdit(item)}>Editar relación</button> : <span className="muted">Sin permiso</span>}</td>
+                  <td className="row-actions">{canUpdate && <button type="button" onClick={() => startEdit(item)} title="Editar relación"><Pencil size={15} /></button>}{canUpdate && !item.folio_fiscal && <button type="button" onClick={() => handleStamp(item)} title="Timbrar factura"><BadgeCheck size={15} /></button>}<button type="button" onClick={() => handleDocument(item, "pdf")} title="Descargar PDF"><FileText size={15} /></button>{item.folio_fiscal && <button type="button" onClick={() => handleDocument(item, "xml")} title="Descargar XML"><Download size={15} /></button>}</td>
                 </tr>
+                {expandedInvoiceId === item.id_invoice && <tr className="invoice-lines-row"><td colSpan="7">
+                  {invoiceLinesLoading === item.id_invoice ? <p className="muted">Cargando partidas...</p> : invoiceLinesError[item.id_invoice] ? <p className="field-error">{invoiceLinesError[item.id_invoice]}</p> : (invoiceLines[item.id_invoice] || []).length === 0 ? <p className="muted">Esta factura no tiene partidas guardadas.</p> : <div className="invoice-lines-panel"><table><thead><tr><th>Clave SAT</th><th>Descripción</th><th>Cantidad</th><th>Unidad</th><th>Precio unitario</th><th>Descuento</th><th>IVA</th><th>Total</th></tr></thead><tbody>{invoiceLines[item.id_invoice].map((line) => <tr key={line.id_invoice_material_service}><td>{line.sat_product_key || "—"}</td><td>{line.invoice_material_service_description}</td><td>{formatTableValue(line.quantity)}</td><td>{line.sat_unit_key || "—"}</td><td>{invoiceMoney(line.gross_price)}</td><td>{invoiceMoney(line.discount)}</td><td>{invoiceMoney(line.line_tax)}</td><td><strong>{invoiceMoney(line.line_total)}</strong></td></tr>)}</tbody></table></div>}
+                </td></tr>}
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -858,6 +919,7 @@ export default function InvoicePage() {
       </div>}
 
       {errorKey && <div className="alert error">{renderError()}</div>}
+      {noticeKey && <div className="alert success">{t(noticeKey, noticeKey)}</div>}
       {loading && <div className="alert">{t("common.loading")}</div>}
       {permissionReady && !canRead && !canCreate && <div className="empty"><strong>{t("security.permission.read_denied", "Sin permiso de lectura")}</strong><p>{t("common.module_hidden_hint", "Este módulo no tiene acciones seleccionadas; quedará oculto y sus campos no se mostrarán.")}</p></div>}
       {canRead && !loading && filtered.length === 0 && <div className="empty"><strong>{t("common.empty_title")}</strong><p>{t("common.empty_body")}</p></div>}
@@ -875,7 +937,7 @@ export default function InvoicePage() {
               {canSeeField("payment_method") && <th>{t("fields.invoice.payment_method")}</th>}
               {canSeeField("note") && <th>{t("fields.invoice.note")}</th>}
               {canSeeField("id_customer_supplier") && <th>{t("fields.invoice.id_customer_supplier")}</th>}
-        </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_invoice}>{showRowActions && <td className="row-actions">{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</td>}
+        </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_invoice}>{showRowActions && <td className="row-actions">{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canUpdate && !item.folio_fiscal && <button type="button" onClick={() => handleStamp(item)} title="Timbrar factura"><BadgeCheck size={15} /></button>}<button type="button" onClick={() => handleDocument(item, "pdf")} title="Descargar PDF"><FileText size={15} /></button>{item.folio_fiscal && <button type="button" onClick={() => handleDocument(item, "xml")} title="Descargar XML"><Download size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}</td>}
               {canSeeField("id_invoice") && <td><pre className="cell-value">{formatTableValue(item.id_invoice)}</pre></td>}
               {canSeeField("date_emision") && <td><pre className="cell-value">{formatTableValue(item.date_emision)}</pre></td>}
               {canSeeField("date_expiration") && <td><pre className="cell-value">{formatTableValue(item.date_expiration)}</pre></td>}

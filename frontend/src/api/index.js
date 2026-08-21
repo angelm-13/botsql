@@ -1,4 +1,5 @@
-import { request } from "./client";
+import { request, requestBlob } from "./client";
+export * from "./restaurant";
 
 export const login = (payload) => request("/auth/login", { method: "POST", body: payload, skipAuth: true });
 export const verifyMfaLogin = (payload) => request("/auth/mfa/verify-login", { method: "POST", body: payload, skipAuth: true });
@@ -50,6 +51,12 @@ export const updateBank = (id, payload) => request(`/bank/${id}`, { method: "PUT
 export const deleteBank = (id) => request(`/bank/${id}`, { method: "DELETE" });
 
 export const getAllBankAccount = (params = {}) => request("/bank_account/", { params });
+export const getBankStatements = (params = {}) => request("/bank-statements/", { params });
+export const previewBankStatement = (body) => request("/bank-statements/preview", { method: "POST", body });
+export const importBankStatement = (body) => request("/bank-statements/import", { method: "POST", body });
+export const getBankStatementMovements = (id, params = {}) => request(`/bank-statements/${id}/movements`, { params });
+export const matchBankStatementMovement = (id, payload) => request(`/bank-statements/movements/${id}/match`, { method: "PUT", body: payload });
+export const deleteBankStatement = (id) => request(`/bank-statements/${id}`, { method: "DELETE" });
 export const getBankAccount = (id) => request(`/bank_account/${id}`);
 export const createBankAccount = (payload) => request("/bank_account/", { method: "POST", body: payload });
 export const updateBankAccount = (id, payload) => request(`/bank_account/${id}`, { method: "PUT", body: payload });
@@ -134,12 +141,16 @@ export const updateInventoryStatus = (id, payload) => request(`/inventory_status
 export const deleteInventoryStatus = (id) => request(`/inventory_status/${id}`, { method: "DELETE" });
 
 export const getAllInvoice = (params = {}) => request("/invoice/", { params });
+export const getInvoiceLines = (id) => request(`/invoice/${id}/lines`);
 export const getInvoice = (id) => request(`/invoice/${id}`);
 export const createInvoice = (payload) => request("/invoice/", { method: "POST", body: payload });
 export const updateInvoice = (id, payload) => request(`/invoice/${id}`, { method: "PUT", body: payload });
 export const deleteInvoice = (id) => request(`/invoice/${id}`, { method: "DELETE" });
 export const previewManualInvoice = (payload) => request("/invoice/manual/preview", { method: "POST", body: payload });
 export const createManualInvoice = (payload) => request("/invoice/manual", { method: "POST", body: payload });
+export const stampInvoice = (id, idempotencyKey = crypto.randomUUID()) => request(`/stamping/invoices/${id}`, { method: "POST", body: { idempotency_key: idempotencyKey } });
+export const downloadInvoiceXml = (id) => requestBlob(`/invoice/${id}/xml`);
+export const downloadInvoicePdf = (id, document = "") => requestBlob(`/invoice/${id}/pdf`, { params: { document } });
 
 export const getAllInvoiceMaterialService = (params = {}) => request("/invoice_material_service/", { params });
 export const getInvoiceMaterialService = (id) => request(`/invoice_material_service/${id}`);

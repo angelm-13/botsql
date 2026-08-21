@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { ChevronDown, LayoutDashboard, LogOut, Settings, ShieldCheck } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Boxes, ChevronDown, ClipboardList, FileText, Landmark, LayoutDashboard, LogOut, PanelLeftClose, PanelLeftOpen, Settings, ShieldCheck, SlidersHorizontal, Users, Utensils } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { getAllEntityPermission } from "../api";
 import { useI18n } from "../i18n";
 
@@ -41,6 +41,11 @@ const navItems = [
   { path: "/payroll_movement", key: "menu.payroll_movement" },
   { path: "/payroll_period", key: "menu.payroll_period" },
   { path: "/kronos", key: "menu.kronos", label: "Asistencias", entityName: "payroll_period" },
+  { path: "/kronos/device", key: "menu.kronos_device", label: "Conexión al dispositivo", entityName: "kronos_device" },
+  { path: "/restaurant/waiter", key: "menu.restaurant_waiter", label: "Meseros", entityName: "restaurant_waiter" },
+  { path: "/restaurant/cashier", key: "menu.restaurant_cashier", label: "Caja", entityName: "restaurant_cashier" },
+  { path: "/restaurant/kitchen", key: "menu.restaurant_kitchen", label: "Cocina", entityName: "restaurant_kitchen" },
+  { path: "/restaurant/admin", key: "menu.restaurant_admin", label: "Admin", entityName: "restaurant_admin" },
   { path: "/permission", key: "menu.permission" },
   { path: "/product", key: "menu.product" },
   { path: "/product_family", key: "menu.product_family" },
@@ -66,12 +71,36 @@ const quickNavItems = [
   { path: "/compradores-web", key: "menu.web_shoppers", label: "Compradores Web", entityName: "user" }
 ];
 
+const groupIcons = {
+  "landmark": Landmark,
+  "file-text": FileText,
+  "users": Users,
+  "utensils": Utensils,
+  "clipboard-list": ClipboardList,
+  "boxes": Boxes,
+  "sliders-horizontal": SlidersHorizontal,
+  "shield-check": ShieldCheck,
+  "layout-dashboard": LayoutDashboard,
+  "settings": Settings,
+};
+
+const defaultGroupIcons = {
+  "Bancos": "landmark",
+  "Contabilidad": "file-text",
+  "Recursos humanos": "users",
+  "Restaurante": "utensils",
+  "Operaciones": "clipboard-list",
+  "Inventario": "boxes",
+  "Configuración": "sliders-horizontal",
+};
+
 export default function Shell() {
   const [, forceRender] = useState(0);
   const [roleEntityPermissions, setRoleEntityPermissions] = useState([]);
   const [rolePermissionsLoaded, setRolePermissionsLoaded] = useState(false);
   const [openGroups, setOpenGroups] = useState({});
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("tyakxa-sidebar-collapsed") === "true");
   const settingsRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
@@ -119,6 +148,7 @@ export default function Shell() {
     if (["/bank", "/bank_account", "/movement"].includes(path)) return "Bancos";
     if (path.startsWith("/invoice") || path.startsWith("/fiscal") || path === "/quotation" || path === "/authorization_tracking") return "Contabilidad";
     if (path.startsWith("/payroll") || path === "/kronos") return "Recursos humanos";
+    if (path.startsWith("/restaurant")) return "Restaurante";
     if (["/proyect", "/incident", "/incident_detail", "/task", "/task_note", "/service", "/template"].includes(path)) return "Operaciones";
     if (["/material", "/location", "/product", "/inventory_status", "/unit", "/brand"].includes(path)) return "Inventario";
     return "Configuración";
@@ -132,6 +162,7 @@ export default function Shell() {
       ...item,
       location: permission?.menu_location || (item.adminOnly ? "settings" : "sidebar"),
       group: permission?.menu_group || defaultGroup(item),
+      groupIcon: permission?.menu_group_icon || defaultGroupIcons[permission?.menu_group || defaultGroup(item)] || "sliders-horizontal",
       order: Number(permission?.menu_order ?? 100),
       displayLabel: isCanonicalPath && permission?.menu_label ? permission.menu_label : t(item.key, item.label || item.key)
     };
@@ -142,10 +173,10 @@ export default function Shell() {
   const sidebarGroups = useMemo(() => {
     const groups = new Map();
     configuredItems.filter((item) => item.location === "sidebar").forEach((item) => {
-      if (!groups.has(item.group)) groups.set(item.group, []);
-      groups.get(item.group).push(item);
+      if (!groups.has(item.group)) groups.set(item.group, { icon: item.groupIcon, items: [] });
+      groups.get(item.group).items.push(item);
     });
-    return [...groups.entries()].map(([label, items]) => ({ label, items: items.sort((a, b) => a.order - b.order || a.displayLabel.localeCompare(b.displayLabel)) }));
+    return [...groups.entries()].map(([label, group]) => ({ label, icon: group.icon, items: group.items.sort((a, b) => a.order - b.order || a.displayLabel.localeCompare(b.displayLabel)) }));
   }, [configuredItems]);
   const settingsItems = configuredItems.filter((item) => item.location === "settings").sort((a, b) => a.order - b.order || a.displayLabel.localeCompare(b.displayLabel));
 
@@ -167,26 +198,46 @@ export default function Shell() {
     localStorage.removeItem("token"); localStorage.removeItem("user"); localStorage.removeItem("mfa_temp_token");
     navigate("/login", { replace: true });
   };
+  const toggleSidebar = () => {
+    setSidebarCollapsed((current) => {
+      const next = !current;
+      localStorage.setItem("tyakxa-sidebar-collapsed", String(next));
+      return next;
+    });
+  };
+  const expandSidebarForGroup = (groupLabel) => {
+    setOpenGroups((current) => ({ ...current, [groupLabel]: true }));
+    setSidebarCollapsed(false);
+    localStorage.setItem("tyakxa-sidebar-collapsed", "false");
+  };
   return (
-    <div className="shell">
-      <aside className="sidebar">
-        <div className="brand"><img src="/tyakxa-logo.png" alt={t("common.app_title")} className="brand-logo" /><span>{t("common.app_title")}</span></div>
+    <div className={sidebarCollapsed ? "shell sidebar-is-collapsed" : "shell"}>
+      <aside className="sidebar" aria-label={t("common.main_navigation", "Navegación principal")}>
+        <div className="sidebar-brand-row">
+          <div className="brand"><img src="/tyakxa-logo.png" alt={t("common.app_title")} className="brand-logo" /><span>{t("common.app_title")}</span></div>
+        </div>
         <nav className="nav">
-          {fixedSidebarItems.map((item, index) => (
-            <NavLink key={item.path} to={item.path} end={item.exact} className={({ isActive }) => isActive ? "nav-link active" : "nav-link"}>
+          {!sidebarCollapsed && fixedSidebarItems.map((item, index) => (
+            <NavLink key={item.path} to={item.path} end={item.exact} title={sidebarCollapsed ? t(item.key, item.label || item.key) : undefined} aria-label={t(item.key, item.label || item.key)} className={({ isActive }) => isActive ? "nav-link active" : "nav-link"}>
               {index === 0 ? <LayoutDashboard size={18} /> : item.path === "/mfa-setup" ? <ShieldCheck size={18} /> : <span className="dot" />}
-              <span>{t(item.key, item.label || item.key)}</span>
+              <span className="nav-link-label">{t(item.key, item.label || item.key)}</span>
             </NavLink>
           ))}
-          {sidebarGroups.map((group) => {
+          {sidebarCollapsed ? sidebarGroups.map((group) => {
+            const GroupIcon = groupIcons[group.icon] || SlidersHorizontal;
+            return <button type="button" key={group.label} className="nav-link collapsed-group-button" title={group.label} aria-label={`Expandir grupo ${group.label}`} onClick={() => expandSidebarForGroup(group.label)}><GroupIcon size={20} /><span className="nav-link-label">{group.label}</span></button>;
+          }) : sidebarGroups.map((group) => {
             const isOpen = openGroups[group.label] ?? group.items.some((item) => location.pathname === item.path);
             return <div className="shell-nav-group" key={group.label}>
               <button type="button" className="shell-nav-group-toggle" onClick={() => setOpenGroups((current) => ({ ...current, [group.label]: !isOpen }))}><span>{group.label}</span><ChevronDown size={16} className={isOpen ? "open" : ""} /></button>
-              {isOpen && <div className="shell-nav-submenu">{group.items.map((item) => <NavLink key={item.path} to={item.path} className={({ isActive }) => isActive ? "nav-link active" : "nav-link"}><span className="dot" /><span>{item.displayLabel}</span></NavLink>)}</div>}
+              {isOpen && <div className="shell-nav-submenu">{group.items.map((item) => <NavLink key={item.path} to={item.path} className={({ isActive }) => isActive ? "nav-link active" : "nav-link"}><span className="dot" /><span className="nav-link-label">{item.displayLabel}</span></NavLink>)}</div>}
             </div>;
           })}
         </nav>
       </aside>
+      <button type="button" className="sidebar-collapse-button" onClick={toggleSidebar} title={sidebarCollapsed ? "Expandir menú" : "Contraer menú"} aria-label={sidebarCollapsed ? "Expandir menú" : "Contraer menú"} aria-expanded={!sidebarCollapsed}>
+        {sidebarCollapsed ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />}
+      </button>
       <main className="main">
         <header className="topbar">
           <div><p className="eyebrow">ERP · CRM · SCM</p><h1>TYAKXA</h1></div>
