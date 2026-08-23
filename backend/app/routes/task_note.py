@@ -1,5 +1,10 @@
 from __future__ import annotations
 from flask import Blueprint, jsonify, request
+from sqlalchemy import func
+from app.models.session import transaction_context
+from app.models.task import Task
+from app.models.task_note import TaskNote
+from app.services.project_management_service import require_task_access, visible_project_ids
 from app.services.task_note_service import TaskNoteService
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
@@ -105,14 +110,29 @@ def list_task_note(user_data):
     per_page = int(request.args.get('per_page', 20))
     sort = request.args.get('sort')
     filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort'} and k in ALLOWED_FIELDS}
-    return _jsonify_projected_list(user_data, TaskNoteService.list(page=page, per_page=per_page, filters=filters, sort=sort))
+    project_ids = visible_project_ids(user_data)
+    if project_ids is None:
+        return _jsonify_projected_list(user_data, TaskNoteService.list(page=page, per_page=per_page, filters=filters, sort=sort))
+    with transaction_context() as db:
+        query = db.query(TaskNote).join(Task, TaskNote.id_task == Task.id_task).filter(
+            TaskNote.deletion_date.is_(None), Task.deletion_date.is_(None), Task.id_proyect.in_(project_ids)
+        )
+        for key, value in filters.items():
+            if hasattr(TaskNote, key) and value not in (None, ''):
+                query = query.filter(getattr(TaskNote, key) == value)
+        total = query.with_entities(func.count()).scalar() or 0
+        items = query.order_by(TaskNote.id_task_note).offset((page - 1) * per_page).limit(per_page).all()
+        payload = {'items': [item.serialize() for item in items], 'total': total, 'page': page, 'per_page': per_page, 'pages': (total + per_page - 1) // per_page}
+    return _jsonify_projected_list(user_data, payload)
 
 
 @bp_task_note.route('/<id_task_note>', methods=['GET'])
 @token_required
 @require_entity_permission('task_note', 'read')
 def get_task_note(user_data, id_task_note):
-    return _jsonify_projected_record(user_data, TaskNoteService.get(id_task_note))
+    record = TaskNoteService.get(id_task_note)
+    require_task_access(record.get('id_task'), user_data)
+    return _jsonify_projected_record(user_data, record)
 
 
 @bp_task_note.route('/', methods=['POST'])
@@ -120,6 +140,7 @@ def get_task_note(user_data, id_task_note):
 @require_entity_permission('task_note', 'create')
 def create_task_note(user_data):
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
+    require_task_access(payload.get('id_task'), user_data)
     return _jsonify_projected_record(user_data, TaskNoteService.create(payload, user_id=user_data.get('id_user')), status=201)
 
 
@@ -128,6 +149,10 @@ def create_task_note(user_data):
 @require_entity_permission('task_note', 'update')
 def update_task_note(user_data, id_task_note):
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
+    current = TaskNoteService.get(id_task_note)
+    require_task_access(current.get('id_task'), user_data)
+    if payload.get('id_task') is not None:
+        require_task_access(payload.get('id_task'), user_data)
     return _jsonify_projected_record(user_data, TaskNoteService.update(id_task_note, payload, user_id=user_data.get('id_user')))
 
 
@@ -135,4 +160,6 @@ def update_task_note(user_data, id_task_note):
 @token_required
 @require_entity_permission('task_note', 'delete')
 def delete_task_note(user_data, id_task_note):
+    record = TaskNoteService.get(id_task_note)
+    require_task_access(record.get('id_task'), user_data)
     return jsonify(TaskNoteService.delete(id_task_note, user_id=user_data.get('id_user')))

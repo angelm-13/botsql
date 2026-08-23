@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Boxes, ClipboardList, FileText, Landmark, LayoutDashboard, Plus, Pencil, Save, Settings, ShieldCheck, SlidersHorizontal, Trash2, Users, Utensils, X } from "lucide-react";
+import { Boxes, ClipboardList, FileText, Landmark, LayoutDashboard, Plus, Pencil, Save, Search, Settings, ShieldCheck, SlidersHorizontal, Trash2, Users, Utensils, X } from "lucide-react";
 import {
   getPermissionCatalog,
   getAllPermission,
@@ -126,6 +126,8 @@ export default function RolePermissionManagerPage() {
   const [savingRole, setSavingRole] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [moduleFilter, setModuleFilter] = useState("");
+  const [groupFilter, setGroupFilter] = useState("");
 
   useEffect(() => {
     let mounted = true;
@@ -270,6 +272,46 @@ export default function RolePermissionManagerPage() {
     });
     return [...groups.values()].sort((left, right) => left.name.localeCompare(right.name));
   }, [catalog, entityMatrix, navigationMatrix]);
+
+  const moduleGroupOptions = useMemo(() => {
+    const groups = new Set();
+    let hasUngroupedModules = false;
+    catalog.forEach((entity) => {
+      const entityName = getEntityName(entity);
+      const groupName = String(navigationMatrix[entityName]?.menu_group || "").trim();
+      if (groupName) groups.add(groupName);
+      else hasUngroupedModules = true;
+    });
+    return {
+      groups: [...groups].sort((left, right) => left.localeCompare(right)),
+      hasUngroupedModules
+    };
+  }, [catalog, navigationMatrix]);
+
+  const filteredCatalog = useMemo(() => {
+    const needle = normalizeKey(moduleFilter);
+    return catalog
+      .filter((entity) => {
+        const entityName = getEntityName(entity);
+        const navigation = navigationMatrix[entityName] || {};
+        const groupName = String(navigation.menu_group || "").trim();
+        const label = navigation.menu_label || t(`menu.${entityName}`, entity?.label || humanizeLabel(entityName));
+        const matchesModule = !needle || [entityName, label].some((value) => normalizeKey(value).includes(needle));
+        const matchesGroup = !groupFilter || (groupFilter === "__ungrouped__" ? !groupName : groupName === groupFilter);
+        return matchesModule && matchesGroup;
+      })
+      .sort((left, right) => {
+        const leftName = getEntityName(left);
+        const rightName = getEntityName(right);
+        const leftNavigation = navigationMatrix[leftName] || {};
+        const rightNavigation = navigationMatrix[rightName] || {};
+        const groupComparison = String(leftNavigation.menu_group || "").localeCompare(String(rightNavigation.menu_group || ""));
+        if (groupComparison) return groupComparison;
+          const leftLabel = leftNavigation.menu_label || t(`menu.${leftName}`, left?.label || humanizeLabel(leftName));
+          const rightLabel = rightNavigation.menu_label || t(`menu.${rightName}`, right?.label || humanizeLabel(rightName));
+          return String(leftLabel).localeCompare(String(rightLabel));
+      });
+        }, [catalog, groupFilter, moduleFilter, navigationMatrix, t]);
 
   const allManagedFields = useMemo(() => {
     const rows = [];
@@ -687,14 +729,34 @@ export default function RolePermissionManagerPage() {
                   <option value="only_update">{t("common.mark_only_update", "Marcar solo Actualizar")}</option>
                   <option value="only_delete">{t("common.mark_only_delete", "Marcar solo Eliminar")}</option>
                 </select>
+                <small className="muted-text">{t("common.bulk_actions_all_modules_hint", "Se aplican a todos los módulos, aunque haya filtros activos.")}</small>
               </label>
             </div>
-            <table>
-              <thead>
-                <tr><th>{t("common.module", "Módulo")}</th>{ENTITY_ACTIONS.map((action) => <th key={action.key}>{t(`common.${action.key}`, action.label)}</th>)}<th>Ubicación</th><th>Grupo</th><th>Etiqueta</th><th>Orden</th></tr>
-              </thead>
-              <tbody>
-                {catalog.map((entity) => {
+            <div className="permission-module-filters" role="search" aria-label={t("common.module_filters", "Filtros de módulos")}>
+              <label className="field permission-module-search">
+                <span>{t("common.filter_by_module", "Filtrar por módulo")}</span>
+                <span className="search-box"><Search size={16} /><input value={moduleFilter} onChange={(event) => setModuleFilter(event.target.value)} placeholder={t("common.module_filter_placeholder", "Nombre o clave del módulo")} /></span>
+              </label>
+              <label className="field compact-field">
+                <span>{t("common.filter_by_group", "Filtrar por grupo")}</span>
+                <select value={groupFilter} onChange={(event) => setGroupFilter(event.target.value)}>
+                  <option value="">{t("common.all_groups", "Todos los grupos")}</option>
+                  {moduleGroupOptions.groups.map((groupName) => <option key={groupName} value={groupName}>{groupName}</option>)}
+                  {moduleGroupOptions.hasUngroupedModules && <option value="__ungrouped__">{t("common.ungrouped", "Sin grupo")}</option>}
+                </select>
+              </label>
+              <div className="permission-filter-summary" aria-live="polite">
+                <strong>{filteredCatalog.length}</strong> {t("common.of", "de")} {catalog.length} {t("common.modules", "módulos")}
+                {(moduleFilter || groupFilter) && <button className="button ghost" type="button" onClick={() => { setModuleFilter(""); setGroupFilter(""); }}><X size={15} />{t("common.clear_filters", "Limpiar filtros")}</button>}
+              </div>
+            </div>
+            <div className="permission-matrix-scroll">
+              <table>
+                <thead>
+                  <tr><th>{t("common.module", "Módulo")}</th>{ENTITY_ACTIONS.map((action) => <th key={action.key}>{t(`common.${action.key}`, action.label)}</th>)}<th>{t("common.location", "Ubicación")}</th><th>{t("common.group", "Grupo")}</th><th>{t("common.label", "Etiqueta")}</th><th>{t("common.order", "Orden")}</th></tr>
+                </thead>
+                <tbody>
+                {filteredCatalog.map((entity) => {
                   const entityName = getEntityName(entity);
                   const value = Number(entityMatrix[entityName] || 0);
                   const navigation = navigationMatrix[entityName] || {};
@@ -703,15 +765,17 @@ export default function RolePermissionManagerPage() {
                     <tr key={entityName} className={selectedEntity === entityName ? "selected-row" : ""} onClick={() => setSelectedEntity(entityName)}>
                       <td><strong>{entityLabel(entity)}</strong>{value === 0 && <small className="muted-text"> {t("common.hidden_module", "Oculto")}</small>}</td>
                       {ENTITY_ACTIONS.map((action) => <td key={action.key}><input type="checkbox" checked={hasBit(value, action.bit)} onChange={() => setEntityBit(entityName, action.bit)} onClick={(event) => event.stopPropagation()} disabled={!selectedRoleId} /></td>)}
-                      <td><select aria-label={`Ubicación de ${entityLabel(entity)}`} value={navigation.menu_location || "sidebar"} onChange={(event) => setNavigationValue(entityName, "menu_location", event.target.value)} onClick={(event) => event.stopPropagation()} disabled={navigationDisabled}><option value="sidebar">Menú vertical</option><option value="settings">Engrane</option><option value="hidden">No mostrar</option></select></td>
-                      <td><input aria-label={`Grupo de ${entityLabel(entity)}`} placeholder="Ej. Contabilidad" value={navigation.menu_group || ""} onChange={(event) => setNavigationValue(entityName, "menu_group", event.target.value)} onClick={(event) => event.stopPropagation()} disabled={navigationDisabled} /></td>
-                      <td><input aria-label={`Etiqueta de ${entityLabel(entity)}`} placeholder={entityLabel(entity)} value={navigation.menu_label || ""} onChange={(event) => setNavigationValue(entityName, "menu_label", event.target.value)} onClick={(event) => event.stopPropagation()} disabled={navigationDisabled} /></td>
-                      <td><input className="menu-order-input" aria-label={`Orden de ${entityLabel(entity)}`} type="number" min="0" value={navigation.menu_order ?? 100} onChange={(event) => setNavigationValue(entityName, "menu_order", event.target.value)} onClick={(event) => event.stopPropagation()} disabled={navigationDisabled} /></td>
+                      <td><select aria-label={`${t("common.location", "Ubicación")} ${entityLabel(entity)}`} value={navigation.menu_location || "sidebar"} onChange={(event) => setNavigationValue(entityName, "menu_location", event.target.value)} onClick={(event) => event.stopPropagation()} disabled={navigationDisabled}><option value="sidebar">{t("common.vertical_menu", "Menú vertical")}</option><option value="settings">{t("common.settings_menu", "Engrane")}</option><option value="hidden">{t("common.do_not_show", "No mostrar")}</option></select></td>
+                      <td><input aria-label={`${t("common.group", "Grupo")} ${entityLabel(entity)}`} placeholder={t("common.group_placeholder", "Ej. Contabilidad")} value={navigation.menu_group || ""} onChange={(event) => setNavigationValue(entityName, "menu_group", event.target.value)} onClick={(event) => event.stopPropagation()} disabled={navigationDisabled} /></td>
+                      <td><input aria-label={`${t("common.label", "Etiqueta")} ${entityLabel(entity)}`} placeholder={entityLabel(entity)} value={navigation.menu_label || ""} onChange={(event) => setNavigationValue(entityName, "menu_label", event.target.value)} onClick={(event) => event.stopPropagation()} disabled={navigationDisabled} /></td>
+                      <td><input className="menu-order-input" aria-label={`${t("common.order", "Orden")} ${entityLabel(entity)}`} type="number" min="0" value={navigation.menu_order ?? 100} onChange={(event) => setNavigationValue(entityName, "menu_order", event.target.value)} onClick={(event) => event.stopPropagation()} disabled={navigationDisabled} /></td>
                     </tr>
                   );
                 })}
-              </tbody>
-            </table>
+                {filteredCatalog.length === 0 && <tr><td colSpan={9}><div className="empty"><strong>{t("common.no_matching_modules", "No hay módulos que coincidan")}</strong><p>{t("common.adjust_module_filters", "Ajusta el nombre o el grupo seleccionado.")}</p></div></td></tr>}
+                </tbody>
+              </table>
+            </div>
           </article>
 
           <article className="form-card field-permission-panel">

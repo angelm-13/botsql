@@ -14,6 +14,7 @@ from datetime import datetime
 from app.services.invoice_material_service_service import InvoiceMaterialServiceService
 from app.services.quotation_service import calculate_totals, validate_transition
 from app.services.manual_invoice_service import create_manual_invoice, preview_manual_invoice, validate_manual_invoice_context
+from app.services.invoice_catalogs import catalogs_payload
 
 
 bp_invoice = Blueprint('invoice', __name__, url_prefix='/invoice')
@@ -209,11 +210,34 @@ def preview_manual_invoice_route(user_data):
     return jsonify(preview_manual_invoice(payload))
 
 
+@bp_invoice.route('/catalogs', methods=['GET'])
+@token_required
+@require_entity_permission('invoice', 'read')
+def invoice_catalogs(user_data):
+    return jsonify(catalogs_payload())
+
+
 @bp_invoice.route('/manual', methods=['POST'])
 @token_required
 @require_entity_permission('invoice', 'create')
 def create_manual_invoice_route(user_data):
-    return jsonify(create_manual_invoice(request.get_json(silent=True) or {}, user_data)), 201
+    payload = request.get_json(silent=True) or {}
+    result = create_manual_invoice(payload, user_data)
+    if payload.get('stamp_now'):
+        from app.services.stamping import stamp_invoice
+        import uuid
+
+        invoice_id = result['invoice']['id_invoice']
+        operation, _ = stamp_invoice(
+            invoice_id,
+            payload.get('idempotency_key') or f"manual-{invoice_id}-{uuid.uuid4()}",
+            user_data,
+        )
+        result['operation'] = operation
+        if operation.get('status') == 'stamped':
+            result['invoice']['invoice_status'] = 'timbrada'
+            result['invoice']['folio_fiscal'] = operation.get('provider_reference')
+    return jsonify(result), 201
 
 
 @bp_invoice.route('/<id_invoice>', methods=['PUT'])

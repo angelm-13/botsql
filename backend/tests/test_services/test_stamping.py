@@ -9,8 +9,9 @@ from app.models.session import transaction_context
 from app.services.manual_invoice_service import create_manual_invoice
 from app.services.cfdi_xml import parse_cfdi
 from app.services.invoice_artifacts import invoice_xml_path
-from app.services.stamping import FakeStampingProvider, StampingResult
+from app.services.stamping import FacturamaSandboxProvider, FakeStampingProvider, StampingResult
 from app.services.stamping import stamp_invoice
+from app.utils.auth import SECRET_KEY
 from app.utils.errors import AppError
 from tests.conftest import BackendTestCase
 
@@ -37,6 +38,33 @@ class TestStampingProviders(unittest.TestCase):
 
         self.assertEqual(result.status, "uncertain")
         self.assertEqual(result.reference, "provider-ref")
+
+    def test_facturama_maps_invoice_draft_to_cfdi_api(self):
+        provider = FacturamaSandboxProvider(
+            base_url="https://apisandbox.facturama.mx",
+            username="demo",
+            password="secret",
+            expedition_place="37000",
+            name_id="1",
+        )
+
+        body = provider.build_request_body({
+            "issuer": {"rfc": "AAA010101AAA", "name": "Emisor", "tax_regime": "601", "postal_code": "37000"},
+            "receiver": {"rfc": "BBB010101BBB", "name": "Cliente", "tax_regime": "601", "postal_code": "37100", "cfdi_use": "G03"},
+            "payment_form": "03", "payment_method": "PUE", "currency": "MXN", "cfdi_type": "I",
+            "concepts": [{
+                "description": "Servicio", "quantity": "2", "unit_price": "100", "amount": "200",
+                "discount": "20", "sat_product_key": "80101500", "sat_unit_key": "E48",
+                "tax_object": "02", "iva_rate": "0.16", "isr_retention_rate": "0.10", "iva_retention_rate": "0",
+            }],
+        })
+
+        self.assertEqual("37000", body["ExpeditionPlace"])
+        self.assertEqual("03", body["PaymentForm"])
+        self.assertEqual("BBB010101BBB", body["Receiver"]["Rfc"])
+        self.assertEqual("80101500", body["Items"][0]["ProductCode"])
+        self.assertEqual("180.00", body["Items"][0]["TaxBase"])
+        self.assertEqual("190.80", body["Items"][0]["Total"])
 
 
 class CapturingProvider(FakeStampingProvider):
@@ -112,11 +140,12 @@ class TestStampInvoice(BackendTestCase):
     def test_stamped_documents_download_through_authenticated_routes(self):
         invoice_id = self._create_invoice()
         stamp_invoice(invoice_id, "manual-demo-http", {"id_user": 1, "id_proyect": 30}, FakeStampingProvider())
-        token = jwt.encode({"id_user": 1, "id_proyect": 30, "is_superuser": True}, "test-secret", algorithm="HS256")
+        token = jwt.encode({"id_user": 1, "id_proyect": 30, "is_superuser": True}, SECRET_KEY, algorithm="HS256")
         headers = {"Authorization": f"Bearer {token}"}
 
         xml_response = self.client.get(f"/invoice/{invoice_id}/xml", headers=headers)
         pdf_response = self.client.get(f"/invoice/{invoice_id}/pdf", headers=headers)
+        quotation_response = self.client.get(f"/invoice/{invoice_id}/pdf?document=quotation", headers=headers)
         public_legacy_response = self.client.get(f"/documents/invoice_pdf/{invoice_id}?format=pdf")
 
         self.assertEqual(xml_response.status_code, 200)
@@ -127,6 +156,9 @@ class TestStampInvoice(BackendTestCase):
         self.assertEqual(pdf_response.status_code, 200)
         self.assertEqual(pdf_response.mimetype, "application/pdf")
         self.assertTrue(pdf_response.data.startswith(b"%PDF"))
+        self.assertEqual(quotation_response.status_code, 200)
+        self.assertEqual(quotation_response.mimetype, "application/pdf")
+        self.assertTrue(quotation_response.data.startswith(b"%PDF"))
         self.assertEqual(public_legacy_response.status_code, 401)
 
 

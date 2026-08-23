@@ -6,6 +6,7 @@ import os
 import socket
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -62,22 +63,111 @@ class FakeStampingProvider(StampingProvider):
 class FacturamaSandboxProvider(StampingProvider):
     name = "facturama_sandbox"
 
-    def __init__(self, base_url=None, username=None, password=None, timeout=15):
-        self.base_url = (base_url or os.getenv("FACTURAMA_BASE_URL") or "").rstrip("/")
-        self.username = username or os.getenv("FACTURAMA_USERNAME") or ""
-        self.password = password or os.getenv("FACTURAMA_PASSWORD") or ""
+    def __init__(self, base_url=None, username=None, password=None, timeout=15, expedition_place=None, name_id=None):
+        self.base_url = (base_url or os.getenv("FACTURAMA_BASE_URL") or "https://apisandbox.facturama.mx").rstrip("/")
+        self.username = username or os.getenv("FACTURAMA_USERNAME") or os.getenv("FACTURAMA_USER") or ""
+        self.password = password or os.getenv("FACTURAMA_PASSWORD") or os.getenv("FACTURAMA_PASS") or ""
+        self.expedition_place = expedition_place or os.getenv("FACTURAMA_EXPEDITION_PLACE") or ""
+        self.name_id = name_id or os.getenv("FACTURAMA_NAME_ID") or "1"
         self.timeout = timeout
         if not self.base_url.startswith("https://"):
             raise ValueError("FACTURAMA_BASE_URL must use HTTPS")
 
-    def stamp(self, payload, idempotency_key):
-        body = json.dumps(payload).encode("utf-8")
+    def _authorization_header(self):
         credentials = base64.b64encode(f"{self.username}:{self.password}".encode()).decode()
+        return f"Basic {credentials}"
+
+    def test_connection(self):
+        if not self.username or not self.password:
+            return False, "Faltan usuario y/o contraseña de Facturama."
         request = Request(
-            f"{self.base_url}/api/3/cfdis",
+            f"{self.base_url}/Client",
+            headers={"Authorization": self._authorization_header()},
+            method="GET",
+        )
+        try:
+            with urlopen(request, timeout=self.timeout) as response:
+                return response.status == 200, "Conexión exitosa con Facturama."
+        except HTTPError as exc:
+            if exc.code in (401, 403):
+                return False, "Usuario o contraseña incorrectos."
+            return False, f"Facturama respondió {exc.code}."
+        except (TimeoutError, socket.timeout, URLError) as exc:
+            return False, f"No se pudo conectar con Facturama: {exc.reason if isinstance(exc, URLError) else exc}"
+
+    def build_request_body(self, payload):
+        items = []
+        for concept in payload.get("concepts") or []:
+            quantity = Decimal(str(concept.get("quantity") or 0))
+            unit_price = Decimal(str(concept.get("unit_price") or 0))
+            subtotal = Decimal(str(concept.get("amount") or quantity * unit_price))
+            discount = min(max(Decimal(str(concept.get("discount") or 0)), Decimal("0")), subtotal)
+            tax_base = subtotal - discount
+            iva_rate = Decimal(str(concept.get("iva_rate") or 0))
+            isr_rate = Decimal(str(concept.get("isr_retention_rate") or 0))
+            iva_retention_rate = Decimal(str(concept.get("iva_retention_rate") or 0))
+            tax_object = str(concept.get("tax_object") or "01")
+            taxes = []
+            if tax_object == "02":
+                taxes.append({
+                    "Total": f"{tax_base * iva_rate:.2f}", "Name": "IVA", "Base": f"{tax_base:.2f}",
+                    "Rate": f"{iva_rate:.6f}", "IsRetention": "false", "IsFederalTax": "true",
+                })
+            if isr_rate > 0:
+                taxes.append({
+                    "Total": f"{tax_base * isr_rate:.2f}", "Name": "ISR", "Base": f"{tax_base:.2f}",
+                    "Rate": f"{isr_rate:.6f}", "IsRetention": "true", "IsFederalTax": "true",
+                })
+            if iva_retention_rate > 0:
+                taxes.append({
+                    "Total": f"{tax_base * iva_retention_rate:.2f}", "Name": "IVA", "Base": f"{tax_base:.2f}",
+                    "Rate": f"{iva_retention_rate:.6f}", "IsRetention": "true", "IsFederalTax": "true",
+                })
+            total = tax_base + (tax_base * iva_rate if tax_object == "02" else 0) - tax_base * isr_rate - tax_base * iva_retention_rate
+            item = {
+                "Quantity": format(quantity, "f"), "ProductCode": concept.get("sat_product_key"),
+                "UnitCode": concept.get("sat_unit_key"), "Unit": concept.get("sat_unit_key"),
+                "Description": concept.get("description"), "UnitPrice": f"{unit_price:.2f}",
+                "Subtotal": f"{subtotal:.2f}", "TaxBase": f"{tax_base:.2f}",
+                "TaxObject": tax_object, "Total": f"{total:.2f}",
+            }
+            if discount:
+                item["Discount"] = f"{discount:.2f}"
+            if taxes:
+                item["Taxes"] = taxes
+            items.append(item)
+
+        issuer = payload.get("issuer") or {}
+        receiver = payload.get("receiver") or {}
+        body = {
+            "CfdiType": payload.get("cfdi_type") or "I", "NameId": self.name_id,
+            "ExpeditionPlace": self.expedition_place or issuer.get("postal_code"), "Exportation": "01",
+            "PaymentForm": payload.get("payment_form"), "PaymentMethod": payload.get("payment_method"),
+            "Currency": payload.get("currency") or "MXN",
+            "Receiver": {
+                "Rfc": receiver.get("rfc"), "Name": receiver.get("name"),
+                "CfdiUse": receiver.get("cfdi_use"), "FiscalRegime": receiver.get("tax_regime"),
+                "TaxZipCode": receiver.get("postal_code"),
+            },
+            "Items": items,
+        }
+        if payload.get("series"):
+            body["Serie"] = payload["series"]
+        if payload.get("folio"):
+            body["Folio"] = payload["folio"]
+        if payload.get("payment_conditions"):
+            body["PaymentConditions"] = str(payload["payment_conditions"])[:1000]
+        return body
+
+    def stamp(self, payload, idempotency_key):
+        if not self.username or not self.password:
+            return StampingResult("rejected", error_code="facturama_credentials_missing")
+        body = json.dumps(self.build_request_body(payload)).encode("utf-8")
+        request = Request(
+            f"{self.base_url}/3/cfdis",
             data=body,
             headers={
-                "Authorization": f"Basic {credentials}",
+                "Authorization": self._authorization_header(),
                 "Content-Type": "application/json",
                 "Idempotency-Key": idempotency_key,
             },
@@ -86,7 +176,9 @@ class FacturamaSandboxProvider(StampingProvider):
         try:
             with urlopen(request, timeout=self.timeout) as response:
                 data = json.loads(response.read().decode("utf-8"))
-            return StampingResult("stamped", data.get("Id") or data.get("Uuid"), {"http_status": response.status})
+            stamp = data.get("Complement", {}).get("TaxStamp", {})
+            reference = stamp.get("Uuid") or data.get("Uuid") or data.get("Id")
+            return StampingResult("stamped", reference, {"http_status": response.status, "facturama_id": data.get("Id")}, xml=data.get("Xml"))
         except HTTPError as exc:
             return StampingResult("rejected", error_code=f"http_{exc.code}", metadata={"http_status": exc.code})
         except (TimeoutError, socket.timeout, URLError):
@@ -97,11 +189,19 @@ class FacturamaSandboxProvider(StampingProvider):
 
 
 def configured_provider():
-    provider_name = os.getenv("STAMPING_PROVIDER", "fake").strip().lower()
+    from app.services.pac_config_service import provider_credentials
+
+    credentials = provider_credentials()
+    provider_name = credentials["provider"]
     if provider_name == "fake":
         return FakeStampingProvider()
-    if provider_name == "facturama_sandbox":
-        return FacturamaSandboxProvider()
+    if provider_name in {"facturama_sandbox", "facturama"}:
+        provider = FacturamaSandboxProvider(
+            base_url=credentials["base_url"], username=credentials["username"], password=credentials["password"],
+            expedition_place=credentials["expedition_place"], name_id=credentials["name_id"],
+        )
+        provider.name = provider_name
+        return provider
     raise ValueError("Unsupported STAMPING_PROVIDER")
 
 

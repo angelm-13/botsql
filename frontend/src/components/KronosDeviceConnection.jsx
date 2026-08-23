@@ -2,8 +2,10 @@
 import React, { useState } from "react";
 import { Save, ShieldCheck } from "lucide-react";
 import { loadKronosConnection, saveKronosConnection } from "../utils/kronosConnection";
+import { useI18n } from "../i18n";
 
 export default function KronosDeviceConnection({ onSaved }) {
+  const { t } = useI18n();
   const [connection, setConnection] = useState(loadKronosConnection);
   const [saved, setSaved] = useState(false);
 
@@ -23,19 +25,19 @@ export default function KronosDeviceConnection({ onSaved }) {
   return <form className="form-card kronos-device-form" onSubmit={submit}>
     <div className="kronos-device-intro">
       <ShieldCheck size={22} />
-      <div><h3>Credenciales del dispositivo</h3><p>Se conservan únicamente durante esta sesión del navegador.</p></div>
+      <div><h3>{t('kronos.device.heading')}</h3><p>{t('kronos.device.note')}</p></div>
     </div>
     <div className="kronos-form-grid">
-      <label className="field kronos-url">URL del dispositivo<input required type="url" name="deviceUrl" value={connection.deviceUrl} onChange={updateConnection} placeholder="https://192.168.0.203/ISAPI/AccessControl/AcsEvent?format=json" /></label>
-      <label className="field">Usuario<input required name="username" autoComplete="username" value={connection.username} onChange={updateConnection} /></label>
-      <label className="field">Contraseña<input required type="password" name="password" autoComplete="current-password" value={connection.password} onChange={updateConnection} /></label>
-      <label className="field">SessionTag <small>Opcional</small><input name="sessionTag" value={connection.sessionTag} onChange={updateConnection} /></label>
-      <label className="field">Cookie <small>Opcional</small><input name="cookie" value={connection.cookie} onChange={updateConnection} /></label>
-      <label className="kronos-check"><input type="checkbox" name="allowSelfSigned" checked={connection.allowSelfSigned} onChange={updateConnection} /> Permitir certificado autofirmado</label>
+      <label className="field kronos-url">{t('kronos.device.url_label')}<input required type="url" name="deviceUrl" value={connection.deviceUrl} onChange={updateConnection} placeholder={t('kronos.device.url_placeholder')} /></label>
+      <label className="field">{t('kronos.device.username')}<input required name="username" autoComplete="username" value={connection.username} onChange={updateConnection} /></label>
+      <label className="field">{t('kronos.device.password')}<input required type="password" name="password" autoComplete="current-password" value={connection.password} onChange={updateConnection} /></label>
+      <label className="field">{t('kronos.device.session_tag')} <small>{t('kronos.device.optional')}</small><input name="sessionTag" value={connection.sessionTag} onChange={updateConnection} /></label>
+      <label className="field">{t('kronos.device.cookie')} <small>{t('kronos.device.optional')}</small><input name="cookie" value={connection.cookie} onChange={updateConnection} /></label>
+      <label className="kronos-check"><input type="checkbox" name="allowSelfSigned" checked={connection.allowSelfSigned} onChange={updateConnection} /> {t('kronos.device.allow_self_signed')}</label>
     </div>
     <div className="kronos-device-actions">
-      {saved && <span role="status">Configuración guardada para esta sesión.</span>}
-      <button type="submit" className="button"><Save size={16} /> Guardar conexión</button>
+      {saved && <span role="status">{t('kronos.device.saved_status')}</span>}
+      <button type="submit" className="button"><Save size={16} /> {t('kronos.device.save_button')}</button>
     </div>
   </form>;
 }

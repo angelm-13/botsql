@@ -14,6 +14,17 @@ export const uploadProductImage = (id, file) => {
 };
 export const getPermissionCatalog = () => request("/security/permission-catalog");
 
+export const getAppointmentProfiles = () => request("/appointments/profiles");
+export const createAppointmentProfile = (payload) => request("/appointments/profiles", { method: "POST", body: payload });
+export const createAppointmentType = (profileId, payload) => request(`/appointments/profiles/${profileId}/types`, { method: "POST", body: payload });
+export const createAvailabilityRule = (profileId, payload) => request(`/appointments/profiles/${profileId}/availability-rules`, { method: "POST", body: payload });
+export const createAvailabilityOverride = (profileId, payload) => request(`/appointments/profiles/${profileId}/availability-overrides`, { method: "POST", body: payload });
+export const getAppointments = (params = {}) => request("/appointments/", { params });
+export const getPublicCalendar = (code) => request(`/public/calendars/${encodeURIComponent(code)}`, { skipAuth: true });
+export const getPublicCalendarSlots = (code, params) => request(`/public/calendars/${encodeURIComponent(code)}/slots`, { params, skipAuth: true });
+export const createPublicAppointment = (code, payload) => request(`/public/calendars/${encodeURIComponent(code)}/appointments`, { method: "POST", body: payload, skipAuth: true });
+export const cancelPublicAppointment = (token) => request(`/public/appointments/${encodeURIComponent(token)}/cancel`, { method: "POST", skipAuth: true });
+
 function readStoredUserForPermissions() {
   try { return JSON.parse(localStorage.getItem("user") || "null") || {}; } catch (_) { return {}; }
 }
@@ -73,6 +84,127 @@ export const getCustomerSupplier = (id) => request(`/customer_supplier/${id}`);
 export const createCustomerSupplier = (payload) => request("/customer_supplier/", { method: "POST", body: payload });
 export const updateCustomerSupplier = (id, payload) => request(`/customer_supplier/${id}`, { method: "PUT", body: payload });
 export const deleteCustomerSupplier = (id) => request(`/customer_supplier/${id}`, { method: "DELETE" });
+
+export const getAllLogisticsContact = (params = {}) => request("/logistics_contact/", { params });
+export const createLogisticsContact = (payload) => request("/logistics_contact/", { method: "POST", body: payload });
+export const updateLogisticsContact = (id, payload) => request(`/logistics_contact/${id}`, { method: "PUT", body: payload });
+export const deleteLogisticsContact = (id) => request(`/logistics_contact/${id}`, { method: "DELETE" });
+
+export const getAllLogisticsAddress = (params = {}) => request("/logistics_address/", { params });
+export const getLogisticsAddress = (id) => request(`/logistics_address/${id}`);
+export const createLogisticsAddress = (payload) => request("/logistics_address/", { method: "POST", body: payload });
+export const updateLogisticsAddress = (id, payload) => request(`/logistics_address/${id}`, { method: "PUT", body: payload });
+export const deleteLogisticsAddress = (id) => request(`/logistics_address/${id}`, { method: "DELETE" });
+
+export const getAllLogisticsContract = (params = {}) => request("/logistics_contract/", { params });
+export const getLogisticsContract = (id) => request(`/logistics_contract/${id}`);
+export const createLogisticsContract = (payload) => request("/logistics_contract/", { method: "POST", body: payload });
+export const updateLogisticsContract = (id, payload) => request(`/logistics_contract/${id}`, { method: "PUT", body: payload });
+export const deleteLogisticsContract = (id) => request(`/logistics_contract/${id}`, { method: "DELETE" });
+
+export const getAllLogisticsRate = (params = {}) => request("/logistics_rate/", { params });
+export const getLogisticsRate = (id) => request(`/logistics_rate/${id}`);
+export const createLogisticsRate = (payload) => request("/logistics_rate/", { method: "POST", body: payload });
+export const updateLogisticsRate = (id, payload) => request(`/logistics_rate/${id}`, { method: "PUT", body: payload });
+export const deleteLogisticsRate = (id) => request(`/logistics_rate/${id}`, { method: "DELETE" });
+
+export const getAllLogisticsUnit = (params = {}) => request("/logistics_unit/", { params });
+export const getLogisticsUnit = (id) => request(`/logistics_unit/${id}`);
+export const createLogisticsUnit = (payload) => request("/logistics_unit/", { method: "POST", body: payload });
+export const updateLogisticsUnit = (id, payload) => request(`/logistics_unit/${id}`, { method: "PUT", body: payload });
+export const deleteLogisticsUnit = (id) => request(`/logistics_unit/${id}`, { method: "DELETE" });
+
+export const getAllLogisticsTrailer = (params = {}) => request("/logistics_trailer/", { params });
+export const getLogisticsTrailer = (id) => request(`/logistics_trailer/${id}`);
+export const createLogisticsTrailer = (payload) => request("/logistics_trailer/", { method: "POST", body: payload });
+export const updateLogisticsTrailer = (id, payload) => request(`/logistics_trailer/${id}`, { method: "PUT", body: payload });
+export const deleteLogisticsTrailer = (id) => request(`/logistics_trailer/${id}`, { method: "DELETE" });
+
+export const getAllLogisticsOperator = (params = {}) => request("/logistics_operator/", { params });
+export const getLogisticsOperator = (id) => request(`/logistics_operator/${id}`);
+export const createLogisticsOperator = (payload) => request("/logistics_operator/", { method: "POST", body: payload });
+export const updateLogisticsOperator = (id, payload) => request(`/logistics_operator/${id}`, { method: "PUT", body: payload });
+export const deleteLogisticsOperator = (id) => request(`/logistics_operator/${id}`, { method: "DELETE" });
+
+export const getAllLogisticsMaintenance = (params = {}) => request("/logistics_maintenance/", { params });
+export const getLogisticsMaintenance = (id) => request(`/logistics_maintenance/${id}`);
+export const createLogisticsMaintenance = (payload) => request("/logistics_maintenance/", { method: "POST", body: payload });
+export const updateLogisticsMaintenance = (id, payload) => request(`/logistics_maintenance/${id}`, { method: "PUT", body: payload });
+export const deleteLogisticsMaintenance = (id) => request(`/logistics_maintenance/${id}`, { method: "DELETE" });
+
+export const getAllLogisticsQuotation = (params = {}) => request("/logistics_quotation/", { params });
+export const getLogisticsQuotation = (id) => request(`/logistics_quotation/${id}`);
+export const createLogisticsQuotation = (payload) => request("/logistics_quotation/", { method: "POST", body: payload });
+export const updateLogisticsQuotation = (id, payload) => request(`/logistics_quotation/${id}`, { method: "PUT", body: payload });
+export const deleteLogisticsQuotation = (id) => request(`/logistics_quotation/${id}`, { method: "DELETE" });
+
+export const getAllLogisticsServiceRequest = (params = {}) => request("/logistics_service_request/", { params });
+export const getLogisticsServiceRequest = (id) => request(`/logistics_service_request/${id}`);
+export const createLogisticsServiceRequest = (payload) => request("/logistics_service_request/", { method: "POST", body: payload });
+export const updateLogisticsServiceRequest = (id, payload) => request(`/logistics_service_request/${id}`, { method: "PUT", body: payload });
+export const deleteLogisticsServiceRequest = (id) => request(`/logistics_service_request/${id}`, { method: "DELETE" });
+
+export const getAllLogisticsTrip = (params = {}) => request("/logistics_trip/", { params });
+export const getLogisticsTrip = (id) => request(`/logistics_trip/${id}`);
+export const createLogisticsTrip = (payload) => request("/logistics_trip/", { method: "POST", body: payload });
+export const updateLogisticsTrip = (id, payload) => request(`/logistics_trip/${id}`, { method: "PUT", body: payload });
+export const deleteLogisticsTrip = (id) => request(`/logistics_trip/${id}`, { method: "DELETE" });
+
+export const getAllLogisticsEvidence = (params = {}) => request("/logistics_evidence/", { params });
+export const getLogisticsEvidence = (id) => request(`/logistics_evidence/${id}`);
+export const createLogisticsEvidence = (payload) => request("/logistics_evidence/", { method: "POST", body: payload });
+export const updateLogisticsEvidence = (id, payload) => request(`/logistics_evidence/${id}`, { method: "PUT", body: payload });
+export const deleteLogisticsEvidence = (id) => request(`/logistics_evidence/${id}`, { method: "DELETE" });
+
+export const getAllLogisticsIncident = (params = {}) => request("/logistics_incident/", { params });
+export const getLogisticsIncident = (id) => request(`/logistics_incident/${id}`);
+export const createLogisticsIncident = (payload) => request("/logistics_incident/", { method: "POST", body: payload });
+export const updateLogisticsIncident = (id, payload) => request(`/logistics_incident/${id}`, { method: "PUT", body: payload });
+export const deleteLogisticsIncident = (id) => request(`/logistics_incident/${id}`, { method: "DELETE" });
+
+export const getAllLogisticsShipment = (params = {}) => request("/logistics_shipment/", { params });
+export const createLogisticsShipment = (payload) => request("/logistics_shipment/", { method: "POST", body: payload });
+export const updateLogisticsShipment = (id, payload) => request(`/logistics_shipment/${id}`, { method: "PUT", body: payload });
+export const deleteLogisticsShipment = (id) => request(`/logistics_shipment/${id}`, { method: "DELETE" });
+
+export const getAllLogisticsBranch = (params = {}) => request("/logistics_branch/", { params });
+export const createLogisticsBranch = (payload) => request("/logistics_branch/", { method: "POST", body: payload });
+export const updateLogisticsBranch = (id, payload) => request(`/logistics_branch/${id}`, { method: "PUT", body: payload });
+export const deleteLogisticsBranch = (id) => request(`/logistics_branch/${id}`, { method: "DELETE" });
+
+export const getAllLogisticsReceivable = (params = {}) => request("/logistics_receivable/", { params });
+export const createLogisticsReceivable = (payload) => request("/logistics_receivable/", { method: "POST", body: payload });
+export const updateLogisticsReceivable = (id, payload) => request(`/logistics_receivable/${id}`, { method: "PUT", body: payload });
+export const deleteLogisticsReceivable = (id) => request(`/logistics_receivable/${id}`, { method: "DELETE" });
+
+export const getAllLogisticsFile = (params = {}) => request("/logistics_file/", { params });
+export const createLogisticsFile = (payload) => request("/logistics_file/", { method: "POST", body: payload });
+export const updateLogisticsFile = (id, payload) => request(`/logistics_file/${id}`, { method: "PUT", body: payload });
+export const deleteLogisticsFile = (id) => request(`/logistics_file/${id}`, { method: "DELETE" });
+
+export const getAllLogisticsWarehouse = (params = {}) => request("/logistics_warehouse/", { params });
+export const getLogisticsWarehouse = (id) => request(`/logistics_warehouse/${id}`);
+export const createLogisticsWarehouse = (payload) => request("/logistics_warehouse/", { method: "POST", body: payload });
+export const updateLogisticsWarehouse = (id, payload) => request(`/logistics_warehouse/${id}`, { method: "PUT", body: payload });
+export const deleteLogisticsWarehouse = (id) => request(`/logistics_warehouse/${id}`, { method: "DELETE" });
+
+export const getAllLogisticsLocation = (params = {}) => request("/logistics_location/", { params });
+export const getLogisticsLocation = (id) => request(`/logistics_location/${id}`);
+export const createLogisticsLocation = (payload) => request("/logistics_location/", { method: "POST", body: payload });
+export const updateLogisticsLocation = (id, payload) => request(`/logistics_location/${id}`, { method: "PUT", body: payload });
+export const deleteLogisticsLocation = (id) => request(`/logistics_location/${id}`, { method: "DELETE" });
+
+export const getAllLogisticsInventory = (params = {}) => request("/logistics_inventory/", { params });
+export const getLogisticsInventory = (id) => request(`/logistics_inventory/${id}`);
+export const createLogisticsInventory = (payload) => request("/logistics_inventory/", { method: "POST", body: payload });
+export const updateLogisticsInventory = (id, payload) => request(`/logistics_inventory/${id}`, { method: "PUT", body: payload });
+export const deleteLogisticsInventory = (id) => request(`/logistics_inventory/${id}`, { method: "DELETE" });
+
+export const getAllLogisticsRack = (params = {}) => request("/logistics_rack/", { params });
+export const getLogisticsRack = (id) => request(`/logistics_rack/${id}`);
+export const createLogisticsRack = (payload) => request("/logistics_rack/", { method: "POST", body: payload });
+export const updateLogisticsRack = (id, payload) => request(`/logistics_rack/${id}`, { method: "PUT", body: payload });
+export const deleteLogisticsRack = (id) => request(`/logistics_rack/${id}`, { method: "DELETE" });
 
 export const getAllDepartment = (params = {}) => request("/department/", { params });
 export const getDepartment = (id) => request(`/department/${id}`);
@@ -145,10 +277,15 @@ export const getInvoiceLines = (id) => request(`/invoice/${id}/lines`);
 export const getInvoice = (id) => request(`/invoice/${id}`);
 export const createInvoice = (payload) => request("/invoice/", { method: "POST", body: payload });
 export const updateInvoice = (id, payload) => request(`/invoice/${id}`, { method: "PUT", body: payload });
+export const transitionQuotation = (id, status) => request(`/invoice/${id}/quotation-transition`, { method: "PATCH", body: { status } });
 export const deleteInvoice = (id) => request(`/invoice/${id}`, { method: "DELETE" });
+export const getInvoiceCatalogs = () => request("/invoice/catalogs");
 export const previewManualInvoice = (payload) => request("/invoice/manual/preview", { method: "POST", body: payload });
 export const createManualInvoice = (payload) => request("/invoice/manual", { method: "POST", body: payload });
 export const stampInvoice = (id, idempotencyKey = crypto.randomUUID()) => request(`/stamping/invoices/${id}`, { method: "POST", body: { idempotency_key: idempotencyKey } });
+export const getStampingConfig = () => request("/stamping/config");
+export const saveStampingConfig = (payload) => request("/stamping/config", { method: "PUT", body: payload });
+export const testStampingConfig = (payload) => request("/stamping/config/test", { method: "POST", body: payload });
 export const downloadInvoiceXml = (id) => requestBlob(`/invoice/${id}/xml`);
 export const downloadInvoicePdf = (id, document = "") => requestBlob(`/invoice/${id}/pdf`, { params: { document } });
 
@@ -271,6 +408,8 @@ export const getProyect = (id) => request(`/proyect/${id}`);
 export const createProyect = (payload) => request("/proyect/", { method: "POST", body: payload });
 export const updateProyect = (id, payload) => request(`/proyect/${id}`, { method: "PUT", body: payload });
 export const deleteProyect = (id) => request(`/proyect/${id}`, { method: "DELETE" });
+export const transitionProyect = (id, payload) => request(`/proyect/${id}/transition`, { method: "POST", body: payload });
+export const addProyectMessage = (id, payload) => request(`/proyect/${id}/messages`, { method: "POST", body: payload });
 
 export const getAllPublicApiKey = (params = {}) => request("/public_api_key/", { params });
 export const getPublicApiKey = (id) => request(`/public_api_key/${id}`);

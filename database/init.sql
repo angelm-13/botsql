@@ -125,6 +125,9 @@ CREATE TABLE IF NOT EXISTS "customer_supplier" (
   "last_fiscal_certification_date" TIMESTAMP NULL,
   "tax_id" VARCHAR(50) NULL,
   "type" TEXT NULL CHECK ("type" IN ('client', 'supplier')),
+  "sla_level" VARCHAR(20) NOT NULL DEFAULT 'standard' CHECK ("sla_level" IN ('standard', 'premium')),
+  "credit_limit" NUMERIC(14,2) NOT NULL DEFAULT 0 CHECK ("credit_limit" >= 0),
+  "logistics_notes" TEXT NULL,
   "is_principal" BOOLEAN NOT NULL DEFAULT FALSE,
   "id_user" INTEGER NOT NULL DEFAULT 1,
   "created_by" INTEGER NOT NULL DEFAULT 1,
@@ -141,7 +144,7 @@ CREATE TABLE IF NOT EXISTS "proyect" (
   "leader" INTEGER NOT NULL DEFAULT 1,
   "proyect_description" VARCHAR(200) NOT NULL,
   "title" VARCHAR(50) NULL,
-  "proyect_status" VARCHAR(20) NULL,
+  "proyect_status" VARCHAR(20) NOT NULL DEFAULT 'draft' CHECK ("proyect_status" IN ('draft', 'submitted', 'authorized', 'denied', 'blocked', 'in_progress', 'stopped', 'completed')),
   "created_by" INTEGER NOT NULL DEFAULT 1,
   "creation_date" TIMESTAMP NULL,
   "last_update_date" TIMESTAMP NULL,
@@ -470,6 +473,22 @@ CREATE TABLE IF NOT EXISTS "task_note" (
   "last_update_date" TIMESTAMP NULL,
   "deletion_date" TIMESTAMP NULL,
   PRIMARY KEY ("id_task_note")
+);
+
+CREATE TABLE IF NOT EXISTS "proyect_event" (
+  "id_proyect_event" SERIAL NOT NULL,
+  "id_proyect" INTEGER NOT NULL REFERENCES "proyect"("id_proyect"),
+  "id_task" INTEGER NULL REFERENCES "task"("id_task"),
+  "created_by" INTEGER NOT NULL REFERENCES "user"("id_user"),
+  "author_role" VARCHAR(100) NULL,
+  "event_type" VARCHAR(30) NOT NULL CHECK ("event_type" IN ('created', 'status_changed', 'message', 'task_event')),
+  "previous_status" VARCHAR(20) NULL,
+  "new_status" VARCHAR(20) NULL,
+  "content" TEXT NULL,
+  "reason" TEXT NULL,
+  "review_date" TIMESTAMP NULL,
+  "creation_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY ("id_proyect_event")
 );
 
 CREATE TABLE IF NOT EXISTS "ticket" (
@@ -820,6 +839,8 @@ CREATE INDEX IF NOT EXISTS "idx_customer_supplier_created_by" ON "customer_suppl
 CREATE INDEX IF NOT EXISTS "idx_proyect_id_customer_supplier" ON "proyect" ("id_customer_supplier");
 CREATE INDEX IF NOT EXISTS "idx_proyect_leader" ON "proyect" ("leader");
 CREATE INDEX IF NOT EXISTS "idx_proyect_created_by" ON "proyect" ("created_by");
+CREATE INDEX IF NOT EXISTS "ix_proyect_status" ON "proyect" ("proyect_status") WHERE "deletion_date" IS NULL;
+CREATE INDEX IF NOT EXISTS "ix_proyect_owner" ON "proyect" ("created_by") WHERE "deletion_date" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_bank_created_by" ON "bank" ("created_by");
 CREATE INDEX IF NOT EXISTS "idx_bank_account_id_bank" ON "bank_account" ("id_bank");
 CREATE INDEX IF NOT EXISTS "idx_bank_account_created_by" ON "bank_account" ("created_by");
@@ -873,6 +894,9 @@ CREATE INDEX IF NOT EXISTS "idx_task_id_proyect" ON "task" ("id_proyect");
 CREATE INDEX IF NOT EXISTS "idx_task_created_by" ON "task" ("created_by");
 CREATE INDEX IF NOT EXISTS "idx_task_note_id_task" ON "task_note" ("id_task");
 CREATE INDEX IF NOT EXISTS "idx_task_note_created_by" ON "task_note" ("created_by");
+CREATE INDEX IF NOT EXISTS "ix_proyect_event_project_date" ON "proyect_event" ("id_proyect", "creation_date", "id_proyect_event");
+CREATE INDEX IF NOT EXISTS "ix_proyect_event_task" ON "proyect_event" ("id_task") WHERE "id_task" IS NOT NULL;
+CREATE INDEX IF NOT EXISTS "ix_proyect_event_author" ON "proyect_event" ("created_by");
 CREATE INDEX IF NOT EXISTS "idx_ticket_created_by" ON "ticket" ("created_by");
 CREATE INDEX IF NOT EXISTS "idx_fiscal_account_created_by" ON "fiscal_account" ("created_by");
 CREATE INDEX IF NOT EXISTS "idx_fiscal_stamp_created_by" ON "fiscal_stamp" ("created_by");
@@ -1470,5 +1494,510 @@ CREATE TABLE IF NOT EXISTS "bank_statement_movement" (
 
 CREATE INDEX IF NOT EXISTS "ix_bank_statement_movement_statement" ON "bank_statement_movement" ("id_bank_statement");
 CREATE UNIQUE INDEX IF NOT EXISTS "uq_bank_statement_movement_row" ON "bank_statement_movement" ("id_bank_statement", "sequence_number") WHERE "sequence_number" IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS "logistics_address" (
+  "id_logistics_address" SERIAL PRIMARY KEY,
+  "id_customer_supplier" INTEGER NOT NULL REFERENCES "customer_supplier"("id_customer_supplier"),
+  "name" VARCHAR(150) NOT NULL,
+  "address_line" VARCHAR(250) NOT NULL,
+  "city" VARCHAR(100) NULL,
+  "state" VARCHAR(100) NULL,
+  "country" VARCHAR(2) NULL DEFAULT 'MX',
+  "postal_code" VARCHAR(10) NULL,
+  "address_type" VARCHAR(30) NOT NULL DEFAULT 'operativa',
+  "status" VARCHAR(20) NOT NULL DEFAULT 'activo' CHECK ("status" IN ('activo', 'inactivo')),
+  "created_by" INTEGER NOT NULL REFERENCES "user"("id_user"),
+  "creation_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "last_update_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "deletion_date" TIMESTAMP NULL
+);
+
+CREATE TABLE IF NOT EXISTS "logistics_contract" (
+  "id_logistics_contract" SERIAL PRIMARY KEY,
+  "id_customer_supplier" INTEGER NOT NULL REFERENCES "customer_supplier"("id_customer_supplier"),
+  "contract_number" VARCHAR(80) NOT NULL UNIQUE,
+  "start_date" DATE NOT NULL,
+  "end_date" DATE NULL,
+  "sla_level" VARCHAR(20) NOT NULL DEFAULT 'standard' CHECK ("sla_level" IN ('standard', 'premium')),
+  "status" VARCHAR(20) NOT NULL DEFAULT 'activo' CHECK ("status" IN ('activo', 'inactivo')),
+  "created_by" INTEGER NOT NULL REFERENCES "user"("id_user"),
+  "creation_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "last_update_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "deletion_date" TIMESTAMP NULL,
+  CHECK ("end_date" IS NULL OR "end_date" >= "start_date")
+);
+
+CREATE TABLE IF NOT EXISTS "logistics_rate" (
+  "id_logistics_rate" SERIAL PRIMARY KEY,
+  "id_customer_supplier" INTEGER NOT NULL REFERENCES "customer_supplier"("id_customer_supplier"),
+  "service_type" VARCHAR(100) NOT NULL,
+  "origin" VARCHAR(150) NULL,
+  "destination" VARCHAR(150) NULL,
+  "unit_type" VARCHAR(80) NULL,
+  "amount" NUMERIC(14,2) NOT NULL DEFAULT 0 CHECK ("amount" >= 0),
+  "currency" VARCHAR(3) NOT NULL DEFAULT 'MXN' CHECK ("currency" IN ('MXN', 'USD')),
+  "status" VARCHAR(20) NOT NULL DEFAULT 'activo' CHECK ("status" IN ('activo', 'inactivo')),
+  "created_by" INTEGER NOT NULL REFERENCES "user"("id_user"),
+  "creation_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "last_update_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "deletion_date" TIMESTAMP NULL
+);
+
+CREATE INDEX IF NOT EXISTS "ix_logistics_address_customer" ON "logistics_address" ("id_customer_supplier") WHERE "deletion_date" IS NULL;
+CREATE INDEX IF NOT EXISTS "ix_logistics_contract_customer" ON "logistics_contract" ("id_customer_supplier") WHERE "deletion_date" IS NULL;
+CREATE INDEX IF NOT EXISTS "ix_logistics_rate_customer" ON "logistics_rate" ("id_customer_supplier") WHERE "deletion_date" IS NULL;
+CREATE INDEX IF NOT EXISTS "ix_logistics_rate_route" ON "logistics_rate" ("origin", "destination") WHERE "deletion_date" IS NULL;
+
+CREATE TABLE IF NOT EXISTS "logistics_unit" (
+  "id_logistics_unit" SERIAL PRIMARY KEY,
+  "plate" VARCHAR(30) NOT NULL UNIQUE,
+  "unit_type" VARCHAR(80) NOT NULL,
+  "mileage" NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK ("mileage" >= 0),
+  "availability_status" VARCHAR(30) NOT NULL DEFAULT 'disponible' CHECK ("availability_status" IN ('disponible', 'en viaje', 'mantenimiento', 'fuera de servicio')),
+  "insurance_expiration" DATE NULL,
+  "verification_expiration" DATE NULL,
+  "policy_number" VARCHAR(100) NULL,
+  "fuel_efficiency" NUMERIC(10,2) NULL CHECK ("fuel_efficiency" >= 0),
+  "status" VARCHAR(20) NOT NULL DEFAULT 'activo' CHECK ("status" IN ('activo', 'inactivo')),
+  "created_by" INTEGER NOT NULL REFERENCES "user"("id_user"),
+  "creation_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "last_update_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "deletion_date" TIMESTAMP NULL
+);
+
+CREATE TABLE IF NOT EXISTS "logistics_trailer" (
+  "id_logistics_trailer" SERIAL PRIMARY KEY,
+  "plate" VARCHAR(30) NOT NULL UNIQUE,
+  "trailer_type" VARCHAR(80) NOT NULL,
+  "capacity" NUMERIC(12,2) NULL CHECK ("capacity" >= 0),
+  "status" VARCHAR(20) NOT NULL DEFAULT 'activo' CHECK ("status" IN ('activo', 'inactivo')),
+  "created_by" INTEGER NOT NULL REFERENCES "user"("id_user"),
+  "creation_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "last_update_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "deletion_date" TIMESTAMP NULL
+);
+
+CREATE TABLE IF NOT EXISTS "logistics_operator" (
+  "id_logistics_operator" SERIAL PRIMARY KEY,
+  "full_name" VARCHAR(150) NOT NULL,
+  "license_number" VARCHAR(80) NOT NULL UNIQUE,
+  "license_expiration" DATE NULL,
+  "status" VARCHAR(20) NOT NULL DEFAULT 'activo' CHECK ("status" IN ('activo', 'inactivo')),
+  "contact_phone" VARCHAR(40) NULL,
+  "performance_score" NUMERIC(5,2) NOT NULL DEFAULT 0 CHECK ("performance_score" >= 0),
+  "created_by" INTEGER NOT NULL REFERENCES "user"("id_user"),
+  "creation_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "last_update_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "deletion_date" TIMESTAMP NULL
+);
+
+CREATE TABLE IF NOT EXISTS "logistics_maintenance" (
+  "id_logistics_maintenance" SERIAL PRIMARY KEY,
+  "id_logistics_unit" INTEGER NOT NULL REFERENCES "logistics_unit"("id_logistics_unit"),
+  "maintenance_type" VARCHAR(80) NOT NULL,
+  "scheduled_at" DATE NULL,
+  "closed_at" DATE NULL,
+  "cost" NUMERIC(14,2) NOT NULL DEFAULT 0 CHECK ("cost" >= 0),
+  "status" VARCHAR(20) NOT NULL DEFAULT 'abierta' CHECK ("status" IN ('abierta', 'en proceso', 'cerrada')),
+  "description" TEXT NULL,
+  "created_by" INTEGER NOT NULL REFERENCES "user"("id_user"),
+  "creation_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "last_update_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "deletion_date" TIMESTAMP NULL,
+  CHECK ("closed_at" IS NULL OR "scheduled_at" IS NULL OR "closed_at" >= "scheduled_at"),
+  CHECK (("status" = 'cerrada' AND "closed_at" IS NOT NULL) OR ("status" <> 'cerrada' AND "closed_at" IS NULL))
+);
+
+CREATE INDEX IF NOT EXISTS "ix_logistics_unit_availability" ON "logistics_unit" ("availability_status") WHERE "deletion_date" IS NULL;
+CREATE INDEX IF NOT EXISTS "ix_logistics_trailer_type" ON "logistics_trailer" ("trailer_type") WHERE "deletion_date" IS NULL;
+CREATE INDEX IF NOT EXISTS "ix_logistics_operator_status" ON "logistics_operator" ("status") WHERE "deletion_date" IS NULL;
+CREATE INDEX IF NOT EXISTS "ix_logistics_maintenance_unit" ON "logistics_maintenance" ("id_logistics_unit") WHERE "deletion_date" IS NULL;
+CREATE INDEX IF NOT EXISTS "ix_logistics_maintenance_status" ON "logistics_maintenance" ("status", "scheduled_at") WHERE "deletion_date" IS NULL;
+
+CREATE TABLE IF NOT EXISTS "logistics_warehouse" (
+  "id_logistics_warehouse" SERIAL PRIMARY KEY,
+  "name" VARCHAR(150) NOT NULL UNIQUE,
+  "address" VARCHAR(300) NULL,
+  "capacity" NUMERIC(14,2) NOT NULL DEFAULT 0 CHECK ("capacity" >= 0),
+  "status" VARCHAR(20) NOT NULL DEFAULT 'activo' CHECK ("status" IN ('activo', 'inactivo')),
+  "created_by" INTEGER NOT NULL REFERENCES "user"("id_user"),
+  "creation_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "last_update_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "deletion_date" TIMESTAMP NULL
+);
+
+CREATE TABLE IF NOT EXISTS "logistics_location" (
+  "id_logistics_location" SERIAL PRIMARY KEY,
+  "id_logistics_warehouse" INTEGER NOT NULL REFERENCES "logistics_warehouse"("id_logistics_warehouse"),
+  "code" VARCHAR(80) NOT NULL,
+  "zone" VARCHAR(80) NULL,
+  "location_type" VARCHAR(80) NULL,
+  "capacity" NUMERIC(14,2) NOT NULL DEFAULT 0 CHECK ("capacity" >= 0),
+  "status" VARCHAR(20) NOT NULL DEFAULT 'activo' CHECK ("status" IN ('activo', 'inactivo')),
+  "created_by" INTEGER NOT NULL REFERENCES "user"("id_user"),
+  "creation_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "last_update_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "deletion_date" TIMESTAMP NULL,
+  CONSTRAINT "uq_logistics_location_warehouse_code" UNIQUE ("id_logistics_warehouse", "code")
+);
+
+CREATE TABLE IF NOT EXISTS "logistics_inventory" (
+  "id_logistics_inventory" SERIAL PRIMARY KEY,
+  "id_customer_supplier" INTEGER NOT NULL REFERENCES "customer_supplier"("id_customer_supplier"),
+  "id_logistics_location" INTEGER NOT NULL REFERENCES "logistics_location"("id_logistics_location"),
+  "sku" VARCHAR(100) NOT NULL,
+  "description" VARCHAR(300) NULL,
+  "quantity" NUMERIC(14,3) NOT NULL DEFAULT 0 CHECK ("quantity" >= 0),
+  "lot" VARCHAR(100) NULL,
+  "serial_number" VARCHAR(120) NULL,
+  "status" VARCHAR(30) NOT NULL DEFAULT 'activo' CHECK ("status" IN ('activo', 'pendiente_surtido', 'surtido', 'inactivo')),
+  "created_by" INTEGER NOT NULL REFERENCES "user"("id_user"),
+  "creation_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "last_update_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "deletion_date" TIMESTAMP NULL
+);
+
+CREATE TABLE IF NOT EXISTS "logistics_rack" (
+  "id_logistics_rack" SERIAL PRIMARY KEY,
+  "id_customer_supplier" INTEGER NOT NULL REFERENCES "customer_supplier"("id_customer_supplier"),
+  "id_logistics_location" INTEGER NOT NULL REFERENCES "logistics_location"("id_logistics_location"),
+  "code" VARCHAR(100) NOT NULL UNIQUE,
+  "status" VARCHAR(30) NOT NULL DEFAULT 'en_cliente' CHECK ("status" IN ('en_cliente', 'en_almacen', 'pendiente_retorno', 'en_reparacion')),
+  "condition" VARCHAR(20) NOT NULL DEFAULT 'bueno' CHECK ("condition" IN ('bueno', 'regular', 'dañado')),
+  "quantity" INTEGER NOT NULL DEFAULT 1 CHECK ("quantity" >= 0),
+  "sent_at" DATE NULL,
+  "received_at" DATE NULL,
+  "created_by" INTEGER NOT NULL REFERENCES "user"("id_user"),
+  "creation_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "last_update_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "deletion_date" TIMESTAMP NULL
+);
+
+CREATE INDEX IF NOT EXISTS "ix_logistics_warehouse_status" ON "logistics_warehouse" ("status") WHERE "deletion_date" IS NULL;
+CREATE INDEX IF NOT EXISTS "ix_logistics_location_warehouse" ON "logistics_location" ("id_logistics_warehouse") WHERE "deletion_date" IS NULL;
+CREATE INDEX IF NOT EXISTS "ix_logistics_location_status" ON "logistics_location" ("status", "zone") WHERE "deletion_date" IS NULL;
+CREATE INDEX IF NOT EXISTS "ix_logistics_inventory_client" ON "logistics_inventory" ("id_customer_supplier") WHERE "deletion_date" IS NULL;
+CREATE INDEX IF NOT EXISTS "ix_logistics_inventory_location" ON "logistics_inventory" ("id_logistics_location") WHERE "deletion_date" IS NULL;
+CREATE INDEX IF NOT EXISTS "ix_logistics_inventory_sku" ON "logistics_inventory" ("sku") WHERE "deletion_date" IS NULL;
+CREATE INDEX IF NOT EXISTS "ix_logistics_rack_client" ON "logistics_rack" ("id_customer_supplier") WHERE "deletion_date" IS NULL;
+CREATE INDEX IF NOT EXISTS "ix_logistics_rack_location" ON "logistics_rack" ("id_logistics_location") WHERE "deletion_date" IS NULL;
+CREATE INDEX IF NOT EXISTS "ix_logistics_rack_status" ON "logistics_rack" ("status", "condition") WHERE "deletion_date" IS NULL;
+
+CREATE TABLE IF NOT EXISTS "logistics_quotation" (
+  "id_logistics_quotation" SERIAL PRIMARY KEY,
+  "id_customer_supplier" INTEGER NOT NULL REFERENCES "customer_supplier"("id_customer_supplier"),
+  "folio" VARCHAR(80) NOT NULL UNIQUE,
+  "service_type" VARCHAR(100) NOT NULL,
+  "origin" TEXT NOT NULL,
+  "destination" TEXT NOT NULL,
+  "cargo_type" VARCHAR(120),
+  "unit_required" VARCHAR(120),
+  "kilometers" NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK ("kilometers" >= 0),
+  "maneuvers" NUMERIC(14,2) NOT NULL DEFAULT 0 CHECK ("maneuvers" >= 0),
+  "storage" NUMERIC(14,2) NOT NULL DEFAULT 0 CHECK ("storage" >= 0),
+  "additional_services" JSONB NOT NULL DEFAULT '{}'::jsonb,
+  "total" NUMERIC(14,2) NOT NULL DEFAULT 0 CHECK ("total" >= 0),
+  "source_branch_reference" VARCHAR(120),
+  "status" VARCHAR(30) NOT NULL DEFAULT 'borrador' CHECK ("status" IN ('borrador', 'enviada', 'aceptada', 'rechazada', 'vencida', 'cancelada')),
+  "created_by" INTEGER NOT NULL REFERENCES "user"("id_user"),
+  "creation_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "last_update_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "deletion_date" TIMESTAMP NULL
+);
+
+CREATE TABLE IF NOT EXISTS "logistics_service_request" (
+  "id_logistics_service_request" SERIAL PRIMARY KEY,
+  "id_customer_supplier" INTEGER NOT NULL REFERENCES "customer_supplier"("id_customer_supplier"),
+  "id_logistics_quotation" INTEGER REFERENCES "logistics_quotation"("id_logistics_quotation"),
+  "request_number" VARCHAR(80) NOT NULL UNIQUE,
+  "request_type" VARCHAR(100) NOT NULL,
+  "origin" TEXT,
+  "destination" TEXT,
+  "requested_pickup_at" TIMESTAMP,
+  "requested_delivery_at" TIMESTAMP,
+  "status" VARCHAR(30) NOT NULL DEFAULT 'solicitado' CHECK ("status" IN ('solicitado', 'aprobado', 'programado', 'cancelado')),
+  "priority" VARCHAR(20) NOT NULL DEFAULT 'normal' CHECK ("priority" IN ('baja', 'normal', 'alta', 'urgente')),
+  "description" TEXT,
+  "created_by" INTEGER NOT NULL REFERENCES "user"("id_user"),
+  "creation_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "last_update_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "deletion_date" TIMESTAMP NULL,
+  CHECK ("requested_delivery_at" IS NULL OR "requested_pickup_at" IS NULL OR "requested_delivery_at" >= "requested_pickup_at")
+);
+
+CREATE TABLE IF NOT EXISTS "logistics_trip" (
+  "id_logistics_trip" SERIAL PRIMARY KEY,
+  "id_logistics_service_request" INTEGER NOT NULL REFERENCES "logistics_service_request"("id_logistics_service_request"),
+  "id_customer_supplier" INTEGER NOT NULL REFERENCES "customer_supplier"("id_customer_supplier"),
+  "folio" VARCHAR(80) NOT NULL UNIQUE,
+  "id_logistics_unit" INTEGER REFERENCES "logistics_unit"("id_logistics_unit"),
+  "id_logistics_trailer" INTEGER REFERENCES "logistics_trailer"("id_logistics_trailer"),
+  "id_logistics_operator" INTEGER REFERENCES "logistics_operator"("id_logistics_operator"),
+  "supplier_reference" VARCHAR(120),
+  "route_reference" VARCHAR(120),
+  "expediente_reference" VARCHAR(120),
+  "status" VARCHAR(30) NOT NULL DEFAULT 'solicitado' CHECK ("status" IN ('solicitado', 'planeado', 'asignado', 'cargado', 'en tránsito', 'en ruta', 'retrasado', 'entregado', 'cerrado', 'facturado', 'cancelado')),
+  "planned_pickup_at" TIMESTAMP,
+  "planned_delivery_at" TIMESTAMP,
+  "actual_pickup_at" TIMESTAMP,
+  "actual_delivery_at" TIMESTAMP,
+  "planned_cost" NUMERIC(14,2) NOT NULL DEFAULT 0 CHECK ("planned_cost" >= 0),
+  "actual_cost" NUMERIC(14,2) NOT NULL DEFAULT 0 CHECK ("actual_cost" >= 0),
+  "revenue" NUMERIC(14,2) NOT NULL DEFAULT 0 CHECK ("revenue" >= 0),
+  "kilometers" NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK ("kilometers" >= 0),
+  "restrictions" TEXT,
+  "created_by" INTEGER NOT NULL REFERENCES "user"("id_user"),
+  "creation_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "last_update_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "deletion_date" TIMESTAMP NULL,
+  CHECK ("planned_delivery_at" IS NULL OR "planned_pickup_at" IS NULL OR "planned_delivery_at" >= "planned_pickup_at"),
+  CHECK ("actual_delivery_at" IS NULL OR "actual_pickup_at" IS NULL OR "actual_delivery_at" >= "actual_pickup_at")
+);
+
+CREATE TABLE IF NOT EXISTS "logistics_evidence" (
+  "id_logistics_evidence" SERIAL PRIMARY KEY,
+  "id_logistics_trip" INTEGER NOT NULL REFERENCES "logistics_trip"("id_logistics_trip"),
+  "evidence_type" VARCHAR(80) NOT NULL,
+  "photo_path" VARCHAR(300),
+  "signature_path" VARCHAR(300),
+  "source_document_reference" VARCHAR(120),
+  "latitude" NUMERIC(10,7) CHECK ("latitude" IS NULL OR "latitude" BETWEEN -90 AND 90),
+  "longitude" NUMERIC(10,7) CHECK ("longitude" IS NULL OR "longitude" BETWEEN -180 AND 180),
+  "comments" TEXT,
+  "captured_by" INTEGER REFERENCES "user"("id_user"),
+  "captured_at" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "created_by" INTEGER NOT NULL REFERENCES "user"("id_user"),
+  "creation_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "last_update_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "deletion_date" TIMESTAMP NULL
+);
+
+CREATE TABLE IF NOT EXISTS "logistics_incident" (
+  "id_logistics_incident" SERIAL PRIMARY KEY,
+  "id_logistics_trip" INTEGER NOT NULL REFERENCES "logistics_trip"("id_logistics_trip"),
+  "incident_type" VARCHAR(100) NOT NULL,
+  "severity" VARCHAR(20) NOT NULL DEFAULT 'media' CHECK ("severity" IN ('baja', 'media', 'alta', 'critica')),
+  "description" TEXT NOT NULL,
+  "responsible_user_id" INTEGER REFERENCES "user"("id_user"),
+  "status" VARCHAR(20) NOT NULL DEFAULT 'abierta' CHECK ("status" IN ('abierta', 'en_proceso', 'resuelta', 'cerrada', 'cancelada')),
+  "created_by" INTEGER NOT NULL REFERENCES "user"("id_user"),
+  "creation_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "last_update_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "deletion_date" TIMESTAMP NULL
+);
+
+CREATE INDEX IF NOT EXISTS "ix_logistics_quotation_client" ON "logistics_quotation" ("id_customer_supplier") WHERE "deletion_date" IS NULL;
+CREATE INDEX IF NOT EXISTS "ix_logistics_quotation_status" ON "logistics_quotation" ("status") WHERE "deletion_date" IS NULL;
+CREATE INDEX IF NOT EXISTS "ix_logistics_service_request_client" ON "logistics_service_request" ("id_customer_supplier") WHERE "deletion_date" IS NULL;
+CREATE INDEX IF NOT EXISTS "ix_logistics_service_request_quotation" ON "logistics_service_request" ("id_logistics_quotation") WHERE "deletion_date" IS NULL;
+CREATE INDEX IF NOT EXISTS "ix_logistics_service_request_status" ON "logistics_service_request" ("status", "priority") WHERE "deletion_date" IS NULL;
+CREATE INDEX IF NOT EXISTS "ix_logistics_trip_request" ON "logistics_trip" ("id_logistics_service_request") WHERE "deletion_date" IS NULL;
+CREATE INDEX IF NOT EXISTS "ix_logistics_trip_client" ON "logistics_trip" ("id_customer_supplier") WHERE "deletion_date" IS NULL;
+CREATE INDEX IF NOT EXISTS "ix_logistics_trip_assignment" ON "logistics_trip" ("id_logistics_unit", "id_logistics_trailer", "id_logistics_operator") WHERE "deletion_date" IS NULL;
+CREATE INDEX IF NOT EXISTS "ix_logistics_trip_status" ON "logistics_trip" ("status", "planned_pickup_at") WHERE "deletion_date" IS NULL;
+CREATE INDEX IF NOT EXISTS "ix_logistics_evidence_trip" ON "logistics_evidence" ("id_logistics_trip") WHERE "deletion_date" IS NULL;
+CREATE INDEX IF NOT EXISTS "ix_logistics_incident_trip" ON "logistics_incident" ("id_logistics_trip") WHERE "deletion_date" IS NULL;
+CREATE INDEX IF NOT EXISTS "ix_logistics_incident_status" ON "logistics_incident" ("status", "severity") WHERE "deletion_date" IS NULL;
+
+INSERT INTO "field" ("table_name", "field_name", "created_by", "creation_date", "last_update_date")
+SELECT source_column.table_name, source_column.column_name, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM information_schema.columns source_column
+WHERE source_column.table_schema = 'public'
+  AND source_column.table_name IN ('logistics_quotation', 'logistics_service_request', 'logistics_trip', 'logistics_evidence', 'logistics_incident')
+  AND NOT EXISTS (
+    SELECT 1 FROM "field"
+    WHERE "field"."table_name" = source_column.table_name
+      AND "field"."field_name" = source_column.column_name
+  );
+
+INSERT INTO "entity_permission" (
+  "id_permission", "entity_name", "control_type", "menu_location", "menu_group",
+  "menu_group_icon", "menu_label", "menu_order", "created_by", "creation_date", "last_update_date"
+)
+SELECT source_permission."id_permission", logistics_entity.entity_name,
+       source_permission."control_type", 'sidebar', 'Logística', 'truck',
+       logistics_entity.menu_label, logistics_entity.menu_order,
+       1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM "entity_permission" source_permission
+CROSS JOIN (VALUES
+  ('logistics_quotation', 'Cotizaciones', 170),
+  ('logistics_service_request', 'Solicitudes', 180),
+  ('logistics_trip', 'Viajes', 190),
+  ('logistics_evidence', 'Evidencias', 200),
+  ('logistics_incident', 'Incidencias', 210)
+) AS logistics_entity(entity_name, menu_label, menu_order)
+WHERE source_permission."entity_name" = 'customer_supplier'
+  AND source_permission."deletion_date" IS NULL
+ON CONFLICT ("id_permission", "entity_name") DO UPDATE SET
+  "control_type" = EXCLUDED."control_type",
+  "menu_location" = EXCLUDED."menu_location",
+  "menu_group" = EXCLUDED."menu_group",
+  "menu_group_icon" = EXCLUDED."menu_group_icon",
+  "menu_label" = EXCLUDED."menu_label",
+  "menu_order" = EXCLUDED."menu_order",
+  "deletion_date" = NULL,
+  "last_update_date" = CURRENT_TIMESTAMP;
+
+INSERT INTO "nm_field_permission" (
+  "id_field", "id_permission", "control_type", "created_by", "creation_date", "last_update_date"
+)
+SELECT logistics_field."id_field", logistics_permission."id_permission", '15',
+       1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM "field" logistics_field
+JOIN "entity_permission" logistics_permission
+  ON logistics_permission."entity_name" = logistics_field."table_name"
+WHERE logistics_field."table_name" IN ('logistics_quotation', 'logistics_service_request', 'logistics_trip', 'logistics_evidence', 'logistics_incident')
+  AND logistics_permission."deletion_date" IS NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM "nm_field_permission" existing
+    WHERE existing."id_field" = logistics_field."id_field"
+      AND existing."id_permission" = logistics_permission."id_permission"
+      AND existing."deletion_date" IS NULL
+  );
+
+CREATE TABLE IF NOT EXISTS logistics_branch (
+  id_logistics_branch SERIAL PRIMARY KEY,
+  name VARCHAR(180) NOT NULL,
+  postal_code VARCHAR(20),
+  series VARCHAR(30),
+  address TEXT,
+  status VARCHAR(20) NOT NULL DEFAULT 'activo' CHECK (status IN ('activo', 'inactivo')),
+  created_by INTEGER NOT NULL REFERENCES "user"(id_user),
+  creation_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_update_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deletion_date TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS logistics_shipment (
+  id_logistics_shipment SERIAL PRIMARY KEY,
+  id_customer_supplier INTEGER NOT NULL REFERENCES customer_supplier(id_customer_supplier),
+  shipment_number VARCHAR(80) NOT NULL UNIQUE,
+  bl_number VARCHAR(120),
+  provider VARCHAR(180),
+  transport_mode VARCHAR(60),
+  cargo_type VARCHAR(120),
+  origin_port VARCHAR(180),
+  destination_port VARCHAR(180),
+  customs VARCHAR(180),
+  status VARCHAR(30) NOT NULL DEFAULT 'registrado' CHECK (status IN ('registrado', 'en tránsito', 'en aduana', 'liberado', 'entregado')),
+  tracking TEXT,
+  created_by INTEGER NOT NULL REFERENCES "user"(id_user),
+  creation_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_update_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deletion_date TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS logistics_receivable (
+  id_logistics_receivable SERIAL PRIMARY KEY,
+  id_invoice INTEGER NOT NULL REFERENCES invoice(id_invoice),
+  id_customer_supplier INTEGER NOT NULL REFERENCES customer_supplier(id_customer_supplier),
+  amount NUMERIC(14,2) NOT NULL CHECK (amount >= 0),
+  due_at DATE NOT NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'pendiente' CHECK (status IN ('pendiente', 'pagado', 'vencido')),
+  paid_at DATE,
+  created_by INTEGER NOT NULL REFERENCES "user"(id_user),
+  creation_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_update_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deletion_date TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS logistics_file (
+  id_logistics_file SERIAL PRIMARY KEY,
+  id_customer_supplier INTEGER NOT NULL REFERENCES customer_supplier(id_customer_supplier),
+  folio VARCHAR(80) NOT NULL UNIQUE,
+  origin TEXT NOT NULL,
+  destination TEXT NOT NULL,
+  id_logistics_branch INTEGER REFERENCES logistics_branch(id_logistics_branch),
+  payment_form VARCHAR(10) NOT NULL DEFAULT '99',
+  payment_method VARCHAR(10) NOT NULL DEFAULT 'PUE',
+  cfdi_use VARCHAR(10) NOT NULL DEFAULT 'G03',
+  status VARCHAR(20) NOT NULL DEFAULT 'abierto' CHECK (status IN ('abierto', 'facturando', 'facturado')),
+  id_invoice INTEGER REFERENCES invoice(id_invoice),
+  last_invoice_error TEXT,
+  notes TEXT,
+  created_by INTEGER NOT NULL REFERENCES "user"(id_user),
+  creation_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_update_date TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  deletion_date TIMESTAMP
+);
+
+ALTER TABLE logistics_trip ADD COLUMN IF NOT EXISTS id_logistics_file INTEGER REFERENCES logistics_file(id_logistics_file);
+
+CREATE INDEX IF NOT EXISTS ix_logistics_shipment_client ON logistics_shipment(id_customer_supplier) WHERE deletion_date IS NULL;
+CREATE INDEX IF NOT EXISTS ix_logistics_shipment_status ON logistics_shipment(status) WHERE deletion_date IS NULL;
+CREATE INDEX IF NOT EXISTS ix_logistics_branch_status ON logistics_branch(status) WHERE deletion_date IS NULL;
+CREATE INDEX IF NOT EXISTS ix_logistics_receivable_invoice ON logistics_receivable(id_invoice) WHERE deletion_date IS NULL;
+CREATE INDEX IF NOT EXISTS ix_logistics_receivable_client ON logistics_receivable(id_customer_supplier) WHERE deletion_date IS NULL;
+CREATE INDEX IF NOT EXISTS ix_logistics_receivable_status ON logistics_receivable(status, due_at) WHERE deletion_date IS NULL;
+CREATE INDEX IF NOT EXISTS ix_logistics_file_client ON logistics_file(id_customer_supplier) WHERE deletion_date IS NULL;
+CREATE INDEX IF NOT EXISTS ix_logistics_file_branch ON logistics_file(id_logistics_branch) WHERE deletion_date IS NULL;
+CREATE INDEX IF NOT EXISTS ix_logistics_file_invoice ON logistics_file(id_invoice) WHERE deletion_date IS NULL;
+CREATE INDEX IF NOT EXISTS ix_logistics_file_status ON logistics_file(status) WHERE deletion_date IS NULL;
+CREATE INDEX IF NOT EXISTS ix_logistics_trip_file ON logistics_trip(id_logistics_file) WHERE deletion_date IS NULL;
+
+INSERT INTO field (table_name, field_name, created_by, creation_date, last_update_date)
+SELECT source_column.table_name, source_column.column_name, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM information_schema.columns source_column
+WHERE source_column.table_schema = 'public'
+  AND source_column.table_name IN ('logistics_shipment', 'logistics_branch', 'logistics_receivable', 'logistics_file')
+  AND NOT EXISTS (SELECT 1 FROM field WHERE field.table_name = source_column.table_name AND field.field_name = source_column.column_name);
+
+INSERT INTO field (table_name, field_name, created_by, creation_date, last_update_date)
+SELECT 'logistics_trip', 'id_logistics_file', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+WHERE NOT EXISTS (SELECT 1 FROM field WHERE table_name = 'logistics_trip' AND field_name = 'id_logistics_file');
+
+INSERT INTO entity_permission (
+  id_permission, entity_name, control_type, menu_location, menu_group,
+  menu_group_icon, menu_label, menu_order, created_by, creation_date, last_update_date
+)
+SELECT source_permission.id_permission, logistics_entity.entity_name,
+       source_permission.control_type, 'sidebar', 'Logística', 'truck',
+       logistics_entity.menu_label, logistics_entity.menu_order,
+       1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM entity_permission source_permission
+JOIN (VALUES
+  ('logistics_shipment', 'customer_supplier', 'Embarques', 220),
+  ('logistics_branch', 'invoice', 'Sucursales', 230),
+  ('logistics_receivable', 'invoice', 'Cuentas por cobrar', 240),
+  ('logistics_file', 'customer_supplier', 'Expedientes', 250)
+) AS logistics_entity(entity_name, source_entity, menu_label, menu_order)
+  ON source_permission.entity_name = logistics_entity.source_entity
+WHERE source_permission.deletion_date IS NULL
+ON CONFLICT (id_permission, entity_name) DO UPDATE SET
+  control_type = EXCLUDED.control_type,
+  menu_location = EXCLUDED.menu_location,
+  menu_group = EXCLUDED.menu_group,
+  menu_group_icon = EXCLUDED.menu_group_icon,
+  menu_label = EXCLUDED.menu_label,
+  menu_order = EXCLUDED.menu_order,
+  deletion_date = NULL,
+  last_update_date = CURRENT_TIMESTAMP;
+
+INSERT INTO nm_field_permission (id_field, id_permission, control_type, created_by, creation_date, last_update_date)
+SELECT logistics_field.id_field, logistics_permission.id_permission, '15', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM field logistics_field
+JOIN entity_permission logistics_permission ON logistics_permission.entity_name = logistics_field.table_name
+WHERE logistics_field.table_name IN ('logistics_shipment', 'logistics_branch', 'logistics_receivable', 'logistics_file')
+  AND logistics_permission.deletion_date IS NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM nm_field_permission existing
+    WHERE existing.id_field = logistics_field.id_field
+      AND existing.id_permission = logistics_permission.id_permission
+      AND existing.deletion_date IS NULL
+  );
+
+INSERT INTO nm_field_permission (id_field, id_permission, control_type, created_by, creation_date, last_update_date)
+SELECT trip_field.id_field, trip_permission.id_permission, '15', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM field trip_field
+JOIN entity_permission trip_permission ON trip_permission.entity_name = 'logistics_trip'
+WHERE trip_field.table_name = 'logistics_trip'
+  AND trip_field.field_name = 'id_logistics_file'
+  AND trip_permission.deletion_date IS NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM nm_field_permission existing
+    WHERE existing.id_field = trip_field.id_field
+      AND existing.id_permission = trip_permission.id_permission
+      AND existing.deletion_date IS NULL
+  );
 
 COMMIT;

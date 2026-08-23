@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Plus, RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
 import { getAllCustomerSupplier, createCustomerSupplier, updateCustomerSupplier, deleteCustomerSupplier, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllUser } from "../api";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 
-const emptyForm = { postal_code: "", name: "", title: "", contact_name: "", phone: "", email: "", web_site: "", street: "", number_ext: "", number_int: "", neighborhood: "", city: "", geographic_state: "", fiscal_type: "", last_fiscal_certification_date: "", tax_id: "", type: "", is_principal: false, id_user: "", path_logo: "" };
+/* eslint-disable react/prop-types */
+
+const baseEmptyForm = { postal_code: "", name: "", title: "", contact_name: "", phone: "", email: "", web_site: "", street: "", number_ext: "", number_int: "", neighborhood: "", city: "", geographic_state: "", fiscal_type: "", last_fiscal_certification_date: "", tax_id: "", type: "", sla_level: "standard", credit_limit: "0", logistics_notes: "", is_principal: false, id_user: "", path_logo: "" };
 const validationRules = allValidationRules["customer_supplier"] || {};
 const ENTITY_KEY = "customer_supplier";
 const ACTION_CREATE = 1;
@@ -12,7 +14,7 @@ const ACTION_READ = 2;
 const ACTION_UPDATE = 4;
 const ACTION_DELETE = 8;
 const FIELD_VISIBLE_BIT = 2;
-const ALL_FIELD_NAMES = ['id_customer_supplier', 'postal_code', 'name', 'title', 'contact_name', 'phone', 'email', 'web_site', 'street', 'number_ext'];
+const ALL_FIELD_NAMES = ['id_customer_supplier', 'postal_code', 'name', 'title', 'contact_name', 'phone', 'email', 'web_site', 'street', 'number_ext', 'number_int', 'neighborhood', 'city', 'geographic_state', 'fiscal_type', 'last_fiscal_certification_date', 'tax_id', 'type', 'sla_level', 'credit_limit', 'logistics_notes', 'is_principal', 'id_user', 'path_logo'];
 
 function hasBit(value, bit) {
   return (Number(value || 0) & bit) === bit;
@@ -26,8 +28,11 @@ function readCurrentUser() {
   try { return JSON.parse(localStorage.getItem("user") || "{}"); } catch (_) { return {}; }
 }
 
-export default function CustomerSupplierPage() {
+export default function CustomerSupplierPage({ clientsOnly = false, mode = "all", entityType = "" }) {
   const { lang, t } = useI18n();
+  const forcedType = entityType || (mode === "suppliersOnly" ? "supplier" : clientsOnly || mode === "clientsOnly" ? "client" : "");
+  const entityLabel = forcedType === "client" ? "Clientes" : forcedType === "supplier" ? "Proveedores" : t("menu.customer_supplier");
+  const emptyForm = useMemo(() => ({ ...baseEmptyForm, type: forcedType }), [forcedType]);
   const [items, setItems] = useState([]);
   const [formData, setFormData] = useState(emptyForm);
   const [fieldErrors, setFieldErrors] = useState({});
@@ -54,6 +59,7 @@ export default function CustomerSupplierPage() {
   const canSubmitForm = editingId ? canUpdate : canCreate;
   const showRowActions = canRead && (canUpdate || canDelete);
   const [userOptions, setUserOptions] = useState([]);
+  const proyectOptions = [];
 
   async function loadData() {
     if (!permissionReady || !canRead) {
@@ -63,7 +69,7 @@ export default function CustomerSupplierPage() {
     }
     setLoading(true); setErrorKey(""); setErrorMeta(null);
     try {
-      const data = await getAllCustomerSupplier({ page, per_page: perPage });
+      const data = await getAllCustomerSupplier({ page, per_page: perPage, ...(forcedType ? { type: forcedType } : {}) });
       setItems(Array.isArray(data) ? data : (data.items || data.data || []));
     } catch (error) {
       setErrorKey(error.message || "errors.request_failed");
@@ -170,6 +176,7 @@ export default function CustomerSupplierPage() {
 
   function buildSubmitPayload() {
     const payload = { ...formData };
+    if (forcedType) payload.type = forcedType;
     if (ENTITY_KEY === "user" && editingId && isBlankValue(payload.password)) {
       delete payload.password;
     }
@@ -357,23 +364,6 @@ export default function CustomerSupplierPage() {
     return String(idValue ?? item.id ?? "");
   }
 
-  function formatEntityCatalogLabel(entityName, fallback = "") {
-    if (!entityName) return "";
-    return t(`menu.${entityName}`, fallback || entityName);
-  }
-
-  function formatControlTypeLabel(value) {
-    const numeric = Number(value);
-    const labels = [];
-    if ((numeric & 1) === 1) labels.push(t("common.create", "Crear"));
-    if ((numeric & 2) === 2) labels.push(t("common.read", "Leer"));
-    if ((numeric & 4) === 4) labels.push(t("common.update", "Actualizar"));
-    if ((numeric & 8) === 8) labels.push(t("common.delete", "Eliminar"));
-    if (!labels.length) return String(value ?? "");
-    const description = numeric === 15 ? t("common.crud_full", "CRUD completo") : labels.join(" + ");
-    return `${numeric} - ${description}`;
-  }
-
   // issue_12_phase3b_invoice_project_link_summary
   function invoiceProjectLabel(invoice) {
     if (ENTITY_KEY !== "invoice") return "";
@@ -472,15 +462,16 @@ export default function CustomerSupplierPage() {
   const groups = useMemo(() => filtered.reduce((acc, item) => {
     const key = String(item.geographic_state ?? t("common.unclassified"));
     acc[key] = acc[key] || []; acc[key].push(item); return acc;
-  }, {}), [filtered, lang]);
+  }, {}), [filtered, lang, t]);
 
   return (
     <section className="entity-page">
       <div className="page-heading">
-        <div><p className="eyebrow">{t("common.module")}</p><h2>{t("menu.customer_supplier")}</h2></div>
+        <div><p className="eyebrow">{forcedType === "client" ? "CRM" : forcedType ? "Logística" : t("common.module")}</p><h2>{entityLabel}</h2></div>
         <button className="button ghost" onClick={loadData} disabled={!canRead}><RefreshCw size={16} />{loading ? t("common.loading") : t("common.refresh")}</button>
       </div>
 
+      {noticeKey && <div className="alert success">{t(noticeKey, noticeKey)}</div>}
       {canSubmitForm && <form className="form-card" onSubmit={handleSubmit}>
         <div className="form-header"><Plus size={18} /><strong>{editingId ? t("common.edit") : t("common.new")}</strong></div>
         <div className="form-grid">
@@ -596,7 +587,7 @@ export default function CustomerSupplierPage() {
             {fieldErrors["tax_id"] && <span className="field-error">{formatFieldError("tax_id")}</span>}
           </label>
           )}
-          {canSeeField("type") && (
+          {canSeeField("type") && !forcedType && (
           <label className="field">
             <span>{t("fields.customer_supplier.type")}</span>
             <select name="type" value={formData.type ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors["type"])} {...inputPropsForField("type", validationRules["type"], "select")}>
@@ -605,6 +596,29 @@ export default function CustomerSupplierPage() {
               <option key="supplier" value="supplier">supplier</option>
             </select>
             {fieldErrors["type"] && <span className="field-error">{formatFieldError("type")}</span>}
+          </label>
+          )}
+          {canSeeField("sla_level") && (
+          <label className="field">
+            <span>Nivel SLA</span>
+            <select name="sla_level" value={formData.sla_level ?? "standard"} onChange={handleChange} aria-invalid={Boolean(fieldErrors.sla_level)}>
+              <option value="standard">Standard</option>
+              <option value="premium">Premium</option>
+            </select>
+            {fieldErrors.sla_level && <span className="field-error">{formatFieldError("sla_level")}</span>}
+          </label>
+          )}
+          {canSeeField("credit_limit") && (
+          <label className="field">
+            <span>Límite de crédito</span>
+            <input name="credit_limit" type="number" min="0" step="0.01" value={formData.credit_limit ?? "0"} onChange={handleChange} aria-invalid={Boolean(fieldErrors.credit_limit)} />
+            {fieldErrors.credit_limit && <span className="field-error">{formatFieldError("credit_limit")}</span>}
+          </label>
+          )}
+          {canSeeField("logistics_notes") && (
+          <label className="field wide-field">
+            <span>Notas logísticas</span>
+            <textarea name="logistics_notes" value={formData.logistics_notes ?? ""} onChange={handleChange} rows="3" />
           </label>
           )}
           {canSeeField("is_principal") && (
@@ -669,6 +683,8 @@ export default function CustomerSupplierPage() {
               {canSeeField("web_site") && <th>{t("fields.customer_supplier.web_site")}</th>}
               {canSeeField("street") && <th>{t("fields.customer_supplier.street")}</th>}
               {canSeeField("number_ext") && <th>{t("fields.customer_supplier.number_ext")}</th>}
+              {canSeeField("sla_level") && <th>Nivel SLA</th>}
+              {canSeeField("credit_limit") && <th>Límite de crédito</th>}
         </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_customer_supplier}>{showRowActions && <td className="row-actions">{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</td>}
               {canSeeField("id_customer_supplier") && <td><pre className="cell-value">{formatTableValue(item.id_customer_supplier)}</pre></td>}
               {canSeeField("postal_code") && <td><pre className="cell-value">{formatTableValue(item.postal_code)}</pre></td>}
@@ -680,6 +696,8 @@ export default function CustomerSupplierPage() {
               {canSeeField("web_site") && <td><pre className="cell-value">{formatTableValue(item.web_site)}</pre></td>}
               {canSeeField("street") && <td><pre className="cell-value">{formatTableValue(item.street)}</pre></td>}
               {canSeeField("number_ext") && <td><pre className="cell-value">{formatTableValue(item.number_ext)}</pre></td>}
+              {canSeeField("sla_level") && <td><pre className="cell-value">{formatTableValue(item.sla_level)}</pre></td>}
+              {canSeeField("credit_limit") && <td><pre className="cell-value">{formatTableValue(item.credit_limit)}</pre></td>}
         </tr>)}</tbody></table></div>}
 
       {canRead && view === "kanban" && filtered.length > 0 && <div className="kanban">{Object.entries(groups).map(([key, groupItems]) => <div className="kanban-column" key={key}><h3>{key} <span>{groupItems.length}</span></h3>{groupItems.map((item) => <article className="kanban-card" key={item.id_customer_supplier}><strong>{String(item.name ?? item.id_customer_supplier)}</strong>{item.is_principal && <span className="principal-company-badge">{t("fields.customer_supplier.is_principal", "Empresa principal")}</span>}<small>#{item.id_customer_supplier}</small>{showRowActions && <div>{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</div>}</article>)}</div>)}</div>}

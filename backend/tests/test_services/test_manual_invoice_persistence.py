@@ -51,6 +51,22 @@ class TestManualInvoicePersistence(BackendTestCase):
             self.assertEqual(line.sat_product_key, '80101500')
             self.assertEqual(line.authorization_status, 'authorized')
 
+    def test_persists_receiver_fiscal_overrides(self):
+        payload = self.payload()
+        payload.update({
+            'rfc': 'XAXX010101000',
+            'razon_social_fiscal': 'PUBLICO EN GENERAL',
+            'regimen_fiscal': '616',
+            'cp_fiscal': '37001',
+        })
+
+        result = create_manual_invoice(payload, {'id_user': 1, 'id_proyect': 30})
+
+        self.assertEqual(result['invoice']['rfc_receptor'], 'XAXX010101000')
+        self.assertEqual(result['invoice']['nombre_receptor'], 'PUBLICO EN GENERAL')
+        self.assertEqual(result['invoice']['regimen_fiscal_receptor'], '616')
+        self.assertEqual(result['invoice']['domicilio_fiscal_receptor'], '37001')
+
     def test_invalid_preview_does_not_persist_partial_rows(self):
         payload = self.payload()
         payload['concepts'][0].pop('sat_product_key')

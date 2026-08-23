@@ -1,129 +1,144 @@
-
 <!doctype html>
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <title>Cotización {{ record.folio }}</title>
+  <title>Cotizacion {{ record.folio }}</title>
   <style>
-    @page { size: letter; margin: 18mm; }
-    body { font-family: Arial, sans-serif; color: #0f172a; font-size: 12px; }
-    h1, h2, h3, p { margin: 0; }
-    .header { display: flex; justify-content: space-between; gap: 16px; border-bottom: 3px solid #0f3554; padding-bottom: 12px; margin-bottom: 16px; }
-    .brand { font-size: 22px; font-weight: 800; color: #0f3554; }
-    .folio { text-align: right; }
-    .folio strong { display: block; font-size: 18px; }
-    .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 12px; }
-    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 12px; }
-    .card { border: 1px solid #d7e0ea; border-radius: 10px; padding: 10px; background: #f8fafc; }
-    .card h3 { font-size: 13px; color: #0f3554; margin-bottom: 8px; }
-    .label { display: block; text-transform: uppercase; font-size: 9px; letter-spacing: .04em; color: #64748b; font-weight: 700; margin-bottom: 2px; }
-    .value { font-weight: 700; }
-    .logo-img { max-width: 120px; max-height: 60px; object-fit: contain; display: block; margin-bottom: 8px; }
-    .row { margin-top: 6px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 14px; }
-    th { background: #f1f5f9; color: #475569; text-transform: uppercase; font-size: 9px; letter-spacing: .04em; }
-    th, td { border-bottom: 1px solid #d7e0ea; padding: 7px; text-align: left; vertical-align: top; }
-    .num { text-align: right; white-space: nowrap; }
-    .totals { margin-top: 14px; margin-left: auto; width: 260px; }
-    .totals div { display: flex; justify-content: space-between; border: 1px solid #d7e0ea; border-radius: 8px; padding: 7px 10px; margin-bottom: 6px; background: #f8fafc; }
-    .total { font-size: 14px; color: #0f3554; }
-    .note { margin-top: 12px; }
-    .muted { color: #64748b; }
+    @page {
+  size: letter;
+  margin: 15mm 14mm 18mm;
+  @bottom-left { content: "TYAKXA | Cotizacion {{ record.folio }}"; color: #667789; font: 7pt Arial, sans-serif; }
+      @bottom-right { content: "Pagina " counter(page) " de " counter(pages); color: #667789; font: 7pt Arial, sans-serif; }
+    }
+    * { box-sizing: border-box; }
+  body { margin: 0; color: #243444; font: 8.5pt Arial, Helvetica, sans-serif; line-height: 1.35; }
+  .header { display: table; width: 100%; border-bottom: 3px solid #1f4e79; padding-bottom: 10px; margin-bottom: 12px; }
+  .brand, .title-block, .folio-block { display: table-cell; vertical-align: middle; }
+  .brand { width: 34%; }
+  .brand img { max-width: 145px; max-height: 55px; }
+  .brand-name { color: #1f4e79; font-size: 17pt; font-weight: 700; }
+  .title-block { width: 32%; color: #1f4e79; font-size: 20pt; font-weight: 700; text-align: center; letter-spacing: .6px; }
+  .folio-block { width: 34%; text-align: right; }
+  .folio { color: #1f4e79; font-size: 13pt; font-weight: 700; }
+  .status { display: inline-block; margin-top: 4px; padding: 3px 8px; border: 1px solid #8ca6bd; color: #1f4e79; font-size: 7pt; font-weight: 700; text-transform: uppercase; }
+  .section-title { margin: 10px 0 0; padding: 5px 8px; background: #1f4e79; color: white; font-size: 8pt; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; }
+  .two-columns { display: table; width: 100%; table-layout: fixed; border: 1px solid #bdcbd6; }
+  .party { display: table-cell; width: 50%; padding: 8px 10px; vertical-align: top; }
+  .party + .party { border-left: 1px solid #bdcbd6; }
+  .party-name { margin-bottom: 4px; color: #1f4e79; font-size: 10pt; font-weight: 700; }
+  .label { color: #667789; font-size: 7pt; font-weight: 700; text-transform: uppercase; }
+  .meta { width: 100%; border-collapse: collapse; border: 1px solid #bdcbd6; }
+  .meta td { width: 25%; padding: 6px 8px; border-right: 1px solid #dbe3e9; }
+  .meta td:last-child { border-right: 0; }
+  .meta strong { display: block; margin-top: 2px; color: #243444; font-size: 8.5pt; }
+  table.items { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  .items th { padding: 6px 4px; background: #e8eff5; border: 1px solid #aebfcd; color: #1f4e79; font-size: 6.8pt; text-transform: uppercase; }
+  .items td { padding: 6px 4px; border: 1px solid #ccd7df; vertical-align: top; }
+  .items tbody tr:nth-child(even) { background: #f7f9fb; }
+  .description { font-weight: 700; }
+  .muted { color: #667789; font-size: 7pt; }
+  .number { text-align: right; white-space: nowrap; }
+  .center { text-align: center; }
+  .summary { display: table; width: 100%; margin-top: 10px; page-break-inside: avoid; }
+  .terms, .totals { display: table-cell; vertical-align: top; }
+  .terms { width: 58%; padding-right: 18px; color: #526577; }
+  .terms p { margin: 0 0 5px; }
+  .totals { width: 42%; border-collapse: collapse; }
+  .totals td { padding: 4px 7px; border-bottom: 1px solid #dbe3e9; }
+  .totals td:last-child { text-align: right; font-weight: 700; white-space: nowrap; }
+  .totals .grand td { padding-top: 7px; padding-bottom: 7px; background: #1f4e79; color: white; border: 0; font-size: 11pt; }
+  .notes { min-height: 45px; padding: 8px; border: 1px solid #bdcbd6; white-space: pre-line; }
+  .authorization { display: table; width: 100%; margin-top: 16px; page-break-inside: avoid; }
+  .signature { display: table-cell; width: 46%; padding-top: 22px; border-top: 1px solid #6c7c89; text-align: center; }
+  .signature-spacer { display: table-cell; width: 8%; }
+  .legal { margin-top: 14px; padding-top: 7px; border-top: 1px solid #d4dde4; color: #667789; font-size: 6.8pt; text-align: center; }
   </style>
-</head>
-<body>
-  <section class="header">
-    <div>
-      <div class="brand">TYAKXA</div>
-      <p class="muted">Cotización comercial</p>
+ </head>
+ <body>
+  <header class="header">
+    <div class="brand">
+      {% if record.company_logo_uri %}<img src="{{ record.company_logo_uri }}" alt="Logo">{% else %}<div class="brand-name">TYAKXA</div>{% endif %}
+  </div>
+  <div class="title-block">COTIZACION</div>
+  <div class="folio-block">
+  <div class="folio">{{ record.folio }}</div>
+  <div>{{ record.date_emision_label }}</div>
+  <span class="status">{{ record.status_label }}</span>
     </div>
-    <div class="folio">
-      <span class="label">Folio</span>
-      <strong>{{ record.folio }}</strong>
-      <div class="row"><span class="label">Estatus</span><span class="value">{{ record.status_label }}</span></div>
-    </div>
-  </section>
+  </header>
 
-  <section class="grid-2">
-    <div class="card">
-      <h3>Datos de empresa emisora</h3>
-      {% if record.issuer.logo_uri %}<img class="logo-img" src="{{ record.issuer.logo_uri }}" alt="Logo empresa emisora">{% endif %}
-      <p class="value">{{ record.issuer.display_name }}</p>
-      <div class="row"><span class="label">RFC</span>{{ record.issuer.tax_id }}</div>
-      <div class="row"><span class="label">Tipo fiscal</span>{{ record.issuer.fiscal_type }}</div>
-      <div class="row"><span class="label">Dirección</span>{{ record.issuer.address_line }}</div>
-      <div class="row"><span class="label">Contacto</span>{{ record.issuer.contact_line }}</div>
-      <div class="row"><span class="label">Correo</span>{{ record.issuer.email }}</div>
-      <div class="row"><span class="label">Sitio web</span>{{ record.issuer.web_site }}</div>
-    </div>
-    <div class="card">
-      <h3>Datos de cliente receptor</h3>
-      {% if record.receiver.logo_uri %}<img class="logo-img" src="{{ record.receiver.logo_uri }}" alt="Logo cliente receptor">{% endif %}
-      <p class="value">{{ record.receiver.display_name }}</p>
-      <div class="row"><span class="label">RFC</span>{{ record.receiver.tax_id }}</div>
-      <div class="row"><span class="label">Tipo fiscal</span>{{ record.receiver.fiscal_type }}</div>
-      <div class="row"><span class="label">Dirección</span>{{ record.receiver.address_line }}</div>
-      <div class="row"><span class="label">Contacto</span>{{ record.receiver.contact_line }}</div>
-      <div class="row"><span class="label">Correo</span>{{ record.receiver.email }}</div>
-      <div class="row"><span class="label">Sitio web</span>{{ record.receiver.web_site }}</div>
-    </div>
-  </section>
+  <div class="section-title">Datos comerciales</div>
+  <table class="meta"><tr>
+    <td><span class="label">Proyecto</span><strong>{{ record.project_name or 'General' }}</strong></td>
+    <td><span class="label">Vigencia</span><strong>{{ record.date_expiration_label or 'Por confirmar' }}</strong></td>
+    <td><span class="label">Moneda</span><strong>{{ record.currency or 'MXN' }}</strong></td>
+    <td><span class="label">Referencia</span><strong>{{ record.reference or record.folio }}</strong></td>
+  </tr></table>
+  <div class="section-title">Emisor y cliente</div>
+  <div class="two-columns">
+    <section class="party">
+  <div class="label">Emisor</div>
+  <div class="party-name">{{ record.issuer.name or record.company_name or 'TYAKXA' }}</div>
+  {% if record.issuer.rfc %}<div><span class="label">RFC</span> {{ record.issuer.rfc }}</div>{% endif %}
+  {% if record.issuer.address %}<div>{{ record.issuer.address }}</div>{% endif %}
+  {% if record.issuer.email %}<div>{{ record.issuer.email }}</div>{% endif %}
+  {% if record.issuer.phone %}<div>{{ record.issuer.phone }}</div>{% endif %}
+    </section>
+    <section class="party">
+      <div class="label">Cliente</div>
+  <div class="party-name">{{ record.receiver.name or 'Cliente por definir' }}</div>
+  {% if record.receiver.rfc %}<div><span class="label">RFC</span> {{ record.receiver.rfc }}</div>{% endif %}
+  {% if record.receiver.address %}<div>{{ record.receiver.address }}</div>{% endif %}
+      {% if record.receiver.email %}<div>{{ record.receiver.email }}</div>{% endif %}
+      {% if record.receiver.phone %}<div>{{ record.receiver.phone }}</div>{% endif %}
+    </section>
+  </div>
 
-  <section class="grid-4">
-    <div class="card"><span class="label">Proveedor certificación fiscal</span><strong>{{ record.fiscal_supplier.display_name }}</strong></div>
-    <div class="card"><span class="label">Proyecto relacionado</span><strong>{{ record.project_label }}</strong></div>
-    <div class="card"><span class="label">Fecha emisión</span><strong>{{ record.date_emision_label }}</strong></div>
-    <div class="card"><span class="label">Fecha vencimiento</span><strong>{{ record.date_expiration_label }}</strong></div>
-    <div class="card"><span class="label">Moneda</span><strong>{{ record.currency or "MXN" }}</strong></div>
-    <div class="card"><span class="label">Condiciones comerciales</span><strong>{{ record.commercial_terms or "—" }}</strong></div>
-  </section>
-
-  <table>
-    <thead>
-      <tr>
-        <th>#</th>
-        <th>Tipo de partida</th>
-        <th>Referencia</th>
-        <th>Concepto</th>
-        <th class="num">Cantidad</th>
-        <th>Unidad</th>
-        <th class="num">Precio unitario</th>
-        <th class="num">Subtotal</th>
-        <th class="num">IVA</th>
-        <th class="num">Total</th>
-      </tr>
-    </thead>
+  <div class="section-title">Conceptos</div>
+  <table class="items">
+    <thead><tr>
+      <th style="width:5%">#</th><th style="width:39%">Descripcion</th><th style="width:10%">Clave SAT</th>
+      <th style="width:8%">Cant.</th><th style="width:12%">P. unitario</th><th style="width:11%">Impuesto</th><th style="width:15%">Importe</th>
+    </tr></thead>
     <tbody>
-      {% if record.has_items %}
-        {% for item in record.line_items %}
-        <tr>
-          <td>{{ item.line_number }}</td>
-          <td>{{ item.type_label }}</td>
-          <td>{{ item.reference_label }}</td>
-          <td>{{ item.description_label }}</td>
-          <td class="num">{{ item.quantity_label }}</td>
-          <td>{{ item.unit_label }}</td>
-          <td class="num">{{ item.gross_price_label }}</td>
-          <td class="num">{{ item.line_subtotal_label }}</td>
-          <td class="num">{{ item.line_tax_label }}</td>
-          <td class="num">{{ item.line_total_label }}</td>
-        </tr>
-        {% endfor %}
-      {% else %}
-        <tr><td colspan="10" class="muted">Sin partidas registradas.</td></tr>
-      {% endif %}
+      {% for item in record.line_items %}
+      <tr>
+        <td class="center">{{ loop.index }}</td>
+  <td><div class="description">{{ item.description or item.name or 'Concepto' }}</div>{% if item.sat_unit_key %}<div class="muted">Unidad SAT: {{ item.sat_unit_key }}</div>{% endif %}</td>
+  <td class="center">{{ item.sat_product_key or '01010101' }}</td>
+  <td class="number">{{ item.quantity }}</td>
+  <td class="number">{{ item.unit_price_label or item.gross_price_label }}</td>
+        <td class="number">{{ item.line_tax_label }}</td>
+        <td class="number"><strong>{{ item.line_total_label }}</strong></td>
+      </tr>
+      {% else %}<tr><td colspan="7" class="center">Sin conceptos registrados</td></tr>{% endfor %}
     </tbody>
   </table>
+  <div class="summary">
+    <div class="terms">
+      <p><span class="label">Condiciones</span></p>
+  <p>{{ record.payment_conditions or record.condiciones_pago or 'Precios expresados en la moneda indicada. La vigencia y disponibilidad estan sujetas a confirmacion.' }}</p>
+  {% if record.payment_method %}<p><span class="label">Forma de pago</span> {{ record.payment_method }}</p>{% endif %}
+  {% if record.metodo_pago %}<p><span class="label">Metodo de pago</span> {{ record.metodo_pago }}</p>{% endif %}
+    </div>
+    <table class="totals">
+      <tr><td>Subtotal</td><td>{{ record.subtotal_label }}</td></tr>
+  {% if record.descuento and record.descuento|float > 0 %}<tr><td>Descuento</td><td>- {{ record.discount_label }}</td></tr>{% endif %}
+  <tr><td>Impuestos</td><td>{{ record.tax_label }}</td></tr>
+  {% if record.isr_retention and record.isr_retention|float > 0 %}<tr><td>Retencion ISR</td><td>- {{ record.isr_retention_label }}</td></tr>{% endif %}
+      {% if record.iva_retention and record.iva_retention|float > 0 %}<tr><td>Retencion IVA</td><td>- {{ record.iva_retention_label }}</td></tr>{% endif %}
+      <tr class="grand"><td>Total</td><td>{{ record.total_label }}</td></tr>
+    </table>
+  </div>
 
-  <section class="totals">
-    <div><span>Subtotal</span><strong>{{ record.subtotal_label }}</strong></div>
-    <div><span>IVA</span><strong>{{ record.tax_label }}</strong></div>
-    <div class="total"><span>Total</span><strong>{{ record.total_label }}</strong></div>
-  </section>
+  {% if record.notes or record.observations %}
+  <div class="section-title">Notas</div>
+  <div class="notes">{{ record.notes or record.observations }}</div>
+  {% endif %}
 
-  <section class="note">
-    <span class="label">Nota</span>
-    <p>{{ record.note or "—" }}</p>
-  </section>
-</body>
-</html>
+  <div class="authorization">
+    <div class="signature">Elaboro / Representante comercial</div><div class="signature-spacer"></div><div class="signature">Aceptacion del cliente</div>
+  </div>
+  <div class="legal">Este documento es una propuesta comercial y no constituye un comprobante fiscal.</div>
+ </body>
+ </html>

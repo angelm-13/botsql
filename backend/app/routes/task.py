@@ -1,5 +1,9 @@
 from __future__ import annotations
 from flask import Blueprint, jsonify, request
+from sqlalchemy import func
+from app.models.session import transaction_context
+from app.models.task import Task
+from app.services.project_management_service import require_project_access, require_task_access, visible_project_ids
 from app.services.task_service import TaskService
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
@@ -105,13 +109,25 @@ def list_task(user_data):
     per_page = int(request.args.get('per_page', 20))
     sort = request.args.get('sort')
     filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort'} and k in ALLOWED_FIELDS}
-    return _jsonify_projected_list(user_data, TaskService.list(page=page, per_page=per_page, filters=filters, sort=sort))
+    project_ids = visible_project_ids(user_data)
+    if project_ids is None:
+        return _jsonify_projected_list(user_data, TaskService.list(page=page, per_page=per_page, filters=filters, sort=sort))
+    with transaction_context() as db:
+        query = db.query(Task).filter(Task.deletion_date.is_(None), Task.id_proyect.in_(project_ids))
+        for key, value in filters.items():
+            if hasattr(Task, key) and value not in (None, ''):
+                query = query.filter(getattr(Task, key) == value)
+        total = query.with_entities(func.count()).scalar() or 0
+        items = query.order_by(Task.id_task).offset((page - 1) * per_page).limit(per_page).all()
+        payload = {'items': [item.serialize() for item in items], 'total': total, 'page': page, 'per_page': per_page, 'pages': (total + per_page - 1) // per_page}
+    return _jsonify_projected_list(user_data, payload)
 
 
 @bp_task.route('/<id_task>', methods=['GET'])
 @token_required
 @require_entity_permission('task', 'read')
 def get_task(user_data, id_task):
+    require_task_access(id_task, user_data)
     return _jsonify_projected_record(user_data, TaskService.get(id_task))
 
 
@@ -120,6 +136,7 @@ def get_task(user_data, id_task):
 @require_entity_permission('task', 'create')
 def create_task(user_data):
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
+    require_project_access(payload.get('id_proyect'), user_data)
     return _jsonify_projected_record(user_data, TaskService.create(payload, user_id=user_data.get('id_user')), status=201)
 
 
@@ -128,6 +145,9 @@ def create_task(user_data):
 @require_entity_permission('task', 'update')
 def update_task(user_data, id_task):
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
+    require_task_access(id_task, user_data)
+    if payload.get('id_proyect') is not None:
+        require_project_access(payload.get('id_proyect'), user_data)
     return _jsonify_projected_record(user_data, TaskService.update(id_task, payload, user_id=user_data.get('id_user')))
 
 
@@ -135,4 +155,5 @@ def update_task(user_data, id_task):
 @token_required
 @require_entity_permission('task', 'delete')
 def delete_task(user_data, id_task):
+    require_task_access(id_task, user_data)
     return jsonify(TaskService.delete(id_task, user_id=user_data.get('id_user')))

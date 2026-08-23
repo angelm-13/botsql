@@ -3,6 +3,7 @@ import { Download, Pencil, Plus, RefreshCw, Search, Trash2, UsersRound } from "l
 import { deleteKronosPerson, getKronosAttendance, getKronosPeople, saveKronosPerson } from "../api";
 import { loadKronosConnection } from "../utils/kronosConnection";
 import "../styles/kronos.css";
+import { useI18n } from "../i18n";
 
 function localDate(date) {
   const offset = date.getTimezoneOffset() * 60000;
@@ -23,13 +24,31 @@ function csvValue(value) {
   return `"${normalized}"`;
 }
 
-function downloadCsv(rows) {
-  const headers = ["Fecha", "Nombre", "Empleado", "Primera marca", "Última marca", "Marcaciones", "Puerta", "Verificación"];
-  const lines = rows.map((row) => [row.date, row.name, row.employee, formatTime(row.firstEntry), formatTime(row.lastExit), row.marks, row.door, row.verification].map(csvValue).join(","));
+function downloadCsv(rows, t) {
+  const headers = [
+    t("kronos.csv.headers.date"),
+    t("kronos.csv.headers.name"),
+    t("kronos.csv.headers.employee"),
+    t("kronos.csv.headers.first"),
+    t("kronos.csv.headers.last"),
+    t("kronos.csv.headers.marks"),
+    t("kronos.csv.headers.door"),
+    t("kronos.csv.headers.verification"),
+  ];
+  const lines = rows.map((row) => [
+    row.date,
+    row.name,
+    row.employee,
+    formatTime(row.firstEntry),
+    formatTime(row.lastExit),
+    row.marks,
+    row.door,
+    row.verification,
+  ].map(csvValue).join(","));
   const blob = new Blob([`\uFEFF${headers.map(csvValue).join(",")}\n${lines.join("\n")}`], { type: "text/csv;charset=utf-8" });
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
-  link.download = `asistencias-${localDate(new Date())}.csv`;
+  link.download = `${t("kronos.csv.filename_prefix")}-${localDate(new Date())}.csv`;
   link.click();
   URL.revokeObjectURL(link.href);
 }
@@ -40,6 +59,7 @@ function emptyPerson() {
 
 export default function KronosPage() {
   const personDialog = useRef(null);
+  const { lang, t } = useI18n();
   const [view, setView] = useState("attendance");
   const [connection] = useState(loadKronosConnection);
   const [period, setPeriod] = useState({ startDate: localDate(new Date(today.getFullYear(), today.getMonth(), 1)), endDate: localDate(today), timezone: "-06:00" });
@@ -48,26 +68,26 @@ export default function KronosPage() {
   const [eventsCount, setEventsCount] = useState(0);
   const [people, setPeople] = useState([]);
   const [query, setQuery] = useState("");
-  const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase("es"));
+  const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase(lang));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [updatedAt, setUpdatedAt] = useState("");
   const [personForm, setPersonForm] = useState(emptyPerson());
   const [originalPerson, setOriginalPerson] = useState(null);
 
-  const filteredReport = useMemo(() => report.filter((row) => String(row.employee).toLocaleLowerCase("es").includes(deferredQuery) || String(row.name).toLocaleLowerCase("es").includes(deferredQuery)), [report, deferredQuery]);
-  const filteredPeople = useMemo(() => people.filter((person) => String(person.employeeNo).toLocaleLowerCase("es").includes(deferredQuery) || String(person.name).toLocaleLowerCase("es").includes(deferredQuery)), [people, deferredQuery]);
+  const filteredReport = useMemo(() => report.filter((row) => String(row.employee).toLocaleLowerCase(lang).includes(deferredQuery) || String(row.name).toLocaleLowerCase(lang).includes(deferredQuery)), [report, deferredQuery, lang]);
+  const filteredPeople = useMemo(() => people.filter((person) => String(person.employeeNo).toLocaleLowerCase(lang).includes(deferredQuery) || String(person.name).toLocaleLowerCase(lang).includes(deferredQuery)), [people, deferredQuery, lang]);
 
   function ensureConnection() {
     if (connection.deviceUrl && connection.username && connection.password) return true;
-    setError("Configura la conexión al dispositivo desde el engrane de configuración.");
+    setError(t("kronos.errors.missing_connection"));
     return false;
   }
 
   function describeError(requestError) {
-    if (requestError?.message === "errors.permission_denied") return "No tienes permisos para realizar esta operación.";
-    if (requestError?.message === "errors.kronos_device_unavailable") return "No se pudo establecer comunicación con el dispositivo.";
-    return "No se pudo completar la operación con el dispositivo.";
+    if (requestError?.message === "errors.permission_denied") return t("kronos.errors.permission_denied");
+    if (requestError?.message === "errors.kronos_device_unavailable") return t("kronos.errors.unavailable");
+    return t("kronos.errors.generic");
   }
 
   async function loadAttendance(event) {
@@ -81,7 +101,7 @@ export default function KronosPage() {
       setStatistics(data.statistics || []);
       setPeople(data.people || []);
       setEventsCount((data.events || []).length);
-      setUpdatedAt(new Intl.DateTimeFormat("es-MX", { hour: "2-digit", minute: "2-digit" }).format(new Date()));
+      setUpdatedAt(new Intl.DateTimeFormat(lang, { hour: "2-digit", minute: "2-digit" }).format(new Date()));
     } catch (requestError) {
       setError(describeError(requestError));
     } finally {
@@ -130,7 +150,7 @@ export default function KronosPage() {
   }
 
   async function removePerson(person) {
-    if (!window.confirm(`¿Eliminar a ${person.name || person.employeeNo} del dispositivo?`) || !ensureConnection()) return;
+    if (!window.confirm(`${t('kronos.action.delete_person')} ${person.name || person.employeeNo}?`) || !ensureConnection()) return;
     setLoading(true);
     setError("");
     try {
@@ -145,26 +165,191 @@ export default function KronosPage() {
   return (
     <section className="entity-page kronos-page">
       <div className="page-heading kronos-heading">
-        <div><p className="eyebrow">CONTROL DE ACCESO</p><h2>Kronos</h2><p>Asistencias y personas del dispositivo Hikvision.</p></div>
-        <span className={`kronos-status ${loading ? "loading" : updatedAt ? "connected" : ""}`}>{loading ? "Consultando" : updatedAt ? "Conectado" : "Sin consultar"}</span>
+        <div>
+          <p className="eyebrow">{t('kronos.page.eyebrow')}</p>
+          <h2>{t('kronos.page.title')}</h2>
+          <p>{t('kronos.page.description')}</p>
+        </div>
+        <span className={`kronos-status ${loading ? 'loading' : updatedAt ? 'connected' : ''}`}>
+          {loading ? t('kronos.status.loading') : updatedAt ? t('kronos.status.connected') : t('kronos.status.idle')}
+        </span>
       </div>
-      <div className="kronos-tabs" role="tablist" aria-label="Secciones de Kronos">
-        <button type="button" role="tab" aria-selected={view === "attendance"} className={view === "attendance" ? "active" : ""} onClick={() => { setView("attendance"); setQuery(""); }}>Asistencias</button>
-        <button type="button" role="tab" aria-selected={view === "people"} className={view === "people" ? "active" : ""} onClick={() => { setView("people"); setQuery(""); }}>Personas</button>
+
+      <div className="kronos-tabs" role="tablist" aria-label={t('kronos.tabs.aria_label')}>
+        <button type="button" role="tab" aria-selected={view === 'attendance'} className={view === 'attendance' ? 'active' : ''} onClick={() => { setView('attendance'); setQuery(''); }}>{t('kronos.tabs.attendance')}</button>
+        <button type="button" role="tab" aria-selected={view === 'people'} className={view === 'people' ? 'active' : ''} onClick={() => { setView('people'); setQuery(''); }}>{t('kronos.tabs.people')}</button>
       </div>
+
       {error && <div className="alert error" role="alert">{error}</div>}
-      {view === "attendance" ? <>
-        <form className="form-card kronos-filter" onSubmit={loadAttendance}>
-          <label className="field">Desde<input required type="date" value={period.startDate} onChange={(event) => setPeriod((current) => ({ ...current, startDate: event.target.value }))} /></label>
-          <label className="field">Hasta<input required type="date" value={period.endDate} onChange={(event) => setPeriod((current) => ({ ...current, endDate: event.target.value }))} /></label>
-          <label className="field">Zona horaria<select value={period.timezone} onChange={(event) => setPeriod((current) => ({ ...current, timezone: event.target.value }))}><option>-06:00</option><option>-05:00</option><option>-04:00</option><option>+00:00</option></select></label>
-          <button type="submit" className="button" disabled={loading}><RefreshCw size={16} /> Generar reporte</button>
+
+      {view === 'attendance' ? (
+        <>
+          <form className="form-card kronos-filter" onSubmit={loadAttendance}>
+            <label className="field">{t('kronos.filter.from')}<input required type="date" value={period.startDate} onChange={(event) => setPeriod((current) => ({ ...current, startDate: event.target.value }))} /></label>
+            <label className="field">{t('kronos.filter.to')}<input required type="date" value={period.endDate} onChange={(event) => setPeriod((current) => ({ ...current, endDate: event.target.value }))} /></label>
+            <label className="field">{t('kronos.filter.timezone')}<select value={period.timezone} onChange={(event) => setPeriod((current) => ({ ...current, timezone: event.target.value }))}><option>-06:00</option><option>-05:00</option><option>-04:00</option><option>+00:00</option></select></label>
+            <button type="submit" className="button" disabled={loading}><RefreshCw size={16} /> {t('kronos.filter.generate')}</button>
+          </form>
+
+          <div className="kronos-metrics">
+            <div><span>{t('kronos.metrics.people')}</span><strong>{new Set(report.map((row) => row.employee)).size}</strong></div>
+            <div><span>{t('kronos.metrics.days')}</span><strong>{report.length}</strong></div>
+            <div><span>{t('kronos.metrics.marks')}</span><strong>{eventsCount}</strong></div>
+            <div><span>{t('kronos.metrics.updated_at')}</span><strong>{updatedAt || '—'}</strong></div>
+          </div>
+
+          <section className="table-card kronos-table-card">
+            <div className="kronos-table-heading">
+              <div>
+                <p className="eyebrow">{t('kronos.summary.eyebrow')}</p>
+                <h3>{t('kronos.summary.title')}</h3>
+              </div>
+            </div>
+            <div className="kronos-table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>{t('kronos.table.stats.employee')}</th>
+                    <th>{t('kronos.table.stats.days')}</th>
+                    <th>{t('kronos.table.stats.marks')}</th>
+                    <th>{t('kronos.table.stats.avg_entry')}</th>
+                    <th>{t('kronos.table.stats.avg_exit')}</th>
+                    <th>{t('kronos.table.stats.hours')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {statistics.length ? statistics.map((row) => (
+                    <tr key={row.employee}>
+                      <td><strong>{row.name || t('kronos.table.stats.default_employee')}</strong><small>{row.employee}</small></td>
+                      <td>{row.days}</td>
+                      <td>{row.marks}</td>
+                      <td>{formatMinutes(row.averageEntryMinutes)}</td>
+                      <td>{formatMinutes(row.averageExitMinutes)}</td>
+                      <td>{row.estimatedHours.toFixed(1)} h</td>
+                    </tr>
+                  )) : (
+                    <tr><td colSpan="6" className="kronos-empty">{t('kronos.summary.empty')}</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className="table-card kronos-table-card">
+            <div className="kronos-table-heading">
+              <div>
+                <p className="eyebrow">{t('kronos.detail.eyebrow')}</p>
+                <h3>{t('kronos.detail.title')}</h3>
+              </div>
+              <div className="kronos-actions">
+                <label className="kronos-search"><Search size={16} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('kronos.search.placeholder_employee')} /></label>
+                <button type="button" className="button secondary" disabled={!report.length} onClick={() => downloadCsv(filteredReport, t)}><Download size={16} /> {t('kronos.csv.button')}</button>
+              </div>
+            </div>
+            <div className="kronos-table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>{t('kronos.csv.headers.date')}</th>
+                    <th>{t('kronos.csv.headers.name')}</th>
+                    <th>{t('kronos.csv.headers.first')}</th>
+                    <th>{t('kronos.csv.headers.last')}</th>
+                    <th>{t('kronos.csv.headers.marks')}</th>
+                    <th>{t('kronos.csv.headers.door')}</th>
+                    <th>{t('kronos.csv.headers.verification')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredReport.length ? filteredReport.map((row) => (
+                    <tr key={`${row.employee}-${row.date}`}>
+                      <td>{row.date}</td>
+                      <td><strong>{row.name || t('kronos.person.no_name')}</strong><small>{row.employee}</small></td>
+                      <td>{formatTime(row.firstEntry)}</td>
+                      <td>{formatTime(row.lastExit)}</td>
+                      <td>{row.marks}</td>
+                      <td>{row.door || '—'}</td>
+                      <td>{row.verification || '—'}</td>
+                    </tr>
+                  )) : (
+                    <tr><td colSpan="7" className="kronos-empty">{t('kronos.empty.attendances')}</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </>
+      ) : (
+        <section className="table-card kronos-table-card">
+          <div className="kronos-table-heading">
+            <div>
+              <p className="eyebrow">{t('kronos.directory.eyebrow')}</p>
+              <h3>{t('kronos.directory.title')}</h3>
+            </div>
+            <div className="kronos-actions">
+              <label className="kronos-search"><Search size={16} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('kronos.search.placeholder_person')} /></label>
+              <button type="button" className="button secondary" onClick={loadPeople} disabled={loading}><RefreshCw size={16} /> {t('kronos.actions.refresh')}</button>
+              <button type="button" className="button" onClick={() => openPerson()}><Plus size={16} /> {t('kronos.actions.new_person')}</button>
+            </div>
+          </div>
+          <div className="kronos-table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>{t('kronos.table.person.number')}</th>
+                  <th>{t('kronos.table.person.name')}</th>
+                  <th>{t('kronos.table.person.type')}</th>
+                  <th>{t('kronos.table.person.gender')}</th>
+                  <th>{t('kronos.table.person.validity')}</th>
+                  <th>{t('kronos.table.person.actions')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredPeople.length ? filteredPeople.map((person) => (
+                  <tr key={person.employeeNo}>
+                    <td>{person.employeeNo}</td>
+                    <td><strong>{person.name || t('kronos.person.no_name')}</strong></td>
+                    <td>{t(`kronos.form.type.options.${person.userType}`) || person.userType}</td>
+                    <td>{t(`kronos.form.gender.options.${person.gender}`) || person.gender || '—'}</td>
+                    <td>{person.Valid?.enable ? `${person.Valid.beginTime?.slice(0, 10) || '—'} ${t('kronos.form.validity.to')} ${person.Valid.endTime?.slice(0, 10) || '—'}` : t('kronos.form.validity.none')}</td>
+                    <td>
+                      <div className="kronos-row-actions">
+                        <button type="button" title={t('kronos.action.edit_person')} aria-label={`${t('kronos.action.edit_person')} ${person.name}`} onClick={() => openPerson(person)}><Pencil size={16} /></button>
+                        <button type="button" className="danger" title={t('kronos.action.delete_person')} aria-label={`${t('kronos.action.delete_person')} ${person.name}`} onClick={() => removePerson(person)}><Trash2 size={16} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                )) : (
+                  <tr><td colSpan="6" className="kronos-empty"><UsersRound size={20} /> {t('kronos.empty.directory')}</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      <dialog ref={personDialog} className="kronos-dialog" onClose={() => setOriginalPerson(null)}>
+        <form onSubmit={submitPerson}>
+          <div className="kronos-dialog-heading">
+            <div>
+              <p className="eyebrow">{t('kronos.dialog.eyebrow')}</p>
+              <h3>{originalPerson ? t('kronos.dialog.title.edit') : t('kronos.dialog.title.new')}</h3>
+            </div>
+            <button type="button" className="button ghost" onClick={() => personDialog.current?.close()}>{t('kronos.dialog.close')}</button>
+          </div>
+          <div className="kronos-person-grid">
+            <label className="field">{t('kronos.form.employee_no')}<input required maxLength="32" readOnly={Boolean(originalPerson)} value={personForm.employeeNo} onChange={(event) => setPersonForm((current) => ({ ...current, employeeNo: event.target.value }))} /></label>
+            <label className="field">{t('kronos.form.name')}<input required maxLength="96" value={personForm.name} onChange={(event) => setPersonForm((current) => ({ ...current, name: event.target.value }))} /></label>
+            <label className="field">{t('kronos.form.type')}<select value={personForm.userType} onChange={(event) => setPersonForm((current) => ({ ...current, userType: event.target.value }))}><option value="normal">{t('kronos.form.type.options.normal')}</option><option value="visitor">{t('kronos.form.type.options.visitor')}</option></select></label>
+            <label className="field">{t('kronos.form.gender')}<select value={personForm.gender} onChange={(event) => setPersonForm((current) => ({ ...current, gender: event.target.value }))}><option value="unknown">{t('kronos.form.gender.options.unknown')}</option><option value="female">{t('kronos.form.gender.options.female')}</option><option value="male">{t('kronos.form.gender.options.male')}</option></select></label>
+            <label className="field">{t('kronos.form.valid_from')}<input required type="date" value={personForm.beginTime} onChange={(event) => setPersonForm((current) => ({ ...current, beginTime: event.target.value }))} /></label>
+            <label className="field">{t('kronos.form.valid_to')}<input required type="date" value={personForm.endTime} onChange={(event) => setPersonForm((current) => ({ ...current, endTime: event.target.value }))} /></label>
+          </div>
+          <div className="kronos-dialog-actions">
+            <button type="button" className="button secondary" onClick={() => personDialog.current?.close()}>{t('kronos.dialog.cancel')}</button>
+            <button type="submit" className="button">{t('kronos.dialog.save')}</button>
+          </div>
         </form>
-        <div className="kronos-metrics"><div><span>Personas</span><strong>{new Set(report.map((row) => row.employee)).size}</strong></div><div><span>Jornadas</span><strong>{report.length}</strong></div><div><span>Marcaciones</span><strong>{eventsCount}</strong></div><div><span>Actualización</span><strong>{updatedAt || "—"}</strong></div></div>
-        <section className="table-card kronos-table-card"><div className="kronos-table-heading"><div><p className="eyebrow">RESUMEN POR PERSONA</p><h3>Estadísticas</h3></div></div><div className="kronos-table-scroll"><table><thead><tr><th>Empleado</th><th>Días</th><th>Marcas</th><th>Entrada promedio</th><th>Salida promedio</th><th>Horas estimadas</th></tr></thead><tbody>{statistics.length ? statistics.map((row) => <tr key={row.employee}><td><strong>{row.name || "Empleado"}</strong><small>{row.employee}</small></td><td>{row.days}</td><td>{row.marks}</td><td>{formatMinutes(row.averageEntryMinutes)}</td><td>{formatMinutes(row.averageExitMinutes)}</td><td>{row.estimatedHours.toFixed(1)} h</td></tr>) : <tr><td colSpan="6" className="kronos-empty">Genera el reporte para ver estadísticas.</td></tr>}</tbody></table></div></section>
-        <section className="table-card kronos-table-card"><div className="kronos-table-heading"><div><p className="eyebrow">DETALLE DIARIO</p><h3>Asistencias</h3></div><div className="kronos-actions"><label className="kronos-search"><Search size={16} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar empleado" /></label><button type="button" className="button secondary" disabled={!report.length} onClick={() => downloadCsv(filteredReport)}><Download size={16} /> CSV</button></div></div><div className="kronos-table-scroll"><table><thead><tr><th>Fecha</th><th>Empleado</th><th>Primera marca</th><th>Última marca</th><th>Marcas</th><th>Puerta</th><th>Verificación</th></tr></thead><tbody>{filteredReport.length ? filteredReport.map((row) => <tr key={`${row.employee}-${row.date}`}><td>{row.date}</td><td><strong>{row.name || "Empleado"}</strong><small>{row.employee}</small></td><td>{formatTime(row.firstEntry)}</td><td>{formatTime(row.lastExit)}</td><td>{row.marks}</td><td>{row.door || "—"}</td><td>{row.verification || "—"}</td></tr>) : <tr><td colSpan="7" className="kronos-empty">No hay asistencias para mostrar.</td></tr>}</tbody></table></div></section>
-      </> : <section className="table-card kronos-table-card"><div className="kronos-table-heading"><div><p className="eyebrow">DIRECTORIO DEL DISPOSITIVO</p><h3>Personas</h3></div><div className="kronos-actions"><label className="kronos-search"><Search size={16} /><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar persona" /></label><button type="button" className="button secondary" onClick={loadPeople} disabled={loading}><RefreshCw size={16} /> Consultar</button><button type="button" className="button" onClick={() => openPerson()}><Plus size={16} /> Nueva persona</button></div></div><div className="kronos-table-scroll"><table><thead><tr><th>Número</th><th>Nombre</th><th>Tipo</th><th>Género</th><th>Vigencia</th><th>Acciones</th></tr></thead><tbody>{filteredPeople.length ? filteredPeople.map((person) => <tr key={person.employeeNo}><td>{person.employeeNo}</td><td><strong>{person.name || "Sin nombre"}</strong></td><td>{person.userType || "normal"}</td><td>{person.gender || "—"}</td><td>{person.Valid?.enable ? `${person.Valid.beginTime?.slice(0, 10) || "—"} a ${person.Valid.endTime?.slice(0, 10) || "—"}` : "Sin límite"}</td><td><div className="kronos-row-actions"><button type="button" title="Editar persona" aria-label={`Editar ${person.name}`} onClick={() => openPerson(person)}><Pencil size={16} /></button><button type="button" className="danger" title="Eliminar persona" aria-label={`Eliminar ${person.name}`} onClick={() => removePerson(person)}><Trash2 size={16} /></button></div></td></tr>) : <tr><td colSpan="6" className="kronos-empty"><UsersRound size={20} /> Consulta el directorio del dispositivo.</td></tr>}</tbody></table></div></section>}
-      <dialog ref={personDialog} className="kronos-dialog" onClose={() => setOriginalPerson(null)}><form onSubmit={submitPerson}><div className="kronos-dialog-heading"><div><p className="eyebrow">PERSONA</p><h3>{originalPerson ? "Editar persona" : "Nueva persona"}</h3></div><button type="button" className="button ghost" onClick={() => personDialog.current?.close()}>Cerrar</button></div><div className="kronos-person-grid"><label className="field">Número de empleado<input required maxLength="32" readOnly={Boolean(originalPerson)} value={personForm.employeeNo} onChange={(event) => setPersonForm((current) => ({ ...current, employeeNo: event.target.value }))} /></label><label className="field">Nombre<input required maxLength="96" value={personForm.name} onChange={(event) => setPersonForm((current) => ({ ...current, name: event.target.value }))} /></label><label className="field">Tipo<select value={personForm.userType} onChange={(event) => setPersonForm((current) => ({ ...current, userType: event.target.value }))}><option value="normal">Normal</option><option value="visitor">Visitante</option></select></label><label className="field">Género<select value={personForm.gender} onChange={(event) => setPersonForm((current) => ({ ...current, gender: event.target.value }))}><option value="unknown">No especificado</option><option value="female">Femenino</option><option value="male">Masculino</option></select></label><label className="field">Válido desde<input required type="date" value={personForm.beginTime} onChange={(event) => setPersonForm((current) => ({ ...current, beginTime: event.target.value }))} /></label><label className="field">Válido hasta<input required type="date" value={personForm.endTime} onChange={(event) => setPersonForm((current) => ({ ...current, endTime: event.target.value }))} /></label></div><div className="kronos-dialog-actions"><button type="button" className="button secondary" onClick={() => personDialog.current?.close()}>Cancelar</button><button type="submit" className="button" disabled={loading}>Guardar</button></div></form></dialog>
+      </dialog>
     </section>
   );
 }

@@ -27,4 +27,5 @@ class CeleryConfig:
         "app.jobs.tasks_scm.*": {"queue": "scm"},
         "app.jobs.tasks_documents.*": {"queue": "documents"},
         "app.jobs.tasks_maintenance.*": {"queue": "maintenance"},
+        "app.jobs.tasks_appointments.*": {"queue": "celery"},
     }

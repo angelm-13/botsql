@@ -322,6 +322,78 @@ INSERT INTO "restaurant_dish" ("id_restaurant_dish", "id_proyect", "title", "des
   (15, 1, 'Cocada', 'Dulce tradicional', 'candy', 'dulce', 18.00, 7.00, FALSE, 'all', TRUE, 1)
 ON CONFLICT ("id_restaurant_dish") DO NOTHING;
 
+INSERT INTO "proyect_event" ("id_proyect", "created_by", "event_type", "new_status", "content", "creation_date")
+SELECT project."id_proyect", project."created_by", 'created', project."proyect_status",
+       'Registro base incorporado al historial de proyectos',
+       COALESCE(project."creation_date", CURRENT_TIMESTAMP)
+FROM "proyect" project
+WHERE project."deletion_date" IS NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM "proyect_event" event
+    WHERE event."id_proyect" = project."id_proyect"
+  );
+
+-- Project workflow roles are created without assigning existing users.
+WITH role_names(role_name) AS (
+  VALUES ('Supervisor'), ('Gerente'), ('Jefe de taller')
+)
+INSERT INTO "permission" ("created_by", "authorized_by", "permission_description", "id_department", "id_subdepartment", "id_level")
+SELECT 1, 1, role_names.role_name, 1, 1, 1
+FROM role_names
+WHERE NOT EXISTS (
+  SELECT 1 FROM "permission"
+  WHERE lower("permission_description") = lower(role_names.role_name)
+    AND "deletion_date" IS NULL
+);
+
+INSERT INTO "entity_permission" ("id_permission", "entity_name", "control_type", "menu_location", "menu_group", "menu_group_icon", "menu_label", "menu_order", "created_by")
+SELECT role."id_permission", capability.entity_name, capability.control_type,
+       capability.menu_location, capability.menu_group, capability.menu_group_icon,
+       capability.menu_label, capability.menu_order, 1
+FROM "permission" role
+JOIN (VALUES
+  ('Supervisor', 'proyect', 7, 'sidebar', 'Operaciones', 'briefcase-business', 'Proyectos', 80),
+  ('Supervisor', 'task', 15, 'sidebar', 'Operaciones', 'briefcase-business', 'Tareas', 90),
+  ('Supervisor', 'task_note', 15, 'sidebar', 'Operaciones', 'briefcase-business', 'Notas de tarea', 100),
+  ('Supervisor', 'task_type', 15, 'sidebar', 'Operaciones', 'briefcase-business', 'Tipos de tarea', 110),
+  ('Gerente', 'proyect', 6, 'sidebar', 'Operaciones', 'briefcase-business', 'Proyectos', 80),
+  ('Gerente', 'project_authorization', 2, 'hidden', NULL, NULL, NULL, 100),
+  ('Jefe de taller', 'proyect', 6, 'sidebar', 'Operaciones', 'briefcase-business', 'Proyectos', 80),
+  ('Jefe de taller', 'task', 15, 'sidebar', 'Operaciones', 'briefcase-business', 'Tareas', 90),
+  ('Jefe de taller', 'task_note', 15, 'sidebar', 'Operaciones', 'briefcase-business', 'Notas de tarea', 100),
+  ('Jefe de taller', 'task_type', 2, 'sidebar', 'Operaciones', 'briefcase-business', 'Tipos de tarea', 110),
+  ('Jefe de taller', 'project_execution', 2, 'hidden', NULL, NULL, NULL, 100)
+) AS capability(role_name, entity_name, control_type, menu_location, menu_group, menu_group_icon, menu_label, menu_order)
+  ON lower(role."permission_description") = lower(capability.role_name)
+WHERE role."deletion_date" IS NULL
+ON CONFLICT ("id_permission", "entity_name") DO UPDATE SET
+  "control_type" = EXCLUDED."control_type",
+  "menu_location" = EXCLUDED."menu_location",
+  "menu_group" = EXCLUDED."menu_group",
+  "menu_group_icon" = EXCLUDED."menu_group_icon",
+  "menu_label" = EXCLUDED."menu_label",
+  "menu_order" = EXCLUDED."menu_order",
+  "deletion_date" = NULL;
+
+INSERT INTO "nm_field_permission" ("id_field", "id_permission", "control_type", "created_by")
+SELECT field_row."id_field", role."id_permission",
+       CASE WHEN role."permission_description" = 'Gerente' THEN '2'
+            WHEN role."permission_description" = 'Jefe de taller' AND field_row."table_name" IN ('proyect', 'task_type') THEN '2'
+            ELSE '15' END,
+       1
+FROM "field" field_row
+JOIN "permission" role ON role."permission_description" IN ('Supervisor', 'Gerente', 'Jefe de taller')
+WHERE field_row."table_name" IN ('proyect', 'task', 'task_note', 'task_type')
+  AND field_row."deletion_date" IS NULL
+  AND role."deletion_date" IS NULL
+  AND (role."permission_description" <> 'Gerente' OR field_row."table_name" = 'proyect')
+  AND NOT EXISTS (
+    SELECT 1 FROM "nm_field_permission" existing
+    WHERE existing."id_field" = field_row."id_field"
+      AND existing."id_permission" = role."id_permission"
+      AND existing."deletion_date" IS NULL
+  );
+
 -- Keep PostgreSQL SERIAL sequences aligned after deterministic seed IDs
 DO $$
 DECLARE r record;

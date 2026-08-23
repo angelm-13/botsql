@@ -25,4 +25,8 @@ BEAT_SCHEDULE = {
         "task": "app.jobs.tasks_maintenance.cleanup_expired_results",
         "schedule": crontab(hour=4, minute=0),
     },
+    "appointment-notifications-every-five-minutes": {
+        "task": "app.jobs.tasks_appointments.dispatch_due_notifications",
+        "schedule": crontab(minute="*/5"),
+    },
 }

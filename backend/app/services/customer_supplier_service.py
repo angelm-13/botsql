@@ -1,3 +1,5 @@
+from decimal import Decimal, InvalidOperation
+
 from app.models import CustomerSupplier
 from app.services.base_service import CrudService
 from app.models.session import transaction_context
@@ -8,6 +10,37 @@ class CustomerSupplierService(CrudService):
     model = CustomerSupplier
     primary_key = 'id_customer_supplier'
     entity_name = 'customer_supplier'
+    logistics_sla_levels = {'standard', 'premium'}
+
+    @classmethod
+    def _validate_logistics_fields(cls, payload: dict) -> dict:
+        payload = dict(payload or {})
+        if 'sla_level' in payload:
+            sla_level = str(payload.get('sla_level') or '').strip().lower()
+            if sla_level not in cls.logistics_sla_levels:
+                raise AppError(
+                    'validations.customer_supplier.sla_level.invalid',
+                    status_code=400,
+                    meta={'field': 'sla_level'},
+                )
+            payload['sla_level'] = sla_level
+        if 'credit_limit' in payload:
+            try:
+                credit_limit = Decimal(str(payload.get('credit_limit') or '0'))
+            except InvalidOperation as exc:
+                raise AppError(
+                    'validations.customer_supplier.credit_limit.invalid',
+                    status_code=400,
+                    meta={'field': 'credit_limit'},
+                ) from exc
+            if credit_limit < 0:
+                raise AppError(
+                    'validations.customer_supplier.credit_limit.negative',
+                    status_code=400,
+                    meta={'field': 'credit_limit'},
+                )
+            payload['credit_limit'] = credit_limit
+        return payload
 
     @staticmethod
     def _as_boolean(value) -> bool:
@@ -38,7 +71,7 @@ class CustomerSupplierService(CrudService):
 
     @classmethod
     def create(cls, payload: dict, user_id: int | None = None):
-        payload = dict(payload or {})
+        payload = cls._validate_logistics_fields(payload)
         is_principal = cls._as_boolean(payload.pop('is_principal', False))
         created = super().create(payload, user_id=user_id)
         if is_principal:
@@ -47,7 +80,7 @@ class CustomerSupplierService(CrudService):
 
     @classmethod
     def update(cls, item_id, payload: dict, user_id: int | None = None):
-        payload = dict(payload or {})
+        payload = cls._validate_logistics_fields(payload)
         has_principal_value = 'is_principal' in payload
         is_principal = cls._as_boolean(payload.pop('is_principal', False))
         updated = super().update(item_id, payload, user_id=user_id)

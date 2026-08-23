@@ -1,7 +1,8 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { Boxes, ChevronDown, ClipboardList, FileText, Landmark, LayoutDashboard, LogOut, PanelLeftClose, PanelLeftOpen, Settings, ShieldCheck, SlidersHorizontal, Users, Utensils } from "lucide-react";
+import { Boxes, CalendarDays, ChevronDown, ClipboardList, FileText, Landmark, LayoutDashboard, LogOut, PanelLeftClose, PanelLeftOpen, Settings, ShieldCheck, SlidersHorizontal, Truck, Users, Utensils } from "lucide-react";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { getAllEntityPermission } from "../api";
+import LanguagePicker from "../components/LanguagePicker";
 import { useI18n } from "../i18n";
 
 const navItems = [
@@ -12,6 +13,11 @@ const navItems = [
   { path: "/bank_account", key: "menu.bank_account" },
   { path: "/brand", key: "menu.brand" },
   { path: "/customer_supplier", key: "menu.customer_supplier" },
+  { path: "/logistica/clientes", label: "Clientes", entityName: "customer_supplier", group: "CRM", groupIcon: "users", location: "sidebar", order: 10 },
+  { path: "/logistica/contactos", label: "Contactos", entityName: "logistics_contact", group: "CRM", groupIcon: "users", location: "sidebar", order: 20 },
+  { path: "/logistica/direcciones", label: "Direcciones", entityName: "logistics_address", group: "CRM", groupIcon: "users", location: "sidebar", order: 30 },
+  { path: "/logistica/contratos", label: "Contratos", entityName: "logistics_contract", group: "CRM", groupIcon: "users", location: "sidebar", order: 40 },
+  { path: "/logistica/tarifas", label: "Tarifas", entityName: "logistics_rate", group: "CRM", groupIcon: "users", location: "sidebar", order: 50 },
   { path: "/department", key: "menu.department" },
   { path: "/event_log", key: "menu.event_log" },
   { path: "/field", key: "menu.field" },
@@ -24,7 +30,7 @@ const navItems = [
   { path: "/inventory_status", key: "menu.inventory_status" },
   { path: "/invoice", key: "menu.invoice" },
   { path: "/invoice/manual", key: "menu.manual_invoice", label: "Factura manual", entityName: "invoice" },
-  { path: "/quotation", key: "menu.quotation", label: "Cotizaciones", entityName: "invoice" },
+  { path: "/quotation", key: "menu.quotation", label: "Cotizaciones", entityName: "invoice", group: "CRM", groupIcon: "users", location: "sidebar", order: 60 },
   { path: "/authorization_tracking", key: "menu.authorization_tracking", label: "Autorización / Seguimiento", entityName: "invoice" },
   { path: "/invoice_material_service", key: "menu.invoice_material_service" },
   { path: "/level", key: "menu.level" },
@@ -50,6 +56,7 @@ const navItems = [
   { path: "/product", key: "menu.product" },
   { path: "/product_family", key: "menu.product_family" },
   { path: "/proyect", key: "menu.proyect" },
+  { path: "/appointments", key: "menu.appointment", label: "Calendario", entityName: "appointment", group: "Operaciones", groupIcon: "calendar-days", location: "sidebar", order: 75 },
   { path: "/service", key: "menu.service" },
   { path: "/status", key: "menu.status" },
   { path: "/subdepartment", key: "menu.subdepartment" },
@@ -71,6 +78,22 @@ const quickNavItems = [
   { path: "/compradores-web", key: "menu.web_shoppers", label: "Compradores Web", entityName: "user" }
 ];
 
+const logisticsSections = [
+  { key: "section_commercial", items: [["quotations", "cotizaciones", "logistics_quotation"], ["requests", "solicitudes", "logistics_service_request"], ["files", "expedientes", "logistics_file"]] },
+  { key: "section_operations", items: [["trips", "viajes", "logistics_trip"], ["evidences", "evidencias", "logistics_evidence"], ["incidents", "incidencias", "logistics_incident"]] },
+  { key: "section_fleet", items: [["units", "unidades"], ["trailers", "remolques"], ["operators", "operadores"], ["maintenance", "mantenimientos"]] },
+  { key: "section_warehouse", items: [["warehouses", "almacenes"], ["locations", "ubicaciones"], ["inventory", "inventario"], ["racks", "racks"]] },
+  { key: "section_finance", items: [["invoices", "facturas", "invoice"], ["branches", "sucursales", "logistics_branch"], ["receivables", "cuentas-cobrar", "logistics_receivable"], ["manual_invoice", "facturacion/manual", "invoice"]] },
+  { key: "section_foreign_trade", items: [["suppliers", "proveedores", "customer_supplier"], ["shipments", "embarques", "logistics_shipment"]] },
+  { key: "section_administration", items: [["users", "usuarios", "user"], ["roles", "roles", null, "admin"], ["audit", "auditoria", null, "technical"], ["security", "seguridad"]] }
+];
+
+const groupTranslationKeys = {
+  "Bancos": "group_banks", CRM: "group_crm", "Contabilidad": "group_accounting",
+  "Recursos humanos": "group_hr", Restaurante: "group_restaurant", Operaciones: "group_operations",
+  Inventario: "group_inventory", "Configuración": "group_settings",
+};
+
 const groupIcons = {
   "landmark": Landmark,
   "file-text": FileText,
@@ -82,10 +105,12 @@ const groupIcons = {
   "shield-check": ShieldCheck,
   "layout-dashboard": LayoutDashboard,
   "settings": Settings,
+  "calendar-days": CalendarDays,
 };
 
 const defaultGroupIcons = {
   "Bancos": "landmark",
+  "CRM": "users",
   "Contabilidad": "file-text",
   "Recursos humanos": "users",
   "Restaurante": "utensils",
@@ -100,11 +125,15 @@ export default function Shell() {
   const [rolePermissionsLoaded, setRolePermissionsLoaded] = useState(false);
   const [openGroups, setOpenGroups] = useState({});
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem("tyakxa-sidebar-collapsed") === "true");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => (
+    window.matchMedia("(max-width: 800px)").matches || localStorage.getItem("tyakxa-sidebar-collapsed") === "true"
+  ));
   const settingsRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
-  const { lang, t, setLanguage } = useI18n();
+  const { t } = useI18n();
+  const shellText = (key) => t(`shell.${key}`);
+  const groupLabel = (label) => groupTranslationKeys[label] ? shellText(groupTranslationKeys[label]) : label;
   const currentUser = JSON.parse(localStorage.getItem("user") || "null");
   const bootstrapUsername = import.meta.env.VITE_BOOTSTRAP_ADMIN_USERNAME || "admin1";
   const isBootstrapAdmin = Boolean(currentUser?.username === bootstrapUsername && (currentUser?.is_bootstrap_admin || currentUser?.is_superuser || currentUser?.username === bootstrapUsername));
@@ -143,13 +172,20 @@ export default function Shell() {
   const visibleNavItems = navItems.filter(canSeeNavItem);
   const permissionByEntity = useMemo(() => new Map(roleEntityPermissions.map((row) => [String(row.entity_name || ""), row])), [roleEntityPermissions]);
 
+  function canSeeLogisticsItem(item) {
+    const entityName = item[2];
+    if (item[3] === "admin") return isAdminUser;
+    if (item[3] === "technical") return isBootstrapAdmin;
+    return !entityName || isBootstrapAdmin || permissionByEntity.has(entityName);
+  }
+
   function defaultGroup(item) {
     const path = item.path;
     if (["/bank", "/bank_account", "/movement"].includes(path)) return "Bancos";
     if (path.startsWith("/invoice") || path.startsWith("/fiscal") || path === "/quotation" || path === "/authorization_tracking") return "Contabilidad";
     if (path.startsWith("/payroll") || path === "/kronos") return "Recursos humanos";
     if (path.startsWith("/restaurant")) return "Restaurante";
-    if (["/proyect", "/incident", "/incident_detail", "/task", "/task_note", "/service", "/template"].includes(path)) return "Operaciones";
+    if (["/proyect", "/incident", "/incident_detail", "/task", "/task_note", "/task_type", "/service", "/template"].includes(path)) return "Operaciones";
     if (["/material", "/location", "/product", "/inventory_status", "/unit", "/brand"].includes(path)) return "Inventario";
     return "Configuración";
   }
@@ -160,11 +196,11 @@ export default function Shell() {
     const isCanonicalPath = item.path === `/${entityName}`;
     return {
       ...item,
-      location: permission?.menu_location || (item.adminOnly ? "settings" : "sidebar"),
-      group: permission?.menu_group || defaultGroup(item),
-      groupIcon: permission?.menu_group_icon || defaultGroupIcons[permission?.menu_group || defaultGroup(item)] || "sliders-horizontal",
-      order: Number(permission?.menu_order ?? 100),
-      displayLabel: isCanonicalPath && permission?.menu_label ? permission.menu_label : t(item.key, item.label || item.key)
+      location: item.location || permission?.menu_location || (item.adminOnly ? "settings" : "sidebar"),
+      group: item.group || permission?.menu_group || defaultGroup(item),
+      groupIcon: item.groupIcon || permission?.menu_group_icon || defaultGroupIcons[item.group || permission?.menu_group || defaultGroup(item)] || "sliders-horizontal",
+      order: Number(item.order ?? permission?.menu_order ?? 100),
+      displayLabel: isCanonicalPath && permission?.menu_label ? permission.menu_label : item.key ? t(item.key, item.label || item.key) : item.label
     };
   }
 
@@ -210,9 +246,11 @@ export default function Shell() {
     setSidebarCollapsed(false);
     localStorage.setItem("tyakxa-sidebar-collapsed", "false");
   };
+  const logisticsIsActive = location.pathname.startsWith("/logistica");
+  const logisticsIsOpen = openGroups.Logística ?? logisticsIsActive;
   return (
     <div className={sidebarCollapsed ? "shell sidebar-is-collapsed" : "shell"}>
-      <aside className="sidebar" aria-label={t("common.main_navigation", "Navegación principal")}>
+      <aside className="sidebar" aria-label={shellText("main_navigation")}>
         <div className="sidebar-brand-row">
           <div className="brand"><img src="/tyakxa-logo.png" alt={t("common.app_title")} className="brand-logo" /><span>{t("common.app_title")}</span></div>
         </div>
@@ -225,17 +263,35 @@ export default function Shell() {
           ))}
           {sidebarCollapsed ? sidebarGroups.map((group) => {
             const GroupIcon = groupIcons[group.icon] || SlidersHorizontal;
-            return <button type="button" key={group.label} className="nav-link collapsed-group-button" title={group.label} aria-label={`Expandir grupo ${group.label}`} onClick={() => expandSidebarForGroup(group.label)}><GroupIcon size={20} /><span className="nav-link-label">{group.label}</span></button>;
+            return <button type="button" key={group.label} className="nav-link collapsed-group-button" title={groupLabel(group.label)} aria-label={`${shellText("expand_group")} ${groupLabel(group.label)}`} onClick={() => expandSidebarForGroup(group.label)}><GroupIcon size={20} /><span className="nav-link-label">{groupLabel(group.label)}</span></button>;
           }) : sidebarGroups.map((group) => {
             const isOpen = openGroups[group.label] ?? group.items.some((item) => location.pathname === item.path);
             return <div className="shell-nav-group" key={group.label}>
-              <button type="button" className="shell-nav-group-toggle" onClick={() => setOpenGroups((current) => ({ ...current, [group.label]: !isOpen }))}><span>{group.label}</span><ChevronDown size={16} className={isOpen ? "open" : ""} /></button>
+              <button type="button" className="shell-nav-group-toggle" onClick={() => setOpenGroups((current) => ({ ...current, [group.label]: !isOpen }))}><span>{groupLabel(group.label)}</span><ChevronDown size={16} className={isOpen ? "open" : ""} /></button>
               {isOpen && <div className="shell-nav-submenu">{group.items.map((item) => <NavLink key={item.path} to={item.path} className={({ isActive }) => isActive ? "nav-link active" : "nav-link"}><span className="dot" /><span className="nav-link-label">{item.displayLabel}</span></NavLink>)}</div>}
             </div>;
           })}
+          {sidebarCollapsed ? (
+            <button type="button" className="nav-link collapsed-group-button" title={shellText("group_logistics")} aria-label={`${shellText("expand_group")} ${shellText("group_logistics")}`} onClick={() => expandSidebarForGroup("Logística")}><Truck size={20} /><span className="nav-link-label">{shellText("group_logistics")}</span></button>
+          ) : (
+            <div className="shell-nav-group logistics-nav-group">
+              <button type="button" className="shell-nav-group-toggle" onClick={() => setOpenGroups((current) => ({ ...current, Logística: !logisticsIsOpen }))}><span className="shell-nav-group-title">{shellText("group_logistics")}</span><ChevronDown size={16} className={logisticsIsOpen ? "open" : ""} /></button>
+              {logisticsIsOpen && <div className="shell-nav-submenu logistics-nav-sections">{logisticsSections.map((section) => {
+                const visibleItems = section.items.filter(canSeeLogisticsItem);
+                const sectionKey = `Logística:${section.key}`;
+                const sectionIsActive = visibleItems.some(([, path]) => location.pathname.startsWith(`/logistica/${path}`));
+                const sectionIsOpen = openGroups[sectionKey] ?? sectionIsActive;
+                if (visibleItems.length === 0) return null;
+                return <div className="logistics-nav-section" key={section.key}>
+                  <button type="button" className="logistics-nav-section-toggle" onClick={() => setOpenGroups((current) => ({ ...current, [sectionKey]: !sectionIsOpen }))}><span>{shellText(section.key)}</span><ChevronDown size={14} className={sectionIsOpen ? "open" : ""} /></button>
+                  {sectionIsOpen && <div className="logistics-nav-items">{visibleItems.map(([key, path]) => <NavLink key={path} to={`/logistica/${path}`} className={({ isActive }) => isActive ? "nav-link active" : "nav-link"}><span className="dot" /><span className="nav-link-label">{shellText(key)}</span></NavLink>)}</div>}
+                </div>;
+              })}</div>}
+            </div>
+          )}
         </nav>
       </aside>
-      <button type="button" className="sidebar-collapse-button" onClick={toggleSidebar} title={sidebarCollapsed ? "Expandir menú" : "Contraer menú"} aria-label={sidebarCollapsed ? "Expandir menú" : "Contraer menú"} aria-expanded={!sidebarCollapsed}>
+      <button type="button" className="sidebar-collapse-button" onClick={toggleSidebar} title={shellText(sidebarCollapsed ? "expand_menu" : "collapse_menu")} aria-label={shellText(sidebarCollapsed ? "expand_menu" : "collapse_menu")} aria-expanded={!sidebarCollapsed}>
         {sidebarCollapsed ? <PanelLeftOpen size={20} /> : <PanelLeftClose size={20} />}
       </button>
       <main className="main">
@@ -243,17 +299,17 @@ export default function Shell() {
           <div><p className="eyebrow">ERP · CRM · SCM</p><h1>TYAKXA</h1></div>
           <div className="topbar-actions">
             <span className="session-pill">{t("common.secure_session", "Sesión protegida")}{currentUser?.username ? ` · ${currentUser.username}` : ""}</span>
-            <label className="language-picker">{t("common.language")}<select value={lang} onChange={(e) => setLanguage(e.target.value)}><option value="es">ES</option><option value="en">EN</option><option value="pt">PT</option><option value="de">DE</option><option value="ja">日本語</option></select></label>
+            <LanguagePicker />
             <div className="session-actions">
               <div className="settings-menu" ref={settingsRef}>
-                <button className="button ghost settings-trigger" title="Opciones" aria-label="Opciones" aria-expanded={settingsOpen} onClick={() => setSettingsOpen((value) => !value)}><Settings size={18} /></button>
-                {settingsOpen && <div className="settings-popover">{settingsItems.length ? settingsItems.map((item) => <NavLink key={item.path} to={item.path} onClick={() => setSettingsOpen(false)}>{item.displayLabel}</NavLink>) : <span className="settings-empty">Sin opciones configuradas</span>}</div>}
+                <button className="button ghost settings-trigger" title={shellText("options")} aria-label={shellText("options")} aria-expanded={settingsOpen} onClick={() => setSettingsOpen((value) => !value)}><Settings size={18} /></button>
+                {settingsOpen && <div className="settings-popover">{settingsItems.length ? settingsItems.map((item) => <NavLink key={item.path} to={item.path} onClick={() => setSettingsOpen(false)}>{item.displayLabel}</NavLink>) : <span className="settings-empty">{shellText("no_options")}</span>}</div>}
               </div>
               <button className="button ghost" onClick={handleLogout}><LogOut size={16} />{t("common.logout", "Cerrar sesión")}</button>
             </div>
           </div>
         </header>
-        <nav className="quick-nav" aria-label={t("common.quick_access", "Accesos rápidos")}>
+        <nav className="quick-nav" aria-label={shellText("quick_access")}>
           {quickNavItems.filter(canSeeNavItem).map((item) => (
             <NavLink key={item.path} to={item.path} className={({ isActive }) => isActive ? "quick-nav-link active" : "quick-nav-link"}>
               {t(item.key, item.label || item.key)}

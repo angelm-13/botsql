@@ -17,6 +17,7 @@ celery.autodiscover_tasks([
     "app.jobs.tasks_documents",
     "app.jobs.tasks_maintenance",
     "app.jobs.tasks_stamping",
+    "app.jobs.tasks_appointments",
 ])
 
 
