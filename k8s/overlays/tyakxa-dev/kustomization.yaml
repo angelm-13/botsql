@@ -1,0 +1,34 @@
+# Overlay real del entorno interno de pruebas (no es cliente de verdad).
+# Instanciado desde k8s/overlays/_template con el commit 533ebb0 (build
+# verde en Actions: backend, worker, db-init y frontend-tyakxa-dev).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: tyakxa-dev
+images:
+  - name: DB_INIT_IMAGE_PLACEHOLDER
+    newName: ghcr.io/tyakxa/tyakxa-tny-db-init
+    newTag: "e12471a"
+  - name: BACKEND_IMAGE_PLACEHOLDER
+    newName: ghcr.io/tyakxa/tyakxa-tny-backend
+    newTag: "e12471a"
+  - name: WORKER_IMAGE_PLACEHOLDER
+    newName: ghcr.io/tyakxa/tyakxa-tny-worker
+    newTag: "e12471a"
+  - name: FRONTEND_IMAGE_PLACEHOLDER
+    newName: ghcr.io/tyakxa/tyakxa-tny-frontend
+    newTag: "e12471a-tyakxa-dev"
+# El dominio real que dieron para pruebas (sistema-test.torredigital.mx)
+# es UN SOLO dominio, no el patrón de dos subdominios de base/ingress.yaml
+# — por eso ese Ingress del base se elimina aquí y se agrega
+# ingress-single-origin.yaml en su lugar (ver ese archivo para el porqué
+# de los dos objetos Ingress).
+resources:
+  - ../../base
+  - ingress-single-origin.yaml
+patches:
+  - patch: |-
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: tyakxa-tny
+      $patch: delete

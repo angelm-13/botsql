@@ -173,6 +173,7 @@ CREATE TABLE IF NOT EXISTS "bank_account" (
   "moratorium_interest" NUMERIC(10,2) NULL,
   "anuality" NUMERIC(10,2) NULL,
   "reimbursement" NUMERIC(10,2) NULL,
+  "id_proyect" INTEGER NULL,
   "created_by" INTEGER NOT NULL DEFAULT 1,
   "creation_date" TIMESTAMP NULL,
   "last_update_date" TIMESTAMP NULL,
@@ -814,7 +815,7 @@ CREATE TABLE IF NOT EXISTS "password_reset_token" (
   "expires_at" TIMESTAMP NOT NULL,
   "used_at" TIMESTAMP NULL,
   "requested_ip" VARCHAR(45) NULL,
-  "created_at" TIMESTAMP NOT NULL DEFAULT 'datetime.now()',
+  "created_at" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY ("id_password_reset_token")
 );
 
@@ -1054,6 +1055,10 @@ EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 DO $$ BEGIN
   ALTER TABLE "bank_account" ADD CONSTRAINT "fk_bank_account_created_by" FOREIGN KEY ("created_by") REFERENCES "user"("id_user") DEFERRABLE INITIALLY DEFERRED;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+DO $$ BEGIN
+  ALTER TABLE "bank_account" ADD CONSTRAINT "fk_bank_account_id_proyect" FOREIGN KEY ("id_proyect") REFERENCES "proyect"("id_proyect") DEFERRABLE INITIALLY DEFERRED;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 DO $$ BEGIN

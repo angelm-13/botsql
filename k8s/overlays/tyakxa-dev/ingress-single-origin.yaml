@@ -1,0 +1,65 @@
+# Overlay de tyakxa-dev con UN SOLO dominio (torredigital.mx), no dos
+# subdominios como en base/ingress.yaml — ese patrón de dos subdominios es
+# para el ERP con clientes reales bajo tyakxa.com.mx. Aquí solo se dio un
+# dominio, así que replicamos el patrón de "un solo origen con /api" que
+# ya usa el nginx local de docker-compose.yml (infra/nginx/default.conf),
+# con las mismas rutas y el mismo orden (API antes de /, o el frontend se
+# traga esas peticiones).
+#
+# Dos objetos Ingress porque nginx.ingress.kubernetes.io/rewrite-target
+# aplica a TODO el Ingress, no por ruta — si se mezclara /api (que sí
+# necesita quitarle el prefijo antes de llegar al backend) con /auth,
+# /graphql y / (que no lo necesitan) en el mismo objeto, el rewrite les
+# rompería la ruta a los otros tres.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tyakxa-dev-app
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: ["sistema-test.torredigital.mx"]
+      secretName: sistema-test-tls
+  rules:
+    - host: sistema-test.torredigital.mx
+      http:
+        paths:
+          # Mismos accesos directos que ya expone el nginx local, sin
+          # quitarles el prefijo — antes de / a propósito.
+          - path: /auth
+            pathType: Prefix
+            backend: { service: { name: backend, port: { number: 5001 } } }
+          - path: /graphql
+            pathType: Prefix
+            backend: { service: { name: backend, port: { number: 5001 } } }
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: frontend, port: { number: 80 } } }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tyakxa-dev-api-prefix
+  annotations:
+    # Sin cert-manager.io/cluster-issuer aquí a propósito: el Ingress de
+    # arriba (tyakxa-dev-app) ya pide el certificado para este dominio;
+    # pedirlo dos veces duplicaría la solicitud a Let's Encrypt.
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: ["sistema-test.torredigital.mx"]
+      secretName: sistema-test-tls # mismo Secret que ya gestiona el otro Ingress
+  rules:
+    - host: sistema-test.torredigital.mx
+      http:
+        paths:
+          # /api/lo-que-sea -> el backend recibe /lo-que-sea (sin el
+          # prefijo) — igual que "location /api/ { proxy_pass .../; }"
+          # en el nginx local.
+          - path: /api(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend: { service: { name: backend, port: { number: 5001 } } }
