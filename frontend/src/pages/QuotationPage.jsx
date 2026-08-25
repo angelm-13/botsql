@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
-import { createInvoice, createInvoiceMaterialService, deleteInvoiceMaterialService, getAllCustomerSupplier, getAllInvoice, getAllInvoiceMaterialService, getAllMaterial, getAllProduct, getAllProyect, getAllService, getAllUnit, updateInvoice } from "../api";
+import React, { useEffect, useMemo, useState } from "react";
+import { createInvoice, createInvoiceMaterialService, deleteInvoiceMaterialService, downloadInvoicePdf, getAllCustomerSupplier, getAllInvoice, getAllInvoiceMaterialService, getAllMaterial, getAllProduct, getAllProyect, getAllService, getAllUnit, transitionQuotation, updateInvoice } from "../api";
 import { useI18n } from "../i18n";
+import QuotationWorkflowBoard, { normalizeQuotationStatus, quotationStatusLabel, QUOTATION_STATUS_CODES } from "../components/QuotationWorkflowBoard.jsx";
 
 function asArray(payload) {
   if (Array.isArray(payload?.items)) return payload.items;
@@ -54,6 +55,8 @@ export default function QuotationPage() {
   const [quotationItems, setQuotationItems] = useState([]);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState("");
   const [editingInvoiceId, setEditingInvoiceId] = useState("");
+  const [activeView, setActiveView] = useState("board");
+  const [transitioningId, setTransitioningId] = useState("");
   const [customers, setCustomers] = useState([]);
   const [projects, setProjects] = useState([]);
   const [products, setProducts] = useState([]);
@@ -88,6 +91,10 @@ export default function QuotationPage() {
   const unitById = useMemo(() => Object.fromEntries(units.map((item) => [Number(item.id_unit), item])), [units]);
   const selectedQuotation = useMemo(() => quotations.find((item) => Number(item.id_invoice) === Number(selectedInvoiceId)) || null, [quotations, selectedInvoiceId]);
   const selectedQuotationItems = useMemo(() => quotationItems.filter((item) => Number(item.id_invoice) === Number(selectedInvoiceId)), [quotationItems, selectedInvoiceId]);
+  const quotationItemCounts = useMemo(() => quotationItems.reduce((counts, item) => {
+    counts[item.id_invoice] = (counts[item.id_invoice] || 0) + 1;
+    return counts;
+  }, {}), [quotationItems]);
 
   function itemSubtotal(item) {
     return Number(item.quantity || 0) * Number(item.gross_price || 0);
@@ -236,6 +243,7 @@ export default function QuotationPage() {
     const invoiceId = Number(invoice.id_invoice);
     const currentItems = quotationItems.filter((item) => Number(item.id_invoice) === invoiceId);
     setEditingInvoiceId(String(invoice.id_invoice));
+    setActiveView("manage");
     setSelectedInvoiceId(String(invoice.id_invoice));
     setMessage("");
     setError("");
@@ -275,6 +283,34 @@ export default function QuotationPage() {
     }));
   }
 
+  function startNewQuotation() {
+    cancelEditQuotation();
+    setSelectedInvoiceId("");
+    setActiveView("manage");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function viewQuotation(invoice) {
+    setSelectedInvoiceId(String(invoice.id_invoice));
+    setActiveView("manage");
+    window.setTimeout(() => document.querySelector(".quotation-detail-card")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  }
+
+  async function moveQuotation(invoice, status) {
+    setTransitioningId(String(invoice.id_invoice));
+    setMessage("");
+    setError("");
+    try {
+      const updated = await transitionQuotation(invoice.id_invoice, status);
+      setQuotations((current) => current.map((item) => Number(item.id_invoice) === Number(invoice.id_invoice) ? { ...item, invoice_status: updated.invoice_status } : item));
+      setMessage(`Cotización ${quotationFolio(invoice)} movida a ${quotationStatusLabel(status, t)}.`);
+    } catch (requestError) {
+      setError(resolveError(requestError));
+    } finally {
+      setTransitioningId("");
+    }
+  }
+
   function loadData() {
     setLoading(true);
     setError("");
@@ -290,7 +326,7 @@ export default function QuotationPage() {
     ])
       .then(([invoicePayload, itemPayload, customerPayload, projectPayload, productPayload, servicePayload, materialPayload, unitPayload]) => {
         const rows = asArray(invoicePayload)
-          .filter((item) => String(item.invoice_status || "").toLowerCase() === "cotizacion")
+          .filter((item) => QUOTATION_STATUS_CODES.includes(normalizeQuotationStatus(item.invoice_status)))
           .sort((a, b) => Number(b.id_invoice || 0) - Number(a.id_invoice || 0));
         const customerRows = asArray(customerPayload);
         const projectRows = asArray(projectPayload);
@@ -431,7 +467,7 @@ export default function QuotationPage() {
       subtotal,
       tax,
       total,
-      invoice_status: "Cotizacion",
+      invoice_status: editingInvoiceId ? (quotations.find((quotation) => Number(quotation.id_invoice) === Number(editingInvoiceId))?.invoice_status || "draft") : "draft",
       note: form.note || "",
       currency: form.currency || "MXN",
       tax_certification_supplier: Number(form.tax_certification_supplier),
@@ -477,24 +513,27 @@ export default function QuotationPage() {
     return quotationItems.filter((item) => Number(item.id_invoice) === Number(invoiceId)).length;
   }
 
-  function printQuotationPdf() {
+  async function printQuotationPdf() {
     if (!selectedQuotation?.id_invoice) return;
-    const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:5001";
-    const normalizedBaseUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
-    const pdfUrl = `${normalizedBaseUrl}/documents/quotation_pdf/${selectedQuotation.id_invoice}?format=pdf`;
-    const pdfWindow = window.open(pdfUrl, "_blank", "noopener,noreferrer");
-    if (!pdfWindow) {
-      setError(t("quotation.pdf_popup_blocked", "El navegador bloqueó la ventana del PDF. Permite ventanas emergentes e inténtalo de nuevo."));
-      return;
+    setError("");
+    try {
+      const blob = await downloadInvoicePdf(selectedQuotation.id_invoice, "quotation");
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `Cotizacion-${selectedQuotation.id_invoice}.pdf`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (requestError) {
+      setError(resolveError(requestError));
     }
-    pdfWindow.focus();
   }
 
   return (
     <section className="entity-page quotation-page">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">{t("quotation.issue_label", "Issue 9")}</p>
+          <p className="eyebrow">CRM</p>
           <h2>{t("quotation.title", "Cotizaciones")}</h2>
           <p className="quotation-subtitle">{t("quotation.subtitle", "Cotizaciones comerciales generadas sobre factura con estatus Cotización.")}</p>
         </div>
@@ -504,6 +543,15 @@ export default function QuotationPage() {
       {message && <div className="alert success">{message}</div>}
       {error && <div className="alert error">{error}</div>}
 
+      <div className="quotation-view-controls" role="tablist" aria-label={t("quotation.views", "Vistas de cotizaciones")}>
+        <button type="button" role="tab" aria-selected={activeView === "board"} className={activeView === "board" ? "active" : ""} onClick={() => setActiveView("board")}>{t("quotation.board", "Tablero")}</button>
+        <button type="button" role="tab" aria-selected={activeView === "manage"} className={activeView === "manage" ? "active" : ""} onClick={() => setActiveView("manage")}>{t("quotation.manage", "Gestionar")}</button>
+        <button type="button" className="button primary" onClick={startNewQuotation}>{t("quotation.new_title", "Nueva cotización")}</button>
+      </div>
+
+      {activeView === "board" ? (
+        <QuotationWorkflowBoard quotations={quotations} customers={customers} projects={projects} itemCounts={quotationItemCounts} loading={loading} transitioningId={transitioningId} onTransition={moveQuotation} onView={viewQuotation} onEdit={startEditQuotation} onCreate={startNewQuotation} />
+      ) : <>
       <form className="form-card quotation-form" onSubmit={submitQuotation}>
         <div className="form-header quotation-section-title">
           <strong>{editingInvoiceId ? t("quotation.edit_title", "Editar cotización") : t("quotation.new_title", "Nueva cotización")}</strong>
@@ -571,7 +619,7 @@ export default function QuotationPage() {
           <strong>{t("quotation.list_title", "Listado de cotizaciones")}</strong>
           <span className="muted">{quotations.length} {t("quotation.records", "registro(s)")}</span>
         </div>
-        <div className="table-wrap"><table><thead><tr><th>{t("quotation.id", "ID")}</th><th>{t("quotation.customer", "Cliente")}</th><th>{t("quotation.project", "Proyecto")}</th><th>{t("quotation.date", "Fecha")}</th><th>{t("quotation.items", "Partidas")}</th><th>{t("quotation.subtotal", "Subtotal")}</th><th>{t("quotation.tax", "IVA")}</th><th>{t("quotation.total", "Total")}</th><th>{t("quotation.detail", "Detalle")}</th></tr></thead><tbody>{quotations.map((item) => (<tr key={item.id_invoice}><td>{quotationFolio(item)}</td><td>{customerById[Number(item.id_customer_supplier)]?.name || item.id_customer_supplier || "—"}</td><td>{projectById[Number(item.id_proyect)]?.title || item.id_proyect || "—"}</td><td>{formatDate(item.date_emision)}</td><td>{countItems(item.id_invoice)}</td><td>{money(item.subtotal)}</td><td>{money(item.tax)}</td><td>{money(item.total)}</td><td><button type="button" className="button small" onClick={() => setSelectedInvoiceId(String(item.id_invoice))}>{t("quotation.view_detail", "Ver detalle")}</button></td></tr>))}{!quotations.length && <tr><td colSpan="10" className="muted">{t("quotation.empty", "Sin cotizaciones registradas.")}</td></tr>}</tbody></table></div>
+        <div className="table-wrap"><table><thead><tr><th>{t("quotation.id", "ID")}</th><th>{t("quotation.customer", "Cliente")}</th><th>{t("quotation.project", "Proyecto")}</th><th>{t("quotation.date", "Fecha")}</th><th>{t("quotation.status", "Estatus")}</th><th>{t("quotation.items", "Partidas")}</th><th>{t("quotation.subtotal", "Subtotal")}</th><th>{t("quotation.tax", "IVA")}</th><th>{t("quotation.total", "Total")}</th><th>{t("quotation.detail", "Detalle")}</th></tr></thead><tbody>{quotations.map((item) => (<tr key={item.id_invoice}><td>{quotationFolio(item)}</td><td>{customerById[Number(item.id_customer_supplier)]?.name || item.id_customer_supplier || "—"}</td><td>{projectById[Number(item.id_proyect)]?.title || item.id_proyect || "—"}</td><td>{formatDate(item.date_emision)}</td><td><span className={`quotation-status-badge status-${normalizeQuotationStatus(item.invoice_status)}`}>{quotationStatusLabel(item.invoice_status, t)}</span></td><td>{countItems(item.id_invoice)}</td><td>{money(item.subtotal)}</td><td>{money(item.tax)}</td><td>{money(item.total)}</td><td><button type="button" className="button small" onClick={() => setSelectedInvoiceId(String(item.id_invoice))}>{t("quotation.view_detail", "Ver detalle")}</button></td></tr>))}{!quotations.length && <tr><td colSpan="10" className="muted">{t("quotation.empty", "Sin cotizaciones registradas.")}</td></tr>}</tbody></table></div>
       </div>
 
       {selectedQuotation && (
@@ -585,7 +633,7 @@ export default function QuotationPage() {
           </div>
           <div className="quotation-meta-strip">
             <div><span>{t("quotation.folio", "Folio")}</span><strong>{quotationFolio(selectedQuotation)}</strong></div>
-            <div><span>{t("quotation.status", "Estatus")}</span><strong>{selectedQuotation.invoice_status || "Cotizacion"}</strong></div>
+            <div><span>{t("quotation.status", "Estatus")}</span><strong>{quotationStatusLabel(selectedQuotation.invoice_status, t)}</strong></div>
           </div>
 
           <div className="quotation-party-grid">
@@ -626,6 +674,7 @@ export default function QuotationPage() {
           {selectedQuotation.note && <p className="quotation-detail-note"><strong>{t("quotation.note", "Nota")}:</strong> {selectedQuotation.note}</p>}
         </div>
       )}
+      </>}
     </section>
   );
 }

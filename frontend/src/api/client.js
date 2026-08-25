@@ -49,3 +49,19 @@ export async function request(path, options = {}) {
   }
   return data;
 }
+
+export async function requestBlob(path, options = {}) {
+  const token = localStorage.getItem("token");
+  const response = await fetch(buildUrl(path, options.params), {
+    method: options.method || "GET",
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(options.headers || {}) }
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    const error = new Error(data.message_key || data.error_key || data.message || "errors.request_failed");
+    error.status = response.status;
+    error.payload = data;
+    throw error;
+  }
+  return response.blob();
+}

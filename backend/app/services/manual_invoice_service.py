@@ -37,7 +37,13 @@ def preview_manual_invoice(payload: dict) -> dict:
     if not concepts:
         errors.append('manual_invoice.concepts_required')
 
-    default_iva_rate = _percentage(payload.get('iva_rate', payload.get('tax_rate', 16)), 'iva_rate')
+    iva_types = {
+        '16': (Decimal('16'), '02'), '8': (Decimal('8'), '02'), '0': (Decimal('0'), '02'),
+        'exento': (Decimal('0'), '02'), 'sin_iva': (Decimal('0'), '01'),
+    }
+    iva_type = str(payload.get('iva_tipo') or '').strip().lower()
+    iva_value, forced_tax_object = iva_types.get(iva_type, (payload.get('iva_rate', payload.get('tax_rate', 16)), None))
+    default_iva_rate = _percentage(iva_value, 'iva_rate')
     default_isr_rate = _percentage(payload.get('isr_ret_rate', 0), 'isr_ret_rate')
     default_iva_ret_rate = _percentage(payload.get('iva_ret_rate', 0), 'iva_ret_rate')
     subtotal = Decimal('0')
@@ -70,7 +76,8 @@ def preview_manual_invoice(payload: dict) -> dict:
         else:
             taxable_base = line_subtotal - discount
 
-        taxable = bool(concept.get('tax_applicable', concept.get('objeto_imp', '02') != '01'))
+        tax_object = str(forced_tax_object or concept.get('tax_object') or concept.get('objeto_imp') or '02')
+        taxable = bool(concept.get('tax_applicable', tax_object != '01'))
         iva_rate = _percentage(concept.get('iva_rate', default_iva_rate * 100), f'concepts.{index}.iva_rate') if taxable else Decimal('0')
         isr_rate = _percentage(concept.get('isr_ret_rate', default_isr_rate * 100), f'concepts.{index}.isr_ret_rate') if taxable else Decimal('0')
         iva_ret_rate = _percentage(concept.get('iva_ret_rate', default_iva_ret_rate * 100), f'concepts.{index}.iva_ret_rate') if taxable else Decimal('0')
@@ -91,7 +98,7 @@ def preview_manual_invoice(payload: dict) -> dict:
             'discount': str(_money(discount)),
             'sat_product_key': sat_product_key,
             'sat_unit_key': sat_unit_key,
-            'tax_object': str(concept.get('tax_object') or concept.get('objeto_imp') or ('02' if taxable else '01')),
+            'tax_object': tax_object,
             'iva_rate': str(_money(iva_rate * 100)),
             'isr_ret_rate': str(_money(isr_rate * 100)),
             'iva_ret_rate': str(_money(iva_ret_rate * 100)),
@@ -205,8 +212,8 @@ def create_manual_invoice(payload: dict, user_data: dict) -> dict:
             nombre_emisor=str(issuer.name or '')[:150],
             lugar_expedicion=str(payload.get('lugar_expedicion') or issuer.postal_code or '')[:120],
             tipo_de_comprobante='factura',
-            rfc_receptor=str(customer.tax_id or '')[:20],
-            nombre_receptor=str(customer.name or '')[:150],
+            rfc_receptor=str(payload.get('rfc') or customer.tax_id or '')[:20],
+            nombre_receptor=str(payload.get('razon_social_fiscal') or customer.name or '')[:150],
             regimen_fiscal_receptor=str(payload.get('regimen_fiscal') or customer.fiscal_type or '')[:100],
             domicilio_fiscal_receptor=str(payload.get('cp_fiscal') or customer.postal_code or '')[:250],
             exportacion=str(payload.get('exportacion') or '01')[:50],

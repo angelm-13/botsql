@@ -5,7 +5,7 @@ from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
 
 bp_customer_supplier = Blueprint('customer_supplier', __name__, url_prefix='/customer_supplier')
-ALLOWED_FIELDS = ['id_customer_supplier', 'postal_code', 'name', 'title', 'contact_name', 'phone', 'email', 'web_site', 'street', 'number_ext', 'number_int', 'neighborhood', 'city', 'geographic_state', 'fiscal_type', 'last_fiscal_certification_date', 'tax_id', 'type', 'id_user', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'path_logo']
+ALLOWED_FIELDS = ['id_customer_supplier', 'postal_code', 'name', 'title', 'contact_name', 'phone', 'email', 'web_site', 'street', 'number_ext', 'number_int', 'neighborhood', 'city', 'geographic_state', 'fiscal_type', 'last_fiscal_certification_date', 'tax_id', 'type', 'sla_level', 'credit_limit', 'logistics_notes', 'is_principal', 'id_user', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'path_logo']
 
 TECHNICAL_RESPONSE_FIELDS = {'id_customer_supplier'}
 FIELD_READ_BIT = 2

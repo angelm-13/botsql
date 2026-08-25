@@ -1,0 +1,61 @@
+.kronos-device-page {
+  max-width: 1100px;
+}
+
+.kronos-device-form {
+  padding: 0;
+  overflow: hidden;
+}
+
+.kronos-device-intro {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px;
+  border-bottom: 1px solid #dbe4ee;
+  color: var(--kronos-ink);
+}
+
+.kronos-device-intro h3,
+.kronos-device-intro p {
+  margin: 0;
+}
+
+.kronos-device-intro p {
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.kronos-device-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  padding: 0 18px 18px;
+}
+
+.kronos-device-actions span {
+  color: #047857;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+@media (max-width: 760px) {
+  .kronos-device-page .kronos-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .kronos-device-page .kronos-url {
+    grid-column: auto;
+  }
+
+  .kronos-device-page .kronos-check {
+    padding-top: 8px;
+  }
+
+  .kronos-device-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

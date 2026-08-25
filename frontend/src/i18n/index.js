@@ -1,12 +1,34 @@
 import { useEffect, useState } from "react";
-import es from "./es.json";
-import en from "./en.json";
-import pt from "./pt.json";
-import de from "./de.json";
-import ja from "./ja.json";
+import canonicalEs from "./locales/es.json";
+import canonicalEn from "./locales/en.json";
+import canonicalPt from "./locales/pt.json";
+import canonicalDe from "./locales/de.json";
+import canonicalJa from "./locales/ja.json";
+import canonicalZhHans from "./locales/zh-Hans.json";
+import canonicalZhHant from "./locales/zh-Hant.json";
+import canonicalNah from "./locales/nah.json";
 
-const catalogs = { es, en, pt, de, ja };
-export const supportedLanguages = ["es", "en", "pt", "de", "ja"];
+const catalogs = {
+  es: canonicalEs,
+  en: canonicalEn,
+  pt: canonicalPt,
+  de: canonicalDe,
+  ja: canonicalJa,
+  "zh-Hans": canonicalZhHans,
+  "zh-Hant": canonicalZhHant,
+  nah: canonicalNah,
+};
+export const languageOptions = [
+  { code: "es", label: "Español" },
+  { code: "en", label: "English" },
+  { code: "pt", label: "Português" },
+  { code: "de", label: "Deutsch" },
+  { code: "ja", label: "日本語" },
+  { code: "zh-Hans", label: "简体中文" },
+  { code: "zh-Hant", label: "繁體中文" },
+  { code: "nah", label: "Nāhuatl" },
+];
+export const supportedLanguages = languageOptions.map(({ code }) => code);
 
 function getStoredLanguage() {
   const saved = localStorage.getItem("language") || "es";

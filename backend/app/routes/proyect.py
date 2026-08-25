@@ -1,13 +1,20 @@
 from __future__ import annotations
 from flask import Blueprint, jsonify, request
-from app.services.proyect_service import ProyectService
+from app.services.project_management_service import (
+    add_project_message,
+    create_project,
+    delete_project,
+    get_project_detail,
+    list_projects,
+    transition_project,
+    update_project,
+)
 from app.utils.auth import token_required, require_entity_permission
-from app.utils.errors import AppError
 
 bp_proyect = Blueprint('proyect', __name__, url_prefix='/proyect')
 ALLOWED_FIELDS = ['id_proyect', 'id_customer_supplier', 'leader', 'proyect_description', 'title', 'proyect_status', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
 
-TECHNICAL_RESPONSE_FIELDS = {'id_proyect'}
+TECHNICAL_RESPONSE_FIELDS = {'id_proyect', 'folio', 'submitted_date'}
 FIELD_READ_BIT = 2
 
 
@@ -104,35 +111,50 @@ def list_proyect(user_data):
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 20))
     sort = request.args.get('sort')
-    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort'} and k in ALLOWED_FIELDS}
-    return _jsonify_projected_list(user_data, ProyectService.list(page=page, per_page=per_page, filters=filters, sort=sort))
+    filters = {
+        key: value for key, value in request.args.items()
+        if key in {'proyect_status', 'created_by', 'id_customer_supplier', 'search', 'creation_date_from', 'creation_date_to'}
+    }
+    return jsonify(list_projects(user_data, page=page, per_page=per_page, filters=filters, sort=sort))
 
 
 @bp_proyect.route('/<id_proyect>', methods=['GET'])
 @token_required
 @require_entity_permission('proyect', 'read')
 def get_proyect(user_data, id_proyect):
-    return _jsonify_projected_record(user_data, ProyectService.get(id_proyect))
+    return jsonify(get_project_detail(id_proyect, user_data))
 
 
 @bp_proyect.route('/', methods=['POST'])
 @token_required
 @require_entity_permission('proyect', 'create')
 def create_proyect(user_data):
-    payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
-    return _jsonify_projected_record(user_data, ProyectService.create(payload, user_id=user_data.get('id_user')), status=201)
+    return jsonify(create_project(request.get_json() or {}, user_data)), 201
 
 
 @bp_proyect.route('/<id_proyect>', methods=['PUT'])
 @token_required
 @require_entity_permission('proyect', 'update')
 def update_proyect(user_data, id_proyect):
-    payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
-    return _jsonify_projected_record(user_data, ProyectService.update(id_proyect, payload, user_id=user_data.get('id_user')))
+    return jsonify(update_project(id_proyect, request.get_json() or {}, user_data))
+
+
+@bp_proyect.route('/<id_proyect>/transition', methods=['POST'])
+@token_required
+@require_entity_permission('proyect', 'update')
+def transition_proyect(user_data, id_proyect):
+    return jsonify(transition_project(id_proyect, request.get_json() or {}, user_data))
+
+
+@bp_proyect.route('/<id_proyect>/messages', methods=['POST'])
+@token_required
+@require_entity_permission('proyect', 'update')
+def create_proyect_message(user_data, id_proyect):
+    return jsonify(add_project_message(id_proyect, request.get_json() or {}, user_data)), 201
 
 
 @bp_proyect.route('/<id_proyect>', methods=['DELETE'])
 @token_required
 @require_entity_permission('proyect', 'delete')
 def delete_proyect(user_data, id_proyect):
-    return jsonify(ProyectService.delete(id_proyect, user_id=user_data.get('id_user')))
+    return jsonify(delete_project(id_proyect, user_data))

@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
-import { FileCheck2, FileText, Plus, Trash2 } from "lucide-react";
-import { createManualInvoice, getAllCustomerSupplier, getAllProyect, previewManualInvoice } from "../api";
+import React, { useEffect, useState } from "react";
+import { BadgeCheck, Download, FileCheck2, FileText, Plus, Trash2 } from "lucide-react";
+import { createManualInvoice, downloadInvoicePdf, downloadInvoiceXml, getAllCustomerSupplier, getAllProyect, previewManualInvoice, stampInvoice } from "../api";
+import { useI18n } from "../i18n";
 
 function asArray(payload) {
   if (Array.isArray(payload?.items)) return payload.items;
@@ -24,11 +25,12 @@ function newConcept() {
   };
 }
 
-function money(value) {
-  return Number(value || 0).toLocaleString("es-MX", { style: "currency", currency: "MXN" });
+function money(value, locale) {
+  return Number(value || 0).toLocaleString(locale, { style: "currency", currency: "MXN" });
 }
 
 export default function ManualInvoicePage() {
+  const { lang, t } = useI18n();
   const currentUser = JSON.parse(localStorage.getItem("user") || "null") || {};
   const [contacts, setContacts] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -37,6 +39,7 @@ export default function ManualInvoicePage() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [createdInvoice, setCreatedInvoice] = useState(null);
   const [form, setForm] = useState({
     id_proyect: currentUser.id_proyect || "",
     id_customer_supplier: "",
@@ -60,7 +63,7 @@ export default function ManualInvoicePage() {
         setContacts(asArray(contactPayload));
         setProjects(asArray(projectPayload));
       })
-      .catch((requestError) => setError(requestError.message || "No se pudieron cargar los catálogos."));
+      .catch((requestError) => setError(requestError.message || "manual_invoice.error_catalogs"));
   }, []);
 
   function updateForm(field, value) {
@@ -74,13 +77,17 @@ export default function ManualInvoicePage() {
   }
 
   function payload() {
-    return { ...form, concepts: concepts.map(({ key, ...concept }) => concept) };
+    return { ...form, concepts: concepts.map((concept) => {
+      const payloadConcept = { ...concept };
+      delete payloadConcept.key;
+      return payloadConcept;
+    }) };
   }
 
   function readableError(requestError) {
     const response = requestError?.payload || requestError?.response?.data || {};
     if (Array.isArray(response?.meta?.errors)) return response.meta.errors.join(" · ");
-    return response.error || response.error_key || requestError.message || "No se pudo completar la solicitud.";
+    return response.error || response.error_key || requestError.message || t("manual_invoice.error_request");
   }
 
   async function handlePreview() {
@@ -104,7 +111,8 @@ export default function ManualInvoicePage() {
     setError("");
     try {
       const result = await createManualInvoice(payload());
-      setMessage(`Factura manual #${result.invoice.id_invoice} guardada correctamente.`);
+      setMessage(`${t("manual_invoice.invoice_number")} #${result.invoice.id_invoice} ${t("manual_invoice.saved_success")}`);
+      setCreatedInvoice(result.invoice);
       setConcepts([newConcept()]);
       setPreview(null);
     } catch (requestError) {
@@ -114,56 +122,89 @@ export default function ManualInvoicePage() {
     }
   }
 
+  function saveBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleStamp() {
+    setBusy(true);
+    setError("");
+    try {
+      const result = await stampInvoice(createdInvoice.id_invoice);
+      setCreatedInvoice((current) => ({ ...current, folio_fiscal: result.operation.provider_reference }));
+      setMessage(`${t("manual_invoice.invoice")} #${createdInvoice.id_invoice} ${t("manual_invoice.stamped_success")}`);
+    } catch (requestError) {
+      setError(readableError(requestError));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDownload(type) {
+    try {
+      const blob = type === "xml" ? await downloadInvoiceXml(createdInvoice.id_invoice) : await downloadInvoicePdf(createdInvoice.id_invoice);
+      saveBlob(blob, `${type === "xml" ? "CFDI" : t("manual_invoice.invoice")}-${createdInvoice.id_invoice}.${type}`);
+    } catch (requestError) {
+      setError(readableError(requestError));
+    }
+  }
+
   const clients = contacts.filter((item) => !item.type || item.type === "client");
   const issuers = contacts.filter((item) => !item.type || item.type === "supplier");
 
   return (
     <section className="entity-page quotation-page">
       <div className="entity-heading">
-        <div><h1>Facturación manual</h1><p className="quotation-subtitle">Captura fiscal sin cotización previa</p></div>
+        <div><h1>{t("manual_invoice.title")}</h1><p className="quotation-subtitle">{t("manual_invoice.subtitle")}</p></div>
         <FileText size={30} aria-hidden="true" />
       </div>
 
       <form className="form-card quotation-form" onSubmit={handleCreate}>
-        <div className="form-header quotation-section-title"><h2>Datos del comprobante</h2></div>
+        <div className="form-header quotation-section-title"><h2>{t("manual_invoice.document_data")}</h2></div>
         <div className="form-grid">
-          <label className="field">Proyecto<select required value={form.id_proyect} onChange={(event) => updateForm("id_proyect", event.target.value)}><option value="">Seleccionar</option>{projects.map((item) => <option key={item.id_proyect} value={item.id_proyect}>{item.title || item.proyect_description}</option>)}</select></label>
-          <label className="field">Cliente receptor<select required value={form.id_customer_supplier} onChange={(event) => updateForm("id_customer_supplier", event.target.value)}><option value="">Seleccionar</option>{clients.map((item) => <option key={item.id_customer_supplier} value={item.id_customer_supplier}>{item.name} · {item.tax_id || "Sin RFC"}</option>)}</select></label>
-          <label className="field">Empresa emisora<select required value={form.id_issuer_customer_supplier} onChange={(event) => updateForm("id_issuer_customer_supplier", event.target.value)}><option value="">Seleccionar</option>{issuers.map((item) => <option key={item.id_customer_supplier} value={item.id_customer_supplier}>{item.name} · {item.tax_id || "Sin RFC"}</option>)}</select></label>
-          <label className="field">Emisión<input required type="date" value={form.date_emision} onChange={(event) => updateForm("date_emision", event.target.value)} /></label>
-          <label className="field">Vencimiento<input required type="date" value={form.date_expiration} onChange={(event) => updateForm("date_expiration", event.target.value)} /></label>
-          <label className="field">Moneda<select value={form.currency} onChange={(event) => updateForm("currency", event.target.value)}><option value="MXN">MXN</option><option value="USD">USD</option></select></label>
-          <label className="field">Forma de pago<input maxLength="2" value={form.forma_pago} onChange={(event) => updateForm("forma_pago", event.target.value)} /></label>
-          <label className="field">Método de pago<select value={form.metodo_pago} onChange={(event) => updateForm("metodo_pago", event.target.value)}><option value="PUE">PUE</option><option value="PPD">PPD</option></select></label>
-          <label className="field">Uso CFDI<input maxLength="4" value={form.uso_cfdi} onChange={(event) => updateForm("uso_cfdi", event.target.value)} /></label>
-          <label className="field">IVA %<input min="0" max="100" step="0.0001" type="number" value={form.iva_rate} onChange={(event) => updateForm("iva_rate", event.target.value)} /></label>
-          <label className="field">Retención ISR %<input min="0" max="100" step="0.0001" type="number" value={form.isr_ret_rate} onChange={(event) => updateForm("isr_ret_rate", event.target.value)} /></label>
-          <label className="field">Retención IVA %<input min="0" max="100" step="0.0001" type="number" value={form.iva_ret_rate} onChange={(event) => updateForm("iva_ret_rate", event.target.value)} /></label>
+          <label className="field">{t("manual_invoice.project")}<select required value={form.id_proyect} onChange={(event) => updateForm("id_proyect", event.target.value)}><option value="">{t("manual_invoice.select")}</option>{projects.map((item) => <option key={item.id_proyect} value={item.id_proyect}>{item.title || item.proyect_description}</option>)}</select></label>
+          <label className="field">{t("manual_invoice.receiver")}<select required value={form.id_customer_supplier} onChange={(event) => updateForm("id_customer_supplier", event.target.value)}><option value="">{t("manual_invoice.select")}</option>{clients.map((item) => <option key={item.id_customer_supplier} value={item.id_customer_supplier}>{item.name} · {item.tax_id || t("manual_invoice.no_tax_id")}</option>)}</select></label>
+          <label className="field">{t("manual_invoice.issuer")}<select required value={form.id_issuer_customer_supplier} onChange={(event) => updateForm("id_issuer_customer_supplier", event.target.value)}><option value="">{t("manual_invoice.select")}</option>{issuers.map((item) => <option key={item.id_customer_supplier} value={item.id_customer_supplier}>{item.name} · {item.tax_id || t("manual_invoice.no_tax_id")}</option>)}</select></label>
+          <label className="field">{t("manual_invoice.issue_date")}<input required type="date" value={form.date_emision} onChange={(event) => updateForm("date_emision", event.target.value)} /></label>
+          <label className="field">{t("manual_invoice.due_date")}<input required type="date" value={form.date_expiration} onChange={(event) => updateForm("date_expiration", event.target.value)} /></label>
+          <label className="field">{t("manual_invoice.currency")}<select value={form.currency} onChange={(event) => updateForm("currency", event.target.value)}><option value="MXN">MXN</option><option value="USD">USD</option></select></label>
+          <label className="field">{t("manual_invoice.payment_form")}<input maxLength="2" value={form.forma_pago} onChange={(event) => updateForm("forma_pago", event.target.value)} /></label>
+          <label className="field">{t("manual_invoice.payment_method")}<select value={form.metodo_pago} onChange={(event) => updateForm("metodo_pago", event.target.value)}><option value="PUE">PUE</option><option value="PPD">PPD</option></select></label>
+          <label className="field">{t("manual_invoice.cfdi_use")}<input maxLength="4" value={form.uso_cfdi} onChange={(event) => updateForm("uso_cfdi", event.target.value)} /></label>
+          <label className="field">{t("manual_invoice.tax_rate")}<input min="0" max="100" step="0.0001" type="number" value={form.iva_rate} onChange={(event) => updateForm("iva_rate", event.target.value)} /></label>
+          <label className="field">{t("manual_invoice.isr_retention")}<input min="0" max="100" step="0.0001" type="number" value={form.isr_ret_rate} onChange={(event) => updateForm("isr_ret_rate", event.target.value)} /></label>
+          <label className="field">{t("manual_invoice.iva_retention")}<input min="0" max="100" step="0.0001" type="number" value={form.iva_ret_rate} onChange={(event) => updateForm("iva_ret_rate", event.target.value)} /></label>
         </div>
 
         <div className="quotation-items-card">
-          <div className="form-header quotation-section-title"><h2>Conceptos</h2><button className="button" type="button" onClick={() => setConcepts((current) => [...current, newConcept()])}><Plus size={16} />Agregar</button></div>
+          <div className="form-header quotation-section-title"><h2>{t("manual_invoice.concepts")}</h2><button className="button" type="button" onClick={() => setConcepts((current) => [...current, newConcept()])}><Plus size={16} />{t("manual_invoice.add")}</button></div>
           {concepts.map((concept, index) => (
             <div className="quotation-line-item" key={concept.key}>
-              <div className="quotation-line-head"><strong>Concepto {index + 1}</strong><button className="icon-button" title="Eliminar concepto" type="button" disabled={concepts.length === 1} onClick={() => setConcepts((current) => current.filter((item) => item.key !== concept.key))}><Trash2 size={16} /></button></div>
+              <div className="quotation-line-head"><strong>{t("manual_invoice.concept")} {index + 1}</strong><button className="icon-button" title={t("manual_invoice.delete_concept")} type="button" disabled={concepts.length === 1} onClick={() => setConcepts((current) => current.filter((item) => item.key !== concept.key))}><Trash2 size={16} /></button></div>
               <div className="form-grid quotation-item-grid">
-                <label className="field">Descripción<input required value={concept.description} onChange={(event) => updateConcept(concept.key, "description", event.target.value)} /></label>
-                <label className="field">Clave SAT producto<input required value={concept.sat_product_key} onChange={(event) => updateConcept(concept.key, "sat_product_key", event.target.value)} /></label>
-                <label className="field">Clave SAT unidad<input required value={concept.sat_unit_key} onChange={(event) => updateConcept(concept.key, "sat_unit_key", event.target.value)} /></label>
-                <label className="field">Cantidad<input required min="0.0001" step="0.0001" type="number" value={concept.quantity} onChange={(event) => updateConcept(concept.key, "quantity", event.target.value)} /></label>
-                <label className="field">Precio unitario<input required min="0" step="0.01" type="number" value={concept.unit_price} onChange={(event) => updateConcept(concept.key, "unit_price", event.target.value)} /></label>
-                <label className="field">Descuento<input min="0" step="0.01" type="number" value={concept.discount} onChange={(event) => updateConcept(concept.key, "discount", event.target.value)} /></label>
-                <label className="field">Objeto de impuesto<select value={concept.tax_object} onChange={(event) => updateConcept(concept.key, "tax_object", event.target.value)}><option value="02">02 · Sí objeto</option><option value="01">01 · No objeto</option></select></label>
+                <label className="field">{t("manual_invoice.description")}<input required value={concept.description} onChange={(event) => updateConcept(concept.key, "description", event.target.value)} /></label>
+                <label className="field">{t("manual_invoice.sat_product_key")}<input required value={concept.sat_product_key} onChange={(event) => updateConcept(concept.key, "sat_product_key", event.target.value)} /></label>
+                <label className="field">{t("manual_invoice.sat_unit_key")}<input required value={concept.sat_unit_key} onChange={(event) => updateConcept(concept.key, "sat_unit_key", event.target.value)} /></label>
+                <label className="field">{t("manual_invoice.quantity")}<input required min="0.0001" step="0.0001" type="number" value={concept.quantity} onChange={(event) => updateConcept(concept.key, "quantity", event.target.value)} /></label>
+                <label className="field">{t("manual_invoice.unit_price")}<input required min="0" step="0.01" type="number" value={concept.unit_price} onChange={(event) => updateConcept(concept.key, "unit_price", event.target.value)} /></label>
+                <label className="field">{t("manual_invoice.discount")}<input min="0" step="0.01" type="number" value={concept.discount} onChange={(event) => updateConcept(concept.key, "discount", event.target.value)} /></label>
+                <label className="field">{t("manual_invoice.tax_object")}<select value={concept.tax_object} onChange={(event) => updateConcept(concept.key, "tax_object", event.target.value)}><option value="02">02 · {t("manual_invoice.taxable")}</option><option value="01">01 · {t("manual_invoice.not_taxable")}</option></select></label>
               </div>
             </div>
           ))}
         </div>
 
-        {error && <div className="alert error">{error}</div>}
+        {error && <div className="alert error">{t(error, error)}</div>}
         {message && <div className="alert success">{message}</div>}
-        {preview && <div className="quotation-totals"><span>Subtotal <strong>{money(preview.subtotal)}</strong></span><span>Descuento <strong>{money(preview.discount)}</strong></span><span>IVA <strong>{money(preview.iva)}</strong></span><span>Ret. ISR <strong>-{money(preview.isr_retention)}</strong></span><span>Ret. IVA <strong>-{money(preview.iva_retention)}</strong></span><span>Total <strong>{money(preview.total)}</strong></span></div>}
+        {createdInvoice && <div className="form-actions">{!createdInvoice.folio_fiscal && <button className="button primary" type="button" disabled={busy} onClick={handleStamp}><BadgeCheck size={16} />{t("manual_invoice.stamp")}</button>}<button className="button" type="button" onClick={() => handleDownload("pdf")}><FileText size={16} />PDF</button>{createdInvoice.folio_fiscal && <button className="button" type="button" onClick={() => handleDownload("xml")}><Download size={16} />XML</button>}</div>}
+        {preview && <div className="quotation-totals"><span>{t("manual_invoice.subtotal")} <strong>{money(preview.subtotal, lang)}</strong></span><span>{t("manual_invoice.discount")} <strong>{money(preview.discount, lang)}</strong></span><span>{t("manual_invoice.tax")} <strong>{money(preview.iva, lang)}</strong></span><span>{t("manual_invoice.isr_short")} <strong>-{money(preview.isr_retention, lang)}</strong></span><span>{t("manual_invoice.iva_short")} <strong>-{money(preview.iva_retention, lang)}</strong></span><span>{t("manual_invoice.total")} <strong>{money(preview.total, lang)}</strong></span></div>}
         {preview?.errors?.length > 0 && <div className="alert error">{preview.errors.join(" · ")}</div>}
-        <div className="form-actions"><button className="button" type="button" disabled={busy} onClick={handlePreview}><FileCheck2 size={16} />Vista previa</button><button className="button primary" type="submit" disabled={busy || !preview?.can_create}>Guardar factura</button></div>
+        <div className="form-actions"><button className="button" type="button" disabled={busy} onClick={handlePreview}><FileCheck2 size={16} />{t("manual_invoice.preview")}</button><button className="button primary" type="submit" disabled={busy || !preview?.can_create}>{t("manual_invoice.save_invoice")}</button></div>
       </form>
     </section>
   );

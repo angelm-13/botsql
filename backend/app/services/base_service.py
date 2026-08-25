@@ -1,7 +1,7 @@
 from __future__ import annotations
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
-from sqlalchemy import BigInteger, Boolean, Date, DateTime, Float, Integer, Numeric, SmallInteger, String, select, func
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, Enum, Float, Integer, Numeric, SmallInteger, String, select, func
 from sqlalchemy.exc import IntegrityError, StatementError
 import bcrypt
 from app.models.session import transaction_context
@@ -328,7 +328,8 @@ class CrudService:
                 if not hasattr(cls.model, key) or value in (None, ''):
                     continue
                 column = getattr(cls.model, key)
-                if isinstance(value, str):
+                model_column = cls._columns().get(key)
+                if isinstance(value, str) and not isinstance(model_column.type, Enum):
                     stmt = stmt.where(column.ilike(f'%{value}%'))
                 else:
                     stmt = stmt.where(column == value)

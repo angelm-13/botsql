@@ -1,7 +1,8 @@
 from __future__ import annotations
 import os
 import sys
-from flask import Flask, jsonify, send_from_directory
+import jwt
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from flask_babel import Babel
 from werkzeug.exceptions import HTTPException
@@ -21,6 +22,29 @@ from app.routes.payroll_detail import bp_payroll_detail
 from app.routes.payroll_concept import bp_payroll_concept
 from app.routes.payroll_movement import bp_payroll_movement
 from app.routes.customer_supplier import bp_customer_supplier
+from app.routes.logistics_address import bp_logistics_address
+from app.routes.logistics_contact import bp_logistics_contact
+from app.routes.logistics_contract import bp_logistics_contract
+from app.routes.logistics_inventory import bp_logistics_inventory
+from app.routes.logistics_location import bp_logistics_location
+from app.routes.logistics_maintenance import bp_logistics_maintenance
+from app.routes.logistics_operator import bp_logistics_operator
+from app.routes.logistics_rack import bp_logistics_rack
+from app.routes.logistics_rate import bp_logistics_rate
+from app.routes.logistics_trailer import bp_logistics_trailer
+from app.routes.logistics_unit import bp_logistics_unit
+from app.routes.logistics_warehouse import bp_logistics_warehouse
+from app.routes.logistics_workflow import (
+    bp_logistics_branch,
+    bp_logistics_evidence,
+    bp_logistics_file,
+    bp_logistics_incident,
+    bp_logistics_quotation,
+    bp_logistics_receivable,
+    bp_logistics_service_request,
+    bp_logistics_shipment,
+    bp_logistics_trip,
+)
 from app.routes.proyect import bp_proyect
 from app.routes.bank import bp_bank
 from app.routes.bank_account import bp_bank_account
@@ -73,6 +97,10 @@ from flask_migrate import Migrate
 from app.extensions import db
 from app.models.session import database_url
 from app.restaurante import blueprints_restaurante, URL_PREFIX as RESTAURANTE_PREFIX
+from app.routes.kronos import bp_kronos
+from app.routes.restaurant import bp_restaurant
+from app.routes.appointments import bp_appointments
+from app.routes.public_calendar import bp_public_appointments, bp_public_calendar
 
 def _documents_reports_app_path() -> str:
     return os.getenv('DOCUMENTS_REPORTS_APP_PATH', '/documents-reports/app')
@@ -228,14 +256,40 @@ def _load_quotation_document_record(record_id: str) -> dict:
         currency = data.get('currency') or 'MXN'
         invoice_id_value = data.get('id_invoice') or record_id
         data['folio'] = data.get('folio') or ('COT-' + str(invoice_id_value).zfill(6))
-        data['status_label'] = data.get('invoice_status') or 'Cotizacion'
+        normalized_status = str(data.get('invoice_status') or 'draft').strip().lower()
+        if normalized_status in ('cotizacion', 'cotización'):
+            normalized_status = 'draft'
+        data['status_label'] = {
+            'draft': 'Borrador',
+            'sent': 'Enviada',
+            'partially_approved': 'Aprobación parcial',
+            'approved': 'Aprobada',
+            'rejected': 'Rechazada',
+            'converted': 'Convertida',
+            'pendiente': 'Pendiente',
+            'timbrada': 'Timbrada',
+            'cancelada': 'Cancelada',
+        }.get(normalized_status, data.get('invoice_status') or 'Borrador')
         data['date_emision_label'] = _doc_date(data.get('date_emision'))
         data['date_expiration_label'] = _doc_date(data.get('date_expiration'))
         data['subtotal_label'] = _doc_money(data.get('subtotal'), currency)
+        data['discount_label'] = _doc_money(data.get('descuento'), currency)
         data['tax_label'] = _doc_money(data.get('tax'), currency)
+        data['isr_retention_label'] = _doc_money(data.get('isr_retention'), currency)
+        data['iva_retention_label'] = _doc_money(data.get('iva_retention'), currency)
         data['total_label'] = _doc_money(data.get('total'), currency)
         # issue_12_phase7_cfdi_original_xml_path
         data['_xml_original_path'] = _cfdi_xml_original_path(invoice_id_value)
+        if data['_xml_original_path']:
+            try:
+                from app.services.cfdi_xml import parse_cfdi
+                with open(data['_xml_original_path'], 'rb') as xml_file:
+                    cfdi_data = parse_cfdi(xml_file.read())
+                for field_name, value in cfdi_data.items():
+                    if field_name != 'conceptos' and value not in (None, ''):
+                        data[field_name] = value
+            except (OSError, ValueError):
+                pass
 
         issuer = _doc_first_by_id(db_session, CustomerSupplier, 'id_customer_supplier', data.get('id_issuer_customer_supplier'))
         receiver = _doc_first_by_id(db_session, CustomerSupplier, 'id_customer_supplier', data.get('id_customer_supplier'))
@@ -309,6 +363,7 @@ def _load_quotation_document_record(record_id: str) -> dict:
                 'quantity_label': ('%g' % quantity) if quantity else '0',
                 'unit_label': unit_data.get('symbol') or unit_data.get('unit_code') or unit_data.get('unit_name') or '—',
                 'gross_price_label': _doc_money(price, currency),
+                'discount_label': _doc_money(item.get('descuento') or item.get('discount'), currency),
                 'line_tax_label': _doc_money(tax_value, currency),
                 'line_subtotal_label': _doc_money(subtotal_value, currency),
                 'line_total_label': _doc_money(subtotal_value + tax_value, currency),
@@ -514,10 +569,40 @@ def _register_documents_blueprint(app: Flask) -> None:
 
     try:
         from documents.routes import create_documents_blueprint
+
+        def authorize_document(doc, record_id):
+            if doc.get('entity') != 'invoice':
+                return True, 200
+            from app.models.invoice import Invoice
+            from app.models.session import transaction_context
+            from app.utils.auth import PUBLIC_JWT_SCOPE, SECRET_KEY, _has_entity_permission
+
+            token = request.headers.get('Authorization', '').replace('Bearer ', '')
+            if not token:
+                return False, 401
+            try:
+                user_data = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
+            except Exception:
+                return False, 401
+            if str(user_data.get('scope') or '').strip().lower() == str(PUBLIC_JWT_SCOPE).strip().lower():
+                return False, 401
+            if not _has_entity_permission(user_data, 'invoice', 'read'):
+                return False, 403
+            with transaction_context() as db:
+                invoice = db.get(Invoice, int(record_id))
+                if not invoice:
+                    return False, 403
+                unrestricted = bool(user_data.get('is_superuser') or user_data.get('is_bootstrap_admin'))
+                actor_project = user_data.get('id_proyect') or user_data.get('project_id')
+                if not unrestricted and str(actor_project) != str(invoice.id_proyect):
+                    return False, 403
+            return True, 200
+
         app.register_blueprint(
             create_documents_blueprint(
                 templates_dir=documents_templates,
                 record_loader=_load_document_record,
+                access_checker=authorize_document,
             )
         )
     except Exception as exc:
@@ -556,14 +641,38 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_sales_catalog_api_keys)
     app.register_blueprint(bp_public_catalog)
     app.register_blueprint(bp_public_auth)
+    app.register_blueprint(bp_public_calendar)
+    app.register_blueprint(bp_public_appointments)
     app.register_blueprint(bp_web_shoppers)
     app.register_blueprint(bp_user)
     app.register_blueprint(bp_user_mfa)
+    app.register_blueprint(bp_appointments)
     app.register_blueprint(bp_payroll_period)
     app.register_blueprint(bp_payroll_detail)
     app.register_blueprint(bp_payroll_concept)
     app.register_blueprint(bp_payroll_movement)
     app.register_blueprint(bp_customer_supplier)
+    app.register_blueprint(bp_logistics_address)
+    app.register_blueprint(bp_logistics_contact)
+    app.register_blueprint(bp_logistics_contract)
+    app.register_blueprint(bp_logistics_inventory)
+    app.register_blueprint(bp_logistics_location)
+    app.register_blueprint(bp_logistics_maintenance)
+    app.register_blueprint(bp_logistics_operator)
+    app.register_blueprint(bp_logistics_rack)
+    app.register_blueprint(bp_logistics_rate)
+    app.register_blueprint(bp_logistics_trailer)
+    app.register_blueprint(bp_logistics_unit)
+    app.register_blueprint(bp_logistics_warehouse)
+    app.register_blueprint(bp_logistics_quotation)
+    app.register_blueprint(bp_logistics_service_request)
+    app.register_blueprint(bp_logistics_trip)
+    app.register_blueprint(bp_logistics_evidence)
+    app.register_blueprint(bp_logistics_incident)
+    app.register_blueprint(bp_logistics_shipment)
+    app.register_blueprint(bp_logistics_branch)
+    app.register_blueprint(bp_logistics_receivable)
+    app.register_blueprint(bp_logistics_file)
     app.register_blueprint(bp_proyect)
     app.register_blueprint(bp_bank)
     app.register_blueprint(bp_bank_account)
@@ -612,6 +721,8 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_client_portal)
     app.register_blueprint(bp_bank_statements)
     _register_restaurante(app)
+    app.register_blueprint(bp_kronos)
+    app.register_blueprint(bp_restaurant)
     _register_documents_blueprint(app)
 
     @app.route('/uploads/products/<path:filename>')

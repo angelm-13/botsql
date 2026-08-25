@@ -602,7 +602,7 @@ export default function UserPage() {
           {canSeeField("password") && (
           <label className="field">
             <span>{t("fields.user.password")}</span>
-            <input name="password" type="password" maxLength={256} value={formData.password ?? ""} onChange={handleChange} placeholder={t("fields.user.password")} aria-invalid={Boolean(fieldErrors["password"])} {...inputPropsForField("password", validationRules["password"], "password")} />
+            <input name="password" type="password" maxLength={256} required={!editingId} value={formData.password ?? ""} onChange={handleChange} placeholder={t("fields.user.password")} aria-invalid={Boolean(fieldErrors["password"])} {...inputPropsForField("password", validationRules["password"], "password")} />
             {fieldErrors["password"] && <span className="field-error">{formatFieldError("password")}</span>}
           </label>
           )}
@@ -700,7 +700,7 @@ export default function UserPage() {
           {canSeeField("username") && (
           <label className="field">
             <span>{t("fields.user.username")}</span>
-            <input name="username" type="text" maxLength={50} value={formData.username ?? ""} onChange={handleChange} placeholder={t("fields.user.username")} aria-invalid={Boolean(fieldErrors["username"])} {...inputPropsForField("username", validationRules["username"], "text")} />
+            <input name="username" type="text" maxLength={50} required={!editingId} value={formData.username ?? ""} onChange={handleChange} placeholder={t("fields.user.username")} aria-invalid={Boolean(fieldErrors["username"])} {...inputPropsForField("username", validationRules["username"], "text")} />
             {fieldErrors["username"] && <span className="field-error">{formatFieldError("username")}</span>}
           </label>
           )}

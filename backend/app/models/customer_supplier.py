@@ -37,6 +37,10 @@ class CustomerSupplier(Base):
     last_fiscal_certification_date: Mapped[object] = mapped_column(DateTime, nullable=True)
     tax_id: Mapped[object] = mapped_column(String(50), nullable=True)
     type: Mapped[object] = mapped_column(Enum('client', 'supplier', name='customer_supplier_type_enum', native_enum=False, validate_strings=True, create_constraint=True), nullable=True)
+    sla_level: Mapped[str] = mapped_column(String(20), nullable=False, default='standard', server_default='standard')
+    credit_limit: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0, server_default='0')
+    logistics_notes: Mapped[object] = mapped_column(Text, nullable=True)
+    is_principal: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     id_user: Mapped[int] = mapped_column(Integer, ForeignKey('user.id_user'), nullable=False)
     created_by: Mapped[int] = mapped_column(Integer, nullable=False)
     creation_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now())
@@ -64,6 +68,10 @@ class CustomerSupplier(Base):
             'last_fiscal_certification_date': to_json_value(self.last_fiscal_certification_date),
             'tax_id': to_json_value(self.tax_id),
             'type': to_json_value(self.type),
+            'sla_level': to_json_value(self.sla_level),
+            'credit_limit': to_json_value(self.credit_limit),
+            'logistics_notes': to_json_value(self.logistics_notes),
+            'is_principal': to_json_value(self.is_principal),
             'id_user': to_json_value(self.id_user),
             'created_by': to_json_value(self.created_by),
             'creation_date': to_json_value(self.creation_date),

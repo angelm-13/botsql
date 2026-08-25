@@ -3,6 +3,7 @@ import { Plus, RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
 import { getAllBank, createBank, updateBank, deleteBank, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa } from "../api";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
+import BankStatementsPanel from "../components/BankStatementsPanel.jsx";
 
 const emptyForm = { bank_name: "" };
 const validationRules = allValidationRules["bank"] || {};
@@ -45,6 +46,7 @@ export default function BankPage() {
   const isSuperUser = Boolean(currentUser?.is_superuser || currentUser?.is_bootstrap_admin || currentUser?.username === "admin1");
   const currentRoleId = currentUser?.id_permission;
   const [modulePermission, setModulePermission] = useState(null);
+  const [bankAccountPermission, setBankAccountPermission] = useState(null);
   const [visibleFieldNames, setVisibleFieldNames] = useState(new Set());
   const [permissionReady, setPermissionReady] = useState(false);
   const canRead = canUseAction(ACTION_READ);
@@ -86,6 +88,7 @@ export default function BankPage() {
     async function loadRolePermissions() {
       if (isSuperUser) {
         setModulePermission({ control_type: 15 });
+        setBankAccountPermission({ control_type: 15 });
         setVisibleFieldNames(new Set(ALL_FIELD_NAMES));
         setPermissionReady(true);
         return;
@@ -110,6 +113,10 @@ export default function BankPage() {
           String(row.entity_name ?? "") === ENTITY_KEY
         );
         setModulePermission(moduleRow || null);
+        setBankAccountPermission(entityPermissions.find((row) =>
+          String(row.id_permission ?? "") === String(currentRoleId) &&
+          String(row.entity_name ?? "") === "bank_account"
+        ) || null);
         const fieldNameById = new Map();
         fieldsMeta.forEach((field) => {
           if (String(field.table_name || "") === ENTITY_KEY && field.id_field) {
@@ -126,6 +133,7 @@ export default function BankPage() {
         setVisibleFieldNames(allowed);
       } catch (error) {
         setModulePermission(null);
+        setBankAccountPermission(null);
         setVisibleFieldNames(new Set());
       } finally {
         setPermissionReady(true);
@@ -487,6 +495,11 @@ export default function BankPage() {
           <button className="button" type="button" onClick={() => { setFormData(emptyForm); setEditingId(null); setFieldErrors({}); }}>{t("common.cancel")}</button>
         </div>
       </form>}
+
+      {canRead && <BankStatementsPanel
+        canManage={isSuperUser || hasBit(bankAccountPermission?.control_type, ACTION_UPDATE)}
+        canCreateAccount={isSuperUser || hasBit(bankAccountPermission?.control_type, ACTION_CREATE)}
+      />}
 
       {canRead && <div className="toolbar">
         <div className="search-box"><Search size={16} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("common.search")} /></div>

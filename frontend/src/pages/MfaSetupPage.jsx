@@ -129,7 +129,7 @@ export default function MfaSetupPage() {
             <>
               <label className="field">
                 <span>{t("common.mfa_code", "Código MFA")}</span>
-                <input inputMode="numeric" pattern="[0-9]{6}" maxLength="6" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="000000" />
+                <input required inputMode="numeric" pattern="[0-9]{6}" maxLength="6" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="000000" />
               </label>
               <div className="form-actions">
                 <button className="button primary" type="submit" disabled={loading || code.length !== 6}>{isBootstrapAdmin ? t("common.mfa_enable", "Activar MFA") : t("common.mfa_confirm_code", "Confirmar código")}</button>

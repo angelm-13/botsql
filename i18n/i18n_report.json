@@ -6,39 +6,51 @@
     "de"
   ],
   "sections": {
-    "common": 46,
+    "common": 54,
+    "logistics": 371,
+    "restaurant": 133,
+    "shell": 52,
+    "project_management": 87,
     "menu": 51,
     "entities": 408,
     "fields": 572,
-    "placeholders": 572
+    "placeholders": 572,
+    "client_portal": 16,
+    "quotation": 3,
+    "kronos": 88,
+    "invoice_ui": 28,
+    "manual_invoice": 44,
+    "bank_statements": 51,
+    "invoice_creation": 49,
+    "appointments": 78
   },
-  "expected_total": 1649,
+  "expected_total": 2657,
   "missing_total": 0,
   "validation": {
     "languages": {
       "es": {
-        "file": "/Users/tanyarojas/Documents/Devs/tyakxa_tny_2/i18n/frontend/es.json",
+        "file": "/Users/tanyarojas/Documents/Devs/unify/tyakxa_tny/i18n/frontend/es.json",
         "missing": [],
         "empty": [],
         "missing_count": 0,
         "empty_count": 0
       },
       "en": {
-        "file": "/Users/tanyarojas/Documents/Devs/tyakxa_tny_2/i18n/frontend/en.json",
+        "file": "/Users/tanyarojas/Documents/Devs/unify/tyakxa_tny/i18n/frontend/en.json",
         "missing": [],
         "empty": [],
         "missing_count": 0,
         "empty_count": 0
       },
       "pt": {
-        "file": "/Users/tanyarojas/Documents/Devs/tyakxa_tny_2/i18n/frontend/pt.json",
+        "file": "/Users/tanyarojas/Documents/Devs/unify/tyakxa_tny/i18n/frontend/pt.json",
         "missing": [],
         "empty": [],
         "missing_count": 0,
         "empty_count": 0
       },
       "de": {
-        "file": "/Users/tanyarojas/Documents/Devs/tyakxa_tny_2/i18n/frontend/de.json",
+        "file": "/Users/tanyarojas/Documents/Devs/unify/tyakxa_tny/i18n/frontend/de.json",
         "missing": [],
         "empty": [],
         "missing_count": 0,
@@ -46,33 +58,33 @@
       }
     },
     "missing_total": 0,
-    "expected_total": 1649
+    "expected_total": 2657
   },
   "written_files": [
-    "/Users/tanyarojas/Documents/Devs/tyakxa_tny_2/i18n/backend/es.json",
-    "/Users/tanyarojas/Documents/Devs/tyakxa_tny_2/i18n/backend/en.json",
-    "/Users/tanyarojas/Documents/Devs/tyakxa_tny_2/i18n/backend/pt.json",
-    "/Users/tanyarojas/Documents/Devs/tyakxa_tny_2/i18n/backend/de.json",
-    "/Users/tanyarojas/Documents/Devs/tyakxa_tny_2/i18n/frontend/es.json",
-    "/Users/tanyarojas/Documents/Devs/tyakxa_tny_2/i18n/frontend/en.json",
-    "/Users/tanyarojas/Documents/Devs/tyakxa_tny_2/i18n/frontend/pt.json",
-    "/Users/tanyarojas/Documents/Devs/tyakxa_tny_2/i18n/frontend/de.json",
-    "/Users/tanyarojas/Documents/Devs/tyakxa_tny_2/i18n/mobile/es.json",
-    "/Users/tanyarojas/Documents/Devs/tyakxa_tny_2/i18n/mobile/en.json",
-    "/Users/tanyarojas/Documents/Devs/tyakxa_tny_2/i18n/mobile/pt.json",
-    "/Users/tanyarojas/Documents/Devs/tyakxa_tny_2/i18n/mobile/de.json",
-    "/Users/tanyarojas/Documents/Devs/tyakxa_tny_2/backend/app/i18n/es.json",
-    "/Users/tanyarojas/Documents/Devs/tyakxa_tny_2/backend/app/i18n/en.json",
-    "/Users/tanyarojas/Documents/Devs/tyakxa_tny_2/backend/app/i18n/pt.json",
-    "/Users/tanyarojas/Documents/Devs/tyakxa_tny_2/backend/app/i18n/de.json",
-    "/Users/tanyarojas/Documents/Devs/tyakxa_tny_2/frontend/src/i18n/locales/es.json",
-    "/Users/tanyarojas/Documents/Devs/tyakxa_tny_2/frontend/src/i18n/locales/en.json",
-    "/Users/tanyarojas/Documents/Devs/tyakxa_tny_2/frontend/src/i18n/locales/pt.json",
-    "/Users/tanyarojas/Documents/Devs/tyakxa_tny_2/frontend/src/i18n/locales/de.json",
-    "/Users/tanyarojas/Documents/Devs/tyakxa_tny_2/mobile/src/i18n/locales/es.json",
-    "/Users/tanyarojas/Documents/Devs/tyakxa_tny_2/mobile/src/i18n/locales/en.json",
-    "/Users/tanyarojas/Documents/Devs/tyakxa_tny_2/mobile/src/i18n/locales/pt.json",
-    "/Users/tanyarojas/Documents/Devs/tyakxa_tny_2/mobile/src/i18n/locales/de.json",
-    "/Users/tanyarojas/Documents/Devs/tyakxa_tny_2/i18n/i18n_keys.json"
+    "/Users/tanyarojas/Documents/Devs/unify/tyakxa_tny/i18n/backend/es.json",
+    "/Users/tanyarojas/Documents/Devs/unify/tyakxa_tny/i18n/backend/en.json",
+    "/Users/tanyarojas/Documents/Devs/unify/tyakxa_tny/i18n/backend/pt.json",
+    "/Users/tanyarojas/Documents/Devs/unify/tyakxa_tny/i18n/backend/de.json",
+    "/Users/tanyarojas/Documents/Devs/unify/tyakxa_tny/i18n/frontend/es.json",
+    "/Users/tanyarojas/Documents/Devs/unify/tyakxa_tny/i18n/frontend/en.json",
+    "/Users/tanyarojas/Documents/Devs/unify/tyakxa_tny/i18n/frontend/pt.json",
+    "/Users/tanyarojas/Documents/Devs/unify/tyakxa_tny/i18n/frontend/de.json",
+    "/Users/tanyarojas/Documents/Devs/unify/tyakxa_tny/i18n/mobile/es.json",
+    "/Users/tanyarojas/Documents/Devs/unify/tyakxa_tny/i18n/mobile/en.json",
+    "/Users/tanyarojas/Documents/Devs/unify/tyakxa_tny/i18n/mobile/pt.json",
+    "/Users/tanyarojas/Documents/Devs/unify/tyakxa_tny/i18n/mobile/de.json",
+    "/Users/tanyarojas/Documents/Devs/unify/tyakxa_tny/backend/app/i18n/es.json",
+    "/Users/tanyarojas/Documents/Devs/unify/tyakxa_tny/backend/app/i18n/en.json",
+    "/Users/tanyarojas/Documents/Devs/unify/tyakxa_tny/backend/app/i18n/pt.json",
+    "/Users/tanyarojas/Documents/Devs/unify/tyakxa_tny/backend/app/i18n/de.json",
+    "/Users/tanyarojas/Documents/Devs/unify/tyakxa_tny/frontend/src/i18n/locales/es.json",
+    "/Users/tanyarojas/Documents/Devs/unify/tyakxa_tny/frontend/src/i18n/locales/en.json",
+    "/Users/tanyarojas/Documents/Devs/unify/tyakxa_tny/frontend/src/i18n/locales/pt.json",
+    "/Users/tanyarojas/Documents/Devs/unify/tyakxa_tny/frontend/src/i18n/locales/de.json",
+    "/Users/tanyarojas/Documents/Devs/unify/tyakxa_tny/mobile/src/i18n/locales/es.json",
+    "/Users/tanyarojas/Documents/Devs/unify/tyakxa_tny/mobile/src/i18n/locales/en.json",
+    "/Users/tanyarojas/Documents/Devs/unify/tyakxa_tny/mobile/src/i18n/locales/pt.json",
+    "/Users/tanyarojas/Documents/Devs/unify/tyakxa_tny/mobile/src/i18n/locales/de.json",
+    "/Users/tanyarojas/Documents/Devs/unify/tyakxa_tny/i18n/i18n_keys.json"
   ]
 }
