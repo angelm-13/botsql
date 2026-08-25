@@ -68,7 +68,11 @@ from app.routes.public_api_key import bp_public_api_key
 from app.routes.stamping import bp_stamping
 from app.routes.client_portal import bp_client_portal
 from app.routes.bank_statements import bp_bank_statements
-from app.restaurante import blueprints_restaurante
+from flask_jwt_extended import JWTManager
+from flask_migrate import Migrate
+from app.extensions import db
+from app.models.session import database_url
+from app.restaurante import blueprints_restaurante, URL_PREFIX as RESTAURANTE_PREFIX
 
 def _documents_reports_app_path() -> str:
     return os.getenv('DOCUMENTS_REPORTS_APP_PATH', '/documents-reports/app')
@@ -521,6 +525,21 @@ def _register_documents_blueprint(app: Flask) -> None:
 
 
 
+def _register_restaurante(app: Flask) -> None:
+    # Misma URL que la capa de sesion del core (app/models/session.py) para
+    # que ambas apunten a la misma base y compartan el modo TESTING.
+    app.config.setdefault('SQLALCHEMY_DATABASE_URI', database_url())
+    app.config.setdefault('SQLALCHEMY_TRACK_MODIFICATIONS', False)
+    app.config.setdefault('JWT_SECRET_KEY', os.getenv('JWT_SECRET_KEY', ''))
+    db.init_app(app)
+    JWTManager(app)
+    Migrate(app, db)
+    for blueprint, name, suffix in blueprints_restaurante:
+        app.register_blueprint(
+            blueprint, url_prefix=RESTAURANTE_PREFIX + suffix, name=name
+        )
+
+
 def create_app(testing: bool = False) -> Flask:
     app = Flask(__name__)
     app.config['TESTING'] = testing
@@ -592,10 +611,7 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_stamping)
     app.register_blueprint(bp_client_portal)
     app.register_blueprint(bp_bank_statements)
-
-    for blueprint, url_prefix in blueprints_restaurante:
-        app.register_blueprint(blueprint, url_prefix=url_prefix)
-
+    _register_restaurante(app)
     _register_documents_blueprint(app)
 
     @app.route('/uploads/products/<path:filename>')

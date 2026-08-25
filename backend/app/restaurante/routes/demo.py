@@ -9,7 +9,7 @@ para que el frontend pueda seguir preguntando el estado incluso despues de
 que la prueba ya vencio.
 """
 from flask import Blueprint, jsonify
-from app import demo as demo_limits
+from app.restaurante import demo as demo_limits
 
 demo_bp = Blueprint('demo', __name__)
 

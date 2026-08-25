@@ -23,20 +23,30 @@ from app.restaurante.routes import (
     visits,
 )
 
-# Blueprints del restaurante con prefijo
+URL_PREFIX = '/restaurante'
+
+# (blueprint, nombre de registro, sufijo de ruta).
+#
+# El nombre lleva prefijo 'restaurante_' porque Flask exige nombres unicos
+# por app y el core ya registra un blueprint llamado 'auth'
+# (app/routes/auth.py) -- sin el prefijo, el arranque aborta con ValueError.
+#
+# El sufijo replica el url_prefix que cada blueprint tenia en la app original
+# del restaurante. Sin el, los 12 blueprints colapsan sobre la misma ruta
+# base y las rutas se pisan entre si.
 blueprints_restaurante = [
-    (admin_users.admin_users_bp, '/restaurante'),
-    (auth.auth_bp, '/restaurante'),
-    (cashier.cashier_bp, '/restaurante'),
-    (demo.demo_bp, '/restaurante'),
-    (inventory.inventory_bp, '/restaurante'),
-    (invoices.invoices_bp, '/restaurante'),
-    (kitchen.kitchen_bp, '/restaurante'),
-    (menu.menu_bp, '/restaurante'),
-    (orders.orders_bp, '/restaurante'),
-    (reservations.reservations_bp, '/restaurante'),
-    (tables.tables_bp, '/restaurante'),
-    (visits.visits_bp, '/restaurante'),
+    (admin_users.admin_users_bp, 'restaurante_admin_users', '/admin'),
+    (auth.auth_bp, 'restaurante_auth', '/auth'),
+    (cashier.cashier_bp, 'restaurante_cashier', '/cashier'),
+    (demo.demo_bp, 'restaurante_demo', '/demo'),
+    (inventory.inventory_bp, 'restaurante_inventory', '/inventory'),
+    (invoices.invoices_bp, 'restaurante_invoices', '/invoices'),
+    (kitchen.kitchen_bp, 'restaurante_kitchen', '/kitchen'),
+    (menu.menu_bp, 'restaurante_menu', '/menu'),
+    (orders.orders_bp, 'restaurante_orders', '/orders'),
+    (reservations.reservations_bp, 'restaurante_reservations', '/reservations'),
+    (tables.tables_bp, 'restaurante_tables', '/tables'),
+    (visits.visits_bp, 'restaurante_visits', '/visits'),
 ]
 
-__all__ = ['blueprints_restaurante']
+__all__ = ['blueprints_restaurante', 'URL_PREFIX']

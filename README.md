@@ -112,7 +112,9 @@ cp .env.example .env
 - `/api/restaurante/cashier/` - Cajas y cortes
 - `/api/restaurante/invoices/` - Facturación CFDI
 - `/api/restaurante/inventory/` - Inventario
-- `/api/restaurante/admin/` - Administración
+- `/api/restaurante/admin/` - Administración de personal
+
+El proxy de nginx quita el segmento `/api`, por lo que el backend las expone como `/restaurante/*`.
 
 ## 📚 Documentación
 

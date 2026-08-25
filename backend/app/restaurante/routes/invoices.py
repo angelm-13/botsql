@@ -22,7 +22,7 @@ from app.restaurante.utils.security import roles_required
 from app.restaurante.utils.errors import ApiError
 from app.restaurante.utils.audit import log_action
 from app.restaurante.utils.rate_limit import rate_limited
-from app import demo as demo_limits
+from app.restaurante import demo as demo_limits
 from app.restaurante.services.invoicing import (
     get_pac_provider, build_draft_from_sale, draft_totals, catalogs_payload,
     PacNotImplementedError,

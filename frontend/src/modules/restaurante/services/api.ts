@@ -11,7 +11,11 @@ import type {
   PayVisitResult, DemoStatus,
 } from '../types/api'
 
-const API_URL = import.meta.env.VITE_API_URL || '/api'
+// nginx (infra/nginx/default.conf) hace proxy de /api/ al backend quitando
+// ese segmento, asi que /api/restaurante/... llega al backend como
+// /restaurante/..., el prefijo con el que se montan los blueprints del
+// modulo (ver backend/app/restaurante/__init__.py).
+const API_URL = import.meta.env.VITE_API_URL || '/api/restaurante'
 
 export const storage = {
   setSession(user: User): void { localStorage.setItem('user', JSON.stringify(user)) },

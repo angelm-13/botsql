@@ -1,5 +1,14 @@
 # Migraciones del Módulo Restaurante
 
+> ⚠️ **Estado: no enganchadas.** Los archivos de Alembic están copiados en
+> `database/migrations/restaurante/versions/`, pero este repo no tiene un
+> entorno de Alembic para ellos (`alembic.ini` / `env.py`), y el core
+> versiona su schema con archivos `.sql` planos. Los comandos
+> `flask db ...` de más abajo **no funcionan todavía**: primero hay que
+> decidir cuál de los dos mecanismos gobierna las tablas del restaurante.
+> El resto de este documento describe el contenido de las migraciones y
+> cómo se usaban en el proyecto original.
+
 Las migraciones del restaurante están en `database/migrations/restaurante/versions/`.
 
 ## Estructura
