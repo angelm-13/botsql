@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, request
 
 from app.services.pac_config_service import get_config, provider_credentials, save_config
-from app.services.stamping import FacturamaSandboxProvider, stamp_invoice
+from app.services.stamping import FacturamaSandboxProvider, preflight_invoice, stamp_invoice
 from app.utils.errors import AppError
 from app.utils.auth import require_entity_permission, token_required
 
@@ -50,3 +50,14 @@ def create_stamping_operation(user_data, invoice_id):
     payload = request.get_json(silent=True) or {}
     operation, created = stamp_invoice(invoice_id, payload.get("idempotency_key"), user_data)
     return jsonify({"operation": operation, "idempotent_replay": not created}), (201 if created else 200)
+
+
+@bp_stamping.route("/invoices/<invoice_id>/preflight", methods=["GET"])
+@token_required
+@require_entity_permission("invoice", "read")
+def check_invoice_before_stamping(user_data, invoice_id):
+    """Revisa si la factura es apta para el SAT sin consumir un timbre."""
+    result = preflight_invoice(invoice_id, user_data)
+    if request.args.get("include_xml") not in {"1", "true", "yes"}:
+        result.pop("preview_xml", None)
+    return jsonify(result)

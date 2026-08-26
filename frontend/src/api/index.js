@@ -283,11 +283,16 @@ export const getInvoiceCatalogs = () => request("/invoice/catalogs");
 export const previewManualInvoice = (payload) => request("/invoice/manual/preview", { method: "POST", body: payload });
 export const createManualInvoice = (payload) => request("/invoice/manual", { method: "POST", body: payload });
 export const stampInvoice = (id, idempotencyKey = crypto.randomUUID()) => request(`/stamping/invoices/${id}`, { method: "POST", body: { idempotency_key: idempotencyKey } });
+export const preflightInvoiceStamping = (id, includeXml = false) => request(`/stamping/invoices/${id}/preflight`, { params: includeXml ? { include_xml: "1" } : {} });
 export const getStampingConfig = () => request("/stamping/config");
 export const saveStampingConfig = (payload) => request("/stamping/config", { method: "PUT", body: payload });
 export const testStampingConfig = (payload) => request("/stamping/config/test", { method: "POST", body: payload });
 export const downloadInvoiceXml = (id) => requestBlob(`/invoice/${id}/xml`);
 export const downloadInvoicePdf = (id, document = "") => requestBlob(`/invoice/${id}/pdf`, { params: { document } });
+
+export const getInventoryMovements = (id, params = {}) => request(`/product/${id}/inventory-movements`, { params });
+export const createInventoryMovement = (id, payload) => request(`/product/${id}/inventory-movements`, { method: "POST", body: { idempotency_key: crypto.randomUUID(), ...payload } });
+export const getInventoryReconciliation = (id) => request(`/product/${id}/inventory-reconciliation`);
 
 export const getAllInvoiceMaterialService = (params = {}) => request("/invoice_material_service/", { params });
 export const getInvoiceMaterialService = (id) => request(`/invoice_material_service/${id}`);

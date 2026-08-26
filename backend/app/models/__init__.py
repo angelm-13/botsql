@@ -65,9 +65,11 @@ from app.models.proyect_event import ProyectEvent
 from app.models.quotation_comment import QuotationComment
 from app.models.restaurant import (
 	RestaurantCashSession,
+	RestaurantCategory,
 	RestaurantDish,
 	RestaurantGuisado,
 	RestaurantInventoryItem,
+	RestaurantInventoryMovement,
 	RestaurantOrder,
 	RestaurantOrderItem,
 	RestaurantRecipeItem,
@@ -79,6 +81,7 @@ from app.models.restaurant import (
 from app.models.public_api_key import PublicApiKey
 from app.models.service import Service
 from app.models.status import Status
+from app.models.sat_product_key import SatProductKey
 from app.models.stamping_operation import StampingOperation
 from app.models.subdepartment import Subdepartment
 from app.models.survey_multiple_answer import SurveyMultipleAnswer
@@ -93,4 +96,4 @@ from app.models.unit import Unit
 from app.models.user import User
 from app.models.user_mfa import UserMfa
 
-__all__ = ['Base', 'Appointment', 'AppointmentType', 'AvailabilityOverride', 'AvailabilityRule', 'CalendarProfile', 'Bank', 'BankAccount', 'BankStatement', 'BankStatementMovement', 'Brand', 'CustomerSupplier', 'Department', 'EntityPermission', 'EventLog', 'Field', 'FiscalAccount', 'FiscalRecord', 'FiscalStamp', 'Incident', 'IncidentDetail', 'IncidentType', 'InventoryLedger', 'InventoryStatus', 'Invoice', 'InvoiceMaterialService', 'Level', 'Location', 'LocationType', 'LogisticsAddress', 'LogisticsBranch', 'LogisticsContact', 'LogisticsContract', 'LogisticsEvidence', 'LogisticsFile', 'LogisticsIncident', 'LogisticsInventory', 'LogisticsLocation', 'LogisticsMaintenance', 'LogisticsOperator', 'LogisticsQuotation', 'LogisticsRack', 'LogisticsRate', 'LogisticsReceivable', 'LogisticsServiceRequest', 'LogisticsShipment', 'LogisticsTrailer', 'LogisticsTrip', 'LogisticsUnit', 'LogisticsWarehouse', 'Material', 'MaterialComponent', 'Movement', 'NmFieldPermission', 'NmIncidentProduct', 'NmSurveyUser', 'NmTemplateTask', 'PacConfig', 'PasswordResetToken', 'PayrollConcept', 'PayrollDetail', 'PayrollMovement', 'PayrollPeriod', 'Permission', 'Product', 'ProductFamily', 'ProductSaleConfig', 'Proyect', 'ProyectEvent', 'PublicApiKey', 'QuotationComment', 'RestaurantCashSession', 'RestaurantDish', 'RestaurantGuisado', 'RestaurantInventoryItem', 'RestaurantOrder', 'RestaurantOrderItem', 'RestaurantRecipeItem', 'RestaurantReservation', 'RestaurantTable', 'RestaurantVisit', 'RestaurantWaiter', 'Service', 'StampingOperation', 'Status', 'Subdepartment', 'SurveyMultipleAnswer', 'SurveyQuestion', 'Task', 'TaskNote', 'TaskType', 'Template', 'Theme', 'Ticket', 'Unit', 'User', 'UserMfa']
+__all__ = ['Base', 'Appointment', 'AppointmentType', 'AvailabilityOverride', 'AvailabilityRule', 'CalendarProfile', 'Bank', 'BankAccount', 'BankStatement', 'BankStatementMovement', 'Brand', 'CustomerSupplier', 'Department', 'EntityPermission', 'EventLog', 'Field', 'FiscalAccount', 'FiscalRecord', 'FiscalStamp', 'Incident', 'IncidentDetail', 'IncidentType', 'InventoryLedger', 'InventoryStatus', 'Invoice', 'InvoiceMaterialService', 'Level', 'Location', 'LocationType', 'LogisticsAddress', 'LogisticsBranch', 'LogisticsContact', 'LogisticsContract', 'LogisticsEvidence', 'LogisticsFile', 'LogisticsIncident', 'LogisticsInventory', 'LogisticsLocation', 'LogisticsMaintenance', 'LogisticsOperator', 'LogisticsQuotation', 'LogisticsRack', 'LogisticsRate', 'LogisticsReceivable', 'LogisticsServiceRequest', 'LogisticsShipment', 'LogisticsTrailer', 'LogisticsTrip', 'LogisticsUnit', 'LogisticsWarehouse', 'Material', 'MaterialComponent', 'Movement', 'NmFieldPermission', 'NmIncidentProduct', 'NmSurveyUser', 'NmTemplateTask', 'PacConfig', 'PasswordResetToken', 'PayrollConcept', 'PayrollDetail', 'PayrollMovement', 'PayrollPeriod', 'Permission', 'Product', 'ProductFamily', 'ProductSaleConfig', 'Proyect', 'ProyectEvent', 'PublicApiKey', 'QuotationComment', 'RestaurantCashSession', 'RestaurantDish', 'RestaurantGuisado', 'RestaurantInventoryItem', 'RestaurantOrder', 'RestaurantOrderItem', 'RestaurantRecipeItem', 'RestaurantReservation', 'RestaurantTable', 'RestaurantVisit', 'RestaurantWaiter', 'Service', 'SatProductKey', 'StampingOperation', 'Status', 'Subdepartment', 'SurveyMultipleAnswer', 'SurveyQuestion', 'Task', 'TaskNote', 'TaskType', 'Template', 'Theme', 'Ticket', 'Unit', 'User', 'UserMfa']

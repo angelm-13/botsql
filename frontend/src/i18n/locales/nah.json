@@ -47,5 +47,15 @@
     "update": "Xicyancuīlia",
     "username": "Motōcā",
     "verify_code": "Xicnexti in tlapōhualli"
+  },
+  "manual_invoice": {
+    "exchange_rate": "Tlapatlaliztli patiuhtli",
+    "iva_type": "IVA itlamantli",
+    "border_rate": "tepantli tlalli",
+    "zero_rate": "ahtle patiuhtli",
+    "exempt": "Ahmo tlaxtlahuilli",
+    "preflight": "SAT ic tlachializtli",
+    "preflight_ready": "Inin amatl ye huelitiz motlalia ixpan SAT.",
+    "preflight_blocked": "Inin amatl ayamo huel motlalia."
   }
 }

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from app.services.invoice_catalogs import OBJETO_IMP_CON_DESGLOSE
 from app.services.invoice_material_service_service import InvoiceMaterialServiceService
 
 
@@ -23,7 +24,9 @@ def build_xml_line_payloads(invoice: dict, concepts: list[dict], user_id: int | 
             'gross_price': concept.get('unit_price') or 0,
             'quantity': concept.get('quantity') or 1,
             'line_type': 'custom',
-            'tax_applicable': tax > 0,
+            # El objeto de impuesto es lo que manda: una partida exenta o a
+            # tasa 0% si es objeto del impuesto aunque su importe sea cero.
+            'tax_applicable': str(concept.get('tax_object') or '') in OBJETO_IMP_CON_DESGLOSE or tax > 0,
             'line_tax': tax,
             'line_total': concept.get('total') or concept.get('subtotal') or 0,
             'authorization_status': 'authorized',
@@ -32,6 +35,7 @@ def build_xml_line_payloads(invoice: dict, concepts: list[dict], user_id: int | 
             'sat_unit_key': concept.get('sat_unit_key'),
             'tax_object': concept.get('tax_object'),
             'tax_rate': tax_rate,
+            'iva_exempt': bool(concept.get('iva_exempt')),
         })
     return payloads
 

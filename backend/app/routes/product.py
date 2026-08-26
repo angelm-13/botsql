@@ -1,7 +1,11 @@
 from __future__ import annotations
 from flask import Blueprint, jsonify, request
 from app.services.product_service import ProductService
-from app.services.inventory_service import apply_inventory_movement
+from app.services.inventory_service import (
+    apply_inventory_movement,
+    list_inventory_movements,
+    reconcile_product_stock,
+)
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
 import os
@@ -187,6 +191,30 @@ def create_inventory_movement(user_data, id_product):
     ProductService.require_record_scope(id_product, user_data)
     movement, created = apply_inventory_movement(id_product, request.get_json() or {}, user_data)
     return jsonify({'movement': movement, 'idempotent_replay': not created}), (201 if created else 200)
+
+
+@bp_product.route('/<id_product>/inventory-movements', methods=['GET'])
+@token_required
+@require_entity_permission('product', 'read')
+def read_inventory_movements(user_data, id_product):
+    """Historial del libro de inventario para auditar como llego el saldo."""
+    ProductService.require_record_scope(id_product, user_data)
+    return jsonify(list_inventory_movements(
+        id_product,
+        user_data,
+        page=request.args.get('page', 1),
+        per_page=request.args.get('per_page', 50),
+        movement_type=request.args.get('movement_type'),
+    ))
+
+
+@bp_product.route('/<id_product>/inventory-reconciliation', methods=['GET'])
+@token_required
+@require_entity_permission('product', 'read')
+def read_inventory_reconciliation(user_data, id_product):
+    """Comprueba que el saldo del producto cuadre con la suma del libro."""
+    ProductService.require_record_scope(id_product, user_data)
+    return jsonify(reconcile_product_stock(id_product, user_data))
 
 
 @bp_product.route('/<id_product>', methods=['DELETE'])

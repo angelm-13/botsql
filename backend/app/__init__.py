@@ -89,14 +89,10 @@ from app.routes.entity_permission import bp_entity_permission
 from app.routes.inventory_status import bp_inventory_status
 from app.routes.product_sale_config import bp_product_sale_config
 from app.routes.public_api_key import bp_public_api_key
+from app.routes.sat_catalog import bp_sat_catalog
 from app.routes.stamping import bp_stamping
 from app.routes.client_portal import bp_client_portal
 from app.routes.bank_statements import bp_bank_statements
-from flask_jwt_extended import JWTManager
-from flask_migrate import Migrate
-from app.extensions import db
-from app.models.session import database_url
-from app.restaurante import blueprints_restaurante, URL_PREFIX as RESTAURANTE_PREFIX
 from app.routes.kronos import bp_kronos
 from app.routes.restaurant import bp_restaurant
 from app.routes.appointments import bp_appointments
@@ -610,21 +606,6 @@ def _register_documents_blueprint(app: Flask) -> None:
 
 
 
-def _register_restaurante(app: Flask) -> None:
-    # Misma URL que la capa de sesion del core (app/models/session.py) para
-    # que ambas apunten a la misma base y compartan el modo TESTING.
-    app.config.setdefault('SQLALCHEMY_DATABASE_URI', database_url())
-    app.config.setdefault('SQLALCHEMY_TRACK_MODIFICATIONS', False)
-    app.config.setdefault('JWT_SECRET_KEY', os.getenv('JWT_SECRET_KEY', ''))
-    db.init_app(app)
-    JWTManager(app)
-    Migrate(app, db)
-    for blueprint, name, suffix in blueprints_restaurante:
-        app.register_blueprint(
-            blueprint, url_prefix=RESTAURANTE_PREFIX + suffix, name=name
-        )
-
-
 def create_app(testing: bool = False) -> Flask:
     app = Flask(__name__)
     app.config['TESTING'] = testing
@@ -717,10 +698,10 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_inventory_status)
     app.register_blueprint(bp_product_sale_config)
     app.register_blueprint(bp_public_api_key)
+    app.register_blueprint(bp_sat_catalog)
     app.register_blueprint(bp_stamping)
     app.register_blueprint(bp_client_portal)
     app.register_blueprint(bp_bank_statements)
-    _register_restaurante(app)
     app.register_blueprint(bp_kronos)
     app.register_blueprint(bp_restaurant)
     _register_documents_blueprint(app)

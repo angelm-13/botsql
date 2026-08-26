@@ -7,10 +7,14 @@ from sqlalchemy import select
 
 from app.models import CustomerSupplier, Invoice, InvoiceMaterialService, Proyect, Status
 from app.models.session import transaction_context
+from app.services.invoice_builder import normalize_cfdi_type, normalize_cfdi_use
+from app.services.invoice_catalogs import OBJETO_IMP_CON_DESGLOSE, TASAS_IVA_TRASLADO
 from app.utils.errors import AppError
 
 
 MONEY = Decimal('0.01')
+UNIT_PRICE = Decimal('0.000001')
+RATE = Decimal('0.0001')
 
 
 def _decimal(value, field: str) -> Decimal:
@@ -31,18 +35,39 @@ def _money(value: Decimal) -> Decimal:
     return value.quantize(MONEY, rounding=ROUND_HALF_UP)
 
 
+def _unit_price(value: Decimal) -> Decimal:
+    return value.quantize(UNIT_PRICE, rounding=ROUND_HALF_UP).normalize()
+
+
+def _rate(value: Decimal) -> Decimal:
+    return value.quantize(RATE, rounding=ROUND_HALF_UP)
+
+
+# iva_tipo -> (tasa, ObjetoImp forzado, es_exento).
+# 'exento' y '0' no son lo mismo para el SAT: el exento se declara con
+# TipoFactor="Exento" (sin TasaOCuota ni Importe) y la tasa 0% con
+# TipoFactor="Tasa" y TasaOCuota="0.000000".
+IVA_TYPES = {
+    '16': (Decimal('16'), '02', False),
+    '8': (Decimal('8'), '02', False),
+    '0': (Decimal('0'), '02', False),
+    'tasa_0': (Decimal('0'), '02', False),
+    'exento': (Decimal('0'), '02', True),
+    'sin_iva': (Decimal('0'), '01', False),
+    'no_objeto': (Decimal('0'), '01', False),
+}
+
+
 def preview_manual_invoice(payload: dict) -> dict:
     concepts = payload.get('concepts') or payload.get('conceptos') or payload.get('items') or []
     errors = []
     if not concepts:
         errors.append('manual_invoice.concepts_required')
 
-    iva_types = {
-        '16': (Decimal('16'), '02'), '8': (Decimal('8'), '02'), '0': (Decimal('0'), '02'),
-        'exento': (Decimal('0'), '02'), 'sin_iva': (Decimal('0'), '01'),
-    }
     iva_type = str(payload.get('iva_tipo') or '').strip().lower()
-    iva_value, forced_tax_object = iva_types.get(iva_type, (payload.get('iva_rate', payload.get('tax_rate', 16)), None))
+    iva_value, forced_tax_object, forced_exempt = IVA_TYPES.get(
+        iva_type, (payload.get('iva_rate', payload.get('tax_rate', 16)), None, None)
+    )
     default_iva_rate = _percentage(iva_value, 'iva_rate')
     default_isr_rate = _percentage(payload.get('isr_ret_rate', 0), 'isr_ret_rate')
     default_iva_ret_rate = _percentage(payload.get('iva_ret_rate', 0), 'iva_ret_rate')
@@ -69,7 +94,12 @@ def preview_manual_invoice(payload: dict) -> dict:
         if quantity <= 0 or unit_price < 0 or discount < 0:
             errors.append(f'manual_invoice.concepts.{index}.invalid_amount')
 
-        line_subtotal = quantity * unit_price
+        # El Importe del concepto se redondea aqui, igual que en el XML: el
+        # SubTotal del comprobante es la suma de estos importes ya redondeados
+        # (Anexo 20). Sumar sin redondear y redondear el total al final produce
+        # diferencias de centavos que el PAC rechaza.
+        line_subtotal = _money(quantity * unit_price)
+        discount = _money(discount)
         if discount > line_subtotal:
             errors.append(f'manual_invoice.concepts.{index}.discount_exceeds_subtotal')
             taxable_base = Decimal('0')
@@ -77,13 +107,19 @@ def preview_manual_invoice(payload: dict) -> dict:
             taxable_base = line_subtotal - discount
 
         tax_object = str(forced_tax_object or concept.get('tax_object') or concept.get('objeto_imp') or '02')
-        taxable = bool(concept.get('tax_applicable', tax_object != '01'))
-        iva_rate = _percentage(concept.get('iva_rate', default_iva_rate * 100), f'concepts.{index}.iva_rate') if taxable else Decimal('0')
+        breaks_down_taxes = tax_object in OBJETO_IMP_CON_DESGLOSE
+        taxable = bool(concept.get('tax_applicable', breaks_down_taxes)) and breaks_down_taxes
+        is_exempt = bool(concept.get('iva_exempt') if forced_exempt is None else forced_exempt) and taxable
+        iva_rate = _percentage(concept.get('iva_rate', default_iva_rate * 100), f'concepts.{index}.iva_rate') if taxable and not is_exempt else Decimal('0')
         isr_rate = _percentage(concept.get('isr_ret_rate', default_isr_rate * 100), f'concepts.{index}.isr_ret_rate') if taxable else Decimal('0')
         iva_ret_rate = _percentage(concept.get('iva_ret_rate', default_iva_ret_rate * 100), f'concepts.{index}.iva_ret_rate') if taxable else Decimal('0')
-        line_iva = taxable_base * iva_rate
-        line_isr_retention = taxable_base * isr_rate
-        line_iva_retention = taxable_base * iva_ret_rate
+        # La tasa de IVA se valida ya en la vista previa: es mejor avisarlo al
+        # capturar que dejarlo salir en el timbrado.
+        if taxable and not is_exempt and iva_rate not in TASAS_IVA_TRASLADO:
+            errors.append(f'manual_invoice.concepts.{index}.iva_rate_not_in_catalog')
+        line_iva = _money(taxable_base * iva_rate)
+        line_isr_retention = _money(taxable_base * isr_rate)
+        line_iva_retention = _money(taxable_base * iva_ret_rate)
         line_total = taxable_base + line_iva - line_isr_retention - line_iva_retention
 
         subtotal += line_subtotal
@@ -94,17 +130,21 @@ def preview_manual_invoice(payload: dict) -> dict:
         normalized.append({
             'description': description,
             'quantity': str(quantity),
-            'unit_price': str(_money(unit_price)),
-            'discount': str(_money(discount)),
+            # ValorUnitario admite hasta 6 decimales; redondearlo a 2 rompia
+            # la igualdad Importe = Cantidad * ValorUnitario.
+            'unit_price': str(_unit_price(unit_price)),
+            'discount': str(discount),
+            'amount': str(line_subtotal),
             'sat_product_key': sat_product_key,
             'sat_unit_key': sat_unit_key,
             'tax_object': tax_object,
-            'iva_rate': str(_money(iva_rate * 100)),
-            'isr_ret_rate': str(_money(isr_rate * 100)),
-            'iva_ret_rate': str(_money(iva_ret_rate * 100)),
-            'iva': str(_money(line_iva)),
-            'isr_retention': str(_money(line_isr_retention)),
-            'iva_retention': str(_money(line_iva_retention)),
+            'iva_exempt': is_exempt,
+            'iva_rate': str(_rate(iva_rate * 100)),
+            'isr_ret_rate': str(_rate(isr_rate * 100)),
+            'iva_ret_rate': str(_rate(iva_ret_rate * 100)),
+            'iva': str(line_iva),
+            'isr_retention': str(line_isr_retention),
+            'iva_retention': str(line_iva_retention),
             'total': str(_money(line_total)),
         })
 
@@ -197,8 +237,8 @@ def create_manual_invoice(payload: dict, user_data: dict) -> dict:
             invoice_status='pendiente',
             payment_method=str(payload.get('forma_pago') or ''),
             forma_pago=str(payload.get('forma_pago') or ''),
-            metodo_pago=str(payload.get('metodo_pago') or ''),
-            uso_cfdi=str(payload.get('uso_cfdi') or ''),
+            metodo_pago=str(payload.get('metodo_pago') or '').strip().upper(),
+            uso_cfdi=normalize_cfdi_use(payload.get('uso_cfdi')),
             note=str(payload.get('note') or payload.get('notas') or '')[:300] or None,
             id_customer_supplier=customer.id_customer_supplier,
             id_issuer_customer_supplier=issuer.id_customer_supplier,
@@ -211,7 +251,9 @@ def create_manual_invoice(payload: dict, user_data: dict) -> dict:
             created_by=actor_id,
             nombre_emisor=str(issuer.name or '')[:150],
             lugar_expedicion=str(payload.get('lugar_expedicion') or issuer.postal_code or '')[:120],
-            tipo_de_comprobante='factura',
+            # c_TipoDeComprobante: 'I' = Ingreso. Guardar la etiqueta 'factura'
+            # dejaba el registro fuera del catalogo del SAT.
+            tipo_de_comprobante=normalize_cfdi_type(payload.get('tipo_de_comprobante')),
             rfc_receptor=str(payload.get('rfc') or customer.tax_id or '')[:20],
             nombre_receptor=str(payload.get('razon_social_fiscal') or customer.name or '')[:150],
             regimen_fiscal_receptor=str(payload.get('regimen_fiscal') or customer.fiscal_type or '')[:100],
@@ -244,6 +286,7 @@ def create_manual_invoice(payload: dict, user_data: dict) -> dict:
                 id_customer_supplier=customer.id_customer_supplier,
                 gross_price=Decimal(normalized['unit_price']),
                 quantity=Decimal(normalized['quantity']),
+                iva_exempt=bool(normalized['iva_exempt']),
                 created_by=actor_id,
                 line_type=str(original.get('line_type') or 'custom'),
                 tax_applicable=normalized['tax_object'] != '01',

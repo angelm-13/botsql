@@ -48,5 +48,15 @@
     "update": "更新",
     "username": "用户名",
     "verify_code": "验证代码"
+  },
+  "manual_invoice": {
+    "exchange_rate": "汇率",
+    "iva_type": "增值税类型",
+    "border_rate": "边境地区",
+    "zero_rate": "零税率",
+    "exempt": "免税",
+    "preflight": "SAT 合规检查",
+    "preflight_ready": "该发票可以向 SAT 开具。",
+    "preflight_blocked": "该发票尚不能开具。"
   }
 }

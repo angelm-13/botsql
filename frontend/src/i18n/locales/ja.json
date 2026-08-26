@@ -48,5 +48,15 @@
     "update": "更新",
     "username": "ユーザー名",
     "verify_code": "コードを確認"
+  },
+  "manual_invoice": {
+    "exchange_rate": "為替レート",
+    "iva_type": "VAT種別",
+    "border_rate": "国境地域",
+    "zero_rate": "ゼロ税率",
+    "exempt": "非課税",
+    "preflight": "SAT適合確認",
+    "preflight_ready": "この請求書はSATへの発行が可能です。",
+    "preflight_blocked": "この請求書はまだ発行できません。"
   }
 }

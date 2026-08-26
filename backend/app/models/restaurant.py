@@ -112,23 +112,59 @@ class RestaurantDish(RestaurantRecord, Base):
         return self.serialize_columns()
 
 
+class RestaurantCategory(RestaurantRecord, Base):
+    """Categoria del menu, editable por proyecto.
+
+    Antes las categorias eran un set fijo en el servicio (DISH_CATEGORIES),
+    asi que un restaurante no podia agregar las suyas. La columna
+    restaurant_dish.category sigue guardando el slug como texto: esta tabla
+    es el catalogo que lo valida y le da nombre, icono y orden de
+    presentacion, sin migrar los platillos existentes.
+    """
+
+    __tablename__ = "restaurant_category"
+    __table_args__ = (
+        UniqueConstraint("id_proyect", "slug", name="uq_restaurant_category_project_slug"),
+    )
+
+    id_restaurant_category: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id_proyect: Mapped[int] = mapped_column(Integer, ForeignKey("proyect.id_proyect"), nullable=False, index=True)
+    slug: Mapped[str] = mapped_column(String(30), nullable=False)
+    label: Mapped[str] = mapped_column(String(80), nullable=False)
+    icon: Mapped[str] = mapped_column(String(40), nullable=False, default="plate")
+    color: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    def serialize(self) -> dict:
+        return self.serialize_columns()
+
+
 class RestaurantVisit(RestaurantRecord, Base):
     __tablename__ = "restaurant_visit"
 
     id_restaurant_visit: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     id_proyect: Mapped[int] = mapped_column(Integer, ForeignKey("proyect.id_proyect"), nullable=False, index=True)
-    id_restaurant_table: Mapped[int] = mapped_column(
-        Integer, ForeignKey("restaurant_table.id_restaurant_table"), nullable=False
+    # Nullable para las ordenes para llevar: no ocupan mesa. Una visita de
+    # mesa siempre la trae (lo valida el servicio al crearla).
+    id_restaurant_table: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("restaurant_table.id_restaurant_table"), nullable=True
     )
     id_restaurant_waiter: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("restaurant_waiter.id_restaurant_waiter"), nullable=True
     )
+    service_type: Mapped[str] = mapped_column(String(20), nullable=False, default="mesa", index=True)
+    customer_name: Mapped[str | None] = mapped_column(String(140), nullable=True)
+    # Folio diario visible al cliente ("para llevar #7"). Se reinicia cada
+    # dia por proyecto; solo aplica a para_llevar.
+    daily_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    service_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
     diners_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="active", index=True)
     opened_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    table: Mapped[RestaurantTable] = relationship()
+    table: Mapped[RestaurantTable | None] = relationship()
     orders: Mapped[list[RestaurantOrder]] = relationship(
         back_populates="visit", cascade="all, delete-orphan", order_by="RestaurantOrder.diner_index"
     )
@@ -157,6 +193,13 @@ class RestaurantOrder(RestaurantRecord, Base):
     tip_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     tip_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     tip_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, default=0)
+    # Datos del cobro. Antes solo se marcaba status='pagado', sin registrar
+    # con que se pago: el corte de caja daba por hecho que todo era efectivo.
+    payment_method: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    received_amount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    # Solo con payment_method='mixto': la parte cubierta en efectivo. Es lo
+    # unico que debe cuadrar contra el cajon en el corte.
+    cash_amount: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     cooked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -177,11 +220,37 @@ class RestaurantOrder(RestaurantRecord, Base):
     def total(self) -> float:
         return round(self.subtotal + float(self.tip_amount or 0), 2)
 
+    @property
+    def change_amount(self) -> float:
+        """Cambio a devolver. Solo aplica si se capturo lo recibido."""
+        if self.received_amount is None:
+            return 0.0
+        return round(max(float(self.received_amount) - self.total, 0.0), 2)
+
+    @property
+    def cash_portion(self) -> float:
+        """Parte del cobro que entra al cajon, para el corte de caja.
+
+        'mixto' guarda explicitamente cuanto fue en efectivo; 'efectivo'
+        cubre el total; tarjeta y transferencia no tocan el cajon.
+        """
+        if self.payment_method == "efectivo":
+            return self.total
+        if self.payment_method == "mixto":
+            return round(float(self.cash_amount or 0), 2)
+        if self.payment_method in ("tarjeta", "transferencia"):
+            return 0.0
+        # Cobros anteriores a que existiera payment_method: se asumen en
+        # efectivo, que es como los contaba el corte antes de este cambio.
+        return self.total if self.status == "pagado" else 0.0
+
     def serialize(self) -> dict:
         data = self.serialize_columns()
         data["items"] = [item.serialize() for item in self.items]
         data["subtotal"] = self.subtotal
         data["total"] = self.total
+        data["change_amount"] = self.change_amount
+        data["cash_portion"] = self.cash_portion
         data["table_number"] = self.visit.table.number if self.visit and self.visit.table else None
         return data
 
@@ -256,6 +325,42 @@ class RestaurantInventoryItem(RestaurantRecord, Base):
 
     def serialize(self) -> dict:
         return self.serialize_columns()
+
+
+class RestaurantInventoryMovement(RestaurantRecord, Base):
+    """Ledger de existencias: toda alta, baja, merma o ajuste de stock.
+
+    Antes restaurant_inventory_item.quantity se sobrescribia sin rastro, asi
+    que no se podia auditar una merma ni reconstruir como se llego al saldo
+    actual. Cada renglon guarda la cantidad antes y despues del movimiento,
+    de modo que el saldo es verificable contra el historial.
+    """
+
+    __tablename__ = "restaurant_inventory_movement"
+
+    id_restaurant_inventory_movement: Mapped[int] = mapped_column(
+        Integer, primary_key=True, autoincrement=True
+    )
+    id_proyect: Mapped[int] = mapped_column(Integer, ForeignKey("proyect.id_proyect"), nullable=False, index=True)
+    id_restaurant_inventory_item: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("restaurant_inventory_item.id_restaurant_inventory_item"),
+        nullable=False,
+        index=True,
+    )
+    movement_type: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    previous_quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    new_quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    unit_cost: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    item: Mapped[RestaurantInventoryItem] = relationship()
+
+    def serialize(self) -> dict:
+        data = self.serialize_columns()
+        data["item_description"] = self.item.description if self.item else None
+        return data
 
 
 class RestaurantRecipeItem(RestaurantRecord, Base):
