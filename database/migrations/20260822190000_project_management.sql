@@ -57,6 +57,27 @@ CREATE INDEX IF NOT EXISTS ix_proyect_status
 CREATE INDEX IF NOT EXISTS ix_proyect_owner
     ON proyect (created_by) WHERE deletion_date IS NULL;
 
+-- Los roles Supervisor/Gerente/Jefe de taller necesitan un department/
+-- subdepartment/level para poder crearse (columnas NOT NULL en permission).
+-- Si el entorno todavia no tiene ninguno configurado (nadie lo cargo desde
+-- la app), se siembra un catalogo "General" minimo para no bloquear la
+-- migracion. Guardado con NOT EXISTS sobre la tabla completa para que solo
+-- se siembre una vez, nunca en reinicios posteriores.
+INSERT INTO department (department_description, created_by)
+SELECT 'General', 1
+WHERE NOT EXISTS (SELECT 1 FROM department);
+
+INSERT INTO subdepartment (subdepartment_description, id_department, created_by)
+SELECT 'General', department.id_department, 1
+FROM department
+WHERE NOT EXISTS (SELECT 1 FROM subdepartment)
+ORDER BY department.id_department
+LIMIT 1;
+
+INSERT INTO level (level_description, created_by)
+SELECT 'General', 1
+WHERE NOT EXISTS (SELECT 1 FROM level);
+
 WITH defaults AS (
     SELECT
         (SELECT id_user FROM "user" ORDER BY id_user LIMIT 1) AS id_user,
