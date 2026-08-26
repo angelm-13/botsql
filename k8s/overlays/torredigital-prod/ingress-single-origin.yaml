@@ -12,10 +12,10 @@ metadata:
 spec:
   ingressClassName: nginx
   tls:
-    - hosts: ["sistema.torredigital.com.mx"]
+    - hosts: ["sistema.torredigital.mx"]
       secretName: sistema-torredigital-tls
   rules:
-    - host: sistema.torredigital.com.mx
+    - host: sistema.torredigital.mx
       http:
         paths:
           - path: /auth
@@ -41,10 +41,10 @@ metadata:
 spec:
   ingressClassName: nginx
   tls:
-    - hosts: ["sistema.torredigital.com.mx"]
+    - hosts: ["sistema.torredigital.mx"]
       secretName: sistema-torredigital-tls # mismo Secret que ya gestiona el otro Ingress
   rules:
-    - host: sistema.torredigital.com.mx
+    - host: sistema.torredigital.mx
       http:
         paths:
           - path: /api(/|$)(.*)

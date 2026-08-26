@@ -1,7 +1,7 @@
 # Overlay real de producción para torredigital (primer cliente real del
 # ERP). Instanciado desde k8s/overlays/_template.
 #
-# Dominio: sistema.torredigital.com.mx, un solo origen (front + API bajo
+# Dominio: sistema.torredigital.mx, un solo origen (front + API bajo
 # /api) — mismo patrón que tyakxa-dev, ya validado ahí. Por eso el
 # Ingress del base se elimina y se usa ingress-single-origin.yaml en su
 # lugar (ver ese archivo).
