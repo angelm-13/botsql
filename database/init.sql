@@ -173,7 +173,6 @@ CREATE TABLE IF NOT EXISTS "bank_account" (
   "moratorium_interest" NUMERIC(10,2) NULL,
   "anuality" NUMERIC(10,2) NULL,
   "reimbursement" NUMERIC(10,2) NULL,
-  "id_proyect" INTEGER NULL,
   "created_by" INTEGER NOT NULL DEFAULT 1,
   "creation_date" TIMESTAMP NULL,
   "last_update_date" TIMESTAMP NULL,
@@ -1804,6 +1803,62 @@ CREATE INDEX IF NOT EXISTS "ix_logistics_evidence_trip" ON "logistics_evidence" 
 CREATE INDEX IF NOT EXISTS "ix_logistics_incident_trip" ON "logistics_incident" ("id_logistics_trip") WHERE "deletion_date" IS NULL;
 CREATE INDEX IF NOT EXISTS "ix_logistics_incident_status" ON "logistics_incident" ("status", "severity") WHERE "deletion_date" IS NULL;
 
+-- Bootstrap minimo para romper el ciclo de FKs circulares (user <->
+-- permission/proyect/status/customer_supplier, todas con created_by=1) en
+-- una instalacion limpia. Sin esto, las filas de catalogo de abajo
+-- (field/entity_permission con created_by=1) fallan porque no existe
+-- ningun "user" todavia -- error real visto al desplegar torredigital-prod
+-- desde cero, algo que tyakxa-dev nunca ejercito porque su esquema se armo
+-- de forma organica con el tiempo, no desde un volumen vacio.
+--
+-- Password TEMPORAL (hash de "test password", el mismo default documentado
+-- en init_db.py). `python init_db.py` la reemplaza por el valor real de
+-- BOOTSTRAP_ADMIN_PASSWORD la primera vez que corre -- correrlo cuanto
+-- antes despues del primer deploy, porque hasta entonces el admin1 real
+-- queda con esta password conocida.
+--
+-- Todo con ON CONFLICT DO NOTHING: si estas filas ya existen (porque el
+-- volumen no estaba realmente vacio), no se tocan.
+INSERT INTO "department" ("id_department", "department_description", "created_by")
+VALUES (1, 'General', 1)
+ON CONFLICT ("id_department") DO NOTHING;
+
+INSERT INTO "subdepartment" ("id_subdepartment", "subdepartment_description", "id_department", "created_by")
+VALUES (1, 'General', 1, 1)
+ON CONFLICT ("id_subdepartment") DO NOTHING;
+
+INSERT INTO "level" ("id_level", "level_description", "created_by")
+VALUES (1, 'General', 1)
+ON CONFLICT ("id_level") DO NOTHING;
+
+INSERT INTO "status" ("id_status", "status_description", "category", "is_terminal", "created_by")
+VALUES (1, 'active', 'general', TRUE, 1)
+ON CONFLICT ("id_status") DO NOTHING;
+
+INSERT INTO "permission" ("id_permission", "permission_description", "created_by", "authorized_by", "id_department", "id_subdepartment", "id_level")
+VALUES (1, 'Administrator', 1, 1, 1, 1, 1)
+ON CONFLICT ("id_permission") DO NOTHING;
+
+INSERT INTO "customer_supplier" ("id_customer_supplier", "name", "type", "is_principal", "id_user", "created_by")
+VALUES (1, 'Interno', 'supplier', TRUE, 1, 1)
+ON CONFLICT ("id_customer_supplier") DO NOTHING;
+
+INSERT INTO "proyect" ("id_proyect", "id_customer_supplier", "leader", "proyect_description", "proyect_status", "created_by")
+VALUES (1, 1, 1, 'Proyecto por defecto', 'draft', 1)
+ON CONFLICT ("id_proyect") DO NOTHING;
+
+INSERT INTO "user" (
+  "id_user", "created_by", "email", "first_name", "id_permission", "full_name",
+  "id_proyect", "last_name_father", "last_name_mother", "password", "supervisor",
+  "id_status", "user_type", "username"
+)
+VALUES (
+  1, 1, 'admin1@tyakxa.local', 'Admin', 1, 'Administrador Bootstrap',
+  1, 'Bootstrap', 'System', '$2b$12$RxTtZtblFwu6ZsmtfNP9Meg6tYSZOCsVIZQLMe260W9seWcdrUma6', 1,
+  1, 'admin', 'admin1'
+)
+ON CONFLICT ("id_user") DO NOTHING;
+
 INSERT INTO "field" ("table_name", "field_name", "created_by", "creation_date", "last_update_date")
 SELECT source_column.table_name, source_column.column_name, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
 FROM information_schema.columns source_column
@@ -1815,14 +1870,11 @@ WHERE source_column.table_schema = 'public'
       AND "field"."field_name" = source_column.column_name
   );
 
-INSERT INTO "entity_permission" (
-  "id_permission", "entity_name", "control_type", "menu_location", "menu_group",
-  "menu_group_icon", "menu_label", "menu_order", "created_by", "creation_date", "last_update_date"
-)
+CREATE TEMP TABLE tmp_ep_logistics_workflow AS
 SELECT source_permission."id_permission", logistics_entity.entity_name,
-       source_permission."control_type", 'sidebar', 'Logística', 'truck',
-       logistics_entity.menu_label, logistics_entity.menu_order,
-       1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+       source_permission."control_type", 'sidebar'::varchar AS menu_location, 'Logística'::varchar AS menu_group,
+       'truck'::varchar AS menu_group_icon, logistics_entity.menu_label, logistics_entity.menu_order,
+       1 AS created_by
 FROM "entity_permission" source_permission
 CROSS JOIN (VALUES
   ('logistics_quotation', 'Cotizaciones', 170),
@@ -1832,16 +1884,34 @@ CROSS JOIN (VALUES
   ('logistics_incident', 'Incidencias', 210)
 ) AS logistics_entity(entity_name, menu_label, menu_order)
 WHERE source_permission."entity_name" = 'customer_supplier'
-  AND source_permission."deletion_date" IS NULL
-ON CONFLICT ("id_permission", "entity_name") DO UPDATE SET
-  "control_type" = EXCLUDED."control_type",
-  "menu_location" = EXCLUDED."menu_location",
-  "menu_group" = EXCLUDED."menu_group",
-  "menu_group_icon" = EXCLUDED."menu_group_icon",
-  "menu_label" = EXCLUDED."menu_label",
-  "menu_order" = EXCLUDED."menu_order",
+  AND source_permission."deletion_date" IS NULL;
+
+UPDATE "entity_permission" target SET
+  "control_type" = source.control_type,
+  "menu_location" = source.menu_location,
+  "menu_group" = source.menu_group,
+  "menu_group_icon" = source.menu_group_icon,
+  "menu_label" = source.menu_label,
+  "menu_order" = source.menu_order,
   "deletion_date" = NULL,
-  "last_update_date" = CURRENT_TIMESTAMP;
+  "last_update_date" = CURRENT_TIMESTAMP
+FROM tmp_ep_logistics_workflow source
+WHERE target."id_permission" = source.id_permission
+  AND target."entity_name" = source.entity_name;
+
+INSERT INTO "entity_permission" (
+  "id_permission", "entity_name", "control_type", "menu_location", "menu_group",
+  "menu_group_icon", "menu_label", "menu_order", "created_by", "creation_date", "last_update_date"
+)
+SELECT source.id_permission, source.entity_name, source.control_type, source.menu_location, source.menu_group,
+       source.menu_group_icon, source.menu_label, source.menu_order, source.created_by, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM tmp_ep_logistics_workflow source
+WHERE NOT EXISTS (
+    SELECT 1 FROM "entity_permission" target
+    WHERE target."id_permission" = source.id_permission AND target."entity_name" = source.entity_name
+);
+
+DROP TABLE tmp_ep_logistics_workflow;
 
 INSERT INTO "nm_field_permission" (
   "id_field", "id_permission", "control_type", "created_by", "creation_date", "last_update_date"
@@ -1951,14 +2021,11 @@ INSERT INTO field (table_name, field_name, created_by, creation_date, last_updat
 SELECT 'logistics_trip', 'id_logistics_file', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
 WHERE NOT EXISTS (SELECT 1 FROM field WHERE table_name = 'logistics_trip' AND field_name = 'id_logistics_file');
 
-INSERT INTO entity_permission (
-  id_permission, entity_name, control_type, menu_location, menu_group,
-  menu_group_icon, menu_label, menu_order, created_by, creation_date, last_update_date
-)
+CREATE TEMP TABLE tmp_ep_logistics_remaining AS
 SELECT source_permission.id_permission, logistics_entity.entity_name,
-       source_permission.control_type, 'sidebar', 'Logística', 'truck',
-       logistics_entity.menu_label, logistics_entity.menu_order,
-       1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+       source_permission.control_type, 'sidebar'::varchar AS menu_location, 'Logística'::varchar AS menu_group,
+       'truck'::varchar AS menu_group_icon, logistics_entity.menu_label, logistics_entity.menu_order,
+       1 AS created_by
 FROM entity_permission source_permission
 JOIN (VALUES
   ('logistics_shipment', 'customer_supplier', 'Embarques', 220),
@@ -1967,16 +2034,34 @@ JOIN (VALUES
   ('logistics_file', 'customer_supplier', 'Expedientes', 250)
 ) AS logistics_entity(entity_name, source_entity, menu_label, menu_order)
   ON source_permission.entity_name = logistics_entity.source_entity
-WHERE source_permission.deletion_date IS NULL
-ON CONFLICT (id_permission, entity_name) DO UPDATE SET
-  control_type = EXCLUDED.control_type,
-  menu_location = EXCLUDED.menu_location,
-  menu_group = EXCLUDED.menu_group,
-  menu_group_icon = EXCLUDED.menu_group_icon,
-  menu_label = EXCLUDED.menu_label,
-  menu_order = EXCLUDED.menu_order,
+WHERE source_permission.deletion_date IS NULL;
+
+UPDATE entity_permission target SET
+  control_type = source.control_type,
+  menu_location = source.menu_location,
+  menu_group = source.menu_group,
+  menu_group_icon = source.menu_group_icon,
+  menu_label = source.menu_label,
+  menu_order = source.menu_order,
   deletion_date = NULL,
-  last_update_date = CURRENT_TIMESTAMP;
+  last_update_date = CURRENT_TIMESTAMP
+FROM tmp_ep_logistics_remaining source
+WHERE target.id_permission = source.id_permission
+  AND target.entity_name = source.entity_name;
+
+INSERT INTO entity_permission (
+  id_permission, entity_name, control_type, menu_location, menu_group,
+  menu_group_icon, menu_label, menu_order, created_by, creation_date, last_update_date
+)
+SELECT source.id_permission, source.entity_name, source.control_type, source.menu_location, source.menu_group,
+       source.menu_group_icon, source.menu_label, source.menu_order, source.created_by, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM tmp_ep_logistics_remaining source
+WHERE NOT EXISTS (
+    SELECT 1 FROM entity_permission target
+    WHERE target.id_permission = source.id_permission AND target.entity_name = source.entity_name
+);
+
+DROP TABLE tmp_ep_logistics_remaining;
 
 INSERT INTO nm_field_permission (id_field, id_permission, control_type, created_by, creation_date, last_update_date)
 SELECT logistics_field.id_field, logistics_permission.id_permission, '15', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
