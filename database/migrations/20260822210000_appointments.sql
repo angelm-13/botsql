@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS btree_gist;
 
-CREATE TABLE calendar_profile (
+CREATE TABLE IF NOT EXISTS calendar_profile (
     id_calendar_profile SERIAL PRIMARY KEY,
     id_user INTEGER NOT NULL REFERENCES "user"(id_user),
     id_proyect INTEGER NOT NULL REFERENCES proyect(id_proyect),
@@ -16,7 +16,7 @@ CREATE TABLE calendar_profile (
     deletion_date TIMESTAMP
 );
 
-CREATE TABLE appointment_type (
+CREATE TABLE IF NOT EXISTS appointment_type (
     id_appointment_type SERIAL PRIMARY KEY,
     id_calendar_profile INTEGER NOT NULL REFERENCES calendar_profile(id_calendar_profile),
     name VARCHAR(120) NOT NULL,
@@ -34,7 +34,7 @@ CREATE TABLE appointment_type (
     deletion_date TIMESTAMP
 );
 
-CREATE TABLE availability_rule (
+CREATE TABLE IF NOT EXISTS availability_rule (
     id_availability_rule SERIAL PRIMARY KEY,
     id_calendar_profile INTEGER NOT NULL REFERENCES calendar_profile(id_calendar_profile),
     weekday SMALLINT NOT NULL CHECK (weekday BETWEEN 0 AND 6),
@@ -47,7 +47,7 @@ CREATE TABLE availability_rule (
     CHECK (start_time < end_time)
 );
 
-CREATE TABLE availability_override (
+CREATE TABLE IF NOT EXISTS availability_override (
     id_availability_override SERIAL PRIMARY KEY,
     id_calendar_profile INTEGER NOT NULL REFERENCES calendar_profile(id_calendar_profile),
     override_date DATE NOT NULL,
@@ -60,7 +60,7 @@ CREATE TABLE availability_override (
     CHECK (NOT is_available OR (start_time IS NOT NULL AND end_time IS NOT NULL AND start_time < end_time))
 );
 
-CREATE TABLE appointment (
+CREATE TABLE IF NOT EXISTS appointment (
     id_appointment SERIAL PRIMARY KEY,
     id_calendar_profile INTEGER NOT NULL REFERENCES calendar_profile(id_calendar_profile),
     id_appointment_type INTEGER NOT NULL REFERENCES appointment_type(id_appointment_type),
@@ -83,35 +83,56 @@ CREATE TABLE appointment (
     CHECK (starts_at < ends_at)
 );
 
-ALTER TABLE appointment ADD CONSTRAINT ex_appointment_no_overlap
-    EXCLUDE USING gist (
-        id_calendar_profile WITH =,
-        tstzrange(starts_at, ends_at, '[)') WITH &&
-    ) WHERE (status IN ('pending_confirmation', 'confirmed'));
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ex_appointment_no_overlap') THEN
+        ALTER TABLE appointment ADD CONSTRAINT ex_appointment_no_overlap
+            EXCLUDE USING gist (
+                id_calendar_profile WITH =,
+                tstzrange(starts_at, ends_at, '[)') WITH &&
+            ) WHERE (status IN ('pending_confirmation', 'confirmed'));
+    END IF;
+END $$;
 
-CREATE INDEX ix_calendar_profile_owner ON calendar_profile (id_user, id_proyect) WHERE deletion_date IS NULL;
-CREATE INDEX ix_appointment_type_profile ON appointment_type (id_calendar_profile) WHERE deletion_date IS NULL;
-CREATE INDEX ix_availability_rule_profile_day ON availability_rule (id_calendar_profile, weekday) WHERE deletion_date IS NULL;
-CREATE INDEX ix_availability_override_profile_date ON availability_override (id_calendar_profile, override_date) WHERE deletion_date IS NULL;
-CREATE INDEX ix_appointment_project_start ON appointment (id_proyect, starts_at);
+CREATE INDEX IF NOT EXISTS ix_calendar_profile_owner ON calendar_profile (id_user, id_proyect) WHERE deletion_date IS NULL;
+CREATE INDEX IF NOT EXISTS ix_appointment_type_profile ON appointment_type (id_calendar_profile) WHERE deletion_date IS NULL;
+CREATE INDEX IF NOT EXISTS ix_availability_rule_profile_day ON availability_rule (id_calendar_profile, weekday) WHERE deletion_date IS NULL;
+CREATE INDEX IF NOT EXISTS ix_availability_override_profile_date ON availability_override (id_calendar_profile, override_date) WHERE deletion_date IS NULL;
+CREATE INDEX IF NOT EXISTS ix_appointment_project_start ON appointment (id_proyect, starts_at);
 
-INSERT INTO entity_permission (
-        id_permission, entity_name, control_type, menu_location, menu_group,
-        menu_group_icon, menu_label, menu_order, created_by, creation_date, last_update_date
-)
-SELECT permission.id_permission, 'appointment', 15, 'sidebar', 'Operaciones',
-            'calendar-days', 'Calendario', 75, permission.created_by, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+CREATE TEMP TABLE tmp_ep_appointments AS
+SELECT permission.id_permission, 'appointment'::varchar AS entity_name, 15::text AS control_type,
+       'sidebar'::varchar AS menu_location, 'Operaciones'::varchar AS menu_group,
+       'calendar-days'::varchar AS menu_group_icon, 'Calendario'::varchar AS menu_label,
+       75 AS menu_order, permission.created_by
 FROM permission
 WHERE permission.deletion_date IS NULL
-    AND lower(permission.permission_description) IN ('supervisor', 'gerente')
-ON CONFLICT (id_permission, entity_name) DO UPDATE SET
-        control_type = EXCLUDED.control_type,
-        menu_location = EXCLUDED.menu_location,
-        menu_group = EXCLUDED.menu_group,
-        menu_group_icon = EXCLUDED.menu_group_icon,
-        menu_label = EXCLUDED.menu_label,
-        menu_order = EXCLUDED.menu_order,
-        deletion_date = NULL,
-        last_update_date = CURRENT_TIMESTAMP;
+    AND lower(permission.permission_description) IN ('supervisor', 'gerente');
+
+UPDATE entity_permission target SET
+    control_type = source.control_type,
+    menu_location = source.menu_location,
+    menu_group = source.menu_group,
+    menu_group_icon = source.menu_group_icon,
+    menu_label = source.menu_label,
+    menu_order = source.menu_order,
+    deletion_date = NULL,
+    last_update_date = CURRENT_TIMESTAMP
+FROM tmp_ep_appointments source
+WHERE target.id_permission = source.id_permission
+  AND target.entity_name = source.entity_name;
+
+INSERT INTO entity_permission (
+    id_permission, entity_name, control_type, menu_location, menu_group,
+    menu_group_icon, menu_label, menu_order, created_by, creation_date, last_update_date
+)
+SELECT source.id_permission, source.entity_name, source.control_type, source.menu_location, source.menu_group,
+       source.menu_group_icon, source.menu_label, source.menu_order, source.created_by, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM tmp_ep_appointments source
+WHERE NOT EXISTS (
+    SELECT 1 FROM entity_permission target
+    WHERE target.id_permission = source.id_permission AND target.entity_name = source.entity_name
+);
+
+DROP TABLE tmp_ep_appointments;
 
 COMMIT;

@@ -80,14 +80,10 @@ WHERE defaults.id_user IS NOT NULL
         AND deletion_date IS NULL
   );
 
-INSERT INTO entity_permission (
-    id_permission, entity_name, control_type, menu_location, menu_group,
-    menu_group_icon, menu_label, menu_order, created_by, creation_date, last_update_date
-)
+CREATE TEMP TABLE tmp_ep_project_management AS
 SELECT role.id_permission, capability.entity_name, capability.control_type,
        capability.menu_location, capability.menu_group, capability.menu_group_icon,
-       capability.menu_label, capability.menu_order, role.created_by,
-       CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+       capability.menu_label, capability.menu_order, role.created_by
 FROM permission role
 JOIN (VALUES
     ('Supervisor', 'proyect', 7, 'sidebar', 'Operaciones', 'briefcase-business', 'Proyectos', 80),
@@ -103,16 +99,34 @@ JOIN (VALUES
     ('Jefe de taller', 'project_execution', 2, 'hidden', NULL, NULL, NULL, 100)
 ) AS capability(role_name, entity_name, control_type, menu_location, menu_group, menu_group_icon, menu_label, menu_order)
     ON lower(role.permission_description) = lower(capability.role_name)
-WHERE role.deletion_date IS NULL
-ON CONFLICT (id_permission, entity_name) DO UPDATE SET
-    control_type = EXCLUDED.control_type,
-    menu_location = EXCLUDED.menu_location,
-    menu_group = EXCLUDED.menu_group,
-    menu_group_icon = EXCLUDED.menu_group_icon,
-    menu_label = EXCLUDED.menu_label,
-    menu_order = EXCLUDED.menu_order,
+WHERE role.deletion_date IS NULL;
+
+UPDATE entity_permission target SET
+    control_type = source.control_type,
+    menu_location = source.menu_location,
+    menu_group = source.menu_group,
+    menu_group_icon = source.menu_group_icon,
+    menu_label = source.menu_label,
+    menu_order = source.menu_order,
     deletion_date = NULL,
-    last_update_date = CURRENT_TIMESTAMP;
+    last_update_date = CURRENT_TIMESTAMP
+FROM tmp_ep_project_management source
+WHERE target.id_permission = source.id_permission
+  AND target.entity_name = source.entity_name;
+
+INSERT INTO entity_permission (
+    id_permission, entity_name, control_type, menu_location, menu_group,
+    menu_group_icon, menu_label, menu_order, created_by, creation_date, last_update_date
+)
+SELECT source.id_permission, source.entity_name, source.control_type, source.menu_location, source.menu_group,
+       source.menu_group_icon, source.menu_label, source.menu_order, source.created_by, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM tmp_ep_project_management source
+WHERE NOT EXISTS (
+    SELECT 1 FROM entity_permission target
+    WHERE target.id_permission = source.id_permission AND target.entity_name = source.entity_name
+);
+
+DROP TABLE tmp_ep_project_management;
 
 INSERT INTO field (table_name, field_name, created_by, creation_date, last_update_date)
 SELECT column_meta.table_name, column_meta.column_name, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
