@@ -11,21 +11,16 @@ namespace: torredigital-prod
 images:
   - name: DB_INIT_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-db-init
-    newTag: "8a2b2a3"
+    newTag: "f5948e6"
   - name: BACKEND_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-backend
-    newTag: "8a2b2a3"
+    newTag: "f5948e6"
   - name: WORKER_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-worker
-    newTag: "8a2b2a3"
+    newTag: "f5948e6"
   - name: FRONTEND_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-frontend
-    # PENDIENTE: build-images.yml solo construye la imagen de frontend
-    # para clientes listados en deploy/clients.yaml. Hasta que se agregue
-    # "torredigital"/"prod" ahí y corra el pipeline, esta imagen no
-    # existe en ghcr.io todavia — reemplazar REEMPLAZAR_SHA por el
-    # sha_short real una vez que ese build termine en verde.
-    newTag: REEMPLAZAR_SHA-torredigital-prod
+    newTag: f5948e6-torredigital-prod
 resources:
   - ../../base
   - ingress-single-origin.yaml
