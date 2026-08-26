@@ -1,0 +1,52 @@
+# Cliente real (torredigital) con UN SOLO dominio, mismo patrón que ya
+# está probado en tyakxa-dev (ver ese overlay para el porqué de los dos
+# objetos Ingress: nginx.ingress.kubernetes.io/rewrite-target aplica a
+# TODO el Ingress, así que /api necesita su propio objeto separado de
+# /auth, /graphql y /).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: torredigital-prod-app
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: ["sistema.torredigital.com.mx"]
+      secretName: sistema-torredigital-tls
+  rules:
+    - host: sistema.torredigital.com.mx
+      http:
+        paths:
+          - path: /auth
+            pathType: Prefix
+            backend: { service: { name: backend, port: { number: 5001 } } }
+          - path: /graphql
+            pathType: Prefix
+            backend: { service: { name: backend, port: { number: 5001 } } }
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: frontend, port: { number: 80 } } }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: torredigital-prod-api-prefix
+  annotations:
+    # Sin cert-manager.io/cluster-issuer aquí a propósito: el Ingress de
+    # arriba ya pide el certificado para este dominio; pedirlo dos veces
+    # duplicaría la solicitud a Let's Encrypt.
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: ["sistema.torredigital.com.mx"]
+      secretName: sistema-torredigital-tls # mismo Secret que ya gestiona el otro Ingress
+  rules:
+    - host: sistema.torredigital.com.mx
+      http:
+        paths:
+          - path: /api(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend: { service: { name: backend, port: { number: 5001 } } }

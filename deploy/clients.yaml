@@ -26,3 +26,8 @@ clients:
   - name: tyakxa
     env: dev
     api_base_url: ""
+  - name: torredigital
+    env: prod
+    # Un solo origen (sistema.torredigital.com.mx con /api) — igual que
+    # tyakxa/dev, el frontend cae solo a /api relativo con esto vacío.
+    api_base_url: ""
