@@ -2623,7 +2623,10 @@
     "inventory_transfer_same_location": "A transfer needs different origin and destination.",
     "inventory_transfer_requires_endpoint": "Use the transfer action for a transfer, not a plain movement.",
     "location_has_stock": "A location holding stock cannot be deleted.",
-    "location_has_children": "A location containing other locations cannot be deleted."
+    "location_has_children": "A location containing other locations cannot be deleted.",
+    "invoice_inventory_direction_unknown": "The warehouse cannot be moved: it is unclear whether the invoice is a sale or a purchase. Set the principal company or classify the invoice.",
+    "invoice_inventory_status_not_allowed": "Only an issued invoice moves the warehouse; a quotation does not.",
+    "invoice_inventory_no_lines": "The invoice has no authorized lines to move."
   },
   "logistics": {
     "module": "Logistics",
@@ -3187,7 +3190,14 @@
     "register_closed_warning": "The register is closed. Open it before taking cash, or the money will not belong to any shift.",
     "avg_delivery": "Average delivery",
     "top_dishes": "Best sellers",
-    "subtotal": "Subtotal"
+    "subtotal": "Subtotal",
+    "close_table": "Close table",
+    "close_takeout": "Close order",
+    "still_unpaid": "still unpaid",
+    "ready_to_close": "All charged: the table can be freed.",
+    "occupied": "Occupied",
+    "free": "Free",
+    "inventory_warnings": "Inventory warnings", "dismiss": "Dismiss", "warn_no_recipe": "No recipe, stock was not deducted", "warn_short_stock": "Insufficient stock", "warn_needed": "needed", "warn_had": "had", "warn_unit_mismatch": "Recipe unit differs from the item unit, nothing deducted"
   },
   "shell": {
     "group_banks": "Banking",

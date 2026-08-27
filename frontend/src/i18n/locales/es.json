@@ -2626,7 +2626,10 @@
     "inventory_transfer_same_location": "El origen y el destino del traspaso deben ser distintos.",
     "inventory_transfer_requires_endpoint": "Un traspaso se registra con la accion de traspaso, no como un movimiento suelto.",
     "location_has_stock": "No se puede eliminar una ubicacion con existencia.",
-    "location_has_children": "No se puede eliminar una ubicacion que contiene otras."
+    "location_has_children": "No se puede eliminar una ubicacion que contiene otras.",
+    "invoice_inventory_direction_unknown": "No se puede mover el almacen: falta saber si la factura es de venta o de compra. Define la empresa principal o clasifica la factura.",
+    "invoice_inventory_status_not_allowed": "Solo una factura emitida mueve el almacen; una cotizacion no.",
+    "invoice_inventory_no_lines": "La factura no tiene partidas autorizadas que mover."
   },
   "logistics": {
     "module": "Logística",
@@ -3190,7 +3193,14 @@
     "register_closed_warning": "La caja está cerrada. Ábrela antes de cobrar en efectivo: si no, el dinero no queda en ningún corte.",
     "avg_delivery": "Entrega promedio",
     "top_dishes": "Más vendidos",
-    "subtotal": "Subtotal"
+    "subtotal": "Subtotal",
+    "close_table": "Cerrar mesa",
+    "close_takeout": "Cerrar orden",
+    "still_unpaid": "sin cobrar",
+    "ready_to_close": "Todo cobrado: la mesa se puede liberar.",
+    "occupied": "Ocupada",
+    "free": "Libre",
+    "inventory_warnings": "Avisos de inventario", "dismiss": "Descartar", "warn_no_recipe": "Sin receta, no se descontó inventario", "warn_short_stock": "Existencias insuficientes", "warn_needed": "se requerían", "warn_had": "había", "warn_unit_mismatch": "Unidad de receta distinta a la del insumo, no se descontó"
   },
   "shell": {
     "group_banks": "Bancos",

@@ -1,10 +1,20 @@
-"""Enlace entre facturar y descontar existencias.
+"""Enlace entre facturar y mover existencias.
 
 El libro de inventario ya tenia el campo para decir de donde viene un
 movimiento, pero nada lo llenaba desde una factura: se facturaba y el almacen
-quedaba igual, de modo que la existencia y lo vendido se separaban solas.
+quedaba igual, de modo que la existencia y lo facturado se separaban solas.
 
-Aqui se descargan las partidas de una factura de venta contra el almacen.
+Una factura mueve el almacen en la direccion que le corresponde:
+
+* **Venta**: saca la mercancia. Lo que se factura al cliente deja de estar en
+  el almacen.
+* **Compra**: la mete. Una factura de proveedor es justamente el documento con
+  el que la mercancia entra.
+
+Es la misma operacion en los dos casos, y el sentido lo decide la direccion de
+la factura, no quien la llama. Asi no hay forma de pedir la operacion
+equivocada por descuido.
+
 Decisiones que conviene tener presentes:
 
 * **La descarga es un paso aparte del timbrado.** Timbrar consume un folio ante
@@ -21,8 +31,8 @@ Decisiones que conviene tener presentes:
   y la partida, asi que repetir la descarga no vuelve a descontar. Es lo que
   permite reintentar sin miedo cuando algo se corta a medias.
 
-* **Solo facturas de venta.** Una factura de compra no descuenta; al
-  contrario, es la que trae la mercancia.
+* **La direccion la manda la factura.** Una factura sin clasificar no mueve
+  nada: sin saber si entra o sale, cualquier movimiento seria una adivinanza.
 """
 
 from __future__ import annotations
@@ -46,9 +56,16 @@ from app.utils.errors import AppError
 
 REFERENCE_TYPE = "invoice_line"
 
-# Estatus de factura desde los que tiene sentido descargar: ya es un
+# Estatus de factura desde los que tiene sentido mover el almacen: ya es un
 # comprobante, no una cotizacion.
-DISCHARGEABLE_STATUSES = {"timbrada", "pendiente", "pagada", "parcial"}
+APPLICABLE_STATUSES = {"timbrada", "pendiente", "pagada", "parcial"}
+
+# Que movimiento genera cada direccion. Una venta saca del almacen; una compra
+# lo surte.
+DIRECTION_MOVEMENTS = {
+    "venta": ("issue", -1),
+    "compra": ("receive", 1),
+}
 
 
 def _movement_key(invoice_id, line_id) -> str:
@@ -153,8 +170,12 @@ def _available_units(db, product, location) -> int:
     return 0
 
 
-def _line_plan(db, invoice, line, requested_locations):
-    """Que haria la descarga con esta partida, y si puede hacerse."""
+def _line_plan(db, invoice, line, requested_locations, direction):
+    """Que haria la factura con esta partida, y si puede hacerse.
+
+    En una venta hay que comprobar que haya existencia; en una compra no,
+    porque la mercancia esta entrando.
+    """
     line_id = line.id_invoice_material_service
     plan = {
         "id_invoice_material_service": line_id,
@@ -165,8 +186,8 @@ def _line_plan(db, invoice, line, requested_locations):
         "id_location": None,
         "location_description": None,
         "available": None,
-        "already_discharged": False,
-        "dischargeable": False,
+        "already_applied": False,
+        "applicable": False,
         "skip_reason": None,
     }
 
@@ -175,7 +196,7 @@ def _line_plan(db, invoice, line, requested_locations):
     ).first()
     if existing:
         plan.update({
-            "already_discharged": True,
+            "already_applied": True,
             "units": abs(int(existing.quantity_delta)),
             "id_location": existing.id_location,
         })
@@ -208,11 +229,12 @@ def _line_plan(db, invoice, line, requested_locations):
     available = _available_units(db, product, location)
     plan["available"] = available
 
-    if available < units:
+    # Solo la salida depende de que haya existencia. Una compra surte.
+    if direction == "venta" and available < units:
         plan["skip_reason"] = "insufficient_stock"
         return plan
 
-    plan["dischargeable"] = True
+    plan["applicable"] = True
     return plan
 
 
@@ -230,44 +252,49 @@ def _requested_locations(payload) -> dict:
     return locations
 
 
-def preview_invoice_discharge(invoice_id, payload, user_data) -> dict:
-    """Que se descargaria de esta factura, sin tocar el almacen."""
+def preview_invoice_inventory(invoice_id, payload, user_data) -> dict:
+    """Que movería esta factura en el almacen, sin tocar nada."""
     with transaction_context() as db:
         invoice = _load_invoice(db, invoice_id, user_data)
         direction = _invoice_direction(db, invoice)
         status = str(invoice.invoice_status or "").strip().lower()
         locations = _requested_locations(payload)
-        plans = [_line_plan(db, invoice, line, locations) for line in _authorized_lines(db, invoice.id_invoice)]
+        plans = [
+            _line_plan(db, invoice, line, locations, direction)
+            for line in _authorized_lines(db, invoice.id_invoice)
+        ]
 
+        movement_type = DIRECTION_MOVEMENTS.get(direction, (None, 0))[0]
         blocking = [plan for plan in plans if plan["skip_reason"] == "insufficient_stock"]
-        pending = [plan for plan in plans if plan["dischargeable"]]
+        pending = [plan for plan in plans if plan["applicable"]]
         return {
             "id_invoice": invoice.id_invoice,
             "invoice_status": invoice.invoice_status,
             "invoice_direction": direction,
-            "is_sale": direction == "venta",
-            "status_allows_discharge": status in DISCHARGEABLE_STATUSES,
+            "movement_type": movement_type,
+            "effect": {"venta": "decrementa", "compra": "incrementa"}.get(direction, "ninguno"),
+            "status_allows_apply": status in APPLICABLE_STATUSES,
             "lines": plans,
             "pending_lines": len(pending),
-            "already_discharged_lines": len([plan for plan in plans if plan["already_discharged"]]),
+            "already_applied_lines": len([plan for plan in plans if plan["already_applied"]]),
             "blocked_lines": len(blocking),
-            "fully_discharged": bool(plans) and not pending and not blocking and any(
-                plan["already_discharged"] for plan in plans
+            "fully_applied": bool(plans) and not pending and not blocking and any(
+                plan["already_applied"] for plan in plans
             ),
-            "can_discharge": (
-                direction == "venta"
-                and status in DISCHARGEABLE_STATUSES
+            "can_apply": (
+                direction in DIRECTION_MOVEMENTS
+                and status in APPLICABLE_STATUSES
                 and bool(pending)
                 and not blocking
             ),
         }
 
 
-def discharge_invoice_inventory(invoice_id, payload, user_data) -> dict:
-    """Descuenta del almacen las partidas de una factura de venta.
+def apply_invoice_to_inventory(invoice_id, payload, user_data) -> dict:
+    """Mueve el almacen segun la factura: una venta saca, una compra mete.
 
     Todas las partidas en una sola transaccion. Repetir la llamada no vuelve a
-    descontar: la llave del movimiento se deriva de la factura y la partida.
+    mover: la llave del movimiento se deriva de la factura y la partida.
     """
     payload = payload or {}
     locations = _requested_locations(payload)
@@ -275,61 +302,72 @@ def discharge_invoice_inventory(invoice_id, payload, user_data) -> dict:
     with transaction_context() as db:
         invoice = _load_invoice(db, invoice_id, user_data)
         direction = _invoice_direction(db, invoice)
-        if direction != "venta":
+        if direction not in DIRECTION_MOVEMENTS:
+            # Sin saber si entra o sale, cualquier movimiento seria una
+            # adivinanza sobre el inventario de alguien.
             raise AppError(
-                "errors.invoice_discharge_requires_sale",
+                "errors.invoice_inventory_direction_unknown",
                 409,
-                {"invoice_direction": direction},
+                {"invoice_direction": direction, "allowed": sorted(DIRECTION_MOVEMENTS)},
             )
+        movement_type, sign = DIRECTION_MOVEMENTS[direction]
+
         status = str(invoice.invoice_status or "").strip().lower()
-        if status not in DISCHARGEABLE_STATUSES:
+        if status not in APPLICABLE_STATUSES:
             raise AppError(
-                "errors.invoice_discharge_status_not_allowed",
+                "errors.invoice_inventory_status_not_allowed",
                 409,
-                {"invoice_status": invoice.invoice_status, "allowed": sorted(DISCHARGEABLE_STATUSES)},
+                {"invoice_status": invoice.invoice_status, "allowed": sorted(APPLICABLE_STATUSES)},
             )
 
         lines = _authorized_lines(db, invoice.id_invoice)
         if not lines:
-            raise AppError("errors.invoice_discharge_no_lines", 409, {"id_invoice": invoice.id_invoice})
+            raise AppError("errors.invoice_inventory_no_lines", 409, {"id_invoice": invoice.id_invoice})
 
-        plans = [_line_plan(db, invoice, line, locations) for line in lines]
+        plans = [_line_plan(db, invoice, line, locations, direction) for line in lines]
         blocked = [plan for plan in plans if plan["skip_reason"] == "insufficient_stock"]
         if blocked:
-            # Se corta antes de escribir: descargar solo las partidas que
+            # Se corta antes de escribir: aplicar solo las partidas que
             # alcanzan dejaria la factura a medias contra el almacen.
-            raise AppError(
-                "errors.inventory_insufficient_stock",
-                409,
-                {"lines": blocked},
-            )
+            raise AppError("errors.inventory_insufficient_stock", 409, {"lines": blocked})
+
+        reason = {
+            "venta": f"Salida por factura de venta {invoice.id_invoice}",
+            "compra": f"Entrada por factura de compra {invoice.id_invoice}",
+        }[direction]
 
         movements = []
         skipped = []
         for plan in plans:
-            if plan["already_discharged"]:
-                skipped.append({**plan, "skip_reason": "already_discharged"})
+            if plan["already_applied"]:
+                skipped.append({**plan, "skip_reason": "already_applied"})
                 continue
-            if not plan["dischargeable"]:
+            if not plan["applicable"]:
                 skipped.append(plan)
                 continue
             movement, created = apply_movement_in_session(
                 db,
                 plan["id_product"],
                 user_data,
-                movement_type="issue",
-                quantity_delta=-plan["units"],
+                movement_type=movement_type,
+                quantity_delta=sign * plan["units"],
                 idempotency_key=_movement_key(invoice.id_invoice, plan["id_invoice_material_service"]),
                 id_location=plan["id_location"],
                 reference_type=REFERENCE_TYPE,
                 reference_id=str(plan["id_invoice_material_service"]),
-                reason=f"Salida por factura {invoice.id_invoice}",
+                reason=reason,
             )
-            movements.append({**movement, "id_invoice_material_service": plan["id_invoice_material_service"], "created": created})
+            movements.append({
+                **movement,
+                "id_invoice_material_service": plan["id_invoice_material_service"],
+                "created": created,
+            })
 
         return {
             "id_invoice": invoice.id_invoice,
-            "discharged_lines": len(movements),
+            "invoice_direction": direction,
+            "movement_type": movement_type,
+            "applied_lines": len(movements),
             "skipped_lines": skipped,
             "movements": movements,
         }

@@ -1,12 +1,13 @@
-"""Enlace entre facturar y descontar existencias.
+"""Enlace entre facturar y mover existencias.
 
 Lo que estas pruebas fijan, en orden de importancia:
 
-* facturar una venta descuenta del almacen y deja el origen en el libro;
-* repetir la descarga no vuelve a descontar;
-* si una partida no alcanza, ninguna se aplica;
-* una factura de compra no descuenta;
-* lo que no se puede descontar se reporta, nunca se redondea a la callada.
+* una venta saca del almacen y una compra lo surte, y el sentido lo decide la
+  direccion de la factura, no quien llama;
+* repetir la operacion no vuelve a mover;
+* si una partida no alcanza en una venta, ninguna se aplica;
+* una factura sin clasificar no mueve nada;
+* lo que no se puede mover se reporta, nunca se redondea a la callada.
 """
 
 from __future__ import annotations
@@ -34,8 +35,8 @@ from app.models.session import transaction_context
 from app.services.invoice_inventory_service import (
     _movement_key,
     _whole_units,
-    discharge_invoice_inventory,
-    preview_invoice_discharge,
+    apply_invoice_to_inventory,
+    preview_invoice_inventory,
 )
 from app.utils.errors import AppError
 from tests.conftest import BackendTestCase
@@ -150,9 +151,9 @@ class TestDischarge(InvoiceInventoryTestCase):
         """El enlace que faltaba: se facturaba y el almacen quedaba igual."""
         line = self.add_line(quantity="4")
 
-        result = discharge_invoice_inventory(SALE, {"id_location": RACK}, ACTOR)
+        result = apply_invoice_to_inventory(SALE, {"id_location": RACK}, ACTOR)
 
-        self.assertEqual(1, result["discharged_lines"])
+        self.assertEqual(1, result["applied_lines"])
         self.assertEqual(16, self.stock())
         self.assertEqual(16, self.product_total())
         movement = result["movements"][0]
@@ -164,13 +165,13 @@ class TestDischarge(InvoiceInventoryTestCase):
 
     def test_discharging_twice_does_not_decrement_twice(self):
         self.add_line(quantity="4")
-        discharge_invoice_inventory(SALE, {"id_location": RACK}, ACTOR)
+        apply_invoice_to_inventory(SALE, {"id_location": RACK}, ACTOR)
 
-        again = discharge_invoice_inventory(SALE, {"id_location": RACK}, ACTOR)
+        again = apply_invoice_to_inventory(SALE, {"id_location": RACK}, ACTOR)
 
-        self.assertEqual(0, again["discharged_lines"])
+        self.assertEqual(0, again["applied_lines"])
         self.assertEqual(
-            ["already_discharged"], [row["skip_reason"] for row in again["skipped_lines"]]
+            ["already_applied"], [row["skip_reason"] for row in again["skipped_lines"]]
         )
         self.assertEqual(16, self.stock())
 
@@ -180,7 +181,7 @@ class TestDischarge(InvoiceInventoryTestCase):
         self.add_line(quantity="9999")
 
         with self.assertRaises(AppError) as raised:
-            discharge_invoice_inventory(SALE, {"id_location": RACK}, ACTOR)
+            apply_invoice_to_inventory(SALE, {"id_location": RACK}, ACTOR)
 
         self.assertEqual("errors.inventory_insufficient_stock", raised.exception.message_key)
         # Ni la partida que si alcanzaba se aplico.
@@ -188,15 +189,17 @@ class TestDischarge(InvoiceInventoryTestCase):
         with transaction_context() as db:
             self.assertEqual(0, db.query(InventoryLedger).count())
 
-    def test_a_purchase_invoice_does_not_decrement(self):
-        """Una compra trae mercancia, no la saca."""
+    def test_a_purchase_invoice_increments_instead(self):
+        """Una compra es el documento con el que la mercancia entra."""
         self.add_line(invoice=PURCHASE, quantity="4")
 
-        with self.assertRaises(AppError) as raised:
-            discharge_invoice_inventory(PURCHASE, {"id_location": RACK}, ACTOR)
+        result = apply_invoice_to_inventory(PURCHASE, {"id_location": RACK}, ACTOR)
 
-        self.assertEqual("errors.invoice_discharge_requires_sale", raised.exception.message_key)
-        self.assertEqual(20, self.stock())
+        self.assertEqual(1, result["applied_lines"])
+        self.assertEqual("compra", result["invoice_direction"])
+        self.assertEqual("receive", result["movement_type"])
+        self.assertEqual(24, self.stock())
+        self.assertEqual(4, result["movements"][0]["quantity_delta"])
 
     def test_a_quotation_cannot_be_discharged(self):
         self.add_line(quantity="4")
@@ -204,25 +207,25 @@ class TestDischarge(InvoiceInventoryTestCase):
             db.get(Invoice, SALE).invoice_status = "cotizacion"
 
         with self.assertRaises(AppError) as raised:
-            discharge_invoice_inventory(SALE, {"id_location": RACK}, ACTOR)
+            apply_invoice_to_inventory(SALE, {"id_location": RACK}, ACTOR)
 
         self.assertEqual(
-            "errors.invoice_discharge_status_not_allowed", raised.exception.message_key
+            "errors.invoice_inventory_status_not_allowed", raised.exception.message_key
         )
 
     def test_an_invoice_without_lines_is_reported(self):
         with self.assertRaises(AppError) as raised:
-            discharge_invoice_inventory(SALE, {}, ACTOR)
+            apply_invoice_to_inventory(SALE, {}, ACTOR)
 
-        self.assertEqual("errors.invoice_discharge_no_lines", raised.exception.message_key)
+        self.assertEqual("errors.invoice_inventory_no_lines", raised.exception.message_key)
 
     def test_lines_without_a_product_are_skipped(self):
         """Un servicio facturado no vive en el almacen."""
         self.add_line(quantity="1", product=None)
 
-        result = discharge_invoice_inventory(SALE, {"id_location": RACK}, ACTOR)
+        result = apply_invoice_to_inventory(SALE, {"id_location": RACK}, ACTOR)
 
-        self.assertEqual(0, result["discharged_lines"])
+        self.assertEqual(0, result["applied_lines"])
         self.assertEqual(
             ["line_without_product"], [row["skip_reason"] for row in result["skipped_lines"]]
         )
@@ -235,9 +238,9 @@ class TestDischarge(InvoiceInventoryTestCase):
         """
         self.add_line(quantity="2.5")
 
-        result = discharge_invoice_inventory(SALE, {"id_location": RACK}, ACTOR)
+        result = apply_invoice_to_inventory(SALE, {"id_location": RACK}, ACTOR)
 
-        self.assertEqual(0, result["discharged_lines"])
+        self.assertEqual(0, result["applied_lines"])
         self.assertEqual(
             ["quantity_not_whole_units"], [row["skip_reason"] for row in result["skipped_lines"]]
         )
@@ -247,16 +250,16 @@ class TestDischarge(InvoiceInventoryTestCase):
         self.add_line(quantity="4", authorized=False)
 
         with self.assertRaises(AppError) as raised:
-            discharge_invoice_inventory(SALE, {}, ACTOR)
+            apply_invoice_to_inventory(SALE, {}, ACTOR)
 
-        self.assertEqual("errors.invoice_discharge_no_lines", raised.exception.message_key)
+        self.assertEqual("errors.invoice_inventory_no_lines", raised.exception.message_key)
 
     def test_the_discharge_location_can_be_chosen(self):
         self.add_line(quantity="4")
         with transaction_context() as db:
             db.add(InventoryStock(id_product=PRODUCT, id_location=WAREHOUSE, quantity=7, created_by=1))
 
-        discharge_invoice_inventory(SALE, {"id_location": WAREHOUSE}, ACTOR)
+        apply_invoice_to_inventory(SALE, {"id_location": WAREHOUSE}, ACTOR)
 
         self.assertEqual(3, self.stock(WAREHOUSE))
         self.assertEqual(20, self.stock(RACK))
@@ -264,7 +267,7 @@ class TestDischarge(InvoiceInventoryTestCase):
     def test_without_a_location_it_uses_the_product_location(self):
         self.add_line(quantity="4")
 
-        discharge_invoice_inventory(SALE, {}, ACTOR)
+        apply_invoice_to_inventory(SALE, {}, ACTOR)
 
         self.assertEqual(16, self.stock(RACK))
 
@@ -273,7 +276,7 @@ class TestDischarge(InvoiceInventoryTestCase):
         with transaction_context() as db:
             db.add(InventoryStock(id_product=PRODUCT, id_location=WAREHOUSE, quantity=9, created_by=1))
 
-        discharge_invoice_inventory(
+        apply_invoice_to_inventory(
             SALE, {"locations_by_line": {str(first): WAREHOUSE}}, ACTOR
         )
 
@@ -284,13 +287,13 @@ class TestDischarge(InvoiceInventoryTestCase):
         self.add_line(quantity="4")
 
         with self.assertRaises(AppError) as raised:
-            discharge_invoice_inventory(SALE, {"id_location": RACK}, OUTSIDER)
+            apply_invoice_to_inventory(SALE, {"id_location": RACK}, OUTSIDER)
 
         self.assertEqual("errors.permission_denied", raised.exception.message_key)
 
     def test_a_missing_invoice_is_reported(self):
         with self.assertRaises(AppError) as raised:
-            discharge_invoice_inventory(9999, {}, ACTOR)
+            apply_invoice_to_inventory(9999, {}, ACTOR)
 
         self.assertEqual("errors.resource_not_found", raised.exception.message_key)
 
@@ -299,10 +302,11 @@ class TestPreview(InvoiceInventoryTestCase):
     def test_preview_reports_what_would_happen_without_touching_stock(self):
         self.add_line(quantity="4")
 
-        report = preview_invoice_discharge(SALE, {"id_location": RACK}, ACTOR)
+        report = preview_invoice_inventory(SALE, {"id_location": RACK}, ACTOR)
 
-        self.assertTrue(report["is_sale"])
-        self.assertTrue(report["can_discharge"])
+        self.assertEqual("venta", report["invoice_direction"])
+        self.assertEqual("decrementa", report["effect"])
+        self.assertTrue(report["can_apply"])
         self.assertEqual(1, report["pending_lines"])
         self.assertEqual(0, report["blocked_lines"])
         self.assertEqual(4, report["lines"][0]["units"])
@@ -313,30 +317,31 @@ class TestPreview(InvoiceInventoryTestCase):
     def test_preview_flags_a_line_that_does_not_fit(self):
         self.add_line(quantity="9999")
 
-        report = preview_invoice_discharge(SALE, {"id_location": RACK}, ACTOR)
+        report = preview_invoice_inventory(SALE, {"id_location": RACK}, ACTOR)
 
-        self.assertFalse(report["can_discharge"])
+        self.assertFalse(report["can_apply"])
         self.assertEqual(1, report["blocked_lines"])
         self.assertEqual("insufficient_stock", report["lines"][0]["skip_reason"])
 
-    def test_preview_of_a_purchase_says_it_is_not_a_sale(self):
+    def test_preview_of_a_purchase_says_it_increments(self):
         self.add_line(invoice=PURCHASE, quantity="4")
 
-        report = preview_invoice_discharge(PURCHASE, {}, ACTOR)
+        report = preview_invoice_inventory(PURCHASE, {}, ACTOR)
 
-        self.assertFalse(report["is_sale"])
-        self.assertFalse(report["can_discharge"])
         self.assertEqual("compra", report["invoice_direction"])
+        self.assertEqual("incrementa", report["effect"])
+        self.assertEqual("receive", report["movement_type"])
+        self.assertTrue(report["can_apply"])
 
     def test_preview_reports_an_already_discharged_invoice(self):
         self.add_line(quantity="4")
-        discharge_invoice_inventory(SALE, {"id_location": RACK}, ACTOR)
+        apply_invoice_to_inventory(SALE, {"id_location": RACK}, ACTOR)
 
-        report = preview_invoice_discharge(SALE, {"id_location": RACK}, ACTOR)
+        report = preview_invoice_inventory(SALE, {"id_location": RACK}, ACTOR)
 
-        self.assertTrue(report["fully_discharged"])
-        self.assertFalse(report["can_discharge"])
-        self.assertEqual(1, report["already_discharged_lines"])
+        self.assertTrue(report["fully_applied"])
+        self.assertFalse(report["can_apply"])
+        self.assertEqual(1, report["already_applied_lines"])
 
 
 class TestHelpers(unittest.TestCase):
@@ -356,3 +361,95 @@ class TestHelpers(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestPurchaseReceives(InvoiceInventoryTestCase):
+    """El lado que faltaba: la compra surte el almacen."""
+
+    def purchase(self, **overrides):
+        return apply_invoice_to_inventory(PURCHASE, overrides, ACTOR)
+
+    def test_a_purchase_does_not_need_existing_stock(self):
+        """Es lo contrario de una venta: la mercancia esta entrando."""
+        with transaction_context() as db:
+            db.query(InventoryStock).filter_by(id_product=PRODUCT).delete()
+        self.add_line(invoice=PURCHASE, quantity="30")
+
+        result = self.purchase(id_location=RACK)
+
+        self.assertEqual(1, result["applied_lines"])
+        self.assertEqual(30, self.stock())
+
+    def test_a_huge_purchase_is_not_blocked(self):
+        """En una compra no hay existencia que pueda faltar."""
+        self.add_line(invoice=PURCHASE, quantity="9999")
+
+        result = self.purchase(id_location=RACK)
+
+        self.assertEqual(1, result["applied_lines"])
+        self.assertEqual(10019, self.stock())
+
+    def test_receiving_twice_does_not_increment_twice(self):
+        self.add_line(invoice=PURCHASE, quantity="5")
+        self.purchase(id_location=RACK)
+
+        again = self.purchase(id_location=RACK)
+
+        self.assertEqual(0, again["applied_lines"])
+        self.assertEqual(25, self.stock())
+
+    def test_a_purchase_can_receive_into_another_warehouse(self):
+        self.add_line(invoice=PURCHASE, quantity="6")
+
+        self.purchase(id_location=WAREHOUSE)
+
+        self.assertEqual(6, self.stock(WAREHOUSE))
+        self.assertEqual(20, self.stock(RACK))
+
+    def test_the_ledger_says_it_came_from_a_purchase(self):
+        line = self.add_line(invoice=PURCHASE, quantity="6")
+
+        movement = self.purchase(id_location=RACK)["movements"][0]
+
+        self.assertEqual("receive", movement["movement_type"])
+        self.assertEqual("invoice_line", movement["reference_type"])
+        self.assertEqual(str(line), movement["reference_id"])
+        self.assertIn("compra", movement["reason"])
+
+    def test_a_fractional_purchase_is_reported_not_rounded(self):
+        self.add_line(invoice=PURCHASE, quantity="2.5")
+
+        result = self.purchase(id_location=RACK)
+
+        self.assertEqual(0, result["applied_lines"])
+        self.assertEqual(
+            ["quantity_not_whole_units"], [row["skip_reason"] for row in result["skipped_lines"]]
+        )
+        self.assertEqual(20, self.stock())
+
+    def test_an_unclassified_invoice_moves_nothing(self):
+        """Sin saber si entra o sale, moverlo seria una adivinanza."""
+        with transaction_context() as db:
+            # Emisor y receptor distintos de la empresa principal.
+            db.get(Invoice, SALE).id_issuer_customer_supplier = CLIENT
+            db.get(Invoice, SALE).id_customer_supplier = CLIENT
+        self.add_line(quantity="4")
+
+        with self.assertRaises(AppError) as raised:
+            apply_invoice_to_inventory(SALE, {"id_location": RACK}, ACTOR)
+
+        self.assertEqual(
+            "errors.invoice_inventory_direction_unknown", raised.exception.message_key
+        )
+        self.assertEqual(20, self.stock())
+
+    def test_a_declared_direction_wins_over_the_deduced_one(self):
+        """Las facturas cargadas por XML ya traen su direccion clasificada."""
+        with transaction_context() as db:
+            db.get(Invoice, SALE).invoice_direction = "compra"
+        self.add_line(quantity="4")
+
+        result = apply_invoice_to_inventory(SALE, {"id_location": RACK}, ACTOR)
+
+        self.assertEqual("compra", result["invoice_direction"])
+        self.assertEqual(24, self.stock())
