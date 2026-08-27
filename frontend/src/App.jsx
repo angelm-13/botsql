@@ -18,14 +18,11 @@ import EntityPermissionPage from "./pages/EntityPermissionPage.jsx";
 import EventLogPage from "./pages/EventLogPage.jsx";
 import FieldPage from "./pages/FieldPage.jsx";
 import FiscalAccountPage from "./pages/FiscalAccountPage.jsx";
-import FiscalRecordPage from "./pages/FiscalRecordPage.jsx";
-import FiscalStampPage from "./pages/FiscalStampPage.jsx";
 import IncidentPage from "./pages/IncidentPage.jsx";
 import IncidentDetailPage from "./pages/IncidentDetailPage.jsx";
 import IncidentTypePage from "./pages/IncidentTypePage.jsx";
 import InventoryStatusPage from "./pages/InventoryStatusPage.jsx";
 import InvoicePage from "./pages/InvoicePage.jsx";
-import InvoiceMaterialServicePage from "./pages/InvoiceMaterialServicePage.jsx";
 import ManualInvoicePage from "./pages/ManualInvoicePage.jsx";
 import LevelPage from "./pages/LevelPage.jsx";
 import LocationPage from "./pages/LocationPage.jsx";
@@ -170,8 +167,6 @@ export default function App() {
           <Route path="/event_log" element={<TechnicalRoute><EventLogPage /></TechnicalRoute>} />
           <Route path="/field" element={<RoleAccessRoute entityName="field"><FieldPage /></RoleAccessRoute>} />
           <Route path="/fiscal_account" element={<RoleAccessRoute entityName="fiscal_account"><FiscalAccountPage /></RoleAccessRoute>} />
-          <Route path="/fiscal_record" element={<RoleAccessRoute entityName="fiscal_record"><FiscalRecordPage /></RoleAccessRoute>} />
-          <Route path="/fiscal_stamp" element={<RoleAccessRoute entityName="fiscal_stamp"><FiscalStampPage /></RoleAccessRoute>} />
           <Route path="/incident" element={<RoleAccessRoute entityName="incident"><IncidentPage /></RoleAccessRoute>} />
           <Route path="/incident_detail" element={<RoleAccessRoute entityName="incident_detail"><IncidentDetailPage /></RoleAccessRoute>} />
           <Route path="/incident_type" element={<RoleAccessRoute entityName="incident_type"><IncidentTypePage /></RoleAccessRoute>} />
@@ -179,7 +174,6 @@ export default function App() {
           <Route path="/kanban" element={<Kanban />} />
           <Route path="/invoice" element={<RoleAccessRoute entityName="invoice"><InvoicePage /></RoleAccessRoute>} />
           <Route path="/invoice/manual" element={<RoleAccessRoute entityName="invoice"><ManualInvoicePage /></RoleAccessRoute>} />
-          <Route path="/invoice_material_service" element={<RoleAccessRoute entityName="invoice_material_service"><InvoiceMaterialServicePage /></RoleAccessRoute>} />
           <Route path="/level" element={<RoleAccessRoute entityName="level"><LevelPage /></RoleAccessRoute>} />
           <Route path="/location" element={<RoleAccessRoute entityName="location"><LocationPage /></RoleAccessRoute>} />
           <Route path="/location_type" element={<RoleAccessRoute entityName="location_type"><LocationTypePage /></RoleAccessRoute>} />

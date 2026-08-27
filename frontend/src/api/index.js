@@ -236,17 +236,7 @@ export const createFiscalAccount = (payload) => request("/fiscal_account/", { me
 export const updateFiscalAccount = (id, payload) => request(`/fiscal_account/${id}`, { method: "PUT", body: payload });
 export const deleteFiscalAccount = (id) => request(`/fiscal_account/${id}`, { method: "DELETE" });
 
-export const getAllFiscalRecord = (params = {}) => request("/fiscal_record/", { params });
-export const getFiscalRecord = (id) => request(`/fiscal_record/${id}`);
-export const createFiscalRecord = (payload) => request("/fiscal_record/", { method: "POST", body: payload });
-export const updateFiscalRecord = (id, payload) => request(`/fiscal_record/${id}`, { method: "PUT", body: payload });
-export const deleteFiscalRecord = (id) => request(`/fiscal_record/${id}`, { method: "DELETE" });
 
-export const getAllFiscalStamp = (params = {}) => request("/fiscal_stamp/", { params });
-export const getFiscalStamp = (id) => request(`/fiscal_stamp/${id}`);
-export const createFiscalStamp = (payload) => request("/fiscal_stamp/", { method: "POST", body: payload });
-export const updateFiscalStamp = (id, payload) => request(`/fiscal_stamp/${id}`, { method: "PUT", body: payload });
-export const deleteFiscalStamp = (id) => request(`/fiscal_stamp/${id}`, { method: "DELETE" });
 
 export const getAllIncident = (params = {}) => request("/incident/", { params });
 export const getIncident = (id) => request(`/incident/${id}`);

@@ -1,0 +1,358 @@
+"""Enlace entre facturar y descontar existencias.
+
+Lo que estas pruebas fijan, en orden de importancia:
+
+* facturar una venta descuenta del almacen y deja el origen en el libro;
+* repetir la descarga no vuelve a descontar;
+* si una partida no alcanza, ninguna se aplica;
+* una factura de compra no descuenta;
+* lo que no se puede descontar se reporta, nunca se redondea a la callada.
+"""
+
+from __future__ import annotations
+
+import unittest
+from decimal import Decimal
+
+from app.models import (
+    Brand,
+    CustomerSupplier,
+    Invoice,
+    InvoiceMaterialService,
+    Location,
+    LocationType,
+    Material,
+    Product,
+    ProductFamily,
+    Proyect,
+    Status,
+    Unit,
+)
+from app.models.inventory_ledger import InventoryLedger
+from app.models.inventory_stock import InventoryStock
+from app.models.session import transaction_context
+from app.services.invoice_inventory_service import (
+    _movement_key,
+    _whole_units,
+    discharge_invoice_inventory,
+    preview_invoice_discharge,
+)
+from app.utils.errors import AppError
+from tests.conftest import BackendTestCase
+
+
+ACTOR = {"id_user": 1, "id_proyect": 30}
+OUTSIDER = {"id_user": 2, "id_proyect": 99}
+
+PRINCIPAL = 10   # la empresa que emite: sus facturas son ventas
+CLIENT = 20
+WAREHOUSE = 1
+RACK = 2
+PRODUCT = 60
+SALE = 50        # factura de venta
+PURCHASE = 51    # factura de compra
+
+
+class InvoiceInventoryTestCase(BackendTestCase):
+    def setUp(self):
+        super().setUp()
+        with transaction_context() as db:
+            db.add_all([
+                CustomerSupplier(
+                    id_customer_supplier=PRINCIPAL, name="Mi Empresa", tax_id="AAA010101AA1",
+                    postal_code="37000", fiscal_type="601", type="supplier",
+                    is_principal=True, id_user=1, created_by=1,
+                ),
+                CustomerSupplier(
+                    id_customer_supplier=CLIENT, name="Cliente", tax_id="BBB010101BB1",
+                    postal_code="37100", fiscal_type="601", type="client", id_user=1, created_by=1,
+                ),
+                LocationType(
+                    id_location_type=1, location_type_description="Almacen",
+                    is_warehouse=True, created_by=1,
+                ),
+                LocationType(
+                    id_location_type=2, location_type_description="Rack",
+                    is_warehouse=False, created_by=1,
+                ),
+                Brand(id_brand=1, brand_description="Generica", created_by=1),
+                ProductFamily(id_product_family=1, product_family_description="General", created_by=1),
+                Unit(id_unit=1, unit_name="Pieza", is_active=True, measurement_system="metric", created_by=1),
+            ])
+            db.flush()
+            db.add_all([
+                Proyect(id_proyect=30, id_customer_supplier=CLIENT, leader=1, proyect_description="Proyecto", created_by=1),
+                Status(id_status=40, status_description="Activo", category="invoice", is_terminal=False, sort_order="asc", created_by=1),
+                Location(id_location=WAREHOUSE, id_location_type=1, location_description="Almacen Central", created_by=1),
+                Material(id_material=1, material_description="Cemento", id_unit=1, id_brand=1, id_product_family=1, created_by=1),
+            ])
+            db.flush()
+            db.add(Location(
+                id_location=RACK, id_location_type=2, location_description="Rack A-1",
+                id_location_reference=WAREHOUSE, created_by=1,
+            ))
+            db.flush()
+            db.add_all([
+                # La factura de compra que trajo el producto.
+                Invoice(
+                    id_invoice=PURCHASE, id_customer_supplier=PRINCIPAL,
+                    id_issuer_customer_supplier=CLIENT, id_proyect=30, id_status=40,
+                    invoice_status="timbrada", tax_certification_supplier=CLIENT,
+                    apply_tax=False, created_by=1,
+                ),
+                # La factura de venta que se va a descargar.
+                Invoice(
+                    id_invoice=SALE, id_customer_supplier=CLIENT,
+                    id_issuer_customer_supplier=PRINCIPAL, id_proyect=30, id_status=40,
+                    invoice_status="timbrada", tax_certification_supplier=PRINCIPAL,
+                    apply_tax=False, created_by=1,
+                ),
+            ])
+            db.flush()
+            db.add(Product(
+                id_product=PRODUCT, id_invoice=PURCHASE, id_location=RACK, id_material=1,
+                is_directly_related_to_product_service=False, cantidad=0, created_by=1,
+            ))
+            db.flush()
+            db.add(InventoryStock(
+                id_product=PRODUCT, id_location=RACK, quantity=20, created_by=1,
+            ))
+
+    def add_line(self, *, invoice=SALE, quantity="4", product=PRODUCT, authorized=True, line_id=None):
+        with transaction_context() as db:
+            line = InvoiceMaterialService(
+                id_invoice_material_service=line_id,
+                id_invoice=invoice,
+                invoice_material_service_description="Cemento vendido",
+                is_directly_related_to_product_service_creation=False,
+                id_authorized=1, id_status=40, id_buyer=1, id_customer_supplier=CLIENT,
+                gross_price=Decimal("120"), quantity=Decimal(str(quantity)),
+                line_type="product", tax_applicable=False,
+                authorization_status="authorized" if authorized else "pending",
+                id_product=product, created_by=1,
+            )
+            db.add(line)
+            db.flush()
+            return line.id_invoice_material_service
+
+    def stock(self, location=RACK):
+        with transaction_context() as db:
+            row = db.query(InventoryStock).filter_by(id_product=PRODUCT, id_location=location).first()
+            return int(row.quantity) if row else None
+
+    def product_total(self):
+        with transaction_context() as db:
+            return int(db.get(Product, PRODUCT).cantidad or 0)
+
+
+class TestDischarge(InvoiceInventoryTestCase):
+    def test_selling_decrements_the_warehouse(self):
+        """El enlace que faltaba: se facturaba y el almacen quedaba igual."""
+        line = self.add_line(quantity="4")
+
+        result = discharge_invoice_inventory(SALE, {"id_location": RACK}, ACTOR)
+
+        self.assertEqual(1, result["discharged_lines"])
+        self.assertEqual(16, self.stock())
+        self.assertEqual(16, self.product_total())
+        movement = result["movements"][0]
+        self.assertEqual(-4, movement["quantity_delta"])
+        self.assertEqual("issue", movement["movement_type"])
+        # El libro queda con el origen, que es lo que permite auditar la salida.
+        self.assertEqual("invoice_line", movement["reference_type"])
+        self.assertEqual(str(line), movement["reference_id"])
+
+    def test_discharging_twice_does_not_decrement_twice(self):
+        self.add_line(quantity="4")
+        discharge_invoice_inventory(SALE, {"id_location": RACK}, ACTOR)
+
+        again = discharge_invoice_inventory(SALE, {"id_location": RACK}, ACTOR)
+
+        self.assertEqual(0, again["discharged_lines"])
+        self.assertEqual(
+            ["already_discharged"], [row["skip_reason"] for row in again["skipped_lines"]]
+        )
+        self.assertEqual(16, self.stock())
+
+    def test_a_line_that_does_not_fit_blocks_the_whole_invoice(self):
+        """Descargar solo lo que alcanza dejaria la factura a medias."""
+        self.add_line(quantity="2")
+        self.add_line(quantity="9999")
+
+        with self.assertRaises(AppError) as raised:
+            discharge_invoice_inventory(SALE, {"id_location": RACK}, ACTOR)
+
+        self.assertEqual("errors.inventory_insufficient_stock", raised.exception.message_key)
+        # Ni la partida que si alcanzaba se aplico.
+        self.assertEqual(20, self.stock())
+        with transaction_context() as db:
+            self.assertEqual(0, db.query(InventoryLedger).count())
+
+    def test_a_purchase_invoice_does_not_decrement(self):
+        """Una compra trae mercancia, no la saca."""
+        self.add_line(invoice=PURCHASE, quantity="4")
+
+        with self.assertRaises(AppError) as raised:
+            discharge_invoice_inventory(PURCHASE, {"id_location": RACK}, ACTOR)
+
+        self.assertEqual("errors.invoice_discharge_requires_sale", raised.exception.message_key)
+        self.assertEqual(20, self.stock())
+
+    def test_a_quotation_cannot_be_discharged(self):
+        self.add_line(quantity="4")
+        with transaction_context() as db:
+            db.get(Invoice, SALE).invoice_status = "cotizacion"
+
+        with self.assertRaises(AppError) as raised:
+            discharge_invoice_inventory(SALE, {"id_location": RACK}, ACTOR)
+
+        self.assertEqual(
+            "errors.invoice_discharge_status_not_allowed", raised.exception.message_key
+        )
+
+    def test_an_invoice_without_lines_is_reported(self):
+        with self.assertRaises(AppError) as raised:
+            discharge_invoice_inventory(SALE, {}, ACTOR)
+
+        self.assertEqual("errors.invoice_discharge_no_lines", raised.exception.message_key)
+
+    def test_lines_without_a_product_are_skipped(self):
+        """Un servicio facturado no vive en el almacen."""
+        self.add_line(quantity="1", product=None)
+
+        result = discharge_invoice_inventory(SALE, {"id_location": RACK}, ACTOR)
+
+        self.assertEqual(0, result["discharged_lines"])
+        self.assertEqual(
+            ["line_without_product"], [row["skip_reason"] for row in result["skipped_lines"]]
+        )
+        self.assertEqual(20, self.stock())
+
+    def test_a_fractional_quantity_is_reported_not_rounded(self):
+        """La existencia se lleva en piezas; 2.5 kilos no se puede descontar.
+
+        Redondear a la callada descuadraria el almacen sin dejar rastro.
+        """
+        self.add_line(quantity="2.5")
+
+        result = discharge_invoice_inventory(SALE, {"id_location": RACK}, ACTOR)
+
+        self.assertEqual(0, result["discharged_lines"])
+        self.assertEqual(
+            ["quantity_not_whole_units"], [row["skip_reason"] for row in result["skipped_lines"]]
+        )
+        self.assertEqual(20, self.stock())
+
+    def test_unauthorized_lines_are_left_out(self):
+        self.add_line(quantity="4", authorized=False)
+
+        with self.assertRaises(AppError) as raised:
+            discharge_invoice_inventory(SALE, {}, ACTOR)
+
+        self.assertEqual("errors.invoice_discharge_no_lines", raised.exception.message_key)
+
+    def test_the_discharge_location_can_be_chosen(self):
+        self.add_line(quantity="4")
+        with transaction_context() as db:
+            db.add(InventoryStock(id_product=PRODUCT, id_location=WAREHOUSE, quantity=7, created_by=1))
+
+        discharge_invoice_inventory(SALE, {"id_location": WAREHOUSE}, ACTOR)
+
+        self.assertEqual(3, self.stock(WAREHOUSE))
+        self.assertEqual(20, self.stock(RACK))
+
+    def test_without_a_location_it_uses_the_product_location(self):
+        self.add_line(quantity="4")
+
+        discharge_invoice_inventory(SALE, {}, ACTOR)
+
+        self.assertEqual(16, self.stock(RACK))
+
+    def test_a_location_per_line_can_be_given(self):
+        first = self.add_line(quantity="3")
+        with transaction_context() as db:
+            db.add(InventoryStock(id_product=PRODUCT, id_location=WAREHOUSE, quantity=9, created_by=1))
+
+        discharge_invoice_inventory(
+            SALE, {"locations_by_line": {str(first): WAREHOUSE}}, ACTOR
+        )
+
+        self.assertEqual(6, self.stock(WAREHOUSE))
+        self.assertEqual(20, self.stock(RACK))
+
+    def test_project_isolation_is_respected(self):
+        self.add_line(quantity="4")
+
+        with self.assertRaises(AppError) as raised:
+            discharge_invoice_inventory(SALE, {"id_location": RACK}, OUTSIDER)
+
+        self.assertEqual("errors.permission_denied", raised.exception.message_key)
+
+    def test_a_missing_invoice_is_reported(self):
+        with self.assertRaises(AppError) as raised:
+            discharge_invoice_inventory(9999, {}, ACTOR)
+
+        self.assertEqual("errors.resource_not_found", raised.exception.message_key)
+
+
+class TestPreview(InvoiceInventoryTestCase):
+    def test_preview_reports_what_would_happen_without_touching_stock(self):
+        self.add_line(quantity="4")
+
+        report = preview_invoice_discharge(SALE, {"id_location": RACK}, ACTOR)
+
+        self.assertTrue(report["is_sale"])
+        self.assertTrue(report["can_discharge"])
+        self.assertEqual(1, report["pending_lines"])
+        self.assertEqual(0, report["blocked_lines"])
+        self.assertEqual(4, report["lines"][0]["units"])
+        self.assertEqual(20, report["lines"][0]["available"])
+        # Nada se movio.
+        self.assertEqual(20, self.stock())
+
+    def test_preview_flags_a_line_that_does_not_fit(self):
+        self.add_line(quantity="9999")
+
+        report = preview_invoice_discharge(SALE, {"id_location": RACK}, ACTOR)
+
+        self.assertFalse(report["can_discharge"])
+        self.assertEqual(1, report["blocked_lines"])
+        self.assertEqual("insufficient_stock", report["lines"][0]["skip_reason"])
+
+    def test_preview_of_a_purchase_says_it_is_not_a_sale(self):
+        self.add_line(invoice=PURCHASE, quantity="4")
+
+        report = preview_invoice_discharge(PURCHASE, {}, ACTOR)
+
+        self.assertFalse(report["is_sale"])
+        self.assertFalse(report["can_discharge"])
+        self.assertEqual("compra", report["invoice_direction"])
+
+    def test_preview_reports_an_already_discharged_invoice(self):
+        self.add_line(quantity="4")
+        discharge_invoice_inventory(SALE, {"id_location": RACK}, ACTOR)
+
+        report = preview_invoice_discharge(SALE, {"id_location": RACK}, ACTOR)
+
+        self.assertTrue(report["fully_discharged"])
+        self.assertFalse(report["can_discharge"])
+        self.assertEqual(1, report["already_discharged_lines"])
+
+
+class TestHelpers(unittest.TestCase):
+    def test_the_movement_key_is_stable_per_invoice_and_line(self):
+        """De aqui sale la idempotencia: misma factura y partida, misma llave."""
+        self.assertEqual("invoice-50-line-7", _movement_key(50, 7))
+        self.assertEqual(_movement_key("50", "7"), _movement_key(50, 7))
+        self.assertNotEqual(_movement_key(50, 7), _movement_key(50, 8))
+
+    def test_whole_units_accepts_only_positive_integers(self):
+        self.assertEqual(3, _whole_units("3"))
+        self.assertEqual(3, _whole_units(Decimal("3.000000")))
+        for value in ("2.5", "0", "-1", None, "abc", ""):
+            with self.subTest(value=value):
+                self.assertIsNone(_whole_units(value))
+
+
+if __name__ == "__main__":
+    unittest.main()

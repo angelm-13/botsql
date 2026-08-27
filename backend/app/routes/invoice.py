@@ -15,6 +15,7 @@ from app.services.invoice_material_service_service import InvoiceMaterialService
 from app.services.quotation_service import calculate_totals, validate_transition
 from app.services.manual_invoice_service import create_manual_invoice, preview_manual_invoice, validate_manual_invoice_context
 from app.services.invoice_catalogs import catalogs_payload
+from app.services.invoice_inventory_service import discharge_invoice_inventory, preview_invoice_discharge
 
 
 bp_invoice = Blueprint('invoice', __name__, url_prefix='/invoice')
@@ -201,6 +202,24 @@ def create_invoice(user_data):
     return _jsonify_projected_record(user_data, InvoiceService.create(payload, user_id=user_data.get('id_user')), status=201)
 
 
+@bp_invoice.route('/<id_invoice>/inventory-discharge', methods=['GET'])
+@token_required
+@require_entity_permission('invoice', 'read')
+def preview_invoice_inventory_discharge(user_data, id_invoice):
+    """Que descontaria del almacen esta factura, sin tocar nada."""
+    payload = {'id_location': request.args.get('id_location')}
+    return jsonify(preview_invoice_discharge(id_invoice, payload, user_data))
+
+
+@bp_invoice.route('/<id_invoice>/inventory-discharge', methods=['POST'])
+@token_required
+@require_entity_permission('invoice', 'update')
+def create_invoice_inventory_discharge(user_data, id_invoice):
+    """Descuenta del almacen las partidas de una factura de venta."""
+    result = discharge_invoice_inventory(id_invoice, request.get_json(silent=True) or {}, user_data)
+    return jsonify(result), (201 if result['discharged_lines'] else 200)
+
+
 @bp_invoice.route('/manual/preview', methods=['POST'])
 @token_required
 @require_entity_permission('invoice', 'create')
@@ -237,7 +256,26 @@ def create_manual_invoice_route(user_data):
         if operation.get('status') == 'stamped':
             result['invoice']['invoice_status'] = 'timbrada'
             result['invoice']['folio_fiscal'] = operation.get('provider_reference')
+            if payload.get('discharge_inventory'):
+                result['inventory'] = _discharge_after_stamp(invoice_id, payload, user_data)
     return jsonify(result), 201
+
+
+def _discharge_after_stamp(invoice_id, payload, user_data):
+    """Descarga el almacen despues de timbrar, sin poder tumbar el timbre.
+
+    El comprobante ya se emitio ante el SAT y eso no se deshace, asi que una
+    falta de existencia no puede revertir la operacion: se reporta y la
+    descarga se reintenta despues con la misma llave, que es idempotente.
+    """
+    try:
+        return discharge_invoice_inventory(
+            invoice_id,
+            {'id_location': payload.get('id_location')},
+            user_data,
+        )
+    except AppError as exc:
+        return {'discharged_lines': 0, 'error_key': exc.message_key, 'meta': exc.meta}
 
 
 @bp_invoice.route('/<id_invoice>', methods=['PUT'])

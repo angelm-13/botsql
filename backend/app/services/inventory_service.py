@@ -269,53 +269,88 @@ def apply_inventory_movement(product_id, payload, user_data):
         quantity_delta = MOVEMENT_SIGNS[movement_type] * _integer_quantity(payload.get("quantity"))
 
     with transaction_context() as db:
-        previous = db.scalars(
-            select(InventoryLedger).where(InventoryLedger.idempotency_key == key)
-        ).first()
-        if previous:
-            if previous.id_product != int(product_id):
-                raise AppError("errors.idempotency_conflict", 409)
-            return previous.serialize(), False
-
-        product = _locked_product(db, product_id)
-        project_id = _authorize(db, product, user_data)
-        _ensure_stock_seeded(db, product)
-        location = _location(db, payload.get("id_location") or product.id_location)
-
-        stock = _stock_row(db, product.id_product, location.id_location, int(user_data.get("id_user") or 0), for_update=True)
-        location_balance = int(stock.quantity or 0) + quantity_delta
-        if location_balance < 0:
-            raise AppError(
-                "errors.inventory_insufficient_stock",
-                409,
-                {
-                    "available": int(stock.quantity or 0),
-                    "requested": abs(quantity_delta),
-                    "id_location": location.id_location,
-                    "location_description": location.location_description,
-                },
-            )
-
-        stock.quantity = location_balance
-        db.flush()
-        product.cantidad = _product_total(db, product.id_product)
-
-        ledger = _append_ledger(
+        return apply_movement_in_session(
             db,
-            id_product=product.id_product,
-            id_proyect=project_id,
+            product_id,
+            user_data,
             movement_type=movement_type,
             quantity_delta=quantity_delta,
-            balance_after=product.cantidad,
-            id_location=location.id_location,
-            location_balance_after=location_balance,
             idempotency_key=key,
+            id_location=payload.get("id_location"),
             reference_type=reference_type,
-            reference_id=str(payload.get("reference_id") or "").strip()[:100] or None,
+            reference_id=payload.get("reference_id"),
             reason=reason,
-            created_by=int(user_data.get("id_user") or 0),
         )
-        return ledger.serialize(), True
+
+
+def apply_movement_in_session(
+    db,
+    product_id,
+    user_data,
+    *,
+    movement_type,
+    quantity_delta,
+    idempotency_key,
+    id_location=None,
+    reference_type=None,
+    reference_id=None,
+    reason=None,
+):
+    """Nucleo de un movimiento, dentro de una transaccion que abre el llamador.
+
+    Existe aparte para que varias partidas de una factura se descarguen en una
+    sola transaccion: si una falla, ninguna se aplica. Los validadores de la
+    entrada publica ya corrieron cuando se llega aqui.
+    """
+    previous = db.scalars(
+        select(InventoryLedger).where(InventoryLedger.idempotency_key == idempotency_key)
+    ).first()
+    if previous:
+        if previous.id_product != int(product_id):
+            raise AppError("errors.idempotency_conflict", 409)
+        return previous.serialize(), False
+
+    product = _locked_product(db, product_id)
+    project_id = _authorize(db, product, user_data)
+    _ensure_stock_seeded(db, product)
+    location = _location(db, id_location or product.id_location)
+
+    actor_id = int(user_data.get("id_user") or 0)
+    stock = _stock_row(db, product.id_product, location.id_location, actor_id, for_update=True)
+    location_balance = int(stock.quantity or 0) + quantity_delta
+    if location_balance < 0:
+        raise AppError(
+            "errors.inventory_insufficient_stock",
+            409,
+            {
+                "available": int(stock.quantity or 0),
+                "requested": abs(quantity_delta),
+                "id_product": product.id_product,
+                "id_location": location.id_location,
+                "location_description": location.location_description,
+            },
+        )
+
+    stock.quantity = location_balance
+    db.flush()
+    product.cantidad = _product_total(db, product.id_product)
+
+    ledger = _append_ledger(
+        db,
+        id_product=product.id_product,
+        id_proyect=project_id,
+        movement_type=movement_type,
+        quantity_delta=quantity_delta,
+        balance_after=product.cantidad,
+        id_location=location.id_location,
+        location_balance_after=location_balance,
+        idempotency_key=idempotency_key,
+        reference_type=reference_type,
+        reference_id=str(reference_id or "").strip()[:100] or None,
+        reason=reason,
+        created_by=actor_id,
+    )
+    return ledger.serialize(), True
 
 
 def transfer_inventory(product_id, payload, user_data):
