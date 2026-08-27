@@ -96,6 +96,7 @@ import ProtectedRoute from "./auth/ProtectedRoute";
 import React, { useEffect, useState } from "react";
 import { getAllEntityPermission } from "./api";
 import "./styles/app.css";
+import "./styles/sat-key.css";
 
 function isBootstrapUser() {
   const currentUser = JSON.parse(localStorage.getItem("user") || "null");

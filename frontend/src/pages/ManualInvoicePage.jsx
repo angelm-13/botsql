@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { BadgeCheck, Download, FileCheck2, FileText, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { createManualInvoice, downloadInvoicePdf, downloadInvoiceXml, getAllCustomerSupplier, getAllProyect, getInvoiceCatalogs, preflightInvoiceStamping, previewManualInvoice, stampInvoice } from "../api";
+import SatProductKeyField from "../components/SatProductKeyField";
 import { useI18n } from "../i18n";
 
 function asArray(payload) {
@@ -233,7 +234,7 @@ export default function ManualInvoicePage() {
               <div className="quotation-line-head"><strong>{t("manual_invoice.concept")} {index + 1}</strong><button className="icon-button" title={t("manual_invoice.delete_concept")} type="button" disabled={concepts.length === 1} onClick={() => setConcepts((current) => current.filter((item) => item.key !== concept.key))}><Trash2 size={16} /></button></div>
               <div className="form-grid quotation-item-grid">
                 <label className="field">{t("manual_invoice.description")}<input required value={concept.description} onChange={(event) => updateConcept(concept.key, "description", event.target.value)} /></label>
-                <label className="field">{t("manual_invoice.sat_product_key")}<input required value={concept.sat_product_key} onChange={(event) => updateConcept(concept.key, "sat_product_key", event.target.value)} /></label>
+                <label className="field">{t("manual_invoice.sat_product_key")}<SatProductKeyField required value={concept.sat_product_key} onChange={(clave) => updateConcept(concept.key, "sat_product_key", clave)} onDescriptionPick={(description) => { if (!concept.description) updateConcept(concept.key, "description", description); }} /></label>
                 <label className="field">{t("manual_invoice.sat_unit_key")}<input required list="sat-unit-keys" maxLength="3" value={concept.sat_unit_key} onChange={(event) => updateConcept(concept.key, "sat_unit_key", event.target.value.toUpperCase())} /></label>
                 <label className="field">{t("manual_invoice.quantity")}<input required min="0.0001" step="0.0001" type="number" value={concept.quantity} onChange={(event) => updateConcept(concept.key, "quantity", event.target.value)} /></label>
                 <label className="field">{t("manual_invoice.unit_price")}<input required min="0" step="0.01" type="number" value={concept.unit_price} onChange={(event) => updateConcept(concept.key, "unit_price", event.target.value)} /></label>

@@ -38,18 +38,24 @@ STOPWORDS = {
 
 # Sinonimos y abreviaturas, ya normalizados. El catalogo del SAT dice
 # "computador" y no "pc" ni "laptop"; dice "mantenimiento" y no "reparacion".
+#
+# Un sinonimo puntua menos que la palabra literal (ver `_relevance`), asi que
+# aqui solo van equivalencias especificas. Terminos genericos como "sistema" o
+# "aplicacion" quedan fuera a proposito: como sinonimo de "software" hacian que
+# la busqueda devolviera "Sistema de bloqueo central".
 SYNONYMS = {
     "pc": ["computador", "computadora", "computadores", "computo"],
     "pcs": ["computador", "computadora", "computadores"],
     "compu": ["computador", "computadora", "computadores"],
     "computadora": ["computador", "computadores", "computo"],
     "computadoras": ["computador", "computadores"],
-    "laptop": ["computador portatil", "portatil", "computador"],
-    "notebook": ["computador portatil", "portatil"],
+    # "portatil" a secas queda fuera: arrastraba bares y antenas portatiles.
+    "laptop": ["computador portatil", "notebook", "computador"],
+    "notebook": ["computador portatil", "computador"],
     "ordenador": ["computador", "computadora"],
     "computo": ["computador", "computadora", "computadores"],
     "computacion": ["computador", "computadora", "computadores"],
-    "informatica": ["computador", "computadora", "sistemas"],
+    "informatica": ["computador", "computadora"],
     # "soporte" no entra como sinonimo de reparacion: arrastra las bases fisicas
     # para computador, que no son un servicio.
     "reparacion": ["mantenimiento", "reparaciones"],
@@ -59,19 +65,49 @@ SYNONYMS = {
     "cel": ["celular", "telefono"],
     "celular": ["telefono", "movil"],
     "tel": ["telefono"],
-    "soft": ["software", "programa"],
-    "software": ["programa", "sistema", "aplicacion"],
-    "programa": ["software", "sistema"],
+    "soft": ["software"],
     "impresora": ["impresion", "impresoras"],
-    "flete": ["transporte", "carga"],
-    "fletes": ["transporte", "carga"],
+    "flete": ["transporte de carga", "transporte", "carga"],
+    "fletes": ["transporte de carga", "transporte", "carga"],
     "obra": ["construccion"],
     "albanileria": ["construccion"],
     "abogado": ["juridico", "legal"],
     "contador": ["contabilidad", "contable"],
     "renta": ["arrendamiento", "alquiler"],
+    "curso": ["capacitacion", "formacion", "ensenanza"],
+    "cursos": ["capacitacion", "formacion"],
+    "capacitacion": ["formacion", "ensenanza"],
     "alimento": ["comida", "alimenticio"],
     "alimentos": ["comida", "alimenticio"],
+}
+
+# Palabras que denotan que el usuario busca un servicio y no un bien. El
+# catalogo del SAT sigue la clasificacion UNSPSC, donde los segmentos 70 a 94
+# son servicios y los de 10 a 60 son bienes; con esta senal se prefieren los
+# primeros. Sin ella, "servicio de limpieza" devolvia robots y kits de
+# limpieza en lugar del servicio.
+SERVICE_HINTS = {
+    "servicio", "servicios", "mantenimiento", "reparacion", "reparaciones",
+    "instalacion", "asesoria", "consultoria", "capacitacion", "curso", "cursos",
+    "honorarios", "flete", "fletes", "transporte", "limpieza", "renta",
+    "arrendamiento", "alquiler", "mano", "reparar", "soporte", "auditoria",
+    "vigilancia", "publicidad", "hospedaje", "restaurante",
+    # Nombrar una profesion equivale a contratar su servicio.
+    "abogado", "contador", "notario", "medico", "dentista", "arquitecto",
+    "ingeniero", "disenador", "traductor", "fotografo",
+}
+
+# Primer segmento UNSPSC desde el que las claves son servicios.
+SERVICE_SEGMENT_FLOOR = 70
+
+# Palabras cuyo sentido literal en el catalogo no es el que usa la gente. Se
+# sustituyen antes de puntuar, para que el termino del catalogo sea el literal
+# y no un sinonimo de menor peso: buscar "renta" daba "Impuesto de renta"
+# porque ahi la palabra aparece literal, mientras el arrendamiento que se
+# buscaba solo llegaba como sinonimo.
+WORD_REPLACEMENTS = {
+    "renta": "arrendamiento",
+    "rentas": "arrendamiento",
 }
 
 # Frases que conviene traducir enteras antes de partir en palabras: en Mexico
@@ -95,7 +131,11 @@ def _tokenize(query: str) -> list[str]:
     text = normalize_search_text(query)
     for phrase, replacement in PHRASES.items():
         text = text.replace(phrase, replacement)
-    tokens = [token for token in text.split() if len(token) >= 2]
+    tokens = [
+        WORD_REPLACEMENTS.get(token, token)
+        for token in text.split()
+        if len(token) >= 2
+    ]
     meaningful = [token for token in tokens if token not in STOPWORDS]
     # Si al quitar las vacias no queda nada, se conservan las originales.
     return meaningful or tokens
@@ -110,22 +150,85 @@ def _matches(token: str):
     return or_(*conditions)
 
 
-def _relevance(row, tokens: list[str]) -> int:
+def _starts_word(needle: str, haystack: str) -> bool:
+    """Si `needle` aparece en `haystack` al inicio de una palabra.
+
+    Se compara contra el inicio y no contra la palabra completa para que la
+    consulta en singular alcance a la entrada en plural: "computador" debe
+    valer para "Computadores". Exigir la palabra entera hacia que "Cables de
+    computador" le ganara a "Computadores", que es la clave generica correcta.
+    """
+    return re.search(rf"\b{re.escape(needle)}", haystack) is not None
+
+
+def _token_score(token: str, description: str, keywords: str) -> int:
+    """Puntaje de un token: la palabra literal pesa mas que su sinonimo.
+
+    Dentro de cada nivel, la descripcion vale mas que las palabras clave, y el
+    inicio de palabra mas que una coincidencia a media palabra. Se devuelve el
+    mejor nivel alcanzado, no la suma, para que un termino no cuente dos veces.
+    """
+    # (inicio de palabra en descripcion, subcadena en descripcion,
+    #  inicio de palabra en palabras clave, subcadena en palabras clave)
+    #
+    # Cualquier coincidencia con la palabra literal vale mas que la mejor de un
+    # sinonimo, incluso si la literal aparece solo en las palabras clave: esa
+    # columna son las "palabras similares" que publica el SAT, y un termino que
+    # el usuario escribio tal cual es mejor senal que un sinonimo que yo supuse.
+    LITERAL = (14, 11, 9, 7)
+    SYNONYM = (6, 4, 3, 2)
+
+    for weights, candidates in ((LITERAL, [token]), (SYNONYM, SYNONYMS.get(token, []))):
+        best = 0
+        for position, candidate in enumerate(candidates):
+            # El orden en la lista de sinonimos es significativo: el primero es
+            # el mas especifico. Sin esta penalizacion, "laptop" empataba
+            # "Computadores notebook" con cualquier cosa "portatil".
+            penalty = min(position, 3)
+            if _starts_word(candidate, description):
+                best = max(best, weights[0] - penalty)
+            elif candidate in description:
+                best = max(best, weights[1] - penalty)
+            elif _starts_word(candidate, keywords):
+                best = max(best, weights[2] - penalty)
+            elif candidate in keywords:
+                best = max(best, weights[3] - penalty)
+        if best:
+            return best
+    return 0
+
+
+def _is_service(clave: str) -> bool:
+    return bool(clave) and clave[:2].isdigit() and int(clave[:2]) >= SERVICE_SEGMENT_FLOOR
+
+
+def _relevance(row, tokens: list[str], *, phrase: str = "", service_intent: bool = False) -> int:
     """Puntua la calidad del match. Mide solo eso, no conoce giros."""
     description = row.description_norm or ""
     keywords = row.keywords_norm or ""
-    score = 0
-    for token in tokens:
-        variants = _variants(token)
-        in_description = any(variant in description for variant in variants)
-        in_keywords = any(variant in keywords for variant in variants)
-        if not (in_description or in_keywords):
-            continue
-        score += 3  # la palabra, o un sinonimo, esta cubierta
-        if any(re.search(rf"\b{re.escape(variant)}\b", description) for variant in variants):
-            score += 3  # palabra completa en la descripcion: senal fuerte
-        elif in_description:
-            score += 1
+    score = sum(_token_score(token, description, keywords) for token in tokens)
+
+    # Que la descripcion cubra TODOS los terminos de la consulta es la mejor
+    # senal de que la clave es la buscada, y pesa mas que cualquier bono de
+    # frase: "Servicios de vigilancia" cubre "servicio" y "vigilancia", y debe
+    # ganarle a "Vigilancia pesquera", cuyas palabras clave contienen la frase
+    # completa pero cuya descripcion solo cubre un termino.
+    if tokens and all(_starts_word(token, description) for token in tokens):
+        score += 6
+
+    # La consulta completa tal como se escribio. En las palabras clave el bono
+    # es menor: ahi el SAT acumula frases largas y una coincidencia de
+    # subcadena es mas debil que la cobertura de la descripcion.
+    if phrase and len(phrase) >= 4:
+        if phrase in description:
+            score += 8
+        elif phrase in keywords:
+            score += 3
+
+    # El usuario pidio un servicio: se prefieren los segmentos de servicio.
+    if service_intent and score > 0 and _is_service(row.clave):
+        score += 7
+
     return score
 
 
@@ -153,6 +256,12 @@ def search_product_keys(query, limit=DEFAULT_LIMIT) -> list[dict]:
             ).all()
             return [row.serialize() for row in rows]
 
+        # La intencion se lee del texto original, antes de que `_tokenize`
+        # sustituya frases: "servicio de limpieza" se reduce a "limpieza", y si
+        # se midiera despues se perderia la palabra que marca el servicio.
+        phrase = normalize_search_text(query)
+        service_intent = bool(SERVICE_HINTS & set(phrase.split()))
+
         tokens = _tokenize(query)
         if not tokens:
             return []
@@ -170,15 +279,19 @@ def search_product_keys(query, limit=DEFAULT_LIMIT) -> list[dict]:
             select(SatProductKey)
             .where(or_(*[_matches(token) for token in tokens]))
             .order_by(coverage.desc(), SatProductKey.clave)
-            .limit(max(limit * 6, 90))
+            .limit(max(limit * 12, 240))
         ).all()
 
         # Entre las mejores por cobertura se refina en Python: a igual
-        # cobertura gana la palabra completa y la descripcion mas corta, que
-        # suele ser la mas especifica.
+        # relevancia gana la descripcion mas corta, que suele ser la clave
+        # generica y por tanto la mas probable.
         ordered = sorted(
             rows,
-            key=lambda row: (-_relevance(row, tokens), len(row.description_norm or ""), row.clave),
+            key=lambda row: (
+                -_relevance(row, tokens, phrase=phrase, service_intent=service_intent),
+                len(row.description_norm or ""),
+                row.clave,
+            ),
         )
         return [row.serialize() for row in ordered[:limit]]
 

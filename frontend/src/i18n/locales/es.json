@@ -3491,5 +3491,14 @@
     "provider_invalid": "El proveedor de timbrado no es valido.",
     "facturama_https_required": "La URL de Facturama debe usar HTTPS.",
     "expedition_place_invalid": "El lugar de expedicion debe ser un codigo postal de 5 digitos."
+  },
+  "sat_catalog": {
+    "not_loaded": "El catálogo del SAT no está cargado. Pide que se importe para poder buscar.",
+    "search_failed": "No se pudo buscar en el catálogo.",
+    "search_title": "Buscar clave en el catálogo del SAT",
+    "search_placeholder": "Busca por texto o por clave: reparación de pc, 8111...",
+    "type_to_search": "Escribe al menos dos letras para buscar.",
+    "no_results": "Sin resultados. Prueba con otra palabra.",
+    "key_must_be_8_digits": "La clave del SAT tiene 8 dígitos."
   }
 }

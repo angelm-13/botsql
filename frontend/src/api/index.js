@@ -293,6 +293,8 @@ export const downloadInvoicePdf = (id, document = "") => requestBlob(`/invoice/$
 export const getInventoryMovements = (id, params = {}) => request(`/product/${id}/inventory-movements`, { params });
 export const createInventoryMovement = (id, payload) => request(`/product/${id}/inventory-movements`, { method: "POST", body: { idempotency_key: crypto.randomUUID(), ...payload } });
 export const getInventoryReconciliation = (id) => request(`/product/${id}/inventory-reconciliation`);
+export const searchSatProductKeys = (q, limit = 12) => request("/sat/clave-prod-serv", { params: { q, limit } });
+export const getSatCatalogStatus = () => request("/sat/clave-prod-serv/status");
 
 export const getAllInvoiceMaterialService = (params = {}) => request("/invoice_material_service/", { params });
 export const getInvoiceMaterialService = (id) => request(`/invoice_material_service/${id}`);

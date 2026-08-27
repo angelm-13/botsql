@@ -1,0 +1,152 @@
+/* Campo de busqueda de la ClaveProdServ del SAT.
+   Sigue el lenguaje visual del resto del sistema: fondo blanco, borde
+   #cbd5e1, radio de 14px y el verde de marca #1b7a60 para la seleccion. */
+
+.sat-key-field {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sat-key-input-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.sat-key-input-row input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  padding: 11px 12px;
+  background: #fff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: .04em;
+}
+
+.sat-key-input-row input[aria-invalid="true"] {
+  border-color: #fca5a5;
+  background: #fff7f7;
+}
+
+.sat-key-search-button {
+  padding: 10px 12px;
+  flex: 0 0 auto;
+}
+
+.sat-key-hint {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.sat-key-hint.error {
+  color: #b91c1c;
+}
+
+.sat-key-popover {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  min-width: 320px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  box-shadow: 0 22px 50px rgba(15, 23, 42, .18);
+  overflow: hidden;
+}
+
+.sat-key-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #64748b;
+}
+
+.sat-key-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-weight: 600;
+  color: #132238;
+}
+
+.sat-key-message {
+  margin: 0;
+  padding: 12px;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.sat-key-message.error {
+  color: #991b1b;
+  background: #fff5f5;
+}
+
+.sat-key-results {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.sat-key-results button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  border-radius: 12px;
+  padding: 9px 10px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
+.sat-key-results button.highlighted {
+  background: #d8efe8;
+}
+
+.sat-key-code {
+  flex: 0 0 auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 800;
+  color: #1b7a60;
+}
+
+.sat-key-description {
+  flex: 1;
+  min-width: 0;
+  color: #334155;
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.sat-key-check {
+  flex: 0 0 auto;
+  color: #1b7a60;
+}
+
+.spin {
+  animation: sat-key-spin 1s linear infinite;
+}
+
+@keyframes sat-key-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 720px) {
+  .sat-key-popover {
+    min-width: 0;
+  }
+}

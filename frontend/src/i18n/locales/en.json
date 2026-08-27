@@ -3452,5 +3452,14 @@
     "stamped_document_invalid": "The document returned by the provider does not meet SAT rules.",
     "stored_total_differs_from_cfdi_total": "The stored total differs from the CFDI total; stamping will correct it."
   },
-  "stamping": {}
+  "stamping": {},
+  "sat_catalog": {
+    "not_loaded": "The SAT catalog is not loaded. Ask for it to be imported to enable search.",
+    "search_failed": "The catalog search failed.",
+    "search_title": "Search the SAT product key catalog",
+    "search_placeholder": "Search by text or key: pc repair, 8111...",
+    "type_to_search": "Type at least two letters to search.",
+    "no_results": "No matches. Try another word.",
+    "key_must_be_8_digits": "SAT product keys have 8 digits."
+  }
 }
