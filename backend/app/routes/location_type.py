@@ -5,7 +5,7 @@ from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
 
 bp_location_type = Blueprint('location_type', __name__, url_prefix='/location_type')
-ALLOWED_FIELDS = ['id_location_type', 'location_type_description', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
+ALLOWED_FIELDS = ['id_location_type', 'location_type_description', 'is_warehouse', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
 
 TECHNICAL_RESPONSE_FIELDS = {'id_location_type'}
 FIELD_READ_BIT = 2

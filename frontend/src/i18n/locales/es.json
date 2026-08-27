@@ -942,7 +942,8 @@
       "deletion_date": "Fecha de eliminación",
       "id_location_type": "ID Tipo de ubicación",
       "last_update_date": "Fecha de última actualización",
-      "location_type_description": "Ubicación Tipo Descripción"
+      "location_type_description": "Ubicación Tipo Descripción",
+      "is_warehouse": "Es almacén"
     },
     "material": {
       "created_by": "Creado por",
@@ -2609,7 +2610,23 @@
     "inventory_reason_required": "Este movimiento requiere un motivo para poder auditarse.",
     "inventory_insufficient_stock": "No hay existencias suficientes para la salida.",
     "idempotency_conflict": "La clave de idempotencia ya se uso en otro registro.",
-    "resource_scope_missing": "El registro no tiene proyecto asignado."
+    "resource_scope_missing": "El registro no tiene proyecto asignado.",
+    "incident_status_invalid": "Ese estatus de incidencia no existe.",
+    "incident_invalid_transition": "Ese cambio de estatus no esta permitido desde el estatus actual de la incidencia.",
+    "incident_transition_reason_required": "Este cambio de estatus requiere un motivo.",
+    "incident_date_in_the_future": "La fecha de la incidencia no puede estar en el futuro.",
+    "incident_close_date_before_incident_date": "La fecha de cierre no puede ser anterior a la de la incidencia.",
+    "incident_close_date_requires_closed_status": "Solo una incidencia resuelta, cerrada o cancelada lleva fecha de cierre.",
+    "task_status_invalid": "Ese estatus de tarea no existe.",
+    "task_invalid_transition": "Ese cambio de estatus no esta permitido desde el estatus actual de la tarea.",
+    "task_transition_reason_required": "Este cambio de estatus requiere un motivo.",
+    "task_priority_invalid": "Esa prioridad no existe.",
+    "task_responsible_not_found": "El usuario asignado no existe.",
+    "task_project_closed": "No se pueden agregar tareas a un proyecto cerrado o denegado.",
+    "inventory_transfer_same_location": "El origen y el destino del traspaso deben ser distintos.",
+    "inventory_transfer_requires_endpoint": "Un traspaso se registra con la accion de traspaso, no como un movimiento suelto.",
+    "location_has_stock": "No se puede eliminar una ubicacion con existencia.",
+    "location_has_children": "No se puede eliminar una ubicacion que contiene otras."
   },
   "logistics": {
     "module": "Logística",
@@ -3146,7 +3163,34 @@
     "audit_empty": "Sin movimientos en la bitácora.",
     "takeout": "Para llevar",
     "new_takeout": "Orden para llevar",
-    "customer_name": "Nombre del cliente"
+    "customer_name": "Nombre del cliente",
+    "payment_method": "Forma de pago",
+    "method_efectivo": "Efectivo",
+    "method_tarjeta": "Tarjeta",
+    "method_transferencia": "Transferencia",
+    "method_mixto": "Mixto",
+    "received": "Recibido",
+    "change": "Cambio",
+    "missing": "Falta",
+    "exact": "Exacto",
+    "cash_part": "Parte en efectivo",
+    "card_part": "Resto con tarjeta",
+    "tip_fixed": "Monto fijo",
+    "amount": "Monto",
+    "charge_together": "Cobrar todo junto",
+    "charging": "Cobrando...",
+    "cancel": "Cancelar",
+    "account": "cuenta",
+    "items": "artículos",
+    "print_ticket": "Imprimir ticket",
+    "reprint_ticket": "Reimprimir ticket",
+    "ticket_title": "Ticket de venta",
+    "ticket_thanks": "¡Gracias por su visita!",
+    "ticket_not_invoice": "Este ticket no es un comprobante fiscal.",
+    "register_closed_warning": "La caja está cerrada. Ábrela antes de cobrar en efectivo: si no, el dinero no queda en ningún corte.",
+    "avg_delivery": "Entrega promedio",
+    "top_dishes": "Más vendidos",
+    "subtotal": "Subtotal"
   },
   "shell": {
     "group_banks": "Bancos",
@@ -3500,5 +3544,29 @@
     "type_to_search": "Escribe al menos dos letras para buscar.",
     "no_results": "Sin resultados. Prueba con otra palabra.",
     "key_must_be_8_digits": "La clave del SAT tiene 8 dígitos."
+  },
+  "validations": {
+    "location": {
+      "id_location_type": {
+        "invalid": "El tipo de ubicacion no existe."
+      },
+      "id_location_reference": {
+        "invalid": "La ubicacion padre no existe.",
+        "self_reference": "Una ubicacion no puede colgar de si misma.",
+        "cycle": "Ese movimiento dejaria la jerarquia en circulo.",
+        "too_deep": "La jerarquia de ubicaciones es demasiado profunda."
+      }
+    },
+    "incident": {
+      "id_user": {
+        "invalid": "El responsable de la incidencia no existe."
+      },
+      "id_lider": {
+        "invalid": "El lider de la incidencia no existe."
+      },
+      "id_incident_type": {
+        "invalid": "El tipo de incidencia no existe."
+      }
+    }
   }
 }

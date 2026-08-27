@@ -4,7 +4,7 @@ import { useI18n } from "../i18n";
 import { getAllLocationType, createLocationType, updateLocationType, deleteLocationType, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa } from "../api";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 
-const emptyForm = { location_type_description: "" };
+const emptyForm = { location_type_description: "", is_warehouse: false };
 const validationRules = allValidationRules["location_type"] || {};
 const ENTITY_KEY = "location_type";
 const ACTION_CREATE = 1;
@@ -12,7 +12,7 @@ const ACTION_READ = 2;
 const ACTION_UPDATE = 4;
 const ACTION_DELETE = 8;
 const FIELD_VISIBLE_BIT = 2;
-const ALL_FIELD_NAMES = ['id_location_type', 'location_type_description', 'created_by', 'creation_date', 'last_update_date', 'deletion_date'];
+const ALL_FIELD_NAMES = ['id_location_type', 'location_type_description', 'is_warehouse', 'created_by', 'creation_date', 'last_update_date', 'deletion_date'];
 
 function hasBit(value, bit) {
   return (Number(value || 0) & bit) === bit;
@@ -481,6 +481,12 @@ export default function LocationTypePage() {
             {fieldErrors["location_type_description"] && <span className="field-error">{formatFieldError("location_type_description")}</span>}
           </label>
           )}
+          {canSeeField("is_warehouse") && (
+          <label className="field checkbox-field">
+            <input name="is_warehouse" type="checkbox" checked={Boolean(formData.is_warehouse)} onChange={handleChange} />
+            <span>{t("fields.location_type.is_warehouse", "Es almacén")}</span>
+          </label>
+          )}
         </div>
         <div className="form-actions">
           <button className="button primary" type="submit">{t("common.save")}</button>
@@ -507,6 +513,7 @@ export default function LocationTypePage() {
       {canRead && view === "table" && filtered.length > 0 && <div className="table-card"><table><thead><tr>{showRowActions && <th>{t("common.actions")}</th>}
               {canSeeField("id_location_type") && <th>{t("fields.location_type.id_location_type")}</th>}
               {canSeeField("location_type_description") && <th>{t("fields.location_type.location_type_description")}</th>}
+              {canSeeField("is_warehouse") && <th>{t("fields.location_type.is_warehouse", "Es almacén")}</th>}
               {canSeeField("created_by") && <th>{t("fields.location_type.created_by")}</th>}
               {canSeeField("creation_date") && <th>{t("fields.location_type.creation_date")}</th>}
               {canSeeField("last_update_date") && <th>{t("fields.location_type.last_update_date")}</th>}
@@ -514,6 +521,7 @@ export default function LocationTypePage() {
         </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_location_type}>{showRowActions && <td className="row-actions">{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</td>}
               {canSeeField("id_location_type") && <td><pre className="cell-value">{formatTableValue(item.id_location_type)}</pre></td>}
               {canSeeField("location_type_description") && <td><pre className="cell-value">{formatTableValue(item.location_type_description)}</pre></td>}
+              {canSeeField("is_warehouse") && <td><pre className="cell-value">{item.is_warehouse ? "✓" : "—"}</pre></td>}
               {canSeeField("created_by") && <td><pre className="cell-value">{formatTableValue(item.created_by)}</pre></td>}
               {canSeeField("creation_date") && <td><pre className="cell-value">{formatTableValue(item.creation_date)}</pre></td>}
               {canSeeField("last_update_date") && <td><pre className="cell-value">{formatTableValue(item.last_update_date)}</pre></td>}

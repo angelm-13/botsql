@@ -1,6 +1,7 @@
 from __future__ import annotations
 from flask import Blueprint, jsonify, request
-from app.services.location_service import LocationService
+from app.services.location_service import LocationService, location_tree
+from app.services.inventory_service import warehouse_stock
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
 
@@ -136,3 +137,19 @@ def update_location(user_data, id_location):
 @require_entity_permission('location', 'delete')
 def delete_location(user_data, id_location):
     return jsonify(LocationService.delete(id_location, user_id=user_data.get('id_user')))
+
+
+@bp_location.route('/tree', methods=['GET'])
+@token_required
+@require_entity_permission('location', 'read')
+def read_location_tree(user_data):
+    """Arbol de ubicaciones por almacen, con la existencia acumulada."""
+    return jsonify(location_tree(user_data))
+
+
+@bp_location.route('/<id_location>/stock', methods=['GET'])
+@token_required
+@require_entity_permission('location', 'read')
+def read_warehouse_stock(user_data, id_location):
+    """Que hay en este almacen o ubicacion, sumando todo lo que cuelga."""
+    return jsonify(warehouse_stock(id_location, user_data))

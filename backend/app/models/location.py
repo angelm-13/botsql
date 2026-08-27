@@ -22,7 +22,9 @@ class Location(Base):
     id_location: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, nullable=False)
     id_location_type: Mapped[int] = mapped_column(Integer, ForeignKey('location_type.id_location_type'), nullable=False)
     location_description: Mapped[object] = mapped_column(String(200), nullable=False)
-    id_location_reference: Mapped[int] = mapped_column(Integer, nullable=True)
+    # Padre en la jerarquia almacen -> zona -> rack -> posicion. Era un
+    # entero suelto, asi que admitia apuntar a una ubicacion inexistente.
+    id_location_reference: Mapped[int] = mapped_column(Integer, ForeignKey('location.id_location'), nullable=True)
     created_by: Mapped[int] = mapped_column(Integer, nullable=False)
     creation_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now())
     last_update_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())

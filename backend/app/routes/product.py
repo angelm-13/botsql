@@ -4,7 +4,10 @@ from app.services.product_service import ProductService
 from app.services.inventory_service import (
     apply_inventory_movement,
     list_inventory_movements,
+    product_stock,
     reconcile_product_stock,
+    transfer_inventory,
+    warehouse_stock,
 )
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
@@ -205,6 +208,7 @@ def read_inventory_movements(user_data, id_product):
         page=request.args.get('page', 1),
         per_page=request.args.get('per_page', 50),
         movement_type=request.args.get('movement_type'),
+        location_id=request.args.get('id_location'),
     ))
 
 
@@ -215,6 +219,25 @@ def read_inventory_reconciliation(user_data, id_product):
     """Comprueba que el saldo del producto cuadre con la suma del libro."""
     ProductService.require_record_scope(id_product, user_data)
     return jsonify(reconcile_product_stock(id_product, user_data))
+
+
+@bp_product.route('/<id_product>/inventory-transfers', methods=['POST'])
+@token_required
+@require_entity_permission('product', 'update')
+def create_inventory_transfer(user_data, id_product):
+    """Traspasa existencia entre ubicaciones o almacenes en una sola operacion."""
+    ProductService.require_record_scope(id_product, user_data)
+    result, created = transfer_inventory(id_product, request.get_json() or {}, user_data)
+    return jsonify({**result, 'idempotent_replay': not created}), (201 if created else 200)
+
+
+@bp_product.route('/<id_product>/inventory-stock', methods=['GET'])
+@token_required
+@require_entity_permission('product', 'read')
+def read_product_stock(user_data, id_product):
+    """En que ubicaciones y almacenes esta repartido el producto."""
+    ProductService.require_record_scope(id_product, user_data)
+    return jsonify(product_stock(id_product, user_data))
 
 
 @bp_product.route('/<id_product>', methods=['DELETE'])
