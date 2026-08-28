@@ -7,16 +7,16 @@ namespace: adser-prod
 images:
   - name: DB_INIT_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-db-init
-    newTag: "b27e95a"
+    newTag: "ad3b2ef"
   - name: BACKEND_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-backend
-    newTag: "b27e95a"
+    newTag: "ad3b2ef"
   - name: WORKER_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-worker
-    newTag: "b27e95a"
+    newTag: "ad3b2ef"
   - name: FRONTEND_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-frontend
-    newTag: REEMPLAZAR_SHA-adser-prod
+    newTag: ad3b2ef-adser-prod
 resources:
   - ../../base
   - ingress-single-origin.yaml
