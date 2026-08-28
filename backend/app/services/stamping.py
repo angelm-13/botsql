@@ -33,6 +33,22 @@ def _cents(value) -> Decimal:
 
 
 @dataclass(frozen=True)
+class CancellationResult:
+    """Respuesta del PAC a una solicitud de cancelacion.
+
+    `acknowledgement` es el acuse que devuelve el SAT: el comprobante de que la
+    cancelacion se solicito y con que resultado. Sin el no hay como demostrar
+    ante una revision que se pidio.
+    """
+
+    status: str
+    reference: str | None = None
+    acknowledgement: str | None = None
+    metadata: dict | None = None
+    error_code: str | None = None
+
+
+@dataclass(frozen=True)
 class StampingResult:
     status: str
     reference: str | None = None
@@ -50,13 +66,23 @@ class StampingProvider:
     def reconcile(self, reference):
         raise NotImplementedError
 
+    def cancel(self, payload, idempotency_key):
+        """Solicita al SAT la cancelacion de un comprobante."""
+        raise NotImplementedError
+
+    def cancellation_status(self, reference):
+        """Consulta si una solicitud en proceso ya se resolvio."""
+        raise NotImplementedError
+
 
 class FakeStampingProvider(StampingProvider):
     name = "fake"
 
-    def __init__(self, result=None):
+    def __init__(self, result=None, cancellation_result=None):
         self.result = result
+        self.cancellation_result = cancellation_result
         self.calls = 0
+        self.cancellations = 0
 
     def stamp(self, payload, idempotency_key):
         self.calls += 1
@@ -67,6 +93,28 @@ class FakeStampingProvider(StampingProvider):
 
     def reconcile(self, reference):
         return self.result or StampingResult("uncertain", reference, error_code="reconciliation_required")
+
+    def cancel(self, payload, idempotency_key):
+        """Cancela de inmediato, salvo que se le pida simular la espera.
+
+        El SAT deja "en proceso" las cancelaciones que necesitan que el
+        receptor acepte. `cancellation_result` permite reproducir ese caso y el
+        del rechazo, que son los que suelen quedar sin probar.
+        """
+        self.cancellations += 1
+        if self.cancellation_result:
+            return self.cancellation_result
+        return CancellationResult(
+            "cancelado",
+            reference=str(payload.get("uuid") or ""),
+            acknowledgement=f"ACUSE-{payload.get('uuid') or 'SIN-UUID'}",
+            metadata={"environment": "test", "motive": payload.get("motive")},
+        )
+
+    def cancellation_status(self, reference):
+        return self.cancellation_result or CancellationResult(
+            "cancelado", reference=reference, acknowledgement=f"ACUSE-{reference}"
+        )
 
 
 class FacturamaSandboxProvider(StampingProvider):
@@ -234,6 +282,97 @@ class FacturamaSandboxProvider(StampingProvider):
 
     def reconcile(self, reference):
         return StampingResult("uncertain", reference, error_code="reconciliation_required")
+
+    def cancel(self, payload, idempotency_key):
+        """Solicita la cancelacion al PAC.
+
+        Facturama cancela por folio fiscal, con el motivo y -solo en el motivo
+        01- el folio del comprobante que sustituye. La respuesta puede venir ya
+        cancelada o "en proceso" si el receptor tiene que aceptar.
+        """
+        if not self.username or not self.password:
+            return CancellationResult("solicitada", error_code="facturama_credentials_missing")
+
+        parametros = {"type": "issued", "motive": payload.get("motive")}
+        if payload.get("substitution_uuid"):
+            parametros["uuidReplacement"] = payload["substitution_uuid"]
+        consulta = "&".join(f"{clave}={valor}" for clave, valor in parametros.items() if valor)
+        request = Request(
+            f"{self.base_url}/cfdi/{payload.get('uuid')}?{consulta}",
+            headers={
+                "Authorization": self._authorization_header(),
+                "Content-Type": "application/json",
+                "Idempotency-Key": idempotency_key,
+            },
+            method="DELETE",
+        )
+        try:
+            with urlopen(request, timeout=self.timeout) as response:
+                data = json.loads(response.read().decode("utf-8") or "{}")
+            return CancellationResult(
+                _cancellation_status_from_provider(data.get("Status")),
+                reference=data.get("Uuid") or payload.get("uuid"),
+                acknowledgement=data.get("Acuse") or data.get("acuse"),
+                metadata={"http_status": response.status, "raw_status": data.get("Status")},
+            )
+        except HTTPError as exc:
+            detalle = ""
+            try:
+                detalle = exc.read().decode("utf-8")[:500]
+            except Exception:
+                pass
+            return CancellationResult(
+                "solicitada",
+                error_code=f"http_{exc.code}",
+                metadata={"http_status": exc.code, "detail": detalle},
+            )
+        except (TimeoutError, socket.timeout, URLError):
+            return CancellationResult("solicitada", error_code="provider_timeout")
+
+    def cancellation_status(self, reference):
+        if not self.username or not self.password:
+            return CancellationResult("solicitada", error_code="facturama_credentials_missing")
+        request = Request(
+            f"{self.base_url}/cfdi/{reference}",
+            headers={"Authorization": self._authorization_header()},
+            method="GET",
+        )
+        try:
+            with urlopen(request, timeout=self.timeout) as response:
+                data = json.loads(response.read().decode("utf-8") or "{}")
+            return CancellationResult(
+                _cancellation_status_from_provider(data.get("Status")),
+                reference=reference,
+                acknowledgement=data.get("Acuse") or data.get("acuse"),
+                metadata={"raw_status": data.get("Status")},
+            )
+        except (HTTPError, TimeoutError, socket.timeout, URLError):
+            return CancellationResult("en_proceso", reference=reference, error_code="status_unavailable")
+
+
+# El PAC nombra los estados en ingles; aqui se traducen a los del sistema.
+_CANCELLATION_STATUS_MAP = {
+    "canceled": "cancelado",
+    "cancelled": "cancelado",
+    "cancelada": "cancelado",
+    "inprocess": "en_proceso",
+    "in_process": "en_proceso",
+    "pending": "en_proceso",
+    "rejected": "rechazado",
+    "rechazada": "rechazado",
+    "active": "rechazado",
+    "vigente": "rechazado",
+}
+
+
+def _cancellation_status_from_provider(valor) -> str:
+    """Traduce el estado del PAC. Lo desconocido queda en proceso.
+
+    Se prefiere dejarlo "en proceso" antes que darlo por cancelado: un estado
+    que no se entiende no puede tomarse como confirmacion, porque de ahi
+    dependen la factura y la devolucion al almacen.
+    """
+    return _CANCELLATION_STATUS_MAP.get(str(valor or "").strip().lower().replace(" ", ""), "en_proceso")
 
 
 def configured_provider():

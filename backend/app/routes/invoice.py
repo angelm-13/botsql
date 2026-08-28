@@ -1,4 +1,5 @@
 from __future__ import annotations
+import uuid as _uuid
 from io import BytesIO
 
 from flask import Blueprint, jsonify, request, send_file
@@ -16,6 +17,16 @@ from app.services.quotation_service import calculate_totals, validate_transition
 from app.services.manual_invoice_service import create_manual_invoice, preview_manual_invoice, validate_manual_invoice_context
 from app.services.invoice_catalogs import catalogs_payload
 from app.services.invoice_inventory_service import apply_invoice_to_inventory, preview_invoice_inventory
+from app.services.invoice_payment_service import (
+    build_payment_complement,
+    invoice_statement,
+    register_payment,
+)
+from app.services.invoice_cancellation_service import (
+    preview_cancellation,
+    refresh_cancellation,
+    request_cancellation,
+)
 
 
 bp_invoice = Blueprint('invoice', __name__, url_prefix='/invoice')
@@ -215,6 +226,64 @@ def download_invoice_pdf(user_data, id_invoice):
 def create_invoice(user_data):
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
     return _jsonify_projected_record(user_data, InvoiceService.create(payload, user_id=user_data.get('id_user')), status=201)
+
+
+@bp_invoice.route('/<id_invoice>/payments', methods=['GET'])
+@token_required
+@require_entity_permission('invoice', 'read')
+def read_invoice_statement(user_data, id_invoice):
+    """Estado de cuenta: lo pagado, lo que falta y cada abono."""
+    return jsonify(invoice_statement(id_invoice, user_data))
+
+
+@bp_invoice.route('/<id_invoice>/payments', methods=['POST'])
+@token_required
+@require_entity_permission('invoice', 'update')
+def create_invoice_payment(user_data, id_invoice):
+    """Registra un abono a una factura en parcialidades."""
+    payload = request.get_json(silent=True) or {}
+    payload.setdefault('idempotency_key', f"pay-{id_invoice}-{_uuid.uuid4()}")
+    result = register_payment(id_invoice, payload, user_data)
+    return jsonify(result), (201 if result['created'] else 200)
+
+
+@bp_invoice.route('/payments/<id_payment>/complement', methods=['GET'])
+@token_required
+@require_entity_permission('invoice', 'read')
+def read_payment_complement(user_data, id_payment):
+    """Datos del comprobante de tipo P que ampara el abono."""
+    return jsonify(build_payment_complement(id_payment, user_data))
+
+
+@bp_invoice.route('/<id_invoice>/cancellation', methods=['GET'])
+@token_required
+@require_entity_permission('invoice', 'read')
+def preview_invoice_cancellation(user_data, id_invoice):
+    """Si la factura se puede cancelar, con que motivos y que devolveria al almacen."""
+    return jsonify(preview_cancellation(id_invoice, request.args.to_dict(), user_data))
+
+
+@bp_invoice.route('/<id_invoice>/cancellation', methods=['POST'])
+@token_required
+@require_entity_permission('invoice', 'delete')
+def create_invoice_cancellation(user_data, id_invoice):
+    """Solicita al SAT la cancelacion del comprobante.
+
+    Exige permiso de baja y no solo de edicion: cancelar es irreversible ante
+    el SAT y consume el folio.
+    """
+    payload = request.get_json(silent=True) or {}
+    payload.setdefault('idempotency_key', f"cancel-{id_invoice}-{_uuid.uuid4()}")
+    result = request_cancellation(id_invoice, payload, user_data)
+    return jsonify(result), (201 if result['created'] else 200)
+
+
+@bp_invoice.route('/cancellations/<id_cancellation>/refresh', methods=['POST'])
+@token_required
+@require_entity_permission('invoice', 'update')
+def refresh_invoice_cancellation(user_data, id_cancellation):
+    """Consulta al SAT si una solicitud en proceso ya se resolvio."""
+    return jsonify(refresh_cancellation(id_cancellation, user_data))
 
 
 @bp_invoice.route('/<id_invoice>/inventory', methods=['GET'])
