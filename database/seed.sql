@@ -82,16 +82,13 @@ INSERT INTO "material_component" ("id_material_component", "id_material", "id_co
 VALUES (1, 1, 1, 1, 1, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
 ON CONFLICT ("id_material_component") DO NOTHING;
 
-INSERT INTO "movement" ("id_movement", "id_fiscal_account", "date", "type", "amount", "currency", "type_exchange_rate", "created_by", "creation_date", "last_update_date", "deletion_date")
-VALUES (1, 1, '2026-01-01 00:00:00', 'income', 1, 'mxn', 1, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
-ON CONFLICT ("id_movement") DO NOTHING;
 
 INSERT INTO "location_type" ("id_location_type", "location_type_description", "created_by", "creation_date", "last_update_date", "deletion_date")
 VALUES (1, 'test description', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
 ON CONFLICT ("id_location_type") DO NOTHING;
 
 INSERT INTO "location" ("id_location", "id_location_type", "location_description", "id_location_reference", "created_by", "creation_date", "last_update_date", "deletion_date")
-VALUES (1, 1, 'test description', 1, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
+VALUES (1, 1, 'test description', NULL, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
 ON CONFLICT ("id_location") DO NOTHING;
 
 INSERT INTO "product" ("id_product", "id_invoice", "id_location", "id_material", "gross_price", "color", "is_directly_related_to_product_service", "product_status", "path_imagen", "product_code", "note", "created_by", "creation_date", "last_update_date", "descripcion", "cantidad", "id_marca", "id_familia")
@@ -117,6 +114,9 @@ ON CONFLICT ("id_ticket") DO NOTHING;
 INSERT INTO "fiscal_account" ("id_fiscal_account", "fiscal_account_description", "balance", "id_fiscal_account_reference", "created_by", "creation_date", "last_update_date", "deletion_date")
 VALUES (1, 'test description', 1, 1, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
 ON CONFLICT ("id_fiscal_account") DO NOTHING;
+INSERT INTO "movement" ("id_movement", "id_fiscal_account", "date", "type", "amount", "currency", "type_exchange_rate", "created_by", "creation_date", "last_update_date", "deletion_date")
+VALUES (1, 1, '2026-01-01 00:00:00', 'income', 1, 'mxn', 1, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
+ON CONFLICT ("id_movement") DO NOTHING;
 
 INSERT INTO "fiscal_stamp" ("id_fiscal_stamp", "concept", "reviewed_by", "authorized_by", "auxiliar", "num_policy", "created_by", "creation_date", "last_update_date", "deletion_date")
 VALUES (1, 'test concept', 1, 1, 'test auxiliar', 'test num_policy', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
@@ -332,6 +332,27 @@ WHERE project."deletion_date" IS NULL
     SELECT 1 FROM "proyect_event" event
     WHERE event."id_proyect" = project."id_proyect"
   );
+
+-- Las secuencias se realinean AQUI, no solo al final del archivo.
+-- Los INSERT anteriores fijan identificadores explicitos, lo que no avanza
+-- la secuencia; el INSERT que sigue depende de nextval. Con la secuencia
+-- atrasada choca contra una llave ya usada y aborta la transaccion, y con
+-- ella todo lo que viniera despues.
+-- Keep PostgreSQL SERIAL sequences aligned after deterministic seed IDs
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT table_name, column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND column_default LIKE 'nextval%'
+  LOOP
+    EXECUTE format(
+      'SELECT setval(pg_get_serial_sequence(%L, %L), COALESCE((SELECT MAX(%I) FROM %I), 0) + 1, false)',
+      r.table_name, r.column_name, r.column_name, r.table_name
+    );
+  END LOOP;
+END $$;
 
 -- Project workflow roles are created without assigning existing users.
 WITH role_names(role_name) AS (

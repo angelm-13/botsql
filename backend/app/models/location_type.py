@@ -22,7 +22,7 @@ class LocationType(Base):
     id_location_type: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, nullable=False)
     location_type_description: Mapped[object] = mapped_column(String(200), nullable=False)
     # Las ubicaciones de este tipo son almacenes: la raiz del arbol.
-    is_warehouse: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text('0'), default=False)
+    is_warehouse: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text('false'), default=False)
     created_by: Mapped[int] = mapped_column(Integer, nullable=False)
     creation_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now())
     last_update_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())

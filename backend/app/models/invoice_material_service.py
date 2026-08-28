@@ -55,7 +55,7 @@ class InvoiceMaterialService(Base):
     iva_retention_rate: Mapped[float] = mapped_column(Numeric(9,6), nullable=True)
     # IVA exento (TipoFactor="Exento" en el CFDI): el SAT lo distingue de la
     # tasa 0%, que si lleva TasaOCuota e Importe en el nodo Traslado.
-    iva_exempt: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text('0'), default=False)
+    iva_exempt: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text('false'), default=False)
 
     def serialize(self) -> dict:
         return {
