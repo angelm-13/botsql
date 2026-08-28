@@ -25,6 +25,7 @@ const navItems = [
   { path: "/incident", key: "menu.incident" },
   { path: "/incident_detail", key: "menu.incident_detail" },
   { path: "/incident_type", key: "menu.incident_type" },
+  { path: "/inventory", key: "menu.inventory", label: "Almacén", entityName: "product", group: "Inventario", groupIcon: "warehouse", location: "sidebar", order: 10 },
   { path: "/inventory_status", key: "menu.inventory_status" },
   { path: "/invoice", key: "menu.invoice" },
   { path: "/invoice/manual", key: "menu.manual_invoice", label: "Factura manual", entityName: "invoice" },

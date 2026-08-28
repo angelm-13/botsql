@@ -21,6 +21,7 @@ import FiscalAccountPage from "./pages/FiscalAccountPage.jsx";
 import IncidentPage from "./pages/IncidentPage.jsx";
 import IncidentDetailPage from "./pages/IncidentDetailPage.jsx";
 import IncidentTypePage from "./pages/IncidentTypePage.jsx";
+import InventoryPage from "./pages/InventoryPage.jsx";
 import InventoryStatusPage from "./pages/InventoryStatusPage.jsx";
 import InvoicePage from "./pages/InvoicePage.jsx";
 import ManualInvoicePage from "./pages/ManualInvoicePage.jsx";
@@ -170,6 +171,7 @@ export default function App() {
           <Route path="/incident" element={<RoleAccessRoute entityName="incident"><IncidentPage /></RoleAccessRoute>} />
           <Route path="/incident_detail" element={<RoleAccessRoute entityName="incident_detail"><IncidentDetailPage /></RoleAccessRoute>} />
           <Route path="/incident_type" element={<RoleAccessRoute entityName="incident_type"><IncidentTypePage /></RoleAccessRoute>} />
+          <Route path="/inventory" element={<RoleAccessRoute entityName="product"><InventoryPage /></RoleAccessRoute>} />
           <Route path="/inventory_status" element={<RoleAccessRoute entityName="inventory_status"><InventoryStatusPage /></RoleAccessRoute>} />
           <Route path="/kanban" element={<Kanban />} />
           <Route path="/invoice" element={<RoleAccessRoute entityName="invoice"><InvoicePage /></RoleAccessRoute>} />
