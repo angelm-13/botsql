@@ -142,7 +142,8 @@
     "mfa_reset": "Restablecer MFA",
     "mfa_reset_confirm": "¿Restablecer MFA de este usuario?",
     "mfa_reset_success": "MFA restablecido correctamente",
-    "mfa_reset_error": "No se pudo restablecer MFA"
+    "mfa_reset_error": "No se pudo restablecer MFA",
+    "continue": "¿Continuar?"
   },
   "entities": {
     "bank": {
@@ -2132,7 +2133,10 @@
     "vat_exempt": "Exento",
     "vat_not_subject": "No objeto de IVA",
     "vat_treatment": "Tratamiento de IVA",
-    "vat_zero": "IVA tasa 0%"
+    "vat_zero": "IVA tasa 0%",
+    "apply_inventory": "Mover el almacén al timbrar",
+    "apply_inventory_help": "Una venta descuenta del almacén y una compra lo surte, según la dirección de la factura.",
+    "inventory_moved": "Almacén actualizado"
   },
   "appointments": {
     "add_schedule": "Agregar horario",
@@ -2349,7 +2353,15 @@
     "project_summary": "Facturas / Proyecto",
     "project_summary_help": "Identifica facturas cargadas desde XML y corrige su proyecto desde el formulario existente.",
     "receiver": "Receptor",
-    "unlinked": "Sin vincular"
+    "unlinked": "Sin vincular",
+    "apply_inventory": "Aplicar al almacén",
+    "inventory_applied": "Almacén actualizado con las partidas de la factura.",
+    "inventory_already_applied": "Esta factura ya se aplicó al almacén; no se movió dos veces.",
+    "inventory_blocked": "Alguna partida no alcanza en el almacén.",
+    "inventory_nothing_to_apply": "No hay partidas de almacén que aplicar.",
+    "inventory_confirm": "Esta factura",
+    "inventory_will_increase": "sumará al almacén",
+    "inventory_will_decrease": "descontará del almacén"
   },
   "client_portal": {
     "title": "Portal de cliente",

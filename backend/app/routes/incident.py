@@ -1,6 +1,6 @@
 from __future__ import annotations
 from flask import Blueprint, jsonify, request
-from app.services.incident_service import IncidentService
+from app.services.incident_service import IncidentService, list_incidents, require_incident_access
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
 
@@ -105,13 +105,14 @@ def list_incident(user_data):
     per_page = int(request.args.get('per_page', 20))
     sort = request.args.get('sort')
     filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort'} and k in ALLOWED_FIELDS}
-    return _jsonify_projected_list(user_data, IncidentService.list(page=page, per_page=per_page, filters=filters, sort=sort))
+    return _jsonify_projected_list(user_data, list_incidents(user_data, page=page, per_page=per_page, filters=filters, sort=sort))
 
 
 @bp_incident.route('/<id_incident>', methods=['GET'])
 @token_required
 @require_entity_permission('incident', 'read')
 def get_incident(user_data, id_incident):
+    require_incident_access(id_incident, user_data)
     return _jsonify_projected_record(user_data, IncidentService.get(id_incident))
 
 
@@ -127,6 +128,7 @@ def create_incident(user_data):
 @token_required
 @require_entity_permission('incident', 'update')
 def update_incident(user_data, id_incident):
+    require_incident_access(id_incident, user_data)
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
     return _jsonify_projected_record(user_data, IncidentService.update(id_incident, payload, user_id=user_data.get('id_user')))
 
@@ -135,4 +137,5 @@ def update_incident(user_data, id_incident):
 @token_required
 @require_entity_permission('incident', 'delete')
 def delete_incident(user_data, id_incident):
+    require_incident_access(id_incident, user_data)
     return jsonify(IncidentService.delete(id_incident, user_id=user_data.get('id_user')))

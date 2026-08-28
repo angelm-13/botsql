@@ -1,7 +1,7 @@
 import React, { Fragment, useEffect, useMemo, useState } from "react";
-import { BadgeCheck, ChevronDown, ChevronRight, Download, FileText, Plus, RefreshCw, Search, Trash2, Pencil } from "lucide-react";
+import { BadgeCheck, ChevronDown, ChevronRight, Download, FileText, Plus, RefreshCw, Search, Trash2, Pencil, Warehouse } from "lucide-react";
 import { useI18n } from "../i18n";
-import { deleteInvoice, downloadInvoicePdf, downloadInvoiceXml, getAllCustomerSupplier, getAllEntityPermission, getAllField, getAllInvoice, getAllNmFieldPermission, getAllProyect, getAllStatus, getInvoiceLines, resetUserMfa, stampInvoice, createInvoice, updateInvoice } from "../api";
+import { applyInvoiceInventory, deleteInvoice, downloadInvoicePdf, downloadInvoiceXml, getAllCustomerSupplier, getAllEntityPermission, getAllField, getAllInvoice, getAllNmFieldPermission, getAllProyect, getAllStatus, getInvoiceInventoryPreview, getInvoiceLines, resetUserMfa, stampInvoice, createInvoice, updateInvoice } from "../api";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 import InvoiceUploadWidget from "../components/InvoiceUploadWidget.jsx";
 import InvoiceCreationForm from "../components/InvoiceCreationForm.jsx";
@@ -439,6 +439,51 @@ export default function InvoicePage() {
     return filtered.filter((item) => item.id_proyect !== null && item.id_proyect !== undefined && String(item.id_proyect).trim() !== "").length;
   }
 
+  async function handleInventory(item) {
+    // Se muestra primero que haria en el almacen y se pide confirmacion: el
+    // movimiento afecta existencias reales.
+    setErrorKey(""); setNoticeKey("");
+    try {
+      const preview = await getInvoiceInventoryPreview(item.id_invoice);
+      if (!preview.can_apply) {
+        if (preview.fully_applied) { setNoticeKey("invoice_ui.inventory_already_applied"); return; }
+        const razon = preview.blocked_lines
+          ? t("invoice_ui.inventory_blocked", "Alguna partida no alcanza en el almacén.")
+          : preview.invoice_direction === "sin_clasificar"
+            ? t("errors.invoice_inventory_direction_unknown", "No se sabe si la factura es de venta o de compra.")
+            : t("invoice_ui.inventory_nothing_to_apply", "No hay partidas de almacén que aplicar.");
+        setErrorKey(razon);
+        return;
+      }
+      const efecto = preview.effect === "incrementa"
+        ? t("invoice_ui.inventory_will_increase", "sumará al almacén")
+        : t("invoice_ui.inventory_will_decrease", "descontará del almacén");
+      const detalle = preview.lines
+        .filter((line) => line.applicable)
+        .map((line) => `  · ${line.description}: ${line.units}`)
+        .join("\n");
+      const confirmado = window.confirm(
+        [
+          `${t("invoice_ui.inventory_confirm", "Esta factura")} ${efecto}:`,
+          "",
+          detalle,
+          "",
+          t("common.continue", "¿Continuar?"),
+        ].join("\n")
+      );
+      if (!confirmado) return;
+      const resultado = await applyInvoiceInventory(item.id_invoice, {});
+      setNoticeKey(resultado.applied_lines
+        ? "invoice_ui.inventory_applied"
+        : "invoice_ui.inventory_already_applied");
+      await loadData();
+    } catch (requestError) {
+      const payload = requestError?.payload || {};
+      setErrorKey(payload.error_key || payload.error || requestError?.message || "errors.request_failed");
+      setErrorMeta(payload.meta || null);
+    }
+  }
+
   async function toggleInvoiceLines(invoiceId) {
     if (expandedInvoiceId === invoiceId) {
       setExpandedInvoiceId(null);
@@ -498,7 +543,7 @@ export default function InvoicePage() {
                   <td><strong>{invoiceMoney(item.total)}</strong></td>
                   <td><span>{invoiceProjectLabel(item)}</span></td>
                   <td><span className={item.id_proyect ? "invoice-link-badge linked" : "invoice-link-badge unlinked"}>{invoiceLinkStatus(item)}</span></td>
-                  <td className="row-actions">{canUpdate && <button type="button" onClick={() => startEdit(item)} title={t("invoice_ui.edit_relation")}><Pencil size={15} /></button>}{canUpdate && !item.folio_fiscal && <button type="button" onClick={() => handleStamp(item)} title={t("invoice_ui.stamp_invoice")}><BadgeCheck size={15} /></button>}<button type="button" onClick={() => handleDocument(item, "pdf")} title={t("invoice_ui.download_pdf")}><FileText size={15} /></button>{item.folio_fiscal && <button type="button" onClick={() => handleDocument(item, "xml")} title={t("invoice_ui.download_xml")}><Download size={15} /></button>}</td>
+                  <td className="row-actions">{canUpdate && <button type="button" onClick={() => startEdit(item)} title={t("invoice_ui.edit_relation")}><Pencil size={15} /></button>}{canUpdate && !item.folio_fiscal && <button type="button" onClick={() => handleStamp(item)} title={t("invoice_ui.stamp_invoice")}><BadgeCheck size={15} /></button>}{canUpdate && <button type="button" onClick={() => handleInventory(item)} title={t("invoice_ui.apply_inventory", "Aplicar al almacén")}><Warehouse size={15} /></button>}<button type="button" onClick={() => handleDocument(item, "pdf")} title={t("invoice_ui.download_pdf")}><FileText size={15} /></button>{item.folio_fiscal && <button type="button" onClick={() => handleDocument(item, "xml")} title={t("invoice_ui.download_xml")}><Download size={15} /></button>}</td>
                 </tr>
                 {expandedInvoiceId === item.id_invoice && <tr className="invoice-lines-row"><td colSpan="7">
                   {invoiceLinesLoading === item.id_invoice ? <p className="muted">{t("invoice_ui.loading_lines")}</p> : invoiceLinesError[item.id_invoice] ? <p className="field-error">{t(invoiceLinesError[item.id_invoice], invoiceLinesError[item.id_invoice])}</p> : (invoiceLines[item.id_invoice] || []).length === 0 ? <p className="muted">{t("invoice_ui.no_lines")}</p> : <div className="invoice-lines-panel"><table><thead><tr><th>{t("invoice_ui.sat_key")}</th><th>{t("invoice_ui.description")}</th><th>{t("invoice_ui.quantity")}</th><th>{t("invoice_ui.unit")}</th><th>{t("invoice_ui.unit_price")}</th><th>{t("invoice_ui.discount")}</th><th>{t("invoice_ui.tax")}</th><th>{t("invoice_ui.total")}</th></tr></thead><tbody>{invoiceLines[item.id_invoice].map((line) => <tr key={line.id_invoice_material_service}><td>{line.sat_product_key || "—"}</td><td>{line.invoice_material_service_description}</td><td>{formatTableValue(line.quantity)}</td><td>{line.sat_unit_key || "—"}</td><td>{invoiceMoney(line.gross_price)}</td><td>{invoiceMoney(line.discount)}</td><td>{invoiceMoney(line.line_tax)}</td><td><strong>{invoiceMoney(line.line_total)}</strong></td></tr>)}</tbody></table></div>}
@@ -921,7 +966,7 @@ export default function InvoicePage() {
               {canSeeField("payment_method") && <th>{t("fields.invoice.payment_method")}</th>}
               {canSeeField("note") && <th>{t("fields.invoice.note")}</th>}
               {canSeeField("id_customer_supplier") && <th>{t("fields.invoice.id_customer_supplier")}</th>}
-        </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_invoice}>{showRowActions && <td className="row-actions">{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canUpdate && !item.folio_fiscal && <button type="button" onClick={() => handleStamp(item)} title={t("invoice_ui.stamp_invoice")}><BadgeCheck size={15} /></button>}<button type="button" onClick={() => handleDocument(item, "pdf")} title={t("invoice_ui.download_pdf")}><FileText size={15} /></button>{item.folio_fiscal && <button type="button" onClick={() => handleDocument(item, "xml")} title={t("invoice_ui.download_xml")}><Download size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}</td>}
+        </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_invoice}>{showRowActions && <td className="row-actions">{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canUpdate && !item.folio_fiscal && <button type="button" onClick={() => handleStamp(item)} title={t("invoice_ui.stamp_invoice")}><BadgeCheck size={15} /></button>}{canUpdate && <button type="button" onClick={() => handleInventory(item)} title={t("invoice_ui.apply_inventory", "Aplicar al almacén")}><Warehouse size={15} /></button>}<button type="button" onClick={() => handleDocument(item, "pdf")} title={t("invoice_ui.download_pdf")}><FileText size={15} /></button>{item.folio_fiscal && <button type="button" onClick={() => handleDocument(item, "xml")} title={t("invoice_ui.download_xml")}><Download size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}</td>}
               {canSeeField("id_invoice") && <td><pre className="cell-value">{formatTableValue(item.id_invoice)}</pre></td>}
               {canSeeField("date_emision") && <td><pre className="cell-value">{formatTableValue(item.date_emision)}</pre></td>}
               {canSeeField("date_expiration") && <td><pre className="cell-value">{formatTableValue(item.date_expiration)}</pre></td>}

@@ -24,8 +24,9 @@ from app.models import (
     Task,
     User,
 )
+from app.models.entity_permission import EntityPermission
 from app.models.session import transaction_context
-from app.services.incident_service import IncidentService
+from app.services.incident_service import IncidentService, list_incidents, require_incident_access
 from app.services.operations_workflow import (
     normalize_incident_status,
     normalize_task_status,
@@ -399,3 +400,112 @@ class TestStatusNormalization(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestIncidentScope(OperationsTestCase):
+    """Quien ve cada incidencia.
+
+    Antes cualquiera con permiso de lectura veia las incidencias de toda la
+    empresa. Ahora una persona alcanza las suyas -las que reporto, las que
+    atiende y las que lidera- y quien supervisa las ve todas.
+    """
+
+    ATIENDE = {"id_user": 7, "id_permission": 700}
+    AJENO = {"id_user": 8, "id_permission": 700}
+    SUPERVISA = {"id_user": 9, "id_permission": 701}
+
+    def setUp(self):
+        super().setUp()
+        with transaction_context() as db:
+            # Los otros dos participantes tienen que existir: el servicio
+            # comprueba que el responsable y el lider sean usuarios reales.
+            db.add_all([
+                User(
+                    id_user=8, username="ajeno", email="ajeno@tyakxa.local",
+                    password="x", user_type="employee", full_name="Persona Ajena",
+                    id_permission=1, id_proyect=30, id_status=40, supervisor=1, created_by=1,
+                ),
+                User(
+                    id_user=9, username="supervisa", email="sup2@tyakxa.local",
+                    password="x", user_type="employee", full_name="Quien Supervisa",
+                    id_permission=1, id_proyect=30, id_status=40, supervisor=1, created_by=1,
+                ),
+                EntityPermission(
+                    id_permission=701, entity_name="incident_supervision",
+                    control_type=2, created_by=1,
+                ),
+            ])
+
+    def _incident(self, **overrides):
+        payload = {
+            "incident_date": (_now() - timedelta(days=1)).isoformat(),
+            "id_incident_type": 1,
+            "id_user": 7,
+            "created_by": 7,
+        }
+        payload.update(overrides)
+        return IncidentService.create(payload, user_id=payload["created_by"])["id_incident"]
+
+    def test_a_person_sees_the_incident_they_attend(self):
+        self._incident(id_user=7)
+
+        result = list_incidents(self.ATIENDE)
+
+        self.assertEqual(1, result["total"])
+
+    def test_a_person_sees_the_incident_they_lead(self):
+        self._incident(id_user=8, id_lider=7, created_by=8)
+
+        self.assertEqual(1, list_incidents(self.ATIENDE)["total"])
+
+    def test_a_person_sees_the_incident_they_reported(self):
+        self._incident(id_user=8, created_by=7)
+
+        self.assertEqual(1, list_incidents(self.ATIENDE)["total"])
+
+    def test_a_person_does_not_see_someone_elses_incident(self):
+        self._incident(id_user=8, created_by=8)
+
+        self.assertEqual(0, list_incidents(self.ATIENDE)["total"])
+
+    def test_a_supervisor_sees_every_incident(self):
+        self._incident(id_user=7, created_by=7)
+        self._incident(id_user=8, created_by=8)
+
+        self.assertEqual(2, list_incidents(self.SUPERVISA)["total"])
+
+    def test_reading_someone_elses_incident_says_it_does_not_exist(self):
+        """No se responde 'no puedes': quien no participa tampoco debe saber
+        que la incidencia existe."""
+        ajena = self._incident(id_user=8, created_by=8)
+
+        with self.assertRaises(AppError) as raised:
+            require_incident_access(ajena, self.ATIENDE)
+
+        self.assertEqual("errors.resource_not_found", raised.exception.message_key)
+        self.assertEqual(404, raised.exception.status_code)
+
+    def test_a_participant_can_open_their_incident(self):
+        propia = self._incident(id_user=7, created_by=7)
+
+        self.assertEqual(propia, require_incident_access(propia, self.ATIENDE).id_incident)
+
+    def test_a_supervisor_opens_any_incident(self):
+        ajena = self._incident(id_user=8, created_by=8)
+
+        self.assertEqual(ajena, require_incident_access(ajena, self.SUPERVISA).id_incident)
+
+    def test_an_actor_without_identity_sees_nothing(self):
+        self._incident(id_user=7, created_by=7)
+
+        self.assertEqual(0, list_incidents({})["total"])
+
+    def test_the_list_can_be_filtered_by_status(self):
+        primera = self._incident(id_user=7, created_by=7)
+        self._incident(id_user=7, created_by=7)
+        IncidentService.update(primera, {"incident_status": "en_proceso"}, user_id=7)
+
+        result = list_incidents(self.ATIENDE, filters={"incident_status": "en_proceso"})
+
+        self.assertEqual(1, result["total"])
+        self.assertEqual(primera, result["items"][0]["id_incident"])

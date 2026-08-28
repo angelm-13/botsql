@@ -8,7 +8,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from sqlalchemy import or_
+
 from app.models import Incident, IncidentType, User
+from app.models.entity_permission import EntityPermission
 from app.models.session import transaction_context
 from app.services.base_service import CrudService
 from app.services.operations_workflow import (
@@ -22,6 +25,93 @@ from app.utils.errors import AppError
 
 
 DEFAULT_STATUS = "abierta"
+
+# Quien supervisa incidencias las ve todas. Sin esta capacidad, una persona
+# solo alcanza las suyas: las que reporto, las que atiende y las que lidera.
+# Antes cualquiera con permiso de lectura veia las de toda la empresa.
+SUPERVISION_CAPABILITY = "incident_supervision"
+READ_BIT = 2
+
+
+def _is_unrestricted(user_data) -> bool:
+    return bool(user_data.get("is_superuser") or user_data.get("is_bootstrap_admin"))
+
+
+def _actor_id(user_data):
+    try:
+        return int(user_data.get("id_user") or user_data.get("user_id") or 0) or None
+    except (TypeError, ValueError):
+        return None
+
+
+def supervises_incidents(db, user_data) -> bool:
+    if _is_unrestricted(user_data):
+        return True
+    try:
+        permission_id = int(user_data.get("id_permission") or user_data.get("permission_id") or 0)
+    except (TypeError, ValueError):
+        return False
+    if not permission_id:
+        return False
+    record = (
+        db.query(EntityPermission)
+        .filter(EntityPermission.id_permission == permission_id)
+        .filter(EntityPermission.entity_name == SUPERVISION_CAPABILITY)
+        .filter(EntityPermission.deletion_date.is_(None))
+        .first()
+    )
+    try:
+        return bool(record and int(record.control_type) & READ_BIT)
+    except (TypeError, ValueError):
+        return False
+
+
+def _involves_actor(incident, user_data) -> bool:
+    """La incidencia es de quien la reporto, la atiende o la lidera."""
+    actor = _actor_id(user_data)
+    if actor is None:
+        return False
+    return actor in {
+        _safe(incident.id_user),
+        _safe(incident.id_lider),
+        _safe(incident.created_by),
+    }
+
+
+def _safe(value):
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def scoped_incident_query(db, user_data):
+    """Consulta acotada a lo que el actor tiene derecho a ver."""
+    query = db.query(Incident).filter(Incident.deletion_date.is_(None))
+    if supervises_incidents(db, user_data):
+        return query
+    actor = _actor_id(user_data)
+    if actor is None:
+        # Sin identidad no se devuelve nada, en lugar de devolverlo todo.
+        return query.filter(Incident.id_incident.is_(None))
+    return query.filter(or_(
+        Incident.id_user == actor,
+        Incident.id_lider == actor,
+        Incident.created_by == actor,
+    ))
+
+
+def require_incident_access(incident_id, user_data) -> Incident:
+    with transaction_context() as db:
+        incident = db.get(Incident, int(incident_id))
+        if not incident or incident.deletion_date is not None:
+            raise AppError("errors.resource_not_found", 404)
+        if not supervises_incidents(db, user_data) and not _involves_actor(incident, user_data):
+            # Se responde "no existe" y no "no puedes": quien no participa
+            # tampoco debe enterarse de que la incidencia existe.
+            raise AppError("errors.resource_not_found", 404)
+        db.expunge(incident)
+        return incident
 
 
 def _as_datetime(value, field):
@@ -158,3 +248,40 @@ class IncidentService(CrudService):
                 raise AppError("errors.resource_not_found", 404)
             db.expunge(current)
         return super().update(item_id, cls._validate(payload, current=current), user_id=user_id)
+
+
+def list_incidents(user_data, *, page=1, per_page=20, filters=None, sort=None) -> dict:
+    """Listado acotado a lo que el actor tiene derecho a ver."""
+    try:
+        page = max(int(page or 1), 1)
+        per_page = min(max(int(per_page or 20), 1), 100)
+    except (TypeError, ValueError):
+        page, per_page = 1, 20
+
+    with transaction_context() as db:
+        query = scoped_incident_query(db, user_data)
+        for campo, valor in (filters or {}).items():
+            columna = getattr(Incident, campo, None)
+            if columna is not None and valor not in (None, ""):
+                if campo == "incident_status":
+                    valor = normalize_incident_status(valor) or valor
+                query = query.filter(columna == valor)
+
+        columnas = {
+            "incident_date": Incident.incident_date,
+            "close_date": Incident.close_date,
+            "creation_date": Incident.creation_date,
+            "incident_status": Incident.incident_status,
+        }
+        descendente = str(sort or "").startswith("-")
+        columna = columnas.get(str(sort or "").lstrip("-"), Incident.creation_date)
+        query = query.order_by(columna.desc() if descendente else columna.asc(), Incident.id_incident.desc())
+
+        total = query.count()
+        filas = query.offset((page - 1) * per_page).limit(per_page).all()
+        return {
+            "items": [fila.serialize() for fila in filas],
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+        }

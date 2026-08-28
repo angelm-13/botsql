@@ -47,7 +47,7 @@ export default function InvoiceCreationForm({ onCreated }) {
     date_emision: today(), date_expiration: afterDays(30), currency: "MXN", type_exchange_rate: "1",
     rfc: "", razon_social_fiscal: "", regimen_fiscal: "", cp_fiscal: "", uso_cfdi: "G03",
     forma_pago: "03", metodo_pago: "PUE", iva_tipo: "16", ret_preset: "none",
-    isr_ret_rate: 0, iva_ret_rate: 0, condiciones_pago: "", notas: "", concepts: [newConcept()],
+    isr_ret_rate: 0, iva_ret_rate: 0, condiciones_pago: "", notas: "", apply_inventory: true, concepts: [newConcept()],
   });
 
   useEffect(() => {
@@ -103,7 +103,7 @@ export default function InvoiceCreationForm({ onCreated }) {
     if (!preview?.can_create) return;
     setBusy(true); setError(""); setNotice("");
     try {
-      const response = await createManualInvoice({ ...payload, stamp_now: true, idempotency_key: crypto.randomUUID() });
+      const response = await createManualInvoice({ ...payload, stamp_now: true, apply_inventory: Boolean(form.apply_inventory), idempotency_key: crypto.randomUUID() });
       setResult(response); await onCreated?.();
       const status = response.operation?.status;
       setNotice(status === "stamped" ? t("invoice_creation.stamped_success") : status === "rejected" ? t("invoice_creation.stamp_rejected") : t("invoice_creation.simulated_success"));
@@ -151,7 +151,7 @@ export default function InvoiceCreationForm({ onCreated }) {
       </section>}
 
       {error && <div className="alert error">{t(error, error)}</div>}{notice && <div className="alert success">{t(notice, notice)}</div>}
-      {result ? <section className="invoice-result-panel"><CheckCircle2 size={28} /><div><strong>{t(notice, notice)}</strong><p>{t("manual_invoice.invoice", "Factura")} #{result.invoice?.id_invoice} · UUID {result.invoice?.folio_fiscal || result.operation?.provider_reference || t("invoice_creation.unassigned", "No asignado")} · {money(result.invoice?.total, lang)}</p></div><div className="form-actions"><button className="button" type="button" onClick={() => download("pdf")}><FileText size={16} />PDF</button>{result.operation?.status === "stamped" && <button className="button" type="button" onClick={() => download("xml")}><Download size={16} />XML</button>}<button className="button primary" type="button" onClick={() => { setResult(null); setPreview(null); setNotice(""); setForm((current) => ({ ...current, concepts: [newConcept()] })); }}>{t("invoice_creation.new_invoice", "Nueva factura")}</button></div></section> :
+      {result ? <section className="invoice-result-panel"><CheckCircle2 size={28} /><div><strong>{t(notice, notice)}</strong><p>{result.inventory?.applied_lines ? `${t("invoice_creation.inventory_moved", "Almacén actualizado")}: ${result.inventory.applied_lines} · ` : result.inventory?.error_key ? `${t(result.inventory.error_key, result.inventory.error_key)} · ` : ""}{t("manual_invoice.invoice", "Factura")} #{result.invoice?.id_invoice} · UUID {result.invoice?.folio_fiscal || result.operation?.provider_reference || t("invoice_creation.unassigned", "No asignado")} · {money(result.invoice?.total, lang)}</p></div><div className="form-actions"><button className="button" type="button" onClick={() => download("pdf")}><FileText size={16} />PDF</button>{result.operation?.status === "stamped" && <button className="button" type="button" onClick={() => download("xml")}><Download size={16} />XML</button>}<button className="button primary" type="button" onClick={() => { setResult(null); setPreview(null); setNotice(""); setForm((current) => ({ ...current, concepts: [newConcept()] })); }}>{t("invoice_creation.new_invoice", "Nueva factura")}</button></div></section> :
       <form className="form-card invoice-fiscal-form" onSubmit={handleCreate}>
         <section className="invoice-create-section"><div className="form-header"><strong>{t("invoice_creation.issuer_receiver", "Emisor y receptor")}</strong></div><div className="form-grid">
           <label className="field"><span>{t("manual_invoice.project", "Proyecto")}</span><select required value={form.id_proyect} onChange={(event) => update("id_proyect", event.target.value)}><option value="">{t("manual_invoice.select", "Seleccionar")}</option>{projects.map((item) => <option key={item.id_proyect} value={item.id_proyect}>{item.proyect_description || item.title}</option>)}</select></label>
@@ -172,7 +172,7 @@ export default function InvoiceCreationForm({ onCreated }) {
 
         <aside className="invoice-live-preview" aria-live="polite"><div><span>{t("manual_invoice.subtotal", "Subtotal")}</span><strong>{money(preview?.subtotal, lang)}</strong></div><div><span>{t("manual_invoice.discount", "Descuento")}</span><strong>-{money(preview?.discount, lang)}</strong></div><div><span>{t("manual_invoice.tax", "IVA")}</span><strong>{money(preview?.iva, lang)}</strong></div>{Number(preview?.isr_retention || 0) > 0 && <div><span>{t("manual_invoice.isr_short", "Ret. ISR")}</span><strong>-{money(preview?.isr_retention, lang)}</strong></div>}{Number(preview?.iva_retention || 0) > 0 && <div><span>{t("manual_invoice.iva_short", "Ret. IVA")}</span><strong>-{money(preview?.iva_retention, lang)}</strong></div>}<div className="invoice-preview-total"><span>{t("manual_invoice.total", "Total")}</span><strong>{money(preview?.total, lang)}</strong></div></aside>
         {preview?.errors?.length > 0 && <div className="alert error">{preview.errors.join(" · ")}</div>}
-        <div className="form-actions"><button className="button primary" type="submit" disabled={busy || !preview?.can_create}><BadgeCheck size={17} />{busy ? t("invoice_creation.stamping", "Timbrando...") : pacConfig.provider === "fake" ? t("invoice_creation.create_simulated", "Crear CFDI simulado") : t("invoice_creation.stamp_invoice", "Timbrar factura")}</button></div>
+        <label className="field checkbox-field" title={t("invoice_creation.apply_inventory_help", "Una venta descuenta del almacén y una compra lo surte, segun la direccion de la factura.")}><input type="checkbox" checked={Boolean(form.apply_inventory)} onChange={(event) => update("apply_inventory", event.target.checked)} />{t("invoice_creation.apply_inventory", "Mover el almacén al timbrar")}</label><div className="form-actions"><button className="button primary" type="submit" disabled={busy || !preview?.can_create}><BadgeCheck size={17} />{busy ? t("invoice_creation.stamping", "Timbrando...") : pacConfig.provider === "fake" ? t("invoice_creation.create_simulated", "Crear CFDI simulado") : t("invoice_creation.stamp_invoice", "Timbrar factura")}</button></div>
       </form>}
     </div>
   );

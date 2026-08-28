@@ -32,6 +32,7 @@ from app.models import (
 from app.models.inventory_ledger import InventoryLedger
 from app.models.inventory_stock import InventoryStock
 from app.models.session import transaction_context
+from app.services.inventory_service import apply_inventory_movement, reconcile_product_stock
 from app.services.invoice_inventory_service import (
     _movement_key,
     _whole_units,
@@ -453,3 +454,83 @@ class TestPurchaseReceives(InvoiceInventoryTestCase):
 
         self.assertEqual("compra", result["invoice_direction"])
         self.assertEqual(24, self.stock())
+
+
+class TestEndToEndProjectFlow(InvoiceInventoryTestCase):
+    """El recorrido completo de un proyecto real, en un solo caso.
+
+    Compra 100, se consumen 30 en la obra, se venden 40. Al final deben quedar
+    30 en el almacen y el libro debe explicar de donde salio cada movimiento.
+    Es la comprobacion que responde a la pregunta practica: al facturar, se
+    actualiza el inventario solo?
+    """
+
+    def test_purchase_consumption_and_sale_leave_the_right_balance(self):
+        with transaction_context() as db:
+            db.query(InventoryStock).filter_by(id_product=PRODUCT).delete()
+
+        # 1) La compra surte el almacen.
+        compra = self.add_line(invoice=PURCHASE, quantity="100")
+        apply_invoice_to_inventory(PURCHASE, {"id_location": RACK}, ACTOR)
+        self.assertEqual(100, self.stock(), "la compra debe sumar al almacen")
+
+        # 2) Consumo en obra: salida directa, sin factura de por medio.
+        apply_inventory_movement(PRODUCT, {
+            "movement_type": "issue", "quantity": 30, "id_location": RACK,
+            "idempotency_key": "obra-1", "reference_type": "project", "reference_id": "30",
+        }, ACTOR)
+        self.assertEqual(70, self.stock())
+
+        # 3) La venta descuenta.
+        venta = self.add_line(invoice=SALE, quantity="40")
+        apply_invoice_to_inventory(SALE, {"id_location": RACK}, ACTOR)
+        self.assertEqual(30, self.stock(), "100 - 30 - 40 = 30")
+
+        # 4) El libro explica cada movimiento.
+        with transaction_context() as db:
+            movimientos = db.query(InventoryLedger).order_by(InventoryLedger.id_inventory_ledger).all()
+            resumen = [(m.movement_type, m.quantity_delta, m.reference_type, m.reference_id) for m in movimientos]
+
+        self.assertEqual([
+            ("receive", 100, "invoice_line", str(compra)),
+            ("issue", -30, "project", "30"),
+            ("issue", -40, "invoice_line", str(venta)),
+        ], resumen)
+
+    def test_the_ledger_and_the_stock_agree_after_the_whole_flow(self):
+        with transaction_context() as db:
+            db.query(InventoryStock).filter_by(id_product=PRODUCT).delete()
+        self.add_line(invoice=PURCHASE, quantity="100")
+        apply_invoice_to_inventory(PURCHASE, {"id_location": RACK}, ACTOR)
+        self.add_line(invoice=SALE, quantity="40")
+        apply_invoice_to_inventory(SALE, {"id_location": RACK}, ACTOR)
+
+        report = reconcile_product_stock(PRODUCT, ACTOR)
+
+        self.assertTrue(report["is_reconciled"])
+        self.assertEqual(60, report["stock_balance"])
+        self.assertEqual(60, report["ledger_balance"])
+
+    def test_a_sale_cannot_take_more_than_the_purchase_brought_in(self):
+        """El caso que el saldo global unico dejaba pasar."""
+        with transaction_context() as db:
+            db.query(InventoryStock).filter_by(id_product=PRODUCT).delete()
+        self.add_line(invoice=PURCHASE, quantity="10")
+        apply_invoice_to_inventory(PURCHASE, {"id_location": RACK}, ACTOR)
+        self.add_line(invoice=SALE, quantity="11")
+
+        with self.assertRaises(AppError) as raised:
+            apply_invoice_to_inventory(SALE, {"id_location": RACK}, ACTOR)
+
+        self.assertEqual("errors.inventory_insufficient_stock", raised.exception.message_key)
+        self.assertEqual(10, self.stock(), "la existencia no se toca si la venta no cabe")
+
+    def test_applying_a_purchase_twice_does_not_double_the_stock(self):
+        with transaction_context() as db:
+            db.query(InventoryStock).filter_by(id_product=PRODUCT).delete()
+        self.add_line(invoice=PURCHASE, quantity="100")
+
+        apply_invoice_to_inventory(PURCHASE, {"id_location": RACK}, ACTOR)
+        apply_invoice_to_inventory(PURCHASE, {"id_location": RACK}, ACTOR)
+
+        self.assertEqual(100, self.stock())
