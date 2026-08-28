@@ -150,5 +150,61 @@ class TestPythonOnlyDefaults(unittest.TestCase):
         )
 
 
+class TestDeferrableForeignKeys(unittest.TestCase):
+    """Las llaves foraneas deben poder aplazarse durante la siembra.
+
+    `seed.sql` no podia aplicarse a una base limpia: su orden no respeta las
+    dependencias, y ademas user, permission, proyect y customer_supplier se
+    referencian en circulo con columnas obligatorias, de modo que ningun orden
+    de sentencias habria funcionado. La salida es que la comprobacion se
+    aplace al COMMIT, y para eso las llaves tienen que ser diferibles.
+
+    Se comprueba sobre el metadata porque el arranque crea el esquema desde los
+    modelos: si aqui se pierde, una instalacion nueva vuelve a quedar rota.
+    """
+
+    def test_every_foreign_key_is_deferrable(self):
+        no_diferibles = [
+            f"{tabla.name}.{restriccion.name or [c.name for c in restriccion.columns]}"
+            for tabla in Base.metadata.tables.values()
+            for restriccion in tabla.foreign_key_constraints
+            if not restriccion.deferrable
+        ]
+
+        self.assertEqual(
+            [], no_diferibles,
+            "Una llave foranea no diferible impide sembrar una base nueva: "
+            f"{no_diferibles}",
+        )
+
+    def test_they_are_checked_immediately_by_default(self):
+        """No se difiere por omision: los errores deben salir donde ocurren."""
+        diferidas_por_omision = [
+            f"{tabla.name}.{restriccion.name}"
+            for tabla in Base.metadata.tables.values()
+            for restriccion in tabla.foreign_key_constraints
+            if str(restriccion.initially or "").upper() == "DEFERRED"
+        ]
+
+        self.assertEqual(
+            [], diferidas_por_omision,
+            "Con INITIALLY DEFERRED los errores de la aplicacion saldrian hasta el "
+            f"COMMIT, lejos de donde se provocaron: {diferidas_por_omision}",
+        )
+
+    def test_the_cycle_that_forced_this_is_still_there(self):
+        """Deja constancia de por que existe esta regla.
+
+        Si algun dia se rompe el circulo -por ejemplo haciendo nulable una de
+        las dos columnas-, esta prueba avisa para revisar si el aplazamiento
+        sigue haciendo falta.
+        """
+        permission = Base.metadata.tables["permission"]
+        user = Base.metadata.tables["user"]
+
+        self.assertFalse(permission.columns["authorized_by"].nullable)
+        self.assertFalse(user.columns["id_permission"].nullable)
+
+
 if __name__ == "__main__":
     unittest.main()

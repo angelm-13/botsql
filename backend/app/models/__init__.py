@@ -98,3 +98,35 @@ from app.models.user import User
 from app.models.user_mfa import UserMfa
 
 __all__ = ['Base', 'Appointment', 'AppointmentType', 'AvailabilityOverride', 'AvailabilityRule', 'CalendarProfile', 'Bank', 'BankAccount', 'BankStatement', 'BankStatementMovement', 'Brand', 'CustomerSupplier', 'Department', 'EntityPermission', 'EventLog', 'Field', 'FiscalAccount', 'FiscalRecord', 'FiscalStamp', 'Incident', 'IncidentDetail', 'IncidentType', 'InventoryLedger', 'InventoryStatus', 'InventoryStock', 'Invoice', 'InvoiceMaterialService', 'Level', 'Location', 'LocationType', 'LogisticsAddress', 'LogisticsBranch', 'LogisticsContact', 'LogisticsContract', 'LogisticsEvidence', 'LogisticsFile', 'LogisticsIncident', 'LogisticsInventory', 'LogisticsLocation', 'LogisticsMaintenance', 'LogisticsOperator', 'LogisticsQuotation', 'LogisticsRack', 'LogisticsRate', 'LogisticsReceivable', 'LogisticsServiceRequest', 'LogisticsShipment', 'LogisticsTrailer', 'LogisticsTrip', 'LogisticsUnit', 'LogisticsWarehouse', 'Material', 'MaterialComponent', 'Movement', 'NmFieldPermission', 'NmIncidentProduct', 'NmSurveyUser', 'NmTemplateTask', 'PacConfig', 'PasswordResetToken', 'PayrollConcept', 'PayrollDetail', 'PayrollMovement', 'PayrollPeriod', 'Permission', 'Product', 'ProductFamily', 'ProductSaleConfig', 'Proyect', 'ProyectEvent', 'PublicApiKey', 'QuotationComment', 'RestaurantCashSession', 'RestaurantCategory', 'RestaurantDish', 'RestaurantGuisado', 'RestaurantInventoryItem', 'RestaurantInventoryMovement', 'RestaurantOrder', 'RestaurantOrderItem', 'RestaurantRecipeItem', 'RestaurantReservation', 'RestaurantTable', 'RestaurantVisit', 'RestaurantWaiter', 'Service', 'SatProductKey', 'StampingOperation', 'Status', 'Subdepartment', 'SurveyMultipleAnswer', 'SurveyQuestion', 'Task', 'TaskNote', 'TaskType', 'Template', 'Theme', 'Ticket', 'Unit', 'User', 'UserMfa']
+
+def _make_foreign_keys_deferrable() -> int:
+    """Marca todas las llaves foraneas como diferibles, comprobadas de inmediato.
+
+    Por que hace falta: las tablas de user, permission, proyect y
+    customer_supplier se referencian en circulo, y dos de esas columnas son
+    obligatorias (`permission.authorized_by` y `user.id_permission`). Ninguna
+    puede insertarse primero, asi que NINGUN orden de sentencias puede sembrar
+    una base nueva. A eso se suma que el orden del archivo de semillas no
+    respeta las dependencias en 694 pares.
+
+    `DEFERRABLE INITIALLY IMMEDIATE` no cambia el comportamiento normal: la
+    llave se sigue comprobando en cada sentencia. Lo unico que habilita es que
+    una transaccion pida explicitamente aplazar la comprobacion al COMMIT, que
+    es lo que hace la siembra. Se prefiere sobre INITIALLY DEFERRED justamente
+    para que los errores de la aplicacion sigan saliendo donde ocurren.
+
+    Se aplica aqui, sobre el metadata, porque el arranque crea el esquema desde
+    los modelos: declararlo solo en una migracion no alcanzaria para una
+    instalacion nueva.
+    """
+    ajustadas = 0
+    for tabla in Base.metadata.tables.values():
+        for restriccion in tabla.foreign_key_constraints:
+            if not restriccion.deferrable:
+                restriccion.deferrable = True
+                restriccion.initially = "IMMEDIATE"
+                ajustadas += 1
+    return ajustadas
+
+
+_make_foreign_keys_deferrable()

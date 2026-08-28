@@ -2,6 +2,15 @@
 -- Note: Each INSERT has ON CONFLICT to handle idempotent seeds
 BEGIN;
 
+-- Las llaves foraneas se comprueban hasta el COMMIT, no en cada sentencia.
+-- Sin esto la siembra no puede aplicarse a una base nueva: el orden del
+-- archivo no respeta las dependencias, y ademas user, permission, proyect y
+-- customer_supplier se referencian en circulo con columnas obligatorias, de
+-- modo que ningun orden de sentencias podria funcionar.
+-- Solo afecta a esta transaccion; fuera de aqui las llaves se siguen
+-- comprobando de inmediato.
+SET CONSTRAINTS ALL DEFERRED;
+
 INSERT INTO "user" ("id_user", "created_by", "creation_date", "date_born", "date_start", "deletion_date", "email", "first_name", "id_permission", "full_name", "id_proyect", "last_name_father", "last_name_mother", "last_update_date", "national_id", "password", "principal_phone", "secundary_phone", "ssn", "supervisor", "base_salary", "hire_date", "id_status", "tax_id", "title", "user_type", "username", "puesto", "accepts_marketing")
 VALUES (1, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00', 'admin1@tyakxa.local', 'Admin', 1, 'test first_name', 1, 'test last_name_father', 'test last_name_mother', '2026-01-01 00:00:00', 'test national_id', '$2b$12$RxTtZtblFwu6ZsmtfNP9Meg6tYSZOCsVIZQLMe260W9seWcdrUma6', 'test principal_', 'test secundary_', 'test ssn', 1, 1, '2026-01-01 00:00:00', 1, 'test tax_id', 'test title', 'admin', 'admin1', 'sample_puesto', TRUE)
 ON CONFLICT ("id_user") DO NOTHING;
