@@ -34,6 +34,7 @@ from app.services.invoice_catalogs import (
     RFC_RESIDENTE_EXTRANJERO,
     TASAS_IVA_TRASLADO,
     TIPO_COMPROBANTE,
+    TIPO_RELACION,
     USO_CFDI_DETALLE,
 )
 
@@ -331,6 +332,36 @@ def _validate_totals(root, concepts, errors, warnings):
             errors.append("cfdi.total_negativo")
 
 
+def _validate_related(root, errors, warnings):
+    """Comprobantes relacionados: es lo que hace de un egreso una nota de credito."""
+    nodos = _children(root, "CfdiRelacionados")
+    tipos_vistos = set()
+    for indice, nodo in enumerate(nodos):
+        tipo = _text(nodo, "TipoRelacion")
+        if tipo not in TIPO_RELACION:
+            errors.append(f"cfdi.relacionados.{indice}.tipo_relacion_invalid")
+        if tipo in tipos_vistos:
+            # El SAT agrupa por tipo: repetirlo parte la misma relacion en dos.
+            errors.append(f"cfdi.relacionados.{indice}.tipo_relacion_duplicado")
+        tipos_vistos.add(tipo)
+
+        folios = _children(nodo, "CfdiRelacionado")
+        if not folios:
+            errors.append(f"cfdi.relacionados.{indice}.sin_comprobantes")
+        vistos = set()
+        for folio in folios:
+            uuid = _text(folio, "UUID").upper()
+            if not UUID_PATTERN.match(uuid):
+                errors.append(f"cfdi.relacionados.{indice}.uuid_invalid")
+            elif uuid in vistos:
+                errors.append(f"cfdi.relacionados.{indice}.uuid_duplicado")
+            vistos.add(uuid)
+
+    # Un egreso sin relacion no dice a que factura corrige.
+    if _text(root, "TipoDeComprobante") == "E" and not nodos:
+        warnings.append("cfdi.egreso_sin_comprobante_relacionado")
+
+
 def _validate_stamp(root, errors, warnings):
     """El timbre solo se exige si el comprobante ya paso por el PAC."""
     stamp = next(
@@ -387,6 +418,7 @@ def inspect_cfdi_xml(xml_content) -> dict[str, list[str]]:
 
     _validate_header(root, errors, warnings)
     _validate_parties(root, errors, warnings)
+    _validate_related(root, errors, warnings)
     concepts = _validate_concepts(root, errors, warnings)
     _validate_totals(root, concepts, errors, warnings)
     _validate_stamp(root, errors, warnings)

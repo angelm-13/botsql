@@ -2660,7 +2660,16 @@
     "payment_amount_must_be_positive": "El importe del abono debe ser mayor que cero.",
     "payment_form_invalid": "Esa forma de pago no existe en el catalogo del SAT.",
     "payment_form_cannot_be_undefined": "Un abono ya ocurrido no puede declarar forma de pago 'por definir'.",
-    "payment_requires_stamped_invoice": "El complemento de pago necesita el folio fiscal de la factura."
+    "payment_requires_stamped_invoice": "El complemento de pago necesita el folio fiscal de la factura.",
+    "credit_note_relation_type_invalid": "Una nota de credito se emite con relacion 01 (descuento o bonificacion) o 03 (devolucion de mercancia).",
+    "credit_note_requires_stamped_invoice": "Solo se acredita una factura timbrada.",
+    "credit_note_invoice_cancelled": "La factura esta cancelada; no admite notas de credito.",
+    "credit_note_invoice_status_not_allowed": "El estatus de la factura no admite notas de credito.",
+    "credit_note_nothing_left_to_credit": "Esta factura ya esta acreditada por completo.",
+    "credit_note_exceeds_creditable": "La nota es mayor que lo que queda por acreditar.",
+    "credit_note_amount_must_be_positive": "El importe de la nota debe ser mayor que cero.",
+    "credit_note_concepts_required": "La nota de credito necesita al menos un concepto.",
+    "credit_note_validation_failed": "Los conceptos de la nota no cumplen las reglas del SAT."
   },
   "logistics": {
     "module": "Logística",

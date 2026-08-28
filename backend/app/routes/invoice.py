@@ -17,6 +17,11 @@ from app.services.quotation_service import calculate_totals, validate_transition
 from app.services.manual_invoice_service import create_manual_invoice, preview_manual_invoice, validate_manual_invoice_context
 from app.services.invoice_catalogs import catalogs_payload
 from app.services.invoice_inventory_service import apply_invoice_to_inventory, preview_invoice_inventory
+from app.services.invoice_credit_note_service import (
+    create_credit_note,
+    credit_note_relations,
+    credit_note_summary,
+)
 from app.services.invoice_payment_service import (
     build_payment_complement,
     invoice_statement,
@@ -226,6 +231,33 @@ def download_invoice_pdf(user_data, id_invoice):
 def create_invoice(user_data):
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
     return _jsonify_projected_record(user_data, InvoiceService.create(payload, user_id=user_data.get('id_user')), status=201)
+
+
+@bp_invoice.route('/<id_invoice>/credit-notes', methods=['GET'])
+@token_required
+@require_entity_permission('invoice', 'read')
+def read_credit_notes(user_data, id_invoice):
+    """Cuanto queda por acreditar de esta factura y que notas ya tiene."""
+    return jsonify(credit_note_summary(id_invoice, user_data))
+
+
+@bp_invoice.route('/<id_invoice>/credit-notes', methods=['POST'])
+@token_required
+@require_entity_permission('invoice', 'create')
+def create_invoice_credit_note(user_data, id_invoice):
+    """Emite una nota de credito contra una factura timbrada."""
+    payload = request.get_json(silent=True) or {}
+    payload.setdefault('idempotency_key', f"credit-{id_invoice}-{_uuid.uuid4()}")
+    result = create_credit_note(id_invoice, payload, user_data)
+    return jsonify(result), (201 if result['created'] else 200)
+
+
+@bp_invoice.route('/<id_invoice>/relations', methods=['GET'])
+@token_required
+@require_entity_permission('invoice', 'read')
+def read_invoice_relations(user_data, id_invoice):
+    """Comprobantes con los que este se relaciona, como van en el XML."""
+    return jsonify(credit_note_relations(id_invoice, user_data))
 
 
 @bp_invoice.route('/<id_invoice>/payments', methods=['GET'])

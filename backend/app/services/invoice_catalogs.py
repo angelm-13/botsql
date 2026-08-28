@@ -121,6 +121,26 @@ TIPO_COMPROBANTE = {
     "P": "Pago",
 }
 
+# --- c_TipoRelacion ---------------------------------------------------------
+# Como se relaciona un comprobante con otro. Es lo que convierte un CFDI de
+# egreso en una nota de credito de una factura concreta.
+TIPO_RELACION = {
+    "01": "Nota de credito de los documentos relacionados",
+    "02": "Nota de debito de los documentos relacionados",
+    "03": "Devolucion de mercancia sobre facturas o traslados previos",
+    "04": "Sustitucion de los CFDI previos",
+    "05": "Traslados de mercancias facturados previamente",
+    "06": "Factura generada por los traslados previos",
+    "07": "CFDI por aplicacion de anticipo",
+}
+
+# Relaciones con las que se emite una nota de credito. La 03 devuelve
+# mercancia, asi que ademas mueve el almacen; la 01 es un descuento o
+# bonificacion y no toca existencias.
+TIPO_RELACION_NOTA_CREDITO = {"01", "03"}
+TIPO_RELACION_DEVUELVE_MERCANCIA = "03"
+
+
 EXPORTACION = {
     "01": "No aplica",
     "02": "Definitiva con clave A1",
@@ -226,6 +246,8 @@ def catalogs_payload():
         "forma_pago": FORMA_PAGO,
         "metodo_pago": METODO_PAGO,
         "tipo_comprobante": TIPO_COMPROBANTE,
+        "tipo_relacion": TIPO_RELACION,
+        "tipo_relacion_nota_credito": sorted(TIPO_RELACION_NOTA_CREDITO),
         "exportacion": EXPORTACION,
         "objeto_imp": OBJETO_IMP,
         "impuesto": IMPUESTO,

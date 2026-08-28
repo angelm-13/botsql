@@ -2657,7 +2657,16 @@
     "payment_amount_must_be_positive": "The payment amount must be greater than zero.",
     "payment_form_invalid": "That payment form is not in the SAT catalog.",
     "payment_form_cannot_be_undefined": "A payment that already happened cannot declare 'to be defined'.",
-    "payment_requires_stamped_invoice": "The payment complement needs the invoice fiscal folio."
+    "payment_requires_stamped_invoice": "The payment complement needs the invoice fiscal folio.",
+    "credit_note_relation_type_invalid": "A credit note uses relation 01 (discount or allowance) or 03 (goods return).",
+    "credit_note_requires_stamped_invoice": "Only a stamped invoice can be credited.",
+    "credit_note_invoice_cancelled": "The invoice is cancelled; it takes no credit notes.",
+    "credit_note_invoice_status_not_allowed": "The invoice status does not accept credit notes.",
+    "credit_note_nothing_left_to_credit": "This invoice is already fully credited.",
+    "credit_note_exceeds_creditable": "The note is larger than what is left to credit.",
+    "credit_note_amount_must_be_positive": "The note amount must be greater than zero.",
+    "credit_note_concepts_required": "A credit note needs at least one line.",
+    "credit_note_validation_failed": "The note lines do not meet SAT rules."
   },
   "logistics": {
     "module": "Logistics",

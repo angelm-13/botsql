@@ -17,6 +17,10 @@ Reglas del Anexo 20 que aqui se respetan y que suelen provocar rechazos:
   ni `Importe`, y no suma a `TotalImpuestosTrasladados`.
 * Si ningun concepto desglosa impuestos, el nodo `Impuestos` se omite.
 * `TipoCambio` es obligatorio con moneda distinta de MXN y XXX.
+* `CfdiRelacionados` va ANTES de `Emisor`, y agrupa por tipo de relacion: un
+  comprobante declara un solo tipo por nodo, con todos los folios de ese tipo
+  dentro. Es lo que convierte un egreso en la nota de credito de una factura
+  concreta.
 """
 
 from __future__ import annotations
@@ -167,6 +171,29 @@ def _append_summary(root, all_taxes: list[dict]) -> None:
             ET.SubElement(group, f"{{{CFDI_NS}}}Traslado", transfer)
 
 
+def _append_related(root, related) -> None:
+    """Comprobantes con los que este se relaciona.
+
+    El SAT agrupa por tipo: un nodo por cada tipo de relacion, con los folios
+    de ese tipo dentro. Va antes del emisor porque asi lo ordena el esquema.
+    """
+    if not related:
+        return
+    por_tipo: dict[str, list[str]] = {}
+    for elemento in related:
+        tipo = str(elemento.get("relation_type") or "").strip()
+        uuid = str(elemento.get("uuid") or "").strip().upper()
+        if not tipo or not uuid:
+            continue
+        if uuid not in por_tipo.setdefault(tipo, []):
+            por_tipo[tipo].append(uuid)
+
+    for tipo, folios in sorted(por_tipo.items()):
+        nodo = ET.SubElement(root, f"{{{CFDI_NS}}}CfdiRelacionados", {"TipoRelacion": tipo})
+        for folio in folios:
+            ET.SubElement(nodo, f"{{{CFDI_NS}}}CfdiRelacionado", {"UUID": folio})
+
+
 def build_cfdi_xml(payload: dict, *, issued_at: str, certificate_number: str, seal: str, stamp: dict | None = None) -> str:
     """Serializa un CFDI 4.0 a partir del payload de `InvoiceDraft.serialize()`."""
     concepts = payload.get("concepts") or []
@@ -219,6 +246,7 @@ def build_cfdi_xml(payload: dict, *, issued_at: str, certificate_number: str, se
         attributes["CondicionesDePago"] = str(payload["payment_conditions"])[:1000]
 
     root = ET.Element(f"{{{CFDI_NS}}}Comprobante", attributes)
+    _append_related(root, payload.get("related_documents"))
     ET.SubElement(root, f"{{{CFDI_NS}}}Emisor", {
         "Rfc": str(issuer.get("rfc") or ""),
         "Nombre": str(issuer.get("name") or ""),
