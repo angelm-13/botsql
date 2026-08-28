@@ -2669,7 +2669,9 @@
     "credit_note_exceeds_creditable": "La nota es mayor que lo que queda por acreditar.",
     "credit_note_amount_must_be_positive": "El importe de la nota debe ser mayor que cero.",
     "credit_note_concepts_required": "La nota de credito necesita al menos un concepto.",
-    "credit_note_validation_failed": "Los conceptos de la nota no cumplen las reglas del SAT."
+    "credit_note_validation_failed": "Los conceptos de la nota no cumplen las reglas del SAT.",
+    "auth_too_many_attempts": "Demasiados intentos fallidos. Espera unos minutos antes de volver a intentar.",
+    "auth_missing_credentials": "Faltan el usuario o la contrasena."
   },
   "logistics": {
     "module": "Logística",

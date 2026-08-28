@@ -4,6 +4,8 @@ import sys
 import jwt
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
+
+from app.utils.startup_guard import allowed_cors_origins, enforce_secure_configuration
 from flask_babel import Babel
 from werkzeug.exceptions import HTTPException
 from app.utils.errors import AppError
@@ -613,7 +615,14 @@ def create_app(testing: bool = False) -> Flask:
     app.config['JSON_SORT_KEYS'] = False
     default_upload_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'uploads'))
     app.config['UPLOAD_ROOT'] = os.getenv('UPLOAD_ROOT', default_upload_root)
-    CORS(app)
+
+    # En produccion, una configuracion insegura impide arrancar. Vale mas un
+    # despliegue que falla ruidosamente que uno que corre abierto sin que nadie
+    # lo sepa.
+    enforce_secure_configuration(testing=testing)
+    # Sin CORS_ORIGINS no se permite ningun origen cruzado: antes se llamaba a
+    # CORS(app) sin argumentos, que acepta peticiones de cualquier sitio.
+    CORS(app, origins=allowed_cors_origins(), supports_credentials=True)
     Babel(app)
     app.register_blueprint(bp_health)
     app.register_blueprint(bp_auth)
