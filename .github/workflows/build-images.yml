@@ -1,0 +1,204 @@
+# Construye lo que cambia con cada commit:
+#
+#   1. backend + worker + db-init  -> una sola vez, son iguales para
+#      todos los clientes (la configuración por cliente entra en
+#      runtime vía Secret de Kubernetes, no en la imagen).
+#   2. frontend                     -> una vez POR CADA cliente activo
+#      en deploy/clients.yaml, porque VITE_API_BASE_URL queda
+#      horneado en el build de Vite y cada cliente tiene su propio
+#      subdominio api-<cliente>-<env>.tyakxa.com.mx.
+#
+# Este workflow construye y publica imágenes en ghcr.io/tyakxa.
+#
+# Para namespaces de CLIENTES reales, aplicar al clúster sigue siendo
+# manual a propósito (actualizar el tag en el overlay, commitear, y
+# `kubectl apply -k` a mano) — no perder el hábito de "cambiar la
+# etiqueta en el manifiesto y commitear" antes de tener semanas de
+# evidencia de que el pipeline no rompe nada.
+#
+# tyakxa-dev es la excepción: es el entorno interno de pruebas (no un
+# cliente real, ver deploy/clients.yaml), así que el job
+# "deploy-tyakxa-dev" de abajo sí actualiza el overlay y aplica solo,
+# en cada push — es justo el lugar de bajo riesgo pensado para curtir
+# la automatización antes de confiar en ella para un cliente real.
+name: build-images
+
+on:
+  push:
+    # Por ahora el despliegue se hace desde initAlan, no desde main
+    # (todavía no hay PR) — se deja "main" en la lista para que el
+    # día que se mergee, este mismo trigger siga funcionando sin
+    # tocar nada. Quitar "initAlan" cuando esa rama deje de ser la
+    # fuente de los despliegues.
+    branches: [main, initAlan]
+  # workflow_dispatch queda para cuando este archivo ya viva en main:
+  # GitHub solo permite dispararlo a mano (CLI/API) desde OTRAS ramas
+  # si el workflow ya existe en la rama default — hoy, con initAlan
+  # como rama de trabajo, este trigger no es utilizable todavía. El
+  # trigger de "push" de arriba es el que de verdad funciona mientras
+  # tanto.
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write # necesario para poder hacer push a ghcr.io
+
+jobs:
+  # Job auxiliar: lee deploy/clients.yaml y lo expone como JSON para
+  # que el job de frontend lo use como matrix. Si clients.yaml está
+  # vacío (clients: []), el matrix queda vacío y ese job simplemente
+  # no corre para nadie — no falla.
+  leer-clientes:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: set
+        run: |
+          echo "matrix=$(yq -o=json '.clients' deploy/clients.yaml -I=0)" >> "$GITHUB_OUTPUT"
+
+  # Imágenes client-agnósticas: se construyen una sola vez por commit.
+  backend-and-worker:
+    runs-on: ubuntu-latest
+    outputs:
+      sha_short: ${{ steps.meta.outputs.sha_short }} # lo usa deploy-tyakxa-dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Calcular tag (SHA corto)
+        id: meta
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Login a ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build + push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/backend.Dockerfile
+          push: true
+          tags: ghcr.io/tyakxa/tyakxa-tny-backend:${{ steps.meta.outputs.sha_short }}
+
+      - name: Build + push worker (celery-worker y celery-beat comparten esta imagen)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/worker.Dockerfile
+          push: true
+          tags: ghcr.io/tyakxa/tyakxa-tny-worker:${{ steps.meta.outputs.sha_short }}
+
+      - name: Build + push db-init
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/db-init.Dockerfile
+          push: true
+          tags: ghcr.io/tyakxa/tyakxa-tny-db-init:${{ steps.meta.outputs.sha_short }}
+
+  # Imagen de frontend: una por cada cliente activo en deploy/clients.yaml.
+  # Si mañana agregas 5 clientes más a ese archivo, este job simplemente
+  # corre 5 veces más — no hay que tocar este workflow.
+  frontend-por-cliente:
+    needs: [leer-clientes]
+    if: ${{ needs.leer-clientes.outputs.matrix != '[]' }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include: ${{ fromJson(needs.leer-clientes.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Calcular tag (SHA corto)
+        id: meta
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Login a ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build + push frontend de ${{ matrix.name }}-${{ matrix.env }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/frontend.Dockerfile
+          target: prod
+          push: true
+          # api_base_url viene tal cual de deploy/clients.yaml (ver el
+          # comentario ahí) — puede ser la URL de dos subdominios de un
+          # cliente real, o vacío para un solo origen con /api relativo.
+          build-args: |
+            VITE_API_BASE_URL=${{ matrix.api_base_url }}
+          tags: ghcr.io/tyakxa/tyakxa-tny-frontend:${{ steps.meta.outputs.sha_short }}-${{ matrix.name }}-${{ matrix.env }}
+
+  # CD completo, pero SOLO para tyakxa-dev (ver el comentario del
+  # encabezado de este archivo — cualquier cliente real sigue siendo
+  # manual). Actualiza el tag en el overlay, lo commitea de vuelta al
+  # repo (así el manifiesto siempre refleja lo que está corriendo, sin
+  # depender de `kubectl set image`), y por último dispara el apply en
+  # el servidor por SSH.
+  deploy-tyakxa-dev:
+    needs: [backend-and-worker, frontend-por-cliente]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # necesario para poder commitear el tag nuevo de vuelta al repo
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Actualizar el tag de las 4 imágenes en el overlay de tyakxa-dev
+        env:
+          SHA: ${{ needs.backend-and-worker.outputs.sha_short }}
+        run: |
+          set -euo pipefail
+          OVERLAY=k8s/overlays/tyakxa-dev/kustomization.yaml
+          yq -i '(.images[] | select(.name == "DB_INIT_IMAGE_PLACEHOLDER")).newTag = strenv(SHA)' "$OVERLAY"
+          yq -i '(.images[] | select(.name == "BACKEND_IMAGE_PLACEHOLDER")).newTag = strenv(SHA)' "$OVERLAY"
+          yq -i '(.images[] | select(.name == "WORKER_IMAGE_PLACEHOLDER")).newTag = strenv(SHA)' "$OVERLAY"
+          yq -i '(.images[] | select(.name == "FRONTEND_IMAGE_PLACEHOLDER")).newTag = strenv(SHA) + "-tyakxa-dev"' "$OVERLAY"
+
+      - name: Commitear el tag nuevo
+        env:
+          SHA: ${{ needs.backend-and-worker.outputs.sha_short }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add k8s/overlays/tyakxa-dev/kustomization.yaml
+          if git diff --cached --quiet; then
+            echo "El overlay ya tenía este tag, nada que commitear."
+          else
+            git commit -m "deploy(tyakxa-dev): actualizar a ${SHA}"
+            # git fetch + rebase antes de empujar: un "re-run" de un workflow
+            # viejo reusa el commit ORIGINAL que lo disparó, no la punta
+            # actual de la rama — sin esto, el push queda "atrasado" respecto
+            # al remoto (rejected, fetch first) si la rama avanzó desde
+            # entonces. Con el rebase, si el cambio ya existe upstream
+            # (mismo SHA ya aplicado), el commit queda vacío y se descarta
+            # solo; si no existe, se reaplica limpio sobre lo más reciente.
+            git fetch origin "${GITHUB_REF_NAME}"
+            git rebase "origin/${GITHUB_REF_NAME}"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
+
+      - name: Aplicar en el servidor
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+          SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
+          SHA: ${{ needs.backend-and-worker.outputs.sha_short }}
+        run: |
+          set -euo pipefail
+          install -m 600 -D /dev/null ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          # El comando que se manda aquí es irrelevante: en el servidor,
+          # authorized_keys fuerza SIEMPRE /home/alanp/deploy-tyakxa-dev.sh
+          # para esta llave, sin importar qué se pida en la conexión.
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "$SSH_USER@$SSH_HOST" "$SHA"
