@@ -31,3 +31,8 @@ clients:
     # Un solo origen (sistema.torredigital.com.mx con /api) — igual que
     # tyakxa/dev, el frontend cae solo a /api relativo con esto vacío.
     api_base_url: ""
+  - name: adser
+    env: prod
+    # Un solo origen (adser.torredigital.mx con /api) — mismo patrón que
+    # torredigital/prod.
+    api_base_url: ""

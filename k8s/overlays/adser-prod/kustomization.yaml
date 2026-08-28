@@ -1,0 +1,29 @@
+# Overlay real de producción para adser (dominio adser.torredigital.mx).
+# Instanciado desde k8s/overlays/torredigital-prod (mismo patrón: un solo
+# origen, front + API bajo /api, DNS ya confirmado con nslookup).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: adser-prod
+images:
+  - name: DB_INIT_IMAGE_PLACEHOLDER
+    newName: ghcr.io/tyakxa/tyakxa-tny-db-init
+    newTag: "b27e95a"
+  - name: BACKEND_IMAGE_PLACEHOLDER
+    newName: ghcr.io/tyakxa/tyakxa-tny-backend
+    newTag: "b27e95a"
+  - name: WORKER_IMAGE_PLACEHOLDER
+    newName: ghcr.io/tyakxa/tyakxa-tny-worker
+    newTag: "b27e95a"
+  - name: FRONTEND_IMAGE_PLACEHOLDER
+    newName: ghcr.io/tyakxa/tyakxa-tny-frontend
+    newTag: REEMPLAZAR_SHA-adser-prod
+resources:
+  - ../../base
+  - ingress-single-origin.yaml
+patches:
+  - patch: |-
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: tyakxa-tny
+      $patch: delete
