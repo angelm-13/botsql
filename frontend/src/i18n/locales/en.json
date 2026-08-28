@@ -2626,7 +2626,8 @@
     "location_has_children": "A location containing other locations cannot be deleted.",
     "invoice_inventory_direction_unknown": "The warehouse cannot be moved: it is unclear whether the invoice is a sale or a purchase. Set the principal company or classify the invoice.",
     "invoice_inventory_status_not_allowed": "Only an issued invoice moves the warehouse; a quotation does not.",
-    "invoice_inventory_no_lines": "The invoice has no authorized lines to move."
+    "invoice_inventory_no_lines": "The invoice has no authorized lines to move.",
+    "inventory_adjustment_not_authorized": "Adjusting stock requires warehouse manager permission. An adjustment changes inventory with no document behind it, which is why it is separate from receiving and issuing."
   },
   "logistics": {
     "module": "Logistics",
@@ -3197,7 +3198,13 @@
     "ready_to_close": "All charged: the table can be freed.",
     "occupied": "Occupied",
     "free": "Free",
-    "inventory_warnings": "Inventory warnings", "dismiss": "Dismiss", "warn_no_recipe": "No recipe, stock was not deducted", "warn_short_stock": "Insufficient stock", "warn_needed": "needed", "warn_had": "had", "warn_unit_mismatch": "Recipe unit differs from the item unit, nothing deducted"
+    "inventory_warnings": "Inventory warnings",
+    "dismiss": "Dismiss",
+    "warn_no_recipe": "No recipe, stock was not deducted",
+    "warn_short_stock": "Insufficient stock",
+    "warn_needed": "needed",
+    "warn_had": "had",
+    "warn_unit_mismatch": "Recipe unit differs from the item unit, nothing deducted"
   },
   "shell": {
     "group_banks": "Banking",

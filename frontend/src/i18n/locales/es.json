@@ -2629,7 +2629,8 @@
     "location_has_children": "No se puede eliminar una ubicacion que contiene otras.",
     "invoice_inventory_direction_unknown": "No se puede mover el almacen: falta saber si la factura es de venta o de compra. Define la empresa principal o clasifica la factura.",
     "invoice_inventory_status_not_allowed": "Solo una factura emitida mueve el almacen; una cotizacion no.",
-    "invoice_inventory_no_lines": "La factura no tiene partidas autorizadas que mover."
+    "invoice_inventory_no_lines": "La factura no tiene partidas autorizadas que mover.",
+    "inventory_adjustment_not_authorized": "Ajustar existencias requiere permiso de jefe de almacen. Un ajuste cambia el inventario sin documento que lo respalde, por eso esta separado de recibir y despachar."
   },
   "logistics": {
     "module": "Logística",
@@ -3200,7 +3201,13 @@
     "ready_to_close": "Todo cobrado: la mesa se puede liberar.",
     "occupied": "Ocupada",
     "free": "Libre",
-    "inventory_warnings": "Avisos de inventario", "dismiss": "Descartar", "warn_no_recipe": "Sin receta, no se descontó inventario", "warn_short_stock": "Existencias insuficientes", "warn_needed": "se requerían", "warn_had": "había", "warn_unit_mismatch": "Unidad de receta distinta a la del insumo, no se descontó"
+    "inventory_warnings": "Avisos de inventario",
+    "dismiss": "Descartar",
+    "warn_no_recipe": "Sin receta, no se descontó inventario",
+    "warn_short_stock": "Existencias insuficientes",
+    "warn_needed": "se requerían",
+    "warn_had": "había",
+    "warn_unit_mismatch": "Unidad de receta distinta a la del insumo, no se descontó"
   },
   "shell": {
     "group_banks": "Bancos",

@@ -26,11 +26,13 @@ from app.models import (
     Status,
     Unit,
 )
+from app.models.entity_permission import EntityPermission
 from app.models.inventory_ledger import InventoryLedger
 from app.models.inventory_stock import InventoryStock
 from app.models.session import transaction_context
 from app.services.inventory_service import (
     apply_inventory_movement,
+    apply_movement_in_session,
     list_inventory_movements,
     product_stock,
     reconcile_product_stock,
@@ -469,3 +471,90 @@ class TestReconciliation(WarehouseTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestAdjustmentRequiresItsOwnCapability(WarehouseTestCase):
+    """Separacion de funciones en el almacen.
+
+    El ajuste es el unico movimiento sin documento detras y sin tope: puede
+    crear existencia de la nada o destruirla por cualquier cantidad. Es la
+    operacion con la que se tapa un faltante, asi que no puede bastar con el
+    permiso de operar productos, el mismo que necesita quien recibe y despacha
+    todos los dias.
+    """
+
+    ALMACENISTA = {"id_user": 50, "id_proyect": 30, "id_permission": 500}
+    JEFE_ALMACEN = {"id_user": 51, "id_proyect": 30, "id_permission": 501}
+
+    def setUp(self):
+        super().setUp()
+        with transaction_context() as db:
+            db.add(EntityPermission(
+                id_permission=501, entity_name="inventory_adjustment",
+                control_type=2, created_by=51,
+            ))
+
+    def _move(self, actor, **payload):
+        return apply_inventory_movement(PRODUCT, payload, actor)
+
+    def test_the_clerk_receives_issues_and_transfers(self):
+        self._move(self.ALMACENISTA, movement_type="receive", quantity=10,
+                   id_location=RACK_A1, idempotency_key="c-r")
+        self._move(self.ALMACENISTA, movement_type="issue", quantity=3,
+                   id_location=RACK_A1, idempotency_key="c-i")
+        transfer_inventory(PRODUCT, {
+            "id_location_from": RACK_A1, "id_location_to": NORTE,
+            "quantity": 2, "reason": "Reabasto", "idempotency_key": "c-t",
+        }, self.ALMACENISTA)
+
+        self.assertEqual(5, self.stock_at(RACK_A1))
+        self.assertEqual(2, self.stock_at(NORTE))
+
+    def test_the_clerk_records_shrinkage_with_a_reason(self):
+        self._move(self.ALMACENISTA, movement_type="receive", quantity=5,
+                   id_location=RACK_A1, idempotency_key="c-r")
+
+        self._move(self.ALMACENISTA, movement_type="loss", quantity=1,
+                   id_location=RACK_A1, idempotency_key="c-l", reason="Bulto roto")
+
+        self.assertEqual(4, self.stock_at(RACK_A1))
+
+    def test_the_clerk_cannot_adjust(self):
+        with self.assertRaises(AppError) as raised:
+            self._move(self.ALMACENISTA, movement_type="adjustment", quantity_delta=500,
+                       id_location=RACK_A1, idempotency_key="c-a", reason="Cuadrando")
+
+        self.assertEqual("errors.inventory_adjustment_not_authorized", raised.exception.message_key)
+        self.assertIsNone(self.stock_at(RACK_A1))
+
+    def test_the_warehouse_manager_can_adjust(self):
+        self._move(self.JEFE_ALMACEN, movement_type="adjustment", quantity_delta=7,
+                   id_location=RACK_A1, idempotency_key="m-a", reason="Conteo fisico")
+
+        self.assertEqual(7, self.stock_at(RACK_A1))
+
+    def test_the_manager_still_needs_a_reason_to_adjust(self):
+        with self.assertRaises(AppError) as raised:
+            self._move(self.JEFE_ALMACEN, movement_type="adjustment", quantity_delta=7,
+                       id_location=RACK_A1, idempotency_key="m-a")
+
+        self.assertEqual("errors.inventory_reason_required", raised.exception.message_key)
+
+    def test_a_superuser_is_not_blocked(self):
+        movimiento, _ = apply_inventory_movement(PRODUCT, {
+            "movement_type": "adjustment", "quantity_delta": 3,
+            "id_location": RACK_A1, "idempotency_key": "su-a", "reason": "Carga inicial",
+        }, {"id_user": 1, "is_superuser": True})
+
+        self.assertEqual(3, movimiento["quantity_delta"])
+
+    def test_the_capability_is_checked_in_the_movement_core(self):
+        """Cubre a cualquier camino que llegue al nucleo, no solo a la ruta."""
+        with transaction_context() as db:
+            with self.assertRaises(AppError) as raised:
+                apply_movement_in_session(
+                    db, PRODUCT, self.ALMACENISTA,
+                    movement_type="adjustment", quantity_delta=1,
+                    idempotency_key="core-a", id_location=RACK_A1,
+                )
+        self.assertEqual("errors.inventory_adjustment_not_authorized", raised.exception.message_key)

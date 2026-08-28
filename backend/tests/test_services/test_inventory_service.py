@@ -19,6 +19,7 @@ from app.models import (
     Status,
     Unit,
 )
+from app.models.entity_permission import EntityPermission
 from app.models.inventory_ledger import InventoryLedger
 from app.models.session import transaction_context
 from app.services.inventory_service import (
@@ -32,7 +33,7 @@ from app.utils.errors import AppError
 from tests.conftest import BackendTestCase
 
 
-ACTOR = {"id_user": 1, "id_proyect": 30}
+ACTOR = {"id_user": 1, "id_proyect": 30, "id_permission": 900}
 OUTSIDER = {"id_user": 2, "id_proyect": 99}
 
 
@@ -80,6 +81,13 @@ class InventoryTestCase(BackendTestCase):
             ])
             db.flush()
             db.add(self._product(60, 10))
+            # Estas pruebas verifican las reglas del movimiento, no quien puede
+            # hacerlo: se concede al actor la capacidad de ajustar para que el
+            # caso bajo prueba sea la regla y no el permiso.
+            db.add(EntityPermission(
+                id_permission=900, entity_name="inventory_adjustment",
+                control_type=2, created_by=1,
+            ))
 
     @staticmethod
     def _product(product_id, quantity):

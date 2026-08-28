@@ -6,6 +6,7 @@ from app.models.proyect_event import ProyectEvent
 from app.models.session import transaction_context
 from app.services.project_management_service import (
     create_project,
+    delete_project,
     get_project_detail,
     list_projects,
     transition_project,
@@ -100,3 +101,123 @@ if __name__ == "__main__":
     import unittest
 
     unittest.main()
+
+class TestProjectLeaderRights(TestProjectWorkflowService):
+    """El lider designado del proyecto.
+
+    Antes el ambito propio se calculaba solo sobre `created_by`, de modo que un
+    proyecto asignado a otra persona quedaba invisible para su propio
+    responsable: no lo veia en su lista ni lo podia consultar, mucho menos
+    moverlo. Un supervisor puede levantar el proyecto y asignarlo, y quien lo
+    lidera es quien lo saca adelante.
+    """
+
+    def setUp(self):
+        super().setUp()
+        # Lucia lidera, pero no creo el proyecto ni tiene capacidades globales.
+        self.leader = {"id_user": 41, "id_permission": 401}
+
+    def _create_led_by_leader(self, title="Con lider"):
+        return create_project({
+            "id_customer_supplier": 1,
+            "proyect_description": "Trabajo asignado",
+            "title": title,
+            "leader": 41,
+        }, self.supervisor)
+
+    def test_the_leader_sees_the_project_they_did_not_create(self):
+        self._create_led_by_leader()
+
+        result = list_projects(self.leader)
+
+        self.assertEqual(1, result["total"])
+        self.assertEqual(11, result["items"][0]["created_by"])
+        self.assertEqual(41, result["items"][0]["leader"])
+
+    def test_the_leader_can_read_the_detail(self):
+        project = self._create_led_by_leader()
+
+        detail = get_project_detail(project["id_proyect"], self.leader)
+
+        self.assertEqual(project["id_proyect"], detail["id_proyect"])
+
+    def test_the_leader_submits_and_runs_their_project(self):
+        project = self._create_led_by_leader()["id_proyect"]
+
+        self.assertEqual(
+            "submitted",
+            transition_project(project, {"status": "submitted"}, self.leader)["proyect_status"],
+        )
+        transition_project(project, {"status": "authorized"}, self.manager)
+        for target in ("in_progress", "completed"):
+            with self.subTest(target=target):
+                self.assertEqual(
+                    target,
+                    transition_project(project, {"status": target}, self.leader)["proyect_status"],
+                )
+
+    def test_the_leader_cannot_authorize_their_own_project(self):
+        """Separacion de funciones: quien ejecuta el trabajo no lo aprueba.
+
+        Es lo que evita que una sola persona levante, apruebe y cierre su
+        propio proyecto.
+        """
+        project = self._create_led_by_leader()["id_proyect"]
+        transition_project(project, {"status": "submitted"}, self.leader)
+
+        for target in ("authorized", "denied", "blocked"):
+            with self.subTest(target=target), self.assertRaises(AppError) as raised:
+                transition_project(project, {"status": target, "reason": "Motivo"}, self.leader)
+            self.assertEqual("errors.permission_denied", raised.exception.message_key)
+
+    def test_the_leader_can_stop_and_resume_with_a_reason(self):
+        project = self._create_led_by_leader()["id_proyect"]
+        transition_project(project, {"status": "submitted"}, self.leader)
+        transition_project(project, {"status": "authorized"}, self.manager)
+        transition_project(project, {"status": "in_progress"}, self.leader)
+
+        with self.assertRaises(AppError):
+            transition_project(project, {"status": "stopped"}, self.leader)
+
+        stopped = transition_project(
+            project, {"status": "stopped", "reason": "Falta material"}, self.leader
+        )
+        self.assertEqual("stopped", stopped["proyect_status"])
+
+    def test_someone_who_is_neither_creator_nor_leader_sees_nothing(self):
+        self._create_led_by_leader()
+        forastero = {"id_user": 99, "id_permission": 999}
+
+        self.assertEqual(0, list_projects(forastero)["total"])
+
+    def test_the_leader_cannot_delete_a_project_someone_else_created(self):
+        """El lider lo saca adelante, pero no lo elimina."""
+        project = self._create_led_by_leader()["id_proyect"]
+
+        with self.assertRaises(AppError) as raised:
+            delete_project(project, self.leader)
+
+        self.assertEqual("errors.permission_denied", raised.exception.message_key)
+
+    def test_the_creator_still_deletes_their_own_draft(self):
+        project = self._create_led_by_leader()["id_proyect"]
+
+        self.assertTrue(delete_project(project, self.supervisor)["deleted"])
+
+    def test_the_leader_edits_their_project_while_it_is_editable(self):
+        project = self._create_led_by_leader()["id_proyect"]
+
+        updated = update_project(project, {"title": "Titulo del lider"}, self.leader)
+
+        self.assertEqual("Titulo del lider", updated["title"])
+
+    def test_the_workshop_sees_a_project_it_leads_before_authorization(self):
+        """Un jefe de taller que ademas lidera no espera la autorizacion."""
+        create_project({
+            "id_customer_supplier": 1,
+            "proyect_description": "Trabajo propio del taller",
+            "title": "Taller lider",
+            "leader": 31,
+        }, self.supervisor)
+
+        self.assertEqual(1, list_projects(self.workshop)["total"])

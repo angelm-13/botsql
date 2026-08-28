@@ -25,6 +25,7 @@ import uuid
 
 from sqlalchemy import func, select
 
+from app.models.entity_permission import EntityPermission
 from app.models.inventory_ledger import InventoryLedger
 from app.models.inventory_stock import InventoryStock
 from app.models.invoice import Invoice
@@ -58,6 +59,14 @@ REFERENCE_TYPES = {
 # Es una red contra datos ciclicos, no un limite de dise~no.
 MAX_LOCATION_DEPTH = 20
 
+# El ajuste es el unico movimiento sin documento detras y sin tope: puede
+# crear o destruir existencia por cualquier cantidad. Es justo la operacion con
+# la que se tapa un faltante, asi que exige una capacidad aparte en lugar de
+# bastar con el permiso de editar productos. Los demas movimientos estan
+# acotados por un documento o por la existencia disponible.
+ADJUSTMENT_CAPABILITY = "inventory_adjustment"
+READ_BIT = 2
+
 
 def _integer_quantity(value, field="quantity"):
     if isinstance(value, bool):
@@ -69,6 +78,42 @@ def _integer_quantity(value, field="quantity"):
     if quantity <= 0:
         raise AppError("errors.invalid_field", 400, {"field": field})
     return quantity
+
+
+def _is_unrestricted(user_data) -> bool:
+    return bool(user_data.get("is_superuser") or user_data.get("is_bootstrap_admin"))
+
+
+def has_capability(db, user_data, capability) -> bool:
+    """Capacidad concedida al rol del actor, con el mismo mecanismo que Proyectos."""
+    if _is_unrestricted(user_data):
+        return True
+    try:
+        permission_id = int(user_data.get("id_permission") or user_data.get("permission_id") or 0)
+    except (TypeError, ValueError):
+        return False
+    if not permission_id:
+        return False
+    record = (
+        db.query(EntityPermission)
+        .filter(EntityPermission.id_permission == permission_id)
+        .filter(EntityPermission.entity_name == capability)
+        .filter(EntityPermission.deletion_date.is_(None))
+        .first()
+    )
+    try:
+        return bool(record and int(record.control_type) & READ_BIT)
+    except (TypeError, ValueError):
+        return False
+
+
+def _require_adjustment_capability(db, user_data):
+    if not has_capability(db, user_data, ADJUSTMENT_CAPABILITY):
+        raise AppError(
+            "errors.inventory_adjustment_not_authorized",
+            403,
+            {"capability": ADJUSTMENT_CAPABILITY},
+        )
 
 
 def _actor_project_id(user_data):
@@ -302,6 +347,11 @@ def apply_movement_in_session(
     sola transaccion: si una falla, ninguna se aplica. Los validadores de la
     entrada publica ya corrieron cuando se llega aqui.
     """
+    # La capacidad de ajustar se comprueba aqui y no solo en la entrada
+    # publica: cualquier camino que llegue a este nucleo queda cubierto.
+    if movement_type == "adjustment":
+        _require_adjustment_capability(db, user_data)
+
     previous = db.scalars(
         select(InventoryLedger).where(InventoryLedger.idempotency_key == idempotency_key)
     ).first()
