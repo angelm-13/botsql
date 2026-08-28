@@ -193,11 +193,12 @@ jobs:
           SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
           SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
+          SHA: ${{ needs.backend-and-worker.outputs.sha_short }}
         run: |
           set -euo pipefail
           install -m 600 -D /dev/null ~/.ssh/deploy_key
           printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
-          # El comando que se manda aquí es irrelevante: en el servidor,
-          # authorized_keys fuerza SIEMPRE /home/alanp/deploy-tyakxa-dev.sh
-          # para esta llave, sin importar qué se pida en la conexión.
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "$SSH_USER@$SSH_HOST" true
+          # El servidor espera el SHA como SSH_ORIGINAL_COMMAND.
+          # Enviamos un comando explícito para que no llegue "true".
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
+            "$SSH_USER@$SSH_HOST" "deploy-tyakxa-dev.sh $SHA"
