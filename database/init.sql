@@ -814,7 +814,7 @@ CREATE TABLE IF NOT EXISTS "password_reset_token" (
   "expires_at" TIMESTAMP NOT NULL,
   "used_at" TIMESTAMP NULL,
   "requested_ip" VARCHAR(45) NULL,
-  "created_at" TIMESTAMP NOT NULL DEFAULT 'datetime.now()',
+  "created_at" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY ("id_password_reset_token")
 );
 
@@ -1410,6 +1410,13 @@ EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 DO $$ BEGIN
   ALTER TABLE "entity_permission" ADD CONSTRAINT "fk_entity_permission_created_by" FOREIGN KEY ("created_by") REFERENCES "user"("id_user") DEFERRABLE INITIALLY DEFERRED;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+-- uq_entity_permission_permission_entity: varios INSERT de este mismo archivo
+-- (mas abajo) y de database/seed.sql usan ON CONFLICT (id_permission, entity_name),
+-- que exige que este constraint ya exista.
+DO $$ BEGIN
+  ALTER TABLE "entity_permission" ADD CONSTRAINT "uq_entity_permission_permission_entity" UNIQUE ("id_permission", "entity_name");
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 DO $$ BEGIN

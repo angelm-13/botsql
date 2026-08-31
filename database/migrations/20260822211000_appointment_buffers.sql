@@ -1,12 +1,17 @@
 BEGIN;
 
 ALTER TABLE appointment
-    ADD COLUMN blocked_starts_at TIMESTAMPTZ,
-    ADD COLUMN blocked_ends_at TIMESTAMPTZ;
+    ADD COLUMN IF NOT EXISTS blocked_starts_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS blocked_ends_at TIMESTAMPTZ;
 
+-- Solo backfillea filas recien agregadas (columna aun en NULL); en una
+-- corrida repetida ya son NOT NULL y el WHERE no matchea nada, así que no
+-- pisa un blocked_starts_at/ends_at que la aplicación ya haya divergido de
+-- starts_at/ends_at.
 UPDATE appointment
 SET blocked_starts_at = starts_at,
-    blocked_ends_at = ends_at;
+    blocked_ends_at = ends_at
+WHERE blocked_starts_at IS NULL;
 
 ALTER TABLE appointment
     ALTER COLUMN blocked_starts_at SET NOT NULL,
