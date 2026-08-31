@@ -198,7 +198,11 @@ jobs:
           set -euo pipefail
           install -m 600 -D /dev/null ~/.ssh/deploy_key
           printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
-          # El servidor espera el SHA como SSH_ORIGINAL_COMMAND.
-          # Enviamos un comando explícito para que no llegue "true".
+          # El servidor fuerza SIEMPRE /home/alanp/deploy-tyakxa-dev.sh vía
+          # `command=` en authorized_keys, sin importar qué se pida en la
+          # conexión -- pero SÍ conserva literal lo pedido en
+          # $SSH_ORIGINAL_COMMAND, y el script usa ese valor completo como
+          # el SHA (sin parsear nombre de script + argumento). Por eso el
+          # comando a mandar es el SHA solo, no "deploy-tyakxa-dev.sh $SHA".
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new \
-            "$SSH_USER@$SSH_HOST" "deploy-tyakxa-dev.sh $SHA"
+            "$SSH_USER@$SSH_HOST" "$SHA"
