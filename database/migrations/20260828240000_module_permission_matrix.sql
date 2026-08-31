@@ -18,8 +18,8 @@
 -- servicio. Conceder `inventario` a un rol NO le da el almacen de logistica ni
 -- el del restaurante.
 --
--- 9 modulos, 12 roles, 9 capacidades,
--- 379 filas.
+-- 10 modulos, 12 roles, 11 capacidades,
+-- 381 filas.
 --
 --   facturacion      9 entidades
 --     Administrator (administrar), gerente_administrativo (capturar), vendedor (capturar), Gerente (capturar)
@@ -30,6 +30,8 @@
 --   logistica       21 entidades  [almacen propio]
 --     Administrator (administrar), gerente_administrativo (consultar), Gerente (consultar), Jefe de almacen (capturar)
 --   restaurante      0 entidades  [almacen propio]
+--     Administrator (administrar)
+--   pos              0 entidades
 --     Administrator (administrar)
 --   crm              7 entidades
 --     Administrator (administrar), gerente_administrativo (capturar), vendedor (capturar), Gerente (capturar)
@@ -130,6 +132,8 @@ FROM (VALUES
     (1, 'incident_supervision', 2, 'none', NULL, NULL, NULL, 390),   -- Administrator / consultar
     (1, 'inventory_adjustment', 2, 'none', NULL, NULL, NULL, 290),   -- Administrator / consultar
     (1, 'kronos_device', 2, 'settings', NULL, NULL, NULL, 790),   -- Administrator / consultar
+    (1, 'pos_admin', 15, 'sidebar', 'Punto de venta', 'pos', 'Admin del punto de venta', 640),   -- Administrator / administrar
+    (1, 'pos_terminal', 7, 'sidebar', 'Punto de venta', 'pos', 'Caja del punto de venta', 640),   -- Administrator / capturar
     (1, 'project_authorization', 2, 'hidden', NULL, NULL, NULL, 390),   -- Administrator / consultar
     (1, 'project_execution', 2, 'hidden', NULL, NULL, NULL, 390),   -- Administrator / consultar
     (1, 'restaurant_admin', 15, 'sidebar', 'Restaurante', 'restaurant', 'Admin del restaurante', 590),   -- Administrator / administrar

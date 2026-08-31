@@ -67,10 +67,11 @@ class TestCobertura(unittest.TestCase):
             set(registry.ENTIDAD_A_MODULO) & set(registry.CAPACIDAD_POR_CLAVE),
         )
 
-    def test_the_seven_business_modules_are_declared(self):
+    def test_the_business_modules_are_declared(self):
+        """Los siete que se pidieron, mas el punto de venta que se integro."""
         esperados = {
             "facturacion", "logistica", "restaurante", "rh", "crm",
-            "operaciones", "inventario",
+            "operaciones", "inventario", "pos",
         }
 
         self.assertEqual(esperados, set(registry.MODULOS_DE_NEGOCIO))
@@ -85,7 +86,8 @@ class TestAlmacenesSeparados(unittest.TestCase):
     los tres pierdan lo que les es propio.
     """
 
-    def test_the_three_modules_declare_their_own_warehouse(self):
+    def test_the_modules_with_a_warehouse_in_the_core_database(self):
+        """El punto de venta no aparece aqui porque lleva el suyo en su base."""
         almacenes = registry.almacenes()
 
         self.assertEqual({"inventario", "logistica", "restaurante"}, set(almacenes))
@@ -137,8 +139,17 @@ class TestAlmacenesSeparados(unittest.TestCase):
         almacenista = next(r for r in registry.ROLES if r.nombre == "Almacenista")
 
         self.assertEqual({"inventario", "configuracion"}, set(almacenista.modulos))
-        self.assertNotIn("logistica", almacenista.modulos)
-        self.assertNotIn("restaurante", almacenista.modulos)
+        for ajeno in ("logistica", "restaurante", "pos"):
+            with self.subTest(modulo=ajeno):
+                self.assertNotIn(ajeno, almacenista.modulos)
+
+    def test_a_module_with_its_own_database_declares_it(self):
+        """Separacion por base: no se cruza ni por una consulta mal escrita."""
+        pos = registry.MODULO_POR_CLAVE["pos"]
+
+        self.assertEqual("pos_enterprise", pos.base_de_datos)
+        self.assertEqual((), pos.entidades, "no tiene tablas en la base del nucleo")
+        self.assertEqual((), pos.almacen, "su almacen vive en su propia base")
 
     def test_the_warehouse_chains_exist_as_models(self):
         """Que las tablas declaradas sean las que el codigo usa de verdad."""

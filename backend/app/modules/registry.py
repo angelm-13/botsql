@@ -17,10 +17,9 @@ Aqui cada entidad pertenece a **exactamente un** modulo, y el archivo se niega
 a cargar si alguna queda fuera o en dos. Es la unica fuente de verdad de esa
 pertenencia.
 
-Los tres almacenes
-------------------
-Inventario, logistica y restaurante tienen almacen propio, y son cadenas de
-tablas independientes que no se cruzan en ningun servicio:
+Los cuatro almacenes
+--------------------
+Cuatro modulos tienen almacen propio, y ninguno comparte tabla con otro:
 
 * **inventario**: `location` -> `inventory_stock` -> `inventory_ledger`, por
   producto y ubicacion, en piezas enteras.
@@ -28,12 +27,19 @@ tablas independientes que no se cruzan en ningun servicio:
   `logistics_inventory`, por SKU, con lote y numero de serie.
 * **restaurante**: `restaurant_inventory_item` ->
   `restaurant_inventory_movement`, por insumo y receta.
+* **punto de venta**: dentro de su propia base, `pos_enterprise`. Es la
+  separacion mas fuerte de las cuatro, porque no se puede cruzar ni por una
+  consulta mal escrita.
 
-No comparten tabla ni servicio a proposito: un almacen de logistica guarda
-mercancia de terceros con lote y serie, el de inventario guarda material propio
-de obra, y el del restaurante insumos que se consumen por receta. Unificarlos
-obligaria a que las tres pierdan lo que les es propio. Al vivir en modulos
-distintos, conceder inventario a un rol NO le da acceso al almacen de logistica.
+Los tres primeros viven en la base del nucleo y no se cruzan en ningun servicio;
+esta comprobado por prueba. Cada uno guarda algo distinto: logistica mercancia
+de terceros que hay que rastrear por lote y serie, inventario material propio de
+obra que se cuenta en piezas enteras, el restaurante insumos que se descuentan
+por receta, y el punto de venta articulos de mostrador con kardex y bloqueo de
+sobreventa. Unificarlos obligaria a que los cuatro pierdan lo que les es propio.
+
+Al vivir en modulos distintos, conceder inventario a un rol NO le da acceso a
+ninguno de los otros tres.
 
 Capacidades
 -----------
@@ -68,14 +74,20 @@ NOMBRE_DE_BITS = {
 class Modulo:
     """Un submodulo del proyecto, con las entidades que le pertenecen."""
 
-    def __init__(self, clave, etiqueta, icono, orden, entidades, *, almacen=None):
+    def __init__(self, clave, etiqueta, icono, orden, entidades, *,
+                 almacen=None, base_de_datos=None):
         self.clave = clave
         self.etiqueta = etiqueta
         self.icono = icono
         self.orden = orden
         self.entidades = tuple(entidades)
-        # Cadena de tablas del almacen propio, si el modulo tiene uno.
+        # Cadena de tablas del almacen propio, si el modulo tiene uno. Solo se
+        # declaran aqui las que viven en la base del nucleo; un modulo con base
+        # propia lleva su almacen dentro y se declara en `base_de_datos`.
         self.almacen = tuple(almacen or ())
+        # Nombre de la base cuando el modulo no comparte la del nucleo. Es la
+        # separacion mas fuerte que hay: no se puede cruzar ni por error.
+        self.base_de_datos = base_de_datos
 
     def __repr__(self):
         return f"<Modulo {self.clave} ({len(self.entidades)} entidades)>"
@@ -130,6 +142,14 @@ MODULOS = (
         # el propio modulo.
         (),
         almacen=("restaurant_inventory_item", "restaurant_inventory_movement"),
+    ),
+    Modulo(
+        "pos", "Punto de venta", "pos", 550,
+        # Corre su propio backend y su propia base (`pos_enterprise`), asi que
+        # no tiene entidades en la del nucleo. Se opera por su pantalla, igual
+        # que el restaurante.
+        (),
+        base_de_datos="pos_enterprise",
     ),
     Modulo(
         "crm", "CRM", "crm", 600,
@@ -192,6 +212,8 @@ CAPACIDADES = (
     Capacidad("restaurant_cashier", "Caja", "restaurante", bits=CAPTURA, menu="sidebar"),
     Capacidad("restaurant_kitchen", "Cocina", "restaurante", bits=EDITAR, menu="sidebar"),
     Capacidad("restaurant_admin", "Admin del restaurante", "restaurante", bits=TOTAL, menu="sidebar"),
+    Capacidad("pos_terminal", "Caja del punto de venta", "pos", bits=CAPTURA, menu="sidebar"),
+    Capacidad("pos_admin", "Admin del punto de venta", "pos", bits=TOTAL, menu="sidebar"),
 )
 
 
@@ -222,7 +244,7 @@ class Rol:
 ROLES = (
     Rol(1, "Administrator", {
         "facturacion": TOTAL, "inventario": TOTAL, "operaciones": TOTAL,
-        "logistica": TOTAL, "restaurante": TOTAL, "crm": TOTAL, "rh": TOTAL,
+        "logistica": TOTAL, "restaurante": TOTAL, "pos": TOTAL, "crm": TOTAL, "rh": TOTAL,
         "configuracion": TOTAL, "seguridad": TOTAL,
     }, [c.clave for c in CAPACIDADES]),
 
@@ -331,6 +353,12 @@ MODULO_POR_CLAVE = {m.clave: m for m in MODULOS}
 CAPACIDAD_POR_CLAVE = {c.clave: c for c in CAPACIDADES}
 
 
+def _solo_por_capacidad(clave) -> bool:
+    """Modulos que no tienen entidades en la base del nucleo."""
+    modulo = MODULO_POR_CLAVE.get(clave)
+    return bool(modulo and not modulo.entidades)
+
+
 def _validar():
     claves = [m.clave for m in MODULOS]
     if len(claves) != len(set(claves)):
@@ -364,9 +392,9 @@ def _validar():
                     f"'{capacidad}'."
                 )
             modulo = CAPACIDAD_POR_CLAVE[capacidad].modulo
-            if modulo not in rol.modulos and modulo != "restaurante":
-                # El restaurante se opera solo por capacidades, asi que no
-                # necesita acceso de tabla al modulo.
+            if modulo not in rol.modulos and not _solo_por_capacidad(modulo):
+                # Restaurante y punto de venta se operan solo por capacidades,
+                # asi que no necesitan acceso de tabla al modulo.
                 raise RuntimeError(
                     f"El rol '{rol.nombre}' tiene la capacidad '{capacidad}' del modulo "
                     f"'{modulo}' sin acceso a ese modulo: es una fila que no puede "
