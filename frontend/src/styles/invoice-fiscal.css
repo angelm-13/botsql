@@ -1,0 +1,279 @@
+/* Panel de actos fiscales de una factura: cancelacion, abonos y notas de
+   credito.
+
+   Se sigue la paleta que ya usa el resto de la aplicacion -slate para texto y
+   bordes, #1b7a60 para la accion principal, #b91c1c para la destructiva- en
+   lugar de introducir tokens nuevos, para que el panel no parezca de otro
+   sistema. */
+
+.fiscal-panel-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, .55);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 32px 16px;
+  overflow-y: auto;
+  z-index: 60;
+}
+
+.fiscal-panel {
+  background: #fff;
+  border-radius: 16px;
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 24px 64px -24px rgba(15, 23, 42, .45);
+  width: 100%;
+  max-width: 920px;
+  padding: 24px 26px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  color: #334155;
+}
+
+.fiscal-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 14px;
+}
+
+.fiscal-panel-head h2 {
+  margin: 4px 0 0;
+  font-size: 22px;
+  color: #0f172a;
+}
+
+.fiscal-panel-head .eyebrow {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: #1b7a60;
+  font-weight: 700;
+}
+
+.fiscal-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.fiscal-tabs .button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.fiscal-section {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* Los datos de cabecera de cada pestana: importes y estados que se leen de un
+   vistazo antes de decidir. */
+.fiscal-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 14px 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+.fiscal-facts > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.fiscal-facts dt {
+  font-size: 11px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: #64748b;
+  font-weight: 700;
+}
+
+.fiscal-facts dd {
+  margin: 0;
+  font-size: 15px;
+  color: #0f172a;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.fiscal-panel .mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Aviso de contexto: explica por que algo no aplica, en lugar de dejar el
+   boton muerto sin motivo. */
+.fiscal-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin: 0;
+  padding: 12px 14px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 10px;
+  color: #78350f;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.fiscal-hint svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+/* Lo que ya esta en curso o ya se emitio. */
+.fiscal-standing {
+  padding: 14px 16px;
+  border: 1px solid #cbd5e1;
+  border-left: 4px solid #1b7a60;
+  border-radius: 0 10px 10px 0;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.fiscal-standing p { margin: 0; }
+
+.fiscal-standing-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.fiscal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+.fiscal-form .field-hint {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.fiscal-concept {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+}
+
+.fiscal-total-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #e2e8f0;
+  font-size: 15px;
+}
+
+/* Un boton deshabilitado tiene que parecerlo. Sin esto el de emitir seguia
+   verde y con cursor de mano cuando la nota superaba lo acreditable: el usuario
+   lo pulsa, no pasa nada, y no hay forma de saber si fallo o si no hizo caso. */
+.fiscal-panel .button:disabled,
+.fiscal-panel .button[disabled] {
+  opacity: .45;
+  cursor: not-allowed;
+  filter: saturate(.4);
+}
+
+.fiscal-panel .button.danger {
+  background: #b91c1c;
+  border-color: #b91c1c;
+  color: #fff;
+}
+
+.fiscal-panel .button.danger:hover:not(:disabled) {
+  background: #991b1b;
+  border-color: #991b1b;
+}
+
+.fiscal-panel .table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.fiscal-panel table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+.fiscal-panel th,
+.fiscal-panel td {
+  text-align: left;
+  padding: 9px 12px;
+  border-bottom: 1px solid #e2e8f0;
+  white-space: nowrap;
+}
+
+.fiscal-panel thead th {
+  background: #f8fafc;
+  font-size: 11px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.fiscal-panel tbody tr:last-child td { border-bottom: none; }
+
+.fiscal-panel .muted { color: #64748b; font-weight: 500; }
+
+.fiscal-panel .error {
+  margin: 0;
+  padding: 11px 14px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  color: #991b1b;
+}
+
+.fiscal-panel .notice {
+  margin: 0;
+  padding: 11px 14px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 10px;
+  color: #14532d;
+}
+
+.fiscal-panel :focus-visible {
+  outline: 2px solid #1b7a60;
+  outline-offset: 2px;
+}
+
+@media (max-width: 640px) {
+  .fiscal-panel-backdrop { padding: 0; }
+  .fiscal-panel { border-radius: 0; min-height: 100vh; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fiscal-panel, .fiscal-panel * { transition: none !important; animation: none !important; }
+}

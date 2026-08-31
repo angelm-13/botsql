@@ -289,6 +289,37 @@ export const getLocationTree = () => request("/location/tree");
 export const getWarehouseStock = (id) => request(`/location/${id}/stock`);
 export const getInvoiceInventoryPreview = (id, params = {}) => request(`/invoice/${id}/inventory`, { params });
 export const applyInvoiceInventory = (id, payload = {}) => request(`/invoice/${id}/inventory`, { method: "POST", body: payload });
+
+// --- Cancelacion de CFDI ---------------------------------------------------
+// El backend exige llave de idempotencia en cada acto fiscal: una cancelacion
+// reintentada por un doble clic no debe llegar dos veces al SAT.
+export const getInvoiceCancellation = (id) => request(`/invoice/${id}/cancellation`);
+export const requestInvoiceCancellation = (id, payload = {}) =>
+  request(`/invoice/${id}/cancellation`, {
+    method: "POST",
+    body: { idempotency_key: crypto.randomUUID(), ...payload }
+  });
+export const refreshInvoiceCancellation = (idCancellation) =>
+  request(`/invoice/cancellations/${idCancellation}/refresh`, { method: "POST" });
+
+// --- Abonos y complemento de pago ----------------------------------------
+export const getInvoiceStatement = (id) => request(`/invoice/${id}/payments`);
+export const registerInvoicePayment = (id, payload = {}) =>
+  request(`/invoice/${id}/payments`, {
+    method: "POST",
+    body: { idempotency_key: crypto.randomUUID(), ...payload }
+  });
+export const getPaymentComplement = (idPayment) =>
+  request(`/invoice/payments/${idPayment}/complement`);
+
+// --- Notas de credito -----------------------------------------------------
+export const getInvoiceCreditNotes = (id) => request(`/invoice/${id}/credit-notes`);
+export const createInvoiceCreditNote = (id, payload = {}) =>
+  request(`/invoice/${id}/credit-notes`, {
+    method: "POST",
+    body: { idempotency_key: crypto.randomUUID(), ...payload }
+  });
+export const getInvoiceRelations = (id) => request(`/invoice/${id}/relations`);
 export const searchSatProductKeys = (q, limit = 12) => request("/sat/clave-prod-serv", { params: { q, limit } });
 export const getSatCatalogStatus = () => request("/sat/clave-prod-serv/status");
 
