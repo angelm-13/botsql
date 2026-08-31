@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import uuid
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func, select
 
 from app.models.entity_permission import EntityPermission
@@ -313,19 +314,51 @@ def apply_inventory_movement(product_id, payload, user_data):
     else:
         quantity_delta = MOVEMENT_SIGNS[movement_type] * _integer_quantity(payload.get("quantity"))
 
+    try:
+        with transaction_context() as db:
+            return apply_movement_in_session(
+                db,
+                product_id,
+                user_data,
+                movement_type=movement_type,
+                quantity_delta=quantity_delta,
+                idempotency_key=key,
+                id_location=payload.get("id_location"),
+                reference_type=reference_type,
+                reference_id=payload.get("reference_id"),
+                reason=reason,
+            )
+    except IntegrityError:
+        # Carrera entre consultar y escribir: el nucleo busca la llave, no la
+        # encuentra e inserta. Dos llamadas a la vez con la misma llave pasan
+        # las dos por ese hueco, y la que pierde choca contra el indice unico.
+        #
+        # El movimiento no se duplica -para eso esta el indice-, pero el
+        # perdedor recibia un error de integridad en crudo. Justo el cliente que
+        # reintenta, que es para quien existe la llave de idempotencia, veia
+        # fallar su reintento. Aqui se relee lo que la otra llamada dejo escrito
+        # y se responde como lo que es: ya aplicado.
+        movimiento = _existing_movement(key, product_id)
+        if movimiento is None:
+            raise
+        return movimiento, False
+
+
+def _existing_movement(idempotency_key, product_id):
+    """El movimiento que otra llamada ya escribio con esta misma llave.
+
+    Se abre una transaccion nueva a proposito: la que perdio la carrera quedo
+    abortada por el error de integridad y no puede seguir consultando.
+    """
     with transaction_context() as db:
-        return apply_movement_in_session(
-            db,
-            product_id,
-            user_data,
-            movement_type=movement_type,
-            quantity_delta=quantity_delta,
-            idempotency_key=key,
-            id_location=payload.get("id_location"),
-            reference_type=reference_type,
-            reference_id=payload.get("reference_id"),
-            reason=reason,
-        )
+        fila = db.scalars(
+            select(InventoryLedger).where(InventoryLedger.idempotency_key == idempotency_key)
+        ).first()
+        if fila is None:
+            return None
+        if fila.id_product != int(product_id):
+            raise AppError("errors.idempotency_conflict", 409)
+        return fila.serialize()
 
 
 def apply_movement_in_session(
