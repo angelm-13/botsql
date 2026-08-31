@@ -150,13 +150,14 @@ def list_invoice(user_data):
     per_page = int(request.args.get('per_page', 20))
     sort = request.args.get('sort')
     filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort'} and k in ALLOWED_FIELDS}
-    return _jsonify_projected_list(user_data, InvoiceService.list(page=page, per_page=per_page, filters=filters, sort=sort))
+    return _jsonify_projected_list(user_data, InvoiceService.list_scoped(user_data, page=page, per_page=per_page, filters=filters, sort=sort))
 
 
 @bp_invoice.route('/<id_invoice>', methods=['GET'])
 @token_required
 @require_entity_permission('invoice', 'read')
 def get_invoice(user_data, id_invoice):
+    InvoiceService.require_scope(id_invoice, user_data)
     return _jsonify_projected_record(user_data, InvoiceService.get(id_invoice))
 
 
@@ -167,6 +168,7 @@ def get_invoice_lines(user_data, id_invoice):
     from app.models import InvoiceMaterialService
     from app.models.session import transaction_context
 
+    InvoiceService.require_scope(id_invoice, user_data)
     invoice_id = _safe_int_value(id_invoice)
     with transaction_context() as db:
         if not db.get(Invoice, invoice_id):
@@ -179,15 +181,19 @@ def get_invoice_lines(user_data, id_invoice):
 
 
 def _invoice_document_access(id_invoice, user_data):
+    """Alcance para bajar el XML o el PDF de una factura.
+
+    Comparte la comprobacion con el resto del modulo en lugar de repetirla. La
+    copia anterior era la unica ruta acotada de facturacion, y por estar suelta
+    nadie noto que el CRUD no hacia lo mismo: se protegia el documento y se
+    dejaba abierto el registro que lo respalda.
+    """
     from app.models.session import transaction_context
 
+    InvoiceService.require_scope(id_invoice, user_data)
     with transaction_context() as db:
         invoice = db.get(Invoice, _safe_int_value(id_invoice))
         if not invoice:
-            raise AppError('errors.resource_not_found', 404)
-        unrestricted = bool(user_data.get('is_superuser') or user_data.get('is_bootstrap_admin'))
-        actor_project = user_data.get('id_proyect') or user_data.get('project_id')
-        if not unrestricted and str(actor_project) != str(invoice.id_proyect):
             raise AppError('errors.resource_not_found', 404)
         return invoice.invoice_status
 
@@ -230,6 +236,7 @@ def download_invoice_pdf(user_data, id_invoice):
 @require_entity_permission('invoice', 'create')
 def create_invoice(user_data):
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
+    InvoiceService.require_project_for_write(payload.get('id_proyect'), user_data)
     return _jsonify_projected_record(user_data, InvoiceService.create(payload, user_id=user_data.get('id_user')), status=201)
 
 
@@ -399,6 +406,12 @@ def _apply_inventory_after_stamp(invoice_id, payload, user_data):
 @require_entity_permission('invoice', 'update')
 def update_invoice(user_data, id_invoice):
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
+    InvoiceService.require_scope(id_invoice, user_data)
+    if payload.get('id_proyect') is not None:
+        # Mover la factura a otro proyecto exige poder ver el destino; si no, se
+        # podria sacar una factura del alcance ajeno hacia el propio, o meter la
+        # propia en uno ajeno.
+        InvoiceService.require_project_for_write(payload.get('id_proyect'), user_data)
     return _jsonify_projected_record(user_data, InvoiceService.update(id_invoice, payload, user_id=user_data.get('id_user')))
 
 
@@ -406,6 +419,7 @@ def update_invoice(user_data, id_invoice):
 @token_required
 @require_entity_permission('invoice', 'update')
 def transition_quotation(user_data, id_invoice):
+    InvoiceService.require_scope(id_invoice, user_data)
     invoice = InvoiceService.get(id_invoice)
     if not invoice:
         raise AppError('errors.resource_not_found', 404)
@@ -422,6 +436,7 @@ def transition_quotation(user_data, id_invoice):
 @token_required
 @require_entity_permission('invoice', 'delete')
 def delete_invoice(user_data, id_invoice):
+    InvoiceService.require_scope(id_invoice, user_data)
     return jsonify(InvoiceService.delete(id_invoice, user_id=user_data.get('id_user')))
 
 

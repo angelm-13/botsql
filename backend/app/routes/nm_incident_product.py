@@ -112,6 +112,22 @@ def _jsonify_projected_list(user_data: dict, payload: dict):
 
 
 
+def _require_incident_scope(id_nm_incident_product, user_data):
+    """Alcance de un renglon de productos de una incidencia.
+
+    `incident` devuelve 404 a quien no participa, con el criterio de que
+    tampoco debe enterarse de que la incidencia existe. Estos renglones cuelgan
+    de una incidencia por `id_incident` y no comprobaban nada, asi que se podia
+    leer que productos se vieron afectados en cualquier incidencia pidiendo el
+    renglon por su id. La incidencia quedaba cerrada y su contenido abierto.
+    """
+    from app.services.incident_service import require_incident_access
+
+    registro = NmIncidentProductService.get(id_nm_incident_product)
+    require_incident_access(registro.get('id_incident'), user_data)
+    return registro
+
+
 @bp_nm_incident_product.route('/', methods=['GET'])
 @token_required
 @require_entity_permission('nm_incident_product', 'read')
@@ -120,21 +136,58 @@ def list_nm_incident_product(user_data):
     per_page = int(request.args.get('per_page', 20))
     sort = request.args.get('sort')
     filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort'} and k in ALLOWED_FIELDS}
-    return _jsonify_projected_list(user_data, NmIncidentProductService.list(page=page, per_page=per_page, filters=filters, sort=sort))
+    from sqlalchemy import func as sql_func
+    from app.models import Incident, NmIncidentProduct
+    from app.models.session import transaction_context
+    from app.services.incident_service import scoped_incident_query
+
+    # Se filtra por las incidencias que el actor puede ver, en lugar de
+    # devolverlas todas. Sin esto el listado entregaba los productos afectados
+    # en incidencias ajenas, justo lo que `incident` se cuida de no revelar.
+    with transaction_context() as db:
+        visibles = [
+            fila[0] for fila in
+            scoped_incident_query(db, user_data).with_entities(Incident.id_incident).all()
+        ]
+        if not visibles:
+            payload = {'items': [], 'total': 0, 'page': page, 'per_page': per_page, 'pages': 0}
+            return _jsonify_projected_list(user_data, payload)
+
+        query = db.query(NmIncidentProduct).filter(
+            NmIncidentProduct.deletion_date.is_(None),
+            NmIncidentProduct.id_incident.in_(visibles),
+        )
+        for clave, valor in filters.items():
+            if hasattr(NmIncidentProduct, clave) and valor not in (None, ''):
+                query = query.filter(getattr(NmIncidentProduct, clave) == valor)
+        total = query.with_entities(sql_func.count()).scalar() or 0
+        renglones = (query.order_by(NmIncidentProduct.id_nm_incident_product)
+                     .offset((page - 1) * per_page).limit(per_page).all())
+        payload = {
+            'items': [r.serialize() for r in renglones],
+            'total': total,
+            'page': page,
+            'per_page': per_page,
+            'pages': (total + per_page - 1) // per_page,
+        }
+    return _jsonify_projected_list(user_data, payload)
 
 
 @bp_nm_incident_product.route('/<id_nm_incident_product>', methods=['GET'])
 @token_required
 @require_entity_permission('nm_incident_product', 'read')
 def get_nm_incident_product(user_data, id_nm_incident_product):
-    return _jsonify_projected_record(user_data, NmIncidentProductService.get(id_nm_incident_product))
+    return _jsonify_projected_record(user_data, _require_incident_scope(id_nm_incident_product, user_data))
 
 
 @bp_nm_incident_product.route('/', methods=['POST'])
 @token_required
 @require_entity_permission('nm_incident_product', 'create')
 def create_nm_incident_product(user_data):
+    from app.services.incident_service import require_incident_access
+
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
+    require_incident_access(payload.get('id_incident'), user_data)
     return _jsonify_projected_record(user_data, NmIncidentProductService.create(payload, user_id=user_data.get('id_user')), status=201)
 
 
@@ -142,7 +195,12 @@ def create_nm_incident_product(user_data):
 @token_required
 @require_entity_permission('nm_incident_product', 'update')
 def update_nm_incident_product(user_data, id_nm_incident_product):
+    from app.services.incident_service import require_incident_access
+
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
+    _require_incident_scope(id_nm_incident_product, user_data)
+    if payload.get('id_incident') is not None:
+        require_incident_access(payload.get('id_incident'), user_data)
     return _jsonify_projected_record(user_data, NmIncidentProductService.update(id_nm_incident_product, payload, user_id=user_data.get('id_user')))
 
 
@@ -150,4 +208,5 @@ def update_nm_incident_product(user_data, id_nm_incident_product):
 @token_required
 @require_entity_permission('nm_incident_product', 'delete')
 def delete_nm_incident_product(user_data, id_nm_incident_product):
+    _require_incident_scope(id_nm_incident_product, user_data)
     return jsonify(NmIncidentProductService.delete(id_nm_incident_product, user_id=user_data.get('id_user')))
