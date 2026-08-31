@@ -791,7 +791,7 @@ CREATE TABLE IF NOT EXISTS "password_reset_token" (
   "expires_at" TIMESTAMP NOT NULL,
   "used_at" TIMESTAMP NULL,
   "requested_ip" VARCHAR(45) NULL,
-  "created_at" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "created_at" TIMESTAMP NOT NULL DEFAULT 'datetime.now()',
   PRIMARY KEY ("id_password_reset_token")
 );
 

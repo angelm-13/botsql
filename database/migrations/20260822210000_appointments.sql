@@ -2,7 +2,7 @@ BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS btree_gist;
 
-CREATE TABLE IF NOT EXISTS calendar_profile (
+CREATE TABLE calendar_profile (
     id_calendar_profile SERIAL PRIMARY KEY,
     id_user INTEGER NOT NULL REFERENCES "user"(id_user),
     id_proyect INTEGER NOT NULL REFERENCES proyect(id_proyect),
@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS calendar_profile (
     deletion_date TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS appointment_type (
+CREATE TABLE appointment_type (
     id_appointment_type SERIAL PRIMARY KEY,
     id_calendar_profile INTEGER NOT NULL REFERENCES calendar_profile(id_calendar_profile),
     name VARCHAR(120) NOT NULL,
@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS appointment_type (
     deletion_date TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS availability_rule (
+CREATE TABLE availability_rule (
     id_availability_rule SERIAL PRIMARY KEY,
     id_calendar_profile INTEGER NOT NULL REFERENCES calendar_profile(id_calendar_profile),
     weekday SMALLINT NOT NULL CHECK (weekday BETWEEN 0 AND 6),
@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS availability_rule (
     CHECK (start_time < end_time)
 );
 
-CREATE TABLE IF NOT EXISTS availability_override (
+CREATE TABLE availability_override (
     id_availability_override SERIAL PRIMARY KEY,
     id_calendar_profile INTEGER NOT NULL REFERENCES calendar_profile(id_calendar_profile),
     override_date DATE NOT NULL,
@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS availability_override (
     CHECK (NOT is_available OR (start_time IS NOT NULL AND end_time IS NOT NULL AND start_time < end_time))
 );
 
-CREATE TABLE IF NOT EXISTS appointment (
+CREATE TABLE appointment (
     id_appointment SERIAL PRIMARY KEY,
     id_calendar_profile INTEGER NOT NULL REFERENCES calendar_profile(id_calendar_profile),
     id_appointment_type INTEGER NOT NULL REFERENCES appointment_type(id_appointment_type),
@@ -83,24 +83,17 @@ CREATE TABLE IF NOT EXISTS appointment (
     CHECK (starts_at < ends_at)
 );
 
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'ex_appointment_no_overlap'
-    ) THEN
-        ALTER TABLE appointment ADD CONSTRAINT ex_appointment_no_overlap
-            EXCLUDE USING gist (
-                id_calendar_profile WITH =,
-                tstzrange(starts_at, ends_at, '[)') WITH &&
-            ) WHERE (status IN ('pending_confirmation', 'confirmed'));
-    END IF;
-END $$;
+ALTER TABLE appointment ADD CONSTRAINT ex_appointment_no_overlap
+    EXCLUDE USING gist (
+        id_calendar_profile WITH =,
+        tstzrange(starts_at, ends_at, '[)') WITH &&
+    ) WHERE (status IN ('pending_confirmation', 'confirmed'));
 
-CREATE INDEX IF NOT EXISTS ix_calendar_profile_owner ON calendar_profile (id_user, id_proyect) WHERE deletion_date IS NULL;
-CREATE INDEX IF NOT EXISTS ix_appointment_type_profile ON appointment_type (id_calendar_profile) WHERE deletion_date IS NULL;
-CREATE INDEX IF NOT EXISTS ix_availability_rule_profile_day ON availability_rule (id_calendar_profile, weekday) WHERE deletion_date IS NULL;
-CREATE INDEX IF NOT EXISTS ix_availability_override_profile_date ON availability_override (id_calendar_profile, override_date) WHERE deletion_date IS NULL;
-CREATE INDEX IF NOT EXISTS ix_appointment_project_start ON appointment (id_proyect, starts_at);
+CREATE INDEX ix_calendar_profile_owner ON calendar_profile (id_user, id_proyect) WHERE deletion_date IS NULL;
+CREATE INDEX ix_appointment_type_profile ON appointment_type (id_calendar_profile) WHERE deletion_date IS NULL;
+CREATE INDEX ix_availability_rule_profile_day ON availability_rule (id_calendar_profile, weekday) WHERE deletion_date IS NULL;
+CREATE INDEX ix_availability_override_profile_date ON availability_override (id_calendar_profile, override_date) WHERE deletion_date IS NULL;
+CREATE INDEX ix_appointment_project_start ON appointment (id_proyect, starts_at);
 
 INSERT INTO entity_permission (
         id_permission, entity_name, control_type, menu_location, menu_group,
