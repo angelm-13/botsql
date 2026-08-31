@@ -16,7 +16,7 @@
 BEGIN;
 
 INSERT INTO entity_permission (id_permission, entity_name, control_type, menu_location, menu_order, created_by)
-SELECT p.id_permission, 'inventory_adjustment', 2, 'none', 999, 1
+SELECT p.id_permission, 'inventory_adjustment', 2, 'hidden', 999, 1
 FROM permission p
 WHERE p.permission_description IN ('Administrator', 'admin', 'Gerente', 'gerente_administrativo')
   AND p.deletion_date IS NULL

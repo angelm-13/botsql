@@ -189,7 +189,7 @@ MODULOS_DE_NEGOCIO = tuple(
 class Capacidad:
     """Un derecho con nombre propio que no corresponde a ninguna tabla."""
 
-    def __init__(self, clave, etiqueta, modulo, *, bits=CONSULTA, menu="none"):
+    def __init__(self, clave, etiqueta, modulo, *, bits=CONSULTA, menu="hidden"):
         self.clave = clave
         self.etiqueta = etiqueta
         self.modulo = modulo
@@ -435,7 +435,7 @@ def filas_de_permisos():
                 etiqueta, orden = MENU.get(entidad, (None, None))
                 filas.append((
                     rol.id_permission, entidad, bits,
-                    "sidebar" if etiqueta else "none",
+                    "sidebar" if etiqueta else "hidden",
                     modulo.etiqueta if etiqueta else None,
                     modulo.icono if etiqueta else None,
                     etiqueta,

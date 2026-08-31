@@ -1866,6 +1866,26 @@ VALUES (
 )
 ON CONFLICT ("id_user") DO NOTHING;
 
+-- Las filas de arriba fijan id=1 a mano en columnas SERIAL. Eso NO avanza la
+-- secuencia interna (nextval() seguiria devolviendo 1) -- el primer INSERT
+-- posterior que dependa del default para generar su id chocaria contra estas
+-- mismas filas con "duplicate key". Mismo patron ya usado en database/seed.sql
+-- para el mismo problema.
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT table_name, column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND column_default LIKE 'nextval%'
+  LOOP
+    EXECUTE format(
+      'SELECT setval(pg_get_serial_sequence(%L, %L), COALESCE((SELECT MAX(%I) FROM %I), 0) + 1, false)',
+      r.table_name, r.column_name, r.column_name, r.table_name
+    );
+  END LOOP;
+END $$;
+
 INSERT INTO "field" ("table_name", "field_name", "created_by", "creation_date", "last_update_date")
 SELECT source_column.table_name, source_column.column_name, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
 FROM information_schema.columns source_column

@@ -40,11 +40,11 @@ JOIN (VALUES
     -- Almacenista: opera el dia a dia.
     ('Almacenista', 'product',         7, 'sidebar', 'Inventario', 'Productos',            100),
     ('Almacenista', 'location',        6, 'sidebar', 'Inventario', 'Ubicaciones',          110),
-    ('Almacenista', 'location_type',   2, 'none',    'Inventario', 'Tipo de ubicacion',    120),
+    ('Almacenista', 'location_type',   2, 'hidden',    'Inventario', 'Tipo de ubicacion',    120),
     ('Almacenista', 'material',        6, 'sidebar', 'Inventario', 'Materiales',           130),
-    ('Almacenista', 'unit',            2, 'none',    'Inventario', 'Unidades',             140),
-    ('Almacenista', 'brand',           2, 'none',    'Inventario', 'Marcas',               150),
-    ('Almacenista', 'inventory_status', 2, 'none',   'Inventario', 'Estado de inventario', 160),
+    ('Almacenista', 'unit',            2, 'hidden',    'Inventario', 'Unidades',             140),
+    ('Almacenista', 'brand',           2, 'hidden',    'Inventario', 'Marcas',               150),
+    ('Almacenista', 'inventory_status', 2, 'hidden',   'Inventario', 'Estado de inventario', 160),
     -- Jefe de almacen: ademas ajusta y corrige el catalogo.
     ('Jefe de almacen', 'product',              15, 'sidebar', 'Inventario', 'Productos',            100),
     ('Jefe de almacen', 'location',             15, 'sidebar', 'Inventario', 'Ubicaciones',          110),
@@ -53,7 +53,7 @@ JOIN (VALUES
     ('Jefe de almacen', 'unit',                 15, 'sidebar', 'Inventario', 'Unidades',             140),
     ('Jefe de almacen', 'brand',                15, 'sidebar', 'Inventario', 'Marcas',               150),
     ('Jefe de almacen', 'inventory_status',     15, 'sidebar', 'Inventario', 'Estado de inventario', 160),
-    ('Jefe de almacen', 'inventory_adjustment',  2, 'none',    'Inventario', 'Ajustes',              170)
+    ('Jefe de almacen', 'inventory_adjustment',  2, 'hidden',    'Inventario', 'Ajustes',              170)
 ) AS capacidad(rol, entity_name, control_type, menu_location, menu_group, menu_label, menu_order)
   ON lower(rol.permission_description) = lower(capacidad.rol)
 WHERE rol.deletion_date IS NULL

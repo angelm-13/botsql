@@ -162,7 +162,18 @@ def principal() -> int:
             # Cada una en su propia transaccion: si falla, las anteriores
             # quedan aplicadas y registradas, y esta no.
             with motor.begin() as conexion:
-                conexion.exec_driver_sql(ruta.read_text(encoding="utf-8"))
+                # exec_driver_sql() le pasa al DBAPI un `parameters` no-None
+                # (un immutabledict interno de SQLAlchemy) aunque no haya
+                # parametros reales -- psycopg2 entonces intenta interpretar
+                # cualquier "%" suelto del SQL (hasta dentro de un comentario
+                # -- o de un format()/RAISE NOTICE legitimo de Postgres) como
+                # placeholder de sustitucion, y revienta con
+                # "immutabledict is not a sequence". El cursor crudo del
+                # DBAPI, sin pasar por la capa de parametros de SQLAlchemy,
+                # ejecuta el texto tal cual -- mismo comportamiento que
+                # `psql -f` (el mecanismo real del initContainer de k8s).
+                cursor = conexion.connection.driver_connection.cursor()
+                cursor.execute(ruta.read_text(encoding="utf-8"))
                 conexion.execute(
                     text("INSERT INTO schema_migration (filename, checksum, applied_by) "
                          "VALUES (:f, :c, :a)"),

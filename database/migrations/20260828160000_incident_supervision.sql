@@ -9,7 +9,7 @@
 BEGIN;
 
 INSERT INTO entity_permission (id_permission, entity_name, control_type, menu_location, menu_order, created_by)
-SELECT p.id_permission, 'incident_supervision', 2, 'none', 999, 1
+SELECT p.id_permission, 'incident_supervision', 2, 'hidden', 999, 1
 FROM permission p
 WHERE lower(p.permission_description) IN
       ('administrator', 'admin', 'gerente', 'gerente_administrativo', 'supervisor', 'jefe de taller')
