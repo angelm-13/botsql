@@ -32,6 +32,7 @@ from sqlalchemy import select
 
 from app.models.cfdi_relation import CfdiRelation
 from app.models.invoice import Invoice
+from app.models.inventory_ledger import InventoryLedger
 from app.models.invoice_material_service import InvoiceMaterialService
 from app.models.session import transaction_context
 from app.services.inventory_service import apply_movement_in_session
@@ -166,12 +167,50 @@ def _build_concepts(payload) -> list[dict]:
     return conceptos
 
 
+def _origin_locations(db, original) -> dict[int, int]:
+    """Producto -> ubicacion de la que salio al facturar.
+
+    La mercancia devuelta tiene que volver al almacen del que salio. Antes se
+    pasaba `id_location=None`, que resuelve el almacen por omision: con un solo
+    almacen daba igual, pero con varios la devolucion acreditaba uno distinto
+    del que despacho. El total cuadraba y la ubicacion no, que es la peor de
+    las dos: nadie revisa un total correcto, y quien va por la mercancia la
+    busca en un almacen que no la tiene mientras otro carga un sobrante que
+    nunca recibio.
+
+    Se lee del libro de inventario, igual que hace el reverso por cancelacion.
+    """
+    lineas = [
+        str(linea.id_invoice_material_service)
+        for linea in db.scalars(
+            select(InvoiceMaterialService)
+            .where(InvoiceMaterialService.id_invoice == original.id_invoice)
+            .where(InvoiceMaterialService.deletion_date.is_(None))
+        ).all()
+    ]
+    if not lineas:
+        return {}
+
+    salidas = db.scalars(
+        select(InventoryLedger)
+        .where(InventoryLedger.reference_type == "invoice_line")
+        .where(InventoryLedger.reference_id.in_(lineas))
+        .where(InventoryLedger.quantity_delta < 0)
+        .order_by(InventoryLedger.id_inventory_ledger)
+    ).all()
+    # El ultimo gana si un producto salio de varias ubicaciones en la misma
+    # factura: no hay forma de saber de que caja venia cada pieza devuelta, y
+    # elegir siempre la misma al menos es predecible.
+    return {int(salida.id_product): int(salida.id_location) for salida in salidas}
+
+
 def _return_goods(db, credit_note, original, user_data, conceptos_creados):
     """Devuelve al almacen la mercancia que el cliente regresa.
 
     Solo con relacion 03. Se apoya en las partidas de la propia nota, no en las
     de la factura original: el cliente puede regresar una parte.
     """
+    origenes = _origin_locations(db, original)
     movimientos = []
     for linea in conceptos_creados:
         if not linea.id_product:
@@ -192,7 +231,9 @@ def _return_goods(db, credit_note, original, user_data, conceptos_creados):
             movement_type="return",
             quantity_delta=int(cantidad),
             idempotency_key=f"credit-{credit_note.id_invoice}-line-{linea.id_invoice_material_service}",
-            id_location=None,
+            # Si la factura original nunca se aplico al almacen no hay origen
+            # que respetar, y entonces si toca el almacen por omision.
+            id_location=origenes.get(int(linea.id_product)),
             reference_type="invoice_line",
             reference_id=str(linea.id_invoice_material_service),
             reason=f"Devolucion por nota de credito de la factura {original.id_invoice}",
@@ -247,6 +288,13 @@ def create_credit_note(invoice_id, payload, user_data) -> dict:
             "currency": original.currency or "MXN",
             "folio_fiscal": original.folio_fiscal,
             "id_invoice": original.id_invoice,
+            # Un CFDI de egreso exige forma y metodo de pago igual que uno de
+            # ingreso. Sin ellos la nota se creaba pero no pasaba su propia
+            # revision previa, asi que no se podia timbrar: un documento que
+            # nace invalido. Se heredan de la factura que corrige, que es la
+            # practica habitual, y quien lo necesite los puede sobreescribir.
+            "forma_pago": original.forma_pago,
+            "metodo_pago": original.metodo_pago,
         }
 
     conceptos = _build_concepts(payload)
@@ -276,6 +324,8 @@ def create_credit_note(invoice_id, payload, user_data) -> dict:
         "concepts": conceptos,
         "tipo_de_comprobante": CREDIT_NOTE_TYPE,
         "uso_cfdi": payload.get("uso_cfdi") or CREDIT_NOTE_CFDI_USE,
+        "forma_pago": payload.get("forma_pago") or datos_originales["forma_pago"],
+        "metodo_pago": payload.get("metodo_pago") or datos_originales["metodo_pago"],
         "note": (payload.get("note") or f"Nota de credito de la factura {invoice_id}")[:300],
     }
     creacion.pop("idempotency_key", None)

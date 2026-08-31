@@ -16,6 +16,25 @@ from app.utils.errors import AppError
 from tests.conftest import BackendTestCase
 
 
+def _falta_el_motor_de_pdf() -> str:
+    """Motivo por el que no se puede generar un PDF aqui, o cadena vacia.
+
+    WeasyPrint necesita bibliotecas nativas de GTK que en Windows no vienen con
+    el paquete de Python. En el contenedor -que es el entorno real- si estan, y
+    ahi esta prueba corre completa.
+
+    La comprobacion es contra el import de verdad, no contra el sistema
+    operativo: si alguien instala las bibliotecas en Windows, la prueba corre;
+    y si el PDF se rompe por cualquier otra razon, sigue fallando como debe.
+    Omitir por plataforma habria escondido regresiones reales.
+    """
+    try:
+        import weasyprint  # noqa: F401
+    except Exception as error:
+        return f"WeasyPrint no puede cargar sus bibliotecas nativas: {error}"
+    return ""
+
+
 class TestStampingProviders(unittest.TestCase):
     def test_fake_provider_success_without_network(self):
         provider = FakeStampingProvider()
@@ -136,29 +155,59 @@ class TestStampInvoice(BackendTestCase):
         with transaction_context() as db:
             self.assertEqual(db.get(Invoice, invoice_id).invoice_status, "pendiente")
 
-    def test_stamped_documents_download_through_authenticated_routes(self):
+    def test_the_stamped_xml_downloads_through_an_authenticated_route(self):
         invoice_id = self._create_invoice()
         stamp_invoice(invoice_id, "manual-demo-http", {"id_user": 1, "id_proyect": 30}, FakeStampingProvider())
         token = jwt.encode({"id_user": 1, "id_proyect": 30, "is_superuser": True}, SECRET_KEY, algorithm="HS256")
         headers = {"Authorization": f"Bearer {token}"}
 
         xml_response = self.client.get(f"/invoice/{invoice_id}/xml", headers=headers)
-        pdf_response = self.client.get(f"/invoice/{invoice_id}/pdf", headers=headers)
-        quotation_response = self.client.get(f"/invoice/{invoice_id}/pdf?document=quotation", headers=headers)
-        public_legacy_response = self.client.get(f"/documents/invoice_pdf/{invoice_id}?format=pdf")
 
         self.assertEqual(xml_response.status_code, 200)
         self.assertEqual(xml_response.mimetype, "application/xml")
         with transaction_context() as db:
             persisted_uuid = db.get(Invoice, invoice_id).folio_fiscal
         self.assertEqual(parse_cfdi(xml_response.data)["uuid"], persisted_uuid)
-        self.assertEqual(pdf_response.status_code, 200)
-        self.assertEqual(pdf_response.mimetype, "application/pdf")
-        self.assertTrue(pdf_response.data.startswith(b"%PDF"))
-        self.assertEqual(quotation_response.status_code, 200)
-        self.assertEqual(quotation_response.mimetype, "application/pdf")
-        self.assertTrue(quotation_response.data.startswith(b"%PDF"))
-        self.assertEqual(public_legacy_response.status_code, 401)
+
+    def test_the_legacy_public_document_route_still_demands_a_token(self):
+        """Una factura ya timbrada no se descarga por la ruta vieja sin token.
+
+        Se timbra primero a proposito: sobre una factura sin documentos la ruta
+        responde 404 y no probaria nada; lo que interesa es que un CFDI que si
+        existe siga exigiendo credenciales.
+
+        Depende del motor de PDF aunque no genere ninguno: sin el, el modulo de
+        documentos no llega a registrarse y la ruta ni siquiera existe, asi que
+        el 404 vendria de la ausencia de la ruta y no de la autorizacion.
+        """
+        motivo = _falta_el_motor_de_pdf()
+        if motivo:
+            self.skipTest(motivo)
+
+        invoice_id = self._create_invoice()
+        stamp_invoice(invoice_id, "manual-demo-legacy", {"id_user": 1, "id_proyect": 30}, FakeStampingProvider())
+
+        response = self.client.get(f"/documents/invoice_pdf/{invoice_id}?format=pdf")
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_the_stamped_pdf_downloads_through_an_authenticated_route(self):
+        motivo = _falta_el_motor_de_pdf()
+        if motivo:
+            self.skipTest(motivo)
+
+        invoice_id = self._create_invoice()
+        stamp_invoice(invoice_id, "manual-demo-pdf", {"id_user": 1, "id_proyect": 30}, FakeStampingProvider())
+        token = jwt.encode({"id_user": 1, "id_proyect": 30, "is_superuser": True}, SECRET_KEY, algorithm="HS256")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        for ruta in (f"/invoice/{invoice_id}/pdf", f"/invoice/{invoice_id}/pdf?document=quotation"):
+            with self.subTest(ruta=ruta):
+                response = self.client.get(ruta, headers=headers)
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.mimetype, "application/pdf")
+                self.assertTrue(response.data.startswith(b"%PDF"))
 
 
 if __name__ == "__main__":

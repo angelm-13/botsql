@@ -148,6 +148,10 @@ class InvoiceDraft:
     folio: str = ""
     cfdi_type: str = "I"
     export_code: str = "01"
+    # Comprobantes con los que este se relaciona: {relation_type, uuid}. Sin
+    # esto una nota de credito se timbraba como un egreso suelto, sin decirle al
+    # SAT que factura corrige, y por tanto sin corregir nada.
+    related_documents: list[dict] = field(default_factory=list)
 
     def serialize(self) -> dict:
         def convert(value):
@@ -189,7 +193,7 @@ def normalize_cfdi_type(value) -> str:
     return aliases.get(normalized, normalized)
 
 
-def build_draft(invoice, issuer, receiver, lines) -> InvoiceDraft:
+def build_draft(invoice, issuer, receiver, lines, related_documents=None) -> InvoiceDraft:
     concepts = []
     for line in lines:
         quantity = _decimal(line.quantity)
@@ -237,6 +241,13 @@ def build_draft(invoice, issuer, receiver, lines) -> InvoiceDraft:
         folio=str(invoice.folio or "").strip(),
         cfdi_type=normalize_cfdi_type(getattr(invoice, "tipo_de_comprobante", None)),
         export_code=str(getattr(invoice, "exportacion", None) or "01").strip(),
+        related_documents=[
+            {
+                "relation_type": str(relacion.get("relation_type") or "").strip(),
+                "uuid": str(relacion.get("uuid") or "").strip().upper(),
+            }
+            for relacion in (related_documents or [])
+        ],
     )
 
 

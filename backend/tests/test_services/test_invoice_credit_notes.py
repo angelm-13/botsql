@@ -370,5 +370,175 @@ class TestRelationsInTheXml(unittest.TestCase):
         self.assertEqual([], root.findall("{http://www.sat.gob.mx/cfd/4}CfdiRelacionados"))
 
 
+class TestCreditNoteRegressions(CreditNoteTestCase):
+    """Tres defectos que solo salieron al recorrer el ciclo fiscal completo.
+
+    Los tres vivian en la union entre piezas que si estaban probadas por
+    separado, que es donde las pruebas de unidad no miran.
+    """
+
+    SEGUNDO_ALMACEN = 3
+
+    def setUp(self):
+        super().setUp()
+        with transaction_context() as db:
+            db.add(Location(id_location=self.SEGUNDO_ALMACEN, id_location_type=1,
+                            location_description="Almacen Norte", created_by=1))
+            db.flush()
+            db.add(InventoryStock(id_product=PRODUCT, id_location=self.SEGUNDO_ALMACEN,
+                                  quantity=5, created_by=1))
+
+    def _despachar_desde(self, id_location, cantidad=2):
+        """Registra la salida por la venta desde una ubicacion concreta."""
+        from app.models.invoice_material_service import InvoiceMaterialService
+        from app.services.inventory_service import apply_movement_in_session
+
+        with transaction_context() as db:
+            linea = InvoiceMaterialService(
+                id_invoice=SALE, id_product=PRODUCT,
+                invoice_material_service_description="Venta", quantity=cantidad,
+                gross_price=Decimal("100.00"), authorization_status="authorized",
+                is_directly_related_to_product_service_creation=False,
+                id_authorized=1, id_status=40, id_buyer=1, id_customer_supplier=CLIENT,
+                line_type="product", tax_applicable=False,
+                sat_product_key="01010101", sat_unit_key="H87", created_by=1,
+            )
+            db.add(linea)
+            db.flush()
+            apply_movement_in_session(
+                db, PRODUCT, ACTOR, movement_type="issue", quantity_delta=-cantidad,
+                idempotency_key=f"venta-{linea.id_invoice_material_service}",
+                id_location=id_location, reference_type="invoice_line",
+                reference_id=str(linea.id_invoice_material_service),
+                reason="Salida por factura de venta",
+            )
+
+    def _stock_en(self, id_location):
+        with transaction_context() as db:
+            fila = db.query(InventoryStock).filter_by(
+                id_product=PRODUCT, id_location=id_location).first()
+            return int(fila.quantity) if fila else None
+
+    def test_returned_goods_go_back_to_the_warehouse_they_left_from(self):
+        """Antes se acreditaba el almacen por omision, no el que despacho.
+
+        Con un solo almacen daba igual. Con varios, el total cuadraba y la
+        ubicacion no, que es la peor de las dos combinaciones: nadie audita un
+        total correcto, y quien va por la mercancia la busca donde no esta.
+        """
+        self._despachar_desde(self.SEGUNDO_ALMACEN, cantidad=2)
+        antes_norte = self._stock_en(self.SEGUNDO_ALMACEN)
+        antes_central = self._stock_en(RACK)
+
+        self.note(relation_type="03", quantity=1, product=PRODUCT, key="nc-devuelve")
+
+        self.assertEqual(antes_norte + 1, self._stock_en(self.SEGUNDO_ALMACEN))
+        self.assertEqual(antes_central, self._stock_en(RACK),
+                         "el almacen que no despacho no debe recibir nada")
+
+    def test_without_a_prior_movement_it_falls_back_to_the_default_warehouse(self):
+        """Si la venta nunca se aplico al almacen, no hay origen que respetar."""
+        antes = self.stock()
+
+        resultado = self.note(relation_type="03", quantity=1, product=PRODUCT, key="nc-sin-origen")
+
+        self.assertTrue(resultado["returns_goods"])
+        self.assertEqual(antes + 1, self.stock())
+
+    def test_the_note_inherits_the_payment_form_and_method(self):
+        """Un CFDI de egreso los exige; sin ellos la nota no se podia timbrar.
+
+        Nacia invalida: se creaba bien y luego no pasaba su propia revision
+        previa. Las pruebas no lo veian porque el ayudante siempre los pasaba a
+        mano, mas generoso que el llamador real.
+        """
+        nota = create_credit_note(SALE, {
+            "relation_type": "01", "idempotency_key": "nc-hereda",
+            "concepts": [{"description": "Descuento", "quantity": 1, "unit_price": "100",
+                          "sat_product_key": "01010101", "sat_unit_key": "H87"}],
+        }, ACTOR)["credit_note"]
+
+        self.assertEqual("03", nota["forma_pago"])
+        self.assertEqual("PUE", nota["metodo_pago"])
+
+    def test_an_explicit_payment_form_still_wins(self):
+        nota = self.note(relation_type="01", key="nc-explicita",
+                         forma_pago="01", metodo_pago="PPD")["credit_note"]
+
+        self.assertEqual("01", nota["forma_pago"])
+        self.assertEqual("PPD", nota["metodo_pago"])
+
+    def test_the_relation_reaches_the_stamped_xml(self):
+        """La relacion se guardaba en la base pero no viajaba al XML.
+
+        Ante el SAT la nota quedaba como un egreso suelto, sin decir que
+        factura corrige: no corregia nada, y el enlace solo existia dentro del
+        sistema. El generador si sabia emitir el nodo y habia pruebas de eso;
+        lo que faltaba era que alguien le pasara las relaciones.
+        """
+        from app.services.stamping import _related_documents
+
+        nota = self.note(relation_type="03", quantity=1, product=PRODUCT, key="nc-xml")["credit_note"]
+
+        with transaction_context() as db:
+            relacionados = _related_documents(db, db.get(Invoice, nota["id_invoice"]))
+
+        self.assertEqual([{"relation_type": "03", "uuid": UUID_SALE}], relacionados)
+
+    def test_the_draft_carries_the_relations_into_the_document(self):
+        from app.services.invoice_builder import build_draft
+
+        with transaction_context() as db:
+            factura = db.get(Invoice, SALE)
+            emisor = db.get(CustomerSupplier, PRINCIPAL)
+            receptor = db.get(CustomerSupplier, CLIENT)
+            borrador = build_draft(
+                factura, emisor, receptor, [],
+                [{"relation_type": "03", "uuid": UUID_SALE}],
+            )
+
+        self.assertEqual(
+            [{"relation_type": "03", "uuid": UUID_SALE}],
+            borrador.serialize()["related_documents"],
+        )
+
+    def test_an_invoice_without_relations_carries_an_empty_list(self):
+        """Para que el nodo quede ausente, no vacio: un CfdiRelacionados sin
+        folios dentro es un XML invalido."""
+        from app.services.stamping import _related_documents
+
+        with transaction_context() as db:
+            relacionados = _related_documents(db, db.get(Invoice, SALE))
+
+        self.assertEqual([], relacionados)
+
+    def test_a_stamped_credit_note_declares_the_relation_in_its_xml(self):
+        """La prueba que faltaba: la union, no cada pieza por separado.
+
+        El generador sabia emitir CfdiRelacionados y tenia pruebas de eso. El
+        servicio guardaba la relacion y tenia pruebas de eso. Nadie comprobaba
+        que la relacion guardada llegara al XML timbrado, y no llegaba.
+        """
+        import xml.etree.ElementTree as ET
+        from app.services.invoice_artifacts import invoice_xml_path
+        from app.services.stamping import FakeStampingProvider, stamp_invoice
+
+        nota = self.note(relation_type="03", quantity=1, product=PRODUCT,
+                         key="nc-timbrada")["credit_note"]
+        id_nota = nota["id_invoice"]
+
+        stamp_invoice(id_nota, f"nc-{id_nota}", ACTOR, FakeStampingProvider())
+
+        ruta = invoice_xml_path(id_nota, self.app.config.get("UPLOAD_ROOT"))
+        self.assertTrue(ruta.is_file(), "la nota timbrada deja su XML en disco")
+        root = ET.fromstring(ruta.read_bytes())
+        nodos = root.findall("{http://www.sat.gob.mx/cfd/4}CfdiRelacionados")
+
+        self.assertEqual(1, len(nodos), "sin este nodo la nota no corrige nada ante el SAT")
+        self.assertEqual("03", nodos[0].attrib["TipoRelacion"])
+        folios = nodos[0].findall("{http://www.sat.gob.mx/cfd/4}CfdiRelacionado")
+        self.assertEqual([UUID_SALE], [f.attrib["UUID"] for f in folios])
+
+
 if __name__ == "__main__":
     unittest.main()

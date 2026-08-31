@@ -5,7 +5,7 @@ import jwt
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
-from app.utils.startup_guard import allowed_cors_origins, enforce_secure_configuration
+from app.utils.startup_guard import allowed_cors_origins, enforce_secure_configuration, is_production
 from flask_babel import Babel
 from werkzeug.exceptions import HTTPException
 from app.utils.errors import AppError
@@ -605,6 +605,19 @@ def _register_documents_blueprint(app: Flask) -> None:
         )
     except Exception as exc:
         app.logger.exception('Documents blueprint registration failed: %s', exc)
+        # El modulo esta en disco pero no carga: es una instalacion rota, no un
+        # modulo opcional ausente (ese caso ya salio arriba, sin excepcion).
+        # Dejarlo pasar arranca una aplicacion que se ve sana y en la que todas
+        # las descargas de factura responden 404, sin mas rastro que esta linea
+        # en el arranque. Es exactamente como se pierde el PDF de un CFDI: la
+        # imagen se construye sin las bibliotecas nativas de WeasyPrint y nadie
+        # se entera hasta que un cliente pide su factura.
+        if is_production():
+            raise RuntimeError(
+                'El modulo de documentos existe pero no se pudo registrar, asi que '
+                'ninguna factura se podria descargar. Revisa sus dependencias '
+                f'(WeasyPrint necesita bibliotecas nativas de GTK). Causa: {exc}'
+            ) from exc
 
 
 

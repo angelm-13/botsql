@@ -413,7 +413,31 @@ def _load_draft(db, invoice_id, user_data):
             InvoiceMaterialService.deletion_date.is_(None),
         )
     ).all()
-    return invoice, build_draft(invoice, issuer, receiver, lines)
+    return invoice, build_draft(invoice, issuer, receiver, lines, _related_documents(db, invoice))
+
+
+def _related_documents(db, invoice) -> list[dict]:
+    """Comprobantes con los que este se relaciona, para el nodo CfdiRelacionados.
+
+    Las relaciones ya se guardaban en `cfdi_relation`, pero no llegaban al XML:
+    una nota de credito se timbraba como un egreso suelto, sin decirle al SAT
+    que factura corrige. Ante la autoridad esa nota no reducia nada, y el enlace
+    solo existia dentro del sistema.
+    """
+    from app.models.cfdi_relation import CfdiRelation
+
+    # La tabla no lleva borrado logico: una relacion fiscal ya timbrada no se
+    # deshace borrandola, se corrige con otro comprobante.
+    relaciones = db.scalars(
+        select(CfdiRelation)
+        .where(CfdiRelation.id_invoice == invoice.id_invoice)
+        .order_by(CfdiRelation.id_cfdi_relation)
+    ).all()
+    return [
+        {"relation_type": relacion.relation_type, "uuid": relacion.related_uuid}
+        for relacion in relaciones
+        if str(relacion.related_uuid or "").strip()
+    ]
 
 
 def preflight_invoice(invoice_id, user_data) -> dict:
