@@ -1,7 +1,14 @@
 from __future__ import annotations
 from flask import Blueprint, jsonify, request
 from app.services.product_service import ProductService
-from app.services.inventory_service import apply_inventory_movement
+from app.services.inventory_service import (
+    apply_inventory_movement,
+    list_inventory_movements,
+    product_stock,
+    reconcile_product_stock,
+    transfer_inventory,
+    warehouse_stock,
+)
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
 import os
@@ -14,6 +21,9 @@ ALLOWED_FIELDS = ['id_product', 'id_invoice', 'id_location', 'id_material', 'gro
 
 TECHNICAL_RESPONSE_FIELDS = {'id_product'}
 FIELD_READ_BIT = 2
+# Escribir un campo exige el bit de alta o el de actualizacion, no el de
+# lectura. Sin esta distincion no se podia conceder "ver pero no editar".
+FIELD_WRITE_BITS = 1 | 4
 
 
 def _actor_has_unrestricted_field_access(user_data: dict) -> bool:
@@ -31,19 +41,21 @@ def _safe_int_value(value):
         return None
 
 
-def _visible_response_fields_for_actor(user_data: dict) -> set[str]:
+def _field_sets_for_actor(user_data: dict) -> tuple[set[str], set[str]]:
+    """Campos que el actor puede ver y campos que puede escribir."""
     if _actor_has_unrestricted_field_access(user_data):
-        return set(ALLOWED_FIELDS)
+        return set(ALLOWED_FIELDS), set(ALLOWED_FIELDS)
 
     permission_id = _safe_int_value(user_data.get('id_permission') or user_data.get('permission_id'))
     if not permission_id:
-        return set(TECHNICAL_RESPONSE_FIELDS)
+        return set(TECHNICAL_RESPONSE_FIELDS), set()
 
     from app.models.field import Field
     from app.models.nm_field_permission import NmFieldPermission
     from app.models.session import transaction_context
 
     visible = set()
+    writable = set()
     with transaction_context() as db_session:
         rows = (
             db_session.query(NmFieldPermission, Field)
@@ -61,18 +73,28 @@ def _visible_response_fields_for_actor(user_data: dict) -> set[str]:
                 continue
             if (control_type & FIELD_READ_BIT) == FIELD_READ_BIT:
                 visible.add(field_row.field_name)
+            if control_type & FIELD_WRITE_BITS:
+                writable.add(field_row.field_name)
 
     # La llave primaria puede viajar en la respuesta para navegacion interna,
     # acciones de fila y rutas REST, aunque el frontend no la pinte si no fue
     # marcada como visible en el gestor.
-    return visible | set(TECHNICAL_RESPONSE_FIELDS)
+    return visible | set(TECHNICAL_RESPONSE_FIELDS), writable
+
+
+def _visible_response_fields_for_actor(user_data: dict) -> set[str]:
+    return _field_sets_for_actor(user_data)[0]
+
+
+def _writable_request_fields_for_actor(user_data: dict) -> set[str]:
+    return _field_sets_for_actor(user_data)[1]
 
 
 def _filter_payload_for_actor(payload: dict, user_data: dict) -> dict:
     payload = dict(payload or {})
     if _actor_has_unrestricted_field_access(user_data):
         return payload
-    writable_fields = _visible_response_fields_for_actor(user_data) - set(TECHNICAL_RESPONSE_FIELDS)
+    writable_fields = _writable_request_fields_for_actor(user_data) - set(TECHNICAL_RESPONSE_FIELDS)
     return {key: value for key, value in payload.items() if key in writable_fields}
 
 
@@ -187,6 +209,50 @@ def create_inventory_movement(user_data, id_product):
     ProductService.require_record_scope(id_product, user_data)
     movement, created = apply_inventory_movement(id_product, request.get_json() or {}, user_data)
     return jsonify({'movement': movement, 'idempotent_replay': not created}), (201 if created else 200)
+
+
+@bp_product.route('/<id_product>/inventory-movements', methods=['GET'])
+@token_required
+@require_entity_permission('product', 'read')
+def read_inventory_movements(user_data, id_product):
+    """Historial del libro de inventario para auditar como llego el saldo."""
+    ProductService.require_record_scope(id_product, user_data)
+    return jsonify(list_inventory_movements(
+        id_product,
+        user_data,
+        page=request.args.get('page', 1),
+        per_page=request.args.get('per_page', 50),
+        movement_type=request.args.get('movement_type'),
+        location_id=request.args.get('id_location'),
+    ))
+
+
+@bp_product.route('/<id_product>/inventory-reconciliation', methods=['GET'])
+@token_required
+@require_entity_permission('product', 'read')
+def read_inventory_reconciliation(user_data, id_product):
+    """Comprueba que el saldo del producto cuadre con la suma del libro."""
+    ProductService.require_record_scope(id_product, user_data)
+    return jsonify(reconcile_product_stock(id_product, user_data))
+
+
+@bp_product.route('/<id_product>/inventory-transfers', methods=['POST'])
+@token_required
+@require_entity_permission('product', 'update')
+def create_inventory_transfer(user_data, id_product):
+    """Traspasa existencia entre ubicaciones o almacenes en una sola operacion."""
+    ProductService.require_record_scope(id_product, user_data)
+    result, created = transfer_inventory(id_product, request.get_json() or {}, user_data)
+    return jsonify({**result, 'idempotent_replay': not created}), (201 if created else 200)
+
+
+@bp_product.route('/<id_product>/inventory-stock', methods=['GET'])
+@token_required
+@require_entity_permission('product', 'read')
+def read_product_stock(user_data, id_product):
+    """En que ubicaciones y almacenes esta repartido el producto."""
+    ProductService.require_record_scope(id_product, user_data)
+    return jsonify(product_stock(id_product, user_data))
 
 
 @bp_product.route('/<id_product>', methods=['DELETE'])

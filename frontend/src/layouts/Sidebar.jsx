@@ -23,10 +23,7 @@ export default function Sidebar() {
       items: [
           { path: "/invoice", labelKey: "menu.invoice" },
           { path: "/invoice/manual", labelKey: "menu.manual_invoice", label: "Factura manual" },
-          { path: "/fiscal_account", labelKey: "menu.fiscal_account" },
-          { path: "/fiscal_stamp", labelKey: "menu.fiscal_stamp" },
-          { path: "/fiscal_record", labelKey: "menu.fiscal_record" },
-          { path: "/invoice_material_service", labelKey: "menu.invoice_material_service" }
+          { path: "/fiscal_account", labelKey: "menu.fiscal_account" }
       ]
     },
     {

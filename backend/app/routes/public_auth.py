@@ -2,6 +2,7 @@ from __future__ import annotations
 from collections import defaultdict, deque
 from datetime import datetime, timedelta, UTC
 import hashlib
+import hmac
 import os
 import re
 import secrets
@@ -10,11 +11,12 @@ import time
 from email.message import EmailMessage
 import bcrypt
 import jwt
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 from sqlalchemy import or_, select
 from app.middleware.public_jwt import require_public_jwt, public_user_payload
 from app.models import User, PasswordResetToken
 from app.models.session import transaction_context
+from app.utils.startup_guard import is_production
 
 try:
     from app.models import EventLog
@@ -83,12 +85,26 @@ def _record_failed_login(email: str) -> None:
 
 
 def _verify_password(raw_password: str, stored_value: str) -> bool:
+    """Comprueba la contrasena del portal publico.
+
+    El respaldo en texto plano existia para cuentas antiguas sin cifrar. En
+    produccion no se acepta: una cuenta guardada en claro es un problema que hay
+    que arreglar, no uno que convenga tolerar en silencio. Se compara con
+    `compare_digest` para no filtrar por el tiempo de respuesta cuantos
+    caracteres coinciden.
+    """
     if not raw_password or not stored_value:
         return False
     try:
         return bcrypt.checkpw(raw_password.encode('utf-8'), stored_value.encode('utf-8'))
     except Exception:
-        return raw_password == stored_value
+        if is_production():
+            current_app.logger.error(
+                'Cuenta del portal con contrasena sin cifrar; se rechaza el acceso.')
+            return False
+        current_app.logger.warning(
+            'Contrasena sin cifrar aceptada fuera de produccion.')
+        return hmac.compare_digest(raw_password, stored_value)
 
 
 def _hash_password(raw_password: str) -> str:
@@ -157,7 +173,19 @@ def _send_reset_email(to_email: str, token: str) -> None:
     reset_url = f'{base_url}/reset-password?token={token}' if base_url else token
     host = os.getenv('SMTP_HOST') or os.getenv('MAIL_SERVER') or ''
     if not host:
-        print(f'[public-auth] Password reset token for {to_email}: {reset_url}')
+        # Sin correo configurado esto imprimia el enlace de restablecimiento en
+        # la salida del proceso. En desarrollo es comodo -no hay buzon donde
+        # mirar-, pero en produccion el enlace queda en la bitacora del
+        # contenedor, y quien pueda leerla se apodera de cualquier cuenta sin
+        # necesitar la contrasena.
+        if is_production():
+            current_app.logger.error(
+                'No se pudo enviar el restablecimiento a %s: falta configurar SMTP_HOST. '
+                'El enlace NO se registra por seguridad.', to_email)
+            raise RuntimeError('SMTP no configurado')
+        current_app.logger.warning(
+            '[public-auth] Sin SMTP; enlace de restablecimiento para %s: %s '
+            '(solo fuera de produccion)', to_email, reset_url)
         return
     port = int(os.getenv('SMTP_PORT') or os.getenv('MAIL_PORT') or '587')
     username = os.getenv('SMTP_USERNAME') or os.getenv('MAIL_USERNAME') or ''
@@ -267,7 +295,12 @@ def recover_password():
             try:
                 _send_reset_email(email, token)
             except Exception as exc:
-                print(f'[public-auth] Could not send reset email: {exc}')
+                # La respuesta al cliente no cambia a proposito: decir "no se
+                # pudo enviar" revelaria que la cuenta existe. Pero el fallo si
+                # tiene que quedar en la bitacora, o nadie se entera de que el
+                # correo lleva dias sin salir.
+                current_app.logger.error(
+                    'No se pudo enviar el correo de restablecimiento: %s', exc)
     return jsonify({'message_key': 'auth.password_reset_if_exists'})
 
 

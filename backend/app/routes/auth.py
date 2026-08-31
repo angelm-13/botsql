@@ -2,11 +2,16 @@ from __future__ import annotations
 from datetime import datetime, timedelta, UTC
 import hashlib
 import os
+import hmac
+
 import bcrypt
+
+from app.utils import login_throttle
+from app.utils.startup_guard import is_production
 import jwt
 import pyotp
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, current_app
 from sqlalchemy import select
 from app.models.session import transaction_context
 from app.models import User, UserMfa
@@ -161,18 +166,39 @@ def _request_can_manage_target_user(user_data: dict, target: User) -> bool:
 
 
 def _verify_password(raw_password: str, stored_value: str) -> bool:
+    """Comprueba la contrasena contra el valor guardado.
+
+    El respaldo en texto plano existe por las semillas antiguas, pero significa
+    que una contrasena guardada sin cifrar entra tal cual. En produccion eso no
+    se tolera: si el valor guardado no es un hash, la cuenta simplemente no
+    entra, y queda en la bitacora para que se pueda corregir.
+    """
     if not raw_password or not stored_value:
         return False
     try:
-        # Preferred path: bcrypt hash
         return bcrypt.checkpw(raw_password.encode('utf-8'), stored_value.encode('utf-8'))
     except Exception:
-        # Backward compatibility for legacy plain-text seeds
-        return raw_password == stored_value
+        pass
+
+    if is_production():
+        current_app.logger.error(
+            'Cuenta con contrasena sin cifrar; se rechaza el acceso. '
+            'Restablecela para que se guarde con hash.'
+        )
+        return False
+    current_app.logger.warning(
+        'Contrasena sin cifrar aceptada fuera de produccion. Restablecela antes de desplegar.'
+    )
+    return hmac.compare_digest(raw_password, stored_value)
 
 
 def _login_error(error_key: str, status_code: int):
     return jsonify({'error': error_key, 'error_key': error_key}), status_code
+
+
+def _client_ip() -> str:
+    forwarded = request.headers.get('X-Forwarded-For', '')
+    return (forwarded.split(',')[0].strip() or request.remote_addr or '')[:45]
 
 
 @bp_auth.route('/login', methods=['POST'])
@@ -183,13 +209,30 @@ def login():
     if not username or not password:
         return _login_error('errors.auth_missing_credentials', 400)
 
+    origen = _client_ip()
+    # Sin freno se podian probar contrasenas sin limite: con un diccionario y
+    # unos minutos, cualquier cuenta con contrasena debil cae.
+    if login_throttle.esta_bloqueado(username, origen):
+        espera = login_throttle.segundos_para_reintentar(username, origen)
+        respuesta = jsonify({
+            'error': 'errors.auth_too_many_attempts',
+            'error_key': 'errors.auth_too_many_attempts',
+            'meta': {'retry_after_seconds': espera},
+        })
+        respuesta.headers['Retry-After'] = str(espera)
+        return respuesta, 429
+
     with transaction_context() as db:
         user = db.scalars(select(User).where(User.username == username)).first()
         if user and _normalize_user_type(getattr(user, 'user_type', None)) == 'web_shopper':
+            login_throttle.registrar_fallo(username, origen)
             return _login_error('errors.auth_invalid_credentials', 401)
         stored_password = getattr(user, 'password', None) or getattr(user, 'password_hash', '')
         if not user or not _verify_password(password, stored_password):
+            login_throttle.registrar_fallo(username, origen)
             return _login_error('errors.auth_invalid_credentials', 401)
+
+        login_throttle.registrar_exito(username)
 
         mfa = db.scalars(select(UserMfa).where(UserMfa.id_user == user.id_user, UserMfa.enabled == True)).first()
         if mfa:

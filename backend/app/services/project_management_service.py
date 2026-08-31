@@ -117,13 +117,35 @@ def _scope_name(db, user_data: dict) -> str:
     return "ownership"
 
 
+def is_project_leader(project, user_data: dict) -> bool:
+    """El lider designado del proyecto.
+
+    Se distingue de quien lo creo: un supervisor puede levantar el proyecto y
+    asignarlo a otra persona, y esa persona es la responsable de sacarlo.
+    """
+    leader = _safe_int(getattr(project, "leader", None))
+    return leader is not None and leader == _safe_int(user_data.get("id_user") or user_data.get("user_id"))
+
+
 def _scoped_query(db, user_data: dict):
     query = db.query(Proyect).filter(Proyect.deletion_date.is_(None))
     scope = _scope_name(db, user_data)
+    actor_id = _actor_id(user_data)
     if scope == "ownership":
-        query = query.filter(Proyect.created_by == _actor_id(user_data))
+        # El lider ve su proyecto aunque no lo haya creado. Sin esto, un
+        # proyecto asignado a alguien mas quedaba invisible para su propio
+        # responsable, que no podia ni consultarlo.
+        query = query.filter(or_(Proyect.created_by == actor_id, Proyect.leader == actor_id))
     elif scope == "execution":
-        query = query.filter(Proyect.proyect_status.in_(WORKSHOP_VISIBLE_STATUSES))
+        query = query.filter(
+            or_(
+                Proyect.proyect_status.in_(WORKSHOP_VISIBLE_STATUSES),
+                Proyect.leader == actor_id,
+            )
+        )
+    elif scope == "authorization":
+        # Quien autoriza ve todo, y ademas lo que lidera.
+        return query
     return query
 
 
@@ -319,9 +341,11 @@ def update_project(project_id, payload: dict, user_data: dict) -> dict:
     values = {key: value for key, value in (payload or {}).items() if key in PROJECT_MUTABLE_FIELDS}
     with transaction_context() as db:
         project = _get_visible_project(db, project_id, user_data, for_update=True)
-        if _scope_name(db, user_data) == "execution":
+        scope = _scope_name(db, user_data)
+        leads_it = is_project_leader(project, user_data)
+        if scope == "execution" and not leads_it:
             raise AppError("errors.permission_denied", 403)
-        if _scope_name(db, user_data) == "ownership" and project.proyect_status not in {"draft", "blocked"}:
+        if (scope == "ownership" or leads_it) and normalize_project_status(project.proyect_status) not in {"draft", "blocked"}:
             raise AppError("errors.project_not_editable", 409, {"status": project.proyect_status})
         for field, value in values.items():
             setattr(project, field, value)
@@ -333,7 +357,11 @@ def delete_project(project_id, user_data: dict) -> dict:
     with transaction_context() as db:
         project = _get_visible_project(db, project_id, user_data, for_update=True)
         scope = _scope_name(db, user_data)
-        if scope not in {"ownership", "unrestricted"}:
+        # Borrar queda con quien lo creo: el lider saca el proyecto adelante,
+        # pero no lo elimina.
+        if scope not in {"ownership", "unrestricted"} or (
+            scope == "ownership" and _safe_int(project.created_by) != _actor_id(user_data)
+        ):
             raise AppError("errors.permission_denied", 403)
         if normalize_project_status(project.proyect_status) != "draft":
             raise AppError("errors.project_not_editable", 409, {"status": project.proyect_status})
@@ -350,13 +378,29 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
         current = normalize_project_status(project.proyect_status)
         validated_target = validate_project_transition(current, target, reason)
         scope = _scope_name(db, user_data)
+        leads_it = is_project_leader(project, user_data)
+
+        # Quien envia a revision: el que lo creo o su lider.
+        puede_enviar = scope in {"ownership", "unrestricted"} or leads_it
+        # Quien autoriza, deniega o bloquea: solo la capacidad de autorizacion.
+        # El lider NO entra aqui a proposito: quien ejecuta el trabajo no debe
+        # aprobarlo. Es la separacion que evita que una sola persona levante,
+        # apruebe y cierre su propio proyecto.
+        puede_autorizar = scope in {"authorization", "unrestricted"}
+        # Quien lo ejecuta: el taller, o el lider sobre el proyecto que lidera.
+        puede_ejecutar = scope in {"execution", "unrestricted"} or leads_it
+
         allowed_scope = (
-            (current in {"draft", "blocked"} and validated_target == "submitted" and scope in {"ownership", "unrestricted"})
-            or (validated_target in {"authorized", "denied", "blocked"} and scope in {"authorization", "unrestricted"})
-            or (validated_target in {"in_progress", "stopped", "completed"} and scope in {"execution", "unrestricted"})
+            (current in {"draft", "blocked"} and validated_target == "submitted" and puede_enviar)
+            or (validated_target in {"authorized", "denied", "blocked"} and puede_autorizar)
+            or (validated_target in {"in_progress", "stopped", "completed"} and puede_ejecutar)
         )
         if not allowed_scope:
-            raise AppError("errors.permission_denied", 403)
+            raise AppError(
+                "errors.permission_denied",
+                403,
+                {"target_status": validated_target, "scope": scope, "is_leader": leads_it},
+            )
 
         project.proyect_status = validated_target
         _append_event(

@@ -2,7 +2,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import String, Integer, BigInteger, SmallInteger, Boolean, Date, DateTime, Float, Numeric, ForeignKey, Text, JSON, Enum, LargeBinary, UniqueConstraint, func
+from sqlalchemy import String, Integer, BigInteger, SmallInteger, Boolean, Date, DateTime, Float, Numeric, ForeignKey, Text, JSON, Enum, LargeBinary, UniqueConstraint, func, text
 from app.models.base import Base
 
 
@@ -40,7 +40,7 @@ class CustomerSupplier(Base):
     sla_level: Mapped[str] = mapped_column(String(20), nullable=False, default='standard', server_default='standard')
     credit_limit: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0, server_default='0')
     logistics_notes: Mapped[object] = mapped_column(Text, nullable=True)
-    is_principal: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_principal: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text('false'))
     id_user: Mapped[int] = mapped_column(Integer, ForeignKey('user.id_user'), nullable=False)
     created_by: Mapped[int] = mapped_column(Integer, nullable=False)
     creation_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now())

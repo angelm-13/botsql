@@ -56,6 +56,15 @@ def create_visit(user_data):
     return jsonify(_execute(user_data, lambda service: service.create_visit(_payload()))), 201
 
 
+@bp_restaurant.post("/waiter/takeout")
+@token_required
+@require_entity_permission("restaurant_waiter", "create")
+def create_takeout_visit(user_data):
+    return jsonify(
+        _execute(user_data, lambda service: service.create_takeout_visit(_payload()))
+    ), 201
+
+
 @bp_restaurant.get("/waiter/visits/<int:visit_id>")
 @token_required
 @require_entity_permission("restaurant_waiter", "read")
@@ -185,6 +194,15 @@ def pay_order(user_data, order_id: int):
     return jsonify(_execute(user_data, lambda service: service.pay_order(order_id, _payload())))
 
 
+@bp_restaurant.post("/cashier/visits/<int:visit_id>/pay")
+@token_required
+@require_entity_permission("restaurant_cashier", "update")
+def pay_visit(user_data, visit_id: int):
+    """Cobro "todo junto": liquida en una sola operacion las cuentas
+    entregadas de la visita."""
+    return jsonify(_execute(user_data, lambda service: service.pay_visit(visit_id, _payload())))
+
+
 @bp_restaurant.post("/cashier/register/open")
 @token_required
 @require_entity_permission("restaurant_cashier", "create")
@@ -298,3 +316,59 @@ def create_recipe_item(user_data):
     return jsonify(
         _execute(user_data, lambda service: service.save_recipe_item(_payload()))
     ), 201
+
+
+@bp_restaurant.get("/admin/categories")
+@token_required
+@require_entity_permission("restaurant_admin", "read")
+def list_categories(user_data):
+    return jsonify(_execute(user_data, lambda service: service.list_categories()))
+
+
+@bp_restaurant.post("/admin/categories")
+@token_required
+@require_entity_permission("restaurant_admin", "create")
+def create_category(user_data):
+    return jsonify(_execute(user_data, lambda service: service.save_category(_payload()))), 201
+
+
+@bp_restaurant.put("/admin/categories/<int:category_id>")
+@token_required
+@require_entity_permission("restaurant_admin", "update")
+def update_category(user_data, category_id: int):
+    return jsonify(
+        _execute(user_data, lambda service: service.save_category(_payload(), category_id))
+    )
+
+
+@bp_restaurant.get("/admin/inventory/movements")
+@token_required
+@require_entity_permission("restaurant_admin", "read")
+def list_inventory_movements(user_data):
+    item_id = request.args.get("id_restaurant_inventory_item", type=int)
+    limit = request.args.get("limit", default=200, type=int)
+    return jsonify(
+        _execute(
+            user_data,
+            lambda service: service.list_inventory_movements(item_id=item_id, limit=limit),
+        )
+    )
+
+
+@bp_restaurant.post("/admin/inventory/movements")
+@token_required
+@require_entity_permission("restaurant_admin", "create")
+def create_inventory_movement(user_data):
+    return jsonify(
+        _execute(user_data, lambda service: service.create_inventory_movement(_payload()))
+    ), 201
+
+
+@bp_restaurant.get("/admin/audit")
+@token_required
+@require_entity_permission("restaurant_admin", "read")
+def list_audit_events(user_data):
+    limit = request.args.get("limit", default=100, type=int)
+    return jsonify(
+        _execute(user_data, lambda service: service.list_audit_events(limit=limit))
+    )

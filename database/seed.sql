@@ -2,6 +2,15 @@
 -- Note: Each INSERT has ON CONFLICT to handle idempotent seeds
 BEGIN;
 
+-- Las llaves foraneas se comprueban hasta el COMMIT, no en cada sentencia.
+-- Sin esto la siembra no puede aplicarse a una base nueva: el orden del
+-- archivo no respeta las dependencias, y ademas user, permission, proyect y
+-- customer_supplier se referencian en circulo con columnas obligatorias, de
+-- modo que ningun orden de sentencias podria funcionar.
+-- Solo afecta a esta transaccion; fuera de aqui las llaves se siguen
+-- comprobando de inmediato.
+SET CONSTRAINTS ALL DEFERRED;
+
 INSERT INTO "user" ("id_user", "created_by", "creation_date", "date_born", "date_start", "deletion_date", "email", "first_name", "id_permission", "full_name", "id_proyect", "last_name_father", "last_name_mother", "last_update_date", "national_id", "password", "principal_phone", "secundary_phone", "ssn", "supervisor", "base_salary", "hire_date", "id_status", "tax_id", "title", "user_type", "username", "puesto", "accepts_marketing")
 VALUES (1, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00', 'admin1@tyakxa.local', 'Admin', 1, 'test first_name', 1, 'test last_name_father', 'test last_name_mother', '2026-01-01 00:00:00', 'test national_id', '$2b$12$RxTtZtblFwu6ZsmtfNP9Meg6tYSZOCsVIZQLMe260W9seWcdrUma6', 'test principal_', 'test secundary_', 'test ssn', 1, 1, '2026-01-01 00:00:00', 1, 'test tax_id', 'test title', 'admin', 'admin1', 'sample_puesto', TRUE)
 ON CONFLICT ("id_user") DO NOTHING;
@@ -31,7 +40,7 @@ VALUES (1, '00000', 'test razon_social', 'test title', 'test contact_name', 'tes
 ON CONFLICT ("id_customer_supplier") DO NOTHING;
 
 INSERT INTO "proyect" ("id_proyect", "id_customer_supplier", "leader", "proyect_description", "title", "proyect_status", "created_by", "creation_date", "last_update_date", "deletion_date")
-VALUES (1, 1, 1, 'test description', 'test title', 'test state', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
+VALUES (1, 1, 1, 'test description', 'test title', 'draft', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
 ON CONFLICT ("id_proyect") DO NOTHING;
 
 INSERT INTO "bank" ("id_bank", "bank_name", "created_by", "creation_date", "last_update_date", "deletion_date")
@@ -82,16 +91,13 @@ INSERT INTO "material_component" ("id_material_component", "id_material", "id_co
 VALUES (1, 1, 1, 1, 1, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
 ON CONFLICT ("id_material_component") DO NOTHING;
 
-INSERT INTO "movement" ("id_movement", "id_fiscal_account", "date", "type", "amount", "currency", "type_exchange_rate", "created_by", "creation_date", "last_update_date", "deletion_date")
-VALUES (1, 1, '2026-01-01 00:00:00', 'income', 1, 'mxn', 1, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
-ON CONFLICT ("id_movement") DO NOTHING;
 
 INSERT INTO "location_type" ("id_location_type", "location_type_description", "created_by", "creation_date", "last_update_date", "deletion_date")
 VALUES (1, 'test description', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
 ON CONFLICT ("id_location_type") DO NOTHING;
 
 INSERT INTO "location" ("id_location", "id_location_type", "location_description", "id_location_reference", "created_by", "creation_date", "last_update_date", "deletion_date")
-VALUES (1, 1, 'test description', 1, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
+VALUES (1, 1, 'test description', NULL, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
 ON CONFLICT ("id_location") DO NOTHING;
 
 INSERT INTO "product" ("id_product", "id_invoice", "id_location", "id_material", "gross_price", "color", "is_directly_related_to_product_service", "product_status", "path_imagen", "product_code", "note", "created_by", "creation_date", "last_update_date", "descripcion", "cantidad", "id_marca", "id_familia")
@@ -117,6 +123,9 @@ ON CONFLICT ("id_ticket") DO NOTHING;
 INSERT INTO "fiscal_account" ("id_fiscal_account", "fiscal_account_description", "balance", "id_fiscal_account_reference", "created_by", "creation_date", "last_update_date", "deletion_date")
 VALUES (1, 'test description', 1, 1, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
 ON CONFLICT ("id_fiscal_account") DO NOTHING;
+INSERT INTO "movement" ("id_movement", "id_fiscal_account", "date", "type", "amount", "currency", "type_exchange_rate", "created_by", "creation_date", "last_update_date", "deletion_date")
+VALUES (1, 1, '2026-01-01 00:00:00', 'income', 1, 'mxn', 1, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
+ON CONFLICT ("id_movement") DO NOTHING;
 
 INSERT INTO "fiscal_stamp" ("id_fiscal_stamp", "concept", "reviewed_by", "authorized_by", "auxiliar", "num_policy", "created_by", "creation_date", "last_update_date", "deletion_date")
 VALUES (1, 'test concept', 1, 1, 'test auxiliar', 'test num_policy', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
@@ -332,6 +341,27 @@ WHERE project."deletion_date" IS NULL
     SELECT 1 FROM "proyect_event" event
     WHERE event."id_proyect" = project."id_proyect"
   );
+
+-- Las secuencias se realinean AQUI, no solo al final del archivo.
+-- Los INSERT anteriores fijan identificadores explicitos, lo que no avanza
+-- la secuencia; el INSERT que sigue depende de nextval. Con la secuencia
+-- atrasada choca contra una llave ya usada y aborta la transaccion, y con
+-- ella todo lo que viniera despues.
+-- Keep PostgreSQL SERIAL sequences aligned after deterministic seed IDs
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT table_name, column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND column_default LIKE 'nextval%'
+  LOOP
+    EXECUTE format(
+      'SELECT setval(pg_get_serial_sequence(%L, %L), COALESCE((SELECT MAX(%I) FROM %I), 0) + 1, false)',
+      r.table_name, r.column_name, r.column_name, r.table_name
+    );
+  END LOOP;
+END $$;
 
 -- Project workflow roles are created without assigning existing users.
 WITH role_names(role_name) AS (

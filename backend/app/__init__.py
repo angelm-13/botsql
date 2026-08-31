@@ -4,6 +4,8 @@ import sys
 import jwt
 from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
+
+from app.utils.startup_guard import allowed_cors_origins, enforce_secure_configuration, is_production
 from flask_babel import Babel
 from werkzeug.exceptions import HTTPException
 from app.utils.errors import AppError
@@ -89,6 +91,7 @@ from app.routes.entity_permission import bp_entity_permission
 from app.routes.inventory_status import bp_inventory_status
 from app.routes.product_sale_config import bp_product_sale_config
 from app.routes.public_api_key import bp_public_api_key
+from app.routes.sat_catalog import bp_sat_catalog
 from app.routes.stamping import bp_stamping
 from app.routes.client_portal import bp_client_portal
 from app.routes.bank_statements import bp_bank_statements
@@ -602,6 +605,19 @@ def _register_documents_blueprint(app: Flask) -> None:
         )
     except Exception as exc:
         app.logger.exception('Documents blueprint registration failed: %s', exc)
+        # El modulo esta en disco pero no carga: es una instalacion rota, no un
+        # modulo opcional ausente (ese caso ya salio arriba, sin excepcion).
+        # Dejarlo pasar arranca una aplicacion que se ve sana y en la que todas
+        # las descargas de factura responden 404, sin mas rastro que esta linea
+        # en el arranque. Es exactamente como se pierde el PDF de un CFDI: la
+        # imagen se construye sin las bibliotecas nativas de WeasyPrint y nadie
+        # se entera hasta que un cliente pide su factura.
+        if is_production():
+            raise RuntimeError(
+                'El modulo de documentos existe pero no se pudo registrar, asi que '
+                'ninguna factura se podria descargar. Revisa sus dependencias '
+                f'(WeasyPrint necesita bibliotecas nativas de GTK). Causa: {exc}'
+            ) from exc
 
 
 
@@ -612,7 +628,14 @@ def create_app(testing: bool = False) -> Flask:
     app.config['JSON_SORT_KEYS'] = False
     default_upload_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'uploads'))
     app.config['UPLOAD_ROOT'] = os.getenv('UPLOAD_ROOT', default_upload_root)
-    CORS(app)
+
+    # En produccion, una configuracion insegura impide arrancar. Vale mas un
+    # despliegue que falla ruidosamente que uno que corre abierto sin que nadie
+    # lo sepa.
+    enforce_secure_configuration(testing=testing)
+    # Sin CORS_ORIGINS no se permite ningun origen cruzado: antes se llamaba a
+    # CORS(app) sin argumentos, que acepta peticiones de cualquier sitio.
+    CORS(app, origins=allowed_cors_origins(), supports_credentials=True)
     Babel(app)
     app.register_blueprint(bp_health)
     app.register_blueprint(bp_auth)
@@ -697,6 +720,7 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_inventory_status)
     app.register_blueprint(bp_product_sale_config)
     app.register_blueprint(bp_public_api_key)
+    app.register_blueprint(bp_sat_catalog)
     app.register_blueprint(bp_stamping)
     app.register_blueprint(bp_client_portal)
     app.register_blueprint(bp_bank_statements)

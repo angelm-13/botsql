@@ -55,16 +55,6 @@ export default function Dashboard() {
           <strong>8</strong>
           <small>{t("common.defined_fields")}</small>
         </article>
-        <article className="metric-card" key="fiscal_record">
-          <span>{t("menu.fiscal_record")}</span>
-          <strong>10</strong>
-          <small>{t("common.defined_fields")}</small>
-        </article>
-        <article className="metric-card" key="fiscal_stamp">
-          <span>{t("menu.fiscal_stamp")}</span>
-          <strong>10</strong>
-          <small>{t("common.defined_fields")}</small>
-        </article>
         <article className="metric-card" key="incident">
           <span>{t("menu.incident")}</span>
           <strong>12</strong>

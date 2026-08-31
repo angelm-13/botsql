@@ -1416,6 +1416,13 @@ DO $$ BEGIN
   ALTER TABLE "entity_permission" ADD CONSTRAINT "fk_entity_permission_created_by" FOREIGN KEY ("created_by") REFERENCES "user"("id_user") DEFERRABLE INITIALLY DEFERRED;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
+-- uq_entity_permission_permission_entity: varios INSERT de este mismo archivo
+-- (mas abajo) y de database/seed.sql usan ON CONFLICT (id_permission, entity_name),
+-- que exige que este constraint ya exista.
+DO $$ BEGIN
+  ALTER TABLE "entity_permission" ADD CONSTRAINT "uq_entity_permission_permission_entity" UNIQUE ("id_permission", "entity_name");
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 DO $$ BEGIN
   ALTER TABLE "inventory_status" ADD CONSTRAINT "fk_inventory_status_id_department" FOREIGN KEY ("id_department") REFERENCES "department"("id_department") DEFERRABLE INITIALLY DEFERRED;
 EXCEPTION WHEN duplicate_object THEN NULL;

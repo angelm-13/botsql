@@ -15,4 +15,14 @@ python-dotenv==1.0.1
 gunicorn==22.0.0
 WeasyPrint>=61.0
 Jinja2>=3.1.0
+# Modulo restaurante (app/restaurante): usa Flask-SQLAlchemy + Alembic y
+# Flask-JWT-Extended, distinto de la capa de sesion del core.
+Flask-SQLAlchemy==3.1.1
+Flask-Migrate==4.0.7
+alembic==1.19.0
+Flask-JWT-Extended==4.6.0
+# Facturacion CFDI del restaurante: PDF, codigo QR del comprobante.
+reportlab==4.2.5
+qrcode==7.4.2
+Pillow==10.4.0
 pypdf==4.3.1

@@ -36,6 +36,11 @@ class TestRestaurantService(BackendTestCase):
             assert service.advance_order(order_id, "en_preparacion")["status"] == "en_preparacion"
             assert service.advance_order(order_id, "listo_para_entrega")["status"] == "listo_para_entrega"
             assert service.advance_order(order_id, "entregado")["status"] == "entregado"
+            # Cobrar en efectivo exige turno de caja abierto: sin el, el dinero
+            # entra fuera de todo arqueo y el faltante no aparece hasta contar
+            # el cajon. La prueba se escribio antes de esa regla y cobraba sin
+            # abrir caja, que es justo lo que ahora no se permite.
+            service.open_cash_session({"opening_amount": 0})
             paid = service.pay_order(
                 order_id, {"tip_type": "porcentaje", "tip_percent": 10}
             )

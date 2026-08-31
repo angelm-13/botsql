@@ -2,7 +2,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import String, Integer, BigInteger, SmallInteger, Boolean, Date, DateTime, Float, Numeric, ForeignKey, Text, JSON, Enum, LargeBinary, UniqueConstraint, Index, func
+from sqlalchemy import String, Integer, BigInteger, SmallInteger, Boolean, Date, DateTime, Float, Numeric, ForeignKey, Text, JSON, Enum, LargeBinary, UniqueConstraint, Index, func, text
 from app.models.base import Base
 
 
@@ -74,7 +74,7 @@ class Invoice(Base):
     forma_pago: Mapped[object] = mapped_column(String(10), nullable=True)
     isr_retention: Mapped[float] = mapped_column(Numeric(10,2), nullable=True)
     iva_retention: Mapped[float] = mapped_column(Numeric(10,2), nullable=True)
-    manual_capture: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    manual_capture: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text('false'))
 
     def serialize(self) -> dict:
         return {

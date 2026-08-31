@@ -14,6 +14,8 @@ class InventoryLedger(Base):
         UniqueConstraint("idempotency_key", name="uq_inventory_ledger_idempotency_key"),
         Index("ix_inventory_ledger_product_created", "id_product", "creation_date"),
         Index("ix_inventory_ledger_project_created", "id_proyect", "creation_date"),
+        Index("ix_inventory_ledger_location", "id_location", "creation_date"),
+        Index("ix_inventory_ledger_transfer_group", "transfer_group"),
     )
 
     id_inventory_ledger: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -22,6 +24,14 @@ class InventoryLedger(Base):
     movement_type: Mapped[str] = mapped_column(String(30), nullable=False)
     quantity_delta: Mapped[int] = mapped_column(Integer, nullable=False)
     balance_after: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Donde ocurrio. `balance_after` sigue siendo el total del producto, para
+    # que los renglones escritos antes de los almacenes sigan siendo validos;
+    # `location_balance_after` es el saldo de esta ubicacion.
+    id_location: Mapped[int | None] = mapped_column(ForeignKey("location.id_location"), nullable=True)
+    id_location_target: Mapped[int | None] = mapped_column(ForeignKey("location.id_location"), nullable=True)
+    location_balance_after: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Une la salida y la entrada de un mismo traspaso.
+    transfer_group: Mapped[str | None] = mapped_column(String(36), nullable=True)
     idempotency_key: Mapped[str] = mapped_column(String(100), nullable=False)
     reference_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     reference_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -37,6 +47,10 @@ class InventoryLedger(Base):
             "movement_type": self.movement_type,
             "quantity_delta": self.quantity_delta,
             "balance_after": self.balance_after,
+            "id_location": self.id_location,
+            "id_location_target": self.id_location_target,
+            "location_balance_after": self.location_balance_after,
+            "transfer_group": self.transfer_group,
             "idempotency_key": self.idempotency_key,
             "reference_type": self.reference_type,
             "reference_id": self.reference_id,

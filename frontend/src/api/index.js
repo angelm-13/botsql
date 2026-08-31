@@ -236,17 +236,7 @@ export const createFiscalAccount = (payload) => request("/fiscal_account/", { me
 export const updateFiscalAccount = (id, payload) => request(`/fiscal_account/${id}`, { method: "PUT", body: payload });
 export const deleteFiscalAccount = (id) => request(`/fiscal_account/${id}`, { method: "DELETE" });
 
-export const getAllFiscalRecord = (params = {}) => request("/fiscal_record/", { params });
-export const getFiscalRecord = (id) => request(`/fiscal_record/${id}`);
-export const createFiscalRecord = (payload) => request("/fiscal_record/", { method: "POST", body: payload });
-export const updateFiscalRecord = (id, payload) => request(`/fiscal_record/${id}`, { method: "PUT", body: payload });
-export const deleteFiscalRecord = (id) => request(`/fiscal_record/${id}`, { method: "DELETE" });
 
-export const getAllFiscalStamp = (params = {}) => request("/fiscal_stamp/", { params });
-export const getFiscalStamp = (id) => request(`/fiscal_stamp/${id}`);
-export const createFiscalStamp = (payload) => request("/fiscal_stamp/", { method: "POST", body: payload });
-export const updateFiscalStamp = (id, payload) => request(`/fiscal_stamp/${id}`, { method: "PUT", body: payload });
-export const deleteFiscalStamp = (id) => request(`/fiscal_stamp/${id}`, { method: "DELETE" });
 
 export const getAllIncident = (params = {}) => request("/incident/", { params });
 export const getIncident = (id) => request(`/incident/${id}`);
@@ -283,11 +273,55 @@ export const getInvoiceCatalogs = () => request("/invoice/catalogs");
 export const previewManualInvoice = (payload) => request("/invoice/manual/preview", { method: "POST", body: payload });
 export const createManualInvoice = (payload) => request("/invoice/manual", { method: "POST", body: payload });
 export const stampInvoice = (id, idempotencyKey = crypto.randomUUID()) => request(`/stamping/invoices/${id}`, { method: "POST", body: { idempotency_key: idempotencyKey } });
+export const preflightInvoiceStamping = (id, includeXml = false) => request(`/stamping/invoices/${id}/preflight`, { params: includeXml ? { include_xml: "1" } : {} });
 export const getStampingConfig = () => request("/stamping/config");
 export const saveStampingConfig = (payload) => request("/stamping/config", { method: "PUT", body: payload });
 export const testStampingConfig = (payload) => request("/stamping/config/test", { method: "POST", body: payload });
 export const downloadInvoiceXml = (id) => requestBlob(`/invoice/${id}/xml`);
 export const downloadInvoicePdf = (id, document = "") => requestBlob(`/invoice/${id}/pdf`, { params: { document } });
+
+export const getInventoryMovements = (id, params = {}) => request(`/product/${id}/inventory-movements`, { params });
+export const createInventoryMovement = (id, payload) => request(`/product/${id}/inventory-movements`, { method: "POST", body: { idempotency_key: crypto.randomUUID(), ...payload } });
+export const getInventoryReconciliation = (id) => request(`/product/${id}/inventory-reconciliation`);
+export const createInventoryTransfer = (id, payload) => request(`/product/${id}/inventory-transfers`, { method: "POST", body: { idempotency_key: crypto.randomUUID(), ...payload } });
+export const getProductStock = (id) => request(`/product/${id}/inventory-stock`);
+export const getLocationTree = () => request("/location/tree");
+export const getWarehouseStock = (id) => request(`/location/${id}/stock`);
+export const getInvoiceInventoryPreview = (id, params = {}) => request(`/invoice/${id}/inventory`, { params });
+export const applyInvoiceInventory = (id, payload = {}) => request(`/invoice/${id}/inventory`, { method: "POST", body: payload });
+
+// --- Cancelacion de CFDI ---------------------------------------------------
+// El backend exige llave de idempotencia en cada acto fiscal: una cancelacion
+// reintentada por un doble clic no debe llegar dos veces al SAT.
+export const getInvoiceCancellation = (id) => request(`/invoice/${id}/cancellation`);
+export const requestInvoiceCancellation = (id, payload = {}) =>
+  request(`/invoice/${id}/cancellation`, {
+    method: "POST",
+    body: { idempotency_key: crypto.randomUUID(), ...payload }
+  });
+export const refreshInvoiceCancellation = (idCancellation) =>
+  request(`/invoice/cancellations/${idCancellation}/refresh`, { method: "POST" });
+
+// --- Abonos y complemento de pago ----------------------------------------
+export const getInvoiceStatement = (id) => request(`/invoice/${id}/payments`);
+export const registerInvoicePayment = (id, payload = {}) =>
+  request(`/invoice/${id}/payments`, {
+    method: "POST",
+    body: { idempotency_key: crypto.randomUUID(), ...payload }
+  });
+export const getPaymentComplement = (idPayment) =>
+  request(`/invoice/payments/${idPayment}/complement`);
+
+// --- Notas de credito -----------------------------------------------------
+export const getInvoiceCreditNotes = (id) => request(`/invoice/${id}/credit-notes`);
+export const createInvoiceCreditNote = (id, payload = {}) =>
+  request(`/invoice/${id}/credit-notes`, {
+    method: "POST",
+    body: { idempotency_key: crypto.randomUUID(), ...payload }
+  });
+export const getInvoiceRelations = (id) => request(`/invoice/${id}/relations`);
+export const searchSatProductKeys = (q, limit = 12) => request("/sat/clave-prod-serv", { params: { q, limit } });
+export const getSatCatalogStatus = () => request("/sat/clave-prod-serv/status");
 
 export const getAllInvoiceMaterialService = (params = {}) => request("/invoice_material_service/", { params });
 export const getInvoiceMaterialService = (id) => request(`/invoice_material_service/${id}`);
