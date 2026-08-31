@@ -40,7 +40,7 @@ VALUES (1, '00000', 'test razon_social', 'test title', 'test contact_name', 'tes
 ON CONFLICT ("id_customer_supplier") DO NOTHING;
 
 INSERT INTO "proyect" ("id_proyect", "id_customer_supplier", "leader", "proyect_description", "title", "proyect_status", "created_by", "creation_date", "last_update_date", "deletion_date")
-VALUES (1, 1, 1, 'test description', 'test title', 'test state', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
+VALUES (1, 1, 1, 'test description', 'test title', 'draft', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
 ON CONFLICT ("id_proyect") DO NOTHING;
 
 INSERT INTO "bank" ("id_bank", "bank_name", "created_by", "creation_date", "last_update_date", "deletion_date")
