@@ -252,7 +252,7 @@ ROLES = (
         "facturacion": CAPTURA, "crm": CAPTURA, "rh": CAPTURA,
         "operaciones": EDITAR, "inventario": CONSULTA, "logistica": CONSULTA,
         "configuracion": CONSULTA,
-    }, ["incident_supervision", "kronos_device"]),
+    }, ["incident_supervision", "kronos_device", "pos_admin", "pos_terminal"]),
 
     Rol(3, "vendedor", {
         "crm": CAPTURA, "facturacion": CAPTURA, "inventario": CONSULTA,
@@ -278,7 +278,7 @@ ROLES = (
         "operaciones": EDITAR, "facturacion": CAPTURA, "crm": CAPTURA,
         "inventario": CONSULTA, "rh": CONSULTA, "logistica": CONSULTA,
         "configuracion": CONSULTA,
-    }, ["project_authorization", "incident_supervision"]),
+    }, ["project_authorization", "incident_supervision", "pos_admin", "pos_terminal"]),
 
     # El almacenista opera el almacen pero no lo administra, y no ajusta: es la
     # separacion de funciones que evita que quien mueve la mercancia tape su

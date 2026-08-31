@@ -199,14 +199,33 @@ class TestMatrizDePermisos(unittest.TestCase):
 
         Una capacidad que el acceso al modulo no puede ejercer es una fila que
         no sirve y que hace creer que el rol puede hacer algo que no puede.
+
+        La excepcion son los modulos que se operan solo por capacidad, porque no
+        tienen entidades en la base del nucleo y por tanto no hay acceso de
+        tabla que conceder. Se reconoce por eso -no tener entidades- y no por
+        nombre: al integrar el punto de venta esta prueba fallo porque eximia al
+        restaurante a mano, y el criterio real no era el nombre sino la
+        naturaleza del modulo.
         """
         for rol in registry.ROLES:
             for clave in rol.capacidades:
-                modulo = registry.CAPACIDAD_POR_CLAVE[clave].modulo
-                if modulo == "restaurante":
+                modulo = registry.MODULO_POR_CLAVE[registry.CAPACIDAD_POR_CLAVE[clave].modulo]
+                if not modulo.entidades:
                     continue
                 with self.subTest(rol=rol.nombre, capacidad=clave):
-                    self.assertIn(modulo, rol.modulos)
+                    self.assertIn(modulo.clave, rol.modulos)
+
+    def test_a_capability_only_module_has_no_core_entities(self):
+        """Lo que hace valida la excepcion de arriba."""
+        for modulo in registry.MODULOS:
+            capacidades = [c for c in registry.CAPACIDADES if c.modulo == modulo.clave]
+            if modulo.entidades or not capacidades:
+                continue
+            with self.subTest(modulo=modulo.clave):
+                self.assertEqual(
+                    (), modulo.entidades,
+                    "un modulo que se opera por capacidad no declara entidades del nucleo",
+                )
 
     def test_the_warehouse_clerk_cannot_adjust(self):
         """Quien mueve la mercancia no tapa su propio faltante."""

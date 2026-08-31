@@ -1,9 +1,10 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { Boxes, CalendarDays, ChevronDown, ClipboardList, FileText, Landmark, LayoutDashboard, LogOut, PanelLeftClose, PanelLeftOpen, Settings, ShieldCheck, SlidersHorizontal, Truck, Users, Utensils } from "lucide-react";
+import { Boxes, CalendarDays, ChevronDown, ClipboardList, FileText, Landmark, LayoutDashboard, LogOut, PanelLeftClose, PanelLeftOpen, Settings, ShieldCheck, ShoppingCart, SlidersHorizontal, Truck, Users, Utensils } from "lucide-react";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { getAllEntityPermission } from "../api";
 import LanguagePicker from "../components/LanguagePicker";
 import { useI18n } from "../i18n";
+import { availableModuleSections } from "./moduleSections";
 
 const navItems = [
   { path: "/", key: "common.dashboard", exact: true },
@@ -76,15 +77,6 @@ const quickNavItems = [
   { path: "/compradores-web", key: "menu.web_shoppers", label: "Compradores Web", entityName: "user" }
 ];
 
-const logisticsSections = [
-  { key: "section_commercial", items: [["quotations", "cotizaciones", "logistics_quotation"], ["requests", "solicitudes", "logistics_service_request"], ["files", "expedientes", "logistics_file"]] },
-  { key: "section_operations", items: [["trips", "viajes", "logistics_trip"], ["evidences", "evidencias", "logistics_evidence"], ["incidents", "incidencias", "logistics_incident"]] },
-  { key: "section_fleet", items: [["units", "unidades"], ["trailers", "remolques"], ["operators", "operadores"], ["maintenance", "mantenimientos"]] },
-  { key: "section_warehouse", items: [["warehouses", "almacenes"], ["locations", "ubicaciones"], ["inventory", "inventario"], ["racks", "racks"]] },
-  { key: "section_finance", items: [["invoices", "facturas", "invoice"], ["branches", "sucursales", "logistics_branch"], ["receivables", "cuentas-cobrar", "logistics_receivable"], ["manual_invoice", "facturacion/manual", "invoice"]] },
-  { key: "section_foreign_trade", items: [["suppliers", "proveedores", "customer_supplier"], ["shipments", "embarques", "logistics_shipment"]] },
-  { key: "section_administration", items: [["users", "usuarios", "user"], ["roles", "roles", null, "admin"], ["audit", "auditoria", null, "technical"], ["security", "seguridad"]] }
-];
 
 const groupTranslationKeys = {
   "Bancos": "group_banks", CRM: "group_crm", "Contabilidad": "group_accounting",
@@ -104,6 +96,10 @@ const groupIcons = {
   "layout-dashboard": LayoutDashboard,
   "settings": Settings,
   "calendar-days": CalendarDays,
+  // Los usan los modulos con secciones; sin estas entradas el menu colapsado
+  // caia al icono por omision y Logistica perdia su camion.
+  "truck": Truck,
+  "shopping-cart": ShoppingCart,
 };
 
 const defaultGroupIcons = {
@@ -170,7 +166,7 @@ export default function Shell() {
   const visibleNavItems = navItems.filter(canSeeNavItem);
   const permissionByEntity = useMemo(() => new Map(roleEntityPermissions.map((row) => [String(row.entity_name || ""), row])), [roleEntityPermissions]);
 
-  function canSeeLogisticsItem(item) {
+  function canSeeSectionItem(item) {
     const entityName = item[2];
     if (item[3] === "admin") return isAdminUser;
     if (item[3] === "technical") return isBootstrapAdmin;
@@ -244,8 +240,10 @@ export default function Shell() {
     setSidebarCollapsed(false);
     localStorage.setItem("tyakxa-sidebar-collapsed", "false");
   };
-  const logisticsIsActive = location.pathname.startsWith("/logistica");
-  const logisticsIsOpen = openGroups.Logística ?? logisticsIsActive;
+  // Un modulo con secciones se abre solo si la ruta actual esta dentro de el.
+  function moduleIsOpen(modulo) {
+    return openGroups[modulo.key] ?? location.pathname.startsWith(modulo.basePath);
+  }
   return (
     <div className={sidebarCollapsed ? "shell sidebar-is-collapsed" : "shell"}>
       <aside className="sidebar" aria-label={shellText("main_navigation")}>
@@ -269,24 +267,37 @@ export default function Shell() {
               {isOpen && <div className="shell-nav-submenu">{group.items.map((item) => <NavLink key={item.path} to={item.path} className={({ isActive }) => isActive ? "nav-link active" : "nav-link"}><span className="dot" /><span className="nav-link-label">{item.displayLabel}</span></NavLink>)}</div>}
             </div>;
           })}
-          {sidebarCollapsed ? (
-            <button type="button" className="nav-link collapsed-group-button" title={shellText("group_logistics")} aria-label={`${shellText("expand_group")} ${shellText("group_logistics")}`} onClick={() => expandSidebarForGroup("Logística")}><Truck size={20} /><span className="nav-link-label">{shellText("group_logistics")}</span></button>
-          ) : (
-            <div className="shell-nav-group logistics-nav-group">
-              <button type="button" className="shell-nav-group-toggle" onClick={() => setOpenGroups((current) => ({ ...current, Logística: !logisticsIsOpen }))}><span className="shell-nav-group-title">{shellText("group_logistics")}</span><ChevronDown size={16} className={logisticsIsOpen ? "open" : ""} /></button>
-              {logisticsIsOpen && <div className="shell-nav-submenu logistics-nav-sections">{logisticsSections.map((section) => {
-                const visibleItems = section.items.filter(canSeeLogisticsItem);
-                const sectionKey = `Logística:${section.key}`;
-                const sectionIsActive = visibleItems.some(([, path]) => location.pathname.startsWith(`/logistica/${path}`));
-                const sectionIsOpen = openGroups[sectionKey] ?? sectionIsActive;
-                if (visibleItems.length === 0) return null;
-                return <div className="logistics-nav-section" key={section.key}>
-                  <button type="button" className="logistics-nav-section-toggle" onClick={() => setOpenGroups((current) => ({ ...current, [sectionKey]: !sectionIsOpen }))}><span>{shellText(section.key)}</span><ChevronDown size={14} className={sectionIsOpen ? "open" : ""} /></button>
-                  {sectionIsOpen && <div className="logistics-nav-items">{visibleItems.map(([key, path]) => <NavLink key={path} to={`/logistica/${path}`} className={({ isActive }) => isActive ? "nav-link active" : "nav-link"}><span className="dot" /><span className="nav-link-label">{shellText(key)}</span></NavLink>)}</div>}
+          {/* Modulos con menu de dos niveles. La estructura vive en
+              moduleSections.js; aqui solo se pinta, de modo que agregar un
+              modulo con secciones no vuelve a significar copiar este bloque. */}
+          {availableModuleSections.map((modulo) => {
+            const seccionesVisibles = modulo.sections
+              .map((seccion) => ({ ...seccion, items: seccion.items.filter(canSeeSectionItem) }))
+              .filter((seccion) => seccion.items.length > 0);
+            // Un modulo sin una sola entrada visible no se pinta. Antes el
+            // encabezado de Logistica salia siempre, asi que un rol sin acceso
+            // veia un grupo que al abrirlo estaba vacio.
+            if (seccionesVisibles.length === 0) return null;
+            const abierto = moduleIsOpen(modulo);
+            const ModuleIcon = groupIcons[modulo.icon] || SlidersHorizontal;
+
+            if (sidebarCollapsed) {
+              return <button type="button" key={modulo.key} className="nav-link collapsed-group-button" title={shellText(modulo.titleKey)} aria-label={`${shellText("expand_group")} ${shellText(modulo.titleKey)}`} onClick={() => expandSidebarForGroup(modulo.key)}><ModuleIcon size={20} /><span className="nav-link-label">{shellText(modulo.titleKey)}</span></button>;
+            }
+
+            return <div className="shell-nav-group logistics-nav-group" key={modulo.key}>
+              <button type="button" className="shell-nav-group-toggle" onClick={() => setOpenGroups((current) => ({ ...current, [modulo.key]: !abierto }))}><span className="shell-nav-group-title">{shellText(modulo.titleKey)}</span><ChevronDown size={16} className={abierto ? "open" : ""} /></button>
+              {abierto && <div className="shell-nav-submenu logistics-nav-sections">{seccionesVisibles.map((seccion) => {
+                const claveSeccion = `${modulo.key}:${seccion.key}`;
+                const seccionActiva = seccion.items.some(([, ruta]) => location.pathname.startsWith(`${modulo.basePath}/${ruta}`));
+                const seccionAbierta = openGroups[claveSeccion] ?? seccionActiva;
+                return <div className="logistics-nav-section" key={seccion.key}>
+                  <button type="button" className="logistics-nav-section-toggle" onClick={() => setOpenGroups((current) => ({ ...current, [claveSeccion]: !seccionAbierta }))}><span>{shellText(seccion.key)}</span><ChevronDown size={14} className={seccionAbierta ? "open" : ""} /></button>
+                  {seccionAbierta && <div className="logistics-nav-items">{seccion.items.map(([clave, ruta]) => <NavLink key={ruta} to={`${modulo.basePath}/${ruta}`} className={({ isActive }) => isActive ? "nav-link active" : "nav-link"}><span className="dot" /><span className="nav-link-label">{shellText(clave)}</span></NavLink>)}</div>}
                 </div>;
               })}</div>}
-            </div>
-          )}
+            </div>;
+          })}
         </nav>
       </aside>
       <button type="button" className="sidebar-collapse-button" onClick={toggleSidebar} title={shellText(sidebarCollapsed ? "expand_menu" : "collapse_menu")} aria-label={shellText(sidebarCollapsed ? "expand_menu" : "collapse_menu")} aria-expanded={!sidebarCollapsed}>

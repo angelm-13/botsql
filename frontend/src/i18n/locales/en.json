@@ -3301,7 +3301,22 @@
     "options": "Options",
     "no_options": "No options configured",
     "main_navigation": "Main navigation",
-    "quick_access": "Quick access"
+    "quick_access": "Quick access",
+    "group_pos": "Point of sale",
+    "section_pos_till": "Till",
+    "section_pos_catalog": "Catalogue",
+    "section_pos_warehouse": "Warehouse",
+    "section_pos_invoicing": "Invoicing",
+    "section_pos_reports": "Reports",
+    "pos_terminal": "Point of sale",
+    "cash_sessions": "Cash sessions",
+    "expenses": "Expenses",
+    "categories": "Categories",
+    "promotions": "Promotions",
+    "invoicing": "Issue invoice",
+    "invoicing_config": "Fiscal settings",
+    "dashboard": "Dashboard",
+    "reports": "Reports"
   },
   "project_management": {
     "operations": "Operations",

@@ -3304,7 +3304,22 @@
     "options": "Opciones",
     "no_options": "Sin opciones configuradas",
     "main_navigation": "Navegación principal",
-    "quick_access": "Accesos rápidos"
+    "quick_access": "Accesos rápidos",
+    "group_pos": "Punto de venta",
+    "section_pos_till": "Caja",
+    "section_pos_catalog": "Catálogo",
+    "section_pos_warehouse": "Almacén",
+    "section_pos_invoicing": "Facturación",
+    "section_pos_reports": "Reportes",
+    "pos_terminal": "Punto de venta",
+    "cash_sessions": "Cortes de caja",
+    "expenses": "Gastos",
+    "categories": "Categorías",
+    "promotions": "Promociones",
+    "invoicing": "Facturar",
+    "invoicing_config": "Configuración fiscal",
+    "dashboard": "Tablero",
+    "reports": "Reportes"
   },
   "project_management": {
     "operations": "Operaciones",

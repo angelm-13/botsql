@@ -19,7 +19,7 @@
 -- el del restaurante.
 --
 -- 10 modulos, 12 roles, 11 capacidades,
--- 381 filas.
+-- 385 filas.
 --
 --   facturacion      9 entidades
 --     Administrator (administrar), gerente_administrativo (capturar), vendedor (capturar), Gerente (capturar)
@@ -208,6 +208,8 @@ FROM (VALUES
     (2, 'payroll_period', 7, 'sidebar', 'Recursos humanos', 'hr', 'Periodos de nomina', 710),   -- gerente_administrativo / capturar
     (2, 'incident_supervision', 2, 'none', NULL, NULL, NULL, 390),   -- gerente_administrativo / consultar
     (2, 'kronos_device', 2, 'settings', NULL, NULL, NULL, 790),   -- gerente_administrativo / consultar
+    (2, 'pos_admin', 15, 'sidebar', 'Punto de venta', 'pos', 'Admin del punto de venta', 640),   -- gerente_administrativo / administrar
+    (2, 'pos_terminal', 7, 'sidebar', 'Punto de venta', 'pos', 'Caja del punto de venta', 640),   -- gerente_administrativo / capturar
     (3, 'department', 2, 'sidebar', 'Configuracion', 'settings', 'Departamentos', 830),   -- vendedor / consultar
     (3, 'level', 2, 'sidebar', 'Configuracion', 'settings', 'Niveles', 850),   -- vendedor / consultar
     (3, 'status', 2, 'none', NULL, NULL, NULL, 890),   -- vendedor / consultar
@@ -386,6 +388,8 @@ FROM (VALUES
     (16, 'payroll_movement', 2, 'sidebar', 'Recursos humanos', 'hr', 'Movimientos', 730),   -- Gerente / consultar
     (16, 'payroll_period', 2, 'sidebar', 'Recursos humanos', 'hr', 'Periodos de nomina', 710),   -- Gerente / consultar
     (16, 'incident_supervision', 2, 'none', NULL, NULL, NULL, 390),   -- Gerente / consultar
+    (16, 'pos_admin', 15, 'sidebar', 'Punto de venta', 'pos', 'Admin del punto de venta', 640),   -- Gerente / administrar
+    (16, 'pos_terminal', 7, 'sidebar', 'Punto de venta', 'pos', 'Caja del punto de venta', 640),   -- Gerente / capturar
     (16, 'project_authorization', 2, 'hidden', NULL, NULL, NULL, 390),   -- Gerente / consultar
     (17, 'department', 2, 'sidebar', 'Configuracion', 'settings', 'Departamentos', 830),   -- Almacenista / consultar
     (17, 'level', 2, 'sidebar', 'Configuracion', 'settings', 'Niveles', 850),   -- Almacenista / consultar
