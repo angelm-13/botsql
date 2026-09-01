@@ -499,5 +499,44 @@ class TestRastreo(PiezasTestCase):
         self.assertEqual("A-001", resultado["items"][0]["asset_tag"])
 
 
+class TestPropositoDelAlmacen(PiezasTestCase):
+    """El almacen guarda dos cosas y no son intercambiables.
+
+    Mercancia se compra para venderse; un activo de uso interno -herramienta,
+    equipo- no se vende nunca. Sin la distincion, una herramienta prestada y un
+    producto vendido se veian igual en el saldo, y nada impedia facturar la venta
+    de un taladro propio.
+    """
+
+    def test_an_internal_use_product_is_not_applied_to_a_sale(self):
+        from app.services.invoice_inventory_service import preview_invoice_inventory
+        from app.models.invoice_material_service import InvoiceMaterialService
+
+        with transaction_context() as db:
+            db.get(Product, HERRAMIENTA).stock_purpose = "uso_interno"
+            db.get(Invoice, FACTURA).invoice_direction = "venta"
+            db.add(InvoiceMaterialService(
+                id_invoice=FACTURA, id_product=HERRAMIENTA,
+                invoice_material_service_description="Taladro", quantity=1,
+                gross_price=Decimal("100.00"), authorization_status="authorized",
+                is_directly_related_to_product_service_creation=False,
+                id_authorized=1, id_status=40, id_buyer=1, id_customer_supplier=CLIENTE,
+                line_type="product", tax_applicable=False,
+                sat_product_key="01010101", sat_unit_key="H87", created_by=1,
+            ))
+
+        vista = preview_invoice_inventory(FACTURA, {}, ACTOR)
+
+        partida = next(l for l in vista["lines"] if l["id_product"] == HERRAMIENTA)
+        self.assertEqual("product_is_for_internal_use", partida["skip_reason"])
+        self.assertFalse(partida["applicable"])
+
+    def test_merchandise_is_the_default_so_nothing_existing_changes(self):
+        with transaction_context() as db:
+            insumo = db.get(Product, INSUMO)
+
+        self.assertEqual("mercancia", insumo.stock_purpose)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -288,6 +288,26 @@ export const getProductStock = (id) => request(`/product/${id}/inventory-stock`)
 export const getLocationTree = () => request("/location/tree");
 export const getWarehouseStock = (id) => request(`/location/${id}/stock`);
 export const getInvoiceInventoryPreview = (id, params = {}) => request(`/invoice/${id}/inventory`, { params });
+// --- Rastreo de piezas: herramienta, equipo, activo de uso -----------------
+// El inventario por cantidades no puede decir donde esta el taladro A-014; estas
+// rutas trabajan sobre la pieza concreta.
+export const getAssets = (params = {}) => request("/assets", { params });
+export const getOverdueAssets = () => request("/assets/overdue");
+export const getAssetByTag = (tag) => request(`/assets/by-tag/${encodeURIComponent(tag)}`);
+export const getAssetHistory = (id) => request(`/assets/${id}`);
+export const getProductAssetSummary = (id) => request(`/product/${id}/asset-summary`);
+export const createAsset = (payload) => request("/assets", { method: "POST", body: payload });
+const accionDePieza = (accion) => (id, payload = {}) =>
+  request(`/assets/${id}/${accion}`, { method: "POST", body: payload });
+export const assignAsset = accionDePieza("assign");
+export const lendAsset = accionDePieza("lend");
+export const returnAsset = accionDePieza("return");
+export const sendAssetToRepair = accionDePieza("send-to-repair");
+export const backAssetFromRepair = accionDePieza("back-from-repair");
+export const reportAssetLost = accionDePieza("report-lost");
+export const retireAsset = accionDePieza("retire");
+export const moveAsset = accionDePieza("move");
+
 export const applyInvoiceInventory = (id, payload = {}) => request(`/invoice/${id}/inventory`, { method: "POST", body: payload });
 
 // --- Cancelacion de CFDI ---------------------------------------------------

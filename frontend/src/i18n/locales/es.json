@@ -145,7 +145,8 @@
     "mfa_reset_error": "No se pudo restablecer MFA",
     "continue": "¿Continuar?",
     "close": "Cerrar",
-    "remove": "Quitar"
+    "remove": "Quitar",
+    "select": "Seleccionar"
   },
   "entities": {
     "bank": {
@@ -1399,7 +1400,8 @@
     "restaurant_cashier": "Caja",
     "restaurant_kitchen": "Cocina",
     "restaurant_admin": "Admin",
-    "inventory": "Almacén"
+    "inventory": "Almacén",
+    "assets": "Rastreo de piezas"
   },
   "placeholders": {
     "bank": {
@@ -3791,5 +3793,63 @@
     "credit_note_returns_goods": "Devolución de mercancía: lo acreditado volverá al almacén del que salió.",
     "credit_note_discount_only": "Descuento o bonificación: el cliente se queda con la mercancía, así que el almacén NO se toca.",
     "declared_relations": "Relaciones declaradas ante el SAT"
+  },
+  "assets": {
+    "eyebrow": "Inventario",
+    "title": "Rastreo de piezas",
+    "subtitle": "Herramienta, equipo y activos de uso: cada pieza con su estado, dónde está y quién responde por ella.",
+    "register": "Dar de alta pieza",
+    "register_hint": "Solo los productos marcados como serializados se rastrean pieza por pieza. Un insumo se lleva por cantidad.",
+    "search_by_tag": "Buscar por etiqueta (la pegada en la pieza)",
+    "all_locations": "Todas las ubicaciones",
+    "filter_location": "Ubicación",
+    "filter_holder": "Responsable (id)",
+    "empty": "No hay piezas con esos filtros.",
+    "overdue": "Préstamos vencidos",
+    "history": "Historia de la pieza",
+    "ledger_row": "Movimiento de almacén",
+    "tag": "Etiqueta",
+    "tag_hint": "La que va pegada en la pieza. No se puede repetir.",
+    "serial": "Número de serie",
+    "status": "Estado",
+    "location": "Ubicación",
+    "holder": "Responsable",
+    "due": "Regresa",
+    "due_hint": "Un préstamo sin fecha nunca está vencido, así que nadie lo reclama.",
+    "reason": "Motivo",
+    "product": "Producto",
+    "cost": "Costo de adquisición",
+    "status_disponible": "Disponible",
+    "status_en_uso": "En uso",
+    "status_prestada": "Prestada",
+    "status_en_reparacion": "En reparación",
+    "status_extraviada": "Extraviada",
+    "status_retirada": "Retirada",
+    "action_assign": "Asignar a alguien de la empresa",
+    "action_lend": "Prestar",
+    "action_return": "Recibir de vuelta",
+    "action_send_to_repair": "Mandar a reparación",
+    "action_back_from_repair": "Regresó de reparación",
+    "action_report_lost": "Reportar extraviada",
+    "action_retire": "Dar de baja",
+    "action_move": "Trasladar de ubicación",
+    "done_register": "Pieza dada de alta.",
+    "done_assign": "Pieza asignada.",
+    "done_lend": "Pieza prestada.",
+    "done_return": "Pieza recibida y disponible.",
+    "done_send_to_repair": "Pieza enviada a reparación.",
+    "done_back_from_repair": "Pieza de vuelta y disponible.",
+    "done_report_lost": "Pieza reportada como extraviada.",
+    "done_retire": "Pieza dada de baja.",
+    "done_move": "Pieza trasladada.",
+    "event_alta": "Alta",
+    "event_asignacion": "Asignación",
+    "event_prestamo": "Préstamo",
+    "event_devolucion": "Devolución",
+    "event_envio_reparacion": "Envío a reparación",
+    "event_regreso_reparacion": "Regreso de reparación",
+    "event_extravio": "Extravío",
+    "event_baja": "Baja",
+    "event_traslado": "Traslado"
   }
 }

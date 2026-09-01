@@ -44,6 +44,17 @@ class Product(Base):
     tracking_mode: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default=text("'fungible'")
     )
+    # Para que sirve en el almacen. `mercancia` se compra para venderse -es el
+    # valor por omision, que es como se ha usado el almacen hasta ahora-;
+    # `uso_interno` es herramienta, equipo o consumible de la empresa, que no se
+    # vende nunca: sale para usarse, prestarse o consumirse.
+    #
+    # Sin esta distincion una herramienta prestada y un producto vendido se
+    # veian igual en el saldo, y nada impedia facturar la venta de un taladro
+    # propio.
+    stock_purpose: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'mercancia'")
+    )
     id_marca: Mapped[int] = mapped_column(Integer, nullable=True)
     id_familia: Mapped[int] = mapped_column(Integer, nullable=True)
 

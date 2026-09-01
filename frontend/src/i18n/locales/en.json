@@ -145,7 +145,8 @@
     "mfa_reset_error": "Could not reset MFA",
     "continue": "Continue?",
     "close": "Close",
-    "remove": "Remove"
+    "remove": "Remove",
+    "select": "Select"
   },
   "entities": {
     "bank": {
@@ -1399,7 +1400,8 @@
     "restaurant_cashier": "Cashier",
     "restaurant_kitchen": "Kitchen",
     "restaurant_admin": "Admin",
-    "inventory": "Warehouse"
+    "inventory": "Warehouse",
+    "assets": "Asset tracking"
   },
   "placeholders": {
     "bank": {
@@ -3728,5 +3730,63 @@
     "credit_note_returns_goods": "Goods return: what you credit goes back to the warehouse it left from.",
     "credit_note_discount_only": "Discount or allowance: the customer keeps the goods, so the warehouse is NOT touched.",
     "declared_relations": "Relations declared to the SAT"
+  },
+  "assets": {
+    "eyebrow": "Inventory",
+    "title": "Asset tracking",
+    "subtitle": "Tools, equipment and company assets: each piece with its state, where it is and who is responsible.",
+    "register": "Register asset",
+    "register_hint": "Only products marked as serialized are tracked piece by piece. Supplies are tracked by quantity.",
+    "search_by_tag": "Search by tag (the one stuck on the asset)",
+    "all_locations": "All locations",
+    "filter_location": "Location",
+    "filter_holder": "Holder (id)",
+    "empty": "No assets match those filters.",
+    "overdue": "Overdue loans",
+    "history": "Asset history",
+    "ledger_row": "Stock movement",
+    "tag": "Tag",
+    "tag_hint": "The one stuck on the asset. It cannot repeat.",
+    "serial": "Serial number",
+    "status": "Status",
+    "location": "Location",
+    "holder": "Holder",
+    "due": "Due back",
+    "due_hint": "A loan with no due date is never overdue, so nobody chases it.",
+    "reason": "Reason",
+    "product": "Product",
+    "cost": "Acquisition cost",
+    "status_disponible": "Available",
+    "status_en_uso": "In use",
+    "status_prestada": "Lent out",
+    "status_en_reparacion": "In repair",
+    "status_extraviada": "Lost",
+    "status_retirada": "Retired",
+    "action_assign": "Assign to someone in the company",
+    "action_lend": "Lend out",
+    "action_return": "Receive back",
+    "action_send_to_repair": "Send to repair",
+    "action_back_from_repair": "Back from repair",
+    "action_report_lost": "Report as lost",
+    "action_retire": "Retire",
+    "action_move": "Move to another location",
+    "done_register": "Asset registered.",
+    "done_assign": "Asset assigned.",
+    "done_lend": "Asset lent out.",
+    "done_return": "Asset received and available.",
+    "done_send_to_repair": "Asset sent to repair.",
+    "done_back_from_repair": "Asset back and available.",
+    "done_report_lost": "Asset reported as lost.",
+    "done_retire": "Asset retired.",
+    "done_move": "Asset moved.",
+    "event_alta": "Registered",
+    "event_asignacion": "Assigned",
+    "event_prestamo": "Lent out",
+    "event_devolucion": "Returned",
+    "event_envio_reparacion": "Sent to repair",
+    "event_regreso_reparacion": "Back from repair",
+    "event_extravio": "Lost",
+    "event_baja": "Retired",
+    "event_traslado": "Moved"
   }
 }

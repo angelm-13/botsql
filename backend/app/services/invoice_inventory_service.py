@@ -212,6 +212,22 @@ def _line_plan(db, invoice, line, requested_locations, direction):
         plan["skip_reason"] = "product_not_found"
         return plan
 
+    # Un activo de uso interno -herramienta, equipo- no se vende. Sale para
+    # usarse, prestarse o consumirse, y para eso esta el rastreo de piezas. Si
+    # se dejara pasar, una venta descontaria del almacen de la empresa una
+    # herramienta que sigue siendo suya, y el saldo quedaria diciendo que ya no
+    # la tiene.
+    #
+    # Se reporta como partida no aplicable en lugar de reventar la factura
+    # entera: la venta puede ser legitima -se vendio una herramienta vieja- y en
+    # ese caso el producto se reclasifica, que es una decision de quien opera y
+    # no algo que el sistema deba adivinar.
+    proposito = str(getattr(product, "stock_purpose", "mercancia") or "mercancia")
+    if direction == "venta" and proposito == "uso_interno":
+        plan["skip_reason"] = "product_is_for_internal_use"
+        plan["stock_purpose"] = proposito
+        return plan
+
     units = _whole_units(line.quantity)
     if units is None:
         plan["skip_reason"] = "quantity_not_whole_units"

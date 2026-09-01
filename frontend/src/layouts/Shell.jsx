@@ -27,6 +27,10 @@ const navItems = [
   { path: "/incident_detail", key: "menu.incident_detail" },
   { path: "/incident_type", key: "menu.incident_type" },
   { path: "/inventory", key: "menu.inventory", label: "Almacén", entityName: "product", group: "Inventario", groupIcon: "warehouse", location: "sidebar", order: 10 },
+  // Rastreo pieza por pieza. Va junto al almacen y con la misma entidad, para
+  // que dar acceso al inventario lo arrastre sin un permiso nuevo que alguien
+  // tenga que acordarse de conceder.
+  { path: "/assets", key: "menu.assets", label: "Rastreo de piezas", entityName: "product", group: "Inventario", groupIcon: "warehouse", location: "sidebar", order: 15 },
   { path: "/inventory_status", key: "menu.inventory_status" },
   { path: "/invoice", key: "menu.invoice" },
   { path: "/invoice/manual", key: "menu.manual_invoice", label: "Factura manual", entityName: "invoice" },
