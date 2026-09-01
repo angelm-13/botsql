@@ -189,7 +189,8 @@ MODULOS_DE_NEGOCIO = tuple(
 class Capacidad:
     """Un derecho con nombre propio que no corresponde a ninguna tabla."""
 
-    def __init__(self, clave, etiqueta, modulo, *, bits=CONSULTA, menu="hidden"):
+    def __init__(self, clave, etiqueta, modulo, *, bits=CONSULTA, menu="hidden",
+                 licencia_independiente=False):
         self.clave = clave
         self.etiqueta = etiqueta
         self.modulo = modulo
@@ -197,6 +198,12 @@ class Capacidad:
         # que las consulta pregunta por ese bit.
         self.bits = bits
         self.menu = menu
+        # Si es True, esta capacidad se vende aparte del modulo que la
+        # contiene: necesita su propia clave en LICENSED_MODULES aunque el
+        # cliente ya tenga licenciado `modulo` (ej. multiemisor dentro de
+        # facturacion). Si es False (el default), viaja con la licencia del
+        # modulo padre, como cualquier otro permiso normal de rol.
+        self.licencia_independiente = licencia_independiente
 
 
 CAPACIDADES = (
@@ -423,7 +430,12 @@ def filas_de_permisos():
     """La matriz completa, lista para sembrar.
 
     Devuelve tuplas (id_permission, entity_name, bits, menu_location,
-    menu_group, menu_group_icon, menu_label, menu_order).
+    menu_group, menu_group_icon, menu_label, menu_order, modulo_licencia).
+
+    `modulo_licencia` es la clave que gobierna si la fila se siembra para un
+    cliente dado: normalmente la del modulo dueno de la entidad/capacidad,
+    salvo una capacidad con `licencia_independiente=True`, que usa su propia
+    clave -- se vende aparte, no viaja con el modulo que la contiene.
     """
     filas = []
     for rol in ROLES:
@@ -440,6 +452,7 @@ def filas_de_permisos():
                     modulo.icono if etiqueta else None,
                     etiqueta,
                     modulo.orden + (orden or 90),
+                    modulo.clave,
                 ))
         for clave in sorted(rol.capacidades):
             capacidad = CAPACIDAD_POR_CLAVE[clave]
@@ -451,5 +464,9 @@ def filas_de_permisos():
                 modulo.icono if es_pantalla else None,
                 capacidad.etiqueta if es_pantalla else None,
                 modulo.orden + 90,
+                capacidad.clave if capacidad.licencia_independiente else modulo.clave,
             ))
     return filas
+
+
+MODULOS_CORE = tuple(m.clave for m in MODULOS if m.clave not in MODULOS_DE_NEGOCIO)

@@ -252,6 +252,73 @@ class TestMatrizDePermisos(unittest.TestCase):
         self.assertEqual(set(), sembradas & registry.SOLO_ARRANQUE)
 
 
+class TestLicenciaPorModulo(unittest.TestCase):
+    """LICENSED_MODULES: que un cliente que no pago un modulo no reciba sus filas."""
+
+    def test_core_modules_are_exactly_the_ones_excluded_from_business(self):
+        self.assertEqual(
+            set(registry.MODULOS_CORE),
+            {m.clave for m in registry.MODULOS} - set(registry.MODULOS_DE_NEGOCIO),
+        )
+        self.assertEqual({"configuracion", "seguridad"}, set(registry.MODULOS_CORE))
+
+    def test_capacidad_defaults_to_bundled_with_its_module(self):
+        capacidad = registry.Capacidad("test_cap", "Prueba", "inventario")
+
+        self.assertFalse(capacidad.licencia_independiente)
+
+    def test_entity_rows_carry_their_own_module_as_the_license_key(self):
+        for fila in registry.filas_de_permisos():
+            entidad = fila[1]
+            modulo_licencia = fila[-1]
+            modulo_dueno = registry.ENTIDAD_A_MODULO.get(entidad)
+            if modulo_dueno is None:
+                continue  # es una capacidad, no una entidad
+            with self.subTest(entidad=entidad):
+                self.assertEqual(modulo_dueno, modulo_licencia)
+
+    def test_a_bundled_capability_uses_its_parent_module_as_the_license_key(self):
+        # inventory_adjustment no esta marcada licencia_independiente: viaja
+        # con la licencia de inventario, no con una clave propia.
+        capacidad = registry.CAPACIDAD_POR_CLAVE["inventory_adjustment"]
+        self.assertFalse(capacidad.licencia_independiente)
+
+        filas = [f for f in registry.filas_de_permisos() if f[1] == "inventory_adjustment"]
+        self.assertTrue(filas)
+        for fila in filas:
+            with self.subTest(rol=fila[0]):
+                self.assertEqual("inventario", fila[-1])
+
+    def test_an_independently_licensed_capability_uses_its_own_key(self):
+        """Una capacidad marcada aparte no debe viajar con la de su modulo padre."""
+        capacidades_originales = registry.CAPACIDADES
+        roles_originales = registry.ROLES
+        try:
+            capacidad_prueba = registry.Capacidad(
+                "prueba_addon", "Addon de prueba", "facturacion", licencia_independiente=True,
+            )
+            registry.CAPACIDADES = capacidades_originales + (capacidad_prueba,)
+            registry.CAPACIDAD_POR_CLAVE["prueba_addon"] = capacidad_prueba
+            rol_admin = next(r for r in roles_originales if r.nombre == "Administrator")
+            registry.ROLES = tuple(
+                registry.Rol(
+                    r.id_permission, r.nombre, r.modulos,
+                    r.capacidades + ("prueba_addon",) if r is rol_admin else r.capacidades,
+                )
+                for r in roles_originales
+            )
+
+            filas = [f for f in registry.filas_de_permisos() if f[1] == "prueba_addon"]
+
+            self.assertTrue(filas)
+            for fila in filas:
+                self.assertEqual("prueba_addon", fila[-1])
+        finally:
+            registry.CAPACIDADES = capacidades_originales
+            registry.ROLES = roles_originales
+            del registry.CAPACIDAD_POR_CLAVE["prueba_addon"]
+
+
 class TestSqlGenerado(unittest.TestCase):
     def _sql(self):
         import importlib.util

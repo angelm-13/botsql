@@ -52,6 +52,14 @@ spec:
               valueFrom: { secretKeyRef: { name: app-secrets, key: DB_USER } }
             - name: PGPASSWORD
               valueFrom: { secretKeyRef: { name: app-secrets, key: DB_PASSWORD } }
+            # Que modulos de negocio tiene contratados este cliente, separados
+            # por coma (ej. "facturacion,restaurante"). `optional: true`
+            # porque la mayoria de los Secret todavia no la traen -- sin ella,
+            # el sembrado de permisos se interpreta como "todos los modulos",
+            # que es el comportamiento de siempre. Ver
+            # database/migrations/20260901000000_module_permission_matrix_licensed.sql.
+            - name: LICENSED_MODULES
+              valueFrom: { secretKeyRef: { name: app-secrets, key: LICENSED_MODULES, optional: true } }
           command:
             - sh
             - -c
@@ -77,7 +85,10 @@ spec:
               # real detenga el arranque en vez de dejar el esquema a medias.
               for f in /migrations/*.sql; do
                 echo "db-migrate: aplicando $(basename "$f")"
-                psql -v ON_ERROR_STOP=1 -q -f "$f"
+                # licensed_modules solo lo usa la migracion de licencia por
+                # modulo; pasarlo siempre es inofensivo para el resto (psql
+                # ignora una -v que el archivo no referencia).
+                psql -v ON_ERROR_STOP=1 -q -v licensed_modules="${LICENSED_MODULES:-}" -f "$f"
               done
               echo "db-migrate: esquema al dia"
           resources:
