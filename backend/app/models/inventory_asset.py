@@ -157,8 +157,12 @@ class InventoryAsset(Base):
             "acquired_on": self.acquired_on.isoformat() if self.acquired_on else None,
             # El importe viaja como cadena y no como numero de punto flotante:
             # es dinero, y sumar flotantes en el cliente desajusta centavos.
+            # Se pasa por str antes de dar formato porque antes del flush el
+            # valor puede ser todavia lo que llego en la peticion, y `format`
+            # con codigo 'f' solo sirve para numeros.
             "acquisition_cost": (
-                format(self.acquisition_cost, "f") if self.acquisition_cost is not None else None
+                None if self.acquisition_cost is None
+                else format(Decimal(str(self.acquisition_cost)), "f")
             ),
             "note": self.note,
             "counts_as_stock": self.cuenta_como_existencia,

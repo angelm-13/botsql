@@ -151,6 +151,25 @@ class TestAlta(PiezasTestCase):
         self.assertEqual(
             "errors.inventory_product_is_not_serialized", raised.exception.message_key)
 
+    def test_the_acquisition_cost_arrives_as_text_and_survives(self):
+        """Salio al recorrer el ciclo contra la base real, no en estas pruebas.
+
+        El importe llega del cuerpo de la peticion como cadena. Se guardaba tal
+        cual, y el modelo no reventaba al asignarlo sino al serializarlo, lejos
+        del origen. Estas pruebas no lo veian porque nunca pasaban el importe:
+        una fijacion que omite un campo opcional deja ese camino sin recorrer.
+        """
+        pieza = self.alta(acquisition_cost="4250.5")
+
+        self.assertEqual("4250.50", pieza["acquisition_cost"],
+                         "se guarda como decimal y viaja como cadena, no como flotante")
+
+    def test_a_negative_acquisition_cost_is_refused(self):
+        with self.assertRaises(AppError) as raised:
+            self.alta("A-999", acquisition_cost="-10")
+
+        self.assertEqual("errors.invalid_field", raised.exception.message_key)
+
     def test_the_registration_is_recorded_in_its_history(self):
         pieza = self.alta()
 

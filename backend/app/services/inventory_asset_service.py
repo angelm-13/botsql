@@ -31,6 +31,7 @@ es una baja disfrazada.
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+from decimal import Decimal, InvalidOperation
 
 from sqlalchemy import func, select
 
@@ -120,6 +121,25 @@ def _entero(valor, campo, *, obligatorio=False):
         return int(valor)
     except (TypeError, ValueError) as error:
         raise AppError("errors.invalid_field", 400, {"field": campo}) from error
+
+
+def _dinero(valor, campo):
+    """Convierte un importe a Decimal.
+
+    Se convierte aqui y no se deja pasar tal cual porque el valor llega del
+    cuerpo de la peticion como cadena, y guardarlo sin convertir dejaba una
+    cadena en un campo numerico: el modelo no reventaba al asignar, sino al
+    serializar, lejos del origen. Se usa Decimal y no float porque es dinero.
+    """
+    if valor in (None, ""):
+        return None
+    try:
+        importe = Decimal(str(valor))
+    except (InvalidOperation, ValueError) as error:
+        raise AppError("errors.invalid_field", 400, {"field": campo}) from error
+    if importe < 0:
+        raise AppError("errors.invalid_field", 400, {"field": campo})
+    return importe.quantize(Decimal("0.01"))
 
 
 def _fecha(valor, campo):
@@ -284,7 +304,7 @@ def register_asset(payload, user_data) -> dict:
             id_location=id_location,
             status=DISPONIBLE,
             acquired_on=_fecha(payload.get("acquired_on"), "acquired_on") or _hoy(),
-            acquisition_cost=payload.get("acquisition_cost"),
+            acquisition_cost=_dinero(payload.get("acquisition_cost"), "acquisition_cost"),
             note=_texto(payload.get("note"), "note"),
             created_by=int(user_data.get("id_user") or 0),
         )
