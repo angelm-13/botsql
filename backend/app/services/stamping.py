@@ -119,6 +119,9 @@ class FakeStampingProvider(StampingProvider):
 
 class FacturamaSandboxProvider(StampingProvider):
     name = "facturama_sandbox"
+    # Atributo de clase para que FacturamaMultiemisorProvider pueda
+    # sobreescribir solo la ruta (vive bajo /api-lite) sin duplicar stamp().
+    CFDIS_PATH = "/3/cfdis"
 
     def __init__(self, base_url=None, username=None, password=None, timeout=15, expedition_place=None, name_id=None):
         self.base_url = (base_url or os.getenv("FACTURAMA_BASE_URL") or "https://apisandbox.facturama.mx").rstrip("/")
@@ -250,7 +253,7 @@ class FacturamaSandboxProvider(StampingProvider):
             return StampingResult("rejected", error_code="facturama_credentials_missing")
         body = json.dumps(self.build_request_body(payload)).encode("utf-8")
         request = Request(
-            f"{self.base_url}/3/cfdis",
+            f"{self.base_url}{self.CFDIS_PATH}",
             data=body,
             headers={
                 "Authorization": self._authorization_header(),
@@ -350,6 +353,94 @@ class FacturamaSandboxProvider(StampingProvider):
             return CancellationResult("en_proceso", reference=reference, error_code="status_unavailable")
 
 
+class FacturamaMultiemisorProvider(FacturamaSandboxProvider):
+    """Timbrado multiemisor: una sola cuenta de Facturama que emite por cuenta
+    de varios RFC.
+
+    A diferencia de la cuenta API Web (`FacturamaSandboxProvider`): cada
+    emisor necesita su CSD registrado en la cuenta (ver `upload_csd`), cada
+    timbrado manda el nodo `Issuer` con el RFC/nombre/regimen del emisor en
+    vez de depender de un `NameId` fijo por cuenta, y los endpoints viven
+    bajo `/api-lite`.
+    """
+
+    name = "facturama_multiemisor"
+    CFDIS_PATH = "/api-lite/3/cfdis"
+    CSDS_PATH = "/api-lite/csds"
+
+    def build_request_body(self, payload):
+        body = super().build_request_body(payload)
+        issuer = payload.get("issuer") or {}
+        body["Issuer"] = {
+            "Rfc": issuer.get("rfc"), "Name": issuer.get("name"),
+            "FiscalRegime": issuer.get("tax_regime"),
+        }
+        # El lugar de expedicion es el CP del emisor, no una config global de
+        # la cuenta -- multiemisor no tiene un solo domicilio fiscal.
+        body["ExpeditionPlace"] = issuer.get("postal_code") or body.get("ExpeditionPlace", "")
+        # NameId es el perfil fiscal de la cuenta API Web; no aplica aqui.
+        body.pop("NameId", None)
+        return body
+
+    def upload_csd(self, rfc, cer_b64, key_b64, password):
+        """Registra el CSD de un emisor en la cuenta de Facturama.
+
+        Los archivos van en base64; Facturama custodia el CSD, tyakxa no lo
+        guarda.
+        """
+        if not self.username or not self.password:
+            return False, "Faltan credenciales de la cuenta del PAC."
+        if not rfc:
+            return False, "Falta el RFC del emisor."
+        if not cer_b64 or not key_b64:
+            return False, "Faltan los archivos del sello (.cer y .key)."
+
+        body = json.dumps({
+            "Rfc": rfc, "Certificate": cer_b64, "PrivateKey": key_b64,
+            "PrivateKeyPassword": password or "",
+        }).encode("utf-8")
+        request = Request(
+            f"{self.base_url}{self.CSDS_PATH}",
+            data=body,
+            headers={
+                "Authorization": self._authorization_header(),
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=self.timeout):
+                return True, "Sello digital registrado correctamente."
+        except HTTPError as exc:
+            try:
+                detail = exc.read().decode("utf-8", errors="replace")[:300]
+            except Exception:
+                detail = ""
+            # Idempotencia: si el CSD ya esta registrado para este RFC en la
+            # cuenta, ese es justo el estado deseado -- Facturama lo rechaza
+            # con 400 en vez de responder 200/201 de nuevo.
+            if exc.code == 400 and "ya existe" in detail.lower():
+                return True, "El sello digital ya estaba registrado en la cuenta; se reutiliza."
+            return False, f"Facturama respondio {exc.code}: {detail}"
+        except (TimeoutError, socket.timeout, URLError) as exc:
+            return False, f"No se pudo conectar con Facturama: {exc}"
+
+    def csd_registered(self, rfc):
+        """Consulta si el emisor `rfc` ya tiene CSD registrado en la cuenta."""
+        if not self.username or not self.password or not rfc:
+            return False
+        request = Request(
+            f"{self.base_url}{self.CSDS_PATH}/{rfc}",
+            headers={"Authorization": self._authorization_header()},
+            method="GET",
+        )
+        try:
+            with urlopen(request, timeout=self.timeout) as response:
+                return response.status == 200
+        except (HTTPError, TimeoutError, socket.timeout, URLError):
+            return False
+
+
 # El PAC nombra los estados en ingles; aqui se traducen a los del sistema.
 _CANCELLATION_STATUS_MAP = {
     "canceled": "cancelado",
@@ -384,6 +475,13 @@ def configured_provider():
         return FakeStampingProvider()
     if provider_name in {"facturama_sandbox", "facturama"}:
         provider = FacturamaSandboxProvider(
+            base_url=credentials["base_url"], username=credentials["username"], password=credentials["password"],
+            expedition_place=credentials["expedition_place"], name_id=credentials["name_id"],
+        )
+        provider.name = provider_name
+        return provider
+    if provider_name in {"facturama_multiemisor_sandbox", "facturama_multiemisor"}:
+        provider = FacturamaMultiemisorProvider(
             base_url=credentials["base_url"], username=credentials["username"], password=credentials["password"],
             expedition_place=credentials["expedition_place"], name_id=credentials["name_id"],
         )

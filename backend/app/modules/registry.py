@@ -221,6 +221,11 @@ CAPACIDADES = (
     Capacidad("restaurant_admin", "Admin del restaurante", "restaurante", bits=TOTAL, menu="sidebar"),
     Capacidad("pos_terminal", "Caja del punto de venta", "pos", bits=CAPTURA, menu="sidebar"),
     Capacidad("pos_admin", "Admin del punto de venta", "pos", bits=TOTAL, menu="sidebar"),
+    # Se vende aparte de Facturacion: un cliente puede tener facturacion sin
+    # multiemisor. licencia_independiente=True hace que necesite su propia
+    # clave en LICENSED_MODULES aunque el modulo padre ya este licenciado.
+    Capacidad("multiemisor_csd", "Multiemisor y CSD", "facturacion", bits=TOTAL, menu="sidebar",
+              licencia_independiente=True),
 )
 
 

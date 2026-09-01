@@ -1,11 +1,13 @@
 from __future__ import annotations
+import base64
+from datetime import datetime
 from flask import Blueprint, jsonify, request
 from app.services.customer_supplier_service import CustomerSupplierService
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
 
 bp_customer_supplier = Blueprint('customer_supplier', __name__, url_prefix='/customer_supplier')
-ALLOWED_FIELDS = ['id_customer_supplier', 'postal_code', 'name', 'title', 'contact_name', 'phone', 'email', 'web_site', 'street', 'number_ext', 'number_int', 'neighborhood', 'city', 'geographic_state', 'fiscal_type', 'last_fiscal_certification_date', 'tax_id', 'type', 'sla_level', 'credit_limit', 'logistics_notes', 'is_principal', 'id_user', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'path_logo']
+ALLOWED_FIELDS = ['id_customer_supplier', 'postal_code', 'name', 'title', 'contact_name', 'phone', 'email', 'web_site', 'street', 'number_ext', 'number_int', 'neighborhood', 'city', 'geographic_state', 'fiscal_type', 'last_fiscal_certification_date', 'tax_id', 'type', 'sla_level', 'credit_limit', 'logistics_notes', 'is_principal', 'csd_status', 'csd_uploaded_at', 'id_user', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'path_logo']
 
 TECHNICAL_RESPONSE_FIELDS = {'id_customer_supplier'}
 FIELD_READ_BIT = 2
@@ -151,3 +153,46 @@ def update_customer_supplier(user_data, id_customer_supplier):
 @require_entity_permission('customer_supplier', 'delete')
 def delete_customer_supplier(user_data, id_customer_supplier):
     return jsonify(CustomerSupplierService.delete(id_customer_supplier, user_id=user_data.get('id_user')))
+
+
+@bp_customer_supplier.route('/<int:id_customer_supplier>/csd', methods=['POST'])
+@token_required
+def upload_customer_supplier_csd(user_data, id_customer_supplier):
+    """Registra el CSD de un emisor en la cuenta multiemisor del PAC.
+
+    Multipart: archivos 'cer' y 'key' + campo 'password'. La llave no se
+    guarda en tyakxa -- se manda al PAC, que la custodia (ver
+    FacturamaMultiemisorProvider.upload_csd).
+    """
+    from app.models.customer_supplier import CustomerSupplier
+    from app.models.session import transaction_context
+    from app.services.stamping import configured_provider
+    from app.routes.stamping import _require_admin
+
+    _require_admin(user_data)
+
+    cer = request.files.get('cer')
+    key = request.files.get('key')
+    password = request.form.get('password', '')
+    if not cer or not key:
+        raise AppError('customer_supplier.csd_files_missing', 400)
+
+    with transaction_context() as db_session:
+        customer_supplier = db_session.get(CustomerSupplier, id_customer_supplier)
+        if not customer_supplier:
+            raise AppError('errors.resource_not_found', 404)
+        if not customer_supplier.tax_id:
+            raise AppError('customer_supplier.rfc_missing', 400)
+
+        cer_b64 = base64.b64encode(cer.read()).decode('ascii')
+        key_b64 = base64.b64encode(key.read()).decode('ascii')
+        ok, message = configured_provider().upload_csd(
+            customer_supplier.tax_id, cer_b64, key_b64, password,
+        )
+
+        customer_supplier.csd_status = 'uploaded' if ok else 'error'
+        customer_supplier.csd_uploaded_at = datetime.utcnow() if ok else None
+        db_session.flush()
+        record = customer_supplier.serialize()
+
+    return jsonify({'ok': ok, 'message': message, 'data': record}), (200 if ok else 502)
