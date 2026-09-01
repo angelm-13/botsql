@@ -75,11 +75,21 @@ class Modulo:
     """Un submodulo del proyecto, con las entidades que le pertenecen."""
 
     def __init__(self, clave, etiqueta, icono, orden, entidades, *,
-                 almacen=None, base_de_datos=None):
+                 almacen=None, base_de_datos=None,
+                 grupo_de_menu=None, icono_de_menu=None):
         self.clave = clave
         self.etiqueta = etiqueta
         self.icono = icono
         self.orden = orden
+        # Bajo que nombre se agrupa en el menu, cuando no coincide con el del
+        # modulo. Existe para poder tener un solo apartado de Configuracion en
+        # la pantalla sin fusionar los modulos de permisos: si `seguridad` y
+        # `configuracion` fueran uno solo, cualquier rol con configuracion
+        # -que son casi todos, porque necesitan leer catalogos- heredaria
+        # usuarios y permisos. La separacion de acceso se mantiene; lo que se
+        # unifica es donde se ve.
+        self.grupo_de_menu = grupo_de_menu or etiqueta
+        self.icono_de_menu = icono_de_menu or icono
         self.entidades = tuple(entidades)
         # Cadena de tablas del almacen propio, si el modulo tiene uno. Solo se
         # declaran aqui las que viven en la base del nucleo; un modulo con base
@@ -178,6 +188,10 @@ MODULOS = (
             "user", "user_mfa", "permission", "entity_permission",
             "nm_field_permission", "field", "event_log",
         ),
+        # Se ve dentro de Configuracion: la peticion fue dejar un solo apartado
+        # de configuracion, y usuarios y permisos son configuracion. Sigue
+        # siendo un modulo aparte para conceder acceso, que es lo que importa.
+        grupo_de_menu="Configuracion", icono_de_menu="settings",
     ),
 )
 
@@ -207,7 +221,11 @@ CAPACIDADES = (
     # destruye existencia por cualquier cantidad. Es la operacion con la que se
     # tapa un faltante, asi que se concede aparte de poder editar productos.
     Capacidad("inventory_adjustment", "Ajustar existencias", "inventario"),
-    Capacidad("kronos_device", "Conexion al dispositivo Kronos", "rh", menu="settings"),
+    # Vivia en el menu de engrane del encabezado, que era el unico que lo
+    # usaba. Con el engrane retirado -habia tres sitios distintos donde
+    # configurar cosas- se pinta donde le toca: es el reloj checador, o sea
+    # Recursos humanos.
+    Capacidad("kronos_device", "Conexion al dispositivo Kronos", "rh", menu="sidebar"),
     Capacidad("restaurant_waiter", "Meseros", "restaurante", bits=CAPTURA, menu="sidebar"),
     Capacidad("restaurant_cashier", "Caja", "restaurante", bits=CAPTURA, menu="sidebar"),
     Capacidad("restaurant_kitchen", "Cocina", "restaurante", bits=EDITAR, menu="sidebar"),
@@ -436,8 +454,8 @@ def filas_de_permisos():
                 filas.append((
                     rol.id_permission, entidad, bits,
                     "sidebar" if etiqueta else "none",
-                    modulo.etiqueta if etiqueta else None,
-                    modulo.icono if etiqueta else None,
+                    modulo.grupo_de_menu if etiqueta else None,
+                    modulo.icono_de_menu if etiqueta else None,
                     etiqueta,
                     modulo.orden + (orden or 90),
                 ))
@@ -447,8 +465,8 @@ def filas_de_permisos():
             es_pantalla = capacidad.menu == "sidebar"
             filas.append((
                 rol.id_permission, capacidad.clave, capacidad.bits, capacidad.menu,
-                modulo.etiqueta if es_pantalla else None,
-                modulo.icono if es_pantalla else None,
+                modulo.grupo_de_menu if es_pantalla else None,
+                modulo.icono_de_menu if es_pantalla else None,
                 capacidad.etiqueta if es_pantalla else None,
                 modulo.orden + 90,
             ))

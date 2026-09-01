@@ -157,3 +157,20 @@
 
 label:has(:is(input,select,textarea):required),label:has(+ :is(input,select,textarea):required){position:relative}
 label:has(:is(input,select,textarea):required)::before,label:has(+ :is(input,select,textarea):required)::before{content:"*";position:absolute;inset-inline-start:-10px;top:0;color:#1b7a60;font-weight:800;line-height:1}
+
+/* Icono en la cabecera de cada grupo del menu lateral.
+   El boton reparte con space-between, asi que sin esto el icono, el texto y la
+   flecha quedarian los tres separados a lo ancho: el texto se empuja a la
+   izquierda con margin-right:auto y la flecha se queda sola a la derecha. */
+.shell-nav-group-toggle{gap:10px}
+.shell-nav-group-toggle>span{margin-right:auto}
+.shell-nav-group-icon{flex:0 0 auto;opacity:.85}
+
+/* Gestor de roles y perfiles en la barra superior.
+   Se ocultan sus etiquetas en pantallas estrechas y quedan solo los iconos:
+   son dos botones de administracion y no deben empujar al boton de cerrar
+   sesion fuera de la vista. */
+.topbar-links{display:flex;align-items:center;gap:8px}
+.topbar-links .button{gap:7px;white-space:nowrap}
+.topbar-links .button.active{background:#d8efe8;color:#0f3554}
+@media (max-width:1100px){.topbar-links .button span{display:none}}

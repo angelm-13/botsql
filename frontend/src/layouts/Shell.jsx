@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { Boxes, CalendarDays, ChevronDown, ClipboardList, FileText, Landmark, LayoutDashboard, LogOut, PanelLeftClose, PanelLeftOpen, Settings, ShieldCheck, ShoppingCart, SlidersHorizontal, Truck, Users, Utensils } from "lucide-react";
+import { Boxes, Briefcase, CalendarDays, ChevronDown, ClipboardList, Contact, FileText, Landmark, LayoutDashboard, LogOut, PanelLeftClose, PanelLeftOpen, Receipt, Settings, ShieldCheck, ShoppingCart, SlidersHorizontal, Truck, UserCog, Users, Utensils, Warehouse } from "lucide-react";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { getAllEntityPermission } from "../api";
 import LanguagePicker from "../components/LanguagePicker";
@@ -8,8 +8,12 @@ import { availableModuleSections } from "./moduleSections";
 
 const navItems = [
   { path: "/", key: "common.dashboard", exact: true },
-  { path: "/mfa-setup", key: "common.mfa_setup" },
-  { path: "/role_permissions", key: "common.role_permission_manager", adminOnly: true },
+  // Los dos vivian aparte: MFA fijo arriba del menu y Permisos por rol dentro
+  // del engrane del encabezado. Con tres sitios distintos donde configurar
+  // cosas, encontrar una opcion era cuestion de acordarse de cual de los tres.
+  // Ahora los dos entran en Configuracion como cualquier otra pantalla.
+  { path: "/mfa-setup", key: "common.mfa_setup", group: "Configuracion", groupIcon: "settings", location: "sidebar", order: 910 },
+  { path: "/role_permissions", key: "common.role_permission_manager", adminOnly: true, location: "topbar" },
   { path: "/bank", key: "menu.bank" },
   { path: "/bank_account", key: "menu.bank_account" },
   { path: "/brand", key: "menu.brand" },
@@ -55,7 +59,7 @@ const navItems = [
   { path: "/restaurant/cashier", key: "menu.restaurant_cashier", label: "Caja", entityName: "restaurant_cashier" },
   { path: "/restaurant/kitchen", key: "menu.restaurant_kitchen", label: "Cocina", entityName: "restaurant_kitchen" },
   { path: "/restaurant/admin", key: "menu.restaurant_admin", label: "Admin", entityName: "restaurant_admin" },
-  { path: "/permission", key: "menu.permission" },
+  { path: "/permission", key: "menu.permission", location: "topbar" },
   { path: "/product", key: "menu.product" },
   { path: "/product_family", key: "menu.product_family" },
   { path: "/proyect", key: "menu.proyect" },
@@ -89,6 +93,14 @@ const groupTranslationKeys = {
 };
 
 const groupIcons = {
+  // Los nombres de esta tabla no son decorativos: son los que vienen en
+  // `entity_permission.menu_group_icon` y en `groupIcon` de las entradas fijas.
+  // Un nombre que no este aqui cae en `SlidersHorizontal`, y como cae en
+  // silencio, la medicion fue que casi todo el menu mostraba el mismo icono de
+  // ajustes: de once nombres que la base envia -crm, billing, inventory, pos,
+  // hr, operations, restaurant, security, briefcase-business...- solo `settings`
+  // y `truck` estaban registrados. Al agregar un modulo hay que agregar su
+  // nombre aqui tambien.
   "landmark": Landmark,
   "file-text": FileText,
   "users": Users,
@@ -100,20 +112,33 @@ const groupIcons = {
   "layout-dashboard": LayoutDashboard,
   "settings": Settings,
   "calendar-days": CalendarDays,
-  // Los usan los modulos con secciones; sin estas entradas el menu colapsado
-  // caia al icono por omision y Logistica perdia su camion.
   "truck": Truck,
   "shopping-cart": ShoppingCart,
+
+  // Nombres que manda el backend en `menu_group_icon`.
+  "crm": Users,
+  "billing": Receipt,
+  "inventory": Warehouse,
+  "warehouse": Warehouse,
+  "pos": ShoppingCart,
+  // Personal y clientes no comparten icono a proposito: son los dos grupos de
+  // "gente" del menu y con el mismo dibujo se confunden de un vistazo.
+  "hr": UserCog,
+  "operations": ClipboardList,
+  "briefcase-business": Briefcase,
+  "restaurant": Utensils,
+  "security": ShieldCheck,
+  "contact": Contact,
 };
 
 const defaultGroupIcons = {
   "Bancos": "landmark",
-  "CRM": "users",
+  "CRM": "crm",
   "Contabilidad": "file-text",
-  "Recursos humanos": "users",
+  "Recursos humanos": "hr",
   "Restaurante": "utensils",
   "Operaciones": "clipboard-list",
-  "Inventario": "boxes",
+  "Inventario": "inventory",
   "Configuración": "sliders-horizontal",
 };
 
@@ -122,11 +147,9 @@ export default function Shell() {
   const [roleEntityPermissions, setRoleEntityPermissions] = useState([]);
   const [rolePermissionsLoaded, setRolePermissionsLoaded] = useState(false);
   const [openGroups, setOpenGroups] = useState({});
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => (
     window.matchMedia("(max-width: 800px)").matches || localStorage.getItem("tyakxa-sidebar-collapsed") === "true"
   ));
-  const settingsRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
   const { t } = useI18n();
@@ -202,17 +225,37 @@ export default function Shell() {
     };
   }
 
-  const fixedSidebarItems = visibleNavItems.filter((item) => item.exact || item.path === "/mfa-setup");
-  const configuredItems = visibleNavItems.filter((item) => !item.exact && item.path !== "/mfa-setup").map(navigationFor);
+  const fixedSidebarItems = visibleNavItems.filter((item) => item.exact);
+  const configuredItems = visibleNavItems.filter((item) => !item.exact).map(navigationFor);
+  // Gestion de roles y perfiles viven arriba, no en el menu. Son de
+  // administracion y se usan poco, pero cuando se usan se buscan; tenerlos
+  // fijos en la barra evita recorrer el menu entero. Se filtran del menu para
+  // que no queden en dos sitios: dos puertas a la misma pantalla es como
+  // empieza a haber dos formas distintas de hacer lo mismo.
+  const topbarItems = configuredItems.filter((item) => item.location === "topbar");
   const sidebarGroups = useMemo(() => {
     const groups = new Map();
-    configuredItems.filter((item) => item.location === "sidebar").forEach((item) => {
+    // Se acepta cualquier ubicacion que no sea el menu oculto: el engrane que
+    // recogia "settings" ya no existe, y una entrada sin puerta es peor que una
+    // mal colocada -no se ve y nadie se entera de que falta-.
+    configuredItems.filter((item) => item.location !== "none" && item.location !== "hidden"
+      && item.location !== "topbar").forEach((item) => {
       if (!groups.has(item.group)) groups.set(item.group, { icon: item.groupIcon, items: [] });
       groups.get(item.group).items.push(item);
     });
-    return [...groups.entries()].map(([label, group]) => ({ label, icon: group.icon, items: group.items.sort((a, b) => a.order - b.order || a.displayLabel.localeCompare(b.displayLabel)) }));
+    // Los grupos se ordenan por el `menu_order` mas bajo que contienen, no por
+    // cual se creo primero. Con el orden de creacion, mover una pantalla de
+    // sitio movia su grupo entero: al pasar MFA a Configuracion, Configuracion
+    // salto al principio del menu solo porque MFA esta arriba en la lista.
+    return [...groups.entries()]
+      .map(([label, group]) => ({
+        label,
+        icon: group.icon,
+        items: group.items.sort((a, b) => a.order - b.order || a.displayLabel.localeCompare(b.displayLabel)),
+      }))
+      .sort((a, b) => Math.min(...a.items.map((i) => i.order)) - Math.min(...b.items.map((i) => i.order))
+        || a.label.localeCompare(b.label));
   }, [configuredItems]);
-  const settingsItems = configuredItems.filter((item) => item.location === "settings").sort((a, b) => a.order - b.order || a.displayLabel.localeCompare(b.displayLabel));
 
   useEffect(() => {
     const handler = () => forceRender((v) => v + 1);
@@ -221,13 +264,6 @@ export default function Shell() {
     window.addEventListener("tyakxa-auth-expired", expired);
     return () => { window.removeEventListener("tyakxa-language-change", handler); window.removeEventListener("tyakxa-auth-expired", expired); };
   }, [navigate]);
-  useEffect(() => {
-    function closeSettings(event) {
-      if (settingsRef.current && !settingsRef.current.contains(event.target)) setSettingsOpen(false);
-    }
-    document.addEventListener("mousedown", closeSettings);
-    return () => document.removeEventListener("mousedown", closeSettings);
-  }, []);
   const handleLogout = () => {
     localStorage.removeItem("token"); localStorage.removeItem("user"); localStorage.removeItem("mfa_temp_token");
     navigate("/login", { replace: true });
@@ -266,8 +302,13 @@ export default function Shell() {
             return <button type="button" key={group.label} className="nav-link collapsed-group-button" title={groupLabel(group.label)} aria-label={`${shellText("expand_group")} ${groupLabel(group.label)}`} onClick={() => expandSidebarForGroup(group.label)}><GroupIcon size={20} /><span className="nav-link-label">{groupLabel(group.label)}</span></button>;
           }) : sidebarGroups.map((group) => {
             const isOpen = openGroups[group.label] ?? group.items.some((item) => location.pathname === item.path);
+            // El icono se pinta tambien con el menu abierto. Antes solo salia
+            // al colapsar, asi que Dashboard y Configurar MFA llevaban icono y
+            // todos los grupos de abajo eran texto pelado: la lista se leia
+            // como dos menus distintos pegados.
+            const GroupIcon = groupIcons[group.icon] || SlidersHorizontal;
             return <div className="shell-nav-group" key={group.label}>
-              <button type="button" className="shell-nav-group-toggle" onClick={() => setOpenGroups((current) => ({ ...current, [group.label]: !isOpen }))}><span>{groupLabel(group.label)}</span><ChevronDown size={16} className={isOpen ? "open" : ""} /></button>
+              <button type="button" className="shell-nav-group-toggle" onClick={() => setOpenGroups((current) => ({ ...current, [group.label]: !isOpen }))}><GroupIcon size={18} className="shell-nav-group-icon" /><span>{groupLabel(group.label)}</span><ChevronDown size={16} className={isOpen ? "open" : ""} /></button>
               {isOpen && <div className="shell-nav-submenu">{group.items.map((item) => <NavLink key={item.path} to={item.path} className={({ isActive }) => isActive ? "nav-link active" : "nav-link"}><span className="dot" /><span className="nav-link-label">{item.displayLabel}</span></NavLink>)}</div>}
             </div>;
           })}
@@ -290,7 +331,7 @@ export default function Shell() {
             }
 
             return <div className="shell-nav-group logistics-nav-group" key={modulo.key}>
-              <button type="button" className="shell-nav-group-toggle" onClick={() => setOpenGroups((current) => ({ ...current, [modulo.key]: !abierto }))}><span className="shell-nav-group-title">{shellText(modulo.titleKey)}</span><ChevronDown size={16} className={abierto ? "open" : ""} /></button>
+              <button type="button" className="shell-nav-group-toggle" onClick={() => setOpenGroups((current) => ({ ...current, [modulo.key]: !abierto }))}><ModuleIcon size={18} className="shell-nav-group-icon" /><span className="shell-nav-group-title">{shellText(modulo.titleKey)}</span><ChevronDown size={16} className={abierto ? "open" : ""} /></button>
               {abierto && <div className="shell-nav-submenu logistics-nav-sections">{seccionesVisibles.map((seccion) => {
                 const claveSeccion = `${modulo.key}:${seccion.key}`;
                 const seccionActiva = seccion.items.some(([, ruta]) => location.pathname.startsWith(`${modulo.basePath}/${ruta}`));
@@ -313,11 +354,17 @@ export default function Shell() {
           <div className="topbar-actions">
             <span className="session-pill">{t("common.secure_session", "Sesión protegida")}{currentUser?.username ? ` · ${currentUser.username}` : ""}</span>
             <LanguagePicker />
-            <div className="session-actions">
-              <div className="settings-menu" ref={settingsRef}>
-                <button className="button ghost settings-trigger" title={shellText("options")} aria-label={shellText("options")} aria-expanded={settingsOpen} onClick={() => setSettingsOpen((value) => !value)}><Settings size={18} /></button>
-                {settingsOpen && <div className="settings-popover">{settingsItems.length ? settingsItems.map((item) => <NavLink key={item.path} to={item.path} onClick={() => setSettingsOpen(false)}>{item.displayLabel}</NavLink>) : <span className="settings-empty">{shellText("no_options")}</span>}</div>}
+            {topbarItems.length > 0 && (
+              <div className="topbar-links">
+                {topbarItems.map((item) => (
+                  <NavLink key={item.path} to={item.path} className={({ isActive }) => isActive ? "button ghost active" : "button ghost"}>
+                    {item.path === "/role_permissions" ? <ShieldCheck size={16} /> : <UserCog size={16} />}
+                    <span>{item.displayLabel}</span>
+                  </NavLink>
+                ))}
               </div>
+            )}
+            <div className="session-actions">
               <button className="button ghost" onClick={handleLogout}><LogOut size={16} />{t("common.logout", "Cerrar sesión")}</button>
             </div>
           </div>
