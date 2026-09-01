@@ -2673,7 +2673,13 @@
     "credit_note_concepts_required": "La nota de credito necesita al menos un concepto.",
     "credit_note_validation_failed": "Los conceptos de la nota no cumplen las reglas del SAT.",
     "auth_too_many_attempts": "Demasiados intentos fallidos. Espera unos minutos antes de volver a intentar.",
-    "auth_missing_credentials": "Faltan el usuario o la contrasena."
+    "auth_missing_credentials": "Faltan el usuario o la contrasena.",
+    "inventory_asset_tag_already_used": "Ya hay una pieza con esa etiqueta. Dos herramientas con la misma etiqueta vuelven inútil el rastreo.",
+    "inventory_product_is_not_serialized": "Este producto se lleva por cantidad, no pieza por pieza. Cámbialo a serializado si necesitas rastrear cada unidad.",
+    "inventory_asset_is_retired": "Esa pieza está dada de baja y no vuelve. Si reapareció, dala de alta como pieza nueva para que su historia anterior quede cerrada.",
+    "inventory_asset_transition_not_allowed": "Desde su estado actual no se puede hacer eso con la pieza.",
+    "inventory_asset_not_in_stock": "La pieza no está en el almacén, así que no se puede trasladar de ubicación.",
+    "inventory_asset_due_date_in_the_past": "La fecha de regreso ya pasó. Un préstamo nace con fecha futura."
   },
   "logistics": {
     "module": "Logística",

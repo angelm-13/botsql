@@ -2670,7 +2670,13 @@
     "credit_note_concepts_required": "A credit note needs at least one line.",
     "credit_note_validation_failed": "The note lines do not meet SAT rules.",
     "auth_too_many_attempts": "Too many failed attempts. Wait a few minutes before trying again.",
-    "auth_missing_credentials": "Username or password missing."
+    "auth_missing_credentials": "Username or password missing.",
+    "inventory_asset_tag_already_used": "Another asset already uses that tag. Two tools with the same tag make tracking useless.",
+    "inventory_product_is_not_serialized": "This product is tracked by quantity, not unit by unit. Switch it to serialized to track each piece.",
+    "inventory_asset_is_retired": "That asset is retired and does not come back. If it reappeared, register it as a new asset so its earlier history stays closed.",
+    "inventory_asset_transition_not_allowed": "That is not possible from the asset's current state.",
+    "inventory_asset_not_in_stock": "The asset is not in the warehouse, so it cannot be moved between locations.",
+    "inventory_asset_due_date_in_the_past": "That due date has already passed. A loan starts with a future date."
   },
   "logistics": {
     "module": "Logistics",

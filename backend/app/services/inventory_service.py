@@ -54,6 +54,10 @@ REASON_REQUIRED_MOVEMENTS = {"adjustment", "damage", "destroy", "loss", "transfe
 REFERENCE_TYPES = {
     "invoice", "invoice_line", "purchase", "project", "task", "incident",
     "count", "manual", "transfer",
+    # Movimiento provocado por el rastreo de una pieza concreta: un prestamo,
+    # una devolucion o un traslado de herramienta. Permite ir del renglon del
+    # libro a la pieza que lo causo.
+    "inventory_asset",
 }
 
 # Profundidad maxima al subir por el arbol de ubicaciones buscando el almacen.

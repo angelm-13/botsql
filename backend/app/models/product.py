@@ -2,7 +2,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import String, Integer, BigInteger, SmallInteger, Boolean, Date, DateTime, Float, Numeric, ForeignKey, Text, JSON, Enum, LargeBinary, UniqueConstraint, func
+from sqlalchemy import String, Integer, BigInteger, SmallInteger, Boolean, Date, DateTime, Float, Numeric, ForeignKey, Text, JSON, Enum, LargeBinary, UniqueConstraint, func, text
 from app.models.base import Base
 
 
@@ -36,6 +36,14 @@ class Product(Base):
     deletion_date: Mapped[object] = mapped_column(DateTime, nullable=True)
     descripcion: Mapped[object] = mapped_column(String(250), nullable=True)
     cantidad: Mapped[int] = mapped_column(Integer, nullable=True)
+    # Como se lleva este producto en el almacen. `fungible` se cuenta -es lo que
+    # el sistema hacia siempre, y sigue siendo el valor por omision-;
+    # `serializado` da una fila por unidad en `inventory_asset`, con estado y
+    # responsable, para lo que hay que rastrear pieza por pieza: herramienta,
+    # equipo, activo de uso.
+    tracking_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'fungible'")
+    )
     id_marca: Mapped[int] = mapped_column(Integer, nullable=True)
     id_familia: Mapped[int] = mapped_column(Integer, nullable=True)
 

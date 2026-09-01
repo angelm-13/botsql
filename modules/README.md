@@ -90,13 +90,14 @@ Criterios, para que se puedan discutir en lugar de adivinarse:
 
 ### pos/
 
-- **Repositorio**: https://github.com/Tyakxa/demo_pos.git
-- **Rama**: `demo-mode`
+- **Repositorio**: https://github.com/Tyakxa/POS.git
+- **Rama**: `initAngm`
 - **Qué es**: POS Enterprise, punto de venta multi-caja para una sucursal, con
   inventario propio (entradas, mermas, kardex, bloqueo de sobreventa), cortes de
   caja y KPIs en vivo.
-- **Base de datos propia**: `pos_enterprise`, en el puerto 5436 para no chocar
-  con la del núcleo ni con la del restaurante.
+- **Base de datos propia**: `pos_enterprise`. Ojo con el puerto: su `.env`
+  pedía el 5433, que lo ocupa la base del núcleo (`tyakxa-db-1`); hay que
+  darle otro.
 - **No trae**: facturación fiscal (CFDI) ni multi-sucursal. La facturación del
   núcleo sí las tiene, así que si se necesita timbrar una venta del POS hay que
   decidir cuál de los dos emite; hoy no están conectados.

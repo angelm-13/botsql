@@ -88,6 +88,7 @@ from app.routes.survey_question import bp_survey_question
 from app.routes.survey_multiple_answer import bp_survey_multiple_answer
 from app.routes.nm_survey_user import bp_nm_survey_user
 from app.routes.entity_permission import bp_entity_permission
+from app.routes.inventory_asset import bp_inventory_asset
 from app.routes.inventory_status import bp_inventory_status
 from app.routes.product_sale_config import bp_product_sale_config
 from app.routes.public_api_key import bp_public_api_key
@@ -717,6 +718,7 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_survey_multiple_answer)
     app.register_blueprint(bp_nm_survey_user)
     app.register_blueprint(bp_entity_permission)
+    app.register_blueprint(bp_inventory_asset)
     app.register_blueprint(bp_inventory_status)
     app.register_blueprint(bp_product_sale_config)
     app.register_blueprint(bp_public_api_key)
