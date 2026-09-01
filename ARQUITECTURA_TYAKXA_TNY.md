@@ -630,6 +630,57 @@ Persistencia y operacion:
 - `maintenance/` contiene backup, restore, rotacion, vacuum/analyze y healthcheck.
 - Localizacion backend/frontend: espanol, ingles, aleman y portugues; frontend agrega japones.
 
+### 7.1 Despliegue en Kubernetes (clúster k3s)
+
+> Agregado 2026-09-01. Docker Compose (arriba) es el ambiente de desarrollo
+> local; en el clúster real (`tyakxa-dev`, `torredigital-prod`, `adser-prod`,
+> 168.231.67.33) el runtime es Kubernetes, con manifiestos en `k8s/base/` y
+> overlays por cliente en `k8s/overlays/<cliente>-<env>/`. El clúster **solo
+> hace pull**: las imágenes las construye GitHub Actions y se etiquetan con
+> el SHA corto del commit; nunca hay código fuente en el servidor, solo
+> configuración y la referencia a la imagen.
+
+**Migraciones: un solo mecanismo autoritativo, no dos.** El esquema de
+Postgres lo gobierna exclusivamente el initContainer `db-migrate`
+(`k8s/base/backend.yaml`): un bucle `for f in /migrations/*.sql; do psql -v
+ON_ERROR_STOP=1 -f "$f"; done` que corre **completo, en cada arranque del
+pod**, sin tabla de tracking. Por diseño, toda migración bajo
+`database/migrations/` debe ser segura de repetir (`CREATE TABLE IF NOT
+EXISTS`, `ON CONFLICT ... DO NOTHING/UPDATE`, `DO $$ ... EXCEPTION WHEN
+duplicate_object THEN NULL; END $$`) — **nunca** `NOT EXISTS (... WHERE
+deletion_date IS NULL)` como única guarda: si una migración posterior da de
+baja logica y resiembra la misma tabla (patron usado en
+`entity_permission`, ver `20260828240000_module_permission_matrix.sql`), esa
+guarda dejará una fila fantasma que choca contra el `UNIQUE` en el siguiente
+reinicio del pod. Antes de escribir una migración con `INSERT`, verificar
+contra un Postgres real corriendo la cadena completa dos veces seguidas
+(`psql -v ON_ERROR_STOP=1`, mismo patrón que ya usaba el proyecto en
+`docs/INTEGRACION_FUNCIONAL.md`), no solo una vez.
+
+`backend/scripts/apply_migrations.py` (con su propia tabla `schema_migration`
+y tracking por checksum) es una **herramienta de desarrollo aparte**, para
+correr a mano contra una base local con `DATABASE_URL` propio. **No está
+conectada a ningún arranque automático** — ni Docker Compose ni el
+initContainer de k8s la usan — porque `DATABASE_URL` nunca se definió ni en
+`app-secrets` (el Secret de k8s trae `DB_HOST`/`DB_NAME`/`DB_USER`/
+`DB_PASSWORD`/`DB_PORT` por separado) ni en `docker-compose.yml`. Hasta
+2026-09-01, `backend/entrypoint.sh` la invocaba igual al arrancar el
+contenedor `backend`; nunca funcionó ahí (fallaba con "DATABASE_URL no esta
+definida") y nunca se detectó porque el pod moría antes, en el
+initContainer. Se quitó esa línea: `entrypoint.sh` solo corre `init_db.py`
+(bootstrap idempotente de tablas/seed/admin) y levanta Flask/Gunicorn.
+**Regla para quien edite `entrypoint.sh` o agregue un mecanismo de
+migración nuevo: el initContainer de k8s es la única fuente de verdad del
+esquema en el clúster.** Si se necesita `apply_migrations.py` en algún
+ambiente real, hay que decidirlo explícitamente (agregar `DATABASE_URL` al
+Secret, correr `--baseline` una vez) — no asumir que ya funciona.
+
+**Nombres fijos:** Secret `app-secrets`, pull secret `ghcr-pull-secret`
+(token clásico con `read:packages`, el registro es `ghcr.io/tyakxa` en
+minúsculas). `kubectl set image` cambia el clúster pero no el archivo — el
+siguiente `apply -f` revierte la versión; cambiar siempre la etiqueta en el
+manifiesto y commitear.
+
 ## 8. Tareas asincronas
 
 `backend/app/tasks/erp_tasks.py` declara:
@@ -683,6 +734,8 @@ rg '<Route ' frontend/src/App.jsx | wc -l
 5. `App.jsx` concentra 99 rutas y `Shell.jsx` concentra la navegacion; ambos son puntos sensibles al agregar modulos.
 6. La autorizacion se aplica en backend y se refleja en frontend, pero el backend es siempre la frontera de seguridad.
 7. `mobile/` y `reports/` no forman parte activa del runtime actual.
+8. `apply_migrations.py` existe en el repo pero no gobierna ningun ambiente real (ni Compose ni k8s); es solo herramienta de desarrollo. Ver 7.1. Confirmado 2026-09-01 al corregir el CrashLoopBackOff de `tyakxa-dev`.
+9. `torredigital-prod` y `adser-prod` no tienen CD: los tags de imagen se fijan a mano en `k8s/overlays/<cliente>-prod/kustomization.yaml`. Al 2026-09-01 corren una version anterior a los ultimos 4 fixes de migracion/`entrypoint.sh`; pendiente decidir cuando promoverlos.
 
 ## 11. Regla de mantenimiento
 
@@ -692,6 +745,7 @@ Actualizar este documento cuando se agregue o elimine cualquiera de los siguient
 - un `register_blueprint` o una ruta especializada;
 - una pagina, componente o ruta React;
 - un servicio Compose, cola Celery o almacen persistente;
-- una transicion importante en CRM, cotizacion, CFDI, logistica, banca o restaurante.
+- una transicion importante en CRM, cotizacion, CFDI, logistica, banca o restaurante;
+- una migracion SQL nueva que otorgue permisos (`entity_permission`) o cree tablas, o cualquier cambio a `backend/entrypoint.sh`, al initContainer `db-migrate` (`k8s/base/backend.yaml`) o a que ambiente (`tyakxa-dev`/`torredigital-prod`/`adser-prod`) tiene desplegado que fix — somos 3 trabajando en este repo y solo uno despliega; sin esto se pierde de vista que version corre donde.
 
 Los conteos de la seccion 1 deben coincidir con los comandos de la seccion 9 antes de aprobar el cambio.
