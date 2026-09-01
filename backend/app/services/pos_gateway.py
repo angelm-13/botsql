@@ -90,7 +90,15 @@ RUTAS = (
     ("POST", "cash/sessions/open", "pos_terminal"),
     ("POST", "cash/sessions/", "pos_terminal"),
     ("GET", "cash/sessions/", "pos_terminal"),
+    ("GET", "cash/sessions/history", "pos_terminal"),
+    # Cerrar el turno y retirar efectivo ya entran por `POST cash/sessions/`,
+    # que cubre `cash/sessions/<id>/close` y `.../withdrawals`. Se deja dicho
+    # aqui porque la decision no es obvia: las dos son del cajero, no de
+    # administracion. Es quien cuenta el dinero del cajon, y si dependiera de
+    # un permiso ajeno tendria que llamar a alguien para poder irse a casa.
     ("GET", "customers", "pos_terminal"),
+    ("GET", "products/low-stock", "pos_terminal"),
+    ("GET", "products/units", "pos_terminal"),
 
     # --- administracion del punto de venta ---
     ("POST", "products", "pos_admin"),
@@ -105,8 +113,18 @@ RUTAS = (
     ("POST", "expenses", "pos_admin"),
     ("GET", "promotions", "pos_admin"),
     ("GET", "suppliers", "pos_admin"),
-    ("GET", "invoicing/", "pos_admin"),
+    # La facturacion del punto de venta se retiro: un CFDI de una venta se
+    # emite desde TYAKXA, que es el unico modulo de facturacion. La ruta se
+    # quita del puente para que no reenvie a un 404 del POS, que parece un
+    # fallo del puente y no una decision.
     ("GET", "audit", "pos_admin"),
+    ("GET", "customers/", "pos_admin"),
+    ("POST", "customers", "pos_admin"),
+    ("GET", "expenses/categories", "pos_admin"),
+    ("GET", "promotions/", "pos_admin"),
+    ("POST", "promotions", "pos_admin"),
+    ("PUT", "promotions/", "pos_admin"),
+    ("GET", "suppliers/", "pos_admin"),
 )
 
 

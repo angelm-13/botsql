@@ -56,6 +56,32 @@ class TestQueSeDejaPasar(unittest.TestCase):
             with self.subTest(ruta=f"{metodo} {ruta}"):
                 self.assertEqual("pos_admin", pos_gateway.capacidad_para(metodo, ruta))
 
+    def test_the_screens_added_later_have_their_route_declared(self):
+        """Cada pantalla nueva necesita su ruta en la lista blanca.
+
+        Sin esto la pantalla se ve pero llega vacia con un 404 del puente, que
+        es peor que no tenerla: parece que el POS no tiene datos.
+        """
+        for metodo, ruta, capacidad in (
+            # Catalogo y almacen: los ve quien cobra.
+            ("GET", "products/low-stock", "pos_terminal"),
+            ("GET", "products/units", "pos_terminal"),
+            # El cajero lee la lista de clientes porque la necesita al cobrar;
+            # la ficha con su credito y su historial ya es de administracion.
+            ("GET", "customers", "pos_terminal"),
+            ("GET", "customers/abc-123", "pos_admin"),
+            ("POST", "customers", "pos_admin"),
+            ("GET", "suppliers", "pos_admin"),
+            ("GET", "promotions", "pos_admin"),
+            ("GET", "expenses/categories", "pos_admin"),
+            # Las cifras del tablero.
+            ("GET", "dashboard/today-summary", "pos_admin"),
+            ("GET", "dashboard/product-margin", "pos_admin"),
+            ("GET", "dashboard/revenue-by-payment-method", "pos_admin"),
+        ):
+            with self.subTest(ruta=f"{metodo} {ruta}"):
+                self.assertEqual(capacidad, pos_gateway.capacidad_para(metodo, ruta))
+
     def test_the_most_specific_pattern_wins(self):
         """`products/categories` es del cajero aunque `products/` sea de admin.
 
@@ -94,6 +120,34 @@ class TestLaPuerta(BackendTestCase):
         from app.utils.auth import SECRET_KEY
 
         return {"Authorization": "Bearer " + jwt.encode(actor, SECRET_KEY, algorithm="HS256")}
+
+    def test_the_link_list_is_readable_by_the_cashier(self):
+        """El catalogo necesita esta lista para marcar quien descuenta y quien no.
+
+        Si la pantalla no la pudiera leer tendria que suponer, y suponer aqui es
+        decirle al operador que su venta descuenta del almacen cuando no lo hace.
+        """
+        respuesta = self.client.get("/pos/links", headers=self.cabeceras(CAJERO))
+        self.assertEqual(200, respuesta.status_code)
+        self.assertIn("items", respuesta.get_json())
+
+    def test_declaring_a_link_is_reserved_to_the_administrator(self):
+        """Enlazar decide de que producto del almacen sale cada venta.
+
+        Es una decision de inventario, no de mostrador: si el cajero pudiera
+        cambiarla, una venta podria empezar a descontar del producto equivocado
+        sin que nadie lo autorizara.
+        """
+        respuesta = self.client.post(
+            "/pos/links",
+            json={"id_product": 1, "pos_product_id": "abc", "id_location": 1},
+            headers=self.cabeceras(CAJERO),
+        )
+        self.assertEqual(403, respuesta.status_code)
+
+    def test_someone_outside_the_point_of_sale_does_not_even_see_the_links(self):
+        respuesta = self.client.get("/pos/links", headers=self.cabeceras(AJENO))
+        self.assertEqual(403, respuesta.status_code)
 
     def test_a_route_that_is_not_forwardable_looks_absent(self):
         """404 y no 403: describir el POS a quien no lo alcanza es de mas."""
