@@ -3139,7 +3139,15 @@
     "audit_empty": "Sem entradas no registo.",
     "takeout": "Para levar",
     "new_takeout": "Pedido para levar",
-    "customer_name": "Nome do cliente"
+    "customer_name": "Nome do cliente",
+    "payment_method": "Forma de pagamento", "method_efectivo": "Dinheiro", "method_tarjeta": "Cartão", "method_transferencia": "Transferência", "method_mixto": "Misto",
+    "received": "Recebido", "change": "Troco", "missing": "Falta", "exact": "Exato", "cash_part": "Parte em dinheiro", "card_part": "Resto no cartão",
+    "tip_fixed": "Valor fixo", "amount": "Valor", "charge_together": "Cobrar tudo junto", "charging": "A cobrar...", "cancel": "Cancelar", "account": "conta", "items": "artigos",
+    "print_ticket": "Imprimir recibo", "reprint_ticket": "Reimprimir recibo", "ticket_title": "Recibo de venda", "ticket_thanks": "Obrigado pela sua visita!", "ticket_not_invoice": "Este recibo não é um documento fiscal.",
+    "register_closed_warning": "A caixa está fechada. Abra-a antes de receber em dinheiro, senão o valor não fica em nenhum turno.", "avg_delivery": "Entrega média", "top_dishes": "Mais vendidos",
+    "subtotal": "Subtotal",
+    "close_table": "Fechar mesa", "close_takeout": "Fechar pedido", "still_unpaid": "sem cobrar", "ready_to_close": "Tudo cobrado: a mesa pode ser liberada.", "occupied": "Ocupada", "free": "Livre",
+    "inventory_warnings": "Avisos de inventário", "dismiss": "Descartar", "warn_no_recipe": "Sem receita, não se descontou existências", "warn_short_stock": "Existências insuficientes", "warn_needed": "eram necessários", "warn_had": "havia", "warn_unit_mismatch": "Unidade da receita diferente da do artigo, nada descontado"
   },
   "shell": {
     "group_banks": "Bancos",
