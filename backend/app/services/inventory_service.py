@@ -45,11 +45,21 @@ MOVEMENT_SIGNS = {
     "damage": -1,
     "destroy": -1,
     "loss": -1,
+    # Lo que se vence se registraba como merma, y no es lo mismo: la merma se
+    # reduce operando mejor y la caducidad se reduce comprando mejor. Con las
+    # dos en el mismo saco no hay forma de saber cual de los dos problemas se
+    # tiene.
+    "expiry": -1,
 }
+
+# Proyectos que pueden mover el inventario. Es uno solo para toda la empresa;
+# esto dice de donde viene cada movimiento, sin partirlo en tablas separadas.
+SOURCE_MODULES = ("nucleo", "pos", "restaurante", "logistica")
+DEFAULT_SOURCE_MODULE = "nucleo"
 
 # Movimientos que exigen un motivo escrito: cambian la existencia sin un
 # documento detras, asi que sin motivo el inventario deja de ser auditable.
-REASON_REQUIRED_MOVEMENTS = {"adjustment", "damage", "destroy", "loss", "transfer"}
+REASON_REQUIRED_MOVEMENTS = {"adjustment", "damage", "destroy", "loss", "expiry", "transfer"}
 
 REFERENCE_TYPES = {
     "invoice", "invoice_line", "purchase", "project", "task", "incident",
@@ -377,6 +387,7 @@ def apply_movement_in_session(
     reference_type=None,
     reference_id=None,
     reason=None,
+    source_module=DEFAULT_SOURCE_MODULE,
 ):
     """Nucleo de un movimiento, dentro de una transaccion que abre el llamador.
 
@@ -388,6 +399,10 @@ def apply_movement_in_session(
     # publica: cualquier camino que llegue a este nucleo queda cubierto.
     if movement_type == "adjustment":
         _require_adjustment_capability(db, user_data)
+
+    if source_module not in SOURCE_MODULES:
+        raise AppError("errors.invalid_field", 400,
+                       {"field": "source_module", "allowed": list(SOURCE_MODULES)})
 
     previous = db.scalars(
         select(InventoryLedger).where(InventoryLedger.idempotency_key == idempotency_key)
@@ -435,6 +450,7 @@ def apply_movement_in_session(
         reference_type=reference_type,
         reference_id=str(reference_id or "").strip()[:100] or None,
         reason=reason,
+        source_module=source_module,
         created_by=actor_id,
     )
     return ledger.serialize(), True

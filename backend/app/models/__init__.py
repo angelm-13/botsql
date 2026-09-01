@@ -63,6 +63,7 @@ from app.models.payroll_detail import PayrollDetail
 from app.models.payroll_movement import PayrollMovement
 from app.models.payroll_period import PayrollPeriod
 from app.models.permission import Permission
+from app.models.pos_product_link import PosProductLink
 from app.models.product import Product
 from app.models.product_family import ProductFamily
 from app.models.product_sale_config import ProductSaleConfig

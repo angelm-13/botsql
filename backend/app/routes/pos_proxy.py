@@ -16,7 +16,7 @@ mismo lugar que todo lo demas.
 
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 
 from app.models.session import transaction_context
 from app.services.inventory_service import has_capability
@@ -66,4 +66,22 @@ def puerta(user_data, ruta):
         params=request.args.to_dict(flat=True),
         cuerpo=request.get_json(silent=True),
     )
+
+    # Un solo inventario: lo que el punto de venta vende descuenta del almacen
+    # del nucleo. Se hace despues de que el POS confirmo la venta, no antes: si
+    # el cobro falla no hay nada que descontar.
+    if ruta.strip("/") == "checkout" and codigo in (200, 201):
+        from app.services.pos_inventory_bridge import reflejar_venta
+
+        try:
+            datos["inventory"] = reflejar_venta(datos, user_data)
+        except Exception as error:
+            # La venta ya se cobro. No se revierte por un problema de registro
+            # -dejaria al cliente sin su compra-, pero tampoco se calla: queda
+            # en la respuesta y en la bitacora para que el descuadre se vea.
+            current_app.logger.exception(
+                "No se pudo reflejar la venta del punto de venta en el inventario: %s", error
+            )
+            datos["inventory"] = {"error": "inventory_reflection_failed"}
+
     return jsonify(datos), codigo

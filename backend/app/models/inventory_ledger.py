@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, event, func
+from sqlalchemy import text, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, event, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -22,6 +22,14 @@ class InventoryLedger(Base):
     id_product: Mapped[int] = mapped_column(ForeignKey("product.id_product"), nullable=False)
     id_proyect: Mapped[int] = mapped_column(ForeignKey("proyect.id_proyect"), nullable=False)
     movement_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    # Que proyecto provoco el movimiento. La existencia es una sola para toda la
+    # empresa; esto dice de donde viene, sin tener que partirla en tres tablas.
+    # Separar por tabla obligaba a preguntar en tres sitios para saber cuanto
+    # hay, y una consulta que olvidaba una devolvia un saldo incompleto sin
+    # avisar.
+    source_module: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'nucleo'")
+    )
     quantity_delta: Mapped[int] = mapped_column(Integer, nullable=False)
     balance_after: Mapped[int] = mapped_column(Integer, nullable=False)
     # Donde ocurrio. `balance_after` sigue siendo el total del producto, para
