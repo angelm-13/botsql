@@ -36,6 +36,7 @@ if str(RAIZ) not in sys.path:
 from app.modules.registry import (  # noqa: E402
     CAPACIDADES,
     MODULOS,
+    MODULOS_CORE,
     NOMBRE_DE_BITS,
     ROLES,
     filas_de_permisos,
@@ -55,12 +56,13 @@ def generar() -> str:
     ultimo = len(filas) - 1
     for indice, fila in enumerate(filas):
         (id_permission, entidad, bits, menu_location,
-         menu_group, menu_icon, menu_label, menu_order) = fila
+         menu_group, menu_icon, menu_label, menu_order, modulo_licencia) = fila
         rol = next(r.nombre for r in ROLES if r.id_permission == id_permission)
         coma = "," if indice < ultimo else ""
         renglones.append(
             f"    ({id_permission}, '{entidad}', {bits}, '{menu_location}', "
-            f"{_sql(menu_group)}, {_sql(menu_icon)}, {_sql(menu_label)}, {menu_order}){coma}"
+            f"{_sql(menu_group)}, {_sql(menu_icon)}, {_sql(menu_label)}, {menu_order}, "
+            f"'{modulo_licencia}'){coma}"
             f"   -- {rol} / {NOMBRE_DE_BITS.get(bits, bits)}"
         )
 
@@ -83,6 +85,7 @@ def generar() -> str:
         total_capacidades=len(CAPACIDADES),
         resumen="\n".join(resumen),
         filas="\n".join(renglones),
+        modulos_core_sql=", ".join(f"'{clave}'" for clave in sorted(MODULOS_CORE)),
     )
 
 
@@ -90,6 +93,22 @@ PLANTILLA = """-- Permisos por modulo y accion CRUD. GENERADO por
 -- backend/scripts/seed_module_permissions.py desde app/modules/registry.py.
 -- No editar a mano: el registro es la fuente de verdad y cualquier cambio aqui
 -- se pierde en la siguiente generacion.
+--
+-- Licencia por modulo/cliente
+-- ---------------------------
+-- El proyecto se vende por modulo: un cliente contrata Facturacion y
+-- Restaurante, otro ademas Multiemisor+CSD. Los modulos de infraestructura
+-- ({modulos_core_sql}) van siempre, sin importar licencia -- sin ellos ni
+-- login ni un select de catalogo funcionan. Todo lo demas (incluida una
+-- capacidad marcada `licencia_independiente=True`, como multiemisor dentro de
+-- facturacion) solo se siembra si su clave aparece en la variable de entorno
+-- LICENSED_MODULES del cliente (separada por comas), leida via `psql -v
+-- licensed_modules=...` -- ver k8s/base/backend.yaml.
+--
+-- LICENSED_MODULES vacia o sin definir se interpreta como "todos los modulos":
+-- una instalacion que nunca configuro esta variable (los 3 ambientes reales
+-- de hoy) sigue viendo exactamente lo mismo que antes de este cambio, hasta
+-- que alguien la restrinja a proposito.
 --
 -- Que cambia respecto al sembrado anterior
 -- ----------------------------------------
@@ -115,7 +134,8 @@ BEGIN;
 
 -- Se marca de baja todo lo vigente antes de sembrar. Sin esto quedarian filas
 -- de la matriz anterior con criterios distintos, y no habria forma de saber
--- cual gobierna.
+-- cual gobierna. Corre en cada reinicio del pod, asi que tambien es lo que
+-- retira un modulo si LICENSED_MODULES cambia a algo mas restringido.
 UPDATE entity_permission
    SET deletion_date = now()
  WHERE deletion_date IS NULL;
@@ -129,8 +149,13 @@ SELECT v.id_permission, v.entity_name, v.control_type, v.menu_location,
 FROM (VALUES
 {filas}
 ) AS v (id_permission, entity_name, control_type, menu_location,
-        menu_group, menu_group_icon, menu_label, menu_order)
+        menu_group, menu_group_icon, menu_label, menu_order, modulo_licencia)
 WHERE EXISTS (SELECT 1 FROM permission p WHERE p.id_permission = v.id_permission)
+  AND (
+    v.modulo_licencia IN ({modulos_core_sql})
+    OR :'licensed_modules' = ''
+    OR v.modulo_licencia = ANY(string_to_array(:'licensed_modules', ','))
+  )
 -- La restriccion unica es por (perfil, entidad) sin importar la baja logica, asi
 -- que se reactiva la fila en lugar de insertar una segunda.
 ON CONFLICT (id_permission, entity_name) DO UPDATE
@@ -159,7 +184,10 @@ UPDATE nm_field_permission nfp
    );
 
 INSERT INTO nm_field_permission (id_field, id_permission, control_type, created_by)
-SELECT f.id_field, ep.id_permission, LEAST(ep.control_type, 15)::text, 1
+-- entity_permission.control_type es `text` en la base real (no coincide con
+-- el `SmallInteger` que declara el modelo -- deuda aparte, no de esta
+-- migracion); sin el cast, LEAST(text, integer) no resuelve tipo comun.
+SELECT f.id_field, ep.id_permission, LEAST(ep.control_type::integer, 15)::text, 1
 FROM entity_permission ep
 JOIN field f
   ON f.table_name = ep.entity_name
