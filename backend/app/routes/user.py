@@ -10,7 +10,7 @@ from app.models.session import transaction_context
 
 
 bp_user = Blueprint('user', __name__, url_prefix='/user')
-ALLOWED_FIELDS = ['id_user', 'created_by', 'creation_date', 'date_born', 'date_start', 'deletion_date', 'email', 'first_name', 'id_permission', 'full_name', 'id_proyect', 'last_name_father', 'last_name_mother', 'last_update_date', 'national_id', 'principal_phone', 'secundary_phone', 'ssn', 'supervisor', 'base_salary', 'hire_date', 'id_status', 'tax_id', 'title', 'user_type', 'username', 'supervisor', 'puesto', 'accepts_marketing']
+ALLOWED_FIELDS = ['id_user', 'created_by', 'creation_date', 'date_born', 'date_start', 'deletion_date', 'email', 'first_name', 'id_permission', 'full_name', 'id_proyect', 'last_name_father', 'last_name_mother', 'last_update_date', 'national_id', 'principal_phone', 'secundary_phone', 'ssn', 'supervisor', 'base_salary', 'hire_date', 'id_status', 'tax_id', 'title', 'user_type', 'username', 'supervisor', 'puesto', 'is_employee', 'accepts_marketing']
 
 TECHNICAL_RESPONSE_FIELDS = {'id_user'}
 FIELD_READ_BIT = 2
