@@ -42,12 +42,12 @@ BEGIN
           AND n.nspname = 'public'
     LOOP
         EXECUTE format(
-            'ALTER TABLE %s ALTER CONSTRAINT %I DEFERRABLE INITIALLY IMMEDIATE',
+            'ALTER TABLE %%s ALTER CONSTRAINT %%I DEFERRABLE INITIALLY IMMEDIATE',
             r.tabla, r.conname
         );
         ajustadas := ajustadas + 1;
     END LOOP;
-    RAISE NOTICE 'Llaves foraneas ajustadas: %', ajustadas;
+    RAISE NOTICE 'Llaves foraneas ajustadas: %%', ajustadas;
 END $$;
 
 COMMIT;

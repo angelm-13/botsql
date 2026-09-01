@@ -6,7 +6,7 @@
 -- 2) TasaOCuota lleva 6 decimales (p. ej. retencion de IVA 0.106667); con
 --    NUMERIC(7,4) se perdian las dos ultimas posiciones.
 -- 3) iva_exempt distingue el IVA exento (TipoFactor="Exento", sin TasaOCuota
---    ni Importe) de la tasa 0% (TipoFactor="Tasa", TasaOCuota="0.000000"),
+--    ni Importe) de la tasa 0%% (TipoFactor="Tasa", TasaOCuota="0.000000"),
 --    que el SAT trata como cosas distintas.
 
 BEGIN;
