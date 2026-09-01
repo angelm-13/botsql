@@ -91,11 +91,10 @@ export const moduleSections = [
     // Las secciones salen de las pantallas que el modulo trae de verdad
     // (modules/pos/frontend/src/pages), no de una agrupacion inventada.
     //
-    // Limitacion conocida: las pantallas todavia no existen en este frontend.
-    // El modulo corre su propio front contra su propia base, y rehacerlas aqui
-    // -como se hizo con el restaurante- es trabajo aparte. Mientras tanto, la
-    // ruta comodin de App.jsx devuelve al tablero, asi que pulsar una entrada
-    // no rompe nada pero tampoco lleva a ningun lado.
+    // La caja ya tiene pantalla propia y habla con el POS por el puente del
+    // nucleo, de modo que el usuario entra una sola vez, en TYAKXA. Las demas
+    // entradas todavia no tienen pantalla: la ruta comodin devuelve al tablero,
+    // asi que pulsarlas no rompe nada pero tampoco lleva a ningun lado.
     sections: [
       { key: "section_pos_till", items: [
         ["pos_terminal", "caja", "pos_terminal"],

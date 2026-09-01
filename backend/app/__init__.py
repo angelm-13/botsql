@@ -97,6 +97,7 @@ from app.routes.stamping import bp_stamping
 from app.routes.client_portal import bp_client_portal
 from app.routes.bank_statements import bp_bank_statements
 from app.routes.kronos import bp_kronos
+from app.routes.pos_proxy import bp_pos
 from app.routes.restaurant import bp_restaurant
 from app.routes.appointments import bp_appointments
 from app.routes.public_calendar import bp_public_appointments, bp_public_calendar
@@ -727,6 +728,7 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_client_portal)
     app.register_blueprint(bp_bank_statements)
     app.register_blueprint(bp_kronos)
+    app.register_blueprint(bp_pos)
     app.register_blueprint(bp_restaurant)
     _register_documents_blueprint(app)
 

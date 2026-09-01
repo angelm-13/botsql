@@ -1401,7 +1401,8 @@
     "restaurant_kitchen": "Kitchen",
     "restaurant_admin": "Admin",
     "inventory": "Warehouse",
-    "assets": "Asset tracking"
+    "assets": "Asset tracking",
+    "pos_till": "Till"
   },
   "placeholders": {
     "bank": {
@@ -2678,7 +2679,11 @@
     "inventory_asset_is_retired": "That asset is retired and does not come back. If it reappeared, register it as a new asset so its earlier history stays closed.",
     "inventory_asset_transition_not_allowed": "That is not possible from the asset's current state.",
     "inventory_asset_not_in_stock": "The asset is not in the warehouse, so it cannot be moved between locations.",
-    "inventory_asset_due_date_in_the_past": "That due date has already passed. A loan starts with a future date."
+    "inventory_asset_due_date_in_the_past": "That due date has already passed. A loan starts with a future date.",
+    "pos_gateway_not_configured": "The point-of-sale bridge is not configured on the server.",
+    "pos_unreachable": "The point of sale is not responding.",
+    "pos_gateway_credentials_rejected": "The point of sale rejected the bridge credentials.",
+    "pos_gateway_unexpected_response": "The point of sale returned something unexpected while authenticating."
   },
   "logistics": {
     "module": "Logistics",
@@ -3788,5 +3793,37 @@
     "event_extravio": "Lost",
     "event_baja": "Retired",
     "event_traslado": "Moved"
+  },
+  "pos": {
+    "eyebrow": "Point of sale",
+    "till_title": "Till",
+    "search_product": "Search or scan a barcode",
+    "no_products": "No results.",
+    "stock": "Stock",
+    "cart": "Sale",
+    "cart_empty": "Tap a product to add it.",
+    "total": "Total",
+    "charge": "Charge",
+    "received": "Received",
+    "change": "Change",
+    "missing": "Missing",
+    "method_cash": "Cash",
+    "method_card": "Card",
+    "method_transfer": "Transfer",
+    "less": "Remove one",
+    "more": "Add one",
+    "open_session": "Open cash session",
+    "session_open": "Session open",
+    "no_session_warning": "With no session open, what you charge stays out of the cash count.",
+    "sale_done": "Sale registered",
+    "next_sale": "Next sale",
+    "not_configured": "The point-of-sale bridge is not configured.",
+    "unreachable": "The point of sale is not responding.",
+    "bridge_hint": "POS_API_URL, POS_SERVICE_USER and POS_SERVICE_PASSWORD are required on the server.",
+    "sale_type": "Sale type",
+    "sale_type_takeout": "Takeout",
+    "sale_type_dine_in": "Dine in",
+    "sale_type_delivery": "Delivery",
+    "sale_type_online": "Online"
   }
 }

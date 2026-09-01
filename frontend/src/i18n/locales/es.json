@@ -1401,7 +1401,8 @@
     "restaurant_kitchen": "Cocina",
     "restaurant_admin": "Admin",
     "inventory": "Almacén",
-    "assets": "Rastreo de piezas"
+    "assets": "Rastreo de piezas",
+    "pos_till": "Caja"
   },
   "placeholders": {
     "bank": {
@@ -2681,7 +2682,11 @@
     "inventory_asset_is_retired": "Esa pieza está dada de baja y no vuelve. Si reapareció, dala de alta como pieza nueva para que su historia anterior quede cerrada.",
     "inventory_asset_transition_not_allowed": "Desde su estado actual no se puede hacer eso con la pieza.",
     "inventory_asset_not_in_stock": "La pieza no está en el almacén, así que no se puede trasladar de ubicación.",
-    "inventory_asset_due_date_in_the_past": "La fecha de regreso ya pasó. Un préstamo nace con fecha futura."
+    "inventory_asset_due_date_in_the_past": "La fecha de regreso ya pasó. Un préstamo nace con fecha futura.",
+    "pos_gateway_not_configured": "El puente con el punto de venta no está configurado en el servidor.",
+    "pos_unreachable": "El punto de venta no responde.",
+    "pos_gateway_credentials_rejected": "El punto de venta rechazó las credenciales del puente.",
+    "pos_gateway_unexpected_response": "El punto de venta respondió algo inesperado al autenticar."
   },
   "logistics": {
     "module": "Logística",
@@ -3851,5 +3856,37 @@
     "event_extravio": "Extravío",
     "event_baja": "Baja",
     "event_traslado": "Traslado"
+  },
+  "pos": {
+    "eyebrow": "Punto de venta",
+    "till_title": "Caja",
+    "search_product": "Buscar o escanear código de barras",
+    "no_products": "Sin resultados.",
+    "stock": "Existencia",
+    "cart": "Venta",
+    "cart_empty": "Toca un producto para agregarlo.",
+    "total": "Total",
+    "charge": "Cobrar",
+    "received": "Recibido",
+    "change": "Cambio",
+    "missing": "Faltan",
+    "method_cash": "Efectivo",
+    "method_card": "Tarjeta",
+    "method_transfer": "Transferencia",
+    "less": "Quitar uno",
+    "more": "Agregar uno",
+    "open_session": "Abrir turno de caja",
+    "session_open": "Turno abierto",
+    "no_session_warning": "Sin turno abierto, lo que cobres queda fuera del corte de caja.",
+    "sale_done": "Venta registrada",
+    "next_sale": "Siguiente venta",
+    "not_configured": "El puente con el punto de venta no está configurado.",
+    "unreachable": "El punto de venta no responde.",
+    "bridge_hint": "Hacen falta POS_API_URL, POS_SERVICE_USER y POS_SERVICE_PASSWORD en la configuración del servidor.",
+    "sale_type": "Tipo de venta",
+    "sale_type_takeout": "Para llevar",
+    "sale_type_dine_in": "En el lugar",
+    "sale_type_delivery": "A domicilio",
+    "sale_type_online": "En línea"
   }
 }

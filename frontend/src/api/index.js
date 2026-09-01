@@ -288,6 +288,16 @@ export const getProductStock = (id) => request(`/product/${id}/inventory-stock`)
 export const getLocationTree = () => request("/location/tree");
 export const getWarehouseStock = (id) => request(`/location/${id}/stock`);
 export const getInvoiceInventoryPreview = (id, params = {}) => request(`/invoice/${id}/inventory`, { params });
+// --- Punto de venta, a traves del puente del nucleo ------------------------
+// Un solo inicio de sesion: se llama al nucleo con el token de TYAKXA y el
+// nucleo habla con el POS por detras. El front nunca ve credenciales del POS.
+export const posStatus = () => request("/pos/status");
+export const posRequest = (ruta, opciones = {}) => request(`/pos/api/${ruta}`, opciones);
+export const posCheckout = (payload) =>
+  request("/pos/api/checkout", { method: "POST", body: payload });
+export const posOpenCashSession = (payload) =>
+  request("/pos/api/cash/sessions/open", { method: "POST", body: payload });
+
 // --- Rastreo de piezas: herramienta, equipo, activo de uso -----------------
 // El inventario por cantidades no puede decir donde esta el taladro A-014; estas
 // rutas trabajan sobre la pieza concreta.
