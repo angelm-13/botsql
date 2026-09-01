@@ -98,33 +98,28 @@ export const moduleSections = [
     sections: [
       { key: "section_pos_till", items: [
         ["pos_terminal", "caja", "pos_terminal"],
-        ["cash_sessions", "cortes", "pos_terminal"],
-        ["expenses", "gastos", "pos_admin"],
+        // El turno lo abre y lo cierra el mismo cajero que cobra: sin turno
+        // abierto no hay venta, asi que va junto a la caja y no en otro grupo.
+        ["shift", "turno", "pos_terminal"],
       ]},
       { key: "section_pos_catalog", items: [
-        ["products", "productos", "pos_admin"],
-        ["categories", "categorias", "pos_admin"],
-        ["promotions", "promociones", "pos_admin"],
-        ["suppliers", "proveedores", "pos_admin"],
+        ["products", "productos", "pos_terminal"],
       ]},
       { key: "section_pos_warehouse", items: [
-        // Almacen propio del modulo: no comparte tabla con el de inventario ni
-        // con el de logistica, y de hecho vive en otra base.
+        // El almacen del POS se lee desde el inventario unico: la pantalla dice
+        // que tanto de su catalogo descuenta de verdad del almacen de TYAKXA.
         ["inventory", "inventario", "pos_admin"],
       ]},
-      { key: "section_pos_invoicing", items: [
-        ["invoices", "facturas", "pos_admin"],
-        ["invoicing", "facturacion", "pos_admin"],
-        ["invoicing_config", "facturacion/configuracion", "pos_admin"],
-      ]},
       { key: "section_pos_reports", items: [
-        ["dashboard", "tablero", "pos_terminal"],
-        ["reports", "reportes", "pos_admin"],
+        ["dashboard", "tablero", "pos_admin"],
       ]},
-      { key: "section_administration", items: [
-        ["users", "usuarios", "pos_admin"],
-        ["audit", "auditoria", null, "technical"],
+      { key: "section_pos_marketing", items: [
+        ["promotions", "promociones", "pos_admin"],
       ]},
+      // Facturacion y administracion del POS no aparecen a proposito. La
+      // decision es que haya un solo modulo de facturacion -el del nucleo, que
+      // timbra CFDI- y una sola administracion de usuarios. Dejar aqui las del
+      // POS invitaria a usar dos, que es como se acaba con dos verdades.
     ],
   },
 ];

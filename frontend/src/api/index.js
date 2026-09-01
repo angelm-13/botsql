@@ -292,6 +292,12 @@ export const getInvoiceInventoryPreview = (id, params = {}) => request(`/invoice
 // Un solo inicio de sesion: se llama al nucleo con el token de TYAKXA y el
 // nucleo habla con el POS por detras. El front nunca ve credenciales del POS.
 export const posStatus = () => request("/pos/status");
+export const posLinks = () => request("/pos/links");
+export const posSyncCatalog = (payload) =>
+  request("/pos/links/sync", { method: "POST", body: payload });
+
+export const posLinkProduct = (payload) =>
+  request("/pos/links", { method: "POST", body: payload });
 export const posRequest = (ruta, opciones = {}) => request(`/pos/api/${ruta}`, opciones);
 export const posCheckout = (payload) =>
   request("/pos/api/checkout", { method: "POST", body: payload });
