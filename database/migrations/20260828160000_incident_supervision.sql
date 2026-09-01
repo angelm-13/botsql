@@ -5,6 +5,13 @@
 -- atiende y las que lidera- y quien supervisa las ve todas.
 --
 -- Se concede a los roles que ya tienen responsabilidad de mando.
+--
+-- ON CONFLICT en vez de NOT EXISTS (deletion_date IS NULL): mismo motivo que
+-- 20260828140000 -- 20260828240000 da de baja logica toda la tabla y la
+-- resiembra desde el registro de modulos, y esta entidad puede quedar fuera
+-- de esa resiembra para alguno de estos roles. Un reinicio del pod reaplica
+-- las 45 migraciones desde cero, y un NOT EXISTS que solo mira filas activas
+-- choca contra la fila fantasma que dejo la resiembra anterior.
 
 BEGIN;
 
@@ -14,11 +21,6 @@ FROM permission p
 WHERE lower(p.permission_description) IN
       ('administrator', 'admin', 'gerente', 'gerente_administrativo', 'supervisor', 'jefe de taller')
   AND p.deletion_date IS NULL
-  AND NOT EXISTS (
-    SELECT 1 FROM entity_permission ep
-    WHERE ep.id_permission = p.id_permission
-      AND ep.entity_name = 'incident_supervision'
-      AND ep.deletion_date IS NULL
-  );
+ON CONFLICT (id_permission, entity_name) DO NOTHING;
 
 COMMIT;

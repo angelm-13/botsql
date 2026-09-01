@@ -31,6 +31,12 @@ WHERE NOT EXISTS (
 );
 
 -- 2) Sus capacidades -------------------------------------------------------
+-- ON CONFLICT en vez de NOT EXISTS (deletion_date IS NULL): mismo motivo que
+-- 20260828140000 -- 20260828240000 da de baja logica toda la tabla y la
+-- resiembra desde el registro de modulos, y estas entidades pueden quedar
+-- fuera de esa resiembra para alguno de estos roles. Un reinicio del pod
+-- reaplica las 45 migraciones desde cero, y un NOT EXISTS que solo mira filas
+-- activas choca contra la fila fantasma que dejo la resiembra anterior.
 INSERT INTO entity_permission (id_permission, entity_name, control_type, menu_location, menu_group, menu_label, menu_order, created_by)
 SELECT rol.id_permission, capacidad.entity_name, capacidad.control_type,
        capacidad.menu_location, capacidad.menu_group, capacidad.menu_label,
@@ -57,12 +63,7 @@ JOIN (VALUES
 ) AS capacidad(rol, entity_name, control_type, menu_location, menu_group, menu_label, menu_order)
   ON lower(rol.permission_description) = lower(capacidad.rol)
 WHERE rol.deletion_date IS NULL
-  AND NOT EXISTS (
-    SELECT 1 FROM entity_permission ep
-    WHERE ep.id_permission = rol.id_permission
-      AND ep.entity_name = capacidad.entity_name
-      AND ep.deletion_date IS NULL
-  );
+ON CONFLICT (id_permission, entity_name) DO NOTHING;
 
 -- 3) El Gerente ya podia ajustar pero no tocar productos --------------------
 INSERT INTO entity_permission (id_permission, entity_name, control_type, menu_location, menu_group, menu_label, menu_order, created_by)
@@ -70,11 +71,6 @@ SELECT p.id_permission, 'product', 15, 'sidebar', 'Inventario', 'Productos', 100
 FROM permission p
 WHERE lower(p.permission_description) IN ('gerente', 'gerente_administrativo')
   AND p.deletion_date IS NULL
-  AND NOT EXISTS (
-    SELECT 1 FROM entity_permission ep
-    WHERE ep.id_permission = p.id_permission
-      AND ep.entity_name = 'product'
-      AND ep.deletion_date IS NULL
-  );
+ON CONFLICT (id_permission, entity_name) DO NOTHING;
 
 COMMIT;
