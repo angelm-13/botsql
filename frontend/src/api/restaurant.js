@@ -11,6 +11,12 @@ export const removeRestaurantOrderItem = (orderId, itemId) => request(`/restaura
 export const sendRestaurantOrder = (orderId) => request(`/restaurant/waiter/orders/${orderId}/send`, { method: "POST" });
 export const deliverRestaurantOrder = (orderId) => request(`/restaurant/waiter/orders/${orderId}/deliver`, { method: "POST" });
 export const createRestaurantReservation = (payload) => request("/restaurant/waiter/reservations", { method: "POST", body: payload });
+// El folio "para llevar #N" reinicia a la medianoche LOCAL del restaurante,
+// asi que el backend necesita el desfase de zona del navegador.
+export const createRestaurantTakeout = (payload) => request("/restaurant/waiter/takeout", {
+  method: "POST",
+  body: { tz_offset_minutes: new Date().getTimezoneOffset(), ...payload }
+});
 
 export const getRestaurantKitchenBoard = () => request("/restaurant/kitchen/board");
 export const updateRestaurantKitchenOrder = (orderId, status) => request(`/restaurant/kitchen/orders/${orderId}/status`, { method: "PATCH", body: { status } });
@@ -18,6 +24,9 @@ export const updateRestaurantKitchenOrder = (orderId, status) => request(`/resta
 export const getRestaurantCashierWorkspace = () => request("/restaurant/cashier/bootstrap");
 export const getRestaurantReports = (params) => request("/restaurant/cashier/reports", { params });
 export const payRestaurantOrder = (orderId, payload) => request(`/restaurant/cashier/orders/${orderId}/pay`, { method: "POST", body: payload });
+// Cobro "todo junto": liquida en una sola operacion las cuentas entregadas
+// de la visita, repartiendo propina y efectivo entre ellas.
+export const payRestaurantVisit = (visitId, payload) => request(`/restaurant/cashier/visits/${visitId}/pay`, { method: "POST", body: payload });
 export const openRestaurantRegister = (payload) => request("/restaurant/cashier/register/open", { method: "POST", body: payload });
 export const closeRestaurantRegister = (payload) => request("/restaurant/cashier/register/close", { method: "POST", body: payload });
 
@@ -33,3 +42,9 @@ export const deleteRestaurantCatalogItem = (kind, id) => request(`/restaurant/ad
 export const adminCreateRestaurantReservation = (payload) => request("/restaurant/admin/reservations", { method: "POST", body: payload });
 export const createRestaurantInventoryItem = (payload) => request("/restaurant/admin/inventory", { method: "POST", body: payload });
 export const createRestaurantRecipeItem = (payload) => request("/restaurant/admin/recipes", { method: "POST", body: payload });
+export const getRestaurantCategories = () => request("/restaurant/admin/categories");
+export const createRestaurantCategory = (payload) => request("/restaurant/admin/categories", { method: "POST", body: payload });
+export const updateRestaurantCategory = (id, payload) => request(`/restaurant/admin/categories/${id}`, { method: "PUT", body: payload });
+export const getRestaurantInventoryMovements = (params) => request("/restaurant/admin/inventory/movements", { params });
+export const createRestaurantInventoryMovement = (payload) => request("/restaurant/admin/inventory/movements", { method: "POST", body: payload });
+export const getRestaurantAuditEvents = (params) => request("/restaurant/admin/audit", { params });

@@ -1,0 +1,89 @@
+/* Ventana de cobro y ticket de 80 mm.
+   El ticket vive oculto en la pagina y solo aparece al imprimir: la regla
+   @media print esconde todo lo demas y lo deja como unico contenido. */
+
+.rest-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(20, 42, 55, .45);
+}
+.rest-modal {
+  width: 100%;
+  max-width: 460px;
+  max-height: 92vh;
+  overflow: auto;
+  background: #fff;
+  border-radius: 9px;
+  box-shadow: 0 22px 60px rgba(20, 42, 55, .28);
+}
+.rest-modal-body { display: flex; flex-direction: column; gap: 13px; padding: 16px 18px; }
+.rest-modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.rest-modal-lines { padding: 2px 0; border-bottom: 1px dashed #ccd6d9; }
+.rest-method-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; }
+.rest-method-grid button {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  min-height: 40px; padding: 8px; cursor: pointer;
+  border: 1px solid #cbd6da; border-radius: 5px; background: #fff; color: var(--rest-navy);
+}
+.rest-method-grid button.is-selected {
+  border-color: var(--rest-green); background: var(--rest-green-soft);
+  color: #087253; font-weight: 700;
+}
+.rest-quick-cash { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.rest-quick-cash button {
+  padding: 5px 10px; cursor: pointer;
+  border: 1px solid #cbd6da; border-radius: 4px; background: #f7faf9;
+  color: var(--rest-navy); font-size: 12px;
+}
+.rest-quick-cash button:hover { border-color: var(--rest-green); }
+.rest-modal-totals { padding: 12px 0 0; border-top: 2px solid var(--rest-navy); }
+.rest-modal-totals > div { display: flex; justify-content: space-between; padding: 4px 0; }
+.rest-modal-totals .is-total { padding-top: 8px; font-size: 17px; }
+.rest-modal-totals .is-change strong { color: var(--rest-green); font-size: 20px; }
+.rest-modal-totals .is-missing strong { color: #b73d3d; font-size: 20px; }
+.rest-modal-actions {
+  display: flex; justify-content: flex-end; gap: 9px;
+  padding: 14px 18px; border-top: 1px solid var(--rest-line);
+}
+
+/* El ticket no se ve en pantalla; solo existe para la impresion. */
+.rest-ticket-print { display: none; }
+
+@media print {
+  /* Ocultar toda la aplicacion y dejar unicamente el ticket. */
+  body * { visibility: hidden !important; }
+  .rest-ticket-print, .rest-ticket-print * { visibility: visible !important; }
+  .rest-ticket-print {
+    display: block !important;
+    position: absolute;
+    top: 0; left: 0;
+    width: 72mm;
+    padding: 2mm;
+    color: #000;
+    font-family: "Courier New", monospace;
+    font-size: 10pt;
+    line-height: 1.35;
+  }
+  @page { size: 80mm auto; margin: 3mm; }
+
+  .rtp-head { text-align: center; padding-bottom: 6px; border-bottom: 1px dashed #000; }
+  .rtp-head strong { display: block; font-size: 12pt; }
+  .rtp-head span { display: block; font-size: 8.5pt; }
+
+  .rtp-lines { padding: 6px 0; border-bottom: 1px dashed #000; }
+  .rtp-line { margin-bottom: 4px; }
+  .rtp-line-main { display: flex; justify-content: space-between; gap: 6px; }
+  .rtp-line small { display: block; padding-left: 8px; font-size: 8pt; }
+
+  .rtp-totals { padding: 6px 0; }
+  .rtp-totals > div { display: flex; justify-content: space-between; }
+  .rtp-total { margin-top: 4px; padding-top: 4px; border-top: 1px solid #000; font-weight: 700; font-size: 12pt; }
+
+  .rtp-foot { padding-top: 8px; text-align: center; border-top: 1px dashed #000; }
+  .rtp-foot span { display: block; }
+  .rtp-foot small { display: block; font-size: 7.5pt; }
+}
