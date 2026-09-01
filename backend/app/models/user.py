@@ -48,6 +48,7 @@ class User(Base):
     user_type: Mapped[object] = mapped_column(Enum('admin', 'client', 'supplier', 'employee', 'web_shopper', name='user_user_type_enum', native_enum=False, validate_strings=True, create_constraint=True), nullable=True)
     username: Mapped[object] = mapped_column(String(50), nullable=True)
     puesto: Mapped[object] = mapped_column(String(50), nullable=True)
+    is_employee: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default='false')
     accepts_marketing: Mapped[bool] = mapped_column(Boolean, nullable=True)
 
     def serialize(self) -> dict:
@@ -79,6 +80,7 @@ class User(Base):
             'user_type': to_json_value(self.user_type),
             'username': to_json_value(self.username),
             'puesto': to_json_value(self.puesto),
+            'is_employee': to_json_value(self.is_employee),
             'accepts_marketing': to_json_value(self.accepts_marketing),
         }
 

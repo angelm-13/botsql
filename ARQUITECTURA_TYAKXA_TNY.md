@@ -749,3 +749,133 @@ Actualizar este documento cuando se agregue o elimine cualquiera de los siguient
 - una migracion SQL nueva que otorgue permisos (`entity_permission`) o cree tablas, o cualquier cambio a `backend/entrypoint.sh`, al initContainer `db-migrate` (`k8s/base/backend.yaml`) o a que ambiente (`tyakxa-dev`/`torredigital-prod`/`adser-prod`) tiene desplegado que fix — somos 3 trabajando en este repo y solo uno despliega; sin esto se pierde de vista que version corre donde.
 
 Los conteos de la seccion 1 deben coincidir con los comandos de la seccion 9 antes de aprobar el cambio.
+
+## 12. Gestion documental y equipos de laboratorio
+
+### 12.1 Objetivo y limites
+
+Los modulos permiten conservar archivos PDF, JPEG y PNG, registrar equipos que un cliente entrega al laboratorio y administrar el ciclo de una orden de diagnostico, reparacion y entrega. El equipo es una entidad persistente y puede tener varias ordenes de servicio a lo largo del tiempo.
+
+No se duplican identidades:
+
+- `user` representa administradores, empleados, tecnicos y usuarios externos;
+- `user.is_employee` indica la relacion laboral de forma independiente a `user_type`, que sigue representando el tipo de acceso; asi un administrador tambien puede ser empleado;
+- `customer_supplier` representa al cliente o proveedor y conserva su enlace con `user`;
+- `logistics_contact` se reutiliza como contacto normalizado;
+- la orden conserva una instantanea de nombre, telefono y correo del contacto para que un documento emitido no cambie al modificar CRM;
+- `customer_supplier.is_principal` y `path_logo` proporcionan los datos del laboratorio para el PDF.
+
+`logistics_service_request` no se reutiliza como orden de laboratorio porque sus campos y estados corresponden a transporte. Mezclar ambos ciclos eliminaria integridad del dominio y obligaria a interpretar estados logisticos como diagnosticos.
+
+### 12.2 Entidades y relaciones
+
+La migracion `database/migrations/20260901090000_document_laboratory_modules.sql` agrega:
+
+| Entidad | Responsabilidad |
+| --- | --- |
+| `document_category` | Catalogo extensible de categorias documentales. |
+| `document` | Identidad logica, metadatos, estado, emision, vencimiento, proyecto y eliminacion logica. |
+| `document_version` | Archivo inmutable, version, ruta relativa, MIME, extension, bytes, SHA-256, origen, actor y snapshot JSONB. |
+| `document_relation` | Asociacion con FK real a cliente/proveedor, empleado, equipo u orden. |
+| `laboratory_equipment` | Equipo propiedad de un cliente: tipo, marca, modelo y serie. |
+| `laboratory_service_order` | Recepcion, contacto, falla, diagnostico, reparacion, tecnico, costos, fechas y estado. |
+| `laboratory_service_order_status_history` | Estado anterior/nuevo, usuario, fecha y comentarios. |
+
+La migracion `database/migrations/20260901100000_user_employee_flag.sql` agrega `user.is_employee`, registra el campo en permisos y migra como empleados los usuarios cuyo `user_type` anterior era `employee`. La seleccion posterior se administra con el checkbox **Es empleado** en Usuarios; documentos y tecnicos consultan este indicador, no el rol.
+
+Se eligio una tabla de asociaciones con columnas FK explicitas y un `CHECK num_nonnulls(...) = 1`. Una pareja polimorfica `entity_type/entity_id` seria mas corta, pero PostgreSQL no podria garantizar que la entidad relacionada existe. Nuevos destinos deben agregarse mediante una FK y su regla de autorizacion.
+
+El modulo es PostgreSQL exclusivo. Usa `JSONB`, columnas identity, `num_nonnulls`, constraints diferibles e indices parciales sobre registros no eliminados. No se valida contra SQLite.
+
+### 12.3 Almacenamiento documental
+
+Los binarios no se guardan en PostgreSQL. Se almacenan bajo:
+
+```text
+${UPLOAD_ROOT}/documents/<id_proyect>/<id_document>/v<version>-<uuid>.<extension>
+```
+
+La base conserva solo la ruta relativa y metadatos. El backend:
+
+1. limita el archivo a `DOCUMENT_MAX_BYTES` (10 MiB por omision);
+2. admite solamente PDF, JPEG y PNG;
+3. compara extension con firma binaria, sin confiar en el MIME enviado;
+4. genera el nombre fisico con UUID;
+5. resuelve rutas contra `UPLOAD_ROOT` y verifica que permanezcan dentro de esa raiz;
+6. sirve contenido solo despues de repetir autorizacion de entidad y fila;
+7. aplica eliminacion logica a metadatos y conserva el archivo como evidencia.
+
+La ruta fisica y `source_snapshot` no se devuelven en listados o detalle de versiones. Cada archivo registra SHA-256 para trazabilidad.
+
+### 12.4 Flujo de la orden
+
+Estados disponibles:
+
+```text
+received -> awaiting_diagnosis | diagnosing | cancelled
+awaiting_diagnosis -> diagnosing | cancelled
+diagnosing -> pending_authorization | not_repairable | cancelled
+pending_authorization -> authorized | not_authorized | cancelled
+authorized -> repairing | awaiting_parts | cancelled
+not_authorized -> authorized | cancelled
+repairing -> awaiting_parts | repaired | not_repairable | cancelled
+awaiting_parts -> repairing | cancelled
+repaired -> ready_for_delivery
+not_repairable -> ready_for_delivery | cancelled
+ready_for_delivery -> delivered
+```
+
+`delivered` y `cancelled` son terminales. `pending_authorization` exige diagnostico. `cancelled`, `not_authorized` y `not_repairable` exigen comentarios. Cada transicion crea un historial; nunca se actualiza un evento anterior. Al entregar se registra `actual_delivery_date`.
+
+### 12.5 PDF, versiones y firma
+
+`LaboratoryReportService` reutiliza `DocumentService`, Jinja2 con autoescape y WeasyPrint. La plantilla `documents-reports/templates/laboratory_diagnostic_report.html` usa carta, margenes de impresion, bloques multipagina, folio y contador de paginas. Incluye datos de empresa, cliente, equipo, falla, diagnostico, recomendacion, presupuesto, plazo, tecnico, condiciones, aceptacion/rechazo, observaciones y firmas.
+
+Al generar se toma un snapshot JSONB de los datos usados. La salida crea o reutiliza el `document` logico asociado a cliente, equipo y orden, y agrega una version `generated/issued`. Regenerar crea la siguiente version bajo bloqueo de fila; no cambia diagnostico ni estado de la orden. Una copia firmada crea una version `signed_scan/signed`, opcionalmente enlazada con `id_parent_document_version`, y nunca sobrescribe el original.
+
+El ejemplo generado durante validacion queda en `uploads/laboratory-diagnostic-example.pdf`.
+
+### 12.6 Autorizacion
+
+Los decoradores JWT y `entity_permission` se complementan con filtros obligatorios en servicios:
+
+- superusuario o administrador autorizado: alcance completo permitido;
+- empleado: proyecto del JWT; si la orden tiene tecnico asignado, otro empleado no puede mutarla;
+- cliente o proveedor: solo documentos cuyo `document_relation.id_customer_supplier` pertenece a su `user`;
+- cliente: solo equipos y ordenes de su `customer_supplier`;
+- cualquier consulta por ID aplica el alcance antes de recuperar el registro y responde recurso no encontrado para IDs ajenos;
+- las descargas repiten la misma consulta autorizada y nunca reciben una ruta desde el cliente.
+
+El blueprint historico `/documents/<document_key>/<record_id>` tambien exige JWT y permiso de lectura para todas las entidades. Si el registro tiene `id_proyect`, se valida contra el proyecto del JWT.
+
+### 12.7 API REST
+
+| Metodo y ruta | Contrato principal |
+| --- | --- |
+| `GET /document/` | Lista paginada con `search`, `status` e `id_document_category`. |
+| `GET /document/categories` | Categorias activas. |
+| `GET /document/employees` | Lista minima (`id_user`, `full_name`) de empleados activos del proyecto para selectores. |
+| `GET /document/<id>` | Metadatos, relaciones y versiones autorizadas. |
+| `POST /document/` | Multipart: metadatos, una relacion y `file`. |
+| `PUT /document/<id>` | Actualiza metadatos permitidos. |
+| `DELETE /document/<id>` | Eliminacion logica. |
+| `POST /document/<id>/versions` | Carga una version adicional. |
+| `GET /document/<id>/versions/<version>/content` | Visualizacion o descarga autorizada. |
+| `GET/POST /laboratory-equipment/` | Lista/busca y registra equipos. |
+| `GET/POST /laboratory-service-order/` | Lista/filtra y registra ordenes. |
+| `GET /laboratory-service-order/<id>` | Detalle autorizado. |
+| `PUT /laboratory-service-order/<id>/diagnosis` | Registra o actualiza diagnostico sin cambiar estado. |
+| `POST /laboratory-service-order/<id>/transition` | Ejecuta una transicion valida y auditada. |
+| `GET /laboratory-service-order/<id>/history` | Historial cronologico. |
+| `POST /laboratory-service-order/<id>/diagnostic-report` | Genera o regenera una version PDF. |
+| `POST /laboratory-service-order/<id>/diagnostic-report/signed` | Carga PDF firmado sin reemplazar el emitido. |
+
+Los errores usan `AppError`, `error_key` y `meta` con HTTP 400, 404, 409 o 500 segun validacion, alcance, conflicto o configuracion.
+
+### 12.8 Presentacion y pruebas
+
+React incorpora `/documents` y `/laboratory`, protegidos por `RoleAccessRoute`. En Usuarios, `is_employee` se administra con un checkbox. En Documentos, el tipo de relacion alterna entre cliente/proveedor y un droplist de empleados activos. Las paginas permiten carga, filtros, versiones, descarga, alta de equipo/orden, diagnostico, transiciones, historial, generacion y carga firmada. Las restricciones de interfaz son ergonomicas; la autorizacion efectiva permanece en backend.
+
+`backend/tests/test_services/test_document_laboratory_postgresql.py` prueba exclusivamente PostgreSQL: firmas y formatos, acceso entre dos clientes, transiciones invalidas/validas, historial, PDF, regeneracion, versiones y copia firmada. Para ejecucion destructiva de tests se usa una base cuyo nombre termina en `_test`; nunca la base operativa.
+
+Extensiones previstas: nuevas categorias sin migracion, nuevas relaciones con FK, almacenamiento de objetos mediante un adaptador compatible con `SecureDocumentStorage`, firma electronica avanzada, antivirus previo a emision y generacion asincrona con Celery cuando el volumen lo requiera.

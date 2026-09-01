@@ -55,6 +55,8 @@ const navItems = [
   { path: "/product_family", key: "menu.product_family" },
   { path: "/proyect", key: "menu.proyect" },
   { path: "/appointments", key: "menu.appointment", label: "Calendario", entityName: "appointment", group: "Operaciones", groupIcon: "calendar-days", location: "sidebar", order: 75 },
+  { path: "/documents", label: "Documentos", entityName: "document", group: "Laboratorio", groupIcon: "file-text", location: "sidebar", order: 10 },
+  { path: "/laboratory", label: "Equipos y ordenes", entityName: "laboratory_service_order", group: "Laboratorio", groupIcon: "clipboard-list", location: "sidebar", order: 20 },
   { path: "/service", key: "menu.service" },
   { path: "/status", key: "menu.status" },
   { path: "/subdepartment", key: "menu.subdepartment" },
@@ -90,6 +92,7 @@ const groupTranslationKeys = {
   "Bancos": "group_banks", CRM: "group_crm", "Contabilidad": "group_accounting",
   "Recursos humanos": "group_hr", Restaurante: "group_restaurant", Operaciones: "group_operations",
   Inventario: "group_inventory", "Configuración": "group_settings",
+  Laboratorio: "group_laboratory",
 };
 
 const groupIcons = {
@@ -114,6 +117,7 @@ const defaultGroupIcons = {
   "Restaurante": "utensils",
   "Operaciones": "clipboard-list",
   "Inventario": "boxes",
+  "Laboratorio": "clipboard-list",
   "Configuración": "sliders-horizontal",
 };
 

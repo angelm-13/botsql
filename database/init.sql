@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS "user" (
   "user_type" TEXT NULL CHECK ("user_type" IN ('admin', 'client', 'supplier', 'employee', 'web_shopper')),
   "username" VARCHAR(50) NULL,
   "puesto" VARCHAR(50) NULL,
+  "is_employee" BOOLEAN NOT NULL DEFAULT FALSE,
   "accepts_marketing" BOOLEAN NULL DEFAULT FALSE,
   PRIMARY KEY ("id_user")
 );
