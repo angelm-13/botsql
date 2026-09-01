@@ -681,6 +681,44 @@ minúsculas). `kubectl set image` cambia el clúster pero no el archivo — el
 siguiente `apply -f` revierte la versión; cambiar siempre la etiqueta en el
 manifiesto y commitear.
 
+**Los manifiestos de k8s en el VPS no se actualizan solos — hay que copiarlos
+a mano.** Confirmado 2026-09-01: `/home/alanp/tyakxa_tny/k8s/` en el VPS **no
+es un repositorio git** (solo una copia plana). El pipeline de CI (`.github/
+workflows/build-images.yml`, job `deploy-tyakxa-dev`) SÍ mantiene esa copia al
+día para una sola cosa — el tag de imagen en
+`k8s/overlays/tyakxa-dev/kustomization.yaml`, vía `yq` calculado en cada
+corrida — pero **cualquier otro cambio a un archivo bajo `k8s/`** (el
+initContainer de `k8s/base/backend.yaml`, un overlay, un Secret nuevo) se
+queda invisible en el clúster hasta que alguien lo copie a mano. El código de
+la app y las migraciones SQL no tienen este problema — llegan bien en cada
+push porque la imagen Docker se construye fresca desde GitHub, no desde esta
+copia.
+
+Se evaluó resolverlo con un clon git disperso (`git sparse-checkout`, solo la
+carpeta `k8s/`) más una deploy key de solo lectura — técnicamente evita traer
+código fuente al servidor (cumple "el clúster solo hace pull"), pero **la
+política de la organización Tyakxa tiene las deploy keys deshabilitadas**
+("Disabled by Tyakxa", captura del 2026-09-01) — recomiendan GitHub Apps en su
+lugar. Se decidió no perseguirlo por ahora: el costo de copiar a mano es bajo
+y ya pasó dos veces en una sesión sin mayor consecuencia una vez detectado.
+
+**Procedimiento manual, hasta que se resuelva de raíz:** después de pushear
+un cambio a cualquier archivo bajo `k8s/` (no solo el tag), copiar el o los
+archivos afectados al VPS y volver a aplicar:
+
+```bash
+# desde tu maquina local, con el repo actualizado
+scp "C:\Users\TDW2\OneDrive\Desktop\tyakxa_tny\k8s\base\backend.yaml" `
+  168.231.67.33:/home/alanp/tyakxa_tny/k8s/base/backend.yaml
+
+# ya en el VPS
+cd /home/alanp/tyakxa_tny
+kubectl apply -k k8s/overlays/tyakxa-dev
+```
+
+Aplica igual para `torredigital-prod`/`adser-prod` (esos overlays tampoco
+tienen CD automatizado — ver sección 10, punto 9).
+
 ## 8. Tareas asincronas
 
 `backend/app/tasks/erp_tasks.py` declara:
