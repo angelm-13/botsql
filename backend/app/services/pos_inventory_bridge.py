@@ -124,7 +124,10 @@ def reflejar_venta(venta, user_data, solicitud=None) -> dict:
                     # de la misma venta no descuenta dos veces.
                     idempotency_key=f"pos-{folio}-{id_pos}"[:90],
                     id_location=enlace.id_location,
-                    reference_type="invoice",
+                    # 'sale' y no 'invoice': lo causo una venta cobrada, no un
+                    # comprobante. Es lo que permite despues facturar esa venta
+                    # sin descontar de nuevo -y lo que antes lo impedia-.
+                    reference_type="sale",
                     reference_id=folio,
                     reason=f"Venta {folio} del punto de venta",
                     source_module=MODULO,

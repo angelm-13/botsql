@@ -64,6 +64,11 @@ REASON_REQUIRED_MOVEMENTS = {"adjustment", "damage", "destroy", "loss", "expiry"
 REFERENCE_TYPES = {
     "invoice", "invoice_line", "purchase", "project", "task", "incident",
     "count", "manual", "transfer",
+    # Una venta ya cobrada en su modulo -mostrador, restaurante- que movio el
+    # almacen al cobrarse. Se distingue de "invoice" a proposito: si al facturar
+    # esa venta no se puede saber que el movimiento ya existe, la factura
+    # descuenta otra vez y el producto sale dos veces por haberse vendido una.
+    "sale",
     # Movimiento provocado por el rastreo de una pieza concreta: un prestamo,
     # una devolucion o un traslado de herramienta. Permite ir del renglon del
     # libro a la pieza que lo causo.
@@ -100,7 +105,16 @@ def _is_unrestricted(user_data) -> bool:
 
 
 def has_capability(db, user_data, capability) -> bool:
-    """Capacidad concedida al rol del actor, con el mismo mecanismo que Proyectos."""
+    """Capacidad concedida al rol del actor, con el mismo mecanismo que Proyectos.
+
+    Igual que con las entidades, el plan manda sobre el rol: las capacidades del
+    punto de venta y del restaurante son la puerta a esos modulos, y si no se
+    compraron no hay rol que las abra.
+    """
+    from app.modules.plan import entidad_habilitada
+
+    if not entidad_habilitada(capability):
+        return False
     if _is_unrestricted(user_data):
         return True
     try:
