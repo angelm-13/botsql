@@ -32,6 +32,13 @@ export const moduleSections = [
     // usuarios; cambiarlo les colapsaria el menu sin motivo.
     key: "Logística",
     titleKey: "group_logistics",
+    // Contra que modulo del plan se gatea el apartado entero. Hace falta
+    // aparte de las entidades de cada entrada: dentro de Logistica hay dos
+    // pantallas de facturacion, asi que un cliente que compro facturacion pero
+    // no logistica seguia viendo el encabezado "Logistica" con esas dos
+    // dentro. No era fuga de datos -el backend negaba lo demas- pero le
+    // nombraba un modulo que no compro.
+    modulo: "logistica",
     icon: "truck",
     basePath: "/logistica",
     sections: [
@@ -86,6 +93,7 @@ export const moduleSections = [
   {
     key: "Punto de venta",
     titleKey: "group_pos",
+    modulo: "pos",
     icon: "shopping-cart",
     basePath: "/pos",
     // Las secciones salen de las pantallas que el modulo trae de verdad
@@ -128,3 +136,21 @@ export const moduleSections = [
 export const availableModuleSections = moduleSections.filter(
   (modulo) => modulo.disponible !== false
 );
+
+/**
+ * Los apartados que el plan del despliegue permite.
+ *
+ * `modulosDelPlan` es la lista que devuelve `/security/plan`. Mientras no haya
+ * llegado -o si el servidor no la da- se muestran todos: un menu vacio mientras
+ * carga se lee como un sistema roto, y el backend niega igual lo que no este en
+ * el plan, asi que ocultar aqui es comodidad y no seguridad.
+ */
+export function moduleSectionsEnPlan(modulosDelPlan) {
+  if (!Array.isArray(modulosDelPlan) || modulosDelPlan.length === 0) {
+    return availableModuleSections;
+  }
+  const permitidos = new Set(modulosDelPlan);
+  return availableModuleSections.filter(
+    (modulo) => !modulo.modulo || permitidos.has(modulo.modulo)
+  );
+}

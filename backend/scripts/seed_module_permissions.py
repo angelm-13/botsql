@@ -49,7 +49,13 @@ def _sql(valor):
 
 
 def generar() -> str:
-    filas = filas_de_permisos()
+    # El plan del despliegue recorta la matriz: un cliente que no compro
+    # logistica no tiene ni las filas de sus entidades. El guardia de peticion
+    # tambien lo comprueba, pero no sembrarlas es lo que mantiene limpios el
+    # menu y el gestor de roles -no se puede conceder lo que no aparece-.
+    from app.modules.plan import entidad_habilitada
+
+    filas = [f for f in filas_de_permisos() if entidad_habilitada(f[1])]
 
     renglones = []
     ultimo = len(filas) - 1

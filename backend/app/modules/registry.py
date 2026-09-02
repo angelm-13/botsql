@@ -427,9 +427,21 @@ def _validar():
 _validar()
 
 
-def modulo_de(entidad):
-    """A que modulo pertenece una entidad, o None si no esta declarada."""
-    return ENTIDAD_A_MODULO.get(entidad)
+def modulo_de(nombre):
+    """A que modulo pertenece una entidad o una capacidad.
+
+    Devuelve None si el nombre no esta declarado en ningun sitio.
+
+    Incluye las capacidades a proposito. Sin ellas, un cliente cuyo plan no
+    trae el punto de venta seguiria alcanzando el puente, porque el puente se
+    gatea con `pos_terminal` y `pos_admin`, que son capacidades y no tablas.
+    Lo mismo con el restaurante y con los ajustes de existencias.
+    """
+    modulo = ENTIDAD_A_MODULO.get(nombre)
+    if modulo is not None:
+        return modulo
+    capacidad = CAPACIDAD_POR_CLAVE.get(nombre)
+    return capacidad.modulo if capacidad is not None else None
 
 
 def almacenes():

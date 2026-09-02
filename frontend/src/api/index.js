@@ -7,6 +7,8 @@ export const setupMfa = () => request("/auth/mfa/setup", { method: "POST" });
 export const enableMfa = (payload) => request("/auth/mfa/enable", { method: "POST", body: payload });
 export const disableMfa = (payload) => request("/auth/mfa/disable", { method: "POST", body: payload });
 export const resetUserMfa = (targetUserId) => request(`/auth/mfa/reset/${targetUserId}`, { method: "POST" });
+export const inventoryTrace = (params) => request("/inventory/trace", { params });
+
 export const uploadProductImage = (id, file) => {
   const formData = new FormData();
   formData.append("file", file);
@@ -293,6 +295,8 @@ export const getInvoiceInventoryPreview = (id, params = {}) => request(`/invoice
 // nucleo habla con el POS por detras. El front nunca ve credenciales del POS.
 export const posStatus = () => request("/pos/status");
 export const posLinks = () => request("/pos/links");
+export const deploymentPlan = () => request("/security/plan");
+
 export const posSyncCatalog = (payload) =>
   request("/pos/links/sync", { method: "POST", body: payload });
 
@@ -588,3 +592,4 @@ export const getKronosAttendance = (payload) => request("/kronos/attendance", { 
 export const getKronosPeople = (payload) => request("/kronos/people", { method: "POST", body: payload });
 export const saveKronosPerson = (payload) => request("/kronos/people", { method: "PUT", body: payload });
 export const deleteKronosPerson = (employeeNo, payload) => request(`/kronos/people/${encodeURIComponent(employeeNo)}`, { method: "DELETE", body: payload });
+export { urlDeArchivo } from "./client";

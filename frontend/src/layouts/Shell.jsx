@@ -1,10 +1,10 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Boxes, Briefcase, CalendarDays, ChevronDown, ClipboardList, Contact, FileText, Landmark, LayoutDashboard, LogOut, PanelLeftClose, PanelLeftOpen, Receipt, Settings, ShieldCheck, ShoppingCart, SlidersHorizontal, Truck, UserCog, Users, Utensils, Warehouse } from "lucide-react";
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { getAllEntityPermission } from "../api";
+import { deploymentPlan, getAllEntityPermission } from "../api";
 import LanguagePicker from "../components/LanguagePicker";
 import { useI18n } from "../i18n";
-import { availableModuleSections } from "./moduleSections";
+import { moduleSectionsEnPlan } from "./moduleSections";
 
 const navItems = [
   { path: "/", key: "common.dashboard", exact: true },
@@ -34,6 +34,7 @@ const navItems = [
   // Rastreo pieza por pieza. Va junto al almacen y con la misma entidad, para
   // que dar acceso al inventario lo arrastre sin un permiso nuevo que alguien
   // tenga que acordarse de conceder.
+  { path: "/inventory/trace", key: "menu.inventory_trace", label: "Localizar", entityName: "product", group: "Inventario", groupIcon: "inventory", location: "sidebar", order: 12 },
   { path: "/assets", key: "menu.assets", label: "Rastreo de piezas", entityName: "product", group: "Inventario", groupIcon: "warehouse", location: "sidebar", order: 15 },
   { path: "/inventory_status", key: "menu.inventory_status" },
   { path: "/invoice", key: "menu.invoice" },
@@ -147,6 +148,10 @@ export default function Shell() {
   const [roleEntityPermissions, setRoleEntityPermissions] = useState([]);
   const [rolePermissionsLoaded, setRolePermissionsLoaded] = useState(false);
   const [openGroups, setOpenGroups] = useState({});
+  // Los modulos que el cliente compro. Vacio hasta que responde el servidor;
+  // mientras tanto se muestran todos, porque un menu que aparece a trozos se
+  // lee como un sistema roto y el backend niega igual lo que no este en el plan.
+  const [modulosDelPlan, setModulosDelPlan] = useState([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => (
     window.matchMedia("(max-width: 800px)").matches || localStorage.getItem("tyakxa-sidebar-collapsed") === "true"
   ));
@@ -179,6 +184,16 @@ export default function Shell() {
       .finally(() => { if (mounted) setRolePermissionsLoaded(true); });
     return () => { mounted = false; };
   }, [currentUser?.id_permission, isBootstrapAdmin]);
+
+  useEffect(() => {
+    let vigente = true;
+    deploymentPlan()
+      .then((plan) => { if (vigente) setModulosDelPlan(plan?.modulos || []); })
+      // Si no se puede leer el plan no se esconde nada: el backend sigue
+      // negando lo que no corresponde.
+      .catch(() => {});
+    return () => { vigente = false; };
+  }, []);
 
   function canSeeNavItem(item) {
     if (item.exact || item.path === "/mfa-setup") return true;
@@ -315,7 +330,7 @@ export default function Shell() {
           {/* Modulos con menu de dos niveles. La estructura vive en
               moduleSections.js; aqui solo se pinta, de modo que agregar un
               modulo con secciones no vuelve a significar copiar este bloque. */}
-          {availableModuleSections.map((modulo) => {
+          {moduleSectionsEnPlan(modulosDelPlan).map((modulo) => {
             const seccionesVisibles = modulo.sections
               .map((seccion) => ({ ...seccion, items: seccion.items.filter(canSeeSectionItem) }))
               .filter((seccion) => seccion.items.length > 0);
