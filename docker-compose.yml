@@ -22,6 +22,48 @@ services:
       retries: 10
     networks: [tyakxa_net]
 
+  # Aplica database/migrations al arrancar, igual que el initContainer
+  # `db-migrate` de k8s (ver k8s/base/backend.yaml): mismo psql, mismo orden
+  # lexicografico -que es el cronologico, por el prefijo de fecha del nombre- y
+  # el mismo ON_ERROR_STOP=1.
+  #
+  # Por que existe este servicio y no una linea en entrypoint.sh: el arranque
+  # del backend dejo de aplicar migraciones a proposito (25f6563), porque
+  # apply_migrations.py exige DATABASE_URL y en k8s no existe. La consecuencia
+  # no buscada fue que el camino de docker-compose se quedo sin NINGUN
+  # mecanismo: `init_db.py` crea las tablas desde los modelos, pero no aplica
+  # ninguna de las migraciones, asi que una instalacion nueva levantaba con las
+  # tablas vacias de permisos -la matriz de entity_permission llega por
+  # migracion- y nadie veia nada.
+  #
+  # Se resuelve con el mecanismo que ya se eligio para k8s en vez de devolver la
+  # linea al entrypoint: no toca el arranque del backend, no cambia nada en
+  # produccion, y las 59 migraciones estan verificadas como reaplicables.
+  db-migrate:
+    image: postgres:16-alpine
+    env_file: [.env]
+    environment:
+      PGHOST: db
+      PGDATABASE: ${DB_NAME}
+      PGUSER: ${DB_USER}
+      PGPASSWORD: ${DB_PASSWORD}
+    volumes:
+      - ./database/migrations:/migrations:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        for f in /migrations/*.sql; do
+          echo "db-migrate: aplicando $$(basename "$$f")"
+          psql -v ON_ERROR_STOP=1 -q -v licensed_modules="$${LICENSED_MODULES:-}" -f "$$f"
+        done
+        echo "db-migrate: esquema al dia"
+    networks: [tyakxa_net]
+
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
     restart: unless-stopped
@@ -48,6 +90,11 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      # Se espera a que las migraciones acaben, no solo a que la base responda:
+      # arrancar contra un esquema a medias da errores que no parecen de
+      # esquema -una columna que falta se ve como un fallo de la aplicacion-.
+      db-migrate:
+        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
     ports:

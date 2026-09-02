@@ -203,7 +203,16 @@ SELECT permission.id_permission, entity.entity_name,
            ELSE 2
        END,
        CASE WHEN entity.entity_name IN ('document', 'laboratory_equipment', 'laboratory_service_order') THEN 'sidebar' ELSE 'hidden' END,
-       'Laboratorio', 'flask-conical', entity.menu_label, entity.menu_order,
+       -- El grupo depende de la entidad. Estaba fijo en 'Laboratorio' para las
+       -- siete filas, asi que las cuatro de documentos quedaban archivadas
+       -- dentro de Laboratorio: dos modulos distintos bajo un solo encabezado.
+       CASE WHEN entity.entity_name IN ('document', 'document_category',
+                                        'document_version', 'document_relation')
+            THEN 'Documentos' ELSE 'Laboratorio' END,
+       CASE WHEN entity.entity_name IN ('document', 'document_category',
+                                        'document_version', 'document_relation')
+            THEN 'file-text' ELSE 'flask-conical' END,
+       entity.menu_label, entity.menu_order,
        COALESCE((SELECT MIN(id_user) FROM "user"), 1), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
 FROM permission
 CROSS JOIN (VALUES
@@ -216,11 +225,36 @@ CROSS JOIN (VALUES
     ('laboratory_service_order_status_history', 'Historial de ordenes', 622)
 ) AS entity(entity_name, menu_label, menu_order)
 WHERE EXISTS (SELECT 1 FROM "user")
-  AND NOT EXISTS (
-      SELECT 1 FROM entity_permission current_permission
-      WHERE current_permission.id_permission = permission.id_permission
-        AND current_permission.entity_name = entity.entity_name
-        AND current_permission.deletion_date IS NULL
-  );
+-- Inserta o revive, en vez de saltarse la fila si ya existe.
+--
+-- La guarda original era `NOT EXISTS ... AND deletion_date IS NULL`, y eso
+-- fallaba de dos maneras segun el estado de la base:
+--
+--   * con una fila borrada logicamente, la guarda decia "no existe" y el
+--     INSERT violaba `uq_entity_permission_scope`, que es UNIQUE
+--     (id_permission, entity_name) y no distingue borrado logico. Como el
+--     initContainer de k8s reaplica todas las migraciones en cada arranque del
+--     pod, eso detiene el arranque;
+--
+--   * quitando el filtro de `deletion_date` se evitaba el choque, pero
+--     entonces una fila borrada logicamente bloqueaba la resiembra para
+--     siempre y el modulo no volvia a aparecer -medido: 12 filas de cada
+--     entidad, todas borradas, y Documentos y Laboratorio invisibles en el
+--     menu-. Se cambiaba un fallo ruidoso por uno silencioso, que es peor.
+--
+-- `ON CONFLICT ... DO UPDATE` cubre los dos casos: si la fila esta viva se
+-- refresca su navegacion, y si estaba borrada logicamente se revive. El estado
+-- final no depende de por cuantas resiembras haya pasado la base.
+--
+-- Los bits de permiso NO se pisan: si alguien recorto el acceso de un rol desde
+-- el gestor, una reaplicacion de esta migracion no debe devolverselo.
+ON CONFLICT (id_permission, entity_name) DO UPDATE
+SET menu_location = EXCLUDED.menu_location,
+    menu_group = EXCLUDED.menu_group,
+    menu_group_icon = EXCLUDED.menu_group_icon,
+    menu_label = EXCLUDED.menu_label,
+    menu_order = EXCLUDED.menu_order,
+    deletion_date = NULL,
+    last_update_date = CURRENT_TIMESTAMP;
 
 COMMIT;

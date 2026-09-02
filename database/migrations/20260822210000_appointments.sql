@@ -100,7 +100,17 @@ CREATE INDEX IF NOT EXISTS ix_availability_override_profile_date ON availability
 CREATE INDEX IF NOT EXISTS ix_appointment_project_start ON appointment (id_proyect, starts_at);
 
 CREATE TEMP TABLE tmp_ep_appointments AS
-SELECT permission.id_permission, 'appointment'::varchar AS entity_name, 15::text AS control_type,
+-- `15` sin cast, no `15::text`.
+--
+-- `entity_permission.control_type` es `text` en las bases reales y `smallint`
+-- en una creada desde los modelos, que declaran `SmallInteger` (deuda conocida,
+-- ver 0f37c01). Con el cast a text esta migracion solo se puede aplicar sobre
+-- las primeras: contra una columna smallint falla, y como el initContainer de
+-- k8s reaplica todo en cada arranque, detiene el pod.
+--
+-- El literal sin cast entra en los dos tipos -comprobado contra Postgres real-
+-- asi que no hace falta resolver antes cual de los dos es el correcto.
+SELECT permission.id_permission, 'appointment'::varchar AS entity_name, 15 AS control_type,
        'sidebar'::varchar AS menu_location, 'Operaciones'::varchar AS menu_group,
        'calendar-days'::varchar AS menu_group_icon, 'Calendario'::varchar AS menu_label,
        75 AS menu_order, permission.created_by
