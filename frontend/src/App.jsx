@@ -22,6 +22,7 @@ import IncidentPage from "./pages/IncidentPage.jsx";
 import IncidentDetailPage from "./pages/IncidentDetailPage.jsx";
 import IncidentTypePage from "./pages/IncidentTypePage.jsx";
 import AssetTrackingPage from "./pages/AssetTrackingPage.jsx";
+import InventoryTracePage from "./pages/InventoryTracePage.jsx";
 import PosTillPage from "./pages/PosTillPage.jsx";
 import PosCatalogPage from "./pages/pos/PosCatalogPage.jsx";
 import PosPromotionsPage from "./pages/pos/PosPromotionsPage.jsx";
@@ -185,6 +186,7 @@ export default function App() {
           <Route path="/pos/inventario" element={<RoleAccessRoute entityName="pos_admin"><PosWarehousePage /></RoleAccessRoute>} />
           <Route path="/pos/tablero" element={<RoleAccessRoute entityName="pos_admin"><PosReportsPage /></RoleAccessRoute>} />
           <Route path="/pos/caja" element={<RoleAccessRoute entityName="pos_terminal"><PosTillPage /></RoleAccessRoute>} />
+          <Route path="/inventory/trace" element={<RoleAccessRoute entityName="product"><InventoryTracePage /></RoleAccessRoute>} />
           <Route path="/assets" element={<RoleAccessRoute entityName="product"><AssetTrackingPage /></RoleAccessRoute>} />
           <Route path="/inventory_status" element={<RoleAccessRoute entityName="inventory_status"><InventoryStatusPage /></RoleAccessRoute>} />
           <Route path="/kanban" element={<Kanban />} />

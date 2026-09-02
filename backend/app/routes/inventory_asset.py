@@ -32,6 +32,28 @@ def _cuerpo():
 
 # --- consultas ----------------------------------------------------------
 
+@bp_inventory_asset.route("/inventory/trace", methods=["GET"])
+@token_required
+@require_entity_permission("product", "read")
+def localizar_en_almacen(user_data):
+    """Buscar cualquier cosa del almacen y ver donde esta y que le paso.
+
+    Es la pregunta que se hace primero en un almacen -"donde esta el
+    taladro"- y la que no se podia hacer: habia que saber de antemano el
+    producto o el almacen para consultar. Busca por codigo, descripcion y
+    etiqueta de pieza, porque la etiqueta es lo que esta pegado en la
+    herramienta y lo que lee quien la tiene en la mano.
+    """
+    from app.services.inventory_trace_service import localizar
+
+    return jsonify(localizar(
+        request.args.get("q"),
+        user_data,
+        proposito=(request.args.get("stock_purpose") or "").strip() or None,
+        con_piezas=str(request.args.get("assets") or "1").strip().lower() not in {"0", "false", "no"},
+    ))
+
+
 @bp_inventory_asset.route("/assets", methods=["GET"])
 @token_required
 @require_entity_permission("product", "read")
