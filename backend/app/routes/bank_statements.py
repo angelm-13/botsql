@@ -75,6 +75,9 @@ def _preview_payload(parsed):
 
 
 def _read_upload():
+    from app.services.storage_service import exigir_espacio
+    exigir_espacio(request.content_length or 0)
+
     uploaded = request.files.get("file")
     if not uploaded or not uploaded.filename:
         raise AppError("errors.invalid_field", 400, {"field": "file"})
