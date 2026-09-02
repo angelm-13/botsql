@@ -124,9 +124,16 @@ def _ejecutar_sql_crudo(conexion, sql: str) -> None:
 
     Llamar a `cursor.execute(sql)` sin el segundo argumento salta la
     interpolacion por completo, que es justo lo que hace falta para un archivo
-    que no lleva parametros.
+    que no lleva parametros. Es el mismo comportamiento que `psql -f`, que es el
+    mecanismo real del initContainer de k8s: por eso el fallo nunca se vio en los
+    despliegues y solo aparecia al correr el aplicador a mano.
+
+    El mismo defecto se encontro dos veces por separado, en esta rama y en
+    tny_docs, y se arreglo igual en las dos. Se conserva el acceso de tny_docs
+    -`driver_connection`- porque `connection` es el proxy del pool: reenvia, pero
+    depender de ese reenvio es depender de un detalle interno.
     """
-    cursor = conexion.connection.cursor()
+    cursor = conexion.connection.driver_connection.cursor()
     try:
         cursor.execute(sql)
     finally:

@@ -1,0 +1,57 @@
+# Plantilla para dar de alta un cliente nuevo. NO se aplica tal cual:
+#
+#   cp -r k8s/overlays/_template k8s/overlays/<cliente>-<env>
+#
+# y luego reemplaza los 4 bloques marcados abajo (namespace, tags de
+# imagen, y los 5 valores del patch de Ingress). El runbook completo
+# está en el artefacto "Runbook multi-cliente".
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# 1) Nombre real del namespace: <cliente>-<env>
+#    (sí puede terminar en -prod/-test: el ERP tiene excepción explícita
+#    a esa regla general de nombrado de namespaces).
+namespace: CLIENTE-ENV
+
+resources:
+  - ../../base
+
+# 2) Tags de imagen: el SHA corto lo da el workflow build-images.yml
+#    en su output "sha_short" cada vez que hace push a ghcr.io/tyakxa.
+images:
+  - name: DB_INIT_IMAGE_PLACEHOLDER
+    newName: ghcr.io/tyakxa/tyakxa-tny-db-init
+    newTag: REEMPLAZAR_SHA
+  - name: BACKEND_IMAGE_PLACEHOLDER
+    newName: ghcr.io/tyakxa/tyakxa-tny-backend
+    newTag: REEMPLAZAR_SHA
+  - name: WORKER_IMAGE_PLACEHOLDER
+    newName: ghcr.io/tyakxa/tyakxa-tny-worker
+    newTag: REEMPLAZAR_SHA
+  - name: FRONTEND_IMAGE_PLACEHOLDER
+    newName: ghcr.io/tyakxa/tyakxa-tny-frontend
+    newTag: REEMPLAZAR_SHA-CLIENTE-ENV
+
+# 3) Dominios reales y el ClusterIssuer correcto (letsencrypt-prod en
+#    producción, letsencrypt-staging para probar sin gastar el límite
+#    de emisión de Let's Encrypt).
+patches:
+  - target:
+      kind: Ingress
+      name: tyakxa-tny
+    patch: |-
+      - op: replace
+        path: /metadata/annotations/cert-manager.io~1cluster-issuer
+        value: letsencrypt-prod
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: CLIENTE-ENV.tyakxa.com.mx
+      - op: replace
+        path: /spec/tls/1/hosts/0
+        value: api-CLIENTE-ENV.tyakxa.com.mx
+      - op: replace
+        path: /spec/rules/0/host
+        value: CLIENTE-ENV.tyakxa.com.mx
+      - op: replace
+        path: /spec/rules/1/host
+        value: api-CLIENTE-ENV.tyakxa.com.mx

@@ -47,9 +47,10 @@ def save_config(payload: dict) -> dict:
     provider = str(payload.get("provider") or "fake").strip().lower()
     if provider not in VALID_PROVIDERS:
         raise AppError("stamping.provider_invalid", 400, {"allowed": sorted(VALID_PROVIDERS)})
-    base_url = str(payload.get("facturama_base_url") or default_base_url(provider)).strip().rstrip("/")
-    if provider != "fake" and not base_url.startswith("https://"):
-        raise AppError("stamping.facturama_https_required", 400)
+    # La URL siempre es la canonica del provider elegido, nunca la que mande
+    # el admin: la pantalla de configuracion no debe poder mostrar (ni guardar)
+    # un base_url que no coincida con el modo real (prod/sandbox).
+    base_url = default_base_url(provider)
     expedition_place = str(payload.get("expedition_place") or "").strip()
     if expedition_place and (len(expedition_place) != 5 or not expedition_place.isdigit()):
         raise AppError("stamping.expedition_place_invalid", 400, {"field": "expedition_place"})
@@ -78,7 +79,10 @@ def provider_credentials(override: dict | None = None) -> dict:
             "provider": provider,
             "username": str(override.get("facturama_username") or (config.facturama_username if config else "") or os.getenv("FACTURAMA_USERNAME") or os.getenv("FACTURAMA_USER") or ""),
             "password": str(override.get("facturama_password") or decrypt_password(config) or os.getenv("FACTURAMA_PASSWORD") or os.getenv("FACTURAMA_PASS") or ""),
-            "base_url": str(override.get("facturama_base_url") or (config.facturama_base_url if config else "") or default_base_url(provider)),
+            # Siempre la canonica del provider resuelto -- ni el override ni lo
+            # guardado en config pueden desviar a que un modo "sandbox" termine
+            # pegandole a produccion o viceversa.
+            "base_url": default_base_url(provider),
             "expedition_place": str(override.get("expedition_place") or (config.expedition_place if config else "") or ""),
             "name_id": str(override.get("name_id") or (config.name_id if config else "1") or "1"),
         }

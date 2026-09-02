@@ -3988,6 +3988,7 @@
     "kind_extraviado": "lost",
     "kind_caducado": "expired",
     "kind_trasladado": "transferred",
-    "kind_ajustado": "adjusted"
+    "kind_ajustado": "adjusted",
+    "manage_piece": "Manage"
   }
 }

@@ -1,0 +1,84 @@
+# Deployment simple (no StatefulSet): si el pod muere y reaparece con
+# la cola vacía, Celery reintenta las tareas — RabbitMQ no es una
+# fuente de verdad como Postgres, así que no necesita disco persistente
+# ni identidad estable.
+#
+# Sin Ingress: el panel de administración (puerto 15672) no se expone
+# públicamente por cliente — reduce superficie de ataque. Para revisar
+# colas se usa `kubectl port-forward` puntual.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rabbitmq
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: rabbitmq
+  template:
+    metadata:
+      labels:
+        app: rabbitmq
+    spec:
+      # Ver nota en backend.yaml: evita que Kubernetes inyecte variables
+      # tipo <SERVICE>_PORT de otros Services del namespace.
+      enableServiceLinks: false
+      containers:
+        - name: rabbitmq
+          image: rabbitmq:3.13-management-alpine
+          # Sin envFrom a propósito: RabbitMQ solo necesita sus propias
+          # RABBITMQ_DEFAULT_*. Inyectarle el resto de app-secrets (DB_
+          # PASSWORD, JWT_SECRET, MFA_ENCRYPTION_KEY...) le daría acceso a
+          # secretos que no usa y que no debería poder leer si este
+          # contenedor (proceso de terceros) se ve comprometido.
+          env:
+            - name: RABBITMQ_DEFAULT_USER
+              valueFrom: { secretKeyRef: { name: app-secrets, key: RABBITMQ_DEFAULT_USER } }
+            - name: RABBITMQ_DEFAULT_PASS
+              valueFrom: { secretKeyRef: { name: app-secrets, key: RABBITMQ_DEFAULT_PASS } }
+          ports:
+            - containerPort: 5672
+            - containerPort: 15672
+          resources:
+            requests:
+              cpu: 100m
+              memory: 150Mi
+            limits:
+              cpu: 400m
+              memory: 320Mi
+          readinessProbe:
+            exec:
+              command: ["rabbitmq-diagnostics", "check_running"]
+            # rabbitmq-diagnostics arranca su propio nodo Erlang de corta
+            # vida para consultar al broker — con timeoutSeconds: 1 (el
+            # default de Kubernetes) casi siempre truena por timeout antes
+            # de terminar, sobre todo con solo 100m de CPU. No es que el
+            # check falle, es que nunca lo dejamos terminar.
+            timeoutSeconds: 10
+            periodSeconds: 15
+            initialDelaySeconds: 20
+          livenessProbe:
+            # "ping" es más liviano que "check_running" (no valida que las
+            # colas/plugins estén operativos, solo que el nodo responde) —
+            # suficiente para decidir si hay que reiniciar el contenedor.
+            exec:
+              command: ["rabbitmq-diagnostics", "ping"]
+            timeoutSeconds: 10
+            periodSeconds: 20
+            failureThreshold: 3
+            initialDelaySeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+spec:
+  selector:
+    app: rabbitmq
+  ports:
+    - name: amqp
+      port: 5672
+    - name: mgmt
+      port: 15672

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle, Camera, ImageOff, MapPin, RefreshCw, Search, Wrench,
 } from "lucide-react";
+import { Link } from "react-router-dom";
 import { inventoryTrace, uploadProductImage, urlDeArchivo } from "../api";
 import { useI18n } from "../i18n";
 import "../styles/inventory-trace.css";
@@ -302,6 +303,16 @@ export default function InventoryTracePage() {
                               {t("trace.due", "regresa")} {a.due_date}
                             </span>
                           )}
+                          {/* Esta pantalla localiza; las acciones sobre la pieza
+                              -prestar, devolver, mandar a reparar, dar de baja-
+                              viven en su pantalla, que es donde estan sus
+                              transiciones de estado y su historial. Se enlaza en
+                              vez de repetirlas aqui: dos sitios que prestan la
+                              misma herramienta acaban discrepando. */}
+                          <Link className="trace-manage"
+                                to={`/assets?tag=${encodeURIComponent(a.asset_tag || "")}`}>
+                            {t("trace.manage_piece", "Gestionar")}
+                          </Link>
                         </li>
                       ))}
                     </ul>

@@ -13,13 +13,15 @@ PYWAIT
 echo "🚀 Initializing database..."
 python init_db.py
 
-# Las migraciones se venian aplicando a mano, sin registro de cuales. Una base
-# nueva no tenia camino definido hasta el esquema actual, y sobre una existente
-# nadie podia decir cual faltaba. El aplicador lleva ese registro y solo corre
-# lo pendiente; si una falla, se detiene aqui en lugar de levantar el servidor
-# contra un esquema a medias.
-echo "📜 Applying pending migrations..."
-python scripts/apply_migrations.py
+# scripts/apply_migrations.py (con su propio tracking por checksum) NO se
+# llama aqui: requiere DATABASE_URL, que nunca ha existido ni en el Secret de
+# k8s (DB_HOST/DB_NAME/DB_USER/DB_PASSWORD/DB_PORT por separado) ni en
+# docker-compose.yml, asi que esta linea jamas llego a ejecutarse con exito en
+# ningun ambiente donde corre la app -- siempre se cayo antes el
+# initContainer de k8s (database/migrations/*.sql via psql -f, ver
+# k8s/base/backend.yaml), que es el mecanismo real y ya corre antes de que
+# este contenedor arranque. Es una herramienta de desarrollo aparte, para
+# correr a mano con su propio DATABASE_URL.
 
 if [ "${FLASK_ENV:-development}" = "development" ]; then
   flask --app app run --host=0.0.0.0 --port=${BACKEND_PORT:-5001} --debug

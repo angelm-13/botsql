@@ -95,6 +95,8 @@ import RestaurantKitchenPage from "./pages/restaurant/RestaurantKitchenPage.jsx"
 import RestaurantCashierPage from "./pages/restaurant/RestaurantCashierPage.jsx";
 import RestaurantAdminPage from "./pages/restaurant/RestaurantAdminPage.jsx";
 import AppointmentsPage from "./pages/AppointmentsPage.jsx";
+import DocumentManagementPage from "./pages/DocumentManagementPage.jsx";
+import LaboratoryManagementPage from "./pages/LaboratoryManagementPage.jsx";
 import PublicCalendarPage from "./pages/PublicCalendarPage.jsx";
 import Kanban from './components/Kanban.jsx';
 import LoginPage from "./auth/LoginPage";
@@ -247,6 +249,8 @@ export default function App() {
           <Route path="/product_sale_config" element={<RoleAccessRoute entityName="product_sale_config"><ProductSaleConfigPage /></RoleAccessRoute>} />
           <Route path="/proyect" element={<RoleAccessRoute entityName="proyect"><ProjectManagementPage /></RoleAccessRoute>} />
           <Route path="/appointments" element={<RoleAccessRoute entityName="appointment"><AppointmentsPage /></RoleAccessRoute>} />
+          <Route path="/documents" element={<RoleAccessRoute entityName="document"><DocumentManagementPage /></RoleAccessRoute>} />
+          <Route path="/laboratory" element={<RoleAccessRoute entityName="laboratory_service_order"><LaboratoryManagementPage /></RoleAccessRoute>} />
           <Route path="/public_api_key" element={<RoleAccessRoute entityName="public_api_key"><PublicApiKeyPage /></RoleAccessRoute>} />
           <Route path="/service" element={<RoleAccessRoute entityName="service"><ServicePage /></RoleAccessRoute>} />
           <Route path="/status" element={<RoleAccessRoute entityName="status"><StatusPage /></RoleAccessRoute>} />

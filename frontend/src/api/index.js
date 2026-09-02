@@ -14,6 +14,36 @@ export const uploadProductImage = (id, file) => {
   formData.append("file", file);
   return request(`/product/${id}/image`, { method: "POST", body: formData });
 };
+
+export const getDocuments = (params = {}) => request("/document/", { params });
+export const getDocument = (id) => request(`/document/${id}`);
+export const getDocumentCategories = () => request("/document/categories");
+export const getDocumentEmployees = () => request("/document/employees");
+export const uploadDocument = (payload, file) => {
+  const formData = new FormData();
+  Object.entries(payload).forEach(([key, value]) => { if (value !== undefined && value !== null && value !== "") formData.append(key, value); });
+  formData.append("file", file);
+  return request("/document/", { method: "POST", body: formData });
+};
+export const updateDocument = (id, payload) => request(`/document/${id}`, { method: "PUT", body: payload });
+export const deleteDocument = (id) => request(`/document/${id}`, { method: "DELETE" });
+export const downloadDocumentVersion = (id, version, download = true) => requestBlob(`/document/${id}/versions/${version}/content`, { params: { download: download ? 1 : 0 } });
+
+export const getLaboratoryEquipment = (params = {}) => request("/laboratory-equipment/", { params });
+export const createLaboratoryEquipment = (payload) => request("/laboratory-equipment/", { method: "POST", body: payload });
+export const getLaboratoryOrders = (params = {}) => request("/laboratory-service-order/", { params });
+export const getLaboratoryOrder = (id) => request(`/laboratory-service-order/${id}`);
+export const createLaboratoryOrder = (payload) => request("/laboratory-service-order/", { method: "POST", body: payload });
+export const updateLaboratoryDiagnosis = (id, payload) => request(`/laboratory-service-order/${id}/diagnosis`, { method: "PUT", body: payload });
+export const transitionLaboratoryOrder = (id, payload) => request(`/laboratory-service-order/${id}/transition`, { method: "POST", body: payload });
+export const getLaboratoryOrderHistory = (id) => request(`/laboratory-service-order/${id}/history`);
+export const generateLaboratoryReport = (id) => request(`/laboratory-service-order/${id}/diagnostic-report`, { method: "POST" });
+export const uploadSignedLaboratoryReport = (id, file, parentVersionId) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (parentVersionId) formData.append("id_parent_document_version", parentVersionId);
+  return request(`/laboratory-service-order/${id}/diagnostic-report/signed`, { method: "POST", body: formData });
+};
 export const getPermissionCatalog = () => request("/security/permission-catalog");
 
 export const getAppointmentProfiles = () => request("/appointments/profiles");

@@ -35,7 +35,7 @@ INSERT INTO nm_field_permission (id_field, id_permission, control_type, created_
 SELECT f.id_field,
        ep.id_permission,
        -- Se hereda el alcance que el rol ya tiene sobre la entidad.
-       LEAST(ep.control_type, 15)::text,
+       LEAST(ep.control_type::integer, 15)::text,
        1
 FROM entity_permission ep
 JOIN field f

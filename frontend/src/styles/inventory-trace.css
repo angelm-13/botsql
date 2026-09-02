@@ -149,3 +149,8 @@
 @media (prefers-reduced-motion: reduce) {
   .trace-page * { transition: none !important; animation: none !important; }
 }
+
+/* Enlace a las acciones de la pieza. Discreto: la pantalla es para localizar,
+   y el enlace es la salida hacia donde se actua. */
+.trace-manage{margin-left:auto;font-size:12.5px;color:#1b7a60;text-decoration:none;font-weight:600}
+.trace-manage:hover{text-decoration:underline}

@@ -97,14 +97,11 @@ WHERE NOT EXISTS (
     SELECT 1 FROM field WHERE table_name = 'logistics_trip' AND field_name = 'id_logistics_file'
 );
 
-INSERT INTO entity_permission (
-    id_permission, entity_name, control_type, menu_location, menu_group,
-    menu_group_icon, menu_label, menu_order, created_by, creation_date, last_update_date
-)
+CREATE TEMP TABLE tmp_ep_logistics_remaining AS
 SELECT source_permission.id_permission, logistics_entity.entity_name,
-       source_permission.control_type, 'sidebar', 'Logística', 'truck',
-       logistics_entity.menu_label, logistics_entity.menu_order,
-       1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+       source_permission.control_type, 'sidebar'::varchar AS menu_location, 'Logística'::varchar AS menu_group,
+       'truck'::varchar AS menu_group_icon, logistics_entity.menu_label, logistics_entity.menu_order,
+       1 AS created_by
 FROM entity_permission source_permission
 JOIN (VALUES
     ('logistics_shipment', 'customer_supplier', 'Embarques', 220),
@@ -113,16 +110,34 @@ JOIN (VALUES
     ('logistics_file', 'customer_supplier', 'Expedientes', 250)
 ) AS logistics_entity(entity_name, source_entity, menu_label, menu_order)
   ON source_permission.entity_name = logistics_entity.source_entity
-WHERE source_permission.deletion_date IS NULL
-ON CONFLICT (id_permission, entity_name) DO UPDATE SET
-    control_type = EXCLUDED.control_type,
-    menu_location = EXCLUDED.menu_location,
-    menu_group = EXCLUDED.menu_group,
-    menu_group_icon = EXCLUDED.menu_group_icon,
-    menu_label = EXCLUDED.menu_label,
-    menu_order = EXCLUDED.menu_order,
+WHERE source_permission.deletion_date IS NULL;
+
+UPDATE entity_permission target SET
+    control_type = source.control_type,
+    menu_location = source.menu_location,
+    menu_group = source.menu_group,
+    menu_group_icon = source.menu_group_icon,
+    menu_label = source.menu_label,
+    menu_order = source.menu_order,
     deletion_date = NULL,
-    last_update_date = CURRENT_TIMESTAMP;
+    last_update_date = CURRENT_TIMESTAMP
+FROM tmp_ep_logistics_remaining source
+WHERE target.id_permission = source.id_permission
+  AND target.entity_name = source.entity_name;
+
+INSERT INTO entity_permission (
+    id_permission, entity_name, control_type, menu_location, menu_group,
+    menu_group_icon, menu_label, menu_order, created_by, creation_date, last_update_date
+)
+SELECT source.id_permission, source.entity_name, source.control_type, source.menu_location, source.menu_group,
+       source.menu_group_icon, source.menu_label, source.menu_order, source.created_by, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM tmp_ep_logistics_remaining source
+WHERE NOT EXISTS (
+    SELECT 1 FROM entity_permission target
+    WHERE target.id_permission = source.id_permission AND target.entity_name = source.entity_name
+);
+
+DROP TABLE tmp_ep_logistics_remaining;
 
 INSERT INTO nm_field_permission (
     id_field, id_permission, control_type, created_by, creation_date, last_update_date

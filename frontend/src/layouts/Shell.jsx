@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { Boxes, Briefcase, CalendarDays, ChevronDown, ClipboardList, Contact, FileText, Landmark, LayoutDashboard, LogOut, PanelLeftClose, PanelLeftOpen, Receipt, Settings, ShieldCheck, ShoppingCart, SlidersHorizontal, Truck, UserCog, Users, Utensils, Warehouse } from "lucide-react";
+import { Boxes, Briefcase, CalendarDays, ChevronDown, ClipboardList, Contact, FileText, FlaskConical, Landmark, LayoutDashboard, LogOut, PanelLeftClose, PanelLeftOpen, Receipt, Settings, ShieldCheck, ShoppingCart, SlidersHorizontal, Truck, UserCog, Users, Utensils, Warehouse } from "lucide-react";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { deploymentPlan, getAllEntityPermission } from "../api";
 import LanguagePicker from "../components/LanguagePicker";
@@ -35,7 +35,12 @@ const navItems = [
   // que dar acceso al inventario lo arrastre sin un permiso nuevo que alguien
   // tenga que acordarse de conceder.
   { path: "/inventory/trace", key: "menu.inventory_trace", label: "Localizar", entityName: "product", group: "Inventario", groupIcon: "inventory", location: "sidebar", order: 12 },
-  { path: "/assets", key: "menu.assets", label: "Rastreo de piezas", entityName: "product", group: "Inventario", groupIcon: "warehouse", location: "sidebar", order: 15 },
+  // `/assets` no tiene entrada de menu propia: se llega desde una pieza en
+  // Localizar. Las dos pantallas se parecian en el menu -ambas listaban piezas
+  // con su estado- aunque hacen cosas distintas: Localizar busca cualquier cosa
+  // del almacen, y esta ejecuta las transiciones de estado de una pieza. Dos
+  // puertas que parecen la misma obligan a probar cual sirve.
+  { path: "/assets", key: "menu.assets", label: "Rastreo de piezas", entityName: "product", location: "none" },
   { path: "/inventory_status", key: "menu.inventory_status" },
   { path: "/invoice", key: "menu.invoice" },
   { path: "/invoice/manual", key: "menu.manual_invoice", label: "Factura manual", entityName: "invoice" },
@@ -65,6 +70,8 @@ const navItems = [
   { path: "/product_family", key: "menu.product_family" },
   { path: "/proyect", key: "menu.proyect" },
   { path: "/appointments", key: "menu.appointment", label: "Calendario", entityName: "appointment", group: "Operaciones", groupIcon: "calendar-days", location: "sidebar", order: 75 },
+  { path: "/documents", label: "Documentos", entityName: "document", group: "Laboratorio", groupIcon: "file-text", location: "sidebar", order: 10 },
+  { path: "/laboratory", label: "Equipos y ordenes", entityName: "laboratory_service_order", group: "Laboratorio", groupIcon: "clipboard-list", location: "sidebar", order: 20 },
   { path: "/service", key: "menu.service" },
   { path: "/status", key: "menu.status" },
   { path: "/subdepartment", key: "menu.subdepartment" },
@@ -91,6 +98,7 @@ const groupTranslationKeys = {
   "Bancos": "group_banks", CRM: "group_crm", "Contabilidad": "group_accounting",
   "Recursos humanos": "group_hr", Restaurante: "group_restaurant", Operaciones: "group_operations",
   Inventario: "group_inventory", "Configuración": "group_settings",
+  Laboratorio: "group_laboratory",
 };
 
 const groupIcons = {
@@ -130,6 +138,14 @@ const groupIcons = {
   "restaurant": Utensils,
   "security": ShieldCheck,
   "contact": Contact,
+
+  // Modulos llegados con tny_docs. Sin registrarlos aqui caen en el icono por
+  // omision y en silencio, que es como el menu acabo mostrando el mismo dibujo
+  // en casi todos los grupos.
+  "documentos": FileText,
+  "laboratorio": FlaskConical,
+  "flask-conical": FlaskConical,
+  "file-text": FileText,
 };
 
 const defaultGroupIcons = {
@@ -140,6 +156,7 @@ const defaultGroupIcons = {
   "Restaurante": "utensils",
   "Operaciones": "clipboard-list",
   "Inventario": "inventory",
+  "Laboratorio": "clipboard-list",
   "Configuración": "sliders-horizontal",
 };
 
@@ -148,6 +165,7 @@ export default function Shell() {
   const [roleEntityPermissions, setRoleEntityPermissions] = useState([]);
   const [rolePermissionsLoaded, setRolePermissionsLoaded] = useState(false);
   const [openGroups, setOpenGroups] = useState({});
+  const [settingsOpen, setSettingsOpen] = useState(false);
   // Los modulos que el cliente compro. Vacio hasta que responde el servidor;
   // mientras tanto se muestran todos, porque un menu que aparece a trozos se
   // lee como un sistema roto y el backend niega igual lo que no este en el plan.
@@ -155,6 +173,7 @@ export default function Shell() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => (
     window.matchMedia("(max-width: 800px)").matches || localStorage.getItem("tyakxa-sidebar-collapsed") === "true"
   ));
+  const settingsRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
   const { t } = useI18n();
@@ -193,6 +212,16 @@ export default function Shell() {
       // negando lo que no corresponde.
       .catch(() => {});
     return () => { vigente = false; };
+  }, []);
+
+  useEffect(() => {
+    function cerrarEngrane(evento) {
+      if (settingsRef.current && !settingsRef.current.contains(evento.target)) {
+        setSettingsOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", cerrarEngrane);
+    return () => document.removeEventListener("mousedown", cerrarEngrane);
   }, []);
 
   function canSeeNavItem(item) {
@@ -248,13 +277,21 @@ export default function Shell() {
   // que no queden en dos sitios: dos puertas a la misma pantalla es como
   // empieza a haber dos formas distintas de hacer lo mismo.
   const topbarItems = configuredItems.filter((item) => item.location === "topbar");
+  // Lo que el gestor de roles marco como "Engrane" en la columna UBICACION.
+  // Es una ubicacion configurable por rol y por entidad, no un cajon de sastre:
+  // el gestor ofrece Menu vertical / Engrane / No mostrar, y esta es la segunda.
+  const settingsItems = configuredItems
+    .filter((item) => item.location === "settings")
+    .sort((a, b) => a.order - b.order || a.displayLabel.localeCompare(b.displayLabel));
   const sidebarGroups = useMemo(() => {
     const groups = new Map();
     // Se acepta cualquier ubicacion que no sea el menu oculto: el engrane que
     // recogia "settings" ya no existe, y una entrada sin puerta es peor que una
     // mal colocada -no se ve y nadie se entera de que falta-.
-    configuredItems.filter((item) => item.location !== "none" && item.location !== "hidden"
-      && item.location !== "topbar").forEach((item) => {
+    // Solo el menu vertical. Lo marcado como "settings" va al engrane y lo
+    // marcado como "topbar" a los botones de al lado: si esto aceptara todo lo
+    // que no fuera "none", cada entrada saldria en dos sitios.
+    configuredItems.filter((item) => item.location === "sidebar").forEach((item) => {
       if (!groups.has(item.group)) groups.set(item.group, { icon: item.groupIcon, items: [] });
       groups.get(item.group).items.push(item);
     });
@@ -369,14 +406,52 @@ export default function Shell() {
           <div className="topbar-actions">
             <span className="session-pill">{t("common.secure_session", "Sesión protegida")}{currentUser?.username ? ` · ${currentUser.username}` : ""}</span>
             <LanguagePicker />
+            {/* El engrane. Se pinta aunque este vacio: es una ubicacion que el
+                gestor de roles ofrece, y si desapareciera al no tener nada
+                dentro, quien acaba de mandar una pantalla ahi creeria que no se
+                guardo. Vacio lo dice con palabras. */}
+            <div className="settings-menu" ref={settingsRef}>
+              <button
+                className="button ghost settings-trigger"
+                title={shellText("options")}
+                aria-label={shellText("options")}
+                aria-expanded={settingsOpen}
+                onClick={() => setSettingsOpen((valor) => !valor)}
+              >
+                <Settings size={18} />
+              </button>
+              {settingsOpen && (
+                <div className="settings-popover">
+                  {settingsItems.length ? settingsItems.map((item) => {
+                    // El icono del grupo al que la entidad quedo asignada, para
+                    // que el engrane se lea igual que el menu vertical.
+                    const ItemIcon = groupIcons[item.groupIcon] || SlidersHorizontal;
+                    return (
+                      <NavLink key={item.path} to={item.path} onClick={() => setSettingsOpen(false)}>
+                        <ItemIcon size={16} />
+                        <span>{item.displayLabel}</span>
+                      </NavLink>
+                    );
+                  }) : <span className="settings-empty">{shellText("no_options")}</span>}
+                </div>
+              )}
+            </div>
+
             {topbarItems.length > 0 && (
               <div className="topbar-links">
-                {topbarItems.map((item) => (
-                  <NavLink key={item.path} to={item.path} className={({ isActive }) => isActive ? "button ghost active" : "button ghost"}>
-                    {item.path === "/role_permissions" ? <ShieldCheck size={16} /> : <UserCog size={16} />}
-                    <span>{item.displayLabel}</span>
-                  </NavLink>
-                ))}
+                {topbarItems.map((item) => {
+                  // El icono sale del grupo de la entidad, igual que en el menu
+                  // vertical y en el engrane. Antes estaba escrito a mano por
+                  // ruta, asi que una entrada nueva en la barra salia sin icono
+                  // hasta que alguien se acordara de este archivo.
+                  const ItemIcon = groupIcons[item.groupIcon] || SlidersHorizontal;
+                  return (
+                    <NavLink key={item.path} to={item.path} className={({ isActive }) => isActive ? "button ghost active" : "button ghost"}>
+                      <ItemIcon size={16} />
+                      <span>{item.displayLabel}</span>
+                    </NavLink>
+                  );
+                })}
               </div>
             )}
             <div className="session-actions">

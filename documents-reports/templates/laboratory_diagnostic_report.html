@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Reporte de diagnostico {{ record.folio }}</title>
+  <style>
+    @page {
+      size: letter;
+      margin: 16mm 14mm 20mm;
+      @bottom-left { content: "Orden {{ record.folio }}"; color: #5f6d73; font: 8pt sans-serif; }
+      @bottom-right { content: "Pagina " counter(page) " de " counter(pages); color: #5f6d73; font: 8pt sans-serif; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #172329; font: 9pt "DejaVu Sans", sans-serif; line-height: 1.45; }
+    header { display: table; width: 100%; padding-bottom: 10px; border-bottom: 3px solid #087e8b; }
+    .brand, .heading { display: table-cell; vertical-align: middle; }
+    .brand { width: 48%; }
+    .brand img { display: block; max-width: 145px; max-height: 50px; margin-bottom: 4px; }
+    .brand strong { color: #075967; font-size: 15pt; }
+    .company-line { color: #52636a; font-size: 7.5pt; }
+    .heading { text-align: right; }
+    h1 { margin: 0; color: #075967; font-size: 17pt; }
+    .folio { margin-top: 5px; font-size: 11pt; font-weight: 700; }
+    .dates { margin-top: 3px; color: #52636a; font-size: 8pt; }
+    h2 { margin: 12px 0 0; padding: 5px 7px; background: #087e8b; color: white; font-size: 8pt; text-transform: uppercase; }
+    .grid { display: table; width: 100%; table-layout: fixed; border: 1px solid #aebdc2; border-top: 0; }
+    .cell { display: table-cell; padding: 6px 8px; vertical-align: top; border-right: 1px solid #d7e0e3; }
+    .cell:last-child { border-right: 0; }
+    .label { display: block; color: #52636a; font-size: 6.8pt; font-weight: 700; text-transform: uppercase; }
+    .value { display: block; margin-top: 2px; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .narrative { padding: 7px 9px; border: 1px solid #aebdc2; border-top: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .money { color: #075967; font-size: 12pt; font-weight: 700; }
+    .acceptance { margin-top: 14px; page-break-inside: avoid; border: 1px solid #82969d; padding: 10px; }
+    .choices { margin: 8px 0 16px; font-size: 10pt; }
+    .box { display: inline-block; width: 12px; height: 12px; margin: 0 5px 0 18px; border: 1px solid #172329; vertical-align: -2px; }
+    .box:first-child { margin-left: 0; }
+    .signature-grid { display: table; width: 100%; table-layout: fixed; margin-top: 28px; }
+    .signature { display: table-cell; width: 50%; padding: 0 18px; text-align: center; }
+    .line { border-top: 1px solid #172329; padding-top: 4px; }
+    .client-notes { min-height: 55px; margin-top: 8px; border-bottom: 1px solid #9aabb0; }
+    .generated { margin-top: 9px; color: #687980; font-size: 7pt; text-align: right; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      {% if record.company.logo_uri %}<img src="{{ record.company.logo_uri }}" alt="Logo">{% endif %}
+      <strong>{{ record.company.name }}</strong>
+      <div class="company-line">{{ record.company.address or '' }}</div>
+      <div class="company-line">{{ record.company.phone or '' }} {{ record.company.email or '' }}</div>
+      {% if record.company.tax_id %}<div class="company-line">RFC: {{ record.company.tax_id }}</div>{% endif %}
+    </div>
+    <div class="heading">
+      <h1>Reporte de diagnostico</h1>
+      <div class="folio">Folio {{ record.folio }}</div>
+      <div class="dates">Recepcion: {{ format_value(record.reception_date, 'date') }} | Diagnostico: {{ format_value(record.diagnosis_date, 'date') }}</div>
+    </div>
+  </header>
+
+  <h2>Cliente y contacto</h2>
+  <div class="grid">
+    <div class="cell"><span class="label">Cliente / propietario</span><span class="value">{{ record.customer.name }}</span></div>
+    <div class="cell"><span class="label">Responsable</span><span class="value">{{ record.customer.contact_name }}</span></div>
+    <div class="cell"><span class="label">Contacto</span><span class="value">{{ record.customer.phone or '' }}<br>{{ record.customer.email or '' }}</span></div>
+  </div>
+
+  <h2>Equipo recibido</h2>
+  <div class="grid">
+    <div class="cell"><span class="label">Tipo</span><span class="value">{{ record.equipment.type }}</span></div>
+    <div class="cell"><span class="label">Marca</span><span class="value">{{ record.equipment.brand or '—' }}</span></div>
+    <div class="cell"><span class="label">Modelo</span><span class="value">{{ record.equipment.model or '—' }}</span></div>
+    <div class="cell"><span class="label">Numero de serie</span><span class="value">{{ record.equipment.serial_number or '—' }}</span></div>
+  </div>
+  <div class="grid">
+    <div class="cell"><span class="label">Accesorios entregados</span><span class="value">{{ record.delivered_accessories or '—' }}</span></div>
+    <div class="cell"><span class="label">Condiciones de recepcion</span><span class="value">{{ record.reception_condition or '—' }}</span></div>
+  </div>
+
+  <h2>Falla reportada</h2><div class="narrative">{{ record.reported_failure }}</div>
+  <h2>Diagnostico tecnico</h2><div class="narrative">{{ record.technical_diagnosis }}</div>
+  <h2>Reparacion recomendada</h2><div class="narrative">{{ record.recommended_repair or '—' }}</div>
+
+  <h2>Presupuesto y plazo</h2>
+  <div class="grid">
+    <div class="cell"><span class="label">Presupuesto estimado</span><span class="value money">{{ format_value(record.estimated_budget, 'currency') }}</span></div>
+    <div class="cell"><span class="label">Tiempo estimado</span><span class="value">{{ record.estimated_repair_time or 'Por confirmar' }}</span></div>
+    <div class="cell"><span class="label">Tecnico responsable</span><span class="value">{{ record.technician_name or 'Por asignar' }}</span></div>
+  </div>
+
+  <h2>Observaciones y condiciones del servicio</h2>
+  <div class="narrative">{{ record.observations or 'Sin observaciones.' }}
+
+{{ record.service_conditions or 'El presupuesto puede variar si se detectan danos adicionales. Ningun trabajo fuera del alcance descrito se realizara sin autorizacion.' }}</div>
+
+  <section class="acceptance">
+    <strong>Aceptacion del diagnostico y presupuesto</strong>
+    <div class="choices"><span class="box"></span> Acepto <span class="box"></span> Rechazo <span class="box"></span> Solicito aclaracion</div>
+    <span class="label">Observaciones del cliente</span><div class="client-notes"></div>
+    <div class="signature-grid">
+      <div class="signature"><div class="line">Nombre y firma del cliente o responsable</div></div>
+      <div class="signature"><div class="line">Nombre y firma del tecnico</div></div>
+    </div>
+    <div class="signature-grid">
+      <div class="signature"><div class="line">Fecha de aceptacion</div></div>
+      <div class="signature"><div class="line">Nombre del tecnico: {{ record.technician_name or '' }}</div></div>
+    </div>
+  </section>
+  <div class="generated">Documento generado: {{ format_value(record.generated_at, 'date') }}</div>
+</body>
+</html>

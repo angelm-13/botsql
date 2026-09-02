@@ -630,6 +630,95 @@ Persistencia y operacion:
 - `maintenance/` contiene backup, restore, rotacion, vacuum/analyze y healthcheck.
 - Localizacion backend/frontend: espanol, ingles, aleman y portugues; frontend agrega japones.
 
+### 7.1 Despliegue en Kubernetes (clúster k3s)
+
+> Agregado 2026-09-01. Docker Compose (arriba) es el ambiente de desarrollo
+> local; en el clúster real (`tyakxa-dev`, `torredigital-prod`, `adser-prod`,
+> 168.231.67.33) el runtime es Kubernetes, con manifiestos en `k8s/base/` y
+> overlays por cliente en `k8s/overlays/<cliente>-<env>/`. El clúster **solo
+> hace pull**: las imágenes las construye GitHub Actions y se etiquetan con
+> el SHA corto del commit; nunca hay código fuente en el servidor, solo
+> configuración y la referencia a la imagen.
+
+**Migraciones: un solo mecanismo autoritativo, no dos.** El esquema de
+Postgres lo gobierna exclusivamente el initContainer `db-migrate`
+(`k8s/base/backend.yaml`): un bucle `for f in /migrations/*.sql; do psql -v
+ON_ERROR_STOP=1 -f "$f"; done` que corre **completo, en cada arranque del
+pod**, sin tabla de tracking. Por diseño, toda migración bajo
+`database/migrations/` debe ser segura de repetir (`CREATE TABLE IF NOT
+EXISTS`, `ON CONFLICT ... DO NOTHING/UPDATE`, `DO $$ ... EXCEPTION WHEN
+duplicate_object THEN NULL; END $$`) — **nunca** `NOT EXISTS (... WHERE
+deletion_date IS NULL)` como única guarda: si una migración posterior da de
+baja logica y resiembra la misma tabla (patron usado en
+`entity_permission`, ver `20260828240000_module_permission_matrix.sql`), esa
+guarda dejará una fila fantasma que choca contra el `UNIQUE` en el siguiente
+reinicio del pod. Antes de escribir una migración con `INSERT`, verificar
+contra un Postgres real corriendo la cadena completa dos veces seguidas
+(`psql -v ON_ERROR_STOP=1`, mismo patrón que ya usaba el proyecto en
+`docs/INTEGRACION_FUNCIONAL.md`), no solo una vez.
+
+`backend/scripts/apply_migrations.py` (con su propia tabla `schema_migration`
+y tracking por checksum) es una **herramienta de desarrollo aparte**, para
+correr a mano contra una base local con `DATABASE_URL` propio. **No está
+conectada a ningún arranque automático** — ni Docker Compose ni el
+initContainer de k8s la usan — porque `DATABASE_URL` nunca se definió ni en
+`app-secrets` (el Secret de k8s trae `DB_HOST`/`DB_NAME`/`DB_USER`/
+`DB_PASSWORD`/`DB_PORT` por separado) ni en `docker-compose.yml`. Hasta
+2026-09-01, `backend/entrypoint.sh` la invocaba igual al arrancar el
+contenedor `backend`; nunca funcionó ahí (fallaba con "DATABASE_URL no esta
+definida") y nunca se detectó porque el pod moría antes, en el
+initContainer. Se quitó esa línea: `entrypoint.sh` solo corre `init_db.py`
+(bootstrap idempotente de tablas/seed/admin) y levanta Flask/Gunicorn.
+**Regla para quien edite `entrypoint.sh` o agregue un mecanismo de
+migración nuevo: el initContainer de k8s es la única fuente de verdad del
+esquema en el clúster.** Si se necesita `apply_migrations.py` en algún
+ambiente real, hay que decidirlo explícitamente (agregar `DATABASE_URL` al
+Secret, correr `--baseline` una vez) — no asumir que ya funciona.
+
+**Nombres fijos:** Secret `app-secrets`, pull secret `ghcr-pull-secret`
+(token clásico con `read:packages`, el registro es `ghcr.io/tyakxa` en
+minúsculas). `kubectl set image` cambia el clúster pero no el archivo — el
+siguiente `apply -f` revierte la versión; cambiar siempre la etiqueta en el
+manifiesto y commitear.
+
+**Los manifiestos de k8s en el VPS no se actualizan solos — hay que copiarlos
+a mano.** Confirmado 2026-09-01: `/home/alanp/tyakxa_tny/k8s/` en el VPS **no
+es un repositorio git** (solo una copia plana). El pipeline de CI (`.github/
+workflows/build-images.yml`, job `deploy-tyakxa-dev`) SÍ mantiene esa copia al
+día para una sola cosa — el tag de imagen en
+`k8s/overlays/tyakxa-dev/kustomization.yaml`, vía `yq` calculado en cada
+corrida — pero **cualquier otro cambio a un archivo bajo `k8s/`** (el
+initContainer de `k8s/base/backend.yaml`, un overlay, un Secret nuevo) se
+queda invisible en el clúster hasta que alguien lo copie a mano. El código de
+la app y las migraciones SQL no tienen este problema — llegan bien en cada
+push porque la imagen Docker se construye fresca desde GitHub, no desde esta
+copia.
+
+Se evaluó resolverlo con un clon git disperso (`git sparse-checkout`, solo la
+carpeta `k8s/`) más una deploy key de solo lectura — técnicamente evita traer
+código fuente al servidor (cumple "el clúster solo hace pull"), pero **la
+política de la organización Tyakxa tiene las deploy keys deshabilitadas**
+("Disabled by Tyakxa", captura del 2026-09-01) — recomiendan GitHub Apps en su
+lugar. Se decidió no perseguirlo por ahora: el costo de copiar a mano es bajo
+y ya pasó dos veces en una sesión sin mayor consecuencia una vez detectado.
+
+**Procedimiento manual, hasta que se resuelva de raíz:** después de pushear
+un cambio a cualquier archivo bajo `k8s/` (no solo el tag), copiar el o los
+archivos afectados al VPS y volver a aplicar:
+
+```bash
+# desde tu maquina local, con el repo actualizado
+scp "C:\Users\TDW2\OneDrive\Desktop\tyakxa_tny\k8s\base\backend.yaml" `
+  168.231.67.33:/home/alanp/tyakxa_tny/k8s/base/backend.yaml
+
+# ya en el VPS
+cd /home/alanp/tyakxa_tny
+kubectl apply -k k8s/overlays/tyakxa-dev
+```
+
+Aplica igual para `torredigital-prod`/`adser-prod` (esos overlays tampoco
+tienen CD automatizado — ver sección 10, punto 9).
+
 ## 8. Tareas asincronas
 
 `backend/app/tasks/erp_tasks.py` declara:
@@ -683,6 +772,8 @@ rg '<Route ' frontend/src/App.jsx | wc -l
 5. `App.jsx` concentra 99 rutas y `Shell.jsx` concentra la navegacion; ambos son puntos sensibles al agregar modulos.
 6. La autorizacion se aplica en backend y se refleja en frontend, pero el backend es siempre la frontera de seguridad.
 7. `mobile/` y `reports/` no forman parte activa del runtime actual.
+8. `apply_migrations.py` existe en el repo pero no gobierna ningun ambiente real (ni Compose ni k8s); es solo herramienta de desarrollo. Ver 7.1. Confirmado 2026-09-01 al corregir el CrashLoopBackOff de `tyakxa-dev`.
+9. `torredigital-prod` y `adser-prod` no tienen CD: los tags de imagen se fijan a mano en `k8s/overlays/<cliente>-prod/kustomization.yaml`. Al 2026-09-01 corren una version anterior a los ultimos 4 fixes de migracion/`entrypoint.sh`; pendiente decidir cuando promoverlos.
 
 ## 11. Regla de mantenimiento
 
@@ -692,6 +783,137 @@ Actualizar este documento cuando se agregue o elimine cualquiera de los siguient
 - un `register_blueprint` o una ruta especializada;
 - una pagina, componente o ruta React;
 - un servicio Compose, cola Celery o almacen persistente;
-- una transicion importante en CRM, cotizacion, CFDI, logistica, banca o restaurante.
+- una transicion importante en CRM, cotizacion, CFDI, logistica, banca o restaurante;
+- una migracion SQL nueva que otorgue permisos (`entity_permission`) o cree tablas, o cualquier cambio a `backend/entrypoint.sh`, al initContainer `db-migrate` (`k8s/base/backend.yaml`) o a que ambiente (`tyakxa-dev`/`torredigital-prod`/`adser-prod`) tiene desplegado que fix — somos 3 trabajando en este repo y solo uno despliega; sin esto se pierde de vista que version corre donde.
 
 Los conteos de la seccion 1 deben coincidir con los comandos de la seccion 9 antes de aprobar el cambio.
+
+## 12. Gestion documental y equipos de laboratorio
+
+### 12.1 Objetivo y limites
+
+Los modulos permiten conservar archivos PDF, JPEG y PNG, registrar equipos que un cliente entrega al laboratorio y administrar el ciclo de una orden de diagnostico, reparacion y entrega. El equipo es una entidad persistente y puede tener varias ordenes de servicio a lo largo del tiempo.
+
+No se duplican identidades:
+
+- `user` representa administradores, empleados, tecnicos y usuarios externos;
+- `user.is_employee` indica la relacion laboral de forma independiente a `user_type`, que sigue representando el tipo de acceso; asi un administrador tambien puede ser empleado;
+- `customer_supplier` representa al cliente o proveedor y conserva su enlace con `user`;
+- `logistics_contact` se reutiliza como contacto normalizado;
+- la orden conserva una instantanea de nombre, telefono y correo del contacto para que un documento emitido no cambie al modificar CRM;
+- `customer_supplier.is_principal` y `path_logo` proporcionan los datos del laboratorio para el PDF.
+
+`logistics_service_request` no se reutiliza como orden de laboratorio porque sus campos y estados corresponden a transporte. Mezclar ambos ciclos eliminaria integridad del dominio y obligaria a interpretar estados logisticos como diagnosticos.
+
+### 12.2 Entidades y relaciones
+
+La migracion `database/migrations/20260901090000_document_laboratory_modules.sql` agrega:
+
+| Entidad | Responsabilidad |
+| --- | --- |
+| `document_category` | Catalogo extensible de categorias documentales. |
+| `document` | Identidad logica, metadatos, estado, emision, vencimiento, proyecto y eliminacion logica. |
+| `document_version` | Archivo inmutable, version, ruta relativa, MIME, extension, bytes, SHA-256, origen, actor y snapshot JSONB. |
+| `document_relation` | Asociacion con FK real a cliente/proveedor, empleado, equipo u orden. |
+| `laboratory_equipment` | Equipo propiedad de un cliente: tipo, marca, modelo y serie. |
+| `laboratory_service_order` | Recepcion, contacto, falla, diagnostico, reparacion, tecnico, costos, fechas y estado. |
+| `laboratory_service_order_status_history` | Estado anterior/nuevo, usuario, fecha y comentarios. |
+
+La migracion `database/migrations/20260901100000_user_employee_flag.sql` agrega `user.is_employee`, registra el campo en permisos y migra como empleados los usuarios cuyo `user_type` anterior era `employee`. La seleccion posterior se administra con el checkbox **Es empleado** en Usuarios; documentos y tecnicos consultan este indicador, no el rol.
+
+Se eligio una tabla de asociaciones con columnas FK explicitas y un `CHECK num_nonnulls(...) = 1`. Una pareja polimorfica `entity_type/entity_id` seria mas corta, pero PostgreSQL no podria garantizar que la entidad relacionada existe. Nuevos destinos deben agregarse mediante una FK y su regla de autorizacion.
+
+El modulo es PostgreSQL exclusivo. Usa `JSONB`, columnas identity, `num_nonnulls`, constraints diferibles e indices parciales sobre registros no eliminados. No se valida contra SQLite.
+
+### 12.3 Almacenamiento documental
+
+Los binarios no se guardan en PostgreSQL. Se almacenan bajo:
+
+```text
+${UPLOAD_ROOT}/documents/<id_proyect>/<id_document>/v<version>-<uuid>.<extension>
+```
+
+La base conserva solo la ruta relativa y metadatos. El backend:
+
+1. limita el archivo a `DOCUMENT_MAX_BYTES` (10 MiB por omision);
+2. admite solamente PDF, JPEG y PNG;
+3. compara extension con firma binaria, sin confiar en el MIME enviado;
+4. genera el nombre fisico con UUID;
+5. resuelve rutas contra `UPLOAD_ROOT` y verifica que permanezcan dentro de esa raiz;
+6. sirve contenido solo despues de repetir autorizacion de entidad y fila;
+7. aplica eliminacion logica a metadatos y conserva el archivo como evidencia.
+
+La ruta fisica y `source_snapshot` no se devuelven en listados o detalle de versiones. Cada archivo registra SHA-256 para trazabilidad.
+
+### 12.4 Flujo de la orden
+
+Estados disponibles:
+
+```text
+received -> awaiting_diagnosis | diagnosing | cancelled
+awaiting_diagnosis -> diagnosing | cancelled
+diagnosing -> pending_authorization | not_repairable | cancelled
+pending_authorization -> authorized | not_authorized | cancelled
+authorized -> repairing | awaiting_parts | cancelled
+not_authorized -> authorized | cancelled
+repairing -> awaiting_parts | repaired | not_repairable | cancelled
+awaiting_parts -> repairing | cancelled
+repaired -> ready_for_delivery
+not_repairable -> ready_for_delivery | cancelled
+ready_for_delivery -> delivered
+```
+
+`delivered` y `cancelled` son terminales. `pending_authorization` exige diagnostico. `cancelled`, `not_authorized` y `not_repairable` exigen comentarios. Cada transicion crea un historial; nunca se actualiza un evento anterior. Al entregar se registra `actual_delivery_date`.
+
+### 12.5 PDF, versiones y firma
+
+`LaboratoryReportService` reutiliza `DocumentService`, Jinja2 con autoescape y WeasyPrint. La plantilla `documents-reports/templates/laboratory_diagnostic_report.html` usa carta, margenes de impresion, bloques multipagina, folio y contador de paginas. Incluye datos de empresa, cliente, equipo, falla, diagnostico, recomendacion, presupuesto, plazo, tecnico, condiciones, aceptacion/rechazo, observaciones y firmas.
+
+Al generar se toma un snapshot JSONB de los datos usados. La salida crea o reutiliza el `document` logico asociado a cliente, equipo y orden, y agrega una version `generated/issued`. Regenerar crea la siguiente version bajo bloqueo de fila; no cambia diagnostico ni estado de la orden. Una copia firmada crea una version `signed_scan/signed`, opcionalmente enlazada con `id_parent_document_version`, y nunca sobrescribe el original.
+
+El ejemplo generado durante validacion queda en `uploads/laboratory-diagnostic-example.pdf`.
+
+### 12.6 Autorizacion
+
+Los decoradores JWT y `entity_permission` se complementan con filtros obligatorios en servicios:
+
+- superusuario o administrador autorizado: alcance completo permitido;
+- empleado: proyecto del JWT; si la orden tiene tecnico asignado, otro empleado no puede mutarla;
+- cliente o proveedor: solo documentos cuyo `document_relation.id_customer_supplier` pertenece a su `user`;
+- cliente: solo equipos y ordenes de su `customer_supplier`;
+- cualquier consulta por ID aplica el alcance antes de recuperar el registro y responde recurso no encontrado para IDs ajenos;
+- las descargas repiten la misma consulta autorizada y nunca reciben una ruta desde el cliente.
+
+El blueprint historico `/documents/<document_key>/<record_id>` tambien exige JWT y permiso de lectura para todas las entidades. Si el registro tiene `id_proyect`, se valida contra el proyecto del JWT.
+
+### 12.7 API REST
+
+| Metodo y ruta | Contrato principal |
+| --- | --- |
+| `GET /document/` | Lista paginada con `search`, `status` e `id_document_category`. |
+| `GET /document/categories` | Categorias activas. |
+| `GET /document/employees` | Lista minima (`id_user`, `full_name`) de empleados activos del proyecto para selectores. |
+| `GET /document/<id>` | Metadatos, relaciones y versiones autorizadas. |
+| `POST /document/` | Multipart: metadatos, una relacion y `file`. |
+| `PUT /document/<id>` | Actualiza metadatos permitidos. |
+| `DELETE /document/<id>` | Eliminacion logica. |
+| `POST /document/<id>/versions` | Carga una version adicional. |
+| `GET /document/<id>/versions/<version>/content` | Visualizacion o descarga autorizada. |
+| `GET/POST /laboratory-equipment/` | Lista/busca y registra equipos. |
+| `GET/POST /laboratory-service-order/` | Lista/filtra y registra ordenes. |
+| `GET /laboratory-service-order/<id>` | Detalle autorizado. |
+| `PUT /laboratory-service-order/<id>/diagnosis` | Registra o actualiza diagnostico sin cambiar estado. |
+| `POST /laboratory-service-order/<id>/transition` | Ejecuta una transicion valida y auditada. |
+| `GET /laboratory-service-order/<id>/history` | Historial cronologico. |
+| `POST /laboratory-service-order/<id>/diagnostic-report` | Genera o regenera una version PDF. |
+| `POST /laboratory-service-order/<id>/diagnostic-report/signed` | Carga PDF firmado sin reemplazar el emitido. |
+
+Los errores usan `AppError`, `error_key` y `meta` con HTTP 400, 404, 409 o 500 segun validacion, alcance, conflicto o configuracion.
+
+### 12.8 Presentacion y pruebas
+
+React incorpora `/documents` y `/laboratory`, protegidos por `RoleAccessRoute`. En Usuarios, `is_employee` se administra con un checkbox. En Documentos, el tipo de relacion alterna entre cliente/proveedor y un droplist de empleados activos. Las paginas permiten carga, filtros, versiones, descarga, alta de equipo/orden, diagnostico, transiciones, historial, generacion y carga firmada. Las restricciones de interfaz son ergonomicas; la autorizacion efectiva permanece en backend.
+
+`backend/tests/test_services/test_document_laboratory_postgresql.py` prueba exclusivamente PostgreSQL: firmas y formatos, acceso entre dos clientes, transiciones invalidas/validas, historial, PDF, regeneracion, versiones y copia firmada. Para ejecucion destructiva de tests se usa una base cuyo nombre termina en `_test`; nunca la base operativa.
+
+Extensiones previstas: nuevas categorias sin migracion, nuevas relaciones con FK, almacenamiento de objetos mediante un adaptador compatible con `SecureDocumentStorage`, firma electronica avanzada, antivirus previo a emision y generacion asincrona con Celery cuando el volumen lo requiera.

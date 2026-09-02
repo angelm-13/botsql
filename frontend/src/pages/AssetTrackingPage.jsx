@@ -1,3 +1,4 @@
+import { useSearchParams } from "react-router-dom";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle, ArrowRightLeft, Ban, Check, ClipboardList, Hand,
@@ -61,7 +62,11 @@ export default function AssetTrackingPage() {
   const [total, setTotal] = useState(0);
   const [filtros, setFiltros] = useState({ status: "", id_holder: "", id_location: "" });
   const [soloVencidos, setSoloVencidos] = useState(false);
-  const [busqueda, setBusqueda] = useState("");
+  // La etiqueta puede llegar en la url. Localizar es la puerta de entrada del
+  // almacen y desde cada pieza enlaza aqui: sin esto, quien llega tendria que
+  // volver a escribir a mano la etiqueta que acababa de ver en pantalla.
+  const [parametros] = useSearchParams();
+  const [busqueda, setBusqueda] = useState(() => parametros.get("tag") || "");
   const [cargando, setCargando] = useState(false);
   const [errorKey, setErrorKey] = useState("");
   const [avisoKey, setAvisoKey] = useState("");

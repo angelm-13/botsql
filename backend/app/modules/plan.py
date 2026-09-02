@@ -20,10 +20,28 @@ existe para concederlo.
 
 De donde sale el plan
 ---------------------
-Hoy, de la configuracion del despliegue: `TYAKXA_PLAN` con el JSON, o
-`TYAKXA_PLAN_FILE` con la ruta a un archivo. La forma es deliberadamente la que
-tendra la licencia firmada, para que cuando llegue solo cambie de donde se lee
-el dato y no lo que lo aplica.
+De la configuracion del despliegue, en dos formas que se complementan:
+
+* **`LICENSED_MODULES`**: la lista de modulos, separada por comas. Es la que ya
+  usan los tres ambientes reales y la que el sembrado consulta al aplicarse
+  (`psql -v licensed_modules=...`, ver `k8s/base/backend.yaml`). Manda sobre los
+  modulos.
+* **`TYAKXA_PLAN`**: el JSON completo, con el nombre del cliente y los topes que
+  `LICENSED_MODULES` no puede expresar -usuarios, almacenamiento-. Tambien
+  acepta `modulos`, que se usa solo si `LICENSED_MODULES` no viene.
+
+Dos variables y no una porque hacen falta las dos cosas y `LICENSED_MODULES` ya
+estaba desplegada: cambiarle la forma habria obligado a tocar tres ambientes en
+produccion para ganar elegancia. La forma del JSON es la que tendra la licencia
+firmada, para que cuando llegue solo cambie de donde se lee el dato.
+
+Un mecanismo, dos sitios donde se aplica
+----------------------------------------
+La misma declaracion gobierna el sembrado y las peticiones. El sembrado recorta
+las filas que existen; los guardias niegan lo que no este en el plan aunque la
+fila exista. Lo segundo hace falta porque el administrador del cliente tiene el
+gestor de roles: sin el guardia, se concede a si mismo un modulo que no compro y
+funciona.
 
     {
       "cliente": "Restaurante La Parroquia SA de CV",
@@ -149,6 +167,19 @@ class Plan:
         }
 
 
+def _modulos_licenciados() -> list[str] | None:
+    """`LICENSED_MODULES` del despliegue, o None si no viene.
+
+    Vacia y ausente significan lo mismo -todos los modulos-, igual que en el
+    sembrado: una instalacion que nunca la configuro sigue viendo todo.
+    """
+    crudo = (os.getenv("LICENSED_MODULES") or "").strip()
+    if not crudo:
+        return None
+    claves = [c.strip().lower() for c in crudo.split(",") if c.strip()]
+    return claves or None
+
+
 def _leer_configuracion() -> dict | None:
     """El plan tal como lo dejo el despliegue, sin interpretarlo."""
     ruta = (os.getenv("TYAKXA_PLAN_FILE") or "").strip()
@@ -160,14 +191,25 @@ def _leer_configuracion() -> dict | None:
     else:
         crudo = (os.getenv("TYAKXA_PLAN") or "").strip()
 
+    licenciados = _modulos_licenciados()
+
     if not crudo:
-        return None
+        # Sin JSON pero con LICENSED_MODULES: plan de modulos, sin topes.
+        return {"modulos": licenciados} if licenciados is not None else None
     try:
         datos = json.loads(crudo)
     except json.JSONDecodeError as error:
         raise PlanInvalido(f"el plan no es JSON valido: {error}") from error
     if not isinstance(datos, dict):
         raise PlanInvalido("el plan debe ser un objeto JSON")
+
+    # `LICENSED_MODULES` manda sobre los modulos: es la que el sembrado consulta
+    # al aplicarse, y si las dos dijeran cosas distintas las filas sembradas y
+    # lo que los guardias permiten dejarian de coincidir. Un modulo con filas
+    # que nadie puede usar, o al contrario, es peor que cualquiera de los dos
+    # recortes por separado.
+    if licenciados is not None:
+        datos = {**datos, "modulos": licenciados}
     return datos
 
 

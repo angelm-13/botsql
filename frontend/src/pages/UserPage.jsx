@@ -4,7 +4,7 @@ import { useI18n } from "../i18n";
 import { getAllUser, createUser, updateUser, deleteUser, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllPermission, getAllProyect, getAllStatus } from "../api";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 
-const emptyForm = { date_born: "", date_start: "", email: "", first_name: "", id_permission: "", full_name: "", id_proyect: "", last_name_father: "", last_name_mother: "", national_id: "", password: "", principal_phone: "", secundary_phone: "", ssn: "", supervisor: "", base_salary: "", hire_date: "", id_status: "", tax_id: "", title: "", user_type: "", username: "", puesto: "", accepts_marketing: false };
+const emptyForm = { date_born: "", date_start: "", email: "", first_name: "", id_permission: "", full_name: "", id_proyect: "", last_name_father: "", last_name_mother: "", national_id: "", password: "", principal_phone: "", secundary_phone: "", ssn: "", supervisor: "", base_salary: "", hire_date: "", id_status: "", tax_id: "", title: "", user_type: "", username: "", puesto: "", is_employee: false, accepts_marketing: false };
 const validationRules = allValidationRules["user"] || {};
 const ENTITY_KEY = "user";
 const ACTION_CREATE = 1;
@@ -709,6 +709,12 @@ export default function UserPage() {
             <span>{t("fields.user.puesto")}</span>
             <input name="puesto" type="text" maxLength={50} value={formData.puesto ?? ""} onChange={handleChange} placeholder={t("fields.user.puesto")} aria-invalid={Boolean(fieldErrors["puesto"])} {...inputPropsForField("puesto", validationRules["puesto"], "text")} />
             {fieldErrors["puesto"] && <span className="field-error">{formatFieldError("puesto")}</span>}
+          </label>
+          )}
+          {canSeeField("is_employee") && (
+          <label className="field checkbox-field">
+            <span>{t("fields.user.is_employee", "Es empleado")}</span>
+            <input name="is_employee" type="checkbox" checked={Boolean(formData.is_employee)} onChange={handleChange} />
           </label>
           )}
           {canSeeField("accepts_marketing") && (

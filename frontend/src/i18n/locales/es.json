@@ -4051,6 +4051,7 @@
     "kind_extraviado": "extraviado",
     "kind_caducado": "caducado",
     "kind_trasladado": "trasladado",
-    "kind_ajustado": "ajustado"
+    "kind_ajustado": "ajustado",
+    "manage_piece": "Gestionar"
   }
 }

@@ -24,6 +24,8 @@ from app.routes.payroll_detail import bp_payroll_detail
 from app.routes.payroll_concept import bp_payroll_concept
 from app.routes.payroll_movement import bp_payroll_movement
 from app.routes.customer_supplier import bp_customer_supplier
+from app.routes.documents import bp_document_management
+from app.routes.laboratory import bp_laboratory_equipment, bp_laboratory_service_order
 from app.routes.logistics_address import bp_logistics_address
 from app.routes.logistics_contact import bp_logistics_contact
 from app.routes.logistics_contract import bp_logistics_contract
@@ -571,8 +573,8 @@ def _register_documents_blueprint(app: Flask) -> None:
         from documents.routes import create_documents_blueprint
 
         def authorize_document(doc, record_id):
-            if doc.get('entity') != 'invoice':
-                return True, 200
+            from importlib import import_module
+            from sqlalchemy import inspect as sqlalchemy_inspect
             from app.models.invoice import Invoice
             from app.models.session import transaction_context
             from app.utils.auth import PUBLIC_JWT_SCOPE, SECRET_KEY, _has_entity_permission
@@ -586,15 +588,25 @@ def _register_documents_blueprint(app: Flask) -> None:
                 return False, 401
             if str(user_data.get('scope') or '').strip().lower() == str(PUBLIC_JWT_SCOPE).strip().lower():
                 return False, 401
-            if not _has_entity_permission(user_data, 'invoice', 'read'):
+            entity = str(doc.get('entity') or '').strip()
+            if not entity or not _has_entity_permission(user_data, entity, 'read'):
                 return False, 403
             with transaction_context() as db:
-                invoice = db.get(Invoice, int(record_id))
-                if not invoice:
+                if entity == 'invoice':
+                    record = db.get(Invoice, int(record_id))
+                else:
+                    try:
+                        model_cls = getattr(import_module(f'app.models.{entity}'), _pascal_from_snake(entity))
+                        primary_key = list(sqlalchemy_inspect(model_cls).primary_key)[0]
+                        record = db.query(model_cls).filter(getattr(model_cls, primary_key.key) == int(record_id)).first()
+                    except (AttributeError, ImportError, IndexError, TypeError, ValueError):
+                        return False, 403
+                if not record or getattr(record, 'deletion_date', None) is not None:
                     return False, 403
                 unrestricted = bool(user_data.get('is_superuser') or user_data.get('is_bootstrap_admin'))
                 actor_project = user_data.get('id_proyect') or user_data.get('project_id')
-                if not unrestricted and str(actor_project) != str(invoice.id_proyect):
+                record_project = getattr(record, 'id_proyect', None)
+                if not unrestricted and record_project is not None and str(actor_project) != str(record_project):
                     return False, 403
             return True, 200
 
@@ -657,6 +669,9 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_payroll_concept)
     app.register_blueprint(bp_payroll_movement)
     app.register_blueprint(bp_customer_supplier)
+    app.register_blueprint(bp_document_management)
+    app.register_blueprint(bp_laboratory_equipment)
+    app.register_blueprint(bp_laboratory_service_order)
     app.register_blueprint(bp_logistics_address)
     app.register_blueprint(bp_logistics_contact)
     app.register_blueprint(bp_logistics_contract)

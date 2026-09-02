@@ -40,12 +40,21 @@ class TestArchivosDeMigracion(unittest.TestCase):
         Lo que se fija aqui es que el SQL viaje por `cursor.execute(sql)` con un
         solo argumento. Con dos -aunque el segundo este vacio- psycopg2
         interpola, y volvemos al principio.
+
+        El mismo defecto se encontro dos veces por separado, en esta rama y en
+        tny_docs, y se arreglo igual en las dos. Que dos personas tropiecen con
+        el mismo mensaje inutil -"immutabledict is not a sequence"- es motivo de
+        sobra para fijarlo.
         """
         from scripts.apply_migrations import _ejecutar_sql_crudo
 
         cursor = MagicMock()
         conexion = MagicMock()
-        conexion.connection.cursor.return_value = cursor
+        # `connection` es el proxy del pool; `driver_connection`, el DBAPI de
+        # verdad. Se simula esa ruta y no la del proxy porque es la que el
+        # codigo usa: el proxy reenvia, pero depender de ese reenvio es
+        # depender de un detalle interno de SQLAlchemy.
+        conexion.connection.driver_connection.cursor.return_value = cursor
 
         sql = "-- un comentario con % dentro\nSELECT 1 WHERE 'abc' LIKE 'a%';"
         _ejecutar_sql_crudo(conexion, sql)

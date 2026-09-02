@@ -169,6 +169,23 @@ MODULOS = (
             "appointment",
         ),
     ),
+    # Documentos y Laboratorio llegan de tny_docs con sus tablas, sus rutas y su
+    # sembrado, pero sin declararse aqui. La prueba de cobertura del registro lo
+    # detecto: sus entidades estan protegidas con `require_entity_permission` y
+    # no pertenecian a ningun modulo, asi que ningun rol podia alcanzarlas por la
+    # matriz y el plan no podia venderlas ni apagarlas. Se declaran con los
+    # grupos y el icono que su propia migracion usa.
+    Modulo(
+        "documentos", "Documentos", "file-text", 650,
+        ("document", "document_category", "document_relation", "document_version"),
+    ),
+    Modulo(
+        "laboratorio", "Laboratorio", "flask-conical", 660,
+        (
+            "laboratory_equipment", "laboratory_service_order",
+            "laboratory_service_order_status_history",
+        ),
+    ),
     Modulo(
         "rh", "Recursos humanos", "hr", 700,
         ("payroll_concept", "payroll_detail", "payroll_movement", "payroll_period"),
@@ -203,7 +220,8 @@ MODULOS_DE_NEGOCIO = tuple(
 class Capacidad:
     """Un derecho con nombre propio que no corresponde a ninguna tabla."""
 
-    def __init__(self, clave, etiqueta, modulo, *, bits=CONSULTA, menu="none"):
+    def __init__(self, clave, etiqueta, modulo, *, bits=CONSULTA, menu="hidden",
+                 licencia_independiente=False):
         self.clave = clave
         self.etiqueta = etiqueta
         self.modulo = modulo
@@ -211,6 +229,12 @@ class Capacidad:
         # que las consulta pregunta por ese bit.
         self.bits = bits
         self.menu = menu
+        # Si es True, esta capacidad se vende aparte del modulo que la
+        # contiene: necesita su propia clave en LICENSED_MODULES aunque el
+        # cliente ya tenga licenciado `modulo` (ej. multiemisor dentro de
+        # facturacion). Si es False (el default), viaja con la licencia del
+        # modulo padre, como cualquier otro permiso normal de rol.
+        self.licencia_independiente = licencia_independiente
 
 
 CAPACIDADES = (
@@ -221,11 +245,15 @@ CAPACIDADES = (
     # destruye existencia por cualquier cantidad. Es la operacion con la que se
     # tapa un faltante, asi que se concede aparte de poder editar productos.
     Capacidad("inventory_adjustment", "Ajustar existencias", "inventario"),
-    # Vivia en el menu de engrane del encabezado, que era el unico que lo
-    # usaba. Con el engrane retirado -habia tres sitios distintos donde
-    # configurar cosas- se pinta donde le toca: es el reloj checador, o sea
-    # Recursos humanos.
-    Capacidad("kronos_device", "Conexion al dispositivo Kronos", "rh", menu="sidebar"),
+    # Va en el engrane del encabezado, no en el menu vertical.
+    #
+    # Se habia movido a `sidebar` al retirar el engrane, razonando que habia
+    # demasiados sitios donde configurar cosas. Era un error: el engrane no es
+    # un cajon de sastre, es una UBICACION que el gestor de roles ofrece -Menu
+    # vertical / Engrane / No mostrar- y que se elige por rol y por entidad.
+    # Quitarlo no simplificaba el menu: le quitaba al sistema una opcion de
+    # configuracion que alguien habia elegido a proposito.
+    Capacidad("kronos_device", "Conexion al dispositivo Kronos", "rh", menu="settings"),
     Capacidad("restaurant_waiter", "Meseros", "restaurante", bits=CAPTURA, menu="sidebar"),
     Capacidad("restaurant_cashier", "Caja", "restaurante", bits=CAPTURA, menu="sidebar"),
     Capacidad("restaurant_kitchen", "Cocina", "restaurante", bits=EDITAR, menu="sidebar"),
@@ -320,6 +348,11 @@ SOLO_ARRANQUE = frozenset({"event_log", "user_mfa", "password_reset_token"})
 # las que merecen pantalla propia; el resto queda accesible por permiso pero sin
 # entrada, porque son catalogos de apoyo que se consultan desde donde se usan.
 MENU = {
+    # Documentos y Laboratorio, con las etiquetas de su propia migracion.
+    "document": ("Documentos", 10),
+    "document_category": ("Categorias de documento", 20),
+    "laboratory_service_order": ("Ordenes de servicio", 10),
+    "laboratory_equipment": ("Equipos", 20),
     "invoice": ("Facturas", 10),
     "customer_supplier": ("Clientes y proveedores", 20),
     "fiscal_account": ("Cuentas fiscales", 30),
@@ -453,7 +486,12 @@ def filas_de_permisos():
     """La matriz completa, lista para sembrar.
 
     Devuelve tuplas (id_permission, entity_name, bits, menu_location,
-    menu_group, menu_group_icon, menu_label, menu_order).
+    menu_group, menu_group_icon, menu_label, menu_order, modulo_licencia).
+
+    `modulo_licencia` es la clave que gobierna si la fila se siembra para un
+    cliente dado: normalmente la del modulo dueno de la entidad/capacidad,
+    salvo una capacidad con `licencia_independiente=True`, que usa su propia
+    clave -- se vende aparte, no viaja con el modulo que la contiene.
     """
     filas = []
     for rol in ROLES:
@@ -465,21 +503,32 @@ def filas_de_permisos():
                 etiqueta, orden = MENU.get(entidad, (None, None))
                 filas.append((
                     rol.id_permission, entidad, bits,
-                    "sidebar" if etiqueta else "none",
+                    "sidebar" if etiqueta else "hidden",
                     modulo.grupo_de_menu if etiqueta else None,
                     modulo.icono_de_menu if etiqueta else None,
                     etiqueta,
                     modulo.orden + (orden or 90),
+                    modulo.clave,
                 ))
         for clave in sorted(rol.capacidades):
             capacidad = CAPACIDAD_POR_CLAVE[clave]
             modulo = MODULO_POR_CLAVE[capacidad.modulo]
-            es_pantalla = capacidad.menu == "sidebar"
+            # Se ve en algun menu, no solo en el vertical. Con `== "sidebar"`
+            # una capacidad puesta en el engrane salia sin etiqueta ni icono, y
+            # el engrane mostraba un renglon en blanco. La etiqueta que habia
+            # venia de una migracion escrita a mano, asi que se perdia en la
+            # siguiente resiembra: es exactamente lo que paso con la conexion al
+            # dispositivo Kronos.
+            es_pantalla = capacidad.menu in ("sidebar", "settings")
             filas.append((
                 rol.id_permission, capacidad.clave, capacidad.bits, capacidad.menu,
                 modulo.grupo_de_menu if es_pantalla else None,
                 modulo.icono_de_menu if es_pantalla else None,
                 capacidad.etiqueta if es_pantalla else None,
                 modulo.orden + 90,
+                capacidad.clave if capacidad.licencia_independiente else modulo.clave,
             ))
     return filas
+
+
+MODULOS_CORE = tuple(m.clave for m in MODULOS if m.clave not in MODULOS_DE_NEGOCIO)

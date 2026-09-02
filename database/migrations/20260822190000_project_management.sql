@@ -57,6 +57,27 @@ CREATE INDEX IF NOT EXISTS ix_proyect_status
 CREATE INDEX IF NOT EXISTS ix_proyect_owner
     ON proyect (created_by) WHERE deletion_date IS NULL;
 
+-- Los roles Supervisor/Gerente/Jefe de taller necesitan un department/
+-- subdepartment/level para poder crearse (columnas NOT NULL en permission).
+-- Si el entorno todavia no tiene ninguno configurado (nadie lo cargo desde
+-- la app), se siembra un catalogo "General" minimo para no bloquear la
+-- migracion. Guardado con NOT EXISTS sobre la tabla completa para que solo
+-- se siembre una vez, nunca en reinicios posteriores.
+INSERT INTO department (department_description, created_by)
+SELECT 'General', 1
+WHERE NOT EXISTS (SELECT 1 FROM department);
+
+INSERT INTO subdepartment (subdepartment_description, id_department, created_by)
+SELECT 'General', department.id_department, 1
+FROM department
+WHERE NOT EXISTS (SELECT 1 FROM subdepartment)
+ORDER BY department.id_department
+LIMIT 1;
+
+INSERT INTO level (level_description, created_by)
+SELECT 'General', 1
+WHERE NOT EXISTS (SELECT 1 FROM level);
+
 WITH defaults AS (
     SELECT
         (SELECT id_user FROM "user" ORDER BY id_user LIMIT 1) AS id_user,
@@ -80,14 +101,10 @@ WHERE defaults.id_user IS NOT NULL
         AND deletion_date IS NULL
   );
 
-INSERT INTO entity_permission (
-    id_permission, entity_name, control_type, menu_location, menu_group,
-    menu_group_icon, menu_label, menu_order, created_by, creation_date, last_update_date
-)
+CREATE TEMP TABLE tmp_ep_project_management AS
 SELECT role.id_permission, capability.entity_name, capability.control_type,
        capability.menu_location, capability.menu_group, capability.menu_group_icon,
-       capability.menu_label, capability.menu_order, role.created_by,
-       CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+       capability.menu_label, capability.menu_order, role.created_by
 FROM permission role
 JOIN (VALUES
     ('Supervisor', 'proyect', 7, 'sidebar', 'Operaciones', 'briefcase-business', 'Proyectos', 80),
@@ -103,16 +120,34 @@ JOIN (VALUES
     ('Jefe de taller', 'project_execution', 2, 'hidden', NULL, NULL, NULL, 100)
 ) AS capability(role_name, entity_name, control_type, menu_location, menu_group, menu_group_icon, menu_label, menu_order)
     ON lower(role.permission_description) = lower(capability.role_name)
-WHERE role.deletion_date IS NULL
-ON CONFLICT (id_permission, entity_name) DO UPDATE SET
-    control_type = EXCLUDED.control_type,
-    menu_location = EXCLUDED.menu_location,
-    menu_group = EXCLUDED.menu_group,
-    menu_group_icon = EXCLUDED.menu_group_icon,
-    menu_label = EXCLUDED.menu_label,
-    menu_order = EXCLUDED.menu_order,
+WHERE role.deletion_date IS NULL;
+
+UPDATE entity_permission target SET
+    control_type = source.control_type,
+    menu_location = source.menu_location,
+    menu_group = source.menu_group,
+    menu_group_icon = source.menu_group_icon,
+    menu_label = source.menu_label,
+    menu_order = source.menu_order,
     deletion_date = NULL,
-    last_update_date = CURRENT_TIMESTAMP;
+    last_update_date = CURRENT_TIMESTAMP
+FROM tmp_ep_project_management source
+WHERE target.id_permission = source.id_permission
+  AND target.entity_name = source.entity_name;
+
+INSERT INTO entity_permission (
+    id_permission, entity_name, control_type, menu_location, menu_group,
+    menu_group_icon, menu_label, menu_order, created_by, creation_date, last_update_date
+)
+SELECT source.id_permission, source.entity_name, source.control_type, source.menu_location, source.menu_group,
+       source.menu_group_icon, source.menu_label, source.menu_order, source.created_by, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+FROM tmp_ep_project_management source
+WHERE NOT EXISTS (
+    SELECT 1 FROM entity_permission target
+    WHERE target.id_permission = source.id_permission AND target.entity_name = source.entity_name
+);
+
+DROP TABLE tmp_ep_project_management;
 
 INSERT INTO field (table_name, field_name, created_by, creation_date, last_update_date)
 SELECT column_meta.table_name, column_meta.column_name, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
