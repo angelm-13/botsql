@@ -3,6 +3,20 @@
 -- No editar a mano: el registro es la fuente de verdad y cualquier cambio aqui
 -- se pierde en la siguiente generacion.
 --
+-- ESTE ES EL UNICO ARCHIVO GENERADO DE LA MATRIZ QUE DEBE EXISTIR.
+-- Al cambiar `registry.py` hay que REGENERAR este archivo:
+--
+--     python scripts/seed_module_permissions.py \
+--         ../database/migrations/20260901000000_module_permission_matrix_licensed.sql
+--
+-- No agregar una copia nueva con otro timestamp. Ya paso una vez: la Fase 2
+-- de facturacion agrego `20260901020000_multiemisor_capacidad.sql`, otra copia
+-- completa de esta matriz, en lugar de regenerar esta. Como cada copia empieza
+-- dando de baja logica TODO `entity_permission` y resiembra solo su propia
+-- lista, la copia con el timestamp mas alto gana en silencio: los modulos que
+-- solo estaban declarados en la otra quedaban con 0 permisos vigentes en cada
+-- arranque del pod, sin ningun error en los logs.
+--
 -- Licencia por modulo/cliente
 -- ---------------------------
 -- El proyecto se vende por modulo: un cliente contrata Facturacion y
@@ -34,8 +48,8 @@
 -- servicio. Conceder `inventario` a un rol NO le da el almacen de logistica ni
 -- el del restaurante.
 --
--- 10 modulos, 12 roles, 11 capacidades,
--- 381 filas.
+-- 11 modulos, 12 roles, 12 capacidades,
+-- 389 filas.
 --
 --   facturacion      9 entidades
 --     Administrator (administrar), gerente_administrativo (capturar), vendedor (capturar), Gerente (capturar)
@@ -51,6 +65,8 @@
 --     Administrator (administrar)
 --   crm              7 entidades
 --     Administrator (administrar), gerente_administrativo (capturar), vendedor (capturar), Gerente (capturar)
+--   laboratorio      7 entidades
+--     Administrator (administrar)
 --   rh               4 entidades
 --     Administrator (administrar), gerente_administrativo (capturar), Gerente (consultar)
 --   configuracion    5 entidades
@@ -106,6 +122,13 @@ FROM (VALUES
     (1, 'product', 15, 'sidebar', 'Inventario', 'inventory', 'Productos', 210, 'inventario'),   -- Administrator / administrar
     (1, 'product_family', 15, 'hidden', NULL, NULL, NULL, 290, 'inventario'),   -- Administrator / administrar
     (1, 'unit', 15, 'hidden', NULL, NULL, NULL, 290, 'inventario'),   -- Administrator / administrar
+    (1, 'document', 15, 'sidebar', 'Laboratorio', 'clipboard-list', 'Documentos', 660, 'laboratorio'),   -- Administrator / administrar
+    (1, 'document_category', 15, 'hidden', NULL, NULL, NULL, 740, 'laboratorio'),   -- Administrator / administrar
+    (1, 'document_relation', 15, 'hidden', NULL, NULL, NULL, 740, 'laboratorio'),   -- Administrator / administrar
+    (1, 'document_version', 15, 'hidden', NULL, NULL, NULL, 740, 'laboratorio'),   -- Administrator / administrar
+    (1, 'laboratory_equipment', 15, 'sidebar', 'Laboratorio', 'clipboard-list', 'Equipos de laboratorio', 670, 'laboratorio'),   -- Administrator / administrar
+    (1, 'laboratory_service_order', 15, 'sidebar', 'Laboratorio', 'clipboard-list', 'Ordenes de servicio', 680, 'laboratorio'),   -- Administrator / administrar
+    (1, 'laboratory_service_order_status_history', 15, 'hidden', NULL, NULL, NULL, 740, 'laboratorio'),   -- Administrator / administrar
     (1, 'logistics_address', 15, 'hidden', NULL, NULL, NULL, 490, 'logistica'),   -- Administrator / administrar
     (1, 'logistics_branch', 15, 'hidden', NULL, NULL, NULL, 490, 'logistica'),   -- Administrator / administrar
     (1, 'logistics_contact', 15, 'hidden', NULL, NULL, NULL, 490, 'logistica'),   -- Administrator / administrar
@@ -149,6 +172,7 @@ FROM (VALUES
     (1, 'incident_supervision', 2, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Administrator / consultar
     (1, 'inventory_adjustment', 2, 'hidden', NULL, NULL, NULL, 290, 'inventario'),   -- Administrator / consultar
     (1, 'kronos_device', 2, 'settings', NULL, NULL, NULL, 790, 'rh'),   -- Administrator / consultar
+    (1, 'multiemisor_csd', 15, 'sidebar', 'Facturacion', 'billing', 'Multiemisor y CSD', 190, 'multiemisor_csd'),   -- Administrator / administrar
     (1, 'pos_admin', 15, 'sidebar', 'Punto de venta', 'pos', 'Admin del punto de venta', 640, 'pos'),   -- Administrator / administrar
     (1, 'pos_terminal', 7, 'sidebar', 'Punto de venta', 'pos', 'Caja del punto de venta', 640, 'pos'),   -- Administrator / capturar
     (1, 'project_authorization', 2, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Administrator / consultar

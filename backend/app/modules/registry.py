@@ -160,6 +160,22 @@ MODULOS = (
         ),
     ),
     Modulo(
+        # `clipboard-list` y no un nombre semantico como los de arriba porque
+        # es una de las claves que `groupIcons` de Shell.jsx sabe resolver de
+        # verdad; las otras ("billing", "inventory") no estan en ese mapa y
+        # caen al icono por defecto -- deuda aparte, no de este modulo.
+        "laboratorio", "Laboratorio", "clipboard-list", 650,
+        (
+            # Gestion documental y ordenes de servicio de laboratorio. Las dos
+            # mitades van juntas a proposito: el reporte de diagnostico de una
+            # orden se guarda como version de un `document`, asi que separarlas
+            # daria un modulo que no puede emitir su propio documento.
+            "document", "document_category", "document_version",
+            "document_relation", "laboratory_equipment",
+            "laboratory_service_order", "laboratory_service_order_status_history",
+        ),
+    ),
+    Modulo(
         "rh", "Recursos humanos", "hr", 700,
         ("payroll_concept", "payroll_detail", "payroll_movement", "payroll_period"),
     ),
@@ -254,9 +270,16 @@ class Rol:
 #     un rol solo consulta inventario, darle `inventory_adjustment` es una fila
 #     que no sirve y que hace creer que puede ajustar.
 ROLES = (
+    # `laboratorio` solo lo recibe Administrator por ahora: el modulo se
+    # integro desde la rama tny_docs, que lo concedia a los 12 perfiles por
+    # igual -incluidos Mesero y Cocina-, y que perfiles lo operan de verdad es
+    # una decision de negocio que todavia no se tomo. Ampliarlo es agregar la
+    # clave a los roles que correspondan; dejarlo abierto era lo que hacia que
+    # un mesero pudiera leer expedientes de empleados.
     Rol(1, "Administrator", {
         "facturacion": TOTAL, "inventario": TOTAL, "operaciones": TOTAL,
         "logistica": TOTAL, "restaurante": TOTAL, "pos": TOTAL, "crm": TOTAL, "rh": TOTAL,
+        "laboratorio": TOTAL,
         "configuracion": TOTAL, "seguridad": TOTAL,
     }, [c.clave for c in CAPACIDADES]),
 
@@ -332,6 +355,9 @@ MENU = {
     "task_type": ("Tipos de tarea", 40),
     "incident": ("Incidencias", 50),
     "incident_detail": ("Detalle de incidencias", 60),
+    "document": ("Documentos", 10),
+    "laboratory_equipment": ("Equipos de laboratorio", 20),
+    "laboratory_service_order": ("Ordenes de servicio", 30),
     "payroll_period": ("Periodos de nomina", 10),
     "payroll_concept": ("Conceptos", 20),
     "payroll_movement": ("Movimientos", 30),

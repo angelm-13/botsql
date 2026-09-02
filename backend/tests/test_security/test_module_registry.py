@@ -68,10 +68,10 @@ class TestCobertura(unittest.TestCase):
         )
 
     def test_the_business_modules_are_declared(self):
-        """Los siete que se pidieron, mas el punto de venta que se integro."""
+        """Los siete que se pidieron, mas el punto de venta y el laboratorio."""
         esperados = {
             "facturacion", "logistica", "restaurante", "rh", "crm",
-            "operaciones", "inventario", "pos",
+            "operaciones", "inventario", "pos", "laboratorio",
         }
 
         self.assertEqual(esperados, set(registry.MODULOS_DE_NEGOCIO))
