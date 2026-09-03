@@ -144,8 +144,11 @@ const groupIcons = {
   // en casi todos los grupos.
   "documentos": FileText,
   "laboratorio": FlaskConical,
+  // `file-text` ya esta arriba, con los demas nombres de lucide. Repetirlo aqui
+  // no hacia dano -apunta al mismo icono- pero era una clave duplicada en un
+  // objeto, que Vite avisaba en cada arranque y que la proxima vez podia
+  // repetirse apuntando a otro icono y ganar en silencio.
   "flask-conical": FlaskConical,
-  "file-text": FileText,
 };
 
 const defaultGroupIcons = {

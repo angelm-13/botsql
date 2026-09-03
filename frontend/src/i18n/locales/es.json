@@ -4052,6 +4052,23 @@
     "kind_caducado": "caducado",
     "kind_trasladado": "trasladado",
     "kind_ajustado": "ajustado",
-    "manage_piece": "Gestionar"
+    "manage_piece": "Gestionar",
+    "level_piece": "Buscaste una pieza:",
+    "level_product": "Buscaste el producto: se muestran sus",
+    "level_product_units": "unidades",
+    "the_piece": "La pieza que buscas",
+    "the_pieces": "Las piezas que buscas",
+    "other_units": "Las otras unidades de este producto",
+    "usable_units": "unidades utilizables",
+    "what_happened_all": "Qué le ha pasado al producto (todas sus unidades)",
+    "event_alta": "se dio de alta",
+    "event_asignacion": "se asignó a",
+    "event_prestamo": "se prestó a",
+    "event_devolucion": "la devolvió",
+    "event_envio_reparacion": "se mandó a reparación",
+    "event_regreso_reparacion": "volvió de reparación",
+    "event_extravio": "se reportó extraviada",
+    "event_baja": "se retiró",
+    "event_traslado": "se movió"
   }
 }

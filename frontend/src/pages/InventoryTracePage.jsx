@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import PropTypes from "prop-types";
 import {
-  AlertTriangle, Camera, ImageOff, MapPin, RefreshCw, Search, Wrench,
+  AlertTriangle, Camera, Crosshair, History, ImageOff, MapPin, Package,
+  RefreshCw, Search, Wrench,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { inventoryTrace, uploadProductImage, urlDeArchivo } from "../api";
@@ -26,6 +28,13 @@ import "../styles/inventory-trace.css";
  * * **Lo que el alcance esconde se cuenta.** Si hay coincidencias de otro
  *   proyecto, se dice cuantas. Quien busca algo que existe y no lo ve merece
  *   saber que el filtro es el alcance y no que no exista.
+ * * **Buscar una pieza y buscar el producto se contestan distinto.** Son dos
+ *   preguntas: "donde esta el taladro TAL-001-C" y "cuantos taladros tengo y
+ *   como estan". Antes se contestaban igual -salia el producto con sus tres
+ *   piezas y sin decir cual era la que se pidio-, asi que quien tenia el numero
+ *   en la mano tenia que buscarlo a ojo en la lista. Ahora el servidor dice por
+ *   que salio cada resultado (`match_kind`) y cual pieza coincide, y la pantalla
+ *   ensena la pieza pedida arriba con su bitacora, y las demas unidades debajo.
  */
 
 const PROPOSITOS = [
@@ -54,6 +63,87 @@ const TONO_DE_HISTORIA = {
   prestado: "warn",
   danado: "crit", destruido: "crit", extraviado: "crit", caducado: "crit",
 };
+
+/**
+ * Una pieza: su etiqueta, su estado, quien la tiene y -si es la que se
+ * busco- todo lo que le ha pasado.
+ *
+ * La bitacora solo se ensena de la pieza pedida. El servidor tampoco la manda
+ * para las demas: desplegar la historia de treinta piezas para ver una es
+ * ruido, y la historia del producto -que si sale siempre- ya contesta la
+ * pregunta general.
+ */
+function Pieza({ pieza, destacada, t }) {
+  return (
+    <li className={destacada ? "trace-asset-hit" : undefined}>
+      <div className="trace-asset-line">
+        {destacada && <Crosshair size={13} className="trace-hit-icon" />}
+        <span className="mono">{pieza.asset_tag}</span>
+        <span className={`trace-chip ${TONO_DE_ESTADO[pieza.status] || "muted"}`}>
+          {t(`assets.status_${pieza.status}`, pieza.status)}
+        </span>
+        {/* Quien la tiene solo aplica cuando esta fuera de su sitio; en
+            `disponible` el responsable es nadie. */}
+        {pieza.holder_name && <span className="trace-holder">{pieza.holder_name}</span>}
+        {pieza.location_description && (
+          <span className="muted">
+            <MapPin size={12} /> {pieza.location_description}
+          </span>
+        )}
+        {pieza.due_date && (
+          <span className="muted">{t("trace.due", "regresa")} {pieza.due_date}</span>
+        )}
+        {/* Esta pantalla localiza; las acciones sobre la pieza -prestar,
+            devolver, mandar a reparar, dar de baja- viven en su pantalla, que es
+            donde estan sus transiciones de estado. Se enlaza en vez de
+            repetirlas aqui: dos sitios que prestan la misma herramienta acaban
+            discrepando. */}
+        <Link className="trace-manage"
+              to={`/assets?tag=${encodeURIComponent(pieza.asset_tag || "")}`}>
+          {t("trace.manage_piece", "Gestionar")}
+        </Link>
+      </div>
+
+      {destacada && pieza.timeline?.length > 0 && (
+        <ol className="trace-timeline">
+          {pieza.timeline.map((e) => (
+            <li key={e.id_inventory_asset_event}>
+              <span className="trace-when">
+                {e.creation_date ? new Date(e.creation_date).toLocaleString("es-MX") : ""}
+              </span>
+              <span className="trace-what">
+                {t(`trace.event_${e.event_type}`, e.etiqueta)}
+                {(e.holder_after_name || e.holder_before_name) && (
+                  <strong> {e.holder_after_name || e.holder_before_name}</strong>
+                )}
+                {e.location_after_description && (
+                  <em> · {e.location_after_description}</em>
+                )}
+              </span>
+              {e.reason && <span className="muted">{e.reason}</span>}
+            </li>
+          ))}
+        </ol>
+      )}
+    </li>
+  );
+}
+
+
+Pieza.propTypes = {
+  pieza: PropTypes.shape({
+    id_inventory_asset: PropTypes.number,
+    asset_tag: PropTypes.string,
+    status: PropTypes.string,
+    holder_name: PropTypes.string,
+    location_description: PropTypes.string,
+    due_date: PropTypes.string,
+    timeline: PropTypes.arrayOf(PropTypes.object),
+  }).isRequired,
+  destacada: PropTypes.bool,
+  t: PropTypes.func.isRequired,
+};
+
 
 export default function InventoryTracePage() {
   const { t } = useI18n();
@@ -192,6 +282,11 @@ export default function InventoryTracePage() {
           const piezas = estadoFiltro
             ? (it.assets || []).filter((a) => a.status === estadoFiltro)
             : (it.assets || []);
+          // La pieza que se pidio y las demas unidades del mismo producto. El
+          // servidor ya las marca y las manda ordenadas; aqui solo se separan
+          // para poder titularlas distinto.
+          const pedidas = piezas.filter((a) => a.matched);
+          const resto = piezas.filter((a) => !a.matched);
           const foto = fotosRotas.has(it.id_product) ? "" : urlDeArchivo(it.path_imagen);
 
           return (
@@ -241,8 +336,37 @@ export default function InventoryTracePage() {
                   <div className="trace-total">
                     <strong>{it.total}</strong>
                     <span>{t("trace.in_stock", "en existencia")}</span>
+                    {/* Tres piezas de las que solo una sirve no es "tres" ni es
+                        "una": la existencia cuenta lo utilizable y las unidades
+                        cuentan lo que se tiene. Las dos hacen falta. */}
+                    {it.unit_count > 0 && (
+                      <em className="trace-units">
+                        {it.available_units}/{it.unit_count}{" "}
+                        {t("trace.usable_units", "unidades utilizables")}
+                      </em>
+                    )}
                   </div>
                 </header>
+
+                {/* Por que salio este resultado. Sin esto, buscar la
+                    etiqueta de una pieza y buscar el codigo del producto dan la
+                    misma pantalla, y no hay forma de saber si lo que se ve es la
+                    pieza que se pidio o el inventario entero de ese modelo. */}
+                {it.match_kind === "asset_tag" && it.matched_asset_tags?.length > 0 && (
+                  <p className="trace-level trace-level-piece">
+                    <Crosshair size={14} />
+                    {t("trace.level_piece", "Buscaste una pieza:")}{" "}
+                    <strong className="mono">{it.matched_asset_tags.join(", ")}</strong>
+                  </p>
+                )}
+                {it.match_kind === "product_code" && it.unit_count > 0 && (
+                  <p className="trace-level trace-level-product">
+                    <Package size={14} />
+                    {t("trace.level_product", "Buscaste el producto: se muestran sus")}{" "}
+                    <strong>{it.unit_count}</strong>{" "}
+                    {t("trace.level_product_units", "unidades")}
+                  </p>
+                )}
 
                 <h3 className="trace-section">
                   <MapPin size={14} /> {t("trace.where", "Dónde está")}
@@ -265,7 +389,12 @@ export default function InventoryTracePage() {
                   </ul>
                 )}
 
-                <h3 className="trace-section">{t("trace.what_happened", "Qué le ha pasado")}</h3>
+                <h3 className="trace-section">
+                  <History size={14} />{" "}
+                  {it.unit_count > 0
+                    ? t("trace.what_happened_all", "Qué le ha pasado al producto (todas sus unidades)")
+                    : t("trace.what_happened", "Qué le ha pasado")}
+                </h3>
                 {historia.length === 0 ? (
                   <p className="muted">{t("trace.no_history", "Sin movimientos registrados.")}</p>
                 ) : (
@@ -281,39 +410,35 @@ export default function InventoryTracePage() {
                   </ul>
                 )}
 
-                {piezas.length > 0 && (
+                {pedidas.length > 0 && (
                   <>
                     <h3 className="trace-section">
-                      <Wrench size={14} /> {t("trace.pieces", "Sus piezas")}
+                      <Crosshair size={14} />{" "}
+                      {pedidas.length === 1
+                        ? t("trace.the_piece", "La pieza que buscas")
+                        : t("trace.the_pieces", "Las piezas que buscas")}
                     </h3>
                     <ul className="trace-assets">
-                      {piezas.map((a) => (
-                        <li key={a.id_inventory_asset || a.asset_tag}>
-                          <span className="mono">{a.asset_tag}</span>
-                          <span className={`trace-chip ${TONO_DE_ESTADO[a.status] || "muted"}`}>
-                            {t(`assets.status_${a.status}`, a.status)}
-                          </span>
-                          {/* Quien la tiene solo aplica cuando esta fuera de su
-                              sitio; en `disponible` el responsable es nadie. */}
-                          {a.holder_name && (
-                            <span className="trace-holder">{a.holder_name}</span>
-                          )}
-                          {a.due_date && (
-                            <span className="muted">
-                              {t("trace.due", "regresa")} {a.due_date}
-                            </span>
-                          )}
-                          {/* Esta pantalla localiza; las acciones sobre la pieza
-                              -prestar, devolver, mandar a reparar, dar de baja-
-                              viven en su pantalla, que es donde estan sus
-                              transiciones de estado y su historial. Se enlaza en
-                              vez de repetirlas aqui: dos sitios que prestan la
-                              misma herramienta acaban discrepando. */}
-                          <Link className="trace-manage"
-                                to={`/assets?tag=${encodeURIComponent(a.asset_tag || "")}`}>
-                            {t("trace.manage_piece", "Gestionar")}
-                          </Link>
-                        </li>
+                      {pedidas.map((a) => (
+                        <Pieza key={a.id_inventory_asset || a.asset_tag}
+                               pieza={a} destacada t={t} />
+                      ))}
+                    </ul>
+                  </>
+                )}
+
+                {resto.length > 0 && (
+                  <>
+                    <h3 className="trace-section">
+                      <Wrench size={14} />{" "}
+                      {pedidas.length > 0
+                        ? t("trace.other_units", "Las otras unidades de este producto")
+                        : t("trace.pieces", "Sus piezas")}
+                      {" "}<span className="muted">({resto.length})</span>
+                    </h3>
+                    <ul className="trace-assets">
+                      {resto.map((a) => (
+                        <Pieza key={a.id_inventory_asset || a.asset_tag} pieza={a} t={t} />
                       ))}
                     </ul>
                   </>

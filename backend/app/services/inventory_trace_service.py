@@ -62,6 +62,10 @@ VENTAS = frozenset({"sale", "invoice_line", "invoice"})
 
 MAXIMO_RESULTADOS = 40
 
+# Cuantos movimientos se traen de UNA pieza. Los ultimos son los que
+# contestan "donde esta"; el resto es historia y tiene su propia pantalla.
+MAXIMO_EVENTOS_POR_PIEZA = 20
+
 
 def _clasificar(movement_type: str, reference_type: str | None) -> str:
     """El nombre con el que se cuenta un renglon del libro."""
@@ -83,7 +87,14 @@ def _clasificar(movement_type: str, reference_type: str | None) -> str:
 
 
 def _historia(db, id_product) -> dict:
-    """Cuanto se ha comprado, vendido, prestado... de este producto."""
+    """Cuanto se ha comprado, vendido, prestado... de este producto.
+
+    Un traslado escribe DOS asientos con el mismo `transfer_group`: la salida
+    del origen y la entrada al destino. Sumando valores absolutos, mover diez
+    piezas se contaba como veinte -medido: un traslado de 10 aparecia como
+    "trasladado 20"-. Se cuenta solo el lado de la salida, que es lo que se
+    movio.
+    """
     filas = db.execute(
         select(
             InventoryLedger.movement_type,
@@ -91,7 +102,14 @@ def _historia(db, id_product) -> dict:
             func.count().label("veces"),
             func.sum(func.abs(InventoryLedger.quantity_delta)).label("unidades"),
         )
-        .where(InventoryLedger.id_product == id_product)
+        .where(
+            InventoryLedger.id_product == id_product,
+            # Del traslado, solo la salida.
+            or_(
+                InventoryLedger.movement_type != "transfer",
+                InventoryLedger.quantity_delta < 0,
+            ),
+        )
         .group_by(InventoryLedger.movement_type, InventoryLedger.reference_type)
     ).all()
 
@@ -124,7 +142,8 @@ def _ubicaciones(db, id_product) -> list[dict]:
     return salida
 
 
-def _piezas(db, id_product) -> list[dict]:
+def _piezas(db, id_product, *, consulta: str = "",
+            codigo_del_producto: str = "") -> list[dict]:
     """Las piezas de un producto que se rastrea una por una.
 
     Solo para `tracking_mode = 'serializado'`. Es el caso que mas importa para
@@ -146,9 +165,23 @@ def _piezas(db, id_product) -> list[dict]:
         .order_by(InventoryAsset.asset_tag)
     ).all()
 
+    texto = str(consulta or "").strip().lower()
+    codigo = str(codigo_del_producto or "").strip().lower()
+    # Las etiquetas suelen empezar por el codigo del producto -TAL-100-A, -B,
+    # -C-, asi que "contiene el texto" marcaba las tres piezas al buscar el
+    # producto y decia "coincide la pieza A, B y C" cuando no coincidia ninguna:
+    # se pidio el producto. Buscar el producto es una pregunta y buscar una
+    # pieza es otra, y la respuesta tiene que distinguirlas.
+    #
+    # Se marca pieza cuando el texto es MAS especifico que el codigo: o es la
+    # etiqueta exacta, o no es algo que el codigo del producto ya explique.
+    busca_una_pieza = bool(texto) and (codigo == "" or texto not in codigo)
+
     salida = []
     for fila in filas:
         pieza = fila.serialize()
+        etiqueta = str(fila.asset_tag or "").lower()
+        pieza["matched"] = texto == etiqueta or (busca_una_pieza and texto in etiqueta)
         if fila.id_holder:
             responsable = db.get(User, fila.id_holder)
             pieza["holder_name"] = (
@@ -163,6 +196,73 @@ def _piezas(db, id_product) -> list[dict]:
             ubicacion = db.get(Location, fila.id_location)
             pieza["location_description"] = getattr(ubicacion, "location_description", None)
         salida.append(pieza)
+    # Las coincidentes primero: es lo que se vino a ver.
+    salida.sort(key=lambda p: (not p["matched"], str(p.get("asset_tag") or "")))
+    return salida
+
+
+ETIQUETA_DE_EVENTO = {
+    "alta": "dio de alta",
+    "asignacion": "se asigno a",
+    "prestamo": "se presto a",
+    "devolucion": "la devolvio",
+    "envio_reparacion": "se mando a reparacion",
+    "regreso_reparacion": "volvio de reparacion",
+    "extravio": "se reporto extraviada",
+    "baja": "se retiro",
+    "traslado": "se movio",
+}
+
+
+def _nombre_de_persona(db, id_usuario) -> str | None:
+    """El nombre de quien tuvo la pieza; nunca el identificador a secas."""
+    if not id_usuario:
+        return None
+    from app.models.user import User
+
+    persona = db.get(User, id_usuario)
+    return (
+        getattr(persona, "full_name", None)
+        or getattr(persona, "username", None)
+        or f"#{id_usuario}"
+    )
+
+
+def _bitacora_de_pieza(db, id_asset) -> list[dict]:
+    """Todo lo que le paso a UNA pieza, en orden y legible.
+
+    Esta es la respuesta especifica: la historia del producto dice que de treinta
+    taladros se prestaron cuatro, y eso no sirve cuando lo que se busca es el
+    taladro que falta. Aqui se ve quien tuvo esta pieza, cuando, de donde salio y
+    a donde fue.
+
+    `InventoryAssetEvent` ya guardaba el antes y el despues completos, pero solo
+    los identificadores. Un renglon que dice `id_holder_after: 7` obliga a ir a
+    buscar quien es el 7, asi que los nombres se resuelven aqui, donde ya hay
+    sesion abierta.
+    """
+    from app.models.inventory_asset_event import InventoryAssetEvent
+
+    eventos = db.scalars(
+        select(InventoryAssetEvent)
+        .where(InventoryAssetEvent.id_inventory_asset == id_asset)
+        .order_by(InventoryAssetEvent.id_inventory_asset_event.desc())
+        .limit(MAXIMO_EVENTOS_POR_PIEZA)
+    ).all()
+
+    salida = []
+    for evento in eventos:
+        fila = evento.serialize()
+        fila["etiqueta"] = ETIQUETA_DE_EVENTO.get(evento.event_type, evento.event_type)
+        fila["holder_before_name"] = _nombre_de_persona(db, evento.id_holder_before)
+        fila["holder_after_name"] = _nombre_de_persona(db, evento.id_holder_after)
+        for lado in ("before", "after"):
+            id_ubicacion = getattr(evento, f"id_location_{lado}")
+            ubicacion = db.get(Location, id_ubicacion) if id_ubicacion else None
+            fila[f"location_{lado}_description"] = getattr(
+                ubicacion, "location_description", None
+            )
+        salida.append(fila)
     return salida
 
 
@@ -201,6 +301,7 @@ def localizar(consulta: str, user_data: dict, *, proposito: str | None = None,
         from app.models.inventory_asset import InventoryAsset
 
         query = select(Product).where(Product.deletion_date.is_(None))
+        productos_con_esa_etiqueta: set[int] = set()
         if texto:
             patron = f"%{texto}%"
             # Las etiquetas se resuelven aparte y se suman a la busqueda: un
@@ -216,8 +317,9 @@ def localizar(consulta: str, user_data: dict, *, proposito: str | None = None,
                 Product.product_code.ilike(patron),
                 Product.descripcion.ilike(patron),
             ]
+            productos_con_esa_etiqueta = set(con_esa_etiqueta)
             if con_esa_etiqueta:
-                condiciones.append(Product.id_product.in_(list(set(con_esa_etiqueta))))
+                condiciones.append(Product.id_product.in_(list(productos_con_esa_etiqueta)))
             query = query.where(or_(*condiciones))
         if proposito:
             query = query.where(Product.stock_purpose == proposito)
@@ -240,6 +342,33 @@ def localizar(consulta: str, user_data: dict, *, proposito: str | None = None,
 
             serializado = str(producto.tracking_mode or "") == "serializado"
             ubicaciones = _ubicaciones(db, producto.id_product)
+            piezas = _piezas(
+                db, producto.id_product, consulta=texto,
+                codigo_del_producto=producto.product_code or "",
+            ) if (serializado and con_piezas) else []
+            coincidentes = [p["asset_tag"] for p in piezas if p.get("matched")]
+            for pieza in piezas:
+                if pieza.get("matched"):
+                    pieza["timeline"] = _bitacora_de_pieza(db, pieza["id_inventory_asset"])
+
+            # Por que este producto salio en la busqueda. La pantalla lo usa
+            # para saber si mostrar la pieza concreta o todas las unidades: son
+            # dos preguntas distintas y hasta ahora se contestaban igual.
+            if coincidentes:
+                # Se pidio una pieza concreta.
+                motivo = "asset_tag"
+            elif texto and texto.lower() in str(producto.product_code or "").lower():
+                # Se pidio el producto: todas sus unidades.
+                motivo = "product_code"
+            elif producto.id_product in productos_con_esa_etiqueta:
+                # Salio por una etiqueta pero sin poder senalar cual, porque se
+                # pidio el resumen sin piezas.
+                motivo = "asset_tag"
+            elif texto:
+                motivo = "description"
+            else:
+                motivo = "all"
+
             resultados.append({
                 "id_product": producto.id_product,
                 "product_code": producto.product_code,
@@ -253,7 +382,17 @@ def localizar(consulta: str, user_data: dict, *, proposito: str | None = None,
                 "locations": ubicaciones,
                 "history": _historia(db, producto.id_product),
                 "last_movement": _ultimo_movimiento(db, producto.id_product),
-                "assets": _piezas(db, producto.id_product) if (serializado and con_piezas) else [],
+                "assets": piezas,
+                "match_kind": motivo,
+                "matched_asset_tags": coincidentes,
+                # Cuantas unidades tiene el producto y cuantas estan
+                # disponibles. Para lo serializado es la cuenta de piezas; para
+                # lo fungible, el saldo, que ya es la respuesta.
+                "unit_count": len(piezas) if serializado else None,
+                "available_units": (
+                    sum(1 for p in piezas if p.get("status") == "disponible")
+                    if serializado else None
+                ),
             })
 
         return {

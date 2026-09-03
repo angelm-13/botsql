@@ -154,3 +154,51 @@
    y el enlace es la salida hacia donde se actua. */
 .trace-manage{margin-left:auto;font-size:12.5px;color:#1b7a60;text-decoration:none;font-weight:600}
 .trace-manage:hover{text-decoration:underline}
+
+/* --- los dos niveles: la pieza y el producto ---
+
+   El aviso dice por que salio el resultado. Se pinta distinto segun el nivel
+   porque la diferencia importa: verde-agua cuando se pidio una pieza concreta,
+   gris cuando se pidio el producto y lo que se ve son todas sus unidades. Sin
+   esta senal las dos busquedas dan la misma pantalla y no hay forma de saber
+   cual de las dos preguntas se contesto. */
+
+.trace-level {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin: 0 0 12px; padding: 8px 12px; border-radius: 9px; font-size: 13px;
+}
+.trace-level-piece   { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
+.trace-level-product { background: #f8fafc; border: 1px solid #e2e8f0; color: #475569; }
+
+/* Unidades frente a existencia. Tres piezas de las que solo una sirve no es
+   "tres" ni es "una", asi que se dicen las dos cosas. */
+.trace-units { display: block; font-size: 11px; color: #64748b; font-style: normal; }
+
+/* La pieza que se pidio. La lista completa sigue debajo -verla en su producto
+   es util- pero esta se separa del resto para no tener que encontrarla a ojo,
+   que es lo que se venia a evitar. */
+.trace-asset-hit {
+  flex-direction: column; align-items: stretch !important;
+  background: #ecfdf5 !important; border: 1px solid #a7f3d0;
+}
+.trace-asset-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.trace-hit-icon { color: #059669; flex: none; }
+
+/* La bitacora de esa pieza: quien la tuvo, cuando y de donde salio. Solo se
+   pinta en la pieza destacada; el servidor tampoco la manda para las demas. */
+.trace-timeline {
+  list-style: none; margin: 8px 0 0; padding: 8px 0 0 4px;
+  border-top: 1px dashed #a7f3d0;
+  display: flex; flex-direction: column; gap: 5px;
+}
+.trace-timeline li {
+  display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline;
+  padding: 0; background: none; font-size: 12.5px;
+}
+.trace-when {
+  flex: none; min-width: 132px; color: #64748b; font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.trace-what { color: #334155; }
+.trace-what strong { color: #065f46; }
+.trace-what em { color: #64748b; font-style: normal; }

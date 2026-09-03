@@ -53,6 +53,59 @@ HERRAMIENTA = 81
 RESPONSABLE = 300
 
 
+def _sembrar_lo_minimo(db, *, id_invoice, ubicaciones):
+    """Los catalogos y la factura sin los que `product` no se puede insertar.
+
+    `product.id_invoice` es NOT NULL y el alcance del actor se resuelve por el
+    proyecto de esa factura, asi que hasta una prueba que solo quiere buscar
+    texto tiene que montar la cadena completa: empresa, cliente, estatus,
+    proyecto y factura.
+
+    `ubicaciones` es {id: descripcion}; se crean todas con el mismo tipo.
+    """
+    db.add_all([
+        CustomerSupplier(
+            id_customer_supplier=EMPRESA, name="Mi Empresa", tax_id="AAA010101AA1",
+            postal_code="37000", fiscal_type="601", type="supplier",
+            is_principal=True, id_user=1, created_by=1,
+        ),
+        CustomerSupplier(
+            id_customer_supplier=CLIENTE, name="Cliente", tax_id="BBB010101BB1",
+            postal_code="37100", fiscal_type="601", type="client",
+            id_user=1, created_by=1,
+        ),
+        LocationType(id_location_type=1, location_type_description="Almacen",
+                     is_warehouse=True, created_by=1),
+        Brand(id_brand=1, brand_description="Generica", created_by=1),
+        ProductFamily(id_product_family=1, product_family_description="General",
+                      created_by=1),
+        Unit(id_unit=1, unit_name="Pieza", is_active=True,
+             measurement_system="metric", created_by=1),
+    ])
+    db.flush()
+    db.add_all([
+        Status(id_status=40, status_description="Activo", category="invoice",
+               is_terminal=False, sort_order="asc", created_by=1),
+        Proyect(id_proyect=70, id_customer_supplier=CLIENTE, leader=1,
+                proyect_description="Proyecto", created_by=1),
+        Material(id_material=1, material_description="Generico", id_unit=1,
+                 id_brand=1, id_product_family=1, created_by=1),
+    ])
+    db.add_all([
+        Location(id_location=id_ubicacion, id_location_type=1,
+                 location_description=descripcion, created_by=1)
+        for id_ubicacion, descripcion in ubicaciones.items()
+    ])
+    db.flush()
+    db.add(Invoice(
+        id_invoice=id_invoice, id_customer_supplier=EMPRESA,
+        id_issuer_customer_supplier=CLIENTE, id_proyect=70, id_status=40,
+        invoice_status="timbrada", tax_certification_supplier=CLIENTE,
+        apply_tax=False, created_by=1,
+    ))
+    db.flush()
+
+
 class TestComoSeClasificaCadaMovimiento(unittest.TestCase):
     """La lectura del libro, sin tocar la base."""
 
@@ -253,6 +306,189 @@ class TestLocalizar(BackendTestCase):
             db.get(Product, MERCANCIA).path_imagen = "uploads/products/p_80.png"
         item = localizar("AGU-001", ACTOR)["items"][0]
         self.assertEqual("uploads/products/p_80.png", item["path_imagen"])
+
+
+
+class TestLosDosNivelesDeBusqueda(BackendTestCase):
+    """Buscar una pieza y buscar el producto son dos preguntas distintas.
+
+    Antes se contestaban igual: buscar la etiqueta `TAL-CFG-C` devolvia el
+    producto con sus tres piezas y sin decir cual era la que se pidio -medido-,
+    asi que quien tenia el numero en la mano tenia que encontrarlo a ojo en la
+    lista, que es justo lo que la busqueda venia a evitar.
+
+    Ahora la respuesta dice por que salio -`match_kind`- y senala las piezas que
+    coinciden. La distincion es fina a proposito: las etiquetas suelen empezar
+    por el codigo del producto -`TAL-CFG-A`, `-B`, `-C`-, asi que "contiene el
+    texto" marcaba las tres al buscar el producto y afirmaba que coincidian tres
+    piezas cuando no coincidia ninguna.
+    """
+
+    ALMACEN2 = 8801
+    HERRAMIENTA2 = 8802
+    COMPRA2 = 8803
+
+    def setUp(self):
+        super().setUp()
+        with transaction_context() as db:
+            _sembrar_lo_minimo(db, id_invoice=self.COMPRA2,
+                               ubicaciones={self.ALMACEN2: "Nave 2"})
+            db.add(Product(
+                id_product=self.HERRAMIENTA2, id_invoice=self.COMPRA2,
+                id_location=self.ALMACEN2, id_material=1,
+                is_directly_related_to_product_service=True, product_code="TAL-CFG",
+                descripcion="Taladro percutor", stock_purpose="uso_interno",
+                tracking_mode="serializado", gross_price=Decimal("3200.00"), created_by=1,
+            ))
+
+        from app.services.inventory_asset_service import register_asset
+
+        for sufijo in ("A", "B", "C"):
+            register_asset({
+                "id_product": self.HERRAMIENTA2,
+                "asset_tag": "TAL-CFG-" + sufijo,
+                "id_location": self.ALMACEN2,
+            }, ACTOR)
+
+    def _pieza_llamada(self, etiqueta):
+        from sqlalchemy import select as _select
+
+        from app.models.inventory_asset import InventoryAsset
+
+        with transaction_context() as db:
+            return db.scalars(
+                _select(InventoryAsset.id_inventory_asset)
+                .where(InventoryAsset.asset_tag == etiqueta)
+            ).first()
+
+    def _item(self, consulta):
+        resultado = localizar(consulta, ACTOR)
+        self.assertEqual(1, resultado["total"], "'%s' no dio un solo producto" % consulta)
+        return resultado["items"][0]
+
+    def test_asking_for_one_piece_points_at_that_piece(self):
+        item = self._item("TAL-CFG-C")
+        self.assertEqual("asset_tag", item["match_kind"])
+        self.assertEqual(["TAL-CFG-C"], item["matched_asset_tags"])
+        # Las tres siguen ahi: la pieza vive en un producto y verlo entero es
+        # util. Lo que cambia es que se sabe cual se pidio.
+        self.assertEqual(3, len(item["assets"]))
+        self.assertEqual("TAL-CFG-C", item["assets"][0]["asset_tag"],
+                         "la pieza que se pidio tiene que venir primero")
+        self.assertEqual([True, False, False], [p["matched"] for p in item["assets"]])
+
+    def test_asking_for_the_product_marks_no_piece(self):
+        """El codigo es prefijo de las etiquetas; sin cuidado marcaria las tres."""
+        item = self._item("TAL-CFG")
+        self.assertEqual("product_code", item["match_kind"])
+        self.assertEqual([], item["matched_asset_tags"])
+        self.assertEqual(3, len(item["assets"]))
+        self.assertFalse(any(p["matched"] for p in item["assets"]))
+
+    def test_it_says_how_many_units_there_are_and_how_many_are_usable(self):
+        """Tres piezas de las que solo una sirve no es "tres" ni es "una"."""
+        from app.services.inventory_asset_service import send_to_repair
+
+        send_to_repair(self._pieza_llamada("TAL-CFG-B"), {"reason": "No enciende"}, ACTOR)
+
+        item = self._item("TAL-CFG")
+        self.assertEqual(3, item["unit_count"])
+        self.assertEqual(2, item["available_units"])
+
+    def test_the_matched_piece_carries_its_own_log(self):
+        """La historia del producto no contesta donde esta ESTA pieza."""
+        from app.services.inventory_asset_service import lend_asset
+
+        # La fecha de regreso es obligatoria: un prestamo sin ella es una baja
+        # disfrazada, porque nunca esta vencido y nadie lo reclama.
+        lend_asset(self._pieza_llamada("TAL-CFG-A"),
+                   {"id_holder": 1, "due_date": "2026-09-30",
+                    "reason": "Obra Norte"}, ACTOR)
+
+        pieza = self._item("TAL-CFG-A")["assets"][0]
+        eventos = pieza["timeline"]
+        # Del mas reciente al mas viejo: lo ultimo que le paso es la respuesta.
+        self.assertEqual(["prestamo", "alta"], [e["event_type"] for e in eventos])
+        self.assertEqual("se presto a", eventos[0]["etiqueta"])
+        # Un nombre, no un identificador: "responsable 1" no dice quien lo tiene.
+        self.assertIsNotNone(eventos[0]["holder_after_name"])
+        self.assertNotEqual("1", eventos[0]["holder_after_name"])
+        self.assertEqual("Nave 2", eventos[1]["location_after_description"])
+
+    def test_the_unmatched_pieces_do_not_carry_a_log(self):
+        """Traer la bitacora de las treinta piezas de un producto para ver una
+        son treinta consultas desperdiciadas."""
+        item = self._item("TAL-CFG-C")
+        self.assertIn("timeline", item["assets"][0])
+        for pieza in item["assets"][1:]:
+            self.assertNotIn("timeline", pieza)
+
+
+class TestElTrasladoNoCuentaDoble(BackendTestCase):
+    """Un traslado escribe dos asientos; sumar valores absolutos los cuenta dos veces.
+
+    Medido antes del arreglo: trasladar 10 unidades y la historia decia
+    `trasladado 20`. El libro guarda la salida del origen y la entrada al
+    destino con el mismo `transfer_group`, y las dos tienen 10 en valor
+    absoluto. Se cuenta solo la salida, que es lo que se movio.
+
+    Importa mas de lo que parece: el traslado es el movimiento que mas se hace
+    en un almacen -reacomodos- y un numero inflado ahi hace creer que se mueve
+    el doble de mercancia de la que se mueve.
+    """
+
+    ALMACEN_A = 8811
+    ALMACEN_B = 8812
+    PRODUCTO = 8813
+    COMPRA3 = 8814
+
+    def setUp(self):
+        super().setUp()
+        with transaction_context() as db:
+            _sembrar_lo_minimo(db, id_invoice=self.COMPRA3, ubicaciones={
+                self.ALMACEN_A: "Nave A", self.ALMACEN_B: "Nave B",
+            })
+            db.add(Product(
+                id_product=self.PRODUCTO, id_invoice=self.COMPRA3,
+                id_location=self.ALMACEN_A, id_material=1,
+                is_directly_related_to_product_service=True, product_code="TOR-500",
+                descripcion="Tornillo", stock_purpose="mercancia",
+                gross_price=Decimal("2.00"), created_by=1,
+            ))
+
+        apply_inventory_movement(self.PRODUCTO, {
+            "movement_type": "receive", "quantity": 30, "id_location": self.ALMACEN_A,
+            "reference_type": "purchase", "reference_id": "1",
+            "idempotency_key": "tor-compra",
+        }, ACTOR)
+
+    def _trasladar(self, llave):
+        from app.services.inventory_service import transfer_inventory
+
+        return transfer_inventory(self.PRODUCTO, {
+            "quantity": 10, "id_location_from": self.ALMACEN_A,
+            "id_location_to": self.ALMACEN_B, "reason": "Reacomodo",
+            "idempotency_key": llave,
+        }, ACTOR)
+
+    def test_moving_ten_units_is_reported_as_ten(self):
+        self._trasladar("tor-traslado")
+
+        historia = localizar("TOR-500", ACTOR)["items"][0]["history"]
+        self.assertEqual(10, historia["trasladado"]["unidades"])
+        self.assertEqual(1, historia["trasladado"]["veces"],
+                         "un traslado es un movimiento, no dos")
+
+    def test_the_stock_still_adds_up_after_the_move(self):
+        """El arreglo es de la cuenta de la historia; el saldo no se toca."""
+        self._trasladar("tor-traslado-2")
+
+        item = localizar("TOR-500", ACTOR)["items"][0]
+        self.assertEqual(30, item["total"])
+        self.assertEqual(
+            {"Nave A": 20, "Nave B": 10},
+            {u["location_description"]: u["quantity"] for u in item["locations"]},
+        )
 
 
 if __name__ == "__main__":

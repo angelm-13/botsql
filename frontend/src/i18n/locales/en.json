@@ -3989,6 +3989,23 @@
     "kind_caducado": "expired",
     "kind_trasladado": "transferred",
     "kind_ajustado": "adjusted",
-    "manage_piece": "Manage"
+    "manage_piece": "Manage",
+    "level_piece": "You searched for one piece:",
+    "level_product": "You searched for the product: showing its",
+    "level_product_units": "units",
+    "the_piece": "The piece you are looking for",
+    "the_pieces": "The pieces you are looking for",
+    "other_units": "The other units of this product",
+    "usable_units": "usable units",
+    "what_happened_all": "What happened to the product (all its units)",
+    "event_alta": "was registered",
+    "event_asignacion": "was assigned to",
+    "event_prestamo": "was lent to",
+    "event_devolucion": "was returned by",
+    "event_envio_reparacion": "was sent for repair",
+    "event_regreso_reparacion": "came back from repair",
+    "event_extravio": "was reported lost",
+    "event_baja": "was retired",
+    "event_traslado": "was moved"
   }
 }
