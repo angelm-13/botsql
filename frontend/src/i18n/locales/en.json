@@ -4006,6 +4006,19 @@
     "event_regreso_reparacion": "came back from repair",
     "event_extravio": "was reported lost",
     "event_baja": "was retired",
-    "event_traslado": "was moved"
+    "event_traslado": "was moved",
+    "by_family": "By family",
+    "any_family": "Any family",
+    "by_brand": "By brand",
+    "any_brand": "Any brand",
+    "by_warehouse": "By warehouse",
+    "any_warehouse": "Any warehouse",
+    "one_match": "product found",
+    "many_matches": "products found",
+    "showing_first": "showing the first",
+    "clear_filters": "Clear filters",
+    "catalog_mismatch": "The public catalogue classifies it differently:",
+    "home_differs": "Its record says",
+    "but_stock_elsewhere": "but the units are somewhere else."
   }
 }

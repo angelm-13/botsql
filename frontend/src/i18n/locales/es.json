@@ -4069,6 +4069,19 @@
     "event_regreso_reparacion": "volvió de reparación",
     "event_extravio": "se reportó extraviada",
     "event_baja": "se retiró",
-    "event_traslado": "se movió"
+    "event_traslado": "se movió",
+    "by_family": "Por familia",
+    "any_family": "Cualquier familia",
+    "by_brand": "Por marca",
+    "any_brand": "Cualquier marca",
+    "by_warehouse": "Por almacén",
+    "any_warehouse": "Cualquier almacén",
+    "one_match": "producto encontrado",
+    "many_matches": "productos encontrados",
+    "showing_first": "se muestran los primeros",
+    "clear_filters": "Quitar filtros",
+    "catalog_mismatch": "El catálogo público lo clasifica distinto:",
+    "home_differs": "Su ficha dice",
+    "but_stock_elsewhere": "pero las unidades están en otro sitio."
   }
 }

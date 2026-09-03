@@ -51,6 +51,14 @@ def localizar_en_almacen(user_data):
         user_data,
         proposito=(request.args.get("stock_purpose") or "").strip() or None,
         con_piezas=str(request.args.get("assets") or "1").strip().lower() not in {"0", "false", "no"},
+        # Los filtros de la barra lateral. Se recortan en el servidor y no en la
+        # pantalla para que el conteo, el aviso de "hay mas" y los desplegables
+        # hablen del mismo conjunto que se ve.
+        id_familia=request.args.get("id_product_family"),
+        id_marca=request.args.get("id_brand"),
+        id_material=request.args.get("id_material"),
+        id_ubicacion=request.args.get("id_location"),
+        estado_pieza=request.args.get("asset_status"),
     ))
 
 

@@ -23,11 +23,19 @@
 
 /* --- barra de busqueda --- */
 
+/* Seis controles no caben en una fila en un portatil. La rejilla llena lo que
+   hay: el buscador toma lo que sobra y cada desplegable un ancho minimo
+   legible, en vez de encogerse hasta que no se lee la opcion elegida. */
 .trace-toolbar {
-  display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 16px;
+  display: grid; gap: 10px; margin: 0 0 16px; align-items: stretch;
+  grid-template-columns: minmax(240px, 2fr) repeat(auto-fit, minmax(158px, 1fr));
+}
+@media (max-width: 720px) {
+  .trace-toolbar { grid-template-columns: 1fr 1fr; }
+  .trace-search { grid-column: 1 / -1; }
 }
 .trace-search {
-  display: flex; align-items: center; gap: 8px; flex: 1 1 340px;
+  display: flex; align-items: center; gap: 8px;
   border: 1px solid #cbd5e1; border-radius: 10px; padding: 0 12px; background: #fff;
 }
 .trace-search svg { color: #64748b; flex: 0 0 auto; }
@@ -202,3 +210,61 @@
 .trace-what { color: #334155; }
 .trace-what strong { color: #065f46; }
 .trace-what em { color: #64748b; font-style: normal; }
+
+/* Cuantos hay y con que se filtra. El numero va aqui arriba porque con el tope
+   de resultados lo que se ve puede ser menos que lo que hay, y ese es justo el
+   caso en el que hace falta saberlo. */
+.trace-count {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin: 12px 0 14px; font-size: 13px; color: #475569;
+}
+.trace-count strong { color: #0f172a; font-size: 15px; }
+.trace-count em { color: #64748b; font-style: normal; }
+.trace-clear {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 11px; border: 1px solid #cbd5e1; border-radius: 999px;
+  background: #fff; font: inherit; font-size: 12.5px; color: #334155;
+  cursor: pointer;
+}
+.trace-clear:hover { background: #f1f5f9; }
+
+/* --- la cadena de clasificacion ---
+
+   Familia > Marca > Material, y la unidad de medida al final. Los eslabones que
+   filtran son botones y no enlaces: no navegan a ninguna parte, recortan esta
+   misma lista, y un enlace que no lleva a otra pagina engana al que lo abre en
+   una pestana nueva. */
+
+.trace-chain {
+  display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+  margin: 6px 0 0; font-size: 12.5px; color: #475569;
+}
+.trace-sep { color: #94a3b8; }
+.trace-unit {
+  display: inline-flex; align-items: center; gap: 4px; margin-left: 4px;
+  padding: 1px 8px; border-radius: 999px; background: #f1f5f9; color: #475569;
+  font-size: 11.5px;
+}
+
+/* Un eslabon en el que se puede hacer clic para filtrar. Se pinta como texto
+   -no como boton- para no llenar la tarjeta de cajas, pero conserva el
+   subrayado al pasar por encima para que se note que hace algo. */
+.trace-link {
+  padding: 0; border: 0; background: none; font: inherit; color: #1b7a60;
+  font-weight: 600; cursor: pointer;
+}
+.trace-link:hover { text-decoration: underline; }
+
+/* La rama de una ubicacion, dentro de la lista de existencias. */
+.trace-path { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+/* Dos avisos de dato incoherente. Ambar y no rojo: no impiden trabajar, pero
+   quien va al sitio equivocado pierde el viaje. */
+.trace-note,
+.trace-mismatch {
+  display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+  margin: 8px 0 0; padding: 7px 11px; border-radius: 8px;
+  background: #fffbeb; border: 1px solid #fde68a; color: #78350f;
+  font-size: 12.5px;
+}
+.trace-mismatch { margin: 6px 0 0; }
