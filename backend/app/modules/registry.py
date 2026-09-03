@@ -360,11 +360,24 @@ MENU = {
     "bank_account": ("Cuentas bancarias", 50),
     "ticket": ("Tickets", 60),
     "product": ("Productos", 10),
+    # Los catalogos de los que cuelga un producto. Sin etiqueta el registro los
+    # siembra como `hidden` -es la regla de mas abajo- y eso los dejaba fuera de
+    # todos los menus: las pantallas existian y sus rutas tambien, pero solo se
+    # llegaba escribiendo la direccion a mano. `product_family` estaba asi para
+    # los cinco roles, de modo que nadie podia dar de alta una familia.
+    #
+    # Van juntos y justo despues de Productos porque es el orden en que hay que
+    # recorrerlos para dar de alta algo: familia, marca y unidad primero, luego
+    # el material que las une, y al final el producto.
+    "product_family": ("Familias de producto", 12),
+    "brand": ("Marcas", 14),
+    "unit": ("Unidades", 16),
     "location": ("Ubicaciones", 20),
     "location_type": ("Tipos de ubicacion", 30),
     "material": ("Materiales", 40),
     "movement": ("Movimientos", 50),
     "material_component": ("Componentes", 60),
+    "inventory_status": ("Estado de inventario", 70),
     "proyect": ("Proyectos", 10),
     "task": ("Tareas", 20),
     "task_note": ("Notas de tarea", 30),
