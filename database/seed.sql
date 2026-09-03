@@ -213,23 +213,53 @@ ON CONFLICT ("id_nm_survey_user") DO NOTHING;
 
 INSERT INTO "entity_permission" ("id_entity_permission", "id_permission", "entity_name", "control_type", "created_by", "creation_date", "last_update_date")
 VALUES (1001, 1, 'product_sale_config', '15', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00')
-ON CONFLICT ("id_entity_permission") DO NOTHING;
+-- Sin objetivo: la colision real es en (id_permission, entity_name), la
+-- restriccion unica que agrega 20260822122000, no en la llave primaria.
+-- Vigilando solo la primaria, este INSERT abortaba seed.sql ENTERO en una
+-- instalacion nueva -las migraciones corren antes y ya habian sembrado esa
+-- fila- y con el se quedaban sin sembrar las ubicaciones, los materiales y
+-- las facturas que el inventario necesita para funcionar.
+ON CONFLICT DO NOTHING;
 
 INSERT INTO "entity_permission" ("id_entity_permission", "id_permission", "entity_name", "control_type", "created_by", "creation_date", "last_update_date")
 VALUES (1002, 1, 'public_api_key', '15', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00')
-ON CONFLICT ("id_entity_permission") DO NOTHING;
+-- Sin objetivo: la colision real es en (id_permission, entity_name), la
+-- restriccion unica que agrega 20260822122000, no en la llave primaria.
+-- Vigilando solo la primaria, este INSERT abortaba seed.sql ENTERO en una
+-- instalacion nueva -las migraciones corren antes y ya habian sembrado esa
+-- fila- y con el se quedaban sin sembrar las ubicaciones, los materiales y
+-- las facturas que el inventario necesita para funcionar.
+ON CONFLICT DO NOTHING;
 
 INSERT INTO "entity_permission" ("id_entity_permission", "id_permission", "entity_name", "control_type", "created_by", "creation_date", "last_update_date")
 VALUES (1003, 2, 'product_sale_config', '15', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00')
-ON CONFLICT ("id_entity_permission") DO NOTHING;
+-- Sin objetivo: la colision real es en (id_permission, entity_name), la
+-- restriccion unica que agrega 20260822122000, no en la llave primaria.
+-- Vigilando solo la primaria, este INSERT abortaba seed.sql ENTERO en una
+-- instalacion nueva -las migraciones corren antes y ya habian sembrado esa
+-- fila- y con el se quedaban sin sembrar las ubicaciones, los materiales y
+-- las facturas que el inventario necesita para funcionar.
+ON CONFLICT DO NOTHING;
 
 INSERT INTO "entity_permission" ("id_entity_permission", "id_permission", "entity_name", "control_type", "created_by", "creation_date", "last_update_date")
 VALUES (1004, 2, 'public_api_key', '15', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00')
-ON CONFLICT ("id_entity_permission") DO NOTHING;
+-- Sin objetivo: la colision real es en (id_permission, entity_name), la
+-- restriccion unica que agrega 20260822122000, no en la llave primaria.
+-- Vigilando solo la primaria, este INSERT abortaba seed.sql ENTERO en una
+-- instalacion nueva -las migraciones corren antes y ya habian sembrado esa
+-- fila- y con el se quedaban sin sembrar las ubicaciones, los materiales y
+-- las facturas que el inventario necesita para funcionar.
+ON CONFLICT DO NOTHING;
 
 INSERT INTO "entity_permission" ("id_entity_permission", "id_permission", "entity_name", "control_type", "created_by", "creation_date", "last_update_date")
 VALUES (1005, 3, 'product_sale_config', '2', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00')
-ON CONFLICT ("id_entity_permission") DO NOTHING;
+-- Sin objetivo: la colision real es en (id_permission, entity_name), la
+-- restriccion unica que agrega 20260822122000, no en la llave primaria.
+-- Vigilando solo la primaria, este INSERT abortaba seed.sql ENTERO en una
+-- instalacion nueva -las migraciones corren antes y ya habian sembrado esa
+-- fila- y con el se quedaban sin sembrar las ubicaciones, los materiales y
+-- las facturas que el inventario necesita para funcionar.
+ON CONFLICT DO NOTHING;
 
 INSERT INTO "inventory_status" ("id_inventory_status", "inventory_status_code", "inventory_status_description", "color", "entity_scope", "flow_scope", "id_department", "id_subdepartment", "id_minimum_level", "is_active", "is_terminal", "visible_to_other_departments", "sort_order", "created_by", "creation_date", "last_update_date")
 VALUES (1, 'ENTRADA', 'Entrada', '#22c55e', 'product', 'inventory', 1, 1, 1, TRUE, FALSE, FALSE, 100, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00')

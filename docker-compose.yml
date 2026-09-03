@@ -57,6 +57,26 @@ services:
       - -c
       - |
         set -e
+        # Se espera a Postgres aunque el compose ya lo diera por sano.
+        #
+        # En el primer arranque Postgres ejecuta sus scripts de init y se
+        # reinicia, y entre una cosa y otra el healthcheck responde sano un
+        # instante antes de que el servidor acepte conexiones. Sin esta espera,
+        # una instalacion desde cero fallaba en la primera migracion con
+        # "Connection refused" -medido borrando el volumen-.
+        #
+        # Es la misma espera que el initContainer de k8s, que la trae por el
+        # mismo motivo; al copiar el bucle de psql se habia dejado fuera.
+        i=0
+        until pg_isready -q; do
+          i=$$((i + 2))
+          if [ "$$i" -ge 120 ]; then
+            echo "db-migrate: Postgres no respondio en 120s, abortando"
+            exit 1
+          fi
+          echo "db-migrate: esperando a Postgres..."
+          sleep 2
+        done
         for f in /migrations/*.sql; do
           echo "db-migrate: aplicando $$(basename "$$f")"
           psql -v ON_ERROR_STOP=1 -q -v licensed_modules="$${LICENSED_MODULES:-}" -f "$$f"
