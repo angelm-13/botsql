@@ -42,14 +42,12 @@ CROSS JOIN (VALUES
 ) AS cap(entity_name, control_type, menu_label)
 WHERE EXISTS (SELECT 1 FROM permission WHERE permission.id_permission = rol.id_permission)
   AND EXISTS (SELECT 1 FROM "user")
-ON CONFLICT (id_permission, entity_name) DO UPDATE
-   SET control_type = EXCLUDED.control_type,
-       menu_location = EXCLUDED.menu_location,
-       menu_group = EXCLUDED.menu_group,
-       menu_group_icon = EXCLUDED.menu_group_icon,
-       menu_label = EXCLUDED.menu_label,
-       menu_order = EXCLUDED.menu_order,
-       deletion_date = NULL,
-       last_update_date = now();
+-- El gestor manda: aqui NO se pisa la fila que ya existe.
+--
+-- Una fila viva es del administrador y pisarla revierte su trabajo; una de baja
+-- significa que la quito a proposito, y reactivarla devolveria un acceso
+-- retirado. El registro solo da el valor por omision al par (perfil, entidad)
+-- que todavia no existe.
+ON CONFLICT (id_permission, entity_name) DO NOTHING;
 
 COMMIT;

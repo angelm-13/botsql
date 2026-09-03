@@ -248,13 +248,12 @@ WHERE EXISTS (SELECT 1 FROM "user")
 --
 -- Los bits de permiso NO se pisan: si alguien recorto el acceso de un rol desde
 -- el gestor, una reaplicacion de esta migracion no debe devolverselo.
-ON CONFLICT (id_permission, entity_name) DO UPDATE
-SET menu_location = EXCLUDED.menu_location,
-    menu_group = EXCLUDED.menu_group,
-    menu_group_icon = EXCLUDED.menu_group_icon,
-    menu_label = EXCLUDED.menu_label,
-    menu_order = EXCLUDED.menu_order,
-    deletion_date = NULL,
-    last_update_date = CURRENT_TIMESTAMP;
+-- El gestor manda: no se toca la fila que ya existe.
+--
+-- Antes reactivaba la fila de baja. Bajo la regla nueva eso devolveria un
+-- acceso que el administrador retiro a proposito: desde el cambio, una baja
+-- significa que alguien la quito, no residuo del resembrado -los residuos los
+-- limpia 20260901000000 antes de sembrar-.
+ON CONFLICT (id_permission, entity_name) DO NOTHING;
 
 COMMIT;

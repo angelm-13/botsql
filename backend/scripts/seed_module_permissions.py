@@ -139,13 +139,38 @@ PLANTILLA = """-- Permisos por modulo y accion CRUD. GENERADO por
 
 BEGIN;
 
--- Se marca de baja todo lo vigente antes de sembrar. Sin esto quedarian filas
--- de la matriz anterior con criterios distintos, y no habria forma de saber
--- cual gobierna. Corre en cada reinicio del pod, asi que tambien es lo que
--- retira un modulo si LICENSED_MODULES cambia a algo mas restringido.
-UPDATE entity_permission
-   SET deletion_date = now()
- WHERE deletion_date IS NULL;
+-- NO se marca de baja lo vigente antes de sembrar.
+--
+-- Lo hacia, y corria en cada reinicio del pod: cualquier ajuste hecho desde el
+-- gestor de roles se revertia en el siguiente despliegue. Medido antes del
+-- cambio: un permiso subido de 2 a 15 en el gestor volvia a 2 al reaplicar.
+--
+-- La decision es que el gestor manda y el registro solo siembra lo que falta.
+-- El registro sigue dando los valores POR OMISION -lo que recibe un modulo o un
+-- rol nuevo- y deja de ser la fuente de la verdad sobre quien puede que.
+--
+-- Retirar un modulo cuando cambia la licencia ya no necesita borrar filas: el
+-- plan se comprueba en cada peticion y filtra el menu, asi que un modulo fuera
+-- del plan es inalcanzable aunque su fila exista. Ver `app/modules/plan.py`.
+
+-- Antes de sembrar: se borran las bajas que dejo el mecanismo VIEJO.
+--
+-- Hasta este cambio, este archivo marcaba de baja todo lo vigente en cada
+-- reinicio antes de insertar. Las filas que quedaron de baja por eso no las
+-- quito nadie: son residuo. Y el sembrado nuevo respeta una baja -porque desde
+-- ahora significa que el administrador la quito-, asi que sin esta limpieza
+-- esos permisos no volverian nunca.
+--
+-- Se borran fisicamente para que el INSERT de abajo las vuelva a crear con el
+-- valor por omision del registro, que es el punto de partida correcto.
+--
+-- La fecha esta fija a proposito. Esta migracion se reaplica en cada arranque
+-- del pod: sin la cota, cada despliegue borraria tambien las bajas que el
+-- administrador hizo despues, o sea el problema que estamos arreglando. Antes
+-- de la cota es residuo; despues, decision de alguien.
+DELETE FROM entity_permission
+ WHERE deletion_date IS NOT NULL
+   AND deletion_date < TIMESTAMP '2026-09-02 18:00:00';
 
 INSERT INTO entity_permission (
     id_permission, entity_name, control_type, menu_location,
@@ -163,17 +188,17 @@ WHERE EXISTS (SELECT 1 FROM permission p WHERE p.id_permission = v.id_permission
     OR :'licensed_modules' = ''
     OR v.modulo_licencia = ANY(string_to_array(:'licensed_modules', ','))
   )
--- La restriccion unica es por (perfil, entidad) sin importar la baja logica, asi
--- que se reactiva la fila en lugar de insertar una segunda.
-ON CONFLICT (id_permission, entity_name) DO UPDATE
-   SET control_type = EXCLUDED.control_type,
-       menu_location = EXCLUDED.menu_location,
-       menu_group = EXCLUDED.menu_group,
-       menu_group_icon = EXCLUDED.menu_group_icon,
-       menu_label = EXCLUDED.menu_label,
-       menu_order = EXCLUDED.menu_order,
-       deletion_date = NULL,
-       last_update_date = now();
+-- La restriccion unica es por (perfil, entidad) sin importar la baja logica, y
+-- aqui NO se toca la fila que ya existe: ni sus bits, ni su navegacion, ni su
+-- baja.
+--
+-- Una fila viva es del gestor: pisarla revierte el trabajo del administrador.
+-- Una fila de baja significa que la quitaron a proposito -el gestor la marca de
+-- baja en vez de borrarla-, asi que reactivarla devolveria un acceso retirado.
+--
+-- Se siembra solo el par (perfil, entidad) que no existe todavia: un modulo
+-- nuevo, una entidad nueva, un rol nuevo. Eso es "sembrar lo que falta".
+ON CONFLICT (id_permission, entity_name) DO NOTHING;
 
 -- Los permisos de campo se derivan del permiso de entidad, asi que hay que
 -- rehacerlos: un modulo que cambio de alcance arrastra sus campos. Se dan de

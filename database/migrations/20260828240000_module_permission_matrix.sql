@@ -44,12 +44,12 @@
 
 BEGIN;
 
--- Se marca de baja todo lo vigente antes de sembrar. Sin esto quedarian filas
--- de la matriz anterior con criterios distintos, y no habria forma de saber
--- cual gobierna.
-UPDATE entity_permission
-   SET deletion_date = now()
- WHERE deletion_date IS NULL;
+-- NO se marca de baja lo vigente antes de sembrar.
+--
+-- Lo hacia, y corria en cada reinicio del pod, asi que revertia cualquier
+-- ajuste del gestor de roles en el siguiente despliegue. La matriz que
+-- gobierna hoy es 20260901000000, que ya siembra sin pisar; esta se conserva
+-- por historia y se limita a insertar lo que falte.
 
 INSERT INTO entity_permission (
     id_permission, entity_name, control_type, menu_location,
@@ -444,15 +444,13 @@ FROM (VALUES
 WHERE EXISTS (SELECT 1 FROM permission p WHERE p.id_permission = v.id_permission)
 -- La restriccion unica es por (perfil, entidad) sin importar la baja logica, asi
 -- que se reactiva la fila en lugar de insertar una segunda.
-ON CONFLICT (id_permission, entity_name) DO UPDATE
-   SET control_type = EXCLUDED.control_type,
-       menu_location = EXCLUDED.menu_location,
-       menu_group = EXCLUDED.menu_group,
-       menu_group_icon = EXCLUDED.menu_group_icon,
-       menu_label = EXCLUDED.menu_label,
-       menu_order = EXCLUDED.menu_order,
-       deletion_date = NULL,
-       last_update_date = now();
+-- El gestor manda: aqui NO se pisa la fila que ya existe.
+--
+-- Una fila viva es del administrador y pisarla revierte su trabajo; una de baja
+-- significa que la quito a proposito, y reactivarla devolveria un acceso
+-- retirado. El registro solo da el valor por omision al par (perfil, entidad)
+-- que todavia no existe.
+ON CONFLICT (id_permission, entity_name) DO NOTHING;
 
 -- Los permisos de campo se derivan del permiso de entidad, asi que hay que
 -- rehacerlos: un modulo que cambio de alcance arrastra sus campos. Se dan de
