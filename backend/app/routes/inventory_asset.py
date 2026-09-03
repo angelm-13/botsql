@@ -59,6 +59,11 @@ def localizar_en_almacen(user_data):
         id_material=request.args.get("id_material"),
         id_ubicacion=request.args.get("id_location"),
         estado_pieza=request.args.get("asset_status"),
+        # Paginado. Antes se cortaba en cuarenta resultados y se avisaba "afina
+        # la busqueda", que no es una respuesta cuando el filtro ya esta puesto
+        # y aun quedan doscientas coincidencias.
+        pagina=request.args.get("page"),
+        por_pagina=request.args.get("per_page"),
     ))
 
 

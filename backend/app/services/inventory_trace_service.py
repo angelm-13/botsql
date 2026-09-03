@@ -88,8 +88,11 @@ def _clasificar(movement_type: str, reference_type: str | None) -> str:
     }.get(movement_type, movement_type)
 
 
-def _historia(db, id_product) -> dict:
-    """Cuanto se ha comprado, vendido, prestado... de este producto.
+def _historia_en_lote(db, ids_productos) -> dict[int, dict]:
+    """Cuanto se ha comprado, vendido, prestado... de cada producto.
+
+    Una consulta para toda la pagina. Antes era una por producto: cuarenta
+    resultados, cuarenta agregaciones sobre la misma tabla.
 
     Un traslado escribe DOS asientos con el mismo `transfer_group`: la salida
     del origen y la entrada al destino. Sumando valores absolutos, mover diez
@@ -97,123 +100,148 @@ def _historia(db, id_product) -> dict:
     "trasladado 20"-. Se cuenta solo el lado de la salida, que es lo que se
     movio.
     """
+    if not ids_productos:
+        return {}
+
     filas = db.execute(
         select(
+            InventoryLedger.id_product,
             InventoryLedger.movement_type,
             InventoryLedger.reference_type,
             func.count().label("veces"),
             func.sum(func.abs(InventoryLedger.quantity_delta)).label("unidades"),
         )
         .where(
-            InventoryLedger.id_product == id_product,
+            InventoryLedger.id_product.in_(list(ids_productos)),
             # Del traslado, solo la salida.
             or_(
                 InventoryLedger.movement_type != "transfer",
                 InventoryLedger.quantity_delta < 0,
             ),
         )
-        .group_by(InventoryLedger.movement_type, InventoryLedger.reference_type)
+        .group_by(
+            InventoryLedger.id_product,
+            InventoryLedger.movement_type,
+            InventoryLedger.reference_type,
+        )
     ).all()
 
-    resumen: dict[str, dict] = {}
-    for movimiento, referencia, veces, unidades in filas:
+    por_producto: dict[int, dict] = {}
+    for id_producto, movimiento, referencia, veces, unidades in filas:
+        resumen = por_producto.setdefault(id_producto, {})
         clave = _clasificar(movimiento, referencia)
         entrada = resumen.setdefault(clave, {"veces": 0, "unidades": 0})
         entrada["veces"] += int(veces or 0)
         entrada["unidades"] += int(unidades or 0)
-    return resumen
+    return por_producto
 
 
-def _ubicaciones(db, id_product, cache: dict | None = None) -> list[dict]:
-    """Donde esta repartido, sin las ubicaciones donde ya no queda nada.
+def _existencias_en_lote(db, ids_productos, ubicaciones: "CacheDeUbicaciones") -> dict[int, list]:
+    """Donde esta repartido cada producto, sin los sitios donde ya no queda nada.
 
-    Cada renglon lleva la rama completa -"Almacen Central > Pasillo 3 > Rack
-    A-1"-. Antes solo llevaba el almacen y la ubicacion final, que en un almacen
-    de dos niveles alcanza y en uno de cuatro deja a medias.
+    Una consulta para toda la pagina, y las ramas salen de la cache, que ya se
+    precargo. Antes eran dos consultas por producto mas una por nivel del arbol
+    de cada ubicacion.
     """
+    if not ids_productos:
+        return {}
+
     filas = db.scalars(
         select(InventoryStock)
-        .where(InventoryStock.id_product == id_product, InventoryStock.quantity > 0)
-        .order_by(InventoryStock.quantity.desc())
+        .where(
+            InventoryStock.id_product.in_(list(ids_productos)),
+            InventoryStock.quantity > 0,
+        )
+        .order_by(InventoryStock.id_product, InventoryStock.quantity.desc())
     ).all()
-    salida = []
+
+    ubicaciones.precargar({f.id_location for f in filas})
+
+    por_producto: dict[int, list] = {}
     for fila in filas:
-        ubicacion = db.get(Location, fila.id_location)
+        ubicacion = ubicaciones.ubicacion(fila.id_location)
         if ubicacion is None:
             continue
-        ruta = _ruta_de_ubicacion(db, ubicacion, cache)
-        salida.append({
-            **_warehouse_payload(db, ubicacion),
+        ruta = ubicaciones.ruta(fila.id_location)
+        por_producto.setdefault(fila.id_product, []).append({
+            "id_location": ubicacion.id_location,
+            "location_description": ubicacion.location_description,
+            "id_warehouse": ruta["id_warehouse"],
+            "warehouse_description": ruta["warehouse_description"],
             "id_module": ubicacion.id_module,
             "quantity": int(fila.quantity or 0),
             "path": ruta["segments"],
             "path_label": ruta["label"],
         })
-    return salida
+    return por_producto
 
 
-def _piezas(db, id_product, *, consulta: str = "", codigo_del_producto: str = "",
-            cache_ruta: dict | None = None) -> list[dict]:
-    """Las piezas de un producto que se rastrea una por una.
+def _piezas_en_lote(db, productos, ubicaciones: "CacheDeUbicaciones",
+                    *, consulta: str = "") -> dict[int, list]:
+    """Las piezas de los productos que se rastrean una por una.
 
     Solo para `tracking_mode = 'serializado'`. Es el caso que mas importa para
     herramienta: cual esta prestada, quien la tiene, cual no aparece.
 
-    Al serializar la pieza se le suman el nombre del responsable y el de su
-    ubicacion. El modelo solo guarda los identificadores, y resolverlos dentro
-    de `serialize()` obligaria al modelo a consultar la base; aqui ya hay sesion
-    abierta. Sin el nombre, la pantalla enseña "responsable 77", que no le dice
-    a nadie quien tiene el taladro.
+    A cada pieza se le suman el nombre de su responsable y su ubicacion con la
+    rama entera. El modelo solo guarda los identificadores, y sin el nombre la
+    pantalla ensena "responsable 77", que no le dice a nadie quien tiene el
+    taladro. Los usuarios se traen en una sola consulta, no uno por pieza.
+
+    Que cuenta como coincidencia
+    ----------------------------
+    Las etiquetas suelen empezar por el codigo del producto -TAL-100-A, -B, -C-,
+    asi que "contiene el texto" marcaba las tres al buscar el producto y decia
+    "coincide la pieza A, B y C" cuando no coincidia ninguna: se pidio el
+    producto. Se marca pieza cuando el texto es MAS especifico que el codigo: o
+    es la etiqueta exacta, o no es algo que el codigo ya explique.
     """
     from app.models.inventory_asset import InventoryAsset
     from app.models.user import User
 
+    serializados = {
+        pr.id_product: (pr.product_code or "")
+        for pr in productos
+        if str(pr.tracking_mode or "") == "serializado"
+    }
+    if not serializados:
+        return {}
+
     filas = db.scalars(
         select(InventoryAsset)
-        .where(InventoryAsset.id_product == id_product,
-               InventoryAsset.deletion_date.is_(None))
-        .order_by(InventoryAsset.asset_tag)
+        .where(
+            InventoryAsset.id_product.in_(list(serializados)),
+            InventoryAsset.deletion_date.is_(None),
+        )
+        .order_by(InventoryAsset.id_product, InventoryAsset.asset_tag)
     ).all()
 
-    texto = str(consulta or "").strip().lower()
-    codigo = str(codigo_del_producto or "").strip().lower()
-    # Las etiquetas suelen empezar por el codigo del producto -TAL-100-A, -B,
-    # -C-, asi que "contiene el texto" marcaba las tres piezas al buscar el
-    # producto y decia "coincide la pieza A, B y C" cuando no coincidia ninguna:
-    # se pidio el producto. Buscar el producto es una pregunta y buscar una
-    # pieza es otra, y la respuesta tiene que distinguirlas.
-    #
-    # Se marca pieza cuando el texto es MAS especifico que el codigo: o es la
-    # etiqueta exacta, o no es algo que el codigo del producto ya explique.
-    busca_una_pieza = bool(texto) and (codigo == "" or texto not in codigo)
+    ubicaciones.precargar({f.id_location for f in filas if f.id_location})
+    responsables = _nombres_de_personas(db, {f.id_holder for f in filas if f.id_holder})
 
-    salida = []
+    texto = str(consulta or "").strip().lower()
+    por_producto: dict[int, list] = {}
     for fila in filas:
-        pieza = fila.serialize()
+        codigo = str(serializados.get(fila.id_product) or "").strip().lower()
+        busca_una_pieza = bool(texto) and (codigo == "" or texto not in codigo)
         etiqueta = str(fila.asset_tag or "").lower()
+
+        pieza = fila.serialize()
         pieza["matched"] = texto == etiqueta or (busca_una_pieza and texto in etiqueta)
         if fila.id_holder:
-            responsable = db.get(User, fila.id_holder)
-            pieza["holder_name"] = (
-                getattr(responsable, "full_name", None)
-                or getattr(responsable, "username", None)
-                # Si el responsable ya no existe se dice, en vez de dejar el
-                # hueco: una pieza asignada a alguien que se fue de la empresa
-                # es justo la que hay que ir a buscar.
-                or f"#{fila.id_holder}"
-            )
+            pieza["holder_name"] = responsables.get(fila.id_holder)
         if fila.id_location:
-            ubicacion = db.get(Location, fila.id_location)
+            ubicacion = ubicaciones.ubicacion(fila.id_location)
             pieza["location_description"] = getattr(ubicacion, "location_description", None)
-            # La rama completa: una pieza en "Rack A-1" no se encuentra si hay
-            # un Rack A-1 en cada nave.
-            ruta = _ruta_de_ubicacion(db, ubicacion, cache_ruta)
+            ruta = ubicaciones.ruta(fila.id_location)
             pieza["location_path"] = ruta["segments"]
             pieza["location_path_label"] = ruta["label"]
-        salida.append(pieza)
+        por_producto.setdefault(fila.id_product, []).append(pieza)
+
     # Las coincidentes primero: es lo que se vino a ver.
-    salida.sort(key=lambda p: (not p["matched"], str(p.get("asset_tag") or "")))
-    return salida
+    for piezas in por_producto.values():
+        piezas.sort(key=lambda p: (not p["matched"], str(p.get("asset_tag") or "")))
+    return por_producto
 
 
 ETIQUETA_DE_EVENTO = {
@@ -229,22 +257,33 @@ ETIQUETA_DE_EVENTO = {
 }
 
 
-def _nombre_de_persona(db, id_usuario) -> str | None:
-    """El nombre de quien tuvo la pieza; nunca el identificador a secas."""
-    if not id_usuario:
-        return None
+def _nombres_de_personas(db, ids_usuarios) -> dict[int, str]:
+    """Los nombres de quienes tienen o tuvieron algo, en una consulta.
+
+    Si el usuario ya no existe se devuelve `#<id>` en vez del hueco: una pieza
+    asignada a alguien que se fue de la empresa es justo la que hay que ir a
+    buscar, y un espacio en blanco la esconde.
+    """
+    ids = {int(i) for i in ids_usuarios if i}
+    if not ids:
+        return {}
+
     from app.models.user import User
 
-    persona = db.get(User, id_usuario)
-    return (
-        getattr(persona, "full_name", None)
-        or getattr(persona, "username", None)
-        or f"#{id_usuario}"
-    )
+    encontrados = {}
+    for persona in db.scalars(select(User).where(User.id_user.in_(list(ids)))).all():
+        encontrados[persona.id_user] = (
+            getattr(persona, "full_name", None)
+            or getattr(persona, "username", None)
+            or f"#{persona.id_user}"
+        )
+    for id_usuario in ids - set(encontrados):
+        encontrados[id_usuario] = f"#{id_usuario}"
+    return encontrados
 
 
-def _bitacora_de_pieza(db, id_asset) -> list[dict]:
-    """Todo lo que le paso a UNA pieza, en orden y legible.
+def _bitacoras_en_lote(db, ids_piezas, ubicaciones: "CacheDeUbicaciones") -> dict[int, list]:
+    """Todo lo que les paso a UNAS piezas, en orden y legible.
 
     Esta es la respuesta especifica: la historia del producto dice que de treinta
     taladros se prestaron cuatro, y eso no sirve cuando lo que se busca es el
@@ -253,108 +292,210 @@ def _bitacora_de_pieza(db, id_asset) -> list[dict]:
 
     `InventoryAssetEvent` ya guardaba el antes y el despues completos, pero solo
     los identificadores. Un renglon que dice `id_holder_after: 7` obliga a ir a
-    buscar quien es el 7, asi que los nombres se resuelven aqui, donde ya hay
-    sesion abierta.
+    buscar quien es el 7, asi que los nombres se resuelven aqui.
+
+    Solo se piden las bitacoras de las piezas que coincidieron con la busqueda:
+    traer la de las treinta piezas de un producto para ver una son treinta
+    lecturas que nadie mira.
     """
     from app.models.inventory_asset_event import InventoryAssetEvent
 
+    ids = [int(i) for i in ids_piezas if i]
+    if not ids:
+        return {}
+
     eventos = db.scalars(
         select(InventoryAssetEvent)
-        .where(InventoryAssetEvent.id_inventory_asset == id_asset)
-        .order_by(InventoryAssetEvent.id_inventory_asset_event.desc())
-        .limit(MAXIMO_EVENTOS_POR_PIEZA)
+        .where(InventoryAssetEvent.id_inventory_asset.in_(ids))
+        .order_by(
+            InventoryAssetEvent.id_inventory_asset,
+            InventoryAssetEvent.id_inventory_asset_event.desc(),
+        )
     ).all()
 
-    salida = []
+    ubicaciones.precargar(
+        {e.id_location_before for e in eventos if e.id_location_before}
+        | {e.id_location_after for e in eventos if e.id_location_after}
+    )
+    personas = _nombres_de_personas(db, (
+        {e.id_holder_before for e in eventos if e.id_holder_before}
+        | {e.id_holder_after for e in eventos if e.id_holder_after}
+    ))
+
+    por_pieza: dict[int, list] = {}
     for evento in eventos:
+        acumulado = por_pieza.setdefault(evento.id_inventory_asset, [])
+        # El tope se aplica aqui y no en el SQL: un LIMIT por pieza obligaria a
+        # una consulta por pieza, que es lo que se vino a quitar.
+        if len(acumulado) >= MAXIMO_EVENTOS_POR_PIEZA:
+            continue
         fila = evento.serialize()
         fila["etiqueta"] = ETIQUETA_DE_EVENTO.get(evento.event_type, evento.event_type)
-        fila["holder_before_name"] = _nombre_de_persona(db, evento.id_holder_before)
-        fila["holder_after_name"] = _nombre_de_persona(db, evento.id_holder_after)
+        fila["holder_before_name"] = personas.get(evento.id_holder_before)
+        fila["holder_after_name"] = personas.get(evento.id_holder_after)
         for lado in ("before", "after"):
             id_ubicacion = getattr(evento, f"id_location_{lado}")
-            ubicacion = db.get(Location, id_ubicacion) if id_ubicacion else None
+            ubicacion = ubicaciones.ubicacion(id_ubicacion) if id_ubicacion else None
             fila[f"location_{lado}_description"] = getattr(
-                ubicacion, "location_description", None
-            )
-        salida.append(fila)
-    return salida
+                ubicacion, "location_description", None)
+        acumulado.append(fila)
+    return por_pieza
 
 
-def _ultimo_movimiento(db, id_product) -> dict | None:
-    fila = db.scalars(
-        select(InventoryLedger)
-        .where(InventoryLedger.id_product == id_product)
-        .order_by(InventoryLedger.id_inventory_ledger.desc())
-        .limit(1)
-    ).first()
-    if fila is None:
-        return None
-    return {
-        "movement_type": fila.movement_type,
-        "clasificacion": _clasificar(fila.movement_type, fila.reference_type),
-        "quantity_delta": int(fila.quantity_delta or 0),
-        "reason": fila.reason,
-        "source_module": fila.source_module,
-        "creation_date": fila.creation_date.isoformat() if fila.creation_date else None,
-    }
+def _ultimo_movimiento_en_lote(db, ids_productos) -> dict[int, dict]:
+    """El ultimo asiento de cada producto, en dos consultas.
 
-
-def _ruta_de_ubicacion(db, location, cache: dict | None = None) -> dict:
-    """La ubicacion con su rama completa, del almacen hacia abajo.
-
-    "Rack A-1" no dice donde esta el rack. Con cuatro naves y dieciocho racks,
-    la descripcion sola obliga a saberse el almacen de memoria, y quien va a
-    buscar la pieza no se lo sabe. Se devuelve la rama entera -"Almacen Central
-    > Pasillo 3 > Rack A-1"- porque es la unica forma de que "lugar" sea una
-    respuesta y no una pista.
-
-    Se sube por `id_location_reference` con el mismo tope y la misma guardia
-    contra ciclos que `resolve_warehouse`: un padre mal capturado que apunte a
-    su propio hijo colgaria la consulta en vez de dar un dato raro.
+    Se hace en dos pasos -primero el id maximo por producto, luego esas filas-
+    en lugar de un `DISTINCT ON`, que es de Postgres: las pruebas corren sobre
+    SQLite y una consulta que solo funciona en produccion no se puede probar.
     """
-    if location is None:
-        return {"segments": [], "label": None, "id_warehouse": None,
-                "warehouse_description": None}
+    if not ids_productos:
+        return {}
 
-    if cache is not None and location.id_location in cache:
-        return cache[location.id_location]
+    ultimos = db.execute(
+        select(
+            InventoryLedger.id_product,
+            func.max(InventoryLedger.id_inventory_ledger).label("id_ultimo"),
+        )
+        .where(InventoryLedger.id_product.in_(list(ids_productos)))
+        .group_by(InventoryLedger.id_product)
+    ).all()
+    if not ultimos:
+        return {}
 
-    segmentos = []
-    id_almacen = None
-    descripcion_almacen = None
-    actual = location
-    vistos = set()
-    for _ in range(MAX_LOCATION_DEPTH):
-        if actual is None or actual.id_location in vistos:
-            break
-        vistos.add(actual.id_location)
-        tipo = db.get(LocationType, actual.id_location_type)
-        es_almacen = bool(getattr(tipo, "is_warehouse", False))
-        if es_almacen and id_almacen is None:
-            id_almacen = actual.id_location
-            descripcion_almacen = actual.location_description
-        segmentos.append({
-            "id_location": actual.id_location,
-            "location_description": actual.location_description,
-            "location_type": getattr(tipo, "location_type_description", None),
-            "is_warehouse": es_almacen,
-        })
-        if actual.id_location_reference is None:
-            break
-        actual = db.get(Location, actual.id_location_reference)
-
-    # Se recorrio de la hoja a la raiz; se lee al contrario.
-    segmentos.reverse()
-    ruta = {
-        "segments": segmentos,
-        "label": " > ".join(s["location_description"] or "" for s in segmentos) or None,
-        "id_warehouse": id_almacen,
-        "warehouse_description": descripcion_almacen,
+    filas = db.scalars(
+        select(InventoryLedger).where(
+            InventoryLedger.id_inventory_ledger.in_([u.id_ultimo for u in ultimos]))
+    ).all()
+    return {
+        fila.id_product: {
+            "movement_type": fila.movement_type,
+            "clasificacion": _clasificar(fila.movement_type, fila.reference_type),
+            "quantity_delta": int(fila.quantity_delta or 0),
+            "reason": fila.reason,
+            "source_module": fila.source_module,
+            "creation_date": fila.creation_date.isoformat() if fila.creation_date else None,
+        }
+        for fila in filas
     }
-    if cache is not None:
-        cache[location.id_location] = ruta
-    return ruta
+
+
+class CacheDeUbicaciones:
+    """Las ubicaciones y sus ramas, cargadas de golpe.
+
+    Por que existe
+    --------------
+    Cada rama se resolvia subiendo por `id_location_reference` con un `db.get`
+    por nivel, y cada resultado del rastreo tiene su ubicacion de ficha mas una
+    por cada sitio donde tiene existencia. Con cuarenta resultados eran del
+    orden de cien viajes a la base para leer una tabla que en un almacen entero
+    tiene decenas de filas.
+
+    Aqui se cargan por niveles: los ids que se piden, luego sus padres, luego
+    los padres de esos. Son tantas consultas como profundidad tenga el arbol
+    -dos o tres en la practica- en vez de una por ubicacion y nivel.
+    """
+
+    def __init__(self, db):
+        self._db = db
+        self._ubicaciones: dict[int, object] = {}
+        self._tipos: dict[int, object] = {}
+        self._rutas: dict[int, dict] = {}
+
+    def precargar(self, ids) -> None:
+        """Trae esas ubicaciones, sus ancestros y los tipos de todas."""
+        pendientes = {int(i) for i in ids if i} - set(self._ubicaciones)
+        for _ in range(MAX_LOCATION_DEPTH):
+            if not pendientes:
+                break
+            filas = self._db.scalars(
+                select(Location).where(Location.id_location.in_(list(pendientes)))
+            ).all()
+            for fila in filas:
+                self._ubicaciones[fila.id_location] = fila
+            # El siguiente nivel: los padres que todavia no estan.
+            pendientes = {
+                fila.id_location_reference for fila in filas
+                if fila.id_location_reference
+                and fila.id_location_reference not in self._ubicaciones
+            }
+
+        faltan_tipos = {
+            u.id_location_type for u in self._ubicaciones.values()
+            if u.id_location_type and u.id_location_type not in self._tipos
+        }
+        if faltan_tipos:
+            for tipo in self._db.scalars(
+                select(LocationType).where(
+                    LocationType.id_location_type.in_(list(faltan_tipos)))
+            ).all():
+                self._tipos[tipo.id_location_type] = tipo
+
+    def ubicacion(self, id_location):
+        if not id_location:
+            return None
+        if id_location not in self._ubicaciones:
+            # Una que no se precargo: se trae sola en vez de devolver None y
+            # dejar la pantalla sin sitio, que seria un dato perdido por una
+            # optimizacion.
+            self.precargar([id_location])
+        return self._ubicaciones.get(int(id_location))
+
+    def ruta(self, id_location) -> dict:
+        """La rama completa, del almacen a la balda.
+
+        "Rack A-1" no dice donde esta el rack. Con dos naves hay un Rack A-1 en
+        cada una, asi que la descripcion sola es una pista y no una respuesta.
+
+        Se sube con el mismo tope y la misma guardia contra ciclos que
+        `resolve_warehouse`: un padre mal capturado que apunte a su propio hijo
+        colgaria la consulta en vez de dar un dato raro.
+        """
+        vacia = {"segments": [], "label": None, "id_warehouse": None,
+                 "warehouse_description": None}
+        if not id_location:
+            return vacia
+        id_location = int(id_location)
+        if id_location in self._rutas:
+            return self._rutas[id_location]
+
+        actual = self.ubicacion(id_location)
+        if actual is None:
+            return vacia
+
+        segmentos = []
+        id_almacen = None
+        descripcion_almacen = None
+        vistos = set()
+        for _ in range(MAX_LOCATION_DEPTH):
+            if actual is None or actual.id_location in vistos:
+                break
+            vistos.add(actual.id_location)
+            tipo = self._tipos.get(actual.id_location_type)
+            es_almacen = bool(getattr(tipo, "is_warehouse", False))
+            if es_almacen and id_almacen is None:
+                id_almacen = actual.id_location
+                descripcion_almacen = actual.location_description
+            segmentos.append({
+                "id_location": actual.id_location,
+                "location_description": actual.location_description,
+                "location_type": getattr(tipo, "location_type_description", None),
+                "is_warehouse": es_almacen,
+            })
+            if actual.id_location_reference is None:
+                break
+            actual = self.ubicacion(actual.id_location_reference)
+
+        # Se recorrio de la hoja a la raiz; se lee al contrario.
+        segmentos.reverse()
+        ruta = {
+            "segments": segmentos,
+            "label": " > ".join(s["location_description"] or "" for s in segmentos) or None,
+            "id_warehouse": id_almacen,
+            "warehouse_description": descripcion_almacen,
+        }
+        self._rutas[id_location] = ruta
+        return ruta
 
 
 def _descendientes(db, id_location) -> list[int]:
@@ -383,14 +524,17 @@ def _descendientes(db, id_location) -> list[int]:
     return encontrados
 
 
-def _clasificacion(db, producto, cache: dict | None = None) -> dict:
-    """A que familia pertenece, de que marca es y en que unidad se mide.
+def _clasificacion_en_lote(db, productos) -> dict[int, dict]:
+    """A que familia pertenece cada producto, de que marca es y en que se mide.
 
     Todo eso ya estaba en la base, a dos saltos: `product.id_material` lleva a
     `material`, y de ahi salen la familia, la marca y la unidad. El rastreo
     devolvia el codigo y la descripcion, asi que para saber la familia de lo que
     se acababa de encontrar habia que abrir la pantalla de Producto, y de ahi la
     de Material.
+
+    Se resuelve con un `join` para toda la pagina. Antes eran hasta cuatro
+    `db.get` por material distinto.
 
     Sobre las dos familias
     ----------------------
@@ -399,9 +543,9 @@ def _clasificacion(db, producto, cache: dict | None = None) -> dict:
     familia del material: una puede decir "Promociones" y la otra "Herramienta
     electrica".
 
-    No se elige una en silencio. Manda la del material -es la que el almacen
-    usa y la unica obligatoria- y si la del catalogo apunta a otra parte se
-    dice, en `catalog_mismatch`. Un discrepancia asi es un dato mal capturado y
+    No se elige una en silencio. Manda la del material -es la que el almacen usa
+    y la unica obligatoria- y si la del catalogo apunta a otra parte se dice, en
+    `catalog_mismatch`. Una discrepancia asi es un dato mal capturado y
     esconderla es como no tenerla.
     """
     from app.models.brand import Brand
@@ -409,49 +553,79 @@ def _clasificacion(db, producto, cache: dict | None = None) -> dict:
     from app.models.product_family import ProductFamily
     from app.models.unit import Unit
 
-    llave = producto.id_material
-    if cache is not None and llave in cache:
-        base = dict(cache[llave])
-    else:
-        material = db.get(Material, producto.id_material) if producto.id_material else None
-        familia = (
-            db.get(ProductFamily, material.id_product_family)
-            if material and material.id_product_family else None
-        )
-        marca = db.get(Brand, material.id_brand) if material and material.id_brand else None
-        unidad = db.get(Unit, material.id_unit) if material and material.id_unit else None
-        base = {
-            "id_material": getattr(material, "id_material", None),
-            "material": getattr(material, "material_description", None),
-            "id_product_family": getattr(familia, "id_product_family", None),
-            "family": getattr(familia, "product_family_description", None),
-            "id_brand": getattr(marca, "id_brand", None),
-            "brand": getattr(marca, "brand_description", None),
-            "id_unit": getattr(unidad, "id_unit", None),
-            "unit": getattr(unidad, "unit_name", None),
-        }
-        if cache is not None:
-            cache[llave] = dict(base)
+    if not productos:
+        return {}
 
-    # La familia y la marca del catalogo publico, solo cuando discrepan.
-    discrepancias = {}
-    if producto.id_familia and producto.id_familia != base["id_product_family"]:
-        otra = db.get(ProductFamily, producto.id_familia)
-        discrepancias["family"] = {
-            "id_product_family": producto.id_familia,
-            "family": getattr(otra, "product_family_description", None),
-        }
-    if producto.id_marca and producto.id_marca != base["id_brand"]:
-        otra = db.get(Brand, producto.id_marca)
-        discrepancias["brand"] = {
-            "id_brand": producto.id_marca,
-            "brand": getattr(otra, "brand_description", None),
-        }
-    base["catalog_mismatch"] = discrepancias or None
-    return base
+    ids_materiales = {pr.id_material for pr in productos if pr.id_material}
+    por_material: dict[int, dict] = {}
+    if ids_materiales:
+        filas = db.execute(
+            select(
+                Material.id_material, Material.material_description,
+                ProductFamily.id_product_family, ProductFamily.product_family_description,
+                Brand.id_brand, Brand.brand_description,
+                Unit.id_unit, Unit.unit_name,
+            )
+            .select_from(Material)
+            .outerjoin(ProductFamily,
+                       ProductFamily.id_product_family == Material.id_product_family)
+            .outerjoin(Brand, Brand.id_brand == Material.id_brand)
+            .outerjoin(Unit, Unit.id_unit == Material.id_unit)
+            .where(Material.id_material.in_(list(ids_materiales)))
+        ).all()
+        for (id_material, material, id_familia, familia,
+             id_marca, marca, id_unidad, unidad) in filas:
+            por_material[id_material] = {
+                "id_material": id_material, "material": material,
+                "id_product_family": id_familia, "family": familia,
+                "id_brand": id_marca, "brand": marca,
+                "id_unit": id_unidad, "unit": unidad,
+            }
+
+    # Las familias y marcas del catalogo publico, solo las que hacen falta para
+    # decidir si discrepan.
+    otras_familias = {pr.id_familia for pr in productos if pr.id_familia}
+    otras_marcas = {pr.id_marca for pr in productos if pr.id_marca}
+    nombre_familia = {}
+    if otras_familias:
+        nombre_familia = dict(db.execute(
+            select(ProductFamily.id_product_family,
+                   ProductFamily.product_family_description)
+            .where(ProductFamily.id_product_family.in_(list(otras_familias)))
+        ).all())
+    nombre_marca = {}
+    if otras_marcas:
+        nombre_marca = dict(db.execute(
+            select(Brand.id_brand, Brand.brand_description)
+            .where(Brand.id_brand.in_(list(otras_marcas)))
+        ).all())
+
+    VACIA = {
+        "id_material": None, "material": None,
+        "id_product_family": None, "family": None,
+        "id_brand": None, "brand": None,
+        "id_unit": None, "unit": None,
+    }
+    salida = {}
+    for producto in productos:
+        base = dict(por_material.get(producto.id_material) or VACIA)
+        discrepancias = {}
+        if producto.id_familia and producto.id_familia != base["id_product_family"]:
+            discrepancias["family"] = {
+                "id_product_family": producto.id_familia,
+                "family": nombre_familia.get(producto.id_familia),
+            }
+        if producto.id_marca and producto.id_marca != base["id_brand"]:
+            discrepancias["brand"] = {
+                "id_brand": producto.id_marca,
+                "brand": nombre_marca.get(producto.id_marca),
+            }
+        base["catalog_mismatch"] = discrepancias or None
+        salida[producto.id_product] = base
+    return salida
 
 
-def _catalogos(db, ids_productos: list[int]) -> dict:
+def _catalogos(db, ids_productos, ubicaciones: "CacheDeUbicaciones") -> dict:
     """Las familias, marcas y almacenes que de verdad tienen algo.
 
     Alimenta los filtros de la pantalla. Se calculan sobre lo que el usuario
@@ -476,7 +650,7 @@ def _catalogos(db, ids_productos: list[int]) -> dict:
         .join(Material, Material.id_material == Product.id_material)
         .join(ProductFamily, ProductFamily.id_product_family == Material.id_product_family)
         .join(Brand, Brand.id_brand == Material.id_brand)
-        .where(Product.id_product.in_(ids_productos))
+        .where(Product.id_product.in_(list(ids_productos)))
         .group_by(
             ProductFamily.id_product_family, ProductFamily.product_family_description,
             Brand.id_brand, Brand.brand_description,
@@ -496,14 +670,15 @@ def _catalogos(db, ids_productos: list[int]) -> dict:
     # Los almacenes salen de donde hay existencia, subiendo por el arbol: una
     # nave sin nada dentro no es un sitio donde buscar.
     almacenes: dict[int, dict] = {}
-    cache: dict = {}
     con_existencia = db.scalars(
         select(InventoryStock.id_location)
-        .where(InventoryStock.id_product.in_(ids_productos), InventoryStock.quantity > 0)
+        .where(InventoryStock.id_product.in_(list(ids_productos)),
+               InventoryStock.quantity > 0)
         .distinct()
     ).all()
+    ubicaciones.precargar(con_existencia)
     for id_ubicacion in con_existencia:
-        ruta = _ruta_de_ubicacion(db, db.get(Location, id_ubicacion), cache)
+        ruta = ubicaciones.ruta(id_ubicacion)
         if ruta["id_warehouse"] is None:
             continue
         almacenes.setdefault(ruta["id_warehouse"], {
@@ -532,9 +707,22 @@ def _entero_o_nada(valor):
         return None
 
 
+def _pagina(pagina, por_pagina) -> tuple[int, int]:
+    """La pagina pedida, acotada.
+
+    `por_pagina` tiene tope porque llega del cliente: sin el, `per_page=100000`
+    convierte una consulta barata en una que arma cien mil diccionarios y tumba
+    el proceso. El tope es el mismo numero que antes era el corte duro.
+    """
+    numero = _entero_o_nada(pagina) or 1
+    tamano = _entero_o_nada(por_pagina) or MAXIMO_RESULTADOS
+    return max(1, numero), max(1, min(tamano, MAXIMO_RESULTADOS))
+
+
 def localizar(consulta: str, user_data: dict, *, proposito: str | None = None,
               con_piezas: bool = True, id_familia=None, id_marca=None,
-              id_material=None, id_ubicacion=None, estado_pieza: str | None = None) -> dict:
+              id_material=None, id_ubicacion=None, estado_pieza: str | None = None,
+              pagina=1, por_pagina=None) -> dict:
     """Busca en el almacen y devuelve todo lo que se sabe de cada coincidencia.
 
     Busca por codigo, descripcion y etiqueta de pieza. La etiqueta se incluye
@@ -552,6 +740,18 @@ def localizar(consulta: str, user_data: dict, *, proposito: str | None = None,
     el conteo, el aviso de "hay mas resultados" y los desplegables hablan de un
     conjunto distinto del que se ve, y no hay forma de saber cual de los tres
     numeros es el bueno.
+
+    Como esta escrita, y por que asi
+    --------------------------------
+    Todo lo que cuelga de un producto se pide EN LOTE para la pagina completa.
+    Medido antes de reescribirla, con 5000 productos en la base: 271 consultas
+    para devolver 40 resultados -siete por producto- y casi un segundo de reloj,
+    del que solo un tercio era SQL; el resto era el coste de dar 271 vueltas a
+    la base. En una pantalla que busca mientras se escribe eso no se sostiene.
+
+    El alcance se resuelve en el `join` con la factura, no con un `db.get` por
+    producto: en una base donde cada producto tiene su factura, aquello era una
+    consulta por coincidencia -miles- antes incluso de recortar a la pagina.
     """
     texto = str(consulta or "").strip()
     id_familia = _entero_o_nada(id_familia)
@@ -559,13 +759,28 @@ def localizar(consulta: str, user_data: dict, *, proposito: str | None = None,
     id_material = _entero_o_nada(id_material)
     id_ubicacion = _entero_o_nada(id_ubicacion)
     estado_pieza = (estado_pieza or "").strip() or None
+    numero_de_pagina, tamano_de_pagina = _pagina(pagina, por_pagina)
+
     sin_restriccion = bool(user_data.get("is_superuser") or user_data.get("is_bootstrap_admin"))
     proyecto = _actor_project_id(user_data)
 
     with transaction_context() as db:
         from app.models.inventory_asset import InventoryAsset
 
-        query = select(Product).where(Product.deletion_date.is_(None))
+        # Solo identificador y proyecto, no el producto entero.
+        #
+        # Medido: buscar algo que coincide con mil productos tardaba 458 ms de
+        # los que 108 eran SQL. El resto era construir mil objetos ORM completos
+        # para acabar pintando cuarenta. Aqui se traen tuplas -baratas- y se
+        # hidratan solo los de la pagina.
+        #
+        # El proyecto de la factura viaja en la misma fila. Es lo que decide el
+        # alcance, y traerlo aqui evita una consulta por coincidencia.
+        query = (
+            select(Product.id_product, Invoice.id_proyect)
+            .outerjoin(Invoice, Invoice.id_invoice == Product.id_invoice)
+            .where(Product.deletion_date.is_(None))
+        )
         productos_con_esa_etiqueta: set[int] = set()
         if texto:
             patron = f"%{texto}%"
@@ -578,11 +793,11 @@ def localizar(consulta: str, user_data: dict, *, proposito: str | None = None,
                     InventoryAsset.deletion_date.is_(None),
                 )
             ).all()
+            productos_con_esa_etiqueta = set(con_esa_etiqueta)
             condiciones = [
                 Product.product_code.ilike(patron),
                 Product.descripcion.ilike(patron),
             ]
-            productos_con_esa_etiqueta = set(con_esa_etiqueta)
             if con_esa_etiqueta:
                 condiciones.append(Product.id_product.in_(list(productos_con_esa_etiqueta)))
             query = query.where(or_(*condiciones))
@@ -592,36 +807,33 @@ def localizar(consulta: str, user_data: dict, *, proposito: str | None = None,
         # El orden es por descripcion y no por identificador: la pantalla es
         # una lista que se lee, y el orden de captura no significa nada para
         # quien la lee.
-        encontrados = db.scalars(
+        encontrados = db.execute(
             query.order_by(Product.descripcion, Product.id_product)
         ).all()
 
-        # Caches por consulta. Sin ellas, cuarenta productos del mismo material
-        # resuelven cuarenta veces la misma familia, marca y unidad.
-        cache_clasificacion: dict = {}
-        cache_ruta: dict = {}
+        ubicaciones = CacheDeUbicaciones(db)
 
         # El alcance se aplica antes que los filtros: los desplegables no deben
         # ofrecer una familia que solo existe en proyectos ajenos.
-        visibles = []
+        visibles: list[int] = []
+        proyecto_de: dict[int, int | None] = {}
         omitidos_por_alcance = 0
-        for producto in encontrados:
-            factura = db.get(Invoice, producto.id_invoice) if producto.id_invoice else None
-            del_proyecto = getattr(factura, "id_proyect", None)
+        for id_producto, del_proyecto in encontrados:
             if not sin_restriccion and del_proyecto != proyecto:
                 # El almacen guarda mercancia de varios proyectos. Se cuenta lo
                 # que se oculta en vez de callarlo: quien busca algo que existe
                 # y no lo ve merece saber que hay resultados fuera de su alcance.
                 omitidos_por_alcance += 1
                 continue
-            visibles.append((producto, del_proyecto))
+            visibles.append(id_producto)
+            proyecto_de[id_producto] = del_proyecto
 
         # Los desplegables, sobre lo que encontro el texto y antes de recortar
         # por familia, marca o sitio. Calculados despues, elegir una familia
         # vaciaba las otras listas -y la propia, cuando la eleccion se quedaba
         # sin resultados-, asi que el filtro activo desaparecia del desplegable
         # que lo mostraba.
-        catalogo = _catalogos(db, [pr.id_product for pr, _ in visibles])
+        catalogo = _catalogos(db, visibles, ubicaciones)
 
         # Los filtros, cada uno como un conjunto de identificadores. Se
         # intersectan en Python en vez de encadenarse en el SQL porque el
@@ -661,8 +873,6 @@ def localizar(consulta: str, user_data: dict, *, proposito: str | None = None,
             ).all())
 
         if estado_pieza:
-            from app.models.inventory_asset import InventoryAsset
-
             _recortar(db.scalars(
                 select(InventoryAsset.id_product).where(
                     InventoryAsset.status == estado_pieza,
@@ -671,24 +881,57 @@ def localizar(consulta: str, user_data: dict, *, proposito: str | None = None,
             ).all())
 
         if permitidos is not None:
-            visibles = [par for par in visibles if par[0].id_product in permitidos]
+            visibles = [i for i in visibles if i in permitidos]
+
+        # La pagina. Antes se cortaba en cuarenta y se avisaba "afina la
+        # busqueda", que no es una respuesta cuando el filtro ya esta puesto y
+        # aun hay doscientas coincidencias.
+        total_de_coincidencias = len(visibles)
+        paginas = max(1, -(-total_de_coincidencias // tamano_de_pagina))
+        numero_de_pagina = min(numero_de_pagina, paginas)
+        desde = (numero_de_pagina - 1) * tamano_de_pagina
+        ids = visibles[desde:desde + tamano_de_pagina]
+
+        # Ahora si, los productos completos: solo los de la pagina.
+        por_id = {
+            pr.id_product: pr for pr in db.scalars(
+                select(Product).where(Product.id_product.in_(ids))
+            ).all()
+        } if ids else {}
+        # Se recorre `ids`, que conserva el orden de la consulta; el `IN` no
+        # promete ninguno.
+        productos = [por_id[i] for i in ids if i in por_id]
+
+        # Todo lo que cuelga de la pagina, en lote.
+        ubicaciones.precargar(
+            {pr.id_location for pr in productos if pr.id_location})
+        clasificaciones = _clasificacion_en_lote(db, productos)
+        existencias = _existencias_en_lote(db, ids, ubicaciones)
+        historias = _historia_en_lote(db, ids)
+        ultimos = _ultimo_movimiento_en_lote(db, ids)
+        piezas_por_producto = (
+            _piezas_en_lote(db, productos, ubicaciones, consulta=texto)
+            if con_piezas else {}
+        )
+        # Solo las bitacoras de las piezas que coincidieron: la de las treinta
+        # piezas de un producto para ver una son treinta lecturas que nadie mira.
+        bitacoras = _bitacoras_en_lote(db, [
+            pieza["id_inventory_asset"]
+            for piezas in piezas_por_producto.values()
+            for pieza in piezas
+            if pieza.get("matched")
+        ], ubicaciones)
 
         resultados = []
-        for producto, del_proyecto in visibles:
-            if len(resultados) >= MAXIMO_RESULTADOS:
-                break
-
+        for producto in productos:
+            del_proyecto = proyecto_de.get(producto.id_product)
+            sitios = existencias.get(producto.id_product, [])
             serializado = str(producto.tracking_mode or "") == "serializado"
-            ubicaciones = _ubicaciones(db, producto.id_product, cache=cache_ruta)
-            piezas = _piezas(
-                db, producto.id_product, consulta=texto,
-                codigo_del_producto=producto.product_code or "",
-                cache_ruta=cache_ruta,
-            ) if (serializado and con_piezas) else []
-            coincidentes = [p["asset_tag"] for p in piezas if p.get("matched")]
+            piezas = piezas_por_producto.get(producto.id_product, [])
             for pieza in piezas:
                 if pieza.get("matched"):
-                    pieza["timeline"] = _bitacora_de_pieza(db, pieza["id_inventory_asset"])
+                    pieza["timeline"] = bitacoras.get(pieza["id_inventory_asset"], [])
+            coincidentes = [p["asset_tag"] for p in piezas if p.get("matched")]
 
             # Por que este producto salio en la busqueda. La pantalla lo usa
             # para saber si mostrar la pieza concreta o todas las unidades: son
@@ -719,19 +962,16 @@ def localizar(consulta: str, user_data: dict, *, proposito: str | None = None,
                 # A que familia pertenece, de que marca es, de que material y en
                 # que unidad se mide. Estaba a dos saltos en la base y obligaba a
                 # abrir dos pantallas mas para saber que se habia encontrado.
-                "classification": _clasificacion(db, producto, cache_clasificacion),
+                "classification": clasificaciones.get(producto.id_product),
                 # Donde vive segun su ficha, con la rama completa. Es distinto de
                 # `locations`, que es donde estan de verdad las unidades: cuando
                 # no coinciden, eso es exactamente lo que hay que ver.
-                "home_location": _ruta_de_ubicacion(
-                    db, db.get(Location, producto.id_location) if producto.id_location else None,
-                    cache_ruta,
-                ),
-                "total": sum(u["quantity"] for u in ubicaciones),
+                "home_location": ubicaciones.ruta(producto.id_location),
+                "total": sum(u["quantity"] for u in sitios),
                 "stock_balance": int(producto.cantidad or 0),
-                "locations": ubicaciones,
-                "history": _historia(db, producto.id_product),
-                "last_movement": _ultimo_movimiento(db, producto.id_product),
+                "locations": sitios,
+                "history": historias.get(producto.id_product, {}),
+                "last_movement": ultimos.get(producto.id_product),
                 "assets": piezas,
                 "match_kind": motivo,
                 "matched_asset_tags": coincidentes,
@@ -765,8 +1005,13 @@ def localizar(consulta: str, user_data: dict, *, proposito: str | None = None,
             "catalog": catalogo,
             "items": resultados,
             "total": len(resultados),
-            # Cuantos coinciden en total, aunque solo se pinten los primeros.
-            "matches": len(visibles),
+            # Cuantos coinciden en total, aunque solo se pinte una pagina.
+            "matches": total_de_coincidencias,
+            "page": numero_de_pagina,
+            "per_page": tamano_de_pagina,
+            "pages": paginas,
             "hidden_by_scope": omitidos_por_alcance,
-            "truncated": len(resultados) >= MAXIMO_RESULTADOS,
+            # Se conserva por compatibilidad con la pantalla anterior: ahora
+            # significa "hay mas paginas", no "se perdieron resultados".
+            "truncated": numero_de_pagina < paginas,
         }

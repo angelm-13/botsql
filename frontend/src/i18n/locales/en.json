@@ -4019,6 +4019,9 @@
     "clear_filters": "Clear filters",
     "catalog_mismatch": "The public catalogue classifies it differently:",
     "home_differs": "Its record says",
-    "but_stock_elsewhere": "but the units are somewhere else."
+    "but_stock_elsewhere": "but the units are somewhere else.",
+    "page_of": "page",
+    "of": "of",
+    "pagination": "Pages"
   }
 }

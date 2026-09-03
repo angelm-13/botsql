@@ -4082,6 +4082,9 @@
     "clear_filters": "Quitar filtros",
     "catalog_mismatch": "El catálogo público lo clasifica distinto:",
     "home_differs": "Su ficha dice",
-    "but_stock_elsewhere": "pero las unidades están en otro sitio."
+    "but_stock_elsewhere": "pero las unidades están en otro sitio.",
+    "page_of": "página",
+    "of": "de",
+    "pagination": "Páginas"
   }
 }

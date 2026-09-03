@@ -268,3 +268,13 @@
   font-size: 12.5px;
 }
 .trace-mismatch { margin: 6px 0 0; }
+
+/* Paginacion. Los botones a los extremos y la cuenta en medio: el orden en que
+   se leen -"anterior, pagina 2 de 7, siguiente"- es el orden en que estan. */
+.trace-pages {
+  display: flex; align-items: center; justify-content: center; gap: 14px;
+  margin: 18px 0 4px; flex-wrap: wrap;
+}
+.trace-pages .button { display: inline-flex; align-items: center; gap: 6px; }
+.trace-pages .button:disabled { opacity: .45; cursor: default; }
+.trace-pages strong { color: #0f172a; }
