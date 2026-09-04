@@ -21,6 +21,14 @@ import FiscalAccountPage from "./pages/FiscalAccountPage.jsx";
 import IncidentPage from "./pages/IncidentPage.jsx";
 import IncidentDetailPage from "./pages/IncidentDetailPage.jsx";
 import IncidentTypePage from "./pages/IncidentTypePage.jsx";
+import AssetTrackingPage from "./pages/AssetTrackingPage.jsx";
+import InventoryTracePage from "./pages/InventoryTracePage.jsx";
+import PosTillPage from "./pages/PosTillPage.jsx";
+import PosCatalogPage from "./pages/pos/PosCatalogPage.jsx";
+import PosPromotionsPage from "./pages/pos/PosPromotionsPage.jsx";
+import PosShiftPage from "./pages/pos/PosShiftPage.jsx";
+import PosWarehousePage from "./pages/pos/PosWarehousePage.jsx";
+import PosReportsPage from "./pages/pos/PosReportsPage.jsx";
 import InventoryPage from "./pages/InventoryPage.jsx";
 import InventoryStatusPage from "./pages/InventoryStatusPage.jsx";
 import InvoicePage from "./pages/InvoicePage.jsx";
@@ -174,6 +182,14 @@ export default function App() {
           <Route path="/incident_detail" element={<RoleAccessRoute entityName="incident_detail"><IncidentDetailPage /></RoleAccessRoute>} />
           <Route path="/incident_type" element={<RoleAccessRoute entityName="incident_type"><IncidentTypePage /></RoleAccessRoute>} />
           <Route path="/inventory" element={<RoleAccessRoute entityName="product"><InventoryPage /></RoleAccessRoute>} />
+          <Route path="/pos/turno" element={<RoleAccessRoute entityName="pos_terminal"><PosShiftPage /></RoleAccessRoute>} />
+          <Route path="/pos/promociones" element={<RoleAccessRoute entityName="pos_admin"><PosPromotionsPage /></RoleAccessRoute>} />
+          <Route path="/pos/productos" element={<RoleAccessRoute entityName="pos_terminal"><PosCatalogPage /></RoleAccessRoute>} />
+          <Route path="/pos/inventario" element={<RoleAccessRoute entityName="pos_admin"><PosWarehousePage /></RoleAccessRoute>} />
+          <Route path="/pos/tablero" element={<RoleAccessRoute entityName="pos_admin"><PosReportsPage /></RoleAccessRoute>} />
+          <Route path="/pos/caja" element={<RoleAccessRoute entityName="pos_terminal"><PosTillPage /></RoleAccessRoute>} />
+          <Route path="/inventory/trace" element={<RoleAccessRoute entityName="product"><InventoryTracePage /></RoleAccessRoute>} />
+          <Route path="/assets" element={<RoleAccessRoute entityName="product"><AssetTrackingPage /></RoleAccessRoute>} />
           <Route path="/inventory_status" element={<RoleAccessRoute entityName="inventory_status"><InventoryStatusPage /></RoleAccessRoute>} />
           <Route path="/kanban" element={<Kanban />} />
           <Route path="/invoice" element={<RoleAccessRoute entityName="invoice"><InvoicePage /></RoleAccessRoute>} />

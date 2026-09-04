@@ -1,0 +1,337 @@
+/* Rastreo de piezas: herramienta, equipo, activo de uso.
+   Sigue la paleta del resto de la aplicacion -slate para texto y bordes,
+   #1b7a60 para la accion principal- en lugar de introducir tokens nuevos. */
+
+.asset-page { color: #334155; }
+
+.asset-page .page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.asset-page .page-header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.asset-page .eyebrow {
+  margin: 0 0 4px;
+  font-size: 11px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: #1b7a60;
+  font-weight: 700;
+}
+.asset-page h1 { margin: 0 0 6px; color: #0f172a; }
+.asset-page .muted { color: #64748b; }
+.asset-page .mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- recuento por estado -------------------------------------------------
+   Va arriba de todo porque es lo que se mira primero: cuantas piezas hay en
+   cada estado. Sin esto hay que leer la tabla entera para notar que falta una.
+   Cada tarjeta filtra, asi que el conteo y el filtro son el mismo gesto. */
+
+.asset-tally {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(126px, 1fr));
+  gap: 10px;
+  margin: 18px 0;
+}
+
+.asset-tally-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+  padding: 13px 15px;
+  border: 1px solid #e2e8f0;
+  border-left: 4px solid var(--tono, #cbd5e1);
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition: border-color .12s ease, background .12s ease;
+}
+
+.asset-tally-card:hover { background: #f8fafc; }
+.asset-tally-card.activa {
+  background: #f1f5f9;
+  border-color: var(--tono, #94a3b8);
+  box-shadow: inset 0 0 0 1px var(--tono, #94a3b8);
+}
+
+.asset-tally-count {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--tono, #0f172a);
+  font-variant-numeric: tabular-nums;
+  min-height: 26px;
+  display: flex;
+  align-items: center;
+}
+
+.asset-tally-label {
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.3;
+}
+
+/* Los tonos dicen si hay que preocuparse, sin leer la etiqueta. */
+.tono-ok    { --tono: #1b7a60; }
+.tono-info  { --tono: #2563eb; }
+.tono-warn  { --tono: #b45309; }
+.tono-crit  { --tono: #b91c1c; }
+.tono-muted { --tono: #94a3b8; }
+
+/* --- barra de filtros --- */
+
+.asset-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.asset-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 320px;
+  padding: 0 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.asset-search input {
+  flex: 1;
+  border: none;
+  outline: none;
+  padding: 10px 0;
+  font: inherit;
+  background: transparent;
+}
+
+.asset-search svg { color: #64748b; flex: 0 0 auto; }
+.asset-toolbar select,
+.asset-toolbar > input {
+  padding: 10px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  font: inherit;
+  background: #fff;
+}
+
+/* --- tabla --- */
+
+.asset-page .table-wrap {
+  overflow-x: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.asset-page table { width: 100%; border-collapse: collapse; font-size: 14px; }
+
+.asset-page th,
+.asset-page td {
+  text-align: left;
+  padding: 11px 14px;
+  border-bottom: 1px solid #e2e8f0;
+  vertical-align: top;
+}
+
+.asset-page thead th {
+  background: #f8fafc;
+  font-size: 11px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.asset-page tbody tr:last-child td { border-bottom: none; }
+.asset-page td p { margin: 3px 0 0; font-size: 12px; }
+
+.asset-tag {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 700;
+  color: #0f172a;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: #cbd5e1;
+}
+
+.asset-tag:hover { text-decoration-color: #1b7a60; }
+
+.asset-chip {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--tono, #94a3b8);
+  white-space: nowrap;
+}
+
+.asset-page td.vencido { color: #b91c1c; font-weight: 700; }
+
+.asset-page .row-actions { display: flex; gap: 5px; flex-wrap: wrap; }
+.asset-page .row-actions button {
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  border-radius: 8px;
+  padding: 6px;
+  cursor: pointer;
+  color: #334155;
+  line-height: 0;
+}
+.asset-page .row-actions button:hover { background: #f1f5f9; border-color: #94a3b8; }
+/* Las acciones que destruyen existencia se ven distintas antes de pulsarlas. */
+.asset-page .row-actions button.peligro { color: #b91c1c; border-color: #fecaca; }
+.asset-page .row-actions button.peligro:hover { background: #fef2f2; border-color: #b91c1c; }
+
+/* --- panel lateral y dialogos --- */
+
+.asset-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, .55);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 32px 16px;
+  overflow-y: auto;
+  z-index: 60;
+}
+
+.asset-drawer,
+.asset-dialog {
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 16px;
+  box-shadow: 0 24px 64px -24px rgba(15, 23, 42, .45);
+  width: 100%;
+  padding: 22px 24px 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.asset-drawer { max-width: 760px; }
+.asset-dialog { max-width: 460px; }
+
+.asset-drawer header,
+.asset-dialog header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 12px;
+}
+
+.asset-drawer h2, .asset-dialog h2 { margin: 4px 0 4px; color: #0f172a; font-size: 21px; }
+.asset-drawer header p, .asset-dialog header p { margin: 0; }
+
+/* --- linea de tiempo -----------------------------------------------------
+   La historia se lee de arriba abajo, que es como pasaron las cosas. */
+
+.asset-timeline { list-style: none; margin: 0; padding: 0 0 0 6px; }
+
+.asset-timeline li {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 12px;
+  padding-bottom: 16px;
+  position: relative;
+}
+
+.asset-timeline li:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  top: 16px;
+  bottom: 0;
+  width: 2px;
+  background: #e2e8f0;
+}
+
+.asset-timeline-mark {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #1b7a60;
+  margin-top: 5px;
+  margin-left: 3px;
+  position: relative;
+  z-index: 1;
+}
+
+.asset-timeline p { margin: 0; }
+.asset-timeline-title { font-size: 14.5px; }
+.asset-timeline-reason {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #334155;
+  border-left: 2px solid #e2e8f0;
+  padding-left: 9px;
+}
+
+/* --- formularios --- */
+
+.asset-page .field { display: flex; flex-direction: column; gap: 6px; }
+.asset-page .field label { font-weight: 700; font-size: 13px; color: #334155; }
+.asset-page .field input,
+.asset-page .field select {
+  padding: 9px 11px;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  font: inherit;
+}
+.asset-page .field-hint { margin: 0; font-size: 12.5px; line-height: 1.4; }
+.asset-page .form-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+.asset-page .button.danger { background: #b91c1c; border-color: #b91c1c; color: #fff; }
+.asset-page .button.danger:hover:not(:disabled) { background: #991b1b; }
+.asset-page .button:disabled { opacity: .45; cursor: not-allowed; filter: saturate(.4); }
+
+.asset-page .error {
+  padding: 11px 14px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  color: #991b1b;
+  margin: 0 0 12px;
+}
+
+.asset-page .notice {
+  padding: 11px 14px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 10px;
+  color: #14532d;
+  margin: 0 0 12px;
+}
+
+.asset-page :focus-visible { outline: 2px solid #1b7a60; outline-offset: 2px; }
+
+@media (max-width: 640px) {
+  .asset-drawer-backdrop { padding: 0; }
+  .asset-drawer, .asset-dialog { border-radius: 0; min-height: 100vh; max-width: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .asset-page *, .asset-drawer, .asset-dialog { transition: none !important; animation: none !important; }
+}

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from sqlalchemy import JSON, BigInteger, Boolean, CheckConstraint, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func, text
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, Date, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -75,13 +75,14 @@ class DocumentVersion(Base):
     sha256: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     source: Mapped[str] = mapped_column(String(20), nullable=False, default="uploaded", server_default="uploaded")
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft", server_default="draft")
-    # JSONB en Postgres, que es lo que declara la migracion, pero JSON liso en
-    # SQLite: la suite corre con TESTING=1 sobre SQLite y crea el esquema desde
-    # los modelos, y su compilador no conoce JSONB. Con `JSONB` a secas fallaba
-    # el `create_all` completo, asi que reventaban 638 pruebas de todo el
-    # proyecto -no solo las de este modulo- con
-    # "'SQLiteTypeCompiler' object has no attribute 'visit_JSONB'".
-    source_snapshot: Mapped[dict | None] = mapped_column(JSON().with_variant(JSONB(), "postgresql"), nullable=True)
+    # `JSONB` a secas rompe la creacion del esquema en SQLite, y sobre SQLite
+    # corre la suite entera: el compilador de SQLite no sabe renderizar ese
+    # tipo, asi que fallaban las 900 pruebas al crear las tablas. El proyecto ya
+    # tenia el patron correcto en `logistics_quotation.py`: JSON portable con
+    # JSONB en Postgres, que es donde de verdad se guarda.
+    source_snapshot: Mapped[dict | None] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"), nullable=True
+    )
     id_parent_document_version: Mapped[int | None] = mapped_column(Integer, ForeignKey("document_version.id_document_version"), nullable=True)
     generated_by: Mapped[int] = mapped_column(Integer, ForeignKey("user.id_user"), nullable=False)
     generation_date: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())

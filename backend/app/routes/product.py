@@ -270,6 +270,11 @@ def upload_product_image(user_data, id_product):
     ProductService.require_record_scope(id_product, user_data)
     if request.content_length and request.content_length > _PRODUCT_IMAGE_MAX_BYTES:
         raise AppError('errors.image_too_large', 413, {'max_mb': 5})
+    # El tope de almacenamiento del plan. Se comprueba antes de escribir: guardar
+    # y borrar despues deja el disco tocado y, si el proceso muere en medio,
+    # pasado de tope.
+    from app.services.storage_service import exigir_espacio
+    exigir_espacio(request.content_length or 0)
     if 'file' not in request.files:
         raise AppError('errors.image_required', 400)
     file = request.files['file']

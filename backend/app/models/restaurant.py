@@ -222,10 +222,16 @@ class RestaurantOrder(RestaurantRecord, Base):
 
     @property
     def change_amount(self) -> float:
-        """Cambio a devolver. Solo aplica si se capturo lo recibido."""
+        """Cambio a devolver. Solo aplica si se capturo lo recibido.
+
+        Se calcula contra la parte en EFECTIVO, no contra el total: en un
+        pago mixto el cliente entrega billetes solo por esa parte, asi que
+        comparar contra el total daba cambio cero cuando si habia que
+        devolver dinero.
+        """
         if self.received_amount is None:
             return 0.0
-        return round(max(float(self.received_amount) - self.total, 0.0), 2)
+        return round(max(float(self.received_amount) - self.cash_portion, 0.0), 2)
 
     @property
     def cash_portion(self) -> float:

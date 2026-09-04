@@ -142,6 +142,36 @@ def _jsonify_projected_list(user_data: dict, payload: dict):
 
 
 
+@bp_invoice.route('/from-sale/<source_module>/<path:reference>/preview', methods=['GET'])
+@token_required
+@require_entity_permission('invoice', 'read')
+def preview_sale_invoice(user_data, source_module, reference):
+    """Que se facturaria de una venta ya cobrada en otro modulo.
+
+    Se expone aparte de crear para que la pantalla pueda ensenar las partidas y
+    avisar si esa venta ya tiene factura antes de emitir. Dos CFDI de la misma
+    venta es un problema fiscal, no un duplicado cosmetico.
+    """
+    from app.services.sale_invoicing_service import preparar
+
+    return jsonify(preparar(source_module, reference, request.args.to_dict(flat=True), user_data))
+
+
+@bp_invoice.route('/from-sale/<source_module>/<path:reference>', methods=['POST'])
+@token_required
+@require_entity_permission('invoice', 'create')
+def create_sale_invoice(user_data, source_module, reference):
+    """Emite la factura de una venta ya cobrada en otro modulo.
+
+    Un solo modulo de facturacion: el punto de venta cobra pero no timbra. La
+    factura nace marcada con su origen, y con eso no vuelve a mover el almacen
+    -la venta ya lo movio al cobrarse-.
+    """
+    from app.services.sale_invoicing_service import facturar
+
+    return jsonify(facturar(source_module, reference, request.get_json(silent=True) or {}, user_data)), 201
+
+
 @bp_invoice.route('/', methods=['GET'])
 @token_required
 @require_entity_permission('invoice', 'read')
@@ -666,6 +696,9 @@ def _save_original_cfdi_xml(invoice_id, xml_bytes):
 @token_required
 @require_entity_permission('invoice', 'create')
 def upload_xml_invoice(user_data):
+    from app.services.storage_service import exigir_espacio
+    exigir_espacio(request.content_length or 0)
+
     files = request.files.getlist('files')
     if not files and 'file' in request.files:
         files = [request.files['file']]

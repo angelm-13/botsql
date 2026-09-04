@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+import unicodedata
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
@@ -8,9 +10,11 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models.restaurant import (
     RestaurantCashSession,
+    RestaurantCategory,
     RestaurantDish,
     RestaurantGuisado,
     RestaurantInventoryItem,
+    RestaurantInventoryMovement,
     RestaurantOrder,
     RestaurantOrderItem,
     RestaurantRecipeItem,
@@ -19,6 +23,8 @@ from app.models.restaurant import (
     RestaurantVisit,
     RestaurantWaiter,
 )
+from app.models.audit_log import AuditLog
+from app.security.audit import audit_event
 from app.utils.errors import AppError
 
 
@@ -33,6 +39,8 @@ DISH_CATEGORIES = {
     "cafe",
     "dulce",
 }
+INVENTORY_MOVEMENT_TYPES = {"entrada", "salida", "merma", "ajuste"}
+PAYMENT_METHODS = {"efectivo", "tarjeta", "transferencia", "mixto"}
 ORDER_TRANSITIONS = {
     "borrador": "pedido",
     "pedido": "en_preparacion",
@@ -72,6 +80,32 @@ def _not_found() -> AppError:
     return AppError("errors.resource_not_found", 404)
 
 
+def _split_exact(amount: Decimal, weights: list[Decimal]) -> list[Decimal]:
+    """Reparte `amount` en proporcion a `weights` sumando exactamente `amount`.
+
+    Se redondea cada parte a dos decimales y la diferencia acumulada por
+    redondeo se carga a la ultima, para que sum(partes) == amount siempre.
+    Si todos los pesos son cero, reparte en partes iguales.
+    """
+    if not weights:
+        return []
+    total_weight = sum(weights)
+    if total_weight == 0:
+        weights = [Decimal("1")] * len(weights)
+        total_weight = Decimal(len(weights))
+    parts = [
+        (amount * weight / total_weight).quantize(Decimal("0.01")) for weight in weights
+    ]
+    parts[-1] += amount - sum(parts)
+    return parts
+
+
+def _slug(value: str) -> str:
+    """Normaliza a slug: minusculas, sin acentos, con guion bajo."""
+    normalized = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode()
+    return re.sub(r"_+", "_", re.sub(r"[^a-z0-9]+", "_", normalized.lower())).strip("_")
+
+
 def _order_query(project_id: int):
     return (
         select(RestaurantOrder)
@@ -91,6 +125,34 @@ class RestaurantService:
         self.project_id = int(project_id)
         self.user_id = int(user_id)
 
+    def _audit(self, entity: str, action: str, metadata: dict | None = None) -> None:
+        """Registra un cambio administrativo en la bitacora del core.
+
+        Reusa audit_log de tyakxa (app/security/audit.py) en vez de una tabla
+        propia del restaurante: es la misma necesidad y ya existe la
+        consulta por entity_name.
+        """
+        audit_event(
+            self.db,
+            {"id_user": self.user_id},
+            event_type="restaurant",
+            entity_name=f"restaurant_{entity}",
+            action=action,
+            metadata={"id_proyect": self.project_id, **(metadata or {})},
+        )
+
+    def list_audit_events(self, limit: int = 100) -> list[dict]:
+        rows = self.db.scalars(
+            select(AuditLog)
+            .where(
+                AuditLog.event_type == "restaurant",
+                AuditLog.metadata_json["id_proyect"].as_integer() == self.project_id,
+            )
+            .order_by(AuditLog.creation_date.desc())
+            .limit(max(1, min(int(limit or 100), 500)))
+        ).all()
+        return [row.serialize() for row in rows]
+
     def list_tables(self) -> list[dict]:
         tables = self.db.scalars(
             select(RestaurantTable)
@@ -107,6 +169,9 @@ class RestaurantService:
                 RestaurantVisit.id_proyect == self.project_id,
                 RestaurantVisit.status == "active",
                 RestaurantVisit.deletion_date.is_(None),
+                # Las ordenes para llevar no ocupan mesa (su
+                # id_restaurant_table es NULL) y no van en este mapa.
+                RestaurantVisit.id_restaurant_table.is_not(None),
             )
         ).all()
         occupied = {visit.id_restaurant_table: visit for visit in visits}
@@ -192,6 +257,7 @@ class RestaurantService:
             id_proyect=self.project_id,
             id_restaurant_table=table_id,
             id_restaurant_waiter=waiter_id,
+            service_type="mesa",
             diners_count=diners,
             status="active",
             created_by=self.user_id,
@@ -209,6 +275,62 @@ class RestaurantService:
                     created_by=self.user_id,
                 )
             )
+        self.db.flush()
+        return self.get_visit(visit.id_restaurant_visit)
+
+    def create_takeout_visit(self, payload: dict) -> dict:
+        """Abre una orden para llevar: sin mesa, con folio diario.
+
+        El folio se calcula por proyecto y dia de servicio. La fecha la
+        manda el cliente como tz_offset_minutes para que el corte del folio
+        ocurra a la medianoche LOCAL del restaurante y no a la del servidor,
+        que puede estar en otra zona.
+        """
+        offset = payload.get("tz_offset_minutes", 0)
+        try:
+            offset_minutes = int(offset)
+        except (TypeError, ValueError) as exc:
+            raise AppError("errors.invalid_field", 400, {"field": "tz_offset_minutes"}) from exc
+        if abs(offset_minutes) > 14 * 60:
+            raise AppError("errors.invalid_field", 400, {"field": "tz_offset_minutes"})
+        service_day = (datetime.utcnow() - timedelta(minutes=offset_minutes)).date()
+
+        waiter_id = payload.get("id_restaurant_waiter")
+        if waiter_id:
+            waiter_id = self._waiter(_integer(waiter_id, "id_restaurant_waiter")).id_restaurant_waiter
+        last_number = self.db.scalar(
+            select(func.max(RestaurantVisit.daily_number)).where(
+                RestaurantVisit.id_proyect == self.project_id,
+                RestaurantVisit.service_type == "para_llevar",
+                RestaurantVisit.service_date == service_day,
+                RestaurantVisit.deletion_date.is_(None),
+            )
+        )
+        visit = RestaurantVisit(
+            id_proyect=self.project_id,
+            id_restaurant_table=None,
+            id_restaurant_waiter=waiter_id,
+            service_type="para_llevar",
+            customer_name=_required_text(payload, "customer_name", 140),
+            daily_number=int(last_number or 0) + 1,
+            service_date=service_day,
+            diners_count=1,
+            status="active",
+            created_by=self.user_id,
+        )
+        self.db.add(visit)
+        self.db.flush()
+        # Una orden para llevar es un solo "comensal": no se reparte cuenta.
+        self.db.add(
+            RestaurantOrder(
+                id_proyect=self.project_id,
+                id_restaurant_visit=visit.id_restaurant_visit,
+                diner_index=1,
+                id_restaurant_waiter=waiter_id,
+                status="borrador",
+                created_by=self.user_id,
+            )
+        )
         self.db.flush()
         return self.get_visit(visit.id_restaurant_visit)
 
@@ -275,8 +397,81 @@ class RestaurantService:
         return {
             "dishes": [dish.serialize() for dish in dishes],
             "guisados": [guisado.serialize() for guisado in guisados],
-            "categories": sorted(DISH_CATEGORIES),
+            "categories": self.list_categories(),
         }
+
+    def list_categories(self) -> list[dict]:
+        """Catalogo de categorias del proyecto.
+
+        Si el proyecto todavia no definio ninguna, devuelve el set fijo
+        historico (DISH_CATEGORIES) como catalogo de solo lectura, para que
+        una instalacion existente siga funcionando sin sembrar nada.
+        """
+        rows = self.db.scalars(
+            select(RestaurantCategory)
+            .where(
+                RestaurantCategory.id_proyect == self.project_id,
+                RestaurantCategory.is_active.is_(True),
+                RestaurantCategory.deletion_date.is_(None),
+            )
+            .order_by(RestaurantCategory.sort_order, RestaurantCategory.label)
+        ).all()
+        if rows:
+            return [row.serialize() for row in rows]
+        return [
+            {"slug": slug, "label": slug.replace("_", " ").title(), "icon": "plate", "sort_order": 100}
+            for slug in sorted(DISH_CATEGORIES)
+        ]
+
+    def _allowed_categories(self) -> set[str]:
+        rows = self.db.scalars(
+            select(RestaurantCategory.slug).where(
+                RestaurantCategory.id_proyect == self.project_id,
+                RestaurantCategory.is_active.is_(True),
+                RestaurantCategory.deletion_date.is_(None),
+            )
+        ).all()
+        return set(rows) if rows else set(DISH_CATEGORIES)
+
+    def save_category(self, payload: dict, category_id: int | None = None) -> dict:
+        if category_id:
+            category = self.db.scalar(
+                select(RestaurantCategory).where(
+                    RestaurantCategory.id_restaurant_category == category_id,
+                    RestaurantCategory.id_proyect == self.project_id,
+                    RestaurantCategory.deletion_date.is_(None),
+                )
+            )
+            if not category:
+                raise _not_found()
+        else:
+            category = RestaurantCategory(id_proyect=self.project_id, created_by=self.user_id)
+        slug = _slug(_required_text(payload, "slug", 30))
+        if not slug:
+            raise AppError("errors.invalid_field", 400, {"field": "slug"})
+        duplicate = self.db.scalar(
+            select(RestaurantCategory).where(
+                RestaurantCategory.id_proyect == self.project_id,
+                RestaurantCategory.slug == slug,
+                RestaurantCategory.deletion_date.is_(None),
+                RestaurantCategory.id_restaurant_category != (category_id or 0),
+            )
+        )
+        if duplicate:
+            raise AppError("restaurant.category_slug_taken", 409)
+        category.slug = slug
+        category.label = _required_text(payload, "label", 80)
+        category.icon = str(payload.get("icon") or "plate")[:40]
+        category.color = str(payload.get("color") or "").strip()[:20] or None
+        category.sort_order = _integer(payload.get("sort_order", 100), "sort_order", minimum=0)
+        category.is_active = bool(payload.get("is_active", True))
+        if not category_id:
+            self.db.add(category)
+        self.db.flush()
+        self._audit("category", "update" if category_id else "create", {
+            "id_restaurant_category": category.id_restaurant_category, "slug": category.slug
+        })
+        return category.serialize()
 
     def list_orders(self, status: str | None = None, visit_id: int | None = None) -> list[dict]:
         query = _order_query(self.project_id).order_by(RestaurantOrder.started_at.desc())
@@ -378,10 +573,7 @@ class RestaurantService:
         self.db.flush()
         return order.serialize()
 
-    def pay_order(self, order_id: int, payload: dict) -> dict:
-        order = self.get_order(order_id)
-        if order.status != "entregado":
-            raise AppError("restaurant.order_not_delivered", 409)
+    def _apply_tip(self, order: RestaurantOrder, payload: dict) -> None:
         tip_type = payload.get("tip_type", "manual")
         if tip_type == "porcentaje":
             percent = _decimal(payload.get("tip_percent", 0), "tip_percent")
@@ -395,10 +587,154 @@ class RestaurantService:
                 Decimal("0.01")
             )
         order.tip_type = tip_type
+
+    def _payment_method(self, payload: dict) -> str:
+        method = str(payload.get("payment_method") or "efectivo").strip()
+        if method not in PAYMENT_METHODS:
+            raise AppError("errors.invalid_field", 400, {"field": "payment_method"})
+        return method
+
+    def _require_open_register(self, method: str) -> None:
+        """Exige turno de caja abierto para cobrar en efectivo.
+
+        Sin esto el efectivo entra sin quedar dentro de ningun turno: el
+        corte solo suma lo cobrado desde que se abrio la caja, asi que ese
+        dinero no aparece en ningun arqueo y el faltante se descubre hasta
+        contar el cajon. Tarjeta y transferencia no pasan por el cajon, asi
+        que no se bloquean.
+        """
+        if method in ("tarjeta", "transferencia"):
+            return
+        if not self.current_cash_session():
+            raise AppError("restaurant.register_not_open", 409)
+
+    def pay_order(self, order_id: int, payload: dict) -> dict:
+        """Cobra una sola cuenta (un comensal)."""
+        order = self.get_order(order_id)
+        if order.status != "entregado":
+            raise AppError("restaurant.order_not_delivered", 409)
+        method = self._payment_method(payload)
+        self._require_open_register(method)
+        self._apply_tip(order, payload)
+        total = Decimal(str(order.total))
+        cash_due = self._settle(order, method, total, payload)
+        received = payload.get("received_amount")
+        if received is not None:
+            received = _decimal(received, "received_amount").quantize(Decimal("0.01"))
+            if received < cash_due:
+                raise AppError("restaurant.insufficient_payment", 409, {
+                    "due": float(cash_due), "received": float(received)
+                })
+            order.received_amount = received
         order.status = "pagado"
         order.paid_at = datetime.utcnow()
         self.db.flush()
-        return order.serialize()
+        avisos = self._consume_inventory([order])
+        data = order.serialize()
+        data["inventory_warnings"] = avisos
+        return data
+
+    def _settle(
+        self, order: RestaurantOrder, method: str, total: Decimal, payload: dict
+    ) -> Decimal:
+        """Fija la forma de pago del renglon y devuelve cuanto entra en efectivo."""
+        order.payment_method = method
+        order.received_amount = None
+        order.cash_amount = None
+        if method == "efectivo":
+            return total
+        if method == "mixto":
+            cash = _decimal(payload.get("cash_amount"), "cash_amount").quantize(Decimal("0.01"))
+            if cash > total:
+                raise AppError("errors.invalid_field", 400, {"field": "cash_amount"})
+            order.cash_amount = cash
+            return cash
+        return Decimal("0")
+
+    def pay_visit(self, visit_id: int, payload: dict) -> dict:
+        """Cobra de una sola vez todas las cuentas entregadas de una visita.
+
+        Es el cobro "todo junto": el cliente paga la mesa completa. La
+        propina y el efectivo capturados aplican al total de la visita y se
+        reparten entre las cuentas con `_split_exact`, para que los reportes
+        por cuenta sigan cuadrando contra el total cobrado.
+        """
+        visit = self._visit(visit_id)
+        orders = [order for order in visit.orders if order.status == "entregado"]
+        if not orders:
+            raise AppError("restaurant.no_payable_orders", 409)
+        method = self._payment_method(payload)
+        self._require_open_register(method)
+
+        subtotal = sum(Decimal(str(order.subtotal)) for order in orders)
+        tip_type = payload.get("tip_type", "manual")
+        if tip_type == "porcentaje":
+            percent = _decimal(payload.get("tip_percent", 0), "tip_percent")
+            tip_total = (subtotal * percent / Decimal("100")).quantize(Decimal("0.01"))
+        else:
+            percent = None
+            tip_total = _decimal(payload.get("tip_amount", 0), "tip_amount").quantize(
+                Decimal("0.01")
+            )
+        weights = [Decimal(str(order.subtotal)) for order in orders]
+        for order, tip_part in zip(orders, _split_exact(tip_total, weights)):
+            order.tip_type = tip_type
+            order.tip_percent = percent
+            order.tip_amount = tip_part
+
+        total = sum(Decimal(str(order.total)) for order in orders)
+        if method == "mixto":
+            cash_total = _decimal(payload.get("cash_amount"), "cash_amount").quantize(
+                Decimal("0.01")
+            )
+            if cash_total > total:
+                raise AppError("errors.invalid_field", 400, {"field": "cash_amount"})
+        elif method == "efectivo":
+            cash_total = total
+        else:
+            cash_total = Decimal("0")
+
+        received = payload.get("received_amount")
+        if received is not None:
+            received = _decimal(received, "received_amount").quantize(Decimal("0.01"))
+            if received < cash_total:
+                raise AppError("restaurant.insufficient_payment", 409, {
+                    "due": float(cash_total), "received": float(received)
+                })
+
+        # El efectivo se reparte llenando cuenta por cuenta en vez de a
+        # prorrata: asi la suma de las partes es exacta sin arrastrar
+        # centavos de redondeo.
+        remaining_cash = cash_total
+        remaining_received = received if received is not None else None
+        now = datetime.utcnow()
+        for order in orders:
+            order_total = Decimal(str(order.total))
+            order.payment_method = method
+            order.cash_amount = None
+            order.received_amount = None
+            if method == "mixto":
+                part = min(order_total, remaining_cash)
+                order.cash_amount = part
+                remaining_cash -= part
+            if remaining_received is not None:
+                part = min(order_total, remaining_received)
+                order.received_amount = part
+                remaining_received -= part
+            order.status = "pagado"
+            order.paid_at = now
+        self.db.flush()
+        avisos = self._consume_inventory(orders)
+        return {
+            "visit": self.get_visit(visit_id),
+            "inventory_warnings": avisos,
+            "paid_orders": len(orders),
+            "total": float(total),
+            "tip_total": float(tip_total),
+            "cash_total": float(cash_total),
+            "received_amount": float(received) if received is not None else None,
+            "change_amount": float(received - cash_total) if received is not None else 0.0,
+        }
 
     def kitchen_board(self) -> list[dict]:
         orders = []
@@ -527,10 +863,14 @@ class RestaurantService:
                 RestaurantOrder.status == "pagado", RestaurantOrder.paid_at >= session.opened_at
             )
         ).unique().all()
-        sales = sum(order.total for order in paid)
-        session.expected_amount = Decimal(str(float(session.opening_amount) + sales)).quantize(
-            Decimal("0.01")
-        )
+        # Solo el efectivo debe cuadrar contra el cajon. Antes se sumaba
+        # order.total de TODO lo cobrado, asi que cada pago con tarjeta o
+        # transferencia inflaba el esperado y el arqueo salia con faltante
+        # por ese mismo monto.
+        cash_sales = sum(order.cash_portion for order in paid)
+        session.expected_amount = Decimal(
+            str(float(session.opening_amount) + cash_sales)
+        ).quantize(Decimal("0.01"))
         session.closing_amount = _decimal(payload.get("closing_amount"), "closing_amount").quantize(
             Decimal("0.01")
         )
@@ -576,7 +916,11 @@ class RestaurantService:
             "waiters": self.list_waiters(),
             "reservations": self.list_reservations(),
             "inventory": self.list_inventory(),
+            "inventory_summary": self.inventory_summary(),
             "recipes": self.list_recipes(),
+            # El calculo ya existia para la caja; el panel de administracion
+            # tambien lo necesita y no habia razon para duplicarlo.
+            "kpis": self.kpis(),
         }
 
     def save_table(self, payload: dict, table_id: int | None = None) -> dict:
@@ -590,11 +934,14 @@ class RestaurantService:
         if not table_id:
             self.db.add(table)
         self.db.flush()
+        self._audit("table", "update" if table_id else "create", {
+            "id_restaurant_table": table.id_restaurant_table, "number": table.number
+        })
         return table.serialize()
 
     def save_dish(self, payload: dict, dish_id: int | None = None) -> dict:
         category = str(payload.get("category") or "")
-        if category not in DISH_CATEGORIES:
+        if category not in self._allowed_categories():
             raise AppError("errors.invalid_field", 400, {"field": "category"})
         dish = self._dish(dish_id) if dish_id else RestaurantDish(
             id_proyect=self.project_id, created_by=self.user_id
@@ -611,6 +958,9 @@ class RestaurantService:
         if not dish_id:
             self.db.add(dish)
         self.db.flush()
+        self._audit("dish", "update" if dish_id else "create", {
+            "id_restaurant_dish": dish.id_restaurant_dish, "title": dish.title
+        })
         return dish.serialize()
 
     def save_guisado(self, payload: dict) -> dict:
@@ -622,6 +972,9 @@ class RestaurantService:
         )
         self.db.add(guisado)
         self.db.flush()
+        self._audit("guisado", "create", {
+            "id_restaurant_guisado": guisado.id_restaurant_guisado, "name": guisado.name
+        })
         return guisado.serialize()
 
     def soft_delete_catalog_item(self, kind: str, record_id: int) -> None:
@@ -630,6 +983,7 @@ class RestaurantService:
             "guisado": (RestaurantGuisado, RestaurantGuisado.id_restaurant_guisado),
             "table": (RestaurantTable, RestaurantTable.id_restaurant_table),
             "waiter": (RestaurantWaiter, RestaurantWaiter.id_restaurant_waiter),
+            "category": (RestaurantCategory, RestaurantCategory.id_restaurant_category),
         }
         if kind not in mapping:
             raise _not_found()
@@ -646,6 +1000,7 @@ class RestaurantService:
         record.deletion_date = datetime.utcnow()
         if hasattr(record, "is_active"):
             record.is_active = False
+        self._audit(kind, "delete", {"record_id": record_id})
 
     def list_reservations(self) -> list[dict]:
         return [
@@ -708,7 +1063,232 @@ class RestaurantService:
         )
         self.db.add(item)
         self.db.flush()
+        self._audit("inventory_item", "create", {
+            "id_restaurant_inventory_item": item.id_restaurant_inventory_item,
+            "description": item.description,
+        })
         return item.serialize()
+
+    def _inventory_item(self, item_id: int) -> RestaurantInventoryItem:
+        item = self.db.scalar(
+            select(RestaurantInventoryItem).where(
+                RestaurantInventoryItem.id_restaurant_inventory_item == item_id,
+                RestaurantInventoryItem.id_proyect == self.project_id,
+                RestaurantInventoryItem.deletion_date.is_(None),
+            )
+        )
+        if not item:
+            raise _not_found()
+        return item
+
+    def list_inventory_movements(self, item_id: int | None = None, limit: int = 200) -> list[dict]:
+        query = (
+            select(RestaurantInventoryMovement)
+            .where(
+                RestaurantInventoryMovement.id_proyect == self.project_id,
+                RestaurantInventoryMovement.deletion_date.is_(None),
+            )
+            .options(selectinload(RestaurantInventoryMovement.item))
+        )
+        if item_id:
+            query = query.where(
+                RestaurantInventoryMovement.id_restaurant_inventory_item
+                == _integer(item_id, "id_restaurant_inventory_item")
+            )
+        rows = self.db.scalars(
+            query.order_by(RestaurantInventoryMovement.creation_date.desc())
+            .limit(max(1, min(int(limit or 200), 1000)))
+        ).all()
+        return [row.serialize() for row in rows]
+
+    def create_inventory_movement(self, payload: dict) -> dict:
+        """Registra un movimiento y deja el saldo del insumo consistente.
+
+        'ajuste' fija el saldo al valor capturado (conteo fisico); los demas
+        lo suman o restan. Un movimiento que dejaria el saldo en negativo se
+        rechaza: es un error de captura, no un sobregiro valido.
+        """
+        movement_type = str(payload.get("movement_type") or "").strip()
+        if movement_type not in INVENTORY_MOVEMENT_TYPES:
+            raise AppError("errors.invalid_field", 400, {"field": "movement_type"})
+        item = self._inventory_item(
+            _integer(payload.get("id_restaurant_inventory_item"), "id_restaurant_inventory_item")
+        )
+        # minimum=0 permite capturar un ajuste a cero (merma total, conteo en
+        # blanco); los otros tipos igual quedan validados por el saldo final.
+        quantity = _decimal(payload.get("quantity"), "quantity", minimum=Decimal("0"))
+        previous = Decimal(str(item.quantity or 0))
+        if movement_type == "ajuste":
+            new_quantity = quantity
+        elif movement_type == "entrada":
+            new_quantity = previous + quantity
+        else:  # salida, merma
+            new_quantity = previous - quantity
+        if new_quantity < 0:
+            raise AppError("restaurant.inventory_insufficient", 409, {
+                "available": float(previous), "requested": float(quantity)
+            })
+        movement = RestaurantInventoryMovement(
+            id_proyect=self.project_id,
+            id_restaurant_inventory_item=item.id_restaurant_inventory_item,
+            movement_type=movement_type,
+            quantity=quantity,
+            previous_quantity=previous,
+            new_quantity=new_quantity,
+            unit_cost=(
+                _decimal(payload["unit_cost"], "unit_cost")
+                if payload.get("unit_cost") is not None
+                else None
+            ),
+            reason=str(payload.get("reason") or "").strip()[:255] or None,
+            created_by=self.user_id,
+        )
+        item.quantity = new_quantity
+        self.db.add(movement)
+        self.db.flush()
+        self._audit("inventory_movement", movement_type, {
+            "id_restaurant_inventory_item": item.id_restaurant_inventory_item,
+            "quantity": float(quantity),
+            "previous_quantity": float(previous),
+            "new_quantity": float(new_quantity),
+        })
+        return movement.serialize()
+
+    def _consume_inventory(self, orders: list[RestaurantOrder]) -> list[dict]:
+        """Descuenta del inventario los insumos de lo que se acaba de cobrar.
+
+        Reglas, en orden de importancia:
+
+        1. **Nunca bloquea el cobro.** El platillo ya se preparo y se
+           entrego; negarse a cobrar porque el sistema cree que no hay
+           cebolla es peor que un saldo inexacto. Si no alcanza, se descuenta
+           hasta cero y el faltante se reporta.
+        2. **No descuenta si las unidades no coinciden.** La receta guarda su
+           unidad como texto libre y no hay tabla de conversion: descontar
+           150 "g" de un saldo en "kg" seria un error de tres ordenes de
+           magnitud. Se omite y se avisa.
+        3. **Un movimiento por insumo**, no uno por renglon de la orden: se
+           agrega primero el consumo para que el kardex quede legible.
+
+        Devuelve la lista de avisos para que la caja los pueda mostrar.
+        """
+        # Consumo agregado por insumo, con las recetas involucradas.
+        consumo: dict[int, Decimal] = {}
+        avisos: list[dict] = []
+        platillos_sin_receta: set[str] = set()
+
+        for order in orders:
+            for item in order.items:
+                recetas = self.db.scalars(
+                    select(RestaurantRecipeItem).where(
+                        RestaurantRecipeItem.id_restaurant_dish == item.id_restaurant_dish,
+                        RestaurantRecipeItem.id_proyect == self.project_id,
+                        RestaurantRecipeItem.deletion_date.is_(None),
+                    )
+                ).all()
+                if not recetas:
+                    platillos_sin_receta.add(item.dish.title if item.dish else str(item.id_restaurant_dish))
+                    continue
+                for receta in recetas:
+                    cantidad = Decimal(str(receta.quantity)) * Decimal(int(item.quantity or 0))
+                    consumo[receta.id_restaurant_inventory_item] = (
+                        consumo.get(receta.id_restaurant_inventory_item, Decimal("0")) + cantidad
+                    )
+
+        if platillos_sin_receta:
+            avisos.append({
+                "code": "sin_receta",
+                "dishes": sorted(platillos_sin_receta),
+            })
+
+        # Unidades de las recetas por insumo, para comparar contra el insumo.
+        for inventory_id, cantidad in consumo.items():
+            item = self.db.scalar(
+                select(RestaurantInventoryItem).where(
+                    RestaurantInventoryItem.id_restaurant_inventory_item == inventory_id,
+                    RestaurantInventoryItem.id_proyect == self.project_id,
+                    RestaurantInventoryItem.deletion_date.is_(None),
+                )
+            )
+            if not item:
+                continue
+            unidades_receta = {
+                (u or "").strip().lower()
+                for u in self.db.scalars(
+                    select(RestaurantRecipeItem.unit).where(
+                        RestaurantRecipeItem.id_restaurant_inventory_item == inventory_id,
+                        RestaurantRecipeItem.id_proyect == self.project_id,
+                        RestaurantRecipeItem.deletion_date.is_(None),
+                    )
+                ).all()
+            }
+            unidad_insumo = (item.unit or "").strip().lower()
+            if unidades_receta - {unidad_insumo}:
+                avisos.append({
+                    "code": "unidad_distinta",
+                    "item": item.description,
+                    "item_unit": item.unit,
+                    "recipe_units": sorted(unidades_receta),
+                })
+                continue
+
+            previo = Decimal(str(item.quantity or 0))
+            descontado = min(cantidad, previo) if previo > 0 else Decimal("0")
+            faltante = cantidad - descontado
+            if faltante > 0:
+                avisos.append({
+                    "code": "existencias_insuficientes",
+                    "item": item.description,
+                    "required": float(cantidad),
+                    "available": float(previo),
+                    "short": float(faltante),
+                })
+            if descontado <= 0:
+                continue
+            nuevo = previo - descontado
+            razon = "Consumo por venta"
+            if faltante > 0:
+                razon += f" (faltaron {faltante} {item.unit})"
+            self.db.add(RestaurantInventoryMovement(
+                id_proyect=self.project_id,
+                id_restaurant_inventory_item=inventory_id,
+                movement_type="salida",
+                quantity=descontado,
+                previous_quantity=previo,
+                new_quantity=nuevo,
+                reason=razon[:255],
+                created_by=self.user_id,
+            ))
+            item.quantity = nuevo
+
+        if consumo or avisos:
+            self._audit("inventory_consumption", "salida", {
+                "orders": [o.id_restaurant_order for o in orders],
+                "items_affected": len(consumo),
+                "warnings": [a["code"] for a in avisos],
+            })
+        self.db.flush()
+        return avisos
+
+    def inventory_summary(self) -> dict:
+        """Valor del inventario y insumos agotados, para el panel de admin."""
+        items = self.db.scalars(
+            select(RestaurantInventoryItem).where(
+                RestaurantInventoryItem.id_proyect == self.project_id,
+                RestaurantInventoryItem.deletion_date.is_(None),
+            )
+        ).all()
+        total_value = sum(
+            Decimal(str(item.quantity or 0)) * Decimal(str(item.cost_per_unit or 0))
+            for item in items
+        )
+        return {
+            "items_count": len(items),
+            "total_value": float(round(total_value, 2)),
+            "out_of_stock": [
+                item.serialize() for item in items if Decimal(str(item.quantity or 0)) <= 0
+            ],
+        }
 
     def list_recipes(self) -> list[dict]:
         return [
@@ -740,12 +1320,26 @@ class RestaurantService:
             )
         ):
             raise _not_found()
+        # La unidad de la receta debe ser la misma del insumo: no hay tabla
+        # de conversion, asi que una receta en "g" contra un saldo en "kg"
+        # descontaria mil veces de mas al cobrar. Se exige que coincidan en
+        # el alta para no generar ese dato.
+        unidad = _required_text(payload, "unit", 40)
+        unidad_insumo = self.db.scalar(
+            select(RestaurantInventoryItem.unit).where(
+                RestaurantInventoryItem.id_restaurant_inventory_item == inventory_id
+            )
+        )
+        if (unidad or "").strip().lower() != (unidad_insumo or "").strip().lower():
+            raise AppError("restaurant.recipe_unit_mismatch", 400, {
+                "field": "unit", "expected": unidad_insumo
+            })
         item = RestaurantRecipeItem(
             id_proyect=self.project_id,
             id_restaurant_dish=dish_id,
             id_restaurant_inventory_item=inventory_id,
             quantity=_decimal(payload.get("quantity"), "quantity", Decimal("0.001")),
-            unit=_required_text(payload, "unit", 40),
+            unit=unidad,
             created_by=self.user_id,
         )
         self.db.add(item)

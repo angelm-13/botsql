@@ -50,6 +50,13 @@ def _sql(valor):
 
 
 def generar() -> str:
+    # NO se filtra por licencia aqui, a proposito. El SQL que sale de este
+    # generador se commitea como migracion y se aplica a todos los ambientes:
+    # recortarlo en tiempo de generacion hornearia el plan de un cliente dentro
+    # de la migracion, y el siguiente cliente heredaria el recorte del anterior.
+    #
+    # El filtro va en el SQL, contra la variable `licensed_modules` que recibe
+    # `psql -v` al aplicar. Cada fila lleva su `modulo_licencia` para eso.
     filas = filas_de_permisos()
 
     renglones = []

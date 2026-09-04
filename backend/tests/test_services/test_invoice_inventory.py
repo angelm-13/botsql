@@ -7,13 +7,20 @@ Lo que estas pruebas fijan, en orden de importancia:
 * repetir la operacion no vuelve a mover;
 * si una partida no alcanza en una venta, ninguna se aplica;
 * una factura sin clasificar no mueve nada;
-* lo que no se puede mover se reporta, nunca se redondea a la callada.
+* lo que no se puede mover se reporta, nunca se redondea a la callada;
+* **una factura que documenta una venta ya cobrada no vuelve a mover.** Es la
+  unica de la lista que no protege contra un error de captura sino contra un
+  descuadre silencioso: la venta de mostrador descuenta al cobrarse y la factura
+  descontaria otra vez, sacando el producto dos veces por haberse vendido una.
+  Las dos operaciones son correctas por separado, asi que nada avisaria.
 """
 
 from __future__ import annotations
 
 import unittest
 from decimal import Decimal
+
+from sqlalchemy import select
 
 from app.models import (
     Brand,
@@ -53,6 +60,187 @@ RACK = 2
 PRODUCT = 60
 SALE = 50        # factura de venta
 PURCHASE = 51    # factura de compra
+
+
+class TestLaFacturaQueDocumentaUnaVenta(BackendTestCase):
+    """Una partida CAUSA un movimiento o lo DOCUMENTA, nunca las dos.
+
+    Una venta de mostrador ya movio el almacen cuando se cobro. La factura que
+    se emite despues solo la respalda ante el SAT.
+    """
+
+    VENTA_DEL_POS = "V-20260101-00007"
+
+    def setUp(self):
+        super().setUp()
+        with transaction_context() as db:
+            db.add_all([
+                CustomerSupplier(
+                    id_customer_supplier=PRINCIPAL, name="Mi Empresa", tax_id="AAA010101AA1",
+                    postal_code="37000", fiscal_type="601", type="supplier",
+                    is_principal=True, id_user=1, created_by=1,
+                ),
+                CustomerSupplier(
+                    id_customer_supplier=CLIENT, name="Cliente", tax_id="BBB010101BB1",
+                    postal_code="37100", fiscal_type="601", type="client",
+                    id_user=1, created_by=1,
+                ),
+                LocationType(id_location_type=1, location_type_description="Almacen",
+                             is_warehouse=True, created_by=1),
+                Brand(id_brand=1, brand_description="Generica", created_by=1),
+                ProductFamily(id_product_family=1, product_family_description="General", created_by=1),
+                Unit(id_unit=1, unit_name="Pieza", is_active=True,
+                     measurement_system="metric", created_by=1),
+            ])
+            db.flush()
+            db.add_all([
+                Proyect(id_proyect=30, id_customer_supplier=CLIENT, leader=1,
+                        proyect_description="Proyecto", created_by=1),
+                Status(id_status=40, status_description="Activo", category="invoice",
+                       is_terminal=False, sort_order="asc", created_by=1),
+                Location(id_location=WAREHOUSE, id_location_type=1,
+                         location_description="Mostrador", id_module="pos", created_by=1),
+                Material(id_material=1, material_description="Agua", id_unit=1,
+                         id_brand=1, id_product_family=1, created_by=1),
+            ])
+            db.flush()
+            db.add(Invoice(
+                id_invoice=PURCHASE, id_customer_supplier=PRINCIPAL,
+                id_issuer_customer_supplier=CLIENT, id_proyect=30, id_status=40,
+                invoice_status="timbrada", tax_certification_supplier=CLIENT,
+                apply_tax=False, created_by=1,
+            ))
+            db.flush()
+            db.add(Product(
+                id_product=PRODUCT, id_invoice=PURCHASE, id_location=WAREHOUSE,
+                id_material=1, is_directly_related_to_product_service=True,
+                gross_price=Decimal("15.00"), created_by=1,
+            ))
+            db.flush()
+
+        # Existencia inicial y la venta que la descuenta, tal como la escribe el
+        # punto de venta al cobrar: reference_type 'sale' con el folio.
+        apply_inventory_movement(PRODUCT, {
+            "movement_type": "receive", "quantity": 10,
+            "id_location": WAREHOUSE, "reference_type": "purchase",
+            "reference_id": str(PURCHASE), "idempotency_key": "alta-inicial",
+        }, ACTOR)
+        with transaction_context() as db:
+            from app.services.inventory_service import apply_movement_in_session
+            apply_movement_in_session(
+                db, PRODUCT, ACTOR, movement_type="issue", quantity_delta=-3,
+                idempotency_key=f"pos-{self.VENTA_DEL_POS}",
+                id_location=WAREHOUSE, reference_type="sale",
+                reference_id=self.VENTA_DEL_POS,
+                reason="Venta de mostrador", source_module="pos",
+            )
+
+    def _factura_de_la_venta(self, modulo="pos", referencia=None):
+        with transaction_context() as db:
+            db.add(Invoice(
+                id_invoice=SALE, id_customer_supplier=CLIENT,
+                id_issuer_customer_supplier=PRINCIPAL, id_proyect=30, id_status=40,
+                invoice_status="timbrada", tax_certification_supplier=PRINCIPAL,
+                apply_tax=False, created_by=1,
+                source_module=modulo,
+                source_reference=referencia if referencia is not None else self.VENTA_DEL_POS,
+            ))
+            db.flush()
+            db.add(InvoiceMaterialService(
+                id_invoice=SALE, id_product=PRODUCT, id_unit=1,
+                invoice_material_service_description="Agua mineral",
+                is_directly_related_to_product_service_creation=False,
+                id_authorized=1, id_status=40, id_buyer=1,
+                id_customer_supplier=CLIENT, gross_price=Decimal("15.00"),
+                quantity=Decimal("3"), created_by=1, line_type="product",
+                tax_applicable=False, authorization_status="authorized",
+            ))
+
+    def _saldo(self):
+        with transaction_context() as db:
+            from sqlalchemy import func as f
+            return int(db.scalar(
+                select(f.coalesce(f.sum(InventoryLedger.quantity_delta), 0))
+                .where(InventoryLedger.id_product == PRODUCT)
+            ) or 0)
+
+    def test_applying_it_does_not_discount_again(self):
+        """La prueba central: el saldo no se mueve.
+
+        Sin esto, el producto sale dos veces del almacen por haberse vendido una
+        vez, y nada lo reporta porque las dos operaciones son correctas por
+        separado.
+        """
+        self._factura_de_la_venta()
+        antes = self._saldo()
+        self.assertEqual(7, antes, "la venta ya descontó 3 de 10")
+
+        resultado = apply_invoice_to_inventory(SALE, {}, ACTOR)
+
+        self.assertEqual(antes, self._saldo(), "la factura volvio a descontar")
+        self.assertTrue(resultado["documents_sale"])
+        self.assertEqual("sale_already_moved_inventory", resultado["reason"])
+        self.assertEqual(0, resultado["applied_lines"])
+
+    def test_it_points_at_the_movement_the_sale_already_made(self):
+        """No basta con no mover: hay que poder decir de donde salio la mercancia.
+
+        Una factura que no puede senalar el movimiento que documenta obliga a
+        buscarlo a mano el dia que alguien pregunte.
+        """
+        self._factura_de_la_venta()
+        vista = preview_invoice_inventory(SALE, {}, ACTOR)
+
+        self.assertEqual(1, vista["sale_movement_count"])
+        movimiento = vista["sale_movements"][0]
+        self.assertEqual(PRODUCT, movimiento["id_product"])
+        self.assertEqual(-3, movimiento["quantity_delta"])
+        self.assertEqual("issue", movimiento["movement_type"])
+        self.assertFalse(vista["sale_movements_missing"])
+        self.assertFalse(vista["can_apply"])
+
+    def test_a_sale_without_a_trace_in_the_ledger_is_reported(self):
+        """Si la venta no descontó, no se calla.
+
+        Pasa de verdad: un producto del punto de venta sin enlace al almacen se
+        vende sin descontar. Entonces la factura no mueve -por la regla- y el
+        movimiento tampoco existe, asi que la mercancia salio del estante sin
+        dejar rastro en ningun sitio. Eso hay que verlo.
+        """
+        self._factura_de_la_venta(referencia="V-20260101-99999")
+        vista = preview_invoice_inventory(SALE, {}, ACTOR)
+
+        self.assertEqual(0, vista["sale_movement_count"])
+        self.assertTrue(vista["sale_movements_missing"])
+
+    def test_an_invoice_without_an_origin_still_moves(self):
+        """La regla no puede haber roto el caso normal.
+
+        Una venta capturada en facturacion, sin modulo de origen, sigue siendo
+        la causa del movimiento y tiene que descontar.
+        """
+        with transaction_context() as db:
+            db.add(Invoice(
+                id_invoice=SALE, id_customer_supplier=CLIENT,
+                id_issuer_customer_supplier=PRINCIPAL, id_proyect=30, id_status=40,
+                invoice_status="timbrada", tax_certification_supplier=PRINCIPAL,
+                apply_tax=False, created_by=1,
+            ))
+            db.flush()
+            db.add(InvoiceMaterialService(
+                id_invoice=SALE, id_product=PRODUCT, id_unit=1,
+                invoice_material_service_description="Agua mineral",
+                is_directly_related_to_product_service_creation=False,
+                id_authorized=1, id_status=40, id_buyer=1,
+                id_customer_supplier=CLIENT, gross_price=Decimal("15.00"),
+                quantity=Decimal("2"), created_by=1, line_type="product",
+                tax_applicable=False, authorization_status="authorized",
+            ))
+
+        antes = self._saldo()
+        apply_invoice_to_inventory(SALE, {}, ACTOR)
+        self.assertEqual(antes - 2, self._saldo(),
+                         "una factura sin origen tiene que descontar")
 
 
 class InvoiceInventoryTestCase(BackendTestCase):

@@ -7,6 +7,8 @@ export const setupMfa = () => request("/auth/mfa/setup", { method: "POST" });
 export const enableMfa = (payload) => request("/auth/mfa/enable", { method: "POST", body: payload });
 export const disableMfa = (payload) => request("/auth/mfa/disable", { method: "POST", body: payload });
 export const resetUserMfa = (targetUserId) => request(`/auth/mfa/reset/${targetUserId}`, { method: "POST" });
+export const inventoryTrace = (params) => request("/inventory/trace", { params });
+
 export const uploadProductImage = (id, file) => {
   const formData = new FormData();
   formData.append("file", file);
@@ -318,6 +320,44 @@ export const getProductStock = (id) => request(`/product/${id}/inventory-stock`)
 export const getLocationTree = () => request("/location/tree");
 export const getWarehouseStock = (id) => request(`/location/${id}/stock`);
 export const getInvoiceInventoryPreview = (id, params = {}) => request(`/invoice/${id}/inventory`, { params });
+// --- Punto de venta, a traves del puente del nucleo ------------------------
+// Un solo inicio de sesion: se llama al nucleo con el token de TYAKXA y el
+// nucleo habla con el POS por detras. El front nunca ve credenciales del POS.
+export const posStatus = () => request("/pos/status");
+export const posLinks = () => request("/pos/links");
+export const deploymentPlan = () => request("/security/plan");
+
+export const posSyncCatalog = (payload) =>
+  request("/pos/links/sync", { method: "POST", body: payload });
+
+export const posLinkProduct = (payload) =>
+  request("/pos/links", { method: "POST", body: payload });
+export const posRequest = (ruta, opciones = {}) => request(`/pos/api/${ruta}`, opciones);
+export const posCheckout = (payload) =>
+  request("/pos/api/checkout", { method: "POST", body: payload });
+export const posOpenCashSession = (payload) =>
+  request("/pos/api/cash/sessions/open", { method: "POST", body: payload });
+
+// --- Rastreo de piezas: herramienta, equipo, activo de uso -----------------
+// El inventario por cantidades no puede decir donde esta el taladro A-014; estas
+// rutas trabajan sobre la pieza concreta.
+export const getAssets = (params = {}) => request("/assets", { params });
+export const getOverdueAssets = () => request("/assets/overdue");
+export const getAssetByTag = (tag) => request(`/assets/by-tag/${encodeURIComponent(tag)}`);
+export const getAssetHistory = (id) => request(`/assets/${id}`);
+export const getProductAssetSummary = (id) => request(`/product/${id}/asset-summary`);
+export const createAsset = (payload) => request("/assets", { method: "POST", body: payload });
+const accionDePieza = (accion) => (id, payload = {}) =>
+  request(`/assets/${id}/${accion}`, { method: "POST", body: payload });
+export const assignAsset = accionDePieza("assign");
+export const lendAsset = accionDePieza("lend");
+export const returnAsset = accionDePieza("return");
+export const sendAssetToRepair = accionDePieza("send-to-repair");
+export const backAssetFromRepair = accionDePieza("back-from-repair");
+export const reportAssetLost = accionDePieza("report-lost");
+export const retireAsset = accionDePieza("retire");
+export const moveAsset = accionDePieza("move");
+
 export const applyInvoiceInventory = (id, payload = {}) => request(`/invoice/${id}/inventory`, { method: "POST", body: payload });
 
 // --- Cancelacion de CFDI ---------------------------------------------------
@@ -582,3 +622,4 @@ export const getKronosAttendance = (payload) => request("/kronos/attendance", { 
 export const getKronosPeople = (payload) => request("/kronos/people", { method: "POST", body: payload });
 export const saveKronosPerson = (payload) => request("/kronos/people", { method: "PUT", body: payload });
 export const deleteKronosPerson = (employeeNo, payload) => request(`/kronos/people/${encodeURIComponent(employeeNo)}`, { method: "DELETE", body: payload });
+export { urlDeArchivo } from "./client";

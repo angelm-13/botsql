@@ -68,10 +68,23 @@ class TestCobertura(unittest.TestCase):
         )
 
     def test_the_business_modules_are_declared(self):
-        """Los siete que se pidieron, mas el punto de venta y el laboratorio."""
+        """Lo que se puede vender por separado.
+
+        La lista es exacta a proposito y hay que tocarla al agregar un modulo.
+        Eso es la mitad del valor de esta prueba: un modulo que se declara sin
+        pasar por aqui es un modulo que nadie decidio vender, y el plan lo
+        vendera igual. Documentos y Laboratorio llegaron asi -con tablas,
+        rutas y sembrado, sin declararse en el registro- y la prueba de
+        cobertura los encontro.
+        """
         esperados = {
+            # Los siete que se pidieron al principio.
             "facturacion", "logistica", "restaurante", "rh", "crm",
-            "operaciones", "inventario", "pos", "laboratorio",
+            "operaciones", "inventario",
+            # El punto de venta, integrado despues como submodulo grande.
+            "pos",
+            # Llegados con tny_docs.
+            "documentos", "laboratorio",
         }
 
         self.assertEqual(esperados, set(registry.MODULOS_DE_NEGOCIO))
@@ -199,14 +212,33 @@ class TestMatrizDePermisos(unittest.TestCase):
 
         Una capacidad que el acceso al modulo no puede ejercer es una fila que
         no sirve y que hace creer que el rol puede hacer algo que no puede.
+
+        La excepcion son los modulos que se operan solo por capacidad, porque no
+        tienen entidades en la base del nucleo y por tanto no hay acceso de
+        tabla que conceder. Se reconoce por eso -no tener entidades- y no por
+        nombre: al integrar el punto de venta esta prueba fallo porque eximia al
+        restaurante a mano, y el criterio real no era el nombre sino la
+        naturaleza del modulo.
         """
         for rol in registry.ROLES:
             for clave in rol.capacidades:
-                modulo = registry.CAPACIDAD_POR_CLAVE[clave].modulo
-                if modulo == "restaurante":
+                modulo = registry.MODULO_POR_CLAVE[registry.CAPACIDAD_POR_CLAVE[clave].modulo]
+                if not modulo.entidades:
                     continue
                 with self.subTest(rol=rol.nombre, capacidad=clave):
-                    self.assertIn(modulo, rol.modulos)
+                    self.assertIn(modulo.clave, rol.modulos)
+
+    def test_a_capability_only_module_has_no_core_entities(self):
+        """Lo que hace valida la excepcion de arriba."""
+        for modulo in registry.MODULOS:
+            capacidades = [c for c in registry.CAPACIDADES if c.modulo == modulo.clave]
+            if modulo.entidades or not capacidades:
+                continue
+            with self.subTest(modulo=modulo.clave):
+                self.assertEqual(
+                    (), modulo.entidades,
+                    "un modulo que se opera por capacidad no declara entidades del nucleo",
+                )
 
     def test_the_warehouse_clerk_cannot_adjust(self):
         """Quien mueve la mercancia no tapa su propio faltante."""

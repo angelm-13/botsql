@@ -75,11 +75,21 @@ class Modulo:
     """Un submodulo del proyecto, con las entidades que le pertenecen."""
 
     def __init__(self, clave, etiqueta, icono, orden, entidades, *,
-                 almacen=None, base_de_datos=None):
+                 almacen=None, base_de_datos=None,
+                 grupo_de_menu=None, icono_de_menu=None):
         self.clave = clave
         self.etiqueta = etiqueta
         self.icono = icono
         self.orden = orden
+        # Bajo que nombre se agrupa en el menu, cuando no coincide con el del
+        # modulo. Existe para poder tener un solo apartado de Configuracion en
+        # la pantalla sin fusionar los modulos de permisos: si `seguridad` y
+        # `configuracion` fueran uno solo, cualquier rol con configuracion
+        # -que son casi todos, porque necesitan leer catalogos- heredaria
+        # usuarios y permisos. La separacion de acceso se mantiene; lo que se
+        # unifica es donde se ve.
+        self.grupo_de_menu = grupo_de_menu or etiqueta
+        self.icono_de_menu = icono_de_menu or icono
         self.entidades = tuple(entidades)
         # Cadena de tablas del almacen propio, si el modulo tiene uno. Solo se
         # declaran aqui las que viven en la base del nucleo; un modulo con base
@@ -159,20 +169,21 @@ MODULOS = (
             "appointment",
         ),
     ),
+    # Documentos y Laboratorio llegan de tny_docs con sus tablas, sus rutas y su
+    # sembrado, pero sin declararse aqui. La prueba de cobertura del registro lo
+    # detecto: sus entidades estan protegidas con `require_entity_permission` y
+    # no pertenecian a ningun modulo, asi que ningun rol podia alcanzarlas por la
+    # matriz y el plan no podia venderlas ni apagarlas. Se declaran con los
+    # grupos y el icono que su propia migracion usa.
     Modulo(
-        # `clipboard-list` y no un nombre semantico como los de arriba porque
-        # es una de las claves que `groupIcons` de Shell.jsx sabe resolver de
-        # verdad; las otras ("billing", "inventory") no estan en ese mapa y
-        # caen al icono por defecto -- deuda aparte, no de este modulo.
-        "laboratorio", "Laboratorio", "clipboard-list", 650,
+        "documentos", "Documentos", "file-text", 650,
+        ("document", "document_category", "document_relation", "document_version"),
+    ),
+    Modulo(
+        "laboratorio", "Laboratorio", "flask-conical", 660,
         (
-            # Gestion documental y ordenes de servicio de laboratorio. Las dos
-            # mitades van juntas a proposito: el reporte de diagnostico de una
-            # orden se guarda como version de un `document`, asi que separarlas
-            # daria un modulo que no puede emitir su propio documento.
-            "document", "document_category", "document_version",
-            "document_relation", "laboratory_equipment",
-            "laboratory_service_order", "laboratory_service_order_status_history",
+            "laboratory_equipment", "laboratory_service_order",
+            "laboratory_service_order_status_history",
         ),
     ),
     Modulo(
@@ -194,6 +205,10 @@ MODULOS = (
             "user", "user_mfa", "permission", "entity_permission",
             "nm_field_permission", "field", "event_log",
         ),
+        # Se ve dentro de Configuracion: la peticion fue dejar un solo apartado
+        # de configuracion, y usuarios y permisos son configuracion. Sigue
+        # siendo un modulo aparte para conceder acceso, que es lo que importa.
+        grupo_de_menu="Configuracion", icono_de_menu="settings",
     ),
 )
 
@@ -230,6 +245,14 @@ CAPACIDADES = (
     # destruye existencia por cualquier cantidad. Es la operacion con la que se
     # tapa un faltante, asi que se concede aparte de poder editar productos.
     Capacidad("inventory_adjustment", "Ajustar existencias", "inventario"),
+    # Va en el engrane del encabezado, no en el menu vertical.
+    #
+    # Se habia movido a `sidebar` al retirar el engrane, razonando que habia
+    # demasiados sitios donde configurar cosas. Era un error: el engrane no es
+    # un cajon de sastre, es una UBICACION que el gestor de roles ofrece -Menu
+    # vertical / Engrane / No mostrar- y que se elige por rol y por entidad.
+    # Quitarlo no simplificaba el menu: le quitaba al sistema una opcion de
+    # configuracion que alguien habia elegido a proposito.
     Capacidad("kronos_device", "Conexion al dispositivo Kronos", "rh", menu="settings"),
     Capacidad("restaurant_waiter", "Meseros", "restaurante", bits=CAPTURA, menu="sidebar"),
     Capacidad("restaurant_cashier", "Caja", "restaurante", bits=CAPTURA, menu="sidebar"),
@@ -270,16 +293,16 @@ class Rol:
 #     un rol solo consulta inventario, darle `inventory_adjustment` es una fila
 #     que no sirve y que hace creer que puede ajustar.
 ROLES = (
-    # `laboratorio` solo lo recibe Administrator por ahora: el modulo se
-    # integro desde la rama tny_docs, que lo concedia a los 12 perfiles por
-    # igual -incluidos Mesero y Cocina-, y que perfiles lo operan de verdad es
-    # una decision de negocio que todavia no se tomo. Ampliarlo es agregar la
-    # clave a los roles que correspondan; dejarlo abierto era lo que hacia que
-    # un mesero pudiera leer expedientes de empleados.
+    # `documentos` y `laboratorio` solo los recibe Administrator por ahora: los
+    # modulos se integraron desde la rama tny_docs, que los concedia a los 12
+    # perfiles por igual -incluidos Mesero y Cocina-, y que perfiles los operan
+    # de verdad es una decision de negocio que todavia no se tomo. Ampliarlo es
+    # agregar la clave a los roles que correspondan; dejarlo abierto era lo que
+    # hacia que un mesero pudiera leer expedientes de empleados.
     Rol(1, "Administrator", {
         "facturacion": TOTAL, "inventario": TOTAL, "operaciones": TOTAL,
         "logistica": TOTAL, "restaurante": TOTAL, "pos": TOTAL, "crm": TOTAL, "rh": TOTAL,
-        "laboratorio": TOTAL,
+        "documentos": TOTAL, "laboratorio": TOTAL,
         "configuracion": TOTAL, "seguridad": TOTAL,
     }, [c.clave for c in CAPACIDADES]),
 
@@ -287,7 +310,7 @@ ROLES = (
         "facturacion": CAPTURA, "crm": CAPTURA, "rh": CAPTURA,
         "operaciones": EDITAR, "inventario": CONSULTA, "logistica": CONSULTA,
         "configuracion": CONSULTA,
-    }, ["incident_supervision", "kronos_device"]),
+    }, ["incident_supervision", "kronos_device", "pos_admin", "pos_terminal"]),
 
     Rol(3, "vendedor", {
         "crm": CAPTURA, "facturacion": CAPTURA, "inventario": CONSULTA,
@@ -313,7 +336,7 @@ ROLES = (
         "operaciones": EDITAR, "facturacion": CAPTURA, "crm": CAPTURA,
         "inventario": CONSULTA, "rh": CONSULTA, "logistica": CONSULTA,
         "configuracion": CONSULTA,
-    }, ["project_authorization", "incident_supervision"]),
+    }, ["project_authorization", "incident_supervision", "pos_admin", "pos_terminal"]),
 
     # El almacenista opera el almacen pero no lo administra, y no ajusta: es la
     # separacion de funciones que evita que quien mueve la mercancia tape su
@@ -337,6 +360,11 @@ SOLO_ARRANQUE = frozenset({"event_log", "user_mfa", "password_reset_token"})
 # las que merecen pantalla propia; el resto queda accesible por permiso pero sin
 # entrada, porque son catalogos de apoyo que se consultan desde donde se usan.
 MENU = {
+    # Documentos y Laboratorio, con las etiquetas de su propia migracion.
+    "document": ("Documentos", 10),
+    "document_category": ("Categorias de documento", 20),
+    "laboratory_service_order": ("Ordenes de servicio", 10),
+    "laboratory_equipment": ("Equipos", 20),
     "invoice": ("Facturas", 10),
     "customer_supplier": ("Clientes y proveedores", 20),
     "fiscal_account": ("Cuentas fiscales", 30),
@@ -355,9 +383,6 @@ MENU = {
     "task_type": ("Tipos de tarea", 40),
     "incident": ("Incidencias", 50),
     "incident_detail": ("Detalle de incidencias", 60),
-    "document": ("Documentos", 10),
-    "laboratory_equipment": ("Equipos de laboratorio", 20),
-    "laboratory_service_order": ("Ordenes de servicio", 30),
     "payroll_period": ("Periodos de nomina", 10),
     "payroll_concept": ("Conceptos", 20),
     "payroll_movement": ("Movimientos", 30),
@@ -447,9 +472,21 @@ def _validar():
 _validar()
 
 
-def modulo_de(entidad):
-    """A que modulo pertenece una entidad, o None si no esta declarada."""
-    return ENTIDAD_A_MODULO.get(entidad)
+def modulo_de(nombre):
+    """A que modulo pertenece una entidad o una capacidad.
+
+    Devuelve None si el nombre no esta declarado en ningun sitio.
+
+    Incluye las capacidades a proposito. Sin ellas, un cliente cuyo plan no
+    trae el punto de venta seguiria alcanzando el puente, porque el puente se
+    gatea con `pos_terminal` y `pos_admin`, que son capacidades y no tablas.
+    Lo mismo con el restaurante y con los ajustes de existencias.
+    """
+    modulo = ENTIDAD_A_MODULO.get(nombre)
+    if modulo is not None:
+        return modulo
+    capacidad = CAPACIDAD_POR_CLAVE.get(nombre)
+    return capacidad.modulo if capacidad is not None else None
 
 
 def almacenes():
@@ -479,8 +516,8 @@ def filas_de_permisos():
                 filas.append((
                     rol.id_permission, entidad, bits,
                     "sidebar" if etiqueta else "hidden",
-                    modulo.etiqueta if etiqueta else None,
-                    modulo.icono if etiqueta else None,
+                    modulo.grupo_de_menu if etiqueta else None,
+                    modulo.icono_de_menu if etiqueta else None,
                     etiqueta,
                     modulo.orden + (orden or 90),
                     modulo.clave,
@@ -488,11 +525,17 @@ def filas_de_permisos():
         for clave in sorted(rol.capacidades):
             capacidad = CAPACIDAD_POR_CLAVE[clave]
             modulo = MODULO_POR_CLAVE[capacidad.modulo]
-            es_pantalla = capacidad.menu == "sidebar"
+            # Se ve en algun menu, no solo en el vertical. Con `== "sidebar"`
+            # una capacidad puesta en el engrane salia sin etiqueta ni icono, y
+            # el engrane mostraba un renglon en blanco. La etiqueta que habia
+            # venia de una migracion escrita a mano, asi que se perdia en la
+            # siguiente resiembra: es exactamente lo que paso con la conexion al
+            # dispositivo Kronos.
+            es_pantalla = capacidad.menu in ("sidebar", "settings")
             filas.append((
                 rol.id_permission, capacidad.clave, capacidad.bits, capacidad.menu,
-                modulo.etiqueta if es_pantalla else None,
-                modulo.icono if es_pantalla else None,
+                modulo.grupo_de_menu if es_pantalla else None,
+                modulo.icono_de_menu if es_pantalla else None,
                 capacidad.etiqueta if es_pantalla else None,
                 modulo.orden + 90,
                 capacidad.clave if capacidad.licencia_independiente else modulo.clave,

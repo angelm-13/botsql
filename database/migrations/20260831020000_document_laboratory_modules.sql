@@ -193,9 +193,9 @@ WHERE EXISTS (SELECT 1 FROM "user")
   );
 
 -- Los permisos de estas siete entidades NO se siembran aqui. Los siembra
--- 20260901000000_module_permission_matrix_licensed.sql a partir del modulo
--- `laboratorio` de app/modules/registry.py, que es la unica fuente de verdad
--- de a que modulo pertenece una entidad.
+-- 20260901000000_module_permission_matrix_licensed.sql a partir de los
+-- modulos `documentos` y `laboratorio` de app/modules/registry.py, que es la
+-- unica fuente de verdad de a que modulo pertenece una entidad.
 --
 -- Este archivo si los sembraba, con un INSERT crudo para los 12 perfiles, y
 -- eso rompia el arranque del backend al segundo despliegue: la matriz corre

@@ -3138,7 +3138,15 @@
     "audit_empty": "Keine Einträge im Protokoll.",
     "takeout": "Zum Mitnehmen",
     "new_takeout": "Bestellung zum Mitnehmen",
-    "customer_name": "Name des Kunden"
+    "customer_name": "Name des Kunden",
+    "payment_method": "Zahlungsart", "method_efectivo": "Bargeld", "method_tarjeta": "Karte", "method_transferencia": "Überweisung", "method_mixto": "Gemischt",
+    "received": "Erhalten", "change": "Rückgeld", "missing": "Fehlt", "exact": "Genau", "cash_part": "Baranteil", "card_part": "Rest per Karte",
+    "tip_fixed": "Festbetrag", "amount": "Betrag", "charge_together": "Alles zusammen abrechnen", "charging": "Wird abgerechnet...", "cancel": "Abbrechen", "account": "Rechnung", "items": "Positionen",
+    "print_ticket": "Bon drucken", "reprint_ticket": "Bon erneut drucken", "ticket_title": "Verkaufsbon", "ticket_thanks": "Danke für Ihren Besuch!", "ticket_not_invoice": "Dieser Bon ist keine Steuerrechnung.",
+    "register_closed_warning": "Die Kasse ist geschlossen. Öffnen Sie sie vor Barzahlungen, sonst gehört das Geld zu keiner Schicht.", "avg_delivery": "Durchschnittliche Ausgabe", "top_dishes": "Bestseller",
+    "subtotal": "Zwischensumme",
+    "close_table": "Tisch schließen", "close_takeout": "Bestellung schließen", "still_unpaid": "noch offen", "ready_to_close": "Alles abgerechnet: der Tisch kann freigegeben werden.", "occupied": "Besetzt", "free": "Frei",
+    "inventory_warnings": "Lagerhinweise", "dismiss": "Verwerfen", "warn_no_recipe": "Kein Rezept, kein Lagerabgang gebucht", "warn_short_stock": "Bestand reicht nicht", "warn_needed": "benötigt", "warn_had": "vorhanden", "warn_unit_mismatch": "Rezepteinheit weicht von der Artikeleinheit ab, nichts gebucht"
   },
   "shell": {
     "group_banks": "Bankwesen",

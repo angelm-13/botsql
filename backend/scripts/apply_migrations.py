@@ -101,6 +101,45 @@ def _revisar_cambios(pendientes_previas: dict[str, str]) -> list[str]:
     return alteradas
 
 
+def _ejecutar_sql_crudo(conexion, sql: str) -> None:
+    """Manda el archivo al servidor tal cual, sin interpolar parametros.
+
+    `exec_driver_sql` pasa un diccionario de parametros vacio, y con eso
+    psycopg2 recorre TODO el texto buscando marcadores de porcentaje: no
+    distingue codigo de comentario ni de literal. Un solo `%` sin duplicar -en
+    un LIKE, en un `RAISE NOTICE`, o en una linea que explica algo- hace fallar
+    la migracion con "immutabledict is not a sequence", que no menciona el
+    porcentaje por ningun lado y manda a buscar el problema donde no esta.
+
+    Dos migraciones ya escritas caian en esto, asi que una base nueva se detenia
+    en la primera y el servidor nunca arrancaba.
+
+    Se arregla aqui y no en los archivos a proposito. Editarlos habria cambiado
+    su huella, y el aplicador detiene el arranque cuando una migracion
+    registrada cambia de contenido -con razon: es la forma mas silenciosa de que
+    dos bases diverjan-. Eso habria bloqueado el despliegue en los ambientes que
+    ya las tienen aplicadas, cambiando un problema por otro. Escribir migracion
+    nueva tampoco servia: el problema no es lo que hacen, es que no se pueden
+    ejecutar.
+
+    Llamar a `cursor.execute(sql)` sin el segundo argumento salta la
+    interpolacion por completo, que es justo lo que hace falta para un archivo
+    que no lleva parametros. Es el mismo comportamiento que `psql -f`, que es el
+    mecanismo real del initContainer de k8s: por eso el fallo nunca se vio en los
+    despliegues y solo aparecia al correr el aplicador a mano.
+
+    El mismo defecto se encontro dos veces por separado, en esta rama y en
+    tny_docs, y se arreglo igual en las dos. Se conserva el acceso de tny_docs
+    -`driver_connection`- porque `connection` es el proxy del pool: reenvia, pero
+    depender de ese reenvio es depender de un detalle interno.
+    """
+    cursor = conexion.connection.driver_connection.cursor()
+    try:
+        cursor.execute(sql)
+    finally:
+        cursor.close()
+
+
 def principal() -> int:
     analizador = argparse.ArgumentParser(description=__doc__)
     analizador.add_argument("--dry-run", action="store_true",
@@ -162,18 +201,7 @@ def principal() -> int:
             # Cada una en su propia transaccion: si falla, las anteriores
             # quedan aplicadas y registradas, y esta no.
             with motor.begin() as conexion:
-                # exec_driver_sql() le pasa al DBAPI un `parameters` no-None
-                # (un immutabledict interno de SQLAlchemy) aunque no haya
-                # parametros reales -- psycopg2 entonces intenta interpretar
-                # cualquier "%" suelto del SQL (hasta dentro de un comentario
-                # -- o de un format()/RAISE NOTICE legitimo de Postgres) como
-                # placeholder de sustitucion, y revienta con
-                # "immutabledict is not a sequence". El cursor crudo del
-                # DBAPI, sin pasar por la capa de parametros de SQLAlchemy,
-                # ejecuta el texto tal cual -- mismo comportamiento que
-                # `psql -f` (el mecanismo real del initContainer de k8s).
-                cursor = conexion.connection.driver_connection.cursor()
-                cursor.execute(ruta.read_text(encoding="utf-8"))
+                _ejecutar_sql_crudo(conexion, ruta.read_text(encoding="utf-8"))
                 conexion.execute(
                     text("INSERT INTO schema_migration (filename, checksum, applied_by) "
                          "VALUES (:f, :c, :a)"),

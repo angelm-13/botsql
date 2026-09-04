@@ -33,6 +33,21 @@ Decisiones que conviene tener presentes:
 
 * **La direccion la manda la factura.** Una factura sin clasificar no mueve
   nada: sin saber si entra o sale, cualquier movimiento seria una adivinanza.
+
+* **Una partida CAUSA un movimiento o lo DOCUMENTA, nunca las dos.** Una venta
+  de mostrador ya descuenta del almacen al cobrarse. Si despues se factura y la
+  factura tambien descuenta, el producto sale dos veces del inventario por
+  haberse vendido una vez. El saldo queda mal y nada avisa, porque las dos
+  operaciones son correctas por separado.
+
+  `invoice.source_module` distingue los dos casos. Vacio: la factura es el
+  origen del movimiento -una venta capturada aqui, una compra a proveedor- y por
+  lo tanto mueve. Con valor: la venta ya ocurrio en el punto de venta o en el
+  restaurante y ya movio; la factura solo la respalda ante el SAT.
+
+  Lo que se devuelve en ese caso no es "no hice nada", sino los movimientos que
+  la venta ya escribio. La factura tiene que poder decir de donde salio su
+  mercancia, aunque no la haya movido ella.
 """
 
 from __future__ import annotations
@@ -212,6 +227,22 @@ def _line_plan(db, invoice, line, requested_locations, direction):
         plan["skip_reason"] = "product_not_found"
         return plan
 
+    # Un activo de uso interno -herramienta, equipo- no se vende. Sale para
+    # usarse, prestarse o consumirse, y para eso esta el rastreo de piezas. Si
+    # se dejara pasar, una venta descontaria del almacen de la empresa una
+    # herramienta que sigue siendo suya, y el saldo quedaria diciendo que ya no
+    # la tiene.
+    #
+    # Se reporta como partida no aplicable en lugar de reventar la factura
+    # entera: la venta puede ser legitima -se vendio una herramienta vieja- y en
+    # ese caso el producto se reclasifica, que es una decision de quien opera y
+    # no algo que el sistema deba adivinar.
+    proposito = str(getattr(product, "stock_purpose", "mercancia") or "mercancia")
+    if direction == "venta" and proposito == "uso_interno":
+        plan["skip_reason"] = "product_is_for_internal_use"
+        plan["stock_purpose"] = proposito
+        return plan
+
     units = _whole_units(line.quantity)
     if units is None:
         plan["skip_reason"] = "quantity_not_whole_units"
@@ -252,10 +283,75 @@ def _requested_locations(payload) -> dict:
     return locations
 
 
+def documenta_una_venta(invoice) -> bool:
+    """Si esta factura respalda una venta que ya movio el almacen."""
+    return bool(getattr(invoice, "source_module", None))
+
+
+def _movimientos_de_la_venta(db, invoice) -> list[dict]:
+    """Los renglones del libro que escribio la venta que esta factura documenta.
+
+    Se buscan por el par (tipo de referencia, referencia) que dejo el modulo de
+    origen al cobrar, no por la factura: la factura no los causo.
+    """
+    filas = db.scalars(
+        select(InventoryLedger).where(
+            InventoryLedger.reference_type == "sale",
+            InventoryLedger.reference_id == str(invoice.source_reference or ""),
+            InventoryLedger.source_module == invoice.source_module,
+        ).order_by(InventoryLedger.id_inventory_ledger)
+    ).all()
+    return [
+        {
+            "id_inventory_ledger": fila.id_inventory_ledger,
+            "id_product": fila.id_product,
+            "id_location": fila.id_location,
+            "movement_type": fila.movement_type,
+            "quantity_delta": int(fila.quantity_delta or 0),
+            "creation_date": fila.creation_date.isoformat() if fila.creation_date else None,
+        }
+        for fila in filas
+    ]
+
+
+def _respaldo_de_venta(db, invoice) -> dict:
+    """Lo que hay que responder cuando la factura documenta en vez de mover.
+
+    Se informa aunque no haya movimientos: una factura que dice venir de una
+    venta y no encuentra su rastro en el libro es un descuadre que alguien tiene
+    que mirar, no un caso normal que se pueda callar.
+    """
+    movimientos = _movimientos_de_la_venta(db, invoice)
+    return {
+        "id_invoice": invoice.id_invoice,
+        "invoice_status": invoice.invoice_status,
+        "documents_sale": True,
+        "source_module": invoice.source_module,
+        "source_reference": invoice.source_reference,
+        "movement_type": None,
+        "effect": "ninguno",
+        "reason": "sale_already_moved_inventory",
+        "sale_movements": movimientos,
+        "sale_movement_count": len(movimientos),
+        # Una factura de una venta cuyo movimiento no aparece: o la venta no
+        # descuento -producto sin enlace al almacen- o alguien borro el renglon.
+        "sale_movements_missing": not movimientos,
+        "lines": [],
+        "pending_lines": 0,
+        "already_applied_lines": 0,
+        "blocked_lines": 0,
+        "fully_applied": True,
+        "status_allows_apply": False,
+        "can_apply": False,
+    }
+
+
 def preview_invoice_inventory(invoice_id, payload, user_data) -> dict:
     """Que movería esta factura en el almacen, sin tocar nada."""
     with transaction_context() as db:
         invoice = _load_invoice(db, invoice_id, user_data)
+        if documenta_una_venta(invoice):
+            return _respaldo_de_venta(db, invoice)
         direction = _invoice_direction(db, invoice)
         status = str(invoice.invoice_status or "").strip().lower()
         locations = _requested_locations(payload)
@@ -301,6 +397,13 @@ def apply_invoice_to_inventory(invoice_id, payload, user_data) -> dict:
 
     with transaction_context() as db:
         invoice = _load_invoice(db, invoice_id, user_data)
+        # La venta ya movio el almacen al cobrarse. Aplicar aqui sacaria el
+        # producto dos veces por haberse vendido una.
+        if documenta_una_venta(invoice):
+            respaldo = _respaldo_de_venta(db, invoice)
+            respaldo["applied"] = []
+            respaldo["applied_lines"] = 0
+            return respaldo
         direction = _invoice_direction(db, invoice)
         if direction not in DIRECTION_MOVEMENTS:
             # Sin saber si entra o sale, cualquier movimiento seria una

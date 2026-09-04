@@ -8739,25 +8739,53 @@ def _is_admin_actor(user_data: dict) -> bool:
 
 
 def _catalog_for_actor(user_data: dict) -> dict:
+    """Lo que el gestor de roles puede ofrecer para conceder.
+
+    Dos cosas que este catalogo tiene que respetar:
+
+    **Las capacidades salen del registro, no de una lista aqui.** Estaban
+    escritas a mano y eran cinco de las nueve que existen, asi que las del punto
+    de venta no se podian conceder desde la interfaz: habia que sembrarlas por
+    fuera. Una lista duplicada del registro se queda corta en cuanto alguien
+    agrega una capacidad y no se acuerda de este archivo.
+
+    **El plan del despliegue recorta el catalogo.** Es lo que hace del plan un
+    techo de verdad: el administrador del cliente reparte permisos con libertad,
+    pero solo entre los modulos que compro. Sin este filtro el gestor mentiria
+    -concedes logistica, lo ves guardado, y el usuario recibe 403 al entrar-, y
+    eso es peor que no ofrecerla: manda a buscar el problema en el rol, donde no
+    hay nada que arreglar.
+    """
+    from app.modules.plan import entidad_habilitada
+    from app.modules.registry import CAPACIDADES, MODULO_POR_CLAVE
+
+    # `domain` viaja en el vocabulario del catalogo -hr, finance, scm, crm,
+    # projects, erp, admin-, que es anterior al registro de modulos y es el que
+    # el gestor usa para agrupar. Se traduce en vez de meter las claves del
+    # registro en el mismo campo: dos vocabularios ahi dejarian el gestor
+    # agrupando la mitad de las cosas aparte.
+    DOMINIO_DEL_MODULO = {
+        'rh': 'hr', 'facturacion': 'finance', 'inventario': 'scm',
+        'crm': 'crm', 'operaciones': 'projects', 'logistica': 'scm',
+        'restaurante': 'restaurant', 'pos': 'pos',
+        'configuracion': 'admin', 'seguridad': 'admin',
+    }
+
     catalog = deepcopy(_PERMISSION_CATALOG)
-    virtual_entities = (
-        ('kronos_device', 'Conexión al dispositivo', 'human_resources'),
-        ('restaurant_waiter', 'Meseros', 'restaurant'),
-        ('restaurant_cashier', 'Caja', 'restaurant'),
-        ('restaurant_kitchen', 'Cocina', 'restaurant'),
-        ('restaurant_admin', 'Administración de restaurante', 'restaurant'),
-    )
-    for entity_name, label, domain in virtual_entities:
+    for capacidad in CAPACIDADES:
+        modulo = MODULO_POR_CLAVE.get(capacidad.modulo)
+        dominio = DOMINIO_DEL_MODULO.get(capacidad.modulo, capacidad.modulo)
         catalog.setdefault('entities', []).append({
-            'entity_name': entity_name,
-            'label': label,
-            'module': domain,
-            'domain': domain,
+            'entity_name': capacidad.clave,
+            'label': capacidad.etiqueta,
+            'module': dominio,
+            'domain': dominio,
             'primary_key': None,
             'representative_field': None,
             'is_bootstrap_only': False,
             'is_permission_source': False,
             'permission_scope': 'actions_only',
+            'module_label': modulo.etiqueta if modulo else None,
             'fields': [],
         })
     if not (user_data.get('is_superuser') or user_data.get('is_bootstrap_admin')):
@@ -8765,6 +8793,10 @@ def _catalog_for_actor(user_data: dict) -> dict:
             entity for entity in catalog.get('entities', [])
             if not entity.get('is_bootstrap_only')
         ]
+    catalog['entities'] = [
+        entity for entity in catalog.get('entities', [])
+        if entidad_habilitada(entity.get('entity_name'))
+    ]
     return catalog
 
 
@@ -8781,6 +8813,38 @@ def _safe_int(value, default=0):
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+@bp_security.route('/storage', methods=['GET'])
+@token_required
+def deployment_storage(user_data):
+    """Cuanto espacio llevan los archivos y cuanto permite el plan.
+
+    Se expone a cualquier usuario autenticado: el cliente tiene derecho a saber
+    cuanto lleva usado de lo que pago, y avisar antes de llegar al tope es lo
+    unico que evita que una subida falle sin previo aviso.
+    """
+    from flask import request
+
+    from app.services.storage_service import estado
+
+    refrescar = str(request.args.get('refresh') or '').strip().lower() in {'1', 'true', 'si'}
+    return jsonify(estado(refrescar=refrescar))
+
+
+@bp_security.route('/plan', methods=['GET'])
+@token_required
+def deployment_plan(user_data):
+    """El plan de este despliegue: que modulos compro el cliente y sus topes.
+
+    Se expone para que la aplicacion pueda decir "esto no esta en tu plan" en
+    vez de ensenar una pantalla que responde 403, y para que la administracion
+    sepa contra que topes esta trabajando. No lleva nada secreto: el cliente
+    tiene derecho a ver que compro.
+    """
+    from app.modules.plan import plan_actual
+
+    return jsonify(plan_actual().serialize())
 
 
 @bp_security.route('/my-permissions', methods=['GET'])
@@ -8812,6 +8876,15 @@ def my_permissions(user_data):
             .filter(EntityPermission.deletion_date.is_(None))
             .all()
         )
+        # El plan filtra lo que se devuelve, y no solo lo que se puede usar.
+        # De estas filas sale el menu: si pasaran las de un modulo que el
+        # cliente no compro, veria las pantallas y recibiria un 403 al entrar.
+        # Un menu que lleva a puertas cerradas es peor que uno mas corto.
+        from app.modules.plan import entidad_habilitada
+        entity_rows = [
+            fila for fila in entity_rows
+            if entidad_habilitada(getattr(fila, 'entity_name', None))
+        ]
         field_permission_rows = (
             db_session.query(NmFieldPermission)
             .filter(NmFieldPermission.id_permission == permission_id)

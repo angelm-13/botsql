@@ -75,6 +75,12 @@ class Invoice(Base):
     isr_retention: Mapped[float] = mapped_column(Numeric(10,2), nullable=True)
     iva_retention: Mapped[float] = mapped_column(Numeric(10,2), nullable=True)
     manual_capture: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text('false'))
+    # De que venta nace esta factura, cuando no nace aqui. Con valor, la venta
+    # ya movio el almacen al cobrarse y la factura solo la respalda ante el SAT:
+    # aplicarla al inventario sacaria el producto dos veces por haberse vendido
+    # una. Vacio significa que la factura es el origen del movimiento.
+    source_module: Mapped[object] = mapped_column(String(20), nullable=True)
+    source_reference: Mapped[object] = mapped_column(String(80), nullable=True)
 
     def serialize(self) -> dict:
         return {
@@ -133,6 +139,8 @@ class Invoice(Base):
             'isr_retention': to_json_value(self.isr_retention),
             'iva_retention': to_json_value(self.iva_retention),
             'manual_capture': to_json_value(self.manual_capture),
+            'source_module': to_json_value(self.source_module),
+            'source_reference': to_json_value(self.source_reference),
         }
 
     def serialize_summary(self) -> dict:

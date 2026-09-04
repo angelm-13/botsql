@@ -1,0 +1,156 @@
+/* Localizar en el almacen.
+   Cada resultado es una tarjeta con su foto a la izquierda y todo lo que se
+   sabe a la derecha: donde esta, que le paso, y sus piezas. La foto va primero
+   porque en un almacen con articulos parecidos es lo que identifica de un
+   vistazo. */
+
+.trace-page { color: #334155; }
+.trace-page .eyebrow {
+  margin: 0 0 4px; font-size: 11px; letter-spacing: .1em;
+  text-transform: uppercase; color: #1b7a60; font-weight: 700;
+}
+.trace-page h1 { margin: 0 0 6px; color: #0f172a; }
+.trace-page .muted { color: #64748b; }
+.trace-page .mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.trace-page .error {
+  padding: 11px 14px; background: #fef2f2; border: 1px solid #fecaca;
+  border-radius: 10px; color: #991b1b; margin: 0 0 14px;
+}
+.trace-empty { padding: 26px 4px; }
+
+/* --- barra de busqueda --- */
+
+.trace-toolbar {
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 16px;
+}
+.trace-search {
+  display: flex; align-items: center; gap: 8px; flex: 1 1 340px;
+  border: 1px solid #cbd5e1; border-radius: 10px; padding: 0 12px; background: #fff;
+}
+.trace-search svg { color: #64748b; flex: 0 0 auto; }
+.trace-search input {
+  flex: 1; border: 0; outline: none; padding: 11px 0; font: inherit; background: transparent;
+}
+.trace-toolbar select {
+  padding: 11px 12px; border: 1px solid #cbd5e1; border-radius: 10px;
+  font: inherit; background: #fff;
+}
+
+.trace-warn {
+  display: flex; align-items: center; gap: 9px; padding: 11px 14px; margin: 0 0 14px;
+  background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px;
+  color: #78350f; font-size: 14px;
+}
+
+/* --- tarjeta de resultado --- */
+
+.trace-list { display: flex; flex-direction: column; gap: 14px; }
+
+.trace-card {
+  display: grid; grid-template-columns: 168px 1fr; gap: 18px;
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 13px; padding: 16px;
+}
+@media (max-width: 720px) {
+  .trace-card { grid-template-columns: 1fr; }
+}
+
+.trace-photo { display: flex; flex-direction: column; gap: 8px; }
+.trace-photo img {
+  width: 100%; aspect-ratio: 1; object-fit: cover;
+  border-radius: 10px; background: #f1f5f9; border: 1px solid #e2e8f0;
+}
+.trace-no-photo {
+  display: grid; place-items: center; width: 100%; aspect-ratio: 1;
+  border-radius: 10px; background: #f8fafc;
+  border: 1px dashed #cbd5e1; color: #94a3b8;
+}
+.trace-upload {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 9px;
+  font-size: 12.5px; cursor: pointer; background: #fff; color: #334155;
+}
+.trace-upload:hover { background: #f8fafc; }
+.trace-upload input { display: none; }
+
+.trace-body { min-width: 0; }
+.trace-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap; margin-bottom: 4px;
+}
+.trace-head h2 { margin: 0 0 3px; font-size: 17px; color: #0f172a; }
+.trace-head p { margin: 0; font-size: 12.5px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+
+.trace-total { text-align: right; line-height: 1.15; }
+.trace-total strong {
+  display: block; font-size: 26px; color: #1b7a60; font-variant-numeric: tabular-nums;
+}
+.trace-total span { font-size: 11.5px; color: #64748b; }
+
+.trace-section {
+  display: flex; align-items: center; gap: 6px;
+  margin: 16px 0 7px; font-size: 12px; font-weight: 700;
+  letter-spacing: .05em; text-transform: uppercase; color: #64748b;
+}
+
+/* --- donde esta --- */
+
+.trace-locations { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.trace-locations li {
+  display: flex; justify-content: space-between; gap: 14px; align-items: baseline;
+  font-size: 14px; padding: 6px 10px; background: #f8fafc; border-radius: 8px;
+}
+.trace-module {
+  margin-left: 7px; padding: 1px 6px; border-radius: 999px;
+  background: #e2e8f0; color: #475569; font-size: 10.5px;
+  font-style: normal; text-transform: uppercase; letter-spacing: .04em;
+}
+
+/* --- que le paso --- */
+
+.trace-history { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.trace-history li {
+  display: flex; align-items: baseline; gap: 6px;
+  padding: 6px 11px; border-radius: 9px; font-size: 13px;
+  background: #f1f5f9; border-left: 3px solid #cbd5e1;
+}
+.trace-history li strong { font-size: 15px; }
+.trace-history li em { font-style: normal; font-size: 11.5px; opacity: .7; }
+.trace-history li.ok    { background: #f0fdf4; border-left-color: #1b7a60; color: #14532d; }
+.trace-history li.info  { background: #eff6ff; border-left-color: #2563eb; color: #1e3a8a; }
+.trace-history li.warn  { background: #fffbeb; border-left-color: #b45309; color: #78350f; }
+.trace-history li.crit  { background: #fef2f2; border-left-color: #b91c1c; color: #991b1b; }
+.trace-history li.muted { color: #475569; }
+
+/* --- piezas --- */
+
+.trace-assets { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.trace-assets li {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  font-size: 13.5px; padding: 6px 10px; background: #f8fafc; border-radius: 8px;
+}
+.trace-holder { font-weight: 600; color: #334155; }
+
+.trace-chip {
+  padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700;
+  white-space: nowrap;
+}
+.trace-chip.ok    { background: #dcfce7; color: #14532d; }
+.trace-chip.info  { background: #dbeafe; color: #1e3a8a; }
+.trace-chip.warn  { background: #fef3c7; color: #78350f; }
+.trace-chip.crit  { background: #fee2e2; color: #991b1b; }
+.trace-chip.muted { background: #f1f5f9; color: #64748b; }
+
+.trace-last { margin: 14px 0 0; font-size: 12.5px; }
+
+.trace-page :focus-visible { outline: 2px solid #1b7a60; outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .trace-page * { transition: none !important; animation: none !important; }
+}
+
+/* Enlace a las acciones de la pieza. Discreto: la pantalla es para localizar,
+   y el enlace es la salida hacia donde se actua. */
+.trace-manage{margin-left:auto;font-size:12.5px;color:#1b7a60;text-decoration:none;font-weight:600}
+.trace-manage:hover{text-decoration:underline}

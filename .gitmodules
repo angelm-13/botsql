@@ -4,5 +4,5 @@
 	branch = plantilla-base
 [submodule "modules/pos"]
 	path = modules/pos
-	url = https://github.com/Tyakxa/demo_pos.git
-	branch = demo-mode
+	url = https://github.com/Tyakxa/POS.git
+	branch = initAngm

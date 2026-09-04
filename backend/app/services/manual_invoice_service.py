@@ -265,6 +265,11 @@ def create_manual_invoice(payload: dict, user_data: dict) -> dict:
             tax_rate=_decimal(payload.get('iva_rate', payload.get('tax_rate', 16)), 'iva_rate'),
             commercial_terms=str(payload.get('commercial_terms') or '')[:500] or None,
             manual_capture=True,
+            # De que venta nace, cuando no nace aqui. Se fija al crear y no
+            # despues: una factura que existio un instante sin su origen es una
+            # factura que en ese instante habria movido el inventario.
+            source_module=str(payload.get('source_module') or '').strip() or None,
+            source_reference=str(payload.get('source_reference') or '').strip()[:80] or None,
         )
         db.add(invoice)
         db.flush()
