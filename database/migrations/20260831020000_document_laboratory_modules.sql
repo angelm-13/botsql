@@ -192,68 +192,29 @@ WHERE EXISTS (SELECT 1 FROM "user")
       WHERE current_field.table_name = entity.table_name AND current_field.field_name = columns.column_name
   );
 
-INSERT INTO entity_permission (
-    id_permission, entity_name, control_type, menu_location, menu_group,
-    menu_group_icon, menu_label, menu_order, created_by, creation_date, last_update_date
-)
-SELECT permission.id_permission, entity.entity_name,
-       CASE
-           WHEN LOWER(permission.permission_description) LIKE '%admin%' THEN 15
-           WHEN entity.entity_name IN ('document', 'document_version', 'document_relation', 'laboratory_equipment', 'laboratory_service_order') THEN 7
-           ELSE 2
-       END,
-       CASE WHEN entity.entity_name IN ('document', 'laboratory_equipment', 'laboratory_service_order') THEN 'sidebar' ELSE 'hidden' END,
-       -- El grupo depende de la entidad. Estaba fijo en 'Laboratorio' para las
-       -- siete filas, asi que las cuatro de documentos quedaban archivadas
-       -- dentro de Laboratorio: dos modulos distintos bajo un solo encabezado.
-       CASE WHEN entity.entity_name IN ('document', 'document_category',
-                                        'document_version', 'document_relation')
-            THEN 'Documentos' ELSE 'Laboratorio' END,
-       CASE WHEN entity.entity_name IN ('document', 'document_category',
-                                        'document_version', 'document_relation')
-            THEN 'file-text' ELSE 'flask-conical' END,
-       entity.menu_label, entity.menu_order,
-       COALESCE((SELECT MIN(id_user) FROM "user"), 1), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-FROM permission
-CROSS JOIN (VALUES
-    ('document', 'Documentos', 610),
-    ('document_category', 'Categorias documentales', 611),
-    ('document_version', 'Versiones documentales', 612),
-    ('document_relation', 'Relaciones documentales', 613),
-    ('laboratory_equipment', 'Equipos de laboratorio', 620),
-    ('laboratory_service_order', 'Ordenes de servicio', 621),
-    ('laboratory_service_order_status_history', 'Historial de ordenes', 622)
-) AS entity(entity_name, menu_label, menu_order)
-WHERE EXISTS (SELECT 1 FROM "user")
--- Inserta o revive, en vez de saltarse la fila si ya existe.
+-- Los permisos de estas siete entidades NO se siembran aqui. Los siembra
+-- 20260901000000_module_permission_matrix_licensed.sql a partir de los
+-- modulos `documentos` y `laboratorio` de app/modules/registry.py, que es la
+-- unica fuente de verdad de a que modulo pertenece una entidad.
 --
--- La guarda original era `NOT EXISTS ... AND deletion_date IS NULL`, y eso
--- fallaba de dos maneras segun el estado de la base:
+-- Este archivo si los sembraba, con un INSERT crudo para los 12 perfiles, y
+-- eso rompia el arranque del backend al segundo despliegue: la matriz corre
+-- antes (orden lexicografico), da de baja logica todo `entity_permission` y
+-- resiembra solo lo declarado en el registro. Como estas entidades no estaban
+-- declaradas, sus filas quedaban borradas pero presentes, y el INSERT de aqui
+-- -protegido solo por `deletion_date IS NULL`- chocaba contra
+-- uq_entity_permission_permission_entity (id_permission, entity_name):
 --
---   * con una fila borrada logicamente, la guarda decia "no existe" y el
---     INSERT violaba `uq_entity_permission_scope`, que es UNIQUE
---     (id_permission, entity_name) y no distingue borrado logico. Como el
---     initContainer de k8s reaplica todas las migraciones en cada arranque del
---     pod, eso detiene el arranque;
+--   ERROR: duplicate key value violates unique constraint
+--   "uq_entity_permission_permission_entity"
+--   DETAIL: Key (id_permission, entity_name)=(1, document) already exists.
 --
---   * quitando el filtro de `deletion_date` se evitaba el choque, pero
---     entonces una fila borrada logicamente bloqueaba la resiembra para
---     siempre y el modulo no volvia a aparecer -medido: 12 filas de cada
---     entidad, todas borradas, y Documentos y Laboratorio invisibles en el
---     menu-. Se cambiaba un fallo ruidoso por uno silencioso, que es peor.
+-- Con ON_ERROR_STOP=1 eso aborta el initContainer db-migrate, asi que el
+-- backend no arrancaba: CrashLoopBackOff en el primer reinicio del pod.
 --
--- `ON CONFLICT ... DO UPDATE` cubre los dos casos: si la fila esta viva se
--- refresca su navegacion, y si estaba borrada logicamente se revive. El estado
--- final no depende de por cuantas resiembras haya pasado la base.
---
--- Los bits de permiso NO se pisan: si alguien recorto el acceso de un rol desde
--- el gestor, una reaplicacion de esta migracion no debe devolverselo.
--- El gestor manda: no se toca la fila que ya existe.
---
--- Antes reactivaba la fila de baja. Bajo la regla nueva eso devolveria un
--- acceso que el administrador retiro a proposito: desde el cambio, una baja
--- significa que alguien la quito, no residuo del resembrado -los residuos los
--- limpia 20260901000000 antes de sembrar-.
-ON CONFLICT (id_permission, entity_name) DO NOTHING;
+-- El timestamp de este archivo es deliberadamente anterior al de la matriz:
+-- las filas de `field` que se insertan arriba tienen que existir cuando la
+-- matriz deriva `nm_field_permission`, o los permisos de campo llegarian un
+-- arranque tarde.
 
 COMMIT;

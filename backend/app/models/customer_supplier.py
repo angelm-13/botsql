@@ -41,6 +41,13 @@ class CustomerSupplier(Base):
     credit_limit: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0, server_default='0')
     logistics_notes: Mapped[object] = mapped_column(Text, nullable=True)
     is_principal: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text('false'))
+    # Estatus del CSD de este emisor ante el PAC multiemisor. `pac_config` es
+    # una sola cuenta compartida (no una fila por empresa), asi que el
+    # certificado se registra por RFC aqui, no alla.
+    csd_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default='none', server_default='none',
+    )
+    csd_uploaded_at: Mapped[object] = mapped_column(DateTime, nullable=True)
     id_user: Mapped[int] = mapped_column(Integer, ForeignKey('user.id_user'), nullable=False)
     created_by: Mapped[int] = mapped_column(Integer, nullable=False)
     creation_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now())
@@ -72,6 +79,8 @@ class CustomerSupplier(Base):
             'credit_limit': to_json_value(self.credit_limit),
             'logistics_notes': to_json_value(self.logistics_notes),
             'is_principal': to_json_value(self.is_principal),
+            'csd_status': to_json_value(self.csd_status),
+            'csd_uploaded_at': to_json_value(self.csd_uploaded_at),
             'id_user': to_json_value(self.id_user),
             'created_by': to_json_value(self.created_by),
             'creation_date': to_json_value(self.creation_date),

@@ -11,11 +11,21 @@ from app.utils.auth import SECRET_KEY
 from app.utils.errors import AppError
 
 
-VALID_PROVIDERS = {"fake", "facturama_sandbox", "facturama"}
+VALID_PROVIDERS = {
+    "fake", "facturama_sandbox", "facturama",
+    "facturama_multiemisor_sandbox", "facturama_multiemisor",
+}
+
+# Misma cuenta compartida de Facturama en los dos modos multiemisor; lo unico
+# que cambia es que el timbrado envia un nodo "Issuer" por RFC en vez de
+# NameId (ver FacturamaMultiemisorProvider en stamping.py).
+PROVEEDORES_PRODUCCION = {"facturama", "facturama_multiemisor"}
 
 
 def default_base_url(provider: str) -> str:
-    return "https://api.facturama.mx" if provider == "facturama" else "https://apisandbox.facturama.mx"
+    if provider in PROVEEDORES_PRODUCCION:
+        return "https://api.facturama.mx"
+    return "https://apisandbox.facturama.mx"
 
 
 def _encryption_key() -> bytes:

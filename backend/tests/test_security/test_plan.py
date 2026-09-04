@@ -116,6 +116,33 @@ class TestQueDeclaraElPlan(unittest.TestCase):
         finally:
             reiniciar_plan()
 
+    def test_the_deployment_label_travels_alone(self):
+        """No hace falta el JSON completo del plan solo para poner un nombre."""
+        reiniciar_plan()
+        try:
+            with patch.dict(os.environ, {"DEPLOYMENT_LABEL": "Adser"}, clear=False):
+                os.environ.pop("TYAKXA_PLAN", None)
+                os.environ.pop("LICENSED_MODULES", None)
+                plan = plan_actual()
+                self.assertEqual("Adser", plan.cliente)
+                # Una etiqueta no es un control de acceso: no recorta modulos.
+                self.assertTrue(plan.completo)
+        finally:
+            reiniciar_plan()
+
+    def test_a_signed_plan_wins_over_the_deployment_label(self):
+        """Cuando llegue la licencia firmada con su propio cliente, ese manda."""
+        reiniciar_plan()
+        try:
+            with patch.dict(os.environ, {
+                "TYAKXA_PLAN": '{"cliente": "Nombre legal SA de CV", "modulos": ["inventario"]}',
+                "DEPLOYMENT_LABEL": "Apodo interno",
+            }):
+                plan = plan_actual()
+                self.assertEqual("Nombre legal SA de CV", plan.cliente)
+        finally:
+            reiniciar_plan()
+
 
 class TestElPlanManda(unittest.TestCase):
     """El plan por encima del rol, en los dos guardias."""

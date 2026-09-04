@@ -8,12 +8,15 @@ import { moduleSectionsEnPlan } from "./moduleSections";
 
 const navItems = [
   { path: "/", key: "common.dashboard", exact: true },
-  // Los dos vivian aparte: MFA fijo arriba del menu y Permisos por rol dentro
-  // del engrane del encabezado. Con tres sitios distintos donde configurar
-  // cosas, encontrar una opcion era cuestion de acordarse de cual de los tres.
-  // Ahora los dos entran en Configuracion como cualquier otra pantalla.
-  { path: "/mfa-setup", key: "common.mfa_setup", group: "Configuracion", groupIcon: "settings", location: "sidebar", order: 910 },
-  { path: "/role_permissions", key: "common.role_permission_manager", adminOnly: true, location: "topbar" },
+  // Configuracion vivia repartida en tres sitios: MFA fijo arriba del menu,
+  // Gestor de roles y Perfiles fijos en la barra superior (a mano, sin pasar
+  // por el gestor de roles), y Usuarios/Departamentos/etc. en el menu
+  // vertical. Encontrar una opcion era acordarse de cual de los tres la
+  // tenia. Los tres entran ahora al engrane -la misma ubicacion que el gestor
+  // de roles ya ofrece por rol y por entidad- junto con lo que la base tenga
+  // agrupado como "Configuracion" (ver 20260903000000_configuracion_dentro_del_engrane.sql).
+  { path: "/mfa-setup", key: "common.mfa_setup", group: "Configuracion", groupIcon: "settings", location: "settings", order: 910 },
+  { path: "/role_permissions", key: "common.role_permission_manager", adminOnly: true, groupIcon: "settings", location: "settings" },
   { path: "/bank", key: "menu.bank" },
   { path: "/bank_account", key: "menu.bank_account" },
   { path: "/brand", key: "menu.brand" },
@@ -24,7 +27,11 @@ const navItems = [
   { path: "/logistica/contratos", label: "Contratos", entityName: "logistics_contract", group: "CRM", groupIcon: "users", location: "sidebar", order: 40 },
   { path: "/logistica/tarifas", label: "Tarifas", entityName: "logistics_rate", group: "CRM", groupIcon: "users", location: "sidebar", order: 50 },
   { path: "/department", key: "menu.department" },
-  { path: "/event_log", key: "menu.event_log" },
+  // Tecnica, solo la cuenta de arranque (ver `technicalPaths`). Sin fila en
+  // `entity_permission` -es SOLO_ARRANQUE en el registro-, asi que sin
+  // ubicacion explicita caia al valor por defecto ("sidebar") y quedaba en el
+  // menu vertical pese al resto de Configuracion ya movido al engrane.
+  { path: "/event_log", key: "menu.event_log", groupIcon: "settings", location: "settings" },
   { path: "/field", key: "menu.field" },
   { path: "/fiscal_account", key: "menu.fiscal_account" },
   { path: "/incident", key: "menu.incident" },
@@ -71,7 +78,7 @@ const navItems = [
   { path: "/restaurant/cashier", key: "menu.restaurant_cashier", label: "Caja", entityName: "restaurant_cashier" },
   { path: "/restaurant/kitchen", key: "menu.restaurant_kitchen", label: "Cocina", entityName: "restaurant_kitchen" },
   { path: "/restaurant/admin", key: "menu.restaurant_admin", label: "Admin", entityName: "restaurant_admin" },
-  { path: "/permission", key: "menu.permission", location: "topbar" },
+  { path: "/permission", key: "menu.permission", groupIcon: "settings", location: "settings" },
   { path: "/product", key: "menu.product" },
   { path: "/product_family", key: "menu.product_family" },
   { path: "/proyect", key: "menu.proyect" },
@@ -91,7 +98,11 @@ const navItems = [
   { path: "/ticket", key: "menu.ticket" },
   { path: "/unit", key: "menu.unit" },
   { path: "/user", key: "menu.user" },
-  { path: "/user_mfa", key: "menu.user_mfa" }
+  // Misma razon que /event_log: tecnica, sin fila propia, caia al menu
+  // vertical por defecto. No confundir con /mfa-setup ("Configurar MFA"),
+  // la pantalla donde el propio usuario activa su MFA -esta es la de
+  // administracion, para ver el estado de MFA de otros usuarios.
+  { path: "/user_mfa", key: "menu.user_mfa", groupIcon: "settings", location: "settings" }
 ];
 
 const quickNavItems = [
@@ -179,6 +190,11 @@ export default function Shell() {
   // mientras tanto se muestran todos, porque un menu que aparece a trozos se
   // lee como un sistema roto y el backend niega igual lo que no este en el plan.
   const [modulosDelPlan, setModulosDelPlan] = useState([]);
+  // Nombre o abreviacion del cliente (DEPLOYMENT_LABEL / TYAKXA_PLAN en el
+  // servidor). Sin esto, todas las instalaciones se ven identicas y es facil
+  // operar la del cliente equivocado por error -el motivo real de agregarlo,
+  // no solo cosmetico.
+  const [clienteDelPlan, setClienteDelPlan] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => (
     window.matchMedia("(max-width: 800px)").matches || localStorage.getItem("tyakxa-sidebar-collapsed") === "true"
   ));
@@ -216,12 +232,23 @@ export default function Shell() {
   useEffect(() => {
     let vigente = true;
     deploymentPlan()
-      .then((plan) => { if (vigente) setModulosDelPlan(plan?.modulos || []); })
+      .then((plan) => {
+        if (!vigente) return;
+        setModulosDelPlan(plan?.modulos || []);
+        setClienteDelPlan(String(plan?.cliente || "").trim());
+      })
       // Si no se puede leer el plan no se esconde nada: el backend sigue
       // negando lo que no corresponde.
       .catch(() => {});
     return () => { vigente = false; };
   }, []);
+
+  useEffect(() => {
+    // El titulo de la pestana es lo primero que se ve al elegir entre varias
+    // abiertas -el momento real en que se opera el cliente equivocado por
+    // error-, asi que es donde mas rinde poner el nombre.
+    document.title = clienteDelPlan ? `TYAKXA · ${clienteDelPlan}` : "TYAKXA";
+  }, [clienteDelPlan]);
 
   useEffect(() => {
     function cerrarEngrane(evento) {
@@ -411,7 +438,17 @@ export default function Shell() {
       </button>
       <main className="main">
         <header className="topbar">
-          <div><p className="eyebrow">ERP · CRM · SCM</p><h1>TYAKXA</h1></div>
+          <div>
+            <p className="eyebrow">ERP · CRM · SCM</p>
+            <div className="brand-title-row">
+              <h1>TYAKXA</h1>
+              {/* De que cliente es esta instancia -DEPLOYMENT_LABEL en el
+                  servidor-. Todas las instalaciones se ven identicas sin
+                  esto, y es facil operar la del cliente equivocado por error;
+                  el cliente lo ve tambien, es el nombre de su propia empresa. */}
+              {clienteDelPlan && <span className="deployment-badge">{clienteDelPlan}</span>}
+            </div>
+          </div>
           <div className="topbar-actions">
             <span className="session-pill">{t("common.secure_session", "Sesión protegida")}{currentUser?.username ? ` · ${currentUser.username}` : ""}</span>
             <LanguagePicker />

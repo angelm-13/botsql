@@ -271,6 +271,11 @@ CAPACIDADES = (
     Capacidad("restaurant_admin", "Admin del restaurante", "restaurante", bits=TOTAL, menu="sidebar"),
     Capacidad("pos_terminal", "Caja del punto de venta", "pos", bits=CAPTURA, menu="sidebar"),
     Capacidad("pos_admin", "Admin del punto de venta", "pos", bits=TOTAL, menu="sidebar"),
+    # Se vende aparte de Facturacion: un cliente puede tener facturacion sin
+    # multiemisor. licencia_independiente=True hace que necesite su propia
+    # clave en LICENSED_MODULES aunque el modulo padre ya este licenciado.
+    Capacidad("multiemisor_csd", "Multiemisor y CSD", "facturacion", bits=TOTAL, menu="sidebar",
+              licencia_independiente=True),
 )
 
 
@@ -299,9 +304,16 @@ class Rol:
 #     un rol solo consulta inventario, darle `inventory_adjustment` es una fila
 #     que no sirve y que hace creer que puede ajustar.
 ROLES = (
+    # `documentos` y `laboratorio` solo los recibe Administrator por ahora: los
+    # modulos se integraron desde la rama tny_docs, que los concedia a los 12
+    # perfiles por igual -incluidos Mesero y Cocina-, y que perfiles los operan
+    # de verdad es una decision de negocio que todavia no se tomo. Ampliarlo es
+    # agregar la clave a los roles que correspondan; dejarlo abierto era lo que
+    # hacia que un mesero pudiera leer expedientes de empleados.
     Rol(1, "Administrator", {
         "facturacion": TOTAL, "inventario": TOTAL, "operaciones": TOTAL,
         "logistica": TOTAL, "restaurante": TOTAL, "pos": TOTAL, "crm": TOTAL, "rh": TOTAL,
+        "documentos": TOTAL, "laboratorio": TOTAL,
         "configuracion": TOTAL, "seguridad": TOTAL,
     }, [c.clave for c in CAPACIDADES]),
 

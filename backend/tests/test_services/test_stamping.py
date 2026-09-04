@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import unittest
+from io import BytesIO
+from unittest.mock import patch
 
 import jwt
 
@@ -9,7 +11,10 @@ from app.models.session import transaction_context
 from app.services.manual_invoice_service import create_manual_invoice
 from app.services.cfdi_xml import parse_cfdi
 from app.services.invoice_artifacts import invoice_xml_path
-from app.services.stamping import FacturamaSandboxProvider, FakeStampingProvider, StampingResult
+from app.services.invoice_artifacts import build_fake_cfdi_xml
+from app.services.stamping import (
+    FacturamaMultiemisorProvider, FacturamaSandboxProvider, FakeStampingProvider, StampingResult,
+)
 from app.services.stamping import stamp_invoice
 from app.utils.auth import SECRET_KEY
 from app.utils.errors import AppError
@@ -84,11 +89,48 @@ class TestStampingProviders(unittest.TestCase):
         self.assertEqual("80101500", body["Items"][0]["ProductCode"])
         self.assertEqual("190.80", body["Items"][0]["Total"])
 
+    def test_facturama_multiemisor_sends_an_issuer_block_instead_of_name_id(self):
+        provider = FacturamaMultiemisorProvider(
+            base_url="https://apisandbox.facturama.mx", username="demo", password="secret",
+        )
+
+        body = provider.build_request_body({
+            "issuer": {"rfc": "AAA010101AAA", "name": "Emisor", "tax_regime": "601", "postal_code": "37000"},
+            "receiver": {"rfc": "BBB010101BBB", "name": "Cliente", "tax_regime": "601", "postal_code": "37100", "cfdi_use": "G03"},
+            "payment_form": "03", "payment_method": "PUE", "currency": "MXN", "cfdi_type": "I",
+            "concepts": [],
+        })
+
+        self.assertEqual({"Rfc": "AAA010101AAA", "Name": "Emisor", "FiscalRegime": "601"}, body["Issuer"])
+        self.assertEqual("37000", body["ExpeditionPlace"], "usa el CP del emisor, no una config global de cuenta")
+        self.assertNotIn("NameId", body, "NameId es del perfil de la cuenta API Web, no aplica en multiemisor")
+
+    def test_facturama_multiemisor_uses_the_api_lite_paths(self):
+        provider = FacturamaMultiemisorProvider(
+            base_url="https://apisandbox.facturama.mx", username="demo", password="secret",
+        )
+
+        self.assertEqual("/api-lite/3/cfdis", provider.CFDIS_PATH)
+        self.assertEqual("/api-lite/csds", provider.CSDS_PATH)
+
 
 class CapturingProvider(FakeStampingProvider):
     def stamp(self, payload, idempotency_key):
         self.payload = payload
         return super().stamp(payload, idempotency_key)
+
+
+class CapturingMultiemisorProvider(FacturamaMultiemisorProvider):
+    """Como CapturingProvider, pero arma el body real -- sin red -- para
+    poder inspeccionar el bloque Issuer que de verdad se mandaria al PAC."""
+
+    def __init__(self):
+        super().__init__(base_url="https://apisandbox.facturama.mx", username="demo", password="secret")
+
+    def stamp(self, payload, idempotency_key):
+        self.request_body = self.build_request_body(payload)
+        stamp_uuid, xml = build_fake_cfdi_xml(payload)
+        return StampingResult("stamped", stamp_uuid, xml=xml)
 
 
 class TestStampInvoice(BackendTestCase):
@@ -139,6 +181,34 @@ class TestStampInvoice(BackendTestCase):
             self.assertEqual(invoice.folio_fiscal, stored_cfdi["uuid"])
             self.assertEqual(invoice.no_certificado_sat, "30001000000400000002")
             self.assertIsNotNone(invoice.certification_date)
+
+    def test_multiemisor_sends_a_distinct_issuer_block_per_invoice(self):
+        """Multiemisor: dos facturas con emisor distinto no deben confundirse."""
+        with transaction_context() as db:
+            db.add(CustomerSupplier(
+                id_customer_supplier=11, name="Otro Emisor", tax_id="CCC010101CCC",
+                postal_code="44100", fiscal_type="601", type="supplier", id_user=1, created_by=1,
+            ))
+        invoice_a = self._create_invoice()  # emisor 10, AAA010101AAA
+        invoice_b = create_manual_invoice({
+            "id_proyect": 30, "id_customer_supplier": 20, "id_issuer_customer_supplier": 11,
+            "id_status": 40, "forma_pago": "03", "metodo_pago": "PUE", "uso_cfdi": "G03",
+            "concepts": [{
+                "description": "Servicio demo", "quantity": 1, "unit_price": 100,
+                "sat_product_key": "80101500", "sat_unit_key": "E48",
+            }],
+        }, {"id_user": 1, "id_proyect": 30})["invoice"]["id_invoice"]
+
+        provider_a = CapturingMultiemisorProvider()
+        provider_b = CapturingMultiemisorProvider()
+        stamp_invoice(invoice_a, "multi-a", {"id_user": 1, "id_proyect": 30}, provider_a)
+        stamp_invoice(invoice_b, "multi-b", {"id_user": 1, "id_proyect": 30}, provider_b)
+
+        self.assertEqual("AAA010101AAA", provider_a.request_body["Issuer"]["Rfc"])
+        self.assertEqual("CCC010101CCC", provider_b.request_body["Issuer"]["Rfc"])
+        self.assertNotEqual(
+            provider_a.request_body["Issuer"], provider_b.request_body["Issuer"],
+        )
 
     def test_invalid_fiscal_data_does_not_call_provider(self):
         invoice_id = self._create_invoice()
@@ -364,3 +434,100 @@ class TestStampingOperationDiagnostics(BackendTestCase):
         self.assertEqual(operation["status"], "uncertain")
         with transaction_context() as db:
             self.assertEqual(db.get(Invoice, invoice_id).invoice_status, "pendiente")
+
+
+class TestCustomerSupplierCsdUpload(BackendTestCase):
+    """POST /customer_supplier/<id>/csd -- registro del CSD en la cuenta multiemisor."""
+
+    def setUp(self):
+        super().setUp()
+        from app.services.pac_config_service import save_config
+
+        with transaction_context() as db:
+            db.add(CustomerSupplier(
+                id_customer_supplier=50, name="Emisor CSD", tax_id="DDD010101DDD",
+                postal_code="37000", fiscal_type="601", type="supplier", id_user=1, created_by=1,
+            ))
+        save_config({
+            "provider": "facturama_multiemisor",
+            "facturama_username": "demo",
+            "facturama_password": "secret",
+        })
+        self.token = jwt.encode({"id_user": 1, "is_superuser": True}, SECRET_KEY, algorithm="HS256")
+
+    def _upload(self, id_customer_supplier=50, include_files=True):
+        data = {"password": "clave-privada"}
+        if include_files:
+            data["cer"] = (BytesIO(b"fake-cer"), "emisor.cer")
+            data["key"] = (BytesIO(b"fake-key"), "emisor.key")
+        return self.client.post(
+            f"/customer_supplier/{id_customer_supplier}/csd",
+            data=data,
+            headers={"Authorization": f"Bearer {self.token}"},
+            content_type="multipart/form-data",
+        )
+
+    def test_a_successful_upload_marks_the_csd_as_registered(self):
+        with patch("app.services.stamping.urlopen") as mock_urlopen:
+            mock_urlopen.return_value.__enter__.return_value = object()
+            response = self._upload()
+
+        self.assertEqual(200, response.status_code)
+        data = self.json(response)
+        self.assertTrue(data["ok"])
+        self.assertEqual("uploaded", data["data"]["csd_status"])
+        with transaction_context() as db:
+            customer_supplier = db.get(CustomerSupplier, 50)
+            self.assertEqual("uploaded", customer_supplier.csd_status)
+            self.assertIsNotNone(customer_supplier.csd_uploaded_at)
+
+    def test_a_rejected_upload_marks_the_csd_as_error(self):
+        from urllib.error import HTTPError
+
+        with patch("app.services.stamping.urlopen") as mock_urlopen:
+            mock_urlopen.side_effect = HTTPError(
+                "https://apisandbox.facturama.mx/api-lite/csds", 400, "Bad Request", {},
+                BytesIO(b"CSD invalido"),
+            )
+            response = self._upload()
+
+        self.assertEqual(502, response.status_code)
+        data = self.json(response)
+        self.assertFalse(data["ok"])
+        self.assertEqual("error", data["data"]["csd_status"])
+        with transaction_context() as db:
+            customer_supplier = db.get(CustomerSupplier, 50)
+            self.assertEqual("error", customer_supplier.csd_status)
+            self.assertIsNone(customer_supplier.csd_uploaded_at)
+
+    def test_missing_files_is_rejected_before_calling_the_provider(self):
+        with patch("app.services.stamping.urlopen") as mock_urlopen:
+            response = self._upload(include_files=False)
+
+        mock_urlopen.assert_not_called()
+        self.assertEqual(400, response.status_code)
+        self.assertEqual("customer_supplier.csd_files_missing", self.json(response)["error_key"])
+
+    def test_a_customer_supplier_without_rfc_is_rejected(self):
+        with transaction_context() as db:
+            db.add(CustomerSupplier(
+                id_customer_supplier=51, name="Sin RFC", tax_id=None,
+                type="supplier", id_user=1, created_by=1,
+            ))
+
+        response = self._upload(id_customer_supplier=51)
+
+        self.assertEqual(400, response.status_code)
+        self.assertEqual("customer_supplier.rfc_missing", self.json(response)["error_key"])
+
+    def test_a_non_admin_actor_is_rejected(self):
+        token = jwt.encode({"id_user": 2, "is_superuser": False, "user_type": "user"}, SECRET_KEY, algorithm="HS256")
+
+        response = self.client.post(
+            "/customer_supplier/50/csd",
+            data={"cer": (BytesIO(b"x"), "a.cer"), "key": (BytesIO(b"x"), "a.key")},
+            headers={"Authorization": f"Bearer {token}"},
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(403, response.status_code)
