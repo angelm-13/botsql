@@ -8,12 +8,15 @@ import { moduleSectionsEnPlan } from "./moduleSections";
 
 const navItems = [
   { path: "/", key: "common.dashboard", exact: true },
-  // Los dos vivian aparte: MFA fijo arriba del menu y Permisos por rol dentro
-  // del engrane del encabezado. Con tres sitios distintos donde configurar
-  // cosas, encontrar una opcion era cuestion de acordarse de cual de los tres.
-  // Ahora los dos entran en Configuracion como cualquier otra pantalla.
-  { path: "/mfa-setup", key: "common.mfa_setup", group: "Configuracion", groupIcon: "settings", location: "sidebar", order: 910 },
-  { path: "/role_permissions", key: "common.role_permission_manager", adminOnly: true, location: "topbar" },
+  // Configuracion vivia repartida en tres sitios: MFA fijo arriba del menu,
+  // Gestor de roles y Perfiles fijos en la barra superior (a mano, sin pasar
+  // por el gestor de roles), y Usuarios/Departamentos/etc. en el menu
+  // vertical. Encontrar una opcion era acordarse de cual de los tres la
+  // tenia. Los tres entran ahora al engrane -la misma ubicacion que el gestor
+  // de roles ya ofrece por rol y por entidad- junto con lo que la base tenga
+  // agrupado como "Configuracion" (ver 20260903000000_configuracion_dentro_del_engrane.sql).
+  { path: "/mfa-setup", key: "common.mfa_setup", group: "Configuracion", groupIcon: "settings", location: "settings", order: 910 },
+  { path: "/role_permissions", key: "common.role_permission_manager", adminOnly: true, groupIcon: "settings", location: "settings" },
   { path: "/bank", key: "menu.bank" },
   { path: "/bank_account", key: "menu.bank_account" },
   { path: "/brand", key: "menu.brand" },
@@ -65,7 +68,7 @@ const navItems = [
   { path: "/restaurant/cashier", key: "menu.restaurant_cashier", label: "Caja", entityName: "restaurant_cashier" },
   { path: "/restaurant/kitchen", key: "menu.restaurant_kitchen", label: "Cocina", entityName: "restaurant_kitchen" },
   { path: "/restaurant/admin", key: "menu.restaurant_admin", label: "Admin", entityName: "restaurant_admin" },
-  { path: "/permission", key: "menu.permission", location: "topbar" },
+  { path: "/permission", key: "menu.permission", groupIcon: "settings", location: "settings" },
   { path: "/product", key: "menu.product" },
   { path: "/product_family", key: "menu.product_family" },
   { path: "/proyect", key: "menu.proyect" },
