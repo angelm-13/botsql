@@ -14,6 +14,7 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from app.services.invoice_catalogs import (
     CLAVE_PROD_SERV_PATTERN,
+    CLAVE_UNIDAD_FRECUENTES,
     CLAVE_UNIDAD_PATTERN,
     EXPORTACION,
     FORMA_PAGO,
@@ -376,9 +377,39 @@ def _validate_header(draft: InvoiceDraft, errors: list[str], warnings: list[str]
         errors.append("invoice.payment_conditions_too_long")
 
 
+def _claves_desconocidas(draft: InvoiceDraft) -> set[str]:
+    """Las ClaveProdServ del borrador que el catalogo del SAT no reconoce.
+
+    Antes solo se validaba el formato -ocho digitos-, asi que `00000000` pasaba
+    y la factura llegaba al PAC para que el PAC la rechazara. Medido:
+    `can_stamp = True` con una clave inventada.
+
+    Devuelve vacio si el catalogo no esta cargado: sin el no se puede afirmar
+    que una clave no exista. La importacion es un paso del despliegue -ver
+    `scripts/import_sat_catalog.py`- y hasta que corra, la validacion se queda
+    como estaba.
+    """
+    try:
+        from app.services.sat_catalog_service import claves_fuera_del_catalogo
+    except Exception:
+        # El validador tambien se usa sobre borradores fuera de una sesion de
+        # base. Si el catalogo no se puede consultar, se valida el formato y ya:
+        # dejar de poder timbrar por no poder leer el catalogo seria peor que
+        # el problema que resuelve.
+        return set()
+
+    try:
+        return claves_fuera_del_catalogo(
+            c.sat_product_key for c in draft.concepts if c.sat_product_key)
+    except Exception:
+        return set()
+
+
 def _validate_concepts(draft: InvoiceDraft, errors: list[str], warnings: list[str]) -> None:
     if not draft.concepts:
         errors.append("invoice.concepts_required")
+
+    desconocidas = _claves_desconocidas(draft)
 
     for index, concept in enumerate(draft.concepts):
         prefix = f"invoice.concepts.{index}"
@@ -394,10 +425,24 @@ def _validate_concepts(draft: InvoiceDraft, errors: list[str], warnings: list[st
             errors.append(f"{prefix}.sat_product_key_required")
         elif not CLAVE_PROD_SERV_PATTERN.match(concept.sat_product_key):
             errors.append(f"{prefix}.sat_product_key_invalid")
+        elif concept.sat_product_key in desconocidas:
+            # Ocho digitos con el formato correcto pero que no estan en
+            # c_ClaveProdServ. El PAC la rechaza; se detecta aqui para no
+            # gastar el viaje y para decir que corregir.
+            errors.append(f"{prefix}.sat_product_key_not_in_catalog")
         if not concept.sat_unit_key:
             errors.append(f"{prefix}.sat_unit_key_required")
         elif not CLAVE_UNIDAD_PATTERN.match(concept.sat_unit_key):
             errors.append(f"{prefix}.sat_unit_key_invalid")
+        elif concept.sat_unit_key.upper() not in CLAVE_UNIDAD_FRECUENTES:
+            # AVISO, no error, y a proposito.
+            #
+            # De c_ClaveUnidad no hay catalogo oficial en el repositorio -solo
+            # las veinte claves de uso frecuente-, asi que no se puede afirmar
+            # que una clave no exista: rechazar `KGM` por no estar en una lista
+            # curada seria rechazar una clave valida. Se avisa, que es todo lo
+            # que se puede sostener con los datos que hay.
+            warnings.append(f"{prefix}.sat_unit_key_not_in_frequent_list")
         if concept.discount < 0 or concept.discount > concept.amount:
             errors.append(f"{prefix}.discount_invalid")
 

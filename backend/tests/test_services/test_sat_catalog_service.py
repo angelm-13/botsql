@@ -274,7 +274,9 @@ class TestScoringHelpers(unittest.TestCase):
         self.assertEqual(["arrendamiento"], _tokenize("renta"))
 
 
-class TestCatalogImport(BackendTestCase):
+class CatalogImportTestCase(BackendTestCase):
+    """El CSV de prueba, para los casos que importan el catalogo."""
+
     HEADER = "c_ClaveProdServ,Descripción,Palabras similares\n"
 
     def _write_csv(self, body, preamble=""):
@@ -284,12 +286,16 @@ class TestCatalogImport(BackendTestCase):
         path.write_text(preamble + self.HEADER + body, encoding="utf-8")
         return path
 
+
+class TestCatalogImport(CatalogImportTestCase):
+
     def test_imports_rows_and_reports_counts(self):
         result = import_product_keys(self._write_csv(
             "43211500,Computadores,Computadoras\n30111601,Cemento,\n"
         ))
 
-        self.assertEqual({"created": 2, "updated": 0, "skipped": 0}, result)
+        self.assertEqual(
+            {"created": 2, "updated": 0, "unchanged": 0, "skipped": 0}, result)
         self.assertEqual({"loaded": True, "total": 2}, catalog_status())
 
     def test_skips_the_sat_preamble_before_the_headers(self):
@@ -308,7 +314,8 @@ class TestCatalogImport(BackendTestCase):
 
         result = import_product_keys(path)
 
-        self.assertEqual({"created": 0, "updated": 1, "skipped": 0}, result)
+        self.assertEqual(
+            {"created": 0, "updated": 1, "unchanged": 0, "skipped": 0}, result)
         self.assertEqual(1, catalog_status()["total"])
         self.assertEqual("Cemento gris", search_product_keys("cemento", limit=1)[0]["description"])
 
@@ -342,3 +349,50 @@ class TestCatalogImport(BackendTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestLaReimportacionNoReescribeLoIgual(CatalogImportTestCase):
+    """Reimportar el mismo archivo no puede tocar la tabla.
+
+    Medido antes: reimportar `c_ClaveProdServ.csv` sin cambios mandaba 52,514
+    UPDATE a la base -18 segundos y la tabla entera reescrita para dejarla
+    igual-. El catalogo se carga en cada despliegue, asi que ese coste se paga
+    en cada arranque y se multiplica por cada replica.
+
+    Lo que se fija es la cuenta que lo delata: las filas identicas se informan
+    como `unchanged` y no como `updated`.
+    """
+
+    def test_reimporting_the_same_file_changes_nothing(self):
+        path = self._write_csv("30111601,Cemento,cal\n43211500,Computadores,\n")
+        import_product_keys(path)
+
+        result = import_product_keys(path)
+
+        self.assertEqual(
+            {"created": 0, "updated": 0, "unchanged": 2, "skipped": 0}, result)
+        self.assertEqual(2, catalog_status()["total"])
+
+    def test_only_the_row_that_changed_is_updated(self):
+        path = self._write_csv("30111601,Cemento,cal\n43211500,Computadores,\n")
+        import_product_keys(path)
+        path.write_text(
+            self.HEADER + "30111601,Cemento gris,cal\n43211500,Computadores,\n",
+            encoding="utf-8")
+
+        result = import_product_keys(path)
+
+        self.assertEqual(
+            {"created": 0, "updated": 1, "unchanged": 1, "skipped": 0}, result)
+        self.assertEqual("Cemento gris",
+                         search_product_keys("cemento", limit=1)[0]["description"])
+
+    def test_a_row_that_only_changes_its_keywords_is_updated(self):
+        """Las palabras similares alimentan la busqueda: si cambian, se escriben."""
+        path = self._write_csv("30111601,Cemento,\n")
+        import_product_keys(path)
+        path.write_text(self.HEADER + "30111601,Cemento,mortero cal\n",
+                        encoding="utf-8")
+
+        self.assertEqual(1, import_product_keys(path)["updated"])
+        self.assertTrue(search_product_keys("mortero", limit=1))

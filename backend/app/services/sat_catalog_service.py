@@ -20,7 +20,7 @@ import re
 import unicodedata
 from pathlib import Path
 
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import case, func, insert, or_, select, update
 
 from app.models.sat_product_key import SatProductKey, normalize_search_text
 from app.models.session import transaction_context
@@ -324,6 +324,43 @@ def _detect_columns(headers) -> tuple[int, int, int | None]:
     return clave, description, keywords
 
 
+def catalogo_cargado() -> bool:
+    """Si el catalogo oficial esta en la base.
+
+    La importacion corre en una sola transaccion, asi que no hay estados a
+    medias: o esta el catalogo completo o no hay nada. Por eso basta con
+    preguntar si hay filas.
+    """
+    return catalog_status()["total"] > 0
+
+
+def claves_fuera_del_catalogo(claves) -> set[str]:
+    """De las claves que se pasan, las que el catalogo no reconoce.
+
+    Devuelve el conjunto vacio cuando el catalogo NO esta cargado. Es la parte
+    importante: sin catalogo no se puede afirmar que una clave no exista, y
+    rechazarla dejaria sin facturar a un despliegue que todavia no lo importo.
+    Sin catalogo se sigue validando el formato, como antes.
+
+    Con catalogo cargado si se puede afirmar: son las 52,514 claves que publica
+    el SAT, y una que no este ahi la rechaza el PAC. Detectarlo aqui ahorra el
+    viaje y da un error que dice que corregir.
+    """
+    pedidas = {
+        str(clave).strip()
+        for clave in (claves or [])
+        if str(clave or "").strip()
+    }
+    if not pedidas or not catalogo_cargado():
+        return set()
+
+    with transaction_context() as db:
+        conocidas = set(db.scalars(
+            select(SatProductKey.clave).where(SatProductKey.clave.in_(list(pedidas)))
+        ).all())
+    return pedidas - conocidas
+
+
 def import_product_keys(csv_path) -> dict:
     """Carga o actualiza el catalogo desde el CSV oficial del SAT.
 
@@ -353,8 +390,21 @@ def import_product_keys(csv_path) -> dict:
         with transaction_context() as db:
             # Se precargan las claves existentes para no consultar por fila:
             # con 52,000 renglones la diferencia es de minutos a segundos.
-            existing = {row.clave: row for row in db.scalars(select(SatProductKey)).all()}
-            created = updated = skipped = 0
+            #
+            # Como TUPLAS y no como objetos del ORM: hidratar 52,514 instancias
+            # para acabar comparando dos cadenas cuesta la mayor parte de los 15
+            # segundos que tardaba una reimportacion sin cambios, y este paso
+            # corre en cada despliegue.
+            existing = {
+                clave: (descripcion or "", palabras or "")
+                for clave, descripcion, palabras in db.execute(
+                    select(SatProductKey.clave, SatProductKey.description,
+                           SatProductKey.keywords)
+                ).all()
+            }
+            created = updated = skipped = unchanged = 0
+            por_insertar: list[dict] = []
+            por_actualizar: list[dict] = []
 
             for row in reader:
                 if len(row) <= clave_index:
@@ -368,21 +418,45 @@ def import_product_keys(csv_path) -> dict:
                 if keywords_index is not None and len(row) > keywords_index:
                     keywords = (row[keywords_index] or "").strip()
 
-                record = existing.get(clave)
-                if record:
-                    record.description = description
-                    record.keywords = keywords
-                    record.description_norm = normalize_search_text(description)
-                    record.keywords_norm = normalize_search_text(keywords)
+                previo = existing.get(clave)
+                if previo is not None:
+                    # Solo se escribe si algo cambio de verdad.
+                    #
+                    # Antes se reasignaban los cuatro campos siempre, asi que
+                    # reimportar el mismo archivo mandaba 52,514 UPDATE para
+                    # dejar la tabla igual: medido, 18 segundos y la tabla
+                    # entera reescrita. Con el catalogo cargandose en cada
+                    # despliegue eso no se sostiene.
+                    if previo == (description, keywords):
+                        unchanged += 1
+                        continue
+                    por_actualizar.append({
+                        "_clave": clave,
+                        "description": description,
+                        "keywords": keywords,
+                        "description_norm": normalize_search_text(description),
+                        "keywords_norm": normalize_search_text(keywords),
+                    })
                     updated += 1
                 else:
-                    db.add(SatProductKey(
-                        clave=clave,
-                        description=description,
-                        keywords=keywords,
-                        description_norm=normalize_search_text(description),
-                        keywords_norm=normalize_search_text(keywords),
-                    ))
+                    por_insertar.append({
+                        "clave": clave,
+                        "description": description,
+                        "keywords": keywords,
+                        "description_norm": normalize_search_text(description),
+                        "keywords_norm": normalize_search_text(keywords),
+                    })
                     created += 1
+
+            # En lote: 52,514 INSERT de uno en uno son 52,514 idas a la base.
+            if por_insertar:
+                db.execute(insert(SatProductKey), por_insertar)
+            for fila in por_actualizar:
+                db.execute(
+                    update(SatProductKey)
+                    .where(SatProductKey.clave == fila.pop("_clave"))
+                    .values(**fila)
+                )
             db.flush()
-            return {"created": created, "updated": updated, "skipped": skipped}
+            return {"created": created, "updated": updated,
+                    "unchanged": unchanged, "skipped": skipped}
