@@ -27,7 +27,11 @@ const navItems = [
   { path: "/logistica/contratos", label: "Contratos", entityName: "logistics_contract", group: "CRM", groupIcon: "users", location: "sidebar", order: 40 },
   { path: "/logistica/tarifas", label: "Tarifas", entityName: "logistics_rate", group: "CRM", groupIcon: "users", location: "sidebar", order: 50 },
   { path: "/department", key: "menu.department" },
-  { path: "/event_log", key: "menu.event_log" },
+  // Tecnica, solo la cuenta de arranque (ver `technicalPaths`). Sin fila en
+  // `entity_permission` -es SOLO_ARRANQUE en el registro-, asi que sin
+  // ubicacion explicita caia al valor por defecto ("sidebar") y quedaba en el
+  // menu vertical pese al resto de Configuracion ya movido al engrane.
+  { path: "/event_log", key: "menu.event_log", groupIcon: "settings", location: "settings" },
   { path: "/field", key: "menu.field" },
   { path: "/fiscal_account", key: "menu.fiscal_account" },
   { path: "/incident", key: "menu.incident" },
@@ -88,7 +92,11 @@ const navItems = [
   { path: "/ticket", key: "menu.ticket" },
   { path: "/unit", key: "menu.unit" },
   { path: "/user", key: "menu.user" },
-  { path: "/user_mfa", key: "menu.user_mfa" }
+  // Misma razon que /event_log: tecnica, sin fila propia, caia al menu
+  // vertical por defecto. No confundir con /mfa-setup ("Configurar MFA"),
+  // la pantalla donde el propio usuario activa su MFA -esta es la de
+  // administracion, para ver el estado de MFA de otros usuarios.
+  { path: "/user_mfa", key: "menu.user_mfa", groupIcon: "settings", location: "settings" }
 ];
 
 const quickNavItems = [
