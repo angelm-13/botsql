@@ -24,6 +24,31 @@ class NmIncidentProduct(Base):
     id_product: Mapped[int] = mapped_column(Integer, ForeignKey('product.id_product'), nullable=False)
     note: Mapped[object] = mapped_column(String(300), nullable=True)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Que pieza concreta, cuando el material se rastrea una por una.
+    #
+    # Nulo para lo fungible: nadie etiqueta trescientos tornillos, y ahi el
+    # renglon dice cantidad. Para la herramienta si hace falta, porque devolver
+    # "un desarmador" no cierra el prestamo del desarmador que se llevaron.
+    #
+    # Si hay pieza, la cantidad es 1: lo garantiza un CHECK en la base
+    # (ck_nm_incident_product_pieza_es_una).
+    id_inventory_asset: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('inventory_asset.id_inventory_asset'), nullable=True)
+    # De donde sale y donde queda alojado. El destino puede ser nulo: un vale
+    # que entrega herramienta a una persona no la deja en un sitio.
+    id_location_from: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('location.id_location'), nullable=True)
+    id_location_to: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('location.id_location'), nullable=True)
+    # Que le pasa a la existencia: `salida`, `entrada` o `traslado`. Es el dato
+    # que el libro de inventario necesita para saber si descontar, devolver o
+    # solo cambiar de sitio.
+    direction: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Desde cuando y hasta cuando. `close_date` ya decia cuando se cerro, pero
+    # sin `due_date` no se podia listar lo vencido, que es la razon de llevar
+    # vales.
+    start_date: Mapped[object] = mapped_column(DateTime, nullable=True)
+    due_date: Mapped[object] = mapped_column(DateTime, nullable=True)
     close_date: Mapped[object] = mapped_column(DateTime, nullable=True)
     created_by: Mapped[int] = mapped_column(Integer, nullable=False)
     creation_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now())
@@ -37,6 +62,12 @@ class NmIncidentProduct(Base):
             'id_product': to_json_value(self.id_product),
             'note': to_json_value(self.note),
             'quantity': to_json_value(self.quantity),
+            'id_inventory_asset': to_json_value(self.id_inventory_asset),
+            'id_location_from': to_json_value(self.id_location_from),
+            'id_location_to': to_json_value(self.id_location_to),
+            'direction': to_json_value(self.direction),
+            'start_date': to_json_value(self.start_date),
+            'due_date': to_json_value(self.due_date),
             'close_date': to_json_value(self.close_date),
             'created_by': to_json_value(self.created_by),
             'creation_date': to_json_value(self.creation_date),

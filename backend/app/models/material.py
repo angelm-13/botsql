@@ -24,6 +24,16 @@ class Material(Base):
     id_unit: Mapped[int] = mapped_column(Integer, ForeignKey('unit.id_unit'), nullable=False)
     id_brand: Mapped[int] = mapped_column(Integer, ForeignKey('brand.id_brand'), nullable=False)
     id_product_family: Mapped[int] = mapped_column(Integer, ForeignKey('product_family.id_product_family'), nullable=False)
+    # El tercer eje del material, junto a la familia y la marca:
+    # familia "Desarmadores" + tipo "Plano" + marca "Truper".
+    #
+    # Nullable porque los materiales que ya existen no tienen tipo y no se
+    # les puede inventar uno; se captura cuando alguien los edite. El tipo
+    # cuelga de la familia, asi que tiene que ser uno de los de
+    # `id_product_family` -lo comprueba el servicio, que es donde se puede
+    # dar un error que diga que corregir-.
+    id_material_type: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('material_type.id_material_type'), nullable=True)
     created_by: Mapped[int] = mapped_column(Integer, nullable=False)
     creation_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now())
     last_update_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
@@ -36,6 +46,7 @@ class Material(Base):
             'id_unit': to_json_value(self.id_unit),
             'id_brand': to_json_value(self.id_brand),
             'id_product_family': to_json_value(self.id_product_family),
+            'id_material_type': to_json_value(self.id_material_type),
             'created_by': to_json_value(self.created_by),
             'creation_date': to_json_value(self.creation_date),
             'last_update_date': to_json_value(self.last_update_date),
