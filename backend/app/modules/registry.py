@@ -119,7 +119,7 @@ MODULOS = (
         (
             "product", "material", "material_component", "location",
             "location_type", "movement", "inventory_status", "brand", "unit",
-            "product_family",
+            "product_family", "material_type",
         ),
         almacen=("location", "inventory_stock", "inventory_ledger"),
     ),
@@ -245,6 +245,17 @@ CAPACIDADES = (
     # destruye existencia por cualquier cantidad. Es la operacion con la que se
     # tapa un faltante, asi que se concede aparte de poder editar productos.
     Capacidad("inventory_adjustment", "Ajustar existencias", "inventario"),
+    # El vale de almacen: quien se llevo que, de donde, y si ya lo devolvio.
+    #
+    # Va como capacidad y no como entidad porque su pantalla no es el CRUD de
+    # una tabla: escribe en `incident` -el vale- y en `nm_incident_product`
+    # -sus renglones-, y esa segunda esta fuera del menu a proposito, por ser
+    # tabla puente que se edita desde su dueno.
+    #
+    # Con `bits=CAPTURA` porque levantar un vale es crear y leer; cerrarlo es
+    # actualizar el renglon, que ya gobierna el permiso de la entidad.
+    Capacidad("warehouse_voucher", "Vales de almacen", "inventario",
+              bits=CAPTURA, menu="sidebar"),
     # Va en el engrane del encabezado, no en el menu vertical.
     #
     # Se habia movido a `sidebar` al retirar el engrane, razonando que habia
@@ -372,11 +383,28 @@ MENU = {
     "bank_account": ("Cuentas bancarias", 50),
     "ticket": ("Tickets", 60),
     "product": ("Productos", 10),
+    # Los catalogos de los que cuelga un producto. Sin etiqueta el registro los
+    # siembra como `hidden` -es la regla de mas abajo- y eso los dejaba fuera de
+    # todos los menus: las pantallas existian y sus rutas tambien, pero solo se
+    # llegaba escribiendo la direccion a mano. `product_family` estaba asi para
+    # los cinco roles, de modo que nadie podia dar de alta una familia.
+    #
+    # Van juntos y justo despues de Productos porque es el orden en que hay que
+    # recorrerlos para dar de alta algo: familia, marca y unidad primero, luego
+    # el material que las une, y al final el producto.
+    "product_family": ("Familias de producto", 12),
+    "brand": ("Marcas", 14),
+    "unit": ("Unidades", 16),
+    # El tercer eje del material, junto a la familia y la marca. Va con ellos
+    # porque es el mismo recorrido de captura: familia, tipo, marca, y de ahi el
+    # material.
+    "material_type": ("Tipos de material", 18),
     "location": ("Ubicaciones", 20),
     "location_type": ("Tipos de ubicacion", 30),
     "material": ("Materiales", 40),
     "movement": ("Movimientos", 50),
     "material_component": ("Componentes", 60),
+    "inventory_status": ("Estado de inventario", 70),
     "proyect": ("Proyectos", 10),
     "task": ("Tareas", 20),
     "task_note": ("Notas de tarea", 30),

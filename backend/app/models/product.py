@@ -26,7 +26,19 @@ class Product(Base):
     gross_price: Mapped[float] = mapped_column(Numeric(10,2), nullable=True)
     color: Mapped[object] = mapped_column(String(100), nullable=True)
     is_directly_related_to_product_service: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    # Texto libre, historico. Se conserva porque es lo que se capturo hasta
+    # ahora y tirarlo seria perder informacion; lo nuevo va en
+    # `id_inventory_status`.
     product_status: Mapped[object] = mapped_column(String(20), nullable=True)
+    # El estatus del producto, contra catalogo: nuevo, usado, en reparacion,
+    # danado, retirado.
+    #
+    # No hay tabla nueva porque ya existe: `inventory_status` es un catalogo
+    # de estados con `entity_scope`, y los del producto viven con
+    # `entity_scope = 'product'`. Con la columna de texto no se podia
+    # filtrar -cada quien escribia "Nuevo", "nuevo" o "n"-.
+    id_inventory_status: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('inventory_status.id_inventory_status'), nullable=True)
     path_imagen: Mapped[object] = mapped_column(String(100), nullable=True)
     product_code: Mapped[object] = mapped_column(String(30), nullable=True)
     note: Mapped[object] = mapped_column(String(300), nullable=True)
@@ -68,6 +80,7 @@ class Product(Base):
             'color': to_json_value(self.color),
             'is_directly_related_to_product_service': to_json_value(self.is_directly_related_to_product_service),
             'product_status': to_json_value(self.product_status),
+            'id_inventory_status': to_json_value(self.id_inventory_status),
             'path_imagen': to_json_value(self.path_imagen),
             'product_code': to_json_value(self.product_code),
             'note': to_json_value(self.note),

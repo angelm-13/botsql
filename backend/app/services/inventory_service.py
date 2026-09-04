@@ -372,6 +372,40 @@ def apply_inventory_movement(product_id, payload, user_data):
         return movimiento, False
 
 
+def _misma_peticion(fila, *, product_id, movement_type, quantity_delta,
+                    id_location, reference_type, reference_id) -> bool:
+    """Si el asiento guardado corresponde a ESTA peticion o a otra.
+
+    Una llave de idempotencia promete que repetir la MISMA peticion no la aplica
+    dos veces. No promete nada sobre repetir la llave con otros datos, y eso es
+    lo que hacia el guardia anterior: solo comparaba el producto, asi que
+    mandar 10 unidades con la llave "K" y despues 99 con la misma llave
+    devolvia el asiento de 10 y contestaba que todo bien. Medido.
+
+    Quien reintenta con los datos corregidos -el caso normal cuando la primera
+    llamada tenia un error de captura- se queda creyendo que su correccion se
+    aplico. Repetir la llave con otra peticion es un conflicto, no un acierto.
+
+    `reason` no entra en la comparacion: es texto libre y corregir una falta de
+    ortografia no es otra peticion. Lo que entra es lo que cambia el efecto:
+    que movimiento, cuanto, donde, y contra que documento -que es lo que decide
+    como se clasifica despues-.
+    """
+    if fila.id_product != int(product_id):
+        return False
+    if str(fila.movement_type or "") != str(movement_type or ""):
+        return False
+    if int(fila.quantity_delta or 0) != int(quantity_delta or 0):
+        return False
+    if id_location is not None and int(fila.id_location or 0) != int(id_location):
+        return False
+    if (fila.reference_type or None) != (reference_type or None):
+        return False
+    guardada = str(fila.reference_id or "").strip() or None
+    entrante = str(reference_id or "").strip()[:100] or None
+    return guardada == entrante
+
+
 def _existing_movement(idempotency_key, product_id):
     """El movimiento que otra llamada ya escribio con esta misma llave.
 
@@ -385,7 +419,8 @@ def _existing_movement(idempotency_key, product_id):
         if fila is None:
             return None
         if fila.id_product != int(product_id):
-            raise AppError("errors.idempotency_conflict", 409)
+            raise AppError("errors.idempotency_conflict", 409,
+                           {"idempotency_key": idempotency_key})
         return fila.serialize()
 
 
@@ -422,8 +457,29 @@ def apply_movement_in_session(
         select(InventoryLedger).where(InventoryLedger.idempotency_key == idempotency_key)
     ).first()
     if previous:
-        if previous.id_product != int(product_id):
-            raise AppError("errors.idempotency_conflict", 409)
+        if not _misma_peticion(
+            previous, product_id=product_id, movement_type=movement_type,
+            quantity_delta=quantity_delta, id_location=id_location,
+            reference_type=reference_type, reference_id=reference_id,
+        ):
+            raise AppError(
+                "errors.idempotency_conflict",
+                409,
+                {
+                    "idempotency_key": idempotency_key,
+                    "id_inventory_ledger": previous.id_inventory_ledger,
+                    # Se dice que se guardo con esa llave: quien reintento con
+                    # datos corregidos necesita ver que la llave ya estaba
+                    # usada para otra cosa, no un 409 a secas.
+                    "stored": {
+                        "movement_type": previous.movement_type,
+                        "quantity_delta": int(previous.quantity_delta or 0),
+                        "id_location": previous.id_location,
+                        "reference_type": previous.reference_type,
+                        "reference_id": previous.reference_id,
+                    },
+                },
+            )
         return previous.serialize(), False
 
     product = _locked_product(db, product_id)
@@ -487,8 +543,27 @@ def transfer_inventory(product_id, payload, user_data):
             select(InventoryLedger).where(InventoryLedger.idempotency_key == outbound_key)
         ).first()
         if previous:
-            if previous.id_product != int(product_id):
-                raise AppError("errors.idempotency_conflict", 409)
+            # Del traslado se compara la salida: mismo producto, misma cantidad
+            # y mismo origen. Trasladar 10 y despues 99 con la misma llave
+            # devolvia el par de 10 y contestaba que se habia hecho.
+            if not (
+                previous.id_product == int(product_id)
+                and int(previous.quantity_delta or 0) == -quantity
+                and int(previous.id_location or 0) == int(
+                    payload.get("id_location_from") or previous.id_location or 0)
+            ):
+                raise AppError(
+                    "errors.idempotency_conflict",
+                    409,
+                    {
+                        "idempotency_key": key,
+                        "stored": {
+                            "quantity": abs(int(previous.quantity_delta or 0)),
+                            "id_location_from": previous.id_location,
+                            "id_location_to": previous.id_location_target,
+                        },
+                    },
+                )
             pair = db.scalars(
                 select(InventoryLedger)
                 .where(InventoryLedger.transfer_group == previous.transfer_group)

@@ -35,7 +35,8 @@ def main() -> int:
     total = catalog_status()["total"]
     print(
         f"Listo: {result['created']} nuevas, {result['updated']} actualizadas, "
-        f"{result['skipped']} filas ignoradas. Total en catalogo: {total}."
+        f"{result.get('unchanged', 0)} sin cambios, {result['skipped']} filas "
+        f"ignoradas. Total en catalogo: {total}."
     )
     return 0
 

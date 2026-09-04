@@ -1,0 +1,181 @@
+/* Vales de almacen. Mismos colores que el resto del almacen: verde de la casa,
+   ambar para lo que hay que atender, rojo solo para lo vencido. */
+
+.vale-acciones-cabecera { display: flex; gap: 10px; flex-wrap: wrap; }
+
+.vale-aviso {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0 0 14px; padding: 10px 14px;
+  background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 9px;
+  color: #065f46; font-size: 13.5px;
+}
+
+/* --- lo vencido ---
+   Va primero porque es la razon de llevar vales. Si no hay nada vencido la
+   seccion no se pinta: "0 vencidos" es ruido. */
+.vale-vencidos {
+  margin: 0 0 20px; padding: 16px 18px;
+  background: #fff1f2; border: 1px solid #fecdd3; border-radius: 10px;
+}
+.vale-vencidos h2 {
+  display: flex; align-items: center; gap: 9px;
+  margin: 0 0 12px; font-size: 1.02rem; color: #9f1239;
+}
+.vale-vencidos h2 span {
+  margin-left: auto; padding: 1px 9px; border-radius: 999px;
+  background: #9f1239; color: #fff; font-size: 12px;
+}
+.vale-vencidos ul { list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 7px; }
+.vale-vencidos li {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 9px 12px; background: #fff; border-radius: 8px; font-size: 13.5px;
+}
+.vale-vencidos li .button { margin-left: auto; }
+
+.vale-enlace {
+  padding: 0; border: 0; background: none; font: inherit; font-weight: 600;
+  color: #9f1239; cursor: pointer;
+}
+.vale-enlace:hover { text-decoration: underline; }
+
+/* --- la captura --- */
+.vale-borrador {
+  margin: 0 0 22px; padding: 18px;
+  background: #fff; border: 2px solid #1b7a60; border-radius: 11px;
+}
+.vale-borrador > header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 14px;
+}
+.vale-borrador h2 {
+  display: flex; align-items: center; gap: 8px; margin: 0; font-size: 1.06rem;
+}
+.vale-borrador h3 {
+  margin: 20px 0 10px; font-size: .95rem;
+  text-transform: uppercase; letter-spacing: .05em; color: #5c6d68;
+}
+
+.vale-cabecera {
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+.vale-cabecera .field { display: flex; flex-direction: column; gap: 5px; }
+.vale-cabecera .field-ancho { grid-column: 1 / -1; }
+.vale-cabecera .field > span {
+  font-size: 11.5px; font-weight: 600; letter-spacing: .04em;
+  text-transform: uppercase; color: #5c6d68;
+}
+.vale-cabecera input, .vale-cabecera select {
+  padding: 9px 11px; font: inherit;
+  border: 1px solid #cbd5e1; border-radius: 8px; background: #fff;
+}
+
+.vale-buscador {
+  display: flex; align-items: center; gap: 9px;
+  padding: 0 12px; background: #fff;
+  border: 1px solid #cbd5e1; border-radius: 9px;
+}
+.vale-buscador input {
+  flex: 1; padding: 10px 0; border: 0; outline: none; font: inherit;
+  background: transparent;
+}
+.vale-buscador-producto { margin-bottom: 12px; }
+
+/* Los candidatos de la busqueda. Lo serializado despliega sus piezas
+   disponibles: elegir el producto no basta cuando hay que decir cual. */
+.vale-candidatos { list-style: none; margin: 0 0 14px; padding: 0;
+  display: flex; flex-direction: column; gap: 8px; }
+.vale-candidatos > li {
+  padding: 10px 12px; background: #f8faf9;
+  border: 1px solid #e8eeeb; border-radius: 8px;
+}
+.vale-candidato-cabecera {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  font-size: 13.5px;
+}
+.vale-candidato-cabecera .button { margin-left: auto; }
+.vale-piezas { list-style: none; margin: 9px 0 0; padding: 8px 0 0 6px;
+  border-top: 1px dashed #cbd5e1;
+  display: flex; flex-direction: column; gap: 5px; }
+.vale-piezas li {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  font-size: 12.5px;
+}
+.vale-piezas li .button { margin-left: auto; }
+
+/* --- los renglones --- */
+.vale-renglones { list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 7px; }
+.vale-renglones li {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 10px 12px; background: #f8faf9; border-radius: 8px; font-size: 13.5px;
+}
+.vale-renglones li.devuelto { background: #f1f5f4; color: #5c6d68; }
+.vale-que { display: inline-flex; align-items: center; gap: 7px; }
+.vale-donde { display: inline-flex; align-items: center; gap: 5px; }
+.vale-devuelto {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 5px;
+  color: #15803d; font-size: 12.5px;
+}
+.vale-renglones li .button { margin-left: auto; }
+
+.vale-renglones-edicion li { align-items: flex-end; }
+.vale-mini { display: flex; flex-direction: column; gap: 4px; }
+.vale-mini > span {
+  font-size: 10.5px; font-weight: 600; letter-spacing: .04em;
+  text-transform: uppercase; color: #5c6d68;
+}
+.vale-mini input, .vale-mini select {
+  padding: 6px 9px; font: inherit; font-size: 13px;
+  border: 1px solid #cbd5e1; border-radius: 7px; background: #fff;
+}
+.vale-mini input[type="number"] { width: 84px; }
+/* Lo que falta para poder abrir el vale. Ambar y no rojo: no es un error, es
+   un dato pendiente. */
+.vale-falta select { border-color: #b45309; background: #fffbeb; }
+.vale-falta > span { color: #b45309; }
+
+.vale-pie {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-top: 18px; padding-top: 14px; border-top: 1px solid #e8eeeb;
+}
+
+/* --- la consulta --- */
+.vale-consulta h2 { font-size: 1.02rem; margin: 0 0 12px; }
+.vale-consulta .vale-buscador { max-width: 380px; margin-bottom: 16px; }
+
+.vale-tarjeta {
+  padding: 16px 18px; background: #fff;
+  border: 1px solid #d6e0dc; border-radius: 10px;
+}
+.vale-tarjeta.vale-abierto { border-left: 4px solid #b45309; }
+.vale-tarjeta.vale-cerrado { border-left: 4px solid #15803d; }
+.vale-tarjeta > header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 14px; flex-wrap: wrap; margin-bottom: 14px;
+}
+.vale-tarjeta h3 {
+  display: flex; align-items: center; gap: 8px; margin: 0 0 3px;
+  font-size: 1.02rem;
+}
+.vale-tarjeta > header p { margin: 0; font-size: 13px; }
+
+/* El estado se muestra, no se elige: lo derivan los renglones. */
+.vale-estado {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
+  padding: 6px 12px; border-radius: 9px;
+  font-size: 12.5px; font-weight: 700; white-space: nowrap;
+}
+.vale-estado em { font-weight: 400; font-style: normal; font-size: 11.5px; }
+.vale-estado.es-abierto { background: #fef3c7; color: #78350f; }
+.vale-estado.es-cerrado { background: #dcfce7; color: #14532d; }
+
+.vale-page :focus-visible { outline: 2px solid #1b7a60; outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .vale-page * { transition: none !important; animation: none !important; }
+}
+@media (max-width: 720px) {
+  .vale-renglones-edicion li { align-items: stretch; }
+  .vale-vencidos li .button, .vale-renglones li .button { margin-left: 0; }
+}

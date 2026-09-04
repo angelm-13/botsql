@@ -1420,9 +1420,15 @@ END $$;
 -- uq_entity_permission_permission_entity: varios INSERT de este mismo archivo
 -- (mas abajo) y de database/seed.sql usan ON CONFLICT (id_permission, entity_name),
 -- que exige que este constraint ya exista.
+-- Se capturan duplicate_object Y duplicate_table. Una restriccion UNIQUE crea un
+-- indice con su mismo nombre, y si el indice ya existe -porque la migracion
+-- 20260822122000 creo la restriccion antes- Postgres lanza duplicate_table, que
+-- la guarda de duplicate_object no atrapa. Ese error abortaba init.sql ENTERO:
+-- se veia como un aviso "no fatal" y dejaba sin ejecutar todo lo que sigue.
+-- Medido borrando el volumen y levantando de cero.
 DO $$ BEGIN
   ALTER TABLE "entity_permission" ADD CONSTRAINT "uq_entity_permission_permission_entity" UNIQUE ("id_permission", "entity_name");
-EXCEPTION WHEN duplicate_object THEN NULL;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL;
 END $$;
 DO $$ BEGIN
   ALTER TABLE "inventory_status" ADD CONSTRAINT "fk_inventory_status_id_department" FOREIGN KEY ("id_department") REFERENCES "department"("id_department") DEFERRABLE INITIALLY DEFERRED;

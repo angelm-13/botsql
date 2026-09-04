@@ -58,8 +58,14 @@ const navItems = [
   { path: "/location_type", key: "menu.location_type" },
   { path: "/material", key: "menu.material" },
   { path: "/material_component", key: "menu.material_component" },
+  { path: "/material_type", key: "menu.material_type" },
   { path: "/movement", key: "menu.movement" },
   { path: "/nm_incident_product", key: "menu.nm_incident_product" },
+  // El vale se guarda con la capacidad y no con una entidad: su pantalla
+  // escribe en `incident` y en `nm_incident_product`, y esa segunda esta
+  // fuera del menu a proposito, por ser tabla puente. La etiqueta, el grupo
+  // y el orden los da la fila de la capacidad en el backend.
+  { path: "/vouchers", key: "menu.warehouse_voucher", label: "Vales de almacén", entityName: "warehouse_voucher" },
   { path: "/nm_survey_user", key: "menu.nm_survey_user" },
   { path: "/nm_template_task", key: "menu.nm_template_task" },
   { path: "/payroll_concept", key: "menu.payroll_concept" },
@@ -155,8 +161,11 @@ const groupIcons = {
   // en casi todos los grupos.
   "documentos": FileText,
   "laboratorio": FlaskConical,
+  // `file-text` ya esta arriba, con los demas nombres de lucide. Repetirlo aqui
+  // no hacia dano -apunta al mismo icono- pero era una clave duplicada en un
+  // objeto, que Vite avisaba en cada arranque y que la proxima vez podia
+  // repetirse apuntando a otro icono y ganar en silencio.
   "flask-conical": FlaskConical,
-  "file-text": FileText,
 };
 
 const defaultGroupIcons = {

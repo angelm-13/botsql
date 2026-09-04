@@ -361,12 +361,32 @@ class TestSqlGenerado(unittest.TestCase):
         especificacion.loader.exec_module(modulo)
         return modulo.generar()
 
-    def test_it_replaces_the_previous_matrix_instead_of_piling_on(self):
-        """Dos criterios conviviendo es como aparecieron los descuadres."""
+    def test_it_seeds_only_what_is_missing(self):
+        """El gestor manda; el registro da el valor por omision y nada mas.
+
+        Esta prueba decia lo contrario: exigia que el sembrado diera de baja
+        todo lo vigente y pisara con `DO UPDATE`, para que no convivieran dos
+        criterios. El razonamiento era bueno y la consecuencia no se habia
+        medido: corriendo en cada arranque del pod, eso revertia cualquier
+        ajuste hecho desde el gestor de roles en el siguiente despliegue -un
+        permiso subido de 2 a 15 volvia a 2-.
+
+        La decision fue que el gestor sea la autoridad. El sembrado inserta el
+        par (perfil, entidad) que no existe y no toca el resto: ni sus bits, ni
+        su navegacion, ni su baja.
+        """
         sql = self._sql()
 
-        self.assertIn("SET deletion_date = now()", sql)
-        self.assertIn("ON CONFLICT (id_permission, entity_name) DO UPDATE", sql)
+        self.assertIn("ON CONFLICT (id_permission, entity_name) DO NOTHING", sql)
+        self.assertNotIn("DO UPDATE", sql)
+        # El borrado general es lo que hacia que nada del gestor durase. Lo que
+        # si queda es el DELETE acotado por fecha que limpia los residuos de
+        # aquel mecanismo, y ese no lleva `SET`.
+        compacto = " ".join(sql.split())
+        self.assertNotIn(
+            "UPDATE entity_permission SET deletion_date = now() WHERE deletion_date IS NULL",
+            compacto,
+        )
 
     def test_it_rebuilds_the_field_permissions_too(self):
         """Un modulo que cambio de alcance arrastra sus campos.

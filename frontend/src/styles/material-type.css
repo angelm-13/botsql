@@ -1,0 +1,60 @@
+/* Tipos de material, agrupados por familia.
+   Los colores son los mismos que el resto del almacen. */
+
+.mt-list { display: flex; flex-direction: column; gap: 14px; }
+
+.mt-family {
+  background: #fff;
+  border: 1px solid #d6e0dc;
+  border-radius: 10px;
+  padding: 16px 18px;
+}
+.mt-family-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 14px; flex-wrap: wrap;
+}
+.mt-family-head h2 {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 1.02rem; margin: 0 0 2px;
+}
+.mt-family-head .muted { font-size: 12.5px; }
+
+/* El alta va dentro del grupo, asi que el formulario aparece bajo la cabecera
+   de su familia: la familia no se elige, ya la eligio el clic. */
+.mt-form {
+  display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+  margin: 14px 0 4px; padding: 12px; background: #f8faf9;
+  border: 1px solid #e8eeeb; border-radius: 8px;
+}
+.mt-form input {
+  flex: 1 1 240px; padding: 9px 11px; font: inherit;
+  border: 1px solid #cbd5e1; border-radius: 8px; background: #fff;
+}
+
+.mt-types { list-style: none; margin: 12px 0 0; padding: 0;
+  display: flex; flex-direction: column; gap: 6px; }
+.mt-types li {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 8px 12px; background: #f8faf9; border-radius: 8px; font-size: 13.5px;
+}
+.mt-acciones { display: flex; gap: 4px; }
+.mt-icono {
+  display: grid; place-items: center; width: 28px; height: 28px;
+  border: 1px solid transparent; border-radius: 6px;
+  background: none; color: #5c6d68; cursor: pointer;
+}
+.mt-icono:hover { background: #fff; border-color: #d6e0dc; color: #1b7a60; }
+.mt-icono-borrar:hover { color: #9f1239; }
+
+.mt-sin-tipos { margin: 12px 0 0; font-size: 13px; }
+.mt-empty { margin: 24px 0; }
+
+/* Los tipos cuya familia no aparece. En ambar porque no impiden trabajar pero
+   siguen apareciendo en los materiales que los usan. */
+.mt-orphans { border-color: #fde68a; background: #fffbeb; }
+.mt-orphans .mt-types li { background: #fff; }
+
+.mt-page :focus-visible { outline: 2px solid #1b7a60; outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .mt-page * { transition: none !important; animation: none !important; }
+}

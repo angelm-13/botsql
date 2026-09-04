@@ -417,6 +417,24 @@ export const createLocationType = (payload) => request("/location_type/", { meth
 export const updateLocationType = (id, payload) => request(`/location_type/${id}`, { method: "PUT", body: payload });
 export const deleteLocationType = (id) => request(`/location_type/${id}`, { method: "DELETE" });
 
+// --- tipos de material -----------------------------------------------------
+// El tercer eje del material, junto a la familia y la marca.
+export const getAllMaterialType = (params = {}) => request("/material_type/", { params });
+export const getMaterialType = (id) => request(`/material_type/${id}`);
+export const createMaterialType = (payload) => request("/material_type/", { method: "POST", body: payload });
+export const updateMaterialType = (id, payload) => request(`/material_type/${id}`, { method: "PUT", body: payload });
+export const deleteMaterialType = (id) => request(`/material_type/${id}`, { method: "DELETE" });
+// Los tipos DE UNA FAMILIA: es lo que necesita el alta de un material, porque
+// ofrecer los de todas permite capturar "Cemento de tipo De cruz".
+export const getMaterialTypesByFamily = (idFamily) => request(`/material_type/by-family/${idFamily}`);
+
+// --- vales de almacen ------------------------------------------------------
+export const createWarehouseVoucher = (payload) => request("/vouchers", { method: "POST", body: payload });
+export const getWarehouseVoucher = (id) => request(`/vouchers/${id}`);
+export const getOverdueVoucherLines = () => request("/vouchers/overdue");
+export const closeWarehouseVoucherLine = (idLine, payload = {}) =>
+  request(`/vouchers/lines/${idLine}/close`, { method: "POST", body: payload });
+
 export const getAllMaterial = (params = {}) => request("/material/", { params });
 export const getMaterial = (id) => request(`/material/${id}`);
 export const createMaterial = (payload) => request("/material/", { method: "POST", body: payload });

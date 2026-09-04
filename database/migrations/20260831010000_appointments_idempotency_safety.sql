@@ -157,14 +157,12 @@ SELECT permission.id_permission, 'appointment', 15, 'sidebar', 'Operaciones',
 FROM permission
 WHERE permission.deletion_date IS NULL
     AND lower(permission.permission_description) IN ('supervisor', 'gerente')
-ON CONFLICT (id_permission, entity_name) DO UPDATE SET
-        control_type = EXCLUDED.control_type,
-        menu_location = EXCLUDED.menu_location,
-        menu_group = EXCLUDED.menu_group,
-        menu_group_icon = EXCLUDED.menu_group_icon,
-        menu_label = EXCLUDED.menu_label,
-        menu_order = EXCLUDED.menu_order,
-        deletion_date = NULL,
-        last_update_date = CURRENT_TIMESTAMP;
+-- El gestor manda: aqui NO se pisa la fila que ya existe.
+--
+-- Una fila viva es del administrador y pisarla revierte su trabajo; una de baja
+-- significa que la quito a proposito, y reactivarla devolveria un acceso
+-- retirado. El registro solo da el valor por omision al par (perfil, entidad)
+-- que todavia no existe.
+ON CONFLICT (id_permission, entity_name) DO NOTHING;
 
 COMMIT;

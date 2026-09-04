@@ -54,6 +54,7 @@ from app.routes.bank import bp_bank
 from app.routes.bank_account import bp_bank_account
 from app.routes.invoice import bp_invoice
 from app.routes.invoice_material_service import bp_invoice_material_service
+from app.routes.material_type import bp_material_type
 from app.routes.product_family import bp_product_family
 from app.routes.incident_type import bp_incident_type
 from app.routes.incident import bp_incident
@@ -91,6 +92,7 @@ from app.routes.survey_multiple_answer import bp_survey_multiple_answer
 from app.routes.nm_survey_user import bp_nm_survey_user
 from app.routes.entity_permission import bp_entity_permission
 from app.routes.inventory_asset import bp_inventory_asset
+from app.routes.warehouse_voucher import bp_warehouse_voucher
 from app.routes.inventory_status import bp_inventory_status
 from app.routes.product_sale_config import bp_product_sale_config
 from app.routes.public_api_key import bp_public_api_key
@@ -698,6 +700,7 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_bank_account)
     app.register_blueprint(bp_invoice)
     app.register_blueprint(bp_invoice_material_service)
+    app.register_blueprint(bp_material_type)
     app.register_blueprint(bp_product_family)
     app.register_blueprint(bp_incident_type)
     app.register_blueprint(bp_incident)
@@ -735,6 +738,7 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_nm_survey_user)
     app.register_blueprint(bp_entity_permission)
     app.register_blueprint(bp_inventory_asset)
+    app.register_blueprint(bp_warehouse_voucher)
     app.register_blueprint(bp_inventory_status)
     app.register_blueprint(bp_product_sale_config)
     app.register_blueprint(bp_public_api_key)

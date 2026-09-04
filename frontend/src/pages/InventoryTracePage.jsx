@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import PropTypes from "prop-types";
 import {
-  AlertTriangle, Camera, ImageOff, MapPin, RefreshCw, Search, Wrench,
+  AlertTriangle, Camera, ChevronLeft, ChevronRight, Crosshair, FilterX, History,
+  ImageOff, MapPin, Package, Ruler, Tags, RefreshCw, Search, Wrench,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { inventoryTrace, uploadProductImage, urlDeArchivo } from "../api";
@@ -26,6 +28,13 @@ import "../styles/inventory-trace.css";
  * * **Lo que el alcance esconde se cuenta.** Si hay coincidencias de otro
  *   proyecto, se dice cuantas. Quien busca algo que existe y no lo ve merece
  *   saber que el filtro es el alcance y no que no exista.
+ * * **Buscar una pieza y buscar el producto se contestan distinto.** Son dos
+ *   preguntas: "donde esta el taladro TAL-001-C" y "cuantos taladros tengo y
+ *   como estan". Antes se contestaban igual -salia el producto con sus tres
+ *   piezas y sin decir cual era la que se pidio-, asi que quien tenia el numero
+ *   en la mano tenia que buscarlo a ojo en la lista. Ahora el servidor dice por
+ *   que salio cada resultado (`match_kind`) y cual pieza coincide, y la pantalla
+ *   ensena la pieza pedida arriba con su bitacora, y las demas unidades debajo.
  */
 
 const PROPOSITOS = [
@@ -55,11 +64,105 @@ const TONO_DE_HISTORIA = {
   danado: "crit", destruido: "crit", extraviado: "crit", caducado: "crit",
 };
 
+/**
+ * Una pieza: su etiqueta, su estado, quien la tiene y -si es la que se
+ * busco- todo lo que le ha pasado.
+ *
+ * La bitacora solo se ensena de la pieza pedida. El servidor tampoco la manda
+ * para las demas: desplegar la historia de treinta piezas para ver una es
+ * ruido, y la historia del producto -que si sale siempre- ya contesta la
+ * pregunta general.
+ */
+function Pieza({ pieza, destacada, t }) {
+  return (
+    <li className={destacada ? "trace-asset-hit" : undefined}>
+      <div className="trace-asset-line">
+        {destacada && <Crosshair size={13} className="trace-hit-icon" />}
+        <span className="mono">{pieza.asset_tag}</span>
+        <span className={`trace-chip ${TONO_DE_ESTADO[pieza.status] || "muted"}`}>
+          {t(`assets.status_${pieza.status}`, pieza.status)}
+        </span>
+        {/* Quien la tiene solo aplica cuando esta fuera de su sitio; en
+            `disponible` el responsable es nadie. */}
+        {pieza.holder_name && <span className="trace-holder">{pieza.holder_name}</span>}
+        {(pieza.location_path_label || pieza.location_description) && (
+          <span className="muted">
+            <MapPin size={12} />{" "}
+            {pieza.location_path_label || pieza.location_description}
+          </span>
+        )}
+        {pieza.due_date && (
+          <span className="muted">{t("trace.due", "regresa")} {pieza.due_date}</span>
+        )}
+        {/* Esta pantalla localiza; las acciones sobre la pieza -prestar,
+            devolver, mandar a reparar, dar de baja- viven en su pantalla, que es
+            donde estan sus transiciones de estado. Se enlaza en vez de
+            repetirlas aqui: dos sitios que prestan la misma herramienta acaban
+            discrepando. */}
+        <Link className="trace-manage"
+              to={`/assets?tag=${encodeURIComponent(pieza.asset_tag || "")}`}>
+          {t("trace.manage_piece", "Gestionar")}
+        </Link>
+      </div>
+
+      {destacada && pieza.timeline?.length > 0 && (
+        <ol className="trace-timeline">
+          {pieza.timeline.map((e) => (
+            <li key={e.id_inventory_asset_event}>
+              <span className="trace-when">
+                {e.creation_date ? new Date(e.creation_date).toLocaleString("es-MX") : ""}
+              </span>
+              <span className="trace-what">
+                {t(`trace.event_${e.event_type}`, e.etiqueta)}
+                {(e.holder_after_name || e.holder_before_name) && (
+                  <strong> {e.holder_after_name || e.holder_before_name}</strong>
+                )}
+                {e.location_after_description && (
+                  <em> · {e.location_after_description}</em>
+                )}
+              </span>
+              {e.reason && <span className="muted">{e.reason}</span>}
+            </li>
+          ))}
+        </ol>
+      )}
+    </li>
+  );
+}
+
+
+Pieza.propTypes = {
+  pieza: PropTypes.shape({
+    id_inventory_asset: PropTypes.number,
+    asset_tag: PropTypes.string,
+    status: PropTypes.string,
+    holder_name: PropTypes.string,
+    location_description: PropTypes.string,
+    location_path_label: PropTypes.string,
+    due_date: PropTypes.string,
+    timeline: PropTypes.arrayOf(PropTypes.object),
+  }).isRequired,
+  destacada: PropTypes.bool,
+  t: PropTypes.func.isRequired,
+};
+
+
+const SIN_FILTROS = {
+  stock_purpose: "",
+  id_product_family: "",
+  id_brand: "",
+  id_location: "",
+  asset_status: "",
+};
+
 export default function InventoryTracePage() {
   const { t } = useI18n();
   const [consulta, setConsulta] = useState("");
-  const [proposito, setProposito] = useState("");
-  const [estadoFiltro, setEstadoFiltro] = useState("");
+  // Los filtros viven juntos en un objeto porque van juntos a la peticion y se
+  // limpian juntos. Sueltos, cada uno nuevo obliga a tocar el efecto, la
+  // llamada y el boton de limpiar, y se olvida uno.
+  const [filtros, setFiltros] = useState(SIN_FILTROS);
+  const [pagina, setPagina] = useState(1);
   const [datos, setDatos] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
@@ -76,11 +179,18 @@ export default function InventoryTracePage() {
   const traducir = useRef(t);
   traducir.current = t;
 
-  const buscar = useCallback(async (texto, fin) => {
+  const buscar = useCallback(async (texto, activos, numeroDePagina) => {
     setCargando(true);
     setError("");
     try {
-      setDatos(await inventoryTrace({ q: texto, stock_purpose: fin }));
+      // Los vacios no se mandan: `?id_brand=` es un filtro que el servidor
+      // tiene que aprender a ignorar, y una direccion llena de parametros
+      // huecos no se puede leer ni compartir.
+      const params = { q: texto, page: numeroDePagina || 1 };
+      Object.entries(activos || {}).forEach(([clave, valor]) => {
+        if (valor) params[clave] = valor;
+      });
+      setDatos(await inventoryTrace(params));
     } catch (e) {
       setError(e?.payload?.error_key
         ? traducir.current(e.payload.error_key)
@@ -93,9 +203,23 @@ export default function InventoryTracePage() {
   // Se espera a que deje de escribir: una peticion por tecla convierte una
   // busqueda de seis letras en seis consultas al almacen.
   useEffect(() => {
-    const temporizador = setTimeout(() => buscar(consulta, proposito), 350);
+    const temporizador = setTimeout(() => buscar(consulta, filtros, pagina), 350);
     return () => clearTimeout(temporizador);
-  }, [consulta, proposito, buscar]);
+  }, [consulta, filtros, pagina, buscar]);
+
+  // Cambiar el texto o un filtro vuelve a la primera pagina. Sin esto, quien
+  // esta en la pagina 7 y escribe algo nuevo pide la pagina 7 de un resultado
+  // distinto: el servidor la acota a la ultima, y parece que la busqueda
+  // devolvio poco cuando lo que paso es que se salto lo de delante.
+  const cambiarFiltro = (clave, valor) => {
+    setPagina(1);
+    setFiltros((antes) => ({ ...antes, [clave]: valor }));
+  };
+  const cambiarConsulta = (valor) => {
+    setPagina(1);
+    setConsulta(valor);
+  };
+  const filtrosActivos = Object.values(filtros).filter(Boolean).length;
 
   const subirFoto = async (idProducto, archivo) => {
     if (!archivo) return;
@@ -108,7 +232,7 @@ export default function InventoryTracePage() {
         siguiente.delete(idProducto);
         return siguiente;
       });
-      await buscar(consulta, proposito);
+      await buscar(consulta, filtros, pagina);
     } catch (e) {
       setError(e?.payload?.error_key
         ? traducir.current(e.payload.error_key)
@@ -118,10 +242,12 @@ export default function InventoryTracePage() {
     }
   };
 
-  const items = (datos?.items || []).filter((it) => {
-    if (!estadoFiltro) return true;
-    return (it.assets || []).some((a) => a.status === estadoFiltro);
-  });
+  // La lista llega ya recortada. Antes se filtraba aqui por estado de pieza, y
+  // entonces el conteo, el aviso de "hay mas resultados" y los desplegables
+  // hablaban de un conjunto y la lista de otro, sin forma de saber cual de los
+  // tres numeros era el bueno.
+  const items = datos?.items || [];
+  const catalogo = datos?.catalog || { families: [], brands: [], warehouses: [] };
 
   return (
     <section className="page trace-page">
@@ -134,7 +260,7 @@ export default function InventoryTracePage() {
               "Busca cualquier producto o herramienta y mira dónde está, qué le pasó y quién la tiene.")}
           </p>
         </div>
-        <button className="button" onClick={() => buscar(consulta, proposito)} disabled={cargando}>
+        <button className="button" onClick={() => buscar(consulta, filtros, pagina)} disabled={cargando}>
           <RefreshCw size={16} />
           {cargando ? t("common.loading", "Cargando…") : t("common.refresh", "Actualizar")}
         </button>
@@ -145,19 +271,52 @@ export default function InventoryTracePage() {
           <Search size={16} />
           <input
             value={consulta}
-            onChange={(e) => setConsulta(e.target.value)}
+            onChange={(e) => cambiarConsulta(e.target.value)}
             placeholder={t("trace.search_placeholder",
               "Nombre, código o etiqueta de la pieza (por ejemplo TAL-001)")}
             aria-label={t("trace.search_placeholder", "Buscar en el almacén")}
           />
         </div>
-        <select value={proposito} onChange={(e) => setProposito(e.target.value)}
+        <select value={filtros.stock_purpose}
+                onChange={(e) => cambiarFiltro("stock_purpose", e.target.value)}
                 aria-label={t("trace.purpose", "Para qué sirve")}>
           {PROPOSITOS.map(([valor, clave, texto]) => (
             <option key={valor} value={valor}>{t(`trace.${clave}`, texto)}</option>
           ))}
         </select>
-        <select value={estadoFiltro} onChange={(e) => setEstadoFiltro(e.target.value)}
+
+        {/* Familia, marca y almacen salen de lo que el texto encontro, con
+            cuantos productos hay detras de cada opcion. Un desplegable que
+            ofrece treinta familias y veintiocho estan vacias hace perder mas
+            tiempo del que ahorra. */}
+        <select value={filtros.id_product_family}
+                onChange={(e) => cambiarFiltro("id_product_family", e.target.value)}
+                aria-label={t("trace.by_family", "Por familia")}>
+          <option value="">{t("trace.any_family", "Cualquier familia")}</option>
+          {catalogo.families.map((f) => (
+            <option key={f.id_product_family} value={f.id_product_family}>
+              {f.family} ({f.products})
+            </option>
+          ))}
+        </select>
+        <select value={filtros.id_brand}
+                onChange={(e) => cambiarFiltro("id_brand", e.target.value)}
+                aria-label={t("trace.by_brand", "Por marca")}>
+          <option value="">{t("trace.any_brand", "Cualquier marca")}</option>
+          {catalogo.brands.map((b) => (
+            <option key={b.id_brand} value={b.id_brand}>{b.brand} ({b.products})</option>
+          ))}
+        </select>
+        <select value={filtros.id_location}
+                onChange={(e) => cambiarFiltro("id_location", e.target.value)}
+                aria-label={t("trace.by_warehouse", "Por almacén")}>
+          <option value="">{t("trace.any_warehouse", "Cualquier almacén")}</option>
+          {catalogo.warehouses.map((w) => (
+            <option key={w.id_location} value={w.id_location}>{w.location_description}</option>
+          ))}
+        </select>
+        <select value={filtros.asset_status}
+                onChange={(e) => cambiarFiltro("asset_status", e.target.value)}
                 aria-label={t("trace.by_status", "Por estado de la pieza")}>
           <option value="">{t("trace.any_status", "Cualquier estado")}</option>
           {Object.keys(TONO_DE_ESTADO).map((estado) => (
@@ -165,6 +324,32 @@ export default function InventoryTracePage() {
           ))}
         </select>
       </div>
+
+      {/* Cuantos hay y con que se esta filtrando. El numero va aqui y no en la
+          lista porque con el tope de resultados lo que se ve puede ser menos
+          que lo que hay, y ese es justo el caso en el que hace falta saberlo. */}
+      {datos && (
+        <p className="trace-count">
+          <strong>{datos.matches ?? items.length}</strong>{" "}
+          {(datos.matches ?? items.length) === 1
+            ? t("trace.one_match", "producto encontrado")
+            : t("trace.many_matches", "productos encontrados")}
+          {datos.pages > 1 && (
+            <em>
+              {" · "}
+              {t("trace.page_of", "página")} {datos.page} {t("trace.of", "de")}{" "}
+              {datos.pages}
+            </em>
+          )}
+          {filtrosActivos > 0 && (
+            <button type="button" className="trace-clear"
+                    onClick={() => { setPagina(1); setFiltros(SIN_FILTROS); }}>
+              <FilterX size={13} />
+              {t("trace.clear_filters", "Quitar filtros")} ({filtrosActivos})
+            </button>
+          )}
+        </p>
+      )}
 
       {error && <p className="error">{error}</p>}
 
@@ -189,9 +374,19 @@ export default function InventoryTracePage() {
         {items.map((it) => {
           const historia = Object.entries(it.history || {})
             .sort((a, b) => b[1].unidades - a[1].unidades);
-          const piezas = estadoFiltro
-            ? (it.assets || []).filter((a) => a.status === estadoFiltro)
+          // El servidor recorto los PRODUCTOS que tienen al menos una pieza en
+          // ese estado; aqui se recortan las PIEZAS a las de ese estado. Son
+          // dos cortes distintos y hacen falta los dos: sin el primero salen
+          // productos sin ninguna pieza asi, y sin el segundo sale el producto
+          // entero cuando lo que se pidio fue "ensename lo extraviado".
+          const piezas = filtros.asset_status
+            ? (it.assets || []).filter((a) => a.status === filtros.asset_status)
             : (it.assets || []);
+          // La pieza que se pidio y las demas unidades del mismo producto. El
+          // servidor ya las marca y las manda ordenadas; aqui solo se separan
+          // para poder titularlas distinto.
+          const pedidas = piezas.filter((a) => a.matched);
+          const resto = piezas.filter((a) => !a.matched);
           const foto = fotosRotas.has(it.id_product) ? "" : urlDeArchivo(it.path_imagen);
 
           return (
@@ -237,26 +432,144 @@ export default function InventoryTracePage() {
                         <> · <Wrench size={12} /> {t("trace.serialized", "pieza por pieza")}</>
                       )}
                     </p>
+
+                    {/* A que pertenece. Todo esto ya estaba en la base, a dos
+                        saltos -producto, material, y de ahi familia, marca y
+                        unidad-, asi que para saber la familia de lo que se
+                        acababa de encontrar habia que abrir dos pantallas mas.
+                        Cada eslabon filtra: se hace clic en la familia y la
+                        lista se queda con esa familia. */}
+                    {it.classification && (
+                      <p className="trace-chain">
+                        <Tags size={13} />
+                        {it.classification.family && (
+                          <button type="button" className="trace-link"
+                                  onClick={() => cambiarFiltro(
+                                    "id_product_family",
+                                    String(it.classification.id_product_family))}>
+                            {it.classification.family}
+                          </button>
+                        )}
+                        {it.classification.brand && (
+                          <>
+                            <span className="trace-sep">›</span>
+                            <button type="button" className="trace-link"
+                                    onClick={() => cambiarFiltro(
+                                      "id_brand", String(it.classification.id_brand))}>
+                              {it.classification.brand}
+                            </button>
+                          </>
+                        )}
+                        {it.classification.material && (
+                          <>
+                            <span className="trace-sep">›</span>
+                            <span>{it.classification.material}</span>
+                          </>
+                        )}
+                        {it.classification.unit && (
+                          <span className="trace-unit">
+                            <Ruler size={12} /> {it.classification.unit}
+                          </span>
+                        )}
+                      </p>
+                    )}
+
+                    {/* La familia del catalogo publico no es la del material.
+                        Cuando discrepan se dice: es un dato mal capturado, y
+                        esconderlo es como no tenerlo. */}
+                    {it.classification?.catalog_mismatch && (
+                      <p className="trace-mismatch">
+                        <AlertTriangle size={13} />
+                        {t("trace.catalog_mismatch",
+                          "El catálogo público lo clasifica distinto:")}{" "}
+                        {[
+                          it.classification.catalog_mismatch.family?.family,
+                          it.classification.catalog_mismatch.brand?.brand,
+                        ].filter(Boolean).join(" · ")}
+                      </p>
+                    )}
                   </div>
                   <div className="trace-total">
                     <strong>{it.total}</strong>
                     <span>{t("trace.in_stock", "en existencia")}</span>
+                    {/* Tres piezas de las que solo una sirve no es "tres" ni es
+                        "una": la existencia cuenta lo utilizable y las unidades
+                        cuentan lo que se tiene. Las dos hacen falta. */}
+                    {it.unit_count > 0 && (
+                      <em className="trace-units">
+                        {it.available_units}/{it.unit_count}{" "}
+                        {t("trace.usable_units", "unidades utilizables")}
+                      </em>
+                    )}
                   </div>
                 </header>
+
+                {/* Por que salio este resultado. Sin esto, buscar la
+                    etiqueta de una pieza y buscar el codigo del producto dan la
+                    misma pantalla, y no hay forma de saber si lo que se ve es la
+                    pieza que se pidio o el inventario entero de ese modelo. */}
+                {it.match_kind === "asset_tag" && it.matched_asset_tags?.length > 0 && (
+                  <p className="trace-level trace-level-piece">
+                    <Crosshair size={14} />
+                    {t("trace.level_piece", "Buscaste una pieza:")}{" "}
+                    <strong className="mono">{it.matched_asset_tags.join(", ")}</strong>
+                  </p>
+                )}
+                {it.match_kind === "product_code" && it.unit_count > 0 && (
+                  <p className="trace-level trace-level-product">
+                    <Package size={14} />
+                    {t("trace.level_product", "Buscaste el producto: se muestran sus")}{" "}
+                    <strong>{it.unit_count}</strong>{" "}
+                    {t("trace.level_product_units", "unidades")}
+                  </p>
+                )}
 
                 <h3 className="trace-section">
                   <MapPin size={14} /> {t("trace.where", "Dónde está")}
                 </h3>
+                {/* La ubicacion de la ficha del producto frente a donde estan
+                    de verdad las unidades. Cuando no coinciden hay que saberlo:
+                    quien va al sitio que dice la ficha no encuentra nada, y sin
+                    este aviso lo unico que puede pensar es que se perdio. */}
+                {it.home_location?.label
+                  && it.locations.length > 0
+                  && !it.locations.some((u) => u.id_location === it.home_location.segments?.at(-1)?.id_location) && (
+                  <p className="trace-note">
+                    <AlertTriangle size={13} />
+                    {t("trace.home_differs", "Su ficha dice")}{" "}
+                    <strong>{it.home_location.label}</strong>
+                    {", "}
+                    {t("trace.but_stock_elsewhere", "pero las unidades están en otro sitio.")}
+                  </p>
+                )}
+
                 {it.locations.length === 0 ? (
                   <p className="muted">{t("trace.nowhere", "Sin existencia en ninguna ubicación.")}</p>
                 ) : (
                   <ul className="trace-locations">
                     {it.locations.map((u) => (
                       <li key={u.id_location}>
-                        <span>
-                          {u.warehouse_description && u.warehouse_description !== u.location_description
-                            ? `${u.warehouse_description} · ${u.location_description}`
-                            : u.location_description}
+                        {/* La rama entera, no solo el sitio final: "Rack A-1"
+                            no dice donde esta el rack, y con cuatro naves hay
+                            un Rack A-1 en cada una. */}
+                        <span className="trace-path">
+                          {(u.path?.length ? u.path : [{
+                            id_location: u.id_location,
+                            location_description: u.location_description,
+                          }]).map((s, i) => (
+                            <React.Fragment key={s.id_location}>
+                              {i > 0 && <span className="trace-sep">›</span>}
+                              {s.is_warehouse ? (
+                                <button type="button" className="trace-link"
+                                        onClick={() => cambiarFiltro(
+                                          "id_location", String(s.id_location))}>
+                                  {s.location_description}
+                                </button>
+                              ) : (
+                                <span>{s.location_description}</span>
+                              )}
+                            </React.Fragment>
+                          ))}
                           {u.id_module && <em className="trace-module">{u.id_module}</em>}
                         </span>
                         <strong className="mono">{u.quantity}</strong>
@@ -265,7 +578,12 @@ export default function InventoryTracePage() {
                   </ul>
                 )}
 
-                <h3 className="trace-section">{t("trace.what_happened", "Qué le ha pasado")}</h3>
+                <h3 className="trace-section">
+                  <History size={14} />{" "}
+                  {it.unit_count > 0
+                    ? t("trace.what_happened_all", "Qué le ha pasado al producto (todas sus unidades)")
+                    : t("trace.what_happened", "Qué le ha pasado")}
+                </h3>
                 {historia.length === 0 ? (
                   <p className="muted">{t("trace.no_history", "Sin movimientos registrados.")}</p>
                 ) : (
@@ -281,39 +599,35 @@ export default function InventoryTracePage() {
                   </ul>
                 )}
 
-                {piezas.length > 0 && (
+                {pedidas.length > 0 && (
                   <>
                     <h3 className="trace-section">
-                      <Wrench size={14} /> {t("trace.pieces", "Sus piezas")}
+                      <Crosshair size={14} />{" "}
+                      {pedidas.length === 1
+                        ? t("trace.the_piece", "La pieza que buscas")
+                        : t("trace.the_pieces", "Las piezas que buscas")}
                     </h3>
                     <ul className="trace-assets">
-                      {piezas.map((a) => (
-                        <li key={a.id_inventory_asset || a.asset_tag}>
-                          <span className="mono">{a.asset_tag}</span>
-                          <span className={`trace-chip ${TONO_DE_ESTADO[a.status] || "muted"}`}>
-                            {t(`assets.status_${a.status}`, a.status)}
-                          </span>
-                          {/* Quien la tiene solo aplica cuando esta fuera de su
-                              sitio; en `disponible` el responsable es nadie. */}
-                          {a.holder_name && (
-                            <span className="trace-holder">{a.holder_name}</span>
-                          )}
-                          {a.due_date && (
-                            <span className="muted">
-                              {t("trace.due", "regresa")} {a.due_date}
-                            </span>
-                          )}
-                          {/* Esta pantalla localiza; las acciones sobre la pieza
-                              -prestar, devolver, mandar a reparar, dar de baja-
-                              viven en su pantalla, que es donde estan sus
-                              transiciones de estado y su historial. Se enlaza en
-                              vez de repetirlas aqui: dos sitios que prestan la
-                              misma herramienta acaban discrepando. */}
-                          <Link className="trace-manage"
-                                to={`/assets?tag=${encodeURIComponent(a.asset_tag || "")}`}>
-                            {t("trace.manage_piece", "Gestionar")}
-                          </Link>
-                        </li>
+                      {pedidas.map((a) => (
+                        <Pieza key={a.id_inventory_asset || a.asset_tag}
+                               pieza={a} destacada t={t} />
+                      ))}
+                    </ul>
+                  </>
+                )}
+
+                {resto.length > 0 && (
+                  <>
+                    <h3 className="trace-section">
+                      <Wrench size={14} />{" "}
+                      {pedidas.length > 0
+                        ? t("trace.other_units", "Las otras unidades de este producto")
+                        : t("trace.pieces", "Sus piezas")}
+                      {" "}<span className="muted">({resto.length})</span>
+                    </h3>
+                    <ul className="trace-assets">
+                      {resto.map((a) => (
+                        <Pieza key={a.id_inventory_asset || a.asset_tag} pieza={a} t={t} />
                       ))}
                     </ul>
                   </>
@@ -334,10 +648,29 @@ export default function InventoryTracePage() {
         })}
       </div>
 
-      {datos?.truncated && (
-        <p className="muted trace-empty">
-          {t("trace.truncated", "Se muestran los primeros resultados. Afina la búsqueda para ver el resto.")}
-        </p>
+      {/* Paginacion. Antes aqui decia "se muestran los primeros resultados,
+          afina la busqueda", que no es una respuesta cuando el filtro ya esta
+          puesto y aun quedan doscientas coincidencias: no hay nada que afinar
+          y no habia forma de ver el resto. */}
+      {datos?.pages > 1 && (
+        <nav className="trace-pages" aria-label={t("trace.pagination", "Páginas")}>
+          <button type="button" className="button"
+                  onClick={() => setPagina((n) => Math.max(1, n - 1))}
+                  disabled={cargando || datos.page <= 1}>
+            <ChevronLeft size={15} />
+            {t("common.previous", "Anterior")}
+          </button>
+          <span className="muted">
+            {t("trace.page_of", "página")} <strong>{datos.page}</strong>{" "}
+            {t("trace.of", "de")} <strong>{datos.pages}</strong>
+          </span>
+          <button type="button" className="button"
+                  onClick={() => setPagina((n) => n + 1)}
+                  disabled={cargando || datos.page >= datos.pages}>
+            {t("common.next", "Siguiente")}
+            <ChevronRight size={15} />
+          </button>
+        </nav>
       )}
     </section>
   );

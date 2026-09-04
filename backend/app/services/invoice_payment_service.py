@@ -184,14 +184,48 @@ def register_payment(invoice_id, payload, user_data) -> dict:
     amount = _parse_amount(payload.get("amount"), "amount")
     payment_form = _validate_payment_form(payload.get("payment_form"))
     paid_at = _parse_date(payload.get("paid_at"), "paid_at")
+    # La moneda se normaliza aqui porque el guardia de idempotencia la compara,
+    # y sin normalizar "mxn" y "MXN" pareceria dos peticiones distintas. Queda
+    # en None cuando la peticion no la trae: entonces el abono hereda la de la
+    # factura, y comparar contra un "MXN" supuesto marcaria como conflicto un
+    # reintento legitimo sobre una factura en dolares.
+    moneda = str(payload.get("currency") or "").strip()[:3].upper() or None
 
     with transaction_context() as db:
         previo = db.scalars(
             select(InvoicePayment).where(InvoicePayment.idempotency_key == key)
         ).first()
         if previo:
-            if previo.id_invoice != int(invoice_id):
-                raise AppError("errors.idempotency_conflict", 409)
+            # Una llave de idempotencia promete que repetir la MISMA peticion no
+            # cobra dos veces. No promete nada sobre repetir la llave con otros
+            # datos, y el guardia anterior solo comparaba la factura: abonar 100
+            # con la llave "K" y despues 900 con la misma llave devolvia el abono
+            # de 100 y contestaba que todo bien. Medido, y es lo peor que puede
+            # pasar aqui: el cliente cree que abono 900 y la cuenta tiene 100.
+            mismo = (
+                previo.id_invoice == int(invoice_id)
+                and Decimal(str(previo.amount)) == amount
+                and (previo.payment_form or "") == (payment_form or "")
+                and (moneda is None or (previo.currency or "") == moneda)
+            )
+            if not mismo:
+                raise AppError(
+                    "errors.idempotency_conflict",
+                    409,
+                    {
+                        "idempotency_key": key,
+                        "id_invoice_payment": previo.id_invoice_payment,
+                        # Que se guardo con esa llave, para que quien reintento
+                        # con datos corregidos vea que la llave ya estaba usada
+                        # para otra cosa y no un 409 a secas.
+                        "stored": {
+                            "id_invoice": previo.id_invoice,
+                            "amount": format(Decimal(str(previo.amount)), "f"),
+                            "payment_form": previo.payment_form,
+                            "currency": previo.currency,
+                        },
+                    },
+                )
             return {"payment": previo.serialize(), "created": False}
 
         # Se bloquea la factura para que dos abonos a la vez no lean el mismo
@@ -225,7 +259,7 @@ def register_payment(invoice_id, payload, user_data) -> dict:
             id_proyect=invoice.id_proyect,
             paid_at=paid_at,
             payment_form=payment_form,
-            currency=str(payload.get("currency") or invoice.currency or "MXN")[:3].upper(),
+            currency=moneda or str(invoice.currency or "MXN")[:3].upper(),
             exchange_rate=Decimal(str(payload.get("exchange_rate") or 1)),
             instalment=parcialidad,
             previous_balance=saldo_anterior,
