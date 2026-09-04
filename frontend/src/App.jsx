@@ -38,6 +38,7 @@ import LocationPage from "./pages/LocationPage.jsx";
 import LocationTypePage from "./pages/LocationTypePage.jsx";
 import MaterialPage from "./pages/MaterialPage.jsx";
 import MaterialComponentPage from "./pages/MaterialComponentPage.jsx";
+import MaterialTypePage from "./pages/MaterialTypePage.jsx";
 import MovementPage from "./pages/MovementPage.jsx";
 import NmFieldPermissionPage from "./pages/NmFieldPermissionPage.jsx";
 import NmIncidentProductPage from "./pages/NmIncidentProductPage.jsx";
@@ -49,6 +50,7 @@ import PayrollMovementPage from "./pages/PayrollMovementPage.jsx";
 import PayrollPeriodPage from "./pages/PayrollPeriodPage.jsx";
 import PermissionPage from "./pages/PermissionPage.jsx";
 import ProductPage from "./pages/ProductPage.jsx";
+import WarehouseVoucherPage from "./pages/WarehouseVoucherPage.jsx";
 import ProductFamilyPage from "./pages/ProductFamilyPage.jsx";
 import ProductSaleConfigPage from "./pages/ProductSaleConfigPage.jsx";
 import ProjectManagementPage from "./pages/ProjectManagementPage.jsx";
@@ -246,6 +248,11 @@ export default function App() {
           <Route path="/permission" element={<RoleAccessRoute entityName="permission"><PermissionPage /></RoleAccessRoute>} />
           <Route path="/product" element={<RoleAccessRoute entityName="product"><ProductPage /></RoleAccessRoute>} />
           <Route path="/product_family" element={<RoleAccessRoute entityName="product_family"><ProductFamilyPage /></RoleAccessRoute>} />
+          <Route path="/material_type" element={<RoleAccessRoute entityName="material_type"><MaterialTypePage /></RoleAccessRoute>} />
+          {/* El vale se guarda con la capacidad `warehouse_voucher`, no con
+              una entidad: su pantalla escribe en `incident` y en la tabla
+              puente de sus renglones, que esta fuera del menu a proposito. */}
+          <Route path="/vouchers" element={<RoleAccessRoute entityName="warehouse_voucher"><WarehouseVoucherPage /></RoleAccessRoute>} />
           <Route path="/product_sale_config" element={<RoleAccessRoute entityName="product_sale_config"><ProductSaleConfigPage /></RoleAccessRoute>} />
           <Route path="/proyect" element={<RoleAccessRoute entityName="proyect"><ProjectManagementPage /></RoleAccessRoute>} />
           <Route path="/appointments" element={<RoleAccessRoute entityName="appointment"><AppointmentsPage /></RoleAccessRoute>} />
