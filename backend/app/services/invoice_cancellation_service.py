@@ -182,6 +182,10 @@ def preview_cancellation(invoice_id, payload, user_data) -> dict:
             "current_request": vigente.serialize() if vigente else None,
             "history": [s.serialize() for s in solicitudes],
             "inventory_movements_to_reverse": len(a_revertir),
+            # Cuantos abonos se van a dar de baja con la cancelacion. Se avisa
+            # antes: cancelar una factura con abonos registrados es una decision
+            # contable, y enterarse despues no sirve de nada.
+            "payments_to_cancel": len(_abonos_vigentes(db, invoice)),
             "can_request": timbrada and vigente is None,
         }
 
@@ -194,6 +198,61 @@ def _invoice_lines(db, invoice_id):
         .where(InvoiceMaterialService.id_invoice == int(invoice_id))
         .where(InvoiceMaterialService.deletion_date.is_(None))
     ).all()
+
+
+def _abonos_vigentes(db, invoice) -> list:
+    """Los abonos que la cancelacion daria de baja."""
+    from app.models.invoice_payment import InvoicePayment
+    from app.services.invoice_payment_service import CANCELLED as ABONO_CANCELADO
+
+    return db.scalars(
+        select(InvoicePayment).where(
+            InvoicePayment.id_invoice == invoice.id_invoice,
+            InvoicePayment.status != ABONO_CANCELADO,
+            InvoicePayment.deletion_date.is_(None),
+        )
+    ).all()
+
+
+def _cancelar_abonos(db, invoice) -> list[dict]:
+    """Da de baja los abonos de una factura que dejo de existir.
+
+    Por que hace falta
+    ------------------
+    Medido antes de esto: se timbra una factura de 1160 en parcialidades, se
+    registra un abono de 500, se cancela la factura -y se cancelaba sin una
+    queja- y el estado de cuenta seguia diciendo "saldo 660" sobre una factura
+    que fiscalmente ya no existe. Las cuentas por cobrar contaban dinero de
+    facturas canceladas.
+
+    Por que se cancelan en vez de impedir la cancelacion
+    ----------------------------------------------------
+    No hay forma de anular un abono por separado -no existe la ruta-, asi que
+    bloquear la cancelacion cuando hay abonos deja al usuario sin salida: no
+    puede cancelar la factura ni quitar el abono. Los abonos son de la factura;
+    si ella se cancela, ellos no pueden seguir vigentes.
+
+    El estado `cancelado` ya existia y el propio servicio de pagos ya lo excluye
+    del saldo y del listado; lo que faltaba era que alguien lo marcara.
+
+    Lo que NO se hace es borrarlos. Un abono cancelado es historia contable: se
+    cobro y despues se revirtio, y eso hay que poder verlo.
+    """
+    from app.models.invoice_payment import InvoicePayment
+    from app.services.invoice_payment_service import CANCELLED as ABONO_CANCELADO
+
+    abonos = db.scalars(
+        select(InvoicePayment).where(
+            InvoicePayment.id_invoice == invoice.id_invoice,
+            InvoicePayment.status != ABONO_CANCELADO,
+            InvoicePayment.deletion_date.is_(None),
+        )
+    ).all()
+    for abono in abonos:
+        abono.status = ABONO_CANCELADO
+    if abonos:
+        db.flush()
+    return [a.serialize() for a in abonos]
 
 
 def _reverse_inventory(db, invoice, user_data, cancellation) -> list[dict]:
@@ -302,16 +361,21 @@ def request_cancellation(invoice_id, payload, user_data, provider=None) -> dict:
             solicitud.resolved_date = _now()
 
         movimientos = []
+        abonos_cancelados = []
         if resultado.status == CANCELLED:
             invoice.invoice_status = "cancelada"
             # El almacen se devuelve DESPUES de que el SAT confirma. Al reves,
             # una cancelacion rechazada dejaria el inventario inflado.
             movimientos = _reverse_inventory(db, invoice, user_data, solicitud)
+            # Y con el mismo criterio, los abonos: una factura cancelada no
+            # puede seguir teniendo saldo por cobrar.
+            abonos_cancelados = _cancelar_abonos(db, invoice)
 
         db.flush()
         return {
             "cancellation": solicitud.serialize(),
             "inventory": movimientos,
+            "payments_cancelled": abonos_cancelados,
             "created": True,
         }
 
@@ -340,10 +404,13 @@ def refresh_cancellation(cancellation_id, user_data, provider=None) -> dict:
         solicitud.response_metadata = resultado.metadata or solicitud.response_metadata
         solicitud.error_code = resultado.error_code
         movimientos = []
+        abonos_cancelados = []
         if resultado.status in RESOLVED_STATUSES:
             solicitud.resolved_date = _now()
         if resultado.status == CANCELLED:
             invoice.invoice_status = "cancelada"
             movimientos = _reverse_inventory(db, invoice, user_data, solicitud)
+            abonos_cancelados = _cancelar_abonos(db, invoice)
         db.flush()
-        return {"cancellation": solicitud.serialize(), "inventory": movimientos, "changed": True}
+        return {"cancellation": solicitud.serialize(), "inventory": movimientos,
+                "payments_cancelled": abonos_cancelados, "changed": True}

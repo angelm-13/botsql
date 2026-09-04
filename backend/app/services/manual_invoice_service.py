@@ -58,6 +58,20 @@ IVA_TYPES = {
 }
 
 
+def _tipo_de_cambio_por_omision(payload: dict):
+    """El tipo de cambio capturado, o el valor que obliga a capturarlo.
+
+    En pesos, 1. En moneda extranjera sin capturar, 0: el validador lee el cero
+    como "no capturado" y lo rechaza, que es lo que hace falta para que nadie
+    timbre dolares a la par sin darse cuenta.
+    """
+    capturado = payload.get('type_exchange_rate') or payload.get('tipo_cambio')
+    if capturado not in (None, ''):
+        return capturado
+    moneda = str(payload.get('currency') or payload.get('moneda') or 'MXN').strip().upper()
+    return 1 if moneda in ('MXN', 'XXX', '') else 0
+
+
 def preview_manual_invoice(payload: dict) -> dict:
     concepts = payload.get('concepts') or payload.get('conceptos') or payload.get('items') or []
     errors = []
@@ -245,7 +259,19 @@ def create_manual_invoice(payload: dict, user_data: dict) -> dict:
             id_proyect=project.id_proyect,
             internationalization='local',
             currency=str(payload.get('currency') or payload.get('moneda') or 'MXN')[:30],
-            type_exchange_rate=_decimal(payload.get('type_exchange_rate') or 1, 'type_exchange_rate'),
+            # El tipo de cambio NO se rellena con 1 cuando la moneda es
+            # extranjera.
+            #
+            # Con el 1 por omision, elegir USD y no tocar el campo daba una
+            # factura de 116 USD "a 1 peso por dolar", que el validador solo
+            # marcaba como AVISO y por tanto se podia timbrar: el SAT leia 116
+            # pesos por algo que cuesta unos dos mil. Medido: can_stamp = True.
+            #
+            # Dejandolo en cero -que es como el validador lee "no capturado"-
+            # el mismo validador lo convierte en error y pide el dato. El 1
+            # explicito se respeta: una moneda a la par es raro pero legal.
+            type_exchange_rate=_decimal(
+                _tipo_de_cambio_por_omision(payload), 'type_exchange_rate'),
             tax_certification_supplier=_required_int(payload.get('tax_certification_supplier') or issuer.id_customer_supplier, 'tax_certification_supplier'),
             id_status=status.id_status,
             created_by=actor_id,
