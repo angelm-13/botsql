@@ -181,6 +181,11 @@ export default function Shell() {
   // mientras tanto se muestran todos, porque un menu que aparece a trozos se
   // lee como un sistema roto y el backend niega igual lo que no este en el plan.
   const [modulosDelPlan, setModulosDelPlan] = useState([]);
+  // Nombre o abreviacion del cliente (DEPLOYMENT_LABEL / TYAKXA_PLAN en el
+  // servidor). Sin esto, todas las instalaciones se ven identicas y es facil
+  // operar la del cliente equivocado por error -el motivo real de agregarlo,
+  // no solo cosmetico.
+  const [clienteDelPlan, setClienteDelPlan] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => (
     window.matchMedia("(max-width: 800px)").matches || localStorage.getItem("tyakxa-sidebar-collapsed") === "true"
   ));
@@ -218,12 +223,23 @@ export default function Shell() {
   useEffect(() => {
     let vigente = true;
     deploymentPlan()
-      .then((plan) => { if (vigente) setModulosDelPlan(plan?.modulos || []); })
+      .then((plan) => {
+        if (!vigente) return;
+        setModulosDelPlan(plan?.modulos || []);
+        setClienteDelPlan(String(plan?.cliente || "").trim());
+      })
       // Si no se puede leer el plan no se esconde nada: el backend sigue
       // negando lo que no corresponde.
       .catch(() => {});
     return () => { vigente = false; };
   }, []);
+
+  useEffect(() => {
+    // El titulo de la pestana es lo primero que se ve al elegir entre varias
+    // abiertas -el momento real en que se opera el cliente equivocado por
+    // error-, asi que es donde mas rinde poner el nombre.
+    document.title = clienteDelPlan ? `TYAKXA · ${clienteDelPlan}` : "TYAKXA";
+  }, [clienteDelPlan]);
 
   useEffect(() => {
     function cerrarEngrane(evento) {
@@ -413,7 +429,17 @@ export default function Shell() {
       </button>
       <main className="main">
         <header className="topbar">
-          <div><p className="eyebrow">ERP · CRM · SCM</p><h1>TYAKXA</h1></div>
+          <div>
+            <p className="eyebrow">ERP · CRM · SCM</p>
+            <div className="brand-title-row">
+              <h1>TYAKXA</h1>
+              {/* De que cliente es esta instancia -DEPLOYMENT_LABEL en el
+                  servidor-. Todas las instalaciones se ven identicas sin
+                  esto, y es facil operar la del cliente equivocado por error;
+                  el cliente lo ve tambien, es el nombre de su propia empresa. */}
+              {clienteDelPlan && <span className="deployment-badge">{clienteDelPlan}</span>}
+            </div>
+          </div>
           <div className="topbar-actions">
             <span className="session-pill">{t("common.secure_session", "Sesión protegida")}{currentUser?.username ? ` · ${currentUser.username}` : ""}</span>
             <LanguagePicker />

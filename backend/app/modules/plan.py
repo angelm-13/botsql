@@ -35,6 +35,12 @@ estaba desplegada: cambiarle la forma habria obligado a tocar tres ambientes en
 produccion para ganar elegancia. La forma del JSON es la que tendra la licencia
 firmada, para que cuando llegue solo cambie de donde se lee el dato.
 
+* **`DEPLOYMENT_LABEL`**: nombre o abreviacion del cliente, solo para pantalla
+  -que no se confunda un despliegue con otro-. Aparte de las dos anteriores
+  porque no es un control de acceso: no deberia hacer falta escribir el JSON
+  completo del plan solo para poner un nombre. Si `TYAKXA_PLAN` ya trae
+  `cliente`, ese gana.
+
 Un mecanismo, dos sitios donde se aplica
 ----------------------------------------
 La misma declaracion gobierna el sembrado y las peticiones. El sembrado recorta
@@ -180,6 +186,17 @@ def _modulos_licenciados() -> list[str] | None:
     return claves or None
 
 
+def _etiqueta_del_despliegue() -> str:
+    """`DEPLOYMENT_LABEL`: el nombre o abreviacion del cliente, para pantalla.
+
+    Aparte de `LICENSED_MODULES`/`TYAKXA_PLAN` a proposito: es una etiqueta
+    visual -que cliente es este despliegue-, sin nada que ver con permisos, y
+    exigir el JSON completo del plan solo para poner un nombre habria sido
+    friccion de mas para algo que hoy ningun ambiente real usa.
+    """
+    return (os.getenv("DEPLOYMENT_LABEL") or "").strip()
+
+
 def _leer_configuracion() -> dict | None:
     """El plan tal como lo dejo el despliegue, sin interpretarlo."""
     ruta = (os.getenv("TYAKXA_PLAN_FILE") or "").strip()
@@ -192,10 +209,19 @@ def _leer_configuracion() -> dict | None:
         crudo = (os.getenv("TYAKXA_PLAN") or "").strip()
 
     licenciados = _modulos_licenciados()
+    etiqueta = _etiqueta_del_despliegue()
 
     if not crudo:
-        # Sin JSON pero con LICENSED_MODULES: plan de modulos, sin topes.
-        return {"modulos": licenciados} if licenciados is not None else None
+        # Sin JSON pero con LICENSED_MODULES y/o DEPLOYMENT_LABEL: se arma un
+        # plan minimo con lo que haya, sin topes.
+        if licenciados is None and not etiqueta:
+            return None
+        datos = {}
+        if licenciados is not None:
+            datos["modulos"] = licenciados
+        if etiqueta:
+            datos["cliente"] = etiqueta
+        return datos
     try:
         datos = json.loads(crudo)
     except json.JSONDecodeError as error:
@@ -210,6 +236,11 @@ def _leer_configuracion() -> dict | None:
     # recortes por separado.
     if licenciados is not None:
         datos = {**datos, "modulos": licenciados}
+    # Aqui SI gana lo que ya traiga el plan: cuando llegue la licencia firmada
+    # con su propio `cliente`, ese es el dato de verdad. DEPLOYMENT_LABEL es
+    # el respaldo de mientras tanto, no algo que deba pisarlo.
+    if etiqueta and not str(datos.get("cliente") or "").strip():
+        datos = {**datos, "cliente": etiqueta}
     return datos
 
 
