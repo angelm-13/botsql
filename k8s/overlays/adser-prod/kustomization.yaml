@@ -27,3 +27,30 @@ patches:
       metadata:
         name: tyakxa-tny
       $patch: delete
+  # Las ~2461 fotos de producto de adser viven en /home/infra-k8s/imagenes/producto
+  # en el VPS (Tanya las sube y las mantiene ahi -- no se copian a la PVC de
+  # /uploads de este cliente). nodeSelector obligatorio porque esa carpeta es
+  # local a master1, no un volumen compartido entre los 3 nodos: si el pod
+  # cayera en otro nodo, la carpeta no existiria ahi (hostPath type: Directory
+  # hace que el pod falle en Pending de forma visible, en vez de arrancar con
+  # /uploads/products vacio en silencio).
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: backend
+      spec:
+        template:
+          spec:
+            nodeSelector:
+              kubernetes.io/hostname: k3s-master1
+            containers:
+              - name: backend
+                volumeMounts:
+                  - name: adser-legacy-product-images
+                    mountPath: /uploads/products
+            volumes:
+              - name: adser-legacy-product-images
+                hostPath:
+                  path: /home/infra-k8s/imagenes/producto
+                  type: Directory
