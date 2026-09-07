@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { Boxes, Briefcase, CalendarDays, ChevronDown, ClipboardList, Contact, FileText, FlaskConical, Landmark, LayoutDashboard, LogOut, PanelLeftClose, PanelLeftOpen, Receipt, Settings, ShieldCheck, ShoppingCart, SlidersHorizontal, Truck, UserCog, Users, Utensils, Warehouse } from "lucide-react";
+import { Boxes, Briefcase, CalendarDays, ChevronDown, ClipboardList, Contact, FileText, FlaskConical, Landmark, LayoutDashboard, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Receipt, Settings, ShieldCheck, ShoppingCart, SlidersHorizontal, Truck, UserCog, Users, Utensils, Warehouse } from "lucide-react";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { deploymentPlan, getAllEntityPermission } from "../api";
 import LanguagePicker from "../components/LanguagePicker";
@@ -198,6 +198,11 @@ export default function Shell() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => (
     window.matchMedia("(max-width: 800px)").matches || localStorage.getItem("tyakxa-sidebar-collapsed") === "true"
   ));
+  // Menu de hamburguesa para media pantalla o menos. Independiente de
+  // `sidebarCollapsed` -ese es el colapsado a iconos del escritorio- porque
+  // aqui el menu entero se oculta y aparece como panel encima del contenido,
+  // no como una version angosta de si mismo.
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const settingsRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
@@ -259,6 +264,12 @@ export default function Shell() {
     document.addEventListener("mousedown", cerrarEngrane);
     return () => document.removeEventListener("mousedown", cerrarEngrane);
   }, []);
+
+  // Elegir un modulo cierra el panel movil. Sin esto el menu se quedaba
+  // abierto tapando la pantalla despues de navegar.
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [location.pathname]);
 
   function canSeeNavItem(item) {
     if (item.exact || item.path === "/mfa-setup") return true;
@@ -372,20 +383,47 @@ export default function Shell() {
   function moduleIsOpen(modulo) {
     return openGroups[modulo.key] ?? location.pathname.startsWith(modulo.basePath);
   }
+  // El panel movil siempre muestra el menu completo (con etiquetas y grupos
+  // expandibles), nunca la version a iconos del escritorio: son dos botones
+  // distintos y uno no debe determinar como se ve el otro.
+  const showCompactSidebar = sidebarCollapsed && !mobileNavOpen;
+  const shellClassName = [
+    "shell",
+    showCompactSidebar ? "sidebar-is-collapsed" : "",
+    mobileNavOpen ? "mobile-nav-open" : "",
+  ].filter(Boolean).join(" ");
+
   return (
-    <div className={sidebarCollapsed ? "shell sidebar-is-collapsed" : "shell"}>
+    <div className={shellClassName}>
+      {/* Solo se ve en media pantalla o menos (ver app.css). En escritorio el
+          sidebar de siempre sigue igual, con su propio boton de colapsar. */}
+      <div className="mobile-topbar">
+        <button
+          type="button"
+          className="mobile-menu-button"
+          onClick={() => setMobileNavOpen(true)}
+          aria-label={shellText("open_menu")}
+          aria-expanded={mobileNavOpen}
+        >
+          <Menu size={22} />
+        </button>
+        <img src="/tyakxa-logo.png" alt={t("common.app_title")} className="mobile-topbar-logo" />
+      </div>
+      {mobileNavOpen && (
+        <div className="mobile-nav-backdrop" onClick={() => setMobileNavOpen(false)} aria-hidden="true" />
+      )}
       <aside className="sidebar" aria-label={shellText("main_navigation")}>
         <div className="sidebar-brand-row">
           <div className="brand"><img src="/tyakxa-logo.png" alt={t("common.app_title")} className="brand-logo" /><span>{t("common.app_title")}</span></div>
         </div>
         <nav className="nav">
-          {!sidebarCollapsed && fixedSidebarItems.map((item, index) => (
-            <NavLink key={item.path} to={item.path} end={item.exact} title={sidebarCollapsed ? t(item.key, item.label || item.key) : undefined} aria-label={t(item.key, item.label || item.key)} className={({ isActive }) => isActive ? "nav-link active" : "nav-link"}>
+          {!showCompactSidebar && fixedSidebarItems.map((item, index) => (
+            <NavLink key={item.path} to={item.path} end={item.exact} title={showCompactSidebar ? t(item.key, item.label || item.key) : undefined} aria-label={t(item.key, item.label || item.key)} className={({ isActive }) => isActive ? "nav-link active" : "nav-link"}>
               {index === 0 ? <LayoutDashboard size={18} /> : item.path === "/mfa-setup" ? <ShieldCheck size={18} /> : <span className="dot" />}
               <span className="nav-link-label">{t(item.key, item.label || item.key)}</span>
             </NavLink>
           ))}
-          {sidebarCollapsed ? sidebarGroups.map((group) => {
+          {showCompactSidebar ? sidebarGroups.map((group) => {
             const GroupIcon = groupIcons[group.icon] || SlidersHorizontal;
             return <button type="button" key={group.label} className="nav-link collapsed-group-button" title={groupLabel(group.label)} aria-label={`${shellText("expand_group")} ${groupLabel(group.label)}`} onClick={() => expandSidebarForGroup(group.label)}><GroupIcon size={20} /><span className="nav-link-label">{groupLabel(group.label)}</span></button>;
           }) : sidebarGroups.map((group) => {
@@ -414,7 +452,7 @@ export default function Shell() {
             const abierto = moduleIsOpen(modulo);
             const ModuleIcon = groupIcons[modulo.icon] || SlidersHorizontal;
 
-            if (sidebarCollapsed) {
+            if (showCompactSidebar) {
               return <button type="button" key={modulo.key} className="nav-link collapsed-group-button" title={shellText(modulo.titleKey)} aria-label={`${shellText("expand_group")} ${shellText(modulo.titleKey)}`} onClick={() => expandSidebarForGroup(modulo.key)}><ModuleIcon size={20} /><span className="nav-link-label">{shellText(modulo.titleKey)}</span></button>;
             }
 

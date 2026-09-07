@@ -3316,6 +3316,8 @@
     "expand_group": "Expand group",
     "expand_menu": "Expand menu",
     "collapse_menu": "Collapse menu",
+    "open_menu": "Open menu",
+    "close_menu": "Close menu",
     "options": "Options",
     "no_options": "No options configured",
     "main_navigation": "Main navigation",

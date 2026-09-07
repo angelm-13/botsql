@@ -3197,6 +3197,8 @@
     "expand_group": "Gruppe erweitern",
     "expand_menu": "Menü erweitern",
     "collapse_menu": "Menü einklappen",
+    "open_menu": "Menü öffnen",
+    "close_menu": "Menü schließen",
     "options": "Optionen",
     "no_options": "Keine Optionen konfiguriert",
     "main_navigation": "Hauptnavigation",
