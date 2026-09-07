@@ -105,6 +105,7 @@ from app.routes.pos_proxy import bp_pos
 from app.routes.restaurant import bp_restaurant
 from app.routes.appointments import bp_appointments
 from app.routes.public_calendar import bp_public_appointments, bp_public_calendar
+from app.routes.kpi import bp_kpi
 
 def _documents_reports_app_path() -> str:
     return os.getenv('DOCUMENTS_REPORTS_APP_PATH', '/documents-reports/app')
@@ -666,6 +667,7 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_user)
     app.register_blueprint(bp_user_mfa)
     app.register_blueprint(bp_appointments)
+    app.register_blueprint(bp_kpi)
     app.register_blueprint(bp_payroll_period)
     app.register_blueprint(bp_payroll_detail)
     app.register_blueprint(bp_payroll_concept)

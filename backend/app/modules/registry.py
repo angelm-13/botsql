@@ -318,10 +318,25 @@ ROLES = (
     # de verdad es una decision de negocio que todavia no se tomo. Ampliarlo es
     # agregar la clave a los roles que correspondan; dejarlo abierto era lo que
     # hacia que un mesero pudiera leer expedientes de empleados.
+    # `kpis`, igual que `documentos`/`laboratorio` arriba: solo Administrator
+    # por ahora, y que otro rol lo reciba -y con que bits- es una decision de
+    # negocio pendiente, no tecnica.
+    #
+    # Los bits van parejos por modulo (`Rol.modulos` es un solo valor para las
+    # cuatro entidades, no uno por entidad), asi que aqui las cuatro quedan en
+    # TOTAL, igual que el resto de los modulos de Administrator. El criterio
+    # que SI debe aplicarse entidad por entidad cuando se decida dar `kpis` a
+    # un rol que no sea Administrator:
+    #   * `kpi_definition` -- catalogo de solo lectura: CONSULTA alcanza para
+    #     cualquiera con el modulo, nadie crea KPIs a mano.
+    #   * `nm_permission_kpi` -- lo administra solo quien reparte permisos,
+    #     igual que ya pasa con `nm_field_permission`: TOTAL.
+    #   * `kpi_dashboard` / `kpi_dashboard_widget` -- datos propios del
+    #     usuario (sus tableros): TOTAL.
     Rol(1, "Administrator", {
         "facturacion": TOTAL, "inventario": TOTAL, "operaciones": TOTAL,
         "logistica": TOTAL, "restaurante": TOTAL, "pos": TOTAL, "crm": TOTAL, "rh": TOTAL,
-        "documentos": TOTAL, "laboratorio": TOTAL,
+        "documentos": TOTAL, "laboratorio": TOTAL, "kpis": TOTAL,
         "configuracion": TOTAL, "seguridad": TOTAL,
     }, [c.clave for c in CAPACIDADES]),
 
