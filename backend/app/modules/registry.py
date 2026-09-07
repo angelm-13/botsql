@@ -190,6 +190,14 @@ MODULOS = (
         "rh", "Recursos humanos", "hr", 700,
         ("payroll_concept", "payroll_detail", "payroll_movement", "payroll_period"),
     ),
+    # Sus pantallas no tienen apartado propio en el menu lateral: viven dentro
+    # del Home/Dashboard actual (ruta "/"), que ya es de acceso libre para
+    # cualquier usuario autenticado. Por eso ninguna de sus cuatro entidades
+    # tiene entrada en MENU, y quedan sembradas como "hidden".
+    Modulo(
+        "kpis", "KPIs", "bar-chart", 750,
+        ("kpi_definition", "nm_permission_kpi", "kpi_dashboard", "kpi_dashboard_widget"),
+    ),
     # --- infraestructura, no son submodulos de negocio -------------------
     Modulo(
         "configuracion", "Configuracion", "settings", 800,
