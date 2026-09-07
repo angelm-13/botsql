@@ -85,6 +85,9 @@ class TestCobertura(unittest.TestCase):
             "pos",
             # Llegados con tny_docs.
             "documentos", "laboratorio",
+            # Indicadores: catalogo de KPIs predefinidos, sin pantalla propia
+            # en el menu -vive dentro del Home/Dashboard actual.
+            "kpis",
         }
 
         self.assertEqual(esperados, set(registry.MODULOS_DE_NEGOCIO))

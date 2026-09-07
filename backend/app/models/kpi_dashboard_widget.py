@@ -2,7 +2,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import String, Integer, JSON, DateTime, ForeignKey, func
+from sqlalchemy import String, Integer, JSON, DateTime, ForeignKey, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from app.models.base import Base
 
@@ -24,8 +24,8 @@ class KpiDashboardWidget(Base):
     id_kpi_dashboard: Mapped[int] = mapped_column(Integer, ForeignKey('kpi_dashboard.id_kpi_dashboard'), nullable=False)
     id_kpi_definition: Mapped[int] = mapped_column(Integer, ForeignKey('kpi_definition.id_kpi_definition'), nullable=False)
     tipo_grafica: Mapped[str] = mapped_column(String(30), nullable=False)
-    parametros: Mapped[dict] = mapped_column(JSON().with_variant(JSONB, "postgresql"), nullable=False, default=dict)
-    posicion_orden: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    parametros: Mapped[dict] = mapped_column(JSON().with_variant(JSONB, "postgresql"), nullable=False, default=dict, server_default='{}')
+    posicion_orden: Mapped[int] = mapped_column(Integer, nullable=False, default=100, server_default=text("100"))
     creation_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now())
     deletion_date: Mapped[object] = mapped_column(DateTime, nullable=True)
 

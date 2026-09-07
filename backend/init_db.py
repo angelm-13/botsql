@@ -111,6 +111,16 @@ def init_database():
         Base.metadata.create_all(engine)
         print("✅ Database tables created")
 
+        # Catalogo de KPIs predefinidos: se resiembra en cada arranque, igual
+        # que seed.sql, para que un cambio de etiqueta/unidad en el codigo se
+        # refleje sin escribir una migracion.
+        try:
+            from app.kpis.registry import seed_kpi_definitions
+            seed_kpi_definitions(engine)
+            print("✅ kpi_definition seeded from KPI_REGISTRY")
+        except Exception as e:
+            print(f"⚠️  KPI catalog seed warning (non-fatal): {e}")
+
         # Re-apply seed.sql on every start. The file is generated idempotently,
         # so this is safe and fixes persistent Docker volumes that skipped the
         # PostgreSQL first-run seed path.

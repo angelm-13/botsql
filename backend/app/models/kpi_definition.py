@@ -2,7 +2,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import String, Integer, JSON, DateTime, func
+from sqlalchemy import String, Integer, JSON, DateTime, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from app.models.base import Base
 
@@ -24,9 +24,9 @@ class KpiDefinition(Base):
     clave: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
     etiqueta: Mapped[str] = mapped_column(String(150), nullable=False)
     modulo: Mapped[str] = mapped_column(String(40), nullable=False)
-    dimensiones: Mapped[list] = mapped_column(JSON().with_variant(JSONB, "postgresql"), nullable=False, default=list)
-    unidad: Mapped[str] = mapped_column(String(20), nullable=False, default='numero')
-    created_by: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    dimensiones: Mapped[list] = mapped_column(JSON().with_variant(JSONB, "postgresql"), nullable=False, default=list, server_default='[]')
+    unidad: Mapped[str] = mapped_column(String(20), nullable=False, default='numero', server_default='numero')
+    created_by: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=text("1"))
     creation_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now())
     last_update_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
     deletion_date: Mapped[object] = mapped_column(DateTime, nullable=True)

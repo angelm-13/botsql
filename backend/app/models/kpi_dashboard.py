@@ -2,7 +2,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import String, Integer, DateTime, func
+from sqlalchemy import String, Integer, DateTime, func, text
 from app.models.base import Base
 
 
@@ -22,8 +22,8 @@ class KpiDashboard(Base):
     id_kpi_dashboard: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, nullable=False)
     id_user: Mapped[int] = mapped_column(Integer, nullable=False)
     nombre: Mapped[str] = mapped_column(String(100), nullable=False)
-    orden: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
-    created_by: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    orden: Mapped[int] = mapped_column(Integer, nullable=False, default=100, server_default=text("100"))
+    created_by: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=text("1"))
     creation_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now())
     last_update_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
     deletion_date: Mapped[object] = mapped_column(DateTime, nullable=True)

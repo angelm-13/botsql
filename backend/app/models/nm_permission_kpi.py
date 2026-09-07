@@ -2,7 +2,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import Integer, SmallInteger, DateTime, ForeignKey, UniqueConstraint, func
+from sqlalchemy import Integer, SmallInteger, DateTime, ForeignKey, UniqueConstraint, func, text
 from app.models.base import Base
 
 
@@ -25,8 +25,8 @@ class NmPermissionKpi(Base):
     id_nm_permission_kpi: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, nullable=False)
     id_permission: Mapped[int] = mapped_column(Integer, nullable=False)
     id_kpi_definition: Mapped[int] = mapped_column(Integer, ForeignKey('kpi_definition.id_kpi_definition'), nullable=False)
-    control_type: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=2)
-    created_by: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    control_type: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=2, server_default=text("2"))
+    created_by: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=text("1"))
     creation_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now())
     last_update_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
     deletion_date: Mapped[object] = mapped_column(DateTime, nullable=True)
