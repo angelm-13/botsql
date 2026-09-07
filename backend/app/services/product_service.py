@@ -11,6 +11,37 @@ class ProductService(CrudService):
     primary_key = 'id_product'
     entity_name = 'product'
 
+    @classmethod
+    def _rechazar_lot_control(cls, payload: dict) -> dict:
+        """El control por lote no se enciende escribiendo la columna.
+
+        Encenderlo en un producto que YA tiene existencia deja esa existencia
+        fuera de todo lote, y como la salida se sirve de los lotes, esas unidades
+        no se pueden despachar: el saldo dice que estan y los lotes dicen que no.
+        Medido al probar contra Postgres, donde el cuadre salio en falso con
+        saldo 1 y 0 en lotes.
+
+        Para eso esta `POST /product/<id>/lot-control`, que enciende y crea el
+        lote de apertura con lo que ya habia, en la misma transaccion.
+        """
+        if 'lot_control' in (payload or {}):
+            raise AppError(
+                'errors.lot_control_needs_its_own_endpoint',
+                400,
+                {'field': 'lot_control',
+                 'use': 'POST /product/<id_product>/lot-control'},
+            )
+        return payload
+
+    @classmethod
+    def create(cls, payload: dict, user_id: int | None = None):
+        return super().create(cls._rechazar_lot_control(payload), user_id=user_id)
+
+    @classmethod
+    def update(cls, item_id, payload: dict, user_id: int | None = None):
+        return super().update(item_id, cls._rechazar_lot_control(payload),
+                              user_id=user_id)
+
     @staticmethod
     def _project_id(user_data: dict) -> int | None:
         if user_data.get('is_superuser') or user_data.get('is_bootstrap_admin'):

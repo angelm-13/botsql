@@ -2,10 +2,13 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import {
   AlertTriangle, Camera, ChevronLeft, ChevronRight, Crosshair, FilterX, History,
-  ImageOff, MapPin, Package, Ruler, Tags, RefreshCw, Search, Wrench,
+  ImageOff, MapPin, Package, Ruler, ShoppingCart, Tags, RefreshCw, Search,
+  Wrench,
 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { inventoryTrace, uploadProductImage, urlDeArchivo } from "../api";
+import {
+  getAssetStatusSummary, inventoryTrace, uploadProductImage, urlDeArchivo,
+} from "../api";
 import { useI18n } from "../i18n";
 import "../styles/inventory-trace.css";
 
@@ -37,10 +40,27 @@ import "../styles/inventory-trace.css";
  *   ensena la pieza pedida arriba con su bitacora, y las demas unidades debajo.
  */
 
-const PROPOSITOS = [
-  ["", "all_purposes", "Todo el almacén"],
-  ["mercancia", "merchandise", "Mercancía"],
-  ["uso_interno", "internal_use", "Uso interno"],
+/**
+ * Las dos naturalezas del material, y no un filtro mas.
+ *
+ * El almacen guarda dos cosas que se preguntan distinto: la mercancia que la
+ * empresa distribuye -de ella importa el saldo- y la herramienta de uso interno
+ * -de ella importa quien la tiene-. Como marco de la pantalla, cada una trae su
+ * pregunta; como opcion dentro de un desplegable de seis, habia que saber que
+ * estaba ahi.
+ */
+const NATURALEZAS = [
+  { valor: "", clave: "all_purposes", texto: "Todo el almacén", icono: null },
+  { valor: "mercancia", clave: "merchandise", texto: "Mercancía",
+    icono: ShoppingCart, ayuda: "Lo que la empresa distribuye. Se cuenta por cantidad." },
+  { valor: "uso_interno", clave: "internal_use", texto: "Uso interno",
+    icono: Wrench, ayuda: "Herramienta y equipo. Se rastrea pieza por pieza." },
+];
+
+// El orden en que se leen los estados: primero lo que se puede usar, luego lo
+// que esta fuera, y al final lo que ya no vuelve.
+const ORDEN_DE_ESTADOS = [
+  "disponible", "en_uso", "prestada", "en_reparacion", "extraviada", "retirada",
 ];
 
 // Los estados de una pieza, con el tono con el que se pintan. `disponible` es
@@ -164,6 +184,9 @@ export default function InventoryTracePage() {
   const [filtros, setFiltros] = useState(SIN_FILTROS);
   const [pagina, setPagina] = useState(1);
   const [datos, setDatos] = useState(null);
+  // El panorama de estatus. Solo tiene sentido con uso interno: lo fungible no
+  // tiene piezas, asi que no tiene estados que contar.
+  const [panorama, setPanorama] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
   const [subiendo, setSubiendo] = useState(null);
@@ -191,6 +214,20 @@ export default function InventoryTracePage() {
         if (valor) params[clave] = valor;
       });
       setDatos(await inventoryTrace(params));
+
+      // El panorama de estatus, acotado a la naturaleza que se este mirando.
+      // Tambien en mercancia: un producto serializado que la empresa distribuye
+      // tiene piezas, y una de ellas puede estar extraviada igual que un
+      // taladro. El servidor solo cuenta lo que el usuario alcanza a ver.
+      try {
+        const proposito = (activos || {}).stock_purpose;
+        setPanorama(await getAssetStatusSummary(
+          proposito ? { stock_purpose: proposito } : {}));
+      } catch {
+        // Que falle el panorama no puede tumbar la busqueda: es un resumen de
+        // apoyo, no el resultado.
+        setPanorama(null);
+      }
     } catch (e) {
       setError(e?.payload?.error_key
         ? traducir.current(e.payload.error_key)
@@ -266,6 +303,64 @@ export default function InventoryTracePage() {
         </button>
       </header>
 
+      {/* El marco: que clase de material se esta buscando. Va ARRIBA del
+          buscador porque cambia el sentido de todo lo que sigue -de la
+          mercancia importa el saldo, de la herramienta quien la tiene-. */}
+      <div className="trace-naturalezas" role="group"
+           aria-label={t("trace.purpose", "Clase de material")}>
+        {NATURALEZAS.map(({ valor, clave, texto, icono: Icono, ayuda }) => (
+          <button
+            key={valor || "todo"}
+            type="button"
+            className={`trace-naturaleza ${filtros.stock_purpose === valor ? "activa" : ""}`}
+            onClick={() => cambiarFiltro("stock_purpose", valor)}
+            title={ayuda ? t(`trace.${clave}_help`, ayuda) : undefined}
+          >
+            {Icono && <Icono size={15} />}
+            {t(`trace.${clave}`, texto)}
+          </button>
+        ))}
+      </div>
+
+      {/* El panorama de estatus: la pregunta de la manana en un almacen de
+          herramienta. Cada cifra filtra, asi que ver "3 prestadas" y saber
+          cuales es el mismo gesto. */}
+      {panorama && panorama.total > 0 && (
+        <div className="trace-panorama">
+          {ORDEN_DE_ESTADOS.map((estado) => {
+            const cuantas = panorama.by_status?.[estado] || 0;
+            if (!cuantas && filtros.asset_status !== estado) return null;
+            return (
+              <button
+                key={estado}
+                type="button"
+                className={[
+                  "trace-cifra",
+                  TONO_DE_ESTADO[estado] || "muted",
+                  filtros.asset_status === estado ? "activa" : "",
+                ].filter(Boolean).join(" ")}
+                onClick={() => cambiarFiltro(
+                  "asset_status", filtros.asset_status === estado ? "" : estado)}
+              >
+                <strong>{cuantas}</strong>
+                <span>{t(`assets.status_${estado}`, estado)}</span>
+              </button>
+            );
+          })}
+          {/* Lo vencido va aparte y no como un estado: una pieza vencida esta
+              prestada, asi que contarla como estado propio la sumaria dos
+              veces. */}
+          {panorama.overdue > 0 && (
+            <span className="trace-cifra vencidas" title={t("trace.overdue_help",
+              "Préstamos que ya debieron volver. Están contados dentro de «prestada».")}>
+              <AlertTriangle size={13} />
+              <strong>{panorama.overdue}</strong>
+              <span>{t("trace.overdue_short", "vencidas")}</span>
+            </span>
+          )}
+        </div>
+      )}
+
       <div className="trace-toolbar">
         <div className="trace-search">
           <Search size={16} />
@@ -277,13 +372,6 @@ export default function InventoryTracePage() {
             aria-label={t("trace.search_placeholder", "Buscar en el almacén")}
           />
         </div>
-        <select value={filtros.stock_purpose}
-                onChange={(e) => cambiarFiltro("stock_purpose", e.target.value)}
-                aria-label={t("trace.purpose", "Para qué sirve")}>
-          {PROPOSITOS.map(([valor, clave, texto]) => (
-            <option key={valor} value={valor}>{t(`trace.${clave}`, texto)}</option>
-          ))}
-        </select>
 
         {/* Familia, marca y almacen salen de lo que el texto encontro, con
             cuantos productos hay detras de cada opcion. Un desplegable que

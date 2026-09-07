@@ -39,6 +39,7 @@ from app.models.session import transaction_context
 from app.services.inventory_service import apply_inventory_movement
 from app.services.inventory_trace_service import _clasificar, localizar
 from tests.conftest import BackendTestCase
+from tests.model_factory import sembrar_actor
 
 
 ACTOR = {"id_user": 1, "id_proyect": 70}
@@ -97,6 +98,11 @@ def _sembrar_lo_minimo(db, *, id_invoice, ubicaciones):
         for id_ubicacion, descripcion in ubicaciones.items()
     ])
     db.flush()
+    # El usuario 1 existe de verdad. Prestar una pieza ahora comprueba el
+    # responsable contra la tabla, porque en produccion `inventory_asset.
+    # id_holder` tiene llave ajena y un identificador inventado reventaba en el
+    # COMMIT. `TestLocalizar` siembra ademas a RESPONSABLE, que es quien recibe.
+    sembrar_actor(db, id_proyect=70, id_status=40)
     db.add(Invoice(
         id_invoice=id_invoice, id_customer_supplier=EMPRESA,
         id_issuer_customer_supplier=CLIENTE, id_proyect=70, id_status=40,

@@ -43,13 +43,16 @@ import "../styles/warehouse-voucher.css";
  * volver y no ha vuelto. Si no hay nada vencido, la seccion no aparece.
  */
 
+/**
+ * Un vale es una SALIDA del almacén en calidad de préstamo, y eso es todo lo
+ * que un vale es. Antes se podía elegir entre salida, entrada y traslado, así
+ * que un traspaso entre racks se podía capturar como si fuera un vale y la
+ * lista de «qué está fuera» contaba cosas que nunca salieron.
+ *
+ * Los renglones de ENTRADA existen, pero no los captura nadie: los escribe la
+ * devolución, y por eso un vale devuelto tiene el doble de renglones.
+ */
 const SALIDA = "salida";
-const TRASLADO = "traslado";
-const DIRECCIONES = [
-  [SALIDA, "direction_out", "Sale del almacén"],
-  ["entrada", "direction_in", "Entra al almacén"],
-  [TRASLADO, "direction_move", "Cambia de ubicación"],
-];
 
 export default function WarehouseVoucherPage() {
   const { t } = useI18n();
@@ -127,9 +130,7 @@ export default function WarehouseVoucherPage() {
           id_product: l.id_product,
           id_inventory_asset: l.id_inventory_asset || undefined,
           quantity: l.id_inventory_asset ? undefined : l.quantity,
-          direction: l.direction,
           id_location_from: l.id_location_from || undefined,
-          id_location_to: l.id_location_to || undefined,
           note: l.note || undefined,
         })),
       });
@@ -300,7 +301,11 @@ function Vale({ vale, onCerrar, nombreDe, sitioDe, t }) {
         {(vale.lines || []).map((linea) => {
           const abierto = !linea.close_date;
           return (
-            <li key={linea.id_nm_incident_product} className={abierto ? "" : "devuelto"}>
+            <li key={linea.id_nm_incident_product}
+                className={[
+                  abierto ? "" : "devuelto",
+                  linea.direction === SALIDA ? "vale-salida" : "vale-entrada",
+                ].filter(Boolean).join(" ")}>
               <span className="vale-que">
                 {linea.id_inventory_asset ? <Tag size={13} /> : <Package size={13} />}
                 {linea.id_inventory_asset
@@ -319,8 +324,11 @@ function Vale({ vale, onCerrar, nombreDe, sitioDe, t }) {
                   </>
                 )}
               </span>
-              <span className="muted">
-                {t(`voucher.direction_${linea.direction}`, linea.direction)}
+              {/* La existencia del producto, que es la cifra con la que se
+                  firma: "salen 5 de 40" y "salen 5 de 5" son la misma linea con
+                  consecuencias distintas. */}
+              <span className="muted vale-existencia">
+                {t("voucher.on_hand", "quedan")} <strong>{linea.stock_on_hand}</strong>
               </span>
               {abierto ? (
                 <button className="button button-quiet"
@@ -390,10 +398,8 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
         asset_tag: pieza?.asset_tag || null,
         quantity: serializado ? 1 : 1,
         serializado,
-        direction: SALIDA,
         id_location_from: pieza?.id_location
           || producto.locations?.[0]?.id_location || "",
-        id_location_to: "",
       }],
     });
     setBusqueda("");
@@ -409,11 +415,12 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
     lines: borrador.lines.filter((_, i) => i !== indice),
   });
 
+  // La fecha de regreso y el motivo van siempre, y el origen en lo fungible.
+  // Se comprueba aqui para decirlo antes de mandar, no despues de que el
+  // servidor conteste; el servidor lo exige igual, que es lo que cuenta.
   const listo = borrador.lines.length > 0 && borrador.id_incident_type
-    && borrador.id_user
-    && borrador.lines.every((l) => (
-      l.direction !== TRASLADO || l.id_location_to
-    ));
+    && borrador.id_user && borrador.due_date && borrador.note.trim()
+    && borrador.lines.every((l) => l.serializado || l.id_location_from);
 
   return (
     <section className="vale-borrador">
@@ -454,12 +461,13 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
           {/* Sin fecha de regreso el vale nunca esta vencido, asi que nadie lo
               reclama: un prestamo sin fecha es una baja disfrazada. */}
           <span>{t("voucher.due", "Debe volver el")}</span>
-          <input type="date" value={borrador.due_date}
+          <input type="date" value={borrador.due_date} required
+                 min={new Date().toISOString().slice(0, 10)}
                  onChange={(e) => setBorrador({ ...borrador, due_date: e.target.value })} />
         </label>
         <label className="field field-ancho">
-          <span>{t("voucher.note", "Motivo")}</span>
-          <input value={borrador.note} maxLength={300}
+          <span>{t("voucher.note", "Motivo")} *</span>
+          <input value={borrador.note} maxLength={300} required
                  placeholder={t("voucher.note_placeholder", "Por ejemplo: Obra Norte")}
                  onChange={(e) => setBorrador({ ...borrador, note: e.target.value })} />
         </label>
@@ -551,43 +559,19 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
                 </label>
               )}
 
-              <label className="vale-mini">
-                <span>{t("voucher.direction", "Qué pasa")}</span>
-                <select value={linea.direction}
-                        onChange={(e) => cambiar(indice, { direction: e.target.value })}>
-                  {DIRECCIONES.map(([valor, clave, texto]) => (
-                    <option key={valor} value={valor}>
-                      {t(`voucher.${clave}`, texto)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="vale-mini">
-                <span>{t("voucher.from", "De")}</span>
+              {/* De donde sale. En una pieza se sabe -es donde esta- pero en
+                  lo fungible hay que decirlo: descontar 5 sacos "del almacen"
+                  sin decir de cual deja el saldo por ubicacion mintiendo, y ese
+                  es el dato con el que alguien va a buscarlos. */}
+              <label className={`vale-mini ${!linea.serializado
+                && !linea.id_location_from ? "vale-falta" : ""}`}>
+                <span>
+                  {t("voucher.from", "Sale de")}
+                  {!linea.serializado && " *"}
+                </span>
                 <select value={linea.id_location_from}
                         onChange={(e) => cambiar(indice,
                           { id_location_from: e.target.value })}>
-                  <option value="">—</option>
-                  {ubicaciones.map((u) => (
-                    <option key={u.id_location} value={u.id_location}>
-                      {u.location_description}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              {/* El destino es obligatorio solo en el traslado: sin el no es un
-                  traslado, es una salida sin registrar. */}
-              <label className={`vale-mini ${linea.direction === TRASLADO
-                && !linea.id_location_to ? "vale-falta" : ""}`}>
-                <span>
-                  {t("voucher.to", "A")}
-                  {linea.direction === TRASLADO && " *"}
-                </span>
-                <select value={linea.id_location_to}
-                        onChange={(e) => cambiar(indice,
-                          { id_location_to: e.target.value })}>
                   <option value="">—</option>
                   {ubicaciones.map((u) => (
                     <option key={u.id_location} value={u.id_location}>

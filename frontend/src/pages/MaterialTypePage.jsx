@@ -1,18 +1,44 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import PropTypes from "prop-types";
-import { Layers, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import {
+  ChevronDown, ChevronRight, Hammer, Layers, Package, Pencil, Plus, RefreshCw,
+  Ruler, Trash2, X,
+} from "lucide-react";
 import {
   createMaterialType,
+  createProductFamily,
   deleteMaterialType,
+  deleteProductFamily,
   getAllMaterialType,
   getAllProductFamily,
   updateMaterialType,
+  updateProductFamily,
 } from "../api";
+import FamilyAttributes from "../components/FamilyAttributes.jsx";
 import { useI18n } from "../i18n";
 import "../styles/material-type.css";
 
 /**
- * Tipos de material, agrupados por su familia.
+ * Familias y tipos: la clasificacion del material, en una sola pantalla.
+ *
+ * Por que una y no dos
+ * --------------------
+ * Habia dos entradas de menu, "Familias de producto" y "Tipos de material", y
+ * leidas por separado parecen la misma cosa dos veces. No lo son: son los DOS
+ * NIVELES de una sola clasificacion.
+ *
+ *     familia "Desarmadores"  ->  tipos "Plano", "De cruz"
+ *     familia "Cemento"       ->  tipos "Saco", "Granel"
+ *
+ * `material_type.id_product_family` es lo que lo sostiene en la base: un tipo
+ * cuelga de una familia y no existe suelto. "Plano" no significa nada por si
+ * mismo -es un tipo DE desarmador-, y por eso una pantalla propia de tipos no
+ * se puede leer: cada renglon depende de algo que no esta a la vista.
+ *
+ * Las tablas siguen siendo dos, y deben seguirlo siendo: fundirlas obligaria a
+ * repetir el nombre de la familia en cada tipo, y renombrar "Desarmadores"
+ * seria renombrarlo en cada renglon -con la mitad sin renombrar en cuanto uno
+ * falle-. Lo que se junta es la PANTALLA, que es donde estaba el problema.
  *
  * Un material se define por tres cosas: su familia, su tipo y su marca.
  *
@@ -44,6 +70,14 @@ export default function MaterialTypePage() {
   // El formulario abierto: { idFamilia, idTipo, descripcion }. `idTipo` nulo
   // significa alta; con valor, edicion.
   const [formulario, setFormulario] = useState(null);
+  // El formulario de la FAMILIA: { idFamilia, descripcion, tipo }. `idFamilia`
+  // nulo es alta. Va aparte del de tipos para que abrir uno cierre el otro sin
+  // ambiguedad: son dos niveles distintos y editarlos a la vez confunde.
+  const [formFamilia, setFormFamilia] = useState(null);
+  // Las familias con sus caracteristicas a la vista. Se cargan al abrir y no al
+  // abrir la pantalla: son una peticion por familia, y con veinte familias
+  // serian veinte peticiones para pintar algo que casi nadie mira.
+  const [conCaracteristicas, setConCaracteristicas] = useState(() => new Set());
   const [guardando, setGuardando] = useState(false);
 
   // `t` cambia de identidad en cada render; si entra en las dependencias del
@@ -99,6 +133,56 @@ export default function MaterialTypePage() {
     }
   };
 
+  const guardarFamilia = async (evento) => {
+    evento.preventDefault();
+    const descripcion = (formFamilia.descripcion || "").trim();
+    if (!descripcion) return;
+
+    setGuardando(true);
+    setError("");
+    try {
+      const cuerpo = {
+        product_family_description: descripcion,
+        // El unico valor que la columna acepta ademas de vacio. Distingue la
+        // herramienta que se presta del consumible que se gasta, que es la
+        // misma division que `product.stock_purpose` hace mas abajo.
+        type: formFamilia.tipo || null,
+      };
+      if (formFamilia.idFamilia) await updateProductFamily(formFamilia.idFamilia, cuerpo);
+      else await createProductFamily(cuerpo);
+      setFormFamilia(null);
+      await cargar();
+    } catch (e) {
+      setError(e?.payload?.error_key
+        ? traducir.current(e.payload.error_key)
+        : traducir.current("errors.request_failed", "No se pudo guardar la familia."));
+    } finally {
+      setGuardando(false);
+    }
+  };
+
+  const borrarFamilia = async (familia) => {
+    setError("");
+    // Borrar la familia dejaria sus tipos colgando de algo que ya no esta, y
+    // esos tipos siguen puestos en materiales. Se avisa antes en lugar de
+    // dejar que el servidor conteste `delete_has_related_records` a secas.
+    const propios = porFamilia(familia.id_product_family);
+    if (propios.length > 0) {
+      setError(traducir.current(
+        "material_type.family_has_types",
+        "Esa familia tiene tipos dentro. Quita primero los tipos: si no, quedarían apuntando a una familia que ya no existe."));
+      return;
+    }
+    try {
+      await deleteProductFamily(familia.id_product_family);
+      await cargar();
+    } catch (e) {
+      setError(e?.payload?.error_key
+        ? traducir.current(e.payload.error_key)
+        : traducir.current("errors.request_failed", "No se pudo eliminar la familia."));
+    }
+  };
+
   const borrar = async (tipo) => {
     setError("");
     try {
@@ -112,6 +196,12 @@ export default function MaterialTypePage() {
         : traducir.current("errors.request_failed", "No se pudo eliminar."));
     }
   };
+
+  const verCaracteristicas = (id) => setConCaracteristicas((antes) => {
+    const siguiente = new Set(antes);
+    if (siguiente.has(id)) siguiente.delete(id); else siguiente.add(id);
+    return siguiente;
+  });
 
   const porFamilia = (idFamilia) => tipos
     .filter((x) => Number(x.id_product_family) === Number(idFamilia))
@@ -128,24 +218,49 @@ export default function MaterialTypePage() {
       <header className="page-header">
         <div>
           <p className="eyebrow">{t("material_type.eyebrow", "Inventario")}</p>
-          <h1>{t("material_type.title", "Tipos de material")}</h1>
+          <h1>{t("material_type.title", "Familias y tipos")}</h1>
           <p className="muted">
             {t("material_type.subtitle",
-              "El tipo dentro de cada familia: un desarmador es plano o de cruz, un cemento viene en saco o a granel.")}
+              "Los dos niveles de la clasificación: la familia agrupa —desarmadores, cemento— y el tipo distingue dentro de ella —plano, de cruz, en saco, a granel—.")}
           </p>
         </div>
-        <button className="button" onClick={cargar} disabled={cargando}>
-          <RefreshCw size={16} />
-          {cargando ? t("common.loading", "Cargando…") : t("common.refresh", "Actualizar")}
-        </button>
+        <div className="mt-cabecera-acciones">
+          <button
+            className="button primary"
+            onClick={() => { setFormulario(null); setFormFamilia(
+              formFamilia && !formFamilia.idFamilia
+                ? null
+                : { idFamilia: null, descripcion: "", tipo: "" }); }}
+          >
+            <Plus size={16} />
+            {t("material_type.add_family", "Nueva familia")}
+          </button>
+          <button className="button" onClick={cargar} disabled={cargando}>
+            <RefreshCw size={16} />
+            {cargando ? t("common.loading", "Cargando…") : t("common.refresh", "Actualizar")}
+          </button>
+        </div>
       </header>
+
+      {/* El alta de familia, arriba: es el nivel de arriba y sin ella no hay
+          donde colgar un tipo. */}
+      {formFamilia && !formFamilia.idFamilia && (
+        <FormularioDeFamilia
+          valor={formFamilia}
+          guardando={guardando}
+          onCambiar={setFormFamilia}
+          onGuardar={guardarFamilia}
+          onCancelar={() => setFormFamilia(null)}
+          t={t}
+        />
+      )}
 
       {error && <p className="error">{error}</p>}
 
-      {!cargando && familias.length === 0 && (
+      {!cargando && familias.length === 0 && !formFamilia && (
         <p className="muted mt-empty">
           {t("material_type.no_families",
-            "No hay familias de producto todavía. El tipo cuelga de una familia, así que primero hay que crear la familia.")}
+            "No hay familias todavía. El tipo cuelga de una familia, así que se empieza por la familia: «Desarmadores», y dentro «Plano» y «De cruz».")}
         </p>
       )}
 
@@ -160,9 +275,38 @@ export default function MaterialTypePage() {
               <header className="mt-family-head">
                 <div>
                   <h2>
-                    <Layers size={15} />
+                    {/* El icono dice de que clase es la familia: la
+                        herramienta se presta y vuelve, el consumible se gasta.
+                        Es la misma division que hace `stock_purpose`. */}
+                    {familia.type === "tool" ? <Hammer size={15} />
+                      : familia.type === "consumable" ? <Package size={15} />
+                        : <Layers size={15} />}
                     {familia.product_family_description
                       || `#${familia.id_product_family}`}
+                    <button
+                      className="mt-icono"
+                      onClick={() => { setFormulario(null); setFormFamilia({
+                        idFamilia: familia.id_product_family,
+                        descripcion: familia.product_family_description || "",
+                        tipo: familia.type || "",
+                      }); }}
+                      title={t("material_type.rename_family", "Renombrar familia")}
+                      aria-label={t("material_type.rename_family", "Renombrar familia")}
+                    >
+                      <Pencil size={13} />
+                    </button>
+                    {/* Solo si esta vacia. Con tipos dentro, borrarla los
+                        dejaria apuntando a una familia que ya no existe. */}
+                    {propios.length === 0 && (
+                      <button
+                        className="mt-icono mt-icono-borrar"
+                        onClick={() => borrarFamilia(familia)}
+                        title={t("material_type.delete_family", "Eliminar familia")}
+                        aria-label={t("material_type.delete_family", "Eliminar familia")}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
                   </h2>
                   <span className="muted">
                     {propios.length === 1
@@ -172,17 +316,45 @@ export default function MaterialTypePage() {
                 </div>
                 {/* El alta va aqui y no en un formulario aparte: asi la familia
                     no se elige en un desplegable, ya la eligio el clic. */}
-                <button
-                  className="button button-quiet"
-                  onClick={() => setFormulario(
-                    abierto && !formulario.idTipo
-                      ? null
-                      : { idFamilia: familia.id_product_family, idTipo: null, descripcion: "" })}
-                >
-                  <Plus size={15} />
-                  {t("material_type.add", "Agregar tipo")}
-                </button>
+                <div className="mt-family-acciones">
+                  <button
+                    className="button button-quiet"
+                    onClick={() => { setFormFamilia(null); setFormulario(
+                      abierto && !formulario.idTipo
+                        ? null
+                        : { idFamilia: familia.id_product_family, idTipo: null, descripcion: "" }); }}
+                  >
+                    <Plus size={15} />
+                    {t("material_type.add", "Agregar tipo")}
+                  </button>
+                  {/* Las caracteristicas de la familia -largo, calibre,
+                      acabado-. Es el tercer nivel: la familia agrupa, el tipo
+                      distingue dentro de ella, y la caracteristica es lo que
+                      antes se escribia dentro de la descripcion. */}
+                  <button
+                    className="button button-quiet"
+                    onClick={() => verCaracteristicas(String(familia.id_product_family))}
+                    aria-expanded={conCaracteristicas.has(String(familia.id_product_family))}
+                  >
+                    {conCaracteristicas.has(String(familia.id_product_family))
+                      ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                    <Ruler size={14} />
+                    {t("attribute.title", "Características")}
+                  </button>
+                </div>
               </header>
+
+              {formFamilia
+                && Number(formFamilia.idFamilia) === Number(familia.id_product_family) && (
+                <FormularioDeFamilia
+                  valor={formFamilia}
+                  guardando={guardando}
+                  onCambiar={setFormFamilia}
+                  onGuardar={guardarFamilia}
+                  onCancelar={() => setFormFamilia(null)}
+                  t={t}
+                />
+              )}
 
               {abierto && (
                 <form className="mt-form" onSubmit={guardar}>
@@ -234,6 +406,9 @@ export default function MaterialTypePage() {
                   ))}
                 </ul>
               )}
+              {conCaracteristicas.has(String(familia.id_product_family)) && (
+                <FamilyAttributes idFamily={familia.id_product_family} />
+              )}
             </article>
           );
         })}
@@ -261,6 +436,63 @@ export default function MaterialTypePage() {
     </section>
   );
 }
+
+/**
+ * El formulario de una familia: su nombre y de que clase es.
+ *
+ * `product_family.type` solo acepta `tool` o `consumable` -o nada-, y no es
+ * decorativo: separa lo que se presta y vuelve de lo que se gasta. Es la misma
+ * division que `product.stock_purpose` hace pieza por pieza, un nivel mas
+ * arriba.
+ */
+function FormularioDeFamilia({ valor, guardando, onCambiar, onGuardar, onCancelar, t }) {
+  return (
+    <form className="mt-form mt-form-familia" onSubmit={onGuardar}>
+      <input
+        autoFocus
+        value={valor.descripcion}
+        maxLength={200}
+        onChange={(e) => onCambiar({ ...valor, descripcion: e.target.value })}
+        placeholder={t("material_type.family_placeholder",
+          "Nombre de la familia (por ejemplo: Desarmadores)")}
+        aria-label={t("material_type.family_placeholder", "Nombre de la familia")}
+      />
+      <select
+        value={valor.tipo || ""}
+        onChange={(e) => onCambiar({ ...valor, tipo: e.target.value })}
+        aria-label={t("material_type.family_kind", "Clase de familia")}
+      >
+        <option value="">{t("material_type.kind_none", "Sin clasificar")}</option>
+        <option value="tool">{t("material_type.kind_tool", "Herramienta — se presta y vuelve")}</option>
+        <option value="consumable">{t("material_type.kind_consumable", "Consumible — se gasta")}</option>
+      </select>
+      <button className="button" type="submit"
+              disabled={guardando || !valor.descripcion.trim()}>
+        {guardando
+          ? t("common.loading", "Guardando…")
+          : valor.idFamilia ? t("common.save", "Guardar") : t("common.create", "Crear")}
+      </button>
+      <button className="button button-quiet" type="button" onClick={onCancelar}>
+        <X size={15} />
+        {t("common.cancel", "Cancelar")}
+      </button>
+    </form>
+  );
+}
+
+FormularioDeFamilia.propTypes = {
+  valor: PropTypes.shape({
+    idFamilia: PropTypes.number,
+    descripcion: PropTypes.string,
+    tipo: PropTypes.string,
+  }).isRequired,
+  guardando: PropTypes.bool.isRequired,
+  onCambiar: PropTypes.func.isRequired,
+  onGuardar: PropTypes.func.isRequired,
+  onCancelar: PropTypes.func.isRequired,
+  t: PropTypes.func.isRequired,
+};
+
 
 function Tipo({ tipo, t, onEditar, onBorrar }) {
   return (

@@ -17,7 +17,7 @@ from werkzeug.utils import secure_filename
 
 
 bp_product = Blueprint('product', __name__, url_prefix='/product')
-ALLOWED_FIELDS = ['id_product', 'id_invoice', 'id_location', 'id_material', 'gross_price', 'color', 'is_directly_related_to_product_service', 'product_status', 'path_imagen', 'product_code', 'note', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'descripcion', 'cantidad', 'id_material', 'id_marca', 'id_familia']
+ALLOWED_FIELDS = ['id_product', 'id_invoice', 'id_location', 'id_material', 'gross_price', 'color', 'is_directly_related_to_product_service', 'product_status', 'path_imagen', 'product_code', 'note', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'descripcion', 'cantidad', 'id_material', 'tracking_mode', 'stock_purpose', 'lot_control', 'id_marca', 'id_familia']
 
 TECHNICAL_RESPONSE_FIELDS = {'id_product'}
 FIELD_READ_BIT = 2

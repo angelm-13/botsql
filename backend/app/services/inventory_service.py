@@ -34,6 +34,12 @@ from app.models.location import Location
 from app.models.location_type import LocationType
 from app.models.product import Product
 from app.models.session import transaction_context
+from app.services.inventory_lot_service import (
+    asentar_desglose as asentar_desglose_de_lotes,
+    entrada_en_sesion as entrada_de_lote,
+    lleva_lotes,
+    salida_en_sesion as salida_de_lote,
+)
 from app.utils.errors import AppError
 
 
@@ -355,6 +361,11 @@ def apply_inventory_movement(product_id, payload, user_data):
                 reference_type=reference_type,
                 reference_id=payload.get("reference_id"),
                 reason=reason,
+                # El lote que nombra la captura. En una entrada de producto con
+                # control por lote es obligatorio -lo exige el servicio de
+                # lotes-; en una salida es opcional, y sin el se sirve del que
+                # vence primero.
+                lot=payload.get("lot"),
             )
     except IntegrityError:
         # Carrera entre consultar y escribir: el nucleo busca la llave, no la
@@ -437,12 +448,17 @@ def apply_movement_in_session(
     reference_id=None,
     reason=None,
     source_module=DEFAULT_SOURCE_MODULE,
+    lot=None,
 ):
     """Nucleo de un movimiento, dentro de una transaccion que abre el llamador.
 
     Existe aparte para que varias partidas de una factura se descarguen en una
     sola transaccion: si una falla, ninguna se aplica. Los validadores de la
     entrada publica ya corrieron cuando se llega aqui.
+
+    `lot` solo se mira cuando el producto lleva lotes -`product.lot_control`, que
+    nace apagado-. En una entrada nombra el lote que llego; en una salida puede
+    nombrar uno concreto, y si no lo nombra se sirve del que vence primero.
     """
     # La capacidad de ajustar se comprueba aqui y no solo en la entrada
     # publica: cualquier camino que llegue a este nucleo queda cubierto.
@@ -507,6 +523,26 @@ def apply_movement_in_session(
     db.flush()
     product.cantidad = _product_total(db, product.id_product)
 
+    # El desglose por lote, cuando el producto los lleva. Se resuelve DESPUES de
+    # que el saldo del sitio ya cuadro y ANTES de escribir el libro: asi una
+    # salida que el saldo permite pero los lotes no -que significa que algo movio
+    # existencia sin pasar por aqui- se cae sin dejar renglon.
+    movidos = []
+    if lleva_lotes(product):
+        if quantity_delta > 0:
+            movidos = entrada_de_lote(
+                db, product=product, id_location=location.id_location,
+                cantidad=quantity_delta, lote_pedido=lot, actor=actor_id)
+        elif quantity_delta < 0:
+            movidos = salida_de_lote(
+                db, product=product, id_location=location.id_location,
+                cantidad=abs(quantity_delta), lote_pedido=lot, actor=actor_id)
+    elif lot:
+        # Nombrar un lote de algo que no los lleva casi siempre es el producto
+        # equivocado. Ignorarlo dejaria al usuario creyendo que quedo anotado.
+        raise AppError("errors.lot_not_applicable", 400,
+                       {"field": "lot", "id_product": product.id_product})
+
     ledger = _append_ledger(
         db,
         id_product=product.id_product,
@@ -523,6 +559,8 @@ def apply_movement_in_session(
         source_module=source_module,
         created_by=actor_id,
     )
+    if movidos:
+        asentar_desglose_de_lotes(db, ledger, movidos, actor_id)
     return ledger.serialize(), True
 
 

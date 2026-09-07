@@ -24,9 +24,11 @@ usarla.
 
 Lo que estas pruebas fijan:
 
-* **toda entidad del modulo de inventario tiene nombre de menu.** Es la
-  invariante que se rompio. Si alguien agrega una entidad al almacen y no la
-  nombra, esto falla en vez de dejarla invisible;
+* **toda entidad del modulo de inventario se alcanza.** Es la invariante que se
+  rompio. Con entrada de menu propia, o -si vive dentro de la pantalla de otra-
+  declarada abajo en `DENTRO_DE_OTRA_PANTALLA` con el motivo. Si alguien agrega
+  una entidad al almacen y no hace ninguna de las dos, esto falla en vez de
+  dejarla invisible;
 * **dos entradas del mismo grupo no comparten etiqueta.** Un menu con dos
   "Movimientos" seguidos obliga a probar los dos para saber cual es cual.
 """
@@ -39,6 +41,29 @@ import unittest
 from app.modules.registry import MENU, MODULO_POR_CLAVE, SOLO_ARRANQUE, filas_de_permisos
 
 
+# Entidades del almacen sin entrada de menu PROPIA porque se trabajan desde la
+# pantalla de otra. No es lo mismo que estar escondidas: se alcanzan, solo que
+# por el sitio donde tienen sentido.
+#
+# Cada una lleva por que. Sin el motivo escrito, esto seria una lista donde
+# esconder cualquier cosa que estorbe, y la invariante dejaria de valer.
+DENTRO_DE_OTRA_PANTALLA = {
+    # `material_type.id_product_family` hace que un tipo cuelgue de una familia
+    # y no exista suelto: "Plano" no significa nada por si mismo, es un tipo DE
+    # desarmador. Con entrada propia el menu mostraba "Familias de producto" y
+    # "Tipos de material" seguidas, que leidas asi parecen la misma cosa dos
+    # veces -se reporto justamente como un modulo duplicado-. Los tipos se
+    # capturan dentro de su familia, en la pantalla de `product_family`.
+    "material_type": "product_family",
+    # Las caracteristicas que una familia declara -largo, calibre, acabado- se
+    # configuran dentro de la familia, en la misma pantalla. Con entrada propia
+    # el menu tendria "Caracteristicas de material" sin decir de que familia, y
+    # una caracteristica sin su familia no significa nada: "largo" es el largo
+    # DE un desarmador.
+    "material_attribute": "product_family",
+}
+
+
 class TestElInventarioSeAlcanzaDesdeElMenu(unittest.TestCase):
 
     def test_every_inventory_entity_has_a_menu_name(self):
@@ -46,7 +71,9 @@ class TestElInventarioSeAlcanzaDesdeElMenu(unittest.TestCase):
         inventario = MODULO_POR_CLAVE["inventario"]
         sin_nombre = sorted(
             entidad for entidad in inventario.entidades
-            if entidad not in SOLO_ARRANQUE and entidad not in MENU
+            if entidad not in SOLO_ARRANQUE
+            and entidad not in MENU
+            and entidad not in DENTRO_DE_OTRA_PANTALLA
         )
         self.assertEqual(
             [], sin_nombre,
@@ -55,6 +82,22 @@ class TestElInventarioSeAlcanzaDesdeElMenu(unittest.TestCase):
             "ningun menu para ningun rol: " + ", ".join(sin_nombre)
             + ". Se nombran en MENU o se documenta aqui por que estan escondidas.",
         )
+
+    def test_the_host_screen_of_a_nested_entity_is_itself_in_the_menu(self):
+        """Si la anfitriona pierde su entrada, la de dentro se queda sin puerta.
+
+        Es el modo en que esta excepcion se romperia en silencio: alguien quita
+        "Familias y tipos" del menu y `material_type` deja de alcanzarse sin que
+        nada avise, porque su propia ausencia ya estaba declarada.
+        """
+        for entidad, anfitriona in DENTRO_DE_OTRA_PANTALLA.items():
+            with self.subTest(entidad=entidad):
+                self.assertIn(
+                    anfitriona, MENU,
+                    "%s se captura dentro de la pantalla de %s, y %s no tiene "
+                    "entrada de menu: entre las dos no se alcanza ninguna."
+                    % (entidad, anfitriona, anfitriona),
+                )
 
     def test_the_five_catalogues_a_product_hangs_from_are_reachable(self):
         """Dar de alta un producto pide recorrer estos cinco, en este orden."""

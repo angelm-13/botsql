@@ -55,9 +55,18 @@ def leer_vale(user_data, id_incident):
     return jsonify(consultar_vale(id_incident, user_data))
 
 
+@bp_warehouse_voucher.route("/vouchers/lines/<id_line>/return", methods=["POST"])
 @bp_warehouse_voucher.route("/vouchers/lines/<id_line>/close", methods=["POST"])
 @token_required
 @require_entity_permission("warehouse_voucher", "update")
-def cerrar_linea(user_data, id_line):
-    """Cierra un renglon. Si era el ultimo, el vale queda cerrado."""
+def devolver_linea(user_data, id_line):
+    """Recibe de vuelta lo que salio en ese renglon.
+
+    Dos direcciones para una operacion porque no son dos operaciones: cerrar un
+    renglon de prestamo ES devolver lo que salio. `/close` se conserva para lo
+    que ya estaba escrito contra ella; `/return` es el nombre de lo que hace.
+
+    El cuerpo acepta `id_location` -a donde vuelve, por omision de donde salio- y
+    `note`.
+    """
     return jsonify(cerrar_renglon(id_line, _cuerpo(), user_data))

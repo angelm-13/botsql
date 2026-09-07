@@ -432,6 +432,9 @@ export const getMaterialTypesByFamily = (idFamily) => request(`/material_type/by
 export const createWarehouseVoucher = (payload) => request("/vouchers", { method: "POST", body: payload });
 export const getWarehouseVoucher = (id) => request(`/vouchers/${id}`);
 export const getOverdueVoucherLines = () => request("/vouchers/overdue");
+// Cuantas piezas hay en cada estado, ahora mismo. Una consulta agrupada, no
+// una por estado: la pantalla del almacen se abre muchas veces al dia.
+export const getAssetStatusSummary = (params = {}) => request("/assets/summary", { params });
 export const closeWarehouseVoucherLine = (idLine, payload = {}) =>
   request(`/vouchers/lines/${idLine}/close`, { method: "POST", body: payload });
 
@@ -658,3 +661,46 @@ export const transitionTask = (id, payload) => request(`/task/${id}/transition`,
 // tiene que saber que la columna del padre se llama `id_task`.
 export const getTaskNotes = (id) => request(`/task/${id}/notes`);
 export const addTaskNote = (id, payload) => request(`/task/${id}/notes`, { method: "POST", body: payload });
+
+// --- caracteristicas del material ---
+//
+// Dos grupos con dos permisos distintos y a proposito: el CATALOGO -que declara
+// una familia- se guarda con `material_attribute`, que es configuracion; los
+// VALORES de un material se guardan con `material`, porque llenar el largo de un
+// desarmador es editar ese desarmador.
+export const getFamilyAttributes = (idFamily) =>
+  request(`/material-attributes/by-family/${idFamily}`);
+export const createMaterialAttribute = (payload) =>
+  request("/material-attributes", { method: "POST", body: payload });
+export const updateMaterialAttribute = (id, payload) =>
+  request(`/material-attributes/${id}`, { method: "PUT", body: payload });
+export const deleteMaterialAttribute = (id) =>
+  request(`/material-attributes/${id}`, { method: "DELETE" });
+export const addMaterialAttributeOption = (id, payload) =>
+  request(`/material-attributes/${id}/options`, { method: "POST", body: payload });
+export const deleteMaterialAttributeOption = (idOption) =>
+  request(`/material-attributes/options/${idOption}`, { method: "DELETE" });
+
+export const getMaterialAttributes = (idMaterial) =>
+  request(`/material/${idMaterial}/attributes`);
+export const saveMaterialAttributes = (idMaterial, values) =>
+  request(`/material/${idMaterial}/attributes`, { method: "PUT", body: { values } });
+// "Cuantos desarmadores Truper planos de 6 pulgadas tengo": es POST porque los
+// criterios son objetos con rangos y en la direccion salen ilegibles.
+export const searchMaterialsByAttributes = (payload) =>
+  request("/material-attributes/search", { method: "POST", body: payload });
+
+// --- lotes y caducidad ---
+//
+// El lote no tiene un POST propio: lo crea la entrada de mercancia al nombrarlo.
+// Encender el control SI es una operacion aparte, porque si el producto ya tiene
+// existencia hay que meterla en un lote de apertura o se queda fuera de todo
+// lote, y entonces no se puede despachar.
+export const getProductLots = (idProduct) => request(`/product/${idProduct}/lots`);
+export const getExpiringStock = (params = {}) => request("/inventory/expiring", { params });
+export const getLotReconciliation = (idProduct) =>
+  request(`/product/${idProduct}/lots/reconciliation`);
+export const enableLotControl = (idProduct, payload = {}) =>
+  request(`/product/${idProduct}/lot-control`, { method: "POST", body: payload });
+export const disableLotControl = (idProduct) =>
+  request(`/product/${idProduct}/lot-control`, { method: "DELETE" });

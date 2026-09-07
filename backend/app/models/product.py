@@ -67,6 +67,16 @@ class Product(Base):
     stock_purpose: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default=text("'mercancia'")
     )
+    # Si este producto se lleva por lotes. Vale solo en lo fungible: un producto
+    # serializado ya tiene una fila por unidad, y ponerle lotes ademas seria
+    # llevar la misma cosa por dos caminos.
+    #
+    # Apagado por omision, y a proposito: encenderlo hace que toda entrada tenga
+    # que nombrar su lote, y eso solo tiene sentido en lo que caduca. En lo demas
+    # seria un campo mas que llenar sin nada que contestar a cambio.
+    lot_control: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
     id_marca: Mapped[int] = mapped_column(Integer, nullable=True)
     id_familia: Mapped[int] = mapped_column(Integer, nullable=True)
 
@@ -90,6 +100,13 @@ class Product(Base):
             'deletion_date': to_json_value(self.deletion_date),
             'descripcion': to_json_value(self.descripcion),
             'cantidad': to_json_value(self.cantidad),
+            # Como se lleva el producto en el almacen. No estaban, y la pantalla
+            # del vale decide con `tracking_mode` si pide la pieza o la
+            # cantidad: sin el campo en la respuesta, todo producto parecia
+            # fungible y la herramienta se podia capturar sin decir cual.
+            'tracking_mode': to_json_value(self.tracking_mode),
+            'stock_purpose': to_json_value(self.stock_purpose),
+            'lot_control': to_json_value(self.lot_control),
             'id_marca': to_json_value(self.id_marca),
             'id_familia': to_json_value(self.id_familia),
         }

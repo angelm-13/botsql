@@ -119,7 +119,7 @@ MODULOS = (
         (
             "product", "material", "material_component", "location",
             "location_type", "movement", "inventory_status", "brand", "unit",
-            "product_family", "material_type",
+            "product_family", "material_type", "material_attribute",
         ),
         almacen=("location", "inventory_stock", "inventory_ledger"),
     ),
@@ -392,13 +392,17 @@ MENU = {
     # Van juntos y justo despues de Productos porque es el orden en que hay que
     # recorrerlos para dar de alta algo: familia, marca y unidad primero, luego
     # el material que las une, y al final el producto.
-    "product_family": ("Familias de producto", 12),
+    #
+    # Una sola entrada para los DOS NIVELES de la clasificacion. Habia dos
+    # -"Familias de producto" y "Tipos de material"- y leidas en el menu una
+    # detras de la otra parecen la misma cosa dos veces. No lo son: el tipo
+    # cuelga de la familia -`material_type.id_product_family`- y no existe
+    # suelto, porque "Plano" no significa nada por si mismo, es un tipo DE
+    # desarmador. Las dos tablas siguen siendo dos; lo que se junto es la
+    # pantalla, que es donde estaba la confusion.
+    "product_family": ("Familias y tipos", 12),
     "brand": ("Marcas", 14),
     "unit": ("Unidades", 16),
-    # El tercer eje del material, junto a la familia y la marca. Va con ellos
-    # porque es el mismo recorrido de captura: familia, tipo, marca, y de ahi el
-    # material.
-    "material_type": ("Tipos de material", 18),
     "location": ("Ubicaciones", 20),
     "location_type": ("Tipos de ubicacion", 30),
     "material": ("Materiales", 40),

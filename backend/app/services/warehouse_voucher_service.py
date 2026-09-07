@@ -60,6 +60,13 @@ from app.models.location import Location
 from app.models.nm_incident_product import NmIncidentProduct
 from app.models.product import Product
 from app.models.session import transaction_context
+from app.models.inventory_asset_event import DEVOLUCION, PRESTAMO
+from app.models.inventory_stock import InventoryStock
+from app.models.user import User
+from app.services.inventory_asset_service import (
+    DISPONIBLE, PRESTADA, transicion_en_sesion,
+)
+from app.services.inventory_service import apply_movement_in_session
 from app.utils.errors import AppError
 
 
@@ -106,6 +113,53 @@ def _actor(user_data: dict) -> int:
     return id_usuario
 
 
+def _fecha_de_regreso(valor):
+    """Cuando debe volver. No es opcional.
+
+    Un vale sin fecha de regreso nunca esta vencido, asi que no sale en
+    `vales_vencidos` y nadie lo reclama: es una baja disfrazada de prestamo. El
+    modulo ya lo decia en un comentario y no lo exigia.
+    """
+    fecha = _fecha(valor)
+    if fecha is None:
+        raise AppError("errors.required_field", 400, {"field": "due_date"})
+    if fecha.date() < _ahora().date():
+        # Una fecha pasada nace vencida. Casi siempre es un dedazo en el ano, y
+        # deja el vale en la lista de vencidos desde el primer dia.
+        raise AppError("errors.voucher_due_date_in_the_past", 400,
+                       {"field": "due_date"})
+    return fecha
+
+
+def _existencias(db, ids_productos: set[int]) -> dict:
+    """Cuanto hay de cada producto, en una sola consulta.
+
+    El vale tiene que decir con que existencia se firmo: "salen 5 de 40" y "salen
+    5 de 5" son la misma linea con consecuencias distintas, y quien firma solo ve
+    la primera cifra. Una consulta por renglon seria el patron de N+1 que ya
+    costo caro en el rastreo.
+    """
+    if not ids_productos:
+        return {}
+    filas = db.execute(
+        select(InventoryStock.id_product, func.sum(InventoryStock.quantity))
+        .where(InventoryStock.id_product.in_(list(ids_productos)))
+        .group_by(InventoryStock.id_product)
+    ).all()
+    return {int(id_producto): int(cantidad or 0) for id_producto, cantidad in filas}
+
+
+def _con_existencias(db, renglones) -> list[dict]:
+    """Los renglones serializados, cada uno con la existencia de su producto."""
+    saldos = _existencias(db, {int(r.id_product) for r in renglones})
+    salida = []
+    for renglon in renglones:
+        fila = renglon.serialize()
+        fila["stock_on_hand"] = saldos.get(int(renglon.id_product), 0)
+        salida.append(fila)
+    return salida
+
+
 def _vale(db, id_incident, *, para_actualizar=False) -> Incident:
     consulta = select(Incident).where(
         Incident.id_incident == _entero(id_incident, "id_incident"),
@@ -148,11 +202,14 @@ def _validar_renglon(db, carga: dict) -> dict:
         raise AppError("errors.not_found", 404, {"entity": "product",
                                                  "field": "id_product"})
 
-    direccion = _texto(carga.get("direction"), "direction", largo=20,
-                       obligatorio=True).lower()
-    if direccion not in DIRECCIONES:
-        raise AppError("errors.invalid_field", 400,
-                       {"field": "direction", "allowed": list(DIRECCIONES)})
+    # La direccion no se captura: un vale es una SALIDA del almacen en calidad
+    # de prestamo, y eso es todo lo que un vale es. Dejarla elegir permitia
+    # capturar un traspaso entre racks como si fuera un vale, y entonces la
+    # lista de lo que esta fuera contaba cosas que nunca salieron.
+    #
+    # Los renglones de ENTRADA existen, pero no los captura nadie: los escribe
+    # la devolucion.
+    direccion = SALIDA
 
     serializado = str(producto.tracking_mode or "") == "serializado"
     id_pieza = _entero(carga.get("id_inventory_asset"), "id_inventory_asset",
@@ -212,10 +269,16 @@ def _validar_renglon(db, carga: dict) -> dict:
                                                      "field": clave})
         return id_ubicacion
 
-    # El traslado exige destino: sin el no es un traslado, es una salida sin
-    # registrar. Lo mismo lo garantiza un CHECK en la base.
-    destino = ubicacion("id_location_to", direccion == TRASLADO)
-    origen = ubicacion("id_location_from", False)
+    # De donde sale. Para una pieza se sabe -es donde esta-, pero para lo
+    # fungible hay que decirlo: descontar 5 sacos "del almacen" sin decir de
+    # cual deja el saldo por ubicacion mintiendo, y ese es el dato con el que
+    # alguien va a buscarlos.
+    origen = ubicacion("id_location_from", pieza is None)
+    if pieza is not None and origen is None:
+        origen = pieza.id_location
+    # El destino de una salida es una persona, no un sitio, asi que va nulo. Lo
+    # llena la devolucion con la ubicacion a la que vuelve.
+    destino = None
 
     return {
         "id_product": id_producto,
@@ -290,43 +353,136 @@ def crear_vale(payload: dict, user_data: dict) -> dict:
             raise AppError("errors.not_found", 404,
                            {"entity": "incident_type", "field": "id_incident_type"})
 
+        # El responsable, comprobado. `incident.id_user` tiene llave ajena
+        # DIFERIDA, asi que un identificador inventado no falla al asignarlo:
+        # falla en el COMMIT, fuera de todo manejo de errores, y le llega al
+        # usuario como un 500. Aqui es el 404 que le toca.
+        #
+        # Y un usuario dado de baja tampoco sirve: el vale quedaria a nombre de
+        # alguien que ya no esta para responder por lo que se llevo.
+        if db.scalars(
+            select(User.id_user).where(
+                User.id_user == id_responsable,
+                User.deletion_date.is_(None),
+            ).limit(1)
+        ).first() is None:
+            raise AppError("errors.not_found", 404,
+                           {"entity": "user", "field": "id_user"})
+
         validados = [_validar_renglon(db, linea) for linea in renglones]
 
         inicio = _ahora()
+        vence = _fecha_de_regreso(payload.get("due_date"))
+        motivo = _texto(payload.get("note"), "note", largo=300, obligatorio=True)
+
         vale = Incident(
             id_incident_type=id_tipo,
             id_user=id_responsable,
             incident_date=inicio,
             incident_status=ABIERTO,
-            note=_texto(payload.get("note"), "note", largo=300),
+            note=motivo,
             created_by=actor,
         )
         db.add(vale)
         db.flush()
 
-        vence = payload.get("due_date")
+        renglones_escritos = []
         for datos in validados:
-            db.add(NmIncidentProduct(
+            renglon = NmIncidentProduct(
                 id_incident=vale.id_incident,
                 start_date=inicio,
-                due_date=_fecha(vence) if vence else None,
+                due_date=vence,
                 created_by=actor,
                 **datos,
-            ))
+            )
+            db.add(renglon)
+            renglones_escritos.append(renglon)
+        db.flush()
+
+        # Y ahora lo que faltaba: que el vale MUEVA el almacen.
+        #
+        # Hasta aqui el vale escribia sus renglones y no tocaba nada mas: la
+        # pieza seguia diciendo "disponible" mientras estaba en la camioneta de
+        # alguien, y el saldo seguia contando cinco sacos que ya no estaban. Dos
+        # vistas del mismo hecho, en desacuerdo, y ninguna forma de saber cual
+        # creer. Un vale que no descuenta es un papel.
+        for renglon in renglones_escritos:
+            _sacar_del_almacen(db, renglon, user_data,
+                               id_responsable=id_responsable, vence=vence,
+                               motivo=motivo)
         db.flush()
 
         return {
             "voucher": vale.serialize(),
-            "lines": [r.serialize() for r in _renglones(db, vale.id_incident)],
+            "lines": _con_existencias(db, _renglones(db, vale.id_incident)),
         }
 
 
-def cerrar_renglon(id_line, payload: dict, user_data: dict) -> dict:
-    """Cierra un renglon y actualiza el estado del vale.
+def _sacar_del_almacen(db, renglon, user_data, *, id_responsable, vence, motivo):
+    """Descuenta lo que el renglon se lleva, por la puerta de siempre.
 
-    Cerrar el ultimo renglon cierra el vale. Es el unico camino: el estado del
-    vale no se puede capturar a mano, justo para que no exista un vale
-    "terminado" con herramienta todavia fuera.
+    Las dos formas de rastrear salen por caminos distintos y a proposito:
+
+    * la PIEZA pasa por `transicion_en_sesion`, la misma funcion que usa el
+      prestamo suelto. Queda PRESTADA, con responsable y con fecha de regreso, y
+      su bitacora recibe el evento. No hay un segundo camino que escriba el
+      estado de una pieza;
+    * lo FUNGIBLE pasa por `apply_movement_in_session` con `movement_type`
+      "loan", que es la unica puerta que mueve existencias en todo el sistema.
+
+    La referencia de los dos apunta al vale, asi que desde un movimiento del
+    libro se llega al papel que lo justifica.
+    """
+    if renglon.id_inventory_asset is not None:
+        transicion_en_sesion(
+            db, renglon.id_inventory_asset,
+            {
+                "id_holder": id_responsable,
+                "due_date": vence.date().isoformat(),
+                "reason": motivo,
+                "reference_type": "incident",
+                "reference_id": str(renglon.id_incident),
+                # La clave de idempotencia cuelga del renglon: reintentar el
+                # alta del vale no puede prestar la pieza dos veces.
+                "idempotency_key": "voucher:%s:line:%s:out" % (
+                    renglon.id_incident, renglon.id_nm_incident_product),
+            },
+            user_data,
+            evento=PRESTAMO, destino=PRESTADA,
+            exige_responsable=True, exige_fecha=True,
+        )
+        return
+
+    apply_movement_in_session(
+        db, renglon.id_product, user_data,
+        movement_type="loan",
+        quantity_delta=-int(renglon.quantity),
+        idempotency_key="voucher:%s:line:%s:out" % (
+            renglon.id_incident, renglon.id_nm_incident_product),
+        id_location=renglon.id_location_from,
+        reference_type="incident",
+        reference_id=str(renglon.id_incident),
+        reason=motivo,
+    )
+
+
+def devolver_renglon(id_line, payload: dict, user_data: dict) -> dict:
+    """Recibe de vuelta lo que salio en un renglon del vale.
+
+    Como queda el rastro
+    --------------------
+    La devolucion no borra ni reescribe la salida: **agrega** un renglon de
+    ENTRADA. Si salieron dos vales, hay dos renglones de salida; cuando vuelven,
+    hay dos de entrada. El papel entero se puede leer despues sin adivinar que
+    paso, y es la misma regla que ya sigue la bitacora de la pieza: la historia
+    no se corrige, se continua.
+
+    La salida se marca ademas con su `close_date`. No es informacion repetida:
+    es lo que hace que "que sigue fuera" y "que esta vencido" sean una consulta
+    con indice en lugar de una suma de salidas menos entradas por producto.
+
+    Y la existencia vuelve por la misma puerta por la que salio: la pieza con
+    `transicion_en_sesion`, lo fungible con `apply_movement_in_session`.
     """
     actor = _actor(user_data)
     with transaction_context() as db:
@@ -340,15 +496,55 @@ def cerrar_renglon(id_line, payload: dict, user_data: dict) -> dict:
         if renglon is None:
             raise AppError("errors.not_found", 404,
                            {"entity": "nm_incident_product"})
+        # La direccion se mira ANTES de la fecha de cierre. Un renglon de
+        # entrada nace saldado, asi que la comprobacion de "ya cerrado" saltaria
+        # primero y contestaria que se devolvio dos veces cuando el problema es
+        # otro: eso no es un prestamo, es la devolucion de uno.
+        if str(renglon.direction or "") != SALIDA:
+            raise AppError("errors.voucher_line_not_a_loan", 409,
+                           {"id_nm_incident_product": renglon.id_nm_incident_product,
+                            "direction": renglon.direction})
         if renglon.close_date is not None:
             raise AppError("errors.voucher_line_already_closed", 409,
                            {"id_nm_incident_product": renglon.id_nm_incident_product,
                             "close_date": renglon.close_date.isoformat()})
 
-        renglon.close_date = _ahora()
         nota = _texto(payload.get("note"), "note", largo=300)
+        # A donde vuelve. Por omision al sitio de donde salio, que es lo que
+        # pasa casi siempre; se puede decir otro, porque a veces se devuelve en
+        # otra nave.
+        vuelve_a = _entero(payload.get("id_location"), "id_location",
+                           obligatorio=False) or renglon.id_location_from
+        if vuelve_a is None:
+            raise AppError("errors.required_field", 400, {"field": "id_location"})
+
+        ahora = _ahora()
+        renglon.close_date = ahora
         if nota:
             renglon.note = nota
+        db.flush()
+
+        entrada = NmIncidentProduct(
+            id_incident=renglon.id_incident,
+            id_product=renglon.id_product,
+            id_inventory_asset=renglon.id_inventory_asset,
+            quantity=renglon.quantity,
+            direction=ENTRADA,
+            id_location_from=None,
+            id_location_to=vuelve_a,
+            start_date=ahora,
+            # Una entrada nace saldada: es el hecho de que volvio, no algo
+            # pendiente. Si quedara abierta, el vale nunca se cerraria.
+            close_date=ahora,
+            due_date=None,
+            note=nota,
+            created_by=actor,
+        )
+        db.add(entrada)
+        db.flush()
+
+        _devolver_al_almacen(db, renglon, user_data, vuelve_a=vuelve_a,
+                             motivo=nota, id_entrada=entrada.id_nm_incident_product)
         db.flush()
 
         vale = _vale(db, renglon.id_incident, para_actualizar=True)
@@ -356,10 +552,54 @@ def cerrar_renglon(id_line, payload: dict, user_data: dict) -> dict:
 
         return {
             "line": renglon.serialize(),
+            "entry": entrada.serialize(),
             "voucher": vale.serialize(),
             "closed_the_voucher": str(vale.incident_status or "") == CERRADO,
             "actor": actor,
         }
+
+
+def _devolver_al_almacen(db, renglon, user_data, *, vuelve_a, motivo, id_entrada):
+    """Repone lo que el renglon se habia llevado, por la puerta de siempre."""
+    if renglon.id_inventory_asset is not None:
+        transicion_en_sesion(
+            db, renglon.id_inventory_asset,
+            {
+                "id_location": vuelve_a,
+                "reason": motivo,
+                "reference_type": "incident",
+                "reference_id": str(renglon.id_incident),
+                "idempotency_key": "voucher:%s:line:%s:in" % (
+                    renglon.id_incident, id_entrada),
+            },
+            user_data,
+            evento=DEVOLUCION, destino=DISPONIBLE,
+            libera_responsable=True, vuelve_a_ubicacion=True,
+        )
+        return
+
+    apply_movement_in_session(
+        db, renglon.id_product, user_data,
+        movement_type="return",
+        quantity_delta=int(renglon.quantity),
+        idempotency_key="voucher:%s:line:%s:in" % (
+            renglon.id_incident, id_entrada),
+        id_location=vuelve_a,
+        reference_type="incident",
+        reference_id=str(renglon.id_incident),
+        reason=motivo,
+    )
+
+
+def cerrar_renglon(id_line, payload: dict, user_data: dict) -> dict:
+    """Cerrar un renglon de vale ES devolver lo que salio.
+
+    Se conserva el nombre porque es el de la ruta `/close`, pero no son dos
+    operaciones: un renglon de prestamo no se puede dar por terminado sin que la
+    herramienta vuelva al almacen. Cuando estaban separadas, cerrar dejaba el
+    vale "terminado" con la pieza todavia marcada como prestada.
+    """
+    return devolver_renglon(id_line, payload, user_data)
 
 
 def consultar_vale(id_incident, user_data: dict) -> dict:
@@ -369,10 +609,18 @@ def consultar_vale(id_incident, user_data: dict) -> dict:
         vale = _vale(db, id_incident)
         renglones = _renglones(db, vale.id_incident)
         abiertos = [r for r in renglones if r.close_date is None]
+        # Las salidas y las entradas se cuentan aparte. Desde que la
+        # devolucion AGREGA un renglon en vez de reescribir el de salida, un
+        # vale de dos renglones devuelto tiene cuatro, y un solo "total" leido
+        # en pantalla parece que se llevaron el doble.
+        salidas = [r for r in renglones if str(r.direction or "") == SALIDA]
+        entradas = [r for r in renglones if str(r.direction or "") == ENTRADA]
         return {
             "voucher": vale.serialize(),
-            "lines": [r.serialize() for r in renglones],
+            "lines": _con_existencias(db, renglones),
             "open_lines": len(abiertos),
+            "exit_lines": len(salidas),
+            "entry_lines": len(entradas),
             "total_lines": len(renglones),
         }
 
@@ -395,7 +643,7 @@ def vales_vencidos(user_data: dict) -> dict:
                 NmIncidentProduct.due_date < ahora,
             ).order_by(NmIncidentProduct.due_date)
         ).all()
-        return {"items": [r.serialize() for r in filas], "total": len(filas)}
+        return {"items": _con_existencias(db, filas), "total": len(filas)}
 
 
 def _fecha(valor):
