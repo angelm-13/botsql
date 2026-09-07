@@ -85,5 +85,90 @@ class TestElInventarioSeAlcanzaDesdeElMenu(unittest.TestCase):
         self.assertEqual({}, repetidas, f"etiquetas repetidas por grupo: {repetidas}")
 
 
+class TestElFlujoDeOperacionesSeLeeEnOrden(unittest.TestCase):
+    """El grupo Operaciones tiene que leerse como el trabajo, no como el diccionario.
+
+    El grupo se leia asi -orden real, porque una entrada sin `menu_order` cae en
+    el 100 por omision y despues se ordena por etiqueta-:
+
+        Calendario, Detalle de incidencias, Incidencias, Notas de tarea,
+        Plantillas, Proyectos, Servicios, Tareas, Tipos de tarea
+
+    Proyectos, que es por donde se entra -`task.id_proyect` es NOT NULL, ninguna
+    tarea existe sin el- salia en sexto lugar y detras de las notas de sus
+    propias tareas. Estas pruebas fijan lo que se corrigio.
+    """
+
+    def test_a_project_comes_before_its_tasks(self):
+        """Se entra por el proyecto: `task.id_proyect` es NOT NULL."""
+        self.assertLess(
+            MENU["proyect"][1], MENU["task"][1],
+            "Proyectos tiene que ir delante de Tareas: una tarea no existe sin "
+            "su proyecto y el menu es lo que ensena ese orden",
+        )
+
+    def test_the_incident_type_a_incident_needs_is_reachable(self):
+        """`incident.id_incident_type` es NOT NULL y no habia donde darlo de alta."""
+        self.assertIn(
+            "incident_type", MENU,
+            "`incident_type` es obligatorio para levantar una incidencia. Sin "
+            "entrada en MENU el registro lo siembra con menu_location='hidden' "
+            "y no hay forma de dar de alta un tipo desde el menu: es el mismo "
+            "fallo que tuvo `product_family` en inventario",
+        )
+
+    def test_a_child_row_has_no_menu_entry_of_its_own(self):
+        """Un hijo se captura desde su padre, no en una tercera pantalla.
+
+        `task_note.id_task` es NOT NULL, y `nm_incident_product` y
+        `nm_template_task` son tablas puente. Con entrada propia habia que abrir
+        otra lista y elegir el padre en un desplegable para escribir una nota,
+        y la bitacora de una tarea no se leia junta en ningun sitio.
+        """
+        for entidad in ("task_note", "nm_incident_product", "nm_template_task"):
+            with self.subTest(entidad=entidad):
+                self.assertNotIn(
+                    entidad, MENU,
+                    f"`{entidad}` cuelga de otra fila y se captura desde ella. "
+                    "Si vuelve al menu hay dos puertas al mismo registro, una "
+                    "de ellas pidiendo el padre en un desplegable",
+                )
+
+    def test_no_operations_label_names_something_else(self):
+        """"Detalle de incidencias" nombraba un catalogo de subtipos.
+
+        `incident_detail.id_incident_type` apunta al TIPO, no a la incidencia, y
+        la entrada estaba justo debajo de "Incidencias": quien buscaba el
+        detalle de una incidencia abria un catalogo.
+        """
+        etiqueta = MENU["incident_detail"][0]
+        self.assertNotIn(
+            "Detalle", etiqueta,
+            "`incident_detail` cuelga de `incident_type`, no de `incident`: su "
+            f"etiqueta no puede leerse como el detalle de una incidencia "
+            f"(ahora dice {etiqueta!r})",
+        )
+
+    def test_every_operations_entity_is_named_or_hangs_from_a_parent(self):
+        """O tiene entrada, o esta en la lista de las que se abren desde su padre."""
+        # Las que se capturan desde su dueno, con la razon en el propio nombre
+        # de la columna que las ata: task_note.id_task, nm_*.id_*.
+        desde_el_padre = {"task_note", "nm_incident_product", "nm_template_task"}
+        operaciones = MODULO_POR_CLAVE["operaciones"]
+        huerfanas = sorted(
+            entidad for entidad in operaciones.entidades
+            if entidad not in SOLO_ARRANQUE
+            and entidad not in MENU
+            and entidad not in desde_el_padre
+        )
+        self.assertEqual(
+            [], huerfanas,
+            "Estas entidades de operaciones no tienen entrada de menu y no "
+            "estan declaradas como capturables desde su padre, asi que el "
+            "registro las siembra escondidas y nadie las encuentra: "
+            + ", ".join(huerfanas),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

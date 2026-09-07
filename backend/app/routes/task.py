@@ -3,8 +3,9 @@ from flask import Blueprint, jsonify, request
 from sqlalchemy import func
 from app.models.session import transaction_context
 from app.models.task import Task
+from app.models.task_note import TaskNote
 from app.services.project_management_service import require_project_access, require_task_access, visible_project_ids
-from app.services.task_service import TaskService
+from app.services.task_service import TaskService, add_task_note, transition_task
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
 
@@ -164,6 +165,42 @@ def update_task(user_data, id_task):
     if payload.get('id_proyect') is not None:
         require_project_access(payload.get('id_proyect'), user_data)
     return _jsonify_projected_record(user_data, TaskService.update(id_task, payload, user_id=user_data.get('id_user')))
+
+
+@bp_task.route('/<id_task>/transition', methods=['POST'])
+@token_required
+@require_entity_permission('task', 'update')
+def transition_task_status(user_data, id_task):
+    """Cambio de estatus guiado, como en `/proyect/<id>/transition`."""
+    return _jsonify_projected_record(user_data, transition_task(id_task, request.get_json() or {}, user_data))
+
+
+@bp_task.route('/<id_task>/notes', methods=['GET'])
+@token_required
+@require_entity_permission('task_note', 'read')
+def list_task_notes(user_data, id_task):
+    """La bitacora de UNA tarea, que es como se lee.
+
+    `/task_note/?id_task=N` ya sabia filtrar, pero obligaba a la pantalla a
+    saber el nombre de la columna del padre. Aqui la relacion la pone la ruta,
+    igual que en `/proyect/<id>`.
+    """
+    require_task_access(id_task, user_data)
+    with transaction_context() as db:
+        rows = (
+            db.query(TaskNote)
+            .filter(TaskNote.id_task == int(id_task), TaskNote.deletion_date.is_(None))
+            .order_by(TaskNote.creation_date.asc(), TaskNote.id_task_note.asc())
+            .all()
+        )
+        return jsonify({'items': [row.serialize() for row in rows], 'total': len(rows)})
+
+
+@bp_task.route('/<id_task>/notes', methods=['POST'])
+@token_required
+@require_entity_permission('task_note', 'create')
+def create_task_note_for_task(user_data, id_task):
+    return jsonify(add_task_note(id_task, request.get_json() or {}, user_data)), 201
 
 
 @bp_task.route('/<id_task>', methods=['DELETE'])

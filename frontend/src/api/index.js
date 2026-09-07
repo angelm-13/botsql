@@ -641,3 +641,20 @@ export const getKronosPeople = (payload) => request("/kronos/people", { method: 
 export const saveKronosPerson = (payload) => request("/kronos/people", { method: "PUT", body: payload });
 export const deleteKronosPerson = (employeeNo, payload) => request(`/kronos/people/${encodeURIComponent(employeeNo)}`, { method: "DELETE", body: payload });
 export { urlDeArchivo } from "./client";
+
+// --- operaciones: catalogo, transiciones y bitacora de tarea ---------------
+// De la otra corriente de trabajo. Se perdieron al separar los cambios de
+// inventario de los de operaciones y se devuelven tal como estaban.
+// Las maquinas de estado de Operaciones -proyecto, tarea e incidencia- tal como
+// las valida el servidor. La pantalla de proyectos llevaba su propia copia del
+// mapa de transiciones en JavaScript: dos copias divergen y la interfaz acaba
+// ofreciendo un paso que el servidor rechaza.
+export const getOperationsCatalog = () => request("/operations/catalog");
+// Cambio de estatus guiado por la maquina de estados del servidor, igual que
+// `transitionProyect`. El PUT suelto sobre `task_status` sigue existiendo, pero
+// no valida la transicion ni guarda el motivo.
+export const transitionTask = (id, payload) => request(`/task/${id}/transition`, { method: "POST", body: payload });
+// La bitacora de UNA tarea. La relacion la pone la ruta, asi que la pantalla no
+// tiene que saber que la columna del padre se llama `id_task`.
+export const getTaskNotes = (id) => request(`/task/${id}/notes`);
+export const addTaskNote = (id, payload) => request(`/task/${id}/notes`, { method: "POST", body: payload });

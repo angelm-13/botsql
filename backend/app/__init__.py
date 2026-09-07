@@ -55,6 +55,7 @@ from app.routes.bank_account import bp_bank_account
 from app.routes.invoice import bp_invoice
 from app.routes.invoice_material_service import bp_invoice_material_service
 from app.routes.material_type import bp_material_type
+from app.routes.operations import bp_operations
 from app.routes.product_family import bp_product_family
 from app.routes.incident_type import bp_incident_type
 from app.routes.incident import bp_incident
@@ -701,6 +702,7 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_invoice)
     app.register_blueprint(bp_invoice_material_service)
     app.register_blueprint(bp_material_type)
+    app.register_blueprint(bp_operations)
     app.register_blueprint(bp_product_family)
     app.register_blueprint(bp_incident_type)
     app.register_blueprint(bp_incident)

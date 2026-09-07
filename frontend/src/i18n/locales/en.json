@@ -3426,7 +3426,18 @@
     "status_in_progress": "In progress",
     "status_stopped": "Stopped",
     "status_completed": "Completed",
-    "status_denied": "Denied"
+    "status_denied": "Denied",
+    "new_task_note": "New note",
+    "no_task_notes": "No notes recorded.",
+    "task_note_event": "Task note",
+    "task_note_placeholder": "Record progress or a blocker for this task",
+    "task_notes": "Task log",
+    "task_status_bloqueada": "Blocked",
+    "task_status_cancelada": "Cancelled",
+    "task_status_en_proceso": "In progress",
+    "task_status_en_revision": "In review",
+    "task_status_pendiente": "Pending",
+    "task_status_terminada": "Done"
   },
   "security": {
     "permission": {

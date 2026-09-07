@@ -36,6 +36,12 @@ PROJECT_TRANSITIONS = {
 }
 
 REASON_REQUIRED_TARGETS = {"denied", "blocked", "stopped"}
+# Estatus desde los que ya no sale ninguna transicion: el proyecto termino y no
+# admite trabajo nuevo. Se deriva del propio mapa para que no haya dos listas
+# que puedan discrepar -`task_service` tenia su propia copia escrita a mano-.
+PROJECT_CLOSED_STATUSES = frozenset(
+    status for status, targets in PROJECT_TRANSITIONS.items() if not targets
+)
 WORKSHOP_VISIBLE_STATUSES = {"authorized", "in_progress", "stopped", "completed"}
 PROJECT_MUTABLE_FIELDS = {"id_customer_supplier", "leader", "proyect_description", "title"}
 
@@ -61,6 +67,22 @@ def validate_project_transition(current_status, target_status, reason=None) -> s
             {"target_status": target, "field": "reason"},
         )
     return target
+
+
+def project_catalog() -> dict:
+    """La maquina de estados de proyecto, tal como la valida el servidor.
+
+    La pantalla de proyectos llevaba su propia copia de PROJECT_TRANSITIONS en
+    JavaScript. Dos copias de una maquina de estados divergen: la interfaz
+    ofrecia un cambio que el servidor rechazaba, o escondia uno que si era
+    valido. Se sirve la del servidor y se acaba la copia.
+    """
+    return {
+        "statuses": list(PROJECT_STATUSES),
+        "transitions": {key: sorted(value) for key, value in PROJECT_TRANSITIONS.items()},
+        "reason_required": sorted(REASON_REQUIRED_TARGETS),
+        "closed_statuses": sorted(PROJECT_CLOSED_STATUSES),
+    }
 
 
 def _safe_int(value):
@@ -216,14 +238,25 @@ def _append_event(
     user_data: dict,
     event_type: str,
     *,
+    task: Task | None = None,
     previous_status=None,
     new_status=None,
     content=None,
     reason=None,
     review_date=None,
 ) -> ProyectEvent:
+    """Anota un hecho en el expediente del proyecto.
+
+    `task` cuelga el evento de una tarea concreta. La columna
+    `proyect_event.id_task` existe desde el principio, con indice, y nadie la
+    escribia: el historial solo contaba lo que le pasaba al proyecto, asi que
+    una tarea bloqueada o cancelada no aparecia en ningun sitio y el motivo se
+    perdia. Ahora el expediente cuenta las dos cosas en una sola linea de
+    tiempo, que es donde se busca "por que se paro esto".
+    """
     event = ProyectEvent(
         id_proyect=project.id_proyect,
+        id_task=task.id_task if task is not None else None,
         created_by=_actor_id(user_data),
         author_role=_actor_role(db, user_data),
         event_type=event_type,

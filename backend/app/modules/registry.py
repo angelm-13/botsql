@@ -405,12 +405,34 @@ MENU = {
     "movement": ("Movimientos", 50),
     "material_component": ("Componentes", 60),
     "inventory_status": ("Estado de inventario", 70),
+    # Operaciones. El orden es el del flujo, no el alfabetico: primero el
+    # proyecto, luego las tareas en que se parte, y aparte las incidencias con
+    # su catalogo de tipos. El menu se leia "Detalle de incidencias,
+    # Incidencias, Notas de tarea, Proyectos, Tareas, Tipos de tarea" -orden
+    # alfabetico, porque las etiquetas no decian el orden del trabajo- y para
+    # entenderlo habia que saberse de memoria que cuelga de que.
     "proyect": ("Proyectos", 10),
     "task": ("Tareas", 20),
-    "task_note": ("Notas de tarea", 30),
-    "task_type": ("Tipos de tarea", 40),
-    "incident": ("Incidencias", 50),
-    "incident_detail": ("Detalle de incidencias", 60),
+    # `task_note` no tiene entrada a proposito, no por descuido: su columna
+    # `id_task` es NOT NULL, o sea que una nota no existe sin su tarea. Con
+    # pantalla propia habia que abrir una tercera lista y elegir la tarea en un
+    # desplegable para escribir una nota, y la bitacora de una tarea no se leia
+    # en ningun sitio junta. Se captura y se lee dentro de la tarea, en el
+    # expediente del proyecto. `nm_incident_product` y `nm_template_task` estan
+    # fuera por lo mismo: son tablas puente, se editan desde su dueno.
+    "incident": ("Incidencias", 30),
+    "incident_type": ("Tipos de incidencia", 32),
+    # La etiqueta anterior, "Detalle de incidencias", nombraba otra cosa:
+    # `incident_detail.id_incident_type` apunta al TIPO, no a la incidencia, y
+    # la pantalla estaba justo debajo de Incidencias. Quien buscaba el detalle
+    # de una incidencia abria un catalogo de subtipos.
+    "incident_detail": ("Subtipos de incidencia", 34),
+    "template": ("Plantillas de tarea", 40),
+    # `task_type` es un catalogo que hoy nadie consume: `task` no tiene
+    # `id_task_type`, su columna `type` es un Enum('personal','business'). Se
+    # queda en el menu -el permiso existe y la pantalla captura- pero al final
+    # del grupo, para que no se lea como un paso del flujo.
+    "task_type": ("Tipos de tarea", 42),
     "payroll_period": ("Periodos de nomina", 10),
     "payroll_concept": ("Conceptos", 20),
     "payroll_movement": ("Movimientos", 30),
