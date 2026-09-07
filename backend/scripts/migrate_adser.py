@@ -35,7 +35,6 @@ antes de tocar una base con datos reales.
 
 from __future__ import annotations
 
-import argparse
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -43,11 +42,10 @@ from pathlib import Path
 RAIZ_BACKEND = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RAIZ_BACKEND))
 
-import pymysql  # noqa: E402
-import pymysql.cursors  # noqa: E402
-from sqlalchemy import text  # noqa: E402
-
-from app.models.session import SessionLocal  # noqa: E402
+from migration_toolkit import (  # noqa: E402
+    parser_base, conectar_origen, sesion_migracion,
+    resolver_ids_por_nombre, normalizar_fecha, ajustar_secuencias, reporte_conteos,
+)
 from app.models.product_family import ProductFamily  # noqa: E402
 from app.models.brand import Brand  # noqa: E402
 from app.models.incident_type import IncidentType  # noqa: E402
@@ -80,27 +78,13 @@ BOOTSTRAP_ID_PROYECT = 1        # proyect "Interno" del bootstrap circular
 # le toca depende de en que orden corrieron esas migraciones, no del numero
 # que registry.py usa para nombrarlo en su propio ROLES de Python. Verificado
 # en la prueba de este script: "Almacenista" salio id=5, no el 17 que tiene
-# registry.py. Por eso esto se resuelve por NOMBRE en tiempo real, nunca a mano.
-def ids_de_permission(session) -> dict:
-    filas = session.execute(text('SELECT id_permission, permission_description FROM permission')).all()
-    return {descripcion.strip().lower(): id_ for id_, descripcion in filas}
+# registry.py. Por eso esto se resuelve por NOMBRE en tiempo real, nunca a mano
+# (ver `resolver_ids_por_nombre` en migration_toolkit.py).
 
 # Los dos unicos choques de id de toda la migracion (ver seccion 01/06 del
 # artefacto, verificados en vivo contra adser-prod real).
 ID_NUEVO_TAROJ = 3          # usuario.id_usuario=1 -> user.id_user=3
 ID_NUEVO_ADSER_SA_DE_CV = 3  # cliente_proveedor.id_cliente_proveedor=1 -> customer_supplier.id_customer_supplier=3
-
-
-def normalizar_fecha(valor, sentinela: datetime):
-    """NULL si la fecha es el sentinela de 'nunca paso' del sistema legado.
-
-    Dos sentinelas distintos en el mismo respaldo (1900-01-01 en usuario,
-    1990-01-01 en producto) - no es el mismo valor en las dos tablas, hay
-    que pasarlo explicito por cada llamada.
-    """
-    if valor is None or valor == sentinela:
-        return None
-    return valor
 
 
 def nombre_completo(empleado) -> str:
@@ -372,7 +356,7 @@ def migrar_user(origen, session, equiv):
         f"(fernanda, yesgo); salieron {len(empleado_por_id_usuario)} - revisar antes de continuar"
     )
 
-    permission_ids = ids_de_permission(session)
+    permission_ids = resolver_ids_por_nombre(session, 'permission', 'id_permission', 'permission_description')
     id_almacenista = permission_ids['almacenista']
 
     mapa_usuario = {}   # id_usuario (origen) -> id_user (destino) - los 3 reales
@@ -744,86 +728,36 @@ TABLAS_CON_ID_MANUAL = [
 ]
 
 
-def ajustar_secuencias(session):
-    """Fijar id=X a mano en una columna SERIAL no avanza su nextval() - sin
-    esto, el primer INSERT normal de la app despues de esta migracion
-    chocaria contra un id ya usado. Mismo patron que database/init.sql.
-    """
-    for tabla, columna in TABLAS_CON_ID_MANUAL:
-        session.execute(text(
-            f"SELECT setval(pg_get_serial_sequence('{tabla}', '{columna}'), "
-            f"COALESCE((SELECT MAX({columna}) FROM \"{tabla}\"), 1), true)"
-        ))
-    print("  secuencias ajustadas al MAX(id) de cada tabla")
-
-
-def reporte_final(session):
-    """Conteos en destino - contra los del artefacto (seccion 06), sumando 1
-    en `user` y en `customer_supplier`: ya traen la fila del bootstrap
-    circular (admin1, "Interno") ANTES de que corra este script - no es un
-    conteo de lo que se migro, es lo que hay en la tabla al terminar. Esto
-    confundio a esta misma migracion durante las pruebas; que no vuelva a
-    pasar por no dejarlo dicho aqui.
-    """
-    print("\n--- verificacion final: conteos en destino (incluye bootstrap donde aplica) ---")
-    for tabla, columna in TABLAS_CON_ID_MANUAL:
-        total = session.execute(text(f'SELECT COUNT(*) FROM "{tabla}"')).scalar()
-        print(f"  {tabla}: {total}")
-
-
-def conectar_origen(args):
-    return pymysql.connect(
-        host=args.source_host, port=args.source_port, user=args.source_user,
-        password=args.source_password, database=args.source_db,
-        cursorclass=pymysql.cursors.DictCursor, charset='utf8mb4',
-    )
-
-
 def main():
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--source-host', default='localhost')
-    parser.add_argument('--source-port', type=int, default=13306)
-    parser.add_argument('--source-user', default='root')
-    parser.add_argument('--source-password', required=True)
-    parser.add_argument('--source-db', default='adser_prod')
-    parser.add_argument('--dry-run', action='store_true', help='Revierte todo al final, no escribe nada permanente.')
+    parser = parser_base(__doc__)
+    parser.set_defaults(source_db='adser_prod')
     args = parser.parse_args()
 
-    origen = conectar_origen(args)
-    session = SessionLocal()
+    origen = conectar_origen(args.source_host, args.source_port, args.source_user,
+                              args.source_password, args.source_db)
     equiv: dict = {}
 
     try:
-        print("Migrando (orden de dependencias, ver seccion 03 del artefacto):")
-        migrar_product_family(origen, session, equiv)
-        migrar_brand(origen, session, equiv)
-        migrar_incident_type(origen, session, equiv)
-        migrar_location_type(origen, session, equiv)
-        migrar_unit(session, equiv)
-        migrar_location(origen, session, equiv)
-        migrar_material(origen, session, equiv)
-        migrar_user(origen, session, equiv)
-        migrar_customer_supplier(origen, session, equiv)
-        migrar_invoice(origen, session, equiv)
-        migrar_product(origen, session, equiv)
-        migrar_incident(origen, session, equiv)
-        migrar_nm_incident_product(origen, session, equiv)
-        migrar_ticket(origen, session, equiv)
+        with sesion_migracion(args.dry_run) as session:
+            print("Migrando (orden de dependencias, ver seccion 03 del artefacto):")
+            migrar_product_family(origen, session, equiv)
+            migrar_brand(origen, session, equiv)
+            migrar_incident_type(origen, session, equiv)
+            migrar_location_type(origen, session, equiv)
+            migrar_unit(session, equiv)
+            migrar_location(origen, session, equiv)
+            migrar_material(origen, session, equiv)
+            migrar_user(origen, session, equiv)
+            migrar_customer_supplier(origen, session, equiv)
+            migrar_invoice(origen, session, equiv)
+            migrar_product(origen, session, equiv)
+            migrar_incident(origen, session, equiv)
+            migrar_nm_incident_product(origen, session, equiv)
+            migrar_ticket(origen, session, equiv)
 
-        ajustar_secuencias(session)
-        reporte_final(session)
-
-        if args.dry_run:
-            session.rollback()
-            print("\n--dry-run: todo revertido, no se escribio nada permanente.")
-        else:
-            session.commit()
-            print("\nMigracion confirmada.")
-    except Exception:
-        session.rollback()
-        raise
+            ajustar_secuencias(session, TABLAS_CON_ID_MANUAL)
+            reporte_conteos(session, TABLAS_CON_ID_MANUAL)
     finally:
-        session.close()
         origen.close()
 
 

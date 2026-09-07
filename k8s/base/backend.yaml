@@ -2,12 +2,31 @@
 # worker (celery-worker y celery-beat literalmente reusan la imagen
 # "worker" — solo cambia el `command`), igual que hoy en
 # docker-compose.yml.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: uploads-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 5Gi # comprobantes XML, PDF, estados de cuenta y fotos de producto (ver storage_service.py); crece con el uso
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: backend
 spec:
   replicas: 1
+  # local-path (ReadWriteOnce, atado al nodo, igual que el PVC de postgres):
+  # dos pods del backend no pueden montar el mismo volumen de /uploads a la
+  # vez, así que el viejo debe apagarse antes de levantar el nuevo. A
+  # diferencia de postgres.yaml (StatefulSet, RollingUpdate ya se comporta
+  # así con 1 réplica), un Deployment normal sí necesita este strategy
+  # explícito o intentaría tener ambos pods corriendo durante el rollout.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: backend
@@ -114,6 +133,9 @@ spec:
             limits:
               cpu: 500m
               memory: 256Mi
+          volumeMounts:
+            - name: uploads
+              mountPath: /uploads
           readinessProbe:
             httpGet:
               path: /health
@@ -131,6 +153,10 @@ spec:
             periodSeconds: 20
             failureThreshold: 3
             initialDelaySeconds: 15
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: uploads-data
 ---
 apiVersion: v1
 kind: Service
