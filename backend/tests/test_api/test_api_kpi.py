@@ -9,8 +9,8 @@ from sqlalchemy import select, text
 
 from app.kpis.registry import seed_kpi_definitions
 from app.models import (
-    CustomerSupplier, Department, EntityPermission, KpiDefinition, KpiSnapshot, Level, NmPermissionKpi,
-    Permission, Proyect, Status, Subdepartment, User,
+    CustomerSupplier, Department, EntityPermission, KpiDashboard, KpiDefinition, KpiSnapshot, Level,
+    NmPermissionKpi, Permission, Proyect, Status, Subdepartment, User,
 )
 from app.models.session import engine, transaction_context
 from tests.conftest import BackendTestCase
@@ -146,6 +146,156 @@ class TestKpiApi(BackendTestCase):
         payload = self.json(response)["rango_a"]
         self.assertEqual(11499.0, payload["total"])
         self.assertEqual({"950": 10999.0, "951": 500.0}, payload["por_empleado"])
+
+
+ACTOR_A = {"id_user": 980, "id_permission": 980, "id_proyect": 980}
+ACTOR_B = {"id_user": 981, "id_permission": 981, "id_proyect": 981}
+
+
+@unittest.skipUnless(engine.dialect.name == "postgresql", "Estas pruebas requieren PostgreSQL")
+class TestKpiDashboardApi(BackendTestCase):
+    """kpi_dashboard / kpi_dashboard_widget: privados por dueno, sin excepcion.
+
+    A diferencia de invoice (donde el superusuario ve todos los proyectos),
+    aqui ni Administrator ve el tablero de otra persona -- es la regla de
+    diseno del modulo, y `test_superuser_cannot_see_a_foreign_dashboard` la
+    confirma explicitamente porque es la excepcion al resto del sistema.
+    """
+
+    def setUp(self):
+        super().setUp()
+        with transaction_context() as db:
+            db.execute(text("SET CONSTRAINTS ALL DEFERRED"))
+            db.add(Status(id_status=1, status_description="Activo", category="general", is_terminal=False, sort_order="asc", created_by=1))
+            db.add(Department(id_department=1, department_description="General", created_by=1))
+            db.add(Subdepartment(id_subdepartment=1, subdepartment_description="General", id_department=1, created_by=1))
+            db.add(Level(id_level=1, level_description="General", created_by=1))
+            db.add(Permission(
+                id_permission=1, permission_description="Admin", created_by=1, authorized_by=1,
+                id_department=1, id_subdepartment=1, id_level=1,
+            ))
+            db.add(User(
+                id_user=1, created_by=1, full_name="Admin", id_permission=1, id_proyect=1,
+                id_status=1, supervisor=1, user_type="admin", username="kpi-dash-admin",
+            ))
+            db.add(CustomerSupplier(
+                id_customer_supplier=1, name="Interno", tax_id="AAA010101AA1", postal_code="37000",
+                fiscal_type="601", type="supplier", id_user=1, created_by=1,
+            ))
+            db.add(Proyect(id_proyect=1, id_customer_supplier=1, leader=1, proyect_description="Default", created_by=1))
+            # El modulo "kpis" (guardia de kpi_dashboard/kpi_dashboard_widget)
+            # concedido a los dos actores no-admin: la propiedad, no el
+            # modulo, es lo que se prueba aqui.
+            db.add_all([
+                EntityPermission(id_permission=980, entity_name="kpi_dashboard", control_type=15, created_by=1),
+                EntityPermission(id_permission=980, entity_name="kpi_dashboard_widget", control_type=15, created_by=1),
+                EntityPermission(id_permission=981, entity_name="kpi_dashboard", control_type=15, created_by=1),
+                EntityPermission(id_permission=981, entity_name="kpi_dashboard_widget", control_type=15, created_by=1),
+            ])
+
+        seed_kpi_definitions(engine)
+        with transaction_context() as db:
+            self.id_kpi = db.scalar(
+                select(KpiDefinition.id_kpi_definition).where(KpiDefinition.clave == "ventas_por_empleado")
+            )
+            # Solo ACTOR_A tiene permiso puntual sobre el KPI. ACTOR_B tiene
+            # el modulo de tableros pero no este KPI -- y ADMIN nunca lo
+            # necesita, por ser superusuario.
+            db.add(NmPermissionKpi(id_permission=980, id_kpi_definition=self.id_kpi, control_type=15, created_by=1))
+
+    def _request(self, actor, method, path, payload=None):
+        with patch("app.utils.auth.jwt.decode", return_value=actor):
+            return self.client.open(
+                path, method=method, json=payload, headers={"Authorization": "Bearer kpi-dash-test"},
+            )
+
+    def _crear_tablero(self, actor, nombre="Mi tablero"):
+        response = self._request(actor, "POST", "/kpi_dashboard/", {"nombre": nombre})
+        self.assertEqual(201, response.status_code, self.json(response))
+        return self.json(response)["id_kpi_dashboard"]
+
+    def test_actor_can_create_own_dashboard_and_widget(self):
+        id_dashboard = self._crear_tablero(ACTOR_A)
+
+        listado = self._request(ACTOR_A, "GET", "/kpi_dashboard/")
+        self.assertEqual(200, listado.status_code)
+        self.assertEqual([id_dashboard], [d["id_kpi_dashboard"] for d in self.json(listado)["items"]])
+
+        widget = self._request(ACTOR_A, "POST", f"/kpi_dashboard/{id_dashboard}/widgets/", {
+            "id_kpi_definition": self.id_kpi, "tipo_grafica": "barras",
+        })
+        self.assertEqual(201, widget.status_code, self.json(widget))
+        id_widget = self.json(widget)["id_kpi_dashboard_widget"]
+
+        widgets = self._request(ACTOR_A, "GET", f"/kpi_dashboard/{id_dashboard}/widgets/")
+        self.assertEqual([id_widget], [w["id_kpi_dashboard_widget"] for w in self.json(widgets)["items"]])
+
+    def test_another_actor_with_the_module_cannot_reach_a_foreign_dashboard(self):
+        id_dashboard = self._crear_tablero(ACTOR_A)
+
+        self.assertEqual(
+            404, self._request(ACTOR_B, "GET", f"/kpi_dashboard/{id_dashboard}/widgets/").status_code,
+        )
+        self.assertEqual(
+            404, self._request(ACTOR_B, "PUT", f"/kpi_dashboard/{id_dashboard}", {"nombre": "Intrusion"}).status_code,
+        )
+        self.assertEqual(
+            404, self._request(ACTOR_B, "POST", f"/kpi_dashboard/{id_dashboard}/widgets/", {
+                "id_kpi_definition": self.id_kpi, "tipo_grafica": "barras",
+            }).status_code,
+        )
+        self.assertEqual(404, self._request(ACTOR_B, "DELETE", f"/kpi_dashboard/{id_dashboard}").status_code)
+
+    def test_superuser_cannot_see_a_foreign_dashboard(self):
+        """La excepcion a como se comporta el resto del sistema.
+
+        InvoiceService.actor_project regresa None para el superusuario, que
+        entonces ve todos los proyectos. kpi_dashboard NO tiene ese `None`:
+        el filtro `id_user == actor` se aplica siempre, y para Administrator
+        `actor` es su propio id_user (1), no un comodin.
+        """
+        id_dashboard = self._crear_tablero(ACTOR_A)
+
+        self.assertEqual(
+            404, self._request(ADMIN, "GET", f"/kpi_dashboard/{id_dashboard}/widgets/").status_code,
+        )
+        self.assertEqual(
+            404, self._request(ADMIN, "PUT", f"/kpi_dashboard/{id_dashboard}", {"nombre": "Intrusion"}).status_code,
+        )
+        self.assertEqual(404, self._request(ADMIN, "DELETE", f"/kpi_dashboard/{id_dashboard}").status_code)
+        # Y el propio tablero de ADMIN sigue vacio: no hereda ni ve el de A.
+        propio = self._request(ADMIN, "GET", "/kpi_dashboard/")
+        self.assertEqual([], self.json(propio)["items"])
+
+    def test_creating_widget_without_kpi_permission_fails(self):
+        id_dashboard = self._crear_tablero(ACTOR_B)
+
+        response = self._request(ACTOR_B, "POST", f"/kpi_dashboard/{id_dashboard}/widgets/", {
+            "id_kpi_definition": self.id_kpi, "tipo_grafica": "barras",
+        })
+
+        self.assertEqual(403, response.status_code)
+
+    def test_invalid_chart_type_is_rejected(self):
+        id_dashboard = self._crear_tablero(ACTOR_A)
+
+        response = self._request(ACTOR_A, "POST", f"/kpi_dashboard/{id_dashboard}/widgets/", {
+            "id_kpi_definition": self.id_kpi, "tipo_grafica": "pastel",
+        })
+
+        self.assertEqual(400, response.status_code)
+
+    def test_delete_dashboard_is_a_soft_delete(self):
+        id_dashboard = self._crear_tablero(ACTOR_A)
+
+        self.assertEqual(200, self._request(ACTOR_A, "DELETE", f"/kpi_dashboard/{id_dashboard}").status_code)
+
+        listado = self._request(ACTOR_A, "GET", "/kpi_dashboard/")
+        self.assertEqual([], self.json(listado)["items"])
+        with transaction_context() as db:
+            fila = db.get(KpiDashboard, id_dashboard)
+            self.assertIsNotNone(fila, "la fila sigue existiendo: es baja logica, no fisica")
+            self.assertIsNotNone(fila.deletion_date)
 
 
 if __name__ == "__main__":

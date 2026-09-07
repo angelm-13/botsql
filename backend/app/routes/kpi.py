@@ -10,10 +10,14 @@ from app.models.kpi_definition import KpiDefinition
 from app.models.kpi_snapshot import KpiSnapshot
 from app.models.session import transaction_context
 from app.services.invoice_service import InvoiceService
+from app.services.kpi_dashboard_service import KpiDashboardService
+from app.services.kpi_dashboard_widget_service import KpiDashboardWidgetService
 from app.utils.auth import has_kpi_permission, require_entity_permission, token_required
 from app.utils.errors import AppError
 
 bp_kpi = Blueprint('kpi', __name__)
+bp_kpi_dashboard = Blueprint('kpi_dashboard', __name__, url_prefix='/kpi_dashboard')
+bp_kpi_dashboard_widget = Blueprint('kpi_dashboard_widget', __name__, url_prefix='/kpi_dashboard_widget')
 
 
 def _required_int(value, field):
@@ -131,3 +135,76 @@ def query_kpi_snapshot(user_data):
             rango_b = _totales(db, id_kpi_definition, fecha_inicio_b, fecha_fin_b, actor_project, empleados)
 
     return jsonify({'rango_a': rango_a, 'rango_b': rango_b})
+
+
+# --- kpi_dashboard: tableros del usuario, siempre privados por dueno -------
+#
+# No se construye con `create_crud_blueprint`
+# (app/routes/logistics_workflow.py): ese generico llama a `service.list`/
+# `get`/`create`/`update`/`delete` sin ningun filtro de propiedad -- su
+# supuesto es "cualquier actor con el bit de la entidad ve/edita cualquier
+# fila", que es exactamente correcto para logistica (acotada por proyecto,
+# no por usuario) y exactamente incorrecto aqui: expondria el tablero de
+# cualquier usuario a cualquier otro con el modulo "kpis" concedido, sin
+# siquiera la excepcion de superusuario que si existe en otros modulos. Por
+# eso las rutas llaman a los metodos `_own`/`_widget` del servicio, que
+# resuelven el alcance por dueno antes de tocar el CRUD generico.
+
+@bp_kpi_dashboard.route('/', methods=['GET'])
+@token_required
+@require_entity_permission('kpi_dashboard', 'read')
+def list_kpi_dashboards(user_data):
+    page = int(request.args.get('page', 1))
+    per_page = int(request.args.get('per_page', 20))
+    return jsonify(KpiDashboardService.list_own(user_data, page=page, per_page=per_page))
+
+
+@bp_kpi_dashboard.route('/', methods=['POST'])
+@token_required
+@require_entity_permission('kpi_dashboard', 'create')
+def create_kpi_dashboard(user_data):
+    return jsonify(KpiDashboardService.create_own(user_data, request.get_json(silent=True) or {})), 201
+
+
+@bp_kpi_dashboard.route('/<id_kpi_dashboard>', methods=['PUT'])
+@token_required
+@require_entity_permission('kpi_dashboard', 'update')
+def update_kpi_dashboard(user_data, id_kpi_dashboard):
+    return jsonify(KpiDashboardService.update_own(user_data, id_kpi_dashboard, request.get_json(silent=True) or {}))
+
+
+@bp_kpi_dashboard.route('/<id_kpi_dashboard>', methods=['DELETE'])
+@token_required
+@require_entity_permission('kpi_dashboard', 'delete')
+def delete_kpi_dashboard(user_data, id_kpi_dashboard):
+    return jsonify(KpiDashboardService.delete_own(user_data, id_kpi_dashboard))
+
+
+@bp_kpi_dashboard.route('/<id_kpi_dashboard>/widgets/', methods=['GET'])
+@token_required
+@require_entity_permission('kpi_dashboard_widget', 'read')
+def list_kpi_dashboard_widgets(user_data, id_kpi_dashboard):
+    return jsonify(KpiDashboardWidgetService.list_by_dashboard(user_data, id_kpi_dashboard))
+
+
+@bp_kpi_dashboard.route('/<id_kpi_dashboard>/widgets/', methods=['POST'])
+@token_required
+@require_entity_permission('kpi_dashboard_widget', 'create')
+def create_kpi_dashboard_widget(user_data, id_kpi_dashboard):
+    payload = request.get_json(silent=True) or {}
+    return jsonify(KpiDashboardWidgetService.create_widget(user_data, id_kpi_dashboard, payload)), 201
+
+
+@bp_kpi_dashboard_widget.route('/<id_kpi_dashboard_widget>', methods=['PUT'])
+@token_required
+@require_entity_permission('kpi_dashboard_widget', 'update')
+def update_kpi_dashboard_widget(user_data, id_kpi_dashboard_widget):
+    payload = request.get_json(silent=True) or {}
+    return jsonify(KpiDashboardWidgetService.update_widget(user_data, id_kpi_dashboard_widget, payload))
+
+
+@bp_kpi_dashboard_widget.route('/<id_kpi_dashboard_widget>', methods=['DELETE'])
+@token_required
+@require_entity_permission('kpi_dashboard_widget', 'delete')
+def delete_kpi_dashboard_widget(user_data, id_kpi_dashboard_widget):
+    return jsonify(KpiDashboardWidgetService.delete_widget(user_data, id_kpi_dashboard_widget))
