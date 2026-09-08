@@ -1,5 +1,5 @@
 /* eslint-disable react/prop-types */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown, ArrowUp, AreaChart as AreaChartIcon, BarChart2, ClipboardList, Hash,
   LineChart as LineChartIcon, Pencil, PieChart as PieChartIcon, Plus, Receipt,
@@ -55,11 +55,80 @@ function kpiModuleMeta(modulo) {
   };
 }
 
-// Numero de espacios "de fabrica" que se muestran en un tablero nuevo: sin
-// esto, un tablero recien creado se ve como una pantalla rota en vez de una
-// invitacion a llenarlo. No es un tope -- con mas widgets la cuadricula
-// simplemente crece.
+// Numero MINIMO de espacios "de fabrica" que se muestran en un tablero nuevo:
+// sin esto, un tablero recien creado se ve como una pantalla rota en vez de
+// una invitacion a llenarlo. No es un tope -- con mas widgets la cuadricula
+// simplemente crece. El total real que se muestra se redondea hacia arriba al
+// multiplo de columnas mas cercano (ver `useGridColumnCount` y su uso en
+// `Dashboard`), asi que puede terminar siendo mayor a este minimo.
 const WIDGET_GRID_MIN_SLOTS = 6;
+
+// Estos dos numeros tienen que ser IGUALES a `minmax(340px, 1fr)` y `gap:16px`
+// de `.kpi-widget-grid` en kpi-dashboard.css: son la misma formula que usa el
+// motor de grid de CSS para decidir cuantas columnas caben
+// (`auto-fill`/`minmax`), reproducida en JS porque CSS no expone cuantas
+// columnas quedo pintando. Si uno de los dos lados cambia, el otro se
+// desincroniza en silencio.
+const WIDGET_CARD_MIN_WIDTH = 340;
+const WIDGET_GRID_GAP = 16;
+// A partir de aqui el CSS fuerza una sola columna
+// (`@media(max-width:720px)` en kpi-dashboard.css) sin importar cuanto quepa
+// por formula -- mismo numero, o el conteo de columnas dejaria de coincidir
+// con lo que el usuario ve justo en ese rango de anchos.
+const WIDGET_GRID_MOBILE_BREAKPOINT = 720;
+
+/** Cuantas columnas esta pintando ahora mismo `.kpi-widget-grid`.
+ *
+ * No se puede leer directo del DOM (`getComputedStyle` da la lista de
+ * anchos calculados, no un conteo), asi que se reproduce la cuenta que hace
+ * el grid: `floor((ancho + gap) / (minimo + gap))`, con el mismo quiebre a
+ * una columna que ya declara el CSS para pantallas angostas.
+ *
+ * Se observa el CONTENEDOR (`ResizeObserver`), no la ventana (`resize`): el
+ * ancho disponible cambia tambien al colapsar/expandir el sidebar, sin que
+ * la ventana misma cambie de tamano, y un `resize` de `window` no se entera
+ * de eso.
+ */
+function useGridColumnCount(containerRef) {
+  const [columnas, setColumnas] = useState(1);
+
+  useEffect(() => {
+    const contenedor = containerRef.current;
+    if (!contenedor) return undefined;
+
+    function recalcular() {
+      if (window.matchMedia(`(max-width: ${WIDGET_GRID_MOBILE_BREAKPOINT}px)`).matches) {
+        setColumnas(1);
+        return;
+      }
+      const ancho = contenedor.clientWidth;
+      const posibles = Math.floor((ancho + WIDGET_GRID_GAP) / (WIDGET_CARD_MIN_WIDTH + WIDGET_GRID_GAP));
+      setColumnas(Math.max(1, posibles));
+    }
+
+    recalcular();
+    const observer = new ResizeObserver(recalcular);
+    observer.observe(contenedor);
+    return () => observer.disconnect();
+  }, [containerRef]);
+
+  return columnas;
+}
+
+/** Cuantos placeholders "+" hacen falta para que la cuadricula no deje
+ * ninguna fila a medias.
+ *
+ * El total (reales + placeholders) es siempre multiplo exacto de `columnas`:
+ * se parte del minimo de fabrica (o de los widgets reales si ya hay mas que
+ * ese minimo) y se redondea hacia arriba al siguiente multiplo. Con 4
+ * columnas y 1 widget real, por ejemplo, el minimo de 6 no es multiplo de 4
+ * -- deja una fila de 4 y una de 2 -- asi que sube a 8 (dos filas completas).
+ */
+function widgetPlaceholderCount(widgetCount, columnCount) {
+  const minimo = Math.max(WIDGET_GRID_MIN_SLOTS, widgetCount);
+  const total = Math.ceil(minimo / columnCount) * columnCount;
+  return total - widgetCount;
+}
 
 // Orden categorico validado (dataviz skill): identidad, nunca ciclado.
 const CATEGORICAL = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
@@ -143,6 +212,9 @@ export default function Dashboard() {
   const [users, setUsers] = useState([]);
 
   const [widgetForm, setWidgetForm] = useState(null);
+
+  const widgetGridRef = useRef(null);
+  const columnasVisibles = useGridColumnCount(widgetGridRef);
 
   const loadDashboards = useCallback(async (preferredId) => {
     setLoadingDashboards(true);
@@ -321,7 +393,7 @@ export default function Dashboard() {
           {loadingWidgets && <div className="alert">{t("common.loading")}</div>}
 
           {!loadingWidgets && !widgetsError && (
-            <div className="kpi-widget-grid">
+            <div className="kpi-widget-grid" ref={widgetGridRef}>
               {widgets.map((widget) => (
                 <KpiWidgetCard
                   key={widget.id_kpi_dashboard_widget}
@@ -336,9 +408,11 @@ export default function Dashboard() {
                 />
               ))}
               {/* Espacios "de fabrica": llenan un tablero nuevo hasta el minimo
-                  visual. No son un tope -- si ya hay mas widgets que el minimo
-                  simplemente no se agrega ninguno de sobra. */}
-              {Array.from({ length: Math.max(0, WIDGET_GRID_MIN_SLOTS - widgets.length) }).map((_, index) => (
+                  visual, redondeado hacia arriba al multiplo de columnas mas
+                  cercano para que ninguna fila quede incompleta (ver
+                  useGridColumnCount). No son un tope -- si ya hay mas widgets
+                  que el minimo, el redondeo se aplica sobre esa cantidad. */}
+              {Array.from({ length: widgetPlaceholderCount(widgets.length, columnasVisibles) }).map((_, index) => (
                 <button
                   type="button"
                   key={`kpi-widget-placeholder-${index}`}
