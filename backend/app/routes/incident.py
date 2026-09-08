@@ -1,6 +1,11 @@
 from __future__ import annotations
 from flask import Blueprint, jsonify, request
-from app.services.incident_service import IncidentService, list_incidents, require_incident_access
+from app.services.incident_service import (
+    IncidentService,
+    list_incidents,
+    require_incident_access,
+    transition_incident,
+)
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
 
@@ -146,6 +151,14 @@ def update_incident(user_data, id_incident):
     require_incident_access(id_incident, user_data)
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
     return _jsonify_projected_record(user_data, IncidentService.update(id_incident, payload, user_id=user_data.get('id_user')))
+
+
+@bp_incident.route('/<id_incident>/transition', methods=['POST'])
+@token_required
+@require_entity_permission('incident', 'update')
+def transition_incident_status(user_data, id_incident):
+    """Cambio de estatus guiado, como en proyectos y tareas."""
+    return _jsonify_projected_record(user_data, transition_incident(id_incident, request.get_json() or {}, user_data))
 
 
 @bp_incident.route('/<id_incident>', methods=['DELETE'])

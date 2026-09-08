@@ -119,7 +119,7 @@ MODULOS = (
         (
             "product", "material", "material_component", "location",
             "location_type", "movement", "inventory_status", "brand", "unit",
-            "product_family", "material_type",
+            "product_family", "material_type", "material_attribute",
         ),
         almacen=("location", "inventory_stock", "inventory_ledger"),
     ),
@@ -262,6 +262,17 @@ CAPACIDADES = (
     #
     # Con `bits=CAPTURA` porque levantar un vale es crear y leer; cerrarlo es
     # actualizar el renglon, que ya gobierna el permiso de la entidad.
+    # El prevale: el supervisor PIDE material y el almacen lo surte. Es una
+    # capacidad aparte de `warehouse_voucher` y no el mismo derecho con menos
+    # bits, porque los bits de una capacidad son suyos y no del rol: con una
+    # sola clave, dar de alta un prevale y dar de alta un vale serian el mismo
+    # permiso, y entonces el supervisor podria surtirse a si mismo.
+    Capacidad("warehouse_prevoucher", "Prevales de material", "inventario",
+              bits=CAPTURA, menu="sidebar"),
+    # Confirmar que lo pedido se entrego y se recibio. Va aparte de levantar el
+    # vale porque son dos personas: uno pide, otro surte y confirma.
+    Capacidad("warehouse_voucher_confirm", "Confirmar entrega de material",
+              "inventario"),
     Capacidad("warehouse_voucher", "Vales de almacen", "inventario",
               bits=CAPTURA, menu="sidebar"),
     # Va en el engrane del encabezado, no en el menu vertical.
@@ -340,16 +351,48 @@ ROLES = (
         "configuracion": TOTAL, "seguridad": TOTAL,
     }, [c.clave for c in CAPACIDADES]),
 
-    Rol(2, "gerente_administrativo", {
-        "facturacion": CAPTURA, "crm": CAPTURA, "rh": CAPTURA,
-        "operaciones": EDITAR, "inventario": CONSULTA, "logistica": CONSULTA,
-        "configuracion": CONSULTA,
-    }, ["incident_supervision", "kronos_device", "pos_admin", "pos_terminal"]),
+    # Los cinco roles del negocio, en los identificadores que tiene la BASE.
+    #
+    # Estaban declarados en los ids 14..18 mientras la base los tiene en 2..6, y
+    # en los ids 2 y 3 este registro declaraba dos roles que la base no tiene
+    # -gerente_administrativo y vendedor-. El efecto medido: Supervisor recibia
+    # la concesion del gerente administrativo -73 filas de permiso, 53 en el
+    # menu- y Jefe de taller se quedaba con 6.
+    #
+    # Manda la base. Si algun dia se renumera, se renumera alla y aqui se
+    # sigue: los usuarios ya existen apuntando a esos identificadores, y
+    # moverlos es mover permisos de gente real.
 
-    Rol(3, "vendedor", {
-        "crm": CAPTURA, "facturacion": CAPTURA, "inventario": CONSULTA,
+    # Pide material con un prevale y sigue sus propios proyectos. NO surte: no
+    # tiene `warehouse_voucher`, asi que no puede levantar el vale con el que se
+    # entrega, ni editar uno ya levantado.
+    Rol(2, "Supervisor", {
+        "operaciones": CAPTURA, "inventario": CONSULTA, "configuracion": CONSULTA,
+    }, ["incident_supervision", "warehouse_prevoucher"]),
+
+    # Ve y busca el almacen sin modificarlo -`inventario` en CONSULTA- y
+    # autoriza o cancela los proyectos de todos los supervisores.
+    Rol(3, "Gerente", {
+        "operaciones": EDITAR, "facturacion": CAPTURA, "crm": CAPTURA,
+        "inventario": CONSULTA, "rh": CONSULTA, "logistica": CONSULTA,
         "configuracion": CONSULTA,
-    }),
+    }, ["project_authorization", "incident_supervision", "pos_admin", "pos_terminal"]),
+
+    # Ve los proyectos autorizados y mueve su estatus en el taller.
+    Rol(4, "Jefe de taller", {
+        "operaciones": CAPTURA, "inventario": CONSULTA, "configuracion": CONSULTA,
+    }, ["project_execution", "incident_supervision"]),
+
+    # Opera el almacen: da de alta productos, levanta vales y confirma entregas.
+    # No ajusta: es la separacion de funciones que evita que quien mueve la
+    # mercancia tape su propio faltante.
+    Rol(5, "Almacenista", {
+        "inventario": CAPTURA, "configuracion": CONSULTA,
+    }, ["warehouse_voucher", "warehouse_voucher_confirm"]),
+
+    Rol(6, "Jefe de almacen", {
+        "inventario": TOTAL, "logistica": CAPTURA, "configuracion": CONSULTA,
+    }, ["inventory_adjustment", "warehouse_voucher", "warehouse_voucher_confirm"]),
 
     Rol(10, "Mesero", {"configuracion": CONSULTA}, ["restaurant_waiter"]),
     Rol(11, "Cocina", {"configuracion": CONSULTA}, ["restaurant_kitchen"]),
@@ -358,30 +401,6 @@ ROLES = (
         "restaurant_admin", "restaurant_cashier", "restaurant_kitchen", "restaurant_waiter",
     ]),
 
-    Rol(14, "Jefe de taller", {
-        "operaciones": CAPTURA, "inventario": CONSULTA, "configuracion": CONSULTA,
-    }, ["project_execution", "incident_supervision"]),
-
-    Rol(15, "Supervisor", {
-        "operaciones": CAPTURA, "inventario": CONSULTA, "configuracion": CONSULTA,
-    }, ["incident_supervision"]),
-
-    Rol(16, "Gerente", {
-        "operaciones": EDITAR, "facturacion": CAPTURA, "crm": CAPTURA,
-        "inventario": CONSULTA, "rh": CONSULTA, "logistica": CONSULTA,
-        "configuracion": CONSULTA,
-    }, ["project_authorization", "incident_supervision", "pos_admin", "pos_terminal"]),
-
-    # El almacenista opera el almacen pero no lo administra, y no ajusta: es la
-    # separacion de funciones que evita que quien mueve la mercancia tape su
-    # propio faltante.
-    Rol(17, "Almacenista", {
-        "inventario": CAPTURA, "configuracion": CONSULTA,
-    }),
-
-    Rol(18, "Jefe de almacen", {
-        "inventario": TOTAL, "logistica": CAPTURA, "configuracion": CONSULTA,
-    }, ["inventory_adjustment"]),
 )
 
 
@@ -415,25 +434,51 @@ MENU = {
     # Van juntos y justo despues de Productos porque es el orden en que hay que
     # recorrerlos para dar de alta algo: familia, marca y unidad primero, luego
     # el material que las une, y al final el producto.
-    "product_family": ("Familias de producto", 12),
+    #
+    # Una sola entrada para los DOS NIVELES de la clasificacion. Habia dos
+    # -"Familias de producto" y "Tipos de material"- y leidas en el menu una
+    # detras de la otra parecen la misma cosa dos veces. No lo son: el tipo
+    # cuelga de la familia -`material_type.id_product_family`- y no existe
+    # suelto, porque "Plano" no significa nada por si mismo, es un tipo DE
+    # desarmador. Las dos tablas siguen siendo dos; lo que se junto es la
+    # pantalla, que es donde estaba la confusion.
+    "product_family": ("Familias y tipos", 12),
     "brand": ("Marcas", 14),
     "unit": ("Unidades", 16),
-    # El tercer eje del material, junto a la familia y la marca. Va con ellos
-    # porque es el mismo recorrido de captura: familia, tipo, marca, y de ahi el
-    # material.
-    "material_type": ("Tipos de material", 18),
     "location": ("Ubicaciones", 20),
     "location_type": ("Tipos de ubicacion", 30),
     "material": ("Materiales", 40),
     "movement": ("Movimientos", 50),
     "material_component": ("Componentes", 60),
     "inventory_status": ("Estado de inventario", 70),
+    # Operaciones. El orden es el del flujo, no el alfabetico: primero el
+    # proyecto, luego las tareas en que se parte, y aparte las incidencias con
+    # su catalogo de tipos. El menu se leia "Detalle de incidencias,
+    # Incidencias, Notas de tarea, Proyectos, Tareas, Tipos de tarea" -orden
+    # alfabetico, porque las etiquetas no decian el orden del trabajo- y para
+    # entenderlo habia que saberse de memoria que cuelga de que.
     "proyect": ("Proyectos", 10),
     "task": ("Tareas", 20),
-    "task_note": ("Notas de tarea", 30),
-    "task_type": ("Tipos de tarea", 40),
-    "incident": ("Incidencias", 50),
-    "incident_detail": ("Detalle de incidencias", 60),
+    # `task_note` no tiene entrada a proposito, no por descuido: su columna
+    # `id_task` es NOT NULL, o sea que una nota no existe sin su tarea. Con
+    # pantalla propia habia que abrir una tercera lista y elegir la tarea en un
+    # desplegable para escribir una nota, y la bitacora de una tarea no se leia
+    # en ningun sitio junta. Se captura y se lee dentro de la tarea, en el
+    # expediente del proyecto. `nm_incident_product` y `nm_template_task` estan
+    # fuera por lo mismo: son tablas puente, se editan desde su dueno.
+    "incident": ("Incidencias", 30),
+    "incident_type": ("Tipos de incidencia", 32),
+    # La etiqueta anterior, "Detalle de incidencias", nombraba otra cosa:
+    # `incident_detail.id_incident_type` apunta al TIPO, no a la incidencia, y
+    # la pantalla estaba justo debajo de Incidencias. Quien buscaba el detalle
+    # de una incidencia abria un catalogo de subtipos.
+    "incident_detail": ("Subtipos de incidencia", 34),
+    "template": ("Plantillas de tarea", 40),
+    # `task_type` es un catalogo que hoy nadie consume: `task` no tiene
+    # `id_task_type`, su columna `type` es un Enum('personal','business'). Se
+    # queda en el menu -el permiso existe y la pantalla captura- pero al final
+    # del grupo, para que no se lea como un paso del flujo.
+    "task_type": ("Tipos de tarea", 42),
     "payroll_period": ("Periodos de nomina", 10),
     "payroll_concept": ("Conceptos", 20),
     "payroll_movement": ("Movimientos", 30),

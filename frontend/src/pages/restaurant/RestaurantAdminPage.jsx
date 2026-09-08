@@ -1,5 +1,5 @@
 /* eslint-disable react/prop-types */
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Banknote, Boxes, ChefHat, CircleDollarSign, ClipboardList, Clock3, FileText, History, Plus, Store, Table2, Tags, UsersRound, Utensils } from "lucide-react";
 import { createRestaurantCategory, createRestaurantDish, createRestaurantGuisado, createRestaurantInventoryItem, createRestaurantInventoryMovement, createRestaurantRecipeItem, createRestaurantTable, createRestaurantWaiter, getRestaurantAdminWorkspace, getRestaurantAuditEvents, getRestaurantInventoryMovements } from "../../api";
 import { useI18n } from "../../i18n";

@@ -250,6 +250,60 @@ class IncidentService(CrudService):
         return super().update(item_id, cls._validate(payload, current=current), user_id=user_id)
 
 
+def transition_incident(incident_id, payload: dict, user_data: dict) -> dict:
+    """Mueve una incidencia de estatus, con motivo cuando el catalogo lo exige.
+
+    Existe por simetria con proyectos y tareas: las tres son procesos con
+    maquina de estados y ahora las tres se mueven por el mismo camino. Sin
+    esto, cambiar el estatus era un PUT con el campo suelto y la pantalla lo
+    pintaba como texto libre, que es como el tablero acababa con una columna
+    por variante escrita a mano.
+
+    El motivo se anota en `audit_log`, la bitacora que ya usa el modulo de
+    restaurante para lo mismo: `incident` no tiene tabla de eventos propia y
+    `note` es el texto de la incidencia, no el del cambio.
+    """
+    from app.security.audit import audit_event
+
+    incident = require_incident_access(incident_id, user_data)
+    target = normalize_incident_status((payload or {}).get("status"))
+    reason = (payload or {}).get("reason")
+    origin = normalize_incident_status(incident.incident_status) or DEFAULT_STATUS
+    validated = validate_transition(
+        origin,
+        target,
+        transitions=INCIDENT_TRANSITIONS,
+        reason_required=INCIDENT_REASON_REQUIRED,
+        reason=reason,
+        entity="incident",
+    )
+
+    # El motivo viaja en el payload aunque no sea columna: `_resolve_status`
+    # lo lee para validar de nuevo la transicion, y `_coerce_payload` descarta
+    # lo que no sea columna antes de escribir. Sin el, cancelar fallaba aqui
+    # -en la segunda validacion- despues de haberse aceptado arriba.
+    actualizado = IncidentService.update(
+        incident_id,
+        {"incident_status": validated, "reason": reason},
+        user_id=user_data.get("id_user"),
+    )
+    with transaction_context() as db:
+        audit_event(
+            db,
+            user_data,
+            event_type="incident_transition",
+            entity_name="incident",
+            action=validated,
+            metadata={
+                "id_incident": int(incident_id),
+                "previous_status": origin,
+                "new_status": validated,
+                "reason": str(reason or "").strip() or None,
+            },
+        )
+    return actualizado
+
+
 def list_incidents(user_data, *, page=1, per_page=20, filters=None, sort=None) -> dict:
     """Listado acotado a lo que el actor tiene derecho a ver."""
     try:

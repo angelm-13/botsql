@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle, Banknote, CreditCard, Minus, Plus, RefreshCw, Search,
   ShoppingCart, Trash2, Unlock, X,

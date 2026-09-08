@@ -20,14 +20,14 @@ from app.services.operations_workflow import (
     normalize_task_status,
     validate_transition,
 )
-from app.services.project_management_service import normalize_project_status
+from app.services.project_management_service import (
+    PROJECT_CLOSED_STATUSES,
+    normalize_project_status,
+)
 from app.utils.errors import AppError
 
 
 DEFAULT_STATUS = "pendiente"
-
-# Estatus de proyecto que ya no admiten trabajo nuevo.
-PROJECT_CLOSED_STATUSES = {"completed", "denied"}
 
 # Columnas de responsables: enteros sin llave foranea en la tabla, asi que la
 # existencia del usuario se comprueba aqui.
@@ -180,3 +180,82 @@ class TaskService(CrudService):
 
 def task_is_closed(task) -> bool:
     return normalize_task_status(getattr(task, 'task_status', None)) in TASK_CLOSED_STATUSES
+
+
+def transition_task(task_id, payload: dict, user_data: dict) -> dict:
+    """Mueve una tarea de estatus y lo anota en el expediente del proyecto.
+
+    Existe por simetria con el flujo de proyectos, que ya tenia su
+    `/transition`. Sin este endpoint la unica forma de cambiar el estatus de
+    una tarea era un PUT con el campo suelto, asi que la pantalla lo pintaba
+    como texto libre: quien escribia "En Proceso " creaba una columna nueva en
+    el tablero y la tarea desaparecia de donde su responsable la buscaba. El
+    motivo tampoco tenia donde guardarse.
+    """
+    from app.services.project_management_service import _append_event, require_task_access
+
+    require_task_access(task_id, user_data)
+    target = normalize_task_status((payload or {}).get("status"))
+    reason = (payload or {}).get("reason")
+    content = (payload or {}).get("content")
+
+    with transaction_context() as db:
+        task = db.get(Task, int(task_id))
+        if not task or task.deletion_date is not None:
+            raise AppError("errors.resource_not_found", 404)
+        origin = normalize_task_status(task.task_status) or DEFAULT_STATUS
+        validated = validate_transition(
+            origin,
+            target,
+            transitions=TASK_TRANSITIONS,
+            reason_required=TASK_REASON_REQUIRED,
+            reason=reason,
+            entity="task",
+        )
+        project = db.get(Proyect, task.id_proyect)
+        if not project or project.deletion_date is not None:
+            raise AppError("errors.resource_not_found", 404, {"field": "id_proyect"})
+
+        task.task_status = validated
+        _append_event(
+            db,
+            project,
+            user_data,
+            "task_status_changed",
+            task=task,
+            previous_status=origin,
+            new_status=validated,
+            reason=reason,
+            content=content,
+        )
+        db.flush()
+        return task.serialize()
+
+
+def add_task_note(task_id, payload: dict, user_data: dict) -> dict:
+    """Escribe una nota de tarea y la deja visible en la linea de tiempo.
+
+    La nota sigue viviendo en `task_note`, que es su tabla; lo que se agrega es
+    el reflejo en `proyect_event` para que el expediente del proyecto cuente lo
+    que pasa en sus tareas sin tener que abrirlas una por una.
+    """
+    from app.services.project_management_service import _append_event, require_task_access
+    from app.services.task_note_service import TaskNoteService
+
+    require_task_access(task_id, user_data)
+    description = str((payload or {}).get("task_note_description") or "").strip()
+    if not description:
+        raise AppError("errors.required_field", 400, {"field": "task_note_description"})
+
+    nota = {"id_task": int(task_id), "task_note_description": description}
+    fecha = (payload or {}).get("date")
+    if fecha not in (None, ""):
+        nota["date"] = fecha
+    note = TaskNoteService.create(nota, user_id=user_data.get("id_user"))
+    with transaction_context() as db:
+        task = db.get(Task, int(task_id))
+        project = db.get(Proyect, task.id_proyect) if task else None
+        if project is not None:
+            _append_event(db, project, user_data, "task_note", task=task, content=description)
+            db.flush()
+    return note

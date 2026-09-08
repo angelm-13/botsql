@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { ClipboardList, FileDown, History, RefreshCw, Stethoscope } from "lucide-react";
 
 import { createLaboratoryEquipment, createLaboratoryOrder, downloadDocumentVersion, generateLaboratoryReport, getAllCustomerSupplier, getLaboratoryEquipment, getLaboratoryOrderHistory, getLaboratoryOrders, transitionLaboratoryOrder, updateLaboratoryDiagnosis, uploadSignedLaboratoryReport } from "../api";

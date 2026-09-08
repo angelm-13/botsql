@@ -16,7 +16,7 @@ herramienta y uno que solo cuenta:
 from __future__ import annotations
 
 import unittest
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from app.models import (
@@ -33,6 +33,7 @@ from app.services import inventory_asset_service as piezas
 from app.services.inventory_service import ADJUSTMENT_CAPABILITY
 from app.utils.errors import AppError
 from tests.conftest import BackendTestCase
+from tests.model_factory import sembrar_actor
 
 
 ACTOR = {"id_user": 1, "id_proyect": 30, "id_permission": 1}
@@ -86,6 +87,12 @@ class PiezasTestCase(BackendTestCase):
                          id_brand=1, id_product_family=1, created_by=1),
             ])
             db.flush()
+            # El usuario 1 existe de verdad. Las piezas se prestan y se asignan
+            # a un responsable, y eso ahora se comprueba contra la tabla: la
+            # llave ajena de `inventory_asset.id_holder` esta en el esquema, y
+            # antes un prestamo a un usuario inventado se guardaba tal cual.
+            sembrar_actor(db, id_proyect=PROYECTO, id_status=40,
+                          ids=(1, RESPONSABLE))
             db.add(Invoice(
                 id_invoice=FACTURA, id_customer_supplier=CLIENTE,
                 id_issuer_customer_supplier=PRINCIPAL, id_proyect=PROYECTO, id_status=40,
@@ -540,3 +547,200 @@ class TestPropositoDelAlmacen(PiezasTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestElPanoramaDeEstatus(PiezasTestCase):
+    """De mis herramientas: cuantas prestadas, cuantas en reparacion, cuantas no aparecen.
+
+    Es la pregunta de la manana en un almacen de herramienta, y no se podia
+    hacer: habia resumen POR PRODUCTO y la lista de prestamos vencidos, pero
+    para el panorama habia que abrir producto por producto.
+
+    Lo que estas pruebas fijan:
+
+    * **los estados se cuentan todos**, incluidos los que estan en cero: un
+      desplegable que solo ofrece los estados con piezas cambia de opciones
+      segun el dia;
+    * **lo vencido va aparte y no como un estado mas.** Una pieza vencida esta
+      PRESTADA: contarla como estado propio la sumaria dos veces y el total
+      dejaria de cuadrar con el numero de piezas;
+    * **`stock_purpose` acota**, porque de la herramienta importa quien la tiene
+      y de la mercancia el saldo;
+    * **una consulta agrupada, no una por estado.** Seis idas a la base cada vez
+      que alguien abre la pantalla es el patron que ya costo caro en el rastreo.
+    """
+
+    def _pieza(self, etiqueta):
+        return self.alta(etiqueta)["id_inventory_asset"]
+
+    def _resumen(self, **kwargs):
+        from app.services.inventory_asset_service import resumen_de_estatus
+
+        return resumen_de_estatus(ACTOR, **kwargs)
+
+    def test_it_counts_every_status_including_the_empty_ones(self):
+        from app.services.inventory_asset_service import ESTADOS
+
+        self._pieza("PAN-001")
+        resumen = self._resumen()
+
+        self.assertEqual(set(ESTADOS), set(resumen["by_status"]),
+                         "faltan estados: el desplegable cambiaria de opciones "
+                         "segun cuantas piezas haya ese dia")
+        self.assertEqual(1, resumen["by_status"]["disponible"])
+        self.assertEqual(0, resumen["by_status"]["prestada"])
+        self.assertEqual(1, resumen["total"])
+
+    def test_the_total_matches_the_number_of_pieces(self):
+        from app.services.inventory_asset_service import lend_asset, send_to_repair
+
+        uno, dos, tres = (self._pieza("PAN-01%d" % i) for i in range(3))
+        lend_asset(uno, {"id_holder": 1, "due_date": "2027-01-31",
+                         "reason": "Obra"}, ACTOR)
+        send_to_repair(dos, {"reason": "No enciende"}, ACTOR)
+
+        resumen = self._resumen()
+        self.assertEqual(3, resumen["total"])
+        self.assertEqual(1, resumen["by_status"]["prestada"])
+        self.assertEqual(1, resumen["by_status"]["en_reparacion"])
+        self.assertEqual(1, resumen["by_status"]["disponible"])
+
+    def test_an_overdue_loan_is_reported_apart_and_not_double_counted(self):
+        from datetime import date, timedelta
+
+        from app.models.inventory_asset import InventoryAsset
+        from app.models.session import transaction_context
+        from app.services.inventory_asset_service import lend_asset
+
+        pieza = self._pieza("PAN-020")
+        lend_asset(pieza, {"id_holder": 1, "due_date": "2027-01-31",
+                           "reason": "Obra"}, ACTOR)
+        # La fecha se atrasa a mano: el servicio rechaza prestar con una fecha
+        # ya pasada, que es el guardia haciendo su trabajo.
+        with transaction_context() as db:
+            db.get(InventoryAsset, pieza).due_date = date.today() - timedelta(days=1)
+
+        resumen = self._resumen()
+        self.assertEqual(1, resumen["overdue"])
+        # Sigue siendo UNA pieza, y sigue estando prestada.
+        self.assertEqual(1, resumen["total"])
+        self.assertEqual(1, resumen["by_status"]["prestada"])
+
+    def test_it_narrows_to_internal_use_or_to_merchandise(self):
+        """Son dos preguntas: quien tiene la herramienta, y cuanto hay de la mercancia."""
+        self._pieza("PAN-030")
+
+        # El producto serializado del montaje no declara `stock_purpose`, asi
+        # que toma el valor por omision: mercancia. Se prueba contra lo que el
+        # montaje dice, no contra lo que su nombre sugiere.
+        mercancia = self._resumen(proposito="mercancia")
+        interno = self._resumen(proposito="uso_interno")
+
+        self.assertEqual(1, mercancia["total"])
+        self.assertEqual("mercancia", mercancia["stock_purpose"])
+        self.assertEqual(0, interno["total"],
+                         "acotar por el otro proposito no puede traer nada")
+
+    def test_it_asks_the_database_once_per_question(self):
+        """Seis consultas -una por estado- en cada carga de la pantalla, no."""
+        from sqlalchemy import event
+
+        from app.models.session import engine
+
+        for i in range(4):
+            self._pieza("PAN-04%d" % i)
+
+        self._resumen()  # calienta la compilacion de sentencias
+        cuenta = []
+        registrar = lambda *a, **k: cuenta.append(1)
+        event.listen(engine, "after_cursor_execute", registrar)
+        try:
+            self._resumen()
+        finally:
+            event.remove(engine, "after_cursor_execute", registrar)
+
+        self.assertLessEqual(
+            len(cuenta), 4,
+            "el resumen hizo %d consultas; con seis estados, una por estado "
+            "seria el patron que ya costo caro en el rastreo" % len(cuenta))
+
+
+class TestElResponsableExiste(PiezasTestCase):
+    """Una pieza no se puede prestar a un usuario que no existe.
+
+    Que estaba pasando
+    ------------------
+    `inventory_asset.id_holder` no tenia llave ajena y el servicio solo
+    comprobaba que el valor fuera un entero. Un prestamo a `id_holder = 9999`
+    se guardaba tal cual y la pieza quedaba PRESTADA a nadie: no sale en lo que
+    debe ningun usuario, no se le puede reclamar, y el unico modo de notarla es
+    ver que falta.
+
+    La llave ajena esta ahora en el esquema
+    -`20260907090000_el_responsable_de_la_pieza_es_un_usuario.sql`-, pero la
+    base sola no basta para estas pruebas: SQLite no aplica llaves ajenas, asi
+    que sin la comprobacion en el servicio esto seguiria pasando aqui y
+    reventaria en produccion como un 500 en el COMMIT en lugar de un 404.
+    """
+
+    def _pieza_disponible(self):
+        return self.alta("RES-001")["id_inventory_asset"]
+
+    def test_lending_to_a_user_that_does_not_exist_is_refused(self):
+        from app.services import inventory_asset_service as piezas
+
+        with self.assertRaises(AppError) as saltó:
+            piezas.lend_asset(self._pieza_disponible(), {
+                "id_holder": 9999,
+                "due_date": (date.today() + timedelta(days=5)).isoformat(),
+            }, ACTOR)
+
+        self.assertEqual("errors.not_found", saltó.exception.message_key)
+        self.assertEqual("id_holder", saltó.exception.meta.get("field"))
+
+    def test_assigning_to_a_user_that_does_not_exist_is_refused(self):
+        """Lo mismo en la asignacion interna, que pasa por la misma puerta."""
+        from app.services import inventory_asset_service as piezas
+
+        with self.assertRaises(AppError) as saltó:
+            piezas.assign_asset(self._pieza_disponible(), {"id_holder": 9999}, ACTOR)
+
+        self.assertEqual("errors.not_found", saltó.exception.message_key)
+
+    def test_a_deleted_user_cannot_receive_a_tool(self):
+        """Un usuario dado de baja tampoco: ya no esta para devolverla."""
+        from app.models.session import transaction_context
+        from app.models.user import User
+        from app.services import inventory_asset_service as piezas
+
+        with transaction_context() as db:
+            db.get(User, RESPONSABLE).deletion_date = datetime.now()
+
+        with self.assertRaises(AppError) as saltó:
+            piezas.lend_asset(self._pieza_disponible(), {
+                "id_holder": RESPONSABLE,
+                "due_date": (date.today() + timedelta(days=5)).isoformat(),
+            }, ACTOR)
+
+        self.assertEqual("errors.not_found", saltó.exception.message_key)
+
+    def test_the_piece_is_not_left_lent_when_the_holder_is_refused(self):
+        """Y la pieza se queda como estaba: ni PRESTADA ni descontada.
+
+        Es la parte que importa. Si la transicion escribiera el estado y
+        reventara despues, la pieza quedaria prestada a un usuario inexistente,
+        que es justo lo que se venia a evitar.
+        """
+        from app.services import inventory_asset_service as piezas
+
+        id_pieza = self._pieza_disponible()
+        with self.assertRaises(AppError):
+            piezas.lend_asset(id_pieza, {
+                "id_holder": 9999,
+                "due_date": (date.today() + timedelta(days=5)).isoformat(),
+            }, ACTOR)
+
+        pieza = piezas.find_asset_by_tag("RES-001", ACTOR)["asset"]
+        self.assertEqual(id_pieza, pieza["id_inventory_asset"])
+        self.assertEqual("disponible", pieza["status"])
+        self.assertIsNone(pieza["id_holder"])

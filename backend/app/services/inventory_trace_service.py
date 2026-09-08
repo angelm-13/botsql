@@ -40,14 +40,19 @@ respuestas a "cuanto hay" es peor que una equivocada.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy import func, or_, select
 
+from app.models.incident import Incident
 from app.models.inventory_ledger import InventoryLedger
 from app.models.inventory_stock import InventoryStock
 from app.models.invoice import Invoice
 from app.models.location import Location
 from app.models.location_type import LocationType
+from app.models.nm_incident_product import NmIncidentProduct
 from app.models.product import Product
+from app.models.user import User
 from app.models.session import transaction_context
 from app.services.inventory_service import (
     MAX_LOCATION_DEPTH,
@@ -197,7 +202,6 @@ def _piezas_en_lote(db, productos, ubicaciones: "CacheDeUbicaciones",
     es la etiqueta exacta, o no es algo que el codigo ya explique.
     """
     from app.models.inventory_asset import InventoryAsset
-    from app.models.user import User
 
     serializados = {
         pr.id_product: (pr.product_code or "")
@@ -340,6 +344,70 @@ def _bitacoras_en_lote(db, ids_piezas, ubicaciones: "CacheDeUbicaciones") -> dic
                 ubicacion, "location_description", None)
         acumulado.append(fila)
     return por_pieza
+
+
+def _prestado_en_lote(db, ids_productos) -> dict[int, dict]:
+    """Que hay fuera de cada producto y quien lo tiene.
+
+    Un producto fungible prestado se veia con cero en todo y sin ubicacion: el
+    saldo bajo -correctamente, salio del almacen- y nada decia donde fue. La
+    pieza serializada si se veia, porque tiene su fila con estado y responsable;
+    lo fungible no tiene piezas.
+
+    Una consulta para toda la pagina. Una por producto es el patron de N+1 que
+    ya costo 271 consultas en esta misma pantalla.
+
+    Solo las SALIDAS sin cerrar: una salida cerrada ya volvio, y un renglon de
+    entrada es el hecho de que volvio. Contarlos aqui diria que alguien tiene
+    algo que devolvio el mes pasado.
+    """
+    if not ids_productos:
+        return {}
+
+    filas = db.execute(
+        select(
+            NmIncidentProduct.id_product,
+            NmIncidentProduct.quantity,
+            NmIncidentProduct.start_date,
+            NmIncidentProduct.due_date,
+            Incident.id_incident,
+            Incident.external_folio,
+            Incident.id_user,
+            User.full_name,
+        )
+        .join(Incident, Incident.id_incident == NmIncidentProduct.id_incident)
+        .outerjoin(User, User.id_user == Incident.id_user)
+        .where(
+            NmIncidentProduct.id_product.in_(list(ids_productos)),
+            NmIncidentProduct.direction == "salida",
+            NmIncidentProduct.close_date.is_(None),
+            NmIncidentProduct.deletion_date.is_(None),
+            Incident.deletion_date.is_(None),
+        )
+        .order_by(NmIncidentProduct.start_date)
+    ).all()
+
+    ahora = datetime.now()
+    salida: dict[int, dict] = {}
+    for (id_producto, cantidad, desde, vence, id_vale, folio, id_usuario,
+         nombre) in filas:
+        grupo = salida.setdefault(int(id_producto), {"quantity": 0, "holders": []})
+        grupo["quantity"] += int(cantidad or 0)
+        grupo["holders"].append({
+            "id_user": id_usuario,
+            "holder_name": nombre,
+            # El folio con el que la gente conoce el vale: el del sistema
+            # anterior cuando lo trae, y si no el identificador.
+            "voucher_folio": folio or str(id_vale),
+            "id_incident": id_vale,
+            "quantity": int(cantidad or 0),
+            "since": desde.isoformat() if desde else None,
+            "due_date": vence.isoformat() if vence else None,
+            "overdue": bool(vence and vence < ahora),
+        })
+    for grupo in salida.values():
+        grupo["overdue"] = any(h["overdue"] for h in grupo["holders"])
+    return salida
 
 
 def _ultimo_movimiento_en_lote(db, ids_productos) -> dict[int, dict]:
@@ -638,7 +706,8 @@ def _catalogos(db, ids_productos, ubicaciones: "CacheDeUbicaciones") -> dict:
     from app.models.product_family import ProductFamily
 
     if not ids_productos:
-        return {"families": [], "brands": [], "warehouses": []}
+        return {"families": [], "brands": [], "warehouses": [],
+                "materials": [], "locations": []}
 
     filas = db.execute(
         select(
@@ -686,11 +755,49 @@ def _catalogos(db, ids_productos, ubicaciones: "CacheDeUbicaciones") -> dict:
             "location_description": ruta["warehouse_description"],
         })
 
+    # Los materiales que de verdad tienen producto. El servidor ya aceptaba
+    # `id_material` y el catalogo no lo ofrecia, asi que la pantalla no podia
+    # filtrar por el nivel por el que la gente busca: "ARCO CON SEGUETA" y no
+    # "familia 37".
+    materiales = [
+        {"id_material": int(id_material), "material": descripcion,
+         "products": int(cuantos or 0)}
+        for id_material, descripcion, cuantos in db.execute(
+            select(Material.id_material, Material.material_description,
+                   func.count(Product.id_product))
+            .select_from(Product)
+            .join(Material, Material.id_material == Product.id_material)
+            .where(Product.id_product.in_(list(ids_productos)))
+            .group_by(Material.id_material, Material.material_description)
+        ).all()
+    ]
+
+    # Todas las ubicaciones con existencia, no solo el almacen de arriba. El
+    # filtro del servidor ya incluye lo que cuelga debajo de la que se elija, asi
+    # que ofrecer solo las dos naves dejaba 23 ubicaciones sin poder pedirse.
+    sitios = []
+    for id_ubicacion in con_existencia:
+        nodo = ubicaciones.ubicacion(id_ubicacion)
+        if nodo is None:
+            continue
+        ruta = ubicaciones.ruta(id_ubicacion)
+        sitios.append({
+            "id_location": int(id_ubicacion),
+            "location_description": nodo.location_description,
+            # La ruta entera: "B1-P2-D-E1" no dice de que nave es, y con dos
+            # naves hay un E1 en cada una.
+            "path_label": ruta.get("path_label") or nodo.location_description,
+            "id_warehouse": ruta.get("id_warehouse"),
+            "warehouse_description": ruta.get("warehouse_description"),
+        })
+
     return {
         "families": sorted(familias.values(), key=lambda x: (x["family"] or "").lower()),
         "brands": sorted(marcas.values(), key=lambda x: (x["brand"] or "").lower()),
         "warehouses": sorted(
             almacenes.values(), key=lambda x: (x["location_description"] or "").lower()),
+        "materials": sorted(materiales, key=lambda x: (x["material"] or "").lower()),
+        "locations": sorted(sitios, key=lambda x: (x["path_label"] or "").lower()),
     }
 
 
@@ -909,6 +1016,7 @@ def localizar(consulta: str, user_data: dict, *, proposito: str | None = None,
         existencias = _existencias_en_lote(db, ids, ubicaciones)
         historias = _historia_en_lote(db, ids)
         ultimos = _ultimo_movimiento_en_lote(db, ids)
+        prestados = _prestado_en_lote(db, ids)
         piezas_por_producto = (
             _piezas_en_lote(db, productos, ubicaciones, consulta=texto)
             if con_piezas else {}
@@ -969,6 +1077,10 @@ def localizar(consulta: str, user_data: dict, *, proposito: str | None = None,
                 "home_location": ubicaciones.ruta(producto.id_location),
                 "total": sum(u["quantity"] for u in sitios),
                 "stock_balance": int(producto.cantidad or 0),
+                # Lo que esta fuera y quien lo tiene. Sin esto un producto
+                # prestado se veia con cero en todo y sin ubicacion: el saldo
+                # bajo -correctamente- y nada decia donde fue.
+                "on_loan": prestados.get(producto.id_product),
                 "locations": sitios,
                 "history": historias.get(producto.id_product, {}),
                 "last_movement": ultimos.get(producto.id_product),

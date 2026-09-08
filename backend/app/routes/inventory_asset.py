@@ -18,7 +18,8 @@ from flask import Blueprint, jsonify, request
 from app.services.inventory_asset_service import (
     asset_history, assign_asset, back_from_repair, find_asset_by_tag,
     lend_asset, list_assets, move_asset, overdue_loans, product_asset_summary,
-    register_asset, report_lost, retire_asset, return_asset, send_to_repair,
+    register_asset, report_lost, resumen_de_estatus, retire_asset, return_asset,
+    send_to_repair,
 )
 from app.utils.auth import require_entity_permission, token_required
 
@@ -80,6 +81,26 @@ def listar_piezas(user_data):
         overdue_only=str(request.args.get("overdue") or "").strip().lower() in {"1", "true", "si"},
         page=request.args.get("page", 1),
         per_page=request.args.get("per_page", 50),
+    ))
+
+
+@bp_inventory_asset.route("/assets/summary", methods=["GET"])
+@token_required
+@require_entity_permission("product", "read")
+def resumen_de_piezas(user_data):
+    """Cuantas piezas hay en cada estado, ahora mismo.
+
+    Es la pregunta de la manana en un almacen de herramienta: de lo mio, cuanto
+    esta prestado, cuanto en reparacion y cuanto no aparece. Antes habia que
+    abrir producto por producto.
+
+    `stock_purpose` acota a mercancia o a uso interno, porque son dos preguntas
+    distintas: de la herramienta importa quien la tiene y de la mercancia el
+    saldo.
+    """
+    return jsonify(resumen_de_estatus(
+        user_data,
+        proposito=(request.args.get("stock_purpose") or "").strip() or None,
     ))
 
 

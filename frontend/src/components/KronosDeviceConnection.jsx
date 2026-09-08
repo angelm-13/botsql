@@ -1,5 +1,5 @@
 /* eslint-disable react/prop-types */
-import React, { useState } from "react";
+import { useState } from "react";
 import { Save, ShieldCheck } from "lucide-react";
 import { loadKronosConnection, saveKronosConnection } from "../utils/kronosConnection";
 import { useI18n } from "../i18n";

@@ -1,7 +1,8 @@
-import React, { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { BadgeCheck, ChevronDown, ChevronRight, Download, FileText, Plus, RefreshCw, Scale, Search, Trash2, Pencil, Warehouse } from "lucide-react";
 import { useI18n } from "../i18n";
 import { applyInvoiceInventory, deleteInvoice, downloadInvoicePdf, downloadInvoiceXml, getAllCustomerSupplier, getAllEntityPermission, getAllField, getAllInvoice, getAllNmFieldPermission, getAllProyect, getAllStatus, getInvoiceInventoryPreview, getInvoiceLines, resetUserMfa, stampInvoice, createInvoice, updateInvoice } from "../api";
+import Pagination from "../components/Pagination.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 import InvoiceUploadWidget from "../components/InvoiceUploadWidget.jsx";
 import InvoiceCreationForm from "../components/InvoiceCreationForm.jsx";
@@ -38,6 +39,7 @@ export default function InvoicePage() {
   const [query, setQuery] = useState("");
   const [view, setView] = useState("table");
   const [page, setPage] = useState(1);
+  const [paginacion, setPaginacion] = useState({ total: 0, pages: 1, perPage: 0 });
   const [perPage, setPerPage] = useState(10);
   const [loading, setLoading] = useState(false);
   const [errorKey, setErrorKey] = useState("");
@@ -76,6 +78,13 @@ export default function InvoicePage() {
     try {
       const data = await getAllInvoice({ page, per_page: perPage });
       setItems(Array.isArray(data) ? data : (data.items || data.data || []));
+      // La respuesta ya traia el total y el numero de paginas; antes se
+      // tiraban aqui, y por eso "Siguiente" no sabia cuando parar.
+      setPaginacion({
+        total: Array.isArray(data) ? 0 : (data.total ?? 0),
+        pages: Array.isArray(data) ? 1 : (data.pages ?? 1),
+        perPage: Array.isArray(data) ? 0 : (data.per_page ?? perPage),
+      });
     } catch (error) {
       setErrorKey(error.message || "errors.request_failed");
       setErrorMeta(error.payload?.meta || null);
@@ -986,7 +995,14 @@ export default function InvoicePage() {
 
       {canCreate && <InvoiceUploadWidget />}
 
-      <div className="pagination"><button className="button" disabled={page <= 1} onClick={() => setPage(page - 1)}>{t("common.previous")}</button><span>{t("common.page")} {page}</span><button className="button" onClick={() => setPage(page + 1)}>{t("common.next")}</button></div>
+      <Pagination
+        page={page}
+        pages={paginacion.pages}
+        total={paginacion.total}
+        perPage={paginacion.perPage}
+        loading={loading}
+        onChange={setPage}
+      />
 
       {fiscalInvoice && (
         <InvoiceFiscalPanel
