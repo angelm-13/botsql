@@ -1,6 +1,10 @@
 /* eslint-disable react/prop-types */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import {
+  ArrowDown, ArrowUp, AreaChart as AreaChartIcon, BarChart2, ClipboardList, Hash,
+  LineChart as LineChartIcon, Pencil, PieChart as PieChartIcon, Plus, Receipt,
+  RefreshCw, SlidersHorizontal, Trash2, User, X,
+} from "lucide-react";
 import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line, AreaChart, Area,
   PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -21,12 +25,59 @@ const CHART_TYPES = [
   { value: "dona", label: "Dona" },
 ];
 
+// Un icono fijo por tipo de grafica, en vez de un <select> oculto -- se eligen
+// a simple vista, igual que se hace con el tipo de grafica en el resto del
+// proyecto.
+const CHART_TYPE_ICONS = {
+  numero: Hash,
+  barras: BarChart2,
+  linea: LineChartIcon,
+  area: AreaChartIcon,
+  dona: PieChartIcon,
+};
+
+// Mismo icono que ya usa el menu lateral para cada modulo (`groupIcons` en
+// `layouts/Shell.jsx`, que a su vez viene del icono real de cada `Modulo` en
+// `app/modules/registry.py` del backend): no se inventa un dibujo nuevo para
+// la categoria del KPI, se reutiliza el que el usuario ya asocia con ese
+// modulo en el menu. Un modulo de KPI que todavia no este aqui cae en el
+// icono generico, no revienta.
+const KPI_MODULE_META = {
+  facturacion: { icon: Receipt, label: "Facturación" },
+  operaciones: { icon: ClipboardList, label: "Operaciones" },
+};
+const DEFAULT_MODULE_ICON = SlidersHorizontal;
+
+function kpiModuleMeta(modulo) {
+  return KPI_MODULE_META[modulo] || {
+    icon: DEFAULT_MODULE_ICON,
+    label: modulo ? modulo.charAt(0).toUpperCase() + modulo.slice(1) : "",
+  };
+}
+
+// Numero de espacios "de fabrica" que se muestran en un tablero nuevo: sin
+// esto, un tablero recien creado se ve como una pantalla rota en vez de una
+// invitacion a llenarlo. No es un tope -- con mas widgets la cuadricula
+// simplemente crece.
+const WIDGET_GRID_MIN_SLOTS = 6;
+
 // Orden categorico validado (dataviz skill): identidad, nunca ciclado.
 const CATEGORICAL = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
 const COLOR_A = CATEGORICAL[0];
 const COLOR_B = CATEGORICAL[1];
 const COLOR_OTHERS = "#898781";
 const AXIS_TICK = { fontSize: 11, fill: "#898781" };
+
+// Avatar por omision para un empleado: no hay fotos de perfil reales, asi que
+// este icono neutro sobre fondo circular es el placeholder en todos lados
+// donde se muestra un nombre de empleado.
+function EmployeeAvatar({ size = "regular" }) {
+  return (
+    <span className={`kpi-avatar ${size === "small" ? "small" : ""}`}>
+      <User size={size === "small" ? 10 : 13} />
+    </span>
+  );
+}
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -269,14 +320,7 @@ export default function Dashboard() {
           {widgetsError && <div className="alert error">{t(widgetsError, widgetsError)}</div>}
           {loadingWidgets && <div className="alert">{t("common.loading")}</div>}
 
-          {!loadingWidgets && !widgetsError && widgets.length === 0 && (
-            <div className="empty">
-              <strong>{tx("empty_widgets_title", "Este tablero no tiene gráficos todavía")}</strong>
-              <p>{tx("empty_widgets_body", "Usa \"Agregar gráfico\" para elegir un KPI y visualizarlo aquí.")}</p>
-            </div>
-          )}
-
-          {!loadingWidgets && widgets.length > 0 && (
+          {!loadingWidgets && !widgetsError && (
             <div className="kpi-widget-grid">
               {widgets.map((widget) => (
                 <KpiWidgetCard
@@ -290,6 +334,21 @@ export default function Dashboard() {
                   t={t}
                   tx={tx}
                 />
+              ))}
+              {/* Espacios "de fabrica": llenan un tablero nuevo hasta el minimo
+                  visual. No son un tope -- si ya hay mas widgets que el minimo
+                  simplemente no se agrega ninguno de sobra. */}
+              {Array.from({ length: Math.max(0, WIDGET_GRID_MIN_SLOTS - widgets.length) }).map((_, index) => (
+                <button
+                  type="button"
+                  key={`kpi-widget-placeholder-${index}`}
+                  className="kpi-widget-placeholder"
+                  onClick={() => setWidgetForm({ editing: null })}
+                  title={tx("add_widget", "Agregar gráfico")}
+                >
+                  <Plus size={22} />
+                  <span>{tx("add_widget", "Agregar gráfico")}</span>
+                </button>
               ))}
             </div>
           )}
@@ -414,13 +473,22 @@ function KpiChartBody({ widget, snapshot, kpiInfo, userLabel, formatNumber, tx }
   }
 
   if (widget.tipo_grafica === "dona") {
-    const data = buildPieData(snapshot, userLabel, tx("others", "Otros"));
+    const othersLabel = tx("others", "Otros");
+    const data = buildPieData(snapshot, userLabel, othersLabel);
     if (!data.length) return <p className="kpi-empty-inline">{tx("no_data", "Sin datos en el rango seleccionado.")}</p>;
     return (
       <ResponsiveContainer width="100%" height={240}>
         <PieChart>
           <Tooltip formatter={(value) => formatNumber(value)} />
-          <Legend wrapperStyle={{ fontSize: 12 }} />
+          <Legend
+            wrapperStyle={{ fontSize: 12 }}
+            formatter={(value) => (
+              <span className="kpi-legend-item">
+                {value !== othersLabel && <EmployeeAvatar size="small" />}
+                {value}
+              </span>
+            )}
+          />
           <Pie data={data} dataKey="value" nameKey="name" innerRadius="55%" outerRadius="80%" paddingAngle={2}>
             {data.map((entry, index) => (
               <Cell key={entry.name} fill={index < CATEGORICAL.length ? CATEGORICAL[index] : COLOR_OTHERS} stroke="#fff" strokeWidth={2} />
@@ -487,7 +555,27 @@ function KpiChartBody({ widget, snapshot, kpiInfo, userLabel, formatNumber, tx }
 
 function KpiWidgetFormModal({ editing, kpiCatalog, users, onCancel, onSave, t, tx }) {
   const parametrosIniciales = editing?.parametros || {};
+
+  // Catalogo agrupado por modulo (facturacion, operaciones, ...): el paso de
+  // categoria solo hace falta cuando hay mas de uno, si no se muestran los
+  // KPIs directo.
+  const kpisPorModulo = useMemo(() => {
+    const mapa = new Map();
+    kpiCatalog.forEach((kpi) => {
+      const lista = mapa.get(kpi.modulo) || [];
+      lista.push(kpi);
+      mapa.set(kpi.modulo, lista);
+    });
+    return mapa;
+  }, [kpiCatalog]);
+  const modulosDisponibles = Array.from(kpisPorModulo.keys());
+  const necesitaCategoria = modulosDisponibles.length > 1;
+  const editingKpi = kpiCatalog.find((kpi) => kpi.id_kpi_definition === editing?.id_kpi_definition);
+
   const [idKpiDefinition, setIdKpiDefinition] = useState(editing?.id_kpi_definition ? String(editing.id_kpi_definition) : "");
+  const [categoriaKpi, setCategoriaKpi] = useState(
+    () => editingKpi?.modulo || (modulosDisponibles.length === 1 ? modulosDisponibles[0] : ""),
+  );
   const [tipoGrafica, setTipoGrafica] = useState(editing?.tipo_grafica || "numero");
   const [fechaInicio, setFechaInicio] = useState(parametrosIniciales.fecha_inicio || daysAgoIso(30));
   const [fechaFin, setFechaFin] = useState(parametrosIniciales.fecha_fin || todayIso());
@@ -544,24 +632,68 @@ function KpiWidgetFormModal({ editing, kpiCatalog, users, onCancel, onSave, t, t
           </div>
         ) : (
           <>
+            <div className="kpi-picker-section">
+              <span>{tx("kpi", "KPI")}</span>
+              {necesitaCategoria && (
+                <div className="kpi-icon-option-group" role="group" aria-label={tx("kpi_category", "Categoría")}>
+                  {modulosDisponibles.map((modulo) => {
+                    const meta = kpiModuleMeta(modulo);
+                    const ModuleIcon = meta.icon;
+                    const activo = categoriaKpi === modulo;
+                    return (
+                      <button
+                        type="button"
+                        key={modulo}
+                        className={`kpi-icon-option ${activo ? "active" : ""}`}
+                        onClick={() => { setCategoriaKpi(modulo); setIdKpiDefinition(""); }}
+                      >
+                        <ModuleIcon size={20} />
+                        <span>{meta.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {(!necesitaCategoria || categoriaKpi) && (
+                <div className="kpi-chip-option-group">
+                  {(necesitaCategoria ? kpisPorModulo.get(categoriaKpi) || [] : kpiCatalog).map((kpi) => (
+                    <button
+                      type="button"
+                      key={kpi.id_kpi_definition}
+                      className={`kpi-chip-option ${idKpiDefinition === String(kpi.id_kpi_definition) ? "active" : ""}`}
+                      onClick={() => setIdKpiDefinition(String(kpi.id_kpi_definition))}
+                    >
+                      {kpi.etiqueta || kpi.clave}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="kpi-picker-section">
+              <span>{tx("chart_type", "Tipo de gráfico")}</span>
+              <div className="kpi-icon-option-group">
+                {CHART_TYPES.map((opt) => {
+                  const ChartIcon = CHART_TYPE_ICONS[opt.value];
+                  const activo = tipoGrafica === opt.value;
+                  const etiqueta = tx(`chart_type_${opt.value}`, opt.label);
+                  return (
+                    <button
+                      type="button"
+                      key={opt.value}
+                      className={`kpi-icon-option ${activo ? "active" : ""}`}
+                      onClick={() => setTipoGrafica(opt.value)}
+                      title={etiqueta}
+                    >
+                      <ChartIcon size={20} />
+                      <span>{etiqueta}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <div className="form-grid">
-              <label className="field">
-                <span>{tx("kpi", "KPI")}</span>
-                <select value={idKpiDefinition} onChange={(event) => setIdKpiDefinition(event.target.value)} required>
-                  <option value="">{tx("select_kpi", "Selecciona un KPI")}</option>
-                  {kpiCatalog.map((kpi) => (
-                    <option key={kpi.id_kpi_definition} value={kpi.id_kpi_definition}>{kpi.etiqueta || kpi.clave}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>{tx("chart_type", "Tipo de gráfico")}</span>
-                <select value={tipoGrafica} onChange={(event) => setTipoGrafica(event.target.value)}>
-                  {CHART_TYPES.map((opt) => (
-                    <option key={opt.value} value={opt.value}>{tx(`chart_type_${opt.value}`, opt.label)}</option>
-                  ))}
-                </select>
-              </label>
               <label className="field">
                 <span>{tx("start_date", "Fecha inicio")}</span>
                 <input type="date" value={fechaInicio} max={fechaFin || undefined} onChange={(event) => setFechaInicio(event.target.value)} required />
@@ -601,6 +733,7 @@ function KpiWidgetFormModal({ editing, kpiCatalog, users, onCancel, onSave, t, t
                         checked={empleadosSeleccionados.includes(String(user.id_user))}
                         onChange={() => toggleEmpleado(String(user.id_user))}
                       />
+                      <EmployeeAvatar size="small" />
                       <span>{user.full_name || user.username || `#${user.id_user}`}</span>
                     </label>
                   ))}
