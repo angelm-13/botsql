@@ -381,6 +381,11 @@ export const registerInvoicePayment = (id, payload = {}) =>
   });
 export const getPaymentComplement = (idPayment) =>
   request(`/invoice/payments/${idPayment}/complement`);
+export const stampPaymentComplement = (idPayment) =>
+  request(`/stamping/invoices/payments/${idPayment}/stamp`, {
+    method: "POST",
+    body: { idempotency_key: crypto.randomUUID() }
+  });
 
 // --- Notas de credito -----------------------------------------------------
 export const getInvoiceCreditNotes = (id) => request(`/invoice/${id}/credit-notes`);

@@ -154,7 +154,8 @@
     "records": "registros",
     "filter": "filtrar…",
     "clear": "Limpiar",
-    "no_matches": "ninguna coincide"
+    "no_matches": "ninguna coincide",
+    "serie_csd_hint": "Se usa como serie por defecto al emitir facturas de esta empresa; una factura puede capturar otra distinta."
   },
   "entities": {
     "bank": {
@@ -725,7 +726,8 @@
       "title": "Título",
       "type": "Tipo",
       "web_site": "Web Sitio",
-      "is_principal": "Empresa principal"
+      "is_principal": "Empresa principal",
+      "serie_csd": "Serie del CFDI (opcional)"
     },
     "department": {
       "created_by": "Creado por",
@@ -1354,6 +1356,7 @@
     "department": "Departamento",
     "entity_permission": "Permiso de entidad",
     "event_log": "Registro de eventos",
+    "facturama_config": "Configurar Facturama",
     "field": "Campo",
     "fiscal_account": "Cuenta fiscal",
     "fiscal_record": "Registro fiscal",
@@ -2115,6 +2118,7 @@
     "error_request": "No se pudo completar la solicitud.",
     "exchange_rate": "Tipo de cambio",
     "expedition_place": "Lugar de expedición",
+    "expedition_place_hint": "El lugar de expedición y el CSD se toman del domicilio de la empresa marcada como \"Empresa principal\" en Contactos.",
     "facturama_user": "Usuario Facturama",
     "fiscal_name": "Razón social fiscal",
     "fiscal_postal_code": "Código postal fiscal",
@@ -3843,13 +3847,18 @@
     "payment_form": "Forma de pago",
     "paid_at": "Fecha del pago",
     "register_payment": "Registrar abono",
-    "payment_registered": "Abono registrado y complemento listo.",
+    "payment_registered": "Abono registrado.",
     "instalment_number": "Parcialidad",
     "already_settled": "La factura está saldada.",
     "complement": "Complemento",
     "view_complement": "Ver complemento de pago",
     "complement_of_instalment": "Complemento de la parcialidad",
     "complement_explainer": "El comprobante va en ceros: el importe vive en el complemento, no en el cuerpo del CFDI.",
+    "stamp_complement": "Timbrar complemento",
+    "complement_stamped": "Complemento timbrado.",
+    "complement_pending_stamp": "Este complemento todavía no se ha timbrado ante el SAT.",
+    "stamped_folio": "Folio fiscal del REP",
+    "stamped_at": "Timbrado el",
     "complement_only_for_ppd": "El complemento de pago corresponde al método PPD (parcialidades o diferido). Esta factura es PUE, así que se considera pagada al emitirse.",
     "cfdi_type": "Tipo",
     "cfdi_use": "Uso CFDI",

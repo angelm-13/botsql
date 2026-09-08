@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus, RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
-import { getAllCustomerSupplier, createCustomerSupplier, updateCustomerSupplier, deleteCustomerSupplier, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllUser } from "../api";
+import { getAllCustomerSupplier, createCustomerSupplier, updateCustomerSupplier, deleteCustomerSupplier, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllUser, getInvoiceCatalogs } from "../api";
 import Pagination from "../components/Pagination.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 
 /* eslint-disable react/prop-types */
 
-const baseEmptyForm = { postal_code: "", name: "", title: "", contact_name: "", phone: "", email: "", web_site: "", street: "", number_ext: "", number_int: "", neighborhood: "", city: "", geographic_state: "", fiscal_type: "", last_fiscal_certification_date: "", tax_id: "", type: "", sla_level: "standard", credit_limit: "0", logistics_notes: "", is_principal: false, id_user: "", path_logo: "" };
+const baseEmptyForm = { postal_code: "", name: "", title: "", contact_name: "", phone: "", email: "", web_site: "", street: "", number_ext: "", number_int: "", neighborhood: "", city: "", geographic_state: "", fiscal_type: "", last_fiscal_certification_date: "", tax_id: "", type: "", sla_level: "standard", credit_limit: "0", logistics_notes: "", is_principal: false, id_user: "", path_logo: "", serie_csd: "" };
 const validationRules = allValidationRules["customer_supplier"] || {};
 const ENTITY_KEY = "customer_supplier";
 const ACTION_CREATE = 1;
@@ -15,7 +15,7 @@ const ACTION_READ = 2;
 const ACTION_UPDATE = 4;
 const ACTION_DELETE = 8;
 const FIELD_VISIBLE_BIT = 2;
-const ALL_FIELD_NAMES = ['id_customer_supplier', 'postal_code', 'name', 'title', 'contact_name', 'phone', 'email', 'web_site', 'street', 'number_ext', 'number_int', 'neighborhood', 'city', 'geographic_state', 'fiscal_type', 'last_fiscal_certification_date', 'tax_id', 'type', 'sla_level', 'credit_limit', 'logistics_notes', 'is_principal', 'id_user', 'path_logo'];
+const ALL_FIELD_NAMES = ['id_customer_supplier', 'postal_code', 'name', 'title', 'contact_name', 'phone', 'email', 'web_site', 'street', 'number_ext', 'number_int', 'neighborhood', 'city', 'geographic_state', 'fiscal_type', 'last_fiscal_certification_date', 'tax_id', 'type', 'sla_level', 'credit_limit', 'logistics_notes', 'is_principal', 'id_user', 'path_logo', 'serie_csd'];
 
 function hasBit(value, bit) {
   return (Number(value || 0) & bit) === bit;
@@ -61,7 +61,19 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
   const canSubmitForm = editingId ? canUpdate : canCreate;
   const showRowActions = canRead && (canUpdate || canDelete);
   const [userOptions, setUserOptions] = useState([]);
+  const [fiscalRegimeCatalog, setFiscalRegimeCatalog] = useState({ regimen_fiscal: {}, persona_fisica: [], persona_moral: [] });
   const proyectOptions = [];
+
+  // Un RFC de 12 caracteres es persona moral, de 13 persona fisica -- mismo
+  // criterio que `_regimes_for_rfc` en el backend. Sin RFC capturado aun, se
+  // muestran todos para no bloquear la captura.
+  const allowedFiscalRegimes = useMemo(() => {
+    const rfcLength = String(formData.tax_id || "").trim().length;
+    const allowed = rfcLength === 12 ? fiscalRegimeCatalog.persona_moral
+      : rfcLength === 13 ? fiscalRegimeCatalog.persona_fisica
+      : Object.keys(fiscalRegimeCatalog.regimen_fiscal);
+    return allowed.filter((code) => fiscalRegimeCatalog.regimen_fiscal[code]);
+  }, [formData.tax_id, fiscalRegimeCatalog]);
 
   async function loadData() {
     if (!permissionReady || !canRead) {
@@ -98,6 +110,18 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
           setUserOptions(Array.isArray(userData) ? userData : (userData.items || []));
         } catch (_) {
           setUserOptions([]);
+        }
+      }
+      if (canSeeField("fiscal_type")) {
+        try {
+          const catalogs = await getInvoiceCatalogs();
+          setFiscalRegimeCatalog({
+            regimen_fiscal: catalogs?.regimen_fiscal || {},
+            persona_fisica: catalogs?.regimen_fiscal_persona_fisica || [],
+            persona_moral: catalogs?.regimen_fiscal_persona_moral || [],
+          });
+        } catch (_) {
+          setFiscalRegimeCatalog({ regimen_fiscal: {}, persona_fisica: [], persona_moral: [] });
         }
       }
     }
@@ -501,7 +525,12 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
           {canSeeField("fiscal_type") && (
           <label className="field">
             <span>{t("fields.customer_supplier.fiscal_type")}</span>
-            <input name="fiscal_type" type="text" maxLength={150} value={formData.fiscal_type ?? ""} onChange={handleChange} placeholder={t("fields.customer_supplier.fiscal_type")} aria-invalid={Boolean(fieldErrors["fiscal_type"])} {...inputPropsForField("fiscal_type", validationRules["fiscal_type"], "text")} />
+            <select name="fiscal_type" value={formData.fiscal_type ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors["fiscal_type"])} {...inputPropsForField("fiscal_type", validationRules["fiscal_type"], "text")}>
+              <option value="">{t("common.select", "— Selecciona —")}</option>
+              {allowedFiscalRegimes.map((code) => (
+                <option key={code} value={code}>{code} · {fiscalRegimeCatalog.regimen_fiscal[code]}</option>
+              ))}
+            </select>
             {fieldErrors["fiscal_type"] && <span className="field-error">{formatFieldError("fiscal_type")}</span>}
           </label>
           )}
@@ -558,6 +587,14 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
             <input name="is_principal" type="checkbox" checked={Boolean(formData.is_principal)} onChange={handleChange} />
             <span>{t("fields.customer_supplier.is_principal", "Empresa principal")}</span>
             <small>{t("common.principal_company_hint", "Su RFC se usará para clasificar automáticamente facturas XML como compras o ventas.")}</small>
+          </label>
+          )}
+          {canSeeField("serie_csd") && formData.is_principal && (
+          <label className="field">
+            <span>{t("fields.customer_supplier.serie_csd", "Serie del CFDI (opcional)")}</span>
+            <input name="serie_csd" type="text" maxLength={25} value={formData.serie_csd ?? ""} onChange={handleChange} placeholder={t("fields.customer_supplier.serie_csd", "Serie del CFDI (opcional)")} aria-invalid={Boolean(fieldErrors["serie_csd"])} />
+            <small>{t("common.serie_csd_hint", "Se usa como serie por defecto al emitir facturas de esta empresa; una factura puede capturar otra distinta.")}</small>
+            {fieldErrors["serie_csd"] && <span className="field-error">{formatFieldError("serie_csd")}</span>}
           </label>
           )}
           {canSeeField("id_user") && (

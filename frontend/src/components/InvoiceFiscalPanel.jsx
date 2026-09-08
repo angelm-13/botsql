@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowLeftRight, Ban, Check, Plus, RefreshCw, Trash2, Wallet, X } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, Ban, BadgeCheck, Check, Plus, RefreshCw, Trash2, Wallet, X } from "lucide-react";
 import { useI18n } from "../i18n";
 import "../styles/invoice-fiscal.css";
 import {
@@ -12,7 +12,8 @@ import {
   getPaymentComplement,
   refreshInvoiceCancellation,
   registerInvoicePayment,
-  requestInvoiceCancellation
+  requestInvoiceCancellation,
+  stampPaymentComplement
 } from "../api";
 
 // El panel abre sobre una factura ya timbrada. Los tres actos que reune
@@ -361,6 +362,23 @@ export default function InvoiceFiscalPanel({ invoice, onClose, onChanged }) {
     }
   }
 
+  async function timbrarComplemento(idPayment) {
+    setBusy(true);
+    setErrorKey("");
+    setNoticeKey("");
+    try {
+      await stampPaymentComplement(idPayment);
+      setNoticeKey("fiscal.complement_stamped");
+      await verComplemento(idPayment);
+      await load();
+      if (onChanged) onChanged();
+    } catch (error) {
+      report(error);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function renderPagos() {
     if (!statement) return null;
     const abonos = statement.payments || [];
@@ -473,6 +491,7 @@ export default function InvoiceFiscalPanel({ invoice, onClose, onChanged }) {
                         onClick={() => verComplemento(abono.id_invoice_payment)}
                         title={t("fiscal.view_complement", "Ver complemento de pago")}
                       >
+                        {abono.status === "timbrado" ? <BadgeCheck size={14} /> : null}
                         {t("fiscal.complement", "Complemento")}
                       </button>
                     </td>
@@ -500,6 +519,38 @@ export default function InvoiceFiscalPanel({ invoice, onClose, onChanged }) {
                 "El comprobante va en ceros: el importe vive en el complemento, no en el cuerpo del CFDI."
               )}
             </p>
+
+            {complement.status === "timbrado" ? (
+              <dl className="fiscal-facts">
+                <div>
+                  <dt>{t("fiscal.stamped_folio", "Folio fiscal del REP")}</dt>
+                  <dd className="mono">{complement.stamped?.folio_fiscal || "—"}</dd>
+                </div>
+                <div>
+                  <dt>{t("fiscal.stamped_at", "Timbrado el")}</dt>
+                  <dd className="mono">{(complement.stamped?.certification_date || "").slice(0, 19) || "—"}</dd>
+                </div>
+              </dl>
+            ) : (
+              <>
+                <p className="fiscal-hint">
+                  <AlertTriangle size={15} />
+                  {t("fiscal.complement_pending_stamp", "Este complemento todavía no se ha timbrado ante el SAT.")}
+                </p>
+                <div className="form-actions">
+                  <button
+                    type="button"
+                    className="button primary"
+                    disabled={busy}
+                    onClick={() => timbrarComplemento(complement.id_invoice_payment)}
+                  >
+                    <BadgeCheck size={15} />
+                    {t("fiscal.stamp_complement", "Timbrar complemento")}
+                  </button>
+                </div>
+              </>
+            )}
+
             <dl className="fiscal-facts">
               <div>
                 <dt>{t("fiscal.cfdi_type", "Tipo")}</dt>

@@ -61,16 +61,12 @@ def save_config(payload: dict) -> dict:
     # el admin: la pantalla de configuracion no debe poder mostrar (ni guardar)
     # un base_url que no coincida con el modo real (prod/sandbox).
     base_url = default_base_url(provider)
-    expedition_place = str(payload.get("expedition_place") or "").strip()
-    if expedition_place and (len(expedition_place) != 5 or not expedition_place.isdigit()):
-        raise AppError("stamping.expedition_place_invalid", 400, {"field": "expedition_place"})
 
     with transaction_context() as db:
         config = db.get(PacConfig, 1) or PacConfig(id_pac_config=1)
         config.provider = provider
         config.facturama_username = str(payload.get("facturama_username") or "").strip() or None
         config.facturama_base_url = base_url if provider != "fake" else None
-        config.expedition_place = expedition_place or None
         config.name_id = str(payload.get("name_id") or "1").strip() or "1"
         password = str(payload.get("facturama_password") or "")
         if password:
@@ -93,6 +89,5 @@ def provider_credentials(override: dict | None = None) -> dict:
             # guardado en config pueden desviar a que un modo "sandbox" termine
             # pegandole a produccion o viceversa.
             "base_url": default_base_url(provider),
-            "expedition_place": str(override.get("expedition_place") or (config.expedition_place if config else "") or ""),
             "name_id": str(override.get("name_id") or (config.name_id if config else "1") or "1"),
         }

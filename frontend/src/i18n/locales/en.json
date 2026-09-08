@@ -154,7 +154,8 @@
     "records": "records",
     "filter": "filter…",
     "clear": "Clear",
-    "no_matches": "none match"
+    "no_matches": "none match",
+    "serie_csd_hint": "Used as the default series when issuing invoices for this company; an invoice can capture a different one."
   },
   "entities": {
     "bank": {
@@ -725,7 +726,8 @@
       "title": "Title",
       "type": "Type",
       "web_site": "Web Site",
-      "is_principal": "Principal Company"
+      "is_principal": "Principal Company",
+      "serie_csd": "CFDI Series (optional)"
     },
     "department": {
       "created_by": "Created By",
@@ -1354,6 +1356,7 @@
     "department": "Department",
     "entity_permission": "Entity Permission",
     "event_log": "Event Log",
+    "facturama_config": "Configure Facturama",
     "field": "Field",
     "fiscal_account": "Fiscal Account",
     "fiscal_record": "Fiscal Record",
@@ -2115,6 +2118,7 @@
     "error_request": "The request could not be completed.",
     "exchange_rate": "Exchange rate",
     "expedition_place": "Place of issue",
+    "expedition_place_hint": "The place of issue and the CSD are taken from the address of the company marked as \"Principal Company\" in Contacts.",
     "facturama_user": "Facturama user",
     "fiscal_name": "Tax name",
     "fiscal_postal_code": "Tax postal code",
@@ -3780,13 +3784,18 @@
     "payment_form": "Payment form",
     "paid_at": "Payment date",
     "register_payment": "Register payment",
-    "payment_registered": "Payment registered and its complement is ready.",
+    "payment_registered": "Payment registered.",
     "instalment_number": "Instalment",
     "already_settled": "The invoice is settled.",
     "complement": "Complement",
     "view_complement": "View payment complement",
     "complement_of_instalment": "Complement for instalment",
     "complement_explainer": "The document goes in zeros: the amount lives in the complement, not in the CFDI body.",
+    "stamp_complement": "Stamp complement",
+    "complement_stamped": "Complement stamped.",
+    "complement_pending_stamp": "This complement has not been stamped with the SAT yet.",
+    "stamped_folio": "REP fiscal folio",
+    "stamped_at": "Stamped on",
     "complement_only_for_ppd": "The payment complement belongs to the PPD method (instalments or deferred). This invoice is PUE, so it counts as paid on issue.",
     "cfdi_type": "Type",
     "cfdi_use": "CFDI use",

@@ -16,6 +16,7 @@ import CustomerSupplierPage from "./pages/CustomerSupplierPage.jsx";
 import DepartmentPage from "./pages/DepartmentPage.jsx";
 import EntityPermissionPage from "./pages/EntityPermissionPage.jsx";
 import EventLogPage from "./pages/EventLogPage.jsx";
+import FacturamaConfigPage from "./pages/FacturamaConfigPage.jsx";
 import FieldPage from "./pages/FieldPage.jsx";
 import FiscalAccountPage from "./pages/FiscalAccountPage.jsx";
 import IncidentPage from "./pages/IncidentPage.jsx";
@@ -167,6 +168,7 @@ export default function App() {
           <Route index element={<Dashboard />} />
           <Route path="/mfa-setup" element={<MfaSetupPage />} />
           <Route path="/role_permissions" element={<AdminRoute><RolePermissionManagerPage /></AdminRoute>} />
+          <Route path="/facturama-config" element={<AdminRoute><FacturamaConfigPage /></AdminRoute>} />
           <Route path="/quotation" element={<RoleAccessRoute entityName="invoice"><QuotationPage /></RoleAccessRoute>} />
           <Route path="/authorization_tracking" element={<RoleAccessRoute entityName="invoice"><AuthorizationTrackingPage /></RoleAccessRoute>} />
           <Route path="/catalogo-web" element={<RoleAccessRoute entityName="product_sale_config"><CatalogoWebPage /></RoleAccessRoute>} />

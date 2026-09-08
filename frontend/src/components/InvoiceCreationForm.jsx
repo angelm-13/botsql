@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
-import { BadgeCheck, CheckCircle2, Download, FileText, Plus, PlugZap, Save, Settings, Trash2 } from "lucide-react";
+import { BadgeCheck, CheckCircle2, Download, FileText, Plus, Trash2 } from "lucide-react";
 import {
   createManualInvoice, downloadInvoicePdf, downloadInvoiceXml, getAllCustomerSupplier,
   getAllProyect, getInvoiceCatalogs, getStampingConfig, previewManualInvoice,
-  saveStampingConfig, testStampingConfig,
 } from "../api";
 import SatProductKeyField from "./SatProductKeyField";
 import { useI18n } from "../i18n";
@@ -27,7 +26,10 @@ function money(value, lang) { return Number(value || 0).toLocaleString(lang, { s
 export default function InvoiceCreationForm({ onCreated }) {
   const { lang, t } = useI18n();
   const currentUser = JSON.parse(localStorage.getItem("user") || "null") || {};
+  // Solo para saber si el boton dice "timbrar" o "simulado" -- la edicion de
+  // la cuenta de Facturama vive en su propia pagina de Configuracion.
   const isAdmin = Boolean(currentUser.is_superuser || currentUser.is_bootstrap_admin || String(currentUser.user_type || "").toLowerCase() === "admin");
+  const [stampingProvider, setStampingProvider] = useState("fake");
   const [contacts, setContacts] = useState([]);
   const [projects, setProjects] = useState([]);
   const [catalogs, setCatalogs] = useState({});
@@ -37,11 +39,6 @@ export default function InvoiceCreationForm({ onCreated }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [pacOpen, setPacOpen] = useState(false);
-  const [pacTesting, setPacTesting] = useState(false);
-  const [pacSaving, setPacSaving] = useState(false);
-  const [pacResult, setPacResult] = useState(null);
-  const [pacConfig, setPacConfig] = useState({ provider: "fake", facturama_username: "", facturama_password: "", facturama_base_url: "", expedition_place: "", name_id: "1", has_password: false });
   const [form, setForm] = useState({
     id_proyect: currentUser.id_proyect || "", id_customer_supplier: "", id_issuer_customer_supplier: "",
     date_emision: today(), date_expiration: afterDays(30), currency: "MXN", type_exchange_rate: "1",
@@ -60,7 +57,7 @@ export default function InvoiceCreationForm({ onCreated }) {
       const nextContacts = asItems(contactPayload);
       const issuers = nextContacts.filter((item) => item.is_principal || item.type === "supplier");
       setContacts(nextContacts); setProjects(asItems(projectPayload)); setCatalogs(catalogPayload || {});
-      if (configPayload) setPacConfig((current) => ({ ...current, ...configPayload, facturama_password: "" }));
+      if (configPayload) setStampingProvider(configPayload.provider || "fake");
       setForm((current) => ({ ...current, id_issuer_customer_supplier: current.id_issuer_customer_supplier || String(issuers[0]?.id_customer_supplier || "") }));
     }).catch((requestError) => setError(requestError.message || "invoice_creation.error_catalogs"))
       .finally(() => { if (mounted) setLoading(false); });
@@ -111,17 +108,6 @@ export default function InvoiceCreationForm({ onCreated }) {
     finally { setBusy(false); }
   }
 
-  async function handlePacTest() {
-    setPacTesting(true); setPacResult(null);
-    try { setPacResult(await testStampingConfig(pacConfig)); } catch (requestError) { setPacResult({ ok: false, message: readableError(requestError) }); }
-    finally { setPacTesting(false); }
-  }
-  async function handlePacSave() {
-    setPacSaving(true); setError("");
-    try { const saved = await saveStampingConfig(pacConfig); setPacConfig((current) => ({ ...current, ...saved, facturama_password: "" })); setPacResult({ ok: true, message: t("invoice_creation.config_saved") }); }
-    catch (requestError) { setError(readableError(requestError)); }
-    finally { setPacSaving(false); }
-  }
   async function download(type) {
     const invoice = result?.invoice;
     if (!invoice) return;
@@ -138,17 +124,7 @@ export default function InvoiceCreationForm({ onCreated }) {
   if (loading) return <div className="empty">{t("invoice_creation.loading_form", "Cargando formulario fiscal...")}</div>;
   return (
     <div className="invoice-creation-workspace">
-      <div className="invoice-creation-heading"><div><p className="eyebrow">CFDI 4.0</p><h3>{t("invoice_creation.new_invoice", "Nueva factura")}</h3><p>{t("invoice_creation.subtitle", "Captura, valida y timbra con el PAC configurado.")}</p></div>{isAdmin && <button className="button ghost" type="button" onClick={() => setPacOpen((open) => !open)}><Settings size={16} />{t("invoice_creation.configure_facturama", "Configurar Facturama")}</button>}</div>
-
-      {isAdmin && pacOpen && <section className="invoice-pac-panel">
-        <div className="form-header"><PlugZap size={18} /><strong>{t("invoice_creation.stamping_connection", "Conexión de timbrado")}</strong></div>
-        <div className="form-grid">
-          <label className="field"><span>{t("invoice_creation.provider", "Proveedor")}</span><select value={pacConfig.provider} onChange={(event) => setPacConfig((current) => ({ ...current, provider: event.target.value }))}><option value="fake">{t("invoice_creation.provider_fake", "Simulado, sin validez fiscal")}</option><option value="facturama_sandbox">{t("invoice_creation.provider_sandbox", "Facturama · Pruebas")}</option><option value="facturama">{t("invoice_creation.provider_production", "Facturama · Producción")}</option></select></label>
-          {pacConfig.provider !== "fake" && <><label className="field"><span>{t("invoice_creation.facturama_user", "Usuario Facturama")}</span><input value={pacConfig.facturama_username} onChange={(event) => setPacConfig((current) => ({ ...current, facturama_username: event.target.value }))} /></label><label className="field"><span>{t("invoice_creation.password", "Contraseña")} {pacConfig.has_password && <small>{t("invoice_creation.saved", "guardada")}</small>}</span><input type="password" autoComplete="new-password" placeholder={pacConfig.has_password ? t("invoice_creation.keep_saved_password", "Conservar contraseña guardada") : ""} value={pacConfig.facturama_password} onChange={(event) => setPacConfig((current) => ({ ...current, facturama_password: event.target.value }))} /></label><label className="field"><span>{t("invoice_creation.expedition_place", "Lugar de expedición")}</span><input inputMode="numeric" maxLength="5" value={pacConfig.expedition_place} onChange={(event) => setPacConfig((current) => ({ ...current, expedition_place: event.target.value.replace(/\D/g, "") }))} /></label><label className="field"><span>{t("invoice_creation.name_id", "Name ID / perfil")}</span><input value={pacConfig.name_id} onChange={(event) => setPacConfig((current) => ({ ...current, name_id: event.target.value }))} /></label></>}
-        </div>
-        {pacResult && <div className={`alert ${pacResult.ok ? "success" : "error"}`}>{pacResult.message}</div>}
-        <div className="form-actions"><button className="button" type="button" disabled={pacTesting} onClick={handlePacTest}><PlugZap size={16} />{pacTesting ? t("invoice_creation.testing") : t("invoice_creation.test_connection")}</button><button className="button primary" type="button" disabled={pacSaving} onClick={handlePacSave}><Save size={16} />{pacSaving ? t("invoice_creation.saving") : t("invoice_creation.save_config")}</button></div>
-      </section>}
+      <div className="invoice-creation-heading"><div><p className="eyebrow">CFDI 4.0</p><h3>{t("invoice_creation.new_invoice", "Nueva factura")}</h3><p>{t("invoice_creation.subtitle", "Captura, valida y timbra con el PAC configurado.")}</p></div></div>
 
       {error && <div className="alert error">{t(error, error)}</div>}{notice && <div className="alert success">{t(notice, notice)}</div>}
       {result ? <section className="invoice-result-panel"><CheckCircle2 size={28} /><div><strong>{t(notice, notice)}</strong><p>{result.inventory?.applied_lines ? `${t("invoice_creation.inventory_moved", "Almacén actualizado")}: ${result.inventory.applied_lines} · ` : result.inventory?.error_key ? `${t(result.inventory.error_key, result.inventory.error_key)} · ` : ""}{t("manual_invoice.invoice", "Factura")} #{result.invoice?.id_invoice} · UUID {result.invoice?.folio_fiscal || result.operation?.provider_reference || t("invoice_creation.unassigned", "No asignado")} · {money(result.invoice?.total, lang)}</p></div><div className="form-actions"><button className="button" type="button" onClick={() => download("pdf")}><FileText size={16} />PDF</button>{result.operation?.status === "stamped" && <button className="button" type="button" onClick={() => download("xml")}><Download size={16} />XML</button>}<button className="button primary" type="button" onClick={() => { setResult(null); setPreview(null); setNotice(""); setForm((current) => ({ ...current, concepts: [newConcept()] })); }}>{t("invoice_creation.new_invoice", "Nueva factura")}</button></div></section> :
@@ -172,7 +148,7 @@ export default function InvoiceCreationForm({ onCreated }) {
 
         <aside className="invoice-live-preview" aria-live="polite"><div><span>{t("manual_invoice.subtotal", "Subtotal")}</span><strong>{money(preview?.subtotal, lang)}</strong></div><div><span>{t("manual_invoice.discount", "Descuento")}</span><strong>-{money(preview?.discount, lang)}</strong></div><div><span>{t("manual_invoice.tax", "IVA")}</span><strong>{money(preview?.iva, lang)}</strong></div>{Number(preview?.isr_retention || 0) > 0 && <div><span>{t("manual_invoice.isr_short", "Ret. ISR")}</span><strong>-{money(preview?.isr_retention, lang)}</strong></div>}{Number(preview?.iva_retention || 0) > 0 && <div><span>{t("manual_invoice.iva_short", "Ret. IVA")}</span><strong>-{money(preview?.iva_retention, lang)}</strong></div>}<div className="invoice-preview-total"><span>{t("manual_invoice.total", "Total")}</span><strong>{money(preview?.total, lang)}</strong></div></aside>
         {preview?.errors?.length > 0 && <div className="alert error">{preview.errors.join(" · ")}</div>}
-        <label className="field checkbox-field" title={t("invoice_creation.apply_inventory_help", "Una venta descuenta del almacén y una compra lo surte, segun la direccion de la factura.")}><input type="checkbox" checked={Boolean(form.apply_inventory)} onChange={(event) => update("apply_inventory", event.target.checked)} />{t("invoice_creation.apply_inventory", "Mover el almacén al timbrar")}</label><div className="form-actions"><button className="button primary" type="submit" disabled={busy || !preview?.can_create}><BadgeCheck size={17} />{busy ? t("invoice_creation.stamping", "Timbrando...") : pacConfig.provider === "fake" ? t("invoice_creation.create_simulated", "Crear CFDI simulado") : t("invoice_creation.stamp_invoice", "Timbrar factura")}</button></div>
+        <label className="field checkbox-field" title={t("invoice_creation.apply_inventory_help", "Una venta descuenta del almacén y una compra lo surte, segun la direccion de la factura.")}><input type="checkbox" checked={Boolean(form.apply_inventory)} onChange={(event) => update("apply_inventory", event.target.checked)} />{t("invoice_creation.apply_inventory", "Mover el almacén al timbrar")}</label><div className="form-actions"><button className="button primary" type="submit" disabled={busy || !preview?.can_create}><BadgeCheck size={17} />{busy ? t("invoice_creation.stamping", "Timbrando...") : stampingProvider === "fake" ? t("invoice_creation.create_simulated", "Crear CFDI simulado") : t("invoice_creation.stamp_invoice", "Timbrar factura")}</button></div>
       </form>}
     </div>
   );
