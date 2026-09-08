@@ -44,7 +44,18 @@ decisiones resueltas, verificación de integridad referencial).
 No avanzar al paso 3 sin haber revisado, con consultas SQL reales:
 - Conteos de filas de cada tabla origen.
 - Llaves foráneas huérfanas (referencian un ID que no existe).
-- Valores sentinela (fechas tipo "nunca pasó", IDs tipo "sin asignar").
+- Valores sentinela (fechas tipo "nunca pasó", IDs tipo "sin asignar"). **No
+  basta con revisar los campos obvios de "baja"/"deletion"** — barrer
+  *todas* las columnas de fecha nullable de *todas* las tablas origen
+  (incluidas las de relación, tipo "fecha_cierre" en una tabla nm_) contra
+  el mismo valor centinela que ya se detectó en otra tabla. En adser,
+  `producto.fecha_baja` y `usuario.fecha_baja` sí se limpiaron
+  (`1990-01-01` → NULL), pero `nm_incidente_producto.fecha_cierre` e
+  `incidente.fecha_cierre` usaban el mismo centinela y no se detectaron en
+  el análisis inicial — se coló hasta producción y rompió la lógica de
+  "abierto/cerrado" de vales downstream (`_estado_derivado()`,
+  `cerrar_renglon()`). Detalle en
+  [[project_tyakxa_tny_migracion_adser]].
 - Columnas NOT NULL en destino que el origen no tiene o deja NULL.
 
 ## Paso 3 — Verificar el estado REAL del destino antes de asumir nada
