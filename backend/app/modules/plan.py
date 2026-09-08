@@ -97,6 +97,12 @@ CLAVES_VALIDAS = frozenset(m.clave for m in MODULOS)
 LIMITES_POR_OMISION = {
     "usuarios": None,          # None significa sin tope
     "almacenamiento_gb": None,
+    # A diferencia de los dos anteriores, este no se usa como "sin tope": el
+    # llamador (`GET /kpi_snapshot/query`) siempre pasa su propio
+    # `por_omision=365` a `limite()`, asi que un plan que no lo declara cae en
+    # 1 anio, no en ilimitado. Se registra aqui solo para que aparezca en
+    # `Plan.serialize()` igual que los demas limites conocidos.
+    "kpi_rango_dias_max": None,
 }
 
 

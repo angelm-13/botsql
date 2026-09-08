@@ -18,47 +18,81 @@ from app.models.session import transaction_context
 VENTANA_DIAS = 7
 
 
+def _recalcular_kpi_snapshots_en_sesion(session, fecha_inicio: date, fecha_fin: date) -> int:
+    """El calculo real, sobre una sesion/transaccion ya abierta.
+
+    Extraido de `recalculate_kpi_snapshots` para que el rango de fechas sea un
+    parametro y no algo hardcodeado dentro de la tarea: la tarea nocturna sigue
+    llamando esto con su ventana rodante de 7 dias (sin cambio de
+    comportamiento), y un backfill manual -- para un lote de prueba sembrado
+    con fechas pasadas, que la ventana rodante nunca alcanza -- puede llamarlo
+    con cualquier rango arbitrario.
+    """
+    filas_escritas = 0
+    id_kpi_definition_por_clave = {
+        clave: id_kpi_definition
+        for id_kpi_definition, clave in session.execute(
+            select(KpiDefinition.id_kpi_definition, KpiDefinition.clave)
+        )
+    }
+    proyectos_activos = session.scalars(
+        select(Proyect.id_proyect).where(Proyect.deletion_date.is_(None))
+    ).all()
+
+    for kpi in KPI_REGISTRY:
+        id_kpi_definition = id_kpi_definition_por_clave.get(kpi.clave)
+        if id_kpi_definition is None:
+            # kpi_definition todavia no trae esta clave (la siembra de
+            # init_db.py no ha corrido en esta base): se salta este KPI en
+            # vez de reventar la tarea completa por uno solo.
+            continue
+
+        for id_proyect in proyectos_activos:
+            filas = kpi.query_builder(session, fecha_inicio, fecha_fin, {}, id_proyect)
+            for id_empleado, periodo, valor in filas:
+                dimension_key = {"id_user": id_empleado, "id_proyect": id_proyect}
+                insercion = pg_insert(KpiSnapshot).values(
+                    id_kpi_definition=id_kpi_definition,
+                    dimension_key=dimension_key,
+                    periodo=periodo,
+                    valor=valor,
+                )
+                upsert = insercion.on_conflict_do_update(
+                    constraint="uq_kpi_snapshot_dia",
+                    set_={"valor": insercion.excluded.valor, "computed_at": func.now()},
+                )
+                session.execute(upsert)
+                filas_escritas += 1
+
+    return filas_escritas
+
+
 @celery.task(name="app.jobs.tasks_kpis.recalculate_kpi_snapshots")
 def recalculate_kpi_snapshots() -> dict:
     fecha_fin = date.today()
     fecha_inicio = fecha_fin - timedelta(days=VENTANA_DIAS - 1)
 
-    filas_escritas = 0
     with transaction_context() as session:
-        id_kpi_definition_por_clave = {
-            clave: id_kpi_definition
-            for id_kpi_definition, clave in session.execute(
-                select(KpiDefinition.id_kpi_definition, KpiDefinition.clave)
-            )
-        }
-        proyectos_activos = session.scalars(
-            select(Proyect.id_proyect).where(Proyect.deletion_date.is_(None))
-        ).all()
+        filas_escritas = _recalcular_kpi_snapshots_en_sesion(session, fecha_inicio, fecha_fin)
 
-        for kpi in KPI_REGISTRY:
-            id_kpi_definition = id_kpi_definition_por_clave.get(kpi.clave)
-            if id_kpi_definition is None:
-                # kpi_definition todavia no trae esta clave (la siembra de
-                # init_db.py no ha corrido en esta base): se salta este KPI en
-                # vez de reventar la tarea completa por uno solo.
-                continue
+    return result_ok(
+        "jobs.kpis.snapshots_recalculated",
+        filas=filas_escritas,
+        fecha_inicio=fecha_inicio.isoformat(),
+        fecha_fin=fecha_fin.isoformat(),
+    )
 
-            for id_proyect in proyectos_activos:
-                filas = kpi.query_builder(session, fecha_inicio, fecha_fin, {}, id_proyect)
-                for id_empleado, periodo, valor in filas:
-                    dimension_key = {"id_user": id_empleado, "id_proyect": id_proyect}
-                    insercion = pg_insert(KpiSnapshot).values(
-                        id_kpi_definition=id_kpi_definition,
-                        dimension_key=dimension_key,
-                        periodo=periodo,
-                        valor=valor,
-                    )
-                    upsert = insercion.on_conflict_do_update(
-                        constraint="uq_kpi_snapshot_dia",
-                        set_={"valor": insercion.excluded.valor, "computed_at": func.now()},
-                    )
-                    session.execute(upsert)
-                    filas_escritas += 1
+
+def recalcular_kpi_snapshots_rango(fecha_inicio: date, fecha_fin: date) -> dict:
+    """Invocacion manual: mismo calculo, un rango de fechas arbitrario.
+
+    Para backfills -- p.ej. poblar `kpi_snapshot` para un lote de prueba
+    sembrado con fechas pasadas, que la tarea nocturna (ventana rodante de 7
+    dias) nunca cubre. No pasa por Celery: se llama directo, igual que ya
+    hacen las pruebas con `recalculate_kpi_snapshots()`.
+    """
+    with transaction_context() as session:
+        filas_escritas = _recalcular_kpi_snapshots_en_sesion(session, fecha_inicio, fecha_fin)
 
     return result_ok(
         "jobs.kpis.snapshots_recalculated",

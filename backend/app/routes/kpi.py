@@ -8,12 +8,21 @@ from sqlalchemy.dialects.postgresql import JSONB
 
 from app.models.kpi_definition import KpiDefinition
 from app.models.kpi_snapshot import KpiSnapshot
+from app.models.permission import Permission
 from app.models.session import transaction_context
+from app.models.user import User
+from app.modules.plan import limite
 from app.services.invoice_service import InvoiceService
 from app.services.kpi_dashboard_service import KpiDashboardService
 from app.services.kpi_dashboard_widget_service import KpiDashboardWidgetService
 from app.utils.auth import has_kpi_permission, require_entity_permission, token_required
 from app.utils.errors import AppError
+
+# Salvo que el plan del cliente declare otro valor en `limites.kpi_rango_dias_max`
+# (ver `app/modules/plan.py`), una consulta no puede pedir mas de un anio de
+# historico de una sola vez: sin tope, un rango sin fin es una tabla completa
+# escaneada por peticion.
+KPI_RANGO_DIAS_MAX_POR_OMISION = 365
 
 bp_kpi = Blueprint('kpi', __name__)
 bp_kpi_dashboard = Blueprint('kpi_dashboard', __name__, url_prefix='/kpi_dashboard')
@@ -38,11 +47,41 @@ def _optional_date(value, field):
     return _required_date(value, field) if value else None
 
 
-def _optional_empleados(value):
+def _optional_int_list(value, field):
     if not value:
         return None
-    ids = [_required_int(chunk.strip(), 'empleados') for chunk in str(value).split(',') if chunk.strip()]
+    ids = [_required_int(chunk.strip(), field) for chunk in str(value).split(',') if chunk.strip()]
     return ids or None
+
+
+def _optional_empleados(value):
+    return _optional_int_list(value, 'empleados')
+
+
+def _optional_id_departments(value):
+    return _optional_int_list(value, 'id_departments')
+
+
+def _validar_rango(fecha_inicio, fecha_fin, dias_maximo, field):
+    dias = (fecha_fin - fecha_inicio).days
+    if dias > dias_maximo:
+        raise AppError('errors.rango_excede_limite', 400, {'field': field, 'dias_maximo': dias_maximo})
+
+
+def _empleados_de_departamentos(db, id_departments):
+    """`id_user` de todos los empleados cuyo `Permission.id_department` este
+    en `id_departments`. `User.id_department` no existe -- la pertenencia
+    pasa por `Permission` (ver `app/models/permission.py`)."""
+    permisos_del_departamento = select(Permission.id_permission).where(
+        Permission.id_department.in_(id_departments),
+        Permission.deletion_date.is_(None),
+    )
+    return db.scalars(
+        select(User.id_user).where(
+            User.id_permission.in_(permisos_del_departamento),
+            User.deletion_date.is_(None),
+        )
+    ).all()
 
 
 def _dimension_user_text():
@@ -62,7 +101,11 @@ def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, empl
     ]
     if actor_project is not None:
         condiciones.append(cast(KpiSnapshot.dimension_key, JSONB).contains({'id_proyect': actor_project}))
-    if empleados:
+    # `is not None`, no truthy: una lista vacia (departamento sin empleados,
+    # ver `_empleados_de_departamentos`) tiene que filtrar a "nadie", no
+    # saltarse el filtro por completo. SQLAlchemy compila `IN (())` como una
+    # condicion siempre falsa, asi que es seguro.
+    if empleados is not None:
         condiciones.append(id_user_expr.in_([str(id_empleado) for id_empleado in empleados]))
 
     filas = db.execute(
@@ -113,6 +156,15 @@ def query_kpi_snapshot(user_data):
     fecha_inicio_b = _optional_date(request.args.get('fecha_inicio_b'), 'fecha_inicio_b')
     fecha_fin_b = _optional_date(request.args.get('fecha_fin_b'), 'fecha_fin_b')
     empleados = _optional_empleados(request.args.get('empleados'))
+    id_departments = _optional_id_departments(request.args.get('id_departments'))
+
+    # Salvo que el plan del cliente declare otro valor, un rango no puede
+    # pedir mas de un anio de una sola vez (ver el comentario junto a
+    # KPI_RANGO_DIAS_MAX_POR_OMISION).
+    dias_maximo = limite('kpi_rango_dias_max', KPI_RANGO_DIAS_MAX_POR_OMISION)
+    _validar_rango(fecha_inicio, fecha_fin, dias_maximo, 'fecha_fin')
+    if fecha_inicio_b and fecha_fin_b:
+        _validar_rango(fecha_inicio_b, fecha_fin_b, dias_maximo, 'fecha_fin_b')
 
     with transaction_context() as db:
         if not has_kpi_permission(db, user_data, id_kpi_definition, 'read'):
@@ -129,6 +181,18 @@ def query_kpi_snapshot(user_data):
         # generalizarse a un alcance por-modulo en vez de seguir atado a
         # InvoiceService.
         actor_project = InvoiceService.actor_project(user_data)
+
+        # id_departments se resuelve a id_user (via Permission.id_department)
+        # y se combina con "empleados": si vienen los dos, interseccion; si
+        # solo viene el departamento, esa lista completa hace de filtro de
+        # empleados. Una lista vacia (departamento sin nadie) filtra a
+        # "nadie" -- ver el comentario en `_totales`.
+        if id_departments:
+            usuarios_del_departamento = _empleados_de_departamentos(db, id_departments)
+            if empleados is not None:
+                empleados = [id_empleado for id_empleado in empleados if id_empleado in usuarios_del_departamento]
+            else:
+                empleados = list(usuarios_del_departamento)
 
         rango_a = _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, empleados)
         rango_b = None

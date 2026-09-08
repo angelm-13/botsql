@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import unittest
 from datetime import date
 from decimal import Decimal
@@ -13,6 +14,7 @@ from app.models import (
     NmPermissionKpi, Permission, Proyect, Status, Subdepartment, User,
 )
 from app.models.session import engine, transaction_context
+from app.modules.plan import reiniciar_plan
 from tests.conftest import BackendTestCase
 
 # Se prueba contra PostgreSQL real, no SQLite: `/kpi_snapshot/query` filtra
@@ -151,6 +153,99 @@ class TestKpiApi(BackendTestCase):
         payload = self.json(response)["rango_a"]
         self.assertEqual(11499.0, payload["total"])
         self.assertEqual({"950": 10999.0, "951": 500.0}, payload["por_empleado"])
+
+    def test_query_snapshot_rejects_range_over_one_year(self):
+        response = self._request(
+            ACTOR_CON_KPI, self._query_url(fecha_inicio="2025-01-01", fecha_fin="2026-06-01"),
+        )
+
+        self.assertEqual(400, response.status_code)
+        payload = self.json(response)
+        self.assertEqual("errors.rango_excede_limite", payload["error_key"])
+        self.assertEqual(365, payload["meta"]["dias_maximo"])
+
+    def test_query_snapshot_respects_plan_configured_range_limit(self):
+        # Un limite mas estricto que el default (30 dias en vez de 365): si la
+        # ruta siguiera usando el 365 fijo, el rango de 40 dias pasaria.
+        with patch.dict(os.environ, {"TYAKXA_PLAN": '{"limites": {"kpi_rango_dias_max": 30}}'}):
+            reiniciar_plan()
+            try:
+                dentro_del_limite = self._request(
+                    ACTOR_CON_KPI, self._query_url(fecha_inicio="2026-01-01", fecha_fin="2026-01-20"),
+                )
+                fuera_del_limite = self._request(
+                    ACTOR_CON_KPI, self._query_url(fecha_inicio="2026-01-01", fecha_fin="2026-03-01"),
+                )
+            finally:
+                reiniciar_plan()
+
+        self.assertEqual(200, dentro_del_limite.status_code)
+        self.assertEqual(400, fuera_del_limite.status_code)
+        self.assertEqual("errors.rango_excede_limite", self.json(fuera_del_limite)["error_key"])
+        self.assertEqual(30, self.json(fuera_del_limite)["meta"]["dias_maximo"])
+
+    def test_query_snapshot_filtra_por_departamento(self):
+        # 950 y 951 (con snapshots ya sembrados en setUp) quedan en
+        # departamentos distintos: 950 en uno nuevo ("Ventas"), 951 en el
+        # mismo departamento que el admin ("General", id_department=1).
+        with transaction_context() as db:
+            db.execute(text("SET CONSTRAINTS ALL DEFERRED"))
+            db.add(Department(id_department=2, department_description="Ventas", created_by=1))
+            db.add(Subdepartment(id_subdepartment=2, subdepartment_description="Ventas", id_department=2, created_by=1))
+            db.add(Permission(
+                id_permission=2, permission_description="Vendedor", created_by=1, authorized_by=1,
+                id_department=2, id_subdepartment=2, id_level=1,
+            ))
+            db.add(User(
+                id_user=950, created_by=1, full_name="Empleado 950", id_permission=2, id_proyect=PROYECTO_A,
+                id_status=1, supervisor=1, user_type="employee", is_employee=True, username="kpi-dept-950",
+            ))
+            db.add(User(
+                id_user=951, created_by=1, full_name="Empleado 951", id_permission=1, id_proyect=PROYECTO_A,
+                id_status=1, supervisor=1, user_type="employee", is_employee=True, username="kpi-dept-951",
+            ))
+
+        response = self._request(ACTOR_CON_KPI, self._query_url(id_departments=2))
+
+        payload = self.json(response)["rango_a"]
+        self.assertEqual({"950": 1000.0}, payload["por_empleado"])
+        self.assertEqual(1000.0, payload["total"])
+
+    def test_query_snapshot_departamento_sin_empleados_no_trae_a_nadie(self):
+        with transaction_context() as db:
+            db.execute(text("SET CONSTRAINTS ALL DEFERRED"))
+            db.add(Department(id_department=3, department_description="Vacio", created_by=1))
+
+        response = self._request(ACTOR_CON_KPI, self._query_url(id_departments=3))
+
+        payload = self.json(response)["rango_a"]
+        self.assertEqual({}, payload["por_empleado"])
+        self.assertEqual(0, payload["total"])
+
+    def test_query_snapshot_departamento_y_empleados_se_intersectan(self):
+        # El departamento 2 tiene a 950 y 951, pero "empleados" solo pide 951:
+        # el resultado debe ser la interseccion (solo 951), no la union.
+        with transaction_context() as db:
+            db.execute(text("SET CONSTRAINTS ALL DEFERRED"))
+            db.add(Department(id_department=2, department_description="Ventas", created_by=1))
+            db.add(Subdepartment(id_subdepartment=2, subdepartment_description="Ventas", id_department=2, created_by=1))
+            db.add(Permission(
+                id_permission=2, permission_description="Vendedor", created_by=1, authorized_by=1,
+                id_department=2, id_subdepartment=2, id_level=1,
+            ))
+            db.add(User(
+                id_user=950, created_by=1, full_name="Empleado 950", id_permission=2, id_proyect=PROYECTO_A,
+                id_status=1, supervisor=1, user_type="employee", is_employee=True, username="kpi-dept-inter-950",
+            ))
+            db.add(User(
+                id_user=951, created_by=1, full_name="Empleado 951", id_permission=2, id_proyect=PROYECTO_A,
+                id_status=1, supervisor=1, user_type="employee", is_employee=True, username="kpi-dept-inter-951",
+            ))
+
+        response = self._request(ACTOR_CON_KPI, self._query_url(id_departments=2, empleados=951))
+
+        payload = self.json(response)["rango_a"]
+        self.assertEqual({"951": 500.0}, payload["por_empleado"])
 
 
 ACTOR_A = {"id_user": 980, "id_permission": 980, "id_proyect": 980}

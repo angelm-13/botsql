@@ -34,10 +34,18 @@ if str(ROOT) not in sys.path:
 
 from sqlalchemy import select
 
-from app.models import CustomerSupplier, Invoice, Status, User
+from app.models import CustomerSupplier, Invoice, Proyect, Status, User
 from app.models.session import transaction_context
 
 ADMIN_ID = 1
+# `recalculate_kpi_snapshots` (app/jobs/tasks_kpis.py) itera los proyectos
+# activos y llama a cada `query_builder` con ese `id_proyect` concreto -- una
+# factura con `id_proyect=NULL` no calza con ningun proyecto iterado y el job
+# la salta en silencio, aunque cumpla el resto de los filtros. Por eso estas
+# facturas SI llevan proyecto, a diferencia de otras demos (`seed_fiscal_demo.py`
+# crea su propio proyecto; aqui se reutiliza el de bootstrap, el unico activo
+# en un ambiente de dev recien levantado).
+PROYECTO_ID = 1
 NOTE_MARCADOR = "Seed demo KPI ventas/egresos"
 USUARIOS_DEMO = (
     {"username": "kpi-demo-ventas-1", "full_name": "Empleado Demo KPI 1"},
@@ -85,6 +93,12 @@ def seed_kpi_ventas_egresos_demo():
         if customer is None or status is None:
             raise RuntimeError(
                 "Faltan los catalogos bootstrap (customer_supplier=1 / status=1); "
+                "corre init_db.py primero."
+            )
+        proyecto = db.get(Proyect, PROYECTO_ID)
+        if proyecto is None or proyecto.deletion_date is not None:
+            raise RuntimeError(
+                f"Falta el proyecto bootstrap (id_proyect={PROYECTO_ID}) o esta dado de baja; "
                 "corre init_db.py primero."
             )
 
@@ -135,6 +149,7 @@ def seed_kpi_ventas_egresos_demo():
                 id_issuer_customer_supplier=customer.id_customer_supplier,
                 tax_certification_supplier=customer.id_customer_supplier,
                 id_status=status.id_status,
+                id_proyect=proyecto.id_proyect,
                 created_by=empleado.id_user,
                 apply_tax=True,
                 tax_rate=Decimal("16"),
