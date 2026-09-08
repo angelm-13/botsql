@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { BadgeCheck, Download, FileCheck2, FileText, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { createManualInvoice, downloadInvoicePdf, downloadInvoiceXml, getAllCustomerSupplier, getAllProyect, getInvoiceCatalogs, preflightInvoiceStamping, previewManualInvoice, stampInvoice } from "../api";
 import SatProductKeyField from "../components/SatProductKeyField";

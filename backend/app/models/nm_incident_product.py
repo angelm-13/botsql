@@ -23,6 +23,10 @@ class NmIncidentProduct(Base):
     id_incident: Mapped[int] = mapped_column(Integer, ForeignKey('incident.id_incident'), nullable=False)
     id_product: Mapped[int] = mapped_column(Integer, ForeignKey('product.id_product'), nullable=False)
     note: Mapped[object] = mapped_column(String(300), nullable=True)
+    # El renglon tal como venia del sistema anterior. Sin esto, repetir la carga
+    # de ~2 787 renglones no podria saber cuales ya estaban.
+    external_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    external_source: Mapped[str | None] = mapped_column(String(30), nullable=True)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     # Que pieza concreta, cuando el material se rastrea una por una.
     #

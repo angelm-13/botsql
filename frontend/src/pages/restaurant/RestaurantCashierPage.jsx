@@ -1,5 +1,5 @@
 /* eslint-disable react/prop-types */
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Banknote, CircleDollarSign, Clock3, FileText, Printer, Store, Users, X } from "lucide-react";
 import { closeRestaurantRegister, getRestaurantCashierWorkspace, getRestaurantReports, openRestaurantRegister, payRestaurantOrder, payRestaurantVisit } from "../../api";
 import { useI18n } from "../../i18n";

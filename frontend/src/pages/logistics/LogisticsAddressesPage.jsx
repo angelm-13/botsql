@@ -1,4 +1,3 @@
-import React from "react";
 
 import { createLogisticsAddress, deleteLogisticsAddress, getAllLogisticsAddress, updateLogisticsAddress } from "../../api";
 import LogisticsEntityPage from "./LogisticsEntityPage.jsx";

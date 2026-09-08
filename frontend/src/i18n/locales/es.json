@@ -146,7 +146,15 @@
     "continue": "¿Continuar?",
     "close": "Cerrar",
     "remove": "Quitar",
-    "select": "Seleccionar"
+    "select": "Seleccionar",
+    "pagination": "Paginación",
+    "first_page": "Primera",
+    "last_page": "Última",
+    "go_to_page": "Ir a la página",
+    "records": "registros",
+    "filter": "filtrar…",
+    "clear": "Limpiar",
+    "no_matches": "ninguna coincide"
   },
   "entities": {
     "bank": {
@@ -4156,7 +4164,14 @@
     "merchandise_help": "Lo que la empresa distribuye. Se cuenta por cantidad.",
     "internal_use_help": "Herramienta y equipo. Se rastrea pieza por pieza.",
     "overdue_help": "Préstamos que ya debieron volver. Están contados dentro de «prestada».",
-    "overdue_short": "vencidas"
+    "overdue_short": "vencidas",
+    "on_loan": "fuera del almacén",
+    "on_loan_overdue": "con préstamo vencido",
+    "unknown_holder": "sin responsable",
+    "voucher": "vale",
+    "was_due": "debió volver el",
+    "due_on": "vence el",
+    "all_on_loan": "Nada en el almacén: todo está fuera."
   },
   "material_type": {
     "eyebrow": "Inventario",
@@ -4192,8 +4207,8 @@
     "overdue": "Ya debió volver y no ha vuelto",
     "was_due": "vencía",
     "close_line": "Marcar devuelto",
-    "lookup": "Consultar un vale",
-    "lookup_placeholder": "Número de vale",
+    "lookup": "Vales",
+    "lookup_placeholder": "Folio del vale o nombre del responsable",
     "voucher_n": "Vale",
     "type": "Tipo de vale",
     "holder": "Responsable",
@@ -4225,7 +4240,21 @@
     "open_lines": "sin devolver",
     "of": "de",
     "missing": "Falta el responsable, o el destino de un renglón que cambia de ubicación.",
-    "on_hand": "quedan"
+    "on_hand": "quedan",
+    "only_open": "Solo con material fuera",
+    "one_voucher": "vale",
+    "many_vouchers": "vales",
+    "only_mine": "solo los tuyos",
+    "no_matches": "Ningún vale con ese folio ni con ese responsable.",
+    "none_open": "No hay vales con material fuera.",
+    "no_holder": "sin responsable",
+    "out": "fuera",
+    "all_back": "todo devuelto",
+    "lines": "renglones",
+    "back_to_list": "Volver a la lista",
+    "status_abierto": "Abierto",
+    "status_cerrado": "Cerrado",
+    "status_cancelado": "Cancelado"
   },
   "attribute": {
     "title": "Características",
@@ -4246,5 +4275,10 @@
     "unused": "sin usar",
     "in_use": "materiales",
     "type_is_fixed": "El tipo de dato no se cambia después: los valores ya capturados quedarían en la forma del tipo viejo."
+  },
+  "product": {
+    "classification": "Clasificación",
+    "see_families": "ver familias y tipos",
+    "classification_help": "La familia agrupa, el tipo distingue dentro de ella y el material es la cosa concreta. Si falta alguna, se da de alta en Familias y tipos."
   }
 }

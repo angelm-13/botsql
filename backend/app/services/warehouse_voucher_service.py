@@ -51,7 +51,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from app.models.incident import Incident
 from app.models.incident_type import IncidentType
@@ -66,7 +66,9 @@ from app.models.user import User
 from app.services.inventory_asset_service import (
     DISPONIBLE, PRESTADA, transicion_en_sesion,
 )
-from app.services.inventory_service import apply_movement_in_session
+from app.services.inventory_service import (
+    apply_movement_in_session, has_capability,
+)
 from app.utils.errors import AppError
 
 
@@ -95,6 +97,20 @@ def _entero(valor, campo, *, obligatorio=True):
         return int(valor)
     except (TypeError, ValueError) as exc:
         raise AppError("errors.invalid_field", 400, {"field": campo}) from exc
+
+
+def _tal_vez_entero(valor):
+    """El valor como entero si lo es, y None si no. Sin reventar.
+
+    `_entero` esta para campos que TIENEN que ser numero: con basura tira 400,
+    que es lo correcto ahi. Pero para preguntar "el texto que teclearon podria
+    ser un folio numerico" hace falta lo contrario: buscar "MAXIMINO" no es un
+    error de captura, es una busqueda por nombre.
+    """
+    try:
+        return int(str(valor).strip())
+    except (TypeError, ValueError):
+        return None
 
 
 def _texto(valor, campo, *, largo, obligatorio=False):
@@ -161,15 +177,38 @@ def _con_existencias(db, renglones) -> list[dict]:
 
 
 def _vale(db, id_incident, *, para_actualizar=False) -> Incident:
-    consulta = select(Incident).where(
-        Incident.id_incident == _entero(id_incident, "id_incident"),
-        Incident.deletion_date.is_(None),
-    )
-    if para_actualizar:
-        consulta = consulta.with_for_update()
-    vale = db.scalars(consulta).first()
+    """El vale, por su identificador o por su FOLIO.
+
+    El folio es el numero con el que la gente conoce el vale: en el sistema
+    anterior era su propia llave -el vale 112- y aqui vive en `external_folio`
+    porque `id_incident` tiene su propia secuencia. Ese mismo 112 es nuestro
+    530, y pedirle a alguien que se acuerde del 530 es guardar el folio para
+    nada.
+
+    Asi que se busca por los dos. Primero por identificador -es lo que usan los
+    enlaces internos y es unico sin discusion- y si no hay, por folio.
+    """
+    crudo = str(id_incident or "").strip()
+    if not crudo:
+        raise AppError("errors.required_field", 400, {"field": "id_incident"})
+
+    def buscar(condicion):
+        consulta = select(Incident).where(condicion,
+                                          Incident.deletion_date.is_(None))
+        if para_actualizar:
+            consulta = consulta.with_for_update()
+        return db.scalars(consulta.limit(1)).first()
+
+    # `_tal_vez_entero` y no `_entero`: preguntar "esto podria ser un id" no es
+    # lo mismo que exigir un numero. Con `_entero`, buscar por un folio que no
+    # es numerico contestaba 400 en lugar de buscarlo.
+    como_numero = _tal_vez_entero(crudo)
+    vale = buscar(Incident.id_incident == como_numero) if como_numero else None
     if vale is None:
-        raise AppError("errors.not_found", 404, {"entity": "incident"})
+        vale = buscar(Incident.external_folio == crudo)
+    if vale is None:
+        raise AppError("errors.not_found", 404,
+                       {"entity": "incident", "looked_up": crudo})
     return vale
 
 
@@ -659,3 +698,354 @@ def _fecha(valor):
         except ValueError:
             continue
     raise AppError("errors.invalid_field", 400, {"field": "due_date"})
+
+# --- las tres preguntas que se le hacen a un almacen de herramienta ------
+#
+# Las tres salen de `nm_incident_product`, que es el registro de entradas y
+# salidas de los vales. Y las tres respetan el mismo alcance: quien opera el
+# almacen ve todo; quien solo pide material ve lo suyo.
+#
+# Ese alcance no es cortesia, es la regla que se pidio: el supervisor tiene que
+# poder ver que material esta a su nombre, y nada mas.
+
+def _ve_todo_el_almacen(db, user_data) -> bool:
+    """Si este actor ve el almacen completo o solo lo que esta a su nombre.
+
+    Lo decide la capacidad de levantar vales, no el rol: quien surte necesita
+    ver quien tiene que para poder reclamarlo, y quien solo pide no.
+    """
+    if _sin_restriccion(user_data):
+        return True
+    return has_capability(db, user_data, "warehouse_voucher")
+
+
+def _sin_restriccion(user_data) -> bool:
+    datos = user_data or {}
+    return bool(datos.get("is_superuser") or datos.get("is_bootstrap_admin")
+                or str(datos.get("user_type") or "").lower() == "admin")
+
+
+def _renglones_con_contexto(db, filas) -> list[dict]:
+    """Los renglones con el nombre del producto, del vale y de su responsable.
+
+    En lote: tres consultas para toda la lista, no tres por renglon. Con ~2 787
+    renglones importados del sistema anterior, una consulta por fila es la
+    diferencia entre una pantalla que abre y una que no.
+    """
+    if not filas:
+        return []
+
+    ids_productos = {int(f.id_product) for f in filas}
+    ids_vales = {int(f.id_incident) for f in filas}
+
+    productos = {
+        int(x.id_product): x for x in db.scalars(
+            select(Product).where(Product.id_product.in_(list(ids_productos)))
+        ).all()
+    }
+    vales = {
+        int(x.id_incident): x for x in db.scalars(
+            select(Incident).where(Incident.id_incident.in_(list(ids_vales)))
+        ).all()
+    }
+    ids_usuarios = {
+        int(v.id_user) for v in vales.values() if v.id_user is not None
+    }
+    usuarios = {
+        int(x.id_user): x for x in db.scalars(
+            select(User).where(User.id_user.in_(list(ids_usuarios) or [0]))
+        ).all()
+    } if ids_usuarios else {}
+
+    ahora = _ahora()
+    salida = []
+    for fila in filas:
+        producto = productos.get(int(fila.id_product))
+        vale = vales.get(int(fila.id_incident))
+        usuario = usuarios.get(int(vale.id_user)) if vale and vale.id_user else None
+        renglon = fila.serialize()
+        renglon.update({
+            "product_code": getattr(producto, "product_code", None),
+            "product_description": getattr(producto, "descripcion", None),
+            # El folio con el que la gente conoce el vale. Para lo importado del
+            # sistema anterior es su numero de siempre; para lo nuevo, el id.
+            "voucher_folio": (getattr(vale, "external_folio", None)
+                              or (str(vale.id_incident) if vale else None)),
+            "voucher_status": getattr(vale, "incident_status", None),
+            "id_user": getattr(vale, "id_user", None),
+            "holder_name": getattr(usuario, "full_name", None),
+            "returned": fila.close_date is not None,
+            "overdue": bool(fila.close_date is None and fila.due_date
+                            and fila.due_date < ahora),
+        })
+        salida.append(renglon)
+    return salida
+
+
+def quien_tiene_que(user_data: dict, *, id_user=None) -> dict:
+    """Que trae cada persona AHORA MISMO, y desde cuando.
+
+    Es la pregunta de la manana en un almacen de herramienta, y hasta ahora habia
+    que abrirla vale por vale.
+
+    Solo los renglones de SALIDA sin cerrar: una salida cerrada ya volvio, y un
+    renglon de entrada es el hecho de que volvio. Contarlos aqui diria que
+    alguien tiene algo que devolvio la semana pasada.
+    """
+    actor = _actor(user_data)
+    with transaction_context() as db:
+        consulta = (
+            select(NmIncidentProduct)
+            .join(Incident,
+                  Incident.id_incident == NmIncidentProduct.id_incident)
+            .where(
+                NmIncidentProduct.deletion_date.is_(None),
+                NmIncidentProduct.direction == SALIDA,
+                NmIncidentProduct.close_date.is_(None),
+                Incident.deletion_date.is_(None),
+            )
+        )
+
+        # El alcance. Quien no opera el almacen ve lo que esta a SU nombre.
+        pedido = _entero(id_user, "id_user", obligatorio=False)
+        if not _ve_todo_el_almacen(db, user_data):
+            pedido = actor
+        if pedido is not None:
+            consulta = consulta.where(Incident.id_user == pedido)
+
+        filas = db.scalars(
+            consulta.order_by(Incident.id_user,
+                              NmIncidentProduct.start_date)
+        ).all()
+        renglones = _renglones_con_contexto(db, filas)
+
+        # Agrupado por persona, que es como se lee: "Juan trae 3 cosas".
+        por_persona: dict = {}
+        for renglon in renglones:
+            clave = renglon["id_user"]
+            grupo = por_persona.setdefault(clave, {
+                "id_user": clave,
+                "holder_name": renglon["holder_name"],
+                "items": [],
+                "total_items": 0,
+                "overdue_items": 0,
+            })
+            grupo["items"].append(renglon)
+            grupo["total_items"] += 1
+            if renglon["overdue"]:
+                grupo["overdue_items"] += 1
+
+        personas = sorted(
+            por_persona.values(),
+            key=lambda g: (-g["overdue_items"], -g["total_items"],
+                           str(g["holder_name"] or "")),
+        )
+        return {
+            "holders": personas,
+            "total_holders": len(personas),
+            "total_items": len(renglones),
+            "overdue_items": sum(1 for r in renglones if r["overdue"]),
+            "scoped_to_actor": not _ve_todo_el_almacen(db, user_data),
+        }
+
+
+def lo_que_ha_pedido(user_data: dict, id_user=None) -> dict:
+    """Todo lo que una persona ha pedido, historico.
+
+    Lo devuelto tambien: el historial es lo que contesta "cuantas veces se ha
+    llevado esto y cuantas lo ha devuelto tarde", y con solo lo abierto esa
+    pregunta no se puede hacer.
+    """
+    actor = _actor(user_data)
+    with transaction_context() as db:
+        pedido = _entero(id_user, "id_user", obligatorio=False)
+        if not _ve_todo_el_almacen(db, user_data):
+            pedido = actor
+        if pedido is None:
+            pedido = actor
+
+        filas = db.scalars(
+            select(NmIncidentProduct)
+            .join(Incident,
+                  Incident.id_incident == NmIncidentProduct.id_incident)
+            .where(
+                NmIncidentProduct.deletion_date.is_(None),
+                NmIncidentProduct.direction == SALIDA,
+                Incident.id_user == pedido,
+                Incident.deletion_date.is_(None),
+            )
+            .order_by(NmIncidentProduct.start_date.desc())
+        ).all()
+        renglones = _renglones_con_contexto(db, filas)
+
+        return {
+            "id_user": pedido,
+            "items": renglones,
+            "total": len(renglones),
+            "still_out": sum(1 for r in renglones if not r["returned"]),
+            "overdue": sum(1 for r in renglones if r["overdue"]),
+        }
+
+
+def historial_del_producto(id_product, user_data: dict) -> dict:
+    """Quien se ha llevado este producto, historico.
+
+    Es la otra mitad de la trazabilidad: `quien_tiene_que` entra por la persona
+    y esto entra por la cosa. La misma tabla contesta las dos, y por eso los
+    renglones son de solo agregado: si la devolucion reescribiera la salida, esta
+    consulta solo podria decir el ultimo que se lo llevo.
+    """
+    _actor(user_data)
+    with transaction_context() as db:
+        id_producto = _entero(id_product, "id_product")
+        consulta = (
+            select(NmIncidentProduct)
+            .join(Incident,
+                  Incident.id_incident == NmIncidentProduct.id_incident)
+            .where(
+                NmIncidentProduct.deletion_date.is_(None),
+                NmIncidentProduct.direction == SALIDA,
+                NmIncidentProduct.id_product == id_producto,
+                Incident.deletion_date.is_(None),
+            )
+        )
+        if not _ve_todo_el_almacen(db, user_data):
+            consulta = consulta.where(Incident.id_user == _actor(user_data))
+
+        filas = db.scalars(
+            consulta.order_by(NmIncidentProduct.start_date.desc())
+        ).all()
+        renglones = _renglones_con_contexto(db, filas)
+
+        # Quien lo tiene ahora, que es lo primero que se pregunta.
+        fuera = [r for r in renglones if not r["returned"]]
+        return {
+            "id_product": id_producto,
+            "items": renglones,
+            "total": len(renglones),
+            "currently_out": fuera,
+            "times_taken": len(renglones),
+            "distinct_holders": len({r["id_user"] for r in renglones
+                                     if r["id_user"] is not None}),
+        }
+
+def buscar_vales(user_data: dict, *, texto=None, estado=None, id_user=None,
+                 solo_con_pendientes=False, pagina=1, por_pagina=25) -> dict:
+    """La lista de vales, buscable por folio o por responsable.
+
+    Antes solo habia `GET /vouchers/<id>`: para ver los vales de alguien habia
+    que ir adivinando identificadores. Y el folio -el numero con el que la gente
+    conoce el vale- no se podia buscar.
+
+    El texto busca por FOLIO y por NOMBRE del responsable a la vez, porque son
+    las dos formas en que alguien llega a un vale: con el papel en la mano
+    -"vale 112"- o preguntando "que trae Maximino".
+
+    El alcance es el mismo que el del resto: quien opera el almacen ve todos;
+    quien solo pide material ve los suyos.
+    """
+    actor = _actor(user_data)
+    numero = max(1, _entero(pagina, "page", obligatorio=False) or 1)
+    tamano = min(100, max(1, _entero(por_pagina, "per_page",
+                                     obligatorio=False) or 25))
+
+    with transaction_context() as db:
+        consulta = select(Incident).where(Incident.deletion_date.is_(None))
+
+        if not _ve_todo_el_almacen(db, user_data):
+            consulta = consulta.where(Incident.id_user == actor)
+        else:
+            pedido = _entero(id_user, "id_user", obligatorio=False)
+            if pedido is not None:
+                consulta = consulta.where(Incident.id_user == pedido)
+
+        limpio = _texto(texto, "q", largo=60)
+        if limpio:
+            # El folio primero: quien teclea "112" tiene el papel delante y
+            # espera ESE vale, no todos los que contienen 112 en algun sitio.
+            condiciones = [Incident.external_folio == limpio]
+            como_numero = _tal_vez_entero(limpio)
+            if como_numero is not None:
+                condiciones.append(Incident.id_incident == como_numero)
+            condiciones.append(Incident.external_folio.ilike("%%%s%%" % limpio))
+            condiciones.append(User.full_name.ilike("%%%s%%" % limpio))
+            consulta = consulta.outerjoin(
+                User, User.id_user == Incident.id_user).where(or_(*condiciones))
+
+        limpio_estado = _texto(estado, "status", largo=20)
+        if limpio_estado:
+            consulta = consulta.where(
+                func.lower(Incident.incident_status) == limpio_estado.lower())
+
+        if solo_con_pendientes:
+            # Los que tienen algo fuera. Es la vista que importa a diario: un
+            # vale cerrado ya no se reclama.
+            consulta = consulta.where(
+                Incident.id_incident.in_(
+                    select(NmIncidentProduct.id_incident).where(
+                        NmIncidentProduct.direction == SALIDA,
+                        NmIncidentProduct.close_date.is_(None),
+                        NmIncidentProduct.deletion_date.is_(None),
+                    )
+                )
+            )
+
+        total = db.scalar(
+            select(func.count()).select_from(consulta.subquery())) or 0
+        paginas = max(1, -(-total // tamano))
+        numero = min(numero, paginas)
+
+        vales = db.scalars(
+            consulta.order_by(Incident.incident_date.desc(),
+                              Incident.id_incident.desc())
+            .offset((numero - 1) * tamano).limit(tamano)
+        ).all()
+
+        # Los renglones de la pagina, en dos consultas y no dos por vale.
+        ids = [int(v.id_incident) for v in vales]
+        pendientes: dict[int, int] = {}
+        renglones: dict[int, int] = {}
+        if ids:
+            for id_vale, abiertos, todos in db.execute(
+                select(
+                    NmIncidentProduct.id_incident,
+                    func.count().filter(
+                        (NmIncidentProduct.direction == SALIDA)
+                        & NmIncidentProduct.close_date.is_(None)),
+                    func.count(),
+                )
+                .where(NmIncidentProduct.id_incident.in_(ids),
+                       NmIncidentProduct.deletion_date.is_(None))
+                .group_by(NmIncidentProduct.id_incident)
+            ).all():
+                pendientes[int(id_vale)] = int(abiertos or 0)
+                renglones[int(id_vale)] = int(todos or 0)
+
+        nombres = {}
+        ids_usuarios = {int(v.id_user) for v in vales if v.id_user}
+        if ids_usuarios:
+            nombres = dict(db.execute(
+                select(User.id_user, User.full_name)
+                .where(User.id_user.in_(list(ids_usuarios)))
+            ).all())
+
+        items = []
+        for vale in vales:
+            fila = vale.serialize()
+            fila.update({
+                # El folio con el que la gente lo conoce; si no lo trae, su id.
+                "folio": vale.external_folio or str(vale.id_incident),
+                "holder_name": nombres.get(int(vale.id_user)) if vale.id_user else None,
+                "open_lines": pendientes.get(int(vale.id_incident), 0),
+                "total_lines": renglones.get(int(vale.id_incident), 0),
+            })
+            items.append(fila)
+
+        return {
+            "items": items,
+            "total": total,
+            "page": numero,
+            "per_page": tamano,
+            "pages": paginas,
+            "scoped_to_actor": not _ve_todo_el_almacen(db, user_data),
+        }

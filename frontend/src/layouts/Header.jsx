@@ -1,6 +1,6 @@
 import { NavLink } from "react-router-dom";
 import { Settings } from "lucide-react";
-import React, { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import LanguagePicker from "../components/LanguagePicker";
 import { useI18n } from "../i18n";
 

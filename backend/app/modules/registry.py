@@ -254,6 +254,17 @@ CAPACIDADES = (
     #
     # Con `bits=CAPTURA` porque levantar un vale es crear y leer; cerrarlo es
     # actualizar el renglon, que ya gobierna el permiso de la entidad.
+    # El prevale: el supervisor PIDE material y el almacen lo surte. Es una
+    # capacidad aparte de `warehouse_voucher` y no el mismo derecho con menos
+    # bits, porque los bits de una capacidad son suyos y no del rol: con una
+    # sola clave, dar de alta un prevale y dar de alta un vale serian el mismo
+    # permiso, y entonces el supervisor podria surtirse a si mismo.
+    Capacidad("warehouse_prevoucher", "Prevales de material", "inventario",
+              bits=CAPTURA, menu="sidebar"),
+    # Confirmar que lo pedido se entrego y se recibio. Va aparte de levantar el
+    # vale porque son dos personas: uno pide, otro surte y confirma.
+    Capacidad("warehouse_voucher_confirm", "Confirmar entrega de material",
+              "inventario"),
     Capacidad("warehouse_voucher", "Vales de almacen", "inventario",
               bits=CAPTURA, menu="sidebar"),
     # Va en el engrane del encabezado, no en el menu vertical.
@@ -317,16 +328,48 @@ ROLES = (
         "configuracion": TOTAL, "seguridad": TOTAL,
     }, [c.clave for c in CAPACIDADES]),
 
-    Rol(2, "gerente_administrativo", {
-        "facturacion": CAPTURA, "crm": CAPTURA, "rh": CAPTURA,
-        "operaciones": EDITAR, "inventario": CONSULTA, "logistica": CONSULTA,
-        "configuracion": CONSULTA,
-    }, ["incident_supervision", "kronos_device", "pos_admin", "pos_terminal"]),
+    # Los cinco roles del negocio, en los identificadores que tiene la BASE.
+    #
+    # Estaban declarados en los ids 14..18 mientras la base los tiene en 2..6, y
+    # en los ids 2 y 3 este registro declaraba dos roles que la base no tiene
+    # -gerente_administrativo y vendedor-. El efecto medido: Supervisor recibia
+    # la concesion del gerente administrativo -73 filas de permiso, 53 en el
+    # menu- y Jefe de taller se quedaba con 6.
+    #
+    # Manda la base. Si algun dia se renumera, se renumera alla y aqui se
+    # sigue: los usuarios ya existen apuntando a esos identificadores, y
+    # moverlos es mover permisos de gente real.
 
-    Rol(3, "vendedor", {
-        "crm": CAPTURA, "facturacion": CAPTURA, "inventario": CONSULTA,
+    # Pide material con un prevale y sigue sus propios proyectos. NO surte: no
+    # tiene `warehouse_voucher`, asi que no puede levantar el vale con el que se
+    # entrega, ni editar uno ya levantado.
+    Rol(2, "Supervisor", {
+        "operaciones": CAPTURA, "inventario": CONSULTA, "configuracion": CONSULTA,
+    }, ["incident_supervision", "warehouse_prevoucher"]),
+
+    # Ve y busca el almacen sin modificarlo -`inventario` en CONSULTA- y
+    # autoriza o cancela los proyectos de todos los supervisores.
+    Rol(3, "Gerente", {
+        "operaciones": EDITAR, "facturacion": CAPTURA, "crm": CAPTURA,
+        "inventario": CONSULTA, "rh": CONSULTA, "logistica": CONSULTA,
         "configuracion": CONSULTA,
-    }),
+    }, ["project_authorization", "incident_supervision", "pos_admin", "pos_terminal"]),
+
+    # Ve los proyectos autorizados y mueve su estatus en el taller.
+    Rol(4, "Jefe de taller", {
+        "operaciones": CAPTURA, "inventario": CONSULTA, "configuracion": CONSULTA,
+    }, ["project_execution", "incident_supervision"]),
+
+    # Opera el almacen: da de alta productos, levanta vales y confirma entregas.
+    # No ajusta: es la separacion de funciones que evita que quien mueve la
+    # mercancia tape su propio faltante.
+    Rol(5, "Almacenista", {
+        "inventario": CAPTURA, "configuracion": CONSULTA,
+    }, ["warehouse_voucher", "warehouse_voucher_confirm"]),
+
+    Rol(6, "Jefe de almacen", {
+        "inventario": TOTAL, "logistica": CAPTURA, "configuracion": CONSULTA,
+    }, ["inventory_adjustment", "warehouse_voucher", "warehouse_voucher_confirm"]),
 
     Rol(10, "Mesero", {"configuracion": CONSULTA}, ["restaurant_waiter"]),
     Rol(11, "Cocina", {"configuracion": CONSULTA}, ["restaurant_kitchen"]),
@@ -335,30 +378,6 @@ ROLES = (
         "restaurant_admin", "restaurant_cashier", "restaurant_kitchen", "restaurant_waiter",
     ]),
 
-    Rol(14, "Jefe de taller", {
-        "operaciones": CAPTURA, "inventario": CONSULTA, "configuracion": CONSULTA,
-    }, ["project_execution", "incident_supervision"]),
-
-    Rol(15, "Supervisor", {
-        "operaciones": CAPTURA, "inventario": CONSULTA, "configuracion": CONSULTA,
-    }, ["incident_supervision"]),
-
-    Rol(16, "Gerente", {
-        "operaciones": EDITAR, "facturacion": CAPTURA, "crm": CAPTURA,
-        "inventario": CONSULTA, "rh": CONSULTA, "logistica": CONSULTA,
-        "configuracion": CONSULTA,
-    }, ["project_authorization", "incident_supervision", "pos_admin", "pos_terminal"]),
-
-    # El almacenista opera el almacen pero no lo administra, y no ajusta: es la
-    # separacion de funciones que evita que quien mueve la mercancia tape su
-    # propio faltante.
-    Rol(17, "Almacenista", {
-        "inventario": CAPTURA, "configuracion": CONSULTA,
-    }),
-
-    Rol(18, "Jefe de almacen", {
-        "inventario": TOTAL, "logistica": CAPTURA, "configuracion": CONSULTA,
-    }, ["inventory_adjustment"]),
 )
 
 

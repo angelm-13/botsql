@@ -252,30 +252,91 @@ def _stock_row(db, product_id, location_id, actor_id, *, for_update=False):
     return row
 
 
-def _ensure_stock_seeded(db, product) -> None:
-    """Traslada `product.cantidad` a la existencia por ubicacion la primera vez.
+def ubicacion_general(db) -> Location | None:
+    """La ubicacion que contesta "esta en el almacen" cuando nadie dijo donde.
 
-    La migracion sembro los productos que existian, pero un producto creado
-    despues por la via normal de altas trae `cantidad` sin ninguna fila de
-    existencia. Sin esto su saldo arrancaria en cero y el primer movimiento
-    perderia lo que ya habia.
+    El sistema original entrega mucho material sin ubicacion particular. Sin un
+    sitio donde ponerlo, ese material no aparece en Localizar: la pantalla lee
+    las ubicaciones de un producto de `inventory_stock`, y un producto sin fila
+    ahi se ve pero no dice donde esta -y desaparece en cuanto alguien filtra por
+    almacen-.
+
+    Se marca con `location.is_general_stock` y solo puede haber una viva, para
+    que la existencia sin sitio no acabe partida en dos montones donde ninguno
+    es el bueno. Si nadie la declaro, esto devuelve None y quien llama decide:
+    no se inventa una ubicacion en medio de una operacion.
     """
-    already = db.scalar(
+    return db.scalars(
+        select(Location).where(
+            Location.is_general_stock.is_(True),
+            Location.deletion_date.is_(None),
+        ).limit(1)
+    ).first()
+
+
+def sembrar_existencia_inicial(db, product) -> InventoryStock | None:
+    """Le da sitio a la existencia que solo vivia en `product.cantidad`.
+
+    Se llama al dar de alta un producto y desde el primer movimiento. Las dos
+    puertas, porque un producto puede pasar semanas sin que nadie lo mueva y
+    durante esas semanas estaba invisible.
+
+    No toca un producto que ya tiene existencia repartida, aunque los numeros no
+    coincidan con `cantidad`: cuadrar esa diferencia es un conteo fisico, no una
+    decision que este codigo pueda tomar por su cuenta sobre cual de los dos
+    numeros es el bueno.
+    """
+    ya = db.scalar(
         select(func.count()).select_from(InventoryStock)
         .where(InventoryStock.id_product == product.id_product)
     )
-    if already:
-        return
-    quantity = int(product.cantidad or 0)
-    if quantity <= 0 or not product.id_location:
-        return
-    db.add(InventoryStock(
+    if ya:
+        return None
+
+    cantidad = int(product.cantidad or 0)
+    if cantidad <= 0:
+        return None
+
+    # Su propia ubicacion cuando la tiene; la general cuando no. Antes esto se
+    # rendia sin ubicacion, que es justo el caso del material entregado sin
+    # decir en que rack esta.
+    destino = None
+    if product.id_location:
+        destino = db.scalars(
+            select(Location).where(
+                Location.id_location == product.id_location,
+                Location.deletion_date.is_(None),
+            ).limit(1)
+        ).first()
+    if destino is None:
+        destino = ubicacion_general(db)
+    if destino is None:
+        # Sin ubicacion general declarada no hay donde ponerlo, y sembrarlo en
+        # una ubicacion cualquiera seria decir que esta en un sitio donde nadie
+        # lo dejo. Se queda como estaba y la migracion
+        # 20260908090000 explica como se declara.
+        return None
+
+    fila = InventoryStock(
         id_product=product.id_product,
-        id_location=product.id_location,
-        quantity=quantity,
+        id_location=destino.id_location,
+        quantity=cantidad,
         created_by=int(product.created_by or 1),
-    ))
+    )
+    db.add(fila)
     db.flush()
+    return fila
+
+
+def _ensure_stock_seeded(db, product) -> None:
+    """Traslada `product.cantidad` a la existencia por ubicacion la primera vez.
+
+    Se conserva el nombre porque es el que llama el nucleo del movimiento. El
+    trabajo lo hace `sembrar_existencia_inicial`, que ademas cae en la ubicacion
+    general cuando el producto no tiene una propia: antes se rendia en ese caso
+    y el material entregado sin decir en que rack esta no entraba nunca.
+    """
+    sembrar_existencia_inicial(db, product)
 
 
 def _product_total(db, product_id) -> int:

@@ -103,7 +103,7 @@ import PublicCalendarPage from "./pages/PublicCalendarPage.jsx";
 import Kanban from './components/Kanban.jsx';
 import LoginPage from "./auth/LoginPage";
 import ProtectedRoute from "./auth/ProtectedRoute";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { getAllEntityPermission } from "./api";
 import "./styles/app.css";
 import "./styles/sat-key.css";

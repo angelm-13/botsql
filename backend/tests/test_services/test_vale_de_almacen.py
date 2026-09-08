@@ -698,5 +698,110 @@ class TestElValeMueveElAlmacen(BaseVale):
         self.assertEqual(35, linea["stock_on_hand"])
 
 
+class TestElFolioSeBusca(BaseVale):
+    """El folio es el numero con el que la gente conoce el vale.
+
+    Como se encontro
+    ----------------
+    Revisando el flujo con los datos importados: el vale 112 del sistema
+    anterior es nuestro `id_incident = 530`, y la unica forma de consultarlo era
+    saberse el 530. El folio se guardaba y no servia para nada, que era justo lo
+    contrario de lo que se pidio al traerlo.
+
+    Lo que estas pruebas fijan:
+
+    * **el vale se encuentra por su folio**, no solo por su identificador;
+    * **el identificador gana**: es lo que usan los enlaces internos y es unico
+      sin discusion, asi que se prueba primero;
+    * **la lista busca por folio Y por responsable a la vez**, porque son las
+      dos formas de llegar a un vale: con el papel en la mano o preguntando que
+      trae alguien;
+    * **un texto que no es numero no revienta.** Buscar "MAXIMINO" no es un
+      error de captura: `_entero` tiraba 400 con cualquier texto y por eso la
+      busqueda por nombre fallaba.
+    """
+
+    def _con_folio(self, folio, **extra):
+        from app.models.incident import Incident
+
+        r = self._vale([self._linea_pieza(self._pieza("FOL-%s" % folio))], **extra)
+        with transaction_context() as db:
+            vale = db.get(Incident, r["voucher"]["id_incident"])
+            vale.external_folio = str(folio)
+            vale.external_source = "adser_prod"
+        return r["voucher"]["id_incident"]
+
+    def test_a_voucher_is_found_by_its_folio(self):
+        id_nuestro = self._con_folio(112)
+        r = consultar_vale("112", ACTOR)
+        self.assertEqual(id_nuestro, r["voucher"]["id_incident"])
+        self.assertEqual("112", r["voucher"]["external_folio"])
+
+    def test_the_identifier_still_works(self):
+        id_nuestro = self._con_folio(113)
+        r = consultar_vale(id_nuestro, ACTOR)
+        self.assertEqual(id_nuestro, r["voucher"]["id_incident"])
+
+    def test_the_identifier_wins_over_a_folio_that_collides(self):
+        """Si un folio coincide con el id de OTRO vale, manda el id."""
+        primero = self._con_folio(500)
+        # Al segundo se le pone como folio el identificador del primero.
+        segundo = self._con_folio(primero)
+
+        r = consultar_vale(primero, ACTOR)
+        self.assertEqual(primero, r["voucher"]["id_incident"],
+                         "el folio ajeno gano sobre el identificador")
+        self.assertNotEqual(segundo, r["voucher"]["id_incident"])
+
+    def test_something_that_is_neither_is_a_404(self):
+        with self.assertRaises(AppError) as caja:
+            consultar_vale("no-existe-este-folio", ACTOR)
+        self.assertEqual("errors.not_found", caja.exception.message_key)
+
+    def test_the_list_finds_by_folio(self):
+        from app.services.warehouse_voucher_service import buscar_vales
+
+        self._con_folio(221)
+        r = buscar_vales(ACTOR, texto="221")
+        self.assertEqual(1, r["total"])
+        self.assertEqual("221", r["items"][0]["folio"])
+
+    def test_the_list_finds_by_holder_name(self):
+        """Y un texto que no es numero no revienta: era el fallo de `_entero`."""
+        from app.services.warehouse_voucher_service import buscar_vales
+
+        self._con_folio(222)
+        r = buscar_vales(ACTOR, texto="Usuario de pruebas")
+        self.assertGreaterEqual(r["total"], 1)
+        self.assertTrue(all(x["holder_name"] for x in r["items"]))
+
+    def test_the_list_says_the_folio_even_without_one(self):
+        """Un vale del sistema nuevo no tiene folio: se usa su identificador."""
+        from app.services.warehouse_voucher_service import buscar_vales
+
+        r = self._vale([self._linea_pieza(self._pieza("FOL-SIN"))])
+        lista = buscar_vales(ACTOR, texto=str(r["voucher"]["id_incident"]))
+        self.assertEqual(1, lista["total"])
+        self.assertEqual(str(r["voucher"]["id_incident"]), lista["items"][0]["folio"])
+
+    def test_only_open_leaves_out_what_came_back(self):
+        from app.services.warehouse_voucher_service import buscar_vales
+
+        r = self._vale([self._linea_pieza(self._pieza("FOL-CERRAR"))])
+        self.assertEqual(1, buscar_vales(ACTOR, solo_con_pendientes=True)["total"])
+
+        devolver_renglon(r["lines"][0]["id_nm_incident_product"], {}, ACTOR)
+        self.assertEqual(0, buscar_vales(ACTOR, solo_con_pendientes=True)["total"])
+
+    def test_the_list_counts_what_is_still_out(self):
+        from app.services.warehouse_voucher_service import buscar_vales
+
+        self._vale([self._linea_pieza(self._pieza("FOL-A")),
+                    self._linea_pieza(self._pieza("FOL-B"))])
+        fila = buscar_vales(ACTOR, solo_con_pendientes=True)["items"][0]
+        self.assertEqual(2, fila["open_lines"])
+        self.assertEqual(2, fila["total_lines"])
+
+
 if __name__ == "__main__":
     unittest.main()

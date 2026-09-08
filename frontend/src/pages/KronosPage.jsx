@@ -1,4 +1,4 @@
-import React, { useDeferredValue, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useMemo, useRef, useState } from "react";
 import { Download, Pencil, Plus, RefreshCw, Search, Trash2, UsersRound } from "lucide-react";
 import { deleteKronosPerson, getKronosAttendance, getKronosPeople, saveKronosPerson } from "../api";
 import { loadKronosConnection } from "../utils/kronosConnection";

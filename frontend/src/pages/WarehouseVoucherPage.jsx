@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import {
-  AlertTriangle, ArrowRight, Check, ClipboardList, Package, Plus,
+  AlertTriangle, ArrowLeft, ArrowRight, Check, ClipboardList, Package, Plus,
   RefreshCw, Search, Tag, Trash2, X,
 } from "lucide-react";
 import {
@@ -12,8 +12,10 @@ import {
   getAllUser,
   getOverdueVoucherLines,
   getWarehouseVoucher,
+  listWarehouseVouchers,
   inventoryTrace,
 } from "../api";
+import Pagination from "../components/Pagination.jsx";
 import { useI18n } from "../i18n";
 import "../styles/warehouse-voucher.css";
 
@@ -67,6 +69,10 @@ export default function WarehouseVoucherPage() {
   // El vale que se esta capturando, y el que se esta consultando.
   const [borrador, setBorrador] = useState(null);
   const [consultado, setConsultado] = useState(null);
+  // La lista: lo que se ve sin tener que saberse un numero de memoria.
+  const [lista, setLista] = useState(null);
+  const [pagina, setPagina] = useState(1);
+  const [soloAbiertos, setSoloAbiertos] = useState(true);
   const [idBuscado, setIdBuscado] = useState("");
 
   const traducir = useRef(t);
@@ -106,6 +112,32 @@ export default function WarehouseVoucherPage() {
     note: "",
     lines: [],
   });
+
+  const listar = useCallback(async () => {
+    setError("");
+    try {
+      setLista(await listWarehouseVouchers({
+        q: idBuscado.trim() || undefined,
+        only_open: soloAbiertos ? 1 : undefined,
+        page: pagina,
+        per_page: 15,
+      }));
+    } catch (e) {
+      setLista(null);
+      decirError(e, "No se pudo cargar la lista de vales.");
+    }
+  }, [idBuscado, soloAbiertos, pagina]);
+
+  // Al escribir se espera: una peticion por tecla con 139 vales detras es
+  // pedirle al servidor una consulta que nadie va a leer.
+  useEffect(() => {
+    const temporizador = setTimeout(() => { listar(); }, 300);
+    return () => clearTimeout(temporizador);
+  }, [listar]);
+
+  // Cambiar el texto o el filtro vuelve a la primera pagina: quien esta en la 7
+  // y escribe algo nuevo no quiere la pagina 7 de otro resultado.
+  useEffect(() => { setPagina(1); }, [idBuscado, soloAbiertos]);
 
   const consultar = async (id) => {
     const numero = String(id || "").trim();
@@ -243,24 +275,104 @@ export default function WarehouseVoucherPage() {
       )}
 
       <section className="vale-consulta">
-        <h2>{t("voucher.lookup", "Consultar un vale")}</h2>
+        <h2>{t("voucher.lookup", "Vales")}</h2>
         <form className="vale-buscador"
               onSubmit={(e) => { e.preventDefault(); consultar(idBuscado); }}>
           <Search size={16} />
           <input
             value={idBuscado}
             onChange={(e) => setIdBuscado(e.target.value)}
-            placeholder={t("voucher.lookup_placeholder", "Número de vale")}
-            aria-label={t("voucher.lookup_placeholder", "Número de vale")}
+            placeholder={t("voucher.lookup_placeholder",
+              "Folio del vale o nombre del responsable")}
+            aria-label={t("voucher.lookup_placeholder", "Buscar un vale")}
           />
           <button className="button" type="submit">
             {t("common.search", "Buscar")}
           </button>
         </form>
 
+        {/* La lista. El buscador de arriba la filtra y tambien abre un vale
+            concreto: el mismo campo sirve para "vale 112" -con el papel en la
+            mano- y para "que trae Maximino". */}
+        {lista && !consultado && (
+          <>
+            <div className="vale-lista-cabecera">
+              <label className="vale-solo-abiertos">
+                <input type="checkbox" checked={soloAbiertos}
+                       onChange={(e) => setSoloAbiertos(e.target.checked)} />
+                {t("voucher.only_open", "Solo con material fuera")}
+              </label>
+              <span className="muted">
+                <strong>{lista.total}</strong>{" "}
+                {lista.total === 1
+                  ? t("voucher.one_voucher", "vale")
+                  : t("voucher.many_vouchers", "vales")}
+                {lista.scoped_to_actor && (
+                  <em>{" · "}{t("voucher.only_mine", "solo los tuyos")}</em>
+                )}
+              </span>
+            </div>
+
+            {lista.items.length === 0 ? (
+              <p className="muted">
+                {idBuscado.trim()
+                  ? t("voucher.no_matches",
+                      "Ningún vale con ese folio ni con ese responsable.")
+                  : t("voucher.none_open",
+                      "No hay vales con material fuera.")}
+              </p>
+            ) : (
+              <ul className="vale-lista">
+                {lista.items.map((v) => (
+                  <li key={v.id_incident}>
+                    <button type="button" onClick={() => consultar(v.id_incident)}>
+                      {/* El folio es el numero con el que la gente lo conoce:
+                          el del sistema anterior cuando lo trae. */}
+                      <strong className="mono">{v.folio}</strong>
+                      <span className="vale-lista-quien">
+                        {v.holder_name || t("voucher.no_holder", "sin responsable")}
+                      </span>
+                      <span className={`vale-lista-estado ${v.incident_status}`}>
+                        {t(`voucher.status_${v.incident_status}`, v.incident_status)}
+                      </span>
+                      <span className="muted vale-lista-cuenta">
+                        {v.open_lines > 0
+                          ? `${v.open_lines} ${t("voucher.out", "fuera")}`
+                          : t("voucher.all_back", "todo devuelto")}
+                        {" · "}{v.total_lines} {t("voucher.lines", "renglones")}
+                      </span>
+                      {v.incident_date && (
+                        <span className="muted">
+                          {new Date(v.incident_date).toLocaleDateString("es-MX")}
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <Pagination
+              page={lista.page}
+              pages={lista.pages}
+              total={lista.total}
+              perPage={lista.per_page}
+              onChange={setPagina}
+              etiquetaDeTotal={t("voucher.many_vouchers", "vales")}
+            />
+          </>
+        )}
+
         {consultado && (
-          <Vale vale={consultado} onCerrar={cerrar} nombreDe={nombreDe}
-                sitioDe={sitioDe} t={t} />
+          <>
+            <button className="button button-quiet vale-volver"
+                    onClick={() => setConsultado(null)}>
+              <ArrowLeft size={15} />
+              {t("voucher.back_to_list", "Volver a la lista")}
+            </button>
+            <Vale vale={consultado} onCerrar={cerrar} nombreDe={nombreDe}
+                  sitioDe={sitioDe} t={t} />
+          </>
         )}
       </section>
     </section>

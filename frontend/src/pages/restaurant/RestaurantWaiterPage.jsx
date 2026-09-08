@@ -1,5 +1,5 @@
 /* eslint-disable react/prop-types */
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { CalendarPlus, Check, DoorClosed, Minus, Plus, Send, ShoppingBag, Users } from "lucide-react";
 import { addRestaurantDiner, addRestaurantOrderItem, closeRestaurantVisit, createRestaurantReservation, createRestaurantTakeout, createRestaurantVisit, deliverRestaurantOrder, getRestaurantWaiterWorkspace, removeRestaurantDiner, removeRestaurantOrderItem, sendRestaurantOrder } from "../../api";
 import { useI18n } from "../../i18n";

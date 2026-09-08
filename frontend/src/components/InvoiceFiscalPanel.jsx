@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowLeftRight, Ban, Check, Plus, RefreshCw, Trash2, Wallet, X } from "lucide-react";
 import { useI18n } from "../i18n";
 import "../styles/invoice-fiscal.css";

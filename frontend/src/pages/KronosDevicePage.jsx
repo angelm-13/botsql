@@ -1,4 +1,3 @@
-import React from "react";
 import KronosDeviceConnection from "../components/KronosDeviceConnection";
 import "../styles/kronos.css";
 import "../styles/kronos-device.css";

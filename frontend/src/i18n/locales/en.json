@@ -146,7 +146,15 @@
     "continue": "Continue?",
     "close": "Close",
     "remove": "Remove",
-    "select": "Select"
+    "select": "Select",
+    "pagination": "Pagination",
+    "first_page": "First",
+    "last_page": "Last",
+    "go_to_page": "Go to page",
+    "records": "records",
+    "filter": "filter…",
+    "clear": "Clear",
+    "no_matches": "none match"
   },
   "entities": {
     "bank": {
@@ -4093,7 +4101,14 @@
     "merchandise_help": "What the company distributes. Counted by quantity.",
     "internal_use_help": "Tools and equipment. Tracked piece by piece.",
     "overdue_help": "Loans already past due. They are counted inside “lent out”.",
-    "overdue_short": "overdue"
+    "overdue_short": "overdue",
+    "on_loan": "out of the warehouse",
+    "on_loan_overdue": "with an overdue loan",
+    "unknown_holder": "no holder",
+    "voucher": "voucher",
+    "was_due": "was due",
+    "due_on": "due",
+    "all_on_loan": "Nothing in the warehouse: it is all out."
   },
   "material_type": {
     "eyebrow": "Inventory",
@@ -4129,8 +4144,8 @@
     "overdue": "Due back and still out",
     "was_due": "was due",
     "close_line": "Mark as returned",
-    "lookup": "Look up a voucher",
-    "lookup_placeholder": "Voucher number",
+    "lookup": "Vouchers",
+    "lookup_placeholder": "Voucher folio or holder's name",
     "voucher_n": "Voucher",
     "type": "Voucher type",
     "holder": "Holder",
@@ -4162,7 +4177,21 @@
     "open_lines": "still out",
     "of": "of",
     "missing": "The holder is missing, or the destination of a line that changes location.",
-    "on_hand": "left"
+    "on_hand": "left",
+    "only_open": "Only with material out",
+    "one_voucher": "voucher",
+    "many_vouchers": "vouchers",
+    "only_mine": "only yours",
+    "no_matches": "No voucher with that folio or that holder.",
+    "none_open": "No vouchers with material out.",
+    "no_holder": "no holder",
+    "out": "out",
+    "all_back": "all returned",
+    "lines": "lines",
+    "back_to_list": "Back to the list",
+    "status_abierto": "Open",
+    "status_cerrado": "Closed",
+    "status_cancelado": "Cancelled"
   },
   "attribute": {
     "title": "Characteristics",
@@ -4183,5 +4212,10 @@
     "unused": "unused",
     "in_use": "materials",
     "type_is_fixed": "The data type cannot be changed later: values already captured would keep the old type's shape."
+  },
+  "product": {
+    "classification": "Classification",
+    "see_families": "see families and types",
+    "classification_help": "The family groups, the type tells them apart within it, and the material is the concrete thing. If one is missing, add it in Families and types."
   }
 }

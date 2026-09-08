@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import { AlertTriangle, CalendarClock, Package } from "lucide-react";
 import { getProductLots } from "../api";

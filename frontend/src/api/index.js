@@ -704,3 +704,8 @@ export const enableLotControl = (idProduct, payload = {}) =>
   request(`/product/${idProduct}/lot-control`, { method: "POST", body: payload });
 export const disableLotControl = (idProduct) =>
   request(`/product/${idProduct}/lot-control`, { method: "DELETE" });
+
+// La lista de vales, buscable por folio o por responsable. El folio es el
+// numero con el que la gente conoce el papel: el del sistema anterior cuando lo
+// trae, y si no el identificador.
+export const listWarehouseVouchers = (params = {}) => request("/vouchers", { params });

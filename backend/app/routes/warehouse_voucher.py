@@ -17,6 +17,7 @@ from __future__ import annotations
 from flask import Blueprint, jsonify, request
 
 from app.services.warehouse_voucher_service import (
+    buscar_vales,
     cerrar_renglon,
     consultar_vale,
     crear_vale,
@@ -38,6 +39,29 @@ def _cuerpo():
 def abrir_vale(user_data):
     """Abre un vale con sus renglones. Todo o nada."""
     return jsonify(crear_vale(_cuerpo(), user_data)), 201
+
+
+@bp_warehouse_voucher.route("/vouchers", methods=["GET"])
+@token_required
+@require_entity_permission("warehouse_voucher", "read")
+def listar_vales(user_data):
+    """La lista de vales, buscable por folio o por responsable.
+
+    `q` busca por las dos cosas a la vez, porque son las dos formas en que
+    alguien llega a un vale: con el papel en la mano -"vale 112"- o preguntando
+    "que trae Maximino". El folio exacto gana sobre la coincidencia parcial.
+    """
+    return jsonify(buscar_vales(
+        user_data,
+        texto=request.args.get("q"),
+        estado=request.args.get("status"),
+        id_user=request.args.get("id_user"),
+        solo_con_pendientes=str(
+            request.args.get("only_open") or "").strip().lower()
+        in ("1", "true", "si", "yes"),
+        pagina=request.args.get("page"),
+        por_pagina=request.args.get("per_page"),
+    ))
 
 
 @bp_warehouse_voucher.route("/vouchers/overdue", methods=["GET"])
