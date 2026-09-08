@@ -107,8 +107,13 @@ class TestKpiApi(BackendTestCase):
     def test_catalog_only_shows_kpis_with_permission_granted(self):
         con_permiso = self._request(ACTOR_CON_KPI, "/kpi_definition/")
         self.assertEqual(200, con_permiso.status_code)
-        claves = [item["clave"] for item in self.json(con_permiso)["items"]]
+        items = self.json(con_permiso)["items"]
+        claves = [item["clave"] for item in items]
         self.assertIn("ventas_por_empleado", claves)
+        # El front necesita el id (no solo la clave) para armar el payload
+        # de creacion de widget: `POST .../widgets/` exige `id_kpi_definition`.
+        fila = next(item for item in items if item["clave"] == "ventas_por_empleado")
+        self.assertEqual(self.id_kpi, fila["id_kpi_definition"])
 
         sin_permiso_puntual = self._request(ACTOR_SIN_KPI_ESPECIFICO, "/kpi_definition/")
         self.assertEqual(200, sin_permiso_puntual.status_code)

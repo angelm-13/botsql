@@ -90,6 +90,7 @@ def list_kpi_definitions(user_data):
         ).all()
         items = [
             {
+                'id_kpi_definition': kpi.id_kpi_definition,
                 'clave': kpi.clave,
                 'etiqueta': kpi.etiqueta,
                 'modulo': kpi.modulo,

@@ -399,6 +399,19 @@ export const createInvoiceMaterialService = (payload) => request("/invoice_mater
 export const updateInvoiceMaterialService = (id, payload) => request(`/invoice_material_service/${id}`, { method: "PUT", body: payload });
 export const deleteInvoiceMaterialService = (id) => request(`/invoice_material_service/${id}`, { method: "DELETE" });
 
+export const getAllKpiDefinition = () => request("/kpi_definition/");
+export const queryKpiSnapshot = (params = {}) => request("/kpi_snapshot/query", { params });
+
+export const getAllKpiDashboard = (params = {}) => request("/kpi_dashboard/", { params });
+export const createKpiDashboard = (payload) => request("/kpi_dashboard/", { method: "POST", body: payload });
+export const updateKpiDashboard = (id, payload) => request(`/kpi_dashboard/${id}`, { method: "PUT", body: payload });
+export const deleteKpiDashboard = (id) => request(`/kpi_dashboard/${id}`, { method: "DELETE" });
+
+export const getAllKpiDashboardWidget = (idDashboard) => request(`/kpi_dashboard/${idDashboard}/widgets/`);
+export const createKpiDashboardWidget = (idDashboard, payload) => request(`/kpi_dashboard/${idDashboard}/widgets/`, { method: "POST", body: payload });
+export const updateKpiDashboardWidget = (id, payload) => request(`/kpi_dashboard_widget/${id}`, { method: "PUT", body: payload });
+export const deleteKpiDashboardWidget = (id) => request(`/kpi_dashboard_widget/${id}`, { method: "DELETE" });
+
 export const getAllLevel = (params = {}) => request("/level/", { params });
 export const getLevel = (id) => request(`/level/${id}`);
 export const createLevel = (payload) => request("/level/", { method: "POST", body: payload });
