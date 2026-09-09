@@ -32,3 +32,25 @@ patches:
       metadata:
         name: tyakxa-tny
       $patch: delete
+  # Solo aqui, no en k8s/base/backend.yaml -- ese es compartido con los 3
+  # clientes reales (torredigital-prod, adser-prod, vidrioyaluminios-prod) y
+  # bajarles el request a ellos no es una decision de "ambiente de bajo
+  # riesgo". tyakxa-dev si lo es: bajar el request solo hace que el scheduler
+  # le pida menos CPU garantizada al agendarlo -el limite (500m) sigue igual,
+  # asi que puede seguir usando mas si el nodo tiene espacio libre en el
+  # momento-. El costo real es que, bajo contencion de verdad, este pod recibe
+  # una porcion mas chica de CPU (mas lento, no se cae) -aceptable aqui,
+  # nunca en un cliente real.
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: backend
+      spec:
+        template:
+          spec:
+            containers:
+              - name: backend
+                resources:
+                  requests:
+                    cpu: 50m
