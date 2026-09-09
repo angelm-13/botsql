@@ -71,6 +71,22 @@ CREATE TABLE IF NOT EXISTS "kpi_dashboard_widget" (
 );
 
 CREATE INDEX IF NOT EXISTS "idx_kpi_dashboard_widget_dashboard" ON "kpi_dashboard_widget" ("id_kpi_dashboard");
-CREATE INDEX IF NOT EXISTS "idx_kpi_dashboard_widget_definition" ON "kpi_dashboard_widget" ("id_kpi_definition");
+
+-- id_kpi_definition existe aqui solo en una instalacion nueva -- en
+-- cualquiera que ya haya corrido 20260908210000_kpi_dashboard_widget_multi_kpi.sql
+-- esa columna ya se elimino (paso a la tabla puente kpi_dashboard_widget_kpi).
+-- Como el initContainer corre esta cadena completa en cada arranque (ver
+-- encabezado del archivo), este CREATE INDEX sin guarda truena en el
+-- segundo arranque en adelante con "column id_kpi_definition does not
+-- exist" -- se vio real en tyakxa-dev.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'kpi_dashboard_widget' AND column_name = 'id_kpi_definition'
+    ) THEN
+        CREATE INDEX IF NOT EXISTS "idx_kpi_dashboard_widget_definition" ON "kpi_dashboard_widget" ("id_kpi_definition");
+    END IF;
+END $$;
 
 COMMIT;
