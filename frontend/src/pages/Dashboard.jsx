@@ -215,10 +215,25 @@ function useCompleteGridPlaceholders(widgetCount) {
 
 // Orden categorico validado (dataviz skill): identidad, nunca ciclado.
 const CATEGORICAL = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
-const COLOR_A = CATEGORICAL[0];
-const COLOR_B = CATEGORICAL[1];
 const COLOR_OTHERS = "#898781";
 const AXIS_TICK = { fontSize: 11, fill: "#898781" };
+
+// Color fijo por KPI (no por posicion en un arreglo): antes un widget de un
+// solo KPI siempre salia con `CATEGORICAL[0]` sin importar cual KPI fuera, y
+// el mismo par de KPIs combinados en dos widgets distintos podia salir con
+// colores distintos si se elegian en otro orden. El modulo (`%`) sobre el id
+// real es determinista y estable entre widgets/tableros -mismo KPI, mismo
+// color, siempre- sin necesitar guardar un mapeo aparte. Con las 8 entradas
+// de CATEGORICAL y solo 3 KPIs reales hoy (ver KPI_REGISTRY en
+// backend/app/kpis/registry.py) el riesgo de colision es nulo en la
+// practica; si el catalogo real llegara a superar las 8 entradas, dos KPIs
+// podrian coincidir en color -aceptable por ahora, no hay pedido de un
+// selector manual todavia.
+function colorDeKpi(idKpiDefinition) {
+  const id = Number(idKpiDefinition);
+  if (!Number.isFinite(id)) return COLOR_OTHERS;
+  return CATEGORICAL[((id % CATEGORICAL.length) + CATEGORICAL.length) % CATEGORICAL.length];
+}
 
 // Avatar por omision para un empleado: no hay fotos de perfil reales, asi que
 // este icono neutro sobre fondo circular es el placeholder en todos lados
@@ -839,12 +854,17 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, formatNumber, tx
     );
   }
 
-  // Un solo KPI: exactamente el mismo camino de siempre (colores fijos
-  // Periodo A/B) -- no se toca para que un widget que ya tenia un solo KPI se
-  // siga viendo igual que antes de esta funcionalidad.
+  // Un solo KPI: mismo layout de siempre, pero el color ya no es
+  // `CATEGORICAL[0]` fijo -- es el color determinista de ESTE KPI
+  // (`colorDeKpi`), para que el mismo KPI se vea siempre con el mismo color
+  // sin importar en que widget aparezca. El rango de comparacion (B) reusa
+  // el mismo color con menos opacidad/trazo punteado en vez de un segundo
+  // color fijo -mismo criterio que ya usa el camino multi-KPI de abajo con
+  // sus propias series "b".
   if (kpiInfos.length <= 1) {
     const data = buildSeriesData(snapshot, userLabel, widget.parametros?.empleados);
     if (!data.length) return <p className="kpi-empty-inline">{tx("no_data", "Sin datos en el rango seleccionado.")}</p>;
+    const colorKpi = colorDeKpi(kpiInfo?.id_kpi_definition);
 
     if (widget.tipo_grafica === "barras") {
       return (
@@ -855,8 +875,8 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, formatNumber, tx
             <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} width={44} />
             <Tooltip formatter={(value) => formatNumber(value)} />
             {hasCompare && <Legend wrapperStyle={{ fontSize: 12 }} />}
-            <Bar dataKey="a" name={tx("range_a", "Periodo A")} fill={COLOR_A} radius={[4, 4, 0, 0]} />
-            {hasCompare && <Bar dataKey="b" name={tx("range_b", "Periodo B")} fill={COLOR_B} radius={[4, 4, 0, 0]} />}
+            <Bar dataKey="a" name={tx("range_a", "Periodo A")} fill={colorKpi} radius={[4, 4, 0, 0]} />
+            {hasCompare && <Bar dataKey="b" name={tx("range_b", "Periodo B")} fill={colorKpi} fillOpacity={0.45} radius={[4, 4, 0, 0]} />}
           </BarChart>
         </ResponsiveContainer>
       );
@@ -871,8 +891,8 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, formatNumber, tx
             <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} width={44} />
             <Tooltip formatter={(value) => formatNumber(value)} />
             {hasCompare && <Legend wrapperStyle={{ fontSize: 12 }} />}
-            <Line type="monotone" dataKey="a" name={tx("range_a", "Periodo A")} stroke={COLOR_A} strokeWidth={2} dot={{ r: 4 }} />
-            {hasCompare && <Line type="monotone" dataKey="b" name={tx("range_b", "Periodo B")} stroke={COLOR_B} strokeWidth={2} dot={{ r: 4 }} />}
+            <Line type="monotone" dataKey="a" name={tx("range_a", "Periodo A")} stroke={colorKpi} strokeWidth={2} dot={{ r: 4 }} />
+            {hasCompare && <Line type="monotone" dataKey="b" name={tx("range_b", "Periodo B")} stroke={colorKpi} strokeWidth={2} strokeDasharray="5 4" dot={{ r: 3 }} />}
           </LineChart>
         </ResponsiveContainer>
       );
@@ -887,8 +907,8 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, formatNumber, tx
             <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} width={44} />
             <Tooltip formatter={(value) => formatNumber(value)} />
             {hasCompare && <Legend wrapperStyle={{ fontSize: 12 }} />}
-            <Area type="monotone" dataKey="a" name={tx("range_a", "Periodo A")} stroke={COLOR_A} fill={COLOR_A} fillOpacity={0.25} strokeWidth={2} />
-            {hasCompare && <Area type="monotone" dataKey="b" name={tx("range_b", "Periodo B")} stroke={COLOR_B} fill={COLOR_B} fillOpacity={0.25} strokeWidth={2} />}
+            <Area type="monotone" dataKey="a" name={tx("range_a", "Periodo A")} stroke={colorKpi} fill={colorKpi} fillOpacity={0.25} strokeWidth={2} />
+            {hasCompare && <Area type="monotone" dataKey="b" name={tx("range_b", "Periodo B")} stroke={colorKpi} fill={colorKpi} fillOpacity={0.1} strokeWidth={2} strokeDasharray="5 4" />}
           </AreaChart>
         </ResponsiveContainer>
       );
@@ -897,11 +917,13 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, formatNumber, tx
     return null;
   }
 
-  // Varios KPIs combinados: una serie por KPI (color fijo por posicion en la
-  // lista, reutilizando la paleta CATEGORICAL), el eje X sigue siendo por
-  // empleado. La serie de comparacion (rango B) de cada KPI reusa el MISMO
-  // color que su rango A -distingue por opacidad/trazo, no por un segundo
-  // color fijo- porque con N KPIs ya no hay solo dos roles (A/B) que colorear
+  // Varios KPIs combinados: una serie por KPI, coloreada por identidad del
+  // KPI (`colorDeKpi`) y no por su posicion dentro de esta seleccion -- el
+  // mismo par de KPIs combinados en otro widget, o en otro orden, sale
+  // siempre con los mismos colores. El eje X sigue siendo por empleado. La
+  // serie de comparacion (rango B) de cada KPI reusa el MISMO color que su
+  // rango A -distingue por opacidad/trazo, no por un segundo color fijo-
+  // porque con N KPIs ya no hay solo dos roles (A/B) que colorear
   // aparte como con un solo KPI.
   const data = buildMultiSeriesData(snapshots, userLabel, widget.parametros?.empleados);
   if (!data.length) return <p className="kpi-empty-inline">{tx("no_data", "Sin datos en el rango seleccionado.")}</p>;
@@ -917,10 +939,10 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, formatNumber, tx
           <Tooltip formatter={(value) => formatNumber(value)} />
           <Legend wrapperStyle={{ fontSize: 12 }} />
           {kpiInfos.map((info, index) => (
-            <Bar key={`a-${index}`} dataKey={`kpi_${index}_a`} name={kpiSeriesLabel(info, index)} fill={CATEGORICAL[index % CATEGORICAL.length]} radius={[4, 4, 0, 0]} />
+            <Bar key={`a-${index}`} dataKey={`kpi_${index}_a`} name={kpiSeriesLabel(info, index)} fill={colorDeKpi(info.id_kpi_definition)} radius={[4, 4, 0, 0]} />
           ))}
           {hasCompare && kpiInfos.map((info, index) => (
-            <Bar key={`b-${index}`} dataKey={`kpi_${index}_b`} name={`${kpiSeriesLabel(info, index)}${comparacionSufijo}`} fill={CATEGORICAL[index % CATEGORICAL.length]} fillOpacity={0.45} radius={[4, 4, 0, 0]} />
+            <Bar key={`b-${index}`} dataKey={`kpi_${index}_b`} name={`${kpiSeriesLabel(info, index)}${comparacionSufijo}`} fill={colorDeKpi(info.id_kpi_definition)} fillOpacity={0.45} radius={[4, 4, 0, 0]} />
           ))}
         </BarChart>
       </ResponsiveContainer>
@@ -937,10 +959,10 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, formatNumber, tx
           <Tooltip formatter={(value) => formatNumber(value)} />
           <Legend wrapperStyle={{ fontSize: 12 }} />
           {kpiInfos.map((info, index) => (
-            <Line key={`a-${index}`} type="monotone" dataKey={`kpi_${index}_a`} name={kpiSeriesLabel(info, index)} stroke={CATEGORICAL[index % CATEGORICAL.length]} strokeWidth={2} dot={{ r: 4 }} />
+            <Line key={`a-${index}`} type="monotone" dataKey={`kpi_${index}_a`} name={kpiSeriesLabel(info, index)} stroke={colorDeKpi(info.id_kpi_definition)} strokeWidth={2} dot={{ r: 4 }} />
           ))}
           {hasCompare && kpiInfos.map((info, index) => (
-            <Line key={`b-${index}`} type="monotone" dataKey={`kpi_${index}_b`} name={`${kpiSeriesLabel(info, index)}${comparacionSufijo}`} stroke={CATEGORICAL[index % CATEGORICAL.length]} strokeWidth={2} strokeDasharray="5 4" dot={{ r: 3 }} />
+            <Line key={`b-${index}`} type="monotone" dataKey={`kpi_${index}_b`} name={`${kpiSeriesLabel(info, index)}${comparacionSufijo}`} stroke={colorDeKpi(info.id_kpi_definition)} strokeWidth={2} strokeDasharray="5 4" dot={{ r: 3 }} />
           ))}
         </LineChart>
       </ResponsiveContainer>
@@ -957,10 +979,10 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, formatNumber, tx
           <Tooltip formatter={(value) => formatNumber(value)} />
           <Legend wrapperStyle={{ fontSize: 12 }} />
           {kpiInfos.map((info, index) => (
-            <Area key={`a-${index}`} type="monotone" dataKey={`kpi_${index}_a`} name={kpiSeriesLabel(info, index)} stroke={CATEGORICAL[index % CATEGORICAL.length]} fill={CATEGORICAL[index % CATEGORICAL.length]} fillOpacity={0.25} strokeWidth={2} />
+            <Area key={`a-${index}`} type="monotone" dataKey={`kpi_${index}_a`} name={kpiSeriesLabel(info, index)} stroke={colorDeKpi(info.id_kpi_definition)} fill={colorDeKpi(info.id_kpi_definition)} fillOpacity={0.25} strokeWidth={2} />
           ))}
           {hasCompare && kpiInfos.map((info, index) => (
-            <Area key={`b-${index}`} type="monotone" dataKey={`kpi_${index}_b`} name={`${kpiSeriesLabel(info, index)}${comparacionSufijo}`} stroke={CATEGORICAL[index % CATEGORICAL.length]} fill={CATEGORICAL[index % CATEGORICAL.length]} fillOpacity={0.1} strokeWidth={2} strokeDasharray="5 4" />
+            <Area key={`b-${index}`} type="monotone" dataKey={`kpi_${index}_b`} name={`${kpiSeriesLabel(info, index)}${comparacionSufijo}`} stroke={colorDeKpi(info.id_kpi_definition)} fill={colorDeKpi(info.id_kpi_definition)} fillOpacity={0.1} strokeWidth={2} strokeDasharray="5 4" />
           ))}
         </AreaChart>
       </ResponsiveContainer>
