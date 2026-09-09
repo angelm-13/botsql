@@ -265,6 +265,28 @@ const DATE_SHORTCUTS = [
   { key: "personalizado", label: "Personalizado", range: null },
 ];
 
+// El panel "Agregar grafico" es permanente (ya no se monta/desmonta al
+// abrir/cerrar), asi que su borrador ya no puede vivir en un useState propio
+// -se perderia entero al cambiar de tablero-. Dashboard() guarda uno de
+// estos por `id_kpi_dashboard` (ver `panelStateByDashboard`); esta funcion
+// es el valor con el que arranca un tablero que todavia no tiene entrada.
+function defaultPanelState() {
+  return {
+    editingWidgetId: null,
+    idsKpiSeleccionados: [],
+    categoriaKpi: "",
+    tipoGrafica: "numero",
+    fechaInicio: daysAgoIso(30),
+    fechaFin: todayIso(),
+    atajoActivo: null,
+    comparar: false,
+    fechaInicioB: "",
+    fechaFinB: "",
+    empleadosSeleccionados: [],
+    departamentosSeleccionados: [],
+  };
+}
+
 function listOf(data) {
   return Array.isArray(data) ? data : data?.items || [];
 }
@@ -358,7 +380,23 @@ export default function Dashboard() {
   const [users, setUsers] = useState([]);
   const [departments, setDepartments] = useState([]);
 
-  const [widgetForm, setWidgetForm] = useState(null);
+  // Borrador del panel "Agregar grafico", uno por tablero (`id_kpi_dashboard`):
+  // el panel ya no se desmonta al cambiar de tablero, asi que su estado no
+  // puede vivir dentro del componente del panel -se perderia o se mezclaria
+  // entre tableros-. Vive aqui, arriba, indexado por tablero.
+  const [panelStateByDashboard, setPanelStateByDashboard] = useState({});
+  const currentPanelState = panelStateByDashboard[activeId] || defaultPanelState();
+
+  const updatePanelState = useCallback((idDashboard, patch) => {
+    setPanelStateByDashboard((prev) => ({
+      ...prev,
+      [idDashboard]: { ...(prev[idDashboard] || defaultPanelState()), ...patch },
+    }));
+  }, []);
+
+  const resetPanelState = useCallback((idDashboard) => {
+    setPanelStateByDashboard((prev) => ({ ...prev, [idDashboard]: defaultPanelState() }));
+  }, []);
 
   const [placeholderCount, widgetGridRef] = useCompleteGridPlaceholders(widgets.length);
 
@@ -447,6 +485,13 @@ export default function Dashboard() {
     if (!window.confirm(pregunta)) return;
     try {
       await deleteKpiDashboard(dashboard.id_kpi_dashboard);
+      // Limpia tambien el borrador del panel de ESTE tablero -- ya no existe,
+      // no tiene caso conservarlo colgado en el mapa.
+      setPanelStateByDashboard((prev) => {
+        const next = { ...prev };
+        delete next[dashboard.id_kpi_dashboard];
+        return next;
+      });
       await loadDashboards();
     } catch (error) {
       notifyError(error);
@@ -457,19 +502,51 @@ export default function Dashboard() {
     if (!window.confirm(tx("delete_widget_confirm", "¿Quitar este gráfico del tablero?"))) return;
     try {
       await deleteKpiDashboardWidget(widget.id_kpi_dashboard_widget);
+      // Si el panel de este tablero estaba editando justo el widget que se
+      // acaba de borrar, no dejarlo apuntando a un id que ya no existe.
+      setPanelStateByDashboard((prev) => {
+        const actual = prev[activeId];
+        if (!actual || actual.editingWidgetId !== widget.id_kpi_dashboard_widget) return prev;
+        return { ...prev, [activeId]: defaultPanelState() };
+      });
       await loadWidgets(activeId);
     } catch (error) {
       notifyError(error);
     }
   }
 
-  async function handleSaveWidget(payload, editingWidget) {
-    if (editingWidget) {
-      await updateKpiDashboardWidget(editingWidget.id_kpi_dashboard_widget, payload);
+  // Carga en el panel (permanente, compartido con la cuadricula) los datos
+  // del widget elegido para editar, reemplazando por completo el borrador
+  // que hubiera en este tablero.
+  function handleEditWidget(widget) {
+    const ids = Array.isArray(widget.ids_kpi_definition) ? widget.ids_kpi_definition.map(String) : [];
+    const primerKpi = kpiCatalog.find((kpi) => String(kpi.id_kpi_definition) === ids[0]);
+    const parametros = widget.parametros || {};
+    updatePanelState(activeId, {
+      editingWidgetId: widget.id_kpi_dashboard_widget,
+      idsKpiSeleccionados: ids,
+      categoriaKpi: primerKpi?.modulo || "",
+      tipoGrafica: widget.tipo_grafica || "numero",
+      fechaInicio: parametros.fecha_inicio || daysAgoIso(30),
+      fechaFin: parametros.fecha_fin || todayIso(),
+      atajoActivo: null,
+      comparar: Boolean(parametros.fecha_inicio_b && parametros.fecha_fin_b),
+      fechaInicioB: parametros.fecha_inicio_b || "",
+      fechaFinB: parametros.fecha_fin_b || "",
+      empleadosSeleccionados: Array.isArray(parametros.empleados) ? parametros.empleados.map(String) : [],
+      departamentosSeleccionados: Array.isArray(parametros.id_departments) ? parametros.id_departments.map(String) : [],
+    });
+  }
+
+  async function handleSaveWidget(payload, editingWidgetId) {
+    if (editingWidgetId) {
+      await updateKpiDashboardWidget(editingWidgetId, payload);
     } else {
       await createKpiDashboardWidget(activeId, payload);
     }
-    setWidgetForm(null);
+    // El panel es permanente -no hay overlay que cerrar-, asi que "terminar"
+    // significa vaciar el borrador de ESTE tablero, listo para el siguiente.
+    resetPanelState(activeId);
     await loadWidgets(activeId);
   }
 
@@ -531,23 +608,30 @@ export default function Dashboard() {
       {activeDashboard && (
         <div className="kpi-dashboard-body">
           <div className="kpi-dashboard-toolbar">
-            <button className="button primary" onClick={() => setWidgetForm({ editing: null })}>
+            <button className="button primary" onClick={() => resetPanelState(activeId)}>
               <Plus size={16} />{tx("add_widget", "Agregar gráfico")}
             </button>
           </div>
 
-          {widgetForm && (
-            <KpiWidgetPanel
-              editing={widgetForm.editing}
-              kpiCatalog={kpiCatalog}
-              users={users}
-              departments={departments}
-              onCancel={() => setWidgetForm(null)}
-              onSave={handleSaveWidget}
-              t={t}
-              tx={tx}
-            />
-          )}
+          {/* Panel permanente: ya no se monta/desmonta con un clic (ver
+              PANEL "AGREGAR GRAFICO" ESTATICO POR DASHBOARD). `key={activeId}`
+              fuerza una instancia nueva por tablero para que el estado
+              efimero de UI (error, saving, aviso) del componente arranque
+              limpio al cambiar de tablero -- el borrador real (KPIs, fechas,
+              filtros) vive arriba en `panelStateByDashboard` y sobrevive al
+              remount via props. */}
+          <KpiWidgetPanel
+            key={activeId}
+            panelState={currentPanelState}
+            onChangePanelState={(patch) => updatePanelState(activeId, patch)}
+            kpiCatalog={kpiCatalog}
+            users={users}
+            departments={departments}
+            onCancel={() => resetPanelState(activeId)}
+            onSave={(payload) => handleSaveWidget(payload, currentPanelState.editingWidgetId)}
+            t={t}
+            tx={tx}
+          />
 
           {widgetsError && <div className="alert error">{t(widgetsError, widgetsError)}</div>}
           {loadingWidgets && <div className="alert">{t("common.loading")}</div>}
@@ -561,7 +645,7 @@ export default function Dashboard() {
                   kpiCatalog={kpiCatalog}
                   userLabel={userLabel}
                   formatNumber={formatNumber}
-                  onEdit={() => setWidgetForm({ editing: widget })}
+                  onEdit={() => handleEditWidget(widget)}
                   onDelete={() => handleDeleteWidget(widget)}
                   t={t}
                   tx={tx}
@@ -578,7 +662,7 @@ export default function Dashboard() {
                   type="button"
                   key={`kpi-widget-placeholder-${index}`}
                   className="kpi-widget-placeholder"
-                  onClick={() => setWidgetForm({ editing: null })}
+                  onClick={() => resetPanelState(activeId)}
                   title={tx("add_widget", "Agregar gráfico")}
                 >
                   <Plus size={22} />
@@ -886,8 +970,21 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, formatNumber, tx
   return null;
 }
 
-function KpiWidgetPanel({ editing, kpiCatalog, users, departments, onCancel, onSave, t, tx }) {
-  const parametrosIniciales = editing?.parametros || {};
+function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, departments, onCancel, onSave, t, tx }) {
+  const {
+    editingWidgetId,
+    idsKpiSeleccionados,
+    categoriaKpi,
+    tipoGrafica,
+    fechaInicio,
+    fechaFin,
+    atajoActivo,
+    comparar,
+    fechaInicioB,
+    fechaFinB,
+    empleadosSeleccionados,
+    departamentosSeleccionados,
+  } = panelState;
 
   // Catalogo agrupado por modulo (facturacion, operaciones, ...): el paso de
   // categoria solo hace falta cuando hay mas de uno, si no se muestran los
@@ -904,26 +1001,10 @@ function KpiWidgetPanel({ editing, kpiCatalog, users, departments, onCancel, onS
   const modulosDisponibles = Array.from(kpisPorModulo.keys());
   const necesitaCategoria = modulosDisponibles.length > 1;
 
-  const editingIdsKpiDefinition = Array.isArray(editing?.ids_kpi_definition) ? editing.ids_kpi_definition.map(String) : [];
-  const primerKpiEditado = kpiCatalog.find((kpi) => String(kpi.id_kpi_definition) === editingIdsKpiDefinition[0]);
-
-  const [idsKpiSeleccionados, setIdsKpiSeleccionados] = useState(editingIdsKpiDefinition);
-  const [categoriaKpi, setCategoriaKpi] = useState(
-    () => primerKpiEditado?.modulo || (modulosDisponibles.length === 1 ? modulosDisponibles[0] : ""),
-  );
-  const [tipoGrafica, setTipoGrafica] = useState(editing?.tipo_grafica || "numero");
-  const [fechaInicio, setFechaInicio] = useState(parametrosIniciales.fecha_inicio || daysAgoIso(30));
-  const [fechaFin, setFechaFin] = useState(parametrosIniciales.fecha_fin || todayIso());
-  const [atajoActivo, setAtajoActivo] = useState(null);
-  const [comparar, setComparar] = useState(Boolean(parametrosIniciales.fecha_inicio_b && parametrosIniciales.fecha_fin_b));
-  const [fechaInicioB, setFechaInicioB] = useState(parametrosIniciales.fecha_inicio_b || "");
-  const [fechaFinB, setFechaFinB] = useState(parametrosIniciales.fecha_fin_b || "");
-  const [empleadosSeleccionados, setEmpleadosSeleccionados] = useState(
-    Array.isArray(parametrosIniciales.empleados) ? parametrosIniciales.empleados.map(String) : [],
-  );
-  const [departamentosSeleccionados, setDepartamentosSeleccionados] = useState(
-    Array.isArray(parametrosIniciales.id_departments) ? parametrosIniciales.id_departments.map(String) : [],
-  );
+  // Efimero de UI, no borrador: se reinicia limpio en cada tablero porque
+  // Dashboard() monta una instancia nueva de este componente por
+  // `id_kpi_dashboard` (`key={activeId}`) -- ver PANEL "AGREGAR GRAFICO"
+  // ESTATICO POR DASHBOARD en Dashboard().
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [avisoKpi, setAvisoKpi] = useState("");
@@ -934,13 +1015,13 @@ function KpiWidgetPanel({ editing, kpiCatalog, users, departments, onCancel, onS
   // conserva solo el primero y se avisa, en vez de guardar una combinacion
   // que ese tipo de grafica no sabe representar.
   function aplicarTipoGrafica(valor) {
-    setTipoGrafica(valor);
     if (!esTipoMultiKpi(valor) && idsKpiSeleccionados.length > 1) {
       const conservado = idsKpiSeleccionados[0];
       const kpiConservado = kpiCatalog.find((kpi) => String(kpi.id_kpi_definition) === conservado);
-      setIdsKpiSeleccionados([conservado]);
+      onChangePanelState({ tipoGrafica: valor, idsKpiSeleccionados: [conservado] });
       setAvisoKpi(tx("kpi_multi_not_supported", `Este tipo de gráfico solo admite un KPI. Se conservó "${kpiConservado?.etiqueta || conservado}".`));
     } else {
+      onChangePanelState({ tipoGrafica: valor });
       setAvisoKpi("");
     }
   }
@@ -948,29 +1029,41 @@ function KpiWidgetPanel({ editing, kpiCatalog, users, departments, onCancel, onS
   function toggleKpi(idKpi) {
     setAvisoKpi("");
     if (multiKpiPermitido) {
-      setIdsKpiSeleccionados((prev) => (prev.includes(idKpi) ? prev.filter((item) => item !== idKpi) : [...prev, idKpi]));
+      onChangePanelState({
+        idsKpiSeleccionados: idsKpiSeleccionados.includes(idKpi)
+          ? idsKpiSeleccionados.filter((item) => item !== idKpi)
+          : [...idsKpiSeleccionados, idKpi],
+      });
     } else {
-      setIdsKpiSeleccionados((prev) => (prev.length === 1 && prev[0] === idKpi ? [] : [idKpi]));
+      onChangePanelState({
+        idsKpiSeleccionados: idsKpiSeleccionados.length === 1 && idsKpiSeleccionados[0] === idKpi ? [] : [idKpi],
+      });
     }
   }
 
   function toggleEmpleado(idUser) {
-    setEmpleadosSeleccionados((prev) => (prev.includes(idUser) ? prev.filter((item) => item !== idUser) : [...prev, idUser]));
+    onChangePanelState({
+      empleadosSeleccionados: empleadosSeleccionados.includes(idUser)
+        ? empleadosSeleccionados.filter((item) => item !== idUser)
+        : [...empleadosSeleccionados, idUser],
+    });
   }
 
   function toggleDepartamento(idDepartamento) {
-    setDepartamentosSeleccionados((prev) => (prev.includes(idDepartamento) ? prev.filter((item) => item !== idDepartamento) : [...prev, idDepartamento]));
+    onChangePanelState({
+      departamentosSeleccionados: departamentosSeleccionados.includes(idDepartamento)
+        ? departamentosSeleccionados.filter((item) => item !== idDepartamento)
+        : [...departamentosSeleccionados, idDepartamento],
+    });
   }
 
   // Los atajos solo rellenan fecha_inicio/fecha_fin -- nunca reemplazan los
   // selectores libres. "Personalizado" no trae rango: solo marca el modo
   // manual (ver DATE_SHORTCUTS).
   function aplicarAtajo(atajo) {
-    setAtajoActivo(atajo.key);
-    if (!atajo.range) return;
+    if (!atajo.range) { onChangePanelState({ atajoActivo: atajo.key }); return; }
     const [inicio, fin] = atajo.range();
-    setFechaInicio(inicio);
-    setFechaFin(fin);
+    onChangePanelState({ atajoActivo: atajo.key, fechaInicio: inicio, fechaFin: fin });
   }
 
   async function handleSubmit(event) {
@@ -996,7 +1089,7 @@ function KpiWidgetPanel({ editing, kpiCatalog, users, departments, onCancel, onS
     const payload = { ids_kpi_definition: idsKpiSeleccionados.map(Number), tipo_grafica: tipoGrafica, parametros };
     setSaving(true);
     try {
-      await onSave(payload, editing);
+      await onSave(payload);
     } catch (err) {
       const clave = err.message || "errors.request_failed";
       setError(
@@ -1014,7 +1107,7 @@ function KpiWidgetPanel({ editing, kpiCatalog, users, departments, onCancel, onS
       <header>
         <div>
           <p className="eyebrow">{tx("widget", "Gráfico")}</p>
-          <h3>{editing ? tx("edit_widget", "Editar gráfico") : tx("add_widget", "Agregar gráfico")}</h3>
+          <h3>{editingWidgetId ? tx("edit_widget", "Editar gráfico") : tx("add_widget", "Agregar gráfico")}</h3>
         </div>
         <button type="button" className="kpi-icon-button" onClick={onCancel} aria-label={t("common.cancel")}><X size={18} /></button>
       </header>
@@ -1069,7 +1162,7 @@ function KpiWidgetPanel({ editing, kpiCatalog, users, departments, onCancel, onS
                         type="button"
                         key={modulo}
                         className={`kpi-icon-option ${activo ? "active" : ""}`}
-                        onClick={() => setCategoriaKpi(modulo)}
+                        onClick={() => onChangePanelState({ categoriaKpi: modulo })}
                       >
                         <ModuleIcon size={20} />
                         <span>{meta.label}</span>
@@ -1122,7 +1215,7 @@ function KpiWidgetPanel({ editing, kpiCatalog, users, departments, onCancel, onS
                   type="date"
                   value={fechaInicio}
                   max={fechaFin || undefined}
-                  onChange={(event) => { setFechaInicio(event.target.value); setAtajoActivo("personalizado"); }}
+                  onChange={(event) => onChangePanelState({ fechaInicio: event.target.value, atajoActivo: "personalizado" })}
                   required
                 />
               </label>
@@ -1132,14 +1225,14 @@ function KpiWidgetPanel({ editing, kpiCatalog, users, departments, onCancel, onS
                   type="date"
                   value={fechaFin}
                   min={fechaInicio || undefined}
-                  onChange={(event) => { setFechaFin(event.target.value); setAtajoActivo("personalizado"); }}
+                  onChange={(event) => onChangePanelState({ fechaFin: event.target.value, atajoActivo: "personalizado" })}
                   required
                 />
               </label>
             </div>
 
             <label className="field checkbox-field">
-              <input type="checkbox" checked={comparar} onChange={(event) => setComparar(event.target.checked)} />
+              <input type="checkbox" checked={comparar} onChange={(event) => onChangePanelState({ comparar: event.target.checked })} />
               <span>{tx("compare_toggle", "Comparar contra otro periodo")}</span>
             </label>
 
@@ -1147,11 +1240,11 @@ function KpiWidgetPanel({ editing, kpiCatalog, users, departments, onCancel, onS
               <div className="form-grid">
                 <label className="field">
                   <span>{tx("start_date_b", "Fecha inicio (comparación)")}</span>
-                  <input type="date" value={fechaInicioB} max={fechaFinB || undefined} onChange={(event) => setFechaInicioB(event.target.value)} required={comparar} />
+                  <input type="date" value={fechaInicioB} max={fechaFinB || undefined} onChange={(event) => onChangePanelState({ fechaInicioB: event.target.value })} required={comparar} />
                 </label>
                 <label className="field">
                   <span>{tx("end_date_b", "Fecha fin (comparación)")}</span>
-                  <input type="date" value={fechaFinB} min={fechaInicioB || undefined} onChange={(event) => setFechaFinB(event.target.value)} required={comparar} />
+                  <input type="date" value={fechaFinB} min={fechaInicioB || undefined} onChange={(event) => onChangePanelState({ fechaFinB: event.target.value })} required={comparar} />
                 </label>
               </div>
             )}
