@@ -9,7 +9,11 @@ from sqlalchemy.dialects.postgresql import JSONB
 
 from app.jobs.tasks_kpis import recalculate_kpi_snapshots
 from app.kpis.registry import seed_kpi_definitions
-from app.models import Invoice, KpiDefinition, KpiSnapshot, Proyect, User
+from app.models import (
+    Brand, Incident, IncidentType, Invoice, KpiDefinition, KpiSnapshot,
+    Location, LocationType, Material, NmIncidentProduct, Product,
+    ProductFamily, Proyect, Unit, User,
+)
 from app.models.session import engine, transaction_context
 
 # Se prueba contra PostgreSQL real, no SQLite: el UNIQUE de `kpi_snapshot` es
@@ -161,6 +165,121 @@ class RecalculateKpiSnapshotsTest(unittest.TestCase):
         recalculate_kpi_snapshots()
 
         self.assertEqual([], self._snapshots(PROYECTO_BAJA))
+
+
+# IDs propios (965-969), distintos de los de arriba (960-962) y de los de
+# test_kpi_incidentes.py (970+): esta clase recorre su propio setUp/tearDown
+# y no deben pisarse entre corridas.
+EMPLEADO_SIN_PROYECTO = 965
+PROYECTO_UNO = 966
+PROYECTO_DOS = 967
+INCIDENT_TYPE_JOB = 965
+LOCATION_TYPE_JOB = 965
+LOCATION_JOB = 965
+BRAND_JOB = 965
+PRODUCT_FAMILY_JOB = 965
+UNIT_JOB = 965
+MATERIAL_JOB = 965
+INVOICE_JOB = 965
+PRODUCT_JOB = 965
+INCIDENT_JOB = 965
+VALE_JOB = 965
+
+
+@unittest.skipUnless(engine.dialect.name == "postgresql", "Estas pruebas requieren PostgreSQL")
+class RecalculateKpiSnapshotsSinAlcanceDeProyectoTest(unittest.TestCase):
+    """Un KPI con `alcance_proyecto=False` (ver `KpiDefinition` en
+    `app/kpis/registry.py`) no debe calcularse una vez por proyecto activo --
+    a diferencia de `ventas_por_empleado`, que SI tiene alcance de proyecto y
+    ya prueba esa parte en `RecalculateKpiSnapshotsTest` de arriba."""
+
+    def setUp(self):
+        self._limpiar()
+        seed_kpi_definitions(engine)
+        with transaction_context() as db:
+            db.add(User(
+                id_user=EMPLEADO_SIN_PROYECTO, created_by=ADMIN_ID, full_name="Empleado sin proyecto KPI",
+                id_permission=1, id_proyect=1, id_status=1, supervisor=ADMIN_ID,
+                user_type="employee", is_employee=True, username="kpi-snap-sin-proyecto",
+            ))
+            db.add(IncidentType(id_incident_type=INCIDENT_TYPE_JOB, incident_type_description="KPI job test", created_by=ADMIN_ID))
+            db.add(LocationType(id_location_type=LOCATION_TYPE_JOB, location_type_description="KPI job test", is_warehouse=True, created_by=ADMIN_ID))
+            db.add(Brand(id_brand=BRAND_JOB, brand_description="KPI job test", created_by=ADMIN_ID))
+            db.add(ProductFamily(id_product_family=PRODUCT_FAMILY_JOB, product_family_description="KPI job test", created_by=ADMIN_ID))
+            db.add(Unit(id_unit=UNIT_JOB, unit_name="Pieza", is_active=True, measurement_system="metric", created_by=ADMIN_ID))
+            db.flush()
+            for proyect_id in (PROYECTO_UNO, PROYECTO_DOS):
+                db.add(Proyect(
+                    id_proyect=proyect_id, id_customer_supplier=1, leader=ADMIN_ID,
+                    proyect_description=f"Proyecto KPI job {proyect_id}", created_by=ADMIN_ID,
+                ))
+            db.add(Location(id_location=LOCATION_JOB, id_location_type=LOCATION_TYPE_JOB, location_description="KPI job test", created_by=ADMIN_ID))
+            db.add(Material(id_material=MATERIAL_JOB, material_description="KPI job test", id_unit=UNIT_JOB, id_brand=BRAND_JOB, id_product_family=PRODUCT_FAMILY_JOB, created_by=ADMIN_ID))
+            db.flush()
+            db.add(Invoice(
+                id_invoice=INVOICE_JOB, id_customer_supplier=1, id_issuer_customer_supplier=1,
+                id_proyect=1, id_status=1, tax_certification_supplier=1, apply_tax=False,
+                invoice_status="pendiente", created_by=ADMIN_ID,
+            ))
+            db.flush()
+            db.add(Product(
+                id_product=PRODUCT_JOB, id_invoice=INVOICE_JOB, id_location=LOCATION_JOB, id_material=MATERIAL_JOB,
+                is_directly_related_to_product_service=False, cantidad=5, created_by=ADMIN_ID,
+            ))
+            db.flush()
+            db.add(Incident(
+                id_incident=INCIDENT_JOB, id_incident_type=INCIDENT_TYPE_JOB, id_user=EMPLEADO_SIN_PROYECTO,
+                incident_status="abierta", creation_date=FECHA_RECIENTE, created_by=EMPLEADO_SIN_PROYECTO,
+            ))
+            db.flush()
+            db.add(NmIncidentProduct(
+                id_nm_incident_product=VALE_JOB, id_incident=INCIDENT_JOB, id_product=PRODUCT_JOB,
+                quantity=1, due_date=datetime.now() - timedelta(days=1), created_by=ADMIN_ID,
+            ))
+
+    def tearDown(self):
+        self._limpiar()
+
+    def _limpiar(self):
+        with transaction_context() as db:
+            db.execute(delete(NmIncidentProduct).where(NmIncidentProduct.id_nm_incident_product == VALE_JOB))
+            db.execute(delete(Incident).where(Incident.id_incident == INCIDENT_JOB))
+            db.execute(delete(Product).where(Product.id_product == PRODUCT_JOB))
+            db.execute(delete(Invoice).where(Invoice.id_invoice == INVOICE_JOB))
+            db.execute(delete(Material).where(Material.id_material == MATERIAL_JOB))
+            db.execute(delete(Location).where(Location.id_location == LOCATION_JOB))
+            db.execute(delete(Proyect).where(Proyect.id_proyect.in_([PROYECTO_UNO, PROYECTO_DOS])))
+            db.execute(delete(Unit).where(Unit.id_unit == UNIT_JOB))
+            db.execute(delete(ProductFamily).where(ProductFamily.id_product_family == PRODUCT_FAMILY_JOB))
+            db.execute(delete(Brand).where(Brand.id_brand == BRAND_JOB))
+            db.execute(delete(LocationType).where(LocationType.id_location_type == LOCATION_TYPE_JOB))
+            db.execute(delete(IncidentType).where(IncidentType.id_incident_type == INCIDENT_TYPE_JOB))
+            db.execute(delete(KpiSnapshot).where(
+                cast(KpiSnapshot.dimension_key, JSONB).contains({"id_user": EMPLEADO_SIN_PROYECTO})
+            ))
+            db.execute(delete(User).where(User.id_user == EMPLEADO_SIN_PROYECTO))
+
+    def test_kpi_sin_alcance_de_proyecto_no_se_duplica_por_proyecto_activo(self):
+        # Dos proyectos activos (PROYECTO_UNO, PROYECTO_DOS) + el bootstrap
+        # (id_proyect=1): si vales_vencidos_por_responsable ignorara
+        # `alcance_proyecto=False` y se recorriera igual que
+        # ventas_por_empleado, sembraria una fila IDENTICA por cada uno.
+        recalculate_kpi_snapshots()
+
+        with transaction_context() as db:
+            id_kpi_definition = db.scalar(
+                select(KpiDefinition.id_kpi_definition).where(KpiDefinition.clave == "vales_vencidos_por_responsable")
+            )
+            filas = db.execute(
+                select(KpiSnapshot.dimension_key, KpiSnapshot.valor)
+                .where(KpiSnapshot.id_kpi_definition == id_kpi_definition)
+            ).all()
+
+        self.assertEqual(1, len(filas), "un KPI sin alcance de proyecto debe sembrar una sola fila, no una por proyecto activo")
+        dimension_key, valor = filas[0]
+        self.assertNotIn("id_proyect", dimension_key, "un KPI sin alcance de proyecto no debe traer id_proyect en su dimension_key")
+        self.assertEqual({"id_user": EMPLEADO_SIN_PROYECTO}, dimension_key)
+        self.assertEqual(1, int(valor))
 
 
 if __name__ == "__main__":

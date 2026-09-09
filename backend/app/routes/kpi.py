@@ -6,6 +6,7 @@ from flask import Blueprint, jsonify, request
 from sqlalchemy import cast, func, select
 from sqlalchemy.dialects.postgresql import JSONB
 
+from app.kpis.registry import ALCANCE_PROYECTO_POR_CLAVE
 from app.models.kpi_definition import KpiDefinition
 from app.models.kpi_snapshot import KpiSnapshot
 from app.models.permission import Permission
@@ -170,17 +171,24 @@ def query_kpi_snapshot(user_data):
         if not has_kpi_permission(db, user_data, id_kpi_definition, 'read'):
             raise AppError('errors.permission_denied', 403, {'kpi': id_kpi_definition})
 
-        # Alcance del actor. KPI_REGISTRY hoy solo tiene "ventas_por_empleado",
-        # de facturacion, cuyo alcance natural -igual que las facturas que
-        # suma- es el proyecto. Se reutiliza tal cual
+        # Alcance del actor. Los primeros 3 KPIs de KPI_REGISTRY (facturacion,
+        # operaciones/tareas) miden entidades con id_proyect real, cuyo
+        # alcance natural es el proyecto -- se reutiliza tal cual
         # InvoiceService.actor_project (es un @staticmethod que no toca nada
         # de Invoice, solo user_data) en vez de duplicar el criterio de
-        # "superusuario ve todo, el resto exige id_proyect". Cuando exista un
-        # KPI de otro modulo con otra convencion de alcance -RRHH por
-        # departamento, por ejemplo, no por proyecto- este punto tendra que
-        # generalizarse a un alcance por-modulo en vez de seguir atado a
-        # InvoiceService.
-        actor_project = InvoiceService.actor_project(user_data)
+        # "superusuario ve todo, el resto exige id_proyect". Pero KPIs como
+        # "vales_vencidos_por_responsable" o "incidentes_resueltos_por_empleado"
+        # miden Incident/NmIncidentProduct, que no tienen id_proyect en NINGUN
+        # punto de la cadena -- exigirles un alcance de proyecto los dejaria
+        # sin una sola fila para cualquier no-superusuario (ver
+        # KpiDefinition.alcance_proyecto en app/kpis/registry.py, y
+        # tasks_kpis.py, que por el mismo motivo los calcula una sola vez en
+        # vez de una vez por proyecto activo). Por eso se resuelve el alcance
+        # por KPI (via su `clave`) antes de decidir si aplica algun filtro de
+        # proyecto: la generalizacion que este comentario ya anticipaba.
+        kpi_row = db.get(KpiDefinition, id_kpi_definition)
+        alcance_proyecto = ALCANCE_PROYECTO_POR_CLAVE.get(kpi_row.clave, True) if kpi_row else True
+        actor_project = InvoiceService.actor_project(user_data) if alcance_proyecto else None
 
         # id_departments se resuelve a id_user (via Permission.id_department)
         # y se combina con "empleados": si vienen los dos, interseccion; si
