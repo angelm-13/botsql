@@ -1,5 +1,5 @@
 /* eslint-disable react/prop-types */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import {
   ArrowDown, ArrowUp, AreaChart as AreaChartIcon, BarChart2, ClipboardList, Hash,
   LineChart as LineChartIcon, Pencil, PieChart as PieChartIcon, Plus, Receipt,
@@ -59,75 +59,138 @@ function kpiModuleMeta(modulo) {
 // sin esto, un tablero recien creado se ve como una pantalla rota en vez de
 // una invitacion a llenarlo. No es un tope -- con mas widgets la cuadricula
 // simplemente crece. El total real que se muestra se redondea hacia arriba al
-// multiplo de columnas mas cercano (ver `useGridColumnCount` y su uso en
-// `Dashboard`), asi que puede terminar siendo mayor a este minimo.
+// multiplo de columnas mas cercano (ver `useCompleteGridPlaceholders`), asi
+// que puede terminar siendo mayor a este minimo.
 const WIDGET_GRID_MIN_SLOTS = 6;
 
-// Estos dos numeros tienen que ser IGUALES a `minmax(340px, 1fr)` y `gap:16px`
-// de `.kpi-widget-grid` en kpi-dashboard.css: son la misma formula que usa el
-// motor de grid de CSS para decidir cuantas columnas caben
-// (`auto-fill`/`minmax`), reproducida en JS porque CSS no expone cuantas
-// columnas quedo pintando. Si uno de los dos lados cambia, el otro se
-// desincroniza en silencio.
-const WIDGET_CARD_MIN_WIDTH = 340;
-const WIDGET_GRID_GAP = 16;
-// A partir de aqui el CSS fuerza una sola columna
-// (`@media(max-width:720px)` en kpi-dashboard.css) sin importar cuanto quepa
-// por formula -- mismo numero, o el conteo de columnas dejaria de coincidir
-// con lo que el usuario ve justo en ese rango de anchos.
-const WIDGET_GRID_MOBILE_BREAKPOINT = 720;
+// Tamano del lote de sondeo: lo bastante grande para que ninguna pantalla
+// real (tarjetas de 340px minimo) alcance a llenarlo en una sola fila. Se usa
+// SOLO para medir sin ambiguedad cuantas columnas hay -- ver el comentario de
+// `useCompleteGridPlaceholders`. Un monitor necesitaria mas de 11000px de
+// ancho de contenido para llenarlo entero, asi que en la practica siempre
+// desborda a una segunda fila.
+const WIDGET_GRID_PROBE_SIZE = 24;
 
-/** Cuantas columnas esta pintando ahora mismo `.kpi-widget-grid`.
+/** Cuenta cuantos hijos de `nodo` comparten el `offsetTop` del primero.
  *
- * No se puede leer directo del DOM (`getComputedStyle` da la lista de
- * anchos calculados, no un conteo), asi que se reproduce la cuenta que hace
- * el grid: `floor((ancho + gap) / (minimo + gap))`, con el mismo quiebre a
- * una columna que ya declara el CSS para pantallas angostas.
- *
- * Se observa el CONTENEDOR (`ResizeObserver`), no la ventana (`resize`): el
- * ancho disponible cambia tambien al colapsar/expandir el sidebar, sin que
- * la ventana misma cambie de tamano, y un `resize` de `window` no se entera
- * de eso.
+ * Con la disposicion por filas de un grid normal (sin `order` ni ubicacion
+ * manual, que es como esta armado `.kpi-widget-grid`), los hijos quedan en el
+ * DOM en el mismo orden en que se ven. Todos los que caen en la primera fila
+ * comparten el mismo `offsetTop`; el primero que tenga uno distinto ya esta
+ * en la segunda fila. Es literalmente cuantas columnas decidio el navegador,
+ * sin reproducir ninguna formula de `auto-fill`/`minmax`.
  */
-function useGridColumnCount(containerRef) {
-  const [columnas, setColumnas] = useState(1);
-
-  useEffect(() => {
-    const contenedor = containerRef.current;
-    if (!contenedor) return undefined;
-
-    function recalcular() {
-      if (window.matchMedia(`(max-width: ${WIDGET_GRID_MOBILE_BREAKPOINT}px)`).matches) {
-        setColumnas(1);
-        return;
-      }
-      const ancho = contenedor.clientWidth;
-      const posibles = Math.floor((ancho + WIDGET_GRID_GAP) / (WIDGET_CARD_MIN_WIDTH + WIDGET_GRID_GAP));
-      setColumnas(Math.max(1, posibles));
-    }
-
-    recalcular();
-    const observer = new ResizeObserver(recalcular);
-    observer.observe(contenedor);
-    return () => observer.disconnect();
-  }, [containerRef]);
-
+function contarColumnasDeLaPrimeraFila(nodo) {
+  const hijos = Array.from(nodo.children);
+  if (hijos.length === 0) return 1;
+  const primerTop = hijos[0].offsetTop;
+  let columnas = 0;
+  for (const hijo of hijos) {
+    if (hijo.offsetTop !== primerTop) break;
+    columnas += 1;
+  }
   return columnas;
 }
 
 /** Cuantos placeholders "+" hacen falta para que la cuadricula no deje
- * ninguna fila a medias.
+ * ninguna fila a medias, midiendo las columnas REALES que el navegador ya
+ * decidio -- no adivinandolas.
  *
- * El total (reales + placeholders) es siempre multiplo exacto de `columnas`:
- * se parte del minimo de fabrica (o de los widgets reales si ya hay mas que
- * ese minimo) y se redondea hacia arriba al siguiente multiplo. Con 4
- * columnas y 1 widget real, por ejemplo, el minimo de 6 no es multiplo de 4
- * -- deja una fila de 4 y una de 2 -- asi que sube a 8 (dos filas completas).
+ * Por que no se replica la formula de `auto-fill`/`minmax`
+ * ------------------------------------------------------
+ * Una version anterior reproducia a mano `floor((ancho + gap) / (minimo +
+ * gap))` para adivinar cuantas columnas iba a pintar el grid. En la practica
+ * quedo desincronizada del `auto-fill` real del navegador (caja, scrollbar,
+ * redondeo de subpixeles -- cualquier diferencia de un par de pixeles corre
+ * el resultado), y en una prueba real con 4 columnas visibles genero solo 6
+ * espacios (fila de 4 + fila de 2) en vez de los 8 que hacian falta.
+ *
+ * Por que se sondea con un lote grande, no incrementando de a uno
+ * -----------------------------------------------------------------
+ * Si todos los hijos renderizados caben en una sola fila no se puede saber
+ * si esa es la cuenta real de columnas o si sencillamente no habia hijos de
+ * sobra para desbordar a una segunda fila. Una primera version resolvia esto
+ * agregando un placeholder a la vez hasta desbordar -- pero eso puede
+ * oscilar para siempre: si el objetivo final calculado (el minimo redondeado
+ * al multiplo de columnas) coincide justo con las columnas reales -caso
+ * nada raro, el minimo de fabrica es multiplo de 2, 3 y 6-, ese objetivo
+ * vuelve a caber entero en una fila, se vuelve a ver "ambiguo", se vuelve a
+ * incrementar, y el resultado se vuelve a achicar al medir de nuevo: un
+ * ciclo sin fin que en la practica tumbaba el componente entero (React corta
+ * la cadena de renders con "Maximum update depth exceeded"). En vez de eso,
+ * cuando hace falta sondear se renderiza de una vez un lote fijo y
+ * deliberadamente grande (`WIDGET_GRID_PROBE_SIZE`), se mide una sola vez sin
+ * ambiguedad, y se salta directo al objetivo final -- nunca se vuelve a medir
+ * el resultado ya ajustado (ver mas abajo), asi que no hay como oscilar.
+ *
+ * Por que no hace loop infinito
+ * ------------------------------
+ * Las columnas medidas (`columnas`) quedan guardadas en estado y el efecto
+ * solo vuelve a sondear (`columnas === null`) cuando algo pudo haber cambiado
+ * el ancho real -- un resize del contenedor. Una vez que `columnas` tiene un
+ * valor, calcular el objetivo a partir de el es determinista y no requiere
+ * volver a medir el DOM, asi que un cambio de `widgetCount` nunca dispara un
+ * sondeo nuevo ni una nueva medicion que se pueda malinterpretar.
+ *
+ * Por que igual hace falta un ResizeObserver
+ * -------------------------------------------
+ * El efecto solo se vuelve a correr cuando cambian sus propias dependencias
+ * -- un resize de la ventana no es ninguna de esas por si solo, asi que sin
+ * nada mas las columnas conocidas se quedarian pegadas al ancho que tenia la
+ * primera vez que se midieron. El observer no calcula columnas (eso lo sigue
+ * haciendo la medicion real de arriba): solo invalida lo que se sabia
+ * (`columnas = null`) para forzar un sondeo fresco.
  */
-function widgetPlaceholderCount(widgetCount, columnCount) {
-  const minimo = Math.max(WIDGET_GRID_MIN_SLOTS, widgetCount);
-  const total = Math.ceil(minimo / columnCount) * columnCount;
-  return total - widgetCount;
+function useCompleteGridPlaceholders(widgetCount) {
+  // El nodo del grid en ESTADO, no en un ref de objeto: `.kpi-widget-grid`
+  // solo se monta cuando `activeDashboard` ya cargo (es condicional, ver el
+  // render mas abajo), asi que en el primer render de este componente el
+  // contenedor todavia no existe. Un `useRef` normal no avisa a ningun efecto
+  // cuando su `.current` pasa de `null` al nodo real despues -- los refs
+  // quedan fuera del sistema de dependencias de React a proposito, asi que
+  // cualquier efecto con `[miRef]` en su arreglo de dependencias solo corre
+  // una vez, con el nodo todavia en `null`, y nunca se entera de que el grid
+  // ya aparecio. Guardar el nodo en estado (via un callback ref) hace que su
+  // aparicion SI dispare un re-render y, con el, los efectos que dependen de
+  // el.
+  const [nodo, setNodo] = useState(null);
+  const gridRef = useCallback((nodoActual) => setNodo(nodoActual), []);
+
+  const [columnas, setColumnas] = useState(null); // null = hay que sondear
+  const [placeholderCount, setPlaceholderCount] = useState(
+    () => Math.max(0, WIDGET_GRID_MIN_SLOTS - widgetCount),
+  );
+
+  useEffect(() => {
+    if (!nodo) return undefined;
+    const observer = new ResizeObserver(() => setColumnas(null));
+    observer.observe(nodo);
+    return () => observer.disconnect();
+  }, [nodo]);
+
+  useLayoutEffect(() => {
+    if (!nodo) return;
+
+    if (columnas === null) {
+      const objetivoDeSondeo = Math.max(0, WIDGET_GRID_PROBE_SIZE - widgetCount);
+      if (placeholderCount !== objetivoDeSondeo) {
+        setPlaceholderCount(objetivoDeSondeo);
+        return; // esperar al proximo render, ya con el lote de sondeo pintado
+      }
+      setColumnas(contarColumnasDeLaPrimeraFila(nodo));
+      return;
+    }
+
+    const minimo = Math.max(WIDGET_GRID_MIN_SLOTS, widgetCount);
+    const totalObjetivo = Math.ceil(minimo / columnas) * columnas;
+    const placeholdersObjetivo = Math.max(0, totalObjetivo - widgetCount);
+
+    if (placeholdersObjetivo !== placeholderCount) {
+      setPlaceholderCount(placeholdersObjetivo);
+    }
+  }, [nodo, widgetCount, placeholderCount, columnas]);
+
+  return [placeholderCount, gridRef];
 }
 
 // Orden categorico validado (dataviz skill): identidad, nunca ciclado.
@@ -213,8 +276,7 @@ export default function Dashboard() {
 
   const [widgetForm, setWidgetForm] = useState(null);
 
-  const widgetGridRef = useRef(null);
-  const columnasVisibles = useGridColumnCount(widgetGridRef);
+  const [placeholderCount, widgetGridRef] = useCompleteGridPlaceholders(widgets.length);
 
   const loadDashboards = useCallback(async (preferredId) => {
     setLoadingDashboards(true);
@@ -408,11 +470,12 @@ export default function Dashboard() {
                 />
               ))}
               {/* Espacios "de fabrica": llenan un tablero nuevo hasta el minimo
-                  visual, redondeado hacia arriba al multiplo de columnas mas
-                  cercano para que ninguna fila quede incompleta (ver
-                  useGridColumnCount). No son un tope -- si ya hay mas widgets
-                  que el minimo, el redondeo se aplica sobre esa cantidad. */}
-              {Array.from({ length: widgetPlaceholderCount(widgets.length, columnasVisibles) }).map((_, index) => (
+                  visual, redondeado hacia arriba al multiplo de columnas
+                  REALES ya renderizadas por el navegador, para que ninguna
+                  fila quede incompleta (ver useCompleteGridPlaceholders). No
+                  son un tope -- si ya hay mas widgets que el minimo, el
+                  redondeo se aplica sobre esa cantidad. */}
+              {Array.from({ length: placeholderCount }).map((_, index) => (
                 <button
                   type="button"
                   key={`kpi-widget-placeholder-${index}`}
