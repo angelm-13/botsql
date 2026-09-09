@@ -147,46 +147,57 @@ jobs:
   # el servidor por SSH.
   deploy-tyakxa-dev:
     needs: [backend-and-worker, frontend-por-cliente]
+    concurrency:
+      group: deploy-tyakxa-dev-${{ github.ref }}
     runs-on: ubuntu-latest
     permissions:
       contents: write # necesario para poder commitear el tag nuevo de vuelta al repo
     steps:
       - uses: actions/checkout@v4
 
-      - name: Actualizar el tag de las 4 imágenes en el overlay de tyakxa-dev
-        env:
-          SHA: ${{ needs.backend-and-worker.outputs.sha_short }}
-        run: |
-          set -euo pipefail
-          OVERLAY=k8s/overlays/tyakxa-dev/kustomization.yaml
-          yq -i '(.images[] | select(.name == "DB_INIT_IMAGE_PLACEHOLDER")).newTag = strenv(SHA)' "$OVERLAY"
-          yq -i '(.images[] | select(.name == "BACKEND_IMAGE_PLACEHOLDER")).newTag = strenv(SHA)' "$OVERLAY"
-          yq -i '(.images[] | select(.name == "WORKER_IMAGE_PLACEHOLDER")).newTag = strenv(SHA)' "$OVERLAY"
-          yq -i '(.images[] | select(.name == "FRONTEND_IMAGE_PLACEHOLDER")).newTag = strenv(SHA) + "-tyakxa-dev"' "$OVERLAY"
-
-      - name: Commitear el tag nuevo
+      - name: Actualizar el tag y commitear (con reintento ante carreras)
         env:
           SHA: ${{ needs.backend-and-worker.outputs.sha_short }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add k8s/overlays/tyakxa-dev/kustomization.yaml
-          if git diff --cached --quiet; then
-            echo "El overlay ya tenía este tag, nada que commitear."
-          else
-            git commit -m "deploy(tyakxa-dev): actualizar a ${SHA}"
-            # git fetch + rebase antes de empujar: un "re-run" de un workflow
-            # viejo reusa el commit ORIGINAL que lo disparó, no la punta
-            # actual de la rama — sin esto, el push queda "atrasado" respecto
-            # al remoto (rejected, fetch first) si la rama avanzó desde
-            # entonces. Con el rebase, si el cambio ya existe upstream
-            # (mismo SHA ya aplicado), el commit queda vacío y se descarta
-            # solo; si no existe, se reaplica limpio sobre lo más reciente.
+          OVERLAY=k8s/overlays/tyakxa-dev/kustomization.yaml
+
+          for intento in 1 2 3 4 5; do
+            # Siempre partimos de la punta MÁS RECIENTE de la rama, no de
+            # la que disparó este run -- así el cambio nunca se calcula
+            # sobre una base vieja que ya no existe en el remoto (la causa
+            # del "could not apply" cuando dos runs caían cerca uno del
+            # otro: cada uno commiteaba un valor distinto para la MISMA
+            # línea, y el rebase no podía reconciliar eso).
             git fetch origin "${GITHUB_REF_NAME}"
-            git rebase "origin/${GITHUB_REF_NAME}"
-            git push origin "HEAD:${GITHUB_REF_NAME}"
-          fi
+            git reset --hard "origin/${GITHUB_REF_NAME}"
+
+            yq -i '(.images[] | select(.name == "DB_INIT_IMAGE_PLACEHOLDER")).newTag = strenv(SHA)' "$OVERLAY"
+            yq -i '(.images[] | select(.name == "BACKEND_IMAGE_PLACEHOLDER")).newTag = strenv(SHA)' "$OVERLAY"
+            yq -i '(.images[] | select(.name == "WORKER_IMAGE_PLACEHOLDER")).newTag = strenv(SHA)' "$OVERLAY"
+            yq -i '(.images[] | select(.name == "FRONTEND_IMAGE_PLACEHOLDER")).newTag = strenv(SHA) + "-tyakxa-dev"' "$OVERLAY"
+
+            git add "$OVERLAY"
+            if git diff --cached --quiet; then
+              echo "El overlay ya tenía este tag, nada que commitear."
+              break
+            fi
+
+            git commit -m "deploy(tyakxa-dev): actualizar a ${SHA}"
+
+            if git push origin "HEAD:${GITHUB_REF_NAME}"; then
+              break
+            fi
+
+            echo "Push rechazado (carrera con otro run), reintentando (${intento})..."
+            if [ "$intento" -eq 5 ]; then
+              echo "Se agotaron los reintentos." >&2
+              exit 1
+            fi
+            sleep $((RANDOM % 5 + 1))
+          done
 
       - name: Aplicar en el servidor
         env:
