@@ -112,6 +112,10 @@ export const updateBrand = (id, payload) => request(`/brand/${id}`, { method: "P
 export const deleteBrand = (id) => request(`/brand/${id}`, { method: "DELETE" });
 
 export const getAllCustomerSupplier = (params = {}) => request("/customer_supplier/", { params });
+// Solo id+nombre, para selectores (ej. "Cliente" al crear un proyecto) --
+// no exige el permiso de lectura completo de customer_supplier, a diferencia
+// de getAllCustomerSupplier.
+export const getCustomerSupplierOptions = () => request("/customer_supplier/options");
 export const getCustomerSupplier = (id) => request(`/customer_supplier/${id}`);
 export const createCustomerSupplier = (payload) => request("/customer_supplier/", { method: "POST", body: payload });
 export const updateCustomerSupplier = (id, payload) => request(`/customer_supplier/${id}`, { method: "PUT", body: payload });

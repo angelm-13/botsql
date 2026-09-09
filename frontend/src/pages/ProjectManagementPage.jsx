@@ -5,7 +5,7 @@ import {
   addTaskNote,
   createProyect,
   deleteProyect,
-  getAllCustomerSupplier,
+  getCustomerSupplierOptions,
   getAllProyect,
   getAllUser,
   getMyPermissions,
@@ -184,7 +184,7 @@ export default function ProjectManagementPage() {
         // aunque el permiso real del rol si alcanzara.
         const [permissionPayload, customerPayload, userPayload, catalogPayload] = await Promise.all([
           privileged ? Promise.resolve({ entity_permissions: [] }) : getMyPermissions().catch(() => ({ entity_permissions: [] })),
-          getAllCustomerSupplier({ page: 1, per_page: 100 }).catch(() => ({ items: [] })),
+          getCustomerSupplierOptions().catch(() => []),
           getAllUser({ page: 1, per_page: 100 }).catch(() => ({ items: [] })),
           // Si el catalogo no llega, `statusCodes` cae en STATUS_ORDER y los
           // cambios de estatus quedan sin ofrecer, no ofrecidos a ciegas: el
