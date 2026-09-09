@@ -9,7 +9,7 @@ import {
   createWarehouseVoucher,
   getAllIncidentType,
   getAllLocation,
-  getAllUser,
+  getUserOptions,
   getOverdueVoucherLines,
   getWarehouseVoucher,
   listWarehouseVouchers,
@@ -86,16 +86,21 @@ export default function WarehouseVoucherPage() {
     setCargando(true);
     setError("");
     try {
+      // Cada llamada se atrapa por separado: un rol de almacen no lee todas
+      // estas entidades por igual (ej. antes de hoy, ninguno tenia lectura
+      // de incident_type), y un solo 403 aqui tumbaba las demas tambien --
+      // dejaba "Levantar vale" deshabilitado por falta de tipos aunque
+      // ubicaciones/usuarios si hubieran cargado bien.
       const [venc, tip, ubi, usr] = await Promise.all([
-        getOverdueVoucherLines(),
-        getAllIncidentType({ per_page: 100 }),
-        getAllLocation({ per_page: 200 }),
-        getAllUser({ per_page: 200 }),
+        getOverdueVoucherLines().catch(() => ({ items: [] })),
+        getAllIncidentType({ per_page: 100 }).catch(() => ({ items: [] })),
+        getAllLocation({ per_page: 200 }).catch(() => ({ items: [] })),
+        getUserOptions().catch(() => []),
       ]);
       setVencidos(venc?.items || []);
       setTipos(tip?.items || []);
       setUbicaciones(ubi?.items || []);
-      setUsuarios(usr?.items || []);
+      setUsuarios(Array.isArray(usr) ? usr : usr?.items || []);
     } catch (e) {
       decirError(e, "No se pudo cargar la pantalla de vales.");
     } finally {

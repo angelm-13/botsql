@@ -541,7 +541,11 @@ def migrar_invoice(origen, session, equiv):
             tax_certification_supplier=id_customer_supplier,
             apply_tax=(fila['impuesto'] or 0) > 0,
             id_status=BOOTSTRAP_ID_STATUS,
-            id_proyect=None,
+            # id_proyect=None se dejo asi originalmente -- descubierto despues
+            # (2026-09-09, fix_adser_invoice_id_proyect.py) que NULL rompe
+            # inventory_trace_service: ningun usuario no-admin puede ver un
+            # producto cuya factura no coincida con su propio id_proyect.
+            id_proyect=BOOTSTRAP_ID_PROYECT,
             lugar_expedicion=fila['lugar_expedicion'],
             tipo_de_comprobante=fila['tipo_de_comprobante'],
             rfc_receptor=fila['rfc_receptor'],
