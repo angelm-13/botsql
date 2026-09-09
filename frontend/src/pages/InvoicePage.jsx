@@ -3,6 +3,7 @@ import { BadgeCheck, ChevronDown, ChevronRight, Download, FileText, Plus, Refres
 import { useI18n } from "../i18n";
 import { applyInvoiceInventory, deleteInvoice, downloadInvoicePdf, downloadInvoiceXml, getAllCustomerSupplier, getAllEntityPermission, getAllField, getAllInvoice, getAllNmFieldPermission, getAllProyect, getAllStatus, getInvoiceInventoryPreview, getInvoiceLines, resetUserMfa, stampInvoice, createInvoice, updateInvoice } from "../api";
 import Pagination from "../components/Pagination.jsx";
+import PageHeader from "../components/PageHeader.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 import InvoiceUploadWidget from "../components/InvoiceUploadWidget.jsx";
 import InvoiceCreationForm from "../components/InvoiceCreationForm.jsx";
@@ -594,10 +595,13 @@ export default function InvoicePage() {
 
   return (
     <section className="entity-page">
-      <div className="page-heading">
-        <div><p className="eyebrow">{t("common.module")}</p><h2>{t("menu.invoice")}</h2></div>
+      <PageHeader
+        eyebrow={t("common.module")}
+        titulo={t("menu.invoice")}
+        subtitulo={t("page.invoice.subtitle", "")}
+      >
         <button className="button ghost" onClick={loadData} disabled={!canRead}><RefreshCw size={16} />{loading ? t("common.loading") : t("common.refresh")}</button>
-      </div>
+      </PageHeader>
 
       {canSubmitForm && (editingId ? <form className="form-card" onSubmit={handleSubmit}>
         <div className="form-header"><Plus size={18} /><strong>{editingId ? t("common.edit") : t("common.new")}</strong></div>

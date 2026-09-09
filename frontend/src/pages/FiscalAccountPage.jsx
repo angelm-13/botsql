@@ -3,6 +3,7 @@ import { Plus, RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
 import { getAllFiscalAccount, createFiscalAccount, updateFiscalAccount, deleteFiscalAccount, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa } from "../api";
 import Pagination from "../components/Pagination.jsx";
+import PageHeader from "../components/PageHeader.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 
 const emptyForm = { fiscal_account_description: "", balance: "", id_fiscal_account_reference: "" };
@@ -322,10 +323,13 @@ export default function FiscalAccountPage() {
 
   return (
     <section className="entity-page">
-      <div className="page-heading">
-        <div><p className="eyebrow">{t("common.module")}</p><h2>{t("menu.fiscal_account")}</h2></div>
+      <PageHeader
+        eyebrow={t("common.module")}
+        titulo={t("menu.fiscal_account")}
+        subtitulo={t("page.fiscal_account.subtitle", "")}
+      >
         <button className="button ghost" onClick={loadData} disabled={!canRead}><RefreshCw size={16} />{loading ? t("common.loading") : t("common.refresh")}</button>
-      </div>
+      </PageHeader>
 
       {canSubmitForm && <form className="form-card" onSubmit={handleSubmit}>
         <div className="form-header"><Plus size={18} /><strong>{editingId ? t("common.edit") : t("common.new")}</strong></div>

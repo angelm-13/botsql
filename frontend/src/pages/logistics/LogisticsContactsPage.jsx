@@ -9,6 +9,7 @@ import {
   updateLogisticsContact,
 } from "../../api";
 import { useI18n } from "../../i18n";
+import PageHeader from "../../components/PageHeader.jsx";
 
 const emptyForm = {
   id_customer_supplier: "",
@@ -106,10 +107,12 @@ export default function LogisticsContactsPage() {
 
   return (
     <section className="entity-page logistics-entity-page">
-      <div className="page-heading">
-        <div><p className="eyebrow">{t("logistics.crm")}</p><h2>{t("logistics.contact_plural")}</h2></div>
+      <PageHeader
+        eyebrow={t("logistics.crm")}
+        titulo={t("logistics.contact_plural")}
+      >
         <button className="button ghost" type="button" onClick={loadData}><RefreshCw size={16} /> {t("logistics.refresh")}</button>
-      </div>
+      </PageHeader>
 
       <form className="form-card" onSubmit={handleSubmit}>
         <div className="form-header"><Plus size={18} /><strong>{editingId ? `${t("logistics.edit")} ${t("logistics.contact_singular").toLowerCase()}` : `${t("logistics.contact_new")} ${t("logistics.contact_singular").toLowerCase()}`}</strong></div>

@@ -26,21 +26,35 @@
 /* Seis controles no caben en una fila en un portatil. La rejilla llena lo que
    hay: el buscador toma lo que sobra y cada desplegable un ancho minimo
    legible, en vez de encogerse hasta que no se lee la opcion elegida. */
+/* Los cinco controles miden lo mismo.
+   Antes el buscador se llevaba `2fr` y los cuatro filtros `1fr` cada uno, con
+   `auto-fit`: el primero salia del doble de ancho que los demas y, segun el
+   ancho de la ventana, los otros cuatro cambiaban de tamano entre si. Cinco
+   columnas iguales y fijas: la barra se lee de un vistazo y no se reacomoda.
+   `align-items: start` para que las cinco cajas empiecen en la misma linea --
+   los filtros llevan debajo su cuenta de opciones y el buscador no, asi que
+   estirandolas el buscador quedaba mas alto que el resto. */
 .trace-toolbar {
-  display: grid; gap: 10px; margin: 0 0 16px; align-items: stretch;
-  grid-template-columns: minmax(240px, 2fr) repeat(auto-fit, minmax(158px, 1fr));
+  display: grid; gap: 10px; margin: 0 0 16px; align-items: start;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+@media (max-width: 1100px) {
+  .trace-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 720px) {
-  .trace-toolbar { grid-template-columns: 1fr 1fr; }
+  .trace-toolbar { grid-template-columns: 1fr; }
   .trace-search { grid-column: 1 / -1; }
 }
+/* El mismo radio y el mismo alto que el input de un filtro: son cinco cajas de
+   la misma barra y cualquier diferencia se lee como que hacen cosas distintas. */
 .trace-search {
-  display: flex; align-items: center; gap: 8px;
-  border: 1px solid #cbd5e1; border-radius: 10px; padding: 0 12px; background: #fff;
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+  border: 1px solid #cbd5e1; border-radius: 14px; padding: 0 11px; background: #fff;
 }
 .trace-search svg { color: #64748b; flex: 0 0 auto; }
 .trace-search input {
-  flex: 1; border: 0; outline: none; padding: 11px 0; font: inherit; background: transparent;
+  flex: 1; min-width: 0; border: 0; outline: none; padding: 9px 0;
+  font: inherit; background: transparent;
 }
 .trace-toolbar select {
   padding: 11px 12px; border: 1px solid #cbd5e1; border-radius: 10px;

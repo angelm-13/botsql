@@ -4,8 +4,11 @@
    desplegable plano de ese tamano no es un filtro: es una lista donde hay que
    bajar con la rueda buscando a ojo. */
 
+/* Sin `min-width`: la rejilla de la barra ya reparte el ancho en cinco partes
+   iguales, y un minimo propio le ganaba a la rejilla en pantallas medianas --
+   la caja se desbordaba y los cinco controles dejaban de medir lo mismo. */
 .filtro-buscable {
-  display: flex; flex-direction: column; gap: 3px; min-width: 190px;
+  display: flex; flex-direction: column; gap: 3px; min-width: 0;
 }
 /* Un solo control: el mismo campo donde se lee la opcion elegida es donde se
    escribe para buscarla. Antes habia una caja de texto ENCIMA del select, que

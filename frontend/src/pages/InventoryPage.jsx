@@ -7,6 +7,7 @@ import {
 import ProductLots from "../components/ProductLots.jsx";
 import { useI18n } from "../i18n";
 import "../styles/inventory-warehouses.css";
+import PageHeader from "../components/PageHeader.jsx";
 import {
   createInventoryMovement, createInventoryTransfer, getAllEntityPermission,
   getAllProduct, getInventoryMovements, getInventoryReconciliation,
@@ -455,16 +456,15 @@ export default function InventoryPage() {
 
   return (
     <main className="page">
-      <header className="page-header">
-        <div>
-          <p className="eyebrow"><Warehouse size={14} /> {t("inventory.eyebrow", "Almacén")}</p>
-          <h1>{t("inventory.title", "Inventario por almacén")}</h1>
-          <p className="muted">{t("inventory.subtitle", "Existencia por ubicación, movimientos y traspasos entre almacenes.")}</p>
-        </div>
+      <PageHeader
+        eyebrow={<><Warehouse size={14} /> {t("inventory.eyebrow", "Almacén")}</>}
+        titulo={t("inventory.title", "Inventario por almacén")}
+        subtitulo={t("inventory.subtitle", "Existencia por ubicación, movimientos y traspasos entre almacenes.")}
+      >
         <button className="button" type="button" onClick={loadBase} disabled={loading}>
-          <RefreshCw size={16} /> {t("common.refresh", "Actualizar")}
+        <RefreshCw size={16} /> {t("common.refresh", "Actualizar")}
         </button>
-      </header>
+      </PageHeader>
 
       {error && (
         <p className="error">

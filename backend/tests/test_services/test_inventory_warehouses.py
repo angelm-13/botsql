@@ -376,6 +376,21 @@ class TestWarehouseQueries(WarehouseTestCase):
         self.assertEqual(1, report["total"])
         self.assertEqual(NORTE, report["items"][0]["id_location"])
 
+    def test_a_movement_says_where_and_who_in_words(self):
+        """El renglon crudo trae ids, y con ids no se puede leer el libro.
+
+        La ficha del producto ensena este libro: sin el nombre de la ubicacion
+        cada linea dice "ubicacion 4", que no contesta donde entro la pieza.
+        """
+        self.receive(5, RACK_A1, "con-nombre")
+
+        renglon = list_inventory_movements(PRODUCT, ACTOR)["items"][0]
+
+        self.assertEqual(RACK_A1, renglon["id_location"])
+        self.assertIsNotNone(renglon["location_description"])
+        self.assertIn("location_target_description", renglon)
+        self.assertIn("created_by_name", renglon)
+
 
 class TestLocationTree(WarehouseTestCase):
     def test_tree_nests_locations_and_rolls_up_quantities(self):

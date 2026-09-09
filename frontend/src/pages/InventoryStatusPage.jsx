@@ -3,6 +3,7 @@ import { Plus, RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
 import { getAllInventoryStatus, createInventoryStatus, updateInventoryStatus, deleteInventoryStatus, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllDepartment, getAllSubdepartment, getAllLevel } from "../api";
 import Pagination from "../components/Pagination.jsx";
+import PageHeader from "../components/PageHeader.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 
 const emptyForm = { inventory_status_code: "", inventory_status_description: "", color: "", entity_scope: "", flow_scope: "", id_department: "", id_subdepartment: "", id_minimum_level: "", is_active: false, is_terminal: false, visible_to_other_departments: false, sort_order: "" };
@@ -402,10 +403,13 @@ export default function InventoryStatusPage() {
 
   return (
     <section className="entity-page">
-      <div className="page-heading">
-        <div><p className="eyebrow">{t("common.module")}</p><h2>{t("menu.inventory_status")}</h2></div>
+      <PageHeader
+        eyebrow={t("common.module")}
+        titulo={t("menu.inventory_status")}
+        subtitulo={t("page.inventory_status.subtitle", "")}
+      >
         <button className="button ghost" onClick={loadData} disabled={!canRead}><RefreshCw size={16} />{loading ? t("common.loading") : t("common.refresh")}</button>
-      </div>
+      </PageHeader>
 
       {canSubmitForm && <form className="form-card" onSubmit={handleSubmit}>
         <div className="form-header"><Plus size={18} /><strong>{editingId ? t("common.edit") : t("common.new")}</strong></div>

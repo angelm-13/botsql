@@ -3,6 +3,7 @@ import { Plus, RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
 import { getAllPayrollPeriod, createPayrollPeriod, updatePayrollPeriod, deletePayrollPeriod, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllStatus } from "../api";
 import Pagination from "../components/Pagination.jsx";
+import PageHeader from "../components/PageHeader.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 
 const emptyForm = { period_start: "", period_end: "", payment_date: "", id_status: "" };
@@ -384,10 +385,13 @@ export default function PayrollPeriodPage() {
 
   return (
     <section className="entity-page">
-      <div className="page-heading">
-        <div><p className="eyebrow">{t("common.module")}</p><h2>{t("menu.payroll_period")}</h2></div>
+      <PageHeader
+        eyebrow={t("common.module")}
+        titulo={t("menu.payroll_period")}
+        subtitulo={t("page.payroll_period.subtitle", "")}
+      >
         <button className="button ghost" onClick={loadData} disabled={!canRead}><RefreshCw size={16} />{loading ? t("common.loading") : t("common.refresh")}</button>
-      </div>
+      </PageHeader>
 
       {canSubmitForm && <form className="form-card" onSubmit={handleSubmit}>
         <div className="form-header"><Plus size={18} /><strong>{editingId ? t("common.edit") : t("common.new")}</strong></div>

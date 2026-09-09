@@ -71,6 +71,29 @@ CREATE TABLE IF NOT EXISTS "kpi_dashboard_widget" (
 );
 
 CREATE INDEX IF NOT EXISTS "idx_kpi_dashboard_widget_dashboard" ON "kpi_dashboard_widget" ("id_kpi_dashboard");
-CREATE INDEX IF NOT EXISTS "idx_kpi_dashboard_widget_definition" ON "kpi_dashboard_widget" ("id_kpi_definition");
+-- El indice, solo si la columna todavia existe.
+--
+-- `db-migrate` re-aplica TODAS las migraciones en cada arranque -no lleva tabla
+-- de control-, asi que cada una tiene que poder correr dos veces. Y esta no
+-- podia: 20260908210000 movio los KPIs de un widget a su propia tabla y quito
+-- `id_kpi_definition` de `kpi_dashboard_widget`, asi que en la segunda pasada
+-- este CREATE INDEX revienta con
+--
+--     ERROR: column "id_kpi_definition" does not exist
+--
+-- y con ON_ERROR_STOP=1 tumba el arranque entero: `docker compose up` sale con
+-- exit 3 y el sistema no levanta. El CREATE TABLE de arriba no lo nota porque
+-- es IF NOT EXISTS; el indice no tiene esa salida.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'kpi_dashboard_widget'
+          AND column_name = 'id_kpi_definition'
+    ) THEN
+        CREATE INDEX IF NOT EXISTS "idx_kpi_dashboard_widget_definition"
+            ON "kpi_dashboard_widget" ("id_kpi_definition");
+    END IF;
+END $$;
 
 COMMIT;

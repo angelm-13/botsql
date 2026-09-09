@@ -4,6 +4,7 @@ import { useI18n } from "../i18n";
 import { getAllCustomerSupplier, createCustomerSupplier, updateCustomerSupplier, deleteCustomerSupplier, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllUser, getInvoiceCatalogs } from "../api";
 import Pagination from "../components/Pagination.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
+import PageHeader from "../components/PageHeader.jsx";
 
 /* eslint-disable react/prop-types */
 
@@ -422,10 +423,12 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
 
   return (
     <section className="entity-page">
-      <div className="page-heading">
-        <div><p className="eyebrow">{forcedType === "client" ? "CRM" : forcedType ? "Logística" : t("common.module")}</p><h2>{entityLabel}</h2></div>
+      <PageHeader
+        eyebrow={forcedType === "client" ? "CRM" : forcedType ? "Logística" : t("common.module")}
+        titulo={entityLabel}
+      >
         <button className="button ghost" onClick={loadData} disabled={!canRead}><RefreshCw size={16} />{loading ? t("common.loading") : t("common.refresh")}</button>
-      </div>
+      </PageHeader>
 
       {noticeKey && <div className="alert success">{t(noticeKey, noticeKey)}</div>}
       {canSubmitForm && <form className="form-card" onSubmit={handleSubmit}>

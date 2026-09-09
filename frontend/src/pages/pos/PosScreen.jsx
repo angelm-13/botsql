@@ -3,6 +3,7 @@ import { AlertTriangle, RefreshCw } from "lucide-react";
 import { useI18n } from "../../i18n";
 import { posLinks, posRequest, posStatus } from "../../api";
 import "../../styles/pos-screens.css";
+import PageHeader from "../../components/PageHeader.jsx";
 
 /**
  * Base comun de las pantallas del punto de venta.
@@ -146,20 +147,19 @@ export default function PosScreen({ titulo, descripcion, recursos, children, acc
 
   return (
     <section className="page pos-screen">
-      <header className="page-header">
-        <div>
-          <p className="eyebrow">{t("pos.eyebrow", "Punto de venta")}</p>
-          <h1>{titulo}</h1>
-          {descripcion && <p className="muted">{descripcion}</p>}
-        </div>
+      <PageHeader
+        eyebrow={t("pos.eyebrow", "Punto de venta")}
+        titulo={titulo}
+        subtitulo={descripcion}
+      >
         <div className="pos-header-actions">
-          {acciones}
-          <button className="button" onClick={cargar} disabled={cargando}>
-            <RefreshCw size={16} />
-            {cargando ? t("common.loading", "Cargando…") : t("common.refresh", "Actualizar")}
-          </button>
+        {acciones}
+        <button className="button" onClick={cargar} disabled={cargando}>
+        <RefreshCw size={16} />
+        {cargando ? t("common.loading", "Cargando…") : t("common.refresh", "Actualizar")}
+        </button>
         </div>
-      </header>
+      </PageHeader>
 
       {errorTexto && <p className="error">{errorTexto}</p>}
 

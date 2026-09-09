@@ -1,0 +1,17 @@
+/* Las caracteristicas dentro del alta del material.
+   La misma rejilla que el resto del formulario: son campos del material, no un
+   bloque aparte que se lee distinto. */
+
+.caracteristicas-campos {
+  display: grid; gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+@media (max-width: 900px) {
+  .caracteristicas-campos { grid-template-columns: 1fr; }
+}
+.caracteristicas-campos input,
+.caracteristicas-campos select {
+  border: 1px solid #cbd5e1; border-radius: 14px; padding: 11px 12px;
+  background: #fff; font: inherit;
+}
+.caracteristicas-aviso { margin: 4px 0 0; font-size: 12.5px; }

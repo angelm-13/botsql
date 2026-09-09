@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { deactivateWebShopper, getWebShoppers, reactivateWebShopper } from "../api";
 import { useI18n } from "../i18n";
+import PageHeader from "../components/PageHeader.jsx";
 
 function asArray(payload) {
   if (Array.isArray(payload?.items)) return payload.items;
@@ -81,16 +82,15 @@ export default function WebShoppersPage() {
 
   return (
     <section className="entity-page web-shoppers-page">
-      <div className="page-heading">
-        <div>
-          <p className="eyebrow">{t("web_shoppers.section", "Tienda en línea")}</p>
-          <h2>{t("web_shoppers.title", "Compradores Web")}</h2>
-          <p className="quotation-subtitle">{t("web_shoppers.subtitle", "Consulta compradores registrados desde la tienda pública y activa o desactiva su acceso.")}</p>
-        </div>
+      <PageHeader
+        eyebrow={t("web_shoppers.section", "Tienda en línea")}
+        titulo={t("web_shoppers.title", "Compradores Web")}
+        subtitulo={t("web_shoppers.subtitle", "Consulta compradores registrados desde la tienda pública y activa o desactiva su acceso.")}
+      >
         <button type="button" className="button" onClick={loadData} disabled={loading}>
-          {loading ? t("common.loading", "Cargando...") : t("common.refresh", "Actualizar")}
+        {loading ? t("common.loading", "Cargando...") : t("common.refresh", "Actualizar")}
         </button>
-      </div>
+      </PageHeader>
 
       {message && <div className="alert success">{message}</div>}
       {error && <div className="alert error">{error}</div>}

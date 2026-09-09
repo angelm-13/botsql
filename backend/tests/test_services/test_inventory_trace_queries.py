@@ -291,10 +291,31 @@ class TestLaPaginacion(BaseDelAlmacen):
         """Sin tope, `per_page=100000` arma cien mil diccionarios."""
         self._sembrar_productos(3, desde=9800)
 
-        from app.services.inventory_trace_service import MAXIMO_RESULTADOS
+        from app.services.inventory_trace_service import TOPE_POR_PAGINA
 
         pagina = localizar("Tornillo", ACTOR, por_pagina=100000)
-        self.assertEqual(MAXIMO_RESULTADOS, pagina["per_page"])
+        self.assertEqual(TOPE_POR_PAGINA, pagina["per_page"])
+
+    def test_the_default_page_size_is_not_the_cap(self):
+        """El selector de "cuantos ver" necesita que sean numeros distintos.
+
+        Eran el mismo 40: pedir 100 se recortaba a 40 sin avisar, asi que la
+        opcion aparecia en la pantalla y no hacia nada.
+        """
+        self._sembrar_productos(3, desde=9700)
+
+        from app.services.inventory_trace_service import (
+            RESULTADOS_POR_PAGINA, TOPE_POR_PAGINA,
+        )
+
+        self.assertLess(RESULTADOS_POR_PAGINA, TOPE_POR_PAGINA)
+        # Sin pedir nada, el valor por omision.
+        self.assertEqual(RESULTADOS_POR_PAGINA,
+                         localizar("Tornillo", ACTOR)["per_page"])
+        # Y pidiendo mas que el default, se respeta.
+        pedido = RESULTADOS_POR_PAGINA + 20
+        self.assertEqual(pedido,
+                         localizar("Tornillo", ACTOR, por_pagina=pedido)["per_page"])
 
     def test_a_garbage_page_is_treated_as_the_first_one(self):
         self._sembrar_productos(3, desde=9900)

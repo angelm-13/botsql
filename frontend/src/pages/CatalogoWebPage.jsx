@@ -13,6 +13,7 @@ import {
   getMyPermissions,
 } from "../api";
 import { useI18n } from "../i18n";
+import PageHeader from "../components/PageHeader.jsx";
 
 function asArray(payload) {
   if (Array.isArray(payload?.items)) return payload.items;
@@ -377,14 +378,13 @@ export default function CatalogoWebPage() {
 
   return (
     <section className="entity-page catalogo-web-page">
-      <div className="page-heading">
-        <div>
-          <p className="eyebrow">Issue 10</p>
-          <h2>{t("catalogo_web.title", "Catálogo Web")}</h2>
-          <p className="muted">{t("catalogo_web.subtitle", "Gestiona productos publicados y llaves API públicas para la tienda online.")}</p>
-        </div>
+      <PageHeader
+        eyebrow={"Issue 10"}
+        titulo={t("catalogo_web.title", "Catálogo Web")}
+        subtitulo={t("catalogo_web.subtitle", "Gestiona productos publicados y llaves API públicas para la tienda online.")}
+      >
         <button type="button" className="button" onClick={reloadAll} disabled={loading}><RefreshCw size={16} />{t("catalogo_web.reload", "Recargar")}</button>
-      </div>
+      </PageHeader>
 
       {message && <div className="alert success">{message}</div>}
       {error && <div className="alert error">{error}</div>}

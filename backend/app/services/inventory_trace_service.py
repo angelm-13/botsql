@@ -68,7 +68,17 @@ from app.services.inventory_service import (
 COMPRAS = frozenset({"purchase", "invoice_line", "invoice"})
 VENTAS = frozenset({"sale", "invoice_line", "invoice"})
 
-MAXIMO_RESULTADOS = 40
+# Cuantos resultados trae una pagina si nadie pide otra cosa.
+RESULTADOS_POR_PAGINA = 40
+
+# Y cuantos como maximo, cuando la pantalla si lo pide.
+#
+# Eran el mismo numero, y por eso el selector de "cuantos ver" de Localizar no
+# podia ofrecer mas de 40: `per_page=100` se recortaba a 40 sin decirlo, asi que
+# la opcion existia y no hacia nada. El tope sigue existiendo -el valor llega
+# del cliente y sin cota `per_page=100000` arma cien mil diccionarios y tumba el
+# proceso-, solo deja de ser tambien el default.
+TOPE_POR_PAGINA = 200
 
 # Cuantos movimientos se traen de UNA pieza. Los ultimos son los que
 # contestan "donde esta"; el resto es historia y tiene su propia pantalla.
@@ -831,11 +841,12 @@ def _pagina(pagina, por_pagina) -> tuple[int, int]:
 
     `por_pagina` tiene tope porque llega del cliente: sin el, `per_page=100000`
     convierte una consulta barata en una que arma cien mil diccionarios y tumba
-    el proceso. El tope es el mismo numero que antes era el corte duro.
+    el proceso. El tope y el valor por omision son numeros distintos: la pantalla
+    puede pedir mas de lo normal, pero no cualquier cosa.
     """
     numero = _entero_o_nada(pagina) or 1
-    tamano = _entero_o_nada(por_pagina) or MAXIMO_RESULTADOS
-    return max(1, numero), max(1, min(tamano, MAXIMO_RESULTADOS))
+    tamano = _entero_o_nada(por_pagina) or RESULTADOS_POR_PAGINA
+    return max(1, numero), max(1, min(tamano, TOPE_POR_PAGINA))
 
 
 def localizar(consulta: str, user_data: dict, *, proposito: str | None = None,

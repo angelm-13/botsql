@@ -49,7 +49,7 @@
     "logout": "Log out",
     "next": "Next",
     "page": "Page",
-    "per_page": "Per page",
+    "per_page": "How many per page",
     "previous": "Previous",
     "reset": "Reset",
     "save": "Save",
@@ -146,7 +146,7 @@
     "continue": "Continue?",
     "close": "Close",
     "remove": "Remove",
-    "select": "Select",
+    "select": "Select…",
     "pagination": "Pagination",
     "first_page": "First",
     "last_page": "Last",
@@ -155,7 +155,9 @@
     "filter": "filter…",
     "clear": "Clear",
     "no_matches": "none match",
-    "serie_csd_hint": "Used as the default series when issuing invoices for this company; an invoice can capture a different one."
+    "serie_csd_hint": "Used as the default series when issuing invoices for this company; an invoice can capture a different one.",
+    "show": "Show",
+    "no_date": "no date"
   },
   "entities": {
     "bank": {
@@ -4120,7 +4122,8 @@
     "voucher": "voucher",
     "was_due": "was due",
     "due_on": "due",
-    "all_on_loan": "Nothing in the warehouse: it is all out."
+    "all_on_loan": "Nothing in the warehouse: it is all out.",
+    "open_history": "History"
   },
   "material_type": {
     "eyebrow": "Inventory",
@@ -4223,7 +4226,10 @@
     "new_option": "another value",
     "unused": "unused",
     "in_use": "materials",
-    "type_is_fixed": "The data type cannot be changed later: values already captured would keep the old type's shape."
+    "type_is_fixed": "The data type cannot be changed later: values already captured would keep the old type's shape.",
+    "pick_family_first": "Pick a family and its characteristics will show up here.",
+    "family_declares_none": "This family declares no characteristics. They are declared once in “Product families”.",
+    "help_material": "The family declares them once, in “Product families”. Here they are answered for this material."
   },
   "product": {
     "classification": "Classification",
@@ -4234,5 +4240,77 @@
     "pick_family_first": "Pick the family first",
     "family_has_no_types": "That family has no types",
     "declare_types": "A family's types are declared in Families and types."
+  },
+  "product_family": {
+    "title": "Product families",
+    "subtitle": "The family groups the material —screwdrivers, cement— and declares what each one is asked: length, gauge, finish.",
+    "no_families": "No families yet. Start with the family —“Screwdrivers”— and declare its characteristics inside: length, gauge, tip."
+  },
+  "page": {
+    "brand": {
+      "subtitle": "Material manufacturers: Truper, Lion Tools. The brand is one of the three things that define a material, along with its family and description."
+    },
+    "unit": {
+      "subtitle": "How each material is measured: piece, metre, litre. It is what gives meaning to a stock figure of “12”."
+    },
+    "location": {
+      "subtitle": "Where a piece can be: bays, racks, shelves. They nest, and filtering by a bay also brings what is on its racks."
+    },
+    "location_type": {
+      "subtitle": "The kinds of location —bay, rack, shelf— that shape the warehouse tree."
+    },
+    "material": {
+      "subtitle": "What the warehouse handles, regardless of how many: “Truper flat-head screwdriver”. The actual pieces are the products."
+    },
+    "product": {
+      "subtitle": "Each concrete item with its code: what gets lent, moved and counted. One material can have many products."
+    },
+    "inventory_status": {
+      "subtitle": "The states a product’s stock can be in."
+    },
+    "customer_supplier": {
+      "subtitle": "The company’s customers and suppliers."
+    },
+    "user": {
+      "subtitle": "Who signs in and with which role. The role decides which screens they see and what they can do there."
+    },
+    "department": {
+      "subtitle": "The company areas each user belongs to."
+    }
+  },
+  "history": {
+    "title": "Product history",
+    "movements": "Movements",
+    "loans": "Loans",
+    "locations": "Locations",
+    "no_movements": "No movements recorded.",
+    "no_loans": "It has never gone out on a voucher.",
+    "no_stock": "No stock in any location.",
+    "balance": "balance",
+    "movements_total": "movements",
+    "times_taken": "times out",
+    "holders": "people",
+    "currently_out": "not returned",
+    "voucher": "Voucher",
+    "units": "u.",
+    "unknown_holder": "no holder",
+    "returned": "returned",
+    "overdue": "overdue",
+    "out": "out",
+    "sum_by_location": "Sum by location",
+    "product_balance": "product balance",
+    "mismatch": "do not match"
+  },
+  "movement": {
+    "receive": "Received",
+    "return": "Returned",
+    "loan": "Loan",
+    "issue": "Issued",
+    "damage": "Damage",
+    "destroy": "Destroyed",
+    "loss": "Lost",
+    "expiry": "Expired",
+    "transfer": "Transfer",
+    "adjustment": "Adjustment"
   }
 }

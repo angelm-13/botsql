@@ -22,6 +22,7 @@ import {
   getAllLevel
 } from "../api";
 import { useI18n } from "../i18n";
+import PageHeader from "../components/PageHeader.jsx";
 
 const ENTITY_ACTIONS = [
   { key: "create", bit: 1, label: "Crear" },
@@ -653,16 +654,15 @@ export default function RolePermissionManagerPage() {
 
   return (
     <section className="entity-page role-permission-manager">
-      <div className="page-heading">
-        <div>
-          <p className="eyebrow">RBAC</p>
-          <h2>{t("common.role_permission_manager", "Gestor de roles y permisos")}</h2>
-          <p>{t("common.role_permission_manager_body", "Configura módulos, acciones y campos visibles para cada rol desde una sola pantalla.")}</p>
-        </div>
+      <PageHeader
+        eyebrow={"RBAC"}
+        titulo={t("common.role_permission_manager", "Gestor de roles y permisos")}
+        subtitulo={t("common.role_permission_manager_body", "Configura módulos, acciones y campos visibles para cada rol desde una sola pantalla.")}
+      >
         <button className="button primary" onClick={handleSave} disabled={saving || !selectedRoleId}>
-          <Save size={16} /> {saving ? t("common.loading", "Cargando...") : t("common.save_permissions", "Guardar permisos")}
+        <Save size={16} /> {saving ? t("common.loading", "Cargando...") : t("common.save_permissions", "Guardar permisos")}
         </button>
-      </div>
+      </PageHeader>
 
       {notice && <div className="alert success">{notice}</div>}
       {error && <div className="alert error">{error}</div>}

@@ -1,0 +1,36 @@
+/* La cabecera de una pantalla, definida UNA vez.
+
+   Habia dos formas de encabezar una pantalla y tres copias de la segunda:
+
+     * `.page-heading` con un <h2>, en las 60 pantallas generadas: titulo y
+       boton de actualizar, sin decir para que sirve la pantalla;
+     * `.page-header` con un <h1> y un subtitulo, en las 8 escritas a mano --
+       y su regla estaba copiada por separado en `asset-tracking.css`,
+       `pos-screens.css` y `pos-till.css`, mientras que Localizar, Familias y
+       Vales usaban la clase sin que nadie la definiera, asi que caian en el
+       flujo normal del documento.
+
+   Resultado: el titulo cambiaba de tamano, de peso y de posicion segun la
+   pantalla, y tres de ellas ni siquiera alineaban sus botones. Una sola regla
+   y un solo componente -`components/PageHeader.jsx`-, y todas se leen igual. */
+
+.page-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 18px; flex-wrap: wrap; margin: 0 0 18px;
+}
+.page-header > div:first-child { min-width: 0; }
+.page-header h1 {
+  margin: 0 0 6px; font-size: 28px; line-height: 1.15; color: #0f172a;
+}
+/* El subtitulo: que se hace en esta pantalla, en una linea. Acotado en ancho
+   porque una linea de texto que cruza un monitor entero no se lee. */
+.page-header .page-header-sub {
+  margin: 0; font-size: 13px; max-width: 78ch; color: #64748b;
+}
+.page-header-acciones { display: flex; gap: 8px; flex-wrap: wrap; }
+
+@media (max-width: 720px) {
+  .page-header { flex-direction: column; }
+  .page-header-acciones { width: 100%; }
+  .page-header h1 { font-size: 23px; }
+}

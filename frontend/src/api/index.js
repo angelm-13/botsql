@@ -321,6 +321,19 @@ export const createInventoryMovement = (id, payload) => request(`/product/${id}/
 export const getInventoryReconciliation = (id) => request(`/product/${id}/inventory-reconciliation`);
 export const createInventoryTransfer = (id, payload) => request(`/product/${id}/inventory-transfers`, { method: "POST", body: { idempotency_key: crypto.randomUUID(), ...payload } });
 export const getProductStock = (id) => request(`/product/${id}/inventory-stock`);
+
+// --- la trazabilidad del vale ---
+//
+// Las tres existian como servicio desde la carga del sistema anterior y ninguna
+// tenia ruta, asi que el dato estaba en la base sin forma de verlo. Salen de
+// `nm_incident_product` -los renglones del vale-, no del libro de inventario:
+// el libro dice cuanto entro y salio, esto dice QUIEN se lo llevo.
+export const getProductLoanHistory = (id) =>
+  request(`/vouchers/products/${id}/history`);
+export const getVoucherHolders = (params = {}) =>
+  request("/vouchers/holders", { params });
+export const getVoucherRequests = (params = {}) =>
+  request("/vouchers/requests", { params });
 export const getLocationTree = () => request("/location/tree");
 export const getWarehouseStock = (id) => request(`/location/${id}/stock`);
 export const getInvoiceInventoryPreview = (id, params = {}) => request(`/invoice/${id}/inventory`, { params });

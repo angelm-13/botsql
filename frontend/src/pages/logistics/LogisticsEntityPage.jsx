@@ -3,6 +3,7 @@ import { Pencil, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 
 import { getAllCustomerSupplier } from "../../api";
 import { useI18n } from "../../i18n";
+import PageHeader from "../../components/PageHeader.jsx";
 
 /* eslint-disable react/prop-types */
 
@@ -153,10 +154,12 @@ export default function LogisticsEntityPage({ config }) {
 
   return (
     <section className="entity-page logistics-entity-page">
-      <div className="page-heading">
-        <div><p className="eyebrow">{moduleLabel}</p><h2>{plural}</h2></div>
+      <PageHeader
+        eyebrow={moduleLabel}
+        titulo={plural}
+      >
         <button className="button ghost" type="button" onClick={loadData}><RefreshCw size={16} /> {t("logistics.refresh")}</button>
-      </div>
+      </PageHeader>
 
       <form className="form-card" onSubmit={handleSubmit}>
         <div className="form-header"><Plus size={18} /><strong>{editingId ? `${t("logistics.edit")} ${singular.toLowerCase()}` : `${newLabel} ${singular.toLowerCase()}`}</strong></div>

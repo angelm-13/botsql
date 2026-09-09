@@ -35,4 +35,22 @@ UPDATE entity_permission
  WHERE entity_name = 'material_type'
    AND deletion_date IS NULL;
 
+-- Y la etiqueta de la familia, que quedo mintiendo.
+--
+-- El renglon decia "Familias y tipos" y en el menu se seguia leyendo asi
+-- despues de retirar el tipo. No lo arreglaba el sembrado: desde
+-- 20260901000000 una fila viva es del gestor y `ON CONFLICT DO NOTHING` no la
+-- pisa, asi que el registro puede decir "Familias de producto" y la base
+-- seguir con el nombre viejo para siempre.
+--
+-- Se acota al valor exacto que dejo el cambio anterior. Si el administrador le
+-- pone otro nombre, este UPDATE ya no lo alcanza: la migracion se reaplica en
+-- cada arranque y sin la cota le estaria borrando el nombre cada vez.
+UPDATE entity_permission
+   SET menu_label = 'Familias de producto',
+       last_update_date = now()
+ WHERE entity_name = 'product_family'
+   AND menu_label = 'Familias y tipos'
+   AND deletion_date IS NULL;
+
 COMMIT;

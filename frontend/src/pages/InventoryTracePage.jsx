@@ -12,8 +12,10 @@ import {
 } from "../api";
 import FiltroBuscable from "../components/FiltroBuscable.jsx";
 import Pagination from "../components/Pagination.jsx";
+import ProductHistory from "../components/ProductHistory.jsx";
 import { useI18n } from "../i18n";
 import "../styles/inventory-trace.css";
+import PageHeader from "../components/PageHeader.jsx";
 
 /**
  * Localizar cualquier cosa del almacen.
@@ -170,6 +172,11 @@ Pieza.propTypes = {
 };
 
 
+// Cuantos resultados por pagina se pueden pedir. El servidor da 40 por omision
+// y no acepta mas de 200: ofrecer 500 seria prometer algo que se recorta en
+// silencio.
+const TAMANOS_DE_PAGINA = [20, 40, 100, 200];
+
 const SIN_FILTROS = {
   stock_purpose: "",
   id_product_family: "",
@@ -187,6 +194,9 @@ export default function InventoryTracePage() {
   // llamada y el boton de limpiar, y se olvida uno.
   const [filtros, setFiltros] = useState(SIN_FILTROS);
   const [pagina, setPagina] = useState(1);
+  // Cuantos ver de golpe. 40 es lo que el servidor da por omision; el tope de
+  // alla son 200, asi que las opciones no prometen mas de lo que puede dar.
+  const [porPagina, setPorPagina] = useState(40);
   const [datos, setDatos] = useState(null);
   // El panorama de estatus. Solo tiene sentido con uso interno: lo fungible no
   // tiene piezas, asi que no tiene estados que contar.
@@ -199,6 +209,9 @@ export default function InventoryTracePage() {
   // se lee como un fallo de la aplicacion. Se cae al marcador de "sin foto",
   // que es la verdad.
   const [fotosRotas, setFotosRotas] = useState(() => new Set());
+  // El producto cuya ficha esta abierta, o null. Se guarda el renglon entero y
+  // no solo el id para poder titular la ventana sin volver a pedirlo.
+  const [ficha, setFicha] = useState(null);
 
   // `t` cambia de identidad en cada render; si entra en las dependencias del
   // efecto la pantalla se repide sin parar hasta que el navegador rechaza
@@ -206,7 +219,7 @@ export default function InventoryTracePage() {
   const traducir = useRef(t);
   traducir.current = t;
 
-  const buscar = useCallback(async (texto, activos, numeroDePagina) => {
+  const buscar = useCallback(async (texto, activos, numeroDePagina, cuantos) => {
     setCargando(true);
     setError("");
     try {
@@ -214,6 +227,7 @@ export default function InventoryTracePage() {
       // tiene que aprender a ignorar, y una direccion llena de parametros
       // huecos no se puede leer ni compartir.
       const params = { q: texto, page: numeroDePagina || 1 };
+      if (cuantos) params.per_page = cuantos;
       Object.entries(activos || {}).forEach(([clave, valor]) => {
         if (valor) params[clave] = valor;
       });
@@ -244,9 +258,10 @@ export default function InventoryTracePage() {
   // Se espera a que deje de escribir: una peticion por tecla convierte una
   // busqueda de seis letras en seis consultas al almacen.
   useEffect(() => {
-    const temporizador = setTimeout(() => buscar(consulta, filtros, pagina), 350);
+    const temporizador = setTimeout(
+      () => buscar(consulta, filtros, pagina, porPagina), 350);
     return () => clearTimeout(temporizador);
-  }, [consulta, filtros, pagina, buscar]);
+  }, [consulta, filtros, pagina, porPagina, buscar]);
 
   // Cambiar el texto o un filtro vuelve a la primera pagina. Sin esto, quien
   // esta en la pagina 7 y escribe algo nuevo pide la pagina 7 de un resultado
@@ -259,6 +274,10 @@ export default function InventoryTracePage() {
   const cambiarConsulta = (valor) => {
     setPagina(1);
     setConsulta(valor);
+  };
+  const cambiarTamano = (cuantos) => {
+    setPagina(1);
+    setPorPagina(cuantos);
   };
   const filtrosActivos = Object.values(filtros).filter(Boolean).length;
 
@@ -273,7 +292,7 @@ export default function InventoryTracePage() {
         siguiente.delete(idProducto);
         return siguiente;
       });
-      await buscar(consulta, filtros, pagina);
+      await buscar(consulta, filtros, pagina, porPagina);
     } catch (e) {
       setError(e?.payload?.error_key
         ? traducir.current(e.payload.error_key)
@@ -293,20 +312,17 @@ export default function InventoryTracePage() {
 
   return (
     <section className="page trace-page">
-      <header className="page-header">
-        <div>
-          <p className="eyebrow">{t("trace.eyebrow", "Almacén")}</p>
-          <h1>{t("trace.title", "Localizar")}</h1>
-          <p className="muted">
-            {t("trace.subtitle",
+      <PageHeader
+        eyebrow={t("trace.eyebrow", "Almacén")}
+        titulo={t("trace.title", "Localizar")}
+        subtitulo={t("trace.subtitle",
               "Busca cualquier producto o herramienta y mira dónde está, qué le pasó y quién la tiene.")}
-          </p>
-        </div>
-        <button className="button" onClick={() => buscar(consulta, filtros, pagina)} disabled={cargando}>
-          <RefreshCw size={16} />
-          {cargando ? t("common.loading", "Cargando…") : t("common.refresh", "Actualizar")}
+      >
+        <button className="button" onClick={() => buscar(consulta, filtros, pagina, porPagina)} disabled={cargando}>
+        <RefreshCw size={16} />
+        {cargando ? t("common.loading", "Cargando…") : t("common.refresh", "Actualizar")}
         </button>
-      </header>
+      </PageHeader>
 
       {/* El marco: que clase de material se esta buscando. Va ARRIBA del
           buscador porque cambia el sentido de todo lo que sigue -de la
@@ -464,6 +480,24 @@ export default function InventoryTracePage() {
         </p>
       )}
 
+      {/* Arriba tambien, no solo al pie. Cada ficha de resultado es alta -foto,
+          piezas, historia-, asi que con 40 en pantalla el pie queda a varios
+          scrolls: cambiar de pagina o de tamano obligaba a bajar hasta el
+          final y volver a subir. */}
+      {datos && datos.pages > 1 && (
+        <Pagination
+          page={datos.page}
+          pages={datos.pages}
+          total={datos.matches}
+          perPage={datos.per_page}
+          loading={cargando}
+          onChange={setPagina}
+          opcionesDeTamano={TAMANOS_DE_PAGINA}
+          onTamano={cambiarTamano}
+          etiquetaDeTotal={t("trace.many_matches", "productos encontrados")}
+        />
+      )}
+
       <div className="trace-list">
         {items.map((it) => {
           const historia = Object.entries(it.history || {})
@@ -608,6 +642,18 @@ export default function InventoryTracePage() {
                         {t("trace.usable_units", "unidades utilizables")}
                       </em>
                     )}
+                    {/* El historial, desde aqui y en una ventana: la pregunta
+                        -"y esto de donde salio"- se hace sobre el renglon que se
+                        tiene delante, y navegar a otra pantalla obligaria a
+                        volver y rehacer la busqueda. */}
+                    <button
+                      type="button"
+                      className="button button-quiet trace-historial"
+                      onClick={() => setFicha(it)}
+                    >
+                      <History size={14} />
+                      {t("trace.open_history", "Historial")}
+                    </button>
                   </div>
                 </header>
 
@@ -820,7 +866,17 @@ export default function InventoryTracePage() {
           perPage={datos.per_page}
           loading={cargando}
           onChange={setPagina}
+          opcionesDeTamano={TAMANOS_DE_PAGINA}
+          onTamano={cambiarTamano}
           etiquetaDeTotal={t("trace.many_matches", "productos encontrados")}
+        />
+      )}
+
+      {ficha && (
+        <ProductHistory
+          idProduct={ficha.id_product}
+          titulo={[ficha.product_code, ficha.descripcion].filter(Boolean).join(" · ")}
+          onCerrar={() => setFicha(null)}
         />
       )}
     </section>

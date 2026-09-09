@@ -21,6 +21,9 @@ from app.services.warehouse_voucher_service import (
     cerrar_renglon,
     consultar_vale,
     crear_vale,
+    historial_del_producto,
+    lo_que_ha_pedido,
+    quien_tiene_que,
     vales_vencidos,
 )
 from app.utils.auth import require_entity_permission, token_required
@@ -94,3 +97,48 @@ def devolver_linea(user_data, id_line):
     `note`.
     """
     return jsonify(cerrar_renglon(id_line, _cuerpo(), user_data))
+
+
+# --- la trazabilidad, por la cosa y por la persona ---
+#
+# Las tres consultas existian como servicio desde que se cargo el sistema
+# anterior -son las que contestan "quien tiene que", "que ha pedido cada uno" y
+# "quien se ha llevado esto"- pero NINGUNA estaba expuesta: sin ruta, el front no
+# tenia por donde preguntarlas, asi que el dato estaba en la base y no habia
+# forma de verlo. Eran codigo muerto medido desde el navegador.
+#
+# Cuelgan de `/vouchers` y no de `/product` porque salen de `nm_incident_product`
+# -los renglones del vale-, no del libro de inventario. Son cosas distintas y la
+# ficha del producto ensena las dos por separado: el libro dice cuanto entro y
+# salio; esto dice QUIEN se lo llevo.
+
+
+@bp_warehouse_voucher.route("/vouchers/products/<id_product>/history",
+                            methods=["GET"])
+@token_required
+@require_entity_permission("warehouse_voucher", "read")
+def historial_de_producto(user_data, id_product):
+    """Quien se ha llevado este producto, historico.
+
+    Los renglones son de solo agregado -la devolucion ANADE una entrada en vez
+    de reescribir la salida-, asi que esto puede contestar por todos los que se
+    lo llevaron y no solo por el ultimo.
+    """
+    return jsonify(historial_del_producto(id_product, user_data))
+
+
+@bp_warehouse_voucher.route("/vouchers/holders", methods=["GET"])
+@token_required
+@require_entity_permission("warehouse_voucher", "read")
+def quien_tiene(user_data):
+    """Quien tiene que, ahora mismo. Con `id_user`, solo el de esa persona."""
+    return jsonify(quien_tiene_que(user_data,
+                                   id_user=request.args.get("id_user")))
+
+
+@bp_warehouse_voucher.route("/vouchers/requests", methods=["GET"])
+@token_required
+@require_entity_permission("warehouse_voucher", "read")
+def lo_pedido(user_data):
+    """Que ha pedido cada persona, historico."""
+    return jsonify(lo_que_ha_pedido(user_data, request.args.get("id_user")))

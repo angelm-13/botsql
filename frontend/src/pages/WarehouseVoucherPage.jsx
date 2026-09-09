@@ -18,6 +18,7 @@ import {
 import Pagination from "../components/Pagination.jsx";
 import { useI18n } from "../i18n";
 import "../styles/warehouse-voucher.css";
+import PageHeader from "../components/PageHeader.jsx";
 
 /**
  * Vales de almacen: quien se llevo que, de donde, y si ya lo devolvio.
@@ -200,27 +201,24 @@ export default function WarehouseVoucherPage() {
 
   return (
     <section className="page vale-page">
-      <header className="page-header">
-        <div>
-          <p className="eyebrow">{t("voucher.eyebrow", "Almacén")}</p>
-          <h1>{t("voucher.title", "Vales de almacén")}</h1>
-          <p className="muted">
-            {t("voucher.subtitle",
+      <PageHeader
+        eyebrow={t("voucher.eyebrow", "Almacén")}
+        titulo={t("voucher.title", "Vales de almacén")}
+        subtitulo={t("voucher.subtitle",
               "Quién se llevó qué, de dónde, y si ya lo devolvió. El vale se cierra solo cuando vuelve su último renglón.")}
-          </p>
-        </div>
+      >
         <div className="vale-acciones-cabecera">
-          <button className="button" onClick={cargar} disabled={cargando}>
-            <RefreshCw size={16} />
-            {cargando ? t("common.loading", "Cargando…") : t("common.refresh", "Actualizar")}
-          </button>
-          <button className="button button-primary" onClick={abrirBorrador}
-                  disabled={cargando || !tipos.length}>
-            <Plus size={16} />
-            {t("voucher.new", "Levantar vale")}
-          </button>
+        <button className="button" onClick={cargar} disabled={cargando}>
+        <RefreshCw size={16} />
+        {cargando ? t("common.loading", "Cargando…") : t("common.refresh", "Actualizar")}
+        </button>
+        <button className="button button-primary" onClick={abrirBorrador}
+        disabled={cargando || !tipos.length}>
+        <Plus size={16} />
+        {t("voucher.new", "Levantar vale")}
+        </button>
         </div>
-      </header>
+      </PageHeader>
 
       {error && <p className="error">{error}</p>}
       {aviso && <p className="vale-aviso"><Check size={15} />{aviso}</p>}

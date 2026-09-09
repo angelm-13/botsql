@@ -4,10 +4,8 @@
 
 .pos-screen { color: #334155; }
 
-.pos-screen .page-header {
-  display: flex; align-items: flex-start; justify-content: space-between;
-  gap: 18px; flex-wrap: wrap; margin-bottom: 16px;
-}
+/* La cabecera la define `styles/page-header.css`, una sola vez para todas
+   las pantallas. Aqui habia una copia con los mismos valores. */
 .pos-header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .pos-screen .eyebrow {
   margin: 0 0 4px; font-size: 11px; letter-spacing: .1em;

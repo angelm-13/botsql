@@ -58,9 +58,7 @@ const navItems = [
   { path: "/location", key: "menu.location" },
   { path: "/location_type", key: "menu.location_type" },
   { path: "/material", key: "menu.material" },
-  { path: "/material_component", key: "menu.material_component" },
   { path: "/material_type", key: "menu.material_type" },
-  { path: "/movement", key: "menu.movement" },
   { path: "/nm_incident_product", key: "menu.nm_incident_product" },
   // El vale se guarda con la capacidad y no con una entidad: su pantalla
   // escribe en `incident` y en `nm_incident_product`, y esa segunda esta
@@ -294,7 +292,7 @@ export default function Shell() {
 
   function defaultGroup(item) {
     const path = item.path;
-    if (["/bank", "/bank_account", "/movement"].includes(path)) return "Bancos";
+    if (["/bank", "/bank_account"].includes(path)) return "Bancos";
     if (path.startsWith("/invoice") || path.startsWith("/fiscal") || path === "/quotation" || path === "/authorization_tracking") return "Contabilidad";
     if (path.startsWith("/payroll") || path === "/kronos") return "Recursos humanos";
     if (path.startsWith("/restaurant")) return "Restaurante";

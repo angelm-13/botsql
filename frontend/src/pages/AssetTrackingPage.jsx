@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { useI18n } from "../i18n";
 import "../styles/asset-tracking.css";
+import PageHeader from "../components/PageHeader.jsx";
 import {
   assignAsset, backAssetFromRepair, createAsset, getAssetByTag, getAssetHistory,
   getAssets, getOverdueAssets, lendAsset, moveAsset, reportAssetLost,
@@ -213,28 +214,25 @@ export default function AssetTrackingPage() {
 
   return (
     <section className="page asset-page">
-      <header className="page-header">
-        <div>
-          <p className="eyebrow">{t("assets.eyebrow", "Inventario")}</p>
-          <h1>{t("assets.title", "Rastreo de piezas")}</h1>
-          <p className="muted">
-            {t(
+      <PageHeader
+        eyebrow={t("assets.eyebrow", "Inventario")}
+        titulo={t("assets.title", "Rastreo de piezas")}
+        subtitulo={t(
               "assets.subtitle",
               "Herramienta, equipo y activos de uso: cada pieza con su estado, dónde está y quién responde por ella."
             )}
-          </p>
-        </div>
+      >
         <div className="page-header-actions">
-          <button className="button" onClick={cargar} disabled={cargando}>
-            <RefreshCw size={16} />
-            {cargando ? t("common.loading") : t("common.refresh")}
-          </button>
-          <button className="button primary" onClick={() => setAlta({ id_product: "", asset_tag: "", id_location: "" })}>
-            <Plus size={16} />
-            {t("assets.register", "Dar de alta pieza")}
-          </button>
+        <button className="button" onClick={cargar} disabled={cargando}>
+        <RefreshCw size={16} />
+        {cargando ? t("common.loading") : t("common.refresh")}
+        </button>
+        <button className="button primary" onClick={() => setAlta({ id_product: "", asset_tag: "", id_location: "" })}>
+        <Plus size={16} />
+        {t("assets.register", "Dar de alta pieza")}
+        </button>
         </div>
-      </header>
+      </PageHeader>
 
       {errorKey && <p className="error">{t(errorKey, errorKey)}</p>}
       {avisoKey && <p className="notice">{t(avisoKey, avisoKey)}</p>}
