@@ -512,7 +512,13 @@ function KpiWidgetCard({ widget, kpiCatalog, userLabel, formatNumber, onEdit, on
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const kpiInfo = kpiCatalog.find((kpi) => kpi.id_kpi_definition === widget.id_kpi_definition);
+  // El backend ahora guarda una lista (`ids_kpi_definition`) para poder
+  // mostrar varios KPIs en un mismo widget mas adelante, pero por ahora cada
+  // widget sigue teniendo uno solo en la practica -- basta con el primero.
+  // Defensivo por si llegara vacia: no deberia pasar, pero que no rompa la
+  // pantalla si pasa.
+  const idKpiDefinition = Array.isArray(widget.ids_kpi_definition) ? widget.ids_kpi_definition[0] : undefined;
+  const kpiInfo = kpiCatalog.find((kpi) => kpi.id_kpi_definition === idKpiDefinition);
   const parametros = widget.parametros || {};
   const fechaInicio = parametros.fecha_inicio;
   const fechaFin = parametros.fecha_fin;
@@ -532,7 +538,7 @@ function KpiWidgetCard({ widget, kpiCatalog, userLabel, formatNumber, onEdit, on
       setLoading(true);
       setError("");
       try {
-        const params = { id_kpi_definition: widget.id_kpi_definition, fecha_inicio: fechaInicio, fecha_fin: fechaFin };
+        const params = { id_kpi_definition: idKpiDefinition, fecha_inicio: fechaInicio, fecha_fin: fechaFin };
         if (fechaInicioB && fechaFinB) {
           params.fecha_inicio_b = fechaInicioB;
           params.fecha_fin_b = fechaFinB;
@@ -548,7 +554,7 @@ function KpiWidgetCard({ widget, kpiCatalog, userLabel, formatNumber, onEdit, on
     }
     cargar();
     return () => { cancelado = true; };
-  }, [widget.id_kpi_definition, fechaInicio, fechaFin, fechaInicioB, fechaFinB, empleadosKey]);
+  }, [idKpiDefinition, fechaInicio, fechaFin, fechaInicioB, fechaFinB, empleadosKey]);
 
   const chartTypeLabel = CHART_TYPES.find((opt) => opt.value === widget.tipo_grafica)?.label || widget.tipo_grafica;
   const rangoTexto = fechaInicio && fechaFin ? `${fechaInicio} → ${fechaFin}` : tx("missing_range", "Sin rango de fechas configurado");
@@ -558,7 +564,7 @@ function KpiWidgetCard({ widget, kpiCatalog, userLabel, formatNumber, onEdit, on
     <article className="kpi-widget-card">
       <div className="kpi-widget-card-header">
         <div>
-          <h4>{kpiInfo?.etiqueta || tx("unknown_kpi", `KPI #${widget.id_kpi_definition}`)}</h4>
+          <h4>{kpiInfo?.etiqueta || tx("unknown_kpi", `KPI #${idKpiDefinition}`)}</h4>
           <p className="kpi-widget-meta">{tx(`chart_type_${widget.tipo_grafica}`, chartTypeLabel)}</p>
           <p className="kpi-widget-meta">{rangoTexto}</p>
           {rangoBTexto && <p className="kpi-widget-meta">{tx("vs_label", "vs.")} {rangoBTexto}</p>}
@@ -707,9 +713,13 @@ function KpiWidgetFormModal({ editing, kpiCatalog, users, onCancel, onSave, t, t
   }, [kpiCatalog]);
   const modulosDisponibles = Array.from(kpisPorModulo.keys());
   const necesitaCategoria = modulosDisponibles.length > 1;
-  const editingKpi = kpiCatalog.find((kpi) => kpi.id_kpi_definition === editing?.id_kpi_definition);
+  // El widget guarda una lista (`ids_kpi_definition`) para poder mostrar
+  // varios KPIs mas adelante, pero por ahora este formulario solo edita uno
+  // -- el primero de la lista. Defensivo por si llegara vacia.
+  const editingIdKpiDefinition = Array.isArray(editing?.ids_kpi_definition) ? editing.ids_kpi_definition[0] : undefined;
+  const editingKpi = kpiCatalog.find((kpi) => kpi.id_kpi_definition === editingIdKpiDefinition);
 
-  const [idKpiDefinition, setIdKpiDefinition] = useState(editing?.id_kpi_definition ? String(editing.id_kpi_definition) : "");
+  const [idKpiDefinition, setIdKpiDefinition] = useState(editingIdKpiDefinition ? String(editingIdKpiDefinition) : "");
   const [categoriaKpi, setCategoriaKpi] = useState(
     () => editingKpi?.modulo || (modulosDisponibles.length === 1 ? modulosDisponibles[0] : ""),
   );
@@ -740,7 +750,10 @@ function KpiWidgetFormModal({ editing, kpiCatalog, users, onCancel, onSave, t, t
     if (comparar) { parametros.fecha_inicio_b = fechaInicioB; parametros.fecha_fin_b = fechaFinB; }
     if (empleadosSeleccionados.length) parametros.empleados = empleadosSeleccionados.map(Number);
 
-    const payload = { id_kpi_definition: Number(idKpiDefinition), tipo_grafica: tipoGrafica, parametros };
+    // Un solo elemento por ahora: el backend ya acepta varios KPIs por
+    // widget (`ids_kpi_definition`), pero combinarlos en una misma grafica es
+    // un cambio aparte -- por hoy cada widget sigue representando uno solo.
+    const payload = { ids_kpi_definition: [Number(idKpiDefinition)], tipo_grafica: tipoGrafica, parametros };
     setSaving(true);
     try {
       await onSave(payload, editing);
