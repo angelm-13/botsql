@@ -36,17 +36,28 @@
 .kpi-empty-inline{color:#8a96a5;text-align:center;padding:24px 8px;font-size:13px}
 .kpi-error-inline{color:#991b1b;background:#fff5f5;border:1px solid #fecaca;border-radius:12px;padding:12px 14px;font-size:13px}
 
-.kpi-modal-backdrop{position:fixed;z-index:1100;inset:0;display:grid;place-items:center;padding:20px;background:rgba(17,31,39,.48)}
-.kpi-modal{width:min(640px,100%);max-height:90vh;overflow:auto;padding:20px;border:1px solid #d7e0ea;border-radius:16px;background:#fff;box-shadow:0 20px 60px rgba(12,34,47,.25)}
-.kpi-modal header{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:16px}
-.kpi-modal h3{margin:2px 0;color:#173b66}
-.kpi-modal footer{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+/* Panel fijo arriba de la cuadricula (ya no modal con backdrop): nunca
+   bloquea el resto de la pantalla, se cierra con el boton de cancelar del
+   header o del footer. */
+.kpi-widget-panel{width:100%;padding:20px;border:1px solid #d7e0ea;border-radius:16px;background:#fff;box-shadow:0 12px 30px rgba(15,23,42,.08)}
+.kpi-widget-panel header{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:16px}
+.kpi-widget-panel h3{margin:2px 0;color:#173b66}
+.kpi-widget-panel footer{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
 
-.kpi-employee-picker{display:flex;flex-direction:column;gap:8px;margin-top:6px}
-.kpi-employee-picker-label{font-weight:800;color:#334155;font-size:13px}
-.kpi-employee-list{display:flex;flex-wrap:wrap;gap:8px;max-height:160px;overflow:auto;padding:4px}
-.kpi-employee-chip{display:flex;align-items:center;gap:6px;border:1px solid #cbd5e1;border-radius:999px;padding:6px 12px;font-size:13px;font-weight:700;color:#334155;cursor:pointer}
-.kpi-employee-chip input{margin:0}
+.kpi-picker-count{font-style:normal;font-weight:700;color:#173b66}
+.kpi-inline-notice{background:#fff8e6;border:1px solid #f2d492;color:#7a5b00;border-radius:10px;padding:8px 12px;font-size:12px;margin:0 0 4px}
+.kpi-chip-badge{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#173b66;color:#fff;font-size:10px;font-weight:800;margin-right:6px}
+
+.kpi-date-shortcuts{display:flex;flex-wrap:wrap;gap:8px}
+.kpi-shortcut-button{border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:999px;padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;font:inherit}
+.kpi-shortcut-button:hover{background:#eef2f6;border-color:#173b66}
+.kpi-shortcut-button.active{background:#eef4fb;border-color:#173b66;color:#173b66}
+
+.kpi-employee-picker,.kpi-department-picker{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+.kpi-employee-picker-label,.kpi-department-picker-label{font-weight:800;color:#334155;font-size:13px}
+.kpi-employee-list,.kpi-department-list{display:flex;flex-wrap:wrap;gap:8px;max-height:160px;overflow:auto;padding:4px}
+.kpi-employee-chip,.kpi-department-chip{display:flex;align-items:center;gap:6px;border:1px solid #cbd5e1;border-radius:999px;padding:6px 12px;font-size:13px;font-weight:700;color:#334155;cursor:pointer}
+.kpi-employee-chip input,.kpi-department-chip input{margin:0}
 
 /* Categoria/KPI y tipo de grafica: iconos fijos en vez de <select>. Mismo
    tratamiento "active" que ya usan las pestanas del tablero (.kpi-tab.active),

@@ -13,7 +13,7 @@ import { useI18n } from "../i18n";
 import {
   getAllKpiDashboard, createKpiDashboard, updateKpiDashboard, deleteKpiDashboard,
   getAllKpiDashboardWidget, createKpiDashboardWidget, updateKpiDashboardWidget, deleteKpiDashboardWidget,
-  getAllKpiDefinition, queryKpiSnapshot, getAllUser,
+  getAllKpiDefinition, queryKpiSnapshot, getAllUser, getAllDepartment,
 } from "../api";
 import "../styles/kpi-dashboard.css";
 
@@ -24,6 +24,26 @@ const CHART_TYPES = [
   { value: "area", label: "Área" },
   { value: "dona", label: "Dona" },
 ];
+
+// Unicos tipos que pueden combinar varios KPIs en el mismo widget -- "numero"
+// y "dona" se quedan limitados a uno solo (ver KpiWidgetPanel.aplicarTipoGrafica).
+const MULTI_KPI_CHART_TYPES = ["barras", "linea", "area"];
+function esTipoMultiKpi(tipoGrafica) {
+  return MULTI_KPI_CHART_TYPES.includes(tipoGrafica);
+}
+
+// Mismo tope por omision que `KPI_RANGO_DIAS_MAX_POR_OMISION` en
+// `backend/app/routes/kpi.py`: el backend sigue siendo la autoridad real (un
+// plan de cliente puede declarar otro limite via `limite('kpi_rango_dias_max', ...)`),
+// esto solo evita el viaje redondo cuando el rango ya se ve mal armado.
+const KPI_RANGO_DIAS_MAX = 365;
+
+function diffDias(fechaInicio, fechaFin) {
+  if (!fechaInicio || !fechaFin) return 0;
+  const inicio = new Date(`${fechaInicio}T00:00:00`);
+  const fin = new Date(`${fechaFin}T00:00:00`);
+  return Math.round((fin - inicio) / 86400000);
+}
 
 // Un icono fijo por tipo de grafica, en vez de un <select> oculto -- se eligen
 // a simple vista, igual que se hace con el tipo de grafica en el resto del
@@ -221,6 +241,30 @@ function daysAgoIso(n) {
   return fecha.toISOString().slice(0, 10);
 }
 
+function startOfWeekIso() {
+  const fecha = new Date();
+  const dia = fecha.getDay(); // 0 = domingo
+  const offset = dia === 0 ? 6 : dia - 1; // semana ISO: lunes como inicio
+  fecha.setDate(fecha.getDate() - offset);
+  return fecha.toISOString().slice(0, 10);
+}
+
+function startOfMonthIso() {
+  const fecha = new Date();
+  fecha.setDate(1);
+  return fecha.toISOString().slice(0, 10);
+}
+
+// "Personalizado" no trae `range`: solo marca el modo manual, nunca toca los
+// campos -- los atajos son un llenado rapido, no un reemplazo de los
+// selectores de fecha libres.
+const DATE_SHORTCUTS = [
+  { key: "hoy", label: "Hoy", range: () => [todayIso(), todayIso()] },
+  { key: "semana", label: "Esta semana", range: () => [startOfWeekIso(), todayIso()] },
+  { key: "mes", label: "Este mes", range: () => [startOfMonthIso(), todayIso()] },
+  { key: "personalizado", label: "Personalizado", range: null },
+];
+
 function listOf(data) {
   return Array.isArray(data) ? data : data?.items || [];
 }
@@ -244,6 +288,45 @@ function buildSeriesData(snapshot, userLabel, empleadosFiltro) {
     a: porA[id] ?? 0,
     b: id in porB ? porB[id] : undefined,
   }));
+}
+
+// Un widget con varios KPIs hace una llamada a `/kpi_snapshot/query` POR CADA
+// id (ver KpiWidgetCard) -- `snapshots[i]` corresponde a `kpiInfos[i]`. Cada
+// fila resultante trae una columna `kpi_<indice>_a`/`kpi_<indice>_b` por KPI,
+// para que Recharts pinte una serie por cada uno sin tocar el eje X (que
+// sigue siendo por empleado, igual que con un solo KPI).
+function buildMultiSeriesData(snapshots, userLabel, empleadosFiltro) {
+  const ids = new Set();
+  snapshots.forEach((snapshot) => {
+    Object.keys(snapshot?.rango_a?.por_empleado || {}).forEach((id) => ids.add(id));
+    Object.keys(snapshot?.rango_b?.por_empleado || {}).forEach((id) => ids.add(id));
+  });
+  let ordenados = Array.from(ids);
+  if (Array.isArray(empleadosFiltro) && empleadosFiltro.length) {
+    const orden = empleadosFiltro.map(String);
+    ordenados = orden.filter((id) => ordenados.includes(id));
+  } else {
+    const totalPorId = (id) => snapshots.reduce((suma, snapshot) => suma + (snapshot?.rango_a?.por_empleado?.[id] ?? 0), 0);
+    ordenados.sort((x, y) => totalPorId(y) - totalPorId(x));
+  }
+  return ordenados.map((id) => {
+    const fila = { name: userLabel(id) };
+    snapshots.forEach((snapshot, index) => {
+      const porA = snapshot?.rango_a?.por_empleado || {};
+      const porB = snapshot?.rango_b?.por_empleado || {};
+      fila[`kpi_${index}_a`] = porA[id] ?? 0;
+      fila[`kpi_${index}_b`] = id in porB ? porB[id] : undefined;
+    });
+    return fila;
+  });
+}
+
+// Nombre real del KPI (no "Periodo A/B" generico) con su unidad al lado --
+// para que el tooltip/leyenda no confundan KPIs de distinta naturaleza (ej.
+// moneda vs. porcentaje) combinados en la misma grafica.
+function kpiSeriesLabel(kpiInfo, index) {
+  const etiqueta = kpiInfo?.etiqueta || `KPI #${index + 1}`;
+  return kpiInfo?.unidad ? `${etiqueta} (${kpiInfo.unidad})` : etiqueta;
 }
 
 function buildPieData(snapshot, userLabel, othersLabel) {
@@ -273,6 +356,7 @@ export default function Dashboard() {
 
   const [kpiCatalog, setKpiCatalog] = useState([]);
   const [users, setUsers] = useState([]);
+  const [departments, setDepartments] = useState([]);
 
   const [widgetForm, setWidgetForm] = useState(null);
 
@@ -319,6 +403,7 @@ export default function Dashboard() {
     let cancelado = false;
     getAllKpiDefinition().then((data) => { if (!cancelado) setKpiCatalog(listOf(data)); }).catch(() => { if (!cancelado) setKpiCatalog([]); });
     getAllUser({ per_page: 500 }).then((data) => { if (!cancelado) setUsers(listOf(data)); }).catch(() => { if (!cancelado) setUsers([]); });
+    getAllDepartment({ per_page: 500 }).then((data) => { if (!cancelado) setDepartments(listOf(data)); }).catch(() => { if (!cancelado) setDepartments([]); });
     return () => { cancelado = true; };
   }, []);
 
@@ -451,6 +536,19 @@ export default function Dashboard() {
             </button>
           </div>
 
+          {widgetForm && (
+            <KpiWidgetPanel
+              editing={widgetForm.editing}
+              kpiCatalog={kpiCatalog}
+              users={users}
+              departments={departments}
+              onCancel={() => setWidgetForm(null)}
+              onSave={handleSaveWidget}
+              t={t}
+              tx={tx}
+            />
+          )}
+
           {widgetsError && <div className="alert error">{t(widgetsError, widgetsError)}</div>}
           {loadingWidgets && <div className="alert">{t("common.loading")}</div>}
 
@@ -492,79 +590,86 @@ export default function Dashboard() {
         </div>
       )}
 
-      {widgetForm && (
-        <KpiWidgetFormModal
-          editing={widgetForm.editing}
-          kpiCatalog={kpiCatalog}
-          users={users}
-          onCancel={() => setWidgetForm(null)}
-          onSave={handleSaveWidget}
-          t={t}
-          tx={tx}
-        />
-      )}
     </section>
   );
 }
 
 function KpiWidgetCard({ widget, kpiCatalog, userLabel, formatNumber, onEdit, onDelete, t, tx }) {
-  const [snapshot, setSnapshot] = useState(null);
+  const [snapshots, setSnapshots] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  // El backend ahora guarda una lista (`ids_kpi_definition`) para poder
-  // mostrar varios KPIs en un mismo widget mas adelante, pero por ahora cada
-  // widget sigue teniendo uno solo en la practica -- basta con el primero.
-  // Defensivo por si llegara vacia: no deberia pasar, pero que no rompa la
-  // pantalla si pasa.
-  const idKpiDefinition = Array.isArray(widget.ids_kpi_definition) ? widget.ids_kpi_definition[0] : undefined;
-  const kpiInfo = kpiCatalog.find((kpi) => kpi.id_kpi_definition === idKpiDefinition);
+  const idsKpiDefinition = Array.isArray(widget.ids_kpi_definition) ? widget.ids_kpi_definition : [];
+  // "numero" y "dona" solo grafican un KPI (ver reglas en KpiWidgetPanel): si
+  // el widget trajera mas de uno guardado -no deberia, el panel ya lo evita
+  // al guardar- solo se usa el primero, defensivo para no romper la pantalla.
+  const idsUsados = ["numero", "dona"].includes(widget.tipo_grafica) ? idsKpiDefinition.slice(0, 1) : idsKpiDefinition;
+  const idsKey = idsUsados.join(",");
+  const kpiInfos = idsUsados.map((id) => kpiCatalog.find((kpi) => kpi.id_kpi_definition === id));
   const parametros = widget.parametros || {};
   const fechaInicio = parametros.fecha_inicio;
   const fechaFin = parametros.fecha_fin;
   const fechaInicioB = parametros.fecha_inicio_b;
   const fechaFinB = parametros.fecha_fin_b;
   const empleadosKey = Array.isArray(parametros.empleados) ? parametros.empleados.join(",") : "";
+  const departamentosKey = Array.isArray(parametros.id_departments) ? parametros.id_departments.join(",") : "";
 
   useEffect(() => {
     let cancelado = false;
     async function cargar() {
+      if (idsUsados.length === 0) {
+        setLoading(false);
+        setSnapshots([]);
+        setError("missing_kpi");
+        return;
+      }
       if (!fechaInicio || !fechaFin) {
         setLoading(false);
-        setSnapshot(null);
+        setSnapshots([]);
         setError("missing_range");
         return;
       }
       setLoading(true);
       setError("");
       try {
-        const params = { id_kpi_definition: idKpiDefinition, fecha_inicio: fechaInicio, fecha_fin: fechaFin };
+        const paramsComunes = { fecha_inicio: fechaInicio, fecha_fin: fechaFin };
         if (fechaInicioB && fechaFinB) {
-          params.fecha_inicio_b = fechaInicioB;
-          params.fecha_fin_b = fechaFinB;
+          paramsComunes.fecha_inicio_b = fechaInicioB;
+          paramsComunes.fecha_fin_b = fechaFinB;
         }
-        if (empleadosKey) params.empleados = empleadosKey;
-        const data = await queryKpiSnapshot(params);
-        if (!cancelado) setSnapshot(data);
+        if (empleadosKey) paramsComunes.empleados = empleadosKey;
+        if (departamentosKey) paramsComunes.id_departments = departamentosKey;
+        // Una llamada POR CADA KPI del widget -- el backend solo acepta un
+        // `id_kpi_definition` a la vez, la combinacion pasa aqui.
+        const resultados = await Promise.all(
+          idsUsados.map((id) => queryKpiSnapshot({ ...paramsComunes, id_kpi_definition: id })),
+        );
+        if (!cancelado) setSnapshots(resultados);
       } catch (err) {
-        if (!cancelado) { setError(err.message || "errors.request_failed"); setSnapshot(null); }
+        if (!cancelado) { setError(err.message || "errors.request_failed"); setSnapshots([]); }
       } finally {
         if (!cancelado) setLoading(false);
       }
     }
     cargar();
     return () => { cancelado = true; };
-  }, [idKpiDefinition, fechaInicio, fechaFin, fechaInicioB, fechaFinB, empleadosKey]);
+  // `idsKey` es el proxy estable de `idsUsados` (un array nuevo cada
+  // render); `idsUsados` en si mismo nunca deberia ir en las dependencias.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idsKey, fechaInicio, fechaFin, fechaInicioB, fechaFinB, empleadosKey, departamentosKey]);
 
   const chartTypeLabel = CHART_TYPES.find((opt) => opt.value === widget.tipo_grafica)?.label || widget.tipo_grafica;
   const rangoTexto = fechaInicio && fechaFin ? `${fechaInicio} → ${fechaFin}` : tx("missing_range", "Sin rango de fechas configurado");
   const rangoBTexto = fechaInicioB && fechaFinB ? `${fechaInicioB} → ${fechaFinB}` : "";
+  const titulo = kpiInfos.length > 1
+    ? kpiInfos.map((info, index) => info?.etiqueta || `KPI #${idsUsados[index]}`).join(" + ")
+    : (kpiInfos[0]?.etiqueta || tx("unknown_kpi", `KPI #${idsUsados[0] ?? "?"}`));
 
   return (
     <article className="kpi-widget-card">
       <div className="kpi-widget-card-header">
         <div>
-          <h4>{kpiInfo?.etiqueta || tx("unknown_kpi", `KPI #${idKpiDefinition}`)}</h4>
+          <h4>{titulo}</h4>
           <p className="kpi-widget-meta">{tx(`chart_type_${widget.tipo_grafica}`, chartTypeLabel)}</p>
           <p className="kpi-widget-meta">{rangoTexto}</p>
           {rangoBTexto && <p className="kpi-widget-meta">{tx("vs_label", "vs.")} {rangoBTexto}</p>}
@@ -580,18 +685,26 @@ function KpiWidgetCard({ widget, kpiCatalog, userLabel, formatNumber, onEdit, on
         {!loading && error === "missing_range" && (
           <p className="kpi-empty-inline">{tx("widget_missing_range", "A este gráfico le falta un rango de fechas. Edítalo para configurarlo.")}</p>
         )}
-        {!loading && error && error !== "missing_range" && (
+        {!loading && error === "missing_kpi" && (
+          <p className="kpi-empty-inline">{tx("widget_missing_kpi", "A este gráfico le falta un KPI. Edítalo para configurarlo.")}</p>
+        )}
+        {!loading && error === "errors.rango_excede_limite" && (
+          <p className="kpi-error-inline">{tx("range_exceeds_limit", "El rango de fechas de este gráfico excede el máximo permitido (aprox. un año). Edítalo para acortarlo.")}</p>
+        )}
+        {!loading && error && !["missing_range", "missing_kpi", "errors.rango_excede_limite"].includes(error) && (
           <p className="kpi-error-inline">{t(error, error)}</p>
         )}
-        {!loading && !error && snapshot && (
-          <KpiChartBody widget={widget} snapshot={snapshot} kpiInfo={kpiInfo} userLabel={userLabel} formatNumber={formatNumber} tx={tx} />
+        {!loading && !error && snapshots.length > 0 && (
+          <KpiChartBody widget={widget} snapshots={snapshots} kpiInfos={kpiInfos} userLabel={userLabel} formatNumber={formatNumber} tx={tx} />
         )}
       </div>
     </article>
   );
 }
 
-function KpiChartBody({ widget, snapshot, kpiInfo, userLabel, formatNumber, tx }) {
+function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, formatNumber, tx }) {
+  const snapshot = snapshots[0];
+  const kpiInfo = kpiInfos[0];
   const hasCompare = Boolean(snapshot?.rango_b);
 
   if (widget.tipo_grafica === "numero") {
@@ -642,8 +755,73 @@ function KpiChartBody({ widget, snapshot, kpiInfo, userLabel, formatNumber, tx }
     );
   }
 
-  const data = buildSeriesData(snapshot, userLabel, widget.parametros?.empleados);
+  // Un solo KPI: exactamente el mismo camino de siempre (colores fijos
+  // Periodo A/B) -- no se toca para que un widget que ya tenia un solo KPI se
+  // siga viendo igual que antes de esta funcionalidad.
+  if (kpiInfos.length <= 1) {
+    const data = buildSeriesData(snapshot, userLabel, widget.parametros?.empleados);
+    if (!data.length) return <p className="kpi-empty-inline">{tx("no_data", "Sin datos en el rango seleccionado.")}</p>;
+
+    if (widget.tipo_grafica === "barras") {
+      return (
+        <ResponsiveContainer width="100%" height={240}>
+          <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e1e0d9" vertical={false} />
+            <XAxis dataKey="name" tick={AXIS_TICK} axisLine={{ stroke: "#c3c2b7" }} tickLine={false} />
+            <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} width={44} />
+            <Tooltip formatter={(value) => formatNumber(value)} />
+            {hasCompare && <Legend wrapperStyle={{ fontSize: 12 }} />}
+            <Bar dataKey="a" name={tx("range_a", "Periodo A")} fill={COLOR_A} radius={[4, 4, 0, 0]} />
+            {hasCompare && <Bar dataKey="b" name={tx("range_b", "Periodo B")} fill={COLOR_B} radius={[4, 4, 0, 0]} />}
+          </BarChart>
+        </ResponsiveContainer>
+      );
+    }
+
+    if (widget.tipo_grafica === "linea") {
+      return (
+        <ResponsiveContainer width="100%" height={240}>
+          <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e1e0d9" vertical={false} />
+            <XAxis dataKey="name" tick={AXIS_TICK} axisLine={{ stroke: "#c3c2b7" }} tickLine={false} />
+            <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} width={44} />
+            <Tooltip formatter={(value) => formatNumber(value)} />
+            {hasCompare && <Legend wrapperStyle={{ fontSize: 12 }} />}
+            <Line type="monotone" dataKey="a" name={tx("range_a", "Periodo A")} stroke={COLOR_A} strokeWidth={2} dot={{ r: 4 }} />
+            {hasCompare && <Line type="monotone" dataKey="b" name={tx("range_b", "Periodo B")} stroke={COLOR_B} strokeWidth={2} dot={{ r: 4 }} />}
+          </LineChart>
+        </ResponsiveContainer>
+      );
+    }
+
+    if (widget.tipo_grafica === "area") {
+      return (
+        <ResponsiveContainer width="100%" height={240}>
+          <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e1e0d9" vertical={false} />
+            <XAxis dataKey="name" tick={AXIS_TICK} axisLine={{ stroke: "#c3c2b7" }} tickLine={false} />
+            <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} width={44} />
+            <Tooltip formatter={(value) => formatNumber(value)} />
+            {hasCompare && <Legend wrapperStyle={{ fontSize: 12 }} />}
+            <Area type="monotone" dataKey="a" name={tx("range_a", "Periodo A")} stroke={COLOR_A} fill={COLOR_A} fillOpacity={0.25} strokeWidth={2} />
+            {hasCompare && <Area type="monotone" dataKey="b" name={tx("range_b", "Periodo B")} stroke={COLOR_B} fill={COLOR_B} fillOpacity={0.25} strokeWidth={2} />}
+          </AreaChart>
+        </ResponsiveContainer>
+      );
+    }
+
+    return null;
+  }
+
+  // Varios KPIs combinados: una serie por KPI (color fijo por posicion en la
+  // lista, reutilizando la paleta CATEGORICAL), el eje X sigue siendo por
+  // empleado. La serie de comparacion (rango B) de cada KPI reusa el MISMO
+  // color que su rango A -distingue por opacidad/trazo, no por un segundo
+  // color fijo- porque con N KPIs ya no hay solo dos roles (A/B) que colorear
+  // aparte como con un solo KPI.
+  const data = buildMultiSeriesData(snapshots, userLabel, widget.parametros?.empleados);
   if (!data.length) return <p className="kpi-empty-inline">{tx("no_data", "Sin datos en el rango seleccionado.")}</p>;
+  const comparacionSufijo = ` (${tx("vs_compare_short", "comparación")})`;
 
   if (widget.tipo_grafica === "barras") {
     return (
@@ -653,9 +831,13 @@ function KpiChartBody({ widget, snapshot, kpiInfo, userLabel, formatNumber, tx }
           <XAxis dataKey="name" tick={AXIS_TICK} axisLine={{ stroke: "#c3c2b7" }} tickLine={false} />
           <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} width={44} />
           <Tooltip formatter={(value) => formatNumber(value)} />
-          {hasCompare && <Legend wrapperStyle={{ fontSize: 12 }} />}
-          <Bar dataKey="a" name={tx("range_a", "Periodo A")} fill={COLOR_A} radius={[4, 4, 0, 0]} />
-          {hasCompare && <Bar dataKey="b" name={tx("range_b", "Periodo B")} fill={COLOR_B} radius={[4, 4, 0, 0]} />}
+          <Legend wrapperStyle={{ fontSize: 12 }} />
+          {kpiInfos.map((info, index) => (
+            <Bar key={`a-${index}`} dataKey={`kpi_${index}_a`} name={kpiSeriesLabel(info, index)} fill={CATEGORICAL[index % CATEGORICAL.length]} radius={[4, 4, 0, 0]} />
+          ))}
+          {hasCompare && kpiInfos.map((info, index) => (
+            <Bar key={`b-${index}`} dataKey={`kpi_${index}_b`} name={`${kpiSeriesLabel(info, index)}${comparacionSufijo}`} fill={CATEGORICAL[index % CATEGORICAL.length]} fillOpacity={0.45} radius={[4, 4, 0, 0]} />
+          ))}
         </BarChart>
       </ResponsiveContainer>
     );
@@ -669,9 +851,13 @@ function KpiChartBody({ widget, snapshot, kpiInfo, userLabel, formatNumber, tx }
           <XAxis dataKey="name" tick={AXIS_TICK} axisLine={{ stroke: "#c3c2b7" }} tickLine={false} />
           <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} width={44} />
           <Tooltip formatter={(value) => formatNumber(value)} />
-          {hasCompare && <Legend wrapperStyle={{ fontSize: 12 }} />}
-          <Line type="monotone" dataKey="a" name={tx("range_a", "Periodo A")} stroke={COLOR_A} strokeWidth={2} dot={{ r: 4 }} />
-          {hasCompare && <Line type="monotone" dataKey="b" name={tx("range_b", "Periodo B")} stroke={COLOR_B} strokeWidth={2} dot={{ r: 4 }} />}
+          <Legend wrapperStyle={{ fontSize: 12 }} />
+          {kpiInfos.map((info, index) => (
+            <Line key={`a-${index}`} type="monotone" dataKey={`kpi_${index}_a`} name={kpiSeriesLabel(info, index)} stroke={CATEGORICAL[index % CATEGORICAL.length]} strokeWidth={2} dot={{ r: 4 }} />
+          ))}
+          {hasCompare && kpiInfos.map((info, index) => (
+            <Line key={`b-${index}`} type="monotone" dataKey={`kpi_${index}_b`} name={`${kpiSeriesLabel(info, index)}${comparacionSufijo}`} stroke={CATEGORICAL[index % CATEGORICAL.length]} strokeWidth={2} strokeDasharray="5 4" dot={{ r: 3 }} />
+          ))}
         </LineChart>
       </ResponsiveContainer>
     );
@@ -685,9 +871,13 @@ function KpiChartBody({ widget, snapshot, kpiInfo, userLabel, formatNumber, tx }
           <XAxis dataKey="name" tick={AXIS_TICK} axisLine={{ stroke: "#c3c2b7" }} tickLine={false} />
           <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} width={44} />
           <Tooltip formatter={(value) => formatNumber(value)} />
-          {hasCompare && <Legend wrapperStyle={{ fontSize: 12 }} />}
-          <Area type="monotone" dataKey="a" name={tx("range_a", "Periodo A")} stroke={COLOR_A} fill={COLOR_A} fillOpacity={0.25} strokeWidth={2} />
-          {hasCompare && <Area type="monotone" dataKey="b" name={tx("range_b", "Periodo B")} stroke={COLOR_B} fill={COLOR_B} fillOpacity={0.25} strokeWidth={2} />}
+          <Legend wrapperStyle={{ fontSize: 12 }} />
+          {kpiInfos.map((info, index) => (
+            <Area key={`a-${index}`} type="monotone" dataKey={`kpi_${index}_a`} name={kpiSeriesLabel(info, index)} stroke={CATEGORICAL[index % CATEGORICAL.length]} fill={CATEGORICAL[index % CATEGORICAL.length]} fillOpacity={0.25} strokeWidth={2} />
+          ))}
+          {hasCompare && kpiInfos.map((info, index) => (
+            <Area key={`b-${index}`} type="monotone" dataKey={`kpi_${index}_b`} name={`${kpiSeriesLabel(info, index)}${comparacionSufijo}`} stroke={CATEGORICAL[index % CATEGORICAL.length]} fill={CATEGORICAL[index % CATEGORICAL.length]} fillOpacity={0.1} strokeWidth={2} strokeDasharray="5 4" />
+          ))}
         </AreaChart>
       </ResponsiveContainer>
     );
@@ -696,7 +886,7 @@ function KpiChartBody({ widget, snapshot, kpiInfo, userLabel, formatNumber, tx }
   return null;
 }
 
-function KpiWidgetFormModal({ editing, kpiCatalog, users, onCancel, onSave, t, tx }) {
+function KpiWidgetPanel({ editing, kpiCatalog, users, departments, onCancel, onSave, t, tx }) {
   const parametrosIniciales = editing?.parametros || {};
 
   // Catalogo agrupado por modulo (facturacion, operaciones, ...): el paso de
@@ -713,68 +903,123 @@ function KpiWidgetFormModal({ editing, kpiCatalog, users, onCancel, onSave, t, t
   }, [kpiCatalog]);
   const modulosDisponibles = Array.from(kpisPorModulo.keys());
   const necesitaCategoria = modulosDisponibles.length > 1;
-  // El widget guarda una lista (`ids_kpi_definition`) para poder mostrar
-  // varios KPIs mas adelante, pero por ahora este formulario solo edita uno
-  // -- el primero de la lista. Defensivo por si llegara vacia.
-  const editingIdKpiDefinition = Array.isArray(editing?.ids_kpi_definition) ? editing.ids_kpi_definition[0] : undefined;
-  const editingKpi = kpiCatalog.find((kpi) => kpi.id_kpi_definition === editingIdKpiDefinition);
 
-  const [idKpiDefinition, setIdKpiDefinition] = useState(editingIdKpiDefinition ? String(editingIdKpiDefinition) : "");
+  const editingIdsKpiDefinition = Array.isArray(editing?.ids_kpi_definition) ? editing.ids_kpi_definition.map(String) : [];
+  const primerKpiEditado = kpiCatalog.find((kpi) => String(kpi.id_kpi_definition) === editingIdsKpiDefinition[0]);
+
+  const [idsKpiSeleccionados, setIdsKpiSeleccionados] = useState(editingIdsKpiDefinition);
   const [categoriaKpi, setCategoriaKpi] = useState(
-    () => editingKpi?.modulo || (modulosDisponibles.length === 1 ? modulosDisponibles[0] : ""),
+    () => primerKpiEditado?.modulo || (modulosDisponibles.length === 1 ? modulosDisponibles[0] : ""),
   );
   const [tipoGrafica, setTipoGrafica] = useState(editing?.tipo_grafica || "numero");
   const [fechaInicio, setFechaInicio] = useState(parametrosIniciales.fecha_inicio || daysAgoIso(30));
   const [fechaFin, setFechaFin] = useState(parametrosIniciales.fecha_fin || todayIso());
+  const [atajoActivo, setAtajoActivo] = useState(null);
   const [comparar, setComparar] = useState(Boolean(parametrosIniciales.fecha_inicio_b && parametrosIniciales.fecha_fin_b));
   const [fechaInicioB, setFechaInicioB] = useState(parametrosIniciales.fecha_inicio_b || "");
   const [fechaFinB, setFechaFinB] = useState(parametrosIniciales.fecha_fin_b || "");
   const [empleadosSeleccionados, setEmpleadosSeleccionados] = useState(
     Array.isArray(parametrosIniciales.empleados) ? parametrosIniciales.empleados.map(String) : [],
   );
+  const [departamentosSeleccionados, setDepartamentosSeleccionados] = useState(
+    Array.isArray(parametrosIniciales.id_departments) ? parametrosIniciales.id_departments.map(String) : [],
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [avisoKpi, setAvisoKpi] = useState("");
+
+  const multiKpiPermitido = esTipoMultiKpi(tipoGrafica);
+
+  // Cambiar a "numero"/"dona" con varios KPIs marcados no rompe nada: se
+  // conserva solo el primero y se avisa, en vez de guardar una combinacion
+  // que ese tipo de grafica no sabe representar.
+  function aplicarTipoGrafica(valor) {
+    setTipoGrafica(valor);
+    if (!esTipoMultiKpi(valor) && idsKpiSeleccionados.length > 1) {
+      const conservado = idsKpiSeleccionados[0];
+      const kpiConservado = kpiCatalog.find((kpi) => String(kpi.id_kpi_definition) === conservado);
+      setIdsKpiSeleccionados([conservado]);
+      setAvisoKpi(tx("kpi_multi_not_supported", `Este tipo de gráfico solo admite un KPI. Se conservó "${kpiConservado?.etiqueta || conservado}".`));
+    } else {
+      setAvisoKpi("");
+    }
+  }
+
+  function toggleKpi(idKpi) {
+    setAvisoKpi("");
+    if (multiKpiPermitido) {
+      setIdsKpiSeleccionados((prev) => (prev.includes(idKpi) ? prev.filter((item) => item !== idKpi) : [...prev, idKpi]));
+    } else {
+      setIdsKpiSeleccionados((prev) => (prev.length === 1 && prev[0] === idKpi ? [] : [idKpi]));
+    }
+  }
 
   function toggleEmpleado(idUser) {
     setEmpleadosSeleccionados((prev) => (prev.includes(idUser) ? prev.filter((item) => item !== idUser) : [...prev, idUser]));
   }
 
+  function toggleDepartamento(idDepartamento) {
+    setDepartamentosSeleccionados((prev) => (prev.includes(idDepartamento) ? prev.filter((item) => item !== idDepartamento) : [...prev, idDepartamento]));
+  }
+
+  // Los atajos solo rellenan fecha_inicio/fecha_fin -- nunca reemplazan los
+  // selectores libres. "Personalizado" no trae rango: solo marca el modo
+  // manual (ver DATE_SHORTCUTS).
+  function aplicarAtajo(atajo) {
+    setAtajoActivo(atajo.key);
+    if (!atajo.range) return;
+    const [inicio, fin] = atajo.range();
+    setFechaInicio(inicio);
+    setFechaFin(fin);
+  }
+
   async function handleSubmit(event) {
     event.preventDefault();
     setError("");
-    if (!idKpiDefinition) { setError(tx("kpi_required", "Elige un KPI.")); return; }
+    if (idsKpiSeleccionados.length === 0) { setError(tx("kpi_required", "Elige al menos un KPI.")); return; }
     if (!fechaInicio || !fechaFin) { setError(tx("range_required", "Elige el rango de fechas.")); return; }
+    if (diffDias(fechaInicio, fechaFin) > KPI_RANGO_DIAS_MAX) {
+      setError(tx("range_exceeds_limit", "El rango de fechas no puede exceder un año. Ajusta las fechas."));
+      return;
+    }
     if (comparar && (!fechaInicioB || !fechaFinB)) { setError(tx("range_b_required", "Elige el rango de comparación o desactívala.")); return; }
+    if (comparar && diffDias(fechaInicioB, fechaFinB) > KPI_RANGO_DIAS_MAX) {
+      setError(tx("range_exceeds_limit", "El rango de comparación no puede exceder un año. Ajusta las fechas."));
+      return;
+    }
 
     const parametros = { fecha_inicio: fechaInicio, fecha_fin: fechaFin };
     if (comparar) { parametros.fecha_inicio_b = fechaInicioB; parametros.fecha_fin_b = fechaFinB; }
     if (empleadosSeleccionados.length) parametros.empleados = empleadosSeleccionados.map(Number);
+    if (departamentosSeleccionados.length) parametros.id_departments = departamentosSeleccionados.map(Number);
 
-    // Un solo elemento por ahora: el backend ya acepta varios KPIs por
-    // widget (`ids_kpi_definition`), pero combinarlos en una misma grafica es
-    // un cambio aparte -- por hoy cada widget sigue representando uno solo.
-    const payload = { ids_kpi_definition: [Number(idKpiDefinition)], tipo_grafica: tipoGrafica, parametros };
+    const payload = { ids_kpi_definition: idsKpiSeleccionados.map(Number), tipo_grafica: tipoGrafica, parametros };
     setSaving(true);
     try {
       await onSave(payload, editing);
     } catch (err) {
-      setError(t(err.message || "errors.request_failed", err.message || "errors.request_failed"));
+      const clave = err.message || "errors.request_failed";
+      setError(
+        clave === "errors.rango_excede_limite"
+          ? tx("range_exceeds_limit", "El rango de fechas excede el máximo permitido (aprox. un año). Ajusta las fechas e inténtalo de nuevo.")
+          : t(clave, clave),
+      );
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <div className="kpi-modal-backdrop" role="presentation">
-      <form className="kpi-modal" onSubmit={handleSubmit}>
-        <header>
-          <div>
-            <p className="eyebrow">{tx("widget", "Gráfico")}</p>
-            <h3>{editing ? tx("edit_widget", "Editar gráfico") : tx("add_widget", "Agregar gráfico")}</h3>
-          </div>
-          <button type="button" className="kpi-icon-button" onClick={onCancel} aria-label={t("common.cancel")}><X size={18} /></button>
-        </header>
+    <section className="kpi-widget-panel">
+      <header>
+        <div>
+          <p className="eyebrow">{tx("widget", "Gráfico")}</p>
+          <h3>{editing ? tx("edit_widget", "Editar gráfico") : tx("add_widget", "Agregar gráfico")}</h3>
+        </div>
+        <button type="button" className="kpi-icon-button" onClick={onCancel} aria-label={t("common.cancel")}><X size={18} /></button>
+      </header>
 
+      <form onSubmit={handleSubmit}>
         {kpiCatalog.length === 0 ? (
           <div className="empty">
             <strong>{tx("no_kpis_title", "No tienes KPIs asignados")}</strong>
@@ -782,44 +1027,6 @@ function KpiWidgetFormModal({ editing, kpiCatalog, users, onCancel, onSave, t, t
           </div>
         ) : (
           <>
-            <div className="kpi-picker-section">
-              <span>{tx("kpi", "KPI")}</span>
-              {necesitaCategoria && (
-                <div className="kpi-icon-option-group" role="group" aria-label={tx("kpi_category", "Categoría")}>
-                  {modulosDisponibles.map((modulo) => {
-                    const meta = kpiModuleMeta(modulo);
-                    const ModuleIcon = meta.icon;
-                    const activo = categoriaKpi === modulo;
-                    return (
-                      <button
-                        type="button"
-                        key={modulo}
-                        className={`kpi-icon-option ${activo ? "active" : ""}`}
-                        onClick={() => { setCategoriaKpi(modulo); setIdKpiDefinition(""); }}
-                      >
-                        <ModuleIcon size={20} />
-                        <span>{meta.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-              {(!necesitaCategoria || categoriaKpi) && (
-                <div className="kpi-chip-option-group">
-                  {(necesitaCategoria ? kpisPorModulo.get(categoriaKpi) || [] : kpiCatalog).map((kpi) => (
-                    <button
-                      type="button"
-                      key={kpi.id_kpi_definition}
-                      className={`kpi-chip-option ${idKpiDefinition === String(kpi.id_kpi_definition) ? "active" : ""}`}
-                      onClick={() => setIdKpiDefinition(String(kpi.id_kpi_definition))}
-                    >
-                      {kpi.etiqueta || kpi.clave}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
             <div className="kpi-picker-section">
               <span>{tx("chart_type", "Tipo de gráfico")}</span>
               <div className="kpi-icon-option-group">
@@ -832,7 +1039,7 @@ function KpiWidgetFormModal({ editing, kpiCatalog, users, onCancel, onSave, t, t
                       type="button"
                       key={opt.value}
                       className={`kpi-icon-option ${activo ? "active" : ""}`}
-                      onClick={() => setTipoGrafica(opt.value)}
+                      onClick={() => aplicarTipoGrafica(opt.value)}
                       title={etiqueta}
                     >
                       <ChartIcon size={20} />
@@ -843,14 +1050,91 @@ function KpiWidgetFormModal({ editing, kpiCatalog, users, onCancel, onSave, t, t
               </div>
             </div>
 
+            <div className="kpi-picker-section">
+              <span>
+                {tx("kpi", "KPI")}
+                {multiKpiPermitido && idsKpiSeleccionados.length > 0 && (
+                  <em className="kpi-picker-count"> — {tx("kpi_selected_count", `${idsKpiSeleccionados.length} seleccionado(s)`)}</em>
+                )}
+              </span>
+              {avisoKpi && <p className="kpi-inline-notice">{avisoKpi}</p>}
+              {necesitaCategoria && (
+                <div className="kpi-icon-option-group" role="group" aria-label={tx("kpi_category", "Categoría")}>
+                  {modulosDisponibles.map((modulo) => {
+                    const meta = kpiModuleMeta(modulo);
+                    const ModuleIcon = meta.icon;
+                    const activo = categoriaKpi === modulo;
+                    return (
+                      <button
+                        type="button"
+                        key={modulo}
+                        className={`kpi-icon-option ${activo ? "active" : ""}`}
+                        onClick={() => setCategoriaKpi(modulo)}
+                      >
+                        <ModuleIcon size={20} />
+                        <span>{meta.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {(!necesitaCategoria || categoriaKpi) && (
+                <div className="kpi-chip-option-group">
+                  {(necesitaCategoria ? kpisPorModulo.get(categoriaKpi) || [] : kpiCatalog).map((kpi) => {
+                    const idStr = String(kpi.id_kpi_definition);
+                    const posicion = idsKpiSeleccionados.indexOf(idStr);
+                    return (
+                      <button
+                        type="button"
+                        key={kpi.id_kpi_definition}
+                        className={`kpi-chip-option ${posicion >= 0 ? "active" : ""}`}
+                        onClick={() => toggleKpi(idStr)}
+                      >
+                        {multiKpiPermitido && posicion >= 0 && <span className="kpi-chip-badge">{posicion + 1}</span>}
+                        {kpi.etiqueta || kpi.clave}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="kpi-picker-section">
+              <span>{tx("date_shortcuts", "Atajos de fecha")}</span>
+              <div className="kpi-date-shortcuts">
+                {DATE_SHORTCUTS.map((atajo) => (
+                  <button
+                    type="button"
+                    key={atajo.key}
+                    className={`kpi-shortcut-button ${atajoActivo === atajo.key ? "active" : ""}`}
+                    onClick={() => aplicarAtajo(atajo)}
+                  >
+                    {tx(`date_shortcut_${atajo.key}`, atajo.label)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="form-grid">
               <label className="field">
                 <span>{tx("start_date", "Fecha inicio")}</span>
-                <input type="date" value={fechaInicio} max={fechaFin || undefined} onChange={(event) => setFechaInicio(event.target.value)} required />
+                <input
+                  type="date"
+                  value={fechaInicio}
+                  max={fechaFin || undefined}
+                  onChange={(event) => { setFechaInicio(event.target.value); setAtajoActivo("personalizado"); }}
+                  required
+                />
               </label>
               <label className="field">
                 <span>{tx("end_date", "Fecha fin")}</span>
-                <input type="date" value={fechaFin} min={fechaInicio || undefined} onChange={(event) => setFechaFin(event.target.value)} required />
+                <input
+                  type="date"
+                  value={fechaFin}
+                  min={fechaInicio || undefined}
+                  onChange={(event) => { setFechaFin(event.target.value); setAtajoActivo("personalizado"); }}
+                  required
+                />
               </label>
             </div>
 
@@ -890,6 +1174,24 @@ function KpiWidgetFormModal({ editing, kpiCatalog, users, onCancel, onSave, t, t
                 </div>
               </div>
             )}
+
+            {departments.length > 0 && (
+              <div className="kpi-department-picker">
+                <span className="kpi-department-picker-label">{tx("departments_filter", "Filtrar por departamento (opcional)")}</span>
+                <div className="kpi-department-list">
+                  {departments.map((department) => (
+                    <label className="kpi-department-chip" key={department.id_department}>
+                      <input
+                        type="checkbox"
+                        checked={departamentosSeleccionados.includes(String(department.id_department))}
+                        onChange={() => toggleDepartamento(String(department.id_department))}
+                      />
+                      <span>{department.department_description || `#${department.id_department}`}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
           </>
         )}
 
@@ -900,6 +1202,6 @@ function KpiWidgetFormModal({ editing, kpiCatalog, users, onCancel, onSave, t, t
           {kpiCatalog.length > 0 && <button type="submit" className="button primary" disabled={saving}>{t("common.save")}</button>}
         </footer>
       </form>
-    </div>
+    </section>
   );
 }
