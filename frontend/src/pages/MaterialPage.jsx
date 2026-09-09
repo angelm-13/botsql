@@ -1,16 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus, RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
-import { getAllMaterial, createMaterial, updateMaterial, deleteMaterial, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllUnit, getAllBrand, getAllProductFamily, saveMaterialAttributes } from "../api";
+import { getAllMaterial, createMaterial, updateMaterial, deleteMaterial, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllUnit, getAllBrand, getAllProductFamily } from "../api";
 import Pagination from "../components/Pagination.jsx";
 import PageHeader from "../components/PageHeader.jsx";
-import MaterialCharacteristics from "../components/MaterialCharacteristics.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 
 const emptyForm = { material_description: "", id_unit: "", id_brand: "", id_product_family: "" };
-// Las caracteristicas van aparte del formulario: no son columnas de `material`
-// sino filas de `nm_material_attribute`, y se guardan en su propia llamada.
-const sinCaracteristicas = {};
 const validationRules = allValidationRules["material"] || {};
 const ENTITY_KEY = "material";
 const ACTION_CREATE = 1;
@@ -38,9 +34,6 @@ export default function MaterialPage() {
   const [formData, setFormData] = useState(emptyForm);
   const [fieldErrors, setFieldErrors] = useState({});
   const [editingId, setEditingId] = useState(null);
-  // {id_material_attribute: valor}. Es lo que el servidor acepta tal cual, y es
-  // lo que un formulario produce sin tener que inventar un orden.
-  const [caracteristicas, setCaracteristicas] = useState(sinCaracteristicas);
   const [query, setQuery] = useState("");
   const [view, setView] = useState("table");
   const [page, setPage] = useState(1);
@@ -247,18 +240,9 @@ export default function MaterialPage() {
     try {
       if (editingId && !canUpdate) return;
       if (!editingId && !canCreate) return;
-      // El material primero: las caracteristicas cuelgan de el y de su familia,
-      // asi que hasta que no existe no hay donde colgarlas. En un alta el id
-      // sale de la respuesta.
-      let idGuardado = editingId;
       if (editingId) await updateMaterial(editingId, submitPayload);
-      else {
-        const creado = await createMaterial(submitPayload);
-        idGuardado = creado?.id_material ?? creado?.data?.id_material ?? null;
-      }
-      if (idGuardado) await saveMaterialAttributes(idGuardado, caracteristicas);
-      setFormData(emptyForm); setEditingId(null);
-      setCaracteristicas(sinCaracteristicas); await loadData();
+      else await createMaterial(submitPayload);
+      setFormData(emptyForm); setEditingId(null); await loadData();
     } catch (error) {
       const meta = error.payload?.meta || null;
       setErrorKey(error.message || "errors.request_failed");
@@ -270,9 +254,6 @@ export default function MaterialPage() {
   function startEdit(item) {
     if (!canUpdate) return;
     setEditingId(item.id_material);
-    // Se vacian aqui y el componente carga las del material elegido: dejar las
-    // del anterior las guardaria en este.
-    setCaracteristicas(sinCaracteristicas);
     const editData = { ...emptyForm, ...item };
     if (ENTITY_KEY === "user") editData.password = "";
     setFormData(editData);
@@ -484,28 +465,10 @@ export default function MaterialPage() {
           )}
         </div>
 
-        {/* Las caracteristicas de la familia elegida. Aqui y no en otra
-            pantalla: el momento de contestar "de que largo" es cuando se esta
-            dando de alta el desarmador. Antes ese dato se escribia dentro de la
-            descripcion -"BROCA HELICOIDAL 3/4"-, asi que se podia leer pero no
-            agrupar, ni filtrar, ni contar cuantas de 3/4 hay. */}
-        <fieldset className="clasificacion">
-          <legend>{t("attribute.title", "Características")}</legend>
-          <p className="muted clasificacion-ayuda">
-            {t("attribute.help_material",
-              "Las declara la familia, una sola vez, en «Familias de producto». Aquí se contestan para este material.")}
-          </p>
-          <MaterialCharacteristics
-            idFamily={formData.id_product_family}
-            idMaterial={editingId}
-            valores={caracteristicas}
-            onChange={setCaracteristicas}
-          />
-        </fieldset>
 
         <div className="form-actions">
           <button className="button primary" type="submit">{t("common.save")}</button>
-          <button className="button" type="button" onClick={() => { setFormData(emptyForm); setEditingId(null); setFieldErrors({}); setCaracteristicas(sinCaracteristicas); }}>{t("common.cancel")}</button>
+          <button className="button" type="button" onClick={() => { setFormData(emptyForm); setEditingId(null); setFieldErrors({}); }}>{t("common.cancel")}</button>
         </div>
       </form>}
 

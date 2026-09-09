@@ -317,6 +317,29 @@ class TestLaPaginacion(BaseDelAlmacen):
         self.assertEqual(pedido,
                          localizar("Tornillo", ACTOR, por_pagina=pedido)["per_page"])
 
+    def test_the_card_gets_the_status_the_old_system_wrote(self):
+        """`product_status` viaja en la respuesta, crudo.
+
+        Es el unico sitio donde estan los seis valores completos del sistema
+        anterior. El catalogo `inventory_status` no tiene fila para EXTRAVIADO,
+        asi que 65 productos reales lo traen aqui y con el FK en nulo: pintar la
+        tarjeta desde el catalogo los habria dejado sin color.
+        """
+        with transaction_context() as db:
+            db.add(Product(
+                id_product=9600, id_invoice=self.COMPRA, id_location=self.RACK,
+                id_material=1, is_directly_related_to_product_service=True,
+                product_code="CARGA-9600",
+                descripcion="Tornillo hexagonal extraviado",
+                stock_purpose="mercancia", tracking_mode="fungible",
+                product_status="EXTRAVIADO", id_inventory_status=None,
+                gross_price=Decimal("10.00"), created_by=1,
+            ))
+
+        encontrado = localizar("Tornillo hexagonal extraviado", ACTOR)["items"]
+        self.assertEqual(1, len(encontrado))
+        self.assertEqual("EXTRAVIADO", encontrado[0]["product_status"])
+
     def test_a_garbage_page_is_treated_as_the_first_one(self):
         self._sembrar_productos(3, desde=9900)
 

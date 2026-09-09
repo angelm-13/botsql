@@ -1089,6 +1089,12 @@ def localizar(consulta: str, user_data: dict, *, proposito: str | None = None,
                 "path_imagen": producto.path_imagen,
                 "tracking_mode": producto.tracking_mode,
                 "stock_purpose": producto.stock_purpose,
+                # El estatus tal como lo escribio el sistema anterior --
+                # ENTRADA, SALIDA, DANADO, DESTRUCCION, EXTRAVIADO--, que es el
+                # unico sitio donde estan los seis valores completos: el
+                # catalogo `inventory_status` no tiene fila para EXTRAVIADO, asi
+                # que 65 productos lo traen aqui y con el FK en nulo.
+                "product_status": producto.product_status,
                 "id_proyect": del_proyecto,
                 # A que familia pertenece, de que marca es, de que material y en
                 # que unidad se mide. Estaba a dos saltos en la base y obligaba a

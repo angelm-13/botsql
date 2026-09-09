@@ -390,3 +390,54 @@
   padding: 1px 8px; border-radius: 999px;
   background: #eef3f1; color: #1b7a60; font-size: 12px; font-weight: 600;
 }
+
+/* --- el estatus del producto, en el borde de la tarjeta ---
+
+   Un acento de 6px a la izquierda, que es como ya se marca una tarjeta en el
+   resto del sistema (`.product-kanban-card` en `app.css` usa el mismo recurso).
+   Los cinco tonos son los mismos de `.trace-chip` y `.trace-cifra`: no se
+   introduce ningun color nuevo.
+
+   El color va por GRAVEDAD, no uno por estatus -- siete estatus no caben en
+   cinco tonos sin inventar colores. La etiqueta escrita dentro de la tarjeta
+   dice cual es cual, que ademas es lo que hace que esto funcione para quien no
+   distingue el verde del ambar. */
+
+.trace-card { border-left: 6px solid transparent; }
+
+.trace-card.estatus-ok    { border-left-color: #16a34a; }
+.trace-card.estatus-info  { border-left-color: #2563eb; }
+.trace-card.estatus-warn  { border-left-color: #d97706; }
+.trace-card.estatus-crit  { border-left-color: #dc2626; }
+.trace-card.estatus-muted { border-left-color: #94a3b8; }
+/* Sin estatus: el borde se queda como el resto del marco, para que la ausencia
+   no parezca un estado mas. */
+.trace-card.estatus-sin   { border-left-color: #e2e8f0; }
+
+.trace-estatus { margin: 6px 0 0; }
+
+/* --- la simbologia del color ---
+
+   Los mismos cinco tonos del borde de la tarjeta, con lo que significan. La
+   muestra es un cuadrito con el color del acento, no un chip: un chip aqui se
+   leeria como un filtro mas y esto no filtra, explica. */
+
+.trace-simbologia {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  margin: 0 0 14px; padding: 9px 12px;
+  background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;
+  font-size: 12px;
+}
+.trace-simbologia-titulo { font-weight: 700; }
+.trace-simbologia-item { display: inline-flex; align-items: center; gap: 6px; }
+.trace-simbologia-item strong { font-weight: 600; color: #334155; }
+
+.trace-muestra {
+  width: 11px; height: 11px; border-radius: 3px; flex: 0 0 auto;
+  background: #e2e8f0;
+}
+.trace-muestra.ok    { background: #16a34a; }
+.trace-muestra.info  { background: #2563eb; }
+.trace-muestra.warn  { background: #d97706; }
+.trace-muestra.crit  { background: #dc2626; }
+.trace-muestra.muted { background: #94a3b8; }

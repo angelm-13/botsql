@@ -56,8 +56,13 @@ import PageHeader from "../components/PageHeader.jsx";
  */
 const NATURALEZAS = [
   { valor: "", clave: "all_purposes", texto: "Todo el almacén", icono: null },
-  { valor: "mercancia", clave: "merchandise", texto: "Mercancía",
-    icono: ShoppingCart, ayuda: "Lo que la empresa distribuye. Se cuenta por cantidad." },
+  // El valor que viaja al servidor sigue siendo `mercancia`: es lo que hay en
+  // `product.stock_purpose` en 2 221 filas, y renombrar la columna seria mover
+  // datos para cambiar una etiqueta. Lo que cambia es como se lee, y
+  // "Consumible" es la palabra que usa el resto del almacen -- la misma que
+  // trae `familia.herramienta_consumible` del sistema anterior.
+  { valor: "mercancia", clave: "consumable", texto: "Consumible",
+    icono: ShoppingCart, ayuda: "Lo que se gasta y se repone. Se cuenta por cantidad." },
   { valor: "uso_interno", clave: "internal_use", texto: "Uso interno",
     icono: Wrench, ayuda: "Herramienta y equipo. Se rastrea pieza por pieza." },
 ];
@@ -70,6 +75,62 @@ const ORDEN_DE_ESTADOS = [
 
 // Los estados de una pieza, con el tono con el que se pintan. `disponible` es
 // el unico que cuenta como existencia; el resto explica por que no esta.
+// El estatus del producto tal como lo escribio el sistema anterior. Son los de
+// `producto.estado`, que el importador guarda intactos en
+// `product.product_status`: ENTRADA 1888, SALIDA 143, DESTRUCCION 86,
+// EXTRAVIADO 65, DANADO 27 y EQ. DANADOS 11.
+//
+// El color va por GRAVEDAD y no uno por estatus, y a proposito: la paleta de
+// esta pantalla tiene cinco tonos -- ok, info, warn, crit, muted -- y los siete
+// estatus no caben en cinco sin inventar colores nuevos. Inventarlos seria
+// romper la colorimetria justo para distinguir cosas que el texto de la
+// etiqueta ya distingue. Asi el color contesta de un vistazo "esto esta bien /
+// esto hay que atenderlo / esto se perdio", y la etiqueta dice cual es cual.
+//
+//   verde  esta en el almacen
+//   azul   fuera, pero sin problema -- salio o esta rentado
+//   ambar  hay que hacer algo -- danado o en reparacion
+//   rojo   se perdio
+//   gris   fin de vida -- se destruyo
+// La simbologia de la tarjeta: que significa cada tono y que estatus lo llevan.
+//
+// Se declara aparte del mapa de arriba y no se deriva de el a proposito: en el
+// mapa manda el estatus y aqui manda el TONO, y son cinco entradas -- una por
+// color-, no ocho. Derivarla daria la lista de estatus por tono, que es la mitad
+// util, pero no el "que quiere decir este color", que es la otra mitad y la que
+// hace falta para leer la pantalla.
+const SIMBOLOGIA = [
+  { tono: "ok", clave: "in_stock", texto: "En el almacén", estatus: ["ENTRADA"] },
+  { tono: "info", clave: "out_ok", texto: "Fuera, sin problema",
+    estatus: ["SALIDA", "RENTA"] },
+  { tono: "warn", clave: "needs_care", texto: "Hay que atenderlo",
+    estatus: ["DAÑADO", "EQ. DAÑADOS", "REPARACIÓN"] },
+  { tono: "crit", clave: "lost", texto: "Se perdió", estatus: ["EXTRAVIADO"] },
+  { tono: "muted", clave: "end_of_life", texto: "Fin de vida",
+    estatus: ["DESTRUCCIÓN"] },
+];
+
+const TONO_DE_ESTATUS = {
+  ENTRADA: "ok",
+  SALIDA: "info",
+  RENTA: "info",
+  DANADO: "warn",
+  "EQ. DANADOS": "warn",
+  REPARACION: "warn",
+  EXTRAVIADO: "crit",
+  DESTRUCCION: "muted",
+};
+
+// Sin acentos y en mayusculas: en los datos conviven "DAÑADO" y "DANADO", y
+// "DESTRUCCION" nunca trae tilde aunque se diga "destrucción".
+function normalizarEstatus(valor) {
+  return String(valor || "")
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .trim();
+}
+
 const TONO_DE_ESTADO = {
   disponible: "ok",
   en_uso: "info",
@@ -461,6 +522,26 @@ export default function InventoryTracePage() {
         </p>
       )}
 
+      {/* Que quiere decir el color del borde de cada tarjeta. Va aqui, pegada a
+          la lista que explica, y no en una ayuda aparte: una leyenda que hay que
+          ir a buscar no se usa. Cada tono lleva los estatus que le tocan, porque
+          el color va por gravedad y varios estatus comparten tono. */}
+      {items.length > 0 && (
+        <div className="trace-simbologia" role="note"
+             aria-label={t("trace.legend", "Qué significa el color de cada tarjeta")}>
+          <span className="trace-simbologia-titulo muted">
+            {t("trace.legend", "Qué significa el color")}
+          </span>
+          {SIMBOLOGIA.map(({ tono, clave, texto, estatus }) => (
+            <span className="trace-simbologia-item" key={tono}>
+              <i className={`trace-muestra ${tono}`} aria-hidden="true" />
+              <strong>{t(`trace.legend_${clave}`, texto)}</strong>
+              <span className="muted">{estatus.join(" · ")}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
       {error && <p className="error">{error}</p>}
 
       {datos?.hidden_by_scope > 0 && (
@@ -518,7 +599,11 @@ export default function InventoryTracePage() {
           const foto = fotosRotas.has(it.id_product) ? "" : urlDeArchivo(it.path_imagen);
 
           return (
-            <article className="trace-card" key={it.id_product}>
+            <article
+              className={`trace-card estatus-${
+                TONO_DE_ESTATUS[normalizarEstatus(it.product_status)] || "sin"}`}
+              key={it.id_product}
+            >
               <div className="trace-photo">
                 {foto ? (
                   <img
@@ -560,6 +645,23 @@ export default function InventoryTracePage() {
                         <> · <Wrench size={12} /> {t("trace.serialized", "pieza por pieza")}</>
                       )}
                     </p>
+
+                    {/* El estatus, escrito. El color de la tarjeta dice la
+                        gravedad de un vistazo -- verde esta, ambar hay que
+                        atenderlo, rojo se perdio -- pero el color solo no dice
+                        CUAL: rentado y salido comparten azul, y danado comparte
+                        ambar con en reparacion. Y hay quien no distingue esos
+                        tonos: el color nunca puede ser el unico portador del
+                        dato. */}
+                    {it.product_status && (
+                      <p className="trace-estatus">
+                        <span className={`trace-chip ${
+                          TONO_DE_ESTATUS[normalizarEstatus(it.product_status)] || "muted"}`}>
+                          {t(`trace.status_${normalizarEstatus(it.product_status)
+                            .toLowerCase().replace(/[^a-z]+/g, "_")}`, it.product_status)}
+                        </span>
+                      </p>
+                    )}
 
                     {/* A que pertenece. Todo esto ya estaba en la base, a dos
                         saltos -producto, material, y de ahi familia, marca y

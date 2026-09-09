@@ -272,8 +272,6 @@ export const createFiscalAccount = (payload) => request("/fiscal_account/", { me
 export const updateFiscalAccount = (id, payload) => request(`/fiscal_account/${id}`, { method: "PUT", body: payload });
 export const deleteFiscalAccount = (id) => request(`/fiscal_account/${id}`, { method: "DELETE" });
 
-
-
 export const getAllIncident = (params = {}) => request("/incident/", { params });
 export const getIncident = (id) => request(`/incident/${id}`);
 export const createIncident = (payload) => request("/incident/", { method: "POST", body: payload });
@@ -690,34 +688,6 @@ export const transitionTask = (id, payload) => request(`/task/${id}/transition`,
 // tiene que saber que la columna del padre se llama `id_task`.
 export const getTaskNotes = (id) => request(`/task/${id}/notes`);
 export const addTaskNote = (id, payload) => request(`/task/${id}/notes`, { method: "POST", body: payload });
-
-// --- caracteristicas del material ---
-//
-// Dos grupos con dos permisos distintos y a proposito: el CATALOGO -que declara
-// una familia- se guarda con `material_attribute`, que es configuracion; los
-// VALORES de un material se guardan con `material`, porque llenar el largo de un
-// desarmador es editar ese desarmador.
-export const getFamilyAttributes = (idFamily) =>
-  request(`/material-attributes/by-family/${idFamily}`);
-export const createMaterialAttribute = (payload) =>
-  request("/material-attributes", { method: "POST", body: payload });
-export const updateMaterialAttribute = (id, payload) =>
-  request(`/material-attributes/${id}`, { method: "PUT", body: payload });
-export const deleteMaterialAttribute = (id) =>
-  request(`/material-attributes/${id}`, { method: "DELETE" });
-export const addMaterialAttributeOption = (id, payload) =>
-  request(`/material-attributes/${id}/options`, { method: "POST", body: payload });
-export const deleteMaterialAttributeOption = (idOption) =>
-  request(`/material-attributes/options/${idOption}`, { method: "DELETE" });
-
-export const getMaterialAttributes = (idMaterial) =>
-  request(`/material/${idMaterial}/attributes`);
-export const saveMaterialAttributes = (idMaterial, values) =>
-  request(`/material/${idMaterial}/attributes`, { method: "PUT", body: { values } });
-// "Cuantos desarmadores Truper planos de 6 pulgadas tengo": es POST porque los
-// criterios son objetos con rangos y en la direccion salen ilegibles.
-export const searchMaterialsByAttributes = (payload) =>
-  request("/material-attributes/search", { method: "POST", body: payload });
 
 // --- lotes y caducidad ---
 //

@@ -536,7 +536,7 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
     <section className="vale-borrador">
       <header>
         <h2><Plus size={16} />{t("voucher.new", "Levantar vale")}</h2>
-        <button className="mt-icono" onClick={onCancelar}
+        <button className="vale-icono" onClick={onCancelar}
                 aria-label={t("common.cancel", "Cancelar")}>
           <X size={16} />
         </button>
@@ -691,7 +691,7 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
                 </select>
               </label>
 
-              <button className="mt-icono mt-icono-borrar" onClick={() => quitar(indice)}
+              <button className="vale-icono vale-icono-borrar" onClick={() => quitar(indice)}
                       aria-label={t("common.delete", "Quitar")}>
                 <Trash2 size={14} />
               </button>

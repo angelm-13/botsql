@@ -237,3 +237,17 @@
   .vale-lista button { grid-template-columns: 60px 1fr; }
   .vale-lista-cuenta, .vale-lista button > span:last-child { grid-column: 1 / -1; }
 }
+
+/* Los botones de icono del vale -- quitar un renglon, cerrar el panel.
+   Vivian en `product-family.css` como `.mt-icono`, y esta pantalla no importa
+   esa hoja: los botones salian sin estilo salvo que el usuario hubiera pasado
+   antes por Familias en la misma sesion, que es lo que hacia que el fallo
+   apareciera y desapareciera. La hoja se retiro con las caracteristicas, asi
+   que las reglas se mudan aqui, que es donde se usan. */
+.vale-icono {
+  display: grid; place-items: center; width: 28px; height: 28px;
+  border: 1px solid transparent; border-radius: 6px;
+  background: none; color: #5c6d68; cursor: pointer;
+}
+.vale-icono:hover { background: #fff; border-color: #d6e0dc; color: #1b7a60; }
+.vale-icono-borrar:hover { color: #9f1239; }
