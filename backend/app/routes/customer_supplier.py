@@ -114,6 +114,20 @@ def _jsonify_projected_list(user_data: dict, payload: dict):
 
 
 
+@bp_customer_supplier.route('/options', methods=['GET'])
+@token_required
+@require_entity_permission('proyect', 'create')
+def list_customer_supplier_options(user_data):
+    """Solo id+nombre, para el selector de "Cliente" al crear un proyecto.
+
+    Deliberadamente NO exige el permiso de lectura completo de
+    customer_supplier -- un rol que puede crear proyectos (ej. Supervisor)
+    no necesariamente puede ver el CRM completo, y sin esto se quedaba sin
+    forma de elegir cliente al crear su propio proyecto.
+    """
+    return jsonify(CustomerSupplierService.options())
+
+
 @bp_customer_supplier.route('/', methods=['GET'])
 @token_required
 @require_entity_permission('customer_supplier', 'read')

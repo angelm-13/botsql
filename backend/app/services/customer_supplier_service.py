@@ -13,6 +13,23 @@ class CustomerSupplierService(CrudService):
     logistics_sla_levels = {'standard', 'premium'}
 
     @classmethod
+    def options(cls) -> list[dict]:
+        """Solo id+nombre, para selectores como el de "Cliente" al crear un
+        proyecto. A proposito no pasa por `_visible_response_fields_for_actor`
+        ni exige el permiso de lectura completo de customer_supplier -- un
+        Supervisor no debe ver el CRM completo (razon social, RFC, contacto),
+        pero si necesita poder elegir un cliente al crear su propio proyecto.
+        """
+        with transaction_context() as session:
+            filas = (
+                session.query(CustomerSupplier.id_customer_supplier, CustomerSupplier.name)
+                .filter(CustomerSupplier.deletion_date.is_(None))
+                .order_by(CustomerSupplier.name)
+                .all()
+            )
+            return [{'id_customer_supplier': fila[0], 'name': fila[1]} for fila in filas]
+
+    @classmethod
     def _validate_logistics_fields(cls, payload: dict) -> dict:
         payload = dict(payload or {})
         if 'sla_level' in payload:
