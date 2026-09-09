@@ -54,3 +54,22 @@ patches:
                 resources:
                   requests:
                     cpu: 50m
+  # Mismo criterio que el patch de "backend" de arriba. El viejo
+  # celery-worker de tyakxa-dev se quedo trabado sin bajar (RollingUpdate
+  # necesitaba cupo para el viejo Y el nuevo a la vez, y no habia) -- se bajo
+  # a mano con `kubectl scale --replicas=0` antes de este patch para
+  # desatorarlo; este cambio evita que se repita la proxima vez que cambie
+  # la imagen o el manifiesto.
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: celery-worker
+      spec:
+        template:
+          spec:
+            containers:
+              - name: celery-worker
+                resources:
+                  requests:
+                    cpu: 50m
