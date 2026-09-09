@@ -298,10 +298,23 @@ class TestKpiDashboardApi(BackendTestCase):
             self.id_kpi = db.scalar(
                 select(KpiDefinition.id_kpi_definition).where(KpiDefinition.clave == "ventas_por_empleado")
             )
-            # Solo ACTOR_A tiene permiso puntual sobre el KPI. ACTOR_B tiene
-            # el modulo de tableros pero no este KPI -- y ADMIN nunca lo
+            self.id_kpi_egresos = db.scalar(
+                select(KpiDefinition.id_kpi_definition).where(KpiDefinition.clave == "egresos_por_empleado")
+            )
+            # Un tercer KPI real que existe en el catalogo pero sobre el que
+            # ACTOR_A NUNCA recibe permiso puntual -- para probar que un
+            # widget con varios KPIs se rechaza si cualquiera de la lista
+            # falla, no solo si todos fallan.
+            self.id_kpi_sin_permiso = db.scalar(
+                select(KpiDefinition.id_kpi_definition).where(KpiDefinition.clave == "desarrollo_por_empleado")
+            )
+            # Solo ACTOR_A tiene permiso puntual sobre estos dos KPIs. ACTOR_B
+            # tiene el modulo de tableros pero ningun KPI -- y ADMIN nunca lo
             # necesita, por ser superusuario.
-            db.add(NmPermissionKpi(id_permission=980, id_kpi_definition=self.id_kpi, control_type=15, created_by=1))
+            db.add_all([
+                NmPermissionKpi(id_permission=980, id_kpi_definition=self.id_kpi, control_type=15, created_by=1),
+                NmPermissionKpi(id_permission=980, id_kpi_definition=self.id_kpi_egresos, control_type=15, created_by=1),
+            ])
 
     def _request(self, actor, method, path, payload=None):
         with patch("app.utils.auth.jwt.decode", return_value=actor):
@@ -321,14 +334,19 @@ class TestKpiDashboardApi(BackendTestCase):
         self.assertEqual(200, listado.status_code)
         self.assertEqual([id_dashboard], [d["id_kpi_dashboard"] for d in self.json(listado)["items"]])
 
+        # Un widget con DOS KPIs a la vez, no solo uno.
         widget = self._request(ACTOR_A, "POST", f"/kpi_dashboard/{id_dashboard}/widgets/", {
-            "id_kpi_definition": self.id_kpi, "tipo_grafica": "barras",
+            "ids_kpi_definition": [self.id_kpi, self.id_kpi_egresos], "tipo_grafica": "barras",
         })
         self.assertEqual(201, widget.status_code, self.json(widget))
-        id_widget = self.json(widget)["id_kpi_dashboard_widget"]
+        cuerpo_creado = self.json(widget)
+        id_widget = cuerpo_creado["id_kpi_dashboard_widget"]
+        self.assertEqual([self.id_kpi, self.id_kpi_egresos], cuerpo_creado["ids_kpi_definition"])
 
         widgets = self._request(ACTOR_A, "GET", f"/kpi_dashboard/{id_dashboard}/widgets/")
-        self.assertEqual([id_widget], [w["id_kpi_dashboard_widget"] for w in self.json(widgets)["items"]])
+        items = self.json(widgets)["items"]
+        self.assertEqual([id_widget], [w["id_kpi_dashboard_widget"] for w in items])
+        self.assertEqual([self.id_kpi, self.id_kpi_egresos], items[0]["ids_kpi_definition"])
 
     def test_another_actor_with_the_module_cannot_reach_a_foreign_dashboard(self):
         id_dashboard = self._crear_tablero(ACTOR_A)
@@ -341,7 +359,7 @@ class TestKpiDashboardApi(BackendTestCase):
         )
         self.assertEqual(
             404, self._request(ACTOR_B, "POST", f"/kpi_dashboard/{id_dashboard}/widgets/", {
-                "id_kpi_definition": self.id_kpi, "tipo_grafica": "barras",
+                "ids_kpi_definition": [self.id_kpi], "tipo_grafica": "barras",
             }).status_code,
         )
         self.assertEqual(404, self._request(ACTOR_B, "DELETE", f"/kpi_dashboard/{id_dashboard}").status_code)
@@ -371,19 +389,77 @@ class TestKpiDashboardApi(BackendTestCase):
         id_dashboard = self._crear_tablero(ACTOR_B)
 
         response = self._request(ACTOR_B, "POST", f"/kpi_dashboard/{id_dashboard}/widgets/", {
-            "id_kpi_definition": self.id_kpi, "tipo_grafica": "barras",
+            "ids_kpi_definition": [self.id_kpi], "tipo_grafica": "barras",
         })
 
         self.assertEqual(403, response.status_code)
+
+    def test_creating_widget_fails_if_any_kpi_in_the_list_lacks_permission(self):
+        """Todo o nada: un solo KPI sin permiso en la lista tira todo el alta.
+
+        ACTOR_A si tiene permiso sobre `self.id_kpi`, pero no sobre
+        `self.id_kpi_sin_permiso` -- mezclados en la misma lista, la
+        respuesta debe ser 403 y no debe quedar ningun widget creado.
+        """
+        id_dashboard = self._crear_tablero(ACTOR_A)
+
+        response = self._request(ACTOR_A, "POST", f"/kpi_dashboard/{id_dashboard}/widgets/", {
+            "ids_kpi_definition": [self.id_kpi, self.id_kpi_sin_permiso], "tipo_grafica": "barras",
+        })
+
+        self.assertEqual(403, response.status_code)
+        widgets = self._request(ACTOR_A, "GET", f"/kpi_dashboard/{id_dashboard}/widgets/")
+        self.assertEqual([], self.json(widgets)["items"], "no debio quedar ningun widget a medias")
 
     def test_invalid_chart_type_is_rejected(self):
         id_dashboard = self._crear_tablero(ACTOR_A)
 
         response = self._request(ACTOR_A, "POST", f"/kpi_dashboard/{id_dashboard}/widgets/", {
-            "id_kpi_definition": self.id_kpi, "tipo_grafica": "pastel",
+            "ids_kpi_definition": [self.id_kpi], "tipo_grafica": "pastel",
         })
 
         self.assertEqual(400, response.status_code)
+
+    def test_update_widget_replaces_the_full_kpi_list_and_keeps_order(self):
+        id_dashboard = self._crear_tablero(ACTOR_A)
+        creado = self._request(ACTOR_A, "POST", f"/kpi_dashboard/{id_dashboard}/widgets/", {
+            "ids_kpi_definition": [self.id_kpi], "tipo_grafica": "numero",
+        })
+        id_widget = self.json(creado)["id_kpi_dashboard_widget"]
+
+        # Agregar un KPI y reordenar: el segundo pasa a ir primero.
+        actualizado = self._request(ACTOR_A, "PUT", f"/kpi_dashboard_widget/{id_widget}", {
+            "ids_kpi_definition": [self.id_kpi_egresos, self.id_kpi],
+        })
+        self.assertEqual(200, actualizado.status_code, self.json(actualizado))
+        self.assertEqual([self.id_kpi_egresos, self.id_kpi], self.json(actualizado)["ids_kpi_definition"])
+
+        widgets = self._request(ACTOR_A, "GET", f"/kpi_dashboard/{id_dashboard}/widgets/")
+        self.assertEqual(
+            [self.id_kpi_egresos, self.id_kpi], self.json(widgets)["items"][0]["ids_kpi_definition"],
+        )
+
+        # Quitar uno: la lista se reemplaza por completo, no se acumula.
+        recortado = self._request(ACTOR_A, "PUT", f"/kpi_dashboard_widget/{id_widget}", {
+            "ids_kpi_definition": [self.id_kpi],
+        })
+        self.assertEqual(200, recortado.status_code, self.json(recortado))
+        self.assertEqual([self.id_kpi], self.json(recortado)["ids_kpi_definition"])
+
+    def test_update_widget_without_touching_kpis_keeps_the_existing_list(self):
+        id_dashboard = self._crear_tablero(ACTOR_A)
+        creado = self._request(ACTOR_A, "POST", f"/kpi_dashboard/{id_dashboard}/widgets/", {
+            "ids_kpi_definition": [self.id_kpi, self.id_kpi_egresos], "tipo_grafica": "numero",
+        })
+        id_widget = self.json(creado)["id_kpi_dashboard_widget"]
+
+        actualizado = self._request(ACTOR_A, "PUT", f"/kpi_dashboard_widget/{id_widget}", {
+            "tipo_grafica": "barras",
+        })
+
+        self.assertEqual(200, actualizado.status_code, self.json(actualizado))
+        self.assertEqual("barras", self.json(actualizado)["tipo_grafica"])
+        self.assertEqual([self.id_kpi, self.id_kpi_egresos], self.json(actualizado)["ids_kpi_definition"])
 
     def test_delete_dashboard_is_a_soft_delete(self):
         id_dashboard = self._crear_tablero(ACTOR_A)

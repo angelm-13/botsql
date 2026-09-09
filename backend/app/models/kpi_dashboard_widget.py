@@ -22,7 +22,6 @@ class KpiDashboardWidget(Base):
 
     id_kpi_dashboard_widget: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, nullable=False)
     id_kpi_dashboard: Mapped[int] = mapped_column(Integer, ForeignKey('kpi_dashboard.id_kpi_dashboard'), nullable=False)
-    id_kpi_definition: Mapped[int] = mapped_column(Integer, ForeignKey('kpi_definition.id_kpi_definition'), nullable=False)
     tipo_grafica: Mapped[str] = mapped_column(String(30), nullable=False)
     parametros: Mapped[dict] = mapped_column(JSON().with_variant(JSONB, "postgresql"), nullable=False, default=dict, server_default='{}')
     posicion_orden: Mapped[int] = mapped_column(Integer, nullable=False, default=100, server_default=text("100"))
@@ -33,7 +32,6 @@ class KpiDashboardWidget(Base):
         return {
             'id_kpi_dashboard_widget': to_json_value(self.id_kpi_dashboard_widget),
             'id_kpi_dashboard': to_json_value(self.id_kpi_dashboard),
-            'id_kpi_definition': to_json_value(self.id_kpi_definition),
             'tipo_grafica': to_json_value(self.tipo_grafica),
             'parametros': to_json_value(self.parametros),
             'posicion_orden': to_json_value(self.posicion_orden),
