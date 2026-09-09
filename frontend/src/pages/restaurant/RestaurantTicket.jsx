@@ -1,5 +1,4 @@
 /* eslint-disable react/prop-types */
-import React from "react";
 import { useI18n } from "../../i18n";
 import { money } from "./RestaurantUi";
 

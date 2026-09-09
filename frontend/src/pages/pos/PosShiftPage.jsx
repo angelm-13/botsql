@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { AlertTriangle, Banknote, DoorClosed, DoorOpen } from "lucide-react";
 import { useI18n } from "../../i18n";
 import { posRequest } from "../../api";

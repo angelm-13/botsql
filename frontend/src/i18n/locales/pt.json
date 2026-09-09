@@ -142,7 +142,9 @@
     "mfa_reset": "Redefinir MFA",
     "mfa_reset_confirm": "Redefinir MFA deste usuário?",
     "mfa_reset_success": "MFA redefinido com sucesso",
-    "mfa_reset_error": "Não foi possível redefinir o MFA"
+    "mfa_reset_error": "Não foi possível redefinir o MFA",
+    "select": "Selecionar",
+    "serie_csd_hint": "Usada como série padrão ao emitir faturas desta empresa; uma fatura pode registrar outra diferente."
   },
   "entities": {
     "bank": {
@@ -713,7 +715,8 @@
       "title": "Título",
       "type": "Tipo",
       "web_site": "Web Local",
-      "is_principal": "Empresa principal"
+      "is_principal": "Empresa principal",
+      "serie_csd": "Série do CFDI (opcional)"
     },
     "department": {
       "created_by": "Criado por",
@@ -1341,6 +1344,7 @@
     "department": "Departamento",
     "entity_permission": "Permissão de entidade",
     "event_log": "Registro de eventos",
+    "facturama_config": "Configurar Facturama",
     "field": "Campo",
     "fiscal_account": "Conta fiscal",
     "fiscal_record": "Registro fiscal",
@@ -2096,6 +2100,7 @@
     "error_request": "Não foi possível concluir a solicitação.",
     "exchange_rate": "Taxa de câmbio",
     "expedition_place": "Local de emissão",
+    "expedition_place_hint": "O local de emissão e o CSD são obtidos do endereço da empresa marcada como \"Empresa principal\" em Contatos.",
     "facturama_user": "Usuário Facturama",
     "fiscal_name": "Razão social fiscal",
     "fiscal_postal_code": "Código postal fiscal",

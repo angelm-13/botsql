@@ -16,6 +16,7 @@ import CustomerSupplierPage from "./pages/CustomerSupplierPage.jsx";
 import DepartmentPage from "./pages/DepartmentPage.jsx";
 import EntityPermissionPage from "./pages/EntityPermissionPage.jsx";
 import EventLogPage from "./pages/EventLogPage.jsx";
+import FacturamaConfigPage from "./pages/FacturamaConfigPage.jsx";
 import FieldPage from "./pages/FieldPage.jsx";
 import FiscalAccountPage from "./pages/FiscalAccountPage.jsx";
 import IncidentPage from "./pages/IncidentPage.jsx";
@@ -103,7 +104,7 @@ import PublicCalendarPage from "./pages/PublicCalendarPage.jsx";
 import Kanban from './components/Kanban.jsx';
 import LoginPage from "./auth/LoginPage";
 import ProtectedRoute from "./auth/ProtectedRoute";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { getAllEntityPermission } from "./api";
 import "./styles/app.css";
 import "./styles/sat-key.css";
@@ -167,6 +168,7 @@ export default function App() {
           <Route index element={<Dashboard />} />
           <Route path="/mfa-setup" element={<MfaSetupPage />} />
           <Route path="/role_permissions" element={<AdminRoute><RolePermissionManagerPage /></AdminRoute>} />
+          <Route path="/facturama-config" element={<AdminRoute><FacturamaConfigPage /></AdminRoute>} />
           <Route path="/quotation" element={<RoleAccessRoute entityName="invoice"><QuotationPage /></RoleAccessRoute>} />
           <Route path="/authorization_tracking" element={<RoleAccessRoute entityName="invoice"><AuthorizationTrackingPage /></RoleAccessRoute>} />
           <Route path="/catalogo-web" element={<RoleAccessRoute entityName="product_sale_config"><CatalogoWebPage /></RoleAccessRoute>} />
@@ -247,8 +249,16 @@ export default function App() {
           <Route path="/restaurant/admin" element={<RoleAccessRoute entityName="restaurant_admin"><RestaurantAdminPage /></RoleAccessRoute>} />
           <Route path="/permission" element={<RoleAccessRoute entityName="permission"><PermissionPage /></RoleAccessRoute>} />
           <Route path="/product" element={<RoleAccessRoute entityName="product"><ProductPage /></RoleAccessRoute>} />
-          <Route path="/product_family" element={<RoleAccessRoute entityName="product_family"><ProductFamilyPage /></RoleAccessRoute>} />
+          {/* Los dos niveles de la clasificacion, en una pantalla. Habia dos
+              entradas de menu y leidas seguidas parecen lo mismo dos veces; el
+              tipo cuelga de la familia y no se puede leer sin ella. Las dos
+              direcciones siguen respondiendo -las que ya estaban guardadas no
+              se rompen- y las dos abren la misma pantalla. */}
+          <Route path="/product_family" element={<RoleAccessRoute entityName="product_family"><MaterialTypePage /></RoleAccessRoute>} />
           <Route path="/material_type" element={<RoleAccessRoute entityName="material_type"><MaterialTypePage /></RoleAccessRoute>} />
+          {/* La tabla cruda de familias, para quien la necesite. Sin entrada de
+              menu: es la vista de mantenimiento, no la de trabajo. */}
+          <Route path="/product_family/table" element={<RoleAccessRoute entityName="product_family"><ProductFamilyPage /></RoleAccessRoute>} />
           {/* El vale se guarda con la capacidad `warehouse_voucher`, no con
               una entidad: su pantalla escribe en `incident` y en la tabla
               puente de sus renglones, que esta fuera del menu a proposito. */}

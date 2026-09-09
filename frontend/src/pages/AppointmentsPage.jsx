@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { CalendarDays, Clock3, Copy, ExternalLink, Plus, RefreshCw } from "lucide-react";
 import {
   createAppointmentProfile,

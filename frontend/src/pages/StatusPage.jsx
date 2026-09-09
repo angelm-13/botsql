@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Plus, RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
 import { getAllStatus, createStatus, updateStatus, deleteStatus, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa } from "../api";
+import Pagination from "../components/Pagination.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 
 const emptyForm = { status_description: "", category: "", is_terminal: false, sort_order: "" };
@@ -35,11 +36,11 @@ export default function StatusPage() {
   const [query, setQuery] = useState("");
   const [view, setView] = useState("table");
   const [page, setPage] = useState(1);
+  const [paginacion, setPaginacion] = useState({ total: 0, pages: 1, perPage: 0 });
   const [perPage, setPerPage] = useState(10);
   const [loading, setLoading] = useState(false);
   const [errorKey, setErrorKey] = useState("");
   const [errorMeta, setErrorMeta] = useState(null);
-  const [noticeKey, setNoticeKey] = useState("");
 
   const currentUser = useMemo(() => readCurrentUser(), []);
   const isSuperUser = Boolean(currentUser?.is_superuser || currentUser?.is_bootstrap_admin || currentUser?.username === "admin1");
@@ -65,6 +66,13 @@ export default function StatusPage() {
     try {
       const data = await getAllStatus({ page, per_page: perPage });
       setItems(Array.isArray(data) ? data : (data.items || data.data || []));
+      // La respuesta ya traia el total y el numero de paginas; antes se
+      // tiraban aqui, y por eso "Siguiente" no sabia cuando parar.
+      setPaginacion({
+        total: Array.isArray(data) ? 0 : (data.total ?? 0),
+        pages: Array.isArray(data) ? 1 : (data.pages ?? 1),
+        perPage: Array.isArray(data) ? 0 : (data.per_page ?? perPage),
+      });
     } catch (error) {
       setErrorKey(error.message || "errors.request_failed");
       setErrorMeta(error.payload?.meta || null);
@@ -190,7 +198,6 @@ export default function StatusPage() {
     event.preventDefault();
     setErrorKey("");
     setErrorMeta(null);
-    setNoticeKey("");
     const submitPayload = buildSubmitPayload();
     const validation = validateForm("status", submitPayload, validationRules);
     const nextFieldErrors = { ...validation.errors };
@@ -244,10 +251,8 @@ export default function StatusPage() {
     if (!window.confirm(t("common.mfa_reset_confirm", "¿Restablecer MFA de este usuario?"))) return;
     setErrorKey("");
     setErrorMeta(null);
-    setNoticeKey("");
     try {
       await resetUserMfa(targetId);
-      setNoticeKey("common.mfa_reset_success");
       await loadData();
     } catch (error) {
       setErrorKey(error.message || "common.mfa_reset_error");
@@ -290,155 +295,6 @@ export default function StatusPage() {
       }
     }
     return String(value);
-  }
-
-  function getOptionLabel(item, entityName = "") {
-    if (!item) return "";
-    const normalized = String(entityName || "").toLowerCase();
-    const specificFields = {
-      user: ["full_name", "username", "email", "first_name", "last_name_father"],
-      permission: ["permission_description"],
-      department: ["department_description"],
-      subdepartment: ["subdepartment_description"],
-      level: ["level_description"],
-      bank: ["bank_name"],
-      brand: ["brand_description", "brand_name"],
-      unit: ["unit_name", "unit_code", "unit_description", "symbol"],
-      material: ["material_description", "material_code"],
-      product: ["product_code", "descripcion", "note"],
-      product_family: ["product_family_description", "type"],
-      location: ["location_description"],
-      location_type: ["location_type_description"],
-      status: ["status_description", "category"],
-      incident_type: ["incident_type_description"],
-      payroll_concept: ["payroll_concept_description", "payroll_code"],
-      proyect: ["proyect_description", "title"],
-      project: ["project_description", "title"],
-      service: ["service_description"],
-      customer_supplier: ["name", "business_name", "commercial_name", "contact_name", "title"],
-      field: ["field_name", "table_name"],
-      template: ["template_description"],
-      survey_question: ["question", "title"],
-      survey_multiple_answer: ["survey_answer_description"],
-      task: ["task_description", "task_code", "title"],
-    };
-    const candidates = [
-      ...(specificFields[normalized] || []),
-      `${normalized}_description`,
-      `${normalized}_name`,
-      `${normalized}_code`,
-      "description",
-      "name",
-      "title",
-      "code",
-      "email",
-      "username",
-      "full_name",
-      "business_name",
-      "commercial_name",
-      "contact_name",
-    ];
-    for (const key of candidates) {
-      const value = item[key];
-      if (value !== null && value !== undefined && String(value).trim() !== "") return String(value);
-    }
-    const idKey = normalized ? `id_${normalized}` : "";
-    const idValue = idKey ? item[idKey] : undefined;
-    return String(idValue ?? item.id ?? "");
-  }
-
-  function formatEntityCatalogLabel(entityName, fallback = "") {
-    if (!entityName) return "";
-    return t(`menu.${entityName}`, fallback || entityName);
-  }
-
-  function formatControlTypeLabel(value) {
-    const numeric = Number(value);
-    const labels = [];
-    if ((numeric & 1) === 1) labels.push(t("common.create", "Crear"));
-    if ((numeric & 2) === 2) labels.push(t("common.read", "Leer"));
-    if ((numeric & 4) === 4) labels.push(t("common.update", "Actualizar"));
-    if ((numeric & 8) === 8) labels.push(t("common.delete", "Eliminar"));
-    if (!labels.length) return String(value ?? "");
-    const description = numeric === 15 ? t("common.crud_full", "CRUD completo") : labels.join(" + ");
-    return `${numeric} - ${description}`;
-  }
-
-  // issue_12_phase3b_invoice_project_link_summary
-  function invoiceProjectLabel(invoice) {
-    if (ENTITY_KEY !== "invoice") return "";
-    const rawProjectId = invoice?.id_proyect;
-    if (rawProjectId === null || rawProjectId === undefined || String(rawProjectId).trim() === "") return "Sin proyecto";
-    const project = proyectOptions.find((item) => String(item.id_proyect ?? item.id ?? "") === String(rawProjectId));
-    return project ? getOptionLabel(project, "proyect") : `Proyecto #${rawProjectId}`;
-  }
-
-  function invoiceLinkStatus(invoice) {
-    const rawProjectId = invoice?.id_proyect;
-    return rawProjectId === null || rawProjectId === undefined || String(rawProjectId).trim() === "" ? "Sin vincular" : "Vinculada";
-  }
-
-  function invoiceDisplayFolio(invoice) {
-    return String(invoice?.folio || invoice?.folio_fiscal || invoice?.cfdi_code || invoice?.id_invoice || "—");
-  }
-
-  function invoiceMoney(value) {
-    const locale = lang === "ja" ? "ja-JP" : lang === "en" ? "en-US" : lang === "pt" ? "pt-BR" : lang === "de" ? "de-DE" : "es-MX";
-    const n = Number(value || 0);
-    return n.toLocaleString(locale, { style: "currency", currency: "MXN" });
-  }
-
-  function invoiceLinkedCount() {
-    return filtered.filter((item) => item.id_proyect !== null && item.id_proyect !== undefined && String(item.id_proyect).trim() !== "").length;
-  }
-
-  function renderInvoiceProjectSummary() {
-    if (ENTITY_KEY !== "invoice" || !canRead || !filtered.length) return null;
-    const linked = invoiceLinkedCount();
-    const unlinked = filtered.length - linked;
-    return (
-      <div className="table-card invoice-project-card">
-        <div className="invoice-project-header">
-          <div>
-            <strong>Facturas / Proyecto</strong>
-            <p className="muted">Identifica facturas cargadas desde XML y corrige su proyecto desde el formulario existente.</p>
-          </div>
-          <div className="invoice-project-metrics">
-            <span><strong>{filtered.length}</strong>Total</span>
-            <span><strong>{linked}</strong>Vinculadas</span>
-            <span><strong>{unlinked}</strong>Sin proyecto</span>
-          </div>
-        </div>
-        <div className="table-wrap">
-          <table className="invoice-project-table">
-            <thead>
-              <tr>
-                <th>Factura / UUID</th>
-                <th>Emisor</th>
-                <th>Receptor</th>
-                <th>Total</th>
-                <th>Proyecto</th>
-                <th>Vinculación</th>
-                <th>Acción</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((item) => (
-                <tr key={`invoice-link-${item.id_invoice}`}>
-                  <td><strong>{invoiceDisplayFolio(item)}</strong><p className="cell-value">{item.folio_fiscal || item.cfdi_code || "—"}</p></td>
-                  <td><span>{item.nombre_emisor || "—"}</span></td>
-                  <td><span>{item.nombre_receptor || item.id_customer_supplier || "—"}</span></td>
-                  <td><strong>{invoiceMoney(item.total)}</strong></td>
-                  <td><span>{invoiceProjectLabel(item)}</span></td>
-                  <td><span className={item.id_proyect ? "invoice-link-badge linked" : "invoice-link-badge unlinked"}>{invoiceLinkStatus(item)}</span></td>
-                  <td>{canUpdate ? <button type="button" className="button small" onClick={() => startEdit(item)}>Editar relación</button> : <span className="muted">Sin permiso</span>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    );
   }
 
   function renderError() {
@@ -527,7 +383,6 @@ export default function StatusPage() {
       {permissionReady && !canRead && !canCreate && <div className="empty"><strong>{t("security.permission.read_denied", "Sin permiso de lectura")}</strong><p>{t("common.module_hidden_hint", "Este módulo no tiene acciones seleccionadas; quedará oculto y sus campos no se mostrarán.")}</p></div>}
       {canRead && !loading && filtered.length === 0 && <div className="empty"><strong>{t("common.empty_title")}</strong><p>{t("common.empty_body")}</p></div>}
 
-      {view === "table" && renderInvoiceProjectSummary()}
 
       {canRead && view === "table" && filtered.length > 0 && <div className="table-card"><table><thead><tr>{showRowActions && <th>{t("common.actions")}</th>}
               {canSeeField("id_status") && <th>{t("fields.status.id_status")}</th>}
@@ -553,7 +408,14 @@ export default function StatusPage() {
 
       {canRead && view === "kanban" && filtered.length > 0 && <div className="kanban">{Object.entries(groups).map(([key, groupItems]) => <div className="kanban-column" key={key}><h3>{key} <span>{groupItems.length}</span></h3>{groupItems.map((item) => <article className="kanban-card" key={item.id_status}><strong>{String(item.status_description ?? item.id_status)}</strong><small>#{item.id_status}</small>{showRowActions && <div>{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</div>}</article>)}</div>)}</div>}
 
-      <div className="pagination"><button className="button" disabled={page <= 1} onClick={() => setPage(page - 1)}>{t("common.previous")}</button><span>{t("common.page")} {page}</span><button className="button" onClick={() => setPage(page + 1)}>{t("common.next")}</button></div>
+      <Pagination
+        page={page}
+        pages={paginacion.pages}
+        total={paginacion.total}
+        perPage={paginacion.perPage}
+        loading={loading}
+        onChange={setPage}
+      />
     </section>
   );
 }

@@ -45,6 +45,7 @@ from app.models.inventory_asset_event import (
 )
 from app.models.product import Product
 from app.models.session import transaction_context
+from app.models.user import User
 from app.services.inventory_service import (
     ADJUSTMENT_CAPABILITY, apply_movement_in_session, has_capability,
 )
@@ -327,78 +328,122 @@ def register_asset(payload, user_data) -> dict:
         return {"asset": pieza.serialize(), "event": evento.serialize()}
 
 
+def _responsable(db, valor):
+    """El usuario que se lleva la pieza, comprobado contra la tabla.
+
+    Antes esto era `_entero(..., obligatorio=True)` y nada mas: un prestamo a
+    `id_holder = 9999` se guardaba tal cual y la pieza quedaba PRESTADA a nadie
+    -no sale en lo que debe ningun usuario, no se le puede reclamar, y el unico
+    modo de notarla es ver que falta-.
+
+    La base ya lo impide desde la llave ajena, pero una llave ajena diferida
+    revienta en el COMMIT con un IntegrityError, que llega al usuario como un
+    500. Esto lo convierte en el 404 que le corresponde, diciendo cual campo.
+    """
+    id_usuario = _entero(valor, "id_holder", obligatorio=True)
+    existe = db.scalars(
+        select(User.id_user).where(
+            User.id_user == id_usuario,
+            User.deletion_date.is_(None),
+        ).limit(1)
+    ).first()
+    if existe is None:
+        # Un usuario dado de baja tampoco sirve: la pieza quedaria a nombre de
+        # alguien que ya no esta para devolverla.
+        raise AppError("errors.not_found", 404,
+                       {"entity": "user", "field": "id_holder"})
+    return id_usuario
+
+
 # --- movimientos de la pieza --------------------------------------------
 
-def _transicion(id_asset, payload, user_data, *, evento, destino,
-                exige_responsable=False, exige_fecha=False, libera_responsable=False,
-                vuelve_a_ubicacion=False):
-    """Nucleo compartido de todas las transiciones de una pieza."""
+def transicion_en_sesion(db, id_asset, payload, user_data, *, evento, destino,
+                         exige_responsable=False, exige_fecha=False,
+                         libera_responsable=False, vuelve_a_ubicacion=False):
+    """Una transicion de pieza dentro de una transaccion que abre el llamador.
+
+    Existe aparte para que el vale de almacen preste sus piezas por esta misma
+    puerta. Un vale es una operacion de varios renglones y tiene que ser todo o
+    nada -si el tercero falla, los dos primeros no se llevaron nada-, asi que no
+    puede llamar a una funcion que abre su propia transaccion.
+
+    Y sobre todo: no puede haber un SEGUNDO camino que cambie el estado de una
+    pieza. La regla que sostiene este modulo es que el saldo y las piezas no se
+    separan; un vale que escribiera el estado por su cuenta seria justamente ese
+    segundo camino, y las dos vistas empezarian a discrepar sin que nadie sepa
+    cual creer.
+    """
     payload = payload or {}
-    with transaction_context() as db:
-        pieza = _pieza(db, id_asset, user_data, para_escribir=True)
-        _validar_transicion(pieza, destino)
+    pieza = _pieza(db, id_asset, user_data, para_escribir=True)
+    _validar_transicion(pieza, destino)
 
-        if evento in MOTIVO_OBLIGATORIO:
-            reason = _texto(payload.get("reason"), "reason", obligatorio=True)
-        else:
-            reason = _texto(payload.get("reason"), "reason")
+    if evento in MOTIVO_OBLIGATORIO:
+        reason = _texto(payload.get("reason"), "reason", obligatorio=True)
+    else:
+        reason = _texto(payload.get("reason"), "reason")
 
-        if evento in (EXTRAVIO, BAJA) and not has_capability(db, user_data, CAPACIDAD_PARA_MERMA):
-            # Declarar una pieza perdida o darla de baja destruye existencia sin
-            # documento: es la operacion con la que se tapa un faltante.
-            raise AppError(
-                "errors.inventory_adjustment_not_authorized",
-                403,
-                {"capability": CAPACIDAD_PARA_MERMA, "event": evento},
-            )
+    if evento in (EXTRAVIO, BAJA) and not has_capability(db, user_data, CAPACIDAD_PARA_MERMA):
+        # Declarar una pieza perdida o darla de baja destruye existencia sin
+        # documento: es la operacion con la que se tapa un faltante.
+        raise AppError(
+            "errors.inventory_adjustment_not_authorized",
+            403,
+            {"capability": CAPACIDAD_PARA_MERMA, "event": evento},
+        )
 
-        antes = _foto(pieza)
+    antes = _foto(pieza)
+    ubicacion_del_movimiento = pieza.id_location
+
+    if exige_responsable:
+        pieza.id_holder = _responsable(db, payload.get("id_holder"))
+    if libera_responsable:
+        pieza.id_holder = None
+
+    if exige_fecha:
+        pieza.due_date = _fecha(payload.get("due_date"), "due_date")
+        if pieza.due_date is None:
+            # Un prestamo sin fecha de regreso es una baja disfrazada:
+            # nadie lo reclama porque nunca esta vencido.
+            raise AppError("errors.required_field", 400, {"field": "due_date"})
+        if pieza.due_date < _hoy():
+            raise AppError("errors.inventory_asset_due_date_in_the_past", 400,
+                           {"field": "due_date"})
+    elif destino != PRESTADA:
+        pieza.due_date = None
+
+    if destino in (PRESTADA, EXTRAVIADA):
+        # Deja de estar en la empresa: decir que sigue en una ubicacion
+        # seria falso, y ese es el dato que hace que nadie la busque.
+        pieza.id_location = None
+    elif vuelve_a_ubicacion:
+        destino_ubicacion = _entero(payload.get("id_location"), "id_location")
+        pieza.id_location = destino_ubicacion or antes["id_location"]
+        if not pieza.id_location:
+            raise AppError("errors.required_field", 400, {"field": "id_location"})
         ubicacion_del_movimiento = pieza.id_location
 
-        if exige_responsable:
-            pieza.id_holder = _entero(payload.get("id_holder"), "id_holder", obligatorio=True)
-        if libera_responsable:
-            pieza.id_holder = None
+    pieza.status = destino
+    db.flush()
 
-        if exige_fecha:
-            pieza.due_date = _fecha(payload.get("due_date"), "due_date")
-            if pieza.due_date is None:
-                # Un prestamo sin fecha de regreso es una baja disfrazada:
-                # nadie lo reclama porque nunca esta vencido.
-                raise AppError("errors.required_field", 400, {"field": "due_date"})
-            if pieza.due_date < _hoy():
-                raise AppError("errors.inventory_asset_due_date_in_the_past", 400,
-                               {"field": "due_date"})
-        elif destino != PRESTADA:
-            pieza.due_date = None
+    ledger = _mover_existencia(
+        db, pieza, evento, user_data,
+        id_location=ubicacion_del_movimiento,
+        reason=reason,
+        referencia=payload.get("idempotency_key") or pieza.last_update_date,
+    )
+    registro = _asentar(
+        db, pieza, evento, antes=antes, user_data=user_data, ledger=ledger,
+        reason=reason,
+        referencia_tipo=_texto(payload.get("reference_type"), "reference_type", largo=50),
+        referencia_id=payload.get("reference_id"),
+    )
+    return {"asset": pieza.serialize(), "event": registro.serialize()}
 
-        if destino in (PRESTADA, EXTRAVIADA):
-            # Deja de estar en la empresa: decir que sigue en una ubicacion
-            # seria falso, y ese es el dato que hace que nadie la busque.
-            pieza.id_location = None
-        elif vuelve_a_ubicacion:
-            destino_ubicacion = _entero(payload.get("id_location"), "id_location")
-            pieza.id_location = destino_ubicacion or antes["id_location"]
-            if not pieza.id_location:
-                raise AppError("errors.required_field", 400, {"field": "id_location"})
-            ubicacion_del_movimiento = pieza.id_location
 
-        pieza.status = destino
-        db.flush()
-
-        ledger = _mover_existencia(
-            db, pieza, evento, user_data,
-            id_location=ubicacion_del_movimiento,
-            reason=reason,
-            referencia=payload.get("idempotency_key") or pieza.last_update_date,
-        )
-        registro = _asentar(
-            db, pieza, evento, antes=antes, user_data=user_data, ledger=ledger,
-            reason=reason,
-            referencia_tipo=_texto(payload.get("reference_type"), "reference_type", largo=50),
-            referencia_id=payload.get("reference_id"),
-        )
-        return {"asset": pieza.serialize(), "event": registro.serialize()}
+def _transicion(id_asset, payload, user_data, **kwargs):
+    """La misma transicion, abriendo la transaccion. Es la entrada publica."""
+    with transaction_context() as db:
+        return transicion_en_sesion(db, id_asset, payload, user_data, **kwargs)
 
 
 def assign_asset(id_asset, payload, user_data) -> dict:
@@ -585,6 +630,86 @@ def list_assets(user_data, *, id_product=None, status=None, id_holder=None,
             "page": page,
             "per_page": per_page,
             "pages": (total + per_page - 1) // per_page,
+        }
+
+
+def resumen_de_estatus(user_data, *, proposito: str | None = None) -> dict:
+    """Cuantas piezas hay en cada estado, ahora mismo.
+
+    Por que existe
+    --------------
+    Habia resumen POR PRODUCTO -`product_asset_summary`- y la lista de
+    prestamos vencidos, pero no el panorama: "de mis herramientas, cuantas
+    estan prestadas, cuantas en reparacion y cuantas no aparecen". Es la
+    pregunta que se hace al abrir el almacen por la manana, y para contestarla
+    habia que abrir producto por producto.
+
+    Se hace con UNA consulta agrupada y no con una por estado. Con seis estados
+    serian seis idas a la base cada vez que alguien abre la pantalla, y ese es
+    el patron que ya costo caro en el rastreo -271 consultas para pintar
+    cuarenta renglones-.
+
+    `proposito` acota a mercancia o a uso interno. Son dos preguntas distintas:
+    de la herramienta importa quien la tiene, y de la mercancia el saldo.
+    """
+    from app.models.invoice import Invoice
+    from app.models.product import Product
+    from app.services.inventory_service import _actor_project_id
+
+    with transaction_context() as db:
+        # El mismo alcance que `list_assets`: el proyecto del actor, salvo
+        # superusuario. Se reusa en vez de escribir otra regla, porque dos
+        # reglas de alcance divergen y una pantalla acaba ensenando lo que la
+        # otra esconde.
+        alcanzables = None
+        sin_limite = bool(user_data.get("is_superuser")
+                          or user_data.get("is_bootstrap_admin"))
+        if not sin_limite:
+            proyecto = _actor_project_id(user_data)
+            if proyecto is None:
+                raise AppError("errors.project_scope_required", 403)
+            alcanzables = (
+                select(Product.id_product)
+                .join(Invoice, Product.id_invoice == Invoice.id_invoice)
+                .where(Invoice.id_proyect == proyecto)
+            )
+
+        base = [InventoryAsset.deletion_date.is_(None),
+                Product.deletion_date.is_(None)]
+        if proposito:
+            base.append(Product.stock_purpose == proposito)
+        if alcanzables is not None:
+            base.append(InventoryAsset.id_product.in_(alcanzables))
+
+        filas = db.execute(
+            select(InventoryAsset.status, func.count().label("cuantas"))
+            .join(Product, Product.id_product == InventoryAsset.id_product)
+            .where(*base)
+            .group_by(InventoryAsset.status)
+        ).all()
+
+        cuentas = {estado: 0 for estado in ESTADOS}
+        for estado, cuantas in filas:
+            cuentas[estado] = int(cuantas or 0)
+
+        # Lo vencido va aparte y no como un estado mas: una pieza vencida esta
+        # PRESTADA, asi que contarla como estado propio la sumaria dos veces y
+        # el total dejaria de cuadrar con el numero de piezas.
+        vencidos = db.scalar(
+            select(func.count())
+            .select_from(InventoryAsset)
+            .join(Product, Product.id_product == InventoryAsset.id_product)
+            .where(*base,
+                   InventoryAsset.status == PRESTADA,
+                   InventoryAsset.due_date.is_not(None),
+                   InventoryAsset.due_date < _hoy())
+        ) or 0
+
+        return {
+            "stock_purpose": proposito,
+            "by_status": cuentas,
+            "total": sum(cuentas.values()),
+            "overdue": int(vencidos),
         }
 
 

@@ -68,7 +68,6 @@ class TestStampingProviders(unittest.TestCase):
             base_url="https://apisandbox.facturama.mx",
             username="demo",
             password="secret",
-            expedition_place="37000",
             name_id="1",
         )
 
@@ -287,7 +286,7 @@ class TestFacturamaPayloadMapping(unittest.TestCase):
     def _provider(self):
         return FacturamaSandboxProvider(
             base_url="https://apisandbox.facturama.mx", username="demo", password="secret",
-            expedition_place="37000", name_id="1",
+            name_id="1",
         )
 
     def _payload(self, **concept_overrides):
@@ -358,14 +357,29 @@ class TestFacturamaPayloadMapping(unittest.TestCase):
             **self._payload(), "currency": "USD", "exchange_rate": "17.253400",
         })
         self.assertEqual(body["Currency"], "USD")
-        self.assertEqual(body["ExchangeRate"], "17.253400")
+        self.assertEqual(body["CurrencyExchangeRate"], "17.253400")
 
     def test_mxn_does_not_send_an_exchange_rate(self):
-        self.assertNotIn("ExchangeRate", self._provider().build_request_body(self._payload()))
+        self.assertNotIn("CurrencyExchangeRate", self._provider().build_request_body(self._payload()))
 
     def test_export_code_is_taken_from_the_invoice(self):
         body = self._provider().build_request_body({**self._payload(), "export_code": "02"})
         self.assertEqual(body["Exportation"], "02")
+
+    def test_a_generic_public_receiver_gets_a_global_information_node(self):
+        """Confirmado contra el sandbox real: sin esto Facturama rechaza
+        cualquier comprobante a XAXX010101000, sin importar lo demas."""
+        payload = self._payload()
+        payload["receiver"]["rfc"] = "XAXX010101000"
+        body = self._provider().build_request_body(payload)
+
+        self.assertIn("GlobalInformation", body)
+        self.assertEqual("01", body["GlobalInformation"]["Periodicity"])
+        self.assertTrue(body["GlobalInformation"]["Months"])
+        self.assertTrue(body["GlobalInformation"]["Year"])
+
+    def test_a_named_receiver_does_not_get_a_global_information_node(self):
+        self.assertNotIn("GlobalInformation", self._provider().build_request_body(self._payload()))
 
     def test_missing_credentials_are_reported_without_calling_the_api(self):
         provider = FacturamaSandboxProvider(

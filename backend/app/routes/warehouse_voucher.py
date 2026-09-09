@@ -17,6 +17,7 @@ from __future__ import annotations
 from flask import Blueprint, jsonify, request
 
 from app.services.warehouse_voucher_service import (
+    buscar_vales,
     cerrar_renglon,
     consultar_vale,
     crear_vale,
@@ -40,6 +41,29 @@ def abrir_vale(user_data):
     return jsonify(crear_vale(_cuerpo(), user_data)), 201
 
 
+@bp_warehouse_voucher.route("/vouchers", methods=["GET"])
+@token_required
+@require_entity_permission("warehouse_voucher", "read")
+def listar_vales(user_data):
+    """La lista de vales, buscable por folio o por responsable.
+
+    `q` busca por las dos cosas a la vez, porque son las dos formas en que
+    alguien llega a un vale: con el papel en la mano -"vale 112"- o preguntando
+    "que trae Maximino". El folio exacto gana sobre la coincidencia parcial.
+    """
+    return jsonify(buscar_vales(
+        user_data,
+        texto=request.args.get("q"),
+        estado=request.args.get("status"),
+        id_user=request.args.get("id_user"),
+        solo_con_pendientes=str(
+            request.args.get("only_open") or "").strip().lower()
+        in ("1", "true", "si", "yes"),
+        pagina=request.args.get("page"),
+        por_pagina=request.args.get("per_page"),
+    ))
+
+
 @bp_warehouse_voucher.route("/vouchers/overdue", methods=["GET"])
 @token_required
 @require_entity_permission("warehouse_voucher", "read")
@@ -55,9 +79,18 @@ def leer_vale(user_data, id_incident):
     return jsonify(consultar_vale(id_incident, user_data))
 
 
+@bp_warehouse_voucher.route("/vouchers/lines/<id_line>/return", methods=["POST"])
 @bp_warehouse_voucher.route("/vouchers/lines/<id_line>/close", methods=["POST"])
 @token_required
 @require_entity_permission("warehouse_voucher", "update")
-def cerrar_linea(user_data, id_line):
-    """Cierra un renglon. Si era el ultimo, el vale queda cerrado."""
+def devolver_linea(user_data, id_line):
+    """Recibe de vuelta lo que salio en ese renglon.
+
+    Dos direcciones para una operacion porque no son dos operaciones: cerrar un
+    renglon de prestamo ES devolver lo que salio. `/close` se conserva para lo
+    que ya estaba escrito contra ella; `/return` es el nombre de lo que hace.
+
+    El cuerpo acepta `id_location` -a donde vuelve, por omision de donde salio- y
+    `note`.
+    """
     return jsonify(cerrar_renglon(id_line, _cuerpo(), user_data))

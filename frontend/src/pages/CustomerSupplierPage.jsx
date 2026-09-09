@@ -1,12 +1,13 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Plus, RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
-import { getAllCustomerSupplier, createCustomerSupplier, updateCustomerSupplier, deleteCustomerSupplier, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllUser } from "../api";
+import { getAllCustomerSupplier, createCustomerSupplier, updateCustomerSupplier, deleteCustomerSupplier, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllUser, getInvoiceCatalogs } from "../api";
+import Pagination from "../components/Pagination.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 
 /* eslint-disable react/prop-types */
 
-const baseEmptyForm = { postal_code: "", name: "", title: "", contact_name: "", phone: "", email: "", web_site: "", street: "", number_ext: "", number_int: "", neighborhood: "", city: "", geographic_state: "", fiscal_type: "", last_fiscal_certification_date: "", tax_id: "", type: "", sla_level: "standard", credit_limit: "0", logistics_notes: "", is_principal: false, id_user: "", path_logo: "" };
+const baseEmptyForm = { postal_code: "", name: "", title: "", contact_name: "", phone: "", email: "", web_site: "", street: "", number_ext: "", number_int: "", neighborhood: "", city: "", geographic_state: "", fiscal_type: "", last_fiscal_certification_date: "", tax_id: "", type: "", sla_level: "standard", credit_limit: "0", logistics_notes: "", is_principal: false, id_user: "", path_logo: "", serie_csd: "" };
 const validationRules = allValidationRules["customer_supplier"] || {};
 const ENTITY_KEY = "customer_supplier";
 const ACTION_CREATE = 1;
@@ -14,7 +15,7 @@ const ACTION_READ = 2;
 const ACTION_UPDATE = 4;
 const ACTION_DELETE = 8;
 const FIELD_VISIBLE_BIT = 2;
-const ALL_FIELD_NAMES = ['id_customer_supplier', 'postal_code', 'name', 'title', 'contact_name', 'phone', 'email', 'web_site', 'street', 'number_ext', 'number_int', 'neighborhood', 'city', 'geographic_state', 'fiscal_type', 'last_fiscal_certification_date', 'tax_id', 'type', 'sla_level', 'credit_limit', 'logistics_notes', 'is_principal', 'id_user', 'path_logo'];
+const ALL_FIELD_NAMES = ['id_customer_supplier', 'postal_code', 'name', 'title', 'contact_name', 'phone', 'email', 'web_site', 'street', 'number_ext', 'number_int', 'neighborhood', 'city', 'geographic_state', 'fiscal_type', 'last_fiscal_certification_date', 'tax_id', 'type', 'sla_level', 'credit_limit', 'logistics_notes', 'is_principal', 'id_user', 'path_logo', 'serie_csd'];
 
 function hasBit(value, bit) {
   return (Number(value || 0) & bit) === bit;
@@ -40,6 +41,7 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
   const [query, setQuery] = useState("");
   const [view, setView] = useState("table");
   const [page, setPage] = useState(1);
+  const [paginacion, setPaginacion] = useState({ total: 0, pages: 1, perPage: 0 });
   const [perPage, setPerPage] = useState(10);
   const [loading, setLoading] = useState(false);
   const [errorKey, setErrorKey] = useState("");
@@ -59,7 +61,19 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
   const canSubmitForm = editingId ? canUpdate : canCreate;
   const showRowActions = canRead && (canUpdate || canDelete);
   const [userOptions, setUserOptions] = useState([]);
+  const [fiscalRegimeCatalog, setFiscalRegimeCatalog] = useState({ regimen_fiscal: {}, persona_fisica: [], persona_moral: [] });
   const proyectOptions = [];
+
+  // Un RFC de 12 caracteres es persona moral, de 13 persona fisica -- mismo
+  // criterio que `_regimes_for_rfc` en el backend. Sin RFC capturado aun, se
+  // muestran todos para no bloquear la captura.
+  const allowedFiscalRegimes = useMemo(() => {
+    const rfcLength = String(formData.tax_id || "").trim().length;
+    const allowed = rfcLength === 12 ? fiscalRegimeCatalog.persona_moral
+      : rfcLength === 13 ? fiscalRegimeCatalog.persona_fisica
+      : Object.keys(fiscalRegimeCatalog.regimen_fiscal);
+    return allowed.filter((code) => fiscalRegimeCatalog.regimen_fiscal[code]);
+  }, [formData.tax_id, fiscalRegimeCatalog]);
 
   async function loadData() {
     if (!permissionReady || !canRead) {
@@ -71,6 +85,13 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
     try {
       const data = await getAllCustomerSupplier({ page, per_page: perPage, ...(forcedType ? { type: forcedType } : {}) });
       setItems(Array.isArray(data) ? data : (data.items || data.data || []));
+      // La respuesta ya traia el total y el numero de paginas; antes se
+      // tiraban aqui, y por eso "Siguiente" no sabia cuando parar.
+      setPaginacion({
+        total: Array.isArray(data) ? 0 : (data.total ?? 0),
+        pages: Array.isArray(data) ? 1 : (data.pages ?? 1),
+        perPage: Array.isArray(data) ? 0 : (data.per_page ?? perPage),
+      });
     } catch (error) {
       setErrorKey(error.message || "errors.request_failed");
       setErrorMeta(error.payload?.meta || null);
@@ -89,6 +110,18 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
           setUserOptions(Array.isArray(userData) ? userData : (userData.items || []));
         } catch (_) {
           setUserOptions([]);
+        }
+      }
+      if (canSeeField("fiscal_type")) {
+        try {
+          const catalogs = await getInvoiceCatalogs();
+          setFiscalRegimeCatalog({
+            regimen_fiscal: catalogs?.regimen_fiscal || {},
+            persona_fisica: catalogs?.regimen_fiscal_persona_fisica || [],
+            persona_moral: catalogs?.regimen_fiscal_persona_moral || [],
+          });
+        } catch (_) {
+          setFiscalRegimeCatalog({ regimen_fiscal: {}, persona_fisica: [], persona_moral: [] });
         }
       }
     }
@@ -364,83 +397,6 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
     return String(idValue ?? item.id ?? "");
   }
 
-  // issue_12_phase3b_invoice_project_link_summary
-  function invoiceProjectLabel(invoice) {
-    if (ENTITY_KEY !== "invoice") return "";
-    const rawProjectId = invoice?.id_proyect;
-    if (rawProjectId === null || rawProjectId === undefined || String(rawProjectId).trim() === "") return "Sin proyecto";
-    const project = proyectOptions.find((item) => String(item.id_proyect ?? item.id ?? "") === String(rawProjectId));
-    return project ? getOptionLabel(project, "proyect") : `Proyecto #${rawProjectId}`;
-  }
-
-  function invoiceLinkStatus(invoice) {
-    const rawProjectId = invoice?.id_proyect;
-    return rawProjectId === null || rawProjectId === undefined || String(rawProjectId).trim() === "" ? "Sin vincular" : "Vinculada";
-  }
-
-  function invoiceDisplayFolio(invoice) {
-    return String(invoice?.folio || invoice?.folio_fiscal || invoice?.cfdi_code || invoice?.id_invoice || "—");
-  }
-
-  function invoiceMoney(value) {
-    const locale = lang === "ja" ? "ja-JP" : lang === "en" ? "en-US" : lang === "pt" ? "pt-BR" : lang === "de" ? "de-DE" : "es-MX";
-    const n = Number(value || 0);
-    return n.toLocaleString(locale, { style: "currency", currency: "MXN" });
-  }
-
-  function invoiceLinkedCount() {
-    return filtered.filter((item) => item.id_proyect !== null && item.id_proyect !== undefined && String(item.id_proyect).trim() !== "").length;
-  }
-
-  function renderInvoiceProjectSummary() {
-    if (ENTITY_KEY !== "invoice" || !canRead || !filtered.length) return null;
-    const linked = invoiceLinkedCount();
-    const unlinked = filtered.length - linked;
-    return (
-      <div className="table-card invoice-project-card">
-        <div className="invoice-project-header">
-          <div>
-            <strong>Facturas / Proyecto</strong>
-            <p className="muted">Identifica facturas cargadas desde XML y corrige su proyecto desde el formulario existente.</p>
-          </div>
-          <div className="invoice-project-metrics">
-            <span><strong>{filtered.length}</strong>Total</span>
-            <span><strong>{linked}</strong>Vinculadas</span>
-            <span><strong>{unlinked}</strong>Sin proyecto</span>
-          </div>
-        </div>
-        <div className="table-wrap">
-          <table className="invoice-project-table">
-            <thead>
-              <tr>
-                <th>Factura / UUID</th>
-                <th>Emisor</th>
-                <th>Receptor</th>
-                <th>Total</th>
-                <th>Proyecto</th>
-                <th>Vinculación</th>
-                <th>Acción</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((item) => (
-                <tr key={`invoice-link-${item.id_invoice}`}>
-                  <td><strong>{invoiceDisplayFolio(item)}</strong><p className="cell-value">{item.folio_fiscal || item.cfdi_code || "—"}</p></td>
-                  <td><span>{item.nombre_emisor || "—"}</span></td>
-                  <td><span>{item.nombre_receptor || item.id_customer_supplier || "—"}</span></td>
-                  <td><strong>{invoiceMoney(item.total)}</strong></td>
-                  <td><span>{invoiceProjectLabel(item)}</span></td>
-                  <td><span className={item.id_proyect ? "invoice-link-badge linked" : "invoice-link-badge unlinked"}>{invoiceLinkStatus(item)}</span></td>
-                  <td>{canUpdate ? <button type="button" className="button small" onClick={() => startEdit(item)}>Editar relación</button> : <span className="muted">Sin permiso</span>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    );
-  }
-
   function renderError() {
     if (!errorKey) return "";
     const fieldLabel = errorMeta?.field ? t(`fields.customer_supplier.${errorMeta.field}`, errorMeta.field) : "";
@@ -569,7 +525,12 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
           {canSeeField("fiscal_type") && (
           <label className="field">
             <span>{t("fields.customer_supplier.fiscal_type")}</span>
-            <input name="fiscal_type" type="text" maxLength={150} value={formData.fiscal_type ?? ""} onChange={handleChange} placeholder={t("fields.customer_supplier.fiscal_type")} aria-invalid={Boolean(fieldErrors["fiscal_type"])} {...inputPropsForField("fiscal_type", validationRules["fiscal_type"], "text")} />
+            <select name="fiscal_type" value={formData.fiscal_type ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors["fiscal_type"])} {...inputPropsForField("fiscal_type", validationRules["fiscal_type"], "text")}>
+              <option value="">{t("common.select", "— Selecciona —")}</option>
+              {allowedFiscalRegimes.map((code) => (
+                <option key={code} value={code}>{code} · {fiscalRegimeCatalog.regimen_fiscal[code]}</option>
+              ))}
+            </select>
             {fieldErrors["fiscal_type"] && <span className="field-error">{formatFieldError("fiscal_type")}</span>}
           </label>
           )}
@@ -628,6 +589,14 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
             <small>{t("common.principal_company_hint", "Su RFC se usará para clasificar automáticamente facturas XML como compras o ventas.")}</small>
           </label>
           )}
+          {canSeeField("serie_csd") && formData.is_principal && (
+          <label className="field">
+            <span>{t("fields.customer_supplier.serie_csd", "Serie del CFDI (opcional)")}</span>
+            <input name="serie_csd" type="text" maxLength={25} value={formData.serie_csd ?? ""} onChange={handleChange} placeholder={t("fields.customer_supplier.serie_csd", "Serie del CFDI (opcional)")} aria-invalid={Boolean(fieldErrors["serie_csd"])} />
+            <small>{t("common.serie_csd_hint", "Se usa como serie por defecto al emitir facturas de esta empresa; una factura puede capturar otra distinta.")}</small>
+            {fieldErrors["serie_csd"] && <span className="field-error">{formatFieldError("serie_csd")}</span>}
+          </label>
+          )}
           {canSeeField("id_user") && (
           <label className="field">
             <span>{t("fields.user.vendor", "Vendedor")}</span>
@@ -670,7 +639,6 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
       {permissionReady && !canRead && !canCreate && <div className="empty"><strong>{t("security.permission.read_denied", "Sin permiso de lectura")}</strong><p>{t("common.module_hidden_hint", "Este módulo no tiene acciones seleccionadas; quedará oculto y sus campos no se mostrarán.")}</p></div>}
       {canRead && !loading && filtered.length === 0 && <div className="empty"><strong>{t("common.empty_title")}</strong><p>{t("common.empty_body")}</p></div>}
 
-      {view === "table" && renderInvoiceProjectSummary()}
 
       {canRead && view === "table" && filtered.length > 0 && <div className="table-card"><table><thead><tr>{showRowActions && <th>{t("common.actions")}</th>}
               {canSeeField("id_customer_supplier") && <th>{t("fields.customer_supplier.id_customer_supplier")}</th>}
@@ -702,7 +670,14 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
 
       {canRead && view === "kanban" && filtered.length > 0 && <div className="kanban">{Object.entries(groups).map(([key, groupItems]) => <div className="kanban-column" key={key}><h3>{key} <span>{groupItems.length}</span></h3>{groupItems.map((item) => <article className="kanban-card" key={item.id_customer_supplier}><strong>{String(item.name ?? item.id_customer_supplier)}</strong>{item.is_principal && <span className="principal-company-badge">{t("fields.customer_supplier.is_principal", "Empresa principal")}</span>}<small>#{item.id_customer_supplier}</small>{showRowActions && <div>{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</div>}</article>)}</div>)}</div>}
 
-      <div className="pagination"><button className="button" disabled={page <= 1} onClick={() => setPage(page - 1)}>{t("common.previous")}</button><span>{t("common.page")} {page}</span><button className="button" onClick={() => setPage(page + 1)}>{t("common.next")}</button></div>
+      <Pagination
+        page={page}
+        pages={paginacion.pages}
+        total={paginacion.total}
+        perPage={paginacion.perPage}
+        loading={loading}
+        onChange={setPage}
+      />
     </section>
   );
 }

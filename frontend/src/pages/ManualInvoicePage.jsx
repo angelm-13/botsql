@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { BadgeCheck, Download, FileCheck2, FileText, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { createManualInvoice, downloadInvoicePdf, downloadInvoiceXml, getAllCustomerSupplier, getAllProyect, getInvoiceCatalogs, preflightInvoiceStamping, previewManualInvoice, stampInvoice } from "../api";
 import SatProductKeyField from "../components/SatProductKeyField";
@@ -191,7 +191,9 @@ export default function ManualInvoicePage() {
   }
 
   const clients = contacts.filter((item) => !item.type || item.type === "client");
-  const issuers = contacts.filter((item) => !item.type || item.type === "supplier");
+  // Igual que InvoiceCreationForm.jsx: is_principal es la propia empresa
+  // (venta), type "supplier" cubre registrar una compra de un proveedor real.
+  const issuers = contacts.filter((item) => item.is_principal || item.type === "supplier");
   const receiver = clients.find((item) => String(item.id_customer_supplier) === String(form.id_customer_supplier));
   // Los codigos vienen del backend, que es la misma fuente que valida el
   // timbrado: asi no se puede capturar una clave que el SAT rechazaria.

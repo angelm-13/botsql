@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ArrowRight, FileText, Pencil, Plus, Search } from "lucide-react";
 import { useI18n } from "../i18n";
 

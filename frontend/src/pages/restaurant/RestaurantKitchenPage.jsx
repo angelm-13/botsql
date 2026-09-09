@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { CheckCircle2, ChefHat, Flame } from "lucide-react";
 import { getRestaurantKitchenBoard, updateRestaurantKitchenOrder } from "../../api";
 import { useI18n } from "../../i18n";

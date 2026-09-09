@@ -1,5 +1,4 @@
 /* eslint-disable react/prop-types, react-refresh/only-export-components */
-import React from "react";
 import { RefreshCw } from "lucide-react";
 import { useI18n } from "../../i18n";
 

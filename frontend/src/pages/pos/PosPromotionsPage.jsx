@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { Percent, Plus } from "lucide-react";
 import { useI18n } from "../../i18n";
 import { posRequest } from "../../api";

@@ -20,6 +20,9 @@ from app.models.inventory_status import InventoryStatus
 from app.models.inventory_asset import InventoryAsset
 from app.models.inventory_asset_event import InventoryAssetEvent
 from app.models.inventory_ledger import InventoryLedger
+from app.models.inventory_lot import (
+    InventoryLot, InventoryLotBalance, NmInventoryLedgerLot,
+)
 from app.models.inventory_stock import InventoryStock
 from app.models.invoice import Invoice
 from app.models.invoice_material_service import InvoiceMaterialService
@@ -57,6 +60,9 @@ from app.models.logistics_unit import LogisticsUnit
 from app.models.logistics_service_request import LogisticsServiceRequest
 from app.models.logistics_warehouse import LogisticsWarehouse
 from app.models.material import Material
+from app.models.material_attribute import (
+    MaterialAttribute, MaterialAttributeOption, NmMaterialAttribute,
+)
 from app.models.material_component import MaterialComponent
 from app.models.material_type import MaterialType
 from app.models.movement import Movement
@@ -112,7 +118,7 @@ from app.models.unit import Unit
 from app.models.user import User
 from app.models.user_mfa import UserMfa
 
-__all__ = ['Base', 'Appointment', 'AppointmentType', 'AvailabilityOverride', 'AvailabilityRule', 'Bank', 'BankAccount', 'BankStatement', 'BankStatementMovement', 'Brand', 'CalendarProfile', 'CfdiRelation', 'CustomerSupplier', 'Department', 'Document', 'DocumentCategory', 'DocumentRelation', 'DocumentVersion', 'EntityPermission', 'EventLog', 'Field', 'FiscalAccount', 'FiscalRecord', 'FiscalStamp', 'Incident', 'IncidentDetail', 'IncidentType', 'InventoryAsset', 'InventoryAssetEvent', 'InventoryLedger', 'InventoryStatus', 'InventoryStock', 'Invoice', 'InvoiceCancellation', 'InvoiceMaterialService', 'InvoicePayment', 'KpiDashboard', 'KpiDashboardWidget', 'KpiDashboardWidgetKpi', 'KpiDefinition', 'KpiSnapshot', 'LaboratoryEquipment', 'LaboratoryServiceOrder', 'LaboratoryServiceOrderStatusHistory', 'Level', 'Location', 'LocationType', 'LogisticsAddress', 'LogisticsBranch', 'LogisticsContact', 'LogisticsContract', 'LogisticsEvidence', 'LogisticsFile', 'LogisticsIncident', 'LogisticsInventory', 'LogisticsLocation', 'LogisticsMaintenance', 'LogisticsOperator', 'LogisticsQuotation', 'LogisticsRack', 'LogisticsRate', 'LogisticsReceivable', 'LogisticsServiceRequest', 'LogisticsShipment', 'LogisticsTrailer', 'LogisticsTrip', 'LogisticsUnit', 'LogisticsWarehouse', 'Material', 'MaterialComponent', 'MaterialType', 'Movement', 'NmFieldPermission', 'NmIncidentProduct', 'NmPermissionKpi', 'NmSurveyUser', 'NmTemplateTask', 'PacConfig', 'PasswordResetToken', 'PayrollConcept', 'PayrollDetail', 'PayrollMovement', 'PayrollPeriod', 'Permission', 'Product', 'ProductFamily', 'ProductSaleConfig', 'Proyect', 'ProyectEvent', 'PublicApiKey', 'QuotationComment', 'RestaurantCashSession', 'RestaurantCategory', 'RestaurantDish', 'RestaurantGuisado', 'RestaurantInventoryItem', 'RestaurantInventoryMovement', 'RestaurantOrder', 'RestaurantOrderItem', 'RestaurantRecipeItem', 'RestaurantReservation', 'RestaurantTable', 'RestaurantVisit', 'RestaurantWaiter', 'SatProductKey', 'Service', 'StampingOperation', 'Status', 'Subdepartment', 'SurveyMultipleAnswer', 'SurveyQuestion', 'Task', 'TaskNote', 'TaskType', 'Template', 'Theme', 'Ticket', 'Unit', 'User', 'UserMfa']
+__all__ = ['Base', 'Appointment', 'AppointmentType', 'AvailabilityOverride', 'AvailabilityRule', 'Bank', 'BankAccount', 'BankStatement', 'BankStatementMovement', 'Brand', 'CalendarProfile', 'CfdiRelation', 'CustomerSupplier', 'Department', 'Document', 'DocumentCategory', 'DocumentRelation', 'DocumentVersion', 'EntityPermission', 'EventLog', 'Field', 'FiscalAccount', 'FiscalRecord', 'FiscalStamp', 'Incident', 'IncidentDetail', 'IncidentType', 'InventoryAsset', 'InventoryAssetEvent', 'InventoryLedger', 'InventoryLot', 'InventoryLotBalance', 'NmInventoryLedgerLot', 'InventoryStatus', 'InventoryStock', 'Invoice', 'InvoiceCancellation', 'InvoiceMaterialService', 'InvoicePayment', 'KpiDashboard', 'KpiDashboardWidget', 'KpiDashboardWidgetKpi', 'KpiDefinition', 'KpiSnapshot', 'LaboratoryEquipment', 'LaboratoryServiceOrder', 'LaboratoryServiceOrderStatusHistory', 'Level', 'Location', 'LocationType', 'LogisticsAddress', 'LogisticsBranch', 'LogisticsContact', 'LogisticsContract', 'LogisticsEvidence', 'LogisticsFile', 'LogisticsIncident', 'LogisticsInventory', 'LogisticsLocation', 'LogisticsMaintenance', 'LogisticsOperator', 'LogisticsQuotation', 'LogisticsRack', 'LogisticsRate', 'LogisticsReceivable', 'LogisticsServiceRequest', 'LogisticsShipment', 'LogisticsTrailer', 'LogisticsTrip', 'LogisticsUnit', 'LogisticsWarehouse', 'Material', 'MaterialAttribute', 'MaterialAttributeOption', 'MaterialComponent', 'MaterialType', 'NmMaterialAttribute', 'Movement', 'NmFieldPermission', 'NmIncidentProduct', 'NmPermissionKpi', 'NmSurveyUser', 'NmTemplateTask', 'PacConfig', 'PasswordResetToken', 'PayrollConcept', 'PayrollDetail', 'PayrollMovement', 'PayrollPeriod', 'Permission', 'Product', 'ProductFamily', 'ProductSaleConfig', 'Proyect', 'ProyectEvent', 'PublicApiKey', 'QuotationComment', 'RestaurantCashSession', 'RestaurantCategory', 'RestaurantDish', 'RestaurantGuisado', 'RestaurantInventoryItem', 'RestaurantInventoryMovement', 'RestaurantOrder', 'RestaurantOrderItem', 'RestaurantRecipeItem', 'RestaurantReservation', 'RestaurantTable', 'RestaurantVisit', 'RestaurantWaiter', 'SatProductKey', 'Service', 'StampingOperation', 'Status', 'Subdepartment', 'SurveyMultipleAnswer', 'SurveyQuestion', 'Task', 'TaskNote', 'TaskType', 'Template', 'Theme', 'Ticket', 'Unit', 'User', 'UserMfa']
 
 def _make_foreign_keys_deferrable() -> int:
     """Marca todas las llaves foraneas como diferibles, comprobadas de inmediato.

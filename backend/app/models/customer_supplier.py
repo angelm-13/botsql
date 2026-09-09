@@ -48,6 +48,10 @@ class CustomerSupplier(Base):
         String(20), nullable=False, default='none', server_default='none',
     )
     csd_uploaded_at: Mapped[object] = mapped_column(DateTime, nullable=True)
+    # Serie de CFDI por defecto de esta empresa (opcional). Se usa para
+    # rellenar el campo "Serie" de una factura manual cuando no se captura
+    # una distinta por factura -- ver `create_manual_invoice`.
+    serie_csd: Mapped[object] = mapped_column(String(25), nullable=True)
     id_user: Mapped[int] = mapped_column(Integer, ForeignKey('user.id_user'), nullable=False)
     created_by: Mapped[int] = mapped_column(Integer, nullable=False)
     creation_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now())
@@ -81,6 +85,7 @@ class CustomerSupplier(Base):
             'is_principal': to_json_value(self.is_principal),
             'csd_status': to_json_value(self.csd_status),
             'csd_uploaded_at': to_json_value(self.csd_uploaded_at),
+            'serie_csd': to_json_value(self.serie_csd),
             'id_user': to_json_value(self.id_user),
             'created_by': to_json_value(self.created_by),
             'creation_date': to_json_value(self.creation_date),

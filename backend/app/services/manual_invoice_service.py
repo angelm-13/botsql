@@ -285,6 +285,9 @@ def create_manual_invoice(payload: dict, user_data: dict) -> dict:
             regimen_fiscal_receptor=str(payload.get('regimen_fiscal') or customer.fiscal_type or '')[:100],
             domicilio_fiscal_receptor=str(payload.get('cp_fiscal') or customer.postal_code or '')[:250],
             exportacion=str(payload.get('exportacion') or '01')[:50],
+            # Serie por defecto de la empresa emisora si la factura no trae
+            # una explicita -- mismo criterio que lugar_expedicion arriba.
+            serie_csd=str(payload.get('series') or payload.get('serie') or issuer.serie_csd or '')[:25] or None,
             folio=str(payload.get('folio') or '')[:30] or None,
             condiciones_pago=str(payload.get('condiciones_pago') or '')[:100] or None,
             apply_tax=Decimal(preview['iva']) > 0,

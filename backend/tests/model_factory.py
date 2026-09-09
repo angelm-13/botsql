@@ -84,3 +84,59 @@ def build_payload(service_class, overrides=None, **extra_overrides):
     values = dict(overrides or {})
     values.update(extra_overrides)
     return build_model_values(service_class.model, values)
+
+def sembrar_actor(db, *, id_proyect, id_status, ids=(1,)):
+    """El usuario que firma las pruebas: de verdad, y no solo de nombre.
+
+    Por que hace falta
+    ------------------
+    Las fijaciones escriben `created_by=1` y `id_user=1` por todas partes sin
+    que exista ningun usuario 1. Funciona porque SQLite no aplica las llaves
+    ajenas -`PRAGMA foreign_keys` viene apagado-, asi que un numero que no
+    apunta a nada se guarda igual.
+
+    Deja de funcionar en cuanto un servicio COMPRUEBA lo que la base ya deberia
+    exigir. `inventory_asset.id_holder` y `incident.id_user` -el responsable de
+    una pieza y el de un vale- ahora se comprueban, porque en produccion la
+    llave ajena existe y un identificador inventado reventaba en el COMMIT como
+    un 500 en lugar de un 404.
+
+    Sobre el ciclo
+    --------------
+    `user` -> `permission` -> `user` es un ciclo real, el mismo que obligo a
+    declarar esas llaves DEFERRABLE en el esquema. Aqui se resuelve escribiendo
+    el permiso primero con `authorized_by` apuntando al usuario que todavia no
+    existe, que es exactamente lo que SQLite permite y Postgres solo acepta con
+    la comprobacion diferida. Sembrar esto en la base de pruebas de Postgres es
+    parte de esa migracion, no de aqui.
+    """
+    from app.models.department import Department
+    from app.models.level import Level
+    from app.models.permission import Permission
+    from app.models.subdepartment import Subdepartment
+    from app.models.user import User
+
+    primero = ids[0]
+    db.add_all([
+        Department(id_department=1, department_description='General', created_by=primero),
+        Level(id_level=1, level_description='Base', created_by=primero),
+    ])
+    db.flush()
+    db.add(Subdepartment(id_subdepartment=1, subdepartment_description='General',
+                         id_department=1, created_by=primero))
+    db.flush()
+    db.add(Permission(id_permission=1, permission_description='Pruebas',
+                      authorized_by=primero, id_department=1, id_subdepartment=1,
+                      id_level=1, created_by=primero))
+    db.flush()
+    # Uno por cada identificador que las pruebas usen: el que firma las
+    # operaciones y los que reciben la herramienta. Un responsable que no existe
+    # es la pieza prestada a nadie.
+    db.add_all([
+        User(id_user=uno, full_name='Usuario de pruebas %d' % uno,
+             username='pruebas%d' % uno, id_permission=1, id_proyect=id_proyect,
+             id_status=id_status, supervisor=primero, created_by=primero)
+        for uno in ids
+    ])
+    db.flush()
+    return primero

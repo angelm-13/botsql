@@ -394,7 +394,7 @@ CREATE TABLE IF NOT EXISTS "location" (
   "id_location" SERIAL NOT NULL,
   "id_location_type" INTEGER NOT NULL DEFAULT 1,
   "location_description" VARCHAR(200) NOT NULL,
-  "id_location_reference" INTEGER NULL DEFAULT 1,
+  "id_location_reference" INTEGER NULL,
   "created_by" INTEGER NOT NULL DEFAULT 1,
   "creation_date" TIMESTAMP NULL,
   "last_update_date" TIMESTAMP NULL,
