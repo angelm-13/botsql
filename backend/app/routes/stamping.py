@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify, request
 
 from app.services.pac_config_service import get_config, provider_credentials, save_config
+from app.services.payment_complement_service import stamp_payment_complement
 from app.services.stamping import FacturamaSandboxProvider, preflight_invoice, stamp_invoice
 from app.utils.errors import AppError
 from app.utils.auth import require_entity_permission, token_required
@@ -37,7 +38,7 @@ def test_stamping_config(user_data):
         return jsonify({"ok": True, "message": "Modo simulado activo, sin validez fiscal."})
     provider = FacturamaSandboxProvider(
         base_url=credentials["base_url"], username=credentials["username"], password=credentials["password"],
-        expedition_place=credentials["expedition_place"], name_id=credentials["name_id"],
+        name_id=credentials["name_id"],
     )
     ok, message = provider.test_connection()
     return jsonify({"ok": ok, "message": message})
@@ -61,3 +62,13 @@ def check_invoice_before_stamping(user_data, invoice_id):
     if request.args.get("include_xml") not in {"1", "true", "yes"}:
         result.pop("preview_xml", None)
     return jsonify(result)
+
+
+@bp_stamping.route("/invoices/payments/<id_payment>/stamp", methods=["POST"])
+@token_required
+@require_entity_permission("invoice", "update")
+def stamp_invoice_payment(user_data, id_payment):
+    """Timbra el complemento de pago (REP) de un abono ya registrado."""
+    payload = request.get_json(silent=True) or {}
+    operation, created = stamp_payment_complement(id_payment, payload.get("idempotency_key"), user_data)
+    return jsonify({"operation": operation, "idempotent_replay": not created}), (201 if created else 200)

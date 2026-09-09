@@ -97,6 +97,58 @@ def _has_entity_permission(user_data: dict, entity_name: str, action: str) -> bo
         return (control_type & bit) == bit
 
 
+def has_kpi_permission(session, user_data: dict, id_kpi_definition, action: str = 'read') -> bool:
+    """Si el actor puede usar este KPI puntual.
+
+    Dos capas, igual que `_has_entity_permission`, pero la primera mira el
+    modulo DEL KPI (`kpi_definition.modulo`, ej. "facturacion"), no el modulo
+    "kpis" del registro: un cliente puede tener "kpis" contratado sin tener
+    "facturacion", y en ese caso sus KPIs de facturacion no existen para
+    nadie, con independencia del rol. `require_entity_permission('kpi_definition',
+    ...)` ya cubre el guardia de modulo "kpis"; este es el guardia del modulo
+    que el KPI mide.
+
+    `session` viaja como parametro en vez de abrir su propia transaccion
+    porque quien llama (la ruta) ya tiene una abierta para resolver el resto
+    de la peticion.
+    """
+    from app.models.kpi_definition import KpiDefinition
+    from app.models.nm_permission_kpi import NmPermissionKpi
+    from app.modules.plan import modulo_habilitado
+
+    kpi = session.get(KpiDefinition, id_kpi_definition)
+    if kpi is None:
+        return False
+    if not modulo_habilitado(kpi.modulo):
+        return False
+
+    if _is_superuser(user_data):
+        return True
+
+    bit = PERMISSION_BITS.get(action)
+    if bit is None:
+        return False
+
+    permission_id = _get_permission_id(user_data)
+    if not permission_id:
+        return False
+
+    record = (
+        session.query(NmPermissionKpi)
+        .filter(NmPermissionKpi.id_permission == permission_id)
+        .filter(NmPermissionKpi.id_kpi_definition == id_kpi_definition)
+        .filter(NmPermissionKpi.deletion_date.is_(None))
+        .first()
+    )
+    if not record:
+        return False
+    try:
+        control_type = int(record.control_type)
+    except (TypeError, ValueError):
+        return False
+    return (control_type & bit) == bit
+
+
 def require_entity_permission(entity_name: str, action: str):
     def decorator(fn):
         @wraps(fn)

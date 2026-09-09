@@ -24,6 +24,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from sqlalchemy import func, select
 
+from app.models.customer_supplier import CustomerSupplier
 from app.models.invoice import Invoice
 from app.models.invoice_payment import InvoicePayment
 from app.models.session import transaction_context
@@ -280,11 +281,69 @@ def register_payment(invoice_id, payload, user_data) -> dict:
         return {"payment": abono.serialize(), "created": True}
 
 
+def _complement_payload(db, abono, invoice) -> dict:
+    """Arma el payload del complemento para un abono y su factura ya cargados.
+
+    Separado de `build_payment_complement` para que `payment_complement_service`
+    (que sí timbra) pueda reusar el mismo armado dentro de su propia
+    transacción, sin abrir una segunda vía `transaction_context()`.
+    """
+    issuer = db.get(CustomerSupplier, invoice.id_issuer_customer_supplier)
+    if not issuer:
+        raise AppError("errors.resource_not_found", 404)
+    return {
+        "id_invoice_payment": abono.id_invoice_payment,
+        # El comprobante de pago va en ceros: el importe vive en el
+        # complemento, no en el cuerpo.
+        "cfdi_type": "P",
+        "subtotal": "0",
+        "total": "0",
+        "cfdi_use": "CP01",
+        # El emisor se lee en vivo (igual que `_load_draft` en stamping.py) --
+        # es "nosotros", debe reflejar el domicilio/RFC actual de la empresa,
+        # no lo que estuviera vigente cuando se timbro la factura original.
+        "issuer": {
+            "rfc": str(issuer.tax_id or "").strip().upper(),
+            "name": str(issuer.name or "").strip(),
+            "tax_regime": str(issuer.fiscal_type or "").strip(),
+            "postal_code": str(issuer.postal_code or "").strip(),
+        },
+        # El receptor, en cambio, se congela de la factura original: es lo que
+        # ya se le declaro al SAT para ese documento especifico.
+        "receiver": {
+            "rfc": str(invoice.rfc_receptor or "").strip().upper(),
+            "name": str(invoice.nombre_receptor or "").strip(),
+            "tax_regime": str(invoice.regimen_fiscal_receptor or "").strip(),
+            "postal_code": str(invoice.domicilio_fiscal_receptor or "").strip(),
+        },
+        "payment": {
+            "paid_at": abono.paid_at.isoformat(),
+            "payment_form": abono.payment_form,
+            "currency": abono.currency,
+            "exchange_rate": format(abono.exchange_rate, "f"),
+            "amount": format(abono.amount, "f"),
+            "operation_number": abono.operation_number,
+        },
+        "related_document": {
+            "uuid": invoice.folio_fiscal,
+            "series": invoice.fiscal_certify_serie or invoice.serie_csd,
+            "folio": invoice.folio,
+            "currency": abono.currency,
+            "payment_method": DEFERRED_METHOD,
+            "instalment": abono.instalment,
+            "previous_balance": format(abono.previous_balance, "f"),
+            "amount_paid": format(abono.amount, "f"),
+            "outstanding_balance": format(abono.outstanding_balance, "f"),
+        },
+    }
+
+
 def build_payment_complement(payment_id, user_data) -> dict:
     """Datos del comprobante de tipo P que ampara un abono.
 
-    Se devuelven ya con la forma que exige el complemento de pagos, para que el
-    generador del XML no tenga que volver a interpretar nada.
+    Preview de solo lectura: arma el payload con la forma que exige el
+    complemento de pagos, pero no timbra ni persiste nada -- para eso esta
+    `payment_complement_service.stamp_payment_complement`.
     """
     with transaction_context() as db:
         abono = db.get(InvoicePayment, int(payment_id))
@@ -293,32 +352,19 @@ def build_payment_complement(payment_id, user_data) -> dict:
         invoice = _load_invoice(db, abono.id_invoice, user_data)
         if not str(invoice.folio_fiscal or "").strip():
             raise AppError("errors.payment_requires_stamped_invoice", 409)
-
-        return {
-            "id_invoice_payment": abono.id_invoice_payment,
-            # El comprobante de pago va en ceros: el importe vive en el
-            # complemento, no en el cuerpo.
-            "cfdi_type": "P",
-            "subtotal": "0",
-            "total": "0",
-            "cfdi_use": "CP01",
-            "payment": {
-                "paid_at": abono.paid_at.isoformat(),
-                "payment_form": abono.payment_form,
-                "currency": abono.currency,
-                "exchange_rate": format(abono.exchange_rate, "f"),
-                "amount": format(abono.amount, "f"),
-                "operation_number": abono.operation_number,
-            },
-            "related_document": {
-                "uuid": invoice.folio_fiscal,
-                "series": invoice.fiscal_certify_serie or invoice.serie_csd,
-                "folio": invoice.folio,
-                "currency": abono.currency,
-                "payment_method": DEFERRED_METHOD,
-                "instalment": abono.instalment,
-                "previous_balance": format(abono.previous_balance, "f"),
-                "amount_paid": format(abono.amount, "f"),
-                "outstanding_balance": format(abono.outstanding_balance, "f"),
-            },
-        }
+        payload = _complement_payload(db, abono, invoice)
+        payload["status"] = abono.status
+        # Una vez timbrado de verdad (payment_complement_service), el folio
+        # fiscal vive en la factura tipo P nueva, no en este payload -- se
+        # agrega aqui para que el mismo preview sirva tambien de resultado.
+        if abono.id_payment_invoice:
+            complemento = db.get(Invoice, abono.id_payment_invoice)
+            if complemento:
+                payload["stamped"] = {
+                    "folio_fiscal": complemento.folio_fiscal,
+                    "certification_date": (
+                        complemento.certification_date.isoformat()
+                        if complemento.certification_date else None
+                    ),
+                }
+        return payload

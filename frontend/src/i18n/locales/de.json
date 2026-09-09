@@ -142,7 +142,9 @@
     "mfa_reset": "MFA zurücksetzen",
     "mfa_reset_confirm": "MFA für diesen Benutzer zurücksetzen?",
     "mfa_reset_success": "MFA erfolgreich zurückgesetzt",
-    "mfa_reset_error": "MFA konnte nicht zurückgesetzt werden"
+    "mfa_reset_error": "MFA konnte nicht zurückgesetzt werden",
+    "select": "Auswählen",
+    "serie_csd_hint": "Wird als Standardserie beim Ausstellen von Rechnungen dieses Unternehmens verwendet; eine Rechnung kann eine andere erfassen."
   },
   "entities": {
     "bank": {
@@ -713,7 +715,8 @@
       "title": "Titel",
       "type": "Typ",
       "web_site": "Web Standort",
-      "is_principal": "Hauptunternehmen"
+      "is_principal": "Hauptunternehmen",
+      "serie_csd": "CFDI-Serie (optional)"
     },
     "department": {
       "created_by": "Erstellt von",
@@ -1341,6 +1344,7 @@
     "department": "Abteilung",
     "entity_permission": "Entitätsberechtigung",
     "event_log": "Ereignisprotokoll",
+    "facturama_config": "Facturama konfigurieren",
     "field": "Feld",
     "fiscal_account": "Steuerkonto",
     "fiscal_record": "Steuerdatensatz",
@@ -2096,6 +2100,7 @@
     "error_request": "Die Anfrage konnte nicht abgeschlossen werden.",
     "exchange_rate": "Wechselkurs",
     "expedition_place": "Ausstellungsort",
+    "expedition_place_hint": "Der Ausstellungsort und das CSD werden aus der Adresse des als \"Hauptunternehmen\" markierten Unternehmens in Kontakte übernommen.",
     "facturama_user": "Facturama-Benutzer",
     "fiscal_name": "Steuerlicher Name",
     "fiscal_postal_code": "Steuerliche Postleitzahl",
@@ -3197,6 +3202,8 @@
     "expand_group": "Gruppe erweitern",
     "expand_menu": "Menü erweitern",
     "collapse_menu": "Menü einklappen",
+    "open_menu": "Menü öffnen",
+    "close_menu": "Menü schließen",
     "options": "Optionen",
     "no_options": "Keine Optionen konfiguriert",
     "main_navigation": "Hauptnavigation",

@@ -12,7 +12,7 @@ Inventario verificable actual:
 
 | Superficie | Cantidad | Fuente |
 |---|---:|---|
-| Entidades ORM con `__tablename__` | 91 | `tyakxa_tny/backend/app/models/` |
+| Entidades ORM con `__tablename__` | 119 | `tyakxa_tny/backend/app/models/` |
 | Registros de blueprint | 86 | `tyakxa_tny/backend/app/__init__.py` |
 | Reglas REST declaradas en `routes/` | 325 | `tyakxa_tny/backend/app/routes/` |
 | Rutas React declaradas | 99 | `tyakxa_tny/frontend/src/App.jsx` |
@@ -48,7 +48,7 @@ Responsabilidades:
 | Presentacion | `frontend/src/` | Rutas, layouts, formularios, tableros y consumo REST. |
 | API REST | `backend/app/routes/` | Blueprints, autenticacion, permisos, validacion de entrada y respuestas HTTP. |
 | Servicios | `backend/app/services/` | Casos de uso, CRUD, cotizaciones, facturacion, timbrado, banca y logistica. |
-| Dominio/persistencia | `backend/app/models/` | 91 entidades SQLAlchemy y sesiones transaccionales. |
+| Dominio/persistencia | `backend/app/models/` | 119 entidades SQLAlchemy y sesiones transaccionales. |
 | GraphQL | `backend/app/graphql/` | Schema, queries, mutations, tipos, filtros e inputs; actualmente no se registra en `create_app`. |
 | Documentos | `documents-reports/` | Manifiesto, Jinja2, HTML, XML y PDF con WeasyPrint. |
 | Procesamiento asincrono | `backend/app/tasks/`, `celery_worker.py` | KPI, documentos pendientes y sincronizacion SCM. |
@@ -206,6 +206,23 @@ Las once entidades viven en `backend/app/models/restaurant.py` y comparten metad
 | `RestaurantInventoryItem` | `restaurant_inventory_item` | `proyect` |
 | `RestaurantRecipeItem` | `restaurant_recipe_item` | `proyect`, platillo, insumo de inventario |
 | `RestaurantCashSession` | `restaurant_cash_session` | `proyect`, usuarios de apertura/cierre |
+
+#### KPIs
+
+Las cuatro entidades viven en archivos homonimos (`kpi_definition.py`,
+`nm_permission_kpi.py`, `kpi_dashboard.py`, `kpi_dashboard_widget.py`).
+Modulo de registro: `kpis` (`backend/app/modules/registry.py`). A diferencia
+del resto de los modulos de negocio, no tiene apartado propio en el menu
+lateral: sus pantallas se sirven desde el Home/Dashboard actual (ruta "/"),
+que ya es de acceso libre para cualquier usuario autenticado, asi que sus
+filas de `entity_permission` se siembran con `menu_location = 'hidden'`.
+
+| Entidad | Tabla | Relaciones principales |
+|---|---|---|
+| `KpiDefinition` | `kpi_definition` | catalogo de indicadores disponibles |
+| `NmPermissionKpi` | `nm_permission_kpi` | `permission`, `kpi_definition` |
+| `KpiDashboard` | `kpi_dashboard` | tablero personalizable, por `user` |
+| `KpiDashboardWidget` | `kpi_dashboard_widget` | `kpi_dashboard`, `kpi_definition` |
 
 ### 3.3 Catalogo completo de blueprints
 

@@ -4,6 +4,7 @@ import base64
 import json
 import os
 import socket
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
@@ -20,7 +21,7 @@ from app.models.session import transaction_context
 from app.services.cfdi_validation import validate_cfdi_xml
 from app.services.cfdi_xml import parse_cfdi
 from app.services.invoice_builder import build_draft, inspect_draft
-from app.services.invoice_catalogs import CLAVE_UNIDAD_FRECUENTES, OBJETO_IMP_CON_DESGLOSE
+from app.services.invoice_catalogs import CLAVE_UNIDAD_FRECUENTES, OBJETO_IMP_CON_DESGLOSE, RFC_PUBLICO_GENERAL
 from app.services.invoice_artifacts import build_fake_cfdi_xml, save_invoice_xml
 from app.utils.errors import AppError
 
@@ -63,6 +64,10 @@ class StampingProvider:
     def stamp(self, payload, idempotency_key):
         raise NotImplementedError
 
+    def stamp_payment_complement(self, payload, idempotency_key):
+        """Timbra el complemento de pago (REP) de un abono."""
+        raise NotImplementedError
+
     def reconcile(self, reference):
         raise NotImplementedError
 
@@ -90,6 +95,15 @@ class FakeStampingProvider(StampingProvider):
             return self.result
         stamp_uuid, xml = build_fake_cfdi_xml(payload)
         return StampingResult("stamped", stamp_uuid, {"environment": "test", "has_xml": True}, xml=xml)
+
+    def stamp_payment_complement(self, payload, idempotency_key):
+        self.calls += 1
+        if self.result:
+            return self.result
+        # A diferencia de stamp(): el generador de XML fake todavia no arma
+        # el nodo Complemento.Payments de un comprobante tipo P, y no hace
+        # falta para probar exito/fallo/rollback de la orquestacion.
+        return StampingResult("stamped", str(uuid.uuid4()).upper(), {"environment": "test"})
 
     def reconcile(self, reference):
         return self.result or StampingResult("uncertain", reference, error_code="reconciliation_required")
@@ -123,11 +137,10 @@ class FacturamaSandboxProvider(StampingProvider):
     # sobreescribir solo la ruta (vive bajo /api-lite) sin duplicar stamp().
     CFDIS_PATH = "/3/cfdis"
 
-    def __init__(self, base_url=None, username=None, password=None, timeout=15, expedition_place=None, name_id=None):
+    def __init__(self, base_url=None, username=None, password=None, timeout=15, name_id=None):
         self.base_url = (base_url or os.getenv("FACTURAMA_BASE_URL") or "https://apisandbox.facturama.mx").rstrip("/")
         self.username = username or os.getenv("FACTURAMA_USERNAME") or os.getenv("FACTURAMA_USER") or ""
         self.password = password or os.getenv("FACTURAMA_PASSWORD") or os.getenv("FACTURAMA_PASS") or ""
-        self.expedition_place = expedition_place or os.getenv("FACTURAMA_EXPEDITION_PLACE") or ""
         self.name_id = name_id or os.getenv("FACTURAMA_NAME_ID") or "1"
         self.timeout = timeout
         if not self.base_url.startswith("https://"):
@@ -227,7 +240,11 @@ class FacturamaSandboxProvider(StampingProvider):
         currency = str(payload.get("currency") or "MXN").upper()
         body = {
             "CfdiType": payload.get("cfdi_type") or "I", "NameId": self.name_id,
-            "ExpeditionPlace": self.expedition_place or issuer.get("postal_code"),
+            # Siempre el domicilio de la empresa emisora, nunca una config
+            # global de cuenta -- una cuenta puede timbrar por mas de un RFC
+            # (multiemisor), y aunque no lo sea, capturarlo aparte de la ficha
+            # de la empresa solo invita a que los dos se desincronicen.
+            "ExpeditionPlace": issuer.get("postal_code"),
             "Exportation": str(payload.get("export_code") or "01"),
             "PaymentForm": payload.get("payment_form"), "PaymentMethod": payload.get("payment_method"),
             "Currency": currency,
@@ -245,16 +262,106 @@ class FacturamaSandboxProvider(StampingProvider):
         if payload.get("payment_conditions"):
             body["PaymentConditions"] = str(payload["payment_conditions"])[:1000]
         if currency not in {"MXN", "XXX"}:
-            body["ExchangeRate"] = format(Decimal(str(payload.get("exchange_rate") or 1)), "f")
+            # Confirmado contra el sandbox real: Facturama exige este nombre
+            # exacto -- "ExchangeRate" (el que se usaba antes) lo rechaza con
+            # "Este campo es requerido", asi que ninguna factura en moneda
+            # extranjera habia timbrado nunca de verdad.
+            body["CurrencyExchangeRate"] = format(Decimal(str(payload.get("exchange_rate") or 1)), "f")
+        if receiver.get("rfc") == RFC_PUBLICO_GENERAL:
+            # Confirmado contra el sandbox real: sin este nodo Facturama
+            # rechaza cualquier comprobante cuyo receptor sea el RFC generico
+            # de publico en general -- no documentado en la guia, y hasta
+            # ahora ningun timbrado a ese receptor habia funcionado de
+            # verdad.
+            now = datetime.now(timezone.utc)
+            body["GlobalInformation"] = {
+                "Periodicity": "01", "Months": f"{now.month:02d}", "Year": str(now.year),
+            }
         return body
 
     def stamp(self, payload, idempotency_key):
         if not self.username or not self.password:
             return StampingResult("rejected", error_code="facturama_credentials_missing")
-        body = json.dumps(self.build_request_body(payload)).encode("utf-8")
+        return self._post_cfdi(self.build_request_body(payload), idempotency_key)
+
+    def build_payment_complement_request_body(self, payload):
+        """Arma el body del REP (CfdiType=P) -- formato confirmado con
+        timbrado real contra el sandbox de Facturama, no solo con su guia:
+        `Folio` es obligatorio, y `GlobalInformation` hace falta si el
+        receptor es el RFC generico de publico en general (aplica igual a
+        tipo P que a tipo I, aunque la guia solo lo menciona para I).
+        """
+        issuer = payload.get("issuer") or {}
+        receiver = payload.get("receiver") or {}
+        payment = payload.get("payment") or {}
+        related = payload.get("related_document") or {}
+        currency = str(payment.get("currency") or "MXN").upper()
+
+        payment_node = {
+            "Date": payment.get("paid_at"),
+            "PaymentForm": payment.get("payment_form"),
+            "Amount": payment.get("amount"),
+        }
+        related_node = {
+            "TaxObject": "01",
+            "Uuid": related.get("uuid"),
+            "Folio": related.get("folio"),
+            "PaymentMethod": related.get("payment_method"),
+            "PartialityNumber": str(related.get("instalment") or ""),
+            "PreviousBalanceAmount": related.get("previous_balance"),
+            "AmountPaid": related.get("amount_paid"),
+            "ImpSaldoInsoluto": related.get("outstanding_balance"),
+        }
+        if related.get("series"):
+            related_node["Serie"] = related["series"]
+        if currency not in {"MXN", "XXX"}:
+            payment_node["Currency"] = currency
+            # Confirmado contra el sandbox real: nombre de campo propio del
+            # nodo Payments, distinto de "CurrencyExchangeRate" a nivel raiz
+            # -- sin el, rechazo "El atributo ExchangeRate es requerido".
+            payment_node["ExchangeRate"] = payment.get("exchange_rate")
+            related_node["Currency"] = currency
+            # EquivalenceDocRel aceptado por Facturama en la prueba en vivo,
+            # pero la reconciliacion exacta de importes con dos monedas
+            # distintas (documento vs pago) quedo sin resolver del todo --
+            # ver notas de la sesion antes de confiar en este calculo a
+            # ciegas con un caso real de conversion cruzada.
+            related_node["EquivalenceDocRel"] = payment.get("exchange_rate")
+        if payment.get("operation_number"):
+            payment_node["OperationNumber"] = payment["operation_number"]
+        payment_node["RelatedDocuments"] = [related_node]
+
+        body = {
+            "CfdiType": "P",
+            "NameId": self.name_id,
+            "ExpeditionPlace": issuer.get("postal_code"),
+            "Folio": payload.get("folio"),
+            "Receiver": {
+                "Rfc": receiver.get("rfc"), "Name": receiver.get("name"),
+                "CfdiUse": "CP01", "FiscalRegime": receiver.get("tax_regime"),
+                "TaxZipCode": receiver.get("postal_code"),
+            },
+            "Complemento": {"Payments": [payment_node]},
+        }
+        if receiver.get("rfc") == RFC_PUBLICO_GENERAL:
+            emision = str(payment.get("paid_at") or "")
+            body["GlobalInformation"] = {
+                "Periodicity": "01",
+                "Months": emision[5:7] if len(emision) >= 7 else "01",
+                "Year": emision[:4] if len(emision) >= 4 else "",
+            }
+        return body
+
+    def stamp_payment_complement(self, payload, idempotency_key):
+        if not self.username or not self.password:
+            return StampingResult("rejected", error_code="facturama_credentials_missing")
+        return self._post_cfdi(self.build_payment_complement_request_body(payload), idempotency_key)
+
+    def _post_cfdi(self, body, idempotency_key):
+        data = json.dumps(body).encode("utf-8")
         request = Request(
             f"{self.base_url}{self.CFDIS_PATH}",
-            data=body,
+            data=data,
             headers={
                 "Authorization": self._authorization_header(),
                 "Content-Type": "application/json",
@@ -264,10 +371,10 @@ class FacturamaSandboxProvider(StampingProvider):
         )
         try:
             with urlopen(request, timeout=self.timeout) as response:
-                data = json.loads(response.read().decode("utf-8"))
-            stamp = data.get("Complement", {}).get("TaxStamp", {})
-            reference = stamp.get("Uuid") or data.get("Uuid") or data.get("Id")
-            return StampingResult("stamped", reference, {"http_status": response.status, "facturama_id": data.get("Id")}, xml=data.get("Xml"))
+                result = json.loads(response.read().decode("utf-8"))
+            stamp = result.get("Complement", {}).get("TaxStamp", {})
+            reference = stamp.get("Uuid") or result.get("Uuid") or result.get("Id")
+            return StampingResult("stamped", reference, {"http_status": response.status, "facturama_id": result.get("Id")}, xml=result.get("Xml"))
         except HTTPError as exc:
             # El motivo del rechazo viaja en el cuerpo de la respuesta: sin el,
             # un 400 de validacion no dice que corregir.
@@ -375,10 +482,18 @@ class FacturamaMultiemisorProvider(FacturamaSandboxProvider):
             "Rfc": issuer.get("rfc"), "Name": issuer.get("name"),
             "FiscalRegime": issuer.get("tax_regime"),
         }
-        # El lugar de expedicion es el CP del emisor, no una config global de
-        # la cuenta -- multiemisor no tiene un solo domicilio fiscal.
-        body["ExpeditionPlace"] = issuer.get("postal_code") or body.get("ExpeditionPlace", "")
-        # NameId es el perfil fiscal de la cuenta API Web; no aplica aqui.
+        # ExpeditionPlace ya viene del CP del emisor (el padre lo arma igual);
+        # NameId es el perfil fiscal de la cuenta API Web, no aplica aqui.
+        body.pop("NameId", None)
+        return body
+
+    def build_payment_complement_request_body(self, payload):
+        body = super().build_payment_complement_request_body(payload)
+        issuer = payload.get("issuer") or {}
+        body["Issuer"] = {
+            "Rfc": issuer.get("rfc"), "Name": issuer.get("name"),
+            "FiscalRegime": issuer.get("tax_regime"),
+        }
         body.pop("NameId", None)
         return body
 
@@ -476,14 +591,14 @@ def configured_provider():
     if provider_name in {"facturama_sandbox", "facturama"}:
         provider = FacturamaSandboxProvider(
             base_url=credentials["base_url"], username=credentials["username"], password=credentials["password"],
-            expedition_place=credentials["expedition_place"], name_id=credentials["name_id"],
+            name_id=credentials["name_id"],
         )
         provider.name = provider_name
         return provider
     if provider_name in {"facturama_multiemisor_sandbox", "facturama_multiemisor"}:
         provider = FacturamaMultiemisorProvider(
             base_url=credentials["base_url"], username=credentials["username"], password=credentials["password"],
-            expedition_place=credentials["expedition_place"], name_id=credentials["name_id"],
+            name_id=credentials["name_id"],
         )
         provider.name = provider_name
         return provider

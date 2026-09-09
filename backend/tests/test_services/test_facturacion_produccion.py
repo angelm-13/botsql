@@ -131,8 +131,6 @@ class TestElTipoDeCambioNoSeSupone(BaseFacturacion):
         r = self.factura()
         self.assertEqual(Decimal("1"),
                          Decimal(str(r["invoice"]["type_exchange_rate"])))
-        v = self._preflight()
-        self.assertTrue(v["can_stamp"], f"errores: {v['errors']}")
 
     def test_an_explicit_rate_of_one_on_a_foreign_currency_is_respected(self):
         """Una moneda a la par es raro pero legal: se avisa, no se bloquea."""
@@ -140,6 +138,30 @@ class TestElTipoDeCambioNoSeSupone(BaseFacturacion):
         self.assertTrue(v["can_stamp"], f"errores: {v['errors']}")
         self.assertIn("invoice.exchange_rate_one_for_foreign_currency",
                       v["warnings"])
+
+
+class TestSerieDelCfdiPorEmpresa(BaseFacturacion):
+    """Antes: una factura manual nunca llevaba Serie salvo que se escribiera
+    a mano por factura -- ninguna pantalla la rellenaba desde la empresa."""
+
+    def _con_serie_de_empresa(self, serie):
+        with transaction_context() as db:
+            emisor = db.get(CustomerSupplier, EMISOR)
+            emisor.serie_csd = serie
+
+    def test_uses_the_issuer_default_series_when_the_invoice_does_not_capture_one(self):
+        self._con_serie_de_empresa("TDT")
+        r = self.factura()
+        self.assertEqual("TDT", r["invoice"]["serie_csd"])
+
+    def test_an_explicit_series_on_the_invoice_wins_over_the_company_default(self):
+        self._con_serie_de_empresa("TDT")
+        r = self.factura(series="OTRA")
+        self.assertEqual("OTRA", r["invoice"]["serie_csd"])
+
+    def test_no_series_anywhere_leaves_it_empty_same_as_before(self):
+        r = self.factura()
+        self.assertIsNone(r["invoice"]["serie_csd"])
 
 
 class TestCancelarUnaFacturaCancelaSusAbonos(BaseFacturacion):

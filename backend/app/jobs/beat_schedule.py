@@ -5,6 +5,10 @@ from celery.schedules import crontab
 
 
 BEAT_SCHEDULE = {
+    "recalculate-kpi-snapshots-nightly": {
+        "task": "app.jobs.tasks_kpis.recalculate_kpi_snapshots",
+        "schedule": crontab(hour=1, minute=0),
+    },
     "audit-entities-nightly": {
         "task": "app.jobs.tasks_entity.run_all_entity_audits",
         "schedule": crontab(hour=2, minute=0),

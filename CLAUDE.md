@@ -1,0 +1,514 @@
+# Contexto de sesión — tyakxa_tny (para retomar en otra conversación)
+
+Última actualización: 2026-09-07. Este archivo es el "dónde nos quedamos",
+aparte de `ARQUITECTURA_TYAKXA_TNY.md` (referencia técnica estable) y de
+`docs/PLAN_ACCION_MEJORA.md` (plan de mejora por auditoría). Cuando una
+sección se resuelve, se puede recortar; mientras tanto se deja completa para
+que una sesión nueva no tenga que releer el historial de chat.
+
+## ESTADO: migración real de adser completada (2026-09-07)
+
+Contexto: adser es un cliente real (`adser-prod`, dominio
+`adser.torredigital.mx`) cuyos datos viven en una base MySQL/MariaDB legacy
+separada del clúster. Hay que migrarlos a la base Postgres de tyakxa_tny sin
+tocar producción a ciegas.
+
+**Principio acordado con Alan, palabras textuales:** *"pasar todo tal cual
+hasta con sus id ya que no queremos mover o afectar nada de producción"* —
+se preservan filas e IDs originales; solo se resuelven 2 colisiones de ID
+verificadas (no más).
+
+### Ya hecho y confirmado en esta sesión
+
+1. Merge de la rama `initAngm` (Ángel, submódulo de restaurante) dentro de
+   `initAlan`, resolviendo el choque de diseño documentos/laboratorio a
+   favor de la versión de Ángel (`registry.py`, tests, migración
+   `20260831020000_document_laboratory_modules.sql`). Pusheado, CI en
+   verde.
+2. Consolidación de "Configuración" en un solo ícono de engrane
+   (`frontend/src/layouts/Shell.jsx`): MFA, gestor de roles, permisos,
+   `/event_log` y `/user_mfa` movidos a `location: "settings"`. Migración
+   `database/migrations/20260903000000_configuracion_dentro_del_engrane.sql`
+   mueve `menu_group='Configuracion'` de `sidebar` a `settings` para
+   instalaciones ya sembradas. Confirmado visualmente por Alan ("Confirmado,
+   ya se ve el badge y el engrane").
+3. `DEPLOYMENT_LABEL`: nuevo env var leído por `backend/app/modules/plan.py`
+   (`_etiqueta_del_despliegue()`), badge visual en el topbar
+   (`.deployment-badge` en `Shell.jsx` + `app.css`) y en el `<title>` de la
+   pestaña. Configurado en `adser-prod` como `"Adser"` vía
+   `kubectl -n adser-prod patch secret app-secrets` + `rollout restart`,
+   confirmado funcionando. **`LICENSED_MODULES` sigue explícitamente
+   diferido — Alan dijo "todavía no", no configurar sin luz verde nueva.**
+4. Overlay `k8s/overlays/adser-prod/kustomization.yaml` promovido a la
+   imagen `fa4de37` (las 4 imágenes), committeado, aplicado a mano vía `scp`
+   + `kubectl apply -k` en el VPS (recordar: `/home/alanp/tyakxa_tny/k8s` no
+   es un repo git). Rollout confirmado, todos los pods en 1/1.
+5. Análisis exhaustivo (múltiples rondas) de los 19 dumps `.sql` reales de
+   adser contra el esquema Postgres — metodología: cargar los dumps en un
+   contenedor MariaDB desechable y verificar con queries reales, nunca
+   contar/parsear el `.sql` a mano. Resultado publicado como artefacto vivo:
+   **"Mapeo de Migración — Adser"** —
+   `https://claude.ai/code/artifact/cbcc2f85-31ce-48c4-9726-c2b66e5cf278`
+   (hallazgos, diagrama ER, orden de migración, mapeo columna-por-columna,
+   12 decisiones ya resueltas, verificación de integridad referencial y
+   CHECK constraints, metodología). Es la referencia autoritativa — si algo
+   más cambia en el diseño de la migración, actualizar ese artefacto.
+6. Script completo escrito, autorevisado (2 bugs reales encontrados y
+   corregidos: IDs de `permission` hardcodeados en vez de resueltos por
+   nombre en runtime; `empleado_por_id_usuario` sin filtrar contra usuarios
+   reales, riesgo de colisión falsa) y committeado:
+   **`backend/scripts/migrate_adser.py`** (~800 líneas, 14 funciones
+   `migrar_*` en orden de dependencias, `--dry-run`, todo en una sola
+   transacción con rollback si algo falla).
+
+### Prueba en tyakxa-dev — COMPLETADA (2026-09-04)
+
+Decisión de Alan: nunca correr el script contra los datos reales de
+adser-prod sin antes probarlo de punta a punta contra tyakxa-dev (ambiente
+de bajo riesgo). Todo esto corrió **dentro del clúster, vía la sesión SSH de
+Alan al VPS** — no hay kubectl local en su máquina Windows.
+
+Pasos ejecutados (para repetir el método con otro cliente en el futuro):
+1. Pod de backend de `tyakxa-dev` ya traía el script (imagen del commit
+   `694505b`, vía el bot `deploy(tyakxa-dev)`).
+2. Dumps de adser copiados al VPS (`/home/alanp/adser_dumps`) y de ahí a un
+   pod temporal de MariaDB en el namespace `tyakxa-dev`:
+   ```bash
+   kubectl -n tyakxa-dev run adser-temp-mariadb \
+     --image=mariadb:10.11 \
+     --env="MARIADB_ROOT_PASSWORD=temp1234" \
+     --env="MARIADB_DATABASE=adser_prod" \
+     --overrides='{"spec":{"containers":[{"name":"adser-temp-mariadb","image":"mariadb:10.11","env":[{"name":"MARIADB_ROOT_PASSWORD","value":"temp1234"},{"name":"MARIADB_DATABASE","value":"adser_prod"}],"resources":{"requests":{"cpu":"100m","memory":"128Mi"},"limits":{"cpu":"300m","memory":"256Mi"}}}]}}'
+   ```
+   (nota: el kubectl del clúster, v1.34.1, ya no soporta `--requests`/
+   `--limits` directos en `kubectl run` — hay que usar `--overrides` con un
+   patch JSON inline).
+3. Los 19 `.sql` cargados sin error dentro del pod temporal.
+4. `pymysql` instalado en el pod de backend de tyakxa-dev.
+5. Un Pod suelto (`kubectl run`, sin Service) no tiene entrada DNS por
+   nombre — hay que usar `kubectl get pod ... -o jsonpath='{.status.podIP}'`
+   y apuntar el script a esa IP directamente.
+6. **Dry-run inicial falló** con `ForeignKeyViolation: fk_user_id_status` —
+   causa raíz investigada y confirmada: no era un bug del script, sino que a
+   tyakxa-dev (volumen viejo, armado orgánicamente) le faltaban 2 filas del
+   bloque de bootstrap de `init.sql` (`status` id=1, `customer_supplier`
+   id=1) porque esos scripts de inicialización solo corren en un volumen
+   nuevo. Detalle completo en memoria:
+   `project_tyakxa_tny_dev_bootstrap_incompleto`. Se corrigió insertando a
+   mano esas 2 filas exactas (mismo patrón `ON CONFLICT DO NOTHING` de
+   `init.sql`) + ajuste de secuencias.
+7. Dry-run y corrida real (sin `--dry-run`) confirmados exitosos después del
+   fix — "Migracion confirmada.", conteos verificados de forma
+   independiente contra la base (no solo el reporte del script).
+8. Limpieza: `kubectl -n tyakxa-dev delete pod adser-temp-mariadb` ya
+   ejecutado.
+
+**Conteos finales verificados en tyakxa-dev** (post-migración real):
+customer_supplier=3, user=43, product=2220, material=802, invoice=2,
+incident=139, nm_incident_product=2768, ticket=2 — todos cuadran exacto con
+lo reportado por el script.
+
+### Merge de initAngm (segunda tanda) — completado 2026-09-04
+
+Ángel había seguido trabajando en `initAngm` (20 commits nuevos: pantallas de
+tipo de material y vale de almacén, validación de ClaveProdServ contra el
+catálogo SAT, fix de tipo de cambio en cancelaciones, fix de idempotencia,
+perf de rastreo de inventario, fixes de menú, y un fix de instalación limpia
+en `init.sql`). Mergeado a `initAlan` sin conflictos (`git merge-tree`
+limpio), verificado con la suite completa (**1076 passed, 10 skipped, 0
+failures**) antes de pushear.
+
+**Nota sobre el push**: mientras corría la suite, Aurora Rodríguez (hace las
+bitácoras del equipo, documenta avances — no es código) pusheó un commit
+trivial (`chore: ignora .DS_Store`) basado en el tip viejo de `initAlan`,
+lo que dejó mi merge local momentáneamente sin pushear y aparentando (a
+primera vista) que el trabajo de Ángel se había perdido de `initAlan`. No
+se perdió nada — era solo una carrera de pushes normal. Se resolvió
+mergeando `origin/initAlan` sobre mi rama local (que ya tenía el merge
+completo de Ángel) y pusheando el resultado reconciliado. Documentado por si
+se repite el patrón: un push de alguien más entre que yo mergeo y pusheo no
+es señal de pérdida de datos, es una carrera normal — mergear de vuelta y
+listo, nunca forzar.
+
+### Migración real contra adser-prod — ✅ COMPLETADA (2026-09-07)
+
+La prueba en tyakxa-dev salió bien, Alan confirmó explícitamente seguir con
+la migración real, y se corrió de punta a punta contra `adser-prod`:
+
+1. **Bloqueo encontrado y resuelto primero**: la imagen desplegada en
+   `adser-prod` (`fa4de37`) era anterior al commit que agrega
+   `migrate_adser.py` (`7e00725`) — el script no estaba en el pod (se
+   verificó con `ls scripts/`, no se asumió). Se promovió el overlay
+   `k8s/overlays/adser-prod/kustomization.yaml` a `0cd29ea` (commit
+   `93811ac`, la misma imagen ya validada en `tyakxa-dev`), aplicado a mano
+   en el VPS, los 4 deployments rodaron bien.
+2. **Bootstrap de adser-prod verificado completo** (`status`/
+   `customer_supplier` con su fila `id=1`) — a diferencia de tyakxa-dev, acá
+   no hizo falta ningún insert manual.
+3. **Dry-run** contra los 19 dumps reales (pod MariaDB temporal en el
+   namespace `adser-prod`): conteos idénticos a la prueba de tyakxa-dev.
+4. **Corrida real (sin `--dry-run`) confirmada**, conteos reverificados de
+   forma independiente — coinciden exacto: product=2220, material=802,
+   user=43, invoice=2, incident=139, nm_incident_product=2768, ticket=2,
+   customer_supplier=3. (Ojo: `SELECT count(*) FROM user` sin comillas en
+   SQL crudo resuelve `CURRENT_USER`, no la tabla — dio un falso "1" en el
+   camino; con `"user"` citado o vía ORM dio el 43 correcto.)
+5. **`fix_adser_product_image_paths.py` corrido real** ya con `product`
+   poblada: 2133 filas de `path_imagen` corregidas, idempotencia
+   reconfirmada.
+6. Limpieza del pod temporal hecha.
+
+Detalle completo en memoria: `project_tyakxa_tny_migracion_adser` y
+`project_tyakxa_tny_persistencia_uploads`.
+
+### Explícitamente diferido / sin resolver — no asumir nada
+
+- `LICENSED_MODULES` para `adser-prod`: diferido por instrucción directa de
+  Alan ("todavía no"). No configurar sin nueva luz verde. **Incidente
+  2026-09-08:** se encontró configurada de todas formas
+  (`inventario,operaciones`), sin aprobación — causaba `errors.module_not_in_plan`
+  en pantallas reales (facturación, contactos) porque adser sí tiene datos
+  migrados de `invoice`/`ticket`/`customer_supplier`, fuera de esos dos
+  módulos. Revertido: `kubectl -n adser-prod patch secret app-secrets
+  --type=json -p='[{"op": "remove", "path": "/data/LICENSED_MODULES"}]'` +
+  `rollout restart deployment/backend`. No hace falta resembrar — el plan es
+  un chequeo en memoria por proceso, leído una sola vez
+  (`backend/app/modules/plan.py:250-254`), no depende de filas de
+  `entity_permission`. Quién/cuándo la configuró originalmente no se
+  investigó — si vuelve a aparecer, revisar eso antes de repetir el fix.
+- Política de `LICENSED_MODULES` para `torredigital-prod`: pregunta abierta
+  sin responder ("¿Cuál es su caso?" — ¿todos los módulos o también
+  restringido?). No asumir ninguna respuesta.
+- El "botón" de migración autoservicio que propuso Tanya (un flujo con un
+  clic para migrar más rápido/seguro): explícitamente pospuesto por Alan
+  ("este es un punto que podemos tocar sobre la marcha"). No iniciado.
+
+## Persistencia de /uploads + fotos de adser conectadas a infra-k8s (2026-09-07)
+
+Punto de partida: ningún ambiente (`tyakxa-dev`, `torredigital-prod`,
+`adser-prod`) tenía almacenamiento persistente para archivos subidos
+(imágenes de producto, XMLs de CFDI, estados de cuenta, documentos) —
+vivían en el filesystem efímero del pod y se perdían en cada
+reinicio/redeploy. Esto ya afectaba a `torredigital-prod` en producción real.
+
+### Parte 1 — PVC en `/uploads`, completada y verificada en los 3 ambientes
+
+- `k8s/base/backend.yaml`: PVC `uploads-data` (`local-path`, `ReadWriteOnce`,
+  `5Gi`), montado en `/uploads` del Deployment `backend`, con
+  `strategy: Recreate` (mismo patrón que `postgres.yaml`). Commit `0b24461`.
+- Aplicado y verificado en los 3 ambientes vía `scp` + `kubectl apply -k`
+  (procedimiento manual, ver sección "Rama y despliegue" más abajo — el
+  cambio es en `k8s/base/`, no se aplica solo en ningún ambiente).
+- **Prueba de aceptación real en `tyakxa-dev`**: archivo de prueba escrito,
+  pod borrado a mano (`kubectl delete pod`), archivo confirmado intacto en
+  el pod nuevo — así se validó el mecanismo antes de tocar producción.
+- **`torredigital-prod`**: rescate obligatorio antes del apply (sí tenía un
+  archivo real, `bank_statements/statement_2_file.pdf`, 469484 bytes) — con
+  `kubectl cp` antes y después, integridad verificada byte a byte.
+- **`adser-prod`**: nada que rescatar (ambiente sin archivos reales
+  todavía, ver bloqueo más abajo).
+
+### Fotos de producto de adser — conectadas a infra-k8s, no copiadas
+
+Tanya pidió explícitamente que las ~2461 fotos de producto legadas de adser
+(que ella sube y mantiene) **se queden** en su carpeta de siempre, y que una
+foto nueva también se guarde ahí — no copiarlas a la PVC nueva de este
+cliente.
+
+- **Ruta real confirmada** (el plan original tenía mal la ruta):
+  `/home/infra-k8s/imagenes/producto` en el nodo `k3s-master1` — **no**
+  `/home/infra-k8s/db/imagenes/producto` como se asumió al principio.
+  `/home/infra-k8s` es un repo git, propiedad de `root:root`, permisos
+  `755`. Confirmado con `find /home /root /srv /opt -maxdepth 5 -iname
+  "infra-k8s"` después de que la ruta asumida diera "No existe" incluso
+  estando parado ahí — la carpeta correcta se encontró por tanteo directo,
+  no asumida de un plan viejo.
+- Nombres de archivo reales: `<id_producto>.<ext>` (ej. `1000.png`), sin el
+  prefijo `p_` que usa la app para subidas nuevas — ambos conviven sin
+  choque en la misma carpeta.
+- El contenedor `backend` corre como **root** (`uid=0`, confirmado con
+  `kubectl exec ... -- id`) — no hizo falta ajustar permisos del host para
+  que la app pueda escribir ahí.
+- `k8s/overlays/adser-prod/kustomization.yaml` (commit `2c56e69`): patch al
+  Deployment `backend` agregando `nodeSelector:
+  kubernetes.io/hostname: k3s-master1` (obligatorio, no afinidad suave —
+  con afinidad suave el pod podría caer en otro nodo y la app fallaría en
+  silencio con `/uploads/products` vacío en vez de quedarse en `Pending` de
+  forma visible) + volumen `hostPath` (`type: Directory`) montado en
+  `/uploads/products`, **además** del PVC que sigue sirviendo
+  `/uploads/bank_statements`, `/uploads/cfdi_xml`, `/uploads/documents`.
+- Verificado en ambos sentidos con un archivo de prueba: escrito desde el
+  pod, visible de inmediato desde el host (`cat` directo en el VPS) y
+  viceversa — es la misma carpeta física, no una copia.
+- Riesgo aceptado explícitamente por Alan: `nodeSelector` obligatorio ata el
+  backend de `adser-prod` a `master1` de forma permanente. Impacto acotado
+  porque `master1` ya es el único punto de entrada de tráfico de todo el
+  clúster (`ingress-nginx` con `hostNetwork`) — si se cae, todos los
+  clientes pierden acceso igual, con o sin este pin. La única pérdida real
+  es flexibilidad de scheduling en escenarios de presión de recursos
+  específicos de `master1` (no de caída completa).
+
+### `product.path_imagen` — ✅ corregido también en adser-prod real (2026-09-07)
+
+`migrate_adser.py` copió `path_imagen` tal cual desde MySQL (ej.
+`/uploads/producto/2.png`, carpeta vieja en singular) pero la ruta que sirve
+la app es `/uploads/products/<filename>` (plural) — sin corregir esto, toda
+foto migrada sale rota en el frontend aunque el archivo exista.
+
+- Script: **`backend/scripts/fix_adser_product_image_paths.py`**
+  (commit `2d4fab2`) — no copia ni renombra archivos, solo hace `UPDATE
+  product SET path_imagen = 'uploads/products/<filename>'` para cada
+  producto cuyo id coincide con un archivo real en `--imagenes-dir`
+  (default `/uploads/products`). `--dry-run` con rollback explícito,
+  idempotente.
+- Probado antes contra datos reales de adser ya migrados a `tyakxa-dev`
+  (idempotencia verificada) y **ya corrido real contra `adser-prod`** una
+  vez resuelto el bloqueo de la migración de datos (ver sección de arriba):
+  2133 filas de `path_imagen` corregidas, 87 productos sin imagen
+  (esperado), 168 archivos huérfanos (esperado), idempotencia reconfirmada
+  con una segunda corrida.
+
+## Ambiente de desarrollo
+
+- **El host Windows no tiene Python ni el CLI de Docker corriendo por
+  defecto.** Para correr la suite de pytest o cualquier script de
+  `backend/scripts/`: iniciar Docker Desktop, `docker compose build backend`,
+  `docker compose up -d db rabbitmq backend`, luego
+  `docker compose exec -T backend pip install -q -r requirements-ci.txt`
+  (pytest no viene en la imagen normal) y
+  `docker compose exec -T backend bash -c "export TESTING=1 JWT_SECRET=test-secret JWT_SS=test-secret MFA_ISSUER='TYAKXA Test'; pytest -q"`.
+- El código de `backend/` está montado por volumen en el contenedor — los
+  cambios se reflejan sin rebuild, solo hace falta el `pip install` una vez
+  por contenedor nuevo.
+- Al correr el stack local, `uploads/cfdi_xml/invoice_*.xml` se regeneran
+  con timestamps nuevos (timbrado mock) — es ruido de git, no commitear
+  (`git restore` antes de cada commit).
+- Vite dentro de Docker en Windows a veces no detecta cambios en bind mounts
+  — si un edit a un componente React no se refleja, forzar
+  `docker compose restart frontend`.
+- `database/seed.sql` tiene un bug preexistente (no introducido por esta
+  sesión, confirmado igual en `initAlan` y `origin/initAngm`): el bloque
+  demo de restaurante corre en la inicialización de Postgres, antes de que
+  el servicio `db-migrate` cree las tablas que referencia — falla en un
+  volumen realmente limpio. Sigue sin arreglarse, marcado como hallazgo
+  pendiente, fuera de alcance de este trabajo.
+
+## Rama y despliegue
+
+- **`initAlan` es la rama de trabajo real y compartida** entre Alan, Ángel y
+  Tanya — no solo de despliegue. Dispara build automático y **despliegue
+  automático a `tyakxa-dev`** (diseñado a propósito como ambiente de bajo
+  riesgo). `torredigital-prod` y `adser-prod` son promoción manual — ahí
+  está el freno real de producción.
+- **Regla acordada:** una función que no convence del todo se trabaja local
+  o en una rama corta propia (probar con Docker Compose) y solo se sube a
+  `initAlan` cuando ya se está conforme.
+- **Antes de cada push:** `git fetch` + rebase — el bot de CI agrega su
+  propio commit `deploy(tyakxa-dev): actualizar a <sha>` sobre lo recién
+  pusheado casi siempre; es normal, no un conflicto real.
+- **`/home/alanp/tyakxa_tny/k8s/` en el VPS no es un repositorio git** — es
+  una copia plana que el pipeline solo mantiene al día para el tag de
+  imagen de `tyakxa-dev`. Cualquier cambio a un archivo bajo `k8s/` (no solo
+  el tag) se queda invisible en el clúster hasta copiarlo a mano (`scp` +
+  `kubectl apply -k`). Procedimiento exacto en `ARQUITECTURA_TYAKXA_TNY.md`
+  sección 7.1. Las deploy keys de GitHub están deshabilitadas por política
+  de la organización Tyakxa — no es una opción para arreglarlo de raíz.
+- Promoción manual de un overlay = editar los `newTag` en
+  `k8s/overlays/<cliente>/kustomization.yaml`, commitear, y en el VPS: `scp`
+  del `kustomization.yaml` actualizado + `kubectl apply -k` sobre el overlay
+  correspondiente + `kubectl rollout status` para confirmar.
+- `kubectl run` en la versión de kubectl del clúster (v1.34.1 cliente) NO
+  soporta `--requests`/`--limits` directos — usar `--overrides` con un
+  patch JSON inline (ver comando arriba). Siempre poner límites explícitos,
+  el clúster tiene 3.8GB RAM por nodo sin swap.
+
+## Plan de integración cotizador_demo → tyakxa_tny (trabajo aparte, en pausa)
+
+Guardado en `C:\Users\TDW2\.claude\plans\snoopy-riding-quilt.md` (no vive en
+este repo). 3 fases:
+
+- **Fase 1 — Blindaje prod/sandbox** ✅ hecha y desplegada (commit `e3644ae`).
+- **Fase 2 — Multiemisor + CSD por RFC** ✅ hecha y desplegada (commit
+  `8cc59eb`). `multiemisor_csd` se declaró como capacidad de `facturacion`
+  con licencia independiente (ver mecanismo de licencias abajo).
+- **Fase 3 — REP real (complemento de pago)** ✅ **completa: backend +
+  frontend, probada con timbrado real de punta a punta desde la UI,
+  2026-09-08.** Falta commitear/subir a `initAlan`. Ver detalle abajo.
+
+### Fase 3 — spike en vivo contra Facturama real (2026-09-08)
+
+**Cuenta usada:** `TorreDigital`, la compartida real de multiemisor (no una
+cuenta sandbox aislada — Alan confirmó que es la misma cuenta con la que
+distintos clientes emiten con sus propios RFC, como en `cotizador_demo`).
+Se probó exclusivamente contra `https://apisandbox.facturama.mx` (con
+`provider=facturama_multiemisor_sandbox`, que el blindaje de Fase 1 fuerza
+sin excepción — nunca toca producción real). CSD de prueba usado: el
+público del SAT (`EKU9003173C9`, Escuela Kemper Urgate), CSD real (no la
+FIEL) subido con éxito vía `POST /customer_supplier/<id>/csd`.
+
+**Timbrado real logrado, dos veces:** una factura tipo I (UUID
+`695bf3cb-25b5-41af-ba74-96bdb93d1048`... revisar bitácora de sesión para el
+detalle completo) y un **REP tipo P timbrado de verdad** con sello y firma
+del SAT — confirma el formato completo del payload, no solo lectura de
+documentación.
+
+**Hallazgos reales que la documentación de Facturama NO menciona:**
+- El nombre oficial del emisor para `EKU9003173C9` en el campo
+  `Issuer.Name`/`Receiver.Name` es **`"ESCUELA KEMPER URGATE"`, sin
+  `"SA DE CV"`** — con el nombre completo (el que trae el propio CSD),
+  Facturama rechaza con "el Nombre del emisor debe pertenecer al nombre
+  asociado al RFC registrado". Ojo si se reusa este RFC de prueba en otro
+  lado.
+- **Multiemisor exige `Folio` siempre**, en cualquier `CfdiType` (I o P) —
+  sin él, rechazo `"The Folio field is required"`.
+- Si el receptor es `XAXX010101000` "Público en general", **hace falta el
+  nodo `GlobalInformation`** (`Periodicity`/`Months`/`Year`) — aplica igual
+  a un REP tipo P, no solo a tipo I.
+- `operation_number` va en **`Complemento.Payments[].OperationNumber`**
+  (confirmado, aceptado tal cual).
+- Moneda extranjera en el REP necesita **dos** campos no documentados:
+  `Complemento.Payments[].ExchangeRate` (obligatorio si
+  `Payments.Currency != MXN`) y `RelatedDocuments[].EquivalenceDocRel`
+  (opcional). La reconciliación exacta de montos (`ImpPagado` dentro del
+  límite permitido cuando hay conversión de moneda) quedó sin resolver del
+  todo — es matemática de negocio para cuando se escriba
+  `payment_complement_service.py`, no un problema de formato.
+
+**Bug real encontrado y ya corregido, fuera del alcance de la Fase 3 pero
+grave** (commit pendiente, ya en el árbol de trabajo): `stamping.py` mandaba
+el campo `"ExchangeRate"` para moneda extranjera en el CFDI tipo I; Facturama
+exige **`"CurrencyExchangeRate"`**. Con el nombre viejo, **ninguna factura en
+moneda extranjera había timbrado nunca de verdad** contra Facturama (los
+tests nunca lo detectaron porque no hacen red real, solo verifican el body
+armado). Corregido en `stamping.py:250-254`, test actualizado en
+`test_stamping.py`, 29/29 en verde. Esto afecta también `torredigital-prod`
+en producción real — vale la pena confirmar si algún cliente real ya intentó
+timbrar en moneda extranjera y falló en silencio.
+
+**Segundo bug real encontrado igual (mismo motivo, mismo alcance de
+producción real):** `build_request_body()` (tipo I) nunca armaba el nodo
+`GlobalInformation`, obligatorio cuando el receptor es el RFC genérico
+`XAXX010101000` (público en general) — confirmado que Facturama rechaza
+*cualquier* comprobante a ese receptor sin ese nodo, sin importar lo demás.
+Corregido en `stamping.py` (mismo bloque que `CurrencyExchangeRate`), test
+nuevo `test_a_generic_public_receiver_gets_a_global_information_node`.
+También afecta a cualquier cliente real que facture a público en general
+(ventas de mostrador sin RFC del comprador) — mismo consejo: confirmar si ya
+pasó en producción.
+
+**Ya investigado y confirmado antes del spike** (sigue vigente):
+- El endpoint de Facturama es el mismo `self.CFDIS_PATH` que ya usa `stamp()`
+  (`/3/cfdis` sandbox, `/api-lite/3/cfdis` multiemisor) — solo cambia la
+  forma del body según `CfdiType`.
+- Formato base del payload (sin `Conceptos`/`Items`, sin
+  `PaymentMethod`/`PaymentForm`/`Currency` a nivel raíz, `Receiver.CfdiUse`
+  debe ser `"CP01"`, `RelatedDocuments[]` lleva `TaxObject`) — confirmado
+  ahora con timbrado real, no solo con la guía de Facturama.
+- `build_payment_complement(payment_id, user_data)` ya existe en
+  `backend/app/services/invoice_payment_service.py:249-290` — arma el
+  payload (payment + related_document) pero no timbra ni persiste nada.
+- `InvoicePayment` (`backend/app/models/invoice_payment.py`) no tiene
+  columnas propias de folio fiscal — esos datos van en la `Invoice` tipo P
+  nueva, vía `id_payment_invoice` (línea 53 del modelo, ya existe el campo).
+- La validación de forma de pago ≠ '99' en `register_payment()`
+  **ya está implementada** (`invoice_payment_service.py:140-146`) — el plan
+  original decía que faltaba, no es cierto.
+- **`cfdi_validation.py` YA SE CORRIGIÓ** (revisar `git status`, puede
+  seguir sin commitear): `_validate_concepts` ya no exige `Conceptos` cuando
+  `TipoDeComprobante == "P"`. `_validate_totals`, `_validate_header` y
+  `_validate_related` ya son compatibles con un CFDI sin partidas y
+  subtotal/total en 0, sin necesitar cambios.
+- `parse_cfdi()` (`cfdi_xml.py`) ya tolera un XML sin `Concepto`.
+- Patrón de transacción a reusar: idéntico a `stamp_invoice()`
+  (`stamping.py:576-646`) — todo dentro de un solo `transaction_context()`,
+  crear la fila nueva + `db.flush()` antes de llamar al proveedor, dejar que
+  cualquier excepción se propague para el rollback. Un resultado
+  "uncertain" (timeout) NO lanza excepción — decidir cómo manejar ese caso
+  para el REP.
+- Campos NOT NULL de `Invoice` a llenar en la fila nueva (ver
+  `manual_invoice_service.py:228-268`): `id_customer_supplier`,
+  `id_issuer_customer_supplier`, `tax_certification_supplier`, `id_status`,
+  `created_by`, `apply_tax`, `manual_capture`, `tax_rate`. Para el REP:
+  `apply_tax=False`, `tax_rate=Decimal(0)`, `manual_capture=False`,
+  `tipo_de_comprobante="P"` (vía `normalize_cfdi_type("PAGO")`), `uso_cfdi`
+  forzado a `"CP01"` directo (no pasar por `normalize_cfdi_use()`, esa
+  función solo sabe `""`/`"P01"` → `"G03"`).
+
+**Implementado y probado con timbrado real 2026-09-08 (backend completo):**
+1. ✅ `backend/app/services/payment_complement_service.py` (archivo nuevo) —
+   `stamp_payment_complement(payment_id, idempotency_key, user_data,
+   provider=None)`. Mismo patrón transaccional que `stamp_invoice()`, con
+   una diferencia deliberada: un rechazo definitivo del PAC (`"rejected"`)
+   **sí lanza excepción y revierte todo** (la factura tipo P se crea
+   específicamente para el intento, a diferencia de `stamp_invoice` donde la
+   factura ya existía antes) — un resultado `"uncertain"` (timeout) **no**
+   revierte, se deja persistido para reconciliar después, igual que
+   `stamp_invoice`.
+2. ✅ `StampingProvider.stamp_payment_complement()` (rechazo por default) +
+   `FakeStampingProvider.stamp_payment_complement()` (para tests) +
+   implementación real en `FacturamaSandboxProvider` (heredada por
+   `FacturamaMultiemisorProvider`, que solo agrega el nodo `Issuer` y quita
+   `NameId`, igual que ya hace con `build_request_body`). `_post_cfdi()`
+   extraído de `stamp()` como helper común.
+3. ✅ `FacturamaSandboxProvider.build_payment_complement_request_body(payload)`
+   — el payload que le pasa `payment_complement_service` ahora sí trae
+   `issuer`/`receiver` (agregado a `_complement_payload()` en
+   `invoice_payment_service.py`, que también sirve al preview de solo
+   lectura `build_payment_complement()`). Pendiente sin resolver: la
+   reconciliación exacta de montos cuando el pago es en moneda distinta a
+   MXN (`ImpPagado` fuera del límite permitido en la prueba en vivo) — es
+   matemática de negocio, no un problema de formato.
+4. ✅ Endpoint `POST /stamping/invoices/payments/<id_payment>/stamp`
+   (`routes/stamping.py`).
+5. ✅ Tests en `backend/tests/test_services/test_payment_complement_service.py`
+   (7 casos: éxito, rollback completo en rechazo, "uncertain" persiste sin
+   asentar, idempotencia, factura original sin timbrar, abono ya timbrado,
+   forma de pago '99' como defensa en profundidad).
+6. ✅ **Frontend hecho y probado en navegador real** (no solo backend):
+   `getPaymentComplement()` (preview) ahora también trae `status` y
+   `stamped.{folio_fiscal,certification_date}` cuando ya se timbró
+   (`_complement_payload` + `build_payment_complement()` en
+   `invoice_payment_service.py`). `InvoiceFiscalPanel.jsx`: nueva función
+   `timbrarComplemento()` + `stampPaymentComplement()` en `api/index.js` →
+   `POST /stamping/invoices/payments/<id>/stamp`. El panel muestra un botón
+   real **"Timbrar complemento"** mientras `status !== "timbrado"`, y una vez
+   timbrado muestra el folio fiscal/UUID real del REP (no el de la factura
+   original, que sigue apareciendo aparte como "Documento relacionado").
+   Texto `fiscal.payment_registered` corregido a solo "Abono registrado."
+   (ya no promete un complemento que todavía no existe). Probado en
+   navegador real contra Facturama: timbrado desde el botón, UUID real
+   `115040b0-8d06-4e6d-9e9b-58d7fb4a2746`.
+
+**Prueba real de punta a punta ya hecha** (sandbox real de Facturama, cuenta
+multiemisor `TorreDigital`, CSD de prueba `EKU9003173C9` ya registrado):
+factura tipo I creada y timbrada por la API real (`POST /invoice/manual` +
+`POST /stamping/invoices/<id>`, UUID `ad0e2f76-a72d-422e-9440-53627a874bd3`),
+abono registrado (`POST /invoice/6/payments`), REP timbrado real por el
+endpoint nuevo (`POST /stamping/invoices/payments/1/stamp`, UUID
+`9a501980-fcc3-4a8c-b4aa-671254200471`) — verificado en la base que la
+factura tipo P quedó en `invoice_status='timbrada'` con su propio
+`folio_fiscal`, y el abono en `status='timbrado'` con
+`id_payment_invoice` apuntando a ella. Suite completa: 1086+ pasan, 0
+fallas.
+
+## Mecanismo de licencia por módulo — en pausa para rediseño
+
+Mecanismo general (`LICENSED_MODULES` por cliente en el Secret de k8s,
+leído por el initContainer, filtrando qué módulos de `registry.py` se
+siembran) — commit `0f37c01`, desplegado (fail-open: vacío = todos los
+módulos, no cambia nada en los 3 ambientes reales hoy).
+
+**Tanya cuestionó el diseño**: un Secret de k8s no está cifrado y cualquiera
+con acceso al clúster lo edita directo — frágil como control de licencia,
+sin auditoría ni dato de negocio. Propone una API central dentro de la
+instancia de Torre Digital que las demás instalaciones consulten,
+permitiendo además KPIs de suscripción. Rediseño grande, sin empezar.
+
+**Decisión de Alan: terminar primero la migración de adser (y, después,
+retomar la Fase 3 de facturación), tratar el rediseño de licencias
+después.** No se ha tocado nada del mecanismo actual.
+
+**Cuidado:** `multiemisor_csd` (Fase 2) depende del campo
+`licencia_independiente` de `Capacidad` en `registry.py` — si se
+rediseña/revierte el mecanismo de licencias, no romper esa dependencia a
+ciegas.

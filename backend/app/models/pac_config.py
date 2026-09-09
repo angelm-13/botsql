@@ -17,7 +17,6 @@ class PacConfig(Base):
     facturama_password_cipher: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     facturama_password_nonce: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     facturama_base_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    expedition_place: Mapped[str | None] = mapped_column(String(5), nullable=True)
     name_id: Mapped[str] = mapped_column(String(10), nullable=False, default="1", server_default="1")
     last_update_date: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
 
@@ -26,7 +25,6 @@ class PacConfig(Base):
             "provider": self.provider or "fake",
             "facturama_username": self.facturama_username or "",
             "facturama_base_url": self.facturama_base_url or "",
-            "expedition_place": self.expedition_place or "",
             "name_id": self.name_id or "1",
             "has_password": bool(self.facturama_password_cipher and self.facturama_password_nonce),
             "last_update_date": self.last_update_date.isoformat() if self.last_update_date else None,

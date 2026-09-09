@@ -190,6 +190,14 @@ MODULOS = (
         "rh", "Recursos humanos", "hr", 700,
         ("payroll_concept", "payroll_detail", "payroll_movement", "payroll_period"),
     ),
+    # Sus pantallas no tienen apartado propio en el menu lateral: viven dentro
+    # del Home/Dashboard actual (ruta "/"), que ya es de acceso libre para
+    # cualquier usuario autenticado. Por eso ninguna de sus cuatro entidades
+    # tiene entrada en MENU, y quedan sembradas como "hidden".
+    Modulo(
+        "kpis", "KPIs", "bar-chart", 750,
+        ("kpi_definition", "nm_permission_kpi", "kpi_dashboard", "kpi_dashboard_widget"),
+    ),
     # --- infraestructura, no son submodulos de negocio -------------------
     Modulo(
         "configuracion", "Configuracion", "settings", 800,
@@ -321,10 +329,25 @@ ROLES = (
     # de verdad es una decision de negocio que todavia no se tomo. Ampliarlo es
     # agregar la clave a los roles que correspondan; dejarlo abierto era lo que
     # hacia que un mesero pudiera leer expedientes de empleados.
+    # `kpis`, igual que `documentos`/`laboratorio` arriba: solo Administrator
+    # por ahora, y que otro rol lo reciba -y con que bits- es una decision de
+    # negocio pendiente, no tecnica.
+    #
+    # Los bits van parejos por modulo (`Rol.modulos` es un solo valor para las
+    # cuatro entidades, no uno por entidad), asi que aqui las cuatro quedan en
+    # TOTAL, igual que el resto de los modulos de Administrator. El criterio
+    # que SI debe aplicarse entidad por entidad cuando se decida dar `kpis` a
+    # un rol que no sea Administrator:
+    #   * `kpi_definition` -- catalogo de solo lectura: CONSULTA alcanza para
+    #     cualquiera con el modulo, nadie crea KPIs a mano.
+    #   * `nm_permission_kpi` -- lo administra solo quien reparte permisos,
+    #     igual que ya pasa con `nm_field_permission`: TOTAL.
+    #   * `kpi_dashboard` / `kpi_dashboard_widget` -- datos propios del
+    #     usuario (sus tableros): TOTAL.
     Rol(1, "Administrator", {
         "facturacion": TOTAL, "inventario": TOTAL, "operaciones": TOTAL,
         "logistica": TOTAL, "restaurante": TOTAL, "pos": TOTAL, "crm": TOTAL, "rh": TOTAL,
-        "documentos": TOTAL, "laboratorio": TOTAL,
+        "documentos": TOTAL, "laboratorio": TOTAL, "kpis": TOTAL,
         "configuracion": TOTAL, "seguridad": TOTAL,
     }, [c.clave for c in CAPACIDADES]),
 
