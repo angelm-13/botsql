@@ -42,13 +42,22 @@
 --     2  Supervisor           29 filas
 --     3  Gerente              72 filas
 --     4  Jefe de taller       29 filas
---     5  Almacenista          19 filas
---     6  Jefe de almacen      41 filas
+--     5  Almacenista          20 filas
+--     6  Jefe de almacen      42 filas
 --
 -- Y las capacidades del flujo de vales, que no las tenia ningun rol salvo
 -- Administrator: `warehouse_voucher` y `warehouse_voucher_confirm` para los dos
 -- roles de almacen, `warehouse_prevoucher` para el supervisor -que pide
 -- material pero no lo surte-.
+--
+-- Correccion 2026-09-09, probando el flujo real de vales con un usuario
+-- Almacenista de prueba: tenia `warehouse_voucher` pero no lectura de
+-- `incident_type` -catalogo de "tipo de vale" que reusa la pantalla de vales
+-- de Ángel-, asi que la pantalla de Vales de almacen nunca podia poblar el
+-- selector de tipo y "Levantar vale" se quedaba deshabilitado para siempre.
+-- Se agrega `incident_type` (solo lectura, oculto -no es un catalogo que
+-- Almacenista deba administrar, solo consultar) a Almacenista y Jefe de
+-- almacen, los dos roles con `warehouse_voucher`.
 
 BEGIN;
 
@@ -223,6 +232,7 @@ INSERT INTO matriz_objetivo VALUES
     ('Jefe de taller', 'unit', 2, 'sidebar', 'Inventario', 'inventory', 'Unidades', 216),
     ('Almacenista', 'brand', 7, 'sidebar', 'Inventario', 'inventory', 'Marcas', 214),
     ('Almacenista', 'department', 2, 'sidebar', 'Configuracion', 'settings', 'Departamentos', 830),
+    ('Almacenista', 'incident_type', 2, 'hidden', NULL, NULL, NULL, 330),
     ('Almacenista', 'inventory_status', 7, 'sidebar', 'Inventario', 'inventory', 'Estado de inventario', 270),
     ('Almacenista', 'level', 2, 'sidebar', 'Configuracion', 'settings', 'Niveles', 850),
     ('Almacenista', 'location', 7, 'sidebar', 'Inventario', 'inventory', 'Ubicaciones', 220),
@@ -242,6 +252,7 @@ INSERT INTO matriz_objetivo VALUES
     ('Almacenista', 'warehouse_voucher_confirm', 2, 'hidden', NULL, NULL, NULL, 290),
     ('Jefe de almacen', 'brand', 15, 'sidebar', 'Inventario', 'inventory', 'Marcas', 214),
     ('Jefe de almacen', 'department', 2, 'sidebar', 'Configuracion', 'settings', 'Departamentos', 830),
+    ('Jefe de almacen', 'incident_type', 2, 'hidden', NULL, NULL, NULL, 330),
     ('Jefe de almacen', 'inventory_adjustment', 2, 'hidden', NULL, NULL, NULL, 290),
     ('Jefe de almacen', 'inventory_status', 15, 'sidebar', 'Inventario', 'inventory', 'Estado de inventario', 270),
     ('Jefe de almacen', 'level', 2, 'sidebar', 'Configuracion', 'settings', 'Niveles', 850),
