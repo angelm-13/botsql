@@ -176,10 +176,16 @@ export default function ProjectManagementPage() {
   useEffect(() => {
     async function initialize() {
       try {
+        // Cada llamada se atrapa por separado: un rol como Supervisor no
+        // tiene lectura de customer_supplier ni de user (a proposito, ver
+        // la matriz de roles), y antes un solo 403 ahi tumbaba el
+        // Promise.all completo -incluido getMyPermissions()-, dejando
+        // `permissions` vacio para siempre y el boton de crear invisible
+        // aunque el permiso real del rol si alcanzara.
         const [permissionPayload, customerPayload, userPayload, catalogPayload] = await Promise.all([
-          privileged ? Promise.resolve({ entity_permissions: [] }) : getMyPermissions(),
-          getAllCustomerSupplier({ page: 1, per_page: 100 }),
-          getAllUser({ page: 1, per_page: 100 }),
+          privileged ? Promise.resolve({ entity_permissions: [] }) : getMyPermissions().catch(() => ({ entity_permissions: [] })),
+          getAllCustomerSupplier({ page: 1, per_page: 100 }).catch(() => ({ items: [] })),
+          getAllUser({ page: 1, per_page: 100 }).catch(() => ({ items: [] })),
           // Si el catalogo no llega, `statusCodes` cae en STATUS_ORDER y los
           // cambios de estatus quedan sin ofrecer, no ofrecidos a ciegas: el
           // servidor los rechazaria y el mensaje seria peor.
