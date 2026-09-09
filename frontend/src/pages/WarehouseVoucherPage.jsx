@@ -9,7 +9,7 @@ import {
   createWarehouseVoucher,
   getAllIncidentType,
   getAllLocation,
-  getAllUser,
+  getUserOptions,
   getOverdueVoucherLines,
   getWarehouseVoucher,
   listWarehouseVouchers,
@@ -95,12 +95,12 @@ export default function WarehouseVoucherPage() {
         getOverdueVoucherLines().catch(() => ({ items: [] })),
         getAllIncidentType({ per_page: 100 }).catch(() => ({ items: [] })),
         getAllLocation({ per_page: 200 }).catch(() => ({ items: [] })),
-        getAllUser({ per_page: 200 }).catch(() => ({ items: [] })),
+        getUserOptions().catch(() => []),
       ]);
       setVencidos(venc?.items || []);
       setTipos(tip?.items || []);
       setUbicaciones(ubi?.items || []);
-      setUsuarios(usr?.items || []);
+      setUsuarios(Array.isArray(usr) ? usr : usr?.items || []);
     } catch (e) {
       decirError(e, "No se pudo cargar la pantalla de vales.");
     } finally {
