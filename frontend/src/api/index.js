@@ -419,14 +419,8 @@ export const deleteLocationType = (id) => request(`/location_type/${id}`, { meth
 
 // --- tipos de material -----------------------------------------------------
 // El tercer eje del material, junto a la familia y la marca.
-export const getAllMaterialType = (params = {}) => request("/material_type/", { params });
-export const getMaterialType = (id) => request(`/material_type/${id}`);
-export const createMaterialType = (payload) => request("/material_type/", { method: "POST", body: payload });
-export const updateMaterialType = (id, payload) => request(`/material_type/${id}`, { method: "PUT", body: payload });
-export const deleteMaterialType = (id) => request(`/material_type/${id}`, { method: "DELETE" });
 // Los tipos DE UNA FAMILIA: es lo que necesita el alta de un material, porque
 // ofrecer los de todas permite capturar "Cemento de tipo De cruz".
-export const getMaterialTypesByFamily = (idFamily) => request(`/material_type/by-family/${idFamily}`);
 
 // --- vales de almacen ------------------------------------------------------
 export const createWarehouseVoucher = (payload) => request("/vouchers", { method: "POST", body: payload });

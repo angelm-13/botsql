@@ -368,3 +368,11 @@
 /* Un renglon vencido se marca por si mismo: en un vale con seis cosas, solo
    una puede estar vencida y el aviso de arriba no dice cual. */
 .trace-prestado li.vencido { box-shadow: inset 3px 0 0 #9f1239; }
+
+/* El tipo, en la miga de la clasificacion. Se distingue de la familia y de la
+   marca porque no es un enlace: no hay filtro por tipo mientras ningun material
+   lo tenga puesto -603 materiales, 0 con tipo hasta ahora-. */
+.trace-tipo {
+  padding: 1px 8px; border-radius: 999px;
+  background: #eef3f1; color: #1b7a60; font-size: 12px; font-weight: 600;
+}

@@ -966,7 +966,8 @@
       "id_product_family": "Id Product Family",
       "id_unit": "Id Unit",
       "last_update_date": "Last Update Date",
-      "material_description": "Material Description"
+      "material_description": "Material Description",
+      "id_material_type": "Type"
     },
     "material_component": {
       "created_by": "Created By",
@@ -4112,8 +4113,8 @@
   },
   "material_type": {
     "eyebrow": "Inventory",
-    "title": "Families and types",
-    "subtitle": "The two levels of the classification: the family groups —screwdrivers, cement— and the type tells them apart within it —flat, phillips, bagged, bulk—.",
+    "title": "Product families",
+    "subtitle": "The group each material belongs to. The material's own description already carries the type and the size —«HELICAL DRILL BIT 3/4»— so this only groups.",
     "add": "Add type",
     "placeholder": "Type name (for example: Flat)",
     "one_type": "1 type",
@@ -4217,5 +4218,10 @@
     "classification": "Classification",
     "see_families": "see families and types",
     "classification_help": "The family groups, the type tells them apart within it, and the material is the concrete thing. If one is missing, add it in Families and types."
+  },
+  "material": {
+    "pick_family_first": "Pick the family first",
+    "family_has_no_types": "That family has no types",
+    "declare_types": "A family's types are declared in Families and types."
   }
 }

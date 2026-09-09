@@ -50,6 +50,7 @@ from app.models.inventory_stock import InventoryStock
 from app.models.invoice import Invoice
 from app.models.location import Location
 from app.models.location_type import LocationType
+from app.models.material_type import MaterialType
 from app.models.nm_incident_product import NmIncidentProduct
 from app.models.product import Product
 from app.models.user import User
@@ -633,19 +634,29 @@ def _clasificacion_en_lote(db, productos) -> dict[int, dict]:
                 ProductFamily.id_product_family, ProductFamily.product_family_description,
                 Brand.id_brand, Brand.brand_description,
                 Unit.id_unit, Unit.unit_name,
+                # El tipo. Faltaba, asi que la clasificacion se leia
+                # "familia > marca > material" y el segundo nivel -el que
+                # distingue un desarmador plano de uno de cruz- no aparecia en
+                # ningun sitio.
+                MaterialType.id_material_type,
+                MaterialType.material_type_description,
             )
             .select_from(Material)
             .outerjoin(ProductFamily,
                        ProductFamily.id_product_family == Material.id_product_family)
             .outerjoin(Brand, Brand.id_brand == Material.id_brand)
             .outerjoin(Unit, Unit.id_unit == Material.id_unit)
+            .outerjoin(MaterialType,
+                       MaterialType.id_material_type == Material.id_material_type)
             .where(Material.id_material.in_(list(ids_materiales)))
         ).all()
         for (id_material, material, id_familia, familia,
-             id_marca, marca, id_unidad, unidad) in filas:
+             id_marca, marca, id_unidad, unidad,
+             id_tipo, tipo) in filas:
             por_material[id_material] = {
                 "id_material": id_material, "material": material,
                 "id_product_family": id_familia, "family": familia,
+                "id_material_type": id_tipo, "material_type": tipo,
                 "id_brand": id_marca, "brand": marca,
                 "id_unit": id_unidad, "unit": unidad,
             }
@@ -670,6 +681,7 @@ def _clasificacion_en_lote(db, productos) -> dict[int, dict]:
 
     VACIA = {
         "id_material": None, "material": None,
+        "id_material_type": None, "material_type": None,
         "id_product_family": None, "family": None,
         "id_brand": None, "brand": None,
         "id_unit": None, "unit": None,

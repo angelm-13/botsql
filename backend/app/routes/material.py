@@ -5,7 +5,7 @@ from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
 
 bp_material = Blueprint('material', __name__, url_prefix='/material')
-ALLOWED_FIELDS = ['id_material', 'material_description', 'id_unit', 'id_brand', 'id_product_family', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
+ALLOWED_FIELDS = ['id_material', 'material_description', 'id_unit', 'id_brand', 'id_product_family', 'id_material_type', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
 
 TECHNICAL_RESPONSE_FIELDS = {'id_material'}
 FIELD_READ_BIT = 2

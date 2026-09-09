@@ -250,10 +250,10 @@ export default function App() {
           {/* Los dos niveles de la clasificacion, en una pantalla. Habia dos
               entradas de menu y leidas seguidas parecen lo mismo dos veces; el
               tipo cuelga de la familia y no se puede leer sin ella. Las dos
-              direcciones siguen respondiendo -las que ya estaban guardadas no
-              se rompen- y las dos abren la misma pantalla. */}
+              El TIPO se retiro del flujo: en estos datos la descripcion del
+              material ya lo trae -"BROCA HELICOIDAL 3/4"-, asi que un nivel
+              aparte obliga a capturar dos veces lo mismo. */}
           <Route path="/product_family" element={<RoleAccessRoute entityName="product_family"><MaterialTypePage /></RoleAccessRoute>} />
-          <Route path="/material_type" element={<RoleAccessRoute entityName="material_type"><MaterialTypePage /></RoleAccessRoute>} />
           {/* La tabla cruda de familias, para quien la necesite. Sin entrada de
               menu: es la vista de mantenimiento, no la de trabajo. */}
           <Route path="/product_family/table" element={<RoleAccessRoute entityName="product_family"><ProductFamilyPage /></RoleAccessRoute>} />

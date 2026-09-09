@@ -424,14 +424,6 @@ export default function InventoryTracePage() {
           etiqueta={t("trace.by_warehouse", "Por ubicación")}
           todas={t("trace.any_warehouse", "Cualquier ubicación")}
         />
-        <select value={filtros.asset_status}
-                onChange={(e) => cambiarFiltro("asset_status", e.target.value)}
-                aria-label={t("trace.by_status", "Por estado de la pieza")}>
-          <option value="">{t("trace.any_status", "Cualquier estado")}</option>
-          {Object.keys(TONO_DE_ESTADO).map((estado) => (
-            <option key={estado} value={estado}>{t(`assets.status_${estado}`, estado)}</option>
-          ))}
-        </select>
       </div>
 
       {/* Cuantos hay y con que se esta filtrando. El numero va aqui y no en la
@@ -551,6 +543,19 @@ export default function InventoryTracePage() {
                                     String(it.classification.id_product_family))}>
                             {it.classification.family}
                           </button>
+                        )}
+                        {/* El tipo, detras de la familia porque cuelga de
+                            ella: es el nivel que distingue un desarmador plano
+                            de uno de cruz. Faltaba en la miga entera, asi que
+                            se leia "familia > marca > material" y el segundo
+                            nivel no aparecia en ningun sitio. */}
+                        {it.classification.material_type && (
+                          <>
+                            <span className="trace-sep">›</span>
+                            <span className="trace-tipo">
+                              {it.classification.material_type}
+                            </span>
+                          </>
                         )}
                         {it.classification.brand && (
                           <>

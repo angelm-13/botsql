@@ -966,7 +966,8 @@
       "id_product_family": "ID Familia de producto",
       "id_unit": "Unidad de medida",
       "last_update_date": "Fecha de última actualización",
-      "material_description": "Material Descripción"
+      "material_description": "Material Descripción",
+      "id_material_type": "Tipo"
     },
     "material_component": {
       "created_by": "Creado por",
@@ -4175,8 +4176,8 @@
   },
   "material_type": {
     "eyebrow": "Inventario",
-    "title": "Familias y tipos",
-    "subtitle": "Los dos niveles de la clasificación: la familia agrupa —desarmadores, cemento— y el tipo distingue dentro de ella —plano, de cruz, en saco, a granel—.",
+    "title": "Familias de producto",
+    "subtitle": "El grupo al que pertenece cada material. La descripción del material ya trae el tipo y la medida —«BROCA HELICOIDAL 3/4»—, así que aquí solo se agrupa.",
     "add": "Agregar tipo",
     "placeholder": "Nombre del tipo (por ejemplo: Plano)",
     "one_type": "1 tipo",
@@ -4280,5 +4281,10 @@
     "classification": "Clasificación",
     "see_families": "ver familias y tipos",
     "classification_help": "La familia agrupa, el tipo distingue dentro de ella y el material es la cosa concreta. Si falta alguna, se da de alta en Familias y tipos."
+  },
+  "material": {
+    "pick_family_first": "Elige primero la familia",
+    "family_has_no_types": "Esa familia no tiene tipos",
+    "declare_types": "Los tipos de una familia se declaran en Familias y tipos."
   }
 }

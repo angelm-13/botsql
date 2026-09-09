@@ -37,3 +37,7 @@
 @media (max-width: 620px) {
   .paginacion { justify-content: center; }
 }
+
+/* Cuando la familia elegida no tiene tipos declarados, se dice donde se
+   declaran en lugar de dejar un desplegable vacio sin explicacion. */
+.material-sin-tipos { font-size: 11.5px; font-weight: 400; }

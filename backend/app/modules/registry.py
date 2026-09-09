@@ -119,7 +119,7 @@ MODULOS = (
         (
             "product", "material", "material_component", "location",
             "location_type", "movement", "inventory_status", "brand", "unit",
-            "product_family", "material_type", "material_attribute",
+            "product_family", "material_attribute",
         ),
         almacen=("location", "inventory_stock", "inventory_ledger"),
     ),
@@ -415,11 +415,13 @@ MENU = {
     # Una sola entrada para los DOS NIVELES de la clasificacion. Habia dos
     # -"Familias de producto" y "Tipos de material"- y leidas en el menu una
     # detras de la otra parecen la misma cosa dos veces. No lo son: el tipo
-    # cuelga de la familia -`material_type.id_product_family`- y no existe
-    # suelto, porque "Plano" no significa nada por si mismo, es un tipo DE
-    # desarmador. Las dos tablas siguen siendo dos; lo que se junto es la
-    # pantalla, que es donde estaba la confusion.
-    "product_family": ("Familias y tipos", 12),
+    # El TIPO se retiro del flujo: en estos datos la descripcion del material ya
+    # lo trae -"BROCA HELICOIDAL 3/4", "DADO 3/16"-, asi que un nivel aparte no
+    # distingue nada que la descripcion no distinga y obliga a capturar dos veces
+    # lo mismo. El sistema anterior tampoco lo tenia, y tras la carga eran 603
+    # materiales con cero tipos. La tabla se queda -hay 4 capturados a mano- pero
+    # nada la lee.
+    "product_family": ("Familias de producto", 12),
     "brand": ("Marcas", 14),
     "unit": ("Unidades", 16),
     "location": ("Ubicaciones", 20),

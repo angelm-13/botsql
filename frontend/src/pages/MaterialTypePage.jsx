@@ -5,13 +5,9 @@ import {
   Ruler, Trash2, X,
 } from "lucide-react";
 import {
-  createMaterialType,
   createProductFamily,
-  deleteMaterialType,
   deleteProductFamily,
-  getAllMaterialType,
   getAllProductFamily,
-  updateMaterialType,
   updateProductFamily,
 } from "../api";
 import FamilyAttributes from "../components/FamilyAttributes.jsx";
@@ -64,12 +60,8 @@ import "../styles/material-type.css";
 export default function MaterialTypePage() {
   const { t } = useI18n();
   const [familias, setFamilias] = useState([]);
-  const [tipos, setTipos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
-  // El formulario abierto: { idFamilia, idTipo, descripcion }. `idTipo` nulo
-  // significa alta; con valor, edicion.
-  const [formulario, setFormulario] = useState(null);
   // El formulario de la FAMILIA: { idFamilia, descripcion, tipo }. `idFamilia`
   // nulo es alta. Va aparte del de tipos para que abrir uno cierre el otro sin
   // ambiguedad: son dos niveles distintos y editarlos a la vez confunde.
@@ -89,12 +81,8 @@ export default function MaterialTypePage() {
     setCargando(true);
     setError("");
     try {
-      const [respFamilias, respTipos] = await Promise.all([
-        getAllProductFamily({ per_page: 200 }),
-        getAllMaterialType({ per_page: 500 }),
-      ]);
+      const respFamilias = await getAllProductFamily({ per_page: 200 });
       setFamilias(respFamilias?.items || []);
-      setTipos(respTipos?.items || []);
     } catch (e) {
       setError(e?.payload?.error_key
         ? traducir.current(e.payload.error_key)
@@ -105,33 +93,6 @@ export default function MaterialTypePage() {
   }, []);
 
   useEffect(() => { cargar(); }, [cargar]);
-
-  const guardar = async (evento) => {
-    evento.preventDefault();
-    const descripcion = (formulario.descripcion || "").trim();
-    if (!descripcion) return;
-
-    setGuardando(true);
-    setError("");
-    try {
-      const cuerpo = {
-        id_product_family: formulario.idFamilia,
-        material_type_description: descripcion,
-      };
-      if (formulario.idTipo) await updateMaterialType(formulario.idTipo, cuerpo);
-      else await createMaterialType(cuerpo);
-      setFormulario(null);
-      await cargar();
-    } catch (e) {
-      // El error del servidor dice cual es el tipo repetido; se muestra tal
-      // cual en vez de "no se pudo guardar", que no dice que corregir.
-      setError(e?.payload?.error_key
-        ? traducir.current(e.payload.error_key)
-        : traducir.current("errors.request_failed", "No se pudo guardar."));
-    } finally {
-      setGuardando(false);
-    }
-  };
 
   const guardarFamilia = async (evento) => {
     evento.preventDefault();
@@ -163,16 +124,6 @@ export default function MaterialTypePage() {
 
   const borrarFamilia = async (familia) => {
     setError("");
-    // Borrar la familia dejaria sus tipos colgando de algo que ya no esta, y
-    // esos tipos siguen puestos en materiales. Se avisa antes en lugar de
-    // dejar que el servidor conteste `delete_has_related_records` a secas.
-    const propios = porFamilia(familia.id_product_family);
-    if (propios.length > 0) {
-      setError(traducir.current(
-        "material_type.family_has_types",
-        "Esa familia tiene tipos dentro. Quita primero los tipos: si no, quedarían apuntando a una familia que ya no existe."));
-      return;
-    }
     try {
       await deleteProductFamily(familia.id_product_family);
       await cargar();
@@ -183,35 +134,12 @@ export default function MaterialTypePage() {
     }
   };
 
-  const borrar = async (tipo) => {
-    setError("");
-    try {
-      await deleteMaterialType(tipo.id_material_type);
-      await cargar();
-    } catch (e) {
-      // El caso normal: hay materiales usando ese tipo. El servidor lo dice
-      // con `delete_has_related_records` y eso es informacion, no un fallo.
-      setError(e?.payload?.error_key
-        ? traducir.current(e.payload.error_key)
-        : traducir.current("errors.request_failed", "No se pudo eliminar."));
-    }
-  };
-
   const verCaracteristicas = (id) => setConCaracteristicas((antes) => {
     const siguiente = new Set(antes);
     if (siguiente.has(id)) siguiente.delete(id); else siguiente.add(id);
     return siguiente;
   });
 
-  const porFamilia = (idFamilia) => tipos
-    .filter((x) => Number(x.id_product_family) === Number(idFamilia))
-    .sort((a, b) => String(a.material_type_description || "")
-      .localeCompare(String(b.material_type_description || "")));
-
-  // Tipos cuya familia ya no esta en la lista. No deberia pasar, pero si pasa
-  // hay que verlos: un tipo invisible sigue apareciendo en los materiales.
-  const idsDeFamilias = new Set(familias.map((f) => Number(f.id_product_family)));
-  const huerfanos = tipos.filter((x) => !idsDeFamilias.has(Number(x.id_product_family)));
 
   return (
     <section className="page mt-page">
@@ -227,7 +155,7 @@ export default function MaterialTypePage() {
         <div className="mt-cabecera-acciones">
           <button
             className="button primary"
-            onClick={() => { setFormulario(null); setFormFamilia(
+            onClick={() => { setFormFamilia(
               formFamilia && !formFamilia.idFamilia
                 ? null
                 : { idFamilia: null, descripcion: "", tipo: "" }); }}
@@ -265,12 +193,7 @@ export default function MaterialTypePage() {
       )}
 
       <div className="mt-list">
-        {familias.map((familia) => {
-          const propios = porFamilia(familia.id_product_family);
-          const abierto = formulario
-            && Number(formulario.idFamilia) === Number(familia.id_product_family);
-
-          return (
+        {familias.map((familia) => (
             <article className="mt-family" key={familia.id_product_family}>
               <header className="mt-family-head">
                 <div>
@@ -285,7 +208,7 @@ export default function MaterialTypePage() {
                       || `#${familia.id_product_family}`}
                     <button
                       className="mt-icono"
-                      onClick={() => { setFormulario(null); setFormFamilia({
+                      onClick={() => { setFormFamilia({
                         idFamilia: familia.id_product_family,
                         descripcion: familia.product_family_description || "",
                         tipo: familia.type || "",
@@ -295,9 +218,10 @@ export default function MaterialTypePage() {
                     >
                       <Pencil size={13} />
                     </button>
-                    {/* Solo si esta vacia. Con tipos dentro, borrarla los
-                        dejaria apuntando a una familia que ya no existe. */}
-                    {propios.length === 0 && (
+                    {/* Si tiene materiales dentro, el servidor lo dice con
+                        `delete_has_related_records` y eso es informacion, no un
+                        fallo: se muestra tal cual. */}
+                    {(
                       <button
                         className="mt-icono mt-icono-borrar"
                         onClick={() => borrarFamilia(familia)}
@@ -308,25 +232,10 @@ export default function MaterialTypePage() {
                       </button>
                     )}
                   </h2>
-                  <span className="muted">
-                    {propios.length === 1
-                      ? t("material_type.one_type", "1 tipo")
-                      : `${propios.length} ${t("material_type.types", "tipos")}`}
-                  </span>
                 </div>
                 {/* El alta va aqui y no en un formulario aparte: asi la familia
                     no se elige en un desplegable, ya la eligio el clic. */}
                 <div className="mt-family-acciones">
-                  <button
-                    className="button button-quiet"
-                    onClick={() => { setFormFamilia(null); setFormulario(
-                      abierto && !formulario.idTipo
-                        ? null
-                        : { idFamilia: familia.id_product_family, idTipo: null, descripcion: "" }); }}
-                  >
-                    <Plus size={15} />
-                    {t("material_type.add", "Agregar tipo")}
-                  </button>
                   {/* Las caracteristicas de la familia -largo, calibre,
                       acabado-. Es el tercer nivel: la familia agrupa, el tipo
                       distingue dentro de ella, y la caracteristica es lo que
@@ -356,83 +265,13 @@ export default function MaterialTypePage() {
                 />
               )}
 
-              {abierto && (
-                <form className="mt-form" onSubmit={guardar}>
-                  <input
-                    autoFocus
-                    value={formulario.descripcion}
-                    maxLength={120}
-                    onChange={(e) => setFormulario(
-                      { ...formulario, descripcion: e.target.value })}
-                    placeholder={t("material_type.placeholder",
-                      "Nombre del tipo (por ejemplo: Plano)")}
-                    aria-label={t("material_type.placeholder", "Nombre del tipo")}
-                  />
-                  <button className="button" type="submit"
-                          disabled={guardando || !formulario.descripcion.trim()}>
-                    {guardando
-                      ? t("common.loading", "Guardando…")
-                      : formulario.idTipo
-                        ? t("common.save", "Guardar")
-                        : t("common.create", "Crear")}
-                  </button>
-                  <button className="button button-quiet" type="button"
-                          onClick={() => setFormulario(null)}>
-                    <X size={15} />
-                    {t("common.cancel", "Cancelar")}
-                  </button>
-                </form>
-              )}
-
-              {propios.length === 0 ? (
-                <p className="muted mt-sin-tipos">
-                  {t("material_type.none_yet",
-                    "Sin tipos. Los materiales de esta familia se quedan sin distinguir entre sí.")}
-                </p>
-              ) : (
-                <ul className="mt-types">
-                  {propios.map((tipo) => (
-                    <Tipo
-                      key={tipo.id_material_type}
-                      tipo={tipo}
-                      t={t}
-                      onEditar={() => setFormulario({
-                        idFamilia: tipo.id_product_family,
-                        idTipo: tipo.id_material_type,
-                        descripcion: tipo.material_type_description || "",
-                      })}
-                      onBorrar={() => borrar(tipo)}
-                    />
-                  ))}
-                </ul>
-              )}
               {conCaracteristicas.has(String(familia.id_product_family)) && (
                 <FamilyAttributes idFamily={familia.id_product_family} />
               )}
             </article>
-          );
-        })}
+        ))}
       </div>
 
-      {huerfanos.length > 0 && (
-        <article className="mt-family mt-orphans">
-          <header className="mt-family-head">
-            <div>
-              <h2>{t("material_type.orphans", "Tipos sin familia visible")}</h2>
-              <span className="muted">
-                {t("material_type.orphans_hint",
-                  "Su familia no aparece en la lista. Siguen apareciendo en los materiales que los usan.")}
-              </span>
-            </div>
-          </header>
-          <ul className="mt-types">
-            {huerfanos.map((tipo) => (
-              <Tipo key={tipo.id_material_type} tipo={tipo} t={t}
-                    onBorrar={() => borrar(tipo)} />
-            ))}
-          </ul>
-        </article>
-      )}
     </section>
   );
 }

@@ -48,13 +48,6 @@ from app.modules.registry import MENU, MODULO_POR_CLAVE, SOLO_ARRANQUE, filas_de
 # Cada una lleva por que. Sin el motivo escrito, esto seria una lista donde
 # esconder cualquier cosa que estorbe, y la invariante dejaria de valer.
 DENTRO_DE_OTRA_PANTALLA = {
-    # `material_type.id_product_family` hace que un tipo cuelgue de una familia
-    # y no exista suelto: "Plano" no significa nada por si mismo, es un tipo DE
-    # desarmador. Con entrada propia el menu mostraba "Familias de producto" y
-    # "Tipos de material" seguidas, que leidas asi parecen la misma cosa dos
-    # veces -se reporto justamente como un modulo duplicado-. Los tipos se
-    # capturan dentro de su familia, en la pantalla de `product_family`.
-    "material_type": "product_family",
     # Las caracteristicas que una familia declara -largo, calibre, acabado- se
     # configuran dentro de la familia, en la misma pantalla. Con entrada propia
     # el menu tendria "Caracteristicas de material" sin decir de que familia, y
