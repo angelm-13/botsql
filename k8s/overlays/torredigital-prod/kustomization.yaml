@@ -31,3 +31,19 @@ patches:
       metadata:
         name: tyakxa-tny
       $patch: delete
+  # PriorityClass del cliente ERP #1 (ver p1-torredigital-prod, aplicada al
+  # clúster con kubectl apply -f priority-classes.yaml). target sin `name`
+  # aplica a los 5 Deployments del base (backend, celery-worker, celery-beat,
+  # frontend, rabbitmq) de un solo patch.
+  - target:
+      kind: Deployment
+    patch: |-
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: p1-torredigital-prod
+  - target:
+      kind: StatefulSet
+    patch: |-
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: p1-torredigital-prod

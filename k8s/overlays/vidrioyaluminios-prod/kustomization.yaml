@@ -28,3 +28,17 @@ patches:
       metadata:
         name: tyakxa-tny
       $patch: delete
+  # PriorityClass del cliente ERP #3 (ver p3-vidrioyaluminios-prod, aplicada
+  # al clúster con kubectl apply -f priority-classes.yaml).
+  - target:
+      kind: Deployment
+    patch: |-
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: p3-vidrioyaluminios-prod
+  - target:
+      kind: StatefulSet
+    patch: |-
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: p3-vidrioyaluminios-prod

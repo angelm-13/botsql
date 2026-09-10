@@ -73,3 +73,19 @@ patches:
                 resources:
                   requests:
                     cpu: 50m
+  # PriorityClass del ambiente de desarrollo del ERP (ver p5-tyakxa-dev,
+  # aplicada al clúster con kubectl apply -f priority-classes.yaml) — por
+  # debajo de los 3 clientes reales y de perrichef, por encima de los demas
+  # proyectos, segun el orden que definio Alan.
+  - target:
+      kind: Deployment
+    patch: |-
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: p5-tyakxa-dev
+  - target:
+      kind: StatefulSet
+    patch: |-
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: p5-tyakxa-dev

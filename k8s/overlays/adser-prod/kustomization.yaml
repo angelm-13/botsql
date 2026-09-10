@@ -54,3 +54,17 @@ patches:
                 hostPath:
                   path: /home/infra-k8s/imagenes/producto
                   type: Directory
+  # PriorityClass del cliente ERP #2 (ver p2-adser-prod, aplicada al clúster
+  # con kubectl apply -f priority-classes.yaml).
+  - target:
+      kind: Deployment
+    patch: |-
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: p2-adser-prod
+  - target:
+      kind: StatefulSet
+    patch: |-
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: p2-adser-prod
