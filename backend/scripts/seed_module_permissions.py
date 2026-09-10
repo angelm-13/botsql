@@ -62,15 +62,14 @@ def generar() -> str:
     renglones = []
     ultimo = len(filas) - 1
     for indice, fila in enumerate(filas):
-        (id_permission, entidad, bits, menu_location,
+        (rol_nombre, entidad, bits, menu_location,
          menu_group, menu_icon, menu_label, menu_order, modulo_licencia) = fila
-        rol = next(r.nombre for r in ROLES if r.id_permission == id_permission)
         coma = "," if indice < ultimo else ""
         renglones.append(
-            f"    ({id_permission}, '{entidad}', {bits}, '{menu_location}', "
+            f"    ({_sql(rol_nombre)}, '{entidad}', {bits}, '{menu_location}', "
             f"{_sql(menu_group)}, {_sql(menu_icon)}, {_sql(menu_label)}, {menu_order}, "
             f"'{modulo_licencia}'){coma}"
-            f"   -- {rol} / {NOMBRE_DE_BITS.get(bits, bits)}"
+            f"   -- {rol_nombre} / {NOMBRE_DE_BITS.get(bits, bits)}"
         )
 
     resumen = []
@@ -172,21 +171,66 @@ DELETE FROM entity_permission
  WHERE deletion_date IS NOT NULL
    AND deletion_date < TIMESTAMP '2026-09-02 18:00:00';
 
+-- La matriz se resuelve por NOMBRE de rol, no por id_permission fijo.
+--
+-- Version anterior de este archivo escribia el numero de `id_permission`
+-- directo en las VALUES, asumiendo que ese numero significa lo mismo en
+-- cualquier instalacion. Es falso: los ids de `permission` dependen del
+-- orden en que cada base sembro sus roles. Medido en dos ambientes reales
+-- con la version vieja: en un cliente, el id que aqui se penso como
+-- "gerente_administrativo" resulto ser de verdad "Supervisor", y Facturacion
+-- se concedio a un rol operativo que nunca debia tenerla; en otro cliente, un
+-- numero distinto choco con "Almacenista" en vez de con el rol pensado.
+--
+-- Se guarda la matriz completa (con el NOMBRE de cada rol, no su numero) en
+-- una tabla temporal para no repetir las 300+ filas dos veces -una para
+-- limpiar lo viejo, otra para sembrar lo nuevo-: ambos pasos hacen JOIN
+-- contra `permission.permission_description` para resolver el id real de
+-- ESTA base.
+CREATE TEMP TABLE matriz_de_permisos AS
+SELECT * FROM (VALUES
+{filas}
+) AS v (role_name, entity_name, control_type, menu_location,
+        menu_group, menu_group_icon, menu_label, menu_order, modulo_licencia);
+
+-- Limpieza de lo que la version vieja (con id fijo) pudo haber sembrado en el
+-- rol equivocado. Solo toca created_by=1 -nunca una fila que un
+-- administrador haya ajustado desde el gestor de roles-, y solo entidades que
+-- esta matriz gestiona: si el par (id_permission, entidad) que hoy existe no
+-- es el que le corresponde por NOMBRE al rol que de verdad tiene ese id en
+-- esta base, se borra. El INSERT de abajo la repone bien de inmediato.
+DELETE FROM entity_permission ep
+ WHERE ep.created_by = 1
+   AND ep.entity_name IN (SELECT DISTINCT entity_name FROM matriz_de_permisos)
+   AND NOT EXISTS (
+     SELECT 1
+       FROM matriz_de_permisos m
+       JOIN permission p
+         ON p.permission_description = m.role_name
+        AND p.deletion_date IS NULL
+      WHERE p.id_permission = ep.id_permission
+        AND m.entity_name = ep.entity_name
+        AND (
+          m.modulo_licencia IN ({modulos_core_sql})
+          OR :'licensed_modules' = ''
+          OR m.modulo_licencia = ANY(string_to_array(:'licensed_modules', ','))
+        )
+   );
+
 INSERT INTO entity_permission (
     id_permission, entity_name, control_type, menu_location,
     menu_group, menu_group_icon, menu_label, menu_order, created_by
 )
-SELECT v.id_permission, v.entity_name, v.control_type, v.menu_location,
-       v.menu_group, v.menu_group_icon, v.menu_label, v.menu_order, 1
-FROM (VALUES
-{filas}
-) AS v (id_permission, entity_name, control_type, menu_location,
-        menu_group, menu_group_icon, menu_label, menu_order, modulo_licencia)
-WHERE EXISTS (SELECT 1 FROM permission p WHERE p.id_permission = v.id_permission)
-  AND (
-    v.modulo_licencia IN ({modulos_core_sql})
+SELECT p.id_permission, m.entity_name, m.control_type, m.menu_location,
+       m.menu_group, m.menu_group_icon, m.menu_label, m.menu_order, 1
+FROM matriz_de_permisos m
+JOIN permission p
+  ON p.permission_description = m.role_name
+ AND p.deletion_date IS NULL
+WHERE (
+    m.modulo_licencia IN ({modulos_core_sql})
     OR :'licensed_modules' = ''
-    OR v.modulo_licencia = ANY(string_to_array(:'licensed_modules', ','))
+    OR m.modulo_licencia = ANY(string_to_array(:'licensed_modules', ','))
   )
 -- La restriccion unica es por (perfil, entidad) sin importar la baja logica, y
 -- aqui NO se toca la fila que ya existe: ni sus bits, ni su navegacion, ni su
@@ -199,6 +243,8 @@ WHERE EXISTS (SELECT 1 FROM permission p WHERE p.id_permission = v.id_permission
 -- Se siembra solo el par (perfil, entidad) que no existe todavia: un modulo
 -- nuevo, una entidad nueva, un rol nuevo. Eso es "sembrar lo que falta".
 ON CONFLICT (id_permission, entity_name) DO NOTHING;
+
+DROP TABLE matriz_de_permisos;
 
 -- Los permisos de campo se derivan del permiso de entidad, asi que hay que
 -- rehacerlos: un modulo que cambio de alcance arrastra sus campos. Se dan de
