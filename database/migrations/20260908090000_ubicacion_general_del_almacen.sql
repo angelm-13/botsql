@@ -60,6 +60,18 @@
 
 BEGIN;
 
+-- 0. Corrige un DEFAULT viejo que ya se habia quitado de init.sql (para
+--    instalaciones nuevas) pero nunca de las que ya existian: la columna
+--    quedo con `DEFAULT 1` desde que se creo la tabla en
+--    20260817020100_init_schema.sql. En una base sin ubicacion id=1 -como
+--    torredigital-prod, el primer cliente real, mas vieja que el fix de
+--    init.sql- el INSERT del paso 3 hereda ese 1 y truena contra
+--    fk_location_parent. `DROP DEFAULT` es idempotente: si ya no tiene
+--    default (instalaciones nuevas, o esta migracion ya corrio antes) no
+--    hace nada.
+ALTER TABLE location
+    ALTER COLUMN id_location_reference DROP DEFAULT;
+
 -- 1. La marca. Va en la ubicacion y no en una tabla aparte porque es una
 --    propiedad de esa ubicacion, no una entidad nueva.
 ALTER TABLE location
@@ -83,12 +95,15 @@ WHERE NOT EXISTS (
 
 -- 3. La ubicacion general, si nadie declaro una todavia.
 INSERT INTO location (
-    id_location_type, location_description, is_general_stock, created_by
+    id_location_type, location_description, id_location_reference, is_general_stock, created_by
 )
 SELECT
     (SELECT MIN(id_location_type) FROM location_type
       WHERE is_warehouse IS TRUE AND deletion_date IS NULL),
     'Almacen general',
+    -- Es la raiz del almacen general, no cuelga de nada. Explicito para no
+    -- depender del DEFAULT de la columna (ver el DROP DEFAULT del paso 0).
+    NULL,
     TRUE,
     1
 WHERE NOT EXISTS (
