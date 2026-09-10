@@ -64,11 +64,22 @@ export const moduleSections = [
         ["operators", "operadores", "logistics_operator"],
         ["maintenance", "mantenimientos", "logistics_maintenance"],
       ]},
+      // Un solo almacen para los cuatro proyectos.
+      //
+      // Aqui habia cuatro pantallas propias -- almacenes, ubicaciones,
+      // inventario y racks -- que competian con el almacen de verdad: dos
+      // sitios donde preguntar cuanto hay, y dos respuestas. Los saldos ya los
+      // unifican los puentes (`services/logistics_inventory_bridge.py`); esto
+      // unifica la puerta, con la ruta absoluta del nucleo.
+      //
+      // Sus tablas y sus pantallas siguen ahi, sin entrada de menu: se retira
+      // la duplicidad, no el codigo. Lo que deja de verse es la dimension "de
+      // que cliente es esta mercancia", que solo existe en
+      // `logistics_inventory` -- si vuelve a hacer falta, es devolver la
+      // seccion, no reconstruirla.
       { key: "section_warehouse", items: [
-        ["warehouses", "almacenes", "logistics_warehouse"],
-        ["locations", "ubicaciones", "logistics_location"],
-        ["inventory", "inventario", "logistics_inventory"],
-        ["racks", "racks", "logistics_rack"],
+        ["warehouse", "/inventory", "product"],
+        ["locate", "/inventory/trace", "product"],
       ]},
       { key: "section_finance", items: [
         ["invoices", "facturas", "invoice"],
@@ -114,9 +125,15 @@ export const moduleSections = [
         ["products", "productos", "pos_terminal"],
       ]},
       { key: "section_pos_warehouse", items: [
-        // El almacen del POS se lee desde el inventario unico: la pantalla dice
-        // que tanto de su catalogo descuenta de verdad del almacen de TYAKXA.
-        ["inventory", "inventario", "pos_admin"],
+        // El mismo almacen que el resto, y por la misma puerta. El puente del
+        // POS ya escribia sus ventas en el libro del nucleo con
+        // `source_module = 'pos'`; esto hace que tambien se consulten ahi.
+        //
+        // Su pantalla propia -- que decia cuanto de su catalogo descuenta de
+        // verdad -- sigue en el codigo y sin entrada de menu: era una vista de
+        // conciliacion, y con un solo almacen no hay nada que conciliar.
+        ["warehouse", "/inventory", "product"],
+        ["locate", "/inventory/trace", "product"],
       ]},
       { key: "section_pos_reports", items: [
         ["dashboard", "tablero", "pos_admin"],

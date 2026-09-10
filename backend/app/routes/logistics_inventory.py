@@ -27,14 +27,14 @@ def get_logistics_inventory(user_data, item_id):
 @token_required
 @require_entity_permission('logistics_inventory', 'create')
 def create_logistics_inventory(user_data):
-    return jsonify(LogisticsInventoryService.create(request.get_json() or {}, user_id=user_data.get('id_user'))), 201
+    return jsonify(LogisticsInventoryService.create(request.get_json() or {}, user_id=user_data.get('id_user'), user_data=user_data)), 201
 
 
 @bp_logistics_inventory.put('/<int:item_id>')
 @token_required
 @require_entity_permission('logistics_inventory', 'update')
 def update_logistics_inventory(user_data, item_id):
-    return jsonify(LogisticsInventoryService.update(item_id, request.get_json() or {}, user_id=user_data.get('id_user')))
+    return jsonify(LogisticsInventoryService.update(item_id, request.get_json() or {}, user_id=user_data.get('id_user'), user_data=user_data))
 
 
 @bp_logistics_inventory.delete('/<int:item_id>')

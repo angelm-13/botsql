@@ -22,6 +22,14 @@ class LogisticsInventory(Base):
     id_logistics_inventory: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     id_customer_supplier: Mapped[int] = mapped_column(ForeignKey('customer_supplier.id_customer_supplier'), nullable=False)
     id_logistics_location: Mapped[int] = mapped_column(ForeignKey('logistics_location.id_logistics_location'), nullable=False)
+    # El producto del almacen propio que representa esta mercancia, y la
+    # ubicacion del nucleo contra la que se mueve. Nulos mientras nadie los
+    # empareje: sin enlace la fila sigue como hasta hoy y no toca el nucleo.
+    # Ver `services/logistics_inventory_bridge.py`.
+    id_product: Mapped[int | None] = mapped_column(
+        ForeignKey('product.id_product'), nullable=True, index=True)
+    id_core_location: Mapped[int | None] = mapped_column(
+        ForeignKey('location.id_location'), nullable=True)
     sku: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str | None] = mapped_column(String(300), nullable=True)
     quantity: Mapped[Decimal] = mapped_column(Numeric(14, 3), nullable=False, default=0, server_default='0')

@@ -1420,7 +1420,6 @@
     "assets": "Rastreo de piezas",
     "pos_till": "Caja",
     "inventory_trace": "Localizar",
-    "material_type": "Tipos de material",
     "warehouse_voucher": "Vales de almacén"
   },
   "placeholders": {
@@ -3384,7 +3383,9 @@
     "reports": "Reportes",
     "products": "Catálogo",
     "shift": "Turno",
-    "section_pos_marketing": "Promociones"
+    "section_pos_marketing": "Promociones",
+    "warehouse": "Almacén",
+    "locate": "Localizar"
   },
   "project_management": {
     "operations": "Operaciones",

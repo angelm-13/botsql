@@ -1420,7 +1420,6 @@
     "assets": "Asset tracking",
     "pos_till": "Till",
     "inventory_trace": "Locate",
-    "material_type": "Material types",
     "warehouse_voucher": "Warehouse vouchers"
   },
   "placeholders": {
@@ -3381,7 +3380,9 @@
     "reports": "Reports",
     "products": "Catalogue",
     "shift": "Shift",
-    "section_pos_marketing": "Promotions"
+    "section_pos_marketing": "Promotions",
+    "warehouse": "Warehouse",
+    "locate": "Locate"
   },
   "project_management": {
     "operations": "Operations",
