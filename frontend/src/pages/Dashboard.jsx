@@ -13,7 +13,7 @@ import { useI18n } from "../i18n";
 import {
   getAllKpiDashboard, createKpiDashboard, updateKpiDashboard, deleteKpiDashboard,
   getAllKpiDashboardWidget, createKpiDashboardWidget, updateKpiDashboardWidget, deleteKpiDashboardWidget,
-  getAllKpiDefinition, queryKpiSnapshot, getAllUser, getAllDepartment,
+  getAllKpiDefinition, queryKpiSnapshot, getAllUser, getAllDepartment, getAllProduct,
 } from "../api";
 import "../styles/kpi-dashboard.css";
 
@@ -323,12 +323,9 @@ function defaultPanelState() {
 }
 
 // Como etiquetar una entidad segun la dimension real del KPI (empleado,
-// producto o "global" -- sin desglose). Los productos todavia no tienen un
-// catalogo cargado en este panel (solo empleados/departamentos, ver
-// `users`/`departments` arriba) -- se muestran por id mientras no haga falta
-// mas: no hay pedido todavia de filtrar/nombrar productos en el selector.
-function labelForDimension(dimension, userLabel) {
-  if (dimension === "producto") return (id) => `Producto #${id}`;
+// producto o "global" -- sin desglose).
+function labelForDimension(dimension, userLabel, productLabel) {
+  if (dimension === "producto") return productLabel;
   if (dimension === "global") return () => "Total";
   return userLabel;
 }
@@ -444,6 +441,7 @@ export default function Dashboard() {
   const [kpiCatalog, setKpiCatalog] = useState([]);
   const [users, setUsers] = useState([]);
   const [departments, setDepartments] = useState([]);
+  const [products, setProducts] = useState([]);
 
   // Borrador del panel "Agregar grafico", uno por tablero (`id_kpi_dashboard`):
   // el panel ya no se desmonta al cambiar de tablero, asi que su estado no
@@ -507,6 +505,7 @@ export default function Dashboard() {
     getAllKpiDefinition().then((data) => { if (!cancelado) setKpiCatalog(listOf(data)); }).catch(() => { if (!cancelado) setKpiCatalog([]); });
     getAllUser({ per_page: 500 }).then((data) => { if (!cancelado) setUsers(listOf(data)); }).catch(() => { if (!cancelado) setUsers([]); });
     getAllDepartment({ per_page: 500 }).then((data) => { if (!cancelado) setDepartments(listOf(data)); }).catch(() => { if (!cancelado) setDepartments([]); });
+    getAllProduct({ per_page: 5000 }).then((data) => { if (!cancelado) setProducts(listOf(data)); }).catch(() => { if (!cancelado) setProducts([]); });
     return () => { cancelado = true; };
   }, []);
 
@@ -514,6 +513,11 @@ export default function Dashboard() {
     const found = users.find((user) => String(user.id_user) === String(idUser));
     return found?.full_name || found?.username || `#${idUser}`;
   }, [users]);
+
+  const productLabel = useCallback((idProduct) => {
+    const found = products.find((product) => String(product.id_product) === String(idProduct));
+    return found?.descripcion || found?.product_code || `#${idProduct}`;
+  }, [products]);
 
   function notifyError(error) {
     window.alert(t(error.message || "errors.request_failed", error.message || "errors.request_failed"));
@@ -714,6 +718,7 @@ export default function Dashboard() {
                   widget={widget}
                   kpiCatalog={kpiCatalog}
                   userLabel={userLabel}
+                  productLabel={productLabel}
                   formatNumber={formatNumber}
                   onEdit={() => handleEditWidget(widget)}
                   onDelete={() => handleDeleteWidget(widget)}
@@ -748,7 +753,7 @@ export default function Dashboard() {
   );
 }
 
-function KpiWidgetCard({ widget, kpiCatalog, userLabel, formatNumber, onEdit, onDelete, t, tx }) {
+function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, formatNumber, onEdit, onDelete, t, tx }) {
   const [snapshots, setSnapshots] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -851,20 +856,20 @@ function KpiWidgetCard({ widget, kpiCatalog, userLabel, formatNumber, onEdit, on
           <p className="kpi-error-inline">{t(error, error)}</p>
         )}
         {!loading && !error && snapshots.length > 0 && (
-          <KpiChartBody widget={widget} snapshots={snapshots} kpiInfos={kpiInfos} userLabel={userLabel} formatNumber={formatNumber} tx={tx} />
+          <KpiChartBody widget={widget} snapshots={snapshots} kpiInfos={kpiInfos} userLabel={userLabel} productLabel={productLabel} formatNumber={formatNumber} tx={tx} />
         )}
       </div>
     </article>
   );
 }
 
-function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, formatNumber, tx }) {
+function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, formatNumber, tx }) {
   const snapshot = snapshots[0];
   const kpiInfo = kpiInfos[0];
   const hasCompare = Boolean(snapshot?.rango_b);
   const coloresOverride = widget.parametros?.colores_kpi;
   const agruparPorPeriodo = widget.parametros?.agrupar_por === "periodo";
-  const labelForId = agruparPorPeriodo ? (id) => id : labelForDimension(kpiInfo?.dimensiones?.[0], userLabel);
+  const labelForId = agruparPorPeriodo ? (id) => id : labelForDimension(kpiInfo?.dimensiones?.[0], userLabel, productLabel);
 
   // Umbral manual de "artículos bajo stock" (decision de Aurora: se captura
   // en el widget, no en una columna nueva de base de datos -- ver
