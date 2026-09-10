@@ -309,7 +309,28 @@ function defaultPanelState() {
     empleadosSeleccionados: [],
     departamentosSeleccionados: [],
     coloresKpi: {},
+    // "entidad": desglosado por empleado/producto (comportamiento de
+    // siempre). "periodo": una sola serie sumada entre todas las entidades,
+    // por dia -- la tendencia en el tiempo que Aurora pidio poder elegir
+    // ("Ambas, seleccionable").
+    agruparPor: "entidad",
+    // Solo aplica al KPI "articulos_bajo_stock": el umbral se captura aqui,
+    // en el widget, y nunca en una columna nueva de base de datos (decision
+    // explicita de Aurora -- no hay stock minimo declarado en el catalogo de
+    // productos).
+    umbralBajoStock: "",
   };
+}
+
+// Como etiquetar una entidad segun la dimension real del KPI (empleado,
+// producto o "global" -- sin desglose). Los productos todavia no tienen un
+// catalogo cargado en este panel (solo empleados/departamentos, ver
+// `users`/`departments` arriba) -- se muestran por id mientras no haga falta
+// mas: no hay pedido todavia de filtrar/nombrar productos en el selector.
+function labelForDimension(dimension, userLabel) {
+  if (dimension === "producto") return (id) => `Producto #${id}`;
+  if (dimension === "global") return () => "Total";
+  return userLabel;
 }
 
 function listOf(data) {
@@ -320,18 +341,31 @@ function localeFor(lang) {
   return lang === "ja" ? "ja-JP" : lang === "en" ? "en-US" : lang === "pt" ? "pt-BR" : lang === "de" ? "de-DE" : "es-MX";
 }
 
-function buildSeriesData(snapshot, userLabel, empleadosFiltro) {
-  const porA = snapshot?.rango_a?.por_empleado || {};
-  const porB = snapshot?.rango_b?.por_empleado || {};
+// El nombre de campo del backend (`por_empleado`) es historico -- se
+// conserva tal cual aunque ahora tambien puede traer productos (KPIs con
+// dimension "producto") o quedar vacio (KPIs "globales", ej. ingresos/
+// egresos totales, o cuando el widget pidio `agrupar_por=periodo`). Este
+// helper decide de que campo leer segun el modo de agrupacion elegido en el
+// widget, sin que cada `build*Data` tenga que repetir la logica.
+function entradasPorModo(ladoDelRango, agruparPorPeriodo) {
+  return agruparPorPeriodo ? (ladoDelRango?.por_periodo || {}) : (ladoDelRango?.por_empleado || {});
+}
+
+function buildSeriesData(snapshot, labelForId, entidadesFiltro, agruparPorPeriodo) {
+  const porA = entradasPorModo(snapshot?.rango_a, agruparPorPeriodo);
+  const porB = entradasPorModo(snapshot?.rango_b, agruparPorPeriodo);
   let ids = Array.from(new Set([...Object.keys(porA), ...Object.keys(porB)]));
-  if (Array.isArray(empleadosFiltro) && empleadosFiltro.length) {
-    const orden = empleadosFiltro.map(String);
+  if (agruparPorPeriodo) {
+    // Las llaves son fechas ISO (`AAAA-MM-DD`): ordenan bien como texto.
+    ids.sort();
+  } else if (Array.isArray(entidadesFiltro) && entidadesFiltro.length) {
+    const orden = entidadesFiltro.map(String);
     ids = orden.filter((id) => ids.includes(id));
   } else {
     ids.sort((x, y) => (porA[y] ?? 0) - (porA[x] ?? 0));
   }
   return ids.map((id) => ({
-    name: userLabel(id),
+    name: labelForId(id),
     a: porA[id] ?? 0,
     b: id in porB ? porB[id] : undefined,
   }));
@@ -342,25 +376,29 @@ function buildSeriesData(snapshot, userLabel, empleadosFiltro) {
 // fila resultante trae una columna `kpi_<indice>_a`/`kpi_<indice>_b` por KPI,
 // para que Recharts pinte una serie por cada uno sin tocar el eje X (que
 // sigue siendo por empleado, igual que con un solo KPI).
-function buildMultiSeriesData(snapshots, userLabel, empleadosFiltro) {
+function buildMultiSeriesData(snapshots, labelForId, entidadesFiltro, agruparPorPeriodo) {
   const ids = new Set();
   snapshots.forEach((snapshot) => {
-    Object.keys(snapshot?.rango_a?.por_empleado || {}).forEach((id) => ids.add(id));
-    Object.keys(snapshot?.rango_b?.por_empleado || {}).forEach((id) => ids.add(id));
+    Object.keys(entradasPorModo(snapshot?.rango_a, agruparPorPeriodo)).forEach((id) => ids.add(id));
+    Object.keys(entradasPorModo(snapshot?.rango_b, agruparPorPeriodo)).forEach((id) => ids.add(id));
   });
   let ordenados = Array.from(ids);
-  if (Array.isArray(empleadosFiltro) && empleadosFiltro.length) {
-    const orden = empleadosFiltro.map(String);
+  if (agruparPorPeriodo) {
+    ordenados.sort();
+  } else if (Array.isArray(entidadesFiltro) && entidadesFiltro.length) {
+    const orden = entidadesFiltro.map(String);
     ordenados = orden.filter((id) => ordenados.includes(id));
   } else {
-    const totalPorId = (id) => snapshots.reduce((suma, snapshot) => suma + (snapshot?.rango_a?.por_empleado?.[id] ?? 0), 0);
+    const totalPorId = (id) => snapshots.reduce(
+      (suma, snapshot) => suma + (entradasPorModo(snapshot?.rango_a, agruparPorPeriodo)[id] ?? 0), 0,
+    );
     ordenados.sort((x, y) => totalPorId(y) - totalPorId(x));
   }
   return ordenados.map((id) => {
-    const fila = { name: userLabel(id) };
+    const fila = { name: labelForId(id) };
     snapshots.forEach((snapshot, index) => {
-      const porA = snapshot?.rango_a?.por_empleado || {};
-      const porB = snapshot?.rango_b?.por_empleado || {};
+      const porA = entradasPorModo(snapshot?.rango_a, agruparPorPeriodo);
+      const porB = entradasPorModo(snapshot?.rango_b, agruparPorPeriodo);
       fila[`kpi_${index}_a`] = porA[id] ?? 0;
       fila[`kpi_${index}_b`] = id in porB ? porB[id] : undefined;
     });
@@ -376,12 +414,14 @@ function kpiSeriesLabel(kpiInfo, index) {
   return kpiInfo?.unidad ? `${etiqueta} (${kpiInfo.unidad})` : etiqueta;
 }
 
-function buildPieData(snapshot, userLabel, othersLabel) {
-  const porA = snapshot?.rango_a?.por_empleado || {};
-  const entradas = Object.entries(porA).sort((x, y) => y[1] - x[1]);
+function buildPieData(snapshot, labelForId, othersLabel, agruparPorPeriodo) {
+  const porA = entradasPorModo(snapshot?.rango_a, agruparPorPeriodo);
+  const entradas = agruparPorPeriodo
+    ? Object.entries(porA).sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0))
+    : Object.entries(porA).sort((x, y) => y[1] - x[1]);
   const principales = entradas.slice(0, CATEGORICAL.length);
   const restoTotal = entradas.slice(CATEGORICAL.length).reduce((suma, [, valor]) => suma + valor, 0);
-  const data = principales.map(([id, valor]) => ({ name: userLabel(id), value: valor }));
+  const data = principales.map(([id, valor]) => ({ name: labelForId(id), value: valor }));
   if (restoTotal > 0) data.push({ name: othersLabel, value: restoTotal });
   return data;
 }
@@ -563,6 +603,8 @@ export default function Dashboard() {
       // Las llaves de `colores_kpi` ya llegan como string desde el JSON
       // guardado -- se copian tal cual, sin volver a tocar el tipo.
       coloresKpi: parametros.colores_kpi && typeof parametros.colores_kpi === "object" ? { ...parametros.colores_kpi } : {},
+      agruparPor: parametros.agrupar_por === "periodo" ? "periodo" : "entidad",
+      umbralBajoStock: parametros.umbral_bajo_stock != null ? String(parametros.umbral_bajo_stock) : "",
     });
   }
 
@@ -725,6 +767,7 @@ function KpiWidgetCard({ widget, kpiCatalog, userLabel, formatNumber, onEdit, on
   const fechaFinB = parametros.fecha_fin_b;
   const empleadosKey = Array.isArray(parametros.empleados) ? parametros.empleados.join(",") : "";
   const departamentosKey = Array.isArray(parametros.id_departments) ? parametros.id_departments.join(",") : "";
+  const agruparPor = parametros.agrupar_por === "periodo" ? "periodo" : "entidad";
 
   useEffect(() => {
     let cancelado = false;
@@ -751,6 +794,7 @@ function KpiWidgetCard({ widget, kpiCatalog, userLabel, formatNumber, onEdit, on
         }
         if (empleadosKey) paramsComunes.empleados = empleadosKey;
         if (departamentosKey) paramsComunes.id_departments = departamentosKey;
+        if (agruparPor === "periodo") paramsComunes.agrupar_por = agruparPor;
         // Una llamada POR CADA KPI del widget -- el backend solo acepta un
         // `id_kpi_definition` a la vez, la combinacion pasa aqui.
         const resultados = await Promise.all(
@@ -768,7 +812,7 @@ function KpiWidgetCard({ widget, kpiCatalog, userLabel, formatNumber, onEdit, on
   // `idsKey` es el proxy estable de `idsUsados` (un array nuevo cada
   // render); `idsUsados` en si mismo nunca deberia ir en las dependencias.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idsKey, fechaInicio, fechaFin, fechaInicioB, fechaFinB, empleadosKey, departamentosKey]);
+  }, [idsKey, fechaInicio, fechaFin, fechaInicioB, fechaFinB, empleadosKey, departamentosKey, agruparPor]);
 
   const chartTypeLabel = CHART_TYPES.find((opt) => opt.value === widget.tipo_grafica)?.label || widget.tipo_grafica;
   const rangoTexto = fechaInicio && fechaFin ? `${fechaInicio} → ${fechaFin}` : tx("missing_range", "Sin rango de fechas configurado");
@@ -819,8 +863,27 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, formatNumber, tx
   const kpiInfo = kpiInfos[0];
   const hasCompare = Boolean(snapshot?.rango_b);
   const coloresOverride = widget.parametros?.colores_kpi;
+  const agruparPorPeriodo = widget.parametros?.agrupar_por === "periodo";
+  const labelForId = agruparPorPeriodo ? (id) => id : labelForDimension(kpiInfo?.dimensiones?.[0], userLabel);
+
+  // Umbral manual de "artículos bajo stock" (decision de Aurora: se captura
+  // en el widget, no en una columna nueva de base de datos -- ver
+  // `articulos_bajo_stock_query` en el backend). Solo tiene sentido con un
+  // unico KPI seleccionado y ese KPI siendo justo este.
+  const umbralBajoStock = Number(widget.parametros?.umbral_bajo_stock);
+  const esBajoStock = kpiInfos.length <= 1 && kpiInfo?.clave === "articulos_bajo_stock" && Number.isFinite(umbralBajoStock);
 
   if (widget.tipo_grafica === "numero") {
+    if (esBajoStock) {
+      const porA = snapshot?.rango_a?.por_empleado || {};
+      const bajoStock = Object.values(porA).filter((valor) => valor < umbralBajoStock).length;
+      return (
+        <div className="kpi-number-widget">
+          <strong>{bajoStock}</strong>
+          <span className="kpi-delta">{tx("bajo_stock_note", `producto(s) por debajo de ${umbralBajoStock}`)}</span>
+        </div>
+      );
+    }
     const total = snapshot.rango_a.total;
     const totalB = snapshot.rango_b?.total;
     const unidad = kpiInfo?.unidad ? ` ${kpiInfo.unidad}` : "";
@@ -843,7 +906,7 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, formatNumber, tx
 
   if (widget.tipo_grafica === "dona") {
     const othersLabel = tx("others", "Otros");
-    const data = buildPieData(snapshot, userLabel, othersLabel);
+    const data = buildPieData(snapshot, labelForId, othersLabel, agruparPorPeriodo);
     if (!data.length) return <p className="kpi-empty-inline">{tx("no_data", "Sin datos en el rango seleccionado.")}</p>;
     return (
       <ResponsiveContainer width="100%" height={240}>
@@ -876,7 +939,8 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, formatNumber, tx
   // color fijo -mismo criterio que ya usa el camino multi-KPI de abajo con
   // sus propias series "b".
   if (kpiInfos.length <= 1) {
-    const data = buildSeriesData(snapshot, userLabel, widget.parametros?.empleados);
+    let data = buildSeriesData(snapshot, labelForId, widget.parametros?.empleados, agruparPorPeriodo);
+    if (esBajoStock) data = data.filter((fila) => fila.a < umbralBajoStock);
     if (!data.length) return <p className="kpi-empty-inline">{tx("no_data", "Sin datos en el rango seleccionado.")}</p>;
     const colorKpi = colorEfectivoDeKpi(kpiInfo?.id_kpi_definition, coloresOverride);
 
@@ -939,7 +1003,7 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, formatNumber, tx
   // rango A -distingue por opacidad/trazo, no por un segundo color fijo-
   // porque con N KPIs ya no hay solo dos roles (A/B) que colorear
   // aparte como con un solo KPI.
-  const data = buildMultiSeriesData(snapshots, userLabel, widget.parametros?.empleados);
+  const data = buildMultiSeriesData(snapshots, labelForId, widget.parametros?.empleados, agruparPorPeriodo);
   if (!data.length) return <p className="kpi-empty-inline">{tx("no_data", "Sin datos en el rango seleccionado.")}</p>;
   const comparacionSufijo = ` (${tx("vs_compare_short", "comparación")})`;
 
@@ -1021,6 +1085,8 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
     empleadosSeleccionados,
     departamentosSeleccionados,
     coloresKpi,
+    agruparPor,
+    umbralBajoStock,
   } = panelState;
 
   // Catalogo agrupado por modulo (facturacion, operaciones, ...): el paso de
@@ -1050,6 +1116,16 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
   const [swatchAbierto, setSwatchAbierto] = useState(null);
 
   const multiKpiPermitido = esTipoMultiKpi(tipoGrafica);
+
+  // Info de los KPIs ya elegidos -- de aqui salen la etiqueta del toggle
+  // "Agrupar por" (Empleado/Producto, segun la dimension real del primer KPI
+  // elegido) y si hay que mostrar el campo de umbral de "artículos bajo
+  // stock" (solo cuando ese KPI especifico esta seleccionado).
+  const kpisSeleccionadosInfo = idsKpiSeleccionados
+    .map((id) => kpiCatalog.find((kpi) => String(kpi.id_kpi_definition) === id))
+    .filter(Boolean);
+  const primeraDimension = kpisSeleccionadosInfo[0]?.dimensiones?.[0];
+  const tieneBajoStockSeleccionado = kpisSeleccionadosInfo.some((kpi) => kpi.clave === "articulos_bajo_stock");
 
   // Cierra el popover de color al hacer clic fuera de el -- sin esto se
   // quedaria abierto hasta elegir un color o deseleccionar el KPI.
@@ -1157,6 +1233,10 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
       idsKpiSeleccionados.filter((id) => coloresKpi[id]).map((id) => [id, coloresKpi[id]]),
     );
     if (Object.keys(coloresVigentes).length) parametros.colores_kpi = coloresVigentes;
+    if (agruparPor === "periodo") parametros.agrupar_por = "periodo";
+    if (tieneBajoStockSeleccionado && umbralBajoStock !== "" && Number.isFinite(Number(umbralBajoStock))) {
+      parametros.umbral_bajo_stock = Number(umbralBajoStock);
+    }
 
     const payload = { ids_kpi_definition: idsKpiSeleccionados.map(Number), tipo_grafica: tipoGrafica, parametros };
     setSaving(true);
@@ -1322,6 +1402,41 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
                 ))}
               </div>
             </div>
+
+            {idsKpiSeleccionados.length > 0 && primeraDimension !== "global" && (
+              <div className="kpi-picker-section">
+                <span>{tx("group_by", "Agrupar por")}</span>
+                <div className="kpi-icon-option-group">
+                  <button
+                    type="button"
+                    className={`kpi-chip-option ${agruparPor === "entidad" ? "active" : ""}`}
+                    onClick={() => onChangePanelState({ agruparPor: "entidad" })}
+                  >
+                    {primeraDimension === "producto" ? tx("group_by_product", "Producto") : tx("group_by_employee", "Empleado")}
+                  </button>
+                  <button
+                    type="button"
+                    className={`kpi-chip-option ${agruparPor === "periodo" ? "active" : ""}`}
+                    onClick={() => onChangePanelState({ agruparPor: "periodo" })}
+                  >
+                    {tx("group_by_period", "Periodo (tendencia)")}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {tieneBajoStockSeleccionado && (
+              <label className="field">
+                <span>{tx("umbral_bajo_stock", "Umbral de stock bajo")}</span>
+                <input
+                  type="number"
+                  min="0"
+                  value={umbralBajoStock}
+                  onChange={(event) => onChangePanelState({ umbralBajoStock: event.target.value })}
+                  placeholder={tx("umbral_bajo_stock_placeholder", "Ej. 10")}
+                />
+              </label>
+            )}
 
             <div className="form-grid">
               <label className="field">

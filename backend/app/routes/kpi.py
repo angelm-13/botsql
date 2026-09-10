@@ -6,7 +6,7 @@ from flask import Blueprint, jsonify, request
 from sqlalchemy import cast, func, select
 from sqlalchemy.dialects.postgresql import JSONB
 
-from app.kpis.registry import ALCANCE_PROYECTO_POR_CLAVE
+from app.kpis.registry import ALCANCE_PROYECTO_POR_CLAVE, DIMENSION_JSON_KEY, DIMENSION_POR_CLAVE
 from app.models.kpi_definition import KpiDefinition
 from app.models.kpi_snapshot import KpiSnapshot
 from app.models.permission import Permission
@@ -59,6 +59,14 @@ def _optional_empleados(value):
     return _optional_int_list(value, 'empleados')
 
 
+def _optional_entidades(value):
+    # Generico, dimension-agnostico: filtra por la entidad que el KPI
+    # desglosa de verdad (empleado o producto). "empleados" (arriba) se
+    # conserva como sinonimo por compatibilidad -- es el nombre que ya manda
+    # el frontend para los KPIs por empleado.
+    return _optional_int_list(value, 'entidades')
+
+
 def _optional_id_departments(value):
     return _optional_int_list(value, 'id_departments')
 
@@ -85,16 +93,32 @@ def _empleados_de_departamentos(db, id_departments):
     ).all()
 
 
-def _dimension_user_text():
+def _dimension_entity_expr(campo_json):
     # `.contains()`/`[]` sobre `dimension_key` necesitan `cast(..., JSONB)`:
     # el tipo declarado en el modelo es el JSON generico con variante, y
     # `with_variant` solo cambia el DDL/bind, no el comparador de Python. Ver
     # el comentario en app/models/kpi_snapshot.py.
-    return cast(KpiSnapshot.dimension_key, JSONB)['id_user'].astext
+    #
+    # `campo_json` viene de `DIMENSION_JSON_KEY` (app/kpis/registry.py):
+    # "id_user" para KPIs por empleado, "id_product" para KPIs por producto.
+    # Antes esta funcion asumia siempre "id_user" -- ahora la llama cada KPI
+    # con la llave que de verdad le corresponde.
+    return cast(KpiSnapshot.dimension_key, JSONB)[campo_json].astext
 
 
-def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, empleados):
-    id_user_expr = _dimension_user_text()
+def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, agrupar_por_periodo=False):
+    """Suma `kpi_snapshot` en el rango, en uno de tres modos:
+
+    * `campo_json` es None (dimension "global", ej. ingresos/egresos
+      totales): no hay entidad que desglosar -- un solo total.
+    * `agrupar_por_periodo=True`: se suma entre TODAS las entidades por
+      `periodo` (dia) -- la serie de tendencia en el tiempo que pidio Aurora
+      ("Ambas, seleccionable": por empleado/producto O por periodo).
+    * si no, el comportamiento de siempre: un total por entidad
+      (`por_empleado`, el nombre historico del campo -- se conserva tal cual
+      aunque ahora tambien puede traer productos, para no romper el resto del
+      frontend que ya lo lee).
+    """
     condiciones = [
         KpiSnapshot.id_kpi_definition == id_kpi_definition,
         KpiSnapshot.periodo >= fecha_inicio,
@@ -102,26 +126,39 @@ def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, empl
     ]
     if actor_project is not None:
         condiciones.append(cast(KpiSnapshot.dimension_key, JSONB).contains({'id_proyect': actor_project}))
+
+    entidad_expr = _dimension_entity_expr(campo_json) if campo_json else None
     # `is not None`, no truthy: una lista vacia (departamento sin empleados,
     # ver `_empleados_de_departamentos`) tiene que filtrar a "nadie", no
     # saltarse el filtro por completo. SQLAlchemy compila `IN (())` como una
     # condicion siempre falsa, asi que es seguro.
-    if empleados is not None:
-        condiciones.append(id_user_expr.in_([str(id_empleado) for id_empleado in empleados]))
+    if entidad_expr is not None and entidades is not None:
+        condiciones.append(entidad_expr.in_([str(entidad) for entidad in entidades]))
+
+    base = {'inicio': fecha_inicio.isoformat(), 'fin': fecha_fin.isoformat()}
+
+    if agrupar_por_periodo:
+        filas = db.execute(
+            select(KpiSnapshot.periodo, func.sum(KpiSnapshot.valor))
+            .where(*condiciones)
+            .group_by(KpiSnapshot.periodo)
+            .order_by(KpiSnapshot.periodo)
+        ).all()
+        por_periodo = {periodo.isoformat(): float(valor) for periodo, valor in filas}
+        return {**base, 'total': sum(por_periodo.values()), 'por_empleado': {}, 'por_periodo': por_periodo}
+
+    if entidad_expr is None:
+        total = db.execute(select(func.sum(KpiSnapshot.valor)).where(*condiciones)).scalar() or 0
+        return {**base, 'total': float(total), 'por_empleado': {}, 'por_periodo': {}}
 
     filas = db.execute(
-        select(id_user_expr, func.sum(KpiSnapshot.valor))
+        select(entidad_expr, func.sum(KpiSnapshot.valor))
         .where(*condiciones)
-        .group_by(id_user_expr)
+        .group_by(entidad_expr)
     ).all()
 
-    por_empleado = {id_user: float(valor) for id_user, valor in filas if id_user is not None}
-    return {
-        'inicio': fecha_inicio.isoformat(),
-        'fin': fecha_fin.isoformat(),
-        'total': sum(por_empleado.values()),
-        'por_empleado': por_empleado,
-    }
+    por_entidad = {entidad: float(valor) for entidad, valor in filas if entidad is not None}
+    return {**base, 'total': sum(por_entidad.values()), 'por_empleado': por_entidad, 'por_periodo': {}}
 
 
 @bp_kpi.route('/kpi_definition/', methods=['GET'])
@@ -158,6 +195,14 @@ def query_kpi_snapshot(user_data):
     fecha_fin_b = _optional_date(request.args.get('fecha_fin_b'), 'fecha_fin_b')
     empleados = _optional_empleados(request.args.get('empleados'))
     id_departments = _optional_id_departments(request.args.get('id_departments'))
+    # "empleados" sigue siendo el nombre que manda el frontend hoy para
+    # cualquier KPI por empleado; "entidades" es el nombre nuevo,
+    # dimension-agnostico (para KPIs por producto). Si llega el primero se
+    # usa ese; si no, se acepta el segundo.
+    entidades = empleados if empleados is not None else _optional_entidades(request.args.get('entidades'))
+    agrupar_por = request.args.get('agrupar_por') or 'entidad'
+    if agrupar_por not in ('entidad', 'periodo'):
+        raise AppError('errors.invalid_field', 400, {'field': 'agrupar_por'})
 
     # Salvo que el plan del cliente declare otro valor, un rango no puede
     # pedir mas de un anio de una sola vez (ver el comentario junto a
@@ -189,23 +234,27 @@ def query_kpi_snapshot(user_data):
         kpi_row = db.get(KpiDefinition, id_kpi_definition)
         alcance_proyecto = ALCANCE_PROYECTO_POR_CLAVE.get(kpi_row.clave, True) if kpi_row else True
         actor_project = InvoiceService.actor_project(user_data) if alcance_proyecto else None
+        dimension = DIMENSION_POR_CLAVE.get(kpi_row.clave, 'empleado') if kpi_row else 'empleado'
+        campo_json = DIMENSION_JSON_KEY.get(dimension, 'id_user')
 
         # id_departments se resuelve a id_user (via Permission.id_department)
-        # y se combina con "empleados": si vienen los dos, interseccion; si
+        # y se combina con "entidades": si vienen los dos, interseccion; si
         # solo viene el departamento, esa lista completa hace de filtro de
         # empleados. Una lista vacia (departamento sin nadie) filtra a
-        # "nadie" -- ver el comentario en `_totales`.
-        if id_departments:
+        # "nadie" -- ver el comentario en `_totales`. Solo aplica a KPIs por
+        # empleado -- un producto no tiene departamento.
+        if id_departments and dimension == 'empleado':
             usuarios_del_departamento = _empleados_de_departamentos(db, id_departments)
-            if empleados is not None:
-                empleados = [id_empleado for id_empleado in empleados if id_empleado in usuarios_del_departamento]
+            if entidades is not None:
+                entidades = [id_empleado for id_empleado in entidades if id_empleado in usuarios_del_departamento]
             else:
-                empleados = list(usuarios_del_departamento)
+                entidades = list(usuarios_del_departamento)
 
-        rango_a = _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, empleados)
+        agrupar_por_periodo = agrupar_por == 'periodo'
+        rango_a = _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, agrupar_por_periodo)
         rango_b = None
         if fecha_inicio_b and fecha_fin_b:
-            rango_b = _totales(db, id_kpi_definition, fecha_inicio_b, fecha_fin_b, actor_project, empleados)
+            rango_b = _totales(db, id_kpi_definition, fecha_inicio_b, fecha_fin_b, actor_project, entidades, campo_json, agrupar_por_periodo)
 
     return jsonify({'rango_a': rango_a, 'rango_b': rango_b})
 
