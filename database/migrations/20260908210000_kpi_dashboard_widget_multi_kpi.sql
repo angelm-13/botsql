@@ -20,32 +20,24 @@ CREATE INDEX IF NOT EXISTS "idx_kpi_dashboard_widget_kpi_widget" ON "kpi_dashboa
 CREATE INDEX IF NOT EXISTS "idx_kpi_dashboard_widget_kpi_definition" ON "kpi_dashboard_widget_kpi" ("id_kpi_definition");
 
 -- Copiar el KPI que ya tenia cada widget existente, antes de quitar la
--- columna vieja.
---
--- Envuelto en un IF porque `db-migrate` re-aplica TODAS las migraciones en cada
--- arranque -no lleva tabla de control-, y en la segunda pasada la columna ya no
--- esta: este SELECT reventaba con
---
---     ERROR: column "id_kpi_definition" does not exist
---     DETAIL: There is a column named "id_kpi_definition" in table
---             "kpi_dashboard_widget_kpi", but it cannot be referenced from
---             this part of the query.
---
--- y con ON_ERROR_STOP=1 tumbaba el arranque entero (exit 3). El relleno solo
--- tiene sentido la primera vez, cuando la columna vieja aun existe.
+-- columna vieja. Con EXECUTE (no SQL estatico) a proposito: el initContainer
+-- corre esta cadena completa en cada arranque, y ya en la segunda corrida
+-- "id_kpi_definition" no existe mas en kpi_dashboard_widget (la quita el
+-- ALTER de mas abajo) -- un INSERT/SELECT estatico contra una columna que ya
+-- no existe truena al re-arrancar, visto real en tyakxa-dev.
 DO $$
 BEGIN
     IF EXISTS (
         SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'kpi_dashboard_widget'
-          AND column_name = 'id_kpi_definition'
+        WHERE table_name = 'kpi_dashboard_widget' AND column_name = 'id_kpi_definition'
     ) THEN
-        INSERT INTO "kpi_dashboard_widget_kpi"
-            ("id_kpi_dashboard_widget", "id_kpi_definition", "orden")
-        SELECT "id_kpi_dashboard_widget", "id_kpi_definition", 100
-        FROM "kpi_dashboard_widget"
-        WHERE "id_kpi_definition" IS NOT NULL
-        ON CONFLICT ("id_kpi_dashboard_widget", "id_kpi_definition") DO NOTHING;
+        EXECUTE '
+            INSERT INTO "kpi_dashboard_widget_kpi" ("id_kpi_dashboard_widget", "id_kpi_definition", "orden")
+            SELECT "id_kpi_dashboard_widget", "id_kpi_definition", 100
+            FROM "kpi_dashboard_widget"
+            WHERE "id_kpi_definition" IS NOT NULL
+            ON CONFLICT ("id_kpi_dashboard_widget", "id_kpi_definition") DO NOTHING
+        ';
     END IF;
 END $$;
 

@@ -47,10 +47,38 @@ def _recalcular_kpi_snapshots_en_sesion(session, fecha_inicio: date, fecha_fin: 
             # vez de reventar la tarea completa por uno solo.
             continue
 
-        for id_proyect in proyectos_activos:
-            filas = kpi.query_builder(session, fecha_inicio, fecha_fin, {}, id_proyect)
+        if kpi.alcance_proyecto:
+            # Camino original: una vez por proyecto activo, dimension_key
+            # trae id_proyect -- correcto para KPIs sobre entidades que SI
+            # tienen id_proyect (Invoice, Task, LaboratoryServiceOrder,
+            # Document).
+            for id_proyect in proyectos_activos:
+                filas = kpi.query_builder(session, fecha_inicio, fecha_fin, {}, id_proyect)
+                for id_empleado, periodo, valor in filas:
+                    dimension_key = {"id_user": id_empleado, "id_proyect": id_proyect}
+                    insercion = pg_insert(KpiSnapshot).values(
+                        id_kpi_definition=id_kpi_definition,
+                        dimension_key=dimension_key,
+                        periodo=periodo,
+                        valor=valor,
+                    )
+                    upsert = insercion.on_conflict_do_update(
+                        constraint="uq_kpi_snapshot_dia",
+                        set_={"valor": insercion.excluded.valor, "computed_at": func.now()},
+                    )
+                    session.execute(upsert)
+                    filas_escritas += 1
+        else:
+            # Sin alcance de proyecto (ver `KpiDefinition.alcance_proyecto`):
+            # UNA sola pasada con `actor_project=None`, dimension_key SIN
+            # id_proyect. Repetir el bucle de arriba por cada proyecto activo
+            # sembraria N filas identicas (una por proyecto) para un KPI
+            # sobre una entidad que no distingue por proyecto -- un
+            # superusuario que no filtra por proyecto en `_totales()` (ver
+            # `routes/kpi.py`) veria el total multiplicado por N.
+            filas = kpi.query_builder(session, fecha_inicio, fecha_fin, {}, None)
             for id_empleado, periodo, valor in filas:
-                dimension_key = {"id_user": id_empleado, "id_proyect": id_proyect}
+                dimension_key = {"id_user": id_empleado}
                 insercion = pg_insert(KpiSnapshot).values(
                     id_kpi_definition=id_kpi_definition,
                     dimension_key=dimension_key,

@@ -7,7 +7,7 @@ import {
   deleteProyect,
   getCustomerSupplierOptions,
   getAllProyect,
-  getAllUser,
+  getUserOptions,
   getMyPermissions,
   getOperationsCatalog,
   getProyect,
@@ -186,7 +186,7 @@ export default function ProjectManagementPage() {
         const [permissionPayload, customerPayload, userPayload, catalogPayload] = await Promise.all([
           privileged ? Promise.resolve({ entity_permissions: [] }) : getMyPermissions().catch(() => ({ entity_permissions: [] })),
           getCustomerSupplierOptions().catch(() => []),
-          getAllUser({ page: 1, per_page: 100 }).catch(() => ({ items: [] })),
+          getUserOptions().catch(() => []),
           // Si el catalogo no llega, `statusCodes` cae en STATUS_ORDER y los
           // cambios de estatus quedan sin ofrecer, no ofrecidos a ciegas: el
           // servidor los rechazaria y el mensaje seria peor.

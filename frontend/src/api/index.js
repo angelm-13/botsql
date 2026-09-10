@@ -650,6 +650,10 @@ export const updateUnit = (id, payload) => request(`/unit/${id}`, { method: "PUT
 export const deleteUnit = (id) => request(`/unit/${id}`, { method: "DELETE" });
 
 export const getAllUser = (params = {}) => request("/user/", { params });
+// Solo id+nombre, para selectores (ej. "Responsable" en un vale de almacen
+// o el lider de un proyecto) -- cualquier usuario autenticado puede
+// llamarlo, sin exigir el permiso de lectura completo de user.
+export const getUserOptions = () => request("/user/options");
 export const getUser = (id) => request(`/user/${id}`);
 export const createUser = (payload) => request("/user/", { method: "POST", body: payload });
 export const updateUser = (id, payload) => request(`/user/${id}`, { method: "PUT", body: payload });

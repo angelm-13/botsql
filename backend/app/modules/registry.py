@@ -590,6 +590,13 @@ def _validar():
     if len(ids) != len(set(ids)):
         raise RuntimeError("Hay dos roles con el mismo id_permission.")
 
+    # El sembrado real resuelve por `nombre`, no por `id_permission` (ver
+    # `filas_de_permisos`), asi que dos roles con el mismo nombre chocarian en
+    # la base real aunque aqui tengan ids distintos.
+    nombres = [r.nombre for r in ROLES]
+    if len(nombres) != len(set(nombres)):
+        raise RuntimeError("Hay dos roles con el mismo nombre.")
+
 
 _validar()
 
@@ -619,8 +626,16 @@ def almacenes():
 def filas_de_permisos():
     """La matriz completa, lista para sembrar.
 
-    Devuelve tuplas (id_permission, entity_name, bits, menu_location,
+    Devuelve tuplas (role_name, entity_name, bits, menu_location,
     menu_group, menu_group_icon, menu_label, menu_order, modulo_licencia).
+
+    El primer campo es el NOMBRE del rol (`permission_description`), no su
+    `id_permission`. La base resuelve el numero real por nombre al aplicar la
+    migracion -- ver `backend/scripts/seed_module_permissions.py`-- porque los
+    ids de `permission` no son estables entre instalaciones (cada una siembra
+    sus roles en un orden distinto). Un id fijo aqui ya causo que Facturacion
+    quedara concedida al rol equivocado en mas de un cliente real: el numero
+    coincidia con OTRO rol en esa base, no con el que se penso al escribirlo.
 
     `modulo_licencia` es la clave que gobierna si la fila se siembra para un
     cliente dado: normalmente la del modulo dueno de la entidad/capacidad,
@@ -636,7 +651,7 @@ def filas_de_permisos():
                     continue
                 etiqueta, orden = MENU.get(entidad, (None, None))
                 filas.append((
-                    rol.id_permission, entidad, bits,
+                    rol.nombre, entidad, bits,
                     "sidebar" if etiqueta else "hidden",
                     modulo.grupo_de_menu if etiqueta else None,
                     modulo.icono_de_menu if etiqueta else None,
@@ -655,7 +670,7 @@ def filas_de_permisos():
             # dispositivo Kronos.
             es_pantalla = capacidad.menu in ("sidebar", "settings")
             filas.append((
-                rol.id_permission, capacidad.clave, capacidad.bits, capacidad.menu,
+                rol.nombre, capacidad.clave, capacidad.bits, capacidad.menu,
                 modulo.grupo_de_menu if es_pantalla else None,
                 modulo.icono_de_menu if es_pantalla else None,
                 capacidad.etiqueta if es_pantalla else None,

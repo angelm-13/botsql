@@ -411,6 +411,20 @@ def _delete_user_or_retire_bootstrap(user_data, target_user_id, service_cls):
         _raise_user_delete_constraint_error(error)
 
 
+@bp_user.route('/options', methods=['GET'])
+@token_required
+def list_user_options(user_data):
+    """Solo id+nombre, para selectores como "Responsable" en un vale de
+    almacen o el lider de un proyecto.
+
+    Sin permiso de entidad de por medio a proposito: cualquier usuario
+    autenticado puede necesitar asignarle algo a un companero (un vale, un
+    proyecto) sin tener acceso al catalogo de RH completo -- solo id+nombre,
+    nada de puesto/salario/RFC/etc.
+    """
+    return jsonify(UserService.options())
+
+
 @bp_user.route('/', methods=['GET'])
 @token_required
 @require_entity_permission('user', 'read')
