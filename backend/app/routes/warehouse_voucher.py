@@ -17,6 +17,7 @@ from __future__ import annotations
 from flask import Blueprint, jsonify, request
 
 from app.services.warehouse_voucher_service import (
+    autorizar_vale,
     buscar_vales,
     cerrar_renglon,
     consultar_vale,
@@ -42,6 +43,21 @@ def _cuerpo():
 def abrir_vale(user_data):
     """Abre un vale con sus renglones. Todo o nada."""
     return jsonify(crear_vale(_cuerpo(), user_data)), 201
+
+
+@bp_warehouse_voucher.route("/prevouchers", methods=["POST"])
+@token_required
+@require_entity_permission("warehouse_prevoucher", "create")
+def abrir_prevale(user_data):
+    """Deja un PREVALE: el material pedido, en borrador, sin mover el almacen.
+
+    Ruta aparte y no un campo en el cuerpo de `POST /vouchers` a proposito. Con
+    un campo, la puerta seria la misma para pedir y para surtir -- habria que
+    guardar la ruta con la capacidad mas permisiva de las dos -- y el permiso
+    dejaria de decir nada. Asi cada camino lleva su llave: esta
+    `warehouse_prevoucher`, la otra `warehouse_voucher`.
+    """
+    return jsonify(crear_vale(_cuerpo(), user_data, como_borrador=True)), 201
 
 
 @bp_warehouse_voucher.route("/vouchers", methods=["GET"])
@@ -80,6 +96,20 @@ def vencidos(user_data):
 @require_entity_permission("warehouse_voucher", "read")
 def leer_vale(user_data, id_incident):
     return jsonify(consultar_vale(id_incident, user_data))
+
+
+@bp_warehouse_voucher.route("/vouchers/<id_incident>/authorize", methods=["POST"])
+@token_required
+@require_entity_permission("warehouse_voucher_authorize", "create")
+def autorizar(user_data, id_incident):
+    """Convierte un borrador en vale: lo abre y saca el material.
+
+    Se guarda con `warehouse_voucher_authorize` y no con `warehouse_voucher`
+    porque son dos derechos distintos: escribir el prevale y soltar el
+    material. El servicio lo vuelve a comprobar -- la ruta protege la puerta,
+    pero la regla vive donde vive la operacion.
+    """
+    return jsonify(autorizar_vale(id_incident, _cuerpo(), user_data)), 200
 
 
 @bp_warehouse_voucher.route("/vouchers/lines/<id_line>/return", methods=["POST"])

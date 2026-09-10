@@ -51,7 +51,9 @@ from app.models import (
 from app.models.session import transaction_context
 from app.services.warehouse_voucher_service import (
     ABIERTO,
+    BORRADOR,
     CERRADO,
+    autorizar_vale,
     cerrar_renglon,
     devolver_renglon,
     consultar_vale,
@@ -64,6 +66,11 @@ from tests.model_factory import sembrar_actor
 
 
 ACTOR = {"id_user": 1, "id_proyect": 30, "is_superuser": True}
+# El que autoriza no es el que pide, que es el control entero. Superusuario para
+# no tener que sembrar la matriz de permisos en cada prueba: lo que se comprueba
+# aqui es el flujo del borrador, y el permiso tiene sus propias pruebas.
+OTRO_ACTOR = {"id_user": 2, "id_proyect": 30, "is_superuser": True}
+JEFE_DE_ALMACEN = 6
 
 EMISOR, CLIENTE, PROYECTO, ESTATUS = 10, 20, 30, 40
 NAVE, RACK, COMPRA = 50, 51, 52
@@ -182,6 +189,18 @@ class BaseVale(BackendTestCase):
             "reason": "Surtido inicial",
             "idempotency_key": "surtido:%s:%s" % (id_location, cantidad),
         }, ACTOR)
+
+    def _saldo(self, id_location=NAVE, id_product=None):
+        from sqlalchemy import select as _select
+
+        from app.models.inventory_stock import InventoryStock
+
+        with transaction_context() as db:
+            fila = db.scalars(_select(InventoryStock).where(
+                InventoryStock.id_product == (id_product or CEMENTO),
+                InventoryStock.id_location == id_location,
+            )).first()
+            return int(fila.quantity) if fila else 0
 
     def _pieza(self, etiqueta):
         from app.services.inventory_asset_service import register_asset
@@ -801,6 +820,178 @@ class TestElFolioSeBusca(BaseVale):
         fila = buscar_vales(ACTOR, solo_con_pendientes=True)["items"][0]
         self.assertEqual(2, fila["open_lines"])
         self.assertEqual(2, fila["total_lines"])
+
+
+class TestElPrevaleNoMueveElAlmacen(BaseVale):
+    """El borrador es lo PEDIDO, no lo entregado.
+
+    Es el control entero: quien pide material deja un borrador y no saca nada;
+    quien surte lo autoriza, y ese acto es el que mueve la existencia. Con las
+    dos cosas en la misma operacion, pedir era llevarse.
+    """
+
+    def _prevale(self, lineas, **extra):
+        carga = {"id_incident_type": TIPO_PRESTAMO, "id_user": 1,
+                 "note": "Obra Norte", "lines": lineas,
+                 "due_date": (datetime.now() + timedelta(days=30)).strftime(
+                     "%Y-%m-%d %H:%M:%S")}
+        carga.update(extra)
+        return crear_vale(carga, ACTOR, como_borrador=True)
+
+    def test_a_draft_leaves_the_stock_untouched(self):
+        self.surtir(5, RACK)
+        antes = self._saldo(RACK)
+
+        r = self._prevale([{"id_product": CEMENTO, "quantity": 2,
+                            "id_location_from": RACK}])
+
+        self.assertEqual(BORRADOR, r["voucher"]["incident_status"])
+        self.assertEqual(antes, self._saldo(RACK),
+                         "un borrador no puede descontar")
+
+    def test_authorising_opens_it_and_moves_the_stock(self):
+        self.surtir(5, RACK)
+        antes = self._saldo(RACK)
+        r = self._prevale([{"id_product": CEMENTO, "quantity": 2,
+                            "id_location_from": RACK}])
+
+        # Otro actor: el que pidio no autoriza.
+        abierto = autorizar_vale(r["voucher"]["id_incident"], {}, OTRO_ACTOR)
+
+        self.assertEqual(ABIERTO, abierto["voucher"]["incident_status"])
+        self.assertEqual(antes - 2, self._saldo(RACK),
+                         "al autorizar SI sale el material")
+
+    def test_it_cannot_be_authorised_twice(self):
+        """Autorizar dos veces sacaria el material dos veces."""
+        self.surtir(5, RACK)
+        r = self._prevale([{"id_product": CEMENTO, "quantity": 2,
+                            "id_location_from": RACK}])
+        id_vale = r["voucher"]["id_incident"]
+        autorizar_vale(id_vale, {}, OTRO_ACTOR)
+        despues = self._saldo(RACK)
+
+        with self.assertRaises(AppError) as cm:
+            autorizar_vale(id_vale, {}, OTRO_ACTOR)
+        self.assertEqual("errors.voucher_not_a_draft", cm.exception.message_key)
+        self.assertEqual(despues, self._saldo(RACK),
+                         "el intento fallido no puede haber movido nada")
+
+    def test_an_already_open_voucher_is_not_a_draft(self):
+        self.surtir(5, RACK)
+        r = self._vale([{"id_product": CEMENTO, "quantity": 1,
+                         "id_location_from": RACK}])
+        with self.assertRaises(AppError) as cm:
+            autorizar_vale(r["voucher"]["id_incident"], {}, OTRO_ACTOR)
+        self.assertEqual("errors.voucher_not_a_draft", cm.exception.message_key)
+
+    def test_without_the_capability_it_cannot_be_authorised(self):
+        """Sin `warehouse_voucher_authorize`, no se autoriza.
+
+        Es el permiso que se le quito al rol Administrator: puede dejar el
+        borrador y no puede soltar el material.
+        """
+        self.surtir(5, RACK)
+        antes = self._saldo(RACK)
+        r = self._prevale([{"id_product": CEMENTO, "quantity": 2,
+                            "id_location_from": RACK}])
+
+        sin_permiso = {"id_user": 2, "id_proyect": PROYECTO, "id_permission": 999}
+        with self.assertRaises(AppError) as cm:
+            autorizar_vale(r["voucher"]["id_incident"], {}, sin_permiso)
+        self.assertEqual("errors.forbidden", cm.exception.message_key)
+        self.assertEqual(antes, self._saldo(RACK))
+
+    def test_the_one_who_asked_cannot_authorise_it(self):
+        """Separacion de deberes: si el que pide autoriza, no separa nada.
+
+        Hace falta sembrar la fila de permiso: sin ella salta primero la
+        comprobacion de capacidad y la prueba no llegaria a mirar lo que
+        pretende mirar -- que TENIENDO el permiso, el que pidio sigue sin poder
+        autorizar lo suyo.
+        """
+        from app.models.entity_permission import EntityPermission
+
+        with transaction_context() as db:
+            db.add(EntityPermission(
+                id_permission=JEFE_DE_ALMACEN,
+                entity_name="warehouse_voucher_authorize",
+                control_type=15, created_by=1))
+
+        self.surtir(5, RACK)
+        antes = self._saldo(RACK)
+        r = self._prevale([{"id_product": CEMENTO, "quantity": 2,
+                            "id_location_from": RACK}])
+
+        # El mismo usuario que lo creo, pero SIN el atajo de superusuario.
+        el_mismo = {"id_user": ACTOR["id_user"], "id_proyect": PROYECTO,
+                    "id_permission": JEFE_DE_ALMACEN}
+        with self.assertRaises(AppError) as cm:
+            autorizar_vale(r["voucher"]["id_incident"], {}, el_mismo)
+        self.assertEqual("errors.voucher_self_authorization",
+                         cm.exception.message_key)
+        self.assertEqual(antes, self._saldo(RACK),
+                         "el intento rechazado no puede haber movido nada")
+
+    def test_with_the_capability_someone_else_can_authorise_it(self):
+        """Y la otra mitad: TENIENDO el permiso y siendo otro, si se autoriza.
+
+        Sin esta, la prueba de arriba pasaria igual si `autorizar_vale`
+        rechazara a todo el mundo.
+        """
+        from app.models.entity_permission import EntityPermission
+
+        with transaction_context() as db:
+            db.add(EntityPermission(
+                id_permission=JEFE_DE_ALMACEN,
+                entity_name="warehouse_voucher_authorize",
+                control_type=15, created_by=1))
+
+        self.surtir(5, RACK)
+        antes = self._saldo(RACK)
+        r = self._prevale([{"id_product": CEMENTO, "quantity": 2,
+                            "id_location_from": RACK}])
+
+        otro = {"id_user": 2, "id_proyect": PROYECTO,
+                "id_permission": JEFE_DE_ALMACEN}
+        abierto = autorizar_vale(r["voucher"]["id_incident"], {}, otro)
+
+        self.assertEqual(ABIERTO, abierto["voucher"]["incident_status"])
+        self.assertEqual(antes - 2, self._saldo(RACK))
+
+
+class TestLaDevolucionEsPorRenglon(BaseVale):
+    """Se piden dos y se devuelve uno primero y el otro despues.
+
+    Cada renglon del vale se cierra por su cuenta: el vale no queda cerrado
+    hasta que vuelve el ultimo. Sin esto, devolver una de dos cosas obligaria a
+    dejar el vale entero abierto o a cerrarlo con material fuera.
+    """
+
+    def test_returning_one_of_two_leaves_the_other_out(self):
+        self.surtir(10, RACK)
+        r = self._vale([
+            {"id_product": CEMENTO, "quantity": 2, "id_location_from": RACK},
+            {"id_product": CEMENTO, "quantity": 3, "id_location_from": RACK},
+        ])
+        id_vale = r["voucher"]["id_incident"]
+        primero, segundo = r["lines"][0], r["lines"][1]
+        tras_salir = self._saldo(RACK)
+
+        devolver_renglon(primero["id_nm_incident_product"], {}, ACTOR)
+
+        consulta = consultar_vale(id_vale, ACTOR)
+        self.assertEqual(ABIERTO, consulta["voucher"]["incident_status"],
+                         "con un renglon fuera, el vale sigue abierto")
+        self.assertEqual(tras_salir + 2, self._saldo(RACK),
+                         "solo vuelve lo del renglon devuelto")
+
+        devolver_renglon(segundo["id_nm_incident_product"], {}, ACTOR)
+
+        consulta = consultar_vale(id_vale, ACTOR)
+        self.assertEqual(CERRADO, consulta["voucher"]["incident_status"],
+                         "cuando vuelve el ultimo, el vale se cierra")
+        self.assertEqual(tras_salir + 5, self._saldo(RACK))
 
 
 if __name__ == "__main__":

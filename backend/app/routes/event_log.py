@@ -150,10 +150,10 @@ def list_event_log(user_data):
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 20))
     sort = request.args.get('sort')
-    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort'} and k in ALLOWED_FIELDS}
+    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort', 'q'} and k in ALLOWED_FIELDS}
     guard = _require_bootstrap_actor(user_data)
     if guard: return guard
-    return jsonify(EventLogService.list(page=page, per_page=per_page, filters=filters, sort=sort))
+    return jsonify(EventLogService.list(page=page, per_page=per_page, filters=filters, sort=sort, q=request.args.get('q')))
 
 
 @bp_event_log.route('/<id_event_log>', methods=['GET'])

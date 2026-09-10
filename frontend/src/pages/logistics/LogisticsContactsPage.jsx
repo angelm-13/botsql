@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Pencil, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
+import { Pencil, RefreshCw, Search, Trash2 } from "lucide-react";
 
 import {
   createLogisticsContact,
@@ -10,6 +10,7 @@ import {
 } from "../../api";
 import { useI18n } from "../../i18n";
 import PageHeader from "../../components/PageHeader.jsx";
+import FormularioPlegable from "../../components/FormularioPlegable.jsx";
 
 const emptyForm = {
   id_customer_supplier: "",
@@ -114,8 +115,11 @@ export default function LogisticsContactsPage() {
         <button className="button ghost" type="button" onClick={loadData}><RefreshCw size={16} /> {t("logistics.refresh")}</button>
       </PageHeader>
 
-      <form className="form-card" onSubmit={handleSubmit}>
-        <div className="form-header"><Plus size={18} /><strong>{editingId ? `${t("logistics.edit")} ${t("logistics.contact_singular").toLowerCase()}` : `${t("logistics.contact_new")} ${t("logistics.contact_singular").toLowerCase()}`}</strong></div>
+      <FormularioPlegable
+        titulo={editingId ? `${t("logistics.edit")} ${t("logistics.contact_singular").toLowerCase()}` : `${t("logistics.contact_new")} ${t("logistics.contact_singular").toLowerCase()}`}
+        abrirSi={editingId}
+        onSubmit={handleSubmit}
+      >
         <div className="form-grid">
           <label className="field"><span>{t("logistics.customer")}</span><select name="id_customer_supplier" value={form.id_customer_supplier} onChange={handleChange} required><option value="">{t("logistics.select_customer")}</option>{clients.map((client) => <option key={client.id_customer_supplier} value={client.id_customer_supplier}>{client.name}</option>)}</select></label>
           <label className="field"><span>{t("logistics.full_name")}</span><input name="full_name" value={form.full_name} onChange={handleChange} maxLength="150" required /></label>
@@ -125,7 +129,7 @@ export default function LogisticsContactsPage() {
           <label className="field"><span>{t("logistics.status")}</span><select name="status" value={form.status} onChange={handleChange}><option value="activo">{t("logistics.status_active")}</option><option value="inactivo">{t("logistics.status_inactive")}</option></select></label>
         </div>
         <div className="form-actions"><button className="button primary" type="submit">{t("logistics.save")}</button>{editingId && <button className="button" type="button" onClick={() => { setEditingId(null); setForm(emptyForm); }}>{t("logistics.cancel")}</button>}</div>
-      </form>
+      </FormularioPlegable>
 
       <div className="toolbar"><div className="search-box"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("logistics.contact_search")} /></div></div>
       {error && <div className="alert error">{error}</div>}

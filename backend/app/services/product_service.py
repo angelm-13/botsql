@@ -160,14 +160,21 @@ class ProductService(CrudService):
             raise AppError('errors.project_scope_required', status_code=403)
 
     @classmethod
-    def list_scoped(cls, user_data: dict, page: int = 1, per_page: int = 20, filters: dict | None = None, sort: str | None = None):
+    def list_scoped(cls, user_data: dict, page: int = 1, per_page: int = 20,
+                    filters: dict | None = None, sort: str | None = None,
+                    q: str | None = None):
         project_id = cls._project_id(user_data)
         if project_id is None:
-            return cls.list(page=page, per_page=per_page, filters=filters, sort=sort)
+            return cls.list(page=page, per_page=per_page, filters=filters, sort=sort, q=q)
 
         filters = filters or {}
         with transaction_context() as session:
             stmt = select(Product).join(Invoice, Product.id_invoice == Invoice.id_invoice).where(Invoice.id_proyect == project_id)
+            # La misma busqueda libre que la lista sin alcance: sin esto, quien
+            # ve solo su proyecto tendria un buscador peor que el resto.
+            busqueda = cls._busqueda_libre(q)
+            if busqueda is not None:
+                stmt = stmt.where(busqueda)
             for key, value in filters.items():
                 if not hasattr(Product, key) or value in (None, ''):
                     continue

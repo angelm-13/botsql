@@ -2,10 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import {
   AlertTriangle, ArrowLeft, ArrowRight, Check, ClipboardList, Package, Plus,
-  RefreshCw, Search, Tag, Trash2, X,
+  ImageOff, RefreshCw, Search, Tag, Trash2, X,
 } from "lucide-react";
 import {
+  authorizeWarehouseVoucher,
   closeWarehouseVoucherLine,
+  createWarehousePrevoucher,
   createWarehouseVoucher,
   getAllIncidentType,
   getAllLocation,
@@ -57,6 +59,16 @@ import PageHeader from "../components/PageHeader.jsx";
  */
 const SALIDA = "salida";
 
+// Los estados por los que se puede filtrar la lista. `borrador` va primero
+// despues de "todos" porque es el que pide accion: un prevale sin autorizar es
+// material que alguien esta esperando.
+const ESTADOS_DE_VALE = [
+  { valor: "", clave: "all", texto: "Todos" },
+  { valor: "borrador", clave: "draft", texto: "Por autorizar" },
+  { valor: "abierto", clave: "open", texto: "Abiertos" },
+  { valor: "cerrado", clave: "closed", texto: "Cerrados" },
+];
+
 export default function WarehouseVoucherPage() {
   const { t } = useI18n();
   const [vencidos, setVencidos] = useState([]);
@@ -74,6 +86,13 @@ export default function WarehouseVoucherPage() {
   const [lista, setLista] = useState(null);
   const [pagina, setPagina] = useState(1);
   const [soloAbiertos, setSoloAbiertos] = useState(true);
+  // El estado por el que se filtra la lista. "" es todos.
+  //
+  // `borrador` es el que hacia falta: los prevales pendientes de autorizar no
+  // se pueden encontrar de otra forma -- no tienen material fuera, asi que el
+  // filtro de "solo con material fuera" los esconde, que es justo al reves de
+  // lo que necesita quien tiene que autorizarlos.
+  const [estado, setEstado] = useState("");
   const [idBuscado, setIdBuscado] = useState("");
 
   const traducir = useRef(t);
@@ -119,7 +138,11 @@ export default function WarehouseVoucherPage() {
     try {
       setLista(await listWarehouseVouchers({
         q: idBuscado.trim() || undefined,
-        only_open: soloAbiertos ? 1 : undefined,
+        // Los dos filtros no se combinan: un borrador no tiene nada fuera, asi
+        // que pedir "borrador" y "solo con material fuera" a la vez no
+        // devolveria nada. Al elegir un estado, el otro filtro se ignora.
+        only_open: (soloAbiertos && !estado) ? 1 : undefined,
+        status: estado || undefined,
         page: pagina,
         per_page: 15,
       }));
@@ -127,7 +150,7 @@ export default function WarehouseVoucherPage() {
       setLista(null);
       decirError(e, "No se pudo cargar la lista de vales.");
     }
-  }, [idBuscado, soloAbiertos, pagina]);
+  }, [idBuscado, soloAbiertos, estado, pagina]);
 
   // Al escribir se espera: una peticion por tecla con 139 vales detras es
   // pedirle al servidor una consulta que nadie va a leer.
@@ -138,7 +161,7 @@ export default function WarehouseVoucherPage() {
 
   // Cambiar el texto o el filtro vuelve a la primera pagina: quien esta en la 7
   // y escribe algo nuevo no quiere la pagina 7 de otro resultado.
-  useEffect(() => { setPagina(1); }, [idBuscado, soloAbiertos]);
+  useEffect(() => { setPagina(1); }, [idBuscado, soloAbiertos, estado]);
 
   const consultar = async (id) => {
     const numero = String(id || "").trim();
@@ -152,12 +175,24 @@ export default function WarehouseVoucherPage() {
     }
   };
 
-  const guardar = async () => {
+  /**
+   * Guarda el vale, o lo deja en borrador.
+   *
+   * `comoPrevale` elige la ruta, y con ella el permiso: `/prevouchers` pide
+   * `warehouse_prevoucher` y no mueve el almacen; `/vouchers` pide
+   * `warehouse_voucher` y saca el material. Quien no tenga la segunda recibe
+   * un 403 de la puerta, y por eso el boton de abrir se ofrece igual: el
+   * servidor es quien decide, no la pantalla, y una pantalla que esconde
+   * botones segun lo que cree del permiso acaba escondiendo los que si se
+   * pueden.
+   */
+  const guardar = async (comoPrevale = false) => {
     if (!borrador.lines.length) return;
     setError("");
     setAviso("");
+    const alta = comoPrevale ? createWarehousePrevoucher : createWarehouseVoucher;
     try {
-      const creado = await createWarehouseVoucher({
+      const creado = await alta({
         ...borrador,
         lines: borrador.lines.map((l) => ({
           id_product: l.id_product,
@@ -169,10 +204,29 @@ export default function WarehouseVoucherPage() {
       });
       setBorrador(null);
       setConsultado(await getWarehouseVoucher(creado.voucher.id_incident));
-      setAviso(`${t("voucher.created", "Vale abierto")} #${creado.voucher.id_incident}`);
+      setAviso(`${comoPrevale
+        ? t("voucher.drafted", "Prevale guardado, pendiente de autorizar")
+        : t("voucher.created", "Vale abierto")} #${creado.voucher.id_incident}`);
       await cargar();
     } catch (e) {
-      decirError(e, "No se pudo abrir el vale.");
+      decirError(e, comoPrevale
+        ? "No se pudo guardar el prevale."
+        : "No se pudo abrir el vale.");
+    }
+  };
+
+  /** Autoriza un borrador: lo abre y saca el material. */
+  const autorizar = async (idVale) => {
+    setError("");
+    setAviso("");
+    try {
+      const r = await authorizeWarehouseVoucher(idVale);
+      setConsultado(await getWarehouseVoucher(r.voucher.id_incident));
+      setAviso(t("voucher.authorized",
+        "Vale autorizado: el material salió del almacén."));
+      await cargar();
+    } catch (e) {
+      decirError(e, "No se pudo autorizar el vale.");
     }
   };
 
@@ -295,8 +349,24 @@ export default function WarehouseVoucherPage() {
         {lista && !consultado && (
           <>
             <div className="vale-lista-cabecera">
+              {/* El estado, en botones y no en un desplegable: son cuatro y el
+                  que importa a diario -- "por autorizar" -- tiene que estar a
+                  un clic, no escondido tras abrir una lista. */}
+              <div className="vale-filtro-estado" role="group"
+                   aria-label={t("voucher.filter_status", "Filtrar por estado")}>
+                {ESTADOS_DE_VALE.map(({ valor, clave, texto }) => (
+                  <button
+                    key={valor || "todos"}
+                    type="button"
+                    className={`button button-quiet ${estado === valor ? "activo" : ""}`}
+                    onClick={() => setEstado(valor)}
+                  >
+                    {t(`voucher.filter_${clave}`, texto)}
+                  </button>
+                ))}
+              </div>
               <label className="vale-solo-abiertos">
-                <input type="checkbox" checked={soloAbiertos}
+                <input type="checkbox" checked={soloAbiertos} disabled={Boolean(estado)}
                        onChange={(e) => setSoloAbiertos(e.target.checked)} />
                 {t("voucher.only_open", "Solo con material fuera")}
               </label>
@@ -368,8 +438,8 @@ export default function WarehouseVoucherPage() {
               <ArrowLeft size={15} />
               {t("voucher.back_to_list", "Volver a la lista")}
             </button>
-            <Vale vale={consultado} onCerrar={cerrar} nombreDe={nombreDe}
-                  sitioDe={sitioDe} t={t} />
+            <Vale vale={consultado} onCerrar={cerrar} onAutorizar={autorizar}
+                  nombreDe={nombreDe} sitioDe={sitioDe} t={t} />
           </>
         )}
       </section>
@@ -378,12 +448,16 @@ export default function WarehouseVoucherPage() {
 }
 
 /** El vale con sus renglones, y el estado derivado bien visible. */
-function Vale({ vale, onCerrar, nombreDe, sitioDe, t }) {
+function Vale({ vale, onCerrar, onAutorizar, nombreDe, sitioDe, t }) {
   const cabecera = vale.voucher || {};
-  const cerrado = String(cabecera.incident_status || "") === "cerrado";
+  const estado = String(cabecera.incident_status || "");
+  const cerrado = estado === "cerrado";
+  // El borrador es el prevale: material pedido, todavia en el almacen.
+  const borrador = estado === "borrador";
 
   return (
-    <article className={`vale-tarjeta ${cerrado ? "vale-cerrado" : "vale-abierto"}`}>
+    <article className={`vale-tarjeta ${
+      borrador ? "vale-borrador" : (cerrado ? "vale-cerrado" : "vale-abierto")}`}>
       <header>
         <div>
           <h3>
@@ -395,17 +469,40 @@ function Vale({ vale, onCerrar, nombreDe, sitioDe, t }) {
             {cabecera.note && <> · {cabecera.note}</>}
           </p>
         </div>
-        {/* El estado se muestra, no se elige: lo derivan los renglones. */}
-        <span className={`vale-estado ${cerrado ? "es-cerrado" : "es-abierto"}`}>
-          {cerrado
-            ? t("voucher.status_closed", "Cerrado")
-            : t("voucher.status_open", "Abierto")}
+        {/* El estado se muestra, no se elige: lo derivan los renglones -- con
+            una excepcion, el borrador, que no habla de los renglones sino de
+            que todavia nadie autorizo la salida. */}
+        <span className={`vale-estado ${
+          borrador ? "es-borrador" : (cerrado ? "es-cerrado" : "es-abierto")}`}>
+          {borrador
+            ? t("voucher.status_draft", "Borrador")
+            : (cerrado
+              ? t("voucher.status_closed", "Cerrado")
+              : t("voucher.status_open", "Abierto"))}
           <em>
-            {vale.open_lines} {t("voucher.of", "de")} {vale.total_lines}{" "}
-            {t("voucher.open_lines", "sin devolver")}
+            {borrador
+              ? t("voucher.nothing_left_yet", "nada ha salido todavía")
+              : `${vale.open_lines} ${t("voucher.of", "de")} ${vale.total_lines} ${
+                t("voucher.open_lines", "sin devolver")}`}
           </em>
         </span>
       </header>
+
+      {/* Autorizar es lo que saca el material, asi que va arriba y solo cuando
+          hay algo que autorizar. Si quien mira no tiene la capacidad, el
+          servidor lo niega -- la pantalla no adivina permisos. */}
+      {borrador && (
+        <p className="vale-autorizar">
+          <button className="button button-primary"
+                  onClick={() => onAutorizar(cabecera.id_incident)}>
+            {t("voucher.authorize", "Autorizar y entregar")}
+          </button>
+          <span className="muted">
+            {t("voucher.authorize_help",
+              "Al autorizar sale el material del almacén. Lo hace el jefe de almacén, y no puede ser quien pidió el vale.")}
+          </span>
+        </p>
+      )}
 
       <ul className="vale-renglones">
         {(vale.lines || []).map((linea) => {
@@ -416,14 +513,17 @@ function Vale({ vale, onCerrar, nombreDe, sitioDe, t }) {
                   abierto ? "" : "devuelto",
                   linea.direction === SALIDA ? "vale-salida" : "vale-entrada",
                 ].filter(Boolean).join(" ")}>
+              {/* Que es lo que salio. Antes aqui solo iba "producto #6847":
+                  un numero que no dice si lo que se llevaron fue un taladro o
+                  un saco de cemento, y quien mira un vale para reclamar
+                  material necesita saber QUE es. */}
+              <FichaDeProducto producto={linea.product} t={t} />
+
               <span className="vale-que">
                 {linea.id_inventory_asset ? <Tag size={13} /> : <Package size={13} />}
                 {linea.id_inventory_asset
                   ? `${t("voucher.piece", "pieza")} #${linea.id_inventory_asset}`
                   : `${linea.quantity} ${t("voucher.units", "unidades")}`}
-                <em className="muted">
-                  {t("voucher.product", "producto")} #{linea.id_product}
-                </em>
               </span>
               <span className="vale-donde muted">
                 {sitioDe(linea.id_location_from)}
@@ -461,6 +561,7 @@ function Vale({ vale, onCerrar, nombreDe, sitioDe, t }) {
 }
 
 Vale.propTypes = {
+  onAutorizar: PropTypes.func.isRequired,
   vale: PropTypes.shape({
     voucher: PropTypes.object,
     lines: PropTypes.array,
@@ -472,6 +573,54 @@ Vale.propTypes = {
   sitioDe: PropTypes.func.isRequired,
   t: PropTypes.func.isRequired,
 };
+
+/**
+ * Que es el producto de un renglon: su foto, su codigo y su clasificacion.
+ *
+ * La foto va pequeña y con su hueco cuando falta -- no se esconde el marco --
+ * para que la lista de renglones no cambie de alto segun cuales tengan
+ * imagen: una lista que se descuadra al cargar se lee peor que una con
+ * huecos.
+ *
+ * Y si el archivo no esta, se cae al marcador en vez de dejar el icono de
+ * imagen rota del navegador, que se lee como un fallo de la aplicacion. Pasa
+ * de verdad con lo importado: `path_imagen` trae la carpeta del sistema
+ * anterior -- `/uploads/producto/225.png`, en singular -- y la aplicacion
+ * sirve `/uploads/products/`, en plural.
+ */
+function FichaDeProducto({ producto, t }) {
+  const [fotoRota, setFotoRota] = useState(false);
+  if (!producto) return null;
+  const rasgos = [producto.brand, producto.material, producto.unit].filter(Boolean);
+
+  return (
+    <span className="vale-ficha">
+      <span className="vale-ficha-foto">
+        {producto.path_imagen && !fotoRota ? (
+          <img src={producto.path_imagen} alt={producto.descripcion || ""}
+               loading="lazy" onError={() => setFotoRota(true)} />
+        ) : (
+          <ImageOff size={16} />
+        )}
+      </span>
+      <span className="vale-ficha-datos">
+        <strong>{producto.descripcion || `#${producto.id_product}`}</strong>
+        <span className="muted mono">
+          {producto.product_code || `#${producto.id_product}`}
+          {producto.tracking_mode === "serializado"
+            && ` · ${t("voucher.serialized", "pieza por pieza")}`}
+        </span>
+        {rasgos.length > 0 && <span className="muted">{rasgos.join(" · ")}</span>}
+      </span>
+    </span>
+  );
+}
+
+FichaDeProducto.propTypes = {
+  producto: PropTypes.object,
+  t: PropTypes.func.isRequired,
+};
+FichaDeProducto.defaultProps = { producto: null };
 
 /** La captura de un vale: cabecera y renglones. */
 function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
@@ -701,7 +850,24 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
       )}
 
       <footer className="vale-pie">
-        <button className="button button-primary" onClick={onGuardar} disabled={!listo}>
+        {/* Dos salidas para el mismo formulario, porque son dos actos: pedir y
+            surtir. El prevale queda en borrador y no mueve nada; abrir el vale
+            saca el material y necesita `warehouse_voucher`.
+
+            Los dos botones se ofrecen siempre y es el servidor quien niega:
+            una pantalla que esconde botones segun lo que CREE del permiso
+            acaba escondiendo los que si se podian, y el permiso vive en la
+            base, no aqui. */}
+        <button
+          className="button"
+          onClick={() => onGuardar(true)}
+          disabled={!listo}
+          title={t("voucher.draft_help",
+            "Deja el material pedido, sin sacarlo. Lo autoriza el jefe de almacén.")}
+        >
+          {t("voucher.draft", "Guardar prevale")}
+        </button>
+        <button className="button button-primary" onClick={() => onGuardar(false)} disabled={!listo}>
           {t("voucher.open", "Abrir vale")}
         </button>
         <button className="button button-quiet" onClick={onCancelar}>

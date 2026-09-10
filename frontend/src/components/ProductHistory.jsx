@@ -1,41 +1,56 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
-import { ArrowDownLeft, ArrowUpRight, MapPin, X } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, MapPin, User, X } from "lucide-react";
 import {
   getInventoryMovements, getProductLoanHistory, getProductStock,
 } from "../api";
 import Pagination from "./Pagination.jsx";
+import { mezclar } from "../utils/historialDelProducto";
 import { useI18n } from "../i18n";
 import "../styles/product-history.css";
+
+const POR_PAGINA = 20;
 
 /**
  * La ficha de un producto: qué le ha pasado, en una ventana.
  *
- * Tres cosas y no una
- * -------------------
- * «El historial» son en realidad tres preguntas distintas, y viven en tablas
- * distintas porque contestan cosas distintas:
+ * Un solo historial, de dos tablas
+ * --------------------------------
+ * Antes eran dos pestañas —«Movimientos» y «Préstamos»— porque son dos tablas:
  *
- *   * **Movimientos** — `inventory_ledger`. Cuánto entró, cuánto salió y con
- *     qué saldo quedó. Es el libro: sirve para auditar cómo llegó la
- *     existencia al número que se ve hoy;
- *   * **Préstamos** — `nm_incident_product`, los renglones del vale. QUIÉN se
- *     lo llevó y si lo devolvió. El libro no lo sabe: para él una salida por
- *     préstamo y una por venta son la misma resta;
- *   * **Ubicaciones** — `inventory_stock`. Dónde está repartido ahora mismo.
+ *   * `inventory_ledger`, el libro: cuánto entró, cuánto salió y con qué saldo
+ *     quedó. Sirve para auditar cómo llegó la existencia al número de hoy;
+ *   * `nm_incident_product`, los renglones del vale: QUIÉN se lo llevó y si lo
+ *     devolvió. El libro no lo sabe — para él una salida por préstamo y una por
+ *     venta son la misma resta.
  *
- * Juntarlas en una sola lista se leería mal: una devolución saldría dos veces
- * —como entrada del libro y como renglón devuelto— y parecerían dos hechos.
+ * Pero son dos vistas del MISMO hecho, no dos hechos: cuando el vale saca una
+ * pieza escribe las dos cosas, el renglón del vale y el asiento del libro con
+ * `reference_type = "incident"`. Dos pestañas obligaban a mirar en dos sitios
+ * para reconstruir una sola historia, y el problema real de juntarlas —que cada
+ * salida saliera dos veces— se resuelve cruzándolas en vez de concatenarlas.
  *
- * Por qué los préstamos pueden decir TODOS los que se lo llevaron
- * --------------------------------------------------------------
- * Porque `nm_incident_product` es de solo agregado: devolver AÑADE un renglón
- * de entrada en vez de reescribir la salida. Si la devolución sobrescribiera,
- * esta pestaña solo podría contestar por el último.
+ * Cómo se cruzan
+ * --------------
+ * Un asiento del libro que apunta a un vale y el renglón de ese vale son el
+ * mismo renglón aquí, con lo que aporta cada uno: el libro pone el saldo que
+ * quedó, el vale pone el responsable y si volvió. Lo que no tiene pareja sale
+ * solo — y hay de las dos clases:
+ *
+ *   * asientos sin vale: un traspaso, una descarga por factura;
+ *   * renglones de vale sin asiento: TODO lo que trajo la carga del sistema
+ *     anterior. Son 5 218 renglones de vale contra 224 asientos, porque la
+ *     carga sembró la existencia sin escribir el libro. Si esta ventana se
+ *     construyera solo sobre el libro, esos 5 218 no se verían.
+ *
+ * Se pagina en el cliente, y no en el servidor, porque la mezcla lo exige: dos
+ * fuentes ordenadas por fecha no se pueden paginar por separado sin que la
+ * página 2 mezcle cosas de tiempos distintos. Cabe: el libro entero son 224
+ * asientos y los vales salen a dos y pico por producto.
  */
 export default function ProductHistory({ idProduct, titulo, onCerrar }) {
   const { t } = useI18n();
-  const [pestana, setPestana] = useState("movimientos");
+  const [pestana, setPestana] = useState("historial");
   const [movimientos, setMovimientos] = useState(null);
   const [prestamos, setPrestamos] = useState(null);
   const [ubicaciones, setUbicaciones] = useState(null);
@@ -43,16 +58,20 @@ export default function ProductHistory({ idProduct, titulo, onCerrar }) {
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState("");
 
-  const traer = useCallback(async (cual, numeroDePagina) => {
+  const traer = useCallback(async (cual) => {
     setCargando(true);
     setError("");
     try {
-      if (cual === "movimientos") {
-        setMovimientos(await getInventoryMovements(idProduct, {
-          page: numeroDePagina || 1, per_page: 20,
-        }));
-      } else if (cual === "prestamos") {
-        setPrestamos(await getProductLoanHistory(idProduct));
+      if (cual === "historial") {
+        // Los dos de golpe: la mezcla necesita las dos listas enteras. 200 es
+        // el tope del servidor y sobra -- el libro completo son 224 asientos
+        // repartidos entre 2 221 productos.
+        const [libro, vales] = await Promise.all([
+          getInventoryMovements(idProduct, { page: 1, per_page: 200 }),
+          getProductLoanHistory(idProduct),
+        ]);
+        setMovimientos(libro);
+        setPrestamos(vales);
       } else {
         setUbicaciones(await getProductStock(idProduct));
       }
@@ -68,7 +87,7 @@ export default function ProductHistory({ idProduct, titulo, onCerrar }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idProduct]);
 
-  useEffect(() => { traer(pestana, pagina); }, [traer, pestana, pagina]);
+  useEffect(() => { traer(pestana); }, [traer, pestana]);
 
   // Cerrar con Escape: es una ventana, y salir de ella no debería obligar a
   // apuntar a un botón concreto.
@@ -78,9 +97,11 @@ export default function ProductHistory({ idProduct, titulo, onCerrar }) {
     return () => window.removeEventListener("keydown", alTeclear);
   }, [onCerrar]);
 
+  const historial = useMemo(
+    () => mezclar(movimientos?.items, prestamos?.items), [movimientos, prestamos]);
+
   const PESTANAS = [
-    ["movimientos", t("history.movements", "Movimientos")],
-    ["prestamos", t("history.loans", "Préstamos")],
+    ["historial", t("history.everything", "Historial")],
     ["ubicaciones", t("history.locations", "Ubicaciones")],
   ];
 
@@ -130,10 +151,15 @@ export default function ProductHistory({ idProduct, titulo, onCerrar }) {
           {error && <p className="error">{error}</p>}
           {cargando && <p className="muted">{t("common.loading", "Cargando…")}</p>}
 
-          {!cargando && pestana === "movimientos" && (
-            <Movimientos datos={movimientos} t={t} onPagina={setPagina} cargando={cargando} />
+          {!cargando && pestana === "historial" && (
+            <Historial
+              renglones={historial}
+              resumen={prestamos}
+              pagina={pagina}
+              onPagina={setPagina}
+              t={t}
+            />
           )}
-          {!cargando && pestana === "prestamos" && <Prestamos datos={prestamos} t={t} />}
           {!cargando && pestana === "ubicaciones" && <Ubicaciones datos={ubicaciones} t={t} />}
         </div>
       </section>
@@ -155,114 +181,129 @@ function fecha(valor, t) {
   return Number.isNaN(d.getTime()) ? String(valor) : d.toLocaleString();
 }
 
-/** El libro: cuánto entró, cuánto salió y con qué saldo quedó. */
-function Movimientos({ datos, t, onPagina, cargando }) {
-  const items = datos?.items || [];
-  if (!items.length) {
-    return <p className="muted">{t("history.no_movements", "Sin movimientos registrados.")}</p>;
+/** El historial completo: el libro y los vales, en una sola tabla. */
+function Historial({ renglones, resumen, pagina, onPagina, t }) {
+  if (!renglones.length) {
+    return (
+      <p className="muted">
+        {t("history.nothing", "Sin movimientos ni préstamos registrados.")}
+      </p>
+    );
   }
-  const paginas = Math.max(1, Math.ceil((datos.total || 0) / (datos.per_page || 20)));
+
+  const paginas = Math.max(1, Math.ceil(renglones.length / POR_PAGINA));
+  const actual = Math.min(pagina, paginas);
+  const visibles = renglones.slice((actual - 1) * POR_PAGINA, actual * POR_PAGINA);
+  const fuera = resumen?.currently_out?.length || 0;
+
   return (
     <>
-      <ul className="ficha-lista">
-        {items.map((m) => {
-          const delta = Number(m.quantity_delta || 0);
-          return (
-            <li key={m.id_inventory_ledger} className="ficha-renglon">
-              <span className={`ficha-delta ${delta < 0 ? "salida" : "entrada"}`}>
-                {delta < 0 ? <ArrowUpRight size={14} /> : <ArrowDownLeft size={14} />}
-                {delta > 0 ? `+${delta}` : delta}
-              </span>
-              <span className="ficha-detalle">
-                <strong>{t(`movement.${m.movement_type}`, m.movement_type)}</strong>
-                <span className="muted">
-                  {m.location_description || ""}
-                  {m.location_target_description ? ` → ${m.location_target_description}` : ""}
-                  {m.reason ? ` · ${m.reason}` : ""}
-                </span>
-              </span>
-              <span className="ficha-lado muted">
-                {fecha(m.creation_date, t)}
-                {m.created_by_name ? ` · ${m.created_by_name}` : ""}
-                {/* El saldo DESPUÉS del movimiento: es lo que convierte una
-                    lista de deltas en algo auditable. */}
-                <strong>{t("history.balance", "saldo")} {m.balance_after}</strong>
-              </span>
-            </li>
-          );
-        })}
-      </ul>
+      {resumen && resumen.times_taken > 0 && (
+        <p className="ficha-resumen muted">
+          <strong>{resumen.times_taken}</strong> {t("history.times_taken", "salidas")}
+          {" · "}
+          <strong>{resumen.distinct_holders}</strong> {t("history.holders", "personas")}
+          {fuera > 0 && (
+            <>
+              {" · "}
+              <strong className="ficha-fuera">{fuera}</strong>{" "}
+              {t("history.currently_out", "sin devolver")}
+            </>
+          )}
+        </p>
+      )}
+
+      <table className="ficha-tabla">
+        <thead>
+          <tr>
+            <th>{t("history.when", "Cuándo")}</th>
+            <th>{t("history.what", "Qué pasó")}</th>
+            <th>{t("history.who", "Quién")}</th>
+            <th className="num">{t("history.change", "Cambio")}</th>
+            <th className="num">{t("history.balance", "Saldo")}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {visibles.map((r) => (
+            <tr key={r.clave} className={r.devuelto === false ? "pendiente" : ""}>
+              <td className="muted">{fecha(r.fecha, t)}</td>
+              <td>
+                <strong>{t(`movement.${r.tipo}`, r.tipo)}</strong>
+                {r.folio && (
+                  <span className="muted">
+                    {" · "}{t("history.voucher", "Vale")} {r.folio}
+                  </span>
+                )}
+                {(r.ubicacion || r.destino) && (
+                  <span className="muted">
+                    {" · "}{r.ubicacion || ""}
+                    {r.destino ? ` → ${r.destino}` : ""}
+                  </span>
+                )}
+                {r.motivo && <span className="muted">{" · "}{r.motivo}</span>}
+                {/* El estado del prestamo solo cuando lo hay: un traspaso no
+                    esta "devuelto" ni "fuera", simplemente no aplica. */}
+                {r.devuelto === false && (
+                  <span className={r.vencido ? "ficha-vencido" : "ficha-fuera"}>
+                    {" · "}
+                    {r.vencido ? t("history.overdue", "vencido") : t("history.out", "fuera")}
+                  </span>
+                )}
+                {r.devuelto === true && (
+                  <span className="muted">{" · "}{t("history.returned", "devuelto")}</span>
+                )}
+              </td>
+              <td>
+                {r.responsable ? (
+                  <span className="ficha-persona">
+                    <User size={12} /> {r.responsable}
+                  </span>
+                ) : (
+                  <span className="muted">{r.autor || "—"}</span>
+                )}
+              </td>
+              <td className="num">
+                {r.delta === null ? (
+                  <span className="muted">—</span>
+                ) : (
+                  <span className={`ficha-delta ${r.delta < 0 ? "salida" : "entrada"}`}>
+                    {r.delta < 0 ? <ArrowUpRight size={13} /> : <ArrowDownLeft size={13} />}
+                    {r.delta > 0 ? `+${r.delta}` : r.delta}
+                  </span>
+                )}
+              </td>
+              {/* Sin saldo cuando el renglon viene del vale y no del libro: el
+                  saldo lo lleva el libro, e inventarlo seria peor que el hueco. */}
+              <td className="num">
+                {r.saldo === null || r.saldo === undefined
+                  ? <span className="muted">—</span>
+                  : <strong>{r.saldo}</strong>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
       <Pagination
-        page={datos.page}
+        page={actual}
         pages={paginas}
-        total={datos.total}
-        perPage={datos.per_page}
-        loading={cargando}
+        total={renglones.length}
+        perPage={POR_PAGINA}
         onChange={onPagina}
-        etiquetaDeTotal={t("history.movements_total", "movimientos")}
+        etiquetaDeTotal={t("history.entries", "registros")}
       />
     </>
   );
 }
 
-Movimientos.propTypes = {
-  datos: PropTypes.object,
-  t: PropTypes.func.isRequired,
+Historial.propTypes = {
+  renglones: PropTypes.array.isRequired,
+  resumen: PropTypes.object,
+  pagina: PropTypes.number.isRequired,
   onPagina: PropTypes.func.isRequired,
-  cargando: PropTypes.bool,
+  t: PropTypes.func.isRequired,
 };
-Movimientos.defaultProps = { datos: null, cargando: false };
-
-/** Quién se lo ha llevado, y quién no lo ha devuelto. */
-function Prestamos({ datos, t }) {
-  const items = datos?.items || [];
-  if (!items.length) {
-    return <p className="muted">{t("history.no_loans", "Nunca ha salido en un vale.")}</p>;
-  }
-  return (
-    <>
-      <p className="ficha-resumen muted">
-        <strong>{datos.times_taken}</strong> {t("history.times_taken", "salidas")}
-        {" · "}
-        <strong>{datos.distinct_holders}</strong> {t("history.holders", "personas")}
-        {datos.currently_out?.length > 0 && (
-          <>
-            {" · "}
-            <strong className="ficha-fuera">{datos.currently_out.length}</strong>{" "}
-            {t("history.currently_out", "sin devolver")}
-          </>
-        )}
-      </p>
-      <ul className="ficha-lista">
-        {items.map((r) => (
-          <li
-            key={r.id_nm_incident_product}
-            className={`ficha-renglon ${r.returned ? "" : "pendiente"}`}
-          >
-            <span className="ficha-detalle">
-              <strong>{r.holder_name || t("history.unknown_holder", "sin responsable")}</strong>
-              <span className="muted">
-                {t("history.voucher", "Vale")} {r.voucher_folio}
-                {r.quantity ? ` · ${r.quantity} ${t("history.units", "u.")}` : ""}
-              </span>
-            </span>
-            <span className="ficha-lado muted">
-              {fecha(r.start_date, t)}
-              <strong className={r.returned ? "" : (r.overdue ? "ficha-vencido" : "ficha-fuera")}>
-                {r.returned
-                  ? t("history.returned", "devuelto")
-                  : (r.overdue ? t("history.overdue", "vencido") : t("history.out", "fuera"))}
-              </strong>
-            </span>
-          </li>
-        ))}
-      </ul>
-    </>
-  );
-}
-
-Prestamos.propTypes = { datos: PropTypes.object, t: PropTypes.func.isRequired };
-Prestamos.defaultProps = { datos: null };
+Historial.defaultProps = { resumen: null };
 
 /** Dónde está repartido ahora mismo. */
 function Ubicaciones({ datos, t }) {

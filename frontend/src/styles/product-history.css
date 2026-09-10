@@ -83,3 +83,35 @@
   .ficha-renglon { grid-template-columns: 1fr; gap: 4px; }
   .ficha-lado { align-items: flex-start; text-align: left; }
 }
+
+/* --- el historial, en una sola tabla ---
+
+   Antes eran dos listas de fichas en dos pestañas. Una tabla porque ahora las
+   columnas significan lo mismo en todos los renglones -- cuando, que, quien,
+   cuanto, saldo -- y comparar dos salidas es leer hacia abajo una columna, no
+   saltar entre dos formatos. */
+
+.ficha-tabla { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ficha-tabla th {
+  text-align: left; padding: 8px 10px; font-size: 11px; font-weight: 700;
+  letter-spacing: .04em; text-transform: uppercase; color: #64748b;
+  border-bottom: 1px solid #e2e8f0; background: #f8fafc;
+}
+.ficha-tabla td {
+  padding: 9px 10px; border-bottom: 1px solid #eef2f6; vertical-align: top;
+}
+.ficha-tabla th.num, .ficha-tabla td.num { text-align: right; white-space: nowrap; }
+.ficha-tabla tbody tr:hover { background: #f8fafc; }
+
+/* El renglon de lo que sigue fuera: no es un error, es lo que hay que mirar. */
+.ficha-tabla tr.pendiente { background: #fffbeb; }
+.ficha-tabla tr.pendiente:hover { background: #fef3c7; }
+
+.ficha-persona { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; }
+.ficha-persona svg { color: #64748b; }
+
+@media (max-width: 720px) {
+  /* La fecha completa y el saldo son lo primero que sobra en una pantalla
+     estrecha: el que, el quien y el cambio son la respuesta. */
+  .ficha-tabla th:nth-child(5), .ficha-tabla td:nth-child(5) { display: none; }
+}

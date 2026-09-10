@@ -157,7 +157,9 @@
     "no_matches": "none match",
     "serie_csd_hint": "Used as the default series when issuing invoices for this company; an invoice can capture a different one.",
     "show": "Show",
-    "no_date": "no date"
+    "no_date": "no date",
+    "expand_form": "open",
+    "collapse_form": "hide"
   },
   "entities": {
     "bank": {
@@ -2725,7 +2727,9 @@
     "lot_not_applicable": "That product is not tracked by lots. It is nearly always the wrong product.",
     "lot_product_mismatch": "That lot belongs to another product.",
     "lot_control_not_for_serialized": "That product is tracked piece by piece, so it already has one row per unit: lots would be the same thing by two paths.",
-    "lot_control_needs_its_own_endpoint": "Lot control is not switched on from here: do it from the product, so the stock already on hand lands inside an opening lot."
+    "lot_control_needs_its_own_endpoint": "Lot control is not switched on from here: do it from the product, so the stock already on hand lands inside an opening lot.",
+    "voucher_not_a_draft": "This voucher is no longer a draft: only a draft can be authorised.",
+    "voucher_self_authorization": "You cannot authorise a voucher you requested yourself. The warehouse chief authorises it."
   },
   "logistics": {
     "module": "Logistics",
@@ -4198,7 +4202,21 @@
     "back_to_list": "Back to the list",
     "status_abierto": "Open",
     "status_cerrado": "Closed",
-    "status_cancelado": "Cancelled"
+    "status_cancelado": "Cancelled",
+    "draft": "Save request",
+    "draft_help": "Records the material requested, without taking it out. The warehouse chief authorises it.",
+    "drafted": "Request saved, pending authorisation",
+    "status_draft": "Draft",
+    "nothing_left_yet": "nothing has left yet",
+    "authorize": "Authorise and hand over",
+    "authorize_help": "Authorising takes the material out of the warehouse. The warehouse chief does it, and it cannot be whoever requested the voucher.",
+    "authorized": "Voucher authorised: the material left the warehouse.",
+    "status_borrador": "Draft",
+    "filter_status": "Filter by status",
+    "filter_all": "All",
+    "filter_draft": "To authorise",
+    "filter_open": "Open",
+    "filter_closed": "Closed"
   },
   "product": {
     "classification": "Classification",
@@ -4273,7 +4291,14 @@
     "out": "out",
     "sum_by_location": "Sum by location",
     "product_balance": "product balance",
-    "mismatch": "do not match"
+    "mismatch": "do not match",
+    "everything": "History",
+    "when": "When",
+    "what": "What happened",
+    "who": "Who",
+    "change": "Change",
+    "entries": "entries",
+    "nothing": "No movements or loans on record."
   },
   "movement": {
     "receive": "Received",
@@ -4285,6 +4310,7 @@
     "loss": "Lost",
     "expiry": "Expired",
     "transfer": "Transfer",
-    "adjustment": "Adjustment"
+    "adjustment": "Adjustment",
+    "opening": "Opening balance"
   }
 }

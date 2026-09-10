@@ -214,7 +214,7 @@ def _filter_protected_permission_list(user_data, result):
 
 
 def _list_level_protected(user_data, page, per_page, filters, sort, service_cls):
-    result = service_cls.list(page=page, per_page=per_page, filters=filters, sort=sort)
+    result = service_cls.list(page=page, per_page=per_page, filters=filters, sort=sort, q=request.args.get('q'))
     return _jsonify_projected_list(user_data, _filter_protected_level_list(user_data, result))
 
 
@@ -243,7 +243,7 @@ def _delete_level_protected(user_data, target_id, service_cls):
 
 
 def _list_permission_protected(user_data, page, per_page, filters, sort, service_cls):
-    result = service_cls.list(page=page, per_page=per_page, filters=filters, sort=sort)
+    result = service_cls.list(page=page, per_page=per_page, filters=filters, sort=sort, q=request.args.get('q'))
     return _jsonify_projected_list(user_data, _filter_protected_permission_list(user_data, result))
 
 
@@ -281,7 +281,7 @@ def list_level(user_data):
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 20))
     sort = request.args.get('sort')
-    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort'} and k in ALLOWED_FIELDS}
+    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort', 'q'} and k in ALLOWED_FIELDS}
     return _list_level_protected(user_data, page, per_page, filters, sort, LevelService)
 
 

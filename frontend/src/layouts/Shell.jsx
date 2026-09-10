@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Boxes, Briefcase, CalendarDays, ChevronDown, ClipboardList, Contact, FileText, FlaskConical, Landmark, LayoutDashboard, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Receipt, Settings, ShieldCheck, ShoppingCart, SlidersHorizontal, Truck, UserCog, Users, Utensils, Warehouse } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { deploymentPlan, getAllEntityPermission } from "../api";
+import { deploymentPlan, getMyPermissions } from "../api";
 import LanguagePicker from "../components/LanguagePicker";
 import { useI18n } from "../i18n";
 import { moduleSectionsEnPlan } from "./moduleSections";
@@ -223,9 +223,22 @@ export default function Shell() {
       setRolePermissionsLoaded(true);
       return () => { mounted = false; };
     }
-    getAllEntityPermission({ per_page: 5000 })
+    // `/security/my-permissions` y no la tabla cruda de `entity_permission`.
+    //
+    // La tabla cruda no sabe del PLAN: devuelve las filas de todos los modulos,
+    // comprados o no, y el menu se armaba con ellas. Por eso, con logistica y
+    // punto de venta apagados por licencia, sus apartados si desaparecian
+    // -esos dos declaran su modulo en `moduleSections.js` y ahi hay un filtro-
+    // pero Restaurante y Laboratorio seguian en el menu: sus grupos se arman
+    // desde `menu_group` de estas filas, donde no habia filtro ninguno.
+    //
+    // Este endpoint ya trae las filas del rol Y filtradas por el plan
+    // (`entidad_habilitada` en `routes/security.py`), asi que el menu deja de
+    // nombrar modulos que este despliegue no tiene.
+    getMyPermissions()
       .then((payload) => {
-        const rows = Array.isArray(payload?.items) ? payload.items : Array.isArray(payload) ? payload : [];
+        const rows = Array.isArray(payload?.entity_permissions)
+          ? payload.entity_permissions : [];
         if (mounted) setRoleEntityPermissions(rows.filter((row) => Number(row.id_permission) === roleId && Number(row.control_type || 0) > 0));
       })
       .catch(() => { if (mounted) setRoleEntityPermissions([]); })

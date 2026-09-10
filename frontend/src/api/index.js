@@ -457,6 +457,14 @@ export const deleteLocationType = (id) => request(`/location_type/${id}`, { meth
 
 // --- vales de almacen ------------------------------------------------------
 export const createWarehouseVoucher = (payload) => request("/vouchers", { method: "POST", body: payload });
+// El PREVALE: el material pedido, en borrador, sin mover el almacen. Ruta
+// aparte y no una bandera en el cuerpo, porque cada camino lleva su permiso --
+// `warehouse_prevoucher` aqui, `warehouse_voucher` en el de arriba.
+export const createWarehousePrevoucher = (payload) => request("/prevouchers", { method: "POST", body: payload });
+// Y el acto que convierte el borrador en vale, que es el que saca el material.
+// Lo guarda `warehouse_voucher_authorize`, que solo tiene el jefe de almacen.
+export const authorizeWarehouseVoucher = (id, payload = {}) =>
+  request(`/vouchers/${id}/authorize`, { method: "POST", body: payload });
 export const getWarehouseVoucher = (id) => request(`/vouchers/${id}`);
 export const getOverdueVoucherLines = () => request("/vouchers/overdue");
 // Cuantas piezas hay en cada estado, ahora mismo. Una consulta agrupada, no

@@ -275,6 +275,19 @@ CAPACIDADES = (
               "inventario"),
     Capacidad("warehouse_voucher", "Vales de almacen", "inventario",
               bits=CAPTURA, menu="sidebar"),
+    # Convertir un borrador en un vale, que es el acto que saca el material.
+    #
+    # Aparte de `warehouse_voucher` por el mismo motivo que el prevale esta
+    # aparte: con una sola clave, quien escribe el borrador y quien lo autoriza
+    # tendrian el mismo permiso y la separacion no separaria nada. El borrador
+    # existe para que el material lo suelte alguien distinto del que lo pidio.
+    #
+    # Sin entrada de menu: no es una pantalla, es un boton dentro del vale.
+    # `CAPTURA` y no los bits por omision: autorizar es una ACCION y la ruta se
+    # guarda con `create`, asi que con los 2 bits de solo lectura que trae una
+    # capacidad por omision el jefe de almacen recibiria un 403 en la puerta.
+    Capacidad("warehouse_voucher_authorize", "Autorizar vales de material",
+              "inventario", bits=CAPTURA, menu="hidden"),
     # Va en el engrane del encabezado, no en el menu vertical.
     #
     # Se habia movido a `sidebar` al retirar el engrane, razonando que habia
@@ -349,7 +362,17 @@ ROLES = (
         "logistica": TOTAL, "restaurante": TOTAL, "pos": TOTAL, "crm": TOTAL, "rh": TOTAL,
         "documentos": TOTAL, "laboratorio": TOTAL, "kpis": TOTAL,
         "configuracion": TOTAL, "seguridad": TOTAL,
-    }, [c.clave for c in CAPACIDADES]),
+    # Todas las capacidades MENOS las dos que sacan material del almacen.
+    #
+    # Es separacion de deberes, y se pidio asi: quien administra el sistema
+    # puede dejar el prevale -- `warehouse_prevoucher` sigue ahi -- pero no
+    # emitir el vale ni autorizarlo. El material lo suelta el Jefe de almacen.
+    #
+    # No afecta a la cuenta `admin1`: es el bootstrap admin y salta las
+    # comprobaciones de capacidad por completo (`_sin_restriccion`). Esto
+    # gobierna a cualquier OTRO usuario que lleve el rol Administrator.
+    }, [c.clave for c in CAPACIDADES
+        if c.clave not in ("warehouse_voucher", "warehouse_voucher_authorize")]),
 
     # Los cinco roles del negocio, en los identificadores que tiene la BASE.
     #
@@ -392,7 +415,8 @@ ROLES = (
 
     Rol(6, "Jefe de almacen", {
         "inventario": TOTAL, "logistica": CAPTURA, "configuracion": CONSULTA,
-    }, ["inventory_adjustment", "warehouse_voucher", "warehouse_voucher_confirm"]),
+    }, ["inventory_adjustment", "warehouse_voucher",
+        "warehouse_voucher_authorize", "warehouse_voucher_confirm"]),
 
     Rol(10, "Mesero", {"configuracion": CONSULTA}, ["restaurant_waiter"]),
     Rol(11, "Cocina", {"configuracion": CONSULTA}, ["restaurant_kitchen"]),

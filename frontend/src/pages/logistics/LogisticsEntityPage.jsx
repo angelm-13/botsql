@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Pencil, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
+import { Pencil, RefreshCw, Search, Trash2 } from "lucide-react";
 
 import { getAllCustomerSupplier } from "../../api";
 import { useI18n } from "../../i18n";
 import PageHeader from "../../components/PageHeader.jsx";
+import FormularioPlegable from "../../components/FormularioPlegable.jsx";
 
 /* eslint-disable react/prop-types */
 
@@ -161,8 +162,11 @@ export default function LogisticsEntityPage({ config }) {
         <button className="button ghost" type="button" onClick={loadData}><RefreshCw size={16} /> {t("logistics.refresh")}</button>
       </PageHeader>
 
-      <form className="form-card" onSubmit={handleSubmit}>
-        <div className="form-header"><Plus size={18} /><strong>{editingId ? `${t("logistics.edit")} ${singular.toLowerCase()}` : `${newLabel} ${singular.toLowerCase()}`}</strong></div>
+      <FormularioPlegable
+        titulo={editingId ? `${t("logistics.edit")} ${singular.toLowerCase()}` : `${newLabel} ${singular.toLowerCase()}`}
+        abrirSi={editingId}
+        onSubmit={handleSubmit}
+      >
         <div className="form-grid">
           {relations.map((relation) => <label className="field" key={relation.field}><span>{relationLabel(relation)}</span><select name={relation.field} value={form[relation.field]} onChange={handleChange} required={relation.required !== false}><option value="">{translate(relation.placeholderKey, relation.placeholder)}</option>{(relatedItems[relation.field] || []).map((item) => <option key={item[relation.idField]} value={item[relation.idField]}>{item[relation.displayField]}</option>)}</select></label>)}
           {config.fields.map((field) => (
@@ -181,7 +185,7 @@ export default function LogisticsEntityPage({ config }) {
           ))}
         </div>
         <div className="form-actions"><button className="button primary" type="submit">{t("logistics.save")}</button>{editingId && <button className="button" type="button" onClick={resetForm}>{t("logistics.cancel")}</button>}</div>
-      </form>
+      </FormularioPlegable>
 
       <div className="toolbar"><div className="search-box"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`${t("logistics.search")} ${singular.toLowerCase()}${relations.length ? ` ${t("logistics.or")} ${relations.map((relation) => relationLabel(relation).toLowerCase()).join("/")}` : ""}`} /></div></div>
       {error && <div className="alert error">{error}</div>}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Pencil, Plus, RefreshCw, Search, Trash2,
+  Pencil, RefreshCw, Search, Trash2,
 } from "lucide-react";
 import {
   createProductFamily,
@@ -8,6 +8,7 @@ import {
   getAllProductFamily,
   updateProductFamily,
 } from "../api";
+import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import Pagination from "../components/Pagination.jsx";
 import { useI18n } from "../i18n";
@@ -165,11 +166,11 @@ export default function ProductFamilyPage() {
         </button>
       </PageHeader>
 
-      <form className="form-card" onSubmit={guardar}>
-        <div className="form-header">
-          <Plus size={18} />
-          <strong>{editando ? t("common.edit", "Editar") : t("common.new", "Nuevo")}</strong>
-        </div>
+      <FormularioPlegable
+        titulo={editando ? t("common.edit", "Editar") : t("common.new", "Nuevo")}
+        abrirSi={editando}
+        onSubmit={guardar}
+      >
         <div className="form-grid">
           <label className="field">
             <span>{t("fields.product_family.product_family_description", "Familia")}</span>
@@ -204,7 +205,7 @@ export default function ProductFamilyPage() {
             {t("common.cancel", "Cancelar")}
           </button>
         </div>
-      </form>
+      </FormularioPlegable>
 
       <div className="toolbar">
         <div className="search-box">

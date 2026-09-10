@@ -135,7 +135,7 @@ def list_nm_incident_product(user_data):
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 20))
     sort = request.args.get('sort')
-    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort'} and k in ALLOWED_FIELDS}
+    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort', 'q'} and k in ALLOWED_FIELDS}
     from sqlalchemy import func as sql_func
     from app.models import Incident, NmIncidentProduct
     from app.models.session import transaction_context

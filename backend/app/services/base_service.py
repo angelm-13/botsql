@@ -320,10 +320,62 @@ class CrudService:
         raise AppError('errors.database_constraint', status_code=400, meta={'detail': detail})
 
     @classmethod
-    def list(cls, page: int = 1, per_page: int = 20, filters: dict | None = None, sort: str | None = None):
+    def _busqueda_libre(cls, texto):
+        """Una sola caja de texto que busca por lo que sea.
+
+        Por que hace falta
+        ------------------
+        El filtro por campo ya existia -- `?descripcion=taladro` hace su
+        ILIKE -- pero obliga a saber EN QUE campo esta lo que se busca. Y el
+        buscador de las pantallas filtraba en el CLIENTE, sobre la pagina ya
+        cargada: con 2 221 productos en 56 paginas, teclear un nombre estando en
+        la pagina 1 no encuentra el que vive en la 34. Que es exactamente el
+        caso de "no se que nombre tiene el producto 8580".
+
+        Que compara
+        -----------
+        Las columnas de TEXTO con ILIKE, y las numericas solo si lo escrito es
+        un numero entero -- para que "8580" encuentre el id 8580 --.
+
+        Fechas y booleanos quedan fuera: un ILIKE contra una fecha no significa
+        nada y en Postgres revienta por tipo. Los `Enum` tambien, por el mismo
+        motivo por el que el filtro por campo ya los trataba aparte.
+        """
+        from sqlalchemy import Boolean, Date, DateTime, Enum, Integer, Numeric, or_
+
+        limpio = str(texto or "").strip()
+        if not limpio:
+            return None
+
+        try:
+            como_numero = int(limpio)
+        except (TypeError, ValueError):
+            como_numero = None
+
+        condiciones = []
+        for nombre, columna in cls._columns().items():
+            tipo = columna.type
+            if isinstance(tipo, (Enum, Date, DateTime, Boolean)):
+                continue
+            atributo = getattr(cls.model, nombre, None)
+            if atributo is None:
+                continue
+            if isinstance(tipo, (Integer, Numeric)):
+                if como_numero is not None:
+                    condiciones.append(atributo == como_numero)
+            else:
+                condiciones.append(atributo.ilike("%" + limpio + "%"))
+        return or_(*condiciones) if condiciones else None
+
+    @classmethod
+    def list(cls, page: int = 1, per_page: int = 20, filters: dict | None = None,
+             sort: str | None = None, q: str | None = None):
         filters = filters or {}
         with transaction_context() as session:
             stmt = select(cls.model)
+            busqueda = cls._busqueda_libre(q)
+            if busqueda is not None:
+                stmt = stmt.where(busqueda)
             for key, value in filters.items():
                 if not hasattr(cls.model, key) or value in (None, ''):
                     continue

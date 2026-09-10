@@ -157,7 +157,9 @@
     "no_matches": "ninguna coincide",
     "serie_csd_hint": "Se usa como serie por defecto al emitir facturas de esta empresa; una factura puede capturar otra distinta.",
     "show": "Ver",
-    "no_date": "sin fecha"
+    "no_date": "sin fecha",
+    "expand_form": "abrir",
+    "collapse_form": "ocultar"
   },
   "entities": {
     "bank": {
@@ -2728,7 +2730,9 @@
     "lot_not_applicable": "Ese producto no se lleva por lotes. Casi siempre es el producto equivocado.",
     "lot_product_mismatch": "Ese lote es de otro producto.",
     "lot_control_not_for_serialized": "Ese producto se rastrea pieza por pieza, así que ya tiene una fila por unidad: los lotes serían la misma cosa por dos caminos.",
-    "lot_control_needs_its_own_endpoint": "El control por lote no se enciende desde aquí: hazlo desde el producto, para que la existencia que ya hay quede dentro de un lote de apertura."
+    "lot_control_needs_its_own_endpoint": "El control por lote no se enciende desde aquí: hazlo desde el producto, para que la existencia que ya hay quede dentro de un lote de apertura.",
+    "voucher_not_a_draft": "Este vale ya no es un borrador: solo un borrador se puede autorizar.",
+    "voucher_self_authorization": "No puedes autorizar un vale que tú mismo pediste. Lo autoriza el jefe de almacén."
   },
   "logistics": {
     "module": "Logística",
@@ -4261,7 +4265,21 @@
     "back_to_list": "Volver a la lista",
     "status_abierto": "Abierto",
     "status_cerrado": "Cerrado",
-    "status_cancelado": "Cancelado"
+    "status_cancelado": "Cancelado",
+    "draft": "Guardar prevale",
+    "draft_help": "Deja el material pedido, sin sacarlo. Lo autoriza el jefe de almacén.",
+    "drafted": "Prevale guardado, pendiente de autorizar",
+    "status_draft": "Borrador",
+    "nothing_left_yet": "nada ha salido todavía",
+    "authorize": "Autorizar y entregar",
+    "authorize_help": "Al autorizar sale el material del almacén. Lo hace el jefe de almacén, y no puede ser quien pidió el vale.",
+    "authorized": "Vale autorizado: el material salió del almacén.",
+    "status_borrador": "Borrador",
+    "filter_status": "Filtrar por estado",
+    "filter_all": "Todos",
+    "filter_draft": "Por autorizar",
+    "filter_open": "Abiertos",
+    "filter_closed": "Cerrados"
   },
   "product": {
     "classification": "Clasificación",
@@ -4336,7 +4354,14 @@
     "out": "fuera",
     "sum_by_location": "Suma por ubicación",
     "product_balance": "saldo del producto",
-    "mismatch": "no cuadran"
+    "mismatch": "no cuadran",
+    "everything": "Historial",
+    "when": "Cuándo",
+    "what": "Qué pasó",
+    "who": "Quién",
+    "change": "Cambio",
+    "entries": "registros",
+    "nothing": "Sin movimientos ni préstamos registrados."
   },
   "movement": {
     "receive": "Entrada",
@@ -4348,6 +4373,7 @@
     "loss": "Extravío",
     "expiry": "Caducidad",
     "transfer": "Traspaso",
-    "adjustment": "Ajuste"
+    "adjustment": "Ajuste",
+    "opening": "Existencia inicial"
   }
 }

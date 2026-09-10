@@ -64,10 +64,11 @@ class InvoiceService(CrudService):
 
     @classmethod
     def list_scoped(cls, user_data: dict, page: int = 1, per_page: int = 20,
-                    filters: dict | None = None, sort: str | None = None):
+                    filters: dict | None = None, sort: str | None = None,
+                    q: str | None = None):
         project_id = cls.actor_project(user_data)
         if project_id is None:
-            return cls.list(page=page, per_page=per_page, filters=filters, sort=sort)
+            return cls.list(page=page, per_page=per_page, filters=filters, sort=sort, q=q)
 
         filters = filters or {}
         with transaction_context() as session:
@@ -75,6 +76,13 @@ class InvoiceService(CrudService):
                 Invoice.id_proyect == project_id,
                 Invoice.deletion_date.is_(None),
             )
+            # La misma busqueda libre que la lista sin alcance. Va DESPUES del
+            # filtro de proyecto y como una condicion mas, no en su lugar: si
+            # sustituyera al alcance, buscar seria una forma de ver las facturas
+            # de otro proyecto.
+            busqueda = cls._busqueda_libre(q)
+            if busqueda is not None:
+                stmt = stmt.where(busqueda)
             for key, value in filters.items():
                 if not hasattr(Invoice, key) or value in (None, ''):
                     continue

@@ -14,6 +14,7 @@ import {
 } from "../api";
 import { useI18n } from "../i18n";
 import PageHeader from "../components/PageHeader.jsx";
+import FormularioPlegable from "../components/FormularioPlegable.jsx";
 
 function asArray(payload) {
   if (Array.isArray(payload?.items)) return payload.items;
@@ -443,12 +444,15 @@ export default function CatalogoWebPage() {
 
       {tab === "keys" && canManageApiKeys && (
         <>
-          <form className="form-card" onSubmit={createKey}>
-            <div className="form-header"><KeyRound size={16} /><strong>{t("catalogo_web.create_key", "Crear API key")}</strong></div>
+          <FormularioPlegable
+            titulo={t("catalogo_web.create_key", "Crear API key")}
+            icono={KeyRound}
+            onSubmit={createKey}
+          >
             <div className="form-grid"><label className="field">{t("catalogo_web.label", "Etiqueta")}<input value={keyForm.label} onChange={(event) => setKeyForm((prev) => ({ ...prev, label: event.target.value }))} required /></label><label className="field wide-field">{t("catalogo_web.allowed_domains", "Dominios permitidos")}<input value={keyForm.allowed_domains} onChange={(event) => setKeyForm((prev) => ({ ...prev, allowed_domains: event.target.value }))} placeholder='["https://tienda.luis.com"]' /></label><label className="field">{t("catalogo_web.rate_limit", "Límite por minuto")}<input type="number" min="1" value={keyForm.rate_limit_per_min} onChange={(event) => setKeyForm((prev) => ({ ...prev, rate_limit_per_min: event.target.value }))} /></label></div>
             <div className="form-actions"><button className="button primary" type="submit">{t("catalogo_web.create_key", "Crear API key")}</button></div>
             {createdKey && <div className="alert success"><strong>{t("catalogo_web.plain_key_once", "Copia esta llave ahora. Solo se mostrará una vez.")}</strong><p><code>{createdKey}</code></p><button type="button" className="button" onClick={() => copy(createdKey)}><Copy size={15} />{t("catalogo_web.copy_key", "Copiar key")}</button></div>}
-          </form>
+          </FormularioPlegable>
           <div className="table-card catalogo-table-card"><table><thead><tr><th>ID</th><th>{t("catalogo_web.label", "Etiqueta")}</th><th>Prefix</th><th>{t("catalogo_web.allowed_domains", "Dominios permitidos")}</th><th>{t("catalogo_web.rate_limit", "Límite por minuto")}</th><th>{t("catalogo_web.active", "Activo")}</th><th>{t("catalogo_web.actions", "Acciones")}</th></tr></thead><tbody>{apiKeys.map((row) => <tr key={row.id_public_api_key}><td>{row.id_public_api_key}</td><td><input value={row.label || ""} onChange={(event) => setApiKeys((prev) => prev.map((item) => item.id_public_api_key === row.id_public_api_key ? { ...item, label: event.target.value } : item))} onBlur={(event) => updateKey(row, "label", event.target.value)} /></td><td>{row.key_prefix}</td><td><input value={row.allowed_domains || "[]"} onChange={(event) => setApiKeys((prev) => prev.map((item) => item.id_public_api_key === row.id_public_api_key ? { ...item, allowed_domains: event.target.value } : item))} onBlur={(event) => updateKey(row, "allowed_domains", event.target.value)} /></td><td><input type="number" min="1" value={row.rate_limit_per_min || 60} onChange={(event) => setApiKeys((prev) => prev.map((item) => item.id_public_api_key === row.id_public_api_key ? { ...item, rate_limit_per_min: event.target.value } : item))} onBlur={(event) => updateKey(row, "rate_limit_per_min", event.target.value)} /></td><td>{row.is_active ? "✓" : "—"}</td><td className="row-actions"><button type="button" onClick={() => revokeKey(row)}>{t("catalogo_web.revoke", "Revocar")}</button></td></tr>)}{!apiKeys.length && <tr><td colSpan="7" className="muted">{t("catalogo_web.no_keys", "No hay API keys registradas.")}</td></tr>}</tbody></table></div>
         </>
       )}

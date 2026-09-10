@@ -493,6 +493,28 @@ def importar_productos(db, datos, mapas, rep, actor, id_factura):
         catalogo_estado[str(fila.inventory_status_code or "").lower()] = \
             fila.id_inventory_status
 
+    # Que el catalogo tenga TODO lo que el mapa promete traducir.
+    #
+    # Antes esto no se comprobaba y `catalogo_estado.get(codigo)` devolvia None
+    # cuando el codigo no existia: la carga seguia, sin aviso, y el producto
+    # quedaba con la cadena original en `product_status` y el enlace al catalogo
+    # vacio. Paso de verdad con `extraviado`, que este mapa traducia y el
+    # catalogo no tenia: 65 productos cargados asi, y el fallo no se veia en
+    # pantalla porque Localizar pinta desde la cadena. Lo arreglo la migracion
+    # 20260909100000, pero el agujero era este.
+    #
+    # Se revienta y no se avisa nada mas: un codigo que falta significa que el
+    # catalogo y este mapa se separaron, y seguir carga datos a medias que nadie
+    # va a volver a revisar.
+    faltan = sorted(set(ESTADO_A_CATALOGO.values()) - set(catalogo_estado))
+    if faltan:
+        raise SystemExit(
+            "el catalogo `inventory_status` no tiene estos codigos, que "
+            "ESTADO_A_CATALOGO si traduce: %s. Con el catalogo incompleto los "
+            "productos se cargarian sin estatus y en silencio."
+            % ", ".join(faltan)
+        )
+
     vigentes = {
         int(p.external_id): p for p in db.scalars(
             select(Product).where(
