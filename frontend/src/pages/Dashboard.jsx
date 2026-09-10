@@ -235,6 +235,15 @@ function colorDeKpi(idKpiDefinition) {
   return CATEGORICAL[((id % CATEGORICAL.length) + CATEGORICAL.length) % CATEGORICAL.length];
 }
 
+// Color EFECTIVO de un KPI dentro de un widget ya guardado: el override manual
+// (`parametros.colores_kpi`, `{ [id_kpi_definition]: '#hex' }`) gana sobre el
+// determinista de `colorDeKpi` cuando existe. Las llaves de un objeto JSON
+// siempre llegan como string -- de ahi el `String(id)` al leer.
+function colorEfectivoDeKpi(idKpiDefinition, coloresOverride) {
+  const override = (coloresOverride || {})[String(idKpiDefinition)];
+  return override || colorDeKpi(idKpiDefinition);
+}
+
 // Avatar por omision para un empleado: no hay fotos de perfil reales, asi que
 // este icono neutro sobre fondo circular es el placeholder en todos lados
 // donde se muestra un nombre de empleado.
@@ -299,6 +308,7 @@ function defaultPanelState() {
     fechaFinB: "",
     empleadosSeleccionados: [],
     departamentosSeleccionados: [],
+    coloresKpi: {},
   };
 }
 
@@ -550,6 +560,9 @@ export default function Dashboard() {
       fechaFinB: parametros.fecha_fin_b || "",
       empleadosSeleccionados: Array.isArray(parametros.empleados) ? parametros.empleados.map(String) : [],
       departamentosSeleccionados: Array.isArray(parametros.id_departments) ? parametros.id_departments.map(String) : [],
+      // Las llaves de `colores_kpi` ya llegan como string desde el JSON
+      // guardado -- se copian tal cual, sin volver a tocar el tipo.
+      coloresKpi: parametros.colores_kpi && typeof parametros.colores_kpi === "object" ? { ...parametros.colores_kpi } : {},
     });
   }
 
@@ -805,6 +818,7 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, formatNumber, tx
   const snapshot = snapshots[0];
   const kpiInfo = kpiInfos[0];
   const hasCompare = Boolean(snapshot?.rango_b);
+  const coloresOverride = widget.parametros?.colores_kpi;
 
   if (widget.tipo_grafica === "numero") {
     const total = snapshot.rango_a.total;
@@ -864,7 +878,7 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, formatNumber, tx
   if (kpiInfos.length <= 1) {
     const data = buildSeriesData(snapshot, userLabel, widget.parametros?.empleados);
     if (!data.length) return <p className="kpi-empty-inline">{tx("no_data", "Sin datos en el rango seleccionado.")}</p>;
-    const colorKpi = colorDeKpi(kpiInfo?.id_kpi_definition);
+    const colorKpi = colorEfectivoDeKpi(kpiInfo?.id_kpi_definition, coloresOverride);
 
     if (widget.tipo_grafica === "barras") {
       return (
@@ -939,10 +953,10 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, formatNumber, tx
           <Tooltip formatter={(value) => formatNumber(value)} />
           <Legend wrapperStyle={{ fontSize: 12 }} />
           {kpiInfos.map((info, index) => (
-            <Bar key={`a-${index}`} dataKey={`kpi_${index}_a`} name={kpiSeriesLabel(info, index)} fill={colorDeKpi(info.id_kpi_definition)} radius={[4, 4, 0, 0]} />
+            <Bar key={`a-${index}`} dataKey={`kpi_${index}_a`} name={kpiSeriesLabel(info, index)} fill={colorEfectivoDeKpi(info.id_kpi_definition, coloresOverride)} radius={[4, 4, 0, 0]} />
           ))}
           {hasCompare && kpiInfos.map((info, index) => (
-            <Bar key={`b-${index}`} dataKey={`kpi_${index}_b`} name={`${kpiSeriesLabel(info, index)}${comparacionSufijo}`} fill={colorDeKpi(info.id_kpi_definition)} fillOpacity={0.45} radius={[4, 4, 0, 0]} />
+            <Bar key={`b-${index}`} dataKey={`kpi_${index}_b`} name={`${kpiSeriesLabel(info, index)}${comparacionSufijo}`} fill={colorEfectivoDeKpi(info.id_kpi_definition, coloresOverride)} fillOpacity={0.45} radius={[4, 4, 0, 0]} />
           ))}
         </BarChart>
       </ResponsiveContainer>
@@ -959,10 +973,10 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, formatNumber, tx
           <Tooltip formatter={(value) => formatNumber(value)} />
           <Legend wrapperStyle={{ fontSize: 12 }} />
           {kpiInfos.map((info, index) => (
-            <Line key={`a-${index}`} type="monotone" dataKey={`kpi_${index}_a`} name={kpiSeriesLabel(info, index)} stroke={colorDeKpi(info.id_kpi_definition)} strokeWidth={2} dot={{ r: 4 }} />
+            <Line key={`a-${index}`} type="monotone" dataKey={`kpi_${index}_a`} name={kpiSeriesLabel(info, index)} stroke={colorEfectivoDeKpi(info.id_kpi_definition, coloresOverride)} strokeWidth={2} dot={{ r: 4 }} />
           ))}
           {hasCompare && kpiInfos.map((info, index) => (
-            <Line key={`b-${index}`} type="monotone" dataKey={`kpi_${index}_b`} name={`${kpiSeriesLabel(info, index)}${comparacionSufijo}`} stroke={colorDeKpi(info.id_kpi_definition)} strokeWidth={2} strokeDasharray="5 4" dot={{ r: 3 }} />
+            <Line key={`b-${index}`} type="monotone" dataKey={`kpi_${index}_b`} name={`${kpiSeriesLabel(info, index)}${comparacionSufijo}`} stroke={colorEfectivoDeKpi(info.id_kpi_definition, coloresOverride)} strokeWidth={2} strokeDasharray="5 4" dot={{ r: 3 }} />
           ))}
         </LineChart>
       </ResponsiveContainer>
@@ -979,10 +993,10 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, formatNumber, tx
           <Tooltip formatter={(value) => formatNumber(value)} />
           <Legend wrapperStyle={{ fontSize: 12 }} />
           {kpiInfos.map((info, index) => (
-            <Area key={`a-${index}`} type="monotone" dataKey={`kpi_${index}_a`} name={kpiSeriesLabel(info, index)} stroke={colorDeKpi(info.id_kpi_definition)} fill={colorDeKpi(info.id_kpi_definition)} fillOpacity={0.25} strokeWidth={2} />
+            <Area key={`a-${index}`} type="monotone" dataKey={`kpi_${index}_a`} name={kpiSeriesLabel(info, index)} stroke={colorEfectivoDeKpi(info.id_kpi_definition, coloresOverride)} fill={colorEfectivoDeKpi(info.id_kpi_definition, coloresOverride)} fillOpacity={0.25} strokeWidth={2} />
           ))}
           {hasCompare && kpiInfos.map((info, index) => (
-            <Area key={`b-${index}`} type="monotone" dataKey={`kpi_${index}_b`} name={`${kpiSeriesLabel(info, index)}${comparacionSufijo}`} stroke={colorDeKpi(info.id_kpi_definition)} fill={colorDeKpi(info.id_kpi_definition)} fillOpacity={0.1} strokeWidth={2} strokeDasharray="5 4" />
+            <Area key={`b-${index}`} type="monotone" dataKey={`kpi_${index}_b`} name={`${kpiSeriesLabel(info, index)}${comparacionSufijo}`} stroke={colorEfectivoDeKpi(info.id_kpi_definition, coloresOverride)} fill={colorEfectivoDeKpi(info.id_kpi_definition, coloresOverride)} fillOpacity={0.1} strokeWidth={2} strokeDasharray="5 4" />
           ))}
         </AreaChart>
       </ResponsiveContainer>
@@ -1006,6 +1020,7 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
     fechaFinB,
     empleadosSeleccionados,
     departamentosSeleccionados,
+    coloresKpi,
   } = panelState;
 
   // Catalogo agrupado por modulo (facturacion, operaciones, ...): el paso de
@@ -1030,8 +1045,22 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [avisoKpi, setAvisoKpi] = useState("");
+  // Que swatch de color tiene su popover de paleta abierto (un id de KPI, o
+  // null si ninguno) -- efimero de UI, igual que `saving`/`error` de arriba.
+  const [swatchAbierto, setSwatchAbierto] = useState(null);
 
   const multiKpiPermitido = esTipoMultiKpi(tipoGrafica);
+
+  // Cierra el popover de color al hacer clic fuera de el -- sin esto se
+  // quedaria abierto hasta elegir un color o deseleccionar el KPI.
+  useEffect(() => {
+    if (!swatchAbierto) return undefined;
+    function handleClickFuera(event) {
+      if (!event.target.closest(".kpi-color-swatch-wrap")) setSwatchAbierto(null);
+    }
+    document.addEventListener("mousedown", handleClickFuera);
+    return () => document.removeEventListener("mousedown", handleClickFuera);
+  }, [swatchAbierto]);
 
   // Cambiar a "numero"/"dona" con varios KPIs marcados no rompe nada: se
   // conserva solo el primero y se avisa, en vez de guardar una combinacion
@@ -1061,6 +1090,21 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
         idsKpiSeleccionados: idsKpiSeleccionados.length === 1 && idsKpiSeleccionados[0] === idKpi ? [] : [idKpi],
       });
     }
+  }
+
+  // Override manual de color para UN KPI, siempre dentro de la paleta cerrada
+  // CATEGORICAL -- nunca un input de color libre (ver colorEfectivoDeKpi).
+  // Elegir el mismo tono que ya le tocaria por default equivale a "quitar el
+  // override": no tiene caso guardar una entrada identica al determinista.
+  function elegirColorKpi(idKpi, colorElegido) {
+    const proximo = { ...coloresKpi };
+    if (colorElegido === colorDeKpi(idKpi)) {
+      delete proximo[idKpi];
+    } else {
+      proximo[idKpi] = colorElegido;
+    }
+    onChangePanelState({ coloresKpi: proximo });
+    setSwatchAbierto(null);
   }
 
   function toggleEmpleado(idUser) {
@@ -1107,6 +1151,12 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
     if (comparar) { parametros.fecha_inicio_b = fechaInicioB; parametros.fecha_fin_b = fechaFinB; }
     if (empleadosSeleccionados.length) parametros.empleados = empleadosSeleccionados.map(Number);
     if (departamentosSeleccionados.length) parametros.id_departments = departamentosSeleccionados.map(Number);
+    // Solo los overrides de KPIs que siguen seleccionados -- un KPI que se
+    // quito de la seleccion no debe dejar un color huerfano guardado.
+    const coloresVigentes = Object.fromEntries(
+      idsKpiSeleccionados.filter((id) => coloresKpi[id]).map((id) => [id, coloresKpi[id]]),
+    );
+    if (Object.keys(coloresVigentes).length) parametros.colores_kpi = coloresVigentes;
 
     const payload = { ids_kpi_definition: idsKpiSeleccionados.map(Number), tipo_grafica: tipoGrafica, parametros };
     setSaving(true);
@@ -1142,6 +1192,8 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
           </div>
         ) : (
           <>
+          <div className="kpi-panel-columns">
+            <div className="kpi-panel-col">
             <div className="kpi-picker-section">
               <span>{tx("chart_type", "Tipo de gráfico")}</span>
               <div className="kpi-icon-option-group">
@@ -1198,22 +1250,63 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
                   {(necesitaCategoria ? kpisPorModulo.get(categoriaKpi) || [] : kpiCatalog).map((kpi) => {
                     const idStr = String(kpi.id_kpi_definition);
                     const posicion = idsKpiSeleccionados.indexOf(idStr);
+                    // El swatch de color solo tiene sentido cuando este KPI ya
+                    // esta seleccionado Y el tipo de grafica activo de verdad
+                    // pinta un color por KPI (barras/linea/area) -- en
+                    // "numero"/"dona" el color no depende del KPI, no hay nada
+                    // que este swatch pudiera cambiar.
+                    const puedeElegirColor = multiKpiPermitido && posicion >= 0;
                     return (
-                      <button
-                        type="button"
-                        key={kpi.id_kpi_definition}
-                        className={`kpi-chip-option ${posicion >= 0 ? "active" : ""}`}
-                        onClick={() => toggleKpi(idStr)}
-                      >
-                        {multiKpiPermitido && posicion >= 0 && <span className="kpi-chip-badge">{posicion + 1}</span>}
-                        {kpi.etiqueta || kpi.clave}
-                      </button>
+                      <div className="kpi-chip-with-swatch" key={kpi.id_kpi_definition}>
+                        <button
+                          type="button"
+                          className={`kpi-chip-option ${posicion >= 0 ? "active" : ""}`}
+                          onClick={() => toggleKpi(idStr)}
+                        >
+                          {multiKpiPermitido && posicion >= 0 && <span className="kpi-chip-badge">{posicion + 1}</span>}
+                          {kpi.etiqueta || kpi.clave}
+                        </button>
+                        {puedeElegirColor && (
+                          <div className="kpi-color-swatch-wrap">
+                            <button
+                              type="button"
+                              className="kpi-color-swatch"
+                              style={{ background: colorEfectivoDeKpi(idStr, coloresKpi) }}
+                              onClick={() => setSwatchAbierto((actual) => (actual === idStr ? null : idStr))}
+                              title={tx("kpi_color_choose", "Elegir color")}
+                              aria-label={tx("kpi_color_choose", "Elegir color")}
+                              aria-expanded={swatchAbierto === idStr}
+                            />
+                            {swatchAbierto === idStr && (
+                              <div className="kpi-color-popover" role="menu">
+                                {CATEGORICAL.map((color) => {
+                                  const activo = colorEfectivoDeKpi(idStr, coloresKpi) === color;
+                                  return (
+                                    <button
+                                      type="button"
+                                      key={color}
+                                      className={`kpi-color-option ${activo ? "active" : ""}`}
+                                      style={{ background: color }}
+                                      onClick={() => elegirColorKpi(idStr, color)}
+                                      aria-label={color}
+                                      role="menuitemradio"
+                                      aria-checked={activo}
+                                    />
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
                 </div>
               )}
             </div>
+            </div>
 
+            <div className="kpi-panel-col">
             <div className="kpi-picker-section">
               <span>{tx("date_shortcuts", "Atajos de fecha")}</span>
               <div className="kpi-date-shortcuts">
@@ -1270,7 +1363,9 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
                 </label>
               </div>
             )}
+            </div>
 
+            <div className="kpi-panel-col">
             {users.length > 0 && (
               <div className="kpi-employee-picker">
                 <span className="kpi-employee-picker-label">{tx("employees_filter", "Filtrar por empleados (opcional)")}</span>
@@ -1307,6 +1402,8 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
                 </div>
               </div>
             )}
+            </div>
+          </div>
           </>
         )}
 
