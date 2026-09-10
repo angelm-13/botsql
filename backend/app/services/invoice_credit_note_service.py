@@ -100,6 +100,79 @@ def _credited_so_far(db, invoice) -> Decimal:
     return _money(sum((_money(nota.total) for nota in _credit_notes(db, invoice)), Decimal("0")))
 
 
+def _credited_quantity_by_original_line(db, original_invoice) -> dict[int, Decimal]:
+    """Cuanto se ha acreditado ya de cada renglon de la factura original.
+
+    Recorre las notas de credito vigentes (no canceladas) de esta factura y
+    suma, por `id_original_line`, la cantidad de las partidas de esas notas
+    que declaran de que renglon vienen. Una partida de nota sin
+    `id_original_line` -una bonificacion global, por ejemplo- no cuenta aqui,
+    solo la controla el monto total como ya hacia el sistema.
+    """
+    notas = _credit_notes(db, original_invoice)
+    if not notas:
+        return {}
+    lineas = db.scalars(
+        select(InvoiceMaterialService)
+        .where(InvoiceMaterialService.id_invoice.in_([nota.id_invoice for nota in notas]))
+        .where(InvoiceMaterialService.id_original_line.is_not(None))
+        .where(InvoiceMaterialService.deletion_date.is_(None))
+    ).all()
+    acumulado: dict[int, Decimal] = {}
+    for linea in lineas:
+        acumulado[linea.id_original_line] = acumulado.get(linea.id_original_line, Decimal("0")) + _money(linea.quantity)
+    return acumulado
+
+
+def _validate_original_line_quantities(db, original_invoice, conceptos):
+    """Ninguna partida acredita mas cantidad de la que en verdad se facturo.
+
+    Solo aplica a las partidas de la nota que citan `id_original_line`. Es el
+    control fino que complementa al de monto total: dos notas por el mismo
+    importe pueden corresponder a devoluciones de productos distintos, y el
+    control de monto no lo distingue -este si-.
+    """
+    citadas = [c for c in conceptos if c.get('id_original_line')]
+    if not citadas:
+        return
+
+    original_line_ids = {int(c['id_original_line']) for c in citadas}
+    renglones_originales = {
+        renglon.id_invoice_material_service: renglon
+        for renglon in db.scalars(
+            select(InvoiceMaterialService)
+            .where(InvoiceMaterialService.id_invoice_material_service.in_(original_line_ids))
+        ).all()
+    }
+    ya_acreditado = _credited_quantity_by_original_line(db, original_invoice)
+
+    solicitado_ahora: dict[int, Decimal] = {}
+    for concepto in citadas:
+        line_id = int(concepto['id_original_line'])
+        renglon = renglones_originales.get(line_id)
+        if not renglon or renglon.id_invoice != original_invoice.id_invoice:
+            raise AppError(
+                'errors.credit_note_original_line_mismatch',
+                400,
+                {'id_original_line': line_id, 'id_invoice': original_invoice.id_invoice},
+            )
+        solicitado_ahora[line_id] = solicitado_ahora.get(line_id, Decimal("0")) + _money(concepto.get('quantity'))
+
+    for line_id, cantidad_solicitada in solicitado_ahora.items():
+        renglon = renglones_originales[line_id]
+        disponible = _money(renglon.quantity) - ya_acreditado.get(line_id, Decimal("0"))
+        if cantidad_solicitada > disponible:
+            raise AppError(
+                'errors.credit_note_line_exceeds_creditable_quantity',
+                409,
+                {
+                    'id_original_line': line_id,
+                    'requested': format(cantidad_solicitada, "f"),
+                    'creditable': format(max(disponible, Decimal("0")), "f"),
+                },
+            )
+
+
 def _validate_relation_type(value) -> str:
     tipo = str(value or "").strip()
     if tipo not in TIPO_RELACION_NOTA_CREDITO:
@@ -137,6 +210,12 @@ def credit_note_summary(invoice_id, user_data) -> dict:
         acreditado = _credited_so_far(db, invoice)
         timbrada = bool(str(invoice.folio_fiscal or "").strip())
         cancelada = str(invoice.invoice_status or "").strip().lower() == "cancelada"
+        ya_acreditado_por_renglon = _credited_quantity_by_original_line(db, invoice)
+        renglones_originales = db.scalars(
+            select(InvoiceMaterialService)
+            .where(InvoiceMaterialService.id_invoice == invoice.id_invoice)
+            .where(InvoiceMaterialService.deletion_date.is_(None))
+        ).all()
         return {
             "id_invoice": invoice.id_invoice,
             "folio_fiscal": invoice.folio_fiscal,
@@ -147,6 +226,25 @@ def credit_note_summary(invoice_id, user_data) -> dict:
             "creditable": format(max(total - acreditado, Decimal("0")), "f"),
             "relation_types": sorted(TIPO_RELACION_NOTA_CREDITO),
             "returns_goods_relation": TIPO_RELACION_DEVUELVE_MERCANCIA,
+            # Por renglon: cuanta cantidad de cada partida original todavia se
+            # puede citar como id_original_line en una nota nueva. Solo
+            # informativo -la validacion real vive en
+            # _validate_original_line_quantities-, para que quien construya
+            # una pantalla de captura no tenga que recalcularlo aparte.
+            "line_availability": [
+                {
+                    "id_invoice_material_service": renglon.id_invoice_material_service,
+                    "description": renglon.invoice_material_service_description,
+                    "id_product": renglon.id_product,
+                    "quantity": format(_money(renglon.quantity), "f"),
+                    "credited_quantity": format(ya_acreditado_por_renglon.get(renglon.id_invoice_material_service, Decimal("0")), "f"),
+                    "creditable_quantity": format(
+                        max(_money(renglon.quantity) - ya_acreditado_por_renglon.get(renglon.id_invoice_material_service, Decimal("0")), Decimal("0")),
+                        "f",
+                    ),
+                }
+                for renglon in renglones_originales
+            ],
             "credit_notes": [
                 {
                     "id_invoice": nota.id_invoice,
@@ -280,6 +378,9 @@ def create_credit_note(invoice_id, payload, user_data) -> dict:
                 409,
                 {"total": format(total_factura, "f"), "credited": format(acreditado, "f")},
             )
+        conceptos_previos = _build_concepts(payload)
+        _validate_original_line_quantities(db, original, conceptos_previos)
+
         datos_originales = {
             "id_proyect": original.id_proyect,
             "id_customer_supplier": original.id_customer_supplier,

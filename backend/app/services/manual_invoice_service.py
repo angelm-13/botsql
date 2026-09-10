@@ -312,6 +312,10 @@ def create_manual_invoice(payload: dict, user_data: dict) -> dict:
                 id_service=original.get('id_service') or None,
                 id_product=original.get('id_product') or None,
                 id_unit=original.get('id_unit') or None,
+                # Solo lo usa el flujo de nota de credito -de que renglon de
+                # la factura original viene esta partida-. Una factura o
+                # cotizacion normal nunca manda este campo.
+                id_original_line=original.get('id_original_line') or None,
                 invoice_material_service_description=normalized['description'][:200],
                 is_directly_related_to_product_service_creation=False,
                 id_authorized=actor_id,

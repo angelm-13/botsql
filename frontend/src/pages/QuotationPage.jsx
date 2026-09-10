@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { createInvoice, createInvoiceMaterialService, deleteInvoiceMaterialService, downloadInvoicePdf, getAllCustomerSupplier, getAllInvoice, getAllInvoiceMaterialService, getAllMaterial, getAllProduct, getAllProyect, getAllService, getAllUnit, transitionQuotation, updateInvoice } from "../api";
+import { convertQuotationToInvoice, createInvoice, createInvoiceMaterialService, deleteInvoiceMaterialService, downloadInvoicePdf, getAllCustomerSupplier, getAllInvoice, getAllInvoiceMaterialService, getAllMaterial, getAllProduct, getAllProyect, getAllService, getAllUnit, getInvoiceCatalogs, transitionQuotation, updateInvoice } from "../api";
 import { useI18n } from "../i18n";
 import QuotationWorkflowBoard, { normalizeQuotationStatus, quotationStatusLabel, QUOTATION_STATUS_CODES } from "../components/QuotationWorkflowBoard.jsx";
+import SatProductKeyField from "../components/SatProductKeyField";
+
+function catalogOptions(catalog) {
+  return Object.entries(catalog || {}).sort(([a], [b]) => a.localeCompare(b));
+}
 
 function asArray(payload) {
   if (Array.isArray(payload?.items)) return payload.items;
@@ -45,6 +50,8 @@ function newLineItem() {
     description: "",
     quantity: "1",
     gross_price: "0",
+    sat_product_key: "",
+    sat_unit_key: "",
   };
 }
 
@@ -63,6 +70,7 @@ export default function QuotationPage() {
   const [services, setServices] = useState([]);
   const [materials, setMaterials] = useState([]);
   const [units, setUnits] = useState([]);
+  const [catalogs, setCatalogs] = useState(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -117,6 +125,15 @@ export default function QuotationPage() {
     }
     if (raw === "validations.invoice_material_service.authorization_status.required" || (field === "authorization_status" && raw.includes("authorization_status"))) {
       return t("quotation.validation_authorization_status_required", "No se pudo guardar porque la partida no tiene estado de autorización inicial.");
+    }
+    if (raw === "validations.invoice.quotation_conversion.no_authorized_lines") {
+      return t("quotation.validation_no_authorized_lines", "No se puede convertir: todas las partidas de esta cotización están marcadas como no autorizadas.");
+    }
+    if (raw === "validations.invoice.quotation_conversion.invalid_status") {
+      return t("quotation.validation_conversion_invalid_status", "Esta cotización ya no está en estatus de cotización, no se puede convertir de nuevo.");
+    }
+    if (raw === "validations.invoice.quotation_expired") {
+      return t("quotation.validation_quotation_expired", "Esta cotización ya venció; actualiza su vigencia antes de convertirla en factura.");
     }
     if (raw === "validations.invoice.tax_certification_supplier.required" || raw.includes("tax_certification_supplier")) {
       return t("quotation.validation_tax_certification_supplier_required", "Selecciona el proveedor de certificación fiscal.");
@@ -235,6 +252,8 @@ export default function QuotationPage() {
       description: line.invoice_material_service_description || "",
       quantity: String(line.quantity ?? "1"),
       gross_price: String(line.gross_price ?? "0"),
+      sat_product_key: line.sat_product_key || "",
+      sat_unit_key: line.sat_unit_key || "",
     };
   }
 
@@ -301,9 +320,19 @@ export default function QuotationPage() {
     setMessage("");
     setError("");
     try {
-      const updated = await transitionQuotation(invoice.id_invoice, status);
-      setQuotations((current) => current.map((item) => Number(item.id_invoice) === Number(invoice.id_invoice) ? { ...item, invoice_status: updated.invoice_status } : item));
-      setMessage(`Cotización ${quotationFolio(invoice)} movida a ${quotationStatusLabel(status, t)}.`);
+      // "converted" no es un simple cambio de etiqueta: hay que recalcular
+      // totales contra las partidas autorizadas y dejar la factura lista
+      // para timbrar (convert-quotation), no solo renombrar el estatus
+      // (quotation-transition) -- eso dejaba la factura en un estatus sin
+      // salida, con totales de la cotizacion completa aunque se hubiera
+      // rechazado algun renglon.
+      const updated = status === "converted"
+        ? await convertQuotationToInvoice(invoice.id_invoice)
+        : await transitionQuotation(invoice.id_invoice, status);
+      setQuotations((current) => current.map((item) => Number(item.id_invoice) === Number(invoice.id_invoice) ? { ...item, ...updated } : item));
+      setMessage(status === "converted"
+        ? `Cotización ${quotationFolio(invoice)} convertida a factura (${updated.authorized_lines_count} partida(s), ${updated.excluded_lines_count} excluida(s)).`
+        : `Cotización ${quotationFolio(invoice)} movida a ${quotationStatusLabel(status, t)}.`);
     } catch (requestError) {
       setError(resolveError(requestError));
     } finally {
@@ -323,8 +352,9 @@ export default function QuotationPage() {
       getAllService({ per_page: 500 }),
       getAllMaterial({ per_page: 500 }),
       getAllUnit({ per_page: 500 }),
+      getInvoiceCatalogs(),
     ])
-      .then(([invoicePayload, itemPayload, customerPayload, projectPayload, productPayload, servicePayload, materialPayload, unitPayload]) => {
+      .then(([invoicePayload, itemPayload, customerPayload, projectPayload, productPayload, servicePayload, materialPayload, unitPayload, catalogPayload]) => {
         const rows = asArray(invoicePayload)
           .filter((item) => QUOTATION_STATUS_CODES.includes(normalizeQuotationStatus(item.invoice_status)))
           .sort((a, b) => Number(b.id_invoice || 0) - Number(a.id_invoice || 0));
@@ -342,6 +372,7 @@ export default function QuotationPage() {
         setServices(serviceRows);
         setMaterials(materialRows);
         setUnits(unitRows);
+        setCatalogs(catalogPayload);
         setForm((prev) => ({
           ...prev,
           id_issuer_customer_supplier: prev.id_issuer_customer_supplier || String(customerRows[0]?.id_customer_supplier || ""),
@@ -404,6 +435,8 @@ export default function QuotationPage() {
       if (!description) return t("quotation.description_required", "Captura concepto.");
       if (!(quantity > 0)) return t("quotation.quantity_required", "La cantidad debe ser mayor a 0.");
       if (!(price >= 0)) return t("quotation.price_required", "El precio unitario debe ser mayor o igual a 0.");
+      if (!String(item.sat_product_key || "").trim()) return t("quotation.sat_product_key_required", "Selecciona la clave de producto/servicio del SAT.");
+      if (!String(item.sat_unit_key || "").trim()) return t("quotation.sat_unit_key_required", "Selecciona la clave de unidad del SAT.");
     }
     return "";
   }
@@ -423,6 +456,8 @@ export default function QuotationPage() {
       invoice_material_service_description: description,
       quantity: Number(item.quantity || 0),
       gross_price: Number(item.gross_price || 0),
+      sat_product_key: String(item.sat_product_key || "").trim(),
+      sat_unit_key: String(item.sat_unit_key || "").trim().toUpperCase(),
       line_type: item.line_type,
       authorization_status: "pending",
       authorization_note: "",
@@ -592,6 +627,8 @@ export default function QuotationPage() {
                   {item.line_type === "product" && <label className="field">{t("quotation.product", "Producto")}<select value={item.id_product} onChange={(event) => updateItem(item.local_id, "id_product", event.target.value)}><option value="">{t("quotation.select_product", "Seleccionar producto")}</option>{products.map((product) => <option key={product.id_product} value={product.id_product}>{product.product_code || product.descripcion || `#${product.id_product}`}</option>)}</select></label>}
                   {item.line_type === "service" && <label className="field">{t("quotation.service", "Servicio")}<select value={item.id_service} onChange={(event) => updateItem(item.local_id, "id_service", event.target.value)}><option value="">{t("quotation.select_service", "Seleccionar servicio")}</option>{services.map((service) => <option key={service.id_service} value={service.id_service}>{service.service_description || `#${service.id_service}`}</option>)}</select></label>}
                   <label className="field wide-field">{t("quotation.concept", "Concepto")}<input value={item.description} onChange={(event) => updateItem(item.local_id, "description", event.target.value)} placeholder={t("quotation.concept_placeholder", "Descripción de la partida")} /></label>
+                  <label className="field">{t("quotation.sat_product_key", "Clave SAT producto/servicio")}<SatProductKeyField required value={item.sat_product_key} onChange={(clave) => updateItem(item.local_id, "sat_product_key", clave)} onDescriptionPick={(description) => { if (!item.description) updateItem(item.local_id, "description", description); }} /></label>
+                  <label className="field">{t("quotation.sat_unit_key", "Clave SAT unidad")}<input required list="quotation-sat-unit-keys" maxLength="3" value={item.sat_unit_key} onChange={(event) => updateItem(item.local_id, "sat_unit_key", event.target.value.toUpperCase())} /></label>
                   <label className="field">{t("quotation.quantity", "Cantidad")}<input type="number" min="0.01" step="0.01" value={item.quantity} onChange={(event) => updateItem(item.local_id, "quantity", event.target.value)} /></label>
                   <label className="field">{t("quotation.unit_measure", "Unidad")}<select value={item.id_unit} onChange={(event) => updateItem(item.local_id, "id_unit", event.target.value)}><option value="">{t("quotation.no_unit", "Sin unidad")}</option>{units.map((unit) => <option key={unit.id_unit} value={unit.id_unit}>{unitLabelFromUnit(unit)}</option>)}</select></label>
                   <label className="field">{t("quotation.unit_price", "Precio unitario")}<input type="number" min="0" step="0.01" value={item.gross_price} onChange={(event) => updateItem(item.local_id, "gross_price", event.target.value)} /></label>
@@ -612,6 +649,9 @@ export default function QuotationPage() {
           <span>{t("quotation.total", "Total")} <strong>{money(total)}</strong></span>
         </div>
         <div className="form-actions"><button type="submit" className="button primary" disabled={saving}>{saving ? t("quotation.saving", "Guardando...") : (editingInvoiceId ? t("quotation.update_button", "Actualizar cotización") : t("quotation.save_button", "Guardar cotización"))}</button>{editingInvoiceId && <button type="button" className="button" onClick={cancelEditQuotation} disabled={saving}>{t("quotation.cancel_edit", "Cancelar edición")}</button>}</div>
+        <datalist id="quotation-sat-unit-keys">
+          {catalogOptions(catalogs?.clave_unidad).map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+        </datalist>
       </form>
 
       <div className="table-card quotation-list-card">

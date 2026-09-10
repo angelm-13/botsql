@@ -540,5 +540,116 @@ class TestCreditNoteRegressions(CreditNoteTestCase):
         self.assertEqual([UUID_SALE], [f.attrib["UUID"] for f in folios])
 
 
+class TestCreditNoteOriginalLineQuantity(CreditNoteTestCase):
+    """Comparado contra cotizador_demo (el sistema anterior de un cliente
+    real): alla una nota acredita por partida y por cantidad, no solo por
+    monto total. Esto fija que tyakxa_tny ahora hace lo mismo cuando la nota
+    cita `id_original_line`.
+    """
+
+    def _renglon_original(self, cantidad):
+        from app.models.invoice_material_service import InvoiceMaterialService
+
+        with transaction_context() as db:
+            linea = InvoiceMaterialService(
+                id_invoice=SALE, id_product=PRODUCT,
+                invoice_material_service_description="Venta original", quantity=cantidad,
+                gross_price=Decimal("100.00"), authorization_status="authorized",
+                is_directly_related_to_product_service_creation=False,
+                id_authorized=1, id_status=40, id_buyer=1, id_customer_supplier=CLIENT,
+                line_type="product", tax_applicable=False,
+                sat_product_key="01010101", sat_unit_key="H87", created_by=1,
+            )
+            db.add(linea)
+            db.flush()
+            return linea.id_invoice_material_service
+
+    def _nota_citando_renglon(self, id_original_line, cantidad, key):
+        payload = {
+            "relation_type": "01",
+            "idempotency_key": key,
+            "forma_pago": "03",
+            "metodo_pago": "PUE",
+            "lugar_expedicion": "37000",
+            "concepts": [{
+                "description": "Ajuste sobre la venta",
+                "quantity": cantidad,
+                "unit_price": "50",
+                "sat_product_key": "01010101", "sat_unit_key": "H87",
+                "id_original_line": id_original_line,
+            }],
+        }
+        return create_credit_note(SALE, payload, ACTOR)
+
+    def test_a_note_can_credit_up_to_the_original_quantity(self):
+        id_linea = self._renglon_original(cantidad=5)
+
+        resultado = self._nota_citando_renglon(id_linea, cantidad=5, key="nc-completa")
+
+        self.assertTrue(resultado["created"])
+
+    def test_a_second_note_cannot_exceed_what_the_first_already_credited(self):
+        id_linea = self._renglon_original(cantidad=5)
+        self._nota_citando_renglon(id_linea, cantidad=3, key="nc-1")
+
+        with self.assertRaises(AppError) as raised:
+            self._nota_citando_renglon(id_linea, cantidad=3, key="nc-2")
+
+        self.assertEqual(
+            "errors.credit_note_line_exceeds_creditable_quantity",
+            raised.exception.message_key,
+        )
+
+    def test_two_notes_that_together_exactly_use_up_the_quantity_both_succeed(self):
+        """El control es acumulado, no solo contra la primera nota."""
+        id_linea = self._renglon_original(cantidad=5)
+        self._nota_citando_renglon(id_linea, cantidad=3, key="nc-1")
+
+        segunda = self._nota_citando_renglon(id_linea, cantidad=2, key="nc-2")
+
+        self.assertTrue(segunda["created"])
+
+    def test_citing_a_line_from_another_invoice_is_rejected(self):
+        """No se puede acreditar contra un renglon que no es de esta factura."""
+        with transaction_context() as db:
+            db.add(Invoice(
+                id_invoice=999, id_customer_supplier=CLIENT, id_issuer_customer_supplier=PRINCIPAL,
+                id_proyect=30, id_status=40, invoice_status="timbrada",
+                folio_fiscal="99999999-9999-9999-9999-999999999999",
+                metodo_pago="PUE", forma_pago="03", tax_certification_supplier=PRINCIPAL,
+                apply_tax=False, total=Decimal("100.00"), currency="MXN", created_by=1,
+            ))
+        with transaction_context() as db:
+            from app.models.invoice_material_service import InvoiceMaterialService
+            linea_ajena = InvoiceMaterialService(
+                id_invoice=999, id_product=PRODUCT,
+                invoice_material_service_description="De otra factura", quantity=5,
+                gross_price=Decimal("100.00"), authorization_status="authorized",
+                is_directly_related_to_product_service_creation=False,
+                id_authorized=1, id_status=40, id_buyer=1, id_customer_supplier=CLIENT,
+                line_type="product", tax_applicable=False,
+                sat_product_key="01010101", sat_unit_key="H87", created_by=1,
+            )
+            db.add(linea_ajena)
+            db.flush()
+            id_linea_ajena = linea_ajena.id_invoice_material_service
+
+        with self.assertRaises(AppError) as raised:
+            self._nota_citando_renglon(id_linea_ajena, cantidad=1, key="nc-cruzada")
+
+        self.assertEqual("errors.credit_note_original_line_mismatch", raised.exception.message_key)
+
+    def test_summary_exposes_creditable_quantity_per_line(self):
+        id_linea = self._renglon_original(cantidad=5)
+        self._nota_citando_renglon(id_linea, cantidad=2, key="nc-1")
+
+        resumen = credit_note_summary(SALE, ACTOR)
+        disponibilidad = next(
+            r for r in resumen["line_availability"] if r["id_invoice_material_service"] == id_linea
+        )
+        self.assertEqual("3.00", disponibilidad["creditable_quantity"])
+        self.assertEqual("2.00", disponibilidad["credited_quantity"])
+
+
 if __name__ == "__main__":
     unittest.main()

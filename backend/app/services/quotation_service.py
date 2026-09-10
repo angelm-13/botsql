@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from sqlalchemy import select
@@ -26,6 +27,40 @@ TRANSITIONS = {
 def normalize_status(value):
     status = str(value or "").strip().lower()
     return STATUS_ALIASES.get(status, status)
+
+
+def is_expired(date_expiration, today=None):
+    """Si una vigencia ya paso. `date_expiration` puede venir sin hora."""
+    if not date_expiration:
+        return False
+    reference = today or date.today()
+    if isinstance(date_expiration, datetime):
+        date_expiration = date_expiration.date()
+    elif isinstance(date_expiration, str):
+        try:
+            date_expiration = date.fromisoformat(date_expiration[:10])
+        except ValueError:
+            return False
+    return date_expiration < reference
+
+
+def ensure_not_expired(invoice):
+    """Bloquea aceptar/convertir una cotizacion cuya vigencia ya paso.
+
+    Ni cotizador_demo ni tyakxa_tny comparaban `date_expiration`/`validity_date`
+    contra la fecha de hoy en ningun punto -el campo se capturaba pero nunca se
+    hacia cumplir-. Se agrega aqui, en el punto donde de verdad importa: al
+    aceptar (cliente) o convertir (staff) una cotizacion en factura, no al
+    guardarla ni al listarla, porque una cotizacion vencida sigue siendo
+    consultable, solo no debe poder volverse un compromiso de cobro.
+    """
+    date_expiration = invoice.get('date_expiration') if isinstance(invoice, dict) else getattr(invoice, 'date_expiration', None)
+    if is_expired(date_expiration):
+        raise AppError(
+            'validations.invoice.quotation_expired',
+            409,
+            {'date_expiration': str(date_expiration)},
+        )
 
 
 def validate_transition(current_status, target_status):

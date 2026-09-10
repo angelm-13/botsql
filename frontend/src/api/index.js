@@ -304,6 +304,12 @@ export const getInvoice = (id) => request(`/invoice/${id}`);
 export const createInvoice = (payload) => request("/invoice/", { method: "POST", body: payload });
 export const updateInvoice = (id, payload) => request(`/invoice/${id}`, { method: "PUT", body: payload });
 export const transitionQuotation = (id, status) => request(`/invoice/${id}/quotation-transition`, { method: "PATCH", body: { status } });
+// A diferencia de transitionQuotation (que solo cambia la etiqueta de
+// estatus), este endpoint recalcula subtotal/impuesto/total contra las
+// partidas autorizadas y deja la factura en 'pendiente', lista para
+// timbrar. Es el paso real de "convertir a factura" -- transitionQuotation
+// nunca debe usarse para el destino "converted".
+export const convertQuotationToInvoice = (id, conversionNote) => request(`/invoice/convert-quotation/${id}`, { method: "PATCH", body: conversionNote ? { conversion_note: conversionNote } : {} });
 export const deleteInvoice = (id) => request(`/invoice/${id}`, { method: "DELETE" });
 export const getInvoiceCatalogs = () => request("/invoice/catalogs");
 export const previewManualInvoice = (payload) => request("/invoice/manual/preview", { method: "POST", body: payload });
