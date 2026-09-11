@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
 import { getAllNmIncidentProduct, createNmIncidentProduct, updateNmIncidentProduct, deleteNmIncidentProduct, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllUser, getAllIncident, getAllProduct } from "../api";
+import { fetchAllPages } from "../utils/fetchAllPages";
 import Pagination from "../components/Pagination.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
@@ -140,9 +141,9 @@ export default function NmIncidentProductPage() {
       }
       try {
         const [entityPermissionData, fieldPermissionData, fieldData] = await Promise.all([
-          getAllEntityPermission({ per_page: 5000 }),
-          getAllNmFieldPermission({ per_page: 5000 }),
-          getAllField({ per_page: 5000 })
+          fetchAllPages(getAllEntityPermission),
+          fetchAllPages(getAllNmFieldPermission),
+          fetchAllPages(getAllField)
         ]);
         const entityPermissions = normalizeList(entityPermissionData);
         const fieldPermissions = normalizeList(fieldPermissionData);

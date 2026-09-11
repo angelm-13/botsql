@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { BadgeCheck, ChevronDown, ChevronRight, Download, FileText, Plus, RefreshCw, Scale, Search, Trash2, Pencil, Warehouse } from "lucide-react";
 import { useI18n } from "../i18n";
 import { applyInvoiceInventory, deleteInvoice, downloadInvoicePdf, downloadInvoiceXml, getAllCustomerSupplier, getAllEntityPermission, getAllField, getAllInvoice, getAllNmFieldPermission, getAllProyect, getAllStatus, getInvoiceInventoryPreview, getInvoiceLines, resetUserMfa, stampInvoice, createInvoice, updateInvoice } from "../api";
+import { fetchAllPages } from "../utils/fetchAllPages";
 import Pagination from "../components/Pagination.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
@@ -151,9 +152,9 @@ export default function InvoicePage() {
       }
       try {
         const [entityPermissionData, fieldPermissionData, fieldData] = await Promise.all([
-          getAllEntityPermission({ per_page: 5000 }),
-          getAllNmFieldPermission({ per_page: 5000 }),
-          getAllField({ per_page: 5000 })
+          fetchAllPages(getAllEntityPermission),
+          fetchAllPages(getAllNmFieldPermission),
+          fetchAllPages(getAllField)
         ]);
         const entityPermissions = normalizeList(entityPermissionData);
         const fieldPermissions = normalizeList(fieldPermissionData);

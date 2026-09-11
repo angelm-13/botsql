@@ -23,6 +23,7 @@ import {
 } from "../api";
 import { useI18n } from "../i18n";
 import PageHeader from "../components/PageHeader.jsx";
+import { fetchAllPages } from "../utils/fetchAllPages";
 
 const ENTITY_ACTIONS = [
   { key: "create", bit: 1, label: "Crear" },
@@ -59,28 +60,6 @@ const DEFAULT_GROUP_ICON_IDS = {
 function asItems(payload) {
   if (Array.isArray(payload)) return payload;
   return payload?.items || payload?.data || payload?.records || [];
-}
-
-// `nm_field_permission` sola ya pasa las 5000 filas de golpe con 12 roles y
-// 85 modulos -8879 en producción al momento de escribir esto-, asi que un
-// solo `per_page: 5000` deja la segunda pagina sin pedir. Sin esas filas, el
-// gestor cree que un modulo con permiso real no tiene ni un campo visible y
-// bloquea GUARDAR de todo el rol con un error que nombra modulos que nadie
-// estaba tocando -asi se vivio "no pude ocultar Producto para Supervisor":
-// el bloqueo era por Departamento/Plantilla, paginas mas adelante.
-async function fetchAllPages(fetcher, params = {}) {
-  const perPage = 5000;
-  let page = 1;
-  let items = [];
-  for (;;) {
-    const payload = await fetcher({ ...params, page, per_page: perPage });
-    const batch = asItems(payload);
-    items = items.concat(batch);
-    const pages = Number(payload?.pages ?? 1);
-    if (!batch.length || page >= pages) break;
-    page += 1;
-  }
-  return { items };
 }
 
 function getEntityName(item) {
