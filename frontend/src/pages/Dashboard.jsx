@@ -3,7 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "reac
 import {
   ArrowDown, ArrowUp, AreaChart as AreaChartIcon, BarChart2, ChevronDown, ChevronUp,
   ClipboardList, GripVertical, Hash, LineChart as LineChartIcon, Pencil, PieChart as PieChartIcon, Plus, Receipt,
-  RefreshCw, SlidersHorizontal, Trash2, User, X,
+  RefreshCw, SlidersHorizontal, Trash2, User,
 } from "lucide-react";
 import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line, AreaChart, Area,
@@ -259,6 +259,48 @@ function EmployeeAvatar({ size = "regular", color }) {
     <span className={`kpi-avatar ${size === "small" ? "small" : ""}`} style={color ? { background: color } : undefined}>
       <User size={size === "small" ? 10 : 13} color={color ? "#fff" : undefined} />
     </span>
+  );
+}
+
+// Barra desplegable reutilizable: boton cerrado por default con un resumen
+// ("Filtrar por empleados", "3 empleados seleccionados") + chevron; al hacer
+// click despliega un popover con las opciones (los chips que le pasen como
+// children) adentro. Reemplaza la caja siempre-abierta que tenian antes tanto
+// el picker de empleados como las variables sueltas -- mismo componente en
+// los dos lugares para que se vean y se comporten igual (ver su uso en
+// KpiWidgetPanel). El picker de departamento deliberadamente NO usa este
+// patron por ahora, se dejo tal cual estaba (chips simples siempre visibles).
+function KpiDropdownPicker({ label, children }) {
+  const [abierto, setAbierto] = useState(false);
+
+  // Mismo patron de "cerrar al hacer clic afuera" que ya usa el popover de
+  // color de los chips de KPI (ver swatchAbierto en KpiWidgetPanel).
+  useEffect(() => {
+    if (!abierto) return undefined;
+    function handleClickFuera(event) {
+      if (!event.target.closest(".kpi-dropdown-picker")) setAbierto(false);
+    }
+    document.addEventListener("mousedown", handleClickFuera);
+    return () => document.removeEventListener("mousedown", handleClickFuera);
+  }, [abierto]);
+
+  return (
+    <div className="kpi-dropdown-picker">
+      <button
+        type="button"
+        className="kpi-dropdown-picker-toggle"
+        onClick={() => setAbierto((actual) => !actual)}
+        aria-expanded={abierto}
+      >
+        <span>{label}</span>
+        {abierto ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+      </button>
+      {abierto && (
+        <div className="kpi-dropdown-picker-menu" role="menu">
+          {children}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1238,6 +1280,9 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
   const primeraDimension = kpisSeleccionadosInfo[0]?.dimensiones?.[0];
   const tieneBajoStockSeleccionado = kpisSeleccionadosInfo.some((kpi) => kpi.clave === "articulos_bajo_stock");
 
+  // Para el resumen del picker desplegable de variables (ver KpiDropdownPicker).
+  const variablesSeleccionadas = kpisSeleccionadosInfo.filter((kpi) => kpi.dimensiones?.[0] === "global");
+
   // Cierra el popover de color al hacer clic fuera de el -- sin esto se
   // quedaria abierto hasta elegir un color o deseleccionar el KPI.
   useEffect(() => {
@@ -1434,9 +1479,9 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
         <div className="kpi-widget-panel-header-actions">
           {/* Pestana/flap, no una X de cierre: un clic colapsa a esta misma
               pestana (el borrador sigue vivo en panelState), otro clic
-              expande de vuelta. Descartar el borrador por completo es una
-              accion aparte (boton de abajo, solo visible colapsado, o
-              "Cancelar" en el footer cuando esta expandido). */}
+              expande de vuelta. Descartar el borrador por completo NO tiene
+              un icono propio aqui colapsado -- se expande el panel y se usa
+              "Cancelar" del footer, que ya hace exactamente eso. */}
           <button
             type="button"
             className="kpi-panel-flap"
@@ -1447,17 +1492,6 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
             {colapsado && <span>{tituloPanel}</span>}
             {colapsado ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
           </button>
-          {colapsado && (
-            <button
-              type="button"
-              className="kpi-icon-button danger"
-              onClick={onCancel}
-              aria-label={t("common.cancel")}
-              title={t("common.cancel")}
-            >
-              <X size={16} />
-            </button>
-          )}
         </div>
       </header>
 
@@ -1532,10 +1566,17 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
 
             {kpisVariables.length > 0 && (
               <div className="kpi-picker-section">
-                <span>{tx("kpi_variables", "Variables (para combinar en un mismo gráfico)")}</span>
-                <div className="kpi-chip-option-group">
-                  {kpisVariables.map(renderKpiChip)}
-                </div>
+                <KpiDropdownPicker
+                  label={
+                    variablesSeleccionadas.length > 0
+                      ? tx("kpi_variables_selected_count", `${variablesSeleccionadas.length} variable(s) seleccionada(s)`)
+                      : tx("kpi_variables", "Variables (para combinar en un mismo gráfico)")
+                  }
+                >
+                  <div className="kpi-chip-option-group">
+                    {kpisVariables.map(renderKpiChip)}
+                  </div>
+                </KpiDropdownPicker>
               </div>
             )}
             </div>
@@ -1637,27 +1678,34 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
             <div className="kpi-panel-col">
             {users.length > 0 && (
               <div className="kpi-employee-picker">
-                <span className="kpi-employee-picker-label">{tx("employees_filter", "Filtrar por empleados (opcional)")}</span>
-                <div className="kpi-employee-list">
-                  {users.map((user) => {
-                    const activo = empleadosSeleccionados.includes(String(user.id_user));
-                    const colorEmpleado = colorDeKpi(user.id_user);
-                    return (
-                      <button
-                        type="button"
-                        className={`kpi-employee-chip ${activo ? "active" : ""}`}
-                        key={user.id_user}
-                        style={{ "--employee-color": colorEmpleado }}
-                        onClick={() => toggleEmpleado(String(user.id_user))}
-                        aria-pressed={activo}
-                        title={user.full_name || user.username || `#${user.id_user}`}
-                      >
-                        <EmployeeAvatar size="small" color={colorEmpleado} />
-                        <span>{user.full_name || user.username || `#${user.id_user}`}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+                <KpiDropdownPicker
+                  label={
+                    empleadosSeleccionados.length > 0
+                      ? tx("employees_selected_count", `${empleadosSeleccionados.length} empleado(s) seleccionado(s)`)
+                      : tx("employees_filter", "Filtrar por empleados (opcional)")
+                  }
+                >
+                  <div className="kpi-employee-list">
+                    {users.map((user) => {
+                      const activo = empleadosSeleccionados.includes(String(user.id_user));
+                      const colorEmpleado = colorDeKpi(user.id_user);
+                      return (
+                        <button
+                          type="button"
+                          className={`kpi-employee-chip ${activo ? "active" : ""}`}
+                          key={user.id_user}
+                          style={{ "--employee-color": colorEmpleado }}
+                          onClick={() => toggleEmpleado(String(user.id_user))}
+                          aria-pressed={activo}
+                          title={user.full_name || user.username || `#${user.id_user}`}
+                        >
+                          <EmployeeAvatar size="small" color={colorEmpleado} />
+                          <span>{user.full_name || user.username || `#${user.id_user}`}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </KpiDropdownPicker>
               </div>
             )}
 
