@@ -61,6 +61,28 @@ function asItems(payload) {
   return payload?.items || payload?.data || payload?.records || [];
 }
 
+// `nm_field_permission` sola ya pasa las 5000 filas de golpe con 12 roles y
+// 85 modulos -8879 en producción al momento de escribir esto-, asi que un
+// solo `per_page: 5000` deja la segunda pagina sin pedir. Sin esas filas, el
+// gestor cree que un modulo con permiso real no tiene ni un campo visible y
+// bloquea GUARDAR de todo el rol con un error que nombra modulos que nadie
+// estaba tocando -asi se vivio "no pude ocultar Producto para Supervisor":
+// el bloqueo era por Departamento/Plantilla, paginas mas adelante.
+async function fetchAllPages(fetcher, params = {}) {
+  const perPage = 5000;
+  let page = 1;
+  let items = [];
+  for (;;) {
+    const payload = await fetcher({ ...params, page, per_page: perPage });
+    const batch = asItems(payload);
+    items = items.concat(batch);
+    const pages = Number(payload?.pages ?? 1);
+    if (!batch.length || page >= pages) break;
+    page += 1;
+  }
+  return { items };
+}
+
 function getEntityName(item) {
   return item?.entity_name || item?.table_name || item?.name || "";
 }
@@ -138,9 +160,9 @@ export default function RolePermissionManagerPage() {
         const [catalogPayload, rolesPayload, entityPermPayload, fieldPayload, fieldPermPayload, usersPayload, departmentsPayload, subdepartmentsPayload, levelsPayload] = await Promise.all([
           getPermissionCatalog(),
           getAllPermission({ per_page: 500 }),
-          getAllEntityPermission({ per_page: 5000 }),
-          getAllField({ per_page: 5000 }),
-          getAllNmFieldPermission({ per_page: 5000 }),
+          fetchAllPages(getAllEntityPermission),
+          fetchAllPages(getAllField),
+          fetchAllPages(getAllNmFieldPermission),
           getAllUser({ per_page: 500 }),
           getAllDepartment({ per_page: 500 }),
           getAllSubdepartment({ per_page: 500 }),
@@ -421,8 +443,8 @@ export default function RolePermissionManagerPage() {
       setRoleFormOpen(false);
       await refreshRoles("");
       const [entityPermPayload, fieldPermPayload] = await Promise.all([
-        getAllEntityPermission({ per_page: 5000 }),
-        getAllNmFieldPermission({ per_page: 5000 })
+        fetchAllPages(getAllEntityPermission),
+        fetchAllPages(getAllNmFieldPermission)
       ]);
       setEntityPermissions(asItems(entityPermPayload));
       setFieldPermissions(asItems(fieldPermPayload));
@@ -626,9 +648,9 @@ export default function RolePermissionManagerPage() {
         }
       }
       const [entityPermPayload, fieldPermPayload, fieldPayload] = await Promise.all([
-        getAllEntityPermission({ per_page: 5000 }),
-        getAllNmFieldPermission({ per_page: 5000 }),
-        getAllField({ per_page: 5000 })
+        fetchAllPages(getAllEntityPermission),
+        fetchAllPages(getAllNmFieldPermission),
+        fetchAllPages(getAllField)
       ]);
       setEntityPermissions(asItems(entityPermPayload));
       setFieldPermissions(asItems(fieldPermPayload));

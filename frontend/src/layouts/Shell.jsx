@@ -453,6 +453,18 @@ export default function Shell() {
               moduleSections.js; aqui solo se pinta, de modo que agregar un
               modulo con secciones no vuelve a significar copiar este bloque. */}
           {moduleSectionsEnPlan(modulosDelPlan).map((modulo) => {
+            // Un modulo con entidades propias declaradas (hoy solo Logistica)
+            // necesita al menos una concedida de verdad para pintarse. Sin
+            // esto, Almacen/Facturas/Proveedores -que piden prestadas
+            // `product`/`invoice`/`customer_supplier` para no duplicar
+            // pantalla- sostenian el encabezado "Logistica" para cualquier
+            // rol con Inventario, Facturacion o CRM, que es casi cualquier
+            // rol, y no habia checkbox en el Gestor de roles que lo apagara:
+            // nada de lo que lo sostenia era, en los hechos, de logistica.
+            if (modulo.entidadesPropias && !isBootstrapAdmin
+              && !modulo.entidadesPropias.some((entidad) => permissionByEntity.has(entidad))) {
+              return null;
+            }
             const seccionesVisibles = modulo.sections
               .map((seccion) => ({ ...seccion, items: seccion.items.filter(canSeeSectionItem) }))
               .filter((seccion) => seccion.items.length > 0);

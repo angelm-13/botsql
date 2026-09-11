@@ -57,21 +57,43 @@ export default function ProductHistory({ idProduct, titulo, onCerrar }) {
   const [pagina, setPagina] = useState(1);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState("");
+  const [avisoPermiso, setAvisoPermiso] = useState("");
 
   const traer = useCallback(async (cual) => {
     setCargando(true);
     setError("");
+    setAvisoPermiso("");
     try {
       if (cual === "historial") {
         // Los dos de golpe: la mezcla necesita las dos listas enteras. 200 es
         // el tope del servidor y sobra -- el libro completo son 224 asientos
         // repartidos entre 2 221 productos.
-        const [libro, vales] = await Promise.all([
+        //
+        // `allSettled` y no `all`: el libro sale de `product` y los prestamos
+        // de `warehouse_voucher` -- dos permisos distintos, y la mayoria de
+        // los roles (Administrator incluido: la separacion de funciones le
+        // deja el prevale pero no el vale) no tienen el segundo. Con `all`,
+        // un 403 en cualquiera de las dos tumbaba TODA la ficha con "no se
+        // pudo cargar el historial" aunque el libro si hubiera respondido --
+        // la vista se veia "no integrada" para casi cualquiera que la abriera.
+        const [libro, vales] = await Promise.allSettled([
           getInventoryMovements(idProduct, { page: 1, per_page: 200 }),
           getProductLoanHistory(idProduct),
         ]);
-        setMovimientos(libro);
-        setPrestamos(vales);
+        if (libro.status === "rejected" && vales.status === "rejected") {
+          throw libro.reason;
+        }
+        setMovimientos(libro.status === "fulfilled" ? libro.value : null);
+        setPrestamos(vales.status === "fulfilled" ? vales.value : null);
+        const rechazoDePermiso = [libro, vales].find(
+          (r) => r.status === "rejected" && r.reason?.status === 403);
+        if (rechazoDePermiso) {
+          setAvisoPermiso(vales.status === "rejected"
+            ? t("history.no_loan_permission",
+              "Falta el permiso de Vales de almacén: se muestra el libro de movimientos, pero no quién se ha llevado el producto en préstamo.")
+            : t("history.no_movement_permission",
+              "Falta el permiso de Productos para el libro de movimientos: se muestra solo lo relacionado a préstamos."));
+        }
       } else {
         setUbicaciones(await getProductStock(idProduct));
       }
@@ -149,6 +171,7 @@ export default function ProductHistory({ idProduct, titulo, onCerrar }) {
 
         <div className="ficha-cuerpo">
           {error && <p className="error">{error}</p>}
+          {!error && avisoPermiso && <p className="muted">{avisoPermiso}</p>}
           {cargando && <p className="muted">{t("common.loading", "Cargando…")}</p>}
 
           {!cargando && pestana === "historial" && (
