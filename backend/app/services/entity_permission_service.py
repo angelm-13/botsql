@@ -56,7 +56,8 @@ class EntityPermissionService(CrudService):
             return {'message_key': 'success.deleted'}
 
     @classmethod
-    def list(cls, page: int = 1, per_page: int = 20, filters: dict | None = None, sort: str | None = None):
+    def list(cls, page: int = 1, per_page: int = 20, filters: dict | None = None,
+             sort: str | None = None, q: str | None = None):
         """Solo los permisos vigentes, y el total tambien.
 
         El CRUD generico no filtra la baja logica, asi que el gestor mostraba
@@ -77,6 +78,10 @@ class EntityPermissionService(CrudService):
         filters = filters or {}
         with transaction_context() as session:
             stmt = select(cls.model).where(cls.model.deletion_date.is_(None))
+            # La busqueda libre, sin perder el filtro de baja logica de arriba.
+            busqueda = cls._busqueda_libre(q)
+            if busqueda is not None:
+                stmt = stmt.where(busqueda)
             for clave, valor in filters.items():
                 if not hasattr(cls.model, clave) or valor in (None, ''):
                     continue

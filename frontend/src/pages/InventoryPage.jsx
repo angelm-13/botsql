@@ -7,19 +7,24 @@ import {
 import ProductLots from "../components/ProductLots.jsx";
 import { useI18n } from "../i18n";
 import "../styles/inventory-warehouses.css";
+import FormularioPlegable from "../components/FormularioPlegable.jsx";
+import PageHeader from "../components/PageHeader.jsx";
 import {
-  createInventoryMovement, createInventoryTransfer, getAllEntityPermission,
+  createInventoryTransfer, getAllEntityPermission,
   getAllProduct, getInventoryMovements, getInventoryReconciliation,
   getLocationTree, getProductStock, getWarehouseStock,
 } from "../api";
 
 const ENTITY_KEY = "product";
-const ADJUSTMENT_CAPABILITY = "inventory_adjustment";
 const ACTION_READ = 2;
 const ACTION_UPDATE = 4;
 
 // Movimientos que el almacen registra a mano. El traspaso va aparte porque
 // mueve dos ubicaciones a la vez, y el ajuste porque exige otra capacidad.
+// Los tipos que puede traer un renglon del libro. Ya no hay formulario que los
+// produzca a mano -- el vale es la puerta --, pero el libro los sigue
+// mostrando y se filtra por ellos: es el historico, y ahi estan los que
+// asentaron los vales y los que trajo la carga del sistema anterior.
 const MOVEMENT_TYPES = [
   { value: "receive", sign: 1 },
   { value: "return", sign: 1 },
@@ -32,10 +37,6 @@ const MOVEMENT_TYPES = [
 
 // Los que cambian existencia sin documento detras: el motivo es obligatorio y
 // conviene que la pantalla lo pida antes de que el servidor lo rechace.
-const REASON_REQUIRED = new Set(["loss", "damage", "destroy", "adjustment"]);
-
-const REFERENCE_TYPES = ["invoice", "invoice_line", "purchase", "project", "task", "incident", "count", "manual"];
-
 function hasBit(value, bit) {
   return (Number(value || 0) & bit) === bit;
 }
@@ -212,15 +213,11 @@ export default function InventoryPage() {
 
   const [permissionReady, setPermissionReady] = useState(false);
   const [modulePermission, setModulePermission] = useState(null);
-  const [canAdjust, setCanAdjust] = useState(false);
 
   const [tree, setTree] = useState([]);
   const [products, setProducts] = useState([]);
   const [selectedWarehouse, setSelectedWarehouse] = useState("");
   const [warehouseContent, setWarehouseContent] = useState(null);
-  // El lote que nombra una entrada. Solo se usa cuando el producto lleva lotes;
-  // en los demas ni se pinta ni se manda.
-  const [lote, setLote] = useState({ lot_code: "", expiry_date: "" });
   // Para volver a pedir el desglose despues de un movimiento, sin recargar la
   // pantalla entera.
   const [refrescoDeLotes, setRefrescoDeLotes] = useState(0);
@@ -234,7 +231,6 @@ export default function InventoryPage() {
   const [reconciliation, setReconciliation] = useState(null);
   const [ledgerFilter, setLedgerFilter] = useState({ movement_type: "", id_location: "" });
 
-  const [movement, setMovement] = useState({ movement_type: "receive", quantity: "1", id_location: "", reason: "", reference_type: "", reference_id: "" });
   const [transfer, setTransfer] = useState({ id_location_from: "", id_location_to: "", quantity: "1", reason: "" });
 
   const [busy, setBusy] = useState(false);
@@ -253,7 +249,6 @@ export default function InventoryPage() {
     let alive = true;
     if (isSuperUser) {
       setModulePermission({ control_type: 15 });
-      setCanAdjust(true);
       setPermissionReady(true);
       return () => { alive = false; };
     }
@@ -262,7 +257,6 @@ export default function InventoryPage() {
         if (!alive) return;
         const rows = normalizeList(payload).filter((row) => String(row.id_permission) === String(roleId));
         setModulePermission(rows.find((row) => row.entity_name === ENTITY_KEY) || null);
-        setCanAdjust(rows.some((row) => row.entity_name === ADJUSTMENT_CAPABILITY && hasBit(row.control_type, ACTION_READ)));
       })
       .catch(() => { if (alive) setModulePermission(null); })
       .finally(() => { if (alive) setPermissionReady(true); });
@@ -321,7 +315,6 @@ export default function InventoryPage() {
     await refreshProduct(productId);
     const product = products.find((row) => String(row.id_product) === String(productId));
     const fallback = product?.id_location ? String(product.id_location) : "";
-    setMovement((prev) => ({ ...prev, id_location: prev.id_location || fallback }));
     setTransfer((prev) => ({ ...prev, id_location_from: prev.id_location_from || fallback }));
   }
 
@@ -333,48 +326,6 @@ export default function InventoryPage() {
       setWarehouseContent(await getWarehouseStock(locationId));
     } catch (requestError) {
       showError(requestError);
-    }
-  }
-
-  async function submitMovement(event) {
-    event.preventDefault();
-    if (!selectedProduct || busy) return;
-    setBusy(true); setError(""); setNotice("");
-    try {
-      const body = {
-        movement_type: movement.movement_type,
-        id_location: Number(movement.id_location) || undefined,
-      };
-      if (movement.movement_type === "adjustment") {
-        body.quantity_delta = Number(movement.quantity);
-      } else {
-        body.quantity = Number(movement.quantity);
-      }
-      if (movement.reason.trim()) body.reason = movement.reason.trim();
-      if (movement.reference_type) {
-        body.reference_type = movement.reference_type;
-        if (movement.reference_id.trim()) body.reference_id = movement.reference_id.trim();
-      }
-      // El lote solo en la entrada de un producto que los lleva. En la salida
-      // no se manda: se sirve del que vence primero, que es el unico orden que
-      // reduce la merma por caducidad.
-      if (llevaLotes && esEntrada && lote.lot_code.trim()) {
-        body.lot = {
-          lot_code: lote.lot_code.trim(),
-          expiry_date: lote.expiry_date || undefined,
-        };
-      }
-      const result = await createInventoryMovement(selectedProduct, body);
-      setNotice(result.idempotent_replay ? "inventory.movement_replayed" : "inventory.movement_registered");
-      setMovement((prev) => ({ ...prev, quantity: "1", reason: "", reference_id: "" }));
-      setLote({ lot_code: "", expiry_date: "" });
-      setRefrescoDeLotes((n) => n + 1);
-      await refreshProduct(selectedProduct);
-      if (selectedWarehouse) await pickWarehouse(selectedWarehouse);
-    } catch (requestError) {
-      showError(requestError);
-    } finally {
-      setBusy(false);
     }
   }
 
@@ -392,6 +343,10 @@ export default function InventoryPage() {
       setNotice(result.idempotent_replay ? "inventory.transfer_replayed" : "inventory.transfer_registered");
       setTransfer((prev) => ({ ...prev, quantity: "1", reason: "" }));
       await refreshProduct(selectedProduct);
+      // El desglose por lotes cambia con el traspaso: la existencia cambia de
+      // sitio y los lotes van con ella. Lo refrescaba el formulario de
+      // movimientos, que ya no esta.
+      setRefrescoDeLotes((antes) => antes + 1);
       if (selectedWarehouse) await pickWarehouse(selectedWarehouse);
     } catch (requestError) {
       showError(requestError);
@@ -406,15 +361,11 @@ export default function InventoryPage() {
     await refreshProduct(selectedProduct, next);
   }
 
-  const movementNeedsReason = REASON_REQUIRED.has(movement.movement_type);
-
   // Si el producto elegido se lleva por lotes. Es lo unico que decide si el
   // formulario pide el lote: para todo lo demas la pantalla no cambia.
   const productoElegido = products.find(
     (row) => String(row.id_product) === String(selectedProduct));
   const llevaLotes = Boolean(productoElegido?.lot_control);
-  const esEntrada = movement.movement_type !== "adjustment"
-    && (MOVEMENT_TYPES.find((x) => x.value === movement.movement_type)?.sign || 0) > 0;
 
   // La ruta completa de cada ubicacion, para los desplegables de los dos
   // formularios: sin ella hay que saberse de memoria de que nave es cada rack.
@@ -429,15 +380,6 @@ export default function InventoryPage() {
 
   // La cuenta antes de mandar. Sin esto se teclea a ciegas y el servidor
   // contesta 409 con el saldo disponible, que es enterarse tarde.
-  const signoElegido = MOVEMENT_TYPES.find(
-    (x) => x.value === movement.movement_type)?.sign;
-  const hayEnLaUbicacion = existenciaEn(stock, movement.id_location);
-  const cantidadPedida = Number(movement.quantity) || 0;
-  const saldoTrasMovimiento = hayEnLaUbicacion === null ? null : (
-    movement.movement_type === "adjustment"
-      ? hayEnLaUbicacion + cantidadPedida
-      : hayEnLaUbicacion + (signoElegido || 0) * Math.abs(cantidadPedida)
-  );
 
   const hayEnOrigen = existenciaEn(stock, transfer.id_location_from);
   const aTraspasar = Number(transfer.quantity) || 0;
@@ -455,16 +397,15 @@ export default function InventoryPage() {
 
   return (
     <main className="page">
-      <header className="page-header">
-        <div>
-          <p className="eyebrow"><Warehouse size={14} /> {t("inventory.eyebrow", "Almacén")}</p>
-          <h1>{t("inventory.title", "Inventario por almacén")}</h1>
-          <p className="muted">{t("inventory.subtitle", "Existencia por ubicación, movimientos y traspasos entre almacenes.")}</p>
-        </div>
+      <PageHeader
+        eyebrow={<><Warehouse size={14} /> {t("inventory.eyebrow", "Almacén")}</>}
+        titulo={t("inventory.title", "Inventario por almacén")}
+        subtitulo={t("inventory.subtitle", "Existencia por ubicación, movimientos y traspasos entre almacenes.")}
+      >
         <button className="button" type="button" onClick={loadBase} disabled={loading}>
-          <RefreshCw size={16} /> {t("common.refresh", "Actualizar")}
+        <RefreshCw size={16} /> {t("common.refresh", "Actualizar")}
         </button>
-      </header>
+      </PageHeader>
 
       {error && (
         <p className="error">
@@ -618,156 +559,30 @@ export default function InventoryPage() {
         )}
 
         {selectedProduct && canWrite && (
-          <div className="form-grid-2">
-            <form className="form-card" onSubmit={submitMovement}>
-              <div className="form-header">
-                <PackagePlus size={16} />
-                <strong>{t("inventory.register_movement", "Registrar movimiento")}</strong>
-                {/* El signo, a la vista. Antes habia que deducirlo del nombre
-                    del movimiento o del "(+)" pegado dentro del desplegable. */}
-                {movement.movement_type === "adjustment" ? (
-                  <span className="inv-signo ajuste">± {t("inventory.sign_adjust", "ajusta")}</span>
-                ) : signoElegido > 0 ? (
-                  <span className="inv-signo entra">+ {t("inventory.sign_in", "entra")}</span>
-                ) : (
-                  <span className="inv-signo sale">− {t("inventory.sign_out", "sale")}</span>
-                )}
-              </div>
+          <>
+            {/* El alta de movimientos a mano se retiro.
 
-              <label className="field">
-                <span>{t("inventory.movement_type", "Tipo de movimiento")}</span>
-                <select value={movement.movement_type} onChange={(event) => setMovement((prev) => ({ ...prev, movement_type: event.target.value }))}>
-                  {MOVEMENT_TYPES.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {t(`inventory.movement_${option.value}`, option.value)} ({option.sign > 0 ? "+" : "−"})
-                    </option>
-                  ))}
-                  {canAdjust && <option value="adjustment">{t("inventory.movement_adjustment", "Ajuste")} (±)</option>}
-                </select>
-              </label>
-              {!canAdjust && (
-                <p className="muted">
-                  <AlertTriangle size={13} /> {t("inventory.adjust_not_allowed", "Los ajustes requieren permiso de jefe de almacén.")}
-                </p>
-              )}
+                Ofrecia siete tipos -- recibir, devolver, entregar, prestar,
+                perder, danar, destruir -- y uno de ellos, `loan`, hacia
+                exactamente lo que hace un vale pero sin vale: sin responsable,
+                sin fecha de regreso y sin folio. Dos puertas para la misma
+                salida, y solo una deja rastro de quien se llevo que.
 
-              {/* La ubicacion con su ruta completa. Con dos naves hay un Rack
-                  A-1 en cada una, y la descripcion suelta no dice de cual. */}
-              <label className="field">
-                <span>{t("inventory.location", "Ubicación")}</span>
-                <select value={movement.id_location} onChange={(event) => setMovement((prev) => ({ ...prev, id_location: event.target.value }))} required>
-                  <option value="">{t("inventory.pick_location", "Elige la ubicación")}</option>
-                  {ubicacionesConRuta.map(({ nodo, etiqueta }) => (
-                    <option key={nodo.id_location} value={nodo.id_location}>{etiqueta}</option>
-                  ))}
-                </select>
-              </label>
+                El movimiento de material sale ahora por el vale. El traspaso
+                de al lado se queda porque es otra cosa: mueve existencia entre
+                ubicaciones del almacen sin cambiar el total, y eso no es un
+                prestamo a nadie.
 
-              {/* El lote, solo en la entrada. En la salida no se pregunta:
-                  se sirve del que vence primero, y elegirlo a mano es como se
-                  desordena el anaquel -sale lo de enfrente, no lo que urge-. */}
-              {llevaLotes && esEntrada && (
-                <div className="inv-lote">
-                  <label className="field">
-                    <span>{t("inventory.lot_code", "Lote")} <strong>*</strong></span>
-                    <input
-                      value={lote.lot_code}
-                      maxLength={60}
-                      onChange={(event) => setLote({ ...lote, lot_code: event.target.value })}
-                      placeholder={t("inventory.lot_code_placeholder",
-                        "El que trae el proveedor")}
-                      required
-                    />
-                  </label>
-                  <label className="field">
-                    <span>{t("inventory.expiry_date", "Caduca")}</span>
-                    <input
-                      type="date"
-                      value={lote.expiry_date}
-                      onChange={(event) => setLote({ ...lote, expiry_date: event.target.value })}
-                    />
-                  </label>
-                  <p className="inv-ruta-ayuda">
-                    {t("inventory.lot_why",
-                      "Es el único momento en que se sabe: con la factura del proveedor delante. Después, un saldo sin lotes no dice cuándo caduca nada.")}
-                  </p>
-                </div>
-              )}
+                El endpoint sigue vivo (`createInventoryMovement` en la api, y
+                `apply_movement_in_session` detras): es la unica puerta por la
+                que se mueve existencia y el vale la usa. Lo que se retiro es
+                el formulario que la exponia en crudo. */}
 
-              {llevaLotes && !esEntrada && movement.movement_type !== "adjustment" && (
-                <p className="inv-ruta-ayuda inv-fefo">
-                  <AlertTriangle size={13} />
-                  {t("inventory.fefo_note",
-                    "Se descuenta del lote que vence primero. No hay que elegirlo.")}
-                </p>
-              )}
-
-              <label className="field">
-                <span>{movement.movement_type === "adjustment" ? t("inventory.quantity_delta", "Diferencia (puede ser negativa)") : t("inventory.quantity", "Cantidad")}</span>
-                <input type="number" step="1" value={movement.quantity} onChange={(event) => setMovement((prev) => ({ ...prev, quantity: event.target.value }))} required />
-              </label>
-
-              {/* La cuenta antes de mandar. Sin esto se teclea a ciegas y el
-                  servidor contesta 409 con el saldo disponible: la cifra que
-                  hacia falta ANTES, no despues. */}
-              {hayEnLaUbicacion !== null && cantidadPedida !== 0 && (
-                <p className={`inv-previa ${saldoTrasMovimiento < 0 ? "no-alcanza" : ""}`}>
-                  {saldoTrasMovimiento < 0 && <AlertTriangle size={14} />}
-                  <span>{t("inventory.there_are", "Hay")}</span>
-                  <strong>{hayEnLaUbicacion}</strong>
-                  <ArrowRight size={13} className="inv-flecha" />
-                  <strong>{saldoTrasMovimiento}</strong>
-                  <span>
-                    {saldoTrasMovimiento < 0
-                      ? t("inventory.not_enough", "— no alcanza, el almacén no puede quedar en negativo")
-                      : t("inventory.after_movement", "tras el movimiento")}
-                  </span>
-                </p>
-              )}
-
-              <label className="field">
-                <span>
-                  {t("inventory.reason", "Motivo")}
-                  {movementNeedsReason && <strong> *</strong>}
-                </span>
-                <input value={movement.reason} onChange={(event) => setMovement((prev) => ({ ...prev, reason: event.target.value }))} required={movementNeedsReason} maxLength={250} />
-                {movementNeedsReason && (
-                  <p className="inv-ruta-ayuda">
-                    {t("inventory.reason_why",
-                      "Este movimiento cambia la existencia sin un documento detrás: sin motivo, el descuadre no se puede auditar después.")}
-                  </p>
-                )}
-              </label>
-
-              {/* Decia "Origen", igual que el origen del traspaso, y son dos
-                  cosas distintas: aquello es una ubicacion y esto el documento
-                  que respalda el movimiento. */}
-              <label className="field">
-                <span>{t("inventory.reference", "Documento de respaldo")}</span>
-                <select value={movement.reference_type} onChange={(event) => setMovement((prev) => ({ ...prev, reference_type: event.target.value }))}>
-                  <option value="">{t("inventory.no_reference", "Sin documento")}</option>
-                  {REFERENCE_TYPES.map((value) => (
-                    <option key={value} value={value}>{t(`inventory.reference_${value}`, value)}</option>
-                  ))}
-                </select>
-                <p className="inv-ruta-ayuda">
-                  {t("inventory.reference_why",
-                    "Decide cómo se cuenta después: una entrada con una compra detrás es «comprado»; sin documento es «recibido».")}
-                </p>
-              </label>
-              {movement.reference_type && (
-                <label className="field">
-                  <span>{t("inventory.reference_id", "Folio del documento")}</span>
-                  <input value={movement.reference_id} onChange={(event) => setMovement((prev) => ({ ...prev, reference_id: event.target.value }))} maxLength={100} />
-                </label>
-              )}
-              <div className="form-actions">
-                <button className="button primary" type="submit" disabled={busy}>{t("inventory.register", "Registrar")}</button>
-              </div>
-            </form>
-
-            <form className="form-card" onSubmit={submitTransfer}>
-              <div className="form-header"><ArrowRightLeft size={16} /><strong>{t("inventory.transfer", "Traspaso entre ubicaciones")}</strong></div>
+            <FormularioPlegable
+              titulo={t("inventory.transfer", "Traspaso entre ubicaciones")}
+              icono={ArrowRightLeft}
+              onSubmit={submitTransfer}
+            >
               <p className="muted">{t("inventory.transfer_help", "Saca de un lugar y mete en otro en una sola operación: o se mueven las dos puntas o ninguna.")}</p>
 
               {/* Origen y destino uno al lado del otro, con la direccion a la
@@ -853,8 +668,8 @@ export default function InventoryPage() {
                   {t("inventory.transfer_action", "Traspasar")}
                 </button>
               </div>
-            </form>
-          </div>
+            </FormularioPlegable>
+          </>
         )}
 
         {ledger && (
@@ -865,7 +680,7 @@ export default function InventoryPage() {
                 <span>{t("inventory.movement_type", "Tipo de movimiento")}</span>
                 <select value={ledgerFilter.movement_type} onChange={(event) => applyLedgerFilter({ ...ledgerFilter, movement_type: event.target.value })}>
                   <option value="">{t("common.all", "Todos")}</option>
-                  {[...MOVEMENT_TYPES.map((option) => option.value), "adjustment", "transfer"].map((value) => (
+                  {[...MOVEMENT_TYPES.map((option) => option.value), "adjustment", "transfer", "opening"].map((value) => (
                     <option key={value} value={value}>{t(`inventory.movement_${value}`, value)}</option>
                   ))}
                 </select>

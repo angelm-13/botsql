@@ -256,7 +256,7 @@ def _payload_elevates_beyond_actor(user_data, target, payload):
 
 
 def _list_users_protected(user_data, page, per_page, filters, sort, service_cls):
-    result = service_cls.list(page=page, per_page=per_page, filters=filters, sort=sort)
+    result = service_cls.list(page=page, per_page=per_page, filters=filters, sort=sort, q=request.args.get('q'))
     original_items = list(result.get('items', []) or [])
     items = [
         item for item in original_items
@@ -432,7 +432,7 @@ def list_user(user_data):
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 20))
     sort = request.args.get('sort')
-    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort'} and k in ALLOWED_FIELDS}
+    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort', 'q'} and k in ALLOWED_FIELDS}
     return _list_users_protected(user_data, page, per_page, filters, sort, UserService)
 
 

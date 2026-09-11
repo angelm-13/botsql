@@ -328,6 +328,14 @@ class RestaurantInventoryItem(RestaurantRecord, Base):
     quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False, default=0)
     unit: Mapped[str] = mapped_column(String(40), nullable=False)
     cost_per_unit: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, default=0)
+    # El producto del almacen que representa este insumo, y donde vive su
+    # existencia. Nulos mientras nadie los empareje: un insumo sin enlace lleva
+    # solo su saldo propio y no toca el nucleo, que es lo que permite adoptarlo
+    # insumo por insumo. Ver `services/restaurant_inventory_bridge.py`.
+    id_product: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("product.id_product"), nullable=True, index=True)
+    id_location: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("location.id_location"), nullable=True)
 
     def serialize(self) -> dict:
         return self.serialize_columns()

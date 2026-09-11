@@ -186,8 +186,8 @@ def list_inventory_status(user_data):
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 20))
     sort = request.args.get('sort')
-    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort'} and k in ALLOWED_FIELDS}
-    return _jsonify_projected_list(user_data, InventoryStatusService.list(page=page, per_page=per_page, filters=filters, sort=sort))
+    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort', 'q'} and k in ALLOWED_FIELDS}
+    return _jsonify_projected_list(user_data, InventoryStatusService.list(page=page, per_page=per_page, filters=filters, sort=sort, q=request.args.get('q')))
 
 
 @bp_inventory_status.route('/<id_inventory_status>', methods=['GET'])

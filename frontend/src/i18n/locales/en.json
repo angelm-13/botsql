@@ -49,7 +49,7 @@
     "logout": "Log out",
     "next": "Next",
     "page": "Page",
-    "per_page": "Per page",
+    "per_page": "How many per page",
     "previous": "Previous",
     "reset": "Reset",
     "save": "Save",
@@ -146,7 +146,7 @@
     "continue": "Continue?",
     "close": "Close",
     "remove": "Remove",
-    "select": "Select",
+    "select": "Select…",
     "pagination": "Pagination",
     "first_page": "First",
     "last_page": "Last",
@@ -155,7 +155,11 @@
     "filter": "filter…",
     "clear": "Clear",
     "no_matches": "none match",
-    "serie_csd_hint": "Used as the default series when issuing invoices for this company; an invoice can capture a different one."
+    "serie_csd_hint": "Used as the default series when issuing invoices for this company; an invoice can capture a different one.",
+    "show": "Show",
+    "no_date": "no date",
+    "expand_form": "open",
+    "collapse_form": "hide"
   },
   "entities": {
     "bank": {
@@ -968,7 +972,8 @@
       "id_product_family": "Id Product Family",
       "id_unit": "Id Unit",
       "last_update_date": "Last Update Date",
-      "material_description": "Material Description"
+      "material_description": "Material Description",
+      "id_material_type": "Type"
     },
     "material_component": {
       "created_by": "Created By",
@@ -1415,7 +1420,6 @@
     "assets": "Asset tracking",
     "pos_till": "Till",
     "inventory_trace": "Locate",
-    "material_type": "Material types",
     "warehouse_voucher": "Warehouse vouchers"
   },
   "placeholders": {
@@ -2722,7 +2726,9 @@
     "lot_not_applicable": "That product is not tracked by lots. It is nearly always the wrong product.",
     "lot_product_mismatch": "That lot belongs to another product.",
     "lot_control_not_for_serialized": "That product is tracked piece by piece, so it already has one row per unit: lots would be the same thing by two paths.",
-    "lot_control_needs_its_own_endpoint": "Lot control is not switched on from here: do it from the product, so the stock already on hand lands inside an opening lot."
+    "lot_control_needs_its_own_endpoint": "Lot control is not switched on from here: do it from the product, so the stock already on hand lands inside an opening lot.",
+    "voucher_not_a_draft": "This voucher is no longer a draft: only a draft can be authorised.",
+    "voucher_self_authorization": "You cannot authorise a voucher you requested yourself. The warehouse chief authorises it."
   },
   "logistics": {
     "module": "Logistics",
@@ -3374,7 +3380,9 @@
     "reports": "Reports",
     "products": "Catalogue",
     "shift": "Shift",
-    "section_pos_marketing": "Promotions"
+    "section_pos_marketing": "Promotions",
+    "warehouse": "Warehouse",
+    "locate": "Locate"
   },
   "project_management": {
     "operations": "Operations",
@@ -4039,9 +4047,8 @@
     "search_placeholder": "Name, code or asset tag (for example TAL-001)",
     "purpose": "What it is for",
     "all_purposes": "Whole warehouse",
-    "merchandise": "Merchandise",
     "internal_use": "Internal use",
-    "purpose_mercancia": "merchandise",
+    "purpose_mercancia": "consumable",
     "purpose_uso_interno": "internal use",
     "by_status": "By piece status",
     "any_status": "Any status",
@@ -4109,7 +4116,6 @@
     "page_of": "page",
     "of": "of",
     "pagination": "Pages",
-    "merchandise_help": "What the company distributes. Counted by quantity.",
     "internal_use_help": "Tools and equipment. Tracked piece by piece.",
     "overdue_help": "Loans already past due. They are counted inside “lent out”.",
     "overdue_short": "overdue",
@@ -4119,29 +4125,24 @@
     "voucher": "voucher",
     "was_due": "was due",
     "due_on": "due",
-    "all_on_loan": "Nothing in the warehouse: it is all out."
-  },
-  "material_type": {
-    "eyebrow": "Inventory",
-    "title": "Families and types",
-    "subtitle": "The two levels of the classification: the family groups —screwdrivers, cement— and the type tells them apart within it —flat, phillips, bagged, bulk—.",
-    "add": "Add type",
-    "placeholder": "Type name (for example: Flat)",
-    "one_type": "1 type",
-    "types": "types",
-    "none_yet": "No types yet. The materials in this family cannot be told apart.",
-    "no_families": "No families yet. A type hangs off a family, so start with the family: “Screwdrivers”, and inside it “Flat” and “Phillips”.",
-    "orphans": "Types with no visible family",
-    "orphans_hint": "Their family is not in the list. They still show up on the materials that use them.",
-    "add_family": "New family",
-    "family_placeholder": "Family name (for example: Screwdrivers)",
-    "family_kind": "Kind of family",
-    "kind_none": "Unclassified",
-    "kind_tool": "Tool — lent out and returned",
-    "kind_consumable": "Consumable — used up",
-    "rename_family": "Rename family",
-    "delete_family": "Delete family",
-    "family_has_types": "That family has types inside it. Remove the types first, or they would point at a family that no longer exists."
+    "all_on_loan": "Nothing in the warehouse: it is all out.",
+    "open_history": "History",
+    "status_entrada": "In the warehouse",
+    "status_salida": "Left the warehouse",
+    "status_renta": "Rented out",
+    "status_danado": "Damaged",
+    "status_eq_danados": "Damaged equipment",
+    "status_reparacion": "Under repair",
+    "status_extraviado": "Lost",
+    "status_destruccion": "Destroyed",
+    "consumable": "Consumable",
+    "consumable_help": "What gets used up and restocked. Counted by quantity.",
+    "legend": "What the colour means",
+    "legend_in_stock": "In the warehouse",
+    "legend_out_ok": "Out, no problem",
+    "legend_needs_care": "Needs attention",
+    "legend_lost": "Lost",
+    "legend_end_of_life": "End of life"
   },
   "voucher": {
     "eyebrow": "Warehouse",
@@ -4202,31 +4203,115 @@
     "back_to_list": "Back to the list",
     "status_abierto": "Open",
     "status_cerrado": "Closed",
-    "status_cancelado": "Cancelled"
-  },
-  "attribute": {
-    "title": "Characteristics",
-    "add": "Add characteristic",
-    "none_yet": "No characteristics. Size, gauge or finish stay written inside the description, where they cannot be filtered or counted.",
-    "name_placeholder": "Name (for example: Length)",
-    "data_type": "Data type",
-    "type_text": "Text",
-    "type_text_help": "For what cannot be pinned down in advance.",
-    "type_number": "Number",
-    "type_number_help": "Stored as a number, so “6 or more” really compares.",
-    "type_list": "List",
-    "type_list_help": "Only the values you declare. Keeps “matte”, “Matte” and “MATTE” apart from each other.",
-    "unit_placeholder": "Unit (in, mm, L)",
-    "options_placeholder": "Allowed values, comma separated: Rubber, Plastic",
-    "required": "Required",
-    "new_option": "another value",
-    "unused": "unused",
-    "in_use": "materials",
-    "type_is_fixed": "The data type cannot be changed later: values already captured would keep the old type's shape."
+    "status_cancelado": "Cancelled",
+    "draft": "Save request",
+    "draft_help": "Records the material requested, without taking it out. The warehouse chief authorises it.",
+    "drafted": "Request saved, pending authorisation",
+    "status_draft": "Draft",
+    "nothing_left_yet": "nothing has left yet",
+    "authorize": "Authorise and hand over",
+    "authorize_help": "Authorising takes the material out of the warehouse. The warehouse chief does it, and it cannot be whoever requested the voucher.",
+    "authorized": "Voucher authorised: the material left the warehouse.",
+    "status_borrador": "Draft",
+    "filter_status": "Filter by status",
+    "filter_all": "All",
+    "filter_draft": "To authorise",
+    "filter_open": "Open",
+    "filter_closed": "Closed"
   },
   "product": {
     "classification": "Classification",
     "see_families": "see families and types",
     "classification_help": "The family groups, the type tells them apart within it, and the material is the concrete thing. If one is missing, add it in Families and types."
+  },
+  "material": {
+    "pick_family_first": "Pick the family first",
+    "family_has_no_types": "That family has no types",
+    "declare_types": "A family's types are declared in Families and types."
+  },
+  "product_family": {
+    "title": "Product families",
+    "subtitle": "The group each material belongs to —screwdrivers, cement— and whether it is a tool that comes back or a consumable that is used up.",
+    "no_families": "No families yet. The family is the material’s group: “Screwdrivers”, “Cement”.",
+    "eyebrow": "Inventory",
+    "family_placeholder": "Family name (for example: Screwdrivers)",
+    "kind_consumable": "Consumable — used up",
+    "kind_none": "Unclassified",
+    "kind_tool": "Tool — lent out and returned"
+  },
+  "page": {
+    "brand": {
+      "subtitle": "Material manufacturers: Truper, Lion Tools. The brand is one of the three things that define a material, along with its family and description."
+    },
+    "unit": {
+      "subtitle": "How each material is measured: piece, metre, litre. It is what gives meaning to a stock figure of “12”."
+    },
+    "location": {
+      "subtitle": "Where a piece can be: bays, racks, shelves. They nest, and filtering by a bay also brings what is on its racks."
+    },
+    "location_type": {
+      "subtitle": "The kinds of location —bay, rack, shelf— that shape the warehouse tree."
+    },
+    "material": {
+      "subtitle": "What the warehouse handles, regardless of how many: “Truper flat-head screwdriver”. The actual pieces are the products."
+    },
+    "product": {
+      "subtitle": "Each concrete item with its code: what gets lent, moved and counted. One material can have many products."
+    },
+    "inventory_status": {
+      "subtitle": "The states a product’s stock can be in."
+    },
+    "customer_supplier": {
+      "subtitle": "The company’s customers and suppliers."
+    },
+    "user": {
+      "subtitle": "Who signs in and with which role. The role decides which screens they see and what they can do there."
+    },
+    "department": {
+      "subtitle": "The company areas each user belongs to."
+    }
+  },
+  "history": {
+    "title": "Product history",
+    "movements": "Movements",
+    "loans": "Loans",
+    "locations": "Locations",
+    "no_movements": "No movements recorded.",
+    "no_loans": "It has never gone out on a voucher.",
+    "no_stock": "No stock in any location.",
+    "balance": "balance",
+    "movements_total": "movements",
+    "times_taken": "times out",
+    "holders": "people",
+    "currently_out": "not returned",
+    "voucher": "Voucher",
+    "units": "u.",
+    "unknown_holder": "no holder",
+    "returned": "returned",
+    "overdue": "overdue",
+    "out": "out",
+    "sum_by_location": "Sum by location",
+    "product_balance": "product balance",
+    "mismatch": "do not match",
+    "everything": "History",
+    "when": "When",
+    "what": "What happened",
+    "who": "Who",
+    "change": "Change",
+    "entries": "entries",
+    "nothing": "No movements or loans on record."
+  },
+  "movement": {
+    "receive": "Received",
+    "return": "Returned",
+    "loan": "Loan",
+    "issue": "Issued",
+    "damage": "Damage",
+    "destroy": "Destroyed",
+    "loss": "Lost",
+    "expiry": "Expired",
+    "transfer": "Transfer",
+    "adjustment": "Adjustment",
+    "opening": "Opening balance"
   }
 }

@@ -124,10 +124,10 @@ def list_task_note(user_data):
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 20))
     sort = request.args.get('sort')
-    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort'} and k in ALLOWED_FIELDS}
+    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort', 'q'} and k in ALLOWED_FIELDS}
     project_ids = visible_project_ids(user_data)
     if project_ids is None:
-        return _jsonify_projected_list(user_data, TaskNoteService.list(page=page, per_page=per_page, filters=filters, sort=sort))
+        return _jsonify_projected_list(user_data, TaskNoteService.list(page=page, per_page=per_page, filters=filters, sort=sort, q=request.args.get('q')))
     with transaction_context() as db:
         query = db.query(TaskNote).join(Task, TaskNote.id_task == Task.id_task).filter(
             TaskNote.deletion_date.is_(None), Task.deletion_date.is_(None), Task.id_proyect.in_(project_ids)

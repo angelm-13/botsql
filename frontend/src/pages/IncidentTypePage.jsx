@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, RefreshCw, Search, Trash2, Pencil } from "lucide-react";
+import { RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
 import { getAllIncidentType, createIncidentType, updateIncidentType, deleteIncidentType, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa } from "../api";
 import Pagination from "../components/Pagination.jsx";
+import PageHeader from "../components/PageHeader.jsx";
+import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 
 const emptyForm = { incident_type_description: "" };
@@ -64,7 +66,7 @@ export default function IncidentTypePage() {
     }
     setLoading(true); setErrorKey(""); setErrorMeta(null);
     try {
-      const data = await getAllIncidentType({ page, per_page: perPage });
+      const data = await getAllIncidentType({ page, per_page: perPage, q: query || undefined });
       setItems(Array.isArray(data) ? data : (data.items || data.data || []));
       // La respuesta ya traia el total y el numero de paginas; antes se
       // tiraban aqui, y por eso "Siguiente" no sabia cuando parar.
@@ -81,7 +83,16 @@ export default function IncidentTypePage() {
     }
   }
 
-  useEffect(() => { loadData(); }, [page, perPage, permissionReady, canRead]);
+  // Se espera a que deje de teclear: una peticion por tecla convierte una
+  // busqueda de seis letras en seis consultas.
+  useEffect(() => {
+    const temporizador = setTimeout(() => { loadData(); }, 300);
+    return () => clearTimeout(temporizador);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, perPage, permissionReady, canRead, query]);
+  // Buscar algo nuevo vuelve a la primera pagina: sin esto, quien esta en la 7
+  // y escribe otra cosa pide la pagina 7 de un resultado distinto.
+  useEffect(() => { setPage(1); }, [query]);
   useEffect(() => {
     async function loadFormOptions() {
       if (!permissionReady || (!canSubmitForm && !canRead)) return;
@@ -309,11 +320,15 @@ export default function IncidentTypePage() {
     return t(errorKey, errorKey);
   }
 
-  const filtered = useMemo(() => {
-    const needle = query.toLowerCase();
-    if (!needle) return items;
-    return items.filter((item) => Object.values(item || {}).some((value) => String(value ?? "").toLowerCase().includes(needle)));
-  }, [items, query]);
+  // El buscador pregunta al SERVIDOR, asi que lo que llega ya viene filtrado.
+  //
+  // Antes se filtraba aqui, sobre `items`, que es solo la pagina cargada: con
+  // 2 221 productos en 56 paginas, teclear un nombre estando en la primera no
+  // encontraba el que vive en la 34, y el contador seguia diciendo 2 221. El
+  // servidor busca por todas las columnas de texto y, si lo escrito es un
+  // numero, tambien por los identificadores -- asi "8580" encuentra el
+  // producto 8580 aunque no se sepa como se llama.
+  const filtered = items;
 
   const groups = useMemo(() => filtered.reduce((acc, item) => {
     const key = String(item.id_incident_type ?? t("common.unclassified"));
@@ -322,13 +337,20 @@ export default function IncidentTypePage() {
 
   return (
     <section className="entity-page">
-      <div className="page-heading">
-        <div><p className="eyebrow">{t("common.module")}</p><h2>{t("menu.incident_type")}</h2></div>
+      <PageHeader
+        eyebrow={t("common.module")}
+        titulo={t("menu.incident_type")}
+        subtitulo={t("page.incident_type.subtitle", "")}
+      >
         <button className="button ghost" onClick={loadData} disabled={!canRead}><RefreshCw size={16} />{loading ? t("common.loading") : t("common.refresh")}</button>
-      </div>
+      </PageHeader>
 
-      {canSubmitForm && <form className="form-card" onSubmit={handleSubmit}>
-        <div className="form-header"><Plus size={18} /><strong>{editingId ? t("common.edit") : t("common.new")}</strong></div>
+      {canSubmitForm && (
+      <FormularioPlegable
+        titulo={editingId ? t("common.edit") : t("common.new")}
+        abrirSi={editingId}
+        onSubmit={handleSubmit}
+      >
         <div className="form-grid">
           {canSeeField("incident_type_description") && (
           <label className="field">
@@ -342,7 +364,8 @@ export default function IncidentTypePage() {
           <button className="button primary" type="submit">{t("common.save")}</button>
           <button className="button" type="button" onClick={() => { setFormData(emptyForm); setEditingId(null); setFieldErrors({}); }}>{t("common.cancel")}</button>
         </div>
-      </form>}
+      </FormularioPlegable>
+      )}
 
       {canRead && <div className="toolbar">
         <div className="search-box"><Search size={16} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("common.search")} /></div>

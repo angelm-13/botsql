@@ -125,6 +125,28 @@ class RestaurantService:
         self.project_id = int(project_id)
         self.user_id = int(user_id)
 
+    @staticmethod
+    def _puente_de_inventario():
+        """El puente al libro del nucleo, importado al usarse.
+
+        Diferido y no arriba porque `inventory_service` arrastra los modelos del
+        nucleo, y este modulo se importa desde el registro de blueprints: un
+        import circular en el arranque es un fallo que no se ve hasta que la
+        aplicacion no levanta.
+        """
+        from app.services.restaurant_inventory_bridge import reflejar_movimiento
+
+        return reflejar_movimiento
+
+    def _usuario(self) -> dict:
+        """El actor, en la forma que espera el nucleo.
+
+        `apply_movement_in_session` recibe el mismo diccionario que las rutas
+        del core -- de ahi saca quien hizo el movimiento y su proyecto -- y este
+        servicio solo guarda los dos numeros sueltos.
+        """
+        return {"id_user": self.user_id, "id_proyect": self.project_id}
+
     def _audit(self, entity: str, action: str, metadata: dict | None = None) -> None:
         """Registra un cambio administrativo en la bitacora del core.
 
@@ -1146,13 +1168,25 @@ class RestaurantService:
         item.quantity = new_quantity
         self.db.add(movement)
         self.db.flush()
+
+        # Y el mismo movimiento en el libro del nucleo, si el insumo esta
+        # enlazado a un producto. Un solo inventario para todos los proyectos:
+        # ver `restaurant_inventory_bridge`. Si el reflejo falla, el movimiento
+        # del restaurante NO se deshace -- el consumo ya ocurrio -- y el fallo
+        # sale en la respuesta.
+        sin_reflejar = self._puente_de_inventario()(
+            self.db, item, movement, self._usuario())
+
         self._audit("inventory_movement", movement_type, {
             "id_restaurant_inventory_item": item.id_restaurant_inventory_item,
             "quantity": float(quantity),
             "previous_quantity": float(previous),
             "new_quantity": float(new_quantity),
         })
-        return movement.serialize()
+        salida = movement.serialize()
+        if sin_reflejar:
+            salida["core_inventory_warning"] = sin_reflejar
+        return salida
 
     def _consume_inventory(self, orders: list[RestaurantOrder]) -> list[dict]:
         """Descuenta del inventario los insumos de lo que se acaba de cobrar.
@@ -1249,7 +1283,7 @@ class RestaurantService:
             razon = "Consumo por venta"
             if faltante > 0:
                 razon += f" (faltaron {faltante} {item.unit})"
-            self.db.add(RestaurantInventoryMovement(
+            renglon = RestaurantInventoryMovement(
                 id_proyect=self.project_id,
                 id_restaurant_inventory_item=inventory_id,
                 movement_type="salida",
@@ -1258,8 +1292,16 @@ class RestaurantService:
                 new_quantity=nuevo,
                 reason=razon[:255],
                 created_by=self.user_id,
-            ))
+            )
+            self.db.add(renglon)
             item.quantity = nuevo
+            # Hace falta el identificador del renglon para la llave de
+            # idempotencia del reflejo, asi que se vuelca antes de reflejar.
+            self.db.flush()
+            fallo = self._puente_de_inventario()(
+                self.db, item, renglon, self._usuario())
+            if fallo:
+                avisos.append({"code": "nucleo_no_reflejado", **fallo})
 
         if consumo or avisos:
             self._audit("inventory_consumption", "salida", {

@@ -4,10 +4,8 @@
 
 .till-page { color: #334155; }
 
-.till-page .page-header {
-  display: flex; align-items: flex-start; justify-content: space-between;
-  gap: 16px; flex-wrap: wrap; margin-bottom: 14px;
-}
+/* La cabecera la define `styles/page-header.css`, una sola vez para todas
+   las pantallas. Aqui habia una copia con los mismos valores. */
 .till-page .eyebrow {
   margin: 0 0 4px; font-size: 11px; letter-spacing: .1em;
   text-transform: uppercase; color: #1b7a60; font-weight: 700;

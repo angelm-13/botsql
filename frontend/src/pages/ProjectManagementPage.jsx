@@ -17,6 +17,7 @@ import {
   updateProyect,
 } from "../api";
 import { useI18n } from "../i18n";
+import PageHeader from "../components/PageHeader.jsx";
 
 /* eslint-disable react/prop-types */
 
@@ -380,10 +381,13 @@ export default function ProjectManagementPage() {
   }
 
   return <section className="entity-page project-management">
-    <div className="page-heading">
-      <div><p className="eyebrow">{projectText("operations")}</p><h2>{projectText("title")}</h2><p className="muted">{projectText(mode === "manager" ? "subtitle_manager" : mode === "workshop" ? "subtitle_workshop" : "subtitle_supervisor")}</p></div>
-      <div className="project-heading-actions">{canCreate && <button className="button primary" type="button" onClick={openCreate}><Plus size={16} />{projectText("new_project")}</button>}<button className="button ghost" type="button" onClick={() => loadData(page)}><RefreshCw size={16} />{t("common.refresh")}</button></div>
-    </div>
+    <PageHeader
+        eyebrow={projectText("operations")}
+        titulo={projectText("title")}
+        subtitulo={projectText(mode === "manager" ? "subtitle_manager" : mode === "workshop" ? "subtitle_workshop" : "subtitle_supervisor")}
+      >
+        <div className="project-heading-actions">{canCreate && <button className="button primary" type="button" onClick={openCreate}><Plus size={16} />{projectText("new_project")}</button>}<button className="button ghost" type="button" onClick={() => loadData(page)}><RefreshCw size={16} />{t("common.refresh")}</button></div>
+      </PageHeader>
 
     <form className="project-toolbar" onSubmit={applyFilters}>
       <div className="search-box"><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={projectText("search")} /></div>

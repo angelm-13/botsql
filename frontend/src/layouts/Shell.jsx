@@ -1,7 +1,7 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Boxes, Briefcase, CalendarDays, ChevronDown, ClipboardList, Contact, FileText, FlaskConical, Landmark, LayoutDashboard, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Receipt, Settings, ShieldCheck, ShoppingCart, SlidersHorizontal, Truck, UserCog, Users, Utensils, Warehouse } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { deploymentPlan, getAllEntityPermission } from "../api";
+import { deploymentPlan, getMyPermissions } from "../api";
 import LanguagePicker from "../components/LanguagePicker";
 import { useI18n } from "../i18n";
 import { moduleSectionsEnPlan } from "./moduleSections";
@@ -58,9 +58,6 @@ const navItems = [
   { path: "/location", key: "menu.location" },
   { path: "/location_type", key: "menu.location_type" },
   { path: "/material", key: "menu.material" },
-  { path: "/material_component", key: "menu.material_component" },
-  { path: "/material_type", key: "menu.material_type" },
-  { path: "/movement", key: "menu.movement" },
   { path: "/nm_incident_product", key: "menu.nm_incident_product" },
   // El vale se guarda con la capacidad y no con una entidad: su pantalla
   // escribe en `incident` y en `nm_incident_product`, y esa segunda esta
@@ -225,9 +222,22 @@ export default function Shell() {
       setRolePermissionsLoaded(true);
       return () => { mounted = false; };
     }
-    getAllEntityPermission({ per_page: 5000 })
+    // `/security/my-permissions` y no la tabla cruda de `entity_permission`.
+    //
+    // La tabla cruda no sabe del PLAN: devuelve las filas de todos los modulos,
+    // comprados o no, y el menu se armaba con ellas. Por eso, con logistica y
+    // punto de venta apagados por licencia, sus apartados si desaparecian
+    // -esos dos declaran su modulo en `moduleSections.js` y ahi hay un filtro-
+    // pero Restaurante y Laboratorio seguian en el menu: sus grupos se arman
+    // desde `menu_group` de estas filas, donde no habia filtro ninguno.
+    //
+    // Este endpoint ya trae las filas del rol Y filtradas por el plan
+    // (`entidad_habilitada` en `routes/security.py`), asi que el menu deja de
+    // nombrar modulos que este despliegue no tiene.
+    getMyPermissions()
       .then((payload) => {
-        const rows = Array.isArray(payload?.items) ? payload.items : Array.isArray(payload) ? payload : [];
+        const rows = Array.isArray(payload?.entity_permissions)
+          ? payload.entity_permissions : [];
         if (mounted) setRoleEntityPermissions(rows.filter((row) => Number(row.id_permission) === roleId && Number(row.control_type || 0) > 0));
       })
       .catch(() => { if (mounted) setRoleEntityPermissions([]); })
@@ -294,7 +304,7 @@ export default function Shell() {
 
   function defaultGroup(item) {
     const path = item.path;
-    if (["/bank", "/bank_account", "/movement"].includes(path)) return "Bancos";
+    if (["/bank", "/bank_account"].includes(path)) return "Bancos";
     if (path.startsWith("/invoice") || path.startsWith("/fiscal") || path === "/quotation" || path === "/authorization_tracking") return "Contabilidad";
     if (path.startsWith("/payroll") || path === "/kronos") return "Recursos humanos";
     if (path.startsWith("/restaurant")) return "Restaurante";
@@ -461,11 +471,18 @@ export default function Shell() {
               <button type="button" className="shell-nav-group-toggle" onClick={() => setOpenGroups((current) => ({ ...current, [modulo.key]: !abierto }))}><ModuleIcon size={18} className="shell-nav-group-icon" /><span className="shell-nav-group-title">{shellText(modulo.titleKey)}</span><ChevronDown size={16} className={abierto ? "open" : ""} /></button>
               {abierto && <div className="shell-nav-submenu logistics-nav-sections">{seccionesVisibles.map((seccion) => {
                 const claveSeccion = `${modulo.key}:${seccion.key}`;
-                const seccionActiva = seccion.items.some(([, ruta]) => location.pathname.startsWith(`${modulo.basePath}/${ruta}`));
+                // Una ruta que empieza por "/" es ABSOLUTA y no cuelga del modulo.
+                // Hace falta para que un apartado de un vertical pueda apuntar
+                // al almacen del nucleo: un solo almacen para los cuatro
+                // proyectos, en lugar de uno por vertical.
+                const rutaDe = (ruta) => (String(ruta).startsWith("/")
+                  ? String(ruta)
+                  : `${modulo.basePath}/${ruta}`);
+                const seccionActiva = seccion.items.some(([, ruta]) => location.pathname.startsWith(rutaDe(ruta)));
                 const seccionAbierta = openGroups[claveSeccion] ?? seccionActiva;
                 return <div className="logistics-nav-section" key={seccion.key}>
                   <button type="button" className="logistics-nav-section-toggle" onClick={() => setOpenGroups((current) => ({ ...current, [claveSeccion]: !seccionAbierta }))}><span>{shellText(seccion.key)}</span><ChevronDown size={14} className={seccionAbierta ? "open" : ""} /></button>
-                  {seccionAbierta && <div className="logistics-nav-items">{seccion.items.map(([clave, ruta]) => <NavLink key={ruta} to={`${modulo.basePath}/${ruta}`} className={({ isActive }) => isActive ? "nav-link active" : "nav-link"}><span className="dot" /><span className="nav-link-label">{shellText(clave)}</span></NavLink>)}</div>}
+                  {seccionAbierta && <div className="logistics-nav-items">{seccion.items.map(([clave, ruta]) => <NavLink key={ruta} to={rutaDe(ruta)} className={({ isActive }) => isActive ? "nav-link active" : "nav-link"}><span className="dot" /><span className="nav-link-label">{shellText(clave)}</span></NavLink>)}</div>}
                 </div>;
               })}</div>}
             </div>;

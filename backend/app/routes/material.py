@@ -5,7 +5,7 @@ from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
 
 bp_material = Blueprint('material', __name__, url_prefix='/material')
-ALLOWED_FIELDS = ['id_material', 'material_description', 'id_unit', 'id_brand', 'id_product_family', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
+ALLOWED_FIELDS = ['id_material', 'material_description', 'id_unit', 'id_brand', 'id_product_family', 'id_material_type', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
 
 TECHNICAL_RESPONSE_FIELDS = {'id_material'}
 FIELD_READ_BIT = 2
@@ -119,8 +119,8 @@ def list_material(user_data):
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 20))
     sort = request.args.get('sort')
-    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort'} and k in ALLOWED_FIELDS}
-    return _jsonify_projected_list(user_data, MaterialService.list(page=page, per_page=per_page, filters=filters, sort=sort))
+    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort', 'q'} and k in ALLOWED_FIELDS}
+    return _jsonify_projected_list(user_data, MaterialService.list(page=page, per_page=per_page, filters=filters, sort=sort, q=request.args.get('q')))
 
 
 @bp_material.route('/<id_material>', methods=['GET'])

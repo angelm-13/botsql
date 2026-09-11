@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, RefreshCw, Search, Trash2, Pencil } from "lucide-react";
+import { RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
 import { getAllIncident, createIncident, updateIncident, deleteIncident, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllIncidentType, getAllUser } from "../api";
 import Pagination from "../components/Pagination.jsx";
+import PageHeader from "../components/PageHeader.jsx";
+import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 
 const emptyForm = { incident_date: "", id_incident_type: "", note: "", id_user: "", incident_status: "", close_date: "", id_lider: "" };
@@ -65,7 +67,7 @@ export default function IncidentPage() {
     }
     setLoading(true); setErrorKey(""); setErrorMeta(null);
     try {
-      const data = await getAllIncident({ page, per_page: perPage });
+      const data = await getAllIncident({ page, per_page: perPage, q: query || undefined });
       setItems(Array.isArray(data) ? data : (data.items || data.data || []));
       // La respuesta ya traia el total y el numero de paginas; antes se
       // tiraban aqui, y por eso "Siguiente" no sabia cuando parar.
@@ -82,7 +84,14 @@ export default function IncidentPage() {
     }
   }
 
-  useEffect(() => { loadData(); }, [page, perPage, permissionReady, canRead]);
+  // Se espera a que deje de teclear: una peticion por tecla convierte una
+  // busqueda de seis letras en seis consultas.
+  useEffect(() => {
+    const temporizador = setTimeout(() => { loadData(); }, 300);
+    return () => clearTimeout(temporizador);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, perPage, permissionReady, canRead, query]);
+  useEffect(() => { setPage(1); }, [query]);
   useEffect(() => {
     async function loadFormOptions() {
       if (!permissionReady || (!canSubmitForm && !canRead)) return;
@@ -411,13 +420,20 @@ export default function IncidentPage() {
 
   return (
     <section className="entity-page">
-      <div className="page-heading">
-        <div><p className="eyebrow">{t("common.module")}</p><h2>{t("menu.incident")}</h2></div>
+      <PageHeader
+        eyebrow={t("common.module")}
+        titulo={t("menu.incident")}
+        subtitulo={t("page.incident.subtitle", "")}
+      >
         <button className="button ghost" onClick={loadData} disabled={!canRead}><RefreshCw size={16} />{loading ? t("common.loading") : t("common.refresh")}</button>
-      </div>
+      </PageHeader>
 
-      {canSubmitForm && <form className="form-card" onSubmit={handleSubmit}>
-        <div className="form-header"><Plus size={18} /><strong>{editingId ? t("common.edit") : t("common.new")}</strong></div>
+      {canSubmitForm && (
+      <FormularioPlegable
+        titulo={editingId ? t("common.edit") : t("common.new")}
+        abrirSi={editingId}
+        onSubmit={handleSubmit}
+      >
         <div className="form-grid">
           {canSeeField("incident_date") && (
           <label className="field">
@@ -487,7 +503,8 @@ export default function IncidentPage() {
           <button className="button primary" type="submit">{t("common.save")}</button>
           <button className="button" type="button" onClick={() => { setFormData(emptyForm); setEditingId(null); setFieldErrors({}); }}>{t("common.cancel")}</button>
         </div>
-      </form>}
+      </FormularioPlegable>
+      )}
 
       {canRead && <div className="toolbar">
         <div className="search-box"><Search size={16} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("common.search")} /></div>

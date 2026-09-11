@@ -1,0 +1,37 @@
+/* El formulario de alta, plegable.
+
+   Hereda `form-card` del sistema, asi que la caja es la misma que antes: lo
+   unico propio es la cabecera pulsable y el estado cerrado. */
+
+/* Cerrada no lleva relleno abajo ni sombra de caja llena: tiene que leerse
+   como un renglon, no como un formulario vacio. */
+.form-card.plegable { padding: 0; overflow: hidden; }
+.form-card.plegable.cerrada { box-shadow: none; }
+
+/* La cabecera es un <button>, asi que hay que devolverle la apariencia de
+   renglon: los agentes de usuario le ponen fondo, borde y fuente propios. */
+.plegable-cabecera {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; margin: 0; padding: 16px 22px;
+  border: 0; background: none; cursor: pointer;
+  font: inherit; color: inherit; text-align: left;
+}
+.plegable-cabecera:hover { background: #f8fafc; }
+.plegable-cabecera svg { flex: 0 0 auto; color: #1b7a60; }
+.plegable-cabecera strong { font-size: 15px; }
+
+/* La pista de que hace el clic. A la derecha del todo y en gris: dice que el
+   renglon es pulsable sin competir con el titulo. */
+.plegable-pista { margin-left: auto; font-size: 12px; }
+
+.plegable-cuerpo {
+  padding: 0 22px 22px;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 18px;
+}
+
+/* Los botones de guardar y cancelar no necesitan el margen superior que traen
+   por omision: el cuerpo ya separa. */
+.plegable-cuerpo .form-actions { margin-top: 18px; }
+
+.form-card.plegable :focus-visible { outline: 2px solid #1b7a60; outline-offset: -2px; }

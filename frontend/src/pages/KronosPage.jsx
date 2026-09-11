@@ -4,6 +4,7 @@ import { deleteKronosPerson, getKronosAttendance, getKronosPeople, saveKronosPer
 import { loadKronosConnection } from "../utils/kronosConnection";
 import "../styles/kronos.css";
 import { useI18n } from "../i18n";
+import PageHeader from "../components/PageHeader.jsx";
 
 function localDate(date) {
   const offset = date.getTimezoneOffset() * 60000;
@@ -164,16 +165,15 @@ export default function KronosPage() {
 
   return (
     <section className="entity-page kronos-page">
-      <div className="page-heading kronos-heading">
-        <div>
-          <p className="eyebrow">{t('kronos.page.eyebrow')}</p>
-          <h2>{t('kronos.page.title')}</h2>
-          <p>{t('kronos.page.description')}</p>
-        </div>
+      <PageHeader
+        eyebrow={t('kronos.page.eyebrow')}
+        titulo={t('kronos.page.title')}
+        subtitulo={t('kronos.page.description')}
+      >
         <span className={`kronos-status ${loading ? 'loading' : updatedAt ? 'connected' : ''}`}>
-          {loading ? t('kronos.status.loading') : updatedAt ? t('kronos.status.connected') : t('kronos.status.idle')}
+        {loading ? t('kronos.status.loading') : updatedAt ? t('kronos.status.connected') : t('kronos.status.idle')}
         </span>
-      </div>
+      </PageHeader>
 
       <div className="kronos-tabs" role="tablist" aria-label={t('kronos.tabs.aria_label')}>
         <button type="button" role="tab" aria-selected={view === 'attendance'} className={view === 'attendance' ? 'active' : ''} onClick={() => { setView('attendance'); setQuery(''); }}>{t('kronos.tabs.attendance')}</button>

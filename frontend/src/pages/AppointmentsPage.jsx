@@ -9,6 +9,7 @@ import {
 } from "../api";
 import { useI18n } from "../i18n";
 import "../styles/appointments.css";
+import PageHeader from "../components/PageHeader.jsx";
 
 function formatAppointment(value, lang) {
   return new Intl.DateTimeFormat(lang, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
@@ -96,10 +97,13 @@ export default function AppointmentsPage() {
 
   return (
     <section className="entity-page appointments-page">
-      <div className="page-heading appointments-heading">
-        <div><p className="eyebrow">{t("appointments.operations", "OPERACIONES")}</p><h2>{t("appointments.title", "Agenda")}</h2><p>{t("appointments.subtitle", "Configura disponibilidad y revisa las próximas citas.")}</p></div>
+      <PageHeader
+        eyebrow={t("appointments.operations", "OPERACIONES")}
+        titulo={t("appointments.title", "Agenda")}
+        subtitulo={t("appointments.subtitle", "Configura disponibilidad y revisa las próximas citas.")}
+      >
         {profile && <div className="appointments-heading-actions"><button type="button" className="button secondary" onClick={copyPublicLink}><Copy size={16} /> {t("appointments.copy_link", "Copiar enlace")}</button><a className="button" href={`/calendar/${profile.calendar_code}`} target="_blank" rel="noreferrer"><ExternalLink size={16} /> {t("appointments.open_page", "Abrir página")}</a></div>}
-      </div>
+      </PageHeader>
       {error && <div className="alert error" role="alert">{t(error, error)}</div>}
       {notice && <div className="alert success" role="status">{t(notice, notice)}</div>}
 

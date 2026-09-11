@@ -50,6 +50,7 @@ from app.models.inventory_stock import InventoryStock
 from app.models.invoice import Invoice
 from app.models.location import Location
 from app.models.location_type import LocationType
+from app.models.material_type import MaterialType
 from app.models.nm_incident_product import NmIncidentProduct
 from app.models.product import Product
 from app.models.user import User
@@ -67,7 +68,17 @@ from app.services.inventory_service import (
 COMPRAS = frozenset({"purchase", "invoice_line", "invoice"})
 VENTAS = frozenset({"sale", "invoice_line", "invoice"})
 
-MAXIMO_RESULTADOS = 40
+# Cuantos resultados trae una pagina si nadie pide otra cosa.
+RESULTADOS_POR_PAGINA = 40
+
+# Y cuantos como maximo, cuando la pantalla si lo pide.
+#
+# Eran el mismo numero, y por eso el selector de "cuantos ver" de Localizar no
+# podia ofrecer mas de 40: `per_page=100` se recortaba a 40 sin decirlo, asi que
+# la opcion existia y no hacia nada. El tope sigue existiendo -el valor llega
+# del cliente y sin cota `per_page=100000` arma cien mil diccionarios y tumba el
+# proceso-, solo deja de ser tambien el default.
+TOPE_POR_PAGINA = 200
 
 # Cuantos movimientos se traen de UNA pieza. Los ultimos son los que
 # contestan "donde esta"; el resto es historia y tiene su propia pantalla.
@@ -633,19 +644,29 @@ def _clasificacion_en_lote(db, productos) -> dict[int, dict]:
                 ProductFamily.id_product_family, ProductFamily.product_family_description,
                 Brand.id_brand, Brand.brand_description,
                 Unit.id_unit, Unit.unit_name,
+                # El tipo. Faltaba, asi que la clasificacion se leia
+                # "familia > marca > material" y el segundo nivel -el que
+                # distingue un desarmador plano de uno de cruz- no aparecia en
+                # ningun sitio.
+                MaterialType.id_material_type,
+                MaterialType.material_type_description,
             )
             .select_from(Material)
             .outerjoin(ProductFamily,
                        ProductFamily.id_product_family == Material.id_product_family)
             .outerjoin(Brand, Brand.id_brand == Material.id_brand)
             .outerjoin(Unit, Unit.id_unit == Material.id_unit)
+            .outerjoin(MaterialType,
+                       MaterialType.id_material_type == Material.id_material_type)
             .where(Material.id_material.in_(list(ids_materiales)))
         ).all()
         for (id_material, material, id_familia, familia,
-             id_marca, marca, id_unidad, unidad) in filas:
+             id_marca, marca, id_unidad, unidad,
+             id_tipo, tipo) in filas:
             por_material[id_material] = {
                 "id_material": id_material, "material": material,
                 "id_product_family": id_familia, "family": familia,
+                "id_material_type": id_tipo, "material_type": tipo,
                 "id_brand": id_marca, "brand": marca,
                 "id_unit": id_unidad, "unit": unidad,
             }
@@ -670,6 +691,7 @@ def _clasificacion_en_lote(db, productos) -> dict[int, dict]:
 
     VACIA = {
         "id_material": None, "material": None,
+        "id_material_type": None, "material_type": None,
         "id_product_family": None, "family": None,
         "id_brand": None, "brand": None,
         "id_unit": None, "unit": None,
@@ -819,11 +841,12 @@ def _pagina(pagina, por_pagina) -> tuple[int, int]:
 
     `por_pagina` tiene tope porque llega del cliente: sin el, `per_page=100000`
     convierte una consulta barata en una que arma cien mil diccionarios y tumba
-    el proceso. El tope es el mismo numero que antes era el corte duro.
+    el proceso. El tope y el valor por omision son numeros distintos: la pantalla
+    puede pedir mas de lo normal, pero no cualquier cosa.
     """
     numero = _entero_o_nada(pagina) or 1
-    tamano = _entero_o_nada(por_pagina) or MAXIMO_RESULTADOS
-    return max(1, numero), max(1, min(tamano, MAXIMO_RESULTADOS))
+    tamano = _entero_o_nada(por_pagina) or RESULTADOS_POR_PAGINA
+    return max(1, numero), max(1, min(tamano, TOPE_POR_PAGINA))
 
 
 def localizar(consulta: str, user_data: dict, *, proposito: str | None = None,
@@ -1066,6 +1089,12 @@ def localizar(consulta: str, user_data: dict, *, proposito: str | None = None,
                 "path_imagen": producto.path_imagen,
                 "tracking_mode": producto.tracking_mode,
                 "stock_purpose": producto.stock_purpose,
+                # El estatus tal como lo escribio el sistema anterior --
+                # ENTRADA, SALIDA, DANADO, DESTRUCCION, EXTRAVIADO--, que es el
+                # unico sitio donde estan los seis valores completos: el
+                # catalogo `inventory_status` no tiene fila para EXTRAVIADO, asi
+                # que 65 productos lo traen aqui y con el FK en nulo.
+                "product_status": producto.product_status,
                 "id_proyect": del_proyecto,
                 # A que familia pertenece, de que marca es, de que material y en
                 # que unidad se mide. Estaba a dos saltos en la base y obligaba a

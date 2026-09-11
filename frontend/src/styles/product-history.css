@@ -1,0 +1,117 @@
+/* La ficha del producto: una ventana sobre lo que se estaba mirando.
+
+   Ventana y no pantalla aparte a propósito: se abre desde el resultado de
+   Localizar y desde la lista de productos, y en los dos casos la pregunta es
+   sobre la fila que se tiene delante. Navegar a otra ruta obligaría a volver y
+   a rehacer la búsqueda. */
+
+.ficha-fondo {
+  position: fixed; inset: 0; z-index: 1200;
+  display: grid; place-items: center; padding: 20px;
+  background: rgba(17, 31, 39, .48);
+}
+
+.ficha {
+  width: min(860px, 100%); max-height: 88vh;
+  display: flex; flex-direction: column;
+  background: #fff; border: 1px solid #d6e0dc; border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(12, 34, 47, .25);
+}
+
+.ficha-cabecera {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 14px; padding: 18px 20px 12px;
+}
+.ficha-cabecera h2 { margin: 0; font-size: 19px; line-height: 1.2; }
+.ficha-cerrar {
+  display: grid; place-items: center; width: 32px; height: 32px;
+  border: 1px solid transparent; border-radius: 8px;
+  background: none; color: #5c6d68; cursor: pointer; flex: 0 0 auto;
+}
+.ficha-cerrar:hover { background: #f1f5f4; border-color: #d6e0dc; color: #0f172a; }
+
+.ficha-pestanas {
+  display: flex; gap: 4px; padding: 0 20px;
+  border-bottom: 1px solid #e2e8f0;
+}
+.ficha-pestana {
+  padding: 9px 14px; font: inherit; font-weight: 700; font-size: 13px;
+  border: 0; border-bottom: 2px solid transparent;
+  background: none; color: #64748b; cursor: pointer;
+}
+.ficha-pestana:hover { color: #0f172a; }
+.ficha-pestana.activa { color: #1b7a60; border-bottom-color: #1b7a60; }
+
+/* El cuerpo desplaza y la cabecera se queda: con 200 movimientos, una ventana
+   que desplaza entera esconde de qué producto se está hablando. */
+.ficha-cuerpo { overflow: auto; padding: 16px 20px 20px; }
+
+.ficha-lista { list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 6px; }
+.ficha-renglon {
+  display: grid; grid-template-columns: 74px minmax(0, 1fr) auto;
+  align-items: center; gap: 12px;
+  padding: 9px 12px; background: #f8faf9; border-radius: 8px; font-size: 13px;
+}
+/* Lo que salió y no ha vuelto, marcado: es lo único de esta lista sobre lo que
+   se puede actuar hoy. */
+.ficha-renglon.pendiente { background: #fffbeb; border: 1px solid #fde68a; }
+
+.ficha-delta {
+  display: inline-flex; align-items: center; gap: 4px; justify-self: start;
+  padding: 3px 8px; border-radius: 999px; font-weight: 800; font-size: 12px;
+}
+.ficha-delta.entrada { background: #ecfdf5; color: #047857; }
+.ficha-delta.salida { background: #fef2f2; color: #b91c1c; }
+
+.ficha-detalle { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ficha-detalle strong { display: flex; align-items: center; gap: 5px; }
+.ficha-detalle .muted { font-size: 12px; }
+
+.ficha-lado {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
+  font-size: 11.5px; text-align: right; white-space: nowrap;
+}
+.ficha-lado strong { color: #0f172a; font-size: 12.5px; }
+
+.ficha-resumen { margin: 0 0 12px; font-size: 12.5px; }
+.ficha-cuerpo > .ficha-resumen:last-child { margin: 12px 0 0; }
+.ficha-fuera { color: #b45309; }
+.ficha-vencido { color: #b91c1c; }
+
+@media (max-width: 720px) {
+  .ficha-renglon { grid-template-columns: 1fr; gap: 4px; }
+  .ficha-lado { align-items: flex-start; text-align: left; }
+}
+
+/* --- el historial, en una sola tabla ---
+
+   Antes eran dos listas de fichas en dos pestañas. Una tabla porque ahora las
+   columnas significan lo mismo en todos los renglones -- cuando, que, quien,
+   cuanto, saldo -- y comparar dos salidas es leer hacia abajo una columna, no
+   saltar entre dos formatos. */
+
+.ficha-tabla { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ficha-tabla th {
+  text-align: left; padding: 8px 10px; font-size: 11px; font-weight: 700;
+  letter-spacing: .04em; text-transform: uppercase; color: #64748b;
+  border-bottom: 1px solid #e2e8f0; background: #f8fafc;
+}
+.ficha-tabla td {
+  padding: 9px 10px; border-bottom: 1px solid #eef2f6; vertical-align: top;
+}
+.ficha-tabla th.num, .ficha-tabla td.num { text-align: right; white-space: nowrap; }
+.ficha-tabla tbody tr:hover { background: #f8fafc; }
+
+/* El renglon de lo que sigue fuera: no es un error, es lo que hay que mirar. */
+.ficha-tabla tr.pendiente { background: #fffbeb; }
+.ficha-tabla tr.pendiente:hover { background: #fef3c7; }
+
+.ficha-persona { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; }
+.ficha-persona svg { color: #64748b; }
+
+@media (max-width: 720px) {
+  /* La fecha completa y el saldo son lo primero que sobra en una pantalla
+     estrecha: el que, el quien y el cambio son la respuesta. */
+  .ficha-tabla th:nth-child(5), .ficha-tabla td:nth-child(5) { display: none; }
+}

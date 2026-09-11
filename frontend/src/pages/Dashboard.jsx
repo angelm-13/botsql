@@ -16,6 +16,7 @@ import {
   getAllKpiDefinition, queryKpiSnapshot, getAllUser, getAllDepartment, getAllProduct,
 } from "../api";
 import "../styles/kpi-dashboard.css";
+import PageHeader from "../components/PageHeader.jsx";
 
 const CHART_TYPES = [
   { value: "numero", label: "Número" },
@@ -631,15 +632,14 @@ export default function Dashboard() {
 
   return (
     <section className="dashboard kpi-dashboard">
-      <div className="page-heading">
-        <div>
-          <p className="eyebrow">{t("common.dashboard")}</p>
-          <h2>{tx("title", "Tableros de KPIs")}</h2>
-        </div>
+      <PageHeader
+        eyebrow={t("common.dashboard")}
+        titulo={tx("title", "Tableros de KPIs")}
+      >
         <button className="button ghost" onClick={() => loadDashboards()} disabled={loadingDashboards}>
-          <RefreshCw size={16} />{loadingDashboards ? t("common.loading") : t("common.refresh")}
+        <RefreshCw size={16} />{loadingDashboards ? t("common.loading") : t("common.refresh")}
         </button>
-      </div>
+      </PageHeader>
 
       {dashboardsError && <div className="alert error">{t(dashboardsError, dashboardsError)}</div>}
 

@@ -12,8 +12,10 @@ import {
 } from "../api";
 import FiltroBuscable from "../components/FiltroBuscable.jsx";
 import Pagination from "../components/Pagination.jsx";
+import ProductHistory from "../components/ProductHistory.jsx";
 import { useI18n } from "../i18n";
 import "../styles/inventory-trace.css";
+import PageHeader from "../components/PageHeader.jsx";
 
 /**
  * Localizar cualquier cosa del almacen.
@@ -54,8 +56,13 @@ import "../styles/inventory-trace.css";
  */
 const NATURALEZAS = [
   { valor: "", clave: "all_purposes", texto: "Todo el almacén", icono: null },
-  { valor: "mercancia", clave: "merchandise", texto: "Mercancía",
-    icono: ShoppingCart, ayuda: "Lo que la empresa distribuye. Se cuenta por cantidad." },
+  // El valor que viaja al servidor sigue siendo `mercancia`: es lo que hay en
+  // `product.stock_purpose` en 2 221 filas, y renombrar la columna seria mover
+  // datos para cambiar una etiqueta. Lo que cambia es como se lee, y
+  // "Consumible" es la palabra que usa el resto del almacen -- la misma que
+  // trae `familia.herramienta_consumible` del sistema anterior.
+  { valor: "mercancia", clave: "consumable", texto: "Consumible",
+    icono: ShoppingCart, ayuda: "Lo que se gasta y se repone. Se cuenta por cantidad." },
   { valor: "uso_interno", clave: "internal_use", texto: "Uso interno",
     icono: Wrench, ayuda: "Herramienta y equipo. Se rastrea pieza por pieza." },
 ];
@@ -68,6 +75,62 @@ const ORDEN_DE_ESTADOS = [
 
 // Los estados de una pieza, con el tono con el que se pintan. `disponible` es
 // el unico que cuenta como existencia; el resto explica por que no esta.
+// El estatus del producto tal como lo escribio el sistema anterior. Son los de
+// `producto.estado`, que el importador guarda intactos en
+// `product.product_status`: ENTRADA 1888, SALIDA 143, DESTRUCCION 86,
+// EXTRAVIADO 65, DANADO 27 y EQ. DANADOS 11.
+//
+// El color va por GRAVEDAD y no uno por estatus, y a proposito: la paleta de
+// esta pantalla tiene cinco tonos -- ok, info, warn, crit, muted -- y los siete
+// estatus no caben en cinco sin inventar colores nuevos. Inventarlos seria
+// romper la colorimetria justo para distinguir cosas que el texto de la
+// etiqueta ya distingue. Asi el color contesta de un vistazo "esto esta bien /
+// esto hay que atenderlo / esto se perdio", y la etiqueta dice cual es cual.
+//
+//   verde  esta en el almacen
+//   azul   fuera, pero sin problema -- salio o esta rentado
+//   ambar  hay que hacer algo -- danado o en reparacion
+//   rojo   se perdio
+//   gris   fin de vida -- se destruyo
+// La simbologia de la tarjeta: que significa cada tono y que estatus lo llevan.
+//
+// Se declara aparte del mapa de arriba y no se deriva de el a proposito: en el
+// mapa manda el estatus y aqui manda el TONO, y son cinco entradas -- una por
+// color-, no ocho. Derivarla daria la lista de estatus por tono, que es la mitad
+// util, pero no el "que quiere decir este color", que es la otra mitad y la que
+// hace falta para leer la pantalla.
+const SIMBOLOGIA = [
+  { tono: "ok", clave: "in_stock", texto: "En el almacén", estatus: ["ENTRADA"] },
+  { tono: "info", clave: "out_ok", texto: "Fuera, sin problema",
+    estatus: ["SALIDA", "RENTA"] },
+  { tono: "warn", clave: "needs_care", texto: "Hay que atenderlo",
+    estatus: ["DAÑADO", "EQ. DAÑADOS", "REPARACIÓN"] },
+  { tono: "crit", clave: "lost", texto: "Se perdió", estatus: ["EXTRAVIADO"] },
+  { tono: "muted", clave: "end_of_life", texto: "Fin de vida",
+    estatus: ["DESTRUCCIÓN"] },
+];
+
+const TONO_DE_ESTATUS = {
+  ENTRADA: "ok",
+  SALIDA: "info",
+  RENTA: "info",
+  DANADO: "warn",
+  "EQ. DANADOS": "warn",
+  REPARACION: "warn",
+  EXTRAVIADO: "crit",
+  DESTRUCCION: "muted",
+};
+
+// Sin acentos y en mayusculas: en los datos conviven "DAÑADO" y "DANADO", y
+// "DESTRUCCION" nunca trae tilde aunque se diga "destrucción".
+function normalizarEstatus(valor) {
+  return String(valor || "")
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .trim();
+}
+
 const TONO_DE_ESTADO = {
   disponible: "ok",
   en_uso: "info",
@@ -170,6 +233,11 @@ Pieza.propTypes = {
 };
 
 
+// Cuantos resultados por pagina se pueden pedir. El servidor da 40 por omision
+// y no acepta mas de 200: ofrecer 500 seria prometer algo que se recorta en
+// silencio.
+const TAMANOS_DE_PAGINA = [20, 40, 100, 200];
+
 const SIN_FILTROS = {
   stock_purpose: "",
   id_product_family: "",
@@ -187,6 +255,9 @@ export default function InventoryTracePage() {
   // llamada y el boton de limpiar, y se olvida uno.
   const [filtros, setFiltros] = useState(SIN_FILTROS);
   const [pagina, setPagina] = useState(1);
+  // Cuantos ver de golpe. 40 es lo que el servidor da por omision; el tope de
+  // alla son 200, asi que las opciones no prometen mas de lo que puede dar.
+  const [porPagina, setPorPagina] = useState(40);
   const [datos, setDatos] = useState(null);
   // El panorama de estatus. Solo tiene sentido con uso interno: lo fungible no
   // tiene piezas, asi que no tiene estados que contar.
@@ -199,6 +270,9 @@ export default function InventoryTracePage() {
   // se lee como un fallo de la aplicacion. Se cae al marcador de "sin foto",
   // que es la verdad.
   const [fotosRotas, setFotosRotas] = useState(() => new Set());
+  // El producto cuya ficha esta abierta, o null. Se guarda el renglon entero y
+  // no solo el id para poder titular la ventana sin volver a pedirlo.
+  const [ficha, setFicha] = useState(null);
 
   // `t` cambia de identidad en cada render; si entra en las dependencias del
   // efecto la pantalla se repide sin parar hasta que el navegador rechaza
@@ -206,7 +280,7 @@ export default function InventoryTracePage() {
   const traducir = useRef(t);
   traducir.current = t;
 
-  const buscar = useCallback(async (texto, activos, numeroDePagina) => {
+  const buscar = useCallback(async (texto, activos, numeroDePagina, cuantos) => {
     setCargando(true);
     setError("");
     try {
@@ -214,6 +288,7 @@ export default function InventoryTracePage() {
       // tiene que aprender a ignorar, y una direccion llena de parametros
       // huecos no se puede leer ni compartir.
       const params = { q: texto, page: numeroDePagina || 1 };
+      if (cuantos) params.per_page = cuantos;
       Object.entries(activos || {}).forEach(([clave, valor]) => {
         if (valor) params[clave] = valor;
       });
@@ -244,9 +319,10 @@ export default function InventoryTracePage() {
   // Se espera a que deje de escribir: una peticion por tecla convierte una
   // busqueda de seis letras en seis consultas al almacen.
   useEffect(() => {
-    const temporizador = setTimeout(() => buscar(consulta, filtros, pagina), 350);
+    const temporizador = setTimeout(
+      () => buscar(consulta, filtros, pagina, porPagina), 350);
     return () => clearTimeout(temporizador);
-  }, [consulta, filtros, pagina, buscar]);
+  }, [consulta, filtros, pagina, porPagina, buscar]);
 
   // Cambiar el texto o un filtro vuelve a la primera pagina. Sin esto, quien
   // esta en la pagina 7 y escribe algo nuevo pide la pagina 7 de un resultado
@@ -259,6 +335,10 @@ export default function InventoryTracePage() {
   const cambiarConsulta = (valor) => {
     setPagina(1);
     setConsulta(valor);
+  };
+  const cambiarTamano = (cuantos) => {
+    setPagina(1);
+    setPorPagina(cuantos);
   };
   const filtrosActivos = Object.values(filtros).filter(Boolean).length;
 
@@ -273,7 +353,7 @@ export default function InventoryTracePage() {
         siguiente.delete(idProducto);
         return siguiente;
       });
-      await buscar(consulta, filtros, pagina);
+      await buscar(consulta, filtros, pagina, porPagina);
     } catch (e) {
       setError(e?.payload?.error_key
         ? traducir.current(e.payload.error_key)
@@ -293,20 +373,17 @@ export default function InventoryTracePage() {
 
   return (
     <section className="page trace-page">
-      <header className="page-header">
-        <div>
-          <p className="eyebrow">{t("trace.eyebrow", "Almacén")}</p>
-          <h1>{t("trace.title", "Localizar")}</h1>
-          <p className="muted">
-            {t("trace.subtitle",
+      <PageHeader
+        eyebrow={t("trace.eyebrow", "Almacén")}
+        titulo={t("trace.title", "Localizar")}
+        subtitulo={t("trace.subtitle",
               "Busca cualquier producto o herramienta y mira dónde está, qué le pasó y quién la tiene.")}
-          </p>
-        </div>
-        <button className="button" onClick={() => buscar(consulta, filtros, pagina)} disabled={cargando}>
-          <RefreshCw size={16} />
-          {cargando ? t("common.loading", "Cargando…") : t("common.refresh", "Actualizar")}
+      >
+        <button className="button" onClick={() => buscar(consulta, filtros, pagina, porPagina)} disabled={cargando}>
+        <RefreshCw size={16} />
+        {cargando ? t("common.loading", "Cargando…") : t("common.refresh", "Actualizar")}
         </button>
-      </header>
+      </PageHeader>
 
       {/* El marco: que clase de material se esta buscando. Va ARRIBA del
           buscador porque cambia el sentido de todo lo que sigue -de la
@@ -424,14 +501,6 @@ export default function InventoryTracePage() {
           etiqueta={t("trace.by_warehouse", "Por ubicación")}
           todas={t("trace.any_warehouse", "Cualquier ubicación")}
         />
-        <select value={filtros.asset_status}
-                onChange={(e) => cambiarFiltro("asset_status", e.target.value)}
-                aria-label={t("trace.by_status", "Por estado de la pieza")}>
-          <option value="">{t("trace.any_status", "Cualquier estado")}</option>
-          {Object.keys(TONO_DE_ESTADO).map((estado) => (
-            <option key={estado} value={estado}>{t(`assets.status_${estado}`, estado)}</option>
-          ))}
-        </select>
       </div>
 
       {/* Cuantos hay y con que se esta filtrando. El numero va aqui y no en la
@@ -453,6 +522,26 @@ export default function InventoryTracePage() {
         </p>
       )}
 
+      {/* Que quiere decir el color del borde de cada tarjeta. Va aqui, pegada a
+          la lista que explica, y no en una ayuda aparte: una leyenda que hay que
+          ir a buscar no se usa. Cada tono lleva los estatus que le tocan, porque
+          el color va por gravedad y varios estatus comparten tono. */}
+      {items.length > 0 && (
+        <div className="trace-simbologia" role="note"
+             aria-label={t("trace.legend", "Qué significa el color de cada tarjeta")}>
+          <span className="trace-simbologia-titulo muted">
+            {t("trace.legend", "Qué significa el color")}
+          </span>
+          {SIMBOLOGIA.map(({ tono, clave, texto, estatus }) => (
+            <span className="trace-simbologia-item" key={tono}>
+              <i className={`trace-muestra ${tono}`} aria-hidden="true" />
+              <strong>{t(`trace.legend_${clave}`, texto)}</strong>
+              <span className="muted">{estatus.join(" · ")}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
       {error && <p className="error">{error}</p>}
 
       {datos?.hidden_by_scope > 0 && (
@@ -470,6 +559,24 @@ export default function InventoryTracePage() {
             ? t("trace.nothing_found", "Nada coincide con esa búsqueda.")
             : t("trace.empty_warehouse", "El almacén no tiene productos registrados.")}
         </p>
+      )}
+
+      {/* Arriba tambien, no solo al pie. Cada ficha de resultado es alta -foto,
+          piezas, historia-, asi que con 40 en pantalla el pie queda a varios
+          scrolls: cambiar de pagina o de tamano obligaba a bajar hasta el
+          final y volver a subir. */}
+      {datos && datos.pages > 1 && (
+        <Pagination
+          page={datos.page}
+          pages={datos.pages}
+          total={datos.matches}
+          perPage={datos.per_page}
+          loading={cargando}
+          onChange={setPagina}
+          opcionesDeTamano={TAMANOS_DE_PAGINA}
+          onTamano={cambiarTamano}
+          etiquetaDeTotal={t("trace.many_matches", "productos encontrados")}
+        />
       )}
 
       <div className="trace-list">
@@ -492,7 +599,11 @@ export default function InventoryTracePage() {
           const foto = fotosRotas.has(it.id_product) ? "" : urlDeArchivo(it.path_imagen);
 
           return (
-            <article className="trace-card" key={it.id_product}>
+            <article
+              className={`trace-card estatus-${
+                TONO_DE_ESTATUS[normalizarEstatus(it.product_status)] || "sin"}`}
+              key={it.id_product}
+            >
               <div className="trace-photo">
                 {foto ? (
                   <img
@@ -535,6 +646,23 @@ export default function InventoryTracePage() {
                       )}
                     </p>
 
+                    {/* El estatus, escrito. El color de la tarjeta dice la
+                        gravedad de un vistazo -- verde esta, ambar hay que
+                        atenderlo, rojo se perdio -- pero el color solo no dice
+                        CUAL: rentado y salido comparten azul, y danado comparte
+                        ambar con en reparacion. Y hay quien no distingue esos
+                        tonos: el color nunca puede ser el unico portador del
+                        dato. */}
+                    {it.product_status && (
+                      <p className="trace-estatus">
+                        <span className={`trace-chip ${
+                          TONO_DE_ESTATUS[normalizarEstatus(it.product_status)] || "muted"}`}>
+                          {t(`trace.status_${normalizarEstatus(it.product_status)
+                            .toLowerCase().replace(/[^a-z]+/g, "_")}`, it.product_status)}
+                        </span>
+                      </p>
+                    )}
+
                     {/* A que pertenece. Todo esto ya estaba en la base, a dos
                         saltos -producto, material, y de ahi familia, marca y
                         unidad-, asi que para saber la familia de lo que se
@@ -551,6 +679,19 @@ export default function InventoryTracePage() {
                                     String(it.classification.id_product_family))}>
                             {it.classification.family}
                           </button>
+                        )}
+                        {/* El tipo, detras de la familia porque cuelga de
+                            ella: es el nivel que distingue un desarmador plano
+                            de uno de cruz. Faltaba en la miga entera, asi que
+                            se leia "familia > marca > material" y el segundo
+                            nivel no aparecia en ningun sitio. */}
+                        {it.classification.material_type && (
+                          <>
+                            <span className="trace-sep">›</span>
+                            <span className="trace-tipo">
+                              {it.classification.material_type}
+                            </span>
+                          </>
                         )}
                         {it.classification.brand && (
                           <>
@@ -603,6 +744,18 @@ export default function InventoryTracePage() {
                         {t("trace.usable_units", "unidades utilizables")}
                       </em>
                     )}
+                    {/* El historial, desde aqui y en una ventana: la pregunta
+                        -"y esto de donde salio"- se hace sobre el renglon que se
+                        tiene delante, y navegar a otra pantalla obligaria a
+                        volver y rehacer la busqueda. */}
+                    <button
+                      type="button"
+                      className="button button-quiet trace-historial"
+                      onClick={() => setFicha(it)}
+                    >
+                      <History size={14} />
+                      {t("trace.open_history", "Historial")}
+                    </button>
                   </div>
                 </header>
 
@@ -815,7 +968,17 @@ export default function InventoryTracePage() {
           perPage={datos.per_page}
           loading={cargando}
           onChange={setPagina}
+          opcionesDeTamano={TAMANOS_DE_PAGINA}
+          onTamano={cambiarTamano}
           etiquetaDeTotal={t("trace.many_matches", "productos encontrados")}
+        />
+      )}
+
+      {ficha && (
+        <ProductHistory
+          idProduct={ficha.id_product}
+          titulo={[ficha.product_code, ficha.descripcion].filter(Boolean).join(" · ")}
+          onCerrar={() => setFicha(null)}
         />
       )}
     </section>

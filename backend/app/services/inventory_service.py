@@ -32,6 +32,7 @@ from app.models.inventory_stock import InventoryStock
 from app.models.invoice import Invoice
 from app.models.location import Location
 from app.models.location_type import LocationType
+from app.models.user import User
 from app.models.product import Product
 from app.models.session import transaction_context
 from app.services.inventory_lot_service import (
@@ -837,6 +838,56 @@ def _descendant_ids(db, location_id) -> list[int]:
     return collected
 
 
+def _movimientos_con_nombres(db, filas) -> list[dict]:
+    """El libro, con el nombre de la ubicacion y de quien lo hizo.
+
+    El renglon crudo trae `id_location`, `id_location_target` y `created_by`, y
+    con eso la pantalla solo puede escribir "ubicacion 12, usuario 3", que no
+    contesta nada. Los nombres se resuelven aqui y no en el front porque el
+    front tendria que traerse el catalogo entero de ubicaciones y de usuarios
+    para pintar veinte renglones.
+
+    En lote -- dos consultas para toda la pagina, no dos por renglon: es
+    exactamente donde reaparece el N+1.
+    """
+    if not filas:
+        return []
+
+    ids_ubicaciones = {int(f.id_location) for f in filas if f.id_location}
+    ids_ubicaciones |= {int(f.id_location_target) for f in filas
+                        if f.id_location_target}
+    ids_actores = {int(f.created_by) for f in filas if f.created_by}
+
+    ubicaciones = {
+        int(x.id_location): x for x in db.scalars(
+            select(Location).where(
+                Location.id_location.in_(list(ids_ubicaciones)))
+        ).all()
+    } if ids_ubicaciones else {}
+    actores = {
+        int(x.id_user): x for x in db.scalars(
+            select(User).where(User.id_user.in_(list(ids_actores)))
+        ).all()
+    } if ids_actores else {}
+
+    def nombre_de(id_ubicacion):
+        sitio = ubicaciones.get(int(id_ubicacion)) if id_ubicacion else None
+        return sitio.location_description if sitio else None
+
+    salida = []
+    for fila in filas:
+        renglon = fila.serialize()
+        renglon.update({
+            "location_description": nombre_de(fila.id_location),
+            "location_target_description": nombre_de(fila.id_location_target),
+            "created_by_name": getattr(
+                actores.get(int(fila.created_by)) if fila.created_by else None,
+                "full_name", None),
+        })
+        salida.append(renglon)
+    return salida
+
+
 def list_inventory_movements(product_id, user_data, *, page=1, per_page=50, movement_type=None, location_id=None) -> dict:
     """Libro de movimientos de un producto, filtrable por tipo y ubicacion."""
     try:
@@ -864,7 +915,7 @@ def list_inventory_movements(product_id, user_data, *, page=1, per_page=50, move
             .limit(per_page)
         ).all()
         return {
-            "items": [row.serialize() for row in rows],
+            "items": _movimientos_con_nombres(db, rows),
             "page": page,
             "per_page": per_page,
             "total": int(total),

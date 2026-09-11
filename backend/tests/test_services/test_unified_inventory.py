@@ -266,5 +266,239 @@ class TestQueSigueSiendoUnSoloSaldo(InventarioUnicoTestCase):
         self.assertEqual(23, self.existencia(), "un solo saldo para los dos")
 
 
+class TestInsumosDelRestaurante(InventarioUnicoTestCase):
+    """El restaurante lleva su libro y ademas anota en el del nucleo.
+
+    Los dos, no uno: el suyo guarda el coste unitario y el saldo por insumo,
+    que son cosas del restaurante; el del nucleo contesta cuanta existencia hay
+    en la empresa. Antes eran dos respuestas distintas a "cuanto aceite hay".
+    """
+
+    def insumo(self, *, enlazado=True, cantidad="10"):
+        from decimal import Decimal
+
+        from app.models.restaurant import RestaurantInventoryItem
+
+        with transaction_context() as db:
+            item = RestaurantInventoryItem(
+                id_proyect=PROYECTO, description="Aceite vegetal",
+                quantity=Decimal(cantidad), unit="L", cost_per_unit=Decimal("0"),
+                id_product=PRODUCTO if enlazado else None,
+                id_location=ALMACEN if enlazado else None,
+                created_by=1)
+            db.add(item)
+            db.flush()
+            return item.id_restaurant_inventory_item
+
+    def movimiento_de_insumo(self, id_item, tipo, cantidad, previo, nuevo):
+        from decimal import Decimal
+
+        from app.models.restaurant import (
+            RestaurantInventoryItem, RestaurantInventoryMovement,
+        )
+        from app.services.restaurant_inventory_bridge import reflejar_movimiento
+
+        with transaction_context() as db:
+            item = db.get(RestaurantInventoryItem, id_item)
+            mov = RestaurantInventoryMovement(
+                id_proyect=PROYECTO, id_restaurant_inventory_item=id_item,
+                movement_type=tipo, quantity=Decimal(str(cantidad)),
+                previous_quantity=Decimal(str(previo)),
+                new_quantity=Decimal(str(nuevo)),
+                reason="prueba", created_by=1)
+            db.add(mov)
+            db.flush()
+            return reflejar_movimiento(db, item, mov, ACTOR)
+
+    def test_a_consumption_discounts_the_core_inventory(self):
+        id_item = self.insumo()
+
+        fallo = self.movimiento_de_insumo(id_item, "salida", 2, 10, 8)
+
+        self.assertIsNone(fallo)
+        self.assertEqual(18, self.existencia())
+
+    def test_the_movement_says_it_came_from_the_restaurant(self):
+        id_item = self.insumo()
+        self.movimiento_de_insumo(id_item, "salida", 1, 10, 9)
+
+        with transaction_context() as db:
+            ultimo = db.query(InventoryLedger).order_by(
+                InventoryLedger.id_inventory_ledger.desc()).first()
+
+        self.assertEqual("restaurante", ultimo.source_module)
+        self.assertEqual("issue", ultimo.movement_type)
+
+    def test_waste_leaves_as_an_exit_like_any_other(self):
+        """Para el almacen una merma es existencia que se fue.
+
+        Lo que la distingue -que se perdio en lugar de venderse- vive en el
+        libro del restaurante, que es donde alguien va a preguntarlo.
+        """
+        id_item = self.insumo()
+
+        self.movimiento_de_insumo(id_item, "merma", 3, 10, 7)
+
+        self.assertEqual(17, self.existencia())
+
+    def test_an_entry_adds_to_the_core_inventory(self):
+        id_item = self.insumo()
+
+        self.movimiento_de_insumo(id_item, "entrada", 5, 10, 15)
+
+        self.assertEqual(25, self.existencia())
+
+    def test_an_adjustment_moves_only_the_difference(self):
+        """El ajuste FIJA el saldo, no lo suma: al nucleo va la diferencia."""
+        id_item = self.insumo()
+
+        self.movimiento_de_insumo(id_item, "ajuste", 7, 10, 7)
+
+        self.assertEqual(17, self.existencia(), "de 10 a 7 son -3")
+
+    def test_an_unlinked_item_does_not_touch_the_core(self):
+        """Sin enlace no se refleja, y eso permite adoptarlo insumo a insumo."""
+        id_item = self.insumo(enlazado=False)
+
+        fallo = self.movimiento_de_insumo(id_item, "salida", 2, 10, 8)
+
+        self.assertIsNone(fallo)
+        self.assertEqual(20, self.existencia(), "no se toco nada")
+
+    def test_a_fractional_quantity_is_reported_not_rounded(self):
+        """0.75 kg de harina no son 0 ni 1 piezas.
+
+        Redondear a 0 esconde un consumo y redondear a 1 inventa existencia que
+        salio. Se reporta y el descuadre queda a la vista.
+        """
+        id_item = self.insumo()
+
+        fallo = self.movimiento_de_insumo(id_item, "salida", "0.75", 10, "9.25")
+
+        self.assertIsNotNone(fallo)
+        self.assertIn("fraccionaria", fallo["motivo"])
+        self.assertEqual(20, self.existencia(), "no se movio nada")
+
+    def test_reflecting_the_same_movement_twice_does_not_discount_twice(self):
+        """La llave lleva el identificador del movimiento del restaurante."""
+        from app.models.restaurant import RestaurantInventoryItem
+        from app.services.restaurant_inventory_bridge import reflejar_movimiento
+        from app.models.restaurant import RestaurantInventoryMovement
+        from decimal import Decimal
+
+        id_item = self.insumo()
+        with transaction_context() as db:
+            item = db.get(RestaurantInventoryItem, id_item)
+            mov = RestaurantInventoryMovement(
+                id_proyect=PROYECTO, id_restaurant_inventory_item=id_item,
+                movement_type="salida", quantity=Decimal("3"),
+                previous_quantity=Decimal("10"), new_quantity=Decimal("7"),
+                reason="prueba", created_by=1)
+            db.add(mov)
+            db.flush()
+            reflejar_movimiento(db, item, mov, ACTOR)
+            reflejar_movimiento(db, item, mov, ACTOR)
+
+        self.assertEqual(17, self.existencia(), "un reintento no descuenta dos veces")
+
+
+class TestMercanciaDeLogistica(InventarioUnicoTestCase):
+    """Logistica no llevaba libro: cada edicion pisaba el saldo sin rastro.
+
+    Aqui el signo de la DIFERENCIA decide el verbo, asi que no hay un campo de
+    tipo que capturar y por tanto no hay donde equivocarse.
+    """
+
+    class Fila:
+        """Lo unico que el puente lee de una fila de logistica."""
+
+        def __init__(self, id_, cantidad, *, enlazada=True):
+            self.id_logistics_inventory = id_
+            self.quantity = cantidad
+            self.id_product = PRODUCTO if enlazada else None
+            self.id_core_location = ALMACEN if enlazada else None
+
+    def reflejar(self, fila, anterior):
+        from app.services.logistics_inventory_bridge import reflejar_cambio
+
+        with transaction_context() as db:
+            return reflejar_cambio(db, fila, anterior, ACTOR, motivo="prueba")
+
+    def test_stock_going_up_enters_the_core_inventory(self):
+        from decimal import Decimal
+
+        fallo = self.reflejar(self.Fila(1, Decimal("4")), Decimal("0"))
+
+        self.assertIsNone(fallo)
+        self.assertEqual(24, self.existencia())
+
+    def test_stock_going_down_leaves_the_core_inventory(self):
+        from decimal import Decimal
+
+        fallo = self.reflejar(self.Fila(2, Decimal("1")), Decimal("4"))
+
+        self.assertIsNone(fallo)
+        self.assertEqual(17, self.existencia(), "de 4 a 1 son -3")
+
+    def test_the_movement_says_it_came_from_logistics(self):
+        from decimal import Decimal
+
+        self.reflejar(self.Fila(3, Decimal("2")), Decimal("0"))
+
+        with transaction_context() as db:
+            ultimo = db.query(InventoryLedger).order_by(
+                InventoryLedger.id_inventory_ledger.desc()).first()
+
+        self.assertEqual("logistica", ultimo.source_module)
+        self.assertEqual("receive", ultimo.movement_type)
+        self.assertEqual("logistics_inventory", ultimo.reference_type)
+
+    def test_no_change_writes_nothing(self):
+        """Guardar una fila sin tocar la cantidad no es un movimiento."""
+        from decimal import Decimal
+
+        with transaction_context() as db:
+            antes = db.query(InventoryLedger).count()
+
+        fallo = self.reflejar(self.Fila(4, Decimal("5")), Decimal("5"))
+
+        with transaction_context() as db:
+            despues = db.query(InventoryLedger).count()
+
+        self.assertIsNone(fallo)
+        self.assertEqual(antes, despues)
+        self.assertEqual(20, self.existencia())
+
+    def test_an_unlinked_row_does_not_touch_the_core(self):
+        from decimal import Decimal
+
+        fallo = self.reflejar(self.Fila(5, Decimal("9"), enlazada=False), Decimal("0"))
+
+        self.assertIsNone(fallo)
+        self.assertEqual(20, self.existencia())
+
+    def test_a_fractional_quantity_is_reported_not_rounded(self):
+        from decimal import Decimal
+
+        fallo = self.reflejar(self.Fila(6, Decimal("2.5")), Decimal("0"))
+
+        self.assertIsNotNone(fallo)
+        self.assertIn("fraccionaria", fallo["motivo"])
+        self.assertEqual(20, self.existencia())
+
+    def test_the_same_resulting_balance_is_not_applied_twice(self):
+        """La llave lleva la fila Y el saldo resultante.
+
+        Reintentar la misma operacion no vuelve a mover; una operacion POSTERIOR
+        sobre la misma fila si, que es lo correcto -- es otro movimiento.
+        """
+        from decimal import Decimal
+
+        self.reflejar(self.Fila(7, Decimal("3")), Decimal("0"))
+        self.reflejar(self.Fila(7, Decimal("3")), Decimal("0"))
+
+        self.assertEqual(23, self.existencia(), "el reintento no entro dos veces")
+
+
 if __name__ == "__main__":
     unittest.main()

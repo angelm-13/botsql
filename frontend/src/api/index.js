@@ -272,8 +272,6 @@ export const createFiscalAccount = (payload) => request("/fiscal_account/", { me
 export const updateFiscalAccount = (id, payload) => request(`/fiscal_account/${id}`, { method: "PUT", body: payload });
 export const deleteFiscalAccount = (id) => request(`/fiscal_account/${id}`, { method: "DELETE" });
 
-
-
 export const getAllIncident = (params = {}) => request("/incident/", { params });
 export const getIncident = (id) => request(`/incident/${id}`);
 export const createIncident = (payload) => request("/incident/", { method: "POST", body: payload });
@@ -327,6 +325,19 @@ export const createInventoryMovement = (id, payload) => request(`/product/${id}/
 export const getInventoryReconciliation = (id) => request(`/product/${id}/inventory-reconciliation`);
 export const createInventoryTransfer = (id, payload) => request(`/product/${id}/inventory-transfers`, { method: "POST", body: { idempotency_key: crypto.randomUUID(), ...payload } });
 export const getProductStock = (id) => request(`/product/${id}/inventory-stock`);
+
+// --- la trazabilidad del vale ---
+//
+// Las tres existian como servicio desde la carga del sistema anterior y ninguna
+// tenia ruta, asi que el dato estaba en la base sin forma de verlo. Salen de
+// `nm_incident_product` -los renglones del vale-, no del libro de inventario:
+// el libro dice cuanto entro y salio, esto dice QUIEN se lo llevo.
+export const getProductLoanHistory = (id) =>
+  request(`/vouchers/products/${id}/history`);
+export const getVoucherHolders = (params = {}) =>
+  request("/vouchers/holders", { params });
+export const getVoucherRequests = (params = {}) =>
+  request("/vouchers/requests", { params });
 export const getLocationTree = () => request("/location/tree");
 export const getWarehouseStock = (id) => request(`/location/${id}/stock`);
 export const getInvoiceInventoryPreview = (id, params = {}) => request(`/invoice/${id}/inventory`, { params });
@@ -447,17 +458,19 @@ export const deleteLocationType = (id) => request(`/location_type/${id}`, { meth
 
 // --- tipos de material -----------------------------------------------------
 // El tercer eje del material, junto a la familia y la marca.
-export const getAllMaterialType = (params = {}) => request("/material_type/", { params });
-export const getMaterialType = (id) => request(`/material_type/${id}`);
-export const createMaterialType = (payload) => request("/material_type/", { method: "POST", body: payload });
-export const updateMaterialType = (id, payload) => request(`/material_type/${id}`, { method: "PUT", body: payload });
-export const deleteMaterialType = (id) => request(`/material_type/${id}`, { method: "DELETE" });
 // Los tipos DE UNA FAMILIA: es lo que necesita el alta de un material, porque
 // ofrecer los de todas permite capturar "Cemento de tipo De cruz".
-export const getMaterialTypesByFamily = (idFamily) => request(`/material_type/by-family/${idFamily}`);
 
 // --- vales de almacen ------------------------------------------------------
 export const createWarehouseVoucher = (payload) => request("/vouchers", { method: "POST", body: payload });
+// El PREVALE: el material pedido, en borrador, sin mover el almacen. Ruta
+// aparte y no una bandera en el cuerpo, porque cada camino lleva su permiso --
+// `warehouse_prevoucher` aqui, `warehouse_voucher` en el de arriba.
+export const createWarehousePrevoucher = (payload) => request("/prevouchers", { method: "POST", body: payload });
+// Y el acto que convierte el borrador en vale, que es el que saca el material.
+// Lo guarda `warehouse_voucher_authorize`, que solo tiene el jefe de almacen.
+export const authorizeWarehouseVoucher = (id, payload = {}) =>
+  request(`/vouchers/${id}/authorize`, { method: "POST", body: payload });
 export const getWarehouseVoucher = (id) => request(`/vouchers/${id}`);
 export const getOverdueVoucherLines = () => request("/vouchers/overdue");
 // Cuantas piezas hay en cada estado, ahora mismo. Una consulta agrupada, no
@@ -693,34 +706,6 @@ export const transitionTask = (id, payload) => request(`/task/${id}/transition`,
 // tiene que saber que la columna del padre se llama `id_task`.
 export const getTaskNotes = (id) => request(`/task/${id}/notes`);
 export const addTaskNote = (id, payload) => request(`/task/${id}/notes`, { method: "POST", body: payload });
-
-// --- caracteristicas del material ---
-//
-// Dos grupos con dos permisos distintos y a proposito: el CATALOGO -que declara
-// una familia- se guarda con `material_attribute`, que es configuracion; los
-// VALORES de un material se guardan con `material`, porque llenar el largo de un
-// desarmador es editar ese desarmador.
-export const getFamilyAttributes = (idFamily) =>
-  request(`/material-attributes/by-family/${idFamily}`);
-export const createMaterialAttribute = (payload) =>
-  request("/material-attributes", { method: "POST", body: payload });
-export const updateMaterialAttribute = (id, payload) =>
-  request(`/material-attributes/${id}`, { method: "PUT", body: payload });
-export const deleteMaterialAttribute = (id) =>
-  request(`/material-attributes/${id}`, { method: "DELETE" });
-export const addMaterialAttributeOption = (id, payload) =>
-  request(`/material-attributes/${id}/options`, { method: "POST", body: payload });
-export const deleteMaterialAttributeOption = (idOption) =>
-  request(`/material-attributes/options/${idOption}`, { method: "DELETE" });
-
-export const getMaterialAttributes = (idMaterial) =>
-  request(`/material/${idMaterial}/attributes`);
-export const saveMaterialAttributes = (idMaterial, values) =>
-  request(`/material/${idMaterial}/attributes`, { method: "PUT", body: { values } });
-// "Cuantos desarmadores Truper planos de 6 pulgadas tengo": es POST porque los
-// criterios son objetos con rangos y en la direccion salen ilegibles.
-export const searchMaterialsByAttributes = (payload) =>
-  request("/material-attributes/search", { method: "POST", body: payload });
 
 // --- lotes y caducidad ---
 //

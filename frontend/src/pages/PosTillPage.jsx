@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { useI18n } from "../i18n";
 import "../styles/pos-till.css";
+import PageHeader from "../components/PageHeader.jsx";
 import {
   posCheckout, posOpenCashSession, posRequest, posStatus,
 } from "../api";
@@ -207,28 +208,27 @@ export default function PosTillPage() {
 
   return (
     <section className="page till-page">
-      <header className="page-header">
-        <div>
-          <p className="eyebrow">{t("pos.eyebrow", "Punto de venta")}</p>
-          <h1>{t("pos.till_title", "Caja")}</h1>
-        </div>
+      <PageHeader
+        eyebrow={t("pos.eyebrow", "Punto de venta")}
+        titulo={t("pos.till_title", "Caja")}
+      >
         <div className="till-session">
-          {turno ? (
-            <span className="till-chip abierta">
-              {t("pos.session_open", "Turno abierto")}
-              {turno.opened_at ? ` · ${String(turno.opened_at).slice(0, 16).replace("T", " ")}` : ""}
-            </span>
-          ) : (
-            <button className="button" onClick={abrirTurno} disabled={ocupado}>
-              <Unlock size={15} />
-              {t("pos.open_session", "Abrir turno de caja")}
-            </button>
-          )}
-          <button className="button ghost" onClick={cargar} disabled={ocupado}>
-            <RefreshCw size={15} />
-          </button>
+        {turno ? (
+        <span className="till-chip abierta">
+        {t("pos.session_open", "Turno abierto")}
+        {turno.opened_at ? ` · ${String(turno.opened_at).slice(0, 16).replace("T", " ")}` : ""}
+        </span>
+        ) : (
+        <button className="button" onClick={abrirTurno} disabled={ocupado}>
+        <Unlock size={15} />
+        {t("pos.open_session", "Abrir turno de caja")}
+        </button>
+        )}
+        <button className="button ghost" onClick={cargar} disabled={ocupado}>
+        <RefreshCw size={15} />
+        </button>
         </div>
-      </header>
+      </PageHeader>
 
       {errorTexto && <p className="error">{errorTexto}</p>}
 

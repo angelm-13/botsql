@@ -39,6 +39,7 @@ import "../styles/pagination.css";
 
 export default function Pagination({
   page, pages, total, perPage, onChange, loading, etiquetaDeTotal,
+  opcionesDeTamano, onTamano,
 }) {
   const { t } = useI18n();
 
@@ -127,6 +128,25 @@ export default function Pagination({
           {etiquetaDeTotal || t("common.records", "registros")}
         </span>
       )}
+
+      {/* Cuantos ver de golpe. Va junto a la cuenta porque son la misma
+          pregunta: cuantos hay y cuantos quiero mirar a la vez. Solo aparece si
+          la pantalla lo pide -no toda lista gana algo con el-. */}
+      {onTamano && opcionesDeTamano.length > 0 && (
+        <label className="paginacion-tamano">
+          <span className="muted">{t("common.show", "Ver")}</span>
+          <select
+            value={String(Number(perPage) || opcionesDeTamano[0])}
+            disabled={loading}
+            onChange={(e) => onTamano(Number(e.target.value))}
+            aria-label={t("common.per_page", "Cuantos por página")}
+          >
+            {opcionesDeTamano.map((cuantos) => (
+              <option key={cuantos} value={String(cuantos)}>{cuantos}</option>
+            ))}
+          </select>
+        </label>
+      )}
     </nav>
   );
 }
@@ -139,6 +159,8 @@ Pagination.propTypes = {
   onChange: PropTypes.func.isRequired,
   loading: PropTypes.bool,
   etiquetaDeTotal: PropTypes.string,
+  opcionesDeTamano: PropTypes.arrayOf(PropTypes.number),
+  onTamano: PropTypes.func,
 };
 
 Pagination.defaultProps = {
@@ -148,4 +170,6 @@ Pagination.defaultProps = {
   perPage: 0,
   loading: false,
   etiquetaDeTotal: "",
+  opcionesDeTamano: [],
+  onTamano: null,
 };

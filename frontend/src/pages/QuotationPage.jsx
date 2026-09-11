@@ -3,6 +3,7 @@ import { convertQuotationToInvoice, createInvoice, createInvoiceMaterialService,
 import { useI18n } from "../i18n";
 import QuotationWorkflowBoard, { normalizeQuotationStatus, quotationStatusLabel, QUOTATION_STATUS_CODES } from "../components/QuotationWorkflowBoard.jsx";
 import SatProductKeyField from "../components/SatProductKeyField";
+import PageHeader from "../components/PageHeader.jsx";
 
 function catalogOptions(catalog) {
   return Object.entries(catalog || {}).sort(([a], [b]) => a.localeCompare(b));
@@ -566,14 +567,13 @@ export default function QuotationPage() {
 
   return (
     <section className="entity-page quotation-page">
-      <div className="page-heading">
-        <div>
-          <p className="eyebrow">CRM</p>
-          <h2>{t("quotation.title", "Cotizaciones")}</h2>
-          <p className="quotation-subtitle">{t("quotation.subtitle", "Cotizaciones comerciales generadas sobre factura con estatus Cotización.")}</p>
-        </div>
+      <PageHeader
+        eyebrow={"CRM"}
+        titulo={t("quotation.title", "Cotizaciones")}
+        subtitulo={t("quotation.subtitle", "Cotizaciones comerciales generadas sobre factura con estatus Cotización.")}
+      >
         <button type="button" className="button" onClick={loadData} disabled={loading}>{loading ? t("common.loading", "Cargando...") : t("common.refresh", "Actualizar")}</button>
-      </div>
+      </PageHeader>
 
       {message && <div className="alert success">{message}</div>}
       {error && <div className="alert error">{error}</div>}

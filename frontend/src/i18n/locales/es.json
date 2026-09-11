@@ -49,7 +49,7 @@
     "logout": "Cerrar sesión",
     "next": "Siguiente",
     "page": "Página",
-    "per_page": "Por página",
+    "per_page": "Cuántos por página",
     "previous": "Anterior",
     "reset": "Restablecer",
     "save": "Guardar",
@@ -146,7 +146,7 @@
     "continue": "¿Continuar?",
     "close": "Cerrar",
     "remove": "Quitar",
-    "select": "Seleccionar",
+    "select": "Selecciona…",
     "pagination": "Paginación",
     "first_page": "Primera",
     "last_page": "Última",
@@ -155,7 +155,11 @@
     "filter": "filtrar…",
     "clear": "Limpiar",
     "no_matches": "ninguna coincide",
-    "serie_csd_hint": "Se usa como serie por defecto al emitir facturas de esta empresa; una factura puede capturar otra distinta."
+    "serie_csd_hint": "Se usa como serie por defecto al emitir facturas de esta empresa; una factura puede capturar otra distinta.",
+    "show": "Ver",
+    "no_date": "sin fecha",
+    "expand_form": "abrir",
+    "collapse_form": "ocultar"
   },
   "entities": {
     "bank": {
@@ -968,7 +972,8 @@
       "id_product_family": "ID Familia de producto",
       "id_unit": "Unidad de medida",
       "last_update_date": "Fecha de última actualización",
-      "material_description": "Material Descripción"
+      "material_description": "Material Descripción",
+      "id_material_type": "Tipo"
     },
     "material_component": {
       "created_by": "Creado por",
@@ -1415,7 +1420,6 @@
     "assets": "Rastreo de piezas",
     "pos_till": "Caja",
     "inventory_trace": "Localizar",
-    "material_type": "Tipos de material",
     "warehouse_voucher": "Vales de almacén"
   },
   "placeholders": {
@@ -2725,7 +2729,9 @@
     "lot_not_applicable": "Ese producto no se lleva por lotes. Casi siempre es el producto equivocado.",
     "lot_product_mismatch": "Ese lote es de otro producto.",
     "lot_control_not_for_serialized": "Ese producto se rastrea pieza por pieza, así que ya tiene una fila por unidad: los lotes serían la misma cosa por dos caminos.",
-    "lot_control_needs_its_own_endpoint": "El control por lote no se enciende desde aquí: hazlo desde el producto, para que la existencia que ya hay quede dentro de un lote de apertura."
+    "lot_control_needs_its_own_endpoint": "El control por lote no se enciende desde aquí: hazlo desde el producto, para que la existencia que ya hay quede dentro de un lote de apertura.",
+    "voucher_not_a_draft": "Este vale ya no es un borrador: solo un borrador se puede autorizar.",
+    "voucher_self_authorization": "No puedes autorizar un vale que tú mismo pediste. Lo autoriza el jefe de almacén."
   },
   "logistics": {
     "module": "Logística",
@@ -3377,7 +3383,9 @@
     "reports": "Reportes",
     "products": "Catálogo",
     "shift": "Turno",
-    "section_pos_marketing": "Promociones"
+    "section_pos_marketing": "Promociones",
+    "warehouse": "Almacén",
+    "locate": "Localizar"
   },
   "project_management": {
     "operations": "Operaciones",
@@ -4102,9 +4110,8 @@
     "search_placeholder": "Nombre, código o etiqueta de la pieza (por ejemplo TAL-001)",
     "purpose": "Para qué sirve",
     "all_purposes": "Todo el almacén",
-    "merchandise": "Mercancía",
     "internal_use": "Uso interno",
-    "purpose_mercancia": "mercancía",
+    "purpose_mercancia": "consumible",
     "purpose_uso_interno": "uso interno",
     "by_status": "Por estado de la pieza",
     "any_status": "Cualquier estado",
@@ -4172,7 +4179,6 @@
     "page_of": "página",
     "of": "de",
     "pagination": "Páginas",
-    "merchandise_help": "Lo que la empresa distribuye. Se cuenta por cantidad.",
     "internal_use_help": "Herramienta y equipo. Se rastrea pieza por pieza.",
     "overdue_help": "Préstamos que ya debieron volver. Están contados dentro de «prestada».",
     "overdue_short": "vencidas",
@@ -4182,29 +4188,24 @@
     "voucher": "vale",
     "was_due": "debió volver el",
     "due_on": "vence el",
-    "all_on_loan": "Nada en el almacén: todo está fuera."
-  },
-  "material_type": {
-    "eyebrow": "Inventario",
-    "title": "Familias y tipos",
-    "subtitle": "Los dos niveles de la clasificación: la familia agrupa —desarmadores, cemento— y el tipo distingue dentro de ella —plano, de cruz, en saco, a granel—.",
-    "add": "Agregar tipo",
-    "placeholder": "Nombre del tipo (por ejemplo: Plano)",
-    "one_type": "1 tipo",
-    "types": "tipos",
-    "none_yet": "Sin tipos. Los materiales de esta familia se quedan sin distinguir entre sí.",
-    "no_families": "No hay familias todavía. El tipo cuelga de una familia, así que se empieza por la familia: «Desarmadores», y dentro «Plano» y «De cruz».",
-    "orphans": "Tipos sin familia visible",
-    "orphans_hint": "Su familia no aparece en la lista. Siguen apareciendo en los materiales que los usan.",
-    "add_family": "Nueva familia",
-    "family_placeholder": "Nombre de la familia (por ejemplo: Desarmadores)",
-    "family_kind": "Clase de familia",
-    "kind_none": "Sin clasificar",
-    "kind_tool": "Herramienta — se presta y vuelve",
-    "kind_consumable": "Consumible — se gasta",
-    "rename_family": "Renombrar familia",
-    "delete_family": "Eliminar familia",
-    "family_has_types": "Esa familia tiene tipos dentro. Quita primero los tipos: si no, quedarían apuntando a una familia que ya no existe."
+    "all_on_loan": "Nada en el almacén: todo está fuera.",
+    "open_history": "Historial",
+    "status_entrada": "En almacén",
+    "status_salida": "Salió del almacén",
+    "status_renta": "Rentado",
+    "status_danado": "Dañado",
+    "status_eq_danados": "Equipo dañado",
+    "status_reparacion": "En reparación",
+    "status_extraviado": "Extraviado",
+    "status_destruccion": "Destruido",
+    "consumable": "Consumible",
+    "consumable_help": "Lo que se gasta y se repone. Se cuenta por cantidad.",
+    "legend": "Qué significa el color",
+    "legend_in_stock": "En el almacén",
+    "legend_out_ok": "Fuera, sin problema",
+    "legend_needs_care": "Hay que atenderlo",
+    "legend_lost": "Se perdió",
+    "legend_end_of_life": "Fin de vida"
   },
   "voucher": {
     "eyebrow": "Almacén",
@@ -4265,31 +4266,115 @@
     "back_to_list": "Volver a la lista",
     "status_abierto": "Abierto",
     "status_cerrado": "Cerrado",
-    "status_cancelado": "Cancelado"
-  },
-  "attribute": {
-    "title": "Características",
-    "add": "Agregar característica",
-    "none_yet": "Sin características. El tamaño, el calibre o el acabado se quedan escritos dentro de la descripción, donde no se pueden filtrar ni contar.",
-    "name_placeholder": "Nombre (por ejemplo: Largo)",
-    "data_type": "Tipo de dato",
-    "type_text": "Texto",
-    "type_text_help": "Lo que no se puede acotar de antemano.",
-    "type_number": "Número",
-    "type_number_help": "Se guarda como número, así que «de 6 o más» compara de verdad.",
-    "type_list": "Lista",
-    "type_list_help": "Solo los valores que declares. Evita «mate», «Mate» y «MATE».",
-    "unit_placeholder": "Unidad (in, mm, L)",
-    "options_placeholder": "Valores permitidos, separados por comas: Goma, Plástico",
-    "required": "Obligatoria",
-    "new_option": "otro valor",
-    "unused": "sin usar",
-    "in_use": "materiales",
-    "type_is_fixed": "El tipo de dato no se cambia después: los valores ya capturados quedarían en la forma del tipo viejo."
+    "status_cancelado": "Cancelado",
+    "draft": "Guardar prevale",
+    "draft_help": "Deja el material pedido, sin sacarlo. Lo autoriza el jefe de almacén.",
+    "drafted": "Prevale guardado, pendiente de autorizar",
+    "status_draft": "Borrador",
+    "nothing_left_yet": "nada ha salido todavía",
+    "authorize": "Autorizar y entregar",
+    "authorize_help": "Al autorizar sale el material del almacén. Lo hace el jefe de almacén, y no puede ser quien pidió el vale.",
+    "authorized": "Vale autorizado: el material salió del almacén.",
+    "status_borrador": "Borrador",
+    "filter_status": "Filtrar por estado",
+    "filter_all": "Todos",
+    "filter_draft": "Por autorizar",
+    "filter_open": "Abiertos",
+    "filter_closed": "Cerrados"
   },
   "product": {
     "classification": "Clasificación",
     "see_families": "ver familias y tipos",
     "classification_help": "La familia agrupa, el tipo distingue dentro de ella y el material es la cosa concreta. Si falta alguna, se da de alta en Familias y tipos."
+  },
+  "material": {
+    "pick_family_first": "Elige primero la familia",
+    "family_has_no_types": "Esa familia no tiene tipos",
+    "declare_types": "Los tipos de una familia se declaran en Familias y tipos."
+  },
+  "product_family": {
+    "title": "Familias de producto",
+    "subtitle": "El grupo al que pertenece cada material —desarmadores, cemento— y si es herramienta que se presta o consumible que se gasta.",
+    "no_families": "No hay familias todavía. La familia es el grupo del material: «Desarmadores», «Cemento».",
+    "eyebrow": "Inventario",
+    "family_placeholder": "Nombre de la familia (por ejemplo: Desarmadores)",
+    "kind_consumable": "Consumible — se gasta",
+    "kind_none": "Sin clasificar",
+    "kind_tool": "Herramienta — se presta y vuelve"
+  },
+  "page": {
+    "brand": {
+      "subtitle": "Los fabricantes del material: Truper, Lion Tools. La marca es una de las tres cosas que definen un material, junto con su familia y su descripción."
+    },
+    "unit": {
+      "subtitle": "Cómo se mide cada material: pieza, metro, litro. Es lo que da sentido a una existencia de «12»."
+    },
+    "location": {
+      "subtitle": "Dónde puede estar una pieza: naves, racks, estantes. Cuelgan unas de otras, y filtrar por una nave trae también lo de sus racks."
+    },
+    "location_type": {
+      "subtitle": "Las clases de ubicación —nave, rack, estante— que dan forma al árbol del almacén."
+    },
+    "material": {
+      "subtitle": "Qué cosas maneja el almacén, sin importar cuántas haya: «desarmador Truper punta plana». Las piezas concretas son los productos."
+    },
+    "product": {
+      "subtitle": "Cada cosa concreta con su código: es lo que se presta, se mueve y se cuenta. Un material puede tener muchos productos."
+    },
+    "inventory_status": {
+      "subtitle": "Los estados en los que puede estar la existencia de un producto."
+    },
+    "customer_supplier": {
+      "subtitle": "Clientes y proveedores de la empresa."
+    },
+    "user": {
+      "subtitle": "Quién entra al sistema y con qué rol. El rol decide qué pantallas ve y qué puede hacer en ellas."
+    },
+    "department": {
+      "subtitle": "Las áreas de la empresa a las que pertenece cada usuario."
+    }
+  },
+  "history": {
+    "title": "Historial del producto",
+    "movements": "Movimientos",
+    "loans": "Préstamos",
+    "locations": "Ubicaciones",
+    "no_movements": "Sin movimientos registrados.",
+    "no_loans": "Nunca ha salido en un vale.",
+    "no_stock": "Sin existencia en ninguna ubicación.",
+    "balance": "saldo",
+    "movements_total": "movimientos",
+    "times_taken": "salidas",
+    "holders": "personas",
+    "currently_out": "sin devolver",
+    "voucher": "Vale",
+    "units": "u.",
+    "unknown_holder": "sin responsable",
+    "returned": "devuelto",
+    "overdue": "vencido",
+    "out": "fuera",
+    "sum_by_location": "Suma por ubicación",
+    "product_balance": "saldo del producto",
+    "mismatch": "no cuadran",
+    "everything": "Historial",
+    "when": "Cuándo",
+    "what": "Qué pasó",
+    "who": "Quién",
+    "change": "Cambio",
+    "entries": "registros",
+    "nothing": "Sin movimientos ni préstamos registrados."
+  },
+  "movement": {
+    "receive": "Entrada",
+    "return": "Devolución",
+    "loan": "Préstamo",
+    "issue": "Salida",
+    "damage": "Merma",
+    "destroy": "Destrucción",
+    "loss": "Extravío",
+    "expiry": "Caducidad",
+    "transfer": "Traspaso",
+    "adjustment": "Ajuste",
+    "opening": "Existencia inicial"
   }
 }

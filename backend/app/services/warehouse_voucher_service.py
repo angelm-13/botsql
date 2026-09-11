@@ -78,7 +78,18 @@ ENTRADA = "entrada"
 TRASLADO = "traslado"
 DIRECCIONES = (SALIDA, ENTRADA, TRASLADO)
 
-# Estados del vale. Se derivan de los renglones, no se capturan.
+# Estados del vale. Se derivan de los renglones, no se capturan -- salvo
+# `borrador`, que es el unico que dice algo del PERMISO de quien lo escribio y
+# no de lo que le paso al material.
+#
+# El borrador es el prevale: el material pedido, con su responsable y su fecha,
+# pero SIN sacar nada del almacen. Quien solo tiene `warehouse_prevoucher`
+# -- pedir -- deja el vale asi; quien tiene `warehouse_voucher_authorize`
+# -- surtir -- lo autoriza, y es ese acto el que mueve la existencia.
+#
+# Separar las dos cosas es el control: quien pide el material no es quien decide
+# que sale del almacen.
+BORRADOR = "borrador"
 ABIERTO = "abierto"
 CERRADO = "cerrado"
 CANCELADO = "cancelado"
@@ -166,13 +177,80 @@ def _existencias(db, ids_productos: set[int]) -> dict:
 
 
 def _con_existencias(db, renglones) -> list[dict]:
-    """Los renglones serializados, cada uno con la existencia de su producto."""
-    saldos = _existencias(db, {int(r.id_product) for r in renglones})
+    """Los renglones serializados, con la existencia y los datos del producto.
+
+    El renglon crudo solo trae `id_product`, y con eso la pantalla escribia
+    "producto #6847": un numero que no dice si lo que salio fue un taladro o un
+    saco de cemento. Quien mira un vale para reclamar material necesita saber
+    QUE es, no su identificador.
+
+    Se resuelve en lote -- una consulta para todos los renglones del vale, no
+    una por renglon -- y se traen tambien la marca, el material y la unidad,
+    que estan a dos saltos en la base y son lo que identifica una herramienta
+    de verdad: "desarmador TRUPER punta plana, pieza".
+    """
+    ids = {int(r.id_product) for r in renglones}
+    saldos = _existencias(db, ids)
+    productos = _fichas_de_producto(db, ids)
     salida = []
     for renglon in renglones:
         fila = renglon.serialize()
         fila["stock_on_hand"] = saldos.get(int(renglon.id_product), 0)
+        fila["product"] = productos.get(int(renglon.id_product))
         salida.append(fila)
+    return salida
+
+
+def _fichas_de_producto(db, ids) -> dict:
+    """Que es cada producto: codigo, descripcion, foto y su clasificacion.
+
+    En dos consultas y no en una por producto: un vale de veinte renglones es
+    exactamente donde el N+1 se nota.
+    """
+    if not ids:
+        return {}
+
+    from app.models.brand import Brand
+    from app.models.material import Material
+    from app.models.unit import Unit
+
+    filas = db.scalars(
+        select(Product).where(Product.id_product.in_(list(ids)))
+    ).all()
+    ids_material = {int(p.id_material) for p in filas if p.id_material}
+    materiales = {
+        int(m.id_material): m for m in db.scalars(
+            select(Material).where(Material.id_material.in_(list(ids_material)))
+        ).all()
+    } if ids_material else {}
+    ids_marca = {int(m.id_brand) for m in materiales.values() if m.id_brand}
+    ids_unidad = {int(m.id_unit) for m in materiales.values() if m.id_unit}
+    marcas = {
+        int(b.id_brand): b.brand_description for b in db.scalars(
+            select(Brand).where(Brand.id_brand.in_(list(ids_marca)))
+        ).all()
+    } if ids_marca else {}
+    unidades = {
+        int(u.id_unit): u.unit_name for u in db.scalars(
+            select(Unit).where(Unit.id_unit.in_(list(ids_unidad)))
+        ).all()
+    } if ids_unidad else {}
+
+    salida = {}
+    for p in filas:
+        material = materiales.get(int(p.id_material)) if p.id_material else None
+        salida[int(p.id_product)] = {
+            "id_product": p.id_product,
+            "product_code": p.product_code,
+            "descripcion": p.descripcion,
+            "path_imagen": p.path_imagen,
+            "color": p.color,
+            "product_status": p.product_status,
+            "tracking_mode": p.tracking_mode,
+            "material": getattr(material, "material_description", None),
+            "brand": marcas.get(int(material.id_brand)) if material and material.id_brand else None,
+            "unit": unidades.get(int(material.id_unit)) if material and material.id_unit else None,
+        }
     return salida
 
 
@@ -369,7 +447,7 @@ def _sincronizar_estado(db, vale: Incident) -> None:
 
 # --- operaciones ---------------------------------------------------------
 
-def crear_vale(payload: dict, user_data: dict) -> dict:
+def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -> dict:
     """Abre un vale con sus renglones.
 
     Todo o nada: si un renglon no pasa la validacion, no se escribe ninguno ni
@@ -414,11 +492,19 @@ def crear_vale(payload: dict, user_data: dict) -> dict:
         vence = _fecha_de_regreso(payload.get("due_date"))
         motivo = _texto(payload.get("note"), "note", largo=300, obligatorio=True)
 
+        # Borrador o vale. Lo decide la RUTA por la que se entro, no un campo
+        # del cuerpo: `POST /prevouchers` esta guardada con
+        # `warehouse_prevoucher` y `POST /vouchers` con `warehouse_voucher`,
+        # asi que el permiso ya quedo comprobado en la puerta. Si el estado
+        # viniera en la peticion, cualquiera que supiera escribir "abierto" se
+        # surtiria a si mismo.
+        estado = BORRADOR if como_borrador else ABIERTO
+
         vale = Incident(
             id_incident_type=id_tipo,
             id_user=id_responsable,
             incident_date=inicio,
-            incident_status=ABIERTO,
+            incident_status=estado,
             note=motivo,
             created_by=actor,
         )
@@ -445,11 +531,17 @@ def crear_vale(payload: dict, user_data: dict) -> dict:
         # alguien, y el saldo seguia contando cinco sacos que ya no estaban. Dos
         # vistas del mismo hecho, en desacuerdo, y ninguna forma de saber cual
         # creer. Un vale que no descuenta es un papel.
-        for renglon in renglones_escritos:
-            _sacar_del_almacen(db, renglon, user_data,
-                               id_responsable=id_responsable, vence=vence,
-                               motivo=motivo)
-        db.flush()
+        #
+        # Un BORRADOR no mueve nada, y es la razon de que exista: es lo pedido,
+        # no lo entregado. La existencia sale cuando alguien lo autoriza, y se
+        # vuelve a comprobar entonces -- entre que se pide y se surte pueden
+        # haberse llevado la ultima pieza.
+        if not como_borrador:
+            for renglon in renglones_escritos:
+                _sacar_del_almacen(db, renglon, user_data,
+                                   id_responsable=id_responsable, vence=vence,
+                                   motivo=motivo)
+            db.flush()
 
         return {
             "voucher": vale.serialize(),
@@ -707,6 +799,76 @@ def _fecha(valor):
 #
 # Ese alcance no es cortesia, es la regla que se pidio: el supervisor tiene que
 # poder ver que material esta a su nombre, y nada mas.
+
+def _puede_autorizar(db, user_data) -> bool:
+    """Si este actor puede convertir un borrador en un vale.
+
+    Es una capacidad APARTE de `warehouse_voucher` a proposito. Con una sola,
+    quien escribe el prevale y quien lo autoriza serian el mismo permiso, y la
+    separacion no separaria nada: el control es que el borrador lo abra alguien
+    distinto del que lo pidio.
+    """
+    if _sin_restriccion(user_data):
+        return True
+    return has_capability(db, user_data, "warehouse_voucher_authorize")
+
+
+def autorizar_vale(id_incident, payload: dict, user_data: dict) -> dict:
+    """Convierte un borrador en un vale: lo abre y saca el material.
+
+    Es el acto que mueve el almacen. Antes de esto el borrador es una peticion:
+    dice que se pidieron dos taladros, no que salieran.
+
+    La existencia se vuelve a comprobar AQUI y no se confia en la del borrador:
+    entre que alguien pide y alguien surte puede haberse llevado la ultima
+    pieza, y autorizar contra un saldo viejo dejaria el almacen en negativo.
+    Eso lo hace `_sacar_del_almacen`, que es la misma puerta de siempre.
+
+    Solo desde borrador. Autorizar un vale ya abierto sacaria el material dos
+    veces, y autorizar uno cerrado o cancelado sacaria lo que ya volvio.
+    """
+    actor = _actor(user_data)
+    with transaction_context() as db:
+        if not _puede_autorizar(db, user_data):
+            raise AppError("errors.forbidden", 403,
+                           {"capability": "warehouse_voucher_authorize"})
+
+        vale = _vale(db, id_incident)
+        estado = str(vale.incident_status or "").lower()
+        if estado != BORRADOR:
+            raise AppError("errors.voucher_not_a_draft", 409,
+                           {"id_incident": vale.id_incident, "status": estado})
+
+        # Quien lo pidio no lo autoriza. Es el control entero: sin esto, un rol
+        # con las dos capacidades -- o la misma persona con dos sombreros --
+        # cerraria el circulo y el borrador seria un tramite.
+        if not _sin_restriccion(user_data) and int(vale.created_by or 0) == int(actor):
+            raise AppError("errors.voucher_self_authorization", 409,
+                           {"id_incident": vale.id_incident})
+
+        renglones = _renglones(db, vale.id_incident)
+        if not renglones:
+            raise AppError("errors.voucher_lines_required", 400,
+                           {"field": "lines"})
+
+        motivo = _texto(payload.get("note"), "note", largo=300,
+                        obligatorio=False) or vale.note
+        for renglon in renglones:
+            if str(renglon.direction or "").lower() != SALIDA:
+                continue
+            _sacar_del_almacen(db, renglon, user_data,
+                               id_responsable=vale.id_user,
+                               vence=renglon.due_date, motivo=motivo)
+
+        vale.incident_status = ABIERTO
+        vale.last_update_date = _ahora()
+        db.flush()
+
+        return {
+            "voucher": vale.serialize(),
+            "lines": _con_existencias(db, _renglones(db, vale.id_incident)),
+        }
+
 
 def _ve_todo_el_almacen(db, user_data) -> bool:
     """Si este actor ve el almacen completo o solo lo que esta a su nombre.

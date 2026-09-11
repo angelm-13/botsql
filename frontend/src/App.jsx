@@ -38,9 +38,6 @@ import LevelPage from "./pages/LevelPage.jsx";
 import LocationPage from "./pages/LocationPage.jsx";
 import LocationTypePage from "./pages/LocationTypePage.jsx";
 import MaterialPage from "./pages/MaterialPage.jsx";
-import MaterialComponentPage from "./pages/MaterialComponentPage.jsx";
-import MaterialTypePage from "./pages/MaterialTypePage.jsx";
-import MovementPage from "./pages/MovementPage.jsx";
 import NmFieldPermissionPage from "./pages/NmFieldPermissionPage.jsx";
 import NmIncidentProductPage from "./pages/NmIncidentProductPage.jsx";
 import NmSurveyUserPage from "./pages/NmSurveyUserPage.jsx";
@@ -202,8 +199,6 @@ export default function App() {
           <Route path="/location" element={<RoleAccessRoute entityName="location"><LocationPage /></RoleAccessRoute>} />
           <Route path="/location_type" element={<RoleAccessRoute entityName="location_type"><LocationTypePage /></RoleAccessRoute>} />
           <Route path="/material" element={<RoleAccessRoute entityName="material"><MaterialPage /></RoleAccessRoute>} />
-          <Route path="/material_component" element={<RoleAccessRoute entityName="material_component"><MaterialComponentPage /></RoleAccessRoute>} />
-          <Route path="/movement" element={<RoleAccessRoute entityName="movement"><MovementPage /></RoleAccessRoute>} />
           <Route path="/nm_field_permission" element={<AdminRoute><NmFieldPermissionPage /></AdminRoute>} />
           <Route path="/nm_incident_product" element={<RoleAccessRoute entityName="nm_incident_product"><NmIncidentProductPage /></RoleAccessRoute>} />
           <Route path="/nm_survey_user" element={<RoleAccessRoute entityName="nm_survey_user"><NmSurveyUserPage /></RoleAccessRoute>} />
@@ -252,13 +247,10 @@ export default function App() {
           {/* Los dos niveles de la clasificacion, en una pantalla. Habia dos
               entradas de menu y leidas seguidas parecen lo mismo dos veces; el
               tipo cuelga de la familia y no se puede leer sin ella. Las dos
-              direcciones siguen respondiendo -las que ya estaban guardadas no
-              se rompen- y las dos abren la misma pantalla. */}
-          <Route path="/product_family" element={<RoleAccessRoute entityName="product_family"><MaterialTypePage /></RoleAccessRoute>} />
-          <Route path="/material_type" element={<RoleAccessRoute entityName="material_type"><MaterialTypePage /></RoleAccessRoute>} />
-          {/* La tabla cruda de familias, para quien la necesite. Sin entrada de
-              menu: es la vista de mantenimiento, no la de trabajo. */}
-          <Route path="/product_family/table" element={<RoleAccessRoute entityName="product_family"><ProductFamilyPage /></RoleAccessRoute>} />
+              El TIPO se retiro del flujo: en estos datos la descripcion del
+              material ya lo trae -"BROCA HELICOIDAL 3/4"-, asi que un nivel
+              aparte obliga a capturar dos veces lo mismo. */}
+          <Route path="/product_family" element={<RoleAccessRoute entityName="product_family"><ProductFamilyPage /></RoleAccessRoute>} />
           {/* El vale se guarda con la capacidad `warehouse_voucher`, no con
               una entidad: su pantalla escribe en `incident` y en la tabla
               puente de sus renglones, que esta fuera del menu a proposito. */}

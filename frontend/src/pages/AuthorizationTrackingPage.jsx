@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { getAllCustomerSupplier, getAllInvoice, getAllInvoiceMaterialService, getAllProyect, updateInvoiceMaterialService } from "../api";
 import { useI18n } from "../i18n";
+import PageHeader from "../components/PageHeader.jsx";
 
 function asArray(payload) {
   if (Array.isArray(payload?.items)) return payload.items;
@@ -150,16 +151,15 @@ export default function AuthorizationTrackingPage() {
 
   return (
     <section className="entity-page authorization-tracking-page">
-      <div className="page-heading">
-        <div>
-          <p className="eyebrow">{t("authorization_tracking.issue_label", "Issue 12")}</p>
-          <h2>{t("authorization_tracking.title", "Autorización / Seguimiento")}</h2>
-          <p className="quotation-subtitle">{t("authorization_tracking.subtitle", "Seguimiento funcional de partidas de cotizaciones y facturas.")}</p>
-        </div>
+      <PageHeader
+        eyebrow={t("authorization_tracking.issue_label", "Issue 12")}
+        titulo={t("authorization_tracking.title", "Autorización / Seguimiento")}
+        subtitulo={t("authorization_tracking.subtitle", "Seguimiento funcional de partidas de cotizaciones y facturas.")}
+      >
         <button type="button" className="button" onClick={loadData} disabled={loading}>
-          {loading ? t("common.loading", "Cargando...") : t("authorization_tracking.reload", "Recargar datos")}
+        {loading ? t("common.loading", "Cargando...") : t("authorization_tracking.reload", "Recargar datos")}
         </button>
-      </div>
+      </PageHeader>
 
       {message && <div className="alert success">{message}</div>}
       {error && <div className="alert error">{error}</div>}

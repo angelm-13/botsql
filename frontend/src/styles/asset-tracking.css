@@ -4,13 +4,8 @@
 
 .asset-page { color: #334155; }
 
-.asset-page .page-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 20px;
-  flex-wrap: wrap;
-}
+/* La cabecera la define `styles/page-header.css`, una sola vez para todas
+   las pantallas. Aqui habia una copia con los mismos valores. */
 
 .asset-page .page-header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .asset-page .eyebrow {
