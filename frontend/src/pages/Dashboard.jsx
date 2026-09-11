@@ -2,13 +2,16 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import {
   ArrowDown, ArrowUp, AreaChart as AreaChartIcon, BarChart2, ChevronDown, ChevronUp,
-  ClipboardList, Hash, LineChart as LineChartIcon, Pencil, PieChart as PieChartIcon, Plus, Receipt,
+  ClipboardList, GripVertical, Hash, LineChart as LineChartIcon, Pencil, PieChart as PieChartIcon, Plus, Receipt,
   RefreshCw, SlidersHorizontal, Trash2, User, X,
 } from "lucide-react";
 import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line, AreaChart, Area,
   PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts";
+import { DndContext, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
+import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import { CSS as DndCss } from "@dnd-kit/utilities";
 import { useI18n } from "../i18n";
 import {
   getAllKpiDashboard, createKpiDashboard, updateKpiDashboard, deleteKpiDashboard,
@@ -511,6 +514,45 @@ export default function Dashboard() {
     }
   }, []);
 
+  // Sensor con distancia minima antes de armar un drag: sin esto, un simple
+  // clic en "Editar"/"Eliminar" dentro de la tarjeta se interpretaria como el
+  // inicio de un arrastre (mismo mousedown) y el clic normal dejaria de
+  // funcionar.
+  const dragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  // Arrastrar para reordenar: el grid sigue siendo responsive (auto-fill de
+  // kpi-widget-grid, ver kpi-dashboard.css) -- dnd-kit con rectSortingStrategy
+  // ya sabe acomodar el resto de tarjetas alrededor del hueco, no hace falta
+  // una cuadricula de posiciones fijas. Optimista en la UI (reordena de
+  // inmediato) y persiste `posicion_orden` -campo que ya existia en el
+  // backend, ver KpiDashboardWidget.posicion_orden- con el mismo criterio de
+  // espaciado (100, 200, 300...) que ya usa `_reemplazar_kpis` para el orden
+  // de KPIs dentro de un widget.
+  async function handleDragEndWidgets(event) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = widgets.findIndex((item) => item.id_kpi_dashboard_widget === active.id);
+    const newIndex = widgets.findIndex((item) => item.id_kpi_dashboard_widget === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordenados = arrayMove(widgets, oldIndex, newIndex);
+    setWidgets(reordenados);
+    try {
+      await Promise.all(
+        reordenados.map((widget, index) => updateKpiDashboardWidget(
+          widget.id_kpi_dashboard_widget,
+          { posicion_orden: (index + 1) * 100 },
+        )),
+      );
+    } catch (error) {
+      // Si algo fallo a medio camino, el orden en el servidor puede haber
+      // quedado a medias -- se recarga desde ahi para no dejar la UI
+      // mostrando un orden que no coincide con lo guardado.
+      setWidgetsError(error.message || "errors.request_failed");
+      await loadWidgets(activeId);
+    }
+  }
+
   useEffect(() => { loadDashboards(); }, [loadDashboards]);
   useEffect(() => { loadWidgets(activeId); }, [activeId, loadWidgets]);
 
@@ -730,9 +772,11 @@ export default function Dashboard() {
           {loadingWidgets && <div className="alert">{t("common.loading")}</div>}
 
           {!loadingWidgets && !widgetsError && (
+            <DndContext sensors={dragSensors} collisionDetection={closestCenter} onDragEnd={handleDragEndWidgets}>
+            <SortableContext items={widgets.map((widget) => widget.id_kpi_dashboard_widget)} strategy={rectSortingStrategy}>
             <div className="kpi-widget-grid" ref={widgetGridRef}>
               {widgets.map((widget) => (
-                <KpiWidgetCard
+                <SortableKpiWidgetCard
                   key={widget.id_kpi_dashboard_widget}
                   widget={widget}
                   kpiCatalog={kpiCatalog}
@@ -764,6 +808,8 @@ export default function Dashboard() {
                 </button>
               ))}
             </div>
+            </SortableContext>
+            </DndContext>
           )}
         </div>
       )}
@@ -772,7 +818,28 @@ export default function Dashboard() {
   );
 }
 
-function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, formatNumber, onEdit, onDelete, t, tx }) {
+// Envoltura sortable: separa el "como se arrastra" (dnd-kit) de "que se
+// muestra" (KpiWidgetCard). El handle (GripVertical) es la UNICA zona con los
+// listeners de arrastre -- si se le pusieran a la tarjeta entera, un clic en
+// "Editar"/"Eliminar" competiria con el inicio de un drag.
+function SortableKpiWidgetCard(props) {
+  const { widget } = props;
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: widget.id_kpi_dashboard_widget,
+  });
+  const style = {
+    transform: DndCss.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+  };
+  return (
+    <div ref={setNodeRef} style={style}>
+      <KpiWidgetCard {...props} dragHandleProps={{ ...attributes, ...listeners }} />
+    </div>
+  );
+}
+
+function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, formatNumber, onEdit, onDelete, t, tx, dragHandleProps }) {
   const [snapshots, setSnapshots] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -855,6 +922,15 @@ function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, formatNumb
           {rangoBTexto && <p className="kpi-widget-meta">{tx("vs_label", "vs.")} {rangoBTexto}</p>}
         </div>
         <div className="kpi-widget-card-actions">
+          <button
+            type="button"
+            className="kpi-icon-button kpi-drag-handle"
+            title={tx("drag_to_reorder", "Arrastrar para reordenar")}
+            aria-label={tx("drag_to_reorder", "Arrastrar para reordenar")}
+            {...dragHandleProps}
+          >
+            <GripVertical size={15} />
+          </button>
           <button type="button" className="kpi-icon-button" title={t("common.edit")} onClick={onEdit}><Pencil size={15} /></button>
           <button type="button" className="kpi-icon-button danger" title={t("common.delete")} onClick={onDelete}><Trash2 size={15} /></button>
         </div>

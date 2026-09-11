@@ -22,6 +22,11 @@
 .kpi-icon-button{border:0;background:#eef2f6;color:#526273;border-radius:8px;padding:7px;cursor:pointer;display:grid;place-items:center}
 .kpi-icon-button:hover{background:#d8efe8;color:#1b7a60}
 .kpi-icon-button.danger:hover{background:#fae5e5;color:#9b3030}
+/* touch-action:none -- sin esto, arrastrar el handle en una pantalla tactil
+   compite con el scroll de la pagina (ver docs de dnd-kit sobre PointerSensor
+   en touch devices). */
+.kpi-drag-handle{cursor:grab;touch-action:none}
+.kpi-drag-handle:active{cursor:grabbing}
 .kpi-widget-meta{color:#8a96a5;font-size:12px;font-weight:700;margin:0}
 .kpi-widget-meta+.kpi-widget-meta{margin-top:-6px}
 .kpi-chart-box{min-height:240px;display:flex;flex-direction:column;justify-content:center}
