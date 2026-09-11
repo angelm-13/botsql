@@ -111,6 +111,9 @@
 .kpi-dropdown-picker-toggle:hover{background:#f4f6f9;border-color:#173b66}
 .kpi-dropdown-picker-toggle span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .kpi-dropdown-picker-menu{position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:15;max-height:220px;overflow:auto;padding:10px;background:#fff;border:1px solid #d7e0ea;border-radius:12px;box-shadow:0 12px 30px rgba(15,23,42,.14)}
+.kpi-dropdown-picker-search{width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:7px 10px;font:inherit;font-size:13px;color:#334155;margin-bottom:8px}
+.kpi-dropdown-picker-search:focus{outline:none;border-color:#173b66}
+.kpi-dropdown-picker-empty{margin:6px 2px;color:#8a96a5;font-size:12px;text-align:center}
 /* Adentro del popover las opciones van en lista (una por renglon), no en
    cuadricula -- el chip/avatar/color de cada item no cambia, solo el
    acomodo del contenedor (kpi-employee-list / kpi-chip-option-group), que

@@ -262,16 +262,32 @@ function EmployeeAvatar({ size = "regular", color }) {
   );
 }
 
+// Sin distinguir mayusculas/acentos: mismo patron NFD que ya usa
+// normalizarEstatus en InventoryTracePage.jsx, aqui aplicado a busqueda libre
+// (nombre de empleado o de variable) en vez de a un estatus fijo.
+function normalizarBusqueda(valor) {
+  return String(valor || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .trim();
+}
+
 // Barra desplegable reutilizable: boton cerrado por default con un resumen
 // ("Filtrar por empleados", "3 empleados seleccionados") + chevron; al hacer
-// click despliega un popover con las opciones (los chips que le pasen como
-// children) adentro. Reemplaza la caja siempre-abierta que tenian antes tanto
-// el picker de empleados como las variables sueltas -- mismo componente en
-// los dos lugares para que se vean y se comporten igual (ver su uso en
+// click despliega un popover con un buscador arriba y las opciones abajo.
+// Reemplaza la caja siempre-abierta que tenian antes tanto el picker de
+// empleados como las variables sueltas -- mismo componente en los dos
+// lugares para que se vean y se comporten igual (ver su uso en
 // KpiWidgetPanel). El picker de departamento deliberadamente NO usa este
 // patron por ahora, se dejo tal cual estaba (chips simples siempre visibles).
-function KpiDropdownPicker({ label, children }) {
+// `renderOptions(filtro)` (filtro ya normalizado via normalizarBusqueda, o ""
+// sin busqueda activa) es quien decide que mostrar -- cada uso filtra su
+// propia lista y arma el mensaje de "sin resultados", este componente solo
+// pone el input y limpia la busqueda cada vez que se abre.
+function KpiDropdownPicker({ label, searchPlaceholder, renderOptions }) {
   const [abierto, setAbierto] = useState(false);
+  const [busqueda, setBusqueda] = useState("");
 
   // Mismo patron de "cerrar al hacer clic afuera" que ya usa el popover de
   // color de los chips de KPI (ver swatchAbierto en KpiWidgetPanel).
@@ -284,12 +300,20 @@ function KpiDropdownPicker({ label, children }) {
     return () => document.removeEventListener("mousedown", handleClickFuera);
   }, [abierto]);
 
+  function alternar() {
+    setAbierto((actual) => {
+      const proximo = !actual;
+      if (proximo) setBusqueda("");
+      return proximo;
+    });
+  }
+
   return (
     <div className="kpi-dropdown-picker">
       <button
         type="button"
         className="kpi-dropdown-picker-toggle"
-        onClick={() => setAbierto((actual) => !actual)}
+        onClick={alternar}
         aria-expanded={abierto}
       >
         <span>{label}</span>
@@ -297,7 +321,15 @@ function KpiDropdownPicker({ label, children }) {
       </button>
       {abierto && (
         <div className="kpi-dropdown-picker-menu" role="menu">
-          {children}
+          <input
+            type="text"
+            className="kpi-dropdown-picker-search"
+            value={busqueda}
+            onChange={(event) => setBusqueda(event.target.value)}
+            placeholder={searchPlaceholder}
+            autoFocus
+          />
+          {renderOptions(normalizarBusqueda(busqueda))}
         </div>
       )}
     </div>
@@ -1572,11 +1604,21 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
                       ? tx("kpi_variables_selected_count", `${variablesSeleccionadas.length} variable(s) seleccionada(s)`)
                       : tx("kpi_variables", "Variables (para combinar en un mismo gráfico)")
                   }
-                >
-                  <div className="kpi-chip-option-group">
-                    {kpisVariables.map(renderKpiChip)}
-                  </div>
-                </KpiDropdownPicker>
+                  searchPlaceholder={tx("dropdown_search_placeholder", "Buscar...")}
+                  renderOptions={(filtro) => {
+                    const variablesFiltradas = filtro
+                      ? kpisVariables.filter((kpi) => normalizarBusqueda(kpi.etiqueta || kpi.clave).includes(filtro))
+                      : kpisVariables;
+                    if (variablesFiltradas.length === 0) {
+                      return <p className="kpi-dropdown-picker-empty">{tx("no_results", "Sin resultados")}</p>;
+                    }
+                    return (
+                      <div className="kpi-chip-option-group">
+                        {variablesFiltradas.map(renderKpiChip)}
+                      </div>
+                    );
+                  }}
+                />
               </div>
             )}
             </div>
@@ -1684,28 +1726,38 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
                       ? tx("employees_selected_count", `${empleadosSeleccionados.length} empleado(s) seleccionado(s)`)
                       : tx("employees_filter", "Filtrar por empleados (opcional)")
                   }
-                >
-                  <div className="kpi-employee-list">
-                    {users.map((user) => {
-                      const activo = empleadosSeleccionados.includes(String(user.id_user));
-                      const colorEmpleado = colorDeKpi(user.id_user);
-                      return (
-                        <button
-                          type="button"
-                          className={`kpi-employee-chip ${activo ? "active" : ""}`}
-                          key={user.id_user}
-                          style={{ "--employee-color": colorEmpleado }}
-                          onClick={() => toggleEmpleado(String(user.id_user))}
-                          aria-pressed={activo}
-                          title={user.full_name || user.username || `#${user.id_user}`}
-                        >
-                          <EmployeeAvatar size="small" color={colorEmpleado} />
-                          <span>{user.full_name || user.username || `#${user.id_user}`}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </KpiDropdownPicker>
+                  searchPlaceholder={tx("dropdown_search_placeholder", "Buscar...")}
+                  renderOptions={(filtro) => {
+                    const usuariosFiltrados = filtro
+                      ? users.filter((user) => normalizarBusqueda(user.full_name || user.username || `#${user.id_user}`).includes(filtro))
+                      : users;
+                    if (usuariosFiltrados.length === 0) {
+                      return <p className="kpi-dropdown-picker-empty">{tx("no_results", "Sin resultados")}</p>;
+                    }
+                    return (
+                      <div className="kpi-employee-list">
+                        {usuariosFiltrados.map((user) => {
+                          const activo = empleadosSeleccionados.includes(String(user.id_user));
+                          const colorEmpleado = colorDeKpi(user.id_user);
+                          return (
+                            <button
+                              type="button"
+                              className={`kpi-employee-chip ${activo ? "active" : ""}`}
+                              key={user.id_user}
+                              style={{ "--employee-color": colorEmpleado }}
+                              onClick={() => toggleEmpleado(String(user.id_user))}
+                              aria-pressed={activo}
+                              title={user.full_name || user.username || `#${user.id_user}`}
+                            >
+                              <EmployeeAvatar size="small" color={colorEmpleado} />
+                              <span>{user.full_name || user.username || `#${user.id_user}`}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  }}
+                />
               </div>
             )}
 
