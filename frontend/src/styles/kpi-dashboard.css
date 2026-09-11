@@ -33,6 +33,14 @@
 
 .kpi-number-widget{display:flex;flex-direction:column;gap:8px;padding:14px 4px 6px}
 .kpi-number-widget strong{font-size:38px;color:#0b0b0b;line-height:1.1}
+/* Fila superior del widget "numero" cuando hay comparacion activa: icono de
+   modulo a la izquierda del valor, sparkline de tendencia a la derecha (ver
+   KpiNumberSparkline en Dashboard.jsx) -- sin comparacion la fila colapsa al
+   solo valor de siempre. */
+.kpi-number-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.kpi-number-value{display:flex;align-items:center;gap:10px;min-width:0}
+.kpi-number-module-icon{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:34px;height:34px;border-radius:50%}
+.kpi-number-sparkline{flex-shrink:0}
 .kpi-delta{display:inline-flex;align-items:center;gap:4px;font-weight:800;font-size:13px}
 .kpi-delta.up{color:#006300}
 .kpi-delta.down{color:#d03b3b}
@@ -176,3 +184,26 @@
   .kpi-panel-columns{grid-template-columns:1fr}
   .kpi-panel-col:last-child{grid-column:auto}
 }
+
+/* --- Reporte PDF (ver generarReportePdf en Dashboard.jsx) --- */
+
+/* Mismo dialogo/backdrop que "asset-tracking.css" (asset-drawer-backdrop /
+   asset-dialog) pero definido aqui aparte -- kpi-dashboard.css no importa
+   hojas de otras paginas, cada pantalla trae la suya. */
+.kpi-pdf-dialog-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;padding:32px 16px;overflow-y:auto;z-index:80}
+.kpi-pdf-dialog{background:#fff;border:1px solid #cbd5e1;border-radius:16px;box-shadow:0 24px 64px -24px rgba(15,23,42,.45);width:100%;max-width:440px;padding:22px 24px 26px;display:flex;flex-direction:column;gap:14px}
+.kpi-pdf-dialog h2{margin:0;color:#173b66;font-size:19px}
+.kpi-pdf-dialog p{margin:0;color:#526273;font-size:14px}
+.kpi-pdf-dialog-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+
+/* Overlay mientras se genera: tapa el "parpadeo" de pestañas cuando el
+   reporte recorre todos los tableros (ver generarReportePdf). */
+.kpi-pdf-exporting-overlay{position:fixed;inset:0;z-index:90;display:flex;align-items:center;justify-content:center;gap:10px;background:rgba(255,255,255,.85);color:#173b66;font-weight:800;font-size:14px}
+.kpi-spin{animation:kpi-spin 1s linear infinite}
+@keyframes kpi-spin{to{transform:rotate(360deg)}}
+
+/* Mientras se captura cada panel para el PDF: sin los espacios "de fabrica"
+   vacios ni los iconos de editar/eliminar/arrastrar -- un reporte, no una
+   foto de la pantalla de administracion. */
+body.kpi-pdf-exporting .kpi-widget-placeholder{display:none}
+body.kpi-pdf-exporting .kpi-widget-card-actions{display:none}

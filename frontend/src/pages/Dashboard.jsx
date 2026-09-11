@@ -1,8 +1,8 @@
 /* eslint-disable react/prop-types */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown, ArrowUp, AreaChart as AreaChartIcon, BarChart2, ChevronDown, ChevronUp,
-  ClipboardList, GripVertical, Hash, LineChart as LineChartIcon, Pencil, PieChart as PieChartIcon, Plus, Receipt,
+  ClipboardList, FileDown, GripVertical, Hash, LineChart as LineChartIcon, Loader2, Pencil, PieChart as PieChartIcon, Plus, Receipt,
   RefreshCw, SlidersHorizontal, Trash2, User,
 } from "lucide-react";
 import {
@@ -12,6 +12,8 @@ import {
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS as DndCss } from "@dnd-kit/utilities";
+import html2canvas from "html2canvas";
+import { jsPDF } from "jspdf";
 import { useI18n } from "../i18n";
 import {
   getAllKpiDashboard, createKpiDashboard, updateKpiDashboard, deleteKpiDashboard,
@@ -41,6 +43,12 @@ function esTipoMultiKpi(tipoGrafica) {
 // plan de cliente puede declarar otro limite via `limite('kpi_rango_dias_max', ...)`),
 // esto solo evita el viaje redondo cuando el rango ya se ve mal armado.
 const KPI_RANGO_DIAS_MAX = 365;
+
+// Resolucion de la captura del reporte PDF (generarReportePdf) -- tiene que
+// ser la MISMA que usan tanto la llamada a html2canvas como
+// medirFilasDeTarjetas al pasar de px del DOM a px del canvas capturado, o
+// las filas medidas quedan desalineadas del recorte real.
+const ESCALA_CAPTURA_PDF = 2;
 
 function diffDias(fechaInicio, fechaFin) {
   if (!fechaInicio || !fechaFin) return 0;
@@ -369,14 +377,13 @@ function startOfMonthIso() {
 // filtrar por departamento, esto se reemplaza por datos de verdad.
 const DEPARTAMENTOS_VISUALES = ["RRHH", "Contabilidad", "Producción", "Ventas", "Sistemas/TI", "Administración", "Logística"];
 
-// "Personalizado" no trae `range`: solo marca el modo manual, nunca toca los
-// campos -- los atajos son un llenado rapido, no un reemplazo de los
-// selectores de fecha libres.
+// Los atajos son un llenado rapido, nunca un reemplazo de los selectores de
+// fecha libres -- Fecha inicio/Fecha fin siguen editables a mano en todo
+// momento, de ahi que no haga falta un boton "Personalizado" aparte.
 const DATE_SHORTCUTS = [
   { key: "hoy", label: "Hoy", range: () => [todayIso(), todayIso()] },
   { key: "semana", label: "Esta semana", range: () => [startOfWeekIso(), todayIso()] },
   { key: "mes", label: "Este mes", range: () => [startOfMonthIso(), todayIso()] },
-  { key: "personalizado", label: "Personalizado", range: null },
 ];
 
 // El panel "Agregar grafico" es permanente (ya no se monta/desmonta al
@@ -514,6 +521,110 @@ function buildPieData(snapshot, labelForId, othersLabel, agruparPorPeriodo) {
   return data;
 }
 
+function esperar(ms) {
+  return new Promise((resolve) => { setTimeout(resolve, ms); });
+}
+
+// Franja vertical (en px de CANVAS, ya multiplicada por `escalaCaptura` --
+// debe ser la MISMA escala que se le pasa a html2canvas) que ocupa cada fila
+// REAL de tarjetas dentro del grid, midiendo el DOM en vivo (getBoundingClientRect)
+// antes de capturar -- no un recorte a una altura de pagina fija. Esto es lo
+// que le permite a `agregarSeccionAlPdf` cortar SOLO entre filas completas,
+// nunca a la mitad de una tarjeta (ver el comentario ahi). Ignora
+// `.kpi-widget-placeholder` porque busca `.kpi-widget-card`, una clase
+// distinta -- los espacios "de fabrica" ya se ocultan aparte durante la
+// captura (ver kpi-pdf-exporting en kpi-dashboard.css), pero aunque no se
+// ocultaran esta funcion no los contaria.
+function medirFilasDeTarjetas(nodoGrid, escalaCaptura) {
+  const tarjetas = Array.from(nodoGrid.querySelectorAll(".kpi-widget-card"));
+  if (tarjetas.length === 0) return [];
+  const gridRect = nodoGrid.getBoundingClientRect();
+  const filas = [];
+  let filaActual = [];
+  let topFilaActual = null;
+
+  function cerrarFila() {
+    if (filaActual.length === 0) return;
+    const top = Math.min(...filaActual.map((r) => r.top));
+    const bottom = Math.max(...filaActual.map((r) => r.bottom));
+    filas.push({ top: top * escalaCaptura, bottom: bottom * escalaCaptura });
+    filaActual = [];
+  }
+
+  tarjetas.forEach((tarjeta) => {
+    const r = tarjeta.getBoundingClientRect();
+    const top = r.top - gridRect.top;
+    const bottom = r.bottom - gridRect.top;
+    // Un par de pixeles de tolerancia -- suficiente para el redondeo de
+    // subpixel del layout, no para confundir dos filas distintas.
+    if (topFilaActual !== null && Math.abs(top - topFilaActual) > 4) cerrarFila();
+    topFilaActual = top;
+    filaActual.push({ top, bottom });
+  });
+  cerrarFila();
+  return filas;
+}
+
+// Dibuja UNA seccion (un panel/tablero completo, ya capturado como `canvas`
+// por html2canvas, con sus filas ya medidas en vivo por
+// `medirFilasDeTarjetas`) dentro de `pdf`, empacando tantas FILAS COMPLETAS
+// como quepan en cada pagina -- nunca corta una fila (ni, por lo tanto, una
+// tarjeta) a la mitad; si ni siquiera la primera fila pendiente cabe entera
+// en una pagina nueva, se dibuja sola de todas formas (mejor una fila que
+// se sale un poco del margen que una que desaparece). `estadoPagina`
+// (`{ vacia: bool }`) es compartido entre TODAS las llamadas a esta funcion
+// durante la generacion de un mismo PDF: el primer bloque de la primera
+// seccion reusa la pagina en blanco con la que jsPDF ya arranca; cualquier
+// otro bloque -sea la continuacion de una seccion muy alta, o el arranque
+// de la siguiente seccion- agrega una pagina nueva. Eso resuelve a la vez
+// "compactar sin espacios en blanco" y "cada panel en su propia
+// seccion/salto de pagina" con la misma regla.
+function agregarSeccionAlPdf({ pdf, canvas, filas, margin, tituloSeccion, estadoPagina }) {
+  if (filas.length === 0) return;
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const anchoDisponible = pageWidth - margin * 2;
+  const escala = anchoDisponible / canvas.width;
+
+  let indiceFila = 0;
+  let esPrimerBloqueDeSeccion = true;
+  while (indiceFila < filas.length) {
+    if (estadoPagina.vacia) {
+      estadoPagina.vacia = false;
+    } else {
+      pdf.addPage();
+    }
+
+    let yImagen = margin;
+    if (esPrimerBloqueDeSeccion) {
+      pdf.setFontSize(13);
+      pdf.setFont(undefined, "bold");
+      pdf.text(tituloSeccion, margin, margin + 10);
+      yImagen = margin + 24;
+    }
+    const altoDisponiblePx = (pageHeight - yImagen - margin) / escala;
+
+    const inicioBloque = filas[indiceFila].top;
+    let finBloque = filas[indiceFila].bottom;
+    let ultimaFilaIncluida = indiceFila;
+    for (let i = indiceFila + 1; i < filas.length; i += 1) {
+      if (filas[i].bottom - inicioBloque > altoDisponiblePx) break;
+      finBloque = filas[i].bottom;
+      ultimaFilaIncluida = i;
+    }
+
+    const altoBloquePx = finBloque - inicioBloque;
+    const franja = document.createElement("canvas");
+    franja.width = canvas.width;
+    franja.height = altoBloquePx;
+    franja.getContext("2d").drawImage(canvas, 0, inicioBloque, canvas.width, altoBloquePx, 0, 0, canvas.width, altoBloquePx);
+    pdf.addImage(franja.toDataURL("image/png"), "PNG", margin, yImagen, anchoDisponible, altoBloquePx * escala);
+
+    indiceFila = ultimaFilaIncluida + 1;
+    esPrimerBloqueDeSeccion = false;
+  }
+}
+
 export default function Dashboard() {
   const { lang, t } = useI18n();
   const tx = useCallback((key, fallback) => t(`kpi_dashboard.${key}`, fallback), [t]);
@@ -552,7 +663,20 @@ export default function Dashboard() {
     setPanelStateByDashboard((prev) => ({ ...prev, [idDashboard]: defaultPanelState() }));
   }, []);
 
-  const [placeholderCount, widgetGridRef] = useCompleteGridPlaceholders(widgets.length);
+  const [placeholderCount, gridRefDeSondeo] = useCompleteGridPlaceholders(widgets.length);
+  // El nodo real del grid, en un ref mutable (no en el estado interno del
+  // hook de arriba, que ademas de callback-ref no expone su nodo) -- lo
+  // necesita `generarReportePdf` para capturarlo con html2canvas. Tiene que
+  // ser un ref y no un valor cerrado sobre el render en el que se creo el
+  // closure de esa funcion: mientras "todos los paneles" recorre tableros
+  // via `setActiveId`, el grid se desmonta/remonta con cada carga
+  // (`{!loadingWidgets && (...)}` en el render), y solo un ref mutable sigue
+  // reflejando el nodo ACTUAL en cada vuelta del bucle.
+  const widgetGridNodeRef = useRef(null);
+  const widgetGridRef = useCallback((nodo) => {
+    widgetGridNodeRef.current = nodo;
+    gridRefDeSondeo(nodo);
+  }, [gridRefDeSondeo]);
 
   const loadDashboards = useCallback(async (preferredId) => {
     setLoadingDashboards(true);
@@ -573,16 +697,23 @@ export default function Dashboard() {
     }
   }, []);
 
+  // Devuelve la lista (ademas de guardarla en `widgets`, como siempre) para
+  // que quien la llame directamente -el reporte PDF, ver generarReportePdf-
+  // pueda saber de inmediato si este tablero trae algo que capturar, sin
+  // depender de esperar a que el estado se refleje en un render.
   const loadWidgets = useCallback(async (dashboardId) => {
-    if (!dashboardId) { setWidgets([]); return; }
+    if (!dashboardId) { setWidgets([]); return []; }
     setLoadingWidgets(true);
     setWidgetsError("");
     try {
       const data = await getAllKpiDashboardWidget(dashboardId);
-      setWidgets(listOf(data));
+      const lista = listOf(data);
+      setWidgets(lista);
+      return lista;
     } catch (error) {
       setWidgetsError(error.message || "errors.request_failed");
       setWidgets([]);
+      return [];
     } finally {
       setLoadingWidgets(false);
     }
@@ -593,6 +724,107 @@ export default function Dashboard() {
   // inicio de un arrastre (mismo mousedown) y el clic normal dejaria de
   // funcionar.
   const dragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  // --- Reporte PDF (exportar el dashboard, ver generarReportePdf mas abajo) ---
+  const [mostrarDialogoExportarPdf, setMostrarDialogoExportarPdf] = useState(false);
+  const [exportandoPdf, setExportandoPdf] = useState(false);
+  // IDs de tarjeta (`id_kpi_dashboard_widget`) que ya terminaron de resolver
+  // sus propios datos (exito O error, ver el `onReady` en KpiWidgetCard). Un
+  // ref y no un estado a proposito: nada en pantalla necesita re-renderizar
+  // cuando cambia, solo `esperarWidgetsListos` lo consulta mientras genera el
+  // PDF. Los ids son unicos globales (no por tablero), asi que no hace falta
+  // limpiarlo entre paneles -- un id de un tablero anterior nunca coincide
+  // con uno del tablero que se esta esperando ahora.
+  const widgetsListosRef = useRef(new Set());
+  const handleWidgetReady = useCallback((idWidget) => { widgetsListosRef.current.add(idWidget); }, []);
+
+  // Oculta los espacios "de fabrica" y los iconos de editar/eliminar/
+  // arrastrar de cada tarjeta MIENTRAS se captura para el PDF -- un reporte
+  // no deberia verse como una foto de la pantalla de administracion (ver
+  // kpi-pdf-exporting en kpi-dashboard.css).
+  useEffect(() => {
+    document.body.classList.toggle("kpi-pdf-exporting", exportandoPdf);
+    return () => document.body.classList.remove("kpi-pdf-exporting");
+  }, [exportandoPdf]);
+
+  async function esperarWidgetsListos(idsEsperados) {
+    if (idsEsperados.length === 0) return;
+    const limite = Date.now() + 20000;
+    while (Date.now() < limite) {
+      if (idsEsperados.every((id) => widgetsListosRef.current.has(id))) return;
+      await esperar(120);
+    }
+    // Se agota el tiempo de espera (20s) y se sigue de todas formas -- mejor
+    // un reporte con alguna tarjeta a medio cargar que dejar la generacion
+    // colgada para siempre por una sola peticion lenta.
+  }
+
+  // Genera el PDF del dashboard completo, capturando lo que YA esta pintado
+  // en pantalla (mismos SVG de Recharts, mismos colores) en vez de rearmar
+  // los graficos del lado del servidor -- ver la nota junto a
+  // `documents-reports/` sobre por que ese generador no sirve aqui (Jinja2 +
+  // WeasyPrint no ejecuta React). `modo` es "actual" (solo el tablero que
+  // esta viendo el usuario) o "todos" (uno por tablero, cada uno en su
+  // propia seccion/salto de pagina, ver agregarSeccionAlPdf). Para "todos"
+  // hace falta ir cambiando `activeId` tablero por tablero -reusando el
+  // mismo camino real de carga y el mismo grid que ya se ve en pantalla, en
+  // vez de duplicar la logica en un arbol oculto- por eso la pantalla
+  // "parpadea" entre pestañas mientras genera: el overlay de abajo lo tapa a
+  // proposito.
+  async function generarReportePdf(modo) {
+    setMostrarDialogoExportarPdf(false);
+    setExportandoPdf(true);
+    const idActivoOriginal = activeId;
+    try {
+      const objetivos = modo === "todos" ? dashboards : dashboards.filter((d) => d.id_kpi_dashboard === activeId);
+      if (objetivos.length === 0) return;
+
+      const pdf = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+      const margin = 24;
+      const estadoPagina = { vacia: true };
+      let huboContenido = false;
+
+      // Un tablero por vuelta, nunca en paralelo -- cada uno depende del
+      // anterior (mismo grid real reutilizado via `setActiveId`, no arboles
+      // ocultos), asi que un `await` dentro de este `for` es intencional.
+      for (const dashboard of objetivos) {
+        setActiveId(dashboard.id_kpi_dashboard);
+        const listaWidgets = await loadWidgets(dashboard.id_kpi_dashboard);
+        // Panel sin graficos: se omite entero, sin pagina ni titulo vacio.
+        if (!listaWidgets || listaWidgets.length === 0) continue;
+
+        await esperarWidgetsListos(listaWidgets.map((w) => w.id_kpi_dashboard_widget));
+        // Un respiro extra despues de "listo": Recharts todavia necesita un
+        // par de frames para terminar de pintar el SVG tras el ultimo cambio
+        // de datos, y `onReady` solo avisa que la peticion ya resolvio.
+        await esperar(300);
+
+        const nodoGrid = widgetGridNodeRef.current;
+        if (!nodoGrid) continue;
+        // Medir las filas ANTES de capturar (misma escala que `scale` de
+        // html2canvas, ver medirFilasDeTarjetas) -- el DOM en vivo es lo
+        // unico que sabe donde termina cada tarjeta, un canvas ya es solo
+        // pixeles.
+        const filas = medirFilasDeTarjetas(nodoGrid, ESCALA_CAPTURA_PDF);
+        if (filas.length === 0) continue;
+        const canvas = await html2canvas(nodoGrid, { scale: ESCALA_CAPTURA_PDF, backgroundColor: "#ffffff" });
+        agregarSeccionAlPdf({ pdf, canvas, filas, margin, tituloSeccion: dashboard.nombre, estadoPagina });
+        huboContenido = true;
+      }
+
+      if (!huboContenido) {
+        window.alert(tx("pdf_report_empty", "Ninguno de los paneles tiene gráficos para incluir en el reporte."));
+        return;
+      }
+      pdf.save(`reporte-kpis-${todayIso()}.pdf`);
+    } catch (error) {
+      notifyError(error);
+    } finally {
+      setActiveId(idActivoOriginal);
+      await loadWidgets(idActivoOriginal);
+      setExportandoPdf(false);
+    }
+  }
 
   // Arrastrar para reordenar: el grid sigue siendo responsive (auto-fill de
   // kpi-widget-grid, ver kpi-dashboard.css) -- dnd-kit con rectSortingStrategy
@@ -628,7 +860,14 @@ export default function Dashboard() {
   }
 
   useEffect(() => { loadDashboards(); }, [loadDashboards]);
-  useEffect(() => { loadWidgets(activeId); }, [activeId, loadWidgets]);
+  // Durante la generacion del reporte PDF, `generarReportePdf` ya llama a
+  // `loadWidgets` el mismo directo y espera su resultado -- sin este freno
+  // este efecto dispararia UNA carga extra (redundante, no incorrecta) cada
+  // vez que el reporte cambia de tablero con `setActiveId`.
+  useEffect(() => {
+    if (exportandoPdf) return;
+    loadWidgets(activeId);
+  }, [activeId, loadWidgets, exportandoPdf]);
 
   useEffect(() => {
     let cancelado = false;
@@ -780,7 +1019,44 @@ export default function Dashboard() {
         <button className="button ghost" onClick={() => loadDashboards()} disabled={loadingDashboards}>
         <RefreshCw size={16} />{loadingDashboards ? t("common.loading") : t("common.refresh")}
         </button>
+        {dashboards.length > 0 && (
+          <button
+            type="button"
+            className="button ghost"
+            onClick={() => setMostrarDialogoExportarPdf(true)}
+            disabled={exportandoPdf}
+          >
+            <FileDown size={16} />{tx("pdf_report_button", "Generar reporte PDF")}
+          </button>
+        )}
       </PageHeader>
+
+      {mostrarDialogoExportarPdf && (
+        <div className="kpi-pdf-dialog-backdrop" role="dialog" aria-modal="true">
+          <div className="kpi-pdf-dialog">
+            <h2>{tx("pdf_report_dialog_title", "Generar reporte PDF")}</h2>
+            <p>{tx("pdf_report_dialog_body", "¿Quieres incluir solo el panel que estás viendo o todos los paneles?")}</p>
+            <div className="kpi-pdf-dialog-actions">
+              <button type="button" className="button" onClick={() => setMostrarDialogoExportarPdf(false)}>
+                {t("common.cancel")}
+              </button>
+              <button type="button" className="button" onClick={() => generarReportePdf("actual")}>
+                {tx("pdf_report_current", "Panel actual")}
+              </button>
+              <button type="button" className="button primary" onClick={() => generarReportePdf("todos")}>
+                {tx("pdf_report_all", "Todos los paneles")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {exportandoPdf && (
+        <div className="kpi-pdf-exporting-overlay">
+          <Loader2 size={22} className="kpi-spin" />
+          <span>{tx("pdf_report_generating", "Generando reporte PDF…")}</span>
+        </div>
+      )}
 
       {dashboardsError && <div className="alert error">{t(dashboardsError, dashboardsError)}</div>}
 
@@ -859,6 +1135,7 @@ export default function Dashboard() {
                   formatNumber={formatNumber}
                   onEdit={() => handleEditWidget(widget)}
                   onDelete={() => handleDeleteWidget(widget)}
+                  onReady={handleWidgetReady}
                   t={t}
                   tx={tx}
                 />
@@ -913,7 +1190,7 @@ function SortableKpiWidgetCard(props) {
   );
 }
 
-function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, formatNumber, onEdit, onDelete, t, tx, dragHandleProps }) {
+function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, formatNumber, onEdit, onDelete, onReady, t, tx, dragHandleProps }) {
   const [snapshots, setSnapshots] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -941,12 +1218,14 @@ function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, formatNumb
         setLoading(false);
         setSnapshots([]);
         setError("missing_kpi");
+        onReady?.(widget.id_kpi_dashboard_widget);
         return;
       }
       if (!fechaInicio || !fechaFin) {
         setLoading(false);
         setSnapshots([]);
         setError("missing_range");
+        onReady?.(widget.id_kpi_dashboard_widget);
         return;
       }
       setLoading(true);
@@ -969,7 +1248,12 @@ function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, formatNumb
       } catch (err) {
         if (!cancelado) { setError(err.message || "errors.request_failed"); setSnapshots([]); }
       } finally {
-        if (!cancelado) setLoading(false);
+        // Se avisa "listo" tanto en exito como en error -- el reporte PDF
+        // (ver esperarWidgetsListos en Dashboard()) necesita saber cuando ya
+        // no va a cambiar nada mas en esta tarjeta para poder capturarla,
+        // sin importar si el resultado fue un dato real o un mensaje de
+        // error ya asentado en pantalla.
+        if (!cancelado) { setLoading(false); onReady?.(widget.id_kpi_dashboard_widget); }
       }
     }
     cargar();
@@ -1032,6 +1316,52 @@ function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, formatNumb
   );
 }
 
+// Mini-grafica de tendencia SOLO para el widget "numero" con comparacion
+// activa. El snapshot que ya carga KpiWidgetCard no trae la serie diaria
+// para este tipo de grafica -- `agrupar_por=periodo` (la unica forma de
+// obtenerla, ver `_totales` en `backend/app/routes/kpi.py`) solo se pide
+// cuando el widget usa el selector "Agrupar por", que ni siquiera se
+// muestra para tipo "numero". Por eso este componente pide SU PROPIO
+// snapshot (mismo endpoint `queryKpiSnapshot` de siempre, no uno nuevo) del
+// periodo A unicamente -- la tendencia que acompana al valor principal, no
+// la comparacion en si (esa ya la muestra el delta de al lado).
+function KpiNumberSparkline({ idKpiDefinition, fechaInicio, fechaFin, empleados, idDepartments, color }) {
+  const [serie, setSerie] = useState(null);
+  const empleadosKey = Array.isArray(empleados) ? empleados.join(",") : "";
+  const idDepartmentsKey = Array.isArray(idDepartments) ? idDepartments.join(",") : "";
+
+  useEffect(() => {
+    let cancelado = false;
+    if (!idKpiDefinition || !fechaInicio || !fechaFin) { setSerie(null); return undefined; }
+    const params = { id_kpi_definition: idKpiDefinition, fecha_inicio: fechaInicio, fecha_fin: fechaFin, agrupar_por: "periodo" };
+    if (empleadosKey) params.empleados = empleadosKey;
+    if (idDepartmentsKey) params.id_departments = idDepartmentsKey;
+    queryKpiSnapshot(params)
+      .then((resultado) => {
+        if (cancelado) return;
+        const porPeriodo = resultado?.rango_a?.por_periodo || {};
+        setSerie(
+          Object.entries(porPeriodo)
+            .sort(([periodoA], [periodoB]) => (periodoA < periodoB ? -1 : periodoA > periodoB ? 1 : 0))
+            .map(([periodo, valor]) => ({ periodo, valor })),
+        );
+      })
+      .catch(() => { if (!cancelado) setSerie([]); });
+    return () => { cancelado = true; };
+  }, [idKpiDefinition, fechaInicio, fechaFin, empleadosKey, idDepartmentsKey]);
+
+  // Sin al menos 2 puntos no hay tendencia que dibujar -- tambien cubre el
+  // estado "todavia cargando" (`serie === null`), no hace falta un loader
+  // propio para un adorno tan chico junto al valor principal.
+  if (!serie || serie.length < 2) return null;
+
+  return (
+    <LineChart width={90} height={32} data={serie} className="kpi-number-sparkline">
+      <Line type="monotone" dataKey="valor" stroke={color} strokeWidth={2} dot={false} isAnimationActive={false} />
+    </LineChart>
+  );
+}
+
 function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, formatNumber, tx }) {
   const snapshot = snapshots[0];
   const kpiInfo = kpiInfos[0];
@@ -1063,9 +1393,30 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, fo
     const unidad = kpiInfo?.unidad ? ` ${kpiInfo.unidad}` : "";
     const delta = hasCompare ? total - totalB : null;
     const deltaPct = hasCompare && totalB ? (delta / Math.abs(totalB)) * 100 : null;
+    const colorKpi = colorEfectivoDeKpi(kpiInfo?.id_kpi_definition, coloresOverride);
+    const ModuleIcon = kpiModuleMeta(kpiInfo?.modulo).icon;
     return (
       <div className="kpi-number-widget">
-        <strong>{formatNumber(total)}{unidad}</strong>
+        <div className="kpi-number-row">
+          <div className="kpi-number-value">
+            {hasCompare && (
+              <span className="kpi-number-module-icon" style={{ background: colorKpi }}>
+                <ModuleIcon size={16} color="#fff" />
+              </span>
+            )}
+            <strong>{formatNumber(total)}{unidad}</strong>
+          </div>
+          {hasCompare && (
+            <KpiNumberSparkline
+              idKpiDefinition={kpiInfo?.id_kpi_definition}
+              fechaInicio={widget.parametros?.fecha_inicio}
+              fechaFin={widget.parametros?.fecha_fin}
+              empleados={widget.parametros?.empleados}
+              idDepartments={widget.parametros?.id_departments}
+              color={colorKpi}
+            />
+          )}
+        </div>
         {delta !== null && (
           <span className={`kpi-delta ${delta >= 0 ? "up" : "down"}`}>
             {delta >= 0 ? <ArrowUp size={14} /> : <ArrowDown size={14} />}
@@ -1445,10 +1796,12 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
   }
 
   // Los atajos solo rellenan fecha_inicio/fecha_fin -- nunca reemplazan los
-  // selectores libres. "Personalizado" no trae rango: solo marca el modo
-  // manual (ver DATE_SHORTCUTS).
+  // selectores libres (ver DATE_SHORTCUTS). Editar las fechas a mano deja de
+  // marcar cualquiera de estos atajos como activo (atajoActivo pasa a
+  // "personalizado" en el onChange de los inputs de fecha), simplemente
+  // ninguno de los botones se ve resaltado -- no hace falta un boton propio
+  // para ese estado.
   function aplicarAtajo(atajo) {
-    if (!atajo.range) { onChangePanelState({ atajoActivo: atajo.key }); return; }
     const [inicio, fin] = atajo.range();
     onChangePanelState({ atajoActivo: atajo.key, fechaInicio: inicio, fechaFin: fin });
   }
