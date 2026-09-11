@@ -1,42 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
 import {
-  AlertTriangle, ArrowRight, ArrowRightLeft, Boxes, CheckCircle2, ChevronDown,
-  ChevronRight, ClipboardList, PackagePlus, RefreshCw, Scale, Search, Warehouse,
+  Boxes, ChevronDown, ChevronRight, ClipboardList, RefreshCw, Search, Warehouse,
 } from "lucide-react";
-import ProductLots from "../components/ProductLots.jsx";
 import { useI18n } from "../i18n";
 import "../styles/inventory-warehouses.css";
-import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import PageHeader from "../components/PageHeader.jsx";
-import {
-  createInventoryTransfer, getAllEntityPermission,
-  getAllProduct, getInventoryMovements, getInventoryReconciliation,
-  getLocationTree, getProductStock, getWarehouseStock,
-} from "../api";
+import { getAllEntityPermission, getLocationTree, getWarehouseStock } from "../api";
 
 const ENTITY_KEY = "product";
 const ACTION_READ = 2;
-const ACTION_UPDATE = 4;
 
-// Movimientos que el almacen registra a mano. El traspaso va aparte porque
-// mueve dos ubicaciones a la vez, y el ajuste porque exige otra capacidad.
-// Los tipos que puede traer un renglon del libro. Ya no hay formulario que los
-// produzca a mano -- el vale es la puerta --, pero el libro los sigue
-// mostrando y se filtra por ellos: es el historico, y ahi estan los que
-// asentaron los vales y los que trajo la carga del sistema anterior.
-const MOVEMENT_TYPES = [
-  { value: "receive", sign: 1 },
-  { value: "return", sign: 1 },
-  { value: "issue", sign: -1 },
-  { value: "loan", sign: -1 },
-  { value: "loss", sign: -1 },
-  { value: "damage", sign: -1 },
-  { value: "destroy", sign: -1 },
-];
-
-// Los que cambian existencia sin documento detras: el motivo es obligatorio y
-// conviene que la pantalla lo pida antes de que el servidor lo rechace.
 function hasBit(value, bit) {
   return (Number(value || 0) & bit) === bit;
 }
@@ -76,14 +50,6 @@ function construirRutas(nodos, ancestros = [], mapa = new Map()) {
     construirRutas(nodo.children, camino, mapa);
   }
   return mapa;
-}
-
-/** Cuanto hay del producto elegido en esa ubicacion, segun lo ya cargado. */
-function existenciaEn(stock, idUbicacion) {
-  if (!stock || !idUbicacion) return null;
-  const fila = (stock.items || []).find(
-    (x) => String(x.id_location) === String(idUbicacion));
-  return fila ? Number(fila.quantity || 0) : 0;
 }
 
 /**
@@ -215,32 +181,17 @@ export default function InventoryPage() {
   const [modulePermission, setModulePermission] = useState(null);
 
   const [tree, setTree] = useState([]);
-  const [products, setProducts] = useState([]);
   const [selectedWarehouse, setSelectedWarehouse] = useState("");
   const [warehouseContent, setWarehouseContent] = useState(null);
-  // Para volver a pedir el desglose despues de un movimiento, sin recargar la
-  // pantalla entera.
-  const [refrescoDeLotes, setRefrescoDeLotes] = useState(0);
   // Que ramas estan plegadas y el texto del buscador del arbol. Un almacen con
   // cuarenta baldas no se lee entero: se plega lo que no interesa o se busca.
   const [plegados, setPlegados] = useState(() => new Set());
   const [filtroUbicacion, setFiltroUbicacion] = useState("");
-  const [selectedProduct, setSelectedProduct] = useState("");
-  const [stock, setStock] = useState(null);
-  const [ledger, setLedger] = useState(null);
-  const [reconciliation, setReconciliation] = useState(null);
-  const [ledgerFilter, setLedgerFilter] = useState({ movement_type: "", id_location: "" });
-
-  const [transfer, setTransfer] = useState({ id_location_from: "", id_location_to: "", quantity: "1", reason: "" });
-
-  const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [errorMeta, setErrorMeta] = useState(null);
-  const [notice, setNotice] = useState("");
 
   const canRead = isSuperUser || hasBit(modulePermission?.control_type, ACTION_READ);
-  const canWrite = isSuperUser || hasBit(modulePermission?.control_type, ACTION_UPDATE);
   const locations = useMemo(() => flattenTree(tree), [tree]);
   const warehouses = useMemo(() => locations.filter((node) => node.is_warehouse), [locations]);
 
@@ -269,12 +220,8 @@ export default function InventoryPage() {
     setLoading(true);
     setError("");
     try {
-      const [treePayload, productPayload] = await Promise.all([
-        getLocationTree(),
-        getAllProduct({ page: 1, per_page: 300 }),
-      ]);
+      const treePayload = await getLocationTree();
       setTree(treePayload?.items || []);
-      setProducts(normalizeList(productPayload));
     } catch (requestError) {
       showError(requestError);
     } finally {
@@ -290,34 +237,6 @@ export default function InventoryPage() {
     setErrorMeta(payload.meta || null);
   }
 
-  const refreshProduct = useCallback(async (productId, filters = ledgerFilter) => {
-    if (!productId) { setStock(null); setLedger(null); setReconciliation(null); return; }
-    try {
-      const params = {};
-      if (filters.movement_type) params.movement_type = filters.movement_type;
-      if (filters.id_location) params.id_location = filters.id_location;
-      const [stockPayload, ledgerPayload, reconciliationPayload] = await Promise.all([
-        getProductStock(productId),
-        getInventoryMovements(productId, { ...params, per_page: 25 }),
-        getInventoryReconciliation(productId),
-      ]);
-      setStock(stockPayload);
-      setLedger(ledgerPayload);
-      setReconciliation(reconciliationPayload);
-    } catch (requestError) {
-      showError(requestError);
-    }
-  }, [ledgerFilter]);
-
-  async function pickProduct(productId) {
-    setSelectedProduct(productId);
-    setError(""); setNotice("");
-    await refreshProduct(productId);
-    const product = products.find((row) => String(row.id_product) === String(productId));
-    const fallback = product?.id_location ? String(product.id_location) : "";
-    setTransfer((prev) => ({ ...prev, id_location_from: prev.id_location_from || fallback }));
-  }
-
   async function pickWarehouse(locationId) {
     setSelectedWarehouse(locationId);
     setWarehouseContent(null);
@@ -329,68 +248,15 @@ export default function InventoryPage() {
     }
   }
 
-  async function submitTransfer(event) {
-    event.preventDefault();
-    if (!selectedProduct || busy) return;
-    setBusy(true); setError(""); setNotice("");
-    try {
-      const result = await createInventoryTransfer(selectedProduct, {
-        id_location_from: Number(transfer.id_location_from),
-        id_location_to: Number(transfer.id_location_to),
-        quantity: Number(transfer.quantity),
-        reason: transfer.reason.trim(),
-      });
-      setNotice(result.idempotent_replay ? "inventory.transfer_replayed" : "inventory.transfer_registered");
-      setTransfer((prev) => ({ ...prev, quantity: "1", reason: "" }));
-      await refreshProduct(selectedProduct);
-      // El desglose por lotes cambia con el traspaso: la existencia cambia de
-      // sitio y los lotes van con ella. Lo refrescaba el formulario de
-      // movimientos, que ya no esta.
-      setRefrescoDeLotes((antes) => antes + 1);
-      if (selectedWarehouse) await pickWarehouse(selectedWarehouse);
-    } catch (requestError) {
-      showError(requestError);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function applyLedgerFilter(next) {
-    setLedgerFilter(next);
-    if (!selectedProduct) return;
-    await refreshProduct(selectedProduct, next);
-  }
-
-  // Si el producto elegido se lleva por lotes. Es lo unico que decide si el
-  // formulario pide el lote: para todo lo demas la pantalla no cambia.
-  const productoElegido = products.find(
-    (row) => String(row.id_product) === String(selectedProduct));
-  const llevaLotes = Boolean(productoElegido?.lot_control);
-
-  // La ruta completa de cada ubicacion, para los desplegables de los dos
-  // formularios: sin ella hay que saberse de memoria de que nave es cada rack.
+  // La ruta completa de cada ubicacion: sin ella hay que saberse de memoria de
+  // que nave es cada rack.
   const rutas = useMemo(() => construirRutas(tree), [tree]);
   const rutaDe = (idUbicacion) => rutas.get(String(idUbicacion))?.etiqueta || "";
-  // Ordenadas por su ruta: asi los racks de una nave salen juntos y detras de
-  // ella, en vez de mezclados por orden de captura.
-  const ubicacionesConRuta = useMemo(
-    () => [...rutas.values()].sort((a, b) => a.etiqueta.localeCompare(b.etiqueta)),
-    [rutas],
-  );
-
-  // La cuenta antes de mandar. Sin esto se teclea a ciegas y el servidor
-  // contesta 409 con el saldo disponible, que es enterarse tarde.
-
-  const hayEnOrigen = existenciaEn(stock, transfer.id_location_from);
-  const aTraspasar = Number(transfer.quantity) || 0;
-  const traspasoNoAlcanza = hayEnOrigen !== null && aTraspasar > hayEnOrigen;
-
   const plegar = (id) => setPlegados((antes) => {
     const siguiente = new Set(antes);
     if (siguiente.has(id)) siguiente.delete(id); else siguiente.add(id);
     return siguiente;
   });
-  const productLabel = (row) => row.descripcion || row.product_code || `#${row.id_product}`;
 
   if (!permissionReady) return <main className="page"><p className="muted">{t("common.loading", "Cargando...")}</p></main>;
   if (!canRead) return <main className="page"><p className="error">{t("errors.permission_denied", "No tienes permiso para ver el inventario.")}</p></main>;
@@ -400,7 +266,7 @@ export default function InventoryPage() {
       <PageHeader
         eyebrow={<><Warehouse size={14} /> {t("inventory.eyebrow", "Almacén")}</>}
         titulo={t("inventory.title", "Inventario por almacén")}
-        subtitulo={t("inventory.subtitle", "Existencia por ubicación, movimientos y traspasos entre almacenes.")}
+        subtitulo={t("inventory.subtitle", "Qué hay en cada nave, pasillo y rack. El material sale y vuelve por los vales.")}
       >
         <button className="button" type="button" onClick={loadBase} disabled={loading}>
         <RefreshCw size={16} /> {t("common.refresh", "Actualizar")}
@@ -413,7 +279,6 @@ export default function InventoryPage() {
           {errorMeta?.available !== undefined && ` (${t("inventory.available", "disponible")}: ${errorMeta.available})`}
         </p>
       )}
-      {notice && <p className="notice"><CheckCircle2 size={15} /> {t(notice, notice)}</p>}
 
       <section className="card">
         <h2><Warehouse size={17} /> {t("inventory.warehouses", "Almacenes y ubicaciones")}</h2>
@@ -501,232 +366,6 @@ export default function InventoryPage() {
         )}
       </section>
 
-      <section className="card">
-        <h2><PackagePlus size={17} /> {t("inventory.product_movements", "Movimientos de un producto")}</h2>
-        <label className="field">
-          <span>{t("inventory.product", "Producto")}</span>
-          <select value={selectedProduct} onChange={(event) => pickProduct(event.target.value)}>
-            <option value="">{t("inventory.pick_product", "Elige un producto")}</option>
-            {products.map((row) => (
-              <option key={row.id_product} value={row.id_product}>{productLabel(row)}</option>
-            ))}
-          </select>
-        </label>
-
-        {stock && (
-          <>
-            <h3>{t("inventory.stock_by_location", "Existencia por ubicación")} · {t("inventory.total", "total")}: {stock.total}</h3>
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>{t("inventory.warehouse", "Almacén")}</th>
-                    <th>{t("inventory.location", "Ubicación")}</th>
-                    <th>{t("inventory.quantity", "Cantidad")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {stock.items.length === 0 && (
-                    <tr><td colSpan="3" className="muted">{t("inventory.no_stock", "Este producto no tiene existencia registrada.")}</td></tr>
-                  )}
-                  {stock.items.map((row) => (
-                    <tr key={row.id_location}>
-                      <td>{row.warehouse_description || <span className="muted">{t("inventory.no_warehouse", "sin almacén")}</span>}</td>
-                      <td>{row.location_description}</td>
-                      <td><strong>{row.quantity}</strong></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
-
-        {reconciliation && (
-          <p className={reconciliation.is_reconciled ? "notice" : "error"}>
-            <Scale size={15} />{" "}
-            {reconciliation.is_reconciled
-              ? t("inventory.reconciled", "El libro, la existencia y el total del producto cuadran.")
-              : t("inventory.not_reconciled", "Descuadre detectado entre el libro y la existencia.")}
-            {" · "}{t("inventory.ledger", "libro")}: {reconciliation.ledger_balance}
-            {" · "}{t("inventory.stock", "existencia")}: {reconciliation.stock_balance}
-            {" · "}{t("inventory.movements", "movimientos")}: {reconciliation.movements}
-          </p>
-        )}
-
-        {selectedProduct && llevaLotes && (
-          <ProductLots idProduct={selectedProduct} refrescar={refrescoDeLotes} />
-        )}
-
-        {selectedProduct && canWrite && (
-          <>
-            {/* El alta de movimientos a mano se retiro.
-
-                Ofrecia siete tipos -- recibir, devolver, entregar, prestar,
-                perder, danar, destruir -- y uno de ellos, `loan`, hacia
-                exactamente lo que hace un vale pero sin vale: sin responsable,
-                sin fecha de regreso y sin folio. Dos puertas para la misma
-                salida, y solo una deja rastro de quien se llevo que.
-
-                El movimiento de material sale ahora por el vale. El traspaso
-                de al lado se queda porque es otra cosa: mueve existencia entre
-                ubicaciones del almacen sin cambiar el total, y eso no es un
-                prestamo a nadie.
-
-                El endpoint sigue vivo (`createInventoryMovement` en la api, y
-                `apply_movement_in_session` detras): es la unica puerta por la
-                que se mueve existencia y el vale la usa. Lo que se retiro es
-                el formulario que la exponia en crudo. */}
-
-            <FormularioPlegable
-              titulo={t("inventory.transfer", "Traspaso entre ubicaciones")}
-              icono={ArrowRightLeft}
-              onSubmit={submitTransfer}
-            >
-              <p className="muted">{t("inventory.transfer_help", "Saca de un lugar y mete en otro en una sola operación: o se mueven las dos puntas o ninguna.")}</p>
-
-              {/* Origen y destino uno al lado del otro, con la direccion a la
-                  vista: es un movimiento con dos puntas y leerlo en dos campos
-                  apilados no lo dice. */}
-              <div className="inv-traspaso-caminos">
-                <label className="field">
-                  <span>{t("inventory.from", "Sale de")}</span>
-                  <select value={transfer.id_location_from} onChange={(event) => setTransfer((prev) => ({ ...prev, id_location_from: event.target.value }))} required>
-                    <option value="">{t("inventory.pick_location", "Elige la ubicación")}</option>
-                    {ubicacionesConRuta.map(({ nodo, etiqueta }) => (
-                      <option key={nodo.id_location} value={nodo.id_location}>{etiqueta}</option>
-                    ))}
-                  </select>
-                </label>
-                <span className="inv-traspaso-flecha"><ArrowRight size={20} /></span>
-                <label className="field">
-                  <span>{t("inventory.to", "Entra en")}</span>
-                  {/* El origen no se ofrece como destino: el servidor lo rechaza
-                      con `inventory_transfer_same_location`, y enterarse al
-                      mandar es enterarse tarde. */}
-                  <select value={transfer.id_location_to} onChange={(event) => setTransfer((prev) => ({ ...prev, id_location_to: event.target.value }))} required>
-                    <option value="">{t("inventory.pick_location", "Elige la ubicación")}</option>
-                    {ubicacionesConRuta
-                      .filter(({ nodo }) => String(nodo.id_location) !== String(transfer.id_location_from))
-                      .map(({ nodo, etiqueta }) => (
-                        <option key={nodo.id_location} value={nodo.id_location}>{etiqueta}</option>
-                      ))}
-                  </select>
-                </label>
-              </div>
-
-              <label className="field">
-                <span>{t("inventory.quantity", "Cantidad")}</span>
-                <input
-                  type="number" min="1" step="1"
-                  max={hayEnOrigen !== null && hayEnOrigen > 0 ? hayEnOrigen : undefined}
-                  value={transfer.quantity}
-                  onChange={(event) => setTransfer((prev) => ({ ...prev, quantity: event.target.value }))}
-                  required
-                />
-              </label>
-
-              {/* Las dos puntas, antes de mandar: cuanto queda en el origen y
-                  cuanto habra en el destino. */}
-              {hayEnOrigen !== null && aTraspasar > 0 && transfer.id_location_from && (
-                <p className={`inv-previa ${traspasoNoAlcanza ? "no-alcanza" : ""}`}>
-                  {traspasoNoAlcanza && <AlertTriangle size={14} />}
-                  {traspasoNoAlcanza ? (
-                    <span>
-                      {t("inventory.only_there_are", "Solo hay")} <strong>{hayEnOrigen}</strong>{" "}
-                      {t("inventory.in_origin", "en el origen")}
-                    </span>
-                  ) : (
-                    <>
-                      <span>{t("inventory.origin_short", "Origen")}</span>
-                      <strong>{hayEnOrigen}</strong>
-                      <ArrowRight size={13} className="inv-flecha" />
-                      <strong>{hayEnOrigen - aTraspasar}</strong>
-                      {transfer.id_location_to && (
-                        <>
-                          <span>{" · "}{t("inventory.destination_short", "Destino")}</span>
-                          <strong>{existenciaEn(stock, transfer.id_location_to)}</strong>
-                          <ArrowRight size={13} className="inv-flecha" />
-                          <strong>{(existenciaEn(stock, transfer.id_location_to) || 0) + aTraspasar}</strong>
-                        </>
-                      )}
-                    </>
-                  )}
-                </p>
-              )}
-
-              <label className="field">
-                <span>{t("inventory.reason", "Motivo")} <strong>*</strong></span>
-                <input value={transfer.reason} onChange={(event) => setTransfer((prev) => ({ ...prev, reason: event.target.value }))} required maxLength={250} />
-              </label>
-              <div className="form-actions">
-                <button
-                  className="button primary" type="submit"
-                  disabled={busy || traspasoNoAlcanza
-                    || !transfer.id_location_from || !transfer.id_location_to}
-                >
-                  {t("inventory.transfer_action", "Traspasar")}
-                </button>
-              </div>
-            </FormularioPlegable>
-          </>
-        )}
-
-        {ledger && (
-          <>
-            <h3><ClipboardList size={16} /> {t("inventory.ledger_title", "Libro de movimientos")} ({ledger.total})</h3>
-            <div className="filters">
-              <label className="field">
-                <span>{t("inventory.movement_type", "Tipo de movimiento")}</span>
-                <select value={ledgerFilter.movement_type} onChange={(event) => applyLedgerFilter({ ...ledgerFilter, movement_type: event.target.value })}>
-                  <option value="">{t("common.all", "Todos")}</option>
-                  {[...MOVEMENT_TYPES.map((option) => option.value), "adjustment", "transfer", "opening"].map((value) => (
-                    <option key={value} value={value}>{t(`inventory.movement_${value}`, value)}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>{t("inventory.location", "Ubicación")}</span>
-                <select value={ledgerFilter.id_location} onChange={(event) => applyLedgerFilter({ ...ledgerFilter, id_location: event.target.value })}>
-                  <option value="">{t("common.all", "Todas")}</option>
-                  {locations.map((node) => <option key={node.id_location} value={node.id_location}>{node.location_description}</option>)}
-                </select>
-              </label>
-            </div>
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>{t("inventory.movement_type", "Tipo")}</th>
-                    <th>{t("inventory.change", "Cambio")}</th>
-                    <th>{t("inventory.location", "Ubicación")}</th>
-                    <th>{t("inventory.balance_at_location", "Saldo en la ubicación")}</th>
-                    <th>{t("inventory.reference", "Origen")}</th>
-                    <th>{t("inventory.reason", "Motivo")}</th>
-                    <th>{t("inventory.date", "Fecha")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ledger.items.length === 0 && (
-                    <tr><td colSpan="7" className="muted">{t("inventory.no_movements", "Sin movimientos con estos filtros.")}</td></tr>
-                  )}
-                  {ledger.items.map((row) => (
-                    <tr key={row.id_inventory_ledger}>
-                      <td>{t(`inventory.movement_${row.movement_type}`, row.movement_type)}</td>
-                      <td><strong>{row.quantity_delta > 0 ? `+${row.quantity_delta}` : row.quantity_delta}</strong></td>
-                      <td>{row.id_location ?? "—"}</td>
-                      <td>{row.location_balance_after ?? "—"}</td>
-                      <td>{row.reference_type ? `${t(`inventory.reference_${row.reference_type}`, row.reference_type)}${row.reference_id ? ` / ${row.reference_id}` : ""}` : "—"}</td>
-                      <td>{row.reason || "—"}</td>
-                      <td>{row.creation_date ? row.creation_date.slice(0, 19).replace("T", " ") : "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
-      </section>
     </main>
   );
 }

@@ -23,7 +23,6 @@ from app.models.restaurant import (
     RestaurantVisit,
     RestaurantWaiter,
 )
-from app.models.audit_log import AuditLog
 from app.security.audit import audit_event
 from app.utils.errors import AppError
 
@@ -150,7 +149,7 @@ class RestaurantService:
     def _audit(self, entity: str, action: str, metadata: dict | None = None) -> None:
         """Registra un cambio administrativo en la bitacora del core.
 
-        Reusa audit_log de tyakxa (app/security/audit.py) en vez de una tabla
+        Reusa la bitacora de tyakxa (app/security/audit.py) en vez de una tabla
         propia del restaurante: es la misma necesidad y ya existe la
         consulta por entity_name.
         """
@@ -164,16 +163,41 @@ class RestaurantService:
         )
 
     def list_audit_events(self, limit: int = 100) -> list[dict]:
+        """La bitacora del restaurante, leida de la bitacora unica.
+
+        Antes salia de `audit_log`, una segunda tabla que existia solo porque
+        `event_log.action` no admitia verbos fuera del CRUD. Fundidas las dos
+        (migracion 20260911120000), esto filtra por `table_name`, que es lo que
+        distingue un asiento del restaurante de cualquier otro.
+
+        Se conservan las claves que la pantalla ya leia -- `id_audit_log`,
+        `entity_name` -- para no arrastrar el cambio de tabla hasta el front.
+        """
+        from app.models.event_log import EventLog
+
         rows = self.db.scalars(
-            select(AuditLog)
+            select(EventLog)
             .where(
-                AuditLog.event_type == "restaurant",
-                AuditLog.metadata_json["id_proyect"].as_integer() == self.project_id,
+                EventLog.table_name.like("restaurant_%"),
+                EventLog.id_proyect == self.project_id,
+                EventLog.deletion_date.is_(None),
             )
-            .order_by(AuditLog.creation_date.desc())
+            .order_by(EventLog.creation_date.desc())
             .limit(max(1, min(int(limit or 100), 500)))
         ).all()
-        return [row.serialize() for row in rows]
+        return [
+            {
+                "id_audit_log": row.id_event_log,
+                "id_user": row.created_by,
+                "event_type": (row.after_value or {}).get("event_type", "restaurant"),
+                "entity_name": row.table_name,
+                "action": row.event_detail or row.action,
+                "metadata_json": row.after_value or {},
+                "creation_date": (row.creation_date.isoformat()
+                                  if row.creation_date else None),
+            }
+            for row in rows
+        ]
 
     def list_tables(self) -> list[dict]:
         tables = self.db.scalars(

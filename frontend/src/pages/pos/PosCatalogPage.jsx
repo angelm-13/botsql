@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link2, Plus, Search, Tag } from "lucide-react";
+import { Plus, Search, Tag } from "lucide-react";
 import { useI18n } from "../../i18n";
 import { posRequest } from "../../api";
 import PosScreen, { dinero, listaDe, mensajeDeError, numero } from "./PosScreen";
@@ -7,14 +7,14 @@ import PosScreen, { dinero, listaDe, mensajeDeError, numero } from "./PosScreen"
 /**
  * Catalogo del punto de venta: que se vende, a que precio y con que existencia.
  *
- * Ademas del listado, muestra si cada producto esta enlazado al inventario del
- * nucleo. Ese dato no es decorativo: un producto sin enlace se vende sin
- * descontar del almacen unico, y sin verlo aqui el descuadre solo aparece al
- * contar el estante.
+ * Es el catalogo del almacen, no una copia suya. Antes esta pantalla marcaba
+ * cada producto como "enlazado" o "sin enlazar" porque el POS tenia su propia
+ * tabla y solo los emparejados descontaban del inventario. Con una sola tabla
+ * `product` no hay nada que emparejar, asi que esa columna se retiro.
  */
 const PRODUCTO_NUEVO = {
-  sku: "", name: "", category_id: "", sale_price: "", cost_price: "",
-  min_stock: "", critical_stock: "", current_stock: "", barcode: "",
+  sku: "", name: "", category_id: "", sale_price: "",
+  current_stock: "", id_invoice: "", id_material: "",
 };
 
 export default function PosCatalogPage() {
@@ -23,7 +23,7 @@ export default function PosCatalogPage() {
   const [categoria, setCategoria] = useState("");
   const [formulario, setFormulario] = useState(null);  // "producto" | "categoria" | null
   const [producto, setProducto] = useState(PRODUCTO_NUEVO);
-  const [nuevaCategoria, setNuevaCategoria] = useState({ name: "", color_hex: "#3b82f6" });
+  const [nuevaCategoria, setNuevaCategoria] = useState({ name: "" });
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState("");
 
@@ -32,7 +32,7 @@ export default function PosCatalogPage() {
       titulo={t("pos.catalog_title", "Catálogo")}
       descripcion={t("pos.catalog_subtitle",
         "Lo que el punto de venta ofrece, con su precio y su existencia.")}
-      recursos={{ productos: "products", categorias: "products/categories", enlaces: "@links" }}
+      recursos={{ productos: "products", categorias: "products/categories" }}
       acciones={
         <>
           <button className="button" onClick={() => setFormulario(
@@ -49,15 +49,12 @@ export default function PosCatalogPage() {
       {(datos, { recargar }) => {
         const productos = listaDe(datos.productos);
         const categorias = listaDe(datos.categorias);
-        // Que productos del POS descuentan del almacen unico y cuales no.
-        const enlazados = new Set(listaDe(datos.enlaces).map((e) => String(e.pos_product_id)));
-
         const filtrados = productos.filter((p) => {
           const texto = busqueda.trim().toLowerCase();
           const coincide = !texto
             || String(p.name || "").toLowerCase().includes(texto)
             || String(p.sku || "").toLowerCase().includes(texto)
-            || String(p.barcode || "").includes(texto);
+            || String(p.sku || "").toLowerCase().includes(texto);
           const deLaCategoria = !categoria || String(p.category_id) === categoria;
           return coincide && deLaCategoria;
         });
@@ -83,18 +80,21 @@ export default function PosCatalogPage() {
           sku: producto.sku.trim(),
           name: producto.name.trim(),
           category_id: producto.category_id || undefined,
-          barcode: producto.barcode.trim() || undefined,
           sale_price: numeroOpcional(producto.sale_price),
-          cost_price: numeroOpcional(producto.cost_price),
-          min_stock: numeroOpcional(producto.min_stock),
-          critical_stock: numeroOpcional(producto.critical_stock),
           current_stock: numeroOpcional(producto.current_stock) ?? 0,
+          // El nucleo exige que un producto venga de una compra y sea de algun
+          // tipo: `product.id_invoice` e `id_material` son obligatorias. Se
+          // piden en vez de inventarlas.
+          id_invoice: numeroOpcional(producto.id_invoice),
+          id_material: numeroOpcional(producto.id_material),
         }, () => setProducto(PRODUCTO_NUEVO));
 
+        // Sin `color_hex`: `product_family` no tiene columna de color, y
+        // agregarsela cambiaria el catalogo del almacen por un adorno de esta
+        // pantalla.
         const altaCategoria = () => guardar("products/categories", {
           name: nuevaCategoria.name.trim(),
-          color_hex: nuevaCategoria.color_hex,
-        }, () => setNuevaCategoria({ name: "", color_hex: "#3b82f6" }));
+        }, () => setNuevaCategoria({ name: "" }));
 
         return (
           <>
@@ -107,7 +107,7 @@ export default function PosCatalogPage() {
                 </h2>
                 <p className="muted">
                   {t("pos.new_product_hint",
-                    "Se da de alta en el punto de venta. Para que su venta descuente del almacen de TYAKXA hay que sincronizar el catalogo desde la pantalla de Almacen.")}
+                    "Se da de alta en el almacén de TYAKXA, que es el mismo que usa la caja. Por eso pide la compra de la que viene y su tipo de material: en TYAKXA un producto existe porque se compró.")}
                 </p>
                 <div className="pos-fields">
                   <label><span>SKU *</span>
@@ -125,24 +125,19 @@ export default function PosCatalogPage() {
                   <label><span>{t("pos.price", "Precio")}</span>
                     <input type="number" min="0" step="0.01" value={producto.sale_price}
                            onChange={(e) => setProducto({ ...producto, sale_price: e.target.value })} /></label>
-                  <label><span>{t("pos.cost", "Costo")}</span>
-                    <input type="number" min="0" step="0.01" value={producto.cost_price}
-                           onChange={(e) => setProducto({ ...producto, cost_price: e.target.value })} /></label>
                   <label><span>{t("pos.initial_stock", "Existencia inicial")}</span>
                     <input type="number" min="0" step="1" value={producto.current_stock}
                            onChange={(e) => setProducto({ ...producto, current_stock: e.target.value })} /></label>
-                  <label><span>{t("pos.min_stock", "Minimo")}</span>
-                    <input type="number" min="0" step="1" value={producto.min_stock}
-                           onChange={(e) => setProducto({ ...producto, min_stock: e.target.value })} /></label>
-                  <label><span>{t("pos.critical", "Critico")}</span>
-                    <input type="number" min="0" step="1" value={producto.critical_stock}
-                           onChange={(e) => setProducto({ ...producto, critical_stock: e.target.value })} /></label>
-                  <label><span>{t("pos.barcode", "Codigo de barras")}</span>
-                    <input value={producto.barcode} maxLength={64}
-                           onChange={(e) => setProducto({ ...producto, barcode: e.target.value })} /></label>
+                  <label><span>{t("pos.purchase_invoice", "Factura de compra")} *</span>
+                    <input type="number" min="1" value={producto.id_invoice}
+                           onChange={(e) => setProducto({ ...producto, id_invoice: e.target.value })} /></label>
+                  <label><span>{t("pos.material", "Material")} *</span>
+                    <input type="number" min="1" value={producto.id_material}
+                           onChange={(e) => setProducto({ ...producto, id_material: e.target.value })} /></label>
                 </div>
                 <button className="button primary" onClick={altaProducto}
-                        disabled={ocupado || !producto.sku.trim() || !producto.name.trim()}>
+                        disabled={ocupado || !producto.name.trim()
+                                  || !producto.id_invoice || !producto.id_material}>
                   {t("common.save", "Guardar")}
                 </button>
               </section>
@@ -157,9 +152,6 @@ export default function PosCatalogPage() {
                   <label className="ancho"><span>{t("pos.name", "Nombre")} *</span>
                     <input value={nuevaCategoria.name} maxLength={100}
                            onChange={(e) => setNuevaCategoria({ ...nuevaCategoria, name: e.target.value })} /></label>
-                  <label><span>{t("pos.color", "Color")}</span>
-                    <input type="color" value={nuevaCategoria.color_hex}
-                           onChange={(e) => setNuevaCategoria({ ...nuevaCategoria, color_hex: e.target.value })} /></label>
                 </div>
                 <button className="button primary" onClick={altaCategoria}
                         disabled={ocupado || !nuevaCategoria.name.trim()}>
@@ -197,50 +189,35 @@ export default function PosCatalogPage() {
                     <th>{t("pos.product", "Producto")}</th>
                     <th>{t("pos.category", "Categoría")}</th>
                     <th className="num">{t("pos.price", "Precio")}</th>
-                    <th className="num">{t("pos.cost", "Costo")}</th>
                     <th className="num">{t("pos.stock", "Existencia")}</th>
-                    <th>{t("pos.linked", "Enlace al almacén")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtrados.length === 0 && (
-                    <tr><td colSpan="6" className="muted">
+                    <tr><td colSpan="4" className="muted">
                       {t("pos.no_products", "Sin resultados.")}
                     </td></tr>
                   )}
                   {filtrados.map((p) => {
+                    // TYAKXA no guarda un minimo por producto, asi que "bajo"
+                    // es el mismo umbral que usa la pantalla de Almacen.
                     const existencia = Number(p.current_stock ?? 0);
-                    const minimo = Number(p.min_stock ?? 0);
-                    const bajo = minimo > 0 && existencia <= minimo;
+                    const bajo = existencia <= 5;
+                    const familia = categorias.find(
+                      (c) => String(c.id) === String(p.category_id));
                     return (
                       <tr key={p.id}>
                         <td>
                           <strong>{p.name}</strong>
                           {p.sku && <p className="muted mono">{p.sku}</p>}
                         </td>
-                        <td>{p.category || "—"}</td>
-                        <td className="num mono">{dinero(p.sale_price ?? p.price)}</td>
-                        <td className="num mono">{dinero(p.cost_price)}</td>
+                        <td>{familia?.name || "—"}</td>
+                        <td className="num mono">{dinero(p.price)}</td>
                         <td className={bajo ? "num mono bajo" : "num mono"}>
                           {numero(existencia)}
                           {bajo && <span className="pos-chip warn">
                             {t("pos.low", "Bajo")}
                           </span>}
-                        </td>
-                        <td>
-                          {/* Sin enlace la venta no descuenta del almacen unico.
-                              Se marca aqui porque es donde se ve y se corrige;
-                              si no, el descuadre aparece al contar el estante. */}
-                          {enlazados.has(String(p.id)) ? (
-                            <span className="pos-chip ok">
-                              <Link2 size={12} /> {t("pos.linked_yes", "Enlazado")}
-                            </span>
-                          ) : (
-                            <span className="pos-chip warn" title={t("pos.link_hint",
-                              "Sin enlace, la venta no descuenta del inventario de TYAKXA.")}>
-                              <Link2 size={12} /> {t("pos.not_linked", "Sin enlazar")}
-                            </span>
-                          )}
                         </td>
                       </tr>
                     );

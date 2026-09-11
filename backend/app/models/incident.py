@@ -30,6 +30,9 @@ class Incident(Base):
     creation_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now())
     last_update_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
     deletion_date: Mapped[object] = mapped_column(DateTime, nullable=True)
+    # El proyecto al que pertenece, cuando pertenece a alguno. Nulo en un vale
+    # de almacen, que tambien es un `incident` y no es de ningun proyecto.
+    id_proyect: Mapped[int] = mapped_column(Integer, ForeignKey('proyect.id_proyect'), nullable=True)
     id_lider: Mapped[int] = mapped_column(Integer, nullable=True)
     # El numero con el que la gente conoce este vale. En el sistema anterior era
     # `incidente.id_incidente` -su propia llave-, asi que no se puede reusar la
@@ -51,6 +54,7 @@ class Incident(Base):
             'creation_date': to_json_value(self.creation_date),
             'last_update_date': to_json_value(self.last_update_date),
             'deletion_date': to_json_value(self.deletion_date),
+            'id_proyect': to_json_value(self.id_proyect),
             'id_lider': to_json_value(self.id_lider),
             'external_folio': to_json_value(self.external_folio),
             'external_source': to_json_value(self.external_source),

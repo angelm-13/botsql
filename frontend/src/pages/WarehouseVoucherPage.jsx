@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import PropTypes from "prop-types";
+import VisorDeFoto from "../components/VisorDeFoto";
 import {
   AlertTriangle, ArrowLeft, ArrowRight, Check, ClipboardList, Package, Plus,
-  ImageOff, RefreshCw, Search, Tag, Trash2, X,
+  ImageOff, Printer, RefreshCw, Search, Tag, Trash2, X,
 } from "lucide-react";
 import {
   authorizeWarehouseVoucher,
+  downloadWarehouseVoucherPdf,
   closeWarehouseVoucherLine,
   createWarehousePrevoucher,
   createWarehouseVoucher,
@@ -14,6 +16,7 @@ import {
   getUserOptions,
   getOverdueVoucherLines,
   getWarehouseVoucher,
+  urlDeArchivo,
   listWarehouseVouchers,
   inventoryTrace,
 } from "../api";
@@ -82,6 +85,10 @@ export default function WarehouseVoucherPage() {
   // El vale que se esta capturando, y el que se esta consultando.
   const [borrador, setBorrador] = useState(null);
   const [consultado, setConsultado] = useState(null);
+  const [imprimiendo, setImprimiendo] = useState(false);
+  // La foto que se esta mirando en grande, o null. Vive aqui y no en
+  // cada ficha para que solo pueda haber una abierta.
+  const [fotoAmpliada, setFotoAmpliada] = useState(null);
   // La lista: lo que se ve sin tener que saberse un numero de memoria.
   const [lista, setLista] = useState(null);
   const [pagina, setPagina] = useState(1);
@@ -258,6 +265,23 @@ export default function WarehouseVoucherPage() {
     return u?.location_description || (idUbicacion ? `#${idUbicacion}` : "");
   };
 
+  // El vale en papel. Se abre en una pestana en vez de descargarse: casi
+  // siempre se quiere imprimir y firmar en el momento, no guardarlo.
+  async function imprimir(id) {
+    setImprimiendo(true);
+    try {
+      const blob = await downloadWarehouseVoucherPdf(id);
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener");
+      // Se libera tarde: revocarlo de inmediato deja la pestana en blanco.
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      decirError(e, "No se pudo generar el PDF del vale.");
+    } finally {
+      setImprimiendo(false);
+    }
+  }
+
   return (
     <section className="page vale-page">
       <PageHeader
@@ -296,7 +320,8 @@ export default function WarehouseVoucherPage() {
               <li key={linea.id_nm_incident_product}>
                 <button className="vale-enlace"
                         onClick={() => consultar(linea.id_incident)}>
-                  {t("voucher.voucher_n", "Vale")} #{linea.id_incident}
+                  {t("voucher.voucher_n", "Vale")}{" "}
+                  #{linea.voucher_folio || linea.id_incident}
                 </button>
                 <span className="mono">
                   {linea.id_inventory_asset
@@ -444,16 +469,28 @@ export default function WarehouseVoucherPage() {
               {t("voucher.back_to_list", "Volver a la lista")}
             </button>
             <Vale vale={consultado} onCerrar={cerrar} onAutorizar={autorizar}
+                  onImprimir={imprimir} imprimiendo={imprimiendo}
+                  onAmpliar={setFotoAmpliada}
                   nombreDe={nombreDe} sitioDe={sitioDe} t={t} />
           </>
         )}
       </section>
+
+      {fotoAmpliada && (
+        <VisorDeFoto
+          src={fotoAmpliada.src}
+          titulo={fotoAmpliada.titulo}
+          descripcion={fotoAmpliada.descripcion}
+          onCerrar={() => setFotoAmpliada(null)}
+        />
+      )}
     </section>
   );
 }
 
 /** El vale con sus renglones, y el estado derivado bien visible. */
-function Vale({ vale, onCerrar, onAutorizar, nombreDe, sitioDe, t }) {
+function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
+               nombreDe, sitioDe, t }) {
   const cabecera = vale.voucher || {};
   const estado = String(cabecera.incident_status || "");
   const cerrado = estado === "cerrado";
@@ -465,14 +502,35 @@ function Vale({ vale, onCerrar, onAutorizar, nombreDe, sitioDe, t }) {
       borrador ? "vale-borrador" : (cerrado ? "vale-cerrado" : "vale-abierto")}`}>
       <header>
         <div>
+          {/* El MISMO numero que la lista: el folio con el que la gente lo
+              conoce -- el del sistema anterior cuando lo trae -- y no el
+              id interno. Mostraban cosas distintas, y buscar "95" para acabar
+              en una pantalla titulada "#513" parece otro vale. El id sigue a
+              la vista, en pequeno, porque es lo que hace falta para pedir
+              ayuda o para mirarlo en la base. */}
           <h3>
             <ClipboardList size={16} />
-            {t("voucher.voucher_n", "Vale")} #{cabecera.id_incident}
+            {t("voucher.voucher_n", "Vale")} #{cabecera.external_folio || cabecera.id_incident}
+            {cabecera.external_folio && (
+              <span className="vale-registro">
+                {t("voucher.record_n", "registro")} {cabecera.id_incident}
+              </span>
+            )}
           </h3>
           <p className="muted">
             {t("voucher.holder", "Responsable")}: <strong>{nombreDe(cabecera.id_user)}</strong>
             {cabecera.note && <> · {cabecera.note}</>}
           </p>
+          {/* Imprimir esta junto al encabezado y no al final: quien abre un
+              vale para entregarlo material en mano lo primero que hace es
+              sacarlo en papel para que lo firmen. */}
+          <button className="button button-quiet vale-imprimir"
+                  disabled={imprimiendo} onClick={() => onImprimir(cabecera.id_incident)}>
+            <Printer size={14} />
+            {imprimiendo
+              ? t("common.loading", "Cargando…")
+              : t("voucher.print", "Imprimir vale")}
+          </button>
         </div>
         {/* El estado se muestra, no se elige: lo derivan los renglones -- con
             una excepcion, el borrador, que no habla de los renglones sino de
@@ -522,7 +580,7 @@ function Vale({ vale, onCerrar, onAutorizar, nombreDe, sitioDe, t }) {
                   un numero que no dice si lo que se llevaron fue un taladro o
                   un saco de cemento, y quien mira un vale para reclamar
                   material necesita saber QUE es. */}
-              <FichaDeProducto producto={linea.product} t={t} />
+              <FichaDeProducto producto={linea.product} onAmpliar={onAmpliar} t={t} />
 
               <span className="vale-que">
                 {linea.id_inventory_asset ? <Tag size={13} /> : <Package size={13} />}
@@ -574,6 +632,9 @@ Vale.propTypes = {
     total_lines: PropTypes.number,
   }).isRequired,
   onCerrar: PropTypes.func.isRequired,
+  onImprimir: PropTypes.func.isRequired,
+  imprimiendo: PropTypes.bool,
+  onAmpliar: PropTypes.func,
   nombreDe: PropTypes.func.isRequired,
   sitioDe: PropTypes.func.isRequired,
   t: PropTypes.func.isRequired,
@@ -585,25 +646,38 @@ Vale.propTypes = {
  * La foto va pequeña y con su hueco cuando falta -- no se esconde el marco --
  * para que la lista de renglones no cambie de alto segun cuales tengan
  * imagen: una lista que se descuadra al cargar se lee peor que una con
- * huecos.
+ * huecos. Y para reconocer una herramienta hace falta verla: por eso la
+ * miniatura abre la foto en grande al pulsarla.
  *
- * Y si el archivo no esta, se cae al marcador en vez de dejar el icono de
- * imagen rota del navegador, que se lee como un fallo de la aplicacion. Pasa
- * de verdad con lo importado: `path_imagen` trae la carpeta del sistema
- * anterior -- `/uploads/producto/225.png`, en singular -- y la aplicacion
- * sirve `/uploads/products/`, en plural.
+ * La URL la arma `urlDeArchivo` y no se pinta `path_imagen` en crudo. Dos
+ * motivos, los dos medidos: con el backend en otro puerto -- desarrollo -- una
+ * ruta relativa no resuelve, y los 2 221 productos migrados traen la carpeta
+ * del sistema anterior en SINGULAR (`/uploads/producto/225.png`) mientras la
+ * aplicacion sirve `/uploads/products/`. El helper traduce las dos cosas.
+ *
+ * Aun asi se conserva el marcador para cuando el archivo no exista: se cae a el
+ * en vez de dejar el icono de imagen rota del navegador, que se lee como un
+ * fallo de la aplicacion.
  */
-function FichaDeProducto({ producto, t }) {
+function FichaDeProducto({ producto, onAmpliar, t }) {
   const [fotoRota, setFotoRota] = useState(false);
   if (!producto) return null;
   const rasgos = [producto.brand, producto.material, producto.unit].filter(Boolean);
+  const foto = fotoRota ? "" : urlDeArchivo(producto.path_imagen);
 
   return (
     <span className="vale-ficha">
       <span className="vale-ficha-foto">
-        {producto.path_imagen && !fotoRota ? (
-          <img src={producto.path_imagen} alt={producto.descripcion || ""}
-               loading="lazy" onError={() => setFotoRota(true)} />
+        {foto ? (
+          <img src={foto} alt={producto.descripcion || ""}
+               className="foto-ampliable" loading="lazy"
+               title={t("photo.click_to_zoom", "Clic para verla en grande")}
+               onClick={() => onAmpliar && onAmpliar({
+                 src: foto,
+                 titulo: producto.descripcion || "",
+                 descripcion: producto.product_code || "",
+               })}
+               onError={() => setFotoRota(true)} />
         ) : (
           <ImageOff size={16} />
         )}
@@ -623,9 +697,10 @@ function FichaDeProducto({ producto, t }) {
 
 FichaDeProducto.propTypes = {
   producto: PropTypes.object,
+  onAmpliar: PropTypes.func,
   t: PropTypes.func.isRequired,
 };
-FichaDeProducto.defaultProps = { producto: null };
+FichaDeProducto.defaultProps = { producto: null, onAmpliar: null };
 
 /** La captura de un vale: cabecera y renglones. */
 function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,

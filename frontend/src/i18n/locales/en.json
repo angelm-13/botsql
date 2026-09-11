@@ -3661,7 +3661,7 @@
   "inventory": {
     "eyebrow": "Warehouse",
     "title": "Inventory by warehouse",
-    "subtitle": "Stock per location, movements and transfers between warehouses.",
+    "subtitle": "What is in each warehouse, aisle and rack. Material leaves and returns through vouchers.",
     "warehouses": "Warehouses and locations",
     "no_warehouses": "No warehouses defined. Mark a location type as warehouse under Location type.",
     "location": "Location",
@@ -4142,7 +4142,8 @@
     "legend_out_ok": "Out, no problem",
     "legend_needs_care": "Needs attention",
     "legend_lost": "Lost",
-    "legend_end_of_life": "End of life"
+    "legend_end_of_life": "End of life",
+    "kind_inicial": "opening stock"
   },
   "voucher": {
     "eyebrow": "Warehouse",

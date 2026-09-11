@@ -3724,7 +3724,7 @@
   "inventory": {
     "eyebrow": "Almacén",
     "title": "Inventario por almacén",
-    "subtitle": "Existencia por ubicación, movimientos y traspasos entre almacenes.",
+    "subtitle": "Qué hay en cada nave, pasillo y rack. El material sale y vuelve por los vales.",
     "warehouses": "Almacenes y ubicaciones",
     "no_warehouses": "No hay almacenes definidos. Marca un tipo de ubicación como almacén en Tipo de ubicación.",
     "location": "Ubicación",
@@ -4205,7 +4205,8 @@
     "legend_out_ok": "Fuera, sin problema",
     "legend_needs_care": "Hay que atenderlo",
     "legend_lost": "Se perdió",
-    "legend_end_of_life": "Fin de vida"
+    "legend_end_of_life": "Fin de vida",
+    "kind_inicial": "existencia inicial"
   },
   "voucher": {
     "eyebrow": "Almacén",

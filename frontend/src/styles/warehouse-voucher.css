@@ -293,3 +293,14 @@
 }
 .vale-ficha-datos strong { font-size: 13.5px; line-height: 1.15; }
 .vale-ficha-datos .muted { font-size: 11.5px; }
+
+/* El id interno junto al folio: hace falta para pedir ayuda o mirar la fila en
+   la base, pero no es el numero con el que la gente llama al vale. */
+.vale-registro {
+  margin-left: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: lowercase;
+  letter-spacing: .02em;
+}

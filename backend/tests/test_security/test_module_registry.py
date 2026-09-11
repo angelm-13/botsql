@@ -159,13 +159,24 @@ class TestAlmacenesSeparados(unittest.TestCase):
             with self.subTest(modulo=ajeno):
                 self.assertNotIn(ajeno, almacenista.modulos)
 
-    def test_a_module_with_its_own_database_declares_it(self):
-        """Separacion por base: no se cruza ni por una consulta mal escrita."""
+    def test_no_module_keeps_a_database_of_its_own(self):
+        """El punto de venta era el ultimo, y entro a esta base.
+
+        Se comprueba sobre el objeto y no sobre una lista escrita a mano para
+        que declarar una base aparte en un modulo nuevo falle aqui: volver a
+        separar las bases deshace justo lo que esta integracion logro.
+        """
+        for modulo in registry.MODULOS:
+            with self.subTest(modulo=modulo.clave):
+                self.assertFalse(hasattr(modulo, "base_de_datos"))
+
+    def test_the_point_of_sale_has_no_warehouse_of_its_own(self):
+        """Descuenta del almacen del nucleo, que es el unico que hay."""
         pos = registry.MODULO_POR_CLAVE["pos"]
 
-        self.assertEqual("pos_enterprise", pos.base_de_datos)
-        self.assertEqual((), pos.entidades, "no tiene tablas en la base del nucleo")
-        self.assertEqual((), pos.almacen, "su almacen vive en su propia base")
+        self.assertEqual((), pos.almacen)
+        self.assertEqual((), pos.entidades,
+                         "se opera por pantalla: sus permisos son capacidades")
 
     def test_the_warehouse_chains_exist_as_models(self):
         """Que las tablas declaradas sean las que el codigo usa de verdad."""

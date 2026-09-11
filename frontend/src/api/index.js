@@ -335,18 +335,18 @@ export const getVoucherRequests = (params = {}) =>
 export const getLocationTree = () => request("/location/tree");
 export const getWarehouseStock = (id) => request(`/location/${id}/stock`);
 export const getInvoiceInventoryPreview = (id, params = {}) => request(`/invoice/${id}/inventory`, { params });
-// --- Punto de venta, a traves del puente del nucleo ------------------------
-// Un solo inicio de sesion: se llama al nucleo con el token de TYAKXA y el
-// nucleo habla con el POS por detras. El front nunca ve credenciales del POS.
+// --- Punto de venta --------------------------------------------------------
+// Ya no hay puente: el punto de venta corre dentro de TYAKXA y contra la misma
+// base. Las rutas conservan el prefijo `/pos/api/` que tenian cuando se
+// reenviaban, para no tocar las pantallas por un cambio que no cambia nada
+// para ellas.
+//
+// Se retiraron `posLinks`, `posLinkProduct` y `posSyncCatalog`: emparejaban un
+// producto del POS con uno del almacen, y compartiendo la tabla `product` no
+// hay dos catalogos que emparejar.
 export const posStatus = () => request("/pos/status");
-export const posLinks = () => request("/pos/links");
 export const deploymentPlan = () => request("/security/plan");
 
-export const posSyncCatalog = (payload) =>
-  request("/pos/links/sync", { method: "POST", body: payload });
-
-export const posLinkProduct = (payload) =>
-  request("/pos/links", { method: "POST", body: payload });
 export const posRequest = (ruta, opciones = {}) => request(`/pos/api/${ruta}`, opciones);
 export const posCheckout = (payload) =>
   request("/pos/api/checkout", { method: "POST", body: payload });
@@ -466,6 +466,10 @@ export const createWarehousePrevoucher = (payload) => request("/prevouchers", { 
 export const authorizeWarehouseVoucher = (id, payload = {}) =>
   request(`/vouchers/${id}/authorize`, { method: "POST", body: payload });
 export const getWarehouseVoucher = (id) => request(`/vouchers/${id}`);
+
+// El vale para imprimir y firmar. Pide `read`, la misma que ver el vale en
+// pantalla: quien puede leerlo puede imprimirlo, porque es el mismo dato.
+export const downloadWarehouseVoucherPdf = (id) => requestBlob(`/vouchers/${id}/pdf`);
 export const getOverdueVoucherLines = () => request("/vouchers/overdue");
 // Cuantas piezas hay en cada estado, ahora mismo. Una consulta agrupada, no
 // una por estado: la pantalla del almacen se abre muchas veces al dia.
@@ -570,6 +574,21 @@ export const updateProyect = (id, payload) => request(`/proyect/${id}`, { method
 export const deleteProyect = (id) => request(`/proyect/${id}`, { method: "DELETE" });
 export const transitionProyect = (id, payload) => request(`/proyect/${id}/transition`, { method: "POST", body: payload });
 export const addProyectMessage = (id, payload) => request(`/proyect/${id}/messages`, { method: "POST", body: payload });
+
+// El recorrido de GERENCIA, aparte del de taller: un proyecto puede estar
+// entregado y sin cobrar, y son dos maquinas de estados distintas.
+export const transitionProyectManagement = (id, payload) =>
+  request(`/proyect/${id}/management-transition`, { method: "POST", body: payload });
+
+// Las parcialidades de pago. Cuelgan del proyecto porque lo que se acuerda es
+// "40% al pedir ESTE trabajo": fuera del proyecto la cifra no dice nada.
+export const getProyectPayments = (id) => request(`/proyect/${id}/payments`);
+export const addProyectPayment = (id, payload) =>
+  request(`/proyect/${id}/payments`, { method: "POST", body: payload });
+export const settleProyectPayment = (idPago, payload) =>
+  request(`/proyect/payments/${idPago}`, { method: "PUT", body: payload });
+export const deleteProyectPayment = (idPago) =>
+  request(`/proyect/payments/${idPago}`, { method: "DELETE" });
 
 export const getAllPublicApiKey = (params = {}) => request("/public_api_key/", { params });
 export const getPublicApiKey = (id) => request(`/public_api_key/${id}`);

@@ -14,6 +14,7 @@ import FiltroBuscable from "../components/FiltroBuscable.jsx";
 import Pagination from "../components/Pagination.jsx";
 import ProductHistory from "../components/ProductHistory.jsx";
 import { useI18n } from "../i18n";
+import VisorDeFoto from "../components/VisorDeFoto";
 import "../styles/inventory-trace.css";
 import PageHeader from "../components/PageHeader.jsx";
 
@@ -145,6 +146,9 @@ const TONO_DE_ESTADO = {
 // que hay que mirar.
 const TONO_DE_HISTORIA = {
   comprado: "ok", recibido: "ok", devuelto: "ok",
+  // La existencia con la que arranco el catalogo: ni buena ni mala noticia,
+  // es el punto de partida.
+  inicial: "muted",
   vendido: "info", entregado: "muted", trasladado: "muted", ajustado: "muted",
   prestado: "warn",
   danado: "crit", destruido: "crit", extraviado: "crit", caducado: "crit",
@@ -270,6 +274,8 @@ export default function InventoryTracePage() {
   // se lee como un fallo de la aplicacion. Se cae al marcador de "sin foto",
   // que es la verdad.
   const [fotosRotas, setFotosRotas] = useState(() => new Set());
+  // La foto que se esta mirando en grande, o null.
+  const [fotoAmpliada, setFotoAmpliada] = useState(null);
   // El producto cuya ficha esta abierta, o null. Se guarda el renglon entero y
   // no solo el id para poder titular la ventana sin volver a pedirlo.
   const [ficha, setFicha] = useState(null);
@@ -609,7 +615,14 @@ export default function InventoryTracePage() {
                   <img
                     src={foto}
                     alt={it.descripcion || ""}
+                    className="foto-ampliable"
                     loading="lazy"
+                    title={t("photo.click_to_zoom", "Clic para verla en grande")}
+                    onClick={() => setFotoAmpliada({
+                      src: foto,
+                      titulo: it.descripcion || "",
+                      descripcion: it.product_code || "",
+                    })}
                     onError={() => setFotosRotas((antes) => {
                       const siguiente = new Set(antes);
                       siguiente.add(it.id_product);
@@ -979,6 +992,15 @@ export default function InventoryTracePage() {
           idProduct={ficha.id_product}
           titulo={[ficha.product_code, ficha.descripcion].filter(Boolean).join(" · ")}
           onCerrar={() => setFicha(null)}
+        />
+      )}
+
+      {fotoAmpliada && (
+        <VisorDeFoto
+          src={fotoAmpliada.src}
+          titulo={fotoAmpliada.titulo}
+          descripcion={fotoAmpliada.descripcion}
+          onCerrar={() => setFotoAmpliada(null)}
         />
       )}
     </section>

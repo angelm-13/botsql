@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 
 from sqlalchemy import or_
 
@@ -8,11 +9,20 @@ from app.models.entity_permission import EntityPermission
 from app.models.permission import Permission
 from app.models.proyect import Proyect
 from app.models.proyect_event import ProyectEvent
+from app.models.proyect_payment import ProyectPayment
 from app.models.session import transaction_context
 from app.models.task import Task
 from app.utils.errors import AppError
 
 
+# El recorrido del TALLER. Los dos ultimos se agregaron con la orden de trabajo
+# (migracion 20260911180000): faltaban "en espera de material" y "entregado",
+# que el taller si distingue.
+#
+# `waiting_material` NO es lo mismo que `stopped`: parado es que alguien lo
+# detuvo y hay que explicar por que; en espera de material es que el trabajo
+# esta bien y falta que llegue algo. Mezclarlos haria que la unica lista de
+# "por que no avanza esto" tuviera un motivo escrito a mano en cada renglon.
 PROJECT_STATUSES = (
     "draft",
     "submitted",
@@ -20,8 +30,10 @@ PROJECT_STATUSES = (
     "denied",
     "blocked",
     "in_progress",
+    "waiting_material",
     "stopped",
     "completed",
+    "delivered",
 )
 
 PROJECT_TRANSITIONS = {
@@ -29,21 +41,58 @@ PROJECT_TRANSITIONS = {
     "submitted": {"authorized", "denied", "blocked"},
     "blocked": {"submitted", "authorized", "denied"},
     "authorized": {"in_progress"},
-    "in_progress": {"stopped", "completed"},
+    "in_progress": {"waiting_material", "stopped", "completed"},
+    # De la espera se vuelve al trabajo: el material llego. No se salta a
+    # terminado porque lo que faltaba era justo para poder terminarlo.
+    "waiting_material": {"in_progress", "stopped"},
     "stopped": {"in_progress"},
+    # Terminado es que el taller acabo; entregado, que salio hacia el cliente.
+    # Son dos hechos con dias de diferencia y alguien pregunta por los dos.
+    "completed": {"delivered"},
     "denied": set(),
-    "completed": set(),
+    "delivered": set(),
 }
 
 REASON_REQUIRED_TARGETS = {"denied", "blocked", "stopped"}
-# Estatus desde los que ya no sale ninguna transicion: el proyecto termino y no
-# admite trabajo nuevo. Se deriva del propio mapa para que no haya dos listas
-# que puedan discrepar -`task_service` tenia su propia copia escrita a mano-.
-PROJECT_CLOSED_STATUSES = frozenset(
-    status for status, targets in PROJECT_TRANSITIONS.items() if not targets
+# Estatus en los que el proyecto ya no admite trabajo nuevo.
+#
+# Se DERIVABA de `PROJECT_TRANSITIONS` -- "los que no tienen salida" -- y
+# funcionaba mientras terminar fuera el final. Dejo de funcionar al agregar
+# `delivered`: `completed` paso a tener salida y, con la regla vieja, un
+# proyecto terminado volvia a aceptar tareas nuevas. Lo detecto
+# `test_no_new_task_in_a_closed_project`.
+#
+# La leccion es que eran dos cosas distintas que coincidian: "no avanza mas" y
+# "no acepta mas trabajo". Un proyecto TERMINADO todavia avanza -- falta
+# entregarlo -- pero el trabajo ya se hizo. Asi que se declara, y el aviso
+# original sigue vigente: una sola lista, aqui, no una copia en `task_service`.
+PROJECT_CLOSED_STATUSES = frozenset({"completed", "delivered", "denied"})
+WORKSHOP_VISIBLE_STATUSES = {"authorized", "in_progress", "waiting_material",
+                             "stopped", "completed", "delivered"}
+PROJECT_MUTABLE_FIELDS = {
+    "id_customer_supplier", "leader", "proyect_description", "title",
+    # Los de la orden de trabajo. El estado NO esta aqui: se mueve por
+    # `transition`, que valida la transicion y deja constancia en `proyect_event`.
+    "folio", "requested_by", "id_quotation", "purchase_order",
+    "purchase_order_item", "id_supervisor", "delivery_date",
+    "id_drawing_document",
+}
+
+# El recorrido COMERCIAL, que corre en paralelo al de taller: un proyecto puede
+# estar entregado y sin cobrar.
+MANAGEMENT_STATUSES = (
+    "pendiente_orden_compra",
+    "autorizado",
+    "cancelado",
+    "cobrado",
 )
-WORKSHOP_VISIBLE_STATUSES = {"authorized", "in_progress", "stopped", "completed"}
-PROJECT_MUTABLE_FIELDS = {"id_customer_supplier", "leader", "proyect_description", "title"}
+
+MANAGEMENT_TRANSITIONS = {
+    "pendiente_orden_compra": {"autorizado", "cancelado"},
+    "autorizado": {"cobrado", "cancelado"},
+    "cobrado": set(),
+    "cancelado": set(),
+}
 
 
 def normalize_project_status(value) -> str:
@@ -69,8 +118,47 @@ def validate_project_transition(current_status, target_status, reason=None) -> s
     return target
 
 
+def validate_management_transition(current_status, target_status) -> str:
+    """La misma disciplina que el recorrido de taller, para el comercial.
+
+    Sin motivo obligatorio: cancelar un proyecto por gerencia ya se explica en
+    el mensaje del evento, y exigir dos textos para el mismo hecho hace que uno
+    de los dos se rellene con un punto.
+    """
+    actual = str(current_status or "").strip().lower() or "pendiente_orden_compra"
+    destino = str(target_status or "").strip().lower()
+    if actual not in MANAGEMENT_TRANSITIONS or destino not in MANAGEMENT_TRANSITIONS[actual]:
+        raise AppError(
+            "errors.project_invalid_management_transition",
+            409,
+            {"current_status": actual, "target_status": destino},
+        )
+    return destino
+
+
+def transition_management(project_id, payload: dict, user_data: dict) -> dict:
+    """Mueve el proyecto por el recorrido de GERENCIA, no por el de taller.
+
+    Son dos vidas del mismo proyecto y avanzan por separado: uno entregado
+    puede seguir sin cobrar. Por eso hay dos rutas y no una con un parametro.
+    """
+    with transaction_context() as db:
+        project = _get_visible_project(db, project_id, user_data, for_update=True)
+        destino = validate_management_transition(
+            project.management_status, (payload or {}).get("management_status"))
+        anterior = project.management_status
+        project.management_status = destino
+        # Queda en la MISMA bitacora que el recorrido de taller: quien mira la
+        # historia de un proyecto quiere los dos hilos en orden, no dos listas.
+        _append_event(db, project, user_data, "management_transition",
+                      new_status=destino, previous_status=anterior,
+                      reason=(payload or {}).get("reason"))
+        db.flush()
+        return _project_payload(project)
+
+
 def project_catalog() -> dict:
-    """La maquina de estados de proyecto, tal como la valida el servidor.
+    """Las maquinas de estados de proyecto, tal como las valida el servidor.
 
     La pantalla de proyectos llevaba su propia copia de PROJECT_TRANSITIONS en
     JavaScript. Dos copias de una maquina de estados divergen: la interfaz
@@ -82,6 +170,13 @@ def project_catalog() -> dict:
         "transitions": {key: sorted(value) for key, value in PROJECT_TRANSITIONS.items()},
         "reason_required": sorted(REASON_REQUIRED_TARGETS),
         "closed_statuses": sorted(PROJECT_CLOSED_STATUSES),
+        # El recorrido comercial viaja por el mismo sitio y por el mismo motivo:
+        # si la pantalla se escribiera su propia copia, ofreceria transiciones
+        # que el servidor rechaza.
+        "management_statuses": list(MANAGEMENT_STATUSES),
+        "management_transitions": {
+            key: sorted(value) for key, value in MANAGEMENT_TRANSITIONS.items()
+        },
     }
 
 
@@ -344,10 +439,66 @@ def get_project_detail(project_id, user_data: dict) -> dict:
             .order_by(ProyectEvent.creation_date.asc(), ProyectEvent.id_proyect_event.asc())
             .all()
         )
+        # Lo que cuelga del proyecto, en el mismo viaje. Las tres cosas se
+        # preguntan juntas -- "como va este trabajo" -- y pedirlas en tres
+        # llamadas dejaba la pantalla armando el expediente a mano.
+        from app.models.appointment import Appointment
+        from app.models.incident import Incident
+
+        incidencias = (
+            db.query(Incident)
+            .filter(Incident.id_proyect == project.id_proyect)
+            .filter(Incident.deletion_date.is_(None))
+            .order_by(Incident.incident_date.desc().nullslast(),
+                      Incident.id_incident.desc())
+            .all()
+        )
+        citas = (
+            db.query(Appointment)
+            .filter(Appointment.id_proyect == project.id_proyect)
+            .order_by(Appointment.starts_at.asc())
+            .all()
+        )
+        pagos = (
+            db.query(ProyectPayment)
+            .filter(ProyectPayment.id_proyect == project.id_proyect)
+            .filter(ProyectPayment.deletion_date.is_(None))
+            .order_by(ProyectPayment.payment_date.asc(),
+                      ProyectPayment.id_proyect_payment.asc())
+            .all()
+        )
+
         payload = _project_payload(project, events)
         payload["tasks"] = [task.serialize() for task in tasks]
         payload["events"] = [event.serialize() for event in events]
+        payload["incidents"] = [i.serialize() for i in incidencias]
+        payload["appointments"] = [c.serialize() for c in citas]
+        payload["payments"] = [p.serialize() for p in pagos]
+        payload["payment_summary"] = _resumen_de_pagos(pagos)
         return payload
+
+
+def _resumen_de_pagos(pagos) -> dict:
+    """Lo acordado, lo cobrado y lo que falta.
+
+    Se cuenta aqui y no en la pantalla porque la misma cifra la quieren el
+    detalle del proyecto y cualquier reporte de cobranza que venga despues, y
+    dos sumas escritas en dos sitios acaban dando numeros distintos.
+    """
+    acordado = sum(Decimal(str(p.amount or 0)) for p in pagos)
+    cobrado = sum(Decimal(str(p.amount or 0)) for p in pagos if p.paid_at)
+    porcentaje = sum(Decimal(str(p.agreed_percent or 0)) for p in pagos)
+    return {
+        "agreed_total": float(acordado),
+        "collected_total": float(cobrado),
+        "pending_total": float(acordado - cobrado),
+        # La suma de los porcentajes pactados. Se devuelve tal cual, sin
+        # forzarla a 100: que no sumen es un dato -- falta acordar una
+        # parcialidad -- y corregirlo aqui lo escondería.
+        "agreed_percent_total": float(porcentaje),
+        "installments": len(pagos),
+        "collected_installments": sum(1 for p in pagos if p.paid_at),
+    }
 
 
 def create_project(payload: dict, user_data: dict) -> dict:
@@ -460,3 +611,111 @@ def add_project_message(project_id, payload: dict, user_data: dict) -> dict:
         event = _append_event(db, project, user_data, "message", content=content)
         db.flush()
         return event.serialize()
+
+
+# --- parcialidades de pago ----------------------------------------------
+
+def _fecha(valor, campo):
+    if valor in (None, ""):
+        raise AppError("errors.required_field", 400, {"field": campo})
+    try:
+        return date.fromisoformat(str(valor)[:10])
+    except ValueError as fallo:
+        raise AppError("errors.invalid_field", 400, {"field": campo}) from fallo
+
+
+def _monto(valor, campo, *, obligatorio=True):
+    if valor in (None, ""):
+        if obligatorio:
+            raise AppError("errors.required_field", 400, {"field": campo})
+        return None
+    try:
+        return Decimal(str(valor))
+    except (InvalidOperation, TypeError, ValueError) as fallo:
+        raise AppError("errors.invalid_field", 400, {"field": campo}) from fallo
+
+
+def list_project_payments(project_id, user_data: dict) -> dict:
+    with transaction_context() as db:
+        project = _get_visible_project(db, project_id, user_data)
+        filas = (
+            db.query(ProyectPayment)
+            .filter(ProyectPayment.id_proyect == project.id_proyect)
+            .filter(ProyectPayment.deletion_date.is_(None))
+            .order_by(ProyectPayment.payment_date.asc(),
+                      ProyectPayment.id_proyect_payment.asc())
+            .all()
+        )
+        return {"items": [p.serialize() for p in filas],
+                "summary": _resumen_de_pagos(filas)}
+
+
+def add_project_payment(project_id, payload: dict, user_data: dict) -> dict:
+    """Acuerda una parcialidad: fecha, monto y el porcentaje pactado.
+
+    El porcentaje es opcional porque no siempre se pacta asi -- a veces se
+    acuerda una cifra redonda y no una fraccion --, pero cuando viene se guarda
+    tal cual. Ver la cabecera del modelo para por que no se deduce del total.
+    """
+    carga = payload or {}
+    with transaction_context() as db:
+        project = _get_visible_project(db, project_id, user_data, for_update=True)
+        pago = ProyectPayment(
+            id_proyect=project.id_proyect,
+            payment_date=_fecha(carga.get("payment_date"), "payment_date"),
+            amount=_monto(carga.get("amount"), "amount"),
+            agreed_percent=_monto(carga.get("agreed_percent"), "agreed_percent",
+                                  obligatorio=False),
+            paid_at=(_fecha(carga.get("paid_at"), "paid_at")
+                     if carga.get("paid_at") else None),
+            notes=(str(carga.get("notes") or "").strip() or None),
+            created_by=_actor_id(user_data),
+        )
+        if pago.amount <= 0:
+            raise AppError("errors.invalid_field", 400, {"field": "amount"})
+        db.add(pago)
+        db.flush()
+        _append_event(db, project, user_data, "payment_agreed",
+                      content="%s el %s" % (pago.amount, pago.payment_date))
+        return pago.serialize()
+
+
+def settle_project_payment(payment_id, payload: dict, user_data: dict) -> dict:
+    """Marca una parcialidad como cobrada, con la fecha en que entro de verdad.
+
+    La fecha de cobro es aparte de la acordada a proposito: un pago que cae dos
+    semanas tarde sigue siendo el pago de su fecha, y guardar una sola borraria
+    el retraso, que es justo lo que alguien quiere ver.
+    """
+    with transaction_context() as db:
+        pago = db.get(ProyectPayment, int(payment_id))
+        if pago is None or pago.deletion_date is not None:
+            raise AppError("errors.not_found", 404, {"entity": "proyect_payment"})
+        # Pasa por la misma comprobacion de alcance que el proyecto: quien no ve
+        # el proyecto no cobra sus parcialidades.
+        project = _get_visible_project(db, pago.id_proyect, user_data, for_update=True)
+
+        carga = payload or {}
+        if carga.get("paid_at") in (None, ""):
+            # Desmarcar tambien es valido: alguien se adelanto al registrarlo.
+            pago.paid_at = None
+        else:
+            pago.paid_at = _fecha(carga.get("paid_at"), "paid_at")
+        if carga.get("notes") is not None:
+            pago.notes = str(carga.get("notes") or "").strip() or None
+        db.flush()
+        _append_event(db, project, user_data, "payment_settled",
+                      content="%s cobrado el %s" % (pago.amount, pago.paid_at)
+                      if pago.paid_at else "%s sin cobrar" % pago.amount)
+        return pago.serialize()
+
+
+def delete_project_payment(payment_id, user_data: dict) -> dict:
+    with transaction_context() as db:
+        pago = db.get(ProyectPayment, int(payment_id))
+        if pago is None or pago.deletion_date is not None:
+            raise AppError("errors.not_found", 404, {"entity": "proyect_payment"})
+        _get_visible_project(db, pago.id_proyect, user_data, for_update=True)
+        pago.deletion_date = datetime.now()
+        db.flush()
+        return {"id_proyect_payment": pago.id_proyect_payment}

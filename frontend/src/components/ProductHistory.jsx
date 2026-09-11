@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
-import { ArrowDownLeft, ArrowUpRight, MapPin, User, X } from "lucide-react";
+import { ArrowDownLeft, ArrowRight, ArrowUpRight, MapPin, User, X } from "lucide-react";
 import {
   getInventoryMovements, getProductLoanHistory, getProductStock,
 } from "../api";
@@ -111,8 +111,10 @@ export default function ProductHistory({ idProduct, titulo, onCerrar }) {
       role="presentation"
       onClick={(e) => { if (e.target === e.currentTarget) onCerrar(); }}
     >
+      {/* Solo el historial necesita el ancho extra: Ubicaciones son tres
+          columnas y en una ventana ancha quedarian perdidas. */}
       <section
-        className="ficha"
+        className={`ficha${pestana === "historial" ? " ficha--historial" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-label={t("history.title", "Historial del producto")}
@@ -213,76 +215,116 @@ function Historial({ renglones, resumen, pagina, onPagina, t }) {
         </p>
       )}
 
-      <table className="ficha-tabla">
-        <thead>
-          <tr>
-            <th>{t("history.when", "Cuándo")}</th>
-            <th>{t("history.what", "Qué pasó")}</th>
-            <th>{t("history.who", "Quién")}</th>
-            <th className="num">{t("history.change", "Cambio")}</th>
-            <th className="num">{t("history.balance", "Saldo")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {visibles.map((r) => (
-            <tr key={r.clave} className={r.devuelto === false ? "pendiente" : ""}>
-              <td className="muted">{fecha(r.fecha, t)}</td>
-              <td>
-                <strong>{t(`movement.${r.tipo}`, r.tipo)}</strong>
-                {r.folio && (
-                  <span className="muted">
-                    {" · "}{t("history.voucher", "Vale")} {r.folio}
+      {/* Una columna por dato, como la tabla del sistema anterior.
+          Antes "Que paso" amontonaba tipo, vale, ubicacion, motivo y estado
+          separados por puntos, y con seis o siete fragmentos el renglon se
+          volvia un parrafo que hay que leer entero para encontrar un dato.
+          Lo que se conserva de aquella tabla es la separacion; lo que NO se
+          conserva es su aspecto -- sigue siendo la estetica de la ficha. */}
+      <div className="ficha-tabla-marco">
+        <table className="ficha-tabla ficha-tabla-ancha">
+          <thead>
+            <tr>
+              <th>{t("history.when", "Cuándo")}</th>
+              <th>{t("history.what", "Movimiento")}</th>
+              <th>{t("history.voucher", "Vale")}</th>
+              <th>{t("history.where", "Ubicación")}</th>
+              <th>{t("history.who", "Quién")}</th>
+              <th className="num">{t("history.change", "Cambio")}</th>
+              <th className="num">{t("history.balance", "Saldo")}</th>
+              <th>{t("history.state", "Estado")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibles.map((r) => (
+              <tr key={r.clave} className={r.devuelto === false ? "pendiente" : ""}>
+                <td className="muted ficha-cuando">{fecha(r.fecha, t)}</td>
+
+                <td>
+                  {/* El tipo va en marca de color y no en texto suelto: en una
+                      lista larga el ojo distingue antes un color que una
+                      palabra. El color sale del signo, que es lo que de verdad
+                      distingue una entrada de una salida. */}
+                  <span className={`ficha-tipo ${
+                    r.delta === null ? "neutro" : (r.delta < 0 ? "salida" : "entrada")}`}>
+                    {t(`movement.${r.tipo}`, r.tipo)}
                   </span>
-                )}
-                {(r.ubicacion || r.destino) && (
-                  <span className="muted">
-                    {" · "}{r.ubicacion || ""}
-                    {r.destino ? ` → ${r.destino}` : ""}
-                  </span>
-                )}
-                {r.motivo && <span className="muted">{" · "}{r.motivo}</span>}
+                  {/* El motivo debajo y no en columna propia: son frases
+                      -- "Existencia inicial de la carga del sistema anterior" --
+                      y en una columna estrecha se parten en cinco lineas. */}
+                  {r.motivo && <span className="ficha-motivo">{r.motivo}</span>}
+                </td>
+
+                <td className="mono ficha-folio">
+                  {r.folio ? r.folio : <span className="muted">—</span>}
+                </td>
+
+                <td className="ficha-donde">
+                  {r.ubicacion || r.destino ? (
+                    <>
+                      {r.ubicacion || "—"}
+                      {r.destino && (
+                        <>
+                          {" "}<ArrowRight size={11} />{" "}
+                          <strong>{r.destino}</strong>
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <span className="muted">—</span>
+                  )}
+                </td>
+
+                <td>
+                  {r.responsable ? (
+                    <span className="ficha-persona">
+                      <User size={12} /> {r.responsable}
+                    </span>
+                  ) : (
+                    <span className="muted">{r.autor || "—"}</span>
+                  )}
+                </td>
+
+                <td className="num">
+                  {r.delta === null ? (
+                    <span className="muted">—</span>
+                  ) : (
+                    <span className={`ficha-delta ${r.delta < 0 ? "salida" : "entrada"}`}>
+                      {r.delta < 0 ? <ArrowUpRight size={13} /> : <ArrowDownLeft size={13} />}
+                      {r.delta > 0 ? `+${r.delta}` : r.delta}
+                    </span>
+                  )}
+                </td>
+
+                {/* Sin saldo cuando el renglon viene del vale y no del libro: el
+                    saldo lo lleva el libro, e inventarlo seria peor que el hueco. */}
+                <td className="num">
+                  {r.saldo === null || r.saldo === undefined
+                    ? <span className="muted">—</span>
+                    : <strong>{r.saldo}</strong>}
+                </td>
+
                 {/* El estado del prestamo solo cuando lo hay: un traspaso no
                     esta "devuelto" ni "fuera", simplemente no aplica. */}
-                {r.devuelto === false && (
-                  <span className={r.vencido ? "ficha-vencido" : "ficha-fuera"}>
-                    {" · "}
-                    {r.vencido ? t("history.overdue", "vencido") : t("history.out", "fuera")}
-                  </span>
-                )}
-                {r.devuelto === true && (
-                  <span className="muted">{" · "}{t("history.returned", "devuelto")}</span>
-                )}
-              </td>
-              <td>
-                {r.responsable ? (
-                  <span className="ficha-persona">
-                    <User size={12} /> {r.responsable}
-                  </span>
-                ) : (
-                  <span className="muted">{r.autor || "—"}</span>
-                )}
-              </td>
-              <td className="num">
-                {r.delta === null ? (
-                  <span className="muted">—</span>
-                ) : (
-                  <span className={`ficha-delta ${r.delta < 0 ? "salida" : "entrada"}`}>
-                    {r.delta < 0 ? <ArrowUpRight size={13} /> : <ArrowDownLeft size={13} />}
-                    {r.delta > 0 ? `+${r.delta}` : r.delta}
-                  </span>
-                )}
-              </td>
-              {/* Sin saldo cuando el renglon viene del vale y no del libro: el
-                  saldo lo lleva el libro, e inventarlo seria peor que el hueco. */}
-              <td className="num">
-                {r.saldo === null || r.saldo === undefined
-                  ? <span className="muted">—</span>
-                  : <strong>{r.saldo}</strong>}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+                <td>
+                  {r.devuelto === false && (
+                    <span className={`ficha-marca ${r.vencido ? "vencido" : "fuera"}`}>
+                      {r.vencido ? t("history.overdue", "vencido") : t("history.out", "fuera")}
+                    </span>
+                  )}
+                  {r.devuelto === true && (
+                    <span className="ficha-marca devuelto">
+                      {t("history.returned", "devuelto")}
+                    </span>
+                  )}
+                  {r.devuelto === null || r.devuelto === undefined
+                    ? <span className="muted">—</span> : null}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       <Pagination
         page={actual}

@@ -81,22 +81,56 @@ def factura_de_la_venta(db, modulo: str, referencia: str):
 
 
 def _venta_del_pos(referencia: str, user_data: dict) -> dict:
-    """Trae la venta del punto de venta por el puente.
+    """La venta y sus renglones, ahora leidos de esta misma base.
 
-    Se pide el ticket y no la venta: `sales/<id>` devuelve solo el resumen
-    -folio, total, estado- y una factura necesita los renglones. Es el ticket el
-    que los trae, que ademas es lo correcto: la factura debe decir exactamente
-    lo que el cliente tiene impreso en la mano.
+    Antes se pedian al otro sistema por HTTP (`GET sales/<id>/receipt`), y esa
+    llamada podia fallar por red, por token caducado o porque el POS estuviera
+    apagado -- de ahi el `errors.pos_unreachable` que ya no hace falta. Con la
+    venta en esta base es una consulta mas, dentro de la misma transaccion que
+    despues escribe la factura.
+
+    Se leen los renglones y no solo el resumen porque una factura necesita las
+    partidas, y se toman los importes tal como se cobraron: la factura debe
+    decir exactamente lo que el cliente tiene impreso en la mano.
     """
-    from app.services.pos_gateway import reenviar
+    from app.models.pos import PosSale, PosSaleItem
+    from app.models.product import Product
+    from app.models.session import transaction_context
 
-    datos, codigo = reenviar("GET", f"sales/{referencia}/receipt",
-                             actor=user_data.get("id_user"))
-    if codigo == 404:
-        raise AppError("errors.not_found", 404, {"entity": "sale", "reference": referencia})
-    if codigo >= 400:
-        raise AppError("errors.pos_unreachable", 502, {"status": codigo})
-    return datos or {}
+    with transaction_context() as db:
+        venta = db.get(PosSale, int(referencia)) if str(referencia).isdigit() else None
+        if venta is None:
+            venta = db.scalars(
+                select(PosSale).where(
+                    PosSale.folio == str(referencia),
+                    PosSale.deletion_date.is_(None),
+                )
+            ).first()
+        if venta is None or venta.deletion_date is not None:
+            raise AppError("errors.not_found", 404,
+                           {"entity": "sale", "reference": referencia})
+
+        renglones = db.execute(
+            select(PosSaleItem, Product.descripcion)
+            .join(Product, Product.id_product == PosSaleItem.id_product)
+            .where(PosSaleItem.id_pos_sale == venta.id_pos_sale,
+                   PosSaleItem.deletion_date.is_(None))
+            .order_by(PosSaleItem.id_pos_sale_item)
+        ).all()
+
+        return {
+            "folio": venta.folio,
+            "total": float(venta.total or 0),
+            "items": [
+                {
+                    "product_name": descripcion,
+                    "quantity": str(fila.quantity),
+                    "unit_price": str(fila.unit_price),
+                    "discount_amount": str(fila.discount_amount or 0),
+                }
+                for fila, descripcion in renglones
+            ],
+        }
 
 
 def _partidas_del_pos(venta: dict, payload: dict) -> list[dict]:

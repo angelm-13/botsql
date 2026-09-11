@@ -23,8 +23,11 @@ class ProyectEvent(Base):
     created_by: Mapped[int] = mapped_column(Integer, ForeignKey("user.id_user"), nullable=False, index=True)
     author_role: Mapped[str | None] = mapped_column(String(100), nullable=True)
     event_type: Mapped[str] = mapped_column(String(30), nullable=False)
-    previous_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    new_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # 40 y no 20: el recorrido comercial tiene 'pendiente_orden_compra',
+    # de veintidos caracteres. La medida original se puso cuando el unico
+    # recorrido era el de taller.
+    previous_status: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    new_status: Mapped[str | None] = mapped_column(String(40), nullable=True)
     content: Mapped[str | None] = mapped_column(Text, nullable=True)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     review_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

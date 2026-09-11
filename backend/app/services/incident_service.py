@@ -259,7 +259,7 @@ def transition_incident(incident_id, payload: dict, user_data: dict) -> dict:
     pintaba como texto libre, que es como el tablero acababa con una columna
     por variante escrita a mano.
 
-    El motivo se anota en `audit_log`, la bitacora que ya usa el modulo de
+    El motivo se anota en `event_log`, la bitacora unica que usa el modulo de
     restaurante para lo mismo: `incident` no tiene tabla de eventos propia y
     `note` es el texto de la incidencia, no el del cambio.
     """

@@ -996,3 +996,156 @@ class TestLaDevolucionEsPorRenglon(BaseVale):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestElValeSeArchivaComoDocumento(BaseVale):
+    """El vale en papel se guarda, no solo se genera al vuelo.
+
+    Un vale es un documento que alguien FIRMA, y cambia: los renglones se
+    devuelven uno a uno. Si solo existiera mientras dura la descarga, nadie
+    podria ver despues que decia el que se firmo.
+    """
+
+    class AlmacenDePrueba:
+        """Escribe en memoria, para no tocar el disco en la suite."""
+
+        def __init__(self):
+            self.archivos = {}
+
+        def write(self, raw, project_id, document_id, version, extension):
+            ruta = "documents/%s/%s/v%s.%s" % (project_id, document_id, version, extension)
+            self.archivos[ruta] = raw
+            return ruta
+
+        def resolve(self, ruta):
+            from pathlib import Path
+
+            class _Falso(Path().__class__):
+                pass
+
+            datos = self.archivos[ruta]
+
+            class _Archivo:
+                def read_bytes(self_):
+                    return datos
+
+            return _Archivo()
+
+    def setUp(self):
+        super().setUp()
+        from unittest.mock import patch
+
+        from app.models.document import DocumentCategory
+
+        with transaction_context() as db:
+            db.add(DocumentCategory(code="warehouse_voucher", name="Vale de almacen",
+                                    active=True, created_by=1))
+        self.surtir()
+        self.almacen = self.AlmacenDePrueba()
+        # El PDF de verdad lo arma WeasyPrint, que necesita bibliotecas nativas
+        # y tarda; aqui interesa el ARCHIVADO, no el dibujo. Se sustituye el
+        # renderizador por uno que devuelve la ficha serializada, que cambia
+        # cuando cambia el vale -- que es justo lo que se esta probando.
+        self.render = patch(
+            "app.services.warehouse_voucher_service._motor_de_documentos")
+        motor = self.render.start()
+        self.addCleanup(self.render.stop)
+        motor.return_value.render_pdf_bytes.side_effect = (
+            lambda clave, ficha, *a, **k: repr(sorted(ficha.items())).encode())
+
+    def descargar(self, id_incident):
+        from app.services.warehouse_voucher_service import pdf_del_vale
+
+        return pdf_del_vale(id_incident, ACTOR, storage=self.almacen)
+
+    def versiones(self, id_incident):
+        from sqlalchemy import select
+
+        from app.models.document import Document, DocumentVersion
+
+        with transaction_context() as db:
+            doc = db.scalars(select(Document).where(
+                Document.business_reference_type == "incident",
+                Document.business_reference_value == str(id_incident))).first()
+            if doc is None:
+                return []
+            return db.scalars(select(DocumentVersion).where(
+                DocumentVersion.id_document == doc.id_document
+            ).order_by(DocumentVersion.version)).all()
+
+    def test_downloading_it_files_the_document(self):
+        vale = self._vale([self._linea_cantidad(10)])
+
+        self.descargar(vale["voucher"]["id_incident"])
+
+        versiones = self.versiones(vale["voucher"]["id_incident"])
+        self.assertEqual(1, len(versiones))
+        self.assertEqual("pdf", versiones[0].extension)
+        self.assertEqual("generated", versiones[0].source)
+
+    def test_downloading_it_again_does_not_file_a_second_copy(self):
+        """El mismo papel no se archiva dos veces."""
+        vale = self._vale([self._linea_cantidad(10)])
+        id_vale = vale["voucher"]["id_incident"]
+
+        primero = self.descargar(id_vale)
+        segundo = self.descargar(id_vale)
+
+        self.assertEqual(primero, segundo)
+        self.assertEqual(1, len(self.versiones(id_vale)))
+
+    def test_a_change_in_the_voucher_files_a_new_version(self):
+        """Devolver un renglon cambia el papel, y eso si es otra version."""
+        from app.services.warehouse_voucher_service import devolver_renglon
+
+        vale = self._vale([self._linea_cantidad(10)])
+        id_vale = vale["voucher"]["id_incident"]
+        self.descargar(id_vale)
+
+        devolver_renglon(vale["lines"][0]["id_nm_incident_product"],
+                         {"id_location_to": NAVE}, ACTOR)
+        self.descargar(id_vale)
+
+        versiones = self.versiones(id_vale)
+        self.assertEqual(2, len(versiones))
+        self.assertEqual([1, 2], [v.version for v in versiones])
+
+    def test_touching_the_voucher_without_changing_it_files_nothing(self):
+        """Lo que decide es el CONTENIDO, no la fecha de modificacion.
+
+        El primer intento comparaba `last_update_date` contra la fecha de la
+        version archivada. Dos motivos para abandonarlo, los dos reales:
+
+        * los 141 vales que vinieron del sistema anterior tienen `creation_date`
+          y `last_update_date` NULAS -- comprobado en la base --, asi que sin
+          fecha con que comparar se archivaba una version nueva en CADA
+          descarga, justo de los vales viejos, que son los que mas se consultan;
+        * y al reves, cualquier escritura que no cambie el papel -- como esta --
+          archivaba una copia identica.
+        """
+        from datetime import timedelta
+
+        from app.models.incident import Incident
+
+        vale = self._vale([self._linea_cantidad(10)])
+        id_vale = vale["voucher"]["id_incident"]
+        self.descargar(id_vale)
+
+        with transaction_context() as db:
+            db.get(Incident, id_vale).last_update_date = (
+                datetime.now() + timedelta(days=1))
+
+        self.descargar(id_vale)
+
+        self.assertEqual(1, len(self.versiones(id_vale)),
+                         "el papel dice lo mismo: no hay nada que archivar")
+
+    def test_the_filed_copy_keeps_what_the_voucher_said(self):
+        """La ficha se guarda con la version: se puede leer sin abrir el PDF."""
+        vale = self._vale([self._linea_cantidad(10)])
+
+        self.descargar(vale["voucher"]["id_incident"])
+
+        ficha = self.versiones(vale["voucher"]["id_incident"])[0].source_snapshot
+        self.assertEqual(1, len(ficha["salidas"]))
+        self.assertEqual("Obra Norte", ficha["nota"])

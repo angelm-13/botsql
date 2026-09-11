@@ -1211,3 +1211,289 @@ def buscar_vales(user_data: dict, *, texto=None, estado=None, id_user=None,
             "pages": paginas,
             "scoped_to_actor": not _ve_todo_el_almacen(db, user_data),
         }
+
+
+# --- el vale en papel ----------------------------------------------------
+
+def _persona(db, id_user):
+    """El nombre de quien firma, o None.
+
+    Un vale impreso sin nombres no sirve para lo unico que se imprime: que
+    alguien lo firme y quede constancia de quien se llevo que.
+    """
+    if not id_user:
+        return None
+    return db.scalars(
+        select(User.full_name).where(User.id_user == int(id_user))
+    ).first()
+
+
+def folio_del_vale(id_incident, user_data: dict) -> str:
+    """El numero con el que la gente conoce el vale.
+
+    El del sistema anterior cuando lo trae, y el id interno cuando no. Es el
+    mismo criterio que usan la lista, la pantalla del vale y el propio PDF: un
+    vale que en pantalla es el 95 no puede descargarse como "Vale-513.pdf".
+    """
+    _actor(user_data)
+    with transaction_context() as db:
+        vale = _vale(db, id_incident)
+        return str(vale.external_folio or vale.id_incident)
+
+
+def documento_del_vale(id_incident, user_data: dict) -> dict:
+    """Arma la ficha que la plantilla del PDF pinta.
+
+    Reusa `consultar_vale` en lugar de volver a consultar: el PDF tiene que
+    decir exactamente lo que la pantalla muestra. Si fueran dos consultas
+    distintas acabarian discrepando, y un papel firmado que no coincide con el
+    sistema es peor que no tener papel.
+
+    Lo unico que agrega son los NOMBRES -- de quien se lo llevo, de quien lo
+    capturo y de las ubicaciones -- porque en pantalla se ven al pasar el raton
+    y en papel no hay raton.
+    """
+    datos = consultar_vale(id_incident, user_data)
+    vale = datos["voucher"]
+
+    with transaction_context() as db:
+        ubicaciones = {}
+        ids_ubicacion = {
+            int(v) for renglon in datos["lines"]
+            for v in (renglon.get("id_location_from"), renglon.get("id_location_to"))
+            if v
+        }
+        if ids_ubicacion:
+            ubicaciones = dict(db.execute(
+                select(Location.id_location, Location.location_description)
+                .where(Location.id_location.in_(list(ids_ubicacion)))
+            ).all())
+
+        responsable = _persona(db, vale.get("id_user"))
+        capturo = _persona(db, vale.get("created_by"))
+        tipo = db.scalars(
+            select(IncidentType.incident_type_description)
+            .where(IncidentType.id_incident_type == vale.get("id_incident_type"))
+        ).first()
+
+    salidas, entradas = [], []
+    for renglon in datos["lines"]:
+        producto = renglon.get("product") or {}
+        fila = {
+            "cantidad": renglon.get("quantity"),
+            "codigo": producto.get("code") or None,
+            "descripcion": producto.get("descripcion") or "Producto %s" % renglon.get("id_product"),
+            "material": producto.get("material"),
+            "marca": producto.get("brand"),
+            "unidad": producto.get("unit"),
+            "desde": ubicaciones.get(renglon.get("id_location_from")),
+            "hasta": ubicaciones.get(renglon.get("id_location_to")),
+            "nota": renglon.get("note"),
+            "vence": _solo_fecha(renglon.get("due_date")),
+            "cerrado": _solo_fecha(renglon.get("close_date")),
+            # Devuelto o no: es la unica pregunta que alguien le hace a un vale
+            # viejo, asi que va en su propia columna y no escondida en la fecha.
+            "devuelto": renglon.get("close_date") is not None,
+        }
+        (entradas if str(renglon.get("direction") or "") == ENTRADA else salidas).append(fila)
+
+    return {
+        "folio": vale.get("external_folio") or str(vale.get("id_incident")),
+        "id_incident": vale.get("id_incident"),
+        "fecha": _solo_fecha(vale.get("incident_date")),
+        "estado": vale.get("incident_status"),
+        "tipo": tipo,
+        "nota": vale.get("note"),
+        "responsable": responsable,
+        "capturo": capturo,
+        "cierre": _solo_fecha(vale.get("close_date")),
+        "salidas": salidas,
+        "entradas": entradas,
+        "pendientes": datos["open_lines"],
+        # Un vale en borrador no ha sacado nada del almacen todavia. El papel lo
+        # dice en grande para que nadie lo confunda con uno autorizado.
+        "es_borrador": vale.get("incident_status") == BORRADOR,
+    }
+
+
+def _solo_fecha(valor):
+    if not valor:
+        return None
+    return str(valor)[:10]
+
+
+def _motor_de_documentos():
+    """El renderizador de PDFs, con su paquete en la ruta.
+
+    El paquete `documents` vive fuera de `backend/` -- se monta aparte -- y hasta
+    ahora entraba en `sys.path` como efecto secundario de registrar su blueprint
+    al crear la aplicacion. Eso hacia que importarlo funcionara o no segun que
+    hubiera pasado antes: una tarea de Celery o un script fallaban con
+    `ModuleNotFoundError` mientras la misma llamada desde una peticion HTTP
+    funcionaba.
+    """
+    import os
+    import sys
+
+    ruta = os.getenv("DOCUMENTS_REPORTS_APP_PATH", "/documents-reports/app")
+    if ruta not in sys.path:
+        sys.path.insert(0, ruta)
+    try:
+        from documents.service import DocumentService
+    except ImportError as fallo:
+        raise AppError("errors.pdf_renderer_unavailable", 503,
+                       {"reason": str(fallo)}) from fallo
+    return DocumentService(
+        os.getenv("DOCUMENTS_TEMPLATES_DIR", "/documents-reports/templates"))
+
+
+def _expediente_del_vale(db, vale, actor_id: int):
+    """El `document` donde se archivan las versiones de este vale.
+
+    Uno por vale, no uno por descarga: las versiones cuelgan de el. Se vincula
+    por `business_reference_type`/`business_reference_value`, el puntero
+    generico de la tabla -- `document_relation` no tiene columna para
+    incidencias y agregarsela seria cambiar el esquema por un caso.
+    """
+    from app.models.document import Document, DocumentCategory
+
+    categoria = db.scalars(
+        select(DocumentCategory).where(
+            DocumentCategory.code == "warehouse_voucher",
+            DocumentCategory.deletion_date.is_(None),
+        )
+    ).first()
+    if categoria is None:
+        raise AppError("documents.category_not_configured", 500,
+                       {"code": "warehouse_voucher"})
+
+    expediente = db.scalars(
+        select(Document).where(
+            Document.business_reference_type == "incident",
+            Document.business_reference_value == str(vale.id_incident),
+            Document.id_document_category == categoria.id_document_category,
+            Document.deletion_date.is_(None),
+        ).with_for_update()
+    ).first()
+    if expediente is not None:
+        return expediente
+
+    # `document.id_proyect` es obligatorio y el vale no lo lleva: `incident` no
+    # tiene proyecto. Se toma el del usuario responsable, que es de quien es el
+    # vale; si no lo tuviera, el del actor.
+    id_proyect = db.scalars(
+        select(User.id_proyect).where(User.id_user == vale.id_user)
+    ).first() or db.scalars(
+        select(User.id_proyect).where(User.id_user == actor_id)
+    ).first()
+    if not id_proyect:
+        raise AppError("errors.resource_scope_missing", 409, {"entity": "proyect"})
+
+    expediente = Document(
+        id_proyect=int(id_proyect),
+        id_document_category=categoria.id_document_category,
+        title="Vale de almacen %s" % (vale.external_folio or vale.id_incident),
+        status="issued",
+        business_reference_type="incident",
+        business_reference_value=str(vale.id_incident),
+        issue_date=(vale.incident_date.date() if vale.incident_date else None),
+        created_by=actor_id,
+    )
+    db.add(expediente)
+    db.flush()
+    return expediente
+
+
+def pdf_del_vale(id_incident, user_data: dict, *, storage=None) -> bytes:
+    """El vale en PDF, archivado para tenerlo a la mano siempre.
+
+    Que hace distinto a generarlo al vuelo
+    --------------------------------------
+    Guarda cada PDF como una version de un `document`, el mismo mecanismo del
+    reporte de laboratorio. Eso trae el sha256, el tamano, el historial y que el
+    vale aparezca en el modulo de Documentos como cualquier otro papel -- sin
+    inventar una carpeta ni una columna.
+
+    Cuando NO se vuelve a generar
+    -----------------------------
+    Si el CONTENIDO del vale es identico al de la ultima version archivada, se
+    devuelve esa misma. No es solo por ahorrar trabajo: un vale CAMBIA -- los
+    renglones se devuelven uno a uno y el estado pasa a cerrado --, asi que
+    regenerar en cada descarga entrega un papel distinto cada vez y ninguno
+    coincide con el que alguien firmo. Archivar por version deja ver que decia el
+    del dia de la entrega y que dice el de hoy.
+
+    Se compara el contenido y NO la fecha de modificacion del vale, que fue el
+    primer intento: los 141 vales que vinieron del sistema anterior tienen
+    `creation_date` y `last_update_date` NULAS, asi que sin fecha con que
+    comparar se archivaba una version nueva en cada descarga -- justo de los
+    vales mas viejos, que son los que mas se consultan. Comparar el contenido
+    ademas detecta un cambio que no haya tocado la fecha.
+
+    Si no hay almacenamiento se genera sin archivar: preferible un PDF sin
+    historial que ninguno.
+    """
+    import hashlib
+    import json
+
+    from app.models.document import DocumentVersion
+
+    actor_id = _actor(user_data)
+
+    if storage is None:
+        return _motor_de_documentos().render_pdf_bytes(
+            "warehouse_voucher", documento_del_vale(id_incident, user_data))
+
+    # La ficha es determinista: sale solo de los datos del vale, sin fechas de
+    # generacion. Por eso sirve para decidir si algo cambio.
+    ficha = documento_del_vale(id_incident, user_data)
+    huella = json.dumps(ficha, sort_keys=True, default=str)
+
+    with transaction_context() as db:
+        vale = _vale(db, id_incident)
+        expediente = _expediente_del_vale(db, vale, actor_id)
+        ultima = db.scalars(
+            select(DocumentVersion).where(
+                DocumentVersion.id_document == expediente.id_document,
+                DocumentVersion.deletion_date.is_(None),
+            ).order_by(DocumentVersion.version.desc())
+        ).first()
+        id_expediente = expediente.id_document
+        id_proyect = expediente.id_proyect
+        siguiente = (ultima.version if ultima else 0) + 1
+        vigente = (ultima is not None and ultima.source_snapshot is not None
+                   and json.dumps(ultima.source_snapshot, sort_keys=True,
+                                  default=str) == huella)
+        ruta_vigente = ultima.file_path if vigente else None
+
+    if ruta_vigente:
+        try:
+            return storage.resolve(ruta_vigente).read_bytes()
+        except AppError:
+            # El archivo se perdio -- volumen nuevo, limpieza -- pero la fila
+            # sigue. Se regenera en vez de fallar: el vale se puede reconstruir
+            # entero desde la base.
+            pass
+
+    pdf = _motor_de_documentos().render_pdf_bytes("warehouse_voucher", ficha)
+
+    ruta = storage.write(pdf, id_proyect, id_expediente, siguiente, "pdf")
+    with transaction_context() as db:
+        db.add(DocumentVersion(
+            id_document=id_expediente,
+            version=siguiente,
+            file_path=ruta,
+            original_filename="Vale-%s-v%s.pdf" % (ficha["folio"], siguiente),
+            extension="pdf",
+            mime_type="application/pdf",
+            file_size=len(pdf),
+            sha256=hashlib.sha256(pdf).hexdigest(),
+            source="generated",
+            status="issued",
+            # La ficha completa queda guardada con la version: permite ver que
+            # decia el vale sin volver a abrir el PDF, y sobrevive aunque el
+            # archivo se pierda.
+            source_snapshot=ficha,
+            generated_by=actor_id,
+        ))
+    return pdf

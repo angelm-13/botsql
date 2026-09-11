@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { useI18n } from "../../i18n";
-import { posLinks, posRequest, posStatus } from "../../api";
+import { posRequest, posStatus } from "../../api";
 import "../../styles/pos-screens.css";
 import PageHeader from "../../components/PageHeader.jsx";
 
@@ -99,10 +99,7 @@ export default function PosScreen({ titulo, descripcion, recursos, children, acc
       const respuestas = await Promise.all(
         nombres.map((nombre) => {
           const ruta = rutas.current[nombre];
-          // `links` no vive en el POS sino en el nucleo: es la
-          // correspondencia entre los dos catalogos.
-          const peticion = ruta === "@links" ? posLinks() : posRequest(ruta);
-          return peticion.catch((error) => {
+          return posRequest(ruta).catch((error) => {
             // Un recurso que falla no tumba la pantalla entera: las demas
             // secciones siguen siendo utiles, y el fallo se ve en su sitio.
             reportar(error);

@@ -1,0 +1,55 @@
+/* La foto en grande, sobre lo que se estaba mirando.
+
+   Fondo más oscuro que el de la ficha (.ficha-fondo, .48) a propósito: aquí lo
+   único que importa es la imagen, y un velo claro deja competir a la lista de
+   atrás. La ficha, en cambio, sigue siendo una ventana sobre su contexto. */
+
+.visor-foto {
+  position: fixed; inset: 0; z-index: 1400;
+  display: grid; place-items: center; padding: 28px;
+  background: rgba(9, 20, 27, .82);
+}
+
+.visor-foto-cerrar {
+  position: absolute; top: 16px; right: 18px;
+  display: grid; place-items: center;
+  width: 38px; height: 38px;
+  border: 1px solid rgba(255, 255, 255, .28);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .12);
+  color: #fff; cursor: pointer;
+}
+.visor-foto-cerrar:hover { background: rgba(255, 255, 255, .22); }
+
+.visor-foto-marco {
+  margin: 0;
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  max-width: 100%; max-height: 100%;
+}
+
+.visor-foto-marco img {
+  /* Cabe entera sin recortarse ni estirarse: una herramienta recortada no se
+     reconoce, que es justo para lo que se abre esta vista. */
+  max-width: min(1100px, 100%);
+  max-height: 78vh;
+  object-fit: contain;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .45);
+}
+
+.visor-foto-marco figcaption {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  color: #e7eef2; text-align: center;
+}
+.visor-foto-marco figcaption strong { font-size: 16px; }
+.visor-foto-marco figcaption span { font-size: 13px; color: #9fb3bd; }
+
+/* La miniatura que abre el visor: se anuncia como pulsable sin gritar. */
+.foto-ampliable { cursor: zoom-in; }
+.foto-ampliable:hover { filter: brightness(1.04); }
+
+@media (max-width: 640px) {
+  .visor-foto { padding: 14px; }
+  .visor-foto-marco img { max-height: 68vh; }
+}

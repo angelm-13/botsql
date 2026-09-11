@@ -1,95 +1,56 @@
 #!/usr/bin/env bash
 #
-# Levanta TYAKXA y todo lo que necesita, de una vez.
+# Levanta TYAKXA.
 #
-# Por que un script y no un solo docker-compose
-# ---------------------------------------------
-# La idea original era meter los demas proyectos en el compose de TYAKXA para
-# que un `docker compose up` levantara todo. No se puede sin romper algo, por
-# dos motivos medidos:
+# Por que ya no levanta nada mas
+# ------------------------------
+# Este script arrancaba dos proyectos: TYAKXA y el punto de venta, que corria su
+# propio backend contra su propia base (`pos_enterprise`). Explicaba con detalle
+# por que no se podian fundir en un solo `docker-compose`: los nombres de
+# servicio chocaban -- los dos tenian `db`, `backend` y `frontend` -- y los
+# volumenes eran del otro proyecto, asi que redeclararlos aqui habria arrancado
+# el POS con la base VACIA.
 #
-#   1. **Los nombres chocan.** TYAKXA tiene `db`, `backend` y `frontend`; el POS
-#      tiene `db`, `backend`, `frontend`, `redis`, `celery_worker` y
-#      `celery_beat`. Fundir los dos archivos exige renombrar los del POS, y
-#      entonces este repositorio tendria una COPIA de los servicios del POS que
-#      se queda vieja en cuanto alguien toca el POS de verdad.
+# Todo eso dejo de aplicar cuando el punto de venta entro a esta base
+# (migracion 20260911100000). Ya no hay un segundo backend que arrancar ni un
+# segundo volumen que respetar: el POS es un modulo mas, sus rutas las sirve
+# este backend y su catalogo es `product`.
 #
-#   2. **Los volumenes son del otro proyecto.** La base del POS vive en
-#      `pos-enterprise_pos_db_data`. Redeclararla aqui como volumen propio
-#      arrancaria el POS con la base VACIA -- casi paso: el primer intento leia
-#      `C:\Users\TDW3\pos-system\docker-compose.yml`, que es OTRO proyecto con
-#      otras credenciales, y habria creado una base nueva sin darse cuenta.
-#
-# Asi que cada proyecto conserva su compose, sus volumenes y sus datos, y esto
-# solo es el boton que los arranca en orden.
-#
-# Que NO hace falta levantar
-# --------------------------
-# Restaurante y logistica NO son proyectos aparte: su codigo vive dentro de este
-# repositorio (`backend/app/models/restaurant.py`,
-# `backend/app/services/logistics_*.py`). Los directorios `restaurante`,
-# `demo_restaurante`, `demo_pos`, `nkpm*` y `cotizador_demo` de esta maquina son
-# otros productos, no servicios que TYAKXA llame.
-#
-# La unica dependencia externa de TYAKXA es el POS, y esta declarada en el .env:
-#
-#     POS_API_URL=http://host.docker.internal:5000
+# Con `docker compose up -d` habria bastado. El script se queda porque hace lo
+# que un `up -d` no hace: comprobar que los servicios RESPONDEN. Un contenedor
+# en estado 'Up' no significa que su API conteste, y esa diferencia ya costo un
+# rato de busqueda una vez.
 #
 set -euo pipefail
 
 TYAKXA="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-POS="${POS_PROJECT_DIR:-$(dirname "$TYAKXA")/pos-enterprise}"
-
-# Del POS solo lo que la pantalla de Caja necesita: su API, su base y su redis.
-# El frontend del POS y sus dos celery se quedan apagados a proposito -- TYAKXA
-# habla con la API, no con su interfaz, y son cuatro contenedores de memoria
-# que nadie mira. Con `--completo` se levantan tambien.
-SERVICIOS_POS=(db redis backend)
-if [[ "${1:-}" == "--completo" ]]; then
-  SERVICIOS_POS=()
-fi
 
 echo "==> TYAKXA  ($TYAKXA)"
 docker compose -f "$TYAKXA/docker-compose.yml" up -d
 
-if [[ -f "$POS/docker-compose.yml" ]]; then
-  echo
-  echo "==> Punto de venta  ($POS)"
-  docker compose --project-directory "$POS" up -d "${SERVICIOS_POS[@]}"
-else
-  echo
-  echo "!! No se encontro el POS en $POS"
-  echo "   La pantalla de Caja dira 'El punto de venta no responde'."
-  echo "   Si esta en otro sitio: POS_PROJECT_DIR=/ruta/al/pos ./levantar-todo.sh"
-fi
-
-# Y comprobar que responde, que es la parte que de verdad importa: un
-# contenedor 'Up' no significa que su API contesta.
 echo
 echo "==> Comprobando"
-for intento in $(seq 1 30); do
-  if curl -fsS -o /dev/null "http://localhost:5001/health" 2>/dev/null; then
-    echo "   TYAKXA        ok  http://localhost:5001/health"
-    break
-  fi
-  [[ $intento -eq 30 ]] && echo "   TYAKXA        NO responde en el 5001"
-  sleep 2
-done
 
-for intento in $(seq 1 30); do
-  if curl -fsS -o /dev/null "http://localhost:3001/" 2>/dev/null; then
-    echo "   Interfaz      ok  http://localhost:3001"
-    break
-  fi
-  [[ $intento -eq 30 ]] && echo "   Interfaz      NO responde en el 3001"
-  sleep 2
-done
+esperar() {
+  local nombre="$1" url="$2" puerto="$3"
+  for intento in $(seq 1 30); do
+    if curl -fsS -o /dev/null "$url" 2>/dev/null; then
+      printf "   %-14s ok  %s\n" "$nombre" "$url"
+      return 0
+    fi
+    sleep 2
+  done
+  printf "   %-14s NO responde en el %s\n" "$nombre" "$puerto"
+  return 1
+}
 
-for intento in $(seq 1 30); do
-  if curl -fsS -o /dev/null "http://localhost:5000/health" 2>/dev/null; then
-    echo "   Punto de venta ok  http://localhost:5000/health"
-    break
-  fi
-  [[ $intento -eq 30 ]] && echo "   Punto de venta NO responde en el 5000"
-  sleep 2
-done
+fallo=0
+esperar "Backend"  "http://localhost:5001/health" 5001 || fallo=1
+esperar "Interfaz" "http://localhost:3001/"       3001 || fallo=1
+
+echo
+if [[ $fallo -eq 0 ]]; then
+  echo "   El punto de venta entra por la interfaz, en Caja: ya no es un"
+  echo "   servicio aparte que haya que arrancar."
+fi
+exit $fallo

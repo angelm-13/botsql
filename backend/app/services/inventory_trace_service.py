@@ -95,6 +95,11 @@ def _clasificar(movement_type: str, reference_type: str | None) -> str:
     return {
         "return": "devuelto",
         "loan": "prestado",
+        # La carga del sistema anterior. Sin nombre propio caia en el
+        # `.get(..., movement_type)` de abajo y la tarjeta enseñaba "opening"
+        # tal cual -- en 2 201 de los 2 427 asientos del libro, que es casi
+        # todo lo que hay.
+        "opening": "inicial",
         "damage": "danado",
         "destroy": "destruido",
         "loss": "extraviado",
