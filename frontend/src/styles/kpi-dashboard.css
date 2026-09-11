@@ -111,6 +111,12 @@
 .kpi-dropdown-picker-toggle:hover{background:#f4f6f9;border-color:#173b66}
 .kpi-dropdown-picker-toggle span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .kpi-dropdown-picker-menu{position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:15;max-height:220px;overflow:auto;padding:10px;background:#fff;border:1px solid #d7e0ea;border-radius:12px;box-shadow:0 12px 30px rgba(15,23,42,.14)}
+/* Adentro del popover las opciones van en lista (una por renglon), no en
+   cuadricula -- el chip/avatar/color de cada item no cambia, solo el
+   acomodo del contenedor (kpi-employee-list / kpi-chip-option-group), que
+   fuera de este popover se quedan como flex-wrap normal. */
+.kpi-dropdown-picker-menu .kpi-employee-list,
+.kpi-dropdown-picker-menu .kpi-chip-option-group{flex-direction:column;flex-wrap:nowrap;align-items:flex-start}
 .kpi-department-chip{display:flex;align-items:center;gap:6px;border:1px solid #cbd5e1;border-radius:999px;padding:6px 12px;font-size:13px;font-weight:700;color:#334155;cursor:pointer}
 .kpi-department-chip input{margin:0}
 /* Solo exhibicion (ver DEPARTAMENTOS_VISUALES en Dashboard.jsx): atenuado y
