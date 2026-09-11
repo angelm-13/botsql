@@ -78,9 +78,23 @@
 
 .kpi-employee-picker,.kpi-department-picker{display:flex;flex-direction:column;gap:8px;margin-top:6px}
 .kpi-employee-picker-label,.kpi-department-picker-label{font-weight:800;color:#334155;font-size:13px}
-.kpi-employee-list,.kpi-department-list{display:flex;flex-wrap:wrap;gap:8px;max-height:160px;overflow:auto;padding:4px}
-.kpi-employee-chip,.kpi-department-chip{display:flex;align-items:center;gap:6px;border:1px solid #cbd5e1;border-radius:999px;padding:6px 12px;font-size:13px;font-weight:700;color:#334155;cursor:pointer}
-.kpi-employee-chip input,.kpi-department-chip input{margin:0}
+.kpi-employee-list,.kpi-department-list{display:flex;flex-wrap:wrap;gap:6px;max-height:160px;overflow:auto;padding:4px}
+.kpi-department-chip{display:flex;align-items:center;gap:6px;border:1px solid #cbd5e1;border-radius:999px;padding:6px 12px;font-size:13px;font-weight:700;color:#334155;cursor:pointer}
+.kpi-department-chip input{margin:0}
+/* Solo exhibicion (ver DEPARTAMENTOS_VISUALES en Dashboard.jsx): atenuado y
+   sin cursor de interaccion, para que se note a simple vista que no es un
+   filtro real todavia. */
+.kpi-department-chip.visual-only{cursor:default;color:#94a3b8;border-style:dashed}
+
+/* Chip de empleado: pildora compacta (sin checkbox visible, boton simple) --
+   varias por fila en vez de una columna apilada. El acento de color por
+   persona (--employee-color, colorDeKpi(id_user)) se ve en el borde siempre
+   y se refuerza con fondo tenue del mismo color solo cuando esta activo, para
+   que no compita visualmente con el resto de chips cuando no esta elegido. */
+.kpi-employee-chip{display:inline-flex;align-items:center;gap:5px;border:1.5px solid var(--employee-color);border-radius:999px;padding:3px 10px 3px 4px;font-size:12px;font-weight:700;color:#334155;cursor:pointer;background:#fff;font:inherit}
+.kpi-employee-chip:hover{background:#f4f6f9}
+.kpi-employee-chip.active{background:color-mix(in srgb, var(--employee-color) 16%, #fff);color:#173b66}
+.kpi-employee-chip span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px}
 
 /* Categoria/KPI y tipo de grafica: iconos fijos en vez de <select>. Mismo
    tratamiento "active" que ya usan las pestanas del tablero (.kpi-tab.active),

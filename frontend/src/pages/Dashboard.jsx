@@ -247,11 +247,14 @@ function colorEfectivoDeKpi(idKpiDefinition, coloresOverride) {
 
 // Avatar por omision para un empleado: no hay fotos de perfil reales, asi que
 // este icono neutro sobre fondo circular es el placeholder en todos lados
-// donde se muestra un nombre de empleado.
-function EmployeeAvatar({ size = "regular" }) {
+// donde se muestra un nombre de empleado. `color` (opcional) es el acento
+// determinista por persona del picker de empleados -- ver colorDeKpi, mismo
+// patron `id % CATEGORICAL.length`, reusado aqui para id_user en vez de
+// id_kpi_definition.
+function EmployeeAvatar({ size = "regular", color }) {
   return (
-    <span className={`kpi-avatar ${size === "small" ? "small" : ""}`}>
-      <User size={size === "small" ? 10 : 13} />
+    <span className={`kpi-avatar ${size === "small" ? "small" : ""}`} style={color ? { background: color } : undefined}>
+      <User size={size === "small" ? 10 : 13} color={color ? "#fff" : undefined} />
     </span>
   );
 }
@@ -279,6 +282,15 @@ function startOfMonthIso() {
   fecha.setDate(1);
   return fecha.toISOString().slice(0, 10);
 }
+
+// SOLO VISUAL -- exhibicion, no filtra nada todavia. `departments` (el prop
+// real, via getAllDepartment) no trae mas que "General" en la practica hoy;
+// esta lista fija es puramente de aparador para que el picker no se vea
+// vacio, NO esta conectada a Permission.id_department ni a ninguna tabla real.
+// No confundir con una fila de `department`: no hay migracion, no hay
+// id_department real detras de estos nombres. Cuando haya un pedido real de
+// filtrar por departamento, esto se reemplaza por datos de verdad.
+const DEPARTAMENTOS_VISUALES = ["RRHH", "Contabilidad", "Producción", "Ventas", "Sistemas/TI", "Administración", "Logística"];
 
 // "Personalizado" no trae `range`: solo marca el modo manual, nunca toca los
 // campos -- los atajos son un llenado rapido, no un reemplazo de los
@@ -1094,18 +1106,28 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
     umbralBajoStock,
   } = panelState;
 
+  // KPIs fijos por modulo (dimension "empleado"/"producto") vs. variables
+  // sueltas (dimension "global", ej. ingresos_totales/egresos_totales -- ver
+  // el comentario de esas entradas en KPI_REGISTRY). Una variable suelta no
+  // se desglosa por nada: sirve para combinar en un mismo grafico ("ingresos"
+  // vs "egresos"), no para elegir por modulo, asi que vive en su propia
+  // seccion del picker y se saca de la lista por modulo para no repetir el
+  // mismo chip en dos lugares.
+  const kpisFijos = useMemo(() => kpiCatalog.filter((kpi) => kpi.dimensiones?.[0] !== "global"), [kpiCatalog]);
+  const kpisVariables = useMemo(() => kpiCatalog.filter((kpi) => kpi.dimensiones?.[0] === "global"), [kpiCatalog]);
+
   // Catalogo agrupado por modulo (facturacion, operaciones, ...): el paso de
   // categoria solo hace falta cuando hay mas de uno, si no se muestran los
   // KPIs directo.
   const kpisPorModulo = useMemo(() => {
     const mapa = new Map();
-    kpiCatalog.forEach((kpi) => {
+    kpisFijos.forEach((kpi) => {
       const lista = mapa.get(kpi.modulo) || [];
       lista.push(kpi);
       mapa.set(kpi.modulo, lista);
     });
     return mapa;
-  }, [kpiCatalog]);
+  }, [kpisFijos]);
   const modulosDisponibles = Array.from(kpisPorModulo.keys());
   const necesitaCategoria = modulosDisponibles.length > 1;
 
@@ -1186,6 +1208,63 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
     }
     onChangePanelState({ coloresKpi: proximo });
     setSwatchAbierto(null);
+  }
+
+  // Un chip de KPI (fijo o variable suelta) con su swatch de color -- se usa
+  // en las dos secciones del picker (KPIs por modulo y variables sueltas),
+  // de ahi que salga de la lista con el mismo criterio ambas veces.
+  function renderKpiChip(kpi) {
+    const idStr = String(kpi.id_kpi_definition);
+    const posicion = idsKpiSeleccionados.indexOf(idStr);
+    // El swatch de color solo tiene sentido cuando este KPI ya esta
+    // seleccionado Y el tipo de grafica activo de verdad pinta un color por
+    // KPI (barras/linea/area) -- en "numero"/"dona" el color no depende del
+    // KPI, no hay nada que este swatch pudiera cambiar.
+    const puedeElegirColor = multiKpiPermitido && posicion >= 0;
+    return (
+      <div className="kpi-chip-with-swatch" key={kpi.id_kpi_definition}>
+        <button
+          type="button"
+          className={`kpi-chip-option ${posicion >= 0 ? "active" : ""}`}
+          onClick={() => toggleKpi(idStr)}
+        >
+          {multiKpiPermitido && posicion >= 0 && <span className="kpi-chip-badge">{posicion + 1}</span>}
+          {kpi.etiqueta || kpi.clave}
+        </button>
+        {puedeElegirColor && (
+          <div className="kpi-color-swatch-wrap">
+            <button
+              type="button"
+              className="kpi-color-swatch"
+              style={{ background: colorEfectivoDeKpi(idStr, coloresKpi) }}
+              onClick={() => setSwatchAbierto((actual) => (actual === idStr ? null : idStr))}
+              title={tx("kpi_color_choose", "Elegir color")}
+              aria-label={tx("kpi_color_choose", "Elegir color")}
+              aria-expanded={swatchAbierto === idStr}
+            />
+            {swatchAbierto === idStr && (
+              <div className="kpi-color-popover" role="menu">
+                {CATEGORICAL.map((color) => {
+                  const activo = colorEfectivoDeKpi(idStr, coloresKpi) === color;
+                  return (
+                    <button
+                      type="button"
+                      key={color}
+                      className={`kpi-color-option ${activo ? "active" : ""}`}
+                      style={{ background: color }}
+                      onClick={() => elegirColorKpi(idStr, color)}
+                      aria-label={color}
+                      role="menuitemradio"
+                      aria-checked={activo}
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
   }
 
   function toggleEmpleado(idUser) {
@@ -1332,63 +1411,19 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
               )}
               {(!necesitaCategoria || categoriaKpi) && (
                 <div className="kpi-chip-option-group">
-                  {(necesitaCategoria ? kpisPorModulo.get(categoriaKpi) || [] : kpiCatalog).map((kpi) => {
-                    const idStr = String(kpi.id_kpi_definition);
-                    const posicion = idsKpiSeleccionados.indexOf(idStr);
-                    // El swatch de color solo tiene sentido cuando este KPI ya
-                    // esta seleccionado Y el tipo de grafica activo de verdad
-                    // pinta un color por KPI (barras/linea/area) -- en
-                    // "numero"/"dona" el color no depende del KPI, no hay nada
-                    // que este swatch pudiera cambiar.
-                    const puedeElegirColor = multiKpiPermitido && posicion >= 0;
-                    return (
-                      <div className="kpi-chip-with-swatch" key={kpi.id_kpi_definition}>
-                        <button
-                          type="button"
-                          className={`kpi-chip-option ${posicion >= 0 ? "active" : ""}`}
-                          onClick={() => toggleKpi(idStr)}
-                        >
-                          {multiKpiPermitido && posicion >= 0 && <span className="kpi-chip-badge">{posicion + 1}</span>}
-                          {kpi.etiqueta || kpi.clave}
-                        </button>
-                        {puedeElegirColor && (
-                          <div className="kpi-color-swatch-wrap">
-                            <button
-                              type="button"
-                              className="kpi-color-swatch"
-                              style={{ background: colorEfectivoDeKpi(idStr, coloresKpi) }}
-                              onClick={() => setSwatchAbierto((actual) => (actual === idStr ? null : idStr))}
-                              title={tx("kpi_color_choose", "Elegir color")}
-                              aria-label={tx("kpi_color_choose", "Elegir color")}
-                              aria-expanded={swatchAbierto === idStr}
-                            />
-                            {swatchAbierto === idStr && (
-                              <div className="kpi-color-popover" role="menu">
-                                {CATEGORICAL.map((color) => {
-                                  const activo = colorEfectivoDeKpi(idStr, coloresKpi) === color;
-                                  return (
-                                    <button
-                                      type="button"
-                                      key={color}
-                                      className={`kpi-color-option ${activo ? "active" : ""}`}
-                                      style={{ background: color }}
-                                      onClick={() => elegirColorKpi(idStr, color)}
-                                      aria-label={color}
-                                      role="menuitemradio"
-                                      aria-checked={activo}
-                                    />
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                  {(necesitaCategoria ? kpisPorModulo.get(categoriaKpi) || [] : kpisFijos).map(renderKpiChip)}
                 </div>
               )}
             </div>
+
+            {kpisVariables.length > 0 && (
+              <div className="kpi-picker-section">
+                <span>{tx("kpi_variables", "Variables (para combinar en un mismo gráfico)")}</span>
+                <div className="kpi-chip-option-group">
+                  {kpisVariables.map(renderKpiChip)}
+                </div>
+              </div>
+            )}
             </div>
 
             <div className="kpi-panel-col">
@@ -1490,17 +1525,24 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
               <div className="kpi-employee-picker">
                 <span className="kpi-employee-picker-label">{tx("employees_filter", "Filtrar por empleados (opcional)")}</span>
                 <div className="kpi-employee-list">
-                  {users.map((user) => (
-                    <label className="kpi-employee-chip" key={user.id_user}>
-                      <input
-                        type="checkbox"
-                        checked={empleadosSeleccionados.includes(String(user.id_user))}
-                        onChange={() => toggleEmpleado(String(user.id_user))}
-                      />
-                      <EmployeeAvatar size="small" />
-                      <span>{user.full_name || user.username || `#${user.id_user}`}</span>
-                    </label>
-                  ))}
+                  {users.map((user) => {
+                    const activo = empleadosSeleccionados.includes(String(user.id_user));
+                    const colorEmpleado = colorDeKpi(user.id_user);
+                    return (
+                      <button
+                        type="button"
+                        className={`kpi-employee-chip ${activo ? "active" : ""}`}
+                        key={user.id_user}
+                        style={{ "--employee-color": colorEmpleado }}
+                        onClick={() => toggleEmpleado(String(user.id_user))}
+                        aria-pressed={activo}
+                        title={user.full_name || user.username || `#${user.id_user}`}
+                      >
+                        <EmployeeAvatar size="small" color={colorEmpleado} />
+                        <span>{user.full_name || user.username || `#${user.id_user}`}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -1518,6 +1560,18 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
                       />
                       <span>{department.department_description || `#${department.id_department}`}</span>
                     </label>
+                  ))}
+                  {/* SOLO VISUAL: ver DEPARTAMENTOS_VISUALES arriba -- no
+                      filtran nada, no estan conectados a
+                      Permission.id_department ni a ninguna tabla real. */}
+                  {DEPARTAMENTOS_VISUALES.map((nombre) => (
+                    <span
+                      className="kpi-department-chip visual-only"
+                      key={nombre}
+                      title={tx("department_visual_only", "Próximamente: todavía no filtra datos reales")}
+                    >
+                      {nombre}
+                    </span>
                   ))}
                 </div>
               </div>
