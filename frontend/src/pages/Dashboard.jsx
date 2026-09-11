@@ -1,8 +1,8 @@
 /* eslint-disable react/prop-types */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import {
-  ArrowDown, ArrowUp, AreaChart as AreaChartIcon, BarChart2, ClipboardList, Hash,
-  LineChart as LineChartIcon, Pencil, PieChart as PieChartIcon, Plus, Receipt,
+  ArrowDown, ArrowUp, AreaChart as AreaChartIcon, BarChart2, ChevronDown, ChevronUp,
+  ClipboardList, Hash, LineChart as LineChartIcon, Pencil, PieChart as PieChartIcon, Plus, Receipt,
   RefreshCw, SlidersHorizontal, Trash2, User, X,
 } from "lucide-react";
 import {
@@ -310,6 +310,7 @@ const DATE_SHORTCUTS = [
 function defaultPanelState() {
   return {
     editingWidgetId: null,
+    colapsado: false,
     idsKpiSeleccionados: [],
     categoriaKpi: "",
     tipoGrafica: "numero",
@@ -606,6 +607,7 @@ export default function Dashboard() {
     const parametros = widget.parametros || {};
     updatePanelState(activeId, {
       editingWidgetId: widget.id_kpi_dashboard_widget,
+      colapsado: false,
       idsKpiSeleccionados: ids,
       categoriaKpi: primerKpi?.modulo || "",
       tipoGrafica: widget.tipo_grafica || "numero",
@@ -648,6 +650,17 @@ export default function Dashboard() {
         eyebrow={t("common.dashboard")}
         titulo={tx("title", "Tableros de KPIs")}
       >
+        {/* Punto de entrada fijo para "Agregar grafico" -- vive aqui, no en
+            un boton dentro de la cuadricula de widgets, porque ese boton
+            desaparecia cuando la cuadricula quedaba llena a un multiplo
+            exacto de columnas (ver useCompleteGridPlaceholders). El submit
+            del panel (footer) ya cambia su propio texto segun el contexto
+            (Agregar/Actualizar); este boton solo abre/reinicia el borrador. */}
+        {activeDashboard && (
+          <button className="button" onClick={() => resetPanelState(activeId)}>
+            <Plus size={16} />{tx("add_widget", "Agregar gráfico")}
+          </button>
+        )}
         <button className="button ghost" onClick={() => loadDashboards()} disabled={loadingDashboards}>
         <RefreshCw size={16} />{loadingDashboards ? t("common.loading") : t("common.refresh")}
         </button>
@@ -693,12 +706,6 @@ export default function Dashboard() {
 
       {activeDashboard && (
         <div className="kpi-dashboard-body">
-          <div className="kpi-dashboard-toolbar">
-            <button className="button primary" onClick={() => resetPanelState(activeId)}>
-              <Plus size={16} />{tx("add_widget", "Agregar gráfico")}
-            </button>
-          </div>
-
           {/* Panel permanente: ya no se monta/desmonta con un clic (ver
               PANEL "AGREGAR GRAFICO" ESTATICO POR DASHBOARD). `key={activeId}`
               fuerza una instancia nueva por tablero para que el estado
@@ -1090,6 +1097,7 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, fo
 function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, departments, onCancel, onSave, t, tx }) {
   const {
     editingWidgetId,
+    colapsado,
     idsKpiSeleccionados,
     categoriaKpi,
     tipoGrafica,
@@ -1338,16 +1346,46 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
     }
   }
 
+  const tituloPanel = editingWidgetId ? tx("edit_widget", "Editar gráfico") : tx("add_widget", "Agregar gráfico");
+
   return (
-    <section className="kpi-widget-panel">
+    <section className={`kpi-widget-panel ${colapsado ? "collapsed" : ""}`}>
       <header>
         <div>
           <p className="eyebrow">{tx("widget", "Gráfico")}</p>
-          <h3>{editingWidgetId ? tx("edit_widget", "Editar gráfico") : tx("add_widget", "Agregar gráfico")}</h3>
+          {!colapsado && <h3>{tituloPanel}</h3>}
         </div>
-        <button type="button" className="kpi-icon-button" onClick={onCancel} aria-label={t("common.cancel")}><X size={18} /></button>
+        <div className="kpi-widget-panel-header-actions">
+          {/* Pestana/flap, no una X de cierre: un clic colapsa a esta misma
+              pestana (el borrador sigue vivo en panelState), otro clic
+              expande de vuelta. Descartar el borrador por completo es una
+              accion aparte (boton de abajo, solo visible colapsado, o
+              "Cancelar" en el footer cuando esta expandido). */}
+          <button
+            type="button"
+            className="kpi-panel-flap"
+            onClick={() => onChangePanelState({ colapsado: !colapsado })}
+            aria-expanded={!colapsado}
+            title={colapsado ? tx("expand_panel", "Expandir") : tx("collapse_panel", "Colapsar")}
+          >
+            {colapsado && <span>{tituloPanel}</span>}
+            {colapsado ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+          </button>
+          {colapsado && (
+            <button
+              type="button"
+              className="kpi-icon-button danger"
+              onClick={onCancel}
+              aria-label={t("common.cancel")}
+              title={t("common.cancel")}
+            >
+              <X size={16} />
+            </button>
+          )}
+        </div>
       </header>
 
+      {!colapsado && (
       <form onSubmit={handleSubmit}>
         {kpiCatalog.length === 0 ? (
           <div className="empty">
@@ -1585,9 +1623,14 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
 
         <footer>
           <button type="button" className="button" onClick={onCancel}>{t("common.cancel")}</button>
-          {kpiCatalog.length > 0 && <button type="submit" className="button primary" disabled={saving}>{t("common.save")}</button>}
+          {kpiCatalog.length > 0 && (
+            <button type="submit" className="button primary" disabled={saving}>
+              {editingWidgetId ? tx("update_widget", "Actualizar") : tx("add_widget", "Agregar gráfico")}
+            </button>
+          )}
         </footer>
       </form>
+      )}
     </section>
   );
 }

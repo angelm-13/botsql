@@ -10,7 +10,6 @@
 .kpi-tab-add:hover{background:#d8efe8;border-color:#1b7a60;color:#1b7a60}
 
 .kpi-dashboard-body{display:flex;flex-direction:column;gap:16px}
-.kpi-dashboard-toolbar{display:flex;justify-content:flex-end}
 
 .kpi-widget-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px}
 .kpi-widget-placeholder{border:1px dashed #c3c2b7;border-radius:22px;min-height:240px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:#fbfaf7;color:#a6a49a;cursor:pointer;font:inherit}
@@ -43,6 +42,22 @@
 .kpi-widget-panel header{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:16px}
 .kpi-widget-panel h3{margin:2px 0;color:#173b66}
 .kpi-widget-panel footer{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.kpi-widget-panel-header-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
+
+/* Colapsado: la seccion se reduce a la franja del header (la pestana/flap),
+   sin el padding pensado para el formulario completo -- ver
+   KpiWidgetPanel.colapsado en Dashboard.jsx. */
+.kpi-widget-panel.collapsed{padding:10px 20px}
+.kpi-widget-panel.collapsed header{margin-bottom:0}
+
+/* Pestana/flap con flecha: reemplaza la "X" de cerrar de antes. Un clic
+   colapsa/expande el mismo panel -- no es un cierre real, el borrador sigue
+   vivo en panelState mientras esta colapsado (ver el comentario junto a
+   `colapsado` en Dashboard.jsx). Cuando esta colapsado tambien muestra el
+   titulo, porque el <h3> de arriba deja de renderizarse. */
+.kpi-panel-flap{display:flex;align-items:center;gap:8px;border:1px solid #d7e0ea;background:#f4f6f9;color:#173b66;border-radius:10px;padding:7px 12px;cursor:pointer;font:inherit;font-weight:800;font-size:13px}
+.kpi-panel-flap:hover{background:#eef2f6}
+.kpi-panel-flap span{white-space:nowrap}
 
 /* Franja compacta y ancha en vez de torre vertical: en desktop las secciones
    del panel se acomodan en 3 columnas lado a lado (KPI+tipo de grafica /
