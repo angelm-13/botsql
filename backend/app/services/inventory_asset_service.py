@@ -30,7 +30,7 @@ es una baja disfrazada.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from sqlalchemy import func, select
@@ -101,7 +101,11 @@ CAPACIDAD_PARA_MERMA = ADJUSTMENT_CAPABILITY
 
 
 def _hoy() -> date:
-    return datetime.now(timezone.utc).date()
+    # La fecha del servidor, no UTC: un vencimiento es un dia del calendario de
+    # quien opera el almacen, y forzar UTC lo adelanta hasta 6 horas (la
+    # diferencia con Mexico) antes de la medianoche real. Mismo criterio que
+    # `inventory_lot_service.py` ya usa para vencimientos de lote.
+    return date.today()
 
 
 def _texto(valor, campo, *, largo=300, obligatorio=False):

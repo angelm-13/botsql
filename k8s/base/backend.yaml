@@ -121,6 +121,13 @@ spec:
         - name: backend
           # kustomize `images:` lo sustituye por ghcr.io/.../tyakxa-tny-backend:<sha>
           image: BACKEND_IMAGE_PLACEHOLDER
+          env:
+            # Sin esto el contenedor corre en UTC (default de la imagen base) y
+            # cualquier corte por dia de calendario -vencimientos, "hoy"- queda
+            # hasta 6 horas adelantado respecto al dia real del cliente. Mismo
+            # valor que .env usa en desarrollo local.
+            - name: TZ
+              value: America/Mexico_City
           envFrom:
             - secretRef:
                 name: app-secrets
@@ -190,6 +197,10 @@ spec:
         - name: celery-worker
           image: WORKER_IMAGE_PLACEHOLDER
           command: ["celery", "-A", "celery_worker.celery", "worker", "--loglevel=INFO"]
+          env:
+            # Ver nota de TZ en el Deployment "backend": misma app, mismo reloj.
+            - name: TZ
+              value: America/Mexico_City
           envFrom:
             - secretRef:
                 name: app-secrets
@@ -259,6 +270,10 @@ spec:
           # tooling extra; queda como pendiente si se vuelve un problema real.
           image: WORKER_IMAGE_PLACEHOLDER
           command: ["celery", "-A", "celery_worker.celery", "beat", "--loglevel=INFO"]
+          env:
+            # Ver nota de TZ en el Deployment "backend": misma app, mismo reloj.
+            - name: TZ
+              value: America/Mexico_City
           envFrom:
             - secretRef:
                 name: app-secrets
