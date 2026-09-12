@@ -234,10 +234,11 @@ export default function App() {
           <Route path="/logistica/expedientes" element={<RoleAccessRoute entityName="logistics_file"><LogisticsFilesPage /></RoleAccessRoute>} />
           <Route path="/logistica/facturas" element={<RoleAccessRoute entityName="invoice"><InvoicePage /></RoleAccessRoute>} />
           <Route path="/logistica/facturacion/manual" element={<RoleAccessRoute entityName="invoice"><ManualInvoicePage /></RoleAccessRoute>} />
-          <Route path="/logistica/usuarios" element={<RoleAccessRoute entityName="user"><UserPage /></RoleAccessRoute>} />
-          <Route path="/logistica/roles" element={<AdminRoute><RolePermissionManagerPage /></AdminRoute>} />
-          <Route path="/logistica/auditoria" element={<TechnicalRoute><EventLogPage /></TechnicalRoute>} />
-          <Route path="/logistica/seguridad" element={<MfaSetupPage />} />
+          {/* /logistica/usuarios, /logistica/roles, /logistica/auditoria y
+              /logistica/seguridad se retiraron con `section_administration`
+              en moduleSections.js: eran una segunda puerta a las mismas
+              pantallas que ya viven en /user, /role_permissions, /event_log
+              y /mfa-setup. */}
           <Route path="/restaurant/waiter" element={<RoleAccessRoute entityName="restaurant_waiter"><RestaurantWaiterPage /></RoleAccessRoute>} />
           <Route path="/restaurant/cashier" element={<RoleAccessRoute entityName="restaurant_cashier"><RestaurantCashierPage /></RoleAccessRoute>} />
           <Route path="/restaurant/kitchen" element={<RoleAccessRoute entityName="restaurant_kitchen"><RestaurantKitchenPage /></RoleAccessRoute>} />

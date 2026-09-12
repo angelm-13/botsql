@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import FiltroBuscable from "../components/FiltroBuscable.jsx";
 import { useI18n } from "../i18n";
 import { getAllProduct, createProduct, updateProduct, deleteProduct, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, uploadProductImage, getAllBrand, getAllProductFamily, getAllInventoryStatus, getAllLocation, getAllMaterial } from "../api";
+import { fetchAllPages } from "../utils/fetchAllPages";
 import Pagination from "../components/Pagination.jsx";
 import ProductHistory from "../components/ProductHistory.jsx";
 import PageHeader from "../components/PageHeader.jsx";
@@ -168,9 +169,9 @@ export default function ProductPage() {
       }
       try {
         const [entityPermissionData, fieldPermissionData, fieldData] = await Promise.all([
-          getAllEntityPermission({ per_page: 5000 }),
-          getAllNmFieldPermission({ per_page: 5000 }),
-          getAllField({ per_page: 5000 })
+          fetchAllPages(getAllEntityPermission),
+          fetchAllPages(getAllNmFieldPermission),
+          fetchAllPages(getAllField)
         ]);
         const entityPermissions = normalizeList(entityPermissionData);
         const fieldPermissions = normalizeList(fieldPermissionData);

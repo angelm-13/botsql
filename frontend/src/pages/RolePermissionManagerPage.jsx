@@ -23,6 +23,7 @@ import {
 } from "../api";
 import { useI18n } from "../i18n";
 import PageHeader from "../components/PageHeader.jsx";
+import { fetchAllPages } from "../utils/fetchAllPages";
 
 const ENTITY_ACTIONS = [
   { key: "create", bit: 1, label: "Crear" },
@@ -138,9 +139,9 @@ export default function RolePermissionManagerPage() {
         const [catalogPayload, rolesPayload, entityPermPayload, fieldPayload, fieldPermPayload, usersPayload, departmentsPayload, subdepartmentsPayload, levelsPayload] = await Promise.all([
           getPermissionCatalog(),
           getAllPermission({ per_page: 500 }),
-          getAllEntityPermission({ per_page: 5000 }),
-          getAllField({ per_page: 5000 }),
-          getAllNmFieldPermission({ per_page: 5000 }),
+          fetchAllPages(getAllEntityPermission),
+          fetchAllPages(getAllField),
+          fetchAllPages(getAllNmFieldPermission),
           getAllUser({ per_page: 500 }),
           getAllDepartment({ per_page: 500 }),
           getAllSubdepartment({ per_page: 500 }),
@@ -421,8 +422,8 @@ export default function RolePermissionManagerPage() {
       setRoleFormOpen(false);
       await refreshRoles("");
       const [entityPermPayload, fieldPermPayload] = await Promise.all([
-        getAllEntityPermission({ per_page: 5000 }),
-        getAllNmFieldPermission({ per_page: 5000 })
+        fetchAllPages(getAllEntityPermission),
+        fetchAllPages(getAllNmFieldPermission)
       ]);
       setEntityPermissions(asItems(entityPermPayload));
       setFieldPermissions(asItems(fieldPermPayload));
@@ -626,9 +627,9 @@ export default function RolePermissionManagerPage() {
         }
       }
       const [entityPermPayload, fieldPermPayload, fieldPayload] = await Promise.all([
-        getAllEntityPermission({ per_page: 5000 }),
-        getAllNmFieldPermission({ per_page: 5000 }),
-        getAllField({ per_page: 5000 })
+        fetchAllPages(getAllEntityPermission),
+        fetchAllPages(getAllNmFieldPermission),
+        fetchAllPages(getAllField)
       ]);
       setEntityPermissions(asItems(entityPermPayload));
       setFieldPermissions(asItems(fieldPermPayload));

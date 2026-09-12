@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
 import { getAllUser, createUser, updateUser, deleteUser, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllPermission, getAllProyect, getAllStatus } from "../api";
+import { fetchAllPages } from "../utils/fetchAllPages";
 import Pagination from "../components/Pagination.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
@@ -151,9 +152,9 @@ export default function UserPage() {
       }
       try {
         const [entityPermissionData, fieldPermissionData, fieldData] = await Promise.all([
-          getAllEntityPermission({ per_page: 5000 }),
-          getAllNmFieldPermission({ per_page: 5000 }),
-          getAllField({ per_page: 5000 })
+          fetchAllPages(getAllEntityPermission),
+          fetchAllPages(getAllNmFieldPermission),
+          fetchAllPages(getAllField)
         ]);
         const entityPermissions = normalizeList(entityPermissionData);
         const fieldPermissions = normalizeList(fieldPermissionData);
@@ -688,7 +689,7 @@ export default function UserPage() {
               {canSeeField("date_start") && <th>{t("fields.user.date_start")}</th>}
               {canSeeField("deletion_date") && <th>{t("fields.user.deletion_date")}</th>}
               {canSeeField("email") && <th>{t("fields.user.email")}</th>}
-              {canSeeField("first_name") && <th>{t("fields.user.first_name")}</th>}
+              {canSeeField("username") && <th>{t("fields.user.username")}</th>}
               {canSeeField("id_permission") && <th>{t("fields.user.id_permission")}</th>}
               {canSeeField("full_name") && <th>{t("fields.user.full_name")}</th>}
               {canSeeField("id_status") && <th>{t("common.status", "Estado")}</th>}
@@ -700,7 +701,7 @@ export default function UserPage() {
               {canSeeField("date_start") && <td><pre className="cell-value">{formatTableValue(item.date_start)}</pre></td>}
               {canSeeField("deletion_date") && <td><pre className="cell-value">{formatTableValue(item.deletion_date)}</pre></td>}
               {canSeeField("email") && <td><pre className="cell-value">{formatTableValue(item.email)}</pre></td>}
-              {canSeeField("first_name") && <td><pre className="cell-value">{formatTableValue(item.first_name)}</pre></td>}
+              {canSeeField("username") && <td><pre className="cell-value">{formatTableValue(item.username)}</pre></td>}
               {canSeeField("id_permission") && <td><pre className="cell-value">{resolveLabel(item.id_permission, permissionOptions, "id_permission", "permission")}</pre></td>}
               {canSeeField("full_name") && <td><pre className="cell-value">{formatTableValue(item.full_name)}</pre></td>}
               {canSeeField("id_status") && <td><pre className="cell-value">{resolveLabel(item.id_status, statusOptions, "id_status", "status")}</pre></td>}

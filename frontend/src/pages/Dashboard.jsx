@@ -1005,30 +1005,9 @@ export default function Dashboard() {
         eyebrow={t("common.dashboard")}
         titulo={tx("title", "Tableros de KPIs")}
       >
-        {/* Punto de entrada fijo para "Agregar grafico" -- vive aqui, no en
-            un boton dentro de la cuadricula de widgets, porque ese boton
-            desaparecia cuando la cuadricula quedaba llena a un multiplo
-            exacto de columnas (ver useCompleteGridPlaceholders). El submit
-            del panel (footer) ya cambia su propio texto segun el contexto
-            (Agregar/Actualizar); este boton solo abre/reinicia el borrador. */}
-        {activeDashboard && (
-          <button className="button" onClick={() => resetPanelState(activeId)}>
-            <Plus size={16} />{tx("add_widget", "Agregar gráfico")}
-          </button>
-        )}
         <button className="button ghost" onClick={() => loadDashboards()} disabled={loadingDashboards}>
         <RefreshCw size={16} />{loadingDashboards ? t("common.loading") : t("common.refresh")}
         </button>
-        {dashboards.length > 0 && (
-          <button
-            type="button"
-            className="button ghost"
-            onClick={() => setMostrarDialogoExportarPdf(true)}
-            disabled={exportandoPdf}
-          >
-            <FileDown size={16} />{tx("pdf_report_button", "Generar reporte PDF")}
-          </button>
-        )}
       </PageHeader>
 
       {mostrarDialogoExportarPdf && (
@@ -1114,6 +1093,9 @@ export default function Dashboard() {
             departments={departments}
             onCancel={() => resetPanelState(activeId)}
             onSave={(payload) => handleSaveWidget(payload, currentPanelState.editingWidgetId)}
+            onAddWidget={() => resetPanelState(activeId)}
+            onExportPdf={() => setMostrarDialogoExportarPdf(true)}
+            exportandoPdf={exportandoPdf}
             t={t}
             tx={tx}
           />
@@ -1595,7 +1577,7 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, fo
   return null;
 }
 
-function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, departments, onCancel, onSave, t, tx }) {
+function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, departments, onCancel, onSave, onAddWidget, onExportPdf, exportandoPdf, t, tx }) {
   const {
     editingWidgetId,
     colapsado,
@@ -1859,9 +1841,24 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
       <header>
         <div>
           <p className="eyebrow">{tx("widget", "Gráfico")}</p>
-          {!colapsado && <h3>{tituloPanel}</h3>}
         </div>
         <div className="kpi-widget-panel-header-actions">
+          {/* Botones de "Agregar grafico" y "Generar reporte PDF": viven aqui,
+              junto a la flechita, en formato solo-icono para caber en este
+              espacio angosto. Misma funcionalidad que antes -- solo cambio
+              de ubicacion en la interfaz. */}
+          <button type="button" className="kpi-icon-button" onClick={onAddWidget} title={tx("add_widget", "Agregar gráfico")}>
+            <Plus size={15} />
+          </button>
+          <button
+            type="button"
+            className="kpi-icon-button"
+            onClick={onExportPdf}
+            disabled={exportandoPdf}
+            title={tx("pdf_report_button", "Generar reporte PDF")}
+          >
+            <FileDown size={15} />
+          </button>
           {/* Pestana/flap, no una X de cierre: un clic colapsa a esta misma
               pestana (el borrador sigue vivo en panelState), otro clic
               expande de vuelta. Descartar el borrador por completo NO tiene
