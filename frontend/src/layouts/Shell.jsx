@@ -113,7 +113,7 @@ const groupTranslationKeys = {
   "Bancos": "group_banks", CRM: "group_crm", "Contabilidad": "group_accounting",
   "Recursos humanos": "group_hr", Restaurante: "group_restaurant", Operaciones: "group_operations",
   Inventario: "group_inventory", "Configuración": "group_settings",
-  Laboratorio: "group_laboratory",
+  Laboratorio: "group_laboratory", "Punto de venta": "group_pos", "Logística": "group_logistics",
 };
 
 const groupIcons = {
@@ -176,6 +176,8 @@ const defaultGroupIcons = {
   "Inventario": "inventory",
   "Laboratorio": "clipboard-list",
   "Configuración": "sliders-horizontal",
+  "Punto de venta": "shopping-cart",
+  "Logística": "truck",
 };
 
 export default function Shell() {
@@ -305,11 +307,19 @@ export default function Shell() {
   function defaultGroup(item) {
     const path = item.path;
     if (["/bank", "/bank_account"].includes(path)) return "Bancos";
-    if (path.startsWith("/invoice") || path.startsWith("/fiscal") || path === "/quotation" || path === "/authorization_tracking") return "Contabilidad";
+    if (path.startsWith("/invoice") || path.startsWith("/fiscal") || path === "/quotation" || path === "/authorization_tracking" || path === "/ticket") return "Contabilidad";
     if (path.startsWith("/payroll") || path === "/kronos") return "Recursos humanos";
     if (path.startsWith("/restaurant")) return "Restaurante";
+    if (path.startsWith("/pos")) return "Punto de venta";
+    if (path.startsWith("/logistics")) return "Logística";
+    // Documentos y Laboratorio comparten un solo apartado de menu por ahora
+    // (ver el `group: "Laboratorio"` explicito en /documents y /laboratory
+    // en navItems); este fallback replica esa misma decision para que una
+    // entidad nueva de cualquiera de los dos modulos no caiga en Configuracion.
+    if (path.startsWith("/document") || path.startsWith("/laboratory")) return "Laboratorio";
     if (["/proyect", "/incident", "/incident_detail", "/task", "/task_note", "/task_type", "/service", "/template"].includes(path)) return "Operaciones";
-    if (["/material", "/location", "/product", "/inventory_status", "/unit", "/brand"].includes(path)) return "Inventario";
+    if (["/material", "/location", "/product", "/inventory_status", "/unit", "/brand", "/vouchers"].includes(path)) return "Inventario";
+    if (["/customer_supplier", "/survey_question", "/survey_multiple_answer", "/nm_survey_user", "/appointment", "/appointments", "/product_sale_config", "/public_api_key"].includes(path)) return "CRM";
     return "Configuración";
   }
 
