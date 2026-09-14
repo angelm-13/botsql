@@ -79,6 +79,8 @@ def listar_vales(user_data):
         texto=request.args.get("q"),
         estado=request.args.get("status"),
         id_user=request.args.get("id_user"),
+        # El material de una obra concreta.
+        id_proyect=request.args.get("id_proyect"),
         solo_con_pendientes=str(
             request.args.get("only_open") or "").strip().lower()
         in ("1", "true", "si", "yes"),

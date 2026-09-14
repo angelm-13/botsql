@@ -1,11 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import PropTypes from "prop-types";
-import { ArrowDownLeft, ArrowRight, ArrowUpRight, MapPin, User, X } from "lucide-react";
-import {
-  getInventoryMovements, getProductLoanHistory, getProductStock,
-} from "../api";
+import { MapPin, X } from "lucide-react";
+import { getProductLoanHistory, getProductStock } from "../api";
 import Pagination from "./Pagination.jsx";
-import { mezclar } from "../utils/historialDelProducto";
 import { useI18n } from "../i18n";
 import "../styles/product-history.css";
 
@@ -14,44 +11,32 @@ const POR_PAGINA = 20;
 /**
  * La ficha de un producto: qué le ha pasado, en una ventana.
  *
- * Un solo historial, de dos tablas
- * --------------------------------
- * Antes eran dos pestañas —«Movimientos» y «Préstamos»— porque son dos tablas:
+ * El formato es el del sistema anterior a propósito
+ * ---------------------------------------------------
+ * Antes se cruzaba el libro de inventario con los renglones de vale en una
+ * sola tabla fusionada, con columnas de saldo y ubicación. Se reemplaza por
+ * esta -- una fila por renglón de vale, con Vale, Responsable, Estado, Nota,
+ * Tipo y las dos fechas -- porque es el formato que ya se usaba en Adser y que
+ * la gente sabe leer de memoria. No hace falta reinventar la lectura de un
+ * historial que ya funcionaba.
  *
- *   * `inventory_ledger`, el libro: cuánto entró, cuánto salió y con qué saldo
- *     quedó. Sirve para auditar cómo llegó la existencia al número de hoy;
- *   * `nm_incident_product`, los renglones del vale: QUIÉN se lo llevó y si lo
- *     devolvió. El libro no lo sabe — para él una salida por préstamo y una por
- *     venta son la misma resta.
+ * Es lo mismo que devuelve `historial_del_producto` sin fusionar con nada: un
+ * renglón de `nm_incident_product` es una salida (o una devolución) real de
+ * ESTE producto, y el vale al que pertenece aporta el resto -- quién lo pidió,
+ * con qué motivo y de qué tipo era.
  *
- * Pero son dos vistas del MISMO hecho, no dos hechos: cuando el vale saca una
- * pieza escribe las dos cosas, el renglón del vale y el asiento del libro con
- * `reference_type = "incident"`. Dos pestañas obligaban a mirar en dos sitios
- * para reconstruir una sola historia, y el problema real de juntarlas —que cada
- * salida saliera dos veces— se resuelve cruzándolas en vez de concatenarlas.
- *
- * Cómo se cruzan
- * --------------
- * Un asiento del libro que apunta a un vale y el renglón de ese vale son el
- * mismo renglón aquí, con lo que aporta cada uno: el libro pone el saldo que
- * quedó, el vale pone el responsable y si volvió. Lo que no tiene pareja sale
- * solo — y hay de las dos clases:
- *
- *   * asientos sin vale: un traspaso, una descarga por factura;
- *   * renglones de vale sin asiento: TODO lo que trajo la carga del sistema
- *     anterior. Son 5 218 renglones de vale contra 224 asientos, porque la
- *     carga sembró la existencia sin escribir el libro. Si esta ventana se
- *     construyera solo sobre el libro, esos 5 218 no se verían.
- *
- * Se pagina en el cliente, y no en el servidor, porque la mezcla lo exige: dos
- * fuentes ordenadas por fecha no se pueden paginar por separado sin que la
- * página 2 mezcle cosas de tiempos distintos. Cabe: el libro entero son 224
- * asientos y los vales salen a dos y pico por producto.
+ * Fecha Creación y Fecha Cierre son del RENGLÓN, no del vale
+ * ------------------------------------------------------------
+ * Un mismo vale puede sacar el mismo producto dos veces -- dos renglones,
+ * mismo folio -- y cada uno se devuelve en su propio momento. Si las fechas
+ * fueran las del vale, dos renglones del mismo vale mostrarían la misma
+ * "Fecha Cierre" aunque uno ya hubiera vuelto y el otro no. Nota, Tipo y
+ * Responsable sí son del vale: un vale tiene una sola nota y un solo tipo,
+ * no uno por renglón.
  */
 export default function ProductHistory({ idProduct, titulo, onCerrar }) {
   const { t } = useI18n();
   const [pestana, setPestana] = useState("historial");
-  const [movimientos, setMovimientos] = useState(null);
   const [prestamos, setPrestamos] = useState(null);
   const [ubicaciones, setUbicaciones] = useState(null);
   const [pagina, setPagina] = useState(1);
@@ -63,15 +48,7 @@ export default function ProductHistory({ idProduct, titulo, onCerrar }) {
     setError("");
     try {
       if (cual === "historial") {
-        // Los dos de golpe: la mezcla necesita las dos listas enteras. 200 es
-        // el tope del servidor y sobra -- el libro completo son 224 asientos
-        // repartidos entre 2 221 productos.
-        const [libro, vales] = await Promise.all([
-          getInventoryMovements(idProduct, { page: 1, per_page: 200 }),
-          getProductLoanHistory(idProduct),
-        ]);
-        setMovimientos(libro);
-        setPrestamos(vales);
+        setPrestamos(await getProductLoanHistory(idProduct));
       } else {
         setUbicaciones(await getProductStock(idProduct));
       }
@@ -96,9 +73,6 @@ export default function ProductHistory({ idProduct, titulo, onCerrar }) {
     window.addEventListener("keydown", alTeclear);
     return () => window.removeEventListener("keydown", alTeclear);
   }, [onCerrar]);
-
-  const historial = useMemo(
-    () => mezclar(movimientos?.items, prestamos?.items), [movimientos, prestamos]);
 
   const PESTANAS = [
     ["historial", t("history.everything", "Historial")],
@@ -155,7 +129,7 @@ export default function ProductHistory({ idProduct, titulo, onCerrar }) {
 
           {!cargando && pestana === "historial" && (
             <Historial
-              renglones={historial}
+              renglones={prestamos?.items || []}
               resumen={prestamos}
               pagina={pagina}
               onPagina={setPagina}
@@ -183,12 +157,15 @@ function fecha(valor, t) {
   return Number.isNaN(d.getTime()) ? String(valor) : d.toLocaleString();
 }
 
-/** El historial completo: el libro y los vales, en una sola tabla. */
+/**
+ * El historial de préstamos: una fila por renglón de vale que tocó este
+ * producto, en el formato del sistema anterior.
+ */
 function Historial({ renglones, resumen, pagina, onPagina, t }) {
   if (!renglones.length) {
     return (
       <p className="muted">
-        {t("history.nothing", "Sin movimientos ni préstamos registrados.")}
+        {t("history.nothing", "Sin préstamos registrados.")}
       </p>
     );
   }
@@ -215,110 +192,44 @@ function Historial({ renglones, resumen, pagina, onPagina, t }) {
         </p>
       )}
 
-      {/* Una columna por dato, como la tabla del sistema anterior.
-          Antes "Que paso" amontonaba tipo, vale, ubicacion, motivo y estado
-          separados por puntos, y con seis o siete fragmentos el renglon se
-          volvia un parrafo que hay que leer entero para encontrar un dato.
-          Lo que se conserva de aquella tabla es la separacion; lo que NO se
-          conserva es su aspecto -- sigue siendo la estetica de la ficha. */}
       <div className="ficha-tabla-marco">
-        <table className="ficha-tabla ficha-tabla-ancha">
+        <table className="ficha-tabla ficha-tabla-legado">
           <thead>
             <tr>
-              <th>{t("history.when", "Cuándo")}</th>
-              <th>{t("history.what", "Movimiento")}</th>
-              <th>{t("history.voucher", "Vale")}</th>
-              <th>{t("history.where", "Ubicación")}</th>
-              <th>{t("history.who", "Quién")}</th>
-              <th className="num">{t("history.change", "Cambio")}</th>
-              <th className="num">{t("history.balance", "Saldo")}</th>
+              <th>{t("history.voucher_n", "# Vale")}</th>
+              <th>{t("history.holder", "Responsable")}</th>
               <th>{t("history.state", "Estado")}</th>
+              <th>{t("history.note", "Nota")}</th>
+              <th>{t("history.type", "Tipo")}</th>
+              <th>{t("history.creation_date", "Fecha Creación")}</th>
+              <th>{t("history.close_date", "Fecha Cierre")}</th>
             </tr>
           </thead>
           <tbody>
             {visibles.map((r) => (
-              <tr key={r.clave} className={r.devuelto === false ? "pendiente" : ""}>
-                <td className="muted ficha-cuando">{fecha(r.fecha, t)}</td>
-
+              <tr key={r.id_nm_incident_product}
+                  className={r.returned ? "" : "pendiente"}>
+                <td className="mono ficha-folio">{r.voucher_folio || "—"}</td>
+                <td>{r.holder_name || <span className="muted">—</span>}</td>
                 <td>
-                  {/* El tipo va en marca de color y no en texto suelto: en una
-                      lista larga el ojo distingue antes un color que una
-                      palabra. El color sale del signo, que es lo que de verdad
-                      distingue una entrada de una salida. */}
-                  <span className={`ficha-tipo ${
-                    r.delta === null ? "neutro" : (r.delta < 0 ? "salida" : "entrada")}`}>
-                    {t(`movement.${r.tipo}`, r.tipo)}
+                  {/* El texto tal cual -- "abierto"/"cerrado" -- que es el
+                      mismo que ya usa el resto del almacén, y el mismo que
+                      mostraba el sistema anterior en esta columna. */}
+                  <span className={`ficha-marca ${
+                    r.voucher_status === "cerrado" ? "devuelto" : "fuera"}`}>
+                    {r.voucher_status || "—"}
                   </span>
-                  {/* El motivo debajo y no en columna propia: son frases
-                      -- "Existencia inicial de la carga del sistema anterior" --
-                      y en una columna estrecha se parten en cinco lineas. */}
-                  {r.motivo && <span className="ficha-motivo">{r.motivo}</span>}
                 </td>
-
-                <td className="mono ficha-folio">
-                  {r.folio ? r.folio : <span className="muted">—</span>}
-                </td>
-
-                <td className="ficha-donde">
-                  {r.ubicacion || r.destino ? (
-                    <>
-                      {r.ubicacion || "—"}
-                      {r.destino && (
-                        <>
-                          {" "}<ArrowRight size={11} />{" "}
-                          <strong>{r.destino}</strong>
-                        </>
-                      )}
-                    </>
-                  ) : (
-                    <span className="muted">—</span>
-                  )}
-                </td>
-
-                <td>
-                  {r.responsable ? (
-                    <span className="ficha-persona">
-                      <User size={12} /> {r.responsable}
-                    </span>
-                  ) : (
-                    <span className="muted">{r.autor || "—"}</span>
-                  )}
-                </td>
-
-                <td className="num">
-                  {r.delta === null ? (
-                    <span className="muted">—</span>
-                  ) : (
-                    <span className={`ficha-delta ${r.delta < 0 ? "salida" : "entrada"}`}>
-                      {r.delta < 0 ? <ArrowUpRight size={13} /> : <ArrowDownLeft size={13} />}
-                      {r.delta > 0 ? `+${r.delta}` : r.delta}
-                    </span>
-                  )}
-                </td>
-
-                {/* Sin saldo cuando el renglon viene del vale y no del libro: el
-                    saldo lo lleva el libro, e inventarlo seria peor que el hueco. */}
-                <td className="num">
-                  {r.saldo === null || r.saldo === undefined
-                    ? <span className="muted">—</span>
-                    : <strong>{r.saldo}</strong>}
-                </td>
-
-                {/* El estado del prestamo solo cuando lo hay: un traspaso no
-                    esta "devuelto" ni "fuera", simplemente no aplica. */}
-                <td>
-                  {r.devuelto === false && (
-                    <span className={`ficha-marca ${r.vencido ? "vencido" : "fuera"}`}>
-                      {r.vencido ? t("history.overdue", "vencido") : t("history.out", "fuera")}
-                    </span>
-                  )}
-                  {r.devuelto === true && (
-                    <span className="ficha-marca devuelto">
-                      {t("history.returned", "devuelto")}
-                    </span>
-                  )}
-                  {r.devuelto === null || r.devuelto === undefined
-                    ? <span className="muted">—</span> : null}
+                <td className="ficha-nota-legado">{r.voucher_note || "—"}</td>
+                <td>{r.voucher_type || "—"}</td>
+                {/* Del RENGLÓN, no del vale: un mismo vale puede sacar el
+                    mismo producto dos veces y cada una vuelve por su cuenta.
+                    Ver la cabecera del archivo. */}
+                <td className="ficha-cuando">{fecha(r.start_date, t)}</td>
+                <td className="ficha-cuando">
+                  {r.close_date
+                    ? fecha(r.close_date, t)
+                    : <span className="muted">{t("history.not_closed", "—")}</span>}
                 </td>
               </tr>
             ))}

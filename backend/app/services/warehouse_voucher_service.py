@@ -59,6 +59,7 @@ from app.models.inventory_asset import InventoryAsset
 from app.models.location import Location
 from app.models.nm_incident_product import NmIncidentProduct
 from app.models.product import Product
+from app.models.proyect import Proyect
 from app.models.session import transaction_context
 from app.models.inventory_asset_event import DEVOLUCION, PRESTAMO
 from app.models.inventory_stock import InventoryStock
@@ -461,6 +462,10 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
 
     id_tipo = _entero(payload.get("id_incident_type"), "id_incident_type")
     id_responsable = _entero(payload.get("id_user"), "id_user")
+    # A que proyecto va el material. Opcional: no todo prestamo es de un
+    # proyecto -- una herramienta para el taller no lo es --, y exigirlo
+    # obligaria a inventar un proyecto para cada vale suelto.
+    id_proyecto = _entero(payload.get("id_proyect"), "id_proyect", obligatorio=False)
 
     with transaction_context() as db:
         if db.scalars(select(IncidentType).where(
@@ -486,6 +491,18 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
             raise AppError("errors.not_found", 404,
                            {"entity": "user", "field": "id_user"})
 
+        # El proyecto, comprobado por el mismo motivo que el responsable: su
+        # llave ajena tambien es diferida, asi que un identificador inventado
+        # reventaria en el COMMIT como un 500 en vez de como el 404 que toca.
+        if id_proyecto is not None and db.scalars(
+            select(Proyect.id_proyect).where(
+                Proyect.id_proyect == id_proyecto,
+                Proyect.deletion_date.is_(None),
+            ).limit(1)
+        ).first() is None:
+            raise AppError("errors.not_found", 404,
+                           {"entity": "proyect", "field": "id_proyect"})
+
         validados = [_validar_renglon(db, linea) for linea in renglones]
 
         inicio = _ahora()
@@ -503,6 +520,7 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
         vale = Incident(
             id_incident_type=id_tipo,
             id_user=id_responsable,
+            id_proyect=id_proyecto,
             incident_date=inicio,
             incident_status=estado,
             note=motivo,
@@ -746,8 +764,22 @@ def consultar_vale(id_incident, user_data: dict) -> dict:
         # en pantalla parece que se llevaron el doble.
         salidas = [r for r in renglones if str(r.direction or "") == SALIDA]
         entradas = [r for r in renglones if str(r.direction or "") == ENTRADA]
+        # El proyecto al que va el material, con su nombre: en pantalla un
+        # "#7" no dice a que obra se lo llevaron.
+        proyecto = None
+        if vale.id_proyect:
+            fila = db.execute(
+                select(Proyect.id_proyect, Proyect.folio, Proyect.title,
+                       Proyect.proyect_description)
+                .where(Proyect.id_proyect == vale.id_proyect)
+            ).first()
+            if fila is not None:
+                proyecto = {"id_proyect": fila[0], "folio": fila[1],
+                            "title": fila[2], "description": fila[3]}
+
         return {
             "voucher": vale.serialize(),
+            "proyect": proyecto,
             "lines": _con_existencias(db, renglones),
             "open_lines": len(abiertos),
             "exit_lines": len(salidas),
@@ -918,6 +950,17 @@ def _renglones_con_contexto(db, filas) -> list[dict]:
             select(User).where(User.id_user.in_(list(ids_usuarios) or [0]))
         ).all()
     } if ids_usuarios else {}
+    # El TIPO del vale -"Prestamo Material", "Reparacion"-, que el sistema
+    # anterior mostraba en su tabla de historial y esta no traia.
+    ids_tipos = {
+        int(v.id_incident_type) for v in vales.values() if v.id_incident_type
+    }
+    tipos = {
+        int(x.id_incident_type): x for x in db.scalars(
+            select(IncidentType).where(
+                IncidentType.id_incident_type.in_(list(ids_tipos) or [0]))
+        ).all()
+    } if ids_tipos else {}
 
     ahora = _ahora()
     salida = []
@@ -925,6 +968,7 @@ def _renglones_con_contexto(db, filas) -> list[dict]:
         producto = productos.get(int(fila.id_product))
         vale = vales.get(int(fila.id_incident))
         usuario = usuarios.get(int(vale.id_user)) if vale and vale.id_user else None
+        tipo = tipos.get(int(vale.id_incident_type)) if vale and vale.id_incident_type else None
         renglon = fila.serialize()
         renglon.update({
             "product_code": getattr(producto, "product_code", None),
@@ -939,6 +983,16 @@ def _renglones_con_contexto(db, filas) -> list[dict]:
             "returned": fila.close_date is not None,
             "overdue": bool(fila.close_date is None and fila.due_date
                             and fila.due_date < ahora),
+            # Del VALE, no del renglon: la nota, el tipo y las dos fechas que
+            # el sistema anterior mostraba son las del vale completo -un vale
+            # de dos renglones tiene una sola nota y una sola fecha de cierre,
+            # no una por renglon.
+            "voucher_note": getattr(vale, "note", None),
+            "voucher_type": getattr(tipo, "incident_type_description", None),
+            "voucher_creation_date": (vale.creation_date.isoformat()
+                                      if vale and vale.creation_date else None),
+            "voucher_close_date": (vale.close_date.isoformat()
+                                   if vale and vale.close_date else None),
         })
         salida.append(renglon)
     return salida
@@ -1092,7 +1146,8 @@ def historial_del_producto(id_product, user_data: dict) -> dict:
         }
 
 def buscar_vales(user_data: dict, *, texto=None, estado=None, id_user=None,
-                 solo_con_pendientes=False, pagina=1, por_pagina=25) -> dict:
+                 id_proyect=None, solo_con_pendientes=False,
+                 pagina=1, por_pagina=25) -> dict:
     """La lista de vales, buscable por folio o por responsable.
 
     Antes solo habia `GET /vouchers/<id>`: para ver los vales de alguien habia
@@ -1113,6 +1168,12 @@ def buscar_vales(user_data: dict, *, texto=None, estado=None, id_user=None,
 
     with transaction_context() as db:
         consulta = select(Incident).where(Incident.deletion_date.is_(None))
+
+        # El material de UN proyecto. Es la pregunta que hace el jefe de obra:
+        # "que se llevo esta obra y que sigue fuera".
+        del_proyecto = _tal_vez_entero(id_proyect)
+        if del_proyecto is not None:
+            consulta = consulta.where(Incident.id_proyect == del_proyecto)
 
         if not _ve_todo_el_almacen(db, user_data):
             consulta = consulta.where(Incident.id_user == actor)

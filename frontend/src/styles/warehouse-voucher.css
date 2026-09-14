@@ -304,3 +304,11 @@
   text-transform: lowercase;
   letter-spacing: .02em;
 }
+
+/* La obra del vale, junto al responsable y el motivo: es el mismo tipo de
+   dato de contexto, asi que lleva el mismo tratamiento tipografico. */
+.vale-obra {
+  display: flex; align-items: center; gap: 5px;
+  margin: 2px 0 0; font-size: 13px; color: #475569;
+}
+.vale-obra svg { color: #94a3b8; }

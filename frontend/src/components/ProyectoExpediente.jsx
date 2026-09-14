@@ -1,6 +1,8 @@
 import { useState } from "react";
 import PropTypes from "prop-types";
-import { Banknote, CalendarClock, CircleDollarSign, FileText, TriangleAlert } from "lucide-react";
+import {
+  AlertTriangle, Banknote, CalendarClock, CircleDollarSign, FileText, PackageMinus,
+} from "lucide-react";
 import { useI18n } from "../i18n";
 import {
   addProyectPayment, deleteProyectPayment, settleProyectPayment,
@@ -36,6 +38,7 @@ export default function ProyectoExpediente({ detalle, catalogo, onCambio }) {
   const resumen = detalle.payment_summary || {};
   const pagos = detalle.payments || [];
   const incidencias = detalle.incidents || [];
+  const material = detalle.material_summary || { items: [], products: 0, taken_total: 0, still_out_total: 0 };
   const citas = detalle.appointments || [];
 
   // Del servidor, nunca de una copia local: una lista escrita aquí ofrecería
@@ -209,15 +212,69 @@ export default function ProyectoExpediente({ detalle, catalogo, onCambio }) {
         </button>
       </form>
 
+      {/* --- el material que se llevo esta obra --- */}
+      {/* Se cuenta desde los renglones de los vales, no desde el libro del
+          almacen: el libro trae `id_proyect` para saber de que INQUILINO es
+          cada asiento, no de que obra. Contarlo de ahi mezclaria todo el
+          almacen de la empresa con lo de este proyecto. */}
+      {material.products > 0 && (
+        <>
+          <h4><PackageMinus size={15} /> {etiqueta("material", "Material prestado")}</h4>
+          <div className="table-wrap">
+            <table className="expediente-tabla">
+              <thead>
+                <tr>
+                  <th>{etiqueta("product", "Producto")}</th>
+                  <th className="num">{etiqueta("taken", "Sacado")}</th>
+                  <th className="num">{etiqueta("still_out", "Sin devolver")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {material.items.map((m) => (
+                  <tr key={m.id_product} className={m.still_out === 0 ? "cobrado" : ""}>
+                    <td>
+                      <strong>{m.descripcion}</strong>
+                      {m.product_code && <span className="muted mono"> {m.product_code}</span>}
+                    </td>
+                    <td className="num mono">{m.taken}</td>
+                    <td className="num mono">
+                      {m.still_out > 0
+                        ? <strong className="expediente-pendiente-material">{m.still_out}</strong>
+                        : <span className="muted">0</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {material.still_out_total > 0 && (
+            <p className="expediente-material-aviso">
+              {etiqueta("still_out_warning", "Sigue fuera")}: {material.still_out_total}{" "}
+              {etiqueta("units", "piezas")}, {etiqueta("of", "de")} {material.products}{" "}
+              {etiqueta("products", "productos")}.
+            </p>
+          )}
+        </>
+      )}
+
       {/* --- lo que cuelga del proyecto --- */}
       {incidencias.length > 0 && (
         <>
-          <h4><TriangleAlert size={15} /> {etiqueta("incidents", "Incidencias")}</h4>
+          <h4><AlertTriangle size={15} /> {etiqueta("incidents", "Incidencias")}</h4>
           <ul className="expediente-lista">
             {incidencias.map((i) => (
               <li key={i.id_incident}>
-                <strong>#{i.external_folio || i.id_incident}</strong>
+                <strong>#{i.folio || i.external_folio || i.id_incident}</strong>
                 <span>{i.note || "—"}</span>
+                {/* Solo el vale de material trae renglones: para una
+                    incidencia de RH (vacaciones, jornada) el total es 0 y no
+                    se pinta nada, en vez de un confuso "0 de 0". */}
+                {i.total_lines > 0 && (
+                  <span className={i.open_lines > 0 ? "expediente-pendiente-material" : "muted"}>
+                    {i.open_lines} {etiqueta("of", "de")} {i.total_lines}{" "}
+                    {etiqueta("open_lines", "sin devolver")}
+                  </span>
+                )}
                 <span className="muted">{i.incident_status}</span>
               </li>
             ))}

@@ -3485,7 +3485,14 @@
     "task_status_en_proceso": "En proceso",
     "task_status_en_revision": "En revisión",
     "task_status_pendiente": "Pendiente",
-    "task_status_terminada": "Terminada"
+    "task_status_terminada": "Terminada",
+    "requested_by": "Lo pidió",
+    "requested_by_placeholder": "Nombre del ingeniero o contacto",
+    "quotation": "Cotización (folio)",
+    "purchase_order": "Orden de compra",
+    "purchase_order_item": "Partida",
+    "no_supervisor": "Sin asignar",
+    "delivery_date": "Fecha de entrega"
   },
   "security": {
     "permission": {

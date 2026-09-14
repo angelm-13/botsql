@@ -9,6 +9,7 @@ from app.services.project_management_service import (
     get_project_detail,
     list_project_payments,
     list_projects,
+    project_options,
     settle_project_payment,
     transition_management,
     transition_project,
@@ -133,6 +134,18 @@ def _jsonify_projected_record(user_data: dict, record: dict | None, status: int 
 def _jsonify_projected_list(user_data: dict, payload: dict):
     return jsonify(_project_list_payload(payload, _visible_response_fields_for_actor(user_data)))
 
+
+
+@bp_proyect.route('/options', methods=['GET'])
+@token_required
+def list_proyect_options(user_data):
+    """Solo id+folio+titulo, para selectores como "Obra" en un vale de almacen.
+
+    Sin permiso de entidad -- igual que `/user/options` -- porque un Almacenista
+    levanta vales sin tener el modulo `operaciones`. Ver el docstring de
+    `project_options()`.
+    """
+    return jsonify(project_options())
 
 
 @bp_proyect.route('/', methods=['GET'])

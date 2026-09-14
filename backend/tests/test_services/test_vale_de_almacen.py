@@ -54,6 +54,7 @@ from app.services.warehouse_voucher_service import (
     BORRADOR,
     CERRADO,
     autorizar_vale,
+    buscar_vales,
     cerrar_renglon,
     devolver_renglon,
     consultar_vale,
@@ -1149,3 +1150,69 @@ class TestElValeSeArchivaComoDocumento(BaseVale):
         ficha = self.versiones(vale["voucher"]["id_incident"])[0].source_snapshot
         self.assertEqual(1, len(ficha["salidas"]))
         self.assertEqual("Obra Norte", ficha["nota"])
+
+
+class TestElValeSeLigaAUnaObra(BaseVale):
+    """El material se relaciona con el proyecto que lo pidio.
+
+    `id_proyect` en el vale NO es el mismo `id_proyect` que acota quien puede
+    ver que -eso es el inquilino, y toda esta suite corre bajo el 30-. Es la
+    OBRA a la que va el material, una fila mas de `proyect` como cualquier
+    otra orden de trabajo. Se prueba con una fila distinta (OBRA) para que
+    quede claro que son dos preguntas distintas sobre la misma tabla.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.OBRA = 31
+        self.surtir()
+        with transaction_context() as db:
+            db.add(Proyect(id_proyect=self.OBRA, id_customer_supplier=CLIENTE,
+                           leader=1, proyect_description="Mantenimiento de puerta",
+                           title="MEXINOX", created_by=1))
+
+    def _vale_de_la_obra(self, **extra):
+        return self._vale([self._linea_cantidad(5)], id_proyect=self.OBRA, **extra)
+
+    def test_a_voucher_can_be_tied_to_a_project(self):
+        vale = self._vale_de_la_obra()
+
+        self.assertEqual(self.OBRA, vale["voucher"]["id_proyect"])
+
+    def test_a_voucher_is_not_forced_into_a_project(self):
+        """Un prestamo para el propio taller no pertenece a ninguna obra."""
+        vale = self._vale([self._linea_cantidad(5)])
+
+        self.assertIsNone(vale["voucher"]["id_proyect"])
+
+    def test_an_inexistent_project_is_rejected(self):
+        with self.assertRaises(AppError) as fallo:
+            self._vale([self._linea_cantidad(5)], id_proyect=999999)
+
+        self.assertEqual("errors.not_found", fallo.exception.message_key)
+
+    def test_consulting_the_voucher_names_its_project(self):
+        """El detalle del vale trae el proyecto CON nombre, no solo el id."""
+        vale = self._vale_de_la_obra()
+
+        detalle = consultar_vale(vale["voucher"]["id_incident"], ACTOR)
+
+        self.assertEqual(self.OBRA, detalle["proyect"]["id_proyect"])
+        self.assertEqual("MEXINOX", detalle["proyect"]["title"])
+
+    def test_a_voucher_without_project_names_none(self):
+        vale = self._vale([self._linea_cantidad(5)])
+
+        detalle = consultar_vale(vale["voucher"]["id_incident"], ACTOR)
+
+        self.assertIsNone(detalle["proyect"])
+
+    def test_the_voucher_list_is_filtered_by_project(self):
+        """Es la pregunta del jefe de obra: que se llevo ESTA obra."""
+        self._vale_de_la_obra()
+        self._vale([self._linea_cantidad(5)])  # otro vale, sin obra
+
+        resultado = buscar_vales(ACTOR, id_proyect=self.OBRA)
+
+        self.assertEqual(1, resultado["total"])
+        self.assertEqual(self.OBRA, resultado["items"][0]["id_proyect"])

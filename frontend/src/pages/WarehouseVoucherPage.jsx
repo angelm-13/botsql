@@ -15,6 +15,7 @@ import {
   getAllLocation,
   getUserOptions,
   getOverdueVoucherLines,
+  getProyectOptions,
   getWarehouseVoucher,
   urlDeArchivo,
   listWarehouseVouchers,
@@ -78,6 +79,9 @@ export default function WarehouseVoucherPage() {
   const [tipos, setTipos] = useState([]);
   const [ubicaciones, setUbicaciones] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
+  // Las obras a las que se le puede ligar un vale. Se pide con `/options`,
+  // que no exige el modulo `operaciones` -- el Almacenista no lo tiene.
+  const [proyectos, setProyectos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
   const [aviso, setAviso] = useState("");
@@ -118,16 +122,18 @@ export default function WarehouseVoucherPage() {
       // de incident_type), y un solo 403 aqui tumbaba las demas tambien --
       // dejaba "Levantar vale" deshabilitado por falta de tipos aunque
       // ubicaciones/usuarios si hubieran cargado bien.
-      const [venc, tip, ubi, usr] = await Promise.all([
+      const [venc, tip, ubi, usr, proy] = await Promise.all([
         getOverdueVoucherLines().catch(() => ({ items: [] })),
         getAllIncidentType({ per_page: 100 }).catch(() => ({ items: [] })),
         getAllLocation({ per_page: 200 }).catch(() => ({ items: [] })),
         getUserOptions().catch(() => []),
+        getProyectOptions().catch(() => []),
       ]);
       setVencidos(venc?.items || []);
       setTipos(tip?.items || []);
       setUbicaciones(ubi?.items || []);
       setUsuarios(Array.isArray(usr) ? usr : usr?.items || []);
+      setProyectos(Array.isArray(proy) ? proy : proy?.items || []);
     } catch (e) {
       decirError(e, "No se pudo cargar la pantalla de vales.");
     } finally {
@@ -140,6 +146,9 @@ export default function WarehouseVoucherPage() {
   const abrirBorrador = () => setBorrador({
     id_incident_type: tipos[0]?.id_incident_type || "",
     id_user: "",
+    // La obra a la que va el material. Vacio por opcion: no todo prestamo
+    // es de un proyecto -- una herramienta para el propio taller no lo es.
+    id_proyect: "",
     due_date: "",
     note: "",
     lines: [],
@@ -206,6 +215,7 @@ export default function WarehouseVoucherPage() {
     try {
       const creado = await alta({
         ...borrador,
+        id_proyect: borrador.id_proyect || undefined,
         lines: borrador.lines.map((l) => ({
           id_product: l.id_product,
           id_inventory_asset: l.id_inventory_asset || undefined,
@@ -350,6 +360,7 @@ export default function WarehouseVoucherPage() {
           tipos={tipos}
           ubicaciones={ubicaciones}
           usuarios={usuarios}
+          proyectos={proyectos}
           onGuardar={guardar}
           onCancelar={() => setBorrador(null)}
           t={t}
@@ -521,6 +532,20 @@ function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
             {t("voucher.holder", "Responsable")}: <strong>{nombreDe(cabecera.id_user)}</strong>
             {cabecera.note && <> · {cabecera.note}</>}
           </p>
+          {/* La obra a la que va este material -- el porque de todo el vale.
+              El proyecto ya viene resuelto con nombre desde el servidor: no
+              se busca en una lista local que puede no traerlo si el proyecto
+              esta cerrado y no aparece en `/proyect/options`. */}
+          {vale.proyect && (
+            <p className="vale-obra">
+              <ClipboardList size={13} />
+              {t("voucher.for_project", "Obra")}:{" "}
+              <strong>
+                {vale.proyect.folio ? `#${vale.proyect.folio}` : `#${vale.proyect.id_proyect}`}
+                {vale.proyect.title ? ` — ${vale.proyect.title}` : ""}
+              </strong>
+            </p>
+          )}
           {/* Imprimir esta junto al encabezado y no al final: quien abre un
               vale para entregarlo material en mano lo primero que hace es
               sacarlo en papel para que lo firmen. */}
@@ -627,6 +652,11 @@ Vale.propTypes = {
   onAutorizar: PropTypes.func.isRequired,
   vale: PropTypes.shape({
     voucher: PropTypes.object,
+    proyect: PropTypes.shape({
+      id_proyect: PropTypes.any,
+      folio: PropTypes.string,
+      title: PropTypes.string,
+    }),
     lines: PropTypes.array,
     open_lines: PropTypes.number,
     total_lines: PropTypes.number,
@@ -704,7 +734,7 @@ FichaDeProducto.defaultProps = { producto: null, onAmpliar: null };
 
 /** La captura de un vale: cabecera y renglones. */
 function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
-                    onGuardar, onCancelar, t }) {
+                    proyectos, onGuardar, onCancelar, t }) {
   const [busqueda, setBusqueda] = useState("");
   const [candidatos, setCandidatos] = useState([]);
   const [buscando, setBuscando] = useState(false);
@@ -792,6 +822,19 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
             {usuarios.map((u) => (
               <option key={u.id_user} value={u.id_user}>
                 {u.full_name || u.username || `#${u.id_user}`}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span>{t("voucher.project", "Obra")}</span>
+          <select value={borrador.id_proyect}
+                  onChange={(e) => setBorrador({ ...borrador, id_proyect: e.target.value })}>
+            <option value="">{t("voucher.no_project", "Sin obra asignada")}</option>
+            {proyectos.map((p) => (
+              <option key={p.id_proyect} value={p.id_proyect}>
+                {p.folio ? `#${p.folio}` : `#${p.id_proyect}`}
+                {p.title ? ` — ${p.title}` : ""}
               </option>
             ))}
           </select>
@@ -968,6 +1011,7 @@ Borrador.propTypes = {
   borrador: PropTypes.shape({
     id_incident_type: PropTypes.any,
     id_user: PropTypes.any,
+    id_proyect: PropTypes.any,
     due_date: PropTypes.string,
     note: PropTypes.string,
     lines: PropTypes.array,
@@ -976,6 +1020,7 @@ Borrador.propTypes = {
   tipos: PropTypes.array.isRequired,
   ubicaciones: PropTypes.array.isRequired,
   usuarios: PropTypes.array.isRequired,
+  proyectos: PropTypes.array.isRequired,
   onGuardar: PropTypes.func.isRequired,
   onCancelar: PropTypes.func.isRequired,
   t: PropTypes.func.isRequired,

@@ -162,3 +162,19 @@
 .ficha-marca.devuelto { background: #f1f5f9; color: #475569; }
 .ficha-marca.fuera    { background: #fffbeb; color: #b45309; }
 .ficha-marca.vencido  { background: #fef2f2; color: #b91c1c; }
+
+/* --- el historial en el formato del sistema anterior --------------------
+
+   Sin marcas de color por tipo de movimiento: esta tabla es una fila por
+   renglon de vale, no un libro de entradas y salidas, asi que esa distincion
+   no aplica aqui. Se mantiene el aspecto general de la ficha -- bordes
+   suaves, fila de pendiente resaltada -- para que no se lea como una tabla
+   ajena al resto de la pantalla. */
+.ficha-tabla-legado th,
+.ficha-tabla-legado td { white-space: nowrap; }
+
+.ficha-nota-legado {
+  white-space: normal;
+  max-width: 28ch;
+  color: #334155;
+}

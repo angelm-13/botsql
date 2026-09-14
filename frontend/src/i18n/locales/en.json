@@ -3482,7 +3482,14 @@
     "task_status_en_proceso": "In progress",
     "task_status_en_revision": "In review",
     "task_status_pendiente": "Pending",
-    "task_status_terminada": "Done"
+    "task_status_terminada": "Done",
+    "requested_by": "Requested by",
+    "requested_by_placeholder": "Engineer or contact name",
+    "quotation": "Quotation (folio)",
+    "purchase_order": "Purchase order",
+    "purchase_order_item": "Line item",
+    "no_supervisor": "Unassigned",
+    "delivery_date": "Delivery date"
   },
   "security": {
     "permission": {

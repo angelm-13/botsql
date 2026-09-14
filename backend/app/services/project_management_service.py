@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
-from sqlalchemy import or_
+from sqlalchemy import case, func, or_, select
 
 from app.models.entity_permission import EntityPermission
 from app.models.permission import Permission
@@ -157,6 +157,30 @@ def transition_management(project_id, payload: dict, user_data: dict) -> dict:
         return _project_payload(project)
 
 
+def project_options() -> list[dict]:
+    """Solo id+folio+titulo, para selectores como "Obra" en un vale de almacen.
+
+    Sin permiso de entidad de por medio, igual que `UserService.options()`: un
+    Almacenista puede levantar un vale y ligarlo a una obra sin tener acceso al
+    modulo de Operaciones completo -- solo necesita saber CUALES obras existen,
+    no su cotizacion, su orden de compra ni su historial. Sin esto, el selector
+    de proyecto en el vale seria un 403 para el rol que mas lo usa: el propio
+    Almacenista no tiene el modulo `operaciones`.
+    """
+    with transaction_context() as db:
+        filas = (
+            db.query(Proyect.id_proyect, Proyect.folio, Proyect.title,
+                     Proyect.proyect_description)
+            .filter(Proyect.deletion_date.is_(None))
+            .order_by(Proyect.id_proyect.desc())
+            .all()
+        )
+        return [
+            {"id_proyect": f[0], "folio": f[1], "title": f[2], "description": f[3]}
+            for f in filas
+        ]
+
+
 def project_catalog() -> dict:
     """Las maquinas de estados de proyecto, tal como las valida el servidor.
 
@@ -268,7 +292,14 @@ def _scoped_query(db, user_data: dict):
 
 def _project_payload(project: Proyect, events=None) -> dict:
     payload = project.serialize()
-    payload["folio"] = f"PRJ-{project.id_proyect:06d}"
+    # Solo se INVENTA un folio cuando el proyecto no trae el suyo. Antes se
+    # sobreescribia siempre: un proyecto capturado con folio "OT-2026-0042" -el
+    # de la orden de trabajo, migracion 20260911180000- se veia como
+    # "PRJ-000006" en cuanto alguien abria su detalle, porque esta funcion lo
+    # pisaba sin mirar si ya tenia uno. El folio de PRJ- sigue existiendo para
+    # los proyectos viejos que nunca tuvieron folio propio.
+    if not payload.get("folio"):
+        payload["folio"] = f"PRJ-{project.id_proyect:06d}"
     submitted_event = next(
         (event for event in (events or []) if event.event_type == "status_changed" and event.new_status == "submitted"),
         None,
@@ -471,11 +502,93 @@ def get_project_detail(project_id, user_data: dict) -> dict:
         payload = _project_payload(project, events)
         payload["tasks"] = [task.serialize() for task in tasks]
         payload["events"] = [event.serialize() for event in events]
-        payload["incidents"] = [i.serialize() for i in incidencias]
+        payload["incidents"] = _vales_con_material(db, incidencias)
+        payload["material_summary"] = _material_del_proyecto(db, project.id_proyect)
         payload["appointments"] = [c.serialize() for c in citas]
         payload["payments"] = [p.serialize() for p in pagos]
         payload["payment_summary"] = _resumen_de_pagos(pagos)
         return payload
+
+
+def _vales_con_material(db, incidencias) -> list[dict]:
+    """Los vales del proyecto, cada uno con cuanto se llevo y cuanto falta.
+
+    Un vale sin esas dos cifras obliga a abrirlo para saber si todavia debe
+    algo, y en una obra con veinte vales eso es abrir veinte pantallas.
+    """
+    from app.models.nm_incident_product import NmIncidentProduct
+
+    if not incidencias:
+        return []
+    ids = [i.id_incident for i in incidencias]
+    cuenta = dict(db.execute(
+        select(NmIncidentProduct.id_incident, func.count())
+        .where(NmIncidentProduct.id_incident.in_(ids),
+               NmIncidentProduct.deletion_date.is_(None))
+        .group_by(NmIncidentProduct.id_incident)
+    ).all())
+    abiertos = dict(db.execute(
+        select(NmIncidentProduct.id_incident, func.count())
+        .where(NmIncidentProduct.id_incident.in_(ids),
+               NmIncidentProduct.close_date.is_(None),
+               NmIncidentProduct.deletion_date.is_(None))
+        .group_by(NmIncidentProduct.id_incident)
+    ).all())
+    salida = []
+    for i in incidencias:
+        fila = i.serialize()
+        # El folio es el numero con el que la gente conoce el vale: el del
+        # sistema anterior cuando lo trae, y el id cuando no.
+        fila["folio"] = i.external_folio or str(i.id_incident)
+        fila["total_lines"] = int(cuenta.get(i.id_incident, 0))
+        fila["open_lines"] = int(abiertos.get(i.id_incident, 0))
+        salida.append(fila)
+    return salida
+
+
+def _material_del_proyecto(db, id_proyect) -> dict:
+    """Que se llevo esta obra y que sigue fuera, por producto.
+
+    Se cuenta desde los RENGLONES del vale y no desde `inventory_ledger`, aunque
+    el libro tambien tenga `id_proyect`: el del libro es el INQUILINO -- lo toma
+    del actor -- y no la obra. Contarlo de ahi daria todo el almacen de la
+    empresa como si fuera de este proyecto.
+    """
+    from app.models.incident import Incident
+    from app.models.nm_incident_product import NmIncidentProduct
+    from app.models.product import Product
+
+    filas = db.execute(
+        select(
+            Product.id_product,
+            Product.descripcion,
+            Product.product_code,
+            func.sum(NmIncidentProduct.quantity),
+            func.sum(case((NmIncidentProduct.close_date.is_(None),
+                           NmIncidentProduct.quantity), else_=0)),
+        )
+        .select_from(NmIncidentProduct)
+        .join(Incident, Incident.id_incident == NmIncidentProduct.id_incident)
+        .join(Product, Product.id_product == NmIncidentProduct.id_product)
+        .where(Incident.id_proyect == id_proyect,
+               Incident.deletion_date.is_(None),
+               NmIncidentProduct.deletion_date.is_(None),
+               NmIncidentProduct.direction == "salida")
+        .group_by(Product.id_product, Product.descripcion, Product.product_code)
+        .order_by(Product.descripcion)
+    ).all()
+
+    articulos = [
+        {"id_product": f[0], "descripcion": f[1], "product_code": f[2],
+         "taken": int(f[3] or 0), "still_out": int(f[4] or 0)}
+        for f in filas
+    ]
+    return {
+        "items": articulos,
+        "products": len(articulos),
+        "taken_total": sum(a["taken"] for a in articulos),
+        "still_out_total": sum(a["still_out"] for a in articulos),
+    }
 
 
 def _resumen_de_pagos(pagos) -> dict:
@@ -501,6 +614,54 @@ def _resumen_de_pagos(pagos) -> dict:
     }
 
 
+def _parsear_fecha_de_la_orden(values: dict) -> None:
+    """`delivery_date` como objeto `date`, no como texto.
+
+    SQLite -donde corre la suite- exige un `date` de verdad para una columna
+    `Date` y revienta con un texto ISO; Postgres lo tolera por el driver, asi
+    que el mismo codigo se veia bien contra la base real y fallaba solo en la
+    suite. Se normaliza aqui, una vez, para las dos rutas que escriben el
+    proyecto -crear y actualizar.
+    """
+    valor = values.get("delivery_date")
+    if valor and isinstance(valor, str):
+        try:
+            values["delivery_date"] = date.fromisoformat(valor[:10])
+        except ValueError as fallo:
+            raise AppError("errors.invalid_field", 400,
+                           {"field": "delivery_date"}) from fallo
+
+
+def _validar_referencias_de_la_orden(db, values: dict) -> None:
+    """Que la cotizacion, el supervisor y el dibujo existan de verdad.
+
+    `id_quotation`, `id_supervisor` e `id_drawing_document` son llaves ajenas
+    normales -no diferidas, como las de `incident`-, asi que un id inventado
+    revienta en el INSERT/UPDATE como un IntegrityError crudo y le llega al
+    usuario como un 500 en vez del 404 que le toca. Se comprueba antes, igual
+    que ya hace `crear_vale` con `id_proyect`.
+    """
+    from app.models.invoice import Invoice
+    from app.models.user import User
+
+    if values.get("id_quotation") and db.get(Invoice, int(values["id_quotation"])) is None:
+        raise AppError("errors.not_found", 404,
+                       {"entity": "invoice", "field": "id_quotation"})
+    if values.get("id_supervisor"):
+        existe = db.scalars(
+            select(User.id_user).where(User.id_user == int(values["id_supervisor"]),
+                                       User.deletion_date.is_(None)).limit(1)
+        ).first()
+        if existe is None:
+            raise AppError("errors.not_found", 404,
+                           {"entity": "user", "field": "id_supervisor"})
+    if values.get("id_drawing_document"):
+        from app.models.document import Document
+        if db.get(Document, int(values["id_drawing_document"])) is None:
+            raise AppError("errors.not_found", 404,
+                           {"entity": "document", "field": "id_drawing_document"})
+
+
 def create_project(payload: dict, user_data: dict) -> dict:
     actor_id = _actor_id(user_data)
     values = {key: value for key, value in (payload or {}).items() if key in PROJECT_MUTABLE_FIELDS}
@@ -510,7 +671,9 @@ def create_project(payload: dict, user_data: dict) -> dict:
     values["created_by"] = actor_id
     values["leader"] = _safe_int(values.get("leader")) or actor_id
     values["proyect_status"] = "draft"
+    _parsear_fecha_de_la_orden(values)
     with transaction_context() as db:
+        _validar_referencias_de_la_orden(db, values)
         project = Proyect(**values)
         db.add(project)
         db.flush()
@@ -531,6 +694,8 @@ def update_project(project_id, payload: dict, user_data: dict) -> dict:
             raise AppError("errors.permission_denied", 403)
         if (scope == "ownership" or leads_it) and normalize_project_status(project.proyect_status) not in {"draft", "blocked"}:
             raise AppError("errors.project_not_editable", 409, {"status": project.proyect_status})
+        _parsear_fecha_de_la_orden(values)
+        _validar_referencias_de_la_orden(db, values)
         for field, value in values.items():
             setattr(project, field, value)
         db.flush()
