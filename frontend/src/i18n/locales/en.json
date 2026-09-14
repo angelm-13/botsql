@@ -74,6 +74,8 @@
     "language": "Language",
     "username": "Username",
     "password": "Password",
+    "show_password": "Show password",
+    "hide_password": "Hide password",
     "login_title": "Secure access",
     "login_subtitle": "Enter your credentials to continue.",
     "sign_in": "Sign in",
