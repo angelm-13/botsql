@@ -13,8 +13,18 @@ export function urlDeArchivo(rutaRelativa) {
   if (!ruta) return "";
   if (/^https?:\/\//.test(ruta) || ruta.startsWith("data:")) return ruta;
   const limpia = ruta.startsWith("/") ? ruta.slice(1) : ruta;
+  // La carpeta del sistema anterior venia en SINGULAR -- `uploads/producto/225.png`
+  // -- y la aplicacion sirve `uploads/products/`. Son 2 221 productos migrados
+  // con la ruta vieja, asi que sin esto ninguna foto importada carga en ninguna
+  // pantalla. Se corrige aqui, en el unico sitio que arma estas URLs, en vez de
+  // en cada componente.
+  //
+  // Es una traduccion de lectura, no un arreglo del dato: `fix_adser_product_image_paths.py`
+  // sigue siendo lo que endereza `path_imagen` en la base. Esto hace que la foto
+  // se vea aunque ese script no se haya corrido todavia.
+  const servible = limpia.replace(/^uploads\/producto\//, "uploads/products/");
   const base = API_BASE_URL.endsWith("/") ? API_BASE_URL.slice(0, -1) : API_BASE_URL;
-  return `${base}/${limpia}`;
+  return `${base}/${servible}`;
 }
 
 function buildUrl(path, params = {}) {

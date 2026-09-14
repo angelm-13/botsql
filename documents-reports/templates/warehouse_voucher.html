@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="utf-8" />
+  <title>Vale de almacén {{ record.folio }}</title>
+  <style>
+    /* Hoja carta con margen real de impresora. El numero de pagina va en el
+       margen y no en el cuerpo: un vale de treinta renglones ocupa varias
+       hojas, y una hoja suelta sin numero no se puede reordenar. */
+    @page {
+      size: Letter;
+      margin: 14mm 13mm 16mm 13mm;
+      @bottom-center {
+        content: "Página " counter(page) " de " counter(pages);
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 8pt;
+        color: #94a3b8;
+      }
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 9.5pt;
+      color: #0f172a;
+      line-height: 1.45;
+    }
+
+    /* --- cabecera --- */
+    .encabezado {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 2.5pt solid #0f172a;
+      padding-bottom: 8pt;
+      margin-bottom: 14pt;
+    }
+    .titulo { font-size: 17pt; font-weight: bold; letter-spacing: -0.4pt; margin: 0; }
+    .subtitulo { color: #64748b; font-size: 8.5pt; margin: 2pt 0 0; }
+
+    /* El folio es lo que la gente busca en un cajon lleno de vales, asi que
+       es lo mas grande de la hoja despues del titulo. */
+    .folio-caja { text-align: right; }
+    .folio-etiqueta {
+      font-size: 7.5pt; text-transform: uppercase; letter-spacing: 1pt;
+      color: #64748b;
+    }
+    .folio { font-size: 20pt; font-weight: bold; letter-spacing: -0.5pt; }
+
+    /* --- sello de estado --- */
+    .sello {
+      display: inline-block;
+      padding: 2.5pt 9pt;
+      border-radius: 3pt;
+      font-size: 8pt;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 0.6pt;
+      border: 1pt solid;
+    }
+    .sello.abierto     { color: #92400e; border-color: #f59e0b; background: #fffbeb; }
+    .sello.cerrado     { color: #166534; border-color: #22c55e; background: #f0fdf4; }
+    .sello.borrador    { color: #475569; border-color: #94a3b8; background: #f8fafc; }
+
+    /* Un borrador no ha sacado nada del almacen. Se dice en grande y cruzado
+       porque un papel se confunde facil con uno autorizado, y firmarlo por
+       error entrega material que nadie descontó. */
+    .aviso-borrador {
+      border: 1.5pt dashed #94a3b8;
+      background: #f8fafc;
+      color: #475569;
+      padding: 8pt 12pt;
+      border-radius: 4pt;
+      margin-bottom: 14pt;
+      font-size: 9pt;
+    }
+    .aviso-borrador strong { color: #0f172a; }
+
+    /* --- datos del vale --- */
+    .datos {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0;
+      border: 0.8pt solid #e2e8f0;
+      border-radius: 5pt;
+      overflow: hidden;
+      margin-bottom: 16pt;
+    }
+    .dato {
+      width: 25%;
+      padding: 8pt 11pt;
+      border-right: 0.8pt solid #e2e8f0;
+    }
+    .dato:last-child { border-right: 0; }
+    .dato-etiqueta {
+      display: block;
+      font-size: 7pt;
+      text-transform: uppercase;
+      letter-spacing: 0.7pt;
+      color: #64748b;
+      margin-bottom: 2pt;
+    }
+    .dato-valor { font-size: 10pt; font-weight: bold; }
+
+    .nota {
+      border-left: 2.5pt solid #cbd5e1;
+      padding: 4pt 0 4pt 10pt;
+      margin: 0 0 16pt;
+      color: #334155;
+      font-size: 9pt;
+    }
+
+    /* --- renglones --- */
+    h2 {
+      font-size: 10pt;
+      text-transform: uppercase;
+      letter-spacing: 0.8pt;
+      color: #475569;
+      margin: 0 0 6pt;
+      padding-bottom: 3pt;
+      border-bottom: 0.8pt solid #e2e8f0;
+    }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 16pt; }
+    thead { display: table-header-group; }   /* la cabecera se repite por hoja */
+    tr { page-break-inside: avoid; }
+    th {
+      text-align: left;
+      font-size: 7.5pt;
+      text-transform: uppercase;
+      letter-spacing: 0.5pt;
+      color: #64748b;
+      padding: 5pt 6pt;
+      border-bottom: 1pt solid #cbd5e1;
+    }
+    td {
+      padding: 6pt;
+      border-bottom: 0.6pt solid #eef2f7;
+      vertical-align: top;
+      font-size: 9pt;
+    }
+    .num { text-align: right; }
+    .cant { font-weight: bold; font-size: 10.5pt; }
+    .codigo { font-family: "Courier New", monospace; font-size: 8.5pt; color: #475569; }
+    .menor { color: #64748b; font-size: 8pt; }
+
+    .marca-si { color: #166534; font-weight: bold; }
+    .marca-no { color: #b45309; }
+
+    .vacio { color: #94a3b8; font-style: italic; padding: 10pt 6pt; }
+
+    /* --- firmas --- */
+    /* Van juntas y nunca partidas entre hojas: media firma en una pagina y
+       media en otra invalida el papel. */
+    .firmas {
+      display: flex;
+      gap: 26pt;
+      margin-top: 26pt;
+      page-break-inside: avoid;
+    }
+    .firma { flex: 1; text-align: center; }
+    .firma-linea { border-top: 0.8pt solid #0f172a; margin-bottom: 4pt; }
+    .firma-nombre { font-size: 9.5pt; font-weight: bold; min-height: 12pt; }
+    .firma-papel {
+      font-size: 7.5pt; text-transform: uppercase; letter-spacing: 0.6pt;
+      color: #64748b;
+    }
+
+    .pie {
+      margin-top: 18pt;
+      padding-top: 6pt;
+      border-top: 0.6pt solid #e2e8f0;
+      color: #94a3b8;
+      font-size: 7.5pt;
+      display: flex;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="encabezado">
+    <div>
+      <h1 class="titulo">Vale de almacén</h1>
+      <p class="subtitulo">
+        {% if record.tipo %}{{ record.tipo }}{% else %}Salida de material{% endif %}
+      </p>
+    </div>
+    <div class="folio-caja">
+      <div class="folio-etiqueta">Folio</div>
+      <div class="folio">{{ record.folio }}</div>
+      <div style="margin-top:5pt">
+        <span class="sello {{ record.estado or 'abierto' }}">{{ record.estado or '—' }}</span>
+      </div>
+    </div>
+  </div>
+
+  {% if record.es_borrador %}
+  <div class="aviso-borrador">
+    <strong>Este vale es un borrador.</strong>
+    No ha salido material del almacén: está a la espera de que el jefe de almacén
+    lo autorice. No debe firmarse ni usarse para entregar.
+  </div>
+  {% endif %}
+
+  <div class="datos">
+    <div class="dato">
+      <span class="dato-etiqueta">Fecha</span>
+      <span class="dato-valor">{{ record.fecha or '—' }}</span>
+    </div>
+    <div class="dato">
+      <span class="dato-etiqueta">Responsable</span>
+      <span class="dato-valor">{{ record.responsable or '—' }}</span>
+    </div>
+    <div class="dato">
+      <span class="dato-etiqueta">Renglones pendientes</span>
+      <span class="dato-valor">{{ record.pendientes }}</span>
+    </div>
+    <div class="dato">
+      <span class="dato-etiqueta">Cierre</span>
+      <span class="dato-valor">{{ record.cierre or 'Sin cerrar' }}</span>
+    </div>
+  </div>
+
+  {% if record.nota %}
+  <p class="nota">{{ record.nota }}</p>
+  {% endif %}
+
+  <h2>Material entregado</h2>
+  <table>
+    <thead>
+      <tr>
+        <th class="num" style="width:8%">Cant.</th>
+        <th style="width:42%">Producto</th>
+        <th style="width:22%">Ubicación</th>
+        <th style="width:14%">Devolver antes de</th>
+        <th style="width:14%">Devuelto</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for linea in record.salidas %}
+      <tr>
+        <td class="num cant">{{ linea.cantidad }}</td>
+        <td>
+          <strong>{{ linea.descripcion }}</strong>
+          {%- set marcas = [] -%}
+          {%- if linea.codigo %}{% set _ = marcas.append(linea.codigo) %}{% endif -%}
+          {%- if linea.marca %}{% set _ = marcas.append(linea.marca) %}{% endif -%}
+          {%- if linea.unidad %}{% set _ = marcas.append(linea.unidad) %}{% endif -%}
+          {%- if marcas %}<br /><span class="menor">{{ marcas | join(' · ') }}</span>{% endif -%}
+          {%- if linea.nota %}<br /><span class="menor">{{ linea.nota }}</span>{% endif -%}
+        </td>
+        <td class="menor">{{ linea.desde or '—' }}{% if linea.hasta %} → {{ linea.hasta }}{% endif %}</td>
+        <td>{{ linea.vence or '—' }}</td>
+        <td>
+          {% if linea.devuelto %}
+            <span class="marca-si">Sí · {{ linea.cerrado }}</span>
+          {% else %}
+            <span class="marca-no">Pendiente</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="vacio">Este vale no tiene renglones de salida.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if record.entradas %}
+  {# Las devoluciones son renglones propios desde que devolver AGREGA en vez de
+     reescribir la salida. Se listan aparte para que el papel no parezca decir
+     que se llevaron el doble. #}
+  <h2>Material devuelto</h2>
+  <table>
+    <thead>
+      <tr>
+        <th class="num" style="width:8%">Cant.</th>
+        <th style="width:56%">Producto</th>
+        <th style="width:22%">Regresó a</th>
+        <th style="width:14%">Fecha</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for linea in record.entradas %}
+      <tr>
+        <td class="num cant">{{ linea.cantidad }}</td>
+        <td>
+          <strong>{{ linea.descripcion }}</strong>
+          {%- if linea.codigo %} <span class="codigo">{{ linea.codigo }}</span>{% endif -%}
+          {%- if linea.nota %}<br /><span class="menor">{{ linea.nota }}</span>{% endif -%}
+        </td>
+        <td class="menor">{{ linea.hasta or '—' }}</td>
+        <td>{{ linea.cerrado or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if not record.es_borrador %}
+  <div class="firmas">
+    <div class="firma">
+      <div class="firma-linea"></div>
+      <div class="firma-nombre">{{ record.responsable or '' }}</div>
+      <div class="firma-papel">Recibe el material</div>
+    </div>
+    <div class="firma">
+      <div class="firma-linea"></div>
+      <div class="firma-nombre">{{ record.capturo or '' }}</div>
+      <div class="firma-papel">Entrega — almacén</div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="pie">
+    <span>TYAKXA · Vale {{ record.folio }} (registro {{ record.id_incident }})</span>
+    <span>Generado {{ generated_at[:16] | replace('T', ' ') }} UTC</span>
+  </div>
+
+</body>
+</html>

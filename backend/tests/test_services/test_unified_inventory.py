@@ -9,9 +9,9 @@ que olvidaba una devolvia un saldo incompleto sin avisar. Con una sola tabla,
 "cuanto hay" y "de donde vino" se contestan las dos, y ninguna se puede
 responder a medias por descuido.
 
-El punto de venta es el unico que no comparte tabla, porque corre contra su
-propia base. Comparte saldo: su venta escribe el movimiento en el libro del
-nucleo.
+El punto de venta ya no es la excepcion: desde que sus tablas entraron a esta
+base (migracion 20260911100000), su venta apunta a `product` directamente y el
+cobro escribe el movimiento en el mismo libro, en la misma transaccion.
 """
 
 from __future__ import annotations
@@ -21,13 +21,14 @@ from decimal import Decimal
 
 from app.models import (
     Brand, CustomerSupplier, Invoice, Location, LocationType, Material,
-    PosProductLink, Product, ProductFamily, Proyect, Status, Unit,
+    Product, ProductFamily, Proyect, Status, Unit, User,
 )
 from app.models.inventory_ledger import InventoryLedger
+from app.models.pos import PosCashSession, PosSale, PosSaleItem
 from app.models.inventory_stock import InventoryStock
 from app.models.session import transaction_context
 from app.services import inventory_service as inventario
-from app.services.pos_inventory_bridge import enlazar, reflejar_venta
+from app.services import pos_service
 from app.utils.errors import AppError
 from tests.conftest import BackendTestCase
 
@@ -36,7 +37,6 @@ ACTOR = {"id_user": 1, "id_proyect": 30, "is_superuser": True}
 PRINCIPAL, CLIENTE, PROYECTO, FACTURA = 10, 20, 30, 50
 ALMACEN = 2
 PRODUCTO = 60
-POS_UUID = "045d0d68-d3ed-438b-9d86-89b2ccd6ca85"
 
 
 class InventarioUnicoTestCase(BackendTestCase):
@@ -157,36 +157,39 @@ class TestOrigenDelMovimiento(InventarioUnicoTestCase):
 
 
 class TestVentaDelPuntoDeVenta(InventarioUnicoTestCase):
-    """El POS no comparte tabla -corre contra su base- pero si comparte saldo."""
+    """El punto de venta ya escribe en estas tablas, no en las suyas.
 
-    def enlace(self):
-        return enlazar({
-            "id_product": PRODUCTO,
-            "pos_product_id": POS_UUID,
-            "pos_product_name": "Agua embotellada 1L",
+    Antes existia `pos_inventory_bridge`: el POS cobraba en su base y aqui se
+    REFLEJABA lo ya cobrado. La diferencia que se prueba abajo es que ahora el
+    cobro y el descuento son la misma transaccion.
+    """
+
+    def setUp(self):
+        super().setUp()
+        with transaction_context() as db:
+            db.add(PosCashSession(
+                id_proyect=PROYECTO, register_name="Caja 1", id_user_opened=1,
+                opening_amount=Decimal("0"), session_status="open", created_by=1))
+
+    def cobro(self, cantidad=2, *, pagado=None, precio="10"):
+        renglon = {"id_product": PRODUCTO, "quantity": cantidad, "unit_price": precio}
+        total = pagado if pagado is not None else Decimal(str(precio)) * Decimal(str(cantidad))
+        return pos_service.cobrar({
+            "sale_type": "takeout",
+            "items": [renglon],
+            "payments": [{"method": "cash", "amount": str(total)}],
             "id_location": ALMACEN,
         }, ACTOR)
 
-    def venta(self, cantidad=2, folio="V-20260901-00001", uuid=POS_UUID):
-        return {
-            "folio": folio,
-            "items": [{"product_id": uuid, "name": "Agua embotellada 1L",
-                       "quantity": cantidad}],
-        }
+    def test_a_sale_discounts_the_core_inventory(self):
+        resultado = self.cobro(2)
 
-    def test_a_linked_sale_discounts_the_core_inventory(self):
-        self.enlace()
-
-        resultado = reflejar_venta(self.venta(2), ACTOR)
-
-        self.assertEqual(1, len(resultado["reflected"]))
-        self.assertEqual([], resultado["skipped"])
+        self.assertEqual("paid", resultado["sale"]["sale_status"])
         self.assertEqual(18, self.existencia())
 
     def test_the_movement_is_recorded_as_coming_from_the_pos(self):
         """Un solo saldo, y el origen sigue siendo legible."""
-        self.enlace()
-        reflejar_venta(self.venta(1), ACTOR)
+        venta = self.cobro(1)
 
         with transaction_context() as db:
             ultimo = db.query(InventoryLedger).order_by(
@@ -194,56 +197,88 @@ class TestVentaDelPuntoDeVenta(InventarioUnicoTestCase):
 
         self.assertEqual("pos", ultimo.source_module)
         self.assertEqual("issue", ultimo.movement_type)
-        self.assertEqual("V-20260901-00001", ultimo.reference_id)
+        # 'sale' y no 'invoice': lo causo una venta cobrada, no un comprobante.
+        self.assertEqual("sale", ultimo.reference_type)
+        self.assertEqual(venta["sale"]["folio"], ultimo.reference_id)
 
-    def test_an_unlinked_product_does_not_discount_and_says_so(self):
-        """Descontar del producto equivocado es peor que no descontar.
+    def test_the_sale_line_points_at_the_warehouse_product(self):
+        """El nudo de la integracion: no hay identificador ajeno que emparejar."""
+        venta = self.cobro(1)
 
-        Lo primero se ve sano; lo segundo se nota. Por eso no se adivina la
-        correspondencia por nombre.
+        with transaction_context() as db:
+            renglon = db.query(PosSaleItem).filter_by(
+                id_pos_sale=venta["sale"]["id_pos_sale"]).one()
+
+        self.assertEqual(PRODUCTO, renglon.id_product)
+
+    def test_a_sale_without_stock_is_refused_instead_of_leaving_a_mismatch(self):
+        """El cambio de fondo respecto al puente.
+
+        El puente no podia deshacer nada porque el dinero ya estaba cobrado en
+        el otro sistema, asi que anotaba el descuadre y seguia. Con el cobro en
+        esta base y en la misma transaccion, la falta de existencia detiene la
+        venta -- que es lo que hace el resto de TYAKXA.
         """
-        resultado = reflejar_venta(self.venta(2, uuid="otro-uuid-sin-enlace"), ACTOR)
+        with self.assertRaises(AppError) as fallo:
+            self.cobro(500)
 
-        self.assertEqual([], resultado["reflected"])
-        self.assertEqual("product_not_linked", resultado["skipped"][0]["reason"])
-        self.assertEqual(20, self.existencia(), "no se toco nada")
-
-    def test_reflecting_the_same_sale_twice_does_not_discount_twice(self):
-        """La llave lleva el folio: un reintento no cobra dos veces al almacen."""
-        self.enlace()
-        reflejar_venta(self.venta(3), ACTOR)
-
-        segunda = reflejar_venta(self.venta(3), ACTOR)
-
-        self.assertEqual(17, self.existencia())
-        self.assertTrue(segunda["reflected"][0]["already_applied"])
-
-    def test_a_sale_without_stock_is_reported_and_not_reverted(self):
-        """La venta ya se cobro: revertirla dejaria al cliente sin su compra."""
-        self.enlace()
-
-        resultado = reflejar_venta(self.venta(500), ACTOR)
-
-        self.assertEqual([], resultado["reflected"])
         self.assertEqual("errors.inventory_insufficient_stock",
-                         resultado["skipped"][0]["reason"])
+                         fallo.exception.message_key)
+        self.assertEqual(20, self.existencia(), "no se movio nada")
+        with transaction_context() as db:
+            self.assertEqual(0, db.query(PosSale).count(),
+                             "tampoco quedo la venta a medias")
+
+    def test_a_fractional_quantity_is_refused_instead_of_rounded(self):
+        """0.5 piezas no son 0 ni 1: redondear esconde o inventa existencia."""
+        with self.assertRaises(AppError) as fallo:
+            self.cobro("1.5")
+
+        self.assertEqual("errors.pos_fractional_quantity", fallo.exception.message_key)
         self.assertEqual(20, self.existencia())
 
-    def test_a_fractional_quantity_is_reported_instead_of_rounded(self):
-        self.enlace()
+    def test_paying_less_than_the_total_is_refused(self):
+        with self.assertRaises(AppError) as fallo:
+            self.cobro(2, pagado="5")
 
-        resultado = reflejar_venta(self.venta("1.5"), ACTOR)
+        self.assertEqual("errors.pos_payment_insufficient", fallo.exception.message_key)
+        self.assertEqual(20, self.existencia())
 
-        self.assertEqual("quantity_not_whole_units", resultado["skipped"][0]["reason"])
+    def test_two_sales_each_discount_their_own_units(self):
+        """Las llaves de idempotencia llevan el folio, que es distinto por venta."""
+        self.cobro(2)
+        self.cobro(3)
 
-    def test_a_pos_product_cannot_be_linked_twice(self):
-        """Dos enlaces dejarian la venta descontando dos veces."""
-        self.enlace()
+        self.assertEqual(15, self.existencia())
 
-        with self.assertRaises(AppError) as raised:
-            self.enlace()
+    def test_the_change_given_is_not_counted_as_money_in_the_drawer(self):
+        """Una venta de 100 pagada con 200 deja 100 en el cajon, no 200.
 
-        self.assertEqual("errors.pos_product_already_linked", raised.exception.message_key)
+        Se encontro probando el cobro contra la base real: el corte sumaba lo
+        que entro sin restar el vuelto, asi que pedia al cajero 100 de mas y el
+        arqueo salia siempre corto por el importe de los cambios del turno.
+        """
+        pos_service.cobrar({
+            "sale_type": "takeout",
+            "items": [{"id_product": PRODUCTO, "quantity": 1, "unit_price": "100"}],
+            "payments": [{"method": "cash", "amount": "200", "tendered_amount": "200"}],
+            "id_location": ALMACEN,
+        }, ACTOR)
+
+        resumen = pos_service.resumen_del_dia(ACTOR)
+
+        self.assertEqual(100.0, resumen["by_payment_method"]["cash"],
+                         "entraron 200 y salieron 100 de vuelto")
+
+    def test_selling_without_an_open_register_is_refused(self):
+        """Cobrar sin turno deja dinero que ningun corte reclama."""
+        with transaction_context() as db:
+            db.query(PosCashSession).delete()
+
+        with self.assertRaises(AppError) as fallo:
+            self.cobro(1)
+
+        self.assertEqual("errors.pos_session_required", fallo.exception.message_key)
 
 
 class TestQueSigueSiendoUnSoloSaldo(InventarioUnicoTestCase):

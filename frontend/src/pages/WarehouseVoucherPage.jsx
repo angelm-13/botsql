@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import PropTypes from "prop-types";
+import VisorDeFoto from "../components/VisorDeFoto";
 import {
   AlertTriangle, ArrowLeft, ArrowRight, Check, ClipboardList, Package, Plus,
-  ImageOff, RefreshCw, Search, Tag, Trash2, X,
+  ImageOff, Printer, RefreshCw, Search, Tag, Trash2, X,
 } from "lucide-react";
 import {
   authorizeWarehouseVoucher,
+  downloadWarehouseVoucherPdf,
   closeWarehouseVoucherLine,
   createWarehousePrevoucher,
   createWarehouseVoucher,
@@ -13,7 +15,9 @@ import {
   getAllLocation,
   getUserOptions,
   getOverdueVoucherLines,
+  getProyectOptions,
   getWarehouseVoucher,
+  urlDeArchivo,
   listWarehouseVouchers,
   inventoryTrace,
 } from "../api";
@@ -75,6 +79,9 @@ export default function WarehouseVoucherPage() {
   const [tipos, setTipos] = useState([]);
   const [ubicaciones, setUbicaciones] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
+  // Las obras a las que se le puede ligar un vale. Se pide con `/options`,
+  // que no exige el modulo `operaciones` -- el Almacenista no lo tiene.
+  const [proyectos, setProyectos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
   const [aviso, setAviso] = useState("");
@@ -82,6 +89,10 @@ export default function WarehouseVoucherPage() {
   // El vale que se esta capturando, y el que se esta consultando.
   const [borrador, setBorrador] = useState(null);
   const [consultado, setConsultado] = useState(null);
+  const [imprimiendo, setImprimiendo] = useState(false);
+  // La foto que se esta mirando en grande, o null. Vive aqui y no en
+  // cada ficha para que solo pueda haber una abierta.
+  const [fotoAmpliada, setFotoAmpliada] = useState(null);
   // La lista: lo que se ve sin tener que saberse un numero de memoria.
   const [lista, setLista] = useState(null);
   const [pagina, setPagina] = useState(1);
@@ -111,16 +122,18 @@ export default function WarehouseVoucherPage() {
       // de incident_type), y un solo 403 aqui tumbaba las demas tambien --
       // dejaba "Levantar vale" deshabilitado por falta de tipos aunque
       // ubicaciones/usuarios si hubieran cargado bien.
-      const [venc, tip, ubi, usr] = await Promise.all([
+      const [venc, tip, ubi, usr, proy] = await Promise.all([
         getOverdueVoucherLines().catch(() => ({ items: [] })),
         getAllIncidentType({ per_page: 100 }).catch(() => ({ items: [] })),
         getAllLocation({ per_page: 200 }).catch(() => ({ items: [] })),
         getUserOptions().catch(() => []),
+        getProyectOptions().catch(() => []),
       ]);
       setVencidos(venc?.items || []);
       setTipos(tip?.items || []);
       setUbicaciones(ubi?.items || []);
       setUsuarios(Array.isArray(usr) ? usr : usr?.items || []);
+      setProyectos(Array.isArray(proy) ? proy : proy?.items || []);
     } catch (e) {
       decirError(e, "No se pudo cargar la pantalla de vales.");
     } finally {
@@ -133,6 +146,9 @@ export default function WarehouseVoucherPage() {
   const abrirBorrador = () => setBorrador({
     id_incident_type: tipos[0]?.id_incident_type || "",
     id_user: "",
+    // La obra a la que va el material. Vacio por opcion: no todo prestamo
+    // es de un proyecto -- una herramienta para el propio taller no lo es.
+    id_proyect: "",
     due_date: "",
     note: "",
     lines: [],
@@ -199,6 +215,7 @@ export default function WarehouseVoucherPage() {
     try {
       const creado = await alta({
         ...borrador,
+        id_proyect: borrador.id_proyect || undefined,
         lines: borrador.lines.map((l) => ({
           id_product: l.id_product,
           id_inventory_asset: l.id_inventory_asset || undefined,
@@ -258,6 +275,23 @@ export default function WarehouseVoucherPage() {
     return u?.location_description || (idUbicacion ? `#${idUbicacion}` : "");
   };
 
+  // El vale en papel. Se abre en una pestana en vez de descargarse: casi
+  // siempre se quiere imprimir y firmar en el momento, no guardarlo.
+  async function imprimir(id) {
+    setImprimiendo(true);
+    try {
+      const blob = await downloadWarehouseVoucherPdf(id);
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener");
+      // Se libera tarde: revocarlo de inmediato deja la pestana en blanco.
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      decirError(e, "No se pudo generar el PDF del vale.");
+    } finally {
+      setImprimiendo(false);
+    }
+  }
+
   return (
     <section className="page vale-page">
       <PageHeader
@@ -296,7 +330,8 @@ export default function WarehouseVoucherPage() {
               <li key={linea.id_nm_incident_product}>
                 <button className="vale-enlace"
                         onClick={() => consultar(linea.id_incident)}>
-                  {t("voucher.voucher_n", "Vale")} #{linea.id_incident}
+                  {t("voucher.voucher_n", "Vale")}{" "}
+                  #{linea.voucher_folio || linea.id_incident}
                 </button>
                 <span className="mono">
                   {linea.id_inventory_asset
@@ -325,6 +360,7 @@ export default function WarehouseVoucherPage() {
           tipos={tipos}
           ubicaciones={ubicaciones}
           usuarios={usuarios}
+          proyectos={proyectos}
           onGuardar={guardar}
           onCancelar={() => setBorrador(null)}
           t={t}
@@ -444,16 +480,28 @@ export default function WarehouseVoucherPage() {
               {t("voucher.back_to_list", "Volver a la lista")}
             </button>
             <Vale vale={consultado} onCerrar={cerrar} onAutorizar={autorizar}
+                  onImprimir={imprimir} imprimiendo={imprimiendo}
+                  onAmpliar={setFotoAmpliada}
                   nombreDe={nombreDe} sitioDe={sitioDe} t={t} />
           </>
         )}
       </section>
+
+      {fotoAmpliada && (
+        <VisorDeFoto
+          src={fotoAmpliada.src}
+          titulo={fotoAmpliada.titulo}
+          descripcion={fotoAmpliada.descripcion}
+          onCerrar={() => setFotoAmpliada(null)}
+        />
+      )}
     </section>
   );
 }
 
 /** El vale con sus renglones, y el estado derivado bien visible. */
-function Vale({ vale, onCerrar, onAutorizar, nombreDe, sitioDe, t }) {
+function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
+               nombreDe, sitioDe, t }) {
   const cabecera = vale.voucher || {};
   const estado = String(cabecera.incident_status || "");
   const cerrado = estado === "cerrado";
@@ -465,14 +513,49 @@ function Vale({ vale, onCerrar, onAutorizar, nombreDe, sitioDe, t }) {
       borrador ? "vale-borrador" : (cerrado ? "vale-cerrado" : "vale-abierto")}`}>
       <header>
         <div>
+          {/* El MISMO numero que la lista: el folio con el que la gente lo
+              conoce -- el del sistema anterior cuando lo trae -- y no el
+              id interno. Mostraban cosas distintas, y buscar "95" para acabar
+              en una pantalla titulada "#513" parece otro vale. El id sigue a
+              la vista, en pequeno, porque es lo que hace falta para pedir
+              ayuda o para mirarlo en la base. */}
           <h3>
             <ClipboardList size={16} />
-            {t("voucher.voucher_n", "Vale")} #{cabecera.id_incident}
+            {t("voucher.voucher_n", "Vale")} #{cabecera.external_folio || cabecera.id_incident}
+            {cabecera.external_folio && (
+              <span className="vale-registro">
+                {t("voucher.record_n", "registro")} {cabecera.id_incident}
+              </span>
+            )}
           </h3>
           <p className="muted">
             {t("voucher.holder", "Responsable")}: <strong>{nombreDe(cabecera.id_user)}</strong>
             {cabecera.note && <> · {cabecera.note}</>}
           </p>
+          {/* La obra a la que va este material -- el porque de todo el vale.
+              El proyecto ya viene resuelto con nombre desde el servidor: no
+              se busca en una lista local que puede no traerlo si el proyecto
+              esta cerrado y no aparece en `/proyect/options`. */}
+          {vale.proyect && (
+            <p className="vale-obra">
+              <ClipboardList size={13} />
+              {t("voucher.for_project", "Obra")}:{" "}
+              <strong>
+                {vale.proyect.folio ? `#${vale.proyect.folio}` : `#${vale.proyect.id_proyect}`}
+                {vale.proyect.title ? ` — ${vale.proyect.title}` : ""}
+              </strong>
+            </p>
+          )}
+          {/* Imprimir esta junto al encabezado y no al final: quien abre un
+              vale para entregarlo material en mano lo primero que hace es
+              sacarlo en papel para que lo firmen. */}
+          <button className="button button-quiet vale-imprimir"
+                  disabled={imprimiendo} onClick={() => onImprimir(cabecera.id_incident)}>
+            <Printer size={14} />
+            {imprimiendo
+              ? t("common.loading", "Cargando…")
+              : t("voucher.print", "Imprimir vale")}
+          </button>
         </div>
         {/* El estado se muestra, no se elige: lo derivan los renglones -- con
             una excepcion, el borrador, que no habla de los renglones sino de
@@ -522,7 +605,7 @@ function Vale({ vale, onCerrar, onAutorizar, nombreDe, sitioDe, t }) {
                   un numero que no dice si lo que se llevaron fue un taladro o
                   un saco de cemento, y quien mira un vale para reclamar
                   material necesita saber QUE es. */}
-              <FichaDeProducto producto={linea.product} t={t} />
+              <FichaDeProducto producto={linea.product} onAmpliar={onAmpliar} t={t} />
 
               <span className="vale-que">
                 {linea.id_inventory_asset ? <Tag size={13} /> : <Package size={13} />}
@@ -569,11 +652,19 @@ Vale.propTypes = {
   onAutorizar: PropTypes.func.isRequired,
   vale: PropTypes.shape({
     voucher: PropTypes.object,
+    proyect: PropTypes.shape({
+      id_proyect: PropTypes.any,
+      folio: PropTypes.string,
+      title: PropTypes.string,
+    }),
     lines: PropTypes.array,
     open_lines: PropTypes.number,
     total_lines: PropTypes.number,
   }).isRequired,
   onCerrar: PropTypes.func.isRequired,
+  onImprimir: PropTypes.func.isRequired,
+  imprimiendo: PropTypes.bool,
+  onAmpliar: PropTypes.func,
   nombreDe: PropTypes.func.isRequired,
   sitioDe: PropTypes.func.isRequired,
   t: PropTypes.func.isRequired,
@@ -585,25 +676,38 @@ Vale.propTypes = {
  * La foto va pequeña y con su hueco cuando falta -- no se esconde el marco --
  * para que la lista de renglones no cambie de alto segun cuales tengan
  * imagen: una lista que se descuadra al cargar se lee peor que una con
- * huecos.
+ * huecos. Y para reconocer una herramienta hace falta verla: por eso la
+ * miniatura abre la foto en grande al pulsarla.
  *
- * Y si el archivo no esta, se cae al marcador en vez de dejar el icono de
- * imagen rota del navegador, que se lee como un fallo de la aplicacion. Pasa
- * de verdad con lo importado: `path_imagen` trae la carpeta del sistema
- * anterior -- `/uploads/producto/225.png`, en singular -- y la aplicacion
- * sirve `/uploads/products/`, en plural.
+ * La URL la arma `urlDeArchivo` y no se pinta `path_imagen` en crudo. Dos
+ * motivos, los dos medidos: con el backend en otro puerto -- desarrollo -- una
+ * ruta relativa no resuelve, y los 2 221 productos migrados traen la carpeta
+ * del sistema anterior en SINGULAR (`/uploads/producto/225.png`) mientras la
+ * aplicacion sirve `/uploads/products/`. El helper traduce las dos cosas.
+ *
+ * Aun asi se conserva el marcador para cuando el archivo no exista: se cae a el
+ * en vez de dejar el icono de imagen rota del navegador, que se lee como un
+ * fallo de la aplicacion.
  */
-function FichaDeProducto({ producto, t }) {
+function FichaDeProducto({ producto, onAmpliar, t }) {
   const [fotoRota, setFotoRota] = useState(false);
   if (!producto) return null;
   const rasgos = [producto.brand, producto.material, producto.unit].filter(Boolean);
+  const foto = fotoRota ? "" : urlDeArchivo(producto.path_imagen);
 
   return (
     <span className="vale-ficha">
       <span className="vale-ficha-foto">
-        {producto.path_imagen && !fotoRota ? (
-          <img src={producto.path_imagen} alt={producto.descripcion || ""}
-               loading="lazy" onError={() => setFotoRota(true)} />
+        {foto ? (
+          <img src={foto} alt={producto.descripcion || ""}
+               className="foto-ampliable" loading="lazy"
+               title={t("photo.click_to_zoom", "Clic para verla en grande")}
+               onClick={() => onAmpliar && onAmpliar({
+                 src: foto,
+                 titulo: producto.descripcion || "",
+                 descripcion: producto.product_code || "",
+               })}
+               onError={() => setFotoRota(true)} />
         ) : (
           <ImageOff size={16} />
         )}
@@ -623,13 +727,14 @@ function FichaDeProducto({ producto, t }) {
 
 FichaDeProducto.propTypes = {
   producto: PropTypes.object,
+  onAmpliar: PropTypes.func,
   t: PropTypes.func.isRequired,
 };
-FichaDeProducto.defaultProps = { producto: null };
+FichaDeProducto.defaultProps = { producto: null, onAmpliar: null };
 
 /** La captura de un vale: cabecera y renglones. */
 function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
-                    onGuardar, onCancelar, t }) {
+                    proyectos, onGuardar, onCancelar, t }) {
   const [busqueda, setBusqueda] = useState("");
   const [candidatos, setCandidatos] = useState([]);
   const [buscando, setBuscando] = useState(false);
@@ -717,6 +822,19 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
             {usuarios.map((u) => (
               <option key={u.id_user} value={u.id_user}>
                 {u.full_name || u.username || `#${u.id_user}`}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span>{t("voucher.project", "Obra")}</span>
+          <select value={borrador.id_proyect}
+                  onChange={(e) => setBorrador({ ...borrador, id_proyect: e.target.value })}>
+            <option value="">{t("voucher.no_project", "Sin obra asignada")}</option>
+            {proyectos.map((p) => (
+              <option key={p.id_proyect} value={p.id_proyect}>
+                {p.folio ? `#${p.folio}` : `#${p.id_proyect}`}
+                {p.title ? ` — ${p.title}` : ""}
               </option>
             ))}
           </select>
@@ -893,6 +1011,7 @@ Borrador.propTypes = {
   borrador: PropTypes.shape({
     id_incident_type: PropTypes.any,
     id_user: PropTypes.any,
+    id_proyect: PropTypes.any,
     due_date: PropTypes.string,
     note: PropTypes.string,
     lines: PropTypes.array,
@@ -901,6 +1020,7 @@ Borrador.propTypes = {
   tipos: PropTypes.array.isRequired,
   ubicaciones: PropTypes.array.isRequired,
   usuarios: PropTypes.array.isRequired,
+  proyectos: PropTypes.array.isRequired,
   onGuardar: PropTypes.func.isRequired,
   onCancelar: PropTypes.func.isRequired,
   t: PropTypes.func.isRequired,

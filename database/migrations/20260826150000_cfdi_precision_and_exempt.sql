@@ -11,6 +11,15 @@
 
 BEGIN;
 
+-- Una vista posterior (`v_partidas`, del modulo asistente) puede depender de
+-- estas columnas. Postgres no deja alterar el tipo de una columna que una
+-- vista usa, ni siquiera si el tipo destino ya es el mismo -- asi que sin
+-- este DROP, en cuanto esa vista existiera, esta migracion reaplicable
+-- tronaria en cada arranque. Quien la cree despues (mas reciente por fecha
+-- de archivo) la vuelve a dejar con `CREATE OR REPLACE VIEW` en el mismo
+-- pase de migraciones.
+DROP VIEW IF EXISTS v_partidas;
+
 ALTER TABLE invoice_material_service
     ALTER COLUMN quantity TYPE NUMERIC(18, 6),
     ALTER COLUMN gross_price TYPE NUMERIC(18, 6),

@@ -54,6 +54,7 @@ from app.services.warehouse_voucher_service import (
     BORRADOR,
     CERRADO,
     autorizar_vale,
+    buscar_vales,
     cerrar_renglon,
     devolver_renglon,
     consultar_vale,
@@ -996,3 +997,222 @@ class TestLaDevolucionEsPorRenglon(BaseVale):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestElValeSeArchivaComoDocumento(BaseVale):
+    """El vale en papel se guarda, no solo se genera al vuelo.
+
+    Un vale es un documento que alguien FIRMA, y cambia: los renglones se
+    devuelven uno a uno. Si solo existiera mientras dura la descarga, nadie
+    podria ver despues que decia el que se firmo.
+    """
+
+    class AlmacenDePrueba:
+        """Escribe en memoria, para no tocar el disco en la suite."""
+
+        def __init__(self):
+            self.archivos = {}
+
+        def write(self, raw, project_id, document_id, version, extension):
+            ruta = "documents/%s/%s/v%s.%s" % (project_id, document_id, version, extension)
+            self.archivos[ruta] = raw
+            return ruta
+
+        def resolve(self, ruta):
+            from pathlib import Path
+
+            class _Falso(Path().__class__):
+                pass
+
+            datos = self.archivos[ruta]
+
+            class _Archivo:
+                def read_bytes(self_):
+                    return datos
+
+            return _Archivo()
+
+    def setUp(self):
+        super().setUp()
+        from unittest.mock import patch
+
+        from app.models.document import DocumentCategory
+
+        with transaction_context() as db:
+            db.add(DocumentCategory(code="warehouse_voucher", name="Vale de almacen",
+                                    active=True, created_by=1))
+        self.surtir()
+        self.almacen = self.AlmacenDePrueba()
+        # El PDF de verdad lo arma WeasyPrint, que necesita bibliotecas nativas
+        # y tarda; aqui interesa el ARCHIVADO, no el dibujo. Se sustituye el
+        # renderizador por uno que devuelve la ficha serializada, que cambia
+        # cuando cambia el vale -- que es justo lo que se esta probando.
+        self.render = patch(
+            "app.services.warehouse_voucher_service._motor_de_documentos")
+        motor = self.render.start()
+        self.addCleanup(self.render.stop)
+        motor.return_value.render_pdf_bytes.side_effect = (
+            lambda clave, ficha, *a, **k: repr(sorted(ficha.items())).encode())
+
+    def descargar(self, id_incident):
+        from app.services.warehouse_voucher_service import pdf_del_vale
+
+        return pdf_del_vale(id_incident, ACTOR, storage=self.almacen)
+
+    def versiones(self, id_incident):
+        from sqlalchemy import select
+
+        from app.models.document import Document, DocumentVersion
+
+        with transaction_context() as db:
+            doc = db.scalars(select(Document).where(
+                Document.business_reference_type == "incident",
+                Document.business_reference_value == str(id_incident))).first()
+            if doc is None:
+                return []
+            return db.scalars(select(DocumentVersion).where(
+                DocumentVersion.id_document == doc.id_document
+            ).order_by(DocumentVersion.version)).all()
+
+    def test_downloading_it_files_the_document(self):
+        vale = self._vale([self._linea_cantidad(10)])
+
+        self.descargar(vale["voucher"]["id_incident"])
+
+        versiones = self.versiones(vale["voucher"]["id_incident"])
+        self.assertEqual(1, len(versiones))
+        self.assertEqual("pdf", versiones[0].extension)
+        self.assertEqual("generated", versiones[0].source)
+
+    def test_downloading_it_again_does_not_file_a_second_copy(self):
+        """El mismo papel no se archiva dos veces."""
+        vale = self._vale([self._linea_cantidad(10)])
+        id_vale = vale["voucher"]["id_incident"]
+
+        primero = self.descargar(id_vale)
+        segundo = self.descargar(id_vale)
+
+        self.assertEqual(primero, segundo)
+        self.assertEqual(1, len(self.versiones(id_vale)))
+
+    def test_a_change_in_the_voucher_files_a_new_version(self):
+        """Devolver un renglon cambia el papel, y eso si es otra version."""
+        from app.services.warehouse_voucher_service import devolver_renglon
+
+        vale = self._vale([self._linea_cantidad(10)])
+        id_vale = vale["voucher"]["id_incident"]
+        self.descargar(id_vale)
+
+        devolver_renglon(vale["lines"][0]["id_nm_incident_product"],
+                         {"id_location_to": NAVE}, ACTOR)
+        self.descargar(id_vale)
+
+        versiones = self.versiones(id_vale)
+        self.assertEqual(2, len(versiones))
+        self.assertEqual([1, 2], [v.version for v in versiones])
+
+    def test_touching_the_voucher_without_changing_it_files_nothing(self):
+        """Lo que decide es el CONTENIDO, no la fecha de modificacion.
+
+        El primer intento comparaba `last_update_date` contra la fecha de la
+        version archivada. Dos motivos para abandonarlo, los dos reales:
+
+        * los 141 vales que vinieron del sistema anterior tienen `creation_date`
+          y `last_update_date` NULAS -- comprobado en la base --, asi que sin
+          fecha con que comparar se archivaba una version nueva en CADA
+          descarga, justo de los vales viejos, que son los que mas se consultan;
+        * y al reves, cualquier escritura que no cambie el papel -- como esta --
+          archivaba una copia identica.
+        """
+        from datetime import timedelta
+
+        from app.models.incident import Incident
+
+        vale = self._vale([self._linea_cantidad(10)])
+        id_vale = vale["voucher"]["id_incident"]
+        self.descargar(id_vale)
+
+        with transaction_context() as db:
+            db.get(Incident, id_vale).last_update_date = (
+                datetime.now() + timedelta(days=1))
+
+        self.descargar(id_vale)
+
+        self.assertEqual(1, len(self.versiones(id_vale)),
+                         "el papel dice lo mismo: no hay nada que archivar")
+
+    def test_the_filed_copy_keeps_what_the_voucher_said(self):
+        """La ficha se guarda con la version: se puede leer sin abrir el PDF."""
+        vale = self._vale([self._linea_cantidad(10)])
+
+        self.descargar(vale["voucher"]["id_incident"])
+
+        ficha = self.versiones(vale["voucher"]["id_incident"])[0].source_snapshot
+        self.assertEqual(1, len(ficha["salidas"]))
+        self.assertEqual("Obra Norte", ficha["nota"])
+
+
+class TestElValeSeLigaAUnaObra(BaseVale):
+    """El material se relaciona con el proyecto que lo pidio.
+
+    `id_proyect` en el vale NO es el mismo `id_proyect` que acota quien puede
+    ver que -eso es el inquilino, y toda esta suite corre bajo el 30-. Es la
+    OBRA a la que va el material, una fila mas de `proyect` como cualquier
+    otra orden de trabajo. Se prueba con una fila distinta (OBRA) para que
+    quede claro que son dos preguntas distintas sobre la misma tabla.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.OBRA = 31
+        self.surtir()
+        with transaction_context() as db:
+            db.add(Proyect(id_proyect=self.OBRA, id_customer_supplier=CLIENTE,
+                           leader=1, proyect_description="Mantenimiento de puerta",
+                           title="MEXINOX", created_by=1))
+
+    def _vale_de_la_obra(self, **extra):
+        return self._vale([self._linea_cantidad(5)], id_proyect=self.OBRA, **extra)
+
+    def test_a_voucher_can_be_tied_to_a_project(self):
+        vale = self._vale_de_la_obra()
+
+        self.assertEqual(self.OBRA, vale["voucher"]["id_proyect"])
+
+    def test_a_voucher_is_not_forced_into_a_project(self):
+        """Un prestamo para el propio taller no pertenece a ninguna obra."""
+        vale = self._vale([self._linea_cantidad(5)])
+
+        self.assertIsNone(vale["voucher"]["id_proyect"])
+
+    def test_an_inexistent_project_is_rejected(self):
+        with self.assertRaises(AppError) as fallo:
+            self._vale([self._linea_cantidad(5)], id_proyect=999999)
+
+        self.assertEqual("errors.not_found", fallo.exception.message_key)
+
+    def test_consulting_the_voucher_names_its_project(self):
+        """El detalle del vale trae el proyecto CON nombre, no solo el id."""
+        vale = self._vale_de_la_obra()
+
+        detalle = consultar_vale(vale["voucher"]["id_incident"], ACTOR)
+
+        self.assertEqual(self.OBRA, detalle["proyect"]["id_proyect"])
+        self.assertEqual("MEXINOX", detalle["proyect"]["title"])
+
+    def test_a_voucher_without_project_names_none(self):
+        vale = self._vale([self._linea_cantidad(5)])
+
+        detalle = consultar_vale(vale["voucher"]["id_incident"], ACTOR)
+
+        self.assertIsNone(detalle["proyect"])
+
+    def test_the_voucher_list_is_filtered_by_project(self):
+        """Es la pregunta del jefe de obra: que se llevo ESTA obra."""
+        self._vale_de_la_obra()
+        self._vale([self._linea_cantidad(5)])  # otro vale, sin obra
+
+        resultado = buscar_vales(ACTOR, id_proyect=self.OBRA)
+
+        self.assertEqual(1, resultado["total"])
+        self.assertEqual(self.OBRA, resultado["items"][0]["id_proyect"])

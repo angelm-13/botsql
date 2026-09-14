@@ -74,6 +74,8 @@
     "language": "Idioma",
     "username": "Usuario",
     "password": "Contraseña",
+    "show_password": "Mostrar contraseña",
+    "hide_password": "Ocultar contraseña",
     "login_title": "Acceso seguro",
     "login_subtitle": "Ingresa tus credenciales para continuar.",
     "sign_in": "Iniciar sesión",
@@ -3513,7 +3515,14 @@
     "task_status_en_proceso": "En proceso",
     "task_status_en_revision": "En revisión",
     "task_status_pendiente": "Pendiente",
-    "task_status_terminada": "Terminada"
+    "task_status_terminada": "Terminada",
+    "requested_by": "Lo pidió",
+    "requested_by_placeholder": "Nombre del ingeniero o contacto",
+    "quotation": "Cotización (folio)",
+    "purchase_order": "Orden de compra",
+    "purchase_order_item": "Partida",
+    "no_supervisor": "Sin asignar",
+    "delivery_date": "Fecha de entrega"
   },
   "security": {
     "permission": {
@@ -3752,7 +3761,7 @@
   "inventory": {
     "eyebrow": "Almacén",
     "title": "Inventario por almacén",
-    "subtitle": "Existencia por ubicación, movimientos y traspasos entre almacenes.",
+    "subtitle": "Qué hay en cada nave, pasillo y rack. El material sale y vuelve por los vales.",
     "warehouses": "Almacenes y ubicaciones",
     "no_warehouses": "No hay almacenes definidos. Marca un tipo de ubicación como almacén en Tipo de ubicación.",
     "location": "Ubicación",
@@ -4233,7 +4242,8 @@
     "legend_out_ok": "Fuera, sin problema",
     "legend_needs_care": "Hay que atenderlo",
     "legend_lost": "Se perdió",
-    "legend_end_of_life": "Fin de vida"
+    "legend_end_of_life": "Fin de vida",
+    "kind_inicial": "existencia inicial"
   },
   "voucher": {
     "eyebrow": "Almacén",

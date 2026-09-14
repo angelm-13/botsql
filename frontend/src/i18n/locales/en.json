@@ -74,6 +74,8 @@
     "language": "Language",
     "username": "Username",
     "password": "Password",
+    "show_password": "Show password",
+    "hide_password": "Hide password",
     "login_title": "Secure access",
     "login_subtitle": "Enter your credentials to continue.",
     "sign_in": "Sign in",
@@ -3482,7 +3484,14 @@
     "task_status_en_proceso": "In progress",
     "task_status_en_revision": "In review",
     "task_status_pendiente": "Pending",
-    "task_status_terminada": "Done"
+    "task_status_terminada": "Done",
+    "requested_by": "Requested by",
+    "requested_by_placeholder": "Engineer or contact name",
+    "quotation": "Quotation (folio)",
+    "purchase_order": "Purchase order",
+    "purchase_order_item": "Line item",
+    "no_supervisor": "Unassigned",
+    "delivery_date": "Delivery date"
   },
   "security": {
     "permission": {
@@ -3661,7 +3670,7 @@
   "inventory": {
     "eyebrow": "Warehouse",
     "title": "Inventory by warehouse",
-    "subtitle": "Stock per location, movements and transfers between warehouses.",
+    "subtitle": "What is in each warehouse, aisle and rack. Material leaves and returns through vouchers.",
     "warehouses": "Warehouses and locations",
     "no_warehouses": "No warehouses defined. Mark a location type as warehouse under Location type.",
     "location": "Location",
@@ -4142,7 +4151,8 @@
     "legend_out_ok": "Out, no problem",
     "legend_needs_care": "Needs attention",
     "legend_lost": "Lost",
-    "legend_end_of_life": "End of life"
+    "legend_end_of_life": "End of life",
+    "kind_inicial": "opening stock"
   },
   "voucher": {
     "eyebrow": "Warehouse",

@@ -193,8 +193,15 @@ class TestIncidentTransition(OperationsTestCase):
         )
 
     def test_the_reason_of_a_cancellation_is_kept_in_the_audit_log(self):
-        """`incident` no tiene tabla de eventos; se usa la bitacora que ya hay."""
-        from app.models.audit_log import AuditLog
+        """`incident` no tiene tabla de eventos; se usa la bitacora que ya hay.
+
+        Esa bitacora era `audit_log` y ahora es `event_log`: eran dos tablas
+        para lo mismo, y la segunda existia solo porque `event_log.action` no
+        admitia verbos fuera del CRUD (migracion 20260911120000). El cambio de
+        estatus cae ahora en la categoria `transition`, con el verbo concreto
+        en `event_detail`.
+        """
+        from app.models.event_log import EventLog
 
         incident = self.new_incident()
         transition_incident(
@@ -205,13 +212,14 @@ class TestIncidentTransition(OperationsTestCase):
 
         with transaction_context() as db:
             row = (
-                db.query(AuditLog)
-                .filter(AuditLog.event_type == "incident_transition")
+                db.query(EventLog)
+                .filter(EventLog.action == "transition")
                 .one()
             )
-            self.assertEqual("cancelada", row.action)
-            self.assertEqual("reportada por error", row.metadata_json["reason"])
-            self.assertEqual("abierta", row.metadata_json["previous_status"])
+            self.assertEqual("cancelada", row.event_detail)
+            self.assertEqual("incident_transition", row.after_value["event_type"])
+            self.assertEqual("reportada por error", row.after_value["reason"])
+            self.assertEqual("abierta", row.after_value["previous_status"])
 
     def test_a_closed_incident_does_not_move_again(self):
         incident = self.new_incident(incident_status="cerrada")

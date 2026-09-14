@@ -221,3 +221,79 @@ class TestProjectLeaderRights(TestProjectWorkflowService):
         }, self.supervisor)
 
         self.assertEqual(1, list_projects(self.workshop)["total"])
+
+
+class TestLaOrdenDeTrabajo(TestProjectWorkflowService):
+    """Los atributos de la orden de trabajo (migracion 20260911180000)."""
+
+    def test_the_work_order_fields_are_saved_and_returned(self):
+        creado = create_project({
+            "id_customer_supplier": 1,
+            "proyect_description": "Mantenimiento de puerta",
+            "title": "MEXINOX",
+            "folio": "OT-2026-0042",
+            "requested_by": "Francisco Molina",
+            "purchase_order": "PO-MEXINOX-118",
+            "purchase_order_item": 3,
+            "delivery_date": "2026-10-15",
+        }, self.supervisor)
+
+        self.assertEqual("OT-2026-0042", creado["folio"])
+        self.assertEqual("Francisco Molina", creado["requested_by"])
+        self.assertEqual("PO-MEXINOX-118", creado["purchase_order"])
+        self.assertEqual(3, creado["purchase_order_item"])
+        self.assertEqual("2026-10-15", creado["delivery_date"])
+
+    def test_a_real_folio_is_not_replaced_by_the_generated_one(self):
+        """El folio propio no se pisa con el "PRJ-000006" autogenerado.
+
+        `_project_payload` inventaba un folio SIEMPRE, sin mirar si el
+        proyecto ya traia el suyo. El detalle -- no `create_project`, que
+        devuelve el registro tal cual -- es donde se notaba: se veia bien al
+        crearlo y cambiaba en cuanto alguien lo volvia a abrir.
+        """
+        creado = create_project({
+            "id_customer_supplier": 1,
+            "proyect_description": "Con folio propio",
+            "folio": "OT-2026-0042",
+        }, self.supervisor)
+
+        detalle = get_project_detail(creado["id_proyect"], self.supervisor)
+
+        self.assertEqual("OT-2026-0042", detalle["folio"])
+
+    def test_a_project_without_a_folio_still_gets_the_generated_one(self):
+        """El "PRJ-000006" sigue existiendo para quien no captura folio."""
+        creado = self._create()
+
+        detalle = get_project_detail(creado["id_proyect"], self.supervisor)
+
+        self.assertEqual("PRJ-%06d" % creado["id_proyect"], detalle["folio"])
+
+    def test_an_inexistent_quotation_is_rejected(self):
+        with self.assertRaises(AppError) as fallo:
+            create_project({
+                "id_customer_supplier": 1,
+                "proyect_description": "Con cotizacion inventada",
+                "id_quotation": 999999,
+            }, self.supervisor)
+
+        self.assertEqual("errors.not_found", fallo.exception.message_key)
+
+    def test_an_inexistent_supervisor_is_rejected(self):
+        with self.assertRaises(AppError) as fallo:
+            create_project({
+                "id_customer_supplier": 1,
+                "proyect_description": "Con supervisor inventado",
+                "id_supervisor": 999999,
+            }, self.supervisor)
+
+        self.assertEqual("errors.not_found", fallo.exception.message_key)
+
+    def test_updating_the_work_order_fields_validates_them_too(self):
+        creado = self._create()
+
+        with self.assertRaises(AppError) as fallo:
+            update_project(creado["id_proyect"], {"id_supervisor": 999999}, self.supervisor)
+
+        self.assertEqual("errors.not_found", fallo.exception.message_key)

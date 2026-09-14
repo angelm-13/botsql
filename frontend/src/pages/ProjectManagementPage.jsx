@@ -17,6 +17,7 @@ import {
   updateProyect,
 } from "../api";
 import { useI18n } from "../i18n";
+import ProyectoExpediente from "../components/ProyectoExpediente.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 
 /* eslint-disable react/prop-types */
@@ -43,7 +44,15 @@ const ROLE_TARGETS = {
   workshop: ["in_progress", "stopped", "completed"],
   // `unrestricted` no aparece: sin limite de papel, manda el catalogo solo.
 };
-const EMPTY_FORM = { id_customer_supplier: "", leader: "", title: "", proyect_description: "" };
+// Los campos de la ORDEN DE TRABAJO se agregan aqui a proposito, y no en una
+// pantalla propia: son atributos del proyecto, no otra entidad. Todos
+// opcionales salvo lo que ya era obligatorio -- un proyecto se puede crear
+// antes de tener folio o supervisor asignados, y completarse despues.
+const EMPTY_FORM = {
+  id_customer_supplier: "", leader: "", title: "", proyect_description: "",
+  folio: "", requested_by: "", id_quotation: "", purchase_order: "",
+  purchase_order_item: "", id_supervisor: "", delivery_date: "",
+};
 
 function orderedStatuses(fromServer, order) {
   if (!fromServer?.length) return order;
@@ -216,7 +225,14 @@ export default function ProjectManagementPage() {
 
   function openEdit(project) {
     setEditingId(project.id_proyect);
-    setForm({ id_customer_supplier: project.id_customer_supplier, leader: project.leader, title: project.title || "", proyect_description: project.proyect_description || "" });
+    setForm({
+      id_customer_supplier: project.id_customer_supplier, leader: project.leader,
+      title: project.title || "", proyect_description: project.proyect_description || "",
+      folio: project.folio || "", requested_by: project.requested_by || "",
+      id_quotation: project.id_quotation || "", purchase_order: project.purchase_order || "",
+      purchase_order_item: project.purchase_order_item || "",
+      id_supervisor: project.id_supervisor || "", delivery_date: project.delivery_date || "",
+    });
     setShowForm(true);
   }
 
@@ -224,9 +240,23 @@ export default function ProjectManagementPage() {
     event.preventDefault();
     setBusyId(editingId || "new");
     setError("");
+    // Los numericos vacios no se mandan como "": el backend los toma como
+    // llave ajena y "" no es un id valido. Igual que ya hace el formulario
+    // del vale con sus campos opcionales.
+    const numeroOpcional = (v) => (String(v ?? "").trim() === "" ? undefined : Number(v));
+    const cuerpo = {
+      ...form,
+      id_quotation: numeroOpcional(form.id_quotation),
+      purchase_order_item: numeroOpcional(form.purchase_order_item),
+      id_supervisor: numeroOpcional(form.id_supervisor),
+      folio: form.folio.trim() || undefined,
+      requested_by: form.requested_by.trim() || undefined,
+      purchase_order: form.purchase_order.trim() || undefined,
+      delivery_date: form.delivery_date || undefined,
+    };
     try {
-      if (editingId) await updateProyect(editingId, form);
-      else await createProyect(form);
+      if (editingId) await updateProyect(editingId, cuerpo);
+      else await createProyect(cuerpo);
       setShowForm(false);
       setForm(EMPTY_FORM);
       setEditingId(null);
@@ -410,11 +440,11 @@ export default function ProjectManagementPage() {
 
     {!loading && total > 0 && <div className="pagination"><button className="button" type="button" disabled={page <= 1} onClick={() => loadData(page - 1)}>{projectText("previous")}</button><span>{projectText("page")} {page} / {Math.max(Math.ceil(total / perPage), 1)}</span><select value={perPage} onChange={(event) => { const nextPerPage = Number(event.target.value); setPerPage(nextPerPage); loadData(1, nextPerPage); }} aria-label={projectText("per_page")}><option value={10}>10</option><option value={20}>20</option><option value={50}>50</option><option value={100}>100</option></select><button className="button" type="button" disabled={page * perPage >= total} onClick={() => loadData(page + 1)}>{projectText("next")}</button></div>}
 
-    {showForm && <div className="project-modal-backdrop" role="presentation"><form className="project-modal" onSubmit={saveProject}><header><div><p className="eyebrow">{projectText("project")}</p><h3>{projectText(editingId ? "edit_project" : "new_project")}</h3></div><button className="icon-button" type="button" onClick={() => setShowForm(false)} aria-label={projectText("close")}><X size={18} /></button></header><div className="form-grid"><label className="field"><span>{projectText("title_field")}</span><input required maxLength={50} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} /></label><label className="field"><span>{projectText("customer")}</span><select required value={form.id_customer_supplier} onChange={(event) => setForm({ ...form, id_customer_supplier: event.target.value })}><option value="">{projectText("select_customer")}</option>{customers.map((customer) => <option key={customer.id_customer_supplier} value={customer.id_customer_supplier}>{customerLabel(customer, projectText("customer"))}</option>)}</select></label><label className="field"><span>{projectText("responsible")}</span><select value={form.leader} onChange={(event) => setForm({ ...form, leader: event.target.value })}><option value="">{projectText("current_user")}</option>{users.map((user) => <option key={user.id_user} value={user.id_user}>{user.full_name || user.username || user.email}</option>)}</select></label><label className="field wide"><span>{projectText("description")}</span><textarea required maxLength={200} rows={4} value={form.proyect_description} onChange={(event) => setForm({ ...form, proyect_description: event.target.value })} /></label></div><footer><button className="button" type="button" onClick={() => setShowForm(false)}>{projectText("cancel")}</button><button className="button primary" disabled={busyId !== null}>{projectText("save")}</button></footer></form></div>}
+    {showForm && <div className="project-modal-backdrop" role="presentation"><form className="project-modal" onSubmit={saveProject}><header><div><p className="eyebrow">{projectText("project")}</p><h3>{projectText(editingId ? "edit_project" : "new_project")}</h3></div><button className="icon-button" type="button" onClick={() => setShowForm(false)} aria-label={projectText("close")}><X size={18} /></button></header><div className="form-grid"><label className="field"><span>{projectText("title_field")}</span><input required maxLength={50} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} /></label><label className="field"><span>{projectText("customer")}</span><select required value={form.id_customer_supplier} onChange={(event) => setForm({ ...form, id_customer_supplier: event.target.value })}><option value="">{projectText("select_customer")}</option>{customers.map((customer) => <option key={customer.id_customer_supplier} value={customer.id_customer_supplier}>{customerLabel(customer, projectText("customer"))}</option>)}</select></label><label className="field"><span>{projectText("responsible")}</span><select value={form.leader} onChange={(event) => setForm({ ...form, leader: event.target.value })}><option value="">{projectText("current_user")}</option>{users.map((user) => <option key={user.id_user} value={user.id_user}>{user.full_name || user.username || user.email}</option>)}</select></label><label className="field wide"><span>{projectText("description")}</span><textarea required maxLength={200} rows={4} value={form.proyect_description} onChange={(event) => setForm({ ...form, proyect_description: event.target.value })} /></label><label className="field"><span>{projectText("folio")}</span><input maxLength={40} value={form.folio} onChange={(event) => setForm({ ...form, folio: event.target.value })} /></label><label className="field"><span>{projectText("requested_by")}</span><input maxLength={160} value={form.requested_by} onChange={(event) => setForm({ ...form, requested_by: event.target.value })} placeholder={projectText("requested_by_placeholder")} /></label><label className="field"><span>{projectText("quotation")}</span><input type="number" min="1" value={form.id_quotation} onChange={(event) => setForm({ ...form, id_quotation: event.target.value })} /></label><label className="field"><span>{projectText("purchase_order")}</span><input maxLength={60} value={form.purchase_order} onChange={(event) => setForm({ ...form, purchase_order: event.target.value })} /></label><label className="field"><span>{projectText("purchase_order_item")}</span><input type="number" min="1" value={form.purchase_order_item} onChange={(event) => setForm({ ...form, purchase_order_item: event.target.value })} /></label><label className="field"><span>{projectText("supervisor")}</span><select value={form.id_supervisor} onChange={(event) => setForm({ ...form, id_supervisor: event.target.value })}><option value="">{projectText("no_supervisor")}</option>{users.map((user) => <option key={user.id_user} value={user.id_user}>{user.full_name || user.username || user.email}</option>)}</select></label><label className="field"><span>{projectText("delivery_date")}</span><input type="date" value={form.delivery_date} onChange={(event) => setForm({ ...form, delivery_date: event.target.value })} /></label></div><footer><button className="button" type="button" onClick={() => setShowForm(false)}>{projectText("cancel")}</button><button className="button primary" disabled={busyId !== null}>{projectText("save")}</button></footer></form></div>}
 
     {transition && <div className="project-modal-backdrop" role="presentation"><form className="project-modal compact" onSubmit={applyTransition}><header><div><p className="eyebrow">{projectText("status_change")}</p><h3>{statusLabel(transition.target)}</h3></div><button className="icon-button" type="button" onClick={() => setTransition(null)} aria-label={projectText("close")}><X size={18} /></button></header><p>{transition.project.title || `${projectText("project")} #${transition.project.id_proyect}`}</p>{needsReason(transition.target) && <label className="field"><span>{projectText("reason")}</span><textarea required rows={3} value={transition.reason} onChange={(event) => setTransition({ ...transition, reason: event.target.value })} /></label>}<label className="field"><span>{projectText(transitionNoteKey(transition))}</span><textarea rows={3} value={transition.content} onChange={(event) => setTransition({ ...transition, content: event.target.value })} /></label>{transition.target === "blocked" && <label className="field"><span>{projectText("review_date")}</span><input type="datetime-local" value={transition.reviewDate} onChange={(event) => setTransition({ ...transition, reviewDate: event.target.value })} /></label>}<footer><button className="button" type="button" onClick={() => setTransition(null)}>{projectText("cancel")}</button><button className="button primary" disabled={busyId !== null}>{projectText("confirm_change")}</button></footer></form></div>}
 
-    {detail && <div className="project-modal-backdrop" role="presentation"><aside className="project-detail-panel"><header><div><p className="eyebrow">{projectText("record")} #{detail.id_proyect}</p><h3>{detail.title || projectText("project")}</h3></div><button className="icon-button" type="button" onClick={() => setDetail(null)} aria-label={projectText("close")}><X size={18} /></button></header><span className={`project-status status-${detail.proyect_status}`}>{statusLabel(detail.proyect_status)}</span><p>{detail.proyect_description}</p><h4>{projectText("tasks")}</h4>{detail.tasks?.length ? detail.tasks.map((task) => <button className="project-detail-row project-task-row" type="button" key={task.id_task} onClick={() => openTask(task)} disabled={busyId !== null}><strong>{taskLabel(task)}</strong><span className="project-task-row-end"><span className={`project-status status-${task.task_status || "unknown"}`}>{taskStatusLabel(task.task_status)}</span><ChevronRight size={16} /></span></button>) : <p className="muted">{projectText("no_tasks")}</p>}<h4>{projectText("history")}</h4><div className="project-timeline">{detail.events?.slice().reverse().map((event) => <div key={event.id_proyect_event}><span>{new Date(event.creation_date).toLocaleString(document.documentElement.lang || "es")}</span><strong>{eventTitle(event)}</strong>{(event.reason || event.content) && <p>{event.reason || event.content}</p>}</div>)}</div><form className="project-message" onSubmit={sendMessage}><label className="field"><span>{projectText("new_message")}</span><textarea rows={2} value={message} onChange={(event) => setMessage(event.target.value)} placeholder={projectText("message_placeholder")} /></label><button className="button primary" disabled={!message.trim() || busyId !== null}><MessageSquare size={16} />{projectText("publish")}</button></form></aside></div>}
+    {detail && <div className="project-modal-backdrop" role="presentation"><aside className="project-detail-panel"><header><div><p className="eyebrow">{projectText("record")} #{detail.id_proyect}</p><h3>{detail.title || projectText("project")}</h3></div><button className="icon-button" type="button" onClick={() => setDetail(null)} aria-label={projectText("close")}><X size={18} /></button></header><span className={`project-status status-${detail.proyect_status}`}>{statusLabel(detail.proyect_status)}</span><p>{detail.proyect_description}</p><ProyectoExpediente detalle={detail} catalogo={catalog} onCambio={async () => setDetail(await getProyect(detail.id_proyect))} /><h4>{projectText("tasks")}</h4>{detail.tasks?.length ? detail.tasks.map((task) => <button className="project-detail-row project-task-row" type="button" key={task.id_task} onClick={() => openTask(task)} disabled={busyId !== null}><strong>{taskLabel(task)}</strong><span className="project-task-row-end"><span className={`project-status status-${task.task_status || "unknown"}`}>{taskStatusLabel(task.task_status)}</span><ChevronRight size={16} /></span></button>) : <p className="muted">{projectText("no_tasks")}</p>}<h4>{projectText("history")}</h4><div className="project-timeline">{detail.events?.slice().reverse().map((event) => <div key={event.id_proyect_event}><span>{new Date(event.creation_date).toLocaleString(document.documentElement.lang || "es")}</span><strong>{eventTitle(event)}</strong>{(event.reason || event.content) && <p>{event.reason || event.content}</p>}</div>)}</div><form className="project-message" onSubmit={sendMessage}><label className="field"><span>{projectText("new_message")}</span><textarea rows={2} value={message} onChange={(event) => setMessage(event.target.value)} placeholder={projectText("message_placeholder")} /></label><button className="button primary" disabled={!message.trim() || busyId !== null}><MessageSquare size={16} />{projectText("publish")}</button></form></aside></div>}
 
     {taskDetail && <div className="project-modal-backdrop" role="presentation"><aside className="project-detail-panel"><header><div><p className="eyebrow">{projectText("task")} #{taskDetail.task.id_task}</p><h3>{taskLabel(taskDetail.task)}</h3></div><button className="icon-button" type="button" onClick={closeTask} aria-label={projectText("close")}><X size={18} /></button></header>
       <div className="project-task-status"><span className={`project-status status-${taskDetail.task.task_status || "unknown"}`}>{taskStatusLabel(taskDetail.task.task_status)}</span>{taskActionTargets(taskDetail.task).length > 0 && <label className="project-transition"><ArrowRight size={15} /><select value="" disabled={busyId !== null} onChange={(event) => event.target.value && setTaskTransition({ task: taskDetail.task, target: event.target.value, reason: "", content: "" })} aria-label={projectText("change_status")}><option value="">{projectText("change_status")}</option>{taskActionTargets(taskDetail.task).map((target) => <option value={target} key={target}>{taskStatusLabel(target)}</option>)}</select></label>}</div>

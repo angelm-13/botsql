@@ -75,7 +75,7 @@ class Modulo:
     """Un submodulo del proyecto, con las entidades que le pertenecen."""
 
     def __init__(self, clave, etiqueta, icono, orden, entidades, *,
-                 almacen=None, base_de_datos=None,
+                 almacen=None, menu="sidebar",
                  grupo_de_menu=None, icono_de_menu=None):
         self.clave = clave
         self.etiqueta = etiqueta
@@ -88,16 +88,23 @@ class Modulo:
         # -que son casi todos, porque necesitan leer catalogos- heredaria
         # usuarios y permisos. La separacion de acceso se mantiene; lo que se
         # unifica es donde se ve.
+        # En que menu se ven las pantallas del modulo: la barra lateral o el
+        # engrane. Estaba fijo en `filas_de_permisos` como "sidebar" para toda
+        # entidad con etiqueta, asi que Configuracion y Seguridad reaparecian en
+        # la barra en cuanto alguien resembraba los permisos -- por mucho que
+        # una migracion escrita a mano los hubiera movido antes al engrane.
+        # Declararlo aqui es lo que hace que el arreglo sobreviva la resiembra.
+        self.menu = menu
         self.grupo_de_menu = grupo_de_menu or etiqueta
         self.icono_de_menu = icono_de_menu or icono
         self.entidades = tuple(entidades)
-        # Cadena de tablas del almacen propio, si el modulo tiene uno. Solo se
-        # declaran aqui las que viven en la base del nucleo; un modulo con base
-        # propia lleva su almacen dentro y se declara en `base_de_datos`.
+        # Cadena de tablas del almacen propio, si el modulo tiene uno.
+        #
+        # Existio tambien `base_de_datos`, para un modulo que no compartiera la
+        # del nucleo. Se retiro con la absorcion del punto de venta, que era el
+        # unico que la declaraba: ya no queda ningun modulo con base aparte, y
+        # un campo que nadie usa invita a volver a separar lo que costo unir.
         self.almacen = tuple(almacen or ())
-        # Nombre de la base cuando el modulo no comparte la del nucleo. Es la
-        # separacion mas fuerte que hay: no se puede cruzar ni por error.
-        self.base_de_datos = base_de_datos
 
     def __repr__(self):
         return f"<Modulo {self.clave} ({len(self.entidades)} entidades)>"
@@ -155,11 +162,15 @@ MODULOS = (
     ),
     Modulo(
         "pos", "Punto de venta", "pos", 550,
-        # Corre su propio backend y su propia base (`pos_enterprise`), asi que
-        # no tiene entidades en la del nucleo. Se opera por su pantalla, igual
-        # que el restaurante.
+        # Se opera por pantalla y no por CRUD de tabla, igual que el
+        # restaurante: sus permisos son las dos capacidades de abajo.
+        #
+        # Hasta la migracion 20260911100000 corria contra su propia base
+        # (`pos_enterprise`) y se declaraba con `base_de_datos`. Ya no: sus
+        # tablas viven aqui y su catalogo ES `product`.
         (),
-        base_de_datos="pos_enterprise",
+        # Sin `almacen` propio, y ahora es verdad en el fondo y no solo en la
+        # forma: el punto de venta descuenta del almacen del nucleo.
     ),
     Modulo(
         "crm", "CRM", "crm", 600,
@@ -205,6 +216,9 @@ MODULOS = (
         # Sin acceso de lectura a `status` los desplegables quedan vacios, asi
         # que todos los roles los consultan.
         ("status", "theme", "department", "subdepartment", "level"),
+        # Van en el engrane, no en la barra: son catalogos que se tocan una vez
+        # al instalar, no pantallas de trabajo diario.
+        menu="settings",
     ),
     Modulo(
         "seguridad", "Seguridad", "security", 900,
@@ -213,6 +227,7 @@ MODULOS = (
             "user", "user_mfa", "permission", "entity_permission",
             "nm_field_permission", "field", "event_log",
         ),
+        menu="settings",
         # Se ve dentro de Configuracion: la peticion fue dejar un solo apartado
         # de configuracion, y usuarios y permisos son configuracion. Sigue
         # siendo un modulo aparte para conceder acceso, que es lo que importa.
@@ -652,7 +667,7 @@ def filas_de_permisos():
                 etiqueta, orden = MENU.get(entidad, (None, None))
                 filas.append((
                     rol.nombre, entidad, bits,
-                    "sidebar" if etiqueta else "hidden",
+                    modulo.menu if etiqueta else "hidden",
                     modulo.grupo_de_menu if etiqueta else None,
                     modulo.icono_de_menu if etiqueta else None,
                     etiqueta,

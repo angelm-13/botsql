@@ -2,17 +2,34 @@ from __future__ import annotations
 from flask import Blueprint, jsonify, request
 from app.services.project_management_service import (
     add_project_message,
+    add_project_payment,
     create_project,
     delete_project,
+    delete_project_payment,
     get_project_detail,
+    list_project_payments,
     list_projects,
+    project_options,
+    settle_project_payment,
+    transition_management,
     transition_project,
     update_project,
 )
 from app.utils.auth import token_required, require_entity_permission
 
 bp_proyect = Blueprint('proyect', __name__, url_prefix='/proyect')
-ALLOWED_FIELDS = ['id_proyect', 'id_customer_supplier', 'leader', 'proyect_description', 'title', 'proyect_status', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
+# Los campos que la respuesta puede llevar. Es una lista blanca: lo que no
+# este aqui se recorta antes de salir, aunque el modelo lo tenga. Los de la
+# orden de trabajo se agregaron con la migracion 20260911180000 -- sin esto
+# estarian en la base y nunca llegarian a la pantalla.
+ALLOWED_FIELDS = [
+    'id_proyect', 'id_customer_supplier', 'leader', 'proyect_description',
+    'title', 'proyect_status', 'created_by', 'creation_date',
+    'last_update_date', 'deletion_date',
+    'folio', 'requested_by', 'id_quotation', 'purchase_order',
+    'purchase_order_item', 'id_supervisor', 'delivery_date',
+    'id_drawing_document', 'management_status',
+]
 
 TECHNICAL_RESPONSE_FIELDS = {'id_proyect', 'folio', 'submitted_date'}
 FIELD_READ_BIT = 2
@@ -119,6 +136,18 @@ def _jsonify_projected_list(user_data: dict, payload: dict):
 
 
 
+@bp_proyect.route('/options', methods=['GET'])
+@token_required
+def list_proyect_options(user_data):
+    """Solo id+folio+titulo, para selectores como "Obra" en un vale de almacen.
+
+    Sin permiso de entidad -- igual que `/user/options` -- porque un Almacenista
+    levanta vales sin tener el modulo `operaciones`. Ver el docstring de
+    `project_options()`.
+    """
+    return jsonify(project_options())
+
+
 @bp_proyect.route('/', methods=['GET'])
 @token_required
 @require_entity_permission('proyect', 'read')
@@ -159,6 +188,52 @@ def update_proyect(user_data, id_proyect):
 @require_entity_permission('proyect', 'update')
 def transition_proyect(user_data, id_proyect):
     return jsonify(transition_project(id_proyect, request.get_json() or {}, user_data))
+
+
+@bp_proyect.route('/<id_proyect>/management-transition', methods=['POST'])
+@token_required
+@require_entity_permission('proyect', 'update')
+def transition_proyect_management(user_data, id_proyect):
+    """El recorrido de GERENCIA, aparte del de taller.
+
+    Dos rutas y no una con un parametro: son dos maquinas de estados con
+    transiciones distintas, y mezclarlas en un endpoint obligaria a que el
+    cuerpo dijera cual, que es la clase de bifurcacion que acaba validando mal
+    la que se usa menos.
+    """
+    return jsonify(transition_management(id_proyect, request.get_json() or {}, user_data))
+
+
+# --- parcialidades de pago ---------------------------------------------
+# Cuelgan del proyecto y no de un modulo de cobranza propio: lo que se acuerda
+# es "40% al pedir ESTE trabajo", y fuera del proyecto la cifra no dice nada.
+
+@bp_proyect.route('/<id_proyect>/payments', methods=['GET'])
+@token_required
+@require_entity_permission('proyect', 'read')
+def list_proyect_payments(user_data, id_proyect):
+    return jsonify(list_project_payments(id_proyect, user_data))
+
+
+@bp_proyect.route('/<id_proyect>/payments', methods=['POST'])
+@token_required
+@require_entity_permission('proyect', 'update')
+def create_proyect_payment(user_data, id_proyect):
+    return jsonify(add_project_payment(id_proyect, request.get_json() or {}, user_data)), 201
+
+
+@bp_proyect.route('/payments/<id_payment>', methods=['PUT'])
+@token_required
+@require_entity_permission('proyect', 'update')
+def settle_proyect_payment(user_data, id_payment):
+    return jsonify(settle_project_payment(id_payment, request.get_json() or {}, user_data))
+
+
+@bp_proyect.route('/payments/<id_payment>', methods=['DELETE'])
+@token_required
+@require_entity_permission('proyect', 'delete')
+def remove_proyect_payment(user_data, id_payment):
+    return jsonify(delete_project_payment(id_payment, user_data))
 
 
 @bp_proyect.route('/<id_proyect>/messages', methods=['POST'])

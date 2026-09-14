@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { KeyRound, Lock, ShieldCheck, UserRound } from "lucide-react";
+import { Eye, EyeOff, KeyRound, Lock, ShieldCheck, UserRound } from "lucide-react";
 import { login, verifyMfaLogin, clearMyPermissionsCache } from "../api";
 import LanguagePicker from "../components/LanguagePicker";
 import { useI18n } from "../i18n";
@@ -27,6 +27,7 @@ export default function LoginPage() {
   const [credentials, setCredentials] = useState(initialCredentials);
   const [mfaCode, setMfaCode] = useState("");
   const [tempToken, setTempToken] = useState(localStorage.getItem("mfa_temp_token") || "");
+  const [verContrasena, setVerContrasena] = useState(false);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -113,7 +114,7 @@ export default function LoginPage() {
         {step === "credentials" ? (
           <form className="auth-form" onSubmit={handleLogin}>
             <label className="field"><span>{t("common.username", "Usuario")}</span><div className="input-icon"><UserRound size={18} /><input autoFocus name="username" value={credentials.username} onChange={(event) => setCredentials((prev) => ({ ...prev, username: event.target.value }))} autoComplete="username" required /></div></label>
-            <label className="field"><span>{t("common.password", "Contraseña")}</span><div className="input-icon"><Lock size={18} /><input name="password" type="password" value={credentials.password} onChange={(event) => setCredentials((prev) => ({ ...prev, password: event.target.value }))} autoComplete="current-password" required /></div></label>
+            <label className="field"><span>{t("common.password", "Contraseña")}</span><div className="input-icon"><Lock size={18} /><input name="password" type={verContrasena ? "text" : "password"} value={credentials.password} onChange={(event) => setCredentials((prev) => ({ ...prev, password: event.target.value }))} autoComplete="current-password" required /><button type="button" className="input-icon-toggle" onClick={() => setVerContrasena((prev) => !prev)} aria-label={verContrasena ? t("common.hide_password", "Ocultar contraseña") : t("common.show_password", "Mostrar contraseña")} tabIndex={-1}>{verContrasena ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></label>
             <button className="button primary auth-submit" type="submit" disabled={loading}>{loading ? t("common.loading", "Cargando...") : t("common.sign_in", "Iniciar sesión")}</button>
           </form>
         ) : (

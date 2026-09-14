@@ -79,12 +79,30 @@ from app.models.payroll_detail import PayrollDetail
 from app.models.payroll_movement import PayrollMovement
 from app.models.payroll_period import PayrollPeriod
 from app.models.permission import Permission
-from app.models.pos_product_link import PosProductLink
+from app.models.pos import (
+	PosCashSession,
+	PosCashWithdrawal,
+	PosCreditAccount,
+	PosCreditMovement,
+	PosExpense,
+	PosExpenseCategory,
+	PosLoyaltyAccount,
+	PosLoyaltyMovement,
+	PosPayment,
+	PosProductVariant,
+	PosPromotion,
+	PosPromotionRedemption,
+	PosPurchaseOrder,
+	PosPurchaseOrderItem,
+	PosSale,
+	PosSaleItem,
+)
 from app.models.product import Product
 from app.models.product_family import ProductFamily
 from app.models.product_sale_config import ProductSaleConfig
 from app.models.proyect import Proyect
 from app.models.proyect_event import ProyectEvent
+from app.models.proyect_payment import ProyectPayment
 from app.models.quotation_comment import QuotationComment
 from app.models.restaurant import (
 	RestaurantCashSession,
@@ -119,7 +137,7 @@ from app.models.unit import Unit
 from app.models.user import User
 from app.models.user_mfa import UserMfa
 
-__all__ = ['Base', 'Appointment', 'AppointmentType', 'AvailabilityOverride', 'AvailabilityRule', 'Bank', 'BankAccount', 'BankStatement', 'BankStatementMovement', 'Brand', 'CalendarProfile', 'CfdiRelation', 'CustomerSupplier', 'Department', 'Document', 'DocumentCategory', 'DocumentRelation', 'DocumentVersion', 'EntityPermission', 'EventLog', 'Field', 'FiscalAccount', 'FiscalRecord', 'FiscalStamp', 'Incident', 'IncidentDetail', 'IncidentType', 'InventoryAsset', 'InventoryAssetEvent', 'InventoryLedger', 'InventoryLot', 'InventoryLotBalance', 'NmInventoryLedgerLot', 'InventoryStatus', 'InventoryStock', 'Invoice', 'InvoiceCancellation', 'InvoiceFolioCounter', 'InvoiceMaterialService', 'InvoicePayment', 'KpiDashboard', 'KpiDashboardWidget', 'KpiDashboardWidgetKpi', 'KpiDefinition', 'KpiSnapshot', 'LaboratoryEquipment', 'LaboratoryServiceOrder', 'LaboratoryServiceOrderStatusHistory', 'Level', 'Location', 'LocationType', 'LogisticsAddress', 'LogisticsBranch', 'LogisticsContact', 'LogisticsContract', 'LogisticsEvidence', 'LogisticsFile', 'LogisticsIncident', 'LogisticsInventory', 'LogisticsLocation', 'LogisticsMaintenance', 'LogisticsOperator', 'LogisticsQuotation', 'LogisticsRack', 'LogisticsRate', 'LogisticsReceivable', 'LogisticsServiceRequest', 'LogisticsShipment', 'LogisticsTrailer', 'LogisticsTrip', 'LogisticsUnit', 'LogisticsWarehouse', 'Material', 'MaterialAttribute', 'MaterialAttributeOption', 'MaterialComponent', 'MaterialType', 'NmMaterialAttribute', 'Movement', 'NmFieldPermission', 'NmIncidentProduct', 'NmPermissionKpi', 'NmSurveyUser', 'NmTemplateTask', 'PacConfig', 'PasswordResetToken', 'PayrollConcept', 'PayrollDetail', 'PayrollMovement', 'PayrollPeriod', 'Permission', 'Product', 'ProductFamily', 'ProductSaleConfig', 'Proyect', 'ProyectEvent', 'PublicApiKey', 'QuotationComment', 'RestaurantCashSession', 'RestaurantCategory', 'RestaurantDish', 'RestaurantGuisado', 'RestaurantInventoryItem', 'RestaurantInventoryMovement', 'RestaurantOrder', 'RestaurantOrderItem', 'RestaurantRecipeItem', 'RestaurantReservation', 'RestaurantTable', 'RestaurantVisit', 'RestaurantWaiter', 'SatProductKey', 'Service', 'StampingOperation', 'Status', 'Subdepartment', 'SurveyMultipleAnswer', 'SurveyQuestion', 'Task', 'TaskNote', 'TaskType', 'Template', 'Theme', 'Ticket', 'Unit', 'User', 'UserMfa']
+__all__ = ['Base', 'Appointment', 'AppointmentType', 'AvailabilityOverride', 'AvailabilityRule', 'Bank', 'BankAccount', 'BankStatement', 'BankStatementMovement', 'Brand', 'CalendarProfile', 'CfdiRelation', 'CustomerSupplier', 'Department', 'Document', 'DocumentCategory', 'DocumentRelation', 'DocumentVersion', 'EntityPermission', 'EventLog', 'Field', 'FiscalAccount', 'FiscalRecord', 'FiscalStamp', 'Incident', 'IncidentDetail', 'IncidentType', 'InventoryAsset', 'InventoryAssetEvent', 'InventoryLedger', 'InventoryLot', 'InventoryLotBalance', 'NmInventoryLedgerLot', 'InventoryStatus', 'InventoryStock', 'Invoice', 'InvoiceCancellation', 'InvoiceFolioCounter', 'InvoiceMaterialService', 'InvoicePayment', 'KpiDashboard', 'KpiDashboardWidget', 'KpiDashboardWidgetKpi', 'KpiDefinition', 'KpiSnapshot', 'LaboratoryEquipment', 'LaboratoryServiceOrder', 'LaboratoryServiceOrderStatusHistory', 'Level', 'Location', 'LocationType', 'LogisticsAddress', 'LogisticsBranch', 'LogisticsContact', 'LogisticsContract', 'LogisticsEvidence', 'LogisticsFile', 'LogisticsIncident', 'LogisticsInventory', 'LogisticsLocation', 'LogisticsMaintenance', 'LogisticsOperator', 'LogisticsQuotation', 'LogisticsRack', 'LogisticsRate', 'LogisticsReceivable', 'LogisticsServiceRequest', 'LogisticsShipment', 'LogisticsTrailer', 'LogisticsTrip', 'LogisticsUnit', 'LogisticsWarehouse', 'Material', 'MaterialAttribute', 'MaterialAttributeOption', 'MaterialComponent', 'MaterialType', 'NmMaterialAttribute', 'Movement', 'NmFieldPermission', 'NmIncidentProduct', 'NmPermissionKpi', 'NmSurveyUser', 'NmTemplateTask', 'PacConfig', 'PasswordResetToken', 'PayrollConcept', 'PayrollDetail', 'PayrollMovement', 'PayrollPeriod', 'Permission', 'PosCashSession', 'PosCashWithdrawal', 'PosCreditAccount', 'PosCreditMovement', 'PosExpense', 'PosExpenseCategory', 'PosLoyaltyAccount', 'PosLoyaltyMovement', 'PosPayment', 'PosProductVariant', 'PosPromotion', 'PosPromotionRedemption', 'PosPurchaseOrder', 'PosPurchaseOrderItem', 'PosSale', 'PosSaleItem', 'Product', 'ProductFamily', 'ProductSaleConfig', 'Proyect', 'ProyectEvent', 'ProyectPayment', 'PublicApiKey', 'QuotationComment', 'RestaurantCashSession', 'RestaurantCategory', 'RestaurantDish', 'RestaurantGuisado', 'RestaurantInventoryItem', 'RestaurantInventoryMovement', 'RestaurantOrder', 'RestaurantOrderItem', 'RestaurantRecipeItem', 'RestaurantReservation', 'RestaurantTable', 'RestaurantVisit', 'RestaurantWaiter', 'SatProductKey', 'Service', 'StampingOperation', 'Status', 'Subdepartment', 'SurveyMultipleAnswer', 'SurveyQuestion', 'Task', 'TaskNote', 'TaskType', 'Template', 'Theme', 'Ticket', 'Unit', 'User', 'UserMfa']
 
 def _make_foreign_keys_deferrable() -> int:
     """Marca todas las llaves foraneas como diferibles, comprobadas de inmediato.

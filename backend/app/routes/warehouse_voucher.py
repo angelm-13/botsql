@@ -14,9 +14,13 @@ todavia fuera. Una ruta que aceptara el estado abriria justo ese camino.
 
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, request
+from io import BytesIO
+
+from flask import Blueprint, current_app, jsonify, request, send_file
 
 from app.services.warehouse_voucher_service import (
+    folio_del_vale,
+    pdf_del_vale,
     autorizar_vale,
     buscar_vales,
     cerrar_renglon,
@@ -75,6 +79,8 @@ def listar_vales(user_data):
         texto=request.args.get("q"),
         estado=request.args.get("status"),
         id_user=request.args.get("id_user"),
+        # El material de una obra concreta.
+        id_proyect=request.args.get("id_proyect"),
         solo_con_pendientes=str(
             request.args.get("only_open") or "").strip().lower()
         in ("1", "true", "si", "yes"),
@@ -96,6 +102,36 @@ def vencidos(user_data):
 @require_entity_permission("warehouse_voucher", "read")
 def leer_vale(user_data, id_incident):
     return jsonify(consultar_vale(id_incident, user_data))
+
+
+@bp_warehouse_voucher.route("/vouchers/<id_incident>/pdf", methods=["GET"])
+@token_required
+@require_entity_permission("warehouse_voucher", "read")
+def vale_en_pdf(user_data, id_incident):
+    """El vale para imprimir y firmar.
+
+    Se pide `read` y no una capacidad nueva: quien puede ver el vale en pantalla
+    puede imprimirlo, porque es el mismo dato. Exigir mas aqui solo conseguiria
+    que alguien lo copiara a mano.
+
+    El PDF queda archivado como version de un `document`, asi que despues se
+    puede recuperar tal cual desde el modulo de Documentos -- incluido el que se
+    firmo el dia de la entrega, aunque el vale haya cambiado desde entonces.
+    """
+    from app.services.document_service import SecureDocumentStorage
+
+    ficha = pdf_del_vale(
+        id_incident, user_data,
+        storage=SecureDocumentStorage(current_app.config["UPLOAD_ROOT"]))
+    return send_file(
+        BytesIO(ficha),
+        mimetype="application/pdf",
+        as_attachment=False,
+        # Con el FOLIO, no con el id interno: un vale que la pantalla llama 95
+        # no debe descargarse como "Vale-513.pdf". Es el mismo numero que
+        # aparece dentro del documento.
+        download_name="Vale-%s.pdf" % folio_del_vale(id_incident, user_data),
+    )
 
 
 @bp_warehouse_voucher.route("/vouchers/<id_incident>/authorize", methods=["POST"])
