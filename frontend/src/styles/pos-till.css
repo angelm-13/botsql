@@ -1,0 +1,172 @@
+/* Caja del punto de venta.
+   Piezas grandes y pocas: se opera de pie, con prisa y a veces en pantalla
+   tactil, asi que los objetivos son amplios y el total se lee de lejos. */
+
+.till-page { color: #334155; }
+
+/* La cabecera la define `styles/page-header.css`, una sola vez para todas
+   las pantallas. Aqui habia una copia con los mismos valores. */
+.till-page .eyebrow {
+  margin: 0 0 4px; font-size: 11px; letter-spacing: .1em;
+  text-transform: uppercase; color: #1b7a60; font-weight: 700;
+}
+.till-page h1 { margin: 0; color: #0f172a; }
+.till-page .muted { color: #64748b; }
+.till-page .mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.till-session { display: flex; align-items: center; gap: 8px; }
+.till-chip {
+  padding: 6px 12px; border-radius: 999px; font-size: 13px; font-weight: 700;
+  background: #dcfce7; color: #14532d;
+}
+
+.till-warn, .till-blocked {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 12px 15px; border-radius: 10px;
+  background: #fffbeb; border: 1px solid #fde68a; color: #78350f;
+  margin: 0 0 14px;
+}
+.till-warn { font-size: 14px; }
+.till-blocked { flex-direction: row; }
+.till-blocked p { margin: 0 0 6px; }
+.till-blocked svg { flex: 0 0 auto; margin-top: 2px; }
+
+.till-page .error {
+  padding: 11px 14px; background: #fef2f2; border: 1px solid #fecaca;
+  border-radius: 10px; color: #991b1b; margin: 0 0 14px;
+}
+
+/* --- dos columnas: catalogo a la izquierda, venta a la derecha ---------- */
+
+.till-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .till-layout { grid-template-columns: 1fr; }
+}
+
+.till-catalog {
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px;
+}
+
+.till-search {
+  display: flex; align-items: center; gap: 9px;
+  border: 1px solid #cbd5e1; border-radius: 10px; padding: 0 12px; margin-bottom: 12px;
+}
+.till-search svg { color: #64748b; flex: 0 0 auto; }
+.till-search input {
+  flex: 1; border: none; outline: none; padding: 12px 0;
+  font: inherit; font-size: 16px; background: transparent;
+}
+
+.till-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+/* Botones grandes: se pulsan con el dedo y con prisa. */
+.till-product {
+  display: flex; flex-direction: column; gap: 4px; align-items: flex-start;
+  padding: 14px; min-height: 84px;
+  border: 1px solid #cbd5e1; border-radius: 11px; background: #fff;
+  cursor: pointer; text-align: left; font: inherit; color: inherit;
+}
+.till-product:hover { border-color: #1b7a60; background: #f0fdf4; }
+.till-product-name { font-weight: 700; font-size: 14px; line-height: 1.25; }
+.till-product-price {
+  font-size: 16px; font-weight: 700; color: #1b7a60;
+  font-variant-numeric: tabular-nums;
+}
+.till-product-stock { font-size: 11.5px; color: #64748b; }
+
+/* --- la venta en curso --- */
+
+.till-cart {
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+  padding: 16px; display: flex; flex-direction: column; gap: 13px;
+  position: sticky; top: 16px;
+}
+
+.till-cart h2 {
+  margin: 0; font-size: 17px; color: #0f172a;
+  display: flex; align-items: center; gap: 8px;
+}
+.till-cart-empty { margin: 0; font-size: 14px; }
+
+.till-lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; max-height: 34vh; overflow-y: auto; }
+.till-lines li { border-bottom: 1px solid #f1f5f9; padding-bottom: 8px; }
+.till-line-main { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; }
+.till-line-name { font-weight: 600; }
+.till-line-qty { display: flex; align-items: center; gap: 6px; margin-top: 5px; }
+.till-line-qty button {
+  border: 1px solid #cbd5e1; background: #fff; border-radius: 7px;
+  padding: 4px 7px; cursor: pointer; line-height: 0; color: #334155;
+}
+.till-line-qty button:hover { background: #f1f5f9; }
+.till-line-qty button.peligro { color: #b91c1c; border-color: #fecaca; margin-left: auto; }
+.till-line-qty span { min-width: 26px; text-align: center; font-weight: 700; }
+
+/* El total se lee de lejos: es lo que el cajero dice en voz alta. */
+.till-total {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding-top: 11px; border-top: 2px solid #e2e8f0; font-size: 15px;
+}
+.till-total strong { font-size: 27px; color: #0f172a; }
+
+.till-methods { display: flex; gap: 7px; flex-wrap: wrap; }
+.till-method {
+  flex: 1 1 96px; display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 10px 8px; border: 1px solid #cbd5e1; border-radius: 9px;
+  background: #fff; cursor: pointer; font: inherit; font-size: 13px; color: #334155;
+}
+.till-method.activa { border-color: #1b7a60; background: #f0fdf4; color: #14532d; font-weight: 700; }
+
+.till-page .field { display: flex; flex-direction: column; gap: 6px; }
+.till-page .field label { font-weight: 700; font-size: 13px; }
+.till-page .field input {
+  padding: 11px 12px; border: 1px solid #cbd5e1; border-radius: 9px;
+  font: inherit; font-size: 17px; font-variant-numeric: tabular-nums;
+}
+
+.till-change {
+  margin: 0; font-size: 17px; font-weight: 700; color: #14532d;
+  font-variant-numeric: tabular-nums;
+}
+.till-change.falta { color: #b91c1c; }
+
+.till-charge { width: 100%; padding: 14px; font-size: 16px; font-weight: 700; }
+.till-page .button:disabled { opacity: .45; cursor: not-allowed; filter: saturate(.4); }
+
+/* --- ticket --- */
+
+.till-receipt-backdrop {
+  position: fixed; inset: 0; background: rgba(15, 23, 42, .55);
+  display: flex; align-items: center; justify-content: center; padding: 24px; z-index: 60;
+}
+.till-receipt {
+  background: #fff; border-radius: 16px; padding: 26px; width: 100%; max-width: 360px;
+  display: flex; flex-direction: column; gap: 14px; text-align: center;
+  border: 1px solid #cbd5e1; box-shadow: 0 24px 64px -24px rgba(15, 23, 42, .45);
+}
+.till-receipt header {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; text-align: left;
+}
+.till-receipt h2 { margin: 0; font-size: 19px; color: #14532d; }
+.till-folio { margin: 0; color: #64748b; font-size: 13px; }
+.till-receipt-total { margin: 0; font-size: 32px; font-weight: 700; color: #0f172a; }
+
+.till-page :focus-visible { outline: 2px solid #1b7a60; outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .till-page * { transition: none !important; animation: none !important; }
+}

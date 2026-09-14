@@ -15,7 +15,6 @@ const InvoiceUploadWidget = () => {
   const { lang } = useI18n();
   const [files, setFiles] = useState([]);
   const [selectedProject, setSelectedProject] = useState('');
-  const [invoiceType, setInvoiceType] = useState('ingreso');
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(false);
   const [uploadResults, setUploadResults] = useState(null);
@@ -29,9 +28,8 @@ const InvoiceUploadWidget = () => {
       title: 'Cargar Facturas XML (CFDI)',
       subtitle: 'Cargue archivos XML de facturas CFDI para procesarlas automáticamente',
       selectProject: 'Seleccionar Proyecto',
-      invoiceType: 'Tipo de Factura',
-      typeIngreso: 'Ingreso',
-      typeEgreso: 'Egreso',
+      automaticType: 'Clasificación automática',
+      automaticTypeHint: 'Se comparará el RFC de la empresa principal con el emisor y receptor para clasificar cada factura como venta o compra.',
       selectFile: 'Seleccionar Archivos XML',
       uploadedFiles: 'Archivos cargados:',
       uploadButton: 'Cargar Facturas',
@@ -49,9 +47,8 @@ const InvoiceUploadWidget = () => {
       title: 'Load XML Invoices (CFDI)',
       subtitle: 'Upload CFDI invoice XML files to process them automatically',
       selectProject: 'Select Project',
-      invoiceType: 'Invoice Type',
-      typeIngreso: 'Income',
-      typeEgreso: 'Expense',
+      automaticType: 'Automatic classification',
+      automaticTypeHint: 'The principal company RFC will be compared with the issuer and receiver to classify each invoice as a sale or purchase.',
       selectFile: 'Select XML Files',
       uploadedFiles: 'Uploaded files:',
       uploadButton: 'Upload Invoices',
@@ -69,9 +66,8 @@ const InvoiceUploadWidget = () => {
       title: 'Carregar faturas XML (CFDI)',
       subtitle: 'Carregue arquivos XML de faturas CFDI para processá-las automaticamente',
       selectProject: 'Selecionar projeto',
-      invoiceType: 'Tipo de fatura',
-      typeIngreso: 'Entrada',
-      typeEgreso: 'Saída',
+      automaticType: 'Classificação automática',
+      automaticTypeHint: 'O RFC da empresa principal será comparado com o emissor e o receptor para classificar cada fatura.',
       selectFile: 'Selecionar arquivos XML',
       uploadedFiles: 'Arquivos carregados:',
       uploadButton: 'Carregar faturas',
@@ -89,9 +85,8 @@ const InvoiceUploadWidget = () => {
       title: 'XML-Rechnungen laden (CFDI)',
       subtitle: 'Laden Sie CFDI-XML-Rechnungen hoch, um sie automatisch zu verarbeiten',
       selectProject: 'Projekt auswählen',
-      invoiceType: 'Rechnungstyp',
-      typeIngreso: 'Einnahme',
-      typeEgreso: 'Ausgabe',
+      automaticType: 'Automatische Klassifizierung',
+      automaticTypeHint: 'Die RFC des Hauptunternehmens wird mit Aussteller und Empfänger verglichen.',
       selectFile: 'XML-Dateien auswählen',
       uploadedFiles: 'Geladene Dateien:',
       uploadButton: 'Rechnungen hochladen',
@@ -174,7 +169,6 @@ const InvoiceUploadWidget = () => {
       const formData = new FormData();
       files.forEach(file => formData.append('files', file));
       formData.append('id_proyect', selectedProject);
-      formData.append('invoice_type', invoiceType);
 
       const baseUrl = import.meta.env.VITE_API_BASE_URL || "/api";
       const token = localStorage.getItem('token');
@@ -265,9 +259,10 @@ const InvoiceUploadWidget = () => {
           {/* Project Selection */}
           <div style={{ marginBottom: '15px' }}>
             <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
-              {t('selectProject')} *
+              {t('selectProject')}
             </label>
             <select
+              required
               value={selectedProject}
               onChange={(e) => setSelectedProject(e.target.value)}
               style={{
@@ -287,25 +282,9 @@ const InvoiceUploadWidget = () => {
             </select>
           </div>
 
-          {/* Invoice Type Selection */}
-          <div style={{ marginBottom: '15px' }}>
-            <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
-              {t('invoiceType')}
-            </label>
-            <select
-              value={invoiceType}
-              onChange={(e) => setInvoiceType(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '8px',
-                border: '1px solid #ddd',
-                borderRadius: '3px',
-                fontSize: '14px'
-              }}
-            >
-              <option value="ingreso">{t('typeIngreso')}</option>
-              <option value="egreso">{t('typeEgreso')}</option>
-            </select>
+          <div className="xml-classification-hint">
+            <strong>{t('automaticType')}</strong>
+            <span>{t('automaticTypeHint')}</span>
           </div>
 
           {/* File Input */}
@@ -363,7 +342,7 @@ const InvoiceUploadWidget = () => {
           )}
 
           {/* Upload Results Table */}
-          {uploadResults && uploadResults.data && (
+          {uploadResults && Array.isArray(uploadResults.results) && (
             <div style={{ marginBottom: '15px' }}>
               <h4>📊 Resultados de Carga</h4>
               <table style={{
@@ -375,17 +354,15 @@ const InvoiceUploadWidget = () => {
                   <tr style={{ backgroundColor: '#f0f0f0' }}>
                     <th style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'left' }}>Archivo</th>
                     <th style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'left' }}>Estado</th>
-                    <th style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'left' }}>Mensaje</th>
+                    <th style={{ padding: '8px', border: '1px solid #ddd', textAlign: 'left' }}>Clasificación</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {uploadResults.data.map((result, idx) => (
+                  {uploadResults.results.map((result, idx) => (
                     <tr key={idx}>
-                      <td style={{ padding: '8px', border: '1px solid #ddd' }}>{result.filename}</td>
-                      <td style={{ padding: '8px', border: '1px solid #ddd' }}>
-                        {result.success ? '✓' : '✗'}
-                      </td>
-                      <td style={{ padding: '8px', border: '1px solid #ddd' }}>{result.message}</td>
+                      <td style={{ padding: '8px', border: '1px solid #ddd' }}>{result.file}</td>
+                      <td style={{ padding: '8px', border: '1px solid #ddd' }}>{result.status === 'created' ? '✓' : '✗'}</td>
+                      <td style={{ padding: '8px', border: '1px solid #ddd' }}>{result.invoice_direction ? `${result.invoice_direction} · ${result.items_count || 0} partidas` : result.message || '—'}</td>
                     </tr>
                   ))}
                 </tbody>

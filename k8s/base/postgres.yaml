@@ -1,0 +1,96 @@
+# StatefulSet en vez de Deployment: le da al pod un nombre estable
+# (postgres-0) y una identidad de red predecible, útil para un
+# servicio con estado aunque aquí solo tengamos 1 réplica.
+#
+# 1 réplica + local-path (ReadWriteOnce, atado al nodo): no se puede
+# tener dos pods de Postgres corriendo a la vez sobre el mismo disco,
+# así que Kubernetes debe apagar el pod viejo antes de levantar el
+# nuevo en cualquier actualización — con 1 réplica esto ya se cumple
+# de forma natural con RollingUpdate.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      # Ver nota en backend.yaml: evita que Kubernetes inyecte variables
+      # tipo <SERVICE>_PORT de otros Services del namespace.
+      enableServiceLinks: false
+      containers:
+        - name: postgres
+          # Reemplazado por el overlay con la imagen db-init:<sha> que
+          # corresponda (ver infra/docker/db-init.Dockerfile).
+          image: DB_INIT_IMAGE_PLACEHOLDER
+          # Sin envFrom a propósito: este contenedor es el motor de Postgres
+          # de terceros, no la app — solo necesita sus propias POSTGRES_*,
+          # traducidas aquí desde el mismo Secret. Inyectarle el resto de
+          # app-secrets (JWT_SECRET, MFA_ENCRYPTION_KEY, credenciales de
+          # RabbitMQ...) le daría acceso a secretos que no usa y que no
+          # debería poder leer si este contenedor se ve comprometido.
+          env:
+            - name: POSTGRES_DB
+              valueFrom: { secretKeyRef: { name: app-secrets, key: DB_NAME } }
+            - name: POSTGRES_USER
+              valueFrom: { secretKeyRef: { name: app-secrets, key: DB_USER } }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: app-secrets, key: DB_PASSWORD } }
+          ports:
+            - containerPort: 5432
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 384Mi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          # "$(DB_USER)" NO se sustituye aquí: la expansión $(VAR) de
+          # Kubernetes solo aplica a command/args del contenedor principal,
+          # no a exec.command de un probe (kubernetes/kubernetes#40846) — sin
+          # el "sh -c", pg_isready recibiría el string literal "$(DB_USER)"
+          # como usuario. Con el shell, $POSTGRES_USER sí es una variable de
+          # entorno real de este contenedor y se expande de verdad.
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\""]
+            timeoutSeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\""]
+            timeoutSeconds: 5
+            periodSeconds: 20
+            failureThreshold: 3
+            initialDelaySeconds: 15
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: local-path
+        resources:
+          requests:
+            storage: 5Gi # ajusta por cliente si el volumen crece más
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+  clusterIP: None # headless: el StatefulSet no necesita balanceo, solo resolución de nombre

@@ -1,0 +1,8 @@
+# El nombre real (ej. acme-prod) lo pone el overlay de cada cliente
+# con `namespace:` en su kustomization.yaml — kustomize reescribe ese
+# valor y lo propaga a TODOS los recursos de este base automáticamente,
+# así este archivo nunca se edita a mano.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: placeholder

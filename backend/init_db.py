@@ -111,6 +111,63 @@ def init_database():
         Base.metadata.create_all(engine)
         print("✅ Database tables created")
 
+        # Catalogo de KPIs predefinidos: se resiembra en cada arranque, igual
+        # que seed.sql, para que un cambio de etiqueta/unidad en el codigo se
+        # refleje sin escribir una migracion.
+        try:
+            from app.kpis.registry import seed_kpi_definitions
+            seed_kpi_definitions(engine)
+            print("✅ kpi_definition seeded from KPI_REGISTRY")
+        except Exception as e:
+            print(f"⚠️  KPI catalog seed warning (non-fatal): {e}")
+
+        # Catalogo `field`: sin una fila por columna publicable, un rol que no
+        # sea el admin de arranque no puede recibir permiso de campo -- las
+        # pantallas genericas se ven vacias para cualquier usuario real. El
+        # `database/sync_fields.sql` que deberia llenarlo apunta a columnas que
+        # la tabla no tiene y siempre aborta en silencio (ver
+        # scripts/sync_field_catalog.py); esto siembra desde los modelos, que
+        # es lo unico que siempre coincide con las tablas reales, y es
+        # idempotente para poder correr en cada arranque.
+        try:
+            from scripts.sync_field_catalog import sincronizar as sync_field_catalog
+            resultado = sync_field_catalog(actor_id=1)
+            print(f"✅ field catalog synced: +{resultado['agregadas']} campos nuevos ({resultado['existentes']} ya existian)")
+        except Exception as e:
+            print(f"⚠️  Field catalog sync warning (non-fatal): {e}")
+
+        # El permiso de campo se deriva del permiso de entidad (mismo criterio
+        # que ya usan las migraciones generadas por seed_module_permissions.py),
+        # pero esa derivacion corre en `db-migrate` ANTES de que el paso de
+        # arriba exista siquiera: en el primer arranque de un pod nuevo, el
+        # catalogo de campos que acaba de sembrarse todavia no tenia filas
+        # cuando la migracion hizo su JOIN, asi que no derivo nada para las
+        # tablas que dependian de este sembrado. Se repite aqui la misma
+        # consulta para que un solo arranque quede completo, sin esperar a que
+        # el pod se reinicie una segunda vez.
+        try:
+            derivar_field_permission_sql = """
+                INSERT INTO nm_field_permission (id_field, id_permission, control_type, created_by)
+                SELECT f.id_field, ep.id_permission, LEAST(ep.control_type::integer, 15)::text, 1
+                FROM entity_permission ep
+                JOIN field f
+                  ON f.table_name = ep.entity_name
+                 AND f.deletion_date IS NULL
+                WHERE ep.deletion_date IS NULL
+                  AND f.field_name <> 'created_by'
+                  AND NOT EXISTS (
+                    SELECT 1 FROM nm_field_permission nfp
+                    WHERE nfp.id_field = f.id_field
+                      AND nfp.id_permission = ep.id_permission
+                      AND nfp.deletion_date IS NULL
+                  );
+            """
+            with engine.begin() as conn:
+                resultado_derivado = conn.execute(text(derivar_field_permission_sql))
+            print(f"✅ nm_field_permission derivado: +{resultado_derivado.rowcount} filas")
+        except Exception as e:
+            print(f"⚠️  Field permission derive warning (non-fatal): {e}")
+
         # Re-apply seed.sql on every start. The file is generated idempotently,
         # so this is safe and fixes persistent Docker volumes that skipped the
         # PostgreSQL first-run seed path.

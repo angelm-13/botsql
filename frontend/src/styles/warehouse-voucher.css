@@ -1,0 +1,314 @@
+/* Vales de almacen. Mismos colores que el resto del almacen: verde de la casa,
+   ambar para lo que hay que atender, rojo solo para lo vencido. */
+
+.vale-acciones-cabecera { display: flex; gap: 10px; flex-wrap: wrap; }
+
+.vale-aviso {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0 0 14px; padding: 10px 14px;
+  background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 9px;
+  color: #065f46; font-size: 13.5px;
+}
+
+/* --- lo vencido ---
+   Va primero porque es la razon de llevar vales. Si no hay nada vencido la
+   seccion no se pinta: "0 vencidos" es ruido. */
+.vale-vencidos {
+  margin: 0 0 20px; padding: 16px 18px;
+  background: #fff1f2; border: 1px solid #fecdd3; border-radius: 10px;
+}
+.vale-vencidos h2 {
+  display: flex; align-items: center; gap: 9px;
+  margin: 0 0 12px; font-size: 1.02rem; color: #9f1239;
+}
+.vale-vencidos h2 span {
+  margin-left: auto; padding: 1px 9px; border-radius: 999px;
+  background: #9f1239; color: #fff; font-size: 12px;
+}
+.vale-vencidos ul { list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 7px; }
+.vale-vencidos li {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 9px 12px; background: #fff; border-radius: 8px; font-size: 13.5px;
+}
+.vale-vencidos li .button { margin-left: auto; }
+
+.vale-enlace {
+  padding: 0; border: 0; background: none; font: inherit; font-weight: 600;
+  color: #9f1239; cursor: pointer;
+}
+.vale-enlace:hover { text-decoration: underline; }
+
+/* --- la captura --- */
+.vale-borrador {
+  margin: 0 0 22px; padding: 18px;
+  background: #fff; border: 2px solid #1b7a60; border-radius: 11px;
+}
+.vale-borrador > header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 14px;
+}
+.vale-borrador h2 {
+  display: flex; align-items: center; gap: 8px; margin: 0; font-size: 1.06rem;
+}
+.vale-borrador h3 {
+  margin: 20px 0 10px; font-size: .95rem;
+  text-transform: uppercase; letter-spacing: .05em; color: #5c6d68;
+}
+
+.vale-cabecera {
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+.vale-cabecera .field { display: flex; flex-direction: column; gap: 5px; }
+.vale-cabecera .field-ancho { grid-column: 1 / -1; }
+.vale-cabecera .field > span {
+  font-size: 11.5px; font-weight: 600; letter-spacing: .04em;
+  text-transform: uppercase; color: #5c6d68;
+}
+.vale-cabecera input, .vale-cabecera select {
+  padding: 9px 11px; font: inherit;
+  border: 1px solid #cbd5e1; border-radius: 8px; background: #fff;
+}
+
+.vale-buscador {
+  display: flex; align-items: center; gap: 9px;
+  padding: 0 12px; background: #fff;
+  border: 1px solid #cbd5e1; border-radius: 9px;
+}
+.vale-buscador input {
+  flex: 1; padding: 10px 0; border: 0; outline: none; font: inherit;
+  background: transparent;
+}
+.vale-buscador-producto { margin-bottom: 12px; }
+
+/* Los candidatos de la busqueda. Lo serializado despliega sus piezas
+   disponibles: elegir el producto no basta cuando hay que decir cual. */
+.vale-candidatos { list-style: none; margin: 0 0 14px; padding: 0;
+  display: flex; flex-direction: column; gap: 8px; }
+.vale-candidatos > li {
+  padding: 10px 12px; background: #f8faf9;
+  border: 1px solid #e8eeeb; border-radius: 8px;
+}
+.vale-candidato-cabecera {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  font-size: 13.5px;
+}
+.vale-candidato-cabecera .button { margin-left: auto; }
+.vale-piezas { list-style: none; margin: 9px 0 0; padding: 8px 0 0 6px;
+  border-top: 1px dashed #cbd5e1;
+  display: flex; flex-direction: column; gap: 5px; }
+.vale-piezas li {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  font-size: 12.5px;
+}
+.vale-piezas li .button { margin-left: auto; }
+
+/* --- los renglones --- */
+.vale-renglones { list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 7px; }
+.vale-renglones li {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 10px 12px; background: #f8faf9; border-radius: 8px; font-size: 13.5px;
+}
+.vale-renglones li.devuelto { background: #f1f5f4; color: #5c6d68; }
+.vale-que { display: inline-flex; align-items: center; gap: 7px; }
+.vale-donde { display: inline-flex; align-items: center; gap: 5px; }
+.vale-devuelto {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 5px;
+  color: #15803d; font-size: 12.5px;
+}
+.vale-renglones li .button { margin-left: auto; }
+
+.vale-renglones-edicion li { align-items: flex-end; }
+.vale-mini { display: flex; flex-direction: column; gap: 4px; }
+.vale-mini > span {
+  font-size: 10.5px; font-weight: 600; letter-spacing: .04em;
+  text-transform: uppercase; color: #5c6d68;
+}
+.vale-mini input, .vale-mini select {
+  padding: 6px 9px; font: inherit; font-size: 13px;
+  border: 1px solid #cbd5e1; border-radius: 7px; background: #fff;
+}
+.vale-mini input[type="number"] { width: 84px; }
+/* Lo que falta para poder abrir el vale. Ambar y no rojo: no es un error, es
+   un dato pendiente. */
+.vale-falta select { border-color: #b45309; background: #fffbeb; }
+.vale-falta > span { color: #b45309; }
+
+.vale-pie {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-top: 18px; padding-top: 14px; border-top: 1px solid #e8eeeb;
+}
+
+/* --- la consulta --- */
+.vale-consulta h2 { font-size: 1.02rem; margin: 0 0 12px; }
+.vale-consulta .vale-buscador { max-width: 380px; margin-bottom: 16px; }
+
+.vale-tarjeta {
+  padding: 16px 18px; background: #fff;
+  border: 1px solid #d6e0dc; border-radius: 10px;
+}
+.vale-tarjeta.vale-abierto { border-left: 4px solid #b45309; }
+.vale-tarjeta.vale-cerrado { border-left: 4px solid #15803d; }
+.vale-tarjeta > header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 14px; flex-wrap: wrap; margin-bottom: 14px;
+}
+.vale-tarjeta h3 {
+  display: flex; align-items: center; gap: 8px; margin: 0 0 3px;
+  font-size: 1.02rem;
+}
+.vale-tarjeta > header p { margin: 0; font-size: 13px; }
+
+/* El estado se muestra, no se elige: lo derivan los renglones. */
+.vale-estado {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
+  padding: 6px 12px; border-radius: 9px;
+  font-size: 12.5px; font-weight: 700; white-space: nowrap;
+}
+.vale-estado em { font-weight: 400; font-style: normal; font-size: 11.5px; }
+.vale-estado.es-abierto { background: #fef3c7; color: #78350f; }
+.vale-estado.es-cerrado { background: #dcfce7; color: #14532d; }
+
+.vale-page :focus-visible { outline: 2px solid #1b7a60; outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .vale-page * { transition: none !important; animation: none !important; }
+}
+@media (max-width: 720px) {
+  .vale-renglones-edicion li { align-items: stretch; }
+  .vale-vencidos li .button, .vale-renglones li .button { margin-left: 0; }
+}
+
+/* --- la salida y la entrada, en el mismo papel ---
+
+   Desde que la devolucion AGREGA un renglon en vez de reescribir el de salida,
+   un vale devuelto tiene el doble de renglones. Se distinguen por un filo de
+   color, no por una etiqueta de texto: la etiqueta obligaba a leer cada renglon
+   para saber cual era cual. */
+
+.vale-renglones li.vale-salida { border-left: 3px solid #b45309; }
+.vale-renglones li.vale-entrada { border-left: 3px solid #15803d; }
+
+/* La existencia del producto, que es la cifra con la que se firma. */
+.vale-existencia { font-variant-numeric: tabular-nums; }
+.vale-existencia strong { color: #16211f; }
+
+/* --- la lista de vales ---
+
+   Antes solo habia un campo para teclear un numero y ver ESE vale. Para
+   encontrar el de alguien habia que ir adivinando: no habia lista. Y el folio
+   del sistema anterior no servia, porque el vale 112 es nuestro 530 y el campo
+   pedia el 530. */
+
+.vale-lista-cabecera {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin: 12px 0 8px; font-size: 13px;
+}
+.vale-solo-abiertos {
+  display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+}
+.vale-lista-cabecera em { font-style: normal; }
+
+.vale-lista { list-style: none; margin: 0; padding: 0; }
+.vale-lista li { margin-bottom: 5px; }
+.vale-lista button {
+  display: grid; align-items: center; gap: 12px; width: 100%;
+  grid-template-columns: 68px minmax(0, 1fr) auto auto auto;
+  padding: 10px 12px; text-align: left;
+  border: 1px solid #e8eeeb; border-radius: 9px; background: #fff;
+  font: inherit; font-size: 13px; cursor: pointer;
+}
+.vale-lista button:hover { border-color: #1b7a60; background: #f8faf9; }
+.vale-lista .mono { font-variant-numeric: tabular-nums; }
+.vale-lista-quien { font-weight: 600; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+.vale-lista-estado {
+  padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 700;
+}
+.vale-lista-estado.abierto { background: #fef3c7; color: #78350f; }
+.vale-lista-estado.cerrado { background: #dcfce7; color: #14532d; }
+.vale-lista-estado.cancelado { background: #f1f5f9; color: #475569; }
+.vale-lista-cuenta { font-size: 11.5px; }
+
+.vale-volver { margin-bottom: 10px; }
+
+@media (max-width: 760px) {
+  .vale-lista button { grid-template-columns: 60px 1fr; }
+  .vale-lista-cuenta, .vale-lista button > span:last-child { grid-column: 1 / -1; }
+}
+
+/* Los botones de icono del vale -- quitar un renglon, cerrar el panel.
+   Vivian en `product-family.css` como `.mt-icono`, y esta pantalla no importa
+   esa hoja: los botones salian sin estilo salvo que el usuario hubiera pasado
+   antes por Familias en la misma sesion, que es lo que hacia que el fallo
+   apareciera y desapareciera. La hoja se retiro con las caracteristicas, asi
+   que las reglas se mudan aqui, que es donde se usan. */
+.vale-icono {
+  display: grid; place-items: center; width: 28px; height: 28px;
+  border: 1px solid transparent; border-radius: 6px;
+  background: none; color: #5c6d68; cursor: pointer;
+}
+.vale-icono:hover { background: #fff; border-color: #d6e0dc; color: #1b7a60; }
+.vale-icono-borrar:hover { color: #9f1239; }
+
+/* --- el prevale: pedido, no entregado ---
+
+   Se distingue del abierto porque son cosas distintas: el abierto dice que el
+   material esta fuera; el borrador dice que alguien lo pidio y sigue en el
+   estante. Confundirlos es contar como salido lo que no ha salido. */
+
+.vale-borrador { border-left: 6px solid #d97706; background: #fffbeb; }
+.vale-estado.es-borrador { background: #fef3c7; color: #78350f; }
+
+/* Autorizar es la accion que mueve el almacen, asi que va arriba del todo y
+   con su explicacion al lado: no es un boton mas de la ficha. */
+.vale-autorizar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin: 0 0 14px; padding: 12px 14px;
+  background: #fff; border: 1px solid #fde68a; border-radius: 10px;
+}
+.vale-autorizar .muted { font-size: 12.5px; flex: 1 1 260px; }
+
+/* --- el filtro de estado de la lista --- */
+
+.vale-filtro-estado { display: flex; gap: 6px; flex-wrap: wrap; }
+.vale-filtro-estado .button { padding: 6px 11px; font-size: 12.5px; }
+.vale-filtro-estado .button.activo {
+  background: #d8efe8; color: #0f3554; border-color: #1b7a60;
+}
+
+/* --- la ficha del producto en cada renglon --- */
+
+.vale-ficha { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.vale-ficha-foto {
+  display: grid; place-items: center; flex: 0 0 auto;
+  width: 42px; height: 42px; border-radius: 8px;
+  background: #f1f5f9; border: 1px solid #e2e8f0; color: #94a3b8;
+  overflow: hidden;
+}
+.vale-ficha-foto img { width: 100%; height: 100%; object-fit: cover; }
+.vale-ficha-datos {
+  display: flex; flex-direction: column; gap: 1px; min-width: 0;
+}
+.vale-ficha-datos strong { font-size: 13.5px; line-height: 1.15; }
+.vale-ficha-datos .muted { font-size: 11.5px; }
+
+/* El id interno junto al folio: hace falta para pedir ayuda o mirar la fila en
+   la base, pero no es el numero con el que la gente llama al vale. */
+.vale-registro {
+  margin-left: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: lowercase;
+  letter-spacing: .02em;
+}
+
+/* La obra del vale, junto al responsable y el motivo: es el mismo tipo de
+   dato de contexto, asi que lleva el mismo tratamiento tipografico. */
+.vale-obra {
+  display: flex; align-items: center; gap: 5px;
+  margin: 2px 0 0; font-size: 13px; color: #475569;
+}
+.vale-obra svg { color: #94a3b8; }

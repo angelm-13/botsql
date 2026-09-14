@@ -1,7 +1,14 @@
 from __future__ import annotations
 from flask import Blueprint, jsonify, request
 from app.services.product_service import ProductService
-from app.services.inventory_service import apply_inventory_movement
+from app.services.inventory_service import (
+    apply_inventory_movement,
+    list_inventory_movements,
+    product_stock,
+    reconcile_product_stock,
+    transfer_inventory,
+    warehouse_stock,
+)
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
 import os
@@ -10,10 +17,13 @@ from werkzeug.utils import secure_filename
 
 
 bp_product = Blueprint('product', __name__, url_prefix='/product')
-ALLOWED_FIELDS = ['id_product', 'id_invoice', 'id_location', 'id_material', 'gross_price', 'color', 'is_directly_related_to_product_service', 'product_status', 'path_imagen', 'product_code', 'note', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'descripcion', 'cantidad', 'id_material', 'id_marca', 'id_familia']
+ALLOWED_FIELDS = ['id_product', 'id_invoice', 'id_location', 'id_material', 'gross_price', 'color', 'is_directly_related_to_product_service', 'product_status', 'path_imagen', 'product_code', 'note', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'descripcion', 'cantidad', 'id_material', 'tracking_mode', 'stock_purpose', 'lot_control', 'id_marca', 'id_familia']
 
 TECHNICAL_RESPONSE_FIELDS = {'id_product'}
 FIELD_READ_BIT = 2
+# Escribir un campo exige el bit de alta o el de actualizacion, no el de
+# lectura. Sin esta distincion no se podia conceder "ver pero no editar".
+FIELD_WRITE_BITS = 1 | 4
 
 
 def _actor_has_unrestricted_field_access(user_data: dict) -> bool:
@@ -31,19 +41,21 @@ def _safe_int_value(value):
         return None
 
 
-def _visible_response_fields_for_actor(user_data: dict) -> set[str]:
+def _field_sets_for_actor(user_data: dict) -> tuple[set[str], set[str]]:
+    """Campos que el actor puede ver y campos que puede escribir."""
     if _actor_has_unrestricted_field_access(user_data):
-        return set(ALLOWED_FIELDS)
+        return set(ALLOWED_FIELDS), set(ALLOWED_FIELDS)
 
     permission_id = _safe_int_value(user_data.get('id_permission') or user_data.get('permission_id'))
     if not permission_id:
-        return set(TECHNICAL_RESPONSE_FIELDS)
+        return set(TECHNICAL_RESPONSE_FIELDS), set()
 
     from app.models.field import Field
     from app.models.nm_field_permission import NmFieldPermission
     from app.models.session import transaction_context
 
     visible = set()
+    writable = set()
     with transaction_context() as db_session:
         rows = (
             db_session.query(NmFieldPermission, Field)
@@ -61,18 +73,28 @@ def _visible_response_fields_for_actor(user_data: dict) -> set[str]:
                 continue
             if (control_type & FIELD_READ_BIT) == FIELD_READ_BIT:
                 visible.add(field_row.field_name)
+            if control_type & FIELD_WRITE_BITS:
+                writable.add(field_row.field_name)
 
     # La llave primaria puede viajar en la respuesta para navegacion interna,
     # acciones de fila y rutas REST, aunque el frontend no la pinte si no fue
     # marcada como visible en el gestor.
-    return visible | set(TECHNICAL_RESPONSE_FIELDS)
+    return visible | set(TECHNICAL_RESPONSE_FIELDS), writable
+
+
+def _visible_response_fields_for_actor(user_data: dict) -> set[str]:
+    return _field_sets_for_actor(user_data)[0]
+
+
+def _writable_request_fields_for_actor(user_data: dict) -> set[str]:
+    return _field_sets_for_actor(user_data)[1]
 
 
 def _filter_payload_for_actor(payload: dict, user_data: dict) -> dict:
     payload = dict(payload or {})
     if _actor_has_unrestricted_field_access(user_data):
         return payload
-    writable_fields = _visible_response_fields_for_actor(user_data) - set(TECHNICAL_RESPONSE_FIELDS)
+    writable_fields = _writable_request_fields_for_actor(user_data) - set(TECHNICAL_RESPONSE_FIELDS)
     return {key: value for key, value in payload.items() if key in writable_fields}
 
 
@@ -148,8 +170,8 @@ def list_product(user_data):
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 20))
     sort = request.args.get('sort')
-    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort'} and k in ALLOWED_FIELDS}
-    return _jsonify_projected_list(user_data, ProductService.list_scoped(user_data, page=page, per_page=per_page, filters=filters, sort=sort))
+    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort', 'q'} and k in ALLOWED_FIELDS}
+    return _jsonify_projected_list(user_data, ProductService.list_scoped(user_data, page=page, per_page=per_page, filters=filters, sort=sort, q=request.args.get('q')))
 
 
 @bp_product.route('/<id_product>', methods=['GET'])
@@ -165,7 +187,11 @@ def get_product(user_data, id_product):
 @require_entity_permission('product', 'create')
 def create_product(user_data):
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
-    ProductService.require_invoice_scope(payload.get('id_invoice'), user_data)
+    # Solo se comprueba el alcance cuando la captura NOMBRA una factura. Sin
+    # factura, el servicio resuelve la de captura directa del propio proyecto del
+    # actor, asi que no hay nada ajeno que validar.
+    if str(payload.get('id_invoice') or '').strip():
+        ProductService.require_invoice_scope(payload.get('id_invoice'), user_data)
     return _jsonify_projected_record(user_data, ProductService.create(payload, user_id=user_data.get('id_user')), status=201)
 
 
@@ -189,6 +215,50 @@ def create_inventory_movement(user_data, id_product):
     return jsonify({'movement': movement, 'idempotent_replay': not created}), (201 if created else 200)
 
 
+@bp_product.route('/<id_product>/inventory-movements', methods=['GET'])
+@token_required
+@require_entity_permission('product', 'read')
+def read_inventory_movements(user_data, id_product):
+    """Historial del libro de inventario para auditar como llego el saldo."""
+    ProductService.require_record_scope(id_product, user_data)
+    return jsonify(list_inventory_movements(
+        id_product,
+        user_data,
+        page=request.args.get('page', 1),
+        per_page=request.args.get('per_page', 50),
+        movement_type=request.args.get('movement_type'),
+        location_id=request.args.get('id_location'),
+    ))
+
+
+@bp_product.route('/<id_product>/inventory-reconciliation', methods=['GET'])
+@token_required
+@require_entity_permission('product', 'read')
+def read_inventory_reconciliation(user_data, id_product):
+    """Comprueba que el saldo del producto cuadre con la suma del libro."""
+    ProductService.require_record_scope(id_product, user_data)
+    return jsonify(reconcile_product_stock(id_product, user_data))
+
+
+@bp_product.route('/<id_product>/inventory-transfers', methods=['POST'])
+@token_required
+@require_entity_permission('product', 'update')
+def create_inventory_transfer(user_data, id_product):
+    """Traspasa existencia entre ubicaciones o almacenes en una sola operacion."""
+    ProductService.require_record_scope(id_product, user_data)
+    result, created = transfer_inventory(id_product, request.get_json() or {}, user_data)
+    return jsonify({**result, 'idempotent_replay': not created}), (201 if created else 200)
+
+
+@bp_product.route('/<id_product>/inventory-stock', methods=['GET'])
+@token_required
+@require_entity_permission('product', 'read')
+def read_product_stock(user_data, id_product):
+    """En que ubicaciones y almacenes esta repartido el producto."""
+    ProductService.require_record_scope(id_product, user_data)
+    return jsonify(product_stock(id_product, user_data))
+
+
 @bp_product.route('/<id_product>', methods=['DELETE'])
 @token_required
 @require_entity_permission('product', 'delete')
@@ -204,6 +274,11 @@ def upload_product_image(user_data, id_product):
     ProductService.require_record_scope(id_product, user_data)
     if request.content_length and request.content_length > _PRODUCT_IMAGE_MAX_BYTES:
         raise AppError('errors.image_too_large', 413, {'max_mb': 5})
+    # El tope de almacenamiento del plan. Se comprueba antes de escribir: guardar
+    # y borrar despues deja el disco tocado y, si el proceso muere en medio,
+    # pasado de tope.
+    from app.services.storage_service import exigir_espacio
+    exigir_espacio(request.content_length or 0)
     if 'file' not in request.files:
         raise AppError('errors.image_required', 400)
     file = request.files['file']

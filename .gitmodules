@@ -1,0 +1,8 @@
+[submodule "modules/restaurante"]
+	path = modules/restaurante
+	url = https://github.com/Tyakxa/demo_restaurante.git
+	branch = plantilla-base
+[submodule "modules/pos"]
+	path = modules/pos
+	url = https://github.com/Tyakxa/POS.git
+	branch = initAngm

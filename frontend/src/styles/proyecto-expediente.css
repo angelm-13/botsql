@@ -1,0 +1,104 @@
+/* El expediente del proyecto, dentro del panel de detalle.
+
+   Hereda el aspecto del panel: no trae fondo ni borde propios, para que se lea
+   como una sección más y no como una tarjeta pegada encima. */
+
+.expediente { display: flex; flex-direction: column; gap: 4px; }
+
+.expediente h4 {
+  display: flex; align-items: center; gap: 6px;
+  margin: 18px 0 6px;
+  font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
+  color: #64748b;
+}
+.expediente h4 svg { color: #94a3b8; }
+
+/* --- la orden de trabajo --- */
+.expediente-datos {
+  display: grid; grid-template-columns: auto 1fr auto 1fr;
+  gap: 4px 10px; margin: 0;
+  font-size: 13px;
+}
+.expediente-datos dt { color: #64748b; white-space: nowrap; }
+.expediente-datos dd { margin: 0; font-weight: 600; }
+
+@media (max-width: 640px) {
+  .expediente-datos { grid-template-columns: auto 1fr; }
+}
+
+/* --- el recorrido comercial --- */
+.expediente-comercial {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0;
+}
+
+.expediente-estado {
+  display: inline-block; padding: 3px 10px; border-radius: 999px;
+  font-size: 12px; font-weight: 700; border: 1px solid transparent;
+}
+.expediente-estado.pendiente_orden_compra { background: #fffbeb; color: #b45309; border-color: #fed7aa; }
+.expediente-estado.autorizado { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+.expediente-estado.cobrado    { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+.expediente-estado.cancelado  { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+
+/* --- las parcialidades --- */
+.expediente-tabla { width: 100%; border-collapse: collapse; font-size: 13px; }
+.expediente-tabla th {
+  text-align: left; padding: 6px 8px; font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .04em; color: #64748b;
+  border-bottom: 1px solid #e2e8f0;
+}
+.expediente-tabla td { padding: 7px 8px; border-bottom: 1px solid #eef2f6; }
+.expediente-tabla th.num, .expediente-tabla td.num { text-align: right; white-space: nowrap; }
+/* Lo ya cobrado se apaga: lo que hay que mirar es lo que falta. */
+.expediente-tabla tr.cobrado { background: #f8fafc; color: #475569; }
+.expediente-tabla input[type="date"] { font-size: 12px; padding: 2px 4px; }
+
+.expediente-cobrado {
+  border: 0; background: none; padding: 0; cursor: pointer;
+  color: #047857; font-weight: 700; font-family: inherit; font-size: 13px;
+}
+.expediente-cobrado:hover { text-decoration: line-through; }
+
+.expediente-resumen {
+  display: flex; flex-wrap: wrap; gap: 18px;
+  list-style: none; margin: 10px 0 0; padding: 10px 12px;
+  background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
+}
+.expediente-resumen li { display: flex; flex-direction: column; gap: 2px; }
+.expediente-resumen span { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: #64748b; }
+.expediente-resumen strong { font-size: 15px; }
+.expediente-resumen .ok { color: #047857; }
+.expediente-resumen .pendiente { color: #b45309; }
+
+.expediente-alta {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px; align-items: end; margin-top: 12px;
+}
+.expediente-alta .ancho { grid-column: 1 / -1; }
+.expediente-alta button { grid-column: 1 / -1; justify-self: start; }
+
+@media (max-width: 640px) {
+  .expediente-alta { grid-template-columns: 1fr; }
+}
+
+/* --- incidencias y calendario --- */
+.expediente-lista { list-style: none; margin: 0; padding: 0; }
+.expediente-lista li {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 6px 0; border-bottom: 1px solid #eef2f6; font-size: 13px;
+}
+.expediente-lista li span:nth-child(2) { flex: 1; min-width: 0; }
+
+/* El material que sigue fuera de un proyecto: el mismo tono de alerta que el
+   pendiente de cobro, porque son la misma pregunta -que falta por resolver-. */
+.expediente-pendiente-material { color: #b45309; font-weight: 700; }
+
+.expediente-material-aviso {
+  margin: 8px 0 0; font-size: 12px; color: #b45309;
+  padding: 6px 10px; background: #fffbeb; border-radius: 6px;
+}
+
+.expediente-lista li span.expediente-pendiente-material,
+.expediente-lista li span.muted {
+  font-size: 12px; white-space: nowrap;
+}

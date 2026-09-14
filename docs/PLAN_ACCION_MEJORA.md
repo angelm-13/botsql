@@ -75,6 +75,7 @@ Evidencia de la iteracion:
 - Migracion `20260816233000_manual_invoicing.sql` aplicada al PostgreSQL local.
 - Smoke test autenticado confirma 404 ante referencia de cliente inexistente; la base local tiene un proyecto con FK de cliente huerfana y requiere saneamiento de datos.
 - Calculo ponderado provisional: 50.7; calificacion efectiva 49.9 por el tope tenant/PII.
+- 2026-09-01: verificado el merge `initAngm` -> `initAlan` (`4283af8`) corriendo la suite completa de pytest vía Docker Compose: **847/848 pruebas correctas, 4 saltadas**. La unica falla (`TestLoginThrottle::test_attempts_expire_with_the_window`) no es del merge -- `login_throttle.py` y su test solo tienen un commit en toda su historia (`5a46fe1`), Angel nunca lo toco -- y no es determinista: pasa 3/3 veces aislada y las 22 pruebas de su archivo completo, solo falla dentro de la corrida de 848. Es deuda de aislamiento de pruebas preexistente: `_fallos` en `login_throttle.py` es un diccionario a nivel de modulo que solo se limpia via `login_throttle.reiniciar()` dentro de `TestLoginThrottle.setUp/tearDown`; ninguna otra prueba del repo toca las mismas llaves (`user:ana`/`ip:10.0.0.1`), asi que la fuente exacta de interferencia bajo carga completa no quedo identificada, solo confirmada como no-determinista y ajena al merge. **Pendiente (menor, no bloqueante):** agregar un fixture `autouse` a nivel de sesion en `backend/tests/conftest.py` que llame `login_throttle.reiniciar()` entre pruebas, para blindar contra este tipo de fuga de estado global a futuro.
 
 ## Responsables sugeridos
 

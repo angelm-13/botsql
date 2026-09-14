@@ -1,10 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, RefreshCw, Search, Trash2, Pencil } from "lucide-react";
+import { RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
-import { getAllCustomerSupplier, createCustomerSupplier, updateCustomerSupplier, deleteCustomerSupplier, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllUser } from "../api";
+import { getAllCustomerSupplier, createCustomerSupplier, updateCustomerSupplier, deleteCustomerSupplier, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllUser, getInvoiceCatalogs } from "../api";
+import { fetchAllPages } from "../utils/fetchAllPages";
+import Pagination from "../components/Pagination.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
+import PageHeader from "../components/PageHeader.jsx";
+import FormularioPlegable from "../components/FormularioPlegable.jsx";
 
-const emptyForm = { postal_code: "", name: "", title: "", contact_name: "", phone: "", email: "", web_site: "", street: "", number_ext: "", number_int: "", neighborhood: "", city: "", geographic_state: "", fiscal_type: "", last_fiscal_certification_date: "", tax_id: "", type: "", id_user: "", path_logo: "" };
+/* eslint-disable react/prop-types */
+
+const baseEmptyForm = { postal_code: "", name: "", title: "", contact_name: "", phone: "", email: "", web_site: "", street: "", number_ext: "", number_int: "", neighborhood: "", city: "", geographic_state: "", fiscal_type: "", last_fiscal_certification_date: "", tax_id: "", type: "", sla_level: "standard", credit_limit: "0", logistics_notes: "", is_principal: false, id_user: "", path_logo: "", serie_csd: "" };
 const validationRules = allValidationRules["customer_supplier"] || {};
 const ENTITY_KEY = "customer_supplier";
 const ACTION_CREATE = 1;
@@ -12,7 +18,7 @@ const ACTION_READ = 2;
 const ACTION_UPDATE = 4;
 const ACTION_DELETE = 8;
 const FIELD_VISIBLE_BIT = 2;
-const ALL_FIELD_NAMES = ['id_customer_supplier', 'postal_code', 'name', 'title', 'contact_name', 'phone', 'email', 'web_site', 'street', 'number_ext'];
+const ALL_FIELD_NAMES = ['id_customer_supplier', 'postal_code', 'name', 'title', 'contact_name', 'phone', 'email', 'web_site', 'street', 'number_ext', 'number_int', 'neighborhood', 'city', 'geographic_state', 'fiscal_type', 'last_fiscal_certification_date', 'tax_id', 'type', 'sla_level', 'credit_limit', 'logistics_notes', 'is_principal', 'id_user', 'path_logo', 'serie_csd'];
 
 function hasBit(value, bit) {
   return (Number(value || 0) & bit) === bit;
@@ -26,8 +32,11 @@ function readCurrentUser() {
   try { return JSON.parse(localStorage.getItem("user") || "{}"); } catch (_) { return {}; }
 }
 
-export default function CustomerSupplierPage() {
+export default function CustomerSupplierPage({ clientsOnly = false, mode = "all", entityType = "" }) {
   const { lang, t } = useI18n();
+  const forcedType = entityType || (mode === "suppliersOnly" ? "supplier" : clientsOnly || mode === "clientsOnly" ? "client" : "");
+  const entityLabel = forcedType === "client" ? "Clientes" : forcedType === "supplier" ? "Proveedores" : t("menu.customer_supplier");
+  const emptyForm = useMemo(() => ({ ...baseEmptyForm, type: forcedType }), [forcedType]);
   const [items, setItems] = useState([]);
   const [formData, setFormData] = useState(emptyForm);
   const [fieldErrors, setFieldErrors] = useState({});
@@ -35,6 +44,7 @@ export default function CustomerSupplierPage() {
   const [query, setQuery] = useState("");
   const [view, setView] = useState("table");
   const [page, setPage] = useState(1);
+  const [paginacion, setPaginacion] = useState({ total: 0, pages: 1, perPage: 0 });
   const [perPage, setPerPage] = useState(10);
   const [loading, setLoading] = useState(false);
   const [errorKey, setErrorKey] = useState("");
@@ -54,6 +64,19 @@ export default function CustomerSupplierPage() {
   const canSubmitForm = editingId ? canUpdate : canCreate;
   const showRowActions = canRead && (canUpdate || canDelete);
   const [userOptions, setUserOptions] = useState([]);
+  const [fiscalRegimeCatalog, setFiscalRegimeCatalog] = useState({ regimen_fiscal: {}, persona_fisica: [], persona_moral: [] });
+  const proyectOptions = [];
+
+  // Un RFC de 12 caracteres es persona moral, de 13 persona fisica -- mismo
+  // criterio que `_regimes_for_rfc` en el backend. Sin RFC capturado aun, se
+  // muestran todos para no bloquear la captura.
+  const allowedFiscalRegimes = useMemo(() => {
+    const rfcLength = String(formData.tax_id || "").trim().length;
+    const allowed = rfcLength === 12 ? fiscalRegimeCatalog.persona_moral
+      : rfcLength === 13 ? fiscalRegimeCatalog.persona_fisica
+      : Object.keys(fiscalRegimeCatalog.regimen_fiscal);
+    return allowed.filter((code) => fiscalRegimeCatalog.regimen_fiscal[code]);
+  }, [formData.tax_id, fiscalRegimeCatalog]);
 
   async function loadData() {
     if (!permissionReady || !canRead) {
@@ -63,8 +86,15 @@ export default function CustomerSupplierPage() {
     }
     setLoading(true); setErrorKey(""); setErrorMeta(null);
     try {
-      const data = await getAllCustomerSupplier({ page, per_page: perPage });
+      const data = await getAllCustomerSupplier({ page, per_page: perPage, q: query || undefined, ...(forcedType ? { type: forcedType } : {}) });
       setItems(Array.isArray(data) ? data : (data.items || data.data || []));
+      // La respuesta ya traia el total y el numero de paginas; antes se
+      // tiraban aqui, y por eso "Siguiente" no sabia cuando parar.
+      setPaginacion({
+        total: Array.isArray(data) ? 0 : (data.total ?? 0),
+        pages: Array.isArray(data) ? 1 : (data.pages ?? 1),
+        perPage: Array.isArray(data) ? 0 : (data.per_page ?? perPage),
+      });
     } catch (error) {
       setErrorKey(error.message || "errors.request_failed");
       setErrorMeta(error.payload?.meta || null);
@@ -73,7 +103,12 @@ export default function CustomerSupplierPage() {
     }
   }
 
-  useEffect(() => { loadData(); }, [page, perPage, permissionReady, canRead]);
+  useEffect(() => {
+    const temporizador = setTimeout(() => { loadData(); }, 300);
+    return () => clearTimeout(temporizador);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, perPage, permissionReady, canRead, query]);
+  useEffect(() => { setPage(1); }, [query]);
   useEffect(() => {
     async function loadFormOptions() {
       if (!permissionReady || (!canSubmitForm && !canRead)) return;
@@ -83,6 +118,18 @@ export default function CustomerSupplierPage() {
           setUserOptions(Array.isArray(userData) ? userData : (userData.items || []));
         } catch (_) {
           setUserOptions([]);
+        }
+      }
+      if (canSeeField("fiscal_type")) {
+        try {
+          const catalogs = await getInvoiceCatalogs();
+          setFiscalRegimeCatalog({
+            regimen_fiscal: catalogs?.regimen_fiscal || {},
+            persona_fisica: catalogs?.regimen_fiscal_persona_fisica || [],
+            persona_moral: catalogs?.regimen_fiscal_persona_moral || [],
+          });
+        } catch (_) {
+          setFiscalRegimeCatalog({ regimen_fiscal: {}, persona_fisica: [], persona_moral: [] });
         }
       }
     }
@@ -105,9 +152,9 @@ export default function CustomerSupplierPage() {
       }
       try {
         const [entityPermissionData, fieldPermissionData, fieldData] = await Promise.all([
-          getAllEntityPermission({ per_page: 5000 }),
-          getAllNmFieldPermission({ per_page: 5000 }),
-          getAllField({ per_page: 5000 })
+          fetchAllPages(getAllEntityPermission),
+          fetchAllPages(getAllNmFieldPermission),
+          fetchAllPages(getAllField)
         ]);
         const entityPermissions = normalizeList(entityPermissionData);
         const fieldPermissions = normalizeList(fieldPermissionData);
@@ -170,6 +217,7 @@ export default function CustomerSupplierPage() {
 
   function buildSubmitPayload() {
     const payload = { ...formData };
+    if (forcedType) payload.type = forcedType;
     if (ENTITY_KEY === "user" && editingId && isBlankValue(payload.password)) {
       delete payload.password;
     }
@@ -204,6 +252,9 @@ export default function CustomerSupplierPage() {
     if (ENTITY_KEY === "user" && !editingId) {
       if (isBlankValue(submitPayload.username)) nextFieldErrors.username = "validations.user.username.required";
       if (isBlankValue(submitPayload.password)) nextFieldErrors.password = "validations.user.password.required";
+    }
+    if (submitPayload.is_principal && isBlankValue(submitPayload.tax_id)) {
+      nextFieldErrors.tax_id = "validations.customer_supplier.principal_tax_id.required";
     }
     if (Object.keys(nextFieldErrors).length > 0) {
       setFieldErrors(nextFieldErrors);
@@ -354,100 +405,6 @@ export default function CustomerSupplierPage() {
     return String(idValue ?? item.id ?? "");
   }
 
-  function formatEntityCatalogLabel(entityName, fallback = "") {
-    if (!entityName) return "";
-    return t(`menu.${entityName}`, fallback || entityName);
-  }
-
-  function formatControlTypeLabel(value) {
-    const numeric = Number(value);
-    const labels = [];
-    if ((numeric & 1) === 1) labels.push(t("common.create", "Crear"));
-    if ((numeric & 2) === 2) labels.push(t("common.read", "Leer"));
-    if ((numeric & 4) === 4) labels.push(t("common.update", "Actualizar"));
-    if ((numeric & 8) === 8) labels.push(t("common.delete", "Eliminar"));
-    if (!labels.length) return String(value ?? "");
-    const description = numeric === 15 ? t("common.crud_full", "CRUD completo") : labels.join(" + ");
-    return `${numeric} - ${description}`;
-  }
-
-  // issue_12_phase3b_invoice_project_link_summary
-  function invoiceProjectLabel(invoice) {
-    if (ENTITY_KEY !== "invoice") return "";
-    const rawProjectId = invoice?.id_proyect;
-    if (rawProjectId === null || rawProjectId === undefined || String(rawProjectId).trim() === "") return "Sin proyecto";
-    const project = proyectOptions.find((item) => String(item.id_proyect ?? item.id ?? "") === String(rawProjectId));
-    return project ? getOptionLabel(project, "proyect") : `Proyecto #${rawProjectId}`;
-  }
-
-  function invoiceLinkStatus(invoice) {
-    const rawProjectId = invoice?.id_proyect;
-    return rawProjectId === null || rawProjectId === undefined || String(rawProjectId).trim() === "" ? "Sin vincular" : "Vinculada";
-  }
-
-  function invoiceDisplayFolio(invoice) {
-    return String(invoice?.folio || invoice?.folio_fiscal || invoice?.cfdi_code || invoice?.id_invoice || "—");
-  }
-
-  function invoiceMoney(value) {
-    const locale = lang === "ja" ? "ja-JP" : lang === "en" ? "en-US" : lang === "pt" ? "pt-BR" : lang === "de" ? "de-DE" : "es-MX";
-    const n = Number(value || 0);
-    return n.toLocaleString(locale, { style: "currency", currency: "MXN" });
-  }
-
-  function invoiceLinkedCount() {
-    return filtered.filter((item) => item.id_proyect !== null && item.id_proyect !== undefined && String(item.id_proyect).trim() !== "").length;
-  }
-
-  function renderInvoiceProjectSummary() {
-    if (ENTITY_KEY !== "invoice" || !canRead || !filtered.length) return null;
-    const linked = invoiceLinkedCount();
-    const unlinked = filtered.length - linked;
-    return (
-      <div className="table-card invoice-project-card">
-        <div className="invoice-project-header">
-          <div>
-            <strong>Facturas / Proyecto</strong>
-            <p className="muted">Identifica facturas cargadas desde XML y corrige su proyecto desde el formulario existente.</p>
-          </div>
-          <div className="invoice-project-metrics">
-            <span><strong>{filtered.length}</strong>Total</span>
-            <span><strong>{linked}</strong>Vinculadas</span>
-            <span><strong>{unlinked}</strong>Sin proyecto</span>
-          </div>
-        </div>
-        <div className="table-wrap">
-          <table className="invoice-project-table">
-            <thead>
-              <tr>
-                <th>Factura / UUID</th>
-                <th>Emisor</th>
-                <th>Receptor</th>
-                <th>Total</th>
-                <th>Proyecto</th>
-                <th>Vinculación</th>
-                <th>Acción</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((item) => (
-                <tr key={`invoice-link-${item.id_invoice}`}>
-                  <td><strong>{invoiceDisplayFolio(item)}</strong><p className="cell-value">{item.folio_fiscal || item.cfdi_code || "—"}</p></td>
-                  <td><span>{item.nombre_emisor || "—"}</span></td>
-                  <td><span>{item.nombre_receptor || item.id_customer_supplier || "—"}</span></td>
-                  <td><strong>{invoiceMoney(item.total)}</strong></td>
-                  <td><span>{invoiceProjectLabel(item)}</span></td>
-                  <td><span className={item.id_proyect ? "invoice-link-badge linked" : "invoice-link-badge unlinked"}>{invoiceLinkStatus(item)}</span></td>
-                  <td>{canUpdate ? <button type="button" className="button small" onClick={() => startEdit(item)}>Editar relación</button> : <span className="muted">Sin permiso</span>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    );
-  }
-
   function renderError() {
     if (!errorKey) return "";
     const fieldLabel = errorMeta?.field ? t(`fields.customer_supplier.${errorMeta.field}`, errorMeta.field) : "";
@@ -469,17 +426,24 @@ export default function CustomerSupplierPage() {
   const groups = useMemo(() => filtered.reduce((acc, item) => {
     const key = String(item.geographic_state ?? t("common.unclassified"));
     acc[key] = acc[key] || []; acc[key].push(item); return acc;
-  }, {}), [filtered, lang]);
+  }, {}), [filtered, lang, t]);
 
   return (
     <section className="entity-page">
-      <div className="page-heading">
-        <div><p className="eyebrow">{t("common.module")}</p><h2>{t("menu.customer_supplier")}</h2></div>
+      <PageHeader
+        eyebrow={forcedType === "client" ? "CRM" : forcedType ? "Logística" : t("common.module")}
+        titulo={entityLabel}
+      >
         <button className="button ghost" onClick={loadData} disabled={!canRead}><RefreshCw size={16} />{loading ? t("common.loading") : t("common.refresh")}</button>
-      </div>
+      </PageHeader>
 
-      {canSubmitForm && <form className="form-card" onSubmit={handleSubmit}>
-        <div className="form-header"><Plus size={18} /><strong>{editingId ? t("common.edit") : t("common.new")}</strong></div>
+      {noticeKey && <div className="alert success">{t(noticeKey, noticeKey)}</div>}
+      {canSubmitForm && (
+      <FormularioPlegable
+        titulo={editingId ? t("common.edit") : t("common.new")}
+        abrirSi={editingId}
+        onSubmit={handleSubmit}
+      >
         <div className="form-grid">
           {canSeeField("postal_code") && (
           <label className="field">
@@ -575,7 +539,12 @@ export default function CustomerSupplierPage() {
           {canSeeField("fiscal_type") && (
           <label className="field">
             <span>{t("fields.customer_supplier.fiscal_type")}</span>
-            <input name="fiscal_type" type="text" maxLength={150} value={formData.fiscal_type ?? ""} onChange={handleChange} placeholder={t("fields.customer_supplier.fiscal_type")} aria-invalid={Boolean(fieldErrors["fiscal_type"])} {...inputPropsForField("fiscal_type", validationRules["fiscal_type"], "text")} />
+            <select name="fiscal_type" value={formData.fiscal_type ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors["fiscal_type"])} {...inputPropsForField("fiscal_type", validationRules["fiscal_type"], "text")}>
+              <option value="">{t("common.select", "— Selecciona —")}</option>
+              {allowedFiscalRegimes.map((code) => (
+                <option key={code} value={code}>{code} · {fiscalRegimeCatalog.regimen_fiscal[code]}</option>
+              ))}
+            </select>
             {fieldErrors["fiscal_type"] && <span className="field-error">{formatFieldError("fiscal_type")}</span>}
           </label>
           )}
@@ -593,7 +562,7 @@ export default function CustomerSupplierPage() {
             {fieldErrors["tax_id"] && <span className="field-error">{formatFieldError("tax_id")}</span>}
           </label>
           )}
-          {canSeeField("type") && (
+          {canSeeField("type") && !forcedType && (
           <label className="field">
             <span>{t("fields.customer_supplier.type")}</span>
             <select name="type" value={formData.type ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors["type"])} {...inputPropsForField("type", validationRules["type"], "select")}>
@@ -602,6 +571,44 @@ export default function CustomerSupplierPage() {
               <option key="supplier" value="supplier">supplier</option>
             </select>
             {fieldErrors["type"] && <span className="field-error">{formatFieldError("type")}</span>}
+          </label>
+          )}
+          {canSeeField("sla_level") && (
+          <label className="field">
+            <span>Nivel SLA</span>
+            <select name="sla_level" value={formData.sla_level ?? "standard"} onChange={handleChange} aria-invalid={Boolean(fieldErrors.sla_level)}>
+              <option value="standard">Standard</option>
+              <option value="premium">Premium</option>
+            </select>
+            {fieldErrors.sla_level && <span className="field-error">{formatFieldError("sla_level")}</span>}
+          </label>
+          )}
+          {canSeeField("credit_limit") && (
+          <label className="field">
+            <span>Límite de crédito</span>
+            <input name="credit_limit" type="number" min="0" step="0.01" value={formData.credit_limit ?? "0"} onChange={handleChange} aria-invalid={Boolean(fieldErrors.credit_limit)} />
+            {fieldErrors.credit_limit && <span className="field-error">{formatFieldError("credit_limit")}</span>}
+          </label>
+          )}
+          {canSeeField("logistics_notes") && (
+          <label className="field wide-field">
+            <span>Notas logísticas</span>
+            <textarea name="logistics_notes" value={formData.logistics_notes ?? ""} onChange={handleChange} rows="3" />
+          </label>
+          )}
+          {canSeeField("is_principal") && (
+          <label className="checkbox-inline principal-company-field">
+            <input name="is_principal" type="checkbox" checked={Boolean(formData.is_principal)} onChange={handleChange} />
+            <span>{t("fields.customer_supplier.is_principal", "Empresa principal")}</span>
+            <small>{t("common.principal_company_hint", "Su RFC se usará para clasificar automáticamente facturas XML como compras o ventas.")}</small>
+          </label>
+          )}
+          {canSeeField("serie_csd") && formData.is_principal && (
+          <label className="field">
+            <span>{t("fields.customer_supplier.serie_csd", "Serie del CFDI (opcional)")}</span>
+            <input name="serie_csd" type="text" maxLength={25} value={formData.serie_csd ?? ""} onChange={handleChange} placeholder={t("fields.customer_supplier.serie_csd", "Serie del CFDI (opcional)")} aria-invalid={Boolean(fieldErrors["serie_csd"])} />
+            <small>{t("common.serie_csd_hint", "Se usa como serie por defecto al emitir facturas de esta empresa; una factura puede capturar otra distinta.")}</small>
+            {fieldErrors["serie_csd"] && <span className="field-error">{formatFieldError("serie_csd")}</span>}
           </label>
           )}
           {canSeeField("id_user") && (
@@ -630,7 +637,8 @@ export default function CustomerSupplierPage() {
           <button className="button primary" type="submit">{t("common.save")}</button>
           <button className="button" type="button" onClick={() => { setFormData(emptyForm); setEditingId(null); setFieldErrors({}); }}>{t("common.cancel")}</button>
         </div>
-      </form>}
+      </FormularioPlegable>
+      )}
 
       {canRead && <div className="toolbar">
         <div className="search-box"><Search size={16} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("common.search")} /></div>
@@ -646,7 +654,6 @@ export default function CustomerSupplierPage() {
       {permissionReady && !canRead && !canCreate && <div className="empty"><strong>{t("security.permission.read_denied", "Sin permiso de lectura")}</strong><p>{t("common.module_hidden_hint", "Este módulo no tiene acciones seleccionadas; quedará oculto y sus campos no se mostrarán.")}</p></div>}
       {canRead && !loading && filtered.length === 0 && <div className="empty"><strong>{t("common.empty_title")}</strong><p>{t("common.empty_body")}</p></div>}
 
-      {view === "table" && renderInvoiceProjectSummary()}
 
       {canRead && view === "table" && filtered.length > 0 && <div className="table-card"><table><thead><tr>{showRowActions && <th>{t("common.actions")}</th>}
               {canSeeField("id_customer_supplier") && <th>{t("fields.customer_supplier.id_customer_supplier")}</th>}
@@ -659,10 +666,12 @@ export default function CustomerSupplierPage() {
               {canSeeField("web_site") && <th>{t("fields.customer_supplier.web_site")}</th>}
               {canSeeField("street") && <th>{t("fields.customer_supplier.street")}</th>}
               {canSeeField("number_ext") && <th>{t("fields.customer_supplier.number_ext")}</th>}
+              {canSeeField("sla_level") && <th>Nivel SLA</th>}
+              {canSeeField("credit_limit") && <th>Límite de crédito</th>}
         </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_customer_supplier}>{showRowActions && <td className="row-actions">{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</td>}
               {canSeeField("id_customer_supplier") && <td><pre className="cell-value">{formatTableValue(item.id_customer_supplier)}</pre></td>}
               {canSeeField("postal_code") && <td><pre className="cell-value">{formatTableValue(item.postal_code)}</pre></td>}
-              {canSeeField("name") && <td><pre className="cell-value">{formatTableValue(item.name)}</pre></td>}
+              {canSeeField("name") && <td><pre className="cell-value">{formatTableValue(item.name)}{item.is_principal ? ` · ${t("fields.customer_supplier.is_principal", "Empresa principal")}` : ""}</pre></td>}
               {canSeeField("title") && <td><pre className="cell-value">{formatTableValue(item.title)}</pre></td>}
               {canSeeField("contact_name") && <td><pre className="cell-value">{formatTableValue(item.contact_name)}</pre></td>}
               {canSeeField("phone") && <td><pre className="cell-value">{formatTableValue(item.phone)}</pre></td>}
@@ -670,11 +679,20 @@ export default function CustomerSupplierPage() {
               {canSeeField("web_site") && <td><pre className="cell-value">{formatTableValue(item.web_site)}</pre></td>}
               {canSeeField("street") && <td><pre className="cell-value">{formatTableValue(item.street)}</pre></td>}
               {canSeeField("number_ext") && <td><pre className="cell-value">{formatTableValue(item.number_ext)}</pre></td>}
+              {canSeeField("sla_level") && <td><pre className="cell-value">{formatTableValue(item.sla_level)}</pre></td>}
+              {canSeeField("credit_limit") && <td><pre className="cell-value">{formatTableValue(item.credit_limit)}</pre></td>}
         </tr>)}</tbody></table></div>}
 
-      {canRead && view === "kanban" && filtered.length > 0 && <div className="kanban">{Object.entries(groups).map(([key, groupItems]) => <div className="kanban-column" key={key}><h3>{key} <span>{groupItems.length}</span></h3>{groupItems.map((item) => <article className="kanban-card" key={item.id_customer_supplier}><strong>{String(item.name ?? item.id_customer_supplier)}</strong><small>#{item.id_customer_supplier}</small>{showRowActions && <div>{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</div>}</article>)}</div>)}</div>}
+      {canRead && view === "kanban" && filtered.length > 0 && <div className="kanban">{Object.entries(groups).map(([key, groupItems]) => <div className="kanban-column" key={key}><h3>{key} <span>{groupItems.length}</span></h3>{groupItems.map((item) => <article className="kanban-card" key={item.id_customer_supplier}><strong>{String(item.name ?? item.id_customer_supplier)}</strong>{item.is_principal && <span className="principal-company-badge">{t("fields.customer_supplier.is_principal", "Empresa principal")}</span>}<small>#{item.id_customer_supplier}</small>{showRowActions && <div>{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</div>}</article>)}</div>)}</div>}
 
-      <div className="pagination"><button className="button" disabled={page <= 1} onClick={() => setPage(page - 1)}>{t("common.previous")}</button><span>{t("common.page")} {page}</span><button className="button" onClick={() => setPage(page + 1)}>{t("common.next")}</button></div>
+      <Pagination
+        page={page}
+        pages={paginacion.pages}
+        total={paginacion.total}
+        perPage={paginacion.perPage}
+        loading={loading}
+        onChange={setPage}
+      />
     </section>
   );
 }

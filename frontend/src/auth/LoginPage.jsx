@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { KeyRound, Lock, ShieldCheck, UserRound } from "lucide-react";
+import { Eye, EyeOff, KeyRound, Lock, ShieldCheck, UserRound } from "lucide-react";
 import { login, verifyMfaLogin, clearMyPermissionsCache } from "../api";
+import LanguagePicker from "../components/LanguagePicker";
 import { useI18n } from "../i18n";
 
 const initialCredentials = { username: "", password: "" };
@@ -21,11 +22,12 @@ function normalizeUser(payload) {
 export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { t, lang, setLanguage } = useI18n();
+  const { t } = useI18n();
   const [step, setStep] = useState("credentials");
   const [credentials, setCredentials] = useState(initialCredentials);
   const [mfaCode, setMfaCode] = useState("");
   const [tempToken, setTempToken] = useState(localStorage.getItem("mfa_temp_token") || "");
+  const [verContrasena, setVerContrasena] = useState(false);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -106,13 +108,13 @@ export default function LoginPage() {
       </section>
       <section className="auth-card">
         <div className="auth-card-header"><ShieldCheck size={28} /><div><p className="eyebrow">{t("common.secure_session", "Sesión protegida")}</p><h2>{step === "mfa" ? t("common.mfa_title", "Verificación MFA") : t("common.sign_in", "Iniciar sesión")}</h2></div></div>
-        <label className="language-picker auth-language">{t("common.language", "Idioma")}<select value={lang} onChange={(event) => setLanguage(event.target.value)}><option value="es">ES</option><option value="en">EN</option><option value="pt">PT</option><option value="de">DE</option><option value="ja">日本語</option></select></label>
+        <LanguagePicker className="auth-language" />
         {notice && <div className="alert success">{notice}</div>}
         {error && <div className="alert error">{error}</div>}
         {step === "credentials" ? (
           <form className="auth-form" onSubmit={handleLogin}>
             <label className="field"><span>{t("common.username", "Usuario")}</span><div className="input-icon"><UserRound size={18} /><input autoFocus name="username" value={credentials.username} onChange={(event) => setCredentials((prev) => ({ ...prev, username: event.target.value }))} autoComplete="username" required /></div></label>
-            <label className="field"><span>{t("common.password", "Contraseña")}</span><div className="input-icon"><Lock size={18} /><input name="password" type="password" value={credentials.password} onChange={(event) => setCredentials((prev) => ({ ...prev, password: event.target.value }))} autoComplete="current-password" required /></div></label>
+            <label className="field"><span>{t("common.password", "Contraseña")}</span><div className="input-icon"><Lock size={18} /><input name="password" type={verContrasena ? "text" : "password"} value={credentials.password} onChange={(event) => setCredentials((prev) => ({ ...prev, password: event.target.value }))} autoComplete="current-password" required /><button type="button" className="input-icon-toggle" onClick={() => setVerContrasena((prev) => !prev)} aria-label={verContrasena ? t("common.hide_password", "Ocultar contraseña") : t("common.show_password", "Mostrar contraseña")} tabIndex={-1}>{verContrasena ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></label>
             <button className="button primary auth-submit" type="submit" disabled={loading}>{loading ? t("common.loading", "Cargando...") : t("common.sign_in", "Iniciar sesión")}</button>
           </form>
         ) : (

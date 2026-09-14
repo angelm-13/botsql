@@ -1,8 +1,43 @@
 from __future__ import annotations
 
 import unittest
+from io import BytesIO
+from unittest.mock import patch
 
-from app.services.stamping import FakeStampingProvider, StampingResult
+import jwt
+
+from app.models import CustomerSupplier, Invoice, Proyect, Status
+from app.models.session import transaction_context
+from app.services.manual_invoice_service import create_manual_invoice
+from app.services.cfdi_xml import parse_cfdi
+from app.services.invoice_artifacts import invoice_xml_path
+from app.services.invoice_artifacts import build_fake_cfdi_xml
+from app.services.stamping import (
+    FacturamaMultiemisorProvider, FacturamaSandboxProvider, FakeStampingProvider, StampingResult,
+)
+from app.services.stamping import stamp_invoice
+from app.utils.auth import SECRET_KEY
+from app.utils.errors import AppError
+from tests.conftest import BackendTestCase
+
+
+def _falta_el_motor_de_pdf() -> str:
+    """Motivo por el que no se puede generar un PDF aqui, o cadena vacia.
+
+    WeasyPrint necesita bibliotecas nativas de GTK que en Windows no vienen con
+    el paquete de Python. En el contenedor -que es el entorno real- si estan, y
+    ahi esta prueba corre completa.
+
+    La comprobacion es contra el import de verdad, no contra el sistema
+    operativo: si alguien instala las bibliotecas en Windows, la prueba corre;
+    y si el PDF se rompe por cualquier otra razon, sigue fallando como debe.
+    Omitir por plataforma habria escondido regresiones reales.
+    """
+    try:
+        import weasyprint  # noqa: F401
+    except Exception as error:
+        return f"WeasyPrint no puede cargar sus bibliotecas nativas: {error}"
+    return ""
 
 
 class TestStampingProviders(unittest.TestCase):
@@ -28,6 +63,581 @@ class TestStampingProviders(unittest.TestCase):
         self.assertEqual(result.status, "uncertain")
         self.assertEqual(result.reference, "provider-ref")
 
+    def test_facturama_maps_invoice_draft_to_cfdi_api(self):
+        provider = FacturamaSandboxProvider(
+            base_url="https://apisandbox.facturama.mx",
+            username="demo",
+            password="secret",
+            name_id="1",
+        )
+
+        body = provider.build_request_body({
+            "issuer": {"rfc": "AAA010101AAA", "name": "Emisor", "tax_regime": "601", "postal_code": "37000"},
+            "receiver": {"rfc": "BBB010101BBB", "name": "Cliente", "tax_regime": "601", "postal_code": "37100", "cfdi_use": "G03"},
+            "payment_form": "03", "payment_method": "PUE", "currency": "MXN", "cfdi_type": "I",
+            "concepts": [{
+                "description": "Servicio", "quantity": "2", "unit_price": "100", "amount": "200",
+                "discount": "20", "sat_product_key": "80101500", "sat_unit_key": "E48",
+                "tax_object": "02", "iva_rate": "0.16", "isr_retention_rate": "0.10", "iva_retention_rate": "0",
+            }],
+        })
+
+        self.assertEqual("37000", body["ExpeditionPlace"])
+        self.assertEqual("03", body["PaymentForm"])
+        self.assertEqual("BBB010101BBB", body["Receiver"]["Rfc"])
+        self.assertEqual("80101500", body["Items"][0]["ProductCode"])
+        self.assertEqual("190.80", body["Items"][0]["Total"])
+
+    def test_facturama_multiemisor_sends_an_issuer_block_instead_of_name_id(self):
+        provider = FacturamaMultiemisorProvider(
+            base_url="https://apisandbox.facturama.mx", username="demo", password="secret",
+        )
+
+        body = provider.build_request_body({
+            "issuer": {"rfc": "AAA010101AAA", "name": "Emisor", "tax_regime": "601", "postal_code": "37000"},
+            "receiver": {"rfc": "BBB010101BBB", "name": "Cliente", "tax_regime": "601", "postal_code": "37100", "cfdi_use": "G03"},
+            "payment_form": "03", "payment_method": "PUE", "currency": "MXN", "cfdi_type": "I",
+            "concepts": [],
+        })
+
+        self.assertEqual({"Rfc": "AAA010101AAA", "Name": "Emisor", "FiscalRegime": "601"}, body["Issuer"])
+        self.assertEqual("37000", body["ExpeditionPlace"], "usa el CP del emisor, no una config global de cuenta")
+        self.assertNotIn("NameId", body, "NameId es del perfil de la cuenta API Web, no aplica en multiemisor")
+
+    def test_facturama_multiemisor_uses_the_api_lite_paths(self):
+        provider = FacturamaMultiemisorProvider(
+            base_url="https://apisandbox.facturama.mx", username="demo", password="secret",
+        )
+
+        self.assertEqual("/api-lite/3/cfdis", provider.CFDIS_PATH)
+        self.assertEqual("/api-lite/csds", provider.CSDS_PATH)
+
+
+class CapturingProvider(FakeStampingProvider):
+    def stamp(self, payload, idempotency_key):
+        self.payload = payload
+        return super().stamp(payload, idempotency_key)
+
+
+class CapturingMultiemisorProvider(FacturamaMultiemisorProvider):
+    """Como CapturingProvider, pero arma el body real -- sin red -- para
+    poder inspeccionar el bloque Issuer que de verdad se mandaria al PAC."""
+
+    def __init__(self):
+        super().__init__(base_url="https://apisandbox.facturama.mx", username="demo", password="secret")
+
+    def stamp(self, payload, idempotency_key):
+        self.request_body = self.build_request_body(payload)
+        stamp_uuid, xml = build_fake_cfdi_xml(payload)
+        return StampingResult("stamped", stamp_uuid, xml=xml)
+
+
+class TestStampInvoice(BackendTestCase):
+    def setUp(self):
+        super().setUp()
+        with transaction_context() as db:
+            db.add_all([
+                CustomerSupplier(id_customer_supplier=10, name="Emisor Demo", tax_id="AAA010101AAA", postal_code="37000", fiscal_type="601", type="supplier", id_user=1, created_by=1),
+                CustomerSupplier(id_customer_supplier=20, name="Cliente Demo", tax_id="BBB010101BBB", postal_code="37100", fiscal_type="601", type="client", id_user=1, created_by=1),
+                Proyect(id_proyect=30, id_customer_supplier=20, leader=1, proyect_description="Proyecto demo", created_by=1),
+                Status(id_status=40, status_description="Activo", category="invoice", is_terminal=False, sort_order="asc", created_by=1),
+            ])
+
+    def _create_invoice(self):
+        result = create_manual_invoice({
+            "id_proyect": 30,
+            "id_customer_supplier": 20,
+            "id_issuer_customer_supplier": 10,
+            "id_status": 40,
+            "forma_pago": "03",
+            "metodo_pago": "PUE",
+            "uso_cfdi": "G03",
+            "concepts": [{
+                "description": "Servicio demo",
+                "quantity": 1,
+                "unit_price": 100,
+                "sat_product_key": "80101500",
+                "sat_unit_key": "E48",
+            }],
+        }, {"id_user": 1, "id_proyect": 30})
+        return result["invoice"]["id_invoice"]
+
+    def test_manual_invoice_builds_full_payload_and_persists_stamp(self):
+        invoice_id = self._create_invoice()
+        provider = CapturingProvider()
+
+        operation, created = stamp_invoice(invoice_id, "manual-demo-1", {"id_user": 1, "id_proyect": 30}, provider)
+
+        self.assertTrue(created)
+        self.assertEqual(operation["status"], "stamped")
+        self.assertEqual(provider.payload["issuer"]["rfc"], "AAA010101AAA")
+        self.assertEqual(provider.payload["receiver"]["rfc"], "BBB010101BBB")
+        self.assertEqual(provider.payload["concepts"][0]["sat_product_key"], "80101500")
+        stored_cfdi = parse_cfdi(invoice_xml_path(invoice_id).read_bytes())
+        with transaction_context() as db:
+            invoice = db.get(Invoice, invoice_id)
+            self.assertEqual(invoice.invoice_status, "timbrada")
+            self.assertEqual(invoice.folio_fiscal, stored_cfdi["uuid"])
+            self.assertEqual(invoice.no_certificado_sat, "30001000000400000002")
+            self.assertIsNotNone(invoice.certification_date)
+
+    def test_multiemisor_sends_a_distinct_issuer_block_per_invoice(self):
+        """Multiemisor: dos facturas con emisor distinto no deben confundirse."""
+        with transaction_context() as db:
+            db.add(CustomerSupplier(
+                id_customer_supplier=11, name="Otro Emisor", tax_id="CCC010101CCC",
+                postal_code="44100", fiscal_type="601", type="supplier", id_user=1, created_by=1,
+            ))
+        invoice_a = self._create_invoice()  # emisor 10, AAA010101AAA
+        invoice_b = create_manual_invoice({
+            "id_proyect": 30, "id_customer_supplier": 20, "id_issuer_customer_supplier": 11,
+            "id_status": 40, "forma_pago": "03", "metodo_pago": "PUE", "uso_cfdi": "G03",
+            "concepts": [{
+                "description": "Servicio demo", "quantity": 1, "unit_price": 100,
+                "sat_product_key": "80101500", "sat_unit_key": "E48",
+            }],
+        }, {"id_user": 1, "id_proyect": 30})["invoice"]["id_invoice"]
+
+        provider_a = CapturingMultiemisorProvider()
+        provider_b = CapturingMultiemisorProvider()
+        stamp_invoice(invoice_a, "multi-a", {"id_user": 1, "id_proyect": 30}, provider_a)
+        stamp_invoice(invoice_b, "multi-b", {"id_user": 1, "id_proyect": 30}, provider_b)
+
+        self.assertEqual("AAA010101AAA", provider_a.request_body["Issuer"]["Rfc"])
+        self.assertEqual("CCC010101CCC", provider_b.request_body["Issuer"]["Rfc"])
+        self.assertNotEqual(
+            provider_a.request_body["Issuer"], provider_b.request_body["Issuer"],
+        )
+
+    def test_invalid_fiscal_data_does_not_call_provider(self):
+        invoice_id = self._create_invoice()
+        provider = CapturingProvider()
+        with transaction_context() as db:
+            db.get(Invoice, invoice_id).domicilio_fiscal_receptor = None
+            db.get(CustomerSupplier, 20).postal_code = None
+
+        with self.assertRaises(AppError) as raised:
+            stamp_invoice(invoice_id, "manual-demo-2", {"id_user": 1, "id_proyect": 30}, provider)
+
+        self.assertEqual(raised.exception.message_key, "invoice.stamping_validation_failed")
+        self.assertEqual(provider.calls, 0)
+        with transaction_context() as db:
+            self.assertEqual(db.get(Invoice, invoice_id).invoice_status, "pendiente")
+
+    def test_the_stamped_xml_downloads_through_an_authenticated_route(self):
+        invoice_id = self._create_invoice()
+        stamp_invoice(invoice_id, "manual-demo-http", {"id_user": 1, "id_proyect": 30}, FakeStampingProvider())
+        token = jwt.encode({"id_user": 1, "id_proyect": 30, "is_superuser": True}, SECRET_KEY, algorithm="HS256")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        xml_response = self.client.get(f"/invoice/{invoice_id}/xml", headers=headers)
+
+        self.assertEqual(xml_response.status_code, 200)
+        self.assertEqual(xml_response.mimetype, "application/xml")
+        with transaction_context() as db:
+            persisted_uuid = db.get(Invoice, invoice_id).folio_fiscal
+        self.assertEqual(parse_cfdi(xml_response.data)["uuid"], persisted_uuid)
+
+    def test_the_legacy_public_document_route_still_demands_a_token(self):
+        """Una factura ya timbrada no se descarga por la ruta vieja sin token.
+
+        Se timbra primero a proposito: sobre una factura sin documentos la ruta
+        responde 404 y no probaria nada; lo que interesa es que un CFDI que si
+        existe siga exigiendo credenciales.
+
+        Depende del motor de PDF aunque no genere ninguno: sin el, el modulo de
+        documentos no llega a registrarse y la ruta ni siquiera existe, asi que
+        el 404 vendria de la ausencia de la ruta y no de la autorizacion.
+        """
+        motivo = _falta_el_motor_de_pdf()
+        if motivo:
+            self.skipTest(motivo)
+
+        invoice_id = self._create_invoice()
+        stamp_invoice(invoice_id, "manual-demo-legacy", {"id_user": 1, "id_proyect": 30}, FakeStampingProvider())
+
+        response = self.client.get(f"/documents/invoice_pdf/{invoice_id}?format=pdf")
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_the_stamped_pdf_downloads_through_an_authenticated_route(self):
+        motivo = _falta_el_motor_de_pdf()
+        if motivo:
+            self.skipTest(motivo)
+
+        invoice_id = self._create_invoice()
+        stamp_invoice(invoice_id, "manual-demo-pdf", {"id_user": 1, "id_proyect": 30}, FakeStampingProvider())
+        token = jwt.encode({"id_user": 1, "id_proyect": 30, "is_superuser": True}, SECRET_KEY, algorithm="HS256")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        for ruta in (f"/invoice/{invoice_id}/pdf", f"/invoice/{invoice_id}/pdf?document=quotation"):
+            with self.subTest(ruta=ruta):
+                response = self.client.get(ruta, headers=headers)
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.mimetype, "application/pdf")
+                self.assertTrue(response.data.startswith(b"%PDF"))
+
+
+class TestFolioConsecutivo(BackendTestCase):
+    """Comparado contra cotizador_demo (el sistema anterior de un cliente
+    real): alla el timbrado asigna folio consecutivo real. Aqui era texto
+    libre sin ningun control. Esto fija el comportamiento nuevo.
+    """
+
+    def setUp(self):
+        super().setUp()
+        with transaction_context() as db:
+            db.add_all([
+                CustomerSupplier(id_customer_supplier=10, name="Emisor Demo", tax_id="AAA010101AAA", postal_code="37000", fiscal_type="601", type="supplier", id_user=1, created_by=1),
+                CustomerSupplier(id_customer_supplier=11, name="Otro Emisor", tax_id="CCC010101CCC", postal_code="44100", fiscal_type="601", type="supplier", id_user=1, created_by=1),
+                CustomerSupplier(id_customer_supplier=20, name="Cliente Demo", tax_id="BBB010101BBB", postal_code="37100", fiscal_type="601", type="client", id_user=1, created_by=1),
+                Proyect(id_proyect=30, id_customer_supplier=20, leader=1, proyect_description="Proyecto demo", created_by=1),
+                Status(id_status=40, status_description="Activo", category="invoice", is_terminal=False, sort_order="asc", created_by=1),
+            ])
+
+    def _invoice(self, id_issuer=10, folio=None):
+        payload = {
+            "id_proyect": 30, "id_customer_supplier": 20, "id_issuer_customer_supplier": id_issuer,
+            "id_status": 40, "forma_pago": "03", "metodo_pago": "PUE", "uso_cfdi": "G03",
+            "concepts": [{
+                "description": "Servicio demo", "quantity": 1, "unit_price": 100,
+                "sat_product_key": "80101500", "sat_unit_key": "E48",
+            }],
+        }
+        if folio:
+            payload["folio"] = folio
+        return create_manual_invoice(payload, {"id_user": 1, "id_proyect": 30})["invoice"]["id_invoice"]
+
+    def _folio(self, invoice_id):
+        with transaction_context() as db:
+            return db.get(Invoice, invoice_id).folio
+
+    def test_the_first_stamp_for_an_issuer_gets_folio_one(self):
+        invoice_id = self._invoice()
+
+        stamp_invoice(invoice_id, "folio-1", {"id_user": 1, "id_proyect": 30}, CapturingProvider())
+
+        self.assertEqual("1", self._folio(invoice_id))
+
+    def test_consecutive_stamps_get_consecutive_folios(self):
+        primera = self._invoice()
+        segunda = self._invoice()
+
+        stamp_invoice(primera, "folio-a", {"id_user": 1, "id_proyect": 30}, CapturingProvider())
+        stamp_invoice(segunda, "folio-b", {"id_user": 1, "id_proyect": 30}, CapturingProvider())
+
+        self.assertEqual("1", self._folio(primera))
+        self.assertEqual("2", self._folio(segunda))
+
+    def test_each_issuer_keeps_its_own_series(self):
+        """Multiemisor: cada RFC lleva su propio consecutivo, no uno compartido."""
+        emisor_a_1 = self._invoice(id_issuer=10)
+        emisor_b_1 = self._invoice(id_issuer=11)
+        emisor_a_2 = self._invoice(id_issuer=10)
+
+        stamp_invoice(emisor_a_1, "serie-a1", {"id_user": 1, "id_proyect": 30}, CapturingProvider())
+        stamp_invoice(emisor_b_1, "serie-b1", {"id_user": 1, "id_proyect": 30}, CapturingProvider())
+        stamp_invoice(emisor_a_2, "serie-a2", {"id_user": 1, "id_proyect": 30}, CapturingProvider())
+
+        self.assertEqual("1", self._folio(emisor_a_1))
+        self.assertEqual("1", self._folio(emisor_b_1))  # su propia serie, no hereda el 2 del otro emisor
+        self.assertEqual("2", self._folio(emisor_a_2))
+
+    def test_a_manually_captured_folio_is_never_overwritten(self):
+        invoice_id = self._invoice(folio="MIGRADO-0042")
+
+        stamp_invoice(invoice_id, "folio-manual", {"id_user": 1, "id_proyect": 30}, CapturingProvider())
+
+        self.assertEqual("MIGRADO-0042", self._folio(invoice_id))
+
+    def test_a_manual_folio_does_not_consume_a_number_from_the_automatic_series(self):
+        con_folio_manual = self._invoice(folio="MIGRADO-0042")
+        sin_folio = self._invoice()
+
+        stamp_invoice(con_folio_manual, "folio-c", {"id_user": 1, "id_proyect": 30}, CapturingProvider())
+        stamp_invoice(sin_folio, "folio-d", {"id_user": 1, "id_proyect": 30}, CapturingProvider())
+
+        self.assertEqual("1", self._folio(sin_folio))
+
+    def test_the_counter_never_collides_with_folios_captured_before_it_existed(self):
+        """Caso real confirmado en torredigital-prod: el emisor ya tenia
+        facturas con folio '1' a '11' capturado a mano, de antes de que
+        existiera este contador. Si el contador arranca en 1 a ciegas,
+        el siguiente timbrado real repite un folio ya usado.
+        """
+        for numero in ("1", "3", "7", "11"):
+            self._invoice(folio=numero)
+        nueva = self._invoice()
+
+        stamp_invoice(nueva, "folio-post-migracion", {"id_user": 1, "id_proyect": 30}, CapturingProvider())
+
+        self.assertEqual("12", self._folio(nueva))
+
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestFacturamaPayloadMapping(unittest.TestCase):
+    def _provider(self):
+        return FacturamaSandboxProvider(
+            base_url="https://apisandbox.facturama.mx", username="demo", password="secret",
+            name_id="1",
+        )
+
+    def _payload(self, **concept_overrides):
+        concept = {
+            "description": "Servicio", "quantity": "3", "unit_price": "33.333",
+            "amount": "100.00", "discount": "0", "taxable_base": "100.00",
+            "sat_product_key": "81111500", "sat_unit_key": "E48", "tax_object": "02",
+            "breaks_down_taxes": True, "iva_exempt": False, "iva_rate": "0.160000",
+            "transferred_iva": "16.00", "isr_retention_rate": "0", "retained_isr": "0.00",
+            "iva_retention_rate": "0", "retained_iva": "0.00", "total": "116.00",
+        }
+        concept.update(concept_overrides)
+        return {
+            "issuer": {"rfc": "AAA010101AA1", "name": "Emisor", "tax_regime": "601", "postal_code": "37000"},
+            "receiver": {"rfc": "BBB010101BB1", "name": "Cliente", "tax_regime": "601",
+                         "postal_code": "37100", "cfdi_use": "G03"},
+            "payment_form": "03", "payment_method": "PUE", "currency": "MXN", "cfdi_type": "I",
+            "export_code": "01", "exchange_rate": "1", "concepts": [concept],
+        }
+
+    def test_precomputed_amounts_are_sent_verbatim(self):
+        """Recalcularlos en el PAC reintroducia los descuadres de centavos."""
+        item = self._provider().build_request_body(self._payload())["Items"][0]
+
+        self.assertEqual(item["Subtotal"], "100.00")
+        self.assertEqual(item["Total"], "116.00")
+        # Unit es la etiqueta legible, UnitCode la ClaveUnidad del SAT.
+        self.assertEqual(item["UnitCode"], "E48")
+        self.assertEqual(item["Unit"], "Unidad de servicio")
+        self.assertEqual(item["Taxes"][0]["Total"], "16.00")
+        # ValorUnitario conserva los decimales que permite el SAT.
+        self.assertEqual(item["UnitPrice"], "33.333")
+
+    def test_concepts_without_breakdown_carry_no_taxes(self):
+        item = self._provider().build_request_body(self._payload(
+            tax_object="01", breaks_down_taxes=False, iva_rate="0", transferred_iva="0.00", total="100.00",
+        ))["Items"][0]
+
+        self.assertNotIn("Taxes", item)
+        self.assertEqual(item["Total"], "100.00")
+
+    def test_exempt_iva_is_sent_as_iva_exento_not_as_zero_rate(self):
+        """Facturama traduce Name "IVA Exento" a TipoFactor="Exento" en el XML.
+
+        Mandarlo como "IVA" con tasa 0 emitiria tasa cero, que el SAT trata
+        como algo distinto del exento.
+        """
+        item = self._provider().build_request_body(self._payload(
+            iva_exempt=True, iva_rate="0", transferred_iva="0.00", total="100.00",
+        ))["Items"][0]
+        tax = item["Taxes"][0]
+
+        self.assertEqual(tax["Name"], "IVA Exento")
+        self.assertEqual(tax["Total"], "0.00")
+        self.assertEqual(tax["Base"], "100.00")
+        self.assertEqual(item["Total"], "100.00")
+
+    def test_zero_rate_is_sent_as_plain_iva(self):
+        item = self._provider().build_request_body(self._payload(
+            iva_rate="0.000000", transferred_iva="0.00", total="100.00",
+        ))["Items"][0]
+
+        self.assertEqual(item["Taxes"][0]["Name"], "IVA")
+        self.assertEqual(item["Taxes"][0]["Rate"], "0.000000")
+
+    def test_foreign_currency_sends_the_exchange_rate(self):
+        body = self._provider().build_request_body({
+            **self._payload(), "currency": "USD", "exchange_rate": "17.253400",
+        })
+        self.assertEqual(body["Currency"], "USD")
+        self.assertEqual(body["CurrencyExchangeRate"], "17.253400")
+
+    def test_mxn_does_not_send_an_exchange_rate(self):
+        self.assertNotIn("CurrencyExchangeRate", self._provider().build_request_body(self._payload()))
+
+    def test_export_code_is_taken_from_the_invoice(self):
+        body = self._provider().build_request_body({**self._payload(), "export_code": "02"})
+        self.assertEqual(body["Exportation"], "02")
+
+    def test_a_generic_public_receiver_gets_a_global_information_node(self):
+        """Confirmado contra el sandbox real: sin esto Facturama rechaza
+        cualquier comprobante a XAXX010101000, sin importar lo demas."""
+        payload = self._payload()
+        payload["receiver"]["rfc"] = "XAXX010101000"
+        body = self._provider().build_request_body(payload)
+
+        self.assertIn("GlobalInformation", body)
+        self.assertEqual("01", body["GlobalInformation"]["Periodicity"])
+        self.assertTrue(body["GlobalInformation"]["Months"])
+        self.assertTrue(body["GlobalInformation"]["Year"])
+
+    def test_a_named_receiver_does_not_get_a_global_information_node(self):
+        self.assertNotIn("GlobalInformation", self._provider().build_request_body(self._payload()))
+
+    def test_missing_credentials_are_reported_without_calling_the_api(self):
+        provider = FacturamaSandboxProvider(
+            base_url="https://apisandbox.facturama.mx", username="", password="",
+        )
+        result = provider.stamp(self._payload(), "key-no-creds")
+
+        self.assertEqual(result.status, "rejected")
+        self.assertEqual(result.error_code, "facturama_credentials_missing")
+
+    def test_http_base_url_is_refused(self):
+        with self.assertRaises(ValueError):
+            FacturamaSandboxProvider(base_url="http://apisandbox.facturama.mx", username="a", password="b")
+
+
+class TestStampingOperationDiagnostics(BackendTestCase):
+    def setUp(self):
+        super().setUp()
+        with transaction_context() as db:
+            db.add_all([
+                CustomerSupplier(id_customer_supplier=10, name="Emisor Demo", tax_id="AAA010101AAA", postal_code="37000", fiscal_type="601", type="supplier", id_user=1, created_by=1),
+                CustomerSupplier(id_customer_supplier=20, name="Cliente Demo", tax_id="BBB010101BBB", postal_code="37100", fiscal_type="601", type="client", id_user=1, created_by=1),
+                Proyect(id_proyect=30, id_customer_supplier=20, leader=1, proyect_description="Proyecto demo", created_by=1),
+                Status(id_status=40, status_description="Activo", category="invoice", is_terminal=False, sort_order="asc", created_by=1),
+            ])
+
+    def _invoice(self):
+        return create_manual_invoice({
+            "id_proyect": 30, "id_customer_supplier": 20, "id_issuer_customer_supplier": 10,
+            "id_status": 40, "forma_pago": "03", "metodo_pago": "PUE", "uso_cfdi": "G03",
+            "concepts": [{"description": "Servicio", "quantity": 1, "unit_price": 100,
+                          "sat_product_key": "80101500", "sat_unit_key": "E48"}],
+        }, {"id_user": 1, "id_proyect": 30})["invoice"]["id_invoice"]
+
+    def test_provider_diagnostics_reach_the_api_response(self):
+        """Sin esto un rechazo solo mostraba el codigo, no el motivo del PAC."""
+        invoice_id = self._invoice()
+        provider = FakeStampingProvider(StampingResult(
+            "rejected", error_code="http_401", metadata={"http_status": 401, "detail": "Unauthorized"},
+        ))
+
+        operation, _ = stamp_invoice(invoice_id, "diag-1", {"id_user": 1, "id_proyect": 30}, provider)
+
+        self.assertEqual(operation["status"], "rejected")
+        self.assertEqual(operation["error_code"], "http_401")
+        self.assertEqual(operation["response_metadata"], {"http_status": 401, "detail": "Unauthorized"})
+
+    def test_a_rejected_stamp_leaves_the_invoice_untouched(self):
+        invoice_id = self._invoice()
+        provider = FakeStampingProvider(StampingResult("rejected", error_code="http_401"))
+
+        stamp_invoice(invoice_id, "diag-2", {"id_user": 1, "id_proyect": 30}, provider)
+
+        with transaction_context() as db:
+            invoice = db.get(Invoice, invoice_id)
+            self.assertEqual(invoice.invoice_status, "pendiente")
+            self.assertIsNone(invoice.folio_fiscal)
+
+    def test_an_uncertain_stamp_is_not_treated_as_success(self):
+        """Un timeout del PAC no debe dar la factura por timbrada."""
+        invoice_id = self._invoice()
+        provider = FakeStampingProvider(StampingResult("uncertain", error_code="provider_timeout"))
+
+        operation, _ = stamp_invoice(invoice_id, "diag-3", {"id_user": 1, "id_proyect": 30}, provider)
+
+        self.assertEqual(operation["status"], "uncertain")
+        with transaction_context() as db:
+            self.assertEqual(db.get(Invoice, invoice_id).invoice_status, "pendiente")
+
+
+class TestCustomerSupplierCsdUpload(BackendTestCase):
+    """POST /customer_supplier/<id>/csd -- registro del CSD en la cuenta multiemisor."""
+
+    def setUp(self):
+        super().setUp()
+        from app.services.pac_config_service import save_config
+
+        with transaction_context() as db:
+            db.add(CustomerSupplier(
+                id_customer_supplier=50, name="Emisor CSD", tax_id="DDD010101DDD",
+                postal_code="37000", fiscal_type="601", type="supplier", id_user=1, created_by=1,
+            ))
+        save_config({
+            "provider": "facturama_multiemisor",
+            "facturama_username": "demo",
+            "facturama_password": "secret",
+        })
+        self.token = jwt.encode({"id_user": 1, "is_superuser": True}, SECRET_KEY, algorithm="HS256")
+
+    def _upload(self, id_customer_supplier=50, include_files=True):
+        data = {"password": "clave-privada"}
+        if include_files:
+            data["cer"] = (BytesIO(b"fake-cer"), "emisor.cer")
+            data["key"] = (BytesIO(b"fake-key"), "emisor.key")
+        return self.client.post(
+            f"/customer_supplier/{id_customer_supplier}/csd",
+            data=data,
+            headers={"Authorization": f"Bearer {self.token}"},
+            content_type="multipart/form-data",
+        )
+
+    def test_a_successful_upload_marks_the_csd_as_registered(self):
+        with patch("app.services.stamping.urlopen") as mock_urlopen:
+            mock_urlopen.return_value.__enter__.return_value = object()
+            response = self._upload()
+
+        self.assertEqual(200, response.status_code)
+        data = self.json(response)
+        self.assertTrue(data["ok"])
+        self.assertEqual("uploaded", data["data"]["csd_status"])
+        with transaction_context() as db:
+            customer_supplier = db.get(CustomerSupplier, 50)
+            self.assertEqual("uploaded", customer_supplier.csd_status)
+            self.assertIsNotNone(customer_supplier.csd_uploaded_at)
+
+    def test_a_rejected_upload_marks_the_csd_as_error(self):
+        from urllib.error import HTTPError
+
+        with patch("app.services.stamping.urlopen") as mock_urlopen:
+            mock_urlopen.side_effect = HTTPError(
+                "https://apisandbox.facturama.mx/api-lite/csds", 400, "Bad Request", {},
+                BytesIO(b"CSD invalido"),
+            )
+            response = self._upload()
+
+        self.assertEqual(502, response.status_code)
+        data = self.json(response)
+        self.assertFalse(data["ok"])
+        self.assertEqual("error", data["data"]["csd_status"])
+        with transaction_context() as db:
+            customer_supplier = db.get(CustomerSupplier, 50)
+            self.assertEqual("error", customer_supplier.csd_status)
+            self.assertIsNone(customer_supplier.csd_uploaded_at)
+
+    def test_missing_files_is_rejected_before_calling_the_provider(self):
+        with patch("app.services.stamping.urlopen") as mock_urlopen:
+            response = self._upload(include_files=False)
+
+        mock_urlopen.assert_not_called()
+        self.assertEqual(400, response.status_code)
+        self.assertEqual("customer_supplier.csd_files_missing", self.json(response)["error_key"])
+
+    def test_a_customer_supplier_without_rfc_is_rejected(self):
+        with transaction_context() as db:
+            db.add(CustomerSupplier(
+                id_customer_supplier=51, name="Sin RFC", tax_id=None,
+                type="supplier", id_user=1, created_by=1,
+            ))
+
+        response = self._upload(id_customer_supplier=51)
+
+        self.assertEqual(400, response.status_code)
+        self.assertEqual("customer_supplier.rfc_missing", self.json(response)["error_key"])
+
+    def test_a_non_admin_actor_is_rejected(self):
+        token = jwt.encode({"id_user": 2, "is_superuser": False, "user_type": "user"}, SECRET_KEY, algorithm="HS256")
+
+        response = self.client.post(
+            "/customer_supplier/50/csd",
+            data={"cer": (BytesIO(b"x"), "a.cer"), "key": (BytesIO(b"x"), "a.key")},
+            headers={"Authorization": f"Bearer {token}"},
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(403, response.status_code)

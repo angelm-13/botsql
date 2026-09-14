@@ -2,7 +2,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import String, Integer, BigInteger, SmallInteger, Boolean, Date, DateTime, Float, Numeric, ForeignKey, Text, JSON, Enum, LargeBinary, UniqueConstraint, func
+from sqlalchemy import String, Integer, BigInteger, SmallInteger, Boolean, Date, DateTime, Float, Numeric, ForeignKey, Text, JSON, Enum, LargeBinary, UniqueConstraint, func, text
 from app.models.base import Base
 
 
@@ -30,8 +30,8 @@ class InvoiceMaterialService(Base):
     id_status: Mapped[int] = mapped_column(Integer, ForeignKey('status.id_status'), nullable=False)
     id_buyer: Mapped[int] = mapped_column(Integer, ForeignKey('user.id_user'), nullable=False)
     id_customer_supplier: Mapped[int] = mapped_column(Integer, ForeignKey('customer_supplier.id_customer_supplier'), nullable=False)
-    gross_price: Mapped[float] = mapped_column(Numeric(10,2), nullable=True)
-    quantity: Mapped[float] = mapped_column(Numeric(10,2), nullable=True)
+    gross_price: Mapped[float] = mapped_column(Numeric(18,6), nullable=True)
+    quantity: Mapped[float] = mapped_column(Numeric(18,6), nullable=True)
     created_by: Mapped[int] = mapped_column(Integer, nullable=False)
     creation_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now())
     last_update_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
@@ -50,9 +50,18 @@ class InvoiceMaterialService(Base):
     sat_product_key: Mapped[object] = mapped_column(String(20), nullable=True)
     sat_unit_key: Mapped[object] = mapped_column(String(10), nullable=True)
     tax_object: Mapped[object] = mapped_column(String(5), nullable=True)
-    tax_rate: Mapped[float] = mapped_column(Numeric(7,4), nullable=True)
-    isr_retention_rate: Mapped[float] = mapped_column(Numeric(7,4), nullable=True)
-    iva_retention_rate: Mapped[float] = mapped_column(Numeric(7,4), nullable=True)
+    tax_rate: Mapped[float] = mapped_column(Numeric(9,6), nullable=True)
+    isr_retention_rate: Mapped[float] = mapped_column(Numeric(9,6), nullable=True)
+    iva_retention_rate: Mapped[float] = mapped_column(Numeric(9,6), nullable=True)
+    # IVA exento (TipoFactor="Exento" en el CFDI): el SAT lo distingue de la
+    # tasa 0%, que si lleva TasaOCuota e Importe en el nodo Traslado.
+    iva_exempt: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text('false'), default=False)
+    # De que renglon original viene esta partida, cuando el renglon es de una
+    # nota de credito que acredita una cantidad puntual de un producto ya
+    # facturado. Nulo para lo que no corresponde a un renglon original -una
+    # bonificacion global, por ejemplo-. Ver invoice_credit_note_service.py.
+    id_original_line: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('invoice_material_service.id_invoice_material_service'), nullable=True)
 
     def serialize(self) -> dict:
         return {
@@ -90,6 +99,8 @@ class InvoiceMaterialService(Base):
             'tax_rate': to_json_value(self.tax_rate),
             'isr_retention_rate': to_json_value(self.isr_retention_rate),
             'iva_retention_rate': to_json_value(self.iva_retention_rate),
+            'iva_exempt': to_json_value(self.iva_exempt),
+            'id_original_line': to_json_value(self.id_original_line),
         }
 
     def serialize_summary(self) -> dict:

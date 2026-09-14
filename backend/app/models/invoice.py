@@ -2,7 +2,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import String, Integer, BigInteger, SmallInteger, Boolean, Date, DateTime, Float, Numeric, ForeignKey, Text, JSON, Enum, LargeBinary, UniqueConstraint, Index, func
+from sqlalchemy import String, Integer, BigInteger, SmallInteger, Boolean, Date, DateTime, Float, Numeric, ForeignKey, Text, JSON, Enum, LargeBinary, UniqueConstraint, Index, func, text
 from app.models.base import Base
 
 
@@ -27,6 +27,7 @@ class Invoice(Base):
     tax: Mapped[float] = mapped_column(Numeric(10,2), nullable=True)
     total: Mapped[float] = mapped_column(Numeric(10,2), nullable=True)
     invoice_status: Mapped[object] = mapped_column(String(20), nullable=True)
+    invoice_direction: Mapped[object] = mapped_column(String(20), nullable=True)
     payment_method: Mapped[object] = mapped_column(String(50), nullable=True)
     note: Mapped[object] = mapped_column(String(300), nullable=True)
     id_customer_supplier: Mapped[int] = mapped_column(Integer, ForeignKey('customer_supplier.id_customer_supplier'), nullable=False)
@@ -73,7 +74,13 @@ class Invoice(Base):
     forma_pago: Mapped[object] = mapped_column(String(10), nullable=True)
     isr_retention: Mapped[float] = mapped_column(Numeric(10,2), nullable=True)
     iva_retention: Mapped[float] = mapped_column(Numeric(10,2), nullable=True)
-    manual_capture: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    manual_capture: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text('false'))
+    # De que venta nace esta factura, cuando no nace aqui. Con valor, la venta
+    # ya movio el almacen al cobrarse y la factura solo la respalda ante el SAT:
+    # aplicarla al inventario sacaria el producto dos veces por haberse vendido
+    # una. Vacio significa que la factura es el origen del movimiento.
+    source_module: Mapped[object] = mapped_column(String(20), nullable=True)
+    source_reference: Mapped[object] = mapped_column(String(80), nullable=True)
 
     def serialize(self) -> dict:
         return {
@@ -84,6 +91,7 @@ class Invoice(Base):
             'tax': to_json_value(self.tax),
             'total': to_json_value(self.total),
             'invoice_status': to_json_value(self.invoice_status),
+            'invoice_direction': to_json_value(self.invoice_direction),
             'payment_method': to_json_value(self.payment_method),
             'note': to_json_value(self.note),
             'id_customer_supplier': to_json_value(self.id_customer_supplier),
@@ -131,6 +139,8 @@ class Invoice(Base):
             'isr_retention': to_json_value(self.isr_retention),
             'iva_retention': to_json_value(self.iva_retention),
             'manual_capture': to_json_value(self.manual_capture),
+            'source_module': to_json_value(self.source_module),
+            'source_reference': to_json_value(self.source_reference),
         }
 
     def serialize_summary(self) -> dict:

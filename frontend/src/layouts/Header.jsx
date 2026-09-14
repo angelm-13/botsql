@@ -1,12 +1,13 @@
 import { NavLink } from "react-router-dom";
-import { Settings, Globe, User } from "lucide-react";
+import { Settings } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
+import LanguagePicker from "../components/LanguagePicker";
 import { useI18n } from "../i18n";
 
 export default function Header() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
-  const { lang, t, setLanguage } = useI18n();
+  const { t } = useI18n();
   
   const settingsRef = useRef(null);
   const langRef = useRef(null);
@@ -131,16 +132,7 @@ export default function Header() {
       </nav>
 
       <div className="header-actions">
-        <label className="language-picker">
-          {t("common.language")}
-          <select value={lang} onChange={(e) => setLanguage(e.target.value)}>
-            <option value="es">ES</option>
-            <option value="en">EN</option>
-            <option value="pt">PT</option>
-            <option value="de">DE</option>
-            <option value="ja">日本語</option>
-          </select>
-        </label>
+        <LanguagePicker />
         <button className="button ghost" title={t("common.settings", "Configuración")}>
           <Settings size={18} />
         </button>

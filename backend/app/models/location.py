@@ -2,7 +2,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import String, Integer, BigInteger, SmallInteger, Boolean, Date, DateTime, Float, Numeric, ForeignKey, Text, JSON, Enum, LargeBinary, UniqueConstraint, func
+from sqlalchemy import String, Integer, BigInteger, SmallInteger, Boolean, Date, DateTime, Float, Numeric, ForeignKey, Text, JSON, Enum, LargeBinary, UniqueConstraint, func, text
 from app.models.base import Base
 
 
@@ -22,7 +22,25 @@ class Location(Base):
     id_location: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, nullable=False)
     id_location_type: Mapped[int] = mapped_column(Integer, ForeignKey('location_type.id_location_type'), nullable=False)
     location_description: Mapped[object] = mapped_column(String(200), nullable=False)
-    id_location_reference: Mapped[int] = mapped_column(Integer, nullable=True)
+    # Proyecto al que pertenece esta ubicacion, o nulo si es comun. El almacen
+    # de cada proyecto es una rama del mismo arbol y no un almacen aparte, de
+    # modo que "cuanto hay en total" y "cuanto hay del restaurante" se contestan
+    # con la misma consulta y un filtro.
+    id_module: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # La ubicacion general del almacen: donde vive lo que esta dentro sin sitio
+    # propio. No es una ubicacion mas -es la que contesta "esta en el almacen"
+    # cuando nadie dijo en que rack-, y solo puede haber una viva a la vez.
+    #
+    # Existe porque el sistema original entrega muchas cosas sin ubicacion
+    # particular, y sin un sitio donde ponerlas no aparecian en Localizar: la
+    # pantalla lee las ubicaciones de `inventory_stock`, y un producto sin fila
+    # ahi se ve pero no dice donde esta.
+    is_general_stock: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    # Padre en la jerarquia almacen -> zona -> rack -> posicion. Era un
+    # entero suelto, asi que admitia apuntar a una ubicacion inexistente.
+    id_location_reference: Mapped[int] = mapped_column(Integer, ForeignKey('location.id_location'), nullable=True)
     created_by: Mapped[int] = mapped_column(Integer, nullable=False)
     creation_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now())
     last_update_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
@@ -34,6 +52,9 @@ class Location(Base):
             'id_location_type': to_json_value(self.id_location_type),
             'location_description': to_json_value(self.location_description),
             'id_location_reference': to_json_value(self.id_location_reference),
+            # Donde vive lo que esta en el almacen sin sitio propio. La pantalla
+            # lo necesita para no ofrecerla como un rack cualquiera.
+            'is_general_stock': bool(self.is_general_stock),
             'created_by': to_json_value(self.created_by),
             'creation_date': to_json_value(self.creation_date),
             'last_update_date': to_json_value(self.last_update_date),

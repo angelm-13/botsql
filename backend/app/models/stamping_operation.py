@@ -38,6 +38,9 @@ class StampingOperation(Base):
             "status": self.status,
             "provider_reference": self.provider_reference,
             "error_code": self.error_code,
+            # El diagnostico del PAC es lo que permite corregir un rechazo:
+            # sin esto la API solo devolvia el codigo HTTP.
+            "response_metadata": self.response_metadata,
             "creation_date": self.creation_date.isoformat() if self.creation_date else None,
             "last_update_date": self.last_update_date.isoformat() if self.last_update_date else None,
         }

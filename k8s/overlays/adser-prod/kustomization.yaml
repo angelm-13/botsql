@@ -1,0 +1,70 @@
+# Overlay real de producción para adser (dominio adser.torredigital.mx).
+# Instanciado desde k8s/overlays/torredigital-prod (mismo patrón: un solo
+# origen, front + API bajo /api, DNS ya confirmado con nslookup).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: adser-prod
+images:
+  - name: DB_INIT_IMAGE_PLACEHOLDER
+    newName: ghcr.io/tyakxa/tyakxa-tny-db-init
+    newTag: "03522b4"
+  - name: BACKEND_IMAGE_PLACEHOLDER
+    newName: ghcr.io/tyakxa/tyakxa-tny-backend
+    newTag: "03522b4"
+  - name: WORKER_IMAGE_PLACEHOLDER
+    newName: ghcr.io/tyakxa/tyakxa-tny-worker
+    newTag: "03522b4"
+  - name: FRONTEND_IMAGE_PLACEHOLDER
+    newName: ghcr.io/tyakxa/tyakxa-tny-frontend
+    newTag: 03522b4-adser-prod
+resources:
+  - ../../base
+  - ingress-single-origin.yaml
+patches:
+  - patch: |-
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: tyakxa-tny
+      $patch: delete
+  # Las ~2461 fotos de producto de adser viven en /home/infra-k8s/imagenes/producto
+  # en el VPS (Tanya las sube y las mantiene ahi -- no se copian a la PVC de
+  # /uploads de este cliente). nodeSelector obligatorio porque esa carpeta es
+  # local a master1, no un volumen compartido entre los 3 nodos: si el pod
+  # cayera en otro nodo, la carpeta no existiria ahi (hostPath type: Directory
+  # hace que el pod falle en Pending de forma visible, en vez de arrancar con
+  # /uploads/products vacio en silencio).
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: backend
+      spec:
+        template:
+          spec:
+            nodeSelector:
+              kubernetes.io/hostname: k3s-master1
+            containers:
+              - name: backend
+                volumeMounts:
+                  - name: adser-legacy-product-images
+                    mountPath: /uploads/products
+            volumes:
+              - name: adser-legacy-product-images
+                hostPath:
+                  path: /home/infra-k8s/imagenes/producto
+                  type: Directory
+  # PriorityClass del cliente ERP #2 (ver p2-adser-prod, aplicada al clúster
+  # con kubectl apply -f priority-classes.yaml).
+  - target:
+      kind: Deployment
+    patch: |-
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: p2-adser-prod
+  - target:
+      kind: StatefulSet
+    patch: |-
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: p2-adser-prod

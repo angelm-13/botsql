@@ -1,0 +1,43 @@
+# Fuente de verdad de qué clientes están activos.
+#
+# GitHub Actions (.github/workflows/build-images.yml) lee este archivo
+# para saber para cuáles clientes generar imagen de frontend — una por
+# cliente, porque VITE_API_BASE_URL queda horneado en el build de Vite.
+#
+# api_base_url es OBLIGATORIO y se escribe a mano por cada cliente (nada
+# de fórmulas en el workflow, para no depender de trucos de ternario en
+# expresiones de GitHub Actions):
+#   - Clientes reales del ERP bajo tyakxa.com.mx (dos subdominios):
+#     "https://api-<cliente>-<env>.tyakxa.com.mx"
+#   - Cualquier caso de un solo origen con /api (dominio distinto, o el
+#     patrón de "otros proyectos"): "" (vacío) — el propio frontend cae
+#     solo a /api relativo cuando VITE_API_BASE_URL viene vacío.
+#
+# Agregar una entrada aquí y hacer push es todo lo que se necesita
+# para que el pipeline empiece a construirle imagen a un cliente
+# nuevo. Esto NO crea nada en el clúster — eso sigue siendo manual
+# (ver el runbook: k8s/overlays/<cliente>-<env>/).
+#
+# "tyakxa" / "dev" no es un cliente real: es el entorno interno de
+# pruebas para validar todo el flujo de despliegue antes de dar de
+# alta al primer cliente real. Dominio real (un solo origen, dado por
+# Tanya): sistema-test.torredigital.mx — no tyakxa.com.mx.
+clients:
+  - name: tyakxa
+    env: dev
+    api_base_url: ""
+  - name: torredigital
+    env: prod
+    # Un solo origen (sistema.torredigital.com.mx con /api) — igual que
+    # tyakxa/dev, el frontend cae solo a /api relativo con esto vacío.
+    api_base_url: ""
+  - name: adser
+    env: prod
+    # Un solo origen (adser.torredigital.mx con /api) — mismo patrón que
+    # torredigital/prod.
+    api_base_url: ""
+  - name: vidrioyaluminios
+    env: prod
+    # Un solo origen (vidrioyaluminios.torredigital.mx con /api) — mismo
+    # patrón que adser/prod y torredigital/prod.
+    api_base_url: ""

@@ -1,3 +1,4 @@
+/* eslint-disable react/prop-types */
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Shell from "./layouts/Shell";
 import Dashboard from "./pages/Dashboard";
@@ -15,23 +16,28 @@ import CustomerSupplierPage from "./pages/CustomerSupplierPage.jsx";
 import DepartmentPage from "./pages/DepartmentPage.jsx";
 import EntityPermissionPage from "./pages/EntityPermissionPage.jsx";
 import EventLogPage from "./pages/EventLogPage.jsx";
+import FacturamaConfigPage from "./pages/FacturamaConfigPage.jsx";
 import FieldPage from "./pages/FieldPage.jsx";
 import FiscalAccountPage from "./pages/FiscalAccountPage.jsx";
-import FiscalRecordPage from "./pages/FiscalRecordPage.jsx";
-import FiscalStampPage from "./pages/FiscalStampPage.jsx";
 import IncidentPage from "./pages/IncidentPage.jsx";
 import IncidentDetailPage from "./pages/IncidentDetailPage.jsx";
 import IncidentTypePage from "./pages/IncidentTypePage.jsx";
+import AssetTrackingPage from "./pages/AssetTrackingPage.jsx";
+import InventoryTracePage from "./pages/InventoryTracePage.jsx";
+import PosTillPage from "./pages/PosTillPage.jsx";
+import PosCatalogPage from "./pages/pos/PosCatalogPage.jsx";
+import PosPromotionsPage from "./pages/pos/PosPromotionsPage.jsx";
+import PosShiftPage from "./pages/pos/PosShiftPage.jsx";
+import PosWarehousePage from "./pages/pos/PosWarehousePage.jsx";
+import PosReportsPage from "./pages/pos/PosReportsPage.jsx";
+import InventoryPage from "./pages/InventoryPage.jsx";
 import InventoryStatusPage from "./pages/InventoryStatusPage.jsx";
 import InvoicePage from "./pages/InvoicePage.jsx";
-import InvoiceMaterialServicePage from "./pages/InvoiceMaterialServicePage.jsx";
 import ManualInvoicePage from "./pages/ManualInvoicePage.jsx";
 import LevelPage from "./pages/LevelPage.jsx";
 import LocationPage from "./pages/LocationPage.jsx";
 import LocationTypePage from "./pages/LocationTypePage.jsx";
 import MaterialPage from "./pages/MaterialPage.jsx";
-import MaterialComponentPage from "./pages/MaterialComponentPage.jsx";
-import MovementPage from "./pages/MovementPage.jsx";
 import NmFieldPermissionPage from "./pages/NmFieldPermissionPage.jsx";
 import NmIncidentProductPage from "./pages/NmIncidentProductPage.jsx";
 import NmSurveyUserPage from "./pages/NmSurveyUserPage.jsx";
@@ -42,9 +48,10 @@ import PayrollMovementPage from "./pages/PayrollMovementPage.jsx";
 import PayrollPeriodPage from "./pages/PayrollPeriodPage.jsx";
 import PermissionPage from "./pages/PermissionPage.jsx";
 import ProductPage from "./pages/ProductPage.jsx";
+import WarehouseVoucherPage from "./pages/WarehouseVoucherPage.jsx";
 import ProductFamilyPage from "./pages/ProductFamilyPage.jsx";
 import ProductSaleConfigPage from "./pages/ProductSaleConfigPage.jsx";
-import ProyectPage from "./pages/ProyectPage.jsx";
+import ProjectManagementPage from "./pages/ProjectManagementPage.jsx";
 import PublicApiKeyPage from "./pages/PublicApiKeyPage.jsx";
 import ServicePage from "./pages/ServicePage.jsx";
 import StatusPage from "./pages/StatusPage.jsx";
@@ -60,12 +67,44 @@ import TicketPage from "./pages/TicketPage.jsx";
 import UnitPage from "./pages/UnitPage.jsx";
 import UserPage from "./pages/UserPage.jsx";
 import UserMfaPage from "./pages/UserMfaPage.jsx";
+import KronosPage from "./pages/KronosPage.jsx";
+import KronosDevicePage from "./pages/KronosDevicePage.jsx";
+import LogisticsAddressesPage from "./pages/logistics/LogisticsAddressesPage.jsx";
+import LogisticsBranchesPage from "./pages/logistics/LogisticsBranchesPage.jsx";
+import LogisticsContactsPage from "./pages/logistics/LogisticsContactsPage.jsx";
+import LogisticsContractsPage from "./pages/logistics/LogisticsContractsPage.jsx";
+import LogisticsInventoryPage from "./pages/logistics/LogisticsInventoryPage.jsx";
+import LogisticsEvidencesPage from "./pages/logistics/LogisticsEvidencesPage.jsx";
+import LogisticsFilesPage from "./pages/logistics/LogisticsFilesPage.jsx";
+import LogisticsIncidentsPage from "./pages/logistics/LogisticsIncidentsPage.jsx";
+import LogisticsLocationsPage from "./pages/logistics/LogisticsLocationsPage.jsx";
+import LogisticsMaintenancePage from "./pages/logistics/LogisticsMaintenancePage.jsx";
+import LogisticsOperatorsPage from "./pages/logistics/LogisticsOperatorsPage.jsx";
+import LogisticsQuotationsPage from "./pages/logistics/LogisticsQuotationsPage.jsx";
+import LogisticsRacksPage from "./pages/logistics/LogisticsRacksPage.jsx";
+import LogisticsRatesPage from "./pages/logistics/LogisticsRatesPage.jsx";
+import LogisticsReceivablesPage from "./pages/logistics/LogisticsReceivablesPage.jsx";
+import LogisticsServiceRequestsPage from "./pages/logistics/LogisticsServiceRequestsPage.jsx";
+import LogisticsShipmentsPage from "./pages/logistics/LogisticsShipmentsPage.jsx";
+import LogisticsTrailersPage from "./pages/logistics/LogisticsTrailersPage.jsx";
+import LogisticsTripsPage from "./pages/logistics/LogisticsTripsPage.jsx";
+import LogisticsUnitsPage from "./pages/logistics/LogisticsUnitsPage.jsx";
+import LogisticsWarehousesPage from "./pages/logistics/LogisticsWarehousesPage.jsx";
+import RestaurantWaiterPage from "./pages/restaurant/RestaurantWaiterPage.jsx";
+import RestaurantKitchenPage from "./pages/restaurant/RestaurantKitchenPage.jsx";
+import RestaurantCashierPage from "./pages/restaurant/RestaurantCashierPage.jsx";
+import RestaurantAdminPage from "./pages/restaurant/RestaurantAdminPage.jsx";
+import AppointmentsPage from "./pages/AppointmentsPage.jsx";
+import DocumentManagementPage from "./pages/DocumentManagementPage.jsx";
+import LaboratoryManagementPage from "./pages/LaboratoryManagementPage.jsx";
+import PublicCalendarPage from "./pages/PublicCalendarPage.jsx";
 import Kanban from './components/Kanban.jsx';
 import LoginPage from "./auth/LoginPage";
 import ProtectedRoute from "./auth/ProtectedRoute";
 import { useEffect, useState } from "react";
 import { getAllEntityPermission } from "./api";
 import "./styles/app.css";
+import "./styles/sat-key.css";
 
 function isBootstrapUser() {
   const currentUser = JSON.parse(localStorage.getItem("user") || "null");
@@ -121,10 +160,12 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/portal-cliente" element={<ClientPortalPage />} />
+        <Route path="/calendar/:code" element={<PublicCalendarPage />} />
         <Route path="/" element={<ProtectedRoute><Shell /></ProtectedRoute>}>
           <Route index element={<Dashboard />} />
           <Route path="/mfa-setup" element={<MfaSetupPage />} />
           <Route path="/role_permissions" element={<AdminRoute><RolePermissionManagerPage /></AdminRoute>} />
+          <Route path="/facturama-config" element={<AdminRoute><FacturamaConfigPage /></AdminRoute>} />
           <Route path="/quotation" element={<RoleAccessRoute entityName="invoice"><QuotationPage /></RoleAccessRoute>} />
           <Route path="/authorization_tracking" element={<RoleAccessRoute entityName="invoice"><AuthorizationTrackingPage /></RoleAccessRoute>} />
           <Route path="/catalogo-web" element={<RoleAccessRoute entityName="product_sale_config"><CatalogoWebPage /></RoleAccessRoute>} />
@@ -138,22 +179,26 @@ export default function App() {
           <Route path="/event_log" element={<TechnicalRoute><EventLogPage /></TechnicalRoute>} />
           <Route path="/field" element={<RoleAccessRoute entityName="field"><FieldPage /></RoleAccessRoute>} />
           <Route path="/fiscal_account" element={<RoleAccessRoute entityName="fiscal_account"><FiscalAccountPage /></RoleAccessRoute>} />
-          <Route path="/fiscal_record" element={<RoleAccessRoute entityName="fiscal_record"><FiscalRecordPage /></RoleAccessRoute>} />
-          <Route path="/fiscal_stamp" element={<RoleAccessRoute entityName="fiscal_stamp"><FiscalStampPage /></RoleAccessRoute>} />
           <Route path="/incident" element={<RoleAccessRoute entityName="incident"><IncidentPage /></RoleAccessRoute>} />
           <Route path="/incident_detail" element={<RoleAccessRoute entityName="incident_detail"><IncidentDetailPage /></RoleAccessRoute>} />
           <Route path="/incident_type" element={<RoleAccessRoute entityName="incident_type"><IncidentTypePage /></RoleAccessRoute>} />
+          <Route path="/inventory" element={<RoleAccessRoute entityName="product"><InventoryPage /></RoleAccessRoute>} />
+          <Route path="/pos/turno" element={<RoleAccessRoute entityName="pos_terminal"><PosShiftPage /></RoleAccessRoute>} />
+          <Route path="/pos/promociones" element={<RoleAccessRoute entityName="pos_admin"><PosPromotionsPage /></RoleAccessRoute>} />
+          <Route path="/pos/productos" element={<RoleAccessRoute entityName="pos_terminal"><PosCatalogPage /></RoleAccessRoute>} />
+          <Route path="/pos/inventario" element={<RoleAccessRoute entityName="pos_admin"><PosWarehousePage /></RoleAccessRoute>} />
+          <Route path="/pos/tablero" element={<RoleAccessRoute entityName="pos_admin"><PosReportsPage /></RoleAccessRoute>} />
+          <Route path="/pos/caja" element={<RoleAccessRoute entityName="pos_terminal"><PosTillPage /></RoleAccessRoute>} />
+          <Route path="/inventory/trace" element={<RoleAccessRoute entityName="product"><InventoryTracePage /></RoleAccessRoute>} />
+          <Route path="/assets" element={<RoleAccessRoute entityName="product"><AssetTrackingPage /></RoleAccessRoute>} />
           <Route path="/inventory_status" element={<RoleAccessRoute entityName="inventory_status"><InventoryStatusPage /></RoleAccessRoute>} />
           <Route path="/kanban" element={<Kanban />} />
           <Route path="/invoice" element={<RoleAccessRoute entityName="invoice"><InvoicePage /></RoleAccessRoute>} />
           <Route path="/invoice/manual" element={<RoleAccessRoute entityName="invoice"><ManualInvoicePage /></RoleAccessRoute>} />
-          <Route path="/invoice_material_service" element={<RoleAccessRoute entityName="invoice_material_service"><InvoiceMaterialServicePage /></RoleAccessRoute>} />
           <Route path="/level" element={<RoleAccessRoute entityName="level"><LevelPage /></RoleAccessRoute>} />
           <Route path="/location" element={<RoleAccessRoute entityName="location"><LocationPage /></RoleAccessRoute>} />
           <Route path="/location_type" element={<RoleAccessRoute entityName="location_type"><LocationTypePage /></RoleAccessRoute>} />
           <Route path="/material" element={<RoleAccessRoute entityName="material"><MaterialPage /></RoleAccessRoute>} />
-          <Route path="/material_component" element={<RoleAccessRoute entityName="material_component"><MaterialComponentPage /></RoleAccessRoute>} />
-          <Route path="/movement" element={<RoleAccessRoute entityName="movement"><MovementPage /></RoleAccessRoute>} />
           <Route path="/nm_field_permission" element={<AdminRoute><NmFieldPermissionPage /></AdminRoute>} />
           <Route path="/nm_incident_product" element={<RoleAccessRoute entityName="nm_incident_product"><NmIncidentProductPage /></RoleAccessRoute>} />
           <Route path="/nm_survey_user" element={<RoleAccessRoute entityName="nm_survey_user"><NmSurveyUserPage /></RoleAccessRoute>} />
@@ -162,11 +207,60 @@ export default function App() {
           <Route path="/payroll_detail" element={<RoleAccessRoute entityName="payroll_detail"><PayrollDetailPage /></RoleAccessRoute>} />
           <Route path="/payroll_movement" element={<RoleAccessRoute entityName="payroll_movement"><PayrollMovementPage /></RoleAccessRoute>} />
           <Route path="/payroll_period" element={<RoleAccessRoute entityName="payroll_period"><PayrollPeriodPage /></RoleAccessRoute>} />
+          <Route path="/kronos" element={<RoleAccessRoute entityName="payroll_period"><KronosPage /></RoleAccessRoute>} />
+          <Route path="/kronos/device" element={<RoleAccessRoute entityName="kronos_device"><KronosDevicePage /></RoleAccessRoute>} />
+          <Route path="/logistica/clientes" element={<RoleAccessRoute entityName="customer_supplier"><CustomerSupplierPage clientsOnly /></RoleAccessRoute>} />
+          <Route path="/logistica/proveedores" element={<RoleAccessRoute entityName="customer_supplier"><CustomerSupplierPage mode="suppliersOnly" /></RoleAccessRoute>} />
+          <Route path="/logistica/contactos" element={<RoleAccessRoute entityName="logistics_contact"><LogisticsContactsPage /></RoleAccessRoute>} />
+          <Route path="/logistica/direcciones" element={<RoleAccessRoute entityName="logistics_address"><LogisticsAddressesPage /></RoleAccessRoute>} />
+          <Route path="/logistica/contratos" element={<RoleAccessRoute entityName="logistics_contract"><LogisticsContractsPage /></RoleAccessRoute>} />
+          <Route path="/logistica/tarifas" element={<RoleAccessRoute entityName="logistics_rate"><LogisticsRatesPage /></RoleAccessRoute>} />
+          <Route path="/logistica/cotizaciones" element={<RoleAccessRoute entityName="logistics_quotation"><LogisticsQuotationsPage /></RoleAccessRoute>} />
+          <Route path="/logistica/solicitudes" element={<RoleAccessRoute entityName="logistics_service_request"><LogisticsServiceRequestsPage /></RoleAccessRoute>} />
+          <Route path="/logistica/viajes" element={<RoleAccessRoute entityName="logistics_trip"><LogisticsTripsPage /></RoleAccessRoute>} />
+          <Route path="/logistica/evidencias" element={<RoleAccessRoute entityName="logistics_evidence"><LogisticsEvidencesPage /></RoleAccessRoute>} />
+          <Route path="/logistica/incidencias" element={<RoleAccessRoute entityName="logistics_incident"><LogisticsIncidentsPage /></RoleAccessRoute>} />
+          <Route path="/logistica/unidades" element={<RoleAccessRoute entityName="logistics_unit"><LogisticsUnitsPage /></RoleAccessRoute>} />
+          <Route path="/logistica/remolques" element={<RoleAccessRoute entityName="logistics_trailer"><LogisticsTrailersPage /></RoleAccessRoute>} />
+          <Route path="/logistica/operadores" element={<RoleAccessRoute entityName="logistics_operator"><LogisticsOperatorsPage /></RoleAccessRoute>} />
+          <Route path="/logistica/mantenimientos" element={<RoleAccessRoute entityName="logistics_maintenance"><LogisticsMaintenancePage /></RoleAccessRoute>} />
+          <Route path="/logistica/almacenes" element={<RoleAccessRoute entityName="logistics_warehouse"><LogisticsWarehousesPage /></RoleAccessRoute>} />
+          <Route path="/logistica/ubicaciones" element={<RoleAccessRoute entityName="logistics_location"><LogisticsLocationsPage /></RoleAccessRoute>} />
+          <Route path="/logistica/inventario" element={<RoleAccessRoute entityName="logistics_inventory"><LogisticsInventoryPage /></RoleAccessRoute>} />
+          <Route path="/logistica/racks" element={<RoleAccessRoute entityName="logistics_rack"><LogisticsRacksPage /></RoleAccessRoute>} />
+          <Route path="/logistica/embarques" element={<RoleAccessRoute entityName="logistics_shipment"><LogisticsShipmentsPage /></RoleAccessRoute>} />
+          <Route path="/logistica/sucursales" element={<RoleAccessRoute entityName="logistics_branch"><LogisticsBranchesPage /></RoleAccessRoute>} />
+          <Route path="/logistica/cuentas-cobrar" element={<RoleAccessRoute entityName="logistics_receivable"><LogisticsReceivablesPage /></RoleAccessRoute>} />
+          <Route path="/logistica/expedientes" element={<RoleAccessRoute entityName="logistics_file"><LogisticsFilesPage /></RoleAccessRoute>} />
+          <Route path="/logistica/facturas" element={<RoleAccessRoute entityName="invoice"><InvoicePage /></RoleAccessRoute>} />
+          <Route path="/logistica/facturacion/manual" element={<RoleAccessRoute entityName="invoice"><ManualInvoicePage /></RoleAccessRoute>} />
+          {/* /logistica/usuarios, /logistica/roles, /logistica/auditoria y
+              /logistica/seguridad se retiraron con `section_administration`
+              en moduleSections.js: eran una segunda puerta a las mismas
+              pantallas que ya viven en /user, /role_permissions, /event_log
+              y /mfa-setup. */}
+          <Route path="/restaurant/waiter" element={<RoleAccessRoute entityName="restaurant_waiter"><RestaurantWaiterPage /></RoleAccessRoute>} />
+          <Route path="/restaurant/cashier" element={<RoleAccessRoute entityName="restaurant_cashier"><RestaurantCashierPage /></RoleAccessRoute>} />
+          <Route path="/restaurant/kitchen" element={<RoleAccessRoute entityName="restaurant_kitchen"><RestaurantKitchenPage /></RoleAccessRoute>} />
+          <Route path="/restaurant/admin" element={<RoleAccessRoute entityName="restaurant_admin"><RestaurantAdminPage /></RoleAccessRoute>} />
           <Route path="/permission" element={<RoleAccessRoute entityName="permission"><PermissionPage /></RoleAccessRoute>} />
           <Route path="/product" element={<RoleAccessRoute entityName="product"><ProductPage /></RoleAccessRoute>} />
+          {/* Los dos niveles de la clasificacion, en una pantalla. Habia dos
+              entradas de menu y leidas seguidas parecen lo mismo dos veces; el
+              tipo cuelga de la familia y no se puede leer sin ella. Las dos
+              El TIPO se retiro del flujo: en estos datos la descripcion del
+              material ya lo trae -"BROCA HELICOIDAL 3/4"-, asi que un nivel
+              aparte obliga a capturar dos veces lo mismo. */}
           <Route path="/product_family" element={<RoleAccessRoute entityName="product_family"><ProductFamilyPage /></RoleAccessRoute>} />
+          {/* El vale se guarda con la capacidad `warehouse_voucher`, no con
+              una entidad: su pantalla escribe en `incident` y en la tabla
+              puente de sus renglones, que esta fuera del menu a proposito. */}
+          <Route path="/vouchers" element={<RoleAccessRoute entityName="warehouse_voucher"><WarehouseVoucherPage /></RoleAccessRoute>} />
           <Route path="/product_sale_config" element={<RoleAccessRoute entityName="product_sale_config"><ProductSaleConfigPage /></RoleAccessRoute>} />
-          <Route path="/proyect" element={<RoleAccessRoute entityName="proyect"><ProyectPage /></RoleAccessRoute>} />
+          <Route path="/proyect" element={<RoleAccessRoute entityName="proyect"><ProjectManagementPage /></RoleAccessRoute>} />
+          <Route path="/appointments" element={<RoleAccessRoute entityName="appointment"><AppointmentsPage /></RoleAccessRoute>} />
+          <Route path="/documents" element={<RoleAccessRoute entityName="document"><DocumentManagementPage /></RoleAccessRoute>} />
+          <Route path="/laboratory" element={<RoleAccessRoute entityName="laboratory_service_order"><LaboratoryManagementPage /></RoleAccessRoute>} />
           <Route path="/public_api_key" element={<RoleAccessRoute entityName="public_api_key"><PublicApiKeyPage /></RoleAccessRoute>} />
           <Route path="/service" element={<RoleAccessRoute entityName="service"><ServicePage /></RoleAccessRoute>} />
           <Route path="/status" element={<RoleAccessRoute entityName="status"><StatusPage /></RoleAccessRoute>} />

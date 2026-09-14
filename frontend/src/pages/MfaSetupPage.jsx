@@ -3,6 +3,7 @@ import QRCode from "qrcode";
 import { KeyRound, QrCode, ShieldCheck } from "lucide-react";
 import { setupMfa, enableMfa, disableMfa } from "../api";
 import { useI18n } from "../i18n";
+import PageHeader from "../components/PageHeader.jsx";
 
 export default function MfaSetupPage() {
   const { t } = useI18n();
@@ -86,18 +87,17 @@ export default function MfaSetupPage() {
 
   return (
     <section className="entity-page mfa-setup-page">
-      <div className="page-heading">
-        <div>
-          <p className="eyebrow">MFA · TOTP</p>
-          <h2>{t("common.mfa_setup_title", "Configurar autenticación MFA")}</h2>
-          <p>{t("common.mfa_setup_subtitle", "Genera un QR, escanéalo con Authenticator y confirma el código de 6 dígitos.")}</p>
-        </div>
+      <PageHeader
+        eyebrow={"MFA · TOTP"}
+        titulo={t("common.mfa_setup_title", "Configurar autenticación MFA")}
+        subtitulo={t("common.mfa_setup_subtitle", "Genera un QR, escanéalo con Authenticator y confirma el código de 6 dígitos.")}
+      >
         {(isBootstrapAdmin || !confirmed) && (
-          <button className="button primary" type="button" onClick={handleSetup} disabled={loading}>
-            <QrCode size={16} />{setup ? t("common.mfa_regenerate_qr", "Regenerar QR") : t("common.mfa_generate_qr", "Generar QR")}
-          </button>
+        <button className="button primary" type="button" onClick={handleSetup} disabled={loading}>
+        <QrCode size={16} />{setup ? t("common.mfa_regenerate_qr", "Regenerar QR") : t("common.mfa_generate_qr", "Generar QR")}
+        </button>
         )}
-      </div>
+      </PageHeader>
       {notice && <div className="alert success">{notice}</div>}
       {error && <div className="alert error">{error}</div>}
       <div className="mfa-grid">
@@ -129,7 +129,7 @@ export default function MfaSetupPage() {
             <>
               <label className="field">
                 <span>{t("common.mfa_code", "Código MFA")}</span>
-                <input inputMode="numeric" pattern="[0-9]{6}" maxLength="6" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="000000" />
+                <input required inputMode="numeric" pattern="[0-9]{6}" maxLength="6" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="000000" />
               </label>
               <div className="form-actions">
                 <button className="button primary" type="submit" disabled={loading || code.length !== 6}>{isBootstrapAdmin ? t("common.mfa_enable", "Activar MFA") : t("common.mfa_confirm_code", "Confirmar código")}</button>

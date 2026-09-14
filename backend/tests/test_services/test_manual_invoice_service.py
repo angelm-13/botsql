@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from decimal import Decimal
 
 from app.services.manual_invoice_service import preview_manual_invoice
 
@@ -41,3 +42,60 @@ class TestManualInvoicePreview(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def test_preview_rejects_an_iva_rate_outside_the_sat_catalog():
+    """El SAT solo acepta traslado de IVA al 0%, 8% o 16%."""
+    concepts = [{
+        "description": "Servicio", "quantity": 1, "unit_price": 100,
+        "sat_product_key": "81111500", "sat_unit_key": "E48",
+    }]
+    result = preview_manual_invoice({"concepts": concepts, "iva_rate": "15"})
+
+    assert result["can_create"] is False
+    assert "manual_invoice.concepts.0.iva_rate_not_in_catalog" in result["errors"]
+
+    for rate in ("0", "8", "16"):
+        assert preview_manual_invoice({"concepts": concepts, "iva_rate": rate})["can_create"] is True
+
+
+def test_preview_rounds_each_line_before_adding_up():
+    """SubTotal debe ser la suma de los Importe ya redondeados de cada partida."""
+    result = preview_manual_invoice({"concepts": [
+        {"description": "A", "quantity": 3, "unit_price": "33.333",
+         "sat_product_key": "81111500", "sat_unit_key": "E48"},
+        {"description": "B", "quantity": 7, "unit_price": "1.115",
+         "sat_product_key": "81111500", "sat_unit_key": "E48"},
+    ]})
+
+    amounts = [Decimal(concept["amount"]) for concept in result["concepts"]]
+    assert amounts == [Decimal("100.00"), Decimal("7.81")]
+    assert Decimal(result["subtotal"]) == sum(amounts)
+    assert Decimal(result["iva"]) == sum(Decimal(item["iva"]) for item in result["concepts"])
+
+
+def test_preview_distinguishes_exempt_from_zero_rate():
+    concepts = [{
+        "description": "Alimento", "quantity": 1, "unit_price": 100,
+        "sat_product_key": "50192700", "sat_unit_key": "H87",
+    }]
+    exempt = preview_manual_invoice({"concepts": concepts, "iva_tipo": "exento"})["concepts"][0]
+    zero_rate = preview_manual_invoice({"concepts": concepts, "iva_tipo": "0"})["concepts"][0]
+
+    assert exempt["iva_exempt"] is True
+    assert zero_rate["iva_exempt"] is False
+    # Ambos suman cero de IVA, pero se declaran distinto en el CFDI.
+    assert exempt["iva"] == zero_rate["iva"] == "0.00"
+    assert exempt["tax_object"] == zero_rate["tax_object"] == "02"
+
+
+def test_preview_marks_non_taxable_concepts_without_breakdown():
+    result = preview_manual_invoice({"iva_tipo": "sin_iva", "concepts": [{
+        "description": "No objeto", "quantity": 1, "unit_price": 100,
+        "sat_product_key": "44121600", "sat_unit_key": "H87",
+    }]})
+    concept = result["concepts"][0]
+
+    assert concept["tax_object"] == "01"
+    assert concept["iva"] == "0.00"
+    assert result["total"] == "100.00"

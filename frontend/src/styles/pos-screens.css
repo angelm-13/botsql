@@ -1,0 +1,181 @@
+/* Pantallas del punto de venta dentro de TYAKXA.
+   Comparten la paleta del resto de la aplicacion para que no se sientan una
+   aplicacion invitada: slate para texto y bordes, #1b7a60 para lo principal. */
+
+.pos-screen { color: #334155; }
+
+/* La cabecera la define `styles/page-header.css`, una sola vez para todas
+   las pantallas. Aqui habia una copia con los mismos valores. */
+.pos-header-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.pos-screen .eyebrow {
+  margin: 0 0 4px; font-size: 11px; letter-spacing: .1em;
+  text-transform: uppercase; color: #1b7a60; font-weight: 700;
+}
+.pos-screen h1 { margin: 0 0 6px; color: #0f172a; }
+.pos-screen .muted { color: #64748b; }
+.pos-screen .mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.pos-section-title {
+  display: flex; align-items: center; gap: 8px;
+  margin: 24px 0 10px; font-size: 17px; color: #0f172a;
+}
+
+/* --- cifras de cabecera ---
+   Van arriba y grandes porque son lo que se consulta primero; el detalle va
+   despues. */
+
+.pos-tally {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px; margin-bottom: 16px;
+}
+
+.pos-tally-card {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 14px 16px; background: #fff;
+  border: 1px solid #e2e8f0; border-left: 4px solid var(--tono, #cbd5e1);
+  border-radius: 11px;
+}
+.pos-tally-card.ok   { --tono: #1b7a60; }
+.pos-tally-card.warn { --tono: #b45309; }
+.pos-tally-card.crit { --tono: #b91c1c; }
+
+.pos-tally-count {
+  font-size: 24px; font-weight: 700; color: var(--tono, #0f172a);
+  font-variant-numeric: tabular-nums; line-height: 1.15;
+}
+.pos-tally-label { font-size: 12px; color: #64748b; line-height: 1.3; }
+
+/* --- avisos --- */
+
+.pos-warn, .pos-blocked {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 12px 15px; border-radius: 10px; margin: 0 0 14px;
+  background: #fffbeb; border: 1px solid #fde68a; color: #78350f; font-size: 14px;
+}
+.pos-warn svg, .pos-blocked svg { flex: 0 0 auto; margin-top: 2px; }
+.pos-blocked p { margin: 0 0 6px; }
+
+.pos-screen .error {
+  padding: 11px 14px; background: #fef2f2; border: 1px solid #fecaca;
+  border-radius: 10px; color: #991b1b; margin: 0 0 14px;
+}
+
+/* --- barra de filtros --- */
+
+.pos-toolbar {
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 12px;
+}
+.pos-search {
+  display: flex; align-items: center; gap: 8px; flex: 1 1 300px;
+  border: 1px solid #cbd5e1; border-radius: 10px; padding: 0 11px; background: #fff;
+}
+.pos-search svg { color: #64748b; flex: 0 0 auto; }
+.pos-search input {
+  flex: 1; border: none; outline: none; padding: 10px 0; font: inherit; background: transparent;
+}
+.pos-toolbar select {
+  padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 10px; font: inherit; background: #fff;
+}
+.pos-count { font-size: 13px; color: #64748b; font-variant-numeric: tabular-nums; }
+
+/* --- tablas --- */
+
+.pos-screen .table-wrap {
+  overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 12px; background: #fff;
+}
+.pos-screen table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.pos-screen th, .pos-screen td {
+  text-align: left; padding: 10px 14px; border-bottom: 1px solid #e2e8f0; vertical-align: top;
+}
+.pos-screen th.num, .pos-screen td.num { text-align: right; }
+.pos-screen thead th {
+  background: #f8fafc; font-size: 11px; letter-spacing: .06em;
+  text-transform: uppercase; color: #64748b; white-space: nowrap;
+}
+.pos-screen tbody tr:last-child td { border-bottom: none; }
+.pos-screen td p { margin: 3px 0 0; font-size: 12px; }
+.pos-screen td.bajo { color: #b91c1c; font-weight: 700; }
+
+.pos-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700;
+  white-space: nowrap;
+}
+.pos-chip.ok    { background: #dcfce7; color: #14532d; }
+.pos-chip.warn  { background: #fef3c7; color: #78350f; }
+.pos-chip.muted { background: #f1f5f9; color: #64748b; }
+
+/* --- barras del tablero ---
+   Se dibujan con divs y no con una libreria de graficas: son proporciones
+   simples, y traer una dependencia para eso engorda el paquete sin ganar nada. */
+
+.pos-columns {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px;
+}
+.pos-panel {
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 4px 16px 16px;
+}
+.pos-panel .pos-section-title { margin-top: 16px; }
+
+.pos-bars { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 11px; }
+.pos-bar-head {
+  display: flex; justify-content: space-between; gap: 12px; font-size: 13.5px; margin-bottom: 4px;
+}
+.pos-bar-track { height: 8px; background: #f1f5f9; border-radius: 999px; overflow: hidden; }
+.pos-bar-fill { height: 100%; background: #1b7a60; border-radius: 999px; }
+
+.pos-screen :focus-visible { outline: 2px solid #1b7a60; outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pos-screen * { transition: none !important; animation: none !important; }
+}
+
+/* Aviso de horizonte: las cifras de arriba son del dia y los desgloses de abajo
+   son historicos. Se marca porque un tablero que no dice de que periodo habla
+   se lee mal. */
+.pos-note {
+  margin: 20px 0 6px; font-size: 13px; color: #64748b;
+  padding-left: 10px; border-left: 3px solid #e2e8f0;
+}
+.pos-bar-head em { font-style: normal; font-size: 12px; }
+
+/* --- formularios de alta ---
+   Rejilla que se acomoda sola: los campos cortos caben varios por renglon y los
+   largos ocupan el ancho. Sin esto un formulario de nueve campos sale como una
+   columna de nueve renglones y no se ve completo en una pantalla. */
+
+.pos-form { padding: 4px 16px 18px; margin-bottom: 16px; }
+.pos-form > p.muted { margin: 0 0 12px; font-size: 13px; }
+
+.pos-fields {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px; margin-bottom: 14px;
+}
+.pos-fields label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; }
+.pos-fields label.ancho { grid-column: span 2; min-width: 0; }
+.pos-fields label.casilla {
+  flex-direction: row; align-items: center; gap: 8px; align-self: end; padding-bottom: 9px;
+}
+.pos-fields label > span { color: #475569; font-weight: 600; }
+.pos-fields input, .pos-fields select {
+  padding: 9px 11px; border: 1px solid #cbd5e1; border-radius: 9px;
+  font: inherit; background: #fff; min-width: 0;
+}
+.pos-fields input[type="color"] { padding: 3px; height: 38px; cursor: pointer; }
+.pos-fields label.casilla input { width: auto; }
+.pos-fields input:focus, .pos-fields select:focus { outline: 2px solid #1b7a60; outline-offset: 1px; }
+
+.pos-screen .button.primary { background: #1b7a60; border-color: #1b7a60; color: #fff; }
+.pos-screen .button.primary:disabled { opacity: .5; cursor: not-allowed; }
+.pos-screen .button:disabled { opacity: .55; cursor: not-allowed; }
+
+/* Desglose del corte, una linea por forma de pago. */
+.pos-cut-lines { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.pos-cut-lines li {
+  display: grid; grid-template-columns: 110px 1fr auto; gap: 12px;
+  align-items: baseline; font-size: 13.5px;
+}
+.pos-cut-lines li > span:first-child { font-weight: 700; }

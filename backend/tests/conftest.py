@@ -32,12 +32,25 @@ else:
 
 
 def reset_test_database():
+    """Deja la base limpia entre pruebas.
+
+    Con SQLite en memoria basta cerrar el pool: la base se va con el.
+
+    Con PostgreSQL se tira el esquema entero en lugar de ir tabla por tabla.
+    `drop_all` tiene que ordenar los DROP y no puede: hay un ciclo real de
+    llaves foraneas entre `permission`, `user`, `proyect` y `customer_supplier`
+    -el mismo que obligo a declararlas diferibles para poder sembrar-, asi que
+    revienta con CircularDependencyError. `DROP SCHEMA ... CASCADE` no necesita
+    orden y ademas se lleva por delante secuencias e indices.
+    """
     if engine.dialect.name == 'sqlite':
         engine.dispose()
     else:
         with warnings.catch_warnings():
             warnings.simplefilter('ignore', SAWarning)
-            Base.metadata.drop_all(bind=engine)
+            with engine.begin() as conexion:
+                conexion.exec_driver_sql('DROP SCHEMA public CASCADE')
+                conexion.exec_driver_sql('CREATE SCHEMA public')
     Base.metadata.create_all(bind=engine)
 
 
@@ -54,12 +67,7 @@ class BackendTestCase(unittest.TestCase):
         reset_test_database()
 
     def tearDown(self):
-        if engine.dialect.name == 'sqlite':
-            engine.dispose()
-        else:
-            with warnings.catch_warnings():
-                warnings.simplefilter('ignore', SAWarning)
-                Base.metadata.drop_all(bind=engine)
+        reset_test_database()
 
     def json(self, response):
         return response.get_json() or {}

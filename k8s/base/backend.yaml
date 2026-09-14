@@ -1,0 +1,286 @@
+# backend, celery-worker y celery-beat comparten la misma imagen de
+# worker (celery-worker y celery-beat literalmente reusan la imagen
+# "worker" — solo cambia el `command`), igual que hoy en
+# docker-compose.yml.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: uploads-data
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 5Gi # comprobantes XML, PDF, estados de cuenta y fotos de producto (ver storage_service.py); crece con el uso
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+spec:
+  replicas: 1
+  # local-path (ReadWriteOnce, atado al nodo, igual que el PVC de postgres):
+  # dos pods del backend no pueden montar el mismo volumen de /uploads a la
+  # vez, así que el viejo debe apagarse antes de levantar el nuevo. A
+  # diferencia de postgres.yaml (StatefulSet, RollingUpdate ya se comporta
+  # así con 1 réplica), un Deployment normal sí necesita este strategy
+  # explícito o intentaría tener ambos pods corriendo durante el rollout.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      # Kubernetes inyecta variables tipo BACKEND_PORT=tcp://<ip>:5001 por
+      # cada Service del namespace (compatibilidad con "Docker links").
+      # Choca con BACKEND_PORT que el propio entrypoint.sh espera como
+      # número de puerto — lo desactivamos para que el único BACKEND_PORT
+      # que exista sea el que definimos nosotros (o su default 5001).
+      enableServiceLinks: false
+      # Aplica database/migrations/*.sql ANTES de que arranque el backend.
+      #
+      # Por qué existe: init.sql solo se ejecuta cuando el volumen de
+      # Postgres nace vacío (/docker-entrypoint-initdb.d), así que los ALTER
+      # posteriores nunca llegaban a una base ya creada. El modelo quedaba
+      # adelantado respecto al esquema y cualquier SELECT sobre una columna
+      # nueva reventaba con UndefinedColumn -> 500 errors.internal_server_error.
+      #
+      # Por qué un initContainer y no un Job: corre en cada arranque del pod,
+      # así que el esquema se auto-repara en cada despliegue y cada namespace
+      # nuevo nace completo, sin un paso manual que se pueda olvidar. Un Job
+      # tendría que borrarse y recrearse en cada apply (campos inmutables).
+      #
+      # Es seguro repetirlo: las 9 migraciones son idempotentes
+      # (IF NOT EXISTS, y los ADD CONSTRAINT van dentro de
+      # DO $$ ... EXCEPTION WHEN duplicate_object THEN NULL; END $$).
+      initContainers:
+        - name: db-migrate
+          # Misma imagen db-init que usa Postgres: ya trae psql, pg_isready
+          # y las migraciones en /migrations (ver infra/docker/db-init.Dockerfile).
+          image: DB_INIT_IMAGE_PLACEHOLDER
+          env:
+            - name: PGHOST
+              value: postgres
+            - name: PGDATABASE
+              valueFrom: { secretKeyRef: { name: app-secrets, key: DB_NAME } }
+            - name: PGUSER
+              valueFrom: { secretKeyRef: { name: app-secrets, key: DB_USER } }
+            - name: PGPASSWORD
+              valueFrom: { secretKeyRef: { name: app-secrets, key: DB_PASSWORD } }
+            # Que modulos de negocio tiene contratados este cliente, separados
+            # por coma (ej. "facturacion,restaurante"). `optional: true`
+            # porque la mayoria de los Secret todavia no la traen -- sin ella,
+            # el sembrado de permisos se interpreta como "todos los modulos",
+            # que es el comportamiento de siempre. Ver
+            # database/migrations/20260901000000_module_permission_matrix_licensed.sql.
+            - name: LICENSED_MODULES
+              valueFrom: { secretKeyRef: { name: app-secrets, key: LICENSED_MODULES, optional: true } }
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              # Postgres puede tardar en estar listo (volumen local-path,
+              # primer arranque con el esquema completo). Se espera hasta
+              # 180 s y si no, se falla ruidosamente: Kubernetes reintenta
+              # el initContainer y el motivo queda en los logs, en vez de
+              # quedarse colgado en silencio.
+              i=0
+              until pg_isready -q; do
+                i=$((i + 3))
+                if [ "$i" -ge 180 ]; then
+                  echo "db-migrate: Postgres no respondio en 180s, abortando"
+                  exit 1
+                fi
+                echo "db-migrate: esperando a Postgres..."
+                sleep 3
+              done
+              # Orden lexicografico = orden cronologico, por el prefijo de
+              # timestamp en el nombre. ON_ERROR_STOP=1 para que un error
+              # real detenga el arranque en vez de dejar el esquema a medias.
+              for f in /migrations/*.sql; do
+                echo "db-migrate: aplicando $(basename "$f")"
+                # licensed_modules solo lo usa la migracion de licencia por
+                # modulo; pasarlo siempre es inofensivo para el resto (psql
+                # ignora una -v que el archivo no referencia).
+                psql -v ON_ERROR_STOP=1 -q -v licensed_modules="${LICENSED_MODULES:-}" -f "$f"
+              done
+              echo "db-migrate: esquema al dia"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 300m
+              memory: 128Mi
+      containers:
+        - name: backend
+          # kustomize `images:` lo sustituye por ghcr.io/.../tyakxa-tny-backend:<sha>
+          image: BACKEND_IMAGE_PLACEHOLDER
+          env:
+            # Sin esto el contenedor corre en UTC (default de la imagen base) y
+            # cualquier corte por dia de calendario -vencimientos, "hoy"- queda
+            # hasta 6 horas adelantado respecto al dia real del cliente. Mismo
+            # valor que .env usa en desarrollo local.
+            - name: TZ
+              value: America/Mexico_City
+          envFrom:
+            - secretRef:
+                name: app-secrets
+          ports:
+            - containerPort: 5001
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: uploads
+              mountPath: /uploads
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5001
+            timeoutSeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            # Mismo endpoint que el readinessProbe, con umbrales más laxos:
+            # si /health deja de responder de forma sostenida (colgado, no
+            # solo un pico de carga), se reinicia el contenedor solo.
+            httpGet:
+              path: /health
+              port: 5001
+            timeoutSeconds: 5
+            periodSeconds: 20
+            failureThreshold: 3
+            initialDelaySeconds: 15
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: uploads-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+spec:
+  selector:
+    app: backend
+  ports:
+    - port: 5001
+      targetPort: 5001
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: celery-worker
+  template:
+    metadata:
+      labels:
+        app: celery-worker
+    spec:
+      # Ver nota en el Deployment "backend" de este mismo archivo: evita que
+      # Kubernetes inyecte BACKEND_PORT=tcp://<ip>:5001 desde el Service.
+      enableServiceLinks: false
+      containers:
+        - name: celery-worker
+          image: WORKER_IMAGE_PLACEHOLDER
+          command: ["celery", "-A", "celery_worker.celery", "worker", "--loglevel=INFO"]
+          env:
+            # Ver nota de TZ en el Deployment "backend": misma app, mismo reloj.
+            - name: TZ
+              value: America/Mexico_City
+          envFrom:
+            - secretRef:
+                name: app-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 400m
+              memory: 256Mi
+          livenessProbe:
+            # No hay endpoint HTTP en un worker de Celery — "inspect ping"
+            # confirma que el proceso sigue respondiendo a control commands
+            # vía el broker, no solo que el contenedor está vivo.
+            #
+            # Los umbrales de antes (timeoutSeconds 10, periodSeconds 30)
+            # mataban a un worker SANO cada ~30 s: el evento decía
+            # "command timed out ... after 10s" y el log del contenedor
+            # terminaba en "ready." + "Warm shutdown", o sea que el proceso
+            # estaba bien. El coste del chequeo no es el ping en sí, es
+            # arrancar otro intérprete de Python que importa toda la app
+            # (Flask + modelos) con 400m de CPU — eso solo ya se acercaba
+            # a los 10 s.
+            #
+            # -d celery@$(hostname) limita la espera a ESTE worker: sin
+            # destino, el comando aguarda su --timeout completo por si
+            # contesta algún otro nodo. Va con "sh -c" porque hace falta
+            # una shell real para expandir $(hostname) — la sustitución
+            # $(VAR) de Kubernetes no aplica a exec.command (misma razón
+            # que el probe de postgres.yaml).
+            exec:
+              command:
+                - sh
+                - -c
+                - celery -A celery_worker.celery inspect ping -d "celery@$(hostname)" --timeout=15
+            timeoutSeconds: 30
+            periodSeconds: 60
+            failureThreshold: 3
+            initialDelaySeconds: 60
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-beat
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # beat guarda su propio estado de scheduler en disco local del pod; dos réplicas duplicarían tareas
+  selector:
+    matchLabels:
+      app: celery-beat
+  template:
+    metadata:
+      labels:
+        app: celery-beat
+    spec:
+      # Ver nota en el Deployment "backend" de este mismo archivo: evita que
+      # Kubernetes inyecte BACKEND_PORT=tcp://<ip>:5001 desde el Service.
+      enableServiceLinks: false
+      containers:
+        - name: celery-beat
+          # Sin livenessProbe propia a propósito: beat no expone nada por
+          # red ni responde a "celery inspect" (eso es para workers). Si el
+          # proceso truena, el contenedor termina y restartPolicy lo levanta
+          # solo — el caso que sí nos falta cubrir (colgado sin salir del
+          # proceso) no tiene un chequeo liviano y confiable sin agregar
+          # tooling extra; queda como pendiente si se vuelve un problema real.
+          image: WORKER_IMAGE_PLACEHOLDER
+          command: ["celery", "-A", "celery_worker.celery", "beat", "--loglevel=INFO"]
+          env:
+            # Ver nota de TZ en el Deployment "backend": misma app, mismo reloj.
+            - name: TZ
+              value: America/Mexico_City
+          envFrom:
+            - secretRef:
+                name: app-secrets
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 96Mi

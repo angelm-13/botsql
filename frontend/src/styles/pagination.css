@@ -1,0 +1,54 @@
+/* La paginacion. Hoja propia porque la usan las 49 pantallas generadas y
+   ninguna importa las hojas del almacen: la trae el componente. */
+/* --- la paginacion, una sola vez ---
+
+   Vivia repetida en 49 pantallas, y en las 49 con los mismos tres fallos:
+   "Siguiente" nunca se deshabilitaba, no decia cuantas paginas hay, y no habia
+   salto. El componente esta en components/Pagination.jsx. */
+
+.paginacion {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 14px; flex-wrap: wrap; margin-top: 16px;
+}
+.paginacion-botones {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.paginacion-botones .button { display: inline-flex; align-items: center; gap: 6px; }
+.paginacion-botones .button:disabled { opacity: .45; cursor: default; }
+
+/* El salto directo: con 56 paginas, llegar al final a base de clics no es
+   navegar. */
+.paginacion-salto {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 12.5px; font-weight: 400;
+}
+.paginacion-salto input {
+  width: 62px; padding: 8px 9px; font: inherit; text-align: center;
+  border: 1px solid #cbd5e1; border-radius: 10px; background: #fff;
+  font-variant-numeric: tabular-nums;
+}
+.paginacion-salto input:disabled { background: #f1f5f9; }
+
+/* Cuantos registros hay, que es la otra mitad de la pregunta: "pagina 5 de 56"
+   no dice si son doscientos o dos mil. */
+.paginacion-cuenta { font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.paginacion-cuenta strong { color: #0f172a; }
+
+@media (max-width: 620px) {
+  .paginacion { justify-content: center; }
+}
+
+/* Cuando la familia elegida no tiene tipos declarados, se dice donde se
+   declaran en lugar de dejar un desplegable vacio sin explicacion. */
+.material-sin-tipos { font-size: 11.5px; font-weight: 400; }
+
+/* Cuantos ver de golpe. Mismo alto que los botones para que la barra no salte
+   de altura cuando la pantalla lo pide y cuando no. */
+.paginacion-tamano {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 12.5px; margin-left: auto;
+}
+.paginacion-tamano select {
+  padding: 8px 10px; font: inherit;
+  border: 1px solid #cbd5e1; border-radius: 10px; background: #fff;
+}

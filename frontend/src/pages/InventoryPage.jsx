@@ -1,0 +1,371 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import PropTypes from "prop-types";
+import {
+  Boxes, ChevronDown, ChevronRight, ClipboardList, RefreshCw, Search, Warehouse,
+} from "lucide-react";
+import { useI18n } from "../i18n";
+import "../styles/inventory-warehouses.css";
+import PageHeader from "../components/PageHeader.jsx";
+import { getAllEntityPermission, getLocationTree, getWarehouseStock } from "../api";
+
+const ENTITY_KEY = "product";
+const ACTION_READ = 2;
+
+function hasBit(value, bit) {
+  return (Number(value || 0) & bit) === bit;
+}
+
+function normalizeList(data) {
+  return Array.isArray(data) ? data : (data?.items || data?.data || []);
+}
+
+function readCurrentUser() {
+  try { return JSON.parse(localStorage.getItem("user") || "{}"); } catch (_) { return {}; }
+}
+
+function flattenTree(nodes, depth = 0, out = []) {
+  for (const node of nodes || []) {
+    out.push({ ...node, depth });
+    flattenTree(node.children, depth + 1, out);
+  }
+  return out;
+}
+
+/**
+ * La ruta completa de cada ubicacion, por identificador.
+ *
+ * "Rack A-1" no dice de que nave es, y con dos naves hay un Rack A-1 en cada
+ * una: el desplegable de los formularios ofrecia esa descripcion suelta, asi
+ * que elegir la ubicacion correcta era cuestion de saberse el almacen de
+ * memoria. El arbol ya venia anidado del backend; aqui solo se recorre.
+ */
+function construirRutas(nodos, ancestros = [], mapa = new Map()) {
+  for (const nodo of nodos || []) {
+    const camino = [...ancestros, nodo.location_description];
+    mapa.set(String(nodo.id_location), {
+      nodo,
+      camino,
+      etiqueta: camino.join(" › "),
+    });
+    construirRutas(nodo.children, camino, mapa);
+  }
+  return mapa;
+}
+
+/**
+ * Una rama del arbol de ubicaciones.
+ *
+ * Antes esto era una tabla y la jerarquia se simulaba con espacios dentro de un
+ * `<pre>`. Se leia con dos niveles; con cuatro, no, y no se podia plegar una
+ * nave para ver las demas.
+ *
+ * La barra dice que parte del total del almacen esta en esta ubicacion. Es lo
+ * que contesta "donde esta concentrado" sin hacer cuentas a mano, y es la
+ * pregunta que se hace antes de ir a buscar algo.
+ */
+function RamaDeUbicacion({ nodo, nivel, elegida, plegados, onElegir, onPlegar,
+                           totalDelAlmacen, filtro, t }) {
+  const hijos = nodo.children || [];
+  const plegado = plegados.has(String(nodo.id_location));
+  const propio = Number(nodo.quantity || 0);
+  const acumulado = Number(nodo.total_quantity || 0);
+  const porcion = totalDelAlmacen > 0
+    ? Math.round((acumulado / totalDelAlmacen) * 100) : 0;
+
+  // Con filtro se muestra el nodo si el o alguno de sus descendientes coincide:
+  // esconder al padre esconderia al hijo que se esta buscando.
+  const coincide = (n) => {
+    const texto = String(n.location_description || "").toLowerCase();
+    if (texto.includes(filtro)) return true;
+    return (n.children || []).some(coincide);
+  };
+  if (filtro && !coincide(nodo)) return null;
+
+  return (
+    <div>
+      <button
+        type="button"
+        className={[
+          "inv-nodo",
+          nodo.is_warehouse ? "es-almacen" : "",
+          String(elegida) === String(nodo.id_location) ? "elegida" : "",
+          acumulado === 0 ? "vacia" : "",
+        ].filter(Boolean).join(" ")}
+        onClick={() => onElegir(String(nodo.id_location))}
+      >
+        <span
+          className={`inv-plegar ${hijos.length ? "" : "sin-hijos"}`}
+          role={hijos.length ? "button" : undefined}
+          tabIndex={-1}
+          onClick={(e) => { e.stopPropagation(); onPlegar(String(nodo.id_location)); }}
+        >
+          {hijos.length ? (plegado ? <ChevronRight size={14} /> : <ChevronDown size={14} />) : null}
+        </span>
+
+        <span className="inv-nombre">
+          {nodo.is_warehouse ? <Warehouse size={14} /> : <Boxes size={13} />}
+          <span title={nodo.location_description}>{nodo.location_description}</span>
+          {nodo.location_type_description && (
+            <em className="inv-tipo">{nodo.location_type_description}</em>
+          )}
+        </span>
+
+        <span className="inv-cifras">
+          <strong className="inv-acumulado">{acumulado}</strong>
+          {/* Lo asentado justo aqui, cuando difiere de lo acumulado. Si son
+              iguales el segundo numero no aporta y solo hace ruido. */}
+          {hijos.length > 0 && propio !== acumulado && (
+            <span className="inv-propio"
+                  title={t("inventory.own_here", "asentado en esta ubicación")}>
+              {propio} {t("inventory.own_short", "aquí")}
+            </span>
+          )}
+        </span>
+
+        <span className="inv-barra"
+              title={`${porcion}% ${t("inventory.of_warehouse", "del almacén")}`}>
+          <i style={{ width: `${porcion}%` }} />
+        </span>
+      </button>
+
+      {hijos.length > 0 && !plegado && (
+        <div className="inv-hijos">
+          {hijos.map((hijo) => (
+            <RamaDeUbicacion
+              key={hijo.id_location}
+              nodo={hijo}
+              nivel={nivel + 1}
+              elegida={elegida}
+              plegados={plegados}
+              onElegir={onElegir}
+              onPlegar={onPlegar}
+              totalDelAlmacen={totalDelAlmacen}
+              filtro={filtro}
+              t={t}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+RamaDeUbicacion.propTypes = {
+  nodo: PropTypes.shape({
+    id_location: PropTypes.number,
+    location_description: PropTypes.string,
+    location_type_description: PropTypes.string,
+    is_warehouse: PropTypes.bool,
+    quantity: PropTypes.number,
+    total_quantity: PropTypes.number,
+    children: PropTypes.array,
+  }).isRequired,
+  nivel: PropTypes.number.isRequired,
+  elegida: PropTypes.any,
+  plegados: PropTypes.instanceOf(Set).isRequired,
+  onElegir: PropTypes.func.isRequired,
+  onPlegar: PropTypes.func.isRequired,
+  totalDelAlmacen: PropTypes.number.isRequired,
+  filtro: PropTypes.string.isRequired,
+  t: PropTypes.func.isRequired,
+};
+
+
+export default function InventoryPage() {
+  const { t } = useI18n();
+  const currentUser = useMemo(() => readCurrentUser(), []);
+  const isSuperUser = Boolean(currentUser?.is_superuser || currentUser?.is_bootstrap_admin);
+  const roleId = currentUser?.id_permission;
+
+  const [permissionReady, setPermissionReady] = useState(false);
+  const [modulePermission, setModulePermission] = useState(null);
+
+  const [tree, setTree] = useState([]);
+  const [selectedWarehouse, setSelectedWarehouse] = useState("");
+  const [warehouseContent, setWarehouseContent] = useState(null);
+  // Que ramas estan plegadas y el texto del buscador del arbol. Un almacen con
+  // cuarenta baldas no se lee entero: se plega lo que no interesa o se busca.
+  const [plegados, setPlegados] = useState(() => new Set());
+  const [filtroUbicacion, setFiltroUbicacion] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [errorMeta, setErrorMeta] = useState(null);
+
+  const canRead = isSuperUser || hasBit(modulePermission?.control_type, ACTION_READ);
+  const locations = useMemo(() => flattenTree(tree), [tree]);
+  const warehouses = useMemo(() => locations.filter((node) => node.is_warehouse), [locations]);
+
+  // --- permisos -----------------------------------------------------------
+  useEffect(() => {
+    let alive = true;
+    if (isSuperUser) {
+      setModulePermission({ control_type: 15 });
+      setPermissionReady(true);
+      return () => { alive = false; };
+    }
+    getAllEntityPermission({ page: 1, per_page: 500 })
+      .then((payload) => {
+        if (!alive) return;
+        const rows = normalizeList(payload).filter((row) => String(row.id_permission) === String(roleId));
+        setModulePermission(rows.find((row) => row.entity_name === ENTITY_KEY) || null);
+      })
+      .catch(() => { if (alive) setModulePermission(null); })
+      .finally(() => { if (alive) setPermissionReady(true); });
+    return () => { alive = false; };
+  }, [isSuperUser, roleId]);
+
+  // --- carga base ---------------------------------------------------------
+  const loadBase = useCallback(async () => {
+    if (!permissionReady || !canRead) return;
+    setLoading(true);
+    setError("");
+    try {
+      const treePayload = await getLocationTree();
+      setTree(treePayload?.items || []);
+    } catch (requestError) {
+      showError(requestError);
+    } finally {
+      setLoading(false);
+    }
+  }, [permissionReady, canRead]);
+
+  useEffect(() => { loadBase(); }, [loadBase]);
+
+  function showError(requestError) {
+    const payload = requestError?.payload || {};
+    setError(payload.error_key || payload.error || requestError?.message || "errors.unexpected");
+    setErrorMeta(payload.meta || null);
+  }
+
+  async function pickWarehouse(locationId) {
+    setSelectedWarehouse(locationId);
+    setWarehouseContent(null);
+    if (!locationId) return;
+    try {
+      setWarehouseContent(await getWarehouseStock(locationId));
+    } catch (requestError) {
+      showError(requestError);
+    }
+  }
+
+  // La ruta completa de cada ubicacion: sin ella hay que saberse de memoria de
+  // que nave es cada rack.
+  const rutas = useMemo(() => construirRutas(tree), [tree]);
+  const rutaDe = (idUbicacion) => rutas.get(String(idUbicacion))?.etiqueta || "";
+  const plegar = (id) => setPlegados((antes) => {
+    const siguiente = new Set(antes);
+    if (siguiente.has(id)) siguiente.delete(id); else siguiente.add(id);
+    return siguiente;
+  });
+
+  if (!permissionReady) return <main className="page"><p className="muted">{t("common.loading", "Cargando...")}</p></main>;
+  if (!canRead) return <main className="page"><p className="error">{t("errors.permission_denied", "No tienes permiso para ver el inventario.")}</p></main>;
+
+  return (
+    <main className="page">
+      <PageHeader
+        eyebrow={<><Warehouse size={14} /> {t("inventory.eyebrow", "Almacén")}</>}
+        titulo={t("inventory.title", "Inventario por almacén")}
+        subtitulo={t("inventory.subtitle", "Qué hay en cada nave, pasillo y rack. El material sale y vuelve por los vales.")}
+      >
+        <button className="button" type="button" onClick={loadBase} disabled={loading}>
+        <RefreshCw size={16} /> {t("common.refresh", "Actualizar")}
+        </button>
+      </PageHeader>
+
+      {error && (
+        <p className="error">
+          {t(error, error)}
+          {errorMeta?.available !== undefined && ` (${t("inventory.available", "disponible")}: ${errorMeta.available})`}
+        </p>
+      )}
+
+      <section className="card">
+        <h2><Warehouse size={17} /> {t("inventory.warehouses", "Almacenes y ubicaciones")}</h2>
+        {warehouses.length === 0 && (
+          <p className="muted">
+            {t("inventory.no_warehouses", "No hay almacenes definidos. Marca un tipo de ubicación como almacén en Tipo de ubicación.")}
+          </p>
+        )}
+
+        {locations.length > 8 && (
+          <div className="inv-buscador">
+            <Search size={15} />
+            <input
+              value={filtroUbicacion}
+              onChange={(event) => setFiltroUbicacion(event.target.value)}
+              placeholder={t("inventory.filter_locations", "Busca una nave, un pasillo o un rack")}
+              aria-label={t("inventory.filter_locations", "Buscar ubicación")}
+            />
+          </div>
+        )}
+
+        {/* El numero grande de cada renglon es lo acumulado -contando lo que
+            cuelga debajo- y el pequeno es lo asentado justo ahi. Antes eran dos
+            columnas rotuladas "Propio" y "Acumulado", y habia que volver a la
+            cabecera cada vez para saber cual era cual. */}
+        <div className="inv-arbol">
+          {tree.map((raiz) => (
+            <RamaDeUbicacion
+              key={raiz.id_location}
+              nodo={raiz}
+              nivel={0}
+              elegida={selectedWarehouse}
+              plegados={plegados}
+              onElegir={pickWarehouse}
+              onPlegar={plegar}
+              totalDelAlmacen={Number(raiz.total_quantity || 0)}
+              filtro={filtroUbicacion.trim().toLowerCase()}
+              t={t}
+            />
+          ))}
+        </div>
+
+        {/* El contenido va PEGADO al arbol y no en una tarjeta trescientos
+            pixeles mas abajo: se elige un sitio justamente para ver lo que
+            tiene, y tener que bajar rompe ese gesto. */}
+        {warehouseContent && (
+          <div className="inv-contenido">
+            <h3>
+              <ClipboardList size={16} />
+              {rutaDe(selectedWarehouse) || warehouseContent.location_description}
+              <em>
+                {t("inventory.total", "total")}: {warehouseContent.total}
+                {" · "}
+                {warehouseContent.locations_included}{" "}
+                {t("inventory.locations_included_short", "ubicaciones")}
+              </em>
+            </h3>
+            {warehouseContent.items.length === 0 ? (
+              <p className="muted">{t("inventory.warehouse_empty", "Sin existencia en este almacén.")}</p>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>{t("inventory.product", "Producto")}</th>
+                      <th>{t("inventory.location", "Ubicación")}</th>
+                      <th>{t("inventory.quantity", "Cantidad")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {warehouseContent.items.map((row) => (
+                      <tr key={`${row.id_product}-${row.id_location}`}>
+                        <td>{row.product_description || row.product_code || `#${row.id_product}`}</td>
+                        {/* Con la ruta: dentro de una nave grande, "Rack A-1" no
+                            dice en que pasillo esta. */}
+                        <td>{rutaDe(row.id_location) || row.location_description}</td>
+                        <td><strong>{row.quantity}</strong></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+
+    </main>
+  );
+}

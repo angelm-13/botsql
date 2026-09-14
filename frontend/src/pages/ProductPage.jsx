@@ -1,10 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, RefreshCw, Search, Trash2, Pencil } from "lucide-react";
+import { ArrowUpRight, RefreshCw, Search, Tags, Trash2, Pencil, History} from "lucide-react";
+import { Link } from "react-router-dom";
+import FiltroBuscable from "../components/FiltroBuscable.jsx";
 import { useI18n } from "../i18n";
-import { getAllProduct, createProduct, updateProduct, deleteProduct, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, uploadProductImage, getAllBrand, getAllProductFamily, getAllInventoryStatus, getAllInvoice, getAllLocation, getAllMaterial } from "../api";
+import { getAllProduct, createProduct, updateProduct, deleteProduct, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, uploadProductImage, getAllBrand, getAllProductFamily, getAllInventoryStatus, getAllLocation, getAllMaterial } from "../api";
+import { fetchAllPages } from "../utils/fetchAllPages";
+import Pagination from "../components/Pagination.jsx";
+import ProductHistory from "../components/ProductHistory.jsx";
+import PageHeader from "../components/PageHeader.jsx";
+import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 
-const emptyForm = { id_invoice: "", id_location: "", id_material: "", gross_price: "", color: "", is_directly_related_to_product_service: false, product_status: "", path_imagen: "", product_code: "", note: "", descripcion: "", cantidad: "", id_marca: "", id_familia: "" };
+const emptyForm = { id_location: "", id_material: "", gross_price: "", color: "", is_directly_related_to_product_service: false, product_status: "", path_imagen: "", product_code: "", note: "", descripcion: "", cantidad: "", id_marca: "", id_familia: "" };
 const validationRules = allValidationRules["product"] || {};
 const ENTITY_KEY = "product";
 const ACTION_CREATE = 1;
@@ -12,7 +19,7 @@ const ACTION_READ = 2;
 const ACTION_UPDATE = 4;
 const ACTION_DELETE = 8;
 const FIELD_VISIBLE_BIT = 2;
-const ALL_FIELD_NAMES = ['id_product', 'id_invoice', 'id_location', 'id_material', 'gross_price', 'color', 'is_directly_related_to_product_service', 'product_status', 'path_imagen', 'product_code'];
+const ALL_FIELD_NAMES = ['id_product', 'id_location', 'id_material', 'gross_price', 'color', 'is_directly_related_to_product_service', 'product_status', 'path_imagen', 'product_code'];
 
 function hasBit(value, bit) {
   return (Number(value || 0) & bit) === bit;
@@ -32,14 +39,16 @@ export default function ProductPage() {
   const [formData, setFormData] = useState(emptyForm);
   const [fieldErrors, setFieldErrors] = useState({});
   const [editingId, setEditingId] = useState(null);
+  // El producto cuya ficha de historial esta abierta, o null.
+  const [ficha, setFicha] = useState(null);
   const [query, setQuery] = useState("");
   const [view, setView] = useState("table");
   const [page, setPage] = useState(1);
+  const [paginacion, setPaginacion] = useState({ total: 0, pages: 1, perPage: 0 });
   const [perPage, setPerPage] = useState(10);
   const [loading, setLoading] = useState(false);
   const [errorKey, setErrorKey] = useState("");
   const [errorMeta, setErrorMeta] = useState(null);
-  const [noticeKey, setNoticeKey] = useState("");
   const [selectedImageFile, setSelectedImageFile] = useState(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState("");
   const currentUser = useMemo(() => readCurrentUser(), []);
@@ -54,7 +63,6 @@ export default function ProductPage() {
   const canDelete = canUseAction(ACTION_DELETE);
   const canSubmitForm = editingId ? canUpdate : canCreate;
   const showRowActions = canRead && (canUpdate || canDelete);
-  const [invoiceOptions, setInvoiceOptions] = useState([]);
   const [locationOptions, setLocationOptions] = useState([]);
   const [materialOptions, setMaterialOptions] = useState([]);
   const [brandOptions, setBrandOptions] = useState([]);
@@ -69,8 +77,15 @@ export default function ProductPage() {
     }
     setLoading(true); setErrorKey(""); setErrorMeta(null);
     try {
-      const data = await getAllProduct({ page, per_page: perPage });
+      const data = await getAllProduct({ page, per_page: perPage, q: query || undefined });
       setItems(Array.isArray(data) ? data : (data.items || data.data || []));
+      // La respuesta ya traia el total y el numero de paginas; antes se
+      // tiraban aqui, y por eso "Siguiente" no sabia cuando parar.
+      setPaginacion({
+        total: Array.isArray(data) ? 0 : (data.total ?? 0),
+        pages: Array.isArray(data) ? 1 : (data.pages ?? 1),
+        perPage: Array.isArray(data) ? 0 : (data.per_page ?? perPage),
+      });
     } catch (error) {
       setErrorKey(error.message || "errors.request_failed");
       setErrorMeta(error.payload?.meta || null);
@@ -79,18 +94,17 @@ export default function ProductPage() {
     }
   }
 
-  useEffect(() => { loadData(); }, [page, perPage, permissionReady, canRead]);
+  // Se espera a que deje de teclear: una peticion por tecla convierte una
+  // busqueda de seis letras en seis consultas.
+  useEffect(() => {
+    const temporizador = setTimeout(() => { loadData(); }, 300);
+    return () => clearTimeout(temporizador);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, perPage, permissionReady, canRead, query]);
+  useEffect(() => { setPage(1); }, [query]);
   useEffect(() => {
     async function loadFormOptions() {
       if (!permissionReady || (!canSubmitForm && !canRead)) return;
-      if (canSeeField("id_invoice")) {
-        try {
-          const invoiceData = await getAllInvoice({ page: 1, per_page: 100 });
-          setInvoiceOptions(Array.isArray(invoiceData) ? invoiceData : (invoiceData.items || []));
-        } catch (_) {
-          setInvoiceOptions([]);
-        }
-      }
       if (canSeeField("id_location")) {
         try {
           const locationData = await getAllLocation({ page: 1, per_page: 100 });
@@ -155,9 +169,9 @@ export default function ProductPage() {
       }
       try {
         const [entityPermissionData, fieldPermissionData, fieldData] = await Promise.all([
-          getAllEntityPermission({ per_page: 5000 }),
-          getAllNmFieldPermission({ per_page: 5000 }),
-          getAllField({ per_page: 5000 })
+          fetchAllPages(getAllEntityPermission),
+          fetchAllPages(getAllNmFieldPermission),
+          fetchAllPages(getAllField)
         ]);
         const entityPermissions = normalizeList(entityPermissionData);
         const fieldPermissions = normalizeList(fieldPermissionData);
@@ -348,7 +362,6 @@ export default function ProductPage() {
     event.preventDefault();
     setErrorKey("");
     setErrorMeta(null);
-    setNoticeKey("");
     const submitPayload = buildSubmitPayload();
     const validation = validateForm("product", submitPayload, validationRules);
     const nextFieldErrors = { ...validation.errors };
@@ -414,10 +427,8 @@ export default function ProductPage() {
     if (!window.confirm(t("common.mfa_reset_confirm", "¿Restablecer MFA de este usuario?"))) return;
     setErrorKey("");
     setErrorMeta(null);
-    setNoticeKey("");
     try {
       await resetUserMfa(targetId);
-      setNoticeKey("common.mfa_reset_success");
       await loadData();
     } catch (error) {
       setErrorKey(error.message || "common.mfa_reset_error");
@@ -517,100 +528,6 @@ export default function ProductPage() {
     return String(idValue ?? item.id ?? "");
   }
 
-  function formatEntityCatalogLabel(entityName, fallback = "") {
-    if (!entityName) return "";
-    return t(`menu.${entityName}`, fallback || entityName);
-  }
-
-  function formatControlTypeLabel(value) {
-    const numeric = Number(value);
-    const labels = [];
-    if ((numeric & 1) === 1) labels.push(t("common.create", "Crear"));
-    if ((numeric & 2) === 2) labels.push(t("common.read", "Leer"));
-    if ((numeric & 4) === 4) labels.push(t("common.update", "Actualizar"));
-    if ((numeric & 8) === 8) labels.push(t("common.delete", "Eliminar"));
-    if (!labels.length) return String(value ?? "");
-    const description = numeric === 15 ? t("common.crud_full", "CRUD completo") : labels.join(" + ");
-    return `${numeric} - ${description}`;
-  }
-
-  // issue_12_phase3b_invoice_project_link_summary
-  function invoiceProjectLabel(invoice) {
-    if (ENTITY_KEY !== "invoice") return "";
-    const rawProjectId = invoice?.id_proyect;
-    if (rawProjectId === null || rawProjectId === undefined || String(rawProjectId).trim() === "") return "Sin proyecto";
-    const project = proyectOptions.find((item) => String(item.id_proyect ?? item.id ?? "") === String(rawProjectId));
-    return project ? getOptionLabel(project, "proyect") : `Proyecto #${rawProjectId}`;
-  }
-
-  function invoiceLinkStatus(invoice) {
-    const rawProjectId = invoice?.id_proyect;
-    return rawProjectId === null || rawProjectId === undefined || String(rawProjectId).trim() === "" ? "Sin vincular" : "Vinculada";
-  }
-
-  function invoiceDisplayFolio(invoice) {
-    return String(invoice?.folio || invoice?.folio_fiscal || invoice?.cfdi_code || invoice?.id_invoice || "—");
-  }
-
-  function invoiceMoney(value) {
-    const locale = lang === "ja" ? "ja-JP" : lang === "en" ? "en-US" : lang === "pt" ? "pt-BR" : lang === "de" ? "de-DE" : "es-MX";
-    const n = Number(value || 0);
-    return n.toLocaleString(locale, { style: "currency", currency: "MXN" });
-  }
-
-  function invoiceLinkedCount() {
-    return filtered.filter((item) => item.id_proyect !== null && item.id_proyect !== undefined && String(item.id_proyect).trim() !== "").length;
-  }
-
-  function renderInvoiceProjectSummary() {
-    if (ENTITY_KEY !== "invoice" || !canRead || !filtered.length) return null;
-    const linked = invoiceLinkedCount();
-    const unlinked = filtered.length - linked;
-    return (
-      <div className="table-card invoice-project-card">
-        <div className="invoice-project-header">
-          <div>
-            <strong>Facturas / Proyecto</strong>
-            <p className="muted">Identifica facturas cargadas desde XML y corrige su proyecto desde el formulario existente.</p>
-          </div>
-          <div className="invoice-project-metrics">
-            <span><strong>{filtered.length}</strong>Total</span>
-            <span><strong>{linked}</strong>Vinculadas</span>
-            <span><strong>{unlinked}</strong>Sin proyecto</span>
-          </div>
-        </div>
-        <div className="table-wrap">
-          <table className="invoice-project-table">
-            <thead>
-              <tr>
-                <th>Factura / UUID</th>
-                <th>Emisor</th>
-                <th>Receptor</th>
-                <th>Total</th>
-                <th>Proyecto</th>
-                <th>Vinculación</th>
-                <th>Acción</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((item) => (
-                <tr key={`invoice-link-${item.id_invoice}`}>
-                  <td><strong>{invoiceDisplayFolio(item)}</strong><p className="cell-value">{item.folio_fiscal || item.cfdi_code || "—"}</p></td>
-                  <td><span>{item.nombre_emisor || "—"}</span></td>
-                  <td><span>{item.nombre_receptor || item.id_customer_supplier || "—"}</span></td>
-                  <td><strong>{invoiceMoney(item.total)}</strong></td>
-                  <td><span>{invoiceProjectLabel(item)}</span></td>
-                  <td><span className={item.id_proyect ? "invoice-link-badge linked" : "invoice-link-badge unlinked"}>{invoiceLinkStatus(item)}</span></td>
-                  <td>{canUpdate ? <button type="button" className="button small" onClick={() => startEdit(item)}>Editar relación</button> : <span className="muted">Sin permiso</span>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    );
-  }
-
   function renderError() {
     if (!errorKey) return "";
     const fieldLabel = errorMeta?.field ? t(`fields.product.${errorMeta.field}`, errorMeta.field) : "";
@@ -644,28 +561,21 @@ export default function ProductPage() {
 
   return (
     <section className="entity-page">
-      <div className="page-heading">
-        <div><p className="eyebrow">{t("common.module")}</p><h2>{t("menu.product")}</h2></div>
+      <PageHeader
+        eyebrow={t("common.module")}
+        titulo={t("menu.product")}
+        subtitulo={t("page.product.subtitle", "")}
+      >
         <button className="button ghost" onClick={loadData} disabled={!canRead}><RefreshCw size={16} />{loading ? t("common.loading") : t("common.refresh")}</button>
-      </div>
+      </PageHeader>
 
-      {canSubmitForm && <form className="form-card" onSubmit={handleSubmit}>
-        <div className="form-header"><Plus size={18} /><strong>{editingId ? t("common.edit") : t("common.new")}</strong></div>
+      {canSubmitForm && (
+      <FormularioPlegable
+        titulo={editingId ? t("common.edit") : t("common.new")}
+        abrirSi={editingId}
+        onSubmit={handleSubmit}
+      >
         <div className="form-grid">
-          {canSeeField("id_invoice") && (
-          <label className="field">
-            <span>{t("fields.product.id_invoice")}</span>
-            <select name="id_invoice" value={formData.id_invoice ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors["id_invoice"])} {...inputPropsForField("id_invoice", validationRules["id_invoice"], "select")}>
-              <option value="">{t("common.select_option", "Selecciona una opción")}</option>
-              {invoiceOptions.map((item) => (
-                <option key={item.id_invoice ?? item.id ?? JSON.stringify(item)} value={item.id_invoice ?? item.id ?? ""}>
-                  {getOptionLabel(item, "invoice")}
-                </option>
-              ))}
-            </select>
-            {fieldErrors["id_invoice"] && <span className="field-error">{formatFieldError("id_invoice")}</span>}
-          </label>
-          )}
           {canSeeField("id_location") && (
           <label className="field">
             <span>{t("fields.product.id_location")}</span>
@@ -678,20 +588,6 @@ export default function ProductPage() {
               ))}
             </select>
             {fieldErrors["id_location"] && <span className="field-error">{formatFieldError("id_location")}</span>}
-          </label>
-          )}
-          {canSeeField("id_material") && (
-          <label className="field">
-            <span>{t("fields.product.id_material")}</span>
-            <select name="id_material" value={formData.id_material ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors["id_material"])} {...inputPropsForField("id_material", validationRules["id_material"], "select")}>
-              <option value="">{t("common.select_option", "Selecciona una opción")}</option>
-              {materialOptions.map((item) => (
-                <option key={item.id_material ?? item.id ?? JSON.stringify(item)} value={item.id_material ?? item.id ?? ""}>
-                  {getOptionLabel(item, "material")}
-                </option>
-              ))}
-            </select>
-            {fieldErrors["id_material"] && <span className="field-error">{formatFieldError("id_material")}</span>}
           </label>
           )}
           {canSeeField("gross_price") && (
@@ -767,26 +663,93 @@ export default function ProductPage() {
             {fieldErrors["cantidad"] && <span className="field-error">{formatFieldError("cantidad")}</span>}
           </label>
           )}
-          {canSeeField("id_marca") && (
-          <label className="field">
-            <span>{t("fields.product.id_marca")}</span>
-            <input name="id_marca" type="number" value={formData.id_marca ?? ""} onChange={handleChange} placeholder={t("fields.product.id_marca")} aria-invalid={Boolean(fieldErrors["id_marca"])} {...inputPropsForField("id_marca", validationRules["id_marca"], "number")} />
-            {fieldErrors["id_marca"] && <span className="field-error">{formatFieldError("id_marca")}</span>}
-          </label>
-          )}
-          {canSeeField("id_familia") && (
-          <label className="field">
-            <span>{t("fields.product.id_familia")}</span>
-            <input name="id_familia" type="number" value={formData.id_familia ?? ""} onChange={handleChange} placeholder={t("fields.product.id_familia")} aria-invalid={Boolean(fieldErrors["id_familia"])} {...inputPropsForField("id_familia", validationRules["id_familia"], "number")} />
-            {fieldErrors["id_familia"] && <span className="field-error">{formatFieldError("id_familia")}</span>}
-          </label>
-          )}
         </div>
+
+        {/* La clasificacion, aparte. No es un campo del producto como su color
+            o su precio: es a que grupo pertenece, y eso vive en sus propias
+            pantallas. Los tres son buscables porque con los datos de verdad son
+            562 materiales, 161 familias y 158 marcas, y hasta hace un momento la
+            marca y la familia se capturaban tecleando su NUMERO. */}
+        {(canSeeField("id_material") || canSeeField("id_familia")
+          || canSeeField("id_marca")) && (
+          <fieldset className="clasificacion">
+            <legend>
+              <Tags size={14} />
+              {t("product.classification", "Clasificación")}
+              <Link to="/product_family" className="clasificacion-enlace">
+                {t("product.see_families", "ver familias y tipos")}
+                <ArrowUpRight size={12} />
+              </Link>
+            </legend>
+            <p className="muted clasificacion-ayuda">
+              {t("product.classification_help",
+                "La familia agrupa, el tipo distingue dentro de ella y el material es la cosa concreta. Si falta alguna, se da de alta en Familias y tipos.")}
+            </p>
+            <div className="clasificacion-campos">
+              {canSeeField("id_material") && (
+                <label className="field">
+                  <span>{t("fields.product.id_material")}</span>
+                  <FiltroBuscable
+                    valor={formData.id_material ?? ""}
+                    opciones={materialOptions.map((m) => ({
+                      value: m.id_material ?? m.id ?? "",
+                      label: getOptionLabel(m, "material"),
+                    }))}
+                    onChange={(v) => setFormData((prev) => ({ ...prev, id_material: v }))}
+                    etiqueta={t("fields.product.id_material")}
+                    todas={t("common.select_option", "Selecciona una opción")}
+                  />
+                  {fieldErrors["id_material"] && (
+                    <span className="field-error">{formatFieldError("id_material")}</span>
+                  )}
+                </label>
+              )}
+              {canSeeField("id_familia") && (
+                <label className="field">
+                  <span>{t("fields.product.id_familia")}</span>
+                  <FiltroBuscable
+                    valor={formData.id_familia ?? ""}
+                    opciones={productFamilyOptions.map((f) => ({
+                      value: f.id_product_family ?? f.id ?? "",
+                      label: getOptionLabel(f, "product_family"),
+                    }))}
+                    onChange={(v) => setFormData((prev) => ({ ...prev, id_familia: v }))}
+                    etiqueta={t("fields.product.id_familia")}
+                    todas={t("common.select_option", "Selecciona una opción")}
+                  />
+                  {fieldErrors["id_familia"] && (
+                    <span className="field-error">{formatFieldError("id_familia")}</span>
+                  )}
+                </label>
+              )}
+              {canSeeField("id_marca") && (
+                <label className="field">
+                  <span>{t("fields.product.id_marca")}</span>
+                  <FiltroBuscable
+                    valor={formData.id_marca ?? ""}
+                    opciones={brandOptions.map((b) => ({
+                      value: b.id_brand ?? b.id ?? "",
+                      label: getOptionLabel(b, "brand"),
+                    }))}
+                    onChange={(v) => setFormData((prev) => ({ ...prev, id_marca: v }))}
+                    etiqueta={t("fields.product.id_marca")}
+                    todas={t("common.select_option", "Selecciona una opción")}
+                  />
+                  {fieldErrors["id_marca"] && (
+                    <span className="field-error">{formatFieldError("id_marca")}</span>
+                  )}
+                </label>
+              )}
+            </div>
+          </fieldset>
+        )}
+
         <div className="form-actions">
           <button className="button primary" type="submit">{t("common.save")}</button>
           <button className="button" type="button" onClick={() => { setFormData(emptyForm); setEditingId(null); setFieldErrors({}); clearProductImageSelection(); }}>{t("common.cancel")}</button>
         </div>
-      </form>}
+      </FormularioPlegable>
+      )}
 
       {canRead && <div className="toolbar">
         <div className="search-box"><Search size={16} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("common.search")} /></div>
@@ -802,11 +765,9 @@ export default function ProductPage() {
       {permissionReady && !canRead && !canCreate && <div className="empty"><strong>{t("security.permission.read_denied", "Sin permiso de lectura")}</strong><p>{t("common.module_hidden_hint", "Este módulo no tiene acciones seleccionadas; quedará oculto y sus campos no se mostrarán.")}</p></div>}
       {canRead && !loading && filtered.length === 0 && <div className="empty"><strong>{t("common.empty_title")}</strong><p>{t("common.empty_body")}</p></div>}
 
-      {view === "table" && renderInvoiceProjectSummary()}
 
       {canRead && view === "table" && filtered.length > 0 && <div className="table-card"><table><thead><tr>{showRowActions && <th>{t("common.actions")}</th>}
               {canSeeField("id_product") && <th>{t("fields.product.id_product")}</th>}
-              {canSeeField("id_invoice") && <th>{t("fields.product.id_invoice")}</th>}
               {canSeeField("id_location") && <th>{t("fields.product.id_location")}</th>}
               {canSeeField("id_material") && <th>{t("fields.product.id_material")}</th>}
               {canSeeField("gross_price") && <th>{t("fields.product.gross_price")}</th>}
@@ -815,9 +776,8 @@ export default function ProductPage() {
               {canSeeField("product_status") && <th>{t("fields.product.product_status")}</th>}
               {canSeeField("path_imagen") && <th>{t("fields.product.path_imagen")}</th>}
               {canSeeField("product_code") && <th>{t("fields.product.product_code")}</th>}
-        </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_product}>{showRowActions && <td className="row-actions">{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</td>}
+        </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_product}>{showRowActions && <td className="row-actions">{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}<button type="button" onClick={() => setFicha(item)} title={t("history.title", "Historial del producto")}><History size={15} /></button>{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</td>}
               {canSeeField("id_product") && <td><pre className="cell-value">{formatTableValue(item.id_product)}</pre></td>}
-              {canSeeField("id_invoice") && <td><pre className="cell-value">{productKanbanDisplayLabel(invoiceOptions, "id_invoice", "invoice", item.id_invoice)}</pre></td>}
               {canSeeField("id_location") && <td><pre className="cell-value">{productKanbanDisplayLabel(locationOptions, "id_location", "location", item.id_location)}</pre></td>}
               {canSeeField("id_material") && <td><pre className="cell-value">{productKanbanDisplayLabel(materialOptions, "id_material", "material", item.id_material)}</pre></td>}
               {canSeeField("gross_price") && <td><pre className="cell-value">{formatTableValue(item.gross_price)}</pre></td>}
@@ -840,9 +800,23 @@ export default function ProductPage() {
           {canSeeField("cantidad") && item.cantidad !== null && item.cantidad !== undefined && item.cantidad !== "" && <p><span>{t("fields.product.cantidad", "Cantidad")}:</span> <strong>{formatTableValue(item.cantidad)}</strong></p>}
           {canSeeField("last_update_date") && item.last_update_date && <p><span>{t("fields.product.last_update_date", "Actualizacion")}:</span> <strong>{formatTableValue(item.last_update_date)}</strong></p>}
           {canSeeField("note") && item.note && <p className="wide"><span>{t("fields.product.note", "Nota")}:</span> <strong>{formatTableValue(item.note)}</strong></p>}
-        </div>{showRowActions && <div>{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</div>}</article>)}</div>)}</div>}
+        </div>{showRowActions && <div>{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}<button type="button" onClick={() => setFicha(item)} title={t("history.title", "Historial del producto")}><History size={15} /></button>{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</div>}</article>)}</div>)}</div>}
 
-      <div className="pagination"><button className="button" disabled={page <= 1} onClick={() => setPage(page - 1)}>{t("common.previous")}</button><span>{t("common.page")} {page}</span><button className="button" onClick={() => setPage(page + 1)}>{t("common.next")}</button></div>
+      <Pagination
+        page={page}
+        pages={paginacion.pages}
+        total={paginacion.total}
+        perPage={paginacion.perPage}
+        loading={loading}
+        onChange={setPage}
+      />
+      {ficha && (
+        <ProductHistory
+          idProduct={ficha.id_product}
+          titulo={[ficha.product_code, ficha.descripcion].filter(Boolean).join(" · ")}
+          onCerrar={() => setFicha(null)}
+        />
+      )}
     </section>
   );
 }

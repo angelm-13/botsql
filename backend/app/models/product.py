@@ -2,7 +2,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import String, Integer, BigInteger, SmallInteger, Boolean, Date, DateTime, Float, Numeric, ForeignKey, Text, JSON, Enum, LargeBinary, UniqueConstraint, func
+from sqlalchemy import String, Integer, BigInteger, SmallInteger, Boolean, Date, DateTime, Float, Numeric, ForeignKey, Text, JSON, Enum, LargeBinary, UniqueConstraint, func, text
 from app.models.base import Base
 
 
@@ -26,7 +26,19 @@ class Product(Base):
     gross_price: Mapped[float] = mapped_column(Numeric(10,2), nullable=True)
     color: Mapped[object] = mapped_column(String(100), nullable=True)
     is_directly_related_to_product_service: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    # Texto libre, historico. Se conserva porque es lo que se capturo hasta
+    # ahora y tirarlo seria perder informacion; lo nuevo va en
+    # `id_inventory_status`.
     product_status: Mapped[object] = mapped_column(String(20), nullable=True)
+    # El estatus del producto, contra catalogo: nuevo, usado, en reparacion,
+    # danado, retirado.
+    #
+    # No hay tabla nueva porque ya existe: `inventory_status` es un catalogo
+    # de estados con `entity_scope`, y los del producto viven con
+    # `entity_scope = 'product'`. Con la columna de texto no se podia
+    # filtrar -cada quien escribia "Nuevo", "nuevo" o "n"-.
+    id_inventory_status: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('inventory_status.id_inventory_status'), nullable=True)
     path_imagen: Mapped[object] = mapped_column(String(100), nullable=True)
     product_code: Mapped[object] = mapped_column(String(30), nullable=True)
     note: Mapped[object] = mapped_column(String(300), nullable=True)
@@ -36,6 +48,45 @@ class Product(Base):
     deletion_date: Mapped[object] = mapped_column(DateTime, nullable=True)
     descripcion: Mapped[object] = mapped_column(String(250), nullable=True)
     cantidad: Mapped[int] = mapped_column(Integer, nullable=True)
+    # Como se lleva este producto en el almacen. `fungible` se cuenta -es lo que
+    # el sistema hacia siempre, y sigue siendo el valor por omision-;
+    # `serializado` da una fila por unidad en `inventory_asset`, con estado y
+    # responsable, para lo que hay que rastrear pieza por pieza: herramienta,
+    # equipo, activo de uso.
+    tracking_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'fungible'")
+    )
+    # Para que sirve en el almacen. `mercancia` se compra para venderse -es el
+    # valor por omision, que es como se ha usado el almacen hasta ahora-;
+    # `uso_interno` es herramienta, equipo o consumible de la empresa, que no se
+    # vende nunca: sale para usarse, prestarse o consumirse.
+    #
+    # Sin esta distincion una herramienta prestada y un producto vendido se
+    # veian igual en el saldo, y nada impedia facturar la venta de un taladro
+    # propio.
+    stock_purpose: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'mercancia'")
+    )
+    # Si este producto se lleva por lotes. Vale solo en lo fungible: un producto
+    # serializado ya tiene una fila por unidad, y ponerle lotes ademas seria
+    # llevar la misma cosa por dos caminos.
+    #
+    # Apagado por omision, y a proposito: encenderlo hace que toda entrada tenga
+    # que nombrar su lote, y eso solo tiene sentido en lo que caduca. En lo demas
+    # seria un campo mas que llenar sin nada que contestar a cambio.
+    lot_control: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    # El rastro del sistema anterior. `external_id` es lo que permite repetir la
+    # carga sin duplicar y ligar los renglones de vale con su producto.
+    external_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    external_source: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # Su `producto.id_ubicacion` es VARCHAR(100): texto que alguien escribio, no
+    # una llave. Ahi esta el origen de "muchas cosas no estan en una ubicacion
+    # particular". Se conserva tal cual para poder auditar despues que texto
+    # acabo en que ubicacion, y que texto no se pudo mapear.
+    external_location_text: Mapped[str | None] = mapped_column(
+        String(100), nullable=True)
     id_marca: Mapped[int] = mapped_column(Integer, nullable=True)
     id_familia: Mapped[int] = mapped_column(Integer, nullable=True)
 
@@ -49,6 +100,7 @@ class Product(Base):
             'color': to_json_value(self.color),
             'is_directly_related_to_product_service': to_json_value(self.is_directly_related_to_product_service),
             'product_status': to_json_value(self.product_status),
+            'id_inventory_status': to_json_value(self.id_inventory_status),
             'path_imagen': to_json_value(self.path_imagen),
             'product_code': to_json_value(self.product_code),
             'note': to_json_value(self.note),
@@ -58,6 +110,15 @@ class Product(Base):
             'deletion_date': to_json_value(self.deletion_date),
             'descripcion': to_json_value(self.descripcion),
             'cantidad': to_json_value(self.cantidad),
+            # Como se lleva el producto en el almacen. No estaban, y la pantalla
+            # del vale decide con `tracking_mode` si pide la pieza o la
+            # cantidad: sin el campo en la respuesta, todo producto parecia
+            # fungible y la herramienta se podia capturar sin decir cual.
+            'tracking_mode': to_json_value(self.tracking_mode),
+            'stock_purpose': to_json_value(self.stock_purpose),
+            'lot_control': to_json_value(self.lot_control),
+            'external_id': to_json_value(self.external_id),
+            'external_location_text': to_json_value(self.external_location_text),
             'id_marca': to_json_value(self.id_marca),
             'id_familia': to_json_value(self.id_familia),
         }

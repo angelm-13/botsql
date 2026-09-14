@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, RefreshCw, Search, Trash2, Pencil } from "lucide-react";
+import { RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
 import { getAllSubdepartment, createSubdepartment, updateSubdepartment, deleteSubdepartment, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllDepartment } from "../api";
+import { fetchAllPages } from "../utils/fetchAllPages";
+import Pagination from "../components/Pagination.jsx";
+import PageHeader from "../components/PageHeader.jsx";
+import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 
 const emptyForm = { subdepartment_description: "", id_department: "" };
@@ -35,11 +39,11 @@ export default function SubdepartmentPage() {
   const [query, setQuery] = useState("");
   const [view, setView] = useState("table");
   const [page, setPage] = useState(1);
+  const [paginacion, setPaginacion] = useState({ total: 0, pages: 1, perPage: 0 });
   const [perPage, setPerPage] = useState(10);
   const [loading, setLoading] = useState(false);
   const [errorKey, setErrorKey] = useState("");
   const [errorMeta, setErrorMeta] = useState(null);
-  const [noticeKey, setNoticeKey] = useState("");
 
   const currentUser = useMemo(() => readCurrentUser(), []);
   const isSuperUser = Boolean(currentUser?.is_superuser || currentUser?.is_bootstrap_admin || currentUser?.username === "admin1");
@@ -63,8 +67,15 @@ export default function SubdepartmentPage() {
     }
     setLoading(true); setErrorKey(""); setErrorMeta(null);
     try {
-      const data = await getAllSubdepartment({ page, per_page: perPage });
+      const data = await getAllSubdepartment({ page, per_page: perPage, q: query || undefined });
       setItems(Array.isArray(data) ? data : (data.items || data.data || []));
+      // La respuesta ya traia el total y el numero de paginas; antes se
+      // tiraban aqui, y por eso "Siguiente" no sabia cuando parar.
+      setPaginacion({
+        total: Array.isArray(data) ? 0 : (data.total ?? 0),
+        pages: Array.isArray(data) ? 1 : (data.pages ?? 1),
+        perPage: Array.isArray(data) ? 0 : (data.per_page ?? perPage),
+      });
     } catch (error) {
       setErrorKey(error.message || "errors.request_failed");
       setErrorMeta(error.payload?.meta || null);
@@ -73,7 +84,16 @@ export default function SubdepartmentPage() {
     }
   }
 
-  useEffect(() => { loadData(); }, [page, perPage, permissionReady, canRead]);
+  // Se espera a que deje de teclear: una peticion por tecla convierte una
+  // busqueda de seis letras en seis consultas.
+  useEffect(() => {
+    const temporizador = setTimeout(() => { loadData(); }, 300);
+    return () => clearTimeout(temporizador);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, perPage, permissionReady, canRead, query]);
+  // Buscar algo nuevo vuelve a la primera pagina: sin esto, quien esta en la 7
+  // y escribe otra cosa pide la pagina 7 de un resultado distinto.
+  useEffect(() => { setPage(1); }, [query]);
   useEffect(() => {
     async function loadFormOptions() {
       if (!permissionReady || (!canSubmitForm && !canRead)) return;
@@ -105,9 +125,9 @@ export default function SubdepartmentPage() {
       }
       try {
         const [entityPermissionData, fieldPermissionData, fieldData] = await Promise.all([
-          getAllEntityPermission({ per_page: 5000 }),
-          getAllNmFieldPermission({ per_page: 5000 }),
-          getAllField({ per_page: 5000 })
+          fetchAllPages(getAllEntityPermission),
+          fetchAllPages(getAllNmFieldPermission),
+          fetchAllPages(getAllField)
         ]);
         const entityPermissions = normalizeList(entityPermissionData);
         const fieldPermissions = normalizeList(fieldPermissionData);
@@ -197,7 +217,6 @@ export default function SubdepartmentPage() {
     event.preventDefault();
     setErrorKey("");
     setErrorMeta(null);
-    setNoticeKey("");
     const submitPayload = buildSubmitPayload();
     const validation = validateForm("subdepartment", submitPayload, validationRules);
     const nextFieldErrors = { ...validation.errors };
@@ -251,10 +270,8 @@ export default function SubdepartmentPage() {
     if (!window.confirm(t("common.mfa_reset_confirm", "¿Restablecer MFA de este usuario?"))) return;
     setErrorKey("");
     setErrorMeta(null);
-    setNoticeKey("");
     try {
       await resetUserMfa(targetId);
-      setNoticeKey("common.mfa_reset_success");
       await loadData();
     } catch (error) {
       setErrorKey(error.message || "common.mfa_reset_error");
@@ -354,100 +371,6 @@ export default function SubdepartmentPage() {
     return String(idValue ?? item.id ?? "");
   }
 
-  function formatEntityCatalogLabel(entityName, fallback = "") {
-    if (!entityName) return "";
-    return t(`menu.${entityName}`, fallback || entityName);
-  }
-
-  function formatControlTypeLabel(value) {
-    const numeric = Number(value);
-    const labels = [];
-    if ((numeric & 1) === 1) labels.push(t("common.create", "Crear"));
-    if ((numeric & 2) === 2) labels.push(t("common.read", "Leer"));
-    if ((numeric & 4) === 4) labels.push(t("common.update", "Actualizar"));
-    if ((numeric & 8) === 8) labels.push(t("common.delete", "Eliminar"));
-    if (!labels.length) return String(value ?? "");
-    const description = numeric === 15 ? t("common.crud_full", "CRUD completo") : labels.join(" + ");
-    return `${numeric} - ${description}`;
-  }
-
-  // issue_12_phase3b_invoice_project_link_summary
-  function invoiceProjectLabel(invoice) {
-    if (ENTITY_KEY !== "invoice") return "";
-    const rawProjectId = invoice?.id_proyect;
-    if (rawProjectId === null || rawProjectId === undefined || String(rawProjectId).trim() === "") return "Sin proyecto";
-    const project = proyectOptions.find((item) => String(item.id_proyect ?? item.id ?? "") === String(rawProjectId));
-    return project ? getOptionLabel(project, "proyect") : `Proyecto #${rawProjectId}`;
-  }
-
-  function invoiceLinkStatus(invoice) {
-    const rawProjectId = invoice?.id_proyect;
-    return rawProjectId === null || rawProjectId === undefined || String(rawProjectId).trim() === "" ? "Sin vincular" : "Vinculada";
-  }
-
-  function invoiceDisplayFolio(invoice) {
-    return String(invoice?.folio || invoice?.folio_fiscal || invoice?.cfdi_code || invoice?.id_invoice || "—");
-  }
-
-  function invoiceMoney(value) {
-    const locale = lang === "ja" ? "ja-JP" : lang === "en" ? "en-US" : lang === "pt" ? "pt-BR" : lang === "de" ? "de-DE" : "es-MX";
-    const n = Number(value || 0);
-    return n.toLocaleString(locale, { style: "currency", currency: "MXN" });
-  }
-
-  function invoiceLinkedCount() {
-    return filtered.filter((item) => item.id_proyect !== null && item.id_proyect !== undefined && String(item.id_proyect).trim() !== "").length;
-  }
-
-  function renderInvoiceProjectSummary() {
-    if (ENTITY_KEY !== "invoice" || !canRead || !filtered.length) return null;
-    const linked = invoiceLinkedCount();
-    const unlinked = filtered.length - linked;
-    return (
-      <div className="table-card invoice-project-card">
-        <div className="invoice-project-header">
-          <div>
-            <strong>Facturas / Proyecto</strong>
-            <p className="muted">Identifica facturas cargadas desde XML y corrige su proyecto desde el formulario existente.</p>
-          </div>
-          <div className="invoice-project-metrics">
-            <span><strong>{filtered.length}</strong>Total</span>
-            <span><strong>{linked}</strong>Vinculadas</span>
-            <span><strong>{unlinked}</strong>Sin proyecto</span>
-          </div>
-        </div>
-        <div className="table-wrap">
-          <table className="invoice-project-table">
-            <thead>
-              <tr>
-                <th>Factura / UUID</th>
-                <th>Emisor</th>
-                <th>Receptor</th>
-                <th>Total</th>
-                <th>Proyecto</th>
-                <th>Vinculación</th>
-                <th>Acción</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((item) => (
-                <tr key={`invoice-link-${item.id_invoice}`}>
-                  <td><strong>{invoiceDisplayFolio(item)}</strong><p className="cell-value">{item.folio_fiscal || item.cfdi_code || "—"}</p></td>
-                  <td><span>{item.nombre_emisor || "—"}</span></td>
-                  <td><span>{item.nombre_receptor || item.id_customer_supplier || "—"}</span></td>
-                  <td><strong>{invoiceMoney(item.total)}</strong></td>
-                  <td><span>{invoiceProjectLabel(item)}</span></td>
-                  <td><span className={item.id_proyect ? "invoice-link-badge linked" : "invoice-link-badge unlinked"}>{invoiceLinkStatus(item)}</span></td>
-                  <td>{canUpdate ? <button type="button" className="button small" onClick={() => startEdit(item)}>Editar relación</button> : <span className="muted">Sin permiso</span>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    );
-  }
-
   function renderError() {
     if (!errorKey) return "";
     const fieldLabel = errorMeta?.field ? t(`fields.subdepartment.${errorMeta.field}`, errorMeta.field) : "";
@@ -460,11 +383,15 @@ export default function SubdepartmentPage() {
     return t(errorKey, errorKey);
   }
 
-  const filtered = useMemo(() => {
-    const needle = query.toLowerCase();
-    if (!needle) return items;
-    return items.filter((item) => Object.values(item || {}).some((value) => String(value ?? "").toLowerCase().includes(needle)));
-  }, [items, query]);
+  // El buscador pregunta al SERVIDOR, asi que lo que llega ya viene filtrado.
+  //
+  // Antes se filtraba aqui, sobre `items`, que es solo la pagina cargada: con
+  // 2 221 productos en 56 paginas, teclear un nombre estando en la primera no
+  // encontraba el que vive en la 34, y el contador seguia diciendo 2 221. El
+  // servidor busca por todas las columnas de texto y, si lo escrito es un
+  // numero, tambien por los identificadores -- asi "8580" encuentra el
+  // producto 8580 aunque no se sepa como se llama.
+  const filtered = items;
 
   const groups = useMemo(() => filtered.reduce((acc, item) => {
     const key = String(item.subdepartment_description ?? t("common.unclassified"));
@@ -473,13 +400,20 @@ export default function SubdepartmentPage() {
 
   return (
     <section className="entity-page">
-      <div className="page-heading">
-        <div><p className="eyebrow">{t("common.module")}</p><h2>{t("menu.subdepartment")}</h2></div>
+      <PageHeader
+        eyebrow={t("common.module")}
+        titulo={t("menu.subdepartment")}
+        subtitulo={t("page.subdepartment.subtitle", "")}
+      >
         <button className="button ghost" onClick={loadData} disabled={!canRead}><RefreshCw size={16} />{loading ? t("common.loading") : t("common.refresh")}</button>
-      </div>
+      </PageHeader>
 
-      {canSubmitForm && <form className="form-card" onSubmit={handleSubmit}>
-        <div className="form-header"><Plus size={18} /><strong>{editingId ? t("common.edit") : t("common.new")}</strong></div>
+      {canSubmitForm && (
+      <FormularioPlegable
+        titulo={editingId ? t("common.edit") : t("common.new")}
+        abrirSi={editingId}
+        onSubmit={handleSubmit}
+      >
         <div className="form-grid">
           {canSeeField("subdepartment_description") && (
           <label className="field">
@@ -507,7 +441,8 @@ export default function SubdepartmentPage() {
           <button className="button primary" type="submit">{t("common.save")}</button>
           <button className="button" type="button" onClick={() => { setFormData(emptyForm); setEditingId(null); setFieldErrors({}); }}>{t("common.cancel")}</button>
         </div>
-      </form>}
+      </FormularioPlegable>
+      )}
 
       {canRead && <div className="toolbar">
         <div className="search-box"><Search size={16} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("common.search")} /></div>
@@ -523,7 +458,6 @@ export default function SubdepartmentPage() {
       {permissionReady && !canRead && !canCreate && <div className="empty"><strong>{t("security.permission.read_denied", "Sin permiso de lectura")}</strong><p>{t("common.module_hidden_hint", "Este módulo no tiene acciones seleccionadas; quedará oculto y sus campos no se mostrarán.")}</p></div>}
       {canRead && !loading && filtered.length === 0 && <div className="empty"><strong>{t("common.empty_title")}</strong><p>{t("common.empty_body")}</p></div>}
 
-      {view === "table" && renderInvoiceProjectSummary()}
 
       {canRead && view === "table" && filtered.length > 0 && <div className="table-card"><table><thead><tr>{showRowActions && <th>{t("common.actions")}</th>}
               {canSeeField("id_subdepartment") && <th>{t("fields.subdepartment.id_subdepartment")}</th>}
@@ -545,7 +479,14 @@ export default function SubdepartmentPage() {
 
       {canRead && view === "kanban" && filtered.length > 0 && <div className="kanban">{Object.entries(groups).map(([key, groupItems]) => <div className="kanban-column" key={key}><h3>{key} <span>{groupItems.length}</span></h3>{groupItems.map((item) => <article className="kanban-card" key={item.id_subdepartment}><strong>{String(item.subdepartment_description ?? item.id_subdepartment)}</strong><small>#{item.id_subdepartment}</small>{showRowActions && <div>{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</div>}</article>)}</div>)}</div>}
 
-      <div className="pagination"><button className="button" disabled={page <= 1} onClick={() => setPage(page - 1)}>{t("common.previous")}</button><span>{t("common.page")} {page}</span><button className="button" onClick={() => setPage(page + 1)}>{t("common.next")}</button></div>
+      <Pagination
+        page={page}
+        pages={paginacion.pages}
+        total={paginacion.total}
+        perPage={paginacion.perPage}
+        loading={loading}
+        onChange={setPage}
+      />
     </section>
   );
 }

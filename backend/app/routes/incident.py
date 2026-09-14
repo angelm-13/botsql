@@ -1,6 +1,11 @@
 from __future__ import annotations
 from flask import Blueprint, jsonify, request
-from app.services.incident_service import IncidentService
+from app.services.incident_service import (
+    IncidentService,
+    list_incidents,
+    require_incident_access,
+    transition_incident,
+)
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
 
@@ -9,6 +14,9 @@ ALLOWED_FIELDS = ['id_incident', 'incident_date', 'id_incident_type', 'note', 'i
 
 TECHNICAL_RESPONSE_FIELDS = {'id_incident'}
 FIELD_READ_BIT = 2
+# Escribir un campo exige el bit de alta o el de actualizacion, no el de
+# lectura. Sin esta distincion no se podia conceder "ver pero no editar".
+FIELD_WRITE_BITS = 1 | 4
 
 
 def _actor_has_unrestricted_field_access(user_data: dict) -> bool:
@@ -26,19 +34,21 @@ def _safe_int_value(value):
         return None
 
 
-def _visible_response_fields_for_actor(user_data: dict) -> set[str]:
+def _field_sets_for_actor(user_data: dict) -> tuple[set[str], set[str]]:
+    """Campos que el actor puede ver y campos que puede escribir."""
     if _actor_has_unrestricted_field_access(user_data):
-        return set(ALLOWED_FIELDS)
+        return set(ALLOWED_FIELDS), set(ALLOWED_FIELDS)
 
     permission_id = _safe_int_value(user_data.get('id_permission') or user_data.get('permission_id'))
     if not permission_id:
-        return set(TECHNICAL_RESPONSE_FIELDS)
+        return set(TECHNICAL_RESPONSE_FIELDS), set()
 
     from app.models.field import Field
     from app.models.nm_field_permission import NmFieldPermission
     from app.models.session import transaction_context
 
     visible = set()
+    writable = set()
     with transaction_context() as db_session:
         rows = (
             db_session.query(NmFieldPermission, Field)
@@ -56,18 +66,28 @@ def _visible_response_fields_for_actor(user_data: dict) -> set[str]:
                 continue
             if (control_type & FIELD_READ_BIT) == FIELD_READ_BIT:
                 visible.add(field_row.field_name)
+            if control_type & FIELD_WRITE_BITS:
+                writable.add(field_row.field_name)
 
     # La llave primaria puede viajar en la respuesta para navegacion interna,
     # acciones de fila y rutas REST, aunque el frontend no la pinte si no fue
     # marcada como visible en el gestor.
-    return visible | set(TECHNICAL_RESPONSE_FIELDS)
+    return visible | set(TECHNICAL_RESPONSE_FIELDS), writable
+
+
+def _visible_response_fields_for_actor(user_data: dict) -> set[str]:
+    return _field_sets_for_actor(user_data)[0]
+
+
+def _writable_request_fields_for_actor(user_data: dict) -> set[str]:
+    return _field_sets_for_actor(user_data)[1]
 
 
 def _filter_payload_for_actor(payload: dict, user_data: dict) -> dict:
     payload = dict(payload or {})
     if _actor_has_unrestricted_field_access(user_data):
         return payload
-    writable_fields = _visible_response_fields_for_actor(user_data) - set(TECHNICAL_RESPONSE_FIELDS)
+    writable_fields = _writable_request_fields_for_actor(user_data) - set(TECHNICAL_RESPONSE_FIELDS)
     return {key: value for key, value in payload.items() if key in writable_fields}
 
 
@@ -104,14 +124,15 @@ def list_incident(user_data):
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 20))
     sort = request.args.get('sort')
-    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort'} and k in ALLOWED_FIELDS}
-    return _jsonify_projected_list(user_data, IncidentService.list(page=page, per_page=per_page, filters=filters, sort=sort))
+    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort', 'q'} and k in ALLOWED_FIELDS}
+    return _jsonify_projected_list(user_data, list_incidents(user_data, page=page, per_page=per_page, filters=filters, sort=sort))
 
 
 @bp_incident.route('/<id_incident>', methods=['GET'])
 @token_required
 @require_entity_permission('incident', 'read')
 def get_incident(user_data, id_incident):
+    require_incident_access(id_incident, user_data)
     return _jsonify_projected_record(user_data, IncidentService.get(id_incident))
 
 
@@ -127,12 +148,22 @@ def create_incident(user_data):
 @token_required
 @require_entity_permission('incident', 'update')
 def update_incident(user_data, id_incident):
+    require_incident_access(id_incident, user_data)
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
     return _jsonify_projected_record(user_data, IncidentService.update(id_incident, payload, user_id=user_data.get('id_user')))
+
+
+@bp_incident.route('/<id_incident>/transition', methods=['POST'])
+@token_required
+@require_entity_permission('incident', 'update')
+def transition_incident_status(user_data, id_incident):
+    """Cambio de estatus guiado, como en proyectos y tareas."""
+    return _jsonify_projected_record(user_data, transition_incident(id_incident, request.get_json() or {}, user_data))
 
 
 @bp_incident.route('/<id_incident>', methods=['DELETE'])
 @token_required
 @require_entity_permission('incident', 'delete')
 def delete_incident(user_data, id_incident):
+    require_incident_access(id_incident, user_data)
     return jsonify(IncidentService.delete(id_incident, user_id=user_data.get('id_user')))

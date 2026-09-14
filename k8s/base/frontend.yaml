@@ -1,0 +1,59 @@
+# El pull secret no se declara aquí: se le pega una sola vez a la
+# ServiceAccount default del namespace (ver el runbook, paso de alta
+# de cliente) para no repetirlo en cada Deployment de este archivo.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      # Ver nota en backend.yaml: evita que Kubernetes inyecte variables
+      # tipo <SERVICE>_PORT de otros Services del namespace.
+      enableServiceLinks: false
+      containers:
+        - name: frontend
+          # kustomize `images:` lo sustituye por
+          # ghcr.io/.../tyakxa-tny-frontend:<sha>-<cliente>-<env>
+          image: FRONTEND_IMAGE_PLACEHOLDER
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            timeoutSeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            timeoutSeconds: 5
+            periodSeconds: 20
+            failureThreshold: 3
+            initialDelaySeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+spec:
+  selector:
+    app: frontend
+  ports:
+    - port: 80
+      targetPort: 80

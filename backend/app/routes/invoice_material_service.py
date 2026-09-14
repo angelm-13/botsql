@@ -6,10 +6,13 @@ from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
 
 bp_invoice_material_service = Blueprint('invoice_material_service', __name__, url_prefix='/invoice_material_service')
-ALLOWED_FIELDS = ['id_invoice_material_service', 'id_invoice', 'id_material', 'id_service', 'invoice_material_service_description', 'max_requirement_date', 'is_directly_related_to_product_service_creation', 'id_authorized', 'id_status', 'id_buyer', 'id_customer_supplier', 'gross_price', 'quantity', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'id_product', 'line_type', 'tax_applicable', 'line_tax', 'line_total', 'id_unit', 'authorization_status', 'authorization_note', 'authorization_date', 'id_task']
+ALLOWED_FIELDS = ['id_invoice_material_service', 'id_invoice', 'id_material', 'id_service', 'invoice_material_service_description', 'max_requirement_date', 'is_directly_related_to_product_service_creation', 'id_authorized', 'id_status', 'id_buyer', 'id_customer_supplier', 'gross_price', 'quantity', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'id_product', 'line_type', 'tax_applicable', 'line_tax', 'line_total', 'id_unit', 'authorization_status', 'authorization_note', 'authorization_date', 'id_task', 'discount', 'sat_product_key', 'sat_unit_key', 'tax_object', 'tax_rate', 'isr_retention_rate', 'iva_retention_rate']
 
 TECHNICAL_RESPONSE_FIELDS = {'id_invoice_material_service'}
 FIELD_READ_BIT = 2
+# Escribir un campo exige el bit de alta o el de actualizacion, no el de
+# lectura. Sin esta distincion no se podia conceder "ver pero no editar".
+FIELD_WRITE_BITS = 1 | 4
 
 
 def _actor_has_unrestricted_field_access(user_data: dict) -> bool:
@@ -27,19 +30,21 @@ def _safe_int_value(value):
         return None
 
 
-def _visible_response_fields_for_actor(user_data: dict) -> set[str]:
+def _field_sets_for_actor(user_data: dict) -> tuple[set[str], set[str]]:
+    """Campos que el actor puede ver y campos que puede escribir."""
     if _actor_has_unrestricted_field_access(user_data):
-        return set(ALLOWED_FIELDS)
+        return set(ALLOWED_FIELDS), set(ALLOWED_FIELDS)
 
     permission_id = _safe_int_value(user_data.get('id_permission') or user_data.get('permission_id'))
     if not permission_id:
-        return set(TECHNICAL_RESPONSE_FIELDS)
+        return set(TECHNICAL_RESPONSE_FIELDS), set()
 
     from app.models.field import Field
     from app.models.nm_field_permission import NmFieldPermission
     from app.models.session import transaction_context
 
     visible = set()
+    writable = set()
     with transaction_context() as db_session:
         rows = (
             db_session.query(NmFieldPermission, Field)
@@ -57,18 +62,28 @@ def _visible_response_fields_for_actor(user_data: dict) -> set[str]:
                 continue
             if (control_type & FIELD_READ_BIT) == FIELD_READ_BIT:
                 visible.add(field_row.field_name)
+            if control_type & FIELD_WRITE_BITS:
+                writable.add(field_row.field_name)
 
     # La llave primaria puede viajar en la respuesta para navegacion interna,
     # acciones de fila y rutas REST, aunque el frontend no la pinte si no fue
     # marcada como visible en el gestor.
-    return visible | set(TECHNICAL_RESPONSE_FIELDS)
+    return visible | set(TECHNICAL_RESPONSE_FIELDS), writable
+
+
+def _visible_response_fields_for_actor(user_data: dict) -> set[str]:
+    return _field_sets_for_actor(user_data)[0]
+
+
+def _writable_request_fields_for_actor(user_data: dict) -> set[str]:
+    return _field_sets_for_actor(user_data)[1]
 
 
 def _filter_payload_for_actor(payload: dict, user_data: dict) -> dict:
     payload = dict(payload or {})
     if _actor_has_unrestricted_field_access(user_data):
         return payload
-    writable_fields = _visible_response_fields_for_actor(user_data) - set(TECHNICAL_RESPONSE_FIELDS)
+    writable_fields = _writable_request_fields_for_actor(user_data) - set(TECHNICAL_RESPONSE_FIELDS)
     return {key: value for key, value in payload.items() if key in writable_fields}
 
 
@@ -105,8 +120,8 @@ def list_invoice_material_service(user_data):
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 20))
     sort = request.args.get('sort')
-    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort'} and k in ALLOWED_FIELDS}
-    return _jsonify_projected_list(user_data, InvoiceMaterialServiceService.list(page=page, per_page=per_page, filters=filters, sort=sort))
+    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort', 'q'} and k in ALLOWED_FIELDS}
+    return _jsonify_projected_list(user_data, InvoiceMaterialServiceService.list(page=page, per_page=per_page, filters=filters, sort=sort, q=request.args.get('q')))
 
 
 @bp_invoice_material_service.route('/<id_invoice_material_service>', methods=['GET'])

@@ -1,0 +1,480 @@
+/* Localizar en el almacen.
+   Cada resultado es una tarjeta con su foto a la izquierda y todo lo que se
+   sabe a la derecha: donde esta, que le paso, y sus piezas. La foto va primero
+   porque en un almacen con articulos parecidos es lo que identifica de un
+   vistazo. */
+
+.trace-page { color: #334155; }
+.trace-page .eyebrow {
+  margin: 0 0 4px; font-size: 11px; letter-spacing: .1em;
+  text-transform: uppercase; color: #1b7a60; font-weight: 700;
+}
+.trace-page h1 { margin: 0 0 6px; color: #0f172a; }
+.trace-page .muted { color: #64748b; }
+.trace-page .mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.trace-page .error {
+  padding: 11px 14px; background: #fef2f2; border: 1px solid #fecaca;
+  border-radius: 10px; color: #991b1b; margin: 0 0 14px;
+}
+.trace-empty { padding: 26px 4px; }
+
+/* --- barra de busqueda --- */
+
+/* Seis controles no caben en una fila en un portatil. La rejilla llena lo que
+   hay: el buscador toma lo que sobra y cada desplegable un ancho minimo
+   legible, en vez de encogerse hasta que no se lee la opcion elegida. */
+/* Los cinco controles miden lo mismo.
+   Antes el buscador se llevaba `2fr` y los cuatro filtros `1fr` cada uno, con
+   `auto-fit`: el primero salia del doble de ancho que los demas y, segun el
+   ancho de la ventana, los otros cuatro cambiaban de tamano entre si. Cinco
+   columnas iguales y fijas: la barra se lee de un vistazo y no se reacomoda.
+   `align-items: start` para que las cinco cajas empiecen en la misma linea --
+   los filtros llevan debajo su cuenta de opciones y el buscador no, asi que
+   estirandolas el buscador quedaba mas alto que el resto. */
+.trace-toolbar {
+  display: grid; gap: 10px; margin: 0 0 16px; align-items: start;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+@media (max-width: 1100px) {
+  .trace-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 720px) {
+  .trace-toolbar { grid-template-columns: 1fr; }
+  .trace-search { grid-column: 1 / -1; }
+}
+/* El mismo radio y el mismo alto que el input de un filtro: son cinco cajas de
+   la misma barra y cualquier diferencia se lee como que hacen cosas distintas. */
+.trace-search {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+  border: 1px solid #cbd5e1; border-radius: 14px; padding: 0 11px; background: #fff;
+}
+.trace-search svg { color: #64748b; flex: 0 0 auto; }
+.trace-search input {
+  flex: 1; min-width: 0; border: 0; outline: none; padding: 9px 0;
+  font: inherit; background: transparent;
+}
+.trace-toolbar select {
+  padding: 11px 12px; border: 1px solid #cbd5e1; border-radius: 10px;
+  font: inherit; background: #fff;
+}
+
+.trace-warn {
+  display: flex; align-items: center; gap: 9px; padding: 11px 14px; margin: 0 0 14px;
+  background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px;
+  color: #78350f; font-size: 14px;
+}
+
+/* --- tarjeta de resultado --- */
+
+.trace-list { display: flex; flex-direction: column; gap: 14px; }
+
+.trace-card {
+  display: grid; grid-template-columns: 168px 1fr; gap: 18px;
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 13px; padding: 16px;
+}
+@media (max-width: 720px) {
+  .trace-card { grid-template-columns: 1fr; }
+}
+
+.trace-photo { display: flex; flex-direction: column; gap: 8px; }
+.trace-photo img {
+  width: 100%; aspect-ratio: 1; object-fit: cover;
+  border-radius: 10px; background: #f1f5f9; border: 1px solid #e2e8f0;
+}
+.trace-no-photo {
+  display: grid; place-items: center; width: 100%; aspect-ratio: 1;
+  border-radius: 10px; background: rgba(255, 255, 255, .72);
+  border: 1px dashed #cbd5e1; color: #94a3b8;
+}
+.trace-upload {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 7px 10px; border: 1px solid #cbd5e1; border-radius: 9px;
+  font-size: 12.5px; cursor: pointer; background: #fff; color: #334155;
+}
+.trace-upload:hover { background: #f8fafc; }
+.trace-upload input { display: none; }
+
+.trace-body { min-width: 0; }
+.trace-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap; margin-bottom: 4px;
+}
+.trace-head h2 { margin: 0 0 3px; font-size: 17px; color: #0f172a; }
+.trace-head p { margin: 0; font-size: 12.5px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+
+.trace-total { text-align: right; line-height: 1.15; }
+.trace-total strong {
+  display: block; font-size: 26px; color: #1b7a60; font-variant-numeric: tabular-nums;
+}
+.trace-total span { font-size: 11.5px; color: #64748b; }
+
+.trace-section {
+  display: flex; align-items: center; gap: 6px;
+  margin: 16px 0 7px; font-size: 12px; font-weight: 700;
+  letter-spacing: .05em; text-transform: uppercase; color: #64748b;
+}
+
+/* --- donde esta --- */
+
+.trace-locations { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.trace-locations li {
+  display: flex; justify-content: space-between; gap: 14px; align-items: baseline;
+  font-size: 14px; padding: 6px 10px; background: rgba(255, 255, 255, .72);
+  border-radius: 8px;
+}
+.trace-module {
+  margin-left: 7px; padding: 1px 6px; border-radius: 999px;
+  background: #e2e8f0; color: #475569; font-size: 10.5px;
+  font-style: normal; text-transform: uppercase; letter-spacing: .04em;
+}
+
+/* --- que le paso --- */
+
+.trace-history { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+/* El renglon del historial lo dice su BORDE, no su relleno.
+
+   Antes cada tono tenia su fondo -- #f0fdf4 el verde, #fef2f2 el rojo -- y son
+   exactamente los mismos cinco que ahora tiñen la tarjeta entera segun el
+   estatus del producto. Sobre una tarjeta verde, un renglon verde con el mismo
+   valor desaparece: el relleno deja de distinguir nada justo cuando coinciden.
+
+   Asi que el relleno pasa a blanco translucido, igual que los demas paneles de
+   dentro -- se aclara con cualquier tono de tarjeta --, y el color se va al
+   borde y al texto, que es donde ya estaba la mitad de la señal. */
+.trace-history li {
+  display: flex; align-items: baseline; gap: 6px;
+  padding: 6px 11px; border-radius: 9px; font-size: 13px;
+  background: rgba(255, 255, 255, .72); border-left: 3px solid #cbd5e1;
+}
+.trace-history li strong { font-size: 15px; }
+.trace-history li em { font-style: normal; font-size: 11.5px; opacity: .7; }
+.trace-history li.ok    { border-left-color: #1b7a60; color: #14532d; }
+.trace-history li.info  { border-left-color: #2563eb; color: #1e3a8a; }
+.trace-history li.warn  { border-left-color: #b45309; color: #78350f; }
+.trace-history li.crit  { border-left-color: #b91c1c; color: #991b1b; }
+.trace-history li.muted { color: #475569; }
+
+/* --- piezas --- */
+
+.trace-assets { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.trace-assets li {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  font-size: 13.5px; padding: 6px 10px; background: rgba(255, 255, 255, .72);
+  border-radius: 8px;
+}
+.trace-holder { font-weight: 600; color: #334155; }
+
+.trace-chip {
+  padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700;
+  white-space: nowrap;
+}
+.trace-chip.ok    { background: #dcfce7; color: #14532d; }
+.trace-chip.info  { background: #dbeafe; color: #1e3a8a; }
+.trace-chip.warn  { background: #fef3c7; color: #78350f; }
+.trace-chip.crit  { background: #fee2e2; color: #991b1b; }
+.trace-chip.muted { background: #f1f5f9; color: #64748b; }
+
+.trace-last { margin: 14px 0 0; font-size: 12.5px; }
+
+.trace-page :focus-visible { outline: 2px solid #1b7a60; outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .trace-page * { transition: none !important; animation: none !important; }
+}
+
+/* Enlace a las acciones de la pieza. Discreto: la pantalla es para localizar,
+   y el enlace es la salida hacia donde se actua. */
+.trace-manage{margin-left:auto;font-size:12.5px;color:#1b7a60;text-decoration:none;font-weight:600}
+.trace-manage:hover{text-decoration:underline}
+
+/* --- los dos niveles: la pieza y el producto ---
+
+   El aviso dice por que salio el resultado. Se pinta distinto segun el nivel
+   porque la diferencia importa: verde-agua cuando se pidio una pieza concreta,
+   gris cuando se pidio el producto y lo que se ve son todas sus unidades. Sin
+   esta senal las dos busquedas dan la misma pantalla y no hay forma de saber
+   cual de las dos preguntas se contesto. */
+
+.trace-level {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin: 0 0 12px; padding: 8px 12px; border-radius: 9px; font-size: 13px;
+}
+.trace-level-piece   { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
+/* Blanco translucido y no #f8fafc: ese es justo el tono con el que se pinta
+   una tarjeta dada de baja, y ahi la insignia se quedaba sin relleno. */
+.trace-level-product { background: rgba(255, 255, 255, .72); border: 1px solid #e2e8f0; color: #475569; }
+
+/* Unidades frente a existencia. Tres piezas de las que solo una sirve no es
+   "tres" ni es "una", asi que se dicen las dos cosas. */
+.trace-units { display: block; font-size: 11px; color: #64748b; font-style: normal; }
+
+/* La pieza que se pidio. La lista completa sigue debajo -verla en su producto
+   es util- pero esta se separa del resto para no tener que encontrarla a ojo,
+   que es lo que se venia a evitar. */
+.trace-asset-hit {
+  flex-direction: column; align-items: stretch !important;
+  background: #ecfdf5 !important; border: 1px solid #a7f3d0;
+}
+.trace-asset-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.trace-hit-icon { color: #059669; flex: none; }
+
+/* La bitacora de esa pieza: quien la tuvo, cuando y de donde salio. Solo se
+   pinta en la pieza destacada; el servidor tampoco la manda para las demas. */
+.trace-timeline {
+  list-style: none; margin: 8px 0 0; padding: 8px 0 0 4px;
+  border-top: 1px dashed #a7f3d0;
+  display: flex; flex-direction: column; gap: 5px;
+}
+.trace-timeline li {
+  display: flex; gap: 10px; flex-wrap: wrap; align-items: baseline;
+  padding: 0; background: none; font-size: 12.5px;
+}
+.trace-when {
+  flex: none; min-width: 132px; color: #64748b; font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.trace-what { color: #334155; }
+.trace-what strong { color: #065f46; }
+.trace-what em { color: #64748b; font-style: normal; }
+
+/* Cuantos hay y con que se filtra. El numero va aqui arriba porque con el tope
+   de resultados lo que se ve puede ser menos que lo que hay, y ese es justo el
+   caso en el que hace falta saberlo. */
+.trace-count {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin: 12px 0 14px; font-size: 13px; color: #475569;
+}
+.trace-count strong { color: #0f172a; font-size: 15px; }
+.trace-count em { color: #64748b; font-style: normal; }
+.trace-clear {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 11px; border: 1px solid #cbd5e1; border-radius: 999px;
+  background: #fff; font: inherit; font-size: 12.5px; color: #334155;
+  cursor: pointer;
+}
+.trace-clear:hover { background: #f1f5f9; }
+
+/* --- la cadena de clasificacion ---
+
+   Familia > Marca > Material, y la unidad de medida al final. Los eslabones que
+   filtran son botones y no enlaces: no navegan a ninguna parte, recortan esta
+   misma lista, y un enlace que no lleva a otra pagina engana al que lo abre en
+   una pestana nueva. */
+
+.trace-chain {
+  display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+  margin: 6px 0 0; font-size: 12.5px; color: #475569;
+}
+.trace-sep { color: #94a3b8; }
+.trace-unit {
+  display: inline-flex; align-items: center; gap: 4px; margin-left: 4px;
+  padding: 1px 8px; border-radius: 999px; background: #f1f5f9; color: #475569;
+  font-size: 11.5px;
+}
+
+/* Un eslabon en el que se puede hacer clic para filtrar. Se pinta como texto
+   -no como boton- para no llenar la tarjeta de cajas, pero conserva el
+   subrayado al pasar por encima para que se note que hace algo. */
+.trace-link {
+  padding: 0; border: 0; background: none; font: inherit; color: #1b7a60;
+  font-weight: 600; cursor: pointer;
+}
+.trace-link:hover { text-decoration: underline; }
+
+/* La rama de una ubicacion, dentro de la lista de existencias. */
+.trace-path { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+/* Dos avisos de dato incoherente. Ambar y no rojo: no impiden trabajar, pero
+   quien va al sitio equivocado pierde el viaje. */
+.trace-note,
+.trace-mismatch {
+  display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+  margin: 8px 0 0; padding: 7px 11px; border-radius: 8px;
+  /* El ambar FUERTE, no el claro. El claro es el tono con el que se pinta una
+     tarjeta que hay que atender, y sobre ella este aviso -- que dice que la
+     existencia y el libro no cuadran -- se quedaba sin relleno justo en las
+     tarjetas donde mas falta hace verlo. */
+  background: #fef3c7; border: 1px solid #fcd34d; color: #78350f;
+  font-size: 12.5px;
+}
+.trace-mismatch { margin: 6px 0 0; }
+
+/* Paginacion. Los botones a los extremos y la cuenta en medio: el orden en que
+   se leen -"anterior, pagina 2 de 7, siguiente"- es el orden en que estan. */
+.trace-pages {
+  display: flex; align-items: center; justify-content: center; gap: 14px;
+  margin: 18px 0 4px; flex-wrap: wrap;
+}
+.trace-pages .button { display: inline-flex; align-items: center; gap: 6px; }
+.trace-pages .button:disabled { opacity: .45; cursor: default; }
+.trace-pages strong { color: #0f172a; }
+
+/* --- las dos naturalezas del material ---
+
+   Marco y no filtro: el almacen guarda mercancia -de la que importa el saldo- y
+   herramienta -de la que importa quien la tiene-. Como opcion dentro de un
+   desplegable de seis, habia que saber que estaba ahi. */
+
+.trace-naturalezas {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  margin: 0 0 14px; padding: 4px;
+  background: #eef3f1; border-radius: 10px;
+  width: fit-content; max-width: 100%;
+}
+.trace-naturaleza {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 8px 15px; border: 0; border-radius: 8px;
+  background: none; font: inherit; font-size: 13.5px; font-weight: 600;
+  color: #5c6d68; cursor: pointer;
+}
+.trace-naturaleza:hover { color: #16211f; }
+.trace-naturaleza.activa {
+  background: #fff; color: #1b7a60;
+  box-shadow: 0 1px 3px rgba(22, 33, 31, .1);
+}
+
+/* --- el panorama de estatus ---
+
+   La pregunta de la manana: de mis herramientas, cuantas prestadas, cuantas en
+   reparacion, cuantas no aparecen. Cada cifra filtra, asi que ver "3 prestadas"
+   y saber cuales es el mismo gesto. */
+
+.trace-panorama {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  margin: 0 0 16px;
+}
+.trace-cifra {
+  display: inline-flex; align-items: baseline; gap: 7px;
+  padding: 8px 13px; border-radius: 9px;
+  border: 1px solid transparent;
+  font: inherit; font-size: 12.5px; cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.trace-cifra strong { font-size: 17px; line-height: 1; }
+.trace-cifra:hover { border-color: currentColor; }
+.trace-cifra.activa { border-color: currentColor; font-weight: 600; }
+
+.trace-cifra.ok    { background: #dcfce7; color: #14532d; }
+.trace-cifra.info  { background: #dbeafe; color: #1e3a8a; }
+.trace-cifra.warn  { background: #fef3c7; color: #78350f; }
+.trace-cifra.crit  { background: #fee2e2; color: #991b1b; }
+.trace-cifra.muted { background: #f1f5f9; color: #475569; }
+
+/* Lo vencido no es un estado: una pieza vencida esta prestada. Va aparte, sin
+   ser un boton, para que no parezca otro filtro de estado. */
+.trace-cifra.vencidas {
+  align-items: center; cursor: default;
+  background: #fff1f2; color: #9f1239; border-color: #fecdd3;
+}
+
+/* --- lo prestado ---
+
+   Un producto fungible prestado se veia "sin existencia en ninguna ubicacion" y
+   punto. No es que no haya: es que lo tiene alguien, con nombre y con vale. */
+
+.trace-prestado {
+  margin: 10px 0; padding: 11px 13px;
+  background: #fef3c7; border: 1px solid #fde68a; border-radius: 9px;
+  font-size: 13px;
+}
+.trace-prestado.vencido { background: #fff1f2; border-color: #fecdd3; }
+.trace-prestado > p {
+  display: flex; align-items: center; gap: 7px; margin: 0 0 7px;
+  color: #78350f; font-weight: 600;
+}
+.trace-prestado.vencido > p { color: #9f1239; }
+.trace-prestado-vencido {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-style: normal; font-weight: 700; font-size: 11.5px;
+}
+.trace-prestado ul {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.trace-prestado li {
+  display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap;
+  padding: 5px 9px; background: rgba(255, 255, 255, .7); border-radius: 7px;
+}
+/* Un renglon vencido se marca por si mismo: en un vale con seis cosas, solo
+   una puede estar vencida y el aviso de arriba no dice cual. */
+.trace-prestado li.vencido { box-shadow: inset 3px 0 0 #9f1239; }
+
+/* El tipo, en la miga de la clasificacion. Se distingue de la familia y de la
+   marca porque no es un enlace: no hay filtro por tipo mientras ningun material
+   lo tenga puesto -603 materiales, 0 con tipo hasta ahora-. */
+.trace-tipo {
+  padding: 1px 8px; border-radius: 999px;
+  background: #eef3f1; color: #1b7a60; font-size: 12px; font-weight: 600;
+}
+
+/* --- el estatus del producto, en el borde de la tarjeta ---
+
+   Un acento de 6px a la izquierda, que es como ya se marca una tarjeta en el
+   resto del sistema (`.product-kanban-card` en `app.css` usa el mismo recurso).
+   Los cinco tonos son los mismos de `.trace-chip` y `.trace-cifra`: no se
+   introduce ningun color nuevo.
+
+   El color va por GRAVEDAD, no uno por estatus -- siete estatus no caben en
+   cinco tonos sin inventar colores. La etiqueta escrita dentro de la tarjeta
+   dice cual es cual, que ademas es lo que hace que esto funcione para quien no
+   distingue el verde del ambar. */
+
+.trace-card { border-left: 6px solid transparent; }
+
+/* El acento del borde y el fondo de toda la tarjeta.
+
+   El fondo va en el tono 50 -- el mas claro de cada color -- y no en el 100 que
+   usan los chips: un chip es una etiqueta de dos centimetros y una tarjeta
+   ocupa media pantalla, asi que el mismo tono que ahi se lee como acento aqui
+   se lee como alarma, y cuarenta seguidas cansan la vista. Esos cinco valores
+   no son nuevos: son los que ya usa `.trace-history li` mas abajo para pintar
+   cada renglon del historial.
+
+   Y el borde se queda: es lo unico que sobrevive si alguien imprime la lista en
+   blanco y negro, o si el fondo se pierde en una pantalla mal calibrada. */
+.trace-card.estatus-ok    { border-left-color: #16a34a; background: #f0fdf4; }
+.trace-card.estatus-info  { border-left-color: #2563eb; background: #eff6ff; }
+.trace-card.estatus-warn  { border-left-color: #d97706; background: #fffbeb; }
+.trace-card.estatus-crit  { border-left-color: #dc2626; background: #fef2f2; }
+.trace-card.estatus-muted { border-left-color: #94a3b8; background: #f8fafc; }
+/* Sin estatus: blanca y con el borde del marco, para que la ausencia no
+   parezca un estado mas. */
+.trace-card.estatus-sin   { border-left-color: #e2e8f0; background: #fff; }
+
+.trace-estatus { margin: 6px 0 0; }
+
+/* --- la simbologia del color ---
+
+   Los mismos cinco tonos del borde de la tarjeta, con lo que significan. La
+   muestra es un cuadrito con el color del acento, no un chip: un chip aqui se
+   leeria como un filtro mas y esto no filtra, explica. */
+
+.trace-simbologia {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  margin: 0 0 14px; padding: 9px 12px;
+  background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;
+  font-size: 12px;
+}
+.trace-simbologia-titulo { font-weight: 700; }
+.trace-simbologia-item { display: inline-flex; align-items: center; gap: 6px; }
+.trace-simbologia-item strong { font-weight: 600; color: #334155; }
+
+.trace-muestra {
+  width: 11px; height: 11px; border-radius: 3px; flex: 0 0 auto;
+  background: #e2e8f0;
+}
+.trace-muestra.ok    { background: #16a34a; }
+.trace-muestra.info  { background: #2563eb; }
+.trace-muestra.warn  { background: #d97706; }
+.trace-muestra.crit  { background: #dc2626; }
+.trace-muestra.muted { background: #94a3b8; }
+
+/* El texto apagado, un punto mas oscuro dentro de la tarjeta.
+
+   `.muted` global es #94a3b8, y sobre el blanco de antes daba 4.76:1 -- justo
+   por encima del minimo para texto pequeño. Sobre el rojo y el azul claros cae
+   a 4.35 y 4.37, por debajo. Medido, no estimado. #475569 lo devuelve a 7:1 en
+   los cinco fondos y es un gris que esta ya en esta misma hoja. */
+.trace-card .muted { color: #475569; }

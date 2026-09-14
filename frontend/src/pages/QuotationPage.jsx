@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { createInvoice, createInvoiceMaterialService, deleteInvoiceMaterialService, getAllCustomerSupplier, getAllInvoice, getAllInvoiceMaterialService, getAllMaterial, getAllProduct, getAllProyect, getAllService, getAllUnit, updateInvoice } from "../api";
+import { convertQuotationToInvoice, createInvoice, createInvoiceMaterialService, deleteInvoiceMaterialService, downloadInvoicePdf, getAllCustomerSupplier, getAllInvoice, getAllInvoiceMaterialService, getAllMaterial, getAllProduct, getAllProyect, getAllService, getAllUnit, getInvoiceCatalogs, transitionQuotation, updateInvoice } from "../api";
 import { useI18n } from "../i18n";
+import QuotationWorkflowBoard, { normalizeQuotationStatus, quotationStatusLabel, QUOTATION_STATUS_CODES } from "../components/QuotationWorkflowBoard.jsx";
+import SatProductKeyField from "../components/SatProductKeyField";
+import PageHeader from "../components/PageHeader.jsx";
+
+function catalogOptions(catalog) {
+  return Object.entries(catalog || {}).sort(([a], [b]) => a.localeCompare(b));
+}
 
 function asArray(payload) {
   if (Array.isArray(payload?.items)) return payload.items;
@@ -44,6 +51,8 @@ function newLineItem() {
     description: "",
     quantity: "1",
     gross_price: "0",
+    sat_product_key: "",
+    sat_unit_key: "",
   };
 }
 
@@ -54,12 +63,15 @@ export default function QuotationPage() {
   const [quotationItems, setQuotationItems] = useState([]);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState("");
   const [editingInvoiceId, setEditingInvoiceId] = useState("");
+  const [activeView, setActiveView] = useState("board");
+  const [transitioningId, setTransitioningId] = useState("");
   const [customers, setCustomers] = useState([]);
   const [projects, setProjects] = useState([]);
   const [products, setProducts] = useState([]);
   const [services, setServices] = useState([]);
   const [materials, setMaterials] = useState([]);
   const [units, setUnits] = useState([]);
+  const [catalogs, setCatalogs] = useState(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -88,6 +100,10 @@ export default function QuotationPage() {
   const unitById = useMemo(() => Object.fromEntries(units.map((item) => [Number(item.id_unit), item])), [units]);
   const selectedQuotation = useMemo(() => quotations.find((item) => Number(item.id_invoice) === Number(selectedInvoiceId)) || null, [quotations, selectedInvoiceId]);
   const selectedQuotationItems = useMemo(() => quotationItems.filter((item) => Number(item.id_invoice) === Number(selectedInvoiceId)), [quotationItems, selectedInvoiceId]);
+  const quotationItemCounts = useMemo(() => quotationItems.reduce((counts, item) => {
+    counts[item.id_invoice] = (counts[item.id_invoice] || 0) + 1;
+    return counts;
+  }, {}), [quotationItems]);
 
   function itemSubtotal(item) {
     return Number(item.quantity || 0) * Number(item.gross_price || 0);
@@ -110,6 +126,15 @@ export default function QuotationPage() {
     }
     if (raw === "validations.invoice_material_service.authorization_status.required" || (field === "authorization_status" && raw.includes("authorization_status"))) {
       return t("quotation.validation_authorization_status_required", "No se pudo guardar porque la partida no tiene estado de autorización inicial.");
+    }
+    if (raw === "validations.invoice.quotation_conversion.no_authorized_lines") {
+      return t("quotation.validation_no_authorized_lines", "No se puede convertir: todas las partidas de esta cotización están marcadas como no autorizadas.");
+    }
+    if (raw === "validations.invoice.quotation_conversion.invalid_status") {
+      return t("quotation.validation_conversion_invalid_status", "Esta cotización ya no está en estatus de cotización, no se puede convertir de nuevo.");
+    }
+    if (raw === "validations.invoice.quotation_expired") {
+      return t("quotation.validation_quotation_expired", "Esta cotización ya venció; actualiza su vigencia antes de convertirla en factura.");
     }
     if (raw === "validations.invoice.tax_certification_supplier.required" || raw.includes("tax_certification_supplier")) {
       return t("quotation.validation_tax_certification_supplier_required", "Selecciona el proveedor de certificación fiscal.");
@@ -228,6 +253,8 @@ export default function QuotationPage() {
       description: line.invoice_material_service_description || "",
       quantity: String(line.quantity ?? "1"),
       gross_price: String(line.gross_price ?? "0"),
+      sat_product_key: line.sat_product_key || "",
+      sat_unit_key: line.sat_unit_key || "",
     };
   }
 
@@ -236,6 +263,7 @@ export default function QuotationPage() {
     const invoiceId = Number(invoice.id_invoice);
     const currentItems = quotationItems.filter((item) => Number(item.id_invoice) === invoiceId);
     setEditingInvoiceId(String(invoice.id_invoice));
+    setActiveView("manage");
     setSelectedInvoiceId(String(invoice.id_invoice));
     setMessage("");
     setError("");
@@ -275,6 +303,44 @@ export default function QuotationPage() {
     }));
   }
 
+  function startNewQuotation() {
+    cancelEditQuotation();
+    setSelectedInvoiceId("");
+    setActiveView("manage");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function viewQuotation(invoice) {
+    setSelectedInvoiceId(String(invoice.id_invoice));
+    setActiveView("manage");
+    window.setTimeout(() => document.querySelector(".quotation-detail-card")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  }
+
+  async function moveQuotation(invoice, status) {
+    setTransitioningId(String(invoice.id_invoice));
+    setMessage("");
+    setError("");
+    try {
+      // "converted" no es un simple cambio de etiqueta: hay que recalcular
+      // totales contra las partidas autorizadas y dejar la factura lista
+      // para timbrar (convert-quotation), no solo renombrar el estatus
+      // (quotation-transition) -- eso dejaba la factura en un estatus sin
+      // salida, con totales de la cotizacion completa aunque se hubiera
+      // rechazado algun renglon.
+      const updated = status === "converted"
+        ? await convertQuotationToInvoice(invoice.id_invoice)
+        : await transitionQuotation(invoice.id_invoice, status);
+      setQuotations((current) => current.map((item) => Number(item.id_invoice) === Number(invoice.id_invoice) ? { ...item, ...updated } : item));
+      setMessage(status === "converted"
+        ? `Cotización ${quotationFolio(invoice)} convertida a factura (${updated.authorized_lines_count} partida(s), ${updated.excluded_lines_count} excluida(s)).`
+        : `Cotización ${quotationFolio(invoice)} movida a ${quotationStatusLabel(status, t)}.`);
+    } catch (requestError) {
+      setError(resolveError(requestError));
+    } finally {
+      setTransitioningId("");
+    }
+  }
+
   function loadData() {
     setLoading(true);
     setError("");
@@ -287,10 +353,11 @@ export default function QuotationPage() {
       getAllService({ per_page: 500 }),
       getAllMaterial({ per_page: 500 }),
       getAllUnit({ per_page: 500 }),
+      getInvoiceCatalogs(),
     ])
-      .then(([invoicePayload, itemPayload, customerPayload, projectPayload, productPayload, servicePayload, materialPayload, unitPayload]) => {
+      .then(([invoicePayload, itemPayload, customerPayload, projectPayload, productPayload, servicePayload, materialPayload, unitPayload, catalogPayload]) => {
         const rows = asArray(invoicePayload)
-          .filter((item) => String(item.invoice_status || "").toLowerCase() === "cotizacion")
+          .filter((item) => QUOTATION_STATUS_CODES.includes(normalizeQuotationStatus(item.invoice_status)))
           .sort((a, b) => Number(b.id_invoice || 0) - Number(a.id_invoice || 0));
         const customerRows = asArray(customerPayload);
         const projectRows = asArray(projectPayload);
@@ -306,6 +373,7 @@ export default function QuotationPage() {
         setServices(serviceRows);
         setMaterials(materialRows);
         setUnits(unitRows);
+        setCatalogs(catalogPayload);
         setForm((prev) => ({
           ...prev,
           id_issuer_customer_supplier: prev.id_issuer_customer_supplier || String(customerRows[0]?.id_customer_supplier || ""),
@@ -368,6 +436,8 @@ export default function QuotationPage() {
       if (!description) return t("quotation.description_required", "Captura concepto.");
       if (!(quantity > 0)) return t("quotation.quantity_required", "La cantidad debe ser mayor a 0.");
       if (!(price >= 0)) return t("quotation.price_required", "El precio unitario debe ser mayor o igual a 0.");
+      if (!String(item.sat_product_key || "").trim()) return t("quotation.sat_product_key_required", "Selecciona la clave de producto/servicio del SAT.");
+      if (!String(item.sat_unit_key || "").trim()) return t("quotation.sat_unit_key_required", "Selecciona la clave de unidad del SAT.");
     }
     return "";
   }
@@ -387,6 +457,8 @@ export default function QuotationPage() {
       invoice_material_service_description: description,
       quantity: Number(item.quantity || 0),
       gross_price: Number(item.gross_price || 0),
+      sat_product_key: String(item.sat_product_key || "").trim(),
+      sat_unit_key: String(item.sat_unit_key || "").trim().toUpperCase(),
       line_type: item.line_type,
       authorization_status: "pending",
       authorization_note: "",
@@ -431,7 +503,7 @@ export default function QuotationPage() {
       subtotal,
       tax,
       total,
-      invoice_status: "Cotizacion",
+      invoice_status: editingInvoiceId ? (quotations.find((quotation) => Number(quotation.id_invoice) === Number(editingInvoiceId))?.invoice_status || "draft") : "draft",
       note: form.note || "",
       currency: form.currency || "MXN",
       tax_certification_supplier: Number(form.tax_certification_supplier),
@@ -477,33 +549,44 @@ export default function QuotationPage() {
     return quotationItems.filter((item) => Number(item.id_invoice) === Number(invoiceId)).length;
   }
 
-  function printQuotationPdf() {
+  async function printQuotationPdf() {
     if (!selectedQuotation?.id_invoice) return;
-    const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:5001";
-    const normalizedBaseUrl = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
-    const pdfUrl = `${normalizedBaseUrl}/documents/quotation_pdf/${selectedQuotation.id_invoice}?format=pdf`;
-    const pdfWindow = window.open(pdfUrl, "_blank", "noopener,noreferrer");
-    if (!pdfWindow) {
-      setError(t("quotation.pdf_popup_blocked", "El navegador bloqueó la ventana del PDF. Permite ventanas emergentes e inténtalo de nuevo."));
-      return;
+    setError("");
+    try {
+      const blob = await downloadInvoicePdf(selectedQuotation.id_invoice, "quotation");
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `Cotizacion-${selectedQuotation.id_invoice}.pdf`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (requestError) {
+      setError(resolveError(requestError));
     }
-    pdfWindow.focus();
   }
 
   return (
     <section className="entity-page quotation-page">
-      <div className="page-heading">
-        <div>
-          <p className="eyebrow">{t("quotation.issue_label", "Issue 9")}</p>
-          <h2>{t("quotation.title", "Cotizaciones")}</h2>
-          <p className="quotation-subtitle">{t("quotation.subtitle", "Cotizaciones comerciales generadas sobre factura con estatus Cotización.")}</p>
-        </div>
+      <PageHeader
+        eyebrow={"CRM"}
+        titulo={t("quotation.title", "Cotizaciones")}
+        subtitulo={t("quotation.subtitle", "Cotizaciones comerciales generadas sobre factura con estatus Cotización.")}
+      >
         <button type="button" className="button" onClick={loadData} disabled={loading}>{loading ? t("common.loading", "Cargando...") : t("common.refresh", "Actualizar")}</button>
-      </div>
+      </PageHeader>
 
       {message && <div className="alert success">{message}</div>}
       {error && <div className="alert error">{error}</div>}
 
+      <div className="quotation-view-controls" role="tablist" aria-label={t("quotation.views", "Vistas de cotizaciones")}>
+        <button type="button" role="tab" aria-selected={activeView === "board"} className={activeView === "board" ? "active" : ""} onClick={() => setActiveView("board")}>{t("quotation.board", "Tablero")}</button>
+        <button type="button" role="tab" aria-selected={activeView === "manage"} className={activeView === "manage" ? "active" : ""} onClick={() => setActiveView("manage")}>{t("quotation.manage", "Gestionar")}</button>
+        <button type="button" className="button primary" onClick={startNewQuotation}>{t("quotation.new_title", "Nueva cotización")}</button>
+      </div>
+
+      {activeView === "board" ? (
+        <QuotationWorkflowBoard quotations={quotations} customers={customers} projects={projects} itemCounts={quotationItemCounts} loading={loading} transitioningId={transitioningId} onTransition={moveQuotation} onView={viewQuotation} onEdit={startEditQuotation} onCreate={startNewQuotation} />
+      ) : <>
       <form className="form-card quotation-form" onSubmit={submitQuotation}>
         <div className="form-header quotation-section-title">
           <strong>{editingInvoiceId ? t("quotation.edit_title", "Editar cotización") : t("quotation.new_title", "Nueva cotización")}</strong>
@@ -544,6 +627,8 @@ export default function QuotationPage() {
                   {item.line_type === "product" && <label className="field">{t("quotation.product", "Producto")}<select value={item.id_product} onChange={(event) => updateItem(item.local_id, "id_product", event.target.value)}><option value="">{t("quotation.select_product", "Seleccionar producto")}</option>{products.map((product) => <option key={product.id_product} value={product.id_product}>{product.product_code || product.descripcion || `#${product.id_product}`}</option>)}</select></label>}
                   {item.line_type === "service" && <label className="field">{t("quotation.service", "Servicio")}<select value={item.id_service} onChange={(event) => updateItem(item.local_id, "id_service", event.target.value)}><option value="">{t("quotation.select_service", "Seleccionar servicio")}</option>{services.map((service) => <option key={service.id_service} value={service.id_service}>{service.service_description || `#${service.id_service}`}</option>)}</select></label>}
                   <label className="field wide-field">{t("quotation.concept", "Concepto")}<input value={item.description} onChange={(event) => updateItem(item.local_id, "description", event.target.value)} placeholder={t("quotation.concept_placeholder", "Descripción de la partida")} /></label>
+                  <label className="field">{t("quotation.sat_product_key", "Clave SAT producto/servicio")}<SatProductKeyField required value={item.sat_product_key} onChange={(clave) => updateItem(item.local_id, "sat_product_key", clave)} onDescriptionPick={(description) => { if (!item.description) updateItem(item.local_id, "description", description); }} /></label>
+                  <label className="field">{t("quotation.sat_unit_key", "Clave SAT unidad")}<input required list="quotation-sat-unit-keys" maxLength="3" value={item.sat_unit_key} onChange={(event) => updateItem(item.local_id, "sat_unit_key", event.target.value.toUpperCase())} /></label>
                   <label className="field">{t("quotation.quantity", "Cantidad")}<input type="number" min="0.01" step="0.01" value={item.quantity} onChange={(event) => updateItem(item.local_id, "quantity", event.target.value)} /></label>
                   <label className="field">{t("quotation.unit_measure", "Unidad")}<select value={item.id_unit} onChange={(event) => updateItem(item.local_id, "id_unit", event.target.value)}><option value="">{t("quotation.no_unit", "Sin unidad")}</option>{units.map((unit) => <option key={unit.id_unit} value={unit.id_unit}>{unitLabelFromUnit(unit)}</option>)}</select></label>
                   <label className="field">{t("quotation.unit_price", "Precio unitario")}<input type="number" min="0" step="0.01" value={item.gross_price} onChange={(event) => updateItem(item.local_id, "gross_price", event.target.value)} /></label>
@@ -564,6 +649,9 @@ export default function QuotationPage() {
           <span>{t("quotation.total", "Total")} <strong>{money(total)}</strong></span>
         </div>
         <div className="form-actions"><button type="submit" className="button primary" disabled={saving}>{saving ? t("quotation.saving", "Guardando...") : (editingInvoiceId ? t("quotation.update_button", "Actualizar cotización") : t("quotation.save_button", "Guardar cotización"))}</button>{editingInvoiceId && <button type="button" className="button" onClick={cancelEditQuotation} disabled={saving}>{t("quotation.cancel_edit", "Cancelar edición")}</button>}</div>
+        <datalist id="quotation-sat-unit-keys">
+          {catalogOptions(catalogs?.clave_unidad).map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+        </datalist>
       </form>
 
       <div className="table-card quotation-list-card">
@@ -571,7 +659,7 @@ export default function QuotationPage() {
           <strong>{t("quotation.list_title", "Listado de cotizaciones")}</strong>
           <span className="muted">{quotations.length} {t("quotation.records", "registro(s)")}</span>
         </div>
-        <div className="table-wrap"><table><thead><tr><th>{t("quotation.id", "ID")}</th><th>{t("quotation.customer", "Cliente")}</th><th>{t("quotation.project", "Proyecto")}</th><th>{t("quotation.date", "Fecha")}</th><th>{t("quotation.items", "Partidas")}</th><th>{t("quotation.subtotal", "Subtotal")}</th><th>{t("quotation.tax", "IVA")}</th><th>{t("quotation.total", "Total")}</th><th>{t("quotation.detail", "Detalle")}</th></tr></thead><tbody>{quotations.map((item) => (<tr key={item.id_invoice}><td>{quotationFolio(item)}</td><td>{customerById[Number(item.id_customer_supplier)]?.name || item.id_customer_supplier || "—"}</td><td>{projectById[Number(item.id_proyect)]?.title || item.id_proyect || "—"}</td><td>{formatDate(item.date_emision)}</td><td>{countItems(item.id_invoice)}</td><td>{money(item.subtotal)}</td><td>{money(item.tax)}</td><td>{money(item.total)}</td><td><button type="button" className="button small" onClick={() => setSelectedInvoiceId(String(item.id_invoice))}>{t("quotation.view_detail", "Ver detalle")}</button></td></tr>))}{!quotations.length && <tr><td colSpan="10" className="muted">{t("quotation.empty", "Sin cotizaciones registradas.")}</td></tr>}</tbody></table></div>
+        <div className="table-wrap"><table><thead><tr><th>{t("quotation.id", "ID")}</th><th>{t("quotation.customer", "Cliente")}</th><th>{t("quotation.project", "Proyecto")}</th><th>{t("quotation.date", "Fecha")}</th><th>{t("quotation.status", "Estatus")}</th><th>{t("quotation.items", "Partidas")}</th><th>{t("quotation.subtotal", "Subtotal")}</th><th>{t("quotation.tax", "IVA")}</th><th>{t("quotation.total", "Total")}</th><th>{t("quotation.detail", "Detalle")}</th></tr></thead><tbody>{quotations.map((item) => (<tr key={item.id_invoice}><td>{quotationFolio(item)}</td><td>{customerById[Number(item.id_customer_supplier)]?.name || item.id_customer_supplier || "—"}</td><td>{projectById[Number(item.id_proyect)]?.title || item.id_proyect || "—"}</td><td>{formatDate(item.date_emision)}</td><td><span className={`quotation-status-badge status-${normalizeQuotationStatus(item.invoice_status)}`}>{quotationStatusLabel(item.invoice_status, t)}</span></td><td>{countItems(item.id_invoice)}</td><td>{money(item.subtotal)}</td><td>{money(item.tax)}</td><td>{money(item.total)}</td><td><button type="button" className="button small" onClick={() => setSelectedInvoiceId(String(item.id_invoice))}>{t("quotation.view_detail", "Ver detalle")}</button></td></tr>))}{!quotations.length && <tr><td colSpan="10" className="muted">{t("quotation.empty", "Sin cotizaciones registradas.")}</td></tr>}</tbody></table></div>
       </div>
 
       {selectedQuotation && (
@@ -585,7 +673,7 @@ export default function QuotationPage() {
           </div>
           <div className="quotation-meta-strip">
             <div><span>{t("quotation.folio", "Folio")}</span><strong>{quotationFolio(selectedQuotation)}</strong></div>
-            <div><span>{t("quotation.status", "Estatus")}</span><strong>{selectedQuotation.invoice_status || "Cotizacion"}</strong></div>
+            <div><span>{t("quotation.status", "Estatus")}</span><strong>{quotationStatusLabel(selectedQuotation.invoice_status, t)}</strong></div>
           </div>
 
           <div className="quotation-party-grid">
@@ -626,6 +714,7 @@ export default function QuotationPage() {
           {selectedQuotation.note && <p className="quotation-detail-note"><strong>{t("quotation.note", "Nota")}:</strong> {selectedQuotation.note}</p>}
         </div>
       )}
+      </>}
     </section>
   );
 }

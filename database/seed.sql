@@ -2,6 +2,15 @@
 -- Note: Each INSERT has ON CONFLICT to handle idempotent seeds
 BEGIN;
 
+-- Las llaves foraneas se comprueban hasta el COMMIT, no en cada sentencia.
+-- Sin esto la siembra no puede aplicarse a una base nueva: el orden del
+-- archivo no respeta las dependencias, y ademas user, permission, proyect y
+-- customer_supplier se referencian en circulo con columnas obligatorias, de
+-- modo que ningun orden de sentencias podria funcionar.
+-- Solo afecta a esta transaccion; fuera de aqui las llaves se siguen
+-- comprobando de inmediato.
+SET CONSTRAINTS ALL DEFERRED;
+
 INSERT INTO "user" ("id_user", "created_by", "creation_date", "date_born", "date_start", "deletion_date", "email", "first_name", "id_permission", "full_name", "id_proyect", "last_name_father", "last_name_mother", "last_update_date", "national_id", "password", "principal_phone", "secundary_phone", "ssn", "supervisor", "base_salary", "hire_date", "id_status", "tax_id", "title", "user_type", "username", "puesto", "accepts_marketing")
 VALUES (1, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00', 'admin1@tyakxa.local', 'Admin', 1, 'test first_name', 1, 'test last_name_father', 'test last_name_mother', '2026-01-01 00:00:00', 'test national_id', '$2b$12$RxTtZtblFwu6ZsmtfNP9Meg6tYSZOCsVIZQLMe260W9seWcdrUma6', 'test principal_', 'test secundary_', 'test ssn', 1, 1, '2026-01-01 00:00:00', 1, 'test tax_id', 'test title', 'admin', 'admin1', 'sample_puesto', TRUE)
 ON CONFLICT ("id_user") DO NOTHING;
@@ -31,7 +40,7 @@ VALUES (1, '00000', 'test razon_social', 'test title', 'test contact_name', 'tes
 ON CONFLICT ("id_customer_supplier") DO NOTHING;
 
 INSERT INTO "proyect" ("id_proyect", "id_customer_supplier", "leader", "proyect_description", "title", "proyect_status", "created_by", "creation_date", "last_update_date", "deletion_date")
-VALUES (1, 1, 1, 'test description', 'test title', 'test state', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
+VALUES (1, 1, 1, 'test description', 'test title', 'draft', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
 ON CONFLICT ("id_proyect") DO NOTHING;
 
 INSERT INTO "bank" ("id_bank", "bank_name", "created_by", "creation_date", "last_update_date", "deletion_date")
@@ -82,16 +91,13 @@ INSERT INTO "material_component" ("id_material_component", "id_material", "id_co
 VALUES (1, 1, 1, 1, 1, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
 ON CONFLICT ("id_material_component") DO NOTHING;
 
-INSERT INTO "movement" ("id_movement", "id_fiscal_account", "date", "type", "amount", "currency", "type_exchange_rate", "created_by", "creation_date", "last_update_date", "deletion_date")
-VALUES (1, 1, '2026-01-01 00:00:00', 'income', 1, 'mxn', 1, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
-ON CONFLICT ("id_movement") DO NOTHING;
 
 INSERT INTO "location_type" ("id_location_type", "location_type_description", "created_by", "creation_date", "last_update_date", "deletion_date")
 VALUES (1, 'test description', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
 ON CONFLICT ("id_location_type") DO NOTHING;
 
 INSERT INTO "location" ("id_location", "id_location_type", "location_description", "id_location_reference", "created_by", "creation_date", "last_update_date", "deletion_date")
-VALUES (1, 1, 'test description', 1, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
+VALUES (1, 1, 'test description', NULL, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
 ON CONFLICT ("id_location") DO NOTHING;
 
 INSERT INTO "product" ("id_product", "id_invoice", "id_location", "id_material", "gross_price", "color", "is_directly_related_to_product_service", "product_status", "path_imagen", "product_code", "note", "created_by", "creation_date", "last_update_date", "descripcion", "cantidad", "id_marca", "id_familia")
@@ -117,6 +123,9 @@ ON CONFLICT ("id_ticket") DO NOTHING;
 INSERT INTO "fiscal_account" ("id_fiscal_account", "fiscal_account_description", "balance", "id_fiscal_account_reference", "created_by", "creation_date", "last_update_date", "deletion_date")
 VALUES (1, 'test description', 1, 1, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
 ON CONFLICT ("id_fiscal_account") DO NOTHING;
+INSERT INTO "movement" ("id_movement", "id_fiscal_account", "date", "type", "amount", "currency", "type_exchange_rate", "created_by", "creation_date", "last_update_date", "deletion_date")
+VALUES (1, 1, '2026-01-01 00:00:00', 'income', 1, 'mxn', 1, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
+ON CONFLICT ("id_movement") DO NOTHING;
 
 INSERT INTO "fiscal_stamp" ("id_fiscal_stamp", "concept", "reviewed_by", "authorized_by", "auxiliar", "num_policy", "created_by", "creation_date", "last_update_date", "deletion_date")
 VALUES (1, 'test concept', 1, 1, 'test auxiliar', 'test num_policy', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
@@ -204,23 +213,53 @@ ON CONFLICT ("id_nm_survey_user") DO NOTHING;
 
 INSERT INTO "entity_permission" ("id_entity_permission", "id_permission", "entity_name", "control_type", "created_by", "creation_date", "last_update_date")
 VALUES (1001, 1, 'product_sale_config', '15', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00')
-ON CONFLICT ("id_entity_permission") DO NOTHING;
+-- Sin objetivo: la colision real es en (id_permission, entity_name), la
+-- restriccion unica que agrega 20260822122000, no en la llave primaria.
+-- Vigilando solo la primaria, este INSERT abortaba seed.sql ENTERO en una
+-- instalacion nueva -las migraciones corren antes y ya habian sembrado esa
+-- fila- y con el se quedaban sin sembrar las ubicaciones, los materiales y
+-- las facturas que el inventario necesita para funcionar.
+ON CONFLICT DO NOTHING;
 
 INSERT INTO "entity_permission" ("id_entity_permission", "id_permission", "entity_name", "control_type", "created_by", "creation_date", "last_update_date")
 VALUES (1002, 1, 'public_api_key', '15', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00')
-ON CONFLICT ("id_entity_permission") DO NOTHING;
+-- Sin objetivo: la colision real es en (id_permission, entity_name), la
+-- restriccion unica que agrega 20260822122000, no en la llave primaria.
+-- Vigilando solo la primaria, este INSERT abortaba seed.sql ENTERO en una
+-- instalacion nueva -las migraciones corren antes y ya habian sembrado esa
+-- fila- y con el se quedaban sin sembrar las ubicaciones, los materiales y
+-- las facturas que el inventario necesita para funcionar.
+ON CONFLICT DO NOTHING;
 
 INSERT INTO "entity_permission" ("id_entity_permission", "id_permission", "entity_name", "control_type", "created_by", "creation_date", "last_update_date")
 VALUES (1003, 2, 'product_sale_config', '15', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00')
-ON CONFLICT ("id_entity_permission") DO NOTHING;
+-- Sin objetivo: la colision real es en (id_permission, entity_name), la
+-- restriccion unica que agrega 20260822122000, no en la llave primaria.
+-- Vigilando solo la primaria, este INSERT abortaba seed.sql ENTERO en una
+-- instalacion nueva -las migraciones corren antes y ya habian sembrado esa
+-- fila- y con el se quedaban sin sembrar las ubicaciones, los materiales y
+-- las facturas que el inventario necesita para funcionar.
+ON CONFLICT DO NOTHING;
 
 INSERT INTO "entity_permission" ("id_entity_permission", "id_permission", "entity_name", "control_type", "created_by", "creation_date", "last_update_date")
 VALUES (1004, 2, 'public_api_key', '15', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00')
-ON CONFLICT ("id_entity_permission") DO NOTHING;
+-- Sin objetivo: la colision real es en (id_permission, entity_name), la
+-- restriccion unica que agrega 20260822122000, no en la llave primaria.
+-- Vigilando solo la primaria, este INSERT abortaba seed.sql ENTERO en una
+-- instalacion nueva -las migraciones corren antes y ya habian sembrado esa
+-- fila- y con el se quedaban sin sembrar las ubicaciones, los materiales y
+-- las facturas que el inventario necesita para funcionar.
+ON CONFLICT DO NOTHING;
 
 INSERT INTO "entity_permission" ("id_entity_permission", "id_permission", "entity_name", "control_type", "created_by", "creation_date", "last_update_date")
 VALUES (1005, 3, 'product_sale_config', '2', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00')
-ON CONFLICT ("id_entity_permission") DO NOTHING;
+-- Sin objetivo: la colision real es en (id_permission, entity_name), la
+-- restriccion unica que agrega 20260822122000, no en la llave primaria.
+-- Vigilando solo la primaria, este INSERT abortaba seed.sql ENTERO en una
+-- instalacion nueva -las migraciones corren antes y ya habian sembrado esa
+-- fila- y con el se quedaban sin sembrar las ubicaciones, los materiales y
+-- las facturas que el inventario necesita para funcionar.
+ON CONFLICT DO NOTHING;
 
 INSERT INTO "inventory_status" ("id_inventory_status", "inventory_status_code", "inventory_status_description", "color", "entity_scope", "flow_scope", "id_department", "id_subdepartment", "id_minimum_level", "is_active", "is_terminal", "visible_to_other_departments", "sort_order", "created_by", "creation_date", "last_update_date")
 VALUES (1, 'ENTRADA', 'Entrada', '#22c55e', 'product', 'inventory', 1, 1, 1, TRUE, FALSE, FALSE, 100, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00')
@@ -249,6 +288,171 @@ ON CONFLICT ("id_public_api_key") DO NOTHING;
 INSERT INTO "password_reset_token" ("id_password_reset_token", "id_user", "token_hash", "expires_at", "used_at", "requested_ip", "created_at")
 VALUES (1, 1, 'disabled_token_hash', '2026-01-01 00:00:00', '2026-01-01 00:00:00', '127.0.0.1', '2026-01-01 00:00:00')
 ON CONFLICT ("id_password_reset_token") DO NOTHING;
+
+-- Device connection is a virtual module and defaults to the settings gear.
+INSERT INTO "entity_permission" ("id_permission", "entity_name", "control_type", "menu_location", "menu_group", "menu_label", "menu_order", "created_by")
+VALUES (1, 'kronos_device', 2, 'settings', 'Recursos humanos', 'Conexión al dispositivo', 30, 1)
+ON CONFLICT ("id_permission", "entity_name") DO UPDATE SET
+  "menu_location" = EXCLUDED."menu_location",
+  "menu_group" = EXCLUDED."menu_group",
+  "menu_label" = EXCLUDED."menu_label",
+  "menu_order" = EXCLUDED."menu_order",
+  "deletion_date" = NULL;
+
+-- Restaurant profiles. Users are assigned through the existing Tyakxa user/role UI.
+INSERT INTO "permission" ("id_permission", "created_by", "authorized_by", "permission_description", "id_department", "id_subdepartment", "id_level") VALUES
+  (10, 1, 1, 'Mesero', 1, 1, 1),
+  (11, 1, 1, 'Cocina', 1, 1, 1),
+  (12, 1, 1, 'Caja Restaurante', 1, 1, 1),
+  (13, 1, 1, 'Admin Restaurante', 1, 1, 1)
+ON CONFLICT ("id_permission") DO NOTHING;
+
+INSERT INTO "entity_permission" ("id_permission", "entity_name", "control_type", "menu_location", "menu_group", "menu_label", "menu_order", "created_by") VALUES
+  (1, 'restaurant_waiter', 15, 'sidebar', 'Restaurante', 'Meseros', 10, 1),
+  (1, 'restaurant_cashier', 15, 'sidebar', 'Restaurante', 'Caja', 20, 1),
+  (1, 'restaurant_kitchen', 15, 'sidebar', 'Restaurante', 'Cocina', 30, 1),
+  (1, 'restaurant_admin', 15, 'sidebar', 'Restaurante', 'Admin', 40, 1),
+  (10, 'restaurant_waiter', 15, 'sidebar', 'Restaurante', 'Meseros', 10, 1),
+  (11, 'restaurant_kitchen', 6, 'sidebar', 'Restaurante', 'Cocina', 30, 1),
+  (12, 'restaurant_cashier', 7, 'sidebar', 'Restaurante', 'Caja', 20, 1),
+  (13, 'restaurant_waiter', 15, 'sidebar', 'Restaurante', 'Meseros', 10, 1),
+  (13, 'restaurant_cashier', 15, 'sidebar', 'Restaurante', 'Caja', 20, 1),
+  (13, 'restaurant_kitchen', 15, 'sidebar', 'Restaurante', 'Cocina', 30, 1),
+  (13, 'restaurant_admin', 15, 'sidebar', 'Restaurante', 'Admin', 40, 1)
+ON CONFLICT ("id_permission", "entity_name") DO UPDATE SET
+  "control_type" = EXCLUDED."control_type",
+  "menu_location" = EXCLUDED."menu_location",
+  "menu_group" = EXCLUDED."menu_group",
+  "menu_label" = EXCLUDED."menu_label",
+  "menu_order" = EXCLUDED."menu_order",
+  "deletion_date" = NULL;
+
+INSERT INTO "restaurant_table" ("id_restaurant_table", "id_proyect", "number", "capacity", "location_description", "is_active", "created_by")
+SELECT number, 1, number, 4, CASE WHEN number <= 8 THEN 'Salón principal' ELSE 'Terraza' END, TRUE, 1
+FROM generate_series(1, 15) AS number
+ON CONFLICT ("id_restaurant_table") DO NOTHING;
+
+INSERT INTO "restaurant_guisado" ("id_restaurant_guisado", "id_proyect", "name", "is_active", "created_by") VALUES
+  (1, 1, 'Picadillo', TRUE, 1),
+  (2, 1, 'Rajas con crema', TRUE, 1),
+  (3, 1, 'Frijoles con chorizo', TRUE, 1),
+  (4, 1, 'Chicharrón en salsa verde', TRUE, 1),
+  (5, 1, 'Papa con chorizo', TRUE, 1),
+  (6, 1, 'Mole', TRUE, 1),
+  (7, 1, 'Tinga de pollo', TRUE, 1),
+  (8, 1, 'Chicharrón prensado', TRUE, 1)
+ON CONFLICT ("id_restaurant_guisado") DO NOTHING;
+
+INSERT INTO "restaurant_dish" ("id_restaurant_dish", "id_proyect", "title", "description", "icon", "category", "price", "production_cost", "requires_guisado", "schedule", "is_active", "created_by") VALUES
+  (1, 1, 'Taco de guisado', 'Tortilla y guisado a elegir', 'taco', 'taco', 18.00, 7.00, TRUE, 'all', TRUE, 1),
+  (2, 1, 'Gordita de guisado', 'Gordita de maíz y guisado', 'sandwich', 'gordita', 22.00, 9.00, TRUE, 'all', TRUE, 1),
+  (3, 1, 'Quesadilla de guisado', 'Quesadilla con guisado a elegir', 'sandwich', 'quesadilla', 25.00, 11.00, TRUE, 'all', TRUE, 1),
+  (4, 1, 'Pozole', 'Platillo del día', 'soup', 'platillo_dia', 85.00, 36.00, FALSE, 'weekend', TRUE, 1),
+  (5, 1, 'Flan', 'Flan de la casa', 'cake', 'postre', 45.00, 16.00, FALSE, 'all', TRUE, 1),
+  (6, 1, 'Pastel', 'Rebanada de pastel', 'cake', 'postre', 50.00, 20.00, FALSE, 'all', TRUE, 1),
+  (7, 1, 'Arroz con leche', 'Postre tradicional', 'cake', 'postre', 40.00, 14.00, FALSE, 'all', TRUE, 1),
+  (8, 1, 'Gelatina', 'Gelatina del día', 'cake', 'postre', 35.00, 10.00, FALSE, 'all', TRUE, 1),
+  (9, 1, 'Agua de jamaica', 'Vaso de agua fresca', 'glass-water', 'agua', 25.00, 6.00, FALSE, 'weekday', TRUE, 1),
+  (10, 1, 'Agua de horchata', 'Vaso de agua fresca', 'glass-water', 'agua', 25.00, 7.00, FALSE, 'weekend', TRUE, 1),
+  (11, 1, 'Coca-Cola', 'Refresco', 'cup-soda', 'refresco', 30.00, 14.00, FALSE, 'all', TRUE, 1),
+  (12, 1, 'Sprite', 'Refresco', 'cup-soda', 'refresco', 28.00, 13.00, FALSE, 'all', TRUE, 1),
+  (13, 1, 'Café de olla', 'Café tradicional', 'coffee', 'cafe', 30.00, 8.00, FALSE, 'all', TRUE, 1),
+  (14, 1, 'Paleta', 'Dulce', 'candy', 'dulce', 12.00, 5.00, FALSE, 'all', TRUE, 1),
+  (15, 1, 'Cocada', 'Dulce tradicional', 'candy', 'dulce', 18.00, 7.00, FALSE, 'all', TRUE, 1)
+ON CONFLICT ("id_restaurant_dish") DO NOTHING;
+
+INSERT INTO "proyect_event" ("id_proyect", "created_by", "event_type", "new_status", "content", "creation_date")
+SELECT project."id_proyect", project."created_by", 'created', project."proyect_status",
+       'Registro base incorporado al historial de proyectos',
+       COALESCE(project."creation_date", CURRENT_TIMESTAMP)
+FROM "proyect" project
+WHERE project."deletion_date" IS NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM "proyect_event" event
+    WHERE event."id_proyect" = project."id_proyect"
+  );
+
+-- Las secuencias se realinean AQUI, no solo al final del archivo.
+-- Los INSERT anteriores fijan identificadores explicitos, lo que no avanza
+-- la secuencia; el INSERT que sigue depende de nextval. Con la secuencia
+-- atrasada choca contra una llave ya usada y aborta la transaccion, y con
+-- ella todo lo que viniera despues.
+-- Keep PostgreSQL SERIAL sequences aligned after deterministic seed IDs
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT table_name, column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND column_default LIKE 'nextval%'
+  LOOP
+    EXECUTE format(
+      'SELECT setval(pg_get_serial_sequence(%L, %L), COALESCE((SELECT MAX(%I) FROM %I), 0) + 1, false)',
+      r.table_name, r.column_name, r.column_name, r.table_name
+    );
+  END LOOP;
+END $$;
+
+-- Project workflow roles are created without assigning existing users.
+WITH role_names(role_name) AS (
+  VALUES ('Supervisor'), ('Gerente'), ('Jefe de taller')
+)
+INSERT INTO "permission" ("created_by", "authorized_by", "permission_description", "id_department", "id_subdepartment", "id_level")
+SELECT 1, 1, role_names.role_name, 1, 1, 1
+FROM role_names
+WHERE NOT EXISTS (
+  SELECT 1 FROM "permission"
+  WHERE lower("permission_description") = lower(role_names.role_name)
+    AND "deletion_date" IS NULL
+);
+
+INSERT INTO "entity_permission" ("id_permission", "entity_name", "control_type", "menu_location", "menu_group", "menu_group_icon", "menu_label", "menu_order", "created_by")
+SELECT role."id_permission", capability.entity_name, capability.control_type,
+       capability.menu_location, capability.menu_group, capability.menu_group_icon,
+       capability.menu_label, capability.menu_order, 1
+FROM "permission" role
+JOIN (VALUES
+  ('Supervisor', 'proyect', 7, 'sidebar', 'Operaciones', 'briefcase-business', 'Proyectos', 80),
+  ('Supervisor', 'task', 15, 'sidebar', 'Operaciones', 'briefcase-business', 'Tareas', 90),
+  ('Supervisor', 'task_note', 15, 'sidebar', 'Operaciones', 'briefcase-business', 'Notas de tarea', 100),
+  ('Supervisor', 'task_type', 15, 'sidebar', 'Operaciones', 'briefcase-business', 'Tipos de tarea', 110),
+  ('Gerente', 'proyect', 6, 'sidebar', 'Operaciones', 'briefcase-business', 'Proyectos', 80),
+  ('Gerente', 'project_authorization', 2, 'hidden', NULL, NULL, NULL, 100),
+  ('Jefe de taller', 'proyect', 6, 'sidebar', 'Operaciones', 'briefcase-business', 'Proyectos', 80),
+  ('Jefe de taller', 'task', 15, 'sidebar', 'Operaciones', 'briefcase-business', 'Tareas', 90),
+  ('Jefe de taller', 'task_note', 15, 'sidebar', 'Operaciones', 'briefcase-business', 'Notas de tarea', 100),
+  ('Jefe de taller', 'task_type', 2, 'sidebar', 'Operaciones', 'briefcase-business', 'Tipos de tarea', 110),
+  ('Jefe de taller', 'project_execution', 2, 'hidden', NULL, NULL, NULL, 100)
+) AS capability(role_name, entity_name, control_type, menu_location, menu_group, menu_group_icon, menu_label, menu_order)
+  ON lower(role."permission_description") = lower(capability.role_name)
+WHERE role."deletion_date" IS NULL
+ON CONFLICT ("id_permission", "entity_name") DO UPDATE SET
+  "control_type" = EXCLUDED."control_type",
+  "menu_location" = EXCLUDED."menu_location",
+  "menu_group" = EXCLUDED."menu_group",
+  "menu_group_icon" = EXCLUDED."menu_group_icon",
+  "menu_label" = EXCLUDED."menu_label",
+  "menu_order" = EXCLUDED."menu_order",
+  "deletion_date" = NULL;
+
+INSERT INTO "nm_field_permission" ("id_field", "id_permission", "control_type", "created_by")
+SELECT field_row."id_field", role."id_permission",
+       CASE WHEN role."permission_description" = 'Gerente' THEN '2'
+            WHEN role."permission_description" = 'Jefe de taller' AND field_row."table_name" IN ('proyect', 'task_type') THEN '2'
+            ELSE '15' END,
+       1
+FROM "field" field_row
+JOIN "permission" role ON role."permission_description" IN ('Supervisor', 'Gerente', 'Jefe de taller')
+WHERE field_row."table_name" IN ('proyect', 'task', 'task_note', 'task_type')
+  AND field_row."deletion_date" IS NULL
+  AND role."deletion_date" IS NULL
+  AND (role."permission_description" <> 'Gerente' OR field_row."table_name" = 'proyect')
+  AND NOT EXISTS (
+    SELECT 1 FROM "nm_field_permission" existing
+    WHERE existing."id_field" = field_row."id_field"
+      AND existing."id_permission" = role."id_permission"
+      AND existing."deletion_date" IS NULL
+  );
 
 -- Keep PostgreSQL SERIAL sequences aligned after deterministic seed IDs
 DO $$

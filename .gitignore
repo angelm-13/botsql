@@ -216,3 +216,12 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Respaldos de la base. Son volcados completos -datos de clientes, RFC,
+# nomina- y pesan megas: uno solo agrega 8 MB al repositorio y publica datos
+# que no deberian salir de la maquina donde se sacaron.
+infra/backups/
+
+# Las bitacoras son entregables, no codigo: se sacaron del repositorio el
+# 10 de septiembre a peticion. Se siguen generando, pero fuera de git.
+Bitacora_*.docx

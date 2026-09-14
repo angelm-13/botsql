@@ -1,9 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
-import { Plus, RefreshCw, Search, Trash2, Pencil } from "lucide-react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { BadgeCheck, ChevronDown, ChevronRight, Download, FileText, Plus, RefreshCw, Scale, Search, Trash2, Pencil, Warehouse } from "lucide-react";
 import { useI18n } from "../i18n";
-import { getAllInvoice, createInvoice, updateInvoice, deleteInvoice, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllCustomerSupplier, getAllStatus, getAllProyect } from "../api";
+import { applyInvoiceInventory, deleteInvoice, downloadInvoicePdf, downloadInvoiceXml, getAllCustomerSupplier, getAllEntityPermission, getAllField, getAllInvoice, getAllNmFieldPermission, getAllProyect, getAllStatus, getInvoiceInventoryPreview, getInvoiceLines, resetUserMfa, stampInvoice, createInvoice, updateInvoice } from "../api";
+import { fetchAllPages } from "../utils/fetchAllPages";
+import Pagination from "../components/Pagination.jsx";
+import PageHeader from "../components/PageHeader.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 import InvoiceUploadWidget from "../components/InvoiceUploadWidget.jsx";
+import InvoiceCreationForm from "../components/InvoiceCreationForm.jsx";
+import InvoiceFiscalPanel from "../components/InvoiceFiscalPanel.jsx";
 
 const emptyForm = { date_emision: "", date_expiration: "", subtotal: "", tax: "", total: "", invoice_status: "", payment_method: "", note: "", id_customer_supplier: "", fiscal_reference: "", serie_csd: "", internationalization: "", currency: "", type_exchange_rate: "", tax_certification_supplier: "", fiscal_certify_serie: "", certification_date: "", cfdi_code: "", sat_code: "", sat_certification_code: "", id_status: "", nombre_emisor: "", lugar_expedicion: "", tipo_de_comprobante: "", rfc_receptor: "", nombre_receptor: "", regimen_fiscal_receptor: "", domicilio_fiscal_receptor: "", id_proveedor_de_sello: "", folio_fiscal: "", exportacion: "", folio: "", no_certificado_sat: "", sello_sat: "", sello_certificacion_sat: "", no_certificado: "", descuento: "", metodo_pago: "", condiciones_pago: "", id_issuer_customer_supplier: "", id_proyect: "", apply_tax: false, tax_rate: "", commercial_terms: "" };
 const validationRules = allValidationRules["invoice"] || {};
@@ -36,6 +41,7 @@ export default function InvoicePage() {
   const [query, setQuery] = useState("");
   const [view, setView] = useState("table");
   const [page, setPage] = useState(1);
+  const [paginacion, setPaginacion] = useState({ total: 0, pages: 1, perPage: 0 });
   const [perPage, setPerPage] = useState(10);
   const [loading, setLoading] = useState(false);
   const [errorKey, setErrorKey] = useState("");
@@ -53,10 +59,16 @@ export default function InvoicePage() {
   const canUpdate = canUseAction(ACTION_UPDATE);
   const canDelete = canUseAction(ACTION_DELETE);
   const canSubmitForm = editingId ? canUpdate : canCreate;
-  const showRowActions = canRead && (canUpdate || canDelete);
+  const showRowActions = canRead;
   const [customerSupplierOptions, setCustomerSupplierOptions] = useState([]);
   const [statusOptions, setStatusOptions] = useState([]);
   const [proyectOptions, setProyectOptions] = useState([]);
+  const [expandedInvoiceId, setExpandedInvoiceId] = useState(null);
+  const [invoiceLines, setInvoiceLines] = useState({});
+  const [invoiceLinesLoading, setInvoiceLinesLoading] = useState(null);
+  const [invoiceLinesError, setInvoiceLinesError] = useState({});
+  // Factura abierta en el panel de actos fiscales (cancelar, cobrar, acreditar).
+  const [fiscalInvoice, setFiscalInvoice] = useState(null);
 
   async function loadData() {
     if (!permissionReady || !canRead) {
@@ -66,8 +78,15 @@ export default function InvoicePage() {
     }
     setLoading(true); setErrorKey(""); setErrorMeta(null);
     try {
-      const data = await getAllInvoice({ page, per_page: perPage });
+      const data = await getAllInvoice({ page, per_page: perPage, q: query || undefined });
       setItems(Array.isArray(data) ? data : (data.items || data.data || []));
+      // La respuesta ya traia el total y el numero de paginas; antes se
+      // tiraban aqui, y por eso "Siguiente" no sabia cuando parar.
+      setPaginacion({
+        total: Array.isArray(data) ? 0 : (data.total ?? 0),
+        pages: Array.isArray(data) ? 1 : (data.pages ?? 1),
+        perPage: Array.isArray(data) ? 0 : (data.per_page ?? perPage),
+      });
     } catch (error) {
       setErrorKey(error.message || "errors.request_failed");
       setErrorMeta(error.payload?.meta || null);
@@ -76,7 +95,16 @@ export default function InvoicePage() {
     }
   }
 
-  useEffect(() => { loadData(); }, [page, perPage, permissionReady, canRead]);
+  // Se espera a que deje de teclear: una peticion por tecla convierte una
+  // busqueda de seis letras en seis consultas.
+  useEffect(() => {
+    const temporizador = setTimeout(() => { loadData(); }, 300);
+    return () => clearTimeout(temporizador);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, perPage, permissionReady, canRead, query]);
+  // Buscar algo nuevo vuelve a la primera pagina: sin esto, quien esta en la 7
+  // y escribe otra cosa pide la pagina 7 de un resultado distinto.
+  useEffect(() => { setPage(1); }, [query]);
   useEffect(() => {
     async function loadFormOptions() {
       if (!permissionReady || (!canSubmitForm && !canRead)) return;
@@ -124,9 +152,9 @@ export default function InvoicePage() {
       }
       try {
         const [entityPermissionData, fieldPermissionData, fieldData] = await Promise.all([
-          getAllEntityPermission({ per_page: 5000 }),
-          getAllNmFieldPermission({ per_page: 5000 }),
-          getAllField({ per_page: 5000 })
+          fetchAllPages(getAllEntityPermission),
+          fetchAllPages(getAllNmFieldPermission),
+          fetchAllPages(getAllField)
         ]);
         const entityPermissions = normalizeList(entityPermissionData);
         const fieldPermissions = normalizeList(fieldPermissionData);
@@ -261,6 +289,39 @@ export default function InvoicePage() {
     try { await deleteInvoice(item.id_invoice); await loadData(); } catch (error) { setErrorKey(error.message || "errors.request_failed"); setErrorMeta(error.payload?.meta || null); }
   }
 
+  function saveBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleStamp(item) {
+    setErrorKey("");
+    setNoticeKey("");
+    try {
+      await stampInvoice(item.id_invoice);
+      setNoticeKey("Factura timbrada correctamente.");
+      await loadData();
+    } catch (error) {
+      setErrorKey(error.message || "errors.request_failed");
+      setErrorMeta(error.payload?.meta || null);
+    }
+  }
+
+  async function handleDocument(item, type) {
+    setErrorKey("");
+    try {
+      const blob = type === "xml" ? await downloadInvoiceXml(item.id_invoice) : await downloadInvoicePdf(item.id_invoice);
+      saveBlob(blob, `${type === "xml" ? "CFDI" : "Factura"}-${item.id_invoice}.${type}`);
+    } catch (error) {
+      setErrorKey(error.message || "errors.request_failed");
+      setErrorMeta(error.payload?.meta || null);
+    }
+  }
+
 
 
   async function resetMfaForItem(item) {
@@ -373,35 +434,18 @@ export default function InvoicePage() {
     return String(idValue ?? item.id ?? "");
   }
 
-  function formatEntityCatalogLabel(entityName, fallback = "") {
-    if (!entityName) return "";
-    return t(`menu.${entityName}`, fallback || entityName);
-  }
-
-  function formatControlTypeLabel(value) {
-    const numeric = Number(value);
-    const labels = [];
-    if ((numeric & 1) === 1) labels.push(t("common.create", "Crear"));
-    if ((numeric & 2) === 2) labels.push(t("common.read", "Leer"));
-    if ((numeric & 4) === 4) labels.push(t("common.update", "Actualizar"));
-    if ((numeric & 8) === 8) labels.push(t("common.delete", "Eliminar"));
-    if (!labels.length) return String(value ?? "");
-    const description = numeric === 15 ? t("common.crud_full", "CRUD completo") : labels.join(" + ");
-    return `${numeric} - ${description}`;
-  }
-
   // issue_12_phase3b_invoice_project_link_summary
   function invoiceProjectLabel(invoice) {
     if (ENTITY_KEY !== "invoice") return "";
     const rawProjectId = invoice?.id_proyect;
-    if (rawProjectId === null || rawProjectId === undefined || String(rawProjectId).trim() === "") return "Sin proyecto";
+    if (rawProjectId === null || rawProjectId === undefined || String(rawProjectId).trim() === "") return t("invoice_ui.no_project", "Sin proyecto");
     const project = proyectOptions.find((item) => String(item.id_proyect ?? item.id ?? "") === String(rawProjectId));
-    return project ? getOptionLabel(project, "proyect") : `Proyecto #${rawProjectId}`;
+    return project ? getOptionLabel(project, "proyect") : `${t("invoice_ui.project", "Proyecto")} #${rawProjectId}`;
   }
 
   function invoiceLinkStatus(invoice) {
     const rawProjectId = invoice?.id_proyect;
-    return rawProjectId === null || rawProjectId === undefined || String(rawProjectId).trim() === "" ? "Sin vincular" : "Vinculada";
+    return rawProjectId === null || rawProjectId === undefined || String(rawProjectId).trim() === "" ? t("invoice_ui.unlinked", "Sin vincular") : t("invoice_ui.linked", "Vinculada");
   }
 
   function invoiceDisplayFolio(invoice) {
@@ -418,6 +462,70 @@ export default function InvoicePage() {
     return filtered.filter((item) => item.id_proyect !== null && item.id_proyect !== undefined && String(item.id_proyect).trim() !== "").length;
   }
 
+  async function handleInventory(item) {
+    // Se muestra primero que haria en el almacen y se pide confirmacion: el
+    // movimiento afecta existencias reales.
+    setErrorKey(""); setNoticeKey("");
+    try {
+      const preview = await getInvoiceInventoryPreview(item.id_invoice);
+      if (!preview.can_apply) {
+        if (preview.fully_applied) { setNoticeKey("invoice_ui.inventory_already_applied"); return; }
+        const razon = preview.blocked_lines
+          ? t("invoice_ui.inventory_blocked", "Alguna partida no alcanza en el almacén.")
+          : preview.invoice_direction === "sin_clasificar"
+            ? t("errors.invoice_inventory_direction_unknown", "No se sabe si la factura es de venta o de compra.")
+            : t("invoice_ui.inventory_nothing_to_apply", "No hay partidas de almacén que aplicar.");
+        setErrorKey(razon);
+        return;
+      }
+      const efecto = preview.effect === "incrementa"
+        ? t("invoice_ui.inventory_will_increase", "sumará al almacén")
+        : t("invoice_ui.inventory_will_decrease", "descontará del almacén");
+      const detalle = preview.lines
+        .filter((line) => line.applicable)
+        .map((line) => `  · ${line.description}: ${line.units}`)
+        .join("\n");
+      const confirmado = window.confirm(
+        [
+          `${t("invoice_ui.inventory_confirm", "Esta factura")} ${efecto}:`,
+          "",
+          detalle,
+          "",
+          t("common.continue", "¿Continuar?"),
+        ].join("\n")
+      );
+      if (!confirmado) return;
+      const resultado = await applyInvoiceInventory(item.id_invoice, {});
+      setNoticeKey(resultado.applied_lines
+        ? "invoice_ui.inventory_applied"
+        : "invoice_ui.inventory_already_applied");
+      await loadData();
+    } catch (requestError) {
+      const payload = requestError?.payload || {};
+      setErrorKey(payload.error_key || payload.error || requestError?.message || "errors.request_failed");
+      setErrorMeta(payload.meta || null);
+    }
+  }
+
+  async function toggleInvoiceLines(invoiceId) {
+    if (expandedInvoiceId === invoiceId) {
+      setExpandedInvoiceId(null);
+      return;
+    }
+    setExpandedInvoiceId(invoiceId);
+    if (invoiceLines[invoiceId]) return;
+    setInvoiceLinesLoading(invoiceId);
+    setInvoiceLinesError((current) => ({ ...current, [invoiceId]: "" }));
+    try {
+      const response = await getInvoiceLines(invoiceId);
+      setInvoiceLines((current) => ({ ...current, [invoiceId]: response.items || [] }));
+    } catch (error) {
+      setInvoiceLinesError((current) => ({ ...current, [invoiceId]: error.message || "invoice_ui.error_loading_lines" }));
+    } finally {
+      setInvoiceLinesLoading(null);
+    }
+  }
+
   function renderInvoiceProjectSummary() {
     if (ENTITY_KEY !== "invoice" || !canRead || !filtered.length) return null;
     const linked = invoiceLinkedCount();
@@ -426,39 +534,44 @@ export default function InvoicePage() {
       <div className="table-card invoice-project-card">
         <div className="invoice-project-header">
           <div>
-            <strong>Facturas / Proyecto</strong>
-            <p className="muted">Identifica facturas cargadas desde XML y corrige su proyecto desde el formulario existente.</p>
+            <strong>{t("invoice_ui.project_summary", "Facturas / Proyecto")}</strong>
+            <p className="muted">{t("invoice_ui.project_summary_help", "Identifica facturas cargadas desde XML y corrige su proyecto desde el formulario existente.")}</p>
           </div>
           <div className="invoice-project-metrics">
-            <span><strong>{filtered.length}</strong>Total</span>
-            <span><strong>{linked}</strong>Vinculadas</span>
-            <span><strong>{unlinked}</strong>Sin proyecto</span>
+            <span><strong>{filtered.length}</strong>{t("invoice_ui.total", "Total")}</span>
+            <span><strong>{linked}</strong>{t("invoice_ui.linked_plural", "Vinculadas")}</span>
+            <span><strong>{unlinked}</strong>{t("invoice_ui.no_project", "Sin proyecto")}</span>
           </div>
         </div>
         <div className="table-wrap">
           <table className="invoice-project-table">
             <thead>
               <tr>
-                <th>Factura / UUID</th>
-                <th>Emisor</th>
-                <th>Receptor</th>
-                <th>Total</th>
-                <th>Proyecto</th>
-                <th>Vinculación</th>
-                <th>Acción</th>
+                <th>{t("invoice_ui.invoice_uuid", "Factura / UUID")}</th>
+                <th>{t("invoice_ui.issuer", "Emisor")}</th>
+                <th>{t("invoice_ui.receiver", "Receptor")}</th>
+                <th>{t("invoice_ui.total", "Total")}</th>
+                <th>{t("invoice_ui.project", "Proyecto")}</th>
+                <th>{t("invoice_ui.link", "Vinculación")}</th>
+                <th>{t("invoice_ui.action", "Acción")}</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((item) => (
-                <tr key={`invoice-link-${item.id_invoice}`}>
-                  <td><strong>{invoiceDisplayFolio(item)}</strong><p className="cell-value">{item.folio_fiscal || item.cfdi_code || "—"}</p></td>
+                <Fragment key={`invoice-link-${item.id_invoice}`}>
+                <tr>
+                  <td className="invoice-identity-cell"><button type="button" className="invoice-lines-toggle" onClick={() => toggleInvoiceLines(item.id_invoice)} aria-expanded={expandedInvoiceId === item.id_invoice} title={t("invoice_ui.view_lines")}>{expandedInvoiceId === item.id_invoice ? <ChevronDown size={17} /> : <ChevronRight size={17} />}</button><span><strong>{invoiceDisplayFolio(item)}</strong><p className="cell-value">{item.folio_fiscal || item.cfdi_code || "—"}</p></span></td>
                   <td><span>{item.nombre_emisor || "—"}</span></td>
                   <td><span>{item.nombre_receptor || item.id_customer_supplier || "—"}</span></td>
                   <td><strong>{invoiceMoney(item.total)}</strong></td>
                   <td><span>{invoiceProjectLabel(item)}</span></td>
                   <td><span className={item.id_proyect ? "invoice-link-badge linked" : "invoice-link-badge unlinked"}>{invoiceLinkStatus(item)}</span></td>
-                  <td>{canUpdate ? <button type="button" className="button small" onClick={() => startEdit(item)}>Editar relación</button> : <span className="muted">Sin permiso</span>}</td>
+                  <td className="row-actions">{canUpdate && <button type="button" onClick={() => startEdit(item)} title={t("invoice_ui.edit_relation")}><Pencil size={15} /></button>}{canUpdate && !item.folio_fiscal && <button type="button" onClick={() => handleStamp(item)} title={t("invoice_ui.stamp_invoice")}><BadgeCheck size={15} /></button>}{canUpdate && <button type="button" onClick={() => handleInventory(item)} title={t("invoice_ui.apply_inventory", "Aplicar al almacén")}><Warehouse size={15} /></button>}{canUpdate && item.folio_fiscal && <button type="button" onClick={() => setFiscalInvoice(item)} title={t("fiscal.open_panel", "Cancelar, cobrar o acreditar")}><Scale size={15} /></button>}<button type="button" onClick={() => handleDocument(item, "pdf")} title={t("invoice_ui.download_pdf")}><FileText size={15} /></button>{item.folio_fiscal && <button type="button" onClick={() => handleDocument(item, "xml")} title={t("invoice_ui.download_xml")}><Download size={15} /></button>}</td>
                 </tr>
+                {expandedInvoiceId === item.id_invoice && <tr className="invoice-lines-row"><td colSpan="7">
+                  {invoiceLinesLoading === item.id_invoice ? <p className="muted">{t("invoice_ui.loading_lines")}</p> : invoiceLinesError[item.id_invoice] ? <p className="field-error">{t(invoiceLinesError[item.id_invoice], invoiceLinesError[item.id_invoice])}</p> : (invoiceLines[item.id_invoice] || []).length === 0 ? <p className="muted">{t("invoice_ui.no_lines")}</p> : <div className="invoice-lines-panel"><table><thead><tr><th>{t("invoice_ui.sat_key")}</th><th>{t("invoice_ui.description")}</th><th>{t("invoice_ui.quantity")}</th><th>{t("invoice_ui.unit")}</th><th>{t("invoice_ui.unit_price")}</th><th>{t("invoice_ui.discount")}</th><th>{t("invoice_ui.tax")}</th><th>{t("invoice_ui.total")}</th></tr></thead><tbody>{invoiceLines[item.id_invoice].map((line) => <tr key={line.id_invoice_material_service}><td>{line.sat_product_key || "—"}</td><td>{line.invoice_material_service_description}</td><td>{formatTableValue(line.quantity)}</td><td>{line.sat_unit_key || "—"}</td><td>{invoiceMoney(line.gross_price)}</td><td>{invoiceMoney(line.discount)}</td><td>{invoiceMoney(line.line_tax)}</td><td><strong>{invoiceMoney(line.line_total)}</strong></td></tr>)}</tbody></table></div>}
+                </td></tr>}
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -479,11 +592,15 @@ export default function InvoicePage() {
     return t(errorKey, errorKey);
   }
 
-  const filtered = useMemo(() => {
-    const needle = query.toLowerCase();
-    if (!needle) return items;
-    return items.filter((item) => Object.values(item || {}).some((value) => String(value ?? "").toLowerCase().includes(needle)));
-  }, [items, query]);
+  // El buscador pregunta al SERVIDOR, asi que lo que llega ya viene filtrado.
+  //
+  // Antes se filtraba aqui, sobre `items`, que es solo la pagina cargada: con
+  // 2 221 productos en 56 paginas, teclear un nombre estando en la primera no
+  // encontraba el que vive en la 34, y el contador seguia diciendo 2 221. El
+  // servidor busca por todas las columnas de texto y, si lo escrito es un
+  // numero, tambien por los identificadores -- asi "8580" encuentra el
+  // producto 8580 aunque no se sepa como se llama.
+  const filtered = items;
 
   const groups = useMemo(() => filtered.reduce((acc, item) => {
     const key = String(item.invoice_status ?? t("common.unclassified"));
@@ -492,12 +609,15 @@ export default function InvoicePage() {
 
   return (
     <section className="entity-page">
-      <div className="page-heading">
-        <div><p className="eyebrow">{t("common.module")}</p><h2>{t("menu.invoice")}</h2></div>
+      <PageHeader
+        eyebrow={t("common.module")}
+        titulo={t("menu.invoice")}
+        subtitulo={t("page.invoice.subtitle", "")}
+      >
         <button className="button ghost" onClick={loadData} disabled={!canRead}><RefreshCw size={16} />{loading ? t("common.loading") : t("common.refresh")}</button>
-      </div>
+      </PageHeader>
 
-      {canSubmitForm && <form className="form-card" onSubmit={handleSubmit}>
+      {canSubmitForm && (editingId ? <form className="form-card" onSubmit={handleSubmit}>
         <div className="form-header"><Plus size={18} /><strong>{editingId ? t("common.edit") : t("common.new")}</strong></div>
         <div className="form-grid">
           {canSeeField("date_emision") && (
@@ -846,7 +966,7 @@ export default function InvoicePage() {
           <button className="button primary" type="submit">{t("common.save")}</button>
           <button className="button" type="button" onClick={() => { setFormData(emptyForm); setEditingId(null); setFieldErrors({}); }}>{t("common.cancel")}</button>
         </div>
-      </form>}
+      </form> : <InvoiceCreationForm onCreated={loadData} />)}
 
       {canRead && <div className="toolbar">
         <div className="search-box"><Search size={16} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("common.search")} /></div>
@@ -858,6 +978,7 @@ export default function InvoicePage() {
       </div>}
 
       {errorKey && <div className="alert error">{renderError()}</div>}
+      {noticeKey && <div className="alert success">{t(noticeKey, noticeKey)}</div>}
       {loading && <div className="alert">{t("common.loading")}</div>}
       {permissionReady && !canRead && !canCreate && <div className="empty"><strong>{t("security.permission.read_denied", "Sin permiso de lectura")}</strong><p>{t("common.module_hidden_hint", "Este módulo no tiene acciones seleccionadas; quedará oculto y sus campos no se mostrarán.")}</p></div>}
       {canRead && !loading && filtered.length === 0 && <div className="empty"><strong>{t("common.empty_title")}</strong><p>{t("common.empty_body")}</p></div>}
@@ -875,7 +996,7 @@ export default function InvoicePage() {
               {canSeeField("payment_method") && <th>{t("fields.invoice.payment_method")}</th>}
               {canSeeField("note") && <th>{t("fields.invoice.note")}</th>}
               {canSeeField("id_customer_supplier") && <th>{t("fields.invoice.id_customer_supplier")}</th>}
-        </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_invoice}>{showRowActions && <td className="row-actions">{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</td>}
+        </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_invoice}>{showRowActions && <td className="row-actions">{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canUpdate && !item.folio_fiscal && <button type="button" onClick={() => handleStamp(item)} title={t("invoice_ui.stamp_invoice")}><BadgeCheck size={15} /></button>}{canUpdate && <button type="button" onClick={() => handleInventory(item)} title={t("invoice_ui.apply_inventory", "Aplicar al almacén")}><Warehouse size={15} /></button>}{canUpdate && item.folio_fiscal && <button type="button" onClick={() => setFiscalInvoice(item)} title={t("fiscal.open_panel", "Cancelar, cobrar o acreditar")}><Scale size={15} /></button>}<button type="button" onClick={() => handleDocument(item, "pdf")} title={t("invoice_ui.download_pdf")}><FileText size={15} /></button>{item.folio_fiscal && <button type="button" onClick={() => handleDocument(item, "xml")} title={t("invoice_ui.download_xml")}><Download size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}</td>}
               {canSeeField("id_invoice") && <td><pre className="cell-value">{formatTableValue(item.id_invoice)}</pre></td>}
               {canSeeField("date_emision") && <td><pre className="cell-value">{formatTableValue(item.date_emision)}</pre></td>}
               {canSeeField("date_expiration") && <td><pre className="cell-value">{formatTableValue(item.date_expiration)}</pre></td>}
@@ -892,7 +1013,22 @@ export default function InvoicePage() {
 
       {canCreate && <InvoiceUploadWidget />}
 
-      <div className="pagination"><button className="button" disabled={page <= 1} onClick={() => setPage(page - 1)}>{t("common.previous")}</button><span>{t("common.page")} {page}</span><button className="button" onClick={() => setPage(page + 1)}>{t("common.next")}</button></div>
+      <Pagination
+        page={page}
+        pages={paginacion.pages}
+        total={paginacion.total}
+        perPage={paginacion.perPage}
+        loading={loading}
+        onChange={setPage}
+      />
+
+      {fiscalInvoice && (
+        <InvoiceFiscalPanel
+          invoice={fiscalInvoice}
+          onClose={() => setFiscalInvoice(null)}
+          onChanged={loadData}
+        />
+      )}
     </section>
   );
 }

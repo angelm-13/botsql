@@ -1,0 +1,49 @@
+# Overlay real de producción para torredigital (primer cliente real del
+# ERP). Instanciado desde k8s/overlays/_template.
+#
+# Dominio: sistema.torredigital.mx, un solo origen (front + API bajo
+# /api) — mismo patrón que tyakxa-dev, ya validado ahí. Por eso el
+# Ingress del base se elimina y se usa ingress-single-origin.yaml en su
+# lugar (ver ese archivo).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: torredigital-prod
+images:
+  - name: DB_INIT_IMAGE_PLACEHOLDER
+    newName: ghcr.io/tyakxa/tyakxa-tny-db-init
+    newTag: "03522b4"
+  - name: BACKEND_IMAGE_PLACEHOLDER
+    newName: ghcr.io/tyakxa/tyakxa-tny-backend
+    newTag: "03522b4"
+  - name: WORKER_IMAGE_PLACEHOLDER
+    newName: ghcr.io/tyakxa/tyakxa-tny-worker
+    newTag: "03522b4"
+  - name: FRONTEND_IMAGE_PLACEHOLDER
+    newName: ghcr.io/tyakxa/tyakxa-tny-frontend
+    newTag: 03522b4-torredigital-prod
+resources:
+  - ../../base
+  - ingress-single-origin.yaml
+patches:
+  - patch: |-
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: tyakxa-tny
+      $patch: delete
+  # PriorityClass del cliente ERP #1 (ver p1-torredigital-prod, aplicada al
+  # clúster con kubectl apply -f priority-classes.yaml). target sin `name`
+  # aplica a los 5 Deployments del base (backend, celery-worker, celery-beat,
+  # frontend, rabbitmq) de un solo patch.
+  - target:
+      kind: Deployment
+    patch: |-
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: p1-torredigital-prod
+  - target:
+      kind: StatefulSet
+    patch: |-
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: p1-torredigital-prod

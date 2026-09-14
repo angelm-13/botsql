@@ -1,0 +1,91 @@
+# Overlay real del entorno interno de pruebas (no es cliente de verdad).
+# Instanciado desde k8s/overlays/_template con el commit 533ebb0 (build
+# verde en Actions: backend, worker, db-init y frontend-tyakxa-dev).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: tyakxa-dev
+images:
+  - name: DB_INIT_IMAGE_PLACEHOLDER
+    newName: ghcr.io/tyakxa/tyakxa-tny-db-init
+    newTag: "0ec5fc4"
+  - name: BACKEND_IMAGE_PLACEHOLDER
+    newName: ghcr.io/tyakxa/tyakxa-tny-backend
+    newTag: "0ec5fc4"
+  - name: WORKER_IMAGE_PLACEHOLDER
+    newName: ghcr.io/tyakxa/tyakxa-tny-worker
+    newTag: "0ec5fc4"
+  - name: FRONTEND_IMAGE_PLACEHOLDER
+    newName: ghcr.io/tyakxa/tyakxa-tny-frontend
+    newTag: "0ec5fc4-tyakxa-dev"
+# El dominio real que dieron para pruebas (sistema-test.torredigital.mx)
+# es UN SOLO dominio, no el patrón de dos subdominios de base/ingress.yaml
+# — por eso ese Ingress del base se elimina aquí y se agrega
+# ingress-single-origin.yaml en su lugar (ver ese archivo para el porqué
+# de los dos objetos Ingress).
+resources:
+  - ../../base
+  - ingress-single-origin.yaml
+patches:
+  - patch: |-
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: tyakxa-tny
+      $patch: delete
+  # Solo aqui, no en k8s/base/backend.yaml -- ese es compartido con los 3
+  # clientes reales (torredigital-prod, adser-prod, vidrioyaluminios-prod) y
+  # bajarles el request a ellos no es una decision de "ambiente de bajo
+  # riesgo". tyakxa-dev si lo es: bajar el request solo hace que el scheduler
+  # le pida menos CPU garantizada al agendarlo -el limite (500m) sigue igual,
+  # asi que puede seguir usando mas si el nodo tiene espacio libre en el
+  # momento-. El costo real es que, bajo contencion de verdad, este pod recibe
+  # una porcion mas chica de CPU (mas lento, no se cae) -aceptable aqui,
+  # nunca en un cliente real.
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: backend
+      spec:
+        template:
+          spec:
+            containers:
+              - name: backend
+                resources:
+                  requests:
+                    cpu: 50m
+  # Mismo criterio que el patch de "backend" de arriba. El viejo
+  # celery-worker de tyakxa-dev se quedo trabado sin bajar (RollingUpdate
+  # necesitaba cupo para el viejo Y el nuevo a la vez, y no habia) -- se bajo
+  # a mano con `kubectl scale --replicas=0` antes de este patch para
+  # desatorarlo; este cambio evita que se repita la proxima vez que cambie
+  # la imagen o el manifiesto.
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: celery-worker
+      spec:
+        template:
+          spec:
+            containers:
+              - name: celery-worker
+                resources:
+                  requests:
+                    cpu: 50m
+  # PriorityClass del ambiente de desarrollo del ERP (ver p5-tyakxa-dev,
+  # aplicada al clúster con kubectl apply -f priority-classes.yaml) — por
+  # debajo de los 3 clientes reales y de perrichef, por encima de los demas
+  # proyectos, segun el orden que definio Alan.
+  - target:
+      kind: Deployment
+    patch: |-
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: p5-tyakxa-dev
+  - target:
+      kind: StatefulSet
+    patch: |-
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: p5-tyakxa-dev

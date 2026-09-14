@@ -1,9 +1,24 @@
 from __future__ import annotations
 
+from io import BytesIO
+import jwt
+
 from tests.conftest import BackendTestCase
+from app.utils.auth import SECRET_KEY
 
 
 class TestInvoiceApi(BackendTestCase):
+    def test_upload_xml_requires_principal_company(self):
+        token = jwt.encode({'id_user': 1, 'is_superuser': True}, SECRET_KEY, algorithm='HS256')
+        response = self.client.post(
+            '/invoice/upload-xml',
+            data={'files': (BytesIO(b'<xml/>'), 'invoice.xml')},
+            headers={'Authorization': f'Bearer {token}'},
+            content_type='multipart/form-data',
+        )
+        self.assertEqual(409, response.status_code)
+        self.assertEqual('invoice.principal_company_required', self.json(response)['error_key'])
+
     def test_list_invoice_supports_pagination(self):
         response = self.client.get("/invoice/?page=1&per_page=10", headers=self.auth_headers())
         self.assertIn(response.status_code, [200, 401, 403])
