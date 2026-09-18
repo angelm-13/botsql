@@ -139,7 +139,11 @@ spec:
               memory: 128Mi
             limits:
               cpu: 500m
-              memory: 256Mi
+              # WeasyPrint (generacion de PDF de facturas/cotizaciones) tiene un
+              # pico de memoria muy por encima del uso normal en reposo (~90Mi) --
+              # con 256Mi el kernel mataba el contenedor a media peticion
+              # (OOMKilled, sin traceback porque el proceso muere entero).
+              memory: 512Mi
           volumeMounts:
             - name: uploads
               mountPath: /uploads
