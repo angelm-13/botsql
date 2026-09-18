@@ -59,6 +59,10 @@ from app.services.warehouse_voucher_service import (
     devolver_renglon,
     consultar_vale,
     crear_vale,
+    reporte_por_almacen,
+    reporte_por_persona,
+    reporte_por_producto,
+    reporte_vales_pendientes,
     vales_vencidos,
 )
 from app.utils.errors import AppError
@@ -1216,3 +1220,152 @@ class TestElValeSeLigaAUnaObra(BaseVale):
 
         self.assertEqual(1, resultado["total"])
         self.assertEqual(self.OBRA, resultado["items"][0]["id_proyect"])
+
+
+class TestLosReportesDeAlmacen(BaseVale):
+    """Los 4 reportes que ya existian en el sistema anterior (Adser).
+
+    El caso real que motiva `_sin_cerrar()`: los vales migrados de Adser no
+    traen `close_date` en NULL cuando siguen abiertos, traen el sentinela
+    `1990-01-01` que la migracion no limpio (a diferencia de
+    `product.fecha_baja`, que si paso por `normalizar_fecha()`). Estas pruebas
+    fijan que un renglon con ESE valor se lea como abierto, igual que uno con
+    NULL de verdad -- y que uno con una fecha real se lea como cerrado.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.surtir(100)
+
+    def _cerrar_con_sentinela(self, id_linea):
+        """Simula un renglon migrado de Adser: cerrado con el sentinela
+        heredado del sistema anterior, no con NULL."""
+        from app.models.nm_incident_product import NmIncidentProduct
+
+        with transaction_context() as db:
+            db.get(NmIncidentProduct, id_linea).close_date = datetime(1990, 1, 1)
+
+    def test_a_line_with_the_inherited_sentinel_counts_as_open(self):
+        vale = self._vale([self._linea_cantidad(10)])
+        linea = vale["lines"][0]["id_nm_incident_product"]
+        self._cerrar_con_sentinela(linea)
+
+        pendientes = reporte_vales_pendientes(ACTOR)
+
+        self.assertEqual(1, pendientes["total"])
+        self.assertIsNone(pendientes["items"][0]["close_date"])
+
+    def test_a_line_actually_returned_does_not_count_as_pending(self):
+        vale = self._vale([self._linea_cantidad(10)])
+        linea = vale["lines"][0]["id_nm_incident_product"]
+        devolver_renglon(linea, {}, ACTOR)
+
+        pendientes = reporte_vales_pendientes(ACTOR)
+
+        self.assertEqual(0, pendientes["total"])
+
+    def test_a_line_still_open_with_null_close_date_is_pending(self):
+        self._vale([self._linea_cantidad(10)])
+
+        pendientes = reporte_vales_pendientes(ACTOR)
+
+        self.assertEqual(1, pendientes["total"])
+
+    def test_grouped_by_product_uses_the_product_code(self):
+        self._vale([self._linea_cantidad(10)])
+        self._vale([self._linea_cantidad(20)])
+
+        reporte = reporte_por_producto(ACTOR)
+
+        self.assertEqual(1, len(reporte["groups"]))
+        self.assertEqual("CEM-50", reporte["groups"][0]["group"])
+        self.assertEqual(2, reporte["groups"][0]["total"])
+
+    def test_grouped_by_project_uses_the_trimmed_note(self):
+        """`incident.note` es donde vive el proyecto/sitio para lo migrado de
+        Adser -- `id_proyect` y `id_location_*` estan en NULL ahi. Un valor
+        sin recortar (como puede traer lo migrado, escrito directo en la
+        base y no via `crear_vale`, que ya recorta al capturar) tiene que
+        agruparse igual que el ya limpio.
+        """
+        limpio = self._vale([self._linea_cantidad(10)], note="APELSA")
+        sucio = self._vale([self._linea_cantidad(10)], note="APELSA")
+        with transaction_context() as db:
+            db.get(Incident, sucio["voucher"]["id_incident"]).note = "  APELSA  "
+
+        reporte = reporte_por_almacen(ACTOR)
+
+        self.assertEqual(1, len(reporte["groups"]))
+        self.assertEqual("APELSA", reporte["groups"][0]["group"])
+        self.assertEqual(2, reporte["groups"][0]["total"])
+
+    def test_a_voucher_without_a_project_note_falls_into_its_own_group(self):
+        vale = self._vale([self._linea_cantidad(10)])
+        with transaction_context() as db:
+            db.get(Incident, vale["voucher"]["id_incident"]).note = "   "
+
+        reporte = reporte_por_almacen(ACTOR)
+
+        self.assertEqual("(sin proyecto)", reporte["groups"][0]["group"])
+
+    def test_grouped_by_requester_uses_the_holder_name(self):
+        self._vale([self._linea_cantidad(10)])
+
+        reporte = reporte_por_persona(ACTOR)
+
+        self.assertEqual(1, len(reporte["groups"]))
+        self.assertEqual(1, reporte["groups"][0]["total"])
+
+    def test_status_is_entrada_or_salida_by_direction(self):
+        vale = self._vale([self._linea_cantidad(10)])
+        linea = vale["lines"][0]["id_nm_incident_product"]
+        devolver_renglon(linea, {}, ACTOR)
+
+        reporte = reporte_por_producto(ACTOR)
+        estados = {r["status"] for r in reporte["groups"][0]["items"]}
+
+        self.assertEqual({"Salida", "Entrada"}, estados)
+
+    def test_status_is_the_incident_type_for_danado_and_destruccion(self):
+        with transaction_context() as db:
+            db.add(IncidentType(id_incident_type=999,
+                                incident_type_description="Dañado",
+                                created_by=1))
+        self._vale([self._linea_cantidad(10)], id_incident_type=999)
+
+        reporte = reporte_por_producto(ACTOR)
+
+        self.assertEqual("Dañado", reporte["groups"][0]["items"][0]["status"])
+
+    def test_date_range_filters_by_incident_date(self):
+        vale = self._vale([self._linea_cantidad(10)])
+        with transaction_context() as db:
+            db.get(Incident, vale["voucher"]["id_incident"]).incident_date = (
+                datetime(2020, 1, 1))
+
+        dentro = reporte_por_producto(ACTOR, fecha_inicio="2019-12-01",
+                                      fecha_fin="2020-02-01")
+        fuera = reporte_por_producto(ACTOR, fecha_inicio="2021-01-01",
+                                     fecha_fin="2021-12-31")
+
+        self.assertEqual(1, dentro["total_items"])
+        self.assertEqual(0, fuera["total_items"])
+
+    def test_filtered_by_requester(self):
+        self._vale([self._linea_cantidad(10)])
+
+        propio = reporte_por_producto(ACTOR, id_user=1)
+        ajeno = reporte_por_producto(ACTOR, id_user=999999)
+
+        self.assertEqual(1, propio["total_items"])
+        self.assertEqual(0, ajeno["total_items"])
+
+    def test_a_requester_without_the_warehouse_capability_only_sees_their_own(self):
+        """Mismo alcance que el resto del modulo: quien no opera el almacen
+        ve lo suyo, aunque pida ver todo con `id_user`."""
+        self._vale([self._linea_cantidad(10)])
+
+        sin_permiso = {"id_user": 999999, "is_superuser": False}
+        reporte = reporte_por_producto(sin_permiso)
+
+        self.assertEqual(0, reporte["total_items"])

@@ -29,6 +29,10 @@ from app.services.warehouse_voucher_service import (
     historial_del_producto,
     lo_que_ha_pedido,
     quien_tiene_que,
+    reporte_por_almacen,
+    reporte_por_persona,
+    reporte_por_producto,
+    reporte_vales_pendientes,
     vales_vencidos,
 )
 from app.utils.auth import require_entity_permission, token_required
@@ -208,3 +212,54 @@ def quien_tiene(user_data):
 def lo_pedido(user_data):
     """Que ha pedido cada persona, historico."""
     return jsonify(lo_que_ha_pedido(user_data, request.args.get("id_user")))
+
+
+# --- los 4 reportes de almacen que ya existian en el sistema anterior ---
+#
+# Los cuatro aceptan el mismo par de filtros: `fecha_inicio`/`fecha_fin`
+# (sobre `incident_date`, el mismo nombre que ya usa `routes/kpi.py` para su
+# rango) e `id_user` (el solicitante/responsable). Guardados con
+# `warehouse_voucher` en modo lectura, igual que el resto de las consultas de
+# este archivo -- no son CRUD de una tabla, son la misma pregunta de siempre
+# ("que ha salido, a nombre de quien") vista de otras 4 formas.
+
+def _filtros_de_reporte():
+    return {
+        "fecha_inicio": request.args.get("fecha_inicio"),
+        "fecha_fin": request.args.get("fecha_fin"),
+        "id_user": request.args.get("id_user"),
+    }
+
+
+@bp_warehouse_voucher.route("/vouchers/reports/by-product", methods=["GET"])
+@token_required
+@require_entity_permission("warehouse_voucher", "read")
+def reporte_producto(user_data):
+    """a) Vales agrupados por codigo de producto."""
+    return jsonify(reporte_por_producto(user_data, **_filtros_de_reporte()))
+
+
+@bp_warehouse_voucher.route("/vouchers/reports/by-project", methods=["GET"])
+@token_required
+@require_entity_permission("warehouse_voucher", "read")
+def reporte_proyecto(user_data):
+    """b) Vales agrupados por proyecto/sitio -- el texto libre de la nota del
+    vale, que es donde vive ese dato en lo migrado de Adser."""
+    return jsonify(reporte_por_almacen(user_data, **_filtros_de_reporte()))
+
+
+@bp_warehouse_voucher.route("/vouchers/reports/pending", methods=["GET"])
+@token_required
+@require_entity_permission("warehouse_voucher", "read")
+def reporte_pendientes(user_data):
+    """c) Vales de salida sin cerrar -- NULL o el sentinela heredado del
+    sistema anterior (1990-01-01). Lista plana, sin agrupar."""
+    return jsonify(reporte_vales_pendientes(user_data, **_filtros_de_reporte()))
+
+
+@bp_warehouse_voucher.route("/vouchers/reports/by-requester", methods=["GET"])
+@token_required
+@require_entity_permission("warehouse_voucher", "read")
+def reporte_solicitante(user_data):
+    """d) Vales agrupados por solicitante/responsable."""
+    return jsonify(reporte_por_persona(user_data, **_filtros_de_reporte()))
