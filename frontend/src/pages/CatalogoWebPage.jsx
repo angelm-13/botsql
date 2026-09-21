@@ -111,14 +111,10 @@ function finalPrice(row) {
 }
 
 const PERMISSION_BITS = { CREATE: 1, READ: 2, UPDATE: 4, DELETE: 8 };
-
-function controlMask(row) {
-  const value = Number(row?.control_type ?? 0);
-  return Number.isFinite(value) ? value : 0;
-}
+const SCOPE_FIELD_BY_BIT = { [PERMISSION_BITS.CREATE]: "scope_create", [PERMISSION_BITS.READ]: "scope_read", [PERMISSION_BITS.UPDATE]: "scope_update", [PERMISSION_BITS.DELETE]: "scope_delete" };
 
 function hasEntityPermission(rows, entityName, bit) {
-  return (rows || []).some((row) => row?.entity_name === entityName && (controlMask(row) & bit) === bit);
+  return (rows || []).some((row) => row?.entity_name === entityName && Number(row?.[SCOPE_FIELD_BY_BIT[bit]] || 0) !== 0);
 }
 
 function canManageEntity(rows, entityName) {

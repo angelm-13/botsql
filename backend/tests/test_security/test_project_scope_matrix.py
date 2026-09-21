@@ -45,7 +45,6 @@ CLIENTE = 20
 # por proyecto, no el permiso de entidad: si el perfil no pudiera leer, todo
 # responderia 403 y la matriz daria verde sin haber medido el filtro.
 PERFIL = 1
-BITS_TOTALES = 15
 ENTIDADES = (
     "invoice", "task", "proyect", "product", "nm_incident_product",
     "incident", "location", "movement",
@@ -91,7 +90,8 @@ class ProjectScopeMatrix(BackendTestCase):
             ])
             db.add_all([
                 EntityPermission(id_permission=PERFIL, entity_name=nombre,
-                                 control_type=BITS_TOTALES, created_by=1)
+                                 scope_create=4, scope_read=4, scope_update=4, scope_delete=4,
+                                 created_by=1)
                 for nombre in ENTIDADES
             ])
             db.flush()

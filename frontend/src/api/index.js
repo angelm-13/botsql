@@ -121,6 +121,14 @@ export const createCustomerSupplier = (payload) => request("/customer_supplier/"
 export const updateCustomerSupplier = (id, payload) => request(`/customer_supplier/${id}`, { method: "PUT", body: payload });
 export const deleteCustomerSupplier = (id) => request(`/customer_supplier/${id}`, { method: "DELETE" });
 
+// El "Cliente" del proyecto: contacto (empresa + persona) fusionado, ya no
+// solo la empresa -- ver customer_contact_service.py.
+export const getCustomerContactOptions = () => request("/customer_contact/options");
+export const getAllCustomerContact = (params = {}) => request("/customer_contact/", { params });
+export const createCustomerContact = (payload) => request("/customer_contact/", { method: "POST", body: payload });
+export const updateCustomerContact = (id, payload) => request(`/customer_contact/${id}`, { method: "PUT", body: payload });
+export const deleteCustomerContact = (id) => request(`/customer_contact/${id}`, { method: "DELETE" });
+
 export const getAllLogisticsContact = (params = {}) => request("/logistics_contact/", { params });
 export const createLogisticsContact = (payload) => request("/logistics_contact/", { method: "POST", body: payload });
 export const updateLogisticsContact = (id, payload) => request(`/logistics_contact/${id}`, { method: "PUT", body: payload });
@@ -253,6 +261,18 @@ export const getEntityPermission = (id) => request(`/entity_permission/${id}`);
 export const createEntityPermission = (payload) => request("/entity_permission/", { method: "POST", body: payload });
 export const updateEntityPermission = (id, payload) => request(`/entity_permission/${id}`, { method: "PUT", body: payload });
 export const deleteEntityPermission = (id) => request(`/entity_permission/${id}`, { method: "DELETE" });
+
+export const getAllTeam = (params = {}) => request("/team/", { params });
+export const getTeam = (id) => request(`/team/${id}`);
+export const createTeam = (payload) => request("/team/", { method: "POST", body: payload });
+export const updateTeam = (id, payload) => request(`/team/${id}`, { method: "PUT", body: payload });
+export const deleteTeam = (id) => request(`/team/${id}`, { method: "DELETE" });
+
+export const getAllNmTeamUser = (params = {}) => request("/nm_team_user/", { params });
+export const getNmTeamUser = (id) => request(`/nm_team_user/${id}`);
+export const createNmTeamUser = (payload) => request("/nm_team_user/", { method: "POST", body: payload });
+export const updateNmTeamUser = (id, payload) => request(`/nm_team_user/${id}`, { method: "PUT", body: payload });
+export const deleteNmTeamUser = (id) => request(`/nm_team_user/${id}`, { method: "DELETE" });
 
 export const getAllEventLog = (params = {}) => request("/event_log/", { params });
 export const getEventLog = (id) => request(`/event_log/${id}`);
@@ -577,7 +597,7 @@ export const getAllProyect = (params = {}) => request("/proyect/", { params });
 
 // Solo id+folio+titulo, sin permiso de entidad -- igual que `getUserOptions` --
 // para que el selector de "Obra" en un vale funcione con roles que no tienen
-// el modulo operaciones (Almacenista, Jefe de almacen).
+// el modulo operaciones (Almacenista).
 export const getProyectOptions = () => request("/proyect/options");
 export const getProyect = (id) => request(`/proyect/${id}`);
 export const createProyect = (payload) => request("/proyect/", { method: "POST", body: payload });
@@ -585,6 +605,18 @@ export const updateProyect = (id, payload) => request(`/proyect/${id}`, { method
 export const deleteProyect = (id) => request(`/proyect/${id}`, { method: "DELETE" });
 export const transitionProyect = (id, payload) => request(`/proyect/${id}/transition`, { method: "POST", body: payload });
 export const addProyectMessage = (id, payload) => request(`/proyect/${id}/messages`, { method: "POST", body: payload });
+
+// Adjuntos de requerimientos (PDF/DOCX), aparte del modulo /document generico
+// -- ver el comentario de `add_project_document` en el backend.
+export const getProyectDocuments = (id) => request(`/proyect/${id}/documents`);
+export const uploadProyectDocument = (id, file, title) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (title) formData.append("title", title);
+  return request(`/proyect/${id}/documents`, { method: "POST", body: formData });
+};
+export const deleteProyectDocument = (id) => request(`/proyect/documents/${id}`, { method: "DELETE" });
+export const downloadProyectDocument = (id) => requestBlob(`/proyect/documents/${id}/content`);
 
 // El recorrido de GERENCIA, aparte del de taller: un proyecto puede estar
 // entregado y sin cobrar, y son dos maquinas de estados distintas.

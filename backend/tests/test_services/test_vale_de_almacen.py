@@ -921,7 +921,8 @@ class TestElPrevaleNoMueveElAlmacen(BaseVale):
             db.add(EntityPermission(
                 id_permission=JEFE_DE_ALMACEN,
                 entity_name="warehouse_voucher_authorize",
-                control_type=15, created_by=1))
+                scope_create=4, scope_read=4, scope_update=4, scope_delete=4,
+                created_by=1))
 
         self.surtir(5, RACK)
         antes = self._saldo(RACK)
@@ -950,7 +951,8 @@ class TestElPrevaleNoMueveElAlmacen(BaseVale):
             db.add(EntityPermission(
                 id_permission=JEFE_DE_ALMACEN,
                 entity_name="warehouse_voucher_authorize",
-                control_type=15, created_by=1))
+                scope_create=4, scope_read=4, scope_update=4, scope_delete=4,
+                created_by=1))
 
         self.surtir(5, RACK)
         antes = self._saldo(RACK)

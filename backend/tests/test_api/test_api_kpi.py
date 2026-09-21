@@ -66,8 +66,8 @@ class TestKpiApi(BackendTestCase):
             # `kpi_definition` concedido (el guardia de modulo) a los
             # permisos 970 y 972; 971 se queda sin el, a proposito.
             db.add_all([
-                EntityPermission(id_permission=970, entity_name="kpi_definition", control_type=15, created_by=1),
-                EntityPermission(id_permission=972, entity_name="kpi_definition", control_type=15, created_by=1),
+                EntityPermission(id_permission=970, entity_name="kpi_definition", scope_create=4, scope_read=4, scope_update=4, scope_delete=4, created_by=1),
+                EntityPermission(id_permission=972, entity_name="kpi_definition", scope_create=4, scope_read=4, scope_update=4, scope_delete=4, created_by=1),
             ])
 
         seed_kpi_definitions(engine)
@@ -287,10 +287,10 @@ class TestKpiDashboardApi(BackendTestCase):
             # concedido a los dos actores no-admin: la propiedad, no el
             # modulo, es lo que se prueba aqui.
             db.add_all([
-                EntityPermission(id_permission=980, entity_name="kpi_dashboard", control_type=15, created_by=1),
-                EntityPermission(id_permission=980, entity_name="kpi_dashboard_widget", control_type=15, created_by=1),
-                EntityPermission(id_permission=981, entity_name="kpi_dashboard", control_type=15, created_by=1),
-                EntityPermission(id_permission=981, entity_name="kpi_dashboard_widget", control_type=15, created_by=1),
+                EntityPermission(id_permission=980, entity_name="kpi_dashboard", scope_create=4, scope_read=4, scope_update=4, scope_delete=4, created_by=1),
+                EntityPermission(id_permission=980, entity_name="kpi_dashboard_widget", scope_create=4, scope_read=4, scope_update=4, scope_delete=4, created_by=1),
+                EntityPermission(id_permission=981, entity_name="kpi_dashboard", scope_create=4, scope_read=4, scope_update=4, scope_delete=4, created_by=1),
+                EntityPermission(id_permission=981, entity_name="kpi_dashboard_widget", scope_create=4, scope_read=4, scope_update=4, scope_delete=4, created_by=1),
             ])
 
         seed_kpi_definitions(engine)

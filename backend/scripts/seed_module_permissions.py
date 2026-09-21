@@ -62,14 +62,22 @@ def generar() -> str:
     renglones = []
     ultimo = len(filas) - 1
     for indice, fila in enumerate(filas):
-        (rol_nombre, entidad, bits, menu_location,
-         menu_group, menu_icon, menu_label, menu_order, modulo_licencia) = fila
+        (rol_nombre, entidad, scope_create, scope_read, scope_update, scope_delete,
+         menu_location, menu_group, menu_icon, menu_label, menu_order, modulo_licencia) = fila
         coma = "," if indice < ultimo else ""
+        # El bit combinado original solo se recalcula para el comentario --
+        # cual de los cuatro NOMBRE_DE_BITS ya conocidos describe esta fila --,
+        # nunca se guarda: lo que se siembra son las 4 columnas de alcance.
+        bits_original = (
+            (1 if scope_create else 0) | (2 if scope_read else 0)
+            | (4 if scope_update else 0) | (8 if scope_delete else 0)
+        )
         renglones.append(
-            f"    ({_sql(rol_nombre)}, '{entidad}', {bits}, '{menu_location}', "
-            f"{_sql(menu_group)}, {_sql(menu_icon)}, {_sql(menu_label)}, {menu_order}, "
-            f"'{modulo_licencia}'){coma}"
-            f"   -- {rol_nombre} / {NOMBRE_DE_BITS.get(bits, bits)}"
+            f"    ({_sql(rol_nombre)}, '{entidad}', "
+            f"{scope_create}, {scope_read}, {scope_update}, {scope_delete}, "
+            f"'{menu_location}', {_sql(menu_group)}, {_sql(menu_icon)}, {_sql(menu_label)}, "
+            f"{menu_order}, '{modulo_licencia}'){coma}"
+            f"   -- {rol_nombre} / {NOMBRE_DE_BITS.get(bits_original, bits_original)}"
         )
 
     resumen = []
@@ -190,8 +198,8 @@ DELETE FROM entity_permission
 CREATE TEMP TABLE matriz_de_permisos AS
 SELECT * FROM (VALUES
 {filas}
-) AS v (role_name, entity_name, control_type, menu_location,
-        menu_group, menu_group_icon, menu_label, menu_order, modulo_licencia);
+) AS v (role_name, entity_name, scope_create, scope_read, scope_update, scope_delete,
+        menu_location, menu_group, menu_group_icon, menu_label, menu_order, modulo_licencia);
 
 -- Limpieza de lo que la version vieja (con id fijo) pudo haber sembrado en el
 -- rol equivocado. Solo toca created_by=1 -nunca una fila que un
@@ -218,11 +226,12 @@ DELETE FROM entity_permission ep
    );
 
 INSERT INTO entity_permission (
-    id_permission, entity_name, control_type, menu_location,
-    menu_group, menu_group_icon, menu_label, menu_order, created_by
+    id_permission, entity_name, scope_create, scope_read, scope_update, scope_delete,
+    menu_location, menu_group, menu_group_icon, menu_label, menu_order, created_by
 )
-SELECT p.id_permission, m.entity_name, m.control_type, m.menu_location,
-       m.menu_group, m.menu_group_icon, m.menu_label, m.menu_order, 1
+SELECT p.id_permission, m.entity_name,
+       m.scope_create, m.scope_read, m.scope_update, m.scope_delete,
+       m.menu_location, m.menu_group, m.menu_group_icon, m.menu_label, m.menu_order, 1
 FROM matriz_de_permisos m
 JOIN permission p
   ON p.permission_description = m.role_name
@@ -262,10 +271,12 @@ UPDATE nm_field_permission nfp
    );
 
 INSERT INTO nm_field_permission (id_field, id_permission, control_type, created_by)
--- entity_permission.control_type es `text` en la base real (no coincide con
--- el `SmallInteger` que declara el modelo -- deuda aparte, no de esta
--- migracion); sin el cast, LEAST(text, integer) no resuelve tipo comun.
-SELECT f.id_field, ep.id_permission, LEAST(ep.control_type::integer, 15)::text, 1
+-- El campo se ve por omision si la entidad tiene algo de lectura (scope_read
+-- != 0); el bit 2 es el unico que nm_field_permission.control_type consulta
+-- hoy (FIELD_VISIBLE_BIT en el frontend). '1' y no '0' cuando no hay lectura:
+-- el Enum de la columna no admite '0' (arranca en '1'), y de cualquier forma
+-- solo importa que el bit 2 no este encendido.
+SELECT f.id_field, ep.id_permission, CASE WHEN ep.scope_read > 0 THEN '2' ELSE '1' END, 1
 FROM entity_permission ep
 JOIN field f
   ON f.table_name = ep.entity_name

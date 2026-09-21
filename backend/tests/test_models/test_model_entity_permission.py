@@ -12,7 +12,7 @@ class TestEntityPermissionModel(BackendTestCase):
         with transaction_context() as session:
             item = build_model(EntityPermission,
             entity_name='bank',
-            control_type='15',
+            scope_create=4, scope_read=4, scope_update=4, scope_delete=4,
             created_by=1
             )
             session.add(item)

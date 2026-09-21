@@ -625,13 +625,33 @@
       "last_update_date": "Last Update Date"
     },
     "entity_permission": {
-      "control_type": "Control Type",
+      "scope_create": "Create Scope",
+      "scope_read": "Read Scope",
+      "scope_update": "Update Scope",
+      "scope_delete": "Delete Scope",
       "created_by": "Created By",
       "creation_date": "Creation Date",
       "deletion_date": "Deletion Date",
       "entity_name": "Entity Name",
       "id_entity_permission": "Id Entity Permission",
       "id_permission": "Id Permission",
+      "last_update_date": "Last Update Date"
+    },
+    "team": {
+      "id_team": "Team Id",
+      "team_description": "Team Description",
+      "created_by": "Created By",
+      "creation_date": "Creation Date",
+      "deletion_date": "Deletion Date",
+      "last_update_date": "Last Update Date"
+    },
+    "nm_team_user": {
+      "id_nm_team_user": "Team Member Id",
+      "id_team": "Team Id",
+      "id_user": "User Id",
+      "created_by": "Created By",
+      "creation_date": "Creation Date",
+      "deletion_date": "Deletion Date",
       "last_update_date": "Last Update Date"
     },
     "event_log": {
@@ -1354,7 +1374,10 @@
       "last_update_date": "Enter last update date"
     },
     "entity_permission": {
-      "control_type": "Enter control type",
+      "scope_create": "Enter create scope",
+      "scope_read": "Enter read scope",
+      "scope_update": "Enter update scope",
+      "scope_delete": "Enter delete scope",
       "created_by": "Enter created by",
       "creation_date": "Enter creation date",
       "deletion_date": "Enter deletion date",

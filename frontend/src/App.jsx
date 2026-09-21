@@ -4,6 +4,7 @@ import Shell from "./layouts/Shell";
 import Dashboard from "./pages/Dashboard";
 import MfaSetupPage from "./pages/MfaSetupPage";
 import RolePermissionManagerPage from "./pages/RolePermissionManagerPage.jsx";
+import TeamManagerPage from "./pages/TeamManagerPage.jsx";
 import QuotationPage from "./pages/QuotationPage.jsx";
 import AuthorizationTrackingPage from "./pages/AuthorizationTrackingPage.jsx";
 import CatalogoWebPage from "./pages/CatalogoWebPage.jsx";
@@ -129,7 +130,10 @@ function roleHasEntityAccess(rows, entityName, currentUser) {
   if (isBootstrapUser()) return true;
   const roleId = Number(currentUser?.id_permission || 0);
   if (!roleId || !entityName) return false;
-  return rows.some((row) => Number(row.id_permission) === roleId && String(row.entity_name || "") === String(entityName) && Number(row.control_type || 0) > 0);
+  return rows.some((row) => Number(row.id_permission) === roleId && String(row.entity_name || "") === String(entityName) && (
+    Number(row.scope_create || 0) > 0 || Number(row.scope_read || 0) > 0 ||
+    Number(row.scope_update || 0) > 0 || Number(row.scope_delete || 0) > 0
+  ));
 }
 
 function RoleAccessRoute({ entityName, children }) {
@@ -244,6 +248,7 @@ export default function App() {
           <Route path="/restaurant/kitchen" element={<RoleAccessRoute entityName="restaurant_kitchen"><RestaurantKitchenPage /></RoleAccessRoute>} />
           <Route path="/restaurant/admin" element={<RoleAccessRoute entityName="restaurant_admin"><RestaurantAdminPage /></RoleAccessRoute>} />
           <Route path="/permission" element={<RoleAccessRoute entityName="permission"><PermissionPage /></RoleAccessRoute>} />
+          <Route path="/team" element={<RoleAccessRoute entityName="team"><TeamManagerPage /></RoleAccessRoute>} />
           <Route path="/product" element={<RoleAccessRoute entityName="product"><ProductPage /></RoleAccessRoute>} />
           {/* Los dos niveles de la clasificacion, en una pantalla. Habia dos
               entradas de menu y leidas seguidas parecen lo mismo dos veces; el

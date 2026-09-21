@@ -21,6 +21,10 @@ class Proyect(Base):
 
     id_proyect: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, nullable=False)
     id_customer_supplier: Mapped[int] = mapped_column(Integer, ForeignKey('customer_supplier.id_customer_supplier'), nullable=False)
+    # El contacto elegido (empresa+persona fusionados); de aqui se derivan
+    # `id_customer_supplier` y `requested_by` al guardar. Ver
+    # 20260921100000_contactos_por_empresa_y_adjuntos_del_proyecto.
+    id_customer_contact: Mapped[int | None] = mapped_column(Integer, ForeignKey('customer_contact.id_customer_contact'), nullable=True)
     leader: Mapped[int] = mapped_column(Integer, ForeignKey('user.id_user'), nullable=False)
     proyect_description: Mapped[object] = mapped_column(String(200), nullable=False)
     title: Mapped[object] = mapped_column(String(50), nullable=True)
@@ -55,6 +59,7 @@ class Proyect(Base):
         return {
             'id_proyect': to_json_value(self.id_proyect),
             'id_customer_supplier': to_json_value(self.id_customer_supplier),
+            'id_customer_contact': to_json_value(self.id_customer_contact),
             'leader': to_json_value(self.leader),
             'proyect_description': to_json_value(self.proyect_description),
             'title': to_json_value(self.title),

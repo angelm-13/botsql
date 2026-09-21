@@ -175,7 +175,7 @@ MODULOS = (
     Modulo(
         "crm", "CRM", "crm", 600,
         (
-            "customer_supplier", "product_sale_config", "public_api_key",
+            "customer_supplier", "customer_contact", "product_sale_config", "public_api_key",
             "survey_question", "survey_multiple_answer", "nm_survey_user",
             "appointment",
         ),
@@ -223,9 +223,16 @@ MODULOS = (
     Modulo(
         "seguridad", "Seguridad", "security", 900,
         # Usuarios, perfiles y bitacora. Solo administracion.
+        #
+        # `team`/`nm_team_user` (equipos de usuarios) van aqui y no en
+        # `configuracion`: se administran, no se consultan desde todas
+        # partes para pintar un select. `nm_team_user` es tabla puente -se
+        # edita desde `team`, igual que `nm_field_permission` se edita desde
+        # el gestor de permisos- por eso no tiene entrada en MENU.
         (
             "user", "user_mfa", "permission", "entity_permission",
             "nm_field_permission", "field", "event_log",
+            "team", "nm_team_user",
         ),
         menu="settings",
         # Se ve dentro de Configuracion: la peticion fue dejar un solo apartado
@@ -381,7 +388,7 @@ ROLES = (
     #
     # Es separacion de deberes, y se pidio asi: quien administra el sistema
     # puede dejar el prevale -- `warehouse_prevoucher` sigue ahi -- pero no
-    # emitir el vale ni autorizarlo. El material lo suelta el Jefe de almacen.
+    # emitir el vale ni autorizarlo. El material lo suelta Almacenista.
     #
     # No afecta a la cuenta `admin1`: es el bootstrap admin y salta las
     # comprobaciones de capacidad por completo (`_sin_restriccion`). Esto
@@ -410,6 +417,13 @@ ROLES = (
 
     # Ve y busca el almacen sin modificarlo -`inventario` en CONSULTA- y
     # autoriza o cancela los proyectos de todos los supervisores.
+    #
+    # La visibilidad de solo-lectura de `warehouse_voucher` (ver vales, sin
+    # poder crearlos/autorizarlos) NO se declara aqui: `Capacidad.bits` es un
+    # solo valor para todo el que la tenga (CAPTURA = crear+leer+actualizar),
+    # asi que agregarla a esta lista le daria a Gerente de mas. Se siembra
+    # aparte, solo con `scope_read`, en
+    # 20260921120000_fusionar_jefe_de_almacen_en_almacenista.sql.
     Rol(3, "Gerente", {
         "operaciones": EDITAR, "facturacion": CAPTURA, "crm": CAPTURA,
         "inventario": CONSULTA, "rh": CONSULTA, "logistica": CONSULTA,
@@ -421,14 +435,13 @@ ROLES = (
         "operaciones": CAPTURA, "inventario": CONSULTA, "configuracion": CONSULTA,
     }, ["project_execution", "incident_supervision"]),
 
-    # Opera el almacen: da de alta productos, levanta vales y confirma entregas.
-    # No ajusta: es la separacion de funciones que evita que quien mueve la
-    # mercancia tape su propio faltante.
+    # Opera el almacen entero: da de alta productos, levanta vales, los
+    # asigna, autoriza/entrega, confirma devoluciones y ajusta inventario.
+    # Antes esto estaba partido con "Jefe de almacen" (separacion de
+    # deberes); se fusiono aqui por decision de negocio -- un solo rol de
+    # almacen, sin ese segundo nivel. Ver
+    # 20260921120000_fusionar_jefe_de_almacen_en_almacenista.sql.
     Rol(5, "Almacenista", {
-        "inventario": CAPTURA, "configuracion": CONSULTA,
-    }, ["warehouse_voucher", "warehouse_voucher_confirm"]),
-
-    Rol(6, "Jefe de almacen", {
         "inventario": TOTAL, "logistica": CAPTURA, "configuracion": CONSULTA,
     }, ["inventory_adjustment", "warehouse_voucher",
         "warehouse_voucher_authorize", "warehouse_voucher_confirm"]),
@@ -529,6 +542,7 @@ MENU = {
     "department": ("Departamentos", 30),
     "subdepartment": ("Subdepartamentos", 40),
     "level": ("Niveles", 50),
+    "team": ("Equipos", 60),
 }
 
 
@@ -638,11 +652,32 @@ def almacenes():
     return {m.clave: m.almacen for m in MODULOS if m.almacen}
 
 
+def _alcance_desde_bits(bits):
+    """Bit encendido -> Todos (4); apagado -> Sin acceso (0).
+
+    `entity_permission` dejo de tener un solo `control_type` combinado y pasa
+    a 4 columnas de alcance independientes (una por accion). Esta es la regla
+    de migracion acordada: un bit que ya estaba encendido no le quita a nadie
+    el acceso que ya tenia. Ajustar un modulo a Propios/Mis grupos para un rol
+    puntual es decision posterior, desde el gestor de permisos -- este
+    registro solo da el valor POR OMISION de un modulo o un rol nuevo.
+
+    Devuelve (scope_create, scope_read, scope_update, scope_delete).
+    """
+    return (
+        4 if bits & CREAR else 0,
+        4 if bits & LEER else 0,
+        4 if bits & ACTUALIZAR else 0,
+        4 if bits & BORRAR else 0,
+    )
+
+
 def filas_de_permisos():
     """La matriz completa, lista para sembrar.
 
-    Devuelve tuplas (role_name, entity_name, bits, menu_location,
-    menu_group, menu_group_icon, menu_label, menu_order, modulo_licencia).
+    Devuelve tuplas (role_name, entity_name, scope_create, scope_read,
+    scope_update, scope_delete, menu_location, menu_group, menu_group_icon,
+    menu_label, menu_order, modulo_licencia).
 
     El primer campo es el NOMBRE del rol (`permission_description`), no su
     `id_permission`. La base resuelve el numero real por nombre al aplicar la
@@ -665,8 +700,10 @@ def filas_de_permisos():
                 if entidad in SOLO_ARRANQUE:
                     continue
                 etiqueta, orden = MENU.get(entidad, (None, None))
+                scope_create, scope_read, scope_update, scope_delete = _alcance_desde_bits(bits)
                 filas.append((
-                    rol.nombre, entidad, bits,
+                    rol.nombre, entidad,
+                    scope_create, scope_read, scope_update, scope_delete,
                     modulo.menu if etiqueta else "hidden",
                     modulo.grupo_de_menu if etiqueta else None,
                     modulo.icono_de_menu if etiqueta else None,
@@ -684,8 +721,11 @@ def filas_de_permisos():
             # siguiente resiembra: es exactamente lo que paso con la conexion al
             # dispositivo Kronos.
             es_pantalla = capacidad.menu in ("sidebar", "settings")
+            scope_create, scope_read, scope_update, scope_delete = _alcance_desde_bits(capacidad.bits)
             filas.append((
-                rol.nombre, capacidad.clave, capacidad.bits, capacidad.menu,
+                rol.nombre, capacidad.clave,
+                scope_create, scope_read, scope_update, scope_delete,
+                capacidad.menu,
                 modulo.grupo_de_menu if es_pantalla else None,
                 modulo.icono_de_menu if es_pantalla else None,
                 capacidad.etiqueta if es_pantalla else None,

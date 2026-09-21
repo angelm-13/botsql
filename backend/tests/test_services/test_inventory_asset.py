@@ -71,7 +71,7 @@ class PiezasTestCase(BackendTestCase):
                 # Solo el perfil 1 puede ajustar: es la separacion de funciones
                 # que ya existia para el ajuste de existencias.
                 EntityPermission(id_permission=1, entity_name=ADJUSTMENT_CAPABILITY,
-                                 control_type=2, created_by=1),
+                                 scope_read=4, created_by=1),
             ])
             db.flush()
             db.add_all([

@@ -23,11 +23,27 @@
 -- contra la fila fantasma. Verificado en tyakxa-dev el 2026-09-01.
 BEGIN;
 
-INSERT INTO entity_permission (id_permission, entity_name, control_type, menu_location, menu_order, created_by)
-SELECT p.id_permission, 'inventory_adjustment', 2, 'hidden', 999, 1
+-- Guardado con un chequeo de existencia de scope_create: esta migracion es
+-- anterior a 20260914110000_equipos_y_alcance_por_accion.sql, que agrega esas
+-- 4 columnas y suelta control_type mas adelante en la misma pasada. Sin este
+-- guardado, la primera pasada completa contra un volumen nuevo tronaria aqui
+-- con "column scope_create does not exist". En pasadas posteriores la
+-- columna ya existe y el INSERT corre normal.
+DO $$
+BEGIN
+IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'entity_permission' AND column_name = 'scope_create'
+) THEN
+
+INSERT INTO entity_permission (id_permission, entity_name, scope_create, scope_read, scope_update, scope_delete, menu_location, menu_order, created_by)
+SELECT p.id_permission, 'inventory_adjustment', 0, 4, 0, 0, 'hidden', 999, 1
 FROM permission p
 WHERE p.permission_description IN ('Administrator', 'admin', 'Gerente', 'gerente_administrativo')
   AND p.deletion_date IS NULL
 ON CONFLICT (id_permission, entity_name) DO NOTHING;
+
+END IF;
+END $$;
 
 COMMIT;

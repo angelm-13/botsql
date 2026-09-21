@@ -23,6 +23,7 @@ from app.routes.payroll_period import bp_payroll_period
 from app.routes.payroll_detail import bp_payroll_detail
 from app.routes.payroll_concept import bp_payroll_concept
 from app.routes.payroll_movement import bp_payroll_movement
+from app.routes.customer_contact import bp_customer_contact
 from app.routes.customer_supplier import bp_customer_supplier
 from app.routes.documents import bp_document_management
 from app.routes.laboratory import bp_laboratory_equipment, bp_laboratory_service_order
@@ -83,6 +84,8 @@ from app.routes.level import bp_level
 from app.routes.field import bp_field
 from app.routes.permission import bp_permission
 from app.routes.nm_field_permission import bp_nm_field_permission
+from app.routes.team import bp_team
+from app.routes.nm_team_user import bp_nm_team_user
 from app.routes.event_log import bp_event_log
 from app.routes.task_type import bp_task_type
 from app.routes.template import bp_template
@@ -689,6 +692,7 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_payroll_concept)
     app.register_blueprint(bp_payroll_movement)
     app.register_blueprint(bp_customer_supplier)
+    app.register_blueprint(bp_customer_contact)
     app.register_blueprint(bp_document_management)
     app.register_blueprint(bp_laboratory_equipment)
     app.register_blueprint(bp_laboratory_service_order)
@@ -746,6 +750,8 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_level)
     app.register_blueprint(bp_field)
     app.register_blueprint(bp_permission)
+    app.register_blueprint(bp_team)
+    app.register_blueprint(bp_nm_team_user)
     app.register_blueprint(bp_nm_field_permission)
     app.register_blueprint(bp_event_log)
     app.register_blueprint(bp_task_type)

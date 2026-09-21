@@ -97,9 +97,29 @@ WHERE NOT EXISTS (
     SELECT 1 FROM field WHERE table_name = 'logistics_trip' AND field_name = 'id_logistics_file'
 );
 
+-- Guardado con un chequeo de existencia de scope_create: esta migracion es
+-- anterior a 20260914110000_equipos_y_alcance_por_accion.sql (que agrega las
+-- 4 columnas de alcance y suelta control_type), asi que en la PRIMERA pasada
+-- completa contra un volumen nuevo todavia no existen -las agrega esa misma
+-- migracion, mas adelante en la misma pasada-. Sin este guardado, la primera
+-- pasada tronaria aqui con "column scope_create does not exist" antes de
+-- llegar siquiera a la migracion que las crea. En pasadas posteriores (o en
+-- cualquier base que ya paso por 20260914110000) la columna ya existe y el
+-- bloque corre normal; si de verdad falta la fila para esta entidad se
+-- resiembra sola en el siguiente reinicio del pod, que es cuando esta
+-- condicion pasa a ser verdadera.
+DO $$
+BEGIN
+IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'entity_permission' AND column_name = 'scope_create'
+) THEN
+
 CREATE TEMP TABLE tmp_ep_logistics_remaining AS
 SELECT source_permission.id_permission, logistics_entity.entity_name,
-       source_permission.control_type, 'sidebar'::varchar AS menu_location, 'Logística'::varchar AS menu_group,
+       source_permission.scope_create, source_permission.scope_read,
+       source_permission.scope_update, source_permission.scope_delete,
+       'sidebar'::varchar AS menu_location, 'Logística'::varchar AS menu_group,
        'truck'::varchar AS menu_group_icon, logistics_entity.menu_label, logistics_entity.menu_order,
        1 AS created_by
 FROM entity_permission source_permission
@@ -113,7 +133,10 @@ JOIN (VALUES
 WHERE source_permission.deletion_date IS NULL;
 
 UPDATE entity_permission target SET
-    control_type = source.control_type,
+    scope_create = source.scope_create,
+    scope_read = source.scope_read,
+    scope_update = source.scope_update,
+    scope_delete = source.scope_delete,
     menu_location = source.menu_location,
     menu_group = source.menu_group,
     menu_group_icon = source.menu_group_icon,
@@ -126,10 +149,12 @@ WHERE target.id_permission = source.id_permission
   AND target.entity_name = source.entity_name;
 
 INSERT INTO entity_permission (
-    id_permission, entity_name, control_type, menu_location, menu_group,
+    id_permission, entity_name, scope_create, scope_read, scope_update, scope_delete, menu_location, menu_group,
     menu_group_icon, menu_label, menu_order, created_by, creation_date, last_update_date
 )
-SELECT source.id_permission, source.entity_name, source.control_type, source.menu_location, source.menu_group,
+SELECT source.id_permission, source.entity_name,
+       source.scope_create, source.scope_read, source.scope_update, source.scope_delete,
+       source.menu_location, source.menu_group,
        source.menu_group_icon, source.menu_label, source.menu_order, source.created_by, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
 FROM tmp_ep_logistics_remaining source
 WHERE NOT EXISTS (
@@ -138,6 +163,9 @@ WHERE NOT EXISTS (
 );
 
 DROP TABLE tmp_ep_logistics_remaining;
+END IF;
+END $$;
+
 
 INSERT INTO nm_field_permission (
     id_field, id_permission, control_type, created_by, creation_date, last_update_date

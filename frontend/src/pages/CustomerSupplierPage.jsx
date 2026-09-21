@@ -7,6 +7,7 @@ import Pagination from "../components/Pagination.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 import PageHeader from "../components/PageHeader.jsx";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
+import CustomerContactsPanel from "../components/CustomerContactsPanel.jsx";
 
 /* eslint-disable react/prop-types */
 
@@ -17,6 +18,7 @@ const ACTION_CREATE = 1;
 const ACTION_READ = 2;
 const ACTION_UPDATE = 4;
 const ACTION_DELETE = 8;
+const SCOPE_FIELD_BY_BIT = { [ACTION_CREATE]: "scope_create", [ACTION_READ]: "scope_read", [ACTION_UPDATE]: "scope_update", [ACTION_DELETE]: "scope_delete" };
 const FIELD_VISIBLE_BIT = 2;
 const ALL_FIELD_NAMES = ['id_customer_supplier', 'postal_code', 'name', 'title', 'contact_name', 'phone', 'email', 'web_site', 'street', 'number_ext', 'number_int', 'neighborhood', 'city', 'geographic_state', 'fiscal_type', 'last_fiscal_certification_date', 'tax_id', 'type', 'sla_level', 'credit_limit', 'logistics_notes', 'is_principal', 'id_user', 'path_logo', 'serie_csd'];
 
@@ -139,7 +141,7 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
   useEffect(() => {
     async function loadRolePermissions() {
       if (isSuperUser) {
-        setModulePermission({ control_type: 15 });
+        setModulePermission({ scope_create: 4, scope_read: 4, scope_update: 4, scope_delete: 4 });
         setVisibleFieldNames(new Set(ALL_FIELD_NAMES));
         setPermissionReady(true);
         return;
@@ -190,7 +192,7 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
 
   function canUseAction(bit) {
     if (isSuperUser) return true;
-    return hasBit(modulePermission?.control_type, bit);
+    return Number(modulePermission?.[SCOPE_FIELD_BY_BIT[bit]] || 0) !== 0;
   }
 
   function canSeeField(fieldName) {
@@ -693,6 +695,11 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
         loading={loading}
         onChange={setPage}
       />
+
+      {/* Contactos por empresa -- solo tiene sentido para clientes, no
+          proveedores. Se gestionan aqui porque cuelgan de la empresa, igual
+          que `logistics_contact` cuelga de la suya en Logistica. */}
+      {forcedType === "client" && <CustomerContactsPanel />}
     </section>
   );
 }

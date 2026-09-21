@@ -86,7 +86,7 @@ class InventoryTestCase(BackendTestCase):
             # caso bajo prueba sea la regla y no el permiso.
             db.add(EntityPermission(
                 id_permission=900, entity_name="inventory_adjustment",
-                control_type=2, created_by=1,
+                scope_read=4, created_by=1,
             ))
 
     @staticmethod

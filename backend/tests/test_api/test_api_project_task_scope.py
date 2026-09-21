@@ -19,8 +19,8 @@ class TestProjectTaskScopeApi(BackendTestCase):
         with transaction_context() as db:
             for permission_id, actor_id in ((101, 11), (102, 12)):
                 db.add_all([
-                    EntityPermission(id_permission=permission_id, entity_name="task", control_type=15, created_by=actor_id),
-                    EntityPermission(id_permission=permission_id, entity_name="task_note", control_type=15, created_by=actor_id),
+                    EntityPermission(id_permission=permission_id, entity_name="task", scope_create=4, scope_read=4, scope_update=4, scope_delete=4, created_by=actor_id),
+                    EntityPermission(id_permission=permission_id, entity_name="task_note", scope_create=4, scope_read=4, scope_update=4, scope_delete=4, created_by=actor_id),
                 ])
             own_project = Proyect(
                 id_customer_supplier=1,

@@ -15,7 +15,14 @@ class EntityPermission(Base):
     id_entity_permission: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     id_permission: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     entity_name: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
-    control_type: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=15, server_default=text("15"))
+    # Alcance por accion: 0 Sin acceso, 1 Propios, 2 Mis grupos, 4 Todos.
+    # Enteros simples (no un Enum) para poder combinarlos a futuro (3/5/6/7)
+    # sin volver a tocar el esquema; la validacion de un solo valor por ahora
+    # vive en backend/frontend, no en la base.
+    scope_create: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0, server_default=text("0"))
+    scope_read: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0, server_default=text("0"))
+    scope_update: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0, server_default=text("0"))
+    scope_delete: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0, server_default=text("0"))
     menu_location: Mapped[str] = mapped_column(String(20), nullable=False, default="sidebar", server_default=text("'sidebar'"))
     menu_group: Mapped[str | None] = mapped_column(String(80), nullable=True)
     menu_group_icon: Mapped[str | None] = mapped_column(String(40), nullable=True)
@@ -31,7 +38,10 @@ class EntityPermission(Base):
             "id_entity_permission": self.id_entity_permission,
             "id_permission": self.id_permission,
             "entity_name": self.entity_name,
-            "control_type": self.control_type,
+            "scope_create": self.scope_create,
+            "scope_read": self.scope_read,
+            "scope_update": self.scope_update,
+            "scope_delete": self.scope_delete,
             "menu_location": self.menu_location,
             "menu_group": self.menu_group,
             "menu_group_icon": self.menu_group_icon,

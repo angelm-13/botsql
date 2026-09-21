@@ -10571,6 +10571,172 @@ _PERMISSION_CATALOG = json.loads(r'''{
       ]
     },
     {
+      "entity_name": "customer_contact",
+      "label": "Customer Contact",
+      "module": "crm",
+      "domain": "crm",
+      "primary_key": "id_customer_contact",
+      "representative_field": "full_name",
+      "is_bootstrap_only": false,
+      "is_permission_source": false,
+      "fields": [
+        {
+          "field_name": "id_customer_contact",
+          "label": "Id Customer Contact",
+          "type": "integer",
+          "raw_type": "int",
+          "is_primary": true,
+          "is_foreign": false,
+          "reference_table": null,
+          "reference_field": null,
+          "is_representative": false,
+          "is_required": false,
+          "is_encrypted": false,
+          "is_system_field": false
+        },
+        {
+          "field_name": "id_customer_supplier",
+          "label": "Id Customer Supplier",
+          "type": "integer",
+          "raw_type": "int",
+          "is_primary": false,
+          "is_foreign": true,
+          "reference_table": "customer_supplier",
+          "reference_field": "id_customer_supplier",
+          "is_representative": false,
+          "is_required": true,
+          "is_encrypted": false,
+          "is_system_field": false
+        },
+        {
+          "field_name": "full_name",
+          "label": "Full Name",
+          "type": "string",
+          "raw_type": "varchar",
+          "is_primary": false,
+          "is_foreign": false,
+          "reference_table": null,
+          "reference_field": null,
+          "is_representative": true,
+          "is_required": true,
+          "is_encrypted": false,
+          "is_system_field": false
+        },
+        {
+          "field_name": "email",
+          "label": "Email",
+          "type": "string",
+          "raw_type": "varchar",
+          "is_primary": false,
+          "is_foreign": false,
+          "reference_table": null,
+          "reference_field": null,
+          "is_representative": false,
+          "is_required": false,
+          "is_encrypted": false,
+          "is_system_field": false
+        },
+        {
+          "field_name": "phone",
+          "label": "Phone",
+          "type": "string",
+          "raw_type": "varchar",
+          "is_primary": false,
+          "is_foreign": false,
+          "reference_table": null,
+          "reference_field": null,
+          "is_representative": false,
+          "is_required": false,
+          "is_encrypted": false,
+          "is_system_field": false
+        },
+        {
+          "field_name": "position",
+          "label": "Position",
+          "type": "string",
+          "raw_type": "varchar",
+          "is_primary": false,
+          "is_foreign": false,
+          "reference_table": null,
+          "reference_field": null,
+          "is_representative": false,
+          "is_required": false,
+          "is_encrypted": false,
+          "is_system_field": false
+        },
+        {
+          "field_name": "status",
+          "label": "Status",
+          "type": "string",
+          "raw_type": "varchar",
+          "is_primary": false,
+          "is_foreign": false,
+          "reference_table": null,
+          "reference_field": null,
+          "is_representative": false,
+          "is_required": true,
+          "is_encrypted": false,
+          "is_system_field": false
+        },
+        {
+          "field_name": "created_by",
+          "label": "Created By",
+          "type": "integer",
+          "raw_type": "int",
+          "is_primary": false,
+          "is_foreign": false,
+          "reference_table": null,
+          "reference_field": null,
+          "is_representative": false,
+          "is_required": true,
+          "is_encrypted": false,
+          "is_system_field": true
+        },
+        {
+          "field_name": "creation_date",
+          "label": "Creation Date",
+          "type": "datetime",
+          "raw_type": "datetime",
+          "is_primary": false,
+          "is_foreign": false,
+          "reference_table": null,
+          "reference_field": null,
+          "is_representative": false,
+          "is_required": true,
+          "is_encrypted": false,
+          "is_system_field": true
+        },
+        {
+          "field_name": "last_update_date",
+          "label": "Last Update Date",
+          "type": "datetime",
+          "raw_type": "datetime",
+          "is_primary": false,
+          "is_foreign": false,
+          "reference_table": null,
+          "reference_field": null,
+          "is_representative": false,
+          "is_required": true,
+          "is_encrypted": false,
+          "is_system_field": true
+        },
+        {
+          "field_name": "deletion_date",
+          "label": "Deletion Date",
+          "type": "datetime",
+          "raw_type": "datetime",
+          "is_primary": false,
+          "is_foreign": false,
+          "reference_table": null,
+          "reference_field": null,
+          "is_representative": false,
+          "is_required": false,
+          "is_encrypted": false,
+          "is_system_field": true
+        }
+      ]
+    },
+    {
       "entity_name": "logistics_contact",
       "label": "Logistics Contact",
       "module": "logistica",
@@ -15496,6 +15662,63 @@ def _catalog_for_actor(user_data: dict) -> dict:
             'module_label': modulo.etiqueta if modulo else None,
             'fields': [],
         })
+
+    # `team`/`nm_team_user` (equipos de usuarios) se agregan aqui igual que
+    # las capacidades de arriba, y no en el JSON congelado de mas abajo: son
+    # entidades nuevas, y el JSON no se regenera solo, es un literal escrito a
+    # mano. Mismo motivo que ya senala el docstring de esta funcion para las
+    # capacidades: una entidad que solo vive en un archivo aparte se pierde de
+    # vista en cuanto alguien deja de acordarse de tocarlo.
+    modulo_seguridad = MODULO_POR_CLAVE.get('seguridad')
+    dominio_seguridad = DOMINIO_DEL_MODULO.get('seguridad', 'seguridad')
+    catalog.setdefault('entities', []).append({
+        'entity_name': 'team',
+        'label': 'Team',
+        'module': dominio_seguridad,
+        'domain': dominio_seguridad,
+        'primary_key': 'id_team',
+        'representative_field': 'team_description',
+        'is_bootstrap_only': False,
+        'is_permission_source': False,
+        'module_label': modulo_seguridad.etiqueta if modulo_seguridad else None,
+        'fields': [
+            {'field_name': 'id_team', 'label': 'Id Team', 'type': 'integer', 'raw_type': 'int',
+             'is_primary': True, 'is_foreign': False, 'reference_table': None, 'reference_field': None,
+             'is_representative': False, 'is_required': True, 'is_encrypted': False, 'is_system_field': False},
+            {'field_name': 'team_description', 'label': 'Team Description', 'type': 'string', 'raw_type': 'varchar',
+             'is_primary': False, 'is_foreign': False, 'reference_table': None, 'reference_field': None,
+             'is_representative': True, 'is_required': True, 'is_encrypted': False, 'is_system_field': False},
+            {'field_name': 'created_by', 'label': 'Created By', 'type': 'integer', 'raw_type': 'int',
+             'is_primary': False, 'is_foreign': True, 'reference_table': 'user', 'reference_field': 'id_user',
+             'is_representative': False, 'is_required': True, 'is_encrypted': False, 'is_system_field': True},
+            {'field_name': 'creation_date', 'label': 'Creation Date', 'type': 'datetime', 'raw_type': 'datetime',
+             'is_primary': False, 'is_foreign': False, 'reference_table': None, 'reference_field': None,
+             'is_representative': False, 'is_required': True, 'is_encrypted': False, 'is_system_field': True},
+            {'field_name': 'last_update_date', 'label': 'Last Update Date', 'type': 'datetime', 'raw_type': 'datetime',
+             'is_primary': False, 'is_foreign': False, 'reference_table': None, 'reference_field': None,
+             'is_representative': False, 'is_required': True, 'is_encrypted': False, 'is_system_field': True},
+            {'field_name': 'deletion_date', 'label': 'Deletion Date', 'type': 'datetime', 'raw_type': 'datetime',
+             'is_primary': False, 'is_foreign': False, 'reference_table': None, 'reference_field': None,
+             'is_representative': False, 'is_required': False, 'is_encrypted': False, 'is_system_field': True},
+        ],
+    })
+    # `nm_team_user` es tabla puente -se administra desde `team`, igual que
+    # `nm_field_permission` desde el gestor de permisos-, por eso el frontend
+    # la excluye del selector (INTERNAL_PERMISSION_ENTITIES) aunque la fila
+    # exista aqui para que su propio permiso de entidad se pueda auditar.
+    catalog.setdefault('entities', []).append({
+        'entity_name': 'nm_team_user',
+        'label': 'Nm Team User',
+        'module': dominio_seguridad,
+        'domain': dominio_seguridad,
+        'primary_key': 'id_nm_team_user',
+        'representative_field': None,
+        'is_bootstrap_only': False,
+        'is_permission_source': False,
+        'module_label': modulo_seguridad.etiqueta if modulo_seguridad else None,
+        'fields': [],
+    })
+
     if not (user_data.get('is_superuser') or user_data.get('is_bootstrap_admin')):
         catalog['entities'] = [
             entity for entity in catalog.get('entities', [])
@@ -15616,7 +15839,10 @@ def my_permissions(user_data):
                 'id_entity_permission': row.id_entity_permission,
                 'id_permission': row.id_permission,
                 'entity_name': row.entity_name,
-                'control_type': row.control_type,
+                'scope_create': row.scope_create,
+                'scope_read': row.scope_read,
+                'scope_update': row.scope_update,
+                'scope_delete': row.scope_delete,
                 'menu_location': row.menu_location,
                 'menu_group': row.menu_group,
                 'menu_group_icon': row.menu_group_icon,

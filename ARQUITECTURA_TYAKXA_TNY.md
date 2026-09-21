@@ -90,9 +90,11 @@ Cada fila corresponde a una clase con tabla real. `Base` y el manejador de sesio
 | `UserMfa` | `user_mfa` | `user_mfa.py` | `user` |
 | `PasswordResetToken` | `password_reset_token` | `password_reset_token.py` | `user` |
 | `Permission` | `permission` | `permission.py` | autorizador `user`, `department`, `subdepartment`, `level` |
-| `EntityPermission` | `entity_permission` | `entity_permission.py` | permisos CRUD por rol/entidad |
+| `EntityPermission` | `entity_permission` | `entity_permission.py` | alcance por accion (crear/leer/actualizar/eliminar) por rol/entidad |
 | `Field` | `field` | `field.py` | catalogo de campos protegibles |
 | `NmFieldPermission` | `nm_field_permission` | `nm_field_permission.py` | `field`, `permission` |
+| `Team` | `team` | `team.py` | equipo de usuarios; distinto de `menu_group` (agrupacion visual del menu) |
+| `NmTeamUser` | `nm_team_user` | `nm_team_user.py` | `team`, `user` (tabla puente, se edita desde `team`) |
 | `PublicApiKey` | `public_api_key` | `public_api_key.py` | credencial de API publica |
 | `AuditLog` | `audit_log` | `audit_log.py` | auditoria de seguridad |
 | `EventLog` | `event_log` | `event_log.py` | eventos funcionales/tecnicos |
@@ -240,6 +242,8 @@ filas de `entity_permission` se siembran con `menu_location = 'hidden'`.
 | `bp_permission` | `/permission` | `permission.py` | Roles/permisos. |
 | `bp_entity_permission` | `/entity_permission` | `entity_permission.py` | Matriz rol-entidad. |
 | `bp_nm_field_permission` | `/nm_field_permission` | `nm_field_permission.py` | Permisos por campo. |
+| `bp_team` | `/team` | `team.py` | Equipos de usuarios. |
+| `bp_nm_team_user` | `/nm_team_user` | `nm_team_user.py` | Membresia de equipo (tabla puente). |
 | `bp_field` | `/field` | `field.py` | Catalogo de campos. |
 | `bp_event_log` | `/event_log` | `event_log.py` | Auditoria/eventos. |
 | `bp_public_api_key` | `/public_api_key` | `public_api_key.py` | Gestion de claves publicas. |
@@ -335,7 +339,33 @@ Ademas del CRUD estandar, las superficies principales son:
 
 - `token_required` valida JWT HS256.
 - `require_entity_permission(entity, action)` aplica RBAC a nivel de entidad.
-- `control_type` es una mascara: crear `1`, leer `2`, actualizar `4`, eliminar `8`.
+- **Alcance por accion (desde 2026-09-14)**: `entity_permission` ya no tiene
+  una sola columna `control_type` combinada. Cada una de las 4 acciones
+  (crear/leer/actualizar/eliminar) vive en su propia columna
+  (`scope_create`, `scope_read`, `scope_update`, `scope_delete`), con 4
+  niveles: `0` Sin acceso, `1` Propios, `2` Mis grupos, `4` Todos -- valores
+  de bit para poder combinarlos a futuro (3/5/6/7) sin volver a tocar el
+  esquema, aunque hoy el gestor de roles solo ofrece seleccion unica.
+  Migracion de datos existentes (`20260914110000_equipos_y_alcance_por_accion.sql`):
+  un bit que ya estaba encendido en el `control_type` viejo se convirtio en
+  Todos (4); uno apagado, en Sin acceso (0) -- nadie perdio el acceso que ya
+  tenia. **El guardia (`app/utils/auth.py:_has_entity_permission`,
+  `app/security/permissions.py`) sigue siendo booleano: `0` deniega,
+  cualquier otro valor permite.** Propios/Mis grupos/Todos NO filtran
+  todavia consultas reales -- eso es una fase aparte, sin empezar, que
+  reusara el filtrado por proyecto que ya existe en
+  `project_management_service._scope_name`/`_scoped_query` (propio =
+  creador o `leader` del `Proyect`) e `invoice_service.actor_project` (
+  igualdad estricta contra el `id_proyect` del JWT) donde ya exista esa
+  nocion de dueno, y tratara "Propios" como "Todos" en los modulos que no
+  tienen ningun concepto de dueno (la mayoria de los catalogos). No asumir
+  que ya filtra solo porque el gestor ya ofrece la opcion.
+- **`Team`/`NmTeamUser`** (equipo de usuarios, modulo `seguridad`): entidad
+  nueva para agrupar usuarios, pensada como base de "Mis grupos" de arriba.
+  Distinta de la columna `entity_permission.menu_group`, que es solo
+  agrupacion visual del menu lateral y no tiene relacion con esto. Sin
+  membresia real hoy en ningun ambiente -- se puebla a mano desde el gestor
+  de equipos (`/team`, `TeamManagerPage.jsx`).
 - `NmFieldPermission` complementa el control a nivel de campo.
 - Usuarios bootstrap/superusuario tienen tratamiento explicito en backend y frontend.
 - MFA usa TOTP y secretos cifrados.

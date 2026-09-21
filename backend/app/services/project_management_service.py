@@ -41,7 +41,13 @@ PROJECT_TRANSITIONS = {
     "submitted": {"authorized", "denied", "blocked"},
     "blocked": {"submitted", "authorized", "denied"},
     "authorized": {"in_progress"},
-    "in_progress": {"waiting_material", "stopped", "completed"},
+    # `blocked` tambien es destino valido desde aqui: Jefe de taller puede
+    # bloquear un proyecto que ya esta en curso, no solo Gerente rechazandolo
+    # antes de iniciar (desde `submitted`). Ver el candado de rol en
+    # `transition_project`. Volver de un bloqueo en curso pasa por Gerente
+    # (blocked -> authorized -> in_progress), a proposito: quien bloquea no
+    # se autoriza solo de vuelta.
+    "in_progress": {"waiting_material", "stopped", "completed", "blocked"},
     # De la espera se vuelve al trabajo: el material llego. No se salta a
     # terminado porque lo que faltaba era justo para poder terminarlo.
     "waiting_material": {"in_progress", "stopped"},
@@ -70,11 +76,17 @@ PROJECT_CLOSED_STATUSES = frozenset({"completed", "delivered", "denied"})
 WORKSHOP_VISIBLE_STATUSES = {"authorized", "in_progress", "waiting_material",
                              "stopped", "completed", "delivered"}
 PROJECT_MUTABLE_FIELDS = {
-    "id_customer_supplier", "leader", "proyect_description", "title",
+    "id_customer_supplier", "id_customer_contact", "proyect_description", "title",
     # Los de la orden de trabajo. El estado NO esta aqui: se mueve por
     # `transition`, que valida la transicion y deja constancia en `proyect_event`.
-    "folio", "requested_by", "id_quotation", "purchase_order",
-    "purchase_order_item", "id_supervisor", "delivery_date",
+    #
+    # `leader` (responsable) tampoco esta aqui a proposito: siempre es quien
+    # crea el proyecto, sin excepcion de rol ni siquiera al editar despues
+    # (decision de negocio). `id_supervisor` se quito del formulario -- es el
+    # mismo concepto que `leader` -- y la columna se deja inerte en la base,
+    # sin migracion de borrado.
+    "folio", "id_quotation", "purchase_order",
+    "purchase_order_item", "delivery_date",
     "id_drawing_document",
 }
 
@@ -141,9 +153,18 @@ def transition_management(project_id, payload: dict, user_data: dict) -> dict:
 
     Son dos vidas del mismo proyecto y avanzan por separado: uno entregado
     puede seguir sin cobrar. Por eso hay dos rutas y no una con un parametro.
+
+    Exclusivo de quien autoriza (Gerente) o de un actor sin restriccion.
+    Antes cualquier actor con `proyect:update` y visibilidad del proyecto
+    -- incluido el propio Supervisor sobre su proyecto -- podia autorizar o
+    cancelar el estado comercial; el candado de rol vive aqui y no en la
+    ruta, igual que `transition_project`.
     """
     with transaction_context() as db:
         project = _get_visible_project(db, project_id, user_data, for_update=True)
+        scope = _scope_name(db, user_data)
+        if scope not in {"authorization", "unrestricted"}:
+            raise AppError("errors.permission_denied", 403, {"scope": scope})
         destino = validate_management_transition(
             project.management_status, (payload or {}).get("management_status"))
         anterior = project.management_status
@@ -239,7 +260,7 @@ def _has_capability(db, user_data: dict, capability: str) -> bool:
         .filter(EntityPermission.deletion_date.is_(None))
         .first()
     )
-    return bool(record and int(record.control_type) & 2)
+    return bool(record and int(record.scope_read) != 0)
 
 
 def _actor_role(db, user_data: dict) -> str | None:
@@ -633,28 +654,30 @@ def _parsear_fecha_de_la_orden(values: dict) -> None:
 
 
 def _validar_referencias_de_la_orden(db, values: dict) -> None:
-    """Que la cotizacion, el supervisor y el dibujo existan de verdad.
+    """Que la cotizacion, el contacto y el dibujo existan de verdad.
 
-    `id_quotation`, `id_supervisor` e `id_drawing_document` son llaves ajenas
-    normales -no diferidas, como las de `incident`-, asi que un id inventado
-    revienta en el INSERT/UPDATE como un IntegrityError crudo y le llega al
-    usuario como un 500 en vez del 404 que le toca. Se comprueba antes, igual
-    que ya hace `crear_vale` con `id_proyect`.
+    `id_quotation`, `id_customer_contact` e `id_drawing_document` son llaves
+    ajenas normales -no diferidas, como las de `incident`-, asi que un id
+    inventado revienta en el INSERT/UPDATE como un IntegrityError crudo y le
+    llega al usuario como un 500 en vez del 404 que le toca. Se comprueba
+    antes, igual que ya hace `crear_vale` con `id_proyect`.
     """
     from app.models.invoice import Invoice
-    from app.models.user import User
+    from app.models.customer_contact import CustomerContact
 
     if values.get("id_quotation") and db.get(Invoice, int(values["id_quotation"])) is None:
         raise AppError("errors.not_found", 404,
                        {"entity": "invoice", "field": "id_quotation"})
-    if values.get("id_supervisor"):
-        existe = db.scalars(
-            select(User.id_user).where(User.id_user == int(values["id_supervisor"]),
-                                       User.deletion_date.is_(None)).limit(1)
-        ).first()
-        if existe is None:
+    if values.get("id_customer_contact"):
+        contacto = db.get(CustomerContact, int(values["id_customer_contact"]))
+        if contacto is None or contacto.deletion_date is not None:
             raise AppError("errors.not_found", 404,
-                           {"entity": "user", "field": "id_supervisor"})
+                           {"entity": "customer_contact", "field": "id_customer_contact"})
+        # El "Cliente" del proyecto se elige como contacto -"Empresa -
+        # Persona"-, y de ahi salen la empresa y quien lo pidio. No son dos
+        # capturas sueltas: si se cambia el contacto, cambian juntas.
+        values["id_customer_supplier"] = contacto.id_customer_supplier
+        values["requested_by"] = contacto.full_name
     if values.get("id_drawing_document"):
         from app.models.document import Document
         if db.get(Document, int(values["id_drawing_document"])) is None:
@@ -665,11 +688,16 @@ def _validar_referencias_de_la_orden(db, values: dict) -> None:
 def create_project(payload: dict, user_data: dict) -> dict:
     actor_id = _actor_id(user_data)
     values = {key: value for key, value in (payload or {}).items() if key in PROJECT_MUTABLE_FIELDS}
-    for field in ("id_customer_supplier", "proyect_description"):
-        if values.get(field) in (None, ""):
-            raise AppError("errors.required_field", 400, {"field": field})
+    if values.get("id_customer_contact") in (None, "") and values.get("id_customer_supplier") in (None, ""):
+        raise AppError("errors.required_field", 400, {"field": "id_customer_contact"})
+    if values.get("proyect_description") in (None, ""):
+        raise AppError("errors.required_field", 400, {"field": "proyect_description"})
     values["created_by"] = actor_id
-    values["leader"] = _safe_int(values.get("leader")) or actor_id
+    # El responsable es siempre quien crea el proyecto -- solo Supervisor (y
+    # roles sin restriccion) pueden crear, y no hace falta que nadie elija a
+    # otro responsable. Ignora cualquier `leader` que venga en el payload
+    # (ya no llega: no esta en PROJECT_MUTABLE_FIELDS).
+    values["leader"] = actor_id
     values["proyect_status"] = "draft"
     _parsear_fecha_de_la_orden(values)
     with transaction_context() as db:
@@ -743,6 +771,12 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
             (current in {"draft", "blocked"} and validated_target == "submitted" and puede_enviar)
             or (validated_target in {"authorized", "denied", "blocked"} and puede_autorizar)
             or (validated_target in {"in_progress", "stopped", "completed"} and puede_ejecutar)
+            # Bloquear un proyecto que ya esta en curso tambien lo puede
+            # pedir quien lo ejecuta (taller), no solo quien autoriza -- a
+            # diferencia de bloquear ANTES de iniciar (desde `submitted`),
+            # que sigue siendo exclusivo de `puede_autorizar` en la regla de
+            # arriba.
+            or (validated_target == "blocked" and current == "in_progress" and puede_ejecutar)
         )
         if not allowed_scope:
             raise AppError(
@@ -776,6 +810,85 @@ def add_project_message(project_id, payload: dict, user_data: dict) -> dict:
         event = _append_event(db, project, user_data, "message", content=content)
         db.flush()
         return event.serialize()
+
+
+# --- adjuntos de requerimientos (PDF/DOCX) -------------------------------
+#
+# Tabla propia, `proyect_document`, y no el modulo /document generico: ese
+# usa `user.id_proyect` del JWT -el tenant/instalacion del actor, la MISMA
+# tabla `proyect` pero otro significado- y no el proyecto de taller que se
+# esta editando en el formulario. Ver el comentario de la migracion
+# 20260921100000.
+
+def list_project_documents(project_id, user_data: dict) -> dict:
+    from app.models.proyect_document import ProyectDocument
+
+    with transaction_context() as db:
+        project = _get_visible_project(db, project_id, user_data)
+        filas = (
+            db.query(ProyectDocument)
+            .filter(ProyectDocument.id_proyect == project.id_proyect)
+            .filter(ProyectDocument.deletion_date.is_(None))
+            .order_by(ProyectDocument.creation_date.desc())
+            .all()
+        )
+        return {"items": [d.serialize_summary() for d in filas]}
+
+
+def add_project_document(project_id, payload, raw, original_filename, user_data, storage) -> dict:
+    from app.models.proyect_document import ProyectDocument
+    import hashlib
+
+    with transaction_context() as db:
+        project = _get_visible_project(db, project_id, user_data, for_update=True)
+        extension, mime_type = storage.validate(raw, original_filename)
+        documento = ProyectDocument(
+            id_proyect=project.id_proyect,
+            title=(str((payload or {}).get("title") or "").strip() or None),
+            original_filename=str(original_filename or "")[:255],
+            extension=extension,
+            mime_type=mime_type,
+            file_size=len(raw),
+            sha256=hashlib.sha256(raw).hexdigest(),
+            file_path="",
+            created_by=_actor_id(user_data),
+        )
+        db.add(documento)
+        db.flush()
+        documento.file_path = storage.write(
+            raw, project.id_proyect, documento.id_proyect_document, 1, extension,
+            subfolder="proyecto_adjuntos",
+        )
+        db.flush()
+        _append_event(db, project, user_data, "document_attached",
+                      content=documento.original_filename)
+        return documento.serialize_summary()
+
+
+def delete_project_document(document_id, user_data: dict) -> dict:
+    from app.models.proyect_document import ProyectDocument
+
+    with transaction_context() as db:
+        documento = db.get(ProyectDocument, int(document_id))
+        if documento is None or documento.deletion_date is not None:
+            raise AppError("errors.not_found", 404, {"entity": "proyect_document"})
+        project = _get_visible_project(db, documento.id_proyect, user_data, for_update=True)
+        documento.deletion_date = datetime.utcnow()
+        _append_event(db, project, user_data, "document_removed",
+                      content=documento.original_filename)
+        db.flush()
+        return {"deleted": True, "id_proyect_document": documento.id_proyect_document}
+
+
+def project_document_content(document_id, user_data: dict, storage):
+    from app.models.proyect_document import ProyectDocument
+
+    with transaction_context() as db:
+        documento = db.get(ProyectDocument, int(document_id))
+        if documento is None or documento.deletion_date is not None:
+            raise AppError("errors.not_found", 404, {"entity": "proyect_document"})
+        _get_visible_project(db, documento.id_proyect, user_data)
+        return storage.resolve(documento.file_path), documento.mime_type, documento.original_filename
 
 
 # --- parcialidades de pago ----------------------------------------------

@@ -148,7 +148,8 @@ def init_database():
         try:
             derivar_field_permission_sql = """
                 INSERT INTO nm_field_permission (id_field, id_permission, control_type, created_by)
-                SELECT f.id_field, ep.id_permission, LEAST(ep.control_type::integer, 15)::text, 1
+                SELECT f.id_field, ep.id_permission,
+                       CASE WHEN ep.scope_read > 0 THEN '2' ELSE '1' END, 1
                 FROM entity_permission ep
                 JOIN field f
                   ON f.table_name = ep.entity_name

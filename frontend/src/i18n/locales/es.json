@@ -3534,6 +3534,8 @@
     "status_stopped": "Detenido",
     "status_completed": "Completado",
     "status_denied": "Denegado",
+    "status_waiting_material": "En espera de material",
+    "status_delivered": "Entregado",
     "new_task_note": "Nueva nota",
     "no_task_notes": "Sin notas registradas.",
     "task_note_event": "Nota de tarea",

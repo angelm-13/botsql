@@ -1,0 +1,67 @@
+from app.models import CustomerContact, CustomerSupplier
+from app.models.session import transaction_context
+from app.services.base_service import CrudService
+from app.utils.errors import AppError
+
+
+class CustomerContactService(CrudService):
+    model = CustomerContact
+    primary_key = 'id_customer_contact'
+    entity_name = 'customer_contact'
+
+    @staticmethod
+    def _validate_customer(payload: dict) -> dict:
+        payload = dict(payload or {})
+        customer_id = payload.get('id_customer_supplier')
+        if customer_id in (None, ''):
+            raise AppError('validations.customer_contact.customer.required', status_code=400, meta={'field': 'id_customer_supplier'})
+        with transaction_context() as session:
+            customer = session.get(CustomerSupplier, int(customer_id))
+            if not customer or customer.deletion_date is not None or customer.type != 'client':
+                raise AppError('validations.customer_contact.customer.invalid', status_code=400, meta={'field': 'id_customer_supplier'})
+        payload['id_customer_supplier'] = int(customer_id)
+        return payload
+
+    @classmethod
+    def create(cls, payload: dict, user_id: int | None = None):
+        return super().create(cls._validate_customer(payload), user_id=user_id)
+
+    @classmethod
+    def update(cls, item_id, payload: dict, user_id: int | None = None):
+        payload = dict(payload or {})
+        if 'id_customer_supplier' in payload:
+            payload = cls._validate_customer(payload)
+        return super().update(item_id, payload, user_id=user_id)
+
+    @classmethod
+    def options(cls) -> list[dict]:
+        """"Empresa - Contacto", para el selector de "Cliente" del proyecto.
+
+        Sin exigir el permiso completo de customer_contact -- mismo motivo
+        que CustomerSupplierService.options(): quien puede crear un proyecto
+        (Supervisor) no necesariamente puede ver/editar el catalogo de
+        contactos del CRM.
+        """
+        with transaction_context() as session:
+            filas = (
+                session.query(
+                    CustomerContact.id_customer_contact,
+                    CustomerContact.id_customer_supplier,
+                    CustomerContact.full_name,
+                    CustomerSupplier.name,
+                )
+                .join(CustomerSupplier, CustomerSupplier.id_customer_supplier == CustomerContact.id_customer_supplier)
+                .filter(CustomerContact.deletion_date.is_(None), CustomerContact.status == 'activo')
+                .filter(CustomerSupplier.deletion_date.is_(None))
+                .order_by(CustomerSupplier.name, CustomerContact.full_name)
+                .all()
+            )
+            return [
+                {
+                    'id_customer_contact': fila[0],
+                    'id_customer_supplier': fila[1],
+                    'full_name': fila[2],
+                    'label': f'{fila[3]} — {fila[2]}',
+                }
+                for fila in filas
+            ]

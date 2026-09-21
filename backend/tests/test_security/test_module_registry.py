@@ -130,7 +130,8 @@ class TestAlmacenesSeparados(unittest.TestCase):
         No es que un gerente no pueda mirar logistica -eso es deliberado y va en
         solo lectura-, es que nadie opere un almacen ajeno por arrastre. Quien
         puede escribir en dos almacenes tiene que estar declarado, y hoy solo lo
-        esta el jefe de almacen.
+        esta Almacenista (fusiono lo que antes era "Jefe de almacen" -- ver
+        20260921120000_fusionar_jefe_de_almacen_en_almacenista.sql).
         """
         ESCRITURA = registry.CREAR | registry.ACTUALIZAR | registry.BORRAR
         con_almacen = set(registry.almacenes())
@@ -145,17 +146,18 @@ class TestAlmacenesSeparados(unittest.TestCase):
             with self.subTest(rol=rol.nombre, opera=sorted(opera)):
                 if len(opera) > 1:
                     self.assertEqual(
-                        "Jefe de almacen", rol.nombre,
-                        f"{rol.nombre} opera {sorted(opera)}; solo el jefe de almacen "
+                        "Almacenista", rol.nombre,
+                        f"{rol.nombre} opera {sorted(opera)}; solo Almacenista "
                         "tiene dos almacenes declarados.",
                     )
 
-    def test_the_warehouse_clerk_reaches_only_its_own_warehouse(self):
-        """El caso concreto que se pidio separar."""
+    def test_the_warehouse_clerk_reaches_both_warehouses_now(self):
+        """Almacenista fusiono lo que antes era "Jefe de almacen": ya opera
+        inventario Y logistica, no solo el suyo."""
         almacenista = next(r for r in registry.ROLES if r.nombre == "Almacenista")
 
-        self.assertEqual({"inventario", "configuracion"}, set(almacenista.modulos))
-        for ajeno in ("logistica", "restaurante", "pos"):
+        self.assertEqual({"inventario", "logistica", "configuracion"}, set(almacenista.modulos))
+        for ajeno in ("restaurante", "pos"):
             with self.subTest(modulo=ajeno):
                 self.assertNotIn(ajeno, almacenista.modulos)
 
@@ -254,12 +256,24 @@ class TestMatrizDePermisos(unittest.TestCase):
                     "un modulo que se opera por capacidad no declara entidades del nucleo",
                 )
 
-    def test_the_warehouse_clerk_cannot_adjust(self):
-        """Quien mueve la mercancia no tapa su propio faltante."""
+    def test_the_warehouse_clerk_now_also_adjusts(self):
+        """Ya no hay separacion entre quien mueve la mercancia y quien ajusta.
+
+        Antes esto era deliberado: "Jefe de almacen" ajustaba, "Almacenista"
+        no, para que quien mueve la mercancia no tape su propio faltante. Se
+        fusionaron los dos roles por decision de negocio (ver
+        20260921120000_fusionar_jefe_de_almacen_en_almacenista.sql) y esa
+        separacion de deberes ya no existe -- Almacenista es el unico rol de
+        almacen y hace las dos cosas.
+        """
         almacenista = next(r for r in registry.ROLES if r.nombre == "Almacenista")
 
-        self.assertNotIn("inventory_adjustment", almacenista.capacidades)
+        self.assertIn("inventory_adjustment", almacenista.capacidades)
         self.assertIn("inventario", almacenista.modulos)
+        self.assertFalse(
+            any(r.nombre == "Jefe de almacen" for r in registry.ROLES),
+            "\"Jefe de almacen\" deberia haber desaparecido del catalogo.",
+        )
 
     def test_the_project_leader_executes_but_does_not_authorize(self):
         jefe = next(r for r in registry.ROLES if r.nombre == "Jefe de taller")
@@ -277,17 +291,20 @@ class TestMatrizDePermisos(unittest.TestCase):
                 self.assertTrue(rol.capacidades)
 
     def test_every_generated_row_uses_bits_the_code_understands(self):
-        from app.utils.auth import PERMISSION_BITS
-
-        validos = 0
-        for bit in PERMISSION_BITS.values():
-            validos |= bit
+        # entity_permission.control_type ya no existe: cada accion vive en su
+        # propia columna de alcance (scope_create/read/update/delete), y
+        # `_alcance_desde_bits` solo produce 0 (Sin acceso) o 4 (Todos) por
+        # ahora. El equivalente de "solo bits que el codigo entiende" es que
+        # cada columna sea uno de esos dos valores; el equivalente de "algo
+        # concedido" es que al menos una de las 4 no sea 0.
+        alcances_validos = {0, 4}
 
         for fila in registry.filas_de_permisos():
-            bits = fila[2]
+            scopes = fila[2:6]
             with self.subTest(entidad=fila[1], rol=fila[0]):
-                self.assertEqual(bits, bits & validos)
-                self.assertGreater(bits, 0)
+                for scope in scopes:
+                    self.assertIn(scope, alcances_validos)
+                self.assertTrue(any(scope != 0 for scope in scopes))
 
     def test_the_bootstrap_only_entities_are_not_seeded(self):
         """Sembrarlas daria una fila inutil: el codigo las bloquea igual."""

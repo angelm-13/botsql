@@ -1,12 +1,14 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import PropTypes from "prop-types";
 import {
-  AlertTriangle, Banknote, CalendarClock, CircleDollarSign, FileText, PackageMinus,
+  AlertTriangle, Banknote, CalendarClock, CircleDollarSign, FileText,
+  Paperclip, PackageMinus,
 } from "lucide-react";
 import { useI18n } from "../i18n";
 import {
-  addProyectPayment, deleteProyectPayment, settleProyectPayment,
-  transitionProyectManagement,
+  addProyectPayment, deleteProyectDocument, deleteProyectPayment,
+  downloadProyectDocument, getProyectDocuments, settleProyectPayment,
+  transitionProyectManagement, uploadProyectDocument,
 } from "../api";
 import "../styles/proyecto-expediente.css";
 
@@ -29,17 +31,24 @@ import "../styles/proyecto-expediente.css";
  * columna eso no se podría ni representar. Las transiciones válidas las manda
  * el servidor en el catálogo; esta pantalla no lleva su propia copia.
  */
-export default function ProyectoExpediente({ detalle, catalogo, onCambio }) {
+export default function ProyectoExpediente({ detalle, catalogo, modo, onCambio }) {
   const { t } = useI18n();
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState("");
   const [pago, setPago] = useState({ payment_date: "", amount: "", agreed_percent: "", notes: "" });
+  const [adjuntos, setAdjuntos] = useState([]);
+  const [archivoNuevo, setArchivoNuevo] = useState(null);
+  const [tituloAdjunto, setTituloAdjunto] = useState("");
 
   const resumen = detalle.payment_summary || {};
   const pagos = detalle.payments || [];
   const incidencias = detalle.incidents || [];
   const material = detalle.material_summary || { items: [], products: 0, taken_total: 0, still_out_total: 0 };
   const citas = detalle.appointments || [];
+  // Autorizar/cancelar el recorrido comercial es exclusivo de Gerente -- el
+  // candado real vive en el backend (`transition_management`), esto solo
+  // evita ofrecer un boton que el servidor va a rechazar.
+  const puedeGestionarComercial = modo === "manager" || modo === "unrestricted";
 
   // Del servidor, nunca de una copia local: una lista escrita aquí ofrecería
   // transiciones que el servidor rechaza.
@@ -60,6 +69,63 @@ export default function ProyectoExpediente({ detalle, catalogo, onCambio }) {
       setError(e?.payload?.error_key || e?.message || "errors.request_failed");
     } finally {
       setOcupado(false);
+    }
+  }
+
+  async function cargarAdjuntos() {
+    try {
+      const payload = await getProyectDocuments(detalle.id_proyect);
+      setAdjuntos(Array.isArray(payload) ? payload : payload?.items || []);
+    } catch {
+      setAdjuntos([]);
+    }
+  }
+
+  useEffect(() => {
+    cargarAdjuntos();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detalle.id_proyect]);
+
+  async function subirAdjunto(evento) {
+    evento.preventDefault();
+    if (!archivoNuevo) return;
+    setOcupado(true); setError("");
+    try {
+      await uploadProyectDocument(detalle.id_proyect, archivoNuevo, tituloAdjunto.trim() || undefined);
+      setArchivoNuevo(null);
+      setTituloAdjunto("");
+      await cargarAdjuntos();
+    } catch (e) {
+      setError(e?.payload?.error_key || e?.message || "errors.request_failed");
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  async function borrarAdjunto(documento) {
+    if (!window.confirm(etiqueta("confirm_delete_attachment", "¿Eliminar este archivo?"))) return;
+    setOcupado(true); setError("");
+    try {
+      await deleteProyectDocument(documento.id_proyect_document);
+      await cargarAdjuntos();
+    } catch (e) {
+      setError(e?.payload?.error_key || e?.message || "errors.request_failed");
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  async function descargarAdjunto(documento) {
+    try {
+      const blob = await downloadProyectDocument(documento.id_proyect_document);
+      const url = URL.createObjectURL(blob);
+      const enlace = document.createElement("a");
+      enlace.href = url;
+      enlace.download = documento.original_filename || `adjunto-${documento.id_proyect_document}`;
+      enlace.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e?.payload?.error_key || e?.message || "errors.request_failed");
     }
   }
 
@@ -100,7 +166,7 @@ export default function ProyectoExpediente({ detalle, catalogo, onCambio }) {
         <span className={`expediente-estado ${comercialActual}`}>
           {etiqueta(`management_${comercialActual}`, comercialActual.replaceAll("_", " "))}
         </span>
-        {destinos.map((destino) => (
+        {puedeGestionarComercial && destinos.map((destino) => (
           <button key={destino} type="button" className="button button-quiet"
                   disabled={ocupado}
                   onClick={() => ejecutar(() => transitionProyectManagement(
@@ -108,7 +174,10 @@ export default function ProyectoExpediente({ detalle, catalogo, onCambio }) {
             {etiqueta(`management_${destino}`, destino.replaceAll("_", " "))}
           </button>
         ))}
-        {destinos.length === 0 && (
+        {!puedeGestionarComercial && (
+          <span className="muted">{etiqueta("management_view_only", "Solo Gerencia autoriza o cancela.")}</span>
+        )}
+        {puedeGestionarComercial && destinos.length === 0 && (
           <span className="muted">{etiqueta("management_final", "Sin más movimientos.")}</span>
         )}
       </p>
@@ -209,6 +278,32 @@ export default function ProyectoExpediente({ detalle, catalogo, onCambio }) {
         </label>
         <button className="button primary" disabled={ocupado || !pago.payment_date || !pago.amount}>
           {etiqueta("add_payment", "Acordar parcialidad")}
+        </button>
+      </form>
+
+      {/* --- adjuntos de requerimientos (PDF/DOCX) --- */}
+      <h4><Paperclip size={15} /> {etiqueta("attachments", "Adjuntos")}</h4>
+      <div className="project-attachments">
+        {adjuntos.length === 0 && <p className="muted">{etiqueta("no_attachments", "Sin archivos adjuntos.")}</p>}
+        {adjuntos.map((documento) => (
+          <div className="project-attachment-row" key={documento.id_proyect_document}>
+            <button type="button" className="button-link" onClick={() => descargarAdjunto(documento)}>
+              {documento.title || documento.original_filename}
+            </button>
+            <span className="muted">{documento.original_filename}</span>
+            <button type="button" className="icon-button" disabled={ocupado}
+                    title={etiqueta("delete", "Quitar")}
+                    onClick={() => borrarAdjunto(documento)}>×</button>
+          </div>
+        ))}
+      </div>
+      <form className="project-attachment-upload" onSubmit={subirAdjunto}>
+        <input type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+               onChange={(e) => setArchivoNuevo(e.target.files?.[0] || null)} />
+        <input type="text" maxLength={200} placeholder={etiqueta("attachment_title", "Título (opcional)")}
+               value={tituloAdjunto} onChange={(e) => setTituloAdjunto(e.target.value)} />
+        <button className="button" type="submit" disabled={ocupado || !archivoNuevo}>
+          {etiqueta("upload_attachment", "Subir archivo")}
         </button>
       </form>
 
@@ -322,6 +417,7 @@ Dato.defaultProps = { valor: null };
 ProyectoExpediente.propTypes = {
   detalle: PropTypes.object.isRequired,
   catalogo: PropTypes.object,
+  modo: PropTypes.string,
   onCambio: PropTypes.func.isRequired,
 };
-ProyectoExpediente.defaultProps = { catalogo: null };
+ProyectoExpediente.defaultProps = { catalogo: null, modo: "supervisor" };

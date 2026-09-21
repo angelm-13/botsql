@@ -16,6 +16,7 @@ const ACTION_CREATE = 1;
 const ACTION_READ = 2;
 const ACTION_UPDATE = 4;
 const ACTION_DELETE = 8;
+const SCOPE_FIELD_BY_BIT = { [ACTION_CREATE]: "scope_create", [ACTION_READ]: "scope_read", [ACTION_UPDATE]: "scope_update", [ACTION_DELETE]: "scope_delete" };
 const FIELD_VISIBLE_BIT = 2;
 const ALL_FIELD_NAMES = ['id_bank', 'bank_name', 'created_by', 'creation_date', 'last_update_date', 'deletion_date'];
 
@@ -107,8 +108,8 @@ export default function BankPage() {
   useEffect(() => {
     async function loadRolePermissions() {
       if (isSuperUser) {
-        setModulePermission({ control_type: 15 });
-        setBankAccountPermission({ control_type: 15 });
+        setModulePermission({ scope_create: 4, scope_read: 4, scope_update: 4, scope_delete: 4 });
+        setBankAccountPermission({ scope_create: 4, scope_read: 4, scope_update: 4, scope_delete: 4 });
         setVisibleFieldNames(new Set(ALL_FIELD_NAMES));
         setPermissionReady(true);
         return;
@@ -164,7 +165,7 @@ export default function BankPage() {
 
   function canUseAction(bit) {
     if (isSuperUser) return true;
-    return hasBit(modulePermission?.control_type, bit);
+    return Number(modulePermission?.[SCOPE_FIELD_BY_BIT[bit]] || 0) !== 0;
   }
 
   function canSeeField(fieldName) {
@@ -377,8 +378,8 @@ export default function BankPage() {
       )}
 
       {canRead && <BankStatementsPanel
-        canManage={isSuperUser || hasBit(bankAccountPermission?.control_type, ACTION_UPDATE)}
-        canCreateAccount={isSuperUser || hasBit(bankAccountPermission?.control_type, ACTION_CREATE)}
+        canManage={isSuperUser || Number(bankAccountPermission?.[SCOPE_FIELD_BY_BIT[ACTION_UPDATE]] || 0) !== 0}
+        canCreateAccount={isSuperUser || Number(bankAccountPermission?.[SCOPE_FIELD_BY_BIT[ACTION_CREATE]] || 0) !== 0}
       />}
 
       {canRead && <div className="toolbar">

@@ -42,8 +42,26 @@ COMMIT;
 BEGIN;
 
 ALTER TABLE entity_permission
-    ALTER COLUMN control_type SET DEFAULT 15,
     ALTER COLUMN menu_location SET DEFAULT 'sidebar',
     ALTER COLUMN menu_order SET DEFAULT 100;
+
+-- `control_type` fue reemplazada por scope_create/scope_read/scope_update/
+-- scope_delete en 20260914110000_equipos_y_alcance_por_accion.sql (que la
+-- termina soltando con DROP COLUMN). Guardado con un chequeo de existencia
+-- porque, a diferencia de un ADD/DROP COLUMN IF [NOT] EXISTS, un ALTER COLUMN
+-- sobre una columna que ya no existe no es idempotente por si solo: en la
+-- segunda repeticion (initContainer de k8s reaplica todo en cada arranque)
+-- la columna ya fue soltada y el ALTER truena.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'entity_permission'
+          AND column_name = 'control_type'
+    ) THEN
+        ALTER TABLE entity_permission ALTER COLUMN control_type SET DEFAULT 15;
+    END IF;
+END $$;
 
 COMMIT;

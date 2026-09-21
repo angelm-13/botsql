@@ -18,6 +18,7 @@ const ACTION_CREATE = 1;
 const ACTION_READ = 2;
 const ACTION_UPDATE = 4;
 const ACTION_DELETE = 8;
+const SCOPE_FIELD_BY_BIT = { [ACTION_CREATE]: "scope_create", [ACTION_READ]: "scope_read", [ACTION_UPDATE]: "scope_update", [ACTION_DELETE]: "scope_delete" };
 const FIELD_VISIBLE_BIT = 2;
 const ALL_FIELD_NAMES = ['id_product', 'id_location', 'id_material', 'gross_price', 'color', 'is_directly_related_to_product_service', 'product_status', 'path_imagen', 'product_code'];
 
@@ -156,7 +157,7 @@ export default function ProductPage() {
   useEffect(() => {
     async function loadRolePermissions() {
       if (isSuperUser) {
-        setModulePermission({ control_type: 15 });
+        setModulePermission({ scope_create: 4, scope_read: 4, scope_update: 4, scope_delete: 4 });
         setVisibleFieldNames(new Set(ALL_FIELD_NAMES));
         setPermissionReady(true);
         return;
@@ -207,7 +208,7 @@ export default function ProductPage() {
 
   function canUseAction(bit) {
     if (isSuperUser) return true;
-    return hasBit(modulePermission?.control_type, bit);
+    return Number(modulePermission?.[SCOPE_FIELD_BY_BIT[bit]] || 0) !== 0;
   }
 
   function canSeeField(fieldName) {

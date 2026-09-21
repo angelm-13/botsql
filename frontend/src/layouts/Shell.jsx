@@ -77,6 +77,7 @@ const navItems = [
   { path: "/restaurant/kitchen", key: "menu.restaurant_kitchen", label: "Cocina", entityName: "restaurant_kitchen" },
   { path: "/restaurant/admin", key: "menu.restaurant_admin", label: "Admin", entityName: "restaurant_admin" },
   { path: "/permission", key: "menu.permission", groupIcon: "settings", location: "settings" },
+  { path: "/team", key: "menu.team", groupIcon: "settings", location: "settings" },
   { path: "/product", key: "menu.product" },
   { path: "/product_family", key: "menu.product_family" },
   { path: "/proyect", key: "menu.proyect" },
@@ -240,7 +241,10 @@ export default function Shell() {
       .then((payload) => {
         const rows = Array.isArray(payload?.entity_permissions)
           ? payload.entity_permissions : [];
-        if (mounted) setRoleEntityPermissions(rows.filter((row) => Number(row.id_permission) === roleId && Number(row.control_type || 0) > 0));
+        if (mounted) setRoleEntityPermissions(rows.filter((row) => Number(row.id_permission) === roleId && (
+          Number(row.scope_create || 0) > 0 || Number(row.scope_read || 0) > 0 ||
+          Number(row.scope_update || 0) > 0 || Number(row.scope_delete || 0) > 0
+        )));
       })
       .catch(() => { if (mounted) setRoleEntityPermissions([]); })
       .finally(() => { if (mounted) setRolePermissionsLoaded(true); });

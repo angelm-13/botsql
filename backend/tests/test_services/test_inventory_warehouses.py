@@ -506,7 +506,7 @@ class TestAdjustmentRequiresItsOwnCapability(WarehouseTestCase):
         with transaction_context() as db:
             db.add(EntityPermission(
                 id_permission=501, entity_name="inventory_adjustment",
-                control_type=2, created_by=51,
+                scope_read=4, created_by=51,
             ))
 
     def _move(self, actor, **payload):

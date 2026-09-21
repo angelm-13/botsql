@@ -5,6 +5,12 @@ import jwt
 import os
 
 PERMISSION_BITS = {'create': 1, 'read': 2, 'update': 4, 'delete': 8}
+# Cada accion vive en su propia columna de alcance (0 Sin acceso, 1 Propios,
+# 2 Mis grupos, 4 Todos -- ver entity_permission.py). El gate de aqui sigue
+# siendo booleano: 0 deniega, cualquier otro valor permite. El alcance real
+# (que Propios/Mis grupos filtren de verdad lo que se ve) no esta conectado
+# todavia -- ver ARQUITECTURA_TYAKXA_TNY.md.
+PERMISSION_SCOPE_COLUMNS = {'create': 'scope_create', 'read': 'scope_read', 'update': 'scope_update', 'delete': 'scope_delete'}
 SECRET_KEY = os.getenv('JWT_SECRET', 'dev-secret-change-me')
 PUBLIC_JWT_SCOPE = os.getenv('PUBLIC_JWT_SCOPE', 'web_shopper')
 BOOTSTRAP_ONLY_ENTITIES = {'event_log', 'user_mfa', 'password_reset_token'}
@@ -69,8 +75,8 @@ def _has_entity_permission(user_data: dict, entity_name: str, action: str) -> bo
     if entity_name in BOOTSTRAP_ONLY_ENTITIES:
         return False
 
-    bit = PERMISSION_BITS.get(action)
-    if bit is None:
+    scope_column = PERMISSION_SCOPE_COLUMNS.get(action)
+    if scope_column is None:
         return False
 
     permission_id = _get_permission_id(user_data)
@@ -91,10 +97,10 @@ def _has_entity_permission(user_data: dict, entity_name: str, action: str) -> bo
         if not record:
             return False
         try:
-            control_type = int(record.control_type)
+            scope = int(getattr(record, scope_column))
         except (TypeError, ValueError):
             return False
-        return (control_type & bit) == bit
+        return scope != 0
 
 
 def has_kpi_permission(session, user_data: dict, id_kpi_definition, action: str = 'read') -> bool:

@@ -148,11 +148,23 @@ CREATE INDEX IF NOT EXISTS ix_availability_rule_profile_day ON availability_rule
 CREATE INDEX IF NOT EXISTS ix_availability_override_profile_date ON availability_override (id_calendar_profile, override_date) WHERE deletion_date IS NULL;
 CREATE INDEX IF NOT EXISTS ix_appointment_project_start ON appointment (id_proyect, starts_at);
 
+-- Guardado con un chequeo de existencia de scope_create: esta migracion es
+-- anterior a 20260914110000_equipos_y_alcance_por_accion.sql, que agrega esas
+-- 4 columnas y suelta control_type mas adelante en la misma pasada. Sin este
+-- guardado, la primera pasada completa contra un volumen nuevo tronaria aqui
+-- con "column scope_create does not exist".
+DO $$
+BEGIN
+IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'entity_permission' AND column_name = 'scope_create'
+) THEN
+
 INSERT INTO entity_permission (
-        id_permission, entity_name, control_type, menu_location, menu_group,
+        id_permission, entity_name, scope_create, scope_read, scope_update, scope_delete, menu_location, menu_group,
         menu_group_icon, menu_label, menu_order, created_by, creation_date, last_update_date
 )
-SELECT permission.id_permission, 'appointment', 15, 'sidebar', 'Operaciones',
+SELECT permission.id_permission, 'appointment', 4, 4, 4, 4, 'sidebar', 'Operaciones',
             'calendar-days', 'Calendario', 75, permission.created_by, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
 FROM permission
 WHERE permission.deletion_date IS NULL
@@ -164,5 +176,8 @@ WHERE permission.deletion_date IS NULL
 -- retirado. El registro solo da el valor por omision al par (perfil, entidad)
 -- que todavia no existe.
 ON CONFLICT (id_permission, entity_name) DO NOTHING;
+
+END IF;
+END $$;
 
 COMMIT;

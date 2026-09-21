@@ -625,13 +625,33 @@
       "last_update_date": "Fecha de última actualización"
     },
     "entity_permission": {
-      "control_type": "Control Tipo",
+      "scope_create": "Alcance de Crear",
+      "scope_read": "Alcance de Leer",
+      "scope_update": "Alcance de Actualizar",
+      "scope_delete": "Alcance de Eliminar",
       "created_by": "Creado por",
       "creation_date": "Fecha de creación",
       "deletion_date": "Fecha de eliminación",
       "entity_name": "Entity Nombre",
       "id_entity_permission": "ID Entity Permiso",
       "id_permission": "ID Permiso",
+      "last_update_date": "Fecha de última actualización"
+    },
+    "team": {
+      "id_team": "ID Equipo",
+      "team_description": "Descripción del equipo",
+      "created_by": "Creado por",
+      "creation_date": "Fecha de creación",
+      "deletion_date": "Fecha de eliminación",
+      "last_update_date": "Fecha de última actualización"
+    },
+    "nm_team_user": {
+      "id_nm_team_user": "ID Equipo Usuario",
+      "id_team": "ID Equipo",
+      "id_user": "ID Usuario",
+      "created_by": "Creado por",
+      "creation_date": "Fecha de creación",
+      "deletion_date": "Fecha de eliminación",
       "last_update_date": "Fecha de última actualización"
     },
     "event_log": {
@@ -1354,7 +1374,10 @@
       "last_update_date": "Ingresa fecha de última actualización"
     },
     "entity_permission": {
-      "control_type": "Ingresa control tipo",
+      "scope_create": "Ingresa alcance de crear",
+      "scope_read": "Ingresa alcance de leer",
+      "scope_update": "Ingresa alcance de actualizar",
+      "scope_delete": "Ingresa alcance de eliminar",
       "created_by": "Ingresa creado por",
       "creation_date": "Ingresa fecha de creación",
       "deletion_date": "Ingresa fecha de eliminación",

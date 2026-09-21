@@ -18,6 +18,10 @@ ALLOWED_FILE_TYPES = {
     "jpg": "image/jpeg",
     "jpeg": "image/jpeg",
     "png": "image/png",
+    # Zip-based; el magic byte solo distingue "es un OOXML" de "no lo es",
+    # no docx de xlsx/pptx -- la extension sigue siendo la que decide el
+    # tipo real.
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
 DOCUMENT_STATUSES = {"draft", "issued", "signed", "rejected", "cancelled"}
 VERSION_SOURCES = {"uploaded", "generated", "signed_scan"}
@@ -77,6 +81,8 @@ class SecureDocumentStorage:
             detected = "image/png"
         elif raw.startswith(b"\xff\xd8\xff"):
             detected = "image/jpeg"
+        elif raw.startswith(b"PK\x03\x04"):
+            detected = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         if detected != ALLOWED_FILE_TYPES[extension]:
             raise AppError("documents.mime_mismatch", 400, {"extension": extension})
         return extension, detected
@@ -86,8 +92,8 @@ class SecureDocumentStorage:
             raise AppError("documents.invalid_file_size", 400, {"max_bytes": self.max_bytes})
         return self.inspect(raw, original_filename)
 
-    def write(self, raw: bytes, project_id: int, document_id: int, version: int, extension: str) -> str:
-        relative = Path("documents") / str(project_id) / str(document_id) / f"v{version}-{uuid.uuid4().hex}.{extension}"
+    def write(self, raw: bytes, project_id: int, document_id: int, version: int, extension: str, *, subfolder: str = "documents") -> str:
+        relative = Path(subfolder) / str(project_id) / str(document_id) / f"v{version}-{uuid.uuid4().hex}.{extension}"
         destination = (self.root / relative).resolve()
         if self.root not in destination.parents:
             raise AppError("documents.invalid_path", 400)
