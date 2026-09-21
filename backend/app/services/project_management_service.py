@@ -37,7 +37,12 @@ PROJECT_STATUSES = (
 )
 
 PROJECT_TRANSITIONS = {
-    "draft": {"submitted"},
+    # Gerente mueve el proyecto directo desde Borrador -- al recibir la
+    # orden de compra del cliente -- sin que Supervisor tenga que "enviarlo
+    # a revision" primero. `submitted` se deja alcanzable por compatibilidad
+    # con lo que ya se hubiera capturado antes de este cambio, pero ya nadie
+    # tiene permiso para pedirlo (ver `transition_project`).
+    "draft": {"submitted", "authorized", "denied", "blocked"},
     "submitted": {"authorized", "denied", "blocked"},
     "blocked": {"submitted", "authorized", "denied"},
     "authorized": {"in_progress"},
@@ -757,8 +762,12 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
         scope = _scope_name(db, user_data)
         leads_it = is_project_leader(project, user_data)
 
-        # Quien envia a revision: el que lo creo o su lider.
-        puede_enviar = scope in {"ownership", "unrestricted"} or leads_it
+        # Enviar a revision ya no lo pide nadie a proposito: Gerente mueve el
+        # proyecto directo desde Borrador (al recibir la orden de compra), y
+        # ni Supervisor ni el lider tienen esta puerta -- decision de negocio.
+        # `submitted` se queda en PROJECT_TRANSITIONS por compatibilidad con
+        # lo que ya se hubiera capturado antes, pero nadie puede pedirlo.
+        #
         # Quien autoriza, deniega o bloquea: solo la capacidad de autorizacion.
         # El lider NO entra aqui a proposito: quien ejecuta el trabajo no debe
         # aprobarlo. Es la separacion que evita que una sola persona levante,
@@ -768,8 +777,7 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
         puede_ejecutar = scope in {"execution", "unrestricted"} or leads_it
 
         allowed_scope = (
-            (current in {"draft", "blocked"} and validated_target == "submitted" and puede_enviar)
-            or (validated_target in {"authorized", "denied", "blocked"} and puede_autorizar)
+            (validated_target in {"authorized", "denied", "blocked"} and puede_autorizar)
             or (validated_target in {"in_progress", "stopped", "completed"} and puede_ejecutar)
             # Bloquear un proyecto que ya esta en curso tambien lo puede
             # pedir quien lo ejecuta (taller), no solo quien autoriza -- a

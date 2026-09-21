@@ -30,9 +30,10 @@ import PageHeader from "../components/PageHeader.jsx";
 const STATUS_ORDER = ["draft", "submitted", "blocked", "authorized", "in_progress", "stopped", "completed", "denied"];
 const TASK_STATUS_ORDER = ["pendiente", "en_proceso", "bloqueada", "en_revision", "terminada", "cancelada"];
 
-// Lo que cada papel puede PEDIR, con los mismos tres grupos que comprueba
-// `transition_project` en el servidor: quien envia a revision, quien autoriza y
-// quien ejecuta.
+// Lo que cada papel puede PEDIR, con los mismos grupos que comprueba
+// `transition_project` en el servidor: quien autoriza y quien ejecuta.
+// Supervisor no tiene ninguno a proposito -- Gerente es quien saca el
+// proyecto de Borrador, al recibir la orden de compra, no Supervisor.
 //
 // De que estatus sale cada transicion ya NO se repite aqui: se lee de
 // /operations/catalog. Antes esta pantalla llevaba una copia completa de
@@ -40,7 +41,10 @@ const TASK_STATUS_ORDER = ["pendiente", "en_proceso", "bloqueada", "en_revision"
 // divergen: la interfaz acaba ofreciendo un paso que el servidor rechaza, o
 // escondiendo uno que si es valido.
 const ROLE_TARGETS = {
-  supervisor: ["submitted"],
+  // Vacio, no ausente: si la clave faltara, `actionTargets()` caeria en
+  // "sin limite de papel" y le ofreceria a Supervisor lo que sea que el
+  // catalogo del servidor traiga para el estado actual.
+  supervisor: [],
   manager: ["authorized", "denied", "blocked"],
   // "blocked" tambien para el taller: puede bloquear un proyecto que ya esta
   // en curso, no solo Gerente rechazandolo antes de iniciar. Ver el candado

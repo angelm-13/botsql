@@ -52,16 +52,14 @@ class TestProjectWorkflowService(BackendTestCase):
         project = self._create()
         self.assertEqual(list_projects(self.workshop)["total"], 0)
 
-        transition_project(project["id_proyect"], {"status": "submitted"}, self.supervisor)
-        self.assertEqual(list_projects(self.workshop)["total"], 0)
-
         transition_project(project["id_proyect"], {"status": "authorized"}, self.manager)
         self.assertEqual(list_projects(self.workshop)["total"], 1)
 
     def test_full_cycle_writes_ordered_immutable_history(self):
+        # Gerente mueve el proyecto directo desde Borrador -- al recibir la
+        # orden de compra -- sin que Supervisor lo "envie a revision" primero.
         project = self._create()
         project_id = project["id_proyect"]
-        transition_project(project_id, {"status": "submitted"}, self.supervisor)
         transition_project(project_id, {"status": "authorized"}, self.manager)
         transition_project(project_id, {"status": "in_progress"}, self.workshop)
         transition_project(project_id, {"status": "stopped", "reason": "Falta material"}, self.workshop)
@@ -71,11 +69,11 @@ class TestProjectWorkflowService(BackendTestCase):
         detail = get_project_detail(project_id, self.workshop)
 
         self.assertEqual(detail["proyect_status"], "completed")
-        self.assertEqual(len(detail["events"]), 7)
+        self.assertEqual(len(detail["events"]), 6)
         self.assertEqual(detail["events"][0]["event_type"], "created")
-        self.assertEqual(detail["events"][4]["reason"], "Falta material")
+        self.assertEqual(detail["events"][3]["reason"], "Falta material")
         with transaction_context() as db:
-            self.assertEqual(db.query(ProyectEvent).filter_by(id_proyect=project_id).count(), 7)
+            self.assertEqual(db.query(ProyectEvent).filter_by(id_proyect=project_id).count(), 6)
 
     def test_direct_status_update_is_rejected(self):
         project = self._create()
@@ -88,10 +86,29 @@ class TestProjectWorkflowService(BackendTestCase):
             stored = db.get(Proyect, project["id_proyect"])
             self.assertEqual(stored.proyect_status, "draft")
 
+    def test_supervisor_can_no_longer_move_a_draft_out_of_draft(self):
+        """Solo Gerente saca un proyecto de Borrador -- al recibir la orden
+        de compra es cuando cambia el estatus, no Supervisor. Ni siquiera
+        hacia "submitted", el paso que antes usaba para "enviarlo a revision".
+        """
+        project = self._create()["id_proyect"]
+
+        for destino in ("submitted", "authorized", "denied", "blocked"):
+            with self.subTest(destino=destino), self.assertRaises(AppError) as raised:
+                transition_project(project, {"status": destino, "reason": "Motivo"}, self.supervisor)
+            self.assertEqual("errors.permission_denied", raised.exception.message_key)
+
+    def test_manager_authorizes_a_draft_directly_without_a_submit_step(self):
+        """Gerente mueve el proyecto directo desde Borrador -> Autorizado."""
+        project = self._create()["id_proyect"]
+
+        autorizado = transition_project(project, {"status": "authorized"}, self.manager)
+
+        self.assertEqual("authorized", autorizado["proyect_status"])
+
     def test_capability_cannot_execute_another_roles_transition(self):
         project = self._create()
         project_id = project["id_proyect"]
-        transition_project(project_id, {"status": "submitted"}, self.supervisor)
 
         with self.assertRaises(AppError) as raised:
             transition_project(project_id, {"status": "authorized"}, self.workshop)
@@ -101,11 +118,10 @@ class TestProjectWorkflowService(BackendTestCase):
     def test_workshop_can_block_a_project_already_in_progress(self):
         """Jefe de taller bloquea un proyecto que ya esta en curso.
 
-        Distinto de bloquear ANTES de iniciar (desde `submitted`), que sigue
+        Distinto de rechazarlo ANTES de iniciar (desde Borrador), que sigue
         siendo exclusivo de Gerente.
         """
         project = self._create()["id_proyect"]
-        transition_project(project, {"status": "submitted"}, self.supervisor)
         transition_project(project, {"status": "authorized"}, self.manager)
         transition_project(project, {"status": "in_progress"}, self.workshop)
 
@@ -117,13 +133,12 @@ class TestProjectWorkflowService(BackendTestCase):
     def test_workshop_cannot_block_a_project_before_it_starts(self):
         """Rechazar antes de iniciar sigue siendo exclusivo de Gerente.
 
-        Un proyecto "submitted" ni siquiera es VISIBLE para el taller todavia
-        (no esta en WORKSHOP_VISIBLE_STATUSES y el taller no lo lidera), asi
-        que el rechazo llega como 404 -no ve el proyecto- antes de que el
-        candado de permiso de la transicion entre en juego.
+        Un proyecto en Borrador ni siquiera es VISIBLE para el taller
+        todavia (no esta en WORKSHOP_VISIBLE_STATUSES y el taller no lo
+        lidera), asi que el rechazo llega como 404 -no ve el proyecto- antes
+        de que el candado de permiso de la transicion entre en juego.
         """
         project = self._create()["id_proyect"]
-        transition_project(project, {"status": "submitted"}, self.supervisor)
 
         with self.assertRaises(AppError) as raised:
             transition_project(project, {"status": "blocked", "reason": "Motivo"}, self.workshop)
