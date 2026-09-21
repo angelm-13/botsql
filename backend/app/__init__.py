@@ -289,6 +289,8 @@ def _load_quotation_document_record(record_id: str) -> dict:
         data['isr_retention_label'] = _doc_money(data.get('isr_retention'), currency)
         data['iva_retention_label'] = _doc_money(data.get('iva_retention'), currency)
         data['total_label'] = _doc_money(data.get('total'), currency)
+        from app.services.amount_in_words import importe_a_letras
+        data['amount_in_words'] = importe_a_letras(data.get('total'), currency)
         # issue_12_phase7_cfdi_original_xml_path
         data['_xml_original_path'] = _cfdi_xml_original_path(invoice_id_value)
         if data['_xml_original_path']:
@@ -302,8 +304,6 @@ def _load_quotation_document_record(record_id: str) -> dict:
             except (OSError, ValueError):
                 pass
 
-        from app.services.amount_in_words import importe_a_letras
-        data['amount_in_words'] = importe_a_letras(data.get('total'), currency)
         if data.get('uuid'):
             from app.services.cfdi_xml import cadena_original_tfd, qr_verification_url
             from app.services.qr_code import png_data_uri
