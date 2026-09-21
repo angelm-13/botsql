@@ -83,8 +83,6 @@ from app.routes.level import bp_level
 from app.routes.field import bp_field
 from app.routes.permission import bp_permission
 from app.routes.nm_field_permission import bp_nm_field_permission
-from app.routes.team import bp_team
-from app.routes.nm_team_user import bp_nm_team_user
 from app.routes.event_log import bp_event_log
 from app.routes.task_type import bp_task_type
 from app.routes.template import bp_template
@@ -748,8 +746,6 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_level)
     app.register_blueprint(bp_field)
     app.register_blueprint(bp_permission)
-    app.register_blueprint(bp_team)
-    app.register_blueprint(bp_nm_team_user)
     app.register_blueprint(bp_nm_field_permission)
     app.register_blueprint(bp_event_log)
     app.register_blueprint(bp_task_type)
