@@ -4254,8 +4254,15 @@
     "no_requests": "Has never requested material from this warehouse.",
     "times": "times",
     "status": "Status",
-    "left_on": "Left",
-    "returned_on": "Back"
+    "col_id": "ID",
+    "col_code": "Code",
+    "col_description": "Description",
+    "col_status": "Status",
+    "col_note": "Note",
+    "col_type": "Type",
+    "col_location": "Location",
+    "col_created": "Created on",
+    "col_closed": "Closed on"
   },
   "product": {
     "classification": "Classification",
@@ -4332,6 +4339,7 @@
     "product_balance": "product balance",
     "mismatch": "do not match",
     "everything": "History",
+    "vouchers_tab": "Vouchers",
     "when": "When",
     "what": "What happened",
     "who": "Who",

@@ -633,103 +633,115 @@ function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
         </p>
       )}
 
-      <ul className="vale-renglones">
-        {renglonesAgrupados.map(({ salida, entrada }) => {
-          // `linea` trae los datos del producto/pieza, iguales en las dos
-          // filas cuando existen las dos. `abierto` exige la salida en
-          // concreto: una entrada huerfana (ver `agruparRenglones`) nace
-          // siempre cerrada, y no tiene boton de "marcar devuelto" porque no
-          // hay nada que cerrar en ella.
-          const linea = salida || entrada;
-          const abierto = Boolean(salida) && !salida.close_date;
-          const vencido = abierto && salida.due_date
-            && new Date(salida.due_date) < new Date();
-          // A donde volvio, solo cuando dice algo distinto de "al mismo
-          // sitio del que salio" -- si coincide, repetirlo es ruido.
-          const destino = entrada?.id_location_to;
-          const origen = salida?.id_location_from ?? linea.id_location_from;
-          const mostrarDestino = destino && String(destino) !== String(origen);
+      <div className="vale-tabla-marco">
+        <table className="vale-tabla">
+          <thead>
+            <tr>
+              <th>{t("voucher.col_id", "ID")}</th>
+              <th>{t("voucher.col_code", "Código")}</th>
+              <th>{t("voucher.col_description", "Descripción")}</th>
+              <th>{t("voucher.quantity", "Cantidad")}</th>
+              <th>{t("voucher.col_status", "Estado")}</th>
+              <th>{t("voucher.col_note", "Nota")}</th>
+              <th>{t("voucher.col_type", "Tipo")}</th>
+              <th>{t("voucher.col_location", "Ubicación")}</th>
+              <th>{t("voucher.col_created", "Fecha creación")}</th>
+              <th>{t("voucher.col_closed", "Fecha cierre")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {renglonesAgrupados.map(({ salida, entrada }) => {
+              // `linea` trae los datos del producto/pieza, iguales en las dos
+              // filas cuando existen las dos. `abierto` exige la salida en
+              // concreto: una entrada huerfana (ver `agruparRenglones`) nace
+              // siempre cerrada, y no tiene boton de "marcar devuelto" porque no
+              // hay nada que cerrar en ella.
+              const linea = salida || entrada;
+              const abierto = Boolean(salida) && !salida.close_date;
+              const vencido = abierto && salida.due_date
+                && new Date(salida.due_date) < new Date();
+              // A donde volvio, solo cuando dice algo distinto de "al mismo
+              // sitio del que salio" -- si coincide, repetirlo es ruido.
+              const destino = entrada?.id_location_to;
+              const origen = salida?.id_location_from ?? linea.id_location_from;
+              const mostrarDestino = destino && String(destino) !== String(origen);
 
-          return (
-            <li key={linea.id_nm_incident_product}
-                className={abierto ? "vale-renglon-fuera" : "vale-renglon-devuelto"}>
-              {/* Que es lo que salio. Antes aqui solo iba "producto #6847":
-                  un numero que no dice si lo que se llevaron fue un taladro o
-                  un saco de cemento, y quien mira un vale para reclamar
-                  material necesita saber QUE es. */}
-              <FichaDeProducto producto={linea.product} onAmpliar={onAmpliar} t={t} />
-
-              <span className="vale-que">
-                {linea.id_inventory_asset ? <Tag size={13} /> : <Package size={13} />}
-                {linea.id_inventory_asset
-                  ? `${t("voucher.piece", "pieza")} #${linea.id_inventory_asset}`
-                  : `${linea.quantity} ${t("voucher.units", "unidades")}`}
-              </span>
-              <span className="vale-donde muted">
-                {sitioDe(origen)}
-                {mostrarDestino && (
-                  <>
-                    {" "}<ArrowRight size={12} />{" "}
-                    {sitioDe(destino)}
-                  </>
-                )}
-              </span>
-              {/* Las dos fechas del papel de siempre -salida y regreso-, las
-                  mismas dos columnas que trae el sistema anterior. Se pintan
-                  las dos siempre y no solo la de regreso cuando existe: la
-                  fecha de salida es la que responde "desde cuando" para lo
-                  que sigue fuera, y sin ella el renglon solo dice que algo
-                  falta, no desde cuando falta. */}
-              <span className="muted vale-fechas">
-                {t("voucher.left_on", "Salió")}{" "}
-                {linea.start_date
-                  ? new Date(linea.start_date).toLocaleDateString("es-MX")
-                  : "—"}
-                {!abierto && entrada?.close_date && (
-                  <> · {t("voucher.returned_on", "Volvió")}{" "}
-                    {new Date(entrada.close_date).toLocaleDateString("es-MX")}</>
-                )}
-              </span>
-              {/* La existencia del producto, que es la cifra con la que se
-                  firma: "salen 5 de 40" y "salen 5 de 5" son la misma linea con
-                  consecuencias distintas. */}
-              <span className="muted vale-existencia">
-                {t("voucher.on_hand", "quedan")} <strong>{linea.stock_on_hand}</strong>
-              </span>
-              {/* La pregunta que importa a simple vista, en rojo o en verde y
-                  nada mas: ¿ya volvio o no? Lo vencido sigue teniendo su
-                  propia alarma arriba de todo (la seccion de vencidos); aqui
-                  se distingue con la palabra, no con un tercer color -un
-                  tercer color es un tercer significado que aprender, y el
-                  objetivo es que se entienda sin explicacion. */}
-              <span className="vale-renglon-acciones">
-                {abierto ? (
-                  <>
-                    <span className={`vale-marca fuera ${vencido ? "vencida" : ""}`}>
-                      <AlertTriangle size={13} />
-                      {t("voucher.out", "fuera")}
-                      {vencido && <> · {t("history.overdue", "vencido")}</>}
+              return (
+                <tr key={linea.id_nm_incident_product}
+                    className={abierto ? "vale-renglon-fuera" : "vale-renglon-devuelto"}>
+                  <td className="mono muted">{linea.id_nm_incident_product}</td>
+                  <td className="mono">
+                    {linea.product?.product_code || `#${linea.id_product}`}
+                  </td>
+                  {/* Que es lo que salio. Antes aqui solo iba "producto #6847":
+                      un numero que no dice si lo que se llevaron fue un taladro
+                      o un saco de cemento, y quien mira un vale para reclamar
+                      material necesita saber QUE es. */}
+                  <td><FichaDeProducto producto={linea.product} onAmpliar={onAmpliar} t={t} /></td>
+                  <td className="vale-tabla-cantidad">
+                    <span className="vale-que">
+                      {linea.id_inventory_asset ? <Tag size={13} /> : <Package size={13} />}
+                      {linea.id_inventory_asset
+                        ? `${t("voucher.piece", "pieza")} #${linea.id_inventory_asset}`
+                        : linea.quantity}
                     </span>
-                    <button className="button button-quiet"
-                            onClick={() => onCerrar(salida.id_nm_incident_product)}>
-                      <Check size={14} />
-                      {t("voucher.close_line", "Marcar devuelto")}
-                    </button>
-                  </>
-                ) : (
-                  // La fecha va en `vale-fechas`, junto a la de salida -no
-                  // aqui otra vez-: repetirla en las dos partes de la fila
-                  // es ruido, no refuerzo.
-                  <span className="vale-marca devuelto">
-                    <Check size={13} />
-                    {t("history.returned", "devuelto")}
-                  </span>
-                )}
-              </span>
-            </li>
-          );
-        })}
-      </ul>
+                    <span className="muted vale-existencia">
+                      {t("voucher.on_hand", "quedan")} {linea.stock_on_hand}
+                    </span>
+                  </td>
+                  {/* La pregunta que importa a simple vista, en rojo o en
+                      verde y nada mas: ¿ya volvio o no? Lo vencido sigue
+                      teniendo su propia alarma arriba de todo (la seccion de
+                      vencidos); aqui se distingue con la palabra, no con un
+                      tercer color -un color mas es un significado mas que
+                      aprender, y el objetivo es que se entienda sin
+                      explicacion. */}
+                  <td className="vale-tabla-estado">
+                    {abierto ? (
+                      <>
+                        <span className={`vale-marca fuera ${vencido ? "vencida" : ""}`}>
+                          <AlertTriangle size={13} />
+                          {t("voucher.out", "fuera")}
+                          {vencido && <> · {t("history.overdue", "vencido")}</>}
+                        </span>
+                        <button className="button button-quiet"
+                                onClick={() => onCerrar(salida.id_nm_incident_product)}>
+                          <Check size={14} />
+                          {t("voucher.close_line", "Marcar devuelto")}
+                        </button>
+                      </>
+                    ) : (
+                      <span className="vale-marca devuelto">
+                        <Check size={13} />
+                        {t("history.returned", "devuelto")}
+                      </span>
+                    )}
+                  </td>
+                  <td className="vale-tabla-nota muted">{linea.note || "—"}</td>
+                  <td>{t(`voucher.direction_${linea.direction}`, linea.direction)}</td>
+                  <td className="muted">
+                    {sitioDe(origen)}
+                    {mostrarDestino && (
+                      <>
+                        {" "}<ArrowRight size={12} />{" "}
+                        {sitioDe(destino)}
+                      </>
+                    )}
+                  </td>
+                  <td className="mono muted">
+                    {linea.start_date ? new Date(linea.start_date).toLocaleString("es-MX") : "—"}
+                  </td>
+                  <td className="mono muted">
+                    {!abierto && entrada?.close_date
+                      ? new Date(entrada.close_date).toLocaleString("es-MX")
+                      : "—"}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </article>
   );
 }

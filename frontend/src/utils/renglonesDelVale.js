@@ -13,8 +13,7 @@
 // Esta funcion empareja cada salida con la entrada que la cerro -mismo
 // producto, misma pieza cuando la tiene- y devuelve UN renglon por prestamo
 // real, con los dos datos que hacen falta a simple vista: si ya volvio, y a
-// donde. Vive aparte del componente por el mismo motivo que `mezclar` en
-// `historialDelProducto.js`: se puede probar sin montar React.
+// donde. Vive aparte del componente para poder probarse sin montar React.
 
 export function agruparRenglones(lineas) {
   const todas = lineas || [];

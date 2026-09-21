@@ -989,8 +989,15 @@ def _renglones_con_contexto(db, filas) -> list[dict]:
             # no una por renglon.
             "voucher_note": getattr(vale, "note", None),
             "voucher_type": getattr(tipo, "incident_type_description", None),
-            "voucher_creation_date": (vale.creation_date.isoformat()
-                                      if vale and vale.creation_date else None),
+            # `incident.creation_date` de respaldo cuando falta: la columna
+            # es NOT NULL en el modelo, pero algunos vales reales quedan con
+            # ella en null (desajuste entre el modelo y la base, no algo que
+            # dependa de esta consulta). `incident_date` -la fecha de negocio
+            # del vale, siempre presente- responde la misma pregunta.
+            "voucher_creation_date": (
+                (vale.creation_date or vale.incident_date).isoformat()
+                if vale and (vale.creation_date or vale.incident_date) else None
+            ),
             "voucher_close_date": (vale.close_date.isoformat()
                                    if vale and vale.close_date else None),
         })

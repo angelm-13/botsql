@@ -1,17 +1,43 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
 import {
-  Boxes, ChevronDown, ChevronRight, ClipboardList, ImageOff, Package, RefreshCw,
-  Search, Tag, Warehouse,
+  Boxes, ChevronDown, ChevronRight, ClipboardList, History, ImageOff, Package,
+  RefreshCw, Search, Tag, Warehouse,
 } from "lucide-react";
 import { useI18n } from "../i18n";
 import "../styles/inventory-warehouses.css";
 import PageHeader from "../components/PageHeader.jsx";
 import VisorDeFoto from "../components/VisorDeFoto";
+import ProductHistory from "../components/ProductHistory.jsx";
 import { getAllEntityPermission, getLocationTree, getWarehouseStock, urlDeArchivo } from "../api";
 
 const ENTITY_KEY = "product";
 const ACTION_READ = 2;
+
+// El estatus tal como lo trae el sistema anterior en `product.product_status`
+// (ENTRADA, SALIDA, DAÑADO, DESTRUCCIÓN, EXTRAVIADO...), con el mismo color
+// por GRAVEDAD que ya usa Localizar (`InventoryTracePage.jsx`) y no un
+// esquema propio: son siete etiquetas de texto, pero solo cinco preguntas
+// reales -esta bien, esta fuera sin problema, hay que atenderlo, se perdio,
+// se dio de baja-, y es esa pregunta la que importa de un vistazo.
+const TONO_DE_ESTATUS = {
+  ENTRADA: "ok",
+  SALIDA: "info",
+  RENTA: "info",
+  DANADO: "warn",
+  "EQ. DANADOS": "warn",
+  REPARACION: "warn",
+  EXTRAVIADO: "crit",
+  DESTRUCCION: "muted",
+};
+
+function normalizarEstatus(valor) {
+  return String(valor || "")
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .trim();
+}
 
 function hasBit(value, bit) {
   return (Number(value || 0) & bit) === bit;
@@ -197,6 +223,8 @@ export default function InventoryPage() {
   // Las fotos que fallaron al cargar: se recuerdan para no reintentar la
   // misma URL rota en cada render y caer al marcador en su lugar.
   const [fotosRotas, setFotosRotas] = useState(() => new Set());
+  // El producto cuyo historial se esta mirando, o null.
+  const [historialProducto, setHistorialProducto] = useState(null);
 
   const canRead = isSuperUser || Number(modulePermission?.scope_read || 0) !== 0;
   const locations = useMemo(() => flattenTree(tree), [tree]);
@@ -357,8 +385,16 @@ export default function InventoryPage() {
                   const clave = `${row.id_product}-${row.id_location}`;
                   const foto = fotosRotas.has(clave) ? "" : urlDeArchivo(row.path_imagen);
                   const nombre = row.product_description || row.product_code || `#${row.id_product}`;
+                  const tono = row.product_status
+                    ? TONO_DE_ESTATUS[normalizarEstatus(row.product_status)] : null;
+                  // Familia › marca › material: lo que ya distingue Localizar
+                  // entre "un desarmador" y "el desarmador TRUPER plano" sin
+                  // tener que abrir la ficha completa del producto.
+                  const clasificacion = [row.family, row.brand, row.material]
+                    .filter(Boolean).join(" · ");
                   return (
-                    <li key={clave} className="inv-existencia-item">
+                    <li key={clave}
+                        className={`inv-existencia-item ${tono ? `tono-${tono}` : ""}`}>
                       <span className="inv-existencia-foto">
                         {foto ? (
                           <img
@@ -384,17 +420,46 @@ export default function InventoryPage() {
                             <> · <Tag size={11} /> {t("voucher.serialized", "pieza por pieza")}</>
                           )}
                         </span>
+                        {(clasificacion || row.color) && (
+                          <span className="muted">
+                            {clasificacion}
+                            {row.color && <> {clasificacion ? "· " : ""}{row.color}</>}
+                          </span>
+                        )}
                         {/* Con la ruta: dentro de una nave grande, "Rack A-1"
                             no dice en que pasillo esta. */}
                         <span className="muted inv-existencia-ruta">
                           {rutaDe(row.id_location) || row.location_description}
                         </span>
+                        {row.product_status && (
+                          <span className={`inv-existencia-estatus tono-${tono || "muted"}`}>
+                            {row.product_status}
+                          </span>
+                        )}
                       </span>
+                      {/* El numero solo, con un icono, no decia de que era
+                          numero: parecia una cajita sin etiqueta. Ahora dice
+                          la palabra completa -unidades, o pieza cuando se
+                          rastrea una por una- igual que ya hace Localizar
+                          con "en existencia". */}
                       <span className="inv-existencia-cantidad">
-                        {row.tracking_mode === "serializado"
-                          ? <Tag size={13} /> : <Package size={13} />}
                         <strong>{row.quantity}</strong>
+                        <span>
+                          {row.tracking_mode === "serializado"
+                            ? <><Tag size={11} /> {t("voucher.piece", "pieza")}</>
+                            : <><Package size={11} /> {t("voucher.units", "unidades")}</>}
+                        </span>
                       </span>
+                      {/* El historial, desde aqui y en una ventana -misma
+                          idea que en Localizar-: la pregunta "y esto que ha
+                          hecho" se hace sobre el renglon que se tiene
+                          delante. */}
+                      <button type="button" className="button button-quiet inv-existencia-historial"
+                              onClick={() => setHistorialProducto(
+                                { id_product: row.id_product, titulo: nombre })}>
+                        <History size={14} />
+                        {t("trace.open_history", "Historial")}
+                      </button>
                     </li>
                   );
                 })}
@@ -410,6 +475,14 @@ export default function InventoryPage() {
           titulo={fotoAmpliada.titulo}
           descripcion={fotoAmpliada.descripcion}
           onCerrar={() => setFotoAmpliada(null)}
+        />
+      )}
+
+      {historialProducto && (
+        <ProductHistory
+          idProduct={historialProducto.id_product}
+          titulo={historialProducto.titulo}
+          onCerrar={() => setHistorialProducto(null)}
         />
       )}
     </main>

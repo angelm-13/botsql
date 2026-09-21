@@ -4349,8 +4349,15 @@
     "no_requests": "Nunca ha pedido material a este almacén.",
     "times": "veces",
     "status": "Estado",
-    "left_on": "Salió",
-    "returned_on": "Volvió"
+    "col_id": "ID",
+    "col_code": "Código",
+    "col_description": "Descripción",
+    "col_status": "Estado",
+    "col_note": "Nota",
+    "col_type": "Tipo",
+    "col_location": "Ubicación",
+    "col_created": "Fecha creación",
+    "col_closed": "Fecha cierre"
   },
   "product": {
     "classification": "Clasificación",
@@ -4427,6 +4434,7 @@
     "product_balance": "saldo del producto",
     "mismatch": "no cuadran",
     "everything": "Historial",
+    "vouchers_tab": "Vales",
     "when": "Cuándo",
     "what": "Qué pasó",
     "who": "Quién",

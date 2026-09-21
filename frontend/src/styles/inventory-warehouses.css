@@ -111,12 +111,21 @@
 .inv-existencia { list-style: none; margin: 0; padding: 0;
   display: flex; flex-direction: column; gap: 7px; }
 .inv-existencia-item {
-  display: flex; align-items: center; gap: 12px;
-  padding: 9px 12px; background: #f8faf9; border-radius: 9px;
+  display: flex; align-items: center; gap: 14px;
+  padding: 10px 14px; background: #f8faf9; border-radius: 9px;
+  border-left: 3px solid transparent;
 }
+/* El estatus heredado del sistema anterior (ENTRADA, SALIDA, DAÑADO,
+   EXTRAVIADO...), por GRAVEDAD y no uno por etiqueta -mismos cinco tonos que
+   ya usa Localizar, para que sea la misma pregunta en las dos pantallas. */
+.inv-existencia-item.tono-ok    { border-left-color: #16a34a; background: #f0fdf4; }
+.inv-existencia-item.tono-info  { border-left-color: #2563eb; background: #eff6ff; }
+.inv-existencia-item.tono-warn  { border-left-color: #d97706; background: #fffbeb; }
+.inv-existencia-item.tono-crit  { border-left-color: #dc2626; background: #fef2f2; }
+.inv-existencia-item.tono-muted { border-left-color: #94a3b8; background: #f8fafc; }
 .inv-existencia-foto {
   display: grid; place-items: center; flex: 0 0 auto;
-  width: 42px; height: 42px; border-radius: 8px;
+  width: 68px; height: 68px; border-radius: 9px;
   background: #f1f5f9; border: 1px solid #e2e8f0; color: #94a3b8;
   overflow: hidden;
 }
@@ -125,16 +134,38 @@
   display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 1 auto;
 }
 .inv-existencia-datos strong {
-  font-size: 13.5px; line-height: 1.2; overflow: hidden;
+  font-size: 16px; line-height: 1.25; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap;
 }
-.inv-existencia-datos .muted { font-size: 11.5px; }
+.inv-existencia-datos .muted { font-size: 12px; }
 .inv-existencia-ruta { display: block; }
+/* El numero solo con un icono no decia de que era numero -una cajita sin
+   etiqueta-. Mismo patron que ya usa Localizar para su "en existencia":
+   la cifra grande, y debajo la palabra completa, no una abreviatura. */
 .inv-existencia-cantidad {
-  display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto;
-  font-size: 15px; font-variant-numeric: tabular-nums; color: #5c6d68;
+  display: flex; flex-direction: column; align-items: flex-end;
+  flex: 0 0 auto; text-align: right; line-height: 1.2;
 }
-.inv-existencia-cantidad strong { font-size: 16px; color: #16211f; }
+.inv-existencia-cantidad strong {
+  font-size: 22px; color: #16211f; font-variant-numeric: tabular-nums;
+}
+.inv-existencia-cantidad span {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 11px; color: #64748b; white-space: nowrap;
+}
+
+.inv-existencia-estatus {
+  display: inline-block; align-self: flex-start; margin-top: 1px;
+  padding: 1px 8px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .02em;
+}
+.inv-existencia-estatus.tono-ok    { background: #dcfce7; color: #14532d; }
+.inv-existencia-estatus.tono-info  { background: #dbeafe; color: #1e3a8a; }
+.inv-existencia-estatus.tono-warn  { background: #fef3c7; color: #78350f; }
+.inv-existencia-estatus.tono-crit  { background: #fee2e2; color: #991b1b; }
+.inv-existencia-estatus.tono-muted { background: #f1f5f9; color: #64748b; }
+
+.inv-existencia-historial { flex: 0 0 auto; }
 
 /* --- los dos formularios --- */
 
