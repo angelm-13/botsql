@@ -791,7 +791,16 @@ Vale.propTypes = {
 function FichaDeProducto({ producto, onAmpliar, t }) {
   const [fotoRota, setFotoRota] = useState(false);
   if (!producto) return null;
-  const rasgos = [producto.brand, producto.material, producto.unit].filter(Boolean);
+  // Cada rasgo con su etiqueta -"Marca: X", no solo "X"-: unos puntos
+  // separando valores sueltos obligan a saberse de memoria el orden para
+  // distinguir la marca del material, y ese es justo el conocimiento que no
+  // se le puede pedir a quien no ha usado el sistema antes.
+  const rasgos = [
+    producto.brand && `${t("inventory.brand", "Marca")}: ${producto.brand}`,
+    producto.material && `${t("voucher.material", "Material")}: ${producto.material}`,
+    producto.color && `${t("inventory.color", "Color")}: ${producto.color}`,
+    producto.unit && `${t("voucher.unit", "Unidad")}: ${producto.unit}`,
+  ].filter(Boolean);
   const foto = fotoRota ? "" : urlDeArchivo(producto.path_imagen);
 
   return (
@@ -814,11 +823,11 @@ function FichaDeProducto({ producto, onAmpliar, t }) {
       <span className="vale-ficha-datos">
         <strong>{producto.descripcion || `#${producto.id_product}`}</strong>
         <span className="muted mono">
-          {producto.product_code || `#${producto.id_product}`}
+          {t("voucher.col_code", "Código")}: {producto.product_code || `#${producto.id_product}`}
           {producto.tracking_mode === "serializado"
             && ` · ${t("voucher.serialized", "pieza por pieza")}`}
         </span>
-        {rasgos.length > 0 && <span className="muted">{rasgos.join(" · ")}</span>}
+        {rasgos.length > 0 && <span className="muted">{rasgos.join("  ·  ")}</span>}
       </span>
     </span>
   );

@@ -39,6 +39,22 @@ function normalizarEstatus(valor) {
     .trim();
 }
 
+// La misma simbologia de Localizar, palabra por palabra: que quiere decir
+// cada tono, y que estatus del sistema anterior le tocan. Vive aparte del
+// mapa de arriba a proposito -el mapa manda el estatus, aqui manda el TONO,
+// y son cinco entradas (una por color), no ocho-. Sin esto un color en la
+// tarjeta es una adivinanza para quien no se aprendio de memoria que "ambar"
+// es "hay que atenderlo".
+const SIMBOLOGIA = [
+  { tono: "ok", clave: "in_stock", texto: "En el almacén", estatus: ["ENTRADA"] },
+  { tono: "info", clave: "out_ok", texto: "Fuera, sin problema",
+    estatus: ["SALIDA", "RENTA"] },
+  { tono: "warn", clave: "needs_care", texto: "Hay que atenderlo",
+    estatus: ["DAÑADO", "EQ. DAÑADOS", "REPARACIÓN"] },
+  { tono: "crit", clave: "lost", texto: "Se perdió", estatus: ["EXTRAVIADO"] },
+  { tono: "muted", clave: "end_of_life", texto: "Fin de vida", estatus: ["DESTRUCCIÓN"] },
+];
+
 function hasBit(value, bit) {
   return (Number(value || 0) & bit) === bit;
 }
@@ -374,24 +390,37 @@ export default function InventoryPage() {
             {warehouseContent.items.length === 0 ? (
               <p className="muted">{t("inventory.warehouse_empty", "Sin existencia en este almacén.")}</p>
             ) : (
-              /* Antes esto era una tabla de puro texto -codigo, descripcion,
-                 cantidad-: la misma cosa que ya se habia resuelto en
-                 Localizar, pero sin resolver aqui. Con foto se reconoce el
-                 material de un vistazo, sin tener que leer la descripcion
-                 entera para saber si "DESARMADOR PLANO" es el de cruz o el
-                 de plano. */
-              <ul className="inv-existencia">
+              <>
+                {/* Misma leyenda que ya trae Localizar, palabra por palabra:
+                    pegada a la lista que explica, no en una ayuda aparte que
+                    nadie va a abrir. */}
+                <div className="trace-simbologia" role="note"
+                     aria-label={t("trace.legend", "Qué significa el color")}>
+                  <span className="trace-simbologia-titulo muted">
+                    {t("trace.legend", "Qué significa el color")}
+                  </span>
+                  {SIMBOLOGIA.map(({ tono, clave, texto, estatus }) => (
+                    <span className="trace-simbologia-item" key={tono}>
+                      <i className={`trace-muestra ${tono}`} aria-hidden="true" />
+                      <strong>{t(`trace.legend_${clave}`, texto)}</strong>
+                      <span className="muted">{estatus.join(" · ")}</span>
+                    </span>
+                  ))}
+                </div>
+
+                {/* Antes esto era una tabla de puro texto -codigo,
+                    descripcion, cantidad-: la misma cosa que ya se habia
+                    resuelto en Localizar, pero sin resolver aqui. Con foto se
+                    reconoce el material de un vistazo, sin tener que leer la
+                    descripcion entera para saber si "DESARMADOR PLANO" es el
+                    de cruz o el de plano. */}
+                <ul className="inv-existencia">
                 {warehouseContent.items.map((row) => {
                   const clave = `${row.id_product}-${row.id_location}`;
                   const foto = fotosRotas.has(clave) ? "" : urlDeArchivo(row.path_imagen);
                   const nombre = row.product_description || row.product_code || `#${row.id_product}`;
                   const tono = row.product_status
                     ? TONO_DE_ESTATUS[normalizarEstatus(row.product_status)] : null;
-                  // Familia › marca › material: lo que ya distingue Localizar
-                  // entre "un desarmador" y "el desarmador TRUPER plano" sin
-                  // tener que abrir la ficha completa del producto.
-                  const clasificacion = [row.family, row.brand, row.material]
-                    .filter(Boolean).join(" · ");
                   return (
                     <li key={clave}
                         className={`inv-existencia-item ${tono ? `tono-${tono}` : ""}`}>
@@ -415,20 +444,29 @@ export default function InventoryPage() {
                       <span className="inv-existencia-datos">
                         <strong>{nombre}</strong>
                         <span className="muted mono">
-                          {row.product_code || `#${row.id_product}`}
+                          {t("voucher.col_code", "Código")}: {row.product_code || `#${row.id_product}`}
                           {row.tracking_mode === "serializado" && (
                             <> · <Tag size={11} /> {t("voucher.serialized", "pieza por pieza")}</>
                           )}
                         </span>
-                        {(clasificacion || row.color) && (
-                          <span className="muted">
-                            {clasificacion}
-                            {row.color && <> {clasificacion ? "· " : ""}{row.color}</>}
+                        {/* Cada dato con su etiqueta, igual que el sistema
+                            anterior ("Familia:", "Marca:", "Color:"): antes
+                            iban solo los valores separados por puntos, y sin
+                            haber usado el sistema no hay forma de adivinar
+                            cual palabra es la familia y cual es la marca. */}
+                        {(row.family || row.brand || row.color) && (
+                          <span className="muted inv-existencia-clasificacion">
+                            {[
+                              row.family && `${t("inventory.family", "Familia")}: ${row.family}`,
+                              row.brand && `${t("inventory.brand", "Marca")}: ${row.brand}`,
+                              row.color && `${t("inventory.color", "Color")}: ${row.color}`,
+                            ].filter(Boolean).join("  ·  ")}
                           </span>
                         )}
                         {/* Con la ruta: dentro de una nave grande, "Rack A-1"
                             no dice en que pasillo esta. */}
                         <span className="muted inv-existencia-ruta">
+                          {t("inventory.location", "Ubicación")}:{" "}
                           {rutaDe(row.id_location) || row.location_description}
                         </span>
                         {row.product_status && (
@@ -463,7 +501,8 @@ export default function InventoryPage() {
                     </li>
                   );
                 })}
-              </ul>
+                </ul>
+              </>
             )}
           </div>
         )}

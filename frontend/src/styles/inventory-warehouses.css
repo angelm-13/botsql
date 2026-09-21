@@ -1,6 +1,34 @@
 /* Almacenes, ubicaciones y los dos formularios del almacen.
    Hoja propia y no app.css: esa la esta tocando otra corriente de trabajo. */
 
+/* --- la simbologia del color ---
+
+   La misma leyenda de Localizar (`inventory-trace.css`), copiada aqui a
+   proposito y no importada de alla: cada pantalla mantiene su propia hoja
+   -ver el comentario de arriba-, y estas cinco reglas son mas baratas de
+   repetir que de acoplar dos paginas por una hoja de estilos compartida.
+   Los mismos cinco tonos del borde de la tarjeta, con lo que significan. */
+
+.trace-simbologia {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  margin: 0 0 14px; padding: 9px 12px;
+  background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;
+  font-size: 12px;
+}
+.trace-simbologia-titulo { font-weight: 700; }
+.trace-simbologia-item { display: inline-flex; align-items: center; gap: 6px; }
+.trace-simbologia-item strong { font-weight: 600; color: #334155; }
+
+.trace-muestra {
+  width: 11px; height: 11px; border-radius: 3px; flex: 0 0 auto;
+  background: #e2e8f0;
+}
+.trace-muestra.ok    { background: #16a34a; }
+.trace-muestra.info  { background: #2563eb; }
+.trace-muestra.warn  { background: #d97706; }
+.trace-muestra.crit  { background: #dc2626; }
+.trace-muestra.muted { background: #94a3b8; }
+
 /* --- el arbol de ubicaciones ---
    Antes era una tabla con la jerarquia simulada dentro de un <pre> y espacios
    repetidos por nivel. Con un almacen de dos niveles se leia; con cuatro, no,
