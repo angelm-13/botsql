@@ -1,0 +1,22 @@
+/* La incidencia (prestamo, reparacion, lo que sea que traiga `incident`):
+   mismo lenguaje visual que el resto del almacen -verde cerrado, ambar
+   abierto, y solo texto para lo que no encaja en ninguna de las dos-, para
+   que sea la misma pregunta en todas las pantallas: ¿sigue abierta o no?
+
+   Hoja propia y no app.css: esa la esta tocando otra corriente de trabajo. */
+
+.incident-estado {
+  display: inline-flex; align-items: center;
+  padding: 3px 10px; border-radius: 999px;
+  font-size: 12px; font-weight: 700; white-space: nowrap;
+}
+.incident-estado.abierta { background: #fef3c7; color: #78350f; }
+.incident-estado.cerrada { background: #dcfce7; color: #14532d; }
+.incident-estado.otro    { background: #f1f5f9; color: #475569; }
+
+/* La ficha del kanban ya agrupa por estado -es su columna-, asi que el color
+   va en el filo de la tarjeta: repetirlo en cada tarjeta con una pastilla
+   seria decir lo mismo que ya dice la columna en la que esta. */
+.incident-kanban-card.tono-abierta { border-left: 3px solid #d97706; }
+.incident-kanban-card.tono-cerrada { border-left: 3px solid #15803d; }
+.incident-kanban-card.tono-otro    { border-left: 3px solid #94a3b8; }

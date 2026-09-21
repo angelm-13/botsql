@@ -101,6 +101,41 @@
   font-style: normal; font-size: 12px; color: #5c6d68; font-weight: 400;
 }
 
+/* --- la existencia del sitio elegido, con foto ---
+
+   Antes era una tabla de solo texto -codigo, descripcion, cantidad-, la
+   misma queja que ya se habia resuelto en Localizar (`inventory-trace.css`)
+   pero no aqui. Card y no tabla, con la foto primero: reconocer una
+   herramienta por su forma es mas rapido que leer su descripcion completa. */
+
+.inv-existencia { list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 7px; }
+.inv-existencia-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 9px 12px; background: #f8faf9; border-radius: 9px;
+}
+.inv-existencia-foto {
+  display: grid; place-items: center; flex: 0 0 auto;
+  width: 42px; height: 42px; border-radius: 8px;
+  background: #f1f5f9; border: 1px solid #e2e8f0; color: #94a3b8;
+  overflow: hidden;
+}
+.inv-existencia-foto img { width: 100%; height: 100%; object-fit: cover; }
+.inv-existencia-datos {
+  display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 1 auto;
+}
+.inv-existencia-datos strong {
+  font-size: 13.5px; line-height: 1.2; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.inv-existencia-datos .muted { font-size: 11.5px; }
+.inv-existencia-ruta { display: block; }
+.inv-existencia-cantidad {
+  display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto;
+  font-size: 15px; font-variant-numeric: tabular-nums; color: #5c6d68;
+}
+.inv-existencia-cantidad strong { font-size: 16px; color: #16211f; }
+
 /* --- los dos formularios --- */
 
 /* La ruta completa en el desplegable. "Rack A-1" no dice de que nave es, y con
@@ -215,4 +250,7 @@
   .inv-lote { grid-template-columns: 1fr; }
   .inv-lotes li { grid-template-columns: 1fr auto; }
   .inv-lote-sitios { grid-column: 1 / -1; }
+  .inv-existencia-item { flex-wrap: wrap; }
+  .inv-existencia-datos { flex-basis: calc(100% - 54px); }
+  .inv-existencia-cantidad { margin-left: 54px; }
 }

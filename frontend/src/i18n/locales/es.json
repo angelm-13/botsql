@@ -744,13 +744,33 @@
       "last_update_date": "Fecha de última actualización"
     },
     "entity_permission": {
-      "control_type": "Control Tipo",
+      "scope_create": "Alcance de Crear",
+      "scope_read": "Alcance de Leer",
+      "scope_update": "Alcance de Actualizar",
+      "scope_delete": "Alcance de Eliminar",
       "created_by": "Creado por",
       "creation_date": "Fecha de creación",
       "deletion_date": "Fecha de eliminación",
       "entity_name": "Entity Nombre",
       "id_entity_permission": "ID Permiso de entidad",
       "id_permission": "ID Permiso",
+      "last_update_date": "Fecha de última actualización"
+    },
+    "team": {
+      "id_team": "ID Equipo",
+      "team_description": "Descripción del equipo",
+      "created_by": "Creado por",
+      "creation_date": "Fecha de creación",
+      "deletion_date": "Fecha de eliminación",
+      "last_update_date": "Fecha de última actualización"
+    },
+    "nm_team_user": {
+      "id_nm_team_user": "ID Equipo Usuario",
+      "id_team": "ID Equipo",
+      "id_user": "ID Usuario",
+      "created_by": "Creado por",
+      "creation_date": "Fecha de creación",
+      "deletion_date": "Fecha de eliminación",
       "last_update_date": "Fecha de última actualización"
     },
     "event_log": {
@@ -1422,6 +1442,7 @@
     "product_sale_config": "Configuración de venta web",
     "proyect": "Proyecto",
     "public_api_key": "Llave API pública",
+    "team": "Equipos",
     "service": "Servicio",
     "status": "Estado",
     "subdepartment": "Subdepartamento",
@@ -1519,7 +1540,10 @@
       "last_update_date": "Ingresa fecha de última actualización"
     },
     "entity_permission": {
-      "control_type": "Ingresa control tipo",
+      "scope_create": "Ingresa alcance de crear",
+      "scope_read": "Ingresa alcance de leer",
+      "scope_update": "Ingresa alcance de actualizar",
+      "scope_delete": "Ingresa alcance de eliminar",
       "created_by": "Ingresa creado por",
       "creation_date": "Ingresa fecha de creación",
       "deletion_date": "Ingresa fecha de eliminación",
@@ -3732,7 +3756,8 @@
     "search_placeholder": "Busca por texto o por clave: reparación de pc, 8111...",
     "type_to_search": "Escribe al menos dos letras para buscar.",
     "no_results": "Sin resultados. Prueba con otra palabra.",
-    "key_must_be_8_digits": "La clave del SAT tiene 8 dígitos."
+    "key_must_be_8_digits": "La clave del SAT tiene 8 dígitos.",
+    "searching": "Buscando en el catálogo del SAT..."
   },
   "validations": {
     "location": {
@@ -4318,7 +4343,14 @@
     "filter_all": "Todos",
     "filter_draft": "Por autorizar",
     "filter_open": "Abiertos",
-    "filter_closed": "Cerrados"
+    "filter_closed": "Cerrados",
+    "view_history": "Ver historial",
+    "employee_history_eyebrow": "Historial de préstamos",
+    "no_requests": "Nunca ha pedido material a este almacén.",
+    "times": "veces",
+    "status": "Estado",
+    "left_on": "Salió",
+    "returned_on": "Volvió"
   },
   "product": {
     "classification": "Clasificación",

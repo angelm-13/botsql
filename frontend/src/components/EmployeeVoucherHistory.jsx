@@ -1,0 +1,208 @@
+import { useCallback, useEffect, useState } from "react";
+import PropTypes from "prop-types";
+import { AlertTriangle, Check, Package, Tag, X } from "lucide-react";
+import { getVoucherRequests } from "../api";
+import Pagination from "./Pagination.jsx";
+import { useI18n } from "../i18n";
+import "../styles/product-history.css";
+
+const POR_PAGINA = 20;
+
+/**
+ * La ficha de un empleado: que se ha llevado del almacen, y que le falta
+ * devolver.
+ *
+ * Se abre desde un vale -junto al nombre del responsable- y no desde la
+ * pantalla de Usuarios: el vale es donde ya se esta preguntando por esa
+ * persona en concreto, y una pantalla nueva obligaria a ir a buscarlo por
+ * nombre otra vez.
+ *
+ * Usa `GET /vouchers/requests`, que ya existia como servicio
+ * (`lo_que_ha_pedido`) desde la carga del sistema anterior pero que ningun
+ * boton llamaba: el dato estaba en la base sin forma de verlo en pantalla.
+ */
+export default function EmployeeVoucherHistory({ idUser, nombre, onCerrar, onAbrirVale }) {
+  const { t } = useI18n();
+  const [datos, setDatos] = useState(null);
+  const [pagina, setPagina] = useState(1);
+  const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState("");
+
+  const traer = useCallback(async () => {
+    setCargando(true);
+    setError("");
+    try {
+      setDatos(await getVoucherRequests({ id_user: idUser }));
+    } catch (e) {
+      setError(e?.payload?.error_key
+        ? t(e.payload.error_key)
+        : t("errors.request_failed", "No se pudo cargar el historial."));
+    } finally {
+      setCargando(false);
+    }
+    // `t` cambia de identidad en cada render: en las dependencias, el efecto
+    // volveria a pedir sin parar.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idUser]);
+
+  useEffect(() => { traer(); }, [traer]);
+
+  useEffect(() => {
+    const alTeclear = (e) => { if (e.key === "Escape") onCerrar(); };
+    window.addEventListener("keydown", alTeclear);
+    return () => window.removeEventListener("keydown", alTeclear);
+  }, [onCerrar]);
+
+  const items = datos?.items || [];
+  const paginas = Math.max(1, Math.ceil(items.length / POR_PAGINA));
+  const actual = Math.min(pagina, paginas);
+  const visibles = items.slice((actual - 1) * POR_PAGINA, actual * POR_PAGINA);
+
+  return (
+    <div
+      className="ficha-fondo"
+      role="presentation"
+      onClick={(e) => { if (e.target === e.currentTarget) onCerrar(); }}
+    >
+      <section
+        className="ficha"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t("voucher.employee_history_eyebrow", "Historial de préstamos")}
+      >
+        <header className="ficha-cabecera">
+          <div>
+            <p className="eyebrow">
+              {t("voucher.employee_history_eyebrow", "Historial de préstamos")}
+            </p>
+            <h2>{nombre || `#${idUser}`}</h2>
+          </div>
+          <button
+            type="button"
+            className="ficha-cerrar"
+            onClick={onCerrar}
+            aria-label={t("common.close", "Cerrar")}
+          >
+            <X size={18} />
+          </button>
+        </header>
+
+        <div className="ficha-cuerpo">
+          {error && <p className="error">{error}</p>}
+          {cargando && <p className="muted">{t("common.loading", "Cargando…")}</p>}
+
+          {!cargando && !error && (
+            items.length === 0 ? (
+              <p className="muted">
+                {t("voucher.no_requests", "Nunca ha pedido material a este almacén.")}
+              </p>
+            ) : (
+              <>
+                {/* Lo que importa de un vistazo: cuantas veces, y cuanto sigue
+                    sin volver. El vencido se resalta aparte porque es la unica
+                    de las tres cifras sobre la que hay que actuar hoy. */}
+                <p className="ficha-resumen muted">
+                  <strong>{datos.total}</strong> {t("voucher.times", "veces")}
+                  {datos.still_out > 0 && (
+                    <>
+                      {" · "}
+                      <strong className="ficha-fuera">{datos.still_out}</strong>{" "}
+                      {t("history.currently_out", "sin devolver")}
+                    </>
+                  )}
+                  {datos.overdue > 0 && (
+                    <>
+                      {" · "}
+                      <strong className="ficha-vencido">{datos.overdue}</strong>{" "}
+                      {t("history.overdue", "vencido")}
+                    </>
+                  )}
+                </p>
+
+                <table className="ficha-tabla">
+                  <thead>
+                    <tr>
+                      <th>{t("history.when", "Cuándo")}</th>
+                      <th>{t("voucher.what", "Qué se lleva")}</th>
+                      <th>{t("voucher.voucher_n", "Vale")}</th>
+                      <th>{t("voucher.status", "Estado")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibles.map((r) => (
+                      <tr key={r.id_nm_incident_product}>
+                        <td className="muted">
+                          {r.start_date
+                            ? new Date(r.start_date).toLocaleDateString("es-MX")
+                            : "—"}
+                        </td>
+                        <td>
+                          <strong>{r.product_description || `#${r.id_product}`}</strong>
+                          <span className="muted mono">
+                            {" "}{r.product_code || ""}
+                            {r.id_inventory_asset ? (
+                              <> · <Tag size={11} /> {t("voucher.piece", "pieza")} #{r.id_inventory_asset}</>
+                            ) : (
+                              <> · <Package size={11} /> {r.quantity} {t("voucher.units", "unidades")}</>
+                            )}
+                          </span>
+                        </td>
+                        <td>
+                          {onAbrirVale ? (
+                            <button
+                              type="button"
+                              className="ficha-enlace"
+                              onClick={() => onAbrirVale(r.id_incident)}
+                            >
+                              #{r.voucher_folio || r.id_incident}
+                            </button>
+                          ) : (
+                            <span className="mono">#{r.voucher_folio || r.id_incident}</span>
+                          )}
+                        </td>
+                        <td>
+                          {r.returned ? (
+                            <span className="ficha-marca devuelto">
+                              <Check size={12} />{t("history.returned", "devuelto")}
+                              {r.close_date && (
+                                <> · {new Date(r.close_date).toLocaleDateString("es-MX")}</>
+                              )}
+                            </span>
+                          ) : (
+                            <span className={`ficha-marca fuera ${r.overdue ? "vencida" : ""}`}>
+                              <AlertTriangle size={12} />
+                              {t("voucher.out", "fuera")}
+                              {r.overdue && <> · {t("history.overdue", "vencido")}</>}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                <Pagination
+                  page={actual}
+                  pages={paginas}
+                  total={items.length}
+                  perPage={POR_PAGINA}
+                  onChange={setPagina}
+                  etiquetaDeTotal={t("history.entries", "registros")}
+                />
+              </>
+            )
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+EmployeeVoucherHistory.propTypes = {
+  idUser: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+  nombre: PropTypes.string,
+  onCerrar: PropTypes.func.isRequired,
+  onAbrirVale: PropTypes.func,
+};
+
+EmployeeVoucherHistory.defaultProps = { nombre: "", onAbrirVale: null };

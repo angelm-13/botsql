@@ -744,13 +744,33 @@
       "last_update_date": "Last Update Date"
     },
     "entity_permission": {
-      "control_type": "Control Type",
+      "scope_create": "Create Scope",
+      "scope_read": "Read Scope",
+      "scope_update": "Update Scope",
+      "scope_delete": "Delete Scope",
       "created_by": "Created By",
       "creation_date": "Creation Date",
       "deletion_date": "Deletion Date",
       "entity_name": "Entity Name",
       "id_entity_permission": "Id Entity Permission",
       "id_permission": "Id Permission",
+      "last_update_date": "Last Update Date"
+    },
+    "team": {
+      "id_team": "Team Id",
+      "team_description": "Team Description",
+      "created_by": "Created By",
+      "creation_date": "Creation Date",
+      "deletion_date": "Deletion Date",
+      "last_update_date": "Last Update Date"
+    },
+    "nm_team_user": {
+      "id_nm_team_user": "Team Member Id",
+      "id_team": "Team Id",
+      "id_user": "User Id",
+      "created_by": "Created By",
+      "creation_date": "Creation Date",
+      "deletion_date": "Deletion Date",
       "last_update_date": "Last Update Date"
     },
     "event_log": {
@@ -3665,7 +3685,8 @@
     "search_placeholder": "Search by text or key: pc repair, 8111...",
     "type_to_search": "Type at least two letters to search.",
     "no_results": "No matches. Try another word.",
-    "key_must_be_8_digits": "SAT product keys have 8 digits."
+    "key_must_be_8_digits": "SAT product keys have 8 digits.",
+    "searching": "Searching the SAT catalog..."
   },
   "inventory": {
     "eyebrow": "Warehouse",
@@ -4227,7 +4248,14 @@
     "filter_all": "All",
     "filter_draft": "To authorise",
     "filter_open": "Open",
-    "filter_closed": "Closed"
+    "filter_closed": "Closed",
+    "view_history": "View history",
+    "employee_history_eyebrow": "Loan history",
+    "no_requests": "Has never requested material from this warehouse.",
+    "times": "times",
+    "status": "Status",
+    "left_on": "Left",
+    "returned_on": "Back"
   },
   "product": {
     "classification": "Classification",

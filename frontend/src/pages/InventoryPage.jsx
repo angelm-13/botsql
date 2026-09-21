@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
 import {
-  Boxes, ChevronDown, ChevronRight, ClipboardList, RefreshCw, Search, Warehouse,
+  Boxes, ChevronDown, ChevronRight, ClipboardList, ImageOff, Package, RefreshCw,
+  Search, Tag, Warehouse,
 } from "lucide-react";
 import { useI18n } from "../i18n";
 import "../styles/inventory-warehouses.css";
 import PageHeader from "../components/PageHeader.jsx";
-import { getAllEntityPermission, getLocationTree, getWarehouseStock } from "../api";
+import VisorDeFoto from "../components/VisorDeFoto";
+import { getAllEntityPermission, getLocationTree, getWarehouseStock, urlDeArchivo } from "../api";
 
 const ENTITY_KEY = "product";
 const ACTION_READ = 2;
@@ -190,8 +192,13 @@ export default function InventoryPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [errorMeta, setErrorMeta] = useState(null);
+  // La foto que se esta mirando en grande, o null.
+  const [fotoAmpliada, setFotoAmpliada] = useState(null);
+  // Las fotos que fallaron al cargar: se recuerdan para no reintentar la
+  // misma URL rota en cada render y caer al marcador en su lugar.
+  const [fotosRotas, setFotosRotas] = useState(() => new Set());
 
-  const canRead = isSuperUser || hasBit(modulePermission?.control_type, ACTION_READ);
+  const canRead = isSuperUser || Number(modulePermission?.scope_read || 0) !== 0;
   const locations = useMemo(() => flattenTree(tree), [tree]);
   const warehouses = useMemo(() => locations.filter((node) => node.is_warehouse), [locations]);
 
@@ -199,7 +206,7 @@ export default function InventoryPage() {
   useEffect(() => {
     let alive = true;
     if (isSuperUser) {
-      setModulePermission({ control_type: 15 });
+      setModulePermission({ scope_create: 4, scope_read: 4, scope_update: 4, scope_delete: 4 });
       setPermissionReady(true);
       return () => { alive = false; };
     }
@@ -339,33 +346,72 @@ export default function InventoryPage() {
             {warehouseContent.items.length === 0 ? (
               <p className="muted">{t("inventory.warehouse_empty", "Sin existencia en este almacén.")}</p>
             ) : (
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>{t("inventory.product", "Producto")}</th>
-                      <th>{t("inventory.location", "Ubicación")}</th>
-                      <th>{t("inventory.quantity", "Cantidad")}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {warehouseContent.items.map((row) => (
-                      <tr key={`${row.id_product}-${row.id_location}`}>
-                        <td>{row.product_description || row.product_code || `#${row.id_product}`}</td>
-                        {/* Con la ruta: dentro de una nave grande, "Rack A-1" no
-                            dice en que pasillo esta. */}
-                        <td>{rutaDe(row.id_location) || row.location_description}</td>
-                        <td><strong>{row.quantity}</strong></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              /* Antes esto era una tabla de puro texto -codigo, descripcion,
+                 cantidad-: la misma cosa que ya se habia resuelto en
+                 Localizar, pero sin resolver aqui. Con foto se reconoce el
+                 material de un vistazo, sin tener que leer la descripcion
+                 entera para saber si "DESARMADOR PLANO" es el de cruz o el
+                 de plano. */
+              <ul className="inv-existencia">
+                {warehouseContent.items.map((row) => {
+                  const clave = `${row.id_product}-${row.id_location}`;
+                  const foto = fotosRotas.has(clave) ? "" : urlDeArchivo(row.path_imagen);
+                  const nombre = row.product_description || row.product_code || `#${row.id_product}`;
+                  return (
+                    <li key={clave} className="inv-existencia-item">
+                      <span className="inv-existencia-foto">
+                        {foto ? (
+                          <img
+                            src={foto}
+                            alt={nombre}
+                            className="foto-ampliable"
+                            loading="lazy"
+                            title={t("photo.click_to_zoom", "Clic para verla en grande")}
+                            onClick={() => setFotoAmpliada({
+                              src: foto, titulo: nombre, descripcion: row.product_code || "",
+                            })}
+                            onError={() => setFotosRotas((antes) => new Set(antes).add(clave))}
+                          />
+                        ) : (
+                          <ImageOff size={18} />
+                        )}
+                      </span>
+                      <span className="inv-existencia-datos">
+                        <strong>{nombre}</strong>
+                        <span className="muted mono">
+                          {row.product_code || `#${row.id_product}`}
+                          {row.tracking_mode === "serializado" && (
+                            <> · <Tag size={11} /> {t("voucher.serialized", "pieza por pieza")}</>
+                          )}
+                        </span>
+                        {/* Con la ruta: dentro de una nave grande, "Rack A-1"
+                            no dice en que pasillo esta. */}
+                        <span className="muted inv-existencia-ruta">
+                          {rutaDe(row.id_location) || row.location_description}
+                        </span>
+                      </span>
+                      <span className="inv-existencia-cantidad">
+                        {row.tracking_mode === "serializado"
+                          ? <Tag size={13} /> : <Package size={13} />}
+                        <strong>{row.quantity}</strong>
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
           </div>
         )}
       </section>
 
+      {fotoAmpliada && (
+        <VisorDeFoto
+          src={fotoAmpliada.src}
+          titulo={fotoAmpliada.titulo}
+          descripcion={fotoAmpliada.descripcion}
+          onCerrar={() => setFotoAmpliada(null)}
+        />
+      )}
     </main>
   );
 }

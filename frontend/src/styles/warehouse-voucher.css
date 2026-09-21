@@ -1,5 +1,9 @@
-/* Vales de almacen. Mismos colores que el resto del almacen: verde de la casa,
-   ambar para lo que hay que atender, rojo solo para lo vencido. */
+/* Vales de almacen. Verde de la casa para lo normal, ambar para lo que
+   todavia falta capturar, rojo para lo que sigue fuera del almacen -sin
+   importar si ya vencio o no: esa distincion sigue existiendo, en la palabra
+   "vencido" junto al rojo y en la seccion `.vale-vencidos`, pero no en un
+   tercer color. La idea es que se lea de un vistazo sin haber usado el
+   sistema antes. */
 
 .vale-acciones-cabecera { display: flex; gap: 10px; flex-wrap: wrap; }
 
@@ -109,16 +113,14 @@
   display: flex; flex-direction: column; gap: 7px; }
 .vale-renglones li {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-  padding: 10px 12px; background: #f8faf9; border-radius: 8px; font-size: 13.5px;
+  padding: 10px 12px; border-radius: 8px; font-size: 13.5px;
 }
-.vale-renglones li.devuelto { background: #f1f5f4; color: #5c6d68; }
 .vale-que { display: inline-flex; align-items: center; gap: 7px; }
 .vale-donde { display: inline-flex; align-items: center; gap: 5px; }
-.vale-devuelto {
-  margin-left: auto; display: inline-flex; align-items: center; gap: 5px;
-  color: #15803d; font-size: 12.5px;
+.vale-fechas { font-size: 12.5px; white-space: nowrap; }
+.vale-renglon-acciones {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 10px;
 }
-.vale-renglones li .button { margin-left: auto; }
 
 .vale-renglones-edicion li { align-items: flex-end; }
 .vale-mini { display: flex; flex-direction: column; gap: 4px; }
@@ -180,15 +182,50 @@
   .vale-vencidos li .button, .vale-renglones li .button { margin-left: 0; }
 }
 
-/* --- la salida y la entrada, en el mismo papel ---
+/* --- fuera / devuelto: la pregunta que importa a simple vista ---
 
-   Desde que la devolucion AGREGA un renglon en vez de reescribir el de salida,
-   un vale devuelto tiene el doble de renglones. Se distinguen por un filo de
-   color, no por una etiqueta de texto: la etiqueta obligaba a leer cada renglon
-   para saber cual era cual. */
+   La devolucion AGREGA un renglon de ENTRADA en vez de reescribir el de
+   SALIDA -asi queda el libro, a proposito, la historia no se corrige-, pero
+   pintar las dos filas por separado hacia parecer que el mismo producto se
+   habia llevado dos veces. `agruparRenglones` (en
+   `utils/renglonesDelVale.js`) las junta en una: aqui solo queda pintar la
+   pregunta que de verdad importa, en rojo o en verde y sin mas matices, para
+   que se entienda sin haber usado el sistema antes. Lo vencido no es un
+   tercer color -un color mas es un significado mas que aprender-, es la
+   palabra "vencido" junto al rojo; la alarma fuerte para eso sigue siendo la
+   seccion de arriba, `.vale-vencidos`. */
 
-.vale-renglones li.vale-salida { border-left: 3px solid #b45309; }
-.vale-renglones li.vale-entrada { border-left: 3px solid #15803d; }
+.vale-renglon-fuera { background: #fff5f5; }
+.vale-renglon-devuelto { background: #f1f5f4; color: #5c6d68; }
+
+.vale-marca {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 4px 10px; border-radius: 999px;
+  font-size: 12px; font-weight: 700; white-space: nowrap;
+}
+.vale-marca.fuera { background: #fee2e2; color: #991b1b; }
+.vale-marca.fuera.vencida { background: #fecaca; }
+.vale-marca.devuelto { background: #dcfce7; color: #14532d; }
+
+/* La misma pareja de colores, en miniatura, para leer la lista de vales sin
+   abrir cada uno. */
+.vale-marca-mini {
+  display: inline-block; padding: 1px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 700;
+}
+.vale-marca-mini.fuera { background: #fee2e2; color: #991b1b; }
+.vale-marca-mini.devuelto { background: #dcfce7; color: #14532d; }
+
+/* El enlace al historial del empleado, junto a su nombre en la cabecera del
+   vale. Es la misma idea que "Marcar devuelto": una accion secundaria que no
+   debe competir en peso visual con imprimir o autorizar. */
+.vale-ver-historial {
+  margin-left: 8px; padding: 2px 8px; border: 1px solid #d6e0dc;
+  border-radius: 999px; background: #fff; color: #1b7a60;
+  font-size: 11.5px; font-weight: 600; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 4px; vertical-align: middle;
+}
+.vale-ver-historial:hover { background: #f8faf9; border-color: #1b7a60; }
 
 /* La existencia del producto, que es la cifra con la que se firma. */
 .vale-existencia { font-variant-numeric: tabular-nums; }

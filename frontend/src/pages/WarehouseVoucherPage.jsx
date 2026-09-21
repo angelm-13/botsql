@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import VisorDeFoto from "../components/VisorDeFoto";
+import EmployeeVoucherHistory from "../components/EmployeeVoucherHistory.jsx";
 import {
-  AlertTriangle, ArrowLeft, ArrowRight, Check, ClipboardList, Package, Plus,
+  AlertTriangle, ArrowLeft, ArrowRight, Check, ClipboardList, History, Package, Plus,
   ImageOff, Printer, RefreshCw, Search, Tag, Trash2, X,
 } from "lucide-react";
 import {
@@ -22,6 +23,7 @@ import {
   inventoryTrace,
 } from "../api";
 import Pagination from "../components/Pagination.jsx";
+import { agruparRenglones } from "../utils/renglonesDelVale";
 import { useI18n } from "../i18n";
 import "../styles/warehouse-voucher.css";
 import PageHeader from "../components/PageHeader.jsx";
@@ -59,9 +61,11 @@ import PageHeader from "../components/PageHeader.jsx";
  * lista de «qué está fuera» contaba cosas que nunca salieron.
  *
  * Los renglones de ENTRADA existen, pero no los captura nadie: los escribe la
- * devolución, y por eso un vale devuelto tiene el doble de renglones.
+ * devolución, y por eso un vale devuelto tiene el doble de renglones a nivel
+ * de base de datos. En pantalla se agrupan de vuelta a uno por prestamo real
+ * -ver `agruparRenglones`, en `utils/renglonesDelVale.js`-, porque mostrar el
+ * doble ahi confundía mas de lo que aclaraba.
  */
-const SALIDA = "salida";
 
 // Los estados por los que se puede filtrar la lista. `borrador` va primero
 // despues de "todos" porque es el que pide accion: un prevale sin autorizar es
@@ -93,6 +97,9 @@ export default function WarehouseVoucherPage() {
   // La foto que se esta mirando en grande, o null. Vive aqui y no en
   // cada ficha para que solo pueda haber una abierta.
   const [fotoAmpliada, setFotoAmpliada] = useState(null);
+  // El empleado cuyo historial se esta mirando, o null. Vive aqui por el
+  // mismo motivo que la foto: una sola ficha abierta a la vez.
+  const [historialEmpleado, setHistorialEmpleado] = useState(null);
   // La lista: lo que se ve sin tener que saberse un numero de memoria.
   const [lista, setLista] = useState(null);
   const [pagina, setPagina] = useState(1);
@@ -444,11 +451,12 @@ export default function WarehouseVoucherPage() {
                       <span className={`vale-lista-estado ${v.incident_status}`}>
                         {t(`voucher.status_${v.incident_status}`, v.incident_status)}
                       </span>
-                      <span className="muted vale-lista-cuenta">
-                        {v.open_lines > 0
-                          ? `${v.open_lines} ${t("voucher.out", "fuera")}`
-                          : t("voucher.all_back", "todo devuelto")}
-                        {" · "}{v.total_lines} {t("voucher.lines", "renglones")}
+                      <span className="vale-lista-cuenta">
+                        <span className={`vale-marca-mini ${v.open_lines > 0 ? "fuera" : "devuelto"}`}>
+                          {v.open_lines > 0
+                            ? `${v.open_lines} ${t("voucher.out", "fuera")}`
+                            : t("voucher.all_back", "todo devuelto")}
+                        </span>
                       </span>
                       {v.incident_date && (
                         <span className="muted">
@@ -482,6 +490,7 @@ export default function WarehouseVoucherPage() {
             <Vale vale={consultado} onCerrar={cerrar} onAutorizar={autorizar}
                   onImprimir={imprimir} imprimiendo={imprimiendo}
                   onAmpliar={setFotoAmpliada}
+                  onVerHistorial={(idUser, nombre) => setHistorialEmpleado({ idUser, nombre })}
                   nombreDe={nombreDe} sitioDe={sitioDe} t={t} />
           </>
         )}
@@ -495,18 +504,42 @@ export default function WarehouseVoucherPage() {
           onCerrar={() => setFotoAmpliada(null)}
         />
       )}
+
+      {historialEmpleado && (
+        <EmployeeVoucherHistory
+          idUser={historialEmpleado.idUser}
+          nombre={historialEmpleado.nombre}
+          onCerrar={() => setHistorialEmpleado(null)}
+          // Cerrar la ficha y abrir ESE vale: quien esta viendo "que trae
+          // Fulano" casi siempre quiere terminar en uno de esos vales, no
+          // solo leerlo.
+          onAbrirVale={(id) => { setHistorialEmpleado(null); consultar(id); }}
+        />
+      )}
     </section>
   );
 }
 
 /** El vale con sus renglones, y el estado derivado bien visible. */
 function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
-               nombreDe, sitioDe, t }) {
+               onVerHistorial, nombreDe, sitioDe, t }) {
   const cabecera = vale.voucher || {};
   const estado = String(cabecera.incident_status || "");
   const cerrado = estado === "cerrado";
   // El borrador es el prevale: material pedido, todavia en el almacen.
   const borrador = estado === "borrador";
+
+  // Un prestamo real por renglon, no una fila de tabla: la devolucion agrega
+  // un renglon de ENTRADA en vez de reescribir el de SALIDA (asi queda el
+  // libro, a proposito), y sin agrupar aqui el mismo producto se veria dos
+  // veces -una vez devuelto, otra vez como una fila suelta de "entrada"-,
+  // que es exactamente el tipo de cosa que no se entiende sin conocer el
+  // sistema por dentro. `vale.open_lines`/`vale.total_lines` cuentan filas
+  // crudas por el mismo motivo y por eso NO se usan aqui abajo.
+  const renglonesAgrupados = agruparRenglones(vale.lines);
+  const totalReal = renglonesAgrupados.length;
+  const fueraReal = renglonesAgrupados.filter(
+    ({ salida }) => salida && !salida.close_date).length;
 
   return (
     <article className={`vale-tarjeta ${
@@ -530,6 +563,14 @@ function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
           </h3>
           <p className="muted">
             {t("voucher.holder", "Responsable")}: <strong>{nombreDe(cabecera.id_user)}</strong>
+            {cabecera.id_user && (
+              <button type="button" className="vale-ver-historial"
+                      onClick={() => onVerHistorial(
+                        cabecera.id_user, nombreDe(cabecera.id_user))}>
+                <History size={13} />
+                {t("voucher.view_history", "Ver historial")}
+              </button>
+            )}
             {cabecera.note && <> · {cabecera.note}</>}
           </p>
           {/* La obra a la que va este material -- el porque de todo el vale.
@@ -570,7 +611,7 @@ function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
           <em>
             {borrador
               ? t("voucher.nothing_left_yet", "nada ha salido todavía")
-              : `${vale.open_lines} ${t("voucher.of", "de")} ${vale.total_lines} ${
+              : `${fueraReal} ${t("voucher.of", "de")} ${totalReal} ${
                 t("voucher.open_lines", "sin devolver")}`}
           </em>
         </span>
@@ -593,14 +634,25 @@ function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
       )}
 
       <ul className="vale-renglones">
-        {(vale.lines || []).map((linea) => {
-          const abierto = !linea.close_date;
+        {renglonesAgrupados.map(({ salida, entrada }) => {
+          // `linea` trae los datos del producto/pieza, iguales en las dos
+          // filas cuando existen las dos. `abierto` exige la salida en
+          // concreto: una entrada huerfana (ver `agruparRenglones`) nace
+          // siempre cerrada, y no tiene boton de "marcar devuelto" porque no
+          // hay nada que cerrar en ella.
+          const linea = salida || entrada;
+          const abierto = Boolean(salida) && !salida.close_date;
+          const vencido = abierto && salida.due_date
+            && new Date(salida.due_date) < new Date();
+          // A donde volvio, solo cuando dice algo distinto de "al mismo
+          // sitio del que salio" -- si coincide, repetirlo es ruido.
+          const destino = entrada?.id_location_to;
+          const origen = salida?.id_location_from ?? linea.id_location_from;
+          const mostrarDestino = destino && String(destino) !== String(origen);
+
           return (
             <li key={linea.id_nm_incident_product}
-                className={[
-                  abierto ? "" : "devuelto",
-                  linea.direction === SALIDA ? "vale-salida" : "vale-entrada",
-                ].filter(Boolean).join(" ")}>
+                className={abierto ? "vale-renglon-fuera" : "vale-renglon-devuelto"}>
               {/* Que es lo que salio. Antes aqui solo iba "producto #6847":
                   un numero que no dice si lo que se llevaron fue un taladro o
                   un saco de cemento, y quien mira un vale para reclamar
@@ -614,12 +666,28 @@ function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
                   : `${linea.quantity} ${t("voucher.units", "unidades")}`}
               </span>
               <span className="vale-donde muted">
-                {sitioDe(linea.id_location_from)}
-                {linea.id_location_to && (
+                {sitioDe(origen)}
+                {mostrarDestino && (
                   <>
                     {" "}<ArrowRight size={12} />{" "}
-                    {sitioDe(linea.id_location_to)}
+                    {sitioDe(destino)}
                   </>
+                )}
+              </span>
+              {/* Las dos fechas del papel de siempre -salida y regreso-, las
+                  mismas dos columnas que trae el sistema anterior. Se pintan
+                  las dos siempre y no solo la de regreso cuando existe: la
+                  fecha de salida es la que responde "desde cuando" para lo
+                  que sigue fuera, y sin ella el renglon solo dice que algo
+                  falta, no desde cuando falta. */}
+              <span className="muted vale-fechas">
+                {t("voucher.left_on", "Salió")}{" "}
+                {linea.start_date
+                  ? new Date(linea.start_date).toLocaleDateString("es-MX")
+                  : "—"}
+                {!abierto && entrada?.close_date && (
+                  <> · {t("voucher.returned_on", "Volvió")}{" "}
+                    {new Date(entrada.close_date).toLocaleDateString("es-MX")}</>
                 )}
               </span>
               {/* La existencia del producto, que es la cifra con la que se
@@ -628,18 +696,36 @@ function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
               <span className="muted vale-existencia">
                 {t("voucher.on_hand", "quedan")} <strong>{linea.stock_on_hand}</strong>
               </span>
-              {abierto ? (
-                <button className="button button-quiet"
-                        onClick={() => onCerrar(linea.id_nm_incident_product)}>
-                  <Check size={14} />
-                  {t("voucher.close_line", "Marcar devuelto")}
-                </button>
-              ) : (
-                <span className="vale-devuelto">
-                  <Check size={13} />
-                  {new Date(linea.close_date).toLocaleDateString("es-MX")}
-                </span>
-              )}
+              {/* La pregunta que importa a simple vista, en rojo o en verde y
+                  nada mas: ¿ya volvio o no? Lo vencido sigue teniendo su
+                  propia alarma arriba de todo (la seccion de vencidos); aqui
+                  se distingue con la palabra, no con un tercer color -un
+                  tercer color es un tercer significado que aprender, y el
+                  objetivo es que se entienda sin explicacion. */}
+              <span className="vale-renglon-acciones">
+                {abierto ? (
+                  <>
+                    <span className={`vale-marca fuera ${vencido ? "vencida" : ""}`}>
+                      <AlertTriangle size={13} />
+                      {t("voucher.out", "fuera")}
+                      {vencido && <> · {t("history.overdue", "vencido")}</>}
+                    </span>
+                    <button className="button button-quiet"
+                            onClick={() => onCerrar(salida.id_nm_incident_product)}>
+                      <Check size={14} />
+                      {t("voucher.close_line", "Marcar devuelto")}
+                    </button>
+                  </>
+                ) : (
+                  // La fecha va en `vale-fechas`, junto a la de salida -no
+                  // aqui otra vez-: repetirla en las dos partes de la fila
+                  // es ruido, no refuerzo.
+                  <span className="vale-marca devuelto">
+                    <Check size={13} />
+                    {t("history.returned", "devuelto")}
+                  </span>
+                )}
+              </span>
             </li>
           );
         })}
@@ -665,6 +751,7 @@ Vale.propTypes = {
   onImprimir: PropTypes.func.isRequired,
   imprimiendo: PropTypes.bool,
   onAmpliar: PropTypes.func,
+  onVerHistorial: PropTypes.func.isRequired,
   nombreDe: PropTypes.func.isRequired,
   sitioDe: PropTypes.func.isRequired,
   t: PropTypes.func.isRequired,

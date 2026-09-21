@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
-import { ArrowDownLeft, ArrowUpRight, MapPin, User, X } from "lucide-react";
+import { AlertTriangle, ArrowDownLeft, ArrowUpRight, Check, MapPin, User, X } from "lucide-react";
 import {
   getInventoryMovements, getProductLoanHistory, getProductStock,
 } from "../api";
@@ -265,15 +265,21 @@ function Historial({ renglones, resumen, pagina, onPagina, t }) {
                 )}
                 {r.motivo && <span className="muted">{" · "}{r.motivo}</span>}
                 {/* El estado del prestamo solo cuando lo hay: un traspaso no
-                    esta "devuelto" ni "fuera", simplemente no aplica. */}
+                    esta "devuelto" ni "fuera", simplemente no aplica. Mismo
+                    rojo/verde que en Vales, para que sea la misma pregunta en
+                    las dos pantallas. */}
                 {r.devuelto === false && (
-                  <span className={r.vencido ? "ficha-vencido" : "ficha-fuera"}>
-                    {" · "}
-                    {r.vencido ? t("history.overdue", "vencido") : t("history.out", "fuera")}
+                  <span className={`ficha-marca fuera ${r.vencido ? "vencida" : ""}`}>
+                    <AlertTriangle size={11} />
+                    {t("history.out", "fuera")}
+                    {r.vencido && <> · {t("history.overdue", "vencido")}</>}
                   </span>
                 )}
                 {r.devuelto === true && (
-                  <span className="muted">{" · "}{t("history.returned", "devuelto")}</span>
+                  <span className="ficha-marca devuelto">
+                    <Check size={11} />
+                    {t("history.returned", "devuelto")}
+                  </span>
                 )}
               </td>
               <td>

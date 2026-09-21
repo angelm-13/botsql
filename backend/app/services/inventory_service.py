@@ -138,7 +138,7 @@ def has_capability(db, user_data, capability) -> bool:
         .first()
     )
     try:
-        return bool(record and int(record.control_type) & READ_BIT)
+        return bool(record and int(record.scope_read) != 0)
     except (TypeError, ValueError):
         return False
 
@@ -807,6 +807,12 @@ def warehouse_stock(location_id, user_data) -> dict:
                 "id_product": row.id_product,
                 "product_description": getattr(product, "descripcion", None),
                 "product_code": getattr(product, "product_code", None),
+                # La foto y el modo de rastreo: sin esto la pantalla de
+                # almacen es una tabla de texto -mismo reclamo que ya se
+                # resolvio en Localizar-, y aqui es donde mas se nota, porque
+                # es la lista mas larga del almacen.
+                "path_imagen": getattr(product, "path_imagen", None),
+                "tracking_mode": getattr(product, "tracking_mode", None),
                 **_warehouse_payload(db, location),
                 "quantity": int(row.quantity or 0),
             })
