@@ -83,6 +83,8 @@ from app.routes.level import bp_level
 from app.routes.field import bp_field
 from app.routes.permission import bp_permission
 from app.routes.nm_field_permission import bp_nm_field_permission
+from app.routes.team import bp_team
+from app.routes.nm_team_user import bp_nm_team_user
 from app.routes.event_log import bp_event_log
 from app.routes.task_type import bp_task_type
 from app.routes.template import bp_template
@@ -281,6 +283,10 @@ def _load_quotation_document_record(record_id: str) -> dict:
         data['date_expiration_label'] = _doc_date(data.get('date_expiration'))
         data['subtotal_label'] = _doc_money(data.get('subtotal'), currency)
         data['discount_label'] = _doc_money(data.get('descuento'), currency)
+        try:
+            data['net_subtotal_label'] = _doc_money(float(data.get('subtotal') or 0) - float(data.get('descuento') or 0), currency)
+        except (TypeError, ValueError):
+            data['net_subtotal_label'] = data['subtotal_label']
         data['tax_label'] = _doc_money(data.get('tax'), currency)
         data['isr_retention_label'] = _doc_money(data.get('isr_retention'), currency)
         data['iva_retention_label'] = _doc_money(data.get('iva_retention'), currency)
@@ -297,6 +303,14 @@ def _load_quotation_document_record(record_id: str) -> dict:
                         data[field_name] = value
             except (OSError, ValueError):
                 pass
+
+        from app.services.amount_in_words import importe_a_letras
+        data['amount_in_words'] = importe_a_letras(data.get('total'), currency)
+        if data.get('uuid'):
+            from app.services.cfdi_xml import cadena_original_tfd, qr_verification_url
+            from app.services.qr_code import png_data_uri
+            data['cadena_original'] = cadena_original_tfd(data)
+            data['qr_data_uri'] = png_data_uri(qr_verification_url(data, data.get('total')))
 
         issuer = _doc_first_by_id(db_session, CustomerSupplier, 'id_customer_supplier', data.get('id_issuer_customer_supplier'))
         receiver = _doc_first_by_id(db_session, CustomerSupplier, 'id_customer_supplier', data.get('id_customer_supplier'))
@@ -734,6 +748,8 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_level)
     app.register_blueprint(bp_field)
     app.register_blueprint(bp_permission)
+    app.register_blueprint(bp_team)
+    app.register_blueprint(bp_nm_team_user)
     app.register_blueprint(bp_nm_field_permission)
     app.register_blueprint(bp_event_log)
     app.register_blueprint(bp_task_type)

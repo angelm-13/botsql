@@ -12,26 +12,27 @@
     }
     * { box-sizing: border-box; }
     body { margin: 0; color: #233545; font: 8pt Arial, Helvetica, sans-serif; line-height: 1.35; }
-    .header { display: table; width: 100%; padding-bottom: 9px; border-bottom: 3px solid #1f4e79; }
-    .brand, .document-title, .folio-box { display: table-cell; vertical-align: middle; }
-    .brand { width: 34%; }
-    .brand img { max-width: 145px; max-height: 52px; }
-    .brand-name { color: #1f4e79; font-size: 17pt; font-weight: 700; }
-    .document-title { width: 32%; color: #1f4e79; font-size: 19pt; font-weight: 700; text-align: center; }
-    .folio-box { width: 34%; text-align: right; }
-    .folio { color: #1f4e79; font-size: 13pt; font-weight: 700; }
-    .badge { display: inline-block; margin-top: 4px; padding: 3px 8px; background: #1f4e79; color: white; font-size: 7pt; font-weight: 700; text-transform: uppercase; }
+    .header { display: table; width: 100%; table-layout: fixed; }
+    .issuer-cell, .folio-cell { display: table-cell; vertical-align: top; }
+    .issuer-cell { width: 62%; padding-right: 14px; }
+    .issuer-cell img { max-width: 150px; max-height: 50px; margin-bottom: 4px; }
+    .brand-name { color: #1f4e79; font-size: 15pt; font-weight: 700; }
+    .issuer-cell div { margin-top: 1px; }
+    .folio-cell { width: 38%; }
+    .box { border: 1px solid #1f4e79; }
+    .box-title { padding: 4px 8px; background: #1f4e79; color: white; font-size: 8.5pt; font-weight: 700; text-align: center; text-transform: uppercase; }
+    .box-rows { display: table; width: 100%; }
+    .box-row { display: table-row; }
+    .box-row .k, .box-row .v { display: table-cell; padding: 3px 8px; border-bottom: 1px solid #d7e0e6; font-size: 7.5pt; }
+    .box-row:last-child .k, .box-row:last-child .v { border-bottom: 0; }
+    .box-row .k { color: #647789; font-weight: 700; width: 42%; }
+    .divider { margin-top: 9px; height: 4px; background: #1f4e79; }
     .section-title { margin: 9px 0 0; padding: 5px 8px; background: #1f4e79; color: white; font-size: 7.5pt; font-weight: 700; letter-spacing: .45px; text-transform: uppercase; }
-    .fiscal-grid, .parties { display: table; width: 100%; table-layout: fixed; border: 1px solid #b9c8d4; }
-    .fiscal-cell { display: table-cell; width: 25%; padding: 5px 7px; border-right: 1px solid #d7e0e6; vertical-align: top; }
-    .fiscal-cell:last-child { border-right: 0; }
-    .party { display: table-cell; width: 50%; padding: 8px 10px; vertical-align: top; }
-    .party + .party { border-left: 1px solid #b9c8d4; }
+    .receptor { border: 1px solid #b9c8d4; border-top: 0; padding: 7px 9px; }
     .label { color: #647789; font-size: 6.5pt; font-weight: 700; text-transform: uppercase; }
-    .value { display: block; margin-top: 1px; font-weight: 700; }
-    .party-name { margin: 2px 0 4px; color: #1f4e79; font-size: 9.5pt; font-weight: 700; }
-    .items { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    .items th { padding: 5px 3px; background: #e8eff5; border: 1px solid #aebfcd; color: #1f4e79; font-size: 6.2pt; text-transform: uppercase; }
+    .party-name { margin: 0 0 3px; color: #1f4e79; font-size: 9.5pt; font-weight: 700; }
+    .items { width: 100%; border-collapse: collapse; table-layout: fixed; margin-top: 9px; }
+    .items th { padding: 5px 3px; background: #1f4e79; border: 1px solid #1f4e79; color: white; font-size: 6.2pt; text-transform: uppercase; }
     .items td { padding: 5px 3px; border: 1px solid #ccd7df; vertical-align: top; }
     .items tbody tr:nth-child(even) { background: #f7f9fb; }
     .description { font-weight: 700; }
@@ -39,111 +40,121 @@
     .number { text-align: right; white-space: nowrap; }
     .center { text-align: center; }
     .payment-summary { display: table; width: 100%; margin-top: 9px; page-break-inside: avoid; }
-    .payment, .totals { display: table-cell; vertical-align: top; }
+    .payment, .totals-box { display: table-cell; vertical-align: top; }
     .payment { width: 58%; padding-right: 16px; }
-    .payment-table { width: 100%; border-collapse: collapse; }
-    .payment-table td { padding: 4px 6px; border: 1px solid #d4dee5; }
-    .payment-table td:first-child { width: 42%; color: #647789; font-size: 6.5pt; font-weight: 700; text-transform: uppercase; }
-    .totals { width: 42%; border-collapse: collapse; }
-    .totals td { padding: 4px 7px; border-bottom: 1px solid #d8e1e7; }
-    .totals td:last-child { text-align: right; font-weight: 700; white-space: nowrap; }
-    .totals .grand td { padding: 7px; background: #1f4e79; color: white; border: 0; font-size: 10.5pt; }
-    .stamp { border: 1px solid #b9c8d4; padding: 8px; page-break-inside: avoid; }
+    .totals-box { width: 42%; }
+    .totals-box .box-row .v { text-align: right; font-weight: 700; }
+    .totals-box .grand .k, .totals-box .grand .v { background: #1f4e79; color: white; font-size: 10.5pt; padding: 7px 8px; border-bottom: 0; }
+    .amount-words { padding: 6px 8px; border: 1px solid #b9c8d4; margin-bottom: 6px; }
+    .stamp { border: 1px solid #b9c8d4; padding: 8px; margin-top: 9px; page-break-inside: avoid; }
     .stamp-grid { display: table; width: 100%; table-layout: fixed; }
-    .stamp-cell { display: table-cell; width: 50%; padding-right: 12px; vertical-align: top; }
-    .uuid { color: #1f4e79; font-size: 10pt; font-weight: 700; letter-spacing: .2px; }
-    .seal-title { margin-top: 7px; color: #647789; font-size: 6.5pt; font-weight: 700; text-transform: uppercase; }
-    .seal { margin-top: 2px; color: #405467; font: 5.8pt "Courier New", monospace; overflow-wrap: anywhere; word-break: break-all; }
+    .qr-cell { display: table-cell; width: 25%; vertical-align: top; }
+    .qr-cell img { width: 78px; height: 78px; }
+    .cert-cell { display: table-cell; width: 75%; vertical-align: top; padding-left: 10px; }
+    .uuid { color: #1f4e79; font-size: 9.5pt; font-weight: 700; letter-spacing: .2px; word-break: break-all; }
+    .seal-title { margin-top: 6px; color: #647789; font-size: 6.5pt; font-weight: 700; text-transform: uppercase; }
+    .seal { margin-top: 2px; color: #405467; font: 5.6pt "Courier New", monospace; overflow-wrap: anywhere; word-break: break-all; }
     .notice { margin-top: 10px; padding-top: 6px; border-top: 1px solid #d5dfe6; color: #647789; font-size: 6.5pt; text-align: center; }
   </style>
 </head>
 <body>
   <header class="header">
-    <div class="brand">{% if record.company_logo_uri %}<img src="{{ record.company_logo_uri }}" alt="Logo">{% else %}<div class="brand-name">TYAKXA</div>{% endif %}</div>
-    <div class="document-title">FACTURA</div>
-    <div class="folio-box"><div class="folio">{{ record.folio }}</div><div>{{ record.date_emision_label }}</div><span class="badge">{{ record.status_label }}</span></div>
+    <div class="issuer-cell">
+      {% if record.issuer.logo_uri %}<img src="{{ record.issuer.logo_uri }}" alt="Logo">{% else %}<div class="brand-name">{{ record.nombre_emisor or record.issuer.name or 'TYAKXA' }}</div>{% endif %}
+      <div>RFC: {{ record.rfc_emisor or record.issuer.tax_id or 'No especificado' }}</div>
+      {% if record.regimen_fiscal_emisor or record.issuer.fiscal_type %}<div>Régimen fiscal: {{ record.regimen_fiscal_emisor or record.issuer.fiscal_type }}</div>{% endif %}
+      {% if record.issuer.address_line and record.issuer.address_line != '—' %}<div>{{ record.issuer.address_line }}</div>{% endif %}
+      {% if record.issuer.phone != '—' or record.issuer.email != '—' %}<div>{% if record.issuer.phone != '—' %}Tel: {{ record.issuer.phone }}{% endif %}{% if record.issuer.phone != '—' and record.issuer.email != '—' %} · {% endif %}{% if record.issuer.email != '—' %}Email: {{ record.issuer.email }}{% endif %}</div>{% endif %}
+    </div>
+    <div class="folio-cell">
+      <div class="box">
+        <div class="box-title">Factura</div>
+        <div class="box-rows">
+          <div class="box-row"><div class="k">Fecha</div><div class="v">{{ record.fecha or record.date_emision_label }}</div></div>
+          {% if record.serie %}<div class="box-row"><div class="k">Serie</div><div class="v">{{ record.serie }}</div></div>{% endif %}
+          <div class="box-row"><div class="k">Folio</div><div class="v">{{ record.folio }}</div></div>
+          <div class="box-row"><div class="k">Comprobante</div><div class="v">{{ record.tipo_de_comprobante or 'I Ingreso' }}</div></div>
+          <div class="box-row"><div class="k">Lugar expedición</div><div class="v">{{ record.lugar_expedicion or record.issuer.postal_code or 'No especificado' }}</div></div>
+        </div>
+      </div>
+    </div>
   </header>
+  <div class="divider"></div>
 
-  <div class="section-title">Datos fiscales del comprobante</div>
-  <div class="fiscal-grid">
-    <div class="fiscal-cell"><span class="label">Version CFDI</span><span class="value">{{ record.version or '4.0' }}</span></div>
-    <div class="fiscal-cell"><span class="label">Tipo</span><span class="value">{{ record.tipo_de_comprobante or 'I - Ingreso' }}</span></div>
-    <div class="fiscal-cell"><span class="label">Lugar expedicion</span><span class="value">{{ record.lugar_expedicion or 'No especificado' }}</span></div>
-    <div class="fiscal-cell"><span class="label">Moneda / cambio</span><span class="value">{{ record.currency or 'MXN' }}{% if record.type_exchange_rate %} / {{ record.type_exchange_rate }}{% endif %}</span></div>
-  </div>
+  <div class="section-title">Receptor</div>
+  <section class="receptor">
+    <div class="party-name">{{ record.nombre_receptor or record.receiver.name or 'Cliente' }}</div>
+    <div>RFC: {{ record.rfc_receptor or record.receiver.tax_id or 'No especificado' }} · CP fiscal: {{ record.domicilio_fiscal_receptor or record.receiver.postal_code or 'No especificado' }}</div>
+    <div>Uso CFDI: {{ record.uso_cfdi or 'No especificado' }} · Régimen fiscal: {{ record.regimen_fiscal_receptor or record.receiver.fiscal_type or 'No especificado' }}</div>
+  </section>
 
-  <div class="section-title">Emisor y receptor</div>
-  <div class="parties">
-    <section class="party">
-      <span class="label">Emisor</span><div class="party-name">{{ record.nombre_emisor or record.issuer.name or record.company_name or 'TYAKXA' }}</div>
-      <div><span class="label">RFC</span> {{ record.rfc_emisor or record.issuer.rfc or 'No especificado' }}</div>
-      {% if record.issuer.tax_regime %}<div><span class="label">Regimen fiscal</span> {{ record.issuer.tax_regime }}</div>{% endif %}
-      {% if record.issuer.address %}<div>{{ record.issuer.address }}</div>{% endif %}
-    </section>
-    <section class="party">
-      <span class="label">Receptor</span><div class="party-name">{{ record.nombre_receptor or record.receiver.name or 'Cliente' }}</div>
-      <div><span class="label">RFC</span> {{ record.rfc_receptor or record.receiver.rfc or 'No especificado' }}</div>
-      {% if record.regimen_fiscal_receptor %}<div><span class="label">Regimen fiscal</span> {{ record.regimen_fiscal_receptor }}</div>{% endif %}
-      {% if record.domicilio_fiscal_receptor %}<div><span class="label">CP fiscal</span> {{ record.domicilio_fiscal_receptor }}</div>{% endif %}
-      {% if record.receiver.address %}<div>{{ record.receiver.address }}</div>{% endif %}
-    </section>
-  </div>
-
-  <div class="section-title">Conceptos</div>
   <table class="items">
     <thead><tr>
-      <th style="width:5%">#</th><th style="width:10%">Clave SAT</th><th style="width:34%">Descripcion</th><th style="width:8%">Cant.</th>
-      <th style="width:7%">Unidad</th><th style="width:12%">P. unitario</th><th style="width:10%">IVA</th><th style="width:14%">Importe</th>
+      <th style="width:11%">Clave SAT</th><th style="width:34%">Descripción</th><th style="width:11%">Unidad</th><th style="width:8%">Cant.</th>
+      <th style="width:13%">P. Unitario</th><th style="width:11%">Descuento</th><th style="width:12%">Importe</th>
     </tr></thead>
     <tbody>
       {% for item in record.line_items %}
       <tr>
-        <td class="center">{{ loop.index }}</td><td class="center">{{ item.sat_product_key or '01010101' }}</td>
+        <td class="center">{{ item.sat_product_key or '01010101' }}</td>
         <td><div class="description">{{ item.description or item.name or 'Concepto' }}</div>{% if item.tax_object %}<div class="muted">Objeto imp.: {{ item.tax_object }}</div>{% endif %}</td>
-        <td class="number">{{ item.quantity }}</td><td class="center">{{ item.sat_unit_key or '-' }}</td>
-        <td class="number">{{ item.unit_price_label or item.gross_price_label }}</td><td class="number">{{ item.line_tax_label }}</td><td class="number"><strong>{{ item.line_total_label }}</strong></td>
+        <td class="center">{{ item.sat_unit_key or '-' }}</td>
+        <td class="number">{{ item.quantity }}</td>
+        <td class="number">{{ item.unit_price_label or item.gross_price_label }}</td>
+        <td class="number">{{ item.discount_label or '$0.00' }}</td>
+        <td class="number"><strong>{{ item.line_subtotal_label }}</strong></td>
       </tr>
-      {% else %}<tr><td colspan="8" class="center">Sin conceptos registrados</td></tr>{% endfor %}
+      {% else %}<tr><td colspan="7" class="center">Sin conceptos registrados</td></tr>{% endfor %}
     </tbody>
   </table>
 
   <div class="payment-summary">
     <div class="payment">
-      <table class="payment-table">
-        <tr><td>Forma de pago</td><td>{{ record.payment_method or 'No especificada' }}</td></tr>
-        <tr><td>Metodo de pago</td><td>{{ record.metodo_pago or 'No especificado' }}</td></tr>
-        <tr><td>Condiciones</td><td>{{ record.condiciones_pago or record.payment_conditions or 'No especificadas' }}</td></tr>
-        {% if record.exportacion %}<tr><td>Exportacion</td><td>{{ record.exportacion }}</td></tr>{% endif %}
-      </table>
+      <div class="amount-words"><span class="label">Cantidad con letra</span><br>{{ record.amount_in_words }}</div>
+      <div class="box-rows">
+        <div class="box-row"><div class="k">Moneda</div><div class="v">{{ record.currency or 'MXN' }}</div></div>
+        {% if record.type_exchange_rate %}<div class="box-row"><div class="k">Tipo de cambio</div><div class="v">{{ record.type_exchange_rate }}</div></div>{% endif %}
+        <div class="box-row"><div class="k">Método de pago</div><div class="v">{{ record.metodo_pago or 'No especificado' }}</div></div>
+        <div class="box-row"><div class="k">Forma de pago</div><div class="v">{{ record.payment_method or 'No especificada' }}</div></div>
+        <div class="box-row"><div class="k">Condiciones de pago</div><div class="v">{{ record.condiciones_pago or 'No especificadas' }}</div></div>
+        <div class="box-row"><div class="k">Notas u observaciones</div><div class="v">{{ record.note or '—' }}</div></div>
+      </div>
     </div>
-    <table class="totals">
-      <tr><td>Subtotal</td><td>{{ record.subtotal_label }}</td></tr>
-      {% if record.descuento and record.descuento|float > 0 %}<tr><td>Descuento</td><td>- {{ record.discount_label }}</td></tr>{% endif %}
-      <tr><td>Impuestos trasladados</td><td>{{ record.tax_label }}</td></tr>
-      {% if record.isr_retention and record.isr_retention|float > 0 %}<tr><td>Retencion ISR</td><td>- {{ record.isr_retention_label }}</td></tr>{% endif %}
-      {% if record.iva_retention and record.iva_retention|float > 0 %}<tr><td>Retencion IVA</td><td>- {{ record.iva_retention_label }}</td></tr>{% endif %}
-      <tr class="grand"><td>Total {{ record.currency or 'MXN' }}</td><td>{{ record.total_label }}</td></tr>
-    </table>
+    <div class="totals-box box">
+      <div class="box-title">Totales</div>
+      <div class="box-rows">
+        <div class="box-row"><div class="k">Parcial</div><div class="v">{{ record.subtotal_label }}</div></div>
+        <div class="box-row"><div class="k">Descuento</div><div class="v">{{ record.discount_label }}</div></div>
+        <div class="box-row"><div class="k">Subtotal</div><div class="v">{{ record.net_subtotal_label or record.subtotal_label }}</div></div>
+        <div class="box-row"><div class="k">Traslado IVA</div><div class="v">{{ record.tax_label }}</div></div>
+        {% if record.isr_retention and record.isr_retention|float > 0 %}<div class="box-row"><div class="k">Ret. ISR</div><div class="v">-{{ record.isr_retention_label }}</div></div>{% endif %}
+        {% if record.iva_retention and record.iva_retention|float > 0 %}<div class="box-row"><div class="k">Ret. IVA</div><div class="v">-{{ record.iva_retention_label }}</div></div>{% endif %}
+        <div class="box-row grand"><div class="k">Total</div><div class="v">{{ record.total_label }} {{ record.currency or 'MXN' }}</div></div>
+      </div>
+    </div>
   </div>
 
-  <div class="section-title">Certificacion fiscal</div>
+  <div class="section-title">Datos de certificación</div>
   <section class="stamp">
     {% if record.uuid or record.folio_fiscal %}
     <div class="stamp-grid">
-      <div class="stamp-cell"><span class="label">Folio fiscal UUID</span><div class="uuid">{{ record.uuid or record.folio_fiscal }}</div></div>
-      <div class="stamp-cell"><span class="label">Fecha de certificacion</span><span class="value">{{ record.certification_date or 'No disponible' }}</span><br><span class="label">PAC</span><span class="value">{{ record.rfc_proveedor_certificacion or 'No disponible' }}</span></div>
+      <div class="qr-cell">{% if record.qr_data_uri %}<img src="{{ record.qr_data_uri }}" alt="QR de verificacion SAT">{% endif %}</div>
+      <div class="cert-cell">
+        <span class="label">Folio fiscal (UUID)</span><div class="uuid">{{ record.uuid or record.folio_fiscal }}</div>
+        <div><span class="label">Fecha de timbrado:</span> {{ record.certification_date or 'No disponible' }}</div>
+        <div><span class="label">No. certificado emisor:</span> {{ record.no_certificado or 'No disponible' }}</div>
+        <div><span class="label">No. certificado SAT:</span> {{ record.no_certificado_sat or 'No disponible' }}</div>
+        <div><span class="label">RFC proveedor de certificación:</span> {{ record.rfc_proveedor_certificacion or 'No disponible' }}</div>
+      </div>
     </div>
-    <div class="stamp-grid" style="margin-top:7px">
-      <div class="stamp-cell"><span class="label">Certificado emisor</span><span class="value">{{ record.no_certificado or 'No disponible' }}</span></div>
-      <div class="stamp-cell"><span class="label">Certificado SAT</span><span class="value">{{ record.no_certificado_sat or 'No disponible' }}</span></div>
-    </div>
-    {% if record.sello_cfdi %}<div class="seal-title">Sello digital del CFDI</div><div class="seal">{{ record.sello_cfdi }}</div>{% endif %}
-    {% if record.sello_sat %}<div class="seal-title">Sello digital del SAT</div><div class="seal">{{ record.sello_sat }}</div>{% endif %}
+    {% if record.sello_cfdi %}<div class="seal-title">Sello digital del CFDI (emisor)</div><div class="seal">{{ record.sello_cfdi }}</div>{% endif %}
+    {% if record.sello_sat %}<div class="seal-title">Sello del SAT</div><div class="seal">{{ record.sello_sat }}</div>{% endif %}
+    {% if record.cadena_original %}<div class="seal-title">Cadena original del complemento de certificación digital del SAT</div><div class="seal">{{ record.cadena_original }}</div>{% endif %}
     {% else %}
     <div class="uuid">Comprobante pendiente de timbrado</div>
     <div class="muted">Los datos de certificacion se mostraran cuando el PAC emita el CFDI.</div>
     {% endif %}
   </section>
-  <div class="notice">Este documento es una representacion impresa de un CFDI. La informacion fiscal procede del XML timbrado disponible.</div>
+  <div class="notice">Este documento es una representación gráfica de un CFDI. Versión CFDI 4.0</div>
 </body>
 </html>
