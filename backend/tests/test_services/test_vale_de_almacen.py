@@ -1409,8 +1409,9 @@ class TestElHistorialDeUnaPersonaEnPdf(BaseVale):
         self.assertEqual(pantalla["total"], ficha["total"])
         self.assertEqual(pantalla["still_out"], ficha["still_out"])
         self.assertEqual(pantalla["overdue"], ficha["overdue"])
-        self.assertEqual(1, len(ficha["renglones"]))
-        renglon = ficha["renglones"][0]
+        self.assertEqual(1, len(ficha["grupos"]))
+        self.assertEqual("Obra Norte", ficha["grupos"][0]["titulo"])
+        renglon = ficha["grupos"][0]["renglones"][0]
         self.assertEqual("Cemento gris 50kg", renglon["descripcion"])
         self.assertEqual("CEM-50", renglon["codigo"])
         self.assertFalse(renglon["devuelto"])
@@ -1422,8 +1423,34 @@ class TestElHistorialDeUnaPersonaEnPdf(BaseVale):
 
         ficha = documento_del_historial_de_persona(ACTOR, 1)
 
-        self.assertTrue(ficha["renglones"][0]["devuelto"])
-        self.assertIsNotNone(ficha["renglones"][0]["cierre"])
+        renglon = ficha["grupos"][0]["renglones"][0]
+        self.assertTrue(renglon["devuelto"])
+        self.assertIsNotNone(renglon["cierre"])
+
+    def test_grouped_by_project_like_the_screen_does(self):
+        """Dos vales con nota distinta caen en dos grupos, en el orden en
+        que aparece cada uno por primera vez -- `lo_que_ha_pedido` ya
+        ordena por fecha descendente, asi que el vale mas reciente (Obra
+        Norte, creado segundo) encabeza."""
+        self._vale([self._linea_cantidad(10)], note="Obra Sur")
+        self._vale([self._linea_cantidad(5)], note="Obra Norte")
+
+        ficha = documento_del_historial_de_persona(ACTOR, 1)
+
+        self.assertEqual(2, len(ficha["grupos"]))
+        self.assertEqual(["Obra Norte", "Obra Sur"],
+                         [g["titulo"] for g in ficha["grupos"]])
+
+    def test_a_blank_note_falls_into_sin_proyecto(self):
+        """`crear_vale` exige nota -- un blanco solo llega por datos
+        migrados, escritos directo en la base y no via el servicio."""
+        vale = self._vale([self._linea_cantidad(10)])
+        with transaction_context() as db:
+            db.get(Incident, vale["voucher"]["id_incident"]).note = "   "
+
+        ficha = documento_del_historial_de_persona(ACTOR, 1)
+
+        self.assertEqual("(sin proyecto)", ficha["grupos"][0]["titulo"])
 
     def test_downloading_it_renders_the_history_template(self):
         self._vale([self._linea_cantidad(10)])

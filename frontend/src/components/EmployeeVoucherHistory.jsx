@@ -1,12 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
 import { AlertTriangle, Check, Download, Package, Tag, X } from "lucide-react";
 import { downloadVoucherRequestsPdf, getVoucherRequests } from "../api";
-import Pagination from "./Pagination.jsx";
 import { useI18n } from "../i18n";
 import "../styles/product-history.css";
-
-const POR_PAGINA = 20;
 
 /**
  * La ficha de un empleado: que se ha llevado del almacen, y que le falta
@@ -20,11 +17,16 @@ const POR_PAGINA = 20;
  * Usa `GET /vouchers/requests`, que ya existia como servicio
  * (`lo_que_ha_pedido`) desde la carga del sistema anterior pero que ningun
  * boton llamaba: el dato estaba en la base sin forma de verlo en pantalla.
+ *
+ * Agrupado por proyecto (la nota del vale), no una tabla plana paginada: es
+ * el mismo criterio que ya usa `reporte_por_almacen` para "vales agrupados
+ * por proyecto/sitio", y es como lo mostraba el sistema anterior -- un
+ * empleado con 270 renglones se lee por obra, no como una lista suelta de
+ * 14 paginas sin mas orden que la fecha.
  */
 export default function EmployeeVoucherHistory({ idUser, nombre, onCerrar, onAbrirVale }) {
   const { t } = useI18n();
   const [datos, setDatos] = useState(null);
-  const [pagina, setPagina] = useState(1);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
   const [descargando, setDescargando] = useState(false);
@@ -75,9 +77,26 @@ export default function EmployeeVoucherHistory({ idUser, nombre, onCerrar, onAbr
   }, [onCerrar]);
 
   const items = datos?.items || [];
-  const paginas = Math.max(1, Math.ceil(items.length / POR_PAGINA));
-  const actual = Math.min(pagina, paginas);
-  const visibles = items.slice((actual - 1) * POR_PAGINA, actual * POR_PAGINA);
+
+  // En el orden en que aparece cada proyecto por primera vez -no alfabetico-,
+  // que es el mismo orden cronologico en que ya vienen los renglones
+  // (`start_date` descendente): el proyecto mas reciente encabeza, igual que
+  // en el sistema anterior.
+  const sinProyecto = t("voucher.no_project", "(sin proyecto)");
+  const grupos = useMemo(() => {
+    const porTitulo = new Map();
+    const orden = [];
+    for (const r of items) {
+      const titulo = (r.voucher_note || "").trim() || sinProyecto;
+      if (!porTitulo.has(titulo)) {
+        porTitulo.set(titulo, []);
+        orden.push(titulo);
+      }
+      porTitulo.get(titulo).push(r);
+    }
+    return orden.map((titulo) => ({ titulo, renglones: porTitulo.get(titulo) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items]);
 
   return (
     <div
@@ -153,76 +172,74 @@ export default function EmployeeVoucherHistory({ idUser, nombre, onCerrar, onAbr
                   )}
                 </p>
 
-                <table className="ficha-tabla">
-                  <thead>
-                    <tr>
-                      <th>{t("history.when", "Cuándo")}</th>
-                      <th>{t("voucher.what", "Qué se lleva")}</th>
-                      <th>{t("voucher.voucher_n", "Vale")}</th>
-                      <th>{t("voucher.status", "Estado")}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visibles.map((r) => (
-                      <tr key={r.id_nm_incident_product}>
-                        <td className="muted">
-                          {r.start_date
-                            ? new Date(r.start_date).toLocaleDateString("es-MX")
-                            : "—"}
-                        </td>
-                        <td>
-                          <strong>{r.product_description || `#${r.id_product}`}</strong>
-                          <span className="muted mono">
-                            {" "}{r.product_code || ""}
-                            {r.id_inventory_asset ? (
-                              <> · <Tag size={11} /> {t("voucher.piece", "pieza")} #{r.id_inventory_asset}</>
-                            ) : (
-                              <> · <Package size={11} /> {r.quantity} {t("voucher.units", "unidades")}</>
-                            )}
-                          </span>
-                        </td>
-                        <td>
-                          {onAbrirVale ? (
-                            <button
-                              type="button"
-                              className="ficha-enlace"
-                              onClick={() => onAbrirVale(r.id_incident)}
-                            >
-                              #{r.voucher_folio || r.id_incident}
-                            </button>
-                          ) : (
-                            <span className="mono">#{r.voucher_folio || r.id_incident}</span>
-                          )}
-                        </td>
-                        <td>
-                          {r.returned ? (
-                            <span className="ficha-marca devuelto">
-                              <Check size={12} />{t("history.returned", "devuelto")}
-                              {r.close_date && (
-                                <> · {new Date(r.close_date).toLocaleDateString("es-MX")}</>
+                {grupos.map((grupo, indice) => (
+                  <section key={grupo.titulo} className="ficha-grupo">
+                    <h3 className="ficha-grupo-titulo">
+                      {indice + 1}. {grupo.titulo}
+                    </h3>
+                    <table className="ficha-tabla">
+                      <thead>
+                        <tr>
+                          <th>{t("history.when", "Cuándo")}</th>
+                          <th>{t("voucher.what", "Qué se lleva")}</th>
+                          <th>{t("voucher.voucher_n", "Vale")}</th>
+                          <th>{t("voucher.status", "Estado")}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {grupo.renglones.map((r) => (
+                          <tr key={r.id_nm_incident_product}>
+                            <td className="muted">
+                              {r.start_date
+                                ? new Date(r.start_date).toLocaleDateString("es-MX")
+                                : "—"}
+                            </td>
+                            <td>
+                              <strong>{r.product_description || `#${r.id_product}`}</strong>
+                              <span className="muted mono">
+                                {" "}{r.product_code || ""}
+                                {r.id_inventory_asset ? (
+                                  <> · <Tag size={11} /> {t("voucher.piece", "pieza")} #{r.id_inventory_asset}</>
+                                ) : (
+                                  <> · <Package size={11} /> {r.quantity} {t("voucher.units", "unidades")}</>
+                                )}
+                              </span>
+                            </td>
+                            <td>
+                              {onAbrirVale ? (
+                                <button
+                                  type="button"
+                                  className="ficha-enlace"
+                                  onClick={() => onAbrirVale(r.id_incident)}
+                                >
+                                  #{r.voucher_folio || r.id_incident}
+                                </button>
+                              ) : (
+                                <span className="mono">#{r.voucher_folio || r.id_incident}</span>
                               )}
-                            </span>
-                          ) : (
-                            <span className={`ficha-marca fuera ${r.overdue ? "vencida" : ""}`}>
-                              <AlertTriangle size={12} />
-                              {t("voucher.out", "fuera")}
-                              {r.overdue && <> · {t("history.overdue", "vencido")}</>}
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-
-                <Pagination
-                  page={actual}
-                  pages={paginas}
-                  total={items.length}
-                  perPage={POR_PAGINA}
-                  onChange={setPagina}
-                  etiquetaDeTotal={t("history.entries", "registros")}
-                />
+                            </td>
+                            <td>
+                              {r.returned ? (
+                                <span className="ficha-marca devuelto">
+                                  <Check size={12} />{t("history.returned", "devuelto")}
+                                  {r.close_date && (
+                                    <> · {new Date(r.close_date).toLocaleDateString("es-MX")}</>
+                                  )}
+                                </span>
+                              ) : (
+                                <span className={`ficha-marca fuera ${r.overdue ? "vencida" : ""}`}>
+                                  <AlertTriangle size={12} />
+                                  {t("voucher.out", "fuera")}
+                                  {r.overdue && <> · {t("history.overdue", "vencido")}</>}
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </section>
+                ))}
               </>
             )
           )}

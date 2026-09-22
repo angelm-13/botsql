@@ -209,3 +209,17 @@
   max-width: 28ch;
   color: #334155;
 }
+
+/* --- el historial de un empleado, agrupado por proyecto ------------------
+
+   Mismo criterio que reporte_por_almacen: la nota del vale es el "proyecto"
+   en los datos migrados. Una tabla por grupo y no una sola tabla larga con
+   una columna de proyecto repetida en cada fila: con 270 renglones en 10
+   obras, repetir el nombre 270 veces es peor que leerlo una vez por seccion. */
+.ficha-grupo { margin-bottom: 18px; }
+.ficha-grupo:last-child { margin-bottom: 0; }
+.ficha-grupo-titulo {
+  margin: 0 0 6px; padding-bottom: 4px;
+  font-size: 12.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em;
+  color: #475569; border-bottom: 1px solid #e2e8f0;
+}

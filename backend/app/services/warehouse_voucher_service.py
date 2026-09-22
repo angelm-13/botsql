@@ -1769,17 +1769,18 @@ def documento_del_historial_de_persona(user_data: dict, id_user=None) -> dict:
     pantalla -- mismas filas, mismo orden, mismo criterio de "vencido" --,
     el mismo principio que ya sigue `documento_del_vale` con la pantalla del
     vale.
+
+    Agrupado por proyecto (la nota del vale), con el mismo criterio y la
+    misma etiqueta de respaldo que `reporte_por_almacen` -- "(sin
+    proyecto)" -- para que un empleado con 270 renglones se lea por obra,
+    como ya lo mostraba el sistema anterior, y no como una lista plana sin
+    mas orden que la fecha.
     """
     datos = lo_que_ha_pedido(user_data, id_user)
 
     with transaction_context() as db:
         nombre = _persona(db, datos["id_user"])
 
-    # "renglones" y no "items": un dict con clave "items" es la trampa
-    # clasica de Jinja2 -- `record.items` en la plantilla resuelve al
-    # METODO `dict.items` (attribute lookup gana sobre getitem), no a esta
-    # lista, y el `for` de la plantilla truena con "object is not iterable"
-    # en vez de con un error de clave faltante.
     renglones = [{
         "fecha": _solo_fecha(r.get("start_date")),
         "descripcion": r.get("product_description") or "Producto %s" % r.get("id_product"),
@@ -1791,7 +1792,20 @@ def documento_del_historial_de_persona(user_data: dict, id_user=None) -> dict:
         "devuelto": bool(r.get("returned")),
         "cierre": _solo_fecha(r.get("close_date")),
         "vencido": bool(r.get("overdue")),
+        "_proyecto": (r.get("voucher_note") or "").strip() or None,
     } for r in datos["items"]]
+
+    # "renglones" y "titulo", no "items"/"group": un dict con clave "items"
+    # es la trampa clasica de Jinja2 -- `grupo.items` en la plantilla
+    # resuelve al METODO `dict.items` (attribute lookup gana sobre getitem),
+    # no a esta lista, y el `for` truena con "object is not iterable" en vez
+    # de con un error de clave faltante. `_agrupar` devuelve "group"/"items"
+    # porque los otros 3 reportes los consumen como JSON, no como plantilla.
+    grupos = [
+        {"titulo": g["group"], "renglones": g["items"]}
+        for g in _agrupar(renglones, lambda r: r["_proyecto"],
+                          sin_grupo="(sin proyecto)")
+    ]
 
     return {
         "id_user": datos["id_user"],
@@ -1799,7 +1813,7 @@ def documento_del_historial_de_persona(user_data: dict, id_user=None) -> dict:
         "total": datos["total"],
         "still_out": datos["still_out"],
         "overdue": datos["overdue"],
-        "renglones": renglones,
+        "grupos": grupos,
     }
 
 

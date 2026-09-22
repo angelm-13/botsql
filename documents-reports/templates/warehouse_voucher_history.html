@@ -57,6 +57,17 @@
     .resumen-fuera .resumen-cifra { color: #b45309; }
     .resumen-vencido .resumen-cifra { color: #b91c1c; }
 
+    h2 {
+      font-size: 10pt;
+      text-transform: uppercase;
+      letter-spacing: 0.8pt;
+      color: #475569;
+      margin: 14pt 0 6pt;
+      padding-bottom: 3pt;
+      border-bottom: 0.8pt solid #e2e8f0;
+    }
+    h2:first-of-type { margin-top: 0; }
+
     table { width: 100%; border-collapse: collapse; margin-bottom: 10pt; }
     thead { display: table-header-group; }
     tr { page-break-inside: avoid; }
@@ -119,6 +130,8 @@
     </div>
   </div>
 
+  {% for grupo in record.grupos %}
+  <h2>{{ loop.index }}. {{ grupo.titulo }}</h2>
   <table>
     <thead>
       <tr>
@@ -129,7 +142,7 @@
       </tr>
     </thead>
     <tbody>
-      {% for linea in record.renglones %}
+      {% for linea in grupo.renglones %}
       <tr>
         <td class="menor">{{ linea.fecha or '—' }}</td>
         <td>
@@ -151,11 +164,12 @@
           {% endif %}
         </td>
       </tr>
-      {% else %}
-      <tr><td colspan="4" class="vacio">Nunca ha pedido material a este almacén.</td></tr>
       {% endfor %}
     </tbody>
   </table>
+  {% else %}
+  <p class="vacio">Nunca ha pedido material a este almacén.</p>
+  {% endfor %}
 
   <div class="pie">
     <span>TYAKXA · Historial de {{ record.empleado }} (usuario {{ record.id_user }})</span>
