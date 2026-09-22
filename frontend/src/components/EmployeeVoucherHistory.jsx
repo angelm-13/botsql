@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import PropTypes from "prop-types";
-import { AlertTriangle, Check, Package, Tag, X } from "lucide-react";
-import { getVoucherRequests } from "../api";
+import { AlertTriangle, Check, Download, Package, Tag, X } from "lucide-react";
+import { downloadVoucherRequestsPdf, getVoucherRequests } from "../api";
 import Pagination from "./Pagination.jsx";
 import { useI18n } from "../i18n";
 import "../styles/product-history.css";
@@ -27,6 +27,7 @@ export default function EmployeeVoucherHistory({ idUser, nombre, onCerrar, onAbr
   const [pagina, setPagina] = useState(1);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
+  const [descargando, setDescargando] = useState(false);
 
   const traer = useCallback(async () => {
     setCargando(true);
@@ -46,6 +47,26 @@ export default function EmployeeVoucherHistory({ idUser, nombre, onCerrar, onAbr
   }, [idUser]);
 
   useEffect(() => { traer(); }, [traer]);
+
+  // El boton que traia el sistema anterior y que esta ficha no tenia: el PDF
+  // sale en una pestana nueva -no se descarga solo- porque lo que se hace con
+  // el casi siempre es imprimirlo o mandarlo, no guardarlo sin mirarlo.
+  const descargarPdf = async () => {
+    setDescargando(true);
+    setError("");
+    try {
+      const blob = await downloadVoucherRequestsPdf({ id_user: idUser });
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      setError(e?.payload?.error_key
+        ? t(e.payload.error_key)
+        : t("errors.request_failed", "No se pudo generar el PDF."));
+    } finally {
+      setDescargando(false);
+    }
+  };
 
   useEffect(() => {
     const alTeclear = (e) => { if (e.key === "Escape") onCerrar(); };
@@ -77,14 +98,27 @@ export default function EmployeeVoucherHistory({ idUser, nombre, onCerrar, onAbr
             </p>
             <h2>{nombre || `#${idUser}`}</h2>
           </div>
-          <button
-            type="button"
-            className="ficha-cerrar"
-            onClick={onCerrar}
-            aria-label={t("common.close", "Cerrar")}
-          >
-            <X size={18} />
-          </button>
+          <div className="ficha-acciones">
+            <button
+              type="button"
+              className="ficha-descargar"
+              onClick={descargarPdf}
+              disabled={cargando || descargando}
+            >
+              <Download size={14} />
+              {descargando
+                ? t("common.generating", "Generando…")
+                : t("voucher.download_pdf", "Descargar PDF")}
+            </button>
+            <button
+              type="button"
+              className="ficha-cerrar"
+              onClick={onCerrar}
+              aria-label={t("common.close", "Cerrar")}
+            >
+              <X size={18} />
+            </button>
+          </div>
         </header>
 
         <div className="ficha-cuerpo">

@@ -1759,3 +1759,60 @@ def pdf_del_vale(id_incident, user_data: dict, *, storage=None) -> bytes:
             generated_by=actor_id,
         ))
     return pdf
+
+
+def documento_del_historial_de_persona(user_data: dict, id_user=None) -> dict:
+    """La ficha que la plantilla del PDF del historial de un empleado pinta.
+
+    Reusa `lo_que_ha_pedido` en lugar de volver a consultar: el PDF tiene que
+    decir exactamente lo mismo que el modal `EmployeeVoucherHistory` en
+    pantalla -- mismas filas, mismo orden, mismo criterio de "vencido" --,
+    el mismo principio que ya sigue `documento_del_vale` con la pantalla del
+    vale.
+    """
+    datos = lo_que_ha_pedido(user_data, id_user)
+
+    with transaction_context() as db:
+        nombre = _persona(db, datos["id_user"])
+
+    # "renglones" y no "items": un dict con clave "items" es la trampa
+    # clasica de Jinja2 -- `record.items` en la plantilla resuelve al
+    # METODO `dict.items` (attribute lookup gana sobre getitem), no a esta
+    # lista, y el `for` de la plantilla truena con "object is not iterable"
+    # en vez de con un error de clave faltante.
+    renglones = [{
+        "fecha": _solo_fecha(r.get("start_date")),
+        "descripcion": r.get("product_description") or "Producto %s" % r.get("id_product"),
+        "codigo": r.get("product_code"),
+        "cantidad": r.get("quantity"),
+        "pieza": r.get("id_inventory_asset"),
+        "vale_folio": r.get("voucher_folio") or r.get("id_incident"),
+        "id_incident": r.get("id_incident"),
+        "devuelto": bool(r.get("returned")),
+        "cierre": _solo_fecha(r.get("close_date")),
+        "vencido": bool(r.get("overdue")),
+    } for r in datos["items"]]
+
+    return {
+        "id_user": datos["id_user"],
+        "empleado": nombre or ("#%s" % datos["id_user"]),
+        "total": datos["total"],
+        "still_out": datos["still_out"],
+        "overdue": datos["overdue"],
+        "renglones": renglones,
+    }
+
+
+def pdf_del_historial_de_persona(user_data: dict, id_user=None) -> bytes:
+    """El historial de prestamos de un empleado en PDF, como lo tenia el
+    sistema anterior.
+
+    A diferencia de `pdf_del_vale`, no se archiva como version de `document`:
+    no es un papel que alguien firma en un momento dado, es un reporte de
+    consulta que cambia cada vez que la persona pide o devuelve algo -- se
+    regenera al vuelo en cada descarga, igual que los otros 4 reportes de
+    almacen (`reporte_por_*`), que tampoco archivan nada.
+    """
+    ficha = documento_del_historial_de_persona(user_data, id_user)
+    return _motor_de_documentos().render_pdf_bytes(
+        "warehouse_voucher_history", ficha)

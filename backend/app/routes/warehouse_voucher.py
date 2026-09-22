@@ -21,6 +21,7 @@ from flask import Blueprint, current_app, jsonify, request, send_file
 
 from app.services.warehouse_voucher_service import (
     _sin_restriccion,
+    documento_del_historial_de_persona,
     folio_del_vale,
     pdf_del_vale,
     autorizar_vale,
@@ -30,6 +31,7 @@ from app.services.warehouse_voucher_service import (
     crear_vale,
     historial_del_producto,
     lo_que_ha_pedido,
+    pdf_del_historial_de_persona,
     quien_tiene_que,
     reporte_por_almacen,
     reporte_por_persona,
@@ -252,6 +254,28 @@ def quien_tiene(user_data):
 def lo_pedido(user_data):
     """Que ha pedido cada persona, historico."""
     return jsonify(lo_que_ha_pedido(user_data, request.args.get("id_user")))
+
+
+@bp_warehouse_voucher.route("/vouchers/requests/pdf", methods=["GET"])
+@token_required
+@require_warehouse_read
+def lo_pedido_pdf(user_data):
+    """El historial de una persona en PDF -- el boton que traia el sistema
+    anterior y que la ficha nueva (`EmployeeVoucherHistory`) no tenia.
+
+    Mismo alcance que `/vouchers/requests`: `lo_que_ha_pedido` ya resuelve que
+    quien solo puede pedir material (sin `warehouse_voucher`) solo ve lo
+    suyo, sin importar que `id_user` se mande.
+    """
+    id_user = request.args.get("id_user")
+    ficha = documento_del_historial_de_persona(user_data, id_user)
+    pdf = pdf_del_historial_de_persona(user_data, id_user)
+    return send_file(
+        BytesIO(pdf),
+        mimetype="application/pdf",
+        as_attachment=False,
+        download_name="Historial-%s.pdf" % ficha["empleado"],
+    )
 
 
 # --- los 4 reportes de almacen que ya existian en el sistema anterior ---

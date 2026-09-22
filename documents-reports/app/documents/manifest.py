@@ -16,3 +16,17 @@ DOCUMENTS['warehouse_voucher'] = {
     'fields': [],
     'metadata': {'source': 'handwritten', 'entity_category': 'operations'},
 }
+
+# El historial de prestamos de una persona -- lo que ha pedido y si lo ha
+# devuelto ya, agrupado por empleado. Igual que el vale, se declara aparte
+# del bloque generado: no es un volcado de una tabla, es exactamente lo que
+# pinta el modal 'EmployeeVoucherHistory' en pantalla, y el boton para
+# bajarlo en PDF es lo que el sistema anterior tenia y este todavia no.
+DOCUMENTS['warehouse_voucher_history'] = {
+    'entity': 'user',
+    'title_key': 'documents.warehouse_voucher_history.title',
+    'template_type': 'document',
+    'output_formats': ['html', 'pdf'],
+    'fields': [],
+    'metadata': {'source': 'handwritten', 'entity_category': 'operations'},
+}

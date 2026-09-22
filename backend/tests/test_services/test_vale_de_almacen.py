@@ -59,6 +59,8 @@ from app.services.warehouse_voucher_service import (
     devolver_renglon,
     consultar_vale,
     crear_vale,
+    documento_del_historial_de_persona,
+    pdf_del_historial_de_persona,
     reporte_por_almacen,
     reporte_por_persona,
     reporte_por_producto,
@@ -1371,3 +1373,72 @@ class TestLosReportesDeAlmacen(BaseVale):
         reporte = reporte_por_producto(sin_permiso)
 
         self.assertEqual(0, reporte["total_items"])
+
+
+class TestElHistorialDeUnaPersonaEnPdf(BaseVale):
+    """El boton nuevo: el historial de una persona -el mismo dato que pinta
+    `EmployeeVoucherHistory` en pantalla- descargable en PDF, como lo tenia
+    el sistema anterior.
+
+    No se archiva como version de `document` -a diferencia del vale, que se
+    firma-, asi que aqui no hace falta un almacen de prueba: solo que la
+    ficha que arma el servicio diga lo mismo que `lo_que_ha_pedido`, y que el
+    renderizador se llame con la plantilla correcta.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from unittest.mock import patch
+
+        self.surtir(100)
+        self.render = patch(
+            "app.services.warehouse_voucher_service._motor_de_documentos")
+        motor = self.render.start()
+        self.addCleanup(self.render.stop)
+        motor.return_value.render_pdf_bytes.side_effect = (
+            lambda clave, ficha, *a, **k: repr((clave, sorted(ficha.items()))).encode())
+
+    def test_the_fiche_matches_what_the_screen_shows(self):
+        from app.services.warehouse_voucher_service import lo_que_ha_pedido
+
+        self._vale([self._linea_cantidad(10)])
+
+        pantalla = lo_que_ha_pedido(ACTOR, 1)
+        ficha = documento_del_historial_de_persona(ACTOR, 1)
+
+        self.assertEqual(pantalla["total"], ficha["total"])
+        self.assertEqual(pantalla["still_out"], ficha["still_out"])
+        self.assertEqual(pantalla["overdue"], ficha["overdue"])
+        self.assertEqual(1, len(ficha["renglones"]))
+        renglon = ficha["renglones"][0]
+        self.assertEqual("Cemento gris 50kg", renglon["descripcion"])
+        self.assertEqual("CEM-50", renglon["codigo"])
+        self.assertFalse(renglon["devuelto"])
+
+    def test_a_returned_line_is_marked_as_such(self):
+        vale = self._vale([self._linea_cantidad(10)])
+        linea = vale["lines"][0]["id_nm_incident_product"]
+        devolver_renglon(linea, {}, ACTOR)
+
+        ficha = documento_del_historial_de_persona(ACTOR, 1)
+
+        self.assertTrue(ficha["renglones"][0]["devuelto"])
+        self.assertIsNotNone(ficha["renglones"][0]["cierre"])
+
+    def test_downloading_it_renders_the_history_template(self):
+        self._vale([self._linea_cantidad(10)])
+
+        pdf = pdf_del_historial_de_persona(ACTOR, 1)
+
+        self.assertIn(b"warehouse_voucher_history", pdf)
+
+    def test_someone_without_the_warehouse_capability_only_sees_their_own(self):
+        """Mismo alcance que `lo_que_ha_pedido`: quien no opera el almacen ve
+        lo suyo, aunque pida el historial de otro `id_user`."""
+        self._vale([self._linea_cantidad(10)])
+
+        sin_permiso = {"id_user": 1, "is_superuser": False}
+        ficha = documento_del_historial_de_persona(sin_permiso, 999999)
+
+        self.assertEqual(1, ficha["id_user"])
+        self.assertEqual(1, ficha["total"])

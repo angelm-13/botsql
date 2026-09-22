@@ -358,6 +358,8 @@ export const getVoucherHolders = (params = {}) =>
   request("/vouchers/holders", { params });
 export const getVoucherRequests = (params = {}) =>
   request("/vouchers/requests", { params });
+export const downloadVoucherRequestsPdf = (params = {}) =>
+  requestBlob("/vouchers/requests/pdf", { params });
 export const getLocationTree = () => request("/location/tree");
 export const getWarehouseStock = (id) => request(`/location/${id}/stock`);
 export const getInvoiceInventoryPreview = (id, params = {}) => request(`/invoice/${id}/inventory`, { params });
