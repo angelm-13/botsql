@@ -981,15 +981,6 @@ export const validationRules = {
         "graphql_error_code": "REQUIRED_FIELD"
       }
     ],
-    "analyst": [
-      {
-        "validation_type": "required",
-        "rule": "value is not null and value != \"\"",
-        "message_key": "validations.task.analyst.required",
-        "severity": "error",
-        "graphql_error_code": "REQUIRED_FIELD"
-      }
-    ],
     "dependency": [
       {
         "validation_type": "required",
@@ -1004,15 +995,6 @@ export const validationRules = {
         "message_key": "validations.task.dependency.valid",
         "severity": "error",
         "graphql_error_code": "VALID"
-      }
-    ],
-    "leader": [
-      {
-        "validation_type": "required",
-        "rule": "value is not null and value != \"\"",
-        "message_key": "validations.task.leader.required",
-        "severity": "error",
-        "graphql_error_code": "REQUIRED_FIELD"
       }
     ],
     "validation": [

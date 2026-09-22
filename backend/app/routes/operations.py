@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from flask import Blueprint, jsonify
 
-from app.services.operations_workflow import incident_catalog, task_catalog
+from app.services.operations_workflow import incident_catalog, task_catalog, task_fase_catalog
 from app.services.project_management_service import project_catalog
 from app.utils.auth import token_required
 
@@ -41,5 +41,6 @@ def get_operations_catalog(user_data):
     return jsonify({
         'proyect': project_catalog(),
         'task': task_catalog(),
+        'task_fase': task_fase_catalog(),
         'incident': incident_catalog(),
     })

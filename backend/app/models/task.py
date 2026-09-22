@@ -25,9 +25,7 @@ class Task(Base):
     duration: Mapped[float] = mapped_column(Numeric(10,2), nullable=True)
     type: Mapped[object] = mapped_column(Enum('personal', 'business', name='task_type_enum', native_enum=False, validate_strings=True, create_constraint=True), nullable=True)
     owner: Mapped[int] = mapped_column(Integer, ForeignKey('user.id_user'), nullable=False)
-    analyst: Mapped[int] = mapped_column(Integer, nullable=False)
     dependency: Mapped[int] = mapped_column(Integer, nullable=False)
-    leader: Mapped[int] = mapped_column(Integer, nullable=False)
     validation: Mapped[int] = mapped_column(Integer, nullable=False)
     task_description: Mapped[object] = mapped_column(String(200), nullable=False)
     estimated_effort: Mapped[object] = mapped_column(String(50), nullable=True)
@@ -49,9 +47,7 @@ class Task(Base):
             'duration': to_json_value(self.duration),
             'type': to_json_value(self.type),
             'owner': to_json_value(self.owner),
-            'analyst': to_json_value(self.analyst),
             'dependency': to_json_value(self.dependency),
-            'leader': to_json_value(self.leader),
             'validation': to_json_value(self.validation),
             'task_description': to_json_value(self.task_description),
             'estimated_effort': to_json_value(self.estimated_effort),

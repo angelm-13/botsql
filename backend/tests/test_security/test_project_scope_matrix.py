@@ -126,8 +126,7 @@ class ProjectScopeMatrix(BackendTestCase):
                 ))
                 db.add(Task(
                     id_task=id_tarea, id_proyect=id_proyect, task_description="Tarea",
-                    task_status="pendiente", owner=id_lider, analyst=id_lider,
-                    leader=id_lider, validation=id_lider, dependency=0,
+                    task_status="pendiente", owner=id_lider, validation=id_lider, dependency=0,
                     created_by=id_lider,
                 ))
                 db.add(Incident(

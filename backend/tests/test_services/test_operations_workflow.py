@@ -105,7 +105,7 @@ class OperationsTestCase(BackendTestCase):
         payload = {
             "task_description": "Tarea de prueba",
             "id_proyect": 30,
-            "owner": 7, "analyst": 7, "leader": 7, "validation": 7,
+            "owner": 7, "validation": 7,
             "dependency": 1,
             "created_by": 1,
         }
@@ -247,8 +247,9 @@ class TestTaskRules(OperationsTestCase):
         self.assertEqual("errors.task_status_invalid", raised.exception.message_key)
 
     def test_a_responsible_user_that_does_not_exist_is_refused(self):
-        """analyst, leader y validation son enteros sin llave foranea."""
-        for field in ("owner", "analyst", "leader", "validation"):
+        """`validation` es entero sin llave foranea; `owner` la tiene pero se
+        comprueba igual, por el mismo camino (RESPONSIBLE_FIELDS)."""
+        for field in ("owner", "validation"):
             with self.subTest(field=field), self.assertRaises(AppError) as raised:
                 self.new_task(**{field: 99999})
             self.assertEqual("errors.task_responsible_not_found", raised.exception.message_key)

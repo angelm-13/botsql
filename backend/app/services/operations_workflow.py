@@ -166,3 +166,28 @@ def task_catalog() -> dict:
         "reason_required": sorted(TASK_REASON_REQUIRED),
         "closed_statuses": sorted(TASK_CLOSED_STATUSES),
     }
+
+
+# --- Fase de tarea (tablero del taller) -------------------------------------
+# Independiente de TASK_STATUSES: task_status es el flujo formal de la tarea
+# (con motivo obligatorio al bloquear/cancelar); fase es la ubicacion visual en
+# el tablero que pidio Jefe de taller. Antes "fase" era texto libre sin
+# catalogo -cualquiera escribia lo que quisiera- y el tablero terminaba con una
+# columna nueva por cada dedazo, igual que le pasaba a task_status antes de
+# este archivo. Sin maquina de transiciones a proposito: no se pidio un flujo
+# formal para la fase, solo que viniera de una lista fija.
+TASK_FASES = ("en_espera", "en_proceso", "bloqueado", "terminado", "entregado")
+
+TASK_FASE_ALIASES = {
+    "ejecucion": "en_proceso",
+    "ejecución": "en_proceso",
+    "cierre": "terminado",
+}
+
+
+def normalize_task_fase(value) -> str:
+    return normalize_status(value, TASK_FASES, TASK_FASE_ALIASES)
+
+
+def task_fase_catalog() -> dict:
+    return {"fases": list(TASK_FASES)}

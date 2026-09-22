@@ -19,12 +19,12 @@ class TestTaskService(OperationsTestCase):
             'start_date': '2026-01-15T12:00:00',
             'duration': 10.5,
             'type': 'business',
-            'owner': 7, 'analyst': 7, 'leader': 7, 'validation': 7,
+            'owner': 7, 'validation': 7,
             'dependency': 1,
             'task_description': 'test description',
             'estimated_effort': 'test estimated_effort',
             'task_status': 'pendiente',
-            'fase': 'test fase',
+            'fase': 'en_proceso',
             'priority': 'media',
             'title': 'test titulo',
             'id_proyect': 30,
@@ -39,12 +39,14 @@ class TestTaskService(OperationsTestCase):
         self.assertIn("total", page)
 
     def test_placeholder_values_no_longer_pass(self):
-        for field, value in (('task_status', 'test state'), ('priority', 'test priority')):
+        for field, value in (
+            ('task_status', 'test state'), ('priority', 'test priority'), ('fase', 'test fase'),
+        ):
             with self.subTest(field=field), self.assertRaises(AppError):
                 TaskService.create({
                     'task_description': 'test description',
                     'id_proyect': 30,
-                    'owner': 7, 'analyst': 7, 'leader': 7, 'validation': 7,
+                    'owner': 7, 'validation': 7,
                     'dependency': 1,
                     'created_by': 1,
                     field: value,

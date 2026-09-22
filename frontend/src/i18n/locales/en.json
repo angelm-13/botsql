@@ -1242,7 +1242,6 @@
       "question_type": "Question Type"
     },
     "task": {
-      "analyst": "Analyst",
       "created_by": "Created By",
       "creation_date": "Creation Date",
       "deletion_date": "Deletion Date",
@@ -1253,7 +1252,6 @@
       "id_proyect": "Id Proyect",
       "id_task": "Id Task",
       "last_update_date": "Last Update Date",
-      "leader": "Leader",
       "owner": "Owner",
       "priority": "Priority",
       "start_date": "Start Date",
@@ -1987,7 +1985,6 @@
       "question_type": "Enter question type"
     },
     "task": {
-      "analyst": "Enter analyst",
       "created_by": "Enter created by",
       "creation_date": "Enter creation date",
       "deletion_date": "Enter deletion date",
@@ -1998,7 +1995,6 @@
       "id_proyect": "Enter id proyect",
       "id_task": "Enter id task",
       "last_update_date": "Enter last update date",
-      "leader": "Enter leader",
       "owner": "Enter owner",
       "priority": "Enter priority",
       "start_date": "Enter start date",
@@ -4401,5 +4397,12 @@
     "transfer": "Transfer",
     "adjustment": "Adjustment",
     "opening": "Opening balance"
+  },
+  "task_fase": {
+    "en_espera": "Waiting",
+    "en_proceso": "In progress",
+    "bloqueado": "Blocked",
+    "terminado": "Finished",
+    "entregado": "Delivered"
   }
 }

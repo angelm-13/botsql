@@ -10,7 +10,7 @@ from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
 
 bp_task = Blueprint('task', __name__, url_prefix='/task')
-ALLOWED_FIELDS = ['id_task', 'task_code', 'start_date', 'duration', 'type', 'owner', 'analyst', 'dependency', 'leader', 'validation', 'task_description', 'estimated_effort', 'task_status', 'fase', 'priority', 'title', 'id_proyect', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
+ALLOWED_FIELDS = ['id_task', 'task_code', 'start_date', 'duration', 'type', 'owner', 'dependency', 'validation', 'task_description', 'estimated_effort', 'task_status', 'fase', 'priority', 'title', 'id_proyect', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
 
 TECHNICAL_RESPONSE_FIELDS = {'id_task'}
 FIELD_READ_BIT = 2

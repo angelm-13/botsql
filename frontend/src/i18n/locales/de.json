@@ -1206,7 +1206,6 @@
       "question_type": "Frage Typ"
     },
     "task": {
-      "analyst": "Analyst",
       "created_by": "Erstellt von",
       "creation_date": "Erstellungsdatum",
       "deletion_date": "Löschdatum",
@@ -1217,7 +1216,6 @@
       "id_proyect": "ID Projekt",
       "id_task": "ID Aufgabe",
       "last_update_date": "Datum der letzten Aktualisierung",
-      "leader": "Leiter",
       "owner": "Eigentümer",
       "priority": "Priorität",
       "start_date": "Start Datum",
@@ -1949,7 +1947,6 @@
       "question_type": "Frage Typ eingeben"
     },
     "task": {
-      "analyst": "Analyst eingeben",
       "created_by": "Erstellt von eingeben",
       "creation_date": "Erstellungsdatum eingeben",
       "deletion_date": "Löschdatum eingeben",
@@ -1960,7 +1957,6 @@
       "id_proyect": "ID Projekt eingeben",
       "id_task": "ID Aufgabe eingeben",
       "last_update_date": "Datum der letzten Aktualisierung eingeben",
-      "leader": "Leiter eingeben",
       "owner": "Eigentümer eingeben",
       "priority": "Priorität eingeben",
       "start_date": "Start Datum eingeben",
@@ -3452,5 +3448,12 @@
       "saved_status": "Konfiguration für diese Sitzung gespeichert.",
       "save_button": "Verbindung speichern"
     }
+  },
+  "task_fase": {
+    "en_espera": "Wartend",
+    "en_proceso": "In Bearbeitung",
+    "bloqueado": "Blockiert",
+    "terminado": "Fertig",
+    "entregado": "Geliefert"
   }
 }

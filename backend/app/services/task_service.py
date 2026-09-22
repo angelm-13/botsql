@@ -1,9 +1,16 @@
-"""Tareas: catalogo de estatus, responsables reales y proyecto abierto.
+"""Tareas: catalogo de estatus, fase de taller, responsables reales y proyecto
+abierto.
 
 Antes era un CRUD sin reglas y aceptaba, entre otras cosas, un estatus
 inventado, una duracion negativa, responsables que no existen (las columnas
-analyst, dependency, leader y validation son enteros sueltos, sin llave
-foranea) y tareas nuevas en un proyecto ya cerrado.
+dependency y validation son enteros sueltos, sin llave foranea) y tareas
+nuevas en un proyecto ya cerrado. `analyst` y `leader` -las mismas fallas, un
+entero suelto sin llave foranea- se retiraron para simplificar la pantalla:
+en produccion real nunca sirvieron para distinguir usuarios (las 13 tareas de
+torredigital-prod comparten un solo valor en las tres, el default de
+instalacion). `owner` SI se queda, aunque tenga el mismo defecto de fondo:
+`desarrollo_por_empleado_query` (app/kpis/registry.py) ya lo usa como
+responsable real para el KPI "Desarrollo por empleado".
 """
 
 from __future__ import annotations
@@ -15,8 +22,10 @@ from app.models.session import transaction_context
 from app.services.base_service import CrudService
 from app.services.operations_workflow import (
     TASK_CLOSED_STATUSES,
+    TASK_FASES,
     TASK_REASON_REQUIRED,
     TASK_TRANSITIONS,
+    normalize_task_fase,
     normalize_task_status,
     validate_transition,
 )
@@ -28,10 +37,12 @@ from app.utils.errors import AppError
 
 
 DEFAULT_STATUS = "pendiente"
+DEFAULT_FASE = "en_espera"
 
-# Columnas de responsables: enteros sin llave foranea en la tabla, asi que la
-# existencia del usuario se comprueba aqui.
-RESPONSIBLE_FIELDS = ("owner", "analyst", "leader", "validation")
+# Columnas de responsables: enteros sin llave foranea en la tabla (salvo
+# `owner`, que si tiene FK a `user`), asi que la existencia del usuario se
+# comprueba aqui de todas formas para tratarlas igual.
+RESPONSIBLE_FIELDS = ("owner", "validation")
 
 VALID_PRIORITIES = {"baja", "media", "alta", "urgente"}
 
@@ -72,6 +83,9 @@ class TaskService(CrudService):
 
         if 'task_status' in payload:
             payload['task_status'] = cls._resolve_status(payload, current)
+
+        if 'fase' in payload:
+            payload['fase'] = cls._fase(payload['fase'])
 
         return payload
 
@@ -135,6 +149,19 @@ class TaskService(CrudService):
             )
         return resolved
 
+    @staticmethod
+    def _fase(value):
+        if value in (None, ''):
+            return None
+        normalized = normalize_task_fase(value)
+        if normalized not in TASK_FASES:
+            raise AppError(
+                "errors.task_fase_invalid",
+                400,
+                {"field": "fase", "allowed": list(TASK_FASES)},
+            )
+        return normalized
+
     @classmethod
     def _resolve_status(cls, payload, current):
         target = normalize_task_status(payload.get('task_status'))
@@ -166,6 +193,7 @@ class TaskService(CrudService):
     def create(cls, payload: dict, user_id: int | None = None):
         payload = dict(payload or {})
         payload.setdefault('task_status', DEFAULT_STATUS)
+        payload.setdefault('fase', DEFAULT_FASE)
         return super().create(cls._validate(payload), user_id=user_id)
 
     @classmethod

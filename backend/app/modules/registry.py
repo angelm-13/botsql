@@ -336,11 +336,18 @@ CAPACIDADES = (
 class Rol:
     """Que puede hacer un perfil en cada modulo, y que capacidades tiene."""
 
-    def __init__(self, id_permission, nombre, modulos, capacidades=()):
+    def __init__(self, id_permission, nombre, modulos, capacidades=(), *, excepciones=None):
         self.id_permission = id_permission
         self.nombre = nombre
         self.modulos = dict(modulos)
         self.capacidades = tuple(capacidades)
+        # Entidad -> bits que sustituyen al del modulo, solo para ESTE rol.
+        # Los bits de un modulo son parejos para todas sus entidades; esto es
+        # la valvula de escape para la entidad que necesita MENOS que el
+        # resto sin partir el modulo en dos "operaciones_lectura" /
+        # "operaciones_captura". Solo para restringir: la comprobacion de
+        # abajo exige que sea un subconjunto del bit del modulo, nunca mas.
+        self.excepciones = dict(excepciones or {})
 
 
 # Criterios de la matriz, para que se puedan discutir en lugar de adivinarse:
@@ -411,9 +418,25 @@ ROLES = (
     # Pide material con un prevale y sigue sus propios proyectos. NO surte: no
     # tiene `warehouse_voucher`, asi que no puede levantar el vale con el que se
     # entrega, ni editar uno ya levantado.
+    #
+    # `task` e `incident` son la excepcion dentro de "operaciones": Supervisor
+    # las CONSULTA nada mas -ve tareas e incidencias, no las crea ni las
+    # modifica-, aunque conserve CAPTURA en el resto del modulo (sus propios
+    # proyectos). Pedido de negocio explicito (2026-09-22): el supervisor
+    # supervisa, no captura tarea ni incidencia. `incident_supervision` sigue
+    # concedida -es "ver incidencias ajenas", no escribirlas- y no choca con
+    # esto.
+    #
+    # Ojo: como en el resto de excepciones puntuales de este registro
+    # (ver la nota de Gerente/`warehouse_voucher` mas abajo), esto solo fija
+    # el valor por omision para una instalacion NUEVA. Un Supervisor que ya
+    # existe (tyakxa-dev y los 3 clientes reales) no se toca por resiembra
+    # -el Gestor de roles y permisos manda-: hay que ajustarlo a mano ahi,
+    # por instalacion, una vez.
     Rol(2, "Supervisor", {
         "operaciones": CAPTURA, "inventario": CONSULTA, "configuracion": CONSULTA,
-    }, ["incident_supervision", "warehouse_prevoucher"]),
+    }, ["incident_supervision", "warehouse_prevoucher"],
+        excepciones={"task": CONSULTA, "incident": CONSULTA}),
 
     # Ve y busca el almacen sin modificarlo -`inventario` en CONSULTA- y
     # autoriza o cancela los proyectos de todos los supervisores.
@@ -599,6 +622,30 @@ def _validar():
                 raise RuntimeError(
                     f"El rol '{rol.nombre}' usa bits invalidos ({bits}) en '{clave}'."
                 )
+        for entidad, bits_excepcion in rol.excepciones.items():
+            if entidad not in ENTIDAD_A_MODULO:
+                raise RuntimeError(
+                    f"El rol '{rol.nombre}' tiene una excepcion para la entidad "
+                    f"inexistente '{entidad}'."
+                )
+            modulo_de_entidad = ENTIDAD_A_MODULO[entidad]
+            if modulo_de_entidad not in rol.modulos:
+                raise RuntimeError(
+                    f"El rol '{rol.nombre}' tiene una excepcion en '{entidad}' pero no "
+                    f"tiene acceso a su modulo '{modulo_de_entidad}'."
+                )
+            bits_modulo = rol.modulos[modulo_de_entidad]
+            if bits_excepcion != (bits_excepcion & BITS_VALIDOS) or bits_excepcion <= 0:
+                raise RuntimeError(
+                    f"El rol '{rol.nombre}' usa bits invalidos ({bits_excepcion}) en la "
+                    f"excepcion de '{entidad}'."
+                )
+            if bits_excepcion & ~bits_modulo:
+                raise RuntimeError(
+                    f"El rol '{rol.nombre}' tiene en '{entidad}' una excepcion "
+                    f"({bits_excepcion}) que da MAS de lo que ya concede su modulo "
+                    f"'{modulo_de_entidad}' ({bits_modulo}). Una excepcion solo resta."
+                )
         for capacidad in rol.capacidades:
             if capacidad not in CAPACIDAD_POR_CLAVE:
                 raise RuntimeError(
@@ -700,7 +747,8 @@ def filas_de_permisos():
                 if entidad in SOLO_ARRANQUE:
                     continue
                 etiqueta, orden = MENU.get(entidad, (None, None))
-                scope_create, scope_read, scope_update, scope_delete = _alcance_desde_bits(bits)
+                bits_entidad = rol.excepciones.get(entidad, bits)
+                scope_create, scope_read, scope_update, scope_delete = _alcance_desde_bits(bits_entidad)
                 filas.append((
                     rol.nombre, entidad,
                     scope_create, scope_read, scope_update, scope_delete,

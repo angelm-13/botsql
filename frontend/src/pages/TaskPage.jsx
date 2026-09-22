@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
-import { getAllTask, createTask, updateTask, deleteTask, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllUser, getAllProyect } from "../api";
+import { getAllTask, createTask, updateTask, deleteTask, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllUser, getAllProyect, getOperationsCatalog } from "../api";
 import { fetchAllPages } from "../utils/fetchAllPages";
 import Pagination from "../components/Pagination.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 
-const emptyForm = { task_code: "", start_date: "", duration: "", type: "", owner: "", analyst: "", dependency: "", leader: "", validation: "", task_description: "", estimated_effort: "", task_status: "", fase: "", priority: "", title: "", id_proyect: "" };
+const emptyForm = { task_code: "", start_date: "", duration: "", type: "", owner: "", dependency: "", validation: "", task_description: "", estimated_effort: "", task_status: "", fase: "", priority: "", title: "", id_proyect: "" };
 const validationRules = allValidationRules["task"] || {};
 const ENTITY_KEY = "task";
 const ACTION_CREATE = 1;
@@ -17,7 +17,11 @@ const ACTION_UPDATE = 4;
 const ACTION_DELETE = 8;
 const SCOPE_FIELD_BY_BIT = { [ACTION_CREATE]: "scope_create", [ACTION_READ]: "scope_read", [ACTION_UPDATE]: "scope_update", [ACTION_DELETE]: "scope_delete" };
 const FIELD_VISIBLE_BIT = 2;
-const ALL_FIELD_NAMES = ['id_task', 'task_code', 'start_date', 'duration', 'type', 'owner', 'analyst', 'dependency', 'leader', 'validation'];
+const ALL_FIELD_NAMES = ['id_task', 'task_code', 'start_date', 'duration', 'type', 'owner', 'dependency', 'validation'];
+// Respaldo si /operations/catalog no responde (offline, permiso, etc.): las
+// mismas 5 fases que pidio Jefe de taller, para que el select no se quede
+// vacio en vez de mostrar el texto libre de antes.
+const DEFAULT_TASK_FASES = ["en_espera", "en_proceso", "bloqueado", "terminado", "entregado"];
 
 function hasBit(value, bit) {
   return (Number(value || 0) & bit) === bit;
@@ -60,6 +64,19 @@ export default function TaskPage() {
   const showRowActions = canRead && (canUpdate || canDelete);
   const [userOptions, setUserOptions] = useState([]);
   const [proyectOptions, setProyectOptions] = useState([]);
+  const [taskFases, setTaskFases] = useState(DEFAULT_TASK_FASES);
+
+  useEffect(() => {
+    let cancelado = false;
+    getOperationsCatalog()
+      .then((data) => {
+        if (!cancelado && Array.isArray(data?.task_fase?.fases) && data.task_fase.fases.length > 0) {
+          setTaskFases(data.task_fase.fases);
+        }
+      })
+      .catch(() => {});
+    return () => { cancelado = true; };
+  }, []);
 
   async function loadData() {
     if (!permissionReady || !canRead) {
@@ -471,25 +488,11 @@ export default function TaskPage() {
             {fieldErrors["owner"] && <span className="field-error">{formatFieldError("owner")}</span>}
           </label>
           )}
-          {canSeeField("analyst") && (
-          <label className="field">
-            <span>{t("fields.task.analyst")}</span>
-            <input name="analyst" type="number" value={formData.analyst ?? ""} onChange={handleChange} placeholder={t("fields.task.analyst")} aria-invalid={Boolean(fieldErrors["analyst"])} {...inputPropsForField("analyst", validationRules["analyst"], "number")} />
-            {fieldErrors["analyst"] && <span className="field-error">{formatFieldError("analyst")}</span>}
-          </label>
-          )}
           {canSeeField("dependency") && (
           <label className="field">
             <span>{t("fields.task.dependency")}</span>
             <input name="dependency" type="number" value={formData.dependency ?? ""} onChange={handleChange} placeholder={t("fields.task.dependency")} aria-invalid={Boolean(fieldErrors["dependency"])} {...inputPropsForField("dependency", validationRules["dependency"], "number")} />
             {fieldErrors["dependency"] && <span className="field-error">{formatFieldError("dependency")}</span>}
-          </label>
-          )}
-          {canSeeField("leader") && (
-          <label className="field">
-            <span>{t("fields.task.leader")}</span>
-            <input name="leader" type="number" value={formData.leader ?? ""} onChange={handleChange} placeholder={t("fields.task.leader")} aria-invalid={Boolean(fieldErrors["leader"])} {...inputPropsForField("leader", validationRules["leader"], "number")} />
-            {fieldErrors["leader"] && <span className="field-error">{formatFieldError("leader")}</span>}
           </label>
           )}
           {canSeeField("validation") && (
@@ -523,7 +526,12 @@ export default function TaskPage() {
           {canSeeField("fase") && (
           <label className="field">
             <span>{t("fields.task.fase")}</span>
-            <input name="fase" type="text" maxLength={100} value={formData.fase ?? ""} onChange={handleChange} placeholder={t("fields.task.fase")} aria-invalid={Boolean(fieldErrors["fase"])} {...inputPropsForField("fase", validationRules["fase"], "text")} />
+            <select name="fase" value={formData.fase ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors["fase"])} {...inputPropsForField("fase", validationRules["fase"], "select")}>
+              <option value="">{t("common.select_option", "Selecciona una opción")}</option>
+              {taskFases.map((valor) => (
+                <option key={valor} value={valor}>{t(`task_fase.${valor}`, valor)}</option>
+              ))}
+            </select>
             {fieldErrors["fase"] && <span className="field-error">{formatFieldError("fase")}</span>}
           </label>
           )}
@@ -585,10 +593,10 @@ export default function TaskPage() {
               {canSeeField("duration") && <th>{t("fields.task.duration")}</th>}
               {canSeeField("type") && <th>{t("fields.task.type")}</th>}
               {canSeeField("owner") && <th>{t("fields.task.owner")}</th>}
-              {canSeeField("analyst") && <th>{t("fields.task.analyst")}</th>}
               {canSeeField("dependency") && <th>{t("fields.task.dependency")}</th>}
-              {canSeeField("leader") && <th>{t("fields.task.leader")}</th>}
               {canSeeField("validation") && <th>{t("fields.task.validation")}</th>}
+              {canSeeField("task_status") && <th>{t("fields.task.task_status")}</th>}
+              {canSeeField("fase") && <th>{t("fields.task.fase")}</th>}
         </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_task}>{showRowActions && <td className="row-actions">{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</td>}
               {canSeeField("id_task") && <td><pre className="cell-value">{formatTableValue(item.id_task)}</pre></td>}
               {canSeeField("task_code") && <td><pre className="cell-value">{formatTableValue(item.task_code)}</pre></td>}
@@ -596,10 +604,10 @@ export default function TaskPage() {
               {canSeeField("duration") && <td><pre className="cell-value">{formatTableValue(item.duration)}</pre></td>}
               {canSeeField("type") && <td><pre className="cell-value">{formatTableValue(item.type)}</pre></td>}
               {canSeeField("owner") && <td><pre className="cell-value">{formatTableValue(item.owner)}</pre></td>}
-              {canSeeField("analyst") && <td><pre className="cell-value">{formatTableValue(item.analyst)}</pre></td>}
               {canSeeField("dependency") && <td><pre className="cell-value">{formatTableValue(item.dependency)}</pre></td>}
-              {canSeeField("leader") && <td><pre className="cell-value">{formatTableValue(item.leader)}</pre></td>}
               {canSeeField("validation") && <td><pre className="cell-value">{formatTableValue(item.validation)}</pre></td>}
+              {canSeeField("task_status") && <td><pre className="cell-value">{formatTableValue(item.task_status)}</pre></td>}
+              {canSeeField("fase") && <td><pre className="cell-value">{t(`task_fase.${item.fase}`, formatTableValue(item.fase))}</pre></td>}
         </tr>)}</tbody></table></div>}
 
       {canRead && view === "kanban" && filtered.length > 0 && <div className="kanban">{Object.entries(groups).map(([key, groupItems]) => <div className="kanban-column" key={key}><h3>{key} <span>{groupItems.length}</span></h3>{groupItems.map((item) => <article className="kanban-card" key={item.id_task}><strong>{String(item.task_description ?? item.id_task)}</strong><small>#{item.id_task}</small>{showRowActions && <div>{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</div>}</article>)}</div>)}</div>}

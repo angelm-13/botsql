@@ -1121,7 +1121,6 @@
       "question_type": "Pregunta Tipo"
     },
     "task": {
-      "analyst": "Analista",
       "created_by": "Creado por",
       "creation_date": "Fecha de creación",
       "deletion_date": "Fecha de eliminación",
@@ -1132,7 +1131,6 @@
       "id_proyect": "ID Proyecto",
       "id_task": "ID Tarea",
       "last_update_date": "Fecha de última actualización",
-      "leader": "Líder",
       "owner": "Propietario",
       "priority": "Prioridad",
       "start_date": "Inicio Fecha",
@@ -1853,7 +1851,6 @@
       "question_type": "Ingresa pregunta tipo"
     },
     "task": {
-      "analyst": "Ingresa analista",
       "created_by": "Ingresa creado por",
       "creation_date": "Ingresa fecha de creación",
       "deletion_date": "Ingresa fecha de eliminación",
@@ -1864,7 +1861,6 @@
       "id_proyect": "Ingresa id proyecto",
       "id_task": "Ingresa id tarea",
       "last_update_date": "Ingresa fecha de última actualización",
-      "leader": "Ingresa líder",
       "owner": "Ingresa propietario",
       "priority": "Ingresa prioridad",
       "start_date": "Ingresa inicio fecha",
