@@ -15,6 +15,7 @@ from app.models import (
 )
 from app.models.session import engine, transaction_context
 from app.modules.plan import reiniciar_plan
+from app.utils.auth import has_kpi_permission
 from tests.conftest import BackendTestCase
 
 # Se prueba contra PostgreSQL real, no SQLite: `/kpi_snapshot/query` filtra
@@ -78,7 +79,7 @@ class TestKpiApi(BackendTestCase):
             )
             # Solo 970 recibe el permiso puntual sobre el KPI (nm_permission_kpi):
             # 972 tiene el modulo pero no este KPI en particular.
-            db.add(NmPermissionKpi(id_permission=970, id_kpi_definition=self.id_kpi, control_type=15, created_by=1))
+            db.add(NmPermissionKpi(id_permission=970, id_kpi_definition=self.id_kpi, puede_ver=True, created_by=1))
             db.add_all([
                 KpiSnapshot(
                     id_kpi_definition=self.id_kpi, dimension_key={"id_user": 950, "id_proyect": PROYECTO_A},
@@ -146,6 +147,29 @@ class TestKpiApi(BackendTestCase):
         for path in ("/kpi_definition/", self._query_url()):
             with self.subTest(path=path):
                 self.assertEqual(403, self._request(ACTOR_SIN_MODULO, path).status_code)
+
+    def test_has_kpi_permission_denies_without_a_row(self):
+        # 972 tiene el modulo (kpi_definition) pero ninguna fila en
+        # nm_permission_kpi para este KPI puntual -- fail-closed.
+        with transaction_context() as db:
+            self.assertFalse(has_kpi_permission(db, ACTOR_SIN_KPI_ESPECIFICO, self.id_kpi))
+
+    def test_has_kpi_permission_allows_with_puede_ver_true(self):
+        # 970 (setUp) ya tiene una fila con puede_ver=True para este KPI.
+        with transaction_context() as db:
+            self.assertTrue(has_kpi_permission(db, ACTOR_CON_KPI, self.id_kpi))
+
+    def test_has_kpi_permission_denies_with_puede_ver_false(self):
+        actor = {"id_user": 973, "id_permission": 973, "id_proyect": 973}
+        with transaction_context() as db:
+            db.add(EntityPermission(
+                id_permission=973, entity_name="kpi_definition",
+                scope_create=4, scope_read=4, scope_update=4, scope_delete=4, created_by=1,
+            ))
+            db.add(NmPermissionKpi(id_permission=973, id_kpi_definition=self.id_kpi, puede_ver=False, created_by=1))
+
+        with transaction_context() as db:
+            self.assertFalse(has_kpi_permission(db, actor, self.id_kpi))
 
     def test_superuser_without_project_scope_sees_every_project(self):
         response = self._request(ADMIN, self._query_url())
@@ -312,8 +336,8 @@ class TestKpiDashboardApi(BackendTestCase):
             # tiene el modulo de tableros pero ningun KPI -- y ADMIN nunca lo
             # necesita, por ser superusuario.
             db.add_all([
-                NmPermissionKpi(id_permission=980, id_kpi_definition=self.id_kpi, control_type=15, created_by=1),
-                NmPermissionKpi(id_permission=980, id_kpi_definition=self.id_kpi_egresos, control_type=15, created_by=1),
+                NmPermissionKpi(id_permission=980, id_kpi_definition=self.id_kpi, puede_ver=True, created_by=1),
+                NmPermissionKpi(id_permission=980, id_kpi_definition=self.id_kpi_egresos, puede_ver=True, created_by=1),
             ])
 
     def _request(self, actor, method, path, payload=None):
@@ -472,6 +496,93 @@ class TestKpiDashboardApi(BackendTestCase):
             fila = db.get(KpiDashboard, id_dashboard)
             self.assertIsNotNone(fila, "la fila sigue existiendo: es baja logica, no fisica")
             self.assertIsNotNone(fila.deletion_date)
+
+
+ACTOR_ADMINISTRA_PERMISOS_KPI = {"id_user": 990, "id_permission": 990, "user_type": "admin"}
+ACTOR_SIN_PERMISO_DE_ADMINISTRAR_KPI = {"id_user": 991, "id_permission": 991}
+
+
+@unittest.skipUnless(engine.dialect.name == "postgresql", "Estas pruebas requieren PostgreSQL")
+class TestPermissionKpiAdminApi(BackendTestCase):
+    """`/kpi_definition/all` y `/permission_kpi`: la pantalla que reparte que
+    rol ve que KPI. Protegidas con el permiso de administrar
+    `nm_permission_kpi` como entidad -- el mismo criterio que ya protege la
+    administracion de `entity_permission`/`nm_field_permission` -- y no con
+    el permiso puntual de cada KPI (`has_kpi_permission`), que es el que
+    filtra el catalogo para un usuario comun en `/kpi_definition/`.
+    """
+
+    def setUp(self):
+        super().setUp()
+        with transaction_context() as db:
+            db.add(EntityPermission(
+                id_permission=990, entity_name="nm_permission_kpi",
+                scope_create=4, scope_read=4, scope_update=4, scope_delete=4, created_by=1,
+            ))
+            # 991 no recibe nada sobre nm_permission_kpi -- solo existe para
+            # probar el 403.
+
+        seed_kpi_definitions(engine)
+        with transaction_context() as db:
+            self.id_kpi = db.scalar(
+                select(KpiDefinition.id_kpi_definition).where(KpiDefinition.clave == "ventas_por_empleado")
+            )
+
+    def _request(self, actor, method, path, payload=None):
+        with patch("app.utils.auth.jwt.decode", return_value=actor):
+            return self.client.open(
+                path, method=method, json=payload, headers={"Authorization": "Bearer permission-kpi-test"},
+            )
+
+    def test_list_all_kpi_definitions_is_not_filtered_by_has_kpi_permission(self):
+        # ACTOR_ADMINISTRA_PERMISOS_KPI no tiene ninguna fila propia en
+        # nm_permission_kpi -- si /all estuviera filtrando por
+        # has_kpi_permission (como /kpi_definition/ si lo hace), vendria
+        # vacio. El catalogo completo debe verse igual.
+        response = self._request(ACTOR_ADMINISTRA_PERMISOS_KPI, "GET", "/kpi_definition/all")
+
+        self.assertEqual(200, response.status_code)
+        claves = [item["clave"] for item in self.json(response)["items"]]
+        self.assertIn("ventas_por_empleado", claves)
+
+    def test_list_all_kpi_definitions_denied_without_admin_permission(self):
+        response = self._request(ACTOR_SIN_PERMISO_DE_ADMINISTRAR_KPI, "GET", "/kpi_definition/all")
+
+        self.assertEqual(403, response.status_code)
+
+    def test_create_list_and_delete_permission_kpi(self):
+        creado = self._request(ACTOR_ADMINISTRA_PERMISOS_KPI, "POST", "/permission_kpi/", {
+            "id_permission": 500, "id_kpi_definition": self.id_kpi,
+        })
+        self.assertEqual(201, creado.status_code, self.json(creado))
+        cuerpo = self.json(creado)
+        self.assertTrue(cuerpo["puede_ver"], "puede_ver=True es el default")
+        id_nm_permission_kpi = cuerpo["id_nm_permission_kpi"]
+
+        listado = self._request(ACTOR_ADMINISTRA_PERMISOS_KPI, "GET", "/permission_kpi/?id_permission=500")
+        self.assertEqual(200, listado.status_code)
+        self.assertEqual([self.id_kpi], [item["id_kpi_definition"] for item in self.json(listado)["items"]])
+
+        with transaction_context() as db:
+            self.assertTrue(has_kpi_permission(db, {"id_permission": 500}, self.id_kpi))
+
+        borrado = self._request(ACTOR_ADMINISTRA_PERMISOS_KPI, "DELETE", f"/permission_kpi/{id_nm_permission_kpi}")
+        self.assertEqual(200, borrado.status_code)
+
+        listado_tras_borrar = self._request(ACTOR_ADMINISTRA_PERMISOS_KPI, "GET", "/permission_kpi/?id_permission=500")
+        self.assertEqual([], self.json(listado_tras_borrar)["items"])
+        with transaction_context() as db:
+            self.assertFalse(has_kpi_permission(db, {"id_permission": 500}, self.id_kpi))
+
+    def test_permission_kpi_endpoints_denied_without_admin_permission(self):
+        for method, path, payload in (
+            ("GET", "/permission_kpi/?id_permission=500", None),
+            ("POST", "/permission_kpi/", {"id_permission": 500, "id_kpi_definition": self.id_kpi}),
+            ("DELETE", "/permission_kpi/1", None),
+        ):
+            with self.subTest(method=method, path=path):
+                response = self._request(ACTOR_SIN_PERMISO_DE_ADMINISTRAR_KPI, method, path, payload)
+                self.assertEqual(403, response.status_code)
 
 
 if __name__ == "__main__":

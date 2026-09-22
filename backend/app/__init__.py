@@ -111,6 +111,7 @@ from app.routes.restaurant import bp_restaurant
 from app.routes.appointments import bp_appointments
 from app.routes.public_calendar import bp_public_appointments, bp_public_calendar
 from app.routes.kpi import bp_kpi, bp_kpi_dashboard, bp_kpi_dashboard_widget
+from app.routes.permission_kpi import bp_permission_kpi
 
 def _documents_reports_app_path() -> str:
     return os.getenv('DOCUMENTS_REPORTS_APP_PATH', '/documents-reports/app')
@@ -687,6 +688,7 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_kpi)
     app.register_blueprint(bp_kpi_dashboard)
     app.register_blueprint(bp_kpi_dashboard_widget)
+    app.register_blueprint(bp_permission_kpi)
     app.register_blueprint(bp_payroll_period)
     app.register_blueprint(bp_payroll_detail)
     app.register_blueprint(bp_payroll_concept)

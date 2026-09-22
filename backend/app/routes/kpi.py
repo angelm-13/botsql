@@ -179,7 +179,39 @@ def list_kpi_definitions(user_data):
                 'unidad': kpi.unidad,
             }
             for kpi in kpis
-            if has_kpi_permission(db, user_data, kpi.id_kpi_definition, 'read')
+            if has_kpi_permission(db, user_data, kpi.id_kpi_definition)
+        ]
+    return jsonify({'items': items})
+
+
+@bp_kpi.route('/kpi_definition/all', methods=['GET'])
+@token_required
+@require_entity_permission('nm_permission_kpi', 'read')
+def list_all_kpi_definitions(user_data):
+    """Catalogo completo de KPIs, sin filtrar por `has_kpi_permission`.
+
+    Distinto de `list_kpi_definitions` (`/kpi_definition/`, usado por el
+    propio dashboard: cada quien ve solo lo que tiene permitido). Este es
+    para poblar el selector de la pantalla que administra
+    `nm_permission_kpi` -- quien reparte permisos necesita ver los 16 KPIs
+    completos para poder asignarlos, no solo los que ya tiene concedidos a
+    si mismo. Protegido con el permiso de administrar `nm_permission_kpi`,
+    no con el de `kpi_definition`.
+    """
+    with transaction_context() as db:
+        kpis = db.scalars(
+            select(KpiDefinition).where(KpiDefinition.deletion_date.is_(None))
+        ).all()
+        items = [
+            {
+                'id_kpi_definition': kpi.id_kpi_definition,
+                'clave': kpi.clave,
+                'etiqueta': kpi.etiqueta,
+                'modulo': kpi.modulo,
+                'dimensiones': kpi.dimensiones,
+                'unidad': kpi.unidad,
+            }
+            for kpi in kpis
         ]
     return jsonify({'items': items})
 
@@ -213,7 +245,7 @@ def query_kpi_snapshot(user_data):
         _validar_rango(fecha_inicio_b, fecha_fin_b, dias_maximo, 'fecha_fin_b')
 
     with transaction_context() as db:
-        if not has_kpi_permission(db, user_data, id_kpi_definition, 'read'):
+        if not has_kpi_permission(db, user_data, id_kpi_definition):
             raise AppError('errors.permission_denied', 403, {'kpi': id_kpi_definition})
 
         # Alcance del actor. Los primeros 3 KPIs de KPI_REGISTRY (facturacion,

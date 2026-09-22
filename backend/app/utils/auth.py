@@ -4,7 +4,6 @@ from flask import jsonify, request
 import jwt
 import os
 
-PERMISSION_BITS = {'create': 1, 'read': 2, 'update': 4, 'delete': 8}
 # Cada accion vive en su propia columna de alcance (0 Sin acceso, 1 Propios,
 # 2 Mis grupos, 4 Todos -- ver entity_permission.py). El gate de aqui sigue
 # siendo booleano: 0 deniega, cualquier otro valor permite. El alcance real
@@ -103,8 +102,8 @@ def _has_entity_permission(user_data: dict, entity_name: str, action: str) -> bo
         return scope != 0
 
 
-def has_kpi_permission(session, user_data: dict, id_kpi_definition, action: str = 'read') -> bool:
-    """Si el actor puede usar este KPI puntual.
+def has_kpi_permission(session, user_data: dict, id_kpi_definition) -> bool:
+    """Si el actor puede ver este KPI puntual.
 
     Dos capas, igual que `_has_entity_permission`, pero la primera mira el
     modulo DEL KPI (`kpi_definition.modulo`, ej. "facturacion"), no el modulo
@@ -113,6 +112,11 @@ def has_kpi_permission(session, user_data: dict, id_kpi_definition, action: str 
     nadie, con independencia del rol. `require_entity_permission('kpi_definition',
     ...)` ya cubre el guardia de modulo "kpis"; este es el guardia del modulo
     que el KPI mide.
+
+    No hay accion mas alla de "ver": un KPI no se crea/edita/borra desde
+    aqui (eso lo administra `nm_permission_kpi` como entidad, via
+    `require_entity_permission('nm_permission_kpi', ...)`), asi que
+    `nm_permission_kpi.puede_ver` es un booleano, no un bitmask.
 
     `session` viaja como parametro en vez de abrir su propia transaccion
     porque quien llama (la ruta) ya tiene una abierta para resolver el resto
@@ -131,10 +135,6 @@ def has_kpi_permission(session, user_data: dict, id_kpi_definition, action: str 
     if _is_superuser(user_data):
         return True
 
-    bit = PERMISSION_BITS.get(action)
-    if bit is None:
-        return False
-
     permission_id = _get_permission_id(user_data)
     if not permission_id:
         return False
@@ -146,13 +146,7 @@ def has_kpi_permission(session, user_data: dict, id_kpi_definition, action: str 
         .filter(NmPermissionKpi.deletion_date.is_(None))
         .first()
     )
-    if not record:
-        return False
-    try:
-        control_type = int(record.control_type)
-    except (TypeError, ValueError):
-        return False
-    return (control_type & bit) == bit
+    return bool(record) and bool(record.puede_ver)
 
 
 def require_entity_permission(entity_name: str, action: str):
