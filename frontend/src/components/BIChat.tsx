@@ -22,9 +22,10 @@ import { usarPaleta } from "../theme";
 import { DashboardGrid } from "./DashboardGrid";
 
 const EJEMPLOS = [
-  "¿Cuánto vendimos este año?",
-  "Ventas por mes de los últimos 12 meses",
+  "¿Cuánto vendimos en total?",
+  "Ventas por mes de este año",
   "Top 5 productos por importe",
+  "Ventas por ciudad",
   "Hazme un dashboard general de ventas",
 ];
 

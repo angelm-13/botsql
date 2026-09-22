@@ -23,24 +23,33 @@ cual.
 
 | Documento | Para qué |
 |---|---|
+| [docs/DEMOSTRACION.md](docs/DEMOSTRACION.md) | Cómo mostrarlo: arranque, guion de 10 minutos, preguntas frecuentes y qué hacer si falla |
 | [docs/PROCEDIMIENTO.md](docs/PROCEDIMIENTO.md) | Paso a paso de cero a funcionando, con cómo comprobar cada paso |
 | [docs/DESPLIEGUE.md](docs/DESPLIEGUE.md) | Puesta en producción: rol de solo lectura, Docker, autenticación, lista de comprobación |
 | [docs/PLAN_DE_VALIDACION.md](docs/PLAN_DE_VALIDACION.md) | Matriz de pruebas y lo que **no** cubre |
 
-## Probarlo en dos minutos, sin PostgreSQL y sin Ollama
+## Verlo funcionando: un comando, una URL
+
+**Windows:** doble clic en `demo.bat` · **Linux/macOS:** `./demo.sh`
+
+Instala lo que falte, construye la interfaz la primera vez y abre
+`http://localhost:5001` — interfaz y API en el mismo puerto. No hace falta
+PostgreSQL, ni Docker, ni tarjeta gráfica.
+
+Siembra una base SQLite genérica (clientes, productos, empleados, ~380 ventas
+de 2026) y usa un modelo **simulado** que responde a las preguntas de ejemplo,
+incluida `borra todas las ventas` para ver la barrera de seguridad. Ante una
+pregunta que no cubre, lo dice: no aparenta entender lo que no entendió.
+
+Para preguntas libres, con el modelo real:
 
 ```bash
-cd backend && pip install -r requirements.txt && python demo.py
+ollama pull qwen2.5-coder:7b-instruct
+cd backend && BI_DEMO_OLLAMA=1 python demo.py
 ```
 
-```bash
-cd frontend && npm install && npm run dev
-```
-
-Siembra una base SQLite de juguete y usa un modelo simulado que responde a
-`ventas totales`, `ventas por mes`, `top productos`, `hazme un dashboard` y
-`borra todas las ventas` (esta última para ver el camino del rechazo). Con
-`BI_DEMO_OLLAMA=1` usa el Ollama real contra la misma base.
+Para presentarlo a alguien, hay un guion de diez minutos en
+[docs/DEMOSTRACION.md](docs/DEMOSTRACION.md).
 
 ## Arranque rápido
 

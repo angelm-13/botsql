@@ -17,10 +17,21 @@ una dependencia mas para una sola llamada POST.
 from __future__ import annotations
 
 import json
+import re
 import time
+import unicodedata
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+
+
+def _normalizar(texto: str) -> str:
+    """Minusculas y sin acentos, para comparar como escribe la gente."""
+    sin_tildes = "".join(
+        c for c in unicodedata.normalize("NFD", texto.lower())
+        if unicodedata.category(c) != "Mn"
+    )
+    return sin_tildes
 
 
 @dataclass(frozen=True)
@@ -66,16 +77,29 @@ class ProveedorDeGuion(ProveedorLLM):
     respuesta_fija: str | None = None
     nombre: str = "guion"
     llamadas: list[str] = field(default_factory=list)
+    # Que se contesta cuando la pregunta no esta en el guion. Sin
+    # `respuesta_fija`, lo honesto es decirlo: un guion que devuelve siempre
+    # algo aparenta entender preguntas que no entiende.
+    mensaje_sin_guion: str = "El guion no tiene respuesta para esta pregunta."
 
     def generar(self, prompt: str, pregunta: str = "") -> RespuestaLLM:
         self.llamadas.append(prompt)
         # Se busca en la PREGUNTA, no en el prompt: el prompt trae el
         # contrato entero y cualquier clave coincidiria siempre.
+        #
+        # La coincidencia ancla al INICIO de palabra, no a cualquier parte:
+        # con subcadena suelta, la clave "mes" se dispara dentro de
+        # "tri-mes-tre", y una pregunta que el guion no cubre acaba
+        # contestada
+        # con una grafica que no viene a cuento -- aparentando que entendio.
+        # Anclar solo al inicio (y no tambien al final) deja que "producto"
+        # siga cazando "productos", que es lo que la gente escribe.
+        texto = _normalizar(pregunta or "")
         for clave, respuesta in self.guion.items():
-            if clave.lower() in (pregunta or "").lower():
+            if re.search(rf"\b{re.escape(_normalizar(clave))}", texto):
                 return RespuestaLLM(texto=respuesta, modelo="guion", ms=0)
         if self.respuesta_fija is None:
-            raise ProveedorNoDisponible("El guion no tiene respuesta para esta pregunta.")
+            raise ProveedorNoDisponible(self.mensaje_sin_guion)
         return RespuestaLLM(texto=self.respuesta_fija, modelo="guion", ms=0)
 
     def disponible(self) -> bool:

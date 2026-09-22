@@ -24,8 +24,9 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from pathlib import Path
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, send_from_directory
 from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 
@@ -34,6 +35,24 @@ from bi.config import AjustesBI
 from bi.llm_provider import ProveedorLLM, ProveedorOllama
 from bi.schema_extractor import CacheDeEsquema
 from bi.security import advertencias_de_despliegue
+
+
+# Donde queda la interfaz ya construida (`npm run build`), relativa a este
+# archivo. Si existe, el mismo proceso sirve interfaz y API desde un solo
+# puerto: una URL y un comando, que es lo que hace falta para demostrarlo.
+DIST_POR_OMISION = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+
+
+def _carpeta_de_interfaz(ruta: str | Path | None) -> Path | None:
+    """La carpeta de la interfaz construida, o None si no se construyo.
+
+    Servir la interfaz desde el backend no es solo comodidad: al compartir
+    origen, el navegador ya no hace peticiones entre dominios y CORS deja de
+    hacer falta. Es la misma razon por la que en produccion nginx pone las dos
+    cosas detras del mismo nombre.
+    """
+    candidata = Path(ruta) if ruta else Path(os.getenv("BI_FRONTEND_DIST", DIST_POR_OMISION))
+    return candidata if (candidata / "index.html").is_file() else None
 
 
 def crear_engine(ajustes: AjustesBI):
@@ -79,17 +98,23 @@ def crear_app(
     contexto=None,
     gancho_sql=None,
     relaciones=None,
+    interfaz=None,
 ) -> Flask:
     ajustes = ajustes or AjustesBI.desde_entorno()
     engine = engine if engine is not None else crear_engine(ajustes)
     proveedor = proveedor if proveedor is not None else crear_proveedor(ajustes)
+    dist = _carpeta_de_interfaz(interfaz)
 
-    app = Flask(__name__)
+    app = Flask(__name__, static_folder=str(dist) if dist else None,
+                static_url_path="")
     app.config["JSON_SORT_KEYS"] = False
 
-    # CORS solo si esta instalado: el modulo no lo exige. En produccion es
-    # mejor servir el frontend detras del mismo origen y no abrir nada.
+    # CORS solo si esta instalado, y solo si la interfaz NO se sirve desde
+    # aqui: con el mismo origen no hay nada que abrir.
     try:
+        if dist is not None:
+            raise ImportError("la interfaz se sirve desde este mismo origen")
+
         from flask_cors import CORS
 
         CORS(app, resources={f"{ajustes.prefijo_api}/*": {
@@ -114,16 +139,33 @@ def crear_app(
         "proveedor": proveedor, "cache": cache,
     }
 
-    @app.get("/")
-    def raiz():
-        return jsonify({
-            "modulo": "bi-text-to-sql",
-            "endpoints": [
-                f"POST {ajustes.prefijo_api}/query",
-                f"GET  {ajustes.prefijo_api}/schema",
-                f"GET  {ajustes.prefijo_api}/health",
-            ],
-        })
+    if dist is not None:
+        @app.get("/")
+        def raiz():
+            return send_from_directory(dist, "index.html")
+
+        # Cualquier ruta que no sea de la API devuelve el index: es una
+        # aplicacion de una sola pagina y el enrutador vive en el navegador.
+        # Las rutas de la API son literales y Werkzeug las prefiere sobre esta
+        # regla con convertidor, asi que no la tapan.
+        @app.get("/<path:ruta>")
+        def interfaz_spa(ruta: str):
+            archivo = dist / ruta
+            if archivo.is_file():
+                return send_from_directory(dist, ruta)
+            return send_from_directory(dist, "index.html")
+    else:
+        @app.get("/")
+        def raiz():
+            return jsonify({
+                "modulo": "bi-text-to-sql",
+                "interfaz": "no construida -- corra `npm run build` en frontend/",
+                "endpoints": [
+                    f"POST {ajustes.prefijo_api}/query",
+                    f"GET  {ajustes.prefijo_api}/schema",
+                    f"GET  {ajustes.prefijo_api}/health",
+                ],
+            })
 
     for aviso in advertencias_de_despliegue(ajustes.database_url):
         app.logger.warning("BI: %s", aviso)
