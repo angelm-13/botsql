@@ -6,10 +6,13 @@ from app.models.proyect import Proyect
 from app.models.proyect_event import ProyectEvent
 from app.models.session import transaction_context
 from app.services.project_management_service import (
+    add_project_payment,
     create_project,
     delete_project,
+    delete_project_payment,
     get_project_detail,
     list_projects,
+    settle_project_payment,
     transition_management,
     transition_project,
     update_project,
@@ -160,6 +163,42 @@ class TestProjectWorkflowService(BackendTestCase):
             project, {"management_status": "autorizado"}, self.manager,
         )
         self.assertEqual("autorizado", autorizado["management_status"])
+
+    def test_payments_are_exclusive_to_the_manager(self):
+        """Las parcialidades cuelgan del mismo recorrido comercial que
+        `transition_management` y comparten su candado: Supervisor las ve
+        (via `get_project_detail`) pero no puede acordarlas, cobrarlas ni
+        quitarlas, aunque sea el lider del proyecto y tenga `proyect:update`.
+        """
+        project = self._create()["id_proyect"]
+
+        with self.assertRaises(AppError) as raised:
+            add_project_payment(
+                project, {"payment_date": "2026-09-22", "amount": "100"}, self.supervisor,
+            )
+        self.assertEqual("errors.permission_denied", raised.exception.message_key)
+
+        pago = add_project_payment(
+            project, {"payment_date": "2026-09-22", "amount": "100"}, self.manager,
+        )
+
+        with self.assertRaises(AppError) as raised:
+            settle_project_payment(
+                pago["id_proyect_payment"], {"paid_at": "2026-09-23"}, self.supervisor,
+            )
+        self.assertEqual("errors.permission_denied", raised.exception.message_key)
+
+        with self.assertRaises(AppError) as raised:
+            delete_project_payment(pago["id_proyect_payment"], self.supervisor)
+        self.assertEqual("errors.permission_denied", raised.exception.message_key)
+
+        cobrado = settle_project_payment(
+            pago["id_proyect_payment"], {"paid_at": "2026-09-23"}, self.manager,
+        )
+        self.assertEqual("2026-09-23", cobrado["paid_at"])
+
+        borrado = delete_project_payment(pago["id_proyect_payment"], self.manager)
+        self.assertEqual(pago["id_proyect_payment"], borrado["id_proyect_payment"])
 
     def test_the_leader_is_always_the_creator_regardless_of_payload(self):
         """El responsable es siempre quien crea, sin excepcion de rol.

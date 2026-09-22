@@ -153,23 +153,28 @@ def validate_management_transition(current_status, target_status) -> str:
     return destino
 
 
+def _require_management_scope(db, user_data: dict) -> None:
+    """Candado de rol compartido por todo el recorrido de GERENCIA.
+
+    Exclusivo de quien autoriza (Gerente) o de un actor sin restriccion. Vive
+    aqui -no en la ruta- para que ninguna operacion comercial (el recorrido
+    en si o las parcialidades que cuelgan de el) se quede sin el candado por
+    accidente, como paso antes con `transition_management`.
+    """
+    scope = _scope_name(db, user_data)
+    if scope not in {"authorization", "unrestricted"}:
+        raise AppError("errors.permission_denied", 403, {"scope": scope})
+
+
 def transition_management(project_id, payload: dict, user_data: dict) -> dict:
     """Mueve el proyecto por el recorrido de GERENCIA, no por el de taller.
 
     Son dos vidas del mismo proyecto y avanzan por separado: uno entregado
     puede seguir sin cobrar. Por eso hay dos rutas y no una con un parametro.
-
-    Exclusivo de quien autoriza (Gerente) o de un actor sin restriccion.
-    Antes cualquier actor con `proyect:update` y visibilidad del proyecto
-    -- incluido el propio Supervisor sobre su proyecto -- podia autorizar o
-    cancelar el estado comercial; el candado de rol vive aqui y no en la
-    ruta, igual que `transition_project`.
     """
     with transaction_context() as db:
         project = _get_visible_project(db, project_id, user_data, for_update=True)
-        scope = _scope_name(db, user_data)
-        if scope not in {"authorization", "unrestricted"}:
-            raise AppError("errors.permission_denied", 403, {"scope": scope})
+        _require_management_scope(db, user_data)
         destino = validate_management_transition(
             project.management_status, (payload or {}).get("management_status"))
         anterior = project.management_status
@@ -942,10 +947,14 @@ def add_project_payment(project_id, payload: dict, user_data: dict) -> dict:
     El porcentaje es opcional porque no siempre se pacta asi -- a veces se
     acuerda una cifra redonda y no una fraccion --, pero cuando viene se guarda
     tal cual. Ver la cabecera del modelo para por que no se deduce del total.
+
+    Exclusivo de Gerente, igual que `transition_management`: las
+    parcialidades son parte del mismo recorrido comercial.
     """
     carga = payload or {}
     with transaction_context() as db:
         project = _get_visible_project(db, project_id, user_data, for_update=True)
+        _require_management_scope(db, user_data)
         pago = ProyectPayment(
             id_proyect=project.id_proyect,
             payment_date=_fecha(carga.get("payment_date"), "payment_date"),
@@ -980,6 +989,7 @@ def settle_project_payment(payment_id, payload: dict, user_data: dict) -> dict:
         # Pasa por la misma comprobacion de alcance que el proyecto: quien no ve
         # el proyecto no cobra sus parcialidades.
         project = _get_visible_project(db, pago.id_proyect, user_data, for_update=True)
+        _require_management_scope(db, user_data)
 
         carga = payload or {}
         if carga.get("paid_at") in (None, ""):
@@ -1002,6 +1012,7 @@ def delete_project_payment(payment_id, user_data: dict) -> dict:
         if pago is None or pago.deletion_date is not None:
             raise AppError("errors.not_found", 404, {"entity": "proyect_payment"})
         _get_visible_project(db, pago.id_proyect, user_data, for_update=True)
+        _require_management_scope(db, user_data)
         pago.deletion_date = datetime.now()
         db.flush()
         return {"id_proyect_payment": pago.id_proyect_payment}
