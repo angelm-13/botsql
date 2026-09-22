@@ -243,3 +243,9 @@ label:has(:is(input,select,textarea):required)::before,label:has(+ :is(input,sel
 .project-attachments{display:flex;flex-direction:column;gap:8px;margin:12px 0}
 .project-attachment-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border-radius:6px;background:#f4f1ea}
 .project-attachment-upload{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.kpi-permission-group{display:flex;flex-direction:column;gap:8px}
+.kpi-permission-group h4{margin:8px 0 0;color:#334155}
+.kpi-permission-group:first-child h4{margin-top:0}
+.kpi-permission-header,.kpi-permission-row{display:grid;grid-template-columns:minmax(0,1fr) 70px;align-items:center;gap:10px}
+.kpi-permission-header{font-size:12px;text-transform:uppercase;color:#64748b;font-weight:800}
+.kpi-permission-row{border:1px solid #e2e8f0;border-radius:14px;padding:10px 12px;background:#fff}

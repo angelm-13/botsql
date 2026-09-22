@@ -450,6 +450,13 @@ export const deleteInvoiceMaterialService = (id) => request(`/invoice_material_s
 export const getAllKpiDefinition = () => request("/kpi_definition/");
 export const queryKpiSnapshot = (params = {}) => request("/kpi_snapshot/query", { params });
 
+// Catalogo completo de KPIs, sin el filtro de permiso puntual -- para poblar
+// el selector del gestor de permisos por KPI, no el dashboard.
+export const getAllKpiDefinitionUnfiltered = () => request("/kpi_definition/all");
+export const getPermissionKpi = (idPermission) => request("/permission_kpi/", { params: { id_permission: idPermission } });
+export const createPermissionKpi = (payload) => request("/permission_kpi/", { method: "POST", body: payload });
+export const deletePermissionKpi = (id) => request(`/permission_kpi/${id}`, { method: "DELETE" });
+
 export const getAllKpiDashboard = (params = {}) => request("/kpi_dashboard/", { params });
 export const createKpiDashboard = (payload) => request("/kpi_dashboard/", { method: "POST", body: payload });
 export const updateKpiDashboard = (id, payload) => request(`/kpi_dashboard/${id}`, { method: "PUT", body: payload });

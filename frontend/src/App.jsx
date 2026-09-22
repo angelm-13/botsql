@@ -4,6 +4,7 @@ import Shell from "./layouts/Shell";
 import Dashboard from "./pages/Dashboard";
 import MfaSetupPage from "./pages/MfaSetupPage";
 import RolePermissionManagerPage from "./pages/RolePermissionManagerPage.jsx";
+import KpiPermissionManagerPage from "./pages/KpiPermissionManagerPage.jsx";
 import TeamManagerPage from "./pages/TeamManagerPage.jsx";
 import QuotationPage from "./pages/QuotationPage.jsx";
 import AuthorizationTrackingPage from "./pages/AuthorizationTrackingPage.jsx";
@@ -169,6 +170,7 @@ export default function App() {
           <Route index element={<Dashboard />} />
           <Route path="/mfa-setup" element={<MfaSetupPage />} />
           <Route path="/role_permissions" element={<AdminRoute><RolePermissionManagerPage /></AdminRoute>} />
+          <Route path="/kpi_permissions" element={<AdminRoute><KpiPermissionManagerPage /></AdminRoute>} />
           <Route path="/facturama-config" element={<AdminRoute><FacturamaConfigPage /></AdminRoute>} />
           <Route path="/quotation" element={<RoleAccessRoute entityName="invoice"><QuotationPage /></RoleAccessRoute>} />
           <Route path="/authorization_tracking" element={<RoleAccessRoute entityName="invoice"><AuthorizationTrackingPage /></RoleAccessRoute>} />

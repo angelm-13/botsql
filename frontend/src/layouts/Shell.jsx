@@ -17,6 +17,7 @@ const navItems = [
   // agrupado como "Configuracion" (ver 20260903000000_configuracion_dentro_del_engrane.sql).
   { path: "/mfa-setup", key: "common.mfa_setup", group: "Configuracion", groupIcon: "settings", location: "settings", order: 910 },
   { path: "/role_permissions", key: "common.role_permission_manager", adminOnly: true, groupIcon: "settings", location: "settings" },
+  { path: "/kpi_permissions", key: "common.kpi_permission_manager", adminOnly: true, groupIcon: "settings", location: "settings" },
   { path: "/facturama-config", key: "menu.facturama_config", adminOnly: true, groupIcon: "settings", location: "settings" },
   { path: "/bank", key: "menu.bank" },
   { path: "/bank_account", key: "menu.bank_account" },
