@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+/* La superficie la fija el tema y la reusan los componentes por token; aqui
+   solo se deja el fondo de la pagina y el esquema de color del navegador,
+   para que los controles nativos (barras, campos) no queden claros sobre
+   oscuro. */
+:root {
+  color-scheme: light dark;
+  --pagina: #f6f5f2;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --pagina: #111110;
+  }
+}
+body {
+  margin: 0;
+  background: var(--pagina);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}

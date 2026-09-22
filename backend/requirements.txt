@@ -1,0 +1,16 @@
+Flask==3.0.3
+SQLAlchemy==2.0.32
+
+# Opcional: solo si el frontend se sirve desde otro origen.
+Flask-Cors==4.0.1
+
+# Controlador segun el motor al que se conecte. Instale solo el que use.
+# psycopg2-binary==2.9.9      # PostgreSQL
+# PyMySQL==1.1.1              # MySQL / MariaDB
+# pyodbc==5.1.0               # SQL Server
+# (SQLite viene en la biblioteca estandar)
+
+# El modelo se consume por HTTP con urllib: no hay dependencia de cliente.
+
+# Servidor WSGI de produccion (solo lo usa el despliegue, no la libreria).
+gunicorn==23.0.0

@@ -1,0 +1,69 @@
+# Despliegue del modulo de BI: frontend + backend.
+#
+# La base de datos NO esta aqui a proposito: este modulo se conecta a la base
+# que ya existe del proyecto anfitrion, no trae la suya. `BI_DATABASE_URL`
+# apunta a donde viva -- otro contenedor, otro servidor, una replica de
+# lectura.
+#
+#   docker compose up -d --build
+#   -> frontend en http://localhost:8080  (la API va por el mismo origen)
+#
+# Ollama tampoco esta por omision: si ya corre en la maquina anfitriona, se
+# consume con `host.docker.internal`. Para levantarlo aqui:
+#
+#   docker compose --profile con-modelo up -d
+
+services:
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      # OBLIGATORIO. Use un rol de SOLO LECTURA, no el superusuario: es la
+      # unica barrera que no depende de que el validador sea perfecto.
+      BI_DATABASE_URL: ${BI_DATABASE_URL:?falta BI_DATABASE_URL}
+
+      BI_OLLAMA_URL: ${BI_OLLAMA_URL:-http://host.docker.internal:11434}
+      BI_MODEL: ${BI_MODEL:-qwen2.5-coder:7b-instruct}
+
+      # Que ve el modelo. Vacio = todo lo que no caiga en la lista negra.
+      BI_INCLUDE_TABLES: ${BI_INCLUDE_TABLES:-}
+      BI_MAX_TABLES: ${BI_MAX_TABLES:-60}
+      BI_ROW_LIMIT: ${BI_ROW_LIMIT:-1000}
+      BI_SQL_TIMEOUT_MS: ${BI_SQL_TIMEOUT_MS:-15000}
+      BI_SCHEMA_TTL: ${BI_SCHEMA_TTL:-300}
+    extra_hosts:
+      # Permite alcanzar un Ollama que corre en la maquina anfitriona. En
+      # Linux no viene resuelto solo, a diferencia de Docker Desktop.
+      - "host.docker.internal:host-gateway"
+    # El puerto NO se publica: solo el frontend habla con el backend, por la
+    # red interna. Publicarlo dejaria la API sin autenticacion expuesta.
+    expose:
+      - "5001"
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:5001/api/v1/bi/health', timeout=5).status==200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${BI_PUERTO:-8080}:80"
+
+  # Perfil opcional: el modelo dentro del mismo compose.
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["con-modelo"]
+    restart: unless-stopped
+    volumes:
+      - ollama:/root/.ollama
+    ports:
+      - "11434:11434"
+
+volumes:
+  ollama:
