@@ -579,6 +579,11 @@ export const updateProyect = (id, payload) => request(`/proyect/${id}`, { method
 export const deleteProyect = (id) => request(`/proyect/${id}`, { method: "DELETE" });
 export const transitionProyect = (id, payload) => request(`/proyect/${id}/transition`, { method: "POST", body: payload });
 export const addProyectMessage = (id, payload) => request(`/proyect/${id}/messages`, { method: "POST", body: payload });
+// El supervisor se hace cargo del proyecto, y lo suelta. No es un PUT sobre
+// `id_supervisor` a proposito: el servidor pone al actor, nunca a quien diga el
+// cuerpo, que es lo que hace que sea TOMAR y no asignar.
+export const takeProyect = (id) => request(`/proyect/${id}/take`, { method: "POST" });
+export const releaseProyect = (id) => request(`/proyect/${id}/release`, { method: "POST" });
 
 // El recorrido de GERENCIA, aparte del de taller: un proyecto puede estar
 // entregado y sin cobrar, y son dos maquinas de estados distintas.

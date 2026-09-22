@@ -87,11 +87,11 @@ export default function ProyectoExpediente({ detalle, catalogo, onCambio }) {
         <Dato etiqueta={etiqueta("requested_by", "Lo pidió")} valor={detalle.requested_by} />
         <Dato etiqueta={etiqueta("quotation", "Cotización")}
               valor={detalle.id_quotation && `#${detalle.id_quotation}`} />
-        <Dato etiqueta={etiqueta("purchase_order", "Orden de compra")}
-              valor={detalle.purchase_order} />
-        <Dato etiqueta={etiqueta("purchase_order_item", "Partida")}
-              valor={detalle.purchase_order_item} />
-        <Dato etiqueta={etiqueta("delivery_date", "Entrega")} valor={detalle.delivery_date} />
+        {/* La orden de compra del cliente y su partida se retiraron de la
+            orden de trabajo. Las columnas siguen en la base con lo que ya
+            tuvieran capturado, pero el expediente ya no las cuenta. */}
+        <Dato etiqueta={etiqueta("delivery_date", "Fecha estimada de entrega")}
+              valor={detalle.delivery_date} />
       </dl>
 
       {/* --- el recorrido comercial --- */}

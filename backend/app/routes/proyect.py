@@ -10,7 +10,9 @@ from app.services.project_management_service import (
     list_project_payments,
     list_projects,
     project_options,
+    release_project,
     settle_project_payment,
+    take_project,
     transition_management,
     transition_project,
     update_project,
@@ -26,10 +28,13 @@ ALLOWED_FIELDS = [
     'id_proyect', 'id_customer_supplier', 'leader', 'proyect_description',
     'title', 'proyect_status', 'created_by', 'creation_date',
     'last_update_date', 'deletion_date',
-    'folio', 'requested_by', 'id_quotation', 'purchase_order',
-    'purchase_order_item', 'id_supervisor', 'delivery_date',
+    'folio', 'requested_by', 'id_quotation', 'id_supervisor', 'delivery_date',
     'id_drawing_document', 'management_status',
 ]
+# `purchase_order` y `purchase_order_item` salieron de la lista con el
+# formulario: la orden de compra del cliente y su partida ya no se capturan ni
+# se devuelven. Las columnas se quedan en la tabla con lo que ya tuvieran, y
+# recuperarlas es volver a ponerlas aqui -- no hay que migrar nada.
 
 TECHNICAL_RESPONSE_FIELDS = {'id_proyect', 'folio', 'submitted_date'}
 FIELD_READ_BIT = 2
@@ -188,6 +193,27 @@ def update_proyect(user_data, id_proyect):
 @require_entity_permission('proyect', 'update')
 def transition_proyect(user_data, id_proyect):
     return jsonify(transition_project(id_proyect, request.get_json() or {}, user_data))
+
+
+@bp_proyect.route('/<id_proyect>/take', methods=['POST'])
+@token_required
+@require_entity_permission('proyect', 'update')
+def take_proyect(user_data, id_proyect):
+    """El supervisor se hace cargo del proyecto.
+
+    Pide el permiso de ACTUALIZAR proyecto, igual que las transiciones: tomarlo
+    cambia el proyecto. Quien puede tomarlo de verdad -- la capacidad
+    `project_execution` -- lo decide el servicio, que es donde vive el resto de
+    las reglas de alcance.
+    """
+    return jsonify(take_project(id_proyect, user_data))
+
+
+@bp_proyect.route('/<id_proyect>/release', methods=['POST'])
+@token_required
+@require_entity_permission('proyect', 'update')
+def release_proyect(user_data, id_proyect):
+    return jsonify(release_project(id_proyect, user_data))
 
 
 @bp_proyect.route('/<id_proyect>/management-transition', methods=['POST'])

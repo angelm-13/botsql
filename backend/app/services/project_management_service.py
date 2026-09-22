@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from sqlalchemy import case, func, or_, select
+from sqlalchemy.exc import IntegrityError
 
 from app.models.entity_permission import EntityPermission
 from app.models.permission import Permission
@@ -70,13 +71,33 @@ PROJECT_CLOSED_STATUSES = frozenset({"completed", "delivered", "denied"})
 WORKSHOP_VISIBLE_STATUSES = {"authorized", "in_progress", "waiting_material",
                              "stopped", "completed", "delivered"}
 PROJECT_MUTABLE_FIELDS = {
-    "id_customer_supplier", "leader", "proyect_description", "title",
+    "id_customer_supplier", "proyect_description", "title",
     # Los de la orden de trabajo. El estado NO esta aqui: se mueve por
     # `transition`, que valida la transicion y deja constancia en `proyect_event`.
-    "folio", "requested_by", "id_quotation", "purchase_order",
-    "purchase_order_item", "id_supervisor", "delivery_date",
+    "requested_by", "id_quotation", "delivery_date",
     "id_drawing_document",
 }
+
+# Campos de `proyect` que existen en la tabla y que el formulario YA NO escribe.
+# Se dejan documentados aqui porque su ausencia de `PROJECT_MUTABLE_FIELDS` es
+# una decision, no un olvido:
+#
+#   * `leader`    -- el responsable es SIEMPRE quien crea el proyecto. Elegirlo
+#                    de una lista permitia levantar un proyecto a nombre de otra
+#                    persona, y el responsable dejaba de ser quien respondia.
+#   * `folio`     -- lo genera el sistema (ver `_folio_nuevo`). Capturable a
+#                    mano, dos proyectos podian llevar el mismo numero hasta que
+#                    el indice unico lo rechazara, y en medio nadie sabia cual
+#                    era el bueno.
+#   * `id_supervisor` -- ya no se ASIGNA: el supervisor TOMA el proyecto
+#                    (`take_project`). Asignarlo desde el formulario hacia que
+#                    quien captura repartiera el trabajo del taller.
+#   * `purchase_order` y `purchase_order_item` -- la orden de compra del cliente
+#                    y su partida. Se retiraron del formulario por peticion; las
+#                    columnas se quedan, con lo que ya tuvieran capturado.
+PROJECT_SYSTEM_FIELDS = frozenset({
+    "leader", "folio", "id_supervisor", "purchase_order", "purchase_order_item",
+})
 
 # El recorrido COMERCIAL, que corre en paralelo al de taller: un proyecto puede
 # estar entregado y sin cobrar.
@@ -632,29 +653,67 @@ def _parsear_fecha_de_la_orden(values: dict) -> None:
                            {"field": "delivery_date"}) from fallo
 
 
-def _validar_referencias_de_la_orden(db, values: dict) -> None:
-    """Que la cotizacion, el supervisor y el dibujo existan de verdad.
+PREFIJO_DE_FOLIO = "OT"
 
-    `id_quotation`, `id_supervisor` e `id_drawing_document` son llaves ajenas
-    normales -no diferidas, como las de `incident`-, asi que un id inventado
-    revienta en el INSERT/UPDATE como un IntegrityError crudo y le llega al
-    usuario como un 500 en vez del 404 que le toca. Se comprueba antes, igual
-    que ya hace `crear_vale` con `id_proyect`.
+
+def _folio_nuevo(db, momento=None) -> str:
+    """El siguiente folio de orden de trabajo: OT-<anio>-<consecutivo>.
+
+    El consecutivo corre POR ANIO, que es como se piden los folios en papel:
+    en enero se vuelve a empezar en 1 y el numero dice de que ejercicio es la
+    orden sin tener que abrirla.
+
+    Se calcula con el maximo del anio y no contando filas, como hace el folio
+    del punto de venta: contando, borrar un proyecto hace que el siguiente
+    reutilice un numero que ya se entrego impreso, y dos ordenes distintas
+    acaban con el mismo folio en dos papeles.
+
+    La carrera entre dos altas simultaneas la corta el indice unico
+    `uq_proyect_folio`: si dos transacciones calculan el mismo numero, una
+    entra y la otra recibe un IntegrityError y vuelve a pedir folio. Por eso
+    `create_project` reintenta en vez de confiar en este calculo.
+    """
+    anio = (momento or datetime.utcnow()).year
+    prefijo = f"{PREFIJO_DE_FOLIO}-{anio}-"
+    ultimo = db.scalars(
+        select(Proyect.folio)
+        .where(Proyect.folio.like(prefijo + "%"))
+        .order_by(Proyect.folio.desc())
+        .limit(1)
+    ).first()
+    consecutivo = 1
+    if ultimo:
+        try:
+            consecutivo = int(str(ultimo)[len(prefijo):]) + 1
+        except ValueError:
+            # Un folio con ese prefijo pero con la cola escrita a mano. No se
+            # adivina: se sigue desde el total del anio, que nunca va hacia
+            # atras aunque salte un numero.
+            consecutivo = (db.scalar(
+                select(func.count(Proyect.id_proyect))
+                .where(Proyect.folio.like(prefijo + "%"))
+            ) or 0) + 1
+    return f"{prefijo}{consecutivo:05d}"
+
+
+def _validar_referencias_de_la_orden(db, values: dict) -> None:
+    """Que la cotizacion y el dibujo existan de verdad.
+
+    `id_quotation` e `id_drawing_document` son llaves ajenas normales -no
+    diferidas, como las de `incident`-, asi que un id inventado revienta en el
+    INSERT/UPDATE como un IntegrityError crudo y le llega al usuario como un
+    500 en vez del 404 que le toca. Se comprueba antes, igual que ya hace
+    `crear_vale` con `id_proyect`.
+
+    `id_supervisor` ya no se comprueba aqui porque ya no llega del formulario:
+    lo pone `take_project` con el id del propio actor, que por definicion
+    existe.
     """
     from app.models.invoice import Invoice
-    from app.models.user import User
 
     if values.get("id_quotation") and db.get(Invoice, int(values["id_quotation"])) is None:
         raise AppError("errors.not_found", 404,
                        {"entity": "invoice", "field": "id_quotation"})
-    if values.get("id_supervisor"):
-        existe = db.scalars(
-            select(User.id_user).where(User.id_user == int(values["id_supervisor"]),
-                                       User.deletion_date.is_(None)).limit(1)
-        ).first()
-        if existe is None:
-            raise AppError("errors.not_found", 404,
-                           {"entity": "user", "field": "id_supervisor"})
     if values.get("id_drawing_document"):
         from app.models.document import Document
         if db.get(Document, int(values["id_drawing_document"])) is None:
@@ -663,21 +722,107 @@ def _validar_referencias_de_la_orden(db, values: dict) -> None:
 
 
 def create_project(payload: dict, user_data: dict) -> dict:
+    """Levanta el proyecto a nombre de quien lo esta creando.
+
+    Dos cosas no se aceptan del cuerpo aunque vengan:
+
+    **El responsable.** Es siempre el actor. Antes el formulario ofrecia la
+    lista completa de usuarios y `leader` solo caia en el actor cuando venia
+    vacio, asi que se podia levantar un proyecto a nombre de otra persona --
+    y esa persona aparecia como responsable de algo que no sabia que existia.
+
+    **El folio.** Lo genera el sistema. Capturado a mano, dos proyectos podian
+    llevar el mismo numero hasta que el indice unico lo rechazara.
+    """
     actor_id = _actor_id(user_data)
     values = {key: value for key, value in (payload or {}).items() if key in PROJECT_MUTABLE_FIELDS}
     for field in ("id_customer_supplier", "proyect_description"):
         if values.get(field) in (None, ""):
             raise AppError("errors.required_field", 400, {"field": field})
     values["created_by"] = actor_id
-    values["leader"] = _safe_int(values.get("leader")) or actor_id
+    values["leader"] = actor_id
     values["proyect_status"] = "draft"
     _parsear_fecha_de_la_orden(values)
+    # Se reintenta porque `_folio_nuevo` lee el ultimo folio y suma uno: dos
+    # altas a la vez calculan el mismo numero y el indice unico deja pasar una.
+    # Reintentar es lo correcto -- el segundo calculo ya ve el folio del
+    # primero -- y es mejor que serializar la tabla entera para un alta que
+    # ocurre unas cuantas veces al dia.
+    ultimo_choque = None
+    for _ in range(3):
+        try:
+            with transaction_context() as db:
+                _validar_referencias_de_la_orden(db, values)
+                values["folio"] = _folio_nuevo(db)
+                project = Proyect(**values)
+                db.add(project)
+                db.flush()
+                _append_event(db, project, user_data, "created", new_status="draft")
+                db.flush()
+                return project.serialize()
+        except IntegrityError as fallo:
+            # Solo el choque de folio se reintenta. Cualquier otra violacion de
+            # integridad es un dato mal capturado, y repetirla tres veces solo
+            # retrasaria el error que el usuario necesita ver.
+            if "uq_proyect_folio" not in str(getattr(fallo, "orig", fallo)):
+                raise
+            ultimo_choque = fallo
+    raise AppError("errors.project_folio_conflict", 409) from ultimo_choque
+
+
+def take_project(project_id, user_data: dict) -> dict:
+    """El supervisor TOMA el proyecto; nadie se lo asigna.
+
+    Antes `id_supervisor` era un desplegable del formulario, o sea que quien
+    captura la orden repartia el trabajo del taller desde su escritorio. Se
+    invierte: el proyecto sale sin supervisor y lo toma quien lo va a sacar.
+
+    Quien puede tomarlo es quien tiene la capacidad `project_execution` -- hoy
+    el rol Supervisor -- y no se comprueba por NOMBRE de rol: los roles se
+    renombran y se crean desde el gestor, y un permiso amarrado a la cadena
+    "Supervisor" deja de funcionar el dia que alguien escriba "Supervisor de
+    obra". La capacidad es lo que el registro declara y lo que el gestor
+    concede.
+
+    Solo se toma lo que esta libre. Quitarle el proyecto a otro supervisor
+    seria una reasignacion, y eso no es tomar: el que lo tiene lo suelta
+    (`release_project`) o lo mueve la administracion.
+    """
     with transaction_context() as db:
-        _validar_referencias_de_la_orden(db, values)
-        project = Proyect(**values)
-        db.add(project)
+        project = _get_visible_project(db, project_id, user_data, for_update=True)
+        scope = _scope_name(db, user_data)
+        if scope not in {"execution", "unrestricted"}:
+            raise AppError("errors.permission_denied", 403,
+                           {"action": "take_project", "scope": scope})
+        actual = _safe_int(project.id_supervisor)
+        actor_id = _actor_id(user_data)
+        if actual is not None and actual != actor_id:
+            raise AppError("errors.project_already_taken", 409,
+                           {"id_supervisor": actual})
+        project.id_supervisor = actor_id
+        _append_event(db, project, user_data, "taken")
         db.flush()
-        _append_event(db, project, user_data, "created", new_status="draft")
+        return project.serialize()
+
+
+def release_project(project_id, user_data: dict) -> dict:
+    """Soltarlo, para que otro lo tome.
+
+    Existe porque tomar es irreversible sin esto: quien se equivoco de proyecto
+    lo dejaria ocupado para siempre. Lo suelta el que lo tiene, o la
+    administracion; nadie mas, porque entonces "tomar" no reservaria nada.
+    """
+    with transaction_context() as db:
+        project = _get_visible_project(db, project_id, user_data, for_update=True)
+        actual = _safe_int(project.id_supervisor)
+        if actual is None:
+            return project.serialize()
+        es_suyo = actual == _actor_id(user_data)
+        if not es_suyo and _scope_name(db, user_data) != "unrestricted":
+            raise AppError("errors.permission_denied", 403,
+                           {"action": "release_project"})
+        project.id_supervisor = None
+        _append_event(db, project, user_data, "released")
         db.flush()
         return project.serialize()
 

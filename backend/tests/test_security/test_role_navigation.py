@@ -44,7 +44,7 @@ class TestRoleNavigation(unittest.TestCase):
             'restaurant_admin',
         ):
             self.assertIn(entity_name, entities)
-            self.assertEqual(entities[entity_name]['domain'], 'restaurant')
+            self.assertEqual(entities[entity_name]['domain'], 'restaurante')
             self.assertEqual(entities[entity_name]['permission_scope'], 'actions_only')
             self.assertEqual(entities[entity_name]['fields'], [])
 

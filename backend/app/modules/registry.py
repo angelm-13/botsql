@@ -353,8 +353,9 @@ class Rol:
 ROLES = (
     # `documentos` y `laboratorio` solo los recibe Administrator por ahora: los
     # modulos se integraron desde la rama tny_docs, que los concedia a los 12
-    # perfiles por igual -incluidos Mesero y Cocina-, y que perfiles los operan
-    # de verdad es una decision de negocio que todavia no se tomo. Ampliarlo es
+    # perfiles por igual -incluidos los del restaurante, que ya no existen-, y
+    # que perfiles los operan de verdad es una decision de negocio que todavia
+    # no se tomo. Ampliarlo es
     # agregar la clave a los roles que correspondan; dejarlo abierto era lo que
     # hacia que un mesero pudiera leer expedientes de empleados.
     # `kpis`, igual que `documentos`/`laboratorio` arriba: solo Administrator
@@ -389,7 +390,7 @@ ROLES = (
     }, [c.clave for c in CAPACIDADES
         if c.clave not in ("warehouse_voucher", "warehouse_voucher_authorize")]),
 
-    # Los cinco roles del negocio, en los identificadores que tiene la BASE.
+    # Los cuatro roles del negocio, en los identificadores que tiene la BASE.
     #
     # Estaban declarados en los ids 14..18 mientras la base los tiene en 2..6, y
     # en los ids 2 y 3 este registro declaraba dos roles que la base no tiene
@@ -406,7 +407,7 @@ ROLES = (
     # entrega, ni editar uno ya levantado.
     Rol(2, "Supervisor", {
         "operaciones": CAPTURA, "inventario": CONSULTA, "configuracion": CONSULTA,
-    }, ["incident_supervision", "warehouse_prevoucher"]),
+    }, ["incident_supervision", "project_execution", "warehouse_prevoucher"]),
 
     # Ve y busca el almacen sin modificarlo -`inventario` en CONSULTA- y
     # autoriza o cancela los proyectos de todos los supervisores.
@@ -415,11 +416,6 @@ ROLES = (
         "inventario": CONSULTA, "rh": CONSULTA, "logistica": CONSULTA,
         "configuracion": CONSULTA,
     }, ["project_authorization", "incident_supervision", "pos_admin", "pos_terminal"]),
-
-    # Ve los proyectos autorizados y mueve su estatus en el taller.
-    Rol(4, "Jefe de taller", {
-        "operaciones": CAPTURA, "inventario": CONSULTA, "configuracion": CONSULTA,
-    }, ["project_execution", "incident_supervision"]),
 
     # Opera el almacen: da de alta productos, levanta vales y confirma entregas.
     # No ajusta: es la separacion de funciones que evita que quien mueve la
@@ -433,13 +429,31 @@ ROLES = (
     }, ["inventory_adjustment", "warehouse_voucher",
         "warehouse_voucher_authorize", "warehouse_voucher_confirm"]),
 
-    Rol(10, "Mesero", {"configuracion": CONSULTA}, ["restaurant_waiter"]),
-    Rol(11, "Cocina", {"configuracion": CONSULTA}, ["restaurant_kitchen"]),
-    Rol(12, "Caja Restaurante", {"configuracion": CONSULTA}, ["restaurant_cashier"]),
-    Rol(13, "Admin Restaurante", {"configuracion": CONSULTA}, [
-        "restaurant_admin", "restaurant_cashier", "restaurant_kitchen", "restaurant_waiter",
-    ]),
-
+    # Cinco roles retirados, y por que
+    # --------------------------------
+    # `Jefe de taller` (id 4) concedia EXACTAMENTE lo mismo que Supervisor
+    # -operaciones en CAPTURA, inventario en CONSULTA, configuracion en
+    # CONSULTA, 28 filas identicas en la base- y solo se distinguia en una
+    # capacidad: `project_execution` en vez de `warehouse_prevoucher`. Un rol
+    # entero para una capacidad es un rol que hay que mantener en paralelo cada
+    # vez que operaciones cambia, y que se desincroniza en cuanto alguien toca
+    # uno y no el otro. La capacidad se paso a Supervisor, que es quien sigue
+    # el proyecto en el taller de todas formas.
+    #
+    # `Mesero` (10), `Cocina` (11), `Caja Restaurante` (12) y
+    # `Admin Restaurante` (13) llegaron con el restaurante desde `seed.sql`,
+    # que los escribia a mano junto con sus filas de `entity_permission`. Cada
+    # uno existia para cargar UNA capacidad -`restaurant_waiter`,
+    # `restaurant_kitchen`, `restaurant_cashier`- que este registro ya declara
+    # y que el gestor de roles ya ofrece por separado. Eran el mismo derecho
+    # dicho dos veces, y dicho distinto: la base los tenia en 15 (administrar)
+    # donde aqui dicen 7 y 6, porque el `seed.sql` los sembraba con sus propios
+    # numeros.
+    #
+    # Retirar el rol NO retira la funcion: las cuatro capacidades del
+    # restaurante siguen declaradas abajo en CAPACIDADES y se conceden a
+    # cualquier rol -uno nuevo, o uno existente- desde el gestor. Lo que
+    # desaparece es el rol vacio que no concedia nada mas.
 )
 
 
@@ -520,6 +534,44 @@ MENU = {
     # queda en el menu -el permiso existe y la pantalla captura- pero al final
     # del grupo, para que no se lea como un paso del flujo.
     "task_type": ("Tipos de tarea", 42),
+    # Logistica. Las 21 pantallas EXISTEN y la base las tenia en la barra con su
+    # etiqueta -se la puso la migracion de tny_logistics a mano-, pero aqui no
+    # habia ni una entrada. Consecuencia medida: `filas_de_permisos()` las
+    # sembraba en `hidden`, asi que una instalacion NUEVA se quedaba con el
+    # modulo entero sin menu -las rutas responden, pero solo se llega
+    # escribiendo la direccion-, y la etiqueta escrita a mano se perdia en la
+    # primera resiembra. Es el mismo descuido que ya habia pasado con la
+    # conexion al dispositivo Kronos.
+    #
+    # El orden es el del trabajo, no el alfabetico, igual que en inventario y
+    # operaciones: primero con quien se trabaja, luego donde se guarda, luego
+    # lo que se mueve, luego con que se mueve, y al final la cobranza.
+    "logistics_branch": ("Sucursales", 10),
+    "logistics_address": ("Direcciones", 12),
+    "logistics_contact": ("Contactos", 14),
+    "logistics_contract": ("Contratos", 16),
+    "logistics_rate": ("Tarifas", 18),
+    "logistics_quotation": ("Cotizaciones", 20),
+    "logistics_warehouse": ("Almacenes", 30),
+    "logistics_location": ("Ubicaciones", 32),
+    "logistics_rack": ("Racks", 34),
+    "logistics_inventory": ("Inventario", 36),
+    "logistics_service_request": ("Solicitudes de servicio", 40),
+    "logistics_trip": ("Viajes", 42),
+    "logistics_shipment": ("Embarques", 44),
+    "logistics_evidence": ("Evidencias", 46),
+    "logistics_incident": ("Incidencias", 48),
+    "logistics_unit": ("Unidades", 50),
+    "logistics_trailer": ("Remolques", 52),
+    "logistics_operator": ("Operadores", 54),
+    "logistics_maintenance": ("Mantenimientos", 56),
+    "logistics_receivable": ("Cuentas por cobrar", 60),
+    "logistics_file": ("Expedientes", 62),
+    # El calendario de citas. Misma historia: la pantalla existe y la base la
+    # tenia en la barra, pero bajo el grupo "Operaciones" -- y `appointment`
+    # pertenece a CRM, que es de donde sale la cita. Declararlo aqui lo pone en
+    # su propio grupo y deja de aparecer en dos sitios segun quien resiembre.
+    "appointment": ("Calendario", 30),
     "payroll_period": ("Periodos de nomina", 10),
     "payroll_concept": ("Conceptos", 20),
     "payroll_movement": ("Movimientos", 30),

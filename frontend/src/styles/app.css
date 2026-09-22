@@ -210,3 +210,4 @@ label:has(:is(input,select,textarea):required)::before,label:has(+ :is(input,sel
   .shell.mobile-nav-open .mobile-nav-backdrop{display:block;position:fixed;inset:0;z-index:150;background:rgba(15,23,42,.45)}
   .main{width:100%;padding-top:66px}
 }
+.field-permission-name{display:flex;flex-direction:column;gap:2px;min-width:0}.field-permission-meta{color:#64748b;font-weight:600;font-size:11px;word-break:break-word}

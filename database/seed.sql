@@ -171,13 +171,14 @@ INSERT INTO "permission" ("id_permission", "created_by", "creation_date", "last_
 VALUES (1, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', 1, 'admin', 1, 1, 1)
 ON CONFLICT ("id_permission") DO NOTHING;
 
-INSERT INTO "permission" ("id_permission", "created_by", "creation_date", "last_update_date", "authorized_by", "permission_description", "id_department", "id_subdepartment", "id_level")
-VALUES (2, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', 1, 'gerente_administrativo', 1, 1, 1)
-ON CONFLICT ("id_permission") DO NOTHING;
-
-INSERT INTO "permission" ("id_permission", "created_by", "creation_date", "last_update_date", "authorized_by", "permission_description", "id_department", "id_subdepartment", "id_level")
-VALUES (3, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', 1, 'vendedor', 1, 1, 1)
-ON CONFLICT ("id_permission") DO NOTHING;
+-- Los ids 2 y 3 sembraban aqui 'gerente_administrativo' y 'vendedor', dos
+-- perfiles que el negocio no reconoce. En una instalacion nueva ocupaban esos
+-- numeros y empujaban a Supervisor y Gerente -- los roles de verdad, creados
+-- mas abajo sin id fijo -- a identificadores altos. Ese es el cruce que
+-- documenta 20260908100000_roles_con_los_ids_de_la_base.sql, y que dejo a
+-- Supervisor con la concesion del gerente administrativo en clientes reales.
+-- Los roles del negocio los declara `app/modules/registry.py` y los siembra la
+-- matriz generada; aqui ya no se escribe ninguno.
 
 INSERT INTO "nm_field_permission" ("id_nm_field_permission", "id_field", "id_permission", "control_type", "created_by", "creation_date", "last_update_date", "deletion_date")
 VALUES (1, 1, 1, '1', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
@@ -289,43 +290,19 @@ INSERT INTO "password_reset_token" ("id_password_reset_token", "id_user", "token
 VALUES (1, 1, 'disabled_token_hash', '2026-01-01 00:00:00', '2026-01-01 00:00:00', '127.0.0.1', '2026-01-01 00:00:00')
 ON CONFLICT ("id_password_reset_token") DO NOTHING;
 
--- Device connection is a virtual module and defaults to the settings gear.
-INSERT INTO "entity_permission" ("id_permission", "entity_name", "control_type", "menu_location", "menu_group", "menu_label", "menu_order", "created_by")
-VALUES (1, 'kronos_device', 2, 'settings', 'Recursos humanos', 'Conexión al dispositivo', 30, 1)
-ON CONFLICT ("id_permission", "entity_name") DO UPDATE SET
-  "menu_location" = EXCLUDED."menu_location",
-  "menu_group" = EXCLUDED."menu_group",
-  "menu_label" = EXCLUDED."menu_label",
-  "menu_order" = EXCLUDED."menu_order",
-  "deletion_date" = NULL;
+-- La conexion al dispositivo Kronos se sembraba aqui a mano, en 15
+-- (administrar), cuando es una capacidad de si-o-no que el registro declara en
+-- 2. La declara `app/modules/registry.py` y la siembra la matriz generada.
 
--- Restaurant profiles. Users are assigned through the existing Tyakxa user/role UI.
-INSERT INTO "permission" ("id_permission", "created_by", "authorized_by", "permission_description", "id_department", "id_subdepartment", "id_level") VALUES
-  (10, 1, 1, 'Mesero', 1, 1, 1),
-  (11, 1, 1, 'Cocina', 1, 1, 1),
-  (12, 1, 1, 'Caja Restaurante', 1, 1, 1),
-  (13, 1, 1, 'Admin Restaurante', 1, 1, 1)
-ON CONFLICT ("id_permission") DO NOTHING;
-
-INSERT INTO "entity_permission" ("id_permission", "entity_name", "control_type", "menu_location", "menu_group", "menu_label", "menu_order", "created_by") VALUES
-  (1, 'restaurant_waiter', 15, 'sidebar', 'Restaurante', 'Meseros', 10, 1),
-  (1, 'restaurant_cashier', 15, 'sidebar', 'Restaurante', 'Caja', 20, 1),
-  (1, 'restaurant_kitchen', 15, 'sidebar', 'Restaurante', 'Cocina', 30, 1),
-  (1, 'restaurant_admin', 15, 'sidebar', 'Restaurante', 'Admin', 40, 1),
-  (10, 'restaurant_waiter', 15, 'sidebar', 'Restaurante', 'Meseros', 10, 1),
-  (11, 'restaurant_kitchen', 6, 'sidebar', 'Restaurante', 'Cocina', 30, 1),
-  (12, 'restaurant_cashier', 7, 'sidebar', 'Restaurante', 'Caja', 20, 1),
-  (13, 'restaurant_waiter', 15, 'sidebar', 'Restaurante', 'Meseros', 10, 1),
-  (13, 'restaurant_cashier', 15, 'sidebar', 'Restaurante', 'Caja', 20, 1),
-  (13, 'restaurant_kitchen', 15, 'sidebar', 'Restaurante', 'Cocina', 30, 1),
-  (13, 'restaurant_admin', 15, 'sidebar', 'Restaurante', 'Admin', 40, 1)
-ON CONFLICT ("id_permission", "entity_name") DO UPDATE SET
-  "control_type" = EXCLUDED."control_type",
-  "menu_location" = EXCLUDED."menu_location",
-  "menu_group" = EXCLUDED."menu_group",
-  "menu_label" = EXCLUDED."menu_label",
-  "menu_order" = EXCLUDED."menu_order",
-  "deletion_date" = NULL;
+-- Los cuatro perfiles del restaurante -Mesero, Cocina, Caja Restaurante y
+-- Admin Restaurante- se creaban aqui con sus filas de `entity_permission`
+-- escritas a mano. Cada uno existia para cargar UNA capacidad que el registro
+-- de modulos ya declara y que el gestor de roles ya ofrece por separado, y las
+-- sembraba con sus propios numeros -15 donde el registro dice 7 y 6-, que es
+-- de donde salia el desfase entre lo que la pantalla ensenaba y lo que el
+-- registro declara. Se retiraron en
+-- 20260918100000_roles_redundantes_retirados.sql. Las capacidades siguen
+-- existiendo: se conceden a cualquier rol desde el gestor.
 
 INSERT INTO "restaurant_table" ("id_restaurant_table", "id_proyect", "number", "capacity", "location_description", "is_active", "created_by")
 SELECT number, 1, number, 4, CASE WHEN number <= 8 THEN 'Salón principal' ELSE 'Terraza' END, TRUE, 1
@@ -393,66 +370,20 @@ BEGIN
   END LOOP;
 END $$;
 
--- Project workflow roles are created without assigning existing users.
-WITH role_names(role_name) AS (
-  VALUES ('Supervisor'), ('Gerente'), ('Jefe de taller')
-)
-INSERT INTO "permission" ("created_by", "authorized_by", "permission_description", "id_department", "id_subdepartment", "id_level")
-SELECT 1, 1, role_names.role_name, 1, 1, 1
-FROM role_names
-WHERE NOT EXISTS (
-  SELECT 1 FROM "permission"
-  WHERE lower("permission_description") = lower(role_names.role_name)
-    AND "deletion_date" IS NULL
-);
-
-INSERT INTO "entity_permission" ("id_permission", "entity_name", "control_type", "menu_location", "menu_group", "menu_group_icon", "menu_label", "menu_order", "created_by")
-SELECT role."id_permission", capability.entity_name, capability.control_type,
-       capability.menu_location, capability.menu_group, capability.menu_group_icon,
-       capability.menu_label, capability.menu_order, 1
-FROM "permission" role
-JOIN (VALUES
-  ('Supervisor', 'proyect', 7, 'sidebar', 'Operaciones', 'briefcase-business', 'Proyectos', 80),
-  ('Supervisor', 'task', 15, 'sidebar', 'Operaciones', 'briefcase-business', 'Tareas', 90),
-  ('Supervisor', 'task_note', 15, 'sidebar', 'Operaciones', 'briefcase-business', 'Notas de tarea', 100),
-  ('Supervisor', 'task_type', 15, 'sidebar', 'Operaciones', 'briefcase-business', 'Tipos de tarea', 110),
-  ('Gerente', 'proyect', 6, 'sidebar', 'Operaciones', 'briefcase-business', 'Proyectos', 80),
-  ('Gerente', 'project_authorization', 2, 'hidden', NULL, NULL, NULL, 100),
-  ('Jefe de taller', 'proyect', 6, 'sidebar', 'Operaciones', 'briefcase-business', 'Proyectos', 80),
-  ('Jefe de taller', 'task', 15, 'sidebar', 'Operaciones', 'briefcase-business', 'Tareas', 90),
-  ('Jefe de taller', 'task_note', 15, 'sidebar', 'Operaciones', 'briefcase-business', 'Notas de tarea', 100),
-  ('Jefe de taller', 'task_type', 2, 'sidebar', 'Operaciones', 'briefcase-business', 'Tipos de tarea', 110),
-  ('Jefe de taller', 'project_execution', 2, 'hidden', NULL, NULL, NULL, 100)
-) AS capability(role_name, entity_name, control_type, menu_location, menu_group, menu_group_icon, menu_label, menu_order)
-  ON lower(role."permission_description") = lower(capability.role_name)
-WHERE role."deletion_date" IS NULL
-ON CONFLICT ("id_permission", "entity_name") DO UPDATE SET
-  "control_type" = EXCLUDED."control_type",
-  "menu_location" = EXCLUDED."menu_location",
-  "menu_group" = EXCLUDED."menu_group",
-  "menu_group_icon" = EXCLUDED."menu_group_icon",
-  "menu_label" = EXCLUDED."menu_label",
-  "menu_order" = EXCLUDED."menu_order",
-  "deletion_date" = NULL;
-
-INSERT INTO "nm_field_permission" ("id_field", "id_permission", "control_type", "created_by")
-SELECT field_row."id_field", role."id_permission",
-       CASE WHEN role."permission_description" = 'Gerente' THEN '2'
-            WHEN role."permission_description" = 'Jefe de taller' AND field_row."table_name" IN ('proyect', 'task_type') THEN '2'
-            ELSE '15' END,
-       1
-FROM "field" field_row
-JOIN "permission" role ON role."permission_description" IN ('Supervisor', 'Gerente', 'Jefe de taller')
-WHERE field_row."table_name" IN ('proyect', 'task', 'task_note', 'task_type')
-  AND field_row."deletion_date" IS NULL
-  AND role."deletion_date" IS NULL
-  AND (role."permission_description" <> 'Gerente' OR field_row."table_name" = 'proyect')
-  AND NOT EXISTS (
-    SELECT 1 FROM "nm_field_permission" existing
-    WHERE existing."id_field" = field_row."id_field"
-      AND existing."id_permission" = role."id_permission"
-      AND existing."deletion_date" IS NULL
-  );
+-- Supervisor, Gerente y Jefe de taller se creaban aqui, con sus filas de
+-- `entity_permission` y de `nm_field_permission` escritas a mano.
+--
+-- Es el origen medido de buena parte del desfase entre la base y el registro:
+-- sembraba `task`, `task_note` y `task_type` en 15 donde el registro dice 7,
+-- `proyect` en 6 para Jefe de taller donde dice 7, y daba a `task_note` una
+-- etiqueta de menu -"Notas de tarea"- que el registro retiro a proposito
+-- (una nota no existe sin su tarea; se captura dentro de ella).
+--
+-- Los roles del negocio los declara `app/modules/registry.py` y los siembra la
+-- matriz generada por `backend/scripts/seed_module_permissions.py`, que
+-- ademas puebla `field` con las columnas reales de cada tabla y deriva de ahi
+-- los permisos por campo. `Jefe de taller` ya no existe: lo absorbio
+-- Supervisor.
 
 -- Keep PostgreSQL SERIAL sequences aligned after deterministic seed IDs
 DO $$

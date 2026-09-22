@@ -64,7 +64,10 @@ class TestProjectWorkflowApi(BackendTestCase):
 
         manager_list = self._request(self.manager, "GET", "/proyect/?page=1&per_page=20")
         manager_project = self.json(manager_list)["items"][0]
-        self.assertEqual(manager_project["folio"], f"PRJ-{project_id:06d}")
+        # El folio lo genera el alta y vive en la base; ya no lo inventa la
+        # pantalla. Se comprueba la forma -- OT-<anio>-<consecutivo> -- y no el
+        # numero exacto, que depende de cuantos proyectos lleve el anio.
+        self.assertRegex(manager_project["folio"], r"^OT-\d{4}-\d{5}$")
         self.assertIsNotNone(manager_project["submitted_date"])
 
         tomorrow = (datetime.fromisoformat(manager_project["creation_date"]) + timedelta(days=1)).date().isoformat()
