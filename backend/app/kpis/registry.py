@@ -38,6 +38,7 @@ from app.models.invoice import Invoice
 from app.models.laboratory import LaboratoryServiceOrder
 from app.models.nm_incident_product import NmIncidentProduct
 from app.models.task import Task
+from app.services.warehouse_voucher_service import CIERRE_SENTINELA
 from app.modules.registry import MODULO_POR_CLAVE
 
 # Que llave de `dimension_key` (JSONB, en `kpi_snapshot`) le corresponde a cada
@@ -234,7 +235,10 @@ def vales_vencidos_por_responsable_query(session, fecha_inicio, fecha_fin, filtr
     fecha_col = func.date(NmIncidentProduct.due_date)
     condiciones = [
         NmIncidentProduct.deletion_date.is_(None),
-        NmIncidentProduct.close_date.is_(None),
+        or_(
+            NmIncidentProduct.close_date.is_(None),
+            NmIncidentProduct.close_date == CIERRE_SENTINELA,
+        ),
         NmIncidentProduct.due_date.isnot(None),
         NmIncidentProduct.due_date < ahora,
         fecha_col >= fecha_inicio,
