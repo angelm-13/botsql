@@ -1,10 +1,113 @@
 # Contexto de sesión — tyakxa_tny (para retomar en otra conversación)
 
-Última actualización: 2026-09-07. Este archivo es el "dónde nos quedamos",
+Última actualización: 2026-09-14. Este archivo es el "dónde nos quedamos",
 aparte de `ARQUITECTURA_TYAKXA_TNY.md` (referencia técnica estable) y de
 `docs/PLAN_ACCION_MEJORA.md` (plan de mejora por auditoría). Cuando una
 sección se resuelve, se puede recortar; mientras tanto se deja completa para
 que una sesión nueva no tenga que releer el historial de chat.
+
+## ESTADO: alcance por acción en permisos + equipos de usuarios — Fase 1 (2026-09-14)
+
+Contexto: se pidió reemplazar las 4 casillas booleanas del gestor de roles y
+permisos (Crear/Leer/Actualizar/Eliminar) por un **alcance** de 4 niveles
+(Sin acceso=0, Propios=1, Mis grupos=2, Todos=4), y crear una entidad nueva de
+**equipo de usuarios** (`Team`/`NmTeamUser`) — sin confundirla con la columna
+`entity_permission.menu_group`, que solo agrupa visualmente el menú.
+
+**Hallazgo clave antes de diseñar nada**: hoy NO existían 4 casillas
+booleanas como columnas — existía una sola `entity_permission.control_type`
+(máscara de bits: CREAR=1, LEER=2, ACTUALIZAR=4, ELIMINAR=8), y el "alcance"
+real (propios/todos) no estaba conectado a `entity_permission` en absoluto:
+existían dos mecanismos ad hoc distintos (`project_management_service`
+por proyecto/líder, `invoice_service` por igualdad estricta de `id_proyect`
+del JWT). Por eso, junto con el usuario, se decidió una entrega **por
+fases**:
+
+- **Fase 1 (esta, completa)**: esquema nuevo (4 columnas de alcance en vez de
+  `control_type`), entidad `Team`/`NmTeamUser`, migración de datos existentes,
+  UI del gestor de roles y del gestor de equipos, pruebas. El guardia
+  (`require_entity_permission`) sigue siendo booleano: `0` deniega, cualquier
+  otro valor permite — **no hay filtrado real por Propios/Mis grupos/Todos
+  todavía**.
+- **Fase 2 (sin empezar)**: conectar el alcance a un filtrado real de
+  consultas, módulo por módulo, reusando el filtrado por proyecto donde ya
+  exista noción de dueño y tratando "Propios" como "Todos" donde no exista
+  (catálogos sin dueño). Incluye las pruebas de "un usuario en varios grupos"
+  que en un principio se pidieron para esta entrega y no se pudieron escribir
+  de verdad todavía.
+
+### Qué se hizo
+
+1. Migración `database/migrations/20260914110000_equipos_y_alcance_por_accion.sql`:
+   crea `team`/`nm_team_user`, agrega `scope_create/read/update/delete` a
+   `entity_permission`, migra los datos existentes (bit encendido → Todos=4,
+   apagado → Sin acceso=0) y elimina `control_type`.
+2. Backend: modelo `EntityPermission` actualizado; modelos/servicios/rutas
+   nuevos para `Team`/`NmTeamUser` (mismo patrón que `department.py`/
+   `nm_field_permission.py`); `app/utils/auth.py` (el guardia REAL — no
+   `app/security/permissions.py`, que resultó ser código muerto sin usar por
+   ninguna ruta) reescrito para leer las 4 columnas; `registry.py` y
+   `seed_module_permissions.py` adaptados (las definiciones de `ROLES` no
+   cambiaron, solo la emisión final); `team`/`nm_team_user` agregados al
+   módulo `seguridad`. `database/seed.sql` e `init_db.py` (bootstrap de
+   instalación nueva) también corregidos — tenían su propia copia de la
+   lógica de siembra.
+3. **Bug real encontrado y corregido, no introducido por esta migración pero
+   destapado por ella**: `incident_service.py`, `project_management_service.py`
+   e `inventory_service.py` leían `record.control_type` directamente (bypass
+   del guardia central) para permisos de capacidad (supervisión de
+   incidencias, autorización/ejecución de proyectos, ajuste de inventario).
+   Sin este fix habrían quedado con un `AttributeError` real (confirmado
+   corriendo la suite completa), no un simple 403.
+4. Frontend: `RolePermissionManagerPage.jsx` reescrito (4 selects con punto
+   de color por acción, igual que el mockup); `TeamManagerPage.jsx` nuevo
+   (alta/edición de equipos + agregar/quitar miembros); **se encontraron y
+   corrigieron ~50 archivos más** que leían `entity_permission.control_type`
+   del lado del cliente y se habrían roto en silencio: los ~46
+   `pages/*Page.jsx` genéricos (gate de crear/editar/borrar), y — más grave
+   todavía — `Shell.jsx` (arma el menú lateral completo a partir de esas
+   filas) y `App.jsx` (`RoleAccessRoute`, la guarda de casi todas las rutas).
+   Sin corregir estos dos últimos, el menú lateral se habría quedado vacío y
+   ninguna ruta protegida habría abierto para nadie que no fuera bootstrap.
+5. Documentación: este archivo y `ARQUITECTURA_TYAKXA_TNY.md` (sección 3.5 y
+   tablas de entidades/blueprints) actualizados con el modelo de alcance
+   nuevo y la advertencia explícita de que el filtrado real es Fase 2.
+
+### Hallazgo importante sobre cómo corren las migraciones de verdad
+
+`backend/scripts/apply_migrations.py` (con su tabla `schema_migration` y
+verificación por checksum) **no es el mecanismo que realmente aplica las
+migraciones**, ni en `docker-compose.yml` ni en k8s
+(`k8s/base/backend.yaml`). Ambos usan el mismo bucle de shell:
+`for f in /migrations/*.sql; do psql -f "$f"; done` — **sin ninguna tabla de
+control**. Esto corre completo en cada arranque de contenedor/pod, para
+siempre. La consecuencia real: **toda migración debe tolerar ejecutarse
+infinitas veces**, no solo una — no es un detalle de estilo, es el
+mecanismo real de producción. Se confirmó de la forma dura: un `DROP COLUMN
+control_type` en la migración de esta sesión rompió una migración de
+2026-08-22 que copiaba ese valor sin guardas — funcionaba en el primer
+arranque (la columna todavía existía) y tronaba desde el segundo en
+adelante. Hubo que corregir esa migración vieja también (no solo la nueva),
+algo que en un principio parecía prohibido asumiendo que
+`apply_migrations.py` protegía con checksums — no es así, ese script parece
+no estar conectado a ningún lado real. Si se vuelve a tocar una columna que
+otra migración ya referencia sin guardas, hay que repetir esta comprobación:
+`docker compose down -v`, levantar y correr `db-migrate` DOS veces seguidas
+desde cero — la primera pasada sola no destapa el problema.
+
+### Explícitamente diferido / sin resolver
+
+- **Fase 2 completa** (filtrado real por Propios/Mis grupos/Todos, módulo por
+  módulo) — no iniciada.
+- Ningún ambiente real (`tyakxa-dev`/`torredigital-prod`/`adser-prod`/
+  `vidrioyaluminios-prod`) tiene equipos con miembros todavía — la tabla nace
+  vacía, se puebla a mano desde `/team` cuando se decida usarla.
+- No se tocó la promoción de overlays de los 3 clientes reales — esta
+  migración se despliega primero a `tyakxa-dev` (auto-deploy de `initAlan`)
+  y se valida ahí antes de promover manualmente.
+- Traducciones (i18n) completas solo en español; inglés con las etiquetas
+  principales corregidas, portugués/alemán con corrección mínima (fallback
+  legible, no roto, pero no tan pulido como el español).
 
 ## ESTADO: migración real de adser completada (2026-09-07)
 

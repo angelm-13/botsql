@@ -981,15 +981,6 @@ export const validationRules = {
         "graphql_error_code": "REQUIRED_FIELD"
       }
     ],
-    "analyst": [
-      {
-        "validation_type": "required",
-        "rule": "value is not null and value != \"\"",
-        "message_key": "validations.task.analyst.required",
-        "severity": "error",
-        "graphql_error_code": "REQUIRED_FIELD"
-      }
-    ],
     "dependency": [
       {
         "validation_type": "required",
@@ -1004,15 +995,6 @@ export const validationRules = {
         "message_key": "validations.task.dependency.valid",
         "severity": "error",
         "graphql_error_code": "VALID"
-      }
-    ],
-    "leader": [
-      {
-        "validation_type": "required",
-        "rule": "value is not null and value != \"\"",
-        "message_key": "validations.task.leader.required",
-        "severity": "error",
-        "graphql_error_code": "REQUIRED_FIELD"
       }
     ],
     "validation": [
@@ -1642,20 +1624,40 @@ export const validationRules = {
         "graphql_error_code": "REQUIRED_FIELD"
       }
     ],
-    "control_type": [
-      {
-        "validation_type": "required",
-        "rule": "value is not null and value != \"\"",
-        "message_key": "validations.entity_permission.control_type.required",
-        "severity": "error",
-        "graphql_error_code": "REQUIRED_FIELD"
-      },
+    "scope_create": [
       {
         "validation_type": "range",
-        "rule": "value >= 1 and value <= 15",
-        "message_key": "validations.entity_permission.control_type.range",
+        "rule": "value >= 0 and value <= 7",
+        "message_key": "validations.entity_permission.scope_create.range",
         "severity": "error",
-        "graphql_error_code": "INVALID_PERMISSION_MASK"
+        "graphql_error_code": "INVALID_PERMISSION_SCOPE"
+      }
+    ],
+    "scope_read": [
+      {
+        "validation_type": "range",
+        "rule": "value >= 0 and value <= 7",
+        "message_key": "validations.entity_permission.scope_read.range",
+        "severity": "error",
+        "graphql_error_code": "INVALID_PERMISSION_SCOPE"
+      }
+    ],
+    "scope_update": [
+      {
+        "validation_type": "range",
+        "rule": "value >= 0 and value <= 7",
+        "message_key": "validations.entity_permission.scope_update.range",
+        "severity": "error",
+        "graphql_error_code": "INVALID_PERMISSION_SCOPE"
+      }
+    ],
+    "scope_delete": [
+      {
+        "validation_type": "range",
+        "rule": "value >= 0 and value <= 7",
+        "message_key": "validations.entity_permission.scope_delete.range",
+        "severity": "error",
+        "graphql_error_code": "INVALID_PERMISSION_SCOPE"
       }
     ]
   },

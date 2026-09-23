@@ -17,6 +17,7 @@ const navItems = [
   // agrupado como "Configuracion" (ver 20260903000000_configuracion_dentro_del_engrane.sql).
   { path: "/mfa-setup", key: "common.mfa_setup", group: "Configuracion", groupIcon: "settings", location: "settings", order: 910 },
   { path: "/role_permissions", key: "common.role_permission_manager", adminOnly: true, groupIcon: "settings", location: "settings" },
+  { path: "/kpi_permissions", key: "common.kpi_permission_manager", adminOnly: true, groupIcon: "settings", location: "settings" },
   { path: "/facturama-config", key: "menu.facturama_config", adminOnly: true, groupIcon: "settings", location: "settings" },
   { path: "/bank", key: "menu.bank" },
   { path: "/bank_account", key: "menu.bank_account" },
@@ -63,7 +64,15 @@ const navItems = [
   // escribe en `incident` y en `nm_incident_product`, y esa segunda esta
   // fuera del menu a proposito, por ser tabla puente. La etiqueta, el grupo
   // y el orden los da la fila de la capacidad en el backend.
-  { path: "/vouchers", key: "menu.warehouse_voucher", label: "Vales de almacén", entityName: "warehouse_voucher" },
+  //
+  // `entityNames` (no `entityName`) porque la misma pantalla sirve a dos
+  // capacidades distintas: Almacenista tiene `warehouse_voucher` (saca
+  // material de verdad) y Supervisor solo `warehouse_prevoucher` (pide
+  // material, sin sacarlo). Con un solo `entityName` fijo en
+  // `warehouse_voucher`, Supervisor -que solo tiene el prevale- nunca veia
+  // la entrada de menu ni podia entrar a la ruta, aunque el backend ya le
+  // permitiera `POST /prevouchers`.
+  { path: "/vouchers", key: "menu.warehouse_voucher", label: "Vales de almacén", entityNames: ["warehouse_voucher", "warehouse_prevoucher"] },
   { path: "/nm_survey_user", key: "menu.nm_survey_user" },
   { path: "/nm_template_task", key: "menu.nm_template_task" },
   { path: "/payroll_concept", key: "menu.payroll_concept" },
@@ -77,6 +86,7 @@ const navItems = [
   { path: "/restaurant/kitchen", key: "menu.restaurant_kitchen", label: "Cocina", entityName: "restaurant_kitchen" },
   { path: "/restaurant/admin", key: "menu.restaurant_admin", label: "Admin", entityName: "restaurant_admin" },
   { path: "/permission", key: "menu.permission", groupIcon: "settings", location: "settings" },
+  { path: "/team", key: "menu.team", groupIcon: "settings", location: "settings" },
   { path: "/product", key: "menu.product" },
   { path: "/product_family", key: "menu.product_family" },
   { path: "/proyect", key: "menu.proyect" },
@@ -113,7 +123,7 @@ const groupTranslationKeys = {
   "Bancos": "group_banks", CRM: "group_crm", "Contabilidad": "group_accounting",
   "Recursos humanos": "group_hr", Restaurante: "group_restaurant", Operaciones: "group_operations",
   Inventario: "group_inventory", "Configuración": "group_settings",
-  Laboratorio: "group_laboratory",
+  Laboratorio: "group_laboratory", "Punto de venta": "group_pos", "Logística": "group_logistics",
 };
 
 const groupIcons = {
@@ -176,6 +186,8 @@ const defaultGroupIcons = {
   "Inventario": "inventory",
   "Laboratorio": "clipboard-list",
   "Configuración": "sliders-horizontal",
+  "Punto de venta": "shopping-cart",
+  "Logística": "truck",
 };
 
 export default function Shell() {
@@ -238,7 +250,10 @@ export default function Shell() {
       .then((payload) => {
         const rows = Array.isArray(payload?.entity_permissions)
           ? payload.entity_permissions : [];
-        if (mounted) setRoleEntityPermissions(rows.filter((row) => Number(row.id_permission) === roleId && Number(row.control_type || 0) > 0));
+        if (mounted) setRoleEntityPermissions(rows.filter((row) => Number(row.id_permission) === roleId && (
+          Number(row.scope_create || 0) > 0 || Number(row.scope_read || 0) > 0 ||
+          Number(row.scope_update || 0) > 0 || Number(row.scope_delete || 0) > 0
+        )));
       })
       .catch(() => { if (mounted) setRoleEntityPermissions([]); })
       .finally(() => { if (mounted) setRolePermissionsLoaded(true); });
@@ -288,8 +303,8 @@ export default function Shell() {
     if (item.adminOnly) return isAdminUser;
     if (isBootstrapAdmin) return true;
     if (!rolePermissionsLoaded) return false;
-    const entityName = item.entityName || String(item.path || "").replace(/^\//, "");
-    return roleEntityPermissions.some((row) => String(row.entity_name || "") === entityName);
+    const entityNames = item.entityNames || [item.entityName || String(item.path || "").replace(/^\//, "")];
+    return roleEntityPermissions.some((row) => entityNames.includes(String(row.entity_name || "")));
   }
 
   const visibleNavItems = navItems.filter(canSeeNavItem);
@@ -305,16 +320,25 @@ export default function Shell() {
   function defaultGroup(item) {
     const path = item.path;
     if (["/bank", "/bank_account"].includes(path)) return "Bancos";
-    if (path.startsWith("/invoice") || path.startsWith("/fiscal") || path === "/quotation" || path === "/authorization_tracking") return "Contabilidad";
+    if (path.startsWith("/invoice") || path.startsWith("/fiscal") || path === "/quotation" || path === "/authorization_tracking" || path === "/ticket") return "Contabilidad";
     if (path.startsWith("/payroll") || path === "/kronos") return "Recursos humanos";
     if (path.startsWith("/restaurant")) return "Restaurante";
+    if (path.startsWith("/pos")) return "Punto de venta";
+    if (path.startsWith("/logistics")) return "Logística";
+    // Documentos y Laboratorio comparten un solo apartado de menu por ahora
+    // (ver el `group: "Laboratorio"` explicito en /documents y /laboratory
+    // en navItems); este fallback replica esa misma decision para que una
+    // entidad nueva de cualquiera de los dos modulos no caiga en Configuracion.
+    if (path.startsWith("/document") || path.startsWith("/laboratory")) return "Laboratorio";
     if (["/proyect", "/incident", "/incident_detail", "/task", "/task_note", "/task_type", "/service", "/template"].includes(path)) return "Operaciones";
-    if (["/material", "/location", "/product", "/inventory_status", "/unit", "/brand"].includes(path)) return "Inventario";
+    if (["/material", "/location", "/product", "/inventory_status", "/unit", "/brand", "/vouchers"].includes(path)) return "Inventario";
+    if (["/customer_supplier", "/survey_question", "/survey_multiple_answer", "/nm_survey_user", "/appointment", "/appointments", "/product_sale_config", "/public_api_key"].includes(path)) return "CRM";
     return "Configuración";
   }
 
   function navigationFor(item) {
-    const entityName = item.entityName || String(item.path || "").replace(/^\//, "");
+    const candidateNames = item.entityNames || [item.entityName || String(item.path || "").replace(/^\//, "")];
+    const entityName = candidateNames.find((name) => permissionByEntity.has(name)) || candidateNames[0];
     const permission = permissionByEntity.get(entityName);
     const isCanonicalPath = item.path === `/${entityName}`;
     return {
@@ -453,6 +477,18 @@ export default function Shell() {
               moduleSections.js; aqui solo se pinta, de modo que agregar un
               modulo con secciones no vuelve a significar copiar este bloque. */}
           {moduleSectionsEnPlan(modulosDelPlan).map((modulo) => {
+            // Un modulo con entidades propias declaradas (hoy solo Logistica)
+            // necesita al menos una concedida de verdad para pintarse. Sin
+            // esto, Almacen/Facturas/Proveedores -que piden prestadas
+            // `product`/`invoice`/`customer_supplier` para no duplicar
+            // pantalla- sostenian el encabezado "Logistica" para cualquier
+            // rol con Inventario, Facturacion o CRM, que es casi cualquier
+            // rol, y no habia checkbox en el Gestor de roles que lo apagara:
+            // nada de lo que lo sostenia era, en los hechos, de logistica.
+            if (modulo.entidadesPropias && !isBootstrapAdmin
+              && !modulo.entidadesPropias.some((entidad) => permissionByEntity.has(entidad))) {
+              return null;
+            }
             const seccionesVisibles = modulo.sections
               .map((seccion) => ({ ...seccion, items: seccion.items.filter(canSeeSectionItem) }))
               .filter((seccion) => seccion.items.length > 0);

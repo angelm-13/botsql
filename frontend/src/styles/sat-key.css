@@ -9,6 +9,10 @@
   gap: 4px;
 }
 
+.concept-description-suggest {
+  position: relative;
+}
+
 .sat-key-input-row {
   display: flex;
   align-items: stretch;

@@ -22,6 +22,18 @@ ACTION_TO_I18N_KEY = {
     PermissionAction.DELETE: "security.permission.delete_denied",
 }
 
+# Cada accion vive en su propia columna de alcance (0 Sin acceso, 1 Propios,
+# 2 Mis grupos, 4 Todos -- ver entity_permission.py). El gate de aqui sigue
+# siendo booleano: 0 deniega, cualquier otro valor permite. El alcance real
+# (que Propios/Mis grupos filtren de verdad lo que se ve) no esta conectado
+# todavia -- es trabajo de una fase aparte, ver ARQUITECTURA_TYAKXA_TNY.md.
+ACTION_TO_SCOPE_COLUMN = {
+    PermissionAction.CREATE: "scope_create",
+    PermissionAction.READ: "scope_read",
+    PermissionAction.UPDATE: "scope_update",
+    PermissionAction.DELETE: "scope_delete",
+}
+
 
 def _get_user_permission_id(user_data: dict[str, Any]) -> int | None:
     value = user_data.get("id_permission") or user_data.get("permission_id")
@@ -47,7 +59,8 @@ def has_permission(db_session: Any, user_data: dict[str, Any], entity_name: str,
     )
     if not record:
         return False
-    return (int(record.control_type) & int(action)) == int(action)
+    scope_column = ACTION_TO_SCOPE_COLUMN[action]
+    return int(getattr(record, scope_column)) != 0
 
 
 def require_entity_permission(entity_name: str, action: PermissionAction) -> Callable:

@@ -49,7 +49,7 @@ class DesarrolloPorEmpleadoQueryTest(unittest.TestCase):
 
     def _tarea(self, owner, id_proyect, creation_date, task_status, descripcion="Tarea KPI"):
         return Task(
-            owner=owner, analyst=ADMIN_ID, dependency=0, leader=ADMIN_ID, validation=ADMIN_ID,
+            owner=owner, dependency=0, validation=ADMIN_ID,
             task_description=descripcion, task_status=task_status,
             id_proyect=id_proyect, created_by=ADMIN_ID, creation_date=creation_date,
         )

@@ -10,7 +10,6 @@
 .kpi-tab-add:hover{background:#d8efe8;border-color:#1b7a60;color:#1b7a60}
 
 .kpi-dashboard-body{display:flex;flex-direction:column;gap:16px}
-.kpi-dashboard-toolbar{display:flex;justify-content:flex-end}
 
 .kpi-widget-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px}
 .kpi-widget-placeholder{border:1px dashed #c3c2b7;border-radius:22px;min-height:240px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:#fbfaf7;color:#a6a49a;cursor:pointer;font:inherit}
@@ -23,12 +22,25 @@
 .kpi-icon-button{border:0;background:#eef2f6;color:#526273;border-radius:8px;padding:7px;cursor:pointer;display:grid;place-items:center}
 .kpi-icon-button:hover{background:#d8efe8;color:#1b7a60}
 .kpi-icon-button.danger:hover{background:#fae5e5;color:#9b3030}
+/* touch-action:none -- sin esto, arrastrar el handle en una pantalla tactil
+   compite con el scroll de la pagina (ver docs de dnd-kit sobre PointerSensor
+   en touch devices). */
+.kpi-drag-handle{cursor:grab;touch-action:none}
+.kpi-drag-handle:active{cursor:grabbing}
 .kpi-widget-meta{color:#8a96a5;font-size:12px;font-weight:700;margin:0}
 .kpi-widget-meta+.kpi-widget-meta{margin-top:-6px}
 .kpi-chart-box{min-height:240px;display:flex;flex-direction:column;justify-content:center}
 
 .kpi-number-widget{display:flex;flex-direction:column;gap:8px;padding:14px 4px 6px}
 .kpi-number-widget strong{font-size:38px;color:#0b0b0b;line-height:1.1}
+/* Fila superior del widget "numero" cuando hay comparacion activa: icono de
+   modulo a la izquierda del valor, sparkline de tendencia a la derecha (ver
+   KpiNumberSparkline en Dashboard.jsx) -- sin comparacion la fila colapsa al
+   solo valor de siempre. */
+.kpi-number-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.kpi-number-value{display:flex;align-items:center;gap:10px;min-width:0}
+.kpi-number-module-icon{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:34px;height:34px;border-radius:50%}
+.kpi-number-sparkline{flex-shrink:0}
 .kpi-delta{display:inline-flex;align-items:center;gap:4px;font-weight:800;font-size:13px}
 .kpi-delta.up{color:#006300}
 .kpi-delta.down{color:#d03b3b}
@@ -43,6 +55,22 @@
 .kpi-widget-panel header{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;margin-bottom:16px}
 .kpi-widget-panel h3{margin:2px 0;color:#173b66}
 .kpi-widget-panel footer{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.kpi-widget-panel-header-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
+
+/* Colapsado: la seccion se reduce a la franja del header (la pestana/flap),
+   sin el padding pensado para el formulario completo -- ver
+   KpiWidgetPanel.colapsado en Dashboard.jsx. */
+.kpi-widget-panel.collapsed{padding:10px 20px}
+.kpi-widget-panel.collapsed header{margin-bottom:0}
+
+/* Pestana/flap con flecha: reemplaza la "X" de cerrar de antes. Un clic
+   colapsa/expande el mismo panel -- no es un cierre real, el borrador sigue
+   vivo en panelState mientras esta colapsado (ver el comentario junto a
+   `colapsado` en Dashboard.jsx). Cuando esta colapsado tambien muestra el
+   titulo, porque el <h3> de arriba deja de renderizarse. */
+.kpi-panel-flap{display:flex;align-items:center;gap:8px;border:1px solid #d7e0ea;background:#f4f6f9;color:#173b66;border-radius:10px;padding:7px 12px;cursor:pointer;font:inherit;font-weight:800;font-size:13px}
+.kpi-panel-flap:hover{background:#eef2f6}
+.kpi-panel-flap span{white-space:nowrap}
 
 /* Franja compacta y ancha en vez de torre vertical: en desktop las secciones
    del panel se acomodan en 3 columnas lado a lado (KPI+tipo de grafica /
@@ -77,10 +105,45 @@
 .kpi-shortcut-button.active{background:#eef4fb;border-color:#173b66;color:#173b66}
 
 .kpi-employee-picker,.kpi-department-picker{display:flex;flex-direction:column;gap:8px;margin-top:6px}
-.kpi-employee-picker-label,.kpi-department-picker-label{font-weight:800;color:#334155;font-size:13px}
-.kpi-employee-list,.kpi-department-list{display:flex;flex-wrap:wrap;gap:8px;max-height:160px;overflow:auto;padding:4px}
-.kpi-employee-chip,.kpi-department-chip{display:flex;align-items:center;gap:6px;border:1px solid #cbd5e1;border-radius:999px;padding:6px 12px;font-size:13px;font-weight:700;color:#334155;cursor:pointer}
-.kpi-employee-chip input,.kpi-department-chip input{margin:0}
+.kpi-department-picker-label{font-weight:800;color:#334155;font-size:13px}
+.kpi-department-list{display:flex;flex-wrap:wrap;gap:6px;max-height:160px;overflow:auto;padding:4px}
+.kpi-employee-list{display:flex;flex-wrap:wrap;gap:6px}
+
+/* Barra desplegable reutilizable (KpiDropdownPicker en Dashboard.jsx): boton
+   cerrado con resumen + chevron, popover con las opciones adentro al hacer
+   click. Usado por el picker de empleados y por las variables sueltas -- ver
+   el comentario junto a KpiDropdownPicker sobre por que NO se uso para
+   departamento. */
+.kpi-dropdown-picker{position:relative}
+.kpi-dropdown-picker-toggle{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:10px;padding:9px 12px;font:inherit;font-weight:700;font-size:13px;cursor:pointer}
+.kpi-dropdown-picker-toggle:hover{background:#f4f6f9;border-color:#173b66}
+.kpi-dropdown-picker-toggle span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kpi-dropdown-picker-menu{position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:15;max-height:220px;overflow:auto;padding:10px;background:#fff;border:1px solid #d7e0ea;border-radius:12px;box-shadow:0 12px 30px rgba(15,23,42,.14)}
+.kpi-dropdown-picker-search{width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:7px 10px;font:inherit;font-size:13px;color:#334155;margin-bottom:8px}
+.kpi-dropdown-picker-search:focus{outline:none;border-color:#173b66}
+.kpi-dropdown-picker-empty{margin:6px 2px;color:#8a96a5;font-size:12px;text-align:center}
+/* Adentro del popover las opciones van en lista (una por renglon), no en
+   cuadricula -- el chip/avatar/color de cada item no cambia, solo el
+   acomodo del contenedor (kpi-employee-list / kpi-chip-option-group), que
+   fuera de este popover se quedan como flex-wrap normal. */
+.kpi-dropdown-picker-menu .kpi-employee-list,
+.kpi-dropdown-picker-menu .kpi-chip-option-group{flex-direction:column;flex-wrap:nowrap;align-items:flex-start}
+.kpi-department-chip{display:flex;align-items:center;gap:6px;border:1px solid #cbd5e1;border-radius:999px;padding:6px 12px;font-size:13px;font-weight:700;color:#334155;cursor:pointer}
+.kpi-department-chip input{margin:0}
+/* Solo exhibicion (ver DEPARTAMENTOS_VISUALES en Dashboard.jsx): atenuado y
+   sin cursor de interaccion, para que se note a simple vista que no es un
+   filtro real todavia. */
+.kpi-department-chip.visual-only{cursor:default;color:#94a3b8;border-style:dashed}
+
+/* Chip de empleado: pildora compacta (sin checkbox visible, boton simple) --
+   varias por fila en vez de una columna apilada. El acento de color por
+   persona (--employee-color, colorDeKpi(id_user)) se ve en el borde siempre
+   y se refuerza con fondo tenue del mismo color solo cuando esta activo, para
+   que no compita visualmente con el resto de chips cuando no esta elegido. */
+.kpi-employee-chip{display:inline-flex;align-items:center;gap:5px;border:1.5px solid var(--employee-color);border-radius:999px;padding:3px 10px 3px 4px;font-size:12px;font-weight:700;color:#334155;cursor:pointer;background:#fff;font:inherit}
+.kpi-employee-chip:hover{background:#f4f6f9}
+.kpi-employee-chip.active{background:color-mix(in srgb, var(--employee-color) 16%, #fff);color:#173b66}
+.kpi-employee-chip span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px}
 
 /* Categoria/KPI y tipo de grafica: iconos fijos en vez de <select>. Mismo
    tratamiento "active" que ya usan las pestanas del tablero (.kpi-tab.active),
@@ -121,3 +184,26 @@
   .kpi-panel-columns{grid-template-columns:1fr}
   .kpi-panel-col:last-child{grid-column:auto}
 }
+
+/* --- Reporte PDF (ver generarReportePdf en Dashboard.jsx) --- */
+
+/* Mismo dialogo/backdrop que "asset-tracking.css" (asset-drawer-backdrop /
+   asset-dialog) pero definido aqui aparte -- kpi-dashboard.css no importa
+   hojas de otras paginas, cada pantalla trae la suya. */
+.kpi-pdf-dialog-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;padding:32px 16px;overflow-y:auto;z-index:80}
+.kpi-pdf-dialog{background:#fff;border:1px solid #cbd5e1;border-radius:16px;box-shadow:0 24px 64px -24px rgba(15,23,42,.45);width:100%;max-width:440px;padding:22px 24px 26px;display:flex;flex-direction:column;gap:14px}
+.kpi-pdf-dialog h2{margin:0;color:#173b66;font-size:19px}
+.kpi-pdf-dialog p{margin:0;color:#526273;font-size:14px}
+.kpi-pdf-dialog-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+
+/* Overlay mientras se genera: tapa el "parpadeo" de pestañas cuando el
+   reporte recorre todos los tableros (ver generarReportePdf). */
+.kpi-pdf-exporting-overlay{position:fixed;inset:0;z-index:90;display:flex;align-items:center;justify-content:center;gap:10px;background:rgba(255,255,255,.85);color:#173b66;font-weight:800;font-size:14px}
+.kpi-spin{animation:kpi-spin 1s linear infinite}
+@keyframes kpi-spin{to{transform:rotate(360deg)}}
+
+/* Mientras se captura cada panel para el PDF: sin los espacios "de fabrica"
+   vacios ni los iconos de editar/eliminar/arrastrar -- un reporte, no una
+   foto de la pantalla de administracion. */
+body.kpi-pdf-exporting .kpi-widget-placeholder{display:none}
+body.kpi-pdf-exporting .kpi-widget-card-actions{display:none}

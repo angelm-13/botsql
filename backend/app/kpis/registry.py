@@ -30,11 +30,28 @@ from sqlalchemy import case, func, or_, select, text
 
 from app.models.document import Document
 from app.models.incident import Incident
+from app.models.inventory_asset import InventoryAsset, PRESTADA
+from app.models.inventory_asset_event import InventoryAssetEvent, PRESTAMO
+from app.models.inventory_lot import InventoryLot
+from app.models.inventory_stock import InventoryStock
 from app.models.invoice import Invoice
 from app.models.laboratory import LaboratoryServiceOrder
 from app.models.nm_incident_product import NmIncidentProduct
 from app.models.task import Task
+from app.services.warehouse_voucher_service import CIERRE_SENTINELA
 from app.modules.registry import MODULO_POR_CLAVE
+
+# Que llave de `dimension_key` (JSONB, en `kpi_snapshot`) le corresponde a cada
+# tipo de dimension declarado en `KpiDefinition.dimensiones`. "global" no
+# agrega ninguna llave de entidad -- el KPI no se desglosa por nada, solo
+# guarda `id_proyect` cuando aplica (ver `alcance_proyecto`). La consumen
+# `app/jobs/tasks_kpis.py` (para saber que llave escribir al insertar el
+# snapshot) y `app/routes/kpi.py` (para saber que llave leer al sumar).
+DIMENSION_JSON_KEY = {
+    "empleado": "id_user",
+    "producto": "id_product",
+    "global": None,
+}
 
 
 def ventas_por_empleado_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
@@ -218,7 +235,10 @@ def vales_vencidos_por_responsable_query(session, fecha_inicio, fecha_fin, filtr
     fecha_col = func.date(NmIncidentProduct.due_date)
     condiciones = [
         NmIncidentProduct.deletion_date.is_(None),
-        NmIncidentProduct.close_date.is_(None),
+        or_(
+            NmIncidentProduct.close_date.is_(None),
+            NmIncidentProduct.close_date == CIERRE_SENTINELA,
+        ),
         NmIncidentProduct.due_date.isnot(None),
         NmIncidentProduct.due_date < ahora,
         fecha_col >= fecha_inicio,
@@ -505,6 +525,224 @@ def documentos_vencidos_por_responsable_query(session, fecha_inicio, fecha_fin, 
     return session.execute(stmt).all()
 
 
+def ingresos_totales_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
+    """Ingresos de la empresa (ventas facturadas), por dia, SIN desglose por empleado.
+
+    Mismo criterio de vigencia y campo de venta que `ventas_por_empleado_query`
+    -- ver ese docstring para el detalle de por que `subtotal` (no `total`) y
+    por que se excluyen `cotizacion`/`cancelada`. La diferencia es el
+    proposito: este KPI es la variable "ingresos" pensada para compararse
+    contra "egresos" en un mismo grafico (pedido explicito de Aurora), no un
+    desglose por responsable -- por eso no se agrupa por `created_by`.
+
+    Dimension "global" (ver `DIMENSION_JSON_KEY`): no hay entidad que
+    desglosar, asi que cada fila regresa `None` como primer elemento -- el
+    snapshot no guarda ninguna llave de entidad para este KPI, solo
+    `id_proyect` cuando aplica.
+    """
+    fecha_col = func.date(Invoice.date_emision)
+    condiciones = [
+        Invoice.deletion_date.is_(None),
+        fecha_col >= fecha_inicio,
+        fecha_col <= fecha_fin,
+        Invoice.invoice_status.notin_(["cotizacion", "cancelada"]),
+        or_(Invoice.invoice_direction.is_(None), Invoice.invoice_direction != "compra"),
+    ]
+    if actor_project is not None:
+        condiciones.append(Invoice.id_proyect == actor_project)
+
+    stmt = (
+        select(fecha_col.label("fecha"), func.sum(Invoice.subtotal))
+        .where(*condiciones)
+        .group_by(fecha_col)
+        .order_by(fecha_col)
+    )
+    return [(None, fecha, valor) for fecha, valor in session.execute(stmt).all()]
+
+
+def egresos_totales_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
+    """Egresos de la empresa (facturas de compra), por dia, SIN desglose por empleado.
+
+    Espejo de `ingresos_totales_query`, con el mismo cambio de direccion que
+    `egresos_por_empleado_query` frente a `ventas_por_empleado_query` --
+    exige `invoice_direction == 'compra'` en vez de excluir solo `'compra'`.
+    Ver `ingresos_totales_query` para el resto del criterio (dimension
+    "global", sin desglose por responsable).
+    """
+    fecha_col = func.date(Invoice.date_emision)
+    condiciones = [
+        Invoice.deletion_date.is_(None),
+        fecha_col >= fecha_inicio,
+        fecha_col <= fecha_fin,
+        Invoice.invoice_status.notin_(["cotizacion", "cancelada"]),
+        Invoice.invoice_direction == "compra",
+    ]
+    if actor_project is not None:
+        condiciones.append(Invoice.id_proyect == actor_project)
+
+    stmt = (
+        select(fecha_col.label("fecha"), func.sum(Invoice.subtotal))
+        .where(*condiciones)
+        .group_by(fecha_col)
+        .order_by(fecha_col)
+    )
+    return [(None, fecha, valor) for fecha, valor in session.execute(stmt).all()]
+
+
+def material_prestado_por_responsable_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
+    """Prestamos de material INICIADOS por dia, por responsable (`id_holder_after`).
+
+    Fuente: `inventory_asset_event` con `event_type = 'prestamo'`, no
+    `inventory_asset.status = 'prestada'` -- el estado actual de la pieza
+    solo dice DONDE esta hoy, no CUANDO empezo el prestamo (ver el docstring
+    de la clase `InventoryAssetEvent`, que explica por que existe esta
+    bitacora aparte del estado). Un evento de prestamo trae una fecha real
+    (`creation_date`) que si sirve para una serie por dia.
+
+    Responsable: `id_holder_after` -- quien recibio la pieza en ESE evento
+    (puede no coincidir con quien la tiene hoy, si ya hubo otro evento
+    despues; este KPI mide cuando se prestaron piezas, no el estado actual).
+
+    Sin alcance de proyecto (`alcance_proyecto=False`): un prestamo de
+    herramienta es una operacion interna de almacen, igual que un vale de
+    almacen -- ver el docstring de `vales_vencidos_por_responsable_query`,
+    mismo motivo: ni `inventory_asset_event` ni `inventory_asset` ni
+    `product` tienen `id_proyect` en la cadena.
+    """
+    fecha_col = func.date(InventoryAssetEvent.creation_date)
+    condiciones = [
+        InventoryAssetEvent.event_type == PRESTAMO,
+        InventoryAssetEvent.id_holder_after.isnot(None),
+        fecha_col >= fecha_inicio,
+        fecha_col <= fecha_fin,
+    ]
+
+    empleados = (filtros_dimension or {}).get("empleados")
+    if empleados:
+        condiciones.append(InventoryAssetEvent.id_holder_after.in_(empleados))
+
+    stmt = (
+        select(InventoryAssetEvent.id_holder_after, fecha_col.label("fecha"), func.count())
+        .where(*condiciones)
+        .group_by(InventoryAssetEvent.id_holder_after, fecha_col)
+        .order_by(InventoryAssetEvent.id_holder_after, fecha_col)
+    )
+    return session.execute(stmt).all()
+
+
+def prestamos_vencidos_por_responsable_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
+    """Piezas prestadas y ya vencidas (`due_date` pasado), por responsable actual.
+
+    Mismo criterio, palabra por palabra, que
+    `vales_vencidos_por_responsable_query` -- aqui sobre `inventory_asset` en
+    vez de `nm_incident_product`: vigente = sigue `status = 'prestada'` (no
+    se ha devuelto -- una `devolucion` la regresaria a `disponible`/
+    `en_uso`), `due_date` no nulo y ya pasado contra el momento real
+    (`ahora`), NUNCA contra `fecha_fin` -- una pieza vencida hace 3 dias que
+    sigue sin devolverse cuenta ese dia cada vez que se recalcula. Se agrupa
+    por el DIA de `due_date` que cae en `[fecha_inicio, fecha_fin]`.
+
+    Responsable: `id_holder` -- quien tiene la pieza ahora mismo.
+
+    Sin alcance de proyecto, mismo motivo que
+    `material_prestado_por_responsable_query`.
+    """
+    ahora = datetime.now()
+    fecha_col = func.date(InventoryAsset.due_date)
+    condiciones = [
+        InventoryAsset.deletion_date.is_(None),
+        InventoryAsset.status == PRESTADA,
+        InventoryAsset.due_date.isnot(None),
+        InventoryAsset.due_date < ahora,
+        fecha_col >= fecha_inicio,
+        fecha_col <= fecha_fin,
+    ]
+
+    empleados = (filtros_dimension or {}).get("empleados")
+    if empleados:
+        condiciones.append(InventoryAsset.id_holder.in_(empleados))
+
+    stmt = (
+        select(InventoryAsset.id_holder, fecha_col.label("fecha"), func.count())
+        .where(*condiciones)
+        .group_by(InventoryAsset.id_holder, fecha_col)
+        .order_by(InventoryAsset.id_holder, fecha_col)
+    )
+    return session.execute(stmt).all()
+
+
+def lotes_proximos_a_caducar_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
+    """Lotes por producto cuya caducidad (`expiry_date`) cae en el rango, por dia.
+
+    No hay un "umbral de dias" separado aqui a proposito: el propio rango de
+    fechas que el usuario ya elige en el widget (`fecha_inicio`/`fecha_fin`)
+    ES el umbral -- pedir "hoy a hoy+30" ya es preguntar "que caduca en los
+    proximos 30 dias". Se agrupa por el DIA exacto de `expiry_date`, no en un
+    solo total, para poder ver picos de vencimiento en el tiempo.
+
+    Dimension "producto" (`id_product`), no "empleado" -- ver
+    `DIMENSION_JSON_KEY`.
+
+    Sin alcance de proyecto: un lote es inventario propio de almacen, no de
+    un proyecto de cliente (mismo criterio que el resto de los KPIs de
+    almacen de este archivo).
+    """
+    fecha_col = InventoryLot.expiry_date
+    condiciones = [
+        InventoryLot.deletion_date.is_(None),
+        InventoryLot.expiry_date.isnot(None),
+        fecha_col >= fecha_inicio,
+        fecha_col <= fecha_fin,
+    ]
+
+    productos = (filtros_dimension or {}).get("productos")
+    if productos:
+        condiciones.append(InventoryLot.id_product.in_(productos))
+
+    stmt = (
+        select(InventoryLot.id_product, fecha_col.label("fecha"), func.count())
+        .where(*condiciones)
+        .group_by(InventoryLot.id_product, fecha_col)
+        .order_by(InventoryLot.id_product, fecha_col)
+    )
+    return session.execute(stmt).all()
+
+
+def articulos_bajo_stock_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
+    """Existencia ACTUAL por producto (`inventory_stock`, sumada entre ubicaciones).
+
+    No es una serie por dia: `inventory_stock` no guarda historia, solo el
+    saldo de HOY (ver el docstring de la tabla). Por eso, igual que
+    `desarrollo_por_empleado_query`/`incidentes_resueltos_por_empleado_query`,
+    regresa una sola fila por producto fechada en `fecha_fin`: es una foto
+    del saldo actual, no una reconstruccion historica -- `fecha_inicio` no se
+    usa para nada mas que mantener la firma comun de `query_builder`.
+
+    El KPI guarda la CANTIDAD en existencia, no un si-o-no de "esta bajo
+    stock": el umbral para decidir que cuenta como "bajo" se captura en el
+    WIDGET (decision explicita de Aurora) -- no hay columna de stock minimo
+    en `product`/`material`/`product_sale_config` (se reviso el modelo
+    completo), y anadirla obligaria a mantenerla actualizada por producto sin
+    que nadie la pida todavia. Comparar el valor contra el umbral es trabajo
+    de la pantalla, no de este query.
+
+    Dimension "producto". Sin alcance de proyecto: el saldo de almacen no le
+    pertenece a un proyecto de cliente.
+    """
+    productos = (filtros_dimension or {}).get("productos")
+    condiciones = []
+    if productos:
+        condiciones.append(InventoryStock.id_product.in_(productos))
+
+    stmt = (
+        select(InventoryStock.id_product, func.sum(InventoryStock.quantity))
+        .where(*condiciones)
+        .group_by(InventoryStock.id_product)
+        .order_by(InventoryStock.id_product)
+    )
+    return [(id_product, fecha_fin, cantidad) for id_product, cantidad in session.execute(stmt).all()]
+
+
 class KpiDefinition:
     def __init__(self, clave, etiqueta, modulo, dimensiones,
                  query_builder, unidad="numero", alcance_proyecto=True):
@@ -614,6 +852,61 @@ KPI_REGISTRY = (
         query_builder=documentos_vencidos_por_responsable_query,
         unidad="numero",
     ),
+    # --- variables/KPIs adicionales (pedido de Aurora: "opcionales,
+    # adicionales", para comparar variables como ingresos vs egresos en un
+    # mismo grafico y convertir datos sueltos en informacion) -------------
+    KpiDefinition(
+        clave="ingresos_totales",
+        etiqueta="Ingresos totales",
+        modulo="facturacion",
+        dimensiones=("global",),
+        query_builder=ingresos_totales_query,
+        unidad="moneda",
+    ),
+    KpiDefinition(
+        clave="egresos_totales",
+        etiqueta="Egresos totales",
+        modulo="facturacion",
+        dimensiones=("global",),
+        query_builder=egresos_totales_query,
+        unidad="moneda",
+    ),
+    KpiDefinition(
+        clave="material_prestado_por_responsable",
+        etiqueta="Material prestado por responsable",
+        modulo="inventario",
+        dimensiones=("empleado",),
+        query_builder=material_prestado_por_responsable_query,
+        unidad="numero",
+        alcance_proyecto=False,
+    ),
+    KpiDefinition(
+        clave="prestamos_vencidos_por_responsable",
+        etiqueta="Préstamos de material vencidos por responsable",
+        modulo="inventario",
+        dimensiones=("empleado",),
+        query_builder=prestamos_vencidos_por_responsable_query,
+        unidad="numero",
+        alcance_proyecto=False,
+    ),
+    KpiDefinition(
+        clave="lotes_proximos_a_caducar",
+        etiqueta="Lotes próximos a caducar",
+        modulo="inventario",
+        dimensiones=("producto",),
+        query_builder=lotes_proximos_a_caducar_query,
+        unidad="numero",
+        alcance_proyecto=False,
+    ),
+    KpiDefinition(
+        clave="articulos_bajo_stock",
+        etiqueta="Artículos bajo stock",
+        modulo="inventario",
+        dimensiones=("producto",),
+        query_builder=articulos_bajo_stock_query,
+        unidad="numero",
+        alcance_proyecto=False,
+    ),
 )
 
 
@@ -623,6 +916,13 @@ KPI_REGISTRY = (
 # registro). Lo consumen `app/jobs/tasks_kpis.py` y `app/routes/kpi.py`, ver
 # el comentario de `KpiDefinition.alcance_proyecto`.
 ALCANCE_PROYECTO_POR_CLAVE = {kpi.clave: kpi.alcance_proyecto for kpi in KPI_REGISTRY}
+
+# Misma idea que el mapa de arriba, pero para la dimension: que tipo de
+# entidad desglosa cada KPI ("empleado"/"producto"/"global"). Lo consume
+# `app/routes/kpi.py` para saber que llave de `dimension_key` leer al sumar
+# (via `DIMENSION_JSON_KEY`) sin tener que resembrar la logica de dimensiones
+# fuera de este registro.
+DIMENSION_POR_CLAVE = {kpi.clave: kpi.dimensiones[0] for kpi in KPI_REGISTRY}
 
 
 # "tiempo_promedio_atencion" queda pendiente de agregar a este registro.

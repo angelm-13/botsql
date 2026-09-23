@@ -1,12 +1,101 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import { BadgeCheck, CheckCircle2, Download, FileText, Plus, Trash2 } from "lucide-react";
 import {
   createManualInvoice, downloadInvoicePdf, downloadInvoiceXml, getAllCustomerSupplier,
-  getAllProyect, getInvoiceCatalogs, getStampingConfig, previewManualInvoice,
+  getAllProyect, getInvoiceCatalogs, getStampingConfig, previewManualInvoice, searchSatProductKeys,
 } from "../api";
 import SatProductKeyField from "./SatProductKeyField";
 import { useI18n } from "../i18n";
+
+const DESCRIPTION_SUGGEST_DEBOUNCE_MS = 400;
+const DESCRIPTION_SUGGEST_MIN_LENGTH = 4;
+
+/**
+ * Mientras se captura la descripcion de un concepto, sugiere la clave del SAT
+ * que le corresponde -- sin esto hay que abrir aparte el buscador de la Clave
+ * producto SAT y volver a escribir lo mismo. Se apaga sola en cuanto el
+ * concepto ya tiene una clave (elegida aqui o desde ese otro buscador).
+ */
+function ConceptDescriptionField({ value, claveProdServ, onChangeDescription, onPickClave, t }) {
+  const [results, setResults] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState("");
+  const requestRef = useRef(0);
+
+  useEffect(() => {
+    const text = value.trim();
+    if (claveProdServ || text.length < DESCRIPTION_SUGGEST_MIN_LENGTH) {
+      setResults([]);
+      setNotice("");
+      setOpen(false);
+      return undefined;
+    }
+    const ticket = requestRef.current + 1;
+    requestRef.current = ticket;
+    const timer = window.setTimeout(() => {
+      setBusy(true);
+      searchSatProductKeys(text, 6)
+        .then((payload) => {
+          if (requestRef.current !== ticket) return;
+          const items = payload?.items || [];
+          setResults(items);
+          setNotice(payload?.catalog_loaded === false ? t("sat_catalog.not_loaded", "El catálogo del SAT no está cargado. Pide que se importe para poder buscar.") : "");
+          setOpen(true);
+        })
+        .catch(() => {
+          if (requestRef.current === ticket) { setResults([]); setOpen(false); }
+        })
+        .finally(() => {
+          if (requestRef.current === ticket) setBusy(false);
+        });
+    }, DESCRIPTION_SUGGEST_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [value, claveProdServ, t]);
+
+  return (
+    <label className="field concept-description concept-description-suggest">
+      <span>{t("manual_invoice.description", "Descripción")}</span>
+      <input
+        required
+        value={value}
+        onChange={(event) => onChangeDescription(event.target.value)}
+        onFocus={() => { if (results.length || notice) setOpen(true); }}
+        onBlur={() => window.setTimeout(() => setOpen(false), 150)}
+      />
+      {open && !claveProdServ && (
+        <div className="sat-key-popover">
+          {busy && <p className="sat-key-message">{t("sat_catalog.searching", "Buscando en el catálogo del SAT...")}</p>}
+          {!busy && notice && <p className="sat-key-message error">{notice}</p>}
+          {!busy && !notice && !results.length && (
+            <p className="sat-key-message">{t("sat_catalog.no_results", "Sin resultados. Prueba con otra palabra.")}</p>
+          )}
+          {!busy && Boolean(results.length) && (
+            <ul className="sat-key-results">
+              {results.map((item) => (
+                <li key={item.clave}>
+                  <button type="button" onMouseDown={(event) => { event.preventDefault(); onPickClave(item.clave); setOpen(false); }}>
+                    <span className="sat-key-code">{item.clave}</span>
+                    <span className="sat-key-description">{item.description}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </label>
+  );
+}
+
+ConceptDescriptionField.propTypes = {
+  value: PropTypes.string.isRequired,
+  claveProdServ: PropTypes.string,
+  onChangeDescription: PropTypes.func.isRequired,
+  onPickClave: PropTypes.func.isRequired,
+  t: PropTypes.func.isRequired,
+};
 
 const RETENTION_PRESETS = {
   none: { labelKey: "invoice_creation.retention_none", isr: 0, iva: 0 },
@@ -140,7 +229,7 @@ export default function InvoiceCreationForm({ onCreated }) {
           <label className="field"><span>{t("manual_invoice.cfdi_use", "Uso CFDI")}</span><select required value={form.uso_cfdi} onChange={(event) => update("uso_cfdi", event.target.value)}>{options(Object.keys(validUses).length ? validUses : catalogs.uso_cfdi)}</select></label>
         </div></section>
 
-        <section className="invoice-create-section"><div className="form-header"><strong>{t("manual_invoice.concepts", "Conceptos")}</strong><button className="button" type="button" onClick={() => setForm((current) => ({ ...current, concepts: [...current.concepts, newConcept()] }))}><Plus size={16} />{t("manual_invoice.add", "Agregar")}</button></div><div className="invoice-concept-list">{form.concepts.map((concept, index) => <div className="invoice-concept-row" key={concept.key}><strong>{index + 1}</strong><label className="field concept-description"><span>{t("manual_invoice.description", "Descripción")}</span><input required value={concept.descripcion} onChange={(event) => updateConcept(concept.key, "descripcion", event.target.value)} /></label><label className="field"><span>{t("manual_invoice.quantity", "Cantidad")}</span><input required type="number" min="0.0001" step="any" value={concept.cantidad} onChange={(event) => updateConcept(concept.key, "cantidad", event.target.value)} /></label><label className="field"><span>{t("manual_invoice.unit_price", "Precio unitario")}</span><input required type="number" min="0" step="0.01" value={concept.valor_unitario} onChange={(event) => updateConcept(concept.key, "valor_unitario", event.target.value)} /></label><label className="field"><span>{t("manual_invoice.discount", "Descuento")}</span><input type="number" min="0" step="0.01" value={concept.descuento} onChange={(event) => updateConcept(concept.key, "descuento", event.target.value)} /></label><label className="field"><span>{t("manual_invoice.sat_product_key", "Clave producto SAT")}</span><SatProductKeyField required value={concept.clave_prod_serv} onChange={(clave) => updateConcept(concept.key, "clave_prod_serv", clave)} onDescriptionPick={(description) => { if (!concept.descripcion) updateConcept(concept.key, "descripcion", description); }} /></label><label className="field"><span>{t("manual_invoice.sat_unit_key", "Clave unidad")}</span><select value={concept.clave_unidad} onChange={(event) => updateConcept(concept.key, "clave_unidad", event.target.value)}>{options(catalogs.clave_unidad)}</select></label><button className="icon-button" title={t("manual_invoice.delete_concept", "Eliminar concepto")} aria-label={t("manual_invoice.delete_concept", "Eliminar concepto")} type="button" disabled={form.concepts.length === 1} onClick={() => setForm((current) => ({ ...current, concepts: current.concepts.filter((item) => item.key !== concept.key) }))}><Trash2 size={16} /></button></div>)}</div></section>
+        <section className="invoice-create-section"><div className="form-header"><strong>{t("manual_invoice.concepts", "Conceptos")}</strong><button className="button" type="button" onClick={() => setForm((current) => ({ ...current, concepts: [...current.concepts, newConcept()] }))}><Plus size={16} />{t("manual_invoice.add", "Agregar")}</button></div><div className="invoice-concept-list">{form.concepts.map((concept, index) => <div className="invoice-concept-row" key={concept.key}><strong>{index + 1}</strong><ConceptDescriptionField value={concept.descripcion} claveProdServ={concept.clave_prod_serv} onChangeDescription={(text) => updateConcept(concept.key, "descripcion", text)} onPickClave={(clave) => updateConcept(concept.key, "clave_prod_serv", clave)} t={t} /><label className="field"><span>{t("manual_invoice.quantity", "Cantidad")}</span><input required type="number" min="0.0001" step="any" value={concept.cantidad} onChange={(event) => updateConcept(concept.key, "cantidad", event.target.value)} /></label><label className="field"><span>{t("manual_invoice.unit_price", "Precio unitario")}</span><input required type="number" min="0" step="0.01" value={concept.valor_unitario} onChange={(event) => updateConcept(concept.key, "valor_unitario", event.target.value)} /></label><label className="field"><span>{t("manual_invoice.discount", "Descuento")}</span><input type="number" min="0" step="0.01" value={concept.descuento} onChange={(event) => updateConcept(concept.key, "descuento", event.target.value)} /></label><label className="field"><span>{t("manual_invoice.sat_product_key", "Clave producto SAT")}</span><SatProductKeyField required value={concept.clave_prod_serv} onChange={(clave) => updateConcept(concept.key, "clave_prod_serv", clave)} onDescriptionPick={(description) => { if (!concept.descripcion) updateConcept(concept.key, "descripcion", description); }} /></label><label className="field"><span>{t("manual_invoice.sat_unit_key", "Clave unidad")}</span><select value={concept.clave_unidad} onChange={(event) => updateConcept(concept.key, "clave_unidad", event.target.value)}>{options(catalogs.clave_unidad)}</select></label><button className="icon-button" title={t("manual_invoice.delete_concept", "Eliminar concepto")} aria-label={t("manual_invoice.delete_concept", "Eliminar concepto")} type="button" disabled={form.concepts.length === 1} onClick={() => setForm((current) => ({ ...current, concepts: current.concepts.filter((item) => item.key !== concept.key) }))}><Trash2 size={16} /></button></div>)}</div></section>
 
         <section className="invoice-create-section"><div className="form-header"><strong>{t("invoice_creation.payment_taxes_dates", "Pago, impuestos y fechas")}</strong></div><div className="form-grid">
           <label className="field"><span>{t("manual_invoice.payment_form", "Forma de pago")}</span><select value={form.forma_pago} onChange={(event) => update("forma_pago", event.target.value)}>{options(catalogs.forma_pago)}</select></label><label className="field"><span>{t("manual_invoice.payment_method", "Método de pago")}</span><select value={form.metodo_pago} onChange={(event) => setPaymentMethod(event.target.value)}>{options(catalogs.metodo_pago)}</select></label><label className="field"><span>{t("invoice_creation.vat_treatment", "Tratamiento de IVA")}</span><select value={form.iva_tipo} onChange={(event) => update("iva_tipo", event.target.value)}><option value="16">{t("invoice_creation.vat_16", "IVA 16%")}</option><option value="8">{t("invoice_creation.vat_border_8", "IVA 8% frontera")}</option><option value="0">{t("invoice_creation.vat_zero", "IVA tasa 0%")}</option><option value="exento">{t("invoice_creation.vat_exempt", "Exento")}</option><option value="sin_iva">{t("invoice_creation.vat_not_subject", "No objeto de IVA")}</option></select></label><label className="field"><span>{t("invoice_creation.retentions", "Retenciones")}</span><select value={form.ret_preset} onChange={(event) => applyRetentionPreset(event.target.value)}>{Object.entries(RETENTION_PRESETS).map(([key, preset]) => <option key={key} value={key}>{t(preset.labelKey)}</option>)}</select></label><label className="field"><span>{t("manual_invoice.issue_date", "Emisión")}</span><input type="date" required value={form.date_emision} onChange={(event) => update("date_emision", event.target.value)} /></label><label className="field"><span>{t("manual_invoice.due_date", "Vencimiento")}</span><input type="date" required value={form.date_expiration} onChange={(event) => update("date_expiration", event.target.value)} /></label><label className="field"><span>{t("manual_invoice.currency", "Moneda")}</span><select value={form.currency} onChange={(event) => update("currency", event.target.value)}><option value="MXN">MXN</option><option value="USD">USD</option></select></label>{form.currency !== "MXN" && <label className="field"><span>{t("invoice_creation.exchange_rate", "Tipo de cambio")}</span><input type="number" min="0.0001" step="0.0001" value={form.type_exchange_rate} onChange={(event) => update("type_exchange_rate", event.target.value)} /></label>}<label className="field wide-field"><span>{t("invoice_creation.payment_terms", "Condiciones de pago")}</span><input maxLength="100" value={form.condiciones_pago} onChange={(event) => update("condiciones_pago", event.target.value)} /></label><label className="field wide-field"><span>{t("invoice_creation.notes", "Notas")}</span><input maxLength="300" value={form.notas} onChange={(event) => update("notas", event.target.value)} /></label>

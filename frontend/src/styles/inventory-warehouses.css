@@ -1,6 +1,34 @@
 /* Almacenes, ubicaciones y los dos formularios del almacen.
    Hoja propia y no app.css: esa la esta tocando otra corriente de trabajo. */
 
+/* --- la simbologia del color ---
+
+   La misma leyenda de Localizar (`inventory-trace.css`), copiada aqui a
+   proposito y no importada de alla: cada pantalla mantiene su propia hoja
+   -ver el comentario de arriba-, y estas cinco reglas son mas baratas de
+   repetir que de acoplar dos paginas por una hoja de estilos compartida.
+   Los mismos cinco tonos del borde de la tarjeta, con lo que significan. */
+
+.trace-simbologia {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  margin: 0 0 14px; padding: 9px 12px;
+  background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px;
+  font-size: 12px;
+}
+.trace-simbologia-titulo { font-weight: 700; }
+.trace-simbologia-item { display: inline-flex; align-items: center; gap: 6px; }
+.trace-simbologia-item strong { font-weight: 600; color: #334155; }
+
+.trace-muestra {
+  width: 11px; height: 11px; border-radius: 3px; flex: 0 0 auto;
+  background: #e2e8f0;
+}
+.trace-muestra.ok    { background: #16a34a; }
+.trace-muestra.info  { background: #2563eb; }
+.trace-muestra.warn  { background: #d97706; }
+.trace-muestra.crit  { background: #dc2626; }
+.trace-muestra.muted { background: #94a3b8; }
+
 /* --- el arbol de ubicaciones ---
    Antes era una tabla con la jerarquia simulada dentro de un <pre> y espacios
    repetidos por nivel. Con un almacen de dos niveles se leia; con cuatro, no,
@@ -100,6 +128,72 @@
 .inv-contenido h3 em {
   font-style: normal; font-size: 12px; color: #5c6d68; font-weight: 400;
 }
+
+/* --- la existencia del sitio elegido, con foto ---
+
+   Antes era una tabla de solo texto -codigo, descripcion, cantidad-, la
+   misma queja que ya se habia resuelto en Localizar (`inventory-trace.css`)
+   pero no aqui. Card y no tabla, con la foto primero: reconocer una
+   herramienta por su forma es mas rapido que leer su descripcion completa. */
+
+.inv-existencia { list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 7px; }
+.inv-existencia-item {
+  display: flex; align-items: center; gap: 14px;
+  padding: 10px 14px; background: #f8faf9; border-radius: 9px;
+  border-left: 3px solid transparent;
+}
+/* El estatus heredado del sistema anterior (ENTRADA, SALIDA, DAÑADO,
+   EXTRAVIADO...), por GRAVEDAD y no uno por etiqueta -mismos cinco tonos que
+   ya usa Localizar, para que sea la misma pregunta en las dos pantallas. */
+.inv-existencia-item.tono-ok    { border-left-color: #16a34a; background: #f0fdf4; }
+.inv-existencia-item.tono-info  { border-left-color: #2563eb; background: #eff6ff; }
+.inv-existencia-item.tono-warn  { border-left-color: #d97706; background: #fffbeb; }
+.inv-existencia-item.tono-crit  { border-left-color: #dc2626; background: #fef2f2; }
+.inv-existencia-item.tono-muted { border-left-color: #94a3b8; background: #f8fafc; }
+.inv-existencia-foto {
+  display: grid; place-items: center; flex: 0 0 auto;
+  width: 68px; height: 68px; border-radius: 9px;
+  background: #f1f5f9; border: 1px solid #e2e8f0; color: #94a3b8;
+  overflow: hidden;
+}
+.inv-existencia-foto img { width: 100%; height: 100%; object-fit: cover; }
+.inv-existencia-datos {
+  display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 1 auto;
+}
+.inv-existencia-datos strong {
+  font-size: 16px; line-height: 1.25; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.inv-existencia-datos .muted { font-size: 12px; }
+.inv-existencia-ruta { display: block; }
+/* El numero solo con un icono no decia de que era numero -una cajita sin
+   etiqueta-. Mismo patron que ya usa Localizar para su "en existencia":
+   la cifra grande, y debajo la palabra completa, no una abreviatura. */
+.inv-existencia-cantidad {
+  display: flex; flex-direction: column; align-items: flex-end;
+  flex: 0 0 auto; text-align: right; line-height: 1.2;
+}
+.inv-existencia-cantidad strong {
+  font-size: 22px; color: #16211f; font-variant-numeric: tabular-nums;
+}
+.inv-existencia-cantidad span {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 11px; color: #64748b; white-space: nowrap;
+}
+
+.inv-existencia-estatus {
+  display: inline-block; align-self: flex-start; margin-top: 1px;
+  padding: 1px 8px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .02em;
+}
+.inv-existencia-estatus.tono-ok    { background: #dcfce7; color: #14532d; }
+.inv-existencia-estatus.tono-info  { background: #dbeafe; color: #1e3a8a; }
+.inv-existencia-estatus.tono-warn  { background: #fef3c7; color: #78350f; }
+.inv-existencia-estatus.tono-crit  { background: #fee2e2; color: #991b1b; }
+.inv-existencia-estatus.tono-muted { background: #f1f5f9; color: #64748b; }
+
+.inv-existencia-historial { flex: 0 0 auto; }
 
 /* --- los dos formularios --- */
 
@@ -215,4 +309,7 @@
   .inv-lote { grid-template-columns: 1fr; }
   .inv-lotes li { grid-template-columns: 1fr auto; }
   .inv-lote-sitios { grid-column: 1 / -1; }
+  .inv-existencia-item { flex-wrap: wrap; }
+  .inv-existencia-datos { flex-basis: calc(100% - 54px); }
+  .inv-existencia-cantidad { margin-left: 54px; }
 }

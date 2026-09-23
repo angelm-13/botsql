@@ -1,14 +1,18 @@
 from __future__ import annotations
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request, send_file
 from app.services.project_management_service import (
+    add_project_document,
     add_project_message,
     add_project_payment,
     create_project,
     delete_project,
+    delete_project_document,
     delete_project_payment,
     get_project_detail,
+    list_project_documents,
     list_project_payments,
     list_projects,
+    project_document_content,
     project_options,
     release_project,
     settle_project_payment,
@@ -19,13 +23,18 @@ from app.services.project_management_service import (
 )
 from app.utils.auth import token_required, require_entity_permission
 
+
+def _storage():
+    from app.services.document_service import SecureDocumentStorage
+    return SecureDocumentStorage(current_app.config["UPLOAD_ROOT"])
+
 bp_proyect = Blueprint('proyect', __name__, url_prefix='/proyect')
 # Los campos que la respuesta puede llevar. Es una lista blanca: lo que no
 # este aqui se recorta antes de salir, aunque el modelo lo tenga. Los de la
 # orden de trabajo se agregaron con la migracion 20260911180000 -- sin esto
 # estarian en la base y nunca llegarian a la pantalla.
 ALLOWED_FIELDS = [
-    'id_proyect', 'id_customer_supplier', 'leader', 'proyect_description',
+    'id_proyect', 'id_customer_supplier', 'id_customer_contact', 'leader', 'proyect_description',
     'title', 'proyect_status', 'created_by', 'creation_date',
     'last_update_date', 'deletion_date',
     'folio', 'requested_by', 'id_quotation', 'id_supervisor', 'delivery_date',
@@ -267,6 +276,42 @@ def remove_proyect_payment(user_data, id_payment):
 @require_entity_permission('proyect', 'update')
 def create_proyect_message(user_data, id_proyect):
     return jsonify(add_project_message(id_proyect, request.get_json() or {}, user_data)), 201
+
+
+# --- adjuntos de requerimientos (PDF/DOCX) ------------------------------
+
+@bp_proyect.route('/<id_proyect>/documents', methods=['GET'])
+@token_required
+@require_entity_permission('proyect', 'read')
+def list_proyect_documents(user_data, id_proyect):
+    return jsonify(list_project_documents(id_proyect, user_data))
+
+
+@bp_proyect.route('/<id_proyect>/documents', methods=['POST'])
+@token_required
+@require_entity_permission('proyect', 'update')
+def create_proyect_document(user_data, id_proyect):
+    uploaded = request.files.get('file')
+    if not uploaded or not uploaded.filename:
+        return jsonify({'error_key': 'errors.invalid_field', 'meta': {'field': 'file'}}), 400
+    return jsonify(add_project_document(
+        id_proyect, request.form, uploaded.read(), uploaded.filename, user_data, _storage(),
+    )), 201
+
+
+@bp_proyect.route('/documents/<id_document>/content', methods=['GET'])
+@token_required
+@require_entity_permission('proyect', 'read')
+def get_proyect_document_content(user_data, id_document):
+    path, mime_type, filename = project_document_content(id_document, user_data, _storage())
+    return send_file(path, mimetype=mime_type, as_attachment=True, download_name=filename)
+
+
+@bp_proyect.route('/documents/<id_document>', methods=['DELETE'])
+@token_required
+@require_entity_permission('proyect', 'update')
+def remove_proyect_document(user_data, id_document):
+    return jsonify(delete_project_document(id_document, user_data))
 
 
 @bp_proyect.route('/<id_proyect>', methods=['DELETE'])

@@ -24,12 +24,25 @@
 
 BEGIN;
 
+-- Guardado con un chequeo de existencia de scope_create: esta migracion es
+-- anterior a 20260914110000_equipos_y_alcance_por_accion.sql, que agrega esas
+-- 4 columnas y suelta control_type mas adelante en la misma pasada. Sin este
+-- guardado, la primera pasada completa contra un volumen nuevo tronaria aqui
+-- con "column scope_create does not exist".
+DO $$
+BEGIN
+IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'entity_permission' AND column_name = 'scope_create'
+) THEN
+
 -- 1. La entidad: tipos de material.
 INSERT INTO entity_permission (
-    id_permission, entity_name, control_type, menu_location,
+    id_permission, entity_name, scope_create, scope_read, scope_update, scope_delete, menu_location,
     menu_group, menu_group_icon, menu_label, menu_order, created_by
 )
-SELECT p.id_permission, 'material_type', p.control_type, 'sidebar',
+SELECT p.id_permission, 'material_type',
+       p.scope_create, p.scope_read, p.scope_update, p.scope_delete, 'sidebar',
        'Inventario', 'inventory', 'Tipos de material', 218, 1
 FROM entity_permission p
 WHERE p.entity_name = 'material'
@@ -43,28 +56,33 @@ ON CONFLICT (id_permission, entity_name) DO NOTHING;
 
 -- 2. La capacidad: vales de almacen.
 --
--- `LEAST(..., 3)` recorta a crear+leer. Un rol con CRUD completo sobre
--- productos recibe 3 y no 15: el vale no se borra ni se edita a mano, se cierra
--- por su renglon, y el bit de borrado abriria un camino para hacer desaparecer
--- el rastro.
+-- Se recorta a crear+leer (scope_update y scope_delete quedan en 0 sin
+-- importar lo que tenga el rol sobre productos): el vale no se borra ni se
+-- edita a mano, se cierra por su renglon, y el bit de borrado abriria un
+-- camino para hacer desaparecer el rastro. Equivalente al viejo
+-- `LEAST(control_type, 3)` (bits 1+2) ahora que el alcance vive en columnas
+-- separadas.
 INSERT INTO entity_permission (
-    id_permission, entity_name, control_type, menu_location,
+    id_permission, entity_name, scope_create, scope_read, scope_update, scope_delete, menu_location,
     menu_group, menu_group_icon, menu_label, menu_order, created_by
 )
 SELECT p.id_permission, 'warehouse_voucher',
-       LEAST(p.control_type::integer, 3)::text, 'sidebar',
+       p.scope_create, p.scope_read, 0, 0, 'sidebar',
        'Inventario', 'inventory', 'Vales de almacen', 290, 1
 FROM entity_permission p
 WHERE p.entity_name = 'product'
   AND p.deletion_date IS NULL
   -- Quien solo consulta el almacen no levanta vales, pero si los lee: con
-  -- control_type 2 el LEAST da 2, que es exactamente eso.
-  AND p.control_type::integer > 0
+  -- scope_read en "Todos" y scope_create en 0 esto da exactamente eso.
+  AND (p.scope_create <> 0 OR p.scope_read <> 0 OR p.scope_update <> 0 OR p.scope_delete <> 0)
   AND NOT EXISTS (
       SELECT 1 FROM entity_permission x
       WHERE x.id_permission = p.id_permission
         AND x.entity_name = 'warehouse_voucher'
   )
 ON CONFLICT (id_permission, entity_name) DO NOTHING;
+
+END IF;
+END $$;
 
 COMMIT;

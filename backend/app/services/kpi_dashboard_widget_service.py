@@ -78,7 +78,7 @@ class KpiDashboardWidgetService(CrudService):
         # Sin esto un usuario podria guardar un widget apuntando a un KPI que
         # no le corresponde: `/kpi_snapshot/query` se lo negaria al leerlo,
         # pero mejor no dejar guardar la referencia rota desde el alta.
-        if not has_kpi_permission(session, user_data, id_kpi_definition, 'read'):
+        if not has_kpi_permission(session, user_data, id_kpi_definition):
             raise AppError('errors.permission_denied', 403, {'kpi': id_kpi_definition})
         return id_kpi_definition
 

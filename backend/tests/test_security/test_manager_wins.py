@@ -19,8 +19,10 @@ Lo que estas pruebas fijan, en orden de importancia:
 
 * **ninguna migracion pisa el mapa CRUD de una fila existente.** Es la
   invariante: si alguien vuelve a poner un `ON CONFLICT ... DO UPDATE SET
-  control_type` en cualquier migracion, el gestor deja de mandar y nadie se
-  entera hasta el despliegue siguiente;
+  control_type` (o, desde que `control_type` se partio en las 4 columnas
+  `scope_create`/`scope_read`/`scope_update`/`scope_delete`, cualquiera de
+  esas) en cualquier migracion, el gestor deja de mandar y nadie se entera
+  hasta el despliegue siguiente;
 * **ninguna migracion da de baja los permisos en masa**, por el mismo motivo;
 * **quitar un permiso lo marca de baja, no borra la fila.** Con borrado fisico,
   una fila ausente significa a la vez "nueva" y "la quitaron", y el sembrado no
@@ -60,14 +62,21 @@ class TestNingunaMigracionPisaAlGestor(unittest.TestCase):
         return archivos
 
     def test_no_migration_overwrites_an_existing_permission(self):
-        """`DO UPDATE SET control_type` es la forma que revierte al gestor."""
+        """`DO UPDATE SET control_type` (o su sucesor scope_*) revierte al gestor."""
+        # `control_type` en entity_permission se partio en 4 columnas de
+        # alcance; una migracion que pise cualquiera de ellas en un
+        # `ON CONFLICT ... DO UPDATE` es exactamente el mismo problema que
+        # pisar el `control_type` viejo, asi que se vigilan las 5 formas.
+        columnas_prohibidas = (
+            "control_type", "scope_create", "scope_read", "scope_update", "scope_delete",
+        )
         culpables = []
         for archivo in self._archivos():
             texto = archivo.read_text(encoding="utf-8", errors="replace")
             for bloque in re.finditer(
                 r"ON CONFLICT \([^)]*entity_name[^)]*\)\s*DO UPDATE\s*SET(?:.|\n)*?;", texto
             ):
-                if "control_type" in bloque.group(0):
+                if any(columna in bloque.group(0) for columna in columnas_prohibidas):
                     culpables.append(archivo.name)
                     break
         self.assertEqual(
@@ -153,7 +162,8 @@ class TestRetirarUnPermiso(BackendTestCase):
         # entidad.
         with transaction_context() as db:
             db.add(EntityPermission(
-                id_permission=90, entity_name="brand", control_type=7,
+                id_permission=90, entity_name="brand",
+                scope_create=4, scope_read=4, scope_update=4, scope_delete=0,
                 menu_location="sidebar", created_by=1,
             ))
             db.flush()

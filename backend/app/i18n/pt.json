@@ -625,7 +625,10 @@
       "last_update_date": "Data da última atualização"
     },
     "entity_permission": {
-      "control_type": "Controle Tipo",
+      "scope_create": "Alcance de Criar",
+      "scope_read": "Alcance de Ler",
+      "scope_update": "Alcance de Atualizar",
+      "scope_delete": "Alcance de Excluir",
       "created_by": "Criado por",
       "creation_date": "Data de criação",
       "deletion_date": "Data de exclusão",
@@ -1354,7 +1357,10 @@
       "last_update_date": "Digite data da última atualização"
     },
     "entity_permission": {
-      "control_type": "Digite controle tipo",
+      "scope_create": "Digite alcance de criar",
+      "scope_read": "Digite alcance de ler",
+      "scope_update": "Digite alcance de atualizar",
+      "scope_delete": "Digite alcance de excluir",
       "created_by": "Digite criado por",
       "creation_date": "Digite data de criação",
       "deletion_date": "Digite data de exclusão",

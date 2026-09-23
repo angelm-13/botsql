@@ -16,6 +16,7 @@ from app.models import (
     Material, NmIncidentProduct, Product, ProductFamily, Unit, User,
 )
 from app.models.session import engine, transaction_context
+from app.services.warehouse_voucher_service import CIERRE_SENTINELA
 
 # Mismo criterio que test_kpi_ventas_por_empleado.py: se corre solo contra
 # PostgreSQL real y reutiliza el bootstrap de siempre (customer_supplier=1,
@@ -119,6 +120,23 @@ class KpiIncidentesTest(unittest.TestCase):
                 # B: due_date en el futuro -- todavia no vence, no cuenta.
                 self._vale(97003, 9703, due_date=AHORA + timedelta(days=5)),
             ])
+
+        with transaction_context() as db:
+            filas = vales_vencidos_por_responsable_query(
+                db, HOY - timedelta(days=10), HOY + timedelta(days=10), {}, None,
+            )
+
+        self.assertEqual([(EMPLEADO_A, (AHORA - timedelta(days=2)).date(), 1)], [tuple(f) for f in filas])
+
+    def test_vales_vencidos_cuenta_el_sentinel_legacy_como_abierto(self):
+        # Renglones migrados de Adser: close_date quedo en CIERRE_SENTINELA
+        # (1990-01-01), no NULL, para un vale que en realidad sigue abierto.
+        # Mismo criterio que warehouse_voucher_service._renglones_de_reporte
+        # -- antes de este fix, close_date.is_(None) solo no lo contaba.
+        with transaction_context() as db:
+            db.add(self._incidente(9708, EMPLEADO_A, "abierta", datetime(2026, 6, 1)))
+            db.flush()
+            db.add(self._vale(97008, 9708, due_date=AHORA - timedelta(days=2), close_date=CIERRE_SENTINELA))
 
         with transaction_context() as db:
             filas = vales_vencidos_por_responsable_query(

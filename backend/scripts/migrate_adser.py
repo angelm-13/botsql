@@ -632,6 +632,14 @@ def migrar_incident(origen, session, equiv):
     """incidente -> incident. id_empleado se resuelve contra el mapa
     completo de 41 empleados (fusionados o creados sin acceso) - sin eso,
     138 de 139 incidentes se quedarian sin id_user valido (seccion 06).
+
+    `fecha_cierre` pasa por `normalizar_fecha()` con el mismo sentinela
+    `1990-01-01` que ya usa `migrar_product` para `fecha_baja` (mas abajo
+    en este archivo) - el origen usa esa fecha como su propio "no ha
+    pasado", no como una fecha real. Sin esto, un incidente 'abierto' del
+    origen llega con `close_date` en 1990 en vez de NULL, y todo el codigo
+    que lee este campo (`vales_vencidos`, `_estado_derivado`,
+    `devolver_renglon`) lo trata como si SI se hubiera cerrado, en 1990.
     """
     cur = origen.cursor()
     cur.execute("SELECT id_incidente, fecha_incidente, id_tipo_incidente, nota, id_empleado, "
@@ -649,7 +657,7 @@ def migrar_incident(origen, session, equiv):
             note=fila['nota'],
             id_user=empleado_map[fila['id_empleado']],
             incident_status=fila['estado'],
-            close_date=fila['fecha_cierre'],
+            close_date=normalizar_fecha(fila['fecha_cierre'], datetime(1990, 1, 1)),
             id_lider=None,  # siempre vacio en origen, verificado (seccion 06)
             created_by=CREATED_BY,
         ))
@@ -663,6 +671,11 @@ def migrar_incident(origen, session, equiv):
 def migrar_nm_incident_product(origen, session, equiv):
     """nm_incidente_producto -> nm_incident_product. 19 filas se excluyen
     porque el producto al que apuntan no existe en origen (seccion 06).
+
+    `fecha_cierre` pasa por `normalizar_fecha()` con el mismo sentinela
+    que `migrar_incident` -- ver ese docstring para el porque. Aqui pega
+    mas todavia: es el campo que de verdad decide "sigue prestado" en
+    `warehouse_voucher_service` (`vales_vencidos`, `devolver_renglon`).
     """
     cur = origen.cursor()
     cur.execute("SELECT id_nm_incidente_producto, id_incidente, id_producto, nota, cantidad, "
@@ -682,7 +695,7 @@ def migrar_nm_incident_product(origen, session, equiv):
             id_product=producto_map[fila['id_producto']],
             note=fila['nota'],
             quantity=fila['cantidad'],
-            close_date=fila['fecha_cierre'],
+            close_date=normalizar_fecha(fila['fecha_cierre'], datetime(1990, 1, 1)),
             created_by=CREATED_BY,
         ))
         migrados += 1

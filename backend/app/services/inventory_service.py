@@ -138,7 +138,7 @@ def has_capability(db, user_data, capability) -> bool:
         .first()
     )
     try:
-        return bool(record and int(record.control_type) & READ_BIT)
+        return bool(record and int(record.scope_read) != 0)
     except (TypeError, ValueError):
         return False
 
@@ -780,6 +780,10 @@ def product_stock(product_id, user_data) -> dict:
 
 def warehouse_stock(location_id, user_data) -> dict:
     """Que hay dentro de un almacen, sumando todas sus ubicaciones."""
+    from app.models.brand import Brand
+    from app.models.material import Material
+    from app.models.product_family import ProductFamily
+
     with transaction_context() as db:
         root = _location(db, location_id)
         descendants = _descendant_ids(db, root.id_location)
@@ -791,11 +795,40 @@ def warehouse_stock(location_id, user_data) -> dict:
             .order_by(InventoryStock.id_product, InventoryStock.id_location)
         ).all()
 
+        # Familia, marca y color: en lote y no un producto a la vez -la
+        # tarjeta de almacen los necesita para reconocerse igual que en
+        # Localizar, y con cientos de renglones por nave un JOIN por fila es
+        # justo el N+1 que ya costo caro en otras pantallas.
+        ids_producto = {int(r.id_product) for r in rows}
+        productos = {
+            int(p.id_product): p for p in db.scalars(
+                select(Product).where(Product.id_product.in_(list(ids_producto)))
+            ).all()
+        } if ids_producto else {}
+        ids_material = {int(p.id_material) for p in productos.values() if p.id_material}
+        materiales = {
+            int(m.id_material): m for m in db.scalars(
+                select(Material).where(Material.id_material.in_(list(ids_material)))
+            ).all()
+        } if ids_material else {}
+        ids_marca = {int(m.id_brand) for m in materiales.values() if m.id_brand}
+        ids_familia = {int(m.id_product_family) for m in materiales.values() if m.id_product_family}
+        marcas = {
+            int(b.id_brand): b.brand_description for b in db.scalars(
+                select(Brand).where(Brand.id_brand.in_(list(ids_marca)))
+            ).all()
+        } if ids_marca else {}
+        familias = {
+            int(f.id_product_family): f.product_family_description for f in db.scalars(
+                select(ProductFamily).where(ProductFamily.id_product_family.in_(list(ids_familia)))
+            ).all()
+        } if ids_familia else {}
+
         unrestricted = bool(user_data.get("is_superuser") or user_data.get("is_bootstrap_admin"))
         actor_project = _actor_project_id(user_data)
         items = []
         for row in rows:
-            product = db.get(Product, row.id_product)
+            product = productos.get(int(row.id_product))
             invoice = db.get(Invoice, product.id_invoice) if product else None
             project_id = getattr(invoice, "id_proyect", None)
             # El almacen puede guardar mercancia de varios proyectos; se
@@ -803,10 +836,26 @@ def warehouse_stock(location_id, user_data) -> dict:
             if not unrestricted and project_id != actor_project:
                 continue
             location = db.get(Location, row.id_location)
+            material = materiales.get(int(product.id_material)) if product and product.id_material else None
             items.append({
                 "id_product": row.id_product,
                 "product_description": getattr(product, "descripcion", None),
                 "product_code": getattr(product, "product_code", None),
+                # La foto y el modo de rastreo: sin esto la pantalla de
+                # almacen es una tabla de texto -mismo reclamo que ya se
+                # resolvio en Localizar-, y aqui es donde mas se nota, porque
+                # es la lista mas larga del almacen.
+                "path_imagen": getattr(product, "path_imagen", None),
+                "tracking_mode": getattr(product, "tracking_mode", None),
+                # El estatus heredado del sistema anterior (ENTRADA, SALIDA,
+                # DAÑADO, EXTRAVIADO...) y el color, para la misma tarjeta que
+                # ya usa Localizar -no un esquema de color nuevo aqui.
+                "product_status": getattr(product, "product_status", None),
+                "color": getattr(product, "color", None),
+                "family": familias.get(int(material.id_product_family))
+                    if material and material.id_product_family else None,
+                "brand": marcas.get(int(material.id_brand)) if material and material.id_brand else None,
+                "material": getattr(material, "material_description", None),
                 **_warehouse_payload(db, location),
                 "quantity": int(row.quantity or 0),
             })

@@ -5,7 +5,7 @@ from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
 
 bp_entity_permission = Blueprint('entity_permission', __name__, url_prefix='/entity_permission')
-ALLOWED_FIELDS = ['id_entity_permission', 'id_permission', 'entity_name', 'control_type', 'menu_location', 'menu_group', 'menu_group_icon', 'menu_label', 'menu_order', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
+ALLOWED_FIELDS = ['id_entity_permission', 'id_permission', 'entity_name', 'scope_create', 'scope_read', 'scope_update', 'scope_delete', 'menu_location', 'menu_group', 'menu_group_icon', 'menu_label', 'menu_order', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
 
 TECHNICAL_RESPONSE_FIELDS = {'id_entity_permission'}
 FIELD_READ_BIT = 2

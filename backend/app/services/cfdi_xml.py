@@ -158,15 +158,19 @@ def parse_cfdi(xml_bytes, max_bytes=None):
         "tipo_de_comprobante": _attribute(root, "TipoDeComprobante"),
         "exportacion": _attribute(root, "Exportacion"),
         "folio": _attribute(root, "Folio"),
+        "serie": _attribute(root, "Serie"),
         "no_certificado": _attribute(root, "NoCertificado"),
+        "sello_cfdi": _attribute(root, "Sello"),
         "condiciones_pago": _attribute(root, "CondicionesDePago"),
         "fecha": _attribute(root, "Fecha"),
         "rfc_emisor": _attribute(emisor, "Rfc"),
         "nombre_emisor": _attribute(emisor, "Nombre"),
+        "regimen_fiscal_emisor": _attribute(emisor, "RegimenFiscal"),
         "rfc_receptor": _attribute(receptor, "Rfc"),
         "nombre_receptor": _attribute(receptor, "Nombre"),
         "regimen_fiscal_receptor": _attribute(receptor, "RegimenFiscalReceptor"),
         "domicilio_fiscal_receptor": _attribute(receptor, "DomicilioFiscalReceptor"),
+        "uso_cfdi": _attribute(receptor, "UsoCFDI"),
         "uuid": uuid,
         "no_certificado_sat": _attribute(timbre, "NoCertificadoSAT"),
         "sello_sat": _attribute(timbre, "SelloSAT"),
@@ -174,3 +178,41 @@ def parse_cfdi(xml_bytes, max_bytes=None):
         "certification_date": _attribute(timbre, "FechaTimbrado"),
         "conceptos": concepts,
     }
+
+
+def cadena_original_tfd(data: dict) -> str:
+    """Cadena original del complemento de certificacion (TFD 1.1).
+
+    Formato oficial y fijo, publicado por el SAT:
+    ||1.1|UUID|FechaTimbrado|RfcProvCertif|SelloCFD|NoCertificadoSAT||
+    No requiere el XSLT del SAT porque, a diferencia de la cadena original del
+    comprobante completo, la del TFD es un template fijo de 6 campos.
+    """
+    if not data or not data.get("uuid"):
+        return ""
+    campos = [
+        "1.1",
+        data.get("uuid") or "",
+        data.get("certification_date") or "",
+        data.get("rfc_proveedor_certificacion") or "",
+        data.get("sello_cfdi") or "",
+        data.get("no_certificado_sat") or "",
+    ]
+    return "||" + "|".join(campos) + "||"
+
+
+def qr_verification_url(data: dict, total) -> str:
+    """URL que el SAT resuelve para verificar el CFDI (la que codifica el QR)."""
+    uuid = str((data or {}).get("uuid") or "")
+    sello = str((data or {}).get("sello_cfdi") or "")
+    fe = sello[-8:] if len(sello) >= 8 else sello
+    try:
+        tt = f"{float(total or 0):.6f}"
+    except (TypeError, ValueError):
+        tt = "0.000000"
+    rfc_emisor = str((data or {}).get("rfc_emisor") or "")
+    rfc_receptor = str((data or {}).get("rfc_receptor") or "")
+    return (
+        "https://verificacfdi.facturaelectronica.sat.gob.mx/default.aspx"
+        f"?id={uuid}&re={rfc_emisor}&rr={rfc_receptor}&tt={tt}&fe={fe}"
+    )

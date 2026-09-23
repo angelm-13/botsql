@@ -59,6 +59,12 @@ from app.services.warehouse_voucher_service import (
     devolver_renglon,
     consultar_vale,
     crear_vale,
+    documento_del_historial_de_persona,
+    pdf_del_historial_de_persona,
+    reporte_por_almacen,
+    reporte_por_persona,
+    reporte_por_producto,
+    reporte_vales_pendientes,
     vales_vencidos,
 )
 from app.utils.errors import AppError
@@ -917,7 +923,8 @@ class TestElPrevaleNoMueveElAlmacen(BaseVale):
             db.add(EntityPermission(
                 id_permission=JEFE_DE_ALMACEN,
                 entity_name="warehouse_voucher_authorize",
-                control_type=15, created_by=1))
+                scope_create=4, scope_read=4, scope_update=4, scope_delete=4,
+                created_by=1))
 
         self.surtir(5, RACK)
         antes = self._saldo(RACK)
@@ -946,7 +953,8 @@ class TestElPrevaleNoMueveElAlmacen(BaseVale):
             db.add(EntityPermission(
                 id_permission=JEFE_DE_ALMACEN,
                 entity_name="warehouse_voucher_authorize",
-                control_type=15, created_by=1))
+                scope_create=4, scope_read=4, scope_update=4, scope_delete=4,
+                created_by=1))
 
         self.surtir(5, RACK)
         antes = self._saldo(RACK)
@@ -1216,3 +1224,248 @@ class TestElValeSeLigaAUnaObra(BaseVale):
 
         self.assertEqual(1, resultado["total"])
         self.assertEqual(self.OBRA, resultado["items"][0]["id_proyect"])
+
+
+class TestLosReportesDeAlmacen(BaseVale):
+    """Los 4 reportes que ya existian en el sistema anterior (Adser).
+
+    El caso real que motiva `_sin_cerrar()`: los vales migrados de Adser no
+    traen `close_date` en NULL cuando siguen abiertos, traen el sentinela
+    `1990-01-01` que la migracion no limpio (a diferencia de
+    `product.fecha_baja`, que si paso por `normalizar_fecha()`). Estas pruebas
+    fijan que un renglon con ESE valor se lea como abierto, igual que uno con
+    NULL de verdad -- y que uno con una fecha real se lea como cerrado.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.surtir(100)
+
+    def _cerrar_con_sentinela(self, id_linea):
+        """Simula un renglon migrado de Adser: cerrado con el sentinela
+        heredado del sistema anterior, no con NULL."""
+        from app.models.nm_incident_product import NmIncidentProduct
+
+        with transaction_context() as db:
+            db.get(NmIncidentProduct, id_linea).close_date = datetime(1990, 1, 1)
+
+    def test_a_line_with_the_inherited_sentinel_counts_as_open(self):
+        vale = self._vale([self._linea_cantidad(10)])
+        linea = vale["lines"][0]["id_nm_incident_product"]
+        self._cerrar_con_sentinela(linea)
+
+        pendientes = reporte_vales_pendientes(ACTOR)
+
+        self.assertEqual(1, pendientes["total"])
+        self.assertIsNone(pendientes["items"][0]["close_date"])
+
+    def test_a_line_actually_returned_does_not_count_as_pending(self):
+        vale = self._vale([self._linea_cantidad(10)])
+        linea = vale["lines"][0]["id_nm_incident_product"]
+        devolver_renglon(linea, {}, ACTOR)
+
+        pendientes = reporte_vales_pendientes(ACTOR)
+
+        self.assertEqual(0, pendientes["total"])
+
+    def test_a_line_still_open_with_null_close_date_is_pending(self):
+        self._vale([self._linea_cantidad(10)])
+
+        pendientes = reporte_vales_pendientes(ACTOR)
+
+        self.assertEqual(1, pendientes["total"])
+
+    def test_grouped_by_product_uses_the_product_code(self):
+        self._vale([self._linea_cantidad(10)])
+        self._vale([self._linea_cantidad(20)])
+
+        reporte = reporte_por_producto(ACTOR)
+
+        self.assertEqual(1, len(reporte["groups"]))
+        self.assertEqual("CEM-50", reporte["groups"][0]["group"])
+        self.assertEqual(2, reporte["groups"][0]["total"])
+
+    def test_grouped_by_project_uses_the_trimmed_note(self):
+        """`incident.note` es donde vive el proyecto/sitio para lo migrado de
+        Adser -- `id_proyect` y `id_location_*` estan en NULL ahi. Un valor
+        sin recortar (como puede traer lo migrado, escrito directo en la
+        base y no via `crear_vale`, que ya recorta al capturar) tiene que
+        agruparse igual que el ya limpio.
+        """
+        limpio = self._vale([self._linea_cantidad(10)], note="APELSA")
+        sucio = self._vale([self._linea_cantidad(10)], note="APELSA")
+        with transaction_context() as db:
+            db.get(Incident, sucio["voucher"]["id_incident"]).note = "  APELSA  "
+
+        reporte = reporte_por_almacen(ACTOR)
+
+        self.assertEqual(1, len(reporte["groups"]))
+        self.assertEqual("APELSA", reporte["groups"][0]["group"])
+        self.assertEqual(2, reporte["groups"][0]["total"])
+
+    def test_a_voucher_without_a_project_note_falls_into_its_own_group(self):
+        vale = self._vale([self._linea_cantidad(10)])
+        with transaction_context() as db:
+            db.get(Incident, vale["voucher"]["id_incident"]).note = "   "
+
+        reporte = reporte_por_almacen(ACTOR)
+
+        self.assertEqual("(sin proyecto)", reporte["groups"][0]["group"])
+
+    def test_grouped_by_requester_uses_the_holder_name(self):
+        self._vale([self._linea_cantidad(10)])
+
+        reporte = reporte_por_persona(ACTOR)
+
+        self.assertEqual(1, len(reporte["groups"]))
+        self.assertEqual(1, reporte["groups"][0]["total"])
+
+    def test_status_is_entrada_or_salida_by_direction(self):
+        vale = self._vale([self._linea_cantidad(10)])
+        linea = vale["lines"][0]["id_nm_incident_product"]
+        devolver_renglon(linea, {}, ACTOR)
+
+        reporte = reporte_por_producto(ACTOR)
+        estados = {r["status"] for r in reporte["groups"][0]["items"]}
+
+        self.assertEqual({"Salida", "Entrada"}, estados)
+
+    def test_status_is_the_incident_type_for_danado_and_destruccion(self):
+        with transaction_context() as db:
+            db.add(IncidentType(id_incident_type=999,
+                                incident_type_description="Dañado",
+                                created_by=1))
+        self._vale([self._linea_cantidad(10)], id_incident_type=999)
+
+        reporte = reporte_por_producto(ACTOR)
+
+        self.assertEqual("Dañado", reporte["groups"][0]["items"][0]["status"])
+
+    def test_date_range_filters_by_incident_date(self):
+        vale = self._vale([self._linea_cantidad(10)])
+        with transaction_context() as db:
+            db.get(Incident, vale["voucher"]["id_incident"]).incident_date = (
+                datetime(2020, 1, 1))
+
+        dentro = reporte_por_producto(ACTOR, fecha_inicio="2019-12-01",
+                                      fecha_fin="2020-02-01")
+        fuera = reporte_por_producto(ACTOR, fecha_inicio="2021-01-01",
+                                     fecha_fin="2021-12-31")
+
+        self.assertEqual(1, dentro["total_items"])
+        self.assertEqual(0, fuera["total_items"])
+
+    def test_filtered_by_requester(self):
+        self._vale([self._linea_cantidad(10)])
+
+        propio = reporte_por_producto(ACTOR, id_user=1)
+        ajeno = reporte_por_producto(ACTOR, id_user=999999)
+
+        self.assertEqual(1, propio["total_items"])
+        self.assertEqual(0, ajeno["total_items"])
+
+    def test_a_requester_without_the_warehouse_capability_only_sees_their_own(self):
+        """Mismo alcance que el resto del modulo: quien no opera el almacen
+        ve lo suyo, aunque pida ver todo con `id_user`."""
+        self._vale([self._linea_cantidad(10)])
+
+        sin_permiso = {"id_user": 999999, "is_superuser": False}
+        reporte = reporte_por_producto(sin_permiso)
+
+        self.assertEqual(0, reporte["total_items"])
+
+
+class TestElHistorialDeUnaPersonaEnPdf(BaseVale):
+    """El boton nuevo: el historial de una persona -el mismo dato que pinta
+    `EmployeeVoucherHistory` en pantalla- descargable en PDF, como lo tenia
+    el sistema anterior.
+
+    No se archiva como version de `document` -a diferencia del vale, que se
+    firma-, asi que aqui no hace falta un almacen de prueba: solo que la
+    ficha que arma el servicio diga lo mismo que `lo_que_ha_pedido`, y que el
+    renderizador se llame con la plantilla correcta.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from unittest.mock import patch
+
+        self.surtir(100)
+        self.render = patch(
+            "app.services.warehouse_voucher_service._motor_de_documentos")
+        motor = self.render.start()
+        self.addCleanup(self.render.stop)
+        motor.return_value.render_pdf_bytes.side_effect = (
+            lambda clave, ficha, *a, **k: repr((clave, sorted(ficha.items()))).encode())
+
+    def test_the_fiche_matches_what_the_screen_shows(self):
+        from app.services.warehouse_voucher_service import lo_que_ha_pedido
+
+        self._vale([self._linea_cantidad(10)])
+
+        pantalla = lo_que_ha_pedido(ACTOR, 1)
+        ficha = documento_del_historial_de_persona(ACTOR, 1)
+
+        self.assertEqual(pantalla["total"], ficha["total"])
+        self.assertEqual(pantalla["still_out"], ficha["still_out"])
+        self.assertEqual(pantalla["overdue"], ficha["overdue"])
+        self.assertEqual(1, len(ficha["grupos"]))
+        self.assertEqual("Obra Norte", ficha["grupos"][0]["titulo"])
+        renglon = ficha["grupos"][0]["renglones"][0]
+        self.assertEqual("Cemento gris 50kg", renglon["descripcion"])
+        self.assertEqual("CEM-50", renglon["codigo"])
+        self.assertFalse(renglon["devuelto"])
+
+    def test_a_returned_line_is_marked_as_such(self):
+        vale = self._vale([self._linea_cantidad(10)])
+        linea = vale["lines"][0]["id_nm_incident_product"]
+        devolver_renglon(linea, {}, ACTOR)
+
+        ficha = documento_del_historial_de_persona(ACTOR, 1)
+
+        renglon = ficha["grupos"][0]["renglones"][0]
+        self.assertTrue(renglon["devuelto"])
+        self.assertIsNotNone(renglon["cierre"])
+
+    def test_grouped_by_project_like_the_screen_does(self):
+        """Dos vales con nota distinta caen en dos grupos, en el orden en
+        que aparece cada uno por primera vez -- `lo_que_ha_pedido` ya
+        ordena por fecha descendente, asi que el vale mas reciente (Obra
+        Norte, creado segundo) encabeza."""
+        self._vale([self._linea_cantidad(10)], note="Obra Sur")
+        self._vale([self._linea_cantidad(5)], note="Obra Norte")
+
+        ficha = documento_del_historial_de_persona(ACTOR, 1)
+
+        self.assertEqual(2, len(ficha["grupos"]))
+        self.assertEqual(["Obra Norte", "Obra Sur"],
+                         [g["titulo"] for g in ficha["grupos"]])
+
+    def test_a_blank_note_falls_into_sin_proyecto(self):
+        """`crear_vale` exige nota -- un blanco solo llega por datos
+        migrados, escritos directo en la base y no via el servicio."""
+        vale = self._vale([self._linea_cantidad(10)])
+        with transaction_context() as db:
+            db.get(Incident, vale["voucher"]["id_incident"]).note = "   "
+
+        ficha = documento_del_historial_de_persona(ACTOR, 1)
+
+        self.assertEqual("(sin proyecto)", ficha["grupos"][0]["titulo"])
+
+    def test_downloading_it_renders_the_history_template(self):
+        self._vale([self._linea_cantidad(10)])
+
+        pdf = pdf_del_historial_de_persona(ACTOR, 1)
+
+        self.assertIn(b"warehouse_voucher_history", pdf)
+
+    def test_someone_without_the_warehouse_capability_only_sees_their_own(self):
+        """Mismo alcance que `lo_que_ha_pedido`: quien no opera el almacen ve
+        lo suyo, aunque pida el historial de otro `id_user`."""
+        self._vale([self._linea_cantidad(10)])
+
+        sin_permiso = {"id_user": 1, "is_superuser": False}
+        ficha = documento_del_historial_de_persona(sin_permiso, 999999)
+
+        self.assertEqual(1, ficha["id_user"])
+        self.assertEqual(1, ficha["total"])

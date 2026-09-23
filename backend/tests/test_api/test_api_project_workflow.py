@@ -17,12 +17,12 @@ class TestProjectWorkflowApi(BackendTestCase):
         self.workshop = {"id_user": 31, "id_permission": 301}
         with transaction_context() as db:
             db.add_all([
-                EntityPermission(id_permission=101, entity_name="proyect", control_type=7, created_by=11),
-                EntityPermission(id_permission=102, entity_name="proyect", control_type=7, created_by=12),
-                EntityPermission(id_permission=201, entity_name="proyect", control_type=6, created_by=21),
-                EntityPermission(id_permission=201, entity_name="project_authorization", control_type=2, created_by=21),
-                EntityPermission(id_permission=301, entity_name="proyect", control_type=6, created_by=31),
-                EntityPermission(id_permission=301, entity_name="project_execution", control_type=2, created_by=31),
+                EntityPermission(id_permission=101, entity_name="proyect", scope_create=4, scope_read=4, scope_update=4, created_by=11),
+                EntityPermission(id_permission=102, entity_name="proyect", scope_create=4, scope_read=4, scope_update=4, created_by=12),
+                EntityPermission(id_permission=201, entity_name="proyect", scope_read=4, scope_update=4, created_by=21),
+                EntityPermission(id_permission=201, entity_name="project_authorization", scope_read=4, created_by=21),
+                EntityPermission(id_permission=301, entity_name="proyect", scope_read=4, scope_update=4, created_by=31),
+                EntityPermission(id_permission=301, entity_name="project_execution", scope_read=4, created_by=31),
             ])
 
     def _request(self, actor, method, path, payload=None):
@@ -59,16 +59,13 @@ class TestProjectWorkflowApi(BackendTestCase):
         workshop_before = self._request(self.workshop, "GET", "/proyect/?page=1&per_page=20")
         self.assertEqual(self.json(workshop_before)["total"], 0)
 
-        submitted = self._request(self.supervisor, "POST", f"/proyect/{project_id}/transition", {"status": "submitted"})
-        self.assertEqual(submitted.status_code, 200)
-
+        # Gerente mueve el proyecto directo desde Borrador -- al recibir la
+        # orden de compra -- sin que Supervisor lo "envie a revision" antes;
+        # Supervisor ya no tiene esa puerta (ver
+        # test_supervisor_cannot_submit_or_authorize_through_http).
         manager_list = self._request(self.manager, "GET", "/proyect/?page=1&per_page=20")
         manager_project = self.json(manager_list)["items"][0]
-        # El folio lo genera el alta y vive en la base; ya no lo inventa la
-        # pantalla. Se comprueba la forma -- OT-<anio>-<consecutivo> -- y no el
-        # numero exacto, que depende de cuantos proyectos lleve el anio.
-        self.assertRegex(manager_project["folio"], r"^OT-\d{4}-\d{5}$")
-        self.assertIsNotNone(manager_project["submitted_date"])
+        self.assertEqual(manager_project["folio"], f"PRJ-{project_id:06d}")
 
         tomorrow = (datetime.fromisoformat(manager_project["creation_date"]) + timedelta(days=1)).date().isoformat()
         future_list = self._request(
@@ -100,8 +97,8 @@ class TestProjectWorkflowApi(BackendTestCase):
         detail_payload = self.json(detail)
         self.assertEqual(detail.status_code, 200)
         self.assertEqual(detail_payload["proyect_status"], "completed")
-        self.assertEqual(len(detail_payload["events"]), 7)
-        self.assertEqual(detail_payload["events"][4]["reason"], "Espera de material")
+        self.assertEqual(len(detail_payload["events"]), 6)
+        self.assertEqual(detail_payload["events"][3]["reason"], "Espera de material")
 
     def test_http_rejects_manual_status_and_wrong_role_transition(self):
         project = self._create_project()
@@ -111,15 +108,28 @@ class TestProjectWorkflowApi(BackendTestCase):
         self.assertEqual(bypass.status_code, 409)
         self.assertEqual(self.json(bypass)["error_key"], "errors.project_status_requires_transition")
 
-        self._request(self.supervisor, "POST", f"/proyect/{project_id}/transition", {"status": "submitted"})
         wrong_role = self._request(self.workshop, "POST", f"/proyect/{project_id}/transition", {"status": "authorized"})
         self.assertEqual(wrong_role.status_code, 404)
         self.assertEqual(self.json(wrong_role)["error_key"], "errors.resource_not_found")
 
+    def test_supervisor_cannot_submit_or_authorize_through_http(self):
+        """Solo Gerente saca un proyecto de Borrador, ni siquiera hacia
+        "submitted" -- el paso que antes usaba Supervisor para "enviarlo a
+        revision" ya no existe para el."""
+        project = self._create_project()
+        project_id = project["id_proyect"]
+
+        for destino in ("submitted", "authorized"):
+            response = self._request(
+                self.supervisor, "POST", f"/proyect/{project_id}/transition",
+                {"status": destino, "reason": "Motivo"},
+            )
+            self.assertEqual(403, response.status_code)
+            self.assertEqual("errors.permission_denied", self.json(response)["error_key"])
+
     def test_http_requires_reason_for_blocking(self):
         project = self._create_project()
         project_id = project["id_proyect"]
-        self._request(self.supervisor, "POST", f"/proyect/{project_id}/transition", {"status": "submitted"})
 
         response = self._request(self.manager, "POST", f"/proyect/{project_id}/transition", {"status": "blocked"})
 

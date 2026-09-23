@@ -13,6 +13,12 @@
 
 .ficha {
   width: min(860px, 100%); max-height: 88vh;
+  /* Sin esto, un hijo de grid no encoge por debajo del ancho minimo de su
+     contenido -aqui, la tabla-, y el `min(860px, 100%)` de arriba se ignora
+     en una pantalla angosta: la ficha se sale del telefono en vez de quedar
+     su tabla desplazable por dentro (`.ficha-cuerpo` ya tiene `overflow:
+     auto` para eso). */
+  min-width: 0;
   display: flex; flex-direction: column;
   background: #fff; border: 1px solid #d6e0dc; border-radius: 12px;
   box-shadow: 0 20px 60px rgba(12, 34, 47, .25);
@@ -23,12 +29,25 @@
   gap: 14px; padding: 18px 20px 12px;
 }
 .ficha-cabecera h2 { margin: 0; font-size: 19px; line-height: 1.2; }
+.ficha-acciones { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
 .ficha-cerrar {
   display: grid; place-items: center; width: 32px; height: 32px;
   border: 1px solid transparent; border-radius: 8px;
   background: none; color: #5c6d68; cursor: pointer; flex: 0 0 auto;
 }
 .ficha-cerrar:hover { background: #f1f5f4; border-color: #d6e0dc; color: #0f172a; }
+
+/* El boton para bajar el PDF -lo que traia el sistema anterior-, con el
+   mismo tono verde de la casa que `.ficha-enlace` para que se lea como una
+   accion, no como un dato mas de la cabecera. */
+.ficha-descargar {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 12px; border: 1px solid #1b7a60; border-radius: 8px;
+  background: #fff; color: #1b7a60; font: inherit; font-weight: 700; font-size: 12.5px;
+  cursor: pointer; white-space: nowrap;
+}
+.ficha-descargar:hover:not(:disabled) { background: #ecfdf5; }
+.ficha-descargar:disabled { opacity: .6; cursor: default; }
 
 .ficha-pestanas {
   display: flex; gap: 4px; padding: 0 20px;
@@ -154,14 +173,26 @@
   max-width: 30ch;
 }
 
-/* Devuelto / fuera / vencido: la pregunta que se le hace a un vale viejo. */
+/* Devuelto o fuera: la pregunta que se le hace a un vale viejo, en rojo o en
+   verde y sin mas matices -- lo vencido se distingue con la palabra, no con
+   un tercer color, para que se lea igual aqui que en la pantalla de vales. */
 .ficha-marca {
-  display: inline-block; padding: 2px 8px; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 999px;
   font-size: 11.5px; font-weight: 700; white-space: nowrap;
 }
-.ficha-marca.devuelto { background: #f1f5f9; color: #475569; }
-.ficha-marca.fuera    { background: #fffbeb; color: #b45309; }
-.ficha-marca.vencido  { background: #fef2f2; color: #b91c1c; }
+.ficha-marca.devuelto { background: #dcfce7; color: #14532d; }
+.ficha-marca.fuera    { background: #fee2e2; color: #991b1b; }
+.ficha-marca.fuera.vencida { background: #fecaca; }
+
+/* El enlace a un vale concreto desde una tabla -el historial del producto o
+   el del empleado-, con el mismo color de la casa que el resto de los
+   enlaces de navegacion, para que se distinga de una accion que cambia algo. */
+.ficha-enlace {
+  padding: 0; border: 0; background: none; font: inherit; font-weight: 700;
+  color: #1b7a60; cursor: pointer;
+}
+.ficha-enlace:hover { text-decoration: underline; }
 
 /* --- el historial en el formato del sistema anterior --------------------
 
@@ -177,4 +208,18 @@
   white-space: normal;
   max-width: 28ch;
   color: #334155;
+}
+
+/* --- el historial de un empleado, agrupado por proyecto ------------------
+
+   Mismo criterio que reporte_por_almacen: la nota del vale es el "proyecto"
+   en los datos migrados. Una tabla por grupo y no una sola tabla larga con
+   una columna de proyecto repetida en cada fila: con 270 renglones en 10
+   obras, repetir el nombre 270 veces es peor que leerlo una vez por seccion. */
+.ficha-grupo { margin-bottom: 18px; }
+.ficha-grupo:last-child { margin-bottom: 0; }
+.ficha-grupo-titulo {
+  margin: 0 0 6px; padding-bottom: 4px;
+  font-size: 12.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em;
+  color: #475569; border-bottom: 1px solid #e2e8f0;
 }

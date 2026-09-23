@@ -7,16 +7,16 @@ namespace: adser-prod
 images:
   - name: DB_INIT_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-db-init
-    newTag: "1e25197"
+    newTag: "91bac5f"
   - name: BACKEND_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-backend
-    newTag: "1e25197"
+    newTag: "91bac5f"
   - name: WORKER_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-worker
-    newTag: "1e25197"
+    newTag: "91bac5f"
   - name: FRONTEND_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-frontend
-    newTag: 1e25197-adser-prod
+    newTag: 91bac5f-adser-prod
 resources:
   - ../../base
   - ingress-single-origin.yaml
@@ -54,3 +54,17 @@ patches:
                 hostPath:
                   path: /home/infra-k8s/imagenes/producto
                   type: Directory
+  # PriorityClass del cliente ERP #2 (ver p2-adser-prod, aplicada al clúster
+  # con kubectl apply -f priority-classes.yaml).
+  - target:
+      kind: Deployment
+    patch: |-
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: p2-adser-prod
+  - target:
+      kind: StatefulSet
+    patch: |-
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: p2-adser-prod

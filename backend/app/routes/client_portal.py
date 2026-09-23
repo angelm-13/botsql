@@ -6,7 +6,7 @@ from sqlalchemy import select
 from app.middleware.public_jwt import require_public_jwt
 from app.models import CustomerSupplier, Invoice, InvoiceMaterialService, QuotationComment
 from app.models.session import transaction_context
-from app.services.quotation_service import normalize_status, validate_transition
+from app.services.quotation_service import ensure_not_expired, normalize_status, validate_transition
 from app.utils.errors import AppError
 
 
@@ -83,6 +83,12 @@ def decide_client_quotation(user_data, invoice_id):
         invoice = _owned_invoice(db, user_data["id_user"], invoice_id)
         if not invoice:
             raise AppError("errors.resource_not_found", 404)
+        # Rechazar una cotizacion vencida se deja pasar -no hay nada que
+        # proteger ahi-, pero aceptarla no: aceptar es el paso que la
+        # convierte en un compromiso, y una vigencia vencida significa que
+        # los precios/condiciones ya no son los vigentes.
+        if target == "approved":
+            ensure_not_expired(invoice)
         invoice.invoice_status = validate_transition(invoice.invoice_status, target)
         db.flush()
         return jsonify({"quotation": _summary(invoice)})

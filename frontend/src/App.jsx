@@ -4,6 +4,8 @@ import Shell from "./layouts/Shell";
 import Dashboard from "./pages/Dashboard";
 import MfaSetupPage from "./pages/MfaSetupPage";
 import RolePermissionManagerPage from "./pages/RolePermissionManagerPage.jsx";
+import KpiPermissionManagerPage from "./pages/KpiPermissionManagerPage.jsx";
+import TeamManagerPage from "./pages/TeamManagerPage.jsx";
 import QuotationPage from "./pages/QuotationPage.jsx";
 import AuthorizationTrackingPage from "./pages/AuthorizationTrackingPage.jsx";
 import CatalogoWebPage from "./pages/CatalogoWebPage.jsx";
@@ -125,15 +127,24 @@ function AdminRoute({ children }) {
   return isAdminUser() ? children : <Navigate to="/" replace />;
 }
 
-function roleHasEntityAccess(rows, entityName, currentUser) {
+function roleHasEntityAccess(rows, entityNames, currentUser) {
   if (isBootstrapUser()) return true;
   const roleId = Number(currentUser?.id_permission || 0);
-  if (!roleId || !entityName) return false;
-  return rows.some((row) => Number(row.id_permission) === roleId && String(row.entity_name || "") === String(entityName) && Number(row.control_type || 0) > 0);
+  const names = Array.isArray(entityNames) ? entityNames : [entityNames];
+  if (!roleId || !names.length || !names.some(Boolean)) return false;
+  return rows.some((row) => Number(row.id_permission) === roleId && names.includes(String(row.entity_name || "")) && (
+    Number(row.scope_create || 0) > 0 || Number(row.scope_read || 0) > 0 ||
+    Number(row.scope_update || 0) > 0 || Number(row.scope_delete || 0) > 0
+  ));
 }
 
-function RoleAccessRoute({ entityName, children }) {
+// `entityName` para el caso normal (una sola entidad/capacidad guarda la
+// ruta); `entityNames` (arreglo) cuando la misma pantalla sirve a mas de una
+// capacidad -- ver `/vouchers`, que acepta `warehouse_voucher` O
+// `warehouse_prevoucher`, sin exigir las dos.
+function RoleAccessRoute({ entityName, entityNames, children }) {
   const [allowed, setAllowed] = useState(null);
+  const names = entityNames || [entityName];
 
   useEffect(() => {
     let mounted = true;
@@ -144,11 +155,11 @@ function RoleAccessRoute({ entityName, children }) {
     getAllEntityPermission({ per_page: 5000 })
       .then((payload) => {
         const rows = Array.isArray(payload?.items) ? payload.items : Array.isArray(payload) ? payload : [];
-        if (mounted) setAllowed(roleHasEntityAccess(rows, entityName, currentUser));
+        if (mounted) setAllowed(roleHasEntityAccess(rows, names, currentUser));
       })
       .catch(() => { if (mounted) setAllowed(false); });
     return () => { mounted = false; };
-  }, [entityName]);
+  }, [names.join(",")]);
 
   if (allowed === null) return null;
   return allowed ? children : <Navigate to="/" replace />;
@@ -165,6 +176,7 @@ export default function App() {
           <Route index element={<Dashboard />} />
           <Route path="/mfa-setup" element={<MfaSetupPage />} />
           <Route path="/role_permissions" element={<AdminRoute><RolePermissionManagerPage /></AdminRoute>} />
+          <Route path="/kpi_permissions" element={<AdminRoute><KpiPermissionManagerPage /></AdminRoute>} />
           <Route path="/facturama-config" element={<AdminRoute><FacturamaConfigPage /></AdminRoute>} />
           <Route path="/quotation" element={<RoleAccessRoute entityName="invoice"><QuotationPage /></RoleAccessRoute>} />
           <Route path="/authorization_tracking" element={<RoleAccessRoute entityName="invoice"><AuthorizationTrackingPage /></RoleAccessRoute>} />
@@ -234,15 +246,17 @@ export default function App() {
           <Route path="/logistica/expedientes" element={<RoleAccessRoute entityName="logistics_file"><LogisticsFilesPage /></RoleAccessRoute>} />
           <Route path="/logistica/facturas" element={<RoleAccessRoute entityName="invoice"><InvoicePage /></RoleAccessRoute>} />
           <Route path="/logistica/facturacion/manual" element={<RoleAccessRoute entityName="invoice"><ManualInvoicePage /></RoleAccessRoute>} />
-          <Route path="/logistica/usuarios" element={<RoleAccessRoute entityName="user"><UserPage /></RoleAccessRoute>} />
-          <Route path="/logistica/roles" element={<AdminRoute><RolePermissionManagerPage /></AdminRoute>} />
-          <Route path="/logistica/auditoria" element={<TechnicalRoute><EventLogPage /></TechnicalRoute>} />
-          <Route path="/logistica/seguridad" element={<MfaSetupPage />} />
+          {/* /logistica/usuarios, /logistica/roles, /logistica/auditoria y
+              /logistica/seguridad se retiraron con `section_administration`
+              en moduleSections.js: eran una segunda puerta a las mismas
+              pantallas que ya viven en /user, /role_permissions, /event_log
+              y /mfa-setup. */}
           <Route path="/restaurant/waiter" element={<RoleAccessRoute entityName="restaurant_waiter"><RestaurantWaiterPage /></RoleAccessRoute>} />
           <Route path="/restaurant/cashier" element={<RoleAccessRoute entityName="restaurant_cashier"><RestaurantCashierPage /></RoleAccessRoute>} />
           <Route path="/restaurant/kitchen" element={<RoleAccessRoute entityName="restaurant_kitchen"><RestaurantKitchenPage /></RoleAccessRoute>} />
           <Route path="/restaurant/admin" element={<RoleAccessRoute entityName="restaurant_admin"><RestaurantAdminPage /></RoleAccessRoute>} />
           <Route path="/permission" element={<RoleAccessRoute entityName="permission"><PermissionPage /></RoleAccessRoute>} />
+          <Route path="/team" element={<RoleAccessRoute entityName="team"><TeamManagerPage /></RoleAccessRoute>} />
           <Route path="/product" element={<RoleAccessRoute entityName="product"><ProductPage /></RoleAccessRoute>} />
           {/* Los dos niveles de la clasificacion, en una pantalla. Habia dos
               entradas de menu y leidas seguidas parecen lo mismo dos veces; el
@@ -254,7 +268,7 @@ export default function App() {
           {/* El vale se guarda con la capacidad `warehouse_voucher`, no con
               una entidad: su pantalla escribe en `incident` y en la tabla
               puente de sus renglones, que esta fuera del menu a proposito. */}
-          <Route path="/vouchers" element={<RoleAccessRoute entityName="warehouse_voucher"><WarehouseVoucherPage /></RoleAccessRoute>} />
+          <Route path="/vouchers" element={<RoleAccessRoute entityNames={["warehouse_voucher", "warehouse_prevoucher"]}><WarehouseVoucherPage /></RoleAccessRoute>} />
           <Route path="/product_sale_config" element={<RoleAccessRoute entityName="product_sale_config"><ProductSaleConfigPage /></RoleAccessRoute>} />
           <Route path="/proyect" element={<RoleAccessRoute entityName="proyect"><ProjectManagementPage /></RoleAccessRoute>} />
           <Route path="/appointments" element={<RoleAccessRoute entityName="appointment"><AppointmentsPage /></RoleAccessRoute>} />

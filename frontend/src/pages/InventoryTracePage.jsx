@@ -685,13 +685,23 @@ export default function InventoryTracePage() {
                     {it.classification && (
                       <p className="trace-chain">
                         <Tags size={13} />
+                        {/* Cada eslabon con su etiqueta -"Familia:", no solo
+                            el valor-: la miga de pan (familia › tipo › marca
+                            › material) da el orden correcto para quien ya
+                            sabe que es cada nivel, pero no para quien no ha
+                            usado el sistema, que no tiene forma de saber que
+                            "ESCUADRA" es la familia y "TRUPER" la marca solo
+                            por su posicion. */}
                         {it.classification.family && (
-                          <button type="button" className="trace-link"
-                                  onClick={() => cambiarFiltro(
-                                    "id_product_family",
-                                    String(it.classification.id_product_family))}>
-                            {it.classification.family}
-                          </button>
+                          <span className="trace-chain-item">
+                            {t("inventory.family", "Familia")}:{" "}
+                            <button type="button" className="trace-link"
+                                    onClick={() => cambiarFiltro(
+                                      "id_product_family",
+                                      String(it.classification.id_product_family))}>
+                              {it.classification.family}
+                            </button>
+                          </span>
                         )}
                         {/* El tipo, detras de la familia porque cuelga de
                             ella: es el nivel que distingue un desarmador plano
@@ -701,30 +711,38 @@ export default function InventoryTracePage() {
                         {it.classification.material_type && (
                           <>
                             <span className="trace-sep">›</span>
-                            <span className="trace-tipo">
-                              {it.classification.material_type}
+                            <span className="trace-chain-item">
+                              {t("trace.material_type", "Tipo")}:{" "}
+                              <span className="trace-tipo">
+                                {it.classification.material_type}
+                              </span>
                             </span>
                           </>
                         )}
                         {it.classification.brand && (
                           <>
                             <span className="trace-sep">›</span>
-                            <button type="button" className="trace-link"
-                                    onClick={() => cambiarFiltro(
-                                      "id_brand", String(it.classification.id_brand))}>
-                              {it.classification.brand}
-                            </button>
+                            <span className="trace-chain-item">
+                              {t("inventory.brand", "Marca")}:{" "}
+                              <button type="button" className="trace-link"
+                                      onClick={() => cambiarFiltro(
+                                        "id_brand", String(it.classification.id_brand))}>
+                                {it.classification.brand}
+                              </button>
+                            </span>
                           </>
                         )}
                         {it.classification.material && (
                           <>
                             <span className="trace-sep">›</span>
-                            <span>{it.classification.material}</span>
+                            <span className="trace-chain-item">
+                              {t("voucher.material", "Material")}: {it.classification.material}
+                            </span>
                           </>
                         )}
                         {it.classification.unit && (
                           <span className="trace-unit">
-                            <Ruler size={12} /> {it.classification.unit}
+                            <Ruler size={12} /> {t("voucher.unit", "Unidad")}: {it.classification.unit}
                           </span>
                         )}
                       </p>

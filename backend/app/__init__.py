@@ -23,6 +23,7 @@ from app.routes.payroll_period import bp_payroll_period
 from app.routes.payroll_detail import bp_payroll_detail
 from app.routes.payroll_concept import bp_payroll_concept
 from app.routes.payroll_movement import bp_payroll_movement
+from app.routes.customer_contact import bp_customer_contact
 from app.routes.customer_supplier import bp_customer_supplier
 from app.routes.documents import bp_document_management
 from app.routes.laboratory import bp_laboratory_equipment, bp_laboratory_service_order
@@ -83,6 +84,8 @@ from app.routes.level import bp_level
 from app.routes.field import bp_field
 from app.routes.permission import bp_permission
 from app.routes.nm_field_permission import bp_nm_field_permission
+from app.routes.team import bp_team
+from app.routes.nm_team_user import bp_nm_team_user
 from app.routes.event_log import bp_event_log
 from app.routes.task_type import bp_task_type
 from app.routes.template import bp_template
@@ -108,6 +111,7 @@ from app.routes.restaurant import bp_restaurant
 from app.routes.appointments import bp_appointments
 from app.routes.public_calendar import bp_public_appointments, bp_public_calendar
 from app.routes.kpi import bp_kpi, bp_kpi_dashboard, bp_kpi_dashboard_widget
+from app.routes.permission_kpi import bp_permission_kpi
 
 def _documents_reports_app_path() -> str:
     return os.getenv('DOCUMENTS_REPORTS_APP_PATH', '/documents-reports/app')
@@ -281,10 +285,16 @@ def _load_quotation_document_record(record_id: str) -> dict:
         data['date_expiration_label'] = _doc_date(data.get('date_expiration'))
         data['subtotal_label'] = _doc_money(data.get('subtotal'), currency)
         data['discount_label'] = _doc_money(data.get('descuento'), currency)
+        try:
+            data['net_subtotal_label'] = _doc_money(float(data.get('subtotal') or 0) - float(data.get('descuento') or 0), currency)
+        except (TypeError, ValueError):
+            data['net_subtotal_label'] = data['subtotal_label']
         data['tax_label'] = _doc_money(data.get('tax'), currency)
         data['isr_retention_label'] = _doc_money(data.get('isr_retention'), currency)
         data['iva_retention_label'] = _doc_money(data.get('iva_retention'), currency)
         data['total_label'] = _doc_money(data.get('total'), currency)
+        from app.services.amount_in_words import importe_a_letras
+        data['amount_in_words'] = importe_a_letras(data.get('total'), currency)
         # issue_12_phase7_cfdi_original_xml_path
         data['_xml_original_path'] = _cfdi_xml_original_path(invoice_id_value)
         if data['_xml_original_path']:
@@ -297,6 +307,12 @@ def _load_quotation_document_record(record_id: str) -> dict:
                         data[field_name] = value
             except (OSError, ValueError):
                 pass
+
+        if data.get('uuid'):
+            from app.services.cfdi_xml import cadena_original_tfd, qr_verification_url
+            from app.services.qr_code import png_data_uri
+            data['cadena_original'] = cadena_original_tfd(data)
+            data['qr_data_uri'] = png_data_uri(qr_verification_url(data, data.get('total')))
 
         issuer = _doc_first_by_id(db_session, CustomerSupplier, 'id_customer_supplier', data.get('id_issuer_customer_supplier'))
         receiver = _doc_first_by_id(db_session, CustomerSupplier, 'id_customer_supplier', data.get('id_customer_supplier'))
@@ -672,11 +688,13 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_kpi)
     app.register_blueprint(bp_kpi_dashboard)
     app.register_blueprint(bp_kpi_dashboard_widget)
+    app.register_blueprint(bp_permission_kpi)
     app.register_blueprint(bp_payroll_period)
     app.register_blueprint(bp_payroll_detail)
     app.register_blueprint(bp_payroll_concept)
     app.register_blueprint(bp_payroll_movement)
     app.register_blueprint(bp_customer_supplier)
+    app.register_blueprint(bp_customer_contact)
     app.register_blueprint(bp_document_management)
     app.register_blueprint(bp_laboratory_equipment)
     app.register_blueprint(bp_laboratory_service_order)
@@ -734,6 +752,8 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_level)
     app.register_blueprint(bp_field)
     app.register_blueprint(bp_permission)
+    app.register_blueprint(bp_team)
+    app.register_blueprint(bp_nm_team_user)
     app.register_blueprint(bp_nm_field_permission)
     app.register_blueprint(bp_event_log)
     app.register_blueprint(bp_task_type)

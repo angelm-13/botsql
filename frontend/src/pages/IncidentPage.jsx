@@ -2,10 +2,23 @@ import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
 import { getAllIncident, createIncident, updateIncident, deleteIncident, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllIncidentType, getAllUser } from "../api";
+import { fetchAllPages } from "../utils/fetchAllPages";
 import Pagination from "../components/Pagination.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
+import "../styles/incident.css";
+
+// Abierta o cerrada, sin importar el texto exacto que traiga cada tipo de
+// incidencia -un prestamo dice "abierta", pero nada obliga a que una
+// reparacion futura use la misma palabra-. Lo que no empieza por ninguna de
+// las dos se pinta neutro en vez de adivinar.
+function tonoDeIncidencia(status) {
+  const texto = String(status || "").trim().toLowerCase();
+  if (texto.startsWith("cerrad")) return "cerrada";
+  if (texto.startsWith("abiert")) return "abierta";
+  return "otro";
+}
 
 const emptyForm = { incident_date: "", id_incident_type: "", note: "", id_user: "", incident_status: "", close_date: "", id_lider: "" };
 const validationRules = allValidationRules["incident"] || {};
@@ -14,6 +27,7 @@ const ACTION_CREATE = 1;
 const ACTION_READ = 2;
 const ACTION_UPDATE = 4;
 const ACTION_DELETE = 8;
+const SCOPE_FIELD_BY_BIT = { [ACTION_CREATE]: "scope_create", [ACTION_READ]: "scope_read", [ACTION_UPDATE]: "scope_update", [ACTION_DELETE]: "scope_delete" };
 const FIELD_VISIBLE_BIT = 2;
 const ALL_FIELD_NAMES = ['id_incident', 'incident_date', 'id_incident_type', 'note', 'id_user', 'incident_status', 'close_date', 'created_by', 'creation_date', 'last_update_date'];
 
@@ -118,7 +132,7 @@ export default function IncidentPage() {
   useEffect(() => {
     async function loadRolePermissions() {
       if (isSuperUser) {
-        setModulePermission({ control_type: 15 });
+        setModulePermission({ scope_create: 4, scope_read: 4, scope_update: 4, scope_delete: 4 });
         setVisibleFieldNames(new Set(ALL_FIELD_NAMES));
         setPermissionReady(true);
         return;
@@ -131,9 +145,9 @@ export default function IncidentPage() {
       }
       try {
         const [entityPermissionData, fieldPermissionData, fieldData] = await Promise.all([
-          getAllEntityPermission({ per_page: 5000 }),
-          getAllNmFieldPermission({ per_page: 5000 }),
-          getAllField({ per_page: 5000 })
+          fetchAllPages(getAllEntityPermission),
+          fetchAllPages(getAllNmFieldPermission),
+          fetchAllPages(getAllField)
         ]);
         const entityPermissions = normalizeList(entityPermissionData);
         const fieldPermissions = normalizeList(fieldPermissionData);
@@ -169,7 +183,7 @@ export default function IncidentPage() {
 
   function canUseAction(bit) {
     if (isSuperUser) return true;
-    return hasBit(modulePermission?.control_type, bit);
+    return Number(modulePermission?.[SCOPE_FIELD_BY_BIT[bit]] || 0) !== 0;
   }
 
   function canSeeField(fieldName) {
@@ -538,17 +552,20 @@ export default function IncidentPage() {
               {canSeeField("id_incident_type") && <td><pre className="cell-value">{incidentDisplayLabel(incidentTypeOptions, "id_incident_type", "incident_type", item.id_incident_type)}</pre></td>}
               {canSeeField("note") && <td><pre className="cell-value">{formatTableValue(item.note)}</pre></td>}
               {canSeeField("id_user") && <td><pre className="cell-value">{incidentDisplayLabel(userOptions, "id_user", "user", item.id_user)}</pre></td>}
-              {canSeeField("incident_status") && <td><pre className="cell-value">{formatTableValue(item.incident_status)}</pre></td>}
+              {canSeeField("incident_status") && <td>{item.incident_status
+                ? <span className={`incident-estado ${tonoDeIncidencia(item.incident_status)}`}>
+                    {formatTableValue(item.incident_status)}
+                  </span>
+                : <pre className="cell-value"></pre>}</td>}
               {canSeeField("close_date") && <td><pre className="cell-value">{formatTableValue(item.close_date)}</pre></td>}
               {canSeeField("created_by") && <td><pre className="cell-value">{incidentDisplayLabel(userOptions, "id_user", "user", item.created_by)}</pre></td>}
               {canSeeField("creation_date") && <td><pre className="cell-value">{formatTableValue(item.creation_date)}</pre></td>}
               {canSeeField("last_update_date") && <td><pre className="cell-value">{formatTableValue(item.last_update_date)}</pre></td>}
         </tr>)}</tbody></table></div>}
 
-      {canRead && view === "kanban" && filtered.length > 0 && <div className="kanban">{Object.entries(groups).map(([key, groupItems]) => <div className="kanban-column" key={key}><h3>{key} <span>{groupItems.length}</span></h3>{groupItems.map((item) => <article className="kanban-card incident-kanban-card" key={item.id_incident}><strong>{String(item.id_incident ?? item.id_incident)}</strong><small>#{item.id_incident}</small><div className="incident-kanban-details">
+      {canRead && view === "kanban" && filtered.length > 0 && <div className="kanban">{Object.entries(groups).map(([key, groupItems]) => <div className="kanban-column" key={key}><h3>{key} <span>{groupItems.length}</span></h3>{groupItems.map((item) => <article className={`kanban-card incident-kanban-card tono-${tonoDeIncidencia(item.incident_status)}`} key={item.id_incident}><strong>{String(item.id_incident ?? item.id_incident)}</strong><small>#{item.id_incident}</small><div className="incident-kanban-details">
           {canSeeField("id_incident_type") && item.id_incident_type && <p><span>{t("fields.incident.id_incident_type", "Tipo")}:</span> <strong>{incidentDisplayLabel(incidentTypeOptions, "id_incident_type", "incident_type", item.id_incident_type)}</strong></p>}
           {canSeeField("id_user") && item.id_user && <p><span>{t("fields.incident.id_user", "Usuario")}:</span> <strong>{incidentDisplayLabel(userOptions, "id_user", "user", item.id_user)}</strong></p>}
-          {canSeeField("incident_status") && item.incident_status && <p><span>{t("fields.incident.incident_status", "Estado")}:</span> <strong>{formatTableValue(item.incident_status)}</strong></p>}
           {canSeeField("incident_date") && item.incident_date && <p><span>{t("fields.incident.incident_date", "Fecha")}:</span> <strong>{formatTableValue(item.incident_date)}</strong></p>}
           {canSeeField("close_date") && item.close_date && <p><span>{t("fields.incident.close_date", "Cierre")}:</span> <strong>{formatTableValue(item.close_date)}</strong></p>}
           {canSeeField("note") && item.note && <p className="wide"><span>{t("fields.incident.note", "Nota")}:</span> <strong>{formatTableValue(item.note)}</strong></p>}

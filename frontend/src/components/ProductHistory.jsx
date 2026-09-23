@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import PropTypes from "prop-types";
-import { MapPin, X } from "lucide-react";
-import { getProductLoanHistory, getProductStock } from "../api";
+import {
+  AlertTriangle, ArrowDownLeft, ArrowUpRight, Check, MapPin, User, X,
+} from "lucide-react";
+import {
+  getInventoryMovements, getProductLoanHistory, getProductStock,
+} from "../api";
 import Pagination from "./Pagination.jsx";
 import { useI18n } from "../i18n";
 import "../styles/product-history.css";
@@ -11,33 +15,26 @@ const POR_PAGINA = 20;
 /**
  * La ficha de un producto: qué le ha pasado, en una ventana.
  *
- * El formato es el del sistema anterior a propósito
- * ---------------------------------------------------
- * Antes se cruzaba el libro de inventario con los renglones de vale en una
- * sola tabla fusionada, con columnas de saldo y ubicación. Se reemplaza por
- * esta -- una fila por renglón de vale, con Vale, Responsable, Estado, Nota,
- * Tipo y las dos fechas -- porque es el formato que ya se usaba en Adser y que
- * la gente sabe leer de memoria. No hace falta reinventar la lectura de un
- * historial que ya funcionaba.
+ * Tres pestañas, no una tabla cruzada
+ * ------------------------------------
+ * Antes "Historial" mezclaba el libro de inventario (`inventory_ledger`) con
+ * los renglones de vale en una sola tabla, emparejados por referencia. Salía
+ * completo, pero la mezcla escondía el dato que en la practica se pregunta
+ * primero -"¿quién se lo ha llevado y lo ha devuelto?"- detrás de una celda
+ * de texto libre con todo junto. Vales, Localizar y el historial del
+ * empleado ya contestan esa pregunta con la misma tabla -Vale, Responsable,
+ * Estado, Nota, Tipo, Fecha creación, Fecha cierre-, y esta ficha ahora usa
+ * la misma, en vez de un formato aparte solo para el producto.
  *
- * Es lo mismo que devuelve `historial_del_producto` sin fusionar con nada: un
- * renglón de `nm_incident_product` es una salida (o una devolución) real de
- * ESTE producto, y el vale al que pertenece aporta el resto -- quién lo pidió,
- * con qué motivo y de qué tipo era.
- *
- * Fecha Creación y Fecha Cierre son del RENGLÓN, no del vale
- * ------------------------------------------------------------
- * Un mismo vale puede sacar el mismo producto dos veces -- dos renglones,
- * mismo folio -- y cada uno se devuelve en su propio momento. Si las fechas
- * fueran las del vale, dos renglones del mismo vale mostrarían la misma
- * "Fecha Cierre" aunque uno ya hubiera vuelto y el otro no. Nota, Tipo y
- * Responsable sí son del vale: un vale tiene una sola nota y un solo tipo,
- * no uno por renglón.
+ * El libro de movimientos no desaparece -sigue siendo el unico que dice el
+ * saldo que quedo tras cada entrada o salida-, solo se muda a su propia
+ * pestaña en vez de forzarlo a compartir fila con el vale.
  */
 export default function ProductHistory({ idProduct, titulo, onCerrar }) {
   const { t } = useI18n();
-  const [pestana, setPestana] = useState("historial");
+  const [pestana, setPestana] = useState("vales");
   const [prestamos, setPrestamos] = useState(null);
+  const [movimientos, setMovimientos] = useState(null);
   const [ubicaciones, setUbicaciones] = useState(null);
   const [pagina, setPagina] = useState(1);
   const [cargando, setCargando] = useState(false);
@@ -47,8 +44,12 @@ export default function ProductHistory({ idProduct, titulo, onCerrar }) {
     setCargando(true);
     setError("");
     try {
-      if (cual === "historial") {
+      if (cual === "vales") {
         setPrestamos(await getProductLoanHistory(idProduct));
+      } else if (cual === "movimientos") {
+        // 200 es el tope del servidor y sobra: el libro completo son 224
+        // asientos repartidos entre 2 221 productos.
+        setMovimientos(await getInventoryMovements(idProduct, { page: 1, per_page: 200 }));
       } else {
         setUbicaciones(await getProductStock(idProduct));
       }
@@ -75,7 +76,8 @@ export default function ProductHistory({ idProduct, titulo, onCerrar }) {
   }, [onCerrar]);
 
   const PESTANAS = [
-    ["historial", t("history.everything", "Historial")],
+    ["vales", t("history.vouchers_tab", "Vales")],
+    ["movimientos", t("history.movements", "Movimientos")],
     ["ubicaciones", t("history.locations", "Ubicaciones")],
   ];
 
@@ -85,10 +87,8 @@ export default function ProductHistory({ idProduct, titulo, onCerrar }) {
       role="presentation"
       onClick={(e) => { if (e.target === e.currentTarget) onCerrar(); }}
     >
-      {/* Solo el historial necesita el ancho extra: Ubicaciones son tres
-          columnas y en una ventana ancha quedarian perdidas. */}
       <section
-        className={`ficha${pestana === "historial" ? " ficha--historial" : ""}`}
+        className="ficha ficha--historial"
         role="dialog"
         aria-modal="true"
         aria-label={t("history.title", "Historial del producto")}
@@ -127,16 +127,15 @@ export default function ProductHistory({ idProduct, titulo, onCerrar }) {
           {error && <p className="error">{error}</p>}
           {cargando && <p className="muted">{t("common.loading", "Cargando…")}</p>}
 
-          {!cargando && pestana === "historial" && (
-            <Historial
-              renglones={prestamos?.items || []}
-              resumen={prestamos}
-              pagina={pagina}
-              onPagina={setPagina}
-              t={t}
-            />
+          {!cargando && !error && pestana === "vales" && (
+            <TablaVales datos={prestamos} pagina={pagina} onPagina={setPagina} t={t} />
           )}
-          {!cargando && pestana === "ubicaciones" && <Ubicaciones datos={ubicaciones} t={t} />}
+          {!cargando && !error && pestana === "movimientos" && (
+            <TablaMovimientos datos={movimientos} pagina={pagina} onPagina={setPagina} t={t} />
+          )}
+          {!cargando && !error && pestana === "ubicaciones" && (
+            <Ubicaciones datos={ubicaciones} t={t} />
+          )}
         </div>
       </section>
     </div>
@@ -151,86 +150,89 @@ ProductHistory.propTypes = {
 
 ProductHistory.defaultProps = { titulo: "" };
 
-function fecha(valor, t) {
-  if (!valor) return t("common.no_date", "sin fecha");
+function fecha(valor) {
+  if (!valor) return "—";
   const d = new Date(valor);
-  return Number.isNaN(d.getTime()) ? String(valor) : d.toLocaleString();
+  return Number.isNaN(d.getTime()) ? String(valor) : d.toLocaleString("es-MX");
 }
 
 /**
- * El historial de préstamos: una fila por renglón de vale que tocó este
- * producto, en el formato del sistema anterior.
+ * Quién se ha llevado este producto, historico: la misma tabla que ya usan
+ * Vales y el historial del empleado -Vale, Responsable, Estado, Nota, Tipo,
+ * Fecha creación, Fecha cierre-, para que sea la misma pregunta en las tres
+ * pantallas.
  */
-function Historial({ renglones, resumen, pagina, onPagina, t }) {
+function TablaVales({ datos, pagina, onPagina, t }) {
+  const renglones = datos?.items || [];
   if (!renglones.length) {
-    return (
-      <p className="muted">
-        {t("history.nothing", "Sin préstamos registrados.")}
-      </p>
-    );
+    return <p className="muted">{t("history.no_loans", "Nunca ha salido en un vale.")}</p>;
   }
 
   const paginas = Math.max(1, Math.ceil(renglones.length / POR_PAGINA));
   const actual = Math.min(pagina, paginas);
   const visibles = renglones.slice((actual - 1) * POR_PAGINA, actual * POR_PAGINA);
-  const fuera = resumen?.currently_out?.length || 0;
+  const fuera = datos?.currently_out?.length || 0;
 
   return (
     <>
-      {resumen && resumen.times_taken > 0 && (
-        <p className="ficha-resumen muted">
-          <strong>{resumen.times_taken}</strong> {t("history.times_taken", "salidas")}
-          {" · "}
-          <strong>{resumen.distinct_holders}</strong> {t("history.holders", "personas")}
-          {fuera > 0 && (
-            <>
-              {" · "}
-              <strong className="ficha-fuera">{fuera}</strong>{" "}
-              {t("history.currently_out", "sin devolver")}
-            </>
-          )}
-        </p>
-      )}
+      <p className="ficha-resumen muted">
+        <strong>{datos.times_taken}</strong> {t("history.times_taken", "salidas")}
+        {" · "}
+        <strong>{datos.distinct_holders}</strong> {t("history.holders", "personas")}
+        {fuera > 0 && (
+          <>
+            {" · "}
+            <strong className="ficha-fuera">{fuera}</strong>{" "}
+            {t("history.currently_out", "sin devolver")}
+          </>
+        )}
+      </p>
 
       <div className="ficha-tabla-marco">
-        <table className="ficha-tabla ficha-tabla-legado">
+        <table className="ficha-tabla ficha-tabla-ancha">
           <thead>
             <tr>
-              <th>{t("history.voucher_n", "# Vale")}</th>
-              <th>{t("history.holder", "Responsable")}</th>
-              <th>{t("history.state", "Estado")}</th>
-              <th>{t("history.note", "Nota")}</th>
-              <th>{t("history.type", "Tipo")}</th>
-              <th>{t("history.creation_date", "Fecha Creación")}</th>
-              <th>{t("history.close_date", "Fecha Cierre")}</th>
+              <th>{t("voucher.voucher_n", "Vale")}</th>
+              <th>{t("voucher.holder", "Responsable")}</th>
+              <th>{t("voucher.col_status", "Estado")}</th>
+              <th>{t("voucher.col_note", "Nota")}</th>
+              <th>{t("voucher.col_type", "Tipo")}</th>
+              <th>{t("voucher.col_created", "Fecha creación")}</th>
+              <th>{t("voucher.col_closed", "Fecha cierre")}</th>
             </tr>
           </thead>
           <tbody>
             {visibles.map((r) => (
-              <tr key={r.id_nm_incident_product}
-                  className={r.returned ? "" : "pendiente"}>
-                <td className="mono ficha-folio">{r.voucher_folio || "—"}</td>
-                <td>{r.holder_name || <span className="muted">—</span>}</td>
+              <tr key={r.id_nm_incident_product}>
+                <td className="mono">#{r.voucher_folio || r.id_incident}</td>
                 <td>
-                  {/* El texto tal cual -- "abierto"/"cerrado" -- que es el
-                      mismo que ya usa el resto del almacén, y el mismo que
-                      mostraba el sistema anterior en esta columna. */}
-                  <span className={`ficha-marca ${
-                    r.voucher_status === "cerrado" ? "devuelto" : "fuera"}`}>
-                    {r.voucher_status || "—"}
-                  </span>
+                  {r.holder_name ? (
+                    <span className="ficha-persona"><User size={12} />{r.holder_name}</span>
+                  ) : (
+                    <span className="muted">{t("voucher.no_holder", "sin responsable")}</span>
+                  )}
+                </td>
+                <td>
+                  {/* La misma pregunta de siempre, en rojo o en verde: ¿ya
+                      volvió este préstamo en concreto o no? Lo vencido se
+                      distingue con la palabra, no con un tercer color. */}
+                  {r.returned ? (
+                    <span className="ficha-marca devuelto">
+                      <Check size={12} />{t("history.returned", "devuelto")}
+                      {r.close_date && <> · {fecha(r.close_date)}</>}
+                    </span>
+                  ) : (
+                    <span className={`ficha-marca fuera ${r.overdue ? "vencida" : ""}`}>
+                      <AlertTriangle size={12} />
+                      {t("history.out", "fuera")}
+                      {r.overdue && <> · {t("history.overdue", "vencido")}</>}
+                    </span>
+                  )}
                 </td>
                 <td className="ficha-nota-legado">{r.voucher_note || "—"}</td>
                 <td>{r.voucher_type || "—"}</td>
-                {/* Del RENGLÓN, no del vale: un mismo vale puede sacar el
-                    mismo producto dos veces y cada una vuelve por su cuenta.
-                    Ver la cabecera del archivo. */}
-                <td className="ficha-cuando">{fecha(r.start_date, t)}</td>
-                <td className="ficha-cuando">
-                  {r.close_date
-                    ? fecha(r.close_date, t)
-                    : <span className="muted">{t("history.not_closed", "—")}</span>}
-                </td>
+                <td className="mono muted">{fecha(r.voucher_creation_date)}</td>
+                <td className="mono muted">{fecha(r.voucher_close_date)}</td>
               </tr>
             ))}
           </tbody>
@@ -249,14 +251,83 @@ function Historial({ renglones, resumen, pagina, onPagina, t }) {
   );
 }
 
-Historial.propTypes = {
-  renglones: PropTypes.array.isRequired,
-  resumen: PropTypes.object,
+TablaVales.propTypes = {
+  datos: PropTypes.object,
   pagina: PropTypes.number.isRequired,
   onPagina: PropTypes.func.isRequired,
   t: PropTypes.func.isRequired,
 };
-Historial.defaultProps = { resumen: null };
+TablaVales.defaultProps = { datos: null };
+
+/** El libro de inventario: cuánto entró, cuánto salió y con qué saldo quedó. */
+function TablaMovimientos({ datos, pagina, onPagina, t }) {
+  const items = datos?.items || [];
+  if (!items.length) {
+    return <p className="muted">{t("history.no_movements", "Sin movimientos registrados.")}</p>;
+  }
+
+  const paginas = Math.max(1, Math.ceil(items.length / POR_PAGINA));
+  const actual = Math.min(pagina, paginas);
+  const visibles = items.slice((actual - 1) * POR_PAGINA, actual * POR_PAGINA);
+
+  return (
+    <>
+      <table className="ficha-tabla">
+        <thead>
+          <tr>
+            <th>{t("history.when", "Cuándo")}</th>
+            <th>{t("history.what", "Qué pasó")}</th>
+            <th className="num">{t("history.change", "Cambio")}</th>
+            <th className="num">{t("history.balance", "Saldo")}</th>
+            <th>{t("history.who", "Quién")}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {visibles.map((m) => (
+            <tr key={m.id_inventory_ledger}>
+              <td className="muted">{fecha(m.creation_date)}</td>
+              <td>
+                <strong>{t(`movement.${m.movement_type}`, m.movement_type)}</strong>
+                {(m.location_description || m.location_target_description) && (
+                  <span className="muted">
+                    {" · "}{m.location_description || ""}
+                    {m.location_target_description ? ` → ${m.location_target_description}` : ""}
+                  </span>
+                )}
+                {m.reason && <span className="muted">{" · "}{m.reason}</span>}
+              </td>
+              <td className="num">
+                <span className={`ficha-delta ${Number(m.quantity_delta) < 0 ? "salida" : "entrada"}`}>
+                  {Number(m.quantity_delta) < 0 ? <ArrowUpRight size={13} /> : <ArrowDownLeft size={13} />}
+                  {Number(m.quantity_delta) > 0 ? `+${m.quantity_delta}` : m.quantity_delta}
+                </span>
+              </td>
+              <td className="num"><strong>{m.balance_after}</strong></td>
+              <td className="muted">{m.created_by_name || "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <Pagination
+        page={actual}
+        pages={paginas}
+        total={items.length}
+        perPage={POR_PAGINA}
+        onChange={onPagina}
+        etiquetaDeTotal={t("history.entries", "registros")}
+      />
+    </>
+  );
+}
+
+TablaMovimientos.propTypes = {
+  datos: PropTypes.object,
+  pagina: PropTypes.number.isRequired,
+  onPagina: PropTypes.func.isRequired,
+  t: PropTypes.func.isRequired,
+};
+TablaMovimientos.defaultProps = { datos: null };
 
 /** Dónde está repartido ahora mismo. */
 function Ubicaciones({ datos, t }) {

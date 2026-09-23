@@ -108,8 +108,8 @@ INSERT INTO "nm_incident_product" ("id_nm_incident_product", "id_incident", "id_
 VALUES (1, 1, 1, 'test note', 1, '2026-01-01 00:00:00', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
 ON CONFLICT ("id_nm_incident_product") DO NOTHING;
 
-INSERT INTO "task" ("id_task", "task_code", "start_date", "duration", "type", "owner", "analyst", "dependency", "leader", "validation", "task_description", "estimated_effort", "task_status", "fase", "priority", "title", "id_proyect", "created_by", "creation_date", "last_update_date", "deletion_date")
-VALUES (1, 'C1', '2026-01-01 00:00:00', 1, 'business', 1, 1, 1, 1, 1, 'test description', 'test estimated_effort', 'test state', 'test fase', 'test priority', 'test titulo', 1, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
+INSERT INTO "task" ("id_task", "task_code", "start_date", "duration", "type", "owner", "dependency", "validation", "task_description", "estimated_effort", "task_status", "fase", "priority", "title", "id_proyect", "created_by", "creation_date", "last_update_date", "deletion_date")
+VALUES (1, 'C1', '2026-01-01 00:00:00', 1, 'business', 1, 1, 1, 'test description', 'test estimated_effort', 'test state', 'en_espera', 'test priority', 'test titulo', 1, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
 ON CONFLICT ("id_task") DO NOTHING;
 
 INSERT INTO "task_note" ("id_task_note", "date", "id_task", "task_note_description", "created_by", "creation_date", "last_update_date", "deletion_date")

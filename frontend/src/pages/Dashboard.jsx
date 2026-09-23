@@ -1,19 +1,24 @@
 /* eslint-disable react/prop-types */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowDown, ArrowUp, AreaChart as AreaChartIcon, BarChart2, ClipboardList, Hash,
-  LineChart as LineChartIcon, Pencil, PieChart as PieChartIcon, Plus, Receipt,
-  RefreshCw, SlidersHorizontal, Trash2, User, X,
+  ArrowDown, ArrowUp, AreaChart as AreaChartIcon, BarChart2, ChevronDown, ChevronUp,
+  ClipboardList, FileDown, GripVertical, Hash, LineChart as LineChartIcon, Loader2, Pencil, PieChart as PieChartIcon, Plus, Receipt,
+  RefreshCw, SlidersHorizontal, Trash2, User,
 } from "lucide-react";
 import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line, AreaChart, Area,
   PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts";
+import { DndContext, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
+import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import { CSS as DndCss } from "@dnd-kit/utilities";
+import html2canvas from "html2canvas";
+import { jsPDF } from "jspdf";
 import { useI18n } from "../i18n";
 import {
   getAllKpiDashboard, createKpiDashboard, updateKpiDashboard, deleteKpiDashboard,
   getAllKpiDashboardWidget, createKpiDashboardWidget, updateKpiDashboardWidget, deleteKpiDashboardWidget,
-  getAllKpiDefinition, queryKpiSnapshot, getAllUser, getAllDepartment,
+  getAllKpiDefinition, queryKpiSnapshot, getAllUser, getAllDepartment, getAllProduct,
 } from "../api";
 import "../styles/kpi-dashboard.css";
 import PageHeader from "../components/PageHeader.jsx";
@@ -38,6 +43,12 @@ function esTipoMultiKpi(tipoGrafica) {
 // plan de cliente puede declarar otro limite via `limite('kpi_rango_dias_max', ...)`),
 // esto solo evita el viaje redondo cuando el rango ya se ve mal armado.
 const KPI_RANGO_DIAS_MAX = 365;
+
+// Resolucion de la captura del reporte PDF (generarReportePdf) -- tiene que
+// ser la MISMA que usan tanto la llamada a html2canvas como
+// medirFilasDeTarjetas al pasar de px del DOM a px del canvas capturado, o
+// las filas medidas quedan desalineadas del recorte real.
+const ESCALA_CAPTURA_PDF = 2;
 
 function diffDias(fechaInicio, fechaFin) {
   if (!fechaInicio || !fechaFin) return 0;
@@ -247,12 +258,89 @@ function colorEfectivoDeKpi(idKpiDefinition, coloresOverride) {
 
 // Avatar por omision para un empleado: no hay fotos de perfil reales, asi que
 // este icono neutro sobre fondo circular es el placeholder en todos lados
-// donde se muestra un nombre de empleado.
-function EmployeeAvatar({ size = "regular" }) {
+// donde se muestra un nombre de empleado. `color` (opcional) es el acento
+// determinista por persona del picker de empleados -- ver colorDeKpi, mismo
+// patron `id % CATEGORICAL.length`, reusado aqui para id_user en vez de
+// id_kpi_definition.
+function EmployeeAvatar({ size = "regular", color }) {
   return (
-    <span className={`kpi-avatar ${size === "small" ? "small" : ""}`}>
-      <User size={size === "small" ? 10 : 13} />
+    <span className={`kpi-avatar ${size === "small" ? "small" : ""}`} style={color ? { background: color } : undefined}>
+      <User size={size === "small" ? 10 : 13} color={color ? "#fff" : undefined} />
     </span>
+  );
+}
+
+// Sin distinguir mayusculas/acentos: mismo patron NFD que ya usa
+// normalizarEstatus en InventoryTracePage.jsx, aqui aplicado a busqueda libre
+// (nombre de empleado o de variable) en vez de a un estatus fijo.
+function normalizarBusqueda(valor) {
+  return String(valor || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .trim();
+}
+
+// Barra desplegable reutilizable: boton cerrado por default con un resumen
+// ("Filtrar por empleados", "3 empleados seleccionados") + chevron; al hacer
+// click despliega un popover con un buscador arriba y las opciones abajo.
+// Reemplaza la caja siempre-abierta que tenian antes tanto el picker de
+// empleados como las variables sueltas -- mismo componente en los dos
+// lugares para que se vean y se comporten igual (ver su uso en
+// KpiWidgetPanel). El picker de departamento deliberadamente NO usa este
+// patron por ahora, se dejo tal cual estaba (chips simples siempre visibles).
+// `renderOptions(filtro)` (filtro ya normalizado via normalizarBusqueda, o ""
+// sin busqueda activa) es quien decide que mostrar -- cada uso filtra su
+// propia lista y arma el mensaje de "sin resultados", este componente solo
+// pone el input y limpia la busqueda cada vez que se abre.
+function KpiDropdownPicker({ label, searchPlaceholder, renderOptions }) {
+  const [abierto, setAbierto] = useState(false);
+  const [busqueda, setBusqueda] = useState("");
+
+  // Mismo patron de "cerrar al hacer clic afuera" que ya usa el popover de
+  // color de los chips de KPI (ver swatchAbierto en KpiWidgetPanel).
+  useEffect(() => {
+    if (!abierto) return undefined;
+    function handleClickFuera(event) {
+      if (!event.target.closest(".kpi-dropdown-picker")) setAbierto(false);
+    }
+    document.addEventListener("mousedown", handleClickFuera);
+    return () => document.removeEventListener("mousedown", handleClickFuera);
+  }, [abierto]);
+
+  function alternar() {
+    setAbierto((actual) => {
+      const proximo = !actual;
+      if (proximo) setBusqueda("");
+      return proximo;
+    });
+  }
+
+  return (
+    <div className="kpi-dropdown-picker">
+      <button
+        type="button"
+        className="kpi-dropdown-picker-toggle"
+        onClick={alternar}
+        aria-expanded={abierto}
+      >
+        <span>{label}</span>
+        {abierto ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+      </button>
+      {abierto && (
+        <div className="kpi-dropdown-picker-menu" role="menu">
+          <input
+            type="text"
+            className="kpi-dropdown-picker-search"
+            value={busqueda}
+            onChange={(event) => setBusqueda(event.target.value)}
+            placeholder={searchPlaceholder}
+            autoFocus
+          />
+          {renderOptions(normalizarBusqueda(busqueda))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -280,14 +368,22 @@ function startOfMonthIso() {
   return fecha.toISOString().slice(0, 10);
 }
 
-// "Personalizado" no trae `range`: solo marca el modo manual, nunca toca los
-// campos -- los atajos son un llenado rapido, no un reemplazo de los
-// selectores de fecha libres.
+// SOLO VISUAL -- exhibicion, no filtra nada todavia. `departments` (el prop
+// real, via getAllDepartment) no trae mas que "General" en la practica hoy;
+// esta lista fija es puramente de aparador para que el picker no se vea
+// vacio, NO esta conectada a Permission.id_department ni a ninguna tabla real.
+// No confundir con una fila de `department`: no hay migracion, no hay
+// id_department real detras de estos nombres. Cuando haya un pedido real de
+// filtrar por departamento, esto se reemplaza por datos de verdad.
+const DEPARTAMENTOS_VISUALES = ["RRHH", "Contabilidad", "Producción", "Ventas", "Sistemas/TI", "Administración", "Logística"];
+
+// Los atajos son un llenado rapido, nunca un reemplazo de los selectores de
+// fecha libres -- Fecha inicio/Fecha fin siguen editables a mano en todo
+// momento, de ahi que no haga falta un boton "Personalizado" aparte.
 const DATE_SHORTCUTS = [
   { key: "hoy", label: "Hoy", range: () => [todayIso(), todayIso()] },
   { key: "semana", label: "Esta semana", range: () => [startOfWeekIso(), todayIso()] },
   { key: "mes", label: "Este mes", range: () => [startOfMonthIso(), todayIso()] },
-  { key: "personalizado", label: "Personalizado", range: null },
 ];
 
 // El panel "Agregar grafico" es permanente (ya no se monta/desmonta al
@@ -298,6 +394,7 @@ const DATE_SHORTCUTS = [
 function defaultPanelState() {
   return {
     editingWidgetId: null,
+    colapsado: false,
     idsKpiSeleccionados: [],
     categoriaKpi: "",
     tipoGrafica: "numero",
@@ -310,7 +407,25 @@ function defaultPanelState() {
     empleadosSeleccionados: [],
     departamentosSeleccionados: [],
     coloresKpi: {},
+    // "entidad": desglosado por empleado/producto (comportamiento de
+    // siempre). "periodo": una sola serie sumada entre todas las entidades,
+    // por dia -- la tendencia en el tiempo que Aurora pidio poder elegir
+    // ("Ambas, seleccionable").
+    agruparPor: "entidad",
+    // Solo aplica al KPI "articulos_bajo_stock": el umbral se captura aqui,
+    // en el widget, y nunca en una columna nueva de base de datos (decision
+    // explicita de Aurora -- no hay stock minimo declarado en el catalogo de
+    // productos).
+    umbralBajoStock: "",
   };
+}
+
+// Como etiquetar una entidad segun la dimension real del KPI (empleado,
+// producto o "global" -- sin desglose).
+function labelForDimension(dimension, userLabel, productLabel) {
+  if (dimension === "producto") return productLabel;
+  if (dimension === "global") return () => "Total";
+  return userLabel;
 }
 
 function listOf(data) {
@@ -321,18 +436,31 @@ function localeFor(lang) {
   return lang === "ja" ? "ja-JP" : lang === "en" ? "en-US" : lang === "pt" ? "pt-BR" : lang === "de" ? "de-DE" : "es-MX";
 }
 
-function buildSeriesData(snapshot, userLabel, empleadosFiltro) {
-  const porA = snapshot?.rango_a?.por_empleado || {};
-  const porB = snapshot?.rango_b?.por_empleado || {};
+// El nombre de campo del backend (`por_empleado`) es historico -- se
+// conserva tal cual aunque ahora tambien puede traer productos (KPIs con
+// dimension "producto") o quedar vacio (KPIs "globales", ej. ingresos/
+// egresos totales, o cuando el widget pidio `agrupar_por=periodo`). Este
+// helper decide de que campo leer segun el modo de agrupacion elegido en el
+// widget, sin que cada `build*Data` tenga que repetir la logica.
+function entradasPorModo(ladoDelRango, agruparPorPeriodo) {
+  return agruparPorPeriodo ? (ladoDelRango?.por_periodo || {}) : (ladoDelRango?.por_empleado || {});
+}
+
+function buildSeriesData(snapshot, labelForId, entidadesFiltro, agruparPorPeriodo) {
+  const porA = entradasPorModo(snapshot?.rango_a, agruparPorPeriodo);
+  const porB = entradasPorModo(snapshot?.rango_b, agruparPorPeriodo);
   let ids = Array.from(new Set([...Object.keys(porA), ...Object.keys(porB)]));
-  if (Array.isArray(empleadosFiltro) && empleadosFiltro.length) {
-    const orden = empleadosFiltro.map(String);
+  if (agruparPorPeriodo) {
+    // Las llaves son fechas ISO (`AAAA-MM-DD`): ordenan bien como texto.
+    ids.sort();
+  } else if (Array.isArray(entidadesFiltro) && entidadesFiltro.length) {
+    const orden = entidadesFiltro.map(String);
     ids = orden.filter((id) => ids.includes(id));
   } else {
     ids.sort((x, y) => (porA[y] ?? 0) - (porA[x] ?? 0));
   }
   return ids.map((id) => ({
-    name: userLabel(id),
+    name: labelForId(id),
     a: porA[id] ?? 0,
     b: id in porB ? porB[id] : undefined,
   }));
@@ -343,25 +471,29 @@ function buildSeriesData(snapshot, userLabel, empleadosFiltro) {
 // fila resultante trae una columna `kpi_<indice>_a`/`kpi_<indice>_b` por KPI,
 // para que Recharts pinte una serie por cada uno sin tocar el eje X (que
 // sigue siendo por empleado, igual que con un solo KPI).
-function buildMultiSeriesData(snapshots, userLabel, empleadosFiltro) {
+function buildMultiSeriesData(snapshots, labelForId, entidadesFiltro, agruparPorPeriodo) {
   const ids = new Set();
   snapshots.forEach((snapshot) => {
-    Object.keys(snapshot?.rango_a?.por_empleado || {}).forEach((id) => ids.add(id));
-    Object.keys(snapshot?.rango_b?.por_empleado || {}).forEach((id) => ids.add(id));
+    Object.keys(entradasPorModo(snapshot?.rango_a, agruparPorPeriodo)).forEach((id) => ids.add(id));
+    Object.keys(entradasPorModo(snapshot?.rango_b, agruparPorPeriodo)).forEach((id) => ids.add(id));
   });
   let ordenados = Array.from(ids);
-  if (Array.isArray(empleadosFiltro) && empleadosFiltro.length) {
-    const orden = empleadosFiltro.map(String);
+  if (agruparPorPeriodo) {
+    ordenados.sort();
+  } else if (Array.isArray(entidadesFiltro) && entidadesFiltro.length) {
+    const orden = entidadesFiltro.map(String);
     ordenados = orden.filter((id) => ordenados.includes(id));
   } else {
-    const totalPorId = (id) => snapshots.reduce((suma, snapshot) => suma + (snapshot?.rango_a?.por_empleado?.[id] ?? 0), 0);
+    const totalPorId = (id) => snapshots.reduce(
+      (suma, snapshot) => suma + (entradasPorModo(snapshot?.rango_a, agruparPorPeriodo)[id] ?? 0), 0,
+    );
     ordenados.sort((x, y) => totalPorId(y) - totalPorId(x));
   }
   return ordenados.map((id) => {
-    const fila = { name: userLabel(id) };
+    const fila = { name: labelForId(id) };
     snapshots.forEach((snapshot, index) => {
-      const porA = snapshot?.rango_a?.por_empleado || {};
-      const porB = snapshot?.rango_b?.por_empleado || {};
+      const porA = entradasPorModo(snapshot?.rango_a, agruparPorPeriodo);
+      const porB = entradasPorModo(snapshot?.rango_b, agruparPorPeriodo);
       fila[`kpi_${index}_a`] = porA[id] ?? 0;
       fila[`kpi_${index}_b`] = id in porB ? porB[id] : undefined;
     });
@@ -377,14 +509,120 @@ function kpiSeriesLabel(kpiInfo, index) {
   return kpiInfo?.unidad ? `${etiqueta} (${kpiInfo.unidad})` : etiqueta;
 }
 
-function buildPieData(snapshot, userLabel, othersLabel) {
-  const porA = snapshot?.rango_a?.por_empleado || {};
-  const entradas = Object.entries(porA).sort((x, y) => y[1] - x[1]);
+function buildPieData(snapshot, labelForId, othersLabel, agruparPorPeriodo) {
+  const porA = entradasPorModo(snapshot?.rango_a, agruparPorPeriodo);
+  const entradas = agruparPorPeriodo
+    ? Object.entries(porA).sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0))
+    : Object.entries(porA).sort((x, y) => y[1] - x[1]);
   const principales = entradas.slice(0, CATEGORICAL.length);
   const restoTotal = entradas.slice(CATEGORICAL.length).reduce((suma, [, valor]) => suma + valor, 0);
-  const data = principales.map(([id, valor]) => ({ name: userLabel(id), value: valor }));
+  const data = principales.map(([id, valor]) => ({ name: labelForId(id), value: valor }));
   if (restoTotal > 0) data.push({ name: othersLabel, value: restoTotal });
   return data;
+}
+
+function esperar(ms) {
+  return new Promise((resolve) => { setTimeout(resolve, ms); });
+}
+
+// Franja vertical (en px de CANVAS, ya multiplicada por `escalaCaptura` --
+// debe ser la MISMA escala que se le pasa a html2canvas) que ocupa cada fila
+// REAL de tarjetas dentro del grid, midiendo el DOM en vivo (getBoundingClientRect)
+// antes de capturar -- no un recorte a una altura de pagina fija. Esto es lo
+// que le permite a `agregarSeccionAlPdf` cortar SOLO entre filas completas,
+// nunca a la mitad de una tarjeta (ver el comentario ahi). Ignora
+// `.kpi-widget-placeholder` porque busca `.kpi-widget-card`, una clase
+// distinta -- los espacios "de fabrica" ya se ocultan aparte durante la
+// captura (ver kpi-pdf-exporting en kpi-dashboard.css), pero aunque no se
+// ocultaran esta funcion no los contaria.
+function medirFilasDeTarjetas(nodoGrid, escalaCaptura) {
+  const tarjetas = Array.from(nodoGrid.querySelectorAll(".kpi-widget-card"));
+  if (tarjetas.length === 0) return [];
+  const gridRect = nodoGrid.getBoundingClientRect();
+  const filas = [];
+  let filaActual = [];
+  let topFilaActual = null;
+
+  function cerrarFila() {
+    if (filaActual.length === 0) return;
+    const top = Math.min(...filaActual.map((r) => r.top));
+    const bottom = Math.max(...filaActual.map((r) => r.bottom));
+    filas.push({ top: top * escalaCaptura, bottom: bottom * escalaCaptura });
+    filaActual = [];
+  }
+
+  tarjetas.forEach((tarjeta) => {
+    const r = tarjeta.getBoundingClientRect();
+    const top = r.top - gridRect.top;
+    const bottom = r.bottom - gridRect.top;
+    // Un par de pixeles de tolerancia -- suficiente para el redondeo de
+    // subpixel del layout, no para confundir dos filas distintas.
+    if (topFilaActual !== null && Math.abs(top - topFilaActual) > 4) cerrarFila();
+    topFilaActual = top;
+    filaActual.push({ top, bottom });
+  });
+  cerrarFila();
+  return filas;
+}
+
+// Dibuja UNA seccion (un panel/tablero completo, ya capturado como `canvas`
+// por html2canvas, con sus filas ya medidas en vivo por
+// `medirFilasDeTarjetas`) dentro de `pdf`, empacando tantas FILAS COMPLETAS
+// como quepan en cada pagina -- nunca corta una fila (ni, por lo tanto, una
+// tarjeta) a la mitad; si ni siquiera la primera fila pendiente cabe entera
+// en una pagina nueva, se dibuja sola de todas formas (mejor una fila que
+// se sale un poco del margen que una que desaparece). `estadoPagina`
+// (`{ vacia: bool }`) es compartido entre TODAS las llamadas a esta funcion
+// durante la generacion de un mismo PDF: el primer bloque de la primera
+// seccion reusa la pagina en blanco con la que jsPDF ya arranca; cualquier
+// otro bloque -sea la continuacion de una seccion muy alta, o el arranque
+// de la siguiente seccion- agrega una pagina nueva. Eso resuelve a la vez
+// "compactar sin espacios en blanco" y "cada panel en su propia
+// seccion/salto de pagina" con la misma regla.
+function agregarSeccionAlPdf({ pdf, canvas, filas, margin, tituloSeccion, estadoPagina }) {
+  if (filas.length === 0) return;
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const anchoDisponible = pageWidth - margin * 2;
+  const escala = anchoDisponible / canvas.width;
+
+  let indiceFila = 0;
+  let esPrimerBloqueDeSeccion = true;
+  while (indiceFila < filas.length) {
+    if (estadoPagina.vacia) {
+      estadoPagina.vacia = false;
+    } else {
+      pdf.addPage();
+    }
+
+    let yImagen = margin;
+    if (esPrimerBloqueDeSeccion) {
+      pdf.setFontSize(13);
+      pdf.setFont(undefined, "bold");
+      pdf.text(tituloSeccion, margin, margin + 10);
+      yImagen = margin + 24;
+    }
+    const altoDisponiblePx = (pageHeight - yImagen - margin) / escala;
+
+    const inicioBloque = filas[indiceFila].top;
+    let finBloque = filas[indiceFila].bottom;
+    let ultimaFilaIncluida = indiceFila;
+    for (let i = indiceFila + 1; i < filas.length; i += 1) {
+      if (filas[i].bottom - inicioBloque > altoDisponiblePx) break;
+      finBloque = filas[i].bottom;
+      ultimaFilaIncluida = i;
+    }
+
+    const altoBloquePx = finBloque - inicioBloque;
+    const franja = document.createElement("canvas");
+    franja.width = canvas.width;
+    franja.height = altoBloquePx;
+    franja.getContext("2d").drawImage(canvas, 0, inicioBloque, canvas.width, altoBloquePx, 0, 0, canvas.width, altoBloquePx);
+    pdf.addImage(franja.toDataURL("image/png"), "PNG", margin, yImagen, anchoDisponible, altoBloquePx * escala);
+
+    indiceFila = ultimaFilaIncluida + 1;
+    esPrimerBloqueDeSeccion = false;
+  }
 }
 
 export default function Dashboard() {
@@ -405,6 +643,7 @@ export default function Dashboard() {
   const [kpiCatalog, setKpiCatalog] = useState([]);
   const [users, setUsers] = useState([]);
   const [departments, setDepartments] = useState([]);
+  const [products, setProducts] = useState([]);
 
   // Borrador del panel "Agregar grafico", uno por tablero (`id_kpi_dashboard`):
   // el panel ya no se desmonta al cambiar de tablero, asi que su estado no
@@ -424,7 +663,20 @@ export default function Dashboard() {
     setPanelStateByDashboard((prev) => ({ ...prev, [idDashboard]: defaultPanelState() }));
   }, []);
 
-  const [placeholderCount, widgetGridRef] = useCompleteGridPlaceholders(widgets.length);
+  const [placeholderCount, gridRefDeSondeo] = useCompleteGridPlaceholders(widgets.length);
+  // El nodo real del grid, en un ref mutable (no en el estado interno del
+  // hook de arriba, que ademas de callback-ref no expone su nodo) -- lo
+  // necesita `generarReportePdf` para capturarlo con html2canvas. Tiene que
+  // ser un ref y no un valor cerrado sobre el render en el que se creo el
+  // closure de esa funcion: mientras "todos los paneles" recorre tableros
+  // via `setActiveId`, el grid se desmonta/remonta con cada carga
+  // (`{!loadingWidgets && (...)}` en el render), y solo un ref mutable sigue
+  // reflejando el nodo ACTUAL en cada vuelta del bucle.
+  const widgetGridNodeRef = useRef(null);
+  const widgetGridRef = useCallback((nodo) => {
+    widgetGridNodeRef.current = nodo;
+    gridRefDeSondeo(nodo);
+  }, [gridRefDeSondeo]);
 
   const loadDashboards = useCallback(async (preferredId) => {
     setLoadingDashboards(true);
@@ -445,29 +697,184 @@ export default function Dashboard() {
     }
   }, []);
 
+  // Devuelve la lista (ademas de guardarla en `widgets`, como siempre) para
+  // que quien la llame directamente -el reporte PDF, ver generarReportePdf-
+  // pueda saber de inmediato si este tablero trae algo que capturar, sin
+  // depender de esperar a que el estado se refleje en un render.
   const loadWidgets = useCallback(async (dashboardId) => {
-    if (!dashboardId) { setWidgets([]); return; }
+    if (!dashboardId) { setWidgets([]); return []; }
     setLoadingWidgets(true);
     setWidgetsError("");
     try {
       const data = await getAllKpiDashboardWidget(dashboardId);
-      setWidgets(listOf(data));
+      const lista = listOf(data);
+      setWidgets(lista);
+      return lista;
     } catch (error) {
       setWidgetsError(error.message || "errors.request_failed");
       setWidgets([]);
+      return [];
     } finally {
       setLoadingWidgets(false);
     }
   }, []);
 
+  // Sensor con distancia minima antes de armar un drag: sin esto, un simple
+  // clic en "Editar"/"Eliminar" dentro de la tarjeta se interpretaria como el
+  // inicio de un arrastre (mismo mousedown) y el clic normal dejaria de
+  // funcionar.
+  const dragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  // --- Reporte PDF (exportar el dashboard, ver generarReportePdf mas abajo) ---
+  const [mostrarDialogoExportarPdf, setMostrarDialogoExportarPdf] = useState(false);
+  const [exportandoPdf, setExportandoPdf] = useState(false);
+  // IDs de tarjeta (`id_kpi_dashboard_widget`) que ya terminaron de resolver
+  // sus propios datos (exito O error, ver el `onReady` en KpiWidgetCard). Un
+  // ref y no un estado a proposito: nada en pantalla necesita re-renderizar
+  // cuando cambia, solo `esperarWidgetsListos` lo consulta mientras genera el
+  // PDF. Los ids son unicos globales (no por tablero), asi que no hace falta
+  // limpiarlo entre paneles -- un id de un tablero anterior nunca coincide
+  // con uno del tablero que se esta esperando ahora.
+  const widgetsListosRef = useRef(new Set());
+  const handleWidgetReady = useCallback((idWidget) => { widgetsListosRef.current.add(idWidget); }, []);
+
+  // Oculta los espacios "de fabrica" y los iconos de editar/eliminar/
+  // arrastrar de cada tarjeta MIENTRAS se captura para el PDF -- un reporte
+  // no deberia verse como una foto de la pantalla de administracion (ver
+  // kpi-pdf-exporting en kpi-dashboard.css).
+  useEffect(() => {
+    document.body.classList.toggle("kpi-pdf-exporting", exportandoPdf);
+    return () => document.body.classList.remove("kpi-pdf-exporting");
+  }, [exportandoPdf]);
+
+  async function esperarWidgetsListos(idsEsperados) {
+    if (idsEsperados.length === 0) return;
+    const limite = Date.now() + 20000;
+    while (Date.now() < limite) {
+      if (idsEsperados.every((id) => widgetsListosRef.current.has(id))) return;
+      await esperar(120);
+    }
+    // Se agota el tiempo de espera (20s) y se sigue de todas formas -- mejor
+    // un reporte con alguna tarjeta a medio cargar que dejar la generacion
+    // colgada para siempre por una sola peticion lenta.
+  }
+
+  // Genera el PDF del dashboard completo, capturando lo que YA esta pintado
+  // en pantalla (mismos SVG de Recharts, mismos colores) en vez de rearmar
+  // los graficos del lado del servidor -- ver la nota junto a
+  // `documents-reports/` sobre por que ese generador no sirve aqui (Jinja2 +
+  // WeasyPrint no ejecuta React). `modo` es "actual" (solo el tablero que
+  // esta viendo el usuario) o "todos" (uno por tablero, cada uno en su
+  // propia seccion/salto de pagina, ver agregarSeccionAlPdf). Para "todos"
+  // hace falta ir cambiando `activeId` tablero por tablero -reusando el
+  // mismo camino real de carga y el mismo grid que ya se ve en pantalla, en
+  // vez de duplicar la logica en un arbol oculto- por eso la pantalla
+  // "parpadea" entre pestañas mientras genera: el overlay de abajo lo tapa a
+  // proposito.
+  async function generarReportePdf(modo) {
+    setMostrarDialogoExportarPdf(false);
+    setExportandoPdf(true);
+    const idActivoOriginal = activeId;
+    try {
+      const objetivos = modo === "todos" ? dashboards : dashboards.filter((d) => d.id_kpi_dashboard === activeId);
+      if (objetivos.length === 0) return;
+
+      const pdf = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+      const margin = 24;
+      const estadoPagina = { vacia: true };
+      let huboContenido = false;
+
+      // Un tablero por vuelta, nunca en paralelo -- cada uno depende del
+      // anterior (mismo grid real reutilizado via `setActiveId`, no arboles
+      // ocultos), asi que un `await` dentro de este `for` es intencional.
+      for (const dashboard of objetivos) {
+        setActiveId(dashboard.id_kpi_dashboard);
+        const listaWidgets = await loadWidgets(dashboard.id_kpi_dashboard);
+        // Panel sin graficos: se omite entero, sin pagina ni titulo vacio.
+        if (!listaWidgets || listaWidgets.length === 0) continue;
+
+        await esperarWidgetsListos(listaWidgets.map((w) => w.id_kpi_dashboard_widget));
+        // Un respiro extra despues de "listo": Recharts todavia necesita un
+        // par de frames para terminar de pintar el SVG tras el ultimo cambio
+        // de datos, y `onReady` solo avisa que la peticion ya resolvio.
+        await esperar(300);
+
+        const nodoGrid = widgetGridNodeRef.current;
+        if (!nodoGrid) continue;
+        // Medir las filas ANTES de capturar (misma escala que `scale` de
+        // html2canvas, ver medirFilasDeTarjetas) -- el DOM en vivo es lo
+        // unico que sabe donde termina cada tarjeta, un canvas ya es solo
+        // pixeles.
+        const filas = medirFilasDeTarjetas(nodoGrid, ESCALA_CAPTURA_PDF);
+        if (filas.length === 0) continue;
+        const canvas = await html2canvas(nodoGrid, { scale: ESCALA_CAPTURA_PDF, backgroundColor: "#ffffff" });
+        agregarSeccionAlPdf({ pdf, canvas, filas, margin, tituloSeccion: dashboard.nombre, estadoPagina });
+        huboContenido = true;
+      }
+
+      if (!huboContenido) {
+        window.alert(tx("pdf_report_empty", "Ninguno de los paneles tiene gráficos para incluir en el reporte."));
+        return;
+      }
+      pdf.save(`reporte-kpis-${todayIso()}.pdf`);
+    } catch (error) {
+      notifyError(error);
+    } finally {
+      setActiveId(idActivoOriginal);
+      await loadWidgets(idActivoOriginal);
+      setExportandoPdf(false);
+    }
+  }
+
+  // Arrastrar para reordenar: el grid sigue siendo responsive (auto-fill de
+  // kpi-widget-grid, ver kpi-dashboard.css) -- dnd-kit con rectSortingStrategy
+  // ya sabe acomodar el resto de tarjetas alrededor del hueco, no hace falta
+  // una cuadricula de posiciones fijas. Optimista en la UI (reordena de
+  // inmediato) y persiste `posicion_orden` -campo que ya existia en el
+  // backend, ver KpiDashboardWidget.posicion_orden- con el mismo criterio de
+  // espaciado (100, 200, 300...) que ya usa `_reemplazar_kpis` para el orden
+  // de KPIs dentro de un widget.
+  async function handleDragEndWidgets(event) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = widgets.findIndex((item) => item.id_kpi_dashboard_widget === active.id);
+    const newIndex = widgets.findIndex((item) => item.id_kpi_dashboard_widget === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordenados = arrayMove(widgets, oldIndex, newIndex);
+    setWidgets(reordenados);
+    try {
+      await Promise.all(
+        reordenados.map((widget, index) => updateKpiDashboardWidget(
+          widget.id_kpi_dashboard_widget,
+          { posicion_orden: (index + 1) * 100 },
+        )),
+      );
+    } catch (error) {
+      // Si algo fallo a medio camino, el orden en el servidor puede haber
+      // quedado a medias -- se recarga desde ahi para no dejar la UI
+      // mostrando un orden que no coincide con lo guardado.
+      setWidgetsError(error.message || "errors.request_failed");
+      await loadWidgets(activeId);
+    }
+  }
+
   useEffect(() => { loadDashboards(); }, [loadDashboards]);
-  useEffect(() => { loadWidgets(activeId); }, [activeId, loadWidgets]);
+  // Durante la generacion del reporte PDF, `generarReportePdf` ya llama a
+  // `loadWidgets` el mismo directo y espera su resultado -- sin este freno
+  // este efecto dispararia UNA carga extra (redundante, no incorrecta) cada
+  // vez que el reporte cambia de tablero con `setActiveId`.
+  useEffect(() => {
+    if (exportandoPdf) return;
+    loadWidgets(activeId);
+  }, [activeId, loadWidgets, exportandoPdf]);
 
   useEffect(() => {
     let cancelado = false;
     getAllKpiDefinition().then((data) => { if (!cancelado) setKpiCatalog(listOf(data)); }).catch(() => { if (!cancelado) setKpiCatalog([]); });
     getAllUser({ per_page: 500 }).then((data) => { if (!cancelado) setUsers(listOf(data)); }).catch(() => { if (!cancelado) setUsers([]); });
     getAllDepartment({ per_page: 500 }).then((data) => { if (!cancelado) setDepartments(listOf(data)); }).catch(() => { if (!cancelado) setDepartments([]); });
+    getAllProduct({ per_page: 5000 }).then((data) => { if (!cancelado) setProducts(listOf(data)); }).catch(() => { if (!cancelado) setProducts([]); });
     return () => { cancelado = true; };
   }, []);
 
@@ -475,6 +882,11 @@ export default function Dashboard() {
     const found = users.find((user) => String(user.id_user) === String(idUser));
     return found?.full_name || found?.username || `#${idUser}`;
   }, [users]);
+
+  const productLabel = useCallback((idProduct) => {
+    const found = products.find((product) => String(product.id_product) === String(idProduct));
+    return found?.descripcion || found?.product_code || `#${idProduct}`;
+  }, [products]);
 
   function notifyError(error) {
     window.alert(t(error.message || "errors.request_failed", error.message || "errors.request_failed"));
@@ -550,6 +962,7 @@ export default function Dashboard() {
     const parametros = widget.parametros || {};
     updatePanelState(activeId, {
       editingWidgetId: widget.id_kpi_dashboard_widget,
+      colapsado: false,
       idsKpiSeleccionados: ids,
       categoriaKpi: primerKpi?.modulo || "",
       tipoGrafica: widget.tipo_grafica || "numero",
@@ -564,6 +977,8 @@ export default function Dashboard() {
       // Las llaves de `colores_kpi` ya llegan como string desde el JSON
       // guardado -- se copian tal cual, sin volver a tocar el tipo.
       coloresKpi: parametros.colores_kpi && typeof parametros.colores_kpi === "object" ? { ...parametros.colores_kpi } : {},
+      agruparPor: parametros.agrupar_por === "periodo" ? "periodo" : "entidad",
+      umbralBajoStock: parametros.umbral_bajo_stock != null ? String(parametros.umbral_bajo_stock) : "",
     });
   }
 
@@ -594,6 +1009,33 @@ export default function Dashboard() {
         <RefreshCw size={16} />{loadingDashboards ? t("common.loading") : t("common.refresh")}
         </button>
       </PageHeader>
+
+      {mostrarDialogoExportarPdf && (
+        <div className="kpi-pdf-dialog-backdrop" role="dialog" aria-modal="true">
+          <div className="kpi-pdf-dialog">
+            <h2>{tx("pdf_report_dialog_title", "Generar reporte PDF")}</h2>
+            <p>{tx("pdf_report_dialog_body", "¿Quieres incluir solo el panel que estás viendo o todos los paneles?")}</p>
+            <div className="kpi-pdf-dialog-actions">
+              <button type="button" className="button" onClick={() => setMostrarDialogoExportarPdf(false)}>
+                {t("common.cancel")}
+              </button>
+              <button type="button" className="button" onClick={() => generarReportePdf("actual")}>
+                {tx("pdf_report_current", "Panel actual")}
+              </button>
+              <button type="button" className="button primary" onClick={() => generarReportePdf("todos")}>
+                {tx("pdf_report_all", "Todos los paneles")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {exportandoPdf && (
+        <div className="kpi-pdf-exporting-overlay">
+          <Loader2 size={22} className="kpi-spin" />
+          <span>{tx("pdf_report_generating", "Generando reporte PDF…")}</span>
+        </div>
+      )}
 
       {dashboardsError && <div className="alert error">{t(dashboardsError, dashboardsError)}</div>}
 
@@ -635,12 +1077,6 @@ export default function Dashboard() {
 
       {activeDashboard && (
         <div className="kpi-dashboard-body">
-          <div className="kpi-dashboard-toolbar">
-            <button className="button primary" onClick={() => resetPanelState(activeId)}>
-              <Plus size={16} />{tx("add_widget", "Agregar gráfico")}
-            </button>
-          </div>
-
           {/* Panel permanente: ya no se monta/desmonta con un clic (ver
               PANEL "AGREGAR GRAFICO" ESTATICO POR DASHBOARD). `key={activeId}`
               fuerza una instancia nueva por tablero para que el estado
@@ -657,6 +1093,9 @@ export default function Dashboard() {
             departments={departments}
             onCancel={() => resetPanelState(activeId)}
             onSave={(payload) => handleSaveWidget(payload, currentPanelState.editingWidgetId)}
+            onAddWidget={() => resetPanelState(activeId)}
+            onExportPdf={() => setMostrarDialogoExportarPdf(true)}
+            exportandoPdf={exportandoPdf}
             t={t}
             tx={tx}
           />
@@ -665,16 +1104,20 @@ export default function Dashboard() {
           {loadingWidgets && <div className="alert">{t("common.loading")}</div>}
 
           {!loadingWidgets && !widgetsError && (
+            <DndContext sensors={dragSensors} collisionDetection={closestCenter} onDragEnd={handleDragEndWidgets}>
+            <SortableContext items={widgets.map((widget) => widget.id_kpi_dashboard_widget)} strategy={rectSortingStrategy}>
             <div className="kpi-widget-grid" ref={widgetGridRef}>
               {widgets.map((widget) => (
-                <KpiWidgetCard
+                <SortableKpiWidgetCard
                   key={widget.id_kpi_dashboard_widget}
                   widget={widget}
                   kpiCatalog={kpiCatalog}
                   userLabel={userLabel}
+                  productLabel={productLabel}
                   formatNumber={formatNumber}
                   onEdit={() => handleEditWidget(widget)}
                   onDelete={() => handleDeleteWidget(widget)}
+                  onReady={handleWidgetReady}
                   t={t}
                   tx={tx}
                 />
@@ -698,6 +1141,8 @@ export default function Dashboard() {
                 </button>
               ))}
             </div>
+            </SortableContext>
+            </DndContext>
           )}
         </div>
       )}
@@ -706,7 +1151,28 @@ export default function Dashboard() {
   );
 }
 
-function KpiWidgetCard({ widget, kpiCatalog, userLabel, formatNumber, onEdit, onDelete, t, tx }) {
+// Envoltura sortable: separa el "como se arrastra" (dnd-kit) de "que se
+// muestra" (KpiWidgetCard). El handle (GripVertical) es la UNICA zona con los
+// listeners de arrastre -- si se le pusieran a la tarjeta entera, un clic en
+// "Editar"/"Eliminar" competiria con el inicio de un drag.
+function SortableKpiWidgetCard(props) {
+  const { widget } = props;
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: widget.id_kpi_dashboard_widget,
+  });
+  const style = {
+    transform: DndCss.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+  };
+  return (
+    <div ref={setNodeRef} style={style}>
+      <KpiWidgetCard {...props} dragHandleProps={{ ...attributes, ...listeners }} />
+    </div>
+  );
+}
+
+function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, formatNumber, onEdit, onDelete, onReady, t, tx, dragHandleProps }) {
   const [snapshots, setSnapshots] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -725,6 +1191,7 @@ function KpiWidgetCard({ widget, kpiCatalog, userLabel, formatNumber, onEdit, on
   const fechaFinB = parametros.fecha_fin_b;
   const empleadosKey = Array.isArray(parametros.empleados) ? parametros.empleados.join(",") : "";
   const departamentosKey = Array.isArray(parametros.id_departments) ? parametros.id_departments.join(",") : "";
+  const agruparPor = parametros.agrupar_por === "periodo" ? "periodo" : "entidad";
 
   useEffect(() => {
     let cancelado = false;
@@ -733,12 +1200,14 @@ function KpiWidgetCard({ widget, kpiCatalog, userLabel, formatNumber, onEdit, on
         setLoading(false);
         setSnapshots([]);
         setError("missing_kpi");
+        onReady?.(widget.id_kpi_dashboard_widget);
         return;
       }
       if (!fechaInicio || !fechaFin) {
         setLoading(false);
         setSnapshots([]);
         setError("missing_range");
+        onReady?.(widget.id_kpi_dashboard_widget);
         return;
       }
       setLoading(true);
@@ -751,6 +1220,7 @@ function KpiWidgetCard({ widget, kpiCatalog, userLabel, formatNumber, onEdit, on
         }
         if (empleadosKey) paramsComunes.empleados = empleadosKey;
         if (departamentosKey) paramsComunes.id_departments = departamentosKey;
+        if (agruparPor === "periodo") paramsComunes.agrupar_por = agruparPor;
         // Una llamada POR CADA KPI del widget -- el backend solo acepta un
         // `id_kpi_definition` a la vez, la combinacion pasa aqui.
         const resultados = await Promise.all(
@@ -760,7 +1230,12 @@ function KpiWidgetCard({ widget, kpiCatalog, userLabel, formatNumber, onEdit, on
       } catch (err) {
         if (!cancelado) { setError(err.message || "errors.request_failed"); setSnapshots([]); }
       } finally {
-        if (!cancelado) setLoading(false);
+        // Se avisa "listo" tanto en exito como en error -- el reporte PDF
+        // (ver esperarWidgetsListos en Dashboard()) necesita saber cuando ya
+        // no va a cambiar nada mas en esta tarjeta para poder capturarla,
+        // sin importar si el resultado fue un dato real o un mensaje de
+        // error ya asentado en pantalla.
+        if (!cancelado) { setLoading(false); onReady?.(widget.id_kpi_dashboard_widget); }
       }
     }
     cargar();
@@ -768,7 +1243,7 @@ function KpiWidgetCard({ widget, kpiCatalog, userLabel, formatNumber, onEdit, on
   // `idsKey` es el proxy estable de `idsUsados` (un array nuevo cada
   // render); `idsUsados` en si mismo nunca deberia ir en las dependencias.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idsKey, fechaInicio, fechaFin, fechaInicioB, fechaFinB, empleadosKey, departamentosKey]);
+  }, [idsKey, fechaInicio, fechaFin, fechaInicioB, fechaFinB, empleadosKey, departamentosKey, agruparPor]);
 
   const chartTypeLabel = CHART_TYPES.find((opt) => opt.value === widget.tipo_grafica)?.label || widget.tipo_grafica;
   const rangoTexto = fechaInicio && fechaFin ? `${fechaInicio} → ${fechaFin}` : tx("missing_range", "Sin rango de fechas configurado");
@@ -787,6 +1262,15 @@ function KpiWidgetCard({ widget, kpiCatalog, userLabel, formatNumber, onEdit, on
           {rangoBTexto && <p className="kpi-widget-meta">{tx("vs_label", "vs.")} {rangoBTexto}</p>}
         </div>
         <div className="kpi-widget-card-actions">
+          <button
+            type="button"
+            className="kpi-icon-button kpi-drag-handle"
+            title={tx("drag_to_reorder", "Arrastrar para reordenar")}
+            aria-label={tx("drag_to_reorder", "Arrastrar para reordenar")}
+            {...dragHandleProps}
+          >
+            <GripVertical size={15} />
+          </button>
           <button type="button" className="kpi-icon-button" title={t("common.edit")} onClick={onEdit}><Pencil size={15} /></button>
           <button type="button" className="kpi-icon-button danger" title={t("common.delete")} onClick={onDelete}><Trash2 size={15} /></button>
         </div>
@@ -807,28 +1291,114 @@ function KpiWidgetCard({ widget, kpiCatalog, userLabel, formatNumber, onEdit, on
           <p className="kpi-error-inline">{t(error, error)}</p>
         )}
         {!loading && !error && snapshots.length > 0 && (
-          <KpiChartBody widget={widget} snapshots={snapshots} kpiInfos={kpiInfos} userLabel={userLabel} formatNumber={formatNumber} tx={tx} />
+          <KpiChartBody widget={widget} snapshots={snapshots} kpiInfos={kpiInfos} userLabel={userLabel} productLabel={productLabel} formatNumber={formatNumber} tx={tx} />
         )}
       </div>
     </article>
   );
 }
 
-function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, formatNumber, tx }) {
+// Mini-grafica de tendencia SOLO para el widget "numero" con comparacion
+// activa. El snapshot que ya carga KpiWidgetCard no trae la serie diaria
+// para este tipo de grafica -- `agrupar_por=periodo` (la unica forma de
+// obtenerla, ver `_totales` en `backend/app/routes/kpi.py`) solo se pide
+// cuando el widget usa el selector "Agrupar por", que ni siquiera se
+// muestra para tipo "numero". Por eso este componente pide SU PROPIO
+// snapshot (mismo endpoint `queryKpiSnapshot` de siempre, no uno nuevo) del
+// periodo A unicamente -- la tendencia que acompana al valor principal, no
+// la comparacion en si (esa ya la muestra el delta de al lado).
+function KpiNumberSparkline({ idKpiDefinition, fechaInicio, fechaFin, empleados, idDepartments, color }) {
+  const [serie, setSerie] = useState(null);
+  const empleadosKey = Array.isArray(empleados) ? empleados.join(",") : "";
+  const idDepartmentsKey = Array.isArray(idDepartments) ? idDepartments.join(",") : "";
+
+  useEffect(() => {
+    let cancelado = false;
+    if (!idKpiDefinition || !fechaInicio || !fechaFin) { setSerie(null); return undefined; }
+    const params = { id_kpi_definition: idKpiDefinition, fecha_inicio: fechaInicio, fecha_fin: fechaFin, agrupar_por: "periodo" };
+    if (empleadosKey) params.empleados = empleadosKey;
+    if (idDepartmentsKey) params.id_departments = idDepartmentsKey;
+    queryKpiSnapshot(params)
+      .then((resultado) => {
+        if (cancelado) return;
+        const porPeriodo = resultado?.rango_a?.por_periodo || {};
+        setSerie(
+          Object.entries(porPeriodo)
+            .sort(([periodoA], [periodoB]) => (periodoA < periodoB ? -1 : periodoA > periodoB ? 1 : 0))
+            .map(([periodo, valor]) => ({ periodo, valor })),
+        );
+      })
+      .catch(() => { if (!cancelado) setSerie([]); });
+    return () => { cancelado = true; };
+  }, [idKpiDefinition, fechaInicio, fechaFin, empleadosKey, idDepartmentsKey]);
+
+  // Sin al menos 2 puntos no hay tendencia que dibujar -- tambien cubre el
+  // estado "todavia cargando" (`serie === null`), no hace falta un loader
+  // propio para un adorno tan chico junto al valor principal.
+  if (!serie || serie.length < 2) return null;
+
+  return (
+    <LineChart width={90} height={32} data={serie} className="kpi-number-sparkline">
+      <Line type="monotone" dataKey="valor" stroke={color} strokeWidth={2} dot={false} isAnimationActive={false} />
+    </LineChart>
+  );
+}
+
+function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, formatNumber, tx }) {
   const snapshot = snapshots[0];
   const kpiInfo = kpiInfos[0];
   const hasCompare = Boolean(snapshot?.rango_b);
   const coloresOverride = widget.parametros?.colores_kpi;
+  const agruparPorPeriodo = widget.parametros?.agrupar_por === "periodo";
+  const labelForId = agruparPorPeriodo ? (id) => id : labelForDimension(kpiInfo?.dimensiones?.[0], userLabel, productLabel);
+
+  // Umbral manual de "artículos bajo stock" (decision de Aurora: se captura
+  // en el widget, no en una columna nueva de base de datos -- ver
+  // `articulos_bajo_stock_query` en el backend). Solo tiene sentido con un
+  // unico KPI seleccionado y ese KPI siendo justo este.
+  const umbralBajoStock = Number(widget.parametros?.umbral_bajo_stock);
+  const esBajoStock = kpiInfos.length <= 1 && kpiInfo?.clave === "articulos_bajo_stock" && Number.isFinite(umbralBajoStock);
 
   if (widget.tipo_grafica === "numero") {
+    if (esBajoStock) {
+      const porA = snapshot?.rango_a?.por_empleado || {};
+      const bajoStock = Object.values(porA).filter((valor) => valor < umbralBajoStock).length;
+      return (
+        <div className="kpi-number-widget">
+          <strong>{bajoStock}</strong>
+          <span className="kpi-delta">{tx("bajo_stock_note", `producto(s) por debajo de ${umbralBajoStock}`)}</span>
+        </div>
+      );
+    }
     const total = snapshot.rango_a.total;
     const totalB = snapshot.rango_b?.total;
     const unidad = kpiInfo?.unidad ? ` ${kpiInfo.unidad}` : "";
     const delta = hasCompare ? total - totalB : null;
     const deltaPct = hasCompare && totalB ? (delta / Math.abs(totalB)) * 100 : null;
+    const colorKpi = colorEfectivoDeKpi(kpiInfo?.id_kpi_definition, coloresOverride);
+    const ModuleIcon = kpiModuleMeta(kpiInfo?.modulo).icon;
     return (
       <div className="kpi-number-widget">
-        <strong>{formatNumber(total)}{unidad}</strong>
+        <div className="kpi-number-row">
+          <div className="kpi-number-value">
+            {hasCompare && (
+              <span className="kpi-number-module-icon" style={{ background: colorKpi }}>
+                <ModuleIcon size={16} color="#fff" />
+              </span>
+            )}
+            <strong>{formatNumber(total)}{unidad}</strong>
+          </div>
+          {hasCompare && (
+            <KpiNumberSparkline
+              idKpiDefinition={kpiInfo?.id_kpi_definition}
+              fechaInicio={widget.parametros?.fecha_inicio}
+              fechaFin={widget.parametros?.fecha_fin}
+              empleados={widget.parametros?.empleados}
+              idDepartments={widget.parametros?.id_departments}
+              color={colorKpi}
+            />
+          )}
+        </div>
         {delta !== null && (
           <span className={`kpi-delta ${delta >= 0 ? "up" : "down"}`}>
             {delta >= 0 ? <ArrowUp size={14} /> : <ArrowDown size={14} />}
@@ -843,7 +1413,7 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, formatNumber, tx
 
   if (widget.tipo_grafica === "dona") {
     const othersLabel = tx("others", "Otros");
-    const data = buildPieData(snapshot, userLabel, othersLabel);
+    const data = buildPieData(snapshot, labelForId, othersLabel, agruparPorPeriodo);
     if (!data.length) return <p className="kpi-empty-inline">{tx("no_data", "Sin datos en el rango seleccionado.")}</p>;
     return (
       <ResponsiveContainer width="100%" height={240}>
@@ -876,7 +1446,8 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, formatNumber, tx
   // color fijo -mismo criterio que ya usa el camino multi-KPI de abajo con
   // sus propias series "b".
   if (kpiInfos.length <= 1) {
-    const data = buildSeriesData(snapshot, userLabel, widget.parametros?.empleados);
+    let data = buildSeriesData(snapshot, labelForId, widget.parametros?.empleados, agruparPorPeriodo);
+    if (esBajoStock) data = data.filter((fila) => fila.a < umbralBajoStock);
     if (!data.length) return <p className="kpi-empty-inline">{tx("no_data", "Sin datos en el rango seleccionado.")}</p>;
     const colorKpi = colorEfectivoDeKpi(kpiInfo?.id_kpi_definition, coloresOverride);
 
@@ -939,7 +1510,7 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, formatNumber, tx
   // rango A -distingue por opacidad/trazo, no por un segundo color fijo-
   // porque con N KPIs ya no hay solo dos roles (A/B) que colorear
   // aparte como con un solo KPI.
-  const data = buildMultiSeriesData(snapshots, userLabel, widget.parametros?.empleados);
+  const data = buildMultiSeriesData(snapshots, labelForId, widget.parametros?.empleados, agruparPorPeriodo);
   if (!data.length) return <p className="kpi-empty-inline">{tx("no_data", "Sin datos en el rango seleccionado.")}</p>;
   const comparacionSufijo = ` (${tx("vs_compare_short", "comparación")})`;
 
@@ -1006,9 +1577,10 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, formatNumber, tx
   return null;
 }
 
-function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, departments, onCancel, onSave, t, tx }) {
+function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, departments, onCancel, onSave, onAddWidget, onExportPdf, exportandoPdf, t, tx }) {
   const {
     editingWidgetId,
+    colapsado,
     idsKpiSeleccionados,
     categoriaKpi,
     tipoGrafica,
@@ -1021,20 +1593,32 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
     empleadosSeleccionados,
     departamentosSeleccionados,
     coloresKpi,
+    agruparPor,
+    umbralBajoStock,
   } = panelState;
+
+  // KPIs fijos por modulo (dimension "empleado"/"producto") vs. variables
+  // sueltas (dimension "global", ej. ingresos_totales/egresos_totales -- ver
+  // el comentario de esas entradas en KPI_REGISTRY). Una variable suelta no
+  // se desglosa por nada: sirve para combinar en un mismo grafico ("ingresos"
+  // vs "egresos"), no para elegir por modulo, asi que vive en su propia
+  // seccion del picker y se saca de la lista por modulo para no repetir el
+  // mismo chip en dos lugares.
+  const kpisFijos = useMemo(() => kpiCatalog.filter((kpi) => kpi.dimensiones?.[0] !== "global"), [kpiCatalog]);
+  const kpisVariables = useMemo(() => kpiCatalog.filter((kpi) => kpi.dimensiones?.[0] === "global"), [kpiCatalog]);
 
   // Catalogo agrupado por modulo (facturacion, operaciones, ...): el paso de
   // categoria solo hace falta cuando hay mas de uno, si no se muestran los
   // KPIs directo.
   const kpisPorModulo = useMemo(() => {
     const mapa = new Map();
-    kpiCatalog.forEach((kpi) => {
+    kpisFijos.forEach((kpi) => {
       const lista = mapa.get(kpi.modulo) || [];
       lista.push(kpi);
       mapa.set(kpi.modulo, lista);
     });
     return mapa;
-  }, [kpiCatalog]);
+  }, [kpisFijos]);
   const modulosDisponibles = Array.from(kpisPorModulo.keys());
   const necesitaCategoria = modulosDisponibles.length > 1;
 
@@ -1050,6 +1634,19 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
   const [swatchAbierto, setSwatchAbierto] = useState(null);
 
   const multiKpiPermitido = esTipoMultiKpi(tipoGrafica);
+
+  // Info de los KPIs ya elegidos -- de aqui salen la etiqueta del toggle
+  // "Agrupar por" (Empleado/Producto, segun la dimension real del primer KPI
+  // elegido) y si hay que mostrar el campo de umbral de "artículos bajo
+  // stock" (solo cuando ese KPI especifico esta seleccionado).
+  const kpisSeleccionadosInfo = idsKpiSeleccionados
+    .map((id) => kpiCatalog.find((kpi) => String(kpi.id_kpi_definition) === id))
+    .filter(Boolean);
+  const primeraDimension = kpisSeleccionadosInfo[0]?.dimensiones?.[0];
+  const tieneBajoStockSeleccionado = kpisSeleccionadosInfo.some((kpi) => kpi.clave === "articulos_bajo_stock");
+
+  // Para el resumen del picker desplegable de variables (ver KpiDropdownPicker).
+  const variablesSeleccionadas = kpisSeleccionadosInfo.filter((kpi) => kpi.dimensiones?.[0] === "global");
 
   // Cierra el popover de color al hacer clic fuera de el -- sin esto se
   // quedaria abierto hasta elegir un color o deseleccionar el KPI.
@@ -1107,6 +1704,63 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
     setSwatchAbierto(null);
   }
 
+  // Un chip de KPI (fijo o variable suelta) con su swatch de color -- se usa
+  // en las dos secciones del picker (KPIs por modulo y variables sueltas),
+  // de ahi que salga de la lista con el mismo criterio ambas veces.
+  function renderKpiChip(kpi) {
+    const idStr = String(kpi.id_kpi_definition);
+    const posicion = idsKpiSeleccionados.indexOf(idStr);
+    // El swatch de color solo tiene sentido cuando este KPI ya esta
+    // seleccionado Y el tipo de grafica activo de verdad pinta un color por
+    // KPI (barras/linea/area) -- en "numero"/"dona" el color no depende del
+    // KPI, no hay nada que este swatch pudiera cambiar.
+    const puedeElegirColor = multiKpiPermitido && posicion >= 0;
+    return (
+      <div className="kpi-chip-with-swatch" key={kpi.id_kpi_definition}>
+        <button
+          type="button"
+          className={`kpi-chip-option ${posicion >= 0 ? "active" : ""}`}
+          onClick={() => toggleKpi(idStr)}
+        >
+          {multiKpiPermitido && posicion >= 0 && <span className="kpi-chip-badge">{posicion + 1}</span>}
+          {kpi.etiqueta || kpi.clave}
+        </button>
+        {puedeElegirColor && (
+          <div className="kpi-color-swatch-wrap">
+            <button
+              type="button"
+              className="kpi-color-swatch"
+              style={{ background: colorEfectivoDeKpi(idStr, coloresKpi) }}
+              onClick={() => setSwatchAbierto((actual) => (actual === idStr ? null : idStr))}
+              title={tx("kpi_color_choose", "Elegir color")}
+              aria-label={tx("kpi_color_choose", "Elegir color")}
+              aria-expanded={swatchAbierto === idStr}
+            />
+            {swatchAbierto === idStr && (
+              <div className="kpi-color-popover" role="menu">
+                {CATEGORICAL.map((color) => {
+                  const activo = colorEfectivoDeKpi(idStr, coloresKpi) === color;
+                  return (
+                    <button
+                      type="button"
+                      key={color}
+                      className={`kpi-color-option ${activo ? "active" : ""}`}
+                      style={{ background: color }}
+                      onClick={() => elegirColorKpi(idStr, color)}
+                      aria-label={color}
+                      role="menuitemradio"
+                      aria-checked={activo}
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   function toggleEmpleado(idUser) {
     onChangePanelState({
       empleadosSeleccionados: empleadosSeleccionados.includes(idUser)
@@ -1124,10 +1778,12 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
   }
 
   // Los atajos solo rellenan fecha_inicio/fecha_fin -- nunca reemplazan los
-  // selectores libres. "Personalizado" no trae rango: solo marca el modo
-  // manual (ver DATE_SHORTCUTS).
+  // selectores libres (ver DATE_SHORTCUTS). Editar las fechas a mano deja de
+  // marcar cualquiera de estos atajos como activo (atajoActivo pasa a
+  // "personalizado" en el onChange de los inputs de fecha), simplemente
+  // ninguno de los botones se ve resaltado -- no hace falta un boton propio
+  // para ese estado.
   function aplicarAtajo(atajo) {
-    if (!atajo.range) { onChangePanelState({ atajoActivo: atajo.key }); return; }
     const [inicio, fin] = atajo.range();
     onChangePanelState({ atajoActivo: atajo.key, fechaInicio: inicio, fechaFin: fin });
   }
@@ -1157,6 +1813,10 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
       idsKpiSeleccionados.filter((id) => coloresKpi[id]).map((id) => [id, coloresKpi[id]]),
     );
     if (Object.keys(coloresVigentes).length) parametros.colores_kpi = coloresVigentes;
+    if (agruparPor === "periodo") parametros.agrupar_por = "periodo";
+    if (tieneBajoStockSeleccionado && umbralBajoStock !== "" && Number.isFinite(Number(umbralBajoStock))) {
+      parametros.umbral_bajo_stock = Number(umbralBajoStock);
+    }
 
     const payload = { ids_kpi_definition: idsKpiSeleccionados.map(Number), tipo_grafica: tipoGrafica, parametros };
     setSaving(true);
@@ -1174,16 +1834,50 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
     }
   }
 
+  const tituloPanel = editingWidgetId ? tx("edit_widget", "Editar gráfico") : tx("add_widget", "Agregar gráfico");
+
   return (
-    <section className="kpi-widget-panel">
+    <section className={`kpi-widget-panel ${colapsado ? "collapsed" : ""}`}>
       <header>
         <div>
           <p className="eyebrow">{tx("widget", "Gráfico")}</p>
-          <h3>{editingWidgetId ? tx("edit_widget", "Editar gráfico") : tx("add_widget", "Agregar gráfico")}</h3>
         </div>
-        <button type="button" className="kpi-icon-button" onClick={onCancel} aria-label={t("common.cancel")}><X size={18} /></button>
+        <div className="kpi-widget-panel-header-actions">
+          {/* Botones de "Agregar grafico" y "Generar reporte PDF": viven aqui,
+              junto a la flechita, en formato solo-icono para caber en este
+              espacio angosto. Misma funcionalidad que antes -- solo cambio
+              de ubicacion en la interfaz. */}
+          <button type="button" className="kpi-icon-button" onClick={onAddWidget} title={tx("add_widget", "Agregar gráfico")}>
+            <Plus size={15} />
+          </button>
+          <button
+            type="button"
+            className="kpi-icon-button"
+            onClick={onExportPdf}
+            disabled={exportandoPdf}
+            title={tx("pdf_report_button", "Generar reporte PDF")}
+          >
+            <FileDown size={15} />
+          </button>
+          {/* Pestana/flap, no una X de cierre: un clic colapsa a esta misma
+              pestana (el borrador sigue vivo en panelState), otro clic
+              expande de vuelta. Descartar el borrador por completo NO tiene
+              un icono propio aqui colapsado -- se expande el panel y se usa
+              "Cancelar" del footer, que ya hace exactamente eso. */}
+          <button
+            type="button"
+            className="kpi-panel-flap"
+            onClick={() => onChangePanelState({ colapsado: !colapsado })}
+            aria-expanded={!colapsado}
+            title={colapsado ? tx("expand_panel", "Expandir") : tx("collapse_panel", "Colapsar")}
+          >
+            {colapsado && <span>{tituloPanel}</span>}
+            {colapsado ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
+          </button>
+        </div>
       </header>
 
+      {!colapsado && (
       <form onSubmit={handleSubmit}>
         {kpiCatalog.length === 0 ? (
           <div className="empty">
@@ -1247,63 +1941,36 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
               )}
               {(!necesitaCategoria || categoriaKpi) && (
                 <div className="kpi-chip-option-group">
-                  {(necesitaCategoria ? kpisPorModulo.get(categoriaKpi) || [] : kpiCatalog).map((kpi) => {
-                    const idStr = String(kpi.id_kpi_definition);
-                    const posicion = idsKpiSeleccionados.indexOf(idStr);
-                    // El swatch de color solo tiene sentido cuando este KPI ya
-                    // esta seleccionado Y el tipo de grafica activo de verdad
-                    // pinta un color por KPI (barras/linea/area) -- en
-                    // "numero"/"dona" el color no depende del KPI, no hay nada
-                    // que este swatch pudiera cambiar.
-                    const puedeElegirColor = multiKpiPermitido && posicion >= 0;
-                    return (
-                      <div className="kpi-chip-with-swatch" key={kpi.id_kpi_definition}>
-                        <button
-                          type="button"
-                          className={`kpi-chip-option ${posicion >= 0 ? "active" : ""}`}
-                          onClick={() => toggleKpi(idStr)}
-                        >
-                          {multiKpiPermitido && posicion >= 0 && <span className="kpi-chip-badge">{posicion + 1}</span>}
-                          {kpi.etiqueta || kpi.clave}
-                        </button>
-                        {puedeElegirColor && (
-                          <div className="kpi-color-swatch-wrap">
-                            <button
-                              type="button"
-                              className="kpi-color-swatch"
-                              style={{ background: colorEfectivoDeKpi(idStr, coloresKpi) }}
-                              onClick={() => setSwatchAbierto((actual) => (actual === idStr ? null : idStr))}
-                              title={tx("kpi_color_choose", "Elegir color")}
-                              aria-label={tx("kpi_color_choose", "Elegir color")}
-                              aria-expanded={swatchAbierto === idStr}
-                            />
-                            {swatchAbierto === idStr && (
-                              <div className="kpi-color-popover" role="menu">
-                                {CATEGORICAL.map((color) => {
-                                  const activo = colorEfectivoDeKpi(idStr, coloresKpi) === color;
-                                  return (
-                                    <button
-                                      type="button"
-                                      key={color}
-                                      className={`kpi-color-option ${activo ? "active" : ""}`}
-                                      style={{ background: color }}
-                                      onClick={() => elegirColorKpi(idStr, color)}
-                                      aria-label={color}
-                                      role="menuitemradio"
-                                      aria-checked={activo}
-                                    />
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                  {(necesitaCategoria ? kpisPorModulo.get(categoriaKpi) || [] : kpisFijos).map(renderKpiChip)}
                 </div>
               )}
             </div>
+
+            {kpisVariables.length > 0 && (
+              <div className="kpi-picker-section">
+                <KpiDropdownPicker
+                  label={
+                    variablesSeleccionadas.length > 0
+                      ? tx("kpi_variables_selected_count", `${variablesSeleccionadas.length} variable(s) seleccionada(s)`)
+                      : tx("kpi_variables", "Variables (para combinar en un mismo gráfico)")
+                  }
+                  searchPlaceholder={tx("dropdown_search_placeholder", "Buscar...")}
+                  renderOptions={(filtro) => {
+                    const variablesFiltradas = filtro
+                      ? kpisVariables.filter((kpi) => normalizarBusqueda(kpi.etiqueta || kpi.clave).includes(filtro))
+                      : kpisVariables;
+                    if (variablesFiltradas.length === 0) {
+                      return <p className="kpi-dropdown-picker-empty">{tx("no_results", "Sin resultados")}</p>;
+                    }
+                    return (
+                      <div className="kpi-chip-option-group">
+                        {variablesFiltradas.map(renderKpiChip)}
+                      </div>
+                    );
+                  }}
+                />
+              </div>
+            )}
             </div>
 
             <div className="kpi-panel-col">
@@ -1322,6 +1989,41 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
                 ))}
               </div>
             </div>
+
+            {idsKpiSeleccionados.length > 0 && primeraDimension !== "global" && (
+              <div className="kpi-picker-section">
+                <span>{tx("group_by", "Agrupar por")}</span>
+                <div className="kpi-icon-option-group">
+                  <button
+                    type="button"
+                    className={`kpi-chip-option ${agruparPor === "entidad" ? "active" : ""}`}
+                    onClick={() => onChangePanelState({ agruparPor: "entidad" })}
+                  >
+                    {primeraDimension === "producto" ? tx("group_by_product", "Producto") : tx("group_by_employee", "Empleado")}
+                  </button>
+                  <button
+                    type="button"
+                    className={`kpi-chip-option ${agruparPor === "periodo" ? "active" : ""}`}
+                    onClick={() => onChangePanelState({ agruparPor: "periodo" })}
+                  >
+                    {tx("group_by_period", "Periodo (tendencia)")}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {tieneBajoStockSeleccionado && (
+              <label className="field">
+                <span>{tx("umbral_bajo_stock", "Umbral de stock bajo")}</span>
+                <input
+                  type="number"
+                  min="0"
+                  value={umbralBajoStock}
+                  onChange={(event) => onChangePanelState({ umbralBajoStock: event.target.value })}
+                  placeholder={tx("umbral_bajo_stock_placeholder", "Ej. 10")}
+                />
+              </label>
+            )}
 
             <div className="form-grid">
               <label className="field">
@@ -1368,20 +2070,44 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
             <div className="kpi-panel-col">
             {users.length > 0 && (
               <div className="kpi-employee-picker">
-                <span className="kpi-employee-picker-label">{tx("employees_filter", "Filtrar por empleados (opcional)")}</span>
-                <div className="kpi-employee-list">
-                  {users.map((user) => (
-                    <label className="kpi-employee-chip" key={user.id_user}>
-                      <input
-                        type="checkbox"
-                        checked={empleadosSeleccionados.includes(String(user.id_user))}
-                        onChange={() => toggleEmpleado(String(user.id_user))}
-                      />
-                      <EmployeeAvatar size="small" />
-                      <span>{user.full_name || user.username || `#${user.id_user}`}</span>
-                    </label>
-                  ))}
-                </div>
+                <KpiDropdownPicker
+                  label={
+                    empleadosSeleccionados.length > 0
+                      ? tx("employees_selected_count", `${empleadosSeleccionados.length} empleado(s) seleccionado(s)`)
+                      : tx("employees_filter", "Filtrar por empleados (opcional)")
+                  }
+                  searchPlaceholder={tx("dropdown_search_placeholder", "Buscar...")}
+                  renderOptions={(filtro) => {
+                    const usuariosFiltrados = filtro
+                      ? users.filter((user) => normalizarBusqueda(user.full_name || user.username || `#${user.id_user}`).includes(filtro))
+                      : users;
+                    if (usuariosFiltrados.length === 0) {
+                      return <p className="kpi-dropdown-picker-empty">{tx("no_results", "Sin resultados")}</p>;
+                    }
+                    return (
+                      <div className="kpi-employee-list">
+                        {usuariosFiltrados.map((user) => {
+                          const activo = empleadosSeleccionados.includes(String(user.id_user));
+                          const colorEmpleado = colorDeKpi(user.id_user);
+                          return (
+                            <button
+                              type="button"
+                              className={`kpi-employee-chip ${activo ? "active" : ""}`}
+                              key={user.id_user}
+                              style={{ "--employee-color": colorEmpleado }}
+                              onClick={() => toggleEmpleado(String(user.id_user))}
+                              aria-pressed={activo}
+                              title={user.full_name || user.username || `#${user.id_user}`}
+                            >
+                              <EmployeeAvatar size="small" color={colorEmpleado} />
+                              <span>{user.full_name || user.username || `#${user.id_user}`}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  }}
+                />
               </div>
             )}
 
@@ -1399,6 +2125,18 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
                       <span>{department.department_description || `#${department.id_department}`}</span>
                     </label>
                   ))}
+                  {/* SOLO VISUAL: ver DEPARTAMENTOS_VISUALES arriba -- no
+                      filtran nada, no estan conectados a
+                      Permission.id_department ni a ninguna tabla real. */}
+                  {DEPARTAMENTOS_VISUALES.map((nombre) => (
+                    <span
+                      className="kpi-department-chip visual-only"
+                      key={nombre}
+                      title={tx("department_visual_only", "Próximamente: todavía no filtra datos reales")}
+                    >
+                      {nombre}
+                    </span>
+                  ))}
                 </div>
               </div>
             )}
@@ -1411,9 +2149,14 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
 
         <footer>
           <button type="button" className="button" onClick={onCancel}>{t("common.cancel")}</button>
-          {kpiCatalog.length > 0 && <button type="submit" className="button primary" disabled={saving}>{t("common.save")}</button>}
+          {kpiCatalog.length > 0 && (
+            <button type="submit" className="button primary" disabled={saving}>
+              {editingWidgetId ? tx("update_widget", "Actualizar") : tx("add_widget", "Agregar gráfico")}
+            </button>
+          )}
         </footer>
       </form>
+      )}
     </section>
   );
 }

@@ -15,6 +15,7 @@ from sqlalchemy import select
 
 from app.models.customer_supplier import CustomerSupplier
 from app.models.invoice import Invoice
+from app.models.invoice_folio_counter import InvoiceFolioCounter
 from app.models.invoice_material_service import InvoiceMaterialService
 from app.models.stamping_operation import StampingOperation
 from app.models.session import transaction_context
@@ -605,6 +606,67 @@ def configured_provider():
     raise ValueError("Unsupported STAMPING_PROVIDER")
 
 
+def _max_folio_ya_usado(db, id_customer_supplier) -> int:
+    """Mayor folio numerico ya usado por esta empresa emisora, o 0 si ninguno.
+
+    Un cliente con datos migrados o con folios capturados a mano antes de
+    que existiera este contador (torredigital-prod es un caso real
+    confirmado: folios '1'-'11' ya en uso para su emisor principal) no debe
+    recibir un contador que arranque en 1 a ciegas -chocaria de inmediato
+    con esos folios ya existentes-.
+    """
+    folios = db.scalars(
+        select(Invoice.folio).where(
+            Invoice.id_issuer_customer_supplier == id_customer_supplier,
+            Invoice.folio.isnot(None),
+        )
+    ).all()
+    numericos = [int(f) for f in folios if str(f).strip().isdigit()]
+    return max(numericos, default=0)
+
+
+def _next_folio(db, id_customer_supplier) -> int:
+    """Siguiente numero de folio para esta empresa emisora, sin repetir.
+
+    `with_for_update()` bloquea la fila del contador mientras dura esta
+    transaccion: si dos timbrados de la misma empresa entran a la vez, el
+    segundo espera a que el primero termine de incrementar en vez de leer el
+    mismo numero. En SQLite (solo pruebas) el lock no existe -no hace falta,
+    las pruebas no timbran de verdad en paralelo-.
+    """
+    counter = (
+        db.query(InvoiceFolioCounter)
+        .filter(InvoiceFolioCounter.id_customer_supplier == id_customer_supplier)
+        .with_for_update()
+        .first()
+    )
+    if counter is None:
+        inicio = _max_folio_ya_usado(db, id_customer_supplier) + 1
+        counter = InvoiceFolioCounter(id_customer_supplier=id_customer_supplier, next_folio=inicio)
+        db.add(counter)
+        db.flush()
+    folio = counter.next_folio
+    counter.next_folio = folio + 1
+    db.flush()
+    return folio
+
+
+def next_folio_if_missing(db, invoice) -> None:
+    """Asigna folio consecutivo por empresa emisora, solo si nadie capturo uno.
+
+    Comparado contra cotizador_demo (el sistema anterior de un cliente
+    real): alla el timbrado siempre asigna un folio consecutivo real. Aqui
+    `invoice.folio` era texto libre sin ningun control -cualquiera podia
+    repetir numeros o dejarlo vacio-. No se sobreescribe un folio que ya
+    trae dato (captura manual, dato migrado de un sistema anterior): el
+    control automatico es para el caso comun, no para forzar un valor sobre
+    quien de verdad necesita el suyo.
+    """
+    if str(invoice.folio or "").strip():
+        return
+    invoice.folio = str(_next_folio(db, invoice.id_issuer_customer_supplier))
+
+
 def _load_draft(db, invoice_id, user_data):
     """Carga la factura, sus partidas autorizadas y arma el borrador CFDI."""
     invoice = db.get(Invoice, invoice_id)
@@ -700,6 +762,11 @@ def stamp_invoice(invoice_id, idempotency_key, user_data, provider=None):
             if previous.id_invoice != int(invoice_id):
                 raise AppError("errors.idempotency_conflict", 409)
             return previous.serialize(), False
+
+        pending_invoice = db.get(Invoice, invoice_id)
+        if not pending_invoice:
+            raise AppError("errors.resource_not_found", 404)
+        next_folio_if_missing(db, pending_invoice)
 
         invoice, draft = _load_draft(db, invoice_id, user_data)
         review = inspect_draft(draft)

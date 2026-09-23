@@ -315,9 +315,7 @@ class TaskInput(graphene.InputObjectType):
     duration = graphene.Float()
     type = graphene.String()
     owner = graphene.Int()
-    analyst = graphene.Int()
     dependency = graphene.Int()
-    leader = graphene.Int()
     validation = graphene.Int()
     task_description = graphene.String()
     estimated_effort = graphene.String()
@@ -487,7 +485,10 @@ class EntityPermissionInput(graphene.InputObjectType):
     """Create/update payload for entity_permission."""
     id_permission = graphene.Int()
     entity_name = graphene.String()
-    control_type = graphene.String()
+    scope_create = graphene.Int()
+    scope_read = graphene.Int()
+    scope_update = graphene.Int()
+    scope_delete = graphene.Int()
     created_by = graphene.Int()
 
 class InventoryStatusInput(graphene.InputObjectType):

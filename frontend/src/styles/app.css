@@ -211,3 +211,42 @@ label:has(:is(input,select,textarea):required)::before,label:has(+ :is(input,sel
   .main{width:100%;padding-top:66px}
 }
 .field-permission-name{display:flex;flex-direction:column;gap:2px;min-width:0}.field-permission-meta{color:#64748b;font-weight:600;font-size:11px;word-break:break-word}
+
+/* Alcance por accion (Sin acceso/Propios/Mis grupos/Todos) en el gestor de
+   roles y permisos: un punto de color a la izquierda del select, uno por
+   nivel, para que el color del bloque de arriba en el mockup sobreviva a un
+   <select> nativo sin depender de una libreria de UI nueva. */
+.scope-select{display:inline-flex;align-items:center;gap:6px}
+.scope-select select{border:1px solid #d8d2c4;border-radius:6px;padding:4px 8px;font-size:13px;background:#fff}
+.scope-dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
+.scope-dot-none .scope-dot{background:#94a3b8}
+.scope-dot-own .scope-dot{background:#2563eb}
+.scope-dot-groups .scope-dot{background:#9333ea}
+.scope-dot-all .scope-dot{background:#16a34a}
+
+/* Gestor de equipos (TeamManagerPage): lista de equipos + editor de
+   membresia lado a lado, mismo patron de tarjetas que el resto del panel de
+   administracion. */
+.team-manager-workspace{display:grid;grid-template-columns:minmax(240px,320px) 1fr;gap:16px;align-items:start}
+.team-list{display:flex;flex-direction:column;gap:6px}
+.team-list-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border-radius:8px;border:1px solid transparent;cursor:pointer}
+.team-list-row:hover{background:#f4f1ea}
+.team-list-row.selected-row{border-color:#173b66;background:#eef2fb}
+.team-member-columns{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.team-member-column h4{margin:0 0 8px}
+.team-member-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border-radius:6px}
+.team-member-row:hover{background:#f4f1ea}
+@media(max-width:900px){
+  .team-manager-workspace{grid-template-columns:1fr}
+  .team-member-columns{grid-template-columns:1fr}
+}
+.field-static{margin:0;padding:8px 10px;background:#f4f1ea;border-radius:6px;color:#3a3630}
+.project-attachments{display:flex;flex-direction:column;gap:8px;margin:12px 0}
+.project-attachment-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;border-radius:6px;background:#f4f1ea}
+.project-attachment-upload{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.kpi-permission-group{display:flex;flex-direction:column;gap:8px}
+.kpi-permission-group h4{margin:8px 0 0;color:#334155}
+.kpi-permission-group:first-child h4{margin-top:0}
+.kpi-permission-header,.kpi-permission-row{display:grid;grid-template-columns:minmax(0,1fr) 70px;align-items:center;gap:10px}
+.kpi-permission-header{font-size:12px;text-transform:uppercase;color:#64748b;font-weight:800}
+.kpi-permission-row{border:1px solid #e2e8f0;border-radius:14px;padding:10px 12px;background:#fff}

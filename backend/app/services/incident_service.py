@@ -61,7 +61,7 @@ def supervises_incidents(db, user_data) -> bool:
         .first()
     )
     try:
-        return bool(record and int(record.control_type) & READ_BIT)
+        return bool(record and int(record.scope_read) != 0)
     except (TypeError, ValueError):
         return False
 

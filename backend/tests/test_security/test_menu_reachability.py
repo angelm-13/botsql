@@ -106,7 +106,7 @@ class TestElInventarioSeAlcanzaDesdeElMenu(unittest.TestCase):
         """Dos "Movimientos" seguidos obligan a abrir los dos para saber cual es cual."""
         por_grupo: dict[str, collections.Counter] = collections.defaultdict(
             collections.Counter)
-        for _, entidad, _, ubicacion, grupo, _, etiqueta, _, _ in filas_de_permisos():
+        for (_, entidad, _, _, _, _, ubicacion, grupo, _, etiqueta, _, _) in filas_de_permisos():
             if ubicacion == "sidebar" and etiqueta:
                 # Se cuentan entidades distintas, no filas: la misma entidad
                 # aparece una vez por rol y eso no es una repeticion.

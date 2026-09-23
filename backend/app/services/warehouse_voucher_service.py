@@ -989,8 +989,15 @@ def _renglones_con_contexto(db, filas) -> list[dict]:
             # no una por renglon.
             "voucher_note": getattr(vale, "note", None),
             "voucher_type": getattr(tipo, "incident_type_description", None),
-            "voucher_creation_date": (vale.creation_date.isoformat()
-                                      if vale and vale.creation_date else None),
+            # `incident.creation_date` de respaldo cuando falta: la columna
+            # es NOT NULL en el modelo, pero algunos vales reales quedan con
+            # ella en null (desajuste entre el modelo y la base, no algo que
+            # dependa de esta consulta). `incident_date` -la fecha de negocio
+            # del vale, siempre presente- responde la misma pregunta.
+            "voucher_creation_date": (
+                (vale.creation_date or vale.incident_date).isoformat()
+                if vale and (vale.creation_date or vale.incident_date) else None
+            ),
             "voucher_close_date": (vale.close_date.isoformat()
                                    if vale and vale.close_date else None),
         })
@@ -1272,6 +1279,200 @@ def buscar_vales(user_data: dict, *, texto=None, estado=None, id_user=None,
             "pages": paginas,
             "scoped_to_actor": not _ve_todo_el_almacen(db, user_data),
         }
+
+
+# --- los 4 reportes que ya usaba Adser en el sistema anterior ------------
+#
+# El sistema anterior (adser-almacen.torredigital.mx) ya tenia estos 4
+# reportes; aqui se replican sobre `nm_incident_product` + `incident`, que es
+# donde vive el mismo dato en este sistema. Los cuatro comparten renglon y
+# columnas (codigo, descripcion, estado, solicitante, fecha de creacion, fecha
+# de cierre) -- solo cambia el criterio de agrupacion, salvo el de pendientes,
+# que es una lista plana a proposito.
+#
+# El sentinela heredado
+# ----------------------
+# `close_date` en los vales migrados de Adser NO es NULL cuando un renglon
+# sigue abierto: es `1990-01-01`, el mismo sentinela que
+# `migrate_adser.py` SI limpio en `product.fecha_baja` (via
+# `normalizar_fecha()`, en `migration_toolkit.py`) pero que se le olvido pasar
+# a `migrar_incident`/`migrar_nm_incident_product`. Se lee bien aqui -- NULL o
+# el sentinela cuentan igual como "sin cerrar" -- sin tocar el dato ni el resto
+# del modulo (`vales_vencidos`, `_estado_derivado`, etc. siguen comparando solo
+# contra NULL; ese es un problema aparte, ya en produccion, que no se corrige
+# en esta tarea).
+CIERRE_SENTINELA = datetime(1990, 1, 1)
+
+
+def _sin_cerrar(fecha_cierre) -> bool:
+    return fecha_cierre is None or fecha_cierre == CIERRE_SENTINELA
+
+
+def _rango_de_fechas(fecha_inicio, fecha_fin):
+    inicio = _fecha(fecha_inicio) if fecha_inicio else None
+    fin = _fecha(fecha_fin) if fecha_fin else None
+    return (inicio.date() if inicio else None, fin.date() if fin else None)
+
+
+def _estado_del_renglon(direction, tipo_descripcion) -> str:
+    """Danado/Destruccion pisan a Entrada/Salida cuando el VALE es de ese
+    tipo: ahi lo que importa no es si el material entro o salio, es lo que le
+    paso. El catalogo real trae "Destruccion" y "Dañado" (`incident_type`,
+    ids 8 y 9 en lo migrado de Adser) -- se usa la descripcion tal como esta
+    en la base, no una constante propia, para no desincronizarse del catalogo.
+    """
+    especial = str(tipo_descripcion or "").strip().lower()
+    if especial in ("destruccion", "dañado"):
+        return str(tipo_descripcion).strip()
+    return "Entrada" if str(direction or "").lower() == ENTRADA else "Salida"
+
+
+def _renglones_de_reporte(db, *, fecha_inicio=None, fecha_fin=None, id_user=None,
+                          solo_salidas_abiertas=False, user_data=None) -> list[dict]:
+    """Los renglones de vale con las 6 columnas de los 4 reportes, en una sola
+    consulta -- el patron de todo este archivo, y no una por renglon: esto lee
+    sobre lo migrado de Adser, ~2 787 renglones.
+
+    El "proyecto/almacen" de un vale no sale de `incident.id_proyect` ni de
+    `nm_incident_product.id_location_*` -- estan en NULL en el 100% de lo
+    migrado de Adser, verificado contra la base real. Vive en `incident.note`,
+    texto libre ("ALUMINIUM-EXPANCION DE NAVE", "APELSA") capturado al abrir
+    el vale en el sistema anterior. Se agrupa por ese texto recortado
+    (`strip()`), sin tocar mayusculas ni ortografia: es la normalizacion
+    minima que no fusiona ni separa de mas.
+    """
+    consulta = (
+        select(NmIncidentProduct, Incident, Product, IncidentType, User)
+        .select_from(NmIncidentProduct)
+        .join(Incident, Incident.id_incident == NmIncidentProduct.id_incident)
+        .join(Product, Product.id_product == NmIncidentProduct.id_product)
+        .outerjoin(IncidentType,
+                   IncidentType.id_incident_type == Incident.id_incident_type)
+        .outerjoin(User, User.id_user == Incident.id_user)
+        .where(
+            NmIncidentProduct.deletion_date.is_(None),
+            Incident.deletion_date.is_(None),
+        )
+    )
+
+    inicio, fin = _rango_de_fechas(fecha_inicio, fecha_fin)
+    fecha_col = func.date(Incident.incident_date)
+    if inicio is not None:
+        consulta = consulta.where(fecha_col >= inicio)
+    if fin is not None:
+        consulta = consulta.where(fecha_col <= fin)
+
+    # El alcance es el mismo que el resto del modulo: quien opera el almacen
+    # ve todo; quien solo pide material ve lo suyo (ver `_ve_todo_el_almacen`).
+    pedido = _entero(id_user, "id_user", obligatorio=False)
+    if user_data is not None and not _ve_todo_el_almacen(db, user_data):
+        pedido = _actor(user_data)
+    if pedido is not None:
+        consulta = consulta.where(Incident.id_user == pedido)
+
+    if solo_salidas_abiertas:
+        consulta = consulta.where(
+            NmIncidentProduct.direction == SALIDA,
+            or_(NmIncidentProduct.close_date.is_(None),
+                NmIncidentProduct.close_date == CIERRE_SENTINELA),
+        )
+
+    filas = db.execute(
+        consulta.order_by(Incident.incident_date,
+                          NmIncidentProduct.id_nm_incident_product)
+    ).all()
+
+    salida = []
+    for renglon, vale, producto, tipo, usuario in filas:
+        salida.append({
+            "id_nm_incident_product": renglon.id_nm_incident_product,
+            "id_incident": vale.id_incident,
+            "folio": vale.external_folio or str(vale.id_incident),
+            "product_code": producto.product_code,
+            "product_description": producto.descripcion,
+            "status": _estado_del_renglon(
+                renglon.direction,
+                getattr(tipo, "incident_type_description", None)),
+            "requester": getattr(usuario, "full_name", None),
+            "id_user": vale.id_user,
+            "project_or_site": (vale.note or "").strip() or None,
+            "creation_date": (vale.incident_date.isoformat()
+                              if vale.incident_date else None),
+            "close_date": (None if _sin_cerrar(renglon.close_date)
+                          else renglon.close_date.isoformat()),
+        })
+    return salida
+
+
+def _agrupar(renglones, clave, *, sin_grupo):
+    """Los renglones agrupados por `clave`, en el orden en que aparece cada
+    grupo por primera vez -- no alfabetico: es el mismo orden cronologico de
+    la consulta (`incident_date`), que es como se lee un reporte de almacen.
+    """
+    grupos: dict = {}
+    orden = []
+    for renglon in renglones:
+        llave = clave(renglon) or sin_grupo
+        if llave not in grupos:
+            grupos[llave] = []
+            orden.append(llave)
+        grupos[llave].append(renglon)
+    return [{"group": llave, "items": grupos[llave], "total": len(grupos[llave])}
+            for llave in orden]
+
+
+def reporte_por_producto(user_data, *, fecha_inicio=None, fecha_fin=None,
+                         id_user=None) -> dict:
+    """a) Vales agrupados por codigo de producto."""
+    _actor(user_data)
+    with transaction_context() as db:
+        renglones = _renglones_de_reporte(
+            db, fecha_inicio=fecha_inicio, fecha_fin=fecha_fin,
+            id_user=id_user, user_data=user_data)
+    grupos = _agrupar(renglones, lambda r: r["product_code"],
+                      sin_grupo="(sin codigo)")
+    return {"groups": grupos, "total_items": len(renglones)}
+
+
+def reporte_por_almacen(user_data, *, fecha_inicio=None, fecha_fin=None,
+                        id_user=None) -> dict:
+    """b) Vales agrupados por proyecto/sitio (`incident.note` recortado --
+    ver el docstring de `_renglones_de_reporte` para por que ahi y no en
+    `id_proyect` ni en `location`)."""
+    _actor(user_data)
+    with transaction_context() as db:
+        renglones = _renglones_de_reporte(
+            db, fecha_inicio=fecha_inicio, fecha_fin=fecha_fin,
+            id_user=id_user, user_data=user_data)
+    grupos = _agrupar(renglones, lambda r: r["project_or_site"],
+                      sin_grupo="(sin proyecto)")
+    return {"groups": grupos, "total_items": len(renglones)}
+
+
+def reporte_por_persona(user_data, *, fecha_inicio=None, fecha_fin=None,
+                        id_user=None) -> dict:
+    """d) Vales agrupados por solicitante/responsable."""
+    _actor(user_data)
+    with transaction_context() as db:
+        renglones = _renglones_de_reporte(
+            db, fecha_inicio=fecha_inicio, fecha_fin=fecha_fin,
+            id_user=id_user, user_data=user_data)
+    grupos = _agrupar(renglones, lambda r: r["requester"],
+                      sin_grupo="(sin responsable)")
+    return {"groups": grupos, "total_items": len(renglones)}
+
+
+def reporte_vales_pendientes(user_data, *, fecha_inicio=None, fecha_fin=None,
+                             id_user=None) -> dict:
+    """c) Lista plana de renglones de SALIDA sin cerrar -- NULL o el
+    sentinela heredado (ver CIERRE_SENTINELA). A proposito sin agrupar: es
+    la lista de "huecos" que se revisa de corrido, no un resumen."""
+    _actor(user_data)
+    with transaction_context() as db:
+        renglones = _renglones_de_reporte(
+            db, fecha_inicio=fecha_inicio, fecha_fin=fecha_fin,
+            id_user=id_user, solo_salidas_abiertas=True, user_data=user_data)
+    return {"items": renglones, "total": len(renglones)}
 
 
 # --- el vale en papel ----------------------------------------------------
@@ -1558,3 +1759,74 @@ def pdf_del_vale(id_incident, user_data: dict, *, storage=None) -> bytes:
             generated_by=actor_id,
         ))
     return pdf
+
+
+def documento_del_historial_de_persona(user_data: dict, id_user=None) -> dict:
+    """La ficha que la plantilla del PDF del historial de un empleado pinta.
+
+    Reusa `lo_que_ha_pedido` en lugar de volver a consultar: el PDF tiene que
+    decir exactamente lo mismo que el modal `EmployeeVoucherHistory` en
+    pantalla -- mismas filas, mismo orden, mismo criterio de "vencido" --,
+    el mismo principio que ya sigue `documento_del_vale` con la pantalla del
+    vale.
+
+    Agrupado por proyecto (la nota del vale), con el mismo criterio y la
+    misma etiqueta de respaldo que `reporte_por_almacen` -- "(sin
+    proyecto)" -- para que un empleado con 270 renglones se lea por obra,
+    como ya lo mostraba el sistema anterior, y no como una lista plana sin
+    mas orden que la fecha.
+    """
+    datos = lo_que_ha_pedido(user_data, id_user)
+
+    with transaction_context() as db:
+        nombre = _persona(db, datos["id_user"])
+
+    renglones = [{
+        "fecha": _solo_fecha(r.get("start_date")),
+        "descripcion": r.get("product_description") or "Producto %s" % r.get("id_product"),
+        "codigo": r.get("product_code"),
+        "cantidad": r.get("quantity"),
+        "pieza": r.get("id_inventory_asset"),
+        "vale_folio": r.get("voucher_folio") or r.get("id_incident"),
+        "id_incident": r.get("id_incident"),
+        "devuelto": bool(r.get("returned")),
+        "cierre": _solo_fecha(r.get("close_date")),
+        "vencido": bool(r.get("overdue")),
+        "_proyecto": (r.get("voucher_note") or "").strip() or None,
+    } for r in datos["items"]]
+
+    # "renglones" y "titulo", no "items"/"group": un dict con clave "items"
+    # es la trampa clasica de Jinja2 -- `grupo.items` en la plantilla
+    # resuelve al METODO `dict.items` (attribute lookup gana sobre getitem),
+    # no a esta lista, y el `for` truena con "object is not iterable" en vez
+    # de con un error de clave faltante. `_agrupar` devuelve "group"/"items"
+    # porque los otros 3 reportes los consumen como JSON, no como plantilla.
+    grupos = [
+        {"titulo": g["group"], "renglones": g["items"]}
+        for g in _agrupar(renglones, lambda r: r["_proyecto"],
+                          sin_grupo="(sin proyecto)")
+    ]
+
+    return {
+        "id_user": datos["id_user"],
+        "empleado": nombre or ("#%s" % datos["id_user"]),
+        "total": datos["total"],
+        "still_out": datos["still_out"],
+        "overdue": datos["overdue"],
+        "grupos": grupos,
+    }
+
+
+def pdf_del_historial_de_persona(user_data: dict, id_user=None) -> bytes:
+    """El historial de prestamos de un empleado en PDF, como lo tenia el
+    sistema anterior.
+
+    A diferencia de `pdf_del_vale`, no se archiva como version de `document`:
+    no es un papel que alguien firma en un momento dado, es un reporte de
+    consulta que cambia cada vez que la persona pide o devuelve algo -- se
+    regenera al vuelo en cada descarga, igual que los otros 4 reportes de
+    almacen (`reporte_por_*`), que tampoco archivan nada.
+    """
+    ficha = documento_del_historial_de_persona(user_data, id_user)
+    return _motor_de_documentos().render_pdf_bytes(
+        "warehouse_voucher_history", ficha)

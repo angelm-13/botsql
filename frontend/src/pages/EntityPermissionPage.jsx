@@ -2,12 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
 import { getAllEntityPermission, createEntityPermission, updateEntityPermission, deleteEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getPermissionCatalog, getAllPermission } from "../api";
+import { fetchAllPages } from "../utils/fetchAllPages";
 import Pagination from "../components/Pagination.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 
-const emptyForm = { id_permission: "", entity_name: "", control_type: "" };
+const emptyForm = { id_permission: "", entity_name: "", scope_create: "", scope_read: "", scope_update: "", scope_delete: "" };
 const validationRules = allValidationRules["entity_permission"] || {};
 const ENTITY_KEY = "entity_permission";
 const ACTION_CREATE = 1;
@@ -15,7 +16,14 @@ const ACTION_READ = 2;
 const ACTION_UPDATE = 4;
 const ACTION_DELETE = 8;
 const FIELD_VISIBLE_BIT = 2;
-const ALL_FIELD_NAMES = ['id_entity_permission', 'id_permission', 'entity_name', 'control_type', 'created_by', 'creation_date', 'last_update_date', 'deletion_date'];
+const SCOPE_FIELD_BY_BIT = { [ACTION_CREATE]: "scope_create", [ACTION_READ]: "scope_read", [ACTION_UPDATE]: "scope_update", [ACTION_DELETE]: "scope_delete" };
+const SCOPE_OPTIONS = [
+  { value: 0, label: "Sin acceso" },
+  { value: 1, label: "Propios" },
+  { value: 2, label: "Mis grupos" },
+  { value: 4, label: "Todos" },
+];
+const ALL_FIELD_NAMES = ['id_entity_permission', 'id_permission', 'entity_name', 'scope_create', 'scope_read', 'scope_update', 'scope_delete', 'created_by', 'creation_date', 'last_update_date', 'deletion_date'];
 
 function hasBit(value, bit) {
   return (Number(value || 0) & bit) === bit;
@@ -118,7 +126,7 @@ export default function EntityPermissionPage() {
   useEffect(() => {
     async function loadRolePermissions() {
       if (isSuperUser) {
-        setModulePermission({ control_type: 15 });
+        setModulePermission({ scope_create: 4, scope_read: 4, scope_update: 4, scope_delete: 4 });
         setVisibleFieldNames(new Set(ALL_FIELD_NAMES));
         setPermissionReady(true);
         return;
@@ -131,9 +139,9 @@ export default function EntityPermissionPage() {
       }
       try {
         const [entityPermissionData, fieldPermissionData, fieldData] = await Promise.all([
-          getAllEntityPermission({ per_page: 5000 }),
-          getAllNmFieldPermission({ per_page: 5000 }),
-          getAllField({ per_page: 5000 })
+          fetchAllPages(getAllEntityPermission),
+          fetchAllPages(getAllNmFieldPermission),
+          fetchAllPages(getAllField)
         ]);
         const entityPermissions = normalizeList(entityPermissionData);
         const fieldPermissions = normalizeList(fieldPermissionData);
@@ -169,7 +177,7 @@ export default function EntityPermissionPage() {
 
   function canUseAction(bit) {
     if (isSuperUser) return true;
-    return hasBit(modulePermission?.control_type, bit);
+    return Number(modulePermission?.[SCOPE_FIELD_BY_BIT[bit]] || 0) !== 0;
   }
 
   function canSeeField(fieldName) {
@@ -382,16 +390,10 @@ export default function EntityPermissionPage() {
     return t(`menu.${entityName}`, fallback || entityName);
   }
 
-  function formatControlTypeLabel(value) {
-    const numeric = Number(value);
-    const labels = [];
-    if ((numeric & 1) === 1) labels.push(t("common.create", "Crear"));
-    if ((numeric & 2) === 2) labels.push(t("common.read", "Leer"));
-    if ((numeric & 4) === 4) labels.push(t("common.update", "Actualizar"));
-    if ((numeric & 8) === 8) labels.push(t("common.delete", "Eliminar"));
-    if (!labels.length) return String(value ?? "");
-    const description = numeric === 15 ? t("common.crud_full", "CRUD completo") : labels.join(" + ");
-    return `${numeric} - ${description}`;
+  function formatScopeLabel(value) {
+    const numeric = Number(value ?? 0);
+    const known = SCOPE_OPTIONS.find((option) => option.value === numeric);
+    return known ? `${numeric} - ${t(`common.scope_${known.label === "Sin acceso" ? "none" : known.label === "Propios" ? "own" : known.label === "Mis grupos" ? "groups" : "all"}`, known.label)}` : String(value ?? "");
   }
 
   function renderError() {
@@ -417,7 +419,7 @@ export default function EntityPermissionPage() {
   const filtered = items;
 
   const groups = useMemo(() => filtered.reduce((acc, item) => {
-    const key = String(item.control_type ?? t("common.unclassified"));
+    const key = String(item.entity_name ?? t("common.unclassified"));
     acc[key] = acc[key] || []; acc[key].push(item); return acc;
   }, {}), [filtered, lang]);
 
@@ -466,18 +468,18 @@ export default function EntityPermissionPage() {
             {fieldErrors["entity_name"] && <span className="field-error">{formatFieldError("entity_name")}</span>}
           </label>
           )}
-          {canSeeField("control_type") && (
-          <label className="field">
-            <span>{t("fields.entity_permission.control_type")}</span>
-            <select name="control_type" value={formData.control_type ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors["control_type"])} {...inputPropsForField("control_type", validationRules["control_type"], "select")}>
+          {["scope_create", "scope_read", "scope_update", "scope_delete"].map((scopeField) => canSeeField(scopeField) && (
+          <label className="field" key={scopeField}>
+            <span>{t(`fields.entity_permission.${scopeField}`)}</span>
+            <select name={scopeField} value={formData[scopeField] ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors[scopeField])} {...inputPropsForField(scopeField, validationRules[scopeField], "select")}>
               <option value="">{t("common.select_option", "Selecciona una opción")}</option>
-              {[1, 2, 3, 4, 6, 8, 10, 14, 15].map((value) => (
-                <option key={value} value={String(value)}>{formatControlTypeLabel(value)}</option>
+              {SCOPE_OPTIONS.map((option) => (
+                <option key={option.value} value={String(option.value)}>{formatScopeLabel(option.value)}</option>
               ))}
             </select>
-            {fieldErrors["control_type"] && <span className="field-error">{formatFieldError("control_type")}</span>}
+            {fieldErrors[scopeField] && <span className="field-error">{formatFieldError(scopeField)}</span>}
           </label>
-          )}
+          ))}
         </div>
         <div className="form-actions">
           <button className="button primary" type="submit">{t("common.save")}</button>
@@ -505,7 +507,10 @@ export default function EntityPermissionPage() {
               {canSeeField("id_entity_permission") && <th>{t("fields.entity_permission.id_entity_permission")}</th>}
               {canSeeField("id_permission") && <th>{t("fields.entity_permission.id_permission")}</th>}
               {canSeeField("entity_name") && <th>{t("fields.entity_permission.entity_name")}</th>}
-              {canSeeField("control_type") && <th>{t("fields.entity_permission.control_type")}</th>}
+              {canSeeField("scope_create") && <th>{t("fields.entity_permission.scope_create")}</th>}
+              {canSeeField("scope_read") && <th>{t("fields.entity_permission.scope_read")}</th>}
+              {canSeeField("scope_update") && <th>{t("fields.entity_permission.scope_update")}</th>}
+              {canSeeField("scope_delete") && <th>{t("fields.entity_permission.scope_delete")}</th>}
               {canSeeField("created_by") && <th>{t("fields.entity_permission.created_by")}</th>}
               {canSeeField("creation_date") && <th>{t("fields.entity_permission.creation_date")}</th>}
               {canSeeField("last_update_date") && <th>{t("fields.entity_permission.last_update_date")}</th>}
@@ -514,7 +519,10 @@ export default function EntityPermissionPage() {
               {canSeeField("id_entity_permission") && <td><pre className="cell-value">{formatTableValue(item.id_entity_permission)}</pre></td>}
               {canSeeField("id_permission") && <td><pre className="cell-value">{formatTableValue(item.id_permission)}</pre></td>}
               {canSeeField("entity_name") && <td><pre className="cell-value">{formatEntityCatalogLabel(item.entity_name)}</pre></td>}
-              {canSeeField("control_type") && <td><pre className="cell-value">{formatControlTypeLabel(item.control_type)}</pre></td>}
+              {canSeeField("scope_create") && <td><pre className="cell-value">{formatScopeLabel(item.scope_create)}</pre></td>}
+              {canSeeField("scope_read") && <td><pre className="cell-value">{formatScopeLabel(item.scope_read)}</pre></td>}
+              {canSeeField("scope_update") && <td><pre className="cell-value">{formatScopeLabel(item.scope_update)}</pre></td>}
+              {canSeeField("scope_delete") && <td><pre className="cell-value">{formatScopeLabel(item.scope_delete)}</pre></td>}
               {canSeeField("created_by") && <td><pre className="cell-value">{formatTableValue(item.created_by)}</pre></td>}
               {canSeeField("creation_date") && <td><pre className="cell-value">{formatTableValue(item.creation_date)}</pre></td>}
               {canSeeField("last_update_date") && <td><pre className="cell-value">{formatTableValue(item.last_update_date)}</pre></td>}

@@ -101,29 +101,53 @@ WHERE defaults.id_user IS NOT NULL
         AND deletion_date IS NULL
   );
 
+-- Guardado con un chequeo de existencia de scope_create: esta migracion es
+-- anterior a 20260914110000_equipos_y_alcance_por_accion.sql (que agrega las
+-- 4 columnas de alcance y suelta control_type), asi que en la PRIMERA pasada
+-- completa contra un volumen nuevo todavia no existen -las agrega esa misma
+-- migracion, mas adelante en la misma pasada-. Sin este guardado, la primera
+-- pasada tronaria aqui con "column scope_create does not exist" antes de
+-- llegar siquiera a la migracion que las crea. En pasadas posteriores (o en
+-- cualquier base que ya paso por 20260914110000) la columna ya existe y el
+-- bloque corre normal; si de verdad falta la fila para esta entidad se
+-- resiembra sola en el siguiente reinicio del pod, que es cuando esta
+-- condicion pasa a ser verdadera.
+DO $$
+BEGIN
+IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'entity_permission' AND column_name = 'scope_create'
+) THEN
+
 CREATE TEMP TABLE tmp_ep_project_management AS
-SELECT role.id_permission, capability.entity_name, capability.control_type,
+SELECT role.id_permission, capability.entity_name,
+       capability.scope_create, capability.scope_read, capability.scope_update, capability.scope_delete,
        capability.menu_location, capability.menu_group, capability.menu_group_icon,
        capability.menu_label, capability.menu_order, role.created_by
 FROM permission role
 JOIN (VALUES
-    ('Supervisor', 'proyect', 7, 'sidebar', 'Operaciones', 'briefcase-business', 'Proyectos', 80),
-    ('Supervisor', 'task', 15, 'sidebar', 'Operaciones', 'briefcase-business', 'Tareas', 90),
-    ('Supervisor', 'task_note', 15, 'sidebar', 'Operaciones', 'briefcase-business', 'Notas de tarea', 100),
-    ('Supervisor', 'task_type', 15, 'sidebar', 'Operaciones', 'briefcase-business', 'Tipos de tarea', 110),
-    ('Gerente', 'proyect', 6, 'sidebar', 'Operaciones', 'briefcase-business', 'Proyectos', 80),
-    ('Gerente', 'project_authorization', 2, 'hidden', NULL, NULL, NULL, 100),
-    ('Jefe de taller', 'proyect', 6, 'sidebar', 'Operaciones', 'briefcase-business', 'Proyectos', 80),
-    ('Jefe de taller', 'task', 15, 'sidebar', 'Operaciones', 'briefcase-business', 'Tareas', 90),
-    ('Jefe de taller', 'task_note', 15, 'sidebar', 'Operaciones', 'briefcase-business', 'Notas de tarea', 100),
-    ('Jefe de taller', 'task_type', 2, 'sidebar', 'Operaciones', 'briefcase-business', 'Tipos de tarea', 110),
-    ('Jefe de taller', 'project_execution', 2, 'hidden', NULL, NULL, NULL, 100)
-) AS capability(role_name, entity_name, control_type, menu_location, menu_group, menu_group_icon, menu_label, menu_order)
+    -- control_type original -> scope_create/scope_read/scope_update/scope_delete
+    -- (bit ON = 4 "Todos", bit OFF = 0, misma conversion que 20260914110000_equipos_y_alcance_por_accion.sql)
+    ('Supervisor', 'proyect', 4, 4, 4, 0, 'sidebar', 'Operaciones', 'briefcase-business', 'Proyectos', 80),
+    ('Supervisor', 'task', 4, 4, 4, 4, 'sidebar', 'Operaciones', 'briefcase-business', 'Tareas', 90),
+    ('Supervisor', 'task_note', 4, 4, 4, 4, 'sidebar', 'Operaciones', 'briefcase-business', 'Notas de tarea', 100),
+    ('Supervisor', 'task_type', 4, 4, 4, 4, 'sidebar', 'Operaciones', 'briefcase-business', 'Tipos de tarea', 110),
+    ('Gerente', 'proyect', 0, 4, 4, 0, 'sidebar', 'Operaciones', 'briefcase-business', 'Proyectos', 80),
+    ('Gerente', 'project_authorization', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 100),
+    ('Jefe de taller', 'proyect', 0, 4, 4, 0, 'sidebar', 'Operaciones', 'briefcase-business', 'Proyectos', 80),
+    ('Jefe de taller', 'task', 4, 4, 4, 4, 'sidebar', 'Operaciones', 'briefcase-business', 'Tareas', 90),
+    ('Jefe de taller', 'task_note', 4, 4, 4, 4, 'sidebar', 'Operaciones', 'briefcase-business', 'Notas de tarea', 100),
+    ('Jefe de taller', 'task_type', 0, 4, 0, 0, 'sidebar', 'Operaciones', 'briefcase-business', 'Tipos de tarea', 110),
+    ('Jefe de taller', 'project_execution', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 100)
+) AS capability(role_name, entity_name, scope_create, scope_read, scope_update, scope_delete, menu_location, menu_group, menu_group_icon, menu_label, menu_order)
     ON lower(role.permission_description) = lower(capability.role_name)
 WHERE role.deletion_date IS NULL;
 
 UPDATE entity_permission target SET
-    control_type = source.control_type,
+    scope_create = source.scope_create,
+    scope_read = source.scope_read,
+    scope_update = source.scope_update,
+    scope_delete = source.scope_delete,
     menu_location = source.menu_location,
     menu_group = source.menu_group,
     menu_group_icon = source.menu_group_icon,
@@ -136,10 +160,12 @@ WHERE target.id_permission = source.id_permission
   AND target.entity_name = source.entity_name;
 
 INSERT INTO entity_permission (
-    id_permission, entity_name, control_type, menu_location, menu_group,
+    id_permission, entity_name, scope_create, scope_read, scope_update, scope_delete, menu_location, menu_group,
     menu_group_icon, menu_label, menu_order, created_by, creation_date, last_update_date
 )
-SELECT source.id_permission, source.entity_name, source.control_type, source.menu_location, source.menu_group,
+SELECT source.id_permission, source.entity_name,
+       source.scope_create, source.scope_read, source.scope_update, source.scope_delete,
+       source.menu_location, source.menu_group,
        source.menu_group_icon, source.menu_label, source.menu_order, source.created_by, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
 FROM tmp_ep_project_management source
 WHERE NOT EXISTS (
@@ -148,6 +174,9 @@ WHERE NOT EXISTS (
 );
 
 DROP TABLE tmp_ep_project_management;
+END IF;
+END $$;
+
 
 INSERT INTO field (table_name, field_name, created_by, creation_date, last_update_date)
 SELECT column_meta.table_name, column_meta.column_name, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP

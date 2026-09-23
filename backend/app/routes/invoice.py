@@ -13,7 +13,7 @@ from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
 from datetime import datetime
 from app.services.invoice_material_service_service import InvoiceMaterialServiceService
-from app.services.quotation_service import calculate_totals, validate_transition
+from app.services.quotation_service import calculate_totals, ensure_not_expired, normalize_status, validate_transition
 from app.services.manual_invoice_service import create_manual_invoice, preview_manual_invoice, validate_manual_invoice_context
 from app.services.invoice_catalogs import catalogs_payload
 from app.services.invoice_inventory_service import apply_invoice_to_inventory, preview_invoice_inventory
@@ -521,12 +521,23 @@ def convert_quotation_invoice(user_data, id_invoice):
         raise AppError('errors.resource_not_found', 404)
 
     current_status = str(invoice.get('invoice_status') or '').strip()
-    if current_status.lower() != 'cotizacion':
+    # El tablero de cotizaciones (QuotationWorkflowBoard) guarda el estado real
+    # como 'draft'/'sent'/'approved'/etc, no como el literal 'cotizacion' -eso
+    # solo lo trae una cotizacion legada de antes de que existiera el tablero
+    # (ver quotation_service.STATUS_ALIASES). Exigir el literal viejo aqui
+    # dejaba la conversion inalcanzable para toda cotizacion creada por el
+    # tablero: nunca pasaba de 'approved' a 'cotizacion' porque nada la pone
+    # en ese valor. Se acepta 'approved' (la unica casilla de la que el
+    # tablero permite pasar a "converted") ademas del literal legado.
+    is_legacy_quotation_literal = current_status.lower() in ('cotizacion', 'cotización')
+    if normalize_status(current_status) != 'approved' and not is_legacy_quotation_literal:
         raise AppError(
             'validations.invoice.quotation_conversion.invalid_status',
             400,
-            {'current_status': current_status, 'required_status': 'Cotizacion'}
+            {'current_status': current_status, 'required_status': 'approved'}
         )
+
+    ensure_not_expired(invoice)
 
     try:
         invoice_id_value = int(id_invoice)
@@ -551,9 +562,27 @@ def convert_quotation_invoice(user_data, id_invoice):
         }
         for row in line_rows
     ]
+
+    # Un cliente que nunca toco la revision por renglon (la mayoria: no
+    # necesita aprobar partida por partida, solo cotizar y facturar todo) no
+    # deberia tener que autorizar a mano cada linea para poder convertir. Se
+    # autoriza en automatico cualquier linea que siga "pending" -el valor con
+    # el que nace toda linea nueva-, y solo se excluye la que alguien rechazo
+    # de forma explicita en la pantalla de seguimiento de autorizaciones. Con
+    # esto "convertir" hace lo mismo que en el sistema anterior (toda la
+    # cotizacion pasa a factura) para quien no usa autorizacion por renglon,
+    # sin quitarle la funcion a quien si la usa.
+    rejected_ids = [
+        line['id_invoice_material_service'] for line in lines
+        if str(line.get('authorization_status') or '').strip().lower() == 'rejected'
+    ]
+    pending_ids = [
+        line['id_invoice_material_service'] for line in lines
+        if str(line.get('authorization_status') or '').strip().lower() not in {'authorized', 'rejected'}
+    ]
     authorized_lines = [
         line for line in lines
-        if str(line.get('authorization_status') or '').strip().lower() == 'authorized'
+        if line['id_invoice_material_service'] not in set(rejected_ids)
     ]
 
     if not authorized_lines:
@@ -562,6 +591,25 @@ def convert_quotation_invoice(user_data, id_invoice):
             400,
             {'id_invoice': id_invoice}
         )
+
+    if pending_ids:
+        with transaction_context() as db_session:
+            (
+                db_session.query(InvoiceMaterialService)
+                .filter(InvoiceMaterialService.id_invoice_material_service.in_(pending_ids))
+                .update(
+                    {
+                        InvoiceMaterialService.authorization_status: 'authorized',
+                        InvoiceMaterialService.authorization_date: datetime.utcnow(),
+                        InvoiceMaterialService.id_authorized: user_data.get('id_user'),
+                        InvoiceMaterialService.authorization_note: 'Autorizada en automatico al convertir la cotizacion completa.',
+                    },
+                    synchronize_session=False,
+                )
+            )
+        for line in authorized_lines:
+            if line['id_invoice_material_service'] in set(pending_ids):
+                line['authorization_status'] = 'authorized'
 
     totals = calculate_totals(authorized_lines, invoice.get('tax_rate') if invoice.get('apply_tax') else 0)
     conversion_note = str(
@@ -576,6 +624,9 @@ def convert_quotation_invoice(user_data, id_invoice):
         'subtotal': str(totals['subtotal']),
         'tax': str(totals['tax']),
         'total': str(totals['total']),
+        # Igual que subtotal/tax/total: si se excluyo un renglon rechazado,
+        # su descuento tampoco debe seguir contando en la factura resultante.
+        'descuento': str(totals['discount']),
         'note': note,
     }
 

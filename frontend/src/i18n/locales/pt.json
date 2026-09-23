@@ -728,7 +728,10 @@
       "last_update_date": "Data da última atualização"
     },
     "entity_permission": {
-      "control_type": "Controle Tipo",
+      "scope_create": "Alcance de Criar",
+      "scope_read": "Alcance de Ler",
+      "scope_update": "Alcance de Atualizar",
+      "scope_delete": "Alcance de Excluir",
       "created_by": "Criado por",
       "creation_date": "Data de criação",
       "deletion_date": "Data de exclusão",
@@ -1204,7 +1207,6 @@
       "question_type": "Pergunta Tipo"
     },
     "task": {
-      "analyst": "Analista",
       "created_by": "Criado por",
       "creation_date": "Data de criação",
       "deletion_date": "Data de exclusão",
@@ -1215,7 +1217,6 @@
       "id_proyect": "ID Projeto",
       "id_task": "ID Tarefa",
       "last_update_date": "Data da última atualização",
-      "leader": "Líder",
       "owner": "Responsável",
       "priority": "Prioridade",
       "start_date": "Início Data",
@@ -1468,7 +1469,10 @@
       "last_update_date": "Digite data da última atualização"
     },
     "entity_permission": {
-      "control_type": "Digite controle tipo",
+      "scope_create": "Digite alcance de criar",
+      "scope_read": "Digite alcance de ler",
+      "scope_update": "Digite alcance de atualizar",
+      "scope_delete": "Digite alcance de excluir",
       "created_by": "Digite criado por",
       "creation_date": "Digite data de criação",
       "deletion_date": "Digite data de exclusão",
@@ -1944,7 +1948,6 @@
       "question_type": "Digite pergunta tipo"
     },
     "task": {
-      "analyst": "Digite analista",
       "created_by": "Digite criado por",
       "creation_date": "Digite data de criação",
       "deletion_date": "Digite data de exclusão",
@@ -1955,7 +1958,6 @@
       "id_proyect": "Digite id projeto",
       "id_task": "Digite id tarefa",
       "last_update_date": "Digite data da última atualização",
-      "leader": "Digite líder",
       "owner": "Digite responsável",
       "priority": "Digite prioridade",
       "start_date": "Digite início data",
@@ -3452,5 +3454,12 @@
       "saved_status": "Configuração salva para esta sessão.",
       "save_button": "Salvar conexão"
     }
+  },
+  "task_fase": {
+    "en_espera": "Em espera",
+    "en_proceso": "Em andamento",
+    "bloqueado": "Bloqueado",
+    "terminado": "Concluído",
+    "entregado": "Entregue"
   }
 }

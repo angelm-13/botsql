@@ -42,16 +42,28 @@
 
 BEGIN;
 
+-- Guardado con un chequeo de existencia de scope_create: esta migracion es
+-- anterior a 20260914110000_equipos_y_alcance_por_accion.sql, que agrega esas
+-- 4 columnas y suelta control_type mas adelante en la misma pasada. Sin este
+-- guardado, la primera pasada completa contra un volumen nuevo tronaria en
+-- las tres secciones con "column scope_create does not exist".
+DO $$
+BEGIN
+IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'entity_permission' AND column_name = 'scope_create'
+) THEN
+
 -- 1. La capacidad de autorizar, para el jefe de almacen.
 --
 -- Con bits de CAPTURA (7) y no los 2 de una capacidad oculta cualquiera: la
 -- ruta `POST /vouchers/<id>/authorize` se guarda con `create`, y con solo
 -- lectura el jefe de almacen recibiria un 403 en la puerta.
 INSERT INTO entity_permission (
-    id_permission, entity_name, control_type, menu_location,
+    id_permission, entity_name, scope_create, scope_read, scope_update, scope_delete, menu_location,
     menu_group, menu_group_icon, menu_label, menu_order, created_by
 )
-SELECT 6, 'warehouse_voucher_authorize', '7', 'hidden',
+SELECT 6, 'warehouse_voucher_authorize', 4, 4, 4, 0, 'hidden',
        NULL, NULL, NULL, 290, 1
 WHERE EXISTS (SELECT 1 FROM permission WHERE id_permission = 6)
   AND NOT EXISTS (
@@ -65,10 +77,10 @@ WHERE EXISTS (SELECT 1 FROM permission WHERE id_permission = 6)
 -- Sin esta fila, quitarle el bit de crear vales lo dejaria sin poder ni pedir
 -- ni surtir: no podria hacer nada con los vales, que no es lo que se pidio.
 INSERT INTO entity_permission (
-    id_permission, entity_name, control_type, menu_location,
+    id_permission, entity_name, scope_create, scope_read, scope_update, scope_delete, menu_location,
     menu_group, menu_group_icon, menu_label, menu_order, created_by
 )
-SELECT 1, 'warehouse_prevoucher', '7', 'sidebar',
+SELECT 1, 'warehouse_prevoucher', 4, 4, 4, 0, 'sidebar',
        'Almacen', 'package', 'Prevales de material', 285, 1
 WHERE EXISTS (SELECT 1 FROM permission WHERE id_permission = 1)
   AND NOT EXISTS (
@@ -79,18 +91,22 @@ WHERE EXISTS (SELECT 1 FROM permission WHERE id_permission = 1)
 
 -- 3. Y se le retira el bit de CREAR vales.
 --
--- `control_type` es TEXT en esta tabla -- no INTEGER --, asi que la aritmetica
--- de bits necesita el cast explicito. Sin el: "operator does not exist: text & integer".
+-- Desde 20260914110000_equipos_y_alcance_por_accion.sql el bit de crear vive
+-- en su propia columna `scope_create` (0 sin acceso, 4 Todos), asi que ya no
+-- hace falta la aritmetica de bits sobre un TEXT.
 --
--- Acotado a que el bit este puesto, para que la migracion se pueda reaplicar
--- -- `db-migrate` la corre en cada arranque -- sin volver a escribir una fila
--- que ya esta como debe.
+-- Acotado a que el alcance de crear este puesto, para que la migracion se
+-- pueda reaplicar -- `db-migrate` la corre en cada arranque -- sin volver a
+-- escribir una fila que ya esta como debe.
 UPDATE entity_permission
-   SET control_type = ((control_type::integer) & ~1)::text,
+   SET scope_create = 0,
        last_update_date = now()
  WHERE id_permission = 1
    AND entity_name = 'warehouse_voucher'
    AND deletion_date IS NULL
-   AND (control_type::integer) & 1 = 1;
+   AND scope_create <> 0;
+
+END IF;
+END $$;
 
 COMMIT;

@@ -31,11 +31,36 @@
 
 BEGIN;
 
+-- Guardado con un chequeo de existencia de scope_create: esta migracion es
+-- anterior a 20260914110000_equipos_y_alcance_por_accion.sql, que agrega esas
+-- 4 columnas y suelta control_type mas adelante en la misma pasada. Sin este
+-- guardado, la primera pasada completa contra un volumen nuevo tronaria aqui
+-- con "column scope_create does not exist" -aunque el destino de este INSERT
+-- es nm_field_permission.control_type (que no cambia), la fuente lee
+-- entity_permission.scope_*-. En pasadas posteriores la columna ya existe y
+-- el INSERT corre normal.
+DO $$
+BEGIN
+IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'entity_permission' AND column_name = 'scope_create'
+) THEN
+
 INSERT INTO nm_field_permission (id_field, id_permission, control_type, created_by)
 SELECT f.id_field,
        ep.id_permission,
-       -- Se hereda el alcance que el rol ya tiene sobre la entidad.
-       LEAST(ep.control_type::integer, 15)::text,
+       -- Se hereda el alcance que el rol ya tiene sobre la entidad, recompuesto
+       -- como bitmask (1 crear, 2 leer, 4 actualizar, 8 borrar) a partir de las
+       -- cuatro columnas de scope_* (0 = sin acceso, distinto de 0 = con
+       -- acceso) desde que 20260914110000_equipos_y_alcance_por_accion.sql
+       -- reemplazo entity_permission.control_type.
+       LEAST(
+           (CASE WHEN ep.scope_create <> 0 THEN 1 ELSE 0 END) +
+           (CASE WHEN ep.scope_read   <> 0 THEN 2 ELSE 0 END) +
+           (CASE WHEN ep.scope_update <> 0 THEN 4 ELSE 0 END) +
+           (CASE WHEN ep.scope_delete <> 0 THEN 8 ELSE 0 END),
+           15
+       )::text,
        1
 FROM entity_permission ep
 JOIN field f
@@ -51,5 +76,8 @@ WHERE ep.deletion_date IS NULL
       AND nfp.id_permission = ep.id_permission
       AND nfp.deletion_date IS NULL
   );
+
+END IF;
+END $$;
 
 COMMIT;

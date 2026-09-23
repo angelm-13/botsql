@@ -9,7 +9,10 @@ from app.utils.errors import AppError
 class TestProjectStateMachine(unittest.TestCase):
     def test_accepts_complete_project_lifecycle(self):
         allowed = {
-            "draft": ("submitted",),
+            # Gerente mueve el proyecto directo desde Borrador, sin pasar
+            # por "submitted" -- ver test_project_workflow_service.py para
+            # quien tiene permiso de pedir cada una.
+            "draft": ("submitted", "authorized", "denied", "blocked"),
             "submitted": ("authorized", "denied", "blocked"),
             "blocked": ("submitted", "authorized", "denied"),
             "authorized": ("in_progress",),
@@ -33,7 +36,7 @@ class TestProjectStateMachine(unittest.TestCase):
             validate_project_transition("in_progress", "stopped")
 
     def test_rejects_unlisted_transitions(self):
-        for current, target in (("draft", "authorized"), ("authorized", "completed"), ("denied", "draft"), ("completed", "in_progress")):
+        for current, target in (("draft", "in_progress"), ("authorized", "completed"), ("denied", "draft"), ("completed", "in_progress")):
             with self.assertRaises(AppError) as raised:
                 validate_project_transition(current, target)
             self.assertEqual("errors.project_invalid_transition", raised.exception.message_key)

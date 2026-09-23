@@ -19,8 +19,8 @@ class TestProjectTaskScopeApi(BackendTestCase):
         with transaction_context() as db:
             for permission_id, actor_id in ((101, 11), (102, 12)):
                 db.add_all([
-                    EntityPermission(id_permission=permission_id, entity_name="task", control_type=15, created_by=actor_id),
-                    EntityPermission(id_permission=permission_id, entity_name="task_note", control_type=15, created_by=actor_id),
+                    EntityPermission(id_permission=permission_id, entity_name="task", scope_create=4, scope_read=4, scope_update=4, scope_delete=4, created_by=actor_id),
+                    EntityPermission(id_permission=permission_id, entity_name="task_note", scope_create=4, scope_read=4, scope_update=4, scope_delete=4, created_by=actor_id),
                 ])
             own_project = Proyect(
                 id_customer_supplier=1,
@@ -40,8 +40,8 @@ class TestProjectTaskScopeApi(BackendTestCase):
             )
             db.add_all([own_project, foreign_project])
             db.flush()
-            own_task = build_model(Task, id_proyect=own_project.id_proyect, owner=11, leader=11, created_by=11)
-            foreign_task = build_model(Task, id_proyect=foreign_project.id_proyect, owner=12, leader=12, created_by=12)
+            own_task = build_model(Task, id_proyect=own_project.id_proyect, owner=11, created_by=11)
+            foreign_task = build_model(Task, id_proyect=foreign_project.id_proyect, owner=12, created_by=12)
             db.add_all([own_task, foreign_task])
             db.flush()
             own_note = build_model(TaskNote, id_task=own_task.id_task, created_by=11)

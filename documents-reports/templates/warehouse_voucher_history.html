@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="{{ lang }}">
+<head>
+  <meta charset="utf-8" />
+  <title>Historial de préstamos — {{ record.empleado }}</title>
+  <style>
+    /* Mismo criterio de hoja e impresion que warehouse_voucher.html: margen
+       real de impresora y numero de pagina en el margen, porque un historial
+       largo -- este reporte no pagina, sale completo -- ocupa varias hojas
+       facilmente. */
+    @page {
+      size: Letter;
+      margin: 14mm 13mm 16mm 13mm;
+      @bottom-center {
+        content: "Página " counter(page) " de " counter(pages);
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 8pt;
+        color: #94a3b8;
+      }
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 9.5pt;
+      color: #0f172a;
+      line-height: 1.45;
+    }
+
+    .encabezado {
+      border-bottom: 2.5pt solid #0f172a;
+      padding-bottom: 8pt;
+      margin-bottom: 10pt;
+    }
+    .titulo { font-size: 17pt; font-weight: bold; letter-spacing: -0.4pt; margin: 0; }
+    .subtitulo { color: #64748b; font-size: 8.5pt; margin: 2pt 0 0; }
+    .empleado { font-size: 13pt; font-weight: bold; margin: 6pt 0 0; }
+
+    /* El resumen de un vistazo -- cuantas veces, cuanto sigue fuera, cuanto
+       vencido -- es lo primero que se pregunta de un historial, igual que en
+       el modal de pantalla. */
+    .resumen {
+      display: flex;
+      gap: 18pt;
+      border: 0.8pt solid #e2e8f0;
+      border-radius: 5pt;
+      padding: 9pt 12pt;
+      margin-bottom: 14pt;
+    }
+    .resumen-dato { text-align: center; }
+    .resumen-cifra { display: block; font-size: 15pt; font-weight: bold; }
+    .resumen-etiqueta {
+      font-size: 7pt; text-transform: uppercase; letter-spacing: 0.6pt;
+      color: #64748b;
+    }
+    .resumen-fuera .resumen-cifra { color: #b45309; }
+    .resumen-vencido .resumen-cifra { color: #b91c1c; }
+
+    h2 {
+      font-size: 10pt;
+      text-transform: uppercase;
+      letter-spacing: 0.8pt;
+      color: #475569;
+      margin: 14pt 0 6pt;
+      padding-bottom: 3pt;
+      border-bottom: 0.8pt solid #e2e8f0;
+    }
+    h2:first-of-type { margin-top: 0; }
+
+    table { width: 100%; border-collapse: collapse; margin-bottom: 10pt; }
+    thead { display: table-header-group; }
+    tr { page-break-inside: avoid; }
+    th {
+      text-align: left;
+      font-size: 7.5pt;
+      text-transform: uppercase;
+      letter-spacing: 0.5pt;
+      color: #64748b;
+      padding: 5pt 6pt;
+      border-bottom: 1pt solid #cbd5e1;
+    }
+    td {
+      padding: 6pt;
+      border-bottom: 0.6pt solid #eef2f7;
+      vertical-align: top;
+      font-size: 9pt;
+    }
+    .codigo { font-family: "Courier New", monospace; font-size: 8.5pt; color: #475569; }
+    .menor { color: #64748b; font-size: 8pt; }
+    .num { text-align: right; }
+
+    .marca-si { color: #166534; font-weight: bold; }
+    .marca-no { color: #b45309; }
+    .marca-vencido { color: #b91c1c; font-weight: bold; }
+
+    .vacio { color: #94a3b8; font-style: italic; padding: 10pt 6pt; }
+
+    .pie {
+      margin-top: 10pt;
+      padding-top: 6pt;
+      border-top: 0.6pt solid #e2e8f0;
+      color: #94a3b8;
+      font-size: 7.5pt;
+      display: flex;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="encabezado">
+    <h1 class="titulo">Historial de préstamos</h1>
+    <p class="subtitulo">Todo lo que esta persona se ha llevado del almacén, y si ya lo devolvió.</p>
+    <p class="empleado">{{ record.empleado }}</p>
+  </div>
+
+  <div class="resumen">
+    <div class="resumen-dato">
+      <span class="resumen-cifra">{{ record.total }}</span>
+      <span class="resumen-etiqueta">Veces</span>
+    </div>
+    <div class="resumen-dato resumen-fuera">
+      <span class="resumen-cifra">{{ record.still_out }}</span>
+      <span class="resumen-etiqueta">Sin devolver</span>
+    </div>
+    <div class="resumen-dato resumen-vencido">
+      <span class="resumen-cifra">{{ record.overdue }}</span>
+      <span class="resumen-etiqueta">Vencido</span>
+    </div>
+  </div>
+
+  {% for grupo in record.grupos %}
+  <h2>{{ loop.index }}. {{ grupo.titulo }}</h2>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:12%">Cuándo</th>
+        <th style="width:46%">Qué se llevó</th>
+        <th class="num" style="width:8%">Vale</th>
+        <th style="width:20%">Estado</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for linea in grupo.renglones %}
+      <tr>
+        <td class="menor">{{ linea.fecha or '—' }}</td>
+        <td>
+          <strong>{{ linea.descripcion }}</strong>
+          {%- set marcas = [] -%}
+          {%- if linea.codigo %}{% set _ = marcas.append(linea.codigo) %}{% endif -%}
+          {%- if linea.pieza %}{% set _ = marcas.append('pieza #' ~ linea.pieza) %}
+          {%- else %}{% set _ = marcas.append((linea.cantidad ~ ' unidades')) %}{% endif -%}
+          {%- if marcas %}<br /><span class="menor codigo">{{ marcas | join(' · ') }}</span>{% endif -%}
+        </td>
+        <td class="num">#{{ linea.vale_folio }}</td>
+        <td>
+          {% if linea.devuelto %}
+            <span class="marca-si">Devuelto{% if linea.cierre %} · {{ linea.cierre }}{% endif %}</span>
+          {% elif linea.vencido %}
+            <span class="marca-vencido">Fuera · vencido</span>
+          {% else %}
+            <span class="marca-no">Fuera</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="vacio">Nunca ha pedido material a este almacén.</p>
+  {% endfor %}
+
+  <div class="pie">
+    <span>TYAKXA · Historial de {{ record.empleado }} (usuario {{ record.id_user }})</span>
+    <span>Generado {{ generated_at[:16] | replace('T', ' ') }} UTC</span>
+  </div>
+
+</body>
+</html>

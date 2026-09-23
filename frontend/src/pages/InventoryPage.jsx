@@ -1,15 +1,59 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
 import {
-  Boxes, ChevronDown, ChevronRight, ClipboardList, RefreshCw, Search, Warehouse,
+  Boxes, ChevronDown, ChevronRight, ClipboardList, History, ImageOff, Package,
+  RefreshCw, Search, Tag, Warehouse,
 } from "lucide-react";
 import { useI18n } from "../i18n";
 import "../styles/inventory-warehouses.css";
 import PageHeader from "../components/PageHeader.jsx";
-import { getAllEntityPermission, getLocationTree, getWarehouseStock } from "../api";
+import VisorDeFoto from "../components/VisorDeFoto";
+import ProductHistory from "../components/ProductHistory.jsx";
+import { getAllEntityPermission, getLocationTree, getWarehouseStock, urlDeArchivo } from "../api";
 
 const ENTITY_KEY = "product";
 const ACTION_READ = 2;
+
+// El estatus tal como lo trae el sistema anterior en `product.product_status`
+// (ENTRADA, SALIDA, DAÑADO, DESTRUCCIÓN, EXTRAVIADO...), con el mismo color
+// por GRAVEDAD que ya usa Localizar (`InventoryTracePage.jsx`) y no un
+// esquema propio: son siete etiquetas de texto, pero solo cinco preguntas
+// reales -esta bien, esta fuera sin problema, hay que atenderlo, se perdio,
+// se dio de baja-, y es esa pregunta la que importa de un vistazo.
+const TONO_DE_ESTATUS = {
+  ENTRADA: "ok",
+  SALIDA: "info",
+  RENTA: "info",
+  DANADO: "warn",
+  "EQ. DANADOS": "warn",
+  REPARACION: "warn",
+  EXTRAVIADO: "crit",
+  DESTRUCCION: "muted",
+};
+
+function normalizarEstatus(valor) {
+  return String(valor || "")
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .trim();
+}
+
+// La misma simbologia de Localizar, palabra por palabra: que quiere decir
+// cada tono, y que estatus del sistema anterior le tocan. Vive aparte del
+// mapa de arriba a proposito -el mapa manda el estatus, aqui manda el TONO,
+// y son cinco entradas (una por color), no ocho-. Sin esto un color en la
+// tarjeta es una adivinanza para quien no se aprendio de memoria que "ambar"
+// es "hay que atenderlo".
+const SIMBOLOGIA = [
+  { tono: "ok", clave: "in_stock", texto: "En el almacén", estatus: ["ENTRADA"] },
+  { tono: "info", clave: "out_ok", texto: "Fuera, sin problema",
+    estatus: ["SALIDA", "RENTA"] },
+  { tono: "warn", clave: "needs_care", texto: "Hay que atenderlo",
+    estatus: ["DAÑADO", "EQ. DAÑADOS", "REPARACIÓN"] },
+  { tono: "crit", clave: "lost", texto: "Se perdió", estatus: ["EXTRAVIADO"] },
+  { tono: "muted", clave: "end_of_life", texto: "Fin de vida", estatus: ["DESTRUCCIÓN"] },
+];
 
 function hasBit(value, bit) {
   return (Number(value || 0) & bit) === bit;
@@ -190,8 +234,15 @@ export default function InventoryPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [errorMeta, setErrorMeta] = useState(null);
+  // La foto que se esta mirando en grande, o null.
+  const [fotoAmpliada, setFotoAmpliada] = useState(null);
+  // Las fotos que fallaron al cargar: se recuerdan para no reintentar la
+  // misma URL rota en cada render y caer al marcador en su lugar.
+  const [fotosRotas, setFotosRotas] = useState(() => new Set());
+  // El producto cuyo historial se esta mirando, o null.
+  const [historialProducto, setHistorialProducto] = useState(null);
 
-  const canRead = isSuperUser || hasBit(modulePermission?.control_type, ACTION_READ);
+  const canRead = isSuperUser || Number(modulePermission?.scope_read || 0) !== 0;
   const locations = useMemo(() => flattenTree(tree), [tree]);
   const warehouses = useMemo(() => locations.filter((node) => node.is_warehouse), [locations]);
 
@@ -199,7 +250,7 @@ export default function InventoryPage() {
   useEffect(() => {
     let alive = true;
     if (isSuperUser) {
-      setModulePermission({ control_type: 15 });
+      setModulePermission({ scope_create: 4, scope_read: 4, scope_update: 4, scope_delete: 4 });
       setPermissionReady(true);
       return () => { alive = false; };
     }
@@ -339,33 +390,140 @@ export default function InventoryPage() {
             {warehouseContent.items.length === 0 ? (
               <p className="muted">{t("inventory.warehouse_empty", "Sin existencia en este almacén.")}</p>
             ) : (
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>{t("inventory.product", "Producto")}</th>
-                      <th>{t("inventory.location", "Ubicación")}</th>
-                      <th>{t("inventory.quantity", "Cantidad")}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {warehouseContent.items.map((row) => (
-                      <tr key={`${row.id_product}-${row.id_location}`}>
-                        <td>{row.product_description || row.product_code || `#${row.id_product}`}</td>
-                        {/* Con la ruta: dentro de una nave grande, "Rack A-1" no
-                            dice en que pasillo esta. */}
-                        <td>{rutaDe(row.id_location) || row.location_description}</td>
-                        <td><strong>{row.quantity}</strong></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <>
+                {/* Misma leyenda que ya trae Localizar, palabra por palabra:
+                    pegada a la lista que explica, no en una ayuda aparte que
+                    nadie va a abrir. */}
+                <div className="trace-simbologia" role="note"
+                     aria-label={t("trace.legend", "Qué significa el color")}>
+                  <span className="trace-simbologia-titulo muted">
+                    {t("trace.legend", "Qué significa el color")}
+                  </span>
+                  {SIMBOLOGIA.map(({ tono, clave, texto, estatus }) => (
+                    <span className="trace-simbologia-item" key={tono}>
+                      <i className={`trace-muestra ${tono}`} aria-hidden="true" />
+                      <strong>{t(`trace.legend_${clave}`, texto)}</strong>
+                      <span className="muted">{estatus.join(" · ")}</span>
+                    </span>
+                  ))}
+                </div>
+
+                {/* Antes esto era una tabla de puro texto -codigo,
+                    descripcion, cantidad-: la misma cosa que ya se habia
+                    resuelto en Localizar, pero sin resolver aqui. Con foto se
+                    reconoce el material de un vistazo, sin tener que leer la
+                    descripcion entera para saber si "DESARMADOR PLANO" es el
+                    de cruz o el de plano. */}
+                <ul className="inv-existencia">
+                {warehouseContent.items.map((row) => {
+                  const clave = `${row.id_product}-${row.id_location}`;
+                  const foto = fotosRotas.has(clave) ? "" : urlDeArchivo(row.path_imagen);
+                  const nombre = row.product_description || row.product_code || `#${row.id_product}`;
+                  const tono = row.product_status
+                    ? TONO_DE_ESTATUS[normalizarEstatus(row.product_status)] : null;
+                  return (
+                    <li key={clave}
+                        className={`inv-existencia-item ${tono ? `tono-${tono}` : ""}`}>
+                      <span className="inv-existencia-foto">
+                        {foto ? (
+                          <img
+                            src={foto}
+                            alt={nombre}
+                            className="foto-ampliable"
+                            loading="lazy"
+                            title={t("photo.click_to_zoom", "Clic para verla en grande")}
+                            onClick={() => setFotoAmpliada({
+                              src: foto, titulo: nombre, descripcion: row.product_code || "",
+                            })}
+                            onError={() => setFotosRotas((antes) => new Set(antes).add(clave))}
+                          />
+                        ) : (
+                          <ImageOff size={18} />
+                        )}
+                      </span>
+                      <span className="inv-existencia-datos">
+                        <strong>{nombre}</strong>
+                        <span className="muted mono">
+                          {t("voucher.col_code", "Código")}: {row.product_code || `#${row.id_product}`}
+                          {row.tracking_mode === "serializado" && (
+                            <> · <Tag size={11} /> {t("voucher.serialized", "pieza por pieza")}</>
+                          )}
+                        </span>
+                        {/* Cada dato con su etiqueta, igual que el sistema
+                            anterior ("Familia:", "Marca:", "Color:"): antes
+                            iban solo los valores separados por puntos, y sin
+                            haber usado el sistema no hay forma de adivinar
+                            cual palabra es la familia y cual es la marca. */}
+                        {(row.family || row.brand || row.color) && (
+                          <span className="muted inv-existencia-clasificacion">
+                            {[
+                              row.family && `${t("inventory.family", "Familia")}: ${row.family}`,
+                              row.brand && `${t("inventory.brand", "Marca")}: ${row.brand}`,
+                              row.color && `${t("inventory.color", "Color")}: ${row.color}`,
+                            ].filter(Boolean).join("  ·  ")}
+                          </span>
+                        )}
+                        {/* Con la ruta: dentro de una nave grande, "Rack A-1"
+                            no dice en que pasillo esta. */}
+                        <span className="muted inv-existencia-ruta">
+                          {t("inventory.location", "Ubicación")}:{" "}
+                          {rutaDe(row.id_location) || row.location_description}
+                        </span>
+                        {row.product_status && (
+                          <span className={`inv-existencia-estatus tono-${tono || "muted"}`}>
+                            {row.product_status}
+                          </span>
+                        )}
+                      </span>
+                      {/* El numero solo, con un icono, no decia de que era
+                          numero: parecia una cajita sin etiqueta. Ahora dice
+                          la palabra completa -unidades, o pieza cuando se
+                          rastrea una por una- igual que ya hace Localizar
+                          con "en existencia". */}
+                      <span className="inv-existencia-cantidad">
+                        <strong>{row.quantity}</strong>
+                        <span>
+                          {row.tracking_mode === "serializado"
+                            ? <><Tag size={11} /> {t("voucher.piece", "pieza")}</>
+                            : <><Package size={11} /> {t("voucher.units", "unidades")}</>}
+                        </span>
+                      </span>
+                      {/* El historial, desde aqui y en una ventana -misma
+                          idea que en Localizar-: la pregunta "y esto que ha
+                          hecho" se hace sobre el renglon que se tiene
+                          delante. */}
+                      <button type="button" className="button button-quiet inv-existencia-historial"
+                              onClick={() => setHistorialProducto(
+                                { id_product: row.id_product, titulo: nombre })}>
+                        <History size={14} />
+                        {t("trace.open_history", "Historial")}
+                      </button>
+                    </li>
+                  );
+                })}
+                </ul>
+              </>
             )}
           </div>
         )}
       </section>
 
+      {fotoAmpliada && (
+        <VisorDeFoto
+          src={fotoAmpliada.src}
+          titulo={fotoAmpliada.titulo}
+          descripcion={fotoAmpliada.descripcion}
+          onCerrar={() => setFotoAmpliada(null)}
+        />
+      )}
+
+      {historialProducto && (
+        <ProductHistory
+          idProduct={historialProducto.id_product}
+          titulo={historialProducto.titulo}
+          onCerrar={() => setHistorialProducto(null)}
+        />
+      )}
     </main>
   );
 }

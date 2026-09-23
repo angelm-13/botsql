@@ -37,40 +37,60 @@ WHERE NOT EXISTS (
 -- fuera de esa resiembra para alguno de estos roles. Un reinicio del pod
 -- reaplica las 45 migraciones desde cero, y un NOT EXISTS que solo mira filas
 -- activas choca contra la fila fantasma que dejo la resiembra anterior.
-INSERT INTO entity_permission (id_permission, entity_name, control_type, menu_location, menu_group, menu_label, menu_order, created_by)
-SELECT rol.id_permission, capacidad.entity_name, capacidad.control_type,
+--
+-- Guardado con un chequeo de existencia de scope_create: esta migracion es
+-- anterior a 20260914110000_equipos_y_alcance_por_accion.sql, que agrega esas
+-- 4 columnas y suelta control_type mas adelante en la misma pasada. Sin este
+-- guardado, la primera pasada completa contra un volumen nuevo tronaria aqui
+-- con "column scope_create does not exist".
+DO $$
+BEGIN
+IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'entity_permission' AND column_name = 'scope_create'
+) THEN
+
+INSERT INTO entity_permission (id_permission, entity_name, scope_create, scope_read, scope_update, scope_delete, menu_location, menu_group, menu_label, menu_order, created_by)
+SELECT rol.id_permission, capacidad.entity_name,
+       capacidad.scope_create, capacidad.scope_read, capacidad.scope_update, capacidad.scope_delete,
        capacidad.menu_location, capacidad.menu_group, capacidad.menu_label,
        capacidad.menu_order, 1
 FROM permission rol
 JOIN (VALUES
     -- Almacenista: opera el dia a dia.
-    ('Almacenista', 'product',         7, 'sidebar', 'Inventario', 'Productos',            100),
-    ('Almacenista', 'location',        6, 'sidebar', 'Inventario', 'Ubicaciones',          110),
-    ('Almacenista', 'location_type',   2, 'hidden',    'Inventario', 'Tipo de ubicacion',    120),
-    ('Almacenista', 'material',        6, 'sidebar', 'Inventario', 'Materiales',           130),
-    ('Almacenista', 'unit',            2, 'hidden',    'Inventario', 'Unidades',             140),
-    ('Almacenista', 'brand',           2, 'hidden',    'Inventario', 'Marcas',               150),
-    ('Almacenista', 'inventory_status', 2, 'hidden',   'Inventario', 'Estado de inventario', 160),
+    -- control_type original -> scope_create/scope_read/scope_update/scope_delete
+    -- (bit ON = 4 "Todos", bit OFF = 0, misma conversion que
+    -- 20260914110000_equipos_y_alcance_por_accion.sql)
+    ('Almacenista', 'product',         4, 4, 4, 0, 'sidebar', 'Inventario', 'Productos',            100),
+    ('Almacenista', 'location',        0, 4, 4, 0, 'sidebar', 'Inventario', 'Ubicaciones',          110),
+    ('Almacenista', 'location_type',   0, 4, 0, 0, 'hidden',    'Inventario', 'Tipo de ubicacion',    120),
+    ('Almacenista', 'material',        0, 4, 4, 0, 'sidebar', 'Inventario', 'Materiales',           130),
+    ('Almacenista', 'unit',            0, 4, 0, 0, 'hidden',    'Inventario', 'Unidades',             140),
+    ('Almacenista', 'brand',           0, 4, 0, 0, 'hidden',    'Inventario', 'Marcas',               150),
+    ('Almacenista', 'inventory_status', 0, 4, 0, 0, 'hidden',   'Inventario', 'Estado de inventario', 160),
     -- Jefe de almacen: ademas ajusta y corrige el catalogo.
-    ('Jefe de almacen', 'product',              15, 'sidebar', 'Inventario', 'Productos',            100),
-    ('Jefe de almacen', 'location',             15, 'sidebar', 'Inventario', 'Ubicaciones',          110),
-    ('Jefe de almacen', 'location_type',        15, 'sidebar', 'Inventario', 'Tipo de ubicacion',    120),
-    ('Jefe de almacen', 'material',             15, 'sidebar', 'Inventario', 'Materiales',           130),
-    ('Jefe de almacen', 'unit',                 15, 'sidebar', 'Inventario', 'Unidades',             140),
-    ('Jefe de almacen', 'brand',                15, 'sidebar', 'Inventario', 'Marcas',               150),
-    ('Jefe de almacen', 'inventory_status',     15, 'sidebar', 'Inventario', 'Estado de inventario', 160),
-    ('Jefe de almacen', 'inventory_adjustment',  2, 'hidden',    'Inventario', 'Ajustes',              170)
-) AS capacidad(rol, entity_name, control_type, menu_location, menu_group, menu_label, menu_order)
+    ('Jefe de almacen', 'product',              4, 4, 4, 4, 'sidebar', 'Inventario', 'Productos',            100),
+    ('Jefe de almacen', 'location',             4, 4, 4, 4, 'sidebar', 'Inventario', 'Ubicaciones',          110),
+    ('Jefe de almacen', 'location_type',        4, 4, 4, 4, 'sidebar', 'Inventario', 'Tipo de ubicacion',    120),
+    ('Jefe de almacen', 'material',             4, 4, 4, 4, 'sidebar', 'Inventario', 'Materiales',           130),
+    ('Jefe de almacen', 'unit',                 4, 4, 4, 4, 'sidebar', 'Inventario', 'Unidades',             140),
+    ('Jefe de almacen', 'brand',                4, 4, 4, 4, 'sidebar', 'Inventario', 'Marcas',               150),
+    ('Jefe de almacen', 'inventory_status',     4, 4, 4, 4, 'sidebar', 'Inventario', 'Estado de inventario', 160),
+    ('Jefe de almacen', 'inventory_adjustment',  0, 4, 0, 0, 'hidden',    'Inventario', 'Ajustes',              170)
+) AS capacidad(rol, entity_name, scope_create, scope_read, scope_update, scope_delete, menu_location, menu_group, menu_label, menu_order)
   ON lower(rol.permission_description) = lower(capacidad.rol)
 WHERE rol.deletion_date IS NULL
 ON CONFLICT (id_permission, entity_name) DO NOTHING;
 
 -- 3) El Gerente ya podia ajustar pero no tocar productos --------------------
-INSERT INTO entity_permission (id_permission, entity_name, control_type, menu_location, menu_group, menu_label, menu_order, created_by)
-SELECT p.id_permission, 'product', 15, 'sidebar', 'Inventario', 'Productos', 100, 1
+INSERT INTO entity_permission (id_permission, entity_name, scope_create, scope_read, scope_update, scope_delete, menu_location, menu_group, menu_label, menu_order, created_by)
+SELECT p.id_permission, 'product', 4, 4, 4, 4, 'sidebar', 'Inventario', 'Productos', 100, 1
 FROM permission p
 WHERE lower(p.permission_description) IN ('gerente', 'gerente_administrativo')
   AND p.deletion_date IS NULL
 ON CONFLICT (id_permission, entity_name) DO NOTHING;
+
+END IF;
+END $$;
 
 COMMIT;

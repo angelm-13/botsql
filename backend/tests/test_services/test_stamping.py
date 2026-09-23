@@ -279,6 +279,102 @@ class TestStampInvoice(BackendTestCase):
                 self.assertTrue(response.data.startswith(b"%PDF"))
 
 
+class TestFolioConsecutivo(BackendTestCase):
+    """Comparado contra cotizador_demo (el sistema anterior de un cliente
+    real): alla el timbrado asigna folio consecutivo real. Aqui era texto
+    libre sin ningun control. Esto fija el comportamiento nuevo.
+    """
+
+    def setUp(self):
+        super().setUp()
+        with transaction_context() as db:
+            db.add_all([
+                CustomerSupplier(id_customer_supplier=10, name="Emisor Demo", tax_id="AAA010101AAA", postal_code="37000", fiscal_type="601", type="supplier", id_user=1, created_by=1),
+                CustomerSupplier(id_customer_supplier=11, name="Otro Emisor", tax_id="CCC010101CCC", postal_code="44100", fiscal_type="601", type="supplier", id_user=1, created_by=1),
+                CustomerSupplier(id_customer_supplier=20, name="Cliente Demo", tax_id="BBB010101BBB", postal_code="37100", fiscal_type="601", type="client", id_user=1, created_by=1),
+                Proyect(id_proyect=30, id_customer_supplier=20, leader=1, proyect_description="Proyecto demo", created_by=1),
+                Status(id_status=40, status_description="Activo", category="invoice", is_terminal=False, sort_order="asc", created_by=1),
+            ])
+
+    def _invoice(self, id_issuer=10, folio=None):
+        payload = {
+            "id_proyect": 30, "id_customer_supplier": 20, "id_issuer_customer_supplier": id_issuer,
+            "id_status": 40, "forma_pago": "03", "metodo_pago": "PUE", "uso_cfdi": "G03",
+            "concepts": [{
+                "description": "Servicio demo", "quantity": 1, "unit_price": 100,
+                "sat_product_key": "80101500", "sat_unit_key": "E48",
+            }],
+        }
+        if folio:
+            payload["folio"] = folio
+        return create_manual_invoice(payload, {"id_user": 1, "id_proyect": 30})["invoice"]["id_invoice"]
+
+    def _folio(self, invoice_id):
+        with transaction_context() as db:
+            return db.get(Invoice, invoice_id).folio
+
+    def test_the_first_stamp_for_an_issuer_gets_folio_one(self):
+        invoice_id = self._invoice()
+
+        stamp_invoice(invoice_id, "folio-1", {"id_user": 1, "id_proyect": 30}, CapturingProvider())
+
+        self.assertEqual("1", self._folio(invoice_id))
+
+    def test_consecutive_stamps_get_consecutive_folios(self):
+        primera = self._invoice()
+        segunda = self._invoice()
+
+        stamp_invoice(primera, "folio-a", {"id_user": 1, "id_proyect": 30}, CapturingProvider())
+        stamp_invoice(segunda, "folio-b", {"id_user": 1, "id_proyect": 30}, CapturingProvider())
+
+        self.assertEqual("1", self._folio(primera))
+        self.assertEqual("2", self._folio(segunda))
+
+    def test_each_issuer_keeps_its_own_series(self):
+        """Multiemisor: cada RFC lleva su propio consecutivo, no uno compartido."""
+        emisor_a_1 = self._invoice(id_issuer=10)
+        emisor_b_1 = self._invoice(id_issuer=11)
+        emisor_a_2 = self._invoice(id_issuer=10)
+
+        stamp_invoice(emisor_a_1, "serie-a1", {"id_user": 1, "id_proyect": 30}, CapturingProvider())
+        stamp_invoice(emisor_b_1, "serie-b1", {"id_user": 1, "id_proyect": 30}, CapturingProvider())
+        stamp_invoice(emisor_a_2, "serie-a2", {"id_user": 1, "id_proyect": 30}, CapturingProvider())
+
+        self.assertEqual("1", self._folio(emisor_a_1))
+        self.assertEqual("1", self._folio(emisor_b_1))  # su propia serie, no hereda el 2 del otro emisor
+        self.assertEqual("2", self._folio(emisor_a_2))
+
+    def test_a_manually_captured_folio_is_never_overwritten(self):
+        invoice_id = self._invoice(folio="MIGRADO-0042")
+
+        stamp_invoice(invoice_id, "folio-manual", {"id_user": 1, "id_proyect": 30}, CapturingProvider())
+
+        self.assertEqual("MIGRADO-0042", self._folio(invoice_id))
+
+    def test_a_manual_folio_does_not_consume_a_number_from_the_automatic_series(self):
+        con_folio_manual = self._invoice(folio="MIGRADO-0042")
+        sin_folio = self._invoice()
+
+        stamp_invoice(con_folio_manual, "folio-c", {"id_user": 1, "id_proyect": 30}, CapturingProvider())
+        stamp_invoice(sin_folio, "folio-d", {"id_user": 1, "id_proyect": 30}, CapturingProvider())
+
+        self.assertEqual("1", self._folio(sin_folio))
+
+    def test_the_counter_never_collides_with_folios_captured_before_it_existed(self):
+        """Caso real confirmado en torredigital-prod: el emisor ya tenia
+        facturas con folio '1' a '11' capturado a mano, de antes de que
+        existiera este contador. Si el contador arranca en 1 a ciegas,
+        el siguiente timbrado real repite un folio ya usado.
+        """
+        for numero in ("1", "3", "7", "11"):
+            self._invoice(folio=numero)
+        nueva = self._invoice()
+
+        stamp_invoice(nueva, "folio-post-migracion", {"id_user": 1, "id_proyect": 30}, CapturingProvider())
+
+        self.assertEqual("12", self._folio(nueva))
+
+
 if __name__ == "__main__":
     unittest.main()
 

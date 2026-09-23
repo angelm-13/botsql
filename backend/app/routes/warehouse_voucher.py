@@ -14,11 +14,14 @@ todavia fuera. Una ruta que aceptara el estado abriria justo ese camino.
 
 from __future__ import annotations
 
+from functools import wraps
 from io import BytesIO
 
 from flask import Blueprint, current_app, jsonify, request, send_file
 
 from app.services.warehouse_voucher_service import (
+    _sin_restriccion,
+    documento_del_historial_de_persona,
     folio_del_vale,
     pdf_del_vale,
     autorizar_vale,
@@ -28,9 +31,15 @@ from app.services.warehouse_voucher_service import (
     crear_vale,
     historial_del_producto,
     lo_que_ha_pedido,
+    pdf_del_historial_de_persona,
     quien_tiene_que,
+    reporte_por_almacen,
+    reporte_por_persona,
+    reporte_por_producto,
+    reporte_vales_pendientes,
     vales_vencidos,
 )
+from app.services.inventory_service import has_capability
 from app.utils.auth import require_entity_permission, token_required
 
 
@@ -39,6 +48,43 @@ bp_warehouse_voucher = Blueprint("warehouse_voucher", __name__)
 
 def _cuerpo():
     return request.get_json(silent=True) or {}
+
+
+def require_warehouse_read(fn):
+    """Lee vales quien puede crearlos (`warehouse_voucher`) O quien solo
+    puede pedirlos (`warehouse_prevoucher`).
+
+    `require_entity_permission` no soporta "cualquiera de N permisos basta",
+    asi que esto es una pieza nueva y chica -- no existe en el repo un
+    decorador de OR de permisos reusable. `_ve_todo_el_almacen` (en el
+    servicio) SIGUE exigiendo `warehouse_voucher` especificamente para
+    decidir "ve todo vs. ve solo lo suyo"; esto solo abre la puerta de
+    lectura, no cambia ese alcance. Un Supervisor (solo `warehouse_prevoucher`)
+    pasa este guard pero sigue viendo nada mas lo que tiene a su nombre.
+    """
+    from app.modules.plan import entidad_habilitada
+    from app.models.session import transaction_context
+
+    @wraps(fn)
+    def wrapper(user_data, *args, **kwargs):
+        if not entidad_habilitada("warehouse_voucher"):
+            return jsonify({
+                'error_key': 'errors.module_not_in_plan',
+                'meta': {'entity': 'warehouse_voucher'},
+            }), 403
+        with transaction_context() as db:
+            permitido = (
+                _sin_restriccion(user_data)
+                or has_capability(db, user_data, "warehouse_voucher")
+                or has_capability(db, user_data, "warehouse_prevoucher")
+            )
+        if not permitido:
+            return jsonify({
+                'error_key': 'errors.permission_denied',
+                'meta': {'entity': 'warehouse_voucher', 'action': 'read'},
+            }), 403
+        return fn(user_data, *args, **kwargs)
+    return wrapper
 
 
 @bp_warehouse_voucher.route("/vouchers", methods=["POST"])
@@ -66,7 +112,7 @@ def abrir_prevale(user_data):
 
 @bp_warehouse_voucher.route("/vouchers", methods=["GET"])
 @token_required
-@require_entity_permission("warehouse_voucher", "read")
+@require_warehouse_read
 def listar_vales(user_data):
     """La lista de vales, buscable por folio o por responsable.
 
@@ -91,7 +137,7 @@ def listar_vales(user_data):
 
 @bp_warehouse_voucher.route("/vouchers/overdue", methods=["GET"])
 @token_required
-@require_entity_permission("warehouse_voucher", "read")
+@require_warehouse_read
 def vencidos(user_data):
     """Lo que ya debio volver y no ha vuelto. Es la razon de llevar vales."""
     return jsonify(vales_vencidos(user_data))
@@ -99,14 +145,14 @@ def vencidos(user_data):
 
 @bp_warehouse_voucher.route("/vouchers/<id_incident>", methods=["GET"])
 @token_required
-@require_entity_permission("warehouse_voucher", "read")
+@require_warehouse_read
 def leer_vale(user_data, id_incident):
     return jsonify(consultar_vale(id_incident, user_data))
 
 
 @bp_warehouse_voucher.route("/vouchers/<id_incident>/pdf", methods=["GET"])
 @token_required
-@require_entity_permission("warehouse_voucher", "read")
+@require_warehouse_read
 def vale_en_pdf(user_data, id_incident):
     """El vale para imprimir y firmar.
 
@@ -182,7 +228,7 @@ def devolver_linea(user_data, id_line):
 @bp_warehouse_voucher.route("/vouchers/products/<id_product>/history",
                             methods=["GET"])
 @token_required
-@require_entity_permission("warehouse_voucher", "read")
+@require_warehouse_read
 def historial_de_producto(user_data, id_product):
     """Quien se ha llevado este producto, historico.
 
@@ -195,7 +241,7 @@ def historial_de_producto(user_data, id_product):
 
 @bp_warehouse_voucher.route("/vouchers/holders", methods=["GET"])
 @token_required
-@require_entity_permission("warehouse_voucher", "read")
+@require_warehouse_read
 def quien_tiene(user_data):
     """Quien tiene que, ahora mismo. Con `id_user`, solo el de esa persona."""
     return jsonify(quien_tiene_que(user_data,
@@ -204,7 +250,80 @@ def quien_tiene(user_data):
 
 @bp_warehouse_voucher.route("/vouchers/requests", methods=["GET"])
 @token_required
-@require_entity_permission("warehouse_voucher", "read")
+@require_warehouse_read
 def lo_pedido(user_data):
     """Que ha pedido cada persona, historico."""
     return jsonify(lo_que_ha_pedido(user_data, request.args.get("id_user")))
+
+
+@bp_warehouse_voucher.route("/vouchers/requests/pdf", methods=["GET"])
+@token_required
+@require_warehouse_read
+def lo_pedido_pdf(user_data):
+    """El historial de una persona en PDF -- el boton que traia el sistema
+    anterior y que la ficha nueva (`EmployeeVoucherHistory`) no tenia.
+
+    Mismo alcance que `/vouchers/requests`: `lo_que_ha_pedido` ya resuelve que
+    quien solo puede pedir material (sin `warehouse_voucher`) solo ve lo
+    suyo, sin importar que `id_user` se mande.
+    """
+    id_user = request.args.get("id_user")
+    ficha = documento_del_historial_de_persona(user_data, id_user)
+    pdf = pdf_del_historial_de_persona(user_data, id_user)
+    return send_file(
+        BytesIO(pdf),
+        mimetype="application/pdf",
+        as_attachment=False,
+        download_name="Historial-%s.pdf" % ficha["empleado"],
+    )
+
+
+# --- los 4 reportes de almacen que ya existian en el sistema anterior ---
+#
+# Los cuatro aceptan el mismo par de filtros: `fecha_inicio`/`fecha_fin`
+# (sobre `incident_date`, el mismo nombre que ya usa `routes/kpi.py` para su
+# rango) e `id_user` (el solicitante/responsable). Guardados con
+# `warehouse_voucher` en modo lectura, igual que el resto de las consultas de
+# este archivo -- no son CRUD de una tabla, son la misma pregunta de siempre
+# ("que ha salido, a nombre de quien") vista de otras 4 formas.
+
+def _filtros_de_reporte():
+    return {
+        "fecha_inicio": request.args.get("fecha_inicio"),
+        "fecha_fin": request.args.get("fecha_fin"),
+        "id_user": request.args.get("id_user"),
+    }
+
+
+@bp_warehouse_voucher.route("/vouchers/reports/by-product", methods=["GET"])
+@token_required
+@require_warehouse_read
+def reporte_producto(user_data):
+    """a) Vales agrupados por codigo de producto."""
+    return jsonify(reporte_por_producto(user_data, **_filtros_de_reporte()))
+
+
+@bp_warehouse_voucher.route("/vouchers/reports/by-project", methods=["GET"])
+@token_required
+@require_warehouse_read
+def reporte_proyecto(user_data):
+    """b) Vales agrupados por proyecto/sitio -- el texto libre de la nota del
+    vale, que es donde vive ese dato en lo migrado de Adser."""
+    return jsonify(reporte_por_almacen(user_data, **_filtros_de_reporte()))
+
+
+@bp_warehouse_voucher.route("/vouchers/reports/pending", methods=["GET"])
+@token_required
+@require_warehouse_read
+def reporte_pendientes(user_data):
+    """c) Vales de salida sin cerrar -- NULL o el sentinela heredado del
+    sistema anterior (1990-01-01). Lista plana, sin agrupar."""
+    return jsonify(reporte_vales_pendientes(user_data, **_filtros_de_reporte()))
+
+
+@bp_warehouse_voucher.route("/vouchers/reports/by-requester", methods=["GET"])
+@token_required
+@require_warehouse_read
+def reporte_solicitante(user_data):
+    """d) Vales agrupados por solicitante/responsable."""
+    return jsonify(reporte_por_persona(user_data, **_filtros_de_reporte()))

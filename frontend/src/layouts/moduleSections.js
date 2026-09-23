@@ -91,14 +91,15 @@ export const moduleSections = [
         ["suppliers", "proveedores", "customer_supplier"],
         ["shipments", "embarques", "logistics_shipment"],
       ]},
-      { key: "section_administration", items: [
-        ["users", "usuarios", "user"],
-        ["roles", "roles", null, "admin"],
-        ["audit", "auditoria", null, "technical"],
-        // La pantalla de seguridad tampoco declaraba nada, asi que la veia
-        // todo el mundo. Se gatea contra el perfil, que es lo que administra.
-        ["security", "seguridad", "permission"],
-      ]},
+      // `section_administration` (Usuarios/Roles/Seguridad) se quito de aqui:
+      // era un segundo camino a las MISMAS pantallas que ya viven, una sola
+      // vez, bajo el engrane de Configuracion (ver
+      // 20260903000000_configuracion_dentro_del_engrane.sql y `navItems` en
+      // Shell.jsx). No se gateaba contra nada de logistica -"users" contra
+      // `user`, "roles" contra ser admin, "security" contra `permission`-, asi
+      // que cualquier rol con esas entidades veia "Administracion" colgando
+      // de "Logistica" sin poder quitarlo desde el gestor de roles: ese
+      // gestor no conoce esta estructura, solo `entity_permission`.
     ],
   },
   {
@@ -149,10 +150,42 @@ export const moduleSections = [
   },
 ];
 
+/**
+ * Entidades PROPIAS de un modulo con secciones: las que empiezan con su
+ * propio prefijo, no las que solo pidio prestadas de otro modulo para no
+ * duplicar pantalla (Almacen/Facturas/Proveedores en Logistica son
+ * `product`/`invoice`/`customer_supplier`, y esas SI son de otro modulo).
+ *
+ * Sin esta lista, un rol sin una sola entidad de logistica seguia viendo el
+ * encabezado "Logistica" -con Almacen, Facturas y Proveedores dentro- en
+ * cuanto tenia el modulo de Inventario, Facturacion o CRM, que es casi
+ * cualquier rol. Y no habia forma de quitarlo desde el Gestor de roles y
+ * permisos: nada ahi controla si "Logistica" se pinta, porque nada de lo que
+ * lo sostenia era, en los hechos, de logistica.
+ */
+function entidadesPropias(modulo, prefijo) {
+  const nombres = new Set();
+  modulo.sections.forEach((seccion) => seccion.items.forEach(([, , entidad]) => {
+    if (entidad && entidad.startsWith(prefijo)) nombres.add(entidad);
+  }));
+  return [...nombres];
+}
+
+// Prefijo de las entidades/capacidades PROPIAS de cada modulo con secciones.
+// Punto de venta tiene la misma fuga que tuvo Logistica: "Almacen"/"Localizar"
+// piden prestado `product` del modulo de Inventario para no duplicar
+// pantalla, y sin este filtro cualquier rol con Inventario -casi cualquier
+// rol- veia el encabezado "Punto de venta" sin tener ni una capacidad real
+// de POS, y sin checkbox en el Gestor de roles que lo apagara.
+const PREFIJO_PROPIO_POR_MODULO = { logistica: "logistics_", pos: "pos_" };
+
 /** Modulos que hoy se pueden mostrar en el menu. */
 export const availableModuleSections = moduleSections.filter(
   (modulo) => modulo.disponible !== false
-);
+).map((modulo) => {
+  const prefijo = PREFIJO_PROPIO_POR_MODULO[modulo.modulo];
+  return prefijo ? { ...modulo, entidadesPropias: entidadesPropias(modulo, prefijo) } : modulo;
+});
 
 /**
  * Los apartados que el plan del despliegue permite.
