@@ -12,6 +12,7 @@ import {
   getMyPermissions,
   getOperationsCatalog,
   getProyect,
+  getQuotationOptions,
   getTaskNotes,
   releaseProyect,
   takeProyect,
@@ -109,6 +110,12 @@ function userLabel(user, fallbackId, fallbackLabel) {
   return user?.full_name || user?.username || user?.email || `${fallbackLabel} #${fallbackId}`;
 }
 
+function quotationLabel(quotation, customerById) {
+  const folio = quotation.folio || `COT-${String(quotation.id_invoice).padStart(6, "0")}`;
+  const customer = customerById[quotation.id_customer_supplier];
+  return customer ? `${folio} — ${customerLabel(customer, "")}` : folio;
+}
+
 function dateLabel(value) {
   return value ? new Date(value).toLocaleDateString(document.documentElement.lang || "es") : "-";
 }
@@ -139,6 +146,7 @@ export default function ProjectManagementPage() {
   const [items, setItems] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [contacts, setContacts] = useState([]);
+  const [quotations, setQuotations] = useState([]);
   const [users, setUsers] = useState([]);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
@@ -218,7 +226,7 @@ export default function ProjectManagementPage() {
         // Promise.all completo -incluido getMyPermissions()-, dejando
         // `permissions` vacio para siempre y el boton de crear invisible
         // aunque el permiso real del rol si alcanzara.
-        const [permissionPayload, customerPayload, contactPayload, userPayload, catalogPayload] = await Promise.all([
+        const [permissionPayload, customerPayload, contactPayload, userPayload, catalogPayload, quotationPayload] = await Promise.all([
           privileged ? Promise.resolve({ entity_permissions: [] }) : getMyPermissions().catch(() => ({ entity_permissions: [] })),
           getCustomerSupplierOptions().catch(() => []),
           getCustomerContactOptions().catch(() => []),
@@ -227,12 +235,14 @@ export default function ProjectManagementPage() {
           // cambios de estatus quedan sin ofrecer, no ofrecidos a ciegas: el
           // servidor los rechazaria y el mensaje seria peor.
           getOperationsCatalog().catch(() => null),
+          getQuotationOptions().catch(() => []),
         ]);
         setPermissions(permissionPayload.entity_permissions || []);
         setCustomers(listOf(customerPayload));
         setContacts(listOf(contactPayload));
         setUsers(listOf(userPayload));
         setCatalog(catalogPayload);
+        setQuotations(listOf(quotationPayload));
       } catch (requestError) {
         setError(requestError.message || projectText("error_prepare"));
       }
@@ -508,7 +518,7 @@ export default function ProjectManagementPage() {
 
     {!loading && total > 0 && <div className="pagination"><button className="button" type="button" disabled={page <= 1} onClick={() => loadData(page - 1)}>{projectText("previous")}</button><span>{projectText("page")} {page} / {Math.max(Math.ceil(total / perPage), 1)}</span><select value={perPage} onChange={(event) => { const nextPerPage = Number(event.target.value); setPerPage(nextPerPage); loadData(1, nextPerPage); }} aria-label={projectText("per_page")}><option value={10}>10</option><option value={20}>20</option><option value={50}>50</option><option value={100}>100</option></select><button className="button" type="button" disabled={page * perPage >= total} onClick={() => loadData(page + 1)}>{projectText("next")}</button></div>}
 
-    {showForm && <div className="project-modal-backdrop" role="presentation"><form className="project-modal" onSubmit={saveProject}><header><div><p className="eyebrow">{projectText("project")}</p><h3>{projectText(editingId ? "edit_project" : "new_project")}</h3></div><button className="icon-button" type="button" onClick={() => setShowForm(false)} aria-label={projectText("close")}><X size={18} /></button></header><div className="form-grid"><label className="field"><span>{projectText("title_field")}</span><input required maxLength={50} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} /></label><label className="field"><span>{projectText("customer")}</span><select required value={form.id_customer_contact} onChange={(event) => setForm({ ...form, id_customer_contact: event.target.value })}><option value="">{projectText("select_contact")}</option>{contacts.map((contact) => <option key={contact.id_customer_contact} value={contact.id_customer_contact}>{contactLabel(contact, projectText("customer"))}</option>)}</select></label><label className="field"><span>{projectText("responsible")}</span><p className="field-static">{editingId ? userLabel(userById[editingLeader], editingLeader, projectText("user")) : (actor.full_name || actor.username || actor.email || projectText("current_user"))}</p></label><label className="field wide"><span>{projectText("description")}</span><textarea required maxLength={200} rows={4} value={form.proyect_description} onChange={(event) => setForm({ ...form, proyect_description: event.target.value })} /></label><label className="field"><span>{projectText("folio")}</span><input maxLength={40} value={form.folio} onChange={(event) => setForm({ ...form, folio: event.target.value })} /></label><label className="field"><span>{projectText("quotation")}</span><input type="number" min="1" value={form.id_quotation} onChange={(event) => setForm({ ...form, id_quotation: event.target.value })} /></label>{canEditManagement && <label className="field"><span>{projectText("purchase_order")}</span><input maxLength={60} value={form.purchase_order} onChange={(event) => setForm({ ...form, purchase_order: event.target.value })} /></label>}{canEditManagement && <label className="field"><span>{projectText("purchase_order_item")}</span><input type="number" min="1" value={form.purchase_order_item} onChange={(event) => setForm({ ...form, purchase_order_item: event.target.value })} /></label>}<label className="field"><span>{projectText("delivery_date")}</span><input type="date" value={form.delivery_date} onChange={(event) => setForm({ ...form, delivery_date: event.target.value })} /></label></div><footer><button className="button" type="button" onClick={() => setShowForm(false)}>{projectText("cancel")}</button><button className="button primary" disabled={busyId !== null}>{projectText("save")}</button></footer></form></div>}
+    {showForm && <div className="project-modal-backdrop" role="presentation"><form className="project-modal" onSubmit={saveProject}><header><div><p className="eyebrow">{projectText("project")}</p><h3>{projectText(editingId ? "edit_project" : "new_project")}</h3></div><button className="icon-button" type="button" onClick={() => setShowForm(false)} aria-label={projectText("close")}><X size={18} /></button></header><div className="form-grid"><label className="field"><span>{projectText("title_field")}</span><input required maxLength={50} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} /></label><label className="field"><span>{projectText("customer")}</span><select required value={form.id_customer_contact} onChange={(event) => setForm({ ...form, id_customer_contact: event.target.value })}><option value="">{projectText("select_contact")}</option>{contacts.map((contact) => <option key={contact.id_customer_contact} value={contact.id_customer_contact}>{contactLabel(contact, projectText("customer"))}</option>)}</select></label><label className="field"><span>{projectText("responsible")}</span><p className="field-static">{editingId ? userLabel(userById[editingLeader], editingLeader, projectText("user")) : (actor.full_name || actor.username || actor.email || projectText("current_user"))}</p></label><label className="field wide"><span>{projectText("description")}</span><textarea required maxLength={200} rows={4} value={form.proyect_description} onChange={(event) => setForm({ ...form, proyect_description: event.target.value })} /></label><label className="field"><span>{projectText("folio")}</span><input maxLength={40} value={form.folio} onChange={(event) => setForm({ ...form, folio: event.target.value })} /></label><label className="field"><span>{projectText("quotation")}</span><select value={form.id_quotation} onChange={(event) => setForm({ ...form, id_quotation: event.target.value })}><option value="">{projectText("select_quotation")}</option>{quotations.map((quotation) => <option key={quotation.id_invoice} value={quotation.id_invoice}>{quotationLabel(quotation, customerById)}</option>)}</select></label>{canEditManagement && <label className="field"><span>{projectText("purchase_order")}</span><input maxLength={60} value={form.purchase_order} onChange={(event) => setForm({ ...form, purchase_order: event.target.value })} /></label>}{canEditManagement && <label className="field"><span>{projectText("purchase_order_item")}</span><input type="number" min="1" value={form.purchase_order_item} onChange={(event) => setForm({ ...form, purchase_order_item: event.target.value })} /></label>}<label className="field"><span>{projectText("delivery_date")}</span><input type="date" value={form.delivery_date} onChange={(event) => setForm({ ...form, delivery_date: event.target.value })} /></label></div><footer><button className="button" type="button" onClick={() => setShowForm(false)}>{projectText("cancel")}</button><button className="button primary" disabled={busyId !== null}>{projectText("save")}</button></footer></form></div>}
 
     {transition && <div className="project-modal-backdrop" role="presentation"><form className="project-modal compact" onSubmit={applyTransition}><header><div><p className="eyebrow">{projectText("status_change")}</p><h3>{statusLabel(transition.target)}</h3></div><button className="icon-button" type="button" onClick={() => setTransition(null)} aria-label={projectText("close")}><X size={18} /></button></header><p>{transition.project.title || `${projectText("project")} #${transition.project.id_proyect}`}</p>{needsReason(transition.target) && <label className="field"><span>{projectText("reason")}</span><textarea required rows={3} value={transition.reason} onChange={(event) => setTransition({ ...transition, reason: event.target.value })} /></label>}<label className="field"><span>{projectText(transitionNoteKey(transition))}</span><textarea rows={3} value={transition.content} onChange={(event) => setTransition({ ...transition, content: event.target.value })} /></label>{transition.target === "blocked" && <label className="field"><span>{projectText("review_date")}</span><input type="datetime-local" value={transition.reviewDate} onChange={(event) => setTransition({ ...transition, reviewDate: event.target.value })} /></label>}<footer><button className="button" type="button" onClick={() => setTransition(null)}>{projectText("cancel")}</button><button className="button primary" disabled={busyId !== null}>{projectText("confirm_change")}</button></footer></form></div>}
 
