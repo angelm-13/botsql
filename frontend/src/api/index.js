@@ -6,6 +6,10 @@ export const verifyMfaLogin = (payload) => request("/auth/mfa/verify-login", { m
 export const setupMfa = () => request("/auth/mfa/setup", { method: "POST" });
 export const enableMfa = (payload) => request("/auth/mfa/enable", { method: "POST", body: payload });
 export const disableMfa = (payload) => request("/auth/mfa/disable", { method: "POST", body: payload });
+
+// Cualquier usuario autenticado, sin importar su rol, cambia SU PROPIA
+// contrasena -- ver POST /user/me/password.
+export const changeMyPassword = (payload) => request("/user/me/password", { method: "POST", body: payload });
 export const resetUserMfa = (targetUserId) => request(`/auth/mfa/reset/${targetUserId}`, { method: "POST" });
 export const inventoryTrace = (params) => request("/inventory/trace", { params });
 

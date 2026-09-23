@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Shell from "./layouts/Shell";
 import Dashboard from "./pages/Dashboard";
 import MfaSetupPage from "./pages/MfaSetupPage";
+import ChangePasswordPage from "./pages/ChangePasswordPage.jsx";
 import RolePermissionManagerPage from "./pages/RolePermissionManagerPage.jsx";
 import KpiPermissionManagerPage from "./pages/KpiPermissionManagerPage.jsx";
 import TeamManagerPage from "./pages/TeamManagerPage.jsx";
@@ -178,6 +179,7 @@ export default function App() {
         <Route path="/" element={<ProtectedRoute><Shell /></ProtectedRoute>}>
           <Route index element={<Dashboard />} />
           <Route path="/mfa-setup" element={<MfaSetupPage />} />
+          <Route path="/change-password" element={<ChangePasswordPage />} />
           <Route path="/role_permissions" element={<AdminRoute><RolePermissionManagerPage /></AdminRoute>} />
           <Route path="/kpi_permissions" element={<AdminRoute><KpiPermissionManagerPage /></AdminRoute>} />
           <Route path="/facturama-config" element={<AdminRoute><FacturamaConfigPage /></AdminRoute>} />

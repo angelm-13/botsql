@@ -101,6 +101,7 @@
     "settings": "Configuración",
     "select_option": "Selecciona una opción",
     "mfa_setup": "Configurar MFA",
+    "change_password": "Cambiar contraseña",
     "mfa_setup_title": "Configurar autenticación MFA",
     "mfa_setup_subtitle": "Genera un QR, escanéalo con Authenticator y confirma el código de 6 dígitos.",
     "mfa_generate_qr": "Generar QR",
@@ -3588,6 +3589,18 @@
     "empty": "Sin contactos registrados.",
     "error_save": "No fue posible guardar el contacto.",
     "error_load": "No fue posible cargar los contactos."
+  },
+  "change_password": {
+    "eyebrow": "MI CUENTA",
+    "title": "Cambiar contraseña",
+    "subtitle": "Disponible para cualquier usuario, sin importar su rol: solo cambia la tuya.",
+    "current": "Contraseña actual",
+    "new": "Contraseña nueva",
+    "confirm": "Confirmar contraseña nueva",
+    "hint": "Mínimo 8 caracteres, con al menos una letra y un número.",
+    "submit": "Guardar contraseña",
+    "success": "Contraseña actualizada correctamente.",
+    "mismatch": "La confirmación no coincide con la contraseña nueva."
   },
   "security": {
     "permission": {
