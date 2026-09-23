@@ -86,6 +86,100 @@ class TestNingunaMigracionPisaAlGestor(unittest.TestCase):
             + ", ".join(culpables),
         )
 
+    # Deuda conocida, sin resolver a proposito -- ver el comentario de abajo.
+    # Cada archivo pisa scope_create/read/update/delete de una fila EXISTENTE
+    # con un UPDATE incondicional (clona los permisos de una entidad "fuente"
+    # hacia una entidad nueva y los reafirma en cada reinicio del pod), el
+    # mismo problema que 20260908100000_roles_con_los_ids_de_la_base.sql tenia
+    # para Supervisor -- solo que acotado a las entidades que cada uno crea,
+    # no a un rol entero. Detectado 2026-09-23 al escribir la prueba de abajo;
+    # no se toco: son 10 archivos de altas de modulo (logistica, proyectos,
+    # citas) mas la migracion de Fase 1 de equipos y alcance, cada uno con su
+    # propio conjunto de entidades/roles, y corregirlos de fondo es trabajo
+    # aparte del pedido que motivo esta prueba (Supervisor). Si se retira uno
+    # de esta lista sin corregir el archivo, esta prueba lo va a atrapar.
+    _DEUDA_UPDATE_INCONDICIONAL = frozenset({
+        "20260822123000_logistics_contacts.sql",
+        "20260822130000_logistics_addresses_contracts_rates.sql",
+        "20260822140000_logistics_fleet.sql",
+        "20260822150000_logistics_wms.sql",
+        "20260822160000_logistics_workflow.sql",
+        "20260822170000_logistics_remaining_entities.sql",
+        "20260822190000_project_management.sql",
+        "20260822210000_appointments.sql",
+        "20260910110000_el_prevale_lo_autoriza_el_jefe_de_almacen.sql",
+        "20260914110000_equipos_y_alcance_por_accion.sql",
+    })
+
+    def test_no_migration_overwrites_scope_columns_via_plain_update(self):
+        """La misma invariante, pero fuera de un `ON CONFLICT`.
+
+        `20260908100000_roles_con_los_ids_de_la_base.sql` pisaba el mapa CRUD
+        con un `UPDATE entity_permission ... FROM <temp> WHERE ...` comun y
+        corriente -- sin `ON CONFLICT` de por medio -- asi que la prueba de
+        arriba (que solo busca ese patron) nunca lo vio. Corria en cada
+        arranque del pod igual que un `ON CONFLICT DO UPDATE` lo haria.
+
+        Los archivos en `_DEUDA_UPDATE_INCONDICIONAL` tienen el mismo defecto
+        y siguen sin corregirse (ver el comentario de esa lista); esta prueba
+        no los vuelve a fallar para no bloquear trabajo que no los toca, pero
+        tampoco deja que aparezca uno nuevo sin que alguien se entere.
+        """
+        columnas_prohibidas = ("scope_create", "scope_read", "scope_update", "scope_delete")
+        culpables = []
+        for archivo in self._archivos():
+            if archivo.name in self._DEUDA_UPDATE_INCONDICIONAL:
+                continue
+            texto = archivo.read_text(encoding="utf-8", errors="replace")
+            for bloque in re.finditer(
+                r"UPDATE\s+entity_permission\b(?:(?!;).)*?\bSET\b(?:(?!;).)*?;",
+                texto, re.I | re.S,
+            ):
+                # Solo importa una columna prohibida del lado del SET, no de un
+                # WHERE/IS DISTINCT FROM que solo la lee para decidir si tocar
+                # la fila -- de eso trata precisamente el patron que se quito.
+                set_clause = re.split(
+                    r"\bFROM\b|\bWHERE\b", bloque.group(0), maxsplit=1, flags=re.I
+                )[0]
+                if any(f"{columna} =" in set_clause.replace("  ", " ") for columna in columnas_prohibidas):
+                    culpables.append(archivo.name)
+                    break
+        self.assertEqual(
+            [], culpables,
+            "Estas migraciones pisan el mapa CRUD de una fila existente con un "
+            "UPDATE directo (sin ON CONFLICT), mismo problema que revierte al "
+            "gestor de roles: " + ", ".join(culpables),
+        )
+
+    def test_no_migration_withdraws_rows_absent_from_its_own_matrix(self):
+        """Dar de baja por ausencia en una matriz vieja tambien revierte al gestor.
+
+        Distinto del `test_no_migration_withdraws_every_permission_at_once` de
+        abajo (que busca un borrado masivo sin condicion): este es el mismo
+        problema pero acotado a un `NOT EXISTS` contra una tabla temporal --
+        cualquier fila que el gestor haya agregado despues, y que esa tabla no
+        conozca, se da de baja en el siguiente reinicio del pod.
+        """
+        culpables = []
+        for archivo in self._archivos():
+            texto = " ".join(archivo.read_text(encoding="utf-8", errors="replace").split())
+            for bloque in re.finditer(
+                r"UPDATE\s+entity_permission\b(?:(?!;).)*?\bSET\b(?:(?!;).)*?;",
+                texto, re.I,
+            ):
+                cuerpo = bloque.group(0)
+                if re.search(r"deletion_date\s*=\s*now\(\)", cuerpo, re.I) and re.search(
+                    r"NOT\s+EXISTS", cuerpo, re.I
+                ):
+                    culpables.append(archivo.name)
+                    break
+        self.assertEqual(
+            [], culpables,
+            "Estas migraciones dan de baja filas de entity_permission ausentes "
+            "de su propia matriz temporal, en cada reinicio del pod: "
+            + ", ".join(culpables),
+        )
+
     def test_no_migration_revives_a_withdrawn_permission(self):
         """Reactivar una fila de baja devuelve un acceso que alguien retiro."""
         culpables = []
