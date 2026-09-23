@@ -607,7 +607,7 @@ export const getAllProyect = (params = {}) => request("/proyect/", { params });
 // Solo id+folio+titulo, sin permiso de entidad -- igual que `getUserOptions` --
 // para que el selector de "Obra" en un vale funcione con roles que no tienen
 // el modulo operaciones (Almacenista).
-export const getProyectOptions = () => request("/proyect/options");
+export const getProyectOptions = (params = {}) => request("/proyect/options", { params });
 export const getProyect = (id) => request(`/proyect/${id}`);
 export const createProyect = (payload) => request("/proyect/", { method: "POST", body: payload });
 export const updateProyect = (id, payload) => request(`/proyect/${id}`, { method: "PUT", body: payload });

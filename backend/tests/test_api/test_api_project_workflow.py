@@ -136,6 +136,28 @@ class TestProjectWorkflowApi(BackendTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(self.json(response)["error_key"], "errors.project_transition_reason_required")
 
+    def test_options_mine_filters_by_leader(self):
+        """El selector de proyecto del prevale: sin `mine`, la lista completa
+        -lo que ya necesitaba el Almacenista-; con `mine=1`, solo los propios
+        -lo que necesita el Supervisor, que es siempre el `leader`."""
+        mine = self._create_project()
+        self._request(self.other_supervisor, "POST", "/proyect/", {
+            "id_customer_supplier": 1,
+            "title": "Fabricación de otro supervisor",
+            "proyect_description": "No debe aparecer con mine=1",
+        })
+
+        sin_filtro = self._request(self.supervisor, "GET", "/proyect/options")
+        self.assertEqual(sin_filtro.status_code, 200)
+        ids_sin_filtro = {item["id_proyect"] for item in self.json(sin_filtro)}
+        self.assertIn(mine["id_proyect"], ids_sin_filtro)
+        self.assertEqual(len(ids_sin_filtro), 2)
+
+        con_filtro = self._request(self.supervisor, "GET", "/proyect/options?mine=1")
+        self.assertEqual(con_filtro.status_code, 200)
+        ids_con_filtro = {item["id_proyect"] for item in self.json(con_filtro)}
+        self.assertEqual(ids_con_filtro, {mine["id_proyect"]})
+
 
 if __name__ == "__main__":
     import unittest

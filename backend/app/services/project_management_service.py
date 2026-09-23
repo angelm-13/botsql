@@ -188,7 +188,7 @@ def transition_management(project_id, payload: dict, user_data: dict) -> dict:
         return _project_payload(project)
 
 
-def project_options() -> list[dict]:
+def project_options(*, id_leader: int | None = None) -> list[dict]:
     """Solo id+folio+titulo, para selectores como "Obra" en un vale de almacen.
 
     Sin permiso de entidad de por medio, igual que `UserService.options()`: un
@@ -197,12 +197,22 @@ def project_options() -> list[dict]:
     no su cotizacion, su orden de compra ni su historial. Sin esto, el selector
     de proyecto en el vale seria un 403 para el rol que mas lo usa: el propio
     Almacenista no tiene el modulo `operaciones`.
+
+    `id_leader` es OPCIONAL y lo pide quien llama, no un alcance que este
+    modulo adivine: el Supervisor de un prevale solo debe ver SUS proyectos
+    -es el unico que pide material, y el responsable del vale ya es el mismo
+    actor-, pero el Almacenista que autoriza necesita la lista completa para
+    reconocer cualquier obra que le mencionen. No es el filtrado de Fase 2
+    (Propios/Mis grupos/Todos) que sigue pendiente en el resto del sistema;
+    es un filtro puntual de este selector, pedido por quien lo consume.
     """
     with transaction_context() as db:
+        consulta = db.query(Proyect.id_proyect, Proyect.folio, Proyect.title,
+                            Proyect.proyect_description)
+        if id_leader is not None:
+            consulta = consulta.filter(Proyect.leader == id_leader)
         filas = (
-            db.query(Proyect.id_proyect, Proyect.folio, Proyect.title,
-                     Proyect.proyect_description)
-            .filter(Proyect.deletion_date.is_(None))
+            consulta.filter(Proyect.deletion_date.is_(None))
             .order_by(Proyect.id_proyect.desc())
             .all()
         )

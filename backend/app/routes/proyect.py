@@ -153,8 +153,18 @@ def list_proyect_options(user_data):
     Sin permiso de entidad -- igual que `/user/options` -- porque un Almacenista
     levanta vales sin tener el modulo `operaciones`. Ver el docstring de
     `project_options()`.
+
+    `?mine=1` acota a los proyectos donde el actor es `leader` -lo que pide el
+    prevale del Supervisor-; sin el parametro, la lista sigue completa.
     """
-    return jsonify(project_options())
+    solo_mios = str(request.args.get('mine') or '').strip().lower() in ('1', 'true', 'si', 'yes')
+    id_leader = None
+    if solo_mios:
+        try:
+            id_leader = int(user_data.get('id_user') or user_data.get('user_id') or 0) or None
+        except (TypeError, ValueError):
+            id_leader = None
+    return jsonify(project_options(id_leader=id_leader))
 
 
 @bp_proyect.route('/', methods=['GET'])
