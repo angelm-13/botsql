@@ -94,6 +94,7 @@
     "settings": "Settings",
     "select_option": "Select an option",
     "mfa_setup": "Set up MFA",
+    "change_password": "Change password",
     "mfa_setup_title": "Set up MFA authentication",
     "mfa_setup_subtitle": "Generate a QR code, scan it with Authenticator, and confirm the 6-digit code.",
     "mfa_generate_qr": "Generate QR",
@@ -3550,6 +3551,18 @@
     "empty": "No contacts registered.",
     "error_save": "The contact could not be saved.",
     "error_load": "The contacts could not be loaded."
+  },
+  "change_password": {
+    "eyebrow": "MY ACCOUNT",
+    "title": "Change password",
+    "subtitle": "Available to any user regardless of role: it only changes your own.",
+    "current": "Current password",
+    "new": "New password",
+    "confirm": "Confirm new password",
+    "hint": "At least 8 characters, with one letter and one number.",
+    "submit": "Save password",
+    "success": "Password updated successfully.",
+    "mismatch": "The confirmation doesn't match the new password."
   },
   "security": {
     "permission": {

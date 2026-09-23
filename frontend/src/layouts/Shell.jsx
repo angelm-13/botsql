@@ -16,6 +16,10 @@ const navItems = [
   // de roles ya ofrece por rol y por entidad- junto con lo que la base tenga
   // agrupado como "Configuracion" (ver 20260903000000_configuracion_dentro_del_engrane.sql).
   { path: "/mfa-setup", key: "common.mfa_setup", group: "Configuracion", groupIcon: "settings", location: "settings", order: 910 },
+  // Igual que /mfa-setup: cualquier usuario autenticado la necesita, sin
+  // importar su rol -- no hay fila de entity_permission que la gatee, ver
+  // el caso especial en canSeeNavItem.
+  { path: "/change-password", key: "common.change_password", group: "Configuracion", groupIcon: "settings", location: "settings", order: 920 },
   { path: "/role_permissions", key: "common.role_permission_manager", adminOnly: true, groupIcon: "settings", location: "settings" },
   { path: "/kpi_permissions", key: "common.kpi_permission_manager", adminOnly: true, groupIcon: "settings", location: "settings" },
   { path: "/facturama-config", key: "menu.facturama_config", adminOnly: true, groupIcon: "settings", location: "settings" },
@@ -298,7 +302,7 @@ export default function Shell() {
   }, [location.pathname]);
 
   function canSeeNavItem(item) {
-    if (item.exact || item.path === "/mfa-setup") return true;
+    if (item.exact || item.path === "/mfa-setup" || item.path === "/change-password") return true;
     if (technicalPaths.includes(item.path)) return isBootstrapAdmin;
     if (item.adminOnly) return isAdminUser;
     if (isBootstrapAdmin) return true;

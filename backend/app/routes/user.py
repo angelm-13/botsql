@@ -1,5 +1,8 @@
 from __future__ import annotations
+from datetime import datetime
+import re
 from flask import Blueprint, jsonify, request
+import bcrypt
 from app.services.user_service import UserService
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
@@ -475,3 +478,54 @@ def delete_user(user_data, id_user):
     if existing and str(existing.get('user_type') or '').strip().lower() == 'web_shopper':
         return jsonify({'error_key': 'errors.resource_not_found'}), 404
     return _delete_user_or_retire_bootstrap(user_data, id_user, UserService)
+
+
+@bp_user.route('/me/password', methods=['POST'])
+@token_required
+def change_own_password(user_data):
+    """Cualquier usuario autenticado cambia SU PROPIA contrasena.
+
+    Sin `require_entity_permission` a proposito, igual que `/user/options`:
+    la fila que se toca es siempre la del propio actor (`user_data['id_user']`),
+    nunca una que llegue por parametro, asi que el permiso de entidad de
+    `user` -que hoy solo tiene Administrator- no aplica aqui y no hace
+    falta.
+
+    No existia ningun camino para esto antes: `password` esta fuera de
+    `ALLOWED_FIELDS` del CRUD generico de usuarios de este archivo, asi que
+    ni siquiera Administrator podia cambiarla desde la app -- solo se fija
+    al sembrar o crear la cuenta. La cuenta de arranque (bootstrap) tambien
+    puede usar esta ruta: es la unica forma de cambiar SU password, ya que
+    esta fuera del CRUD por completo.
+    """
+    payload = request.get_json(silent=True) or {}
+    current_password = str(payload.get('current_password') or '')
+    new_password = str(payload.get('new_password') or '')
+    if len(new_password) < 8 or not re.search(r'[A-Za-z]', new_password) or not re.search(r'[0-9]', new_password):
+        raise AppError('errors.validation_failed', 400, {'field': 'new_password'})
+
+    with transaction_context() as session:
+        user = session.get(UserService.model, user_data.get('id_user'))
+        if user is None:
+            raise AppError('errors.resource_not_found', 404)
+        stored = getattr(user, 'password', None) or ''
+        if not stored or not bcrypt.checkpw(current_password.encode('utf-8'), stored.encode('utf-8')):
+            # 400 y no 401: un 401 en este frontend (ver api/client.js) borra
+            # el token y manda a /login -- correcto para una sesion invalida,
+            # pero esto no es eso, es una contrasena actual mal escrita en un
+            # formulario, con la sesion todavia perfectamente valida.
+            raise AppError('errors.auth_invalid_credentials', 400)
+        user.password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        user.last_update_date = datetime.utcnow()
+        try:
+            from app.models import EventLog
+            session.add(EventLog(
+                table_name='user', field_name='password', action='update',
+                event_detail='self_service_password_change',
+                before_value={}, after_value={},
+                created_by=user_data.get('id_user') or 1,
+            ))
+        except Exception:
+            pass
+        session.flush()
+    return jsonify({'message_key': 'success.password_changed'})
