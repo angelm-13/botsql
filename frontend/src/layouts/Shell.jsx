@@ -64,7 +64,13 @@ const navItems = [
   // escribe en `incident` y en `nm_incident_product`, y esa segunda esta
   // fuera del menu a proposito, por ser tabla puente. La etiqueta, el grupo
   // y el orden los da la fila de la capacidad en el backend.
-  { path: "/vouchers", key: "menu.warehouse_voucher", label: "Vales de almacén", entityName: "warehouse_voucher" },
+  //
+  // Dos capacidades abren la misma puerta y nunca las tiene el mismo rol:
+  // `warehouse_voucher` (Almacenista, surte) y `warehouse_prevoucher`
+  // (Supervisor, solo pide un borrador). Con una sola clave aqui, Supervisor
+  // se quedaba sin entrada de menu -tenia el permiso en la base, pero la
+  // pantalla nunca aparecia para llegar a usarlo.
+  { path: "/vouchers", key: "menu.warehouse_voucher", label: "Vales de almacén", entityName: ["warehouse_voucher", "warehouse_prevoucher"] },
   { path: "/nm_survey_user", key: "menu.nm_survey_user" },
   { path: "/nm_template_task", key: "menu.nm_template_task" },
   { path: "/payroll_concept", key: "menu.payroll_concept" },
@@ -289,14 +295,22 @@ export default function Shell() {
     setMobileNavOpen(false);
   }, [location.pathname]);
 
+  // `item.entityName` normalmente es una sola clave, pero una pantalla que
+  // comparten dos roles sin capacidad en comun -como `/vouchers`, entre
+  // Almacenista y Supervisor- necesita aceptar CUALQUIERA de varias.
+  function entityNamesFor(item) {
+    if (Array.isArray(item.entityName)) return item.entityName;
+    return [item.entityName || String(item.path || "").replace(/^\//, "")];
+  }
+
   function canSeeNavItem(item) {
     if (item.exact || item.path === "/mfa-setup") return true;
     if (technicalPaths.includes(item.path)) return isBootstrapAdmin;
     if (item.adminOnly) return isAdminUser;
     if (isBootstrapAdmin) return true;
     if (!rolePermissionsLoaded) return false;
-    const entityName = item.entityName || String(item.path || "").replace(/^\//, "");
-    return roleEntityPermissions.some((row) => String(row.entity_name || "") === entityName);
+    const entityNames = entityNamesFor(item);
+    return roleEntityPermissions.some((row) => entityNames.includes(String(row.entity_name || "")));
   }
 
   const visibleNavItems = navItems.filter(canSeeNavItem);
@@ -329,9 +343,13 @@ export default function Shell() {
   }
 
   function navigationFor(item) {
-    const entityName = item.entityName || String(item.path || "").replace(/^\//, "");
+    const entityNames = entityNamesFor(item);
+    // Con varias claves, se usa la fila del actor -quien la tenga concedida-
+    // para menu_group/menu_order/etc.; si no tiene ninguna (no deberia pasar,
+    // ya filtro `canSeeNavItem`) cae a la primera para no romper el layout.
+    const entityName = entityNames.find((nombre) => permissionByEntity.has(nombre)) || entityNames[0];
     const permission = permissionByEntity.get(entityName);
-    const isCanonicalPath = item.path === `/${entityName}`;
+    const isCanonicalPath = entityNames.length === 1 && item.path === `/${entityName}`;
     return {
       ...item,
       location: item.location || permission?.menu_location || (item.adminOnly ? "settings" : "sidebar"),
