@@ -180,6 +180,38 @@ class TestNingunaMigracionPisaAlGestor(unittest.TestCase):
             + ", ".join(culpables),
         )
 
+    def test_no_migration_recreates_a_role_that_was_withdrawn(self):
+        """Un NOT EXISTS que solo mira roles activos resucita el que se retiro.
+
+        `20260828150000_warehouse_roles.sql` creaba "Jefe de almacen" si no
+        veia una fila ACTIVA con ese nombre en `permission`. Una vez que
+        `20260921120000_fusionar_jefe_de_almacen_en_almacenista.sql` lo dio de
+        baja logica, cada reinicio del pod volvia a ver "no existe" (porque
+        la unica fila que habia estaba de baja), creaba una fila nueva, y esa
+        migracion la volvia a dar de baja en la misma pasada -- una fila
+        fantasma nueva en cada despliegue, para siempre. Medido en tyakxa-dev:
+        9 filas acumuladas en dos dias de deploys normales.
+        """
+        culpables = []
+        for archivo in self._archivos():
+            texto = " ".join(archivo.read_text(encoding="utf-8", errors="replace").split())
+            for bloque in re.finditer(
+                r"INSERT\s+INTO\s+permission\b(?:(?!;).)*?;", texto, re.I,
+            ):
+                cuerpo = bloque.group(0)
+                if re.search(r"NOT\s+EXISTS\s*\(", cuerpo, re.I) and re.search(
+                    r"deletion_date\s+IS\s+NULL", cuerpo, re.I
+                ):
+                    culpables.append(archivo.name)
+                    break
+        self.assertEqual(
+            [], culpables,
+            "Estas migraciones solo comprueban roles ACTIVOS antes de crear "
+            "uno por nombre, asi que resucitan en cada reinicio del pod "
+            "cualquier rol que se haya retirado a proposito: "
+            + ", ".join(culpables),
+        )
+
     def test_no_migration_revives_a_withdrawn_permission(self):
         """Reactivar una fila de baja devuelve un acceso que alguien retiro."""
         culpables = []

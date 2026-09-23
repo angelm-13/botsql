@@ -77,10 +77,18 @@ WHERE permission_description IN
     ('Supervisor', 'Gerente', 'Jefe de taller', 'Almacenista', 'Jefe de almacen')
   AND deletion_date IS NULL;
 
+-- 4 o 5, no exactamente 5 (corregido 2026-09-23): esta migracion es de
+-- 2026-09-08, antes de que 20260921120000_fusionar_jefe_de_almacen_en_almacenista.sql
+-- retirara "Jefe de almacen" como rol -- decision de negocio posterior,
+-- legitima. Exigir 5 aqui reventaba esta migracion en CADA reinicio del pod
+-- desde el 09-21 (aborta el `for` de db-migrate.sh entero, todo lo que sigue
+-- en el archivo se queda sin aplicar). Con 4 sigue detectando el problema
+-- real que esta comprobacion queria atrapar -- una instalacion donde falta
+-- alguno de los roles core, no solo el que se retiro a proposito despues.
 DO $$
 BEGIN
-    IF (SELECT count(*) FROM role_ids) <> 5 THEN
-        RAISE EXCEPTION 'Se esperaban 5 roles (Supervisor, Gerente, Jefe de taller, Almacenista, Jefe de almacen) en permission y se encontraron %. Revisar antes de continuar.',
+    IF (SELECT count(*) FROM role_ids) NOT IN (4, 5) THEN
+        RAISE EXCEPTION 'Se esperaban 4 o 5 roles (Supervisor, Gerente, Jefe de taller, Almacenista, y "Jefe de almacen" solo si esta instalacion no lo retiro todavia) en permission y se encontraron %. Revisar antes de continuar.',
             (SELECT count(*) FROM role_ids);
     END IF;
 END $$;

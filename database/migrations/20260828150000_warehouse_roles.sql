@@ -21,13 +21,30 @@
 BEGIN;
 
 -- 1) Los dos roles, si no existen ya --------------------------------------
+--
+-- Corregido 2026-09-23: el NOT EXISTS solo miraba filas ACTIVAS. Desde que
+-- 20260921120000_fusionar_jefe_de_almacen_en_almacenista.sql da de baja
+-- logica "Jefe de almacen" al fusionarlo en Almacenista, esta migracion (que
+-- corre antes en cada reinicio del pod, por orden de fecha) dejaba de ver una
+-- fila activa con ese nombre y creaba una nueva -- que la migracion de fusion
+-- volvia a dar de baja en la misma pasada. Resultado: una fila fantasma nueva
+-- en `permission` (y sus ~8 en entity_permission) en CADA arranque, desde el
+-- 2026-09-21. Medido en tyakxa-dev: 9 filas fantasma acumuladas en dos dias
+-- de despliegues normales, visibles en el selector del Gestor de roles porque
+-- ademas `PermissionService.list()` no filtraba la baja logica (corregido
+-- aparte).
+--
+-- Se quita el filtro de `deletion_date IS NULL`: ahora "existe" significa
+-- que el nombre aparecio alguna vez, este activo o de baja. Es el mismo
+-- criterio que ya rige entity_permission en todo el resto del proyecto (ver
+-- test_manager_wins.py) -- una baja logica significa que alguien lo retiro a
+-- proposito, y una resiembra no debe resucitarlo.
 INSERT INTO permission (created_by, authorized_by, permission_description, id_department, id_subdepartment, id_level)
 SELECT 1, 1, nombre.rol, 1, 1, 1
 FROM (VALUES ('Almacenista'), ('Jefe de almacen')) AS nombre(rol)
 WHERE NOT EXISTS (
     SELECT 1 FROM permission p
     WHERE lower(p.permission_description) = lower(nombre.rol)
-      AND p.deletion_date IS NULL
 );
 
 -- 2) Sus capacidades -------------------------------------------------------
