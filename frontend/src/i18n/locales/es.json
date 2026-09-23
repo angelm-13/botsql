@@ -2753,6 +2753,7 @@
     "credit_note_validation_failed": "Los conceptos de la nota no cumplen las reglas del SAT.",
     "auth_too_many_attempts": "Demasiados intentos fallidos. Espera unos minutos antes de volver a intentar.",
     "auth_missing_credentials": "Faltan el usuario o la contrasena.",
+    "quotation_already_linked": "Esa cotización ya está ligada a otro proyecto. Dos proyectos con la misma cotización no se pueden distinguir al facturar.",
     "inventory_asset_tag_already_used": "Ya hay una pieza con esa etiqueta. Dos herramientas con la misma etiqueta vuelven inútil el rastreo.",
     "inventory_product_is_not_serialized": "Este producto se lleva por cantidad, no pieza por pieza. Cámbialo a serializado si necesitas rastrear cada unidad.",
     "inventory_asset_is_retired": "Esa pieza está dada de baja y no vuelve. Si reapareció, dala de alta como pieza nueva para que su historia anterior quede cerrada.",

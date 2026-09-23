@@ -35,7 +35,7 @@ ALLOWED_FIELDS = [
     'id_proyect', 'id_customer_supplier', 'id_customer_contact', 'leader', 'proyect_description',
     'title', 'proyect_status', 'created_by', 'creation_date',
     'last_update_date', 'deletion_date',
-    'folio', 'requested_by', 'id_quotation', 'purchase_order',
+    'folio', 'requested_by', 'id_quotation', 'quotation_reference', 'purchase_order',
     'purchase_order_item', 'id_supervisor', 'delivery_date',
     'id_drawing_document', 'management_status',
 ]

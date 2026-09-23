@@ -90,7 +90,13 @@ PROJECT_MUTABLE_FIELDS = {
     # (decision de negocio). `id_supervisor` se quito del formulario -- es el
     # mismo concepto que `leader` -- y la columna se deja inerte en la base,
     # sin migracion de borrado.
-    "folio", "id_quotation", "purchase_order",
+    #
+    # `id_quotation`/`quotation_reference` tampoco estan aqui a proposito: el
+    # formulario manda un solo valor crudo bajo `id_quotation` y
+    # `_resolver_cotizacion` decide a cual de las dos columnas va -- dejarlas
+    # en este set permitiria que alguien mandara `quotation_reference`
+    # directo, sin pasar por esa resolucion.
+    "folio", "purchase_order",
     "purchase_order_item", "delivery_date",
     "id_drawing_document",
 }
@@ -673,21 +679,52 @@ def _parsear_fecha_de_la_orden(values: dict) -> None:
                            {"field": "delivery_date"}) from fallo
 
 
-def _validar_referencias_de_la_orden(db, values: dict) -> None:
-    """Que la cotizacion, el contacto y el dibujo existan de verdad.
+def _resolver_cotizacion(db, valor_bruto) -> tuple:
+    """Un solo campo de captura, dos destinos posibles.
 
-    `id_quotation`, `id_customer_contact` e `id_drawing_document` son llaves
-    ajenas normales -no diferidas, como las de `incident`-, asi que un id
-    inventado revienta en el INSERT/UPDATE como un IntegrityError crudo y le
-    llega al usuario como un 500 en vez del 404 que le toca. Se comprueba
-    antes, igual que ya hace `crear_vale` con `id_proyect`.
+    El formulario manda un solo valor bajo `id_quotation`. Si coincide con un
+    `invoice` real de esta base, se liga ahi (FK protegida). Si no -- el
+    folio de un sistema externo, como el de adser, que nunca genera una fila
+    de invoice aqui y puede traer letras/guiones -- se guarda tal cual en
+    `quotation_reference`, sin exigir que exista nada.
     """
     from app.models.invoice import Invoice
+
+    if valor_bruto in (None, ""):
+        return None, None
+    texto = str(valor_bruto).strip()
+    if texto.isdigit() and db.get(Invoice, int(texto)) is not None:
+        return int(texto), None
+    return None, texto[:80]
+
+
+def _validar_referencias_de_la_orden(db, values: dict, id_proyecto_actual=None) -> None:
+    """Que la cotizacion no este duplicada, y que el contacto y el dibujo existan de verdad.
+
+    `id_customer_contact` e `id_drawing_document` son llaves ajenas normales
+    -no diferidas, como las de `incident`-, asi que un id inventado revienta
+    en el INSERT/UPDATE como un IntegrityError crudo y le llega al usuario
+    como un 500 en vez del 404 que le toca. Se comprueba antes, igual que ya
+    hace `crear_vale` con `id_proyect`.
+
+    `id_quotation` ya llega resuelto por `_resolver_cotizacion` -- aqui solo
+    se comprueba que, si es un `invoice` real, no este ya ligado a OTRO
+    proyecto activo: dos proyectos con la misma cotizacion no se pueden
+    distinguir al facturar.
+    """
     from app.models.customer_contact import CustomerContact
 
-    if values.get("id_quotation") and db.get(Invoice, int(values["id_quotation"])) is None:
-        raise AppError("errors.not_found", 404,
-                       {"entity": "invoice", "field": "id_quotation"})
+    if values.get("id_quotation") is not None:
+        conflicto = db.scalars(
+            select(Proyect.id_proyect).where(
+                Proyect.id_quotation == values["id_quotation"],
+                Proyect.deletion_date.is_(None),
+                Proyect.id_proyect != (id_proyecto_actual or -1),
+            ).limit(1)
+        ).first()
+        if conflicto is not None:
+            raise AppError("errors.quotation_already_linked", 409,
+                           {"id_quotation": values["id_quotation"], "id_proyect": conflicto})
     if values.get("id_customer_contact"):
         contacto = db.get(CustomerContact, int(values["id_customer_contact"]))
         if contacto is None or contacto.deletion_date is not None:
@@ -721,6 +758,8 @@ def create_project(payload: dict, user_data: dict) -> dict:
     values["proyect_status"] = "draft"
     _parsear_fecha_de_la_orden(values)
     with transaction_context() as db:
+        values["id_quotation"], values["quotation_reference"] = _resolver_cotizacion(
+            db, (payload or {}).get("id_quotation"))
         _validar_referencias_de_la_orden(db, values)
         project = Proyect(**values)
         db.add(project)
@@ -743,7 +782,10 @@ def update_project(project_id, payload: dict, user_data: dict) -> dict:
         if (scope == "ownership" or leads_it) and normalize_project_status(project.proyect_status) not in {"draft", "blocked"}:
             raise AppError("errors.project_not_editable", 409, {"status": project.proyect_status})
         _parsear_fecha_de_la_orden(values)
-        _validar_referencias_de_la_orden(db, values)
+        if payload and "id_quotation" in payload:
+            values["id_quotation"], values["quotation_reference"] = _resolver_cotizacion(
+                db, payload.get("id_quotation"))
+        _validar_referencias_de_la_orden(db, values, id_proyecto_actual=project.id_proyect)
         for field, value in values.items():
             setattr(project, field, value)
         db.flush()

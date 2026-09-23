@@ -2711,6 +2711,7 @@
     "credit_note_validation_failed": "The note lines do not meet SAT rules.",
     "auth_too_many_attempts": "Too many failed attempts. Wait a few minutes before trying again.",
     "auth_missing_credentials": "Username or password missing.",
+    "quotation_already_linked": "That quotation is already linked to another project. Two projects with the same quotation can't be told apart when invoicing.",
     "inventory_asset_tag_already_used": "Another asset already uses that tag. Two tools with the same tag make tracking useless.",
     "inventory_product_is_not_serialized": "This product is tracked by quantity, not unit by unit. Switch it to serialized to track each piece.",
     "inventory_asset_is_retired": "That asset is retired and does not come back. If it reappeared, register it as a new asset so its earlier history stays closed.",

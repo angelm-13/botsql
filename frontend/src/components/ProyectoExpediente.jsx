@@ -152,7 +152,7 @@ export default function ProyectoExpediente({ detalle, catalogo, modo, onCambio }
         <Dato etiqueta={etiqueta("folio", "Folio")} valor={detalle.folio} />
         <Dato etiqueta={etiqueta("requested_by", "Lo pidió")} valor={detalle.requested_by} />
         <Dato etiqueta={etiqueta("quotation", "Cotización")}
-              valor={detalle.id_quotation && `#${detalle.id_quotation}`} />
+              valor={detalle.id_quotation ? `#${detalle.id_quotation}` : detalle.quotation_reference} />
         <Dato etiqueta={etiqueta("purchase_order", "Orden de compra")}
               valor={detalle.purchase_order} />
         <Dato etiqueta={etiqueta("purchase_order_item", "Partida")}
