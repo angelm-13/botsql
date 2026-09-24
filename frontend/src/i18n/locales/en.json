@@ -4230,6 +4230,7 @@
     "title": "Warehouse vouchers",
     "subtitle": "Who took what, from where, and whether it came back. A voucher closes itself when its last line returns.",
     "new": "New voucher",
+    "draft_new": "New prevoucher",
     "open": "Open voucher",
     "created": "Voucher opened",
     "closed_all": "That was the last line: the voucher is closed.",

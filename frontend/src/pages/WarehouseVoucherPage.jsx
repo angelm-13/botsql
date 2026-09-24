@@ -369,7 +369,9 @@ export default function WarehouseVoucherPage() {
         <button className="button button-primary" onClick={abrirBorrador}
         disabled={cargando || !tipos.length}>
         <Plus size={16} />
-        {t("voucher.new", "Levantar vale")}
+        {soloPuedeSolicitar
+          ? t("voucher.draft_new", "Levantar prevale")
+          : t("voucher.new", "Levantar vale")}
         </button>
         </div>
       </PageHeader>
@@ -744,16 +746,10 @@ function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
                       o un saco de cemento, y quien mira un vale para reclamar
                       material necesita saber QUE es. */}
                   <td><FichaDeProducto producto={linea.product} onAmpliar={onAmpliar} t={t} /></td>
-                  <td className="vale-tabla-cantidad">
-                    <span className="vale-que">
-                      {linea.id_inventory_asset ? <Tag size={13} /> : <Package size={13} />}
-                      {linea.id_inventory_asset
-                        ? `${t("voucher.piece", "pieza")} #${linea.id_inventory_asset}`
-                        : linea.quantity}
-                    </span>
-                    <span className="muted vale-existencia">
-                      {t("voucher.on_hand", "quedan")} {linea.stock_on_hand}
-                    </span>
+                  <td className="mono">
+                    {linea.id_inventory_asset
+                      ? `${t("voucher.piece", "pieza")} #${linea.id_inventory_asset}`
+                      : linea.quantity}
                   </td>
                   {/* La pregunta que importa a simple vista, en rojo o en
                       verde y nada mas: ¿ya volvio o no? Lo vencido sigue
@@ -797,11 +793,22 @@ function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
                     )}
                   </td>
                   <td className="mono muted">
-                    {linea.start_date ? new Date(linea.start_date).toLocaleString("es-MX") : "—"}
+                    {/* `creation_date` de respaldo cuando falta `start_date`: lo
+                        migrado de Adser nunca tuvo `start_date` (concepto propio
+                        del vale rediseñado), pero si trae su fecha de alta real
+                        del sistema anterior en `creation_date`. */}
+                    {(linea.start_date || linea.creation_date)
+                      ? new Date(linea.start_date || linea.creation_date).toLocaleString("es-MX")
+                      : "—"}
                   </td>
                   <td className="mono muted">
-                    {!abierto && entrada?.close_date
-                      ? new Date(entrada.close_date).toLocaleString("es-MX")
+                    {/* La entrada pareada manda cuando existe -es la devolucion
+                        hecha desde esta app-, pero lo migrado de Adser cerraba
+                        el renglon de salida directo, sin una entrada aparte: sin
+                        este respaldo, todo lo cerrado antes de esta app se veria
+                        para siempre sin fecha de cierre. */}
+                    {!abierto && (entrada?.close_date || salida?.close_date)
+                      ? new Date(entrada?.close_date || salida?.close_date).toLocaleString("es-MX")
                       : "—"}
                   </td>
                 </tr>
@@ -996,7 +1003,11 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
   return (
     <section className="vale-borrador">
       <header>
-        <h2><Plus size={16} />{t("voucher.new", "Levantar vale")}</h2>
+        <h2><Plus size={16} />
+          {soloPuedeSolicitar
+            ? t("voucher.draft_new", "Levantar prevale")
+            : t("voucher.new", "Levantar vale")}
+        </h2>
         <button className="vale-icono" onClick={onCancelar}
                 aria-label={t("common.cancel", "Cancelar")}>
           <X size={16} />

@@ -4332,6 +4332,7 @@
     "title": "Vales de almacén",
     "subtitle": "Quién se llevó qué, de dónde, y si ya lo devolvió. El vale se cierra solo cuando vuelve su último renglón.",
     "new": "Levantar vale",
+    "draft_new": "Levantar prevale",
     "open": "Abrir vale",
     "created": "Vale abierto",
     "closed_all": "Era el último renglón: el vale queda cerrado.",
