@@ -260,7 +260,29 @@ export const createDepartment = (payload) => request("/department/", { method: "
 export const updateDepartment = (id, payload) => request(`/department/${id}`, { method: "PUT", body: payload });
 export const deleteDepartment = (id) => request(`/department/${id}`, { method: "DELETE" });
 
-export const getAllEntityPermission = (params = {}) => isPrivilegedPermissionUser() ? request("/entity_permission/", { params }) : getMyPermissions().then((payload) => ({ items: payload.entity_permissions || [], page: 1, pages: 1, per_page: (payload.entity_permissions || []).length, total: (payload.entity_permissions || []).length }));
+// `isPrivilegedPermissionUser()` decide por `user_type`, un campo separado
+// del rol real (`id_permission`) que nada obliga a mantener consistente -- un
+// usuario con `user_type="admin"` pero un rol restringido (ej. Gerente) cae
+// aqui creyendose privilegiado, y el backend lo niega con 403 porque su rol
+// de verdad no tiene alcance sobre esta tabla. Sin el fallback, ese 403
+// tumbaba `RoleAccessRoute` (App.jsx) y dejaba al usuario rebotando al
+// Dashboard sin poder entrar a ninguna pantalla.
+function privilegedOrOwnRows(path, params, myPermissionsKey) {
+  if (!isPrivilegedPermissionUser()) return myPermissionsAsList(myPermissionsKey);
+  return request(path, { params }).catch((error) => {
+    if (error?.status === 403) return myPermissionsAsList(myPermissionsKey);
+    throw error;
+  });
+}
+
+function myPermissionsAsList(key) {
+  return getMyPermissions().then((payload) => {
+    const rows = payload?.[key] || [];
+    return { items: rows, page: 1, pages: 1, per_page: rows.length, total: rows.length };
+  });
+}
+
+export const getAllEntityPermission = (params = {}) => privilegedOrOwnRows("/entity_permission/", params, "entity_permissions");
 export const getEntityPermission = (id) => request(`/entity_permission/${id}`);
 export const createEntityPermission = (payload) => request("/entity_permission/", { method: "POST", body: payload });
 export const updateEntityPermission = (id, payload) => request(`/entity_permission/${id}`, { method: "PUT", body: payload });
@@ -284,7 +306,7 @@ export const createEventLog = (payload) => request("/event_log/", { method: "POS
 export const updateEventLog = (id, payload) => request(`/event_log/${id}`, { method: "PUT", body: payload });
 export const deleteEventLog = (id) => request(`/event_log/${id}`, { method: "DELETE" });
 
-export const getAllField = (params = {}) => isPrivilegedPermissionUser() ? request("/field/", { params }) : getMyPermissions().then((payload) => ({ items: payload.fields || [], page: 1, pages: 1, per_page: (payload.fields || []).length, total: (payload.fields || []).length }));
+export const getAllField = (params = {}) => privilegedOrOwnRows("/field/", params, "fields");
 export const getField = (id) => request(`/field/${id}`);
 export const createField = (payload) => request("/field/", { method: "POST", body: payload });
 export const updateField = (id, payload) => request(`/field/${id}`, { method: "PUT", body: payload });
@@ -534,7 +556,7 @@ export const createMovement = (payload) => request("/movement/", { method: "POST
 export const updateMovement = (id, payload) => request(`/movement/${id}`, { method: "PUT", body: payload });
 export const deleteMovement = (id) => request(`/movement/${id}`, { method: "DELETE" });
 
-export const getAllNmFieldPermission = (params = {}) => isPrivilegedPermissionUser() ? request("/nm_field_permission/", { params }) : getMyPermissions().then((payload) => ({ items: payload.field_permissions || [], page: 1, pages: 1, per_page: (payload.field_permissions || []).length, total: (payload.field_permissions || []).length }));
+export const getAllNmFieldPermission = (params = {}) => privilegedOrOwnRows("/nm_field_permission/", params, "field_permissions");
 export const getNmFieldPermission = (id) => request(`/nm_field_permission/${id}`);
 export const createNmFieldPermission = (payload) => request("/nm_field_permission/", { method: "POST", body: payload });
 export const updateNmFieldPermission = (id, payload) => request(`/nm_field_permission/${id}`, { method: "PUT", body: payload });

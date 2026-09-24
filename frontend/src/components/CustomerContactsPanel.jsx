@@ -54,7 +54,7 @@ export default function CustomerContactsPanel() {
       setContacts(listItems(contactPayload));
       setClients(listItems(clientPayload));
     } catch (requestError) {
-      setError(requestError.message || etiqueta("error_load", "No fue posible cargar los contactos."));
+      setError(t(requestError.message, etiqueta("error_load", "No fue posible cargar los contactos.")));
     } finally {
       setLoading(false);
     }
@@ -94,7 +94,7 @@ export default function CustomerContactsPanel() {
       setEditingId(null);
       await loadData();
     } catch (requestError) {
-      setError(requestError.message || etiqueta("error_save", "No fue posible guardar el contacto."));
+      setError(t(requestError.message, etiqueta("error_save", "No fue posible guardar el contacto.")));
     }
   }
 
@@ -110,7 +110,7 @@ export default function CustomerContactsPanel() {
       await deleteCustomerContact(contact.id_customer_contact);
       await loadData();
     } catch (requestError) {
-      setError(requestError.message || etiqueta("error_save", "No fue posible guardar el contacto."));
+      setError(t(requestError.message, etiqueta("error_save", "No fue posible guardar el contacto.")));
     }
   }
 
