@@ -153,7 +153,17 @@ def get_task(user_data, id_task):
 def create_task(user_data):
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
     require_project_access(payload.get('id_proyect'), user_data)
-    return _jsonify_projected_record(user_data, TaskService.create(payload, user_id=user_data.get('id_user')), status=201)
+    # El responsable es siempre quien crea la tarea -- Jefe de taller es el
+    # unico que da de alta, igual que `leader` en proyectos (ver
+    # project_management_service.create_project). El formulario reducido ya
+    # no captura owner/dependency/validation, y las dos ultimas son NOT NULL
+    # en la base sin uso real como distincion de usuarios (ver docstring de
+    # task_service.py), asi que se completan aqui con un valor inerte.
+    actor_id = user_data.get('id_user')
+    payload['owner'] = actor_id
+    payload.setdefault('dependency', 0)
+    payload.setdefault('validation', actor_id)
+    return _jsonify_projected_record(user_data, TaskService.create(payload, user_id=actor_id), status=201)
 
 
 @bp_task.route('/<id_task>', methods=['PUT'])

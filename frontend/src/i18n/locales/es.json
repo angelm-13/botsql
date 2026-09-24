@@ -598,6 +598,7 @@
       "description": "Gestión de Tarea",
       "empty_description": "Crea el primer registro de Tarea.",
       "empty_title": "Sin Tarea",
+      "estado_label": "Estado",
       "plural": "Tarea",
       "singular": "Tarea",
       "update_success": "Tarea actualizado correctamente"

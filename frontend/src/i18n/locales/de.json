@@ -573,6 +573,7 @@
       "description": "Aufgabe management",
       "empty_description": "Create the first Aufgabe record.",
       "empty_title": "No Aufgabe records",
+      "estado_label": "Status",
       "plural": "Aufgabe",
       "singular": "Aufgabe",
       "update_success": "Aufgabe updated successfully"

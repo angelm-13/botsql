@@ -573,6 +573,7 @@
       "description": "Tarefa management",
       "empty_description": "Create the first Tarefa record.",
       "empty_title": "No Tarefa records",
+      "estado_label": "Status",
       "plural": "Tarefa",
       "singular": "Tarefa",
       "update_success": "Tarefa updated successfully"
