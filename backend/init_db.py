@@ -380,27 +380,45 @@ def init_database():
                 # Keep the known development credentials valid even when an old
                 # Docker volume already has admin1 without the expected password
                 # columns populated. Only update columns that exist.
+                #
+                # The password column(s) are the one exception: they are only
+                # restored to the bootstrap default when empty/NULL (a broken
+                # volume). If admin1 already has a real hash -- including one
+                # set via POST /user/me/password -- it is left untouched, so a
+                # legitimate self-service password change survives a
+                # container restart instead of getting silently reverted.
                 try:
-                    password = bootstrap_password
-                    hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt(rounds=12)).decode()
                     user_columns = {col["name"] for col in inspector.get_columns("user")}
-                    updates = []
-                    params = {"username": bootstrap_username, "password": hashed, "password_hash": hashed}
-                    if "password" in user_columns:
-                        updates.append("password = :password")
-                    if "password_hash" in user_columns:
-                        updates.append("password_hash = :password_hash")
+                    non_password_updates = []
+                    params = {"username": bootstrap_username, "email": bootstrap_email}
                     if "is_active" in user_columns:
-                        updates.append("is_active = TRUE")
+                        non_password_updates.append("is_active = TRUE")
                     if "user_type" in user_columns:
-                        updates.append("user_type = 'admin'")
+                        non_password_updates.append("user_type = 'admin'")
                     if "email" in user_columns:
-                        updates.append("email = :email")
-                        params["email"] = bootstrap_email
-                    if updates:
+                        non_password_updates.append("email = :email")
+                    if non_password_updates:
                         with engine.begin() as conn:
-                            conn.execute(text(f"UPDATE \"user\" SET {', '.join(updates)} WHERE username = :username"), params)
-                    print(f"⚠️  Bootstrap admin already exists; credentials verified ({bootstrap_username})")
+                            conn.execute(text(f"UPDATE \"user\" SET {', '.join(non_password_updates)} WHERE username = :username"), params)
+
+                    password_columns = [c for c in ("password", "password_hash") if c in user_columns]
+                    if password_columns:
+                        empty_check = " OR ".join(f"({c} IS NULL OR {c} = '')" for c in password_columns)
+                        with engine.connect() as conn:
+                            needs_password = conn.execute(
+                                text(f"SELECT COUNT(*) FROM \"user\" WHERE username = :username AND ({empty_check})"),
+                                {"username": bootstrap_username},
+                            ).scalar()
+                        if needs_password:
+                            hashed = bcrypt.hashpw(bootstrap_password.encode(), bcrypt.gensalt(rounds=12)).decode()
+                            pwd_updates = ", ".join(f"{c} = :hashed" for c in password_columns)
+                            with engine.begin() as conn:
+                                conn.execute(text(f"UPDATE \"user\" SET {pwd_updates} WHERE username = :username"), {"username": bootstrap_username, "hashed": hashed})
+                            print(f"⚠️  Bootstrap admin already exists; password column(s) were empty, restored default ({bootstrap_username})")
+                        else:
+                            print(f"⚠️  Bootstrap admin already exists; credentials verified, existing password left untouched ({bootstrap_username})")
+                    else:
+                        print(f"⚠️  Bootstrap admin already exists; credentials verified ({bootstrap_username})")
                 except Exception as e:
                     print(f"⚠️  Admin credential update warning (non-fatal): {e}")
         
