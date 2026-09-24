@@ -198,7 +198,11 @@ def _validate_concepts(root, errors, warnings):
     container = _child(root, "Conceptos")
     concepts = _children(container, "Concepto")
     if not concepts:
-        errors.append("cfdi.conceptos_required")
+        # El comprobante de pago (tipo P) va sin partidas: el importe vive en
+        # el complemento de pagos, no en Conceptos. Cualquier otro tipo sin
+        # conceptos si es un error real.
+        if _text(root, "TipoDeComprobante") != "P":
+            errors.append("cfdi.conceptos_required")
         return concepts
 
     for index, concept in enumerate(concepts):
