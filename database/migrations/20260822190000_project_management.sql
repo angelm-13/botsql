@@ -91,6 +91,10 @@ INSERT INTO permission (
     created_by, creation_date, last_update_date, authorized_by,
     permission_description, id_department, id_subdepartment, id_level
 )
+-- Sin filtro de deletion_date en el NOT EXISTS (corregido 2026-09-23, mismo
+-- motivo que 20260828150000_warehouse_roles.sql): si alguno de estos roles se
+-- retira alguna vez, "existe" tiene que seguir significando "el nombre ya
+-- aparecio", o una resiembra en el siguiente reinicio del pod lo resucita.
 SELECT defaults.id_user, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, defaults.id_user,
        role_names.role_name, defaults.id_department, defaults.id_subdepartment, defaults.id_level
 FROM defaults CROSS JOIN role_names
@@ -98,7 +102,6 @@ WHERE defaults.id_user IS NOT NULL
   AND NOT EXISTS (
       SELECT 1 FROM permission
       WHERE lower(permission_description) = lower(role_names.role_name)
-        AND deletion_date IS NULL
   );
 
 -- Guardado con un chequeo de existencia de scope_create: esta migracion es

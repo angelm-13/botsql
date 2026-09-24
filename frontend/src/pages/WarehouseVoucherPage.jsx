@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import VisorDeFoto from "../components/VisorDeFoto";
 import EmployeeVoucherHistory from "../components/EmployeeVoucherHistory.jsx";
@@ -14,6 +14,7 @@ import {
   createWarehouseVoucher,
   getAllIncidentType,
   getAllLocation,
+  getMyPermissions,
   getUserOptions,
   getOverdueVoucherLines,
   getProyectOptions,
@@ -67,6 +68,22 @@ import PageHeader from "../components/PageHeader.jsx";
  * doble ahi confundía mas de lo que aclaraba.
  */
 
+// Mismo patron que `ProjectManagementPage.jsx`: el actor y sus capacidades
+// deciden que boton ofrecer. El servidor sigue siendo quien manda -cada ruta
+// vuelve a comprobar la capacidad exacta-, pero un boton que el servidor
+// siempre va a rechazar no debe estar ahi para empezar: confunde mas de lo
+// que "cuida" un permiso que la pantalla ya conoce.
+function actorGuardado() {
+  try { return JSON.parse(localStorage.getItem("user") || "{}"); } catch { return {}; }
+}
+function esPrivilegiado(actor) {
+  return Boolean(actor.is_superuser || actor.is_bootstrap_admin || actor.username === "admin1");
+}
+function tieneCapacidad(permisos, entidad, campo = "scope_read") {
+  const fila = permisos.find((p) => p.entity_name === entidad);
+  return Number(fila?.[campo] || 0) !== 0;
+}
+
 // Los estados por los que se puede filtrar la lista. `borrador` va primero
 // despues de "todos" porque es el que pide accion: un prevale sin autorizar es
 // material que alguien esta esperando.
@@ -79,6 +96,24 @@ const ESTADOS_DE_VALE = [
 
 export default function WarehouseVoucherPage() {
   const { t } = useI18n();
+  const actor = useMemo(actorGuardado, []);
+  const privilegiado = esPrivilegiado(actor);
+  const [permisos, setPermisos] = useState([]);
+  // Puede abrir el vale directo -- saca material de inmediato, capacidad
+  // `warehouse_voucher` (Almacenista). Sin ella solo queda pedir un borrador.
+  const puedeAbrirValeDirecto = privilegiado || tieneCapacidad(permisos, "warehouse_voucher", "scope_create");
+  // Autorizar y entregar es OTRA capacidad, aparte de abrir el vale a
+  // proposito (separacion de deberes: quien pide no autoriza lo suyo).
+  const puedeAutorizar = privilegiado || tieneCapacidad(permisos, "warehouse_voucher_authorize", "scope_create");
+  // Cerrar un renglon (`/return`, "Marcar devuelto") lo guarda la ruta con
+  // `warehouse_voucher` en UPDATE -- quien no puede abrir un vale tampoco
+  // puede cerrarlo, aunque sea el suyo.
+  const puedeCerrarRenglon = privilegiado || tieneCapacidad(permisos, "warehouse_voucher", "scope_update");
+  // Sin `warehouse_voucher` pero con `warehouse_prevoucher`: solo puede pedir
+  // material, nunca surtirlo. Es el caso de Supervisor -y de Administrator
+  // real, que tiene la misma separacion-, nunca el de Almacenista.
+  const soloPuedeSolicitar = !puedeAbrirValeDirecto
+    && (privilegiado || tieneCapacidad(permisos, "warehouse_prevoucher", "scope_create"));
   const [vencidos, setVencidos] = useState([]);
   const [tipos, setTipos] = useState([]);
   const [ubicaciones, setUbicaciones] = useState([]);
@@ -129,31 +164,50 @@ export default function WarehouseVoucherPage() {
       // de incident_type), y un solo 403 aqui tumbaba las demas tambien --
       // dejaba "Levantar vale" deshabilitado por falta de tipos aunque
       // ubicaciones/usuarios si hubieran cargado bien.
-      const [venc, tip, ubi, usr, proy] = await Promise.all([
+      const [venc, tip, ubi, usr, permisosPayload] = await Promise.all([
         getOverdueVoucherLines().catch(() => ({ items: [] })),
         getAllIncidentType({ per_page: 100 }).catch(() => ({ items: [] })),
         getAllLocation({ per_page: 200 }).catch(() => ({ items: [] })),
         getUserOptions().catch(() => []),
-        getProyectOptions().catch(() => []),
+        privilegiado
+          ? Promise.resolve({ entity_permissions: [] })
+          : getMyPermissions().catch(() => ({ entity_permissions: [] })),
       ]);
       setVencidos(venc?.items || []);
       setTipos(tip?.items || []);
       setUbicaciones(ubi?.items || []);
       setUsuarios(Array.isArray(usr) ? usr : usr?.items || []);
+      const filasPermiso = permisosPayload.entity_permissions || [];
+      setPermisos(filasPermiso);
+
+      // La lista de proyectos depende de la capacidad que se acaba de leer:
+      // quien solo puede SOLICITAR material -Supervisor, o Administrator
+      // real- pide `mine=1` y ve nada mas los suyos, porque el es siempre el
+      // responsable. Almacenista sigue viendo la lista completa -- necesita
+      // reconocer cualquier obra que le mencionen al surtir.
+      const soloSolicitaAhora = !(privilegiado
+          || tieneCapacidad(filasPermiso, "warehouse_voucher", "scope_create"))
+        && (privilegiado || tieneCapacidad(filasPermiso, "warehouse_prevoucher", "scope_create"));
+      const proy = await getProyectOptions(soloSolicitaAhora ? { mine: 1 } : {})
+        .catch(() => []);
       setProyectos(Array.isArray(proy) ? proy : proy?.items || []);
     } catch (e) {
       decirError(e, "No se pudo cargar la pantalla de vales.");
     } finally {
       setCargando(false);
     }
-  }, []);
+  }, [privilegiado]);
 
   useEffect(() => { cargar(); }, [cargar]);
 
   const abrirBorrador = () => setBorrador({
     id_incident_type: tipos[0]?.id_incident_type || "",
-    id_user: "",
-    // La obra a la que va el material. Vacio por opcion: no todo prestamo
+    // Quien solo puede solicitar es SIEMPRE el responsable de lo que pide --
+    // mismo criterio que ya rige en Proyectos ("el responsable es quien crea
+    // el proyecto"): no tiene sentido que Supervisor levante un prevale a
+    // nombre de otra persona si el es quien va a tener que devolverlo.
+    id_user: soloPuedeSolicitar ? String(actor.id_user || "") : "",
+    // El proyecto al que va el material. Vacio por opcion: no todo prestamo
     // es de un proyecto -- una herramienta para el propio taller no lo es.
     id_proyect: "",
     due_date: "",
@@ -208,11 +262,11 @@ export default function WarehouseVoucherPage() {
    *
    * `comoPrevale` elige la ruta, y con ella el permiso: `/prevouchers` pide
    * `warehouse_prevoucher` y no mueve el almacen; `/vouchers` pide
-   * `warehouse_voucher` y saca el material. Quien no tenga la segunda recibe
-   * un 403 de la puerta, y por eso el boton de abrir se ofrece igual: el
-   * servidor es quien decide, no la pantalla, y una pantalla que esconde
-   * botones segun lo que cree del permiso acaba escondiendo los que si se
-   * pueden.
+   * `warehouse_voucher` y saca el material. El servidor sigue siendo quien
+   * decide de verdad -esta funcion no cambia-, pero el boton de "Abrir vale"
+   * ya no se ofrece a quien la pantalla sabe que no tiene esa capacidad: ver
+   * un boton que siempre va a rechazar el servidor confunde mas de lo que
+   * "protege" un permiso que ya se conoce de antemano.
    */
   const guardar = async (comoPrevale = false) => {
     if (!borrador.lines.length) return;
@@ -349,11 +403,16 @@ export default function WarehouseVoucherPage() {
                   {t("voucher.was_due", "vencía")}{" "}
                   {new Date(linea.due_date).toLocaleDateString("es-MX")}
                 </span>
-                <button className="button button-quiet"
-                        onClick={() => cerrar(linea.id_nm_incident_product)}>
-                  <Check size={14} />
-                  {t("voucher.close_line", "Marcar devuelto")}
-                </button>
+                {/* Quien solo puede pedir material (Supervisor) no lo recibe
+                    ni lo suelta: marcarlo devuelto es lo mismo derecho de
+                    `warehouse_voucher` que abrir el vale. */}
+                {puedeCerrarRenglon && (
+                  <button className="button button-quiet"
+                          onClick={() => cerrar(linea.id_nm_incident_product)}>
+                    <Check size={14} />
+                    {t("voucher.close_line", "Marcar devuelto")}
+                  </button>
+                )}
               </li>
             ))}
           </ul>
@@ -370,6 +429,10 @@ export default function WarehouseVoucherPage() {
           proyectos={proyectos}
           onGuardar={guardar}
           onCancelar={() => setBorrador(null)}
+          onAmpliar={setFotoAmpliada}
+          puedeAbrirValeDirecto={puedeAbrirValeDirecto}
+          soloPuedeSolicitar={soloPuedeSolicitar}
+          nombreDelActor={nombreDe(actor.id_user) || actor.username}
           t={t}
         />
       )}
@@ -491,6 +554,8 @@ export default function WarehouseVoucherPage() {
                   onImprimir={imprimir} imprimiendo={imprimiendo}
                   onAmpliar={setFotoAmpliada}
                   onVerHistorial={(idUser, nombre) => setHistorialEmpleado({ idUser, nombre })}
+                  puedeAutorizar={puedeAutorizar}
+                  puedeCerrarRenglon={puedeCerrarRenglon}
                   nombreDe={nombreDe} sitioDe={sitioDe} t={t} />
           </>
         )}
@@ -522,7 +587,7 @@ export default function WarehouseVoucherPage() {
 
 /** El vale con sus renglones, y el estado derivado bien visible. */
 function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
-               onVerHistorial, nombreDe, sitioDe, t }) {
+               onVerHistorial, puedeAutorizar, puedeCerrarRenglon, nombreDe, sitioDe, t }) {
   const cabecera = vale.voucher || {};
   const estado = String(cabecera.incident_status || "");
   const cerrado = estado === "cerrado";
@@ -618,9 +683,10 @@ function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
       </header>
 
       {/* Autorizar es lo que saca el material, asi que va arriba y solo cuando
-          hay algo que autorizar. Si quien mira no tiene la capacidad, el
-          servidor lo niega -- la pantalla no adivina permisos. */}
-      {borrador && (
+          hay algo que autorizar -y solo a quien de verdad puede: Supervisor
+          pidio este prevale y por eso mismo no puede ser quien lo suelte, la
+          misma separacion de deberes que ya impone el servidor. */}
+      {borrador && puedeAutorizar && (
         <p className="vale-autorizar">
           <button className="button button-primary"
                   onClick={() => onAutorizar(cabecera.id_incident)}>
@@ -704,11 +770,13 @@ function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
                           {t("voucher.out", "fuera")}
                           {vencido && <> · {t("history.overdue", "vencido")}</>}
                         </span>
-                        <button className="button button-quiet"
-                                onClick={() => onCerrar(salida.id_nm_incident_product)}>
-                          <Check size={14} />
-                          {t("voucher.close_line", "Marcar devuelto")}
-                        </button>
+                        {puedeCerrarRenglon && (
+                          <button className="button button-quiet"
+                                  onClick={() => onCerrar(salida.id_nm_incident_product)}>
+                            <Check size={14} />
+                            {t("voucher.close_line", "Marcar devuelto")}
+                          </button>
+                        )}
                       </>
                     ) : (
                       <span className="vale-marca devuelto">
@@ -764,6 +832,8 @@ Vale.propTypes = {
   imprimiendo: PropTypes.bool,
   onAmpliar: PropTypes.func,
   onVerHistorial: PropTypes.func.isRequired,
+  puedeAutorizar: PropTypes.bool,
+  puedeCerrarRenglon: PropTypes.bool,
   nombreDe: PropTypes.func.isRequired,
   sitioDe: PropTypes.func.isRequired,
   t: PropTypes.func.isRequired,
@@ -840,9 +910,33 @@ FichaDeProducto.propTypes = {
 };
 FichaDeProducto.defaultProps = { producto: null, onAmpliar: null };
 
+/**
+ * Adapta un resultado de `inventoryTrace` (Localizar) a lo que `FichaDeProducto`
+ * espera. Son dos formas distintas del mismo dato: el vale ya resuelto trae
+ * `brand`/`material`/`unit` planos (`_fichas_de_producto` en el backend), y el
+ * rastreo los trae anidados bajo `classification` -viene de la misma tabla
+ * `material`, pero por un camino que ademas compara contra el catalogo publico.
+ * Sin este ajuste, el buscador del prevale se veia solo con codigo y
+ * descripcion mientras Almacen/Localizar ya mostraban foto y clasificacion
+ * para el mismo producto.
+ */
+function comoFichaDeProducto(candidato) {
+  return {
+    id_product: candidato.id_product,
+    product_code: candidato.product_code,
+    descripcion: candidato.descripcion,
+    path_imagen: candidato.path_imagen,
+    tracking_mode: candidato.tracking_mode,
+    brand: candidato.classification?.brand,
+    material: candidato.classification?.material,
+    unit: candidato.classification?.unit,
+  };
+}
+
 /** La captura de un vale: cabecera y renglones. */
 function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
-                    proyectos, onGuardar, onCancelar, t }) {
+                    proyectos, onGuardar, onCancelar, onAmpliar,
+                    puedeAbrirValeDirecto, soloPuedeSolicitar, nombreDelActor, t }) {
   const [busqueda, setBusqueda] = useState("");
   const [candidatos, setCandidatos] = useState([]);
   const [buscando, setBuscando] = useState(false);
@@ -924,21 +1018,32 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
         </label>
         <label className="field">
           <span>{t("voucher.holder", "Responsable")}</span>
-          <select value={borrador.id_user}
-                  onChange={(e) => setBorrador({ ...borrador, id_user: e.target.value })}>
-            <option value="">{t("voucher.pick_holder", "Elige a quién se le entrega")}</option>
-            {usuarios.map((u) => (
-              <option key={u.id_user} value={u.id_user}>
-                {u.full_name || u.username || `#${u.id_user}`}
-              </option>
-            ))}
-          </select>
+          {/* Quien solo puede solicitar es SIEMPRE el responsable de lo que
+              pide -mismo criterio que "el responsable es quien crea el
+              proyecto"-: no hay a quien mas elegir, asi que no se ofrece un
+              desplegable que solo tendria una opcion util. */}
+          {soloPuedeSolicitar ? (
+            <span className="vale-responsable-fijo">
+              {nombreDelActor}
+              <em className="muted">{t("voucher.holder_is_you", "(tú)")}</em>
+            </span>
+          ) : (
+            <select value={borrador.id_user}
+                    onChange={(e) => setBorrador({ ...borrador, id_user: e.target.value })}>
+              <option value="">{t("voucher.pick_holder", "Elige a quién se le entrega")}</option>
+              {usuarios.map((u) => (
+                <option key={u.id_user} value={u.id_user}>
+                  {u.full_name || u.username || `#${u.id_user}`}
+                </option>
+              ))}
+            </select>
+          )}
         </label>
         <label className="field">
-          <span>{t("voucher.project", "Obra")}</span>
+          <span>{t("voucher.project", "Proyecto")}</span>
           <select value={borrador.id_proyect}
                   onChange={(e) => setBorrador({ ...borrador, id_proyect: e.target.value })}>
-            <option value="">{t("voucher.no_project", "Sin obra asignada")}</option>
+            <option value="">{t("voucher.no_project", "Sin proyecto asignado")}</option>
             {proyectos.map((p) => (
               <option key={p.id_proyect} value={p.id_proyect}>
                 {p.folio ? `#${p.folio}` : `#${p.id_proyect}`}
@@ -981,8 +1086,11 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
           {candidatos.map((p) => (
             <li key={p.id_product}>
               <div className="vale-candidato-cabecera">
-                <strong className="mono">{p.product_code || `#${p.id_product}`}</strong>
-                <span>{p.descripcion}</span>
+                {/* Misma ficha -foto, codigo, marca/material/unidad- que ya
+                    usan Almacen y Localizar para el mismo producto: un
+                    "#9001" a secas no dice si lo que se pide es un taladro o
+                    un saco de cemento. */}
+                <FichaDeProducto producto={comoFichaDeProducto(p)} onAmpliar={onAmpliar} t={t} />
                 <em className="muted">
                   {p.tracking_mode === "serializado"
                     ? t("voucher.by_piece", "por pieza")
@@ -1085,22 +1193,24 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
             surtir. El prevale queda en borrador y no mueve nada; abrir el vale
             saca el material y necesita `warehouse_voucher`.
 
-            Los dos botones se ofrecen siempre y es el servidor quien niega:
-            una pantalla que esconde botones segun lo que CREE del permiso
-            acaba escondiendo los que si se podian, y el permiso vive en la
-            base, no aqui. */}
+            "Abrir vale" solo se ofrece a quien de verdad puede surtir: quien
+            solo pide material (Supervisor) no tiene mas que una salida, asi
+            que esa es la primaria. El servidor sigue negando la ruta que no
+            le toca de cualquier forma -esto es UX, no el permiso de verdad. */}
         <button
-          className="button"
+          className={`button ${puedeAbrirValeDirecto ? "" : "button-primary"}`}
           onClick={() => onGuardar(true)}
           disabled={!listo}
           title={t("voucher.draft_help",
             "Deja el material pedido, sin sacarlo. Lo autoriza el jefe de almacén.")}
         >
-          {t("voucher.draft", "Guardar prevale")}
+          {t("voucher.draft", "Solicitar vale")}
         </button>
-        <button className="button button-primary" onClick={() => onGuardar(false)} disabled={!listo}>
-          {t("voucher.open", "Abrir vale")}
-        </button>
+        {puedeAbrirValeDirecto && (
+          <button className="button button-primary" onClick={() => onGuardar(false)} disabled={!listo}>
+            {t("voucher.open", "Abrir vale")}
+          </button>
+        )}
         <button className="button button-quiet" onClick={onCancelar}>
           {t("common.cancel", "Cancelar")}
         </button>
@@ -1131,5 +1241,9 @@ Borrador.propTypes = {
   proyectos: PropTypes.array.isRequired,
   onGuardar: PropTypes.func.isRequired,
   onCancelar: PropTypes.func.isRequired,
+  onAmpliar: PropTypes.func,
+  puedeAbrirValeDirecto: PropTypes.bool,
+  soloPuedeSolicitar: PropTypes.bool,
+  nombreDelActor: PropTypes.string,
   t: PropTypes.func.isRequired,
 };

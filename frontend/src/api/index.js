@@ -128,11 +128,6 @@ export const deleteCustomerSupplier = (id) => request(`/customer_supplier/${id}`
 // El "Cliente" del proyecto: contacto (empresa + persona) fusionado, ya no
 // solo la empresa -- ver customer_contact_service.py.
 export const getCustomerContactOptions = () => request("/customer_contact/options");
-
-// Solo id+folio+cliente+estatus, para el selector de "Cotizacion" al crear o
-// editar un proyecto -- no exige el permiso completo de invoice, igual que
-// getCustomerSupplierOptions no exige el de customer_supplier.
-export const getQuotationOptions = () => request("/invoice/quotation_options");
 export const getAllCustomerContact = (params = {}) => request("/customer_contact/", { params });
 export const createCustomerContact = (payload) => request("/customer_contact/", { method: "POST", body: payload });
 export const updateCustomerContact = (id, payload) => request(`/customer_contact/${id}`, { method: "PUT", body: payload });
@@ -616,7 +611,7 @@ export const getAllProyect = (params = {}) => request("/proyect/", { params });
 // Solo id+folio+titulo, sin permiso de entidad -- igual que `getUserOptions` --
 // para que el selector de "Obra" en un vale funcione con roles que no tienen
 // el modulo operaciones (Almacenista).
-export const getProyectOptions = () => request("/proyect/options");
+export const getProyectOptions = (params = {}) => request("/proyect/options", { params });
 export const getProyect = (id) => request(`/proyect/${id}`);
 export const createProyect = (payload) => request("/proyect/", { method: "POST", body: payload });
 export const updateProyect = (id, payload) => request(`/proyect/${id}`, { method: "PUT", body: payload });

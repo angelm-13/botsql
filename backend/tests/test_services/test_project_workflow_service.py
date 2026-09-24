@@ -4,6 +4,7 @@ from datetime import datetime
 
 from app.models.customer_contact import CustomerContact
 from app.models.entity_permission import EntityPermission
+from app.models.invoice import Invoice
 from app.models.proyect import Proyect
 from app.models.proyect_event import ProyectEvent
 from app.models.session import transaction_context
@@ -415,15 +416,95 @@ class TestLaOrdenDeTrabajo(TestProjectWorkflowService):
 
         self.assertEqual("PRJ-%06d" % creado["id_proyect"], detalle["folio"])
 
-    def test_an_inexistent_quotation_is_rejected(self):
+    def _invoice(self, id_invoice):
+        """Un `invoice` minimo, real, para las pruebas de cotizacion.
+
+        SQLite (donde corre la suite) no impone las FK de `id_customer_supplier`/
+        `id_status` -igual que el resto de fixtures de este archivo, que usan
+        `id_customer_supplier: 1` sin crearlo-, asi que basta con satisfacer los
+        NOT NULL de la tabla.
+        """
+        with transaction_context() as db:
+            db.add(Invoice(
+                id_invoice=id_invoice, id_customer_supplier=1, id_issuer_customer_supplier=1,
+                tax_certification_supplier=1, id_status=1, created_by=1,
+                apply_tax=False, tax_rate=0,
+            ))
+
+    def test_a_quotation_with_no_matching_invoice_is_kept_as_external_reference(self):
+        """Un folio de un sistema externo (ej. adser) se acepta tal cual.
+
+        Antes cualquier numero que no fuera un `invoice` real tronaba con
+        `errors.not_found` -- rompia el caso de un cliente que cotiza fuera de
+        tyakxa_tny y solo pega ese folio como referencia.
+        """
+        creado = create_project({
+            "id_customer_supplier": 1,
+            "proyect_description": "Con folio externo",
+            "id_quotation": "COT-2026-045",
+        }, self.supervisor)
+
+        self.assertIsNone(creado["id_quotation"])
+        self.assertEqual("COT-2026-045", creado["quotation_reference"])
+
+    def test_a_quotation_matching_a_free_invoice_is_linked(self):
+        """Un `id_quotation` real que ningun proyecto usa todavia se liga de verdad."""
+        self._invoice(500)
+
+        creado = create_project({
+            "id_customer_supplier": 1,
+            "proyect_description": "Con cotizacion real",
+            "id_quotation": "500",
+        }, self.supervisor)
+
+        self.assertEqual(500, creado["id_quotation"])
+        self.assertIsNone(creado["quotation_reference"])
+
+    def test_a_quotation_already_linked_to_another_active_project_is_rejected(self):
+        self._invoice(501)
+        create_project({
+            "id_customer_supplier": 1,
+            "proyect_description": "Primero en tomarla",
+            "id_quotation": "501",
+        }, self.supervisor)
+
         with self.assertRaises(AppError) as fallo:
             create_project({
                 "id_customer_supplier": 1,
-                "proyect_description": "Con cotizacion inventada",
-                "id_quotation": 999999,
+                "proyect_description": "Segundo, choca",
+                "id_quotation": "501",
             }, self.supervisor)
 
-        self.assertEqual("errors.not_found", fallo.exception.message_key)
+        self.assertEqual("errors.quotation_already_linked", fallo.exception.message_key)
+
+    def test_a_quotation_linked_to_a_deleted_project_can_be_reused(self):
+        self._invoice(502)
+        primero = create_project({
+            "id_customer_supplier": 1,
+            "proyect_description": "Se va a borrar",
+            "id_quotation": "502",
+        }, self.supervisor)
+        delete_project(primero["id_proyect"], self.supervisor)
+
+        segundo = create_project({
+            "id_customer_supplier": 1,
+            "proyect_description": "Reusa la cotizacion",
+            "id_quotation": "502",
+        }, self.supervisor)
+
+        self.assertEqual(502, segundo["id_quotation"])
+
+    def test_updating_a_project_without_touching_the_quotation_keeps_it(self):
+        self._invoice(503)
+        creado = create_project({
+            "id_customer_supplier": 1,
+            "proyect_description": "Con cotizacion",
+            "id_quotation": "503",
+        }, self.supervisor)
+
+        actualizado = update_project(creado["id_proyect"], {"title": "Nuevo titulo"}, self.supervisor)
+
+        self.assertEqual(503, actualizado["id_quotation"])
 
     def test_an_inexistent_customer_contact_is_rejected(self):
         with self.assertRaises(AppError) as fallo:

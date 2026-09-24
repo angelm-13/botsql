@@ -29,6 +29,14 @@
 BEGIN;
 
 -- 1. El expediente tiene que poder contar que alguien tomo o solto el proyecto.
+--
+-- Esta migracion se reaplica en cada arranque del pod, en el mismo orden que
+-- las que siguen (20260921100000 amplia esta misma lista con
+-- 'document_attached'/'document_removed'). Si aqui se dejara solo lo que
+-- este commit necesitaba, el DROP+ADD de esta migracion volveria a angostar
+-- la lista un instante antes de que la siguiente la ampliara de nuevo -- y
+-- si ya existe una fila real de esos eventos, el ADD CONSTRAINT revienta
+-- contra esa fila. Se deja aqui de una vez la union completa.
 ALTER TABLE proyect_event DROP CONSTRAINT IF EXISTS proyect_event_event_type_check;
 
 ALTER TABLE proyect_event ADD CONSTRAINT proyect_event_event_type_check CHECK (
@@ -42,7 +50,9 @@ ALTER TABLE proyect_event ADD CONSTRAINT proyect_event_event_type_check CHECK (
         -- Van como evento y no como una columna de fecha porque un proyecto
         -- puede cambiar de manos varias veces, y lo que importa es la linea de
         -- tiempo: quien lo tenia cuando paso lo que paso.
-        'taken', 'released'
+        'taken', 'released',
+        -- Adjuntos del expediente.
+        'document_attached', 'document_removed'
     )
 );
 

@@ -23,6 +23,20 @@ ALLOWED_FILE_TYPES = {
     # tipo real.
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
+# Adjuntos de PROYECTO solamente (add_project_document). No se agregan aqui
+# a ALLOWED_FILE_TYPES porque esa lista tambien protege documentos
+# genericos, laboratorio y vales de almacen -- ampliarla ahi los afectaria a
+# los tres. Los usuarios de proyecto suben planos y CAD (.dxf/.dwg/.step)
+# ademas de hojas de calculo, que esos otros modulos no necesitan.
+PROJECT_ATTACHMENT_FILE_TYPES = {
+    **ALLOWED_FILE_TYPES,
+    "dxf": "image/vnd.dxf",
+    "dwg": "application/acad",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "xls": "application/vnd.ms-excel",
+    "step": "application/step",
+    "stp": "application/step",
+}
 DOCUMENT_STATUSES = {"draft", "issued", "signed", "rejected", "cancelled"}
 VERSION_SOURCES = {"uploaded", "generated", "signed_scan"}
 
@@ -70,10 +84,12 @@ class SecureDocumentStorage:
         self.max_bytes = int(os.getenv("DOCUMENT_MAX_BYTES", str(10 * 1024 * 1024)))
 
     @staticmethod
-    def inspect(raw: bytes, original_filename: str) -> tuple[str, str]:
+    def inspect(raw: bytes, original_filename: str, allowed_types: dict[str, str] | None = None) -> tuple[str, str]:
+        types = allowed_types if allowed_types is not None else ALLOWED_FILE_TYPES
         extension = Path(str(original_filename or "")).suffix.lower().lstrip(".")
-        if extension not in ALLOWED_FILE_TYPES:
-            raise AppError("documents.invalid_file_type", 400, {"allowed": sorted(ALLOWED_FILE_TYPES)})
+        if extension not in types:
+            raise AppError("documents.invalid_file_type", 400, {"allowed": sorted(types)})
+        expected = types[extension]
         detected = None
         if raw.startswith(b"%PDF-"):
             detected = "application/pdf"
@@ -82,15 +98,45 @@ class SecureDocumentStorage:
         elif raw.startswith(b"\xff\xd8\xff"):
             detected = "image/jpeg"
         elif raw.startswith(b"PK\x03\x04"):
-            detected = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        if detected != ALLOWED_FILE_TYPES[extension]:
+            # Zip-based (docx/xlsx/pptx); el magic byte solo distingue "es un
+            # OOXML" de "no lo es" -- la extension sigue siendo la que decide
+            # el tipo real, igual que ya hacia docx.
+            detected = expected if expected in (
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ) else None
+        elif raw.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"):
+            # OLE2 (compound file binario): xls viejo, igual que docx/xlsx
+            # no distingue del resto de formatos OLE2 (doc, ppt) -- la
+            # extension decide.
+            detected = "application/vnd.ms-excel" if expected == "application/vnd.ms-excel" else None
+        elif extension == "dwg" and raw[:3] == b"AC1":
+            detected = expected
+        elif extension in ("dxf", "step", "stp"):
+            # Sin magic number binario (son texto plano): se valida
+            # contenido en vez de un byte fijo -- un DXF real trae "SECTION"
+            # cerca del inicio, un STEP real empieza con el encabezado ISO.
+            texto = None
+            try:
+                texto = raw[:4096].decode("utf-8")
+            except UnicodeDecodeError:
+                try:
+                    texto = raw[:4096].decode("latin-1")
+                except UnicodeDecodeError:
+                    texto = None
+            if texto is not None:
+                if extension == "dxf" and "SECTION" in texto:
+                    detected = expected
+                elif extension in ("step", "stp") and texto.lstrip("﻿ \t\r\n").startswith("ISO-10303-21"):
+                    detected = expected
+        if detected != expected:
             raise AppError("documents.mime_mismatch", 400, {"extension": extension})
         return extension, detected
 
-    def validate(self, raw: bytes, original_filename: str) -> tuple[str, str]:
+    def validate(self, raw: bytes, original_filename: str, allowed_types: dict[str, str] | None = None) -> tuple[str, str]:
         if not raw or len(raw) > self.max_bytes:
             raise AppError("documents.invalid_file_size", 400, {"max_bytes": self.max_bytes})
-        return self.inspect(raw, original_filename)
+        return self.inspect(raw, original_filename, allowed_types=allowed_types)
 
     def write(self, raw: bytes, project_id: int, document_id: int, version: int, extension: str, *, subfolder: str = "documents") -> str:
         relative = Path(subfolder) / str(project_id) / str(document_id) / f"v{version}-{uuid.uuid4().hex}.{extension}"

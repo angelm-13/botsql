@@ -128,24 +128,27 @@ function AdminRoute({ children }) {
   return isAdminUser() ? children : <Navigate to="/" replace />;
 }
 
-function roleHasEntityAccess(rows, entityNames, currentUser) {
+// Referencia estable para que <RoleAccessRoute> no la reciba como un arreglo
+// literal nuevo en cada render de <App/> -eso reiniciaria su efecto sin fin,
+// porque `[entityName]` en el useEffect compara por referencia.
+const VOUCHER_ENTITY_NAMES = ["warehouse_voucher", "warehouse_prevoucher"];
+
+function roleHasEntityAccess(rows, entityName, currentUser) {
   if (isBootstrapUser()) return true;
   const roleId = Number(currentUser?.id_permission || 0);
-  const names = Array.isArray(entityNames) ? entityNames : [entityNames];
-  if (!roleId || !names.length || !names.some(Boolean)) return false;
-  return rows.some((row) => Number(row.id_permission) === roleId && names.includes(String(row.entity_name || "")) && (
+  if (!roleId || !entityName) return false;
+  // `entityName` puede traer mas de una clave -por ejemplo `warehouse_voucher`
+  // y `warehouse_prevoucher`, que dan acceso a la misma pantalla pero nunca
+  // las tiene el mismo rol- y basta con que el actor tenga UNA de ellas.
+  const nombres = Array.isArray(entityName) ? entityName : [entityName];
+  return rows.some((row) => Number(row.id_permission) === roleId && nombres.includes(String(row.entity_name || "")) && (
     Number(row.scope_create || 0) > 0 || Number(row.scope_read || 0) > 0 ||
     Number(row.scope_update || 0) > 0 || Number(row.scope_delete || 0) > 0
   ));
 }
 
-// `entityName` para el caso normal (una sola entidad/capacidad guarda la
-// ruta); `entityNames` (arreglo) cuando la misma pantalla sirve a mas de una
-// capacidad -- ver `/vouchers`, que acepta `warehouse_voucher` O
-// `warehouse_prevoucher`, sin exigir las dos.
-function RoleAccessRoute({ entityName, entityNames, children }) {
+function RoleAccessRoute({ entityName, children }) {
   const [allowed, setAllowed] = useState(null);
-  const names = entityNames || [entityName];
 
   useEffect(() => {
     let mounted = true;
@@ -156,11 +159,11 @@ function RoleAccessRoute({ entityName, entityNames, children }) {
     getAllEntityPermission({ per_page: 5000 })
       .then((payload) => {
         const rows = Array.isArray(payload?.items) ? payload.items : Array.isArray(payload) ? payload : [];
-        if (mounted) setAllowed(roleHasEntityAccess(rows, names, currentUser));
+        if (mounted) setAllowed(roleHasEntityAccess(rows, entityName, currentUser));
       })
       .catch(() => { if (mounted) setAllowed(false); });
     return () => { mounted = false; };
-  }, [names.join(",")]);
+  }, [entityName]);
 
   if (allowed === null) return null;
   return allowed ? children : <Navigate to="/" replace />;
@@ -269,8 +272,13 @@ export default function App() {
           <Route path="/product_family" element={<RoleAccessRoute entityName="product_family"><ProductFamilyPage /></RoleAccessRoute>} />
           {/* El vale se guarda con la capacidad `warehouse_voucher`, no con
               una entidad: su pantalla escribe en `incident` y en la tabla
-              puente de sus renglones, que esta fuera del menu a proposito. */}
-          <Route path="/vouchers" element={<RoleAccessRoute entityNames={["warehouse_voucher", "warehouse_prevoucher"]}><WarehouseVoucherPage /></RoleAccessRoute>} />
+              puente de sus renglones, que esta fuera del menu a proposito.
+              Quien solo tiene `warehouse_prevoucher` (Supervisor: pide
+              material, no lo surte) entra a la MISMA pantalla -es el borrador,
+              no un vale abierto- y ahi el propio servidor decide que boton
+              dejarle usar; sin la segunda clave aqui, Supervisor nunca
+              llegaba a la puerta. */}
+          <Route path="/vouchers" element={<RoleAccessRoute entityName={VOUCHER_ENTITY_NAMES}><WarehouseVoucherPage /></RoleAccessRoute>} />
           <Route path="/product_sale_config" element={<RoleAccessRoute entityName="product_sale_config"><ProductSaleConfigPage /></RoleAccessRoute>} />
           <Route path="/proyect" element={<RoleAccessRoute entityName="proyect"><ProjectManagementPage /></RoleAccessRoute>} />
           <Route path="/appointments" element={<RoleAccessRoute entityName="appointment"><AppointmentsPage /></RoleAccessRoute>} />

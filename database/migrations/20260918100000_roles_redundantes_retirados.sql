@@ -1,15 +1,7 @@
--- Cinco roles que no concedian nada propio.
+-- Cuatro roles que no concedian nada propio.
 --
 -- Que se retira y por que
 -- -----------------------
--- `Jefe de taller` concedia EXACTAMENTE lo mismo que Supervisor: operaciones
--- en CAPTURA, inventario en CONSULTA, configuracion en CONSULTA -- 28 filas de
--- permiso identicas, medidas en la base. Se distinguia en una sola capacidad,
--- `project_execution`. Mantener un rol entero en paralelo para eso es
--- garantizar que los dos se desincronicen en cuanto alguien toque uno y no el
--- otro, que es lo que ya habia pasado: en la base, Jefe de taller tenia
--- `proyect` en 6 y `task_type` en 2 donde el registro dice 7 para ambos.
---
 -- `Mesero`, `Cocina`, `Caja Restaurante` y `Admin Restaurante` llegaron con el
 -- restaurante desde `database/seed.sql`, que los escribia a mano junto con sus
 -- filas de `entity_permission`. Cada uno existia para cargar UNA capacidad
@@ -25,18 +17,36 @@
 --
 -- Que pasa con los usuarios
 -- -------------------------
--- Los de `Jefe de taller` pasan a `Supervisor`, que es el rol que lo absorbe y
--- que ya recibio `project_execution` en el registro: no pierden nada.
---
--- Los de los cuatro roles del restaurante NO se mueven. No hay rol destino que
--- conserve su alcance, y mandarlos a cualquier otro les daria accesos que
--- nunca tuvieron. Se quedan apuntando a un perfil retirado, o sea sin permisos
--- -- cerrado, visible y reversible: el administrador les asigna el rol nuevo
--- desde la pantalla de usuarios. La migracion los deja anotados en el log para
--- que se sepa a quien hay que reasignar.
+-- NO se mueven. No hay rol destino que conserve su alcance, y mandarlos a
+-- cualquier otro les daria accesos que nunca tuvieron. Se quedan apuntando a
+-- un perfil retirado, o sea sin permisos -- cerrado, visible y reversible: el
+-- administrador les asigna el rol nuevo desde la pantalla de usuarios. La
+-- migracion los deja anotados en el log para que se sepa a quien hay que
+-- reasignar.
 --
 -- Todo el retiro es LOGICO (`deletion_date`), asi que queda para consulta y se
 -- puede revisar despues.
+--
+-- Editado despues del commit original (ver historial)
+-- -----------------------------------------------------
+-- 1. `Jefe de taller` SALIO de la lista de roles a retirar. Esta migracion
+--    originalmente lo fusionaba en Supervisor -razonamiento que en su momento
+--    parecia correcto, medido contra la base de ese dia-, pero el rol se
+--    mantuvo vivo en la rama compartida y gano funcion real (bloquear un
+--    proyecto en curso, catalogo de fase del taller, separacion de deberes
+--    del prevale). Como esta migracion se reaplica en cada arranque del pod,
+--    dejarla como estaba habria vuelto a fusionar -y dado de baja- el rol
+--    cada vez, sin importar lo que el Gestor de roles hiciera despues: es la
+--    misma clase de bug que ya se encontro y corrigio en
+--    `20260908100000_roles_con_los_ids_de_la_base.sql` (ver
+--    `fix(permisos): Supervisor deja de resetearse en cada deploy`).
+-- 2. `entity_permission.control_type` ya no existe -lo elimino
+--    `20260914110000_equipos_y_alcance_por_accion.sql`, migracion posterior a
+--    esta en la cadena pero anterior en el tiempo de commit-. Las dos UPDATE
+--    que escribian ese campo se reescribieron contra las 4 columnas de
+--    alcance (`scope_create/read/update/delete`) con la misma regla de
+--    conversion que uso esa migracion: bit encendido -> Todos (4), apagado ->
+--    Sin acceso (0).
 
 BEGIN;
 
@@ -44,22 +54,9 @@ CREATE TEMP TABLE roles_retirados AS
 SELECT id_permission, permission_description
   FROM permission
  WHERE lower(permission_description) IN (
-         'jefe de taller', 'mesero', 'cocina',
-         'caja restaurante', 'admin restaurante'
+         'mesero', 'cocina', 'caja restaurante', 'admin restaurante'
        )
    AND deletion_date IS NULL;
-
--- Los usuarios de Jefe de taller pasan a Supervisor.
-UPDATE "user" u
-   SET id_permission = sup.id_permission,
-       last_update_date = now()
-  FROM roles_retirados r,
-       permission sup
- WHERE u.id_permission = r.id_permission
-   AND lower(r.permission_description) = 'jefe de taller'
-   AND lower(sup.permission_description) = 'supervisor'
-   AND sup.deletion_date IS NULL
-   AND u.deletion_date IS NULL;
 
 -- Quien queda sin rol util, para que alguien lo reasigne.
 DO $$
@@ -107,48 +104,59 @@ DROP TABLE roles_retirados;
 --
 -- Acotado a esas cinco filas y al rol 'Administrator' a proposito: no es una
 -- resiembra general, y ningun ajuste hecho desde la pantalla se toca.
+--
+-- Corregido 2026-09-24: la version original comparaba el valor de HOY
+-- contra el valor OBJETIVO (`IS DISTINCT FROM` contra `v.crear...`) -- eso
+-- vuelve a escribir la correccion en cada reinicio del pod mientras la fila
+-- no diga exactamente eso, incluyendo despues de que un administrador la
+-- cambie a proposito desde el gestor. Es la misma invariante que
+-- `test_no_migration_overwrites_scope_columns_via_plain_update` fija: el
+-- gestor manda. Se compara en cambio contra el valor MALO conocido que dejo
+-- `seed.sql` (control_type=15 en las cinco, es decir el (4,4,4,4) de estas 4
+-- columnas) -- una correccion de una sola vez que deja de tocar la fila en
+-- cuanto se aplica, sin importar a que la mueva despues el gestor.
 UPDATE entity_permission ep
-   SET control_type = v.bits::text,
+   SET scope_create = v.crear, scope_read = v.leer, scope_update = v.actualizar, scope_delete = v.borrar,
        menu_label = v.etiqueta,
        last_update_date = now()
   FROM (VALUES
-          ('restaurant_waiter',  7, 'Meseros'),
-          ('restaurant_cashier', 7, 'Caja'),
-          ('restaurant_kitchen', 6, 'Cocina'),
-          ('restaurant_admin',  15, 'Admin del restaurante'),
-          ('kronos_device',      2, 'Conexion al dispositivo Kronos')
-       ) AS v(entidad, bits, etiqueta)
+          -- bits=7 (CAPTURA: crear+leer+actualizar)
+          ('restaurant_waiter',  4, 4, 4, 0, 'Meseros'),
+          ('restaurant_cashier', 4, 4, 4, 0, 'Caja'),
+          -- bits=6 (EDITAR: leer+actualizar)
+          ('restaurant_kitchen', 0, 4, 4, 0, 'Cocina'),
+          -- bits=15 (TOTAL: administrar)
+          ('restaurant_admin',   4, 4, 4, 4, 'Admin del restaurante'),
+          -- bits=2 (CONSULTA: solo leer)
+          ('kronos_device',      0, 4, 0, 0, 'Conexion al dispositivo Kronos')
+       ) AS v(entidad, crear, leer, actualizar, borrar, etiqueta)
   JOIN permission p
     ON lower(p.permission_description) = 'administrator'
    AND p.deletion_date IS NULL
  WHERE ep.id_permission = p.id_permission
    AND ep.entity_name = v.entidad
    AND ep.deletion_date IS NULL
-   AND ep.control_type IS DISTINCT FROM v.bits::text;
+   AND (ep.scope_create, ep.scope_read, ep.scope_update, ep.scope_delete) = (4, 4, 4, 4)
+   AND (ep.scope_create, ep.scope_read, ep.scope_update, ep.scope_delete)
+       IS DISTINCT FROM (v.crear, v.leer, v.actualizar, v.borrar);
 
--- Lo que `seed.sql` habia escrito a mano sobre Supervisor.
+-- Lo que `seed.sql` habia escrito a mano sobre Supervisor -- YA NO SE FUERZA.
 --
--- El bloque "Project workflow roles" -retirado del seed.sql en este mismo
--- cambio- sembraba `task`, `task_note` y `task_type` en 15 (administrar)
--- cuando el registro concede operaciones en 7 (capturar). Solo administracion
--- borra, que es el criterio escrito de la matriz: con 15, un supervisor podia
--- borrar tareas y tipos de tarea.
+-- Esta migracion originalmente ponia `task`, `task_note` y `task_type` en 7
+-- (capturar) para corregir el 15 (administrar) que `seed.sql` habia escrito a
+-- mano. Correcto en su momento, pero un pedido de negocio posterior
+-- (2026-09-22, ver `registry.py` y la excepcion de Supervisor en
+-- `task`/`incident`) los bajo otra vez, a CONSULTA -- y como esta migracion
+-- se reaplica en cada arranque del pod, forzar aqui un valor fijo habria
+-- revertido esa excepcion en cada deploy, exactamente el mismo bug que
+-- `fix(permisos): Supervisor deja de resetearse en cada deploy` encontro y
+-- corrigio para `20260908100000_roles_con_los_ids_de_la_base.sql`. El UPDATE
+-- se retira; el Gestor de roles manda sobre lo que ya existe.
 --
--- Y le ponia a `task_note` una etiqueta de menu, "Notas de tarea", que el
--- registro retiro a proposito: `task_note.id_task` es NOT NULL, o sea que una
--- nota no existe sin su tarea, y con pantalla propia habia que abrir una
--- tercera lista y elegir la tarea en un desplegable para escribir una nota.
-UPDATE entity_permission ep
-   SET control_type = '7',
-       last_update_date = now()
-  FROM permission p
- WHERE ep.id_permission = p.id_permission
-   AND lower(p.permission_description) = 'supervisor'
-   AND p.deletion_date IS NULL
-   AND ep.entity_name IN ('task', 'task_note', 'task_type')
-   AND ep.deletion_date IS NULL
-   AND ep.control_type IS DISTINCT FROM '7';
-
+-- La etiqueta de menu de `task_note` si se sigue ocultando abajo: eso no
+-- depende de una decision de negocio que pueda cambiar por rol, es una
+-- decision fija del registro (`task_note.id_task` es NOT NULL, no tiene
+-- pantalla propia).
 UPDATE entity_permission ep
    SET menu_location = 'hidden',
        menu_group = NULL,

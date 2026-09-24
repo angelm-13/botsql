@@ -172,24 +172,6 @@ def create_sale_invoice(user_data, source_module, reference):
     return jsonify(facturar(source_module, reference, request.get_json(silent=True) or {}, user_data)), 201
 
 
-@bp_invoice.route('/quotation_options', methods=['GET'])
-@token_required
-@require_entity_permission('proyect', 'read')
-def list_quotation_options(user_data):
-    """Solo id+folio+cliente+estatus, para el selector de "Cotizacion" al
-    crear o editar un proyecto -- ver `ProjectManagementPage.jsx`.
-
-    Deliberadamente NO exige el permiso completo de `invoice` -- un
-    Supervisor que puede crear proyectos no necesariamente puede ver el
-    modulo de facturacion entero, igual que ya pasa con el selector de
-    "Cliente" en `customer_supplier/options`. Antes de este endpoint, el
-    formulario pedia el numero de folio interno a mano y sin lista, asi que
-    cualquier numero que no fuera el id real de una cotizacion existente
-    tronaba con `errors.not_found` al guardar.
-    """
-    return jsonify(InvoiceService.quotation_options())
-
-
 @bp_invoice.route('/', methods=['GET'])
 @token_required
 @require_entity_permission('invoice', 'read')

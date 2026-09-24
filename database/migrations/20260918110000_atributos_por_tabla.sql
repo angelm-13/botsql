@@ -113,6 +113,15 @@ DELETE FROM entity_permission
 -- caso de una instalacion nueva, para que los numeros salgan como el registro
 -- los documenta. Nunca se mueve un rol existente de identificador: los
 -- usuarios apuntan ahi, y moverlos es mover permisos de gente real.
+--
+-- Corregido 2026-09-24: el NOT EXISTS de nombre filtraba solo filas ACTIVAS
+-- (`AND p.deletion_date IS NULL`). Es el mismo patron fantasma que
+-- `b4a80cb` ya encontro y corrigio en `20260828150000_warehouse_roles.sql`
+-- para "Jefe de almacen": si un rol de esta lista se retira (baja logica),
+-- cada reinicio del pod deja de ver una fila activa con ese nombre y crea
+-- una nueva -- fantasma, para siempre. "Existe" ahora significa que el
+-- nombre aparecio alguna vez, activo o de baja; una resiembra no debe
+-- resucitar un rol que alguien retiro a proposito.
 INSERT INTO permission (
     id_permission, created_by, authorized_by, permission_description,
     id_department, id_subdepartment, id_level
@@ -128,7 +137,6 @@ SELECT r.id_permission, 1, 1, r.role_name, 1, 1, 1
  WHERE NOT EXISTS (
          SELECT 1 FROM permission p
           WHERE lower(p.permission_description) = lower(r.role_name)
-            AND p.deletion_date IS NULL
        )
    AND NOT EXISTS (
          SELECT 1 FROM permission p WHERE p.id_permission = r.id_permission
@@ -152,7 +160,6 @@ SELECT 1, 1, r.role_name, 1, 1, 1
  WHERE NOT EXISTS (
          SELECT 1 FROM permission p
           WHERE lower(p.permission_description) = lower(r.role_name)
-            AND p.deletion_date IS NULL
        );
 
 -- Los INSERT de arriba fijan identificadores explicitos, lo que NO avanza la
@@ -464,11 +471,25 @@ DELETE FROM entity_permission ep
         )
    );
 
+-- `entity_permission.control_type` (mascara de bits: CREAR=1, LEER=2,
+-- ACTUALIZAR=4, BORRAR=8) ya no existe -la elimino
+-- 20260914110000_equipos_y_alcance_por_accion.sql, migracion posterior en la
+-- cadena pero anterior en el tiempo de commit-. Se convierte aqui a las 4
+-- columnas de alcance con la misma regla que uso esa migracion para los
+-- datos existentes: bit encendido -> Todos (4), apagado -> Sin acceso (0). La
+-- matriz de arriba se deja con la columna `control_type` tal cual -son 256
+-- filas literales, y la conversion es mecanica- para no reescribir cada una
+-- a mano.
 INSERT INTO entity_permission (
-    id_permission, entity_name, control_type, menu_location,
+    id_permission, entity_name, scope_create, scope_read, scope_update, scope_delete, menu_location,
     menu_group, menu_group_icon, menu_label, menu_order, created_by
 )
-SELECT p.id_permission, m.entity_name, m.control_type, m.menu_location,
+SELECT p.id_permission, m.entity_name,
+       CASE WHEN (m.control_type & 1) = 1 THEN 4 ELSE 0 END,
+       CASE WHEN (m.control_type & 2) = 2 THEN 4 ELSE 0 END,
+       CASE WHEN (m.control_type & 4) = 4 THEN 4 ELSE 0 END,
+       CASE WHEN (m.control_type & 8) = 8 THEN 4 ELSE 0 END,
+       m.menu_location,
        m.menu_group, m.menu_group_icon, m.menu_label, m.menu_order, 1
 FROM matriz_de_permisos m
 JOIN permission p
@@ -594,10 +615,21 @@ UPDATE nm_field_permission nfp
    );
 
 INSERT INTO nm_field_permission (id_field, id_permission, control_type, created_by)
--- entity_permission.control_type es `text` en la base real (no coincide con
--- el `SmallInteger` que declara el modelo -- deuda aparte, no de esta
--- migracion); sin el cast, LEAST(text, integer) no resuelve tipo comun.
-SELECT f.id_field, ep.id_permission, LEAST(ep.control_type::integer, 15)::text, 1
+-- `entity_permission.control_type` (la mascara de bits de la que este valor
+-- salia) ya no existe -ver la nota de mas arriba, en el INSERT de
+-- `entity_permission`-. Se reconstruye el mismo bitmask desde las 4 columnas
+-- de alcance: el bit se enciende si el alcance de esa accion es CUALQUIERA
+-- que no sea "Sin acceso" (>0), que es lo que `control_type` ya decia -esta
+-- tabla solo pregunta si el campo se puede ver/editar, no con que alcance.
+SELECT f.id_field, ep.id_permission,
+       LEAST(
+           (CASE WHEN ep.scope_create > 0 THEN 1 ELSE 0 END) +
+           (CASE WHEN ep.scope_read   > 0 THEN 2 ELSE 0 END) +
+           (CASE WHEN ep.scope_update > 0 THEN 4 ELSE 0 END) +
+           (CASE WHEN ep.scope_delete > 0 THEN 8 ELSE 0 END),
+           15
+       )::text,
+       1
 FROM entity_permission ep
 JOIN field f
   ON f.table_name = ep.entity_name

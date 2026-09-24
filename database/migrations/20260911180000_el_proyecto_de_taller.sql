@@ -190,6 +190,17 @@ BEGIN;
 ALTER TABLE proyect_event ALTER COLUMN previous_status TYPE VARCHAR(40);
 ALTER TABLE proyect_event ALTER COLUMN new_status TYPE VARCHAR(40);
 
+-- Esta migracion se reaplica en cada arranque del pod (junto con TODAS las
+-- demas, siempre en el mismo orden), y este DROP+ADD siempre corre antes que
+-- el de las migraciones mas nuevas que siguen ampliando esta misma lista
+-- (20260918130000, 20260921100000). Si aqui se dejara solo el valor
+-- historico de este commit, cualquier fila real de un evento que esas
+-- migraciones posteriores agregaron ('taken'/'released',
+-- 'document_attached'/'document_removed') haria fallar este ADD CONSTRAINT
+-- la proxima vez que el pod arranque -- se angosta la lista un instante
+-- antes de que la migracion siguiente la vuelva a ampliar, y en ese instante
+-- ya puede haber datos que no le caben. Se deja aqui de una vez la union
+-- completa de lo que cualquier migracion de esta cadena necesita.
 ALTER TABLE proyect_event DROP CONSTRAINT IF EXISTS proyect_event_event_type_check;
 
 ALTER TABLE proyect_event ADD CONSTRAINT proyect_event_event_type_check CHECK (
@@ -198,7 +209,11 @@ ALTER TABLE proyect_event ADD CONSTRAINT proyect_event_event_type_check CHECK (
         -- El recorrido comercial, que corre en paralelo al de taller.
         'management_transition',
         -- Lo acordado y lo cobrado, cada uno por su lado.
-        'payment_agreed', 'payment_settled'
+        'payment_agreed', 'payment_settled',
+        -- Quien se hizo cargo del proyecto en el taller, y cuando lo solto.
+        'taken', 'released',
+        -- Adjuntos del expediente.
+        'document_attached', 'document_removed'
     )
 );
 

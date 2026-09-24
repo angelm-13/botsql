@@ -37,13 +37,10 @@ ALLOWED_FIELDS = [
     'id_proyect', 'id_customer_supplier', 'id_customer_contact', 'leader', 'proyect_description',
     'title', 'proyect_status', 'created_by', 'creation_date',
     'last_update_date', 'deletion_date',
-    'folio', 'requested_by', 'id_quotation', 'id_supervisor', 'delivery_date',
+    'folio', 'requested_by', 'id_quotation', 'quotation_reference', 'purchase_order',
+    'purchase_order_item', 'id_supervisor', 'delivery_date',
     'id_drawing_document', 'management_status',
 ]
-# `purchase_order` y `purchase_order_item` salieron de la lista con el
-# formulario: la orden de compra del cliente y su partida ya no se capturan ni
-# se devuelven. Las columnas se quedan en la tabla con lo que ya tuvieran, y
-# recuperarlas es volver a ponerlas aqui -- no hay que migrar nada.
 
 TECHNICAL_RESPONSE_FIELDS = {'id_proyect', 'folio', 'submitted_date'}
 FIELD_READ_BIT = 2
@@ -158,8 +155,18 @@ def list_proyect_options(user_data):
     Sin permiso de entidad -- igual que `/user/options` -- porque un Almacenista
     levanta vales sin tener el modulo `operaciones`. Ver el docstring de
     `project_options()`.
+
+    `?mine=1` acota a los proyectos donde el actor es `leader` -lo que pide el
+    prevale del Supervisor-; sin el parametro, la lista sigue completa.
     """
-    return jsonify(project_options())
+    solo_mios = str(request.args.get('mine') or '').strip().lower() in ('1', 'true', 'si', 'yes')
+    id_leader = None
+    if solo_mios:
+        try:
+            id_leader = int(user_data.get('id_user') or user_data.get('user_id') or 0) or None
+        except (TypeError, ValueError):
+            id_leader = None
+    return jsonify(project_options(id_leader=id_leader))
 
 
 @bp_proyect.route('/', methods=['GET'])

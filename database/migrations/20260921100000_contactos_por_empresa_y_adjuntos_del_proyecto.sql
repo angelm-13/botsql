@@ -137,12 +137,22 @@ CREATE INDEX IF NOT EXISTS ix_proyect_document_proyect
 -- El expediente registra que se subio/quito un adjunto en la misma bitacora
 -- que el resto del historial del proyecto (mismo patron que
 -- 20260911180000 amplio la lista para 'management_transition' etc).
+--
+-- 'taken'/'released' -que 20260918130000 ya habia agregado- se quedaron
+-- fuera aqui por descuido: como esta migracion tambien hace DROP+ADD del
+-- mismo constraint, en cada reaplicacion (el mecanismo real de despliegue
+-- corre todas las migraciones en cada arranque del pod, no solo una vez)
+-- volvia a angostar la lista, y en cuanto existiera una fila real de
+-- 'taken'/'released' -tomar o soltar un proyecto- el ADD CONSTRAINT
+-- reventaba contra esa fila. Se incluyen aqui tambien para que la lista siga
+-- siendo la union de todo lo que ya era valido, no una foto vieja.
 ALTER TABLE proyect_event DROP CONSTRAINT IF EXISTS proyect_event_event_type_check;
 
 ALTER TABLE proyect_event ADD CONSTRAINT proyect_event_event_type_check CHECK (
     event_type IN (
         'created', 'status_changed', 'message', 'task_event',
         'management_transition', 'payment_agreed', 'payment_settled',
+        'taken', 'released',
         'document_attached', 'document_removed'
     )
 );

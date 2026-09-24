@@ -37,6 +37,11 @@ class Proyect(Base):
     requested_by: Mapped[object] = mapped_column(String(160), nullable=True)
     # La cotizacion de la que salio; en TYAKXA es una `invoice` en su primer momento.
     id_quotation: Mapped[int] = mapped_column(Integer, ForeignKey('invoice.id_invoice'), nullable=True)
+    # Folio de un sistema de cotizacion EXTERNO (ej. adser, obligado por su
+    # proveedor a cotizar fuera de tyakxa_tny): nunca genera una fila de
+    # `invoice` aqui. Se llena solo cuando `id_quotation` no aplica -- las dos
+    # nunca coexisten en el mismo proyecto.
+    quotation_reference: Mapped[str | None] = mapped_column(String(80), nullable=True)
     # Numeros del documento del CLIENTE, no de los nuestros.
     purchase_order: Mapped[object] = mapped_column(String(60), nullable=True)
     purchase_order_item: Mapped[int] = mapped_column(Integer, nullable=True)
@@ -71,6 +76,7 @@ class Proyect(Base):
             'purchase_order_item': to_json_value(self.purchase_order_item),
             'purchase_order': to_json_value(self.purchase_order),
             'id_quotation': to_json_value(self.id_quotation),
+            'quotation_reference': to_json_value(self.quotation_reference),
             'requested_by': to_json_value(self.requested_by),
             'folio': to_json_value(self.folio),
             'created_by': to_json_value(self.created_by),

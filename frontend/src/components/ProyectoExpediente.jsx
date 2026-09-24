@@ -152,12 +152,12 @@ export default function ProyectoExpediente({ detalle, catalogo, modo, onCambio }
         <Dato etiqueta={etiqueta("folio", "Folio")} valor={detalle.folio} />
         <Dato etiqueta={etiqueta("requested_by", "Lo pidió")} valor={detalle.requested_by} />
         <Dato etiqueta={etiqueta("quotation", "Cotización")}
-              valor={detalle.id_quotation && `#${detalle.id_quotation}`} />
-        {/* La orden de compra del cliente y su partida se retiraron de la
-            orden de trabajo. Las columnas siguen en la base con lo que ya
-            tuvieran capturado, pero el expediente ya no las cuenta. */}
-        <Dato etiqueta={etiqueta("delivery_date", "Fecha estimada de entrega")}
-              valor={detalle.delivery_date} />
+              valor={detalle.id_quotation ? `#${detalle.id_quotation}` : detalle.quotation_reference} />
+        <Dato etiqueta={etiqueta("purchase_order", "Orden de compra")}
+              valor={detalle.purchase_order} />
+        <Dato etiqueta={etiqueta("purchase_order_item", "Partida")}
+              valor={detalle.purchase_order_item} />
+        <Dato etiqueta={etiqueta("delivery_date", "Entrega")} valor={detalle.delivery_date} />
       </dl>
 
       {/* --- el recorrido comercial: exclusivo de Gerente, ni siquiera de
@@ -302,7 +302,7 @@ export default function ProyectoExpediente({ detalle, catalogo, modo, onCambio }
         ))}
       </div>
       <form className="project-attachment-upload" onSubmit={subirAdjunto}>
-        <input type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        <input type="file" accept=".pdf,.docx,.dxf,.dwg,.xlsx,.xls,.step,.stp,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
                onChange={(e) => setArchivoNuevo(e.target.files?.[0] || null)} />
         <input type="text" maxLength={200} placeholder={etiqueta("attachment_title", "Título (opcional)")}
                value={tituloAdjunto} onChange={(e) => setTituloAdjunto(e.target.value)} />

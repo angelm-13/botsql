@@ -133,6 +133,21 @@ function getFieldId(field) {
   return field?.id_field ?? field?.id ?? null;
 }
 
+// El backend corre con 3 workers de gunicorn (entrypoint.sh) en un clúster
+// con poca RAM/CPU por nodo (ver CLAUDE.md); mandar cientos de peticiones a
+// la vez monopolizaria esos 3 workers por varios segundos y dejaria en cola
+// a cualquier otro usuario del sistema. Por eso se procesa en lotes chicos en
+// paralelo, no todo secuencial (lo que hacia que "Guardar" tardara cientos de
+// viajes de red, uno detras de otro) ni todo de golpe.
+const SAVE_BATCH_SIZE = 8;
+
+async function runInBatches(items, worker, batchSize = SAVE_BATCH_SIZE) {
+  for (let index = 0; index < items.length; index += batchSize) {
+    const lote = items.slice(index, index + batchSize);
+    await Promise.all(lote.map(worker));
+  }
+}
+
 export default function RolePermissionManagerPage() {
   const { t } = useI18n();
   const currentUser = JSON.parse(localStorage.getItem("user") || "null");
@@ -652,12 +667,12 @@ export default function RolePermissionManagerPage() {
     if (!validateVisibleFieldsBeforeSave()) return;
     setSaving(true); setError(""); setNotice("");
     try {
-      for (const entity of catalog) {
+      await runInBatches(catalog, async (entity) => {
         const entityName = getEntityName(entity);
         if (entityName) await saveEntityPermission(entityName, entityMatrix[entityName] || EMPTY_ENTITY_SCOPES);
-      }
+      });
       const createdFields = new Map();
-      for (const field of allManagedFields) {
+      await runInBatches(allManagedFields, async (field) => {
         const entityName = field.entity_name || field.table_name;
         const entityEnabled = hasAnyScope(entityMatrix[entityName]);
         const fieldKey = getFieldKey(field);
@@ -666,7 +681,7 @@ export default function RolePermissionManagerPage() {
           const fieldId = await resolveFieldRecord(field, createdFields);
           if (fieldId) await saveFieldPermission(fieldId, controlType);
         }
-      }
+      });
       const [entityPermPayload, fieldPermPayload, fieldPayload] = await Promise.all([
         fetchAllPages(getAllEntityPermission),
         fetchAllPages(getAllNmFieldPermission),

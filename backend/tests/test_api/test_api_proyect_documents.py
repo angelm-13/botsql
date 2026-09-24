@@ -12,6 +12,11 @@ from tests.conftest import BackendTestCase
 
 PDF_BYTES = b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\ntest\n%%EOF"
 DOCX_BYTES = b"PK\x03\x04" + b"0" * 40  # firma real de un .docx (zip/OOXML)
+XLSX_BYTES = b"PK\x03\x04" + b"0" * 40  # mismo contenedor zip/OOXML que docx
+XLS_BYTES = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"0" * 40  # firma real OLE2
+DWG_BYTES = b"AC1027" + b"0" * 40  # firma real de un DWG (AutoCAD 2013+)
+DXF_BYTES = b"0\nSECTION\n2\nHEADER\n0\nENDSEC\n0\nEOF\n"  # DXF ASCII real
+STEP_BYTES = b"ISO-10303-21;\nHEADER;\nENDSEC;\nEND-ISO-10303-21;\n"  # STEP real
 
 
 class TestProyectDocumentsApi(BackendTestCase):
@@ -76,6 +81,92 @@ class TestProyectDocumentsApi(BackendTestCase):
 
         self.assertEqual(response.status_code, 201)
         self.assertEqual("docx", self.json(response)["extension"])
+
+    def test_uploads_a_valid_dxf(self):
+        project_id = self._create_project()
+
+        response = self._request(
+            self.supervisor, "POST", f"/proyect/{project_id}/documents",
+            data={"file": (BytesIO(DXF_BYTES), "plano.dxf")},
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual("dxf", self.json(response)["extension"])
+
+    def test_uploads_a_valid_dwg(self):
+        project_id = self._create_project()
+
+        response = self._request(
+            self.supervisor, "POST", f"/proyect/{project_id}/documents",
+            data={"file": (BytesIO(DWG_BYTES), "plano.dwg")},
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual("dwg", self.json(response)["extension"])
+
+    def test_uploads_a_valid_xlsx(self):
+        project_id = self._create_project()
+
+        response = self._request(
+            self.supervisor, "POST", f"/proyect/{project_id}/documents",
+            data={"file": (BytesIO(XLSX_BYTES), "materiales.xlsx")},
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual("xlsx", self.json(response)["extension"])
+
+    def test_uploads_a_valid_xls(self):
+        project_id = self._create_project()
+
+        response = self._request(
+            self.supervisor, "POST", f"/proyect/{project_id}/documents",
+            data={"file": (BytesIO(XLS_BYTES), "materiales.xls")},
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual("xls", self.json(response)["extension"])
+
+    def test_uploads_a_valid_step(self):
+        project_id = self._create_project()
+
+        response = self._request(
+            self.supervisor, "POST", f"/proyect/{project_id}/documents",
+            data={"file": (BytesIO(STEP_BYTES), "pieza.step")},
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual("step", self.json(response)["extension"])
+
+    def test_rejects_a_dxf_that_is_not_actually_text(self):
+        """La validacion de contenido para DXF sigue vigente, no es "confiar en la extension"."""
+        project_id = self._create_project()
+
+        response = self._request(
+            self.supervisor, "POST", f"/proyect/{project_id}/documents",
+            data={"file": (BytesIO(b"\x00\x01\x02esto no es un dxf"), "falso.dxf")},
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual("documents.mime_mismatch", self.json(response)["error_key"])
+
+    def test_the_generic_documents_endpoint_still_rejects_dxf(self):
+        """La lista ampliada es solo de adjuntos de proyecto, no se filtro al modulo compartido."""
+        admin = {"id_user": 1, "is_superuser": True, "id_proyect": 1}
+
+        response = self._request(
+            admin, "POST", "/document/",
+            data={"file": (BytesIO(DXF_BYTES), "plano.dxf")},
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual("documents.invalid_file_type", self.json(response)["error_key"])
 
     def test_rejects_a_disallowed_extension(self):
         project_id = self._create_project()

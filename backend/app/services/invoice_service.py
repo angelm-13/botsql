@@ -35,57 +35,13 @@ from sqlalchemy import func, select
 from app.models import Invoice
 from app.models.session import transaction_context
 from app.services.base_service import CrudService
-from app.services.quotation_service import normalize_status
 from app.utils.errors import AppError
-
-# Los mismos estatus que `QUOTATION_STATUS_CODES` en
-# `QuotationWorkflowBoard.jsx` -- una cotizacion convertida sigue siendo
-# elegible: el proyecto puede seguir apuntando a ella aunque ya tenga
-# factura.
-QUOTATION_STATUS_CODES = frozenset({
-    "draft", "sent", "partially_approved", "approved", "rejected", "converted",
-})
 
 
 class InvoiceService(CrudService):
     model = Invoice
     primary_key = 'id_invoice'
     entity_name = 'invoice'
-
-    @classmethod
-    def quotation_options(cls) -> list[dict]:
-        """Solo id+folio+cliente+estatus, para el selector de "Cotizacion"
-        al crear o editar un proyecto -- ver `ProjectManagementPage.jsx`.
-
-        A proposito NO pasa por `list_scoped`/`actor_project`: ese alcance
-        acota una factura al `id_proyect` fijo del actor (mecanismo viejo de
-        aislamiento por instalacion, ver el docstring del modulo), que no es
-        "la obra a la que pertenece esta cotizacion" -- son dos cosas
-        distintas que hoy comparten la misma columna. Filtrar con ese
-        alcance aqui habria dejado el selector casi vacio para cualquiera
-        cuyo proyecto fijo no coincidiera con el de la cotizacion que
-        necesita elegir.
-        """
-        with transaction_context() as session:
-            filas = (
-                session.query(
-                    Invoice.id_invoice, Invoice.folio, Invoice.invoice_status,
-                    Invoice.id_customer_supplier,
-                )
-                .filter(Invoice.deletion_date.is_(None))
-                .order_by(Invoice.id_invoice.desc())
-                .all()
-            )
-            return [
-                {
-                    'id_invoice': fila[0],
-                    'folio': fila[1],
-                    'invoice_status': fila[2],
-                    'id_customer_supplier': fila[3],
-                }
-                for fila in filas
-                if normalize_status(fila[2]) in QUOTATION_STATUS_CODES
-            ]
 
     @staticmethod
     def actor_project(user_data: dict) -> int | None:

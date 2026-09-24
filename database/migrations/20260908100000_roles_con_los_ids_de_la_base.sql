@@ -77,10 +77,18 @@ WHERE permission_description IN
     ('Supervisor', 'Gerente', 'Jefe de taller', 'Almacenista', 'Jefe de almacen')
   AND deletion_date IS NULL;
 
+-- 4 o 5, no exactamente 5 (corregido 2026-09-23): esta migracion es de
+-- 2026-09-08, antes de que 20260921120000_fusionar_jefe_de_almacen_en_almacenista.sql
+-- retirara "Jefe de almacen" como rol -- decision de negocio posterior,
+-- legitima. Exigir 5 aqui reventaba esta migracion en CADA reinicio del pod
+-- desde el 09-21 (aborta el `for` de db-migrate.sh entero, todo lo que sigue
+-- en el archivo se queda sin aplicar). Con 4 sigue detectando el problema
+-- real que esta comprobacion queria atrapar -- una instalacion donde falta
+-- alguno de los roles core, no solo el que se retiro a proposito despues.
 DO $$
 BEGIN
-    IF (SELECT count(*) FROM role_ids) <> 5 THEN
-        RAISE EXCEPTION 'Se esperaban 5 roles (Supervisor, Gerente, Jefe de taller, Almacenista, Jefe de almacen) en permission y se encontraron %. Revisar antes de continuar.',
+    IF (SELECT count(*) FROM role_ids) NOT IN (4, 5) THEN
+        RAISE EXCEPTION 'Se esperaban 4 o 5 roles (Supervisor, Gerente, Jefe de taller, Almacenista, y "Jefe de almacen" solo si esta instalacion no lo retiro todavia) en permission y se encontraron %. Revisar antes de continuar.',
             (SELECT count(*) FROM role_ids);
     END IF;
 END $$;
@@ -330,48 +338,37 @@ WHERE NOT EXISTS (
       AND e.entity_name = m.entity_name
 );
 
--- 2. Lo que existe con otro valor. Es la correccion de fondo: aqui es donde
---    Supervisor deja de tener los bits del gerente administrativo.
-UPDATE entity_permission e
-   SET scope_create = m.scope_create,
-       scope_read = m.scope_read,
-       scope_update = m.scope_update,
-       scope_delete = m.scope_delete,
-       menu_location = m.menu_location,
-       menu_group = m.menu_group,
-       menu_group_icon = m.menu_group_icon,
-       menu_label = m.menu_label,
-       menu_order = m.menu_order,
-       deletion_date = NULL,
-       last_update_date = now()
-  FROM matriz_objetivo m
-  JOIN role_ids r ON r.role_name = m.role_name
- WHERE e.id_permission = r.id_permission
-   AND e.entity_name = m.entity_name
-   AND (
-        e.scope_create IS DISTINCT FROM m.scope_create
-     OR e.scope_read IS DISTINCT FROM m.scope_read
-     OR e.scope_update IS DISTINCT FROM m.scope_update
-     OR e.scope_delete IS DISTINCT FROM m.scope_delete
-     OR e.menu_location IS DISTINCT FROM m.menu_location
-     OR e.menu_label IS DISTINCT FROM m.menu_label
-     OR e.deletion_date IS NOT NULL
-   );
+-- 2. y 3. (neutralizadas 2026-09-23 -- ver nota abajo). Aqui vivian un
+--    UPDATE que forzaba scope_create/read/update/delete al valor de esta
+--    matriz para cualquier fila existente distinta, y un UPDATE que daba de
+--    baja cualquier fila de estos 5 roles ausente de esta misma matriz.
+--
+--    Las dos eran, a proposito, "la excepcion a 'el gestor manda'" (ver nota
+--    de cabecera): correccion de una sola vez para el cruce de ids
+--    Supervisor/gerente_administrativo. El problema es que esta migracion,
+--    como todas, se reaplica en CADA arranque del pod (no hay tabla de
+--    control real -- ver apply_migrations.py, desconectado del mecanismo
+--    real). Una correccion pensada para una sola vez, en un archivo que
+--    corre para siempre, actua como reseteo permanente.
+--
+--    Medido en tyakxa-dev 2026-09-23: un scope subido desde el Gestor de
+--    roles para Supervisor volvia al valor de esta matriz en el siguiente
+--    `deploy(tyakxa-dev)`. Ademas, la parte 2 competia con migraciones
+--    posteriores que si declaran su valor final por NOMBRE (ej.
+--    20260922100000_resembrar_catalogo_supervisor_task_incident.sql, que deja
+--    a Supervisor solo-lectura en `task`/`incident`): esta migracion los
+--    devolvia a los bits de captura de esta matriz en cada reinicio,
+--    independientemente de si alguien las habia tocado despues.
+--
+--    Es seguro quitarlas sin resembrar los 4 ambientes reales: la correccion
+--    de fondo ya esta en la fila viva de cada uno desde que esta migracion
+--    corrio la primera vez -- quitar el UPDATE no deshace un dato ya
+--    guardado, solo deja de repetirlo. En una instalacion nueva tampoco hace
+--    falta: el INSERT de la parte 1, al no encontrar la fila, ya la crea con
+--    el valor de esta misma matriz -- el UPDATE nunca tenia nada que corregir
+--    ahi (compara contra los valores que el INSERT acaba de poner).
 
 END IF;
 END $$;
-
--- 3. Lo que el rol ya no debe tener. En logico: queda para consulta.
-UPDATE entity_permission e
-   SET deletion_date = now(),
-       last_update_date = now()
- WHERE e.id_permission IN (SELECT id_permission FROM role_ids)
-   AND e.deletion_date IS NULL
-   AND NOT EXISTS (
-       SELECT 1 FROM matriz_objetivo m
-       JOIN role_ids r ON r.role_name = m.role_name
-       WHERE r.id_permission = e.id_permission
-         AND m.entity_name = e.entity_name
-   );
 
 COMMIT;
