@@ -58,9 +58,12 @@ const ROLE_TARGETS = {
 // antes de tener folio asignado, y completarse despues.
 //
 // `leader` (responsable) NO esta aqui: siempre es quien crea el proyecto, sin
-// selector -- se muestra fijo, nunca se manda en el payload. `purchase_order`/
-// `purchase_order_item` solo se muestran y se mandan cuando edita Gerente
-// (ver `mode` en el JSX del modal); para Supervisor quedan siempre vacios.
+// selector -- se muestra fijo, nunca se manda en el payload. `purchase_order`
+// solo se muestra y se manda cuando edita Gerente (ver `mode` en el JSX del
+// modal); para Supervisor queda siempre vacio. `purchase_order_item` ya no se
+// captura en el formulario -- era redundante con `purchase_order` (misma
+// orden de compra, sin renglon aparte); la columna y el modelo se dejan
+// intactos, solo se dejo de pedir en la UI.
 // `proyect_description` tampoco esta en el formulario: era redundante con
 // `title` (el campo real que la gente llenaba) y el backend la sigue
 // exigiendo al crear, asi que `saveProject` la manda igual al titulo, sin
@@ -68,7 +71,7 @@ const ROLE_TARGETS = {
 const EMPTY_FORM = {
   id_customer_contact: "", title: "",
   folio: "", id_quotation: "", purchase_order: "",
-  purchase_order_item: "", delivery_date: "",
+  delivery_date: "",
 };
 
 function orderedStatuses(fromServer, order) {
@@ -271,7 +274,6 @@ export default function ProjectManagementPage() {
       title: project.title || "",
       folio: project.folio || "",
       id_quotation: project.id_quotation || project.quotation_reference || "", purchase_order: project.purchase_order || "",
-      purchase_order_item: project.purchase_order_item || "",
       delivery_date: project.delivery_date || "",
     });
     setShowForm(true);
@@ -296,10 +298,9 @@ export default function ProjectManagementPage() {
       proyect_description: form.title,
       id_customer_contact: numeroOpcional(form.id_customer_contact),
       id_quotation: textoOpcional(form.id_quotation),
-      // Orden de compra/partida solo los captura Gerente (`canEditManagement`);
-      // para Supervisor el formulario ni los muestra, y aqui se manda
-      // `undefined` para no pisar lo ya capturado con vacio.
-      purchase_order_item: canEditManagement ? numeroOpcional(form.purchase_order_item) : undefined,
+      // Orden de compra solo la captura Gerente (`canEditManagement`); para
+      // Supervisor el formulario ni la muestra, y aqui se manda `undefined`
+      // para no pisar lo ya capturado con vacio.
       purchase_order: canEditManagement ? (form.purchase_order.trim() || undefined) : undefined,
       folio: form.folio.trim() || undefined,
       delivery_date: form.delivery_date || undefined,
@@ -499,7 +500,7 @@ export default function ProjectManagementPage() {
 
     {!loading && total > 0 && <div className="pagination"><button className="button" type="button" disabled={page <= 1} onClick={() => loadData(page - 1)}>{projectText("previous")}</button><span>{projectText("page")} {page} / {Math.max(Math.ceil(total / perPage), 1)}</span><select value={perPage} onChange={(event) => { const nextPerPage = Number(event.target.value); setPerPage(nextPerPage); loadData(1, nextPerPage); }} aria-label={projectText("per_page")}><option value={10}>10</option><option value={20}>20</option><option value={50}>50</option><option value={100}>100</option></select><button className="button" type="button" disabled={page * perPage >= total} onClick={() => loadData(page + 1)}>{projectText("next")}</button></div>}
 
-    {showForm && <div className="project-modal-backdrop" role="presentation"><form className="project-modal" onSubmit={saveProject}><header><div><p className="eyebrow">{projectText("project")}</p><h3>{projectText(editingId ? "edit_project" : "new_project")}</h3></div><button className="icon-button" type="button" onClick={() => setShowForm(false)} aria-label={projectText("close")}><X size={18} /></button></header><div className="form-grid"><label className="field"><span>{projectText("title_field")}</span><input required maxLength={50} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} /></label><label className="field"><span>{projectText("customer")}</span><select required value={form.id_customer_contact} onChange={(event) => setForm({ ...form, id_customer_contact: event.target.value })}><option value="">{projectText("select_contact")}</option>{contacts.map((contact) => <option key={contact.id_customer_contact} value={contact.id_customer_contact}>{contactLabel(contact, projectText("customer"))}</option>)}</select></label><label className="field"><span>{projectText("responsible")}</span><p className="field-static">{editingId ? userLabel(userById[editingLeader], editingLeader, projectText("user")) : (actor.full_name || actor.username || actor.email || projectText("current_user"))}</p></label><label className="field"><span>{projectText("folio")}</span><input maxLength={40} value={form.folio} onChange={(event) => setForm({ ...form, folio: event.target.value })} /></label><label className="field"><span>{projectText("quotation")}</span><input type="text" maxLength={80} value={form.id_quotation} onChange={(event) => setForm({ ...form, id_quotation: event.target.value })} /></label>{canEditManagement && <label className="field"><span>{projectText("purchase_order")}</span><input maxLength={60} value={form.purchase_order} onChange={(event) => setForm({ ...form, purchase_order: event.target.value })} /></label>}{canEditManagement && <label className="field"><span>{projectText("purchase_order_item")}</span><input type="number" min="1" value={form.purchase_order_item} onChange={(event) => setForm({ ...form, purchase_order_item: event.target.value })} /></label>}<label className="field"><span>{projectText("delivery_date")}</span><input type="date" value={form.delivery_date} onChange={(event) => setForm({ ...form, delivery_date: event.target.value })} /></label></div><footer><button className="button" type="button" onClick={() => setShowForm(false)}>{projectText("cancel")}</button><button className="button primary" disabled={busyId !== null}>{projectText("save")}</button></footer></form></div>}
+    {showForm && <div className="project-modal-backdrop" role="presentation"><form className="project-modal" onSubmit={saveProject}><header><div><p className="eyebrow">{projectText("project")}</p><h3>{projectText(editingId ? "edit_project" : "new_project")}</h3></div><button className="icon-button" type="button" onClick={() => setShowForm(false)} aria-label={projectText("close")}><X size={18} /></button></header><div className="form-grid"><label className="field"><span>{projectText("title_field")}</span><input required maxLength={50} value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} /></label><label className="field"><span>{projectText("customer")}</span><select required value={form.id_customer_contact} onChange={(event) => setForm({ ...form, id_customer_contact: event.target.value })}><option value="">{projectText("select_contact")}</option>{contacts.map((contact) => <option key={contact.id_customer_contact} value={contact.id_customer_contact}>{contactLabel(contact, projectText("customer"))}</option>)}</select></label><label className="field"><span>{projectText("responsible")}</span><p className="field-static">{editingId ? userLabel(userById[editingLeader], editingLeader, projectText("user")) : (actor.full_name || actor.username || actor.email || projectText("current_user"))}</p></label><label className="field"><span>{projectText("folio")}</span><input maxLength={40} value={form.folio} onChange={(event) => setForm({ ...form, folio: event.target.value })} /></label><label className="field"><span>{projectText("quotation")}</span><input type="text" maxLength={80} value={form.id_quotation} onChange={(event) => setForm({ ...form, id_quotation: event.target.value })} /></label>{canEditManagement && <label className="field"><span>{projectText("purchase_order")}</span><input maxLength={60} value={form.purchase_order} onChange={(event) => setForm({ ...form, purchase_order: event.target.value })} /></label>}<label className="field"><span>{projectText("delivery_date")}</span><input type="date" value={form.delivery_date} onChange={(event) => setForm({ ...form, delivery_date: event.target.value })} /></label></div><footer><button className="button" type="button" onClick={() => setShowForm(false)}>{projectText("cancel")}</button><button className="button primary" disabled={busyId !== null}>{projectText("save")}</button></footer></form></div>}
 
     {transition && <div className="project-modal-backdrop" role="presentation"><form className="project-modal compact" onSubmit={applyTransition}><header><div><p className="eyebrow">{projectText("status_change")}</p><h3>{statusLabel(transition.target)}</h3></div><button className="icon-button" type="button" onClick={() => setTransition(null)} aria-label={projectText("close")}><X size={18} /></button></header><p>{transition.project.title || `${projectText("project")} #${transition.project.id_proyect}`}</p>{needsReason(transition.target) && <label className="field"><span>{projectText("reason")}</span><textarea required rows={3} value={transition.reason} onChange={(event) => setTransition({ ...transition, reason: event.target.value })} /></label>}<label className="field"><span>{projectText(transitionNoteKey(transition))}</span><textarea rows={3} value={transition.content} onChange={(event) => setTransition({ ...transition, content: event.target.value })} /></label>{transition.target === "blocked" && <label className="field"><span>{projectText("review_date")}</span><input type="datetime-local" value={transition.reviewDate} onChange={(event) => setTransition({ ...transition, reviewDate: event.target.value })} /></label>}<footer><button className="button" type="button" onClick={() => setTransition(null)}>{projectText("cancel")}</button><button className="button primary" disabled={busyId !== null}>{projectText("confirm_change")}</button></footer></form></div>}
 
