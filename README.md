@@ -23,6 +23,7 @@ cual.
 
 | Documento | Para qué |
 |---|---|
+| [docs/COMO_PROBARLO.md](docs/COMO_PROBARLO.md) | Tres formas de probarlo ahora mismo (sin Docker, un contenedor, compose contra PostgreSQL real), con los resultados exactos de la verificación |
 | [docs/DEMOSTRACION.md](docs/DEMOSTRACION.md) | Cómo mostrarlo: arranque, guion de 10 minutos, preguntas frecuentes y qué hacer si falla |
 | [docs/PROCEDIMIENTO.md](docs/PROCEDIMIENTO.md) | Paso a paso de cero a funcionando, con cómo comprobar cada paso |
 | [docs/DESPLIEGUE.md](docs/DESPLIEGUE.md) | Puesta en producción: rol de solo lectura, Docker, autenticación, lista de comprobación |

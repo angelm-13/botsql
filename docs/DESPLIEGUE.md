@@ -3,12 +3,23 @@
 Guía para poner el módulo en producción contra la base de un proyecto real.
 Para probarlo en dos minutos sin nada instalado, vea el [README](../README.md).
 
-> **Estado de verificación.** Lo que dice este documento sobre la aplicación
-> está probado (74 pruebas automatizadas, verificación en navegador). Los
-> `Dockerfile` y el `docker-compose.yml` están escritos y el compose valida su
-> sintaxis (`docker compose config`), pero **las imágenes no se construyeron
-> en esta sesión**: la primera vez que las construya, hágalo en un ambiente de
-> pruebas, no directo en producción.
+> **Estado de verificación.** Este despliegue se probó de punta a punta: las
+> tres imágenes se construyeron (`bi-backend`, `bi-frontend`,
+> `Dockerfile.demo`), el stack completo se levantó con `docker compose up`
+> contra un PostgreSQL 16 real —no SQLite— con un rol `bi_lector` creado
+> siguiendo exactamente la sección 1 de abajo, y se comprobó desde fuera del
+> contenedor: la interfaz sirviendo por nginx, `/health` reportando la
+> conexión real sin advertencias, el esquema extraído con su llave foránea
+> detectada, una consulta con JOIN devolviendo el número correcto, un intento
+> de `DELETE` rechazado por el validador, y el rol de solo lectura confirmado
+> incapaz de escribir incluso conectándose directo con `psql`.
+>
+> Un defecto real apareció en esa prueba y ya está corregido: la versión de
+> `psycopg2-binary` fijada en `backend/Dockerfile` (2.9.9) no tiene rueda
+> precompilada para Python 3.13, y el build fallaba con
+> `pg_config executable not found`. Se subió a 2.9.13 y se agregó `libpq-dev`
+> como red de seguridad, purgada en la misma capa para no dejarla en la
+> imagen final.
 
 ---
 
@@ -133,7 +144,38 @@ error más común al estrenar es que nadie corrió `ollama pull`.
 
 ---
 
-## 4. Desplegar con Docker Compose
+## 4. Desplegar con Docker
+
+### 4a. Un solo contenedor, para probar (recomendado para esto)
+
+```bash
+docker build -f Dockerfile.demo -t bi-demo .
+docker run --rm -p 5001:5001 bi-demo
+```
+
+Sin PostgreSQL, sin variables de entorno, sin Ollama. Siembra su propia base
+SQLite genérica al arrancar y sirve la interfaz completa en
+`http://localhost:5001`. Es la misma imagen que usan `demo.bat`/`demo.sh`
+cuando corre bajo Docker Desktop.
+
+Para probarlo con el modelo real en vez del simulado:
+
+```bash
+docker run --rm -p 5001:5001 \
+  -e BI_DEMO_OLLAMA=1 \
+  -e BI_OLLAMA_URL=http://host.docker.internal:11434 \
+  --add-host=host.docker.internal:host-gateway \
+  bi-demo
+```
+
+(`--add-host` hace falta en Linux; en Docker Desktop para Windows/Mac
+`host.docker.internal` ya resuelve solo.) Requiere Ollama corriendo en el
+equipo anfitrión con el modelo descargado.
+
+Esta imagen es para probarlo, no para producción: la base vive dentro del
+contenedor y se pierde al borrarlo.
+
+### 4b. Compose completo, contra una base real
 
 ```bash
 cp .env.example .env

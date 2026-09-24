@@ -6,9 +6,20 @@ FROM python:3.13-slim
 # solo si el despliegue lo usa, en vez de engordar la imagen de todos.
 WORKDIR /app
 
+# Red de seguridad: si algun dia no hay rueda precompilada para la
+# plataforma o version de Python del build, pip cae a compilar desde
+# fuente y necesita esto. Ya paso una vez -- psycopg2-binary 2.9.9 no
+# traia rueda para Python 3.13 y el build tronaba con "pg_config
+# executable not found" -- por eso queda instalado, aunque hoy no se
+# necesite con la version fijada abajo. Se purga en la misma capa.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gcc libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir psycopg2-binary==2.9.9 PyMySQL==1.1.1
+    && pip install --no-cache-dir psycopg2-binary==2.9.13 PyMySQL==1.1.1 \
+    && apt-get purge -y --auto-remove gcc libpq-dev
 
 COPY bi/ ./bi/
 COPY app.py demo.py wsgi.py ./

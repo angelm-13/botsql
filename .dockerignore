@@ -1,0 +1,15 @@
+# Para `Dockerfile.demo`, cuyo contexto es la raiz del repo. Nada de esto
+# hace falta para construir la imagen de demostracion, y sin filtrarlo se
+# manda entero al daemon de Docker en cada build.
+.git/
+docs/
+*.md
+node_modules/
+frontend/dist/
+frontend/node_modules/
+backend/__pycache__/
+backend/tests/
+backend/demo_bi.db
+backend/.pytest_cache/
+.env
+.env.example

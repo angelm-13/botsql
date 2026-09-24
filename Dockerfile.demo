@@ -1,0 +1,47 @@
+# syntax=docker/dockerfile:1
+#
+# Imagen de DEMOSTRACION: interfaz + backend + base de datos de juguete, todo
+# en un contenedor. No requiere PostgreSQL ni Ollama ni variables de entorno.
+#
+#   docker build -f Dockerfile.demo -t bi-demo .
+#   docker run --rm -p 5001:5001 bi-demo
+#   -> http://localhost:5001
+#
+# Para el modelo real en vez del simulado, agregue -e BI_DEMO_OLLAMA=1 y
+# -e BI_OLLAMA_URL=http://host.docker.internal:11434 (con Ollama corriendo en
+# el host y `--add-host=host.docker.internal:host-gateway` en Linux).
+#
+# Esta imagen es para PROBARLO, no para producción: la base de datos vive
+# dentro del contenedor y se pierde al borrarlo. Para un despliegue real
+# contra la base de un proyecto, vea backend/Dockerfile + docker-compose.yml
+# y docs/DESPLIEGUE.md.
+
+FROM node:24-alpine AS interfaz
+WORKDIR /app
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ .
+RUN npm run build
+
+FROM python:3.13-slim
+WORKDIR /app
+
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY backend/bi/ ./bi/
+COPY backend/app.py backend/demo.py backend/wsgi.py ./
+COPY --from=interfaz /app/dist ./frontend/dist
+
+RUN useradd --create-home --uid 10001 bi && chown -R bi:bi /app
+USER bi
+
+EXPOSE 5001
+ENV BI_HOST=0.0.0.0
+# `app.py` busca la interfaz en <raiz-del-repo>/frontend/dist por omision,
+# relativo a su propia ubicacion -- en el repo eso es backend/../frontend/dist.
+# Aqui `app.py` vive en /app y la interfaz quedo en /app/frontend/dist, que
+# no es lo que ese calculo relativo produce, asi que se fija explicito.
+ENV BI_FRONTEND_DIST=/app/frontend/dist
+
+CMD ["python", "demo.py"]
