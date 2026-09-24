@@ -354,7 +354,7 @@ export default function TaskPage() {
       status: ["status_description", "category"],
       incident_type: ["incident_type_description"],
       payroll_concept: ["payroll_concept_description", "payroll_code"],
-      proyect: ["proyect_description", "title"],
+      proyect: ["title", "proyect_description"],
       project: ["project_description", "title"],
       service: ["service_description"],
       customer_supplier: ["name", "business_name", "commercial_name", "contact_name", "title"],
