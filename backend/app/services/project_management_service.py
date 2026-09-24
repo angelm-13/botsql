@@ -12,6 +12,7 @@ from app.models.proyect_event import ProyectEvent
 from app.models.proyect_payment import ProyectPayment
 from app.models.session import transaction_context
 from app.models.task import Task
+from app.services.operations_workflow import TASK_CLOSED_STATUSES
 from app.utils.errors import AppError
 
 
@@ -832,6 +833,11 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
         puede_autorizar = scope in {"authorization", "unrestricted"}
         # Quien lo ejecuta: el taller, o el lider sobre el proyecto que lidera.
         puede_ejecutar = scope in {"execution", "unrestricted"} or leads_it
+        # Entregar al cliente es responsabilidad de quien lidera el proyecto
+        # (normalmente Supervisor, quien lo crea), no del taller: "completado"
+        # es que el trabajo esta hecho, "entregado" es un hecho comercial
+        # aparte, con el cliente de por medio.
+        puede_entregar = leads_it or scope == "unrestricted"
 
         allowed_scope = (
             (validated_target in {"authorized", "denied", "blocked"} and puede_autorizar)
@@ -842,6 +848,7 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
             # que sigue siendo exclusivo de `puede_autorizar` en la regla de
             # arriba.
             or (validated_target == "blocked" and current == "in_progress" and puede_ejecutar)
+            or (validated_target == "delivered" and puede_entregar)
         )
         if not allowed_scope:
             raise AppError(
@@ -849,6 +856,26 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
                 403,
                 {"target_status": validated_target, "scope": scope, "is_leader": leads_it},
             )
+
+        if validated_target == "delivered":
+            # No se entrega con tareas todavia abiertas -- "completado" es el
+            # estatus del proyecto, no garantiza que cada tarea individual ya
+            # se haya cerrado en el taller.
+            tareas_abiertas = (
+                db.query(Task)
+                .filter(Task.id_proyect == project.id_proyect, Task.deletion_date.is_(None))
+                # `NOT IN` con NULL nunca es verdadero en SQL -- una tarea sin
+                # estatus capturado quedaria fuera del conteo, como si ya
+                # estuviera cerrada, sin estarlo.
+                .filter(or_(Task.task_status.is_(None), Task.task_status.notin_(TASK_CLOSED_STATUSES)))
+                .count()
+            )
+            if tareas_abiertas:
+                raise AppError(
+                    "errors.project_open_tasks",
+                    409,
+                    {"open_tasks": tareas_abiertas},
+                )
 
         project.proyect_status = validated_target
         _append_event(

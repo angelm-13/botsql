@@ -183,6 +183,13 @@ export default function ProjectManagementPage() {
   const customerById = useMemo(() => Object.fromEntries(customers.map((item) => [item.id_customer_supplier, item])), [customers]);
   const userById = useMemo(() => Object.fromEntries(users.map((item) => [item.id_user, item])), [users]);
   const canEditManagement = mode === "manager" || mode === "unrestricted";
+  // Cambiar el estatus de una tarea (taller) es capacidad de Gerente/Jefe de
+  // taller/administrador -- ver seed de `entity_permission` para "task"
+  // (`scope_update`): Supervisor solo tiene lectura. El backend ya lo exige
+  // (`require_entity_permission('task', 'update')` en /task/<id>/transition),
+  // esto solo evita ofrecerle el control a quien de todas formas recibiria
+  // un 403.
+  const canChangeTaskStatus = mode !== "supervisor";
   const filtered = items;
 
   async function loadData(nextPage = page, nextPerPage = perPage) {
@@ -358,7 +365,16 @@ export default function ProjectManagementPage() {
   function actionTargets(project) {
     const desdeElServidor = catalog?.proyect?.transitions?.[project.proyect_status] || [];
     const permitidos = ROLE_TARGETS[mode];
-    return permitidos ? desdeElServidor.filter((target) => permitidos.includes(target)) : desdeElServidor;
+    const base = permitidos ? desdeElServidor.filter((target) => permitidos.includes(target)) : desdeElServidor;
+    // Entregar al cliente es del LIDER del proyecto (normalmente Supervisor,
+    // quien lo crea), no del rol -- igual que el candado real en
+    // `transition_project` (backend). Por eso no vive en ROLE_TARGETS: ese
+    // mapa es por papel, esto es por quien lidera este proyecto en concreto.
+    const leadsIt = Number(project.leader) === Number(actor.id_user);
+    if (leadsIt && desdeElServidor.includes("delivered") && !base.includes("delivered")) {
+      return [...base, "delivered"];
+    }
+    return base;
   }
 
   function taskActionTargets(task) {
@@ -486,7 +502,7 @@ export default function ProjectManagementPage() {
     {detail && <div className="project-modal-backdrop" role="presentation"><aside className="project-detail-panel"><header><div><p className="eyebrow">{projectText("record")} #{detail.id_proyect}</p><h3>{detail.title || projectText("project")}</h3></div><button className="icon-button" type="button" onClick={() => setDetail(null)} aria-label={projectText("close")}><X size={18} /></button></header><span className={`project-status status-${detail.proyect_status}`}>{statusLabel(detail.proyect_status)}</span><p>{detail.proyect_description}</p><ProyectoExpediente detalle={detail} catalogo={catalog} modo={mode} onCambio={async () => setDetail(await getProyect(detail.id_proyect))} /><h4>{projectText("tasks")}</h4>{detail.tasks?.length ? detail.tasks.map((task) => <button className="project-detail-row project-task-row" type="button" key={task.id_task} onClick={() => openTask(task)} disabled={busyId !== null}><strong>{taskLabel(task)}</strong><span className="project-task-row-end"><span className={`project-status status-${task.task_status || "unknown"}`}>{taskStatusLabel(task.task_status)}</span><ChevronRight size={16} /></span></button>) : <p className="muted">{projectText("no_tasks")}</p>}<h4>{projectText("history")}</h4><div className="project-timeline">{detail.events?.slice().reverse().map((event) => <div key={event.id_proyect_event}><span>{new Date(event.creation_date).toLocaleString(document.documentElement.lang || "es")}</span><strong>{eventTitle(event)}</strong>{(event.reason || event.content) && <p>{event.reason || event.content}</p>}</div>)}</div><form className="project-message" onSubmit={sendMessage}><label className="field"><span>{projectText("new_message")}</span><textarea rows={2} value={message} onChange={(event) => setMessage(event.target.value)} placeholder={projectText("message_placeholder")} /></label><button className="button primary" disabled={!message.trim() || busyId !== null}><MessageSquare size={16} />{projectText("publish")}</button></form></aside></div>}
 
     {taskDetail && <div className="project-modal-backdrop" role="presentation"><aside className="project-detail-panel"><header><div><p className="eyebrow">{projectText("task")} #{taskDetail.task.id_task}</p><h3>{taskLabel(taskDetail.task)}</h3></div><button className="icon-button" type="button" onClick={closeTask} aria-label={projectText("close")}><X size={18} /></button></header>
-      <div className="project-task-status"><span className={`project-status status-${taskDetail.task.task_status || "unknown"}`}>{taskStatusLabel(taskDetail.task.task_status)}</span>{taskActionTargets(taskDetail.task).length > 0 && <label className="project-transition"><ArrowRight size={15} /><select value="" disabled={busyId !== null} onChange={(event) => event.target.value && setTaskTransition({ task: taskDetail.task, target: event.target.value, reason: "", content: "" })} aria-label={projectText("change_status")}><option value="">{projectText("change_status")}</option>{taskActionTargets(taskDetail.task).map((target) => <option value={target} key={target}>{taskStatusLabel(target)}</option>)}</select></label>}</div>
+      <div className="project-task-status"><span className={`project-status status-${taskDetail.task.task_status || "unknown"}`}>{taskStatusLabel(taskDetail.task.task_status)}</span>{canChangeTaskStatus && taskActionTargets(taskDetail.task).length > 0 && <label className="project-transition"><ArrowRight size={15} /><select value="" disabled={busyId !== null} onChange={(event) => event.target.value && setTaskTransition({ task: taskDetail.task, target: event.target.value, reason: "", content: "" })} aria-label={projectText("change_status")}><option value="">{projectText("change_status")}</option>{taskActionTargets(taskDetail.task).map((target) => <option value={target} key={target}>{taskStatusLabel(target)}</option>)}</select></label>}</div>
       {taskDetail.task.task_description && <p>{taskDetail.task.task_description}</p>}
       <h4>{projectText("task_notes")}</h4>
       {taskDetail.notes.length ? taskDetail.notes.map((note) => <div className="project-note" key={note.id_task_note}><span>{new Date(note.date || note.creation_date).toLocaleString(document.documentElement.lang || "es")}</span><p>{note.task_note_description}</p></div>) : <p className="muted">{projectText("no_task_notes")}</p>}

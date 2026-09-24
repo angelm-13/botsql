@@ -2325,7 +2325,8 @@
     "project_invalid_transition": "A alteração de status solicitada não é permitida.",
     "project_transition_reason_required": "É necessário informar um motivo para esta alteração de status.",
     "project_status_requires_transition": "O status só pode ser alterado pelas ações do fluxo.",
-    "project_not_editable": "O projeto não pode mais ser editado no status atual."
+    "project_not_editable": "O projeto não pode mais ser editado no status atual.",
+    "project_open_tasks": "Não é possível entregar o projeto: ainda há tarefas em aberto."
   },
   "logistics": {
     "module": "Logística", "crm": "CRM", "customer": "Cliente", "select_customer": "Selecione um cliente", "error_load": "Não foi possível carregar", "error_save": "Não foi possível salvar", "error_delete": "Não foi possível excluir", "confirm_delete": "Excluir", "refresh": "Atualizar", "edit": "Editar", "save": "Salvar", "cancel": "Cancelar", "search": "Buscar", "or": "ou", "loading": "Carregando", "empty": "Sem", "actions": "Ações", "delete": "Excluir",
