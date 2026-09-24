@@ -190,15 +190,24 @@ BEGIN;
 ALTER TABLE proyect_event ALTER COLUMN previous_status TYPE VARCHAR(40);
 ALTER TABLE proyect_event ALTER COLUMN new_status TYPE VARCHAR(40);
 
+-- Este DROP+ADD corre en CADA arranque del pod (sin tabla de control) y
+-- angosta el constraint a exactamente esta lista cada vez -- si para
+-- entonces ya existe una fila con un event_type que una migracion MAS NUEVA
+-- agrego (920921100000: document_attached/removed; 20260924190000:
+-- task_status_changed/task_note), esta migracion la revierte primero (corre
+-- antes por fecha) y truena con CheckViolation/CrashLoopBackOff contra esa
+-- fila real. Asi tumbo tyakxa-dev el 2026-09-24 con `ck_proyect_status`
+-- (mismo patron, otra columna). La lista de aqui en adelante es la FINAL,
+-- identica a la de 20260924190000 -- si vuelve a crecer, hay que actualizar
+-- las tres migraciones (esta, 20260921100000 y 20260924190000) a la vez.
 ALTER TABLE proyect_event DROP CONSTRAINT IF EXISTS proyect_event_event_type_check;
 
 ALTER TABLE proyect_event ADD CONSTRAINT proyect_event_event_type_check CHECK (
     event_type IN (
         'created', 'status_changed', 'message', 'task_event',
-        -- El recorrido comercial, que corre en paralelo al de taller.
-        'management_transition',
-        -- Lo acordado y lo cobrado, cada uno por su lado.
-        'payment_agreed', 'payment_settled'
+        'management_transition', 'payment_agreed', 'payment_settled',
+        'document_attached', 'document_removed',
+        'task_status_changed', 'task_note'
     )
 );
 

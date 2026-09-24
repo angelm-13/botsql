@@ -137,13 +137,25 @@ CREATE INDEX IF NOT EXISTS ix_proyect_document_proyect
 -- El expediente registra que se subio/quito un adjunto en la misma bitacora
 -- que el resto del historial del proyecto (mismo patron que
 -- 20260911180000 amplio la lista para 'management_transition' etc).
+--
+-- Este DROP+ADD corre en CADA arranque del pod (sin tabla de control) y
+-- angosta el constraint a exactamente esta lista cada vez -- si una
+-- migracion MAS NUEVA (20260924190000: task_status_changed/task_note) ya
+-- amplio esta misma columna y una fila real llego a usar uno de esos
+-- valores, esta migracion la revierte primero (corre antes por fecha) y
+-- truena con CheckViolation/CrashLoopBackOff. Asi tumbo tyakxa-dev el
+-- 2026-09-24 con `ck_proyect_status` (mismo patron, otra columna). La lista
+-- de aqui en adelante es la FINAL, identica a la de 20260911180000 y
+-- 20260924190000 -- si vuelve a crecer, hay que actualizar las tres a la
+-- vez.
 ALTER TABLE proyect_event DROP CONSTRAINT IF EXISTS proyect_event_event_type_check;
 
 ALTER TABLE proyect_event ADD CONSTRAINT proyect_event_event_type_check CHECK (
     event_type IN (
         'created', 'status_changed', 'message', 'task_event',
         'management_transition', 'payment_agreed', 'payment_settled',
-        'document_attached', 'document_removed'
+        'document_attached', 'document_removed',
+        'task_status_changed', 'task_note'
     )
 );
 
