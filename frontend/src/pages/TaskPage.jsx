@@ -212,7 +212,17 @@ export default function TaskPage() {
   }
 
   function buildSubmitPayload() {
-    const payload = { ...formData };
+    // Solo los campos que el formulario en verdad edita -- `startEdit`
+    // arranca de `{...emptyForm, ...item}`, que copia el registro COMPLETO
+    // que trajo el GET (task_status, owner, dependency, validation, id_task,
+    // lo que sea). Mandar `formData` tal cual reenvia esos valores viejos
+    // como si fueran intencion explicita del usuario: el backend ve
+    // `task_status` en el payload y asume que alguien lo quiso fijar a mano,
+    // bloqueando que la Fase lo sincronice sola (ver FASE_TO_TASK_STATUS).
+    const payload = {};
+    for (const field of Object.keys(emptyForm)) {
+      payload[field] = formData[field];
+    }
     if (ENTITY_KEY === "user" && editingId && isBlankValue(payload.password)) {
       delete payload.password;
     }
@@ -495,12 +505,16 @@ export default function TaskPage() {
 
 
       {canRead && view === "table" && filtered.length > 0 && <div className="table-card"><table><thead><tr>{showRowActions && <th>{t("common.actions")}</th>}
+              {canSeeField("task_description") && <th>{t("fields.task.task_description")}</th>}
+              {canSeeField("id_proyect") && <th>{t("fields.task.id_proyect")}</th>}
               {canSeeField("owner") && <th>{t("fields.task.owner")}</th>}
               {canSeeField("dependency") && <th>{t("fields.task.dependency")}</th>}
               {canSeeField("validation") && <th>{t("fields.task.validation")}</th>}
               {canSeeField("task_status") && <th>{t("fields.task.task_status")}</th>}
               {canSeeField("fase") && <th>{t("fields.task.fase")}</th>}
         </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_task}>{showRowActions && <td className="row-actions">{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</td>}
+              {canSeeField("task_description") && <td><pre className="cell-value">{formatTableValue(item.task_description)}</pre></td>}
+              {canSeeField("id_proyect") && <td><pre className="cell-value">{getOptionLabel(proyectOptions.find((proyecto) => (proyecto.id_proyect ?? proyecto.id) === item.id_proyect), "proyect") || formatTableValue(item.id_proyect)}</pre></td>}
               {canSeeField("owner") && <td><pre className="cell-value">{formatTableValue(item.owner)}</pre></td>}
               {canSeeField("dependency") && <td><pre className="cell-value">{formatTableValue(item.dependency)}</pre></td>}
               {canSeeField("validation") && <td><pre className="cell-value">{formatTableValue(item.validation)}</pre></td>}

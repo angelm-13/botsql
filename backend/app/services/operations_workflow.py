@@ -191,3 +191,22 @@ def normalize_task_fase(value) -> str:
 
 def task_fase_catalog() -> dict:
     return {"fases": list(TASK_FASES)}
+
+
+# Jefe de taller y Supervisor pidieron, el mismo dia que se separaron
+# fase/task_status (20260922090000), que cambiar la fase desde /task tambien
+# cierre la tarea de verdad -- un solo lugar para marcarla lista, en vez de
+# tener que ir a Proyectos a usar "Cambiar estado". El precio aceptado a
+# proposito: este camino NO exige motivo ni respeta la adyacencia de
+# TASK_TRANSITIONS (ver TaskService._validate) -- eso se queda para quien
+# use el flujo dedicado (/task/<id>/transition, "Cambiar estado" en
+# Proyectos), pensado para quien si necesita dejar constancia del porque.
+# No hay task_status equivalente a "entregado": una tarea entregada sigue
+# siendo, formalmente, una tarea terminada.
+FASE_TO_TASK_STATUS = {
+    "en_espera": "pendiente",
+    "en_proceso": "en_proceso",
+    "bloqueado": "bloqueada",
+    "terminado": "terminada",
+    "entregado": "terminada",
+}
