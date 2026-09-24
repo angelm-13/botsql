@@ -906,7 +906,8 @@ def add_project_document(project_id, payload, raw, original_filename, user_data,
 
     with transaction_context() as db:
         project = _get_visible_project(db, project_id, user_data, for_update=True)
-        extension, mime_type = storage.validate(raw, original_filename)
+        from app.services.document_service import PROJECT_ATTACHMENT_FILE_TYPES
+        extension, mime_type = storage.validate(raw, original_filename, allowed_types=PROJECT_ATTACHMENT_FILE_TYPES)
         documento = ProyectDocument(
             id_proyect=project.id_proyect,
             title=(str((payload or {}).get("title") or "").strip() or None),

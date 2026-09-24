@@ -302,7 +302,7 @@ export default function ProyectoExpediente({ detalle, catalogo, modo, onCambio }
         ))}
       </div>
       <form className="project-attachment-upload" onSubmit={subirAdjunto}>
-        <input type="file" accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        <input type="file" accept=".pdf,.docx,.dxf,.dwg,.xlsx,.xls,.step,.stp,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
                onChange={(e) => setArchivoNuevo(e.target.files?.[0] || null)} />
         <input type="text" maxLength={200} placeholder={etiqueta("attachment_title", "Título (opcional)")}
                value={tituloAdjunto} onChange={(e) => setTituloAdjunto(e.target.value)} />
