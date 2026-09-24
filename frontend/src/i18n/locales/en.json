@@ -591,7 +591,6 @@
       "description": "Task management",
       "empty_description": "Create the first Task record.",
       "empty_title": "No Task records",
-      "estado_label": "Status",
       "plural": "Task",
       "singular": "Task",
       "update_success": "Task updated successfully"

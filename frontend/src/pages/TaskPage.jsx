@@ -17,7 +17,12 @@ const ACTION_UPDATE = 4;
 const ACTION_DELETE = 8;
 const SCOPE_FIELD_BY_BIT = { [ACTION_CREATE]: "scope_create", [ACTION_READ]: "scope_read", [ACTION_UPDATE]: "scope_update", [ACTION_DELETE]: "scope_delete" };
 const FIELD_VISIBLE_BIT = 2;
-const ALL_FIELD_NAMES = ['id_task', 'task_code', 'start_date', 'duration', 'type', 'owner', 'dependency', 'validation'];
+// `id_task`/`task_code`/`start_date`/`duration`/`type` ya no tienen columna
+// en la tabla ni campo en el formulario -- el formulario se redujo a
+// descripcion/proyecto/fase (ver 828255e) y esos otros nunca tuvieron dato
+// real por fila en produccion. Quedan fuera de esta lista, no solo ocultos:
+// dejarlos aqui sugeriria que todavia hay algo que mostrar.
+const ALL_FIELD_NAMES = ['owner', 'dependency', 'validation'];
 // Respaldo si /operations/catalog no responde (offline, permiso, etc.): las
 // mismas 5 fases que pidio Jefe de taller, para que el select no se quede
 // vacio en vez de mostrar el texto libre de antes.
@@ -456,7 +461,7 @@ export default function TaskPage() {
           )}
           {canSeeField("fase") && (
           <label className="field">
-            <span>{t("page.task.estado_label", "Estado")}</span>
+            <span>{t("fields.task.fase")}</span>
             <select name="fase" value={formData.fase ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors["fase"])} {...inputPropsForField("fase", validationRules["fase"], "select")}>
               <option value="">{t("common.select_option", "Selecciona una opción")}</option>
               {taskFases.map((valor) => (
@@ -490,22 +495,12 @@ export default function TaskPage() {
 
 
       {canRead && view === "table" && filtered.length > 0 && <div className="table-card"><table><thead><tr>{showRowActions && <th>{t("common.actions")}</th>}
-              {canSeeField("id_task") && <th>{t("fields.task.id_task")}</th>}
-              {canSeeField("task_code") && <th>{t("fields.task.task_code")}</th>}
-              {canSeeField("start_date") && <th>{t("fields.task.start_date")}</th>}
-              {canSeeField("duration") && <th>{t("fields.task.duration")}</th>}
-              {canSeeField("type") && <th>{t("fields.task.type")}</th>}
               {canSeeField("owner") && <th>{t("fields.task.owner")}</th>}
               {canSeeField("dependency") && <th>{t("fields.task.dependency")}</th>}
               {canSeeField("validation") && <th>{t("fields.task.validation")}</th>}
               {canSeeField("task_status") && <th>{t("fields.task.task_status")}</th>}
               {canSeeField("fase") && <th>{t("fields.task.fase")}</th>}
         </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_task}>{showRowActions && <td className="row-actions">{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</td>}
-              {canSeeField("id_task") && <td><pre className="cell-value">{formatTableValue(item.id_task)}</pre></td>}
-              {canSeeField("task_code") && <td><pre className="cell-value">{formatTableValue(item.task_code)}</pre></td>}
-              {canSeeField("start_date") && <td><pre className="cell-value">{formatTableValue(item.start_date)}</pre></td>}
-              {canSeeField("duration") && <td><pre className="cell-value">{formatTableValue(item.duration)}</pre></td>}
-              {canSeeField("type") && <td><pre className="cell-value">{formatTableValue(item.type)}</pre></td>}
               {canSeeField("owner") && <td><pre className="cell-value">{formatTableValue(item.owner)}</pre></td>}
               {canSeeField("dependency") && <td><pre className="cell-value">{formatTableValue(item.dependency)}</pre></td>}
               {canSeeField("validation") && <td><pre className="cell-value">{formatTableValue(item.validation)}</pre></td>}

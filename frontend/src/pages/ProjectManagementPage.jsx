@@ -125,7 +125,11 @@ export default function ProjectManagementPage() {
       : TASK_STATUS_ORDER.includes(status) ? projectText(`task_status_${status}`)
       : status
   );
-  const taskLabel = (task) => task.title || task.task_code || `${projectText("task")} #${task.id_task}`;
+  // `title` ya no tiene forma de capturarse desde /task (el formulario se
+  // redujo a descripcion/proyecto/fase, ver 828255e) -- sin este respaldo,
+  // toda tarea real se veia como "Tarea #5" en vez de lo unico que su
+  // responsable si escribio.
+  const taskLabel = (task) => task.title || task.task_description || task.task_code || `${projectText("task")} #${task.id_task}`;
 
   function eventTitle(event) {
     if (event.event_type === "status_changed") return `${statusLabel(event.previous_status)} → ${statusLabel(event.new_status)}`;
