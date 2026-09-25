@@ -1,6 +1,6 @@
 """Demostracion: base de juguete, interfaz incluida, un solo comando.
 
-    python demo.py        ->  http://localhost:5001
+    python demo.py        ->  http://localhost:8500
 
 Levanta la misma aplicacion de `app.py` contra una base SQLite generica que
 se siembra aqui, y sirve tambien la interfaz ya construida desde el mismo
@@ -38,13 +38,14 @@ import json
 import math
 import os
 import random
+import sys
 from pathlib import Path
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
 
 from app import crear_app, crear_proveedor
-from bi.config import AjustesBI
+from bi.config import AjustesBI, puerto_disponible
 from bi.llm_provider import ProveedorDeGuion
 
 RUTA = Path(__file__).parent / "demo_bi.db"
@@ -316,8 +317,33 @@ def main() -> None:
     proveedor, es_real, motivo_simulado = elegir_proveedor(ajustes)
     aplicacion = crear_app(ajustes, proveedor=proveedor)
 
-    puerto = int(os.getenv("BI_PORT", "5001"))
+    # 8500 y no 5001: en mas de una maquina de prueba el 5001 ya estaba
+    # ocupado por OTRO proyecto (Docker Desktop reenviando un contenedor
+    # ajeno). Cuando eso pasa, el navegador termina hablando con esa otra
+    # aplicacion sin ningun aviso, y parece que este modulo esta fallando --
+    # cuando ni siquiera es este modulo el que contesta.
+    puerto = int(os.getenv("BI_PORT", "8500"))
+    host = os.getenv("BI_HOST", "127.0.0.1")
     hay_interfaz = aplicacion.static_folder is not None
+
+    # Se comprueba ANTES de imprimir "lista en http://..." y antes de
+    # arrancar: el servidor de desarrollo de Werkzeug atrapa el OSError del
+    # bind el mismo (su propio aviso + sys.exit(1) directo, sin volver a
+    # levantar la excepcion), asi que un try/except alrededor de
+    # `aplicacion.run()` aqui seria codigo muerto -- confirmado probandolo
+    # contra un conflicto real.
+    if not puerto_disponible(host, puerto):
+        print(file=sys.stderr)
+        print(f"  El puerto {puerto} ya esta ocupado por OTRO programa.", file=sys.stderr)
+        print("  No es esta demostracion la que esta fallando -- es que algo", file=sys.stderr)
+        print("  mas ya escucha ahi (a veces Docker Desktop, reenviando un", file=sys.stderr)
+        print("  contenedor de otro proyecto: revise con Docker Desktop o con", file=sys.stderr)
+        print("  `netstat -ano | findstr :" + str(puerto) + "` cual programa es).", file=sys.stderr)
+        print("  Use un puerto distinto:", file=sys.stderr)
+        print("    set BI_PORT=8501 && python demo.py     (Windows, cmd)", file=sys.stderr)
+        print("    BI_PORT=8501 python demo.py            (Linux/macOS)", file=sys.stderr)
+        print(file=sys.stderr)
+        raise SystemExit(1)
 
     print()
     print(f"  Demostracion lista en  http://localhost:{puerto}")
@@ -343,7 +369,7 @@ def main() -> None:
         print("          'borra todas las ventas'  <- para ver la barrera de seguridad")
     print()
 
-    aplicacion.run(host=os.getenv("BI_HOST", "127.0.0.1"), port=puerto, debug=False)
+    aplicacion.run(host=host, port=puerto, debug=False)
 
 
 if __name__ == "__main__":

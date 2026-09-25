@@ -4,12 +4,19 @@
 # en un contenedor. No requiere PostgreSQL ni Ollama ni variables de entorno.
 #
 #   docker build -f Dockerfile.demo -t bi-demo .
-#   docker run --rm -p 5001:5001 bi-demo
-#   -> http://localhost:5001
+#   docker run --rm -p 8500:5001 bi-demo
+#   -> http://localhost:8500
 #
-# Para el modelo real en vez del simulado, agregue -e BI_DEMO_OLLAMA=1 y
-# -e BI_OLLAMA_URL=http://host.docker.internal:11434 (con Ollama corriendo en
-# el host y `--add-host=host.docker.internal:host-gateway` en Linux).
+# (El host usa 8500 y no 5001 a proposito: en mas de una maquina de prueba el
+# 5001 ya estaba ocupado por Docker Desktop reenviando un contenedor de OTRO
+# proyecto, y el navegador terminaba hablando con esa otra aplicacion sin
+# ningun aviso. El puerto DENTRO del contenedor sigue siendo 5001 -- eso no
+# choca con nada del host, es un mapeo -p host:contenedor.)
+#
+# El modelo real se detecta solo si hay un Ollama alcanzable con el modelo
+# descargado; si no, cae a uno simulado. Para apuntar a un Ollama que corre
+# en el host, agregue -e BI_OLLAMA_URL=http://host.docker.internal:11434
+# (con `--add-host=host.docker.internal:host-gateway` en Linux).
 #
 # Esta imagen es para PROBARLO, no para producción: la base de datos vive
 # dentro del contenedor y se pierde al borrarlo. Para un despliegue real

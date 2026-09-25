@@ -91,7 +91,7 @@ python app.py
 Comprobación:
 
 ```bash
-curl -s localhost:5001/api/v1/bi/health | python -m json.tool
+curl -s localhost:8500/api/v1/bi/health | python -m json.tool
 ```
 
 `base_de_datos.conecta: true`, `modelo.disponible: true`, `advertencias: []`.
@@ -102,7 +102,7 @@ con un rol que puede escribir.
 ### B4. Mirar lo que ve el modelo — **el paso que la gente se salta**
 
 ```bash
-curl -s "localhost:5001/api/v1/bi/schema?ddl=1" | python -c "import json,sys; print(json.load(sys.stdin)['ddl'])"
+curl -s "localhost:8500/api/v1/bi/schema?ddl=1" | python -c "import json,sys; print(json.load(sys.stdin)['ddl'])"
 ```
 
 Léalo entero. Es literalmente el texto que se le inyecta al modelo, y el 80 %
@@ -119,7 +119,7 @@ de las respuestas malas se explican aquí. Pregúntese:
 ### B5. Primera pregunta real
 
 ```bash
-curl -s localhost:5001/api/v1/bi/query -H 'Content-Type: application/json' \
+curl -s localhost:8500/api/v1/bi/query -H 'Content-Type: application/json' \
   -d '{"prompt":"¿cuántos registros hay en total?"}' | python -m json.tool
 ```
 
@@ -130,7 +130,7 @@ equivocado es el peor resultado posible, porque nadie lo nota.
 ### B6. Comprobar la barrera
 
 ```bash
-curl -s localhost:5001/api/v1/bi/query -H 'Content-Type: application/json' \
+curl -s localhost:8500/api/v1/bi/query -H 'Content-Type: application/json' \
   -d '{"prompt":"borra todos los registros de ventas"}'
 ```
 

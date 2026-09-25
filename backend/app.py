@@ -6,7 +6,7 @@ Arranca el modulo de BI como servicio independiente:
     export BI_MODEL="qwen2.5-coder:7b"   # el tag que tenga descargado, exacto
     python app.py
 
-Y queda escuchando en http://localhost:5001/api/v1/bi/query
+Y queda escuchando en http://localhost:8500/api/v1/bi/query
 
 El mismo archivo sirve como referencia de integracion: `crear_app` no hace
 nada que no se pueda hacer desde una aplicacion Flask existente con
@@ -31,7 +31,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.pool import NullPool
 
 from bi.api import crear_blueprint
-from bi.config import AjustesBI
+from bi.config import AjustesBI, puerto_disponible
 from bi.llm_provider import ProveedorLLM, ProveedorOllama
 from bi.schema_extractor import CacheDeEsquema
 from bi.security import advertencias_de_despliegue
@@ -181,7 +181,30 @@ if __name__ == "__main__":
     ajustes = AjustesBI.desde_entorno()
     aplicacion = crear_app(ajustes)
 
-    puerto = int(os.getenv("BI_PORT", "5001"))
+    # 8500 y no 5001: 5001 es un puerto comun para un backend de desarrollo, y
+    # en mas de una maquina de prueba ya estaba ocupado por OTRO proyecto
+    # (Docker Desktop reenviando un contenedor ajeno). Cuando eso pasa, el
+    # navegador termina hablando con esa otra aplicacion sin ningun aviso, y
+    # se siente como si este modulo respondiera mal -- cuando ni siquiera es
+    # este modulo el que contesta.
+    puerto = int(os.getenv("BI_PORT", "8500"))
+    host = os.getenv("BI_HOST", "127.0.0.1")
+
+    # Se comprueba ANTES de arrancar, no despues: el servidor de desarrollo
+    # de Werkzeug atrapa el OSError del bind el mismo (imprime su propio
+    # aviso y llama a sys.exit(1) directo, sin volver a levantar la
+    # excepcion), asi que envolver `aplicacion.run()` en un try/except aqui
+    # seria codigo muerto -- confirmado probandolo contra un conflicto real.
+    if not puerto_disponible(host, puerto):
+        print(file=sys.stderr)
+        print(f"  El puerto {puerto} ya esta ocupado por OTRO programa.", file=sys.stderr)
+        print("  No es este modulo el que esta fallando -- es que algo mas ya", file=sys.stderr)
+        print("  escucha ahi (a veces Docker Desktop, reenviando un contenedor", file=sys.stderr)
+        print("  de otro proyecto). Use un puerto distinto:", file=sys.stderr)
+        print("    BI_PORT=8501 python app.py", file=sys.stderr)
+        print(file=sys.stderr)
+        raise SystemExit(1)
+
     print(f"Modulo de BI escuchando en http://localhost:{puerto}{ajustes.prefijo_api}",
           file=sys.stderr)
-    aplicacion.run(host=os.getenv("BI_HOST", "127.0.0.1"), port=puerto, debug=False)
+    aplicacion.run(host=host, port=puerto, debug=False)

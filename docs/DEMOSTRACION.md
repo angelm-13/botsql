@@ -11,7 +11,7 @@ orden. Pensada para una presentación de unos diez minutos.
 **Linux / macOS:** `./demo.sh`
 
 El script instala lo que falte, construye la interfaz la primera vez (tarda
-alrededor de un minuto) y abre `http://localhost:5001`. Las siguientes veces
+alrededor de un minuto) y abre `http://localhost:8500`. Las siguientes veces
 arranca en segundos.
 
 A mano, si prefiere ver los pasos:
@@ -153,7 +153,7 @@ ejemplo. Avise antes que puede tardar un minuto en CPU.
 
 ### Minuto 9 — Lo que el modelo puede ver
 
-Abra `http://localhost:5001/api/v1/bi/schema?ddl=1`
+Abra `http://localhost:8500/api/v1/bi/schema?ddl=1`
 
 > "Esto es literalmente lo que se le entrega al modelo. Las tablas internas
 > del sistema no están, y las columnas sensibles tampoco: no es que estén
@@ -212,7 +212,7 @@ segundos.
 | La página carga sin estilos ni gráficas | La interfaz no está construida. Corra `npm ci && npm run build` dentro de `frontend/`. |
 | *Modelo: sin conexión* en el encabezado | Solo en modo real: Ollama no está corriendo, o falta `ollama pull`. En modo simulado debe decir *ok*. |
 | Responde "esa pregunta no está en el guion" | Está en modo simulado y la pregunta no es una de las de ejemplo. Es el comportamiento correcto. |
-| El puerto 5001 está ocupado | `BI_PORT=5005 python demo.py` y abra ese puerto. |
+| El puerto 8500 está ocupado | `demo.bat`/`demo.sh` ya lo detectan y avisan antes de arrancar. Use otro: `BI_PORT=8501 python demo.py`. En una máquina con Docker Desktop, revíselo primero: a veces reenvía un contenedor de OTRO proyecto y el navegador termina hablando con esa aplicación sin ningún aviso -- fue justo lo que pasó la primera vez que se probó esto, con el puerto 5001 (por eso el módulo ya no usa 5001 por omisión). |
 
 Para dejarlo listo antes de la presentación: arránquelo una vez, haga las
 cinco preguntas del guion y ciérrelo. Así la interfaz queda construida y el

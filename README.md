@@ -34,7 +34,7 @@ cual.
 **Windows:** doble clic en `demo.bat` · **Linux/macOS:** `./demo.sh`
 
 Instala lo que falte, construye la interfaz la primera vez y abre
-`http://localhost:5001` — interfaz y API en el mismo puerto. No hace falta
+`http://localhost:8500` — interfaz y API en el mismo puerto. No hace falta
 PostgreSQL, ni Docker, ni tarjeta gráfica.
 
 Siembra una base SQLite genérica (clientes, productos, empleados, ~380 ventas
@@ -69,7 +69,7 @@ python app.py
 ```
 
 ```bash
-curl -s localhost:5001/api/v1/bi/query -H 'Content-Type: application/json' \
+curl -s localhost:8500/api/v1/bi/query -H 'Content-Type: application/json' \
   -d '{"prompt":"dame un dashboard de ventas del último trimestre"}'
 ```
 

@@ -23,7 +23,7 @@ cd modulo_bi
 
 **Windows:** doble clic en `demo.bat` · **Linux/macOS:** `./demo.sh`
 
-Abre `http://localhost:5001`. Guion completo de qué preguntar en
+Abre `http://localhost:8500`. Guion completo de qué preguntar en
 [DEMOSTRACION.md](DEMOSTRACION.md).
 
 ---
@@ -36,23 +36,23 @@ máquina salvo Docker.
 ```bash
 cd modulo_bi
 docker build -f Dockerfile.demo -t bi-demo .
-docker run --rm -p 5001:5001 bi-demo
+docker run --rm -p 8500:5001 bi-demo
 ```
 
-Abre `http://localhost:5001`. `Ctrl+C` para detenerlo; `--rm` limpia el
+Abre `http://localhost:8500`. `Ctrl+C` para detenerlo; `--rm` limpia el
 contenedor solo.
 
 **Para comprobar que responde correctamente sin abrir el navegador:**
 
 ```bash
-curl -s localhost:5001/api/v1/bi/health | python -m json.tool
+curl -s localhost:8500/api/v1/bi/health | python -m json.tool
 
-curl -s -X POST localhost:5001/api/v1/bi/query \
+curl -s -X POST localhost:8500/api/v1/bi/query \
   -H 'Content-Type: application/json' \
   -d '{"prompt":"hazme un dashboard"}' | python -m json.tool
 
 # La barrera de seguridad: esto debe devolver HTTP 403.
-curl -s -o /dev/null -w '%{http_code}\n' -X POST localhost:5001/api/v1/bi/query \
+curl -s -o /dev/null -w '%{http_code}\n' -X POST localhost:8500/api/v1/bi/query \
   -H 'Content-Type: application/json' \
   -d '{"prompt":"borra todas las ventas"}'
 ```
@@ -180,7 +180,7 @@ for fila in con.execute('SELECT su-propia-consulta-de-referencia-aqui'):
 "
 ```
 
-Y compare contra lo que devuelve `curl -s localhost:5001/api/v1/bi/query ... | python -m json.tool` para la misma pregunta en español. El `sql` que trae la respuesta es exactamente lo que se ejecutó — léalo para saber si el modelo entendió la pregunta como usted esperaba.
+Y compare contra lo que devuelve `curl -s localhost:8500/api/v1/bi/query ... | python -m json.tool` para la misma pregunta en español. El `sql` que trae la respuesta es exactamente lo que se ejecutó — léalo para saber si el modelo entendió la pregunta como usted esperaba.
 
 ---
 

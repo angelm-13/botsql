@@ -12,6 +12,7 @@ construirlo a mano y nunca pasar por variables de entorno.
 from __future__ import annotations
 
 import os
+import socket
 from dataclasses import dataclass, field, replace
 
 # Tablas que no son datos de negocio en practicamente ningun sistema. Son
@@ -122,3 +123,33 @@ class AjustesBI:
             prefijo_api=env.get("BI_API_PREFIX", base.prefijo_api),
             cors_origenes=lista("BI_CORS_ORIGINS", base.cors_origenes),
         )
+
+
+def puerto_disponible(host: str, puerto: int) -> bool:
+    """Si se puede escuchar ahi ahora mismo.
+
+    Se usa para avisar ANTES de arrancar, y no despues. La razon no es
+    cosmetica: el servidor de desarrollo de Werkzeug atrapa el `OSError` del
+    bind el mismo -- imprime su propio mensaje y llama a `sys.exit(1)`
+    directamente, sin volver a levantar la excepcion -- asi que envolver
+    `aplicacion.run(...)` en un `try/except OSError` en el codigo que lo llama
+    es codigo muerto: nunca se ejecuta, se confirmo probandolo contra un
+    conflicto de puerto real. La unica forma confiable de dar un aviso propio
+    y claro es probar el puerto por separado, antes de entregarle el control
+    a Werkzeug.
+
+    Ademas, un intento de bind sobre un puerto ya tomado en Windows a veces
+    da "permiso denegado" (WSAEACCES) en vez de "direccion en uso"
+    (WSAEADDRINUSE) -- tambien confirmado en la practica -- asi que aqui no
+    se distingue el motivo: cualquier `OSError` al intentar el bind cuenta
+    como "no disponible".
+    """
+    # Sin SO_REUSEADDR a proposito: se quiere saber si el puerto esta
+    # LIBRE de verdad, no si se podria reusar un socket ajeno que ya esta
+    # escuchando -- eso daria un falso "disponible" en Windows.
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind((host, puerto))
+        except OSError:
+            return False
+        return True

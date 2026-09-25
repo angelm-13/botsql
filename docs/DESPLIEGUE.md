@@ -153,19 +153,26 @@ error más común al estrenar es que nadie corrió `ollama pull`.
 
 ```bash
 docker build -f Dockerfile.demo -t bi-demo .
-docker run --rm -p 5001:5001 bi-demo
+docker run --rm -p 8500:5001 bi-demo
 ```
 
 Sin PostgreSQL, sin variables de entorno, sin Ollama. Siembra su propia base
 SQLite genérica al arrancar y sirve la interfaz completa en
-`http://localhost:5001`. Es la misma imagen que usan `demo.bat`/`demo.sh`
+`http://localhost:8500`. Es la misma imagen que usan `demo.bat`/`demo.sh`
 cuando corre bajo Docker Desktop.
 
-Para probarlo con el modelo real en vez del simulado:
+(El host usa 8500 y no 5001 a propósito: en más de una máquina de prueba el
+5001 ya estaba ocupado por Docker Desktop reenviando un contenedor de OTRO
+proyecto, y el navegador terminaba hablando con esa otra aplicación sin
+ningún aviso. Si 8500 también choca en su máquina, cambie solo el primer
+número del `-p`, por ejemplo `-p 8501:5001`.)
+
+El modelo real se detecta solo si hay un Ollama alcanzable con el modelo
+descargado; si no, cae a uno simulado. Para apuntar a un Ollama que corre en
+el equipo anfitrión:
 
 ```bash
-docker run --rm -p 5001:5001 \
-  -e BI_DEMO_OLLAMA=1 \
+docker run --rm -p 8500:5001 \
   -e BI_OLLAMA_URL=http://host.docker.internal:11434 \
   --add-host=host.docker.internal:host-gateway \
   bi-demo
@@ -209,7 +216,7 @@ cd backend
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt psycopg2-binary
 export BI_DATABASE_URL="postgresql+psycopg2://bi_lector:...@host/erp"
-gunicorn -w 4 -b 127.0.0.1:5001 --timeout 180 wsgi:application
+gunicorn -w 4 -b 127.0.0.1:8500 --timeout 180 wsgi:application
 ```
 
 El `--timeout 180` no es adorno: el valor por omisión de gunicorn son 30 s, y
