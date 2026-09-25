@@ -63,6 +63,16 @@ function hasAnyScope(entityScopes) {
 }
 
 const FIELD_VISIBLE_BIT = 2;
+// Los mismos bits que el backend consulta para permitir escribir un campo
+// (FIELD_WRITE_BITS en app/routes/task.py) y los mismos que deriva la
+// resiembra de permisos (backend/scripts/seed_module_permissions.py) para
+// una fila nueva. Un campo visible hereda "escribible" del alcance de la
+// ENTIDAD (Crear/Actualizar de la tabla de arriba) -- no hay, ni tiene
+// sentido que haya, un control aparte de "editable" por campo: si el rol
+// puede crear/actualizar la entidad, puede escribir cualquier campo que
+// tenga marcado como visible.
+const FIELD_CREATE_BIT = 1;
+const FIELD_UPDATE_BIT = 4;
 const INTERNAL_PERMISSION_ENTITIES = new Set(["entity_permission", "nm_field_permission", "user_mfa", "event_log", "nm_team_user"]);
 const SYSTEM_FIELD_NAMES = new Set(["created_by", "creation_date", "last_update_date", "deletion_date"]);
 const GROUP_ICON_OPTIONS = [
@@ -651,7 +661,7 @@ export default function RolePermissionManagerPage() {
     if (!fieldId) return;
     const existing = fieldPermissions.find((row) => Number(row.id_permission) === roleId && Number(row.id_field) === Number(fieldId));
     if (controlType > 0) {
-      const payload = { id_permission: roleId, id_field: Number(fieldId), control_type: String(FIELD_VISIBLE_BIT) };
+      const payload = { id_permission: roleId, id_field: Number(fieldId), control_type: String(controlType) };
       if (existing?.id_nm_field_permission) await updateNmFieldPermission(existing.id_nm_field_permission, payload);
       else await createNmFieldPermission(payload);
     } else if (existing?.id_nm_field_permission) {
@@ -674,9 +684,19 @@ export default function RolePermissionManagerPage() {
       const createdFields = new Map();
       await runInBatches(allManagedFields, async (field) => {
         const entityName = field.entity_name || field.table_name;
-        const entityEnabled = hasAnyScope(entityMatrix[entityName]);
+        const entityScopes = entityMatrix[entityName] || EMPTY_ENTITY_SCOPES;
+        const entityEnabled = hasAnyScope(entityScopes);
         const fieldKey = getFieldKey(field);
-        const controlType = entityEnabled ? Number(fieldMatrix[fieldKey] || 0) : 0;
+        const isVisible = entityEnabled && hasBit(fieldMatrix[fieldKey], FIELD_VISIBLE_BIT);
+        // Escribible se deriva del alcance de la ENTIDAD, igual que en la
+        // resiembra del backend -- no del checkbox, que solo dice si el
+        // campo se ve. Un campo oculto no lleva bits de escritura tampoco:
+        // sin fila de permiso no hay ni lectura ni escritura para el
+        // formulario generico (ver `_field_sets_for_actor` en
+        // app/routes/task.py), y asi se mantiene igual que antes.
+        const writeBits = (entityScopeValue(entityScopes, "create") > 0 ? FIELD_CREATE_BIT : 0)
+          | (entityScopeValue(entityScopes, "update") > 0 ? FIELD_UPDATE_BIT : 0);
+        const controlType = isVisible ? (FIELD_VISIBLE_BIT | writeBits) : 0;
         if (controlType > 0 || getFieldId(field)) {
           const fieldId = await resolveFieldRecord(field, createdFields);
           if (fieldId) await saveFieldPermission(fieldId, controlType);

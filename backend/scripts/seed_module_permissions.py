@@ -272,11 +272,26 @@ UPDATE nm_field_permission nfp
 
 INSERT INTO nm_field_permission (id_field, id_permission, control_type, created_by)
 -- El campo se ve por omision si la entidad tiene algo de lectura (scope_read
--- != 0); el bit 2 es el unico que nm_field_permission.control_type consulta
--- hoy (FIELD_VISIBLE_BIT en el frontend). '1' y no '0' cuando no hay lectura:
--- el Enum de la columna no admite '0' (arranca en '1'), y de cualquier forma
--- solo importa que el bit 2 no este encendido.
-SELECT f.id_field, ep.id_permission, CASE WHEN ep.scope_read > 0 THEN '2' ELSE '1' END, 1
+-- != 0, bit 2), y se puede escribir si la entidad tiene alta o actualizacion
+-- (scope_create/scope_update != 0, bits 1 y 4 -- los mismos que
+-- FIELD_WRITE_BITS consulta en app/routes/task.py). Antes esta derivacion
+-- solo prendia el bit de lectura: un rol con alta/actualizacion a nivel de
+-- ENTIDAD (entity_permission.scope_create/update) se quedaba sin ningun
+-- campo escribible a nivel de CAMPO (nm_field_permission), porque esta
+-- consulta nunca encendia los bits 1/4 -- ni siquiera para una fila nueva.
+-- El sintoma real: el formulario generico "guardaba" sin error visible, pero
+-- el payload llegaba vacio (cada campo se filtraba por no-escribible) y la
+-- ruta fallaba con 404 al no encontrar el proyecto de una tarea sin
+-- `id_proyect`. GREATEST(..., 1) preserva el viejo piso de '1' cuando la
+-- entidad no tiene ningun permiso (el Enum no admite '0').
+SELECT f.id_field, ep.id_permission,
+       GREATEST(
+         (CASE WHEN ep.scope_read > 0 THEN 2 ELSE 0 END)
+         + (CASE WHEN ep.scope_create > 0 THEN 1 ELSE 0 END)
+         + (CASE WHEN ep.scope_update > 0 THEN 4 ELSE 0 END),
+         1
+       )::text,
+       1
 FROM entity_permission ep
 JOIN field f
   ON f.table_name = ep.entity_name

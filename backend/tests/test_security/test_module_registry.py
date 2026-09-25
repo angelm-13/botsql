@@ -429,6 +429,22 @@ class TestSqlGenerado(unittest.TestCase):
 
         self.assertIn("nm_field_permission", sql)
 
+    def test_it_derives_write_bits_from_the_entity_scope_too(self):
+        """Alta/actualizacion a nivel de ENTIDAD debe arrastrar bits de
+        escritura a nivel de CAMPO, no solo el de lectura.
+
+        Antes esta derivacion solo prendia el bit 2 (lectura): un rol con
+        `scope_create`/`scope_update` en `entity_permission` se quedaba sin
+        ningun campo escribible en `nm_field_permission` para una fila nueva,
+        y el formulario generico "guardaba" sin error visible con un payload
+        vacio (ver app/routes/task.py:_filter_payload_for_actor).
+        """
+        sql = self._sql()
+        compacto = " ".join(sql.split())
+
+        self.assertIn("WHEN ep.scope_create > 0 THEN 1", compacto)
+        self.assertIn("WHEN ep.scope_update > 0 THEN 4", compacto)
+
     def test_the_comma_goes_before_the_comment(self):
         """Con la coma despues del `--`, el renglon siguiente deja de contar."""
         for linea in self._sql().splitlines():
