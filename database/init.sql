@@ -147,7 +147,7 @@ CREATE TABLE IF NOT EXISTS "proyect" (
   "title" VARCHAR(50) NULL,
   "proyect_status" VARCHAR(20) NOT NULL DEFAULT 'draft' CHECK ("proyect_status" IN ('draft', 'submitted', 'authorized', 'denied', 'blocked', 'in_progress', 'stopped', 'completed')),
   "created_by" INTEGER NOT NULL DEFAULT 1,
-  "creation_date" TIMESTAMP NULL,
+  "creation_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "last_update_date" TIMESTAMP NULL,
   "deletion_date" TIMESTAMP NULL,
   PRIMARY KEY ("id_proyect")
