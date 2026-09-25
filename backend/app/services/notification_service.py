@@ -4,10 +4,9 @@ from datetime import datetime
 from typing import List, Optional
 
 from sqlalchemy import select, desc
-from sqlalchemy.orm import Session
 
 from app.models.notification import Notification
-from app.models.session import get_session
+from app.models.session import transaction_context
 
 
 def create_notification(
@@ -42,7 +41,7 @@ def create_notification(
     if metadata is None:
         metadata = {}
 
-    with get_session() as db:
+    with transaction_context() as db:
         notification = Notification(
             id_user_recipient=id_user_recipient,
             id_user_sender=id_user_sender,
@@ -50,7 +49,7 @@ def create_notification(
             notification_type=notification_type,
             title=title,
             message=message,
-            metadata=metadata,
+            metadata_data=metadata,
             created_by=created_by,
         )
         db.add(notification)
@@ -77,7 +76,7 @@ def get_user_notifications(
     Returns:
         List[Notification]: Lista de notificaciones ordenadas por fecha descendente
     """
-    with get_session() as db:
+    with transaction_context() as db:
         query = select(Notification).where(
             (Notification.id_user_recipient == id_user) &
             (Notification.deletion_date.is_(None))
@@ -94,7 +93,7 @@ def get_user_notifications(
 
 def get_notification_by_id(id_notification: int) -> Optional[Notification]:
     """Obtiene una notificación específica por ID."""
-    with get_session() as db:
+    with transaction_context() as db:
         notification = db.execute(
             select(Notification).where(
                 (Notification.id_notification == id_notification) &
@@ -115,7 +114,7 @@ def mark_as_read(id_notification: int, id_user: int) -> bool:
     Returns:
         bool: True si se marcó exitosamente, False si la notificación no existe o no pertenece al usuario
     """
-    with get_session() as db:
+    with transaction_context() as db:
         notification = db.execute(
             select(Notification).where(
                 (Notification.id_notification == id_notification) &
@@ -143,7 +142,7 @@ def mark_all_as_read(id_user: int) -> int:
     Returns:
         int: Cantidad de notificaciones marcadas como leídas
     """
-    with get_session() as db:
+    with transaction_context() as db:
         count = db.query(Notification).filter(
             (Notification.id_user_recipient == id_user) &
             (Notification.is_read == False) &
@@ -167,7 +166,7 @@ def delete_notification(id_notification: int, id_user: int) -> bool:
     Returns:
         bool: True si se eliminó, False si no existe
     """
-    with get_session() as db:
+    with transaction_context() as db:
         notification = db.execute(
             select(Notification).where(
                 (Notification.id_notification == id_notification) &
@@ -186,7 +185,7 @@ def delete_notification(id_notification: int, id_user: int) -> bool:
 
 def get_unread_count(id_user: int) -> int:
     """Obtiene la cantidad de notificaciones no leídas de un usuario."""
-    with get_session() as db:
+    with transaction_context() as db:
         count = db.query(Notification).filter(
             (Notification.id_user_recipient == id_user) &
             (Notification.is_read == False) &

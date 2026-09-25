@@ -30,7 +30,7 @@ class Notification(Base):
     message: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default='false', index=True)
     read_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    metadata: Mapped[dict] = mapped_column(JSON, nullable=False, default={}, server_default='{}')
+    metadata_data: Mapped[dict] = mapped_column('metadata', JSON, nullable=False, default={}, server_default='{}')
     created_by: Mapped[int] = mapped_column(Integer, ForeignKey('user.id_user'), nullable=False)
     creation_date: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     last_update_date: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
@@ -47,7 +47,7 @@ class Notification(Base):
             'message': to_json_value(self.message),
             'is_read': to_json_value(self.is_read),
             'read_date': to_json_value(self.read_date),
-            'metadata': to_json_value(self.metadata),
+            'metadata': to_json_value(self.metadata_data),
             'created_by': to_json_value(self.created_by),
             'creation_date': to_json_value(self.creation_date),
             'last_update_date': to_json_value(self.last_update_date),

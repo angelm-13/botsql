@@ -4,10 +4,10 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import List, Optional
 
-from sqlalchemy import select, desc, and_, or_
+from sqlalchemy import select, desc, and_
 
 from app.models.supervisor_activity_log import SupervisorActivityLog
-from app.models.session import get_session
+from app.models.session import transaction_context
 
 
 def create_activity(
@@ -39,7 +39,7 @@ def create_activity(
     if created_by is None:
         created_by = id_supervisor
 
-    with get_session() as db:
+    with transaction_context() as db:
         activity = SupervisorActivityLog(
             id_proyect=id_proyect,
             id_supervisor=id_supervisor,
@@ -58,7 +58,7 @@ def create_activity(
 
 def get_activity_by_id(id_activity: int) -> Optional[SupervisorActivityLog]:
     """Obtiene un registro de actividad por ID."""
-    with get_session() as db:
+    with transaction_context() as db:
         activity = db.execute(
             select(SupervisorActivityLog).where(
                 (SupervisorActivityLog.id_activity == id_activity) &
@@ -90,7 +90,7 @@ def get_activities_by_range(
     Returns:
         List[SupervisorActivityLog]: Lista de actividades ordenadas por fecha descendente
     """
-    with get_session() as db:
+    with transaction_context() as db:
         query = select(SupervisorActivityLog).where(
             SupervisorActivityLog.deletion_date.is_(None)
         )
@@ -137,7 +137,7 @@ def get_supervisor_pending_activities(id_supervisor: int, days: int = 7) -> List
     today = date.today()
     start_date = today - timedelta(days=days)
 
-    with get_session() as db:
+    with transaction_context() as db:
         activities = db.execute(
             select(SupervisorActivityLog).where(
                 (SupervisorActivityLog.id_supervisor == id_supervisor) &
@@ -167,7 +167,7 @@ def update_activity(
     Returns:
         SupervisorActivityLog: La actividad actualizada, o None si no existe
     """
-    with get_session() as db:
+    with transaction_context() as db:
         query_filter = SupervisorActivityLog.id_activity == id_activity
 
         if id_supervisor:
@@ -205,7 +205,7 @@ def delete_activity(id_activity: int, id_supervisor: int = None) -> bool:
     Returns:
         bool: True si se eliminó, False si no existe
     """
-    with get_session() as db:
+    with transaction_context() as db:
         query_filter = SupervisorActivityLog.id_activity == id_activity
 
         if id_supervisor:
@@ -249,7 +249,7 @@ def get_activities_by_project(
     if start_date is None:
         start_date = today - timedelta(days=30)
 
-    with get_session() as db:
+    with transaction_context() as db:
         activities = db.execute(
             select(SupervisorActivityLog).where(
                 (SupervisorActivityLog.id_proyect == id_proyect) &
