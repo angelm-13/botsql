@@ -55,6 +55,13 @@ class Proyect(Base):
     management_status: Mapped[object] = mapped_column(
         String(40), nullable=True, default='pendiente_orden_compra',
         server_default=text("'pendiente_orden_compra'"))
+    # Prioridad y costo total: solo los captura/ve Gerencia (candado real en
+    # project_management_service, no solo de UI -- ver PROJECT_PRIORITIES y
+    # _tiene_alcance_comercial). No son parte del recorrido de taller ni del
+    # comercial (proyect_status/management_status): son datos sueltos que
+    # Gerencia quiso capturar aparte.
+    priority: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    total_cost: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     created_by: Mapped[int] = mapped_column(Integer, ForeignKey('user.id_user'), nullable=False)
     creation_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now())
     last_update_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
@@ -70,6 +77,8 @@ class Proyect(Base):
             'title': to_json_value(self.title),
             'proyect_status': to_json_value(self.proyect_status),
             'management_status': to_json_value(self.management_status),
+            'priority': to_json_value(self.priority),
+            'total_cost': to_json_value(self.total_cost),
             'id_drawing_document': to_json_value(self.id_drawing_document),
             'delivery_date': to_json_value(self.delivery_date),
             'id_supervisor': to_json_value(self.id_supervisor),

@@ -136,10 +136,27 @@ MANAGEMENT_STATUSES = (
 
 MANAGEMENT_TRANSITIONS = {
     "pendiente_orden_compra": {"autorizado", "cancelado"},
-    "autorizado": {"cobrado", "cancelado"},
+    # "cobrado" YA NO es un destino manual (decision de negocio, 2026-09-25):
+    # Gerencia lo podia marcar a mano sin que hubiera entrado un solo peso,
+    # mientras la columna de "estado de cobro" (ver `_collection_status`) lo
+    # calculaba solo contra las parcialidades -- dos "cobrado" independientes
+    # que se podian contradecir. Ahora lo mueve `_sync_management_status_with_collection`,
+    # en automatico, en los dos sentidos.
+    "autorizado": {"cancelado"},
     "cobrado": set(),
     "cancelado": set(),
 }
+
+# Prioridad del proyecto -- pedido explicito de 3 niveles, no 4: a diferencia
+# de `Task.priority`/`Laboratory.priority` (que si tienen "urgente"), aqui se
+# dejo en 3 porque asi se pidio, no por descuido.
+PROJECT_PRIORITIES = ("baja", "media", "alta")
+
+# Campos exclusivos de Gerencia (candado real, no solo de UI): quien no tiene
+# la capacidad `project_authorization` (ver `_tiene_alcance_comercial`) los ve
+# recortados de la respuesta y cualquier intento de escribirlos se ignora en
+# silencio, igual que un campo que no le pertenece.
+PROJECT_MANAGEMENT_ONLY_FIELDS = {"priority", "total_cost"}
 
 
 def normalize_project_status(value) -> str:
@@ -181,6 +198,19 @@ def validate_management_transition(current_status, target_status) -> str:
             {"current_status": actual, "target_status": destino},
         )
     return destino
+
+
+def _tiene_alcance_comercial(db, user_data: dict) -> bool:
+    """Mismo criterio que `_require_management_scope`, sin lanzar excepcion.
+
+    `priority`/`total_cost` no deben tronar con 403 si alguien sin el alcance
+    los manda -- se descartan en silencio, igual que un campo que no le
+    pertenece al formulario -- pero SI deben negarse de verdad, no solo
+    esconderse en la UI. `_scope_name` ya vive mas abajo en este archivo;
+    Python resuelve la referencia al llamar, no al definir, asi que el orden
+    de las funciones en el archivo no importa aqui.
+    """
+    return _scope_name(db, user_data) in {"authorization", "unrestricted"}
 
 
 def _require_management_scope(db, user_data: dict) -> None:
@@ -361,7 +391,24 @@ def _scoped_query(db, user_data: dict):
     return query
 
 
-def _project_payload(project: Proyect, events=None) -> dict:
+def _collection_status(total_cost, collected_total) -> str | None:
+    """Pendiente/cobrado/excedido, contra lo YA COBRADO en `proyect_payment`.
+
+    Sin costo total capturado no hay contra que comparar -- no es "pendiente",
+    es que la pregunta todavia no aplica.
+    """
+    if total_cost in (None, ""):
+        return None
+    total = Decimal(str(total_cost))
+    cobrado = Decimal(str(collected_total or 0))
+    if cobrado < total:
+        return "pendiente"
+    if cobrado == total:
+        return "cobrado"
+    return "excedido"
+
+
+def _project_payload(project: Proyect, events=None, *, gerente_visible: bool = True, collected_total=None) -> dict:
     payload = project.serialize()
     # Solo se INVENTA un folio cuando el proyecto no trae el suyo. Antes se
     # sobreescribia siempre: un proyecto capturado con folio "OT-2026-0042" -el
@@ -376,6 +423,14 @@ def _project_payload(project: Proyect, events=None) -> dict:
         None,
     )
     payload["submitted_date"] = submitted_event.creation_date.isoformat() if submitted_event else None
+    # Candado real, no solo de UI: quien no tiene el alcance comercial no ve
+    # `priority`/`total_cost` ni el estado de cobro derivado, aunque el
+    # proyecto ya los tenga capturados por Gerencia.
+    if gerente_visible:
+        payload["collection_status"] = _collection_status(payload.get("total_cost"), collected_total)
+    else:
+        for campo in PROJECT_MANAGEMENT_ONLY_FIELDS:
+            payload.pop(campo, None)
     return payload
 
 
@@ -518,8 +573,28 @@ def list_projects(user_data: dict, *, page=1, per_page=20, filters=None, sort=No
             )
             for event in rows:
                 submitted_events.setdefault(event.id_proyect, event)
+        # El estado de cobro es Gerencia-only, igual que `priority`/`total_cost`
+        # (ver `_project_payload`): sin ese alcance, ni se molesta en sumar lo
+        # cobrado de cada proyecto de la pagina.
+        gerente_visible = _tiene_alcance_comercial(db, user_data)
+        collected_by_project: dict = {}
+        if gerente_visible and project_ids:
+            collected_by_project = dict(db.execute(
+                select(ProyectPayment.id_proyect, func.coalesce(func.sum(ProyectPayment.amount), 0))
+                .where(
+                    ProyectPayment.id_proyect.in_(project_ids),
+                    ProyectPayment.paid_at.isnot(None),
+                    ProyectPayment.deletion_date.is_(None),
+                )
+                .group_by(ProyectPayment.id_proyect)
+            ).all())
         payloads = [
-            _project_payload(item, [submitted_events[item.id_proyect]] if item.id_proyect in submitted_events else [])
+            _project_payload(
+                item,
+                [submitted_events[item.id_proyect]] if item.id_proyect in submitted_events else [],
+                gerente_visible=gerente_visible,
+                collected_total=collected_by_project.get(item.id_proyect),
+            )
             for item in items
         ]
         return {"items": payloads, "page": page, "per_page": per_page, "total": total}
@@ -570,14 +645,19 @@ def get_project_detail(project_id, user_data: dict) -> dict:
             .all()
         )
 
-        payload = _project_payload(project, events)
+        resumen_pagos = _resumen_de_pagos(pagos)
+        payload = _project_payload(
+            project, events,
+            gerente_visible=_tiene_alcance_comercial(db, user_data),
+            collected_total=resumen_pagos["collected_total"],
+        )
         payload["tasks"] = [task.serialize() for task in tasks]
         payload["events"] = [event.serialize() for event in events]
         payload["incidents"] = _vales_con_material(db, incidencias)
         payload["material_summary"] = _material_del_proyecto(db, project.id_proyect)
         payload["appointments"] = [c.serialize() for c in citas]
         payload["payments"] = [p.serialize() for p in pagos]
-        payload["payment_summary"] = _resumen_de_pagos(pagos)
+        payload["payment_summary"] = resumen_pagos
         return payload
 
 
@@ -685,6 +765,49 @@ def _resumen_de_pagos(pagos) -> dict:
     }
 
 
+def _collected_total(db, id_proyect) -> Decimal:
+    total = db.scalar(
+        select(func.coalesce(func.sum(ProyectPayment.amount), 0))
+        .where(
+            ProyectPayment.id_proyect == id_proyect,
+            ProyectPayment.paid_at.isnot(None),
+            ProyectPayment.deletion_date.is_(None),
+        )
+    )
+    return Decimal(str(total or 0))
+
+
+def _sync_management_status_with_collection(db, project: Proyect, user_data: dict) -> None:
+    """El estatus comercial "cobrado" ya no lo pone Gerencia con un clic --
+    se sigue solo del costo total contra lo REALMENTE cobrado en las
+    parcialidades (decision de negocio, 2026-09-25). Antes convivian dos
+    "cobrado" independientes -este boton y la columna de estado de cobro de
+    la tabla (ver `_collection_status`)- que se podian contradecir: Gerencia
+    marcaba "cobrado" a mano sin haber registrado ni una parcialidad pagada.
+
+    Se mueve en los DOS sentidos -- incluye revertir a "autorizado" si se
+    deshace un cobro que ya lo habia completado, para que el estatus nunca
+    se quede mintiendo. `pendiente_orden_compra` y `cancelado` se dejan
+    intactos a proposito: saltarse la autorizacion o revivir un proyecto
+    cancelado porque le entro un pago no es lo que nadie pidio.
+    """
+    if project.total_cost is None:
+        return
+    completo = _collection_status(project.total_cost, _collected_total(db, project.id_proyect)) in {"cobrado", "excedido"}
+    if completo and project.management_status == "autorizado":
+        anterior = project.management_status
+        project.management_status = "cobrado"
+        _append_event(db, project, user_data, "management_transition",
+                      new_status="cobrado", previous_status=anterior,
+                      reason="Cobro completo (automatico)")
+    elif not completo and project.management_status == "cobrado":
+        anterior = project.management_status
+        project.management_status = "autorizado"
+        _append_event(db, project, user_data, "management_transition",
+                      new_status="autorizado", previous_status=anterior,
+                      reason="Cobro incompleto tras modificar una parcialidad (automatico)")
+
+
 def _parsear_fecha_de_la_orden(values: dict) -> None:
     """`delivery_date` como objeto `date`, no como texto.
 
@@ -701,6 +824,59 @@ def _parsear_fecha_de_la_orden(values: dict) -> None:
         except ValueError as fallo:
             raise AppError("errors.invalid_field", 400,
                            {"field": "delivery_date"}) from fallo
+
+
+def _validar_prioridad(valor):
+    if valor in (None, ""):
+        return None
+    texto = str(valor).strip().lower()
+    if texto not in PROJECT_PRIORITIES:
+        raise AppError("errors.invalid_field", 400, {"field": "priority"})
+    return texto
+
+
+def _validar_costo_total(valor):
+    if valor in (None, ""):
+        return None
+    try:
+        monto = Decimal(str(valor))
+    except (InvalidOperation, TypeError, ValueError) as fallo:
+        raise AppError("errors.invalid_field", 400, {"field": "total_cost"}) from fallo
+    if monto < 0:
+        raise AppError("errors.invalid_field", 400, {"field": "total_cost"})
+    return monto
+
+
+def _redact_management_only_fields(payload: dict, gerente_visible: bool) -> dict:
+    """Recorta `priority`/`total_cost` de una respuesta cruda (`serialize()`).
+
+    `_project_payload` ya hace esto para listar/consultar; `create_project` y
+    `update_project` devuelven `serialize()` directo, sin pasar por ahi, asi
+    que necesitan el mismo recorte por su cuenta.
+    """
+    if not gerente_visible:
+        for campo in PROJECT_MANAGEMENT_ONLY_FIELDS:
+            payload.pop(campo, None)
+    return payload
+
+
+def _apply_management_only_fields(db, user_data: dict, payload: dict, values: dict) -> None:
+    """Filtra y valida `priority`/`total_cost`, exclusivos de Gerencia.
+
+    Quien no tiene el alcance comercial los manda igual desde un cliente HTTP
+    directo -no solo desde esta pantalla-, y aqui se descartan en silencio en
+    vez de tronar: es el mismo trato que ya reciben los campos que no
+    pertenecen al formulario (`values` ya los filtra por PROJECT_MUTABLE_FIELDS
+    antes de llegar aqui). El candado real es que, sin el alcance, nunca se
+    llega a validar ni a escribir el valor.
+    """
+    payload = payload or {}
+    if not _tiene_alcance_comercial(db, user_data):
+        return
+    if "priority" in payload:
+        values["priority"] = _validar_prioridad(payload.get("priority"))
+    if "total_cost" in payload:
+        values["total_cost"] = _validar_costo_total(payload.get("total_cost"))
 
 
 def _resolver_cotizacion(db, valor_bruto) -> tuple:
@@ -785,12 +961,13 @@ def create_project(payload: dict, user_data: dict) -> dict:
         values["id_quotation"], values["quotation_reference"] = _resolver_cotizacion(
             db, (payload or {}).get("id_quotation"))
         _validar_referencias_de_la_orden(db, values)
+        _apply_management_only_fields(db, user_data, payload, values)
         project = Proyect(**values)
         db.add(project)
         db.flush()
         _append_event(db, project, user_data, "created", new_status="draft")
         db.flush()
-        return project.serialize()
+        return _redact_management_only_fields(project.serialize(), _tiene_alcance_comercial(db, user_data))
 
 
 def update_project(project_id, payload: dict, user_data: dict) -> dict:
@@ -810,10 +987,15 @@ def update_project(project_id, payload: dict, user_data: dict) -> dict:
             values["id_quotation"], values["quotation_reference"] = _resolver_cotizacion(
                 db, payload.get("id_quotation"))
         _validar_referencias_de_la_orden(db, values, id_proyecto_actual=project.id_proyect)
+        _apply_management_only_fields(db, user_data, payload, values)
         for field, value in values.items():
             setattr(project, field, value)
+        # Si el costo total cambio, el estado de cobro que se sigue de el
+        # puede haber cambiado tambien -- se resincroniza aqui, no solo
+        # cuando se toca una parcialidad.
+        _sync_management_status_with_collection(db, project, user_data)
         db.flush()
-        return project.serialize()
+        return _redact_management_only_fields(project.serialize(), _tiene_alcance_comercial(db, user_data))
 
 
 def delete_project(project_id, user_data: dict) -> dict:
@@ -1110,6 +1292,11 @@ def add_project_payment(project_id, payload: dict, user_data: dict) -> dict:
         db.flush()
         _append_event(db, project, user_data, "payment_agreed",
                       content="%s el %s" % (pago.amount, pago.payment_date))
+        # Una parcialidad puede nacer ya cobrada (`paid_at` capturado desde el
+        # alta) -- si eso completa el costo total, el estatus comercial se
+        # sigue solo.
+        _sync_management_status_with_collection(db, project, user_data)
+        db.flush()
         return pago.serialize()
 
 
@@ -1141,6 +1328,10 @@ def settle_project_payment(payment_id, payload: dict, user_data: dict) -> dict:
         _append_event(db, project, user_data, "payment_settled",
                       content="%s cobrado el %s" % (pago.amount, pago.paid_at)
                       if pago.paid_at else "%s sin cobrar" % pago.amount)
+        # Marcar o desmarcar un cobro puede completar el costo total o
+        # deshacer que ya estuviera completo -- en los dos sentidos.
+        _sync_management_status_with_collection(db, project, user_data)
+        db.flush()
         return pago.serialize()
 
 
@@ -1149,8 +1340,12 @@ def delete_project_payment(payment_id, user_data: dict) -> dict:
         pago = db.get(ProyectPayment, int(payment_id))
         if pago is None or pago.deletion_date is not None:
             raise AppError("errors.not_found", 404, {"entity": "proyect_payment"})
-        _get_visible_project(db, pago.id_proyect, user_data, for_update=True)
+        project = _get_visible_project(db, pago.id_proyect, user_data, for_update=True)
         _require_management_scope(db, user_data)
         pago.deletion_date = datetime.now()
+        db.flush()
+        # Borrar una parcialidad ya cobrada puede deshacer un costo total que
+        # ya estaba completo.
+        _sync_management_status_with_collection(db, project, user_data)
         db.flush()
         return {"id_proyect_payment": pago.id_proyect_payment}
