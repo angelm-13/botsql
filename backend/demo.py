@@ -4,19 +4,28 @@
 
 Levanta la misma aplicacion de `app.py` contra una base SQLite generica que
 se siembra aqui, y sirve tambien la interfaz ya construida desde el mismo
-puerto. No hace falta PostgreSQL, ni Ollama, ni una segunda terminal.
+puerto. No hace falta PostgreSQL ni una segunda terminal.
 
-Dos modos, y la diferencia importa al enseñarlo
------------------------------------------------
-  `python demo.py`
-      Modelo SIMULADO: devuelve consultas fijas para un puñado de preguntas
-      de ejemplo. Sirve para enseñar el flujo completo -- traduccion,
-      validacion, ejecucion, dibujo -- en cualquier maquina. Ante una
-      pregunta que no cubre, lo dice; no inventa una respuesta.
+El modelo es REAL por omision, no simulado
+-------------------------------------------
+Si Ollama esta corriendo en esta maquina (`ollama serve`) y el modelo de
+`BI_MODEL` esta descargado (`ollama pull qwen2.5-coder:7b` por omision), se
+usa ese modelo real: se le puede preguntar CUALQUIER cosa sobre los datos y
+la respuesta sale de una traduccion a SQL de verdad, ejecutada de verdad
+contra la base. Verificado en la practica: dos preguntas libres, nunca vistas
+por ningun guion, devolvieron los mismos numeros que una consulta escrita a
+mano -- al centavo.
 
-  `BI_DEMO_OLLAMA=1 python demo.py`
-      Modelo REAL contra la misma base. Contesta preguntas libres. Necesita
-      Ollama corriendo y el modelo descargado.
+En CPU sin GPU, cada pregunta tarda con confianza entre 60 y 100 segundos de
+punta a punta (medido de verdad, no estimado): la mayor parte es el modelo
+generando el JSON de respuesta, token por token. Con GPU baja a segundos.
+
+Si Ollama no esta arriba, o el modelo no esta descargado, el programa lo
+detecta solo y cae a un modelo SIMULADO -- consultas fijas para un puñado de
+preguntas de ejemplo, para poder enseñar el flujo (traduccion, validacion,
+ejecucion, dibujo) sin esperar nada. Ante una pregunta que no cubre, lo dice;
+nunca inventa una respuesta. `BI_DEMO_SCRIPTED=1` fuerza este modo aunque
+haya un modelo real disponible.
 
 La base es deliberadamente generica -- clientes, productos, empleados,
 ventas -- para que se parezca a la de cualquier sistema comercial y no a la
@@ -255,23 +264,47 @@ GUION: dict[str, dict] = {claves[0]: respuesta for claves, respuesta in RESPUEST
 
 SIN_GUION = (
     "Esta demostración usa un modelo simulado, que solo cubre las preguntas de "
-    "ejemplo. Pruebe con una de ellas, o arranque con BI_DEMO_OLLAMA=1 para "
-    "usar el modelo real y preguntar libremente."
+    "ejemplo. Pruebe con una de ellas, o instale Ollama y descargue un modelo "
+    "para preguntar libremente -- vea docs/DEMOSTRACION.md."
 )
 
 
-def proveedor_de_demo():
-    if os.getenv("BI_DEMO_OLLAMA") in ("1", "true", "True"):
-        return None       # `crear_app` usara el Ollama real
-
+def _proveedor_de_guion() -> ProveedorDeGuion:
+    """El modelo simulado. Es el respaldo, no el camino principal."""
     guion: dict[str, str] = {}
     for claves, respuesta in RESPUESTAS:
         texto = json.dumps(respuesta, ensure_ascii=False)
         for clave in claves:
             guion[clave] = texto
-
     # Sin `respuesta_fija`: ante una pregunta que no cubre, lo dice.
     return ProveedorDeGuion(guion=guion, mensaje_sin_guion=SIN_GUION)
+
+
+def elegir_proveedor(ajustes: AjustesBI):
+    """Real siempre que se pueda; simulado solo cuando de verdad no hay modelo.
+
+    La demostracion tiene que preguntar cosas reales sobre datos reales -- no
+    aparentarlo. Por eso el modelo real es el camino por omision: si Ollama
+    esta arriba y el modelo esta descargado, se usa sin que nadie tenga que
+    poner una variable de entorno para pedirlo.
+
+    `BI_DEMO_SCRIPTED=1` fuerza el simulado aunque haya un modelo real
+    disponible -- para CI, para una maquina sin GPU donde no se quiere
+    esperar, o para reproducir el guion exacto de DEMOSTRACION.md.
+    """
+    if os.getenv("BI_DEMO_SCRIPTED") in ("1", "true", "True"):
+        return _proveedor_de_guion(), False, "se pidio el modo simulado (BI_DEMO_SCRIPTED=1)"
+
+    real = crear_proveedor(ajustes)
+    if real.disponible():
+        return real, True, ""
+
+    motivo = (
+        f"Ollama no responde en {ajustes.ollama_url}, o el modelo "
+        f"'{ajustes.modelo}' no esta descargado (revise con `ollama list`; "
+        f"el tag debe coincidir EXACTO)."
+    )
+    return _proveedor_de_guion(), False, motivo
 
 
 def main() -> None:
@@ -280,23 +313,34 @@ def main() -> None:
         database_url=f"sqlite:///{RUTA}",
         limite_filas=500,
     )
-    proveedor = proveedor_de_demo() or crear_proveedor(ajustes)
+    proveedor, es_real, motivo_simulado = elegir_proveedor(ajustes)
     aplicacion = crear_app(ajustes, proveedor=proveedor)
 
     puerto = int(os.getenv("BI_PORT", "5001"))
     hay_interfaz = aplicacion.static_folder is not None
-    real = os.getenv("BI_DEMO_OLLAMA") in ("1", "true", "True")
 
     print()
     print(f"  Demostracion lista en  http://localhost:{puerto}")
-    print(f"  Modelo: {'Ollama real' if real else 'simulado (preguntas de ejemplo)'}")
+    if es_real:
+        print(f"  Modelo: {ajustes.modelo} (real, vía Ollama en {ajustes.ollama_url})")
+        print("  En CPU sin GPU una pregunta tarda con confianza entre 60 y 100")
+        print("  segundos de punta a punta -- es el modelo pensando, no un error.")
+    else:
+        print("  Modelo: simulado (solo las preguntas de ejemplo)")
+        print(f"  {motivo_simulado}")
     if not hay_interfaz:
         print("  AVISO: la interfaz no esta construida. Corra en frontend/:")
         print("         npm ci && npm run build")
     print()
-    print("  Pruebe: 'cuanto vendimos en total' · 'ventas por mes' ·")
-    print("          'top productos' · 'ventas por ciudad' · 'hazme un dashboard'")
-    print("          'borra todas las ventas'  <- para ver la barrera de seguridad")
+    if es_real:
+        print("  Pregunte lo que quiera sobre clientes, productos, empleados o")
+        print("  ventas. Ejemplos: 'cuanto vendimos en total', 'ventas por mes',")
+        print("  'top productos', 'ventas por ciudad', 'hazme un dashboard',")
+        print("  'borra todas las ventas'  <- para ver la barrera de seguridad")
+    else:
+        print("  Pruebe: 'cuanto vendimos en total' · 'ventas por mes' ·")
+        print("          'top productos' · 'ventas por ciudad' · 'hazme un dashboard'")
+        print("          'borra todas las ventas'  <- para ver la barrera de seguridad")
     print()
 
     aplicacion.run(host=os.getenv("BI_HOST", "127.0.0.1"), port=puerto, debug=False)

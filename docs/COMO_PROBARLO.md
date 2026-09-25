@@ -8,6 +8,7 @@ según qué quiera comprobar.
 | A | Sin Docker | Python (+ Node opcional) | Que el módulo funciona en esta máquina |
 | B | Un contenedor Docker | Docker | Que la imagen de demostración funciona igual, aislada |
 | C | Docker Compose completo | Docker + una base PostgreSQL | Que el despliegue real —nginx, proxy, base externa— funciona |
+| D | Preguntas libres, con modelo real | Ollama | Que responde CUALQUIER pregunta con datos exactos, no solo las de un guion |
 
 Las tres están **verificadas en esta sesión**, no solo escritas: los
 resultados exactos de cada comprobación están al final de este documento.
@@ -148,9 +149,82 @@ docker rm -f pg-prueba
 
 ---
 
+## D. Preguntas libres, con modelo real y datos exactos
+
+Esta es la prueba que de verdad importa: que el módulo responde **cualquier**
+pregunta —no solo las de un guion de ejemplo— traduciéndola a SQL real y
+ejecutándola contra datos reales.
+
+```bash
+ollama pull qwen2.5-coder:7b     # si no lo tiene ya (unos 4.7 GB)
+ollama serve                     # si no está corriendo
+cd modulo_bi/backend
+python demo.py
+```
+
+`demo.py` detecta el modelo solo — no hace falta ninguna variable de entorno.
+El arranque dice `Modelo: qwen2.5-coder:7b (real, vía Ollama en ...)`.
+Pregunte lo que se le ocurra sobre `clientes`, `productos`, `empleados` o
+`ventas`. **Sin GPU, cuente 60 a 100 segundos por pregunta** — es tiempo real
+medido, no una estimación.
+
+**Para comprobar que el número es exacto y no solo "parece razonable"**,
+calcule la respuesta a mano contra la misma base y compárela:
+
+```bash
+python3 -c "
+import sqlite3
+con = sqlite3.connect('demo_bi.db')
+for fila in con.execute('SELECT su-propia-consulta-de-referencia-aqui'):
+    print(fila)
+"
+```
+
+Y compare contra lo que devuelve `curl -s localhost:5001/api/v1/bi/query ... | python -m json.tool` para la misma pregunta en español. El `sql` que trae la respuesta es exactamente lo que se ejecutó — léalo para saber si el modelo entendió la pregunta como usted esperaba.
+
+---
+
 ## Resultados de la verificación hecha en esta sesión
 
 Para que quien lea esto sepa exactamente qué se comprobó y qué no.
+
+**Modelo real, preguntas libres (forma D) — la prueba central.** Contra
+`qwen2.5-coder:7b` real vía Ollama, en CPU pura (sin GPU), tres preguntas
+**nunca vistas por ningún guion**, cada una comparada contra una consulta
+SQL escrita a mano sobre la misma base:
+
+| Pregunta (tal cual, en español libre) | SQL que escribió el modelo | Resultado | Verdad de referencia |
+|---|---|---|---|
+| "muéstrame el importe vendido por cada uno de los empleados, de mayor a menor" | `SELECT e.nombre, SUM(v.total) FROM empleados e JOIN ventas v ... GROUP BY e.id ORDER BY ... DESC` | Ana Rivas 65791.68, Sofía Lara 61536.73, Hugo Márquez 61265.30... | **Idéntico, al centavo, en las 6 filas** |
+| "que producto genero mas ingresos en febrero de 2026" | `... WHERE v.fecha BETWEEN '2026-02-01' AND '2026-02-29' GROUP BY p.nombre ORDER BY ... LIMIT 1` | Producto 18, 3798.00 | **Idéntico** |
+| "cuales son los 3 clientes que mas han comprado y de que ciudad son" | `SELECT c.nombre, c.ciudad, SUM(v.total) ... GROUP BY c.id ORDER BY ... LIMIT 3` | Cliente 08/Puebla/37764.34, Cliente 10/CDMX/32521.30, Cliente 01/Monterrey/31361.29 | **Idéntico en las 3 filas y las 2 columnas de texto** |
+| "cuales son los 3 productos con menos ventas y cuanto vendieron" (en el navegador) | `SELECT p.nombre, SUM(v.cantidad) ... ORDER BY total_ventas ASC LIMIT 3` | Producto 10 (44), Producto 02 (57), Producto 15 (58) | **Idéntico** -- y es un caso interesante: "ventas" es ambiguo (¿ingreso o unidades?), el modelo lo leyó como unidades, y esa lectura se ejecutó exacta. La ambigüedad del lenguaje, no el cálculo, es el riesgo real -- por eso siempre se muestra el SQL |
+
+En esta cuarta pregunta, hecha desde el navegador, se vio ademas en vivo el
+sistema de autocorreccion de ejes: el modelo propuso columnas para el eje X/Y
+que no coincidian con las que la consulta devolvio, y la interfaz lo avisó
+(`⚠ el eje X que propuso el modelo no existe; se usa 'nombre'`) y dibujó con
+las columnas reales en vez de una gráfica en blanco.
+
+Las cuatro tardaron entre 79 y 92 segundos de punta a punta (`ms_modelo` en la
+respuesta), en CPU sin GPU. La detección automática funcionó sin ninguna
+variable de entorno: el arranque de `demo.py` ya decía
+`Modelo: qwen2.5-coder:7b (real, vía Ollama en ...)`. El camino de respaldo
+también se probó a propósito, apuntando a un puerto de Ollama inexistente: la
+demostración cayó sola al modelo simulado, con el motivo exacto impreso
+(`Ollama no responde en ...`), y siguió respondiendo bien a las preguntas de
+ejemplo.
+
+**Un defecto real encontrado en el camino**: el timeout por omisión del
+proveedor de Ollama era de 120s, y una pregunta real en este hardware mide
+90s+ — quedaba sin margen. Subido a 240s en `bi/config.py`,
+`bi/llm_provider.py`, `.env.example` y `docker-compose.yml`. Y el tag de
+modelo por omisión era `qwen2.5-coder:7b-instruct`; esta máquina tenía
+descargado `qwen2.5-coder:7b` (mismo modelo, tag distinto en el registro de
+Ollama) — Ollama compara el tag exacto, así que la generación fallaría con
+"modelo no encontrado" aunque `/health` reportara el modelo como disponible
+(esa comprobación sí tolera la diferencia de tag; la generación no). Corregido
+el valor por omisión en todo el código y la documentación.
 
 **Imagen de demostración (forma B).** Construida y corrida. `id` dentro del
 contenedor confirma el usuario sin privilegios (`uid=10001`, no root). La
@@ -179,6 +253,9 @@ para el día que una plataforma distinta tampoco tenga rueda, purgados en la
 misma capa para no dejarlos en la imagen final. Confirmado después: la imagen
 final importa `psycopg2` y `pymysql` sin problema y pesa 511 MB.
 
-**Lo que no se probó**: el perfil `con-modelo` del compose (Ollama dentro del
-mismo stack) y el despliegue sin Docker con `gunicorn` a mano (sección 5 de
-`DESPLIEGUE.md`) — ambos están escritos pero no ejecutados en esta sesión.
+**Lo que no se probó**: el modelo real dentro de Docker (formas B y C usaron
+el modelo simulado o ningún modelo, no `qwen2.5-coder:7b` con GPU real -- solo
+la forma A/D, sin Docker, se probó con el modelo real); el perfil
+`con-modelo` del compose (Ollama dentro del mismo stack); un modelo más
+grande que `7b`; y el despliegue sin Docker con `gunicorn` a mano (sección 5
+de `DESPLIEGUE.md`).

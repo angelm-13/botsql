@@ -3,7 +3,7 @@
 Arranca el modulo de BI como servicio independiente:
 
     export BI_DATABASE_URL="postgresql+psycopg2://bi_lector:...@host/erp"
-    export BI_MODEL="qwen2.5-coder:7b-instruct"
+    export BI_MODEL="qwen2.5-coder:7b"   # el tag que tenga descargado, exacto
     python app.py
 
 Y queda escuchando en http://localhost:5001/api/v1/bi/query

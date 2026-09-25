@@ -23,7 +23,14 @@ services:
       BI_DATABASE_URL: ${BI_DATABASE_URL:?falta BI_DATABASE_URL}
 
       BI_OLLAMA_URL: ${BI_OLLAMA_URL:-http://host.docker.internal:11434}
-      BI_MODEL: ${BI_MODEL:-qwen2.5-coder:7b-instruct}
+      # Tiene que ser el tag EXACTO ya descargado (`ollama list`): este y
+      # "qwen2.5-coder:7b-instruct" son el mismo modelo en el registro, pero
+      # Ollama los trata como pulls distintos.
+      BI_MODEL: ${BI_MODEL:-qwen2.5-coder:7b}
+      # Medido real en CPU pura: ~90-100s por pregunta. Con GPU baja a
+      # segundos; sin ella, 120s (el valor por omision del modulo) se queda
+      # corto.
+      BI_LLM_TIMEOUT: ${BI_LLM_TIMEOUT:-240}
 
       # Que ve el modelo. Vacio = todo lo que no caiga en la lista negra.
       BI_INCLUDE_TABLES: ${BI_INCLUDE_TABLES:-}

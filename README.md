@@ -38,16 +38,21 @@ Instala lo que falte, construye la interfaz la primera vez y abre
 PostgreSQL, ni Docker, ni tarjeta gráfica.
 
 Siembra una base SQLite genérica (clientes, productos, empleados, ~380 ventas
-de 2026) y usa un modelo **simulado** que responde a las preguntas de ejemplo,
-incluida `borra todas las ventas` para ver la barrera de seguridad. Ante una
-pregunta que no cubre, lo dice: no aparenta entender lo que no entendió.
-
-Para preguntas libres, con el modelo real:
+de 2026). Si hay un [Ollama](https://ollama.com) corriendo con el modelo
+descargado, lo detecta solo y responde **cualquier pregunta libre** con datos
+reales — verificado: tres preguntas nunca vistas por ningún guion devolvieron
+los mismos números, al centavo, que una consulta escrita a mano:
 
 ```bash
-ollama pull qwen2.5-coder:7b-instruct
-cd backend && BI_DEMO_OLLAMA=1 python demo.py
+ollama pull qwen2.5-coder:7b     # una sola vez
+cd backend && python demo.py
 ```
+
+Sin GPU, cuente 60–100 segundos por pregunta (medido, no estimado) — es el
+modelo generando la respuesta en CPU. Sin Ollama disponible, cae solo a un
+modelo simulado que responde a las preguntas de ejemplo (incluida
+`borra todas las ventas`, para ver la barrera de seguridad) y dice
+honestamente cuando una pregunta no está cubierta, en vez de inventar.
 
 Para presentarlo a alguien, hay un guion de diez minutos en
 [docs/DEMOSTRACION.md](docs/DEMOSTRACION.md).
@@ -59,7 +64,7 @@ cd modulo_bi/backend
 pip install -r requirements.txt
 
 export BI_DATABASE_URL="postgresql+psycopg2://bi_lector:clave@host:5432/erp"
-export BI_MODEL="qwen2.5-coder:7b-instruct"
+export BI_MODEL="qwen2.5-coder:7b"   # el tag exacto que descargo con `ollama pull`
 python app.py
 ```
 
@@ -86,7 +91,8 @@ frontend tenga una sola forma que dibujar. Cada widget lleva su propio `ok`:
 |----------|-------------|----------|
 | `BI_DATABASE_URL` | — | Cadena de conexión (gana sobre `DATABASE_URL`) |
 | `BI_OLLAMA_URL` | `http://localhost:11434` | Dónde vive el modelo |
-| `BI_MODEL` | `qwen2.5-coder:7b-instruct` | Modelo a usar |
+| `BI_MODEL` | `qwen2.5-coder:7b` | Modelo a usar (tag exacto del `ollama pull`) |
+| `BI_LLM_TIMEOUT` | `240` | Segundos de espera al modelo (en CPU sin GPU, una pregunta mide 60–100s reales) |
 | `BI_INCLUDE_TABLES` | — | Lista blanca de patrones; manda sobre la negra |
 | `BI_EXCLUDE_TABLES` | fontanería típica | Lista negra de patrones |
 | `BI_HIDDEN_COLUMNS` | `password*`, `*token*`, … | Columnas que no llegan ni al DDL |

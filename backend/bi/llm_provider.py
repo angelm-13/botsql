@@ -129,8 +129,15 @@ class ProveedorOllama(ProveedorLLM):
     def __init__(
         self,
         url: str = "http://localhost:11434",
-        modelo: str = "qwen2.5-coder:7b-instruct",
-        timeout: int = 120,
+        # El tag debe ser EXACTO al que se descargo con `ollama pull`.
+        # "qwen2.5-coder:7b" y "qwen2.5-coder:7b-instruct" son el mismo
+        # modelo en el registro, pero Ollama los trata como pulls distintos:
+        # pedir uno que no se bajo falla en la generacion aunque /api/tags
+        # muestre el otro como disponible.
+        modelo: str = "qwen2.5-coder:7b",
+        # Medido real, sin GPU: una pregunta libre de este modulo tardo
+        # 90-100s de punta a punta en CPU pura. Con GPU baja a segundos.
+        timeout: int = 240,
         temperatura: float = 0.0,
         num_ctx: int = 8192,
     ):

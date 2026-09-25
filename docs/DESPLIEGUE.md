@@ -125,19 +125,22 @@ la definición de la vista. El backend la fija por petición con el gancho
 
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
-ollama pull qwen2.5-coder:7b-instruct
+ollama pull qwen2.5-coder:7b
 ollama serve
 ```
 
 | Modelo | RAM/VRAM | Comentario |
 |---|---|---|
-| `qwen2.5-coder:7b-instruct` | ~6 GB | El equilibrio recomendado |
-| `qwen2.5-coder:14b-instruct` | ~10 GB | Notablemente mejor en JOIN de 3+ tablas |
+| `qwen2.5-coder:7b` | ~6 GB | El equilibrio recomendado. `:7b-instruct` es el mismo modelo con otro tag -- use el que YA tenga descargado |
+| `qwen2.5-coder:14b` | ~10 GB | Notablemente mejor en JOIN de 3+ tablas |
 | `qwen2.5-coder:1.5b` | ~2 GB | Solo para preguntas de una tabla |
 | `llama3.1:8b` | ~6 GB | Peor en SQL que Qwen-Coder a igual tamaño |
 
-Sin GPU funciona, pero cada pregunta pasa de ~3 s a ~40 s. Si no hay GPU
-disponible, mida antes de prometer tiempos de respuesta.
+**Sin GPU funciona, pero cuente con 60–100 segundos por pregunta** en un
+`7b` -- medido de verdad contra `qwen2.5-coder:7b` en CPU pura (tres
+preguntas libres, ~92s cada una de punta a punta), no una estimación. Con GPU
+baja a segundos. Suba `BI_LLM_TIMEOUT` si usa un modelo más grande que `7b`
+sin GPU: el tiempo escala con el tamaño del modelo.
 
 `/health` distingue "Ollama está arriba" de "el modelo está descargado" — el
 error más común al estrenar es que nadie corrió `ollama pull`.

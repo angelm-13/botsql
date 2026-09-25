@@ -27,25 +27,43 @@ SQLite que el propio script crea y llena.
 
 ---
 
-## 2. Los dos modos, y cuál usar
+## 2. Real por omisión — y qué pasa si no hay modelo a mano
 
-| Modo | Comando | Qué hace |
-|---|---|---|
-| **Simulado** (por omisión) | `python demo.py` | El "modelo" devuelve consultas fijas para las preguntas de ejemplo. Funciona en cualquier máquina. |
-| **Real** | `BI_DEMO_OLLAMA=1 python demo.py` | Modelo de lenguaje de verdad sobre la misma base: contesta preguntas libres. Requiere Ollama y el modelo descargado. |
+`demo.py` detecta solo si hay un modelo real disponible y lo usa. No hace
+falta ninguna variable de entorno para eso: si `ollama serve` está corriendo
+y el modelo de `BI_MODEL` (por omisión `qwen2.5-coder:7b`) está descargado,
+el arranque ya dice `Modelo: qwen2.5-coder:7b (real, vía Ollama en ...)` y se
+puede preguntar **cualquier cosa** sobre los datos, en español libre.
 
-**Dígalo de frente al presentar.** Si usa el modo simulado y su asesor escribe
-una pregunta libre, el sistema responderá que esa pregunta no está en el
-guion — está hecho así a propósito, para no aparentar que entiende algo que no
-entendió. Presentarlo como "modelo real" y que eso ocurra a media
-demostración es peor que explicarlo antes.
-
-Si quiere el modo real y tiene unos minutos:
+Verificado de verdad, no solo escrito: tres preguntas distintas, nunca vistas
+por ningún guion ("¿cuánto vendió cada empleado?", "¿qué producto generó más
+ingresos en febrero?", "¿los 3 clientes que más compraron y de qué ciudad
+son?") devolvieron **los mismos números, al centavo**, que una consulta
+escrita a mano contra la misma base.
 
 ```bash
-ollama pull qwen2.5-coder:7b-instruct
-BI_DEMO_OLLAMA=1 python demo.py
+ollama serve                             # si no está corriendo ya
+ollama pull qwen2.5-coder:7b             # una sola vez
+python demo.py
 ```
+
+**Sin GPU, cuente con 60 a 100 segundos por pregunta.** Es tiempo real de
+generación en CPU, medido, no una estimación — la mayor parte es el modelo
+escribiendo el JSON de respuesta token por token. Dígalo antes de preguntar
+en vivo: un silencio de un minuto sin avisar se lee como que se colgó.
+
+| Modo | Cuándo aparece | Qué hace |
+|---|---|---|
+| **Real** (por omisión) | Ollama arriba y el modelo descargado | Traduce cualquier pregunta a SQL de verdad y lo ejecuta contra la base real |
+| **Simulado** (respaldo automático) | Ollama no responde, o el modelo no está descargado | Consultas fijas para las preguntas de ejemplo. El arranque explica por qué cayó aquí |
+
+Se puede forzar el simulado aunque haya modelo real con `BI_DEMO_SCRIPTED=1`
+— útil si quiere reproducir exactamente el guion de este documento sin
+esperar la respuesta del modelo.
+
+**Dígalo de frente al presentar.** En modo simulado, si su asesor escribe una
+pregunta libre, el sistema responderá que esa pregunta no está en el guion —
+hecho así a propósito, para no aparentar que entiende algo que no entendió.
 
 ---
 
@@ -124,6 +142,15 @@ Explique las cuatro barreras (están en el informe, sección 3):
 
 > "Y ninguna depende de que la anterior funcione."
 
+### Minuto 8b — Que pregunte él mismo
+
+Si tiene modelo real, este es el momento que de verdad convence: pídale a su
+asesor que escriba **su propia pregunta**, con sus palabras, sobre las
+tablas de `clientes`, `productos`, `empleados` o `ventas` — no una de las de
+ejemplo. Avise antes que puede tardar un minuto en CPU.
+
+> "No es un guion. Pregunte lo que se le ocurra."
+
 ### Minuto 9 — Lo que el modelo puede ver
 
 Abra `http://localhost:5001/api/v1/bi/schema?ddl=1`
@@ -155,7 +182,8 @@ segundos.
 **¿Cuánto cuesta?**
 > Nada por uso. Todos los componentes son de código abierto y el modelo corre
 > en la máquina propia. El costo es el hardware: con tarjeta gráfica responde
-> en segundos, sin ella en decenas de segundos.
+> en segundos; sin ella, medido de verdad, entre 60 y 100 segundos por
+> pregunta.
 
 **¿Se puede conectar al sistema de la empresa?**
 > Sí, cambiando la cadena de conexión. Lo que hay que hacer antes está en la

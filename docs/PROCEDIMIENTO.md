@@ -40,9 +40,17 @@ Abra `http://localhost:5173` y pruebe las cuatro preguntas de ejemplo, más
 línea, pastel, barras); la pregunta destructiva devuelve un aviso de rechazo y
 no una gráfica; el encabezado marca *Base: ok* y *Modelo: ok*.
 
-**Qué es lo que está viendo.** Una base SQLite de juguete que se siembra sola
-y un modelo **simulado** que devuelve JSON fijo. Todavía no hay inteligencia
-de por medio: lo que se está probando es el módulo, no el modelo.
+**Qué es lo que está viendo.** `demo.py` detecta solo si hay un Ollama real
+disponible (`ollama serve` + el modelo descargado) y lo usa por omisión: en
+ese caso ya se le puede preguntar cualquier cosa, no solo las cuatro de
+ejemplo -- verificado con tres preguntas libres que devolvieron los mismos
+números, al centavo, que una consulta escrita a mano. Sin GPU, cuente 60-100
+segundos por pregunta (medido, no estimado).
+
+Sin un modelo real a mano, cae solo a uno **simulado** que devuelve JSON fijo
+para esas cuatro preguntas y dice honestamente cuando una no está cubierta.
+Sirve igual para probar el módulo -- validación, ejecución, dibujo --, solo
+que ahí lo que se prueba es el módulo, no el modelo.
 
 ---
 
@@ -52,7 +60,7 @@ de por medio: lo que se está probando es el módulo, no el modelo.
 
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
-ollama pull qwen2.5-coder:7b-instruct
+ollama pull qwen2.5-coder:7b
 ollama serve
 ```
 

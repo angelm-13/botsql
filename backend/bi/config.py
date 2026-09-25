@@ -52,8 +52,16 @@ class AjustesBI:
 
     # -- modelo de lenguaje --------------------------------------------------
     ollama_url: str = "http://localhost:11434"
-    modelo: str = "qwen2.5-coder:7b-instruct"
-    timeout_llm: int = 120
+    # El tag en el registro de Ollama es "qwen2.5-coder:7b" -- sin sufijo
+    # "-instruct". Con GPU responde en segundos; medido en CPU pura (sin
+    # GPU, hardware de escritorio normal) una pregunta libre tarda entre 60 y
+    # 100 segundos, casi todo en la generacion del JSON de respuesta.
+    modelo: str = "qwen2.5-coder:7b"
+    # 120s alcanza con GPU; en CPU pura una sola pregunta ya mide ~90s de
+    # punta a punta (medido de verdad, no estimado) y un tablero de varios
+    # widgets puede acercarse al limite. Se sube el doble como margen real,
+    # no arbitrario.
+    timeout_llm: int = 240
     temperatura: float = 0.0
 
     # -- ejecucion -----------------------------------------------------------
