@@ -3,6 +3,7 @@ import { Boxes, Briefcase, CalendarDays, ChevronDown, ClipboardList, Contact, Fi
 import { useEffect, useMemo, useRef, useState } from "react";
 import { deploymentPlan, getMyPermissions } from "../api";
 import LanguagePicker from "../components/LanguagePicker";
+import NotificationBell from "../components/NotificationBell";
 import { useI18n } from "../i18n";
 import { moduleSectionsEnPlan } from "./moduleSections";
 
@@ -564,6 +565,7 @@ export default function Shell() {
           </div>
           <div className="topbar-actions">
             <span className="session-pill">{t("common.secure_session", "Sesión protegida")}{currentUser?.username ? ` · ${currentUser.username}` : ""}</span>
+            <NotificationBell />
             <LanguagePicker />
             {/* El engrane. Se pinta aunque este vacio: es una ubicacion que el
                 gestor de roles ofrece, y si desapareciera al no tener nada

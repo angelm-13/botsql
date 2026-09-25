@@ -800,3 +800,19 @@ export const disableLotControl = (idProduct) =>
 // numero con el que la gente conoce el papel: el del sistema anterior cuando lo
 // trae, y si no el identificador.
 export const listWarehouseVouchers = (params = {}) => request("/vouchers", { params });
+
+// --- Notificaciones ---
+export const getNotifications = (params = {}) => request("/notifications", { params });
+export const getUnreadCount = () => request("/notifications/unread-count");
+export const markNotificationAsRead = (id) => request(`/notifications/${id}/read`, { method: "PUT" });
+export const markAllNotificationsAsRead = () => request("/notifications/read-all", { method: "PUT" });
+export const deleteNotification = (id) => request(`/notifications/${id}`, { method: "DELETE" });
+
+// --- Bitácoras de Supervisores ---
+export const createActivityLog = (payload) => request("/activity-logs", { method: "POST", body: payload });
+export const getActivityLogs = (params = {}) => request("/activity-logs", { params });
+export const getActivityLog = (id) => request(`/activity-logs/${id}`);
+export const updateActivityLog = (id, payload) => request(`/activity-logs/${id}`, { method: "PUT", body: payload });
+export const deleteActivityLog = (id) => request(`/activity-logs/${id}`, { method: "DELETE" });
+export const getPendingActivities = (params = {}) => request("/activity-logs/pending", { params });
+export const getProjectActivityReport = (id, params = {}) => request(`/activity-logs/project/${id}/report`, { params });
