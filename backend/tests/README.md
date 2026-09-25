@@ -17,3 +17,46 @@ cd backend
 - Celery imports
 
 Los tests están diseñados para correr con `pytest` y `TESTING=1`.
+
+## Pruebas que solo corren en PostgreSQL (KPIs, concurrencia de inventario, documentos/laboratorio)
+
+`./run_tests.sh` corre en SQLite en memoria. Todo archivo que mira
+`engine.dialect.name == "postgresql"` (o `!=`) se **salta en silencio** ahí
+— entre ellos todas las pruebas de KPIs. Ningún CI las corre: el workflow de
+GitHub (`.github/workflows/build-images.yml`) solo construye imágenes.
+
+Para correrlas contra el Postgres del `docker-compose` local (stack arriba y
+migrado):
+
+```bash
+backend/ci/run_postgres_tests.sh            # todas
+backend/ci/run_postgres_tests.sh -k kpi     # filtra como pytest -k
+CONSERVAR_BASES=1 backend/ci/run_postgres_tests.sh   # no borra las bases al terminar
+```
+
+### Por qué en dos grupos
+
+Hay dos tipos de prueba de Postgres, incompatibles en una misma base:
+
+| Grupo | Clase base | Qué necesita | Base que usa el script |
+|---|---|---|---|
+| `base_real` | `unittest.TestCase` | El esquema **real** (`init.sql` + migraciones, con sus FK diferibles) y el bootstrap de siempre (`user=1`, `proyect=1`, `status=1`, `customer_supplier=1`). No reinicia el esquema. | `tyakxa_pgtest_base_real`, copia (`pg_dump`) de la base del stack |
+| `esquema_orm` | `BackendTestCase` | Nada previo: cada prueba hace `DROP SCHEMA public CASCADE` y recrea solo lo que declara el ORM (`reset_test_database` en `conftest.py`). | `tyakxa_pgtest_esquema_orm`, vacía |
+
+Juntas en una base, las de `esquema_orm` borran lo que las de `base_real`
+necesitan: con las pruebas de KPI, 33 de 60 fallaban solo por el orden
+(2026-09-25). El script clasifica cada archivo por su clase base (no hay
+lista que mantener) y rechaza un archivo que mezcle las dos. La base del
+stack (`tyakxa_erp`) nunca se modifica; las dos de prueba se borran al final.
+
+Un archivo nuevo de `base_real` no puede heredar de `BackendTestCase`: su
+`reset_test_database()` tiraría el esquema real. Ver el comentario al inicio
+de `tests/test_services/test_kpi_ventas_por_empleado.py`.
+
+### Falla conocida (pendiente, no relacionada con KPIs)
+
+`tests/test_services/test_inventory_concurrency.py` (4 pruebas) falla en
+`esquema_orm`: inserta `customer_supplier` con `id_user=1` antes de que
+exista ese usuario, sin `SET CONSTRAINTS ALL DEFERRED`. Existía antes de
+este script; nunca se había detectado porque nada corría estas pruebas en
+Postgres.
