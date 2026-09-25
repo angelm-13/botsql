@@ -55,6 +55,11 @@ class Proyect(Base):
     management_status: Mapped[object] = mapped_column(
         String(40), nullable=True, default='pendiente_orden_compra',
         server_default=text("'pendiente_orden_compra'"))
+    # Prioridad del proyecto: baja, media, alta. Solo visible para gerente.
+    priority: Mapped[str] = mapped_column(String(20), nullable=False, default='media', server_default=text("'media'"))
+    # Costo total acordado del proyecto. La sumatoria de montos en `proyect_payment`
+    # se compara contra este para determinar el estado (pendiente/cobrado/excedido).
+    total_cost: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=Decimal(0), server_default=text("0"))
     created_by: Mapped[int] = mapped_column(Integer, ForeignKey('user.id_user'), nullable=False)
     creation_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now())
     last_update_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
@@ -79,6 +84,8 @@ class Proyect(Base):
             'quotation_reference': to_json_value(self.quotation_reference),
             'requested_by': to_json_value(self.requested_by),
             'folio': to_json_value(self.folio),
+            'priority': to_json_value(self.priority),
+            'total_cost': to_json_value(self.total_cost),
             'created_by': to_json_value(self.created_by),
             'creation_date': to_json_value(self.creation_date),
             'last_update_date': to_json_value(self.last_update_date),

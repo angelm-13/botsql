@@ -3569,7 +3569,16 @@
     "attachment_title": "Título (opcional)",
     "error_upload": "No fue posible subir el archivo.",
     "confirm_delete_attachment": "¿Eliminar este archivo?",
-    "management_view_only": "Solo Gerencia autoriza o cancela."
+    "management_view_only": "Solo Gerencia autoriza o cancela.",
+    "priority": "Prioridad",
+    "priority_baja": "Baja",
+    "priority_media": "Media",
+    "priority_alta": "Alta",
+    "total_cost": "Costo total",
+    "payment_status": "Estado de pago",
+    "payment_status_pendiente": "Pendiente",
+    "payment_status_cobrado": "Cobrado",
+    "payment_status_excedido": "Excedido"
   },
   "customer_contact": {
     "title": "Contactos",

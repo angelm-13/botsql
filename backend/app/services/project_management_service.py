@@ -100,6 +100,8 @@ PROJECT_MUTABLE_FIELDS = {
     "folio", "purchase_order",
     "purchase_order_item", "delivery_date",
     "id_drawing_document",
+    # Campos nuevos de la orden de trabajo: prioridad y costo total (solo gerente).
+    "priority", "total_cost",
 }
 
 # Campos de `proyect` que existen en la tabla y que el formulario YA NO escribe.
@@ -349,7 +351,7 @@ def _scoped_query(db, user_data: dict):
     return query
 
 
-def _project_payload(project: Proyect, events=None) -> dict:
+def _project_payload(project: Proyect, events=None, pagos=None) -> dict:
     payload = project.serialize()
     # Solo se INVENTA un folio cuando el proyecto no trae el suyo. Antes se
     # sobreescribia siempre: un proyecto capturado con folio "OT-2026-0042" -el
@@ -364,6 +366,9 @@ def _project_payload(project: Proyect, events=None) -> dict:
         None,
     )
     payload["submitted_date"] = submitted_event.creation_date.isoformat() if submitted_event else None
+    # Calcular el estado de pago basado en la sumatoria de montos de `proyect_payment`
+    if pagos is not None:
+        payload["payment_status"] = _calculate_payment_status(project.total_cost, pagos)
     return payload
 
 
@@ -558,7 +563,7 @@ def get_project_detail(project_id, user_data: dict) -> dict:
             .all()
         )
 
-        payload = _project_payload(project, events)
+        payload = _project_payload(project, events, pagos)
         payload["tasks"] = [task.serialize() for task in tasks]
         payload["events"] = [event.serialize() for event in events]
         payload["incidents"] = _vales_con_material(db, incidencias)
@@ -648,6 +653,26 @@ def _material_del_proyecto(db, id_proyect) -> dict:
         "taken_total": sum(a["taken"] for a in articulos),
         "still_out_total": sum(a["still_out"] for a in articulos),
     }
+
+
+def _calculate_payment_status(total_cost: Decimal, pagos) -> str:
+    """Calcula el estado de pago del proyecto basado en la suma de montos.
+
+    Estados:
+    - "pendiente": si la suma es 0 o menor a total_cost
+    - "cobrado": si la suma es igual a total_cost
+    - "excedido": si la suma es mayor a total_cost
+    """
+    if not pagos or total_cost == 0:
+        return "pendiente"
+    suma = sum(Decimal(str(p.amount or 0)) for p in pagos)
+    if suma == 0:
+        return "pendiente"
+    if suma < total_cost:
+        return "pendiente"
+    if suma == total_cost:
+        return "cobrado"
+    return "excedido"
 
 
 def _resumen_de_pagos(pagos) -> dict:
