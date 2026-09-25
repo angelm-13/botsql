@@ -289,6 +289,23 @@ INSERT INTO "password_reset_token" ("id_password_reset_token", "id_user", "token
 VALUES (1, 1, 'disabled_token_hash', '2026-01-01 00:00:00', '2026-01-01 00:00:00', '127.0.0.1', '2026-01-01 00:00:00')
 ON CONFLICT ("id_password_reset_token") DO NOTHING;
 
+-- `entity_permission.control_type` ya no existe en una base migrada: la
+-- elimino 20260914110000_equipos_y_alcance_por_accion.sql, que antes copia
+-- sus bits a scope_create/read/update/delete. Los INSERT de este archivo (y
+-- init.sql) la siguen usando porque en un volumen nuevo corren en initdb,
+-- ANTES de las migraciones, cuando la columna todavia existe -- y funcionan
+-- solo porque esa migracion convierte despues lo que sembraron aqui. Si
+-- alguien quita esa conversion, esta siembra deja de funcionar.
+--
+-- En docker-compose este archivo ADEMAS vuelve a correr en cada arranque:
+-- ./database se monta en /database del backend y `init_db.py` lo reaplica
+-- (`execute_sql_file`), ya sobre la base migrada. Ahi estos INSERT truenan
+-- con "column control_type does not exist" y, como todo el archivo es una
+-- sola transaccion, se revierte completo cada vez: init_db lo registra como
+-- aviso no fatal y ningun cambio a este archivo llega a un volumen ya
+-- existente. En k8s no pasa: el backend no monta /database.
+-- Pasar estos INSERT a scope_* exige que init.sql declare esas columnas primero.
+
 -- Device connection is a virtual module and defaults to the settings gear.
 INSERT INTO "entity_permission" ("id_permission", "entity_name", "control_type", "menu_location", "menu_group", "menu_label", "menu_order", "created_by")
 VALUES (1, 'kronos_device', 2, 'settings', 'Recursos humanos', 'Conexión al dispositivo', 30, 1)
@@ -327,39 +344,62 @@ ON CONFLICT ("id_permission", "entity_name") DO UPDATE SET
   "menu_order" = EXCLUDED."menu_order",
   "deletion_date" = NULL;
 
-INSERT INTO "restaurant_table" ("id_restaurant_table", "id_proyect", "number", "capacity", "location_description", "is_active", "created_by")
-SELECT number, 1, number, 4, CASE WHEN number <= 8 THEN 'Salón principal' ELSE 'Terraza' END, TRUE, 1
-FROM generate_series(1, 15) AS number
-ON CONFLICT ("id_restaurant_table") DO NOTHING;
+-- Demo del restaurante: solo si sus tablas ya existen.
+--
+-- En un volumen nuevo este archivo lo ejecuta Postgres desde
+-- docker-entrypoint-initdb.d, ANTES de que db-migrate
+-- aplique database/migrations -- y las tablas restaurant_* las crea una
+-- migracion (20260817120000_restaurant_module.sql), no init.sql. Sin esta
+-- guarda el primer INSERT truena, y como todo el archivo es una sola
+-- transaccion se revierte la siembra completa -- entre otras cosas los
+-- perfiles Mesero/Cocina/Caja/Admin Restaurante-- y Postgres aborta su
+-- inicializacion.
+--
+-- Dentro de un DO, plpgsql no resuelve las tablas hasta ejecutar cada
+-- sentencia, asi que el IF basta para que la ausencia no sea un error.
+DO $$
+BEGIN
+  IF to_regclass('public.restaurant_table') IS NULL
+     OR to_regclass('public.restaurant_guisado') IS NULL
+     OR to_regclass('public.restaurant_dish') IS NULL THEN
+    RAISE NOTICE 'seed.sql: tablas del restaurante todavia no existen, se omite su demo';
+    RETURN;
+  END IF;
 
-INSERT INTO "restaurant_guisado" ("id_restaurant_guisado", "id_proyect", "name", "is_active", "created_by") VALUES
-  (1, 1, 'Picadillo', TRUE, 1),
-  (2, 1, 'Rajas con crema', TRUE, 1),
-  (3, 1, 'Frijoles con chorizo', TRUE, 1),
-  (4, 1, 'Chicharrón en salsa verde', TRUE, 1),
-  (5, 1, 'Papa con chorizo', TRUE, 1),
-  (6, 1, 'Mole', TRUE, 1),
-  (7, 1, 'Tinga de pollo', TRUE, 1),
-  (8, 1, 'Chicharrón prensado', TRUE, 1)
-ON CONFLICT ("id_restaurant_guisado") DO NOTHING;
-
-INSERT INTO "restaurant_dish" ("id_restaurant_dish", "id_proyect", "title", "description", "icon", "category", "price", "production_cost", "requires_guisado", "schedule", "is_active", "created_by") VALUES
-  (1, 1, 'Taco de guisado', 'Tortilla y guisado a elegir', 'taco', 'taco', 18.00, 7.00, TRUE, 'all', TRUE, 1),
-  (2, 1, 'Gordita de guisado', 'Gordita de maíz y guisado', 'sandwich', 'gordita', 22.00, 9.00, TRUE, 'all', TRUE, 1),
-  (3, 1, 'Quesadilla de guisado', 'Quesadilla con guisado a elegir', 'sandwich', 'quesadilla', 25.00, 11.00, TRUE, 'all', TRUE, 1),
-  (4, 1, 'Pozole', 'Platillo del día', 'soup', 'platillo_dia', 85.00, 36.00, FALSE, 'weekend', TRUE, 1),
-  (5, 1, 'Flan', 'Flan de la casa', 'cake', 'postre', 45.00, 16.00, FALSE, 'all', TRUE, 1),
-  (6, 1, 'Pastel', 'Rebanada de pastel', 'cake', 'postre', 50.00, 20.00, FALSE, 'all', TRUE, 1),
-  (7, 1, 'Arroz con leche', 'Postre tradicional', 'cake', 'postre', 40.00, 14.00, FALSE, 'all', TRUE, 1),
-  (8, 1, 'Gelatina', 'Gelatina del día', 'cake', 'postre', 35.00, 10.00, FALSE, 'all', TRUE, 1),
-  (9, 1, 'Agua de jamaica', 'Vaso de agua fresca', 'glass-water', 'agua', 25.00, 6.00, FALSE, 'weekday', TRUE, 1),
-  (10, 1, 'Agua de horchata', 'Vaso de agua fresca', 'glass-water', 'agua', 25.00, 7.00, FALSE, 'weekend', TRUE, 1),
-  (11, 1, 'Coca-Cola', 'Refresco', 'cup-soda', 'refresco', 30.00, 14.00, FALSE, 'all', TRUE, 1),
-  (12, 1, 'Sprite', 'Refresco', 'cup-soda', 'refresco', 28.00, 13.00, FALSE, 'all', TRUE, 1),
-  (13, 1, 'Café de olla', 'Café tradicional', 'coffee', 'cafe', 30.00, 8.00, FALSE, 'all', TRUE, 1),
-  (14, 1, 'Paleta', 'Dulce', 'candy', 'dulce', 12.00, 5.00, FALSE, 'all', TRUE, 1),
-  (15, 1, 'Cocada', 'Dulce tradicional', 'candy', 'dulce', 18.00, 7.00, FALSE, 'all', TRUE, 1)
-ON CONFLICT ("id_restaurant_dish") DO NOTHING;
+  INSERT INTO "restaurant_table" ("id_restaurant_table", "id_proyect", "number", "capacity", "location_description", "is_active", "created_by")
+  SELECT number, 1, number, 4, CASE WHEN number <= 8 THEN 'Salón principal' ELSE 'Terraza' END, TRUE, 1
+  FROM generate_series(1, 15) AS number
+  ON CONFLICT ("id_restaurant_table") DO NOTHING;
+  
+  INSERT INTO "restaurant_guisado" ("id_restaurant_guisado", "id_proyect", "name", "is_active", "created_by") VALUES
+    (1, 1, 'Picadillo', TRUE, 1),
+    (2, 1, 'Rajas con crema', TRUE, 1),
+    (3, 1, 'Frijoles con chorizo', TRUE, 1),
+    (4, 1, 'Chicharrón en salsa verde', TRUE, 1),
+    (5, 1, 'Papa con chorizo', TRUE, 1),
+    (6, 1, 'Mole', TRUE, 1),
+    (7, 1, 'Tinga de pollo', TRUE, 1),
+    (8, 1, 'Chicharrón prensado', TRUE, 1)
+  ON CONFLICT ("id_restaurant_guisado") DO NOTHING;
+  
+  INSERT INTO "restaurant_dish" ("id_restaurant_dish", "id_proyect", "title", "description", "icon", "category", "price", "production_cost", "requires_guisado", "schedule", "is_active", "created_by") VALUES
+    (1, 1, 'Taco de guisado', 'Tortilla y guisado a elegir', 'taco', 'taco', 18.00, 7.00, TRUE, 'all', TRUE, 1),
+    (2, 1, 'Gordita de guisado', 'Gordita de maíz y guisado', 'sandwich', 'gordita', 22.00, 9.00, TRUE, 'all', TRUE, 1),
+    (3, 1, 'Quesadilla de guisado', 'Quesadilla con guisado a elegir', 'sandwich', 'quesadilla', 25.00, 11.00, TRUE, 'all', TRUE, 1),
+    (4, 1, 'Pozole', 'Platillo del día', 'soup', 'platillo_dia', 85.00, 36.00, FALSE, 'weekend', TRUE, 1),
+    (5, 1, 'Flan', 'Flan de la casa', 'cake', 'postre', 45.00, 16.00, FALSE, 'all', TRUE, 1),
+    (6, 1, 'Pastel', 'Rebanada de pastel', 'cake', 'postre', 50.00, 20.00, FALSE, 'all', TRUE, 1),
+    (7, 1, 'Arroz con leche', 'Postre tradicional', 'cake', 'postre', 40.00, 14.00, FALSE, 'all', TRUE, 1),
+    (8, 1, 'Gelatina', 'Gelatina del día', 'cake', 'postre', 35.00, 10.00, FALSE, 'all', TRUE, 1),
+    (9, 1, 'Agua de jamaica', 'Vaso de agua fresca', 'glass-water', 'agua', 25.00, 6.00, FALSE, 'weekday', TRUE, 1),
+    (10, 1, 'Agua de horchata', 'Vaso de agua fresca', 'glass-water', 'agua', 25.00, 7.00, FALSE, 'weekend', TRUE, 1),
+    (11, 1, 'Coca-Cola', 'Refresco', 'cup-soda', 'refresco', 30.00, 14.00, FALSE, 'all', TRUE, 1),
+    (12, 1, 'Sprite', 'Refresco', 'cup-soda', 'refresco', 28.00, 13.00, FALSE, 'all', TRUE, 1),
+    (13, 1, 'Café de olla', 'Café tradicional', 'coffee', 'cafe', 30.00, 8.00, FALSE, 'all', TRUE, 1),
+    (14, 1, 'Paleta', 'Dulce', 'candy', 'dulce', 12.00, 5.00, FALSE, 'all', TRUE, 1),
+    (15, 1, 'Cocada', 'Dulce tradicional', 'candy', 'dulce', 18.00, 7.00, FALSE, 'all', TRUE, 1)
+  ON CONFLICT ("id_restaurant_dish") DO NOTHING;
+END $$;
 
 INSERT INTO "proyect_event" ("id_proyect", "created_by", "event_type", "new_status", "content", "creation_date")
 SELECT project."id_proyect", project."created_by", 'created', project."proyect_status",
