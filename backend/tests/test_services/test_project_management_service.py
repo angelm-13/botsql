@@ -15,7 +15,11 @@ class TestProjectStateMachine(unittest.TestCase):
             "draft": ("submitted", "authorized", "denied", "blocked"),
             "submitted": ("authorized", "denied", "blocked"),
             "blocked": ("submitted", "authorized", "denied"),
-            "authorized": ("in_progress",),
+            # Ya no hay salida directa a "in_progress": toda autorizacion
+            # pasa primero por la espera de material (obligatoria, ver
+            # test_project_workflow_service.py::test_an_authorized_project_cannot_skip_the_wait_for_material).
+            "authorized": ("waiting_material",),
+            "waiting_material": ("in_progress", "stopped"),
             "in_progress": ("stopped", "completed"),
             "stopped": ("in_progress",),
         }

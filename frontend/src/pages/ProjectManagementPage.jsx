@@ -27,13 +27,20 @@ import PageHeader from "../components/PageHeader.jsx";
 // no la conoce: el catalogo dice cuales existen, esto en que orden se pintan.
 // Un estatus que el catalogo traiga y esta lista no nombre se pinta al final,
 // en vez de desaparecer del tablero.
-const STATUS_ORDER = ["draft", "submitted", "blocked", "authorized", "in_progress", "stopped", "completed", "denied"];
+const STATUS_ORDER = ["draft", "submitted", "blocked", "authorized", "waiting_material", "in_progress", "stopped", "completed", "denied"];
 const TASK_STATUS_ORDER = ["pendiente", "en_proceso", "bloqueada", "en_revision", "terminada", "cancelada"];
 
 // Lo que cada papel puede PEDIR, con los mismos grupos que comprueba
 // `transition_project` en el servidor: quien autoriza y quien ejecuta.
 // Supervisor no tiene ninguno a proposito -- Gerente es quien saca el
 // proyecto de Borrador, al recibir la orden de compra, no Supervisor.
+//
+// Va por ESTADO ACTUAL, no solo por destino: "en_proceso" ya no significa
+// lo mismo segun de donde venga -- desde "en espera de material" lo decide
+// Gerente (la compra puede surtir a varios proyectos, ver el comentario de
+// PROJECT_STATUSES en el backend), desde "detenido" lo reanuda el taller.
+// Mismo destino, dos candados de rol distintos, igual que en
+// `transition_project` (backend).
 //
 // De que estatus sale cada transicion ya NO se repite aqui: se lee de
 // /operations/catalog. Antes esta pantalla llevaba una copia completa de
@@ -44,12 +51,27 @@ const ROLE_TARGETS = {
   // Vacio, no ausente: si la clave faltara, `actionTargets()` caeria en
   // "sin limite de papel" y le ofreceria a Supervisor lo que sea que el
   // catalogo del servidor traiga para el estado actual.
-  supervisor: [],
-  manager: ["authorized", "denied", "blocked"],
-  // "blocked" tambien para el taller: puede bloquear un proyecto que ya esta
-  // en curso, no solo Gerente rechazandolo antes de iniciar. Ver el candado
-  // real en `transition_project` (backend).
-  workshop: ["in_progress", "stopped", "completed", "blocked"],
+  supervisor: {},
+  manager: {
+    draft: ["authorized", "denied", "blocked"],
+    submitted: ["authorized", "denied", "blocked"],
+    blocked: ["authorized", "denied", "blocked"],
+    // La espera de material es obligatoria y la abre Gerente, no el
+    // taller -- es quien sabe si la compra ya llego.
+    authorized: ["waiting_material"],
+    waiting_material: ["in_progress"],
+  },
+  workshop: {
+    // Taller NO tiene "blocked": para un proyecto ya en curso, lo suyo es
+    // "detenido" (`stopped`). Bloquearlo es cosa de quien lidera el
+    // proyecto o de quien autoriza. Ver el candado real en
+    // `transition_project` (backend). La pausa a medio trabajo (el
+    // material se acaba ya arrancado) SI es del taller -- a diferencia de
+    // la espera de entrada, que controla Gerente arriba.
+    in_progress: ["waiting_material", "stopped", "completed"],
+    waiting_material: ["stopped"],
+    stopped: ["in_progress"],
+  },
   // `unrestricted` no aparece: sin limite de papel, manda el catalogo solo.
 };
 // Los campos de la ORDEN DE TRABAJO se agregan aqui a proposito, y no en una
@@ -369,7 +391,8 @@ export default function ProjectManagementPage() {
 
   function actionTargets(project) {
     const desdeElServidor = catalog?.proyect?.transitions?.[project.proyect_status] || [];
-    const permitidos = ROLE_TARGETS[mode];
+    const porPapel = ROLE_TARGETS[mode];
+    const permitidos = porPapel ? (porPapel[project.proyect_status] || []) : null;
     const base = permitidos ? desdeElServidor.filter((target) => permitidos.includes(target)) : desdeElServidor;
     // Entregar al cliente es del LIDER del proyecto (normalmente Supervisor,
     // quien lo crea), no del rol -- igual que el candado real en

@@ -24,6 +24,19 @@ from app.utils.errors import AppError
 # detuvo y hay que explicar por que; en espera de material es que el trabajo
 # esta bien y falta que llegue algo. Mezclarlos haria que la unica lista de
 # "por que no avanza esto" tuviera un motivo escrito a mano en cada renglon.
+#
+# `waiting_material` es un paso OBLIGATORIO entre `authorized` y
+# `in_progress`, no un desvio opcional a medio trabajo (decision de negocio,
+# 2026-09-25): una orden de compra puede surtir a varios proyectos a la vez
+# (ej. los mismos costales de cemento), asi que autorizar el proyecto no
+# significa que el taller ya tenga en mano lo que necesita. Por eso
+# `authorized` ya NO tiene salida directa a `in_progress` -- ver
+# PROJECT_TRANSITIONS. La entrada a esta espera y la salida hacia
+# `in_progress` las controla quien autoriza (Gerente), no el taller: es
+# quien sabe si la compra ya llego, igual que decide autorizar el proyecto en
+# primer lugar. El taller SI conserva su propio `in_progress -> waiting_material`
+# para cuando el trabajo ya arranco y el material se acaba a medias -- ese caso
+# no cambia.
 PROJECT_STATUSES = (
     "draft",
     "submitted",
@@ -46,16 +59,26 @@ PROJECT_TRANSITIONS = {
     "draft": {"submitted", "authorized", "denied", "blocked"},
     "submitted": {"authorized", "denied", "blocked"},
     "blocked": {"submitted", "authorized", "denied"},
-    "authorized": {"in_progress"},
-    # `blocked` tambien es destino valido desde aqui: Jefe de taller puede
-    # bloquear un proyecto que ya esta en curso, no solo Gerente rechazandolo
-    # antes de iniciar (desde `submitted`). Ver el candado de rol en
-    # `transition_project`. Volver de un bloqueo en curso pasa por Gerente
-    # (blocked -> authorized -> in_progress), a proposito: quien bloquea no
-    # se autoriza solo de vuelta.
+    # Ya NO hay salida directa a `in_progress`: todo proyecto autorizado pasa
+    # primero por `waiting_material` (ver el comentario de PROJECT_STATUSES).
+    "authorized": {"waiting_material"},
+    # `blocked` tambien es destino valido desde aqui: quien lidera el
+    # proyecto (o quien autoriza) puede bloquear uno que ya esta en curso, no
+    # solo Gerente rechazandolo antes de iniciar (desde `submitted`). Jefe de
+    # taller NO entra aqui -- para taller lo equivalente es "detenido"
+    # (`stopped`). Ver el candado de rol en `transition_project`. Volver de
+    # un bloqueo en curso pasa por Gerente (blocked -> authorized ->
+    # in_progress), a proposito: quien bloquea no se autoriza solo de vuelta.
     "in_progress": {"waiting_material", "stopped", "completed", "blocked"},
-    # De la espera se vuelve al trabajo: el material llego. No se salta a
-    # terminado porque lo que faltaba era justo para poder terminarlo.
+    # `waiting_material` sirve DOS momentos distintos con el mismo estatus:
+    # la espera obligatoria de entrada (desde `authorized`, la controla
+    # Gerente) y la pausa a medio trabajo (desde `in_progress`, la controla
+    # el taller). La salida siempre es la misma transicion tecnica
+    # (`waiting_material -> in_progress`), pero `transition_project` distingue
+    # quien puede pedirla mirando de donde viene el proyecto -- no hay forma
+    # de saber aqui si el material que se esperaba era el de arranque o el de
+    # una pausa a medias. No se salta a terminado porque lo que faltaba era
+    # justo para poder terminarlo.
     "waiting_material": {"in_progress", "stopped"},
     "stopped": {"in_progress"},
     # Terminado es que el taller acabo; entregado, que salio hacia el cliente.
@@ -841,13 +864,32 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
 
         allowed_scope = (
             (validated_target in {"authorized", "denied", "blocked"} and puede_autorizar)
-            or (validated_target in {"in_progress", "stopped", "completed"} and puede_ejecutar)
-            # Bloquear un proyecto que ya esta en curso tambien lo puede
-            # pedir quien lo ejecuta (taller), no solo quien autoriza -- a
-            # diferencia de bloquear ANTES de iniciar (desde `submitted`),
-            # que sigue siendo exclusivo de `puede_autorizar` en la regla de
-            # arriba.
-            or (validated_target == "blocked" and current == "in_progress" and puede_ejecutar)
+            # El material de una orden de compra puede surtir a varios
+            # proyectos a la vez (ver el comentario en PROJECT_STATUSES):
+            # entrar a la espera obligatoria (desde `authorized`) y salir de
+            # ella hacia el arranque real (`in_progress`) las decide quien
+            # autoriza/compra, no el taller -- es quien sabe si la compra ya
+            # llego.
+            or (validated_target == "waiting_material" and current == "authorized" and puede_autorizar)
+            or (validated_target == "in_progress" and current == "waiting_material" and puede_autorizar)
+            # El resto de "en proceso" (reanudar tras un paro) y
+            # "detenido"/"terminado" los sigue controlando quien ejecuta.
+            or (validated_target == "in_progress" and current == "stopped" and puede_ejecutar)
+            or (validated_target in {"stopped", "completed"} and puede_ejecutar)
+            # La pausa a medio trabajo (`in_progress -> waiting_material`, el
+            # material se acaba ya arrancado) SI es del taller -- a
+            # diferencia de la espera de entrada de arriba. Antes esta
+            # transicion no tenia ningun candado que de verdad la permitiera
+            # salvo "unrestricted" (bug preexistente sin cobertura de
+            # pruebas: ningun target del set de puede_ejecutar incluia
+            # "waiting_material").
+            or (validated_target == "waiting_material" and current == "in_progress" and puede_ejecutar)
+            # Bloquear un proyecto que ya esta en curso lo pide quien lo
+            # lidera (o quien autoriza, ya cubierto arriba), no el taller: a
+            # taller le queda "detenido" (`stopped`) para lo mismo. Antes
+            # `puede_ejecutar` alcanzaba para esto y el taller si podia
+            # bloquear -- se separo a proposito.
+            or (validated_target == "blocked" and current == "in_progress" and (leads_it or scope == "unrestricted"))
             or (validated_target == "delivered" and puede_entregar)
         )
         if not allowed_scope:
@@ -857,10 +899,26 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
                 {"target_status": validated_target, "scope": scope, "is_leader": leads_it},
             )
 
-        if validated_target == "delivered":
-            # No se entrega con tareas todavia abiertas -- "completado" es el
-            # estatus del proyecto, no garantiza que cada tarea individual ya
-            # se haya cerrado en el taller.
+        if validated_target == "in_progress" and current == "waiting_material":
+            # El taller no arranca un proyecto sin tener que trabajar: si no
+            # hay ni una tarea capturada todavia, no hay nada que ejecutar.
+            # Se checa aqui (la salida real hacia el trabajo) y no al entrar
+            # a `waiting_material`, a proposito: las tareas se van definiendo
+            # mientras el material todavia esta en camino, no antes.
+            tiene_tareas = (
+                db.query(Task)
+                .filter(Task.id_proyect == project.id_proyect, Task.deletion_date.is_(None))
+                .first()
+                is not None
+            )
+            if not tiene_tareas:
+                raise AppError("errors.project_requires_task", 409)
+
+        if validated_target in {"completed", "delivered"}:
+            # No se completa ni se entrega con tareas todavia abiertas --
+            # "completado"/"entregado" es el estatus del proyecto, no
+            # garantiza que cada tarea individual ya se haya cerrado en el
+            # taller.
             tareas_abiertas = (
                 db.query(Task)
                 .filter(Task.id_proyect == project.id_proyect, Task.deletion_date.is_(None))
@@ -872,7 +930,7 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
             )
             if tareas_abiertas:
                 raise AppError(
-                    "errors.project_open_tasks",
+                    "errors.project_tasks_not_completed" if validated_target == "completed" else "errors.project_open_tasks",
                     409,
                     {"open_tasks": tareas_abiertas},
                 )
