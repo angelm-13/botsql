@@ -2610,7 +2610,8 @@
     "project_invalid_transition": "A alteração de status solicitada não é permitida.",
     "project_transition_reason_required": "É necessário informar um motivo para esta alteração de status.",
     "project_status_requires_transition": "O status só pode ser alterado pelas ações do fluxo.",
-    "project_not_editable": "O projeto não pode mais ser editado no status atual."
+    "project_not_editable": "O projeto não pode mais ser editado no status atual.",
+    "project_open_tasks": "Não é possível entregar o projeto: ainda há tarefas em aberto."
   },
   "logistics": {
     "module": "Logística",

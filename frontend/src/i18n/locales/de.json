@@ -2608,7 +2608,8 @@
     "project_invalid_transition": "Der angeforderte Statuswechsel ist nicht zulässig.",
     "project_transition_reason_required": "Für diesen Statuswechsel ist eine Begründung erforderlich.",
     "project_status_requires_transition": "Der Status kann nur über die Workflow-Aktionen geändert werden.",
-    "project_not_editable": "Das Projekt kann im aktuellen Status nicht mehr bearbeitet werden."
+    "project_not_editable": "Das Projekt kann im aktuellen Status nicht mehr bearbeitet werden.",
+    "project_open_tasks": "Das Projekt kann nicht ausgeliefert werden: es gibt noch offene Aufgaben."
   },
   "logistics": {
     "module": "Logistik",

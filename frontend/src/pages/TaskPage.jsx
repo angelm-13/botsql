@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
-import { getAllTask, createTask, updateTask, deleteTask, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllUser, getAllProyect, getOperationsCatalog } from "../api";
+import { getAllTask, createTask, updateTask, deleteTask, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllProyect, getOperationsCatalog } from "../api";
 import { fetchAllPages } from "../utils/fetchAllPages";
 import Pagination from "../components/Pagination.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 
-const emptyForm = { task_code: "", start_date: "", duration: "", type: "", owner: "", dependency: "", validation: "", task_description: "", estimated_effort: "", task_status: "", fase: "", priority: "", title: "", id_proyect: "" };
+const emptyForm = { task_description: "", fase: "", id_proyect: "" };
 const validationRules = allValidationRules["task"] || {};
 const ENTITY_KEY = "task";
 const ACTION_CREATE = 1;
@@ -17,7 +17,12 @@ const ACTION_UPDATE = 4;
 const ACTION_DELETE = 8;
 const SCOPE_FIELD_BY_BIT = { [ACTION_CREATE]: "scope_create", [ACTION_READ]: "scope_read", [ACTION_UPDATE]: "scope_update", [ACTION_DELETE]: "scope_delete" };
 const FIELD_VISIBLE_BIT = 2;
-const ALL_FIELD_NAMES = ['id_task', 'task_code', 'start_date', 'duration', 'type', 'owner', 'dependency', 'validation'];
+// `id_task`/`task_code`/`start_date`/`duration`/`type` ya no tienen columna
+// en la tabla ni campo en el formulario -- el formulario se redujo a
+// descripcion/proyecto/fase (ver 828255e) y esos otros nunca tuvieron dato
+// real por fila en produccion. Quedan fuera de esta lista, no solo ocultos:
+// dejarlos aqui sugeriria que todavia hay algo que mostrar.
+const ALL_FIELD_NAMES = ['owner', 'dependency', 'validation'];
 // Respaldo si /operations/catalog no responde (offline, permiso, etc.): las
 // mismas 5 fases que pidio Jefe de taller, para que el select no se quede
 // vacio en vez de mostrar el texto libre de antes.
@@ -62,7 +67,6 @@ export default function TaskPage() {
   const canDelete = canUseAction(ACTION_DELETE);
   const canSubmitForm = editingId ? canUpdate : canCreate;
   const showRowActions = canRead && (canUpdate || canDelete);
-  const [userOptions, setUserOptions] = useState([]);
   const [proyectOptions, setProyectOptions] = useState([]);
   const [taskFases, setTaskFases] = useState(DEFAULT_TASK_FASES);
 
@@ -116,14 +120,6 @@ export default function TaskPage() {
   useEffect(() => {
     async function loadFormOptions() {
       if (!permissionReady || (!canSubmitForm && !canRead)) return;
-      if (canSeeField("owner")) {
-        try {
-          const userData = await getAllUser({ page: 1, per_page: 100 });
-          setUserOptions(Array.isArray(userData) ? userData : (userData.items || []));
-        } catch (_) {
-          setUserOptions([]);
-        }
-      }
       if (canSeeField("id_proyect")) {
         try {
           const proyectData = await getAllProyect({ page: 1, per_page: 100 });
@@ -216,7 +212,17 @@ export default function TaskPage() {
   }
 
   function buildSubmitPayload() {
-    const payload = { ...formData };
+    // Solo los campos que el formulario en verdad edita -- `startEdit`
+    // arranca de `{...emptyForm, ...item}`, que copia el registro COMPLETO
+    // que trajo el GET (task_status, owner, dependency, validation, id_task,
+    // lo que sea). Mandar `formData` tal cual reenvia esos valores viejos
+    // como si fueran intencion explicita del usuario: el backend ve
+    // `task_status` en el payload y asume que alguien lo quiso fijar a mano,
+    // bloqueando que la Fase lo sincronice sola (ver FASE_TO_TASK_STATUS).
+    const payload = {};
+    for (const field of Object.keys(emptyForm)) {
+      payload[field] = formData[field];
+    }
     if (ENTITY_KEY === "user" && editingId && isBlankValue(payload.password)) {
       delete payload.password;
     }
@@ -363,7 +369,7 @@ export default function TaskPage() {
       status: ["status_description", "category"],
       incident_type: ["incident_type_description"],
       payroll_concept: ["payroll_concept_description", "payroll_code"],
-      proyect: ["proyect_description", "title"],
+      proyect: ["title", "proyect_description"],
       project: ["project_description", "title"],
       service: ["service_description"],
       customer_supplier: ["name", "business_name", "commercial_name", "contact_name", "title"],
@@ -442,111 +448,11 @@ export default function TaskPage() {
         onSubmit={handleSubmit}
       >
         <div className="form-grid">
-          {canSeeField("task_code") && (
-          <label className="field">
-            <span>{t("fields.task.task_code")}</span>
-            <input name="task_code" type="text" maxLength={11} value={formData.task_code ?? ""} onChange={handleChange} placeholder={t("fields.task.task_code")} aria-invalid={Boolean(fieldErrors["task_code"])} {...inputPropsForField("task_code", validationRules["task_code"], "text")} />
-            {fieldErrors["task_code"] && <span className="field-error">{formatFieldError("task_code")}</span>}
-          </label>
-          )}
-          {canSeeField("start_date") && (
-          <label className="field">
-            <span>{t("fields.task.start_date")}</span>
-            <input name="start_date" type="datetime-local" value={formData.start_date ?? ""} onChange={handleChange} placeholder={t("fields.task.start_date")} aria-invalid={Boolean(fieldErrors["start_date"])} {...inputPropsForField("start_date", validationRules["start_date"], "datetime-local")} />
-            {fieldErrors["start_date"] && <span className="field-error">{formatFieldError("start_date")}</span>}
-          </label>
-          )}
-          {canSeeField("duration") && (
-          <label className="field">
-            <span>{t("fields.task.duration")}</span>
-            <input name="duration" type="number" value={formData.duration ?? ""} onChange={handleChange} placeholder={t("fields.task.duration")} aria-invalid={Boolean(fieldErrors["duration"])} {...inputPropsForField("duration", validationRules["duration"], "number")} />
-            {fieldErrors["duration"] && <span className="field-error">{formatFieldError("duration")}</span>}
-          </label>
-          )}
-          {canSeeField("type") && (
-          <label className="field">
-            <span>{t("fields.task.type")}</span>
-            <select name="type" value={formData.type ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors["type"])} {...inputPropsForField("type", validationRules["type"], "select")}>
-              <option value="">{t("common.select_option", "Selecciona una opción")}</option>
-              <option key="personal" value="personal">personal</option>
-              <option key="business" value="business">business</option>
-            </select>
-            {fieldErrors["type"] && <span className="field-error">{formatFieldError("type")}</span>}
-          </label>
-          )}
-          {canSeeField("owner") && (
-          <label className="field">
-            <span>{t("fields.task.owner")}</span>
-            <select name="owner" value={formData.owner ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors["owner"])} {...inputPropsForField("owner", validationRules["owner"], "select")}>
-              <option value="">{t("common.select_option", "Selecciona una opción")}</option>
-              {userOptions.map((item) => (
-                <option key={item.id_user ?? item.id ?? JSON.stringify(item)} value={item.id_user ?? item.id ?? ""}>
-                  {getOptionLabel(item, "user")}
-                </option>
-              ))}
-            </select>
-            {fieldErrors["owner"] && <span className="field-error">{formatFieldError("owner")}</span>}
-          </label>
-          )}
-          {canSeeField("dependency") && (
-          <label className="field">
-            <span>{t("fields.task.dependency")}</span>
-            <input name="dependency" type="number" value={formData.dependency ?? ""} onChange={handleChange} placeholder={t("fields.task.dependency")} aria-invalid={Boolean(fieldErrors["dependency"])} {...inputPropsForField("dependency", validationRules["dependency"], "number")} />
-            {fieldErrors["dependency"] && <span className="field-error">{formatFieldError("dependency")}</span>}
-          </label>
-          )}
-          {canSeeField("validation") && (
-          <label className="field">
-            <span>{t("fields.task.validation")}</span>
-            <input name="validation" type="number" value={formData.validation ?? ""} onChange={handleChange} placeholder={t("fields.task.validation")} aria-invalid={Boolean(fieldErrors["validation"])} {...inputPropsForField("validation", validationRules["validation"], "number")} />
-            {fieldErrors["validation"] && <span className="field-error">{formatFieldError("validation")}</span>}
-          </label>
-          )}
           {canSeeField("task_description") && (
           <label className="field">
             <span>{t("fields.task.task_description")}</span>
             <input name="task_description" type="text" maxLength={200} value={formData.task_description ?? ""} onChange={handleChange} placeholder={t("fields.task.task_description")} aria-invalid={Boolean(fieldErrors["task_description"])} {...inputPropsForField("task_description", validationRules["task_description"], "text")} />
             {fieldErrors["task_description"] && <span className="field-error">{formatFieldError("task_description")}</span>}
-          </label>
-          )}
-          {canSeeField("estimated_effort") && (
-          <label className="field">
-            <span>{t("fields.task.estimated_effort")}</span>
-            <input name="estimated_effort" type="text" maxLength={50} value={formData.estimated_effort ?? ""} onChange={handleChange} placeholder={t("fields.task.estimated_effort")} aria-invalid={Boolean(fieldErrors["estimated_effort"])} {...inputPropsForField("estimated_effort", validationRules["estimated_effort"], "text")} />
-            {fieldErrors["estimated_effort"] && <span className="field-error">{formatFieldError("estimated_effort")}</span>}
-          </label>
-          )}
-          {canSeeField("task_status") && (
-          <label className="field">
-            <span>{t("fields.task.task_status")}</span>
-            <input name="task_status" type="text" maxLength={20} value={formData.task_status ?? ""} onChange={handleChange} placeholder={t("fields.task.task_status")} aria-invalid={Boolean(fieldErrors["task_status"])} {...inputPropsForField("task_status", validationRules["task_status"], "text")} />
-            {fieldErrors["task_status"] && <span className="field-error">{formatFieldError("task_status")}</span>}
-          </label>
-          )}
-          {canSeeField("fase") && (
-          <label className="field">
-            <span>{t("fields.task.fase")}</span>
-            <select name="fase" value={formData.fase ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors["fase"])} {...inputPropsForField("fase", validationRules["fase"], "select")}>
-              <option value="">{t("common.select_option", "Selecciona una opción")}</option>
-              {taskFases.map((valor) => (
-                <option key={valor} value={valor}>{t(`task_fase.${valor}`, valor)}</option>
-              ))}
-            </select>
-            {fieldErrors["fase"] && <span className="field-error">{formatFieldError("fase")}</span>}
-          </label>
-          )}
-          {canSeeField("priority") && (
-          <label className="field">
-            <span>{t("fields.task.priority")}</span>
-            <input name="priority" type="text" maxLength={50} value={formData.priority ?? ""} onChange={handleChange} placeholder={t("fields.task.priority")} aria-invalid={Boolean(fieldErrors["priority"])} {...inputPropsForField("priority", validationRules["priority"], "text")} />
-            {fieldErrors["priority"] && <span className="field-error">{formatFieldError("priority")}</span>}
-          </label>
-          )}
-          {canSeeField("title") && (
-          <label className="field">
-            <span>{t("fields.task.title")}</span>
-            <input name="title" type="text" maxLength={50} value={formData.title ?? ""} onChange={handleChange} placeholder={t("fields.task.title")} aria-invalid={Boolean(fieldErrors["title"])} {...inputPropsForField("title", validationRules["title"], "text")} />
-            {fieldErrors["title"] && <span className="field-error">{formatFieldError("title")}</span>}
           </label>
           )}
           {canSeeField("id_proyect") && (
@@ -561,6 +467,18 @@ export default function TaskPage() {
               ))}
             </select>
             {fieldErrors["id_proyect"] && <span className="field-error">{formatFieldError("id_proyect")}</span>}
+          </label>
+          )}
+          {canSeeField("fase") && (
+          <label className="field">
+            <span>{t("fields.task.fase")}</span>
+            <select name="fase" value={formData.fase ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors["fase"])} {...inputPropsForField("fase", validationRules["fase"], "select")}>
+              <option value="">{t("common.select_option", "Selecciona una opción")}</option>
+              {taskFases.map((valor) => (
+                <option key={valor} value={valor}>{t(`task_fase.${valor}`, valor)}</option>
+              ))}
+            </select>
+            {fieldErrors["fase"] && <span className="field-error">{formatFieldError("fase")}</span>}
           </label>
           )}
         </div>
@@ -587,22 +505,16 @@ export default function TaskPage() {
 
 
       {canRead && view === "table" && filtered.length > 0 && <div className="table-card"><table><thead><tr>{showRowActions && <th>{t("common.actions")}</th>}
-              {canSeeField("id_task") && <th>{t("fields.task.id_task")}</th>}
-              {canSeeField("task_code") && <th>{t("fields.task.task_code")}</th>}
-              {canSeeField("start_date") && <th>{t("fields.task.start_date")}</th>}
-              {canSeeField("duration") && <th>{t("fields.task.duration")}</th>}
-              {canSeeField("type") && <th>{t("fields.task.type")}</th>}
+              {canSeeField("task_description") && <th>{t("fields.task.task_description")}</th>}
+              {canSeeField("id_proyect") && <th>{t("fields.task.id_proyect")}</th>}
               {canSeeField("owner") && <th>{t("fields.task.owner")}</th>}
               {canSeeField("dependency") && <th>{t("fields.task.dependency")}</th>}
               {canSeeField("validation") && <th>{t("fields.task.validation")}</th>}
               {canSeeField("task_status") && <th>{t("fields.task.task_status")}</th>}
               {canSeeField("fase") && <th>{t("fields.task.fase")}</th>}
         </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_task}>{showRowActions && <td className="row-actions">{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</td>}
-              {canSeeField("id_task") && <td><pre className="cell-value">{formatTableValue(item.id_task)}</pre></td>}
-              {canSeeField("task_code") && <td><pre className="cell-value">{formatTableValue(item.task_code)}</pre></td>}
-              {canSeeField("start_date") && <td><pre className="cell-value">{formatTableValue(item.start_date)}</pre></td>}
-              {canSeeField("duration") && <td><pre className="cell-value">{formatTableValue(item.duration)}</pre></td>}
-              {canSeeField("type") && <td><pre className="cell-value">{formatTableValue(item.type)}</pre></td>}
+              {canSeeField("task_description") && <td><pre className="cell-value">{formatTableValue(item.task_description)}</pre></td>}
+              {canSeeField("id_proyect") && <td><pre className="cell-value">{getOptionLabel(proyectOptions.find((proyecto) => (proyecto.id_proyect ?? proyecto.id) === item.id_proyect), "proyect") || formatTableValue(item.id_proyect)}</pre></td>}
               {canSeeField("owner") && <td><pre className="cell-value">{formatTableValue(item.owner)}</pre></td>}
               {canSeeField("dependency") && <td><pre className="cell-value">{formatTableValue(item.dependency)}</pre></td>}
               {canSeeField("validation") && <td><pre className="cell-value">{formatTableValue(item.validation)}</pre></td>}

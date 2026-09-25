@@ -972,40 +972,6 @@ export const validationRules = {
     ]
   },
   "task": {
-    "owner": [
-      {
-        "validation_type": "required",
-        "rule": "value is not null and value != \"\"",
-        "message_key": "validations.task.owner.required",
-        "severity": "error",
-        "graphql_error_code": "REQUIRED_FIELD"
-      }
-    ],
-    "dependency": [
-      {
-        "validation_type": "required",
-        "rule": "value is not null and value != \"\"",
-        "message_key": "validations.task.dependency.required",
-        "severity": "error",
-        "graphql_error_code": "REQUIRED_FIELD"
-      },
-      {
-        "validation_type": "business",
-        "rule": "dependency task must exist and cannot equal id_task",
-        "message_key": "validations.task.dependency.valid",
-        "severity": "error",
-        "graphql_error_code": "VALID"
-      }
-    ],
-    "validation": [
-      {
-        "validation_type": "required",
-        "rule": "value is not null and value != \"\"",
-        "message_key": "validations.task.validation.required",
-        "severity": "error",
-        "graphql_error_code": "REQUIRED_FIELD"
-      }
-    ],
     "id_proyect": [
       {
         "validation_type": "required",

@@ -21,6 +21,7 @@ from app.models import Proyect, Task, User
 from app.models.session import transaction_context
 from app.services.base_service import CrudService
 from app.services.operations_workflow import (
+    FASE_TO_TASK_STATUS,
     TASK_CLOSED_STATUSES,
     TASK_FASES,
     TASK_REASON_REQUIRED,
@@ -65,6 +66,11 @@ class TaskService(CrudService):
     @classmethod
     def _validate(cls, payload: dict, *, current: Task | None = None) -> dict:
         payload = dict(payload or {})
+        # Se guarda ANTES de que 'fase' pueda inyectar 'task_status' mas
+        # abajo: si quien llama ya mando un task_status explicito (el flujo
+        # dedicado, /task/<id>/transition), esa intencion manda y no se
+        # pisa con lo que la fase sugeriria.
+        explicit_task_status = 'task_status' in payload
 
         if 'id_proyect' in payload and payload['id_proyect'] not in (None, ''):
             payload['id_proyect'] = cls._open_project(payload['id_proyect'], creating=current is None)
@@ -81,11 +87,22 @@ class TaskService(CrudService):
         if 'priority' in payload and payload['priority'] not in (None, ''):
             payload['priority'] = cls._priority(payload['priority'])
 
-        if 'task_status' in payload:
-            payload['task_status'] = cls._resolve_status(payload, current)
-
         if 'fase' in payload:
             payload['fase'] = cls._fase(payload['fase'])
+            if not explicit_task_status and payload['fase']:
+                derived = FASE_TO_TASK_STATUS.get(payload['fase'])
+                origin = normalize_task_status(current.task_status) if current else None
+                if derived and derived != origin:
+                    payload['task_status'] = derived
+
+        if 'task_status' in payload:
+            if explicit_task_status:
+                payload['task_status'] = cls._resolve_status(payload, current)
+            # Si no fue explicito (lo puso la fase, arriba), se deja tal
+            # cual: a proposito NO pasa por `validate_transition` -- Jefe de
+            # taller pidio que cambiar la fase cierre la tarea sin repetir
+            # la adyacencia formal de TASK_TRANSITIONS ni exigir motivo. Ver
+            # el comentario de FASE_TO_TASK_STATUS (operations_workflow.py).
 
         return payload
 

@@ -8,16 +8,16 @@ namespace: vidrioyaluminios-prod
 images:
   - name: DB_INIT_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-db-init
-    newTag: "33bda50"
+    newTag: "916d1a7"
   - name: BACKEND_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-backend
-    newTag: "33bda50"
+    newTag: "916d1a7"
   - name: WORKER_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-worker
-    newTag: "33bda50"
+    newTag: "916d1a7"
   - name: FRONTEND_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-frontend
-    newTag: 33bda50-vidrioyaluminios-prod
+    newTag: 916d1a7-vidrioyaluminios-prod
 resources:
   - ../../base
   - ingress-single-origin.yaml

@@ -10,11 +10,25 @@ ALTER TABLE proyect
     ALTER COLUMN proyect_status SET NOT NULL,
     DROP CONSTRAINT IF EXISTS ck_proyect_status;
 
+-- Corre en CADA arranque del pod (sin tabla de control, ver
+-- project_tyakxa_tny_migraciones_replay_infinito en memoria): un DROP+ADD
+-- incondicional como este REVIERTE el constraint a esta lista en cada
+-- replay, aunque una migracion mas nueva ya lo haya ampliado. Asi tumbo
+-- tyakxa-dev el 2026-09-24: 20260924190000 amplio esta misma columna para
+-- aceptar 'waiting_material'/'delivered', un proyecto real ya se movio a
+-- 'delivered', y en el siguiente restart ESTA migracion (que corre antes,
+-- por fecha) intento angostar el constraint de vuelta contra esa fila ya
+-- existente -- CheckViolation, CrashLoopBackOff. La lista de aqui en
+-- adelante debe ser la MISMA que la version final en
+-- 20260924190000_completa_catalogos_de_expediente_y_estatus_de_proyecto.sql,
+-- no solo lo que existia en 2026-08-22 -- si esa lista vuelve a crecer, hay
+-- que actualizar las dos migraciones a la vez, o la de aqui se convierte en
+-- una bomba de tiempo para el proximo restart.
 ALTER TABLE proyect
     ADD CONSTRAINT ck_proyect_status CHECK (
         proyect_status IN (
-            'draft', 'submitted', 'authorized', 'denied',
-            'blocked', 'in_progress', 'stopped', 'completed'
+            'draft', 'submitted', 'authorized', 'denied', 'blocked',
+            'in_progress', 'waiting_material', 'stopped', 'completed', 'delivered'
         )
     );
 

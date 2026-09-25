@@ -46,7 +46,7 @@ export default function LogisticsContactsPage() {
       setContacts(listItems(contactPayload));
       setClients(listItems(clientPayload));
     } catch (requestError) {
-      setError(requestError.message || `${t("logistics.error_load")} ${t("logistics.contact_plural").toLowerCase()}.`);
+      setError(t(requestError.message, `${t("logistics.error_load")} ${t("logistics.contact_plural").toLowerCase()}.`));
     } finally {
       setLoading(false);
     }
@@ -86,7 +86,7 @@ export default function LogisticsContactsPage() {
       setEditingId(null);
       await loadData();
     } catch (requestError) {
-      setError(requestError.message || `${t("logistics.error_save")} ${t("logistics.contact_singular").toLowerCase()}.`);
+      setError(t(requestError.message, `${t("logistics.error_save")} ${t("logistics.contact_singular").toLowerCase()}.`));
     }
   }
 
@@ -102,7 +102,7 @@ export default function LogisticsContactsPage() {
       await deleteLogisticsContact(contact.id_logistics_contact);
       await loadData();
     } catch (requestError) {
-      setError(requestError.message || `${t("logistics.error_delete")} ${t("logistics.contact_singular").toLowerCase()}.`);
+      setError(t(requestError.message, `${t("logistics.error_delete")} ${t("logistics.contact_singular").toLowerCase()}.`));
     }
   }
 

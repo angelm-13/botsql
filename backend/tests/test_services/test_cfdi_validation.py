@@ -209,6 +209,27 @@ def test_exempt_transfer_cannot_declare_rate_or_amount():
     assert "cfdi.conceptos.0.exento_no_admite_importe" in errors
 
 
+def test_payment_complement_is_valid_without_concepts():
+    """El comprobante de pago (tipo P) no lleva partidas -- el importe vive en
+    el complemento de pagos, no en Conceptos -- asi que no debe exigirlas.
+    """
+    root = ET.fromstring(VALID_CFDI)
+    root.remove(root.find(f"{{{CFDI_NS}}}Conceptos"))
+    root.remove(root.find(f"{{{CFDI_NS}}}Impuestos"))
+    root.attrib.pop("Descuento", None)
+    root.set("TipoDeComprobante", "P")
+    root.set("SubTotal", "0")
+    root.set("Total", "0")
+    root.find(f"{{{CFDI_NS}}}Receptor").set("UsoCFDI", "CP01")
+    assert validate_cfdi_xml(ET.tostring(root, encoding="unicode")) == []
+
+
+def test_other_comprobante_types_still_require_concepts():
+    root = ET.fromstring(VALID_CFDI)
+    root.remove(root.find(f"{{{CFDI_NS}}}Conceptos"))
+    assert "cfdi.conceptos_required" in validate_cfdi_xml(ET.tostring(root, encoding="unicode"))
+
+
 def test_subtotal_must_equal_the_sum_of_the_concepts():
     broken = _mutate(**{"Comprobante.SubTotal": "1000.50", "Comprobante.Total": "1044.50"})
     assert "cfdi.subtotal_no_cuadra_con_suma_de_conceptos" in validate_cfdi_xml(broken)
