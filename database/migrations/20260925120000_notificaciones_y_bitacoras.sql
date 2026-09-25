@@ -32,10 +32,10 @@ CREATE TABLE IF NOT EXISTS notification (
 );
 
 -- Índices para notification
-CREATE INDEX idx_notification_recipient ON notification(id_user_recipient);
-CREATE INDEX idx_notification_proyect ON notification(id_proyect);
-CREATE INDEX idx_notification_creation_date ON notification(creation_date DESC);
-CREATE INDEX idx_notification_is_read ON notification(is_read);
+CREATE INDEX IF NOT EXISTS idx_notification_recipient ON notification(id_user_recipient);
+CREATE INDEX IF NOT EXISTS idx_notification_proyect ON notification(id_proyect);
+CREATE INDEX IF NOT EXISTS idx_notification_creation_date ON notification(creation_date DESC);
+CREATE INDEX IF NOT EXISTS idx_notification_is_read ON notification(is_read);
 
 -- Tabla: supervisor_activity_log
 -- Propósito: Registrar actividades diarias de supervisores en proyectos
@@ -58,10 +58,10 @@ CREATE TABLE IF NOT EXISTS supervisor_activity_log (
 );
 
 -- Índices para supervisor_activity_log
-CREATE INDEX idx_activity_proyect ON supervisor_activity_log(id_proyect);
-CREATE INDEX idx_activity_supervisor ON supervisor_activity_log(id_supervisor);
-CREATE INDEX idx_activity_date ON supervisor_activity_log(activity_date DESC);
-CREATE INDEX idx_activity_proyect_supervisor_date ON supervisor_activity_log(id_proyect, id_supervisor, activity_date);
+CREATE INDEX IF NOT EXISTS idx_activity_proyect ON supervisor_activity_log(id_proyect);
+CREATE INDEX IF NOT EXISTS idx_activity_supervisor ON supervisor_activity_log(id_supervisor);
+CREATE INDEX IF NOT EXISTS idx_activity_date ON supervisor_activity_log(activity_date DESC);
+CREATE INDEX IF NOT EXISTS idx_activity_proyect_supervisor_date ON supervisor_activity_log(id_proyect, id_supervisor, activity_date);
 
 -- Comentarios de tabla para documentación
 COMMENT ON TABLE notification IS 'Notificaciones entre roles: Supervisor, Gerente, Jefe de Taller, Almacenista. Registra cambios de estatus de proyectos, creación de tareas, etc.';
