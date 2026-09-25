@@ -6,7 +6,7 @@ from flask import Blueprint, jsonify, request
 from sqlalchemy import cast, func, select
 from sqlalchemy.dialects.postgresql import JSONB
 
-from app.kpis.registry import ALCANCE_PROYECTO_POR_CLAVE, DIMENSION_JSON_KEY, DIMENSION_POR_CLAVE
+from app.kpis.registry import AGREGACION_POR_CLAVE, ALCANCE_PROYECTO_POR_CLAVE, DIMENSION_JSON_KEY, DIMENSION_POR_CLAVE
 from app.models.kpi_definition import KpiDefinition
 from app.models.kpi_snapshot import KpiSnapshot
 from app.models.permission import Permission
@@ -106,18 +106,30 @@ def _dimension_entity_expr(campo_json):
     return cast(KpiSnapshot.dimension_key, JSONB)[campo_json].astext
 
 
-def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, agrupar_por_periodo=False):
-    """Suma `kpi_snapshot` en el rango, en uno de tres modos:
+def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo=False):
+    """Combina `kpi_snapshot` en el rango, en uno de tres modos:
 
     * `campo_json` es None (dimension "global", ej. ingresos/egresos
       totales): no hay entidad que desglosar -- un solo total.
-    * `agrupar_por_periodo=True`: se suma entre TODAS las entidades por
+    * `agrupar_por_periodo=True`: se combina entre TODAS las entidades por
       `periodo` (dia) -- la serie de tendencia en el tiempo que pidio Aurora
       ("Ambas, seleccionable": por empleado/producto O por periodo).
-    * si no, el comportamiento de siempre: un total por entidad
+    * si no, el comportamiento de siempre: un valor por entidad
       (`por_empleado`, el nombre historico del campo -- se conserva tal cual
       aunque ahora tambien puede traer productos, para no romper el resto del
       frontend que ya lo lee).
+
+    COMO se combina lo decide `agregacion`, declarada por cada KPI (ver
+    AGREGACIONES en app/kpis/registry.py). Antes aqui se sumaba siempre, y
+    eso inflaba porcentajes, promedios y fotos de existencia:
+
+    * "suma": SUM(valor).
+    * "promedio_ponderado": SUM(valor * peso) / SUM(peso), tanto por grupo
+      como en el total -- el total NO es la suma ni el promedio simple de los
+      grupos. Las filas sin peso (escritas antes de que existiera la columna)
+      se ignoran: no hay forma correcta de combinarlas.
+    * "ultimo": la foto del ultimo dia del rango que tenga datos. Por periodo
+      se muestra la foto de cada dia, y el total es la del ultimo.
     """
     condiciones = [
         KpiSnapshot.id_kpi_definition == id_kpi_definition,
@@ -137,28 +149,72 @@ def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, enti
 
     base = {'inicio': fecha_inicio.isoformat(), 'fin': fecha_fin.isoformat()}
 
+    if agregacion == 'ultimo':
+        ultimo = db.execute(select(func.max(KpiSnapshot.periodo)).where(*condiciones)).scalar()
+        if ultimo is None:
+            return {**base, 'total': 0.0, 'por_empleado': {}, 'por_periodo': {}}
+        if agrupar_por_periodo:
+            filas = db.execute(
+                select(KpiSnapshot.periodo, func.sum(KpiSnapshot.valor))
+                .where(*condiciones)
+                .group_by(KpiSnapshot.periodo)
+                .order_by(KpiSnapshot.periodo)
+            ).all()
+            por_periodo = {periodo.isoformat(): float(valor) for periodo, valor in filas}
+            return {**base, 'total': por_periodo[ultimo.isoformat()], 'por_empleado': {}, 'por_periodo': por_periodo}
+        # Acotado a un solo dia, sumar entre entidades y proyectos ya es
+        # correcto: es la existencia total de esa foto.
+        condiciones.append(KpiSnapshot.periodo == ultimo)
+
+    ponderado = agregacion == 'promedio_ponderado'
+    if ponderado:
+        condiciones.extend([KpiSnapshot.peso.isnot(None), KpiSnapshot.peso > 0])
+        columnas = (func.sum(KpiSnapshot.valor * KpiSnapshot.peso), func.sum(KpiSnapshot.peso))
+    else:
+        columnas = (func.sum(KpiSnapshot.valor),)
+
+    def valor_de(numerador, denominador=None):
+        if not ponderado:
+            return float(numerador or 0)
+        return float(numerador) / float(denominador) if denominador else 0.0
+
+    def total_de(agregados):
+        # `agregados`: lista de (numerador,) o (numerador, denominador) por
+        # grupo. Ponderado: se recombinan numeradores y denominadores, nunca
+        # los valores ya divididos.
+        if not ponderado:
+            return float(sum(numerador or 0 for numerador, in agregados))
+        numerador = sum(n or 0 for n, _ in agregados)
+        denominador = sum(d or 0 for _, d in agregados)
+        return float(numerador) / float(denominador) if denominador else 0.0
+
     if agrupar_por_periodo:
         filas = db.execute(
-            select(KpiSnapshot.periodo, func.sum(KpiSnapshot.valor))
+            select(KpiSnapshot.periodo, *columnas)
             .where(*condiciones)
             .group_by(KpiSnapshot.periodo)
             .order_by(KpiSnapshot.periodo)
         ).all()
-        por_periodo = {periodo.isoformat(): float(valor) for periodo, valor in filas}
-        return {**base, 'total': sum(por_periodo.values()), 'por_empleado': {}, 'por_periodo': por_periodo}
+        por_periodo = {periodo.isoformat(): valor_de(*agregados) for periodo, *agregados in filas}
+        total = total_de([tuple(agregados) for _, *agregados in filas])
+        return {**base, 'total': total, 'por_empleado': {}, 'por_periodo': por_periodo}
 
     if entidad_expr is None:
-        total = db.execute(select(func.sum(KpiSnapshot.valor)).where(*condiciones)).scalar() or 0
-        return {**base, 'total': float(total), 'por_empleado': {}, 'por_periodo': {}}
+        fila = db.execute(select(*columnas).where(*condiciones)).one()
+        return {**base, 'total': valor_de(*fila), 'por_empleado': {}, 'por_periodo': {}}
 
-    filas = db.execute(
-        select(entidad_expr, func.sum(KpiSnapshot.valor))
-        .where(*condiciones)
-        .group_by(entidad_expr)
-    ).all()
-
-    por_entidad = {entidad: float(valor) for entidad, valor in filas if entidad is not None}
-    return {**base, 'total': sum(por_entidad.values()), 'por_empleado': por_entidad, 'por_periodo': {}}
+    filas = [
+        (entidad, *agregados)
+        for entidad, *agregados in db.execute(
+            select(entidad_expr, *columnas)
+            .where(*condiciones)
+            .group_by(entidad_expr)
+        ).all()
+        if entidad is not None
+    ]
+    por_entidad = {entidad: valor_de(*agregados) for entidad, *agregados in filas}
+    total = total_de([tuple(agregados) for _, *agregados in filas])
+    return {**base, 'total': total, 'por_empleado': por_entidad, 'por_periodo': {}}
 
 
 @bp_kpi.route('/kpi_definition/', methods=['GET'])
@@ -268,6 +324,12 @@ def query_kpi_snapshot(user_data):
         actor_project = InvoiceService.actor_project(user_data) if alcance_proyecto else None
         dimension = DIMENSION_POR_CLAVE.get(kpi_row.clave, 'empleado') if kpi_row else 'empleado'
         campo_json = DIMENSION_JSON_KEY.get(dimension, 'id_user')
+        # Sin regla no se combina nada: una fila de kpi_definition que ya no
+        # esta en KPI_REGISTRY no tiene quien la calcule, y sumarla "por si
+        # acaso" es exactamente el error que motivo `agregacion`.
+        agregacion = AGREGACION_POR_CLAVE.get(kpi_row.clave) if kpi_row else None
+        if agregacion is None:
+            raise AppError('errors.resource_not_found', 404, {'kpi': id_kpi_definition})
 
         # id_departments se resuelve a id_user (via Permission.id_department)
         # y se combina con "entidades": si vienen los dos, interseccion; si
@@ -283,10 +345,10 @@ def query_kpi_snapshot(user_data):
                 entidades = list(usuarios_del_departamento)
 
         agrupar_por_periodo = agrupar_por == 'periodo'
-        rango_a = _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, agrupar_por_periodo)
+        rango_a = _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo)
         rango_b = None
         if fecha_inicio_b and fecha_fin_b:
-            rango_b = _totales(db, id_kpi_definition, fecha_inicio_b, fecha_fin_b, actor_project, entidades, campo_json, agrupar_por_periodo)
+            rango_b = _totales(db, id_kpi_definition, fecha_inicio_b, fecha_fin_b, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo)
 
     return jsonify({'rango_a': rango_a, 'rango_b': rango_b})
 

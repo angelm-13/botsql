@@ -130,10 +130,11 @@ class KpiLaboratorioQueryTest(unittest.TestCase):
             )
 
         self.assertEqual(1, len(filas))
-        id_tecnico, periodo, promedio = filas[0]
+        id_tecnico, periodo, promedio, peso = filas[0]
         self.assertEqual(TECNICO_A, id_tecnico)
         self.assertEqual(date(2026, 9, 5), periodo)
         self.assertAlmostEqual(3.0, float(promedio), places=2)
+        self.assertEqual(2, peso)  # las 2 ordenes detras del promedio
 
     # --- costo_promedio_reparacion_laboratorio_por_tecnico_query --------
 
@@ -157,10 +158,12 @@ class KpiLaboratorioQueryTest(unittest.TestCase):
             )
 
         self.assertEqual(1, len(filas))
-        id_tecnico, periodo, promedio = filas[0]
+        id_tecnico, periodo, promedio, peso = filas[0]
         self.assertEqual(TECNICO_A, id_tecnico)
         self.assertEqual(date(2026, 9, 8), periodo)
         self.assertEqual(Decimal("1000.00"), Decimal(promedio).quantize(Decimal("0.01")))
+        # Peso = solo las ordenes CON costo: la de final_cost NULL no pesa.
+        self.assertEqual(2, peso)
 
     def test_filtro_de_empleados(self):
         with transaction_context() as db:

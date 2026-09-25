@@ -72,10 +72,16 @@ class DesarrolloPorEmpleadoQueryTest(unittest.TestCase):
                 db, date(2026, 5, 1), date(2026, 5, 4), {}, PROYECTO_ACTOR,
             )
 
-        # A: 2 de 4 terminadas = 50.00%. B: 1 de 2 terminadas = 50.00%.
+        # Una fila por empleado y por DIA de creacion, con el numero de
+        # tareas del dia como peso (cuarta columna). Combinadas como promedio
+        # ponderado dan A: 2 de 4 = 50 %, B: 1 de 2 = 50 %.
         self.assertEqual([
-            (EMPLEADO_A, date(2026, 5, 4), Decimal("50.00")),
-            (EMPLEADO_B, date(2026, 5, 4), Decimal("50.00")),
+            (EMPLEADO_A, date(2026, 5, 1), Decimal("100.00"), 1),
+            (EMPLEADO_A, date(2026, 5, 2), Decimal("100.00"), 1),
+            (EMPLEADO_A, date(2026, 5, 3), Decimal("0.00"), 1),
+            (EMPLEADO_A, date(2026, 5, 4), Decimal("0.00"), 1),
+            (EMPLEADO_B, date(2026, 5, 1), Decimal("100.00"), 1),
+            (EMPLEADO_B, date(2026, 5, 2), Decimal("0.00"), 1),
         ], [tuple(fila) for fila in filas])
 
     def test_status_null_o_desconocido_cuenta_como_no_terminada(self):
@@ -93,7 +99,7 @@ class DesarrolloPorEmpleadoQueryTest(unittest.TestCase):
 
         # 1 de 3 terminadas = 33.33%; NULL y el estatus desconocido no suman
         # al numerador, pero si al denominador.
-        self.assertEqual([(EMPLEADO_A, date(2026, 6, 1), Decimal("33.33"))], [tuple(f) for f in filas])
+        self.assertEqual([(EMPLEADO_A, date(2026, 6, 1), Decimal("33.33"), 3)], [tuple(f) for f in filas])
 
     def test_actor_project_acota_el_resultado(self):
         with transaction_context() as db:
@@ -106,8 +112,8 @@ class DesarrolloPorEmpleadoQueryTest(unittest.TestCase):
             solo_actor = desarrollo_por_empleado_query(db, date(2026, 7, 1), date(2026, 7, 1), {}, PROYECTO_ACTOR)
             solo_otro = desarrollo_por_empleado_query(db, date(2026, 7, 1), date(2026, 7, 1), {}, PROYECTO_OTRO)
 
-        self.assertEqual([(EMPLEADO_A, date(2026, 7, 1), Decimal("100.00"))], [tuple(f) for f in solo_actor])
-        self.assertEqual([(EMPLEADO_A, date(2026, 7, 1), Decimal("0.00"))], [tuple(f) for f in solo_otro])
+        self.assertEqual([(EMPLEADO_A, date(2026, 7, 1), Decimal("100.00"), 1)], [tuple(f) for f in solo_actor])
+        self.assertEqual([(EMPLEADO_A, date(2026, 7, 1), Decimal("0.00"), 1)], [tuple(f) for f in solo_otro])
 
     def test_filtro_de_empleados(self):
         with transaction_context() as db:
@@ -121,7 +127,7 @@ class DesarrolloPorEmpleadoQueryTest(unittest.TestCase):
                 db, date(2026, 8, 1), date(2026, 8, 1), {"empleados": [EMPLEADO_B]}, PROYECTO_ACTOR,
             )
 
-        self.assertEqual([(EMPLEADO_B, date(2026, 8, 1), Decimal("0.00"))], [tuple(f) for f in filas])
+        self.assertEqual([(EMPLEADO_B, date(2026, 8, 1), Decimal("0.00"), 1)], [tuple(f) for f in filas])
 
 
 if __name__ == "__main__":
