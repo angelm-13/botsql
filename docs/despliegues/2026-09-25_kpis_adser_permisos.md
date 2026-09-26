@@ -105,6 +105,106 @@ Esperado: `Administrator` con los dos KPIs y `puede_ver = t`.
 Dashboard, el selector de KPIs muestra exactamente "Artículos bajo stock" e
 "Incidentes resueltos por empleado", con datos si el backfill ya corrió.
 
+## Orden completo para adser-prod
+
+Todo en este orden. Salvo el paso 1, los comandos van en el VPS, en la
+sesión SSH con acceso al clúster.
+
+**Imagen a promover:** `e73fcfc`, el primer commit que trae el script de
+permisos y la regla de agregación (`4c36348`). Antes de empezar, confirmar
+en GitHub → Actions que el run de `e73fcfc` terminó en verde. Si no, las
+imágenes no existen y el pod queda en `ImagePullBackOff`.
+
+### 0. Respaldo antes de tocar nada
+
+La promoción trae `20260925130000_bits_de_escritura_en_permisos_de_campo.sql`,
+que reescribe `nm_field_permission` en cada arranque. Conviene poder comparar
+el antes y el después.
+
+```bash
+kubectl -n adser-prod exec statefulset/postgres -- sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > ~/adser_antes_de_e73fcfc_$(date +%Y%m%d_%H%M).sql
+ls -la ~/adser_antes_de_e73fcfc_*.sql
+```
+
+### 1. Promover la imagen (en el repo, no en el VPS)
+
+En `k8s/overlays/adser-prod/kustomization.yaml`, cambiar los 4 `newTag`:
+`"0bf9d69"` → `"e73fcfc"` (tres veces) y `0bf9d69-adser-prod` →
+`e73fcfc-adser-prod`. Commitear y hacer push. Luego, desde la máquina con el
+repo:
+
+```bash
+scp k8s/overlays/adser-prod/kustomization.yaml 168.231.67.33:/home/alanp/tyakxa_tny/k8s/overlays/adser-prod/kustomization.yaml
+```
+
+### 2. Aplicar y esperar el rollout (db-migrate corre aquí)
+
+```bash
+cd /home/alanp/tyakxa_tny
+kubectl apply -k k8s/overlays/adser-prod
+kubectl -n adser-prod rollout status deployment/backend
+kubectl -n adser-prod rollout status deployment/celery-worker
+kubectl -n adser-prod rollout status deployment/celery-beat
+```
+
+El initContainer `db-migrate` aplica las migraciones antes de que arranque el
+backend nuevo. Confirmar que terminó y que aplicó las dos nuevas:
+
+```bash
+kubectl -n adser-prod logs deployment/backend -c db-migrate | grep -E "20260925130000|20260925140000|esquema al dia"
+```
+
+Esperado: las dos líneas `db-migrate: aplicando ...` y al final
+`db-migrate: esquema al dia`.
+
+### 3. Backfill de snapshots
+
+```bash
+kubectl -n adser-prod exec deployment/backend -- python -c "
+from datetime import date, timedelta
+from app.jobs.tasks_kpis import recalcular_kpi_snapshots_rango
+hoy = date.today()
+print(recalcular_kpi_snapshots_rango(hoy - timedelta(days=364), hoy))
+"
+```
+
+Esperado: `{'ok': True, ... 'filas': N, ...}`. Detalle y verificaciones en
+`2026-09-25_kpi_agregacion.md`.
+
+### 4. Dry-run del script
+
+```bash
+kubectl -n adser-prod exec deployment/backend -- python -m scripts.seed_kpi_permissions --perfil adser --dry-run
+```
+
+Esperado: `Administrator` con los dos KPIs en `INSERTAR` y
+`Se insertarian: 2`. Si aparece `ROL INEXISTENTE` o `AVISO`, parar.
+
+### 5. Aplicar el script
+
+```bash
+kubectl -n adser-prod exec deployment/backend -- python -m scripts.seed_kpi_permissions --perfil adser
+```
+
+Esperado: `Insertadas: 2 fila(s) en nm_permission_kpi.` y código de salida 0.
+
+### 6. Verificar con taroj
+
+1. `taroj` **cierra sesión y vuelve a entrar**: el token anterior no ve el
+   cambio.
+2. En el Dashboard, el selector de KPIs muestra exactamente "Artículos bajo
+   stock" e "Incidentes resueltos por empleado".
+3. Crear un widget de cada uno con un rango de 30 días:
+   - "Artículos bajo stock" muestra la existencia actual por producto, no un
+     múltiplo de los días.
+   - "Incidentes resueltos por empleado" muestra un porcentaje entre 0 y 100.
+
+Si algo falla: volver a la imagen `0bf9d69` en el overlay (paso 1 y 2 al
+revés). La columna `peso` y las filas de `nm_permission_kpi` pueden quedarse;
+el código viejo no las usa. Lo que **no** se deshace solo son los bits que
+`20260925130000` cambió en `nm_field_permission`: para eso está el respaldo
+del paso 0.
+
 ## Resultado de la prueba local (2026-09-25)
 
 Usuario de prueba con rol Administrator, sin ser superusuario, como `taroj`:
