@@ -80,17 +80,34 @@ ASIGNACIONES = {
         # En Adser solo Administrator (taroj) recibe KPIs; Almacenista se queda
         # sin cambios. Administrator ya tiene el modulo `kpis` en ROLES.
         #
-        # `vales_vencidos_por_responsable` queda FUERA a proposito: en los
-        # datos de Adser `nm_incident_product.due_date` viene vacio (no se
-        # captura), y ese KPI solo cuenta vales con due_date vencido -- saldria
-        # siempre en cero y se leeria como "no hay vales vencidos". Se agrega
-        # cuando due_date se capture.
+        # `articulos_bajo_stock` queda FUERA a proposito: el almacen de Adser
+        # es de herramientas individuales, casi toda la existencia real es 1
+        # -- "bajo stock" no significa nada ahi. Lo que le importa a Adser es
+        # cuantas incidencias se abren/cierran, cuanto material esta prestado
+        # (vales de almacen, `nm_incident_product`) y en que estado esta cada
+        # renglon -- de ahi los 4 KPIs nuevos.
+        #
+        # `vales_vencidos_por_responsable` sigue FUERA por el mismo motivo de
+        # siempre: `nm_incident_product.due_date` viene vacio en los datos de
+        # Adser -- saldria siempre en cero. Se agrega cuando due_date se
+        # capture.
+        #
+        # `material_prestado_actual` (foto de vales prestados sin devolver,
+        # por responsable) NO se agrega todavia: `nm_incident_product.
+        # start_date`/`due_date` tambien vienen vacios para el 100% de las
+        # filas migradas de Adser (`migrate_adser.py::migrar_nm_incident_product`
+        # nunca los puebla) -- sin una fecha de prestamo real, ese KPI no
+        # tiene nada que mostrar. Se agrega cuando se resuelva de donde sale
+        # esa fecha para los datos reales de Adser.
         AsignacionRol(
             rol="Administrator",
             acotado_a_proyecto=False,
             kpis=(
-                "articulos_bajo_stock",
                 "incidentes_resueltos_por_empleado",
+                "incidencias_abiertas_por_empleado",
+                "incidencias_pendientes",
+                "incidencias_abiertas_vs_cerradas",
+                "material_por_estado",
             ),
         ),
     ),

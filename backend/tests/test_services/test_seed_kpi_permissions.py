@@ -22,9 +22,23 @@ class TestValidacionDeAsignaciones(BackendTestCase):
     def test_la_asignacion_de_adser_es_valida(self):
         self.assertEqual([], validar(ASIGNACIONES["adser"]))
 
-    def test_adser_deja_fuera_vales_vencidos(self):
+    def test_adser_deja_fuera_kpis_sin_datos_reales_para_su_almacen(self):
+        # articulos_bajo_stock: almacen de herramientas individuales, casi
+        # toda la existencia es 1 -- "bajo stock" no aplica.
+        # vales_vencidos_por_responsable / material_prestado_actual: ambos
+        # dependen de una fecha (due_date/start_date en nm_incident_product)
+        # que viene vacia en el 100% de lo migrado de Adser.
         claves = {clave for asignacion in ASIGNACIONES["adser"] for clave in asignacion.kpis}
-        self.assertEqual({"articulos_bajo_stock", "incidentes_resueltos_por_empleado"}, claves)
+        self.assertEqual(
+            {
+                "incidentes_resueltos_por_empleado",
+                "incidencias_abiertas_por_empleado",
+                "incidencias_pendientes",
+                "incidencias_abiertas_vs_cerradas",
+                "material_por_estado",
+            },
+            claves,
+        )
 
     def test_rol_acotado_no_recibe_un_kpi_sin_alcance_de_proyecto(self):
         errores = validar((AsignacionRol("Admin Restaurante", acotado_a_proyecto=True,
@@ -52,7 +66,13 @@ class TestSiembraDePermisosDeKpi(BackendTestCase):
                 EntityPermission(id_permission=ADMINISTRATOR, entity_name="kpi_definition", scope_create=4,
                                  scope_read=4, scope_update=4, scope_delete=4, created_by=1),
             ])
-            for clave in ("articulos_bajo_stock", "incidentes_resueltos_por_empleado", "vales_vencidos_por_responsable"):
+            for clave in (
+                "incidentes_resueltos_por_empleado",
+                "incidencias_abiertas_por_empleado",
+                "incidencias_pendientes",
+                "incidencias_abiertas_vs_cerradas",
+                "material_por_estado",
+            ):
                 db.add(KpiDefinition(clave=clave, etiqueta=clave, modulo="inventario", dimensiones=["producto"]))
 
     def _correr(self, *argv):
@@ -70,29 +90,37 @@ class TestSiembraDePermisosDeKpi(BackendTestCase):
                        NmPermissionKpi.puede_ver.is_(True))
             ).all())
 
+    ADSER_KPIS = [
+        "incidencias_abiertas_por_empleado",
+        "incidencias_abiertas_vs_cerradas",
+        "incidencias_pendientes",
+        "incidentes_resueltos_por_empleado",
+        "material_por_estado",
+    ]
+
     def test_dry_run_no_escribe_nada(self):
         codigo, salida = self._correr("--perfil", "adser", "--dry-run")
 
         self.assertEqual(0, codigo)
-        self.assertIn("Se insertarian: 2", salida)
+        self.assertIn("Se insertarian: 5", salida)
         self.assertEqual([], self._vistos())
 
-    def test_siembra_solo_los_dos_kpis_y_es_idempotente(self):
+    def test_siembra_los_cinco_kpis_y_es_idempotente(self):
         codigo, salida = self._correr("--perfil", "adser")
         self.assertEqual(0, codigo)
-        self.assertIn("Insertadas: 2", salida)
-        self.assertEqual(["articulos_bajo_stock", "incidentes_resueltos_por_empleado"], self._vistos())
+        self.assertIn("Insertadas: 5", salida)
+        self.assertEqual(self.ADSER_KPIS, self._vistos())
         self.assertEqual([], self._vistos(ALMACENISTA))
 
         codigo, salida = self._correr("--perfil", "adser")
         self.assertEqual(0, codigo)
         self.assertIn("Insertadas: 0", salida)
         with transaction_context() as db:
-            self.assertEqual(2, len(db.scalars(select(NmPermissionKpi)).all()))
+            self.assertEqual(5, len(db.scalars(select(NmPermissionKpi)).all()))
 
     def test_no_reactiva_un_permiso_dado_de_baja(self):
         with transaction_context() as db:
-            id_kpi = db.scalar(select(KpiDefinition.id_kpi_definition).where(KpiDefinition.clave == "articulos_bajo_stock"))
+            id_kpi = db.scalar(select(KpiDefinition.id_kpi_definition).where(KpiDefinition.clave == "material_por_estado"))
             db.add(NmPermissionKpi(id_permission=ADMINISTRATOR, id_kpi_definition=id_kpi, puede_ver=True,
                                    created_by=1, deletion_date=datetime(2026, 9, 1)))
 
@@ -100,7 +128,7 @@ class TestSiembraDePermisosDeKpi(BackendTestCase):
 
         self.assertEqual(0, codigo)
         self.assertIn("NO se reactiva", salida)
-        self.assertEqual(["incidentes_resueltos_por_empleado"], self._vistos())
+        self.assertEqual([clave for clave in self.ADSER_KPIS if clave != "material_por_estado"], self._vistos())
 
     def test_un_borrado_fisico_desde_la_pantalla_se_reasigna_al_volver_a_correr(self):
         # /kpi_permissions borra la fila (BaseService.delete), no la da de
@@ -111,7 +139,7 @@ class TestSiembraDePermisosDeKpi(BackendTestCase):
             fila = db.scalar(
                 select(NmPermissionKpi)
                 .join(KpiDefinition, KpiDefinition.id_kpi_definition == NmPermissionKpi.id_kpi_definition)
-                .where(KpiDefinition.clave == "articulos_bajo_stock")
+                .where(KpiDefinition.clave == "material_por_estado")
             )
             db.delete(fila)
 
@@ -119,7 +147,7 @@ class TestSiembraDePermisosDeKpi(BackendTestCase):
 
         self.assertEqual(0, codigo)
         self.assertIn("Insertadas: 1", salida)
-        self.assertEqual(["articulos_bajo_stock", "incidentes_resueltos_por_empleado"], self._vistos())
+        self.assertEqual(self.ADSER_KPIS, self._vistos())
 
     def test_rol_inexistente_se_reporta_y_no_se_crea(self):
         with transaction_context() as db:
