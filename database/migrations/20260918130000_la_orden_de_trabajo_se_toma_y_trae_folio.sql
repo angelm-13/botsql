@@ -37,11 +37,19 @@ BEGIN;
 -- la lista un instante antes de que la siguiente la ampliara de nuevo -- y
 -- si ya existe una fila real de esos eventos, el ADD CONSTRAINT revienta
 -- contra esa fila. Se deja aqui de una vez la union completa.
+--
+-- 'task_status_changed'/'task_note' tambien van aqui por el mismo motivo:
+-- `task_service.py` (transition_task/add_task_note) los escribe desde antes
+-- de este commit, y un ADD CONSTRAINT que no los incluya revienta de
+-- inmediato contra cualquier base con proyectos reales que ya tengan uno de
+-- esos eventos -- no contra un volumen vacio, que es donde se probo esto
+-- antes de encontrar el problema en datos reales (tyakxa-dev, 2026-09-28).
 ALTER TABLE proyect_event DROP CONSTRAINT IF EXISTS proyect_event_event_type_check;
 
 ALTER TABLE proyect_event ADD CONSTRAINT proyect_event_event_type_check CHECK (
     event_type IN (
         'created', 'status_changed', 'message', 'task_event',
+        'task_status_changed', 'task_note',
         -- El recorrido comercial, que corre en paralelo al de taller.
         'management_transition',
         -- Lo acordado y lo cobrado, cada uno por su lado.

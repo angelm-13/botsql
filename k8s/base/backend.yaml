@@ -200,7 +200,15 @@ spec:
       containers:
         - name: celery-worker
           image: WORKER_IMAGE_PLACEHOLDER
-          command: ["celery", "-A", "celery_worker.celery", "worker", "--loglevel=INFO"]
+          # --concurrency=2: sin esta bandera celery autodetecta el numero
+          # de CPUs del NODO (no el 0.4 real que el pod tiene asignado abajo)
+          # y forkeaba 4 procesos hijo, cada uno con la app completa cargada
+          # -- funciono mientras la app era mas chica, y el crecimiento
+          # normal (notificaciones, bitacoras de actividad) lo tumbo con
+          # OOMKilled real en el primer task recibido (medido en tyakxa-dev
+          # y torredigital-prod, 2026-09-28). 2 procesos es proporcional al
+          # limite de CPU real de este pod.
+          command: ["celery", "-A", "celery_worker.celery", "worker", "--loglevel=INFO", "--concurrency=2"]
           env:
             # Ver nota de TZ en el Deployment "backend": misma app, mismo reloj.
             - name: TZ
@@ -211,10 +219,10 @@ spec:
           resources:
             requests:
               cpu: 100m
-              memory: 128Mi
+              memory: 160Mi
             limits:
               cpu: 400m
-              memory: 256Mi
+              memory: 320Mi
           livenessProbe:
             # No hay endpoint HTTP en un worker de Celery — "inspect ping"
             # confirma que el proceso sigue respondiendo a control commands
