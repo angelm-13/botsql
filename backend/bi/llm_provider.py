@@ -136,8 +136,9 @@ class ProveedorOllama(ProveedorLLM):
         # muestre el otro como disponible.
         modelo: str = "qwen2.5-coder:7b",
         # Medido real, sin GPU: una pregunta libre de este modulo tardo
-        # 90-100s de punta a punta en CPU pura. Con GPU baja a segundos.
-        timeout: int = 240,
+        # 90-100s de punta a punta en CPU pura, y 166s dentro de Docker con
+        # otros contenedores compitiendo por CPU. Con GPU baja a segundos.
+        timeout: int = 270,
         temperatura: float = 0.0,
         num_ctx: int = 8192,
     ):

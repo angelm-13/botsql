@@ -91,7 +91,7 @@ NOMBRES = ["Ana Rivas", "Luis Cordero", "Marta Peña", "Iván Soto",
 DIAS_POR_MES = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 
 
-def sembrar() -> None:
+def sembrar(database_url: str | None = None) -> None:
     """Crea y llena la base de demostracion. Es determinista.
 
     Los importes NO son aleatorios planos: llevan una tendencia de
@@ -102,14 +102,33 @@ def sembrar() -> None:
 
     La semilla es fija para que dos personas que corran la demostracion vean
     exactamente los mismos numeros y puedan compararlos.
+
+    Sin argumento siembra el archivo SQLite de siempre (`demo.py` suelto).
+    Con una URL de Postgres, siembra ahi -- lo usa
+    `seed_demo_postgres.py` para dar una base generica de verdad al stack de
+    Docker Compose, en vez de solo al camino sin Docker. El DDL es el mismo
+    en los dos motores a proposito: no hay nada especifico de SQLite aqui
+    (los IDs siempre se dan explicitos, asi que ni siquiera hace falta un
+    autoincremental).
     """
-    if RUTA.exists():
-        RUTA.unlink()
+    if database_url is None:
+        if RUTA.exists():
+            RUTA.unlink()
+        database_url = f"sqlite:///{RUTA}"
 
     azar = random.Random(20260922)
-    motor = create_engine(f"sqlite:///{RUTA}", future=True, poolclass=NullPool)
+    motor = create_engine(database_url, future=True, poolclass=NullPool)
 
     with motor.begin() as con:
+        # DROP primero, en orden inverso a las llaves foraneas: hace que
+        # sembrar() se pueda correr mas de una vez contra la misma base de
+        # Postgres (un contenedor que se reinicia, o alguien que vuelve a
+        # levantar el stack de demostracion) sin toparse con "la tabla ya
+        # existe". `CASCADE` es sintaxis de Postgres que SQLite no entiende
+        # -- confirmado con una prueba real, no supuesto -- por eso el orden
+        # se respeta a mano en vez de usar CASCADE en los dos motores.
+        for tabla in ("ventas", "user_mfa", "alembic_version", "empleados", "productos", "clientes"):
+            con.execute(text(f"DROP TABLE IF EXISTS {tabla}"))
         for ddl in ESQUEMA:
             con.execute(text(ddl))
 

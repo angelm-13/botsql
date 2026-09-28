@@ -22,7 +22,7 @@ RUN pip install --no-cache-dir -r requirements.txt \
     && apt-get purge -y --auto-remove gcc libpq-dev
 
 COPY bi/ ./bi/
-COPY app.py demo.py wsgi.py ./
+COPY app.py demo.py wsgi.py seed_demo_postgres.py ./
 
 # Usuario sin privilegios: el proceso no tiene por que poder escribir su
 # propio codigo.
@@ -34,5 +34,13 @@ EXPOSE 5001
 # El tiempo de espera va alto a proposito: una respuesta de un modelo local
 # puede tardar decenas de segundos, y el valor por omision de gunicorn (30s)
 # cortaria la peticion justo antes de que el modelo conteste.
-CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5001", "--timeout", "180", \
+#
+# 300 y no 180: medido en la practica dentro de Docker (con otros
+# contenedores compitiendo por CPU), una pregunta real tardo 166s de punta a
+# punta -- mas de lo que BI_LLM_TIMEOUT (240s) por si solo hacia pensar, y
+# gunicorn mataba al trabajador por "silencioso" ANTES de que la aplicacion
+# llegara a decidir que el modelo tardaba demasiado. El timeout de esta capa
+# tiene que quedar por ENCIMA de BI_LLM_TIMEOUT, nunca por debajo -- si no,
+# el sintoma no es un error claro, es una respuesta vacia sin explicacion.
+CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5001", "--timeout", "300", \
      "--access-logfile", "-", "wsgi:application"]

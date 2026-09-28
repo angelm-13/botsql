@@ -1,0 +1,68 @@
+# Stack de DEMOSTRACION: agrega una base PostgreSQL real, sembrada con el
+# mismo dataset generico que usa `demo.py` (clientes, productos, empleados,
+# ventas), y el rol de solo lectura `bi_lector` ya creado -- exactamente
+# como pide `docs/DESPLIEGUE.md`.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --build
+#   -> frontend en http://localhost:8090
+#
+# El unico proposito es mostrar el flujo completo -- Docker, nginx, un
+# Postgres real, el rol de solo lectura -- funcionando de punta a punta
+# antes de apuntarlo a una base de verdad. Pasar a produccion es dejar de
+# usar este archivo y poner su propio `BI_DATABASE_URL` en `.env`: el
+# `docker-compose.yml` base no cambia en nada.
+#
+# Esta base VIVE Y MUERE con el volumen `postgres_demo`. Si quiere
+# empezar de cero: `docker compose -f docker-compose.yml -f
+# docker-compose.demo.yml down -v`.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_demo
+      POSTGRES_DB: erp_demo
+    volumes:
+      - postgres_demo:/var/lib/postgresql/data
+    # Sin publicar el puerto al host a proposito: nada fuera del stack
+    # deberia conectarse aqui directo, ni siquiera para probar -- si se
+    # quiere ver los datos con psql, es `docker compose exec db psql -U
+    # postgres erp_demo`.
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d erp_demo"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Un solo disparo: siembra los datos y crea `bi_lector`, y termina. No es
+  # un servicio de los que quedan corriendo -- por eso `restart: "no"`.
+  seed:
+    build: ./backend
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    # `command:` y no `entrypoint:`: el Dockerfile solo define CMD (no
+    # ENTRYPOINT), asi que `command:` lo reemplaza limpio. Con `entrypoint:`
+    # Docker le habria pegado el CMD original (el arranque de gunicorn) como
+    # argumentos de mas, detras de la URL.
+    command: ["python", "seed_demo_postgres.py",
+             "postgresql+psycopg2://postgres:postgres_demo@db:5432/erp_demo"]
+
+  backend:
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    environment:
+      # Sobreescribe el BI_DATABASE_URL obligatorio del archivo base: aqui
+      # ya no hace falta que el usuario ponga el suyo en .env, apunta a la
+      # base de demostracion que acaba de sembrar el servicio `seed`, con
+      # el rol de solo lectura -- nunca con el superusuario `postgres`.
+      BI_DATABASE_URL: "postgresql+psycopg2://bi_lector:bi_lector_demo@db:5432/erp_demo"
+
+volumes:
+  postgres_demo:

@@ -60,9 +60,13 @@ class AjustesBI:
     modelo: str = "qwen2.5-coder:7b"
     # 120s alcanza con GPU; en CPU pura una sola pregunta ya mide ~90s de
     # punta a punta (medido de verdad, no estimado) y un tablero de varios
-    # widgets puede acercarse al limite. Se sube el doble como margen real,
-    # no arbitrario.
-    timeout_llm: int = 240
+    # widgets puede acercarse al limite. Dentro de Docker, con otros
+    # contenedores compitiendo por CPU, se midio 166s en una corrida real --
+    # por eso 270 y no 240. Tiene que quedar POR DEBAJO del timeout de
+    # gunicorn y de nginx (backend/Dockerfile, frontend/nginx.conf, 300s los
+    # dos): si esta capa no corta primero, el sintoma que ve quien pregunta
+    # es un 504 vacio en vez del error claro que da esta aplicacion.
+    timeout_llm: int = 270
     temperatura: float = 0.0
 
     # -- ejecucion -----------------------------------------------------------

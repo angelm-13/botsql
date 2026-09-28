@@ -7,8 +7,9 @@ según qué quiera comprobar.
 |---|---|---|---|
 | A | Sin Docker | Python (+ Node opcional) | Que el módulo funciona en esta máquina |
 | B | Un contenedor Docker | Docker | Que la imagen de demostración funciona igual, aislada |
-| C | Docker Compose completo | Docker + una base PostgreSQL | Que el despliegue real —nginx, proxy, base externa— funciona |
-| D | Preguntas libres, con modelo real | Ollama | Que responde CUALQUIER pregunta con datos exactos, no solo las de un guion |
+| C | Docker Compose + Postgres de demostración incluido | Docker | El stack completo -- nginx, backend, Postgres real, rol de solo lectura -- de un solo comando, sin configurar nada |
+| D | Docker Compose contra SU PostgreSQL | Docker + una base PostgreSQL propia | Que el despliegue real, contra una base externa de verdad, funciona |
+| E | Preguntas libres, con modelo real | Ollama | Que responde CUALQUIER pregunta con datos exactos, no solo las de un guion |
 
 Las tres están **verificadas en esta sesión**, no solo escritas: los
 resultados exactos de cada comprobación están al final de este documento.
@@ -59,13 +60,51 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST localhost:8500/api/v1/bi/query 
 
 ---
 
-## C. Docker Compose completo, contra PostgreSQL real
+## C. Docker Compose + Postgres de demostración incluido
 
-Esta es la que de verdad prueba el despliegue: nginx haciendo de proxy,
-backend con gunicorn, y una base **externa** de verdad — no SQLite. Sirve
-para validar antes de tocar la base de un cliente.
+La forma más simple de ver el stack de producción completo (nginx +
+backend + PostgreSQL real, con el rol de solo lectura ya creado) sin tener
+que traer su propia base ni editar `.env`. Trae su propio Postgres de
+juguete, sembrado con el mismo dataset genérico de `demo.py`.
 
-### C1. Levante una base de prueba (o use la suya)
+```bash
+cd modulo_bi
+docker compose -f docker-compose.yml -f docker-compose.demo.yml up -d --build
+```
+
+Un servicio `seed` (de un solo disparo) siembra los datos y crea el rol
+`bi_lector` antes de que el backend arranque -- compose espera a que termine
+bien (`condition: service_completed_successfully`) antes de levantar el
+backend, así que no hay una carrera entre "la base ya tiene datos" y "el
+backend ya intentó conectarse".
+
+Abre en `http://localhost:8090`. Verifique igual que en la forma D/E de abajo:
+`/health` con `"motor": "postgresql"` y `advertencias: []`, el esquema con
+la llave foránea detectada, y que `bi_lector` de verdad no puede escribir
+(`docker compose exec db psql -U bi_lector -d erp_demo -c "INSERT INTO clientes (nombre) VALUES ('x')"`
+tiene que fallar con `permission denied`).
+
+**Esta base es solo para probar.** Vive en el volumen `postgres_demo` y se
+va con él:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.demo.yml down -v
+```
+
+Para pasar a una base real, deje de usar `docker-compose.demo.yml` y ponga
+su propio `BI_DATABASE_URL` en `.env` -- el `docker-compose.yml` base no
+cambia en nada, es exactamente el mismo archivo.
+
+---
+
+## D. Docker Compose completo, contra SU PostgreSQL
+
+Esta es la que de verdad prueba el despliegue contra algo que no controla
+este módulo: nginx haciendo de proxy, backend con gunicorn, y una base
+**externa** de verdad, la suya. Sirve para validar antes de tocar la base
+de un cliente.
+
+### D1. Levante una base de prueba (o use la suya)
 
 Si no tiene una PostgreSQL a mano, cree una temporal:
 
@@ -96,7 +135,7 @@ SQL
 Esto es exactamente lo que dice [DESPLIEGUE.md §1](DESPLIEGUE.md#1-antes-de-nada-el-rol-de-solo-lectura)
 para un despliegue real — pruébelo aquí primero, sobre datos que no importan.
 
-### C2. Configure y levante el compose
+### D2. Configure y levante el compose
 
 ```bash
 cp .env.example .env
@@ -117,7 +156,7 @@ paso.)
 docker compose up -d --build
 ```
 
-### C3. Verifique
+### D3. Verifique
 
 ```bash
 curl -s localhost:8090/api/v1/bi/health | python -m json.tool
@@ -140,7 +179,7 @@ comportamiento correcto: se nota la diferencia entre "no hay modelo" y "algo
 se rompió". Con Ollama arriba (`BI_OLLAMA_URL` en el `.env`), pregunte de
 verdad.
 
-### C4. Limpie
+### D4. Limpie
 
 ```bash
 docker compose down
@@ -149,7 +188,7 @@ docker rm -f pg-prueba
 
 ---
 
-## D. Preguntas libres, con modelo real y datos exactos
+## E. Preguntas libres, con modelo real y datos exactos
 
 Esta es la prueba que de verdad importa: que el módulo responde **cualquier**
 pregunta —no solo las de un guion de ejemplo— traduciéndola a SQL real y
@@ -188,7 +227,7 @@ Y compare contra lo que devuelve `curl -s localhost:8500/api/v1/bi/query ... | p
 
 Para que quien lea esto sepa exactamente qué se comprobó y qué no.
 
-**Modelo real, preguntas libres (forma D) — la prueba central.** Contra
+**Modelo real, preguntas libres (forma E) — la prueba central.** Contra
 `qwen2.5-coder:7b` real vía Ollama, en CPU pura (sin GPU), tres preguntas
 **nunca vistas por ningún guion**, cada una comparada contra una consulta
 SQL escrita a mano sobre la misma base:
@@ -226,6 +265,31 @@ Ollama) — Ollama compara el tag exacto, así que la generación fallaría con
 (esa comprobación sí tolera la diferencia de tag; la generación no). Corregido
 el valor por omisión en todo el código y la documentación.
 
+**Compose con Postgres de demostración incluido (forma C) — de punta a punta,
+con un fallo real encontrado en el camino.** El servicio `seed` sembró los
+datos y creó `bi_lector` en un solo disparo, el backend esperó a que
+terminara antes de arrancar (`condition: service_completed_successfully`),
+`/health` conectó de verdad contra Postgres sin advertencias, y `bi_lector`
+confirmó no poder escribir (`permission denied`) incluso conectándose con
+`psql` directo, sin pasar por la aplicación.
+
+La primera corrida de una pregunta libre real, sin embargo, **falló con un
+504 y cuerpo vacío** después de 166 segundos. La causa no era el modelo ni la
+aplicación: `gunicorn` (`backend/Dockerfile`, `--timeout 180`) y `nginx`
+(`frontend/nginx.conf`, `proxy_read_timeout 180s`) tenían **su propio**
+tiempo de espera, más corto que `BI_LLM_TIMEOUT` (240s en ese momento) --
+dentro de Docker, compitiendo por CPU con otros contenedores del mismo
+equipo, la pregunta tardó 166s, y `gunicorn` mató al trabajador por
+"silencioso" antes de que la aplicación llegara a decidir nada. El síntoma
+para quien pregunta es el peor posible: nada, sin explicación.
+
+Corregido subiendo las tres capas en el orden correcto -- la de la
+aplicación siempre por debajo de la infraestructura que la envuelve, para
+que sea la aplicación la que explique el error y no un `504` mudo:
+`BI_LLM_TIMEOUT` a 270s, `gunicorn --timeout` y `proxy_read_timeout`/
+`proxy_send_timeout` de nginx a 300s. Reintentada la misma pregunta después
+del arreglo: exitosa.
+
 **Imagen de demostración (forma B).** Construida y corrida. `id` dentro del
 contenedor confirma el usuario sin privilegios (`uid=10001`, no root). La
 interfaz sirvió en `/` con `HTTP 200`, `/health` reportó `ok`, un tablero
@@ -233,7 +297,7 @@ completo devolvió 5 widgets con datos reales, y la petición destructiva
 devolvió `HTTP 403`. Verificado además en un navegador real, no solo con
 `curl`.
 
-**Compose completo (forma C), contra PostgreSQL 16 real.** Las tres imágenes
+**Compose completo (forma D), contra PostgreSQL 16 real.** Las tres imágenes
 compilaron. El stack completo respondió desde fuera del contenedor, por el
 proxy de nginx: `/health` con `"motor": "postgresql"` y `advertencias: []`;
 el esquema extraído mostró la tabla `ventas` con `id_cliente` marcado
@@ -255,7 +319,7 @@ final importa `psycopg2` y `pymysql` sin problema y pesa 511 MB.
 
 **Lo que no se probó**: el modelo real dentro de Docker (formas B y C usaron
 el modelo simulado o ningún modelo, no `qwen2.5-coder:7b` con GPU real -- solo
-la forma A/D, sin Docker, se probó con el modelo real); el perfil
+la forma A/E, sin Docker, se probó con el modelo real; y la forma C, nueva, ya trae su propio Postgres de demostración con el rol de solo lectura); el perfil
 `con-modelo` del compose (Ollama dentro del mismo stack); un modelo más
 grande que `7b`; y el despliegue sin Docker con `gunicorn` a mano (sección 5
 de `DESPLIEGUE.md`).

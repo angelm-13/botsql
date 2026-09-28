@@ -22,19 +22,31 @@ services:
     build: ./backend
     restart: unless-stopped
     environment:
-      # OBLIGATORIO. Use un rol de SOLO LECTURA, no el superusuario: es la
-      # unica barrera que no depende de que el validador sea perfecto.
-      BI_DATABASE_URL: ${BI_DATABASE_URL:?falta BI_DATABASE_URL}
+      # Sin valor por omision real a proposito -- pero tampoco `:?` duro:
+      # eso rompia `docker-compose.demo.yml` (ese override SI fija un valor
+      # real, pero la sustitucion de este archivo se evalua antes del
+      # merge, asi que un `:?` aqui truena aunque el override lo vaya a
+      # reemplazar). La barrera de verdad vive en la aplicacion
+      # (`app.py::crear_engine`), que se niega a arrancar sin esto -- con un
+      # mensaje mas completo que el que podria dar aqui, con ejemplos por
+      # motor.
+      #
+      # OBLIGATORIO en un despliegue real. Use un rol de SOLO LECTURA, no el
+      # superusuario: es la unica barrera que no depende de que el
+      # validador sea perfecto.
+      BI_DATABASE_URL: ${BI_DATABASE_URL:-}
 
       BI_OLLAMA_URL: ${BI_OLLAMA_URL:-http://host.docker.internal:11434}
       # Tiene que ser el tag EXACTO ya descargado (`ollama list`): este y
       # "qwen2.5-coder:7b-instruct" son el mismo modelo en el registro, pero
       # Ollama los trata como pulls distintos.
       BI_MODEL: ${BI_MODEL:-qwen2.5-coder:7b}
-      # Medido real en CPU pura: ~90-100s por pregunta. Con GPU baja a
-      # segundos; sin ella, 120s (el valor por omision del modulo) se queda
-      # corto.
-      BI_LLM_TIMEOUT: ${BI_LLM_TIMEOUT:-240}
+      # Medido real: ~90-100s por pregunta en CPU pura, 166s dentro de
+      # Docker con otros contenedores compitiendo por CPU. Con GPU baja a
+      # segundos. Tiene que quedar por debajo del timeout de gunicorn
+      # (backend/Dockerfile) y de nginx (frontend/nginx.conf), los dos en
+      # 300s -- si no, el sintoma es un 504 vacio en vez de un error claro.
+      BI_LLM_TIMEOUT: ${BI_LLM_TIMEOUT:-270}
 
       # Que ve el modelo. Vacio = todo lo que no caiga en la lista negra.
       BI_INCLUDE_TABLES: ${BI_INCLUDE_TABLES:-}
