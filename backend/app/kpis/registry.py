@@ -51,7 +51,50 @@ DIMENSION_JSON_KEY = {
     "empleado": "id_user",
     "producto": "id_product",
     "global": None,
+    # El valor de cada fila no es un id de entidad sino el nombre de una
+    # categoria fija (ej. "abierta"/"cerrada", "Entrada"/"Salida"/...) -- ver
+    # `incidencias_abiertas_vs_cerradas_query`/`material_por_estado_query`.
+    # `_totales()` en routes/kpi.py ya es generico sobre el TIPO del valor
+    # que guarda `dimension_key` (siempre lo compara como texto via
+    # `.astext`), asi que un string de categoria funciona igual que un id.
+    "estado": "estado",
 }
+
+# Los 4 niveles de "que tan buena es una variacion" para un KPI, declarados
+# por cada uno en `direccion` (ver KpiDefinition): "alto_es_mejor" (ventas,
+# resueltos...), "bajo_es_mejor" (vencidos, cancelaciones...) y "neutral"
+# cuando mas/menos no es en si bueno ni malo (es solo volumen/actividad,
+# ej. material_prestado_por_responsable). La consume el frontend para
+# colorear la flecha de variacion del widget de tipo numero -- sin esto,
+# "subio" se pintaba siempre de verde sin importar si subir es deseable.
+DIRECCIONES = ("alto_es_mejor", "bajo_es_mejor", "neutral")
+
+# Tipos de grafica que existen hoy en el frontend (numero/barras/linea/
+# area/dona) mas "tabla" (declarada aqui aunque el renderer de frontend
+# todavia no exista -- se agrega con el rediseno del dashboard). Cada KPI
+# declara cuales le aplican (`graficas_permitidas`) y cual se preselecciona
+# (`grafica_default`).
+GRAFICAS = ("numero", "barras", "linea", "area", "dona", "tabla")
+
+# "snapshot": el KPI de siempre -- su query_builder lo llama la tarea
+# nocturna (`app/jobs/tasks_kpis.py`) y el backfill manual, y el resultado
+# vive en `kpi_snapshot`; declara `agregacion` porque hay que combinar varios
+# dias. "vivo": el KPI NO pasa por el job ni por `kpi_snapshot` -- su
+# query_builder se llama en el momento de renderizar el widget, sobre datos
+# de detalle (ej. cada renglon de un prestamo individual, con su fecha
+# exacta) que no caben en "un numero por entidad y dia". No declara
+# `agregacion` (no hay nada que combinar entre dias: siempre es "ahora").
+MODOS = ("snapshot", "vivo")
+
+# Vocabulario cerrado de unidades -- igual que AGREGACIONES, revienta al
+# importar si un KPI declara una que no este aqui. El formato visual de cada
+# una (que sufijo/simbolo mostrar) es trabajo del frontend, no de este
+# registro -- ver el rediseno del dashboard.
+UNIDADES = ("numero", "porcentaje", "moneda", "dias")
+
+# Vocabulario cerrado de dimensiones -- "estado" es nueva (ver
+# DIMENSION_JSON_KEY arriba), las otras tres ya existian sin validarse.
+DIMENSIONES = ("empleado", "producto", "global", "estado")
 
 # Como se combinan varios snapshots de un KPI (varios dias, varios proyectos)
 # en un solo numero -- lo declara cada KPI en `agregacion`, sin valor por
@@ -774,17 +817,38 @@ def articulos_bajo_stock_query(session, fecha_inicio, fecha_fin, filtros_dimensi
 
 class KpiDefinition:
     def __init__(self, clave, etiqueta, modulo, dimensiones,
-                 query_builder, *, agregacion, unidad="numero", alcance_proyecto=True):
+                 query_builder, *, direccion, graficas_permitidas, grafica_default,
+                 agregacion=None, unidad="numero", alcance_proyecto=True, modo="snapshot"):
         self.clave = clave
         self.etiqueta = etiqueta
         self.modulo = modulo               # clave de MODULOS en app/modules/registry.py
         self.dimensiones = dimensiones      # tupla, ej. ("empleado",)
         self.query_builder = query_builder  # ver firma de ventas_por_empleado_query
-        # Obligatorio y sin valor por omision (ver AGREGACIONES): un KPI que no
-        # la declare revienta con TypeError al importar este modulo, en vez de
-        # caer en una suma silenciosa que solo es correcta para conteos/montos.
+        # Si el KPI vive en `kpi_snapshot` con recalculo periodico ("snapshot",
+        # el default -- los 16 KPIs de siempre) o si su query_builder se llama
+        # EN VIVO al renderizar el widget, sobre datos de detalle que no caben
+        # en "un numero por entidad y dia" (ej. cada renglon de un prestamo
+        # individual con su fecha exacta) -- ver MODOS arriba.
+        self.modo = modo
+        # Obligatoria para un KPI "snapshot" (revienta en _validar() si falta,
+        # no con TypeError -- antes era un kwarg sin default y Python lo
+        # exigia solo; ahora la exigencia es condicional al modo, asi que se
+        # valida a mano). Un KPI "vivo" NO debe declararla: no hay nada que
+        # combinar entre dias, siempre es "ahora" -- ver AGREGACIONES.
         self.agregacion = agregacion
         self.unidad = unidad
+        # Como colorear una variacion (flecha del widget de tipo numero):
+        # "alto_es_mejor"/"bajo_es_mejor"/"neutral" -- obligatorio y sin
+        # default a proposito, igual que `agregacion`: un KPI sin esta
+        # decision explicita de negocio revienta al importar. Ver DIRECCIONES.
+        self.direccion = direccion
+        # Que tipos de grafica puede mostrar este KPI y cual va preseleccionado
+        # -- ver GRAFICAS. Obligatorios y sin default: hoy no los lee ningun
+        # endpoint ni el frontend (es metadato puro, preparado para el
+        # rediseno del dashboard), pero se exigen desde ya para que ningun KPI
+        # nuevo se quede sin esta decision tomada.
+        self.graficas_permitidas = graficas_permitidas
+        self.grafica_default = grafica_default
         # Si el KPI se calcula UNA VEZ POR PROYECTO ACTIVO (True, el default
         # -- lo que ya hacian los primeros 3 KPIs, todos sobre entidades que
         # SI tienen id_proyect) o UNA SOLA VEZ, sin filtro de proyecto
@@ -801,6 +865,16 @@ class KpiDefinition:
         self.alcance_proyecto = alcance_proyecto
 
 
+# Los 16 KPIs de siempre no restringen tipo de grafica -- hoy nada valida
+# `graficas_permitidas` en ningun endpoint ni en el frontend, y no hay
+# visibilidad de que widgets reales ya existen configurados en cada
+# ambiente. Restringir de mas aqui podria invalidar en el futuro (cuando el
+# rediseno del dashboard SI empiece a leer este campo) un widget que alguien
+# ya configuro con una grafica que aqui se hubiera excluido. Los KPIs NUEVOS
+# de esta tarea si declaran un conjunto acotado: no tienen ningun widget real
+# configurado todavia en ningun ambiente.
+TODAS_LAS_GRAFICAS = GRAFICAS
+
 KPI_REGISTRY = (
     KpiDefinition(
         clave="ventas_por_empleado",
@@ -810,6 +884,9 @@ KPI_REGISTRY = (
         query_builder=ventas_por_empleado_query,
         agregacion="suma",
         unidad="moneda",
+        direccion="alto_es_mejor",
+        graficas_permitidas=TODAS_LAS_GRAFICAS,
+        grafica_default="barras",
     ),
     KpiDefinition(
         clave="egresos_por_empleado",
@@ -819,6 +896,9 @@ KPI_REGISTRY = (
         query_builder=egresos_por_empleado_query,
         agregacion="suma",
         unidad="moneda",
+        direccion="bajo_es_mejor",
+        graficas_permitidas=TODAS_LAS_GRAFICAS,
+        grafica_default="barras",
     ),
     KpiDefinition(
         clave="desarrollo_por_empleado",
@@ -828,6 +908,9 @@ KPI_REGISTRY = (
         query_builder=desarrollo_por_empleado_query,
         agregacion="promedio_ponderado",
         unidad="porcentaje",
+        direccion="alto_es_mejor",
+        graficas_permitidas=TODAS_LAS_GRAFICAS,
+        grafica_default="barras",
     ),
     KpiDefinition(
         clave="vales_vencidos_por_responsable",
@@ -838,6 +921,9 @@ KPI_REGISTRY = (
         agregacion="suma",
         unidad="numero",
         alcance_proyecto=False,
+        direccion="bajo_es_mejor",
+        graficas_permitidas=TODAS_LAS_GRAFICAS,
+        grafica_default="tabla",
     ),
     KpiDefinition(
         clave="incidentes_resueltos_por_empleado",
@@ -848,6 +934,9 @@ KPI_REGISTRY = (
         agregacion="promedio_ponderado",
         unidad="porcentaje",
         alcance_proyecto=False,
+        direccion="alto_es_mejor",
+        graficas_permitidas=TODAS_LAS_GRAFICAS,
+        grafica_default="barras",
     ),
     KpiDefinition(
         clave="cancelaciones_por_empleado",
@@ -858,6 +947,9 @@ KPI_REGISTRY = (
         agregacion="suma",
         unidad="numero",
         alcance_proyecto=False,
+        direccion="bajo_es_mejor",
+        graficas_permitidas=TODAS_LAS_GRAFICAS,
+        grafica_default="barras",
     ),
     KpiDefinition(
         clave="ordenes_laboratorio_entregadas_por_tecnico",
@@ -867,6 +959,9 @@ KPI_REGISTRY = (
         query_builder=ordenes_laboratorio_entregadas_por_tecnico_query,
         agregacion="suma",
         unidad="numero",
+        direccion="alto_es_mejor",
+        graficas_permitidas=TODAS_LAS_GRAFICAS,
+        grafica_default="barras",
     ),
     KpiDefinition(
         clave="tiempo_promedio_reparacion_laboratorio_por_tecnico",
@@ -876,6 +971,9 @@ KPI_REGISTRY = (
         query_builder=tiempo_promedio_reparacion_laboratorio_por_tecnico_query,
         agregacion="promedio_ponderado",
         unidad="dias",
+        direccion="bajo_es_mejor",
+        graficas_permitidas=TODAS_LAS_GRAFICAS,
+        grafica_default="barras",
     ),
     KpiDefinition(
         clave="costo_promedio_reparacion_laboratorio_por_tecnico",
@@ -885,6 +983,9 @@ KPI_REGISTRY = (
         query_builder=costo_promedio_reparacion_laboratorio_por_tecnico_query,
         agregacion="promedio_ponderado",
         unidad="moneda",
+        direccion="neutral",
+        graficas_permitidas=TODAS_LAS_GRAFICAS,
+        grafica_default="barras",
     ),
     KpiDefinition(
         clave="documentos_vencidos_por_responsable",
@@ -894,6 +995,9 @@ KPI_REGISTRY = (
         query_builder=documentos_vencidos_por_responsable_query,
         agregacion="suma",
         unidad="numero",
+        direccion="bajo_es_mejor",
+        graficas_permitidas=TODAS_LAS_GRAFICAS,
+        grafica_default="tabla",
     ),
     # --- variables/KPIs adicionales (pedido de Aurora: "opcionales,
     # adicionales", para comparar variables como ingresos vs egresos en un
@@ -906,6 +1010,9 @@ KPI_REGISTRY = (
         query_builder=ingresos_totales_query,
         agregacion="suma",
         unidad="moneda",
+        direccion="alto_es_mejor",
+        graficas_permitidas=TODAS_LAS_GRAFICAS,
+        grafica_default="linea",
     ),
     KpiDefinition(
         clave="egresos_totales",
@@ -915,6 +1022,9 @@ KPI_REGISTRY = (
         query_builder=egresos_totales_query,
         agregacion="suma",
         unidad="moneda",
+        direccion="bajo_es_mejor",
+        graficas_permitidas=TODAS_LAS_GRAFICAS,
+        grafica_default="linea",
     ),
     KpiDefinition(
         clave="material_prestado_por_responsable",
@@ -925,6 +1035,9 @@ KPI_REGISTRY = (
         agregacion="suma",
         unidad="numero",
         alcance_proyecto=False,
+        direccion="neutral",
+        graficas_permitidas=TODAS_LAS_GRAFICAS,
+        grafica_default="barras",
     ),
     KpiDefinition(
         clave="prestamos_vencidos_por_responsable",
@@ -935,6 +1048,9 @@ KPI_REGISTRY = (
         agregacion="suma",
         unidad="numero",
         alcance_proyecto=False,
+        direccion="bajo_es_mejor",
+        graficas_permitidas=TODAS_LAS_GRAFICAS,
+        grafica_default="tabla",
     ),
     KpiDefinition(
         clave="lotes_proximos_a_caducar",
@@ -945,6 +1061,9 @@ KPI_REGISTRY = (
         agregacion="suma",
         unidad="numero",
         alcance_proyecto=False,
+        direccion="bajo_es_mejor",
+        graficas_permitidas=TODAS_LAS_GRAFICAS,
+        grafica_default="tabla",
     ),
     KpiDefinition(
         clave="articulos_bajo_stock",
@@ -955,6 +1074,9 @@ KPI_REGISTRY = (
         agregacion="ultimo",
         unidad="numero",
         alcance_proyecto=False,
+        direccion="bajo_es_mejor",
+        graficas_permitidas=TODAS_LAS_GRAFICAS,
+        grafica_default="tabla",
     ),
 )
 
@@ -1005,10 +1127,54 @@ def _validar():
             raise RuntimeError(
                 f"El KPI '{kpi.clave}' apunta al modulo inexistente '{kpi.modulo}'."
             )
-        if kpi.agregacion not in AGREGACIONES:
+        if kpi.modo not in MODOS:
+            raise RuntimeError(
+                f"El KPI '{kpi.clave}' declara el modo desconocido '{kpi.modo}' "
+                f"(validos: {', '.join(MODOS)})."
+            )
+        if kpi.modo == "snapshot" and kpi.agregacion is None:
+            raise RuntimeError(
+                f"El KPI '{kpi.clave}' es de modo 'snapshot' y necesita declarar 'agregacion' "
+                f"(validas: {', '.join(AGREGACIONES)})."
+            )
+        if kpi.modo == "vivo" and kpi.agregacion is not None:
+            raise RuntimeError(
+                f"El KPI '{kpi.clave}' es de modo 'vivo': no participa del job ni del backfill, "
+                "no debe declarar 'agregacion'."
+            )
+        if kpi.agregacion is not None and kpi.agregacion not in AGREGACIONES:
             raise RuntimeError(
                 f"El KPI '{kpi.clave}' declara la agregacion desconocida '{kpi.agregacion}' "
                 f"(validas: {', '.join(AGREGACIONES)})."
+            )
+        if kpi.direccion not in DIRECCIONES:
+            raise RuntimeError(
+                f"El KPI '{kpi.clave}' declara la direccion desconocida '{kpi.direccion}' "
+                f"(validas: {', '.join(DIRECCIONES)})."
+            )
+        if kpi.unidad not in UNIDADES:
+            raise RuntimeError(
+                f"El KPI '{kpi.clave}' declara la unidad desconocida '{kpi.unidad}' "
+                f"(validas: {', '.join(UNIDADES)})."
+            )
+        for dimension in kpi.dimensiones:
+            if dimension not in DIMENSIONES:
+                raise RuntimeError(
+                    f"El KPI '{kpi.clave}' declara la dimension desconocida '{dimension}' "
+                    f"(validas: {', '.join(DIMENSIONES)})."
+                )
+        if not kpi.graficas_permitidas:
+            raise RuntimeError(f"El KPI '{kpi.clave}' no declara ninguna grafica permitida.")
+        for grafica in kpi.graficas_permitidas:
+            if grafica not in GRAFICAS:
+                raise RuntimeError(
+                    f"El KPI '{kpi.clave}' declara la grafica desconocida '{grafica}' "
+                    f"(validas: {', '.join(GRAFICAS)})."
+                )
+        if kpi.grafica_default not in kpi.graficas_permitidas:
+            raise RuntimeError(
+                f"El KPI '{kpi.clave}' declara grafica_default='{kpi.grafica_default}' "
+                "que no esta en su propia lista de graficas_permitidas."
             )
 
 
