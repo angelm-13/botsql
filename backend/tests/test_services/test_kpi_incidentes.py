@@ -235,6 +235,43 @@ class KpiIncidentesTest(unittest.TestCase):
 
         self.assertEqual([(EMPLEADO_B, date(2026, 7, 15), Decimal("0.00"), 1)], [tuple(f) for f in filas])
 
+    def test_incidentes_resueltos_cuenta_filas_con_creation_date_nulo(self):
+        # El caso real que motiva este fix: un incidente migrado de Adser
+        # (o cualquier insercion que no pase por IncidentService.create(),
+        # que es lo unico que hoy llena creation_date -- ver el docstring de
+        # la query) trae creation_date NULL pero incident_date real. Antes de
+        # este fix, agrupar por creation_date lo volvia invisible en
+        # cualquier rango; ahora se cuenta por incident_date.
+        with transaction_context() as db:
+            db.add(self._incidente(
+                9718, EMPLEADO_A, "resuelta", creation_date=None, incident_date=datetime(2026, 7, 20, 9, 0),
+            ))
+
+        with transaction_context() as db:
+            filas = incidentes_resueltos_por_empleado_query(db, date(2026, 7, 20), date(2026, 7, 20), {}, None)
+
+        self.assertEqual([(EMPLEADO_A, date(2026, 7, 20), Decimal("100.00"), 1)], [tuple(f) for f in filas])
+
+    def test_incidentes_resueltos_excluye_sin_incident_date(self):
+        # Contrapartida documentada del fix: un incidente sin incident_date
+        # (permitido por incident_service._validate_dates) ahora queda fuera,
+        # aunque tenga creation_date real -- ver el docstring de la query.
+        # Se construye el Incident directo (no con self._incidente): ese
+        # helper hace caer incident_date a creation_date cuando no se pasa,
+        # y aqui se necesita justo lo contrario -- incident_date en None de
+        # verdad, con creation_date real.
+        with transaction_context() as db:
+            db.add(Incident(
+                id_incident=9719, id_incident_type=INCIDENT_TYPE, id_user=EMPLEADO_A,
+                incident_status="resuelta", creation_date=datetime(2026, 7, 21, 9, 0), incident_date=None,
+                created_by=EMPLEADO_A,
+            ))
+
+        with transaction_context() as db:
+            filas = incidentes_resueltos_por_empleado_query(db, date(2026, 7, 21), date(2026, 7, 21), {}, None)
+
+        self.assertEqual([], [tuple(f) for f in filas])
+
     # --- cancelaciones_por_empleado_query --------------------------------
 
     def test_cancelaciones_cuenta_por_dia_de_cierre_no_de_creacion(self):

@@ -336,11 +336,29 @@ def incidentes_resueltos_por_empleado_query(session, fecha_inicio, fecha_fin, fi
     """Porcentaje de incidentes resueltos por empleado responsable (`Incident.id_user`).
 
     * Vigencia: `Incident.deletion_date IS NULL`.
-    * Rango de fechas: `Incident.creation_date` -- mismo campo y mismo
-      criterio que `Task.creation_date` en `desarrollo_por_empleado_query`:
-      `incident_date` es opcional y no siempre lo puebla la captura (ver
-      `incident_service._validate_dates`, puede quedar en NULL), asi que no
-      es un campo de fecha confiable para acotar el universo.
+    * Rango de fechas: `Incident.incident_date`, YA NO `creation_date` (cambio
+      de esta tarea). `creation_date` declara `nullable=False,
+      server_default=func.now()` en el modelo, pero la tabla real en Postgres
+      no tiene ese default (confirmado en `init.sql`: `"creation_date"
+      TIMESTAMP NULL`, sin `DEFAULT`) -- solo queda poblado cuando algo lo
+      asigna a mano. `IncidentService.create()` SI lo hace (hereda
+      `_fill_system_defaults()` de `CrudService`, pensado justo para
+      compensar que `init.sql` no trae el default -- ver su propio
+      comentario), asi que un incidente capturado normal por la app SI trae
+      `creation_date`. Pero `migrate_adser.py::migrar_incident` inserta
+      directo con `session.add(Incident(...))`, sin pasar por ese servicio:
+      los 139 incidentes migrados de Adser quedan con `creation_date` NULL, y
+      `func.date(NULL) >= fecha_inicio` nunca es verdadero -- quedaban
+      invisibles en cualquier rango, para cualquier cliente con datos
+      migrados de un sistema legado.
+      Contrapartida real de este cambio, para que quede documentada: un
+      incidente capturado normal SIN `incident_date` (el propio
+      `incident_service._validate_dates` lo permite en NULL) ahora SI queda
+      fuera de este KPI, cosa que antes no pasaba (via `creation_date`, que
+      la captura normal siempre llena). Se acepta el cambio tal cual lo pide
+      la tarea -- mismo campo que ya usan los KPIs nuevos de este archivo --
+      sin agregar un `COALESCE` a `creation_date` como respaldo, que es una
+      decision de producto aparte, no de esta tarea.
     * Formula: `COUNT(incident_status IN (resuelta, cerrada)) / COUNT(*)`
       por `id_user`, sobre los incidentes CREADOS en el rango. El
       denominador incluye cualquier estatus (`abierta`, `en_proceso`,
@@ -353,13 +371,14 @@ def incidentes_resueltos_por_empleado_query(session, fecha_inicio, fecha_fin, fi
     * Sin alcance de proyecto, mismo motivo que
       `vales_vencidos_por_responsable_query`: `Incident` no tiene
       `id_proyect`.
-    * Una fila por `id_user` y por DIA de creacion, con el numero de
+    * Una fila por `id_user` y por DIA de `incident_date`, con el numero de
       incidentes de ese dia como `peso` -- mismo motivo que
       `desarrollo_por_empleado_query` (`promedio_ponderado`).
     """
-    fecha_col = func.date(Incident.creation_date)
+    fecha_col = func.date(Incident.incident_date)
     condiciones = [
         Incident.deletion_date.is_(None),
+        Incident.incident_date.isnot(None),
         fecha_col >= fecha_inicio,
         fecha_col <= fecha_fin,
     ]
