@@ -219,6 +219,30 @@ def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, enti
     return {**base, 'total': total, 'por_empleado': por_entidad, 'por_periodo': {}}
 
 
+def _con_metadatos_del_registry(kpi_row: KpiDefinition) -> dict:
+    """La fila de `kpi_definition` (BD) mas los campos que solo viven en
+    `KPI_REGISTRY` (en memoria, nunca migrados a la tabla -- ver el
+    comentario de `KpiDefinition.graficas_permitidas` en app/kpis/registry.py).
+    Un `clave` que ya no este en el registro (fila huerfana) cae a defaults
+    neutros en vez de reventar: no debería pasar en un ambiente sano, pero
+    esta ruta ya la usa el dashboard en vivo.
+    """
+    definicion = KPI_POR_CLAVE.get(kpi_row.clave)
+    return {
+        'id_kpi_definition': kpi_row.id_kpi_definition,
+        'clave': kpi_row.clave,
+        'etiqueta': kpi_row.etiqueta,
+        'modulo': kpi_row.modulo,
+        'dimensiones': kpi_row.dimensiones,
+        'unidad': kpi_row.unidad,
+        'direccion': definicion.direccion if definicion else 'neutral',
+        'graficas_permitidas': list(definicion.graficas_permitidas) if definicion else [],
+        'grafica_default': definicion.grafica_default if definicion else None,
+        'modo': definicion.modo if definicion else 'snapshot',
+        'colores_categoria': definicion.colores_categoria if definicion else None,
+    }
+
+
 @bp_kpi.route('/kpi_definition/', methods=['GET'])
 @token_required
 @require_entity_permission('kpi_definition', 'read')
@@ -228,14 +252,7 @@ def list_kpi_definitions(user_data):
             select(KpiDefinition).where(KpiDefinition.deletion_date.is_(None))
         ).all()
         items = [
-            {
-                'id_kpi_definition': kpi.id_kpi_definition,
-                'clave': kpi.clave,
-                'etiqueta': kpi.etiqueta,
-                'modulo': kpi.modulo,
-                'dimensiones': kpi.dimensiones,
-                'unidad': kpi.unidad,
-            }
+            _con_metadatos_del_registry(kpi)
             for kpi in kpis
             if has_kpi_permission(db, user_data, kpi.id_kpi_definition)
         ]

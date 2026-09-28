@@ -1186,7 +1186,8 @@ def material_prestado_actual_query(session, *, limit, offset, actor_project=None
 class KpiDefinition:
     def __init__(self, clave, etiqueta, modulo, dimensiones,
                  query_builder, *, direccion, graficas_permitidas, grafica_default,
-                 agregacion=None, unidad="numero", alcance_proyecto=True, modo="snapshot"):
+                 agregacion=None, unidad="numero", alcance_proyecto=True, modo="snapshot",
+                 colores_categoria=None):
         self.clave = clave
         self.etiqueta = etiqueta
         self.modulo = modulo               # clave de MODULOS en app/modules/registry.py
@@ -1211,12 +1212,21 @@ class KpiDefinition:
         # decision explicita de negocio revienta al importar. Ver DIRECCIONES.
         self.direccion = direccion
         # Que tipos de grafica puede mostrar este KPI y cual va preseleccionado
-        # -- ver GRAFICAS. Obligatorios y sin default: hoy no los lee ningun
-        # endpoint ni el frontend (es metadato puro, preparado para el
-        # rediseno del dashboard), pero se exigen desde ya para que ningun KPI
-        # nuevo se quede sin esta decision tomada.
+        # -- ver GRAFICAS. Obligatorios sin default: un KPI nuevo no se puede
+        # quedar sin esta decision tomada. Expuestos por `GET /kpi_definition/`
+        # (`app/routes/kpi.py`) para que el frontend los lea directo del
+        # registry -- no viven en la tabla `kpi_definition`, no hizo falta
+        # migracion para agregarlos.
         self.graficas_permitidas = graficas_permitidas
         self.grafica_default = grafica_default
+        # Colores fijos por categoria, solo para KPIs de dimension "estado"
+        # con un catalogo cerrado y conocido de antemano (ej.
+        # material_por_estado: Entrada/Salida/Danado/Extraviado/Destruccion)
+        # -- None para el resto. Se declara aqui, no en el frontend, porque es
+        # el mismo tipo de decision de negocio que `direccion`: que color le
+        # toca a "Extraviado" no deberia depender de en que orden lleguen las
+        # categorias a la grafica. dict {valor_de_categoria: "#rrggbb"}.
+        self.colores_categoria = colores_categoria
         # Si el KPI se calcula UNA VEZ POR PROYECTO ACTIVO (True, el default
         # -- lo que ya hacian los primeros 3 KPIs, todos sobre entidades que
         # SI tienen id_proyect) o UNA SOLA VEZ, sin filtro de proyecto
@@ -1503,6 +1513,16 @@ KPI_REGISTRY = (
         direccion="neutral",
         graficas_permitidas=("dona", "tabla"),
         grafica_default="dona",
+        # Verde TYAKXA para Entrada (vuelve, es lo deseable), tinta/navy para
+        # Salida (hecho neutro, no bueno ni malo), ambar/rojo crecientes para
+        # las 3 disposiciones especiales segun que tan grave es cada una.
+        colores_categoria={
+            "Entrada": "#1b7a60",
+            "Salida": "#173b66",
+            "Dañado": "#eda100",
+            "Extraviado": "#e34948",
+            "Destruccion": "#9b3030",
+        },
     ),
     KpiDefinition(
         clave="material_prestado_actual",
