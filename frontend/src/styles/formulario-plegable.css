@@ -24,6 +24,24 @@
    renglon es pulsable sin competir con el titulo. */
 .plegable-pista { margin-left: auto; font-size: 12px; }
 
+/* El truco de "grid-template-rows: 0fr -> 1fr" anima a una altura que nunca
+   se mide en JS -- el propio grid la calcula. El hijo necesita min-height:0
+   para poder encogerse por debajo de su contenido (si no, un grid item nunca
+   baja de su tamano natural) y overflow:hidden para que el contenido no se
+   vea mientras el renglon todavia esta creciendo. */
+.plegable-cuerpo-wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows .22s ease;
+  min-height: 0;
+}
+.plegable-cuerpo-wrap.abierta { grid-template-rows: 1fr; }
+.plegable-cuerpo-wrap > .plegable-cuerpo { overflow: hidden; min-height: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .plegable-cuerpo-wrap { transition: none; }
+}
+
 .plegable-cuerpo {
   padding: 0 22px 22px;
   border-top: 1px solid #e2e8f0;

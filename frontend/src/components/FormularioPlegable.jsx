@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import { ChevronDown, ChevronRight, Plus } from "lucide-react";
 import { useI18n } from "../i18n";
@@ -31,33 +31,91 @@ import "../styles/formulario-plegable.css";
  * Y no se cierra solo al terminar de editar, a propósito: quien acaba de dar
  * de alta algo suele dar de alta otra cosa, y cerrarle el formulario en la
  * cara le obliga a volver a abrirlo. Cerrar es decisión suya.
+ *
+ * `cerrarAlEnviar` es la única excepción a eso, y por lo mismo nace apagada
+ * (`false`): un uso puntual (el editor de widgets del dashboard de KPIs,
+ * donde SÍ conviene cerrar tras agregar un gráfico) puede pedirla explícito
+ * sin cambiarle el comportamiento a ninguna de las otras pantallas que ya
+ * usan este componente. Contrato: si se activa, `onSubmit` debe devolver la
+ * promesa de su envío (no solo lanzarla sin esperar) -- el panel cierra
+ * cuando esa promesa resuelve, y se queda abierto si rechaza, para que el
+ * error quede a la vista sin obligar a reabrir.
+ *
+ * Animación de apertura/cierre
+ * ----------------------------
+ * El cuerpo sigue DESMONTÁNDOSE de verdad al cerrar -- el motivo de arriba
+ * (un `required` escondido bloquearía el envío sin decir dónde) no cambia.
+ * Lo que se anima es la transición: al abrir, el cuerpo se monta y el alto
+ * crece con una transición CSS (`grid-template-rows`, sin medir nada en JS);
+ * al cerrar, el alto baja a 0 primero y el desmontaje real ocurre en
+ * `onTransitionEnd`, no de inmediato -- por eso hacen falta dos estados
+ * (`abierto`, la intención; `montado`, si el cuerpo sigue en el DOM).
  */
 export default function FormularioPlegable({
-  titulo, abrirSi, onSubmit, icono: Icono, children, className,
+  titulo, abrirSi, onSubmit, icono: Icono, children, className, cerrarAlEnviar,
 }) {
   const { t } = useI18n();
   const [abierto, setAbierto] = useState(false);
+  const [montado, setMontado] = useState(false);
+  const cuerpoWrapRef = useRef(null);
+
+  function alternar() {
+    setAbierto((antes) => {
+      const siguiente = !antes;
+      if (siguiente) setMontado(true);
+      return siguiente;
+    });
+  }
 
   // Solo al pasar de "nada" a "algo". Con `abrirSi` a secas en las
   // dependencias, cualquier render con el mismo valor volveria a abrirlo
   // despues de que el usuario lo cerrara a mano.
   const anterior = useRef(abrirSi);
   useEffect(() => {
-    if (abrirSi && !anterior.current) setAbierto(true);
+    if (abrirSi && !anterior.current) {
+      setAbierto(true);
+      setMontado(true);
+    }
     anterior.current = abrirSi;
   }, [abrirSi]);
+
+  const alTerminarTransicion = useCallback((evento) => {
+    // Se filtra el target: un elemento de adentro con su propia transicion
+    // (un input, un boton) tambien dispara "transitionend" y burbujea hasta
+    // aca -- solo importa la transicion del propio wrapper de alto.
+    if (evento.target !== cuerpoWrapRef.current) return;
+    setAbierto((sigueAbierto) => {
+      if (!sigueAbierto) setMontado(false);
+      return sigueAbierto;
+    });
+  }, []);
+
+  async function manejarEnvio(evento) {
+    if (!cerrarAlEnviar) {
+      onSubmit(evento);
+      return;
+    }
+    evento.preventDefault();
+    try {
+      await onSubmit(evento);
+      setAbierto(false);
+    } catch {
+      // onSubmit ya deja su propio mensaje de error en pantalla -- no se
+      // cierra, para que se vea sin tener que volver a abrir.
+    }
+  }
 
   return (
     <form
       className={`form-card plegable ${abierto ? "abierta" : "cerrada"} ${className}`.trim()}
-      onSubmit={onSubmit}
+      onSubmit={manejarEnvio}
     >
       {/* La cabecera ES el botón. Un botón aparte al lado seria un objetivo
           pequeño junto a un renglón grande que no hace nada. */}
       <button
         type="button"
         className="form-header plegable-cabecera"
-        onClick={() => setAbierto((antes) => !antes)}
+        onClick={alternar}
         aria-expanded={abierto}
       >
         {abierto ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
@@ -70,11 +128,17 @@ export default function FormularioPlegable({
         </span>
       </button>
 
-      {/* Se desmonta en lugar de esconderse con CSS: escondido, sus campos
-          siguen en el formulario y un `required` invisible bloquea el envio sin
-          decir donde. Y aqui dentro no hay estado que perder -- lo tiene la
-          pantalla, no el formulario. */}
-      {abierto && <div className="plegable-cuerpo">{children}</div>}
+      <div
+        ref={cuerpoWrapRef}
+        className={`plegable-cuerpo-wrap ${abierto ? "abierta" : ""}`}
+        onTransitionEnd={alTerminarTransicion}
+      >
+        {/* Se desmonta en lugar de esconderse con CSS: escondido, sus campos
+            siguen en el formulario y un `required` invisible bloquea el envio
+            sin decir donde. Y aqui dentro no hay estado que perder -- lo
+            tiene la pantalla, no el formulario. */}
+        {montado && <div className="plegable-cuerpo">{children}</div>}
+      </div>
     </form>
   );
 }
@@ -87,6 +151,7 @@ FormularioPlegable.propTypes = {
   icono: PropTypes.elementType,
   children: PropTypes.node,
   className: PropTypes.string,
+  cerrarAlEnviar: PropTypes.bool,
 };
 
 FormularioPlegable.defaultProps = {
@@ -94,4 +159,5 @@ FormularioPlegable.defaultProps = {
   icono: Plus,
   children: null,
   className: "",
+  cerrarAlEnviar: false,
 };
