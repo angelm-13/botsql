@@ -12,6 +12,8 @@ from app.models.proyect_event import ProyectEvent
 from app.models.proyect_payment import ProyectPayment
 from app.models.session import transaction_context
 from app.models.task import Task
+from app.models.user import User
+from app.services.notification_service import create_notification
 from app.services.operations_workflow import TASK_CLOSED_STATUSES
 from app.utils.errors import AppError
 
@@ -330,6 +332,63 @@ def _actor_role(db, user_data: dict) -> str | None:
     permission_id = _permission_id(user_data)
     permission = db.get(Permission, permission_id) if permission_id else None
     return permission.permission_description if permission else None
+
+
+def _users_with_capability(db, capability: str) -> list[int]:
+    """Todos los usuarios cuyo rol tiene esta capacidad concedida (scope_read>0).
+
+    Reusa el mismo criterio que `_has_capability`, pero al reves: en vez de
+    preguntar por UN actor, junta a todos los que la tienen -- para saber a
+    quien avisar, no a quien dejar pasar.
+    """
+    permission_ids = [
+        row[0] for row in db.query(EntityPermission.id_permission).filter(
+            EntityPermission.entity_name == capability,
+            EntityPermission.scope_read > 0,
+            EntityPermission.deletion_date.is_(None),
+        ).all()
+    ]
+    if not permission_ids:
+        return []
+    return [
+        row[0] for row in db.query(User.id_user).filter(
+            User.id_permission.in_(permission_ids),
+            User.deletion_date.is_(None),
+        ).all()
+    ]
+
+
+def _notificar_proyecto(*, destinatarios, actor_id, id_proyect, nombre_proyecto, titulo, mensaje) -> None:
+    """Dispara una notificacion por proyecto, sin tronar la operacion real.
+
+    SIEMPRE se llama DESPUES de que el `with transaction_context()` de la
+    operacion real (crear/tomar/transicionar) ya cerro -- `create_notification`
+    abre su PROPIA transaccion, y llamarla con otra ya abierta en la misma
+    peticion se queda esperando una conexion libre del pool para siempre
+    (medido: un `docker exec` de prueba nunca regreso). Por eso recibe
+    valores sueltos (`id_proyect`, `nombre_proyecto`) y no el objeto ORM del
+    proyecto -- ese objeto pertenece a una sesion que para entonces ya cerro.
+
+    Un fallo al notificar (destinatario invalido, lo que sea) no debe
+    revertir la transicion/toma/creacion que ya paso: la notificacion es un
+    aviso, no una condicion del cambio. Se excluye al propio actor -- nadie
+    necesita que le avisen de lo que acaba de hacer el mismo.
+    """
+    for id_destinatario in {int(d) for d in destinatarios if d is not None}:
+        if id_destinatario == actor_id:
+            continue
+        try:
+            create_notification(
+                id_user_recipient=id_destinatario,
+                id_user_sender=actor_id,
+                notification_type="project_status_change",
+                title=titulo,
+                message=f"{nombre_proyecto}: {mensaje}",
+                id_proyect=id_proyect,
+                created_by=actor_id,
+            )
+        except Exception:
+            pass
 
 
 def _scope_name(db, user_data: dict) -> str:
@@ -882,7 +941,21 @@ def create_project(payload: dict, user_data: dict) -> dict:
         db.flush()
         _append_event(db, project, user_data, "created", new_status="draft")
         db.flush()
-        return project.serialize()
+        destinatarios = _users_with_capability(db, "project_authorization")
+        payload_creado = project.serialize()
+        id_proyect = project.id_proyect
+        nombre_proyecto = project.title or project.proyect_description or f"Proyecto {id_proyect}"
+
+    # Fuera del `with`: `create_notification` abre su propia transaccion, y
+    # llamarla con esta todavia abierta se queda esperando conexion del pool
+    # para siempre (ver docstring de `_notificar_proyecto`).
+    _notificar_proyecto(
+        destinatarios=destinatarios, actor_id=actor_id,
+        id_proyect=id_proyect, nombre_proyecto=nombre_proyecto,
+        titulo="Nuevo proyecto pendiente de autorizacion",
+        mensaje="fue capturado y espera tu autorizacion",
+    )
+    return payload_creado
 
 
 def take_project(project_id, user_data: dict) -> dict:
@@ -919,7 +992,18 @@ def take_project(project_id, user_data: dict) -> dict:
         project.id_supervisor = actor_id
         _append_event(db, project, user_data, "taken")
         db.flush()
-        return project.serialize()
+        payload_tomado = project.serialize()
+        destinatarios = [project.leader]
+        id_proyect = project.id_proyect
+        nombre_proyecto = project.title or project.proyect_description or f"Proyecto {id_proyect}"
+
+    _notificar_proyecto(
+        destinatarios=destinatarios, actor_id=actor_id,
+        id_proyect=id_proyect, nombre_proyecto=nombre_proyecto,
+        titulo="Jefe de taller tomo tu proyecto",
+        mensaje="ya esta trabajando en el",
+    )
+    return payload_tomado
 
 
 def release_project(project_id, user_data: dict) -> dict:
@@ -1099,7 +1183,44 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
             review_date=(payload or {}).get("review_date"),
         )
         db.flush()
-        return project.serialize()
+
+        actor_id = _actor_id(user_data)
+        id_proyect = project.id_proyect
+        nombre_proyecto = project.title or project.proyect_description or f"Proyecto {id_proyect}"
+        payload_transicion = project.serialize()
+
+        # Que notificar y a quien, decidido AQUI (todavia con `db` abierta,
+        # para poder consultar `_users_with_capability`) pero disparado
+        # DESPUES de cerrar el `with` -- ver docstring de `_notificar_proyecto`.
+        aviso = None
+        if validated_target in {"authorized", "denied", "blocked"}:
+            etiqueta = {
+                "authorized": "fue autorizado por gerencia",
+                "denied": "fue denegado por gerencia",
+                "blocked": "quedo bloqueado",
+            }[validated_target]
+            aviso = dict(
+                destinatarios=[project.leader],
+                titulo="Proyecto autorizado" if validated_target == "authorized" else "Cambio de estatus del proyecto",
+                mensaje=etiqueta,
+            )
+        elif validated_target == "completed":
+            aviso = dict(
+                destinatarios=[project.leader],
+                titulo="Proyecto completado", mensaje="el taller termino el trabajo",
+            )
+        elif validated_target == "delivered":
+            aviso = dict(
+                destinatarios=_users_with_capability(db, "project_authorization"),
+                titulo="Proyecto entregado", mensaje="ya se entrego al cliente",
+            )
+
+    if aviso is not None:
+        _notificar_proyecto(
+            actor_id=actor_id, id_proyect=id_proyect, nombre_proyecto=nombre_proyecto,
+            **aviso,
+        )
+    return payload_transicion
 
 
 def add_project_message(project_id, payload: dict, user_data: dict) -> dict:
