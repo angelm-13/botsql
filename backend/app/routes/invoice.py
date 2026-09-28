@@ -805,7 +805,6 @@ def upload_xml_invoice(user_data):
             payload['no_certificado'] = cfdi_data.get('no_certificado')
             payload['condiciones_pago'] = cfdi_data.get('condiciones_pago')
             payload['date_emision'] = cfdi_data.get('fecha')
-            payload['date_expiration'] = cfdi_data.get('fecha')
             payload['apply_tax'] = True
             payload['tax_rate'] = request.form.get('tax_rate') or 16
             payload['no_certificado_sat'] = cfdi_data.get('no_certificado_sat')
