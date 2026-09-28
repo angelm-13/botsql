@@ -25,9 +25,11 @@ class TestValidacionDeAsignaciones(BackendTestCase):
     def test_adser_deja_fuera_kpis_sin_datos_reales_para_su_almacen(self):
         # articulos_bajo_stock: almacen de herramientas individuales, casi
         # toda la existencia es 1 -- "bajo stock" no aplica.
-        # vales_vencidos_por_responsable / material_prestado_actual: ambos
-        # dependen de una fecha (due_date/start_date en nm_incident_product)
-        # que viene vacia en el 100% de lo migrado de Adser.
+        # vales_vencidos_por_responsable: depende de nm_incident_product.
+        # due_date, vacio en el 100% de lo migrado de Adser.
+        # material_prestado_actual SI se incluye: usa Incident.incident_date
+        # como fecha de prestamo, no due_date/start_date -- ese si esta
+        # poblado real.
         claves = {clave for asignacion in ASIGNACIONES["adser"] for clave in asignacion.kpis}
         self.assertEqual(
             {
@@ -36,6 +38,7 @@ class TestValidacionDeAsignaciones(BackendTestCase):
                 "incidencias_pendientes",
                 "incidencias_abiertas_vs_cerradas",
                 "material_por_estado",
+                "material_prestado_actual",
             },
             claves,
         )
@@ -72,6 +75,7 @@ class TestSiembraDePermisosDeKpi(BackendTestCase):
                 "incidencias_pendientes",
                 "incidencias_abiertas_vs_cerradas",
                 "material_por_estado",
+                "material_prestado_actual",
             ):
                 db.add(KpiDefinition(clave=clave, etiqueta=clave, modulo="inventario", dimensiones=["producto"]))
 
@@ -96,19 +100,20 @@ class TestSiembraDePermisosDeKpi(BackendTestCase):
         "incidencias_pendientes",
         "incidentes_resueltos_por_empleado",
         "material_por_estado",
+        "material_prestado_actual",
     ]
 
     def test_dry_run_no_escribe_nada(self):
         codigo, salida = self._correr("--perfil", "adser", "--dry-run")
 
         self.assertEqual(0, codigo)
-        self.assertIn("Se insertarian: 5", salida)
+        self.assertIn("Se insertarian: 6", salida)
         self.assertEqual([], self._vistos())
 
-    def test_siembra_los_cinco_kpis_y_es_idempotente(self):
+    def test_siembra_los_seis_kpis_y_es_idempotente(self):
         codigo, salida = self._correr("--perfil", "adser")
         self.assertEqual(0, codigo)
-        self.assertIn("Insertadas: 5", salida)
+        self.assertIn("Insertadas: 6", salida)
         self.assertEqual(self.ADSER_KPIS, self._vistos())
         self.assertEqual([], self._vistos(ALMACENISTA))
 
@@ -116,7 +121,7 @@ class TestSiembraDePermisosDeKpi(BackendTestCase):
         self.assertEqual(0, codigo)
         self.assertIn("Insertadas: 0", salida)
         with transaction_context() as db:
-            self.assertEqual(5, len(db.scalars(select(NmPermissionKpi)).all()))
+            self.assertEqual(6, len(db.scalars(select(NmPermissionKpi)).all()))
 
     def test_no_reactiva_un_permiso_dado_de_baja(self):
         with transaction_context() as db:

@@ -92,17 +92,16 @@ ASIGNACIONES = {
         # Adser -- saldria siempre en cero. Se agrega cuando due_date se
         # capture.
         #
-        # `material_prestado_actual` (foto de vales prestados sin devolver,
-        # por responsable) NO se agrega todavia: `nm_incident_product.
-        # start_date`/`due_date` tambien vienen vacios para el 100% de las
-        # filas migradas de Adser (`migrate_adser.py::migrar_nm_incident_product`
-        # nunca los puebla) -- sin una fecha de prestamo real, ese KPI no
-        # tiene nada que mostrar. Se agrega cuando se resuelva de donde sale
-        # esa fecha para los datos reales de Adser.
+        # `material_prestado_actual` SI se agrega: aunque `nm_incident_product.
+        # start_date`/`due_date` siguen vacios en Adser, este KPI se diseno
+        # para no depender de ellos -- usa `Incident.incident_date` como fecha
+        # de prestamo (confirmado real contra `migrate_adser.py`, viene de
+        # `fecha_incidente` de origen sin sentinel), que si esta poblado.
         AsignacionRol(
             rol="Administrator",
             acotado_a_proyecto=False,
             kpis=(
+                "material_prestado_actual",
                 "incidentes_resueltos_por_empleado",
                 "incidencias_abiertas_por_empleado",
                 "incidencias_pendientes",
