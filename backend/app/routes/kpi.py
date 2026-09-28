@@ -6,7 +6,9 @@ from flask import Blueprint, jsonify, request
 from sqlalchemy import cast, func, select
 from sqlalchemy.dialects.postgresql import JSONB
 
-from app.kpis.registry import AGREGACION_POR_CLAVE, ALCANCE_PROYECTO_POR_CLAVE, DIMENSION_JSON_KEY, DIMENSION_POR_CLAVE
+from app.kpis.registry import (
+    AGREGACION_POR_CLAVE, ALCANCE_PROYECTO_POR_CLAVE, DIMENSION_JSON_KEY, DIMENSION_POR_CLAVE, KPI_POR_CLAVE,
+)
 from app.models.kpi_definition import KpiDefinition
 from app.models.kpi_snapshot import KpiSnapshot
 from app.models.permission import Permission
@@ -351,6 +353,50 @@ def query_kpi_snapshot(user_data):
             rango_b = _totales(db, id_kpi_definition, fecha_inicio_b, fecha_fin_b, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo)
 
     return jsonify({'rango_a': rango_a, 'rango_b': rango_b})
+
+
+# Igual que KPI_RANGO_DIAS_MAX_POR_OMISION arriba, pero para el tamano de
+# pagina de un KPI "vivo" -- sin tope, una pagina sin fin es una tabla
+# completa escaneada por peticion (ver material_prestado_actual_query).
+KPI_VIVO_LIMIT_MAX_POR_OMISION = 100
+KPI_VIVO_LIMIT_POR_OMISION = 25
+
+
+@bp_kpi.route('/kpi_definition/<int:id_kpi_definition>/vivo', methods=['GET'])
+@token_required
+@require_entity_permission('kpi_definition', 'read')
+def query_kpi_vivo(user_data, id_kpi_definition):
+    """Datos de un KPI "vivo" (`KpiDefinition.modo == "vivo"`, ver el registry).
+
+    Distinto de `query_kpi_snapshot`: no hay rango de fechas (siempre es
+    "ahora") ni combinacion de `kpi_snapshot` -- se llama al `query_builder`
+    del KPI directo, con limit/offset, cada vez que se pide. Mismos dos
+    chequeos que el resto de los KPIs (`has_kpi_permission`, que ya cubre
+    tanto el permiso del rol como el plan/modulo del cliente -- ver su propio
+    docstring en app/utils/auth.py) para que un KPI "vivo" no sea una
+    puerta trasera que se salte esas dos capas.
+    """
+    limit_maximo = limite('kpi_vivo_limit_max', KPI_VIVO_LIMIT_MAX_POR_OMISION)
+    limit = min(_required_int(request.args.get('limit', KPI_VIVO_LIMIT_POR_OMISION), 'limit'), limit_maximo)
+    if limit < 1:
+        raise AppError('errors.invalid_field', 400, {'field': 'limit'})
+    offset = _required_int(request.args.get('offset', 0), 'offset')
+    if offset < 0:
+        raise AppError('errors.invalid_field', 400, {'field': 'offset'})
+
+    with transaction_context() as db:
+        if not has_kpi_permission(db, user_data, id_kpi_definition):
+            raise AppError('errors.permission_denied', 403, {'kpi': id_kpi_definition})
+
+        kpi_row = db.get(KpiDefinition, id_kpi_definition)
+        kpi_def = KPI_POR_CLAVE.get(kpi_row.clave) if kpi_row else None
+        if kpi_def is None or kpi_def.modo != 'vivo':
+            raise AppError('errors.resource_not_found', 404, {'kpi': id_kpi_definition})
+
+        actor_project = InvoiceService.actor_project(user_data) if kpi_def.alcance_proyecto else None
+        items, total = kpi_def.query_builder(db, limit=limit, offset=offset, actor_project=actor_project)
+
+    return jsonify({'items': items, 'total': total, 'limit': limit, 'offset': offset})
 
 
 # --- kpi_dashboard: tableros del usuario, siempre privados por dueno -------

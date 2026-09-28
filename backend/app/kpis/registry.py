@@ -38,8 +38,10 @@ from app.models.inventory_stock import InventoryStock
 from app.models.invoice import Invoice
 from app.models.laboratory import LaboratoryServiceOrder
 from app.models.nm_incident_product import NmIncidentProduct
+from app.models.product import Product
 from app.models.task import Task
-from app.services.warehouse_voucher_service import CIERRE_SENTINELA, _estado_del_renglon
+from app.models.user import User
+from app.services.warehouse_voucher_service import CIERRE_SENTINELA, SALIDA, _estado_del_renglon
 from app.modules.registry import MODULO_POR_CLAVE
 
 # Que llave de `dimension_key` (JSONB, en `kpi_snapshot`) le corresponde a cada
@@ -1074,6 +1076,113 @@ def material_por_estado_query(session, fecha_inicio, fecha_fin, filtros_dimensio
     ]
 
 
+# Descripcion en minuscula y sin espacios sobrantes de las 3 disposiciones
+# especiales que `_estado_del_renglon` reconoce (warehouse_voucher_service.py)
+# -- un renglon con uno de estos tipos es un estado TERMINAL (se destruyo, se
+# perdio, salio danado), no un prestamo pendiente de devolver, sin importar
+# que traiga en `close_date`. Se repite aqui en vez de llamar a
+# `_estado_del_renglon` fila por fila porque este query SI necesita
+# LIMIT/OFFSET a nivel SQL (es "vivo", paginado) -- filtrar en Python DESPUES
+# de traer una pagina rompería la paginacion (una pagina podria perder filas
+# reales tras el filtro). Si `_estado_del_renglon` cambia sus 3 valores
+# especiales, este conjunto hay que actualizarlo a mano.
+_TIPOS_ESPECIALES_RENGLON = ("destruccion", "dañado", "extraviado")
+
+
+def material_prestado_actual_query(session, *, limit, offset, actor_project=None):
+    """KPI "vivo": renglones de vale actualmente prestados (sin devolver), por responsable.
+
+    No es un KPI de `kpi_snapshot` -- ver `KpiDefinition.modo="vivo"`. Cada
+    renglon prestado es un hecho de detalle (que articulo, a quien, desde
+    cuando), no un numero por entidad-y-dia: no hay forma correcta de
+    comprimirlo en una foto diaria sin perder la fecha exacta de cada
+    prestamo. Por eso este query_builder tiene una firma DISTINTA a la de
+    los KPIs "snapshot" (sin fecha_inicio/fecha_fin -- siempre es "ahora"; con
+    limit/offset -- siempre paginado) y nunca lo llama `tasks_kpis.py`.
+
+    * "Prestado" = dos condiciones, ambas necesarias:
+      - Direccion "Salida" segun `_estado_del_renglon` -- ver
+        `_TIPOS_ESPECIALES_RENGLON` arriba: una Entrada nunca esta prestada, y
+        una disposicion especial (Destruccion/Dañado/Extraviado) es un estado
+        terminal, no un prestamo pendiente. Replicado en SQL, no llamando a
+        `_estado_del_renglon` fila por fila, por el motivo de paginacion ya
+        explicado.
+      - Sin devolver: `_sin_cerrar(close_date)` -- `close_date IS NULL` o
+        `== CIERRE_SENTINELA`, mismo criterio que el resto del modulo.
+    * Fecha de prestamo: `Incident.incident_date` (decision explicita para
+      este KPI, confirmada contra `migrate_adser.py::migrar_incident`: ese
+      campo viene DIRECTO de `fecha_incidente` de origen, sin pasar por
+      `normalizar_fecha()`/sentinel -- a diferencia de `fecha_cierre`, que si
+      necesito ese tratamiento porque el sistema legado SI usaba un
+      placeholder ahi. `fecha_incidente` no tiene ese problema documentado en
+      ningun punto de la migracion).
+    * "Dias prestado" = hoy - incident_date, calculado en Python al armar
+      cada fila (no hace falta expresarlo en SQL: el ORDER BY ya ordena por
+      `incident_date` ascendente, que es equivalente a ordenar por dias
+      prestados descendente -- el mas antiguo es siempre el que mas dias
+      lleva).
+    * Responsable: `Incident.id_user` (quien levanto el vale), mismo criterio
+      que el resto del modulo -- no `created_by`.
+    * Sin alcance de proyecto (mismo motivo que sus vecinos de este archivo);
+      `actor_project` se acepta por firma pero no se usa aqui.
+
+    Regresa `(items, total)`: `items` ya es la pagina pedida (limit/offset a
+    nivel SQL), `total` es el conteo COMPLETO sin paginar (para que el
+    frontend pueda mostrar "1-25 de 143").
+    """
+    condiciones = [
+        NmIncidentProduct.deletion_date.is_(None),
+        Incident.deletion_date.is_(None),
+        Incident.incident_date.isnot(None),
+        NmIncidentProduct.direction == SALIDA,
+        or_(
+            NmIncidentProduct.close_date.is_(None),
+            NmIncidentProduct.close_date == CIERRE_SENTINELA,
+        ),
+        or_(
+            IncidentType.incident_type_description.is_(None),
+            func.lower(func.trim(IncidentType.incident_type_description)).notin_(_TIPOS_ESPECIALES_RENGLON),
+        ),
+    ]
+
+    base = (
+        select(
+            NmIncidentProduct.id_nm_incident_product,
+            Product.descripcion,
+            Product.product_code,
+            Incident.id_user,
+            User.full_name,
+            Incident.incident_date,
+        )
+        .select_from(NmIncidentProduct)
+        .join(Incident, Incident.id_incident == NmIncidentProduct.id_incident)
+        .join(Product, Product.id_product == NmIncidentProduct.id_product)
+        .outerjoin(IncidentType, IncidentType.id_incident_type == Incident.id_incident_type)
+        .outerjoin(User, User.id_user == Incident.id_user)
+        .where(*condiciones)
+    )
+
+    total = session.execute(select(func.count()).select_from(base.subquery())).scalar() or 0
+    filas = session.execute(
+        base.order_by(Incident.incident_date.asc(), NmIncidentProduct.id_nm_incident_product.asc())
+        .limit(limit)
+        .offset(offset)
+    ).all()
+
+    hoy = date.today()
+    items = []
+    for id_renglon, descripcion, product_code, id_user, full_name, incident_date in filas:
+        items.append({
+            "id_nm_incident_product": id_renglon,
+            "articulo": descripcion or product_code or f"Producto #{id_renglon}",
+            "id_user": id_user,
+            "responsable": full_name,
+            "fecha_prestamo": incident_date.date().isoformat(),
+            "dias_prestado": (hoy - incident_date.date()).days,
+        })
+    return items, total
+
+
 class KpiDefinition:
     def __init__(self, clave, etiqueta, modulo, dimensiones,
                  query_builder, *, direccion, graficas_permitidas, grafica_default,
@@ -1395,6 +1504,19 @@ KPI_REGISTRY = (
         graficas_permitidas=("dona", "tabla"),
         grafica_default="dona",
     ),
+    KpiDefinition(
+        clave="material_prestado_actual",
+        etiqueta="Material prestado ahora",
+        modulo="operaciones",
+        dimensiones=("empleado",),
+        query_builder=material_prestado_actual_query,
+        modo="vivo",
+        unidad="numero",
+        alcance_proyecto=False,
+        direccion="neutral",
+        graficas_permitidas=("tabla",),
+        grafica_default="tabla",
+    ),
 )
 
 
@@ -1415,6 +1537,12 @@ DIMENSION_POR_CLAVE = {kpi.clave: kpi.dimensiones[0] for kpi in KPI_REGISTRY}
 # Y para la regla de agregacion (ver AGREGACIONES): la consume `_totales()` en
 # `app/routes/kpi.py` para saber como combinar los snapshots del rango.
 AGREGACION_POR_CLAVE = {kpi.clave: kpi.agregacion for kpi in KPI_REGISTRY}
+
+# El objeto KpiDefinition completo por clave -- a diferencia de los mapas de
+# arriba (un campo suelto cada uno), este lo necesita el endpoint de KPIs
+# "vivo" (`app/routes/kpi.py`) para poder llegar a `.modo` y `.query_builder`
+# de un KPI puntual sin repetir la logica de busqueda en KPI_REGISTRY.
+KPI_POR_CLAVE = {kpi.clave: kpi for kpi in KPI_REGISTRY}
 
 
 # "tiempo_promedio_atencion" queda pendiente de agregar a este registro.
