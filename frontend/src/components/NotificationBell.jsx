@@ -54,7 +54,11 @@ export default function NotificationBell() {
   async function loadNotifications() {
     setLoading(true);
     try {
-      const data = await getNotifications({ limit: 20 });
+      // Solo las no leidas: una vez que se da "Enterado" desaparece de aqui.
+      // Es la unica manera de que una notificacion salga de esta lista -- no
+      // hay boton de cerrar por fila -- para que nadie pueda decir despues
+      // que no la vio.
+      const data = await getNotifications({ unread: true, limit: 20 });
       setNotifications(data || []);
     } catch (err) {
       console.error("Error cargando notificaciones:", err);
@@ -63,18 +67,15 @@ export default function NotificationBell() {
     }
   }
 
-  async function handleMarkAsRead(id) {
+  async function handleAcknowledge(id) {
     try {
       await markNotificationAsRead(id);
-      // Actualizar lista local
-      setNotifications((prev) =>
-        prev.map((n) =>
-          n.id_notification === id ? { ...n, is_read: true } : n
-        )
-      );
+      // Se retira de la vista solo tras confirmar "Enterado" en el backend;
+      // si la peticion falla, se queda donde estaba (no desaparece "gratis").
+      setNotifications((prev) => prev.filter((n) => n.id_notification !== id));
       loadUnreadCount();
     } catch (err) {
-      console.error("Error marcando notificación como leída:", err);
+      console.error("Error al confirmar notificación como enterado:", err);
     }
   }
 
@@ -122,18 +123,13 @@ export default function NotificationBell() {
               <div className="notification-empty">
                 {t(
                   "common.no_notifications",
-                  "No hay notificaciones"
+                  "Todo al día — sin notificaciones pendientes"
                 )}
               </div>
             ) : (
               <div className="notification-list">
                 {notifications.map((notif) => (
-                  <div
-                    key={notif.id_notification}
-                    className={`notification-item ${
-                      notif.is_read ? "read" : "unread"
-                    }`}
-                  >
+                  <div key={notif.id_notification} className="notification-item unread">
                     <div className="notification-item-content">
                       <div className="notification-item-title">
                         {notif.title}
@@ -146,18 +142,17 @@ export default function NotificationBell() {
                       <div className="notification-item-time">
                         {new Date(notif.creation_date).toLocaleString()}
                       </div>
-                    </div>
-                    {!notif.is_read && (
                       <button
-                        className="notification-item-mark-read"
-                        onClick={() =>
-                          handleMarkAsRead(notif.id_notification)
-                        }
-                        title={t("common.mark_as_read", "Marcar como leída")}
+                        className="notification-item-acknowledge"
+                        onClick={() => handleAcknowledge(notif.id_notification)}
+                        title={t(
+                          "common.acknowledge_hint",
+                          "Confirmar que la leíste; es la única forma de quitarla de esta lista"
+                        )}
                       >
-                        ●
+                        {t("common.acknowledge", "Enterado")}
                       </button>
-                    )}
+                    </div>
                   </div>
                 ))}
               </div>
