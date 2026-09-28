@@ -7,7 +7,12 @@ from typing import List, Optional
 from sqlalchemy import select, desc, and_
 
 from app.models.supervisor_activity_log import SupervisorActivityLog
+from app.models.activity_log_worker import ActivityLogWorker
+from app.models.team import Team
+from app.models.nm_team_user import NmTeamUser
+from app.models.user import User
 from app.models.session import transaction_context
+from app.utils.errors import AppError
 
 
 def create_activity(
@@ -258,3 +263,86 @@ def get_activities_by_project(
             ).order_by(desc(SupervisorActivityLog.activity_date))
         ).scalars().all()
         return activities
+
+
+def list_my_team_workers(id_jefe_taller: int) -> List[dict]:
+    """La plantilla del Jefe de taller: los `user` de sus propios `team`.
+
+    No se inventa un rol de "obrero" -- pedido explicito de negocio
+    (2026-09-28): los obreros son usuarios sin ningun rol operativo,
+    agrupados por el Jefe de taller en un equipo generico (`team`/
+    `nm_team_user`), el mismo mecanismo que ya existe para otros usos. "Su"
+    equipo es el que el mismo creo (`team.created_by`); no hay un campo de
+    lider aparte todavia.
+    """
+    with transaction_context() as db:
+        rows = db.execute(
+            select(User.id_user, User.full_name, User.username)
+            .join(NmTeamUser, NmTeamUser.id_user == User.id_user)
+            .join(Team, Team.id_team == NmTeamUser.id_team)
+            .where(
+                (Team.created_by == id_jefe_taller) &
+                (Team.deletion_date.is_(None)) &
+                (NmTeamUser.deletion_date.is_(None)) &
+                (User.deletion_date.is_(None))
+            )
+            .order_by(User.full_name)
+        ).all()
+        return [
+            {"id_user": r.id_user, "full_name": r.full_name, "username": r.username}
+            for r in rows
+        ]
+
+
+def set_activity_workers(id_activity: int, id_jefe_taller: int, worker_ids: List[int]) -> List[dict]:
+    """Fija quien de la plantilla participo en esta bitacora (reemplaza).
+
+    Cada `id_user` debe pertenecer a un `team` del propio Jefe de taller --
+    sin este candado, cualquiera podria atribuirle la jornada de hoy a un
+    obrero que ni siquiera es suyo.
+    """
+    with transaction_context() as db:
+        propios = {
+            r.id_user for r in db.execute(
+                select(User.id_user)
+                .join(NmTeamUser, NmTeamUser.id_user == User.id_user)
+                .join(Team, Team.id_team == NmTeamUser.id_team)
+                .where(
+                    (Team.created_by == id_jefe_taller) &
+                    (Team.deletion_date.is_(None)) &
+                    (NmTeamUser.deletion_date.is_(None))
+                )
+            ).all()
+        }
+        ajenos = [w for w in worker_ids if int(w) not in propios]
+        if ajenos:
+            raise AppError("errors.worker_not_in_team", 400, {"worker_ids": ajenos})
+
+        # Reemplaza: se borran (fisico, es tabla puente) los renglones que ya
+        # no vienen y se agregan los nuevos -- una bitacora no acumula
+        # obreros de intentos anteriores del mismo dia.
+        db.query(ActivityLogWorker).filter(
+            ActivityLogWorker.id_activity == id_activity
+        ).delete()
+        for id_user in worker_ids:
+            db.add(ActivityLogWorker(
+                id_activity=id_activity, id_user=id_user, created_by=id_jefe_taller,
+            ))
+        db.flush()
+
+        rows = db.execute(
+            select(User.id_user, User.full_name)
+            .join(ActivityLogWorker, ActivityLogWorker.id_user == User.id_user)
+            .where(ActivityLogWorker.id_activity == id_activity)
+        ).all()
+        return [{"id_user": r.id_user, "full_name": r.full_name} for r in rows]
+
+
+def get_activity_workers(id_activity: int) -> List[dict]:
+    with transaction_context() as db:
+        rows = db.execute(
+            select(User.id_user, User.full_name)
+            .join(ActivityLogWorker, ActivityLogWorker.id_user == User.id_user)
+            .where(ActivityLogWorker.id_activity == id_activity)
+        ).all()
+        return [{"id_user": r.id_user, "full_name": r.full_name} for r in rows]

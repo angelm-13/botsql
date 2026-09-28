@@ -374,7 +374,7 @@ def _scoped_query(db, user_data: dict):
     return query
 
 
-def _project_payload(project: Proyect, events=None, pagos=None) -> dict:
+def _project_payload(project: Proyect, events=None, total_paid=None) -> dict:
     payload = project.serialize()
     # Solo se INVENTA un folio cuando el proyecto no trae el suyo. Antes se
     # sobreescribia siempre: un proyecto capturado con folio "OT-2026-0042" -el
@@ -390,8 +390,8 @@ def _project_payload(project: Proyect, events=None, pagos=None) -> dict:
     )
     payload["submitted_date"] = submitted_event.creation_date.isoformat() if submitted_event else None
     # Calcular el estado de pago basado en la sumatoria de montos de `proyect_payment`
-    if pagos is not None:
-        payload["payment_status"] = _calculate_payment_status(project.total_cost, pagos)
+    if total_paid is not None:
+        payload["payment_status"] = _calculate_payment_status(project.total_cost, total_paid)
     return payload
 
 
@@ -423,6 +423,26 @@ def require_task_access(task_id, user_data: dict) -> None:
         if not task or task.deletion_date is not None:
             raise AppError("errors.resource_not_found", 404)
         _get_visible_project(db, task.id_proyect, user_data)
+
+
+def require_project_taken_by_actor(project_id, user_data: dict) -> None:
+    """El proyecto debe estar TOMADO por este actor (`take_project`).
+
+    Correccion de negocio explicita (2026-09-28): Jefe de taller sube tareas
+    y bitacora del proyecto al que se asigno, no de cualquier proyecto
+    visible del taller. `_scoped_query` (scope "execution") es mas ancha a
+    proposito -- deja ver todo lo autorizado para poder tomarlo -- asi que no
+    alcanza para esta regla; hace falta el candado aparte.
+    """
+    if _is_unrestricted(user_data):
+        return
+    with transaction_context() as db:
+        project = db.get(Proyect, project_id)
+        if not project or project.deletion_date is not None:
+            raise AppError("errors.resource_not_found", 404)
+        if _safe_int(project.id_supervisor) != _actor_id(user_data):
+            raise AppError("errors.project_not_taken_by_actor", 403,
+                           {"id_proyect": project_id})
 
 
 def _parse_review_date(value):
@@ -534,8 +554,24 @@ def list_projects(user_data: dict, *, page=1, per_page=20, filters=None, sort=No
             )
             for event in rows:
                 submitted_events.setdefault(event.id_proyect, event)
+        # Agregado, no una consulta por proyecto: con paginas de hasta 100
+        # renglones, un N+1 aqui se nota.
+        payment_sums = {}
+        if project_ids:
+            sum_rows = (
+                db.query(ProyectPayment.id_proyect, func.sum(ProyectPayment.amount))
+                .filter(ProyectPayment.id_proyect.in_(project_ids))
+                .filter(ProyectPayment.deletion_date.is_(None))
+                .group_by(ProyectPayment.id_proyect)
+                .all()
+            )
+            payment_sums = {row[0]: row[1] for row in sum_rows}
         payloads = [
-            _project_payload(item, [submitted_events[item.id_proyect]] if item.id_proyect in submitted_events else [])
+            _project_payload(
+                item,
+                [submitted_events[item.id_proyect]] if item.id_proyect in submitted_events else [],
+                payment_sums.get(item.id_proyect, Decimal(0)),
+            )
             for item in items
         ]
         return {"items": payloads, "page": page, "per_page": per_page, "total": total}
@@ -586,7 +622,8 @@ def get_project_detail(project_id, user_data: dict) -> dict:
             .all()
         )
 
-        payload = _project_payload(project, events, pagos)
+        total_paid = sum(Decimal(str(p.amount or 0)) for p in pagos)
+        payload = _project_payload(project, events, total_paid)
         payload["tasks"] = [task.serialize() for task in tasks]
         payload["events"] = [event.serialize() for event in events]
         payload["incidents"] = _vales_con_material(db, incidencias)
@@ -678,18 +715,19 @@ def _material_del_proyecto(db, id_proyect) -> dict:
     }
 
 
-def _calculate_payment_status(total_cost: Decimal, pagos) -> str:
-    """Calcula el estado de pago del proyecto basado en la suma de montos.
+def _calculate_payment_status(total_cost: Decimal, total_paid) -> str:
+    """Calcula el estado de pago del proyecto a partir de la sumatoria de
+    montos ACORDADOS en `proyect_payment` (no solo los ya cobrados, ver
+    `_resumen_de_pagos` para esa otra cifra).
 
     Estados:
     - "pendiente": si la suma es 0 o menor a total_cost
     - "cobrado": si la suma es igual a total_cost
     - "excedido": si la suma es mayor a total_cost
     """
-    if not pagos or total_cost == 0:
-        return "pendiente"
-    suma = sum(Decimal(str(p.amount or 0)) for p in pagos)
-    if suma == 0:
+    total_cost = Decimal(str(total_cost or 0))
+    suma = Decimal(str(total_paid or 0))
+    if total_cost == 0 or suma == 0:
         return "pendiente"
     if suma < total_cost:
         return "pendiente"
@@ -825,6 +863,17 @@ def create_project(payload: dict, user_data: dict) -> dict:
     values["proyect_status"] = "draft"
     _parsear_fecha_de_la_orden(values)
     with transaction_context() as db:
+        # Correccion de negocio explicita (2026-09-28): solo Supervisor
+        # levanta el proyecto. Antes esto dependia nada mas del bit CREAR de
+        # la entidad `proyect`, y Jefe de taller tambien lo tiene (CAPTURA en
+        # "operaciones", igual que Supervisor) -- asi que sin este candado
+        # Jefe de taller podia levantar proyectos propios, cuando su papel es
+        # TOMAR los que ya existen (`take_project`) y ejecutarlos. Gerente
+        # tampoco crea: solo autoriza o cancela lo que Supervisor ya levanto.
+        scope = _scope_name(db, user_data)
+        if scope not in {"ownership", "unrestricted"}:
+            raise AppError("errors.permission_denied", 403,
+                           {"action": "create_project", "scope": scope})
         values["id_quotation"], values["quotation_reference"] = _resolver_cotizacion(
             db, (payload or {}).get("id_quotation"))
         _validar_referencias_de_la_orden(db, values)
@@ -837,20 +886,22 @@ def create_project(payload: dict, user_data: dict) -> dict:
 
 
 def take_project(project_id, user_data: dict) -> dict:
-    """El supervisor TOMA el proyecto; nadie se lo asigna.
+    """Jefe de taller TOMA el proyecto; nadie se lo asigna.
 
     Antes `id_supervisor` era un desplegable del formulario, o sea que quien
     captura la orden repartia el trabajo del taller desde su escritorio. Se
-    invierte: el proyecto sale sin supervisor y lo toma quien lo va a sacar.
+    invierte: el proyecto sale sin tomar y lo toma quien lo va a sacar.
 
     Quien puede tomarlo es quien tiene la capacidad `project_execution` -- hoy
-    el rol Supervisor -- y no se comprueba por NOMBRE de rol: los roles se
+    el rol Jefe de taller -- y no se comprueba por NOMBRE de rol: los roles se
     renombran y se crean desde el gestor, y un permiso amarrado a la cadena
-    "Supervisor" deja de funcionar el dia que alguien escriba "Supervisor de
-    obra". La capacidad es lo que el registro declara y lo que el gestor
-    concede.
+    "Jefe de taller" deja de funcionar el dia que alguien escriba "Jefe de
+    planta". La capacidad es lo que el registro declara y lo que el gestor
+    concede. Supervisor (quien LEVANTA el proyecto, ver `create_project`) no
+    tiene esta capacidad, asi que no puede tomarlo -- solo verlo y pedir
+    material via prevale.
 
-    Solo se toma lo que esta libre. Quitarle el proyecto a otro supervisor
+    Solo se toma lo que esta libre. Quitarselo a otro Jefe de taller
     seria una reasignacion, y eso no es tomar: el que lo tiene lo suelta
     (`release_project`) o lo mueve la administracion.
     """

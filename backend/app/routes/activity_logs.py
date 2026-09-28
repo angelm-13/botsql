@@ -11,10 +11,30 @@ from app.services.activity_log_service import (
     get_activities_by_project,
     update_activity,
     delete_activity,
+    list_my_team_workers,
+    set_activity_workers,
+    get_activity_workers,
 )
 from app.services.notification_service import create_notification
+from app.services.inventory_service import has_capability
+from app.services.project_management_service import require_project_taken_by_actor
+from app.models.session import transaction_context
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
+
+
+def _puede_ver_todas(user_data) -> bool:
+    """Gerente (y quien no tenga restriccion) ve las bitacoras de todos.
+
+    Antes esto comparaba `user_data.get('user_type')` -- el TIPO de cuenta
+    (admin/client/supplier/employee/web_shopper) -- contra el literal
+    'gerente', que nunca puede coincidir: el rol de negocio vive en
+    `permission`, no en ese campo. Un Gerente real (user_type='employee')
+    siempre caia en "solo ve las suyas". Se resuelve por la capacidad que de
+    verdad distingue a Gerente de los demas roles operativos.
+    """
+    with transaction_context() as db:
+        return has_capability(db, user_data, "project_authorization")
 
 
 bp_activity_logs = Blueprint("activity_logs", __name__, url_prefix="/activity-logs")
@@ -45,11 +65,15 @@ def create_activity_log(user_data):
     }
 
     Crea un nuevo registro de actividad diaria.
-    Solo supervisores pueden crear sus propias actividades.
+    Solo Jefe de taller (y quien no tenga restriccion) puede crear la suya.
     """
     id_user = user_data.get('id_user')
     if not id_user:
         raise AppError("Usuario no autenticado", 401)
+
+    with transaction_context() as db:
+        if not has_capability(db, user_data, "daily_activity_log"):
+            raise AppError("errors.forbidden", 403, {"capability": "daily_activity_log"})
 
     data = request.get_json() or {}
 
@@ -60,6 +84,9 @@ def create_activity_log(user_data):
 
     if not id_proyect:
         raise AppError("id_proyect es requerido", 400)
+    # Del proyecto al que se asigno, no de cualquiera (pedido de negocio
+    # explicito, 2026-09-28): ver `require_project_taken_by_actor`.
+    require_project_taken_by_actor(id_proyect, user_data)
     if not activity_date_str:
         raise AppError("activity_date es requerido", 400)
     if not description:
@@ -95,6 +122,14 @@ def create_activity_log(user_data):
         created_by=id_user,
     )
 
+    # Quien de su plantilla trabajo hoy (opcional: no todos los dias
+    # participa todo el equipo). Cada id debe ser un obrero de un `team`
+    # propio del Jefe de taller -- lo valida `set_activity_workers`.
+    worker_ids = data.get('worker_ids') or []
+    workers = []
+    if worker_ids:
+        workers = set_activity_workers(activity.id_activity, id_user, worker_ids)
+
     # Crear notificación (opcional - si el gerente lo configuró así)
     # Por ahora, solo registramos silenciosamente
     # create_notification(
@@ -104,7 +139,45 @@ def create_activity_log(user_data):
     #     ...
     # )
 
-    return jsonify(activity.serialize()), 201
+    payload = activity.serialize()
+    payload['workers'] = workers
+    return jsonify(payload), 201
+
+
+@bp_activity_logs.route("/my-team", methods=["GET"])
+@token_required
+def get_my_team_workers(user_data):
+    """
+    GET /activity-logs/my-team
+
+    La plantilla de obreros del Jefe de taller autenticado (los usuarios de
+    sus propios equipos), para elegir en el formulario de la bitacora quien
+    trabajo hoy.
+    """
+    id_user = user_data.get('id_user')
+    if not id_user:
+        raise AppError("Usuario no autenticado", 401)
+
+    with transaction_context() as db:
+        if not has_capability(db, user_data, "daily_activity_log"):
+            raise AppError("errors.forbidden", 403, {"capability": "daily_activity_log"})
+
+    return jsonify(list_my_team_workers(id_user))
+
+
+@bp_activity_logs.route("/<int:id_activity>/workers", methods=["GET"])
+@token_required
+def get_activity_log_workers(user_data, id_activity):
+    """GET /activity-logs/{id}/workers"""
+    activity = get_activity_by_id(id_activity)
+    if not activity:
+        raise AppError("Actividad no encontrada", 404)
+
+    id_user = user_data.get('id_user')
+    if not _puede_ver_todas(user_data) and activity.id_supervisor != id_user:
+        raise AppError("No tienes permiso para ver esta actividad", 403)
+
+    return jsonify(get_activity_workers(id_activity))
 
 
 @bp_activity_logs.route("", methods=["GET"])
@@ -129,12 +202,8 @@ def list_activities(user_data):
     limit = min(int(request.args.get('limit', 50)), 100)
     offset = int(request.args.get('offset', 0))
 
-    # Validación: supervisores solo ven sus propias actividades
-    user_type = user_data.get('user_type', '').lower()
-    is_admin = user_data.get('is_superuser') or user_data.get('is_bootstrap_admin')
-
-    if not is_admin and user_type not in ['admin', 'gerente']:
-        # Es supervisor, solo ve sus propias actividades
+    # Validación: quien no sea Gerente (ni sin restricción) solo ve las suyas
+    if not _puede_ver_todas(user_data):
         id_supervisor = id_user
 
     activities = get_activities_by_range(
@@ -163,11 +232,9 @@ def get_activity(user_data, id_activity):
         raise AppError("Actividad no encontrada", 404)
 
     id_user = user_data.get('id_user')
-    is_admin = user_data.get('is_superuser') or user_data.get('is_bootstrap_admin')
-    user_type = user_data.get('user_type', '').lower()
 
-    # Validación: supervisores solo ven sus propias actividades
-    if not is_admin and user_type not in ['admin', 'gerente']:
+    # Validación: quien no sea Gerente (ni sin restricción) solo ve las suyas
+    if not _puede_ver_todas(user_data):
         if activity.id_supervisor != id_user:
             raise AppError("No tienes permiso para ver esta actividad", 403)
 

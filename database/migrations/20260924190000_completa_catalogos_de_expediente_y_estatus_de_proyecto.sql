@@ -16,6 +16,13 @@ ALTER TABLE proyect_event ADD CONSTRAINT proyect_event_event_type_check CHECK (
     event_type IN (
         'created', 'status_changed', 'message', 'task_event',
         'management_transition', 'payment_agreed', 'payment_settled',
+        -- 'taken'/'released' se perdieron aqui al resolver a mano un merge
+        -- de git (fusion de initAlan/initAngm, 2026-09-25): esta lista
+        -- reemplaza por completo a la de 20260911180000 en cada arranque
+        -- (mismo patron de la migracion de arriba), asi que un evento real
+        -- 'taken' escrito por `take_project` tronaba con CheckViolation
+        -- contra ESTA migracion, no la vieja. Repuestos.
+        'taken', 'released',
         'document_attached', 'document_removed',
         'task_status_changed', 'task_note'
     )

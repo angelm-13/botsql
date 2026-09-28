@@ -310,6 +310,17 @@ CAPACIDADES = (
     # capacidad por omision el jefe de almacen recibiria un 403 en la puerta.
     Capacidad("warehouse_voucher_authorize", "Autorizar vales de material",
               "inventario", bits=CAPTURA, menu="hidden"),
+    # La bitacora diaria del taller. Solo Jefe de taller la sube -- pidio
+    # negocio explicito (2026-09-28): el supervisor levanta el proyecto y pide
+    # material, pero quien reporta el avance del dia en el piso es Jefe de
+    # taller, que es tambien quien tiene a su cargo la plantilla de obreros
+    # (via `team`/`nm_team_user`, sin inventar un rol nuevo para el obrero).
+    #
+    # Va como capacidad y no como bit de la entidad `proyect`/`task` porque no
+    # es un CRUD de una tabla del menu: la pantalla ya existe
+    # (`activity_logs`) y lo unico que faltaba era la puerta.
+    Capacidad("daily_activity_log", "Bitacora diaria de taller", "operaciones",
+              bits=CAPTURA, menu="hidden"),
     # Va en el engrane del encabezado, no en el menu vertical.
     #
     # Se habia movido a `sidebar` al retirar el engrane, razonando que habia
@@ -457,7 +468,7 @@ ROLES = (
     # Ve los proyectos autorizados y mueve su estatus en el taller.
     Rol(4, "Jefe de taller", {
         "operaciones": CAPTURA, "inventario": CONSULTA, "configuracion": CONSULTA,
-    }, ["project_execution", "incident_supervision"]),
+    }, ["project_execution", "incident_supervision", "daily_activity_log"]),
 
     # Opera el almacen entero: da de alta productos, levanta vales, los
     # asigna, autoriza/entrega, confirma devoluciones y ajusta inventario.
