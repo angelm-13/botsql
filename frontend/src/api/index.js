@@ -640,6 +640,11 @@ export const updateProyect = (id, payload) => request(`/proyect/${id}`, { method
 export const deleteProyect = (id) => request(`/proyect/${id}`, { method: "DELETE" });
 export const transitionProyect = (id, payload) => request(`/proyect/${id}/transition`, { method: "POST", body: payload });
 export const addProyectMessage = (id, payload) => request(`/proyect/${id}/messages`, { method: "POST", body: payload });
+// El supervisor se hace cargo del proyecto, y lo suelta. No es un PUT sobre
+// `id_supervisor` a proposito: el servidor pone al actor, nunca a quien diga el
+// cuerpo, que es lo que hace que sea TOMAR y no asignar.
+export const takeProyect = (id) => request(`/proyect/${id}/take`, { method: "POST" });
+export const releaseProyect = (id) => request(`/proyect/${id}/release`, { method: "POST" });
 
 // Adjuntos de requerimientos (PDF/DOCX), aparte del modulo /document generico
 // -- ver el comentario de `add_project_document` en el backend.
@@ -817,3 +822,19 @@ export const disableLotControl = (idProduct) =>
 // numero con el que la gente conoce el papel: el del sistema anterior cuando lo
 // trae, y si no el identificador.
 export const listWarehouseVouchers = (params = {}) => request("/vouchers", { params });
+
+// --- Notificaciones ---
+export const getNotifications = (params = {}) => request("/notifications", { params });
+export const getUnreadCount = () => request("/notifications/unread-count");
+export const markNotificationAsRead = (id) => request(`/notifications/${id}/read`, { method: "PUT" });
+export const markAllNotificationsAsRead = () => request("/notifications/read-all", { method: "PUT" });
+export const deleteNotification = (id) => request(`/notifications/${id}`, { method: "DELETE" });
+
+// --- Bitácoras de Supervisores ---
+export const createActivityLog = (payload) => request("/activity-logs", { method: "POST", body: payload });
+export const getActivityLogs = (params = {}) => request("/activity-logs", { params });
+export const getActivityLog = (id) => request(`/activity-logs/${id}`);
+export const updateActivityLog = (id, payload) => request(`/activity-logs/${id}`, { method: "PUT", body: payload });
+export const deleteActivityLog = (id) => request(`/activity-logs/${id}`, { method: "DELETE" });
+export const getPendingActivities = (params = {}) => request("/activity-logs/pending", { params });
+export const getProjectActivityReport = (id, params = {}) => request(`/activity-logs/project/${id}/report`, { params });

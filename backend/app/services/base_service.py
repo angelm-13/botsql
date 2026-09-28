@@ -367,12 +367,27 @@ class CrudService:
                 condiciones.append(atributo.ilike("%" + limpio + "%"))
         return or_(*condiciones) if condiciones else None
 
+    # Si el listado esconde lo que esta de baja.
+    #
+    # Se deja apagado por omision: el CRUD generico nunca filtro, y encenderlo
+    # para todas las entidades a la vez cambiaria lo que ensenan 60 pantallas de
+    # golpe. Se enciende donde una fila de baja NO significa "un registro
+    # historico" sino "esto ya no rige" -- perfiles y permisos --, porque ahi
+    # ensenarla es ofrecer algo que el guardia de peticion va a negar.
+    solo_vigentes = False
+
     @classmethod
     def list(cls, page: int = 1, per_page: int = 20, filters: dict | None = None,
              sort: str | None = None, q: str | None = None):
         filters = filters or {}
         with transaction_context() as session:
             stmt = select(cls.model)
+            if cls.solo_vigentes and hasattr(cls.model, 'deletion_date'):
+                # En SQL y no descartando despues lo que llego: con paginacion,
+                # recortar en memoria da un total que no coincide con lo que se
+                # ve, y en una pantalla de permisos esa mentira pequena cuesta
+                # una hora a quien la cree.
+                stmt = stmt.where(cls.model.deletion_date.is_(None))
             busqueda = cls._busqueda_libre(q)
             if busqueda is not None:
                 stmt = stmt.where(busqueda)

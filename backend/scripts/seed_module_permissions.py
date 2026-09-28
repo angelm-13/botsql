@@ -100,6 +100,10 @@ def generar() -> str:
         resumen="\n".join(resumen),
         filas="\n".join(renglones),
         modulos_core_sql=", ".join(f"'{clave}'" for clave in sorted(MODULOS_CORE)),
+        capacidades_sql=", ".join(f"'{c.clave}'" for c in sorted(CAPACIDADES, key=lambda c: c.clave)),
+        roles_sql=",\n".join(
+            f"    ({r.id_permission}, {_sql(r.nombre)})" for r in ROLES
+        ),
     )
 
 
@@ -179,6 +183,64 @@ DELETE FROM entity_permission
  WHERE deletion_date IS NOT NULL
    AND deletion_date < TIMESTAMP '2026-09-02 18:00:00';
 
+-- Los roles que el registro declara, creados si esta base no los tiene.
+--
+-- Los escribia `database/seed.sql` a mano, y por eso una instalacion nueva
+-- salia con los identificadores cruzados: el archivo ocupaba los ids 2 y 3 con
+-- 'gerente_administrativo' y 'vendedor' -dos perfiles que el negocio no
+-- reconoce- y empujaba a Supervisor y Gerente a numeros altos. El desastre que
+-- eso causo en clientes reales esta documentado en
+-- 20260908100000_roles_con_los_ids_de_la_base.sql.
+--
+-- Se crea por NOMBRE, no por numero: si el rol ya existe -con el id que sea,
+-- ACTIVO O DE BAJA- no se toca nada. Comprobar solo lo activo resucitaria en
+-- cada reinicio del pod cualquier rol que un administrador haya retirado a
+-- proposito desde el gestor -la unica fila que quedaria seria la de baja, "no
+-- existe" volveria a ser cierto, y este INSERT la recrearia sin fin-. El id
+-- del registro solo se usa cuando ESTA LIBRE, que es el caso de una
+-- instalacion nueva, para que los numeros salgan como el registro los
+-- documenta. Nunca se mueve un rol existente de identificador: los usuarios
+-- apuntan ahi, y moverlos es mover permisos de gente real.
+INSERT INTO permission (
+    id_permission, created_by, authorized_by, permission_description,
+    id_department, id_subdepartment, id_level
+)
+SELECT r.id_permission, 1, 1, r.role_name, 1, 1, 1
+  FROM (VALUES
+{roles_sql}
+       ) AS r(id_permission, role_name)
+ WHERE NOT EXISTS (
+         SELECT 1 FROM permission p
+          WHERE lower(p.permission_description) = lower(r.role_name)
+       )
+   AND NOT EXISTS (
+         SELECT 1 FROM permission p WHERE p.id_permission = r.id_permission
+       );
+
+-- El mismo rol, cuando su numero del registro ya lo ocupa otro. Deja que la
+-- secuencia asigne uno: lo que importa es que el rol exista y se llame como el
+-- registro dice, porque la matriz de abajo resuelve por nombre.
+INSERT INTO permission (
+    created_by, authorized_by, permission_description,
+    id_department, id_subdepartment, id_level
+)
+SELECT 1, 1, r.role_name, 1, 1, 1
+  FROM (VALUES
+{roles_sql}
+       ) AS r(id_permission, role_name)
+ WHERE NOT EXISTS (
+         SELECT 1 FROM permission p
+          WHERE lower(p.permission_description) = lower(r.role_name)
+       );
+
+-- Los INSERT de arriba fijan identificadores explicitos, lo que NO avanza la
+-- secuencia. Sin realinearla, el siguiente rol que alguien cree desde la
+-- pantalla choca contra una llave ya usada.
+SELECT setval(
+    pg_get_serial_sequence('permission', 'id_permission'),
+    GREATEST((SELECT MAX(id_permission) FROM permission), 1)
+);
+
 -- La matriz se resuelve por NOMBRE de rol, no por id_permission fijo.
 --
 -- Version anterior de este archivo escribia el numero de `id_permission`
@@ -253,6 +315,86 @@ WHERE (
 -- nuevo, una entidad nueva, un rol nuevo. Eso es "sembrar lo que falta".
 ON CONFLICT (id_permission, entity_name) DO NOTHING;
 
+-- El catalogo de campos, poblado con las columnas REALES de cada entidad que
+-- esta matriz gestiona.
+--
+-- Por que hacia falta
+-- -------------------
+-- `nm_field_permission` -- la tabla que decide que atributos ve un rol -- se
+-- deriva mas abajo cruzando `entity_permission` con `field`. Si `field` no
+-- tiene las columnas de una tabla, ese cruce no produce NADA para ella, y la
+-- pantalla generica no pinta ni una columna porque solo muestra los campos
+-- concedidos (`canSeeField` en el frontend).
+--
+-- Medido en la base antes de este cambio: `field` cubria 34 tablas, y eran casi
+-- todas de logistica, documentos y laboratorio -- las que llegaron de ramas que
+-- traian su propio sembrado. Inventario, facturacion, CRM, recursos humanos y
+-- configuracion tenian CERO filas. El efecto real: un Almacenista abria
+-- Productos y no veia ninguna columna, aunque su rol concede `product` en
+-- CAPTURA; solo la cuenta de arranque veia algo, porque salta la comprobacion.
+--
+-- La fuente es `information_schema`, no una lista escrita a mano: una lista se
+-- desfasa en cuanto alguien agrega una columna, que es exactamente como se
+-- llego aqui. Las capacidades no aparecen porque no son tablas y el JOIN no las
+-- encuentra, que es lo correcto: no tienen campos que conceder.
+INSERT INTO field (table_name, field_name, created_by)
+SELECT c.table_name, c.column_name, 1
+  FROM information_schema.columns c
+  JOIN (SELECT DISTINCT entity_name FROM matriz_de_permisos) m
+    ON m.entity_name = c.table_name
+ WHERE c.table_schema = 'public'
+   -- Una capacidad NO es una tabla, aunque se llame como una.
+   --
+   -- `restaurant_waiter` es las dos cosas: la capacidad "Meseros" que concede
+   -- la pantalla, y una tabla real del restaurante. Sin esta exclusion el
+   -- cruce de arriba le poblaria campos a la capacidad -- y el gestor pediria
+   -- marcar columnas de una tabla que esa capacidad no gobierna. La lista sale
+   -- del registro, no escrita a mano, para que una capacidad nueva con nombre
+   -- de tabla no vuelva a colarse.
+   AND c.table_name NOT IN ({capacidades_sql})
+   -- Las administra el sistema: `created_by` lo fija el servicio con el
+   -- usuario de la sesion, y las tres fechas las escribe el ORM. Publicarlas
+   -- como configurables invita a capturarlas a mano.
+   AND c.column_name NOT IN ('created_by', 'creation_date', 'last_update_date', 'deletion_date')
+   AND NOT EXISTS (
+     SELECT 1 FROM field f
+      WHERE f.table_name = c.table_name
+        AND f.field_name = c.column_name
+        AND f.deletion_date IS NULL
+   );
+
+-- Y se retiran las columnas de sistema que sembrados anteriores si publicaron.
+--
+-- `field` traia 124 filas de `created_by`, `creation_date`, `last_update_date`
+-- y `deletion_date` -- casi todas de logistica, documentos y laboratorio, que
+-- llegaron con el sembrado de su propia rama. La pantalla ya las ocultaba, pero
+-- la derivacion de mas abajo si les daba permiso, asi que cada rol cargaba
+-- decenas de filas que no gobiernan nada.
+UPDATE field f
+   SET deletion_date = now(),
+       last_update_date = now()
+ WHERE f.deletion_date IS NULL
+   AND f.field_name IN ('created_by', 'creation_date', 'last_update_date', 'deletion_date')
+   AND EXISTS (SELECT 1 FROM matriz_de_permisos m WHERE m.entity_name = f.table_name);
+
+-- Una columna que ya no existe en la tabla deja de ofrecerse. Se retira en
+-- logico, como todo aqui, asi que el permiso que alguien le hubiera dado queda
+-- para consulta. Si la columna vuelve, el INSERT de arriba la repone como fila
+-- nueva en la siguiente corrida -- sin arrastrar los permisos de antes, que es
+-- lo correcto: la columna de hoy puede no significar lo que significaba.
+UPDATE field f
+   SET deletion_date = now(),
+       last_update_date = now()
+ WHERE f.deletion_date IS NULL
+   AND EXISTS (SELECT 1 FROM matriz_de_permisos m WHERE m.entity_name = f.table_name)
+   AND f.table_name NOT IN ({capacidades_sql})
+   AND NOT EXISTS (
+     SELECT 1 FROM information_schema.columns c
+      WHERE c.table_schema = 'public'
+        AND c.table_name = f.table_name
+        AND c.column_name = f.field_name
+   );
+
 DROP TABLE matriz_de_permisos;
 
 -- Los permisos de campo se derivan del permiso de entidad, asi que hay que
@@ -268,6 +410,11 @@ UPDATE nm_field_permission nfp
       WHERE ep.id_permission = nfp.id_permission
         AND ep.entity_name = f.table_name
         AND ep.deletion_date IS NULL
+        -- Tambien cuenta la baja del CAMPO, no solo la de la entidad. Sin esta
+        -- linea, retirar una columna del catalogo dejaba viva su concesion:
+        -- eran las 124 filas de `created_by` y las tres fechas, que seguian
+        -- concedidas despues de dar de baja el campo.
+        AND f.deletion_date IS NULL
    );
 
 INSERT INTO nm_field_permission (id_field, id_permission, control_type, created_by)

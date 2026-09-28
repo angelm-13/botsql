@@ -723,6 +723,20 @@ export default function RolePermissionManagerPage() {
     return t(`menu.${name}`, entity?.label || humanizeLabel(name));
   }
 
+  // Lo que el campo ES en la base, no solo como se llama: a que tabla apunta
+  // cuando es llave foranea, y si la tabla lo exige. Sin esto, decidir si un
+  // rol ve `id_location_from` obliga a abrir el esquema para saber que es una
+  // ubicacion -- y el catalogo ya lo sabe, porque se deriva de los modelos.
+  function fieldMeta(field) {
+    const partes = [];
+    if (field?.is_foreign && field?.reference_table) {
+      const destino = t(`menu.${field.reference_table}`, humanizeLabel(field.reference_table));
+      partes.push(`→ ${destino}`);
+    }
+    if (field?.is_required) partes.push(t("common.field_required", "obligatorio"));
+    return partes.join(" · ");
+  }
+
   function fieldLabel(field) {
     const name = getFieldName(field);
     const entityName = field?.entity_name || field?.table_name || selectedEntity;
@@ -893,7 +907,10 @@ export default function RolePermissionManagerPage() {
                   const entityEnabled = hasAnyScope(entityMatrix[selectedEntity]);
                   return (
                     <div className="field-permission-row" key={fieldKey}>
-                      <span>{fieldLabel(field)}</span>
+                      <span className="field-permission-name">
+                        {fieldLabel(field)}
+                        {fieldMeta(field) && <small className="field-permission-meta">{fieldMeta(field)}</small>}
+                      </span>
                       <label className="checkbox-inline"><input type="checkbox" checked={hasBit(value, FIELD_VISIBLE_BIT)} onChange={() => setFieldVisible(fieldKey)} disabled={!selectedRoleId || !entityEnabled} /></label>
                     </div>
                   );

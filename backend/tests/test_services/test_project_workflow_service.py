@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from app.models.customer_contact import CustomerContact
 from app.models.entity_permission import EntityPermission
 from app.models.invoice import Invoice
@@ -14,7 +16,9 @@ from app.services.project_management_service import (
     delete_project_payment,
     get_project_detail,
     list_projects,
+    release_project,
     settle_project_payment,
+    take_project,
     transition_management,
     transition_project,
     update_project,
@@ -338,6 +342,144 @@ if __name__ == "__main__":
 
     unittest.main()
 
+class TestProjectLeaderRights(TestProjectWorkflowService):
+    """El lider designado del proyecto.
+
+    Antes el ambito propio se calculaba solo sobre `created_by`, de modo que un
+    proyecto asignado a otra persona quedaba invisible para su propio
+    responsable: no lo veia en su lista ni lo podia consultar, mucho menos
+    moverlo. Un supervisor puede levantar el proyecto y asignarlo, y quien lo
+    lidera es quien lo saca adelante.
+    """
+
+    def setUp(self):
+        super().setUp()
+        # Lucia lidera, pero no creo el proyecto ni tiene capacidades globales.
+        self.leader = {"id_user": 41, "id_permission": 401}
+
+    def _create_led_by_leader(self, title="Con lider"):
+        """Un proyecto cuyo responsable NO es quien lo creo.
+
+        Ya no se puede pedir al crearlo -- `create_project` pone siempre al
+        actor y descarta el `leader` del cuerpo --, pero la situacion sigue
+        existiendo en datos reales: todos los proyectos levantados antes de ese
+        cambio pudieron asignarse a otra persona desde el formulario. Se
+        reproduce escribiendo la columna, que es exactamente como esos
+        proyectos estan hoy en la base, y lo que se prueba sigue vivo: que el
+        ambito propio mire `leader` y no solo `created_by`.
+        """
+        creado = create_project({
+            "id_customer_supplier": 1,
+            "proyect_description": "Trabajo asignado",
+            "title": title,
+        }, self.supervisor)
+        with transaction_context() as db:
+            db.get(Proyect, creado["id_proyect"]).leader = 41
+        creado["leader"] = 41
+        return creado
+
+    def test_the_leader_sees_the_project_they_did_not_create(self):
+        self._create_led_by_leader()
+
+        result = list_projects(self.leader)
+
+        self.assertEqual(1, result["total"])
+        self.assertEqual(11, result["items"][0]["created_by"])
+        self.assertEqual(41, result["items"][0]["leader"])
+
+    def test_the_leader_can_read_the_detail(self):
+        project = self._create_led_by_leader()
+
+        detail = get_project_detail(project["id_proyect"], self.leader)
+
+        self.assertEqual(project["id_proyect"], detail["id_proyect"])
+
+    def test_the_leader_submits_and_runs_their_project(self):
+        """Gerente autoriza directo desde Borrador; el lider ejecuta despues.
+
+        Entre "autorizado" y "en proceso" va la espera de material
+        obligatoria (`waiting_material`), y esa la controla quien autoriza
+        -- no el lider -- porque es quien sabe si la compra ya llego.
+        """
+        project = self._create_led_by_leader()["id_proyect"]
+        self._add_task(project, "terminada")
+
+        transition_project(project, {"status": "authorized"}, self.manager)
+        self._start_work(project)
+
+        self.assertEqual(
+            "completed",
+            transition_project(project, {"status": "completed"}, self.leader)["proyect_status"],
+        )
+
+    def test_the_leader_cannot_authorize_their_own_project(self):
+        """Separacion de funciones: quien ejecuta el trabajo no lo aprueba.
+
+        Es lo que evita que una sola persona levante, apruebe y cierre su
+        propio proyecto.
+        """
+        project = self._create_led_by_leader()["id_proyect"]
+
+        for target in ("authorized", "denied", "blocked"):
+            with self.subTest(target=target), self.assertRaises(AppError) as raised:
+                transition_project(project, {"status": target, "reason": "Motivo"}, self.leader)
+            self.assertEqual("errors.permission_denied", raised.exception.message_key)
+
+    def test_the_leader_can_stop_and_resume_with_a_reason(self):
+        project = self._create_led_by_leader()["id_proyect"]
+        self._add_task(project)
+        transition_project(project, {"status": "authorized"}, self.manager)
+        self._start_work(project)
+
+        with self.assertRaises(AppError):
+            transition_project(project, {"status": "stopped"}, self.leader)
+
+        stopped = transition_project(
+            project, {"status": "stopped", "reason": "Falta material"}, self.leader
+        )
+        self.assertEqual("stopped", stopped["proyect_status"])
+
+    def test_someone_who_is_neither_creator_nor_leader_sees_nothing(self):
+        self._create_led_by_leader()
+        forastero = {"id_user": 99, "id_permission": 999}
+
+        self.assertEqual(0, list_projects(forastero)["total"])
+
+    def test_the_leader_cannot_delete_a_project_someone_else_created(self):
+        """El lider lo saca adelante, pero no lo elimina."""
+        project = self._create_led_by_leader()["id_proyect"]
+
+        with self.assertRaises(AppError) as raised:
+            delete_project(project, self.leader)
+
+        self.assertEqual("errors.permission_denied", raised.exception.message_key)
+
+    def test_the_creator_still_deletes_their_own_draft(self):
+        project = self._create_led_by_leader()["id_proyect"]
+
+        self.assertTrue(delete_project(project, self.supervisor)["deleted"])
+
+    def test_the_leader_edits_their_project_while_it_is_editable(self):
+        project = self._create_led_by_leader()["id_proyect"]
+
+        updated = update_project(project, {"title": "Titulo del lider"}, self.leader)
+
+        self.assertEqual("Titulo del lider", updated["title"])
+
+    def test_the_workshop_sees_a_project_it_leads_before_authorization(self):
+        """Un jefe de taller que ademas lidera no espera la autorizacion."""
+        creado = create_project({
+            "id_customer_supplier": 1,
+            "proyect_description": "Trabajo propio del taller",
+            "title": "Taller lider",
+        }, self.supervisor)
+        # Igual que en `_create_led_by_leader`: el responsable ya no se elige al
+        # crear, pero los proyectos que ya lo tienen distinto siguen ahi.
+        with transaction_context() as db:
+            db.get(Proyect, creado["id_proyect"]).leader = 31
+
+        self.assertEqual(1, list_projects(self.workshop)["total"])
+
 
 class TestLaOrdenDeTrabajo(TestProjectWorkflowService):
     """Los atributos de la orden de trabajo (migracion 20260911180000)."""
@@ -370,7 +512,7 @@ class TestLaOrdenDeTrabajo(TestProjectWorkflowService):
         self.assertEqual("2026-10-15", creado["delivery_date"])
 
     def test_a_real_folio_is_not_replaced_by_the_generated_one(self):
-        """El folio propio no se pisa con el "PRJ-000006" autogenerado.
+        """El folio propio no se pisa con el generado automaticamente.
 
         `_project_payload` inventaba un folio SIEMPRE, sin mirar si el
         proyecto ya traia el suyo. El detalle -- no `create_project`, que
@@ -388,7 +530,7 @@ class TestLaOrdenDeTrabajo(TestProjectWorkflowService):
         self.assertEqual("OT-2026-0042", detalle["folio"])
 
     def test_a_project_without_a_folio_still_gets_the_generated_one(self):
-        """El "PRJ-000006" sigue existiendo para quien no captura folio."""
+        """El folio "PRJ-000006" sigue existiendo para quien no captura folio."""
         creado = self._create()
 
         detalle = get_project_detail(creado["id_proyect"], self.supervisor)
@@ -495,6 +637,36 @@ class TestLaOrdenDeTrabajo(TestProjectWorkflowService):
 
         self.assertEqual("errors.not_found", fallo.exception.message_key)
 
+    def test_the_supervisor_cannot_be_assigned_from_the_payload(self):
+        """Se TOMA, no se asigna.
+
+        Era un desplegable del formulario, o sea que quien capturaba la orden
+        repartia el trabajo del taller desde su escritorio.
+        """
+        creado = create_project({
+            "id_customer_supplier": 1,
+            "proyect_description": "Con supervisor impuesto",
+            "id_supervisor": 31,
+        }, self.supervisor)
+
+        self.assertIsNone(creado["id_supervisor"])
+
+        update_project(creado["id_proyect"], {"id_supervisor": 31}, self.supervisor)
+
+        self.assertIsNone(
+            get_project_detail(creado["id_proyect"], self.supervisor)["id_supervisor"])
+
+    def test_the_leader_is_always_whoever_created_the_project(self):
+        """Se podia levantar una orden a nombre de otra persona."""
+        creado = create_project({
+            "id_customer_supplier": 1,
+            "proyect_description": "A nombre de otro",
+            "leader": 41,
+        }, self.supervisor)
+
+        self.assertEqual(self.supervisor["id_user"], creado["leader"])
+        self.assertEqual(self.supervisor["id_user"], creado["created_by"])
+
     def test_updating_the_work_order_fields_validates_them_too(self):
         creado = self._create()
 
@@ -502,3 +674,91 @@ class TestLaOrdenDeTrabajo(TestProjectWorkflowService):
             update_project(creado["id_proyect"], {"id_customer_contact": 999999}, self.supervisor)
 
         self.assertEqual("errors.not_found", fallo.exception.message_key)
+
+
+class TestElSupervisorTomaElProyecto(TestProjectWorkflowService):
+    """El proyecto no se asigna: lo toma quien lo va a sacar adelante.
+
+    `id_supervisor` era un desplegable del formulario, o sea que quien
+    capturaba la orden repartia el trabajo del taller desde su escritorio.
+    Ahora el proyecto nace libre y lo toma quien tiene la capacidad
+    `project_execution` -- hoy el rol Jefe de taller (`self.workshop`).
+    """
+
+    def _autorizado(self, title="Para tomar"):
+        """Un proyecto ya autorizado, que es lo que el taller ve.
+
+        Gerente lo autoriza directo desde Borrador -- Supervisor ya no tiene
+        la puerta de "enviar a revision" (decision de negocio, ver
+        `transition_project`).
+        """
+        creado = self._create(title=title)
+        transition_project(creado["id_proyect"], {"status": "authorized"}, self.manager)
+        return creado["id_proyect"]
+
+    def test_the_workshop_takes_a_free_project(self):
+        id_proyect = self._autorizado()
+
+        tomado = take_project(id_proyect, self.workshop)
+
+        self.assertEqual(self.workshop["id_user"], tomado["id_supervisor"])
+
+    def test_it_is_written_in_the_file(self):
+        """Quien lo tenia cuando paso lo que paso se lee en el expediente."""
+        id_proyect = self._autorizado()
+
+        take_project(id_proyect, self.workshop)
+
+        with transaction_context() as db:
+            eventos = [e.event_type for e in db.query(ProyectEvent)
+                       .filter(ProyectEvent.id_proyect == id_proyect).all()]
+        self.assertIn("taken", eventos)
+
+    def test_whoever_cannot_execute_cannot_take(self):
+        """Sin la capacidad no se toma, aunque se pueda ver el proyecto."""
+        id_proyect = self._autorizado()
+
+        with self.assertRaises(AppError) as fallo:
+            take_project(id_proyect, self.supervisor)
+
+        self.assertEqual("errors.permission_denied", fallo.exception.message_key)
+
+    def test_a_taken_project_is_not_taken_again(self):
+        """Quitarselo a otro seria reasignar, y eso no es tomar."""
+        id_proyect = self._autorizado()
+        take_project(id_proyect, self.workshop)
+        otro_taller = {"id_user": 32, "id_permission": 301}
+
+        with self.assertRaises(AppError) as fallo:
+            take_project(id_proyect, otro_taller)
+
+        self.assertEqual("errors.project_already_taken", fallo.exception.message_key)
+
+    def test_taking_it_twice_is_the_same_as_taking_it_once(self):
+        id_proyect = self._autorizado()
+        take_project(id_proyect, self.workshop)
+
+        tomado = take_project(id_proyect, self.workshop)
+
+        self.assertEqual(self.workshop["id_user"], tomado["id_supervisor"])
+
+    def test_whoever_has_it_releases_it_and_another_takes_it(self):
+        """Sin soltar, equivocarse de proyecto lo dejaba ocupado para siempre."""
+        id_proyect = self._autorizado()
+        take_project(id_proyect, self.workshop)
+        otro_taller = {"id_user": 32, "id_permission": 301}
+
+        release_project(id_proyect, self.workshop)
+        tomado = take_project(id_proyect, otro_taller)
+
+        self.assertEqual(32, tomado["id_supervisor"])
+
+    def test_nobody_else_releases_what_they_do_not_have(self):
+        id_proyect = self._autorizado()
+        take_project(id_proyect, self.workshop)
+        otro_taller = {"id_user": 32, "id_permission": 301}
+
+        with self.assertRaises(AppError) as fallo:
+            release_project(id_proyect, otro_taller)
+
+        self.assertEqual("errors.permission_denied", fallo.exception.message_key)

@@ -275,20 +275,51 @@ class TestMatrizDePermisos(unittest.TestCase):
             "\"Jefe de almacen\" deberia haber desaparecido del catalogo.",
         )
 
-    def test_the_project_leader_executes_but_does_not_authorize(self):
-        jefe = next(r for r in registry.ROLES if r.nombre == "Jefe de taller")
+    def test_whoever_executes_a_project_does_not_authorize_it(self):
+        """Quien lo trabaja no lo aprueba: son dos personas.
+
+        `project_execution` la tiene Jefe de taller, no Supervisor ni
+        Gerente; lo que NO puede pasar es que el mismo rol ejecute y
+        autorice.
+        """
+        taller = next(r for r in registry.ROLES if r.nombre == "Jefe de taller")
         gerente = next(r for r in registry.ROLES if r.nombre == "Gerente")
 
-        self.assertIn("project_execution", jefe.capacidades)
-        self.assertNotIn("project_authorization", jefe.capacidades)
+        self.assertIn("project_execution", taller.capacidades)
+        self.assertNotIn("project_authorization", taller.capacidades)
         self.assertIn("project_authorization", gerente.capacidades)
 
-    def test_restaurant_roles_only_reach_the_restaurant(self):
-        for nombre in ("Mesero", "Cocina", "Caja Restaurante"):
-            rol = next(r for r in registry.ROLES if r.nombre == nombre)
-            with self.subTest(rol=nombre):
-                self.assertEqual({"configuracion"}, set(rol.modulos))
-                self.assertTrue(rol.capacidades)
+    def test_no_role_exists_only_to_carry_one_capability(self):
+        """Un rol que no concede ningun modulo propio es el mismo derecho dicho dos veces.
+
+        Asi estaban `Mesero`, `Cocina`, `Caja Restaurante` y
+        `Admin Restaurante`: cada uno existia para cargar UNA capacidad que el
+        registro ya declara y que el gestor ya ofrece por separado, sembrada
+        ademas con otros bits -15 donde aqui dicen 7 y 6-, porque los escribia
+        `database/seed.sql` a mano. Se retiraron; las capacidades siguen.
+        """
+        for rol in registry.ROLES:
+            propios = set(rol.modulos) - {"configuracion"}
+            with self.subTest(rol=rol.nombre):
+                self.assertTrue(
+                    propios,
+                    f"El rol '{rol.nombre}' no concede ningun modulo de trabajo: "
+                    "solo carga capacidades que el gestor ya ofrece sueltas.",
+                )
+
+    def test_the_restaurant_is_still_reachable_after_retiring_its_roles(self):
+        """Retirar los perfiles no retira la funcion."""
+        capacidades = {c.clave for c in registry.CAPACIDADES if c.modulo == "restaurante"}
+
+        self.assertEqual(
+            {"restaurant_waiter", "restaurant_cashier",
+             "restaurant_kitchen", "restaurant_admin"},
+            capacidades,
+        )
+        # Y alguien tiene que poder concederlas: si ningun rol las trae, el
+        # modulo queda vendido y sin nadie que lo abra.
+        concedidas = {c for rol in registry.ROLES for c in rol.capacidades}
+        self.assertTrue(capacidades <= concedidas)
 
     def test_every_generated_row_uses_bits_the_code_understands(self):
         # entity_permission.control_type ya no existe: cada accion vive en su
@@ -428,6 +459,78 @@ class TestSqlGenerado(unittest.TestCase):
         sql = self._sql()
 
         self.assertIn("nm_field_permission", sql)
+
+    def test_it_fills_the_field_catalog_from_the_real_columns(self):
+        """Sin `field` poblada, `nm_field_permission` no puede existir.
+
+        Es la causa medida de que inventario, facturacion, CRM, recursos
+        humanos y configuracion no tuvieran NINGUN atributo configurado: la
+        derivacion de permisos por campo cruza `entity_permission` con `field`,
+        y `field` solo tenia las 34 tablas que trajeron las ramas de logistica,
+        documentos y laboratorio con su propio sembrado. Un Almacenista abria
+        Productos y no veia ni una columna.
+
+        La fuente tiene que ser `information_schema`, no una lista escrita a
+        mano: una lista se desfasa en cuanto alguien agrega una columna, que es
+        exactamente como se llego a ese estado.
+        """
+        sql = self._sql()
+
+        self.assertIn("INSERT INTO field", sql)
+        self.assertIn("information_schema.columns", sql)
+
+    def test_the_field_catalog_never_offers_a_system_column(self):
+        """`created_by` lo fija el servicio, y las fechas las escribe el ORM."""
+        sql = self._sql()
+        compacto = " ".join(sql.split())
+
+        self.assertIn(
+            "c.column_name NOT IN ('created_by', 'creation_date', "
+            "'last_update_date', 'deletion_date')",
+            compacto,
+        )
+
+    def test_a_capability_never_gets_fields_even_if_a_table_shares_its_name(self):
+        """`restaurant_waiter` es capacidad Y tabla real del restaurante.
+
+        El cruce que puebla `field` va por nombre de tabla, asi que sin excluir
+        las capacidades le poblaria columnas a la capacidad "Meseros".
+        """
+        sql = self._sql()
+
+        for capacidad in registry.CAPACIDADES:
+            with self.subTest(capacidad=capacidad.clave):
+                self.assertIn(f"'{capacidad.clave}'", sql.split("NOT IN (")[1])
+
+    def test_it_creates_the_roles_the_registry_declares(self):
+        """Los escribia `seed.sql` a mano, y por eso salian con ids cruzados.
+
+        Se resuelve por NOMBRE: un rol que ya existe no se toca, pase lo que
+        pase con su numero. Mover un rol de identificador es mover permisos de
+        gente real.
+        """
+        sql = self._sql()
+
+        self.assertIn("INSERT INTO permission", sql)
+        for rol in registry.ROLES:
+            with self.subTest(rol=rol.nombre):
+                self.assertIn(f"({rol.id_permission}, '{rol.nombre}')", sql)
+        self.assertIn("lower(p.permission_description) = lower(r.role_name)", sql)
+
+    def test_a_retired_role_is_never_reseeded(self):
+        """Retirarlo en la base no sirve de nada si el sembrado lo repone."""
+        sql = self._sql()
+
+        # Por renglon y no por subcadena: "Cocina" tambien es la ETIQUETA de
+        # la capacidad `restaurant_kitchen`, que si sigue en el SQL.
+        renglones = [l.strip() for l in sql.splitlines()]
+        for nombre in ("Mesero", "Cocina",
+                       "Caja Restaurante", "Admin Restaurante"):
+            with self.subTest(rol=nombre):
+                self.assertFalse(
+                    [l for l in renglones if l.startswith(f"('{nombre}',")],
+                    f"El sembrado repondria el rol retirado '{nombre}'.",
+                )
 
     def test_it_derives_write_bits_from_the_entity_scope_too(self):
         """Alta/actualizacion a nivel de ENTIDAD debe arrastrar bits de

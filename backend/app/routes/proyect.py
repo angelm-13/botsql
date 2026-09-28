@@ -14,7 +14,9 @@ from app.services.project_management_service import (
     list_projects,
     project_document_content,
     project_options,
+    release_project,
     settle_project_payment,
+    take_project,
     transition_management,
     transition_project,
     update_project,
@@ -207,6 +209,27 @@ def update_proyect(user_data, id_proyect):
 @require_entity_permission('proyect', 'update')
 def transition_proyect(user_data, id_proyect):
     return jsonify(transition_project(id_proyect, request.get_json() or {}, user_data))
+
+
+@bp_proyect.route('/<id_proyect>/take', methods=['POST'])
+@token_required
+@require_entity_permission('proyect', 'update')
+def take_proyect(user_data, id_proyect):
+    """El supervisor se hace cargo del proyecto.
+
+    Pide el permiso de ACTUALIZAR proyecto, igual que las transiciones: tomarlo
+    cambia el proyecto. Quien puede tomarlo de verdad -- la capacidad
+    `project_execution` -- lo decide el servicio, que es donde vive el resto de
+    las reglas de alcance.
+    """
+    return jsonify(take_project(id_proyect, user_data))
+
+
+@bp_proyect.route('/<id_proyect>/release', methods=['POST'])
+@token_required
+@require_entity_permission('proyect', 'update')
+def release_proyect(user_data, id_proyect):
+    return jsonify(release_project(id_proyect, user_data))
 
 
 @bp_proyect.route('/<id_proyect>/management-transition', methods=['POST'])

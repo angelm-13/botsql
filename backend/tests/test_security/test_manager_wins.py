@@ -109,6 +109,15 @@ class TestNingunaMigracionPisaAlGestor(unittest.TestCase):
         "20260822210000_appointments.sql",
         "20260910110000_el_prevale_lo_autoriza_el_jefe_de_almacen.sql",
         "20260914110000_equipos_y_alcance_por_accion.sql",
+        # Distinto de los diez de arriba: este UPDATE ya compara contra el
+        # valor MALO conocido que dejo `seed.sql` (`= (4, 4, 4, 4)`), no
+        # contra el valor objetivo -- deja de tocar la fila en cuanto se
+        # aplica una vez, sin volver a pisar un ajuste posterior del gestor.
+        # Sigue en esta lista porque el detector es por texto (cualquier
+        # `UPDATE entity_permission ... SET scope_* =` cuenta, sin leer el
+        # WHERE) y no puede distinguir esa guarda de una realmente
+        # incondicional.
+        "20260918100000_roles_redundantes_retirados.sql",
     })
 
     def test_no_migration_overwrites_scope_columns_via_plain_update(self):

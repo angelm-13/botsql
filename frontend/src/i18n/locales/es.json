@@ -147,8 +147,8 @@
     "field_visibility_hint": "Marca los campos que serán visibles para este rol. Los no marcados quedarán ocultos.",
     "module_hidden_hint": "Este módulo no tiene acciones seleccionadas; quedará oculto y sus campos no se mostrarán.",
     "no_fields_available": "No hay campos configurables para este módulo.",
-    "actions_only_module": "Permisos administrados por acción",
-    "actions_only_hint": "Este espacio de trabajo no expone permisos por campo. Usa Crear, Leer, Actualizar y Eliminar en la tabla superior para controlar sus funciones.",
+    "actions_only_module": "Permiso por acción, no por campo",
+    "actions_only_hint": "Esto es una capacidad — un derecho con nombre propio, no una tabla — así que no tiene atributos que mostrar. Se concede con Crear, Leer, Actualizar y Eliminar en la tabla de arriba.",
     "mfa_reset": "Restablecer MFA",
     "mfa_reset_confirm": "¿Restablecer MFA de este usuario?",
     "mfa_reset_success": "MFA restablecido correctamente",
@@ -169,7 +169,8 @@
     "show": "Ver",
     "no_date": "sin fecha",
     "expand_form": "abrir",
-    "collapse_form": "ocultar"
+    "collapse_form": "ocultar",
+    "field_required": "obligatorio"
   },
   "entities": {
     "bank": {
@@ -3560,6 +3561,9 @@
     "quotation": "Cotización (folio)",
     "purchase_order": "Orden de compra",
     "no_supervisor": "Sin asignar",
+    "unassigned": "Sin tomar",
+    "take": "Tomar el proyecto",
+    "release": "Soltar el proyecto",
     "delivery_date": "Fecha de entrega",
     "priority": "Prioridad",
     "select_priority": "Selecciona una prioridad",
@@ -3577,7 +3581,16 @@
     "attachment_title": "Título (opcional)",
     "error_upload": "No fue posible subir el archivo.",
     "confirm_delete_attachment": "¿Eliminar este archivo?",
-    "management_view_only": "Solo Gerencia autoriza o cancela."
+    "management_view_only": "Solo Gerencia autoriza o cancela.",
+    "priority": "Prioridad",
+    "priority_baja": "Baja",
+    "priority_media": "Media",
+    "priority_alta": "Alta",
+    "total_cost": "Costo total",
+    "payment_status": "Estado de pago",
+    "payment_status_pendiente": "Pendiente",
+    "payment_status_cobrado": "Cobrado",
+    "payment_status_excedido": "Excedido"
   },
   "customer_contact": {
     "title": "Contactos",

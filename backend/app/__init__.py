@@ -112,6 +112,8 @@ from app.routes.appointments import bp_appointments
 from app.routes.public_calendar import bp_public_appointments, bp_public_calendar
 from app.routes.kpi import bp_kpi, bp_kpi_dashboard, bp_kpi_dashboard_widget
 from app.routes.permission_kpi import bp_permission_kpi
+from app.routes.notifications import bp_notifications
+from app.routes.activity_logs import bp_activity_logs
 
 def _documents_reports_app_path() -> str:
     return os.getenv('DOCUMENTS_REPORTS_APP_PATH', '/documents-reports/app')
@@ -777,6 +779,8 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_kronos)
     app.register_blueprint(bp_pos)
     app.register_blueprint(bp_restaurant)
+    app.register_blueprint(bp_notifications)
+    app.register_blueprint(bp_activity_logs)
     _register_documents_blueprint(app)
 
     @app.route('/uploads/products/<path:filename>')

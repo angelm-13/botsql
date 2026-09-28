@@ -140,8 +140,8 @@
     "field_visibility_hint": "Select the fields visible to this role. Unselected fields will remain hidden.",
     "module_hidden_hint": "This module has no selected actions; it will stay hidden and its fields will not be shown.",
     "no_fields_available": "No configurable fields are available for this module.",
-    "actions_only_module": "Permissions managed by action",
-    "actions_only_hint": "This workspace does not expose field permissions. Use Create, Read, Update, and Delete in the table above to control its functions.",
+    "actions_only_module": "Permission by action, not by field",
+    "actions_only_hint": "This is a capability — a named right, not a table — so it has no attributes to show. Grant it with Create, Read, Update and Delete in the table above.",
     "mfa_reset": "Reset MFA",
     "mfa_reset_confirm": "Reset MFA for this user?",
     "mfa_reset_success": "MFA reset successfully",
@@ -162,7 +162,8 @@
     "show": "Show",
     "no_date": "no date",
     "expand_form": "open",
-    "collapse_form": "hide"
+    "collapse_form": "hide",
+    "field_required": "required"
   },
   "entities": {
     "bank": {
@@ -3518,6 +3519,9 @@
     "quotation": "Quotation (folio)",
     "purchase_order": "Purchase order",
     "no_supervisor": "Unassigned",
+    "unassigned": "Not taken",
+    "take": "Take this project",
+    "release": "Release this project",
     "delivery_date": "Delivery date",
     "priority": "Priority",
     "select_priority": "Select a priority",

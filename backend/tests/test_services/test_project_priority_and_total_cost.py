@@ -53,19 +53,26 @@ class TestProjectPriorityAndTotalCost(BackendTestCase):
             self.assertIsNone(stored.total_cost)
 
     def test_manager_can_set_priority_and_total_cost_on_create(self):
-        project = self._create(self.manager, priority="alta", total_cost=1000)
+        # Gerencia ya no crea proyectos (correccion de negocio 2026-09-28:
+        # solo Supervisor levanta la orden) -- lo crea el Supervisor y
+        # Gerencia le pone prioridad/costo total enseguida, via update.
+        project = self._create(self.supervisor)
 
-        self.assertEqual(project["priority"], "alta")
-        self.assertEqual(project["total_cost"], 1000)
+        result = update_project(project["id_proyect"], {"priority": "alta", "total_cost": 1000}, self.manager)
+
+        self.assertEqual(result["priority"], "alta")
+        self.assertEqual(result["total_cost"], 1000)
 
     def test_invalid_priority_is_rejected(self):
+        project = self._create(self.supervisor)
         with self.assertRaises(AppError) as raised:
-            self._create(self.manager, priority="urgente")
+            update_project(project["id_proyect"], {"priority": "urgente"}, self.manager)
         self.assertEqual("errors.invalid_field", raised.exception.message_key)
 
     def test_negative_total_cost_is_rejected(self):
+        project = self._create(self.supervisor)
         with self.assertRaises(AppError) as raised:
-            self._create(self.manager, total_cost=-1)
+            update_project(project["id_proyect"], {"total_cost": -1}, self.manager)
         self.assertEqual("errors.invalid_field", raised.exception.message_key)
 
     def test_supervisor_update_silently_ignores_management_only_fields(self):
@@ -93,7 +100,8 @@ class TestProjectPriorityAndTotalCost(BackendTestCase):
             self.assertEqual(stored.title, "Actualizado")
 
     def test_manager_update_overwrites_priority_and_total_cost(self):
-        project = self._create(self.manager, priority="baja", total_cost=500)
+        project = self._create(self.supervisor)
+        update_project(project["id_proyect"], {"priority": "baja", "total_cost": 500}, self.manager)
 
         result = update_project(project["id_proyect"], {"priority": "media", "total_cost": 750}, self.manager)
 
@@ -116,15 +124,16 @@ class TestProjectPriorityAndTotalCost(BackendTestCase):
         self.assertNotIn("collection_status", listing["items"][0])
 
     def test_collection_status_without_total_cost_is_none(self):
-        project = self._create(self.manager)
+        project = self._create(self.supervisor)
 
         detail = get_project_detail(project["id_proyect"], self.manager)
 
         self.assertIsNone(detail["collection_status"])
 
     def test_collection_status_pendiente_cobrado_excedido(self):
-        project = self._create(self.manager, total_cost=1000)
+        project = self._create(self.supervisor)
         project_id = project["id_proyect"]
+        update_project(project_id, {"total_cost": 1000}, self.manager)
 
         self.assertEqual(get_project_detail(project_id, self.manager)["collection_status"], "pendiente")
 
@@ -139,7 +148,8 @@ class TestProjectPriorityAndTotalCost(BackendTestCase):
         self.assertEqual(get_project_detail(project_id, self.manager)["collection_status"], "excedido")
 
     def test_list_projects_reports_collection_status_per_project(self):
-        project = self._create(self.manager, total_cost=1000)
+        project = self._create(self.supervisor)
+        update_project(project["id_proyect"], {"total_cost": 1000}, self.manager)
         add_project_payment(project["id_proyect"], {
             "payment_date": "2026-09-01", "amount": 400, "paid_at": "2026-09-01",
         }, self.manager)
@@ -158,6 +168,7 @@ class TestManagementStatusFollowsCollection(BackendTestCase):
 
     def setUp(self):
         super().setUp()
+        self.supervisor = {"id_user": 11, "id_permission": 101}
         self.manager = {"id_user": 21, "id_permission": 201}
         with transaction_context() as db:
             db.add(EntityPermission(
@@ -166,12 +177,17 @@ class TestManagementStatusFollowsCollection(BackendTestCase):
             ))
 
     def _create(self, **extra):
-        return create_project({
+        # Gerencia ya no crea proyectos (correccion de negocio 2026-09-28):
+        # lo levanta el Supervisor, y Gerencia le pone `total_cost` (si lo
+        # pide esta prueba) enseguida, via update -- antes de autorizarlo.
+        project = create_project({
             "id_customer_supplier": 1,
             "proyect_description": "Trabajo de fabricación",
             "title": "Proyecto",
-            **extra,
-        }, self.manager)
+        }, self.supervisor)
+        if extra:
+            project = update_project(project["id_proyect"], extra, self.manager)
+        return project
 
     def test_manual_transition_to_cobrado_is_rejected(self):
         project = self._create()["id_proyect"]

@@ -12,6 +12,8 @@ from app.models.proyect_event import ProyectEvent
 from app.models.proyect_payment import ProyectPayment
 from app.models.session import transaction_context
 from app.models.task import Task
+from app.models.user import User
+from app.services.notification_service import create_notification
 from app.services.operations_workflow import TASK_CLOSED_STATUSES
 from app.utils.errors import AppError
 
@@ -123,7 +125,23 @@ PROJECT_MUTABLE_FIELDS = {
     "folio", "purchase_order",
     "purchase_order_item", "delivery_date",
     "id_drawing_document",
+    # `priority`/`total_cost` tampoco estan aqui a proposito: son exclusivos
+    # de Gerencia y se filtran/validan aparte, en `_apply_management_only_fields`
+    # -- meterlos aqui dejaria pasar el valor crudo del payload sin validar
+    # para cualquier actor sin alcance comercial (`_apply_management_only_fields`
+    # no hace nada si no lo tiene, en vez de sobreescribir con lo ya validado).
 }
+
+# Campos de `proyect` que existen en la tabla y que el formulario YA NO escribe.
+# Se dejan documentados aqui porque su ausencia de `PROJECT_MUTABLE_FIELDS` es
+# una decision, no un olvido:
+#
+#   * `leader`    -- el responsable es SIEMPRE quien crea el proyecto. Elegirlo
+#                    de una lista permitia levantar un proyecto a nombre de otra
+#                    persona, y el responsable dejaba de ser quien respondia.
+#   * `id_supervisor` -- ya no se ASIGNA: el supervisor TOMA el proyecto
+#                    (`take_project`). Asignarlo desde el formulario hacia que
+#                    quien captura repartiera el trabajo del taller.
 
 # El recorrido COMERCIAL, que corre en paralelo al de taller: un proyecto puede
 # estar entregado y sin cobrar.
@@ -349,6 +367,63 @@ def _actor_role(db, user_data: dict) -> str | None:
     return permission.permission_description if permission else None
 
 
+def _users_with_capability(db, capability: str) -> list[int]:
+    """Todos los usuarios cuyo rol tiene esta capacidad concedida (scope_read>0).
+
+    Reusa el mismo criterio que `_has_capability`, pero al reves: en vez de
+    preguntar por UN actor, junta a todos los que la tienen -- para saber a
+    quien avisar, no a quien dejar pasar.
+    """
+    permission_ids = [
+        row[0] for row in db.query(EntityPermission.id_permission).filter(
+            EntityPermission.entity_name == capability,
+            EntityPermission.scope_read > 0,
+            EntityPermission.deletion_date.is_(None),
+        ).all()
+    ]
+    if not permission_ids:
+        return []
+    return [
+        row[0] for row in db.query(User.id_user).filter(
+            User.id_permission.in_(permission_ids),
+            User.deletion_date.is_(None),
+        ).all()
+    ]
+
+
+def _notificar_proyecto(*, destinatarios, actor_id, id_proyect, nombre_proyecto, titulo, mensaje) -> None:
+    """Dispara una notificacion por proyecto, sin tronar la operacion real.
+
+    SIEMPRE se llama DESPUES de que el `with transaction_context()` de la
+    operacion real (crear/tomar/transicionar) ya cerro -- `create_notification`
+    abre su PROPIA transaccion, y llamarla con otra ya abierta en la misma
+    peticion se queda esperando una conexion libre del pool para siempre
+    (medido: un `docker exec` de prueba nunca regreso). Por eso recibe
+    valores sueltos (`id_proyect`, `nombre_proyecto`) y no el objeto ORM del
+    proyecto -- ese objeto pertenece a una sesion que para entonces ya cerro.
+
+    Un fallo al notificar (destinatario invalido, lo que sea) no debe
+    revertir la transicion/toma/creacion que ya paso: la notificacion es un
+    aviso, no una condicion del cambio. Se excluye al propio actor -- nadie
+    necesita que le avisen de lo que acaba de hacer el mismo.
+    """
+    for id_destinatario in {int(d) for d in destinatarios if d is not None}:
+        if id_destinatario == actor_id:
+            continue
+        try:
+            create_notification(
+                id_user_recipient=id_destinatario,
+                id_user_sender=actor_id,
+                notification_type="project_status_change",
+                title=titulo,
+                message=f"{nombre_proyecto}: {mensaje}",
+                id_proyect=id_proyect,
+                created_by=actor_id,
+            )
+        except Exception:
+            pass
+
+
 def _scope_name(db, user_data: dict) -> str:
     if _is_unrestricted(user_data):
         return "unrestricted"
@@ -462,6 +537,26 @@ def require_task_access(task_id, user_data: dict) -> None:
         if not task or task.deletion_date is not None:
             raise AppError("errors.resource_not_found", 404)
         _get_visible_project(db, task.id_proyect, user_data)
+
+
+def require_project_taken_by_actor(project_id, user_data: dict) -> None:
+    """El proyecto debe estar TOMADO por este actor (`take_project`).
+
+    Correccion de negocio explicita (2026-09-28): Jefe de taller sube tareas
+    y bitacora del proyecto al que se asigno, no de cualquier proyecto
+    visible del taller. `_scoped_query` (scope "execution") es mas ancha a
+    proposito -- deja ver todo lo autorizado para poder tomarlo -- asi que no
+    alcanza para esta regla; hace falta el candado aparte.
+    """
+    if _is_unrestricted(user_data):
+        return
+    with transaction_context() as db:
+        project = db.get(Proyect, project_id)
+        if not project or project.deletion_date is not None:
+            raise AppError("errors.resource_not_found", 404)
+        if _safe_int(project.id_supervisor) != _actor_id(user_data):
+            raise AppError("errors.project_not_taken_by_actor", 403,
+                           {"id_proyect": project_id})
 
 
 def _parse_review_date(value):
@@ -943,6 +1038,13 @@ def _validar_referencias_de_la_orden(db, values: dict, id_proyecto_actual=None) 
 
 
 def create_project(payload: dict, user_data: dict) -> dict:
+    """Levanta el proyecto a nombre de quien lo esta creando.
+
+    **El responsable.** Es siempre el actor. Antes el formulario ofrecia la
+    lista completa de usuarios y `leader` solo caia en el actor cuando venia
+    vacio, asi que se podia levantar un proyecto a nombre de otra persona --
+    y esa persona aparecia como responsable de algo que no sabia que existia.
+    """
     actor_id = _actor_id(user_data)
     values = {key: value for key, value in (payload or {}).items() if key in PROJECT_MUTABLE_FIELDS}
     if values.get("id_customer_contact") in (None, "") and values.get("id_customer_supplier") in (None, ""):
@@ -958,6 +1060,17 @@ def create_project(payload: dict, user_data: dict) -> dict:
     values["proyect_status"] = "draft"
     _parsear_fecha_de_la_orden(values)
     with transaction_context() as db:
+        # Correccion de negocio explicita (2026-09-28): solo Supervisor
+        # levanta el proyecto. Antes esto dependia nada mas del bit CREAR de
+        # la entidad `proyect`, y Jefe de taller tambien lo tiene (CAPTURA en
+        # "operaciones", igual que Supervisor) -- asi que sin este candado
+        # Jefe de taller podia levantar proyectos propios, cuando su papel es
+        # TOMAR los que ya existen (`take_project`) y ejecutarlos. Gerente
+        # tampoco crea: solo autoriza o cancela lo que Supervisor ya levanto.
+        scope = _scope_name(db, user_data)
+        if scope not in {"ownership", "unrestricted"}:
+            raise AppError("errors.permission_denied", 403,
+                           {"action": "create_project", "scope": scope})
         values["id_quotation"], values["quotation_reference"] = _resolver_cotizacion(
             db, (payload or {}).get("id_quotation"))
         _validar_referencias_de_la_orden(db, values)
@@ -967,7 +1080,91 @@ def create_project(payload: dict, user_data: dict) -> dict:
         db.flush()
         _append_event(db, project, user_data, "created", new_status="draft")
         db.flush()
-        return _redact_management_only_fields(project.serialize(), _tiene_alcance_comercial(db, user_data))
+        destinatarios = _users_with_capability(db, "project_authorization")
+        payload_creado = _redact_management_only_fields(project.serialize(), _tiene_alcance_comercial(db, user_data))
+        id_proyect = project.id_proyect
+        nombre_proyecto = project.title or project.proyect_description or f"Proyecto {id_proyect}"
+
+    # Fuera del `with`: `create_notification` abre su propia transaccion, y
+    # llamarla con esta todavia abierta se queda esperando conexion del pool
+    # para siempre (ver docstring de `_notificar_proyecto`).
+    _notificar_proyecto(
+        destinatarios=destinatarios, actor_id=actor_id,
+        id_proyect=id_proyect, nombre_proyecto=nombre_proyecto,
+        titulo="Nuevo proyecto pendiente de autorizacion",
+        mensaje="fue capturado y espera tu autorizacion",
+    )
+    return payload_creado
+
+
+def take_project(project_id, user_data: dict) -> dict:
+    """Jefe de taller TOMA el proyecto; nadie se lo asigna.
+
+    Antes `id_supervisor` era un desplegable del formulario, o sea que quien
+    captura la orden repartia el trabajo del taller desde su escritorio. Se
+    invierte: el proyecto sale sin tomar y lo toma quien lo va a sacar.
+
+    Quien puede tomarlo es quien tiene la capacidad `project_execution` -- hoy
+    el rol Jefe de taller -- y no se comprueba por NOMBRE de rol: los roles se
+    renombran y se crean desde el gestor, y un permiso amarrado a la cadena
+    "Jefe de taller" deja de funcionar el dia que alguien escriba "Jefe de
+    planta". La capacidad es lo que el registro declara y lo que el gestor
+    concede. Supervisor (quien LEVANTA el proyecto, ver `create_project`) no
+    tiene esta capacidad, asi que no puede tomarlo -- solo verlo y pedir
+    material via prevale.
+
+    Solo se toma lo que esta libre. Quitarselo a otro Jefe de taller
+    seria una reasignacion, y eso no es tomar: el que lo tiene lo suelta
+    (`release_project`) o lo mueve la administracion.
+    """
+    with transaction_context() as db:
+        project = _get_visible_project(db, project_id, user_data, for_update=True)
+        scope = _scope_name(db, user_data)
+        if scope not in {"execution", "unrestricted"}:
+            raise AppError("errors.permission_denied", 403,
+                           {"action": "take_project", "scope": scope})
+        actual = _safe_int(project.id_supervisor)
+        actor_id = _actor_id(user_data)
+        if actual is not None and actual != actor_id:
+            raise AppError("errors.project_already_taken", 409,
+                           {"id_supervisor": actual})
+        project.id_supervisor = actor_id
+        _append_event(db, project, user_data, "taken")
+        db.flush()
+        payload_tomado = project.serialize()
+        destinatarios = [project.leader]
+        id_proyect = project.id_proyect
+        nombre_proyecto = project.title or project.proyect_description or f"Proyecto {id_proyect}"
+
+    _notificar_proyecto(
+        destinatarios=destinatarios, actor_id=actor_id,
+        id_proyect=id_proyect, nombre_proyecto=nombre_proyecto,
+        titulo="Jefe de taller tomo tu proyecto",
+        mensaje="ya esta trabajando en el",
+    )
+    return payload_tomado
+
+
+def release_project(project_id, user_data: dict) -> dict:
+    """Soltarlo, para que otro lo tome.
+
+    Existe porque tomar es irreversible sin esto: quien se equivoco de proyecto
+    lo dejaria ocupado para siempre. Lo suelta el que lo tiene, o la
+    administracion; nadie mas, porque entonces "tomar" no reservaria nada.
+    """
+    with transaction_context() as db:
+        project = _get_visible_project(db, project_id, user_data, for_update=True)
+        actual = _safe_int(project.id_supervisor)
+        if actual is None:
+            return project.serialize()
+        es_suyo = actual == _actor_id(user_data)
+        if not es_suyo and _scope_name(db, user_data) != "unrestricted":
+            raise AppError("errors.permission_denied", 403,
+                           {"action": "release_project"})
+        project.id_supervisor = None
+        _append_event(db, project, user_data, "released")
+        db.flush()
+        return project.serialize()
 
 
 def update_project(project_id, payload: dict, user_data: dict) -> dict:
@@ -1130,7 +1327,44 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
             review_date=(payload or {}).get("review_date"),
         )
         db.flush()
-        return project.serialize()
+
+        actor_id = _actor_id(user_data)
+        id_proyect = project.id_proyect
+        nombre_proyecto = project.title or project.proyect_description or f"Proyecto {id_proyect}"
+        payload_transicion = project.serialize()
+
+        # Que notificar y a quien, decidido AQUI (todavia con `db` abierta,
+        # para poder consultar `_users_with_capability`) pero disparado
+        # DESPUES de cerrar el `with` -- ver docstring de `_notificar_proyecto`.
+        aviso = None
+        if validated_target in {"authorized", "denied", "blocked"}:
+            etiqueta = {
+                "authorized": "fue autorizado por gerencia",
+                "denied": "fue denegado por gerencia",
+                "blocked": "quedo bloqueado",
+            }[validated_target]
+            aviso = dict(
+                destinatarios=[project.leader],
+                titulo="Proyecto autorizado" if validated_target == "authorized" else "Cambio de estatus del proyecto",
+                mensaje=etiqueta,
+            )
+        elif validated_target == "completed":
+            aviso = dict(
+                destinatarios=[project.leader],
+                titulo="Proyecto completado", mensaje="el taller termino el trabajo",
+            )
+        elif validated_target == "delivered":
+            aviso = dict(
+                destinatarios=_users_with_capability(db, "project_authorization"),
+                titulo="Proyecto entregado", mensaje="ya se entrego al cliente",
+            )
+
+    if aviso is not None:
+        _notificar_proyecto(
+            actor_id=actor_id, id_proyect=id_proyect, nombre_proyecto=nombre_proyecto,
+            **aviso,
+        )
+    return payload_transicion
 
 
 def add_project_message(project_id, payload: dict, user_data: dict) -> dict:
