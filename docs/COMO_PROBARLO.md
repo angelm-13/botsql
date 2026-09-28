@@ -120,7 +120,7 @@ docker compose up -d --build
 ### C3. Verifique
 
 ```bash
-curl -s localhost:8080/api/v1/bi/health | python -m json.tool
+curl -s localhost:8090/api/v1/bi/health | python -m json.tool
 ```
 
 Debe decir `"conecta": true`, `"motor": "postgresql"` y `"advertencias": []`
@@ -128,10 +128,10 @@ Debe decir `"conecta": true`, `"motor": "postgresql"` y `"advertencias": []`
 
 ```bash
 # El esquema real, con la llave foranea detectada:
-curl -s "localhost:8080/api/v1/bi/schema?ddl=1" | python -m json.tool
+curl -s "localhost:8090/api/v1/bi/schema?ddl=1" | python -m json.tool
 
 # La interfaz, por el proxy de nginx:
-curl -s -o /dev/null -w '%{http_code}\n' localhost:8080/
+curl -s -o /dev/null -w '%{http_code}\n' localhost:8090/
 ```
 
 Sin un modelo configurado, `/query` responde `503` con

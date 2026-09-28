@@ -6,7 +6,11 @@
 # lectura.
 #
 #   docker compose up -d --build
-#   -> frontend en http://localhost:8080  (la API va por el mismo origen)
+#   -> frontend en http://localhost:8090  (la API va por el mismo origen)
+#
+# (8090 y no 8080: en mas de una maquina de prueba el 8080 ya estaba tomado
+# por el nginx de OTRO proyecto -- confirmado en la practica. Si 8090
+# tambien choca en la suya, cambie BI_PUERTO en su .env.)
 #
 # Ollama tampoco esta por omision: si ya corre en la maquina anfitriona, se
 # consume con `host.docker.internal`. Para levantarlo aqui:
@@ -60,7 +64,7 @@ services:
     depends_on:
       - backend
     ports:
-      - "${BI_PUERTO:-8080}:80"
+      - "${BI_PUERTO:-8090}:80"
 
   # Perfil opcional: el modelo dentro del mismo compose.
   ollama:

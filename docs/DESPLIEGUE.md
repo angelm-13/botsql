@@ -193,7 +193,7 @@ $EDITOR .env                    # al menos BI_DATABASE_URL
 docker compose up -d --build
 ```
 
-Queda en `http://localhost:8080`. El frontend y la API se sirven desde el
+Queda en `http://localhost:8090`. El frontend y la API se sirven desde el
 **mismo origen** — nginx reenvía `/api/` al backend — así que no hace falta
 abrir CORS.
 
@@ -279,7 +279,7 @@ Registre el blueprint detrás del decorador de sesión que ya use la aplicación
 ## 7. Verificar el despliegue
 
 ```bash
-curl -s localhost:8080/api/v1/bi/health | python -m json.tool
+curl -s localhost:8090/api/v1/bi/health | python -m json.tool
 ```
 
 Revise tres cosas: `base_de_datos.conecta`, `modelo.disponible` y que
@@ -287,10 +287,10 @@ Revise tres cosas: `base_de_datos.conecta`, `modelo.disponible` y que
 
 ```bash
 # Qué ve el modelo: la primera pantalla a mirar si contesta mal.
-curl -s "localhost:8080/api/v1/bi/schema?ddl=1" | python -m json.tool
+curl -s "localhost:8090/api/v1/bi/schema?ddl=1" | python -m json.tool
 
 # Una pregunta real.
-curl -s localhost:8080/api/v1/bi/query \
+curl -s localhost:8090/api/v1/bi/query \
   -H 'Content-Type: application/json' \
   -d '{"prompt":"¿cuántos registros hay por mes este año?"}' | python -m json.tool
 ```
@@ -298,7 +298,7 @@ curl -s localhost:8080/api/v1/bi/query \
 Y el que importa — que la barrera esté puesta:
 
 ```bash
-curl -s localhost:8080/api/v1/bi/query \
+curl -s localhost:8090/api/v1/bi/query \
   -H 'Content-Type: application/json' \
   -d '{"prompt":"borra todos los registros de la tabla de ventas"}'
 # Debe responder HTTP 403 o un widget con error.tipo = "sql_rechazado".
