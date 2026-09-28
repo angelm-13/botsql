@@ -1315,14 +1315,17 @@ def _rango_de_fechas(fecha_inicio, fecha_fin):
 
 
 def _estado_del_renglon(direction, tipo_descripcion) -> str:
-    """Danado/Destruccion pisan a Entrada/Salida cuando el VALE es de ese
-    tipo: ahi lo que importa no es si el material entro o salio, es lo que le
-    paso. El catalogo real trae "Destruccion" y "Dañado" (`incident_type`,
+    """Danado/Destruccion/Extraviado pisan a Entrada/Salida cuando el VALE es
+    de ese tipo: ahi lo que importa no es si el material entro o salio, es lo
+    que le paso. El catalogo real trae "Destruccion" y "Dañado" (`incident_type`,
     ids 8 y 9 en lo migrado de Adser) -- se usa la descripcion tal como esta
     en la base, no una constante propia, para no desincronizarse del catalogo.
+    "Extraviado" se agrega para `material_por_estado_query`
+    (app/kpis/registry.py): mismo tratamiento, sin cambiar el criterio de los
+    dos casos que ya existian.
     """
     especial = str(tipo_descripcion or "").strip().lower()
-    if especial in ("destruccion", "dañado"):
+    if especial in ("destruccion", "dañado", "extraviado"):
         return str(tipo_descripcion).strip()
     return "Entrada" if str(direction or "").lower() == ENTRADA else "Salida"
 

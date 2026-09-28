@@ -26,10 +26,11 @@ import json
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import case, func, or_, select, text
+from sqlalchemy import Date, and_, case, cast, func, literal, or_, select, text
 
 from app.models.document import Document
 from app.models.incident import Incident
+from app.models.incident_type import IncidentType
 from app.models.inventory_asset import InventoryAsset, PRESTADA
 from app.models.inventory_asset_event import InventoryAssetEvent, PRESTAMO
 from app.models.inventory_lot import InventoryLot
@@ -38,7 +39,7 @@ from app.models.invoice import Invoice
 from app.models.laboratory import LaboratoryServiceOrder
 from app.models.nm_incident_product import NmIncidentProduct
 from app.models.task import Task
-from app.services.warehouse_voucher_service import CIERRE_SENTINELA
+from app.services.warehouse_voucher_service import CIERRE_SENTINELA, _estado_del_renglon
 from app.modules.registry import MODULO_POR_CLAVE
 
 # Que llave de `dimension_key` (JSONB, en `kpi_snapshot`) le corresponde a cada
@@ -826,6 +827,234 @@ def articulos_bajo_stock_query(session, fecha_inicio, fecha_fin, filtros_dimensi
     return [(id_product, fecha_fin, cantidad) for id_product, cantidad in session.execute(stmt).all()]
 
 
+def incidencias_abiertas_por_empleado_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
+    """Incidencias/vales ABIERTOS (creados), por empleado que los levanto y por dia.
+
+    * Vigencia: `Incident.deletion_date IS NULL`. Sin filtro de estatus a
+      proposito: cuenta cualquier incidencia que se haya abierto, sin
+      importar en que quedo -- "cuantas abre cada quien", no "cuantas
+      resuelve" (eso ya lo mide `incidentes_resueltos_por_empleado_query`).
+    * Responsable: `Incident.id_user` -- quien la levanto, mismo campo que ya
+      usa `vales_vencidos_por_responsable_query` como precedente. NO
+      `created_by`: ese es solo auditoria (entero plano sin FK, no editable
+      en el formulario) y puede diferir de quien realmente la levanto.
+    * Fecha: `Incident.incident_date`, DELIBERADAMENTE no `creation_date`.
+      El modelo declara `creation_date` como `nullable=False,
+      server_default=func.now()`, pero la tabla real en Postgres NO tiene
+      ese default (verificado con el describe de psql sobre la tabla real: columna nullable, sin
+      `Default`) -- discrepancia real entre el modelo y el esquema, ajena a
+      esta tarea, no introducida aqui. Como ni `migrate_adser.py::migrar_incident`
+      ni el alta normal de un incidente (`incident_service.py`) asignan
+      `creation_date` a mano, confiando en ese default que no existe,
+      `creation_date` queda **NULL** -- no "fijo en la fecha de la
+      migracion" como se penso al principio de esta tarea, sino ausente del
+      todo, para incidentes migrados Y para incidentes nuevos por igual. Eso
+      ya afecta hoy a `incidentes_resueltos_por_empleado_query`, que agrupa
+      por `func.date(Incident.creation_date)`: con esa columna en NULL,
+      `func.date(NULL) >= fecha_inicio` nunca es verdadero, asi que CUALQUIER
+      incidente (no solo los migrados de Adser) queda invisible para ese KPI
+      en cualquier rango -- fuera de alcance de esta tarea, no se toca aqui,
+      pero vale la pena confirmarlo con el equipo. Este KPI nuevo lo evita
+      desde el diseno usando `incident_date`, el campo que `migrar_incident`
+      SI llena con la fecha real (`fecha_incidente` de origen) y que el alta
+      normal tambien captura como dato de negocio real, no como auditoria.
+    * Sin alcance de proyecto: un vale de almacen es un `Incident` con
+      `id_proyect` NULL, mismo motivo que `vales_vencidos_por_responsable_query`.
+    """
+    fecha_col = func.date(Incident.incident_date)
+    condiciones = [
+        Incident.deletion_date.is_(None),
+        Incident.incident_date.isnot(None),
+        fecha_col >= fecha_inicio,
+        fecha_col <= fecha_fin,
+    ]
+
+    empleados = (filtros_dimension or {}).get("empleados")
+    if empleados:
+        condiciones.append(Incident.id_user.in_(empleados))
+
+    stmt = (
+        select(Incident.id_user, fecha_col.label("fecha"), func.count())
+        .where(*condiciones)
+        .group_by(Incident.id_user, fecha_col)
+        .order_by(Incident.id_user, fecha_col)
+    )
+    return session.execute(stmt).all()
+
+
+def incidencias_pendientes_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
+    """Foto: cuantas incidencias seguian sin cerrar en cada dia del rango.
+
+    Para una fecha D, "pendiente en D" es una incidencia creada hasta D
+    (`incident_date <= D`) que NO estaba cerrada en D -- no necesariamente
+    sin cerrar HOY: pudo cerrarse despues de D. "Sin cerrar en D" es
+    `close_date IS NULL` (nunca se cerro), `close_date == CIERRE_SENTINELA`
+    (el sentinel heredado de Adser -- ver `_sin_cerrar` en
+    warehouse_voucher_service.py, que compara exactamente contra estos dos
+    casos) o `close_date > D` (se cerro, pero DESPUES de la fecha que se esta
+    reconstruyendo; cerrarse justo EN D ya no cuenta como pendiente ese dia).
+
+    Esto permite reconstruir el valor de cualquier fecha PASADA de forma
+    exacta -- necesario porque este KPI es una foto por dia, no un evento que
+    ya traiga su propia fecha en una columna: cada dia del rango es una
+    pregunta independiente sobre el estado del universo completo de
+    incidencias en ese momento, no algo que un GROUP BY normal resuelva.
+
+    Se genera la serie de dias del rango con `generate_series` (Postgres,
+    igual que el resto de este archivo asume ese motor) y se hace LEFT JOIN
+    contra `Incident` -- OUTER, no INNER: un dia sin ninguna incidencia
+    pendiente debe regresar 0, no faltar de la respuesta. Una fila ausente en
+    `kpi_snapshot` se lee como "no calculado", no como "cero" (ver el
+    diagnostico de esta tarea) -- y como este KPI es `agregacion="ultimo"`,
+    `_totales()` en routes/kpi.py toma el snapshot del ULTIMO dia con fila;
+    si faltara el ultimo dia real del rango por no tener incidencias
+    pendientes, tomaria el dia anterior por error.
+
+    Dimension "global" (una sola foto, sin desglose por empleado/producto).
+    Sin alcance de proyecto, mismo motivo que el resto de los KPIs sobre
+    `Incident` de este archivo.
+    """
+    dias = (
+        select(cast(func.generate_series(fecha_inicio, fecha_fin, text("interval '1 day'")), Date).label("dia"))
+        .subquery()
+    )
+    condicion_pendiente = and_(
+        Incident.deletion_date.is_(None),
+        Incident.incident_date.isnot(None),
+        func.date(Incident.incident_date) <= dias.c.dia,
+        or_(
+            Incident.close_date.is_(None),
+            Incident.close_date == CIERRE_SENTINELA,
+            func.date(Incident.close_date) > dias.c.dia,
+        ),
+    )
+    stmt = (
+        select(dias.c.dia, func.count(Incident.id_incident))
+        .select_from(dias)
+        .outerjoin(Incident, condicion_pendiente)
+        .group_by(dias.c.dia)
+        .order_by(dias.c.dia)
+    )
+    return [(None, dia, valor) for dia, valor in session.execute(stmt).all()]
+
+
+def incidencias_abiertas_vs_cerradas_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
+    """Incidencias abiertas y cerradas, por dia -- flujo, no foto.
+
+    Dos series bajo la dimension nueva "estado" (valores "abierta"/"cerrada";
+    no confundir con `Incident.incident_status`, que trae valores de negocio
+    como "resuelta"/"cancelada"): "abierta" cuenta incidencias CREADAS ese
+    dia (`incident_date`); "cerrada" cuenta las que se CERRARON ese dia
+    (`close_date`), excluyendo el sentinel heredado de Adser
+    (`CIERRE_SENTINELA` no es un cierre real -- sin este filtro, cada
+    incidencia migrada que sigue abierta se contaria como "cerrada el
+    1990-01-01").
+
+    Companero de `incidencias_pendientes_query` (la foto): ese responde
+    "cuantas siguen sin cerrar a la fecha", este "cuantas se abrieron/
+    cerraron ESE dia". Son agregaciones distintas (ultimo vs suma) sobre
+    preguntas distintas -- por eso son dos KPIs separados, no uno con un
+    selector de "foto/flujo": el registro solo permite declarar una
+    `agregacion` por KPI (ver AGREGACIONES).
+
+    Mismo motivo que el resto de los KPIs de este archivo para usar
+    `incident_date` en vez de `creation_date`, y para `alcance_proyecto=False`.
+    """
+    fecha_apertura = func.date(Incident.incident_date)
+    abiertas_stmt = (
+        select(literal("abierta").label("estado"), fecha_apertura.label("fecha"), func.count())
+        .where(
+            Incident.deletion_date.is_(None),
+            Incident.incident_date.isnot(None),
+            fecha_apertura >= fecha_inicio,
+            fecha_apertura <= fecha_fin,
+        )
+        .group_by(fecha_apertura)
+    )
+    fecha_cierre = func.date(Incident.close_date)
+    cerradas_stmt = (
+        select(literal("cerrada").label("estado"), fecha_cierre.label("fecha"), func.count())
+        .where(
+            Incident.deletion_date.is_(None),
+            Incident.close_date.isnot(None),
+            Incident.close_date != CIERRE_SENTINELA,
+            fecha_cierre >= fecha_inicio,
+            fecha_cierre <= fecha_fin,
+        )
+        .group_by(fecha_cierre)
+    )
+    filas = list(session.execute(abiertas_stmt).all()) + list(session.execute(cerradas_stmt).all())
+    return sorted(filas, key=lambda fila: (fila[1], fila[0]))
+
+
+def material_por_estado_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
+    """Renglones de vale (`NmIncidentProduct`) por categoria de movimiento, por dia.
+
+    Categoria: `_estado_del_renglon(direction, tipo_descripcion)`
+    (warehouse_voucher_service.py) -- la MISMA funcion que ya usan los 4
+    reportes reales de vales, no se reinventa el criterio. Devuelve
+    "Entrada"/"Salida" segun `direction`, o el texto del tipo de incidencia
+    ("Destruccion"/"Dañado"/"Extraviado") cuando el vale es de ese tipo
+    especial, sin importar la direccion. Se extendio esa funcion para
+    reconocer tambien "extraviado" (antes solo "destruccion"/"dañado") --
+    pedido explicito para este KPI, ver el diff de `_estado_del_renglon`.
+
+    Como varias combinaciones distintas de (direction, tipo_descripcion)
+    pueden mapear a la MISMA categoria en el mismo dia (ej. dos tipos de
+    incidencia distintos, ninguno especial, ambos caen en "Salida"), la
+    agregacion por categoria se hace en PYTHON, despues de traer los conteos
+    crudos agrupados por los campos reales -- agrupar directo por categoria
+    en SQL no es posible porque `_estado_del_renglon` es logica de Python, y
+    dejar que dos filas con la misma categoria y fecha lleguen sueltas a
+    `tasks_kpis.py` haria que el upsert de la segunda PISE el valor de la
+    primera en vez de sumarse (la llave unica de `kpi_snapshot` es
+    (kpi, dimension_key, periodo), no hay forma de que dos filas con la
+    misma categoria y fecha coexistan).
+
+    Dimension nueva "estado": el valor de cada fila es el nombre de la
+    categoria (string), no un id de entidad -- ver `DIMENSION_JSON_KEY`.
+
+    Fecha: `Incident.incident_date` (fecha real del vale), no
+    `NmIncidentProduct.creation_date` -- mismo motivo que
+    `incidencias_abiertas_por_empleado_query`: la tabla real tampoco tiene
+    default para esa columna (mismo hallazgo, verificado con el describe de
+    psql sobre la tabla real), y ni `migrar_nm_incident_product` ni el alta
+    normal de un renglon la asignan a mano, asi que queda NULL, no "en la
+    fecha de la migracion".
+
+    Sin alcance de proyecto, mismo motivo que
+    `vales_vencidos_por_responsable_query`.
+    """
+    fecha_col = func.date(Incident.incident_date)
+    condiciones = [
+        NmIncidentProduct.deletion_date.is_(None),
+        Incident.deletion_date.is_(None),
+        Incident.incident_date.isnot(None),
+        fecha_col >= fecha_inicio,
+        fecha_col <= fecha_fin,
+    ]
+
+    stmt = (
+        select(NmIncidentProduct.direction, IncidentType.incident_type_description,
+               fecha_col.label("fecha"), func.count())
+        .select_from(NmIncidentProduct)
+        .join(Incident, Incident.id_incident == NmIncidentProduct.id_incident)
+        .outerjoin(IncidentType, IncidentType.id_incident_type == Incident.id_incident_type)
+        .where(*condiciones)
+        .group_by(NmIncidentProduct.direction, IncidentType.incident_type_description, fecha_col)
+    )
+
+    acumulado = {}
+    for direction, tipo_descripcion, fecha, cantidad in session.execute(stmt).all():
+        categoria = _estado_del_renglon(direction, tipo_descripcion)
+        llave = (categoria, fecha)
+        acumulado[llave] = acumulado.get(llave, 0) + cantidad
+    return [
+        (categoria, fecha, cantidad)
+        for (categoria, fecha), cantidad in sorted(acumulado.items(), key=lambda item: (item[0][1], item[0][0]))
+    ]
+
+
 class KpiDefinition:
     def __init__(self, clave, etiqueta, modulo, dimensiones,
                  query_builder, *, direccion, graficas_permitidas, grafica_default,
@@ -1088,6 +1317,64 @@ KPI_REGISTRY = (
         direccion="bajo_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="tabla",
+    ),
+    # --- KPIs nuevos de Adser (almacen de herramientas: lo que importa es
+    # cuantas incidencias se abren/cierran, cuanto material esta prestado y
+    # donde esta cada articulo -- no "bajo stock", que no aplica a un
+    # almacen donde casi toda la existencia es 1). Todos con
+    # `alcance_proyecto=False`: un vale/incidencia de almacen no pertenece a
+    # un proyecto de cliente, mismo motivo que sus vecinos de este modulo. --
+    KpiDefinition(
+        clave="incidencias_abiertas_por_empleado",
+        etiqueta="Incidencias abiertas por empleado",
+        modulo="operaciones",
+        dimensiones=("empleado",),
+        query_builder=incidencias_abiertas_por_empleado_query,
+        agregacion="suma",
+        unidad="numero",
+        alcance_proyecto=False,
+        direccion="neutral",
+        graficas_permitidas=("barras", "tabla"),
+        grafica_default="barras",
+    ),
+    KpiDefinition(
+        clave="incidencias_pendientes",
+        etiqueta="Incidencias pendientes",
+        modulo="operaciones",
+        dimensiones=("global",),
+        query_builder=incidencias_pendientes_query,
+        agregacion="ultimo",
+        unidad="numero",
+        alcance_proyecto=False,
+        direccion="bajo_es_mejor",
+        graficas_permitidas=("numero",),
+        grafica_default="numero",
+    ),
+    KpiDefinition(
+        clave="incidencias_abiertas_vs_cerradas",
+        etiqueta="Incidencias abiertas vs. cerradas",
+        modulo="operaciones",
+        dimensiones=("estado",),
+        query_builder=incidencias_abiertas_vs_cerradas_query,
+        agregacion="suma",
+        unidad="numero",
+        alcance_proyecto=False,
+        direccion="neutral",
+        graficas_permitidas=("barras", "linea"),
+        grafica_default="barras",
+    ),
+    KpiDefinition(
+        clave="material_por_estado",
+        etiqueta="Material por estado",
+        modulo="operaciones",
+        dimensiones=("estado",),
+        query_builder=material_por_estado_query,
+        agregacion="suma",
+        unidad="numero",
+        alcance_proyecto=False,
+        direccion="neutral",
+        graficas_permitidas=("dona", "tabla"),
+        grafica_default="dona",
     ),
 )
 

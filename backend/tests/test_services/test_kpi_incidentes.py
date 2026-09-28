@@ -8,6 +8,9 @@ from sqlalchemy import delete
 
 from app.kpis.registry import (
     cancelaciones_por_empleado_query,
+    incidencias_abiertas_por_empleado_query,
+    incidencias_abiertas_vs_cerradas_query,
+    incidencias_pendientes_query,
     incidentes_resueltos_por_empleado_query,
     vales_vencidos_por_responsable_query,
 )
@@ -89,10 +92,16 @@ class KpiIncidentesTest(unittest.TestCase):
             db.execute(delete(IncidentType).where(IncidentType.id_incident_type == INCIDENT_TYPE))
             db.execute(delete(User).where(User.id_user.in_([EMPLEADO_A, EMPLEADO_B])))
 
-    def _incidente(self, id_incident, id_user, incident_status, creation_date, close_date=None):
+    def _incidente(self, id_incident, id_user, incident_status, creation_date, close_date=None, incident_date=None):
+        # `incident_date` por omision cae en `creation_date`: las pruebas de
+        # arriba (contra queries que agrupan por `creation_date`) no tienen
+        # que pasarlo. Las nuevas de abajo (que agrupan por `incident_date`,
+        # ver el motivo en el docstring de `incidencias_abiertas_por_empleado_query`)
+        # si lo pasan explicito.
         return Incident(
             id_incident=id_incident, id_incident_type=INCIDENT_TYPE, id_user=id_user,
             incident_status=incident_status, creation_date=creation_date, close_date=close_date,
+            incident_date=incident_date if incident_date is not None else creation_date,
             created_by=id_user,
         )
 
@@ -286,6 +295,165 @@ class KpiIncidentesTest(unittest.TestCase):
             filas = cancelaciones_por_empleado_query(db, date(1990, 1, 1), date(1990, 1, 1), {}, None)
 
         self.assertEqual([], [tuple(f) for f in filas])
+
+    # --- incidencias_abiertas_por_empleado_query -------------------------
+
+    # Fechas en 2031 a proposito, no 2026: estas 4 queries nuevas agrupan por
+    # `incident_date` (a diferencia de sus vecinas de arriba, que agrupan por
+    # `creation_date`, hoy siempre NULL -- ver el hallazgo documentado en el
+    # docstring de `incidencias_abiertas_por_empleado_query`), asi que SI
+    # colisionan con datos reales/demo de un dev local (ej.
+    # `scripts/seed_kpi_incidencias_demo.py`, que siembra ~90 dias hacia atras
+    # desde "hoy"). Ninguna de estas 4 queries puede aislarse por un id de
+    # fixture propio (dimension "global"/"estado", sin filtro de entidad) --
+    # un ano bien alejado de cualquier fecha real es la unica forma de que la
+    # prueba no dependa de que "hoy" nunca haya sembrado algo justo ese dia.
+
+    def test_incidencias_abiertas_cuenta_por_dia_de_incident_date(self):
+        with transaction_context() as db:
+            db.add_all([
+                self._incidente(9730, EMPLEADO_A, "abierta", datetime(2020, 1, 1), incident_date=datetime(2031, 9, 1)),
+                self._incidente(9731, EMPLEADO_A, "resuelta", datetime(2020, 1, 1), incident_date=datetime(2031, 9, 1)),
+                self._incidente(9732, EMPLEADO_B, "abierta", datetime(2020, 1, 1), incident_date=datetime(2031, 9, 1)),
+            ])
+
+        with transaction_context() as db:
+            filas = incidencias_abiertas_por_empleado_query(
+                db, date(2031, 9, 1), date(2031, 9, 1), {"empleados": [EMPLEADO_A, EMPLEADO_B]}, None,
+            )
+
+        # Sin filtro de estatus: cuenta cualquier incidencia abierta ese dia,
+        # sin importar en que quedo despues (resuelta o no).
+        self.assertEqual(
+            [(EMPLEADO_A, date(2031, 9, 1), 2), (EMPLEADO_B, date(2031, 9, 1), 1)],
+            [tuple(f) for f in filas],
+        )
+
+    def test_incidencias_abiertas_ignora_creation_date_usa_incident_date(self):
+        # `creation_date` queda en 2020 (fecha de migracion simulada) pero
+        # `incident_date` (la real) cae en el rango pedido -- debe contar.
+        with transaction_context() as db:
+            db.add(self._incidente(9733, EMPLEADO_A, "abierta", datetime(2020, 1, 1), incident_date=datetime(2031, 9, 10)))
+
+        with transaction_context() as db:
+            dentro = incidencias_abiertas_por_empleado_query(
+                db, date(2031, 9, 10), date(2031, 9, 10), {"empleados": [EMPLEADO_A]}, None,
+            )
+            fuera = incidencias_abiertas_por_empleado_query(
+                db, date(2020, 1, 1), date(2020, 1, 1), {"empleados": [EMPLEADO_A]}, None,
+            )
+
+        self.assertEqual([(EMPLEADO_A, date(2031, 9, 10), 1)], [tuple(f) for f in dentro])
+        self.assertEqual([], [tuple(f) for f in fuera])
+
+    def test_incidencias_abiertas_filtro_de_empleados(self):
+        with transaction_context() as db:
+            db.add_all([
+                self._incidente(9734, EMPLEADO_A, "abierta", datetime(2020, 1, 1), incident_date=datetime(2031, 9, 15)),
+                self._incidente(9735, EMPLEADO_B, "abierta", datetime(2020, 1, 1), incident_date=datetime(2031, 9, 15)),
+            ])
+
+        with transaction_context() as db:
+            filas = incidencias_abiertas_por_empleado_query(
+                db, date(2031, 9, 15), date(2031, 9, 15), {"empleados": [EMPLEADO_B]}, None,
+            )
+
+        self.assertEqual([(EMPLEADO_B, date(2031, 9, 15), 1)], [tuple(f) for f in filas])
+
+    # --- incidencias_pendientes_query (foto reconstruible a fechas pasadas) --
+
+    def test_incidencias_pendientes_reconstruye_fechas_pasadas(self):
+        # Esta query es una FOTO acumulativa (todo lo que sigue abierto desde
+        # siempre), no un evento por dia -- a diferencia de las otras 3 del
+        # bloque de arriba, ninguna fecha "esta a salvo" de contar tambien
+        # cualquier incidente ambiental que ya exista en la base (dev local
+        # real, con datos propios o de scripts/seed_kpi_incidencias_demo.py)
+        # y que siga con close_date NULL para siempre: ese ruido aparece
+        # IGUAL en todos los dias del rango pedido, asi que se mide el DELTA
+        # contra una linea base (el primer dia, antes de que exista el
+        # fixture), no el valor absoluto.
+        #
+        # A: abierta el 1, se cierra el 10 -- pendiente del 1 al 9, ya no el 10.
+        # B: abierta el 5, nunca se cierra (close_date NULL) -- pendiente desde el 5.
+        # C: abierta el 3, sentinel legacy (nunca en realidad se cerro) -- pendiente desde el 3.
+        with transaction_context() as db:
+            db.add_all([
+                self._incidente(9740, EMPLEADO_A, "resuelta", datetime(2020, 1, 1),
+                                 incident_date=datetime(2031, 6, 1), close_date=datetime(2031, 6, 10)),
+                self._incidente(9741, EMPLEADO_B, "abierta", datetime(2020, 1, 1),
+                                 incident_date=datetime(2031, 6, 5)),
+                self._incidente(9742, EMPLEADO_A, "abierta", datetime(2020, 1, 1),
+                                 incident_date=datetime(2031, 6, 3), close_date=CIERRE_SENTINELA),
+            ])
+
+        with transaction_context() as db:
+            filas = incidencias_pendientes_query(db, date(2031, 5, 31), date(2031, 6, 10), {}, None)
+
+        por_dia = {periodo: valor for _, periodo, valor in filas}
+        base = por_dia[date(2031, 5, 31)]
+        self.assertEqual(base + 0, por_dia[date(2031, 5, 31)], "nada del fixture creado todavia")
+        self.assertEqual(base + 1, por_dia[date(2031, 6, 1)], "solo A, recien abierta")
+        self.assertEqual(base + 1, por_dia[date(2031, 6, 2)], "sigue solo A -- fecha PASADA reconstruida")
+        self.assertEqual(base + 2, por_dia[date(2031, 6, 3)], "se suma C (sentinel = sigue abierta)")
+        self.assertEqual(base + 3, por_dia[date(2031, 6, 5)], "se suma B")
+        self.assertEqual(base + 3, por_dia[date(2031, 6, 9)], "un dia antes de que A se cierre")
+        self.assertEqual(base + 2, por_dia[date(2031, 6, 10)], "A se cierra ESE dia -- ya no cuenta")
+        # Ningun dia del rango queda sin fila -- un dia sin pendientes debe
+        # regresar 0 (o la linea base), no faltar (ver el docstring de la
+        # query: una fila ausente se leeria como "no calculado", no como "cero").
+        self.assertEqual(11, len(filas))
+
+    def test_incidencias_pendientes_dimension_global_sin_desglose(self):
+        # Mismo motivo que arriba: se compara contra una linea base del dia
+        # anterior (sin el fixture) en vez de un valor absoluto.
+        with transaction_context() as db:
+            base_filas = incidencias_pendientes_query(db, date(2031, 6, 30), date(2031, 6, 30), {}, None)
+            base = base_filas[0][2] if base_filas else 0
+            db.add(self._incidente(9743, EMPLEADO_A, "abierta", datetime(2020, 1, 1), incident_date=datetime(2031, 7, 1)))
+
+        with transaction_context() as db:
+            filas = incidencias_pendientes_query(db, date(2031, 7, 1), date(2031, 7, 1), {}, None)
+
+        self.assertEqual([(None, date(2031, 7, 1), base + 1)], [tuple(f) for f in filas])
+
+    # --- incidencias_abiertas_vs_cerradas_query --------------------------
+
+    def test_incidencias_abiertas_vs_cerradas_dos_series_por_dia(self):
+        with transaction_context() as db:
+            db.add_all([
+                # Se abre el 1 y se cierra el 3.
+                self._incidente(9744, EMPLEADO_A, "resuelta", datetime(2020, 1, 1),
+                                 incident_date=datetime(2031, 8, 1), close_date=datetime(2031, 8, 3)),
+                # Se abre el 3 tambien (misma fecha que la anterior cierra).
+                self._incidente(9745, EMPLEADO_A, "abierta", datetime(2020, 1, 1),
+                                 incident_date=datetime(2031, 8, 3)),
+            ])
+
+        with transaction_context() as db:
+            filas = incidencias_abiertas_vs_cerradas_query(db, date(2031, 8, 1), date(2031, 8, 3), {}, None)
+
+        self.assertEqual(
+            [
+                ("abierta", date(2031, 8, 1), 1),
+                ("abierta", date(2031, 8, 3), 1),
+                ("cerrada", date(2031, 8, 3), 1),
+            ],
+            sorted([tuple(f) for f in filas]),
+        )
+
+    def test_incidencias_abiertas_vs_cerradas_excluye_sentinel_de_cerradas(self):
+        with transaction_context() as db:
+            db.add(self._incidente(9746, EMPLEADO_A, "abierta", datetime(2020, 1, 1),
+                                    incident_date=datetime(2031, 8, 10), close_date=CIERRE_SENTINELA))
+
+        with transaction_context() as db:
+            filas = incidencias_abiertas_vs_cerradas_query(db, date(2031, 8, 10), date(2031, 8, 10), {}, None)
+
+        # Solo la serie "abierta" (por incident_date); "cerrada" no debe
+        # traer el sentinel como si fuera un cierre real el 1990-01-01 (fuera
+        # de rango de todas formas, pero tampoco debe aparecer dentro de
+        # este rango por error de fecha).
+        self.assertEqual([("abierta", date(2031, 8, 10), 1)], [tuple(f) for f in filas])
 
 
 if __name__ == "__main__":
