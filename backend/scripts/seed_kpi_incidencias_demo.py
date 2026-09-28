@@ -12,11 +12,11 @@ esta prestado y en que estado -- no "bajo stock", que no aplica ahi), pero
 esta base local no tiene datos de Adser. Sin esto, los widgets de un tablero
 de prueba saldrian todos en "Sin datos".
 
-No genera el escenario de `material_prestado_actual` (el KPI en vivo que
-sigue bloqueado -- ver el aviso al usuario en esta misma tarea sobre
-`nm_incident_product.start_date` vacio en Adser): esta base local es de
-prueba, no migrada, asi que no hay ningun problema de datos que simular ahi;
-simplemente no hace falta porque ese KPI no se construyo todavia.
+No siembra un escenario dedicado para `material_prestado_actual` (el KPI
+"vivo" que se agrego despues de escribir este script) -- no hace falta: ese
+KPI lee renglones "salida" sin cerrar, y como abajo se generan incidentes
+"abierta" (sin `close_date`) con renglones de direccion aleatoria, ya sale
+poblado como efecto secundario de los datos de siempre.
 
 Guarda de seguridad
 --------------------
@@ -35,10 +35,20 @@ y seguro, upsert).
 Uso
 ---
     docker compose exec backend python -m scripts.seed_kpi_incidencias_demo
+    docker compose exec backend python -m scripts.seed_kpi_incidencias_demo --limpiar
+
+`--limpiar` borra SOLO lo que este script sembro (por el mismo marcador que
+usa para detectar una corrida previa: `Incident.note`, mas los 3 usuarios de
+`USUARIOS_DEMO`) -- nunca toca nada mas. Existe porque una prueba real
+(`test_document_can_be_related_to_employee_selector`) espera una lista
+CERRADA de empleados y se rompe si estos usuarios de prueba siguen en la
+base; correr `--limpiar` antes de la suite de Postgres la deja como si este
+script nunca hubiera corrido.
 """
 
 from __future__ import annotations
 
+import argparse
 import os
 import random
 import sys
@@ -49,7 +59,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from sqlalchemy import select  # noqa: E402
+from sqlalchemy import delete, select  # noqa: E402
 
 from app.jobs.tasks_kpis import recalcular_kpi_snapshots_rango  # noqa: E402
 from app.models import Incident, IncidentType, NmIncidentProduct, User  # noqa: E402
@@ -212,5 +222,40 @@ def seed_kpi_incidencias_demo():
     return resultado
 
 
+def limpiar_kpi_incidencias_demo():
+    """Borra solo lo que `seed_kpi_incidencias_demo()` sembro, por marcador.
+
+    Orden obligatorio por las FK: los renglones de vale primero (referencian
+    `id_incident`), luego los incidentes, luego los 3 usuarios de prueba (los
+    incidentes ya borrados dejan de referenciarlos). No toca `kpi_snapshot`
+    -- las filas que el backfill escribio quedan obsoletas pero inertes; se
+    sobreescriben solas la proxima vez que se vuelva a sembrar y correr el
+    backfill.
+    """
+    _verificar_host_local()
+    with transaction_context() as db:
+        ids_incidentes = db.scalars(select(Incident.id_incident).where(Incident.note == MARCADOR)).all()
+        renglones_borrados = 0
+        if ids_incidentes:
+            renglones_borrados = db.execute(
+                delete(NmIncidentProduct).where(NmIncidentProduct.id_incident.in_(ids_incidentes))
+            ).rowcount
+        incidentes_borrados = db.execute(delete(Incident).where(Incident.note == MARCADOR)).rowcount
+        usuarios_borrados = db.execute(delete(User).where(User.username.in_(USUARIOS_DEMO))).rowcount
+
+    return {
+        "renglones_borrados": renglones_borrados,
+        "incidentes_borrados": incidentes_borrados,
+        "usuarios_borrados": usuarios_borrados,
+    }
+
+
 if __name__ == "__main__":
-    print(seed_kpi_incidencias_demo())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--limpiar", action="store_true", help="borra solo lo que este script sembro, por marcador")
+    args = parser.parse_args()
+
+    if args.limpiar:
+        print(limpiar_kpi_incidencias_demo())
+    else:
+        print(seed_kpi_incidencias_demo())
