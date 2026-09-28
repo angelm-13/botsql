@@ -69,7 +69,20 @@ def _recalcular_kpi_snapshots_en_sesion(session, fecha_inicio: date, fecha_fin: 
 
         for id_proyect in proyectos_a_iterar:
             filas = kpi.query_builder(session, fecha_inicio, fecha_fin, {}, id_proyect)
-            for id_entidad, periodo, valor in filas:
+            for fila in filas:
+                # (entidad, periodo, valor) o, para los KPIs de
+                # `promedio_ponderado`, (entidad, periodo, valor, peso) -- ver
+                # AGREGACIONES en app/kpis/registry.py.
+                id_entidad, periodo, valor, *resto = fila
+                peso = resto[0] if resto else None
+                if kpi.agregacion == "promedio_ponderado" and peso is None:
+                    # Error de programacion, no de datos: sin peso el promedio
+                    # ponderado no se puede reconstruir, y guardar la fila de
+                    # todas formas volveria a dar numeros falsos en silencio.
+                    raise RuntimeError(
+                        f"El KPI '{kpi.clave}' es promedio_ponderado pero su query_builder "
+                        "no regreso la columna peso."
+                    )
                 dimension_key = {}
                 if id_proyect is not None:
                     dimension_key["id_proyect"] = id_proyect
@@ -80,10 +93,11 @@ def _recalcular_kpi_snapshots_en_sesion(session, fecha_inicio: date, fecha_fin: 
                     dimension_key=dimension_key,
                     periodo=periodo,
                     valor=valor,
+                    peso=peso,
                 )
                 upsert = insercion.on_conflict_do_update(
                     constraint="uq_kpi_snapshot_dia",
-                    set_={"valor": insercion.excluded.valor, "computed_at": func.now()},
+                    set_={"valor": insercion.excluded.valor, "peso": insercion.excluded.peso, "computed_at": func.now()},
                 )
                 session.execute(upsert)
                 filas_escritas += 1

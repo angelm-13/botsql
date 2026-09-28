@@ -53,6 +53,24 @@ DIMENSION_JSON_KEY = {
     "global": None,
 }
 
+# Como se combinan varios snapshots de un KPI (varios dias, varios proyectos)
+# en un solo numero -- lo declara cada KPI en `agregacion`, sin valor por
+# omision: antes `routes/kpi.py` sumaba SIEMPRE, y eso inflaba en silencio
+# cualquier KPI que no fuera un conteo o un monto (30 dias de un 50 % daban
+# 1500 %; 30 fotos de 10 piezas en existencia daban 300). Medido contra
+# Postgres real al corregirlo.
+#
+# * "suma": conteos y montos por dia -- sumar dias y proyectos es correcto.
+# * "promedio_ponderado": porcentajes y promedios. El `query_builder` regresa
+#   una cuarta columna, `peso` (cuantos casos hay detras de ese valor: tareas,
+#   incidentes, ordenes), y el total es SUM(valor * peso) / SUM(peso). Sin el
+#   peso, promediar los valores diarios le daria el mismo voto a un dia con 1
+#   orden que a uno con 50.
+# * "ultimo": fotos del estado actual (existencias), no eventos. Cada noche
+#   repite la foto completa, asi que sumar dias multiplica; lo correcto es
+#   tomar la foto del ultimo dia del rango que tenga datos.
+AGREGACIONES = ("suma", "promedio_ponderado", "ultimo")
+
 
 def ventas_por_empleado_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
     """Ventas facturadas por empleado (`Invoice.created_by`) y por dia.
@@ -172,8 +190,13 @@ def desarrollo_por_empleado_query(session, fecha_inicio, fecha_fin, filtros_dime
       SQL) para no depender de como cada dialecto castea `SUM`/`COUNT` a
       punto flotante, y para poder devolver `Decimal` igual que
       `ventas_por_empleado_query`.
-    * Igual que las demas, regresa una fila por `owner` con `fecha_fin` como
-      periodo: es un porcentaje del rango completo, no una serie diaria.
+    * Una fila por `owner` y por DIA de creacion, con el numero de tareas de
+      ese dia como `peso` (cuarta columna, ver `AGREGACIONES`). Antes era una
+      sola fila por `owner` fechada en `fecha_fin` con el porcentaje del rango
+      completo: la tarea nocturna la reescribia cada noche con una ventana de
+      7 dias distinta, y al sumar esas noches el porcentaje salia multiplicado
+      por el numero de dias del rango. Por dia y con peso, el porcentaje de
+      cualquier rango se reconstruye exacto (`promedio_ponderado`).
     """
     fecha_col = func.date(Task.creation_date)
     condiciones = [
@@ -192,18 +215,18 @@ def desarrollo_por_empleado_query(session, fecha_inicio, fecha_fin, filtros_dime
     total = func.count(Task.id_task)
 
     stmt = (
-        select(Task.owner, terminadas, total)
+        select(Task.owner, fecha_col.label("fecha"), terminadas, total)
         .where(*condiciones)
-        .group_by(Task.owner)
-        .order_by(Task.owner)
+        .group_by(Task.owner, fecha_col)
+        .order_by(Task.owner, fecha_col)
     )
 
     filas = []
-    for owner, terminadas_owner, total_owner in session.execute(stmt).all():
+    for owner, fecha, terminadas_owner, total_owner in session.execute(stmt).all():
         if not total_owner:
             continue
         porcentaje = (Decimal(terminadas_owner) * 100 / Decimal(total_owner)).quantize(Decimal("0.01"))
-        filas.append((owner, fecha_fin, porcentaje))
+        filas.append((owner, fecha, porcentaje, total_owner))
     return filas
 
 
@@ -286,6 +309,9 @@ def incidentes_resueltos_por_empleado_query(session, fecha_inicio, fecha_fin, fi
     * Sin alcance de proyecto, mismo motivo que
       `vales_vencidos_por_responsable_query`: `Incident` no tiene
       `id_proyect`.
+    * Una fila por `id_user` y por DIA de creacion, con el numero de
+      incidentes de ese dia como `peso` -- mismo motivo que
+      `desarrollo_por_empleado_query` (`promedio_ponderado`).
     """
     fecha_col = func.date(Incident.creation_date)
     condiciones = [
@@ -302,18 +328,18 @@ def incidentes_resueltos_por_empleado_query(session, fecha_inicio, fecha_fin, fi
     total = func.count(Incident.id_incident)
 
     stmt = (
-        select(Incident.id_user, resueltos, total)
+        select(Incident.id_user, fecha_col.label("fecha"), resueltos, total)
         .where(*condiciones)
-        .group_by(Incident.id_user)
-        .order_by(Incident.id_user)
+        .group_by(Incident.id_user, fecha_col)
+        .order_by(Incident.id_user, fecha_col)
     )
 
     filas = []
-    for id_user, resueltos_usuario, total_usuario in session.execute(stmt).all():
+    for id_user, fecha, resueltos_usuario, total_usuario in session.execute(stmt).all():
         if not total_usuario:
             continue
         porcentaje = (Decimal(resueltos_usuario) * 100 / Decimal(total_usuario)).quantize(Decimal("0.01"))
-        filas.append((id_user, fecha_fin, porcentaje))
+        filas.append((id_user, fecha, porcentaje, total_usuario))
     return filas
 
 
@@ -412,7 +438,8 @@ def tiempo_promedio_reparacion_laboratorio_por_tecnico_query(session, fecha_inic
     para el detalle de por que `status == "delivered"`, `id_technician IS
     NOT NULL` y el alcance por proyecto. Se agrupa por el DIA de entrega
     (`actual_delivery_date`): "de las ordenes entregadas ESE dia, cuanto se
-    tardaron en promedio desde que entraron".
+    tardaron en promedio desde que entraron". Cuarta columna: cuantas ordenes
+    hay detras de ese promedio (`peso`, ver `AGREGACIONES`).
     """
     fecha_col = func.date(LaboratoryServiceOrder.actual_delivery_date)
     dias_reparacion = func.extract(
@@ -433,7 +460,7 @@ def tiempo_promedio_reparacion_laboratorio_por_tecnico_query(session, fecha_inic
         condiciones.append(LaboratoryServiceOrder.id_proyect == actor_project)
 
     stmt = (
-        select(LaboratoryServiceOrder.id_technician, fecha_col.label("fecha"), func.avg(dias_reparacion))
+        select(LaboratoryServiceOrder.id_technician, fecha_col.label("fecha"), func.avg(dias_reparacion), func.count())
         .where(*condiciones)
         .group_by(LaboratoryServiceOrder.id_technician, fecha_col)
         .order_by(LaboratoryServiceOrder.id_technician, fecha_col)
@@ -449,7 +476,8 @@ def costo_promedio_reparacion_laboratorio_por_tecnico_query(session, fecha_inici
     nullable (una orden entregada sin costo capturado no debe promediar
     como 0), asi que se excluye explicitamente con IS NOT NULL en vez de
     dejar que el AVG de SQL la ignore en silencio -- mas claro que la
-    exclusion es real y no un accidente del promedio.
+    exclusion es real y no un accidente del promedio. Por lo mismo el `peso`
+    (cuarta columna) cuenta solo las ordenes CON costo.
     """
     fecha_col = func.date(LaboratoryServiceOrder.actual_delivery_date)
     condiciones = [
@@ -468,7 +496,7 @@ def costo_promedio_reparacion_laboratorio_por_tecnico_query(session, fecha_inici
         condiciones.append(LaboratoryServiceOrder.id_proyect == actor_project)
 
     stmt = (
-        select(LaboratoryServiceOrder.id_technician, fecha_col.label("fecha"), func.avg(LaboratoryServiceOrder.final_cost))
+        select(LaboratoryServiceOrder.id_technician, fecha_col.label("fecha"), func.avg(LaboratoryServiceOrder.final_cost), func.count())
         .where(*condiciones)
         .group_by(LaboratoryServiceOrder.id_technician, fecha_col)
         .order_by(LaboratoryServiceOrder.id_technician, fecha_col)
@@ -712,11 +740,12 @@ def articulos_bajo_stock_query(session, fecha_inicio, fecha_fin, filtros_dimensi
     """Existencia ACTUAL por producto (`inventory_stock`, sumada entre ubicaciones).
 
     No es una serie por dia: `inventory_stock` no guarda historia, solo el
-    saldo de HOY (ver el docstring de la tabla). Por eso, igual que
-    `desarrollo_por_empleado_query`/`incidentes_resueltos_por_empleado_query`,
-    regresa una sola fila por producto fechada en `fecha_fin`: es una foto
-    del saldo actual, no una reconstruccion historica -- `fecha_inicio` no se
-    usa para nada mas que mantener la firma comun de `query_builder`.
+    saldo de HOY (ver el docstring de la tabla). Por eso regresa una sola
+    fila por producto fechada en `fecha_fin`: es una foto del saldo actual,
+    no una reconstruccion historica -- `fecha_inicio` no se usa para nada mas
+    que mantener la firma comun de `query_builder`. Como cada noche repite la
+    foto completa, se declara `agregacion="ultimo"`: sumar las noches del
+    rango multiplicaria la existencia por el numero de dias.
 
     El KPI guarda la CANTIDAD en existencia, no un si-o-no de "esta bajo
     stock": el umbral para decidir que cuenta como "bajo" se captura en el
@@ -745,12 +774,16 @@ def articulos_bajo_stock_query(session, fecha_inicio, fecha_fin, filtros_dimensi
 
 class KpiDefinition:
     def __init__(self, clave, etiqueta, modulo, dimensiones,
-                 query_builder, unidad="numero", alcance_proyecto=True):
+                 query_builder, *, agregacion, unidad="numero", alcance_proyecto=True):
         self.clave = clave
         self.etiqueta = etiqueta
         self.modulo = modulo               # clave de MODULOS en app/modules/registry.py
         self.dimensiones = dimensiones      # tupla, ej. ("empleado",)
         self.query_builder = query_builder  # ver firma de ventas_por_empleado_query
+        # Obligatorio y sin valor por omision (ver AGREGACIONES): un KPI que no
+        # la declare revienta con TypeError al importar este modulo, en vez de
+        # caer en una suma silenciosa que solo es correcta para conteos/montos.
+        self.agregacion = agregacion
         self.unidad = unidad
         # Si el KPI se calcula UNA VEZ POR PROYECTO ACTIVO (True, el default
         # -- lo que ya hacian los primeros 3 KPIs, todos sobre entidades que
@@ -775,6 +808,7 @@ KPI_REGISTRY = (
         modulo="facturacion",
         dimensiones=("empleado",),
         query_builder=ventas_por_empleado_query,
+        agregacion="suma",
         unidad="moneda",
     ),
     KpiDefinition(
@@ -783,6 +817,7 @@ KPI_REGISTRY = (
         modulo="facturacion",
         dimensiones=("empleado",),
         query_builder=egresos_por_empleado_query,
+        agregacion="suma",
         unidad="moneda",
     ),
     KpiDefinition(
@@ -791,6 +826,7 @@ KPI_REGISTRY = (
         modulo="operaciones",
         dimensiones=("empleado",),
         query_builder=desarrollo_por_empleado_query,
+        agregacion="promedio_ponderado",
         unidad="porcentaje",
     ),
     KpiDefinition(
@@ -799,6 +835,7 @@ KPI_REGISTRY = (
         modulo="operaciones",
         dimensiones=("empleado",),
         query_builder=vales_vencidos_por_responsable_query,
+        agregacion="suma",
         unidad="numero",
         alcance_proyecto=False,
     ),
@@ -808,6 +845,7 @@ KPI_REGISTRY = (
         modulo="operaciones",
         dimensiones=("empleado",),
         query_builder=incidentes_resueltos_por_empleado_query,
+        agregacion="promedio_ponderado",
         unidad="porcentaje",
         alcance_proyecto=False,
     ),
@@ -817,6 +855,7 @@ KPI_REGISTRY = (
         modulo="operaciones",
         dimensiones=("empleado",),
         query_builder=cancelaciones_por_empleado_query,
+        agregacion="suma",
         unidad="numero",
         alcance_proyecto=False,
     ),
@@ -826,6 +865,7 @@ KPI_REGISTRY = (
         modulo="laboratorio",
         dimensiones=("empleado",),
         query_builder=ordenes_laboratorio_entregadas_por_tecnico_query,
+        agregacion="suma",
         unidad="numero",
     ),
     KpiDefinition(
@@ -834,6 +874,7 @@ KPI_REGISTRY = (
         modulo="laboratorio",
         dimensiones=("empleado",),
         query_builder=tiempo_promedio_reparacion_laboratorio_por_tecnico_query,
+        agregacion="promedio_ponderado",
         unidad="dias",
     ),
     KpiDefinition(
@@ -842,6 +883,7 @@ KPI_REGISTRY = (
         modulo="laboratorio",
         dimensiones=("empleado",),
         query_builder=costo_promedio_reparacion_laboratorio_por_tecnico_query,
+        agregacion="promedio_ponderado",
         unidad="moneda",
     ),
     KpiDefinition(
@@ -850,6 +892,7 @@ KPI_REGISTRY = (
         modulo="documentos",
         dimensiones=("empleado",),
         query_builder=documentos_vencidos_por_responsable_query,
+        agregacion="suma",
         unidad="numero",
     ),
     # --- variables/KPIs adicionales (pedido de Aurora: "opcionales,
@@ -861,6 +904,7 @@ KPI_REGISTRY = (
         modulo="facturacion",
         dimensiones=("global",),
         query_builder=ingresos_totales_query,
+        agregacion="suma",
         unidad="moneda",
     ),
     KpiDefinition(
@@ -869,6 +913,7 @@ KPI_REGISTRY = (
         modulo="facturacion",
         dimensiones=("global",),
         query_builder=egresos_totales_query,
+        agregacion="suma",
         unidad="moneda",
     ),
     KpiDefinition(
@@ -877,6 +922,7 @@ KPI_REGISTRY = (
         modulo="inventario",
         dimensiones=("empleado",),
         query_builder=material_prestado_por_responsable_query,
+        agregacion="suma",
         unidad="numero",
         alcance_proyecto=False,
     ),
@@ -886,6 +932,7 @@ KPI_REGISTRY = (
         modulo="inventario",
         dimensiones=("empleado",),
         query_builder=prestamos_vencidos_por_responsable_query,
+        agregacion="suma",
         unidad="numero",
         alcance_proyecto=False,
     ),
@@ -895,6 +942,7 @@ KPI_REGISTRY = (
         modulo="inventario",
         dimensiones=("producto",),
         query_builder=lotes_proximos_a_caducar_query,
+        agregacion="suma",
         unidad="numero",
         alcance_proyecto=False,
     ),
@@ -904,6 +952,7 @@ KPI_REGISTRY = (
         modulo="inventario",
         dimensiones=("producto",),
         query_builder=articulos_bajo_stock_query,
+        agregacion="ultimo",
         unidad="numero",
         alcance_proyecto=False,
     ),
@@ -923,6 +972,10 @@ ALCANCE_PROYECTO_POR_CLAVE = {kpi.clave: kpi.alcance_proyecto for kpi in KPI_REG
 # (via `DIMENSION_JSON_KEY`) sin tener que resembrar la logica de dimensiones
 # fuera de este registro.
 DIMENSION_POR_CLAVE = {kpi.clave: kpi.dimensiones[0] for kpi in KPI_REGISTRY}
+
+# Y para la regla de agregacion (ver AGREGACIONES): la consume `_totales()` en
+# `app/routes/kpi.py` para saber como combinar los snapshots del rango.
+AGREGACION_POR_CLAVE = {kpi.clave: kpi.agregacion for kpi in KPI_REGISTRY}
 
 
 # "tiempo_promedio_atencion" queda pendiente de agregar a este registro.
@@ -951,6 +1004,11 @@ def _validar():
         if kpi.modulo not in MODULO_POR_CLAVE:
             raise RuntimeError(
                 f"El KPI '{kpi.clave}' apunta al modulo inexistente '{kpi.modulo}'."
+            )
+        if kpi.agregacion not in AGREGACIONES:
+            raise RuntimeError(
+                f"El KPI '{kpi.clave}' declara la agregacion desconocida '{kpi.agregacion}' "
+                f"(validas: {', '.join(AGREGACIONES)})."
             )
 
 

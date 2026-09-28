@@ -196,7 +196,8 @@ class KpiIncidentesTest(unittest.TestCase):
             filas = incidentes_resueltos_por_empleado_query(db, date(2026, 7, 1), date(2026, 7, 1), {}, None)
 
         # 2 de 4 (resuelta + cerrada) = 50.00%; cancelada NO cuenta como resuelta.
-        self.assertEqual([(EMPLEADO_A, date(2026, 7, 1), Decimal("50.00"))], [tuple(f) for f in filas])
+        # Cuarta columna: los 4 incidentes del dia, el peso del promedio ponderado.
+        self.assertEqual([(EMPLEADO_A, date(2026, 7, 1), Decimal("50.00"), 4)], [tuple(f) for f in filas])
 
     def test_incidentes_resueltos_excluye_fuera_de_rango_de_creacion(self):
         with transaction_context() as db:
@@ -209,7 +210,7 @@ class KpiIncidentesTest(unittest.TestCase):
         with transaction_context() as db:
             filas = incidentes_resueltos_por_empleado_query(db, date(2026, 7, 10), date(2026, 7, 10), {}, None)
 
-        self.assertEqual([(EMPLEADO_A, date(2026, 7, 10), Decimal("100.00"))], [tuple(f) for f in filas])
+        self.assertEqual([(EMPLEADO_A, date(2026, 7, 10), Decimal("100.00"), 1)], [tuple(f) for f in filas])
 
     def test_incidentes_resueltos_filtro_de_empleados(self):
         with transaction_context() as db:
@@ -223,7 +224,7 @@ class KpiIncidentesTest(unittest.TestCase):
                 db, date(2026, 7, 15), date(2026, 7, 15), {"empleados": [EMPLEADO_B]}, None,
             )
 
-        self.assertEqual([(EMPLEADO_B, date(2026, 7, 15), Decimal("0.00"))], [tuple(f) for f in filas])
+        self.assertEqual([(EMPLEADO_B, date(2026, 7, 15), Decimal("0.00"), 1)], [tuple(f) for f in filas])
 
     # --- cancelaciones_por_empleado_query --------------------------------
 

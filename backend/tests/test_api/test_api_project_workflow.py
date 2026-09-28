@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from app.models.entity_permission import EntityPermission
 from app.models.session import transaction_context
+from app.models.task import Task
 from tests.conftest import BackendTestCase
 
 
@@ -81,8 +82,22 @@ class TestProjectWorkflowApi(BackendTestCase):
         workshop_after = self._request(self.workshop, "GET", "/proyect/?page=1&per_page=20")
         self.assertEqual(self.json(workshop_after)["total"], 1)
 
+        with transaction_context() as db:
+            db.add(Task(
+                id_proyect=project_id, task_description="Tarea", task_status="terminada",
+                owner=self.workshop["id_user"], validation=self.workshop["id_user"], dependency=0,
+                created_by=self.workshop["id_user"],
+            ))
+
+        # La espera de material es obligatoria y la abre/cierra Gerente, no
+        # el taller -- una orden de compra puede surtir a varios proyectos a
+        # la vez, asi que autorizar no significa que ya haya material a la
+        # mano.
+        for status in ("waiting_material", "in_progress"):
+            response = self._request(self.manager, "POST", f"/proyect/{project_id}/transition", {"status": status})
+            self.assertEqual(response.status_code, 200)
+
         for status, reason in (
-            ("in_progress", None),
             ("stopped", "Espera de material"),
             ("in_progress", None),
             ("completed", None),
@@ -97,8 +112,10 @@ class TestProjectWorkflowApi(BackendTestCase):
         detail_payload = self.json(detail)
         self.assertEqual(detail.status_code, 200)
         self.assertEqual(detail_payload["proyect_status"], "completed")
-        self.assertEqual(len(detail_payload["events"]), 6)
-        self.assertEqual(detail_payload["events"][3]["reason"], "Espera de material")
+        # created, authorized, waiting_material, in_progress, stopped,
+        # in_progress, completed.
+        self.assertEqual(len(detail_payload["events"]), 7)
+        self.assertEqual(detail_payload["events"][4]["reason"], "Espera de material")
 
     def test_http_rejects_manual_status_and_wrong_role_transition(self):
         project = self._create_project()

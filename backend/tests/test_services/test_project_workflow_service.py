@@ -8,6 +8,7 @@ from app.models.invoice import Invoice
 from app.models.proyect import Proyect
 from app.models.proyect_event import ProyectEvent
 from app.models.session import transaction_context
+from app.models.task import Task
 from app.services.project_management_service import (
     add_project_payment,
     create_project,
@@ -46,6 +47,21 @@ class TestProjectWorkflowService(BackendTestCase):
             "title": title,
         }, actor or self.supervisor)
 
+    def _add_task(self, project_id, task_status="pendiente"):
+        with transaction_context() as db:
+            db.add(Task(
+                id_proyect=project_id, task_description="Tarea", task_status=task_status,
+                owner=self.workshop["id_user"], validation=self.workshop["id_user"], dependency=0,
+                created_by=self.workshop["id_user"],
+            ))
+
+    def _start_work(self, project_id):
+        """De `authorized` a `in_progress` pasando por la espera de material
+        obligatoria -- ambos saltos los pide Gerente, no el taller (ver el
+        comentario de PROJECT_STATUSES en project_management_service.py)."""
+        transition_project(project_id, {"status": "waiting_material"}, self.manager)
+        return transition_project(project_id, {"status": "in_progress"}, self.manager)
+
     def test_supervisor_creation_defaults_to_draft_and_is_owner_scoped(self):
         own = self._create()
         self._create(self.other_supervisor, "Ajeno")
@@ -69,7 +85,8 @@ class TestProjectWorkflowService(BackendTestCase):
         project = self._create()
         project_id = project["id_proyect"]
         transition_project(project_id, {"status": "authorized"}, self.manager)
-        transition_project(project_id, {"status": "in_progress"}, self.workshop)
+        self._add_task(project_id, "terminada")
+        self._start_work(project_id)
         transition_project(project_id, {"status": "stopped", "reason": "Falta material"}, self.workshop)
         transition_project(project_id, {"status": "in_progress"}, self.workshop)
         transition_project(project_id, {"status": "completed"}, self.workshop)
@@ -77,11 +94,14 @@ class TestProjectWorkflowService(BackendTestCase):
         detail = get_project_detail(project_id, self.workshop)
 
         self.assertEqual(detail["proyect_status"], "completed")
-        self.assertEqual(len(detail["events"]), 6)
+        # created, authorized, waiting_material, in_progress, stopped,
+        # in_progress, completed -- un evento mas que antes de que la espera
+        # de material fuera obligatoria.
+        self.assertEqual(len(detail["events"]), 7)
         self.assertEqual(detail["events"][0]["event_type"], "created")
-        self.assertEqual(detail["events"][3]["reason"], "Falta material")
+        self.assertEqual(detail["events"][4]["reason"], "Falta material")
         with transaction_context() as db:
-            self.assertEqual(db.query(ProyectEvent).filter_by(id_proyect=project_id).count(), 6)
+            self.assertEqual(db.query(ProyectEvent).filter_by(id_proyect=project_id).count(), 7)
 
     def test_direct_status_update_is_rejected(self):
         project = self._create()
@@ -114,6 +134,48 @@ class TestProjectWorkflowService(BackendTestCase):
 
         self.assertEqual("authorized", autorizado["proyect_status"])
 
+    def test_an_authorized_project_cannot_skip_the_wait_for_material(self):
+        """Ya no hay salida directa de `authorized` a `in_progress` -- una
+        orden de compra puede surtir a varios proyectos a la vez (ej. los
+        mismos costales de cemento), asi que autorizar no significa que el
+        taller ya tenga en mano lo que necesita. Debe pasar por
+        `waiting_material`, sin importar quien lo pida.
+        """
+        project = self._create()["id_proyect"]
+        transition_project(project, {"status": "authorized"}, self.manager)
+        self._add_task(project)
+
+        for actor in (self.manager, self.workshop):
+            with self.subTest(actor=actor), self.assertRaises(AppError) as raised:
+                transition_project(project, {"status": "in_progress"}, actor)
+            self.assertEqual("errors.project_invalid_transition", raised.exception.message_key)
+
+    def test_only_the_manager_opens_and_closes_the_wait_for_material(self):
+        """Entrar a la espera y salir de ella hacia el trabajo real las
+        decide quien autoriza/compra (Gerente), no el taller -- es quien
+        sabe si la compra ya llego. El taller SI puede pausar un proyecto ya
+        en curso por falta de material (`in_progress -> waiting_material`,
+        cubierto en `test_full_cycle_writes_ordered_immutable_history`), pero
+        no controla la espera de arranque.
+        """
+        project = self._create()["id_proyect"]
+        transition_project(project, {"status": "authorized"}, self.manager)
+        self._add_task(project)
+
+        with self.assertRaises(AppError) as raised:
+            transition_project(project, {"status": "waiting_material"}, self.workshop)
+        self.assertEqual("errors.permission_denied", raised.exception.message_key)
+
+        en_espera = transition_project(project, {"status": "waiting_material"}, self.manager)
+        self.assertEqual("waiting_material", en_espera["proyect_status"])
+
+        with self.assertRaises(AppError) as raised:
+            transition_project(project, {"status": "in_progress"}, self.workshop)
+        self.assertEqual("errors.permission_denied", raised.exception.message_key)
+
+        en_proceso = transition_project(project, {"status": "in_progress"}, self.manager)
+        self.assertEqual("in_progress", en_proceso["proyect_status"])
+
     def test_capability_cannot_execute_another_roles_transition(self):
         project = self._create()
         project_id = project["id_proyect"]
@@ -123,20 +185,72 @@ class TestProjectWorkflowService(BackendTestCase):
 
         self.assertEqual(raised.exception.status_code, 404)
 
-    def test_workshop_can_block_a_project_already_in_progress(self):
-        """Jefe de taller bloquea un proyecto que ya esta en curso.
-
-        Distinto de rechazarlo ANTES de iniciar (desde Borrador), que sigue
-        siendo exclusivo de Gerente.
+    def test_workshop_cannot_block_a_project_already_in_progress(self):
+        """Jefe de taller NO bloquea un proyecto en curso -- lo suyo es
+        "detenido" (`stopped`). Bloquear un proyecto en curso queda para
+        quien lo lidera (o quien autoriza).
         """
         project = self._create()["id_proyect"]
         transition_project(project, {"status": "authorized"}, self.manager)
-        transition_project(project, {"status": "in_progress"}, self.workshop)
+        self._add_task(project)
+        self._start_work(project)
+
+        with self.assertRaises(AppError) as raised:
+            transition_project(project, {"status": "blocked", "reason": "Falta permiso"}, self.workshop)
+        self.assertEqual("errors.permission_denied", raised.exception.message_key)
+
+        detenido = transition_project(project, {"status": "stopped", "reason": "Falta material"}, self.workshop)
+        self.assertEqual("stopped", detenido["proyect_status"])
+
+    def test_leader_can_block_a_project_already_in_progress(self):
+        """Quien lidera el proyecto si puede bloquearlo en curso, aunque no
+        tenga la capacidad de autorizacion ni sea del taller."""
+        project = self._create()["id_proyect"]  # self.supervisor es el lider por defecto.
+        transition_project(project, {"status": "authorized"}, self.manager)
+        self._add_task(project)
+        self._start_work(project)
 
         blocked = transition_project(
-            project, {"status": "blocked", "reason": "Falta permiso"}, self.workshop,
+            project, {"status": "blocked", "reason": "Falta permiso"}, self.supervisor,
         )
         self.assertEqual("blocked", blocked["proyect_status"])
+
+    def test_project_cannot_move_to_in_progress_without_tasks(self):
+        """No se arranca un proyecto que todavia no tiene tareas.
+
+        El candado vive en la salida real hacia el trabajo
+        (`waiting_material -> in_progress`), no al entrar a la espera de
+        material -- las tareas se van definiendo mientras el material esta
+        en camino, no antes.
+        """
+        project = self._create()["id_proyect"]
+        transition_project(project, {"status": "authorized"}, self.manager)
+        transition_project(project, {"status": "waiting_material"}, self.manager)
+
+        with self.assertRaises(AppError) as raised:
+            transition_project(project, {"status": "in_progress"}, self.manager)
+        self.assertEqual("errors.project_requires_task", raised.exception.message_key)
+
+        self._add_task(project)
+        en_proceso = transition_project(project, {"status": "in_progress"}, self.manager)
+        self.assertEqual("in_progress", en_proceso["proyect_status"])
+
+    def test_project_cannot_be_completed_with_open_tasks(self):
+        """No se completa el proyecto si todavia hay tareas sin cerrar."""
+        project = self._create()["id_proyect"]
+        transition_project(project, {"status": "authorized"}, self.manager)
+        self._add_task(project, "pendiente")
+        self._start_work(project)
+
+        with self.assertRaises(AppError) as raised:
+            transition_project(project, {"status": "completed"}, self.workshop)
+        self.assertEqual("errors.project_tasks_not_completed", raised.exception.message_key)
+
+        with transaction_context() as db:
+            db.query(Task).filter(Task.id_proyect == project).update({"task_status": "terminada"})
+
+        completado = transition_project(project, {"status": "completed"}, self.workshop)
+        self.assertEqual("completed", completado["proyect_status"])
 
     def test_workshop_cannot_block_a_project_before_it_starts(self):
         """Rechazar antes de iniciar sigue siendo exclusivo de Gerente.
