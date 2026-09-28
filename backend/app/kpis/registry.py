@@ -405,12 +405,23 @@ def cancelaciones_por_empleado_query(session, fecha_inicio, fecha_fin, filtros_d
       incidente.
     * Sin alcance de proyecto, mismo motivo que
       `vales_vencidos_por_responsable_query`.
+    * Sentinel heredado: `close_date == CIERRE_SENTINELA` se excluye
+      explicitamente, ademas de `IS NOT NULL` -- `CIERRE_SENTINELA` no es un
+      cierre real (ver `_sin_cerrar` en warehouse_voucher_service.py), asi
+      que un incidente cancelado migrado de Adser sin fecha de cierre
+      capturada NO debe contarse como "cancelado el 1990-01-01". Antes de
+      este fix, `close_date.isnot(None)` dejaba pasar el sentinel igual que
+      una fecha real -- el efecto practico era que esas cancelaciones
+      quedaban invisibles en cualquier rango real (nadie pide un reporte que
+      incluya 1990), pero el criterio era incorrecto de fondo, no solo
+      inofensivo por casualidad.
     """
     fecha_col = func.date(Incident.close_date)
     condiciones = [
         Incident.deletion_date.is_(None),
         Incident.incident_status == "cancelada",
         Incident.close_date.isnot(None),
+        Incident.close_date != CIERRE_SENTINELA,
         fecha_col >= fecha_inicio,
         fecha_col <= fecha_fin,
     ]

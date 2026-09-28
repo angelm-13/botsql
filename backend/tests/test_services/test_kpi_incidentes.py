@@ -270,6 +270,23 @@ class KpiIncidentesTest(unittest.TestCase):
 
         self.assertEqual([(EMPLEADO_B, date(2026, 8, 10), 1)], [tuple(f) for f in filas])
 
+    def test_cancelaciones_no_cuenta_el_sentinel_legacy_como_cierre_real(self):
+        # Mismo hallazgo que ya se corrigio en vales_vencidos: el sentinel
+        # heredado de Adser (close_date = 1990-01-01) no es un cierre real --
+        # antes de este fix, close_date.isnot(None) lo dejaba pasar igual que
+        # una fecha real, y esta cancelacion se hubiera contado como
+        # "cancelada el 1990-01-01".
+        with transaction_context() as db:
+            db.add(self._incidente(
+                9726, EMPLEADO_A, "cancelada",
+                creation_date=datetime(2026, 5, 1, 9, 0), close_date=CIERRE_SENTINELA,
+            ))
+
+        with transaction_context() as db:
+            filas = cancelaciones_por_empleado_query(db, date(1990, 1, 1), date(1990, 1, 1), {}, None)
+
+        self.assertEqual([], [tuple(f) for f in filas])
+
 
 if __name__ == "__main__":
     unittest.main()
