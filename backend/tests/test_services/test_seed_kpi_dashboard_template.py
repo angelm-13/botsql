@@ -77,17 +77,21 @@ class TestFechasRelativas(BackendTestCase):
         # Una tabla de un KPI en vivo no guarda periodo; solo su ancho, y solo si es doble.
         self.assertEqual({}, parametros_del_widget(WidgetPlantilla("material_prestado_actual", "tabla"), HOY))
         self.assertEqual({"columnas": 2}, parametros_del_widget(WidgetPlantilla("material_prestado_actual", "tabla", columnas=2), HOY))
-        self.assertEqual({"columnas": 2}, parametros_del_widget(next(w for w in PLANTILLA if w.tipo_grafica == "tabla"), HOY))
+        self.assertEqual({"filas": 2}, parametros_del_widget(WidgetPlantilla("material_prestado_actual", "tabla", filas=2), HOY))
+        self.assertEqual({"columnas": 2, "filas": 2}, parametros_del_widget(next(w for w in PLANTILLA if w.tipo_grafica == "tabla"), HOY))
+        # Solo una tabla guarda tamano.
+        self.assertEqual({"rango_relativo": "hoy", "fecha_inicio": "2026-09-29", "fecha_fin": "2026-09-29"},
+                         parametros_del_widget(WidgetPlantilla("x", "barras", "hoy", columnas=2, filas=2), HOY))
 
 
 class TestPlantillaEnSi(BackendTestCase):
     def test_son_los_cinco_widgets_acordados(self):
         self.assertEqual(
             [
+                ("material_prestado_actual", "tabla", "", 0),
                 ("incidencias_pendientes", "numero", "hoy", 30),
                 ("incidencias_abiertas_vs_cerradas", "barras", "este_anio", 0),
                 ("incidencias_abiertas_por_empleado", "barras", "este_anio", 0),
-                ("material_prestado_actual", "tabla", "", 0),
                 ("material_por_estado", "dona", "hoy", 0),
             ],
             [(w.clave_kpi, w.tipo_grafica, w.rango_relativo, w.comparar_desfase_dias) for w in PLANTILLA],
@@ -203,7 +207,7 @@ class TestSiembraDelTablero(BackendTestCase):
             self.assertEqual("este_anio", por_clave[clave]["rango_relativo"], clave)
             self.assertEqual("2026-01-01", por_clave[clave]["fecha_inicio"], clave)
             self.assertEqual("2026-09-29", por_clave[clave]["fecha_fin"], clave)
-        self.assertEqual({"columnas": 2}, por_clave["material_prestado_actual"], "el KPI en vivo no lleva rango, solo su ancho doble")
+        self.assertEqual({"columnas": 2, "filas": 2}, por_clave["material_prestado_actual"], "el KPI en vivo no lleva rango, solo su tamano 2x2")
         self.assertEqual("hoy", por_clave["material_por_estado"]["rango_relativo"])
         self.assertNotIn("comparar_anterior", por_clave["material_por_estado"])
 

@@ -130,13 +130,29 @@ arranque los ve todos):
 `backend/scripts/seed_kpi_dashboard_template.py` le arma a `taroj` un tablero
 ("Operación Adser") con 5 widgets, por el mismo servicio que usa el editor:
 
-| Gráfica | KPI | Rango |
-|---|---|---|
-| Número | Incidencias pendientes | Hoy, contra el mismo día de hace 30 días |
-| Barras | Incidencias abiertas vs. cerradas | Este año |
-| Barras | Incidencias abiertas por responsable | Este año |
-| Tabla | Material prestado ahora | Sin rango (KPI en vivo), ancho doble: `parametros = {"columnas": 2}` |
-| Dona | Material por estado | Hoy |
+En este orden (el orden del tablero es `posicion_orden`, de 100 en 100):
+
+| # | Gráfica | KPI | Rango / tamaño |
+|---|---|---|---|
+| 1 | Tabla | Material prestado ahora | Sin rango (KPI en vivo). 2 columnas × 2 filas: `parametros = {"columnas": 2, "filas": 2}` |
+| 2 | Número | Incidencias pendientes | Hoy, contra el mismo día de hace 30 días |
+| 3 | Barras | Incidencias abiertas vs. cerradas | Este año |
+| 4 | Barras | Incidencias abiertas por responsable | Este año |
+| 5 | Dona | Material por estado | Hoy |
+
+**Cómo se ve:** la tabla es el widget principal, a la izquierda, y las otras cuatro
+tarjetas forman un bloque de 2×2 a su derecha, alineado con ella arriba y abajo.
+Con 4 columnas (pantalla ancha) es 2 + 2×2; con 3 columnas, la tabla más una columna
+de 2 tarjetas (las otras dos quedan debajo); con 2 o 1 columna, todo apilado con la
+tabla primero. La cuadrícula (`.kpi-widget-grid`) tiene tope de 4 columnas, alto
+mínimo de fila de 372 px y `grid-auto-flow: dense`. **Sin la tabla (`--sin-tabla`)**
+las 4 tarjetas ocupan una fila de 4 columnas.
+
+**Un tablero que ya existía no cambia de orden ni de tamaño:** la plantilla no
+modifica lo que alguien ya tiene (regla de idempotencia de abajo). Para reacomodarlo,
+se edita el widget de la tabla (el editor ofrece "Alto de la tabla" y "Ancho de la
+tabla") o se borra el tablero y se corre la plantilla de nuevo. En `adser-prod` la
+plantilla aún no se ha corrido, así que nace con el orden nuevo.
 
 "Este año" y no 30 o 90 días porque en Adser el último vale migrado es del 15 de
 agosto y no hay capturas nuevas desde la migración: un rango corto sale vacío.
@@ -192,9 +208,9 @@ sabía pintarlo.
   guardar una tabla de un KPI que no es "vivo": el Dashboard la pinta como
   "Este tipo de tabla estará disponible próximamente", no revienta.
 - Un widget de tabla no guarda periodo ni filtros (son datos de "ahora"). Lo
-  único que puede guardar es su ancho: `parametros = {"columnas": 2}` para que
-  ocupe dos columnas de la cuadrícula; ausente es una columna, así que las
-  tablas guardadas antes se ven igual. En pantallas donde solo cabe una
+  único que puede guardar es su tamaño: `columnas: 2` (dos columnas de la
+  cuadrícula) y `filas: 2` (dos filas de alto, con la lista desplazándose por
+  dentro); ausentes son 1 y 1, así que las tablas guardadas antes se ven igual. En pantallas donde solo cabe una
   columna, la tabla vuelve a ocupar una. Sin migración: `parametros` es JSON
   libre y el backend no lo valida.
 

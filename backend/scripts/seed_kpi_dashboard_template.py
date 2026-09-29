@@ -14,7 +14,7 @@ Que hace y que no
   con 5 widgets. Los de serie llevan un rango RELATIVO (`parametros.rango_relativo`)
   y, ademas, la foto de las fechas de hoy, exactamente como lo guarda el
   editor: el Dashboard recalcula las fechas cada vez que se abre. La tabla de
-  un KPI "vivo" no lleva rango: solo guarda su ancho (`{"columnas": 2}`).
+  un KPI "vivo" no lleva rango: solo guarda su tamano (`{"columnas": 2, "filas": 2}`).
 * AVISO sobre la tabla "Material prestado ahora": depende de
   `incident.incident_date` (la fecha del vale). NO correr en adser-prod hasta que
   Alan confirme, con una consulta de solo lectura, que esa fecha es confiable en
@@ -87,14 +87,21 @@ class WidgetPlantilla:
     comparar_anterior: bool = False
     # ...o contra el mismo rango N dias atras ("hoy contra hace 30 dias").
     comparar_desfase_dias: int = 0
-    # Ancho en la cuadricula (2 = doble). Solo lo guarda una tabla; 1 = como los widgets de siempre.
+    # Tamano en la cuadricula (2 = doble). Solo lo guarda una tabla; 1 = como los widgets de siempre.
     columnas: int = 1
+    filas: int = 1
 
 
 # La plantilla. Cada rango es de los que ofrece el editor (RANGOS_RELATIVOS en
 # frontend/src/kpi/kpiRango.js) y cada tipo de grafica esta entre las
 # `graficas_permitidas` de su KPI (lo comprueba `validar`).
 PLANTILLA = (
+    # LA TABLA PRIMERO, de 2 columnas por 2 filas: es el widget principal (a la izquierda). Las otras
+    # cuatro tarjetas caen en un bloque de 2x2 a su derecha (`grid-auto-flow: dense`, ver
+    # frontend/src/styles/kpi-dashboard.css). Material prestado sin devolver AHORA. KPI "vivo": sin
+    # rango; parametros = {"columnas": 2, "filas": 2}. Depende de incident_date: ver el AVISO al
+    # inicio de este archivo.
+    WidgetPlantilla("material_prestado_actual", "tabla", columnas=2, filas=2),
     # Cuantas incidencias siguen sin resolver hoy, contra el mismo dia de hace 30.
     WidgetPlantilla("incidencias_pendientes", "numero", "hoy", comparar_desfase_dias=30),
     # Cuantas se abren y cuantas se cierran, por dia, en lo que va del ano. Un
@@ -103,9 +110,6 @@ PLANTILLA = (
     WidgetPlantilla("incidencias_abiertas_vs_cerradas", "barras", "este_anio"),
     # Quien es el responsable de las incidencias abiertas, en lo que va del ano.
     WidgetPlantilla("incidencias_abiertas_por_empleado", "barras", "este_anio"),
-    # Material prestado sin devolver AHORA. KPI "vivo": sin rango, de ancho doble (parametros = {"columnas": 2}).
-    # Depende de incident_date: ver el AVISO al inicio de este archivo.
-    WidgetPlantilla("material_prestado_actual", "tabla", columnas=2),
     # En que estado esta el material de los vales, hoy.
     WidgetPlantilla("material_por_estado", "dona", "hoy"),
 )
@@ -142,8 +146,13 @@ def parametros_del_widget(widget: WidgetPlantilla, hoy: date) -> dict:
     """Los `parametros` tal como los guarda el editor para un rango relativo:
     la instruccion (`rango_relativo`) mas la foto de las fechas de hoy."""
     if not widget.rango_relativo:
-        # Un KPI "vivo" no guarda periodo; lo unico que lleva es su ancho, y solo si es doble.
-        return {"columnas": widget.columnas} if widget.tipo_grafica == "tabla" and widget.columnas == 2 else {}
+        # Un KPI "vivo" no guarda periodo; lo unico que lleva es su tamano, y solo si es doble.
+        if widget.tipo_grafica != "tabla":
+            return {}
+        return {
+            **({"columnas": 2} if widget.columnas == 2 else {}),
+            **({"filas": 2} if widget.filas == 2 else {}),
+        }
     inicio, fin = resolver_rango_relativo(widget.rango_relativo, hoy)
     parametros = {
         "rango_relativo": widget.rango_relativo,

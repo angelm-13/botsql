@@ -371,7 +371,7 @@ Esperado: `Creados: 1 tablero(s) y 4 widget(s).` Cuando Alan confirme
 2. En el Dashboard, el selector de KPI muestra una fila de botones de módulo
    (Operaciones, Inventario, Facturación, Laboratorio, Documentos y Variables, cada
    uno con su conteo) y, debajo, los KPIs del módulo elegido, con buscador.
-3. El tablero "Operación Adser" aparece con sus 4 tarjetas y los rangos rotulados
+3. El tablero "Operación Adser" aparece con sus 4 tarjetas (sin la tabla, en una fila de 4; con ella, ver su disposición en `2026-09-29_kpis_dashboard_adser.md`) y los rangos rotulados
    ("Hoy · …", "Este año · …"). El último vale migrado es del 15 de agosto: un rango
    de **30 días** (desde el 31 de agosto) sale vacío con toda razón, pero uno de
    **90 días** sí alcanza esa fecha, así que si sale vacío es que **falta el
