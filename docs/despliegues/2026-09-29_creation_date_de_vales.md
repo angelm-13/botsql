@@ -52,6 +52,6 @@ Aplica a cada ambiente (`tyakxa-dev` se despliega solo al hacer push a
 
 | Ambiente | Migración | Rellenado |
 |---|---|---|
-| `tyakxa-dev` | ver commit | ver commit |
+| `tyakxa-dev` | aplicada 2026-09-29 (`12b9ed3`) | aplicado 2026-09-29: 139 incidencias con la fecha del sistema anterior, 7 con la fecha del vale, 2783 renglones |
 | `adser-prod` | pendiente | pendiente (requiere OK de Alan) |
 | `torredigital-prod`, `vidrioyaluminios-prod` | pendiente | no aplica (sin datos migrados de adser) |
