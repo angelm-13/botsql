@@ -24,7 +24,10 @@ from app.utils.errors import AppError
 # "dona" y no "pastel": el mockup original mostraba un donut con hueco en el
 # centro, no un pastel completo. El nombre tiene que ser el mismo en modelo,
 # API y frontend -- se elige aqui porque es donde nace el contrato.
-TIPOS_GRAFICA = {'numero', 'barras', 'linea', 'area', 'dona'}
+# "tabla" es el tipo de los KPIs en modo "vivo" (material_prestado_actual): una
+# lista paginada de detalle, no una serie por fecha. Que el KPI elegido sea
+# realmente "vivo" lo decide el editor del Dashboard, no este servicio.
+TIPOS_GRAFICA = {'numero', 'barras', 'linea', 'area', 'dona', 'tabla'}
 
 
 class KpiDashboardWidgetService(CrudService):

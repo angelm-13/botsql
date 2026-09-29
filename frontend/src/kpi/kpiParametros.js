@@ -1,0 +1,103 @@
+// Del borrador del editor (panelState en Dashboard.jsx) a los `parametros` que
+// se guardan en el widget, y de vuelta. Puro y sin React -- ver kpi.test.js.
+//
+// Lo que se guarda es lo mismo que antes armaba handleSubmit en
+// KpiWidgetPanel; se saco a un modulo para que la vista previa del editor
+// consulte EXACTAMENTE lo que se va a guardar, no una copia que se
+// desincronice.
+import {
+  RANGO_PERSONALIZADO, RANGO_RELATIVO_POR_OMISION, esRangoRelativoVigente,
+  fechaLocalIso, periodoAnterior, resolverRangoRelativo,
+} from "./kpiRango.js";
+
+/** Los `parametros` de un widget a partir del borrador del editor.
+ *
+ * - `esTabla`: un widget de tabla (KPI "vivo") son datos de "ahora": no guarda
+ *   periodo, filtros ni colores.
+ * - `tieneBajoStock`: el umbral solo se guarda si el KPI "articulos_bajo_stock"
+ *   esta entre los elegidos (se captura en el widget, no en una columna).
+ */
+export function armarParametros(estado, { esTabla = false, tieneBajoStock = false, hoy = new Date() } = {}) {
+  if (esTabla) return {};
+  // Con un chip de rango relativo se guarda la INSTRUCCION (`rango_relativo`)
+  // y, ademas, la foto de las fechas de hoy: quien no conozca el campo sigue
+  // leyendo fechas absolutas de siempre. Sin chip ("personalizado") el
+  // resultado es identico al de antes de que existieran los rangos relativos.
+  const relativo = esRangoRelativoVigente(estado.rangoRelativo);
+  const rangoA = relativo
+    ? resolverRangoRelativo(estado.rangoRelativo, hoy)
+    : { fecha_inicio: estado.fechaInicio, fecha_fin: estado.fechaFin };
+  const parametros = { ...rangoA };
+  if (relativo) parametros.rango_relativo = estado.rangoRelativo;
+  if (estado.comparar) {
+    if (relativo) {
+      // Contra el periodo inmediatamente anterior: un rango B tecleado a mano
+      // se quedaria viejo en cuanto pasara un dia.
+      parametros.comparar_anterior = true;
+      Object.assign(parametros, periodoAnterior(rangoA));
+    } else {
+      parametros.fecha_inicio_b = estado.fechaInicioB;
+      parametros.fecha_fin_b = estado.fechaFinB;
+    }
+  }
+  if (estado.empleadosSeleccionados.length) parametros.empleados = estado.empleadosSeleccionados.map(Number);
+  if (estado.departamentosSeleccionados.length) parametros.id_departments = estado.departamentosSeleccionados.map(Number);
+  // Solo los overrides de KPIs que siguen seleccionados -- un KPI que se
+  // quito de la seleccion no debe dejar un color huerfano guardado.
+  const coloresVigentes = Object.fromEntries(
+    estado.idsKpiSeleccionados.filter((id) => estado.coloresKpi[id]).map((id) => [id, estado.coloresKpi[id]]),
+  );
+  if (Object.keys(coloresVigentes).length) parametros.colores_kpi = coloresVigentes;
+  if (estado.agruparPor === "periodo") parametros.agrupar_por = "periodo";
+  if (tieneBajoStock && estado.umbralBajoStock !== "" && Number.isFinite(Number(estado.umbralBajoStock))) {
+    parametros.umbral_bajo_stock = Number(estado.umbralBajoStock);
+  }
+  return parametros;
+}
+
+/** El widget que representa un borrador (lo que consulta la vista previa). */
+export function widgetDeBorrador(estado, opciones) {
+  return {
+    tipo_grafica: estado.tipoGrafica,
+    ids_kpi_definition: estado.idsKpiSeleccionados.map(Number),
+    parametros: armarParametros(estado, opciones),
+  };
+}
+
+/** El borrador del editor para un widget ya guardado (lo inverso de
+ * armarParametros): lo que se carga al pulsar el lapiz de una tarjeta. Un
+ * widget de antes de los rangos relativos entra como "personalizado", con sus
+ * fechas absolutas intactas. */
+export function estadoDeWidget(widget, kpiCatalog, hoy = new Date()) {
+  const ids = Array.isArray(widget.ids_kpi_definition) ? widget.ids_kpi_definition.map(String) : [];
+  const primerKpi = kpiCatalog.find((kpi) => String(kpi.id_kpi_definition) === ids[0]);
+  const guardados = widget.parametros || {};
+  const relativo = esRangoRelativoVigente(guardados.rango_relativo);
+  const parametros = relativo ? { ...guardados, ...resolverRangoRelativo(guardados.rango_relativo, hoy) } : guardados;
+  return {
+    editingWidgetId: widget.id_kpi_dashboard_widget,
+    paso: 0,
+    idsKpiSeleccionados: ids,
+    categoriaKpi: primerKpi?.modulo || "",
+    tipoGrafica: widget.tipo_grafica || "numero",
+    rangoRelativo: relativo ? guardados.rango_relativo : RANGO_PERSONALIZADO,
+    fechaInicio: parametros.fecha_inicio || fechaLocalIso(new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() - 29)),
+    fechaFin: parametros.fecha_fin || fechaLocalIso(hoy),
+    comparar: Boolean(parametros.fecha_inicio_b && parametros.fecha_fin_b),
+    fechaInicioB: parametros.fecha_inicio_b || "",
+    fechaFinB: parametros.fecha_fin_b || "",
+    empleadosSeleccionados: Array.isArray(parametros.empleados) ? parametros.empleados.map(String) : [],
+    departamentosSeleccionados: Array.isArray(parametros.id_departments) ? parametros.id_departments.map(String) : [],
+    // Las llaves de `colores_kpi` ya llegan como string desde el JSON
+    // guardado -- se copian tal cual, sin volver a tocar el tipo.
+    coloresKpi: parametros.colores_kpi && typeof parametros.colores_kpi === "object" ? { ...parametros.colores_kpi } : {},
+    agruparPor: parametros.agrupar_por === "periodo" ? "periodo" : "entidad",
+    umbralBajoStock: parametros.umbral_bajo_stock != null ? String(parametros.umbral_bajo_stock) : "",
+  };
+}
+
+/** El rango con el que arranca un borrador nuevo: los ultimos 30 dias. */
+export function rangoInicialDelBorrador(hoy = new Date()) {
+  const rango = resolverRangoRelativo(RANGO_RELATIVO_POR_OMISION, hoy);
+  return { rangoRelativo: RANGO_RELATIVO_POR_OMISION, fechaInicio: rango.fecha_inicio, fechaFin: rango.fecha_fin };
+}

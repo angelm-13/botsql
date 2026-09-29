@@ -20,4 +20,28 @@ module.exports = {
   rules: {
     'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
   },
+  overrides: [
+    {
+      // Usar un `const`/`let` antes de su declaracion NO falla al compilar ni al
+      // hacer el build: lanza ReferenceError (zona muerta temporal) solo cuando
+      // esa linea se ejecuta, y en un componente eso desmonta la app entera. Se
+      // exige en el codigo del Dashboard de KPIs y sus vecinos; el resto del
+      // proyecto aun no se ha revisado con esta regla.
+      files: [
+        'src/main.jsx',
+        'src/pages/Dashboard.jsx',
+        'src/pages/DashboardPreviewPage.jsx',
+        'src/components/ErrorBoundary.jsx',
+        'src/components/FormularioPlegable.jsx',
+        'src/components/kpi-widgets/**/*.{js,jsx}',
+        'src/kpi/**/*.js',
+      ],
+      rules: {
+        // variables: true -> tambien dentro de un mismo ambito (la trampa real);
+        // functions: true -> una funcion declarada con `function` se puede llamar
+        // antes, pero se pide el mismo orden para leerse de arriba hacia abajo.
+        'no-use-before-define': ['error', { functions: true, classes: true, variables: true }],
+      },
+    },
+  ],
 }

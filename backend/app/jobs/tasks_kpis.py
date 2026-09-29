@@ -40,6 +40,15 @@ def _recalcular_kpi_snapshots_en_sesion(session, fecha_inicio: date, fecha_fin: 
     ).all()
 
     for kpi in KPI_REGISTRY:
+        if kpi.modo != "snapshot":
+            # Un KPI "vivo" (ver KpiDefinition.modo en app/kpis/registry.py)
+            # no vive en kpi_snapshot: su query_builder tiene una firma
+            # distinta (limit/offset en vez de fecha_inicio/fecha_fin) porque
+            # trabaja sobre detalle, no sobre un numero por entidad-y-dia.
+            # Llamarlo aqui igual que a los demas reventaria con un
+            # TypeError -- se salta por diseno, no participa del job ni del
+            # backfill.
+            continue
         id_kpi_definition = id_kpi_definition_por_clave.get(kpi.clave)
         if id_kpi_definition is None:
             # kpi_definition todavia no trae esta clave (la siembra de

@@ -2,6 +2,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Shell from "./layouts/Shell";
 import Dashboard from "./pages/Dashboard";
+import DashboardPreviewPage from "./pages/DashboardPreviewPage.jsx";
+import ErrorBoundaryPreview from "./components/kpi-widgets/ErrorBoundaryPreview.jsx";
 import MfaSetupPage from "./pages/MfaSetupPage";
 import ChangePasswordPage from "./pages/ChangePasswordPage.jsx";
 import RolePermissionManagerPage from "./pages/RolePermissionManagerPage.jsx";
@@ -178,6 +180,14 @@ export default function App() {
         <Route path="/calendar/:code" element={<PublicCalendarPage />} />
         <Route path="/" element={<ProtectedRoute><Shell /></ProtectedRoute>}>
           <Route index element={<Dashboard />} />
+          {/* Vista previa aislada del rediseno del Dashboard de KPIs (datos
+              fijos, no toca la API ni la base) -- ver docs de la tarea.
+              Cualquier usuario autenticado la puede abrir, sin gate de
+              modulo/rol: no es una pantalla real todavia. */}
+          <Route
+            path="/dashboard-preview"
+            element={<ErrorBoundaryPreview><DashboardPreviewPage /></ErrorBoundaryPreview>}
+          />
           <Route path="/mfa-setup" element={<MfaSetupPage />} />
           <Route path="/change-password" element={<ChangePasswordPage />} />
           <Route path="/role_permissions" element={<AdminRoute><RolePermissionManagerPage /></AdminRoute>} />

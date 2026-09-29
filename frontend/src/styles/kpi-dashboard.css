@@ -5,7 +5,7 @@
 .kpi-tab.active .kpi-tab-label{color:#173b66}
 .kpi-tab-icon{border:0;background:transparent;color:#8a96a5;padding:6px;margin-right:2px;cursor:pointer;border-radius:8px;display:grid;place-items:center}
 .kpi-tab-icon:hover{background:#eef2f6;color:#173b66}
-.kpi-tab-icon.danger:hover{background:#fae5e5;color:#9b3030}
+.kpi-tab-icon.danger:hover{background:#fee2e2;color:#c62828}
 .kpi-tab-add{border:1px dashed #a9b7c6;background:#fff;color:#173b66;border-radius:12px;width:38px;height:38px;display:grid;place-items:center;cursor:pointer}
 .kpi-tab-add:hover{background:#d8efe8;border-color:#1b7a60;color:#1b7a60}
 
@@ -15,13 +15,17 @@
 .kpi-widget-placeholder{border:1px dashed #c3c2b7;border-radius:22px;min-height:240px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:#fbfaf7;color:#a6a49a;cursor:pointer;font:inherit}
 .kpi-widget-placeholder span{font-size:12px;font-weight:700}
 .kpi-widget-placeholder:hover{background:#eef2f6;border-color:#173b66;color:#173b66}
-.kpi-widget-card{background:#fff;border:1px solid #e2e8f0;border-radius:22px;padding:18px;display:flex;flex-direction:column;gap:10px;box-shadow:0 12px 30px rgba(15,23,42,.05);min-width:0}
+.kpi-widget-card{background:#fff;border:1px solid #e2e8f0;border-left:4px solid var(--kpi-acento,#e2e8f0);border-radius:22px;padding:18px;display:flex;flex-direction:column;gap:10px;box-shadow:0 12px 30px rgba(15,23,42,.05);min-width:0;transition:transform .18s ease,box-shadow .18s ease}
+/* Elevacion mientras se arrastra -- reemplaza el desvanecido (opacity) de
+   antes, que apagaba la tarjeta justo cuando mas se necesita verla bien. */
+.kpi-widget-dragging{box-shadow:0 22px 45px rgba(15,23,42,.22);transform:scale(1.02);cursor:grabbing}
+@media(prefers-reduced-motion:reduce){.kpi-widget-card{transition:none}.kpi-widget-dragging{transform:none}}
 .kpi-widget-card-header{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
 .kpi-widget-card-header h4{margin:0;font-size:16px;color:#173b66;line-height:1.25}
 .kpi-widget-card-actions{display:flex;gap:6px;flex-shrink:0}
 .kpi-icon-button{border:0;background:#eef2f6;color:#526273;border-radius:8px;padding:7px;cursor:pointer;display:grid;place-items:center}
 .kpi-icon-button:hover{background:#d8efe8;color:#1b7a60}
-.kpi-icon-button.danger:hover{background:#fae5e5;color:#9b3030}
+.kpi-icon-button.danger:hover{background:#fee2e2;color:#c62828}
 /* touch-action:none -- sin esto, arrastrar el handle en una pantalla tactil
    compite con el scroll de la pagina (ver docs de dnd-kit sobre PointerSensor
    en touch devices). */
@@ -42,11 +46,17 @@
 .kpi-number-module-icon{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:34px;height:34px;border-radius:50%}
 .kpi-number-sparkline{flex-shrink:0}
 .kpi-delta{display:inline-flex;align-items:center;gap:4px;font-weight:800;font-size:13px}
-.kpi-delta.up{color:#006300}
-.kpi-delta.down{color:#d03b3b}
+/* Vivo, no oscuro -- reemplaza el verde/rojo apagados de antes. La flecha
+   (Arriba/Abajo) siempre muestra la direccion real del cambio; este color
+   dice si esa direccion es buena o mala segun `direccion` del KPI -- dos
+   senales independientes, nunca solo el color. */
+.kpi-delta.bueno{color:#1f9d5c}
+.kpi-delta.malo{color:#ef6f5c}
+.kpi-delta.neutral{color:#8a96a5;font-weight:700}
+.kpi-number-range-hint{font-size:11px;color:#8a96a5;white-space:nowrap}
 
 .kpi-empty-inline{color:#8a96a5;text-align:center;padding:24px 8px;font-size:13px}
-.kpi-error-inline{color:#991b1b;background:#fff5f5;border:1px solid #fecaca;border-radius:12px;padding:12px 14px;font-size:13px}
+.kpi-error-inline{color:#c62828;background:#fff5f5;border:1px solid #fecaca;border-radius:12px;padding:12px 14px;font-size:13px}
 
 /* Panel fijo arriba de la cuadricula (ya no modal con backdrop): nunca
    bloquea el resto de la pantalla, se cierra con el boton de cancelar del
@@ -83,7 +93,7 @@
 .kpi-panel-col{display:flex;flex-direction:column;min-width:0}
 
 .kpi-picker-count{font-style:normal;font-weight:700;color:#173b66}
-.kpi-inline-notice{background:#fff8e6;border:1px solid #f2d492;color:#7a5b00;border-radius:10px;padding:8px 12px;font-size:12px;margin:0 0 4px}
+.kpi-inline-notice{background:#eaf3ff;border:1px solid #b9d5fb;color:#1d5fb3;border-radius:10px;padding:8px 12px;font-size:12px;margin:0 0 4px}
 .kpi-chip-badge{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#173b66;color:#fff;font-size:10px;font-weight:800;margin-right:6px}
 
 /* Swatch de color por KPI: siempre un tono de la paleta CATEGORICAL cerrada,
@@ -207,3 +217,17 @@
    foto de la pantalla de administracion. */
 body.kpi-pdf-exporting .kpi-widget-placeholder{display:none}
 body.kpi-pdf-exporting .kpi-widget-card-actions{display:none}
+
+/* --- Editor de graficos (ver KpiWidgetPanel): tipo de grafica ----------- */
+.kpi-icon-option{position:relative}
+.kpi-icon-option:disabled{opacity:.4;cursor:not-allowed}
+.kpi-icon-option .kpi-editor-tipo-check{position:absolute;top:6px;right:6px}
+
+/* --- Tarjeta recien agregada: entra desde abajo con un halo que se apaga --- */
+@keyframes kpi-widget-entrada{
+  from{opacity:0;transform:translateY(16px) scale(.97);box-shadow:0 0 0 0 transparent}
+  60%{opacity:1;transform:none;box-shadow:0 0 0 4px color-mix(in srgb,var(--kpi-acento,#2a78d6) 35%,transparent)}
+  to{opacity:1;transform:none;box-shadow:0 0 0 0 transparent}
+}
+.kpi-widget-entrada{animation:kpi-widget-entrada .9s cubic-bezier(.2,.8,.2,1) both}
+@media(prefers-reduced-motion:reduce){.kpi-widget-entrada{animation:none}}
