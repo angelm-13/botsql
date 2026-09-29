@@ -12,6 +12,7 @@ import {
   CATEGORICAL, COLOR_OTHERS, buildMultiSeriesData, buildPieData, buildSeriesData,
   colorDeKpi, colorEfectivoDeKpi, formatConUnidad, labelForDimension,
 } from "./kpiDatos.js";
+import { armarParametros, widgetDeBorrador } from "./kpiParametros.js";
 import {
   filasTablaPrestamo, propsDona, propsNumero, propsNumeroBajoStock, propsSeries,
   tendenciaDeSnapshot,
@@ -190,4 +191,32 @@ test("funciones de datos: el mismo KPI siempre el mismo color, unidades sin pala
   assert.equal(formatConUnidad("12", "unidad-desconocida"), "12");
   assert.deepEqual(buildPieData({ rango_a: { por_empleado: { a: 1 } } }, (x) => x, "Otros", false, "estado"), [{ id: "a", name: "a", value: 1 }]);
   assert.deepEqual(buildSeriesData({ rango_a: { por_empleado: { 1: 1, 2: 2 } } }, (x) => x, ["2", "1"], false).map((f) => f.id), ["2", "1"]);
+});
+
+// --- parametros del borrador del editor -------------------------------------
+const BORRADOR = {
+  tipoGrafica: "barras", idsKpiSeleccionados: ["3", "4"],
+  fechaInicio: "2026-08-01", fechaFin: "2026-08-31",
+  comparar: true, fechaInicioB: "2026-07-01", fechaFinB: "2026-07-31",
+  empleadosSeleccionados: ["5", "7"], departamentosSeleccionados: ["2"],
+  coloresKpi: { 3: "#111111", 99: "#222222" }, agruparPor: "periodo", umbralBajoStock: "12",
+};
+
+test("armarParametros: lo mismo que guardaba el editor antes (numeros, colores vigentes, umbral)", () => {
+  assert.deepEqual(armarParametros(BORRADOR, { tieneBajoStock: true }), {
+    fecha_inicio: "2026-08-01", fecha_fin: "2026-08-31",
+    fecha_inicio_b: "2026-07-01", fecha_fin_b: "2026-07-31",
+    empleados: [5, 7], id_departments: [2],
+    colores_kpi: { 3: "#111111" }, // el 99 ya no esta seleccionado: no se guarda huerfano
+    agrupar_por: "periodo", umbral_bajo_stock: 12,
+  });
+  // Sin bajo stock el umbral no se guarda; sin comparar no hay rango B.
+  const simple = armarParametros({ ...BORRADOR, comparar: false, agruparPor: "entidad", empleadosSeleccionados: [], departamentosSeleccionados: [], coloresKpi: {} }, {});
+  assert.deepEqual(simple, { fecha_inicio: "2026-08-01", fecha_fin: "2026-08-31" });
+});
+
+test("armarParametros: una tabla (KPI vivo) no guarda periodo ni filtros", () => {
+  assert.deepEqual(armarParametros(BORRADOR, { esTabla: true }), {});
+  const widget = widgetDeBorrador({ ...BORRADOR, tipoGrafica: "tabla", idsKpiSeleccionados: ["11"] }, { esTabla: true });
+  assert.deepEqual(widget, { tipo_grafica: "tabla", ids_kpi_definition: [11], parametros: {} });
 });

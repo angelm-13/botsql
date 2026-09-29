@@ -102,3 +102,8 @@
   .kpi-editor-cuerpo { grid-template-columns: 1fr; }
   .kpi-editor-vista-previa { border-left: 0; padding-left: 0; border-top: 1px solid var(--kpi-borde); padding-top: 14px; }
 }
+
+/* Vista previa con datos reales: la tarjeta ocupa todo el ancho de la columna
+   y el cuerpo (grafica, numero, tabla) se estira dentro de ella. */
+.kpi-editor-vista-previa-tarjeta { border-style: solid; background: var(--kpi-tarjeta); min-width: 0; }
+.kpi-editor-vista-previa-cuerpo { margin-top: 8px; min-width: 0; }

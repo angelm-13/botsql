@@ -24,9 +24,11 @@ import "../styles/kpi-editor.css";
 import "../styles/kpi-dashboard.css";
 import PageHeader from "../components/PageHeader.jsx";
 import TIPO_GRAFICA_COMPONENTE from "../components/kpi-widgets/tipoGraficaComponentes";
+import Skeleton from "../components/kpi-widgets/Skeleton";
 import {
   CATEGORICAL, colorDeKpi, colorEfectivoDeKpi, labelForDimension,
 } from "../kpi/kpiDatos.js";
+import { armarParametros, widgetDeBorrador } from "../kpi/kpiParametros.js";
 import {
   UMBRAL_ATRASO_PRESTAMO_DIAS, filasTablaPrestamo, propsDona, propsNumero,
   propsNumeroBajoStock, propsSeries, tendenciaDeSnapshot,
@@ -1086,6 +1088,9 @@ export default function Dashboard() {
               kpiCatalog={kpiCatalog}
               users={users}
               departments={departments}
+              userLabel={userLabel}
+              productLabel={productLabel}
+              formatNumber={formatNumber}
               onCancel={() => resetPanelState(activeId)}
               onAbierto={() => setPedidoScrollEditor((n) => n + 1)}
               onSave={(payload) => handleSaveWidget(payload, currentPanelState.editingWidgetId)}
@@ -1125,7 +1130,16 @@ function SortableKpiWidgetCard(props) {
   );
 }
 
-function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, formatNumber, onEdit, onDelete, onReady, t, tx, dragHandleProps, isDragging, animar, esNuevo }) {
+// Carga los datos de un widget (guardado, o el borrador de la vista previa del
+// editor): una llamada a /kpi_snapshot/query POR CADA KPI -el backend solo
+// acepta un `id_kpi_definition` a la vez, la combinacion pasa aqui-, o el
+// endpoint "vivo" si es una tabla de un KPI en modo "vivo".
+//
+// `onReady(id)` avisa cuando la tarjeta ya no va a cambiar (exito O error): el
+// reporte PDF (ver esperarWidgetsListos en Dashboard()) necesita saber cuando
+// puede capturarla, sin importar si el resultado fue un dato real o un mensaje
+// de error ya asentado en pantalla.
+function useDatosDeWidget({ widget, kpiCatalog, onReady }) {
   const [snapshots, setSnapshots] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -1154,9 +1168,11 @@ function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, formatNumb
   // material_prestado_actual) -- ver KpiWidgetPanel, que ya restringe la
   // seleccion a eso para este tipo de grafica. Cualquier otra combinacion
   // (un tabla guardado antes del rediseno, o apuntando a un KPI que no es
-  // vivo) cae en el estado "proximamente" mas abajo, nunca en un renderer
-  // generico que no existe todavia.
-  const esTablaVivo = widget.tipo_grafica === "tabla" && kpiInfos.length === 1 && kpiInfos[0]?.modo === "vivo";
+  // vivo) cae en el estado "proximamente", nunca en un renderer generico que
+  // no existe todavia.
+  const esTabla = widget.tipo_grafica === "tabla";
+  const esTablaVivo = esTabla && kpiInfos.length === 1 && kpiInfos[0]?.modo === "vivo";
+  const idWidget = widget.id_kpi_dashboard_widget;
 
   useEffect(() => {
     let cancelado = false;
@@ -1169,12 +1185,13 @@ function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, formatNumb
       } catch (err) {
         if (!cancelado) { setError(err.message || "errors.request_failed"); setVivoItems([]); }
       } finally {
-        if (!cancelado) { setLoading(false); onReady?.(widget.id_kpi_dashboard_widget); }
+        if (!cancelado) { setLoading(false); onReady?.(idWidget); }
       }
     }
     if (esTablaVivo) cargarVivo();
     return () => { cancelado = true; };
-  }, [esTablaVivo, idsUsados, onReady, widget.id_kpi_dashboard_widget]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [esTablaVivo, idsKey, onReady, idWidget]);
 
   useEffect(() => {
     let cancelado = false;
@@ -1182,29 +1199,25 @@ function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, formatNumb
       // El KPI "vivo" ya tiene su propio efecto (arriba) -- este solo
       // atiende a los widgets de kpi_snapshot de siempre.
       if (esTablaVivo) return;
-      // "tabla" sin un KPI vivo detras (hoy, solo material_prestado_actual):
-      // no hay ningun renderer de tabla generico sobre kpi_snapshot todavia
-      // -- se avisa "proximamente" en vez de intentar una llamada que de
-      // todas formas no se sabria pintar.
-      if (widget.tipo_grafica === "tabla") {
+      if (esTabla) {
         setLoading(false);
         setSnapshots([]);
-        setError("tabla_no_soportada");
-        onReady?.(widget.id_kpi_dashboard_widget);
+        setError(idsUsados.length === 0 ? "missing_kpi" : "tabla_no_soportada");
+        onReady?.(idWidget);
         return;
       }
       if (idsUsados.length === 0) {
         setLoading(false);
         setSnapshots([]);
         setError("missing_kpi");
-        onReady?.(widget.id_kpi_dashboard_widget);
+        onReady?.(idWidget);
         return;
       }
       if (!fechaInicio || !fechaFin) {
         setLoading(false);
         setSnapshots([]);
         setError("missing_range");
-        onReady?.(widget.id_kpi_dashboard_widget);
+        onReady?.(idWidget);
         return;
       }
       setLoading(true);
@@ -1218,8 +1231,6 @@ function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, formatNumb
         if (empleadosKey) paramsComunes.empleados = empleadosKey;
         if (departamentosKey) paramsComunes.id_departments = departamentosKey;
         if (agruparPor === "periodo") paramsComunes.agrupar_por = agruparPor;
-        // Una llamada POR CADA KPI del widget -- el backend solo acepta un
-        // `id_kpi_definition` a la vez, la combinacion pasa aqui.
         const resultados = await Promise.all(
           idsUsados.map((id) => queryKpiSnapshot({ ...paramsComunes, id_kpi_definition: id })),
         );
@@ -1227,12 +1238,9 @@ function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, formatNumb
       } catch (err) {
         if (!cancelado) { setError(err.message || "errors.request_failed"); setSnapshots([]); }
       } finally {
-        // Se avisa "listo" tanto en exito como en error -- el reporte PDF
-        // (ver esperarWidgetsListos en Dashboard()) necesita saber cuando ya
-        // no va a cambiar nada mas en esta tarjeta para poder capturarla,
-        // sin importar si el resultado fue un dato real o un mensaje de
-        // error ya asentado en pantalla.
-        if (!cancelado) { setLoading(false); onReady?.(widget.id_kpi_dashboard_widget); }
+        // Se avisa "listo" tanto en exito como en error (ver el comentario de
+        // arriba sobre `onReady`).
+        if (!cancelado) { setLoading(false); onReady?.(idWidget); }
       }
     }
     cargar();
@@ -1240,7 +1248,103 @@ function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, formatNumb
   // `idsKey` es el proxy estable de `idsUsados` (un array nuevo cada
   // render); `idsUsados` en si mismo nunca deberia ir en las dependencias.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idsKey, fechaInicio, fechaFin, fechaInicioB, fechaFinB, empleadosKey, departamentosKey, agruparPor]);
+  }, [idsKey, esTabla, esTablaVivo, fechaInicio, fechaFin, fechaInicioB, fechaFinB, empleadosKey, departamentosKey, agruparPor]);
+
+  return { snapshots, loading, error, vivoItems, vivoTotal, kpiInfos, idsUsados, esTablaVivo };
+}
+
+// El mismo valor, pero solo despues de `ms` sin cambios -- para no pedirle datos
+// al servidor con cada tecla mientras se arma un rango de fechas. Compara por
+// contenido (JSON), no por identidad: el borrador es un objeto nuevo en cada
+// render y reiniciaria el temporizador para siempre.
+function useValorRetrasado(valor, ms) {
+  const clave = JSON.stringify(valor);
+  const [retrasado, setRetrasado] = useState(valor);
+  useEffect(() => {
+    const cronometro = setTimeout(() => setRetrasado(JSON.parse(clave)), ms);
+    return () => clearTimeout(cronometro);
+  }, [clave, ms]);
+  return retrasado;
+}
+
+// Que skeleton corresponde a cada tipo de grafica mientras cargan los datos.
+const SKELETON_POR_TIPO = { numero: "numero", dona: "dona", tabla: "tabla" };
+
+// El cuerpo de un widget en cualquiera de sus estados (cargando, sin KPI, sin
+// rango, error, vacio, datos): lo comparten la tarjeta del tablero y la vista
+// previa del editor, para que lo que se ve al armar sea lo que queda.
+function CuerpoDeWidget({ widget, datos, userLabel, productLabel, formatNumber, t, tx, animar }) {
+  const { snapshots, loading, error, vivoItems, vivoTotal, kpiInfos, esTablaVivo } = datos;
+  const ERRORES_CON_TEXTO_PROPIO = ["missing_range", "missing_kpi", "errors.rango_excede_limite", "tabla_no_soportada"];
+  return (
+    <>
+      {loading && <Skeleton tipo={SKELETON_POR_TIPO[widget.tipo_grafica] || "grafica"} />}
+      {!loading && error === "missing_range" && (
+        <p className="kpi-empty-inline">{tx("widget_missing_range", "A este gráfico le falta un rango de fechas. Edítalo para configurarlo.")}</p>
+      )}
+      {!loading && error === "missing_kpi" && (
+        <p className="kpi-empty-inline">{tx("widget_missing_kpi", "A este gráfico le falta un KPI. Edítalo para configurarlo.")}</p>
+      )}
+      {!loading && error === "errors.rango_excede_limite" && (
+        <p className="kpi-error-inline">{tx("range_exceeds_limit", "El rango de fechas de este gráfico excede el máximo permitido (aprox. un año). Edítalo para acortarlo.")}</p>
+      )}
+      {!loading && error === "tabla_no_soportada" && (
+        <p className="kpi-empty-inline">{tx("widget_table_coming_soon", "Este tipo de tabla estará disponible próximamente.")}</p>
+      )}
+      {!loading && error && !ERRORES_CON_TEXTO_PROPIO.includes(error) && (
+        <p className="kpi-error-inline">{t(error, error)}</p>
+      )}
+      {!loading && !error && esTablaVivo && (
+        <KpiTablaVivo items={vivoItems} total={vivoTotal} tx={tx} />
+      )}
+      {!loading && !error && !esTablaVivo && snapshots.length > 0 && (
+        <KpiChartBody
+          widget={widget}
+          snapshots={snapshots}
+          kpiInfos={kpiInfos}
+          userLabel={userLabel}
+          productLabel={productLabel}
+          formatNumber={formatNumber}
+          tx={tx}
+          animar={animar}
+        />
+      )}
+    </>
+  );
+}
+
+// Vista previa del editor: consulta EXACTAMENTE lo que se va a guardar (el
+// borrador pasa por armarParametros, igual que al guardar) y lo pinta con el
+// mismo cuerpo que la tarjeta del tablero. Skeleton mientras espera -tanto la
+// pausa de tecleo como la respuesta del servidor-.
+function VistaPreviaEditor({ widget, kpiCatalog, userLabel, productLabel, formatNumber, t, tx }) {
+  const widgetRetrasado = useValorRetrasado(widget, 400);
+  const datos = useDatosDeWidget({ widget: widgetRetrasado, kpiCatalog });
+  const pendiente = JSON.stringify(widget) !== JSON.stringify(widgetRetrasado);
+  return (
+    <div className="kpi-editor-vista-previa-cuerpo">
+      <CuerpoDeWidget
+        widget={widgetRetrasado}
+        datos={{ ...datos, loading: datos.loading || pendiente }}
+        userLabel={userLabel}
+        productLabel={productLabel}
+        formatNumber={formatNumber}
+        t={t}
+        tx={tx}
+        animar={false}
+      />
+    </div>
+  );
+}
+
+function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, formatNumber, onEdit, onDelete, onReady, t, tx, dragHandleProps, isDragging, animar, esNuevo }) {
+  const datos = useDatosDeWidget({ widget, kpiCatalog, onReady });
+  const { kpiInfos, idsUsados, esTablaVivo } = datos;
+  const parametros = widget.parametros || {};
+  const fechaInicio = parametros.fecha_inicio;
+  const fechaFin = parametros.fecha_fin;
+  const fechaInicioB = parametros.fecha_inicio_b;
+  const fechaFinB = parametros.fecha_fin_b;
 
   const chartTypeLabel = CHART_TYPES.find((opt) => opt.value === widget.tipo_grafica)?.label || widget.tipo_grafica;
   const rangoTexto = esTablaVivo
@@ -1285,28 +1389,16 @@ function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, formatNumb
       </div>
 
       <div className="kpi-chart-box">
-        {loading && <p className="kpi-empty-inline">{t("common.loading")}</p>}
-        {!loading && error === "missing_range" && (
-          <p className="kpi-empty-inline">{tx("widget_missing_range", "A este gráfico le falta un rango de fechas. Edítalo para configurarlo.")}</p>
-        )}
-        {!loading && error === "missing_kpi" && (
-          <p className="kpi-empty-inline">{tx("widget_missing_kpi", "A este gráfico le falta un KPI. Edítalo para configurarlo.")}</p>
-        )}
-        {!loading && error === "errors.rango_excede_limite" && (
-          <p className="kpi-error-inline">{tx("range_exceeds_limit", "El rango de fechas de este gráfico excede el máximo permitido (aprox. un año). Edítalo para acortarlo.")}</p>
-        )}
-        {!loading && error === "tabla_no_soportada" && (
-          <p className="kpi-empty-inline">{tx("widget_table_coming_soon", "Este tipo de tabla estará disponible próximamente.")}</p>
-        )}
-        {!loading && error && !["missing_range", "missing_kpi", "errors.rango_excede_limite", "tabla_no_soportada"].includes(error) && (
-          <p className="kpi-error-inline">{t(error, error)}</p>
-        )}
-        {!loading && !error && esTablaVivo && (
-          <KpiTablaVivo items={vivoItems} total={vivoTotal} tx={tx} />
-        )}
-        {!loading && !error && !esTablaVivo && snapshots.length > 0 && (
-          <KpiChartBody widget={widget} snapshots={snapshots} kpiInfos={kpiInfos} userLabel={userLabel} productLabel={productLabel} formatNumber={formatNumber} tx={tx} animar={animar} />
-        )}
+        <CuerpoDeWidget
+          widget={widget}
+          datos={datos}
+          userLabel={userLabel}
+          productLabel={productLabel}
+          formatNumber={formatNumber}
+          t={t}
+          tx={tx}
+          animar={animar}
+        />
       </div>
     </article>
   );
@@ -1480,7 +1572,7 @@ function tiposDeGraficaPermitidos(kpiInfos) {
   }, todos);
 }
 
-function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, departments, onCancel, onSave, onAbierto, t, tx }) {
+function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, departments, userLabel, productLabel, formatNumber, onCancel, onSave, onAbierto, t, tx }) {
   const {
     editingWidgetId,
     colapsado,
@@ -1760,21 +1852,7 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
       }
     }
 
-    // Un widget "tabla" (KPI vivo) no guarda periodo: son datos de "ahora".
-    const parametros = esTabla ? {} : { fecha_inicio: fechaInicio, fecha_fin: fechaFin };
-    if (comparar && !esTabla) { parametros.fecha_inicio_b = fechaInicioB; parametros.fecha_fin_b = fechaFinB; }
-    if (!esTabla && empleadosSeleccionados.length) parametros.empleados = empleadosSeleccionados.map(Number);
-    if (!esTabla && departamentosSeleccionados.length) parametros.id_departments = departamentosSeleccionados.map(Number);
-    // Solo los overrides de KPIs que siguen seleccionados -- un KPI que se
-    // quito de la seleccion no debe dejar un color huerfano guardado.
-    const coloresVigentes = Object.fromEntries(
-      idsKpiSeleccionados.filter((id) => coloresKpi[id]).map((id) => [id, coloresKpi[id]]),
-    );
-    if (Object.keys(coloresVigentes).length) parametros.colores_kpi = coloresVigentes;
-    if (agruparPor === "periodo") parametros.agrupar_por = "periodo";
-    if (tieneBajoStockSeleccionado && umbralBajoStock !== "" && Number.isFinite(Number(umbralBajoStock))) {
-      parametros.umbral_bajo_stock = Number(umbralBajoStock);
-    }
+    const parametros = armarParametros(panelState, { esTabla, tieneBajoStock: tieneBajoStockSeleccionado });
 
     const payload = { ids_kpi_definition: idsKpiSeleccionados.map(Number), tipo_grafica: tipoGrafica, parametros };
     setSaving(true);
@@ -2116,7 +2194,18 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
               ) : (
                 <div className="kpi-editor-vista-previa-tarjeta">
                   <strong>{kpisSeleccionadosInfo.map((kpi) => kpi.etiqueta || kpi.clave).join(" + ")}</strong>
-                  <span className="muted">{tx(`chart_type_${tipoGrafica}`, tipoGrafica)}</span>
+                  {kpisSeleccionadosInfo.length === 1 && kpisSeleccionadosInfo[0].descripcion && (
+                    <span className="muted">{kpisSeleccionadosInfo[0].descripcion}</span>
+                  )}
+                  <VistaPreviaEditor
+                    widget={widgetDeBorrador(panelState, { esTabla, tieneBajoStock: tieneBajoStockSeleccionado })}
+                    kpiCatalog={kpiCatalog}
+                    userLabel={userLabel}
+                    productLabel={productLabel}
+                    formatNumber={formatNumber}
+                    t={t}
+                    tx={tx}
+                  />
                 </div>
               )}
             </aside>
