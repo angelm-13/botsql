@@ -12,7 +12,7 @@ import {
   closeWarehouseVoucherLine,
   createWarehousePrevoucher,
   createWarehouseVoucher,
-  getAllIncidentType,
+  getIncidentTypeOptions,
   getAllLocation,
   getMyPermissions,
   getUserOptions,
@@ -161,12 +161,13 @@ export default function WarehouseVoucherPage() {
     try {
       // Cada llamada se atrapa por separado: un rol de almacen no lee todas
       // estas entidades por igual (ej. antes de hoy, ninguno tenia lectura
-      // de incident_type), y un solo 403 aqui tumbaba las demas tambien --
+      // de incident_type -- por eso los tipos vienen de `/incident_type/options`,
+      // sin permiso de entidad, como usuarios y proyectos), y un solo 403 aqui tumbaba las demas tambien --
       // dejaba "Levantar vale" deshabilitado por falta de tipos aunque
       // ubicaciones/usuarios si hubieran cargado bien.
       const [venc, tip, ubi, usr, permisosPayload] = await Promise.all([
         getOverdueVoucherLines().catch(() => ({ items: [] })),
-        getAllIncidentType({ per_page: 100 }).catch(() => ({ items: [] })),
+        getIncidentTypeOptions().catch(() => []),
         getAllLocation({ per_page: 200 }).catch(() => ({ items: [] })),
         getUserOptions().catch(() => []),
         privilegiado
@@ -174,7 +175,7 @@ export default function WarehouseVoucherPage() {
           : getMyPermissions().catch(() => ({ entity_permissions: [] })),
       ]);
       setVencidos(venc?.items || []);
-      setTipos(tip?.items || []);
+      setTipos(Array.isArray(tip) ? tip : tip?.items || []);
       setUbicaciones(ubi?.items || []);
       setUsuarios(Array.isArray(usr) ? usr : usr?.items || []);
       const filasPermiso = permisosPayload.entity_permissions || [];

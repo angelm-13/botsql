@@ -112,6 +112,18 @@ def _jsonify_projected_list(user_data: dict, payload: dict):
 
 
 
+@bp_incident_type.route('/options', methods=['GET'])
+@token_required
+def list_incident_type_options(user_data):
+    """Solo id+descripcion, para el selector de tipo de un vale de almacen.
+
+    Sin permiso de entidad -- igual que `/user/options` y `/proyect/options` --
+    porque un Almacenista levanta vales sin tener el modulo `operaciones`, al
+    que pertenece `incident_type`.
+    """
+    return jsonify(IncidentTypeService.options())
+
+
 @bp_incident_type.route('/', methods=['GET'])
 @token_required
 @require_entity_permission('incident_type', 'read')
