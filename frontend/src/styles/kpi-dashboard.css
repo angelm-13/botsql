@@ -12,10 +12,14 @@
 .kpi-dashboard-body{display:flex;flex-direction:column;gap:16px}
 
 .kpi-widget-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px}
+/* Un hijo de una cuadricula no baja de su ancho minimo de contenido (min-width: auto): una tabla
+   o un grafico ancho lo ensanchaba y se salia de su columna, quedando bajo el recuadro vecino.
+   Con min-width: 0 la columna manda y el contenido se ajusta a ella. */
+.kpi-widget-grid>*{min-width:0}
 .kpi-widget-placeholder{border:1px dashed #c3c2b7;border-radius:22px;min-height:240px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:#fbfaf7;color:#a6a49a;cursor:pointer;font:inherit}
 .kpi-widget-placeholder span{font-size:12px;font-weight:700}
 .kpi-widget-placeholder:hover{background:#eef2f6;border-color:#173b66;color:#173b66}
-.kpi-widget-card{background:#fff;border:1px solid #e2e8f0;border-left:4px solid var(--kpi-acento,#e2e8f0);border-radius:22px;padding:18px;display:flex;flex-direction:column;gap:10px;box-shadow:0 12px 30px rgba(15,23,42,.05);min-width:0;transition:transform .18s ease,box-shadow .18s ease}
+.kpi-widget-card{background:#fff;border:1px solid #e2e8f0;border-left:4px solid var(--kpi-acento,#e2e8f0);border-radius:22px;padding:18px;display:flex;flex-direction:column;gap:10px;box-shadow:0 12px 30px rgba(15,23,42,.05);min-width:0;overflow-x:clip;transition:transform .18s ease,box-shadow .18s ease}
 /* Elevacion mientras se arrastra -- reemplaza el desvanecido (opacity) de
    antes, que apagaba la tarjeta justo cuando mas se necesita verla bien. */
 .kpi-widget-dragging{box-shadow:0 22px 45px rgba(15,23,42,.22);transform:scale(1.02);cursor:grabbing}
@@ -38,7 +42,7 @@
 .kpi-drag-handle{cursor:grab;touch-action:none}
 .kpi-drag-handle:active{cursor:grabbing}
 .kpi-widget-meta{color:#8a96a5;font-size:12px;font-weight:700;line-height:1.35;margin:0;overflow-wrap:anywhere}
-.kpi-chart-box{min-height:240px;display:flex;flex-direction:column;justify-content:center}
+.kpi-chart-box{min-height:240px;min-width:0;max-width:100%;display:flex;flex-direction:column;justify-content:center}
 
 .kpi-number-widget{display:flex;flex-direction:column;gap:8px;padding:14px 4px 6px}
 .kpi-number-widget strong{font-size:38px;color:#0b0b0b;line-height:1.1}

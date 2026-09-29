@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta
 
 from sqlalchemy import delete
 
-from app.kpis.registry import material_prestado_actual_query
+from app.kpis.registry import CAMPOS_RENGLON_PRESTADO_ACTUAL, material_prestado_actual_query
 from app.models import (
     Brand, Incident, IncidentType, Invoice, Location, LocationType,
     Material, NmIncidentProduct, Product, ProductFamily, Unit, User,
@@ -126,6 +126,27 @@ class MaterialPrestadoActualQueryTest(unittest.TestCase):
         self.assertEqual("Empleado 990", items[0]["responsable"])
         self.assertEqual((HOY - timedelta(days=5)).date().isoformat(), items[0]["fecha_prestamo"])
         self.assertEqual(5, items[0]["dias_prestado"])
+
+    def test_contrato_con_el_frontend_campos_y_tipos_del_renglon(self):
+        # La tabla del Dashboard lee estos campos POR NOMBRE; si cambian, se pinta vacia.
+        with transaction_context() as db:
+            db.add(self._incidente(9950, EMPLEADO_A, HOY - timedelta(days=512)))
+            db.flush()
+            db.add(self._renglon(99050, 9950, PRODUCT_A, "salida"))
+
+        with transaction_context() as db:
+            items, _ = material_prestado_actual_query(db, limit=25, offset=0)
+
+        self.assertEqual(1, len(items))
+        self.assertEqual(sorted(CAMPOS_RENGLON_PRESTADO_ACTUAL), sorted(items[0].keys()))
+        renglon = items[0]
+        self.assertIsInstance(renglon["id_nm_incident_product"], int)
+        self.assertIsInstance(renglon["id_user"], int)
+        self.assertIsInstance(renglon["articulo"], str)
+        self.assertIsInstance(renglon["responsable"], str)
+        self.assertRegex(renglon["fecha_prestamo"], r"^\d{4}-\d{2}-\d{2}$")
+        self.assertIsInstance(renglon["dias_prestado"], int)
+        self.assertEqual(512, renglon["dias_prestado"])
 
     def test_cerrado_con_fecha_real_no_cuenta(self):
         with transaction_context() as db:

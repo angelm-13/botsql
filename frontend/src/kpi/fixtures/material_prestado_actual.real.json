@@ -1,0 +1,127 @@
+{
+ "items": [
+  {
+   "articulo": "sample_descripcion",
+   "dias_prestado": 512,
+   "fecha_prestamo": "2025-05-05",
+   "id_nm_incident_product": 3,
+   "id_user": 5,
+   "responsable": "Empleado demo incidencias 2"
+  },
+  {
+   "articulo": "sample_descripcion",
+   "dias_prestado": 456,
+   "fecha_prestamo": "2025-06-30",
+   "id_nm_incident_product": 4,
+   "id_user": 4,
+   "responsable": "Empleado demo incidencias 1"
+  },
+  {
+   "articulo": "sample_descripcion",
+   "dias_prestado": 100,
+   "fecha_prestamo": "2026-06-21",
+   "id_nm_incident_product": 5,
+   "id_user": 5,
+   "responsable": "Empleado demo incidencias 2"
+  },
+  {
+   "articulo": "sample_descripcion",
+   "dias_prestado": 83,
+   "fecha_prestamo": "2026-07-08",
+   "id_nm_incident_product": 18,
+   "id_user": 4,
+   "responsable": "Empleado demo incidencias 1"
+  },
+  {
+   "articulo": "sample_descripcion",
+   "dias_prestado": 75,
+   "fecha_prestamo": "2026-07-16",
+   "id_nm_incident_product": 12,
+   "id_user": 4,
+   "responsable": "Empleado demo incidencias 1"
+  },
+  {
+   "articulo": "sample_descripcion",
+   "dias_prestado": 72,
+   "fecha_prestamo": "2026-07-19",
+   "id_nm_incident_product": 20,
+   "id_user": 4,
+   "responsable": "Empleado demo incidencias 1"
+  },
+  {
+   "articulo": "sample_descripcion",
+   "dias_prestado": 68,
+   "fecha_prestamo": "2026-07-23",
+   "id_nm_incident_product": 19,
+   "id_user": 5,
+   "responsable": "Empleado demo incidencias 2"
+  },
+  {
+   "articulo": "sample_descripcion",
+   "dias_prestado": 54,
+   "fecha_prestamo": "2026-08-06",
+   "id_nm_incident_product": 14,
+   "id_user": 4,
+   "responsable": "Empleado demo incidencias 1"
+  },
+  {
+   "articulo": "sample_descripcion",
+   "dias_prestado": 45,
+   "fecha_prestamo": "2026-08-15",
+   "id_nm_incident_product": 6,
+   "id_user": 4,
+   "responsable": "Empleado demo incidencias 1"
+  },
+  {
+   "articulo": "sample_descripcion",
+   "dias_prestado": 45,
+   "fecha_prestamo": "2026-08-15",
+   "id_nm_incident_product": 10,
+   "id_user": 4,
+   "responsable": "Empleado demo incidencias 1"
+  },
+  {
+   "articulo": "sample_descripcion",
+   "dias_prestado": 37,
+   "fecha_prestamo": "2026-08-23",
+   "id_nm_incident_product": 24,
+   "id_user": 4,
+   "responsable": "Empleado demo incidencias 1"
+  },
+  {
+   "articulo": "sample_descripcion",
+   "dias_prestado": 12,
+   "fecha_prestamo": "2026-09-17",
+   "id_nm_incident_product": 8,
+   "id_user": 4,
+   "responsable": "Empleado demo incidencias 1"
+  },
+  {
+   "articulo": "sample_descripcion",
+   "dias_prestado": 11,
+   "fecha_prestamo": "2026-09-18",
+   "id_nm_incident_product": 21,
+   "id_user": 5,
+   "responsable": "Empleado demo incidencias 2"
+  },
+  {
+   "articulo": "sample_descripcion",
+   "dias_prestado": 11,
+   "fecha_prestamo": "2026-09-18",
+   "id_nm_incident_product": 17,
+   "id_user": 5,
+   "responsable": "Empleado demo incidencias 2"
+  },
+  {
+   "articulo": "sample_descripcion",
+   "dias_prestado": 0,
+   "fecha_prestamo": "2026-09-29",
+   "id_nm_incident_product": 11,
+   "id_user": 5,
+   "responsable": "Empleado demo incidencias 2"
+  }
+ ],
+ "limit": 50,
+ "offset": 0,
+ "total": 15
+}

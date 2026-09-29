@@ -81,8 +81,13 @@
    tarjeta que la aloja) baja de 540px, pasa a tarjeta por renglon. Sin
    overflow-x a proposito: el diseno tiene que caber, no esconder el desborde
    detras de una barra de scroll. */
-.kpi-preview-tabla-wrap { container-type: inline-size; container-name: kpi-tabla; min-width: 0; }
-.kpi-preview-tabla { width: 100%; border-collapse: collapse; font-size: 13px; }
+.kpi-preview-tabla-wrap { container-type: inline-size; container-name: kpi-tabla; min-width: 0; max-width: 100%; overflow: hidden; }
+/* `min-width: 0` no es un detalle: app.css trae una regla GLOBAL `table { min-width: 900px }`
+   (pensada para las tablas de las pantallas de catalogo) y, sin esto, la tabla de la
+   tarjeta medía 900px dentro de una tarjeta de 400: los renglones se salian por la
+   derecha, quedaban bajo el recuadro vecino, y en modo tarjeta el valor de cada celda
+   -alineado a la derecha- quedaba fuera de la vista y parecia vacio. */
+.kpi-preview-tabla { width: 100%; min-width: 0; border-collapse: collapse; font-size: 13px; }
 .kpi-preview-tabla th, .kpi-preview-tabla td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--kpi-borde); overflow-wrap: anywhere; }
 .kpi-preview-orden-movil { display: none; align-items: flex-end; gap: 8px; margin-bottom: 10px; }
 .kpi-preview-orden-movil label { display: flex; flex-direction: column; gap: 3px; flex: 1; font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--kpi-texto-suave); }

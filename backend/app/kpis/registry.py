@@ -1097,6 +1097,19 @@ def material_por_estado_query(session, fecha_inicio, fecha_fin, filtros_dimensio
 # pagina romperia la paginacion (una pagina podria perder filas reales).
 
 
+# CONTRATO con el frontend: los campos de cada renglon que devuelve
+# `material_prestado_actual_query` (y, por lo tanto, `GET /kpi_definition/<id>/vivo`).
+# El Dashboard los lee por nombre (frontend/src/kpi/kpiAdaptadores.js,
+# filasTablaPrestamo) y su prueba de contrato usa una respuesta REAL guardada en
+# frontend/src/kpi/fixtures/material_prestado_actual.real.json. Un renglon con otro
+# nombre de campo no revienta nada: la tabla se pinta VACIA. Por eso esta lista esta
+# fijada por una prueba (test_kpi_material_prestado_actual.py) y no debe cambiar sin
+# cambiar tambien el adaptador y ese archivo.
+CAMPOS_RENGLON_PRESTADO_ACTUAL = (
+    "articulo", "dias_prestado", "fecha_prestamo", "id_nm_incident_product", "id_user", "responsable",
+)
+
+
 def material_prestado_actual_query(session, *, limit, offset, actor_project=None):
     """KPI "vivo": renglones de vale actualmente prestados (sin devolver), por responsable.
 
