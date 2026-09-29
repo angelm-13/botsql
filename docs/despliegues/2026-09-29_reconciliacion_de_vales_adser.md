@@ -81,5 +81,5 @@ kubectl -n <ns> exec deploy/backend -- python scripts/fix_adser_estado_de_vales.
 
 | Ambiente | Gemelos (66) | Estado de vales (14) |
 |---|---|---|
-| `tyakxa-dev` | ver commit | ver commit |
+| `tyakxa-dev` | aplicado 2026-09-29: 66 renglones cerrados | aplicado 2026-09-29: 14 vales cerrados |
 | `adser-prod` | ya estaban (no-op) | pendiente (requiere OK de Alan) |

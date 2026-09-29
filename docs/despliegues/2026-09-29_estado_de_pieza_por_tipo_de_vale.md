@@ -80,6 +80,6 @@ Esperado en adser: `DESTRUCCION` → `retirado` (86), `DAÑADO` y `EQ. DAÑADOS`
 
 | Ambiente | Migración |
 |---|---|
-| `tyakxa-dev` | ver commit |
+| `tyakxa-dev` | aplicada 2026-09-29 (`1a24e88`): 86 retirado, 38 danado, 65 extraviado |
 | `adser-prod` | pendiente |
 | resto | pendiente (no aplica: sin esos textos) |
