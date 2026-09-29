@@ -16,7 +16,7 @@ const KPI = (id, etiqueta, modulo, unidad, extra = {}) => ({
   descripcion: `Descripcion de ${etiqueta}`, ...extra,
 });
 const CATALOGO = [
-  KPI(1, "Incidencias abiertas por empleado", "operaciones", "numero"),
+  KPI(1, "Incidencias abiertas por responsable", "operaciones", "numero"),
   KPI(2, "Incidentes resueltos por empleado", "operaciones", "porcentaje"),
   KPI(3, "Cancelaciones por empleado", "operaciones", "numero"),
   KPI(4, "Existencias en almacén", "inventario", "piezas"),
@@ -78,7 +78,7 @@ test("al combinar varios, los de otra unidad salen deshabilitados y con tooltip;
 
 test("un KPI ya elegido nunca se bloquea, lleva su numero de orden y su color", () => {
   const html = pintar({ seleccionados: ["1", "3"], multiple: true, onElegirColor: () => {}, coloresKpi: { 3: "#123456" } });
-  const primera = filaDe(html, "Incidencias abiertas por empleado");
+  const primera = filaDe(html, "Incidencias abiertas por responsable");
   const segunda = filaDe(html, "Cancelaciones por empleado");
   assert.ok(primera.includes("kpi-chip-badge") && primera.includes(">1<"));
   assert.ok(segunda.includes(">2<"));

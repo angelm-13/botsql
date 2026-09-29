@@ -39,7 +39,7 @@ export const ABIERTAS_VS_CERRADAS_DEMO = [
   { semana: "S13", abiertas: 1, cerradas: 2 },
 ];
 
-// Widget 3 -- barras (1 serie): incidencias abiertas por empleado, 30 dias.
+// Widget 3 -- barras (1 serie): incidencias abiertas por responsable, 30 dias.
 export const INCIDENCIAS_POR_EMPLEADO_DEMO = EMPLEADOS_DEMO.map((empleado, indice) => ({
   id_user: empleado.id_user,
   empleado: empleado.full_name.split(" ")[0],
@@ -84,10 +84,10 @@ export const KPIS_DEMO_PARA_EDITOR = [
     descripcion: "Cuantas se abren y cuantas se cierran, por dia.",
   },
   {
-    clave: "incidencias_abiertas_por_empleado", etiqueta: "Incidencias abiertas por empleado", modulo: "operaciones",
+    clave: "incidencias_abiertas_por_empleado", etiqueta: "Incidencias abiertas por responsable", modulo: "operaciones",
     unidad: "numero", dimensiones: ["empleado"], direccion: "neutral",
     graficas_permitidas: ["barras", "tabla"], grafica_default: "barras",
-    descripcion: "Conteo de incidencias abiertas, por quien las levanto.",
+    descripcion: "Incidencias/vales abiertos, por responsable: el usuario a cuyo nombre esta el material.",
   },
   {
     clave: "material_prestado_actual", etiqueta: "Material prestado ahora", modulo: "operaciones",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 
+from app.kpis.registry import KPI_POR_CLAVE
 from app.models.kpi_definition import KpiDefinition
 from app.routes.kpi import _con_metadatos_del_registry
 
@@ -64,3 +65,15 @@ class ConMetadatosDelRegistryTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EtiquetaDeIncidenciasAbiertasTest(unittest.TestCase):
+    def test_se_llama_por_responsable_porque_es_id_user_no_quien_capturo(self):
+        # id_user es el usuario a cuyo nombre esta el vale (quien TIENE el
+        # material), no quien lo capturo. La clave no cambia: hay widgets y
+        # permisos que la referencian.
+        kpi = KPI_POR_CLAVE["incidencias_abiertas_por_empleado"]
+        self.assertEqual("Incidencias abiertas por responsable", kpi.etiqueta)
+        self.assertIn("responsable", kpi.descripcion.lower())
+        self.assertNotIn("levanto", kpi.descripcion.lower())
+        self.assertNotIn("empleado", kpi.etiqueta.lower())

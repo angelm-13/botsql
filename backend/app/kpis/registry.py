@@ -849,16 +849,17 @@ def articulos_bajo_stock_query(session, fecha_inicio, fecha_fin, filtros_dimensi
 
 
 def incidencias_abiertas_por_empleado_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
-    """Incidencias/vales ABIERTOS (creados), por empleado que los levanto y por dia.
+    """Incidencias/vales ABIERTOS (creados), por responsable y por dia.
 
     * Vigencia: `Incident.deletion_date IS NULL`. Sin filtro de estatus a
       proposito: cuenta cualquier incidencia que se haya abierto, sin
       importar en que quedo -- "cuantas abre cada quien", no "cuantas
       resuelve" (eso ya lo mide `incidentes_resueltos_por_empleado_query`).
-    * Responsable: `Incident.id_user` -- quien la levanto, mismo campo que ya
-      usa `vales_vencidos_por_responsable_query` como precedente. NO
+    * Responsable: `Incident.id_user` -- el usuario a cuyo nombre esta el vale,
+      es decir quien TIENE el material, no necesariamente quien lo capturo. Es
+      el mismo campo que ya usa `vales_vencidos_por_responsable_query`. NO
       `created_by`: ese es solo auditoria (entero plano sin FK, no editable
-      en el formulario) y puede diferir de quien realmente la levanto.
+      en el formulario) y puede diferir de quien realmente tiene el material.
     * Fecha: `Incident.incident_date`, DELIBERADAMENTE no `creation_date`.
       El modelo declara `creation_date` como `nullable=False,
       server_default=func.now()`, pero la tabla real en Postgres NO tiene
@@ -1484,7 +1485,7 @@ KPI_REGISTRY = (
     # un proyecto de cliente, mismo motivo que sus vecinos de este modulo. --
     KpiDefinition(
         clave="incidencias_abiertas_por_empleado",
-        etiqueta="Incidencias abiertas por empleado",
+        etiqueta="Incidencias abiertas por responsable",
         modulo="operaciones",
         dimensiones=("empleado",),
         query_builder=incidencias_abiertas_por_empleado_query,
@@ -1494,7 +1495,7 @@ KPI_REGISTRY = (
         direccion="neutral",
         graficas_permitidas=("barras", "tabla"),
         grafica_default="barras",
-        descripcion="Incidencias/vales abiertos, por quien los levanto.",
+        descripcion="Incidencias/vales abiertos, por responsable: el usuario a cuyo nombre esta el material.",
     ),
     KpiDefinition(
         clave="incidencias_pendientes",

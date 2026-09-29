@@ -83,7 +83,7 @@ export default function DashboardPreviewPage() {
           )}
         </WidgetCard>
 
-        <WidgetCard titulo="Incidencias abiertas por empleado · 30 días" color="#eb6834" actualizado="Actualizado: hace 4 min" indice={2} reducirMovimiento={reducirMovimiento}>
+        <WidgetCard titulo="Incidencias abiertas por responsable · 30 días" color="#eb6834" actualizado="Actualizado: hace 4 min" indice={2} reducirMovimiento={reducirMovimiento}>
           {cargando ? <Skeleton tipo="grafica" /> : (
             <BarrasWidget
               datos={INCIDENCIAS_POR_EMPLEADO_DEMO}
