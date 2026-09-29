@@ -168,3 +168,20 @@ test("un widget guardado con unidades mezcladas (porcentaje + cantidad) se sigue
   const datos = { snapshots: [snapshot, snapshot], loading: false, error: "", vivoItems: [], vivoTotal: 0, kpiInfos: catalogo, idsUsados: [3, 5], esTablaVivo: false };
   assert.ok(pintarCuerpo({ widget, datos }).length > 0);
 });
+
+test("la tabla de material prestado muestra los dias prestados y ordena por los MAS dias primero", () => {
+  const widget = widgetDe("tabla", {});
+  // Llegan desordenados a proposito: el orden lo pone la tabla, no el orden de llegada.
+  const items = [
+    { id_nm_incident_product: 1, articulo: "Sierra", responsable: "Ana", fecha_prestamo: "2026-09-20", dias_prestado: 9 },
+    { id_nm_incident_product: 2, articulo: "Taladro", responsable: "Beto", fecha_prestamo: "2026-08-15", dias_prestado: 45 },
+    { id_nm_incident_product: 3, articulo: "Martillo", responsable: "Carla", fecha_prestamo: "2026-09-01", dias_prestado: 28 },
+  ];
+  const html = pintarCuerpo({ widget, datos: datosDe(widget, { items, total: 3 }) });
+  assert.ok(html.includes("Días prestado"), "encabezado de la columna");
+  assert.ok(html.includes("45 días") && html.includes("28 días") && html.includes("9 días"), "cada renglon dice sus dias");
+  const posicion = (articulo) => html.indexOf(articulo);
+  assert.ok(posicion("Taladro") < posicion("Martillo") && posicion("Martillo") < posicion("Sierra"), "45, luego 28, luego 9");
+  // Y el selector de orden del modo tarjeta arranca en esa misma columna.
+  assert.match(html, /<option value="dias_prestado" selected/);
+});
