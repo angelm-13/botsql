@@ -27,7 +27,7 @@ import TIPO_GRAFICA_COMPONENTE from "../components/kpi-widgets/tipoGraficaCompon
 import Skeleton from "../components/kpi-widgets/Skeleton";
 import SelectorDeKpi from "../components/kpi-widgets/SelectorDeKpi";
 import {
-  colorDeKpi, colorEfectivoDeKpi, labelForDimension, normalizarBusqueda, unidadInfo,
+  colorDeKpi, colorEfectivoDeKpi, etiquetasDeDimension, labelForDimension, normalizarBusqueda, unidadInfo,
 } from "../kpi/kpiDatos.js";
 import {
   armarParametros, estadoDeWidget, mezclaUnidades, motivoParaNoCombinar, rangoInicialDelBorrador,
@@ -1577,6 +1577,11 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
     .map((id) => kpiCatalog.find((kpi) => String(kpi.id_kpi_definition) === id))
     .filter(Boolean);
   const primeraDimension = kpisSeleccionadosInfo[0]?.dimensiones?.[0];
+  // Lo que se desglosa, con el nombre que le da cada KPI ("Responsable", "Tecnico"...).
+  // Las dos etiquetas de siempre conservan su traduccion.
+  const etiquetaDeAgrupar = etiquetasDeDimension(kpisSeleccionadosInfo)
+    .map((etiqueta) => (etiqueta === "Empleado" ? tx("group_by_employee", etiqueta) : etiqueta === "Producto" ? tx("group_by_product", etiqueta) : etiqueta))
+    .join(" / ");
   const tieneBajoStockSeleccionado = kpisSeleccionadosInfo.some((kpi) => kpi.clave === "articulos_bajo_stock");
 
   // Que tipos de grafica admite lo elegido: la interseccion de las
@@ -1870,7 +1875,7 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
                     className={`kpi-chip-option ${agruparPor === "entidad" ? "active" : ""}`}
                     onClick={() => onChangePanelState({ agruparPor: "entidad" })}
                   >
-                    {primeraDimension === "producto" ? tx("group_by_product", "Producto") : tx("group_by_employee", "Empleado")}
+                    {etiquetaDeAgrupar}
                   </button>
                   <button
                     type="button"

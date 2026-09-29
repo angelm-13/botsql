@@ -1184,17 +1184,35 @@ def material_prestado_actual_query(session, *, limit, offset, actor_project=None
     return items, total
 
 
+# Como se llama, en el selector "Agrupar por" del editor, la dimension de un KPI
+# cuando el KPI no declara una propia (`etiqueta_dimension`). "global" es un
+# KPI sin desglose: su unica "fila" es el total.
+ETIQUETA_DIMENSION_POR_OMISION = {
+    "empleado": "Empleado",
+    "producto": "Producto",
+    "estado": "Estado",
+    "global": "Total",
+}
+
+
 class KpiDefinition:
     def __init__(self, clave, etiqueta, modulo, dimensiones,
                  query_builder, *, direccion, graficas_permitidas, grafica_default,
                  agregacion=None, unidad="numero", alcance_proyecto=True, modo="snapshot",
-                 colores_categoria=None, descripcion=None):
+                 colores_categoria=None, descripcion=None, etiqueta_dimension=None):
         self.clave = clave
         self.etiqueta = etiqueta
         # Una linea corta para el selector de KPI del editor (rediseno del
         # dashboard) -- opcional, sin default obligatorio: un KPI viejo sin
         # descripcion simplemente no muestra esa linea, no revienta nada.
         self.descripcion = descripcion
+        # Como se llama lo que se desglosa ("Responsable", "Tecnico"...), para el
+        # selector "Agrupar por" del editor. La dimension interna sigue siendo
+        # "empleado" (es lo que dice de donde salen los ids), pero un KPI puede
+        # tener una etiqueta mas precisa: incidencias_abiertas_por_empleado agrupa
+        # por Incident.id_user, quien TIENE el material, y eso es un "Responsable",
+        # no cualquier "Empleado". Sin declararla toma la de su dimension.
+        self.etiqueta_dimension = etiqueta_dimension or ETIQUETA_DIMENSION_POR_OMISION.get(dimensiones[0], "")
         self.modulo = modulo               # clave de MODULOS en app/modules/registry.py
         self.dimensiones = dimensiones      # tupla, ej. ("empleado",)
         self.query_builder = query_builder  # ver firma de ventas_por_empleado_query
@@ -1303,6 +1321,7 @@ KPI_REGISTRY = (
         etiqueta="Vales vencidos por responsable",
         modulo="operaciones",
         dimensiones=("empleado",),
+        etiqueta_dimension="Responsable",
         query_builder=vales_vencidos_por_responsable_query,
         agregacion="suma",
         unidad="numero",
@@ -1345,6 +1364,7 @@ KPI_REGISTRY = (
         etiqueta="Órdenes de laboratorio entregadas por técnico",
         modulo="laboratorio",
         dimensiones=("empleado",),
+        etiqueta_dimension="Técnico",
         query_builder=ordenes_laboratorio_entregadas_por_tecnico_query,
         agregacion="suma",
         unidad="numero",
@@ -1358,6 +1378,7 @@ KPI_REGISTRY = (
         etiqueta="Tiempo promedio de reparación por técnico",
         modulo="laboratorio",
         dimensiones=("empleado",),
+        etiqueta_dimension="Técnico",
         query_builder=tiempo_promedio_reparacion_laboratorio_por_tecnico_query,
         agregacion="promedio_ponderado",
         unidad="dias",
@@ -1371,6 +1392,7 @@ KPI_REGISTRY = (
         etiqueta="Costo promedio de reparación por técnico",
         modulo="laboratorio",
         dimensiones=("empleado",),
+        etiqueta_dimension="Técnico",
         query_builder=costo_promedio_reparacion_laboratorio_por_tecnico_query,
         agregacion="promedio_ponderado",
         unidad="moneda",
@@ -1384,6 +1406,7 @@ KPI_REGISTRY = (
         etiqueta="Documentos vencidos por responsable",
         modulo="documentos",
         dimensiones=("empleado",),
+        etiqueta_dimension="Responsable",
         query_builder=documentos_vencidos_por_responsable_query,
         agregacion="suma",
         unidad="numero",
@@ -1426,6 +1449,7 @@ KPI_REGISTRY = (
         etiqueta="Material prestado por responsable",
         modulo="inventario",
         dimensiones=("empleado",),
+        etiqueta_dimension="Responsable",
         query_builder=material_prestado_por_responsable_query,
         agregacion="suma",
         unidad="numero",
@@ -1440,6 +1464,7 @@ KPI_REGISTRY = (
         etiqueta="Préstamos de material vencidos por responsable",
         modulo="inventario",
         dimensiones=("empleado",),
+        etiqueta_dimension="Responsable",
         query_builder=prestamos_vencidos_por_responsable_query,
         agregacion="suma",
         unidad="numero",
@@ -1488,6 +1513,7 @@ KPI_REGISTRY = (
         etiqueta="Incidencias abiertas por responsable",
         modulo="operaciones",
         dimensiones=("empleado",),
+        etiqueta_dimension="Responsable",
         query_builder=incidencias_abiertas_por_empleado_query,
         agregacion="suma",
         unidad="numero",
@@ -1560,6 +1586,7 @@ KPI_REGISTRY = (
         etiqueta="Material prestado ahora",
         modulo="operaciones",
         dimensiones=("empleado",),
+        etiqueta_dimension="Responsable",
         query_builder=material_prestado_actual_query,
         modo="vivo",
         unidad="piezas",
@@ -1623,6 +1650,11 @@ def _validar():
         if kpi.modulo not in MODULO_POR_CLAVE:
             raise RuntimeError(
                 f"El KPI '{kpi.clave}' apunta al modulo inexistente '{kpi.modulo}'."
+            )
+        if not kpi.etiqueta_dimension or len(kpi.etiqueta_dimension) > 30:
+            raise RuntimeError(
+                f"El KPI '{kpi.clave}' necesita una etiqueta de dimension de 1 a 30 caracteres "
+                f"(la dimension '{kpi.dimensiones[0]}' no tiene una por omision)."
             )
         if kpi.modo not in MODOS:
             raise RuntimeError(

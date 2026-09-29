@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  CATEGORICAL, COLOR_OTHERS, buildMultiSeriesData, buildPieData, buildSeriesData,
+  CATEGORICAL, COLOR_OTHERS, buildMultiSeriesData, etiquetasDeDimension, buildPieData, buildSeriesData,
   colorDeKpi, colorEfectivoDeKpi, formatConUnidad, labelForDimension,
 } from "./kpiDatos.js";
 import { agruparKpis, estadoDeOpcion, esVariable } from "./kpiSelector.js";
@@ -515,4 +515,25 @@ test("selector: una opcion se bloquea solo al combinar, y una ya elegida nunca",
   assert.deepEqual(estadoDeOpcion({ kpi: SEL[3], seleccionados: ["1"], catalogo, multiple: true }), { elegida: false, motivo: null });
   assert.deepEqual(estadoDeOpcion({ kpi: SEL[0], seleccionados: ["1", "5"], catalogo, multiple: true }), { elegida: true, motivo: null });
   assert.deepEqual(estadoDeOpcion({ kpi: porcentaje, seleccionados: [], catalogo, multiple: true }), { elegida: false, motivo: null });
+});
+
+// --- etiqueta de la dimension en "Agrupar por" ---------------------------------
+test("Agrupar por usa la etiqueta que declara el KPI (Responsable, no Empleado)", () => {
+  const responsable = { dimensiones: ["empleado"], etiqueta_dimension: "Responsable" };
+  assert.deepEqual(etiquetasDeDimension([responsable]), ["Responsable"]);
+});
+
+test("sin etiqueta propia (backend viejo, fila huerfana) cae a la de la dimension", () => {
+  assert.deepEqual(etiquetasDeDimension([{ dimensiones: ["empleado"] }]), ["Empleado"]);
+  assert.deepEqual(etiquetasDeDimension([{ dimensiones: ["producto"], etiqueta_dimension: "" }]), ["Producto"]);
+  assert.deepEqual(etiquetasDeDimension([{ dimensiones: ["desconocida"] }]), []);
+  assert.deepEqual(etiquetasDeDimension([]), []);
+});
+
+test("con varios KPIs salen las etiquetas distintas, sin repetir y en el orden elegido", () => {
+  const a = { dimensiones: ["empleado"], etiqueta_dimension: "Responsable" };
+  const b = { dimensiones: ["empleado"], etiqueta_dimension: "Responsable" };
+  const c = { dimensiones: ["empleado"] };
+  assert.deepEqual(etiquetasDeDimension([a, b]), ["Responsable"]);
+  assert.deepEqual(etiquetasDeDimension([a, c]), ["Responsable", "Empleado"]);
 });

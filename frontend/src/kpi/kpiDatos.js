@@ -194,3 +194,15 @@ export function normalizarBusqueda(valor) {
     .trim();
 }
 
+
+// Como se llama, en "Agrupar por", lo que desglosa un KPI. Cada KPI declara la
+// suya en el registry (`etiqueta_dimension`: "Responsable", "Tecnico"...); sin
+// ella -un backend viejo, una fila huerfana- se cae a la de su dimension. Con
+// varios KPIs elegidos salen las distintas, sin repetir, separadas por " / ".
+const ETIQUETA_DIMENSION_POR_OMISION = { empleado: "Empleado", producto: "Producto", estado: "Estado", global: "Total" };
+export function etiquetasDeDimension(kpiInfos) {
+  const etiquetas = (kpiInfos || []).map((info) => info?.etiqueta_dimension
+    || ETIQUETA_DIMENSION_POR_OMISION[info?.dimensiones?.[0]]
+    || "");
+  return [...new Set(etiquetas.filter(Boolean))];
+}
