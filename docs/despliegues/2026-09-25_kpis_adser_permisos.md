@@ -139,26 +139,42 @@ sesión SSH con acceso al clúster.
 punto de partida. `b21a793` es ancestro del destino, así que no hay que pasar
 por ninguna versión intermedia.
 
-**Destino: `aecd92f`**, el commit de código más reciente al escribir esto (el que
-sigue en `origin/initAlan` es un commit del bot que solo mueve etiquetas de
-`tyakxa-dev`). Si hay commits de código posteriores, usa el último; antes de
-empezar confirma en GitHub → Actions que el run de ese SHA terminó en verde, o
-las imágenes no existirán y el pod queda en `ImagePullBackOff`.
+**Destino: `8579bf4`**, mi último commit de código (`feat(dashboard): el selector
+de KPI combina botones de módulo y lista`). No es un commit del bot ni uno de
+documentación: esos no cambian el código. Se elige este SHA y no el más reciente de
+la rama porque **las imágenes solo se construyen para el commit con el que termina
+cada `push`** (el tag es `git rev-parse --short HEAD` del run, ver
+`.github/workflows/build-images.yml`): `8579bf4` se subió como cabeza de su propio
+push, así que sus imágenes existen; un commit intermedio de un push con varios
+commits no tendría imagen. Antes de empezar confirma en GitHub → Actions que el run
+de `8579bf4` terminó en verde, o el pod queda en `ImagePullBackOff`. Si más adelante
+hay commits de código posteriores, usa el último *que se haya subido como cabeza de
+un push* y sustituye el SHA en todo este documento.
 
-**Qué cambia de `b21a793` a `aecd92f`: solo código.** No hay migraciones ni
-cambios de esquema en ese rango (`git diff --name-status b21a793 aecd92f --
-database backend/app/models` sale vacío; lo único fuera de código son los
-`kustomization.yaml` de los overlays). Por eso ya **no aplican** el respaldo previo
-a migraciones ni la comprobación de `db-migrate` que traía la versión anterior: lo
-que reescribía `nm_field_permission` (`20260925130000`) y agregaba `peso`
-(`20260925140000`) llegó con `abf0929`. Lo que **sigue aplicando**: el backfill,
-los permisos y la plantilla.
+**Qué cambia de `b21a793` a `8579bf4`: mi parte es solo código, pero llegan dos
+migraciones de Alan.** En mi trabajo no hay migraciones ni cambios de esquema
+(`git diff --name-status b21a793 8579bf4 -- database backend/app/models` no
+muestra nada mío). El rango sí trae, de los commits `d775206` y `12b9ed3` de Alan:
+
+- `20260929100000_material_no_se_repite.sql`: índice único para que un material no
+  se capture dos veces. Es defensiva: si ya hay duplicados vivos no crea el índice y
+  avisa (Alan midió 0 en los cuatro ambientes el 29-sep), así que no deja el backend
+  en `CrashLoop`.
+- `20260929110000_creation_date_por_defecto_en_vales.sql`: `DEFAULT now()` en
+  `creation_date` de `incident` y `nm_incident_product`. Idempotente; no toca filas.
+  El rellenado de lo ya migrado es un script aparte, con sus propios pasos en
+  `2026-09-29_creation_date_de_vales.md`; **no forma parte de este documento**.
+
+Por eso el respaldo previo **vuelve a recomendarse** (paso 0) y `db-migrate` sí tiene
+algo que aplicar (paso 2). Lo que reescribía `nm_field_permission`
+(`20260925130000`) y agregaba `peso` (`20260925140000`) llegó con `abf0929`. Lo que
+**sigue aplicando**: el backfill, los permisos y la plantilla.
 
 Lo que ya viene en `b21a793` y **no** hay que volver a hacer: la regla de
 agregación y la columna `peso`, los 4 KPIs nuevos de incidencias y material, el
 KPI en vivo `material_prestado_actual`, el tipo de widget `tabla`, el rango
-relativo y el ErrorBoundary. Lo que llega con `aecd92f`: la plantilla del tablero,
-el selector de KPI agrupado con buscador, la regla de unidades, "Tabla" solo para
+relativo y el ErrorBoundary. Lo que llega con `8579bf4`: la plantilla del tablero,
+el selector de KPI con botones de módulo y buscador, la regla de unidades, "Tabla" solo para
 KPIs en vivo, la comparación contra "hace N días", los acentos del menú, la
 cabecera de tarjeta sin traslape y la etiqueta "Responsable" (que llega sola a
 `kpi_definition` en el siguiente arranque del backend).
@@ -168,20 +184,20 @@ cabecera de tarjeta sin traslape y la etiqueta "Responsable" (que llega sola a
 > pero el perfil de permisos creció de dos KPIs a seis, así que el paso 4 casi
 > seguro tendrá filas nuevas por insertar.
 
-### 0. Respaldo (opcional, ya no hay migraciones)
+### 0. Respaldo (recomendado: hay dos migraciones de Alan)
 
-Sin migraciones ni cambios de esquema, el respaldo previo deja de ser
-necesario. Si se quiere uno de todos modos:
+Las migraciones nuevas son aditivas (un `DEFAULT` y un índice que solo se crea si
+no hay duplicados), pero tocan esquema; un respaldo antes de aplicar cuesta poco:
 
 ```bash
-kubectl -n adser-prod exec statefulset/postgres -- sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > ~/adser_antes_de_aecd92f_$(date +%Y%m%d_%H%M).sql
+kubectl -n adser-prod exec statefulset/postgres -- sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > ~/adser_antes_de_8579bf4_$(date +%Y%m%d_%H%M).sql
 ```
 
 ### 1. Promover la imagen (en el repo, no en el VPS)
 
 En `k8s/overlays/adser-prod/kustomization.yaml`, cambiar los 4 `newTag`:
-`"b21a793"` → `"aecd92f"` (tres veces) y `b21a793-adser-prod` →
-`aecd92f-adser-prod`. Commitear y hacer push. Luego, desde la máquina con el
+`"b21a793"` → `"8579bf4"` (tres veces) y `b21a793-adser-prod` →
+`8579bf4-adser-prod`. Commitear y hacer push. Luego, desde la máquina con el
 repo:
 
 ```bash
@@ -198,17 +214,21 @@ kubectl -n adser-prod rollout status deployment/celery-worker
 kubectl -n adser-prod rollout status deployment/celery-beat
 ```
 
-`db-migrate` corre otra vez pero no tiene nada nuevo que aplicar. Confirmar
+`db-migrate` aplica las dos migraciones de Alan (el resto ya estaba). Confirmar
 que terminó y que el catálogo de KPIs está completo:
 
 ```bash
-kubectl -n adser-prod logs deployment/backend -c db-migrate | grep -E "esquema al dia"
+kubectl -n adser-prod logs deployment/backend -c db-migrate | grep -E "20260929100000|20260929110000|esquema al dia"
 kubectl -n adser-prod exec -i statefulset/postgres -- sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At' <<'SQL'
 SELECT count(*) FROM kpi_definition WHERE deletion_date IS NULL;
 SQL
 ```
 
-Esperado: `db-migrate: esquema al dia` y `21`.
+Esperado: las dos líneas de las migraciones nuevas, `db-migrate: esquema al dia` y
+`21`. Si `20260929100000` avisa de duplicados en `material`, el índice no se creó
+(el backend arranca igual): resolverlo con `dedupe_adser_material.py` antes de
+seguir. Después, el rellenado de `creation_date` según
+`2026-09-29_creation_date_de_vales.md`.
 
 ### 3. Backfill de snapshots
 
@@ -266,8 +286,9 @@ Esperado: `Creados: 1 tablero(s) y 4 widget(s).` Cuando Alan confirme
 
 1. `taroj` **cierra sesión y vuelve a entrar**: el token anterior no ve el
    cambio.
-2. En el Dashboard, el selector de KPI (agrupado por módulo, con buscador) muestra
-   los KPIs del perfil.
+2. En el Dashboard, el selector de KPI muestra una fila de botones de módulo
+   (Operaciones, Inventario, Facturación, Laboratorio, Documentos y Variables, cada
+   uno con su conteo) y, debajo, los KPIs del módulo elegido, con buscador.
 3. El tablero "Operación Adser" aparece con sus 4 tarjetas y los rangos rotulados
    ("Hoy · …", "Este año · …"). El último vale migrado es del 15 de agosto: un rango
    de **30 días** (desde el 31 de agosto) sale vacío con toda razón, pero uno de
@@ -279,7 +300,8 @@ Esperado: `Creados: 1 tablero(s) y 4 widget(s).` Cuando Alan confirme
    menús y encabezados de tarjeta se ven con acentos y sin traslape.
 
 Si algo falla: volver a la imagen `b21a793` en el overlay (pasos 1 y 2 al
-revés). No hay migraciones que deshacer; las filas nuevas de
+revés). Las dos migraciones de Alan son aditivas y pueden quedarse (el código de
+`b21a793` no las usa ni se rompe con ellas); no hay migraciones mías que deshacer. Las filas nuevas de
 `nm_permission_kpi`, los snapshots y el tablero sembrado pueden quedarse (el
 código de `b21a793` no los rompe).
 
