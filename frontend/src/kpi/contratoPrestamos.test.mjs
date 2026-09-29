@@ -84,3 +84,11 @@ test("un renglon sin responsable dice 'Sin asignar' en vez de quedar vacio", () 
   const plano = texto(pintarCuerpo({ widget: WIDGET, datos: datos(sinResponsable, REAL.total) }));
   assert.ok(plano.includes("Sin asignar"));
 });
+
+test("si el backend limita la lista, la tabla dice 'Mostrando N de M'; si llegaron todos, no lo dice", () => {
+  const limitada = texto(pintarCuerpo({ widget: WIDGET, datos: datos(REAL.items, 73) }));
+  assert.match(limitada, new RegExp(`Mostrando ${REAL.items.length} de 73`));
+  assert.ok(limitada.includes(`${REAL.items.length} de 73 renglones`), "el resumen tambien dice cuantos hay de mas");
+  const completa = texto(pintarCuerpo({ widget: WIDGET, datos: datos(REAL.items, REAL.items.length) }));
+  assert.doesNotMatch(completa, /Mostrando/);
+});
