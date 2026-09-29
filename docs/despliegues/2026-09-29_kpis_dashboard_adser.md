@@ -125,6 +125,58 @@ arranque los ve todos):
    migrados de Adser debe mostrar incidentes, cosa que antes no pasaba.
 4. Los widgets que ya estaban guardados se ven con sus mismas fechas.
 
+## Solo `adser-prod`: tablero de plantilla para `taroj`
+
+`backend/scripts/seed_kpi_dashboard_template.py` le arma a `taroj` un tablero
+("Operación Adser") con 5 widgets, por el mismo servicio que usa el editor:
+
+| Gráfica | KPI | Rango |
+|---|---|---|
+| Número | Incidencias pendientes | Hoy, contra el mismo día de hace 30 días |
+| Barras | Incidencias abiertas vs. cerradas | Este año |
+| Barras | Incidencias abiertas por responsable | Este año |
+| Tabla | Material prestado ahora | Sin rango (KPI en vivo, `parametros = {}`) |
+| Dona | Material por estado | Hoy |
+
+"Este año" y no 30 o 90 días porque en Adser el último vale migrado es del 15 de
+agosto y no hay capturas nuevas desde la migración: un rango corto sale vacío.
+Cuando vuelvan las capturas, el rango se puede acortar desde el editor.
+
+Los de serie guardan `rango_relativo` más la foto de las fechas de hoy, así que
+el Dashboard las recalcula cada vez que se abre. "Contra hace 30 días" se guarda
+como `comparar_desfase_dias: 30`.
+
+> **AVISO: no correr la tabla en `adser-prod` todavía.** "Material prestado
+> ahora" depende de `incident.incident_date` (la fecha del vale). Hasta que Alan
+> confirme, con una consulta de solo lectura, que esa fecha es confiable en lo
+> migrado, la tabla puede mostrar fechas o días prestados equivocados. Mientras
+> tanto, `--sin-tabla` crea los otros 4 widgets; la tabla se agrega después con
+> una corrida normal (los 4 ya existentes se respetan). El script imprime este
+> aviso cada vez que la tabla forma parte de lo que va a crear.
+
+Requiere que `taroj` vea esos KPIs: correr antes `seed_kpi_permissions`
+(paso de arriba). Si no los ve, el script no escribe nada y lo dice.
+
+```bash
+# Sin la tabla, hasta confirmar incident_date:
+kubectl -n adser-prod exec deployment/backend -- python -m scripts.seed_kpi_dashboard_template --sin-tabla --dry-run
+kubectl -n adser-prod exec deployment/backend -- python -m scripts.seed_kpi_dashboard_template --sin-tabla
+
+# Ya confirmada incident_date, el tablero completo (agrega solo la tabla):
+kubectl -n adser-prod exec deployment/backend -- python -m scripts.seed_kpi_dashboard_template --dry-run
+kubectl -n adser-prod exec deployment/backend -- python -m scripts.seed_kpi_dashboard_template
+```
+
+Es idempotente: reusa el tablero si ya existe, no repite un widget (misma
+gráfica y mismo KPI), no pisa lo que alguien haya cambiado y no borra nada. Si
+se borra un widget de la plantilla, volver a correrla lo crea otra vez. Códigos
+de salida: `0` bien; `1` permisos o plantilla inválida (no se escribió nada);
+`2` el usuario no existe. Opciones: `--usuario`, `--nombre` y `--sin-tabla`.
+
+Verificar: `taroj` entra al Dashboard y ve el tablero "Operación Adser" con sus
+tarjetas y los rangos rotulados ("Hoy · …", "90 días · …"). Un dry-run posterior
+debe decir `ya existe, sin cambios` en todo.
+
 ## Nota: `tipo_grafica='tabla'` (cambio de backend)
 
 `KpiDashboardWidgetService.TIPOS_GRAFICA` ahora acepta `tabla`, además de
@@ -167,5 +219,4 @@ no hace falta: el usuario de arranque ve todos los KPIs.
   editarlos o crear otros daría 400.
 - **Pendiente fuera de este despliegue:** el `DEFAULT now()` de
   `incident.creation_date` (decisión de Alan, en
-  `docs/2026-09-28_creation_date_sin_default_en_incident.md`) y la plantilla
-  del tablero de Adser (`seed_kpi_dashboard_template.py`).
+  `docs/2026-09-28_creation_date_sin_default_en_incident.md`).

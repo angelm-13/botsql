@@ -37,9 +37,17 @@ local y NO se pushean hasta que Aurora los revise en el navegador.
   procedimiento general en `ARQUITECTURA_TYAKXA_TNY.md` §7.1.
 - **Vista previa aislada**: `/dashboard-preview` (datos demo); sus
   componentes viven en `frontend/src/components/kpi-widgets/`.
-- **Pendiente**: plantilla del tablero de Adser
-  (`seed_kpi_dashboard_template.py`) y confirmación de Alan sobre
-  `creation_date`.
+- **Plantilla del tablero de Adser**: `backend/scripts/seed_kpi_dashboard_template.py`
+  (5 widgets para `taroj`: número de pendientes hoy contra hace 30 días, barras
+  abiertas vs. cerradas y barras abiertas por responsable, ambas "este año" —el
+  último vale migrado es del 15 de agosto—, tabla
+  de material prestado —KPI en vivo, sin rango— y dona de material por estado
+  hoy; `--dry-run`, `--sin-tabla`, idempotente; pasos en
+  `docs/despliegues/2026-09-29_kpis_dashboard_adser.md`). **No correr la tabla en
+  `adser-prod` hasta que Alan confirme que `incident_date` es confiable**
+  (consulta de solo lectura); mientras, `--sin-tabla`.
+- **Pendiente**: confirmación de Alan sobre `creation_date` y sobre
+  `incident_date`; correr la plantilla en `adser-prod` (aún no).
 
 ## ESTADO: alcance por acción en permisos + equipos de usuarios — Fase 1 (2026-09-14)
 
