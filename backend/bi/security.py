@@ -167,9 +167,29 @@ _DESPUES_DE_FROM = re.compile(
 _ALIAS_DE_CTE = re.compile(r"\b([a-zA-Z_][a-zA-Z_0-9]*)\s*(?:\([^)]*\))?\s+as\s*\(",
                            re.IGNORECASE)
 
+# EXTRACT(MONTH FROM fecha), TRIM(BOTH ' ' FROM col) y SUBSTRING(x FROM y FOR z)
+# usan la palabra FROM como parte de su propia sintaxis, no para introducir
+# una tabla -- pero `_DESPUES_DE_FROM` no lo sabe y lee "fecha" como si fuera
+# una relacion desconocida. Confirmado en la practica: una consulta de "ventas
+# por mes" perfectamente segura caia con "relacion_no_permitida: fecha no
+# esta en el esquema expuesto", justo el tipo de pregunta que mas se pide.
+# Ninguna de las tres funciones anida parentesis en su propio argumento, asi
+# que un solo nivel de `[^()]*` alcanza.
+_FUNCIONES_CON_FROM_PROPIO = re.compile(
+    r"\b(?:extract|trim|substring|overlay)\s*\([^()]*\)",
+    re.IGNORECASE,
+)
+
 
 def _limpiar_identificador(bruto: str) -> str:
     return bruto.strip().strip('"').strip("`").strip("[").strip("]").lower()
+
+
+def _sin_from_de_funciones(texto: str) -> str:
+    return _FUNCIONES_CON_FROM_PROPIO.sub(
+        lambda m: re.sub(r"\bfrom\b", "having", m.group(0), flags=re.IGNORECASE),
+        texto,
+    )
 
 
 def relaciones_referenciadas(sql: str) -> tuple[str, ...]:
@@ -179,7 +199,7 @@ def relaciones_referenciadas(sql: str) -> tuple[str, ...]:
     si no se descuenta, toda consulta con WITH se rechazaria por "relacion
     desconocida", y el modelo escribe WITH todo el tiempo para los rankings.
     """
-    texto = esqueleto(sql)
+    texto = _sin_from_de_funciones(esqueleto(sql))
     ctes = {n.lower() for n in _ALIAS_DE_CTE.findall(texto)}
     encontradas: list[str] = []
     for bruto in _DESPUES_DE_FROM.findall(texto):

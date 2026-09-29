@@ -92,6 +92,15 @@ LEGITIMAS = [
     ("subconsulta", "SELECT * FROM ventas WHERE id_cliente IN (SELECT id FROM clientes)"),
     ("comentario al final", "SELECT total FROM ventas -- solo las ventas\n"),
     ("punto y coma final", "SELECT total FROM ventas;"),
+    # EXTRACT/TRIM/SUBSTRING usan FROM como parte de su propia sintaxis, no
+    # para introducir una tabla. Sin esto, "ventas por mes" -- la pregunta
+    # mas comun de un tablero -- cae con "relacion_no_permitida: fecha no
+    # esta en el esquema expuesto", confirmado en la practica contra
+    # PostgreSQL real.
+    ("extract con from", "SELECT EXTRACT(MONTH FROM fecha) AS mes, SUM(total) "
+                        "FROM ventas GROUP BY EXTRACT(MONTH FROM fecha)"),
+    ("trim con from", "SELECT TRIM(BOTH ' ' FROM nombre) AS n FROM clientes"),
+    ("substring con from", "SELECT SUBSTRING(nombre FROM 1 FOR 3) AS n FROM clientes"),
 ]
 
 
@@ -172,6 +181,32 @@ def test_se_detectan_las_tablas_de_todos_los_join():
         "LEFT JOIN productos p ON p.id = v.id_producto"
     )
     assert set(relaciones) == {"ventas", "clientes", "productos"}
+
+
+def test_el_from_de_extract_no_cuenta_como_tabla():
+    """`EXTRACT(MONTH FROM fecha)` no lee de una tabla llamada "fecha".
+
+    Encontrado probando el modulo de verdad contra Postgres: el modelo
+    escribe esto para "ventas por mes" -- la pregunta mas comun de un
+    tablero -- y sin este descuento la consulta caia con
+    "relacion_no_permitida: fecha", aunque `fecha` sea una columna real de
+    `ventas` y el SQL sea completamente seguro.
+    """
+    relaciones = relaciones_referenciadas(
+        "SELECT EXTRACT(MONTH FROM fecha) AS mes, SUM(total) AS total "
+        "FROM ventas GROUP BY EXTRACT(MONTH FROM fecha)"
+    )
+    assert relaciones == ("ventas",)
+
+
+def test_un_from_real_despues_de_extract_si_cuenta():
+    """El descuento es solo dentro de los parentesis de la funcion: un FROM
+    de verdad que viene despues se sigue detectando como tabla."""
+    relaciones = relaciones_referenciadas(
+        "SELECT EXTRACT(MONTH FROM v.fecha) AS mes FROM ventas v "
+        "JOIN clientes c ON c.id = v.id_cliente"
+    )
+    assert set(relaciones) == {"ventas", "clientes"}
 
 
 def test_se_reclama_un_usuario_privilegiado():
