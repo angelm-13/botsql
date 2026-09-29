@@ -11,10 +11,6 @@ import {
   colorDeCategoriaEstado, colorEfectivoDeKpi, formatConUnidad, kpiSeriesLabel,
 } from "./kpiDatos.js";
 
-// Dias desde los que un prestamo se considera atrasado (mismo umbral que
-// tenia TablaMaterialPrestado en Dashboard.jsx).
-export const UMBRAL_ATRASO_PRESTAMO_DIAS = 14;
-
 // Opacidad de la serie del periodo de comparacion (B): mismo color que la A,
 // distinta opacidad -- no hay un segundo color fijo (ver colorDeKpi).
 export const OPACIDAD_COMPARACION = 0.45;

@@ -38,7 +38,7 @@ import {
   parametrosEfectivos, periodoAnterior, rangoDesfasado, resolverRangoRelativo,
 } from "../kpi/kpiRango.js";
 import {
-  UMBRAL_ATRASO_PRESTAMO_DIAS, filasTablaPrestamo, propsDona, propsNumero,
+  filasTablaPrestamo, propsDona, propsNumero,
   propsNumeroBajoStock, propsSeries, tendenciaDeSnapshot,
 } from "../kpi/kpiAdaptadores.js";
 
@@ -1321,7 +1321,7 @@ export function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, for
     ? `${tx(`range_${claveRango}`, ETIQUETA_RANGO_POR_OMISION[claveRango])} · `
     : "";
   const rangoTexto = esTablaVivo
-    ? tx("live_data", "En vivo -- siempre lo más reciente")
+    ? tx("live_data", "En vivo · actualizado ahora")
     : (fechaInicio && fechaFin ? `${etiquetaRango}${fechaInicio} → ${fechaFin}` : tx("missing_range", "Sin rango de fechas configurado"));
   const rangoBTexto = fechaInicioB && fechaFinB ? `${fechaInicioB} → ${fechaFinB}` : "";
   const titulo = kpiInfos.length > 1
@@ -1453,18 +1453,36 @@ function KpiTablaVivo({ items, total, tx }) {
     <Componente
       filas={filasTablaPrestamo(items, tx("unknown_user", "Sin asignar"))}
       total={total}
-      umbralDias={UMBRAL_ATRASO_PRESTAMO_DIAS}
       etiquetas={{
         articulo: tx("loan_item", "Artículo"),
         responsable: tx("loan_holder", "Responsable"),
         fecha_prestamo: tx("loan_date", "Fecha del vale"),
         dias_prestado: tx("loan_days", "Días prestado"),
-        dias: tx("loan_days_unit", "días"),
+        vale_del: tx("loan_voucher_of", "vale del"),
+        vacio_titulo: tx("loan_empty_title", "Todo el material está en el almacén"),
         vacio: tx("widget_no_loans", "No hay artículos prestados sin devolver en este momento."),
+        sin_resultados: tx("loan_no_results", "Ningún renglón de {responsable}."),
+        quitar_filtro: tx("loan_clear_filter", "Ver todos los responsables"),
         ordenar: tx("loan_sort_by", "Ordenar por"),
         invertir_orden: tx("loan_sort_reverse", "Invertir el orden"),
+        filtro_responsable: tx("loan_filter_holder", "Responsable"),
+        todos_los_responsables: tx("loan_all_holders", "Todos los responsables"),
+        vista_lista: tx("loan_view_list", "Lista"),
+        vista_agrupada: tx("loan_view_grouped", "Por responsable"),
+        vistas: tx("loan_views", "Vista"),
+        ver_todos: tx("loan_see_all", "Ver todos ({n})"),
+        ver_menos: tx("loan_see_less", "Ver menos"),
         mostrando: tx("loan_showing", "Mostrando"),
         de: tx("loan_of", "de"),
+        renglon: tx("loan_row", "renglón"),
+        renglones: tx("loan_rows", "renglones"),
+        responsable_uno: tx("loan_holder_one", "responsable"),
+        responsables: tx("loan_holders", "responsables"),
+        mas_antiguo: tx("loan_oldest", "el más antiguo"),
+        nivel_ok: tx("loan_level_ok", "Reciente"),
+        nivel_atencion: tx("loan_level_attention", "Requiere atención"),
+        nivel_critico: tx("loan_level_critical", "Atrasado"),
+        grupo_renglones: tx("loan_group_rows", "{n} renglones"),
       }}
     />
   );

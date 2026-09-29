@@ -15,7 +15,7 @@ import {
 } from "./kpiDatos.js";
 import {
   agruparPorResponsable, duracionLegible, etiquetaDeDias, filtrarPorResponsable, gravedadDeDias, ordenarFilas,
-  recortar, resumenDePrestamos, responsablesDe,
+  anchoDeBarra, recortar, recortarGrupos, resumenDePrestamos, responsablesDe,
 } from "./kpiPrestamos.js";
 import {
   agruparKpis, claveDeGrupo, colorDeModulo, COLOR_DE_MODULO, estadoDeOpcion, esVariable, grupoInicial, resumenDeModulos,
@@ -672,4 +672,20 @@ test("solo se ven 10 renglones hasta pedir 'Ver todos'", () => {
   assert.equal(recortar(muchas, false).length, 10);
   assert.equal(recortar(muchas, true).length, 25);
   assert.equal(recortar(muchas.slice(0, 4), false).length, 4);
+});
+
+test("agrupado: el limite de renglones se reparte entre grupos y cada uno dice cuantos oculta", () => {
+  const grupo = (responsable, n) => ({ responsable, filas: Array.from({ length: n }, (_, i) => ({ id: i })) });
+  const grupos = [grupo("Ana", 7), grupo("Beto", 6), grupo("Carla", 2)];
+  const vistos = recortarGrupos(grupos, false, 10);
+  assert.deepEqual(vistos.map((g) => [g.responsable, g.filas.length, g.ocultos]), [["Ana", 7, 0], ["Beto", 3, 3]]);
+  assert.equal(recortarGrupos(grupos, true, 10), grupos);
+});
+
+test("la barra de dias es proporcional al maximo, con minimo visible y tope de 100", () => {
+  assert.equal(anchoDeBarra(512, 512), 100);
+  assert.equal(anchoDeBarra(256, 512), 50);
+  assert.equal(anchoDeBarra(0, 512), 4);
+  assert.equal(anchoDeBarra(600, 512), 100);
+  assert.equal(anchoDeBarra(10, 0), 4);
 });

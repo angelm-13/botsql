@@ -100,3 +100,25 @@ export function agruparPorResponsable(filas) {
 export function recortar(filas, verTodos, limite = RENGLONES_VISIBLES) {
   return verTodos ? filas : filas.slice(0, limite);
 }
+
+/** Como `recortar`, pero sobre grupos: se cortan los RENGLONES (no los grupos), en el
+ * orden en que se ven, y los grupos que se quedan sin ninguno desaparecen. */
+export function recortarGrupos(grupos, verTodos, limite = RENGLONES_VISIBLES) {
+  if (verTodos) return grupos;
+  let restantes = limite;
+  const salida = [];
+  for (const grupo of grupos) {
+    if (restantes <= 0) break;
+    const filas = grupo.filas.slice(0, restantes);
+    restantes -= filas.length;
+    salida.push({ ...grupo, filas, ocultos: grupo.filas.length - filas.length });
+  }
+  return salida;
+}
+
+/** Ancho de la barra de un renglon (0 a 100): proporcional al que lleva mas dias de los
+ * que se estan viendo, con un minimo para que un renglon de 0 dias no desaparezca. */
+export function anchoDeBarra(dias, maximo) {
+  if (!maximo || maximo <= 0) return 4;
+  return Math.max(4, Math.min(100, Math.round((dias / maximo) * 100)));
+}

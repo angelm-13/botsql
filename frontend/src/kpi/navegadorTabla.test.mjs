@@ -55,7 +55,7 @@ async function escenario(nombre, anchoCuadricula, config = {}) {
   const tarjeta = envoltura.querySelector(".kpi-widget-card");
   const caja = tarjeta.getBoundingClientRect();
   const filas = [...tarjeta.querySelectorAll("tbody tr")];
-  paso(nombre + ": se pintaron los 15 renglones", filas.length === 15, filas.length);
+  paso(nombre + ": se pintaron los 10 primeros renglones (el resto, tras 'Ver todos')", filas.length === 10, filas.length);
   // 1. Ninguna parte de la tarjeta se sale de ella por los lados.
   const fuera = [...tarjeta.querySelectorAll("*")].filter((el) => !dentro(el, caja) && getComputedStyle(el).display !== "none");
   paso(nombre + ": nada se sale de la tarjeta", fuera.length === 0, fuera.slice(0, 3).map((el) => el.tagName + "." + (el.className || "").toString().slice(0, 30) + " " + Math.round(el.getBoundingClientRect().right - caja.right) + "px").join(", "));
@@ -78,11 +78,122 @@ async function escenario(nombre, anchoCuadricula, config = {}) {
   return { contenedor, tarjeta, filas };
 }
 
+const click = async (el) => { el.click(); await esperar(120); };
+const seleccionar = async (select, valor) => { select.value = valor; select.dispatchEvent(new Event("change", { bubbles: true })); await esperar(120); };
+const filasDe = (tarjeta) => [...tarjeta.querySelectorAll("tbody tr")];
+const textoPlano = (el) => el.textContent.replace(/\\s+/g, " ").trim();
+const boton = (tarjeta, re) => [...tarjeta.querySelectorAll("button")].find((b) => re.test(b.textContent));
+
+async function diseno(nombre, ancho, esTabla) {
+  const { tarjeta } = await escenario(nombre, ancho);
+  const filas = filasDe(tarjeta);
+  const resumen = textoPlano(tarjeta.querySelector(".kpi-prestamos-resumen"));
+  paso(nombre + ": el resumen dice renglones, responsables y el mas antiguo", /^15 renglones\\s*2 responsables\\s*el más antiguo: 512 días · 1 año, 5 meses/.test(resumen), resumen);
+  paso(nombre + ": la tarjeta dice 'En vivo · actualizado ahora' (sin doble guion)", textoPlano(tarjeta).includes("En vivo · actualizado ahora") && !textoPlano(tarjeta).includes("--"));
+  // Solo 10 renglones hasta pedir "Ver todos".
+  const visiblesAntes = filas.filter((f) => f.getBoundingClientRect().height > 0).length;
+  paso(nombre + ": solo se ven 10 renglones al principio", visiblesAntes === 10, visiblesAntes);
+  const verTodos = boton(tarjeta, /Ver todos \\(15\\)/);
+  paso(nombre + ": hay un 'Ver todos (15)'", !!verTodos);
+  // Gravedad: 512 y 456 son coral, 45 ambar, 12 verde, con icono y texto; 512 y 456 NO se distinguen por color pero si por texto.
+  const chips = (f) => f.querySelector(".kpi-prestamos-chip");
+  // Chrome devuelve color-mix() como color(srgb r g b / a) con canales de 0 a 1.
+  const esCoral = (valor) => { const n = (valor.match(/[\\d.]+/g) || []).slice(-4, -1).map(Number); return n.length === 3 && Math.abs(n[0] * 255 - 239) < 3 && Math.abs(n[1] * 255 - 111) < 3 && Math.abs(n[2] * 255 - 92) < 3; };
+  const niveles = filas.map((f) => [...f.classList].find((c) => c.startsWith("nivel-")));
+  paso(nombre + ": 512, 456 y 100 dias son criticos; 83 dias es ambar", niveles.slice(0, 4).join() === "nivel-critico,nivel-critico,nivel-critico,nivel-atencion", niveles.slice(0, 4).join());
+  const color = (f) => getComputedStyle(chips(f)).borderColor;
+  paso(nombre + ": el chip critico es coral, no oscuro ni cafe", color(filas[0]) !== color(filas[3]) && esCoral(color(filas[0])), color(filas[0]));
+  paso(nombre + ": cada chip lleva icono y texto (la duracion), no solo color", !!chips(filas[0]).querySelector("svg") && textoPlano(chips(filas[0])).includes("512 días · 1 año, 5 meses") && textoPlano(chips(filas[1])).includes("456 días · 1 año, 3 meses"));
+  if (esTabla) {
+    const th = tarjeta.querySelector("th");
+    paso(nombre + ": tabla ancha con encabezado de columnas y encabezado fijo", getComputedStyle(th).display !== "none" && getComputedStyle(th).position === "sticky");
+    paso(nombre + ": el selector de orden del modo compacto no se ve", getComputedStyle(tarjeta.querySelector(".kpi-preview-orden-movil")).display === "none");
+  } else {
+    paso(nombre + ": modo compacto: sin encabezado ni etiquetas repetidas", getComputedStyle(tarjeta.querySelector("thead")).display === "none" && getComputedStyle(filas[0].querySelector(".kpi-prestamos-articulo"), "::before").content === "none");
+    const art = filas[0].querySelector(".kpi-prestamos-articulo").getBoundingClientRect();
+    const resp = filas[0].querySelector(".kpi-prestamos-responsable").getBoundingClientRect();
+    const fecha = filas[0].querySelector(".kpi-prestamos-fecha").getBoundingClientRect();
+    const dias = filas[0].querySelector(".kpi-prestamos-dias").getBoundingClientRect();
+    paso(nombre + ": articulo arriba, luego responsable y fecha en una linea, y abajo los dias", art.bottom <= resp.top + 1 && Math.abs(resp.top - fecha.top) < 4 && resp.bottom <= dias.top + 1, [art.top, resp.top, fecha.top, dias.top].map(Math.round).join("/"));
+    const chipCaja = filas[0].querySelector(".kpi-prestamos-chip").getBoundingClientRect();
+    const barraCaja = filas[0].querySelector(".kpi-prestamos-barra").getBoundingClientRect();
+    paso(nombre + ": el chip y la barra van en la MISMA linea y la barra es delgada", Math.abs((chipCaja.top + chipCaja.height / 2) - (barraCaja.top + barraCaja.height / 2)) < 4 && barraCaja.height <= 8 && barraCaja.width > 30, "barra " + Math.round(barraCaja.width) + "x" + Math.round(barraCaja.height) + " chip@" + Math.round(chipCaja.top) + " barra@" + Math.round(barraCaja.top));
+    const marca = getComputedStyle(filas[0].querySelector(".kpi-prestamos-articulo")).boxShadow;
+    paso(nombre + ": el articulo no lleva la marca lateral de la tabla ancha (esa es solo de la tabla)", marca === "none", marca);
+    paso(nombre + ": el articulo va en negritas", +getComputedStyle(filas[0].querySelector(".kpi-prestamos-articulo")).fontWeight >= 700);
+    const antesFecha = getComputedStyle(filas[0].querySelector(".kpi-prestamos-fecha"), "::before").content;
+    paso(nombre + ": la fecha dice 'vale del'", /vale del/.test(antesFecha), antesFecha);
+    paso(nombre + ": el orden se elige con un selector propio", getComputedStyle(tarjeta.querySelector(".kpi-preview-orden-movil")).display !== "none");
+  }
+  // Ver todos: 15 renglones en una lista con scroll interno, y Ver menos vuelve a 10.
+  await click(verTodos);
+  // Los renglones verdes (hasta 30 dias) son los ultimos por dias: solo aparecen con "Ver todos".
+  const todas = filasDe(tarjeta);
+  const verde = todas.find((f) => f.classList.contains("nivel-ok"));
+  paso(nombre + ": hay renglones verdes (hasta 30 dias) con otro icono que el coral", !!verde && chips(verde).querySelector("svg").innerHTML !== chips(todas[0]).querySelector("svg").innerHTML);
+  const lista = tarjeta.querySelector(".kpi-prestamos-lista");
+  paso(nombre + ": 'Ver todos' muestra los 15", filasDe(tarjeta).filter((f) => f.getBoundingClientRect().height > 0).length === 15);
+  paso(nombre + ": la lista tiene alto limitado y scroll interno", lista.classList.contains("con-scroll") && lista.scrollHeight > lista.clientHeight && lista.clientHeight <= 421 && getComputedStyle(lista).overflowY === "auto", lista.scrollHeight + "/" + lista.clientHeight);
+  paso(nombre + ": la tarjeta ya no crece sin limite", tarjeta.getBoundingClientRect().height < 900, Math.round(tarjeta.getBoundingClientRect().height));
+  paso(nombre + ": con la lista abierta, nada se sale de la tarjeta", [...tarjeta.querySelectorAll("*")].every((el) => dentro(el, tarjeta.getBoundingClientRect())));
+  await click(boton(tarjeta, /Ver menos/));
+  paso(nombre + ": 'Ver menos' vuelve a 10", filasDe(tarjeta).filter((f) => f.getBoundingClientRect().height > 0).length === 10);
+  // Filtro por responsable.
+  const filtro = tarjeta.querySelector(".kpi-prestamos-control select");
+  const opciones = [...filtro.options].map((o) => o.value).filter(Boolean);
+  paso(nombre + ": el filtro lista los responsables", opciones.length === 2 && filtro.options[0].textContent.includes("(15)"), opciones.join("|"));
+  await seleccionar(filtro, opciones[0]);
+  const solo = filasDe(tarjeta).filter((f) => f.getBoundingClientRect().height > 0);
+  paso(nombre + ": filtrar deja solo los renglones de ese responsable, con el orden por dias", solo.length > 0 && solo.every((f) => f.querySelector(".kpi-prestamos-responsable").textContent === opciones[0]) && solo.map((f) => +f.querySelector(".kpi-prestamos-chip-texto").textContent.split(" ")[0]).every((d, i, arr) => i === 0 || arr[i - 1] >= d));
+  paso(nombre + ": el resumen se ajusta al filtro (1 responsable)", /1 responsable/.test(textoPlano(tarjeta.querySelector(".kpi-prestamos-resumen"))));
+  await seleccionar(filtro, "");
+  // Vista agrupada por responsable.
+  await click(boton(tarjeta, /Por responsable/));
+  const grupos = [...tarjeta.querySelectorAll(".kpi-prestamos-grupo")];
+  paso(nombre + ": la vista agrupada tiene un grupo por responsable, el del prestamo mas viejo primero", grupos.length === 2 && textoPlano(grupos[0].querySelector("header")).includes("512 días"), grupos.map((g) => g.querySelector("header strong").textContent).join("|"));
+  paso(nombre + ": el boton de la vista activa esta marcado", boton(tarjeta, /Por responsable/).getAttribute("aria-pressed") === "true" && boton(tarjeta, /Lista/).getAttribute("aria-pressed") === "false");
+  paso(nombre + ": agrupada tambien limita a 10 renglones", filasDe(tarjeta).filter((f) => f.getBoundingClientRect().height > 0).length === 10);
+  paso(nombre + ": agrupada, nada se sale de la tarjeta", [...tarjeta.querySelectorAll("*")].every((el) => dentro(el, tarjeta.getBoundingClientRect())));
+  await click(boton(tarjeta, /Lista/));
+  // Orden.
+  if (esTabla) {
+    await click(tarjeta.querySelector("th button"));
+    paso(nombre + ": pulsar el encabezado ordena por esa columna", filasDe(tarjeta)[0].querySelector(".kpi-prestamos-articulo").textContent === "sample_descripcion");
+  }
+}
+
+async function estadoVacio() {
+  const original = window.fetch;
+  window.fetch = async () => new Response(JSON.stringify({ items: [], limit: 50, offset: 0, total: 0 }), { status: 200, headers: { "content-type": "application/json" } });
+  const contenedor = document.createElement("div");
+  contenedor.className = "kpi-dashboard"; contenedor.style.cssText = "width:420px;margin:8px 0";
+  document.body.appendChild(contenedor);
+  window.montarTabla({ contenedor });
+  await esperar(700);
+  const vacio = contenedor.querySelector(".kpi-prestamos-vacio");
+  paso("estado vacio: dice claro que todo esta en el almacen, con icono", !!vacio && !!vacio.querySelector("svg") && /Todo el material está en el almacén/.test(vacio.textContent) && /No hay artículos prestados/.test(vacio.textContent), vacio && vacio.textContent);
+  paso("estado vacio: sin tabla, sin controles y sin 'Ver todos'", !contenedor.querySelector("table") && !contenedor.querySelector(".kpi-prestamos-controles") && !/Ver todos/.test(contenedor.textContent));
+  paso("estado vacio: cabe en la tarjeta", dentro(vacio, contenedor.querySelector(".kpi-widget-card").getBoundingClientRect()));
+  window.fetch = original;
+}
+
+function movimientoReducido() {
+  const reducido = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const relleno = document.querySelector(".kpi-prestamos-barra-relleno");
+  const duracion = getComputedStyle(relleno).transitionDuration;
+  paso("movimiento reducido: " + (reducido ? "las barras no se animan" : "las barras se animan"), reducido ? parseFloat(duracion) === 0 : parseFloat(duracion) > 0, "reducido=" + reducido + " duracion=" + duracion);
+}
+
 async function todo() {
-  // 420: una columna. 760: dos columnas de ~372 (tarjeta angosta). 1120: dos de ~552.
-  await escenario("420px (1 columna)", 420);
-  await escenario("760px (2 columnas angostas)", 760);
-  await escenario("1120px (2 columnas anchas)", 1120);
+  // La cuadricula es repeat(auto-fill, minmax(340px, 1fr)):
+  //   420 -> 1 columna de 420 (tarjeta angosta: renglones compactos)
+  //   680 -> 1 columna de 680 (tarjeta ancha: tabla de cuatro columnas)
+  //   760 -> 2 columnas de ~372 (tarjeta angosta)
+  await diseno("420px (1 columna)", 420, false);
+  await diseno("680px (1 columna ancha)", 680, true);
+  await diseno("760px (2 columnas angostas)", 760, false);
+  await estadoVacio();
+  movimientoReducido();
   document.title = JSON.stringify({ resultados });
 }
 todo().catch((e) => { document.title = JSON.stringify({ resultados, error: String(e && e.stack || e) }); });
@@ -111,12 +222,14 @@ async function construir(nombrePagina) {
 
 test("la tabla de material prestado en Chrome, con la respuesta REAL del backend, a tres anchos", { skip: CHROME ? false : "no hay Chrome/Chromium (define CHROME_BIN)" }, async () => {
   const pagina = await construir("tabla");
-  const corrida = spawnSync(CHROME, ["--headless=new", "--disable-gpu", "--no-sandbox", "--window-size=1300,3000", "--virtual-time-budget=30000", "--dump-dom", pathToFileURL(pagina).href], { encoding: "utf8", timeout: 120000, maxBuffer: 64 * 1024 * 1024 });
-  const titulo = /<title>(.*?)<\/title>/s.exec(corrida.stdout || "");
-  assert.ok(titulo, `Chrome no devolvio resultados (codigo ${corrida.status}): ${(corrida.stderr || "").slice(0, 300)}`);
-  const medicion = JSON.parse(titulo[1].replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">"));
-  assert.equal(medicion.error, undefined, medicion.error);
-  const fallas = medicion.resultados.filter((r) => !r.ok).map((r) => `${r.nombre} -- ${r.detalle}`);
-  assert.deepEqual(fallas, []);
-  assert.ok(medicion.resultados.length >= 15, `se ejecutaron ${medicion.resultados.length} comprobaciones`);
+  for (const [modo, banderas] of [["normal", []], ["con movimiento reducido", ["--force-prefers-reduced-motion"]]]) {
+    const corrida = spawnSync(CHROME, ["--headless=new", "--disable-gpu", "--no-sandbox", ...banderas, "--window-size=1500,4000", "--virtual-time-budget=60000", "--dump-dom", pathToFileURL(pagina).href], { encoding: "utf8", timeout: 180000, maxBuffer: 64 * 1024 * 1024 });
+    const titulo = /<title>(.*?)<\/title>/s.exec(corrida.stdout || "");
+    assert.ok(titulo, `Chrome (${modo}) no devolvio resultados (codigo ${corrida.status}): ${(corrida.stderr || "").slice(0, 300)}`);
+    const medicion = JSON.parse(titulo[1].replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">"));
+    assert.equal(medicion.error, undefined, medicion.error);
+    const fallas = medicion.resultados.filter((r) => !r.ok).map((r) => `${r.nombre} -- ${r.detalle}`);
+    assert.deepEqual(fallas, [], `Chrome ${modo}`);
+    assert.ok(medicion.resultados.length >= 60, `se ejecutaron ${medicion.resultados.length} comprobaciones`);
+  }
 });

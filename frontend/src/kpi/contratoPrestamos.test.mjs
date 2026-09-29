@@ -52,14 +52,31 @@ test("la respuesta real trae exactamente los campos del contrato y cada uno con 
 test("con la respuesta real, articulo, responsable, fecha del vale y dias llegan a la pantalla", () => {
   const html = pintarCuerpo({ widget: WIDGET, datos: datos(REAL.items, REAL.total) });
   const plano = texto(html);
-  for (const renglon of REAL.items) {
+  // Solo se ven 10 renglones hasta pulsar "Ver todos" (eso lo prueba navegadorTabla.test.mjs);
+  // los 10 primeros, que son los que llevan mas dias, tienen que estar completos.
+  const visibles = REAL.items.slice(0, 10);
+  for (const renglon of visibles) {
     assert.ok(plano.includes(renglon.articulo), `articulo ${renglon.articulo}`);
     assert.ok(plano.includes(renglon.responsable), `responsable ${renglon.responsable}`);
     assert.ok(plano.includes(renglon.fecha_prestamo), `fecha ${renglon.fecha_prestamo}`);
     assert.ok(new RegExp(`${renglon.dias_prestado}\\s+días`).test(plano), `dias ${renglon.dias_prestado}`);
   }
-  // Cada renglon del backend es un renglon de la tabla (ni de mas ni de menos).
-  assert.equal([...html.matchAll(/<tr[ >]/g)].length - 1, REAL.items.length, "un <tr> por renglon, mas el de encabezado");
+  assert.equal([...html.matchAll(/<tr[ >]/g)].length - 1, visibles.length, "un <tr> por renglon visible, mas el de encabezado");
+  assert.ok(plano.includes(`Ver todos (${REAL.items.length})`), "el resto queda tras 'Ver todos'");
+  // El resumen sale de los datos reales.
+  const responsables = new Set(REAL.items.map((r) => r.responsable)).size;
+  assert.ok(plano.includes(`${REAL.items.length} renglones`) && plano.includes(`${responsables} responsables`));
+  assert.ok(plano.includes(`${REAL.items[0].dias_prestado} días`), "el mas antiguo va en el resumen");
+});
+
+test("la gravedad sale de los dias reales: 512 y 456 coral, 45 ambar, 12 verde, cada una con su icono y texto", () => {
+  const html = pintarCuerpo({ widget: WIDGET, datos: datos(REAL.items, REAL.total) });
+  const clases = [...html.matchAll(/kpi-prestamos-fila nivel-(\w+)/g)].map((m) => m[1]);
+  assert.deepEqual(clases.slice(0, 3), ["critico", "critico", "critico"], "512, 456 y 100 dias");
+  assert.ok(clases.includes("atencion"));
+  const plano = texto(html);
+  assert.ok(plano.includes("512 días · 1 año, 5 meses") && plano.includes("456 días · 1 año, 3 meses"), "los dias legibles");
+  assert.ok(plano.includes("Atrasado") && plano.includes("Requiere atención"), "el nivel tambien esta escrito, no solo pintado");
 });
 
 test("un renglon sin responsable dice 'Sin asignar' en vez de quedar vacio", () => {

@@ -32,6 +32,11 @@
   /* Ambar vivo: SOLO para "atrasado" en la tabla de material prestado. */
   --kpi-atrasado: #f08a00;
   --kpi-atrasado-fondo: #fff3dc;
+  /* Gravedad de un prestamo por dias: hasta 30 verde, 31 a 90 ambar, mas de 90 coral.
+     Siempre con icono y texto ademas del color. Nada oscuro ni cafe. */
+  --kpi-nivel-ok: #12a06a;
+  --kpi-nivel-atencion: #f0a000;
+  --kpi-nivel-critico: #ef6f5c;
 }
 
 .dashboard-preview-page[data-theme="dark"],
@@ -58,6 +63,9 @@
   --kpi-neutral: #94a3b8;
   --kpi-atrasado: #ffb020;
   --kpi-atrasado-fondo: rgba(255, 176, 32, .14);
+  --kpi-nivel-ok: #34d399;
+  --kpi-nivel-atencion: #ffb020;
+  --kpi-nivel-critico: #ff8a7a;
 }
 
 /* --- numero ---------------------------------------------------------- */
@@ -76,10 +84,10 @@
 .kpi-preview-tooltip-fila { display: flex; align-items: center; gap: 6px; }
 .kpi-preview-tooltip-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
 
-/* --- tabla -------------------------------------------------------------- */
-/* El contenedor de la consulta es la propia tabla: cuando SU ancho (el de la
-   tarjeta que la aloja) baja de 540px, pasa a tarjeta por renglon. Sin
-   overflow-x a proposito: el diseno tiene que caber, no esconder el desborde
+/* --- tabla de material prestado ------------------------------------------ */
+/* El contenedor de la consulta es la propia tabla: cuando SU ancho (el de la tarjeta que la
+   aloja, no el de la ventana) baja de 540px, pasa de tabla de cuatro columnas a renglones
+   compactos. Sin overflow-x a proposito: el diseno tiene que caber, no esconder el desborde
    detras de una barra de scroll. */
 .kpi-preview-tabla-wrap { container-type: inline-size; container-name: kpi-tabla; min-width: 0; max-width: 100%; overflow: hidden; }
 /* `min-width: 0` no es un detalle: app.css trae una regla GLOBAL `table { min-width: 900px }`
@@ -89,30 +97,91 @@
    -alineado a la derecha- quedaba fuera de la vista y parecia vacio. */
 .kpi-preview-tabla { width: 100%; min-width: 0; border-collapse: collapse; font-size: 13px; }
 .kpi-preview-tabla th, .kpi-preview-tabla td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--kpi-borde); overflow-wrap: anywhere; }
-.kpi-preview-orden-movil { display: none; align-items: flex-end; gap: 8px; margin-bottom: 10px; }
-.kpi-preview-orden-movil label { display: flex; flex-direction: column; gap: 3px; flex: 1; font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--kpi-texto-suave); }
-.kpi-preview-orden-movil select { border: 1px solid var(--kpi-borde); border-radius: 8px; padding: 7px 8px; background: var(--kpi-tarjeta); color: var(--kpi-ink); font: inherit; font-size: 13px; text-transform: none; font-weight: 400; }
-.kpi-preview-orden-movil .kpi-preview-tabla-orden { border: 1px solid var(--kpi-borde); border-radius: 8px; padding: 9px; background: var(--kpi-tarjeta); color: var(--kpi-ink); }
-
-@container kpi-tabla (max-width: 540px) {
-  .kpi-preview-orden-movil { display: flex; }
-  .kpi-preview-tabla thead { display: none; }
-  .kpi-preview-tabla, .kpi-preview-tabla tbody, .kpi-preview-tabla tr, .kpi-preview-tabla td { display: block; width: 100%; }
-  .kpi-preview-tabla tr { border: 1px solid var(--kpi-borde); border-radius: 12px; padding: 8px 12px; margin-bottom: 10px; }
-  .kpi-preview-tabla tr:last-child { margin-bottom: 0; }
-  .kpi-preview-tabla td { display: flex; justify-content: space-between; align-items: center; gap: 12px; border: 0; padding: 4px 0; text-align: right; }
-  .kpi-preview-tabla td::before { content: attr(data-label); flex: 0 0 auto; color: var(--kpi-texto-suave); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; text-align: left; }
-  .kpi-preview-dias-celda { flex: 1; justify-content: flex-end; }
-}
 .kpi-preview-tabla-orden { display: inline-flex; align-items: center; gap: 4px; border: 0; background: none; font: inherit; font-weight: 800; color: var(--kpi-texto-suave); text-transform: uppercase; font-size: 11px; cursor: pointer; padding: 0; }
 .kpi-preview-tabla-orden-inactivo { opacity: .4; }
-.kpi-preview-fila-atrasada { background: var(--kpi-atrasado-fondo); }
+.kpi-prestamos-orden-espacio { display: inline-block; width: 12px; height: 12px; }
 .kpi-preview-fila-resaltada { outline: 2px solid var(--kpi-acento); outline-offset: -2px; }
-.kpi-preview-icono-atrasado { color: var(--kpi-atrasado); flex: 0 0 auto; }
-.kpi-preview-dias-celda { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
-.kpi-preview-barra-progreso { flex: 1; min-width: 48px; height: 5px; border-radius: 999px; background: var(--kpi-borde); overflow: hidden; }
-.kpi-preview-barra-progreso-relleno { height: 100%; background: var(--kpi-ink-suave); border-radius: inherit; }
-.kpi-preview-barra-progreso-relleno.atrasado { background: var(--kpi-atrasado); }
+.kpi-preview-tabla-total { margin: 8px 2px 0; color: var(--kpi-texto-suave); font-size: 11px; text-align: right; }
+
+.kpi-prestamos { display: flex; flex-direction: column; gap: 10px; }
+.kpi-prestamos-resumen { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; font-size: 12px; color: var(--kpi-ink-suave); }
+.kpi-prestamos-resumen strong { color: var(--kpi-ink); }
+.kpi-prestamos-resumen-antiguo { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+.kpi-prestamos-controles { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.kpi-prestamos-controles .kpi-preview-orden-movil { flex: 1 1 100%; }
+.kpi-prestamos-control { display: flex; flex-direction: column; gap: 3px; flex: 1 1 170px; min-width: 0; font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--kpi-texto-suave); }
+.kpi-prestamos-control select, .kpi-preview-orden-movil select { border: 1px solid var(--kpi-borde); border-radius: 8px; padding: 7px 8px; background: var(--kpi-tarjeta); color: var(--kpi-ink); font: inherit; font-size: 13px; text-transform: none; font-weight: 400; min-width: 0; }
+.kpi-prestamos-vistas { display: inline-flex; border: 1px solid var(--kpi-borde); border-radius: 10px; overflow: hidden; flex: 0 0 auto; }
+.kpi-prestamos-vistas button { display: inline-flex; align-items: center; gap: 5px; padding: 8px 10px; border: 0; background: var(--kpi-tarjeta); color: var(--kpi-ink-suave); font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.kpi-prestamos-vistas button[aria-pressed="true"] { background: color-mix(in srgb, var(--kpi-acento) 12%, var(--kpi-tarjeta)); color: var(--kpi-ink); box-shadow: inset 0 -2px 0 var(--kpi-acento); }
+.kpi-prestamos-vistas button + button { border-left: 1px solid var(--kpi-borde); }
+/* El selector de orden solo hace falta cuando la cabecera de la tabla (que ordena al pulsar) no se ve. */
+.kpi-preview-orden-movil { display: none; align-items: flex-end; gap: 8px; flex: 1 1 200px; min-width: 0; }
+.kpi-preview-orden-movil label { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--kpi-texto-suave); }
+.kpi-preview-orden-movil .kpi-preview-tabla-orden { border: 1px solid var(--kpi-borde); border-radius: 8px; padding: 9px; background: var(--kpi-tarjeta); color: var(--kpi-ink); }
+
+/* Lista: con "Ver todos" se limita el alto y se desplaza por dentro, con el encabezado fijo. */
+.kpi-prestamos-lista { min-width: 0; }
+.kpi-prestamos-lista.con-scroll { max-height: 420px; overflow-y: auto; overscroll-behavior: contain; }
+.kpi-prestamos-tabla th { position: sticky; top: 0; z-index: 1; background: var(--kpi-tarjeta); }
+.kpi-prestamos-articulo { font-weight: 800; color: var(--kpi-ink); }
+.kpi-prestamos-fila td:first-child { box-shadow: inset 3px 0 0 var(--nivel-fila, transparent); }
+.kpi-prestamos-fila.nivel-ok { --nivel-fila: var(--kpi-nivel-ok); }
+.kpi-prestamos-fila.nivel-atencion { --nivel-fila: var(--kpi-nivel-atencion); }
+.kpi-prestamos-fila.nivel-critico { --nivel-fila: var(--kpi-nivel-critico); }
+.kpi-prestamos-dias { display: flex; align-items: center; gap: 8px; min-width: 0; }
+
+/* El chip de dias: color + icono + texto ("512 días · 1 año, 5 meses"). */
+.kpi-prestamos-chip { position: relative; display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; color: var(--kpi-ink); border: 1px solid color-mix(in srgb, var(--nivel) 60%, transparent); background: color-mix(in srgb, var(--nivel) 14%, var(--kpi-tarjeta)); }
+.kpi-prestamos-chip svg { color: var(--nivel); flex: 0 0 auto; }
+.kpi-prestamos-chip.nivel-ok { --nivel: var(--kpi-nivel-ok); }
+.kpi-prestamos-chip.nivel-atencion { --nivel: var(--kpi-nivel-atencion); }
+.kpi-prestamos-chip.nivel-critico { --nivel: var(--kpi-nivel-critico); }
+.kpi-prestamos-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.kpi-prestamos-barra { flex: 1 1 auto; min-width: 36px; height: 6px; border-radius: 999px; background: var(--kpi-borde); overflow: hidden; }
+.kpi-prestamos-barra-relleno { display: block; height: 100%; border-radius: inherit; transition: width .5s ease; }
+.kpi-prestamos-barra-relleno.nivel-ok { background: var(--kpi-nivel-ok); }
+.kpi-prestamos-barra-relleno.nivel-atencion { background: var(--kpi-nivel-atencion); }
+.kpi-prestamos-barra-relleno.nivel-critico { background: var(--kpi-nivel-critico); }
+
+.kpi-prestamos-grupo { margin-bottom: 12px; }
+.kpi-prestamos-grupo-cabecera { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 6px 2px; font-size: 13px; color: var(--kpi-ink); }
+.kpi-prestamos-grupo-cabecera span:not(.kpi-prestamos-chip) { color: var(--kpi-texto-suave); font-size: 12px; }
+.kpi-prestamos-ver-todos { align-self: center; border: 1px solid var(--kpi-borde); background: var(--kpi-tarjeta); color: var(--kpi-ink); border-radius: 999px; padding: 6px 16px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.kpi-prestamos-ver-todos:hover { border-color: var(--kpi-acento); }
+
+.kpi-prestamos-vacio { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 26px 14px; text-align: center; color: var(--kpi-ink-suave); border: 1px dashed var(--kpi-borde); border-radius: 14px; }
+.kpi-prestamos-vacio svg { color: var(--kpi-nivel-ok); }
+.kpi-prestamos-vacio strong { color: var(--kpi-ink); font-size: 14px; }
+.kpi-prestamos-vacio p { margin: 0; font-size: 13px; }
+
+/* Tarjeta angosta: renglones compactos, SIN etiquetas repetidas.
+     Articulo (negritas)
+     responsable · vale del <fecha>
+     [chip de dias] ▬▬▬▬ */
+@container kpi-tabla (max-width: 540px) {
+  .kpi-preview-orden-movil { display: flex; }
+  .kpi-prestamos-tabla thead { display: none; }
+  .kpi-prestamos-tabla, .kpi-prestamos-tabla tbody { display: block; width: 100%; }
+  .kpi-prestamos-fila {
+    display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+    grid-template-areas: "art art" "resp fecha" "dias dias"; column-gap: 6px; row-gap: 4px;
+    padding: 10px 12px 10px 14px; margin-bottom: 8px; border: 1px solid var(--kpi-borde);
+    border-left: 4px solid var(--nivel-fila); border-radius: 12px; background: var(--kpi-tarjeta);
+  }
+  .kpi-prestamos-fila:last-child { margin-bottom: 0; }
+  .kpi-prestamos-fila td { display: block; width: auto; padding: 0; border: 0; text-align: left; min-width: 0; }
+  .kpi-prestamos-fila td:first-child { box-shadow: none; }
+  .kpi-prestamos-articulo { grid-area: art; font-size: 14px; }
+  .kpi-prestamos-responsable { grid-area: resp; font-size: 12px; color: var(--kpi-ink-suave); }
+  .kpi-prestamos-fecha { grid-area: fecha; font-size: 12px; color: var(--kpi-texto-suave); }
+  .kpi-prestamos-fecha::before { content: "· " attr(data-prefijo) " "; }
+  /* `td.kpi-...` a proposito: `.kpi-prestamos-fila td { display: block }` (arriba) pesa mas que
+     `.kpi-prestamos-dias { display: flex }` y dejaba el chip y la barra apilados, con la barra
+     inflada a un bloque de 24px de alto. */
+  .kpi-prestamos-fila td.kpi-prestamos-dias { grid-area: dias; display: flex; align-items: center; margin-top: 2px; }
+}
 
 /* --- dona ---------------------------------------------------------------- */
 .kpi-preview-dona-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; }
@@ -136,6 +205,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .kpi-skeleton { animation: none; background: var(--kpi-skeleton-base); }
+  .kpi-prestamos-barra-relleno { transition: none; }
+  .kpi-prestamos-lista.con-scroll { scroll-behavior: auto; }
 }
 
 /* --- numero: insignia del modulo, valor y pista ------------------------- */
