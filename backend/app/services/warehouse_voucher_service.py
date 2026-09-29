@@ -505,6 +505,14 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
 
         validados = [_validar_renglon(db, linea) for linea in renglones]
 
+        # La misma pieza dos veces en un mismo vale es una captura doble: solo
+        # puede salir una vez. Sin esta comprobacion el segundo renglon falla
+        # despues, dentro del movimiento de la pieza, con un error de estado
+        # que no dice que la culpa es del renglon repetido.
+        piezas = [v["id_inventory_asset"] for v in validados if v["id_inventory_asset"] is not None]
+        if len(piezas) != len(set(piezas)):
+            raise AppError("errors.voucher_duplicate_line", 409, {"field": "lines"})
+
         inicio = _ahora()
         vence = _fecha_de_regreso(payload.get("due_date"))
         motivo = _texto(payload.get("note"), "note", largo=300, obligatorio=True)
