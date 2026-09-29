@@ -20,8 +20,14 @@
    antes, que apagaba la tarjeta justo cuando mas se necesita verla bien. */
 .kpi-widget-dragging{box-shadow:0 22px 45px rgba(15,23,42,.22);transform:scale(1.02);cursor:grabbing}
 @media(prefers-reduced-motion:reduce){.kpi-widget-card{transition:none}.kpi-widget-dragging{transform:none}}
+/* La cabecera CRECE con su contenido: sin alturas fijas, sin posicionamiento
+   absoluto y sin margenes negativos (el -6px de antes montaba una linea
+   subtitulo sobre la otra en cuanto el rango o el titulo ocupaban dos
+   renglones). Titulo y subtitulos van en una columna con separacion propia
+   (gap), y ambos rompen palabras largas en vez de desbordar. */
 .kpi-widget-card-header{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
-.kpi-widget-card-header h4{margin:0;font-size:16px;color:#173b66;line-height:1.25}
+.kpi-widget-card-titulos{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1 1 auto}
+.kpi-widget-card-header h4{margin:0 0 2px;font-size:16px;color:#173b66;line-height:1.3;overflow-wrap:anywhere}
 .kpi-widget-card-actions{display:flex;gap:6px;flex-shrink:0}
 .kpi-icon-button{border:0;background:#eef2f6;color:#526273;border-radius:8px;padding:7px;cursor:pointer;display:grid;place-items:center}
 .kpi-icon-button:hover{background:#d8efe8;color:#1b7a60}
@@ -31,8 +37,7 @@
    en touch devices). */
 .kpi-drag-handle{cursor:grab;touch-action:none}
 .kpi-drag-handle:active{cursor:grabbing}
-.kpi-widget-meta{color:#8a96a5;font-size:12px;font-weight:700;margin:0}
-.kpi-widget-meta+.kpi-widget-meta{margin-top:-6px}
+.kpi-widget-meta{color:#8a96a5;font-size:12px;font-weight:700;line-height:1.35;margin:0;overflow-wrap:anywhere}
 .kpi-chart-box{min-height:240px;display:flex;flex-direction:column;justify-content:center}
 
 .kpi-number-widget{display:flex;flex-direction:column;gap:8px;padding:14px 4px 6px}

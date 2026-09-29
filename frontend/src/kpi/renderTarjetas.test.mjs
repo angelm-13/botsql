@@ -9,37 +9,14 @@
 // Sin dependencias nuevas: esbuild ya viene con Vite; se empaqueta la entrada
 // JSX, se importa el resultado y se renderiza con react-dom/server.
 import assert from "node:assert/strict";
-import { mkdirSync } from "node:fs";
 import test, { before } from "node:test";
-import { fileURLToPath } from "node:url";
-import { build } from "esbuild";
-
-const ENTRADA = fileURLToPath(new URL("./renderTarjetas.entry.jsx", import.meta.url));
-// Dentro de node_modules para que los paquetes externos se resuelvan igual.
-const SALIDA_DIR = fileURLToPath(new URL("../../node_modules/.cache/kpi-render-test/", import.meta.url));
-const SALIDA = `${SALIDA_DIR}entrada.mjs`;
+import { cargarRender } from "./bundleRender.mjs";
 
 let pintarTarjeta;
 let pintarCuerpo;
 
 before(async () => {
-  // El modulo se ejecuta en Node: lo unico del navegador que se toca al importar
-  // es localStorage/window, y solo dentro de funciones que estas pruebas no llaman.
-  globalThis.localStorage ??= { getItem: () => null, setItem() {}, removeItem() {} };
-  mkdirSync(SALIDA_DIR, { recursive: true });
-  await build({
-    entryPoints: [ENTRADA],
-    outfile: SALIDA,
-    bundle: true,
-    platform: "node",
-    format: "esm",
-    jsx: "automatic",
-    packages: "external",
-    loader: { ".js": "jsx", ".css": "empty" },
-    define: { "import.meta.env": JSON.stringify({ VITE_API_BASE_URL: "/api", MODE: "test", DEV: false, BASE_URL: "/" }) },
-    logLevel: "silent",
-  });
-  ({ pintarTarjeta, pintarCuerpo } = await import(`${SALIDA}?${Date.now()}`));
+  ({ pintarTarjeta, pintarCuerpo } = await cargarRender());
 });
 
 // --- catalogo y widgets ---------------------------------------------------

@@ -1348,7 +1348,7 @@ export function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, for
       style={{ "--kpi-acento": colorAcento }}
     >
       <div className="kpi-widget-card-header">
-        <div>
+        <div className="kpi-widget-card-titulos">
           <h4>{titulo}</h4>
           <p className="kpi-widget-meta">{tx(`chart_type_${widget.tipo_grafica}`, chartTypeLabel)}</p>
           <p className="kpi-widget-meta">{rangoTexto}</p>
