@@ -76,6 +76,7 @@ const navItems = [
   // se quedaba sin entrada de menu -tenia el permiso en la base, pero la
   // pantalla nunca aparecia para llegar a usarlo.
   { path: "/vouchers", key: "menu.warehouse_voucher", label: "Vales de almacén", entityName: ["warehouse_voucher", "warehouse_prevoucher"] },
+  { path: "/activity-log", key: "menu.daily_activity_log", label: "Bitácora diaria", entityName: "daily_activity_log", group: "Operaciones", groupIcon: "operations", location: "sidebar", order: 78 },
   { path: "/nm_survey_user", key: "menu.nm_survey_user" },
   { path: "/nm_template_task", key: "menu.nm_template_task" },
   { path: "/payroll_concept", key: "menu.payroll_concept" },

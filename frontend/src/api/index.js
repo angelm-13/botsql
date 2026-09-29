@@ -837,4 +837,6 @@ export const getActivityLog = (id) => request(`/activity-logs/${id}`);
 export const updateActivityLog = (id, payload) => request(`/activity-logs/${id}`, { method: "PUT", body: payload });
 export const deleteActivityLog = (id) => request(`/activity-logs/${id}`, { method: "DELETE" });
 export const getPendingActivities = (params = {}) => request("/activity-logs/pending", { params });
+export const getMyTeamWorkers = () => request("/activity-logs/my-team");
+export const getActivityLogWorkers = (id) => request(`/activity-logs/${id}/workers`);
 export const getProjectActivityReport = (id, params = {}) => request(`/activity-logs/project/${id}/report`, { params });

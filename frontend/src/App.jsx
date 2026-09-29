@@ -52,6 +52,7 @@ import PayrollPeriodPage from "./pages/PayrollPeriodPage.jsx";
 import PermissionPage from "./pages/PermissionPage.jsx";
 import ProductPage from "./pages/ProductPage.jsx";
 import WarehouseVoucherPage from "./pages/WarehouseVoucherPage.jsx";
+import ActivityLogPage from "./pages/ActivityLogPage.jsx";
 import ProductFamilyPage from "./pages/ProductFamilyPage.jsx";
 import ProductSaleConfigPage from "./pages/ProductSaleConfigPage.jsx";
 import ProjectManagementPage from "./pages/ProjectManagementPage.jsx";
@@ -279,6 +280,7 @@ export default function App() {
               dejarle usar; sin la segunda clave aqui, Supervisor nunca
               llegaba a la puerta. */}
           <Route path="/vouchers" element={<RoleAccessRoute entityName={VOUCHER_ENTITY_NAMES}><WarehouseVoucherPage /></RoleAccessRoute>} />
+          <Route path="/activity-log" element={<RoleAccessRoute entityName="daily_activity_log"><ActivityLogPage /></RoleAccessRoute>} />
           <Route path="/product_sale_config" element={<RoleAccessRoute entityName="product_sale_config"><ProductSaleConfigPage /></RoleAccessRoute>} />
           <Route path="/proyect" element={<RoleAccessRoute entityName="proyect"><ProjectManagementPage /></RoleAccessRoute>} />
           <Route path="/appointments" element={<RoleAccessRoute entityName="appointment"><AppointmentsPage /></RoleAccessRoute>} />

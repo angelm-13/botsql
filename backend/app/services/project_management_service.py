@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 
 from app.models.entity_permission import EntityPermission
 from app.models.permission import Permission
@@ -454,10 +454,22 @@ def _scoped_query(db, user_data: dict):
         # responsable, que no podia ni consultarlo.
         query = query.filter(or_(Proyect.created_by == actor_id, Proyect.leader == actor_id))
     elif scope == "execution":
+        # Correccion de negocio explicita (2026-09-30): antes cualquier Jefe
+        # de taller veia TODOS los proyectos en un estatus de taller activo,
+        # sin importar quien ya lo hubiera tomado -- un Jefe de taller podia
+        # ver (y, peor, potencialmente sacar tareas/bitacora de) el proyecto
+        # que otro compañero ya tenia asignado. Ahora solo ve lo que puede
+        # tomar (libre, `id_supervisor IS NULL`) o lo que ya es suyo
+        # (lo tomo el, o lo lidera -- caso raro pero posible via `leader`).
+        # Lo que tomo OTRO Jefe de taller queda fuera por completo.
         query = query.filter(
             or_(
-                Proyect.proyect_status.in_(WORKSHOP_VISIBLE_STATUSES),
                 Proyect.leader == actor_id,
+                Proyect.id_supervisor == actor_id,
+                and_(
+                    Proyect.proyect_status.in_(WORKSHOP_VISIBLE_STATUSES),
+                    Proyect.id_supervisor.is_(None),
+                ),
             )
         )
     elif scope == "authorization":
