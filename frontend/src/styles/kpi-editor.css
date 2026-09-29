@@ -127,3 +127,34 @@
 .kpi-selector-check { color: var(--kpi-acento); flex: 0 0 auto; }
 .kpi-selector-fila .kpi-color-swatch-wrap { padding-top: 12px; flex: 0 0 auto; }
 .kpi-selector .kpi-chip-badge { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background: var(--kpi-ink); color: var(--kpi-tarjeta); font-size: 10px; font-weight: 800; }
+
+/* --- Botones de icono: tipo de grafica y modulo del selector de KPI ------------
+   Neutros en reposo; al elegirlos se pintan con su color (`--tinte`, o el azul
+   marino de siempre si no traen uno) y llevan ademas un borde y un check, para que
+   el color nunca sea la unica senal. */
+.kpi-icon-option-group { display: flex; flex-wrap: wrap; gap: 8px; }
+.kpi-icon-option {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px;
+  min-width: 78px; border: 1px solid #d7e0ea; background: #f4f6f9; color: #526273;
+  border-radius: 12px; padding: 10px 12px; cursor: pointer; font: inherit;
+  transition: color .15s ease, border-color .15s ease, background .15s ease;
+}
+.kpi-icon-option span { font-size: 11px; font-weight: 700; white-space: nowrap; }
+.kpi-icon-option:hover:not(:disabled) { background: #eef2f6; color: var(--tinte, #173b66); }
+.kpi-icon-option.active {
+  background: color-mix(in srgb, var(--tinte, #173b66) 9%, #fff);
+  border-color: var(--tinte, #173b66); color: var(--tinte, #173b66);
+  box-shadow: 0 1px 4px rgba(15, 23, 42, .12);
+}
+.kpi-icon-option:disabled { opacity: .4; cursor: not-allowed; }
+.kpi-icon-option .kpi-editor-tipo-check { position: absolute; top: 6px; right: 6px; }
+
+/* --- Fila de modulos del selector de KPI --------------------------------------- */
+.kpi-selector-modulos { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+.kpi-selector-modulos .kpi-icon-option { min-width: 0; padding-top: 12px; }
+.kpi-selector-modulo-etiqueta { display: flex; align-items: center; gap: 5px; white-space: normal !important; text-align: center; }
+.kpi-selector-modulo-cuenta { font-weight: 400; opacity: .75; }
+.kpi-selector-modulo-elegidos {
+  position: absolute; top: 5px; left: 6px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px;
+  background: var(--tinte, #173b66); color: #fff; font-size: 10px; font-weight: 800; line-height: 16px; text-align: center;
+}

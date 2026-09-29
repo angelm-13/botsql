@@ -13,7 +13,9 @@ import {
   CATEGORICAL, COLOR_OTHERS, buildMultiSeriesData, etiquetasDeDimension, buildPieData, buildSeriesData,
   colorDeKpi, colorEfectivoDeKpi, formatConUnidad, labelForDimension,
 } from "./kpiDatos.js";
-import { agruparKpis, estadoDeOpcion, esVariable } from "./kpiSelector.js";
+import {
+  agruparKpis, claveDeGrupo, colorDeModulo, COLOR_DE_MODULO, estadoDeOpcion, esVariable, grupoInicial, resumenDeModulos,
+} from "./kpiSelector.js";
 import {
   armarParametros, estadoDeWidget, mezclaUnidades, motivoParaNoCombinar, rangoInicialDelBorrador,
   tiposDeGraficaPermitidos, unidadDeKpi, widgetDeBorrador,
@@ -491,7 +493,7 @@ const SEL = [
   { id_kpi_definition: 4, etiqueta: "Cancelaciones", clave: "d", modulo: "operaciones", unidad: "numero", dimensiones: ["empleado"] },
 ];
 
-test("selector: agrupa por modulo en el orden del catalogo y deja 'Variables' al final", () => {
+test("selector: agrupa por modulo en un orden fijo (no el del catalogo) y deja 'Variables' al final", () => {
   const grupos = agruparKpis(SEL);
   assert.deepEqual(grupos.map((g) => g.clave), ["operaciones", "inventario", "variables"]);
   assert.deepEqual(grupos[0].kpis.map((k) => k.etiqueta), ["Incidencias abiertas", "Cancelaciones"]);
@@ -536,4 +538,56 @@ test("con varios KPIs salen las etiquetas distintas, sin repetir y en el orden e
   const c = { dimensiones: ["empleado"] };
   assert.deepEqual(etiquetasDeDimension([a, b]), ["Responsable"]);
   assert.deepEqual(etiquetasDeDimension([a, c]), ["Responsable", "Empleado"]);
+});
+
+// --- botones de modulo del selector -----------------------------------------
+test("modulo inicial: el del primer KPI ya elegido; si no hay, el primero de la lista", () => {
+  const grupos = agruparKpis(SEL);
+  assert.equal(grupoInicial(grupos, SEL, []), "operaciones");
+  assert.equal(grupoInicial(grupos, SEL, ["3"]), "inventario");
+  assert.equal(grupoInicial(grupos, SEL, ["2", "1"]), "variables", "manda el PRIMERO elegido, no el de menor id");
+  assert.equal(grupoInicial(grupos, SEL, ["999"]), "operaciones", "un id que ya no existe no rompe nada");
+  assert.equal(grupoInicial([], [], []), null);
+  assert.equal(claveDeGrupo(SEL[1]), "variables");
+  assert.equal(claveDeGrupo(SEL[0]), "operaciones");
+});
+
+test("resumen de modulos: total, coincidencias con la busqueda y elegidos por modulo", () => {
+  const sinBuscar = resumenDeModulos(SEL, "", ["1", "4"]);
+  assert.deepEqual(sinBuscar.map((m) => [m.clave, m.total, m.coincidencias, m.elegidos]), [
+    ["operaciones", 2, 2, 2], ["inventario", 1, 1, 0], ["variables", 1, 1, 0],
+  ]);
+  const buscando = resumenDeModulos(SEL, "cancel", ["1"]);
+  assert.deepEqual(buscando.map((m) => [m.clave, m.total, m.coincidencias]), [
+    ["operaciones", 2, 1], ["inventario", 1, 0], ["variables", 1, 0],
+  ], "el total no cambia al buscar; las coincidencias si");
+  assert.equal(buscando[0].elegidos, 1, "la seleccion se conserva mientras se busca");
+});
+
+test("un modulo sin KPIs en el catalogo (plan o permiso) no aparece en el resumen", () => {
+  const sinInventario = SEL.filter((kpi) => kpi.modulo !== "inventario");
+  assert.deepEqual(resumenDeModulos(sinInventario, "", []).map((m) => m.clave), ["operaciones", "variables"]);
+  assert.deepEqual(resumenDeModulos([], "", []), []);
+});
+
+test("cada modulo tiene su color, distinto, estable y vivo", () => {
+  const conocidos = Object.keys(COLOR_DE_MODULO);
+  assert.equal(new Set(Object.values(COLOR_DE_MODULO)).size, conocidos.length, "sin repetidos");
+  assert.equal(colorDeModulo("operaciones"), colorDeModulo("operaciones"));
+  const desconocido = colorDeModulo("un_modulo_nuevo");
+  assert.ok(CATEGORICAL.includes(desconocido) && desconocido === colorDeModulo("un_modulo_nuevo"));
+});
+
+test("el orden de los modulos no depende del orden en que llegue el catalogo", () => {
+  const mezclado = [
+    { id_kpi_definition: 1, etiqueta: "a", modulo: "documentos", dimensiones: ["empleado"] },
+    { id_kpi_definition: 2, etiqueta: "b", modulo: "zeta_nuevo", dimensiones: ["empleado"] },
+    { id_kpi_definition: 3, etiqueta: "c", modulo: "facturacion", dimensiones: ["empleado"] },
+    { id_kpi_definition: 4, etiqueta: "d", modulo: "operaciones", dimensiones: ["empleado"] },
+    { id_kpi_definition: 5, etiqueta: "e", modulo: "alfa_nuevo", dimensiones: ["empleado"] },
+    { id_kpi_definition: 6, etiqueta: "f", modulo: "inventario", dimensiones: ["global"] },
+  ];
+  const orden = agruparKpis(mezclado).map((g) => g.clave);
+  assert.deepEqual(orden, ["operaciones", "facturacion", "documentos", "alfa_nuevo", "zeta_nuevo", "variables"]);
+  assert.deepEqual(agruparKpis([...mezclado].reverse()).map((g) => g.clave), orden);
 });
