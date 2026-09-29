@@ -97,7 +97,7 @@
       {% for item in record.line_items %}
       <tr>
         <td class="center">{{ item.sat_product_key or '01010101' }}</td>
-        <td><div class="description">{{ item.description or item.name or 'Concepto' }}</div>{% if item.tax_object %}<div class="muted">Objeto imp.: {{ item.tax_object }}</div>{% endif %}</td>
+        <td><div class="description">{{ item.description_label or 'Concepto' }}</div>{% if item.tax_object %}<div class="muted">Objeto imp.: {{ item.tax_object }}</div>{% endif %}</td>
         <td class="center">{{ item.sat_unit_key or '-' }}</td>
         <td class="number">{{ item.quantity }}</td>
         <td class="number">{{ item.unit_price_label or item.gross_price_label }}</td>
