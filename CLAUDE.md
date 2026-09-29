@@ -1,10 +1,45 @@
 # Contexto de sesión — tyakxa_tny (para retomar en otra conversación)
 
-Última actualización: 2026-09-14. Este archivo es el "dónde nos quedamos",
+Última actualización: 2026-09-29. Este archivo es el "dónde nos quedamos",
 aparte de `ARQUITECTURA_TYAKXA_TNY.md` (referencia técnica estable) y de
 `docs/PLAN_ACCION_MEJORA.md` (plan de mejora por auditoría). Cuando una
 sección se resuelve, se puede recortar; mientras tanto se deja completa para
 que una sesión nueva no tenga que releer el historial de chat.
+
+## ESTADO: Dashboard y KPIs de Adser (2026-09-29) — frente actual
+
+Entrega a Adser. Rama `initAlan`; los commits de esta línea se prueban en
+local y NO se pushean hasta que Aurora los revise en el navegador.
+
+- **Registry** (`backend/app/kpis/registry.py`): cada KPI declara dirección
+  (alto/bajo es mejor), gráficas permitidas, unidad, `modo` y, si aplica,
+  `colores_categoria`. `GET /kpi_definition/` los expone al Dashboard. Las
+  filas de `kpi_definition` no vienen de una migración: `init_db.py` llama a
+  `seed_kpi_definitions()` en cada arranque (una fila por KPI del registry).
+- **Modo `snapshot` vs `vivo`**: `snapshot` se calcula por entidad-y-día
+  (job `tasks_kpis.py`); `vivo` (ej. `material_prestado_actual`) es una
+  consulta paginada "ahora" que el job se salta a propósito. Su widget es de
+  tipo `tabla` (el backend lo acepta desde esta línea).
+- **Fechas de Adser**: `incident.creation_date` viene NULL en lo migrado;
+  los KPIs de incidencias usan `incident_date`. Decisión pendiente de Alan
+  en `docs/2026-09-28_creation_date_sin_default_en_incident.md`.
+- **Frontend**: la lógica pura del Dashboard vive en `frontend/src/kpi/`
+  (no en `src/lib/`: el `.gitignore` de Python ignora cualquier `lib/`) y se
+  prueba con `npm test` (node --test, sin dependencias). Cada tarjeta se
+  pinta con el mapa `tipo_grafica → componente` de
+  `components/kpi-widgets/tipoGraficaComponentes.js`. Un widget guarda
+  `parametros.rango_relativo` además de sus fechas absolutas (aditivo).
+- **Pruebas**: las de KPI solo corren en Postgres (en SQLite se saltan sin
+  avisar): `backend/ci/run_postgres_tests.sh -k kpi` con el stack arriba.
+  Detalle en `backend/tests/README.md`.
+- **Despliegue**: pasos por cambio en `docs/despliegues/` (ej.
+  `2026-09-25_kpis_adser_permisos.md`, `2026-09-25_kpi_agregacion.md`);
+  procedimiento general en `ARQUITECTURA_TYAKXA_TNY.md` §7.1.
+- **Vista previa aislada**: `/dashboard-preview` (datos demo); sus
+  componentes viven en `frontend/src/components/kpi-widgets/`.
+- **Pendiente**: plantilla del tablero de Adser
+  (`seed_kpi_dashboard_template.py`) y confirmación de Alan sobre
+  `creation_date`.
 
 ## ESTADO: alcance por acción en permisos + equipos de usuarios — Fase 1 (2026-09-14)
 
