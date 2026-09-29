@@ -56,6 +56,7 @@ from sqlalchemy import func, or_, select
 from app.models.incident import Incident
 from app.models.incident_type import IncidentType
 from app.models.inventory_asset import InventoryAsset
+from app.models.inventory_status import InventoryStatus
 from app.models.location import Location
 from app.models.nm_incident_product import NmIncidentProduct
 from app.models.product import Product
@@ -98,6 +99,41 @@ CANCELADO = "cancelado"
 
 def _ahora() -> datetime:
     return datetime.now()
+
+
+# Lo que un vale de estos tipos le hace al PRODUCTO.
+#
+# El sistema anterior fijaba `producto.estado` segun el tipo de la incidencia: en
+# los datos de adser, el ultimo vale de 80 de 83 productos de tipo "Destruccion"
+# los dejo en DESTRUCCION, 27 de 37 de "Dañado" en DAÑADO y 65 de 72 de
+# "Extraviado" en EXTRAVIADO. El sistema nuevo perdio ese efecto: el tipo solo
+# etiquetaba reportes (`_estado_del_renglon`), asi que un vale de "Extraviado"
+# dejaba el producto como si nada.
+#
+# El estado de la pieza vive en el catalogo `inventory_status` (codigos de
+# `product`), no en el texto libre `product_status`, que se conserva como dato
+# historico -- por eso se escriben las dos cosas: las pantallas viejas pintan el
+# texto y las consultas agrupan por el catalogo.
+#
+# La clave es la descripcion del tipo tal como esta en la base, sin acentos ni
+# mayusculas, no un id: los ids cambian de una instalacion a otra.
+ESTADO_POR_TIPO = {
+    "reparacion": ("en_reparacion", "EN REPARACION"),
+    "destruccion": ("retirado", "DESTRUCCION"),
+    "danado": ("danado", "DAÑADO"),
+    "extraviado": ("extraviado", "EXTRAVIADO"),
+}
+# Los estados que dejan de ser verdad cuando la cosa regresa: lo reparado ya no
+# esta en reparacion y lo extraviado que aparece ya no esta perdido. Lo dañado
+# sigue dañado al volver, y lo destruido no vuelve.
+SE_LIMPIA_AL_VOLVER = {"reparacion", "extraviado"}
+# Lo que dice el texto historico de una pieza que esta de regreso en el almacen.
+TEXTO_DE_REGRESO = "ENTRADA"
+
+
+def _clave_de_tipo(descripcion) -> str:
+    return str(descripcion or "").strip().lower().translate(
+        str.maketrans("ñáéíóú", "naeiou"))
 
 
 def _entero(valor, campo, *, obligatorio=True):
@@ -567,12 +603,79 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
                 _sacar_del_almacen(db, renglon, user_data,
                                    id_responsable=id_responsable, vence=vence,
                                    motivo=motivo)
+            _marcar_estado_de_producto(db, id_tipo, renglones_escritos)
             db.flush()
 
         return {
             "voucher": vale.serialize(),
             "lines": _con_existencias(db, _renglones(db, vale.id_incident)),
         }
+
+
+def _estado_de_catalogo(db, codigo):
+    """El id del estado de producto con ese codigo, o None si el catalogo no lo
+    tiene. Sin el no se escribe nada: un catalogo sin sembrar no puede tumbar un
+    vale."""
+    return db.scalars(
+        select(InventoryStatus.id_inventory_status).where(
+            InventoryStatus.inventory_status_code == codigo,
+            InventoryStatus.entity_scope == "product",
+            InventoryStatus.deletion_date.is_(None),
+        ).limit(1)
+    ).first()
+
+
+def _marcar_estado_de_producto(db, id_incident_type, renglones) -> None:
+    """Fija el estado de los productos de un vale de reparacion, destruccion,
+    dañado o extraviado.
+
+    Solo productos FUNGIBLES. En uno serializado el estado es de cada pieza
+    (`inventory_asset.status`), y marcar el producto entero porque se perdio UN
+    desarmador dejaria "perdidos" a todos los demas. Esas piezas siguen su
+    propio camino.
+    """
+    tipo = db.get(IncidentType, id_incident_type)
+    destino = ESTADO_POR_TIPO.get(_clave_de_tipo(
+        getattr(tipo, "incident_type_description", None)))
+    if destino is None:
+        return
+    codigo, texto = destino
+    id_estado = _estado_de_catalogo(db, codigo)
+    if id_estado is None:
+        return
+    for id_producto in {int(r.id_product) for r in renglones
+                        if str(r.direction or "") == SALIDA}:
+        producto = db.get(Product, id_producto)
+        if producto is None or str(producto.tracking_mode or "") == "serializado":
+            continue
+        producto.id_inventory_status = id_estado
+        producto.product_status = texto
+        producto.last_update_date = _ahora()
+    db.flush()
+
+
+def _limpiar_estado_de_producto(db, vale, renglon) -> None:
+    """Quita el estado que el vale le puso a un producto cuando este regresa.
+
+    Solo si el producto TODAVIA tiene ese estado: si alguien lo cambio a mano
+    entre tanto, ya dijo lo que queria y esto no lo pisa.
+    """
+    tipo = db.get(IncidentType, vale.id_incident_type) if vale.id_incident_type else None
+    clave = _clave_de_tipo(getattr(tipo, "incident_type_description", None))
+    if clave not in SE_LIMPIA_AL_VOLVER:
+        return
+    codigo, texto = ESTADO_POR_TIPO[clave]
+    producto = db.get(Product, renglon.id_product)
+    if producto is None or str(producto.tracking_mode or "") == "serializado":
+        return
+    id_estado = _estado_de_catalogo(db, codigo)
+    if id_estado is None or producto.id_inventory_status != id_estado:
+        return
+    producto.id_inventory_status = None
+    if producto.product_status == texto:
+        producto.product_status = TEXTO_DE_REGRESO
+    producto.last_update_date = _ahora()
+    db.flush()
 
 
 def _sacar_del_almacen(db, renglon, user_data, *, id_responsable, vence, motivo):
@@ -706,6 +809,7 @@ def devolver_renglon(id_line, payload: dict, user_data: dict) -> dict:
 
         vale = _vale(db, renglon.id_incident, para_actualizar=True)
         _sincronizar_estado(db, vale)
+        _limpiar_estado_de_producto(db, vale, renglon)
 
         return {
             "line": renglon.serialize(),
@@ -899,6 +1003,7 @@ def autorizar_vale(id_incident, payload: dict, user_data: dict) -> dict:
             _sacar_del_almacen(db, renglon, user_data,
                                id_responsable=vale.id_user,
                                vence=renglon.due_date, motivo=motivo)
+        _marcar_estado_de_producto(db, vale.id_incident_type, renglones)
 
         vale.incident_status = ABIERTO
         vale.last_update_date = _ahora()
