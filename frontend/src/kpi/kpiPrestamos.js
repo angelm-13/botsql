@@ -51,6 +51,37 @@ export function filtrarPorResponsable(filas, responsable) {
   return responsable ? (filas || []).filter((fila) => fila.responsable === responsable) : (filas || []);
 }
 
+/** Los renglones de UN usuario (por `id_user`, no por nombre: dos personas pueden llamarse
+ * igual). Sin id devuelve todo. Es lo que usa el clic en una barra de otra tarjeta. */
+export function filtrarPorUsuario(filas, idUser) {
+  if (idUser === null || idUser === undefined || idUser === "") return filas || [];
+  return (filas || []).filter((fila) => String(fila.id_user) === String(idUser));
+}
+
+const sinAcentos = (texto) => String(texto ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+/** Busqueda del panel "Ver todos": todas las palabras tienen que aparecer, sin importar
+ * mayusculas ni acentos, en articulo, responsable, fecha del vale o dias. */
+export function buscarEnFilas(filas, texto) {
+  const palabras = sinAcentos(texto).split(/\s+/).filter(Boolean);
+  if (!palabras.length) return filas || [];
+  return (filas || []).filter((fila) => {
+    const paja = sinAcentos(`${fila.articulo} ${fila.responsable} ${fila.fecha_prestamo} ${fila.dias_prestado}`);
+    return palabras.every((palabra) => paja.includes(palabra));
+  });
+}
+
+// Con una lista de renglones recientes las barras no deben inflarse hasta llenar el ancho:
+// la escala nunca baja de un año.
+export const DIAS_ESCALA_MINIMA = 365;
+
+/** Contra cuantos dias se dibuja la barra de cada renglon: el del renglon mas antiguo de la
+ * lista, pero nunca menos de 365. Asi, 512 dias llenan la barra, 45 dias se ven como lo que
+ * son (poco) y una lista de puros prestamos de esta semana no sale toda "al 100 %". */
+export function escalaDeBarras(filas) {
+  return Math.max(DIAS_ESCALA_MINIMA, ...(filas || []).map((fila) => fila.dias_prestado || 0));
+}
+
 /** Ordena sin alterar la lista recibida. Empata por fecha del vale (el mas viejo
  * primero) y por articulo, para que el orden sea siempre el mismo. */
 export function ordenarFilas(filas, campo = "dias_prestado", direccion = "desc") {

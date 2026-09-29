@@ -129,6 +129,7 @@ export function propsDona({ snapshot, kpiInfo, labelForId, agruparPorPeriodo, fo
 export function filasTablaPrestamo(items, textoSinAsignar) {
   return (items || []).map((fila) => ({
     id: fila.id_nm_incident_product,
+    id_user: fila.id_user,
     articulo: fila.articulo,
     responsable: fila.responsable || textoSinAsignar,
     fecha_prestamo: fila.fecha_prestamo,

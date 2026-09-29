@@ -15,13 +15,13 @@ import {
 } from "./kpiDatos.js";
 import {
   agruparPorResponsable, duracionLegible, etiquetaDeDias, filtrarPorResponsable, gravedadDeDias, ordenarFilas,
-  anchoDeBarra, recortar, recortarGrupos, resumenDePrestamos, responsablesDe,
+  anchoDeBarra, buscarEnFilas, escalaDeBarras, filtrarPorUsuario, recortar, recortarGrupos, resumenDePrestamos, responsablesDe,
 } from "./kpiPrestamos.js";
 import {
   agruparKpis, claveDeGrupo, colorDeModulo, COLOR_DE_MODULO, estadoDeOpcion, esVariable, grupoInicial, resumenDeModulos,
 } from "./kpiSelector.js";
 import {
-  armarParametros, columnasDeWidget, estadoDeWidget, mezclaUnidades, motivoParaNoCombinar, rangoInicialDelBorrador,
+  armarParametros, columnasDeWidget, estadoDeWidget, filasDeWidget, mezclaUnidades, motivoParaNoCombinar, rangoInicialDelBorrador,
   tiposDeGraficaPermitidos, unidadDeKpi, widgetDeBorrador,
 } from "./kpiParametros.js";
 import {
@@ -186,12 +186,12 @@ test("dona: categorias fijas con su color, abiertas con la paleta y 'Otros' al f
 
 test("tabla de material prestado: id, responsable por omision y columnas", () => {
   const filas = filasTablaPrestamo([
-    { id_nm_incident_product: 11, articulo: "Taladro", responsable: null, fecha_prestamo: "2026-08-01", dias_prestado: 30 },
-    { id_nm_incident_product: 12, articulo: "Sierra", responsable: "Ana", fecha_prestamo: "2026-09-20", dias_prestado: 9 },
+    { id_nm_incident_product: 11, id_user: 5, articulo: "Taladro", responsable: null, fecha_prestamo: "2026-08-01", dias_prestado: 30 },
+    { id_nm_incident_product: 12, id_user: 6, articulo: "Sierra", responsable: "Ana", fecha_prestamo: "2026-09-20", dias_prestado: 9 },
   ], "Sin asignar");
   assert.deepEqual(filas, [
-    { id: 11, articulo: "Taladro", responsable: "Sin asignar", fecha_prestamo: "2026-08-01", dias_prestado: 30 },
-    { id: 12, articulo: "Sierra", responsable: "Ana", fecha_prestamo: "2026-09-20", dias_prestado: 9 },
+    { id: 11, id_user: 5, articulo: "Taladro", responsable: "Sin asignar", fecha_prestamo: "2026-08-01", dias_prestado: 30 },
+    { id: 12, id_user: 6, articulo: "Sierra", responsable: "Ana", fecha_prestamo: "2026-09-20", dias_prestado: 9 },
   ]);
   assert.deepEqual(filasTablaPrestamo(undefined, "x"), []);
 });
@@ -235,6 +235,8 @@ test("armarParametros: una tabla (KPI vivo) no guarda periodo ni filtros", () =>
   assert.deepEqual(armarParametros(BORRADOR, { esTabla: true }), {});
   assert.deepEqual(armarParametros({ ...BORRADOR, columnas: 1 }, { esTabla: true }), {});
   assert.deepEqual(armarParametros({ ...BORRADOR, columnas: 2 }, { esTabla: true }), { columnas: 2 });
+  assert.deepEqual(armarParametros({ ...BORRADOR, columnas: 2, filas: 2 }, { esTabla: true }), { columnas: 2, filas: 2 });
+  assert.deepEqual(armarParametros({ ...BORRADOR, columnas: 1, filas: 1 }, { esTabla: true }), {});
   const widget = widgetDeBorrador({ ...BORRADOR, tipoGrafica: "tabla", idsKpiSeleccionados: ["11"] }, { esTabla: true });
   assert.deepEqual(widget, { tipo_grafica: "tabla", ids_kpi_definition: [11], parametros: {} });
 });
@@ -700,4 +702,42 @@ test("columnasDeWidget: solo una tabla guardada con columnas 2 ocupa dos; lo dem
   assert.equal(columnasDeWidget({ tipo_grafica: "barras", parametros: { columnas: 2 } }), 1);
   assert.equal(estadoDeWidget({ tipo_grafica: "tabla", ids_kpi_definition: [11], parametros: { columnas: 2 } }, []).columnas, 2);
   assert.equal(estadoDeWidget({ tipo_grafica: "tabla", ids_kpi_definition: [11], parametros: {} }, []).columnas, 1);
+});
+
+test("filasDeWidget: solo una tabla guardada con filas 2 ocupa dos filas; lo anterior ocupa una", () => {
+  assert.equal(filasDeWidget({ tipo_grafica: "tabla", parametros: { columnas: 2, filas: 2 } }), 2);
+  assert.equal(filasDeWidget({ tipo_grafica: "tabla", parametros: { columnas: 2 } }), 1);
+  assert.equal(filasDeWidget({ tipo_grafica: "tabla", parametros: { filas: 3 } }), 1);
+  assert.equal(filasDeWidget({ tipo_grafica: "barras", parametros: { filas: 2 } }), 1);
+  assert.equal(filasDeWidget({ tipo_grafica: "tabla" }), 1);
+  assert.equal(estadoDeWidget({ tipo_grafica: "tabla", ids_kpi_definition: [11], parametros: { filas: 2 } }, []).filas, 2);
+  assert.equal(estadoDeWidget({ tipo_grafica: "tabla", ids_kpi_definition: [11], parametros: {} }, []).filas, 1);
+});
+
+test("filtrarPorUsuario filtra por id_user (no por nombre) y sin id no filtra", () => {
+  const filas = [{ id: 1, id_user: 5, responsable: "Ana" }, { id: 2, id_user: "6", responsable: "Ana" }, { id: 3, id_user: 5, responsable: "Ana" }];
+  assert.deepEqual(filtrarPorUsuario(filas, "5").map((f) => f.id), [1, 3]);
+  assert.deepEqual(filtrarPorUsuario(filas, 6).map((f) => f.id), [2]);
+  assert.equal(filtrarPorUsuario(filas, null), filas);
+  assert.deepEqual(filtrarPorUsuario(filas, 99), []);
+});
+
+test("buscarEnFilas: todas las palabras, sin importar mayusculas ni acentos, en cualquier columna", () => {
+  const filas = [
+    { id: 1, articulo: "Taladro Bosch", responsable: "José Pérez", fecha_prestamo: "2026-08-01", dias_prestado: 512 },
+    { id: 2, articulo: "Sierra circular", responsable: "Ana", fecha_prestamo: "2026-09-20", dias_prestado: 9 },
+  ];
+  assert.deepEqual(buscarEnFilas(filas, "jose").map((f) => f.id), [1]);
+  assert.deepEqual(buscarEnFilas(filas, "BOSCH taladro").map((f) => f.id), [1]);
+  assert.deepEqual(buscarEnFilas(filas, "2026-09").map((f) => f.id), [2]);
+  assert.deepEqual(buscarEnFilas(filas, "512").map((f) => f.id), [1]);
+  assert.deepEqual(buscarEnFilas(filas, "taladro ana"), []);
+  assert.equal(buscarEnFilas(filas, "  "), filas);
+});
+
+test("escalaDeBarras: el renglon mas antiguo, pero nunca menos de un ano", () => {
+  assert.equal(escalaDeBarras([{ dias_prestado: 512 }, { dias_prestado: 45 }]), 512);
+  assert.equal(escalaDeBarras([{ dias_prestado: 20 }, { dias_prestado: 3 }]), 365);
+  assert.equal(escalaDeBarras([]), 365);
+  assert.equal(anchoDeBarra(45, escalaDeBarras([{ dias_prestado: 45 }])), 12);
 });
