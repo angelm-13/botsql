@@ -475,6 +475,10 @@ export const deleteInvoiceMaterialService = (id) => request(`/invoice_material_s
 
 export const getAllKpiDefinition = () => request("/kpi_definition/");
 export const queryKpiSnapshot = (params = {}) => request("/kpi_snapshot/query", { params });
+// KPI "vivo" (modo === "vivo", ej. material_prestado_actual): no pasa por
+// kpi_snapshot, se llama directo cada vez -- ver GET /kpi_definition/<id>/vivo
+// en backend/app/routes/kpi.py.
+export const queryKpiVivo = (idKpiDefinition, params = {}) => request(`/kpi_definition/${idKpiDefinition}/vivo`, { params });
 
 // Catalogo completo de KPIs, sin el filtro de permiso puntual -- para poblar
 // el selector del gestor de permisos por KPI, no el dashboard.

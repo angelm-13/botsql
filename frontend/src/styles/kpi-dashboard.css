@@ -15,7 +15,11 @@
 .kpi-widget-placeholder{border:1px dashed #c3c2b7;border-radius:22px;min-height:240px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:#fbfaf7;color:#a6a49a;cursor:pointer;font:inherit}
 .kpi-widget-placeholder span{font-size:12px;font-weight:700}
 .kpi-widget-placeholder:hover{background:#eef2f6;border-color:#173b66;color:#173b66}
-.kpi-widget-card{background:#fff;border:1px solid #e2e8f0;border-radius:22px;padding:18px;display:flex;flex-direction:column;gap:10px;box-shadow:0 12px 30px rgba(15,23,42,.05);min-width:0}
+.kpi-widget-card{background:#fff;border:1px solid #e2e8f0;border-left:4px solid var(--kpi-acento,#e2e8f0);border-radius:22px;padding:18px;display:flex;flex-direction:column;gap:10px;box-shadow:0 12px 30px rgba(15,23,42,.05);min-width:0;transition:transform .18s ease,box-shadow .18s ease}
+/* Elevacion mientras se arrastra -- reemplaza el desvanecido (opacity) de
+   antes, que apagaba la tarjeta justo cuando mas se necesita verla bien. */
+.kpi-widget-dragging{box-shadow:0 22px 45px rgba(15,23,42,.22);transform:scale(1.02);cursor:grabbing}
+@media(prefers-reduced-motion:reduce){.kpi-widget-card{transition:none}.kpi-widget-dragging{transform:none}}
 .kpi-widget-card-header{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
 .kpi-widget-card-header h4{margin:0;font-size:16px;color:#173b66;line-height:1.25}
 .kpi-widget-card-actions{display:flex;gap:6px;flex-shrink:0}
@@ -42,8 +46,14 @@
 .kpi-number-module-icon{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:34px;height:34px;border-radius:50%}
 .kpi-number-sparkline{flex-shrink:0}
 .kpi-delta{display:inline-flex;align-items:center;gap:4px;font-weight:800;font-size:13px}
-.kpi-delta.up{color:#006300}
-.kpi-delta.down{color:#d03b3b}
+/* Vivo, no oscuro -- reemplaza el verde/rojo apagados de antes. La flecha
+   (Arriba/Abajo) siempre muestra la direccion real del cambio; este color
+   dice si esa direccion es buena o mala segun `direccion` del KPI -- dos
+   senales independientes, nunca solo el color. */
+.kpi-delta.bueno{color:#1f9d5c}
+.kpi-delta.malo{color:#ef6f5c}
+.kpi-delta.neutral{color:#8a96a5;font-weight:700}
+.kpi-number-range-hint{font-size:11px;color:#8a96a5;white-space:nowrap}
 
 .kpi-empty-inline{color:#8a96a5;text-align:center;padding:24px 8px;font-size:13px}
 .kpi-error-inline{color:#991b1b;background:#fff5f5;border:1px solid #fecaca;border-radius:12px;padding:12px 14px;font-size:13px}
@@ -184,6 +194,36 @@
   .kpi-panel-columns{grid-template-columns:1fr}
   .kpi-panel-col:last-child{grid-column:auto}
 }
+
+/* Tabla del KPI "vivo" (material_prestado_actual). El ancho de la tarjeta ya
+   es angosto (grid de tarjetas, no de ancho completo), asi que el layout de
+   tarjeta-por-renglon aplica antes que en el resto del sitio -- 560px, no
+   720px. */
+.kpi-tabla-vivo{width:100%;overflow-x:auto}
+.kpi-tabla-prestamo{width:100%;border-collapse:collapse;font-size:13px}
+.kpi-tabla-prestamo th{text-align:left;color:#8a96a5;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;padding:0 8px 8px;border-bottom:1px solid #e2e8f0}
+.kpi-tabla-prestamo td{padding:9px 8px;border-bottom:1px solid #f1f5f9;color:#334155;vertical-align:middle}
+.kpi-tabla-prestamo tr:last-child td{border-bottom:0}
+/* Atrasado: acento ambar/coral suave, nunca el cafe/vino de antes -- el color
+   se refuerza con la barra de avance llena, no es la unica senal. */
+.kpi-fila-atrasada td{background:#fff7ed}
+.kpi-fila-atrasada .kpi-dias-avance{background:#ef6f5c}
+.kpi-dias-prestado{display:flex;align-items:center;gap:8px;min-width:90px}
+.kpi-dias-barra{flex:1;height:6px;border-radius:999px;background:#e2e8f0;overflow:hidden}
+.kpi-dias-avance{height:100%;background:#f0a93b;border-radius:999px}
+.kpi-tabla-total-hint{margin:8px 2px 0;color:#8a96a5;font-size:11px;text-align:right}
+
+@media(max-width:560px){
+  .kpi-tabla-prestamo thead{display:none}
+  .kpi-tabla-prestamo,.kpi-tabla-prestamo tbody,.kpi-tabla-prestamo tr,.kpi-tabla-prestamo td{display:block;width:100%}
+  .kpi-tabla-prestamo tr{border:1px solid #e2e8f0;border-radius:14px;padding:10px 12px;margin-bottom:10px}
+  .kpi-tabla-prestamo tr:last-child{margin-bottom:0}
+  .kpi-tabla-prestamo td{border-bottom:0;padding:4px 0;display:flex;justify-content:space-between;gap:10px}
+  .kpi-tabla-prestamo td::before{content:attr(data-label);color:#8a96a5;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.03em}
+  .kpi-fila-atrasada{background:#fff7ed;border-radius:14px}
+}
+
+@media(prefers-reduced-motion:reduce){.kpi-dias-avance{transition:none}}
 
 /* --- Reporte PDF (ver generarReportePdf en Dashboard.jsx) --- */
 
