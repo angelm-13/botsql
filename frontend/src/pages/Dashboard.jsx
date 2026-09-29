@@ -26,10 +26,11 @@ import PageHeader from "../components/PageHeader.jsx";
 import TIPO_GRAFICA_COMPONENTE from "../components/kpi-widgets/tipoGraficaComponentes";
 import Skeleton from "../components/kpi-widgets/Skeleton";
 import {
-  CATEGORICAL, colorDeKpi, colorEfectivoDeKpi, labelForDimension,
+  CATEGORICAL, colorDeKpi, colorEfectivoDeKpi, labelForDimension, unidadInfo,
 } from "../kpi/kpiDatos.js";
 import {
-  armarParametros, estadoDeWidget, rangoInicialDelBorrador, tiposDeGraficaPermitidos as tiposPermitidosPorKpi, widgetDeBorrador,
+  armarParametros, estadoDeWidget, mezclaUnidades, motivoParaNoCombinar, rangoInicialDelBorrador,
+  tiposDeGraficaPermitidos as tiposPermitidosPorKpi, unidadDeKpi, widgetDeBorrador,
 } from "../kpi/kpiParametros.js";
 import {
   DESFASES_DE_COMPARACION, ETIQUETA_RANGO_POR_OMISION, RANGOS_RELATIVOS, RANGO_PERSONALIZADO, fechaLocalIso,
@@ -1672,8 +1673,31 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
     }
   }
 
+  // Por que este KPI no se puede sumar a los que ya se eligieron (otra unidad, u
+  // otra clase de KPI), o null. Solo aplica al combinar varios en un grafico.
+  function motivoDeBloqueo(kpi) {
+    if (!multiKpiPermitido || idsKpiSeleccionados.includes(String(kpi.id_kpi_definition))) return null;
+    return motivoParaNoCombinar(kpisSeleccionadosInfo, kpi);
+  }
+
+  function textoDeBloqueo(kpi, motivo) {
+    if (motivo === "modo") return tx("kpi_mode_mismatch", "No se puede combinar: un KPI en vivo (tabla) no comparte gráfico con uno de serie.");
+    const unidadElegida = unidadInfo(unidadDeKpi(kpisSeleccionadosInfo[0])).etiquetaSelector;
+    const unidadKpi = unidadInfo(unidadDeKpi(kpi)).etiquetaSelector;
+    return tx(
+      "kpi_unit_mismatch",
+      `No se puede combinar: este KPI se mide en ${unidadKpi} y los elegidos en ${unidadElegida}. Con unidades distintas comparten eje y una barra queda invisible.`,
+    );
+  }
+
   function toggleKpi(idKpi) {
     setAvisoKpi("");
+    const candidato = kpiCatalog.find((kpi) => String(kpi.id_kpi_definition) === idKpi);
+    const motivo = candidato ? motivoDeBloqueo(candidato) : null;
+    if (motivo) {
+      setAvisoKpi(textoDeBloqueo(candidato, motivo));
+      return;
+    }
     let proximos;
     if (multiKpiPermitido) {
       proximos = idsKpiSeleccionados.includes(idKpi)
@@ -1682,14 +1706,7 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
     } else {
       proximos = idsKpiSeleccionados.length === 1 && idsKpiSeleccionados[0] === idKpi ? [] : [idKpi];
     }
-    let infos = proximos.map((id) => kpiCatalog.find((kpi) => String(kpi.id_kpi_definition) === id)).filter(Boolean);
-    // Dos KPIs sin ninguna grafica en comun (uno "vivo" y uno de serie) no
-    // se pueden combinar: se queda solo el que se acaba de elegir.
-    if (infos.length > 1 && tiposDeGraficaPermitidos(infos).length === 0) {
-      proximos = [idKpi];
-      infos = infos.filter((kpi) => String(kpi.id_kpi_definition) === idKpi);
-      setAvisoKpi(tx("kpi_incompatible", "Ese KPI no se puede combinar con los anteriores. Se conservó solo el nuevo."));
-    }
+    const infos = proximos.map((id) => kpiCatalog.find((kpi) => String(kpi.id_kpi_definition) === id)).filter(Boolean);
     // Si la grafica actual ya no le sirve a lo elegido, se pasa a la que el
     // propio KPI declara como preferida (o a la primera que admita).
     const permitidos = tiposDeGraficaPermitidos(infos);
@@ -1725,12 +1742,15 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
     // KPI (barras/linea/area) -- en "numero"/"dona" el color no depende del
     // KPI, no hay nada que este swatch pudiera cambiar.
     const puedeElegirColor = multiKpiPermitido && posicion >= 0;
+    const motivo = motivoDeBloqueo(kpi);
     return (
       <div className="kpi-chip-with-swatch" key={kpi.id_kpi_definition}>
         <button
           type="button"
           className={`kpi-chip-option ${posicion >= 0 ? "active" : ""}`}
           onClick={() => toggleKpi(idStr)}
+          disabled={Boolean(motivo)}
+          title={motivo ? textoDeBloqueo(kpi, motivo) : undefined}
         >
           {multiKpiPermitido && posicion >= 0 && <span className="kpi-chip-badge">{posicion + 1}</span>}
           {kpi.etiqueta || kpi.clave}
@@ -1907,6 +1927,11 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
                 )}
               </span>
               {avisoKpi && <p className="kpi-inline-notice">{avisoKpi}</p>}
+              {mezclaUnidades(kpisSeleccionadosInfo) && (
+                <p className="kpi-inline-notice">
+                  {tx("kpi_units_mixed_legacy", "Este gráfico combina KPIs de unidades distintas (se armó antes de que el editor lo impidiera): sigue viéndose igual, pero una barra puede quedar muy pequeña. Quita un KPI para separarlos.")}
+                </p>
+              )}
               {necesitaCategoria && (
                 <div className="kpi-icon-option-group" role="group" aria-label={tx("kpi_category", "Categoría")}>
                   {modulosDisponibles.map((modulo) => {

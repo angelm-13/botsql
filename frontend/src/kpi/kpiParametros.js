@@ -125,3 +125,32 @@ export function tiposDeGraficaPermitidos(kpiInfos, todosLosTipos) {
   const todosVivos = kpiInfos.every((info) => info.modo === "vivo");
   return todosVivos ? permitidos : permitidos.filter((tipo) => tipo !== "tabla");
 }
+
+/** La unidad con la que se mide un KPI. Sin unidad declarada, "numero" (igual
+ * que unidadInfo en kpiDatos.js). */
+export function unidadDeKpi(info) {
+  return info?.unidad || "numero";
+}
+
+/** Si el grafico ya mezcla unidades distintas (un widget guardado antes de la
+ * regla de unidades). Solo informativo: esos widgets se siguen viendo igual. */
+export function mezclaUnidades(kpiInfos) {
+  return new Set(kpiInfos.map(unidadDeKpi)).size > 1;
+}
+
+/** Por que `candidato` NO se puede sumar a un grafico que ya lleva
+ * `seleccionados`, o null si se puede.
+ *
+ * - "unidad": otra unidad. Dos KPIs con unidades distintas (un porcentaje y una
+ *   cantidad) comparten el eje Y del grafico y el de escala menor queda
+ *   invisible.
+ * - "modo": un KPI en vivo (tabla) y uno de serie no comparten ninguna grafica.
+ */
+export function motivoParaNoCombinar(seleccionados, candidato) {
+  if (!seleccionados.length) return null;
+  const esVivo = candidato.modo === "vivo";
+  if (seleccionados.some((info) => (info.modo === "vivo") !== esVivo)) return "modo";
+  const unidad = unidadDeKpi(candidato);
+  if (seleccionados.some((info) => unidadDeKpi(info) !== unidad)) return "unidad";
+  return null;
+}

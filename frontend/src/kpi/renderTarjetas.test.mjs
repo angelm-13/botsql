@@ -155,3 +155,16 @@ test("estados de carga y de error del cuerpo", () => {
   assert.ok(pintarCuerpo({ widget, datos: datosDe(widget, { error: "errors.rango_excede_limite" }) }).includes("excede el máximo"));
   assert.ok(pintarCuerpo({ widget, datos: datosDe(widget, { error: "errors.request_failed" }) }).includes("errors.request_failed"));
 });
+
+test("un widget guardado con unidades mezcladas (porcentaje + cantidad) se sigue pintando", () => {
+  const catalogo = [
+    { ...CATALOGO[0], id_kpi_definition: 3, unidad: "porcentaje", etiqueta: "Incidentes resueltos" },
+    { ...CATALOGO[0], id_kpi_definition: 5, unidad: "numero", etiqueta: "Cancelaciones" },
+  ];
+  const widget = { id_kpi_dashboard_widget: 1, tipo_grafica: "barras", ids_kpi_definition: [3, 5], parametros: { fecha_inicio: "2026-08-01", fecha_fin: "2026-08-31" } };
+  const tarjeta = pintarTarjeta({ widget, kpiCatalog: catalogo });
+  assert.ok(tarjeta.includes("Incidentes resueltos + Cancelaciones"));
+  const snapshot = { rango_a: { total: 14, por_empleado: { 5: 10, 7: 4 }, por_periodo: {} }, rango_b: null };
+  const datos = { snapshots: [snapshot, snapshot], loading: false, error: "", vivoItems: [], vivoTotal: 0, kpiInfos: catalogo, idsUsados: [3, 5], esTablaVivo: false };
+  assert.ok(pintarCuerpo({ widget, datos }).length > 0);
+});

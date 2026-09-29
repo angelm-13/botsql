@@ -13,7 +13,10 @@ import {
   CATEGORICAL, COLOR_OTHERS, buildMultiSeriesData, buildPieData, buildSeriesData,
   colorDeKpi, colorEfectivoDeKpi, formatConUnidad, labelForDimension,
 } from "./kpiDatos.js";
-import { armarParametros, estadoDeWidget, rangoInicialDelBorrador, tiposDeGraficaPermitidos, widgetDeBorrador } from "./kpiParametros.js";
+import {
+  armarParametros, estadoDeWidget, mezclaUnidades, motivoParaNoCombinar, rangoInicialDelBorrador,
+  tiposDeGraficaPermitidos, unidadDeKpi, widgetDeBorrador,
+} from "./kpiParametros.js";
 import {
   fechaLocalIso, parametrosEfectivos, periodoAnterior, rangoDesfasado, resolverRangoRelativo,
 } from "./kpiRango.js";
@@ -441,4 +444,40 @@ test("sin desfase, comparar sigue siendo contra el periodo anterior (lo de antes
   const guardado = armarParametros(estado, { hoy: HOY });
   assert.equal(guardado.comparar_anterior, true);
   assert.ok(!("comparar_desfase_dias" in guardado));
+});
+
+// --- unidades: solo se combinan KPIs de la misma unidad ----------------------
+const PORCENTAJE = { id_kpi_definition: 3, clave: "incidentes_resueltos_por_empleado", unidad: "porcentaje", modo: "snapshot" };
+const CANTIDAD = { id_kpi_definition: 5, clave: "cancelaciones_por_empleado", unidad: "numero", modo: "snapshot" };
+const OTRA_CANTIDAD = { id_kpi_definition: 6, clave: "incidencias_abiertas_por_empleado", unidad: "numero", modo: "snapshot" };
+const SIN_UNIDAD = { id_kpi_definition: 7, clave: "sin_unidad", modo: "snapshot" };
+const VIVO = { id_kpi_definition: 11, clave: "material_prestado_actual", unidad: "piezas", modo: "vivo" };
+
+test("un porcentaje y una cantidad NO se combinan (el caso que dejaba una barra invisible)", () => {
+  assert.equal(motivoParaNoCombinar([PORCENTAJE], CANTIDAD), "unidad");
+  assert.equal(motivoParaNoCombinar([CANTIDAD], PORCENTAJE), "unidad");
+});
+
+test("dos KPIs de la misma unidad si; y sin nada elegido todo se puede elegir", () => {
+  assert.equal(motivoParaNoCombinar([CANTIDAD], OTRA_CANTIDAD), null);
+  assert.equal(motivoParaNoCombinar([], PORCENTAJE), null);
+  // Un KPI sin unidad declarada cuenta como "numero", igual que al mostrarlo.
+  assert.equal(unidadDeKpi(SIN_UNIDAD), "numero");
+  assert.equal(motivoParaNoCombinar([CANTIDAD], SIN_UNIDAD), null);
+});
+
+test("la regla mira TODOS los ya elegidos, y un KPI en vivo no se mezcla con uno de serie", () => {
+  assert.equal(motivoParaNoCombinar([CANTIDAD, OTRA_CANTIDAD], PORCENTAJE), "unidad");
+  assert.equal(motivoParaNoCombinar([CANTIDAD], VIVO), "modo");
+  assert.equal(motivoParaNoCombinar([VIVO], CANTIDAD), "modo");
+});
+
+test("un widget viejo con unidades mezcladas se detecta, pero no se le cambia nada", () => {
+  const viejo = { id_kpi_dashboard_widget: 9, tipo_grafica: "barras", ids_kpi_definition: [3, 5], parametros: { fecha_inicio: "2026-08-01", fecha_fin: "2026-08-31" } };
+  assert.equal(mezclaUnidades([PORCENTAJE, CANTIDAD]), true);
+  assert.equal(mezclaUnidades([CANTIDAD, OTRA_CANTIDAD]), false);
+  // Abrirlo y guardarlo tal cual no altera los KPIs ni los parametros.
+  const estado = estadoDeWidget(viejo, [PORCENTAJE, CANTIDAD], HOY);
+  assert.deepEqual(estado.idsKpiSeleccionados, ["3", "5"]);
+  assert.deepEqual(armarParametros(estado, { hoy: HOY }), viejo.parametros);
 });
