@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Moon, Sun } from "lucide-react";
 import "../styles/kpi-widgets.css";
+import "../styles/kpi-editor.css";
 import "../styles/dashboard-preview.css";
 import WidgetCard from "../components/kpi-widgets/WidgetCard";
 import Skeleton from "../components/kpi-widgets/Skeleton";

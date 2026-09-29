@@ -247,3 +247,17 @@
    foto de la pantalla de administracion. */
 body.kpi-pdf-exporting .kpi-widget-placeholder{display:none}
 body.kpi-pdf-exporting .kpi-widget-card-actions{display:none}
+
+/* --- Editor de graficos (ver KpiWidgetPanel): tipo de grafica ----------- */
+.kpi-icon-option{position:relative}
+.kpi-icon-option:disabled{opacity:.4;cursor:not-allowed}
+.kpi-icon-option .kpi-editor-tipo-check{position:absolute;top:6px;right:6px}
+
+/* --- Tarjeta recien agregada: entra desde abajo con un halo que se apaga --- */
+@keyframes kpi-widget-entrada{
+  from{opacity:0;transform:translateY(16px) scale(.97);box-shadow:0 0 0 0 transparent}
+  60%{opacity:1;transform:none;box-shadow:0 0 0 4px color-mix(in srgb,var(--kpi-acento,#2a78d6) 35%,transparent)}
+  to{opacity:1;transform:none;box-shadow:0 0 0 0 transparent}
+}
+.kpi-widget-entrada{animation:kpi-widget-entrada .9s cubic-bezier(.2,.8,.2,1) both}
+@media(prefers-reduced-motion:reduce){.kpi-widget-entrada{animation:none}}

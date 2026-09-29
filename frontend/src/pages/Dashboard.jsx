@@ -2,9 +2,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   AreaChart as AreaChartIcon, BarChart2, Boxes, ChevronDown, ChevronUp,
-  ClipboardList, FileDown, FileText, FlaskConical, GripVertical, Hash, LineChart as LineChartIcon,
+  Check, ClipboardList, FileDown, FileText, FlaskConical, GripVertical, Hash, LineChart as LineChartIcon,
   Loader2, Pencil, PieChart as PieChartIcon, Plus, Receipt,
-  RefreshCw, SlidersHorizontal, Trash2, User,
+  RefreshCw, SlidersHorizontal, Table as TableIcon, Trash2, User,
 } from "lucide-react";
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from "@dnd-kit/sortable";
@@ -12,12 +12,15 @@ import { CSS as DndCss } from "@dnd-kit/utilities";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import { useI18n } from "../i18n";
+import FormularioPlegable from "../components/FormularioPlegable.jsx";
+import useReducedMotion from "../components/kpi-widgets/useReducedMotion";
 import {
   getAllKpiDashboard, createKpiDashboard, updateKpiDashboard, deleteKpiDashboard,
   getAllKpiDashboardWidget, createKpiDashboardWidget, updateKpiDashboardWidget, deleteKpiDashboardWidget,
   getAllKpiDefinition, queryKpiSnapshot, queryKpiVivo, getAllUser, getAllDepartment, getAllProduct,
 } from "../api";
 import "../styles/kpi-widgets.css";
+import "../styles/kpi-editor.css";
 import "../styles/kpi-dashboard.css";
 import PageHeader from "../components/PageHeader.jsx";
 import TIPO_GRAFICA_COMPONENTE from "../components/kpi-widgets/tipoGraficaComponentes";
@@ -35,6 +38,9 @@ const CHART_TYPES = [
   { value: "linea", label: "Línea" },
   { value: "area", label: "Área" },
   { value: "dona", label: "Dona" },
+  // Solo para KPIs "vivos" (material_prestado_actual): lo permite el propio
+  // KPI via `graficas_permitidas`, no esta lista.
+  { value: "tabla", label: "Tabla" },
 ];
 
 // Unicos tipos que pueden combinar varios KPIs en el mismo widget -- "numero"
@@ -72,6 +78,7 @@ const CHART_TYPE_ICONS = {
   linea: LineChartIcon,
   area: AreaChartIcon,
   dona: PieChartIcon,
+  tabla: TableIcon,
 };
 
 // Mismo icono que ya usa el menu lateral para cada modulo (`groupIcons` en
@@ -372,7 +379,12 @@ const DATE_SHORTCUTS = [
 function defaultPanelState() {
   return {
     editingWidgetId: null,
-    colapsado: false,
+    // Cerrado por omision: el editor va debajo de las graficas y solo se abre
+    // cuando hace falta (ver KpiWidgetPanel / FormularioPlegable).
+    colapsado: true,
+    // Paso del asistente (0 = Que medir); vive aqui, no en el panel, para que
+    // el borrador sobreviva a cambiar de tablero.
+    paso: 0,
     idsKpiSeleccionados: [],
     categoriaKpi: "",
     tipoGrafica: "numero",
@@ -547,6 +559,46 @@ export default function Dashboard() {
   const resetPanelState = useCallback((idDashboard) => {
     setPanelStateByDashboard((prev) => ({ ...prev, [idDashboard]: defaultPanelState() }));
   }, []);
+
+  const reducirMovimiento = useReducedMotion();
+  // Ancla del editor (debajo de la cuadricula) y contador de "llevame al
+  // editor": cada pedido incrementa el contador y el efecto de abajo hace el
+  // scroll suave -- ver abrirEditor y onAbierto del panel.
+  const editorRef = useRef(null);
+  const [pedidoScrollEditor, setPedidoScrollEditor] = useState(0);
+  // Widget recien creado: su tarjeta entra con animacion y la pantalla se
+  // lleva hasta ella (el editor se cierra solo al agregar, ver handleSaveWidget).
+  const [idWidgetNuevo, setIdWidgetNuevo] = useState(null);
+
+  // Abre el editor de ESTE tablero con un borrador nuevo (o con el widget que
+  // se va a editar, via `estado`) y pide el scroll suave hasta el.
+  const abrirEditor = useCallback((idDashboard, estado = {}) => {
+    setPanelStateByDashboard((prev) => ({
+      ...prev,
+      [idDashboard]: { ...defaultPanelState(), ...estado, colapsado: false },
+    }));
+    setPedidoScrollEditor((n) => n + 1);
+  }, []);
+
+  useEffect(() => {
+    if (!pedidoScrollEditor) return undefined;
+    // El panel anima su alto al abrirse (.22s): si el scroll saliera al
+    // instante, llegaria a la altura que el documento tiene TODAVIA y se
+    // quedaria corto. Con reduced-motion no hay animacion que esperar.
+    const espera = reducirMovimiento ? 0 : 260;
+    const cronometro = setTimeout(() => {
+      editorRef.current?.scrollIntoView({ behavior: reducirMovimiento ? "auto" : "smooth", block: "start" });
+    }, espera);
+    return () => clearTimeout(cronometro);
+  }, [pedidoScrollEditor, reducirMovimiento]);
+
+  useEffect(() => {
+    if (!idWidgetNuevo) return undefined;
+    document.querySelector(`[data-widget-id="${idWidgetNuevo}"]`)
+      ?.scrollIntoView({ behavior: reducirMovimiento ? "auto" : "smooth", block: "nearest" });
+    const cronometro = setTimeout(() => setIdWidgetNuevo(null), 1600);
+    return () => clearTimeout(cronometro);
+  }, [idWidgetNuevo, reducirMovimiento]);
 
   const [placeholderCount, gridRefDeSondeo] = useCompleteGridPlaceholders(widgets.length);
   // El nodo real del grid, en un ref mutable (no en el estado interno del
@@ -845,9 +897,9 @@ export default function Dashboard() {
     const ids = Array.isArray(widget.ids_kpi_definition) ? widget.ids_kpi_definition.map(String) : [];
     const primerKpi = kpiCatalog.find((kpi) => String(kpi.id_kpi_definition) === ids[0]);
     const parametros = widget.parametros || {};
-    updatePanelState(activeId, {
+    abrirEditor(activeId, {
       editingWidgetId: widget.id_kpi_dashboard_widget,
-      colapsado: false,
+      paso: 0,
       idsKpiSeleccionados: ids,
       categoriaKpi: primerKpi?.modulo || "",
       tipoGrafica: widget.tipo_grafica || "numero",
@@ -868,15 +920,18 @@ export default function Dashboard() {
   }
 
   async function handleSaveWidget(payload, editingWidgetId) {
+    let creado = null;
     if (editingWidgetId) {
       await updateKpiDashboardWidget(editingWidgetId, payload);
     } else {
-      await createKpiDashboardWidget(activeId, payload);
+      creado = await createKpiDashboardWidget(activeId, payload);
     }
-    // El panel es permanente -no hay overlay que cerrar-, asi que "terminar"
-    // significa vaciar el borrador de ESTE tablero, listo para el siguiente.
+    // "Terminar" vacia el borrador de ESTE tablero, listo para el siguiente;
+    // el panel se cierra solo (cerrarAlEnviar de FormularioPlegable) y la
+    // tarjeta nueva entra con animacion.
     resetPanelState(activeId);
     await loadWidgets(activeId);
+    if (creado?.id_kpi_dashboard_widget) setIdWidgetNuevo(creado.id_kpi_dashboard_widget);
   }
 
   const activeDashboard = useMemo(
@@ -890,6 +945,14 @@ export default function Dashboard() {
         eyebrow={t("common.dashboard")}
         titulo={tx("title", "Tableros de KPIs")}
       >
+        <button
+          type="button"
+          className="button ghost"
+          onClick={() => setMostrarDialogoExportarPdf(true)}
+          disabled={exportandoPdf || !activeDashboard}
+        >
+          <FileDown size={16} />{tx("pdf_report_button", "Generar reporte PDF")}
+        </button>
         <button className="button ghost" onClick={() => loadDashboards()} disabled={loadingDashboards}>
         <RefreshCw size={16} />{loadingDashboards ? t("common.loading") : t("common.refresh")}
         </button>
@@ -962,29 +1025,6 @@ export default function Dashboard() {
 
       {activeDashboard && (
         <div className="kpi-dashboard-body">
-          {/* Panel permanente: ya no se monta/desmonta con un clic (ver
-              PANEL "AGREGAR GRAFICO" ESTATICO POR DASHBOARD). `key={activeId}`
-              fuerza una instancia nueva por tablero para que el estado
-              efimero de UI (error, saving, aviso) del componente arranque
-              limpio al cambiar de tablero -- el borrador real (KPIs, fechas,
-              filtros) vive arriba en `panelStateByDashboard` y sobrevive al
-              remount via props. */}
-          <KpiWidgetPanel
-            key={activeId}
-            panelState={currentPanelState}
-            onChangePanelState={(patch) => updatePanelState(activeId, patch)}
-            kpiCatalog={kpiCatalog}
-            users={users}
-            departments={departments}
-            onCancel={() => resetPanelState(activeId)}
-            onSave={(payload) => handleSaveWidget(payload, currentPanelState.editingWidgetId)}
-            onAddWidget={() => resetPanelState(activeId)}
-            onExportPdf={() => setMostrarDialogoExportarPdf(true)}
-            exportandoPdf={exportandoPdf}
-            t={t}
-            tx={tx}
-          />
-
           {widgetsError && <div className="alert error">{t(widgetsError, widgetsError)}</div>}
           {loadingWidgets && <div className="alert">{t("common.loading")}</div>}
 
@@ -1003,6 +1043,7 @@ export default function Dashboard() {
                   onEdit={() => handleEditWidget(widget)}
                   onDelete={() => handleDeleteWidget(widget)}
                   onReady={handleWidgetReady}
+                  esNuevo={widget.id_kpi_dashboard_widget === idWidgetNuevo}
                   t={t}
                   tx={tx}
                 />
@@ -1018,7 +1059,7 @@ export default function Dashboard() {
                   type="button"
                   key={`kpi-widget-placeholder-${index}`}
                   className="kpi-widget-placeholder"
-                  onClick={() => resetPanelState(activeId)}
+                  onClick={() => abrirEditor(activeId)}
                   title={tx("add_widget", "Agregar gráfico")}
                 >
                   <Plus size={22} />
@@ -1029,6 +1070,29 @@ export default function Dashboard() {
             </SortableContext>
             </DndContext>
           )}
+
+          {/* Editor de graficos, DEBAJO de la cuadricula: lo que se mira va
+              arriba y lo que se arma de vez en cuando, abajo (mismo criterio
+              que FormularioPlegable en el resto de las pantallas). `key`
+              fuerza una instancia nueva por tablero para que el estado
+              efimero de UI (error, saving, aviso) arranque limpio al cambiar
+              de tablero -- el borrador real (KPIs, fechas, filtros) vive en
+              `panelStateByDashboard` y sobrevive al remount via props. */}
+          <div className="kpi-editor-ancla" ref={editorRef}>
+            <KpiWidgetPanel
+              key={activeId}
+              panelState={currentPanelState}
+              onChangePanelState={(patch) => updatePanelState(activeId, patch)}
+              kpiCatalog={kpiCatalog}
+              users={users}
+              departments={departments}
+              onCancel={() => resetPanelState(activeId)}
+              onAbierto={() => setPedidoScrollEditor((n) => n + 1)}
+              onSave={(payload) => handleSaveWidget(payload, currentPanelState.editingWidgetId)}
+              t={t}
+              tx={tx}
+            />
+          </div>
         </div>
       )}
 
@@ -1055,13 +1119,13 @@ function SortableKpiWidgetCard(props) {
     zIndex: isDragging ? 1 : "auto",
   };
   return (
-    <div ref={setNodeRef} style={style} className={isDragging ? "kpi-widget-dragging" : ""}>
+    <div ref={setNodeRef} style={style} className={isDragging ? "kpi-widget-dragging" : ""} data-widget-id={widget.id_kpi_dashboard_widget}>
       <KpiWidgetCard {...props} dragHandleProps={{ ...attributes, ...listeners }} isDragging={isDragging} />
     </div>
   );
 }
 
-function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, formatNumber, onEdit, onDelete, onReady, t, tx, dragHandleProps, isDragging, animar }) {
+function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, formatNumber, onEdit, onDelete, onReady, t, tx, dragHandleProps, isDragging, animar, esNuevo }) {
   const [snapshots, setSnapshots] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -1195,7 +1259,7 @@ function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, formatNumb
 
   return (
     <article
-      className={`kpi-widget-card ${isDragging ? "kpi-widget-dragging" : ""}`}
+      className={`kpi-widget-card ${isDragging ? "kpi-widget-dragging" : ""} ${esNuevo ? "kpi-widget-entrada" : ""}`.trim()}
       style={{ "--kpi-acento": colorAcento }}
     >
       <div className="kpi-widget-card-header">
@@ -1404,10 +1468,23 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, fo
   return <Componente {...props} tipo={widget.tipo_grafica} animar={animar} />;
 }
 
-function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, departments, onCancel, onSave, onAddWidget, onExportPdf, exportandoPdf, t, tx }) {
+// Tipos de grafica que admiten TODOS los KPIs elegidos a la vez (interseccion
+// de sus `graficas_permitidas`). Sin KPI elegido, todos menos "tabla", que
+// solo existe para KPIs "vivos". Un KPI que no trae la lista no restringe.
+function tiposDeGraficaPermitidos(kpiInfos) {
+  const todos = CHART_TYPES.map((opt) => opt.value);
+  if (kpiInfos.length === 0) return todos.filter((tipo) => tipo !== "tabla");
+  return kpiInfos.reduce((permitidos, info) => {
+    const lista = Array.isArray(info.graficas_permitidas) && info.graficas_permitidas.length ? info.graficas_permitidas : todos.filter((tipo) => tipo !== "tabla");
+    return permitidos.filter((tipo) => lista.includes(tipo));
+  }, todos);
+}
+
+function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, departments, onCancel, onSave, onAbierto, t, tx }) {
   const {
     editingWidgetId,
     colapsado,
+    paso,
     idsKpiSeleccionados,
     categoriaKpi,
     tipoGrafica,
@@ -1472,6 +1549,29 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
   const primeraDimension = kpisSeleccionadosInfo[0]?.dimensiones?.[0];
   const tieneBajoStockSeleccionado = kpisSeleccionadosInfo.some((kpi) => kpi.clave === "articulos_bajo_stock");
 
+  // Que tipos de grafica admite lo elegido: la interseccion de las
+  // `graficas_permitidas` de cada KPI (las declara el registry del backend).
+  // Sin KPI elegido todos menos "tabla", que solo existe para KPIs "vivos".
+  // Un KPI sin lista (fila huerfana) no restringe nada.
+  const tiposPermitidos = useMemo(
+    () => tiposDeGraficaPermitidos(kpisSeleccionadosInfo),
+    [kpisSeleccionadosInfo],
+  );
+  const esTabla = tipoGrafica === "tabla";
+
+  // Un widget "tabla" (KPI vivo) no tiene periodo ni filtros: son datos de
+  // "ahora". Su asistente es de un solo paso.
+  const pasos = esTabla
+    ? [{ clave: "medir", etiqueta: tx("step_measure", "Qué medir") }]
+    : [
+      { clave: "medir", etiqueta: tx("step_measure", "Qué medir") },
+      { clave: "periodo", etiqueta: tx("step_period", "Periodo") },
+      { clave: "filtros", etiqueta: tx("step_filters", "Filtros") },
+    ];
+  const pasoActual = Math.min(paso || 0, pasos.length - 1);
+  const esUltimoPaso = pasoActual === pasos.length - 1;
+  const puedeAvanzar = pasoActual === 0 ? idsKpiSeleccionados.length > 0 : true;
+
   // Para el resumen del picker desplegable de variables (ver KpiDropdownPicker).
   const variablesSeleccionadas = kpisSeleccionadosInfo.filter((kpi) => kpi.dimensiones?.[0] === "global");
 
@@ -1490,6 +1590,7 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
   // conserva solo el primero y se avisa, en vez de guardar una combinacion
   // que ese tipo de grafica no sabe representar.
   function aplicarTipoGrafica(valor) {
+    if (!tiposPermitidos.includes(valor)) return;
     if (!esTipoMultiKpi(valor) && idsKpiSeleccionados.length > 1) {
       const conservado = idsKpiSeleccionados[0];
       const kpiConservado = kpiCatalog.find((kpi) => String(kpi.id_kpi_definition) === conservado);
@@ -1503,17 +1604,29 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
 
   function toggleKpi(idKpi) {
     setAvisoKpi("");
+    let proximos;
     if (multiKpiPermitido) {
-      onChangePanelState({
-        idsKpiSeleccionados: idsKpiSeleccionados.includes(idKpi)
-          ? idsKpiSeleccionados.filter((item) => item !== idKpi)
-          : [...idsKpiSeleccionados, idKpi],
-      });
+      proximos = idsKpiSeleccionados.includes(idKpi)
+        ? idsKpiSeleccionados.filter((item) => item !== idKpi)
+        : [...idsKpiSeleccionados, idKpi];
     } else {
-      onChangePanelState({
-        idsKpiSeleccionados: idsKpiSeleccionados.length === 1 && idsKpiSeleccionados[0] === idKpi ? [] : [idKpi],
-      });
+      proximos = idsKpiSeleccionados.length === 1 && idsKpiSeleccionados[0] === idKpi ? [] : [idKpi];
     }
+    let infos = proximos.map((id) => kpiCatalog.find((kpi) => String(kpi.id_kpi_definition) === id)).filter(Boolean);
+    // Dos KPIs sin ninguna grafica en comun (uno "vivo" y uno de serie) no
+    // se pueden combinar: se queda solo el que se acaba de elegir.
+    if (infos.length > 1 && tiposDeGraficaPermitidos(infos).length === 0) {
+      proximos = [idKpi];
+      infos = infos.filter((kpi) => String(kpi.id_kpi_definition) === idKpi);
+      setAvisoKpi(tx("kpi_incompatible", "Ese KPI no se puede combinar con los anteriores. Se conservó solo el nuevo."));
+    }
+    // Si la grafica actual ya no le sirve a lo elegido, se pasa a la que el
+    // propio KPI declara como preferida (o a la primera que admita).
+    const permitidos = tiposDeGraficaPermitidos(infos);
+    const tipoNuevo = permitidos.includes(tipoGrafica)
+      ? tipoGrafica
+      : (infos[0]?.grafica_default && permitidos.includes(infos[0].grafica_default) ? infos[0].grafica_default : permitidos[0]);
+    onChangePanelState({ idsKpiSeleccionados: proximos, ...(tipoNuevo && tipoNuevo !== tipoGrafica ? { tipoGrafica: tipoNuevo } : {}) });
   }
 
   // Override manual de color para UN KPI, siempre dentro de la paleta cerrada
@@ -1615,25 +1728,43 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
     onChangePanelState({ atajoActivo: atajo.key, fechaInicio: inicio, fechaFin: fin });
   }
 
+  // FormularioPlegable (cerrarAlEnviar) cierra el panel cuando esta funcion
+  // RESUELVE y lo deja abierto si RECHAZA: por eso todo camino que no guardo
+  // -validacion, error del servidor, "Enter" en un paso intermedio- termina
+  // lanzando esto, despues de dejar su mensaje en pantalla.
+  const NO_CERRAR = new Error("kpi_editor_sin_guardar");
+
+  function rechazar(mensaje) {
+    setError(mensaje);
+    throw NO_CERRAR;
+  }
+
   async function handleSubmit(event) {
     event.preventDefault();
     setError("");
-    if (idsKpiSeleccionados.length === 0) { setError(tx("kpi_required", "Elige al menos un KPI.")); return; }
-    if (!fechaInicio || !fechaFin) { setError(tx("range_required", "Elige el rango de fechas.")); return; }
-    if (diffDias(fechaInicio, fechaFin) > KPI_RANGO_DIAS_MAX) {
-      setError(tx("range_exceeds_limit", "El rango de fechas no puede exceder un año. Ajusta las fechas."));
-      return;
+    // "Enter" dentro de un campo de un paso intermedio manda el formulario:
+    // ahi lo esperable es pasar al siguiente paso, no guardar a medias.
+    if (!esUltimoPaso) {
+      if (puedeAvanzar) irAPaso(pasoActual + 1);
+      throw NO_CERRAR;
     }
-    if (comparar && (!fechaInicioB || !fechaFinB)) { setError(tx("range_b_required", "Elige el rango de comparación o desactívala.")); return; }
-    if (comparar && diffDias(fechaInicioB, fechaFinB) > KPI_RANGO_DIAS_MAX) {
-      setError(tx("range_exceeds_limit", "El rango de comparación no puede exceder un año. Ajusta las fechas."));
-      return;
+    if (idsKpiSeleccionados.length === 0) rechazar(tx("kpi_required", "Elige al menos un KPI."));
+    if (!esTabla) {
+      if (!fechaInicio || !fechaFin) rechazar(tx("range_required", "Elige el rango de fechas."));
+      if (diffDias(fechaInicio, fechaFin) > KPI_RANGO_DIAS_MAX) {
+        rechazar(tx("range_exceeds_limit", "El rango de fechas no puede exceder un año. Ajusta las fechas."));
+      }
+      if (comparar && (!fechaInicioB || !fechaFinB)) rechazar(tx("range_b_required", "Elige el rango de comparación o desactívala."));
+      if (comparar && diffDias(fechaInicioB, fechaFinB) > KPI_RANGO_DIAS_MAX) {
+        rechazar(tx("range_exceeds_limit", "El rango de comparación no puede exceder un año. Ajusta las fechas."));
+      }
     }
 
-    const parametros = { fecha_inicio: fechaInicio, fecha_fin: fechaFin };
-    if (comparar) { parametros.fecha_inicio_b = fechaInicioB; parametros.fecha_fin_b = fechaFinB; }
-    if (empleadosSeleccionados.length) parametros.empleados = empleadosSeleccionados.map(Number);
-    if (departamentosSeleccionados.length) parametros.id_departments = departamentosSeleccionados.map(Number);
+    // Un widget "tabla" (KPI vivo) no guarda periodo: son datos de "ahora".
+    const parametros = esTabla ? {} : { fecha_inicio: fechaInicio, fecha_fin: fechaFin };
+    if (comparar && !esTabla) { parametros.fecha_inicio_b = fechaInicioB; parametros.fecha_fin_b = fechaFinB; }
+    if (!esTabla && empleadosSeleccionados.length) parametros.empleados = empleadosSeleccionados.map(Number);
+    if (!esTabla && departamentosSeleccionados.length) parametros.id_departments = departamentosSeleccionados.map(Number);
     // Solo los overrides de KPIs que siguen seleccionados -- un KPI que se
     // quito de la seleccion no debe dejar un color huerfano guardado.
     const coloresVigentes = Object.fromEntries(
@@ -1656,71 +1787,32 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
           ? tx("range_exceeds_limit", "El rango de fechas excede el máximo permitido (aprox. un año). Ajusta las fechas e inténtalo de nuevo.")
           : t(clave, clave),
       );
+      throw err;
     } finally {
       setSaving(false);
     }
   }
 
+  function irAPaso(indice) {
+    setError("");
+    onChangePanelState({ paso: Math.max(0, Math.min(indice, pasos.length - 1)) });
+  }
+
   const tituloPanel = editingWidgetId ? tx("edit_widget", "Editar gráfico") : tx("add_widget", "Agregar gráfico");
 
-  return (
-    <section className={`kpi-widget-panel ${colapsado ? "collapsed" : ""}`}>
-      <header>
-        <div>
-          <p className="eyebrow">{tx("widget", "Gráfico")}</p>
-        </div>
-        <div className="kpi-widget-panel-header-actions">
-          {/* Botones de "Agregar grafico" y "Generar reporte PDF": viven aqui,
-              junto a la flechita, en formato solo-icono para caber en este
-              espacio angosto. Misma funcionalidad que antes -- solo cambio
-              de ubicacion en la interfaz. */}
-          <button type="button" className="kpi-icon-button" onClick={onAddWidget} title={tx("add_widget", "Agregar gráfico")}>
-            <Plus size={15} />
-          </button>
-          <button
-            type="button"
-            className="kpi-icon-button"
-            onClick={onExportPdf}
-            disabled={exportandoPdf}
-            title={tx("pdf_report_button", "Generar reporte PDF")}
-          >
-            <FileDown size={15} />
-          </button>
-          {/* Pestana/flap, no una X de cierre: un clic colapsa a esta misma
-              pestana (el borrador sigue vivo en panelState), otro clic
-              expande de vuelta. Descartar el borrador por completo NO tiene
-              un icono propio aqui colapsado -- se expande el panel y se usa
-              "Cancelar" del footer, que ya hace exactamente eso. */}
-          <button
-            type="button"
-            className="kpi-panel-flap"
-            onClick={() => onChangePanelState({ colapsado: !colapsado })}
-            aria-expanded={!colapsado}
-            title={colapsado ? tx("expand_panel", "Expandir") : tx("collapse_panel", "Colapsar")}
-          >
-            {colapsado && <span>{tituloPanel}</span>}
-            {colapsado ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
-          </button>
-        </div>
-      </header>
-
-      {!colapsado && (
-      <form onSubmit={handleSubmit}>
-        {kpiCatalog.length === 0 ? (
-          <div className="empty">
-            <strong>{tx("no_kpis_title", "No tienes KPIs asignados")}</strong>
-            <p>{tx("no_kpis_body", "Pide a un administrador que te asigne permiso sobre algún KPI para poder graficarlo aquí.")}</p>
-          </div>
-        ) : (
-          <>
-          <div className="kpi-panel-columns">
-            <div className="kpi-panel-col">
+  // Lo que va en cada paso es lo que antes eran tres columnas lado a lado;
+  // el orden y los controles son los mismos, solo que ahora se recorren con
+  // Atras / Siguiente y la vista previa acompana a todos.
+  const contenidoDelPaso = {
+    medir: (
+      <>
             <div className="kpi-picker-section">
               <span>{tx("chart_type", "Tipo de gráfico")}</span>
               <div className="kpi-icon-option-group">
                 {CHART_TYPES.map((opt) => {
                   const ChartIcon = CHART_TYPE_ICONS[opt.value];
                   const activo = tipoGrafica === opt.value;
+                  const permitido = tiposPermitidos.includes(opt.value);
                   const etiqueta = tx(`chart_type_${opt.value}`, opt.label);
                   return (
                     <button
@@ -1728,10 +1820,12 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
                       key={opt.value}
                       className={`kpi-icon-option ${activo ? "active" : ""}`}
                       onClick={() => aplicarTipoGrafica(opt.value)}
-                      title={etiqueta}
+                      disabled={!permitido}
+                      title={permitido ? etiqueta : tx("chart_type_not_allowed", "El KPI elegido no admite este tipo de gráfico")}
                     >
                       <ChartIcon size={20} />
                       <span>{etiqueta}</span>
+                      {activo && <Check size={13} className="kpi-editor-tipo-check" aria-hidden="true" />}
                     </button>
                   );
                 })}
@@ -1798,9 +1892,10 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
                 />
               </div>
             )}
-            </div>
-
-            <div className="kpi-panel-col">
+      </>
+    ),
+    periodo: (
+      <>
             <div className="kpi-picker-section">
               <span>{tx("date_shortcuts", "Atajos de fecha")}</span>
               <div className="kpi-date-shortcuts">
@@ -1892,9 +1987,10 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
                 </label>
               </div>
             )}
-            </div>
-
-            <div className="kpi-panel-col">
+      </>
+    ),
+    filtros: (
+      <>
             {users.length > 0 && (
               <div className="kpi-employee-picker">
                 <KpiDropdownPicker
@@ -1967,23 +2063,88 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
                 </div>
               </div>
             )}
-            </div>
-          </div>
-          </>
-        )}
+      </>
+    ),
+  };
 
-        {error && <div className="alert error">{error}</div>}
-
-        <footer>
-          <button type="button" className="button" onClick={onCancel}>{t("common.cancel")}</button>
-          {kpiCatalog.length > 0 && (
-            <button type="submit" className="button primary" disabled={saving}>
-              {editingWidgetId ? tx("update_widget", "Actualizar") : tx("add_widget", "Agregar gráfico")}
-            </button>
+  return (
+    <FormularioPlegable
+      titulo={tituloPanel}
+      icono={editingWidgetId ? Pencil : Plus}
+      className="kpi-editor"
+      abierto={!colapsado}
+      onCambioAbierto={(abierto) => {
+        onChangePanelState({ colapsado: !abierto });
+        if (abierto) onAbierto();
+      }}
+      onSubmit={handleSubmit}
+      cerrarAlEnviar
+    >
+      {kpiCatalog.length === 0 ? (
+        <div className="empty">
+          <strong>{tx("no_kpis_title", "No tienes KPIs asignados")}</strong>
+          <p>{tx("no_kpis_body", "Pide a un administrador que te asigne permiso sobre algún KPI para poder graficarlo aquí.")}</p>
+        </div>
+      ) : (
+        <>
+          {pasos.length > 1 && (
+            <ol className="kpi-editor-pasos" aria-label={tx("steps_label", "Pasos")}>
+              {pasos.map((item, indice) => (
+                <li key={item.clave}>
+                  <button
+                    type="button"
+                    className={`kpi-editor-paso ${indice === pasoActual ? "activo" : ""} ${indice < pasoActual ? "completo" : ""}`}
+                    onClick={() => (indice <= pasoActual || puedeAvanzar) && irAPaso(indice)}
+                    aria-current={indice === pasoActual ? "step" : undefined}
+                  >
+                    <span className="kpi-editor-paso-numero">{indice < pasoActual ? <Check size={13} /> : indice + 1}</span>
+                    {item.etiqueta}
+                  </button>
+                </li>
+              ))}
+            </ol>
           )}
-        </footer>
-      </form>
+
+          <div className="kpi-editor-cuerpo">
+            <div className="kpi-editor-paso-contenido kpi-panel-col">
+              {contenidoDelPaso[pasos[pasoActual].clave]}
+            </div>
+            <aside className="kpi-editor-vista-previa">
+              <p className="kpi-editor-grupo-titulo">{tx("preview", "Vista previa")}</p>
+              {kpisSeleccionadosInfo.length === 0 ? (
+                <p className="muted">{tx("preview_empty", "Elige un KPI para ver cómo quedará.")}</p>
+              ) : (
+                <div className="kpi-editor-vista-previa-tarjeta">
+                  <strong>{kpisSeleccionadosInfo.map((kpi) => kpi.etiqueta || kpi.clave).join(" + ")}</strong>
+                  <span className="muted">{tx(`chart_type_${tipoGrafica}`, tipoGrafica)}</span>
+                </div>
+              )}
+            </aside>
+          </div>
+
+          {error && <div className="alert error kpi-editor-error">{error}</div>}
+
+          <footer className="kpi-editor-footer">
+            <div className="kpi-editor-footer-nav">
+              <div className="kpi-editor-footer-derecha">
+                <button type="button" className="button ghost" onClick={onCancel}>{t("common.cancel")}</button>
+                <button type="button" className="button ghost" disabled={pasoActual === 0} onClick={() => irAPaso(pasoActual - 1)}>
+                  {tx("step_back", "Atrás")}
+                </button>
+              </div>
+              {!esUltimoPaso ? (
+                <button type="button" className="button primary" disabled={!puedeAvanzar} onClick={() => irAPaso(pasoActual + 1)}>
+                  {tx("step_next", "Siguiente")}
+                </button>
+              ) : (
+                <button type="submit" className="button primary" disabled={saving || idsKpiSeleccionados.length === 0}>
+                  {editingWidgetId ? tx("update_widget", "Actualizar") : tx("add_widget", "Agregar gráfico")}
+                </button>
+              )}
+            </div>
+          </footer>
+        </>
       )}
-    </section>
+    </FormularioPlegable>
   );
 }

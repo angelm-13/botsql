@@ -66,23 +66,48 @@ import "../styles/formulario-plegable.css";
  * termina (mismo `onTransitionEnd` que ya existia para el desmontaje al
  * cerrar) y se apaga de inmediato en cuanto se empieza a cerrar -- ver
  * `.plegable-cuerpo-wrap.asentada` en formulario-plegable.css.
+ *
+ * Abierto controlado (opt-in)
+ * ---------------------------
+ * Por omision el formulario decide solo si esta abierto y ninguna pantalla
+ * tiene que enterarse. Una pantalla que SI necesita saberlo -el editor de
+ * graficos del dashboard de KPIs guarda su borrador por tablero y tiene que
+ * poder cerrarlo desde un "Cancelar"- puede pasar `abierto` (controlado) y/o
+ * `onCambioAbierto` (aviso de cada cambio, con o sin control) y
+ * `abiertoInicial` (arrancar abierto, ya asentado, sin animacion). Ninguna de
+ * las tres cambia el comportamiento de las pantallas que no las usan.
  */
 export default function FormularioPlegable({
   titulo, abrirSi, onSubmit, icono: Icono, children, className, cerrarAlEnviar,
+  abierto: abiertoControlado, abiertoInicial, onCambioAbierto,
 }) {
   const { t } = useI18n();
-  const [abierto, setAbierto] = useState(false);
-  const [montado, setMontado] = useState(false);
-  const [asentado, setAsentado] = useState(false);
+  const controlado = abiertoControlado !== undefined && abiertoControlado !== null;
+  const [abiertoInterno, setAbiertoInterno] = useState(Boolean(abiertoInicial));
+  const abierto = controlado ? Boolean(abiertoControlado) : abiertoInterno;
+  // Arrancar abierto = ya montado y asentado: nada que animar.
+  const [montado, setMontado] = useState(abierto);
+  const [asentado, setAsentado] = useState(abierto);
   const cuerpoWrapRef = useRef(null);
+  const abiertoRef = useRef(abierto);
+  abiertoRef.current = abierto;
+
+  function pedirCambio(siguiente) {
+    if (siguiente) setMontado(true);
+    else setAsentado(false);
+    if (!controlado) setAbiertoInterno(siguiente);
+    if (onCambioAbierto && siguiente !== abiertoRef.current) onCambioAbierto(siguiente);
+  }
+
+  // Abierto controlado: el cambio llega por props, no por `pedirCambio`.
+  useEffect(() => {
+    if (!controlado) return;
+    if (abierto) setMontado(true);
+    else setAsentado(false);
+  }, [controlado, abierto]);
 
   function alternar() {
-    setAbierto((antes) => {
-      const siguiente = !antes;
-      if (siguiente) setMontado(true);
-      else setAsentado(false);
-      return siguiente;
-    });
+    pedirCambio(!abierto);
   }
 
   // Solo al pasar de "nada" a "algo". Con `abrirSi` a secas en las
@@ -90,11 +115,9 @@ export default function FormularioPlegable({
   // despues de que el usuario lo cerrara a mano.
   const anterior = useRef(abrirSi);
   useEffect(() => {
-    if (abrirSi && !anterior.current) {
-      setAbierto(true);
-      setMontado(true);
-    }
+    if (abrirSi && !anterior.current && !abiertoRef.current) pedirCambio(true);
     anterior.current = abrirSi;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [abrirSi]);
 
   const alTerminarTransicion = useCallback((evento) => {
@@ -102,11 +125,8 @@ export default function FormularioPlegable({
     // (un input, un boton) tambien dispara "transitionend" y burbujea hasta
     // aca -- solo importa la transicion del propio wrapper de alto.
     if (evento.target !== cuerpoWrapRef.current) return;
-    setAbierto((sigueAbierto) => {
-      if (!sigueAbierto) setMontado(false);
-      else setAsentado(true);
-      return sigueAbierto;
-    });
+    if (!abiertoRef.current) setMontado(false);
+    else setAsentado(true);
   }, []);
 
   async function manejarEnvio(evento) {
@@ -117,7 +137,7 @@ export default function FormularioPlegable({
     evento.preventDefault();
     try {
       await onSubmit(evento);
-      setAbierto(false);
+      pedirCambio(false);
     } catch {
       // onSubmit ya deja su propio mensaje de error en pantalla -- no se
       // cierra, para que se vea sin tener que volver a abrir.
@@ -171,6 +191,9 @@ FormularioPlegable.propTypes = {
   children: PropTypes.node,
   className: PropTypes.string,
   cerrarAlEnviar: PropTypes.bool,
+  abierto: PropTypes.bool,
+  abiertoInicial: PropTypes.bool,
+  onCambioAbierto: PropTypes.func,
 };
 
 FormularioPlegable.defaultProps = {
@@ -179,4 +202,7 @@ FormularioPlegable.defaultProps = {
   children: null,
   className: "",
   cerrarAlEnviar: false,
+  abierto: undefined,
+  abiertoInicial: false,
+  onCambioAbierto: null,
 };
