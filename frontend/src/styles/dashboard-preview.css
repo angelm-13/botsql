@@ -39,7 +39,9 @@
 .kpi-preview-card {
   background: var(--kpi-tarjeta);
   border: 2px solid var(--kpi-borde);
-  border-left: 6px solid var(--kpi-grafito);
+  /* La franja lleva el color del KPI de la tarjeta (--kpi-acento-tarjeta, lo
+     pone WidgetCard); sin el, el acento del tema. */
+  border-left: 6px solid var(--kpi-acento-tarjeta, var(--kpi-acento));
   border-radius: 14px;
   padding: 18px;
   box-shadow: var(--kpi-sombra);

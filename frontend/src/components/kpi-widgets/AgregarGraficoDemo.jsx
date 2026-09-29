@@ -18,16 +18,15 @@ const ICONO_MODULO = {
   documentos: FileText,
 };
 
-// Un tono propio por tipo de grafica -- tomado de la paleta "Taller"
-// (tierra/neutros), nunca arcoiris, y sin tocar el cobre (reservado para lo
-// atrasado) ni los colores de KPI/estado.
+// Un tono propio por tipo de grafica -- vivo y claro, uno distinto por tipo
+// para reconocerlos a simple vista; nunca marrones ni grafitos.
 const CHART_TYPES = [
-  { tipo: "numero", etiqueta: "Número", Icono: Hash, color: "#57534e" },
-  { tipo: "barras", etiqueta: "Barras", Icono: BarChart2, color: "#78350f" },
-  { tipo: "linea", etiqueta: "Línea", Icono: LineChartIcon, color: "#44403c" },
-  { tipo: "area", etiqueta: "Área", Icono: AreaChartIcon, color: "#a16207" },
-  { tipo: "dona", etiqueta: "Dona", Icono: PieChartIcon, color: "#3f3f46" },
-  { tipo: "tabla", etiqueta: "Tabla", Icono: TableIcon, color: "#6b7280" },
+  { tipo: "numero", etiqueta: "Número", Icono: Hash, color: "#2a78d6" },
+  { tipo: "barras", etiqueta: "Barras", Icono: BarChart2, color: "#eb6834" },
+  { tipo: "linea", etiqueta: "Línea", Icono: LineChartIcon, color: "#12b8c9" },
+  { tipo: "area", etiqueta: "Área", Icono: AreaChartIcon, color: "#1baf7a" },
+  { tipo: "dona", etiqueta: "Dona", Icono: PieChartIcon, color: "#8b6cf6" },
+  { tipo: "tabla", etiqueta: "Tabla", Icono: TableIcon, color: "#e87ba4" },
 ];
 
 const PERIODOS_RELATIVOS = ["Hoy", "7 días", "30 días", "90 días", "Este mes", "Mes anterior", "Este año", "Personalizado"];

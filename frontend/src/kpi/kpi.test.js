@@ -6,6 +6,7 @@
 // fueron agregando despues (rango_relativo, etc.). Lo que se prueba es que
 // pasar por los adaptadores nuevos produce exactamente los datos que el
 // Dashboard pintaba antes de conectar los componentes de kpi-widgets/.
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -16,6 +17,7 @@ import { armarParametros, estadoDeWidget, rangoInicialDelBorrador, widgetDeBorra
 import {
   fechaLocalIso, parametrosEfectivos, periodoAnterior, resolverRangoRelativo,
 } from "./kpiRango.js";
+import { colorDeAvatar } from "../components/kpi-widgets/avatar.js";
 import {
   filasTablaPrestamo, propsDona, propsNumero, propsNumeroBajoStock, propsSeries,
   tendenciaDeSnapshot,
@@ -328,4 +330,58 @@ test("un rango relativo desconocido (version futura) cae a las fechas guardadas"
 
 test("un borrador nuevo arranca en los ultimos 30 dias como chip", () => {
   assert.deepEqual(rangoInicialDelBorrador(HOY), { rangoRelativo: "30_dias", fechaInicio: "2026-08-31", fechaFin: "2026-09-29" });
+});
+
+// --- paleta: ni marrones, ni grafitos, ni vinos ----------------------------
+function hsl(hex) {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  const d = max - min;
+  const sat = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+  let h = 0;
+  if (d !== 0) {
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+  }
+  return { h: (h * 60 + 360) % 360, s: sat, l };
+}
+
+/** Por que un color NO es "vivo y claro", o null si lo es. */
+function motivoNoVivo(hex) {
+  const { h, s, l } = hsl(hex);
+  if (s < 0.18 && l > 0.08 && l < 0.5) return "grafito";
+  if (h >= 10 && h <= 50 && s >= 0.18 && l < 0.5 && (s < 0.6 || l < 0.35)) return "marron";
+  if ((h >= 320 || h <= 8) && l < 0.4 && s > 0.2) return "vino";
+  return null;
+}
+
+test("la paleta categorica y el gris de 'Otros' son vivos y claros", () => {
+  assert.equal(CATEGORICAL.length, 8);
+  for (const retirado of ["#4a3aa7", "#008300", "#898781"]) {
+    assert.ok(!CATEGORICAL.includes(retirado) && COLOR_OTHERS !== retirado, `${retirado} ya no debe estar`);
+  }
+  for (const color of [...CATEGORICAL, COLOR_OTHERS]) assert.equal(motivoNoVivo(color), null, color);
+  // "Otros" es gris azulado claro: apagado a proposito, pero nunca oscuro.
+  const otros = hsl(COLOR_OTHERS);
+  assert.ok(otros.h > 190 && otros.h < 240 && otros.l > 0.6, "gris azulado claro");
+  assert.equal(new Set(CATEGORICAL).size, CATEGORICAL.length, "sin repetidos");
+});
+
+test("los avatares tambien: nada de tonos tierra", () => {
+  for (let id = 0; id < 8; id += 1) assert.equal(motivoNoVivo(colorDeAvatar(id)), null, colorDeAvatar(id));
+});
+
+test("los tokens de tema (claro y oscuro) no traen marrones, grafitos ni vinos", () => {
+  const css = readFileSync(new URL("../styles/kpi-widgets.css", import.meta.url), "utf8");
+  // Grises azulados de TEXTO secundario (no de graficos, bordes ni franjas).
+  const textoPizarra = new Set(["#526273", "#64748b"]);
+  const tokens = [...css.matchAll(/(--kpi-[a-z-]+):\s*(#[0-9a-fA-F]{6})/g)];
+  assert.ok(tokens.length > 20, "se encontraron los tokens");
+  for (const [, nombre, color] of tokens) {
+    if (textoPizarra.has(color.toLowerCase())) continue;
+    assert.equal(motivoNoVivo(color.toLowerCase()), null, `${nombre}: ${color}`);
+  }
 });

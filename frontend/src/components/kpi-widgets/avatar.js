@@ -4,13 +4,14 @@
  * iniciales sobre un color estable derivado de `id_user`.
  *
  * Paleta DELIBERADAMENTE distinta de `CATEGORICAL` (color por KPI, ver
- * Dashboard.jsx) y de `colores_categoria` (estado del material, backend):
- * tonos tierra/taller, ninguno repite un hex de esas dos paletas, para que
- * un avatar nunca se confunda con el color de un KPI o de una categoria.
+ * kpi/kpiDatos.js) y de `colores_categoria` (estado del material, backend):
+ * mismos tonos vivos pero un escalon mas saturado, ninguno repite un hex de
+ * esas dos paletas, para que un avatar nunca se confunda con el color de un
+ * KPI o de una categoria. Sin marrones, grafitos ni vinos.
  */
 const PALETA_AVATAR = [
-  "#8b5e3c", "#6d5847", "#7a6a53", "#5b6b5b",
-  "#4a5a6a", "#6b5b73", "#7a5c5c", "#5a6b6b",
+  "#3b82f6", "#f97316", "#10b981", "#ec4899",
+  "#06b6d4", "#8b5cf6", "#f59e0b", "#ef4444",
 ];
 
 export function colorDeAvatar(idUsuario) {

@@ -5,11 +5,11 @@ import PropTypes from "prop-types";
  * elevacion suave al pasar el mouse. Nunca las anima si `reducirMovimiento`
  * viene en true -- ver dashboard-preview.css, que ademas ya respeta
  * `prefers-reduced-motion` por su cuenta como respaldo. */
-export default function WidgetCard({ titulo, actualizado, indice, reducirMovimiento, children, className }) {
+export default function WidgetCard({ titulo, actualizado, indice, reducirMovimiento, children, className, color }) {
   return (
     <article
       className={`kpi-preview-card ${reducirMovimiento ? "sin-movimiento" : ""} ${className}`.trim()}
-      style={{ "--orden-entrada": indice }}
+      style={{ "--orden-entrada": indice, ...(color ? { "--kpi-acento-tarjeta": color } : {}) }}
     >
       <header className="kpi-preview-card-header">
         <h3>{titulo}</h3>
@@ -27,6 +27,8 @@ WidgetCard.propTypes = {
   reducirMovimiento: PropTypes.bool,
   children: PropTypes.node,
   className: PropTypes.string,
+  // Color de la franja izquierda (el del KPI que muestra la tarjeta).
+  color: PropTypes.string,
 };
 
 WidgetCard.defaultProps = {
@@ -35,4 +37,5 @@ WidgetCard.defaultProps = {
   reducirMovimiento: false,
   children: null,
   className: "",
+  color: null,
 };

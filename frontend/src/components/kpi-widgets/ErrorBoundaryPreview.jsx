@@ -34,7 +34,7 @@ export default class ErrorBoundaryPreview extends Component {
     return (
       <div style={{
         margin: 24, padding: 20, borderRadius: 12, border: "1px solid #e34948",
-        background: "#fff5f5", color: "#9b3030", fontFamily: "monospace",
+        background: "#fff5f5", color: "#c62828", fontFamily: "monospace",
       }}
       >
         <p style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 800, margin: "0 0 10px" }}>

@@ -57,7 +57,7 @@ export default function DashboardPreviewPage() {
       </div>
 
       <div className="kpi-preview-grid">
-        <WidgetCard titulo="Incidencias pendientes hoy" actualizado="Actualizado: hace 4 min" indice={0} reducirMovimiento={reducirMovimiento}>
+        <WidgetCard titulo="Incidencias pendientes hoy" color="#2a78d6" actualizado="Actualizado: hace 4 min" indice={0} reducirMovimiento={reducirMovimiento}>
           {cargando ? <Skeleton tipo="numero" /> : (
             <NumeroWidget
               valor={INCIDENCIAS_PENDIENTES_DEMO.valor}
@@ -69,27 +69,27 @@ export default function DashboardPreviewPage() {
           )}
         </WidgetCard>
 
-        <WidgetCard titulo="Abiertas vs. cerradas · últimos 90 días" actualizado="Actualizado: hace 4 min" indice={1} reducirMovimiento={reducirMovimiento}>
+        <WidgetCard titulo="Abiertas vs. cerradas · últimos 90 días" color="#22b573" actualizado="Actualizado: hace 4 min" indice={1} reducirMovimiento={reducirMovimiento}>
           {cargando ? <Skeleton tipo="grafica" /> : (
             <BarrasWidget
               datos={ABIERTAS_VS_CERRADAS_DEMO}
               campoEtiqueta="semana"
               animar={!reducirMovimiento}
               series={[
-                { clave: "abiertas", nombre: "Abiertas", color: "#78350f" },
-                { clave: "cerradas", nombre: "Cerradas", color: "#1b7a60" },
+                { clave: "abiertas", nombre: "Abiertas", color: "#ef6f5c" },
+                { clave: "cerradas", nombre: "Cerradas", color: "#22b573" },
               ]}
             />
           )}
         </WidgetCard>
 
-        <WidgetCard titulo="Incidencias abiertas por empleado · 30 días" actualizado="Actualizado: hace 4 min" indice={2} reducirMovimiento={reducirMovimiento}>
+        <WidgetCard titulo="Incidencias abiertas por empleado · 30 días" color="#eb6834" actualizado="Actualizado: hace 4 min" indice={2} reducirMovimiento={reducirMovimiento}>
           {cargando ? <Skeleton tipo="grafica" /> : (
             <BarrasWidget
               datos={INCIDENCIAS_POR_EMPLEADO_DEMO}
               campoEtiqueta="empleado"
               animar={!reducirMovimiento}
-              series={[{ clave: "cantidad", nombre: "Incidencias", color: "#57534e" }]}
+              series={[{ clave: "cantidad", nombre: "Incidencias", color: "#2a78d6" }]}
               barraResaltada={INCIDENCIAS_POR_EMPLEADO_DEMO.find((f) => f.id_user === empleadoResaltado)?.empleado || null}
               onBarClick={(datosBarra) => {
                 const fila = INCIDENCIAS_POR_EMPLEADO_DEMO.find((f) => f.empleado === datosBarra.empleado);
@@ -102,13 +102,13 @@ export default function DashboardPreviewPage() {
           </p>
         </WidgetCard>
 
-        <WidgetCard titulo="Material prestado ahora" actualizado="Actualizado: en vivo" indice={3} reducirMovimiento={reducirMovimiento} className="kpi-preview-card-ancha">
+        <WidgetCard titulo="Material prestado ahora" color="#8b6cf6" actualizado="Actualizado: en vivo" indice={3} reducirMovimiento={reducirMovimiento} className="kpi-preview-card-ancha">
           {cargando ? <Skeleton tipo="tabla" /> : (
             <TablaWidget filas={MATERIAL_PRESTADO_DEMO} resaltarResponsable={empleadoResaltadoNombre} />
           )}
         </WidgetCard>
 
-        <WidgetCard titulo="Material por estado" actualizado="Actualizado: hace 4 min" indice={4} reducirMovimiento={reducirMovimiento}>
+        <WidgetCard titulo="Material por estado" color="#12b8c9" actualizado="Actualizado: hace 4 min" indice={4} reducirMovimiento={reducirMovimiento}>
           {cargando ? <Skeleton tipo="dona" /> : (
             <DonaWidget datos={MATERIAL_POR_ESTADO_DEMO} animar={!reducirMovimiento} />
           )}

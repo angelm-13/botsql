@@ -63,11 +63,11 @@ export const MATERIAL_PRESTADO_DEMO = [
 // a `colores_categoria` de material_por_estado en el registry (backend) --
 // no se inventan aqui, se copian para que la vista previa no se desincronice.
 export const MATERIAL_POR_ESTADO_DEMO = [
-  { categoria: "Salida", valor: 15, color: "#173b66" },
-  { categoria: "Entrada", valor: 12, color: "#1b7a60" },
-  { categoria: "Dañado", valor: 3, color: "#eda100" },
-  { categoria: "Extraviado", valor: 2, color: "#e34948" },
-  { categoria: "Destruccion", valor: 2, color: "#9b3030" },
+  { categoria: "Salida", valor: 15, color: "#2f8fe0" },
+  { categoria: "Entrada", valor: 12, color: "#22b573" },
+  { categoria: "Dañado", valor: 3, color: "#f0a93b" },
+  { categoria: "Extraviado", valor: 2, color: "#ef6f5c" },
+  { categoria: "Destruccion", valor: 2, color: "#e0559b" },
 ];
 
 export const KPIS_DEMO_PARA_EDITOR = [

@@ -8,8 +8,9 @@
 
 .dashboard-preview-page,
 .kpi-dashboard {
-  /* Tokens claros: los MISMOS de siempre en TYAKXA (app.css), no una
-     paleta nueva -- fondo, tinta, acento verde, tarjetas blancas. */
+  /* Tokens claros: fondo, tinta y tarjetas blancas como en el resto de
+     TYAKXA; el resto de los colores son vivos y claros -ni marrones, ni
+     grafitos, ni vinos-. */
   --kpi-fondo: #f5f7fb;
   --kpi-tarjeta: #fff;
   --kpi-borde: #e2e8f0;
@@ -17,46 +18,46 @@
   --kpi-ink-suave: #526273;
   --kpi-texto-suave: #64748b;
   --kpi-acento: #1b7a60;
-  --kpi-grafito: #3a3630;
   --kpi-grid: #e5e9f0;
-  --kpi-hover-barra: rgba(58, 54, 48, .05);
+  --kpi-hover-barra: rgba(42, 120, 214, .08);
   --kpi-sombra: 0 12px 30px rgba(15, 23, 42, .06);
   --kpi-sombra-hover: 0 18px 40px rgba(15, 23, 42, .12);
   --kpi-skeleton-base: #eef1f6;
   --kpi-skeleton-brillo: #f8fafc;
 
   /* Semántica de dirección -- nunca la única señal, siempre con ícono/texto. */
-  --kpi-bueno: #1b7a60;
-  --kpi-malo: #b3432f;
+  --kpi-bueno: #12a06a;
+  --kpi-malo: #e5484d;
   --kpi-neutral: #8a96a5;
-  /* El cobre: SOLO para "atrasado" en la tabla de material prestado. */
-  --kpi-atrasado: #c2703d;
-  --kpi-atrasado-fondo: #fbeee4;
+  /* Ambar vivo: SOLO para "atrasado" en la tabla de material prestado. */
+  --kpi-atrasado: #f08a00;
+  --kpi-atrasado-fondo: #fff3dc;
 }
 
 .dashboard-preview-page[data-theme="dark"],
 [data-theme="dark"] .kpi-dashboard {
-  /* Sala del taller de noche: mismos tokens semánticos, valores ajustados
-     SOLO donde de verdad no se leían en oscuro -- la paleta categórica de
-     KPI/estado no se toca (pedido explícito). */
-  --kpi-fondo: #1c1a17;
-  --kpi-tarjeta: #262320;
-  --kpi-borde: #3a352e;
-  --kpi-ink: #f2ede4;
-  --kpi-ink-suave: #c9c0b3;
-  --kpi-texto-suave: #a49a8a;
-  --kpi-grafito: #d8d0c2;
-  --kpi-grid: #3a352e;
-  --kpi-hover-barra: rgba(242, 237, 228, .06);
+  /* Noche azul, no gris apagado: fondos azul marino profundo y los MISMOS
+     colores vivos de la paleta categorica (no se atenuan en oscuro, ese es el
+     pedido); solo se aclaran los semanticos que no se leian sobre fondo
+     oscuro. */
+  --kpi-fondo: #0d1526;
+  --kpi-tarjeta: #16223a;
+  --kpi-borde: #2a3b5c;
+  --kpi-ink: #eaf0fb;
+  --kpi-ink-suave: #bcc9e0;
+  --kpi-texto-suave: #90a2c0;
+  --kpi-acento: #34d399;
+  --kpi-grid: #2a3b5c;
+  --kpi-hover-barra: rgba(255, 255, 255, .07);
   --kpi-sombra: 0 12px 30px rgba(0, 0, 0, .35);
   --kpi-sombra-hover: 0 18px 40px rgba(0, 0, 0, .5);
-  --kpi-skeleton-base: #322e28;
-  --kpi-skeleton-brillo: #3c372f;
-  --kpi-bueno: #3fae8c;
-  --kpi-malo: #d9705a;
-  --kpi-neutral: #8f8677;
-  --kpi-atrasado: #d68a55;
-  --kpi-atrasado-fondo: #3a2a1c;
+  --kpi-skeleton-base: #1f2f4d;
+  --kpi-skeleton-brillo: #2b3f66;
+  --kpi-bueno: #34d399;
+  --kpi-malo: #ff6b6b;
+  --kpi-neutral: #94a3b8;
+  --kpi-atrasado: #ffb020;
+  --kpi-atrasado-fondo: rgba(255, 176, 32, .14);
 }
 
 /* --- numero ---------------------------------------------------------- */

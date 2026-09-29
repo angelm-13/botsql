@@ -5,9 +5,13 @@
 // Todo lo de aqui se movio tal cual desde pages/Dashboard.jsx: mismo
 // comportamiento, distinto lugar.
 
-// Orden categorico validado (dataviz skill): identidad, nunca ciclado.
-export const CATEGORICAL = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
-export const COLOR_OTHERS = "#898781";
+// Paleta categorica del Dashboard: solo tonos vivos y claros -sin marrones,
+// grafitos ni vinos-, de tonos bien separados entre si, para que un color siga
+// siendo "ese KPI" a simple vista. Identidad, nunca ciclado.
+export const CATEGORICAL = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#12b8c9", "#8b6cf6", "#e34948"];
+// "Otros" (lo que no cabe en la paleta) en gris azulado claro: se lee como
+// "resto", nunca compite con un color de verdad.
+export const COLOR_OTHERS = "#a9b7c9";
 
 // "NUMERO"/"MONEDA" crudos nunca se le muestran a nadie: sufijo para pegar
 // al VALOR ya formateado (widgets) y etiqueta corta para el selector de KPI
