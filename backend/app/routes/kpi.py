@@ -240,6 +240,7 @@ def _con_metadatos_del_registry(kpi_row: KpiDefinition) -> dict:
         'grafica_default': definicion.grafica_default if definicion else None,
         'modo': definicion.modo if definicion else 'snapshot',
         'colores_categoria': definicion.colores_categoria if definicion else None,
+        'descripcion': definicion.descripcion if definicion else None,
     }
 
 

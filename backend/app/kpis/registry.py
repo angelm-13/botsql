@@ -93,7 +93,7 @@ MODOS = ("snapshot", "vivo")
 # importar si un KPI declara una que no este aqui. El formato visual de cada
 # una (que sufijo/simbolo mostrar) es trabajo del frontend, no de este
 # registro -- ver el rediseno del dashboard.
-UNIDADES = ("numero", "porcentaje", "moneda", "dias")
+UNIDADES = ("numero", "porcentaje", "moneda", "dias", "piezas")
 
 # Vocabulario cerrado de dimensiones -- "estado" es nueva (ver
 # DIMENSION_JSON_KEY arriba), las otras tres ya existian sin validarse.
@@ -1187,9 +1187,13 @@ class KpiDefinition:
     def __init__(self, clave, etiqueta, modulo, dimensiones,
                  query_builder, *, direccion, graficas_permitidas, grafica_default,
                  agregacion=None, unidad="numero", alcance_proyecto=True, modo="snapshot",
-                 colores_categoria=None):
+                 colores_categoria=None, descripcion=None):
         self.clave = clave
         self.etiqueta = etiqueta
+        # Una linea corta para el selector de KPI del editor (rediseno del
+        # dashboard) -- opcional, sin default obligatorio: un KPI viejo sin
+        # descripcion simplemente no muestra esa linea, no revienta nada.
+        self.descripcion = descripcion
         self.modulo = modulo               # clave de MODULOS en app/modules/registry.py
         self.dimensiones = dimensiones      # tupla, ej. ("empleado",)
         self.query_builder = query_builder  # ver firma de ventas_por_empleado_query
@@ -1265,6 +1269,7 @@ KPI_REGISTRY = (
         direccion="alto_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="barras",
+        descripcion="Subtotal facturado (antes de impuesto), por empleado y por dia.",
     ),
     KpiDefinition(
         clave="egresos_por_empleado",
@@ -1277,6 +1282,7 @@ KPI_REGISTRY = (
         direccion="bajo_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="barras",
+        descripcion="Facturas de compra capturadas, por empleado y por dia.",
     ),
     KpiDefinition(
         clave="desarrollo_por_empleado",
@@ -1289,6 +1295,7 @@ KPI_REGISTRY = (
         direccion="alto_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="barras",
+        descripcion="Porcentaje de tareas terminadas, por empleado responsable.",
     ),
     KpiDefinition(
         clave="vales_vencidos_por_responsable",
@@ -1302,6 +1309,7 @@ KPI_REGISTRY = (
         direccion="bajo_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="tabla",
+        descripcion="Vales de almacen vencidos y sin cerrar, por responsable.",
     ),
     KpiDefinition(
         clave="incidentes_resueltos_por_empleado",
@@ -1315,6 +1323,7 @@ KPI_REGISTRY = (
         direccion="alto_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="barras",
+        descripcion="Porcentaje de incidentes resueltos, por empleado responsable.",
     ),
     KpiDefinition(
         clave="cancelaciones_por_empleado",
@@ -1328,6 +1337,7 @@ KPI_REGISTRY = (
         direccion="bajo_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="barras",
+        descripcion="Incidentes cancelados, por empleado y por dia de cancelacion.",
     ),
     KpiDefinition(
         clave="ordenes_laboratorio_entregadas_por_tecnico",
@@ -1340,6 +1350,7 @@ KPI_REGISTRY = (
         direccion="alto_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="barras",
+        descripcion="Ordenes de servicio entregadas, por tecnico.",
     ),
     KpiDefinition(
         clave="tiempo_promedio_reparacion_laboratorio_por_tecnico",
@@ -1352,6 +1363,7 @@ KPI_REGISTRY = (
         direccion="bajo_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="barras",
+        descripcion="Dias promedio de reparacion, por tecnico.",
     ),
     KpiDefinition(
         clave="costo_promedio_reparacion_laboratorio_por_tecnico",
@@ -1364,6 +1376,7 @@ KPI_REGISTRY = (
         direccion="neutral",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="barras",
+        descripcion="Costo promedio de reparacion, por tecnico.",
     ),
     KpiDefinition(
         clave="documentos_vencidos_por_responsable",
@@ -1376,6 +1389,7 @@ KPI_REGISTRY = (
         direccion="bajo_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="tabla",
+        descripcion="Documentos firmados y ya vencidos, por responsable.",
     ),
     # --- variables/KPIs adicionales (pedido de Aurora: "opcionales,
     # adicionales", para comparar variables como ingresos vs egresos en un
@@ -1391,6 +1405,7 @@ KPI_REGISTRY = (
         direccion="alto_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="linea",
+        descripcion="Ventas facturadas de toda la empresa, por dia.",
     ),
     KpiDefinition(
         clave="egresos_totales",
@@ -1403,6 +1418,7 @@ KPI_REGISTRY = (
         direccion="bajo_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="linea",
+        descripcion="Facturas de compra de toda la empresa, por dia.",
     ),
     KpiDefinition(
         clave="material_prestado_por_responsable",
@@ -1416,6 +1432,7 @@ KPI_REGISTRY = (
         direccion="neutral",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="barras",
+        descripcion="Prestamos de material iniciados, por responsable y por dia.",
     ),
     KpiDefinition(
         clave="prestamos_vencidos_por_responsable",
@@ -1429,6 +1446,7 @@ KPI_REGISTRY = (
         direccion="bajo_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="tabla",
+        descripcion="Piezas prestadas y ya vencidas, por responsable actual.",
     ),
     KpiDefinition(
         clave="lotes_proximos_a_caducar",
@@ -1442,6 +1460,7 @@ KPI_REGISTRY = (
         direccion="bajo_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="tabla",
+        descripcion="Lotes de inventario cuya caducidad cae en el rango elegido.",
     ),
     KpiDefinition(
         clave="articulos_bajo_stock",
@@ -1455,6 +1474,7 @@ KPI_REGISTRY = (
         direccion="bajo_es_mejor",
         graficas_permitidas=TODAS_LAS_GRAFICAS,
         grafica_default="tabla",
+        descripcion="Existencia actual por producto, foto del saldo de hoy.",
     ),
     # --- KPIs nuevos de Adser (almacen de herramientas: lo que importa es
     # cuantas incidencias se abren/cierran, cuanto material esta prestado y
@@ -1474,6 +1494,7 @@ KPI_REGISTRY = (
         direccion="neutral",
         graficas_permitidas=("barras", "tabla"),
         grafica_default="barras",
+        descripcion="Incidencias/vales abiertos, por quien los levanto.",
     ),
     KpiDefinition(
         clave="incidencias_pendientes",
@@ -1487,6 +1508,7 @@ KPI_REGISTRY = (
         direccion="bajo_es_mejor",
         graficas_permitidas=("numero",),
         grafica_default="numero",
+        descripcion="Foto de cuantas incidencias siguen sin cerrar hoy.",
     ),
     KpiDefinition(
         clave="incidencias_abiertas_vs_cerradas",
@@ -1500,6 +1522,11 @@ KPI_REGISTRY = (
         direccion="neutral",
         graficas_permitidas=("barras", "linea"),
         grafica_default="barras",
+        # Mismo mecanismo que material_por_estado: colores fijos por valor de
+        # categoria, no por posicion -- coral para "abierta" (llama la
+        # atencion, hay que atenderla), verde para "cerrada" (resuelta, bien).
+        colores_categoria={"abierta": "#ef6f5c", "cerrada": "#22b573"},
+        descripcion="Cuantas incidencias se abren y cuantas se cierran, por dia.",
     ),
     KpiDefinition(
         clave="material_por_estado",
@@ -1513,16 +1540,19 @@ KPI_REGISTRY = (
         direccion="neutral",
         graficas_permitidas=("dona", "tabla"),
         grafica_default="dona",
-        # Verde TYAKXA para Entrada (vuelve, es lo deseable), tinta/navy para
-        # Salida (hecho neutro, no bueno ni malo), ambar/rojo crecientes para
-        # las 3 disposiciones especiales segun que tan grave es cada una.
+        # Paleta viva, no oscura (pedido explicito): verde para Entrada,
+        # azul para Salida (hecho neutro, no bueno ni malo), ambar/coral para
+        # las disposiciones intermedias, y fucsia -no vino- para Destruccion,
+        # la mas grave, para que se distinga sin depender de que tan oscuro
+        # se vea un tono ya de por si dificil de leer en modo oscuro.
         colores_categoria={
-            "Entrada": "#1b7a60",
-            "Salida": "#173b66",
-            "Dañado": "#eda100",
-            "Extraviado": "#e34948",
-            "Destruccion": "#9b3030",
+            "Entrada": "#22b573",
+            "Salida": "#2f8fe0",
+            "Dañado": "#f0a93b",
+            "Extraviado": "#ef6f5c",
+            "Destruccion": "#e0559b",
         },
+        descripcion="Entrada, salida y disposiciones especiales de cada renglon de vale.",
     ),
     KpiDefinition(
         clave="material_prestado_actual",
@@ -1531,11 +1561,12 @@ KPI_REGISTRY = (
         dimensiones=("empleado",),
         query_builder=material_prestado_actual_query,
         modo="vivo",
-        unidad="numero",
+        unidad="piezas",
         alcance_proyecto=False,
         direccion="neutral",
         graficas_permitidas=("tabla",),
         grafica_default="tabla",
+        descripcion="Renglones de vale prestados sin devolver, por responsable.",
     ),
 )
 

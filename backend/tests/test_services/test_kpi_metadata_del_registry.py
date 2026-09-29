@@ -27,6 +27,16 @@ class ConMetadatosDelRegistryTest(unittest.TestCase):
             {"Entrada", "Salida", "Dañado", "Extraviado", "Destruccion"},
             set(resultado["colores_categoria"]),
         )
+        self.assertIsNotNone(resultado["descripcion"])
+
+    def test_expone_colores_categoria_de_incidencias_abiertas_vs_cerradas(self):
+        fila = KpiDefinition(clave="incidencias_abiertas_vs_cerradas", etiqueta="Incidencias abiertas vs. cerradas",
+                              modulo="operaciones", dimensiones=["estado"], unidad="numero")
+        fila.id_kpi_definition = 996
+
+        resultado = _con_metadatos_del_registry(fila)
+
+        self.assertEqual({"abierta", "cerrada"}, set(resultado["colores_categoria"]))
 
     def test_expone_modo_vivo_de_material_prestado_actual(self):
         fila = KpiDefinition(clave="material_prestado_actual", etiqueta="Material prestado ahora",
@@ -49,6 +59,7 @@ class ConMetadatosDelRegistryTest(unittest.TestCase):
         self.assertEqual("snapshot", resultado["modo"])
         self.assertEqual([], resultado["graficas_permitidas"])
         self.assertIsNone(resultado["colores_categoria"])
+        self.assertIsNone(resultado["descripcion"])
 
 
 if __name__ == "__main__":
