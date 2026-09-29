@@ -182,3 +182,15 @@ export function buildPieData(snapshot, labelForId, othersLabel, agruparPorPeriod
   if (restoTotal > 0) data.push({ id: null, name: othersLabel, value: restoTotal });
   return data;
 }
+
+// Sin distinguir mayusculas/acentos: mismo patron NFD que ya usa
+// normalizarEstatus en InventoryTracePage.jsx, aqui aplicado a busqueda libre
+// (nombre de empleado o de variable) en vez de a un estatus fijo.
+export function normalizarBusqueda(valor) {
+  return String(valor || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .trim();
+}
+

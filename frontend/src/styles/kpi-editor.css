@@ -110,3 +110,20 @@
 
 .kpi-editor-rango-resuelto { margin: 8px 0 0; font-size: 12px; font-weight: 700; color: var(--kpi-ink-suave); }
 .kpi-editor-rango-resuelto span { font-weight: 400; color: var(--kpi-texto-suave); }
+
+/* --- Selector de KPI (components/kpi-widgets/SelectorDeKpi.jsx) ---------------- */
+.kpi-selector { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.kpi-selector-grupo { display: flex; flex-direction: column; gap: 6px; }
+.kpi-selector-cuenta { margin-left: 4px; padding: 0 7px; border-radius: 999px; background: var(--kpi-borde); color: var(--kpi-texto-suave); font-size: 10px; }
+.kpi-selector-ayuda { margin: 0; font-size: 12px; color: var(--kpi-texto-suave); }
+.kpi-selector-vacio { margin: 0; padding: 14px; text-align: center; color: var(--kpi-texto-suave); border: 1px dashed var(--kpi-borde); border-radius: 10px; }
+.kpi-selector-fila { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.kpi-selector-fila > .kpi-editor-kpi-opcion { flex: 1 1 auto; min-width: 0; }
+.kpi-editor-kpi-opcion { font: inherit; }
+.kpi-editor-kpi-opcion:disabled { opacity: .45; cursor: not-allowed; background: var(--kpi-fondo); }
+.kpi-editor-kpi-opcion:disabled:hover { border-color: var(--kpi-borde); }
+.kpi-selector-fila.bloqueada { cursor: not-allowed; }
+.kpi-editor-kpi-nombre { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; overflow-wrap: anywhere; }
+.kpi-selector-check { color: var(--kpi-acento); flex: 0 0 auto; }
+.kpi-selector-fila .kpi-color-swatch-wrap { padding-top: 12px; flex: 0 0 auto; }
+.kpi-selector .kpi-chip-badge { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background: var(--kpi-ink); color: var(--kpi-tarjeta); font-size: 10px; font-weight: 800; }

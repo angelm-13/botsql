@@ -26,7 +26,7 @@ import PageHeader from "../components/PageHeader.jsx";
 import TIPO_GRAFICA_COMPONENTE from "../components/kpi-widgets/tipoGraficaComponentes";
 import Skeleton from "../components/kpi-widgets/Skeleton";
 import {
-  CATEGORICAL, colorDeKpi, colorEfectivoDeKpi, labelForDimension, unidadInfo,
+  CATEGORICAL, colorDeKpi, colorEfectivoDeKpi, labelForDimension, normalizarBusqueda, unidadInfo,
 } from "../kpi/kpiDatos.js";
 import {
   armarParametros, estadoDeWidget, mezclaUnidades, motivoParaNoCombinar, rangoInicialDelBorrador,
@@ -262,17 +262,6 @@ function EmployeeAvatar({ size = "regular", color }) {
       <User size={size === "small" ? 10 : 13} color={color ? "#fff" : undefined} />
     </span>
   );
-}
-
-// Sin distinguir mayusculas/acentos: mismo patron NFD que ya usa
-// normalizarEstatus en InventoryTracePage.jsx, aqui aplicado a busqueda libre
-// (nombre de empleado o de variable) en vez de a un estatus fijo.
-function normalizarBusqueda(valor) {
-  return String(valor || "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .trim();
 }
 
 // Barra desplegable reutilizable: boton cerrado por default con un resumen

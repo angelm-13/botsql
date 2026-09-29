@@ -3,6 +3,7 @@
 // que la prueba pueda comprobar que NINGUNA combinacion lanza al renderizar.
 import { renderToStaticMarkup } from "react-dom/server";
 import { CuerpoDeWidget, KpiWidgetCard } from "../pages/Dashboard.jsx";
+import SelectorDeKpi from "../components/kpi-widgets/SelectorDeKpi.jsx";
 
 const t = (clave, respaldo) => (typeof respaldo === "string" ? respaldo : clave);
 const tx = (clave, respaldo) => respaldo ?? clave;
@@ -45,6 +46,19 @@ export function pintarCuerpo({ widget, datos }) {
       t={t}
       tx={tx}
       animar={false}
+    />,
+  );
+}
+
+/** El selector de KPI del editor. `props` son las del componente; lo que no se
+ * pase toma valores de prueba (metaDeModulo sin iconos, tooltip legible). */
+export function pintarSelector(props) {
+  return renderToStaticMarkup(
+    <SelectorDeKpi
+      onAlternar={() => {}}
+      metaDeModulo={(modulo) => ({ icon: null, label: `Modulo ${modulo}` })}
+      textoDeBloqueo={(kpi, motivo) => `BLOQUEADO(${motivo}): ${kpi.etiqueta}`}
+      {...props}
     />,
   );
 }

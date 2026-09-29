@@ -13,6 +13,7 @@ import {
   CATEGORICAL, COLOR_OTHERS, buildMultiSeriesData, buildPieData, buildSeriesData,
   colorDeKpi, colorEfectivoDeKpi, formatConUnidad, labelForDimension,
 } from "./kpiDatos.js";
+import { agruparKpis, estadoDeOpcion, esVariable } from "./kpiSelector.js";
 import {
   armarParametros, estadoDeWidget, mezclaUnidades, motivoParaNoCombinar, rangoInicialDelBorrador,
   tiposDeGraficaPermitidos, unidadDeKpi, widgetDeBorrador,
@@ -480,4 +481,38 @@ test("un widget viejo con unidades mezcladas se detecta, pero no se le cambia na
   const estado = estadoDeWidget(viejo, [PORCENTAJE, CANTIDAD], HOY);
   assert.deepEqual(estado.idsKpiSeleccionados, ["3", "5"]);
   assert.deepEqual(armarParametros(estado, { hoy: HOY }), viejo.parametros);
+});
+
+// --- logica del selector de KPI -------------------------------------------
+const SEL = [
+  { id_kpi_definition: 1, etiqueta: "Incidencias abiertas", clave: "a", modulo: "operaciones", unidad: "numero", dimensiones: ["empleado"], descripcion: "Cuántas siguen abiertas" },
+  { id_kpi_definition: 2, etiqueta: "Ingresos totales", clave: "b", modulo: "facturacion", unidad: "moneda", dimensiones: ["global"] },
+  { id_kpi_definition: 3, etiqueta: "Existencias", clave: "c", modulo: "inventario", unidad: "piezas", dimensiones: ["producto"] },
+  { id_kpi_definition: 4, etiqueta: "Cancelaciones", clave: "d", modulo: "operaciones", unidad: "numero", dimensiones: ["empleado"] },
+];
+
+test("selector: agrupa por modulo en el orden del catalogo y deja 'Variables' al final", () => {
+  const grupos = agruparKpis(SEL);
+  assert.deepEqual(grupos.map((g) => g.clave), ["operaciones", "inventario", "variables"]);
+  assert.deepEqual(grupos[0].kpis.map((k) => k.etiqueta), ["Incidencias abiertas", "Cancelaciones"]);
+  assert.equal(esVariable(SEL[1]), true);
+  assert.equal(grupos[2].esVariables, true);
+});
+
+test("selector: la busqueda mira nombre, descripcion y clave, sin acentos, y quita grupos vacios", () => {
+  assert.deepEqual(agruparKpis(SEL, "cuantas").map((g) => g.clave), ["operaciones"], "por descripcion, sin acento");
+  assert.deepEqual(agruparKpis(SEL, "INGRESOS").map((g) => g.clave), ["variables"]);
+  assert.deepEqual(agruparKpis(SEL, "").length, 3);
+  assert.deepEqual(agruparKpis(SEL, "nada de esto"), []);
+  assert.deepEqual(agruparKpis([], "x"), []);
+});
+
+test("selector: una opcion se bloquea solo al combinar, y una ya elegida nunca", () => {
+  const catalogo = [...SEL, { id_kpi_definition: 5, etiqueta: "Resueltos %", clave: "e", modulo: "operaciones", unidad: "porcentaje", dimensiones: ["empleado"] }];
+  const porcentaje = catalogo[4];
+  assert.deepEqual(estadoDeOpcion({ kpi: porcentaje, seleccionados: ["1"], catalogo, multiple: true }), { elegida: false, motivo: "unidad" });
+  assert.deepEqual(estadoDeOpcion({ kpi: porcentaje, seleccionados: ["1"], catalogo, multiple: false }), { elegida: false, motivo: null });
+  assert.deepEqual(estadoDeOpcion({ kpi: SEL[3], seleccionados: ["1"], catalogo, multiple: true }), { elegida: false, motivo: null });
+  assert.deepEqual(estadoDeOpcion({ kpi: SEL[0], seleccionados: ["1", "5"], catalogo, multiple: true }), { elegida: true, motivo: null });
+  assert.deepEqual(estadoDeOpcion({ kpi: porcentaje, seleccionados: [], catalogo, multiple: true }), { elegida: false, motivo: null });
 });
