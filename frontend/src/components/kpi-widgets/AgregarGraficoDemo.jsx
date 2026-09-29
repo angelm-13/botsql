@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import {
   AreaChart as AreaChartIcon, BarChart2, Boxes, Check, FileText, FlaskConical,
   Hash, LineChart as LineChartIcon, PieChart as PieChartIcon, Receipt,
-  Search, Table as TableIcon,
+  Table as TableIcon,
 } from "lucide-react";
 import FormularioPlegable from "../FormularioPlegable";
+import SelectorDeKpi from "./SelectorDeKpi";
 import { EMPLEADOS_DEMO, KPIS_DEMO_PARA_EDITOR } from "./demoData";
 import { colorDeAvatar, inicialesDe } from "./avatar";
 
@@ -33,32 +34,31 @@ const PERIODOS_RELATIVOS = ["Hoy", "7 días", "30 días", "90 días", "Este mes"
 
 const PASOS = ["Qué medir", "Cómo verlo", "Periodo", "Filtros"];
 
+// El selector es el MISMO componente que usa el editor real; la demo solo le
+// da un catalogo con la forma de /kpi_definition/ (un id por KPI).
+const CATALOGO_DEMO = KPIS_DEMO_PARA_EDITOR.map((kpi, indice) => ({ ...kpi, id_kpi_definition: indice + 1, modo: "snapshot" }));
+const ETIQUETA_MODULO = { facturacion: "Facturación", operaciones: "Operaciones", laboratorio: "Laboratorio", documentos: "Documentos" };
+const metaDeModulo = (modulo) => ({ icon: ICONO_MODULO[modulo] || Boxes, label: ETIQUETA_MODULO[modulo] || modulo });
+
 export default function AgregarGraficoDemo() {
   const [paso, setPaso] = useState(0);
-  const [busqueda, setBusqueda] = useState("");
-  const [claveKpi, setClaveKpi] = useState(null);
+  const [idKpi, setIdKpi] = useState(null);
   const [tipoGrafica, setTipoGrafica] = useState(null);
   const [periodo, setPeriodo] = useState("30 días");
   const [empleadosSeleccionados, setEmpleadosSeleccionados] = useState([]);
 
-  const kpiSeleccionado = KPIS_DEMO_PARA_EDITOR.find((kpi) => kpi.clave === claveKpi) || null;
+  const kpiSeleccionado = CATALOGO_DEMO.find((kpi) => String(kpi.id_kpi_definition) === idKpi) || null;
+  const claveKpi = kpiSeleccionado?.clave || null;
 
-  const kpisPorModulo = useMemo(() => {
-    const filtro = busqueda.trim().toLowerCase();
-    const filtrados = KPIS_DEMO_PARA_EDITOR.filter((kpi) => (
-      !filtro || kpi.etiqueta.toLowerCase().includes(filtro) || kpi.descripcion.toLowerCase().includes(filtro)
-    ));
-    const grupos = new Map();
-    filtrados.forEach((kpi) => {
-      if (!grupos.has(kpi.modulo)) grupos.set(kpi.modulo, []);
-      grupos.get(kpi.modulo).push(kpi);
-    });
-    return grupos;
-  }, [busqueda]);
-
-  function elegirKpi(kpi) {
-    setClaveKpi(kpi.clave);
-    setTipoGrafica(kpi.grafica_default);
+  // Un KPI por grafico: elegir otro reemplaza al anterior, y volver a pulsar el
+  // elegido lo quita.
+  function elegirKpi(id) {
+    if (id === idKpi) {
+      setIdKpi(null);
+      return;
+    }
+    setIdKpi(id);
+    setTipoGrafica(CATALOGO_DEMO.find((kpi) => String(kpi.id_kpi_definition) === id).grafica_default);
   }
 
   function alternarEmpleado(idUsuario) {
@@ -78,7 +78,7 @@ export default function AgregarGraficoDemo() {
     // que en Paso 3 conectaria de verdad al backend.
     await new Promise((resolver) => { setTimeout(resolver, 300); });
     setPaso(0);
-    setClaveKpi(null);
+    setIdKpi(null);
     setTipoGrafica(null);
     setEmpleadosSeleccionados([]);
   }
@@ -104,37 +104,13 @@ export default function AgregarGraficoDemo() {
         <div className="kpi-editor-paso-contenido">
           {paso === 0 && (
             <div className="kpi-editor-seccion">
-              <div className="kpi-editor-buscador">
-                <Search size={15} aria-hidden="true" />
-                <input
-                  type="search"
-                  placeholder="Buscar KPI…"
-                  value={busqueda}
-                  onChange={(evento) => setBusqueda(evento.target.value)}
-                />
-              </div>
-              {[...kpisPorModulo.entries()].map(([modulo, kpis]) => {
-                const IconoModulo = ICONO_MODULO[modulo] || Boxes;
-                return (
-                  <div key={modulo} className="kpi-editor-grupo-modulo">
-                    <p className="kpi-editor-grupo-titulo"><IconoModulo size={14} aria-hidden="true" /> {modulo}</p>
-                    <div className="kpi-editor-kpi-lista">
-                      {kpis.map((kpi) => (
-                        <button
-                          type="button"
-                          key={kpi.clave}
-                          className={`kpi-editor-kpi-opcion ${claveKpi === kpi.clave ? "activo" : ""}`}
-                          onClick={() => elegirKpi(kpi)}
-                        >
-                          <span className="kpi-editor-kpi-nombre">{kpi.etiqueta}</span>
-                          <span className="kpi-editor-kpi-unidad">{kpi.unidad}</span>
-                          <span className="kpi-editor-kpi-descripcion">{kpi.descripcion}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
+              <SelectorDeKpi
+                catalogo={CATALOGO_DEMO}
+                seleccionados={idKpi ? [idKpi] : []}
+                multiple={false}
+                onAlternar={elegirKpi}
+                metaDeModulo={metaDeModulo}
+              />
             </div>
           )}
 
