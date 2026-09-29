@@ -171,7 +171,32 @@ la de Alan de abajo). El rango trae:
   `2026-09-29_reconciliacion_de_vales_adser.md`; **tampoco forman parte de este
   documento** (léelos antes de promover, cambian el estado de los vales).
 
-Por eso el respaldo previo **vuelve a recomendarse** (paso 0) y `db-migrate` sí tiene
+**Esto ya no es solo código: hay migración y scripts de datos.** Por eso el respaldo
+previo es **obligatorio** (paso 0) y el orden de abajo importa: los scripts de
+reconciliación de Alan cambian `incident.close_date` de 14 vales, y los KPIs de
+incidencias se reconstruyen desde esa fecha, así que **el backfill va después**.
+
+**Qué mueve en los números que verá Adser** (`6cd62bc` y las guías de Alan):
+
+- `material_prestado_actual` (tabla, en vivo): ya no excluye "Dañado", solo
+  Destrucción y Extraviado. En adser-prod sube de 156 a unos **183 renglones** (156 de
+  Préstamo Material + 27 de Dañado; las bajas, 146, siguen fuera). Cambia el
+  significado de "prestado" (ahora incluye lo dañado que no se ha devuelto), no sus
+  campos ni su forma: el contrato con el frontend es el mismo.
+- `incidencias_pendientes` e `incidencias_abiertas_vs_cerradas`: los 14 vales
+  "abierta" con todo devuelto pasan a cerrados con la fecha de su último cierre
+  (`fix_adser_estado_de_vales.py`). Los pendientes de hoy bajan hasta en 14, la serie
+  histórica de pendientes se reconstruye con esos cierres, y "cerradas" gana hasta 14
+  cierres en sus fechas reales. El sentinel `1990-01-01` sigue tratándose como "sin
+  cerrar" (no cambió); lo que cambia es que esos vales dejan de tenerlo.
+- `material_por_estado`: **no cambia.** Cuenta renglones por el tipo del vale
+  (`_estado_del_renglon`, sin modificar), no por el estado de la pieza.
+- La migración `20260929120000` toca `product.id_inventory_status` (124 piezas), que
+  ningún KPI de este documento lee; afecta a los reportes por estado de pieza.
+- `vales_vencidos_por_responsable` (KPI que no está en el perfil `adser`) ya excluye
+  las bajas.
+
+Por eso el respaldo previo es obligatorio (paso 0) y `db-migrate` sí tiene
 algo que aplicar (paso 2). Lo que reescribía `nm_field_permission`
 (`20260925130000`) y agregaba `peso` (`20260925140000`) llegó con `abf0929`. Lo que
 **sigue aplicando**: el backfill, los permisos y la plantilla.
@@ -185,20 +210,31 @@ KPIs en vivo, la comparación contra "hace N días", los acentos del menú, la
 cabecera de tarjeta sin traslape y la etiqueta "Responsable" (que llega sola a
 `kpi_definition` en el siguiente arranque del backend).
 
-> **Si el backfill (paso 3) y los permisos (pasos 4 y 5) ya se hicieron con
-> `abf0929`/`b21a793`, verifica antes de repetir:** los tres son idempotentes,
-> pero el perfil de permisos creció de dos KPIs a seis, así que el paso 4 casi
-> seguro tendrá filas nuevas por insertar.
+> **Si el backfill y los permisos ya se hicieron con `abf0929`/`b21a793`, no te
+> saltes nada:** todos son idempotentes, pero (a) el backfill hay que **repetirlo
+> después** de la reconciliación de vales (paso 4), porque cambia el pasado de los
+> KPIs de incidencias, y (b) el perfil de permisos creció de dos KPIs a seis, así que
+> el dry-run de permisos casi seguro tendrá filas nuevas por insertar.
 
-### 0. Respaldo (recomendado: hay tres migraciones de Alan)
+**Orden:** 0 respaldo → 1 promover → 2 aplicar y migraciones → 3 `creation_date` →
+4 reconciliación de vales (Alan) → 5 backfill → 6 y 7 permisos → 8 plantilla → 9
+verificar. Las guías de Alan van *antes* del backfill; permisos y plantilla no
+dependen de ellas, pero se dejan al final para verificar todo con los datos ya
+corregidos.
 
-Las migraciones nuevas no borran nada (un `DEFAULT`, un índice que solo se crea si
-no hay duplicados y el llenado de `id_inventory_status` en unos 124 productos), pero
-tocan esquema y datos; un respaldo antes de aplicar cuesta poco:
+### 0. Respaldo (obligatorio)
+
+Hay migración de datos (`20260929120000` llena `id_inventory_status` en unos 124
+productos) y scripts que cierran vales; ninguno se deshace al volver a la imagen
+anterior. Sin respaldo no hay marcha atrás. **No pases al paso 1 sin esto:**
 
 ```bash
 kubectl -n adser-prod exec statefulset/postgres -- sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > ~/adser_antes_de_e33126f_$(date +%Y%m%d_%H%M).sql
+ls -l ~/adser_antes_de_e33126f_*.sql    # debe pesar megabytes, no 0 bytes
+tail -n 3 ~/adser_antes_de_e33126f_*.sql   # debe terminar en "PostgreSQL database dump complete"
 ```
+
+Guarda el archivo fuera del clúster (`scp` a otra máquina) antes de seguir.
 
 ### 1. Promover la imagen (en el repo, no en el VPS)
 
@@ -234,12 +270,51 @@ SQL
 Esperado: las tres líneas de las migraciones nuevas, `db-migrate: esquema al dia` y
 `21`. Si `20260929100000` avisa de duplicados en `material`, el índice no se creó
 (el backend arranca igual): resolverlo con `dedupe_adser_material.py` antes de
-seguir. Después, el rellenado de `creation_date` según
-`2026-09-29_creation_date_de_vales.md`.
+seguir.
 
-### 3. Backfill de snapshots
+Verifica también que `20260929120000` llenó el estado de las piezas
+(`2026-09-29_estado_de_pieza_por_tipo_de_vale.md`):
 
-Sigue haciendo falta. La tarea nocturna solo recalcula una ventana rodante de 7
+```bash
+kubectl -n adser-prod exec -i statefulset/postgres -- sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+SELECT p.product_status, s.inventory_status_code, count(*)
+FROM product p LEFT JOIN inventory_status s USING (id_inventory_status)
+WHERE p.deletion_date IS NULL GROUP BY 1, 2 ORDER BY 1;
+SQL
+```
+
+Esperado: `DESTRUCCION` → `retirado` (86), `DAÑADO` y `EQ. DAÑADOS` → `danado` (38),
+`EXTRAVIADO` → `extraviado` (65). Si no cuadra, para aquí y avisa a Alan.
+
+### 3. `creation_date` de los vales (guía de Alan)
+
+Sigue `2026-09-29_creation_date_de_vales.md` tal cual (dry-run primero). Ningún KPI
+de este documento lee `creation_date` (usan `incident_date`), así que no cambia sus
+números; se hace ahora para no mezclarlo con el resto.
+
+### 4. Reconciliación de vales (guía de Alan)
+
+Sigue `2026-09-29_reconciliacion_de_vales_adser.md` (sección "Pasos"), **siempre con
+`--dry-run` antes**, y **con el visto bueno de Alan** para el segundo script (su tabla
+de estado lo marca "requiere OK de Alan" en prod):
+
+```bash
+kubectl -n adser-prod exec deploy/backend -- python scripts/sync_adser_cierre_de_gemelos_20260929.py --dry-run
+kubectl -n adser-prod exec deploy/backend -- python scripts/fix_adser_estado_de_vales.py --dry-run
+```
+
+Esperado en prod: el primero **no hace nada** (los 66 renglones ya estaban cerrados);
+el segundo lista **14 vales** (67, 70, 83, 85, 99, 103, 116, 118, 119, 121, 123, 126,
+131, 136) "abierta -> cerrada". Si la lista es otra, parar. Solo entonces, sin
+`--dry-run`. Este paso mueve `incidencias_pendientes` e `incidencias_abiertas_vs_cerradas`
+(ver arriba), por eso el backfill va después.
+
+### 5. Backfill de snapshots (después del paso 4)
+
+Sigue haciendo falta, **y se corre con los vales ya reconciliados**: los KPIs de
+incidencias reconstruyen el pasado desde `close_date`, y la tarea nocturna solo
+recalcula 7 días; un backfill anterior al paso 4 dejaría la historia con los 14 vales
+todavía "abiertos". La tarea nocturna solo recalcula una ventana rodante de 7
 días, así que sin backfill los 4 KPIs nuevos no tienen historia,
 `incidentes_resueltos_por_empleado` sigue vacío para lo anterior (antes agrupaba
 por una fecha que en lo migrado viene en NULL) y `cancelaciones_por_empleado`
@@ -257,7 +332,7 @@ print(recalcular_kpi_snapshots_rango(hoy - timedelta(days=364), hoy))
 Esperado: `{'ok': True, ... 'filas': N, ...}`. Detalle y verificaciones en
 `2026-09-25_kpi_agregacion.md` y en `2026-09-29_kpis_dashboard_adser.md`.
 
-### 4. Dry-run del script de permisos
+### 6. Dry-run del script de permisos
 
 ```bash
 kubectl -n adser-prod exec deployment/backend -- python -m scripts.seed_kpi_permissions --perfil adser --dry-run
@@ -267,7 +342,7 @@ Esperado: `Administrator` con los KPIs del perfil que aún no tenga en
 `INSERTAR` (hasta seis) y el total en `Se insertarian: N`. Si aparece
 `ROL INEXISTENTE` o `AVISO`, parar.
 
-### 5. Aplicar el script de permisos
+### 7. Aplicar el script de permisos
 
 ```bash
 kubectl -n adser-prod exec deployment/backend -- python -m scripts.seed_kpi_permissions --perfil adser
@@ -275,7 +350,7 @@ kubectl -n adser-prod exec deployment/backend -- python -m scripts.seed_kpi_perm
 
 Esperado: `Insertadas: N fila(s) en nm_permission_kpi.` y código de salida 0.
 
-### 6. Plantilla del tablero de `taroj`
+### 8. Plantilla del tablero de `taroj`
 
 Detalle y opciones en `2026-09-29_kpis_dashboard_adser.md`. **La tabla
 "Material prestado ahora" no se crea todavía:** depende de `incident_date` y falta
@@ -289,7 +364,7 @@ kubectl -n adser-prod exec deployment/backend -- python -m scripts.seed_kpi_dash
 Esperado: `Creados: 1 tablero(s) y 4 widget(s).` Cuando Alan confirme
 `incident_date`, una corrida normal (sin `--sin-tabla`) agrega solo la tabla.
 
-### 7. Verificar con taroj
+### 9. Verificar con taroj
 
 1. `taroj` **cierra sesión y vuelve a entrar**: el token anterior no ve el
    cambio.
@@ -306,11 +381,53 @@ Esperado: `Creados: 1 tablero(s) y 4 widget(s).` Cuando Alan confirme
 4. "Incidentes resueltos por empleado" muestra un porcentaje entre 0 y 100, y los
    menús y encabezados de tarjeta se ven con acentos y sin traslape.
 
-Si algo falla: volver a la imagen `b21a793` en el overlay (pasos 1 y 2 al
-revés). Las migraciones de Alan no borran nada y pueden quedarse (el código de
-`b21a793` no las usa ni se rompe con ellas); no hay migraciones mías que deshacer. Las filas nuevas de
-`nm_permission_kpi`, los snapshots y el tablero sembrado pueden quedarse (el
-código de `b21a793` no los rompe).
+5. **Números que deben cuadrar después de todo** (solo lectura; el KPI y esta
+   consulta usan la misma regla, así que deben dar lo mismo):
+
+   ```sql
+   SELECT lower(trim(t.incident_type_description)) AS tipo,
+          count(*) FILTER (WHERE n.close_date IS NULL OR n.close_date < '2000-01-01') AS abiertos
+   FROM nm_incident_product n
+   JOIN incident i ON i.id_incident = n.id_incident AND i.deletion_date IS NULL
+   LEFT JOIN incident_type t ON t.id_incident_type = i.id_incident_type
+   WHERE n.deletion_date IS NULL AND n.direction = 'salida' AND i.incident_date IS NOT NULL
+   GROUP BY 1 ORDER BY 1;
+   ```
+
+   "Material prestado ahora" (el "N renglones" del resumen de la tabla) debe ser la
+   suma de todos los tipos **menos** `destruccion`/`destrucción` y `extraviado`;
+   Dañado sí suma. Con lo medido el 2026-09-29: 156 + 27 = **183**. "Incidencias
+   pendientes" de hoy debe ser el de antes menos los vales que cerró el paso 4 (hasta 14).
+
+## Qué comparar contra el Resumen de almacén del sistema anterior
+
+El repositorio no trae ese reporte ni sus columnas, así que esta lista sale de las
+cifras medidas por Alan (guías del 2026-09-29) y hay que ponerle al lado la pantalla
+del sistema anterior. Comparar cada cosa contra **lo mismo** en el sistema nuevo:
+
+| En el Resumen de almacén | Comparar con | Debe dar |
+|---|---|---|
+| Herramientas en manos de alguien (sin bajas) | Tabla "Material prestado ahora", renglones | 183 (156 préstamo + 27 dañado). Si el legacy cuenta las bajas, dará 329 (156 + 80 destrucción + 66 extraviado + 27 dañado): es otra definición, no un error |
+| Piezas por estado (Destrucción, Dañado, Extraviado) | La consulta por `product_status` / `inventory_status_code` del paso 2 | 86 retirado, 38 danado, 65 extraviado. Es por **pieza** (último vale), no por renglón |
+| Movimientos por tipo (Entrada, Salida, Destrucción, Dañado, Extraviado) | Dona "Material por estado", rango "Este año" | Cuenta **renglones** por tipo de vale y fecha del vale (`incident_date`); no coincidirá con el conteo por pieza de arriba |
+| Vales abiertos / pendientes | Número "Incidencias pendientes" de hoy | Los abiertos del legacy menos los 14 cerrados por el paso 4. El legacy tiene además 10 vales "cerrada" con renglones abiertos (7 son bajas) que aquí no cuentan como pendientes |
+| Quién tiene qué, por persona | Tabla con la vista "Por responsable" | Ya sin bajas: el marcador `ESTANCIA EN EL TALLER` (169 renglones) no debe aparecer como la persona con más herramientas |
+
+Diferencias esperadas que **no** son errores: los 6 renglones gemelos que prod dejó
+abiertos (vales 9, 19 y 112) y la decisión de contar Dañado como prestado. Cualquier
+otra diferencia, pásasela a Alan con el vale y el renglón.
+
+## Si algo falla
+
+- **Antes del paso 2:** volver a la imagen `b21a793` en el overlay (pasos 1 y 2 al
+  revés). No se ha tocado ningún dato.
+- **Después del paso 2:** volver a la imagen **no deshace los datos** (la migración de
+  estado de pieza, el cierre de los 14 vales). Las migraciones de Alan no borran nada
+  y pueden quedarse; para regresar los datos, restaurar el respaldo del paso 0 (parar
+  antes el backend y avisar a Alan: se pierde todo lo capturado desde el respaldo).
+  Un cierre de vales mal aplicado se corrige con Alan, no a mano.
+- Las filas nuevas de `nm_permission_kpi`, los snapshots y el tablero sembrado pueden
+  quedarse (el código de `b21a793` no los rompe). No hay migraciones mías que deshacer.
 
 ## Resultado de la prueba local (2026-09-25)
 
