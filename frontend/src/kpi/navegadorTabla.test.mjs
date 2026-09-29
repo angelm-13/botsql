@@ -61,7 +61,9 @@ async function escenario(nombre, anchoCuadricula, config = {}) {
   paso(nombre + ": nada se sale de la tarjeta", fuera.length === 0, fuera.slice(0, 3).map((el) => el.tagName + "." + (el.className || "").toString().slice(0, 30) + " " + Math.round(el.getBoundingClientRect().right - caja.right) + "px").join(", "));
   paso(nombre + ": la tarjeta no tiene scroll horizontal", tarjeta.scrollWidth <= tarjeta.clientWidth + 1, tarjeta.scrollWidth + ">" + tarjeta.clientWidth);
   // 2. Ningun renglon queda bajo un recuadro vecino.
-  const tapados = filas.filter((fila) => { const r = fila.getBoundingClientRect(); if (!r.width) return false; const punto = document.elementFromPoint(Math.min(r.left + r.width / 2, window.innerWidth - 1), r.top + Math.min(r.height / 2, 8)); return punto && !tarjeta.contains(punto); });
+  const areaLista = (tarjeta.querySelector(".kpi-prestamos-lista") || tarjeta).getBoundingClientRect();
+  // Un renglon que la lista recorta (queda por scroll) no esta "tapado": esta fuera de la vista de su propia lista.
+  const tapados = filas.filter((fila) => { const r = fila.getBoundingClientRect(); if (!r.width || r.bottom > areaLista.bottom || r.top < areaLista.top) return false; const punto = document.elementFromPoint(Math.min(r.left + r.width / 2, window.innerWidth - 1), r.top + Math.min(r.height / 2, 8)); return punto && !tarjeta.contains(punto); });
   paso(nombre + ": ningun renglon queda tapado por otro recuadro", tapados.length === 0, tapados.length + " tapados");
   const vecinos = [...contenedor.querySelectorAll("[data-vecino]")].filter((v) => { const r = v.getBoundingClientRect(); return r.left < caja.right - 1 && r.right > caja.left + 1 && r.top < caja.bottom - 1 && r.bottom > caja.top + 1; });
   paso(nombre + ": los vecinos no se enciman con la tarjeta", vecinos.length === 0, vecinos.length);
@@ -80,6 +82,7 @@ async function escenario(nombre, anchoCuadricula, config = {}) {
 
 const click = async (el) => { el.click(); await esperar(120); };
 const seleccionar = async (select, valor) => { select.value = valor; select.dispatchEvent(new Event("change", { bubbles: true })); await esperar(120); };
+const escribir = async (input, valor) => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, valor); input.dispatchEvent(new Event("input", { bubbles: true })); await esperar(120); };
 const filasDe = (tarjeta) => [...tarjeta.querySelectorAll("tbody tr")];
 const textoPlano = (el) => el.textContent.replace(/\\s+/g, " ").trim();
 const boton = (tarjeta, re) => [...tarjeta.querySelectorAll("button")].find((b) => re.test(b.textContent));
@@ -125,19 +128,34 @@ async function diseno(nombre, ancho, esTabla) {
     paso(nombre + ": la fecha dice 'vale del'", /vale del/.test(antesFecha), antesFecha);
     paso(nombre + ": el orden se elige con un selector propio", getComputedStyle(tarjeta.querySelector(".kpi-preview-orden-movil")).display !== "none");
   }
-  // Ver todos: 15 renglones en una lista con scroll interno, y Ver menos vuelve a 10.
+  // Ver todos: abre una ventana con los 15 renglones, sin agrandar la tarjeta.
+  const alto0 = tarjeta.getBoundingClientRect().height;
+  verTodos.focus();
   await click(verTodos);
-  // Los renglones verdes (hasta 30 dias) son los ultimos por dias: solo aparecen con "Ver todos".
-  const todas = filasDe(tarjeta);
+  const dlg = document.querySelector('[role="dialog"]');
+  paso(nombre + ": 'Ver todos' abre una ventana", !!dlg && dlg.getAttribute("aria-modal") === "true");
+  const todas = filasDe(dlg);
+  paso(nombre + ": la ventana muestra los 15", todas.length === 15, todas.length);
   const verde = todas.find((f) => f.classList.contains("nivel-ok"));
   paso(nombre + ": hay renglones verdes (hasta 30 dias) con otro icono que el coral", !!verde && chips(verde).querySelector("svg").innerHTML !== chips(todas[0]).querySelector("svg").innerHTML);
-  const lista = tarjeta.querySelector(".kpi-prestamos-lista");
-  paso(nombre + ": 'Ver todos' muestra los 15", filasDe(tarjeta).filter((f) => f.getBoundingClientRect().height > 0).length === 15);
-  paso(nombre + ": la lista tiene alto limitado y scroll interno", lista.classList.contains("con-scroll") && lista.scrollHeight > lista.clientHeight && lista.clientHeight <= 421 && getComputedStyle(lista).overflowY === "auto", lista.scrollHeight + "/" + lista.clientHeight);
-  paso(nombre + ": la tarjeta ya no crece sin limite", tarjeta.getBoundingClientRect().height < 900, Math.round(tarjeta.getBoundingClientRect().height));
-  paso(nombre + ": con la lista abierta, nada se sale de la tarjeta", [...tarjeta.querySelectorAll("*")].every((el) => dentro(el, tarjeta.getBoundingClientRect())));
-  await click(boton(tarjeta, /Ver menos/));
-  paso(nombre + ": 'Ver menos' vuelve a 10", filasDe(tarjeta).filter((f) => f.getBoundingClientRect().height > 0).length === 10);
+  paso(nombre + ": la tarjeta no crece al abrir la ventana", Math.abs(tarjeta.getBoundingClientRect().height - alto0) < 2, Math.round(alto0) + " -> " + Math.round(tarjeta.getBoundingClientRect().height));
+  const cajaDlg = dlg.getBoundingClientRect();
+  paso(nombre + ": la ventana cabe en la pantalla", cajaDlg.left >= -1 && cajaDlg.right <= innerWidth + 1 && cajaDlg.bottom <= innerHeight + 1, Math.round(cajaDlg.left) + "-" + Math.round(cajaDlg.right));
+  paso(nombre + ": la ventana tiene busqueda, filtro por responsable y orden", !!dlg.querySelector('input[type="search"]') && !!dlg.querySelector(".kpi-prestamos-control select") && !!dlg.querySelector(".kpi-prestamos-tabla th, .kpi-preview-orden-movil"));
+  paso(nombre + ": el foco entra a la ventana", dlg.contains(document.activeElement), document.activeElement && document.activeElement.tagName);
+  const buscador = dlg.querySelector('input[type="search"]');
+  await escribir(buscador, "2025-05");
+  paso(nombre + ": buscar por fecha deja solo ese renglon", filasDe(dlg).length === 1, filasDe(dlg).length);
+  await escribir(buscador, "zzz");
+  paso(nombre + ": una busqueda sin resultados lo dice", /Ningún renglón coincide/.test(textoPlano(dlg)));
+  await escribir(buscador, "");
+  const lista = dlg.querySelector(".kpi-prestamos-lista");
+  paso(nombre + ": en la ventana la lista se desplaza por dentro, sin salirse", getComputedStyle(lista).overflowY === "auto" && lista.getBoundingClientRect().bottom <= cajaDlg.bottom + 1);
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  await esperar(200);
+  paso(nombre + ": Escape cierra la ventana y devuelve el foco al boton", !document.querySelector('[role="dialog"]') && document.activeElement === verTodos);
+  paso(nombre + ": la tarjeta sigue con sus 10 renglones", filasDe(tarjeta).length === 10, filasDe(tarjeta).length);
+  paso(nombre + ": nada se sale de la tarjeta", [...tarjeta.querySelectorAll("*")].every((el) => dentro(el, tarjeta.getBoundingClientRect())));
   // Filtro por responsable.
   const filtro = tarjeta.querySelector(".kpi-prestamos-control select");
   const opciones = [...filtro.options].map((o) => o.value).filter(Boolean);

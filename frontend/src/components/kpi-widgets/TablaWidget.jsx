@@ -1,12 +1,13 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import PropTypes from "prop-types";
 import {
-  AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, Clock, List, PackageCheck, Users,
+  AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, Clock, List, PackageCheck, Search, Users, X,
 } from "lucide-react";
 import {
-  RENGLONES_VISIBLES, agruparPorResponsable, anchoDeBarra,
-  etiquetaDeDias, filtrarPorResponsable, gravedadDeDias, ordenarFilas, recortar, recortarGrupos,
-  resumenDePrestamos, responsablesDe,
+  RENGLONES_VISIBLES, agruparPorResponsable, anchoDeBarra, buscarEnFilas, escalaDeBarras,
+  etiquetaDeDias, filtrarPorResponsable, filtrarPorUsuario, gravedadDeDias, ordenarFilas, recortar,
+  recortarGrupos, resumenDePrestamos, responsablesDe,
 } from "../../kpi/kpiPrestamos.js";
 
 const CAMPOS = ["articulo", "responsable", "fecha_prestamo", "dias_prestado"];
@@ -32,7 +33,15 @@ const ETIQUETAS_POR_OMISION = {
   vista_agrupada: "Por responsable",
   vistas: "Vista",
   ver_todos: "Ver todos ({n})",
-  ver_menos: "Ver menos",
+  cerrar: "Cerrar",
+  panel_titulo: "Material prestado ahora",
+  buscar: "Buscar",
+  buscar_pista: "Artículo, responsable, fecha…",
+  sin_coincidencias: "Ningún renglón coincide con la búsqueda.",
+  limpiar_busqueda: "Limpiar la búsqueda",
+  filtrando: "Filtrando",
+  quitar_filtro_externo: "Quitar el filtro",
+  sin_prestamos_de: "{responsable} no tiene material prestado.",
   mostrando: "Mostrando",
   de: "de",
   renglon: "renglón",
@@ -105,38 +114,50 @@ Renglon.propTypes = {
 };
 Renglon.defaultProps = { resaltada: false, onFilaClick: null };
 
-/** La tabla de "Material prestado ahora" (KPI en vivo).
+/** Contenido de la tabla de "Material prestado ahora" (KPI en vivo). Lo usan la tarjeta del
+ * tablero (`enPanel` falso) y el panel "Ver todos" (`enPanel`), cada uno con su propio estado
+ * de filtro, orden y busqueda.
  *
  * - Arriba, un resumen: renglones, responsables distintos y el mas antiguo.
  * - Cada renglon: articulo en negritas; debajo "responsable · vale del <fecha>"; debajo
  *   la barra de dias con su chip. La gravedad es por dias -hasta 30 verde, 31 a 90
  *   ambar, mas de 90 coral- y el chip lleva icono, texto y los dias en años y meses.
- * - Solo se ven 10 renglones hasta pulsar "Ver todos", que los muestra en una lista con
- *   scroll interno y encabezado fijo. Filtro por responsable y vista agrupada.
+ *   La barra se dibuja contra el renglon mas antiguo (nunca menos de 365 dias).
+ * - En la tarjeta se ven 10 renglones y el resto queda tras "Ver todos", que abre el panel
+ *   con la lista completa (busqueda, responsable, orden) sin agrandar la tarjeta. La lista
+ *   se desplaza por dentro con el encabezado fijo.
  * - Orden por dias (el que mas lleva, primero); se puede cambiar por columna.
- * - Responsivo por el ANCHO DE LA TARJETA (container queries, kpi-widgets.css): en una
- *   tarjeta ancha es una tabla de cuatro columnas; en una angosta, renglones compactos
- *   sin etiquetas repetidas. Sin scroll horizontal en ningun caso. */
-export default function TablaWidget({
-  filas, resaltarResponsable, onFilaClick, total, etiquetas,
+ * - Responsivo por el ANCHO DEL CONTENEDOR (container queries, kpi-widgets.css): ancho es
+ *   una tabla de cuatro columnas; angosto, renglones compactos sin etiquetas repetidas. */
+function ContenidoPrestamos({
+  filas, resaltarResponsable, onFilaClick, total, textos, filtroExterno, onQuitarFiltroExterno, enPanel, onVerTodos,
 }) {
-  const textos = { ...ETIQUETAS_POR_OMISION, ...etiquetas };
   const [orden, setOrden] = useState({ campo: "dias_prestado", direccion: "desc" });
   const [responsable, setResponsable] = useState("");
+  const [busqueda, setBusqueda] = useState("");
   const [agrupada, setAgrupada] = useState(false);
-  const [verTodos, setVerTodos] = useState(false);
 
-  const responsables = useMemo(() => responsablesDe(filas), [filas]);
+  // El filtro que llega de otra tarjeta (clic en una barra) recorta ANTES de todo lo demas.
+  const base = useMemo(() => (filtroExterno ? filtrarPorUsuario(filas, filtroExterno.id) : filas), [filas, filtroExterno]);
+  const responsables = useMemo(() => responsablesDe(base), [base]);
   // Si el responsable filtrado ya no esta en los datos (se devolvio todo su material),
   // el filtro se ignora en vez de dejar una tabla vacia.
   const filtro = responsables.includes(responsable) ? responsable : "";
-  const filtradas = useMemo(() => filtrarPorResponsable(filas, filtro), [filas, filtro]);
+  const filtradas = useMemo(
+    () => buscarEnFilas(filtrarPorResponsable(base, filtro), busqueda),
+    [base, filtro, busqueda],
+  );
   const ordenadas = useMemo(() => ordenarFilas(filtradas, orden.campo, orden.direccion), [filtradas, orden]);
-  const resumen = useMemo(() => resumenDePrestamos(filtradas, filtro ? 0 : total), [filtradas, filtro, total]);
-  const maximo = useMemo(() => Math.max(0, ...filtradas.map((fila) => fila.dias_prestado)), [filtradas]);
+  const hayRecorte = Boolean(filtro || filtroExterno || busqueda);
+  const resumen = useMemo(() => resumenDePrestamos(filtradas, hayRecorte ? 0 : total), [filtradas, hayRecorte, total]);
+  const escala = useMemo(() => escalaDeBarras(filtradas), [filtradas]);
 
-  const visibles = recortar(ordenadas, verTodos);
-  const grupos = useMemo(() => (agrupada ? recortarGrupos(agruparPorResponsable(filtradas), verTodos) : []), [agrupada, filtradas, verTodos]);
+  const limite = enPanel ? Infinity : RENGLONES_VISIBLES;
+  const visibles = recortar(ordenadas, enPanel, limite);
+  const grupos = useMemo(
+    () => (agrupada ? recortarGrupos(agruparPorResponsable(filtradas), enPanel, limite) : []),
+    [agrupada, filtradas, enPanel, limite],
+  );
   const hayMasQueElLimite = filtradas.length > RENGLONES_VISIBLES;
 
   function alternarOrden(campo) {
@@ -153,6 +174,9 @@ export default function TablaWidget({
     );
   }
 
+  // El filtro de otra tarjeta dejo la lista en blanco porque esa persona no debe nada (no porque
+  // la busqueda o el responsable no coincidan): se dice asi, con un solo boton para quitarlo.
+  const sinPrestamosDelFiltrado = Boolean(filtroExterno) && base.length === 0;
   const plural = (n, uno, varios) => `${n} ${n === 1 ? textos[uno] : textos[varios]}`;
   const renglonesTexto = resumen.renglones > resumen.cargados
     ? `${resumen.cargados} ${textos.de} ${resumen.renglones} ${textos.renglones}`
@@ -161,7 +185,7 @@ export default function TablaWidget({
     <Renglon
       key={fila.id}
       fila={fila}
-      maximo={maximo}
+      maximo={escala}
       textos={textos}
       resaltada={Boolean(resaltarResponsable) && fila.responsable === resaltarResponsable}
       onFilaClick={onFilaClick}
@@ -185,7 +209,15 @@ export default function TablaWidget({
   );
 
   return (
-    <div className="kpi-preview-tabla-wrap kpi-prestamos">
+    <div className={`kpi-preview-tabla-wrap kpi-prestamos ${enPanel ? "en-panel" : ""}`.trim()}>
+      {filtroExterno && (
+        <div className="kpi-prestamos-filtro-externo">
+          <span>{textos.filtrando}: <strong>{filtroExterno.nombre}</strong></span>
+          <button type="button" onClick={onQuitarFiltroExterno} aria-label={`${textos.quitar_filtro_externo}: ${filtroExterno.nombre}`} title={textos.quitar_filtro_externo}>
+            <X size={13} aria-hidden="true" />
+          </button>
+        </div>
+      )}
       <p className="kpi-prestamos-resumen">
         <span><strong>{renglonesTexto}</strong></span>
         <span>{plural(resumen.responsables, "responsable_uno", "responsables")}</span>
@@ -197,12 +229,26 @@ export default function TablaWidget({
       </p>
 
       <div className="kpi-prestamos-controles">
+        {enPanel && (
+          <label className="kpi-prestamos-control kpi-prestamos-buscador">
+            <span>{textos.buscar}</span>
+            <span className="kpi-prestamos-buscador-caja">
+              <Search size={14} aria-hidden="true" />
+              <input
+                type="search"
+                value={busqueda}
+                placeholder={textos.buscar_pista}
+                onChange={(evento) => setBusqueda(evento.target.value)}
+              />
+            </span>
+          </label>
+        )}
         <label className="kpi-prestamos-control">
           <span>{textos.filtro_responsable}</span>
-          <select value={filtro} onChange={(evento) => { setResponsable(evento.target.value); setVerTodos(false); }}>
-            <option value="">{textos.todos_los_responsables} ({filas.length})</option>
+          <select value={filtro} onChange={(evento) => setResponsable(evento.target.value)}>
+            <option value="">{textos.todos_los_responsables} ({base.length})</option>
             {responsables.map((nombre) => (
-              <option key={nombre} value={nombre}>{nombre} ({filtrarPorResponsable(filas, nombre).length})</option>
+              <option key={nombre} value={nombre}>{nombre} ({filtrarPorResponsable(base, nombre).length})</option>
             ))}
           </select>
         </label>
@@ -235,13 +281,28 @@ export default function TablaWidget({
 
       {filtradas.length === 0 && (
         <div className="kpi-prestamos-vacio">
-          <p>{llenar(textos.sin_resultados, { responsable })}</p>
-          <button type="button" className="button ghost" onClick={() => setResponsable("")}>{textos.quitar_filtro}</button>
+          {sinPrestamosDelFiltrado ? (
+            <>
+              <p>{llenar(textos.sin_prestamos_de, { responsable: filtroExterno.nombre })}</p>
+              <button type="button" className="button ghost" onClick={onQuitarFiltroExterno}>{textos.quitar_filtro_externo}</button>
+            </>
+          ) : (
+            <>
+              <p>{busqueda ? textos.sin_coincidencias : llenar(textos.sin_resultados, { responsable })}</p>
+              <button
+                type="button"
+                className="button ghost"
+                onClick={() => { setResponsable(""); setBusqueda(""); }}
+              >
+                {busqueda ? textos.limpiar_busqueda : textos.quitar_filtro}
+              </button>
+            </>
+          )}
         </div>
       )}
 
       {filtradas.length > 0 && (
-        <div className={`kpi-prestamos-lista ${verTodos && hayMasQueElLimite ? "con-scroll" : ""}`}>
+        <div className="kpi-prestamos-lista">
           {!agrupada && (
             <table className="kpi-preview-tabla kpi-prestamos-tabla">
               {encabezado}
@@ -263,15 +324,115 @@ export default function TablaWidget({
         </div>
       )}
 
-      {hayMasQueElLimite && (
-        <button type="button" className="kpi-prestamos-ver-todos" aria-expanded={verTodos} onClick={() => setVerTodos((actual) => !actual)}>
-          {verTodos ? textos.ver_menos : llenar(textos.ver_todos, { n: filtradas.length })}
+      {!enPanel && hayMasQueElLimite && (
+        <button type="button" className="kpi-prestamos-ver-todos" aria-haspopup="dialog" onClick={onVerTodos}>
+          {llenar(textos.ver_todos, { n: filtradas.length })}
         </button>
       )}
       {total > filas.length && (
         <p className="kpi-preview-tabla-total">{textos.mostrando} {filas.length} {textos.de} {total}</p>
       )}
     </div>
+  );
+}
+
+const PROPS_FILAS = PropTypes.arrayOf(PropTypes.shape({
+  id: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  id_user: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  articulo: PropTypes.string,
+  responsable: PropTypes.string,
+  fecha_prestamo: PropTypes.string,
+  dias_prestado: PropTypes.number,
+}));
+
+ContenidoPrestamos.propTypes = {
+  filas: PROPS_FILAS.isRequired,
+  resaltarResponsable: PropTypes.string,
+  onFilaClick: PropTypes.func,
+  total: PropTypes.number,
+  textos: PropTypes.objectOf(PropTypes.string).isRequired,
+  filtroExterno: PropTypes.shape({ id: PropTypes.oneOfType([PropTypes.number, PropTypes.string]), nombre: PropTypes.string }),
+  onQuitarFiltroExterno: PropTypes.func,
+  enPanel: PropTypes.bool,
+  onVerTodos: PropTypes.func,
+};
+ContenidoPrestamos.defaultProps = {
+  resaltarResponsable: null, onFilaClick: null, total: 0, filtroExterno: null, onQuitarFiltroExterno: null, enPanel: false, onVerTodos: null,
+};
+
+const ENFOCABLES = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
+/** Ventana con la lista completa. Se pinta en `document.body` (no dentro de la tarjeta, que
+ * recorta y tiene transform por el arrastre); Escape o un clic afuera la cierran, el foco
+ * entra a la ventana, Tab no se sale de ella y al cerrar vuelve al boton que la abrio. */
+function PanelDePrestamos({ onCerrar, textos, children }) {
+  const ventana = useRef(null);
+  useEffect(() => {
+    const previo = document.activeElement;
+    ventana.current?.querySelector("input, button")?.focus();
+    const alTeclear = (evento) => {
+      if (evento.key === "Escape") { evento.stopPropagation(); onCerrar(); return; }
+      if (evento.key !== "Tab" || !ventana.current) return;
+      const dentro = [...ventana.current.querySelectorAll(ENFOCABLES)].filter((el) => !el.disabled && el.offsetParent !== null);
+      if (!dentro.length) return;
+      const primero = dentro[0];
+      const ultimo = dentro[dentro.length - 1];
+      if (evento.shiftKey && document.activeElement === primero) { evento.preventDefault(); ultimo.focus(); }
+      else if (!evento.shiftKey && document.activeElement === ultimo) { evento.preventDefault(); primero.focus(); }
+    };
+    document.addEventListener("keydown", alTeclear, true);
+    const desbordeAnterior = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", alTeclear, true);
+      document.body.style.overflow = desbordeAnterior;
+      if (previo && typeof previo.focus === "function") previo.focus();
+    };
+  }, [onCerrar]);
+
+  return createPortal(
+    <div
+      className="kpi-prestamos-modal-raiz"
+      data-theme={document.querySelector(".kpi-dashboard")?.getAttribute("data-theme") || undefined}
+    >
+      <div className="kpi-prestamos-modal-fondo" onMouseDown={(evento) => { if (evento.target === evento.currentTarget) onCerrar(); }}>
+        <div ref={ventana} className="kpi-prestamos-modal" role="dialog" aria-modal="true" aria-label={textos.panel_titulo}>
+          <header className="kpi-prestamos-modal-cabecera">
+            <h3>{textos.panel_titulo}</h3>
+            <button type="button" className="kpi-icon-button" onClick={onCerrar} aria-label={textos.cerrar} title={textos.cerrar}>
+              <X size={16} aria-hidden="true" />
+            </button>
+          </header>
+          <div className="kpi-prestamos-modal-cuerpo">{children}</div>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+PanelDePrestamos.propTypes = {
+  onCerrar: PropTypes.func.isRequired,
+  textos: PropTypes.objectOf(PropTypes.string).isRequired,
+  children: PropTypes.node.isRequired,
+};
+
+export default function TablaWidget({
+  filas, resaltarResponsable, onFilaClick, total, etiquetas, filtroExterno, onQuitarFiltroExterno,
+}) {
+  const textos = { ...ETIQUETAS_POR_OMISION, ...etiquetas };
+  const [panelAbierto, setPanelAbierto] = useState(false);
+  const cerrar = useMemo(() => () => setPanelAbierto(false), []);
+  const compartidas = { filas, resaltarResponsable, onFilaClick, total, textos, filtroExterno, onQuitarFiltroExterno };
+  return (
+    <>
+      <ContenidoPrestamos {...compartidas} onVerTodos={() => setPanelAbierto(true)} />
+      {panelAbierto && (
+        <PanelDePrestamos onCerrar={cerrar} textos={textos}>
+          <ContenidoPrestamos {...compartidas} enPanel />
+        </PanelDePrestamos>
+      )}
+    </>
   );
 }
 
@@ -288,6 +449,11 @@ TablaWidget.propTypes = {
   // Total real en el servidor cuando `filas` es solo la primera pagina.
   total: PropTypes.number,
   etiquetas: PropTypes.objectOf(PropTypes.string),
+  // Filtro que llega de otra tarjeta (clic en una barra de "abiertas por responsable").
+  filtroExterno: PropTypes.shape({ id: PropTypes.oneOfType([PropTypes.number, PropTypes.string]), nombre: PropTypes.string }),
+  onQuitarFiltroExterno: PropTypes.func,
 };
 
-TablaWidget.defaultProps = { resaltarResponsable: null, onFilaClick: null, total: 0, etiquetas: null };
+TablaWidget.defaultProps = {
+  resaltarResponsable: null, onFilaClick: null, total: 0, etiquetas: null, filtroExterno: null, onQuitarFiltroExterno: null,
+};
