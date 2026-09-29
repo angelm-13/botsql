@@ -88,6 +88,47 @@ Además hay **dos tablas que el módulo debe ocultar** —`alembic_version` y
 `user_mfa`— y **dos columnas sensibles** en `clientes`. Están ahí para poder
 demostrar el filtrado, no por descuido.
 
+### La estructura, para cuando pidan verla
+
+```
+clientes                    productos              empleados
+├─ id (PK)                  ├─ id (PK)             ├─ id (PK)
+├─ nombre                   ├─ nombre              ├─ nombre
+├─ ciudad                   ├─ categoria           └─ puesto
+├─ segmento                 └─ precio
+├─ password_hash  ← oculta al modelo
+└─ api_key        ← oculta al modelo
+
+                    ventas
+                    ├─ id (PK)
+                    ├─ fecha
+                    ├─ id_cliente  → clientes.id
+                    ├─ id_producto → productos.id
+                    ├─ id_empleado → empleados.id
+                    ├─ cantidad
+                    └─ total
+```
+
+Dos cosas que vale la pena señalar de esta estructura al presentarla:
+
+1. `clientes.password_hash` y `clientes.api_key` **existen en la tabla pero
+   nunca llegan al modelo** — son justo el tipo de columna que
+   `BI_HIDDEN_COLUMNS` filtra por patrón (`password*`, `*api_key*`) antes de
+   construir el DDL que se le muestra a la IA. Buen momento para mostrar que
+   la columna está ahí en la base real, pero el modelo ni sabe que existe.
+2. `ventas` es la única tabla con las tres llaves foráneas — por eso casi
+   toda pregunta interesante ("qué empleado vendió más", "ventas por
+   ciudad") termina siendo un `JOIN` de `ventas` con alguna de las otras
+   tres. Es la tabla que amarra todo el negocio, y explica por qué el
+   modelo casi siempre junta esas dos tablas y no otro par.
+
+Para verla de verdad, sin abrir ningún puerto (el contenedor de la base no
+publica el suyo a propósito):
+
+```bash
+docker compose exec db psql -U postgres -d erp_demo -c "\d+ ventas"
+```
+
 ---
 
 ## 4. Guion sugerido (10 minutos)
