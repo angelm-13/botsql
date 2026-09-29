@@ -7,7 +7,7 @@
 // desincronice.
 import {
   RANGO_PERSONALIZADO, RANGO_RELATIVO_POR_OMISION, esRangoRelativoVigente,
-  fechaLocalIso, periodoAnterior, resolverRangoRelativo,
+  fechaLocalIso, periodoAnterior, rangoDesfasado, resolverRangoRelativo,
 } from "./kpiRango.js";
 
 /** Los `parametros` de un widget a partir del borrador del editor.
@@ -31,10 +31,16 @@ export function armarParametros(estado, { esTabla = false, tieneBajoStock = fals
   if (relativo) parametros.rango_relativo = estado.rangoRelativo;
   if (estado.comparar) {
     if (relativo) {
-      // Contra el periodo inmediatamente anterior: un rango B tecleado a mano
-      // se quedaria viejo en cuanto pasara un dia.
-      parametros.comparar_anterior = true;
-      Object.assign(parametros, periodoAnterior(rangoA));
+      // Un rango B tecleado a mano se quedaria viejo en cuanto pasara un dia:
+      // con un chip se compara contra el periodo inmediatamente anterior, o
+      // contra el mismo rango N dias atras (`desfaseComparacion`).
+      if (estado.desfaseComparacion) {
+        parametros.comparar_desfase_dias = Number(estado.desfaseComparacion);
+        Object.assign(parametros, rangoDesfasado(rangoA, Number(estado.desfaseComparacion)));
+      } else {
+        parametros.comparar_anterior = true;
+        Object.assign(parametros, periodoAnterior(rangoA));
+      }
     } else {
       parametros.fecha_inicio_b = estado.fechaInicioB;
       parametros.fecha_fin_b = estado.fechaFinB;
@@ -84,6 +90,7 @@ export function estadoDeWidget(widget, kpiCatalog, hoy = new Date()) {
     fechaInicio: parametros.fecha_inicio || fechaLocalIso(new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() - 29)),
     fechaFin: parametros.fecha_fin || fechaLocalIso(hoy),
     comparar: Boolean(parametros.fecha_inicio_b && parametros.fecha_fin_b),
+    desfaseComparacion: Number(parametros.comparar_desfase_dias) > 0 ? Number(parametros.comparar_desfase_dias) : null,
     fechaInicioB: parametros.fecha_inicio_b || "",
     fechaFinB: parametros.fecha_fin_b || "",
     empleadosSeleccionados: Array.isArray(parametros.empleados) ? parametros.empleados.map(String) : [],

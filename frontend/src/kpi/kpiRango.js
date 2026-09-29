@@ -89,6 +89,19 @@ export function esRangoRelativoVigente(clave) {
   return RANGOS_RELATIVOS.includes(clave);
 }
 
+/** Con qué se puede comparar un rango relativo, además del periodo anterior: el
+ * mismo rango pero corrido N días atrás (`comparar_desfase_dias`). "Hoy contra
+ * hace 30 días" es un dia contra otro dia, no contra "ayer". */
+export const DESFASES_DE_COMPARACION = [7, 30, 90, 365];
+
+/** El mismo rango, corrido `dias` hacia atras. */
+export function rangoDesfasado({ fecha_inicio: inicio, fecha_fin: fin }, dias) {
+  return {
+    fecha_inicio_b: fechaLocalIso(sumarDias(desdeIso(inicio), -dias)),
+    fecha_fin_b: fechaLocalIso(sumarDias(desdeIso(fin), -dias)),
+  };
+}
+
 /** Los `parametros` de un widget con sus fechas al dia de `hoy`. Un widget sin
  * `rango_relativo` (todos los de antes) sale IGUAL, tal cual estaba guardado. */
 export function parametrosEfectivos(parametros, hoy = new Date()) {
@@ -96,6 +109,8 @@ export function parametrosEfectivos(parametros, hoy = new Date()) {
   if (!esRangoRelativoVigente(guardados.rango_relativo)) return guardados;
   const rango = resolverRangoRelativo(guardados.rango_relativo, hoy);
   const efectivos = { ...guardados, ...rango };
-  if (guardados.comparar_anterior) Object.assign(efectivos, periodoAnterior(rango));
+  const desfase = Number(guardados.comparar_desfase_dias);
+  if (Number.isInteger(desfase) && desfase > 0) Object.assign(efectivos, rangoDesfasado(rango, desfase));
+  else if (guardados.comparar_anterior) Object.assign(efectivos, periodoAnterior(rango));
   return efectivos;
 }

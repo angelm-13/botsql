@@ -15,7 +15,7 @@ import {
 } from "./kpiDatos.js";
 import { armarParametros, estadoDeWidget, rangoInicialDelBorrador, tiposDeGraficaPermitidos, widgetDeBorrador } from "./kpiParametros.js";
 import {
-  fechaLocalIso, parametrosEfectivos, periodoAnterior, resolverRangoRelativo,
+  fechaLocalIso, parametrosEfectivos, periodoAnterior, rangoDesfasado, resolverRangoRelativo,
 } from "./kpiRango.js";
 import { colorDeAvatar } from "../components/kpi-widgets/avatar.js";
 import {
@@ -412,4 +412,33 @@ test("varios KPIs: la interseccion; uno en vivo con uno de serie no comparten na
 
 test("un KPI sin lista de graficas no restringe (menos Tabla)", () => {
   assert.deepEqual(tiposDeGraficaPermitidos([{ modo: "snapshot" }], TODOS), ["numero", "barras", "linea", "area", "dona"]);
+});
+
+// --- comparar contra "hace N dias" --------------------------------------------
+test("rango desfasado: el mismo rango N dias atras (hoy contra hace 30 dias es un dia contra otro dia)", () => {
+  assert.deepEqual(rangoDesfasado({ fecha_inicio: "2026-09-29", fecha_fin: "2026-09-29" }, 30), { fecha_inicio_b: "2026-08-30", fecha_fin_b: "2026-08-30" });
+  assert.deepEqual(rangoDesfasado({ fecha_inicio: "2026-09-01", fecha_fin: "2026-09-29" }, 365), { fecha_inicio_b: "2025-09-01", fecha_fin_b: "2025-09-29" });
+});
+
+test("un widget con comparar_desfase_dias recalcula su B cada dia; guardar y reabrir no lo pierde", () => {
+  const estado = { ...estadoDeWidget(WIDGETS_VIEJOS[0], CATALOGO, HOY), rangoRelativo: "hoy", comparar: true, desfaseComparacion: 30 };
+  const guardado = armarParametros(estado, { hoy: HOY });
+  assert.deepEqual(guardado, {
+    fecha_inicio: "2026-09-29", fecha_fin: "2026-09-29", rango_relativo: "hoy",
+    comparar_desfase_dias: 30, fecha_inicio_b: "2026-08-30", fecha_fin_b: "2026-08-30",
+  });
+  assert.ok(!("comparar_anterior" in guardado), "es una u otra");
+  const manana = parametrosEfectivos(guardado, new Date(2026, 8, 30));
+  assert.deepEqual([manana.fecha_inicio, manana.fecha_inicio_b], ["2026-09-30", "2026-08-31"]);
+  const reabierto = estadoDeWidget({ ...WIDGETS_VIEJOS[0], parametros: guardado }, CATALOGO, HOY);
+  assert.equal(reabierto.desfaseComparacion, 30);
+  assert.equal(reabierto.comparar, true);
+  assert.deepEqual(armarParametros(reabierto, { hoy: HOY }), guardado);
+});
+
+test("sin desfase, comparar sigue siendo contra el periodo anterior (lo de antes)", () => {
+  const estado = { ...estadoDeWidget(WIDGETS_VIEJOS[0], CATALOGO, HOY), rangoRelativo: "30_dias", comparar: true, desfaseComparacion: null };
+  const guardado = armarParametros(estado, { hoy: HOY });
+  assert.equal(guardado.comparar_anterior, true);
+  assert.ok(!("comparar_desfase_dias" in guardado));
 });

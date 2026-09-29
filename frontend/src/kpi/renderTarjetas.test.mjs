@@ -35,6 +35,7 @@ const PARAMETROS = {
   "viejo, con comparacion": { fecha_inicio: "2026-08-01", fecha_fin: "2026-08-31", fecha_inicio_b: "2026-07-01", fecha_fin_b: "2026-07-31" },
   "rango relativo": { rango_relativo: "30_dias", fecha_inicio: "2026-08-31", fecha_fin: "2026-09-29" },
   "rango relativo con comparar el periodo anterior": { rango_relativo: "este_mes", comparar_anterior: true, fecha_inicio: "2026-09-01", fecha_fin: "2026-09-29", fecha_inicio_b: "2026-08-03", fecha_fin_b: "2026-08-31" },
+  "rango relativo \"hoy\" comparado con hace 30 dias": { rango_relativo: "hoy", comparar_desfase_dias: 30, fecha_inicio: "2026-09-29", fecha_fin: "2026-09-29", fecha_inicio_b: "2026-08-30", fecha_fin_b: "2026-08-30" },
   "sin fechas": {},
   "sin parametros": undefined,
   "rango relativo desconocido (version futura)": { rango_relativo: "trimestre_pasado", fecha_inicio: "2026-06-01", fecha_fin: "2026-08-31" },

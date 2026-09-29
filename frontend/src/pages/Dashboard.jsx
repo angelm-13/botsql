@@ -32,8 +32,8 @@ import {
   armarParametros, estadoDeWidget, rangoInicialDelBorrador, tiposDeGraficaPermitidos as tiposPermitidosPorKpi, widgetDeBorrador,
 } from "../kpi/kpiParametros.js";
 import {
-  ETIQUETA_RANGO_POR_OMISION, RANGOS_RELATIVOS, RANGO_PERSONALIZADO, fechaLocalIso, parametrosEfectivos,
-  periodoAnterior, resolverRangoRelativo,
+  DESFASES_DE_COMPARACION, ETIQUETA_RANGO_POR_OMISION, RANGOS_RELATIVOS, RANGO_PERSONALIZADO, fechaLocalIso,
+  parametrosEfectivos, periodoAnterior, rangoDesfasado, resolverRangoRelativo,
 } from "../kpi/kpiRango.js";
 import {
   UMBRAL_ATRASO_PRESTAMO_DIAS, filasTablaPrestamo, propsDona, propsNumero,
@@ -372,6 +372,8 @@ function defaultPanelState() {
     // se mira); "personalizado" = fechas tecleadas a mano, como antes.
     ...rangoInicialDelBorrador(),
     comparar: false,
+    // null = contra el periodo anterior; un numero = contra el mismo rango N dias atras.
+    desfaseComparacion: null,
     fechaInicioB: "",
     fechaFinB: "",
     empleadosSeleccionados: [],
@@ -1564,6 +1566,7 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
     empleadosSeleccionados,
     departamentosSeleccionados,
     coloresKpi,
+    desfaseComparacion,
     agruparPor,
     umbralBajoStock,
   } = panelState;
@@ -1860,7 +1863,9 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
   // que quedaron en el borrador), igual que las que se consultan y se guardan.
   const esRelativo = RANGOS_RELATIVOS.includes(rangoRelativo);
   const rangoResuelto = esRelativo ? resolverRangoRelativo(rangoRelativo) : null;
-  const periodoBResuelto = esRelativo ? periodoAnterior(rangoResuelto) : null;
+  const periodoBResuelto = esRelativo
+    ? (desfaseComparacion ? rangoDesfasado(rangoResuelto, desfaseComparacion) : periodoAnterior(rangoResuelto))
+    : null;
 
   // Lo que va en cada paso es lo que antes eran tres columnas lado a lado;
   // el orden y los controles son los mismos, solo que ahora se recorren con
@@ -2043,11 +2048,25 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
 
             <label className="field checkbox-field">
               <input type="checkbox" checked={comparar} onChange={(event) => onChangePanelState({ comparar: event.target.checked })} />
-              <span>{esRelativo ? tx("compare_previous_toggle", "Comparar contra el periodo anterior") : tx("compare_toggle", "Comparar contra otro periodo")}</span>
+              <span>{esRelativo ? tx("compare_relative_toggle", "Comparar") : tx("compare_toggle", "Comparar contra otro periodo")}</span>
             </label>
 
             {comparar && esRelativo && (
-              <p className="kpi-editor-rango-resuelto">{periodoBResuelto.fecha_inicio_b} → {periodoBResuelto.fecha_fin_b}</p>
+              <>
+                <label className="field">
+                  <span>{tx("compare_against", "Contra")}</span>
+                  <select
+                    value={desfaseComparacion || ""}
+                    onChange={(event) => onChangePanelState({ desfaseComparacion: event.target.value ? Number(event.target.value) : null })}
+                  >
+                    <option value="">{tx("compare_previous_period", "El periodo anterior")}</option>
+                    {DESFASES_DE_COMPARACION.map((dias) => (
+                      <option key={dias} value={dias}>{tx(`compare_shift_${dias}`, `Hace ${dias} días`)}</option>
+                    ))}
+                  </select>
+                </label>
+                <p className="kpi-editor-rango-resuelto">{periodoBResuelto.fecha_inicio_b} → {periodoBResuelto.fecha_fin_b}</p>
+              </>
             )}
 
             {comparar && !esRelativo && (
