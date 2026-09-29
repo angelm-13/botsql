@@ -41,7 +41,9 @@ from app.models.nm_incident_product import NmIncidentProduct
 from app.models.product import Product
 from app.models.task import Task
 from app.models.user import User
-from app.services.warehouse_voucher_service import CIERRE_SENTINELA, SALIDA, _estado_del_renglon
+from app.services.warehouse_voucher_service import (
+    CIERRE_SENTINELA, SALIDA, TIPOS_DE_BAJA, _estado_del_renglon, _vales_de_baja,
+)
 from app.modules.registry import MODULO_POR_CLAVE
 
 # Que llave de `dimension_key` (JSONB, en `kpi_snapshot`) le corresponde a cada
@@ -310,6 +312,9 @@ def vales_vencidos_por_responsable_query(session, fecha_inicio, fecha_fin, filtr
         ),
         NmIncidentProduct.due_date.isnot(None),
         NmIncidentProduct.due_date < ahora,
+        # Una baja (destruccion, extravio) no se reclama: mismo criterio que
+        # `warehouse_voucher_service.vales_vencidos()`. Ver TIPOS_DE_BAJA.
+        NmIncidentProduct.id_incident.notin_(_vales_de_baja()),
         fecha_col >= fecha_inicio,
         fecha_col <= fecha_fin,
     ]
@@ -1077,17 +1082,19 @@ def material_por_estado_query(session, fecha_inicio, fecha_fin, filtros_dimensio
     ]
 
 
-# Descripcion en minuscula y sin espacios sobrantes de las 3 disposiciones
-# especiales que `_estado_del_renglon` reconoce (warehouse_voucher_service.py)
-# -- un renglon con uno de estos tipos es un estado TERMINAL (se destruyo, se
-# perdio, salio danado), no un prestamo pendiente de devolver, sin importar
-# que traiga en `close_date`. Se repite aqui en vez de llamar a
-# `_estado_del_renglon` fila por fila porque este query SI necesita
-# LIMIT/OFFSET a nivel SQL (es "vivo", paginado) -- filtrar en Python DESPUES
-# de traer una pagina rompería la paginacion (una pagina podria perder filas
-# reales tras el filtro). Si `_estado_del_renglon` cambia sus 3 valores
-# especiales, este conjunto hay que actualizarlo a mano.
-_TIPOS_ESPECIALES_RENGLON = ("destruccion", "dañado", "extraviado")
+# Que tipos de vale NO cuentan como "prestado ahora": los de BAJA
+# (`TIPOS_DE_BAJA` en warehouse_voucher_service.py: destruccion y extravio), donde
+# la herramienta ya no esta con nadie. Es la MISMA regla que usa "Quien tiene que"
+# en la app, para que la pantalla y este KPI no se contradigan.
+#
+# Antes este KPI excluia tambien "Dañado", como estado terminal. Se cambio el
+# 2026-09-29 por decision de Alan: no se sabe si quien lo daño todavia lo tiene, y
+# es mejor verlo de mas que esconderlo. Los reportes por estado
+# (`_estado_del_renglon`) siguen etiquetando los tres.
+#
+# El filtro va en SQL, no en Python fila por fila, porque este query SI necesita
+# LIMIT/OFFSET a nivel SQL (es "vivo", paginado): filtrar DESPUES de traer una
+# pagina romperia la paginacion (una pagina podria perder filas reales).
 
 
 def material_prestado_actual_query(session, *, limit, offset, actor_project=None):
@@ -1102,11 +1109,11 @@ def material_prestado_actual_query(session, *, limit, offset, actor_project=None
     limit/offset -- siempre paginado) y nunca lo llama `tasks_kpis.py`.
 
     * "Prestado" = dos condiciones, ambas necesarias:
-      - Direccion "Salida" segun `_estado_del_renglon` -- ver
-        `_TIPOS_ESPECIALES_RENGLON` arriba: una Entrada nunca esta prestada, y
-        una disposicion especial (Destruccion/Dañado/Extraviado) es un estado
-        terminal, no un prestamo pendiente. Replicado en SQL, no llamando a
-        `_estado_del_renglon` fila por fila, por el motivo de paginacion ya
+      - Direccion "Salida", y un vale que no sea de BAJA -- ver `TIPOS_DE_BAJA`
+        arriba: una Entrada nunca esta prestada, y un vale de Destruccion o
+        Extraviado registra que la herramienta ya no esta con nadie, no un
+        prestamo pendiente. "Dañado" SI cuenta (ver el comentario de arriba).
+        Replicado en SQL, no fila por fila, por el motivo de paginacion ya
         explicado.
       - Sin devolver: `_sin_cerrar(close_date)` -- `close_date IS NULL` o
         `== CIERRE_SENTINELA`, mismo criterio que el resto del modulo.
@@ -1142,7 +1149,7 @@ def material_prestado_actual_query(session, *, limit, offset, actor_project=None
         ),
         or_(
             IncidentType.incident_type_description.is_(None),
-            func.lower(func.trim(IncidentType.incident_type_description)).notin_(_TIPOS_ESPECIALES_RENGLON),
+            func.lower(func.trim(IncidentType.incident_type_description)).notin_(TIPOS_DE_BAJA),
         ),
     ]
 

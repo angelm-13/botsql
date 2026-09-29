@@ -24,8 +24,10 @@ sus renglones, igual que la app.
 NO toca el caso contrario -vale "cerrada" que conserva renglones abiertos-: hay 10 en
 adser-prod y 7 son de tipo Destruccion/Dañado/Extraviado, donde el vale cerrado con la
 herramienta "abierta" es la forma en que el sistema anterior registraba una baja. Eso
-no es una inconsistencia que se derive: es una decision de como contar "quien tiene
-que" (ver docs/despliegues/2026-09-29_estado_de_pieza_por_tipo_de_vale.md).
+no es una inconsistencia que se derive: era una decision de como contar "quien tiene
+que", y se resolvio en las consultas, no en los datos (ver TIPOS_DE_BAJA en
+warehouse_voucher_service.py y la seccion 3 de
+docs/despliegues/2026-09-29_reconciliacion_de_vales_adser.md).
 
 Idempotente. `--dry-run` no escribe nada.
 """

@@ -20,6 +20,8 @@ EMPLEADO_A = 990
 EMPLEADO_B = 991
 INCIDENT_TYPE_NORMAL = 990
 INCIDENT_TYPE_DESTRUCCION = 991
+INCIDENT_TYPE_EXTRAVIADO = 992
+INCIDENT_TYPE_DANADO = 993
 LOCATION_TYPE = 990
 LOCATION = 990
 BRAND = 990
@@ -48,6 +50,8 @@ class MaterialPrestadoActualQueryTest(unittest.TestCase):
             ])
             db.add(IncidentType(id_incident_type=INCIDENT_TYPE_NORMAL, incident_type_description="Vale normal", created_by=ADMIN_ID))
             db.add(IncidentType(id_incident_type=INCIDENT_TYPE_DESTRUCCION, incident_type_description="Destruccion", created_by=ADMIN_ID))
+            db.add(IncidentType(id_incident_type=INCIDENT_TYPE_EXTRAVIADO, incident_type_description="Extraviado", created_by=ADMIN_ID))
+            db.add(IncidentType(id_incident_type=INCIDENT_TYPE_DANADO, incident_type_description="Dañado", created_by=ADMIN_ID))
             db.add(LocationType(id_location_type=LOCATION_TYPE, location_type_description="KPI test", is_warehouse=True, created_by=ADMIN_ID))
             db.add(Brand(id_brand=BRAND, brand_description="KPI test", created_by=ADMIN_ID))
             db.add(ProductFamily(id_product_family=PRODUCT_FAMILY, product_family_description="KPI test", created_by=ADMIN_ID))
@@ -76,7 +80,7 @@ class MaterialPrestadoActualQueryTest(unittest.TestCase):
     def _limpiar(self):
         with transaction_context() as db:
             db.execute(delete(NmIncidentProduct).where(NmIncidentProduct.id_product.in_([PRODUCT_A, PRODUCT_B])))
-            db.execute(delete(Incident).where(Incident.id_incident_type.in_([INCIDENT_TYPE_NORMAL, INCIDENT_TYPE_DESTRUCCION])))
+            db.execute(delete(Incident).where(Incident.id_incident_type.in_([INCIDENT_TYPE_NORMAL, INCIDENT_TYPE_DESTRUCCION, INCIDENT_TYPE_EXTRAVIADO, INCIDENT_TYPE_DANADO])))
             db.execute(delete(Product).where(Product.id_product.in_([PRODUCT_A, PRODUCT_B])))
             db.execute(delete(Invoice).where(Invoice.id_invoice == INVOICE))
             db.execute(delete(Material).where(Material.id_material == MATERIAL))
@@ -85,7 +89,7 @@ class MaterialPrestadoActualQueryTest(unittest.TestCase):
             db.execute(delete(ProductFamily).where(ProductFamily.id_product_family == PRODUCT_FAMILY))
             db.execute(delete(Brand).where(Brand.id_brand == BRAND))
             db.execute(delete(LocationType).where(LocationType.id_location_type == LOCATION_TYPE))
-            db.execute(delete(IncidentType).where(IncidentType.id_incident_type.in_([INCIDENT_TYPE_NORMAL, INCIDENT_TYPE_DESTRUCCION])))
+            db.execute(delete(IncidentType).where(IncidentType.id_incident_type.in_([INCIDENT_TYPE_NORMAL, INCIDENT_TYPE_DESTRUCCION, INCIDENT_TYPE_EXTRAVIADO, INCIDENT_TYPE_DANADO])))
             db.execute(delete(User).where(User.id_user.in_([EMPLEADO_A, EMPLEADO_B])))
 
     def _incidente(self, id_incident, id_user, incident_date, id_incident_type=INCIDENT_TYPE_NORMAL):
@@ -147,19 +151,38 @@ class MaterialPrestadoActualQueryTest(unittest.TestCase):
         self.assertEqual(1, total)
         self.assertEqual(20, items[0]["dias_prestado"])
 
-    def test_disposicion_especial_no_cuenta_aunque_la_direccion_sea_salida(self):
-        # _estado_del_renglon hace que el TIPO especial pise a la direccion --
-        # un renglon "Destruccion" nunca es un prestamo pendiente, sin
-        # importar que su direction sea 'salida' y siga sin cerrar.
+    def test_una_baja_no_cuenta_aunque_la_direccion_sea_salida(self):
+        # Un vale de Destruccion o de Extraviado registra que la herramienta ya
+        # no esta con nadie: nunca es un prestamo pendiente, sin importar que su
+        # direction sea 'salida' y siga sin cerrar.
+        for id_incident, id_renglon, tipo in (
+            (9904, 99004, INCIDENT_TYPE_DESTRUCCION),
+            (9907, 99007, INCIDENT_TYPE_EXTRAVIADO),
+        ):
+            with self.subTest(tipo=tipo):
+                with transaction_context() as db:
+                    db.add(self._incidente(id_incident, EMPLEADO_A, HOY - timedelta(days=1), id_incident_type=tipo))
+                    db.flush()
+                    db.add(self._renglon(id_renglon, id_incident, PRODUCT_A, "salida"))
+
+                with transaction_context() as db:
+                    items, total = material_prestado_actual_query(db, limit=25, offset=0)
+
+                self.assertEqual(0, total)
+
+    def test_lo_danado_sigue_contando_como_prestado(self):
+        # Decision del 2026-09-29: no se sabe si quien lo daño todavia lo tiene o
+        # ya lo entrego roto, y es mejor verlo de mas que esconderlo.
         with transaction_context() as db:
-            db.add(self._incidente(9904, EMPLEADO_A, HOY - timedelta(days=1), id_incident_type=INCIDENT_TYPE_DESTRUCCION))
+            db.add(self._incidente(9908, EMPLEADO_A, HOY - timedelta(days=4), id_incident_type=INCIDENT_TYPE_DANADO))
             db.flush()
-            db.add(self._renglon(99004, 9904, PRODUCT_A, "salida"))
+            db.add(self._renglon(99008, 9908, PRODUCT_A, "salida"))
 
         with transaction_context() as db:
             items, total = material_prestado_actual_query(db, limit=25, offset=0)
 
-        self.assertEqual(0, total)
+        self.assertEqual(1, total)
+        self.assertEqual(4, items[0]["dias_prestado"])
 
     def test_orden_por_mas_dias_prestado_primero(self):
         with transaction_context() as db:

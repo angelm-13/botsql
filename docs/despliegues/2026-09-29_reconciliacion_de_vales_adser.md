@@ -48,11 +48,13 @@ anterior sí lo dejaba capturar y `migrate_adser.py` lo copió.
   anterior un vale cerrado con la herramienta "abierta" era la forma de registrar una
   baja.
 
-## 3. Problema abierto: "quién tiene qué" cuenta bajas como préstamos
+## 3. "Quién tiene qué" ya no cuenta las bajas como préstamos
 
-`quien_tiene_que` y el KPI de material prestado cuentan un renglón como "alguien lo
-tiene" si es de salida y no tiene `close_date`, **sin mirar el tipo del vale**. En
-adser-prod:
+**Decisión del 2026-09-29 (Alan): excluir Destrucción y Extraviado; Dañado se queda
+dentro.** Solo cambia código, no datos.
+
+Antes, las consultas que cuentan "lo que está con alguien" contaban un renglón si era de
+salida y no tenía `close_date`, **sin mirar el tipo del vale**. En adser-prod:
 
 | Tipo del vale | Renglones "abiertos" | Vales |
 |---|---|---|
@@ -61,10 +63,33 @@ adser-prod:
 | Extraviado | 66 | 3 |
 | Dañado | 27 | 4 |
 
-De 329 renglones que hoy cuentan como en manos de alguien, **173 son de vales de baja**
-(destruido, perdido o dañado). Solo 156 son préstamos reales. **Decisión pendiente** de
-cómo contar: excluir los tipos de baja de "quién tiene qué", cerrar esos renglones al
-registrar la baja, o distinguir "dañado, todavía lo tiene" de "destruido/extraviado".
+Eran 329 renglones "en manos de alguien", de los que 173 eran bajas. La persona con más
+herramientas era un marcador (`ESTANCIA EN EL TALLER`, 169 renglones, todos de vales
+de baja).
+
+**Qué cambia.** `TIPOS_DE_BAJA` y `_vales_de_baja()` en `warehouse_voucher_service.py` son
+la única definición, y las siete consultas siguientes la usan:
+
+| Consulta | Antes | Ahora |
+|---|---|---|
+| Pantalla "Quién tiene qué" (`quien_tiene_que`) | contaba las bajas | las excluye |
+| Vales vencidos (`vales_vencidos`) y el KPI de vencidos por responsable | contaban las bajas | las excluyen |
+| Búsqueda de vales con pendientes y su conteo de renglones pendientes | contaban las bajas | las excluyen |
+| Reporte de vales pendientes | contaba las bajas | las excluye |
+| Quién tiene un producto ahora (trazabilidad de inventario) | contaba las bajas | las excluye |
+| KPI "Material prestado actual" | excluía **Destrucción, Dañado y Extraviado** | excluye solo Destrucción y Extraviado; **Dañado ahora cuenta** |
+
+Ese último cambio es deliberado: antes de esta decisión, el KPI escondía lo dañado como
+"estado terminal", mientras la pantalla lo mostraba; ahora los dos dicen lo mismo.
+Los reportes por estado (`_estado_del_renglon`) siguen etiquetando los tres tipos.
+
+**El vale de baja no se esconde:** sigue abierto y consultable en la lista de vales; solo
+deja de contarse como préstamo. El estado del vale sigue derivándose de sus renglones.
+
+**Lo que no cubre.** El seguimiento de material por proyecto
+(`project_management_service`) cuenta sus propios renglones abiertos y no se tocó. Y
+"Dañado" sigue siendo ambiguo: si más adelante se sabe que un dañado ya no está con
+quien lo dañó, basta con agregarlo a `TIPOS_DE_BAJA`.
 
 ## Pasos
 

@@ -136,6 +136,33 @@ def _clave_de_tipo(descripcion) -> str:
         str.maketrans("ñáéíóú", "naeiou"))
 
 
+# Los vales de BAJA: la herramienta ya no esta con nadie.
+#
+# En el sistema anterior un vale de destruccion o extravio quedaba cerrado y sus
+# renglones seguian sin fecha de cierre, porque lo destruido o perdido nunca se
+# devuelve. Contarlos como "alguien lo tiene" ponia a la persona con mas
+# herramientas a un marcador ("ESTANCIA EN EL TALLER", 169 renglones) y a 173 de
+# 329 renglones "en manos de alguien" que eran bajas.
+#
+# "Dañado" NO esta aqui a proposito: no se sabe si quien lo daño todavia lo
+# tiene o ya lo entrego roto, y es mejor verlo de mas que esconderlo. Y
+# "Reparacion" tampoco: la pieza esta fuera, en alguien.
+#
+# En minuscula y con la variante acentuada, porque la comparacion se hace en SQL
+# y ahi no se quitan los acentos.
+TIPOS_DE_BAJA = ("destruccion", "destrucción", "extraviado")
+
+
+def _vales_de_baja():
+    """Los vales cuyo tipo es una baja, como subconsulta para excluirlos de lo
+    que cuenta como "esta con alguien"."""
+    return (
+        select(Incident.id_incident)
+        .join(IncidentType, IncidentType.id_incident_type == Incident.id_incident_type)
+        .where(func.lower(func.trim(IncidentType.incident_type_description)).in_(TIPOS_DE_BAJA))
+    )
+
+
 def _entero(valor, campo, *, obligatorio=True):
     if valor in (None, ""):
         if obligatorio:
@@ -916,6 +943,8 @@ def vales_vencidos(user_data: dict) -> dict:
                 NmIncidentProduct.close_date.is_(None),
                 NmIncidentProduct.due_date.isnot(None),
                 NmIncidentProduct.due_date < ahora,
+                # Una baja no se reclama: ver TIPOS_DE_BAJA.
+                NmIncidentProduct.id_incident.notin_(_vales_de_baja()),
             ).order_by(NmIncidentProduct.due_date)
         ).all()
         return {"items": _con_existencias(db, filas), "total": len(filas)}
@@ -1139,6 +1168,8 @@ def quien_tiene_que(user_data: dict, *, id_user=None) -> dict:
                 NmIncidentProduct.direction == SALIDA,
                 NmIncidentProduct.close_date.is_(None),
                 Incident.deletion_date.is_(None),
+                # Una baja no esta con nadie: ver TIPOS_DE_BAJA.
+                NmIncidentProduct.id_incident.notin_(_vales_de_baja()),
             )
         )
 
@@ -1329,6 +1360,7 @@ def buscar_vales(user_data: dict, *, texto=None, estado=None, id_user=None,
                         NmIncidentProduct.direction == SALIDA,
                         NmIncidentProduct.close_date.is_(None),
                         NmIncidentProduct.deletion_date.is_(None),
+                        NmIncidentProduct.id_incident.notin_(_vales_de_baja()),
                     )
                 )
             )
@@ -1354,7 +1386,8 @@ def buscar_vales(user_data: dict, *, texto=None, estado=None, id_user=None,
                     NmIncidentProduct.id_incident,
                     func.count().filter(
                         (NmIncidentProduct.direction == SALIDA)
-                        & NmIncidentProduct.close_date.is_(None)),
+                        & NmIncidentProduct.close_date.is_(None)
+                        & NmIncidentProduct.id_incident.notin_(_vales_de_baja())),
                     func.count(),
                 )
                 .where(NmIncidentProduct.id_incident.in_(ids),
@@ -1491,6 +1524,7 @@ def _renglones_de_reporte(db, *, fecha_inicio=None, fecha_fin=None, id_user=None
             NmIncidentProduct.direction == SALIDA,
             or_(NmIncidentProduct.close_date.is_(None),
                 NmIncidentProduct.close_date == CIERRE_SENTINELA),
+            NmIncidentProduct.id_incident.notin_(_vales_de_baja()),
         )
 
     filas = db.execute(

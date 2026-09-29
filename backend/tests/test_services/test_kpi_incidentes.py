@@ -31,6 +31,7 @@ ADMIN_ID = 1
 EMPLEADO_A = 970
 EMPLEADO_B = 971
 INCIDENT_TYPE = 970
+INCIDENT_TYPE_BAJA = 971
 LOCATION_TYPE = 970
 LOCATION = 970
 BRAND = 970
@@ -80,7 +81,7 @@ class KpiIncidentesTest(unittest.TestCase):
     def _limpiar(self):
         with transaction_context() as db:
             db.execute(delete(NmIncidentProduct).where(NmIncidentProduct.id_product == PRODUCT))
-            db.execute(delete(Incident).where(Incident.id_incident_type == INCIDENT_TYPE))
+            db.execute(delete(Incident).where(Incident.id_incident_type.in_([INCIDENT_TYPE, INCIDENT_TYPE_BAJA])))
             db.execute(delete(Product).where(Product.id_product == PRODUCT))
             db.execute(delete(Invoice).where(Invoice.id_invoice == INVOICE))
             db.execute(delete(Material).where(Material.id_material == MATERIAL))
@@ -89,7 +90,7 @@ class KpiIncidentesTest(unittest.TestCase):
             db.execute(delete(ProductFamily).where(ProductFamily.id_product_family == PRODUCT_FAMILY))
             db.execute(delete(Brand).where(Brand.id_brand == BRAND))
             db.execute(delete(LocationType).where(LocationType.id_location_type == LOCATION_TYPE))
-            db.execute(delete(IncidentType).where(IncidentType.id_incident_type == INCIDENT_TYPE))
+            db.execute(delete(IncidentType).where(IncidentType.id_incident_type.in_([INCIDENT_TYPE, INCIDENT_TYPE_BAJA])))
             db.execute(delete(User).where(User.id_user.in_([EMPLEADO_A, EMPLEADO_B])))
 
     def _incidente(self, id_incident, id_user, incident_status, creation_date, close_date=None, incident_date=None):
@@ -136,6 +137,28 @@ class KpiIncidentesTest(unittest.TestCase):
             )
 
         self.assertEqual([(EMPLEADO_A, (AHORA - timedelta(days=2)).date(), 1)], [tuple(f) for f in filas])
+
+    def test_vales_vencidos_no_cuenta_una_baja(self):
+        # Un vale de Extraviado o Destruccion registra que la herramienta ya no
+        # esta con nadie: no se reclama, aunque su renglon tenga fecha de regreso
+        # vencida y siga sin cerrar. Mismo criterio que la pantalla de vencidos.
+        with transaction_context() as db:
+            db.add(IncidentType(id_incident_type=INCIDENT_TYPE_BAJA, incident_type_description="Extraviado", created_by=ADMIN_ID))
+            db.flush()
+            db.add(Incident(
+                id_incident=9711, id_incident_type=INCIDENT_TYPE_BAJA, id_user=EMPLEADO_A,
+                incident_status="cerrada", creation_date=datetime(2026, 6, 1),
+                incident_date=datetime(2026, 6, 1), created_by=EMPLEADO_A,
+            ))
+            db.flush()
+            db.add(self._vale(97011, 9711, due_date=AHORA - timedelta(days=2)))
+
+        with transaction_context() as db:
+            filas = vales_vencidos_por_responsable_query(
+                db, HOY - timedelta(days=10), HOY + timedelta(days=10), {}, None,
+            )
+
+        self.assertEqual([], [tuple(f) for f in filas])
 
     def test_vales_vencidos_cuenta_el_sentinel_legacy_como_abierto(self):
         # Renglones migrados de Adser: close_date quedo en CIERRE_SENTINELA
