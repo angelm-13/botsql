@@ -50,6 +50,22 @@ import "../styles/formulario-plegable.css";
  * al cerrar, el alto baja a 0 primero y el desmontaje real ocurre en
  * `onTransitionEnd`, no de inmediato -- por eso hacen falta dos estados
  * (`abierto`, la intención; `montado`, si el cuerpo sigue en el DOM).
+ *
+ * Por que hace falta un TERCER estado (`asentado`)
+ * -------------------------------------------------
+ * La animacion de alto necesita `overflow: hidden` en el formulario y en el
+ * wrapper del cuerpo MIENTRAS el renglon crece o se encoge -- si no, el
+ * contenido se veria "salir" de golpe antes de que la fila termine de
+ * crecer. El problema es dejar ese `overflow: hidden` puesto PARA SIEMPRE,
+ * incluso ya abierto del todo: cualquier cosa que necesite salirse de su
+ * caja (un popover, un `<select>` desplegado por el navegador con contenido
+ * ancho, un dropdown propio) se ve cortada por ese mismo overflow, aunque el
+ * renglon ya este a su altura final y no haya nada corriendose. Por eso
+ * `overflow: hidden` solo se aplica MIENTRAS SE MUEVE (abriendo o cerrando):
+ * `asentado` se vuelve `true` justo cuando la transicion de apertura
+ * termina (mismo `onTransitionEnd` que ya existia para el desmontaje al
+ * cerrar) y se apaga de inmediato en cuanto se empieza a cerrar -- ver
+ * `.plegable-cuerpo-wrap.asentada` en formulario-plegable.css.
  */
 export default function FormularioPlegable({
   titulo, abrirSi, onSubmit, icono: Icono, children, className, cerrarAlEnviar,
@@ -57,12 +73,14 @@ export default function FormularioPlegable({
   const { t } = useI18n();
   const [abierto, setAbierto] = useState(false);
   const [montado, setMontado] = useState(false);
+  const [asentado, setAsentado] = useState(false);
   const cuerpoWrapRef = useRef(null);
 
   function alternar() {
     setAbierto((antes) => {
       const siguiente = !antes;
       if (siguiente) setMontado(true);
+      else setAsentado(false);
       return siguiente;
     });
   }
@@ -86,6 +104,7 @@ export default function FormularioPlegable({
     if (evento.target !== cuerpoWrapRef.current) return;
     setAbierto((sigueAbierto) => {
       if (!sigueAbierto) setMontado(false);
+      else setAsentado(true);
       return sigueAbierto;
     });
   }, []);
@@ -130,7 +149,7 @@ export default function FormularioPlegable({
 
       <div
         ref={cuerpoWrapRef}
-        className={`plegable-cuerpo-wrap ${abierto ? "abierta" : ""}`}
+        className={`plegable-cuerpo-wrap ${abierto ? "abierta" : ""} ${asentado ? "asentada" : ""}`}
         onTransitionEnd={alTerminarTransicion}
       >
         {/* Se desmonta en lugar de esconderse con CSS: escondido, sus campos

@@ -4,8 +4,12 @@
    unico propio es la cabecera pulsable y el estado cerrado. */
 
 /* Cerrada no lleva relleno abajo ni sombra de caja llena: tiene que leerse
-   como un renglon, no como un formulario vacio. */
+   como un renglon, no como un formulario vacio. El overflow:hidden aqui es
+   solo para las esquinas redondeadas mientras el contenido anima su alto --
+   una vez asentado (ver .asentada mas abajo) se quita, para que un popover
+   o un desplegable de adentro no se corte contra el borde del formulario. */
 .form-card.plegable { padding: 0; overflow: hidden; }
+.form-card.plegable:has(.plegable-cuerpo-wrap.asentada) { overflow: visible; }
 .form-card.plegable.cerrada { box-shadow: none; }
 
 /* La cabecera es un <button>, asi que hay que devolverle la apariencia de
@@ -37,6 +41,12 @@
 }
 .plegable-cuerpo-wrap.abierta { grid-template-rows: 1fr; }
 .plegable-cuerpo-wrap > .plegable-cuerpo { overflow: hidden; min-height: 0; }
+/* Ya asentado (transicion de apertura terminada): se quita el recorte, para
+   que cualquier cosa que necesite salirse de su caja (un popover, un menu
+   propio) se vea completa. Se vuelve a poner de inmediato al empezar a
+   cerrar (ver alternar() en FormularioPlegable.jsx), asi que la animacion
+   de cierre sigue recortando limpio. */
+.plegable-cuerpo-wrap.asentada > .plegable-cuerpo { overflow: visible; }
 
 @media (prefers-reduced-motion: reduce) {
   .plegable-cuerpo-wrap { transition: none; }
