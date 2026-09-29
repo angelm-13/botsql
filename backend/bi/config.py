@@ -76,6 +76,12 @@ class AjustesBI:
 
     # -- cache ---------------------------------------------------------------
     ttl_esquema_s: int = 300               # cada cuanto se re-inspecciona la base
+    # Cuanto se reusa el JSON de una pregunta identica antes de volver a
+    # pensarla. Es lo que mas ahorra tiempo en una demo que repite las mismas
+    # preguntas de ejemplo: la segunda vez contesta en milisegundos en vez de
+    # decenas de segundos. No cachea datos, solo el SQL que penso el modelo --
+    # la consulta se ejecuta fresca siempre. 0 o negativo lo apaga.
+    ttl_preguntas_s: int = 3600
 
     # -- servidor ------------------------------------------------------------
     prefijo_api: str = "/api/v1/bi"
@@ -124,6 +130,7 @@ class AjustesBI:
             timeout_sql_ms=entero("BI_SQL_TIMEOUT_MS", base.timeout_sql_ms),
             max_widgets=entero("BI_MAX_WIDGETS", base.max_widgets),
             ttl_esquema_s=entero("BI_SCHEMA_TTL", base.ttl_esquema_s),
+            ttl_preguntas_s=entero("BI_QUESTION_CACHE_TTL", base.ttl_preguntas_s),
             prefijo_api=env.get("BI_API_PREFIX", base.prefijo_api),
             cors_origenes=lista("BI_CORS_ORIGINS", base.cors_origenes),
         )

@@ -41,6 +41,7 @@ def crear_blueprint(
     ajustes,
     proveedor,
     cache_esquema: CacheDeEsquema | None = None,
+    cache_preguntas: "service.CacheDePreguntas | None" = None,
     contexto=None,
     gancho_sql=None,
     relaciones=None,
@@ -48,6 +49,8 @@ def crear_blueprint(
 ) -> Blueprint:
     bp = Blueprint(nombre, __name__, url_prefix=ajustes.prefijo_api)
     cache = cache_esquema or CacheDeEsquema(engine, ajustes)
+    cache_preg = (cache_preguntas if cache_preguntas is not None
+                  else service.CacheDePreguntas(ajustes.ttl_preguntas_s))
 
     def _contexto() -> dict:
         return contexto() if contexto is not None else {}
@@ -77,6 +80,7 @@ def crear_blueprint(
             cache_esquema=cache,
             gancho=gancho,
             relaciones_permitidas=permitidas,
+            cache_preguntas=cache_preg,
         )
         return jsonify(respuesta.a_dict()), respuesta.http
 
@@ -117,6 +121,7 @@ def crear_blueprint(
                        "nombre": getattr(proveedor, "modelo", ""),
                        "disponible": modelo_ok},
             "esquema": cache.estado,
+            "cache_preguntas": cache_preg.estado,
             "advertencias": advertencias_de_despliegue(ajustes.database_url),
         }), (200 if estado_bd else 503)
 

@@ -40,7 +40,13 @@ services:
       # Tiene que ser el tag EXACTO ya descargado (`ollama list`): este y
       # "qwen2.5-coder:7b-instruct" son el mismo modelo en el registro, pero
       # Ollama los trata como pulls distintos.
-      BI_MODEL: ${BI_MODEL:-qwen2.5-coder:7b}
+      #
+      # "3b" por omision: probado contra dos preguntas con JOIN reales,
+      # ambas correctas al centavo y bastante mas rapido que "7b" -- que en
+      # la misma maquina, con CPU compartida, dio timeout a los 270s (ver
+      # .env.example para el detalle medido). Cambielo a "qwen2.5-coder:7b"
+      # si sus preguntas son mas complejas que un JOIN de dos tablas.
+      BI_MODEL: ${BI_MODEL:-qwen2.5-coder:3b}
       # Medido real: ~90-100s por pregunta en CPU pura, 166s dentro de
       # Docker con otros contenedores compitiendo por CPU. Con GPU baja a
       # segundos. Tiene que quedar por debajo del timeout de gunicorn
@@ -54,6 +60,9 @@ services:
       BI_ROW_LIMIT: ${BI_ROW_LIMIT:-1000}
       BI_SQL_TIMEOUT_MS: ${BI_SQL_TIMEOUT_MS:-15000}
       BI_SCHEMA_TTL: ${BI_SCHEMA_TTL:-300}
+      # Reusa el JSON de una pregunta identica mientras el esquema no cambie
+      # -- no cachea datos, el SQL se re-ejecuta fresco siempre. 0 lo apaga.
+      BI_QUESTION_CACHE_TTL: ${BI_QUESTION_CACHE_TTL:-3600}
     extra_hosts:
       # Permite alcanzar un Ollama que corre en la maquina anfitriona. En
       # Linux no viene resuelto solo, a diferencia de Docker Desktop.

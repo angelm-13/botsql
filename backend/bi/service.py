@@ -26,17 +26,83 @@ lleva su propio `ok` y su propio error.
 
 from __future__ import annotations
 
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import date
 
 from bi import directive, prompt as prompt_mod, security
 from bi.executor import ejecutar
-from bi.llm_provider import ProveedorNoDisponible
+from bi.llm_provider import ProveedorNoDisponible, RespuestaLLM, _normalizar
 
 # Columnas cuyo nombre sugiere que son el eje de una serie de tiempo.
 _PISTAS_DE_TIEMPO = ("fecha", "date", "mes", "month", "dia", "day", "anio",
                      "year", "periodo", "period", "semana", "week", "hora")
+
+
+# ---------------------------------------------------------------------------
+# Cache de preguntas
+# ---------------------------------------------------------------------------
+
+class CacheDePreguntas:
+    """Guarda el JSON crudo que devolvio el modelo, para reusarlo en preguntas
+    repetidas -- exactas, no parecidas.
+
+    Es lo que mas pesa en el reloj: pensar el SQL le cuesta al modelo entre
+    45 y 100 segundos (ver llm_provider.py), y una demostracion repite las
+    mismas preguntas de ejemplo una y otra vez. Se cachea el TEXTO del
+    modelo, nunca las filas de la consulta: el SQL se vuelve a validar y a
+    ejecutar siempre, en vivo, con el `gancho`/`relaciones_permitidas` de
+    ESA peticion -- asi el dato nunca sale viejo ni se filtra de un
+    inquilino a otro cuando dos usuarios con alcances distintos hacen la
+    misma pregunta. Solo se ahorra la parte cara, que es traducir a SQL, no
+    la parte sensible, que es leer datos.
+
+    La clave incluye la huella del esquema: si el esquema cambia (se agrega
+    una tabla, cambia una columna), una respuesta vieja para la misma
+    pregunta ya no aplica y se recalcula sola, sin necesidad de invalidar
+    nada a mano.
+    """
+
+    def __init__(self, ttl_s: int = 3600):
+        self.ttl_s = ttl_s
+        self._entradas: dict[str, tuple[str, str, float]] = {}
+        self._lock = threading.Lock()
+        self.aciertos = 0
+        self.fallos = 0
+
+    @staticmethod
+    def _clave(pregunta: str, huella_esquema: str) -> str:
+        return f"{huella_esquema}|{_normalizar(pregunta.strip())}"
+
+    def obtener(self, pregunta: str, huella_esquema: str) -> tuple[str, str] | None:
+        if self.ttl_s <= 0:
+            return None
+        clave = self._clave(pregunta, huella_esquema)
+        ahora = time.time()
+        with self._lock:
+            entrada = self._entradas.get(clave)
+            if entrada is None or ahora >= entrada[2]:
+                self.fallos += 1
+                return None
+            self.aciertos += 1
+            return entrada[0], entrada[1]
+
+    def guardar(self, pregunta: str, huella_esquema: str, texto: str, modelo: str) -> None:
+        if self.ttl_s <= 0:
+            return
+        clave = self._clave(pregunta, huella_esquema)
+        with self._lock:
+            self._entradas[clave] = (texto, modelo, time.time() + self.ttl_s)
+
+    def invalidar(self) -> None:
+        with self._lock:
+            self._entradas.clear()
+
+    @property
+    def estado(self) -> dict:
+        return {"aciertos": self.aciertos, "fallos": self.fallos,
+                "entradas": len(self._entradas), "ttl_s": self.ttl_s}
 
 
 @dataclass
@@ -243,6 +309,7 @@ def responder(
     hoy: date | None = None,
     gancho=None,
     relaciones_permitidas=None,
+    cache_preguntas: CacheDePreguntas | None = None,
 ) -> RespuestaBI:
     """Contesta una pregunta de punta a punta."""
     inicio = time.monotonic()
@@ -267,11 +334,18 @@ def responder(
         max_widgets=ajustes.max_widgets,
     )
 
-    try:
-        salida = proveedor.generar(texto_prompt, pregunta)
-    except ProveedorNoDisponible as exc:
-        return RespuestaBI(ok=False, pregunta=pregunta, http=503,
-                           error={"tipo": "modelo_no_disponible", "mensaje": str(exc)})
+    desde_cache = False
+    cacheado = cache_preguntas.obtener(pregunta, esquema.huella) if cache_preguntas else None
+    if cacheado is not None:
+        texto_cache, modelo_cache = cacheado
+        salida = RespuestaLLM(texto=texto_cache, modelo=f"{modelo_cache} (cache)", ms=0)
+        desde_cache = True
+    else:
+        try:
+            salida = proveedor.generar(texto_prompt, pregunta)
+        except ProveedorNoDisponible as exc:
+            return RespuestaBI(ok=False, pregunta=pregunta, http=503,
+                               error={"tipo": "modelo_no_disponible", "mensaje": str(exc)})
 
     meta = {
         "modelo": salida.modelo,
@@ -281,6 +355,7 @@ def responder(
         "motor": esquema.motor,
         "huella_esquema": esquema.huella,
         "relaciones_expuestas": len(esquema.relaciones),
+        "desde_cache": desde_cache,
     }
 
     try:
@@ -293,6 +368,12 @@ def responder(
                    "mensaje": "El modelo no devolvio el JSON del contrato.",
                    "respuesta_cruda": exc.crudo},
         )
+
+    if cache_preguntas is not None and not desde_cache:
+        # El nombre del modelo real, no el que ya trae "(cache)" encima --
+        # asi una segunda pregunta identica etiqueta bien de que modelo salio
+        # el JSON, aunque ya no lo haya pensado el modelo esa vez.
+        cache_preguntas.guardar(pregunta, esquema.huella, salida.texto, salida.modelo)
 
     if dir_.rechazada_por_el_modelo:
         meta["ms_total"] = int((time.monotonic() - inicio) * 1000)

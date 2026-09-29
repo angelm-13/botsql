@@ -79,7 +79,7 @@ curl -s localhost:8500/api/v1/bi/query -H 'Content-Type: application/json' \
 |--------|------|----------|
 | POST | `/api/v1/bi/query` | `{"prompt": "..."}` → SQL, datos y directiva de gráfica |
 | GET | `/api/v1/bi/schema` | Qué ve el modelo (`?ddl=1`, `?refresh=1`) |
-| GET | `/api/v1/bi/health` | Base, modelo, caché y advertencias de despliegue |
+| GET | `/api/v1/bi/health` | Base, modelo, caché (esquema y preguntas) y advertencias de despliegue |
 
 La respuesta siempre trae `widgets[]`, aunque sea uno solo, para que el
 frontend tenga una sola forma que dibujar. Cada widget lleva su propio `ok`:
@@ -91,7 +91,7 @@ frontend tenga una sola forma que dibujar. Cada widget lleva su propio `ok`:
 |----------|-------------|----------|
 | `BI_DATABASE_URL` | — | Cadena de conexión (gana sobre `DATABASE_URL`) |
 | `BI_OLLAMA_URL` | `http://localhost:11434` | Dónde vive el modelo |
-| `BI_MODEL` | `qwen2.5-coder:7b` | Modelo a usar (tag exacto del `ollama pull`) |
+| `BI_MODEL` | `qwen2.5-coder:3b` | Modelo a usar (tag exacto del `ollama pull`). Medido: 60-100s por pregunta y acierta JOINs de 2 tablas; `qwen2.5-coder:7b` es mas preciso para consultas complejas pero mas lento y menos tolerante a CPU compartida (ver `.env.example`) |
 | `BI_LLM_TIMEOUT` | `240` | Segundos de espera al modelo (en CPU sin GPU, una pregunta mide 60–100s reales) |
 | `BI_INCLUDE_TABLES` | — | Lista blanca de patrones; manda sobre la negra |
 | `BI_EXCLUDE_TABLES` | fontanería típica | Lista negra de patrones |
@@ -101,6 +101,7 @@ frontend tenga una sola forma que dibujar. Cada widget lleva su propio `ok`:
 | `BI_SQL_TIMEOUT_MS` | `15000` | Reloj de cada consulta |
 | `BI_SAMPLE_VALUES` | `0` | Valores de ejemplo de columnas categóricas |
 | `BI_SCHEMA_TTL` | `300` | Cada cuánto se re-inspecciona la base |
+| `BI_QUESTION_CACHE_TTL` | `3600` | Cuánto se reusa el JSON de una pregunta idéntica antes de volver a pensarla (0 lo apaga) |
 
 ## Integrarlo en una aplicación Flask existente
 
@@ -175,10 +176,11 @@ contra la superficie clara.
 cd backend && python -m pytest
 ```
 
-74 pruebas, sin red y sin modelo: extractor, validador (13 ataques + 5 funciones
+78 pruebas, sin red y sin modelo: extractor, validador (13 ataques + 5 funciones
 peligrosas por motor + 8 consultas legítimas que no deben caer), parser de la
-directiva, ejecutor y la matriz de 6 casos de punta a punta. El detalle y lo
-que **no** cubre está en [docs/PLAN_DE_VALIDACION.md](docs/PLAN_DE_VALIDACION.md).
+directiva, ejecutor, el caché de preguntas repetidas y la matriz de 6 casos de
+punta a punta. El detalle y lo que **no** cubre está en
+[docs/PLAN_DE_VALIDACION.md](docs/PLAN_DE_VALIDACION.md).
 
 ## Verificado contra una base real
 

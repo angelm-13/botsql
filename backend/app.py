@@ -35,6 +35,7 @@ from bi.config import AjustesBI, puerto_disponible
 from bi.llm_provider import ProveedorLLM, ProveedorOllama
 from bi.schema_extractor import CacheDeEsquema
 from bi.security import advertencias_de_despliegue
+from bi.service import CacheDePreguntas
 
 
 # Donde queda la interfaz ya construida (`npm run build`), relativa a este
@@ -123,11 +124,13 @@ def crear_app(
         app.logger.info("flask-cors no esta instalado; no se habilita CORS.")
 
     cache = CacheDeEsquema(engine, ajustes)
+    cache_preguntas = CacheDePreguntas(ajustes.ttl_preguntas_s)
     app.register_blueprint(crear_blueprint(
         engine=engine,
         ajustes=ajustes,
         proveedor=proveedor,
         cache_esquema=cache,
+        cache_preguntas=cache_preguntas,
         contexto=contexto,
         gancho_sql=gancho_sql,
         relaciones=relaciones,
@@ -137,6 +140,7 @@ def crear_app(
     app.extensions["bi"] = {
         "ajustes": ajustes, "engine": engine,
         "proveedor": proveedor, "cache": cache,
+        "cache_preguntas": cache_preguntas,
     }
 
     if dist is not None:

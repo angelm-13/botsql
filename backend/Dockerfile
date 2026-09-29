@@ -42,5 +42,16 @@ EXPOSE 5001
 # llegara a decidir que el modelo tardaba demasiado. El timeout de esta capa
 # tiene que quedar por ENCIMA de BI_LLM_TIMEOUT, nunca por debajo -- si no,
 # el sintoma no es un error claro, es una respuesta vacia sin explicacion.
-CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5001", "--timeout", "300", \
+# "gthread" con 1 proceso y 4 hilos, y no "-w 4" (4 procesos): verificado en
+# la practica que con 4 procesos el cache de preguntas (bi/service.py) y el
+# de esquema (bi/schema_extractor.py) casi no acertaban -- cada worker es un
+# proceso de Python con su propia memoria, asi que una pregunta repetida
+# tenia solo 1 de 4 chances de caer en el mismo proceso que la guardo. Con
+# hilos comparten memoria de verdad, y el cache si sirve. No se pierde
+# concurrencia real: la espera al modelo es de red (Ollama por HTTP), asi
+# que el hilo suelta el GIL mientras espera, igual que lo haria un proceso
+# aparte -- y el Engine de SQLAlchemy ya se creo pensado para esto
+# (pool_size=5 en app.py::crear_engine).
+CMD ["gunicorn", "-k", "gthread", "-w", "1", "--threads", "4", \
+     "-b", "0.0.0.0:5001", "--timeout", "300", \
      "--access-logfile", "-", "wsgi:application"]

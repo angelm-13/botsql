@@ -216,11 +216,19 @@ cd backend
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt psycopg2-binary
 export BI_DATABASE_URL="postgresql+psycopg2://bi_lector:...@host/erp"
-gunicorn -w 4 -b 127.0.0.1:8500 --timeout 180 wsgi:application
+gunicorn -k gthread -w 1 --threads 4 -b 127.0.0.1:8500 --timeout 180 wsgi:application
 ```
 
 El `--timeout 180` no es adorno: el valor por omisión de gunicorn son 30 s, y
 cortaría la petición justo antes de que un modelo local termine de contestar.
+
+`-k gthread -w 1 --threads 4` y no `-w 4` (varios procesos): los cachés en
+memoria de preguntas repetidas y de esquema viven dentro de un solo proceso.
+Con varios procesos cada uno tiene su propia copia y una pregunta repetida
+solo acierta el cache por suerte -- confirmado en la práctica. Con hilos
+comparten memoria de verdad, y no se pierde nada de concurrencia real: la
+espera es de red (HTTP a Ollama), así que el hilo suelta el GIL mientras
+espera, igual que haría un proceso aparte.
 
 ```bash
 cd frontend && npm ci && npm run build      # queda en dist/
