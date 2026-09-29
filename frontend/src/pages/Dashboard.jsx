@@ -1,5 +1,5 @@
 /* eslint-disable react/prop-types */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AreaChart as AreaChartIcon, BarChart2, Boxes, ChevronDown, ChevronUp,
   Check, ClipboardList, FileDown, FileText, FlaskConical, GripVertical, Hash, LineChart as LineChartIcon,
@@ -30,7 +30,7 @@ import {
   colorDeKpi, colorEfectivoDeKpi, etiquetasDeDimension, labelForDimension, normalizarBusqueda, unidadInfo,
 } from "../kpi/kpiDatos.js";
 import {
-  armarParametros, columnasDeWidget, estadoDeWidget, mezclaUnidades, motivoParaNoCombinar, rangoInicialDelBorrador,
+  armarParametros, columnasDeWidget, estadoDeWidget, filasDeWidget, mezclaUnidades, motivoParaNoCombinar, rangoInicialDelBorrador,
   tiposDeGraficaPermitidos as tiposPermitidosPorKpi, unidadDeKpi, widgetDeBorrador,
 } from "../kpi/kpiParametros.js";
 import {
@@ -111,52 +111,6 @@ function kpiModuleMeta(modulo) {
     icon: DEFAULT_MODULE_ICON,
     label: modulo ? modulo.charAt(0).toUpperCase() + modulo.slice(1) : "",
   };
-}
-
-// Numero MINIMO de espacios "de fabrica" que se muestran en un tablero nuevo:
-// sin esto, un tablero recien creado se ve como una pantalla rota en vez de
-// una invitacion a llenarlo. No es un tope -- con mas widgets la cuadricula
-// simplemente crece. El total real que se muestra se redondea hacia arriba al
-// multiplo de columnas mas cercano (ver `useCompleteGridPlaceholders`), asi
-// que puede terminar siendo mayor a este minimo.
-const WIDGET_GRID_MIN_SLOTS = 6;
-
-/** Cuantas columnas tiene el grid AHORA, leidas de su `grid-template-columns` ya resuelto (el
- * navegador lo entrega como una lista de anchos en px, una por pista). No se reproduce la formula
- * de `auto-fill`/`minmax`: se lee lo que el navegador decidio. */
-function contarColumnasDelGrid(nodo) {
-  const pistas = getComputedStyle(nodo).gridTemplateColumns;
-  if (!pistas || pistas === "none") return 1;
-  return Math.max(1, pistas.trim().split(/\s+/).length);
-}
-
-/** Cuantos placeholders "+" hacen falta para que la cuadricula no deje una fila a medias.
- *
- * Cada widget pesa 1 espacio, salvo los de ancho doble (`dobles`), que pesan 2 mientras haya al
- * menos dos columnas. El total (widgets + placeholders) se redondea al multiplo de columnas y
- * nunca baja de WIDGET_GRID_MIN_SLOTS. Las columnas se vuelven a leer con un ResizeObserver; el
- * calculo en si es aritmetica sobre ese numero, asi que no hay ciclo de medicion. */
-function useCompleteGridPlaceholders(widgetCount, dobles) {
-  // El nodo en ESTADO (callback ref), no en un ref de objeto: el grid solo se monta cuando el
-  // tablero ya cargo, y un `useRef` no avisa a los efectos cuando su `.current` deja de ser null.
-  const [nodo, setNodo] = useState(null);
-  const gridRef = useCallback((nodoActual) => setNodo(nodoActual), []);
-  const [columnas, setColumnas] = useState(null);
-
-  useLayoutEffect(() => {
-    if (!nodo) return undefined;
-    const medir = () => setColumnas(contarColumnasDelGrid(nodo));
-    medir();
-    const observer = new ResizeObserver(medir);
-    observer.observe(nodo);
-    return () => observer.disconnect();
-  }, [nodo]);
-
-  const pistas = columnas || 1;
-  const peso = widgetCount + (pistas >= 2 ? dobles : 0);
-  const total = Math.ceil(Math.max(WIDGET_GRID_MIN_SLOTS, peso) / pistas) * pistas;
-  const placeholderCount = columnas === null ? Math.max(0, WIDGET_GRID_MIN_SLOTS - peso) : total - peso;
-  return [Math.max(0, placeholderCount), gridRef];
 }
 
 // Avatar por omision para un empleado: no hay fotos de perfil reales, asi que
@@ -290,6 +244,7 @@ function defaultPanelState() {
     // Solo cuenta para una tabla: las tablas nuevas nacen de 2 columnas (una fila de 4 datos
     // no cabe bien en 340px); las guardadas antes de este campo se abren con 1.
     columnas: 2,
+    filas: 2,
   };
 }
 
@@ -483,12 +438,7 @@ export default function Dashboard() {
     return () => clearTimeout(cronometro);
   }, [idWidgetNuevo, reducirMovimiento]);
 
-  const [placeholderCount, gridRefDeSondeo] = useCompleteGridPlaceholders(
-    widgets.length,
-    widgets.filter((w) => columnasDeWidget(w) === 2).length,
-  );
-  // El nodo real del grid, en un ref mutable (no en el estado interno del
-  // hook de arriba, que ademas de callback-ref no expone su nodo) -- lo
+  // El nodo real del grid, en un ref mutable -- lo
   // necesita `generarReportePdf` para capturarlo con html2canvas. Tiene que
   // ser un ref y no un valor cerrado sobre el render en el que se creo el
   // closure de esa funcion: mientras "todos los paneles" recorre tableros
@@ -498,8 +448,18 @@ export default function Dashboard() {
   const widgetGridNodeRef = useRef(null);
   const widgetGridRef = useCallback((nodo) => {
     widgetGridNodeRef.current = nodo;
-    gridRefDeSondeo(nodo);
-  }, [gridRefDeSondeo]);
+  }, []);
+
+  // Filtro que una tarjeta le pone a otra: un clic en la barra de un responsable en "Incidencias
+  // abiertas por responsable" filtra la tabla de material prestado. Vive aqui (no en cada tarjeta)
+  // porque las dos tarjetas son hermanas; se limpia al cambiar de tablero.
+  const [filtroResponsable, setFiltroResponsable] = useState(null);
+  const quitarFiltroResponsable = useCallback(() => setFiltroResponsable(null), []);
+  useEffect(() => { setFiltroResponsable(null); }, [activeId]);
+  const hayTablaDePrestamos = widgets.some((widget) => widget.tipo_grafica === "tabla");
+  const alFiltrarResponsable = useCallback((nuevo) => {
+    setFiltroResponsable((actual) => (actual && String(actual.id) === String(nuevo.id) ? null : nuevo));
+  }, []);
 
   const loadDashboards = useCallback(async (preferredId) => {
     setLoadingDashboards(true);
@@ -920,28 +880,25 @@ export default function Dashboard() {
                   esNuevo={widget.id_kpi_dashboard_widget === idWidgetNuevo}
                   animar={animarWidgets}
                   reducirMovimiento={reducirMovimiento}
+                  filtroResponsable={filtroResponsable}
+                  onFiltrarResponsable={hayTablaDePrestamos ? alFiltrarResponsable : undefined}
+                  onQuitarFiltroResponsable={quitarFiltroResponsable}
                   t={t}
                   tx={tx}
                 />
               ))}
-              {/* Espacios "de fabrica": llenan un tablero nuevo hasta el minimo
-                  visual, redondeado hacia arriba al multiplo de columnas
-                  REALES ya renderizadas por el navegador, para que ninguna
-                  fila quede incompleta (ver useCompleteGridPlaceholders). No
-                  son un tope -- si ya hay mas widgets que el minimo, el
-                  redondeo se aplica sobre esa cantidad. */}
-              {Array.from({ length: placeholderCount }).map((_, index) => (
-                <button
-                  type="button"
-                  key={`kpi-widget-placeholder-${index}`}
-                  className="kpi-widget-placeholder"
-                  onClick={() => abrirEditor(activeId)}
-                  title={tx("add_widget", "Agregar gráfico")}
-                >
-                  <Plus size={22} />
-                  <span>{tx("add_widget", "Agregar gráfico")}</span>
-                </button>
-              ))}
+              {/* Un solo recuadro "Agregar gráfico", al final: con las tarjetas de varias
+                  filas y columnas, rellenar hasta "completar la fila" ya no tiene sentido
+                  (lo hace grid-auto-flow: dense) y llenaba el tablero de recuadros vacíos. */}
+              <button
+                type="button"
+                className="kpi-widget-placeholder"
+                onClick={() => abrirEditor(activeId)}
+                title={tx("add_widget", "Agregar gráfico")}
+              >
+                <Plus size={22} />
+                <span>{tx("add_widget", "Agregar gráfico")}</span>
+              </button>
             </div>
             </SortableContext>
             </DndContext>
@@ -1002,7 +959,11 @@ function SortableKpiWidgetCard({ reducirMovimiento, ...props }) {
     <div
       ref={setNodeRef}
       style={style}
-      className={[isDragging && "kpi-widget-dragging", columnasDeWidget(widget) === 2 && "kpi-widget-doble"].filter(Boolean).join(" ")}
+      className={[
+        isDragging && "kpi-widget-dragging",
+        columnasDeWidget(widget) === 2 && "kpi-widget-doble",
+        filasDeWidget(widget) === 2 && "kpi-widget-filas-2",
+      ].filter(Boolean).join(" ")}
       data-widget-id={widget.id_kpi_dashboard_widget}
     >
       <KpiWidgetCard {...props} dragHandleProps={{ ...attributes, ...listeners }} isDragging={isDragging} />
@@ -1157,7 +1118,9 @@ const SKELETON_POR_TIPO = { numero: "numero", dona: "dona", tabla: "tabla" };
 // previa del editor, para que lo que se ve al armar sea lo que queda.
 // Se exportan solo para la prueba de render (kpi/renderTarjetas.test.mjs).
 // eslint-disable-next-line react-refresh/only-export-components
-export function CuerpoDeWidget({ widget, datos, userLabel, productLabel, formatNumber, t, tx, animar }) {
+export function CuerpoDeWidget({
+  widget, datos, userLabel, productLabel, formatNumber, t, tx, animar, filtroResponsable, onFiltrarResponsable, onQuitarFiltroResponsable,
+}) {
   const { snapshots, loading, error, vivoItems, vivoTotal, kpiInfos, esTablaVivo } = datos;
   const ERRORES_CON_TEXTO_PROPIO = ["missing_range", "missing_kpi", "errors.rango_excede_limite", "tabla_no_soportada"];
   return (
@@ -1179,7 +1142,7 @@ export function CuerpoDeWidget({ widget, datos, userLabel, productLabel, formatN
         <p className="kpi-error-inline">{t(error, error)}</p>
       )}
       {!loading && !error && esTablaVivo && (
-        <KpiTablaVivo items={vivoItems} total={vivoTotal} tx={tx} />
+        <KpiTablaVivo items={vivoItems} total={vivoTotal} tx={tx} filtroExterno={filtroResponsable} onQuitarFiltroExterno={onQuitarFiltroResponsable} />
       )}
       {!loading && !error && !esTablaVivo && snapshots.length > 0 && (
         <KpiChartBody
@@ -1191,6 +1154,8 @@ export function CuerpoDeWidget({ widget, datos, userLabel, productLabel, formatN
           formatNumber={formatNumber}
           tx={tx}
           animar={animar}
+          filtroResponsable={filtroResponsable}
+          onFiltrarResponsable={onFiltrarResponsable}
         />
       )}
     </>
@@ -1222,7 +1187,10 @@ function VistaPreviaEditor({ widget, kpiCatalog, userLabel, productLabel, format
 }
 
 // eslint-disable-next-line react-refresh/only-export-components
-export function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, formatNumber, onEdit, onDelete, onReady, t, tx, dragHandleProps, isDragging, animar, esNuevo }) {
+export function KpiWidgetCard({
+  widget, kpiCatalog, userLabel, productLabel, formatNumber, onEdit, onDelete, onReady, t, tx, dragHandleProps, isDragging, animar, esNuevo,
+  filtroResponsable, onFiltrarResponsable, onQuitarFiltroResponsable,
+}) {
   const datos = useDatosDeWidget({ widget, kpiCatalog, onReady });
   const { kpiInfos, idsUsados, esTablaVivo } = datos;
   const parametros = parametrosEfectivos(widget.parametros);
@@ -1290,6 +1258,9 @@ export function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, for
           t={t}
           tx={tx}
           animar={animar}
+          filtroResponsable={filtroResponsable}
+          onFiltrarResponsable={onFiltrarResponsable}
+          onQuitarFiltroResponsable={onQuitarFiltroResponsable}
         />
       </div>
     </article>
@@ -1366,12 +1337,14 @@ function KpiNumero({ widget, snapshot, kpiInfo, formatNumber, tx, animar }) {
 // El unico KPI "vivo" que hoy existe (material_prestado_actual): una lista
 // paginada de renglones de vale sin devolver, no una serie por fecha -- por
 // eso no pasa por `KpiChartBody` (que solo sabe leer snapshots).
-function KpiTablaVivo({ items, total, tx }) {
+function KpiTablaVivo({ items, total, tx, filtroExterno, onQuitarFiltroExterno }) {
   const Componente = TIPO_GRAFICA_COMPONENTE.tabla;
   return (
     <Componente
       filas={filasTablaPrestamo(items, tx("unknown_user", "Sin asignar"))}
       total={total}
+      filtroExterno={filtroExterno}
+      onQuitarFiltroExterno={onQuitarFiltroExterno}
       etiquetas={{
         articulo: tx("loan_item", "Artículo"),
         responsable: tx("loan_holder", "Responsable"),
@@ -1390,7 +1363,15 @@ function KpiTablaVivo({ items, total, tx }) {
         vista_agrupada: tx("loan_view_grouped", "Por responsable"),
         vistas: tx("loan_views", "Vista"),
         ver_todos: tx("loan_see_all", "Ver todos ({n})"),
-        ver_menos: tx("loan_see_less", "Ver menos"),
+        cerrar: tx("close", "Cerrar"),
+        panel_titulo: tx("loan_panel_title", "Material prestado ahora"),
+        buscar: tx("loan_search", "Buscar"),
+        buscar_pista: tx("loan_search_hint", "Artículo, responsable, fecha…"),
+        sin_coincidencias: tx("loan_no_matches", "Ningún renglón coincide con la búsqueda."),
+        limpiar_busqueda: tx("loan_clear_search", "Limpiar la búsqueda"),
+        filtrando: tx("loan_filtering", "Filtrando"),
+        quitar_filtro_externo: tx("loan_remove_filter", "Quitar el filtro"),
+        sin_prestamos_de: tx("loan_none_of", "{responsable} no tiene material prestado."),
         mostrando: tx("loan_showing", "Mostrando"),
         de: tx("loan_of", "de"),
         renglon: tx("loan_row", "renglón"),
@@ -1410,7 +1391,7 @@ function KpiTablaVivo({ items, total, tx }) {
 // El mapa `tipo_grafica -> componente` vive en
 // components/kpi-widgets/tipoGraficaComponentes.js; aqui solo se arman las
 // props de cada uno (ver kpi/kpiAdaptadores.js).
-function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, formatNumber, tx, animar }) {
+function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, formatNumber, tx, animar, filtroResponsable, onFiltrarResponsable }) {
   const snapshot = snapshots[0];
   const kpiInfo = kpiInfos[0];
   const parametros = widget.parametros || {};
@@ -1469,7 +1450,21 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, fo
     },
   });
   if (!props.datos.length) return sinDatos;
-  return <Componente {...props} tipo={widget.tipo_grafica} animar={animar} />;
+  // Clic en la barra de un responsable: filtra la tabla de material prestado (ver
+  // `filtroResponsable` en Dashboard()). Solo "Incidencias abiertas por responsable", en barras.
+  const filtraLaTabla = Boolean(onFiltrarResponsable)
+    && widget.tipo_grafica === "barras" && kpiInfos.length === 1 && !agruparPorPeriodo
+    && kpiInfo?.clave === "incidencias_abiertas_por_empleado";
+  const interaccion = filtraLaTabla
+    ? {
+      onBarClick: (entrada) => {
+        const fila = entrada?.payload || entrada;
+        if (fila?.id !== undefined) onFiltrarResponsable({ id: fila.id, nombre: fila.name });
+      },
+      barraResaltada: filtroResponsable?.nombre || null,
+    }
+    : {};
+  return <Componente {...props} {...interaccion} tipo={widget.tipo_grafica} animar={animar} />;
 }
 
 function tiposDeGraficaPermitidos(kpiInfos) {
@@ -1745,6 +1740,24 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
               </div>
             </div>
 
+            {esTabla && (
+              <div className="kpi-picker-section">
+                <span>{tx("table_height", "Alto de la tabla")}</span>
+                <div className="kpi-icon-option-group">
+                  {[1, 2].map((n) => (
+                    <button
+                      type="button"
+                      key={n}
+                      className={`kpi-icon-option ${(panelState.filas === 2 ? 2 : 1) === n ? "active" : ""}`}
+                      aria-pressed={(panelState.filas === 2 ? 2 : 1) === n}
+                      onClick={() => onChangePanelState({ filas: n })}
+                    >
+                      <span>{n === 1 ? tx("table_height_1", "1 fila") : tx("table_height_2", "2 filas")}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             {esTabla && (
               <div className="kpi-picker-section">
                 <span>{tx("table_width", "Ancho de la tabla")}</span>

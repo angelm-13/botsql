@@ -11,16 +11,32 @@
 
 .kpi-dashboard-body{display:flex;flex-direction:column;gap:16px}
 
-.kpi-widget-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;container-type:inline-size;container-name:kpi-cuadricula}
+/* La cuadricula del tablero.
+   * Columnas: tantas como quepan de 340px, con TOPE de 4 (el minimo de cada columna es lo mayor entre
+     340px y una cuarta parte del ancho, asi que nunca caben mas de 4).
+   * Filas: de alto MINIMO `--kpi-fila`; una tarjeta con mas contenido la hace crecer. Una tarjeta de
+     dos filas (`parametros.filas = 2`) mide justo dos filas mas el hueco, asi que un bloque de
+     tarjetas de una fila junto a ella alinea con su borde de abajo.
+   * `dense`: una tarjeta pequena rellena el hueco que dejo otra mas grande, en vez de dejarlo vacio.
+     El orden en el DOM sigue siendo `posicion_orden`; solo cambia donde cae cada una. */
+.kpi-widget-grid{--kpi-fila:372px;--kpi-hueco:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(max(340px,calc((100% - 3 * var(--kpi-hueco)) / 4)),1fr));grid-auto-rows:minmax(var(--kpi-fila),auto);grid-auto-flow:row dense;gap:var(--kpi-hueco);container-type:inline-size;container-name:kpi-cuadricula}
 /* Ancho doble (parametros.columnas = 2, hoy solo tablas). Con menos de dos columnas de 340px + el hueco
    (696px) un `span 2` inventaria una columna implicita, asi que ahi vuelve a ocupar una. */
 .kpi-widget-doble{grid-column:span 2}
 @container kpi-cuadricula (max-width:695px){.kpi-widget-doble{grid-column:auto}}
+/* Alto doble (parametros.filas = 2). `contain: size` a proposito: sin el, el contenido de la tabla
+   (que puede medir 2000px) decidiria el alto de las filas; con el, la tarjeta no aporta alto propio,
+   solo su `min-height` de dos filas, y la lista de adentro se desplaza. */
+.kpi-widget-filas-2{grid-row:span 2;contain:size;min-height:calc(2 * var(--kpi-fila) + var(--kpi-hueco))}
 /* Un hijo de una cuadricula no baja de su ancho minimo de contenido (min-width: auto): una tabla
    o un grafico ancho lo ensanchaba y se salia de su columna, quedando bajo el recuadro vecino.
-   Con min-width: 0 la columna manda y el contenido se ajusta a ella. */
-.kpi-widget-grid>*{min-width:0}
-.kpi-widget-placeholder{border:1px dashed #c3c2b7;border-radius:22px;min-height:240px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:#fbfaf7;color:#a6a49a;cursor:pointer;font:inherit}
+   Con min-width: 0 la columna manda y el contenido se ajusta a ella. Cada hijo es una columna flex
+   para que su tarjeta ocupe TODO el alto de su celda (si no, una tarjeta de una fila junto a una de
+   dos quedaria mas corta que el hueco que le toca). */
+.kpi-widget-grid>*{min-width:0;min-height:0}
+.kpi-widget-grid>div{display:flex;flex-direction:column}
+.kpi-widget-grid>div>.kpi-widget-card{flex:1 1 auto;min-height:0}
+.kpi-widget-placeholder{border:1px dashed #c3c2b7;border-radius:22px;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:#fbfaf7;color:#a6a49a;cursor:pointer;font:inherit}
 .kpi-widget-placeholder span{font-size:12px;font-weight:700}
 .kpi-widget-placeholder:hover{background:#eef2f6;border-color:#173b66;color:#173b66}
 .kpi-widget-card{background:#fff;border:1px solid #e2e8f0;border-left:4px solid var(--kpi-acento,#e2e8f0);border-radius:22px;padding:18px;display:flex;flex-direction:column;gap:10px;box-shadow:0 12px 30px rgba(15,23,42,.05);min-width:0;overflow-x:clip;transition:transform .18s ease,box-shadow .18s ease}
@@ -46,7 +62,7 @@
 .kpi-drag-handle{cursor:grab;touch-action:none}
 .kpi-drag-handle:active{cursor:grabbing}
 .kpi-widget-meta{color:#8a96a5;font-size:12px;font-weight:700;line-height:1.35;margin:0;overflow-wrap:anywhere}
-.kpi-chart-box{min-height:240px;min-width:0;max-width:100%;display:flex;flex-direction:column;justify-content:center}
+.kpi-chart-box{flex:1 1 auto;min-height:0;min-width:0;max-width:100%;display:flex;flex-direction:column;justify-content:center}
 
 .kpi-number-widget{display:flex;flex-direction:column;gap:8px;padding:14px 4px 6px}
 .kpi-number-widget strong{font-size:38px;color:#0b0b0b;line-height:1.1}
