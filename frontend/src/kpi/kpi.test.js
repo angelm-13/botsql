@@ -14,6 +14,10 @@ import {
   colorDeKpi, colorEfectivoDeKpi, formatConUnidad, labelForDimension,
 } from "./kpiDatos.js";
 import {
+  agruparPorResponsable, duracionLegible, etiquetaDeDias, filtrarPorResponsable, gravedadDeDias, ordenarFilas,
+  recortar, resumenDePrestamos, responsablesDe,
+} from "./kpiPrestamos.js";
+import {
   agruparKpis, claveDeGrupo, colorDeModulo, COLOR_DE_MODULO, estadoDeOpcion, esVariable, grupoInicial, resumenDeModulos,
 } from "./kpiSelector.js";
 import {
@@ -590,4 +594,82 @@ test("el orden de los modulos no depende del orden en que llegue el catalogo", (
   const orden = agruparKpis(mezclado).map((g) => g.clave);
   assert.deepEqual(orden, ["operaciones", "facturacion", "documentos", "alfa_nuevo", "zeta_nuevo", "variables"]);
   assert.deepEqual(agruparKpis([...mezclado].reverse()).map((g) => g.clave), orden);
+});
+
+// --- tabla de material prestado: gravedad, duracion, resumen, filtro y agrupado ----
+test("gravedad por dias: hasta 30 verde, 31 a 90 ambar, mas de 90 coral (los bordes)", () => {
+  assert.deepEqual([0, 1, 30].map(gravedadDeDias), ["ok", "ok", "ok"]);
+  assert.deepEqual([31, 60, 90].map(gravedadDeDias), ["atencion", "atencion", "atencion"]);
+  assert.deepEqual([91, 456, 512].map(gravedadDeDias), ["critico", "critico", "critico"]);
+});
+
+test("512 y 456 dias son GRAVES y se leen distinto: '1 año, 5 meses' y '1 año, 3 meses'", () => {
+  assert.equal(duracionLegible(512), "1 año, 5 meses");
+  assert.equal(duracionLegible(456), "1 año, 3 meses");
+  assert.equal(etiquetaDeDias(512), "512 días · 1 año, 5 meses");
+  assert.notEqual(etiquetaDeDias(512), etiquetaDeDias(456));
+});
+
+test("duracion legible: nada bajo un mes, meses hasta un año, y los plurales en singular", () => {
+  assert.equal(duracionLegible(0), "");
+  assert.equal(duracionLegible(29), "");
+  assert.equal(etiquetaDeDias(1), "1 día");
+  assert.equal(etiquetaDeDias(12), "12 días");
+  assert.equal(duracionLegible(45), "1 mes");
+  assert.equal(duracionLegible(75), "2 meses");
+  assert.equal(duracionLegible(364), "12 meses", "casi un año: aun no es un año");
+  assert.equal(duracionLegible(365), "1 año");
+  assert.equal(duracionLegible(730), "2 años");
+  assert.equal(duracionLegible(365 + 182), "1 año, 6 meses");
+  assert.equal(duracionLegible(365 + 360), "2 años", "12 meses redondeados pasan a un año mas");
+  assert.equal(duracionLegible(Number.NaN), "");
+});
+
+const PRESTAMOS = [
+  { id: 1, articulo: "Taladro", responsable: "Ana", fecha_prestamo: "2025-05-05", dias_prestado: 512 },
+  { id: 2, articulo: "Sierra", responsable: "Beto", fecha_prestamo: "2026-08-15", dias_prestado: 45 },
+  { id: 3, articulo: "Martillo", responsable: "Ana", fecha_prestamo: "2026-09-17", dias_prestado: 12 },
+  { id: 4, articulo: "Nivel", responsable: "Carla", fecha_prestamo: "2026-07-08", dias_prestado: 83 },
+  { id: 5, articulo: "Llave", responsable: "Beto", fecha_prestamo: "2026-08-15", dias_prestado: 45 },
+];
+
+test("resumen: renglones, responsables distintos y el mas antiguo", () => {
+  assert.deepEqual(resumenDePrestamos(PRESTAMOS), {
+    renglones: 5, cargados: 5, responsables: 3,
+    masAntiguo: { dias: 512, articulo: "Taladro", responsable: "Ana" },
+  });
+  // Cuando llego solo la primera pagina, los renglones son los del servidor.
+  assert.equal(resumenDePrestamos(PRESTAMOS, 120).renglones, 120);
+  assert.equal(resumenDePrestamos(PRESTAMOS, 120).cargados, 5);
+  assert.deepEqual(resumenDePrestamos([]), { renglones: 0, cargados: 0, responsables: 0, masAntiguo: null });
+});
+
+test("filtro por responsable y lista de responsables (alfabetica)", () => {
+  assert.deepEqual(responsablesDe(PRESTAMOS), ["Ana", "Beto", "Carla"]);
+  assert.deepEqual(filtrarPorResponsable(PRESTAMOS, "Ana").map((f) => f.id), [1, 3]);
+  assert.equal(filtrarPorResponsable(PRESTAMOS, "").length, 5, "vacio = todos");
+  assert.deepEqual(filtrarPorResponsable(PRESTAMOS, "Nadie"), []);
+});
+
+test("el orden por dias es estable y determinista, y no altera la lista original", () => {
+  const copia = JSON.stringify(PRESTAMOS);
+  assert.deepEqual(ordenarFilas(PRESTAMOS).map((f) => f.id), [1, 4, 5, 2, 3], "empate de 45 dias: por fecha y luego por articulo (Llave antes que Sierra)");
+  assert.deepEqual(ordenarFilas(PRESTAMOS, "dias_prestado", "asc").map((f) => f.id), [3, 5, 2, 4, 1].map((n) => n), "ascendente");
+  assert.deepEqual(ordenarFilas(PRESTAMOS, "articulo", "asc").map((f) => f.articulo), ["Llave", "Martillo", "Nivel", "Sierra", "Taladro"]);
+  assert.equal(JSON.stringify(PRESTAMOS), copia);
+});
+
+test("agrupado por responsable: el grupo con el prestamo mas viejo primero, y sus renglones por dias", () => {
+  const grupos = agruparPorResponsable(PRESTAMOS);
+  assert.deepEqual(grupos.map((g) => [g.responsable, g.masAntiguo, g.filas.map((f) => f.id)]), [
+    ["Ana", 512, [1, 3]], ["Carla", 83, [4]], ["Beto", 45, [5, 2]],
+  ]);
+  assert.deepEqual(agruparPorResponsable([]), []);
+});
+
+test("solo se ven 10 renglones hasta pedir 'Ver todos'", () => {
+  const muchas = Array.from({ length: 25 }, (_, i) => ({ id: i, dias_prestado: 100 - i }));
+  assert.equal(recortar(muchas, false).length, 10);
+  assert.equal(recortar(muchas, true).length, 25);
+  assert.equal(recortar(muchas.slice(0, 4), false).length, 4);
 });
