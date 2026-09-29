@@ -67,3 +67,17 @@ real con los que sí la tienen.
 No se tocó el esquema ni se escribió la migración: es una decisión de
 producción real (adser-prod tiene datos migrados dependientes de este
 comportamiento) que le corresponde a Alan.
+
+## Actualización 2026-09-29
+
+Decidido y aplicado primero en `tyakxa-dev`: DEFAULT `now()` para las altas
+futuras (migración `20260929110000_creation_date_por_defecto_en_vales.sql`) y
+rellenado de lo existente con `backend/scripts/fix_adser_creation_date.py`.
+
+Una diferencia con el punto 2 de la propuesta: las filas existentes **no** se
+rellenan con `incident_date`. Las incidencias migradas reciben la
+`fecha_creacion` real del sistema anterior (123 de 139 caen el mismo día que la
+fecha del vale), los renglones la de su vale, y solo las incidencias sin par en
+el sistema anterior usan `incident_date`. Pasos y estado por ambiente en
+`docs/despliegues/2026-09-29_creation_date_de_vales.md`. `adser-prod` sigue
+pendiente de tu OK.
