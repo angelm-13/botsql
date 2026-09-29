@@ -28,7 +28,13 @@ import Skeleton from "../components/kpi-widgets/Skeleton";
 import {
   CATEGORICAL, colorDeKpi, colorEfectivoDeKpi, labelForDimension,
 } from "../kpi/kpiDatos.js";
-import { armarParametros, widgetDeBorrador } from "../kpi/kpiParametros.js";
+import {
+  armarParametros, estadoDeWidget, rangoInicialDelBorrador, widgetDeBorrador,
+} from "../kpi/kpiParametros.js";
+import {
+  RANGOS_RELATIVOS, RANGO_PERSONALIZADO, fechaLocalIso, parametrosEfectivos,
+  periodoAnterior, resolverRangoRelativo,
+} from "../kpi/kpiRango.js";
 import {
   UMBRAL_ATRASO_PRESTAMO_DIAS, filasTablaPrestamo, propsDona, propsNumero,
   propsNumeroBajoStock, propsSeries, tendenciaDeSnapshot,
@@ -331,28 +337,9 @@ function KpiDropdownPicker({ label, searchPlaceholder, renderOptions }) {
   );
 }
 
+// AAAA-MM-DD de hoy en hora LOCAL (ver fechaLocalIso).
 function todayIso() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function daysAgoIso(n) {
-  const fecha = new Date();
-  fecha.setDate(fecha.getDate() - n);
-  return fecha.toISOString().slice(0, 10);
-}
-
-function startOfWeekIso() {
-  const fecha = new Date();
-  const dia = fecha.getDay(); // 0 = domingo
-  const offset = dia === 0 ? 6 : dia - 1; // semana ISO: lunes como inicio
-  fecha.setDate(fecha.getDate() - offset);
-  return fecha.toISOString().slice(0, 10);
-}
-
-function startOfMonthIso() {
-  const fecha = new Date();
-  fecha.setDate(1);
-  return fecha.toISOString().slice(0, 10);
+  return fechaLocalIso(new Date());
 }
 
 // SOLO VISUAL -- exhibicion, no filtra nada todavia. `departments` (el prop
@@ -363,15 +350,6 @@ function startOfMonthIso() {
 // id_department real detras de estos nombres. Cuando haya un pedido real de
 // filtrar por departamento, esto se reemplaza por datos de verdad.
 const DEPARTAMENTOS_VISUALES = ["RRHH", "Contabilidad", "Producción", "Ventas", "Sistemas/TI", "Administración", "Logística"];
-
-// Los atajos son un llenado rapido, nunca un reemplazo de los selectores de
-// fecha libres -- Fecha inicio/Fecha fin siguen editables a mano en todo
-// momento, de ahi que no haga falta un boton "Personalizado" aparte.
-const DATE_SHORTCUTS = [
-  { key: "hoy", label: "Hoy", range: () => [todayIso(), todayIso()] },
-  { key: "semana", label: "Esta semana", range: () => [startOfWeekIso(), todayIso()] },
-  { key: "mes", label: "Este mes", range: () => [startOfMonthIso(), todayIso()] },
-];
 
 // El panel "Agregar grafico" es permanente (ya no se monta/desmonta al
 // abrir/cerrar), asi que su borrador ya no puede vivir en un useState propio
@@ -390,9 +368,9 @@ function defaultPanelState() {
     idsKpiSeleccionados: [],
     categoriaKpi: "",
     tipoGrafica: "numero",
-    fechaInicio: daysAgoIso(30),
-    fechaFin: todayIso(),
-    atajoActivo: null,
+    // Rango: por omision "ultimos 30 dias" como chip (se recalcula cada vez que
+    // se mira); "personalizado" = fechas tecleadas a mano, como antes.
+    ...rangoInicialDelBorrador(),
     comparar: false,
     fechaInicioB: "",
     fechaFinB: "",
@@ -896,29 +874,7 @@ export default function Dashboard() {
   // del widget elegido para editar, reemplazando por completo el borrador
   // que hubiera en este tablero.
   function handleEditWidget(widget) {
-    const ids = Array.isArray(widget.ids_kpi_definition) ? widget.ids_kpi_definition.map(String) : [];
-    const primerKpi = kpiCatalog.find((kpi) => String(kpi.id_kpi_definition) === ids[0]);
-    const parametros = widget.parametros || {};
-    abrirEditor(activeId, {
-      editingWidgetId: widget.id_kpi_dashboard_widget,
-      paso: 0,
-      idsKpiSeleccionados: ids,
-      categoriaKpi: primerKpi?.modulo || "",
-      tipoGrafica: widget.tipo_grafica || "numero",
-      fechaInicio: parametros.fecha_inicio || daysAgoIso(30),
-      fechaFin: parametros.fecha_fin || todayIso(),
-      atajoActivo: null,
-      comparar: Boolean(parametros.fecha_inicio_b && parametros.fecha_fin_b),
-      fechaInicioB: parametros.fecha_inicio_b || "",
-      fechaFinB: parametros.fecha_fin_b || "",
-      empleadosSeleccionados: Array.isArray(parametros.empleados) ? parametros.empleados.map(String) : [],
-      departamentosSeleccionados: Array.isArray(parametros.id_departments) ? parametros.id_departments.map(String) : [],
-      // Las llaves de `colores_kpi` ya llegan como string desde el JSON
-      // guardado -- se copian tal cual, sin volver a tocar el tipo.
-      coloresKpi: parametros.colores_kpi && typeof parametros.colores_kpi === "object" ? { ...parametros.colores_kpi } : {},
-      agruparPor: parametros.agrupar_por === "periodo" ? "periodo" : "entidad",
-      umbralBajoStock: parametros.umbral_bajo_stock != null ? String(parametros.umbral_bajo_stock) : "",
-    });
+    abrirEditor(activeId, estadoDeWidget(widget, kpiCatalog));
   }
 
   async function handleSaveWidget(payload, editingWidgetId) {
@@ -1156,7 +1112,9 @@ function useDatosDeWidget({ widget, kpiCatalog, onReady }) {
   const idsUsados = ["numero", "dona"].includes(widget.tipo_grafica) ? idsKpiDefinition.slice(0, 1) : idsKpiDefinition;
   const idsKey = idsUsados.join(",");
   const kpiInfos = idsUsados.map((id) => kpiCatalog.find((kpi) => kpi.id_kpi_definition === id));
-  const parametros = widget.parametros || {};
+  // Fechas al dia de hoy: un widget con `rango_relativo` las recalcula cada
+  // vez que se mira; uno sin el (todos los de antes) sale tal cual se guardo.
+  const parametros = parametrosEfectivos(widget.parametros);
   const fechaInicio = parametros.fecha_inicio;
   const fechaFin = parametros.fecha_fin;
   const fechaInicioB = parametros.fecha_inicio_b;
@@ -1340,7 +1298,7 @@ function VistaPreviaEditor({ widget, kpiCatalog, userLabel, productLabel, format
 function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, formatNumber, onEdit, onDelete, onReady, t, tx, dragHandleProps, isDragging, animar, esNuevo }) {
   const datos = useDatosDeWidget({ widget, kpiCatalog, onReady });
   const { kpiInfos, idsUsados, esTablaVivo } = datos;
-  const parametros = widget.parametros || {};
+  const parametros = parametrosEfectivos(widget.parametros);
   const fechaInicio = parametros.fecha_inicio;
   const fechaFin = parametros.fecha_fin;
   const fechaInicioB = parametros.fecha_inicio_b;
@@ -1349,8 +1307,13 @@ function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, formatNumb
   const chartTypeLabel = CHART_TYPES.find((opt) => opt.value === widget.tipo_grafica)?.label || widget.tipo_grafica;
   const rangoTexto = esTablaVivo
     ? tx("live_data", "En vivo -- siempre lo más reciente")
-    : (fechaInicio && fechaFin ? `${fechaInicio} → ${fechaFin}` : tx("missing_range", "Sin rango de fechas configurado"));
+    : (fechaInicio && fechaFin ? `${etiquetaRango}${fechaInicio} → ${fechaFin}` : tx("missing_range", "Sin rango de fechas configurado"));
   const rangoBTexto = fechaInicioB && fechaFinB ? `${fechaInicioB} → ${fechaFinB}` : "";
+  // "Ultimos 30 dias · 2026-08-31 → 2026-09-29": el nombre del rango solo si el
+  // widget lo trae; uno de fechas fijas se ve como siempre.
+  const etiquetaRango = RANGOS_RELATIVOS.includes(widget.parametros?.rango_relativo)
+    ? `${tx(`range_${widget.parametros.rango_relativo}`, widget.parametros.rango_relativo)} · `
+    : "";
   const titulo = kpiInfos.length > 1
     ? kpiInfos.map((info, index) => info?.etiqueta || `KPI #${idsUsados[index]}`).join(" + ")
     : (kpiInfos[0]?.etiqueta || tx("unknown_kpi", `KPI #${idsUsados[0] ?? "?"}`));
@@ -1439,7 +1402,7 @@ function useTendenciaKpi({ activo, idKpiDefinition, fechaInicio, fechaFin, emple
 // mini-tendencia -- o, sin comparacion, el rango que se esta viendo (nunca se
 // deja la mitad de la tarjeta en blanco).
 function KpiNumero({ widget, snapshot, kpiInfo, formatNumber, tx, animar }) {
-  const parametros = widget.parametros || {};
+  const parametros = parametrosEfectivos(widget.parametros);
   const hayComparacion = Boolean(snapshot?.rango_b);
   const tendencia = useTendenciaKpi({
     activo: hayComparacion,
@@ -1560,6 +1523,18 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, fo
   return <Componente {...props} tipo={widget.tipo_grafica} animar={animar} />;
 }
 
+// Texto de cada chip de rango cuando la traduccion no lo trae.
+const ETIQUETA_RANGO_POR_OMISION = {
+  hoy: "Hoy",
+  "7_dias": "7 días",
+  "30_dias": "30 días",
+  "90_dias": "90 días",
+  este_mes: "Este mes",
+  mes_anterior: "Mes anterior",
+  este_anio: "Este año",
+  personalizado: "Personalizado",
+};
+
 // Tipos de grafica que admiten TODOS los KPIs elegidos a la vez (interseccion
 // de sus `graficas_permitidas`). Sin KPI elegido, todos menos "tabla", que
 // solo existe para KPIs "vivos". Un KPI que no trae la lista no restringe.
@@ -1580,9 +1555,9 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
     idsKpiSeleccionados,
     categoriaKpi,
     tipoGrafica,
+    rangoRelativo,
     fechaInicio,
     fechaFin,
-    atajoActivo,
     comparar,
     fechaInicioB,
     fechaFinB,
@@ -1809,15 +1784,17 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
     });
   }
 
-  // Los atajos solo rellenan fecha_inicio/fecha_fin -- nunca reemplazan los
-  // selectores libres (ver DATE_SHORTCUTS). Editar las fechas a mano deja de
-  // marcar cualquiera de estos atajos como activo (atajoActivo pasa a
-  // "personalizado" en el onChange de los inputs de fecha), simplemente
-  // ninguno de los botones se ve resaltado -- no hace falta un boton propio
-  // para ese estado.
-  function aplicarAtajo(atajo) {
-    const [inicio, fin] = atajo.range();
-    onChangePanelState({ atajoActivo: atajo.key, fechaInicio: inicio, fechaFin: fin });
+  // Un chip de rango relativo guarda la INSTRUCCION ("ultimos 30 dias") y
+  // rellena las fechas con lo que da hoy, para que se vean; "Personalizado"
+  // conserva las fechas que haya y las deja editar a mano. Editar una fecha a
+  // mano tambien pasa a "personalizado" (ver los inputs de fecha).
+  function elegirRango(clave) {
+    if (clave === RANGO_PERSONALIZADO) {
+      onChangePanelState({ rangoRelativo: RANGO_PERSONALIZADO });
+      return;
+    }
+    const rango = resolverRangoRelativo(clave);
+    onChangePanelState({ rangoRelativo: clave, fechaInicio: rango.fecha_inicio, fechaFin: rango.fecha_fin });
   }
 
   // FormularioPlegable (cerrarAlEnviar) cierra el panel cuando esta funcion
@@ -1841,18 +1818,19 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
       throw NO_CERRAR;
     }
     if (idsKpiSeleccionados.length === 0) rechazar(tx("kpi_required", "Elige al menos un KPI."));
+    // Lo que se valida es lo que se va a guardar (armarParametros): con un
+    // chip relativo, las fechas ya vienen calculadas al dia de hoy.
+    const parametros = armarParametros(panelState, { esTabla, tieneBajoStock: tieneBajoStockSeleccionado });
     if (!esTabla) {
-      if (!fechaInicio || !fechaFin) rechazar(tx("range_required", "Elige el rango de fechas."));
-      if (diffDias(fechaInicio, fechaFin) > KPI_RANGO_DIAS_MAX) {
+      if (!parametros.fecha_inicio || !parametros.fecha_fin) rechazar(tx("range_required", "Elige el rango de fechas."));
+      if (diffDias(parametros.fecha_inicio, parametros.fecha_fin) > KPI_RANGO_DIAS_MAX) {
         rechazar(tx("range_exceeds_limit", "El rango de fechas no puede exceder un año. Ajusta las fechas."));
       }
-      if (comparar && (!fechaInicioB || !fechaFinB)) rechazar(tx("range_b_required", "Elige el rango de comparación o desactívala."));
-      if (comparar && diffDias(fechaInicioB, fechaFinB) > KPI_RANGO_DIAS_MAX) {
+      if (comparar && (!parametros.fecha_inicio_b || !parametros.fecha_fin_b)) rechazar(tx("range_b_required", "Elige el rango de comparación o desactívala."));
+      if (comparar && diffDias(parametros.fecha_inicio_b, parametros.fecha_fin_b) > KPI_RANGO_DIAS_MAX) {
         rechazar(tx("range_exceeds_limit", "El rango de comparación no puede exceder un año. Ajusta las fechas."));
       }
     }
-
-    const parametros = armarParametros(panelState, { esTabla, tieneBajoStock: tieneBajoStockSeleccionado });
 
     const payload = { ids_kpi_definition: idsKpiSeleccionados.map(Number), tipo_grafica: tipoGrafica, parametros };
     setSaving(true);
@@ -1877,6 +1855,12 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
   }
 
   const tituloPanel = editingWidgetId ? tx("edit_widget", "Editar gráfico") : tx("add_widget", "Agregar gráfico");
+
+  // Rango relativo vigente: las fechas que se muestran son las de HOY (no las
+  // que quedaron en el borrador), igual que las que se consultan y se guardan.
+  const esRelativo = RANGOS_RELATIVOS.includes(rangoRelativo);
+  const rangoResuelto = esRelativo ? resolverRangoRelativo(rangoRelativo) : null;
+  const periodoBResuelto = esRelativo ? periodoAnterior(rangoResuelto) : null;
 
   // Lo que va en cada paso es lo que antes eran tres columnas lado a lado;
   // el orden y los controles son los mismos, solo que ahora se recorren con
@@ -1975,19 +1959,26 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
     periodo: (
       <>
             <div className="kpi-picker-section">
-              <span>{tx("date_shortcuts", "Atajos de fecha")}</span>
-              <div className="kpi-date-shortcuts">
-                {DATE_SHORTCUTS.map((atajo) => (
+              <span>{tx("date_range", "Periodo")}</span>
+              <div className="kpi-editor-chips" role="group" aria-label={tx("date_range", "Periodo")}>
+                {[...RANGOS_RELATIVOS, RANGO_PERSONALIZADO].map((clave) => (
                   <button
                     type="button"
-                    key={atajo.key}
-                    className={`kpi-shortcut-button ${atajoActivo === atajo.key ? "active" : ""}`}
-                    onClick={() => aplicarAtajo(atajo)}
+                    key={clave}
+                    className={`kpi-editor-chip ${rangoRelativo === clave ? "activo" : ""}`}
+                    aria-pressed={rangoRelativo === clave}
+                    onClick={() => elegirRango(clave)}
                   >
-                    {tx(`date_shortcut_${atajo.key}`, atajo.label)}
+                    {tx(`range_${clave}`, ETIQUETA_RANGO_POR_OMISION[clave])}
                   </button>
                 ))}
               </div>
+              {esRelativo && (
+                <p className="kpi-editor-rango-resuelto">
+                  {rangoResuelto.fecha_inicio} → {rangoResuelto.fecha_fin}
+                  <span> · {tx("range_relative_hint", "se recalcula cada vez que se abre el tablero")}</span>
+                </p>
+              )}
             </div>
 
             {idsKpiSeleccionados.length > 0 && primeraDimension !== "global" && (
@@ -2025,35 +2016,41 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
               </label>
             )}
 
-            <div className="form-grid">
-              <label className="field">
-                <span>{tx("start_date", "Fecha inicio")}</span>
-                <input
-                  type="date"
-                  value={fechaInicio}
-                  max={fechaFin || undefined}
-                  onChange={(event) => onChangePanelState({ fechaInicio: event.target.value, atajoActivo: "personalizado" })}
-                  required
-                />
-              </label>
-              <label className="field">
-                <span>{tx("end_date", "Fecha fin")}</span>
-                <input
-                  type="date"
-                  value={fechaFin}
-                  min={fechaInicio || undefined}
-                  onChange={(event) => onChangePanelState({ fechaFin: event.target.value, atajoActivo: "personalizado" })}
-                  required
-                />
-              </label>
-            </div>
+            {!esRelativo && (
+              <div className="form-grid">
+                <label className="field">
+                  <span>{tx("start_date", "Fecha inicio")}</span>
+                  <input
+                    type="date"
+                    value={fechaInicio}
+                    max={fechaFin || undefined}
+                    onChange={(event) => onChangePanelState({ fechaInicio: event.target.value, rangoRelativo: RANGO_PERSONALIZADO })}
+                    required
+                  />
+                </label>
+                <label className="field">
+                  <span>{tx("end_date", "Fecha fin")}</span>
+                  <input
+                    type="date"
+                    value={fechaFin}
+                    min={fechaInicio || undefined}
+                    onChange={(event) => onChangePanelState({ fechaFin: event.target.value, rangoRelativo: RANGO_PERSONALIZADO })}
+                    required
+                  />
+                </label>
+              </div>
+            )}
 
             <label className="field checkbox-field">
               <input type="checkbox" checked={comparar} onChange={(event) => onChangePanelState({ comparar: event.target.checked })} />
-              <span>{tx("compare_toggle", "Comparar contra otro periodo")}</span>
+              <span>{esRelativo ? tx("compare_previous_toggle", "Comparar contra el periodo anterior") : tx("compare_toggle", "Comparar contra otro periodo")}</span>
             </label>
 
-            {comparar && (
+            {comparar && esRelativo && (
+              <p className="kpi-editor-rango-resuelto">{periodoBResuelto.fecha_inicio_b} → {periodoBResuelto.fecha_fin_b}</p>
+            )}
+
+            {comparar && !esRelativo && (
               <div className="form-grid">
                 <label className="field">
                   <span>{tx("start_date_b", "Fecha inicio (comparación)")}</span>

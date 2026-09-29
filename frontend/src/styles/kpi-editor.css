@@ -107,3 +107,6 @@
    y el cuerpo (grafica, numero, tabla) se estira dentro de ella. */
 .kpi-editor-vista-previa-tarjeta { border-style: solid; background: var(--kpi-tarjeta); min-width: 0; }
 .kpi-editor-vista-previa-cuerpo { margin-top: 8px; min-width: 0; }
+
+.kpi-editor-rango-resuelto { margin: 8px 0 0; font-size: 12px; font-weight: 700; color: var(--kpi-ink-suave); }
+.kpi-editor-rango-resuelto span { font-weight: 400; color: var(--kpi-texto-suave); }
