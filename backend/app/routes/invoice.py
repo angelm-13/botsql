@@ -13,7 +13,7 @@ from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
 from datetime import datetime
 from app.services.invoice_material_service_service import InvoiceMaterialServiceService
-from app.services.quotation_service import calculate_totals, ensure_not_expired, normalize_status, validate_transition
+from app.services.quotation_service import calculate_totals, totals_from_priced_lines, ensure_not_expired, normalize_status, validate_transition
 from app.services.manual_invoice_service import create_manual_invoice, preview_manual_invoice, validate_manual_invoice_context
 from app.services.invoice_catalogs import catalogs_payload
 from app.services.invoice_inventory_service import apply_invoice_to_inventory, preview_invoice_inventory
@@ -611,7 +611,14 @@ def convert_quotation_invoice(user_data, id_invoice):
             if line['id_invoice_material_service'] in set(pending_ids):
                 line['authorization_status'] = 'authorized'
 
-    totals = calculate_totals(authorized_lines, invoice.get('tax_rate') if invoice.get('apply_tax') else 0)
+    # totals_from_priced_lines y no calculate_totals: este segundo ignora por
+    # completo tax_applicable/line_tax/tax_rate de cada renglon y aplica una
+    # sola tasa (la del encabezado) a todo el subtotal. Bug real medido: con
+    # tax_rate sin capturar en el encabezado (no es obligatorio), el IVA que
+    # el cliente ya vio y aprobo en la cotizacion desaparecia sin error
+    # visible. Ver docstring de totals_from_priced_lines.
+    totals = totals_from_priced_lines(
+        authorized_lines, invoice.get('tax_rate') if invoice.get('apply_tax') else 0)
     conversion_note = str(
         data.get('conversion_note')
         or 'Convertida desde cotizacion usando solo partidas autorizadas.'
@@ -628,6 +635,16 @@ def convert_quotation_invoice(user_data, id_invoice):
         # su descuento tampoco debe seguir contando en la factura resultante.
         'descuento': str(totals['discount']),
         'note': note,
+        # La fecha de emision debe ser la del timbrado real, no la del dia en
+        # que se capturo la cotizacion -- pueden pasar semanas entre cotizar
+        # y que el cliente apruebe. Bug real medido: convertir dejaba
+        # date_emision congelada en la fecha vieja, lo que arriesga rechazo
+        # del SAT (la Fecha del CFDI debe ser cercana al momento real del
+        # timbrado). date_expiration no se toca aqui a proposito: paso a
+        # significar otra cosa (vigencia de la cotizacion, no vencimiento de
+        # la factura) y cambiar su semantica es una decision de negocio
+        # aparte, no un bug de fecha congelada.
+        'date_emision': datetime.utcnow().isoformat(),
     }
 
     updated = InvoiceService.update(id_invoice, payload, user_id=user_data.get('id_user'))
