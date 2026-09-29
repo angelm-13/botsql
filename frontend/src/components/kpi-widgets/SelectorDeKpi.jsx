@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
 import { Boxes, Check, Hash, Search } from "lucide-react";
 import { CATEGORICAL, colorEfectivoDeKpi, unidadInfo } from "../../kpi/kpiDatos.js";
@@ -29,6 +29,16 @@ export default function SelectorDeKpi({
   const [busqueda, setBusqueda] = useState(busquedaInicial);
   const [colorAbierto, setColorAbierto] = useState(null);
   const grupos = useMemo(() => agruparKpis(catalogo, busqueda), [catalogo, busqueda]);
+
+  // El popover de color se cierra al hacer clic fuera de el, no solo al elegir.
+  useEffect(() => {
+    if (!colorAbierto) return undefined;
+    function alHacerClic(evento) {
+      if (!evento.target.closest(".kpi-color-swatch-wrap")) setColorAbierto(null);
+    }
+    document.addEventListener("mousedown", alHacerClic);
+    return () => document.removeEventListener("mousedown", alHacerClic);
+  }, [colorAbierto]);
 
   return (
     <div className="kpi-selector">

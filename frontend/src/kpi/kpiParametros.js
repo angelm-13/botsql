@@ -76,7 +76,6 @@ export function widgetDeBorrador(estado, opciones) {
  * fechas absolutas intactas. */
 export function estadoDeWidget(widget, kpiCatalog, hoy = new Date()) {
   const ids = Array.isArray(widget.ids_kpi_definition) ? widget.ids_kpi_definition.map(String) : [];
-  const primerKpi = kpiCatalog.find((kpi) => String(kpi.id_kpi_definition) === ids[0]);
   const guardados = widget.parametros || {};
   const relativo = esRangoRelativoVigente(guardados.rango_relativo);
   const parametros = relativo ? { ...guardados, ...resolverRangoRelativo(guardados.rango_relativo, hoy) } : guardados;
@@ -84,7 +83,6 @@ export function estadoDeWidget(widget, kpiCatalog, hoy = new Date()) {
     editingWidgetId: widget.id_kpi_dashboard_widget,
     paso: 0,
     idsKpiSeleccionados: ids,
-    categoriaKpi: primerKpi?.modulo || "",
     tipoGrafica: widget.tipo_grafica || "numero",
     rangoRelativo: relativo ? guardados.rango_relativo : RANGO_PERSONALIZADO,
     fechaInicio: parametros.fecha_inicio || fechaLocalIso(new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() - 29)),
