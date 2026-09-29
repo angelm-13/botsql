@@ -135,7 +135,7 @@ arranque los ve todos):
 | Número | Incidencias pendientes | Hoy, contra el mismo día de hace 30 días |
 | Barras | Incidencias abiertas vs. cerradas | Este año |
 | Barras | Incidencias abiertas por responsable | Este año |
-| Tabla | Material prestado ahora | Sin rango (KPI en vivo, `parametros = {}`) |
+| Tabla | Material prestado ahora | Sin rango (KPI en vivo), ancho doble: `parametros = {"columnas": 2}` |
 | Dona | Material por estado | Hoy |
 
 "Este año" y no 30 o 90 días porque en Adser el último vale migrado es del 15 de
@@ -191,8 +191,12 @@ sabía pintarlo.
   `graficas_permitidas`). Un cliente que hable directo con la API podría
   guardar una tabla de un KPI que no es "vivo": el Dashboard la pinta como
   "Este tipo de tabla estará disponible próximamente", no revienta.
-- Un widget de tabla guarda `parametros = {}`: son datos de "ahora", sin
-  periodo ni filtros.
+- Un widget de tabla no guarda periodo ni filtros (son datos de "ahora"). Lo
+  único que puede guardar es su ancho: `parametros = {"columnas": 2}` para que
+  ocupe dos columnas de la cuadrícula; ausente es una columna, así que las
+  tablas guardadas antes se ven igual. En pantallas donde solo cabe una
+  columna, la tabla vuelve a ocupar una. Sin migración: `parametros` es JSON
+  libre y el backend no lo valida.
 
 ## Solo si el ambiente es `adser-prod`
 

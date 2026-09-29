@@ -74,8 +74,10 @@ class TestFechasRelativas(BackendTestCase):
             {"rango_relativo": "30_dias", "fecha_inicio": "2026-08-31", "fecha_fin": "2026-09-29"},
             parametros_del_widget(WidgetPlantilla("x", "barras", "30_dias"), HOY),
         )
-        # Una tabla de un KPI en vivo no guarda periodo.
+        # Una tabla de un KPI en vivo no guarda periodo; solo su ancho, y solo si es doble.
         self.assertEqual({}, parametros_del_widget(WidgetPlantilla("material_prestado_actual", "tabla"), HOY))
+        self.assertEqual({"columnas": 2}, parametros_del_widget(WidgetPlantilla("material_prestado_actual", "tabla", columnas=2), HOY))
+        self.assertEqual({"columnas": 2}, parametros_del_widget(next(w for w in PLANTILLA if w.tipo_grafica == "tabla"), HOY))
 
 
 class TestPlantillaEnSi(BackendTestCase):
@@ -201,7 +203,7 @@ class TestSiembraDelTablero(BackendTestCase):
             self.assertEqual("este_anio", por_clave[clave]["rango_relativo"], clave)
             self.assertEqual("2026-01-01", por_clave[clave]["fecha_inicio"], clave)
             self.assertEqual("2026-09-29", por_clave[clave]["fecha_fin"], clave)
-        self.assertEqual({}, por_clave["material_prestado_actual"], "el KPI en vivo no lleva rango")
+        self.assertEqual({"columnas": 2}, por_clave["material_prestado_actual"], "el KPI en vivo no lleva rango, solo su ancho doble")
         self.assertEqual("hoy", por_clave["material_por_estado"]["rango_relativo"])
         self.assertNotIn("comparar_anterior", por_clave["material_por_estado"])
 
