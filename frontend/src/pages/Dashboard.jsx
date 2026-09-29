@@ -29,7 +29,7 @@ import {
   CATEGORICAL, colorDeKpi, colorEfectivoDeKpi, labelForDimension,
 } from "../kpi/kpiDatos.js";
 import {
-  armarParametros, estadoDeWidget, rangoInicialDelBorrador, widgetDeBorrador,
+  armarParametros, estadoDeWidget, rangoInicialDelBorrador, tiposDeGraficaPermitidos as tiposPermitidosPorKpi, widgetDeBorrador,
 } from "../kpi/kpiParametros.js";
 import {
   ETIQUETA_RANGO_POR_OMISION, RANGOS_RELATIVOS, RANGO_PERSONALIZADO, fechaLocalIso, parametrosEfectivos,
@@ -1543,16 +1543,8 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, fo
   return <Componente {...props} tipo={widget.tipo_grafica} animar={animar} />;
 }
 
-// Tipos de grafica que admiten TODOS los KPIs elegidos a la vez (interseccion
-// de sus `graficas_permitidas`). Sin KPI elegido, todos menos "tabla", que
-// solo existe para KPIs "vivos". Un KPI que no trae la lista no restringe.
 function tiposDeGraficaPermitidos(kpiInfos) {
-  const todos = CHART_TYPES.map((opt) => opt.value);
-  if (kpiInfos.length === 0) return todos.filter((tipo) => tipo !== "tabla");
-  return kpiInfos.reduce((permitidos, info) => {
-    const lista = Array.isArray(info.graficas_permitidas) && info.graficas_permitidas.length ? info.graficas_permitidas : todos.filter((tipo) => tipo !== "tabla");
-    return permitidos.filter((tipo) => lista.includes(tipo));
-  }, todos);
+  return tiposPermitidosPorKpi(kpiInfos, CHART_TYPES.map((opt) => opt.value));
 }
 
 function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, departments, userLabel, productLabel, formatNumber, onCancel, onSave, onAbierto, t, tx }) {

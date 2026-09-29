@@ -101,3 +101,20 @@ export function rangoInicialDelBorrador(hoy = new Date()) {
   const rango = resolverRangoRelativo(RANGO_RELATIVO_POR_OMISION, hoy);
   return { rangoRelativo: RANGO_RELATIVO_POR_OMISION, fechaInicio: rango.fecha_inicio, fechaFin: rango.fecha_fin };
 }
+
+/** Tipos de grafica que admiten TODOS los KPIs elegidos a la vez (interseccion de
+ * sus `graficas_permitidas`). Sin KPI elegido, todos menos "tabla". "Tabla" solo
+ * se ofrece si TODOS los KPIs son "vivos": aunque el registry liste "tabla" entre
+ * las graficas de un KPI de serie (ej. material_por_estado), no hay renderer de
+ * tabla para snapshots todavia y el widget saldria como "proximamente". Un KPI
+ * sin lista no restringe nada. */
+export function tiposDeGraficaPermitidos(kpiInfos, todosLosTipos) {
+  const sinTabla = todosLosTipos.filter((tipo) => tipo !== "tabla");
+  if (kpiInfos.length === 0) return sinTabla;
+  const permitidos = kpiInfos.reduce((restantes, info) => {
+    const lista = Array.isArray(info.graficas_permitidas) && info.graficas_permitidas.length ? info.graficas_permitidas : sinTabla;
+    return restantes.filter((tipo) => lista.includes(tipo));
+  }, todosLosTipos);
+  const todosVivos = kpiInfos.every((info) => info.modo === "vivo");
+  return todosVivos ? permitidos : permitidos.filter((tipo) => tipo !== "tabla");
+}

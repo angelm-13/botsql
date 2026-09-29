@@ -13,7 +13,7 @@ import {
   CATEGORICAL, COLOR_OTHERS, buildMultiSeriesData, buildPieData, buildSeriesData,
   colorDeKpi, colorEfectivoDeKpi, formatConUnidad, labelForDimension,
 } from "./kpiDatos.js";
-import { armarParametros, estadoDeWidget, rangoInicialDelBorrador, widgetDeBorrador } from "./kpiParametros.js";
+import { armarParametros, estadoDeWidget, rangoInicialDelBorrador, tiposDeGraficaPermitidos, widgetDeBorrador } from "./kpiParametros.js";
 import {
   fechaLocalIso, parametrosEfectivos, periodoAnterior, resolverRangoRelativo,
 } from "./kpiRango.js";
@@ -384,4 +384,32 @@ test("los tokens de tema (claro y oscuro) no traen marrones, grafitos ni vinos",
     if (textoPizarra.has(color.toLowerCase())) continue;
     assert.equal(motivoNoVivo(color.toLowerCase()), null, `${nombre}: ${color}`);
   }
+});
+
+// --- tipos de grafica que ofrece el editor -----------------------------------
+const TODOS = ["numero", "barras", "linea", "area", "dona", "tabla"];
+const SERIE = { graficas_permitidas: ["numero", "barras", "linea", "area", "dona"], modo: "snapshot" };
+
+test("sin KPI elegido el editor ofrece todo menos Tabla", () => {
+  assert.deepEqual(tiposDeGraficaPermitidos([], TODOS), ["numero", "barras", "linea", "area", "dona"]);
+});
+
+test("un KPI en vivo solo admite Tabla", () => {
+  assert.deepEqual(tiposDeGraficaPermitidos([{ graficas_permitidas: ["tabla"], modo: "vivo" }], TODOS), ["tabla"]);
+});
+
+test("un KPI de serie que lista 'tabla' en el registry NO la ofrece (no hay tabla para snapshots)", () => {
+  // material_por_estado e incidencias_abiertas_por_empleado lo declaran asi.
+  const conTabla = { graficas_permitidas: ["dona", "tabla"], modo: "snapshot" };
+  assert.deepEqual(tiposDeGraficaPermitidos([conTabla], TODOS), ["dona"]);
+  assert.deepEqual(tiposDeGraficaPermitidos([{ graficas_permitidas: ["barras", "tabla"], modo: "snapshot" }], TODOS), ["barras"]);
+});
+
+test("varios KPIs: la interseccion; uno en vivo con uno de serie no comparten nada", () => {
+  assert.deepEqual(tiposDeGraficaPermitidos([SERIE, { graficas_permitidas: ["barras", "linea"], modo: "snapshot" }], TODOS), ["barras", "linea"]);
+  assert.deepEqual(tiposDeGraficaPermitidos([SERIE, { graficas_permitidas: ["tabla"], modo: "vivo" }], TODOS), []);
+});
+
+test("un KPI sin lista de graficas no restringe (menos Tabla)", () => {
+  assert.deepEqual(tiposDeGraficaPermitidos([{ modo: "snapshot" }], TODOS), ["numero", "barras", "linea", "area", "dona"]);
 });
