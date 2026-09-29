@@ -11,7 +11,11 @@
 
 .kpi-dashboard-body{display:flex;flex-direction:column;gap:16px}
 
-.kpi-widget-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px}
+.kpi-widget-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px;container-type:inline-size;container-name:kpi-cuadricula}
+/* Ancho doble (parametros.columnas = 2, hoy solo tablas). Con menos de dos columnas de 340px + el hueco
+   (696px) un `span 2` inventaria una columna implicita, asi que ahi vuelve a ocupar una. */
+.kpi-widget-doble{grid-column:span 2}
+@container kpi-cuadricula (max-width:695px){.kpi-widget-doble{grid-column:auto}}
 /* Un hijo de una cuadricula no baja de su ancho minimo de contenido (min-width: auto): una tabla
    o un grafico ancho lo ensanchaba y se salia de su columna, quedando bajo el recuadro vecino.
    Con min-width: 0 la columna manda y el contenido se ajusta a ella. */

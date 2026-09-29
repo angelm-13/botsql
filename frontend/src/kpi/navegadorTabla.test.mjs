@@ -184,6 +184,23 @@ function movimientoReducido() {
   paso("movimiento reducido: " + (reducido ? "las barras no se animan" : "las barras se animan"), reducido ? parseFloat(duracion) === 0 : parseFloat(duracion) > 0, "reducido=" + reducido + " duracion=" + duracion);
 }
 
+// Ancho doble (columnas = 2): ocupa dos pistas de la cuadricula, y donde solo cabe una
+// vuelve a ocupar una (un span 2 crearia una columna implicita fuera de la pantalla).
+async function anchoDoble(nombre, ancho, pistasEsperadas) {
+  const { contenedor, tarjeta } = await escenario(nombre, ancho, { columnas: 2, vecinos: 4 });
+  const grid = contenedor.querySelector(".kpi-widget-grid");
+  const pistas = getComputedStyle(grid).gridTemplateColumns.trim().split(/\\s+/).length;
+  const envoltura = contenedor.querySelector("[data-tarjeta]");
+  const caja = envoltura.getBoundingClientRect();
+  const cajaGrid = grid.getBoundingClientRect();
+  const unaPista = (cajaGrid.width - 16 * (pistas - 1)) / pistas;
+  const ocupa = pistasEsperadas === 1 ? 1 : 2;
+  paso(nombre + ": la cuadricula tiene " + pistasEsperadas + " columna(s)", pistas === pistasEsperadas, pistas);
+  paso(nombre + ": la tabla ocupa " + ocupa + " columna(s)", Math.abs(caja.width - (unaPista * ocupa + 16 * (ocupa - 1))) < 2, Math.round(caja.width) + "px de " + Math.round(unaPista) + "px por columna");
+  paso(nombre + ": no crea columnas implicitas (sin scroll horizontal de la cuadricula)", grid.scrollWidth <= grid.clientWidth + 1, grid.scrollWidth + ">" + grid.clientWidth);
+  paso(nombre + ": el modo depende del ancho real de la tarjeta", (getComputedStyle(tarjeta.querySelector("thead")).display !== "none") === (caja.width > 560), Math.round(caja.width));
+}
+
 async function todo() {
   // La cuadricula es repeat(auto-fill, minmax(340px, 1fr)):
   //   420 -> 1 columna de 420 (tarjeta angosta: renglones compactos)
@@ -192,6 +209,10 @@ async function todo() {
   await diseno("420px (1 columna)", 420, false);
   await diseno("680px (1 columna ancha)", 680, true);
   await diseno("760px (2 columnas angostas)", 760, false);
+  // Ancho doble: 500 -> 1 pista (vuelve a una), 900 -> 2 pistas, 1200 -> 3 pistas (la tabla ocupa 2).
+  await anchoDoble("doble a 500px", 500, 1);
+  await anchoDoble("doble a 900px", 900, 2);
+  await anchoDoble("doble a 1200px", 1200, 3);
   await estadoVacio();
   movimientoReducido();
   document.title = JSON.stringify({ resultados });

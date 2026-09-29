@@ -18,7 +18,9 @@ import {
  *   esta entre los elegidos (se captura en el widget, no en una columna).
  */
 export function armarParametros(estado, { esTabla = false, tieneBajoStock = false, hoy = new Date() } = {}) {
-  if (esTabla) return {};
+  // Una tabla son datos de "ahora": sin periodo ni filtros. Lo unico que guarda es su ancho,
+  // y solo cuando es doble: ausente = 1 columna, que es como se ven las tablas anteriores.
+  if (esTabla) return estado.columnas === 2 ? { columnas: 2 } : {};
   // Con un chip de rango relativo se guarda la INSTRUCCION (`rango_relativo`)
   // y, ademas, la foto de las fechas de hoy: quien no conozca el campo sigue
   // leyendo fechas absolutas de siempre. Sin chip ("personalizado") el
@@ -70,6 +72,12 @@ export function widgetDeBorrador(estado, opciones) {
   };
 }
 
+/** Cuantas columnas de la cuadricula ocupa un widget: 2 solo si lo guardo asi; cualquier otra
+ * cosa (ausente, 1, basura) es 1, para que los widgets anteriores no cambien. */
+export function columnasDeWidget(widget) {
+  return widget?.tipo_grafica === "tabla" && widget?.parametros?.columnas === 2 ? 2 : 1;
+}
+
 /** El borrador del editor para un widget ya guardado (lo inverso de
  * armarParametros): lo que se carga al pulsar el lapiz de una tarjeta. Un
  * widget de antes de los rangos relativos entra como "personalizado", con sus
@@ -98,6 +106,7 @@ export function estadoDeWidget(widget, kpiCatalog, hoy = new Date()) {
     coloresKpi: parametros.colores_kpi && typeof parametros.colores_kpi === "object" ? { ...parametros.colores_kpi } : {},
     agruparPor: parametros.agrupar_por === "periodo" ? "periodo" : "entidad",
     umbralBajoStock: parametros.umbral_bajo_stock != null ? String(parametros.umbral_bajo_stock) : "",
+    columnas: columnasDeWidget(widget),
   };
 }
 

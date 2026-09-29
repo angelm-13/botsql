@@ -21,7 +21,7 @@ import {
   agruparKpis, claveDeGrupo, colorDeModulo, COLOR_DE_MODULO, estadoDeOpcion, esVariable, grupoInicial, resumenDeModulos,
 } from "./kpiSelector.js";
 import {
-  armarParametros, estadoDeWidget, mezclaUnidades, motivoParaNoCombinar, rangoInicialDelBorrador,
+  armarParametros, columnasDeWidget, estadoDeWidget, mezclaUnidades, motivoParaNoCombinar, rangoInicialDelBorrador,
   tiposDeGraficaPermitidos, unidadDeKpi, widgetDeBorrador,
 } from "./kpiParametros.js";
 import {
@@ -233,6 +233,8 @@ test("armarParametros: lo mismo que guardaba el editor antes (numeros, colores v
 
 test("armarParametros: una tabla (KPI vivo) no guarda periodo ni filtros", () => {
   assert.deepEqual(armarParametros(BORRADOR, { esTabla: true }), {});
+  assert.deepEqual(armarParametros({ ...BORRADOR, columnas: 1 }, { esTabla: true }), {});
+  assert.deepEqual(armarParametros({ ...BORRADOR, columnas: 2 }, { esTabla: true }), { columnas: 2 });
   const widget = widgetDeBorrador({ ...BORRADOR, tipoGrafica: "tabla", idsKpiSeleccionados: ["11"] }, { esTabla: true });
   assert.deepEqual(widget, { tipo_grafica: "tabla", ids_kpi_definition: [11], parametros: {} });
 });
@@ -688,4 +690,14 @@ test("la barra de dias es proporcional al maximo, con minimo visible y tope de 1
   assert.equal(anchoDeBarra(0, 512), 4);
   assert.equal(anchoDeBarra(600, 512), 100);
   assert.equal(anchoDeBarra(10, 0), 4);
+});
+
+test("columnasDeWidget: solo una tabla guardada con columnas 2 ocupa dos; lo demas (y lo anterior) ocupa una", () => {
+  assert.equal(columnasDeWidget({ tipo_grafica: "tabla", parametros: { columnas: 2 } }), 2);
+  assert.equal(columnasDeWidget({ tipo_grafica: "tabla", parametros: {} }), 1);
+  assert.equal(columnasDeWidget({ tipo_grafica: "tabla", parametros: { columnas: 7 } }), 1);
+  assert.equal(columnasDeWidget({ tipo_grafica: "tabla" }), 1);
+  assert.equal(columnasDeWidget({ tipo_grafica: "barras", parametros: { columnas: 2 } }), 1);
+  assert.equal(estadoDeWidget({ tipo_grafica: "tabla", ids_kpi_definition: [11], parametros: { columnas: 2 } }, []).columnas, 2);
+  assert.equal(estadoDeWidget({ tipo_grafica: "tabla", ids_kpi_definition: [11], parametros: {} }, []).columnas, 1);
 });
