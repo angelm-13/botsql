@@ -2,6 +2,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Boxes, Briefcase, CalendarDays, ChevronDown, ClipboardList, Contact, FileText, FlaskConical, Landmark, LayoutDashboard, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Receipt, Settings, ShieldCheck, ShoppingCart, SlidersHorizontal, Truck, UserCog, Users, Utensils, Warehouse } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { deploymentPlan, getMyPermissions } from "../api";
+import { etiquetaParaMostrar, grupoParaMostrar } from "./etiquetasMenu.js";
 import LanguagePicker from "../components/LanguagePicker";
 import NotificationBell from "../components/NotificationBell";
 import { useI18n } from "../i18n";
@@ -221,7 +222,12 @@ export default function Shell() {
   const location = useLocation();
   const { t } = useI18n();
   const shellText = (key) => t(`shell.${key}`);
-  const groupLabel = (label) => groupTranslationKeys[label] ? shellText(groupTranslationKeys[label]) : label;
+  // El grupo viene de la base sin acento ("Facturacion"): se acentua solo para
+  // mostrarlo, la llave con la que se agrupa no cambia (ver etiquetasMenu.js).
+  const groupLabel = (label) => {
+    const visible = grupoParaMostrar(label);
+    return groupTranslationKeys[visible] ? shellText(groupTranslationKeys[visible]) : visible;
+  };
   const currentUser = JSON.parse(localStorage.getItem("user") || "null");
   const bootstrapUsername = import.meta.env.VITE_BOOTSTRAP_ADMIN_USERNAME || "admin1";
   const isBootstrapAdmin = Boolean(currentUser?.username === bootstrapUsername && (currentUser?.is_bootstrap_admin || currentUser?.is_superuser || currentUser?.username === bootstrapUsername));
@@ -369,7 +375,7 @@ export default function Shell() {
       group: item.group || permission?.menu_group || defaultGroup(item),
       groupIcon: item.groupIcon || permission?.menu_group_icon || defaultGroupIcons[item.group || permission?.menu_group || defaultGroup(item)] || "sliders-horizontal",
       order: Number(item.order ?? permission?.menu_order ?? 100),
-      displayLabel: isCanonicalPath && permission?.menu_label ? permission.menu_label : item.key ? t(item.key, item.label || item.key) : item.label
+      displayLabel: etiquetaParaMostrar(isCanonicalPath && permission?.menu_label ? permission.menu_label : item.key ? t(item.key, item.label || item.key) : item.label)
     };
   }
 
