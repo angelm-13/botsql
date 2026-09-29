@@ -452,6 +452,18 @@ class TestKpiDashboardApi(BackendTestCase):
 
         self.assertEqual(400, response.status_code)
 
+    def test_a_table_widget_can_be_saved(self):
+        # "tabla" es el tipo del KPI "vivo" (material_prestado_actual). Sin
+        # aceptarlo aqui el editor del Dashboard no podia guardar ese widget.
+        id_dashboard = self._crear_tablero(ACTOR_A)
+
+        response = self._request(ACTOR_A, "POST", f"/kpi_dashboard/{id_dashboard}/widgets/", {
+            "ids_kpi_definition": [self.id_kpi], "tipo_grafica": "tabla",
+        })
+
+        self.assertEqual(201, response.status_code, self.json(response))
+        self.assertEqual("tabla", self.json(response)["tipo_grafica"])
+
     def test_update_widget_replaces_the_full_kpi_list_and_keeps_order(self):
         id_dashboard = self._crear_tablero(ACTOR_A)
         creado = self._request(ACTOR_A, "POST", f"/kpi_dashboard/{id_dashboard}/widgets/", {

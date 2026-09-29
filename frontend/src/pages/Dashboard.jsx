@@ -1,15 +1,11 @@
 /* eslint-disable react/prop-types */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowDown, ArrowUp, AreaChart as AreaChartIcon, BarChart2, Boxes, ChevronDown, ChevronUp,
+  AreaChart as AreaChartIcon, BarChart2, Boxes, ChevronDown, ChevronUp,
   ClipboardList, FileDown, FileText, FlaskConical, GripVertical, Hash, LineChart as LineChartIcon,
-  Loader2, Package, Pencil, PieChart as PieChartIcon, Plus, Receipt,
-  RefreshCw, SlidersHorizontal, Tag, Trash2, User,
+  Loader2, Pencil, PieChart as PieChartIcon, Plus, Receipt,
+  RefreshCw, SlidersHorizontal, Trash2, User,
 } from "lucide-react";
-import {
-  ResponsiveContainer, BarChart, Bar, LineChart, Line, AreaChart, Area,
-  PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-} from "recharts";
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS as DndCss } from "@dnd-kit/utilities";
@@ -21,8 +17,17 @@ import {
   getAllKpiDashboardWidget, createKpiDashboardWidget, updateKpiDashboardWidget, deleteKpiDashboardWidget,
   getAllKpiDefinition, queryKpiSnapshot, queryKpiVivo, getAllUser, getAllDepartment, getAllProduct,
 } from "../api";
+import "../styles/kpi-widgets.css";
 import "../styles/kpi-dashboard.css";
 import PageHeader from "../components/PageHeader.jsx";
+import TIPO_GRAFICA_COMPONENTE from "../components/kpi-widgets/tipoGraficaComponentes";
+import {
+  CATEGORICAL, colorDeKpi, colorEfectivoDeKpi, labelForDimension,
+} from "../kpi/kpiDatos.js";
+import {
+  UMBRAL_ATRASO_PRESTAMO_DIAS, filasTablaPrestamo, propsDona, propsNumero,
+  propsNumeroBajoStock, propsSeries, tendenciaDeSnapshot,
+} from "../kpi/kpiAdaptadores.js";
 
 const CHART_TYPES = [
   { value: "numero", label: "Número" },
@@ -89,57 +94,6 @@ function kpiModuleMeta(modulo) {
     icon: DEFAULT_MODULE_ICON,
     label: modulo ? modulo.charAt(0).toUpperCase() + modulo.slice(1) : "",
   };
-}
-
-// Que icono acompana a cada categoria segun la dimension REAL del KPI, no
-// siempre la personita -- un KPI por producto muestra una caja, uno por
-// categoria fija (dimension "estado", ej. material_por_estado) una etiqueta,
-// uno global un simple numeral. `empleado` sigue siendo la persona de
-// siempre.
-const DIMENSION_ICONS = { empleado: User, producto: Package, estado: Tag, global: Hash };
-function iconoDeDimension(dimension) {
-  return DIMENSION_ICONS[dimension] || User;
-}
-
-// "NUMERO"/"MONEDA" crudos nunca se le muestran a nadie: sufijo para pegar
-// al VALOR ya formateado (widgets) y etiqueta corta para el selector de KPI
-// del editor -- vocabulario cerrado, igual que el que ya valida el backend
-// (ver UNIDADES en app/kpis/registry.py). Una unidad que el backend agregue
-// y este mapa todavia no conozca cae en el mismo trato que "numero" (sin
-// sufijo, "Cantidad" como etiqueta) en vez de imprimir la palabra cruda.
-const UNIDAD_INFO = {
-  numero: { etiquetaSelector: "Cantidad", prefijo: "", sufijo: "" },
-  porcentaje: { etiquetaSelector: "%", prefijo: "", sufijo: "%" },
-  moneda: { etiquetaSelector: "$", prefijo: "$", sufijo: "" },
-  dias: { etiquetaSelector: "Días", prefijo: "", sufijo: " días" },
-  piezas: { etiquetaSelector: "Piezas", prefijo: "", sufijo: " piezas" },
-};
-function unidadInfo(unidad) {
-  return UNIDAD_INFO[unidad] || UNIDAD_INFO.numero;
-}
-function formatConUnidad(valorFormateado, unidad) {
-  const info = unidadInfo(unidad);
-  return `${info.prefijo}${valorFormateado}${info.sufijo}`;
-}
-
-// Primera letra en mayuscula -- "abierta"/"cerrada" (los dos unicos valores
-// que hoy trae la dimension "estado" de incidencias_abiertas_vs_cerradas)
-// llegan en minuscula desde el backend; las de material_por_estado
-// ("Entrada", "Salida"...) ya vienen capitalizadas, asi que esto no les hace
-// nada -- es seguro aplicarlo siempre sin distinguir de cual KPI viene.
-function capitalizar(valor) {
-  const texto = String(valor || "");
-  return texto ? texto.charAt(0).toUpperCase() + texto.slice(1) : texto;
-}
-
-// Color de una categoria de dimension "estado": si el KPI declaro
-// colores_categoria (backend, ver app/kpis/registry.py) se usa ESE color
-// fijo por nombre de categoria -- nunca la paleta CATEGORICAL generica por
-// posicion, que es para dimensiones ABIERTAS (empleado/producto), no para un
-// catalogo cerrado y conocido de antemano.
-function colorDeCategoriaEstado(nombreCategoria, coloresCategoria, colorRespaldo) {
-  if (coloresCategoria && nombreCategoria in coloresCategoria) return coloresCategoria[nombreCategoria];
-  return colorRespaldo;
 }
 
 // Numero MINIMO de espacios "de fabrica" que se muestran en un tablero nuevo:
@@ -278,37 +232,6 @@ function useCompleteGridPlaceholders(widgetCount) {
   }, [nodo, widgetCount, placeholderCount, columnas]);
 
   return [placeholderCount, gridRef];
-}
-
-// Orden categorico validado (dataviz skill): identidad, nunca ciclado.
-const CATEGORICAL = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
-const COLOR_OTHERS = "#898781";
-const AXIS_TICK = { fontSize: 11, fill: "#898781" };
-
-// Color fijo por KPI (no por posicion en un arreglo): antes un widget de un
-// solo KPI siempre salia con `CATEGORICAL[0]` sin importar cual KPI fuera, y
-// el mismo par de KPIs combinados en dos widgets distintos podia salir con
-// colores distintos si se elegian en otro orden. El modulo (`%`) sobre el id
-// real es determinista y estable entre widgets/tableros -mismo KPI, mismo
-// color, siempre- sin necesitar guardar un mapeo aparte. Con las 8 entradas
-// de CATEGORICAL y solo 3 KPIs reales hoy (ver KPI_REGISTRY en
-// backend/app/kpis/registry.py) el riesgo de colision es nulo en la
-// practica; si el catalogo real llegara a superar las 8 entradas, dos KPIs
-// podrian coincidir en color -aceptable por ahora, no hay pedido de un
-// selector manual todavia.
-function colorDeKpi(idKpiDefinition) {
-  const id = Number(idKpiDefinition);
-  if (!Number.isFinite(id)) return COLOR_OTHERS;
-  return CATEGORICAL[((id % CATEGORICAL.length) + CATEGORICAL.length) % CATEGORICAL.length];
-}
-
-// Color EFECTIVO de un KPI dentro de un widget ya guardado: el override manual
-// (`parametros.colores_kpi`, `{ [id_kpi_definition]: '#hex' }`) gana sobre el
-// determinista de `colorDeKpi` cuando existe. Las llaves de un objeto JSON
-// siempre llegan como string -- de ahi el `String(id)` al leer.
-function colorEfectivoDeKpi(idKpiDefinition, coloresOverride) {
-  const override = (coloresOverride || {})[String(idKpiDefinition)];
-  return override || colorDeKpi(idKpiDefinition);
 }
 
 // Avatar por omision para un empleado: no hay fotos de perfil reales, asi que
@@ -475,121 +398,12 @@ function defaultPanelState() {
   };
 }
 
-// Como etiquetar una entidad segun la dimension real del KPI (empleado,
-// producto o "global" -- sin desglose).
-function labelForDimension(dimension, userLabel, productLabel) {
-  if (dimension === "producto") return productLabel;
-  if (dimension === "global") return () => "Total";
-  // "estado": el id YA es el nombre legible de la categoria (ej. "abierta",
-  // "Entrada") -- no hay a quien buscarle nombre, solo capitalizar. Sin este
-  // caso caia en userLabel, que trataba "abierta" como un id_user y lo
-  // mostraba como "#abierta" al no encontrar a nadie con ese id.
-  if (dimension === "estado") return (valor) => capitalizar(valor);
-  return userLabel;
-}
-
 function listOf(data) {
   return Array.isArray(data) ? data : data?.items || [];
 }
 
 function localeFor(lang) {
   return lang === "ja" ? "ja-JP" : lang === "en" ? "en-US" : lang === "pt" ? "pt-BR" : lang === "de" ? "de-DE" : "es-MX";
-}
-
-// El nombre de campo del backend (`por_empleado`) es historico -- se
-// conserva tal cual aunque ahora tambien puede traer productos (KPIs con
-// dimension "producto") o quedar vacio (KPIs "globales", ej. ingresos/
-// egresos totales, o cuando el widget pidio `agrupar_por=periodo`). Este
-// helper decide de que campo leer segun el modo de agrupacion elegido en el
-// widget, sin que cada `build*Data` tenga que repetir la logica.
-function entradasPorModo(ladoDelRango, agruparPorPeriodo) {
-  return agruparPorPeriodo ? (ladoDelRango?.por_periodo || {}) : (ladoDelRango?.por_empleado || {});
-}
-
-function buildSeriesData(snapshot, labelForId, entidadesFiltro, agruparPorPeriodo) {
-  const porA = entradasPorModo(snapshot?.rango_a, agruparPorPeriodo);
-  const porB = entradasPorModo(snapshot?.rango_b, agruparPorPeriodo);
-  let ids = Array.from(new Set([...Object.keys(porA), ...Object.keys(porB)]));
-  if (agruparPorPeriodo) {
-    // Las llaves son fechas ISO (`AAAA-MM-DD`): ordenan bien como texto.
-    ids.sort();
-  } else if (Array.isArray(entidadesFiltro) && entidadesFiltro.length) {
-    const orden = entidadesFiltro.map(String);
-    ids = orden.filter((id) => ids.includes(id));
-  } else {
-    ids.sort((x, y) => (porA[y] ?? 0) - (porA[x] ?? 0));
-  }
-  return ids.map((id) => ({
-    id,
-    name: labelForId(id),
-    a: porA[id] ?? 0,
-    b: id in porB ? porB[id] : undefined,
-  }));
-}
-
-// Un widget con varios KPIs hace una llamada a `/kpi_snapshot/query` POR CADA
-// id (ver KpiWidgetCard) -- `snapshots[i]` corresponde a `kpiInfos[i]`. Cada
-// fila resultante trae una columna `kpi_<indice>_a`/`kpi_<indice>_b` por KPI,
-// para que Recharts pinte una serie por cada uno sin tocar el eje X (que
-// sigue siendo por empleado, igual que con un solo KPI).
-function buildMultiSeriesData(snapshots, labelForId, entidadesFiltro, agruparPorPeriodo) {
-  const ids = new Set();
-  snapshots.forEach((snapshot) => {
-    Object.keys(entradasPorModo(snapshot?.rango_a, agruparPorPeriodo)).forEach((id) => ids.add(id));
-    Object.keys(entradasPorModo(snapshot?.rango_b, agruparPorPeriodo)).forEach((id) => ids.add(id));
-  });
-  let ordenados = Array.from(ids);
-  if (agruparPorPeriodo) {
-    ordenados.sort();
-  } else if (Array.isArray(entidadesFiltro) && entidadesFiltro.length) {
-    const orden = entidadesFiltro.map(String);
-    ordenados = orden.filter((id) => ordenados.includes(id));
-  } else {
-    const totalPorId = (id) => snapshots.reduce(
-      (suma, snapshot) => suma + (entradasPorModo(snapshot?.rango_a, agruparPorPeriodo)[id] ?? 0), 0,
-    );
-    ordenados.sort((x, y) => totalPorId(y) - totalPorId(x));
-  }
-  return ordenados.map((id) => {
-    const fila = { name: labelForId(id) };
-    snapshots.forEach((snapshot, index) => {
-      const porA = entradasPorModo(snapshot?.rango_a, agruparPorPeriodo);
-      const porB = entradasPorModo(snapshot?.rango_b, agruparPorPeriodo);
-      fila[`kpi_${index}_a`] = porA[id] ?? 0;
-      fila[`kpi_${index}_b`] = id in porB ? porB[id] : undefined;
-    });
-    return fila;
-  });
-}
-
-// Nombre real del KPI (no "Periodo A/B" generico) con su unidad al lado --
-// para que el tooltip/leyenda no confundan KPIs de distinta naturaleza (ej.
-// moneda vs. porcentaje) combinados en la misma grafica.
-function kpiSeriesLabel(kpiInfo, index) {
-  const etiqueta = kpiInfo?.etiqueta || `KPI #${index + 1}`;
-  return kpiInfo?.unidad ? `${etiqueta} (${unidadInfo(kpiInfo.unidad).etiquetaSelector})` : etiqueta;
-}
-
-// "Otros" agrupa el sobrante SOLO en dimensiones ABIERTAS (empleado,
-// producto: catalogos que pueden crecer sin limite). Una dimension "estado"
-// es un catalogo CERRADO y conocido de antemano (5 categorias como mucho,
-// ver material_por_estado) -- agruparla no tiene sentido y le escondería a
-// alguien una categoria real detras de un "Otros" que nunca hacia falta.
-const DIMENSIONES_ABIERTAS = new Set(["empleado", "producto"]);
-
-function buildPieData(snapshot, labelForId, othersLabel, agruparPorPeriodo, dimension) {
-  const porA = entradasPorModo(snapshot?.rango_a, agruparPorPeriodo);
-  const entradas = agruparPorPeriodo
-    ? Object.entries(porA).sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0))
-    : Object.entries(porA).sort((x, y) => y[1] - x[1]);
-  if (!DIMENSIONES_ABIERTAS.has(dimension)) {
-    return entradas.map(([id, valor]) => ({ id, name: labelForId(id), value: valor }));
-  }
-  const principales = entradas.slice(0, CATEGORICAL.length);
-  const restoTotal = entradas.slice(CATEGORICAL.length).reduce((suma, [, valor]) => suma + valor, 0);
-  const data = principales.map(([id, valor]) => ({ id, name: labelForId(id), value: valor }));
-  if (restoTotal > 0) data.push({ id: null, name: othersLabel, value: restoTotal });
-  return data;
 }
 
 function esperar(ms) {
@@ -1247,7 +1061,7 @@ function SortableKpiWidgetCard(props) {
   );
 }
 
-function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, formatNumber, onEdit, onDelete, onReady, t, tx, dragHandleProps, isDragging }) {
+function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, formatNumber, onEdit, onDelete, onReady, t, tx, dragHandleProps, isDragging, animar }) {
   const [snapshots, setSnapshots] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -1424,382 +1238,170 @@ function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, formatNumb
           <p className="kpi-error-inline">{t(error, error)}</p>
         )}
         {!loading && !error && esTablaVivo && (
-          <TablaMaterialPrestado items={vivoItems} total={vivoTotal} tx={tx} />
+          <KpiTablaVivo items={vivoItems} total={vivoTotal} tx={tx} />
         )}
         {!loading && !error && !esTablaVivo && snapshots.length > 0 && (
-          <KpiChartBody widget={widget} snapshots={snapshots} kpiInfos={kpiInfos} userLabel={userLabel} productLabel={productLabel} formatNumber={formatNumber} tx={tx} />
+          <KpiChartBody widget={widget} snapshots={snapshots} kpiInfos={kpiInfos} userLabel={userLabel} productLabel={productLabel} formatNumber={formatNumber} tx={tx} animar={animar} />
         )}
       </div>
     </article>
   );
 }
 
-// Mini-grafica de tendencia SOLO para el widget "numero" con comparacion
-// activa. El snapshot que ya carga KpiWidgetCard no trae la serie diaria
-// para este tipo de grafica -- `agrupar_por=periodo` (la unica forma de
-// obtenerla, ver `_totales` en `backend/app/routes/kpi.py`) solo se pide
-// cuando el widget usa el selector "Agrupar por", que ni siquiera se
-// muestra para tipo "numero". Por eso este componente pide SU PROPIO
-// snapshot (mismo endpoint `queryKpiSnapshot` de siempre, no uno nuevo) del
-// periodo A unicamente -- la tendencia que acompana al valor principal, no
-// la comparacion en si (esa ya la muestra el delta de al lado).
-function KpiNumberSparkline({ idKpiDefinition, fechaInicio, fechaFin, empleados, idDepartments, color }) {
+// Mini-tendencia SOLO para el widget "numero" con comparacion activa. El
+// snapshot que ya carga KpiWidgetCard no trae la serie diaria para este tipo
+// de grafica -- `agrupar_por=periodo` (la unica forma de obtenerla, ver
+// `_totales` en `backend/app/routes/kpi.py`) solo se pide cuando el widget usa
+// el selector "Agrupar por", que ni siquiera se muestra para tipo "numero".
+// Por eso este hook pide SU PROPIO snapshot (mismo endpoint `queryKpiSnapshot`
+// de siempre, no uno nuevo) del periodo A unicamente -- la tendencia que
+// acompana al valor principal, no la comparacion en si (esa ya la muestra el
+// delta de al lado). Devuelve una serie de numeros lista para NumeroWidget, o
+// null mientras carga / si no hay al menos 2 puntos que dibujar.
+function useTendenciaKpi({ activo, idKpiDefinition, fechaInicio, fechaFin, empleados, idDepartments }) {
   const [serie, setSerie] = useState(null);
   const empleadosKey = Array.isArray(empleados) ? empleados.join(",") : "";
   const idDepartmentsKey = Array.isArray(idDepartments) ? idDepartments.join(",") : "";
 
   useEffect(() => {
     let cancelado = false;
-    if (!idKpiDefinition || !fechaInicio || !fechaFin) { setSerie(null); return undefined; }
+    if (!activo || !idKpiDefinition || !fechaInicio || !fechaFin) { setSerie(null); return undefined; }
     const params = { id_kpi_definition: idKpiDefinition, fecha_inicio: fechaInicio, fecha_fin: fechaFin, agrupar_por: "periodo" };
     if (empleadosKey) params.empleados = empleadosKey;
     if (idDepartmentsKey) params.id_departments = idDepartmentsKey;
     queryKpiSnapshot(params)
-      .then((resultado) => {
-        if (cancelado) return;
-        const porPeriodo = resultado?.rango_a?.por_periodo || {};
-        setSerie(
-          Object.entries(porPeriodo)
-            .sort(([periodoA], [periodoB]) => (periodoA < periodoB ? -1 : periodoA > periodoB ? 1 : 0))
-            .map(([periodo, valor]) => ({ periodo, valor })),
-        );
-      })
+      .then((resultado) => { if (!cancelado) setSerie(tendenciaDeSnapshot(resultado)); })
       .catch(() => { if (!cancelado) setSerie([]); });
     return () => { cancelado = true; };
-  }, [idKpiDefinition, fechaInicio, fechaFin, empleadosKey, idDepartmentsKey]);
+  }, [activo, idKpiDefinition, fechaInicio, fechaFin, empleadosKey, idDepartmentsKey]);
 
-  // Sin al menos 2 puntos no hay tendencia que dibujar -- tambien cubre el
-  // estado "todavia cargando" (`serie === null`), no hace falta un loader
-  // propio para un adorno tan chico junto al valor principal.
-  if (!serie || serie.length < 2) return null;
+  return serie && serie.length >= 2 ? serie : null;
+}
 
+// Widget "numero" de un solo KPI: el valor con su unidad, la insignia del
+// modulo, el delta contra el periodo de comparacion y, a la derecha, la
+// mini-tendencia -- o, sin comparacion, el rango que se esta viendo (nunca se
+// deja la mitad de la tarjeta en blanco).
+function KpiNumero({ widget, snapshot, kpiInfo, formatNumber, tx, animar }) {
+  const parametros = widget.parametros || {};
+  const hayComparacion = Boolean(snapshot?.rango_b);
+  const tendencia = useTendenciaKpi({
+    activo: hayComparacion,
+    idKpiDefinition: kpiInfo?.id_kpi_definition,
+    fechaInicio: parametros.fecha_inicio,
+    fechaFin: parametros.fecha_fin,
+    empleados: parametros.empleados,
+    idDepartments: parametros.id_departments,
+  });
+  const props = propsNumero({
+    snapshot,
+    kpiInfo,
+    formatNumber,
+    textos: {
+      vsAnterior: tx("vs_compare", "vs. periodo anterior"),
+      sinComparacion: tx("no_compare_hint", "Activa \"Comparar\" para ver la variación"),
+    },
+  });
+  const Componente = TIPO_GRAFICA_COMPONENTE.numero;
   return (
-    <LineChart width={90} height={32} data={serie} className="kpi-number-sparkline">
-      <Line type="monotone" dataKey="valor" stroke={color} strokeWidth={2} dot={false} isAnimationActive={false} />
-    </LineChart>
+    <Componente
+      {...props}
+      animar={animar}
+      icono={kpiModuleMeta(kpiInfo?.modulo).icon}
+      colorAcento={colorEfectivoDeKpi(kpiInfo?.id_kpi_definition, parametros.colores_kpi)}
+      tendencia={tendencia}
+      pistaRango={hayComparacion ? null : `${parametros.fecha_inicio} → ${parametros.fecha_fin}`}
+    />
   );
 }
 
-const DIAS_ATRASO_PRESTAMO = 14;
-
-// El unico KPI "vivo" que hoy existe: una lista paginada de renglones de
-// vale sin devolver, no una serie por fecha -- por eso no pasa por
-// `KpiChartBody` (que solo sabe leer snapshots). Tarjeta-por-renglon en
-// pantallas angostas para no forzar scroll horizontal (requisito 10).
-function TablaMaterialPrestado({ items, total, tx }) {
-  if (!items || items.length === 0) {
-    return <p className="kpi-empty-inline">{tx("widget_no_loans", "No hay articulos prestados sin devolver en este momento.")}</p>;
-  }
+// El unico KPI "vivo" que hoy existe (material_prestado_actual): una lista
+// paginada de renglones de vale sin devolver, no una serie por fecha -- por
+// eso no pasa por `KpiChartBody` (que solo sabe leer snapshots).
+function KpiTablaVivo({ items, total, tx }) {
+  const Componente = TIPO_GRAFICA_COMPONENTE.tabla;
   return (
-    <div className="kpi-tabla-vivo">
-      <table className="kpi-tabla-prestamo">
-        <thead>
-          <tr>
-            <th>{tx("loan_item", "Articulo")}</th>
-            <th>{tx("loan_holder", "Responsable")}</th>
-            <th>{tx("loan_date", "Fecha del vale")}</th>
-            <th>{tx("loan_days", "Dias prestado")}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((fila) => {
-            const atrasado = fila.dias_prestado >= DIAS_ATRASO_PRESTAMO;
-            const avance = Math.min(100, Math.round((fila.dias_prestado / DIAS_ATRASO_PRESTAMO) * 100));
-            return (
-              <tr key={fila.id_nm_incident_product} className={atrasado ? "kpi-fila-atrasada" : ""}>
-                <td data-label={tx("loan_item", "Articulo")}>{fila.articulo}</td>
-                <td data-label={tx("loan_holder", "Responsable")}>{fila.responsable || tx("unknown_user", "Sin asignar")}</td>
-                <td data-label={tx("loan_date", "Fecha del vale")}>{fila.fecha_prestamo}</td>
-                <td data-label={tx("loan_days", "Dias prestado")}>
-                  <div className="kpi-dias-prestado">
-                    <div className="kpi-dias-barra">
-                      <div className="kpi-dias-avance" style={{ width: `${avance}%` }} />
-                    </div>
-                    <span>{fila.dias_prestado}</span>
-                  </div>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-      {total > items.length && (
-        <p className="kpi-tabla-total-hint">{tx("loan_showing", "Mostrando")} {items.length} {tx("loan_of", "de")} {total}</p>
-      )}
-    </div>
+    <Componente
+      filas={filasTablaPrestamo(items, tx("unknown_user", "Sin asignar"))}
+      total={total}
+      umbralDias={UMBRAL_ATRASO_PRESTAMO_DIAS}
+      etiquetas={{
+        articulo: tx("loan_item", "Artículo"),
+        responsable: tx("loan_holder", "Responsable"),
+        fecha_prestamo: tx("loan_date", "Fecha del vale"),
+        dias_prestado: tx("loan_days", "Días prestado"),
+        dias: tx("loan_days_unit", "días"),
+        vacio: tx("widget_no_loans", "No hay artículos prestados sin devolver en este momento."),
+        mostrando: tx("loan_showing", "Mostrando"),
+        de: tx("loan_of", "de"),
+      }}
+    />
   );
 }
 
-function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, formatNumber, tx }) {
+// El mapa `tipo_grafica -> componente` vive en
+// components/kpi-widgets/tipoGraficaComponentes.js; aqui solo se arman las
+// props de cada uno (ver kpi/kpiAdaptadores.js).
+function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, formatNumber, tx, animar }) {
   const snapshot = snapshots[0];
   const kpiInfo = kpiInfos[0];
-  const hasCompare = Boolean(snapshot?.rango_b);
-  const coloresOverride = widget.parametros?.colores_kpi;
-  const agruparPorPeriodo = widget.parametros?.agrupar_por === "periodo";
+  const parametros = widget.parametros || {};
+  const agruparPorPeriodo = parametros.agrupar_por === "periodo";
   const labelForId = agruparPorPeriodo ? (id) => id : labelForDimension(kpiInfo?.dimensiones?.[0], userLabel, productLabel);
+  const Componente = TIPO_GRAFICA_COMPONENTE[widget.tipo_grafica];
+  const sinDatos = <p className="kpi-empty-inline">{tx("no_data", "Sin datos en el rango seleccionado.")}</p>;
+  if (!Componente) return null;
 
   // Umbral manual de "artículos bajo stock" (decision de Aurora: se captura
   // en el widget, no en una columna nueva de base de datos -- ver
   // `articulos_bajo_stock_query` en el backend). Solo tiene sentido con un
   // unico KPI seleccionado y ese KPI siendo justo este.
-  const umbralBajoStock = Number(widget.parametros?.umbral_bajo_stock);
+  const umbralBajoStock = Number(parametros.umbral_bajo_stock);
   const esBajoStock = kpiInfos.length <= 1 && kpiInfo?.clave === "articulos_bajo_stock" && Number.isFinite(umbralBajoStock);
 
   if (widget.tipo_grafica === "numero") {
     if (esBajoStock) {
-      const porA = snapshot?.rango_a?.por_empleado || {};
-      const bajoStock = Object.values(porA).filter((valor) => valor < umbralBajoStock).length;
       return (
-        <div className="kpi-number-widget">
-          <strong>{bajoStock}</strong>
-          <span className="kpi-delta">{tx("bajo_stock_note", `producto(s) por debajo de ${umbralBajoStock}`)}</span>
-        </div>
+        <Componente
+          {...propsNumeroBajoStock({
+            snapshot,
+            umbralBajoStock,
+            textos: { bajoStock: (umbral) => tx("bajo_stock_note", `producto(s) por debajo de ${umbral}`) },
+          })}
+          animar={animar}
+        />
       );
     }
-    const total = snapshot.rango_a.total;
-    const totalB = snapshot.rango_b?.total;
-    const delta = hasCompare ? total - totalB : null;
-    const deltaPct = hasCompare && totalB ? (delta / Math.abs(totalB)) * 100 : null;
-    // Antes esto era siempre "subio=verde, bajo=rojo" sin mirar la direccion
-    // real del KPI -- una baja en "egresos" (bajo_es_mejor) se pintaba de
-    // rojo como si fuera mala noticia, siendo la mejor posible. Ahora lee
-    // `direccion` (Paso 0, GET /kpi_definition/) para decidir si SUBIR es
-    // bueno o malo; "neutral" no juzga, solo informa (gris, sin flecha de
-    // alarma).
-    let claseDelta = "neutral";
-    if (delta !== null && delta !== 0) {
-      const subio = delta > 0;
-      const esBueno = kpiInfo?.direccion === "alto_es_mejor" ? subio
-        : kpiInfo?.direccion === "bajo_es_mejor" ? !subio
-        : null;
-      claseDelta = esBueno === null ? "neutral" : esBueno ? "bueno" : "malo";
-    }
-    const colorKpi = colorEfectivoDeKpi(kpiInfo?.id_kpi_definition, coloresOverride);
-    const ModuleIcon = kpiModuleMeta(kpiInfo?.modulo).icon;
-    return (
-      <div className="kpi-number-widget">
-        <div className="kpi-number-row">
-          <div className="kpi-number-value">
-            <span className="kpi-number-module-icon" style={{ background: colorKpi }}>
-              <ModuleIcon size={16} color="#fff" />
-            </span>
-            <strong>{formatConUnidad(formatNumber(total), kpiInfo?.unidad)}</strong>
-          </div>
-          {/* Siempre algo a la derecha del valor, nunca un hueco vacio: con
-              comparacion, la mini-tendencia; sin ella, el rango que se esta
-              viendo -- contexto minimo para no dejar la mitad de la tarjeta
-              en blanco. */}
-          {hasCompare ? (
-            <KpiNumberSparkline
-              idKpiDefinition={kpiInfo?.id_kpi_definition}
-              fechaInicio={widget.parametros?.fecha_inicio}
-              fechaFin={widget.parametros?.fecha_fin}
-              empleados={widget.parametros?.empleados}
-              idDepartments={widget.parametros?.id_departments}
-              color={colorKpi}
-            />
-          ) : (
-            <span className="kpi-number-range-hint">{widget.parametros?.fecha_inicio} → {widget.parametros?.fecha_fin}</span>
-          )}
-        </div>
-        {delta !== null ? (
-          <span className={`kpi-delta ${claseDelta}`}>
-            {delta >= 0 ? <ArrowUp size={14} /> : <ArrowDown size={14} />}
-            {formatConUnidad(formatNumber(Math.abs(delta)), kpiInfo?.unidad)}
-            {deltaPct !== null && Number.isFinite(deltaPct) ? ` (${deltaPct >= 0 ? "+" : ""}${deltaPct.toFixed(1)}%)` : ""}
-            {" "}{tx("vs_compare", "vs. periodo anterior")}
-          </span>
-        ) : (
-          <span className="kpi-delta neutral">{tx("no_compare_hint", "Activa \"Comparar\" para ver la variación")}</span>
-        )}
-      </div>
-    );
+    return <KpiNumero widget={widget} snapshot={snapshot} kpiInfo={kpiInfo} formatNumber={formatNumber} tx={tx} animar={animar} />;
   }
 
   if (widget.tipo_grafica === "dona") {
-    const othersLabel = tx("others", "Otros");
-    const dimension = kpiInfo?.dimensiones?.[0];
-    const data = buildPieData(snapshot, labelForId, othersLabel, agruparPorPeriodo, dimension);
-    if (!data.length) return <p className="kpi-empty-inline">{tx("no_data", "Sin datos en el rango seleccionado.")}</p>;
-    const coloresCategoria = kpiInfo?.colores_categoria;
-    const DimensionIcon = iconoDeDimension(dimension);
-    return (
-      <ResponsiveContainer width="100%" height={240}>
-        <PieChart>
-          <Tooltip formatter={(value) => formatConUnidad(formatNumber(value), kpiInfo?.unidad)} />
-          <Legend
-            wrapperStyle={{ fontSize: 12 }}
-            formatter={(value) => (
-              <span className="kpi-legend-item">
-                {value !== othersLabel && <DimensionIcon size={12} />}
-                {value}
-              </span>
-            )}
-          />
-          <Pie data={data} dataKey="value" nameKey="name" innerRadius="55%" outerRadius="80%" paddingAngle={2}>
-            {data.map((entry, index) => (
-              <Cell
-                key={entry.name}
-                fill={
-                  coloresCategoria
-                    ? colorDeCategoriaEstado(entry.id, coloresCategoria, COLOR_OTHERS)
-                    : (index < CATEGORICAL.length ? CATEGORICAL[index] : COLOR_OTHERS)
-                }
-                stroke="#fff"
-                strokeWidth={2}
-              />
-            ))}
-          </Pie>
-        </PieChart>
-      </ResponsiveContainer>
-    );
+    const props = propsDona({
+      snapshot, kpiInfo, labelForId, agruparPorPeriodo, formatNumber, textos: { otros: tx("others", "Otros") },
+    });
+    if (!props.datos.length) return sinDatos;
+    return <Componente {...props} animar={animar} />;
   }
 
-  // Un solo KPI: mismo layout de siempre, pero el color ya no es
-  // `CATEGORICAL[0]` fijo -- es el color determinista de ESTE KPI
-  // (`colorDeKpi`), para que el mismo KPI se vea siempre con el mismo color
-  // sin importar en que widget aparezca. El rango de comparacion (B) reusa
-  // el mismo color con menos opacidad/trazo punteado en vez de un segundo
-  // color fijo -mismo criterio que ya usa el camino multi-KPI de abajo con
-  // sus propias series "b".
-  if (kpiInfos.length <= 1) {
-    let data = buildSeriesData(snapshot, labelForId, widget.parametros?.empleados, agruparPorPeriodo);
-    if (esBajoStock) data = data.filter((fila) => fila.a < umbralBajoStock);
-    if (!data.length) return <p className="kpi-empty-inline">{tx("no_data", "Sin datos en el rango seleccionado.")}</p>;
-    const colorKpi = colorEfectivoDeKpi(kpiInfo?.id_kpi_definition, coloresOverride);
-    // Dimension "estado" (catalogo fijo, ej. incidencias_abiertas_vs_cerradas):
-    // cada categoria lleva SU color declarado (colores_categoria), no el
-    // color unico del KPI para todas las barras.
-    const coloresPorCategoria = kpiInfo?.dimensiones?.[0] === "estado" ? kpiInfo?.colores_categoria : null;
-
-    if (widget.tipo_grafica === "barras") {
-      return (
-        <ResponsiveContainer width="100%" height={240}>
-          <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e1e0d9" vertical={false} />
-            <XAxis dataKey="name" tick={AXIS_TICK} axisLine={{ stroke: "#c3c2b7" }} tickLine={false} />
-            <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} width={44} />
-            <Tooltip formatter={(value) => formatConUnidad(formatNumber(value), kpiInfo?.unidad)} />
-            {hasCompare && <Legend wrapperStyle={{ fontSize: 12 }} />}
-            <Bar dataKey="a" name={tx("range_a", "Periodo A")} fill={colorKpi} radius={[4, 4, 0, 0]}>
-              {coloresPorCategoria && data.map((entry) => (
-                <Cell key={entry.id} fill={colorDeCategoriaEstado(entry.id, coloresPorCategoria, colorKpi)} />
-              ))}
-            </Bar>
-            {hasCompare && <Bar dataKey="b" name={tx("range_b", "Periodo B")} fill={colorKpi} fillOpacity={0.45} radius={[4, 4, 0, 0]} />}
-          </BarChart>
-        </ResponsiveContainer>
-      );
-    }
-
-    if (widget.tipo_grafica === "linea") {
-      return (
-        <ResponsiveContainer width="100%" height={240}>
-          <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e1e0d9" vertical={false} />
-            <XAxis dataKey="name" tick={AXIS_TICK} axisLine={{ stroke: "#c3c2b7" }} tickLine={false} />
-            <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} width={44} />
-            <Tooltip formatter={(value) => formatNumber(value)} />
-            {hasCompare && <Legend wrapperStyle={{ fontSize: 12 }} />}
-            <Line type="monotone" dataKey="a" name={tx("range_a", "Periodo A")} stroke={colorKpi} strokeWidth={2} dot={{ r: 4 }} />
-            {hasCompare && <Line type="monotone" dataKey="b" name={tx("range_b", "Periodo B")} stroke={colorKpi} strokeWidth={2} strokeDasharray="5 4" dot={{ r: 3 }} />}
-          </LineChart>
-        </ResponsiveContainer>
-      );
-    }
-
-    if (widget.tipo_grafica === "area") {
-      return (
-        <ResponsiveContainer width="100%" height={240}>
-          <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#e1e0d9" vertical={false} />
-            <XAxis dataKey="name" tick={AXIS_TICK} axisLine={{ stroke: "#c3c2b7" }} tickLine={false} />
-            <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} width={44} />
-            <Tooltip formatter={(value) => formatNumber(value)} />
-            {hasCompare && <Legend wrapperStyle={{ fontSize: 12 }} />}
-            <Area type="monotone" dataKey="a" name={tx("range_a", "Periodo A")} stroke={colorKpi} fill={colorKpi} fillOpacity={0.25} strokeWidth={2} />
-            {hasCompare && <Area type="monotone" dataKey="b" name={tx("range_b", "Periodo B")} stroke={colorKpi} fill={colorKpi} fillOpacity={0.1} strokeWidth={2} strokeDasharray="5 4" />}
-          </AreaChart>
-        </ResponsiveContainer>
-      );
-    }
-
-    return null;
-  }
-
-  // Varios KPIs combinados: una serie por KPI, coloreada por identidad del
-  // KPI (`colorDeKpi`) y no por su posicion dentro de esta seleccion -- el
-  // mismo par de KPIs combinados en otro widget, o en otro orden, sale
-  // siempre con los mismos colores. El eje X sigue siendo por empleado. La
-  // serie de comparacion (rango B) de cada KPI reusa el MISMO color que su
-  // rango A -distingue por opacidad/trazo, no por un segundo color fijo-
-  // porque con N KPIs ya no hay solo dos roles (A/B) que colorear
-  // aparte como con un solo KPI.
-  const data = buildMultiSeriesData(snapshots, labelForId, widget.parametros?.empleados, agruparPorPeriodo);
-  if (!data.length) return <p className="kpi-empty-inline">{tx("no_data", "Sin datos en el rango seleccionado.")}</p>;
-  const comparacionSufijo = ` (${tx("vs_compare_short", "comparación")})`;
-
-  if (widget.tipo_grafica === "barras") {
-    return (
-      <ResponsiveContainer width="100%" height={240}>
-        <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e1e0d9" vertical={false} />
-          <XAxis dataKey="name" tick={AXIS_TICK} axisLine={{ stroke: "#c3c2b7" }} tickLine={false} />
-          <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} width={44} />
-          <Tooltip formatter={(value) => formatNumber(value)} />
-          <Legend wrapperStyle={{ fontSize: 12 }} />
-          {kpiInfos.map((info, index) => (
-            <Bar key={`a-${index}`} dataKey={`kpi_${index}_a`} name={kpiSeriesLabel(info, index)} fill={colorEfectivoDeKpi(info.id_kpi_definition, coloresOverride)} radius={[4, 4, 0, 0]} />
-          ))}
-          {hasCompare && kpiInfos.map((info, index) => (
-            <Bar key={`b-${index}`} dataKey={`kpi_${index}_b`} name={`${kpiSeriesLabel(info, index)}${comparacionSufijo}`} fill={colorEfectivoDeKpi(info.id_kpi_definition, coloresOverride)} fillOpacity={0.45} radius={[4, 4, 0, 0]} />
-          ))}
-        </BarChart>
-      </ResponsiveContainer>
-    );
-  }
-
-  if (widget.tipo_grafica === "linea") {
-    return (
-      <ResponsiveContainer width="100%" height={240}>
-        <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e1e0d9" vertical={false} />
-          <XAxis dataKey="name" tick={AXIS_TICK} axisLine={{ stroke: "#c3c2b7" }} tickLine={false} />
-          <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} width={44} />
-          <Tooltip formatter={(value) => formatNumber(value)} />
-          <Legend wrapperStyle={{ fontSize: 12 }} />
-          {kpiInfos.map((info, index) => (
-            <Line key={`a-${index}`} type="monotone" dataKey={`kpi_${index}_a`} name={kpiSeriesLabel(info, index)} stroke={colorEfectivoDeKpi(info.id_kpi_definition, coloresOverride)} strokeWidth={2} dot={{ r: 4 }} />
-          ))}
-          {hasCompare && kpiInfos.map((info, index) => (
-            <Line key={`b-${index}`} type="monotone" dataKey={`kpi_${index}_b`} name={`${kpiSeriesLabel(info, index)}${comparacionSufijo}`} stroke={colorEfectivoDeKpi(info.id_kpi_definition, coloresOverride)} strokeWidth={2} strokeDasharray="5 4" dot={{ r: 3 }} />
-          ))}
-        </LineChart>
-      </ResponsiveContainer>
-    );
-  }
-
-  if (widget.tipo_grafica === "area") {
-    return (
-      <ResponsiveContainer width="100%" height={240}>
-        <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e1e0d9" vertical={false} />
-          <XAxis dataKey="name" tick={AXIS_TICK} axisLine={{ stroke: "#c3c2b7" }} tickLine={false} />
-          <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} width={44} />
-          <Tooltip formatter={(value) => formatNumber(value)} />
-          <Legend wrapperStyle={{ fontSize: 12 }} />
-          {kpiInfos.map((info, index) => (
-            <Area key={`a-${index}`} type="monotone" dataKey={`kpi_${index}_a`} name={kpiSeriesLabel(info, index)} stroke={colorEfectivoDeKpi(info.id_kpi_definition, coloresOverride)} fill={colorEfectivoDeKpi(info.id_kpi_definition, coloresOverride)} fillOpacity={0.25} strokeWidth={2} />
-          ))}
-          {hasCompare && kpiInfos.map((info, index) => (
-            <Area key={`b-${index}`} type="monotone" dataKey={`kpi_${index}_b`} name={`${kpiSeriesLabel(info, index)}${comparacionSufijo}`} stroke={colorEfectivoDeKpi(info.id_kpi_definition, coloresOverride)} fill={colorEfectivoDeKpi(info.id_kpi_definition, coloresOverride)} fillOpacity={0.1} strokeWidth={2} strokeDasharray="5 4" />
-          ))}
-        </AreaChart>
-      </ResponsiveContainer>
-    );
-  }
-
-  return null;
+  const props = propsSeries({
+    tipo: widget.tipo_grafica,
+    snapshots,
+    kpiInfos,
+    labelForId,
+    empleados: parametros.empleados,
+    agruparPorPeriodo,
+    coloresOverride: parametros.colores_kpi,
+    umbralBajoStock,
+    esBajoStock,
+    formatNumber,
+    textos: {
+      rangoA: tx("range_a", "Periodo A"),
+      rangoB: tx("range_b", "Periodo B"),
+      comparacionCorta: tx("vs_compare_short", "comparación"),
+    },
+  });
+  if (!props.datos.length) return sinDatos;
+  return <Componente {...props} tipo={widget.tipo_grafica} animar={animar} />;
 }
 
 function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, departments, onCancel, onSave, onAddWidget, onExportPdf, exportandoPdf, t, tx }) {

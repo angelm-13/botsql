@@ -1,0 +1,120 @@
+/* Tokens y clases de widget compartidos entre el Dashboard real
+   (.kpi-dashboard) y la vista previa (.dashboard-preview-page): lo que pinta
+   un numero, una tabla, una dona o un skeleton se ve igual en los dos.
+   Lo propio de la vista previa (barra superior, cuadricula demo, editor de
+   demostracion) vive aparte en dashboard-preview.css. El tema oscuro es
+   [data-theme="dark"] en el contenedor -- el resto de TYAKXA no tiene modo
+   oscuro todavia y no debe heredar nada de aqui. */
+
+.dashboard-preview-page,
+.kpi-dashboard {
+  /* Tokens claros: los MISMOS de siempre en TYAKXA (app.css), no una
+     paleta nueva -- fondo, tinta, acento verde, tarjetas blancas. */
+  --kpi-fondo: #f5f7fb;
+  --kpi-tarjeta: #fff;
+  --kpi-borde: #e2e8f0;
+  --kpi-ink: #132238;
+  --kpi-ink-suave: #526273;
+  --kpi-texto-suave: #64748b;
+  --kpi-acento: #1b7a60;
+  --kpi-grafito: #3a3630;
+  --kpi-grid: #e5e9f0;
+  --kpi-hover-barra: rgba(58, 54, 48, .05);
+  --kpi-sombra: 0 12px 30px rgba(15, 23, 42, .06);
+  --kpi-sombra-hover: 0 18px 40px rgba(15, 23, 42, .12);
+  --kpi-skeleton-base: #eef1f6;
+  --kpi-skeleton-brillo: #f8fafc;
+
+  /* Semántica de dirección -- nunca la única señal, siempre con ícono/texto. */
+  --kpi-bueno: #1b7a60;
+  --kpi-malo: #b3432f;
+  --kpi-neutral: #8a96a5;
+  /* El cobre: SOLO para "atrasado" en la tabla de material prestado. */
+  --kpi-atrasado: #c2703d;
+  --kpi-atrasado-fondo: #fbeee4;
+}
+
+.dashboard-preview-page[data-theme="dark"],
+[data-theme="dark"] .kpi-dashboard {
+  /* Sala del taller de noche: mismos tokens semánticos, valores ajustados
+     SOLO donde de verdad no se leían en oscuro -- la paleta categórica de
+     KPI/estado no se toca (pedido explícito). */
+  --kpi-fondo: #1c1a17;
+  --kpi-tarjeta: #262320;
+  --kpi-borde: #3a352e;
+  --kpi-ink: #f2ede4;
+  --kpi-ink-suave: #c9c0b3;
+  --kpi-texto-suave: #a49a8a;
+  --kpi-grafito: #d8d0c2;
+  --kpi-grid: #3a352e;
+  --kpi-hover-barra: rgba(242, 237, 228, .06);
+  --kpi-sombra: 0 12px 30px rgba(0, 0, 0, .35);
+  --kpi-sombra-hover: 0 18px 40px rgba(0, 0, 0, .5);
+  --kpi-skeleton-base: #322e28;
+  --kpi-skeleton-brillo: #3c372f;
+  --kpi-bueno: #3fae8c;
+  --kpi-malo: #d9705a;
+  --kpi-neutral: #8f8677;
+  --kpi-atrasado: #d68a55;
+  --kpi-atrasado-fondo: #3a2a1c;
+}
+
+/* --- numero ---------------------------------------------------------- */
+.kpi-preview-numero { display: flex; flex-direction: column; gap: 8px; }
+.kpi-preview-numero-fila { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.kpi-preview-numero-valor { font-size: 40px; font-weight: 800; line-height: 1; color: var(--kpi-ink); font-variant-numeric: tabular-nums; }
+.kpi-preview-sparkline { flex-shrink: 0; }
+.kpi-preview-delta { display: inline-flex; align-items: center; gap: 5px; margin: 0; font-weight: 700; font-size: 13px; }
+
+/* --- tooltip rico ------------------------------------------------------ */
+.kpi-preview-tooltip {
+  background: var(--kpi-tarjeta); border: 1px solid var(--kpi-borde); border-radius: 10px;
+  padding: 10px 12px; box-shadow: var(--kpi-sombra-hover); font-size: 12px; color: var(--kpi-ink);
+  display: flex; flex-direction: column; gap: 4px;
+}
+.kpi-preview-tooltip-fila { display: flex; align-items: center; gap: 6px; }
+.kpi-preview-tooltip-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+
+/* --- tabla -------------------------------------------------------------- */
+.kpi-preview-tabla-wrap { overflow-x: auto; }
+.kpi-preview-tabla { width: 100%; border-collapse: collapse; font-size: 13px; }
+.kpi-preview-tabla th, .kpi-preview-tabla td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--kpi-borde); }
+.kpi-preview-tabla-orden { display: inline-flex; align-items: center; gap: 4px; border: 0; background: none; font: inherit; font-weight: 800; color: var(--kpi-texto-suave); text-transform: uppercase; font-size: 11px; cursor: pointer; padding: 0; }
+.kpi-preview-tabla-orden-inactivo { opacity: .4; }
+.kpi-preview-fila-atrasada { background: var(--kpi-atrasado-fondo); }
+.kpi-preview-fila-resaltada { outline: 2px solid var(--kpi-acento); outline-offset: -2px; }
+.kpi-preview-icono-atrasado { color: var(--kpi-atrasado); flex: 0 0 auto; }
+.kpi-preview-dias-celda { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.kpi-preview-barra-progreso { flex: 1; min-width: 48px; height: 5px; border-radius: 999px; background: var(--kpi-borde); overflow: hidden; }
+.kpi-preview-barra-progreso-relleno { height: 100%; background: var(--kpi-ink-suave); border-radius: inherit; }
+.kpi-preview-barra-progreso-relleno.atrasado { background: var(--kpi-atrasado); }
+
+/* --- dona ---------------------------------------------------------------- */
+.kpi-preview-dona-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.kpi-preview-dona-leyenda { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 14px; justify-content: center; }
+.kpi-preview-dona-leyenda li { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; transition: opacity .15s ease; }
+.kpi-preview-leyenda-atenuada { opacity: .4; }
+
+/* --- skeleton ------------------------------------------------------------ */
+.kpi-skeleton {
+  border-radius: 10px;
+  background: linear-gradient(100deg, var(--kpi-skeleton-base) 30%, var(--kpi-skeleton-brillo) 50%, var(--kpi-skeleton-base) 70%);
+  background-size: 200% 100%;
+  animation: kpi-shimmer 1.4s ease-in-out infinite;
+}
+.kpi-skeleton-numero { height: 48px; width: 60%; }
+.kpi-skeleton-grafica { height: 200px; width: 100%; }
+.kpi-skeleton-tabla { height: 160px; width: 100%; }
+.kpi-skeleton-dona { height: 190px; width: 190px; border-radius: 50%; margin: 0 auto; }
+@keyframes kpi-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+
+@media (prefers-reduced-motion: reduce) {
+  .kpi-skeleton { animation: none; background: var(--kpi-skeleton-base); }
+}
+
+/* --- numero: insignia del modulo, valor y pista ------------------------- */
+.kpi-preview-numero-valor-caja { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.kpi-preview-numero-insignia { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 9px; flex: 0 0 auto; }
+.kpi-preview-numero-pista { font-size: 11px; color: var(--kpi-texto-suave); text-align: right; }
+.kpi-preview-tabla-total { margin: 8px 2px 0; color: var(--kpi-texto-suave); font-size: 11px; text-align: right; }

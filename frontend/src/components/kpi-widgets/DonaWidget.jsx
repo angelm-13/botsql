@@ -2,24 +2,28 @@ import { useState } from "react";
 import PropTypes from "prop-types";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
-function TooltipDona({ active, payload }) {
+function TooltipDona({ active, payload, formatearValor }) {
   if (!active || !payload || !payload.length) return null;
   const dato = payload[0];
   return (
     <div className="kpi-preview-tooltip">
       <span className="kpi-preview-tooltip-dot" style={{ background: dato.payload.color }} />
-      <strong>{dato.name}</strong>: {dato.value}
+      <strong>{dato.name}</strong>: {formatearValor(dato.value)}
     </div>
   );
 }
-TooltipDona.propTypes = { active: PropTypes.bool, payload: PropTypes.arrayOf(PropTypes.object) };
+TooltipDona.propTypes = {
+  active: PropTypes.bool,
+  payload: PropTypes.arrayOf(PropTypes.object),
+  formatearValor: PropTypes.func.isRequired,
+};
 TooltipDona.defaultProps = { active: false, payload: null };
 
 /** Categorias fijas -- nunca "Otros" aqui, porque no aplica un umbral de
  * dimension abierta a una dona de estado con catalogo cerrado. El color
  * nunca es la unica senal: la leyenda siempre trae el nombre de la
  * categoria en texto junto al punto de color. */
-export default function DonaWidget({ datos, animar }) {
+export default function DonaWidget({ datos, animar, formatearValor }) {
   const [resaltado, setResaltado] = useState(null);
 
   return (
@@ -46,7 +50,7 @@ export default function DonaWidget({ datos, animar }) {
               />
             ))}
           </Pie>
-          <Tooltip content={<TooltipDona />} />
+          <Tooltip content={<TooltipDona formatearValor={formatearValor} />} />
         </PieChart>
       </ResponsiveContainer>
       <ul className="kpi-preview-dona-leyenda">
@@ -59,7 +63,7 @@ export default function DonaWidget({ datos, animar }) {
           >
             <span className="kpi-preview-tooltip-dot" style={{ background: entrada.color }} />
             <span>{entrada.categoria}</span>
-            <strong>{entrada.valor}</strong>
+            <strong>{formatearValor(entrada.valor)}</strong>
           </li>
         ))}
       </ul>
@@ -74,5 +78,6 @@ DonaWidget.propTypes = {
     color: PropTypes.string.isRequired,
   })).isRequired,
   animar: PropTypes.bool,
+  formatearValor: PropTypes.func,
 };
-DonaWidget.defaultProps = { animar: true };
+DonaWidget.defaultProps = { animar: true, formatearValor: (valor) => String(valor) };
