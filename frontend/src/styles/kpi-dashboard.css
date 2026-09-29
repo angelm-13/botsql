@@ -195,36 +195,6 @@
   .kpi-panel-col:last-child{grid-column:auto}
 }
 
-/* Tabla del KPI "vivo" (material_prestado_actual). El ancho de la tarjeta ya
-   es angosto (grid de tarjetas, no de ancho completo), asi que el layout de
-   tarjeta-por-renglon aplica antes que en el resto del sitio -- 560px, no
-   720px. */
-.kpi-tabla-vivo{width:100%;overflow-x:auto}
-.kpi-tabla-prestamo{width:100%;border-collapse:collapse;font-size:13px}
-.kpi-tabla-prestamo th{text-align:left;color:#8a96a5;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;padding:0 8px 8px;border-bottom:1px solid #e2e8f0}
-.kpi-tabla-prestamo td{padding:9px 8px;border-bottom:1px solid #f1f5f9;color:#334155;vertical-align:middle}
-.kpi-tabla-prestamo tr:last-child td{border-bottom:0}
-/* Atrasado: acento ambar/coral suave, nunca el cafe/vino de antes -- el color
-   se refuerza con la barra de avance llena, no es la unica senal. */
-.kpi-fila-atrasada td{background:#fff7ed}
-.kpi-fila-atrasada .kpi-dias-avance{background:#ef6f5c}
-.kpi-dias-prestado{display:flex;align-items:center;gap:8px;min-width:90px}
-.kpi-dias-barra{flex:1;height:6px;border-radius:999px;background:#e2e8f0;overflow:hidden}
-.kpi-dias-avance{height:100%;background:#f0a93b;border-radius:999px}
-.kpi-tabla-total-hint{margin:8px 2px 0;color:#8a96a5;font-size:11px;text-align:right}
-
-@media(max-width:560px){
-  .kpi-tabla-prestamo thead{display:none}
-  .kpi-tabla-prestamo,.kpi-tabla-prestamo tbody,.kpi-tabla-prestamo tr,.kpi-tabla-prestamo td{display:block;width:100%}
-  .kpi-tabla-prestamo tr{border:1px solid #e2e8f0;border-radius:14px;padding:10px 12px;margin-bottom:10px}
-  .kpi-tabla-prestamo tr:last-child{margin-bottom:0}
-  .kpi-tabla-prestamo td{border-bottom:0;padding:4px 0;display:flex;justify-content:space-between;gap:10px}
-  .kpi-tabla-prestamo td::before{content:attr(data-label);color:#8a96a5;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.03em}
-  .kpi-fila-atrasada{background:#fff7ed;border-radius:14px}
-}
-
-@media(prefers-reduced-motion:reduce){.kpi-dias-avance{transition:none}}
-
 /* --- Reporte PDF (ver generarReportePdf en Dashboard.jsx) --- */
 
 /* Mismo dialogo/backdrop que "asset-tracking.css" (asset-drawer-backdrop /

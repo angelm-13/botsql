@@ -15,12 +15,20 @@ const ETIQUETAS_POR_OMISION = {
   dias_prestado: "Días prestado",
   dias: "días",
   vacio: "No hay artículos prestados sin devolver en este momento.",
+  ordenar: "Ordenar por",
+  invertir_orden: "Invertir el orden",
   mostrando: "Mostrando",
   de: "de",
 };
 
-/** El acento cobre (`--kpi-atrasado`) es SOLO para lo atrasado, y nunca es la
- * unica senal: siempre lo acompana el icono de alerta y el texto "días". */
+/** El acento ambar (`--kpi-atrasado`) es SOLO para lo atrasado, y nunca es la
+ * unica senal: siempre lo acompana el icono de alerta y el texto "días".
+ *
+ * Responsivo por el ANCHO DE LA TARJETA, no de la ventana (container queries,
+ * ver kpi-widgets.css): la misma tabla en una tarjeta angosta de una ventana
+ * enorme y en una ventana angosta se ve igual -tarjeta por renglon, sin scroll
+ * horizontal-. En ese modo desaparece la cabecera, asi que el orden se elige
+ * con un selector propio. */
 export default function TablaWidget({
   filas, resaltarResponsable, onFilaClick, total, umbralDias, etiquetas,
 }) {
@@ -51,6 +59,23 @@ export default function TablaWidget({
 
   return (
     <div className="kpi-preview-tabla-wrap">
+      <div className="kpi-preview-orden-movil">
+        <label>
+          <span>{textos.ordenar}</span>
+          <select value={orden.campo} onChange={(evento) => setOrden((actual) => ({ ...actual, campo: evento.target.value }))}>
+            {CAMPOS.map((campo) => <option key={campo} value={campo}>{textos[campo]}</option>)}
+          </select>
+        </label>
+        <button
+          type="button"
+          className="kpi-preview-tabla-orden"
+          aria-label={textos.invertir_orden}
+          title={textos.invertir_orden}
+          onClick={() => setOrden((actual) => ({ ...actual, direccion: actual.direccion === "desc" ? "asc" : "desc" }))}
+        >
+          {orden.direccion === "desc" ? <ArrowDown size={14} aria-hidden="true" /> : <ArrowUp size={14} aria-hidden="true" />}
+        </button>
+      </div>
       <table className="kpi-preview-tabla">
         <thead>
           <tr>
@@ -78,10 +103,10 @@ export default function TablaWidget({
                 className={`${atrasado ? "kpi-preview-fila-atrasada" : ""} ${resaltada ? "kpi-preview-fila-resaltada" : ""}`.trim()}
                 onClick={onFilaClick ? () => onFilaClick(fila) : undefined}
               >
-                <td>{fila.articulo}</td>
-                <td>{fila.responsable}</td>
-                <td>{fila.fecha_prestamo}</td>
-                <td>
+                <td data-label={textos.articulo}>{fila.articulo}</td>
+                <td data-label={textos.responsable}>{fila.responsable}</td>
+                <td data-label={textos.fecha_prestamo}>{fila.fecha_prestamo}</td>
+                <td data-label={textos.dias_prestado}>
                   <div className="kpi-preview-dias-celda">
                     {atrasado && <AlertTriangle size={13} className="kpi-preview-icono-atrasado" aria-hidden="true" />}
                     <span>{fila.dias_prestado} {textos.dias}</span>

@@ -77,9 +77,28 @@
 .kpi-preview-tooltip-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
 
 /* --- tabla -------------------------------------------------------------- */
-.kpi-preview-tabla-wrap { overflow-x: auto; }
+/* El contenedor de la consulta es la propia tabla: cuando SU ancho (el de la
+   tarjeta que la aloja) baja de 540px, pasa a tarjeta por renglon. Sin
+   overflow-x a proposito: el diseno tiene que caber, no esconder el desborde
+   detras de una barra de scroll. */
+.kpi-preview-tabla-wrap { container-type: inline-size; container-name: kpi-tabla; min-width: 0; }
 .kpi-preview-tabla { width: 100%; border-collapse: collapse; font-size: 13px; }
-.kpi-preview-tabla th, .kpi-preview-tabla td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--kpi-borde); }
+.kpi-preview-tabla th, .kpi-preview-tabla td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--kpi-borde); overflow-wrap: anywhere; }
+.kpi-preview-orden-movil { display: none; align-items: flex-end; gap: 8px; margin-bottom: 10px; }
+.kpi-preview-orden-movil label { display: flex; flex-direction: column; gap: 3px; flex: 1; font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--kpi-texto-suave); }
+.kpi-preview-orden-movil select { border: 1px solid var(--kpi-borde); border-radius: 8px; padding: 7px 8px; background: var(--kpi-tarjeta); color: var(--kpi-ink); font: inherit; font-size: 13px; text-transform: none; font-weight: 400; }
+.kpi-preview-orden-movil .kpi-preview-tabla-orden { border: 1px solid var(--kpi-borde); border-radius: 8px; padding: 9px; background: var(--kpi-tarjeta); color: var(--kpi-ink); }
+
+@container kpi-tabla (max-width: 540px) {
+  .kpi-preview-orden-movil { display: flex; }
+  .kpi-preview-tabla thead { display: none; }
+  .kpi-preview-tabla, .kpi-preview-tabla tbody, .kpi-preview-tabla tr, .kpi-preview-tabla td { display: block; width: 100%; }
+  .kpi-preview-tabla tr { border: 1px solid var(--kpi-borde); border-radius: 12px; padding: 8px 12px; margin-bottom: 10px; }
+  .kpi-preview-tabla tr:last-child { margin-bottom: 0; }
+  .kpi-preview-tabla td { display: flex; justify-content: space-between; align-items: center; gap: 12px; border: 0; padding: 4px 0; text-align: right; }
+  .kpi-preview-tabla td::before { content: attr(data-label); flex: 0 0 auto; color: var(--kpi-texto-suave); font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; text-align: left; }
+  .kpi-preview-dias-celda { flex: 1; justify-content: flex-end; }
+}
 .kpi-preview-tabla-orden { display: inline-flex; align-items: center; gap: 4px; border: 0; background: none; font: inherit; font-weight: 800; color: var(--kpi-texto-suave); text-transform: uppercase; font-size: 11px; cursor: pointer; padding: 0; }
 .kpi-preview-tabla-orden-inactivo { opacity: .4; }
 .kpi-preview-fila-atrasada { background: var(--kpi-atrasado-fondo); }

@@ -1451,6 +1451,8 @@ function KpiTablaVivo({ items, total, tx }) {
         dias_prestado: tx("loan_days", "Días prestado"),
         dias: tx("loan_days_unit", "días"),
         vacio: tx("widget_no_loans", "No hay artículos prestados sin devolver en este momento."),
+        ordenar: tx("loan_sort_by", "Ordenar por"),
+        invertir_orden: tx("loan_sort_reverse", "Invertir el orden"),
         mostrando: tx("loan_showing", "Mostrando"),
         de: tx("loan_of", "de"),
       }}
