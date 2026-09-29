@@ -32,7 +32,7 @@ import {
   armarParametros, estadoDeWidget, rangoInicialDelBorrador, widgetDeBorrador,
 } from "../kpi/kpiParametros.js";
 import {
-  RANGOS_RELATIVOS, RANGO_PERSONALIZADO, fechaLocalIso, parametrosEfectivos,
+  ETIQUETA_RANGO_POR_OMISION, RANGOS_RELATIVOS, RANGO_PERSONALIZADO, fechaLocalIso, parametrosEfectivos,
   periodoAnterior, resolverRangoRelativo,
 } from "../kpi/kpiRango.js";
 import {
@@ -647,6 +647,10 @@ export default function Dashboard() {
   // funcionar.
   const dragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
+  function notifyError(error) {
+    window.alert(t(error.message || "errors.request_failed", error.message || "errors.request_failed"));
+  }
+
   // --- Reporte PDF (exportar el dashboard, ver generarReportePdf mas abajo) ---
   const [mostrarDialogoExportarPdf, setMostrarDialogoExportarPdf] = useState(false);
   const [exportandoPdf, setExportandoPdf] = useState(false);
@@ -814,10 +818,6 @@ export default function Dashboard() {
     const found = products.find((product) => String(product.id_product) === String(idProduct));
     return found?.descripcion || found?.product_code || `#${idProduct}`;
   }, [products]);
-
-  function notifyError(error) {
-    window.alert(t(error.message || "errors.request_failed", error.message || "errors.request_failed"));
-  }
 
   async function handleCreateDashboard() {
     const nombre = window.prompt(tx("new_dashboard_prompt", "Nombre del nuevo tablero"));
@@ -1244,7 +1244,9 @@ const SKELETON_POR_TIPO = { numero: "numero", dona: "dona", tabla: "tabla" };
 // El cuerpo de un widget en cualquiera de sus estados (cargando, sin KPI, sin
 // rango, error, vacio, datos): lo comparten la tarjeta del tablero y la vista
 // previa del editor, para que lo que se ve al armar sea lo que queda.
-function CuerpoDeWidget({ widget, datos, userLabel, productLabel, formatNumber, t, tx, animar }) {
+// Se exportan solo para la prueba de render (kpi/renderTarjetas.test.mjs).
+// eslint-disable-next-line react-refresh/only-export-components
+export function CuerpoDeWidget({ widget, datos, userLabel, productLabel, formatNumber, t, tx, animar }) {
   const { snapshots, loading, error, vivoItems, vivoTotal, kpiInfos, esTablaVivo } = datos;
   const ERRORES_CON_TEXTO_PROPIO = ["missing_range", "missing_kpi", "errors.rango_excede_limite", "tabla_no_soportada"];
   return (
@@ -1308,7 +1310,8 @@ function VistaPreviaEditor({ widget, kpiCatalog, userLabel, productLabel, format
   );
 }
 
-function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, formatNumber, onEdit, onDelete, onReady, t, tx, dragHandleProps, isDragging, animar, esNuevo }) {
+// eslint-disable-next-line react-refresh/only-export-components
+export function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, formatNumber, onEdit, onDelete, onReady, t, tx, dragHandleProps, isDragging, animar, esNuevo }) {
   const datos = useDatosDeWidget({ widget, kpiCatalog, onReady });
   const { kpiInfos, idsUsados, esTablaVivo } = datos;
   const parametros = parametrosEfectivos(widget.parametros);
@@ -1318,15 +1321,17 @@ function KpiWidgetCard({ widget, kpiCatalog, userLabel, productLabel, formatNumb
   const fechaFinB = parametros.fecha_fin_b;
 
   const chartTypeLabel = CHART_TYPES.find((opt) => opt.value === widget.tipo_grafica)?.label || widget.tipo_grafica;
+  // "30 días · 2026-08-31 → 2026-09-29": el nombre del rango solo si el widget
+  // lo trae; uno de fechas fijas se ve como siempre. Va ANTES de rangoTexto:
+  // usarlo antes de declararlo lanzaba ReferenceError y tumbaba la app entera.
+  const claveRango = widget.parametros?.rango_relativo;
+  const etiquetaRango = RANGOS_RELATIVOS.includes(claveRango)
+    ? `${tx(`range_${claveRango}`, ETIQUETA_RANGO_POR_OMISION[claveRango])} · `
+    : "";
   const rangoTexto = esTablaVivo
     ? tx("live_data", "En vivo -- siempre lo más reciente")
     : (fechaInicio && fechaFin ? `${etiquetaRango}${fechaInicio} → ${fechaFin}` : tx("missing_range", "Sin rango de fechas configurado"));
   const rangoBTexto = fechaInicioB && fechaFinB ? `${fechaInicioB} → ${fechaFinB}` : "";
-  // "Ultimos 30 dias · 2026-08-31 → 2026-09-29": el nombre del rango solo si el
-  // widget lo trae; uno de fechas fijas se ve como siempre.
-  const etiquetaRango = RANGOS_RELATIVOS.includes(widget.parametros?.rango_relativo)
-    ? `${tx(`range_${widget.parametros.rango_relativo}`, widget.parametros.rango_relativo)} · `
-    : "";
   const titulo = kpiInfos.length > 1
     ? kpiInfos.map((info, index) => info?.etiqueta || `KPI #${idsUsados[index]}`).join(" + ")
     : (kpiInfos[0]?.etiqueta || tx("unknown_kpi", `KPI #${idsUsados[0] ?? "?"}`));
@@ -1537,18 +1542,6 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, fo
   if (!props.datos.length) return sinDatos;
   return <Componente {...props} tipo={widget.tipo_grafica} animar={animar} />;
 }
-
-// Texto de cada chip de rango cuando la traduccion no lo trae.
-const ETIQUETA_RANGO_POR_OMISION = {
-  hoy: "Hoy",
-  "7_dias": "7 días",
-  "30_dias": "30 días",
-  "90_dias": "90 días",
-  este_mes: "Este mes",
-  mes_anterior: "Mes anterior",
-  este_anio: "Este año",
-  personalizado: "Personalizado",
-};
 
 // Tipos de grafica que admiten TODOS los KPIs elegidos a la vez (interseccion
 // de sus `graficas_permitidas`). Sin KPI elegido, todos menos "tabla", que
@@ -1812,6 +1805,11 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
     onChangePanelState({ rangoRelativo: clave, fechaInicio: rango.fecha_inicio, fechaFin: rango.fecha_fin });
   }
 
+  function irAPaso(indice) {
+    setError("");
+    onChangePanelState({ paso: Math.max(0, Math.min(indice, pasos.length - 1)) });
+  }
+
   // FormularioPlegable (cerrarAlEnviar) cierra el panel cuando esta funcion
   // RESUELVE y lo deja abierto si RECHAZA: por eso todo camino que no guardo
   // -validacion, error del servidor, "Enter" en un paso intermedio- termina
@@ -1862,11 +1860,6 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
     } finally {
       setSaving(false);
     }
-  }
-
-  function irAPaso(indice) {
-    setError("");
-    onChangePanelState({ paso: Math.max(0, Math.min(indice, pasos.length - 1)) });
   }
 
   const tituloPanel = editingWidgetId ? tx("edit_widget", "Editar gráfico") : tx("add_widget", "Agregar gráfico");

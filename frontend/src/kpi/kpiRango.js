@@ -12,6 +12,20 @@
  * usar ninguno y elegir las fechas a mano). Orden = orden de los chips. */
 export const RANGOS_RELATIVOS = ["hoy", "7_dias", "30_dias", "90_dias", "este_mes", "mes_anterior", "este_anio"];
 export const RANGO_PERSONALIZADO = "personalizado";
+
+/** Texto de cada rango cuando la traduccion (`kpi_dashboard.range_<clave>`) no
+ * lo trae: el nombre de un chip del editor y el rotulo del encabezado de una
+ * tarjeta. La clave interna (`30_dias`) nunca se le muestra a nadie. */
+export const ETIQUETA_RANGO_POR_OMISION = {
+  hoy: "Hoy",
+  "7_dias": "7 días",
+  "30_dias": "30 días",
+  "90_dias": "90 días",
+  este_mes: "Este mes",
+  mes_anterior: "Mes anterior",
+  este_anio: "Este año",
+  personalizado: "Personalizado",
+};
 export const RANGO_RELATIVO_POR_OMISION = "30_dias";
 
 const MS_POR_DIA = 86400000;
