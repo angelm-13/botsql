@@ -618,9 +618,14 @@ export default function Dashboard() {
   // que quien la llame directamente -el reporte PDF, ver generarReportePdf-
   // pueda saber de inmediato si este tablero trae algo que capturar, sin
   // depender de esperar a que el estado se refleje en un render.
-  const loadWidgets = useCallback(async (dashboardId) => {
+  //
+  // `silencioso`: recarga SIN esconder la cuadricula (sin pasar por "cargando").
+  // Es lo que hace falta despues de agregar o reordenar un widget: si el grid se
+  // desmontara, todas las tarjetas volverian a pedir sus datos y a animarse
+  // desde cero, y la entrada de la nueva se perderia entre las demas.
+  const loadWidgets = useCallback(async (dashboardId, { silencioso = false } = {}) => {
     if (!dashboardId) { setWidgets([]); return []; }
-    setLoadingWidgets(true);
+    if (!silencioso) setLoadingWidgets(true);
     setWidgetsError("");
     try {
       const data = await getAllKpiDashboardWidget(dashboardId);
@@ -645,6 +650,11 @@ export default function Dashboard() {
   // --- Reporte PDF (exportar el dashboard, ver generarReportePdf mas abajo) ---
   const [mostrarDialogoExportarPdf, setMostrarDialogoExportarPdf] = useState(false);
   const [exportandoPdf, setExportandoPdf] = useState(false);
+  // Cuenta animada del numero y dibujo de las graficas: apagados si la
+  // persona pidio reducir el movimiento, y tambien mientras se captura el
+  // reporte PDF (una captura a mitad de animacion saldria con el 0 o con
+  // barras a medio crecer).
+  const animarWidgets = !reducirMovimiento && !exportandoPdf;
   // IDs de tarjeta (`id_kpi_dashboard_widget`) que ya terminaron de resolver
   // sus propios datos (exito O error, ver el `onReady` en KpiWidgetCard). Un
   // ref y no un estado a proposito: nada en pantalla necesita re-renderizar
@@ -772,7 +782,7 @@ export default function Dashboard() {
       // quedado a medias -- se recarga desde ahi para no dejar la UI
       // mostrando un orden que no coincide con lo guardado.
       setWidgetsError(error.message || "errors.request_failed");
-      await loadWidgets(activeId);
+      await loadWidgets(activeId, { silencioso: true });
     }
   }
 
@@ -888,7 +898,7 @@ export default function Dashboard() {
     // el panel se cierra solo (cerrarAlEnviar de FormularioPlegable) y la
     // tarjeta nueva entra con animacion.
     resetPanelState(activeId);
-    await loadWidgets(activeId);
+    await loadWidgets(activeId, { silencioso: true });
     if (creado?.id_kpi_dashboard_widget) setIdWidgetNuevo(creado.id_kpi_dashboard_widget);
   }
 
@@ -1002,6 +1012,8 @@ export default function Dashboard() {
                   onDelete={() => handleDeleteWidget(widget)}
                   onReady={handleWidgetReady}
                   esNuevo={widget.id_kpi_dashboard_widget === idWidgetNuevo}
+                  animar={animarWidgets}
+                  reducirMovimiento={reducirMovimiento}
                   t={t}
                   tx={tx}
                 />
@@ -1065,7 +1077,7 @@ export default function Dashboard() {
 // muestra" (KpiWidgetCard). El handle (GripVertical) es la UNICA zona con los
 // listeners de arrastre -- si se le pusieran a la tarjeta entera, un clic en
 // "Editar"/"Eliminar" competiria con el inicio de un drag.
-function SortableKpiWidgetCard(props) {
+function SortableKpiWidgetCard({ reducirMovimiento, ...props }) {
   const { widget } = props;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: widget.id_kpi_dashboard_widget,
@@ -1076,7 +1088,8 @@ function SortableKpiWidgetCard(props) {
     // resto de las tarjetas cuando una se suelta -- se conserva SIEMPRE,
     // incluso mientras se arrastra la propia (isDragging), para que las
     // demas nunca salten de golpe a su nuevo lugar.
-    transition,
+    // Con reduced-motion las demas tarjetas ocupan su nuevo lugar de golpe.
+    transition: reducirMovimiento ? undefined : transition,
     zIndex: isDragging ? 1 : "auto",
   };
   return (
