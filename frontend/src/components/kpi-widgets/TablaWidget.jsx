@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import PropTypes from "prop-types";
-import { ArrowDown, ArrowUp, ArrowUpDown, TriangleAlert } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 
 const UMBRAL_ATRASADO_DIAS = 14;
 
@@ -72,7 +72,7 @@ export default function TablaWidget({ filas, resaltarResponsable, onFilaClick })
                 <td>{fila.fecha_prestamo}</td>
                 <td>
                   <div className="kpi-preview-dias-celda">
-                    {atrasado && <TriangleAlert size={13} className="kpi-preview-icono-atrasado" aria-hidden="true" />}
+                    {atrasado && <AlertTriangle size={13} className="kpi-preview-icono-atrasado" aria-hidden="true" />}
                     <span>{fila.dias_prestado} días</span>
                     <div className="kpi-preview-barra-progreso">
                       <div
