@@ -53,6 +53,7 @@ from datetime import datetime
 
 from sqlalchemy import func, or_, select
 
+from app.models.customer_supplier import CustomerSupplier
 from app.models.incident import Incident
 from app.models.incident_type import IncidentType
 from app.models.inventory_asset import InventoryAsset
@@ -314,6 +315,11 @@ def _fichas_de_producto(db, ids) -> dict:
             "material": getattr(material, "material_description", None),
             "brand": marcas.get(int(material.id_brand)) if material and material.id_brand else None,
             "unit": unidades.get(int(material.id_unit)) if material and material.id_unit else None,
+            # `float`, no `Decimal` crudo: la ficha se archiva como JSON junto
+            # con la version del PDF (`source_snapshot`) y `Decimal` no es
+            # serializable -- tronaba `TypeError` al archivar cualquier vale
+            # con producto que tuviera precio capturado.
+            "gross_price": float(p.gross_price) if p.gross_price is not None else None,
         }
     return salida
 
@@ -1744,6 +1750,36 @@ def folio_del_vale(id_incident, user_data: dict) -> str:
         return str(vale.external_folio or vale.id_incident)
 
 
+def _fecha_larga(valor) -> str | None:
+    """Fecha y hora en el formato que usaba el sistema anterior en sus vales
+    impresos: "16/8/2026, 1:13:56 p.m." -- dia y mes sin cero a la izquierda,
+    hora de 12 con a.m./p.m. en minusculas. `strftime` no lo da directo
+    (`%p` sale en mayusculas y sin puntos, `%-d` no existe en Windows), asi
+    que se arma a mano.
+    """
+    if not valor:
+        return None
+    dt = valor if isinstance(valor, datetime) else datetime.fromisoformat(str(valor))
+    hora12 = dt.hour % 12 or 12
+    ampm = "a.m." if dt.hour < 12 else "p.m."
+    return "%d/%d/%d, %d:%02d:%02d %s" % (dt.day, dt.month, dt.year, hora12, dt.minute, dt.second, ampm)
+
+
+def _cliente_del_vale(db, id_proyect) -> str | None:
+    """El nombre de la empresa/cliente de la obra a la que va este vale --
+    el dato que el vale impreso del sistema anterior llamaba "Descripcion"
+    (ej. "APELSA"), distinto de la nota del vale.
+    """
+    if not id_proyect:
+        return None
+    return db.execute(
+        select(CustomerSupplier.name)
+        .select_from(Proyect)
+        .join(CustomerSupplier, CustomerSupplier.id_customer_supplier == Proyect.id_customer_supplier)
+        .where(Proyect.id_proyect == int(id_proyect))
+    ).scalars().first()
+
+
 def documento_del_vale(id_incident, user_data: dict) -> dict:
     """Arma la ficha que la plantilla del PDF pinta.
 
@@ -1778,17 +1814,24 @@ def documento_del_vale(id_incident, user_data: dict) -> dict:
             select(IncidentType.incident_type_description)
             .where(IncidentType.id_incident_type == vale.get("id_incident_type"))
         ).first()
+        cliente = _cliente_del_vale(db, vale.get("id_proyect"))
 
     salidas, entradas = [], []
     for renglon in datos["lines"]:
         producto = renglon.get("product") or {}
         fila = {
+            "id_product": renglon.get("id_product"),
             "cantidad": renglon.get("quantity"),
-            "codigo": producto.get("code") or None,
+            # Bug real, no intencional: esta llave se leia como `.get("code")`
+            # pero `_fichas_de_producto` la publica como `product_code` -- el
+            # codigo del renglon salia SIEMPRE vacio en el PDF, sin importar
+            # el producto.
+            "codigo": producto.get("product_code") or None,
             "descripcion": producto.get("descripcion") or "Producto %s" % renglon.get("id_product"),
             "material": producto.get("material"),
             "marca": producto.get("brand"),
             "unidad": producto.get("unit"),
+            "precio_bruto": producto.get("gross_price"),
             "desde": ubicaciones.get(renglon.get("id_location_from")),
             "hasta": ubicaciones.get(renglon.get("id_location_to")),
             "nota": renglon.get("note"),
@@ -1804,9 +1847,11 @@ def documento_del_vale(id_incident, user_data: dict) -> dict:
         "folio": vale.get("external_folio") or str(vale.get("id_incident")),
         "id_incident": vale.get("id_incident"),
         "fecha": _solo_fecha(vale.get("incident_date")),
+        "fecha_larga": _fecha_larga(vale.get("incident_date")),
         "estado": vale.get("incident_status"),
         "tipo": tipo,
         "nota": vale.get("note"),
+        "cliente": cliente,
         "responsable": responsable,
         "capturo": capturo,
         "cierre": _solo_fecha(vale.get("close_date")),
