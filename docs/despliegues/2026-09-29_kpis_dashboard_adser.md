@@ -166,12 +166,19 @@ eso el orden **visual** es por columnas y no por renglones, y puede no coincidir
 el lineal: la 4.ª puede quedar a la derecha de la 2.ª y arriba de la 3.ª. Lo
 que sí es cierto siempre: mover una tarjeta antes en la lista la coloca antes.
 
-**Arrastre:** al arrastrar, las demás tarjetas **no** se corren (la estrategia por
-rectángulos de dnd-kit supone una cuadrícula uniforme y en un masonry mostraría un
-acomodo que no es el que queda). La tarjeta sigue al puntero y el destino se decide
-por cercanía de centros. Al soltar, la tarjeta pasa a la posición de la que soltó
-encima en la **lista** (`arrayMove`), se guarda `posicion_orden` con esa lista y el
-masonry se recalcula con ella: lo guardado es exactamente el orden de colocación.
+**Arrastre:** mientras arrastras, las demás tarjetas se corren solas y la tarjeta
+arrastrada deja un **hueco de su tamaño real** donde caería. No es una reja uniforme:
+el hueco es la propia tarjeta (escondida, con su altura natural) puesta en el orden
+que tendría al soltar, y el masonry real acomoda a las demás alrededor; las que
+cambian de lugar se deslizan con una animación de 220 ms (FLIP). Lo que sigue al
+puntero es una copia estática de la tarjeta (su HTML), no otra tarjeta viva: no vuelve
+a pedir datos ni a montar gráficas. Al soltar se guarda `posicion_orden` con **ese
+mismo orden**, así que el resultado coincide con lo que mostraba el hueco, sin saltos.
+Con `prefers-reduced-motion` no hay animación de corrimiento (las tarjetas cambian de
+lugar de golpe y la copia cae sin animación). Tras cada corrimiento se ignora el
+movimiento durante 220 ms para que las tarjetas no "tiemblen" mientras la que se
+acaba de mover todavía se está deslizando. Código:
+`components/kpi-widgets/useReordenarTarjetas.js` y `kpi/kpiReorden.js`.
 
 **Un tablero que ya existía no cambia de orden ni de tamaño:** la plantilla no
 modifica lo que alguien ya tiene (regla de idempotencia de abajo). Para reacomodarlo,
