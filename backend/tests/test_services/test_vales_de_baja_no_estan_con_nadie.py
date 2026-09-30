@@ -14,8 +14,11 @@ esta con alguien" usan la MISMA regla.
 
 from __future__ import annotations
 
-from app.models import IncidentType
+from decimal import Decimal
+
+from app.models import IncidentType, Product
 from app.models.session import transaction_context
+from app.services.inventory_service import apply_inventory_movement
 from app.services.warehouse_voucher_service import (
     ABIERTO,
     buscar_vales,
@@ -24,9 +27,15 @@ from app.services.warehouse_voucher_service import (
     reporte_vales_pendientes,
     vales_vencidos,
 )
-from tests.test_services.test_vale_de_almacen import ACTOR, BaseVale
+from tests.test_services.test_vale_de_almacen import (
+    ACTOR, CEMENTO, COMPRA, MAT_CEMENTO, NAVE, BaseVale,
+)
 
 TIPOS = {"Destruccion": 81, "Extraviado": 82, "Dañado": 83, "Reparacion": 84}
+# Un producto por vale: con el mismo producto en todos, un vale de baja cerraria el
+# prestamo abierto del anterior (justo lo que hace en la vida real, y ver
+# test_vale_de_baja_registra_lo_que_paso.py), y aqui se prueba otra cosa.
+PRODUCTOS = {"Prestamo": CEMENTO, "Destruccion": 701, "Extraviado": 702, "Dañado": 703, "Reparacion": 704}
 CUENTAN = ("Prestamo", "Dañado", "Reparacion")
 NO_CUENTAN = ("Destruccion", "Extraviado")
 
@@ -40,13 +49,28 @@ class BaseBaja(BaseVale):
                 IncidentType(id_incident_type=i, incident_type_description=nombre, created_by=1)
                 for nombre, i in TIPOS.items()
             ])
+        with transaction_context() as db:
+            db.add_all([
+                Product(id_product=i, id_invoice=COMPRA, id_location=NAVE, id_material=MAT_CEMENTO,
+                        is_directly_related_to_product_service=True, product_code="BAJ-%s" % i,
+                        descripcion="Herramienta %s" % i, stock_purpose="uso_interno",
+                        tracking_mode="fungible", gross_price=Decimal("10.00"), created_by=1)
+                for i in PRODUCTOS.values() if i != CEMENTO
+            ])
         self.surtir()
+        for i in PRODUCTOS.values():
+            if i != CEMENTO:
+                apply_inventory_movement(i, {
+                    "movement_type": "receive", "quantity": 5, "id_location": NAVE,
+                    "reason": "Surtido inicial", "idempotency_key": "surtido-baja:%s" % i,
+                }, ACTOR)
         # Un vale de cada tipo, con un renglon de cemento. El de "Prestamo" es el
         # `TIPO_PRESTAMO` que ya trae la base de las pruebas.
         self.vales = {}
         for nombre in ("Prestamo", *TIPOS):
             carga = {} if nombre == "Prestamo" else {"id_incident_type": TIPOS[nombre]}
-            resultado = self._vale([self._linea_cantidad(1)], **carga)
+            linea = {"id_product": PRODUCTOS[nombre], "quantity": 1, "id_location_from": NAVE}
+            resultado = self._vale([linea], **carga)
             self.vales[nombre] = (
                 resultado["voucher"]["id_incident"],
                 resultado["lines"][0]["id_nm_incident_product"],
@@ -69,11 +93,13 @@ class TestQuienTieneQue(BaseBaja):
         self.assertEqual(self.ids_de(CUENTAN), vales_con_algo)
         self.assertEqual(len(CUENTAN), resultado["total_items"])
 
-    def test_el_vale_de_baja_sigue_abierto_y_consultable(self):
-        """No se esconde el vale: solo deja de contarse como prestamo."""
+    def test_el_vale_de_baja_sigue_consultable(self):
+        """No se esconde el vale: solo deja de contarse como prestamo. Una destruccion
+        nace cerrada (lo destruido no vuelve); un extravio queda abierto hasta que
+        aparezca."""
         vales = {v["id_incident"]: v for v in buscar_vales(ACTOR)["items"]}
-        for nombre in NO_CUENTAN:
-            self.assertEqual(ABIERTO, vales[self.id_vale(nombre)]["incident_status"])
+        self.assertEqual("cerrado", vales[self.id_vale("Destruccion")]["incident_status"])
+        self.assertEqual(ABIERTO, vales[self.id_vale("Extraviado")]["incident_status"])
 
 
 class TestVencidos(BaseBaja):
