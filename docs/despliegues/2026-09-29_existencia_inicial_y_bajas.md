@@ -87,5 +87,11 @@ producto corregido.
 
 | Ambiente | Existencia inicial | Vales de baja |
 |---|---|---|
-| `tyakxa-dev` | ver commit | ver commit |
-| `adser-prod` | pendiente (requiere OK de Alan) | llega con el despliegue |
+| `tyakxa-dev` | ✅ 2026-09-30, imagen `8148dcc`: 327 ajustes (178 prestados + 149 destruidos o extraviados), 0 fallidos; segunda corrida en seco da 0 | ✅ desplegado en `8148dcc`; cubierto por pruebas de Postgres, sin prueba en vivo (evita dejar vales de prueba) |
+| `adser-prod` | pendiente (requiere OK de Alan) | llega con el despliegue; hoy corre `b21a793`, anterior a todo esto |
+
+Verificado en `tyakxa-dev` después de aplicar, contra la base y no contra el reporte del
+script: el libro tiene 327 ajustes `Existencia inicial…` cuya suma es −327; ningún producto
+`retirado`/`extraviado` conserva existencia; ninguna existencia es negativa; y `cantidad`
+coincide con `inventory_stock` en los 2220 productos. Queda 1 producto omitido a propósito
+(ya tenía movimientos en el libro por la limpieza de los vales de prueba).
