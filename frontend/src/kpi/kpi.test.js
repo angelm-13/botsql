@@ -11,7 +11,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   CATEGORICAL, COLOR_OTHERS, buildMultiSeriesData, etiquetasDeDimension, buildPieData, buildSeriesData,
-  colorDeKpi, colorEfectivoDeKpi, formatConUnidad, labelForDimension,
+  colorDeKpi, colorEfectivoDeKpi, formatConUnidad, labelForDimension, ordenarPorCategorias,
 } from "./kpiDatos.js";
 import {
   agruparPorResponsable, duracionLegible, etiquetaDeDias, filtrarPorResponsable, gravedadDeDias, ordenarFilas,
@@ -183,6 +183,76 @@ test("dona: categorias fijas con su color, abiertas con la paleta y 'Otros' al f
   assert.equal(abierta.datos.length, CATEGORICAL.length + 1);
   assert.deepEqual(abierta.datos.at(-1), { categoria: "Otros", valor: (100 - 9) + (100 - 10), color: COLOR_OTHERS });
   assert.equal(abierta.datos[0].color, CATEGORICAL[0]);
+});
+
+// --- categorias ORDINALES: prestamos_abiertos_por_antiguedad ---------------------------------------
+const ORDEN_ANTIGUEDAD = ["0-30", "31-60", "61-90", "+90"];
+const KPI_ANTIGUEDAD = {
+  id_kpi_definition: 30, clave: "prestamos_abiertos_por_antiguedad", unidad: "numero", dimensiones: ["estado"],
+  colores_categoria: { "0-30": "#22b573", "31-60": "#f0a93b", "61-90": "#f58a3c", "+90": "#e5484d" },
+  orden_categorias: ORDEN_ANTIGUEDAD, modulo: "operaciones",
+};
+// Los valores estan puestos para que ordenar por valor (lo normal) los dejara al reves: +90 primero.
+const SNAPSHOT_ANTIGUEDAD = { rango_a: { total: 15, por_empleado: { "+90": 9, "61-90": 4, "31-60": 2, "0-30": 0 } }, rango_b: null };
+const SNAPSHOT_ESTADOS = { rango_a: { total: 15, por_empleado: { Dañado: 3, Entrada: 9, Salida: 1, Extraviado: 2 } }, rango_b: null };
+
+test("ordenarPorCategorias: sigue el orden declarado, lo desconocido va al final y no altera la entrada", () => {
+  const filas = [{ id: "+90" }, { id: "raro" }, { id: "0-30" }, { id: "61-90" }, { id: "31-60" }];
+  const copia = filas.map((f) => ({ ...f }));
+  assert.deepEqual(ordenarPorCategorias(filas, ORDEN_ANTIGUEDAD).map((f) => f.id), ["0-30", "31-60", "61-90", "+90", "raro"]);
+  assert.deepEqual(filas, copia);
+  // Sin orden declarado: las mismas filas, sin tocarlas.
+  assert.equal(ordenarPorCategorias(filas, undefined), filas);
+  assert.equal(ordenarPorCategorias(filas, null), filas);
+  assert.equal(ordenarPorCategorias(filas, []), filas);
+});
+
+test("barras de antiguedad: siempre 0-30, 31-60, 61-90, +90, aunque el valor las pida al reves", () => {
+  const props = propsSeries({
+    tipo: "barras", snapshots: [SNAPSHOT_ANTIGUEDAD], kpiInfos: [KPI_ANTIGUEDAD],
+    labelForId: (id) => id, empleados: undefined, agruparPorPeriodo: false,
+    coloresOverride: undefined, formatNumber, textos: TEXTOS_SERIES,
+  });
+  assert.deepEqual(props.datos.map((fila) => fila.id), ORDEN_ANTIGUEDAD);
+  assert.deepEqual(props.datos.map((fila) => fila.a), [0, 2, 4, 9]);
+  // Cada barra con SU color declarado.
+  assert.equal(props.colorPorFila(props.datos[0]), "#22b573");
+  assert.equal(props.colorPorFila(props.datos[3]), "#e5484d");
+});
+
+test("dona de antiguedad: mismo orden fijo, no por valor", () => {
+  const dona = propsDona({
+    snapshot: SNAPSHOT_ANTIGUEDAD, kpiInfo: KPI_ANTIGUEDAD, labelForId: (id) => id,
+    agruparPorPeriodo: false, formatNumber, textos: { otros: "Otros" },
+  });
+  assert.deepEqual(dona.datos.map((d) => d.categoria), ORDEN_ANTIGUEDAD);
+  assert.deepEqual(dona.datos.map((d) => d.color), ["#22b573", "#f0a93b", "#f58a3c", "#e5484d"]);
+});
+
+test("por periodo (llaves = fechas) el orden declarado no se toca", () => {
+  const snapshot = { rango_a: { total: 3, por_periodo: { "2026-09-02": 1, "2026-09-01": 2 } }, rango_b: null };
+  const props = propsSeries({
+    tipo: "barras", snapshots: [snapshot], kpiInfos: [KPI_ANTIGUEDAD], labelForId: (id) => id,
+    empleados: undefined, agruparPorPeriodo: true, coloresOverride: undefined, formatNumber, textos: TEXTOS_SERIES,
+  });
+  assert.deepEqual(props.datos.map((fila) => fila.id), ["2026-09-01", "2026-09-02"]);
+});
+
+test("los demas KPIs de estado (sin orden declarado) siguen ordenados por valor, de mayor a menor", () => {
+  const KPI_MATERIAL = {
+    id_kpi_definition: 9, clave: "material_por_estado", unidad: "numero", dimensiones: ["estado"],
+    colores_categoria: { Entrada: "#22b573", Salida: "#2f8fe0", Dañado: "#f0a93b", Extraviado: "#ef6f5c" }, modulo: "operaciones",
+  };
+  const barras = propsSeries({
+    tipo: "barras", snapshots: [SNAPSHOT_ESTADOS], kpiInfos: [KPI_MATERIAL], labelForId: (id) => id,
+    empleados: undefined, agruparPorPeriodo: false, coloresOverride: undefined, formatNumber, textos: TEXTOS_SERIES,
+  });
+  assert.deepEqual(barras.datos.map((fila) => fila.id), ["Entrada", "Dañado", "Extraviado", "Salida"]);
+  const dona = propsDona({
+    snapshot: SNAPSHOT_ESTADOS, kpiInfo: KPI_MATERIAL, labelForId: (id) => id,
+    agruparPorPeriodo: false, formatNumber, textos: { otros: "Otros" },
+  });
+  assert.deepEqual(dona.datos.map((d) => d.categoria), ["Entrada", "Dañado", "Extraviado", "Salida"]);
 });
 
 test("tabla de material prestado: id, responsable por omision y columnas", () => {

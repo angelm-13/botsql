@@ -1304,7 +1304,8 @@ class KpiDefinition:
     def __init__(self, clave, etiqueta, modulo, dimensiones,
                  query_builder, *, direccion, graficas_permitidas, grafica_default,
                  agregacion=None, unidad="numero", alcance_proyecto=True, modo="snapshot",
-                 colores_categoria=None, descripcion=None, etiqueta_dimension=None):
+                 colores_categoria=None, descripcion=None, etiqueta_dimension=None,
+                 orden_categorias=None):
         self.clave = clave
         self.etiqueta = etiqueta
         # Una linea corta para el selector de KPI del editor (rediseno del
@@ -1355,6 +1356,11 @@ class KpiDefinition:
         # toca a "Extraviado" no deberia depender de en que orden lleguen las
         # categorias a la grafica. dict {valor_de_categoria: "#rrggbb"}.
         self.colores_categoria = colores_categoria
+        # Orden de lectura de las categorias, como LISTA: solo para un KPI de categorias ORDINALES
+        # (ej. prestamos_abiertos_por_antiguedad: 0-30, 31-60, 61-90, +90), cuyo orden es parte del
+        # dato. Con None (el default, todos los demas) el Dashboard ordena por valor, de mayor a
+        # menor. No se deriva de `colores_categoria`: un dict pierde el orden al serializarse.
+        self.orden_categorias = tuple(orden_categorias) if orden_categorias else None
         # Si el KPI se calcula UNA VEZ POR PROYECTO ACTIVO (True, el default
         # -- lo que ya hacian los primeros 3 KPIs, todos sobre entidades que
         # SI tienen id_proyect) o UNA SOLA VEZ, sin filtro de proyecto
@@ -1702,6 +1708,7 @@ KPI_REGISTRY = (
         # Verde -> ambar -> naranja -> rojo: a mas dias prestado, mas urgente. Por nombre
         # de categoria, como material_por_estado.
         colores_categoria=ANTIGUEDAD_COLORES,
+        orden_categorias=ANTIGUEDAD_CATEGORIAS,
         descripcion="Renglones prestados sin devolver, por días desde el vale: 0-30, 31-60, 61-90 y más de 90.",
     ),
     KpiDefinition(
@@ -1814,6 +1821,13 @@ def _validar():
                 raise RuntimeError(
                     f"El KPI '{kpi.clave}' declara la dimension desconocida '{dimension}' "
                     f"(validas: {', '.join(DIMENSIONES)})."
+                )
+        if kpi.orden_categorias is not None:
+            if len(set(kpi.orden_categorias)) != len(kpi.orden_categorias):
+                raise RuntimeError(f"El KPI '{kpi.clave}' repite una categoria en orden_categorias.")
+            if kpi.colores_categoria is not None and set(kpi.orden_categorias) != set(kpi.colores_categoria):
+                raise RuntimeError(
+                    f"El KPI '{kpi.clave}' declara orden_categorias y colores_categoria con categorias distintas."
                 )
         if not kpi.graficas_permitidas:
             raise RuntimeError(f"El KPI '{kpi.clave}' no declara ninguna grafica permitida.")

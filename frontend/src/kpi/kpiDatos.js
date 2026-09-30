@@ -56,6 +56,22 @@ export function colorDeCategoriaEstado(nombreCategoria, coloresCategoria, colorR
   return colorRespaldo;
 }
 
+// Orden de lectura de las categorias de un KPI ORDINAL (ej. prestamos_abiertos_por_antiguedad:
+// 0-30, 31-60, 61-90, +90): el KPI lo declara en `orden_categorias` (backend, registry.py) y las
+// filas salen en ESE orden, no por valor. Sin orden declarado (todos los demas KPIs) devuelve
+// las filas tal cual llegaron. Una categoria que no este en la lista va al final, en su orden
+// original; no se altera el arreglo recibido.
+export function ordenarPorCategorias(filas, ordenCategorias, campoId = "id") {
+  if (!Array.isArray(ordenCategorias) || ordenCategorias.length === 0) return filas;
+  const posicion = new Map(ordenCategorias.map((categoria, indice) => [String(categoria), indice]));
+  const fin = ordenCategorias.length;
+  const lugar = (fila) => posicion.get(String(fila[campoId])) ?? fin;
+  return filas
+    .map((fila, indice) => ({ fila, indice }))
+    .sort((a, b) => lugar(a.fila) - lugar(b.fila) || a.indice - b.indice)
+    .map(({ fila }) => fila);
+}
+
 // Color fijo por KPI (no por posicion en un arreglo): el modulo (`%`) sobre
 // el id real es determinista y estable entre widgets/tableros -mismo KPI,
 // mismo color, siempre- sin necesitar guardar un mapeo aparte.
