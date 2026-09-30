@@ -155,8 +155,12 @@ escribe `useMasonryRef`, en `components/kpi-widgets/useMasonry.js`, con un
 `ResizeObserver` y directo en el DOM, no en el estado de React: la primera medida se
 hace antes de pintar y un cambio de alto se corrige antes del siguiente cuadro, sin
 parpadeo). `grid-auto-flow: dense` hace que cada tarjeta caiga en el primer hueco
-donde cabe, que en la práctica es la columna más corta. El recuadro "Agregar
-gráfico" es uno solo, a todo el ancho, al final. La tabla no se estira: su lista
+donde cabe, que en la práctica es la columna más corta. Los recuadros punteados
+"Agregar gráfico" (240 px, una columna) van al final y entran al masonry como tarjetas
+más, sin mover a las reales: un tablero vacío se llena con 2 a 4 filas completas (lo que
+alcance a verse); con tarjetas, se completa la última fila hasta un múltiplo de las columnas
+y mínimo 6 casillas (una tabla de 2 columnas pesa 2). Se ocultan mientras se arrastra y en
+el PDF. La tabla no se estira: su lista
 se desplaza por dentro con un tope (22 rem, o 36 rem con `filas: 2`).
 
 **Cómo se mapean `posicion_orden` y el tamaño al layout** (contrato del masonry):

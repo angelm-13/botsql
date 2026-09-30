@@ -15,6 +15,7 @@ import { useI18n } from "../i18n";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import useReducedMotion from "../components/kpi-widgets/useReducedMotion";
 import useMasonryRef from "../components/kpi-widgets/useMasonry";
+import useRellenoDelGrid from "../components/kpi-widgets/useRellenoDelGrid";
 import useReordenarTarjetas, { sinColision } from "../components/kpi-widgets/useReordenarTarjetas";
 import {
   getAllKpiDashboard, createKpiDashboard, updateKpiDashboard, deleteKpiDashboard,
@@ -454,9 +455,15 @@ export default function Dashboard() {
   // (`{!loadingWidgets && (...)}` en el render), y solo un ref mutable sigue
   // reflejando el nodo ACTUAL en cada vuelta del bucle.
   const widgetGridNodeRef = useRef(null);
+  // Recuadros punteados "Agregar gráfico" que completan la cuadricula (ver useRellenoDelGrid).
+  const [rellenoCount, rellenoRef] = useRellenoDelGrid(
+    widgets.length,
+    widgets.filter((w) => columnasDeWidget(w) === 2).length,
+  );
   const widgetGridRef = useCallback((nodo) => {
     widgetGridNodeRef.current = nodo;
-  }, []);
+    rellenoRef(nodo);
+  }, [rellenoRef]);
 
   // Filtro que una tarjeta le pone a otra: un clic en la barra de un responsable en "Incidencias
   // abiertas por responsable" filtra la tabla de material prestado. Vive aqui (no en cada tarjeta)
@@ -875,7 +882,7 @@ export default function Dashboard() {
           {!loadingWidgets && !widgetsError && (
             <DndContext sensors={dragSensors} collisionDetection={sinColision} {...reorden.handlers}>
             <SortableContext items={reorden.idsVista} strategy={sinDesplazarVecinas}>
-            <div className="kpi-widget-grid" ref={widgetGridRef}>
+            <div className={`kpi-widget-grid${reorden.activoId ? " kpi-widget-grid-arrastrando" : ""}`} ref={widgetGridRef}>
               {reorden.widgetsVista.map((widget) => (
                 <SortableKpiWidgetCard
                   key={widget.id_kpi_dashboard_widget}
@@ -898,18 +905,22 @@ export default function Dashboard() {
                   tx={tx}
                 />
               ))}
-              {/* Un solo recuadro "Agregar gráfico", al final: con las tarjetas de varias
-                  filas y columnas, rellenar hasta "completar la fila" ya no tiene sentido
-                  (lo hace grid-auto-flow: dense) y llenaba el tablero de recuadros vacíos. */}
-              <button
-                type="button"
-                className="kpi-widget-placeholder"
-                onClick={() => abrirEditor(activeId)}
-                title={tx("add_widget", "Agregar gráfico")}
-              >
-                <Plus size={22} />
-                <span>{tx("add_widget", "Agregar gráfico")}</span>
-              </button>
+              {/* Recuadros punteados al final: con el tablero vacío llenan lo que alcanza a verse; con
+                  tarjetas, completan la última fila. Entran al masonry como tarjetas de una
+                  columna, después de todas las reales, así que no las mueven. */}
+              {Array.from({ length: rellenoCount }).map((_, index) => (
+                <button
+                  type="button"
+                  key={`kpi-widget-placeholder-${index}`}
+                  className="kpi-widget-placeholder"
+                  onClick={() => abrirEditor(activeId)}
+                  title={tx("add_widget", "Agregar gráfico")}
+                  tabIndex={reorden.activoId ? -1 : undefined}
+                >
+                  <Plus size={22} />
+                  <span>{tx("add_widget", "Agregar gráfico")}</span>
+                </button>
+              ))}
             </div>
             </SortableContext>
             {/* Lo que sigue al puntero: una copia ESTATICA de la tarjeta (su HTML), no otra tarjeta
