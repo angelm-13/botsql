@@ -1,14 +1,14 @@
-# Promoción de adser-prod a `0f8c696` — runbook para revisar (NO ejecutado)
+# Promoción de adser-prod a `de1aa56` — runbook para revisar (NO ejecutado)
 
 **Estado: preparado el 2026-09-30, pendiente del OK de Alan y de una ventana.** Nada de esto
 se ha aplicado en `adser-prod`. El cambio del overlay está en el árbol de trabajo, sin
 commitear.
 
 - **De:** `b21a793` (lo que corre hoy, verificado en el clúster).
-- **A:** `0f8c696`, **la misma versión que probó `tyakxa-dev`**. Las 4 imágenes existen: el bot
-  solo publica «actualizar a 0f8c696» cuando terminaron todas las del build, incluido el
+- **A:** `de1aa56`, **la misma versión que probó `tyakxa-dev`**. Las 4 imágenes existen: el bot
+  solo publica «actualizar a de1aa56» cuando terminaron todas las del build, incluido el
   frontend de adser (`needs: [backend-and-worker, frontend-por-cliente]`).
-- **Qué cambia en el rango (72 commits):** tres migraciones, ningún modelo y ningún cambio en
+- **Qué cambia en el rango (80 commits):** tres migraciones, ningún modelo y ningún cambio en
   `k8s/base`. Por eso basta copiar el `kustomization.yaml` del overlay al VPS.
 - **Permisos:** no se mueven (decisión de Alan). Se **omiten** los pasos 6, 7 y 8 de
   `2026-09-25_kpis_adser_permisos.md`. Medido en una copia de prod: la promoción no cambia
@@ -47,26 +47,26 @@ capturó datos entre hoy y la ventana, los números esperados de abajo cambian.
 ### 0. Respaldo — obligatorio, no pasar al paso 1 sin esto
 
 ```bash
-kubectl -n adser-prod exec statefulset/postgres -- sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > ~/adser_antes_de_0f8c696_$(date +%Y%m%d_%H%M).sql
-ls -l ~/adser_antes_de_0f8c696_*.sql          # megabytes, no 0 bytes
-tail -n 3 ~/adser_antes_de_0f8c696_*.sql      # debe terminar en "PostgreSQL database dump complete"
+kubectl -n adser-prod exec statefulset/postgres -- sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > ~/adser_antes_de_de1aa56_$(date +%Y%m%d_%H%M).sql
+ls -l ~/adser_antes_de_de1aa56_*.sql          # megabytes, no 0 bytes
+tail -n 3 ~/adser_antes_de_de1aa56_*.sql      # debe terminar en "PostgreSQL database dump complete"
 ```
 
 Copiarlo **fuera del clúster y fuera de OneDrive**: contiene datos personales (RFC, CURP, NSS)
 y hashes de contraseña, y la carpeta Escritorio de esta máquina se sincroniza.
 
 ```powershell
-scp 168.231.67.33:~/adser_antes_de_0f8c696_*.sql C:\Users\TDW2\respaldos_prod\
+scp 168.231.67.33:~/adser_antes_de_de1aa56_*.sql C:\Users\TDW2\respaldos_prod\
 ```
 
 ### 1. Promover la imagen (en el repo)
 
 El diff ya está preparado en `k8s/overlays/adser-prod/kustomization.yaml` (los 4 `newTag`:
-`b21a793` → `0f8c696`, y `b21a793-adser-prod` → `0f8c696-adser-prod`).
+`b21a793` → `de1aa56`, y `b21a793-adser-prod` → `de1aa56-adser-prod`).
 
 ```bash
 git add k8s/overlays/adser-prod/kustomization.yaml
-git commit -m "deploy(adser-prod): promover a 0f8c696 (misma version que probo tyakxa-dev)"
+git commit -m "deploy(adser-prod): promover a de1aa56 (misma version que probo tyakxa-dev)"
 git fetch && git pull --rebase origin initAlan && git push origin initAlan
 scp k8s/overlays/adser-prod/kustomization.yaml 168.231.67.33:/home/alanp/tyakxa_tny/k8s/overlays/adser-prod/kustomization.yaml
 ```
@@ -189,7 +189,7 @@ que se tomó**. Solo con decisión de Alan en el momento:
 ```bash
 kubectl -n adser-prod scale deployment/backend deployment/celery-worker deployment/celery-beat --replicas=0
 kubectl -n adser-prod exec -i statefulset/postgres -- sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"'
-kubectl -n adser-prod exec -i statefulset/postgres -- sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < ~/adser_antes_de_0f8c696_<fecha>.sql
+kubectl -n adser-prod exec -i statefulset/postgres -- sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < ~/adser_antes_de_de1aa56_<fecha>.sql
 # volver el overlay a b21a793 (4 newTag), scp y kubectl apply -k; luego escalar de nuevo a 1
 ```
 

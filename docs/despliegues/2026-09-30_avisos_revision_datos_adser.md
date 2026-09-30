@@ -41,7 +41,7 @@ para verlos tú mismo en la campana: `--destinatario admin1`.
 | Ambiente | Estado |
 |---|---|
 | Copia local de `adser-prod` (dump 2026-09-30) | ✅ corrido como `yesgo`: 4 temas + resumen; 2.ª corrida 0 |
-| `tyakxa-dev` (imagen `0f8c696`) | ✅ 2026-09-30, para `admin1`: 3 temas + resumen (29 préstamos, 5 sin herramienta, 6 vales vacíos; el de la incidencia 90 no aplica porque en dev la cuenta de Fernanda Contreras nunca se renombró); 2.ª corrida 0 |
+| `tyakxa-dev` (imagen `de1aa56`) | ✅ 2026-09-30, para `admin1`: 3 temas + resumen (29 préstamos, divididos en 28 «probablemente ya volvieron» y 1 «parece vigente»; 5 sin herramienta; 6 vales vacíos; el de la incidencia 90 no aplica porque en dev la cuenta de Fernanda Contreras nunca se renombró); 2.ª corrida 0 |
 | `adser-prod` | pendiente: después de promover y de los scripts de datos, y con el OK de Alan |
 
 En dev los ve quien entre como `admin1` (campana de la barra superior); se quitan con «Enterado».
