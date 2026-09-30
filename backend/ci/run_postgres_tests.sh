@@ -25,12 +25,27 @@
 # Uso (desde cualquier carpeta; requiere el stack local arriba y migrado):
 #   backend/ci/run_postgres_tests.sh              # todos los archivos de Postgres
 #   backend/ci/run_postgres_tests.sh -k kpi       # filtra por nombre, como pytest -k
+#   backend/ci/run_postgres_tests.sh --copiar-base-local   # base_real = copia de tu base local
 #   CONSERVAR_BASES=1 backend/ci/run_postgres_tests.sh   # no borra las bases al final
 #
-# La base "base_real" es una COPIA (pg_dump) de la base del stack
-# (POSTGRES_DB del servicio db, normalmente tyakxa_erp); esa base nunca se
-# modifica. Ambas bases de prueba se borran al terminar.
+# La base "base_real" es LIMPIA por omision: se crea vacia con database/init.sql
+# (que trae el bootstrap: user=1, proyect=1, status=1, customer_supplier=1) y todas
+# las migraciones, en el mismo orden que el servicio `db-migrate` de docker-compose.
+# Asi no depende de lo que tenga tu base local. Con --copiar-base-local se usa en
+# cambio una COPIA (pg_dump) de la base del stack (POSTGRES_DB del servicio db,
+# normalmente tyakxa_erp), que esta base nunca se modifica: sirve para probar contra
+# datos reales, pero puede fallar si tiene datos demo (vales, usuarios de prueba),
+# porque las pruebas esperan contar solo lo que ellas mismas crean. Ambas bases de
+# prueba se borran al terminar.
 set -euo pipefail
+
+# Opciones propias (se quitan antes de pasar el resto a pytest).
+COPIAR_BASE_LOCAL=0
+args_pytest=()
+for arg in "$@"; do
+  if [ "$arg" = "--copiar-base-local" ]; then COPIAR_BASE_LOCAL=1; else args_pytest+=("$arg"); fi
+done
+set -- ${args_pytest[@]+"${args_pytest[@]}"}
 
 RAIZ="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$RAIZ"
@@ -76,7 +91,16 @@ done < <(cd backend && grep -rlE 'dialect\.name (==|!=) "postgresql"' tests --in
 # --- bases ---------------------------------------------------------------------
 limpiar
 psql_admin -c "CREATE DATABASE $BASE_REAL" -c "CREATE DATABASE $BASE_ORM"
-dc exec -T db sh -c "pg_dump -U '$DB_USER' -d '$BASE_ORIGEN' | psql -U '$DB_USER' -d '$BASE_REAL' -q -v ON_ERROR_STOP=1" >/dev/null
+if [ "$COPIAR_BASE_LOCAL" = "1" ]; then
+  echo "run_postgres_tests: base_real = copia de $BASE_ORIGEN (--copiar-base-local)"
+  dc exec -T db sh -c "pg_dump -U '$DB_USER' -d '$BASE_ORIGEN' | psql -U '$DB_USER' -d '$BASE_REAL' -q -v ON_ERROR_STOP=1" >/dev/null
+else
+  echo "run_postgres_tests: base_real limpia (init.sql + migraciones)"
+  # Los NOTICE de las migraciones (reaplicables) son ruido: solo se muestra la salida si algo falla.
+  salida=$(dc exec -T db psql -U "$DB_USER" -d "$BASE_REAL" -q -v ON_ERROR_STOP=1 < database/init.sql 2>&1 \
+    && dc run --rm --no-deps -T -e PGDATABASE="$BASE_REAL" db-migrate 2>&1) \
+    || { echo "$salida" >&2; echo "run_postgres_tests: no se pudo crear la base limpia" >&2; exit 1; }
+fi
 
 correr_grupo() {
   local nombre="$1" base="$2"; shift 2
