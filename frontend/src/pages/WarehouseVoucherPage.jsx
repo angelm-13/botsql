@@ -10,6 +10,8 @@ import {
   authorizeWarehouseVoucher,
   downloadWarehouseVoucherPdf,
   closeWarehouseVoucherLine,
+  deliverWarehouseVoucherLine,
+  confirmWarehouseVoucherLineCustody,
   createWarehousePrevoucher,
   createWarehouseVoucher,
   getIncidentTypeOptions,
@@ -328,6 +330,41 @@ export default function WarehouseVoucherPage() {
     }
   };
 
+  // A que operador u otro supervisor se le entrega esta pieza -- sin sacarla
+  // del almacen otra vez ni cerrar el prestamo, solo constancia de por donde
+  // anda mientras el vale sigue abierto.
+  const entregarA = async (idLinea, idUsuarioEntrega) => {
+    if (!idUsuarioEntrega) return;
+    setError("");
+    try {
+      const r = await deliverWarehouseVoucherLine(idLinea, { id_user: idUsuarioEntrega });
+      setConsultado(await getWarehouseVoucher(r.id_incident));
+    } catch (e) {
+      decirError(e, "No se pudo registrar la entrega.");
+    }
+  };
+
+  // El supervisor dueño del vale confirma que ya recupero la pieza de manos
+  // del operador al que se la habia entregado.
+  const confirmarCustodia = async (idLinea) => {
+    setError("");
+    try {
+      const r = await confirmWarehouseVoucherLineCustody(idLinea);
+      setConsultado(await getWarehouseVoucher(r.id_incident));
+    } catch (e) {
+      decirError(e, "No se pudo confirmar la recepción.");
+    }
+  };
+
+  // Quien puede entregar una pieza a un operador o confirmar que la
+  // recupero: el responsable DE ESTE vale (normalmente Supervisor, que solo
+  // tiene `warehouse_prevoucher`, nunca `warehouse_voucher`) o quien opera
+  // el almacen. Se calcula por vale, no una vez -- el mismo actor es
+  // responsable de unos y no de otros.
+  const puedeGestionarCustodia = (vale) => privilegiado
+    || Number(vale?.id_user) === Number(actor.id_user)
+    || puedeCerrarRenglon;
+
   const nombreDe = (idUsuario) => {
     const u = usuarios.find((x) => Number(x.id_user) === Number(idUsuario));
     return u?.full_name || u?.username || (idUsuario ? `#${idUsuario}` : "");
@@ -559,6 +596,9 @@ export default function WarehouseVoucherPage() {
                   onVerHistorial={(idUser, nombre) => setHistorialEmpleado({ idUser, nombre })}
                   puedeAutorizar={puedeAutorizar}
                   puedeCerrarRenglon={puedeCerrarRenglon}
+                  onEntregar={entregarA} onConfirmarCustodia={confirmarCustodia}
+                  privilegiado={privilegiado} actorIdUser={actor.id_user}
+                  usuarios={usuarios}
                   nombreDe={nombreDe} sitioDe={sitioDe} t={t} />
           </>
         )}
@@ -590,12 +630,22 @@ export default function WarehouseVoucherPage() {
 
 /** El vale con sus renglones, y el estado derivado bien visible. */
 function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
-               onVerHistorial, puedeAutorizar, puedeCerrarRenglon, nombreDe, sitioDe, t }) {
+               onVerHistorial, puedeAutorizar, puedeCerrarRenglon,
+               onEntregar, onConfirmarCustodia, privilegiado, actorIdUser, usuarios,
+               nombreDe, sitioDe, t }) {
   const cabecera = vale.voucher || {};
   const estado = String(cabecera.incident_status || "");
   const cerrado = estado === "cerrado";
   // El borrador es el prevale: material pedido, todavia en el almacen.
   const borrador = estado === "borrador";
+  // Quien puede entregar una pieza a un operador o confirmar que la
+  // recupero: el responsable DE ESTE vale (normalmente Supervisor, que solo
+  // tiene `warehouse_prevoucher`, nunca `warehouse_voucher`) o quien opera
+  // el almacen.
+  const puedeGestionarCustodia = privilegiado
+    || Number(cabecera.id_user) === Number(actorIdUser)
+    || puedeCerrarRenglon;
+  const [entregaEnCaptura, setEntregaEnCaptura] = useState({});
 
   // Un prestamo real por renglon, no una fila de tabla: la devolucion agrega
   // un renglon de ENTRADA en vez de reescribir el de SALIDA (asi queda el
@@ -773,6 +823,57 @@ function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
                             <Check size={14} />
                             {t("voucher.close_line", "Marcar devuelto")}
                           </button>
+                        )}
+                        {/* A quien se le entrega la pieza -- un operador o
+                            otro supervisor, distinto del responsable del
+                            vale -- y la confirmacion de que ya la recupero.
+                            Es un paso INTERMEDIO: la pieza sigue "fuera"
+                            hasta que alguien la devuelva de verdad con
+                            "Marcar devuelto". */}
+                        {puedeGestionarCustodia && !linea.id_user_delivered_to && (
+                          <span className="vale-custodia">
+                            <select
+                              value={entregaEnCaptura[linea.id_nm_incident_product] || ""}
+                              onChange={(e) => setEntregaEnCaptura({
+                                ...entregaEnCaptura,
+                                [linea.id_nm_incident_product]: e.target.value,
+                              })}
+                              aria-label={t("voucher.deliver_to", "Entregar a")}
+                            >
+                              <option value="">{t("voucher.deliver_to", "Entregar a…")}</option>
+                              {usuarios.map((u) => (
+                                <option key={u.id_user} value={u.id_user}>
+                                  {u.full_name || u.username}
+                                </option>
+                              ))}
+                            </select>
+                            <button className="button button-quiet"
+                                    disabled={!entregaEnCaptura[linea.id_nm_incident_product]}
+                                    onClick={() => onEntregar(
+                                      linea.id_nm_incident_product,
+                                      entregaEnCaptura[linea.id_nm_incident_product])}>
+                              {t("voucher.assign_delivery", "Asignar")}
+                            </button>
+                          </span>
+                        )}
+                        {linea.id_user_delivered_to && !linea.custody_confirmed_date && (
+                          <span className="vale-custodia">
+                            <span className="muted">
+                              {t("voucher.delivered_to", "Con")}: {nombreDe(linea.id_user_delivered_to)}
+                            </span>
+                            {puedeGestionarCustodia && (
+                              <button className="button button-quiet"
+                                      onClick={() => onConfirmarCustodia(linea.id_nm_incident_product)}>
+                                <Check size={14} />
+                                {t("voucher.confirm_custody", "Confirmar recepción")}
+                              </button>
+                            )}
+                          </span>
+                        )}
+                        {linea.id_user_delivered_to && linea.custody_confirmed_date && (
+                          <span className="vale-custodia muted">
+                            {t("voucher.custody_confirmed", "Recuperado de")} {nombreDe(linea.id_user_delivered_to)}
+                          </span>
                         )}
                       </>
                     ) : (

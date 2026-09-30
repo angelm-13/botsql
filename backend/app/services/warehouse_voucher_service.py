@@ -879,6 +879,97 @@ def _devolver_al_almacen(db, renglon, user_data, *, vuelve_a, motivo, id_entrada
     )
 
 
+def _puede_gestionar_custodia(db, vale: Incident, user_data: dict) -> bool:
+    """Quien puede decir a quien se entrega una pieza, o confirmar que la
+    recupero: el responsable del vale (de quien se trata todo esto) o quien
+    opera el almacen (`warehouse_voucher`). NO se exige con
+    `require_entity_permission` en la ruta -a diferencia de `/return`- porque
+    el responsable de un prevale suele ser Supervisor, que nunca tiene
+    `warehouse_voucher` -- solo `warehouse_prevoucher`. Es SU vale y tiene
+    que poder gestionar la entrega de su propia herramienta.
+    """
+    if _sin_restriccion(user_data):
+        return True
+    if int(vale.id_user) == _actor(user_data):
+        return True
+    return has_capability(db, user_data, "warehouse_voucher")
+
+
+def asignar_entrega_de_renglon(id_line, payload: dict, user_data: dict) -> dict:
+    """A que operador u otro supervisor se le entrega esta pieza del vale.
+
+    Es un dato aparte del responsable del vale completo (`incident.id_user`):
+    el vale puede salir a nombre de un supervisor y la herramienta pasar de
+    sus manos a las de un operador que de verdad la va a usar. No mueve nada
+    del almacen -eso ya paso al abrir o autorizar el vale- ni cierra el
+    prestamo -eso lo sigue haciendo `devolver_renglon`-, solo deja constancia
+    de por donde anda la pieza mientras tanto.
+    """
+    id_user_entrega = _entero(payload.get("id_user"), "id_user")
+    with transaction_context() as db:
+        renglon = db.scalars(
+            select(NmIncidentProduct).where(
+                NmIncidentProduct.id_nm_incident_product == _entero(
+                    id_line, "id_nm_incident_product"),
+                NmIncidentProduct.deletion_date.is_(None),
+            ).with_for_update()
+        ).first()
+        if renglon is None:
+            raise AppError("errors.not_found", 404,
+                           {"entity": "nm_incident_product"})
+        if str(renglon.direction or "") != SALIDA:
+            raise AppError("errors.voucher_line_not_a_loan", 409,
+                           {"id_nm_incident_product": renglon.id_nm_incident_product,
+                            "direction": renglon.direction})
+        if renglon.close_date is not None:
+            raise AppError("errors.voucher_line_already_closed", 409,
+                           {"id_nm_incident_product": renglon.id_nm_incident_product,
+                            "close_date": renglon.close_date.isoformat()})
+        vale = _vale(db, renglon.id_incident)
+        if not _puede_gestionar_custodia(db, vale, user_data):
+            raise AppError("errors.permission_denied", 403,
+                           {"action": "deliver_line"})
+        renglon.id_user_delivered_to = id_user_entrega
+        # Un nuevo destinatario invalida cualquier confirmacion anterior: si
+        # ya se habia confirmado la recepcion del operador A, entregarsela
+        # ahora al operador B no puede seguir contando esa confirmacion vieja.
+        renglon.custody_confirmed_date = None
+        db.flush()
+        return renglon.serialize()
+
+
+def confirmar_recepcion_de_renglon(id_line, user_data: dict) -> dict:
+    """El supervisor dueño del vale confirma que recupero esta pieza de manos
+    del operador al que se la habia entregado.
+
+    Es un paso INTERMEDIO: la pieza sigue fuera del almacen (`close_date`
+    sigue vacio) hasta que alguien la devuelva de verdad con
+    `devolver_renglon`. Esto solo contesta "¿ya la tienes de vuelta?", que
+    antes se preguntaba a mano por whatsapp y no quedaba en ningun lado.
+    """
+    with transaction_context() as db:
+        renglon = db.scalars(
+            select(NmIncidentProduct).where(
+                NmIncidentProduct.id_nm_incident_product == _entero(
+                    id_line, "id_nm_incident_product"),
+                NmIncidentProduct.deletion_date.is_(None),
+            ).with_for_update()
+        ).first()
+        if renglon is None:
+            raise AppError("errors.not_found", 404,
+                           {"entity": "nm_incident_product"})
+        if renglon.id_user_delivered_to is None:
+            raise AppError("errors.voucher_line_not_delivered", 409,
+                           {"id_nm_incident_product": renglon.id_nm_incident_product})
+        vale = _vale(db, renglon.id_incident)
+        if not _puede_gestionar_custodia(db, vale, user_data):
+            raise AppError("errors.permission_denied", 403,
+                           {"action": "confirm_custody"})
+        renglon.custody_confirmed_date = _ahora()
+        db.flush()
+        return renglon.serialize()
+
+
 def cerrar_renglon(id_line, payload: dict, user_data: dict) -> dict:
     """Cerrar un renglon de vale ES devolver lo que salio.
 

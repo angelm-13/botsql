@@ -1,8 +1,7 @@
 from __future__ import annotations
-from functools import wraps
 from flask import Blueprint, jsonify, request
 from app.services.incident_type_service import IncidentTypeService
-from app.utils.auth import token_required, require_entity_permission, _has_entity_permission, _plan_permite
+from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
 
 bp_incident_type = Blueprint('incident_type', __name__, url_prefix='/incident_type')
@@ -15,70 +14,12 @@ FIELD_READ_BIT = 2
 FIELD_WRITE_BITS = 1 | 4
 
 
-def _require_incident_type_read(fn):
-    """Lee el catalogo de tipos de vale quien administra `incident_type` de
-    verdad (modulo `operaciones`) O quien solo necesita clasificar un vale al
-    levantarlo -- `warehouse_voucher`/`warehouse_prevoucher` (Almacenista,
-    Supervisor).
-
-    Sin esto, Almacenista se quedaba sin poder levantar un vale: el
-    desplegable de tipo (`GET /incident_type/`) devolvia 403 porque
-    `incident_type` vive en el modulo "operaciones", que Almacenista no
-    tiene -- ni deberia tener completo solo por esto, es CRUD de proyectos y
-    tareas que no le corresponden. Mismo patron que `require_warehouse_read`
-    en `routes/warehouse_voucher.py`: ampliar SOLO la lectura, con una llave
-    que ya existe, en vez de dar el modulo entero.
-    """
-    from app.services.inventory_service import has_capability
-    from app.models.session import transaction_context
-
-    @wraps(fn)
-    def wrapper(user_data, *args, **kwargs):
-        if not _plan_permite('incident_type'):
-            return jsonify({
-                'error_key': 'errors.module_not_in_plan',
-                'meta': {'entity': 'incident_type'},
-            }), 403
-        with transaction_context() as db:
-            permitido = (
-                _has_entity_permission(user_data, 'incident_type', 'read')
-                or has_capability(db, user_data, 'warehouse_voucher')
-                or has_capability(db, user_data, 'warehouse_prevoucher')
-            )
-        if not permitido:
-            return jsonify({
-                'error_key': 'errors.permission_denied',
-                'meta': {'entity': 'incident_type', 'action': 'read'},
-            }), 403
-        return fn(user_data, *args, **kwargs)
-    return wrapper
-
-
 def _actor_has_unrestricted_field_access(user_data: dict) -> bool:
     return bool(
         user_data.get('is_superuser')
         or user_data.get('is_bootstrap_admin')
         or user_data.get('user_type') == 'admin'
     )
-
-
-def _actor_reads_incident_type_by_capability(user_data: dict) -> bool:
-    """Almacenista (y Supervisor, con solo `warehouse_prevoucher`) ve el
-    catalogo completo -- id + descripcion -- aunque nunca haya tenido fila de
-    `nm_field_permission` para 'incident_type': esa fila se DERIVA de
-    `entity_permission`, y estos roles no tienen ninguna para esta entidad
-    (no tienen el modulo "operaciones"). Sin esto, `_require_incident_type_read`
-    deja pasar la ruta pero la respuesta llega solo con el id -- el
-    desplegable del vale se ve vacio igual.
-    """
-    from app.services.inventory_service import has_capability
-    from app.models.session import transaction_context
-
-    with transaction_context() as db:
-        return (
-            has_capability(db, user_data, 'warehouse_voucher')
-            or has_capability(db, user_data, 'warehouse_prevoucher')
-        )
 
 
 def _safe_int_value(value):
@@ -92,8 +33,6 @@ def _field_sets_for_actor(user_data: dict) -> tuple[set[str], set[str]]:
     """Campos que el actor puede ver y campos que puede escribir."""
     if _actor_has_unrestricted_field_access(user_data):
         return set(ALLOWED_FIELDS), set(ALLOWED_FIELDS)
-    if _actor_reads_incident_type_by_capability(user_data):
-        return set(ALLOWED_FIELDS), set()
 
     permission_id = _safe_int_value(user_data.get('id_permission') or user_data.get('permission_id'))
     if not permission_id:
@@ -187,7 +126,7 @@ def list_incident_type_options(user_data):
 
 @bp_incident_type.route('/', methods=['GET'])
 @token_required
-@_require_incident_type_read
+@require_entity_permission('incident_type', 'read')
 def list_incident_type(user_data):
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 20))
@@ -198,7 +137,7 @@ def list_incident_type(user_data):
 
 @bp_incident_type.route('/<id_incident_type>', methods=['GET'])
 @token_required
-@_require_incident_type_read
+@require_entity_permission('incident_type', 'read')
 def get_incident_type(user_data, id_incident_type):
     return _jsonify_projected_record(user_data, IncidentTypeService.get(id_incident_type))
 

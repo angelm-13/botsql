@@ -724,7 +724,17 @@ class TestElSupervisorTomaElProyecto(TestProjectWorkflowService):
         self.assertEqual("errors.permission_denied", fallo.exception.message_key)
 
     def test_a_taken_project_is_not_taken_again(self):
-        """Quitarselo a otro seria reasignar, y eso no es tomar."""
+        """Quitarselo a otro seria reasignar, y eso no es tomar.
+
+        Desde la correccion de visibilidad (2026-09-29, commit 2013b4c):
+        `otro_taller` ni siquiera VE un proyecto que ya tomo OTRO Jefe de
+        taller (`_scoped_query`, scope "execution", ya no incluye lo tomado
+        por alguien mas). `take_project` llama a `_get_visible_project`
+        primero, asi que el 404 llega antes de que la regla de
+        "ya esta tomado" tenga oportunidad de hablar -- es el mismo
+        resultado que ver cualquier otro recurso fuera de alcance, no un
+        caso especial de este flujo.
+        """
         id_proyect = self._autorizado()
         take_project(id_proyect, self.workshop)
         otro_taller = {"id_user": 32, "id_permission": 301}
@@ -732,7 +742,7 @@ class TestElSupervisorTomaElProyecto(TestProjectWorkflowService):
         with self.assertRaises(AppError) as fallo:
             take_project(id_proyect, otro_taller)
 
-        self.assertEqual("errors.project_already_taken", fallo.exception.message_key)
+        self.assertEqual("errors.resource_not_found", fallo.exception.message_key)
 
     def test_taking_it_twice_is_the_same_as_taking_it_once(self):
         id_proyect = self._autorizado()
@@ -754,6 +764,10 @@ class TestElSupervisorTomaElProyecto(TestProjectWorkflowService):
         self.assertEqual(32, tomado["id_supervisor"])
 
     def test_nobody_else_releases_what_they_do_not_have(self):
+        """Mismo motivo que arriba: `otro_taller` ya no ve este proyecto
+        (correccion de visibilidad, commit 2013b4c), asi que `release_project`
+        -que tambien pasa por `_get_visible_project` primero- da 404 antes de
+        llegar al candado de "no es tuyo"."""
         id_proyect = self._autorizado()
         take_project(id_proyect, self.workshop)
         otro_taller = {"id_user": 32, "id_permission": 301}
@@ -761,4 +775,4 @@ class TestElSupervisorTomaElProyecto(TestProjectWorkflowService):
         with self.assertRaises(AppError) as fallo:
             release_project(id_proyect, otro_taller)
 
-        self.assertEqual("errors.permission_denied", fallo.exception.message_key)
+        self.assertEqual("errors.resource_not_found", fallo.exception.message_key)

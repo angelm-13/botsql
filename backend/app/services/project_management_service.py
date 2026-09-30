@@ -125,6 +125,11 @@ PROJECT_MUTABLE_FIELDS = {
     "folio", "purchase_order",
     "purchase_order_item", "delivery_date",
     "id_drawing_document",
+    # El checkbox de "requiere maquila". Se captura al crear (por omision
+    # True, el comportamiento de siempre) y se puede corregir despues por si
+    # se marco mal -- no se bloquea al autorizar porque no hay ningun dato
+    # que dependa de eso todavia en ese momento.
+    "requires_maquila",
     # `priority`/`total_cost` tampoco estan aqui a proposito: son exclusivos
     # de Gerencia y se filtran/validan aparte, en `_apply_management_only_fields`
     # -- meterlos aqui dejaria pasar el valor crudo del payload sin validar
@@ -182,10 +187,18 @@ def normalize_project_status(value) -> str:
     return {"active": "draft", "activo": "draft", "borrador": "draft"}.get(status, status)
 
 
-def validate_project_transition(current_status, target_status, reason=None) -> str:
+def validate_project_transition(current_status, target_status, reason=None, *, requires_maquila=True) -> str:
     current = normalize_project_status(current_status)
     target = normalize_project_status(target_status)
-    if current not in PROJECT_TRANSITIONS or target not in PROJECT_TRANSITIONS[current]:
+    allowed_targets = PROJECT_TRANSITIONS.get(current, set())
+    # Un proyecto que NO requiere maquila (pinturas, drenaje, cimientos) no
+    # pasa por el taller: "en espera de material" y "en proceso" son pasos
+    # del recorrido de taller, no del comercial. Gerente lo autoriza y, en
+    # cuanto el supervisor le avisa que ya no falta nada, lo completa
+    # directo desde "autorizado" -- sin los dos pasos intermedios.
+    if not requires_maquila and current == "authorized":
+        allowed_targets = allowed_targets | {"completed"}
+    if current not in PROJECT_TRANSITIONS or target not in allowed_targets:
         raise AppError(
             "errors.project_invalid_transition",
             409,
@@ -469,6 +482,12 @@ def _scoped_query(db, user_data: dict):
                 and_(
                     Proyect.proyect_status.in_(WORKSHOP_VISIBLE_STATUSES),
                     Proyect.id_supervisor.is_(None),
+                    # Un proyecto sin maquila no pasa por el taller -- Gerente
+                    # lo autoriza y lo completa directo, sin que Jefe de
+                    # taller participe en ningun momento. Sin este filtro
+                    # aparecia como "libre para tomar" un proyecto que nunca
+                    # le va a tocar.
+                    Proyect.requires_maquila.is_(True),
                 ),
             )
         )
@@ -1230,7 +1249,8 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
     with transaction_context() as db:
         project = _get_visible_project(db, project_id, user_data, for_update=True)
         current = normalize_project_status(project.proyect_status)
-        validated_target = validate_project_transition(current, target, reason)
+        validated_target = validate_project_transition(
+            current, target, reason, requires_maquila=project.requires_maquila)
         scope = _scope_name(db, user_data)
         leads_it = is_project_leader(project, user_data)
 
@@ -1263,6 +1283,13 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
             # llego.
             or (validated_target == "waiting_material" and current == "authorized" and puede_autorizar)
             or (validated_target == "in_progress" and current == "waiting_material" and puede_autorizar)
+            # Un proyecto sin maquila salta directo de "autorizado" a
+            # "completado" -- lo decide quien autoriza, igual que el resto
+            # del recorrido comercial de este bloque. `validate_project_transition`
+            # ya solo deja pasar este destino cuando `requires_maquila` es
+            # falso; aqui solo falta decir QUIEN puede pedirlo.
+            or (validated_target == "completed" and current == "authorized"
+                and not project.requires_maquila and puede_autorizar)
             # El resto de "en proceso" (reanudar tras un paro) y
             # "detenido"/"terminado" los sigue controlando quien ejecuta.
             or (validated_target == "in_progress" and current == "stopped" and puede_ejecutar)

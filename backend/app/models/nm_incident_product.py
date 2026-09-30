@@ -48,6 +48,16 @@ class NmIncidentProduct(Base):
     # que el libro de inventario necesita para saber si descontar, devolver o
     # solo cambiar de sitio.
     direction: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # A que operador u otro supervisor se le entrega esta pieza -- distinto
+    # del responsable del vale completo (`incident.id_user`): el vale puede
+    # salir a nombre de un supervisor y la herramienta pasar de mano en mano
+    # hasta quien de verdad la va a usar. `custody_confirmed_date` es cuando
+    # el supervisor dueño del vale confirma que la recupero de manos de esa
+    # persona -- un paso INTERMEDIO, no la devolucion al almacen (esa sigue
+    # siendo `close_date`). Ver `warehouse_voucher_service.py`.
+    id_user_delivered_to: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('user.id_user'), nullable=True)
+    custody_confirmed_date: Mapped[object] = mapped_column(DateTime, nullable=True)
     # Desde cuando y hasta cuando. `close_date` ya decia cuando se cerro, pero
     # sin `due_date` no se podia listar lo vencido, que es la razon de llevar
     # vales.
@@ -70,6 +80,8 @@ class NmIncidentProduct(Base):
             'id_location_from': to_json_value(self.id_location_from),
             'id_location_to': to_json_value(self.id_location_to),
             'direction': to_json_value(self.direction),
+            'id_user_delivered_to': to_json_value(self.id_user_delivered_to),
+            'custody_confirmed_date': to_json_value(self.custody_confirmed_date),
             'start_date': to_json_value(self.start_date),
             'due_date': to_json_value(self.due_date),
             'close_date': to_json_value(self.close_date),

@@ -542,6 +542,13 @@ export const getOverdueVoucherLines = () => request("/vouchers/overdue");
 export const getAssetStatusSummary = (params = {}) => request("/assets/summary", { params });
 export const closeWarehouseVoucherLine = (idLine, payload = {}) =>
   request(`/vouchers/lines/${idLine}/close`, { method: "POST", body: payload });
+// A que operador u otro supervisor se le entrega esta pieza, y cuando el
+// dueno del vale confirma que la recupero -- paso intermedio, no la
+// devolucion al almacen (esa sigue siendo `closeWarehouseVoucherLine`).
+export const deliverWarehouseVoucherLine = (idLine, payload = {}) =>
+  request(`/vouchers/lines/${idLine}/deliver-to`, { method: "POST", body: payload });
+export const confirmWarehouseVoucherLineCustody = (idLine) =>
+  request(`/vouchers/lines/${idLine}/confirm-custody`, { method: "POST" });
 
 export const getAllMaterial = (params = {}) => request("/material/", { params });
 export const getMaterial = (id) => request(`/material/${id}`);
