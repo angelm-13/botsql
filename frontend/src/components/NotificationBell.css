@@ -123,6 +123,8 @@
   margin-bottom: 4px;
   word-break: break-word;
   line-height: 1.3;
+  /* Respeta los saltos de linea del mensaje (listas con viñetas); una sola linea se ve igual. */
+  white-space: pre-line;
 }
 
 .notification-item-time {
