@@ -135,6 +135,46 @@ ya pusheados. Sin desplegar a ningún ambiente real todavía — `initAngm` no
 dispara auto-deploy (solo `initAlan` lo hace, a `tyakxa-dev`); falta
 mergear.
 
+### Merge de `initAlan` (87 commits) a `initAngm` local — 2026-09-30
+
+`git merge origin/initAlan` sin conflictos de código real — solo
+`CLAUDE.md` (resuelto conservando ambas bitácoras, la de esta rama y la
+del frente de Dashboard/KPIs de Adser de abajo). Trae el dashboard en
+masonry de Adser, la reconciliación de vales migrados, y varios fixes de
+`alan lopez`/Aurora Rodríguez del 2026-09-29 (ver sus propios mensajes de
+commit).
+
+**Bug real destapado al reconstruir y levantar el stack completo**: el
+`db-migrate` truena con
+`CheckViolation: proyect_event_event_type_check` al toparse con un evento
+`'taken'` real (de haber "tomado" un proyecto durante las pruebas de
+`jefetaller1`/`jefetaller2` de la sección de arriba). Causa: dos
+migraciones viejas (`20260911180000`, `20260921100000`) reaplican su
+propio `DROP CONSTRAINT` + `ADD CONSTRAINT` en **cada arranque del pod**
+(sin tabla de control, ver sección de "Ambiente de desarrollo" más abajo)
+y cada una afirmaba en su propio comentario traer "la lista FINAL,
+idéntica a las otras" — pero a ambas les faltaban `'taken'`/`'released'`
+(agregados después por `20260918130000`). Como corren en orden por
+fecha, revertían el constraint a una versión más angosta que la vigente
+y tronaban contra cualquier base con un evento `'taken'` real —
+**exactamente el mismo patrón de regresión que ya tumbó tyakxa-dev el
+2026-09-24** (documentado en el propio comentario de
+`20260924190000`), esta vez en dos migraciones más viejas que nadie
+había vuelto a revisar. Corregido agregando `'taken', 'released'` a las
+dos listas; confirmado con `docker compose up -d db-migrate` de nuevo
+sobre el mismo volumen (sin `down -v`): `esquema al dia`, sin error.
+Commit `bc2e965`.
+
+**Lección para la próxima vez que la lista de `event_type` crezca**: hay
+que actualizar las CUATRO migraciones que la reaplican
+(`20260911180000`, `20260918130000`, `20260921100000`, `20260924190000`),
+no solo la más nueva — este bug es la prueba de que "solo la más nueva"
+no es seguro, porque las viejas se lo llevan por delante en cada
+arranque igual. Vale la pena, en algún momento, colapsar las cuatro en
+una sola fuente de verdad (o mover el constraint a la más nueva
+únicamente y que las viejas dejen de tocarlo) — no se hizo en esta
+sesión por no ser parte del pedido original.
+
 ## ESTADO: Dashboard y KPIs de Adser (2026-09-29) — frente actual
 
 Entrega a Adser. Rama `initAlan`; los commits de esta línea se prueban en
