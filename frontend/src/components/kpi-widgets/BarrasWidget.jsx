@@ -1,3 +1,4 @@
+import { useState } from "react";
 import PropTypes from "prop-types";
 import {
   Bar, BarChart, CartesianGrid, Cell, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -39,6 +40,10 @@ TooltipRico.defaultProps = { active: false, payload: null, label: "", series: []
 export default function BarrasWidget({
   datos, series, campoEtiqueta, animar, onBarClick, barraResaltada, colorPorFila,
 }) {
+  // Las barras se dibujan UNA vez. Recharts las vuelve a animar cada vez que le llega un `datos` nuevo
+  // (aqui se recalcula en cada render de la tarjeta), y con un filtro entre tarjetas eso hacia que las
+  // barras "crecieran" de nuevo a cada clic.
+  const [yaAnimo, setYaAnimo] = useState(false);
   return (
     <ResponsiveContainer width="100%" height={220}>
       <BarChart data={datos} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
@@ -54,8 +59,9 @@ export default function BarrasWidget({
             name={serie.nombre}
             fill={serie.color}
             radius={[4, 4, 0, 0]}
-            isAnimationActive={animar}
+            isAnimationActive={animar && !yaAnimo}
             animationDuration={700}
+            onAnimationEnd={() => setYaAnimo(true)}
             cursor={onBarClick ? "pointer" : "default"}
             onClick={onBarClick}
           >
