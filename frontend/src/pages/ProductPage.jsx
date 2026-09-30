@@ -3,8 +3,9 @@ import { ArrowUpRight, RefreshCw, Search, Tags, Trash2, Pencil, History} from "l
 import { Link } from "react-router-dom";
 import FiltroBuscable from "../components/FiltroBuscable.jsx";
 import { useI18n } from "../i18n";
-import { getAllProduct, createProduct, updateProduct, deleteProduct, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, uploadProductImage, getAllBrand, getAllProductFamily, getAllInventoryStatus, getAllLocation, getAllMaterial } from "../api";
+import { getAllProduct, createProduct, updateProduct, deleteProduct, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, uploadProductImage, getAllBrand, getAllProductFamily, getAllInventoryStatus, getAllLocation, getAllMaterial, urlDeArchivo } from "../api";
 import { fetchAllPages } from "../utils/fetchAllPages";
+import { colorDeEstatus } from "../utils/estatusDePieza";
 import Pagination from "../components/Pagination.jsx";
 import ProductHistory from "../components/ProductHistory.jsx";
 import PageHeader from "../components/PageHeader.jsx";
@@ -52,6 +53,10 @@ export default function ProductPage() {
   const [errorMeta, setErrorMeta] = useState(null);
   const [selectedImageFile, setSelectedImageFile] = useState(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState("");
+  // Los productos cuya foto no cargo (archivo que no existe): se recuerdan para
+  // pintar el marcador en lugar del icono de imagen rota.
+  const [fotosRotas, setFotosRotas] = useState(() => new Set());
+  const marcarFotoRota = (idProduct) => setFotosRotas((antes) => new Set(antes).add(idProduct));
   const currentUser = useMemo(() => readCurrentUser(), []);
   const isSuperUser = Boolean(currentUser?.is_superuser || currentUser?.is_bootstrap_admin || currentUser?.username === "admin1");
   const currentRoleId = currentUser?.id_permission;
@@ -218,14 +223,6 @@ export default function ProductPage() {
   }
 
 
-  function buildImageUrl(value) {
-    if (!value) return "";
-    const text = String(value);
-    if (/^https?:\/\//i.test(text)) return text;
-    const base = import.meta.env.VITE_API_BASE_URL || "http://localhost:5001";
-    return `${base.replace(/\/+$/, "")}/${text.replace(/^\/+/, "")}`;
-  }
-
   function clearProductImageSelection() {
     setSelectedImageFile(null);
     setImagePreviewUrl("");
@@ -273,8 +270,12 @@ export default function ProductPage() {
   }
 
   function productStatusColor(value) {
+    // El color que el administrador le puso al estado en el catalogo manda; si el
+    // texto no coincide con ninguna fila (ENTRADA, SALIDA, DESTRUCCION... no la
+    // tienen), se cae a la paleta por gravedad de `estatusDePieza.js`.
     const color = String(productStatusMeta(value)?.color || "").trim();
-    return /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(color) ? color : "";
+    if (/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(color)) return color;
+    return colorDeEstatus(value);
   }
 
   function productHexToRgba(hex, alpha) {
@@ -408,7 +409,7 @@ export default function ProductPage() {
     if (ENTITY_KEY === "user") editData.password = "";
     setFormData(editData);
     setSelectedImageFile(null);
-    setImagePreviewUrl(item.path_imagen ? buildImageUrl(item.path_imagen) : "");
+    setImagePreviewUrl(item.path_imagen ? urlDeArchivo(item.path_imagen) : "");
     setFieldErrors({});
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -785,11 +786,11 @@ export default function ProductPage() {
               {canSeeField("color") && <td><pre className="cell-value">{formatTableValue(item.color)}</pre></td>}
               {canSeeField("is_directly_related_to_product_service") && <td><pre className="cell-value">{formatTableValue(item.is_directly_related_to_product_service)}</pre></td>}
               {canSeeField("product_status") && <td><span style={productStatusBadgeStyle(item.product_status)}>{productStatusDisplayLabel(item.product_status)}</span></td>}
-              {canSeeField("path_imagen") && <td>{item.path_imagen ? <img className="table-image" src={buildImageUrl(item.path_imagen)} alt={t("common.image", "Imagen")} /> : <span className="muted">-</span>}</td>}
+              {canSeeField("path_imagen") && <td>{item.path_imagen && !fotosRotas.has(item.id_product) ? <img className="table-image" src={urlDeArchivo(item.path_imagen)} alt={t("common.image", "Imagen")} onError={() => marcarFotoRota(item.id_product)} /> : <span className="muted">-</span>}</td>}
               {canSeeField("product_code") && <td><pre className="cell-value">{formatTableValue(item.product_code)}</pre></td>}
         </tr>)}</tbody></table></div>}
 
-      {canRead && view === "kanban" && filtered.length > 0 && <div className="kanban">{Object.entries(groups).map(([key, groupItems]) => <div className="kanban-column" key={key}><h3>{key} <span>{groupItems.length}</span></h3>{groupItems.map((item) => <article className="kanban-card product-kanban-card" style={productStatusCardStyle(item.product_status)} key={item.id_product}>{canSeeField("path_imagen") && item.path_imagen && <img className="kanban-image" src={buildImageUrl(item.path_imagen)} alt={t("common.image", "Imagen")} />}<strong>{String(item.product_code ?? item.id_product)}</strong><small>#{item.id_product}</small><div className="product-kanban-details product-kanban-compact">
+      {canRead && view === "kanban" && filtered.length > 0 && <div className="kanban">{Object.entries(groups).map(([key, groupItems]) => <div className="kanban-column" key={key}><h3>{key} <span>{groupItems.length}</span></h3>{groupItems.map((item) => <article className="kanban-card product-kanban-card" style={productStatusCardStyle(item.product_status)} key={item.id_product}>{canSeeField("path_imagen") && item.path_imagen && !fotosRotas.has(item.id_product) && <img className="kanban-image" src={urlDeArchivo(item.path_imagen)} alt={t("common.image", "Imagen")} onError={() => marcarFotoRota(item.id_product)} />}<strong>{String(item.product_code ?? item.id_product)}</strong><small>#{item.id_product}</small><div className="product-kanban-details product-kanban-compact">
           {canSeeField("product_status") && item.product_status && <p><span>{t("fields.product.product_status", "Estado")}:</span> <strong style={productStatusBadgeStyle(item.product_status)}>{productStatusDisplayLabel(item.product_status)}</strong></p>}
           {canSeeField("descripcion") && item.descripcion && <p className="wide"><span>{t("fields.product.descripcion", "Descripcion")}:</span> <strong>{formatTableValue(item.descripcion)}</strong></p>}
           {canSeeField("id_location") && item.id_location && <p><span>{t("fields.product.id_location", "Ubicacion")}:</span> <strong>{productKanbanDisplayLabel(locationOptions, "id_location", "location", item.id_location)}</strong></p>}
