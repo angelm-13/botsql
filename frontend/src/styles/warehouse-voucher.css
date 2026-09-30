@@ -237,6 +237,14 @@
 .vale-marca.fuera.vencida { background: #fecaca; }
 .vale-marca.devuelto { background: #dcfce7; color: #14532d; }
 
+/* A quien se entrego la pieza, y la confirmacion de que volvio a manos del
+   responsable del vale -- un paso intermedio, no la devolucion al almacen. */
+.vale-custodia {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-left: 8px; font-size: 12.5px;
+}
+.vale-custodia select { max-width: 160px; }
+
 /* La misma pareja de colores, en miniatura, para leer la lista de vales sin
    abrir cada uno. */
 .vale-marca-mini {

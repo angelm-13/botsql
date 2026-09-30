@@ -111,6 +111,57 @@ def calculate_totals(lines, tax_rate=Decimal("0")):
     }
 
 
+def totals_from_priced_lines(lines, fallback_tax_rate=Decimal("0")):
+    """Suma lo que CADA renglon ya trae calculado, en vez de recalcular todo
+    contra una sola tasa del encabezado.
+
+    Bug real corregido (2026-09-29): `calculate_totals(lines, tax_rate)`
+    ignora por completo `tax_applicable`/`line_tax`/`tax_rate` de cada
+    renglon -- aplica una tasa unica a todo el subtotal. Si al convertir una
+    cotizacion el encabezado de la factura no trae `tax_rate` capturado (no
+    es un campo obligatorio), el IVA que el cliente ya vio en su cotizacion
+    desaparecia sin ningun error visible.
+
+    Prioridad por renglon: se usa `line_tax` si ya viene capturado (es lo
+    que el cliente vio y aprobo en la cotizacion, no se recalcula). Si falta,
+    se calcula con la tasa PROPIA del renglon (`tax_rate`) cuando
+    `tax_applicable` es verdadero. Solo si ninguno de los dos esta capturado
+    se usa `fallback_tax_rate` -- el mismo comportamiento de antes, pero como
+    ultimo recurso y no como unica fuente.
+    """
+    subtotal = Decimal("0")
+    discount = Decimal("0")
+    tax = Decimal("0")
+    fallback_rate = _decimal(fallback_tax_rate, "tax_rate")
+
+    for line in lines:
+        quantity = _decimal(line.get("quantity"), "quantity")
+        unit_price = _decimal(line.get("gross_price"), "gross_price")
+        line_discount = _decimal(line.get("discount") or line.get("descuento"), "discount")
+        if quantity <= 0 or unit_price < 0 or line_discount < 0:
+            raise AppError("errors.invalid_field", 400, {"field": "quotation_line"})
+        line_subtotal = quantity * unit_price
+        if line_discount > line_subtotal:
+            raise AppError("errors.invalid_field", 400, {"field": "discount"})
+        subtotal += line_subtotal
+        discount += line_discount
+
+        if line.get("line_tax") is not None:
+            tax += _decimal(line.get("line_tax"), "line_tax")
+        elif line.get("tax_applicable"):
+            renglon_rate = line.get("tax_rate")
+            rate = _decimal(renglon_rate, "tax_rate") if renglon_rate is not None else fallback_rate
+            tax += (line_subtotal - line_discount) * rate / Decimal("100")
+
+    total = subtotal - discount + tax
+    return {
+        "subtotal": subtotal.quantize(MONEY, rounding=ROUND_HALF_UP),
+        "discount": discount.quantize(MONEY, rounding=ROUND_HALF_UP),
+        "tax": tax.quantize(MONEY, rounding=ROUND_HALF_UP),
+        "total": total.quantize(MONEY, rounding=ROUND_HALF_UP),
+    }
+
+
 def link_line_to_task(line_id, task_id, user_data):
     with transaction_context() as db:
         line = db.get(InvoiceMaterialService, line_id)

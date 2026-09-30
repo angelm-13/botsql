@@ -317,10 +317,11 @@ CAPACIDADES = (
     # (via `team`/`nm_team_user`, sin inventar un rol nuevo para el obrero).
     #
     # Va como capacidad y no como bit de la entidad `proyect`/`task` porque no
-    # es un CRUD de una tabla del menu: la pantalla ya existe
-    # (`activity_logs`) y lo unico que faltaba era la puerta.
+    # es un CRUD de una tabla generico. `menu="sidebar"` (2026-09-30): la
+    # pantalla propia (`ActivityLogPage.jsx`) ya existe, antes se quedaba sin
+    # entrada de menu y Jefe de taller no tenia como llegar a ella.
     Capacidad("daily_activity_log", "Bitacora diaria de taller", "operaciones",
-              bits=CAPTURA, menu="hidden"),
+              bits=CAPTURA, menu="sidebar"),
     # Va en el engrane del encabezado, no en el menu vertical.
     #
     # Se habia movido a `sidebar` al retirar el engrane, razonando que habia

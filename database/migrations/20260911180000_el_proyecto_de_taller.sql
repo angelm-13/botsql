@@ -200,12 +200,23 @@ ALTER TABLE proyect_event ALTER COLUMN new_status TYPE VARCHAR(40);
 -- (mismo patron, otra columna). La lista de aqui en adelante es la FINAL,
 -- identica a la de 20260924190000 -- si vuelve a crecer, hay que actualizar
 -- las tres migraciones (esta, 20260921100000 y 20260924190000) a la vez.
+--
+-- 'taken'/'released' faltaban aqui (2026-09-30): esta migracion corre
+-- ANTES que 20260918130000 (que los agrego) y que 20260924190000 (que
+-- tambien los tiene), asi que en cualquier base con un evento 'taken' real
+-- -escrito por `take_project`- esta migracion lo revertia primero y
+-- tronaba con CheckViolation, aunque las dos migraciones mas nuevas
+-- estuvieran bien. Confirmado reproduciendolo en docker compose local
+-- (`docker compose down -v` + arranque limpio + `take_project` + segundo
+-- arranque). Mismo patron exacto que el comentario de arriba describe,
+-- solo que en esta migracion en vez de en la de 20260924190000.
 ALTER TABLE proyect_event DROP CONSTRAINT IF EXISTS proyect_event_event_type_check;
 
 ALTER TABLE proyect_event ADD CONSTRAINT proyect_event_event_type_check CHECK (
     event_type IN (
         'created', 'status_changed', 'message', 'task_event',
         'management_transition', 'payment_agreed', 'payment_settled',
+        'taken', 'released',
         'document_attached', 'document_removed',
         'task_status_changed', 'task_note'
     )

@@ -1,10 +1,299 @@
 # Contexto de sesión — tyakxa_tny (para retomar en otra conversación)
 
-Última actualización: 2026-09-29. Este archivo es el "dónde nos quedamos",
+Última actualización: 2026-09-30. Este archivo es el "dónde nos quedamos",
 aparte de `ARQUITECTURA_TYAKXA_TNY.md` (referencia técnica estable) y de
 `docs/PLAN_ACCION_MEJORA.md` (plan de mejora por auditoría). Cuando una
 sección se resuelve, se puede recortar; mientras tanto se deja completa para
 que una sesión nueva no tenga que releer el historial de chat.
+
+## Bitácora 2026-09-30 (continuación) — plantilla del PDF de vale igual a la del sistema anterior
+
+Pedido: rehacer el PDF del vale de almacén para que sea idéntico al del
+sistema anterior (se dio una foto de un vale impreso real como
+referencia). Commit `e27125e`.
+
+Se reemplazó por completo `documents-reports/templates/warehouse_voucher.html`:
+caja de firmas Entregado/Recibido Almacén/Personal, línea de
+identificación (ID Incidente/ID Vale/Responsable/Fecha), Nota,
+Descripción (el CLIENTE de la obra, no la descripción del proyecto —
+confirmado comparando contra el papel de referencia, que mostraba un
+nombre de empresa ahí) y la tabla de renglones con las columnas
+#/IDdb/Código/Descripción/Tipo/Cantidad/Precio Bruto/Recibido Sello y
+Firma. Todo duplicado dos veces en la misma hoja (copia Almacén / copia
+Personal), igual que el papel de referencia.
+
+**Dos bugs reales encontrados de paso, sin cobertura de pruebas
+previa** (nadie probaba el CONTENIDO de `documento_del_vale`, solo que
+el PDF se archivara):
+- El código de producto se leía de una llave que el helper de fichas de
+  producto nunca publica (`code` en vez de `product_code`) — la
+  columna "Código" salía SIEMPRE vacía en el PDF, para cualquier vale.
+- El precio bruto (campo nuevo de esta plantilla) viajaba como
+  `Decimal` crudo hacia la ficha que se archiva como JSON junto con la
+  versión del documento — tronaba con `TypeError` al archivar
+  CUALQUIER vale cuyo producto tuviera precio capturado. Detectado
+  corriendo la suite completa, no al escribir el código.
+
+Verificado generando PDFs reales (no con datos mockeados) contra dos
+vales reales de la base: uno sin proyecto (Descripción en blanco) y uno
+con proyecto/cliente ligado (Descripción: "BMW Manufacturing de Mexico
+SA de CV", igual al "APELSA" del papel de referencia). Sin LibreOffice
+ni poppler instalados en este Windows local, así que la verificación
+visual se hizo leyendo el PDF directamente (el propio Read del agente
+sabe renderizar PDF), no con el `soffice.py`/`pdftoppm` que sugiere el
+skill de docx (pensado para macOS/Linux).
+
+## Bitácora 2026-09-30 (continuación) — prueba del flujo completo con Jefe de taller
+
+Pedido: probar en navegador el flujo de proyectos con Jefe de taller
+también (tras el punto de maquila/custodia de arriba). Se destapó un bug
+real preexistente, no introducido en esta sesión: **`take_project`/
+`release_project` (backend) y sus clientes de API (`takeProyect`/
+`releaseProyect`) existían, pero ningún botón de `ProjectManagementPage.jsx`
+los llamaba** — código muerto del lado del cliente. Jefe de taller no
+tenía NINGUNA forma de tomar un proyecto libre desde el navegador, solo
+vía script directo al backend (que es como se probó el flujo en sesiones
+anteriores, sin darse cuenta de que la UI real no lo ofrecía).
+
+Corregido: dos botones nuevos en `ProjectActions` — "Tomar proyecto"
+(modo taller, cuando el proyecto sigue sin supervisor) y "Soltar
+proyecto" (para quien ya lo tiene). Commit `0429574`.
+
+Ciclo completo probado en navegador real con clics reales, con un
+proyecto que SÍ requiere maquila: Jefe de taller toma → Gerente autoriza
+→ espera de material → Jefe de taller crea una tarea → Gerente pasa a en
+proceso → Jefe de taller cierra la tarea → Jefe de taller completa el
+proyecto. Las 6 acciones con 200/201 real. También confirmado de nuevo
+que el proyecto sin maquila (de la sección de arriba) sigue sin aparecer
+en ninguna columna del tablero de Jefe de taller, incluida "Completado".
+
+## Bitácora 2026-09-29 — QA de cotización/factura, alta de proyectos, alta de cliente
+
+Pedido: revisar y probar (1) el flujo cotización→factura con fechas
+correctas y el estatus "pendiente" (Facturama en modo pruebas, no
+producción), (2) el flujo completo de creación de proyectos, anotando
+inconsistencias, y (3) qué campos del alta de cliente/empresa son
+realmente necesarios — quitar los que no, u ocultarlos si rompen tablas.
+Se probó vía API (scripts dentro del contenedor) y también en navegador
+real. 3 bugs reales encontrados y corregidos, commiteados y pusheados a
+`initAngm`.
+
+1. **IVA perdido al convertir cotización → factura.** `calculate_totals()`
+   ignoraba `tax_applicable`/`line_tax`/`tax_rate` de cada renglón y
+   recalculaba todo desde un solo `tax_rate` de cabecera — si ese campo
+   de cabecera venía vacío (no es obligatorio), la factura convertida
+   salía con IVA en $0 aunque la cotización sí lo hubiera capturado por
+   renglón. Nueva función
+   [totals_from_priced_lines()](backend/app/services/quotation_service.py)
+   que respeta el impuesto de cada renglón, con `calculate_totals()`
+   intacta para no arriesgar otros llamadores. Verificado con una
+   cotización de prueba (renglón con `line_tax=1600.00`, sin `tax_rate`
+   de cabecera): antes convertía a `tax: 0, total: 10000`; después,
+   `tax: 1600.0, total: 11600.0`.
+2. **`date_emision` de la factura se congelaba en la fecha de captura de
+   la cotización.** Una cotización de 20 días de antigüedad se convertía
+   en factura con esa misma fecha vieja — riesgo real de cumplimiento SAT
+   (el CFDI debe timbrarse cerca de la fecha real). Se agrega
+   `date_emision: datetime.utcnow()` al payload de
+   [convert_quotation_invoice()](backend/app/routes/invoice.py).
+   `date_expiration` se deja intacto a propósito (significado distinto
+   después de convertir). Verificado: cotización con `date_emision` de
+   hace 20 días → factura convertida con la fecha real de conversión.
+3. **Alta de proyecto rota con 500 para CUALQUIER usuario.**
+   `psycopg2.errors.NotNullViolation` en `priority`. Causa raíz: una
+   migración vieja (ya borrada del repo) había dejado `priority` y
+   `total_cost` con `NOT NULL` real en la base; la migración de
+   reemplazo de `initAlan` usa `ADD COLUMN IF NOT EXISTS` (no-op sobre
+   columna ya existente), así que la restricción vieja sobrevivía en
+   cualquier base que ya la hubiera corrido. Corregido con
+   `ALTER COLUMN ... DROP NOT NULL/DROP DEFAULT` +
+   `20260929090000_prioridad_y_costo_ya_no_obligatorios.sql`. Probado el
+   ciclo de vida completo del proyecto (crear → autorizar/denegar/cancelar
+   → tomar → tarea → completar → entregar) con los 4 roles operativos.
+4. **Alta de cliente/empresa: campos capturables sin ningún consumidor
+   real.** Auditoría (agente de exploración, citando archivo:línea de
+   cada consumidor real) sobre `CustomerSupplierPage.jsx` encontró
+   `title`, `last_fiscal_certification_date` y `logistics_notes` sin
+   ningún lector en el resto del sistema — se quitaron del formulario.
+   `sla_level`/`credit_limit` sí son NOT NULL con DEFAULT en la base pero
+   tampoco los lee ningún módulo real (ni facturación/POS, que tiene su
+   propio `credit_limit`, ni logística, que tiene su propio `sla_level`
+   en `logistics_contract`) — se ocultan del formulario pero se mantiene
+   su valor por omisión en `baseEmptyForm` para no romper el alta.
+
+(Esta misma auditoría destapó, un día después, que el selector de
+"Vendedor" del mismo formulario en realidad estaba roto para cualquiera
+que no fuera Administrator — ver la entrada de abajo, punto 4.)
+
+## Bitácora 2026-09-29/30 — visibilidad de taller, bitácora diaria, vale de Almacenista, Vendedor en Clientes
+
+Cuatro correcciones reales sobre `initAngm`, cada una probada en navegador
+real (no solo API), commiteadas y pusheadas.
+
+1. **Jefe de taller veía proyectos ya tomados por OTRO Jefe de taller.**
+   `_scoped_query()` (`project_management_service.py`, scope `"execution"`)
+   filtraba solo por estatus de taller activo, sin mirar quién lo había
+   tomado. Ahora solo muestra lo propio (`leader == actor` o
+   `id_supervisor == actor`) o lo que sigue libre
+   (`id_supervisor IS NULL`); lo tomado por otro Jefe de taller queda
+   fuera. Probado con dos Jefes de taller reales (`jefetaller1`/`jefetaller2`).
+   Efecto secundario de la prueba: un insert de ORM crudo para el segundo
+   usuario de prueba desincronizó la secuencia de `user.id_user` y pisó al
+   empleado migrado de Adser "ALFREDO GONZALEZ" (id=35) — restaurado a mano
+   y secuencia resincronizada (`setval` al `MAX(id_user)` real). Cuidado al
+   crear usuarios de prueba con `db.add(User(...))` en una base con IDs
+   migrados explícitos (adser): la secuencia puede no reflejar el máximo
+   real.
+
+2. **Bitácora diaria de taller sin pantalla.** El backend
+   (`activity_logs.py`) y el permiso (`daily_activity_log`) ya existían
+   desde antes, pero sin entrada de menú (`menu="hidden"`) ni componente
+   React — Jefe de taller no tenía cómo llegar a subir su bitácora. Se
+   agregó [ActivityLogPage.jsx](frontend/src/pages/ActivityLogPage.jsx)
+   (alta con proyecto propio tomado + plantilla de obreros vía
+   `getMyTeamWorkers()`, y listado propio), ruta en `App.jsx`, entrada de
+   menú en `Shell.jsx`, `menu="sidebar"` en `registry.py` y la migración
+   `20260930090000_bitacora_diaria_entra_al_menu.sql` (UPDATE explícito,
+   porque el sembrado con `ON CONFLICT DO NOTHING` no actualiza el menú de
+   una fila de `entity_permission` que ya existía). Probado end-to-end como
+   `jefetaller1`: alta con trabajador seleccionado, aparece en el listado.
+
+3. **Almacenista no podía levantar vale.** El catálogo `incident_type`
+   ("Tipo de vale") vive en el módulo `operaciones`, al que Almacenista no
+   tiene acceso — el desplegable de tipo volvía 403 y el vale quedaba
+   imposible de levantar aunque `warehouse_voucher` estuviera bien
+   concedido. Se agregó un guardia nuevo en
+   [incident_type.py](backend/app/routes/incident_type.py)
+   (`_require_incident_type_read`) que deja leer el catálogo a quien
+   administra `incident_type` de verdad O a quien solo necesita
+   clasificar un vale/prevale (`warehouse_voucher`/`warehouse_prevoucher`),
+   sin darle a Almacenista el módulo "operaciones" completo (eso le habría
+   mostrado Proyectos/Tareas/Incidencias de más). Segundo hueco relacionado,
+   a nivel de CAMPO: `nm_field_permission` se deriva de `entity_permission`,
+   y Almacenista nunca tuvo fila para `incident_type` — la respuesta llegaba
+   solo con el id, sin descripción, y el desplegable se veía vacío igual
+   (`_actor_reads_incident_type_by_capability`). Probado en navegador real
+   como Almacenista: `POST /vouchers` 201, vale abierto con su renglón.
+   Supervisor confirmado sin cambios: solo ve "Levantar prevale", nunca
+   "Abrir vale" — el diseño de separación de deberes ya era correcto.
+
+4. **Alta de cliente: "Vendedor" obligatorio pero imposible de elegir fuera
+   de Administrator.** El selector se poblaba con `getAllUser()` →
+   `GET /user/`, que exige el permiso completo de RH (módulo "seguridad",
+   solo Administrator). Gerente (que sí puede dar de alta clientes, `crm`
+   en CAPTURA) se topaba con el desplegable vacío — un campo obligatorio
+   que ningún rol de negocio real podía llenar. Cambiado a
+   `getUserOptions()` → `GET /user/options` (mismo patrón id+nombre sin
+   permiso de entidad que ya usa `WarehouseVoucherPage.jsx` para elegir
+   responsable de un vale), y de paso precargado con el usuario actual
+   (sigue editable) para que la mayoría de las altas no tengan que elegirlo
+   a mano. Probado en navegador real como Gerente: 47 opciones,
+   preseleccionado, `POST /customer_supplier/` 201.
+
+Todo esto quedó en 2 commits sobre `initAngm`
+(`2013b4c` visibilidad+bitácora, `6c59ab6` vale de Almacenista+Vendedor),
+ya pusheados. Sin desplegar a ningún ambiente real todavía — `initAngm` no
+dispara auto-deploy (solo `initAlan` lo hace, a `tyakxa-dev`); falta
+mergear.
+
+### Merge de `initAlan` (87 commits) a `initAngm` local — 2026-09-30
+
+`git merge origin/initAlan` sin conflictos de código real — solo
+`CLAUDE.md` (resuelto conservando ambas bitácoras, la de esta rama y la
+del frente de Dashboard/KPIs de Adser de abajo). Trae el dashboard en
+masonry de Adser, la reconciliación de vales migrados, y varios fixes de
+`alan lopez`/Aurora Rodríguez del 2026-09-29 (ver sus propios mensajes de
+commit).
+
+**Bug real destapado al reconstruir y levantar el stack completo**: el
+`db-migrate` truena con
+`CheckViolation: proyect_event_event_type_check` al toparse con un evento
+`'taken'` real (de haber "tomado" un proyecto durante las pruebas de
+`jefetaller1`/`jefetaller2` de la sección de arriba). Causa: dos
+migraciones viejas (`20260911180000`, `20260921100000`) reaplican su
+propio `DROP CONSTRAINT` + `ADD CONSTRAINT` en **cada arranque del pod**
+(sin tabla de control, ver sección de "Ambiente de desarrollo" más abajo)
+y cada una afirmaba en su propio comentario traer "la lista FINAL,
+idéntica a las otras" — pero a ambas les faltaban `'taken'`/`'released'`
+(agregados después por `20260918130000`). Como corren en orden por
+fecha, revertían el constraint a una versión más angosta que la vigente
+y tronaban contra cualquier base con un evento `'taken'` real —
+**exactamente el mismo patrón de regresión que ya tumbó tyakxa-dev el
+2026-09-24** (documentado en el propio comentario de
+`20260924190000`), esta vez en dos migraciones más viejas que nadie
+había vuelto a revisar. Corregido agregando `'taken', 'released'` a las
+dos listas; confirmado con `docker compose up -d db-migrate` de nuevo
+sobre el mismo volumen (sin `down -v`): `esquema al dia`, sin error.
+Commit `bc2e965`.
+
+**Lección para la próxima vez que la lista de `event_type` crezca**: hay
+que actualizar las CUATRO migraciones que la reaplican
+(`20260911180000`, `20260918130000`, `20260921100000`, `20260924190000`),
+no solo la más nueva — este bug es la prueba de que "solo la más nueva"
+no es seguro, porque las viejas se lo llevan por delante en cada
+arranque igual. Vale la pena, en algún momento, colapsar las cuatro en
+una sola fuente de verdad (o mover el constraint a la más nueva
+únicamente y que las viejas dejen de tocarlo) — no se hizo en esta
+sesión por no ser parte del pedido original.
+
+### Segundo hallazgo del merge: dos arreglos distintos para el mismo bug
+
+`incident_type` (mi fix de esta sesión, ver arriba) e `initAlan` (de forma
+independiente) resolvieron el MISMO problema — Almacenista sin acceso al
+catálogo de tipos de vale — con mecanismos distintos: yo con un guardia a
+medida (`_require_incident_type_read`) que ampliaba `GET /incident_type/`;
+initAlan con el patrón ya establecido `/incident_type/options` (igual que
+`/user/options`/`/proyect/options` — id+descripción, sin permiso de
+entidad). El merge combinó los dos SIN conflicto de texto (tocaban líneas
+distintas del archivo), pero un test que llegó con initAlan
+(`test_a_role_without_incident_type_permission_can_list_the_options`)
+asume que `GET /incident_type/` sigue devolviendo 403 para ese rol — cosa
+que mi guardia rompía. Se adoptó el patrón de initAlan (más consistente
+con el resto del código) y se revirtió el mío por completo.
+
+**Lección**: un merge sin conflicto de texto no es sinónimo de "sin
+conflicto real" — correr la suite completa después de todo merge grande
+es lo que lo destapa, no la ausencia de `<<<<<<<`.
+
+## Bitácora 2026-09-30 — maquila opcional + entrega de herramienta por operador
+
+Pedido de negocio nuevo, 5 puntos, todos entregados y probados en
+navegador real (commit `d7bdc6a`, sobre `initAngm`):
+
+1. Checkbox "Requiere maquila" al crear/editar proyecto
+   (`proyect.requires_maquila`, default `true` — compatible con lo
+   existente).
+2. Un proyecto sin maquila (pinturas, drenaje, cimientos): Gerente lo
+   autoriza igual, y en cuanto el supervisor avisa que ya no falta nada
+   lo completa DIRECTO desde "autorizado" — sin pasar por "en espera de
+   material"/"en proceso" (pasos pensados para cuando el taller sí
+   participa). `validate_project_transition()`/`transition_project()`
+   en `project_management_service.py`.
+3. Ya aparecía en el selector de proyecto del vale/prevale sin ningún
+   cambio — `project_options()` nunca filtró por estatus.
+4. El estado "completado" ya existía; y la visualización de material
+   asignado/sin devolver (`material_summary`) también — ambas
+   confirmadas, ninguna se tocó.
+5. A qué operador u otro supervisor se le entrega la herramienta de un
+   renglón del vale, y confirmación de que el supervisor dueño del vale
+   la recuperó — **por renglón**, no por vale completo. Columnas nuevas
+   `nm_incident_product.id_user_delivered_to`/`custody_confirmed_date`;
+   rutas `POST /vouchers/lines/<id>/deliver-to` y `/confirm-custody`,
+   candado propio (`_puede_gestionar_custodia`: el responsable del vale
+   — normalmente Supervisor, que nunca tiene `warehouse_voucher` — o
+   quien opera el almacén). Paso INTERMEDIO: la pieza sigue "fuera"
+   hasta la devolución real (`close_date`, sin tocar).
+
+Hallazgo lateral: Jefe de taller ya no ve un proyecto sin maquila en
+absoluto (mismo `_scoped_query` de la corrección del 2026-09-29) — nunca
+le toca, ni para tomarlo.
+
+Sin desplegar todavía a ningún ambiente real (mismo estado que el resto
+de `initAngm`: falta mergear a `initAlan`). Sin pruebas automatizadas
+nuevas para esta entrega — solo verificación manual en navegador; si se
+retoma este frente, vale la pena escribir los casos de
+`validate_project_transition`/`asignar_entrega_de_renglon`/
+`confirmar_recepcion_de_renglon` antes de tocarlo de nuevo.
 
 ## ESTADO: Dashboard y KPIs de Adser (2026-09-29) — frente actual
 
