@@ -1,8 +1,32 @@
-# Promoción de adser-prod a `de1aa56` — runbook para revisar (NO ejecutado)
+# Promoción de adser-prod a `de1aa56`
 
-**Estado: preparado el 2026-09-30, pendiente del OK de Alan y de una ventana.** Nada de esto
-se ha aplicado en `adser-prod`. El cambio del overlay está en el árbol de trabajo, sin
-commitear.
+**Estado: EJECUTADA el 2026-09-30, 23:22–23:27 UTC (17:22–17:27 hora de México), con el OK de
+Alan. Pasos 0 a 5 hechos y verificados; el paso 6 (avisos a `yesgo`) queda pendiente de su OK
+aparte.** Overlay promovido en el commit `fb674ae`.
+
+## Registro de la ejecución
+
+| Paso | Resultado |
+|---|---|
+| Antes de empezar | prod idéntico al ensayo (139 / 2745 / 2220, 67 permisos dados de baja, 0 notificaciones, mismas fechas de última modificación) |
+| 0 Respaldo | `adser_antes_de_de1aa56_20260930_2320.sql`, 12 574 047 bytes, termina en «dump complete»; copia local en `C:\Users\TDW2\respaldos_prod\` con el mismo SHA-256 (`d0b68a9c…822f`) |
+| 1 Overlay | `kubectl diff` mostró **solo** 6 líneas de imagen; archivo del VPS idéntico al del repo |
+| 2 Apply y rollout | backend, celery-worker, celery-beat y frontend en `de1aa56`; **1 min 44 s** de rollout (el backend estuvo sin servicio ~1.5 min); `postgres-0` se reinició unos segundos por el cambio de imagen, con los datos intactos; 118 migraciones, las 3 nuevas, «esquema al dia», **0 avisos** |
+| 2 Verificación | índice `uq_material_identidad` creado, `DEFAULT now()` en ambas tablas, 21 KPIs, estado de piezas 86 retirado / 27+11 dañado / 65 extraviado |
+| 3a `creation_date` | 139 incidencias, 2745 renglones; 2.ª corrida 0 |
+| 3b `start_date` | 2745 renglones |
+| 3-bis renglón 1495 | `UPDATE 1` (CRUZETA, vale 75) |
+| 3c gemelos | en seco: 0 cerrados, 66 ya cerrados (no se corrió sin `--dry-run`) |
+| 3d estado de vales | exactamente los 14 vales esperados; 2.ª corrida 0 |
+| 3e existencia | **328** ajustes (179 prestados + 149), 0 fallidos; 2.ª corrida 0 |
+| 4 Backfill de KPI | `ok: True`, 3014 filas, 8.9 s |
+| 5 Verificación | existencia 1881, ajustes 328 / −328, sin negativos, `cantidad` = existencia, 0 sin fechas, **184** préstamos abiertos, 6 vales vacíos (44, 120, 133, 134, 138, 139), CRUZETA 0 / 1, permisos dados de baja **67 (sin cambios)**, frontend HTTP 200, 0 errores en los logs de los 4 componentes, API 400 / 401 como debe |
+
+**No incluido en esta promoción:** desde `de1aa56` entraron al repo más cambios (Ángel y otros:
+5 migraciones, cambios al servicio de vales y a modelos). Van en una promoción aparte, con su propio
+ensayo sobre una copia de prod.
+
+*(Lo que sigue es el runbook tal como se preparó, para consulta.)*
 
 - **De:** `b21a793` (lo que corre hoy, verificado en el clúster).
 - **A:** `de1aa56`, **la misma versión que probó `tyakxa-dev`**. Las 4 imágenes existen: el bot
