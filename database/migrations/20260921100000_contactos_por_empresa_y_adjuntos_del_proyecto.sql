@@ -148,12 +148,20 @@ CREATE INDEX IF NOT EXISTS ix_proyect_document_proyect
 -- de aqui en adelante es la FINAL, identica a la de 20260911180000 y
 -- 20260924190000 -- si vuelve a crecer, hay que actualizar las tres a la
 -- vez.
+--
+-- 'taken'/'released' faltaban aqui tambien (2026-09-30), mismo hueco que
+-- en 20260911180000: esta migracion corre DESPUES de 20260918130000 (que
+-- los agrego) pero su lista no los traia, asi que revertia el constraint a
+-- una version mas angosta que la que acababa de dejar esa migracion --
+-- CheckViolation contra cualquier evento 'taken' real. Confirmado
+-- reproduciendolo en docker compose local.
 ALTER TABLE proyect_event DROP CONSTRAINT IF EXISTS proyect_event_event_type_check;
 
 ALTER TABLE proyect_event ADD CONSTRAINT proyect_event_event_type_check CHECK (
     event_type IN (
         'created', 'status_changed', 'message', 'task_event',
         'management_transition', 'payment_agreed', 'payment_settled',
+        'taken', 'released',
         'document_attached', 'document_removed',
         'task_status_changed', 'task_note'
     )
