@@ -11,7 +11,7 @@ Gerente). No cambian ningún dato ni permiso: solo dicen qué revisar.
 
 | Aviso | Casos en adser-prod (medido 2026-09-30) | Qué se le pide |
 |---|---|---|
-| Préstamos abiertos de herramientas que figuran en el almacén | 29 renglones, 13 responsables | Confirmar dónde está; si ya volvió, «Marcar devuelto» en el vale |
+| Préstamos abiertos de herramientas que figuran en el almacén | 29 renglones, 13 responsables: **28 «probablemente ya volvieron»** y **1 «parece vigente»** (pieza 320, PRENSA C 8", vale 100) | Confirmar dónde está; si ya volvió, «Marcar devuelto» en el vale. La lista va dividida para empezar por lo que casi seguro es solo un renglón sin cerrar |
 | Préstamos del sistema anterior sin herramienta en el catálogo | 5 (vales 1 ×2, 3, 36, 96) | Si alguna sigue fuera, registrarla en un vale nuevo |
 | Incidencia 90: el responsable cambió de nombre | 1 | Corregir el responsable si no es la misma persona |
 | Vales abiertos sin ningún material | 6 (44, 120, 133, 134, 138, 139) | Cerrarlos o cancelarlos |
@@ -56,6 +56,14 @@ En dev los ve quien entre como `admin1` (campana de la barra superior); se quita
 - La campana pintaba el mensaje sin respetar saltos de línea; una lista se veía como un
   párrafo corrido. Con `white-space: pre-line` se lee en viñetas (verificado en el navegador
   con la app local).
+- La división de los 29 préstamos sale de comparar, en el respaldo del sistema anterior, la fecha
+  de última actualización de la pieza con la del préstamo: si el estado «en almacén» se marcó
+  **después** del préstamo, alguien la regresó y solo faltó cerrar el renglón (28); si es
+  **anterior**, el préstamo parece vigente (1). Esa fecha **no se puede calcular al correr el
+  script**: `fix_adser_existencia_inicial.py` mueve la existencia y cambia `product.last_update_date`
+  de 341 piezas, así que la clasificación queda fija en el script (`PROBABLEMENTE_YA_VOLVIO`,
+  `PARECE_VIGENTE`). Una pieza que no esté en ninguna de las dos listas sale como «sin evidencia».
+  Es una pista, no una certeza: por eso solo se avisa y no se cierra ningún renglón.
 - Los 5 préstamos sin herramienta **no están en la base** (la migración los excluyó porque su
   producto no existe en el origen): sus datos están en el script, tomados del respaldo.
   Las otras tres consultas se calculan en vivo.

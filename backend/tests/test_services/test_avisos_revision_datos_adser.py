@@ -6,6 +6,8 @@
   cerrada y `revision_datos` la violaba: el script habria fallado al crear el primer aviso-;
 * un tema sin casos no genera aviso;
 * los textos agrupan por persona y por vale, y usan singular y plural correctos;
+* los prestamos que se contradicen con el estado se dividen en lo que probablemente ya volvio,
+  lo que parece vigente y lo que no tiene evidencia;
 * la incidencia solo se avisa si el responsable de verdad cambio.
 
 La parte que consulta la base se probo contra una copia de adser-prod (ver
@@ -22,11 +24,23 @@ from scripts import notify_adser_revision_datos as avisos
 TIPOS_ADMITIDOS = {"project_status_change", "project_modified", "activity_log_created",
                    "task_assigned", "material_confirmed", "custom"}
 
+# Dos piezas de la clasificacion fija y una que no esta en ella.
+VOLVIO, VIGENTE, NUEVA = 307, 320, 999999
+
 
 class TestElTipoSePuedeGuardar(unittest.TestCase):
 
     def test_el_tipo_es_uno_que_la_tabla_admite(self):
         self.assertIn(avisos.TIPO, TIPOS_ADMITIDOS)
+
+
+class TestLaClasificacionFija(unittest.TestCase):
+    """Sale del respaldo del sistema anterior (2026-09-30); no se calcula al correr el script."""
+
+    def test_son_28_y_1_y_no_se_cruzan(self):
+        self.assertEqual(len(avisos.PROBABLEMENTE_YA_VOLVIO), 28)
+        self.assertEqual(avisos.PARECE_VIGENTE, frozenset({320}))
+        self.assertFalse(avisos.PROBABLEMENTE_YA_VOLVIO & avisos.PARECE_VIGENTE)
 
 
 class TestPrestamosQueSeContradicen(unittest.TestCase):
@@ -36,10 +50,10 @@ class TestPrestamosQueSeContradicen(unittest.TestCase):
 
     def test_agrupa_por_persona_y_por_vale_y_ordena_por_cantidad(self):
         filas = [
-            ("ANA  LOPEZ", 7, "PERICA 12"),
-            ("MAXIMINO  CANO", 95, "ESCUADRA"),
-            ("MAXIMINO  CANO", 95, "TORQUIMETRO"),
-            ("MAXIMINO  CANO", 113, "DADO 22MM"),
+            ("ANA  LOPEZ", 7, "PERICA 12", 65),
+            ("MAXIMINO  CANO", 95, "ESCUADRA", 263),
+            ("MAXIMINO  CANO", 95, "TORQUIMETRO", 298),
+            ("MAXIMINO  CANO", 113, "DADO 22MM", 316),
         ]
         clave, titulo, mensaje = avisos.aviso_contradicciones(filas)
         self.assertEqual(clave, "contradicciones_entrada_abierto")
@@ -49,18 +63,43 @@ class TestPrestamosQueSeContradicen(unittest.TestCase):
         # El que mas tiene va primero.
         self.assertLess(mensaje.index("Maximino Cano"), mensaje.index("Ana Lopez"))
 
+    def test_divide_en_lo_que_volvio_lo_vigente_y_lo_que_no_tiene_evidencia(self):
+        filas = [
+            ("ANA LOPEZ", 7, "PERICA", VOLVIO),
+            ("LUIS RUIZ", 100, "PRENSA C", VIGENTE),
+            ("OMAR GONZALEZ", 45, "TALADRO", NUEVA),
+        ]
+        mensaje = avisos.aviso_contradicciones(filas)[2]
+        volvio = mensaje.index("PROBABLEMENTE YA VOLVIERON (1)")
+        vigente = mensaje.index("PARECEN VIGENTES (1)")
+        sin = mensaje.index("SIN EVIDENCIA (1)")
+        self.assertLess(volvio, vigente)
+        self.assertLess(vigente, sin)
+        # Cada persona cae en su seccion.
+        self.assertLess(volvio, mensaje.index("Ana Lopez"))
+        self.assertLess(mensaje.index("Ana Lopez"), vigente)
+        self.assertLess(vigente, mensaje.index("Luis Ruiz"))
+        self.assertLess(mensaje.index("Luis Ruiz"), sin)
+        self.assertGreater(mensaje.index("Omar Gonzalez"), sin)
+
+    def test_una_seccion_sin_casos_no_aparece(self):
+        mensaje = avisos.aviso_contradicciones([("ANA LOPEZ", 7, "PERICA", VOLVIO)])[2]
+        self.assertIn("PROBABLEMENTE YA VOLVIERON (1)", mensaje)
+        self.assertNotIn("PARECEN VIGENTES", mensaje)
+        self.assertNotIn("SIN EVIDENCIA", mensaje)
+
     def test_dice_que_hacer_con_la_pantalla_real(self):
-        mensaje = avisos.aviso_contradicciones([("ANA LOPEZ", 7, "PERICA")])[2]
+        mensaje = avisos.aviso_contradicciones([("ANA LOPEZ", 7, "PERICA", VOLVIO)])[2]
         self.assertIn("Vales de almacén", mensaje)
         self.assertIn("Marcar devuelto", mensaje)
 
     def test_singular(self):
-        titulo = avisos.aviso_contradicciones([("ANA LOPEZ", 7, "PERICA")])[1]
+        titulo = avisos.aviso_contradicciones([("ANA LOPEZ", 7, "PERICA", VOLVIO)])[1]
         self.assertTrue(titulo.startswith("1 préstamo abierto de herramientas"))
 
     def test_recorta_un_nombre_de_herramienta_muy_largo(self):
         largo = "X" * 80
-        mensaje = avisos.aviso_contradicciones([("ANA LOPEZ", 7, largo)])[2]
+        mensaje = avisos.aviso_contradicciones([("ANA LOPEZ", 7, largo, VOLVIO)])[2]
         self.assertNotIn(largo, mensaje)
         self.assertIn("…", mensaje)
 

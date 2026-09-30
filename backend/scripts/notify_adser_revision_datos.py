@@ -59,9 +59,22 @@ HUERFANOS = (
 # La incidencia 90 era de esta persona en el sistema anterior.
 INCIDENCIA_90 = (90, "Fernanda Contreras")
 
+# Piezas cuyo estado dice ENTRADA (en el almacen) pero tienen un prestamo abierto, clasificadas con
+# la fecha de su ultima actualizacion en el respaldo del sistema anterior (2026-09-30): si el estado
+# se marco DESPUES del inicio del prestamo, alguien la regreso al almacen y solo falto cerrar el
+# renglon (28 piezas); si es ANTERIOR, el prestamo parece vigente (1 pieza: 320, PRENSA C 8").
+# Esta fecha NO se puede calcular al correr el script: `fix_adser_existencia_inicial.py` mueve la
+# existencia y con ello cambia `product.last_update_date` (341 piezas), por eso quedan fijas aqui.
+PROBABLEMENTE_YA_VOLVIO = frozenset({
+    65, 263, 298, 307, 316, 338, 442, 576, 803, 885, 932, 957, 1132, 1206,
+    1225, 1256, 1296, 1460, 1547, 1722, 2208, 2297, 2305, 2309, 2318, 2326, 2332, 2414,
+})
+PARECE_VIGENTE = frozenset({320})
+
 SQL_CONTRADICCIONES = """
 SELECT u.full_name, r.id_incident,
-       coalesce(nullif(btrim(p.descripcion), ''), m.material_description, 'producto ' || p.id_product) AS herramienta
+       coalesce(nullif(btrim(p.descripcion), ''), m.material_description, 'producto ' || p.id_product) AS herramienta,
+       p.id_product
 FROM nm_incident_product r
 JOIN incident i ON i.id_incident = r.id_incident
 JOIN incident_type t ON t.id_incident_type = i.id_incident_type
@@ -112,13 +125,11 @@ def plural(n: int, uno: str, varios: str) -> str:
 
 # --- textos: funciones puras, sin base de datos -------------------------------------------
 
-def aviso_contradicciones(filas):
-    """filas: (responsable, vale, herramienta). None si no hay casos."""
-    if not filas:
-        return None
+def _lineas_por_persona(filas):
+    """filas: (responsable, vale, herramienta, id_pieza) -> lineas «• Persona (n): vale N — a, b; vale M — c»."""
     # persona -> vale -> herramientas, para no repetir el numero de vale en cada renglon.
     por_persona: dict[str, dict[int, list[str]]] = {}
-    for responsable, vale, herramienta in filas:
+    for responsable, vale, herramienta, _id_pieza in filas:
         por_persona.setdefault(nombre(responsable), {}).setdefault(vale, []).append(recortar(herramienta))
     lineas = []
     for persona, vales in sorted(por_persona.items(),
@@ -127,14 +138,44 @@ def aviso_contradicciones(filas):
         detalle = "; ".join(f"vale {vale} — " + ", ".join(herramientas)
                             for vale, herramientas in sorted(vales.items()))
         lineas.append(f"• {persona} ({total}): {detalle}")
+    return lineas
+
+
+def aviso_contradicciones(filas):
+    """filas: (responsable, vale, herramienta, id_pieza). None si no hay casos.
+
+    Se divide en lo que la fecha indica que ya volvio, lo que parece vigente y lo que no tiene
+    evidencia (una pieza nueva que no estaba cuando se clasifico), para que quien lo revise empiece
+    por lo que casi seguro es solo un renglon sin cerrar."""
+    if not filas:
+        return None
+    volvieron = [f for f in filas if f[3] in PROBABLEMENTE_YA_VOLVIO]
+    vigentes = [f for f in filas if f[3] in PARECE_VIGENTE]
+    sin_evidencia = [f for f in filas if f[3] not in PROBABLEMENTE_YA_VOLVIO and f[3] not in PARECE_VIGENTE]
+
+    secciones = []
+    if volvieron:
+        secciones.append(
+            f"PROBABLEMENTE YA VOLVIERON ({len(volvieron)}): la herramienta se marcó «en almacén» "
+            "después del préstamo; casi seguro solo falta cerrar el renglón.\n"
+            + "\n".join(_lineas_por_persona(volvieron)))
+    if vigentes:
+        secciones.append(
+            f"PARECEN VIGENTES ({len(vigentes)}): la marca «en almacén» es anterior al préstamo.\n"
+            + "\n".join(_lineas_por_persona(vigentes)))
+    if sin_evidencia:
+        secciones.append(
+            f"SIN EVIDENCIA ({len(sin_evidencia)}): no hay forma de saber cuál de los dos datos es cierto.\n"
+            + "\n".join(_lineas_por_persona(sin_evidencia)))
+
     n = len(filas)
     titulo = (f"{n} {plural(n, 'préstamo abierto', 'préstamos abiertos')} de herramientas "
               f"que figuran en el almacén")
     mensaje = (
         "Estos préstamos siguen abiertos, pero la herramienta está marcada como «en almacén»: "
-        "uno de los dos datos no es cierto. Confirmen dónde está. Si ya volvió, en Vales de "
-        "almacén abran el vale y pulsen «Marcar devuelto» en ese renglón (así vuelve a contar en "
-        "existencia). Si sigue con la persona, no hagan nada.\n\n" + "\n".join(lineas)
+        "uno de los dos datos no es cierto. Si ya volvió, en Vales de almacén abran el vale y "
+        "pulsen «Marcar devuelto» en ese renglón (así vuelve a contar en existencia). Si sigue con "
+        "la persona, no hagan nada.\n\n" + "\n\n".join(secciones)
     )
     return "contradicciones_entrada_abierto", titulo, mensaje
 

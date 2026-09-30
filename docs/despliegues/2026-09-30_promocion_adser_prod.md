@@ -37,7 +37,7 @@ capturó datos entre hoy y la ventana, los números esperados de abajo cambian.
   > Hola, el [día] a las [hora] actualizaremos el sistema de Adser. Estará fuera de servicio
   > unos 10 minutos. Después verán: los 14 vales que ya estaban todos devueltos pasan a
   > cerrados (bajan los «pendientes»); «Material prestado» ya cuenta lo dañado y deja fuera lo
-  > destruido y lo extraviado; la existencia baja en 327 unidades que figuraban en el
+  > destruido y lo extraviado; la existencia baja en 328 unidades que figuraban en el
   > almacén estando prestadas, destruidas o extraviadas; los vales y renglones migrados ganan
   > su fecha de captura; y Yessica González recibirá en la campana cuatro avisos de datos que
   > solo ustedes pueden confirmar. No se cambia ningún permiso.
@@ -107,10 +107,10 @@ dry-run no da lo esperado, **parar**.
 |---|---|---|---|
 | 3a | `fix_adser_creation_date.py` | 139 incidencias, 2745 renglones, 0 sin par | 2.ª corrida en seco: 0 |
 | 3b | `fix_adser_start_date.py` | 2745 renglones | sin NULL |
-| 3-bis | **(solo con OK de Alan, antes de 3e)** restaurar el renglón 1495 (CRUZETA, vale 75) | el renglón está dado de baja desde 2026-09-22 y es el único préstamo abierto del legado que se perdió; ver `2026-09-30_ensayo_general_adser.md` §2b | la pieza 736 vuelve a figurar prestada y 3e le resta su unidad |
+| 3-bis | restaurar el renglón 1495 (CRUZETA, vale 75), **antes de 3e** (OK de Alan 2026-09-30) | `UPDATE 1`: el renglón está dado de baja desde 2026-09-22 y es el único préstamo abierto del legado que se perdió; ver `2026-09-30_ensayo_general_adser.md` §2b | la pieza 736 vuelve a figurar prestada y 3e le resta su unidad |
 | 3c | `sync_adser_cierre_de_gemelos_20260929.py` | 0 cerrados (66 ya cerrados) | no hace falta correrlo sin `--dry-run` |
 | 3d | `fix_adser_estado_de_vales.py` | exactamente 14 vales: 67, 70, 83, 85, 99, 103, 116, 118, 119, 121, 123, 126, 131, 136 | 2.ª corrida: 0 |
-| 3e | `fix_adser_existencia_inicial.py` | 327 ajustes (178 prestados + 149 destruidos/extraviados), 0 omitidos | 2.ª corrida: 0 |
+| 3e | `fix_adser_existencia_inicial.py` | **328** ajustes con el 3-bis hecho (179 prestados + 149 destruidos/extraviados), 0 omitidos | 2.ª corrida: 0 |
 
 ```bash
 kubectl -n adser-prod exec deploy/backend -- python scripts/<script>.py --dry-run
@@ -119,9 +119,9 @@ kubectl -n adser-prod exec deploy/backend -- python scripts/<script>.py --dry-ru
 ```
 
 El paso 3-bis es un `UPDATE` de una fila (probado en la copia: la pieza 736 vuelve a figurar
-prestada y 3e le resta su unidad). **Si se hace, los números esperados cambian en uno:**
-3e da **328** ajustes (179 prestados + 149), y en la verificación del paso 5 la existencia total
-es **1881**, los ajustes **328 / -328** y los préstamos abiertos **184**.
+prestada y 3e le resta su unidad). Con él hecho, los números de 3e y del paso 5 ya lo incluyen:
+**328** ajustes (179 prestados + 149), existencia total **1881**, ajustes **328 / -328** y
+**184** préstamos abiertos. Sin 3-bis serían 327, 1882, 327 / -327 y 183.
 
 ```bash
 kubectl -n adser-prod exec -i statefulset/postgres -- sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
@@ -147,13 +147,13 @@ Esperado: `ok: True`, ~3015 filas, unos 6 segundos.
 
 ```bash
 kubectl -n adser-prod exec -i statefulset/postgres -- sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At' <<'SQL'
-select 'existencia total (esperado 1882 = 2209 - 327): ' || sum(quantity) from inventory_stock;
-select 'ajustes Existencia inicial / suma (327 / -327): ' || count(*) || ' / ' || sum(quantity_delta) from inventory_ledger where reason like 'Existencia inicial%';
+select 'existencia total (esperado 1881 = 2209 - 328): ' || sum(quantity) from inventory_stock;
+select 'ajustes Existencia inicial / suma (328 / -328): ' || count(*) || ' / ' || sum(quantity_delta) from inventory_ledger where reason like 'Existencia inicial%';
 select 'existencia negativa (0): ' || count(*) from inventory_stock where quantity < 0;
 select 'cantidad distinta de existencia (0): ' || count(*) from product p join (select id_product, sum(quantity) q from inventory_stock group by 1) s using (id_product) where p.cantidad is distinct from s.q and p.deletion_date is null;
 select 'incidencias sin creation_date (0): ' || count(*) from incident where creation_date is null;
 select 'renglones vivos sin creation_date / start_date (0 / 0): ' || count(*) filter (where creation_date is null) || ' / ' || count(*) filter (where start_date is null) from nm_incident_product where deletion_date is null;
-select 'prestamos abiertos que no son baja (183): ' || count(*) from nm_incident_product r join incident i using (id_incident) join incident_type t on t.id_incident_type = i.id_incident_type where r.deletion_date is null and i.deletion_date is null and lower(r.direction) = 'salida' and (r.close_date is null or r.close_date < timestamp '2000-01-01') and lower(btrim(t.incident_type_description)) not in ('destruccion', 'destrucción', 'extraviado');
+select 'prestamos abiertos que no son baja (184 con el 3-bis): ' || count(*) from nm_incident_product r join incident i using (id_incident) join incident_type t on t.id_incident_type = i.id_incident_type where r.deletion_date is null and i.deletion_date is null and lower(r.direction) = 'salida' and (r.close_date is null or r.close_date < timestamp '2000-01-01') and lower(btrim(t.incident_type_description)) not in ('destruccion', 'destrucción', 'extraviado');
 select 'vales abiertos sin renglones (6: 44,120,133,134,138,139): ' || count(*) from incident i where i.deletion_date is null and lower(i.incident_status) like 'abiert%' and not exists (select 1 from nm_incident_product r where r.id_incident = i.id_incident and r.deletion_date is null);
 SQL
 curl -s -o /dev/null -w "frontend https://adser.torredigital.mx -> HTTP %{http_code}\n" https://adser.torredigital.mx/
@@ -169,7 +169,8 @@ kubectl -n adser-prod exec deploy/backend -- python scripts/notify_adser_revisio
 kubectl -n adser-prod exec deploy/backend -- python scripts/notify_adser_revision_datos.py   # debe crear 0
 ```
 
-Esperado: 4 temas + resumen (29 préstamos, 5 sin herramienta, incidencia 90, 6 vales vacíos).
+Esperado: 4 temas + resumen (29 préstamos, divididos en 28 «probablemente ya volvieron» y 1
+«parece vigente»; 5 sin herramienta; incidencia 90; 6 vales vacíos).
 
 ## Lo que NO se hace
 
