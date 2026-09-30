@@ -15,7 +15,7 @@ import { useI18n } from "../i18n";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import useReducedMotion from "../components/kpi-widgets/useReducedMotion";
 import useMasonryRef from "../components/kpi-widgets/useMasonry";
-import useReordenarTarjetas, { colisionPorPuntero } from "../components/kpi-widgets/useReordenarTarjetas";
+import useReordenarTarjetas, { sinColision } from "../components/kpi-widgets/useReordenarTarjetas";
 import {
   getAllKpiDashboard, createKpiDashboard, updateKpiDashboard, deleteKpiDashboard,
   getAllKpiDashboardWidget, createKpiDashboardWidget, updateKpiDashboardWidget, deleteKpiDashboardWidget,
@@ -362,12 +362,10 @@ function agregarSeccionAlPdf({ pdf, canvas, filas, margin, tituloSeccion, estado
   }
 }
 
-// Al arrastrar, las demas tarjetas NO se corren para hacer sitio. La estrategia por rectangulos de
-// dnd-kit supone una cuadricula donde el orden de la lista es el orden de los rectangulos; en el
-// masonry (columnas de alturas distintas) eso mostraria un acomodo que no es el que quedara al
-// soltar. Sin desplazarlas, la tarjeta arrastrada sigue al puntero, el hueco destino se decide por
-// geometria (closestCenter) y, al soltar, el orden guardado es el de la lista (`arrayMove`) y el
-// masonry se recalcula con el.
+// Al arrastrar, dnd-kit no desplaza a las vecinas: su estrategia por rectangulos supone que el orden
+// de la lista es el de los rectangulos, y en el masonry no lo es. El orden que toma el tablero lo
+// decide `elegirOrden` (kpi/kpiMasonry.js) simulando el masonry, y el navegador acomoda las tarjetas
+// con ese orden (ver useReordenarTarjetas.js).
 const sinDesplazarVecinas = () => null;
 
 export default function Dashboard() {
@@ -875,7 +873,7 @@ export default function Dashboard() {
           {loadingWidgets && <div className="alert">{t("common.loading")}</div>}
 
           {!loadingWidgets && !widgetsError && (
-            <DndContext sensors={dragSensors} collisionDetection={colisionPorPuntero} {...reorden.handlers}>
+            <DndContext sensors={dragSensors} collisionDetection={sinColision} {...reorden.handlers}>
             <SortableContext items={reorden.idsVista} strategy={sinDesplazarVecinas}>
             <div className="kpi-widget-grid" ref={widgetGridRef}>
               {reorden.widgetsVista.map((widget) => (

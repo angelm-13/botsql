@@ -29,7 +29,6 @@ import {
 } from "./kpiRango.js";
 import { colorDeAvatar } from "../components/kpi-widgets/avatar.js";
 import { filasQueOcupa } from "../components/kpi-widgets/useMasonry.js";
-import { mismoOrden, ordenTrasMover } from "./kpiReorden.js";
 import {
   filasTablaPrestamo, propsDona, propsNumero, propsNumeroBajoStock, propsSeries,
   tendenciaDeSnapshot,
@@ -755,29 +754,4 @@ test("masonry: una tarjeta ocupa las filas de 4px que mide, mas el hueco de abaj
     const ocupado = filasQueOcupa(alto) * 4 - 16;
     assert.ok(ocupado >= alto && ocupado - alto < 4, `alto ${alto} -> ${ocupado}`);
   }
-});
-
-test("reordenar: la tarjeta arrastrada toma el lugar de sobre la que se suelta y las demas se recorren", () => {
-  const ids = ["a", "b", "c", "d", "e"];
-  assert.deepEqual(ordenTrasMover(ids, "e", "b"), ["a", "e", "b", "c", "d"]); // hacia arriba: antes
-  assert.deepEqual(ordenTrasMover(ids, "a", "c"), ["b", "c", "a", "d", "e"]); // hacia abajo: despues
-  assert.deepEqual(ordenTrasMover(ids, "b", "a"), ["b", "a", "c", "d", "e"]);
-  assert.deepEqual(ids, ["a", "b", "c", "d", "e"], "no altera la lista recibida");
-  // Sin efecto: mismo arreglo (para que React no vuelva a renderizar).
-  assert.equal(ordenTrasMover(ids, "c", "c"), ids);
-  assert.equal(ordenTrasMover(ids, "z", "a"), ids);
-  assert.equal(ordenTrasMover(ids, "a", "z"), ids);
-});
-
-test("reordenar: lo que se ve durante el arrastre es lo que se guarda (mismo orden, misma semantica que arrayMove)", () => {
-  const ids = ["1", "2", "3", "4", "5"];
-  for (let de = 0; de < ids.length; de++) {
-    for (let a = 0; a < ids.length; a++) {
-      const esperado = [...ids]; esperado.splice(a, 0, esperado.splice(de, 1)[0]);
-      assert.deepEqual(ordenTrasMover(ids, ids[de], ids[a]), esperado, `${de} -> ${a}`);
-    }
-  }
-  assert.ok(mismoOrden(["a", "b"], ["a", "b"]));
-  assert.ok(!mismoOrden(["a", "b"], ["b", "a"]));
-  assert.ok(!mismoOrden(["a"], ["a", "b"]));
 });
