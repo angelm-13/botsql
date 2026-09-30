@@ -1,10 +1,81 @@
 # Contexto de sesión — tyakxa_tny (para retomar en otra conversación)
 
-Última actualización: 2026-09-14. Este archivo es el "dónde nos quedamos",
+Última actualización: 2026-09-30. Este archivo es el "dónde nos quedamos",
 aparte de `ARQUITECTURA_TYAKXA_TNY.md` (referencia técnica estable) y de
 `docs/PLAN_ACCION_MEJORA.md` (plan de mejora por auditoría). Cuando una
 sección se resuelve, se puede recortar; mientras tanto se deja completa para
 que una sesión nueva no tenga que releer el historial de chat.
+
+## Bitácora 2026-09-29/30 — visibilidad de taller, bitácora diaria, vale de Almacenista, Vendedor en Clientes
+
+Cuatro correcciones reales sobre `initAngm`, cada una probada en navegador
+real (no solo API), commiteadas y pusheadas.
+
+1. **Jefe de taller veía proyectos ya tomados por OTRO Jefe de taller.**
+   `_scoped_query()` (`project_management_service.py`, scope `"execution"`)
+   filtraba solo por estatus de taller activo, sin mirar quién lo había
+   tomado. Ahora solo muestra lo propio (`leader == actor` o
+   `id_supervisor == actor`) o lo que sigue libre
+   (`id_supervisor IS NULL`); lo tomado por otro Jefe de taller queda
+   fuera. Probado con dos Jefes de taller reales (`jefetaller1`/`jefetaller2`).
+   Efecto secundario de la prueba: un insert de ORM crudo para el segundo
+   usuario de prueba desincronizó la secuencia de `user.id_user` y pisó al
+   empleado migrado de Adser "ALFREDO GONZALEZ" (id=35) — restaurado a mano
+   y secuencia resincronizada (`setval` al `MAX(id_user)` real). Cuidado al
+   crear usuarios de prueba con `db.add(User(...))` en una base con IDs
+   migrados explícitos (adser): la secuencia puede no reflejar el máximo
+   real.
+
+2. **Bitácora diaria de taller sin pantalla.** El backend
+   (`activity_logs.py`) y el permiso (`daily_activity_log`) ya existían
+   desde antes, pero sin entrada de menú (`menu="hidden"`) ni componente
+   React — Jefe de taller no tenía cómo llegar a subir su bitácora. Se
+   agregó [ActivityLogPage.jsx](frontend/src/pages/ActivityLogPage.jsx)
+   (alta con proyecto propio tomado + plantilla de obreros vía
+   `getMyTeamWorkers()`, y listado propio), ruta en `App.jsx`, entrada de
+   menú en `Shell.jsx`, `menu="sidebar"` en `registry.py` y la migración
+   `20260930090000_bitacora_diaria_entra_al_menu.sql` (UPDATE explícito,
+   porque el sembrado con `ON CONFLICT DO NOTHING` no actualiza el menú de
+   una fila de `entity_permission` que ya existía). Probado end-to-end como
+   `jefetaller1`: alta con trabajador seleccionado, aparece en el listado.
+
+3. **Almacenista no podía levantar vale.** El catálogo `incident_type`
+   ("Tipo de vale") vive en el módulo `operaciones`, al que Almacenista no
+   tiene acceso — el desplegable de tipo volvía 403 y el vale quedaba
+   imposible de levantar aunque `warehouse_voucher` estuviera bien
+   concedido. Se agregó un guardia nuevo en
+   [incident_type.py](backend/app/routes/incident_type.py)
+   (`_require_incident_type_read`) que deja leer el catálogo a quien
+   administra `incident_type` de verdad O a quien solo necesita
+   clasificar un vale/prevale (`warehouse_voucher`/`warehouse_prevoucher`),
+   sin darle a Almacenista el módulo "operaciones" completo (eso le habría
+   mostrado Proyectos/Tareas/Incidencias de más). Segundo hueco relacionado,
+   a nivel de CAMPO: `nm_field_permission` se deriva de `entity_permission`,
+   y Almacenista nunca tuvo fila para `incident_type` — la respuesta llegaba
+   solo con el id, sin descripción, y el desplegable se veía vacío igual
+   (`_actor_reads_incident_type_by_capability`). Probado en navegador real
+   como Almacenista: `POST /vouchers` 201, vale abierto con su renglón.
+   Supervisor confirmado sin cambios: solo ve "Levantar prevale", nunca
+   "Abrir vale" — el diseño de separación de deberes ya era correcto.
+
+4. **Alta de cliente: "Vendedor" obligatorio pero imposible de elegir fuera
+   de Administrator.** El selector se poblaba con `getAllUser()` →
+   `GET /user/`, que exige el permiso completo de RH (módulo "seguridad",
+   solo Administrator). Gerente (que sí puede dar de alta clientes, `crm`
+   en CAPTURA) se topaba con el desplegable vacío — un campo obligatorio
+   que ningún rol de negocio real podía llenar. Cambiado a
+   `getUserOptions()` → `GET /user/options` (mismo patrón id+nombre sin
+   permiso de entidad que ya usa `WarehouseVoucherPage.jsx` para elegir
+   responsable de un vale), y de paso precargado con el usuario actual
+   (sigue editable) para que la mayoría de las altas no tengan que elegirlo
+   a mano. Probado en navegador real como Gerente: 47 opciones,
+   preseleccionado, `POST /customer_supplier/` 201.
+
+Todo esto quedó en 2 commits sobre `initAngm`
+(`2013b4c` visibilidad+bitácora, `6c59ab6` vale de Almacenista+Vendedor),
+ya pusheados. Sin desplegar a ningún ambiente real todavía — `initAngm` no
+dispara auto-deploy (solo `initAlan` lo hace, a `tyakxa-dev`); falta
+mergear.
 
 ## ESTADO: alcance por acción en permisos + equipos de usuarios — Fase 1 (2026-09-14)
 
