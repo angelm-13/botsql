@@ -7,13 +7,14 @@ import {
   RefreshCw, SlidersHorizontal, Table as TableIcon, Trash2, User,
 } from "lucide-react";
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
-import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import { SortableContext, arrayMove, useSortable } from "@dnd-kit/sortable";
 import { CSS as DndCss } from "@dnd-kit/utilities";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import { useI18n } from "../i18n";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import useReducedMotion from "../components/kpi-widgets/useReducedMotion";
+import useMasonryRef from "../components/kpi-widgets/useMasonry";
 import {
   getAllKpiDashboard, createKpiDashboard, updateKpiDashboard, deleteKpiDashboard,
   getAllKpiDashboardWidget, createKpiDashboardWidget, updateKpiDashboardWidget, deleteKpiDashboardWidget,
@@ -359,6 +360,14 @@ function agregarSeccionAlPdf({ pdf, canvas, filas, margin, tituloSeccion, estado
     esPrimerBloqueDeSeccion = false;
   }
 }
+
+// Al arrastrar, las demas tarjetas NO se corren para hacer sitio. La estrategia por rectangulos de
+// dnd-kit supone una cuadricula donde el orden de la lista es el orden de los rectangulos; en el
+// masonry (columnas de alturas distintas) eso mostraria un acomodo que no es el que quedara al
+// soltar. Sin desplazarlas, la tarjeta arrastrada sigue al puntero, el hueco destino se decide por
+// geometria (closestCenter) y, al soltar, el orden guardado es el de la lista (`arrayMove`) y el
+// masonry se recalcula con el.
+const sinDesplazarVecinas = () => null;
 
 export default function Dashboard() {
   const { lang, t } = useI18n();
@@ -864,7 +873,7 @@ export default function Dashboard() {
 
           {!loadingWidgets && !widgetsError && (
             <DndContext sensors={dragSensors} collisionDetection={closestCenter} onDragEnd={handleDragEndWidgets}>
-            <SortableContext items={widgets.map((widget) => widget.id_kpi_dashboard_widget)} strategy={rectSortingStrategy}>
+            <SortableContext items={widgets.map((widget) => widget.id_kpi_dashboard_widget)} strategy={sinDesplazarVecinas}>
             <div className="kpi-widget-grid" ref={widgetGridRef}>
               {widgets.map((widget) => (
                 <SortableKpiWidgetCard
@@ -955,9 +964,11 @@ function SortableKpiWidgetCard({ reducirMovimiento, ...props }) {
     transition: reducirMovimiento ? undefined : transition,
     zIndex: isDragging ? 1 : "auto",
   };
+  const masonryRef = useMasonryRef();
+  const asignarRef = useCallback((nodo) => { setNodeRef(nodo); masonryRef(nodo); }, [setNodeRef, masonryRef]);
   return (
     <div
-      ref={setNodeRef}
+      ref={asignarRef}
       style={style}
       className={[
         isDragging && "kpi-widget-dragging",

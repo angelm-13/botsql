@@ -124,15 +124,12 @@
 .kpi-preview-orden-movil .kpi-preview-tabla-orden { border: 1px solid var(--kpi-borde); border-radius: 8px; padding: 9px; background: var(--kpi-tarjeta); color: var(--kpi-ink); }
 
 /* Lista: con "Ver todos" se limita el alto y se desplaza por dentro, con el encabezado fijo. */
-/* La lista se desplaza POR DENTRO (encabezado fijo) en vez de agrandar la tarjeta. En una tarjeta de
-   dos filas (`.kpi-widget-filas-2`, kpi-dashboard.css) ocupa todo el alto que sobra; en una de una
-   fila, hasta 26rem. */
-.kpi-prestamos-lista { min-width: 0; min-height: 0; max-height: 26rem; overflow-y: auto; overscroll-behavior: contain; }
-.kpi-widget-filas-2 .kpi-prestamos-lista { flex: 1 1 0; max-height: none; }
-.kpi-prestamos > * { flex-shrink: 0; }
-.kpi-prestamos > .kpi-prestamos-lista { flex-shrink: 1; }
-.kpi-widget-filas-2 .kpi-chart-box { justify-content: flex-start; overflow: hidden; }
-.kpi-widget-filas-2 .kpi-preview-tabla-wrap.kpi-prestamos { flex: 1 1 0; min-height: 0; }
+/* La tarjeta tiene su ALTURA NATURAL (masonry, kpi-dashboard.css) y la lista se desplaza POR DENTRO
+   (encabezado fijo) al pasar de cierto alto, en vez de agrandar la tarjeta: 22rem en una tabla de una
+   fila y 36rem en una de dos (`parametros.filas = 2`, la tabla "alta" del tablero de Adser). Con pocos
+   renglones la tarjeta simplemente es mas baja: no se estira. */
+.kpi-prestamos-lista { min-width: 0; min-height: 0; max-height: 22rem; overflow-y: auto; overscroll-behavior: contain; }
+.kpi-widget-filas-2 .kpi-prestamos-lista { max-height: 36rem; }
 
 /* "Filtrando: X ✕": el filtro que llega de otra tarjeta. */
 .kpi-prestamos-filtro-externo { align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; padding: 4px 6px 4px 12px; border-radius: 999px; font-size: 12px; color: var(--kpi-ink); border: 1px solid var(--kpi-acento); background: color-mix(in srgb, var(--kpi-acento) 12%, var(--kpi-tarjeta)); max-width: 100%; }
@@ -153,6 +150,8 @@
 .kpi-prestamos-modal-cuerpo { display: flex; flex-direction: column; min-height: 0; padding: 14px 18px 18px; overflow: hidden; }
 .kpi-prestamos-modal-cuerpo .kpi-preview-tabla-wrap { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
 .kpi-prestamos-modal-cuerpo .kpi-prestamos-lista { flex: 1 1 auto; max-height: none; }
+.kpi-prestamos.en-panel > * { flex-shrink: 0; }
+.kpi-prestamos.en-panel > .kpi-prestamos-lista { flex-shrink: 1; }
 .kpi-prestamos-tabla th { position: sticky; top: 0; z-index: 1; background: var(--kpi-tarjeta); }
 .kpi-prestamos-articulo { font-weight: 800; color: var(--kpi-ink); }
 /* `overflow-wrap: anywhere` (regla general de .kpi-preview-tabla) deja la columna sin ancho minimo y parte

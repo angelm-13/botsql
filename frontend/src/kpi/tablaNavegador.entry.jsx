@@ -6,6 +6,7 @@
 // sustituye por la respuesta REAL del backend guardada en fixtures/.
 import { createRoot } from "react-dom/client";
 import { KpiWidgetCard } from "../pages/Dashboard.jsx";
+import useMasonryRef, { remedirMasonry } from "../components/kpi-widgets/useMasonry.js";
 
 const t = (clave, respaldo) => (typeof respaldo === "string" ? respaldo : clave);
 const tx = (clave, respaldo) => respaldo ?? clave;
@@ -16,13 +17,14 @@ const KPI = {
 };
 
 function Escenario({ columnas, vecinos }) {
+  const masonryRef = useMasonryRef();
   const widget = {
     id_kpi_dashboard_widget: 1, tipo_grafica: "tabla", ids_kpi_definition: [57],
     parametros: columnas ? { columnas } : {},
   };
   return (
     <div className="kpi-widget-grid">
-      <div className={columnas === 2 ? "kpi-widget-doble" : undefined} data-tarjeta="1">
+      <div ref={masonryRef} className={columnas === 2 ? "kpi-widget-doble" : undefined} data-tarjeta="1">
         <KpiWidgetCard
           widget={widget}
           kpiCatalog={[KPI]}
@@ -50,6 +52,7 @@ function Escenario({ columnas, vecinos }) {
   );
 }
 
+window.remedirMasonry = remedirMasonry;
 window.montarTabla = ({ contenedor, columnas = 0, vecinos = 3 }) => {
   createRoot(contenedor).render(<Escenario columnas={columnas} vecinos={vecinos} />);
 };

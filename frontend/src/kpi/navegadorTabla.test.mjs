@@ -51,6 +51,8 @@ async function escenario(nombre, anchoCuadricula, config = {}) {
   document.body.appendChild(contenedor);
   window.montarTabla({ contenedor, ...config });
   await esperar(700);
+  window.remedirMasonry();
+  await esperar(50);
   const envoltura = contenedor.querySelector("[data-tarjeta]");
   const tarjeta = envoltura.querySelector(".kpi-widget-card");
   const caja = tarjeta.getBoundingClientRect();

@@ -28,6 +28,7 @@ import {
   fechaLocalIso, parametrosEfectivos, periodoAnterior, rangoDesfasado, resolverRangoRelativo,
 } from "./kpiRango.js";
 import { colorDeAvatar } from "../components/kpi-widgets/avatar.js";
+import { filasQueOcupa } from "../components/kpi-widgets/useMasonry.js";
 import {
   filasTablaPrestamo, propsDona, propsNumero, propsNumeroBajoStock, propsSeries,
   tendenciaDeSnapshot,
@@ -740,4 +741,17 @@ test("escalaDeBarras: el renglon mas antiguo, pero nunca menos de un ano", () =>
   assert.equal(escalaDeBarras([{ dias_prestado: 20 }, { dias_prestado: 3 }]), 365);
   assert.equal(escalaDeBarras([]), 365);
   assert.equal(anchoDeBarra(45, escalaDeBarras([{ dias_prestado: 45 }])), 12);
+});
+
+test("masonry: una tarjeta ocupa las filas de 4px que mide, mas el hueco de abajo", () => {
+  assert.equal(filasQueOcupa(193), 53); // (193 + 16) / 4 = 52.25 -> 53
+  assert.equal(filasQueOcupa(676), 173);
+  assert.equal(filasQueOcupa(48), 16); // justo 64 / 4
+  assert.equal(filasQueOcupa(0), 1);
+  assert.equal(filasQueOcupa(NaN), 1);
+  // La tarjeta siempre cabe en lo que ocupa, y sobra menos de una fila.
+  for (const alto of [1, 50, 193, 324, 350, 799]) {
+    const ocupado = filasQueOcupa(alto) * 4 - 16;
+    assert.ok(ocupado >= alto && ocupado - alto < 4, `alto ${alto} -> ${ocupado}`);
+  }
 });
