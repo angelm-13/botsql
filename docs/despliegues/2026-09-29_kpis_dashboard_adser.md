@@ -140,13 +140,38 @@ En este orden (el orden del tablero es `posicion_orden`, de 100 en 100):
 | 4 | Barras | Incidencias abiertas por responsable | Este año |
 | 5 | Dona | Material por estado | Hoy |
 
-**Cómo se ve:** la tabla es el widget principal, a la izquierda, y las otras cuatro
-tarjetas forman un bloque de 2×2 a su derecha, alineado con ella arriba y abajo.
-Con 4 columnas (pantalla ancha) es 2 + 2×2; con 3 columnas, la tabla más una columna
-de 2 tarjetas (las otras dos quedan debajo); con 2 o 1 columna, todo apilado con la
-tabla primero. La cuadrícula (`.kpi-widget-grid`) tiene tope de 4 columnas, alto
-mínimo de fila de 372 px y `grid-auto-flow: dense`. **Sin la tabla (`--sin-tabla`)**
-las 4 tarjetas ocupan una fila de 4 columnas.
+**Cómo se ve (masonry):** cada tarjeta conserva su **altura natural**; no se estira
+para igualar a las vecinas. La tabla es el widget principal, a la izquierda, y las
+tarjetas chicas se apilan a su derecha, cada una a su alto. Con 4 columnas (pantalla
+ancha) la tabla ocupa 2 y las otras se reparten en las 2 columnas de la derecha; con
+3 columnas, la tabla más una columna de tarjetas apiladas (el resto cae debajo, en
+la columna que quede más corta); con 2 o 1 columna, todo apilado con la tabla
+primero. La parte de abajo de un masonry es irregular por naturaleza: las columnas
+no terminan a la misma altura.
+
+**Cómo está hecho** (sin librería): `.kpi-widget-grid` tiene tope de 4 columnas y
+filas de 4 px; cada tarjeta ocupa las filas que mide (`grid-row-end: span N`, lo
+escribe `useMasonryRef`, en `components/kpi-widgets/useMasonry.js`, con un
+`ResizeObserver` y directo en el DOM, no en el estado de React: la primera medida se
+hace antes de pintar y un cambio de alto se corrige antes del siguiente cuadro, sin
+parpadeo). `grid-auto-flow: dense` hace que cada tarjeta caiga en el primer hueco
+donde cabe, que en la práctica es la columna más corta. El recuadro "Agregar
+gráfico" es uno solo, a todo el ancho, al final. La tabla no se estira: su lista
+se desplaza por dentro con un tope (22 rem, o 36 rem con `filas: 2`).
+
+**Cómo se mapea `posicion_orden` al layout:** `posicion_orden` (de 100 en 100) es
+el orden en que se **colocan** las tarjetas; el DOM sigue ese orden. Cada tarjeta
+cae en el primer hueco libre (más arriba y, a igual altura, más a la izquierda). Por
+eso el orden **visual** es por columnas y no por renglones, y puede no coincidir con
+el lineal: la 4.ª puede quedar a la derecha de la 2.ª y arriba de la 3.ª. Lo
+que sí es cierto siempre: mover una tarjeta antes en la lista la coloca antes.
+
+**Arrastre:** al arrastrar, las demás tarjetas **no** se corren (la estrategia por
+rectángulos de dnd-kit supone una cuadrícula uniforme y en un masonry mostraría un
+acomodo que no es el que queda). La tarjeta sigue al puntero y el destino se decide
+por cercanía de centros. Al soltar, la tarjeta pasa a la posición de la que soltó
+encima en la **lista** (`arrayMove`), se guarda `posicion_orden` con esa lista y el
+masonry se recalcula con ella: lo guardado es exactamente el orden de colocación.
 
 **Un tablero que ya existía no cambia de orden ni de tamaño:** la plantilla no
 modifica lo que alguien ya tiene (regla de idempotencia de abajo). Para reacomodarlo,
@@ -209,8 +234,8 @@ sabía pintarlo.
   "Este tipo de tabla estará disponible próximamente", no revienta.
 - Un widget de tabla no guarda periodo ni filtros (son datos de "ahora"). Lo
   único que puede guardar es su tamaño: `columnas: 2` (dos columnas de la
-  cuadrícula) y `filas: 2` (dos filas de alto, con la lista desplazándose por
-  dentro); ausentes son 1 y 1, así que las tablas guardadas antes se ven igual. En pantallas donde solo cabe una
+  cuadrícula) y `filas: 2` (tabla alta: la lista se desplaza por dentro con un tope
+  mayor, 36 rem en vez de 22); ausentes son 1 y 1, así que las tablas guardadas antes se ven igual. En pantallas donde solo cabe una
   columna, la tabla vuelve a ocupar una. Sin migración: `parametros` es JSON
   libre y el backend no lo valida.
 
