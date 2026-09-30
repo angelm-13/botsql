@@ -175,6 +175,65 @@ una sola fuente de verdad (o mover el constraint a la más nueva
 únicamente y que las viejas dejen de tocarlo) — no se hizo en esta
 sesión por no ser parte del pedido original.
 
+### Segundo hallazgo del merge: dos arreglos distintos para el mismo bug
+
+`incident_type` (mi fix de esta sesión, ver arriba) e `initAlan` (de forma
+independiente) resolvieron el MISMO problema — Almacenista sin acceso al
+catálogo de tipos de vale — con mecanismos distintos: yo con un guardia a
+medida (`_require_incident_type_read`) que ampliaba `GET /incident_type/`;
+initAlan con el patrón ya establecido `/incident_type/options` (igual que
+`/user/options`/`/proyect/options` — id+descripción, sin permiso de
+entidad). El merge combinó los dos SIN conflicto de texto (tocaban líneas
+distintas del archivo), pero un test que llegó con initAlan
+(`test_a_role_without_incident_type_permission_can_list_the_options`)
+asume que `GET /incident_type/` sigue devolviendo 403 para ese rol — cosa
+que mi guardia rompía. Se adoptó el patrón de initAlan (más consistente
+con el resto del código) y se revirtió el mío por completo.
+
+**Lección**: un merge sin conflicto de texto no es sinónimo de "sin
+conflicto real" — correr la suite completa después de todo merge grande
+es lo que lo destapa, no la ausencia de `<<<<<<<`.
+
+## Bitácora 2026-09-30 — maquila opcional + entrega de herramienta por operador
+
+Pedido de negocio nuevo, 5 puntos, todos entregados y probados en
+navegador real (commit `d7bdc6a`, sobre `initAngm`):
+
+1. Checkbox "Requiere maquila" al crear/editar proyecto
+   (`proyect.requires_maquila`, default `true` — compatible con lo
+   existente).
+2. Un proyecto sin maquila (pinturas, drenaje, cimientos): Gerente lo
+   autoriza igual, y en cuanto el supervisor avisa que ya no falta nada
+   lo completa DIRECTO desde "autorizado" — sin pasar por "en espera de
+   material"/"en proceso" (pasos pensados para cuando el taller sí
+   participa). `validate_project_transition()`/`transition_project()`
+   en `project_management_service.py`.
+3. Ya aparecía en el selector de proyecto del vale/prevale sin ningún
+   cambio — `project_options()` nunca filtró por estatus.
+4. El estado "completado" ya existía; y la visualización de material
+   asignado/sin devolver (`material_summary`) también — ambas
+   confirmadas, ninguna se tocó.
+5. A qué operador u otro supervisor se le entrega la herramienta de un
+   renglón del vale, y confirmación de que el supervisor dueño del vale
+   la recuperó — **por renglón**, no por vale completo. Columnas nuevas
+   `nm_incident_product.id_user_delivered_to`/`custody_confirmed_date`;
+   rutas `POST /vouchers/lines/<id>/deliver-to` y `/confirm-custody`,
+   candado propio (`_puede_gestionar_custodia`: el responsable del vale
+   — normalmente Supervisor, que nunca tiene `warehouse_voucher` — o
+   quien opera el almacén). Paso INTERMEDIO: la pieza sigue "fuera"
+   hasta la devolución real (`close_date`, sin tocar).
+
+Hallazgo lateral: Jefe de taller ya no ve un proyecto sin maquila en
+absoluto (mismo `_scoped_query` de la corrección del 2026-09-29) — nunca
+le toca, ni para tomarlo.
+
+Sin desplegar todavía a ningún ambiente real (mismo estado que el resto
+de `initAngm`: falta mergear a `initAlan`). Sin pruebas automatizadas
+nuevas para esta entrega — solo verificación manual en navegador; si se
+retoma este frente, vale la pena escribir los casos de
+`validate_project_transition`/`asignar_entrega_de_renglon`/
+`confirmar_recepcion_de_renglon` antes de tocarlo de nuevo.
+
 ## ESTADO: Dashboard y KPIs de Adser (2026-09-29) — frente actual
 
 Entrega a Adser. Rama `initAlan`; los commits de esta línea se prueban en
