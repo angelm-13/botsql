@@ -71,6 +71,34 @@ laboratorio, documentos, citas, encuestas…).
 renglón la existencia subiría a 2 (se probó en la copia: devolver uno pasa de 0 a 1, no a 2).
 Si Adser confirma que siguen en el almacén, basta devolver el renglón en el vale.
 
+### 2b. Estados de las piezas contra sus vales (medido 2026-09-30 en la copia de prod)
+
+El texto de estado es idéntico al del sistema anterior en las 2220 piezas y solo hay seis
+valores (sin erratas): `ENTRADA` 1901, `SALIDA` 130, `DESTRUCCION` 86, `EXTRAVIADO` 65, `DAÑADO` 27,
+`EQ. DAÑADOS` 11. Contra lo que dicen los vales:
+
+| Estado | Piezas | Respaldado por sus vales | Excepciones |
+|---|---|---|---|
+| `EXTRAVIADO` | 65 | 65 con renglón de Extraviado abierto | ninguna |
+| `DAÑADO` | 27 | 27 con renglón de Dañado abierto | 1 además tiene un préstamo abierto |
+| `EQ. DAÑADOS` | 11 | sin vales (estado puesto a nivel de pieza) | propio del sistema anterior |
+| `DESTRUCCION` | 86 | 80 con renglón de Destrucción abierto | 6 sin ningún vale |
+| `SALIDA` | 130 | 123 con préstamo abierto | 7 sin préstamo abierto (ver abajo) |
+| `ENTRADA` | 1901 | 1872 sin préstamo abierto | 29 con préstamo abierto (ya avisados) |
+
+- **7 piezas en `SALIDA` sin préstamo abierto:** 6 tienen todos sus préstamos ya devueltos y el
+  estado quedó sin actualizar (el sistema anterior no lo reponía): 72, 169, 283, 1304, 1416 y
+  2277. La 7.ª es la **736 (CRUZETA)**, ver el siguiente punto.
+- **Un préstamo abierto del legado que se perdió en prod: CRUZETA (pieza 736), vale 75, a nombre de
+  Mario.** El legado tenía 2 renglones abiertos (1489 y 1495, una captura doble del mismo
+  préstamo). En prod el 1489 no existe y el 1495 está dado de baja (2026-09-22), así que la pieza
+  quedó en `SALIDA` **sin ningún renglón vivo**. Es el único caso: de los 443 préstamos abiertos
+  del legado, 395 conservan su renglón, 41 conservan un gemelo vivo de la misma pieza en el vale,
+  5 eran de productos inexistentes y 2 son este. La limpieza de gemelos quitó los dos en lugar de
+  dejar uno.
+- **Pieza 249 (BROCA PARA CONCRETO 5/8):** tiene abiertos a la vez un préstamo (vale 128) y un
+  extravío (vale 64): apareció y se volvió a prestar sin cerrar el extravío.
+
 ### 3. Otros puntos para Adser (no bloquean)
 
 - **5 préstamos abiertos de productos que no existen en el legado** (vales 1 ×2, 3, 36 y 96,

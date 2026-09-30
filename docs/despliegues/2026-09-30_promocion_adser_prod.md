@@ -107,6 +107,7 @@ dry-run no da lo esperado, **parar**.
 |---|---|---|---|
 | 3a | `fix_adser_creation_date.py` | 139 incidencias, 2745 renglones, 0 sin par | 2.ª corrida en seco: 0 |
 | 3b | `fix_adser_start_date.py` | 2745 renglones | sin NULL |
+| 3-bis | **(solo con OK de Alan, antes de 3e)** restaurar el renglón 1495 (CRUZETA, vale 75) | el renglón está dado de baja desde 2026-09-22 y es el único préstamo abierto del legado que se perdió; ver `2026-09-30_ensayo_general_adser.md` §2b | la pieza 736 vuelve a figurar prestada y 3e le resta su unidad |
 | 3c | `sync_adser_cierre_de_gemelos_20260929.py` | 0 cerrados (66 ya cerrados) | no hace falta correrlo sin `--dry-run` |
 | 3d | `fix_adser_estado_de_vales.py` | exactamente 14 vales: 67, 70, 83, 85, 99, 103, 116, 118, 119, 121, 123, 126, 131, 136 | 2.ª corrida: 0 |
 | 3e | `fix_adser_existencia_inicial.py` | 327 ajustes (178 prestados + 149 destruidos/extraviados), 0 omitidos | 2.ª corrida: 0 |
@@ -115,6 +116,18 @@ dry-run no da lo esperado, **parar**.
 kubectl -n adser-prod exec deploy/backend -- python scripts/<script>.py --dry-run
 kubectl -n adser-prod exec deploy/backend -- python scripts/<script>.py
 kubectl -n adser-prod exec deploy/backend -- python scripts/<script>.py --dry-run   # debe dar 0
+```
+
+El paso 3-bis es un `UPDATE` de una fila (probado en la copia: la pieza 736 vuelve a figurar
+prestada y 3e le resta su unidad). **Si se hace, los números esperados cambian en uno:**
+3e da **328** ajustes (179 prestados + 149), y en la verificación del paso 5 la existencia total
+es **1881**, los ajustes **328 / -328** y los préstamos abiertos **184**.
+
+```bash
+kubectl -n adser-prod exec -i statefulset/postgres -- sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+UPDATE nm_incident_product SET deletion_date = NULL WHERE id_nm_incident_product = 1495 AND deletion_date IS NOT NULL;
+SQL
+# reversa: UPDATE nm_incident_product SET deletion_date = '2026-09-22' WHERE id_nm_incident_product = 1495;
 ```
 
 ### 4. Backfill de snapshots de KPI (después del 3d)
