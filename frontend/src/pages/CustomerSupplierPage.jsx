@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
-import { getAllCustomerSupplier, createCustomerSupplier, updateCustomerSupplier, deleteCustomerSupplier, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllUser, getInvoiceCatalogs } from "../api";
+import { getAllCustomerSupplier, createCustomerSupplier, updateCustomerSupplier, deleteCustomerSupplier, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getUserOptions, getInvoiceCatalogs } from "../api";
 import { fetchAllPages } from "../utils/fetchAllPages";
 import Pagination from "../components/Pagination.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
@@ -38,7 +38,13 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
   const { lang, t } = useI18n();
   const forcedType = entityType || (mode === "suppliersOnly" ? "supplier" : clientsOnly || mode === "clientsOnly" ? "client" : "");
   const entityLabel = forcedType === "client" ? "Clientes" : forcedType === "supplier" ? "Proveedores" : t("menu.customer_supplier");
-  const emptyForm = useMemo(() => ({ ...baseEmptyForm, type: forcedType }), [forcedType]);
+  const currentUser = useMemo(() => readCurrentUser(), []);
+  // Vendedor precargado con quien esta dando de alta al cliente: es el unico
+  // otro campo obligatorio ademas de Nombre (NOT NULL sin default en la
+  // base), y casi siempre es la misma persona que abre el formulario. Sigue
+  // siendo editable -- un vendedor puede dar de alta un cliente a nombre de
+  // otro -- pero ya no hay que elegirlo a mano cada vez.
+  const emptyForm = useMemo(() => ({ ...baseEmptyForm, type: forcedType, id_user: currentUser?.id_user ?? "" }), [forcedType, currentUser]);
   const [items, setItems] = useState([]);
   const [formData, setFormData] = useState(emptyForm);
   const [fieldErrors, setFieldErrors] = useState({});
@@ -53,7 +59,6 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
   const [errorMeta, setErrorMeta] = useState(null);
   const [noticeKey, setNoticeKey] = useState("");
 
-  const currentUser = useMemo(() => readCurrentUser(), []);
   const isSuperUser = Boolean(currentUser?.is_superuser || currentUser?.is_bootstrap_admin || currentUser?.username === "admin1");
   const currentRoleId = currentUser?.id_permission;
   const [modulePermission, setModulePermission] = useState(null);
@@ -116,7 +121,16 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
       if (!permissionReady || (!canSubmitForm && !canRead)) return;
       if (canSeeField("id_user")) {
         try {
-          const userData = await getAllUser({ page: 1, per_page: 100 });
+          // `getUserOptions` (`/user/options`) y no `getAllUser` (`/user/`):
+          // esta ultima exige el permiso completo de RH (`user`, modulo
+          // "seguridad"), que Gerente/Supervisor NO tienen aunque si puedan
+          // dar de alta un cliente -- el select de Vendedor se quedaba sin
+          // una sola opcion (403 silencioso, atrapado abajo) y un campo
+          // OBLIGATORIO se volvia imposible de llenar para cualquiera que no
+          // fuera Administrator. `options()` en el backend es id+nombre nada
+          // mas, sin el resto del catalogo de RH -- mismo patron ya usado en
+          // `WarehouseVoucherPage.jsx` para elegir responsable de un vale.
+          const userData = await getUserOptions();
           setUserOptions(Array.isArray(userData) ? userData : (userData.items || []));
         } catch (_) {
           setUserOptions([]);
