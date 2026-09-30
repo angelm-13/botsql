@@ -31,6 +31,13 @@ y solo si la existencia actual es MAYOR, la baja con un movimiento de AJUSTE en 
 libro (que es de solo agregado): queda escrito quien, cuando y por que. NUNCA sube una
 existencia. Lo `danado` no se toca: no se sabe si esta en almacen.
 
+Ojo con los prestamos que se contradicen con el estado: en adser-prod, 29 productos dicen
+ENTRADA (en el almacen) pero tienen un prestamo abierto. NO se excluyen, a proposito: si
+se dejaran contando como en almacen, el dia que alguien "devuelva" ese renglon la
+existencia subiria a 2 -justo el error que este script corrige-. Restandolos como a los
+demas, devolver el renglon los deja en 1 por el flujo de siempre. Si Adser confirma que
+siguen en el almacen, basta devolver el renglon en el vale.
+
 Solo actua sobre productos SIN movimientos en el libro (la existencia INICIAL): un
 producto que ya opero la app tiene una existencia que refleja lo que paso de verdad, y
 `cantidad` cambia con cada movimiento, asi que recalcular sobre ella no seria seguro.
