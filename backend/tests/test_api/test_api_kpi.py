@@ -117,6 +117,14 @@ class TestKpiApi(BackendTestCase):
         # de creacion de widget: `POST .../widgets/` exige `id_kpi_definition`.
         fila = next(item for item in items if item["clave"] == "ventas_por_empleado")
         self.assertEqual(self.id_kpi, fila["id_kpi_definition"])
+        # Metadatos que solo viven en KPI_REGISTRY (en memoria, nunca
+        # migrados a la tabla kpi_definition) -- el frontend los necesita
+        # para el rediseno del dashboard, sin que haga falta ninguna
+        # migracion para exponerlos.
+        self.assertEqual("alto_es_mejor", fila["direccion"])
+        self.assertEqual("snapshot", fila["modo"])
+        self.assertIn(fila["grafica_default"], fila["graficas_permitidas"])
+        self.assertIsNone(fila["colores_categoria"])
 
         sin_permiso_puntual = self._request(ACTOR_SIN_KPI_ESPECIFICO, "/kpi_definition/")
         self.assertEqual(200, sin_permiso_puntual.status_code)
@@ -443,6 +451,18 @@ class TestKpiDashboardApi(BackendTestCase):
         })
 
         self.assertEqual(400, response.status_code)
+
+    def test_a_table_widget_can_be_saved(self):
+        # "tabla" es el tipo del KPI "vivo" (material_prestado_actual). Sin
+        # aceptarlo aqui el editor del Dashboard no podia guardar ese widget.
+        id_dashboard = self._crear_tablero(ACTOR_A)
+
+        response = self._request(ACTOR_A, "POST", f"/kpi_dashboard/{id_dashboard}/widgets/", {
+            "ids_kpi_definition": [self.id_kpi], "tipo_grafica": "tabla",
+        })
+
+        self.assertEqual(201, response.status_code, self.json(response))
+        self.assertEqual("tabla", self.json(response)["tipo_grafica"])
 
     def test_update_widget_replaces_the_full_kpi_list_and_keeps_order(self):
         id_dashboard = self._crear_tablero(ACTOR_A)

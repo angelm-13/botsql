@@ -380,6 +380,10 @@ def _prestado_en_lote(db, ids_productos) -> dict[int, dict]:
     if not ids_productos:
         return {}
 
+    # Import local: el servicio de vales ya importa de inventario, y arriba se
+    # cerraria un circulo.
+    from app.services.warehouse_voucher_service import _vales_de_baja
+
     filas = db.execute(
         select(
             NmIncidentProduct.id_product,
@@ -399,6 +403,8 @@ def _prestado_en_lote(db, ids_productos) -> dict[int, dict]:
             NmIncidentProduct.close_date.is_(None),
             NmIncidentProduct.deletion_date.is_(None),
             Incident.deletion_date.is_(None),
+            # Quien "tiene" el producto ahora: una baja no esta con nadie.
+            NmIncidentProduct.id_incident.notin_(_vales_de_baja()),
         )
         .order_by(NmIncidentProduct.start_date)
     ).all()

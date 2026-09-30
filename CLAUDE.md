@@ -6,6 +6,64 @@ aparte de `ARQUITECTURA_TYAKXA_TNY.md` (referencia técnica estable) y de
 sección se resuelve, se puede recortar; mientras tanto se deja completa para
 que una sesión nueva no tenga que releer el historial de chat.
 
+## Bitácora 2026-09-29 — QA de cotización/factura, alta de proyectos, alta de cliente
+
+Pedido: revisar y probar (1) el flujo cotización→factura con fechas
+correctas y el estatus "pendiente" (Facturama en modo pruebas, no
+producción), (2) el flujo completo de creación de proyectos, anotando
+inconsistencias, y (3) qué campos del alta de cliente/empresa son
+realmente necesarios — quitar los que no, u ocultarlos si rompen tablas.
+Se probó vía API (scripts dentro del contenedor) y también en navegador
+real. 3 bugs reales encontrados y corregidos, commiteados y pusheados a
+`initAngm`.
+
+1. **IVA perdido al convertir cotización → factura.** `calculate_totals()`
+   ignoraba `tax_applicable`/`line_tax`/`tax_rate` de cada renglón y
+   recalculaba todo desde un solo `tax_rate` de cabecera — si ese campo
+   de cabecera venía vacío (no es obligatorio), la factura convertida
+   salía con IVA en $0 aunque la cotización sí lo hubiera capturado por
+   renglón. Nueva función
+   [totals_from_priced_lines()](backend/app/services/quotation_service.py)
+   que respeta el impuesto de cada renglón, con `calculate_totals()`
+   intacta para no arriesgar otros llamadores. Verificado con una
+   cotización de prueba (renglón con `line_tax=1600.00`, sin `tax_rate`
+   de cabecera): antes convertía a `tax: 0, total: 10000`; después,
+   `tax: 1600.0, total: 11600.0`.
+2. **`date_emision` de la factura se congelaba en la fecha de captura de
+   la cotización.** Una cotización de 20 días de antigüedad se convertía
+   en factura con esa misma fecha vieja — riesgo real de cumplimiento SAT
+   (el CFDI debe timbrarse cerca de la fecha real). Se agrega
+   `date_emision: datetime.utcnow()` al payload de
+   [convert_quotation_invoice()](backend/app/routes/invoice.py).
+   `date_expiration` se deja intacto a propósito (significado distinto
+   después de convertir). Verificado: cotización con `date_emision` de
+   hace 20 días → factura convertida con la fecha real de conversión.
+3. **Alta de proyecto rota con 500 para CUALQUIER usuario.**
+   `psycopg2.errors.NotNullViolation` en `priority`. Causa raíz: una
+   migración vieja (ya borrada del repo) había dejado `priority` y
+   `total_cost` con `NOT NULL` real en la base; la migración de
+   reemplazo de `initAlan` usa `ADD COLUMN IF NOT EXISTS` (no-op sobre
+   columna ya existente), así que la restricción vieja sobrevivía en
+   cualquier base que ya la hubiera corrido. Corregido con
+   `ALTER COLUMN ... DROP NOT NULL/DROP DEFAULT` +
+   `20260929090000_prioridad_y_costo_ya_no_obligatorios.sql`. Probado el
+   ciclo de vida completo del proyecto (crear → autorizar/denegar/cancelar
+   → tomar → tarea → completar → entregar) con los 4 roles operativos.
+4. **Alta de cliente/empresa: campos capturables sin ningún consumidor
+   real.** Auditoría (agente de exploración, citando archivo:línea de
+   cada consumidor real) sobre `CustomerSupplierPage.jsx` encontró
+   `title`, `last_fiscal_certification_date` y `logistics_notes` sin
+   ningún lector en el resto del sistema — se quitaron del formulario.
+   `sla_level`/`credit_limit` sí son NOT NULL con DEFAULT en la base pero
+   tampoco los lee ningún módulo real (ni facturación/POS, que tiene su
+   propio `credit_limit`, ni logística, que tiene su propio `sla_level`
+   en `logistics_contract`) — se ocultan del formulario pero se mantiene
+   su valor por omisión en `baseEmptyForm` para no romper el alta.
+
+(Esta misma auditoría destapó, un día después, que el selector de
+"Vendedor" del mismo formulario en realidad estaba roto para cualquiera
+que no fuera Administrator — ver la entrada de abajo, punto 4.)
+
 ## Bitácora 2026-09-29/30 — visibilidad de taller, bitácora diaria, vale de Almacenista, Vendedor en Clientes
 
 Cuatro correcciones reales sobre `initAngm`, cada una probada en navegador
@@ -76,6 +134,49 @@ Todo esto quedó en 2 commits sobre `initAngm`
 ya pusheados. Sin desplegar a ningún ambiente real todavía — `initAngm` no
 dispara auto-deploy (solo `initAlan` lo hace, a `tyakxa-dev`); falta
 mergear.
+
+## ESTADO: Dashboard y KPIs de Adser (2026-09-29) — frente actual
+
+Entrega a Adser. Rama `initAlan`; los commits de esta línea se prueban en
+local y NO se pushean hasta que Aurora los revise en el navegador.
+
+- **Registry** (`backend/app/kpis/registry.py`): cada KPI declara dirección
+  (alto/bajo es mejor), gráficas permitidas, unidad, `modo` y, si aplica,
+  `colores_categoria`. `GET /kpi_definition/` los expone al Dashboard. Las
+  filas de `kpi_definition` no vienen de una migración: `init_db.py` llama a
+  `seed_kpi_definitions()` en cada arranque (una fila por KPI del registry).
+- **Modo `snapshot` vs `vivo`**: `snapshot` se calcula por entidad-y-día
+  (job `tasks_kpis.py`); `vivo` (ej. `material_prestado_actual`) es una
+  consulta paginada "ahora" que el job se salta a propósito. Su widget es de
+  tipo `tabla` (el backend lo acepta desde esta línea).
+- **Fechas de Adser**: `incident.creation_date` viene NULL en lo migrado;
+  los KPIs de incidencias usan `incident_date`. Decisión pendiente de Alan
+  en `docs/2026-09-28_creation_date_sin_default_en_incident.md`.
+- **Frontend**: la lógica pura del Dashboard vive en `frontend/src/kpi/`
+  (no en `src/lib/`: el `.gitignore` de Python ignora cualquier `lib/`) y se
+  prueba con `npm test` (node --test, sin dependencias). Cada tarjeta se
+  pinta con el mapa `tipo_grafica → componente` de
+  `components/kpi-widgets/tipoGraficaComponentes.js`. Un widget guarda
+  `parametros.rango_relativo` además de sus fechas absolutas (aditivo).
+- **Pruebas**: las de KPI solo corren en Postgres (en SQLite se saltan sin
+  avisar): `backend/ci/run_postgres_tests.sh -k kpi` con el stack arriba.
+  Detalle en `backend/tests/README.md`.
+- **Despliegue**: pasos por cambio en `docs/despliegues/` (ej.
+  `2026-09-25_kpis_adser_permisos.md`, `2026-09-25_kpi_agregacion.md`);
+  procedimiento general en `ARQUITECTURA_TYAKXA_TNY.md` §7.1.
+- **Vista previa aislada**: `/dashboard-preview` (datos demo); sus
+  componentes viven en `frontend/src/components/kpi-widgets/`.
+- **Plantilla del tablero de Adser**: `backend/scripts/seed_kpi_dashboard_template.py`
+  (5 widgets para `taroj`: número de pendientes hoy contra hace 30 días, barras
+  abiertas vs. cerradas y barras abiertas por responsable, ambas "este año" —el
+  último vale migrado es del 15 de agosto—, tabla
+  de material prestado —KPI en vivo, sin rango— y dona de material por estado
+  hoy; `--dry-run`, `--sin-tabla`, idempotente; pasos en
+  `docs/despliegues/2026-09-29_kpis_dashboard_adser.md`). **No correr la tabla en
+  `adser-prod` hasta que Alan confirme que `incident_date` es confiable**
+  (consulta de solo lectura); mientras, `--sin-tabla`.
+- **Pendiente**: confirmación de Alan sobre `creation_date` y sobre
+  `incident_date`; correr la plantilla en `adser-prod` (aún no).
 
 ## ESTADO: alcance por acción en permisos + equipos de usuarios — Fase 1 (2026-09-14)
 

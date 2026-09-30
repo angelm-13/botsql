@@ -1,0 +1,72 @@
+/* Dashboard de KPIs -- vista previa aislada, dirección "Taller".
+   Todo vive bajo .dashboard-preview-page para no filtrarse al resto de la
+   app; el tema oscuro es [data-theme="dark"] en ese mismo contenedor, no en
+   <html> -- el resto de TYAKXA no tiene modo oscuro todavía y no debe
+   heredar nada de aquí. */
+
+.dashboard-preview-page {
+  background: var(--kpi-fondo);
+  color: var(--kpi-ink);
+  font-family: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  min-height: 100%;
+  padding: 4px 2px 32px;
+}
+
+.kpi-preview-topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; margin-bottom: 20px; flex-wrap: wrap;
+}
+.kpi-preview-topbar h1 { margin: 0; font-size: 26px; }
+.kpi-preview-topbar p { margin: 4px 0 0; color: var(--kpi-texto-suave); }
+
+.kpi-preview-theme-toggle {
+  display: inline-flex; align-items: center; gap: 8px;
+  border: 1px solid var(--kpi-borde); background: var(--kpi-tarjeta); color: var(--kpi-ink);
+  border-radius: 999px; padding: 8px 16px; cursor: pointer; font: inherit; font-weight: 700;
+}
+.kpi-preview-theme-toggle:hover { box-shadow: var(--kpi-sombra); }
+
+.kpi-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 18px;
+}
+/* La tabla de material prestado trae mas columnas que las demas tarjetas --
+   le toca el doble de ancho cuando hay espacio para eso. */
+.kpi-preview-card-ancha { grid-column: span 2; }
+@media (max-width: 760px) { .kpi-preview-card-ancha { grid-column: span 1; } }
+
+.kpi-preview-card {
+  background: var(--kpi-tarjeta);
+  border: 2px solid var(--kpi-borde);
+  /* La franja lleva el color del KPI de la tarjeta (--kpi-acento-tarjeta, lo
+     pone WidgetCard); sin el, el acento del tema. */
+  border-left: 6px solid var(--kpi-acento-tarjeta, var(--kpi-acento));
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: var(--kpi-sombra);
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+  /* Entrada escalonada: cada tarjeta espera su turno via --orden-entrada,
+     puesto inline por WidgetCard. */
+  animation: kpi-entrada .4s ease backwards;
+  animation-delay: calc(var(--orden-entrada, 0) * 80ms);
+}
+.kpi-preview-card:hover { transform: translateY(-3px); box-shadow: var(--kpi-sombra-hover); }
+.kpi-preview-card.sin-movimiento { animation: none; }
+
+@keyframes kpi-entrada {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.kpi-preview-card-header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.kpi-preview-card-header h3 { margin: 0; font-size: 15px; color: var(--kpi-ink); }
+.kpi-preview-updated { font-size: 11px; color: var(--kpi-texto-suave); white-space: nowrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  .kpi-preview-card { animation: none; }
+  .kpi-preview-card:hover { transform: none; }
+}
+
+/* --- editor de demostracion --------------------------------------------- */
+.kpi-editor-demo .plegable-cuerpo { padding-top: 10px; }
