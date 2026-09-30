@@ -159,26 +159,48 @@ donde cabe, que en la práctica es la columna más corta. El recuadro "Agregar
 gráfico" es uno solo, a todo el ancho, al final. La tabla no se estira: su lista
 se desplaza por dentro con un tope (22 rem, o 36 rem con `filas: 2`).
 
-**Cómo se mapea `posicion_orden` al layout:** `posicion_orden` (de 100 en 100) es
-el orden en que se **colocan** las tarjetas; el DOM sigue ese orden. Cada tarjeta
-cae en el primer hueco libre (más arriba y, a igual altura, más a la izquierda). Por
-eso el orden **visual** es por columnas y no por renglones, y puede no coincidir con
-el lineal: la 4.ª puede quedar a la derecha de la 2.ª y arriba de la 3.ª. Lo
-que sí es cierto siempre: mover una tarjeta antes en la lista la coloca antes.
+**Cómo se mapean `posicion_orden` y el tamaño al layout** (contrato del masonry):
 
-**Arrastre:** mientras arrastras, las demás tarjetas se corren solas y la tarjeta
-arrastrada deja un **hueco de su tamaño real** donde caería. No es una reja uniforme:
-el hueco es la propia tarjeta (escondida, con su altura natural) puesta en el orden
-que tendría al soltar, y el masonry real acomoda a las demás alrededor; las que
-cambian de lugar se deslizan con una animación de 220 ms (FLIP). Lo que sigue al
-puntero es una copia estática de la tarjeta (su HTML), no otra tarjeta viva: no vuelve
-a pedir datos ni a montar gráficas. Al soltar se guarda `posicion_orden` con **ese
-mismo orden**, así que el resultado coincide con lo que mostraba el hueco, sin saltos.
-Con `prefers-reduced-motion` no hay animación de corrimiento (las tarjetas cambian de
-lugar de golpe y la copia cae sin animación). Tras cada corrimiento se ignora el
-movimiento durante 220 ms para que las tarjetas no "tiemblen" mientras la que se
-acaba de mover todavía se está deslizando. Código:
-`components/kpi-widgets/useReordenarTarjetas.js` y `kpi/kpiReorden.js`.
+- `posicion_orden` (de 100 en 100) es el orden en que se **colocan** las tarjetas; el DOM
+  sigue ese orden. Cada tarjeta cae en el primer hueco donde cabe: la fila más alta y, a igual
+  altura, la columna más a la izquierda. Por eso la posición de una tarjeta depende **solo de
+  las que van antes** en el orden, y el orden visual es por columnas, no por renglones (la
+  4.ª puede quedar a la derecha de la 2.ª y arriba de la 3.ª).
+- El tamaño sale de `parametros`: `columnas` (1 o 2; con una sola columna disponible, una
+  tabla de 2 ocupa 1) y `filas` (solo tablas). `filas: 2` no reserva filas de la cuadricula: solo
+  deja crecer la lista a 36 rem; el alto de toda tarjeta es su altura natural.
+- Una tarjeta es **grande** si ocupa 2 columnas o 2 filas (hoy, las tablas). Con la tabla
+  primero, cae siempre en la esquina superior izquierda: no "flota". Una tarjeta chica
+  colocada **antes** de ella la empuja a la derecha (con una sola antes, queda en el centro:
+  columnas 2-3), porque en la columna 1 ya no cabe en 2 columnas; ese era el brinco del arrastre.
+
+**Arrastre:** dnd-kit solo pone el gesto (el sensor y la copia que sigue al puntero). Qué orden
+toma el tablero lo decide `elegirOrden` (`kpi/kpiMasonry.js`), no la tarjeta "sobre la que está el
+puntero": `colocarMasonry` repite el algoritmo del navegador (mismo orden, mismas columnas, mismas
+alturas medidas) y, para cada lugar posible de la lista, calcula dónde quedaría el hueco. Reglas:
+
+1. **Mientras el puntero siga dentro del hueco actual, no pasa nada.** El hueco solo cambia
+   cuando el puntero sale de él; por eso no parpadea ni salta entre posiciones lejanas.
+2. Al salir, gana el hueco que contiene al puntero (o, si ninguno lo contiene, el más cercano, y
+   solo si mejora al actual por más de 8 px). Tras el cambio el puntero queda dentro del hueco
+   nuevo, así que no se regresa al anterior: no hay ciclos.
+3. **Una tarjeta chica nunca mueve a una grande.** Solo valen los lugares donde cada tarjeta
+   grande queda donde estaba al empezar el arrastre. La tabla solo se mueve si la arrastras tú; al
+   arrastrarla, cualquier lugar de la lista vale y el hueco muestra el lugar real.
+4. El hueco **es** la propia tarjeta (escondida, con su altura real), puesta en el orden que tendrá
+   al soltar, y las demás se acomodan con el masonry real; al soltar se guarda `posicion_orden` con
+   **ese mismo orden**, así que el resultado es exactamente lo que mostraba el hueco.
+
+Lo que cambia para quien usa el tablero: con la tabla en la esquina, una tarjeta chica no se puede
+soltar a su izquierda o encima de ella (eso la movería); se suelta en el hueco más cercano de la
+derecha. Para sacar la tabla de la esquina hay que arrastrar la tabla.
+
+Las demás tarjetas que cambian de lugar se deslizan con una animación de 220 ms (FLIP); si una
+seguía animándose, arranca desde donde se veía, sin salto. Con `prefers-reduced-motion` no hay
+animación (cambian de lugar de golpe y la copia cae sin animación). La copia que sigue al puntero
+es una copia estática del HTML de la tarjeta: no vuelve a pedir datos ni a montar gráficas. Código:
+`components/kpi-widgets/useReordenarTarjetas.js`, `kpi/kpiMasonry.js` y `kpi/kpiReorden.js`; pruebas
+en `kpi/kpiMasonry.test.js`.
 
 **Un tablero que ya existía no cambia de orden ni de tamaño:** la plantilla no
 modifica lo que alguien ya tiene (regla de idempotencia de abajo). Para reacomodarlo,
