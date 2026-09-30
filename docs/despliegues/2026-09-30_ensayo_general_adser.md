@@ -28,7 +28,7 @@ devolución de prueba), ninguna existencia negativa, ningún retirado/extraviado
 
 ## Lo que el ensayo encontró (y la guía no decía)
 
-### 1. Bloqueante para los pasos 6 a 8: al rol Administrator le faltan permisos en prod
+### 1. Lo que bloquea los pasos 6 a 8 (se omiten por decisión de Alan): al rol Administrator le faltan permisos en prod
 
 `seed_kpi_permissions.py --dry-run` avisa «El rol 'Administrator' no tiene lectura de
 kpi_definition». La guía manda **parar** ante un AVISO, y con razón: en adser-prod hay **38
@@ -51,9 +51,17 @@ laboratorio, documentos, citas, encuestas…).
   (`UPDATE entity_permission SET deletion_date = NULL WHERE id_permission = 1 AND entity_name IN
   ('kpi_definition','kpi_dashboard','kpi_dashboard_widget','nm_permission_kpi')`) deja el dry-run
   de permisos sin avisos (6 filas por insertar, 2.ª corrida 0) y la plantilla del tablero lista.
-- **Decisión pendiente (de Alan/Tanya):** ¿se restauran solo esas 4, o las 38? Algunas (módulos
-  que Adser no usa) pudieron quitarse a propósito; otras (`nm_incident_product`, `status`,
-  `field`…) son del núcleo. No se toca en prod sin OK.
+- **Decisión de Alan (2026-09-30): no se mueve nada del Gestor de roles de adser-prod.** Se
+  dejan las 38 bajas como están. Se omiten los pasos 6, 7 y 8 de
+  `2026-09-25_kpis_adser_permisos.md` (permisos de KPI y plantilla del tablero); `taroj` no
+  verá el tablero hasta que Adser lo pida. Si hace falta activar algo en el Gestor de roles,
+  Adser avisa a Alan y él decide.
+- **La promoción por sí sola no mueve permisos de nadie** (medido en la copia, antes y después
+  de aplicar las 118 migraciones): `entity_permission` 0 filas cambiadas; permisos por campo
+  (`nm_field_permission`) 0 perdidos, 0 ganados y 0 con otro `control_type` (1578 filas
+  vivas antes y después). Las +981 filas que crecen son registros ya dados de baja que el
+  sembrado agrega en cada arranque.
+- Se sigue corriendo el backfill de snapshots (paso 5): no depende de permisos.
 
 ### 2. Préstamos abiertos que se contradicen con el estado de la pieza
 

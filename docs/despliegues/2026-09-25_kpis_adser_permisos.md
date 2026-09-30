@@ -330,6 +330,15 @@ print(recalcular_kpi_snapshots_rango(hoy - timedelta(days=364), hoy))
 Esperado: `{'ok': True, ... 'filas': N, ...}`. Detalle y verificaciones en
 `2026-09-25_kpi_agregacion.md` y en `2026-09-29_kpis_dashboard_adser.md`.
 
+> **DECISIÓN DE ALAN (2026-09-30): los pasos 6, 7 y 8 NO se corren en `adser-prod`.**
+> No se mueven permisos del Gestor de roles de Adser: se dejan como están. El ensayo sobre
+> una copia de prod (`2026-09-30_ensayo_general_adser.md`) mostró que `taroj` no tiene hoy
+> lectura de `kpi_definition` (la fila está dada de baja desde el 14-sep) y que el script de
+> permisos avisa por eso; la plantilla del tablero depende de esa lectura. Consecuencia
+> aceptada: `taroj` no verá el tablero de KPI hasta que Adser lo pida; si hace falta
+> activar algo en el Gestor de roles, **Adser avisa a Alan** y él decide. Del paso 9 sigue
+> vigente solo el punto 5 (las cifras de solo lectura); los puntos 1 a 4 no aplican.
+
 ### 6. Dry-run del script de permisos
 
 ```bash
