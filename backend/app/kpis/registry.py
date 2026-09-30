@@ -23,7 +23,7 @@ KPIs comparten clave o si alguno declara un modulo que no existe en
 from __future__ import annotations
 
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import Date, and_, case, cast, func, literal, or_, select, text
@@ -965,6 +965,91 @@ def incidencias_pendientes_query(session, fecha_inicio, fecha_fin, filtros_dimen
     return [(None, dia, valor) for dia, valor in session.execute(stmt).all()]
 
 
+# Las 4 categorias fijas de `prestamos_abiertos_por_antiguedad`, en el orden en que se leen
+# (de menos a mas antiguo). Son `estado` de la dimension: texto, no ids.
+ANTIGUEDAD_CATEGORIAS = ("0-30", "31-60", "61-90", "+90")
+# Verde -> ambar -> naranja -> rojo: a mas dias prestado, mas urgente.
+ANTIGUEDAD_COLORES = {"0-30": "#22b573", "31-60": "#f0a93b", "61-90": "#f58a3c", "+90": "#e5484d"}
+
+
+def prestamos_abiertos_por_antiguedad_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
+    """Foto: renglones de vale prestados sin devolver, por antiguedad, en cada dia del rango.
+
+    Mismo universo que `material_prestado_actual_query` (el KPI "vivo" que lista estos
+    mismos renglones): direccion "Salida", sin vales de BAJA (`TIPOS_DE_BAJA`:
+    destruccion y extravio; "Dañado" SI cuenta), con `Incident.incident_date`, sin
+    borrados. Aqui se cuentan por antiguedad en vez de listarse.
+
+    Antiguedad en un dia D = `D - incident_date` (la misma "dias prestado" de la tabla,
+    que usa D = hoy), en 4 categorias fijas: "0-30", "31-60", "61-90" y "+90" dias.
+
+    Reconstruccion de cualquier dia pasado, igual que `incidencias_pendientes_query`: un
+    renglon estaba abierto en D si su vale ya existia (`incident_date <= D`) y NO estaba
+    cerrado en D: `close_date` nulo, el sentinel heredado de Adser (`CIERRE_SENTINELA`,
+    que no es un cierre real) o posterior a D (cerrarse EN D ya no cuenta ese dia). Asi la
+    foto de un dia anterior sale exacta, con la antiguedad que tenia ENTONCES.
+
+    Siempre regresa las 4 categorias de cada dia, con 0 cuando no hay renglones: el
+    agregado "ultimo" toma el ultimo dia con filas, y una categoria ausente se lee como
+    "no calculada", no como cero.
+
+    Dimension "estado" (categoria fija). Sin alcance de proyecto, mismo motivo que el resto
+    de los KPIs sobre `Incident` de este archivo. La unidad es renglones de vale.
+    """
+    dias = (
+        select(cast(func.generate_series(fecha_inicio, fecha_fin, text("interval '1 day'")), Date).label("dia"))
+        .subquery()
+    )
+    antiguedad = dias.c.dia - func.date(Incident.incident_date)
+    categoria = case(
+        (antiguedad <= 30, ANTIGUEDAD_CATEGORIAS[0]),
+        (antiguedad <= 60, ANTIGUEDAD_CATEGORIAS[1]),
+        (antiguedad <= 90, ANTIGUEDAD_CATEGORIAS[2]),
+        else_=ANTIGUEDAD_CATEGORIAS[3],
+    )
+    stmt = (
+        select(categoria.label("categoria"), dias.c.dia, func.count())
+        .select_from(dias)
+        .join(
+            Incident,
+            and_(
+                Incident.deletion_date.is_(None),
+                Incident.incident_date.isnot(None),
+                func.date(Incident.incident_date) <= dias.c.dia,
+            ),
+        )
+        .join(
+            NmIncidentProduct,
+            and_(
+                NmIncidentProduct.id_incident == Incident.id_incident,
+                NmIncidentProduct.deletion_date.is_(None),
+                NmIncidentProduct.direction == SALIDA,
+                or_(
+                    NmIncidentProduct.close_date.is_(None),
+                    NmIncidentProduct.close_date == CIERRE_SENTINELA,
+                    func.date(NmIncidentProduct.close_date) > dias.c.dia,
+                ),
+            ),
+        )
+        .outerjoin(IncidentType, IncidentType.id_incident_type == Incident.id_incident_type)
+        .where(
+            or_(
+                IncidentType.incident_type_description.is_(None),
+                func.lower(func.trim(IncidentType.incident_type_description)).notin_(TIPOS_DE_BAJA),
+            )
+        )
+        .group_by(categoria, dias.c.dia)
+    )
+    conteos = {(dia, cat): cantidad for cat, dia, cantidad in session.execute(stmt).all()}
+    filas = []
+    dia = fecha_inicio
+    while dia <= fecha_fin:
+        for cat in ANTIGUEDAD_CATEGORIAS:
+            filas.append((cat, dia, conteos.get((dia, cat), 0)))
+        dia += timedelta(days=1)
+    return filas
+
+
 def incidencias_abiertas_vs_cerradas_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
     """Incidencias abiertas y cerradas, por dia -- flujo, no foto.
 
@@ -1600,6 +1685,24 @@ KPI_REGISTRY = (
             "Destruccion": "#e0559b",
         },
         descripcion="Entrada, salida y disposiciones especiales de cada renglon de vale.",
+    ),
+    KpiDefinition(
+        clave="prestamos_abiertos_por_antiguedad",
+        etiqueta="Préstamos abiertos por antigüedad",
+        modulo="operaciones",
+        dimensiones=("estado",),
+        etiqueta_dimension="Antigüedad",
+        query_builder=prestamos_abiertos_por_antiguedad_query,
+        agregacion="ultimo",
+        unidad="numero",
+        alcance_proyecto=False,
+        direccion="bajo_es_mejor",
+        graficas_permitidas=("barras", "dona", "tabla"),
+        grafica_default="barras",
+        # Verde -> ambar -> naranja -> rojo: a mas dias prestado, mas urgente. Por nombre
+        # de categoria, como material_por_estado.
+        colores_categoria=ANTIGUEDAD_COLORES,
+        descripcion="Renglones prestados sin devolver, por días desde el vale: 0-30, 31-60, 61-90 y más de 90.",
     ),
     KpiDefinition(
         clave="material_prestado_actual",
