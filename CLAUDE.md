@@ -6,6 +6,30 @@ aparte de `ARQUITECTURA_TYAKXA_TNY.md` (referencia técnica estable) y de
 sección se resuelve, se puede recortar; mientras tanto se deja completa para
 que una sesión nueva no tenga que releer el historial de chat.
 
+## Bitácora 2026-09-30 (continuación) — prueba del flujo completo con Jefe de taller
+
+Pedido: probar en navegador el flujo de proyectos con Jefe de taller
+también (tras el punto de maquila/custodia de arriba). Se destapó un bug
+real preexistente, no introducido en esta sesión: **`take_project`/
+`release_project` (backend) y sus clientes de API (`takeProyect`/
+`releaseProyect`) existían, pero ningún botón de `ProjectManagementPage.jsx`
+los llamaba** — código muerto del lado del cliente. Jefe de taller no
+tenía NINGUNA forma de tomar un proyecto libre desde el navegador, solo
+vía script directo al backend (que es como se probó el flujo en sesiones
+anteriores, sin darse cuenta de que la UI real no lo ofrecía).
+
+Corregido: dos botones nuevos en `ProjectActions` — "Tomar proyecto"
+(modo taller, cuando el proyecto sigue sin supervisor) y "Soltar
+proyecto" (para quien ya lo tiene). Commit `0429574`.
+
+Ciclo completo probado en navegador real con clics reales, con un
+proyecto que SÍ requiere maquila: Jefe de taller toma → Gerente autoriza
+→ espera de material → Jefe de taller crea una tarea → Gerente pasa a en
+proceso → Jefe de taller cierra la tarea → Jefe de taller completa el
+proyecto. Las 6 acciones con 200/201 real. También confirmado de nuevo
+que el proyecto sin maquila (de la sección de arriba) sigue sin aparecer
+en ninguna columna del tablero de Jefe de taller, incluida "Completado".
+
 ## Bitácora 2026-09-29 — QA de cotización/factura, alta de proyectos, alta de cliente
 
 Pedido: revisar y probar (1) el flujo cotización→factura con fechas
