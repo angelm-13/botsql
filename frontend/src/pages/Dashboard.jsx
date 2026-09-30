@@ -6,8 +6,8 @@ import {
   Loader2, Pencil, PieChart as PieChartIcon, Plus, Receipt,
   RefreshCw, SlidersHorizontal, Table as TableIcon, Trash2, User,
 } from "lucide-react";
-import { DndContext, PointerSensor, closestCenter, useSensor, useSensors } from "@dnd-kit/core";
-import { SortableContext, arrayMove, useSortable } from "@dnd-kit/sortable";
+import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { SortableContext, useSortable } from "@dnd-kit/sortable";
 import { CSS as DndCss } from "@dnd-kit/utilities";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
@@ -15,6 +15,7 @@ import { useI18n } from "../i18n";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import useReducedMotion from "../components/kpi-widgets/useReducedMotion";
 import useMasonryRef from "../components/kpi-widgets/useMasonry";
+import useReordenarTarjetas, { colisionPorPuntero } from "../components/kpi-widgets/useReordenarTarjetas";
 import {
   getAllKpiDashboard, createKpiDashboard, updateKpiDashboard, deleteKpiDashboard,
   getAllKpiDashboardWidget, createKpiDashboardWidget, updateKpiDashboardWidget, deleteKpiDashboardWidget,
@@ -640,14 +641,10 @@ export default function Dashboard() {
   // backend, ver KpiDashboardWidget.posicion_orden- con el mismo criterio de
   // espaciado (100, 200, 300...) que ya usa `_reemplazar_kpis` para el orden
   // de KPIs dentro de un widget.
-  async function handleDragEndWidgets(event) {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const oldIndex = widgets.findIndex((item) => item.id_kpi_dashboard_widget === active.id);
-    const newIndex = widgets.findIndex((item) => item.id_kpi_dashboard_widget === over.id);
-    if (oldIndex === -1 || newIndex === -1) return;
-
-    const reordenados = arrayMove(widgets, oldIndex, newIndex);
+  async function guardarOrdenWidgets(idsEnOrden) {
+    const porId = new Map(widgets.map((item) => [String(item.id_kpi_dashboard_widget), item]));
+    const reordenados = idsEnOrden.map((id) => porId.get(String(id))).filter(Boolean);
+    if (reordenados.length !== widgets.length) return;
     setWidgets(reordenados);
     try {
       await Promise.all(
@@ -664,6 +661,12 @@ export default function Dashboard() {
       await loadWidgets(activeId, { silencioso: true });
     }
   }
+
+  // Reordenar arrastrando: durante el arrastre las demas tarjetas se corren y la arrastrada deja un
+  // hueco de su tamano donde caeria; al soltar se guarda ESE orden. Ver useReordenarTarjetas.js.
+  const reorden = useReordenarTarjetas({
+    widgets, guardarOrden: guardarOrdenWidgets, gridNodeRef: widgetGridNodeRef, reducirMovimiento,
+  });
 
   useEffect(() => { loadDashboards(); }, [loadDashboards]);
   // Durante la generacion del reporte PDF, `generarReportePdf` ya llama a
@@ -872,10 +875,10 @@ export default function Dashboard() {
           {loadingWidgets && <div className="alert">{t("common.loading")}</div>}
 
           {!loadingWidgets && !widgetsError && (
-            <DndContext sensors={dragSensors} collisionDetection={closestCenter} onDragEnd={handleDragEndWidgets}>
-            <SortableContext items={widgets.map((widget) => widget.id_kpi_dashboard_widget)} strategy={sinDesplazarVecinas}>
+            <DndContext sensors={dragSensors} collisionDetection={colisionPorPuntero} {...reorden.handlers}>
+            <SortableContext items={reorden.idsVista} strategy={sinDesplazarVecinas}>
             <div className="kpi-widget-grid" ref={widgetGridRef}>
-              {widgets.map((widget) => (
+              {reorden.widgetsVista.map((widget) => (
                 <SortableKpiWidgetCard
                   key={widget.id_kpi_dashboard_widget}
                   widget={widget}
@@ -889,6 +892,7 @@ export default function Dashboard() {
                   esNuevo={widget.id_kpi_dashboard_widget === idWidgetNuevo}
                   animar={animarWidgets}
                   reducirMovimiento={reducirMovimiento}
+                  esHueco={String(widget.id_kpi_dashboard_widget) === reorden.activoId}
                   filtroResponsable={filtroResponsable}
                   onFiltrarResponsable={hayTablaDePrestamos ? alFiltrarResponsable : undefined}
                   onQuitarFiltroResponsable={quitarFiltroResponsable}
@@ -910,6 +914,19 @@ export default function Dashboard() {
               </button>
             </div>
             </SortableContext>
+            {/* Lo que sigue al puntero: una copia ESTATICA de la tarjeta (su HTML), no otra tarjeta
+                viva -- no vuelve a pedir datos ni a montar graficas. La tarjeta real se queda en el
+                masonry, escondida, como hueco. */}
+            <DragOverlay dropAnimation={reducirMovimiento ? null : { duration: 200, easing: "cubic-bezier(.2,.8,.2,1)" }}>
+              {reorden.instantanea && (
+                <div
+                  className="kpi-widget-superpuesta"
+                  style={{ width: reorden.instantanea.ancho }}
+                  // eslint-disable-next-line react/no-danger
+                  dangerouslySetInnerHTML={{ __html: reorden.instantanea.html }}
+                />
+              )}
+            </DragOverlay>
             </DndContext>
           )}
 
@@ -949,13 +966,14 @@ export default function Dashboard() {
 // muestra" (KpiWidgetCard). El handle (GripVertical) es la UNICA zona con los
 // listeners de arrastre -- si se le pusieran a la tarjeta entera, un clic en
 // "Editar"/"Eliminar" competiria con el inicio de un drag.
-function SortableKpiWidgetCard({ reducirMovimiento, ...props }) {
+function SortableKpiWidgetCard({ reducirMovimiento, esHueco, ...props }) {
   const { widget } = props;
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: widget.id_kpi_dashboard_widget,
   });
   const style = {
-    transform: DndCss.Transform.toString(transform),
+    // La que se arrastra no se mueve: su copia (DragOverlay) sigue al puntero y ella es el hueco.
+    transform: esHueco ? undefined : DndCss.Transform.toString(transform),
     // La transicion de dnd-kit es la que acomoda con animacion suave al
     // resto de las tarjetas cuando una se suelta -- se conserva SIEMPRE,
     // incluso mientras se arrastra la propia (isDragging), para que las
@@ -971,7 +989,7 @@ function SortableKpiWidgetCard({ reducirMovimiento, ...props }) {
       ref={asignarRef}
       style={style}
       className={[
-        isDragging && "kpi-widget-dragging",
+        esHueco && "kpi-widget-hueco",
         columnasDeWidget(widget) === 2 && "kpi-widget-doble",
         filasDeWidget(widget) === 2 && "kpi-widget-filas-2",
       ].filter(Boolean).join(" ")}
