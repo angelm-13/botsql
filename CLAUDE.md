@@ -6,6 +6,43 @@ aparte de `ARQUITECTURA_TYAKXA_TNY.md` (referencia técnica estable) y de
 sección se resuelve, se puede recortar; mientras tanto se deja completa para
 que una sesión nueva no tenga que releer el historial de chat.
 
+## Bitácora 2026-09-30 (continuación) — plantilla del PDF de vale igual a la del sistema anterior
+
+Pedido: rehacer el PDF del vale de almacén para que sea idéntico al del
+sistema anterior (se dio una foto de un vale impreso real como
+referencia). Commit `e27125e`.
+
+Se reemplazó por completo `documents-reports/templates/warehouse_voucher.html`:
+caja de firmas Entregado/Recibido Almacén/Personal, línea de
+identificación (ID Incidente/ID Vale/Responsable/Fecha), Nota,
+Descripción (el CLIENTE de la obra, no la descripción del proyecto —
+confirmado comparando contra el papel de referencia, que mostraba un
+nombre de empresa ahí) y la tabla de renglones con las columnas
+#/IDdb/Código/Descripción/Tipo/Cantidad/Precio Bruto/Recibido Sello y
+Firma. Todo duplicado dos veces en la misma hoja (copia Almacén / copia
+Personal), igual que el papel de referencia.
+
+**Dos bugs reales encontrados de paso, sin cobertura de pruebas
+previa** (nadie probaba el CONTENIDO de `documento_del_vale`, solo que
+el PDF se archivara):
+- El código de producto se leía de una llave que el helper de fichas de
+  producto nunca publica (`code` en vez de `product_code`) — la
+  columna "Código" salía SIEMPRE vacía en el PDF, para cualquier vale.
+- El precio bruto (campo nuevo de esta plantilla) viajaba como
+  `Decimal` crudo hacia la ficha que se archiva como JSON junto con la
+  versión del documento — tronaba con `TypeError` al archivar
+  CUALQUIER vale cuyo producto tuviera precio capturado. Detectado
+  corriendo la suite completa, no al escribir el código.
+
+Verificado generando PDFs reales (no con datos mockeados) contra dos
+vales reales de la base: uno sin proyecto (Descripción en blanco) y uno
+con proyecto/cliente ligado (Descripción: "BMW Manufacturing de Mexico
+SA de CV", igual al "APELSA" del papel de referencia). Sin LibreOffice
+ni poppler instalados en este Windows local, así que la verificación
+visual se hizo leyendo el PDF directamente (el propio Read del agente
+sabe renderizar PDF), no con el `soffice.py`/`pdftoppm` que sugiere el
+skill de docx (pensado para macOS/Linux).
+
 ## Bitácora 2026-09-30 (continuación) — prueba del flujo completo con Jefe de taller
 
 Pedido: probar en navegador el flujo de proyectos con Jefe de taller
