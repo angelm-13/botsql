@@ -160,6 +160,31 @@ class TestNingunaMigracionPisaAlGestor(unittest.TestCase):
             "gestor de roles: " + ", ".join(culpables),
         )
 
+    def test_la_migracion_de_la_bitacora_no_revierte_lo_que_el_gestor_guarde(self):
+        """Las columnas de MENU tambien son del Gestor (selector «Ubicacion»).
+
+        `20260930090000_bitacora_diaria_entra_al_menu.sql` movia la pantalla al
+        menu lateral con `WHERE menu_location IS DISTINCT FROM 'sidebar'`: como
+        db-migrate la reaplica en cada arranque, un administrador que la ponia
+        en «No mostrar» la veia reaparecer en el siguiente reinicio. La forma
+        correcta es actuar solo sobre la fila que sigue como la dejo la siembra
+        (oculta y sin grupo ni etiqueta). Se comprueba sobre el texto por la
+        misma razon que el resto de esta clase.
+        """
+        texto = (MIGRACIONES / "20260930090000_bitacora_diaria_entra_al_menu.sql").read_text(
+            encoding="utf-8", errors="replace")
+        # Sin los comentarios, que citan la forma vieja para explicarla.
+        codigo = "\n".join(linea for linea in texto.splitlines() if not linea.lstrip().startswith("--"))
+        self.assertNotIn(
+            "IS DISTINCT FROM", codigo.upper(),
+            "compara contra el valor DESEADO: revierte lo que el Gestor guarde en cada reinicio")
+        for guarda in ("menu_location = 'hidden'", "COALESCE(menu_group, '') = ''",
+                       "COALESCE(menu_label, '') = ''"):
+            self.assertIn(
+                guarda, codigo,
+                f"falta la guarda `{guarda}`: sin ella la migracion pisa una fila que el "
+                "administrador ya cambio")
+
     def test_no_migration_withdraws_rows_absent_from_its_own_matrix(self):
         """Dar de baja por ausencia en una matriz vieja tambien revierte al gestor.
 

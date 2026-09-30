@@ -11,8 +11,19 @@
 -- a `menu="sidebar"` no alcanza solo: hace falta este UPDATE para las
 -- instalaciones que ya sembraron la fila con el menu viejo.
 --
--- Se reaplica en cada arranque del pod: el WHERE es por entity_name, sin
--- IDs fijos, y no hace nada la segunda vez que el menu ya este correcto.
+-- Se reaplica en cada arranque del pod (db-migrate corre TODAS las migraciones
+-- cada vez), asi que solo toca una fila que sigue EXACTAMENTE como la dejo la
+-- siembra original: oculta (`menu_location = 'hidden'`) y sin grupo ni etiqueta.
+-- El WHERE es por entity_name, sin IDs fijos.
+--
+-- Corregido 2026-09-30: la condicion anterior era `menu_location IS DISTINCT
+-- FROM 'sidebar' OR menu_label IS DISTINCT FROM '...'`, que compara contra el
+-- valor DESEADO y no contra el de la siembra. Con eso, un administrador que
+-- ocultaba la pantalla ("No mostrar") o la movia al engrane desde el Gestor de
+-- roles veia su decision revertida en el siguiente reinicio del backend. Ahora,
+-- despues de aplicarse una vez la fila ya tiene grupo y etiqueta (el Gestor los
+-- conserva al guardar), asi que no vuelve a coincidir y lo que el administrador
+-- decida perdura -- el Gestor manda.
 BEGIN;
 
 UPDATE entity_permission
@@ -22,7 +33,8 @@ UPDATE entity_permission
        menu_label = 'Bitacora diaria de taller',
        menu_order = 390
  WHERE entity_name = 'daily_activity_log'
-   AND (menu_location IS DISTINCT FROM 'sidebar'
-        OR menu_label IS DISTINCT FROM 'Bitacora diaria de taller');
+   AND menu_location = 'hidden'
+   AND COALESCE(menu_group, '') = ''
+   AND COALESCE(menu_label, '') = '';
 
 COMMIT;
