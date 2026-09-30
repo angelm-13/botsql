@@ -3485,6 +3485,8 @@
     "folio": "Partida",
     "requires_maquila": "Requiere maquila (taller)",
     "no_maquila_badge": "Sin maquila",
+    "take_project": "Tomar proyecto",
+    "release_project": "Soltar proyecto",
     "project": "Proyecto",
     "task": "Tarea",
     "user": "Usuario",

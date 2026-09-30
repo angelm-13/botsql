@@ -3443,6 +3443,8 @@
     "folio": "Line item",
     "requires_maquila": "Requires workshop (maquila)",
     "no_maquila_badge": "No workshop needed",
+    "take_project": "Take project",
+    "release_project": "Release project",
     "project": "Project",
     "task": "Task",
     "user": "User",
