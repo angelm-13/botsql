@@ -11,9 +11,7 @@ import KpiPermissionManagerPage from "./pages/KpiPermissionManagerPage.jsx";
 import TeamManagerPage from "./pages/TeamManagerPage.jsx";
 import QuotationPage from "./pages/QuotationPage.jsx";
 import AuthorizationTrackingPage from "./pages/AuthorizationTrackingPage.jsx";
-import CatalogoWebPage from "./pages/CatalogoWebPage.jsx";
 import ClientPortalPage from "./pages/ClientPortalPage.jsx";
-import WebShoppersPage from "./pages/WebShoppersPage.jsx";
 import BankPage from "./pages/BankPage.jsx";
 import BankAccountPage from "./pages/BankAccountPage.jsx";
 import BrandPage from "./pages/BrandPage.jsx";
@@ -196,8 +194,6 @@ export default function App() {
           <Route path="/facturama-config" element={<AdminRoute><FacturamaConfigPage /></AdminRoute>} />
           <Route path="/quotation" element={<RoleAccessRoute entityName="invoice"><QuotationPage /></RoleAccessRoute>} />
           <Route path="/authorization_tracking" element={<RoleAccessRoute entityName="invoice"><AuthorizationTrackingPage /></RoleAccessRoute>} />
-          <Route path="/catalogo-web" element={<RoleAccessRoute entityName="product_sale_config"><CatalogoWebPage /></RoleAccessRoute>} />
-          <Route path="/compradores-web" element={<RoleAccessRoute entityName="user"><WebShoppersPage /></RoleAccessRoute>} />
           <Route path="/bank" element={<RoleAccessRoute entityName="bank"><BankPage /></RoleAccessRoute>} />
           <Route path="/bank_account" element={<RoleAccessRoute entityName="bank_account"><BankAccountPage /></RoleAccessRoute>} />
           <Route path="/brand" element={<RoleAccessRoute entityName="brand"><BrandPage /></RoleAccessRoute>} />
