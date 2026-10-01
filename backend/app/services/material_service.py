@@ -1,6 +1,6 @@
 from sqlalchemy import func, select
 
-from app.models import Material
+from app.models import Material, Product
 from app.models.session import transaction_context
 from app.services.base_service import CrudService
 from app.utils.errors import AppError
@@ -48,6 +48,36 @@ class MaterialService(CrudService):
                 'errors.material_already_exists', 409,
                 {'entity': 'material', 'id_material': existente},
             )
+
+    @staticmethod
+    def heredar_foto_de_producto(items: list[dict]) -> list[dict]:
+        """A un material sin foto propia le presta la de uno de sus productos.
+
+        Casi todo el catalogo trae sus fotos en los PRODUCTOS (las del sistema
+        anterior), asi que un material sin foto propia mostraria un hueco aunque
+        su herramienta se vea en Almacen, Localizar y Productos. Se toma la del
+        producto vivo con foto de menor id, para que sea estable. Solo lectura:
+        no escribe `material.path_imagen`.
+        """
+        pendientes = {int(i['id_material']) for i in items
+                      if not i.get('path_imagen') and i.get('id_material')}
+        if not pendientes:
+            return items
+        with transaction_context() as session:
+            filas = session.execute(
+                select(Product.id_material, Product.path_imagen).where(
+                    Product.id_material.in_(list(pendientes)),
+                    Product.deletion_date.is_(None),
+                    Product.path_imagen.isnot(None),
+                    Product.path_imagen != '',
+                ).order_by(Product.id_product.desc())
+            ).all()
+        # Desc + sobrescribir deja la de menor id al final.
+        fotos = {int(id_material): ruta for id_material, ruta in filas}
+        for item in items:
+            if not item.get('path_imagen') and item.get('id_material'):
+                item['path_imagen'] = fotos.get(int(item['id_material'])) or item.get('path_imagen')
+        return items
 
     @classmethod
     def create(cls, payload: dict, user_id: int | None = None):

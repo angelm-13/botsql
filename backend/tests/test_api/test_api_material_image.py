@@ -97,3 +97,20 @@ class TestMaterialImageApi(BackendTestCase):
 
         self.assertEqual(200, response.status_code, response.get_data(as_text=True))
         self.assertEqual("editada", self.json(response)["note"])
+
+    def test_a_material_without_photo_shows_the_one_of_its_products(self):
+        id_material = self._material()
+        creado = ProductService.create(build_payload(
+            ProductService, {"created_by": 1, "descripcion": "con foto", "cantidad": 0,
+                             "id_material": id_material}))
+        with transaction_context() as db:
+            db.get(Product, creado["id_product"]).path_imagen = "uploads/producto/225.png"
+
+        lista = self._request("GET", "/material/?per_page=500")
+
+        fotos = {i["id_material"]: i["path_imagen"] for i in self.json(lista)["items"]}
+        self.assertEqual("uploads/producto/225.png", fotos[id_material])
+        # Solo de lectura: el material sigue sin foto propia.
+        with transaction_context() as db:
+            from app.models import Material
+            self.assertIsNone(db.get(Material, id_material).path_imagen)

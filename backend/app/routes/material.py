@@ -120,7 +120,9 @@ def list_material(user_data):
     per_page = int(request.args.get('per_page', 20))
     sort = request.args.get('sort')
     filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort', 'q'} and k in ALLOWED_FIELDS}
-    return _jsonify_projected_list(user_data, MaterialService.list(page=page, per_page=per_page, filters=filters, sort=sort, q=request.args.get('q')))
+    resultado = MaterialService.list(page=page, per_page=per_page, filters=filters, sort=sort, q=request.args.get('q'))
+    MaterialService.heredar_foto_de_producto(resultado.get('items', []))
+    return _jsonify_projected_list(user_data, resultado)
 
 
 @bp_material.route('/<id_material>', methods=['GET'])
