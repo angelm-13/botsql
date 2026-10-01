@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import unittest
+from unittest import mock
 
+from app.kpis import registry
 from app.kpis.registry import ETIQUETA_DIMENSION_POR_OMISION, KPI_POR_CLAVE, KPI_REGISTRY
 from app.models.kpi_definition import KpiDefinition
 from app.routes.kpi import _con_metadatos_del_registry
@@ -49,6 +51,65 @@ class ConMetadatosDelRegistryTest(unittest.TestCase):
         self.assertEqual("vivo", resultado["modo"])
         self.assertEqual(["tabla"], resultado["graficas_permitidas"])
 
+    def test_expone_el_orden_de_categorias_solo_de_prestamos_abiertos_por_antiguedad(self):
+        fila = KpiDefinition(clave="prestamos_abiertos_por_antiguedad", etiqueta="Prestamos abiertos por antiguedad",
+                              modulo="operaciones", dimensiones=["estado"], unidad="numero")
+        fila.id_kpi_definition = 995
+
+        resultado = _con_metadatos_del_registry(fila)
+
+        # Una LISTA, en el orden de lectura: no por valor ni el de un dict.
+        self.assertEqual(["0-30", "31-60", "61-90", "+90"], resultado["orden_categorias"])
+        # Los demas KPIs de estado siguen sin orden propio (el Dashboard los ordena por valor).
+        for clave in ("material_por_estado", "incidencias_abiertas_vs_cerradas"):
+            with self.subTest(clave=clave):
+                self.assertIsNone(KPI_POR_CLAVE[clave].orden_categorias)
+        self.assertEqual(
+            ["prestamos_abiertos_por_antiguedad"],
+            [kpi.clave for kpi in KPI_REGISTRY if kpi.orden_categorias is not None],
+        )
+
+    def test_expone_el_limite_de_categorias_solo_de_perdidas_por_familia(self):
+        fila = KpiDefinition(clave="perdidas_por_familia", etiqueta="Perdidas por familia",
+                              modulo="operaciones", dimensiones=["familia"], unidad="piezas")
+        fila.id_kpi_definition = 994
+
+        resultado = _con_metadatos_del_registry(fila)
+
+        self.assertEqual(10, resultado["limite_categorias"])
+        self.assertEqual("Familia", resultado["etiqueta_dimension"])
+        self.assertEqual(["perdidas_por_familia"], [k.clave for k in KPI_REGISTRY if k.limite_categorias is not None])
+
+    def test_un_limite_de_categorias_malo_falla_al_importar(self):
+        for malo in (0, -3, 2.5, True, "10"):
+            kpi = registry.KpiDefinition(
+                "kpi_de_prueba", "Prueba", "operaciones", ("familia",), lambda *a: [],
+                direccion="neutral", graficas_permitidas=("barras",), grafica_default="barras",
+                agregacion="suma", limite_categorias=malo,
+            )
+            with self.subTest(limite=malo), mock.patch.object(registry, "KPI_REGISTRY", (kpi,)):
+                with self.assertRaisesRegex(RuntimeError, "limite_categorias"):
+                    registry._validar()
+
+    def test_un_orden_de_categorias_malo_falla_al_importar(self):
+        def kpi(orden, colores):
+            return registry.KpiDefinition(
+                "kpi_de_prueba", "Prueba", "operaciones", ("estado",), lambda *a: [],
+                direccion="neutral", graficas_permitidas=("barras",), grafica_default="barras",
+                agregacion="suma", colores_categoria=colores, orden_categorias=orden,
+            )
+
+        bueno = kpi(["a", "b"], {"a": "#111111", "b": "#222222"})
+        with mock.patch.object(registry, "KPI_REGISTRY", (bueno,)):
+            registry._validar()  # no revienta
+        for orden, colores, motivo in (
+            (["a", "a"], None, "repite una categoria"),
+            (["a", "c"], {"a": "#111111", "b": "#222222"}, "categorias distintas"),
+        ):
+            with self.subTest(motivo=motivo), mock.patch.object(registry, "KPI_REGISTRY", (kpi(orden, colores),)):
+                with self.assertRaisesRegex(RuntimeError, motivo):
+                    registry._validar()
+
     def test_clave_huerfana_cae_a_defaults_neutros(self):
         fila = KpiDefinition(clave="no_existe_en_el_registro", etiqueta="x",
                               modulo="operaciones", dimensiones=["empleado"], unidad="numero")
@@ -60,6 +121,8 @@ class ConMetadatosDelRegistryTest(unittest.TestCase):
         self.assertEqual("snapshot", resultado["modo"])
         self.assertEqual([], resultado["graficas_permitidas"])
         self.assertIsNone(resultado["colores_categoria"])
+        self.assertIsNone(resultado["orden_categorias"])
+        self.assertIsNone(resultado["limite_categorias"])
         self.assertIsNone(resultado["descripcion"])
 
 
@@ -110,7 +173,7 @@ class EtiquetaDeDimensionTest(unittest.TestCase):
         for kpi in KPI_REGISTRY:
             self.assertTrue(kpi.etiqueta_dimension, kpi.clave)
             self.assertLessEqual(len(kpi.etiqueta_dimension), 30, kpi.clave)
-        self.assertEqual({"empleado", "producto", "estado", "global"}, set(ETIQUETA_DIMENSION_POR_OMISION))
+        self.assertEqual({"empleado", "producto", "estado", "familia", "global"}, set(ETIQUETA_DIMENSION_POR_OMISION))
 
     def test_la_api_la_expone(self):
         fila = KpiDefinition(clave="incidencias_abiertas_por_empleado", etiqueta="x", modulo="operaciones",

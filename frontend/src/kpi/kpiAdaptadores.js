@@ -8,7 +8,7 @@
 // es QUIEN los pinta.
 import {
   COLOR_OTHERS, CATEGORICAL, buildMultiSeriesData, buildPieData, buildSeriesData,
-  colorDeCategoriaEstado, colorEfectivoDeKpi, formatConUnidad, kpiSeriesLabel,
+  colorDeCategoriaEstado, colorEfectivoDeKpi, formatConUnidad, kpiSeriesLabel, ordenarPorCategorias,
 } from "./kpiDatos.js";
 
 // Opacidad de la serie del periodo de comparacion (B): mismo color que la A,
@@ -70,6 +70,8 @@ export function propsSeries({
     const kpiInfo = kpiInfos[0];
     let datos = buildSeriesData(snapshots[0], labelForId, empleados, agruparPorPeriodo);
     if (esBajoStock) datos = datos.filter((fila) => fila.a < umbralBajoStock);
+    // Un KPI de categorias ordinales declara su orden de lectura; por periodo las llaves son fechas.
+    if (!agruparPorPeriodo) datos = ordenarPorCategorias(datos, kpiInfo?.orden_categorias);
     const colorKpi = colorEfectivoDeKpi(kpiInfo?.id_kpi_definition, coloresOverride);
     const formatear = (valor) => formatConUnidad(formatNumber(valor), kpiInfo?.unidad);
     const series = [{ clave: "a", nombre: textos.rangoA, color: colorKpi, formatear }];
@@ -113,7 +115,8 @@ export function propsSeries({
 /** Props de DonaWidget. */
 export function propsDona({ snapshot, kpiInfo, labelForId, agruparPorPeriodo, formatNumber, textos }) {
   const dimension = kpiInfo?.dimensiones?.[0];
-  const rebanadas = buildPieData(snapshot, labelForId, textos.otros, agruparPorPeriodo, dimension);
+  const crudas = buildPieData(snapshot, labelForId, textos.otros, agruparPorPeriodo, dimension);
+  const rebanadas = agruparPorPeriodo ? crudas : ordenarPorCategorias(crudas, kpiInfo?.orden_categorias);
   const coloresCategoria = kpiInfo?.colores_categoria;
   const datos = rebanadas.map((entrada, indice) => ({
     categoria: entrada.name,

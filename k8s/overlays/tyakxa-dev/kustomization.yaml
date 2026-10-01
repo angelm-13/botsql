@@ -7,16 +7,16 @@ namespace: tyakxa-dev
 images:
   - name: DB_INIT_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-db-init
-    newTag: "e4097cc"
+    newTag: "140eb3a"
   - name: BACKEND_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-backend
-    newTag: "e4097cc"
+    newTag: "140eb3a"
   - name: WORKER_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-worker
-    newTag: "e4097cc"
+    newTag: "140eb3a"
   - name: FRONTEND_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-frontend
-    newTag: "e4097cc-tyakxa-dev"
+    newTag: "140eb3a-tyakxa-dev"
 # El dominio real que dieron para pruebas (sistema-test.torredigital.mx)
 # es UN SOLO dominio, no el patrón de dos subdominios de base/ingress.yaml
 # — por eso ese Ingress del base se elimina aquí y se agrega

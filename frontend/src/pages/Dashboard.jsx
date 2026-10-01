@@ -30,7 +30,7 @@ import TIPO_GRAFICA_COMPONENTE from "../components/kpi-widgets/tipoGraficaCompon
 import Skeleton from "../components/kpi-widgets/Skeleton";
 import SelectorDeKpi from "../components/kpi-widgets/SelectorDeKpi";
 import {
-  colorDeKpi, colorEfectivoDeKpi, etiquetasDeDimension, labelForDimension, normalizarBusqueda, unidadInfo,
+  colorDeKpi, colorEfectivoDeKpi, etiquetasDeDimension, etiquetasDeSnapshots, labelForDimension, normalizarBusqueda, unidadInfo,
 } from "../kpi/kpiDatos.js";
 import {
   armarParametros, columnasDeWidget, estadoDeWidget, filasDeWidget, mezclaUnidades, motivoParaNoCombinar, rangoInicialDelBorrador,
@@ -1434,7 +1434,9 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, fo
   const kpiInfo = kpiInfos[0];
   const parametros = widget.parametros || {};
   const agruparPorPeriodo = parametros.agrupar_por === "periodo";
-  const labelForId = agruparPorPeriodo ? (id) => id : labelForDimension(kpiInfo?.dimensiones?.[0], userLabel, productLabel);
+  const labelForId = agruparPorPeriodo
+    ? (id) => id
+    : labelForDimension(kpiInfo?.dimensiones?.[0], userLabel, productLabel, etiquetasDeSnapshots(snapshots));
   const Componente = TIPO_GRAFICA_COMPONENTE[widget.tipo_grafica];
   const sinDatos = <p className="kpi-empty-inline">{tx("no_data", "Sin datos en el rango seleccionado.")}</p>;
   if (!Componente) return null;
