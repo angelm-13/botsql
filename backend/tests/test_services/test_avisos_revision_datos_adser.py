@@ -151,6 +151,24 @@ class TestValesVacios(unittest.TestCase):
         self.assertIn("El vale 44 está abierto", avisos.aviso_vales_vacios([44])[2])
 
 
+class TestSoloHablaDeLoMigrado(unittest.TestCase):
+    """El vale 140 (2026-10-01) fue un prestamo legitimo del sistema nuevo y salio como
+    contradiccion: el sistema nuevo no cambia `product.product_status` al prestar."""
+
+    def test_el_ultimo_vale_migrado_es_el_139(self):
+        self.assertEqual(avisos.ULTIMO_VALE_MIGRADO, 139)
+
+    def test_las_dos_consultas_de_vales_se_acotan_a_lo_migrado(self):
+        for sql in (avisos.SQL_CONTRADICCIONES, avisos.SQL_VALES_VACIOS):
+            self.assertIn("i.id_incident <= %(ultimo_vale)s", sql)
+
+    def test_el_porcentaje_literal_va_escapado_porque_la_consulta_lleva_parametros(self):
+        # Con parametros, un `%` suelto lo toma psycopg2 por un marcador y falla al ejecutar.
+        for sql in (avisos.SQL_CONTRADICCIONES, avisos.SQL_VALES_VACIOS):
+            sin_marcadores = sql.replace("%(ultimo_vale)s", "").replace("%%", "")
+            self.assertNotIn("%", sin_marcadores)
+
+
 class TestResumen(unittest.TestCase):
 
     def test_dice_cuantos_temas_y_a_quien_avisar_para_un_permiso(self):

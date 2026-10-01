@@ -71,6 +71,12 @@ PROBABLEMENTE_YA_VOLVIO = frozenset({
 })
 PARECE_VIGENTE = frozenset({320})
 
+# Ultimo vale que venia del sistema anterior (adser-prod, 2026-09-30). Los avisos de abajo hablan de
+# datos MIGRADOS: el sistema nuevo no cambia `product.product_status` (texto historico) al prestar,
+# asi que un prestamo legitimo hecho aqui parecia una contradiccion (vale 140, 2026-10-01), y un vale
+# nuevo todavia sin renglones parecia un vale vacio. Lo posterior a este id no se avisa.
+ULTIMO_VALE_MIGRADO = 139
+
 SQL_CONTRADICCIONES = """
 SELECT u.full_name, r.id_incident,
        coalesce(nullif(btrim(p.descripcion), ''), m.material_description, 'producto ' || p.id_product) AS herramienta,
@@ -82,6 +88,7 @@ JOIN "user" u ON u.id_user = i.id_user
 JOIN product p ON p.id_product = r.id_product
 LEFT JOIN material m ON m.id_material = p.id_material
 WHERE r.deletion_date IS NULL AND i.deletion_date IS NULL AND p.deletion_date IS NULL
+  AND i.id_incident <= %(ultimo_vale)s
   AND lower(r.direction) = 'salida'
   AND (r.close_date IS NULL OR r.close_date < '2000-01-01')
   AND upper(btrim(p.product_status)) = 'ENTRADA'
@@ -92,7 +99,8 @@ ORDER BY u.full_name, r.id_incident, r.id_nm_incident_product
 SQL_VALES_VACIOS = """
 SELECT i.id_incident
 FROM incident i
-WHERE i.deletion_date IS NULL AND lower(i.incident_status) LIKE 'abiert%'
+WHERE i.deletion_date IS NULL AND lower(i.incident_status) LIKE 'abiert%%'
+  AND i.id_incident <= %(ultimo_vale)s
   AND NOT EXISTS (SELECT 1 FROM nm_incident_product r
                   WHERE r.id_incident = i.id_incident AND r.deletion_date IS NULL)
 ORDER BY i.id_incident
@@ -250,7 +258,7 @@ def aviso_resumen(n_temas):
 
 def reunir_avisos(cur):
     """Los avisos que hoy corresponden, sin el resumen: [(clave, titulo, mensaje)]."""
-    cur.execute(SQL_CONTRADICCIONES)
+    cur.execute(SQL_CONTRADICCIONES, {"ultimo_vale": ULTIMO_VALE_MIGRADO})
     contradicciones = cur.fetchall()
 
     vales = [vale for _, vale, _, _ in HUERFANOS]
@@ -265,7 +273,7 @@ def reunir_avisos(cur):
                 'WHERE i.id_incident = %s AND i.deletion_date IS NULL', (id_incidencia,))
     fila = cur.fetchone()
 
-    cur.execute(SQL_VALES_VACIOS)
+    cur.execute(SQL_VALES_VACIOS, {"ultimo_vale": ULTIMO_VALE_MIGRADO})
     vacios = [f[0] for f in cur.fetchall()]
 
     candidatos = (
