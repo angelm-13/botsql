@@ -285,7 +285,7 @@
 .vale-lista li { margin-bottom: 5px; }
 .vale-lista button {
   display: grid; align-items: center; gap: 12px; width: 100%;
-  grid-template-columns: 68px minmax(0, 1fr) auto auto auto;
+  grid-template-columns: 68px minmax(0, 1fr) minmax(0, 1fr) auto auto auto;
   padding: 10px 12px; text-align: left;
   border: 1px solid #e8eeeb; border-radius: 9px; background: #fff;
   font: inherit; font-size: 13px; cursor: pointer;
@@ -294,6 +294,8 @@
 .vale-lista .mono { font-variant-numeric: tabular-nums; }
 .vale-lista-quien { font-weight: 600; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; }
+.vale-lista-proyecto { overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: #475569; }
 .vale-lista-estado {
   padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 700;
 }
@@ -306,6 +308,7 @@
 
 @media (max-width: 760px) {
   .vale-lista button { grid-template-columns: 60px 1fr; }
+  .vale-lista-proyecto { grid-column: 1 / -1; }
   .vale-lista-cuenta, .vale-lista button > span:last-child { grid-column: 1 / -1; }
 }
 

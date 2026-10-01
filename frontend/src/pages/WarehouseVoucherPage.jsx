@@ -551,6 +551,17 @@ export default function WarehouseVoucherPage() {
                       <span className="vale-lista-quien">
                         {v.holder_name || t("voucher.no_holder", "sin responsable")}
                       </span>
+                      {/* La obra, como la nombra el resto de la pantalla: el
+                          proyecto ligado si lo hay; si no, la nota del vale,
+                          que es donde los vales migrados de Adser guardan su
+                          obra (lo mismo que agrupa el historial del empleado). */}
+                      <span className="vale-lista-proyecto"
+                            title={v.proyect?.title || v.note || undefined}>
+                        {v.proyect
+                          ? `${v.proyect.folio ? `#${v.proyect.folio}` : `#${v.proyect.id_proyect}`}${v.proyect.title ? ` — ${v.proyect.title}` : ""}`
+                          : (v.note || "").trim()
+                            || t("voucher.no_project", "Sin proyecto asignado")}
+                      </span>
                       <span className={`vale-lista-estado ${v.incident_status}`}>
                         {t(`voucher.status_${v.incident_status}`, v.incident_status)}
                       </span>

@@ -1619,6 +1619,20 @@ def buscar_vales(user_data: dict, *, texto=None, estado=None, id_user=None,
                 .where(User.id_user.in_(list(ids_usuarios)))
             ).all())
 
+        # La obra de cada vale, con nombre: un supervisor con varios proyectos
+        # a la vez encuentra su vale de un vistazo en la lista, sin abrirlos
+        # uno por uno. Una consulta para toda la pagina.
+        ids_proyectos = {int(v.id_proyect) for v in vales if v.id_proyect}
+        proyectos = {}
+        if ids_proyectos:
+            proyectos = {
+                int(fila[0]): {"id_proyect": fila[0], "folio": fila[1], "title": fila[2]}
+                for fila in db.execute(
+                    select(Proyect.id_proyect, Proyect.folio, Proyect.title)
+                    .where(Proyect.id_proyect.in_(list(ids_proyectos)))
+                ).all()
+            }
+
         items = []
         for vale in vales:
             fila = vale.serialize()
@@ -1626,6 +1640,7 @@ def buscar_vales(user_data: dict, *, texto=None, estado=None, id_user=None,
                 # El folio con el que la gente lo conoce; si no lo trae, su id.
                 "folio": vale.external_folio or str(vale.id_incident),
                 "holder_name": nombres.get(int(vale.id_user)) if vale.id_user else None,
+                "proyect": proyectos.get(int(vale.id_proyect)) if vale.id_proyect else None,
                 "open_lines": pendientes.get(int(vale.id_incident), 0),
                 "total_lines": renglones.get(int(vale.id_incident), 0),
             })
