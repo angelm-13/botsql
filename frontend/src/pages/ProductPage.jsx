@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowUpRight, RefreshCw, Search, Tags, Trash2, Pencil, History} from "lucide-react";
+import { ArrowUpRight, RefreshCw, Search, Tags, Trash2, Pencil, History, PackagePlus } from "lucide-react";
 import { Link } from "react-router-dom";
 import FiltroBuscable from "../components/FiltroBuscable.jsx";
 import { useI18n } from "../i18n";
@@ -9,6 +9,7 @@ import { fetchAllPages } from "../utils/fetchAllPages";
 import { colorDeEstatus } from "../utils/estatusDePieza";
 import Pagination from "../components/Pagination.jsx";
 import ProductHistory from "../components/ProductHistory.jsx";
+import EntradaDeExistencia from "../components/EntradaDeExistencia.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
@@ -44,6 +45,8 @@ export default function ProductPage() {
   const [editingId, setEditingId] = useState(null);
   // El producto cuya ficha de historial esta abierta, o null.
   const [ficha, setFicha] = useState(null);
+  // El producto al que se le esta registrando una entrada de existencia, o null.
+  const [entrada, setEntrada] = useState(null);
   const [query, setQuery] = useState("");
   const [view, setView] = useState("table");
   const [page, setPage] = useState(1);
@@ -786,7 +789,7 @@ export default function ProductPage() {
               {canSeeField("product_status") && <th>{t("fields.product.product_status")}</th>}
               {canSeeField("path_imagen") && <th>{t("fields.product.path_imagen")}</th>}
               {canSeeField("product_code") && <th>{t("fields.product.product_code")}</th>}
-        </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_product}>{showRowActions && <td className="row-actions">{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}<button type="button" onClick={() => setFicha(item)} title={t("history.title", "Historial del producto")}><History size={15} /></button>{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</td>}
+        </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_product}>{showRowActions && <td className="row-actions">{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{canUpdate && <button type="button" onClick={() => setEntrada(item)} title={t("stock_entry.title", "Registrar entrada")}><PackagePlus size={15} /></button>}<button type="button" onClick={() => setFicha(item)} title={t("history.title", "Historial del producto")}><History size={15} /></button>{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</td>}
               {canSeeField("id_product") && <td><pre className="cell-value">{formatTableValue(item.id_product)}</pre></td>}
               {canSeeField("id_location") && <td><pre className="cell-value">{productKanbanDisplayLabel(locationOptions, "id_location", "location", item.id_location)}</pre></td>}
               {canSeeField("id_material") && <td><pre className="cell-value">{productKanbanDisplayLabel(materialOptions, "id_material", "material", item.id_material)}</pre></td>}
@@ -810,7 +813,7 @@ export default function ProductPage() {
           {canSeeField("cantidad") && item.cantidad !== null && item.cantidad !== undefined && item.cantidad !== "" && <p><span>{t("fields.product.cantidad", "Cantidad")}:</span> <strong>{formatTableValue(item.cantidad)}</strong></p>}
           {canSeeField("last_update_date") && item.last_update_date && <p><span>{t("fields.product.last_update_date", "Actualizacion")}:</span> <strong>{formatTableValue(item.last_update_date)}</strong></p>}
           {canSeeField("note") && item.note && <p className="wide"><span>{t("fields.product.note", "Nota")}:</span> <strong>{formatTableValue(item.note)}</strong></p>}
-        </div>{showRowActions && <div>{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}<button type="button" onClick={() => setFicha(item)} title={t("history.title", "Historial del producto")}><History size={15} /></button>{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</div>}</article>)}</div>)}</div>}
+        </div>{showRowActions && <div>{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{canUpdate && <button type="button" onClick={() => setEntrada(item)} title={t("stock_entry.title", "Registrar entrada")}><PackagePlus size={15} /></button>}<button type="button" onClick={() => setFicha(item)} title={t("history.title", "Historial del producto")}><History size={15} /></button>{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</div>}</article>)}</div>)}</div>}
 
       {fotoAmpliada && (
         <VisorDeFoto
@@ -829,6 +832,13 @@ export default function ProductPage() {
         loading={loading}
         onChange={setPage}
       />
+      {entrada && (
+        <EntradaDeExistencia
+          producto={entrada}
+          onCerrar={() => setEntrada(null)}
+          onRegistrada={() => loadData()}
+        />
+      )}
       {ficha && (
         <ProductHistory
           idProduct={ficha.id_product}

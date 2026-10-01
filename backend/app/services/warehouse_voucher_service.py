@@ -533,6 +533,36 @@ def _sincronizar_estado(db, vale: Incident) -> None:
 
 # --- operaciones ---------------------------------------------------------
 
+def _comprobar_existencia_del_borrador(db, validados: list[dict]) -> None:
+    """Rechaza el borrador que pide mas de lo que hay en su ubicacion.
+
+    Lo fungible se suma por (producto, ubicacion) ANTES de comparar: dos
+    renglones de 3 contra una existencia de 4 son 6 pedidos, y comprobarlos por
+    separado dejaria pasar los dos. Las piezas serializadas no cuentan aqui:
+    una pieza es una pieza, y su disponibilidad la comprueba el propio renglon.
+    """
+    pedido: dict[tuple[int, int], int] = {}
+    for renglon in validados:
+        if renglon["id_inventory_asset"] is not None:
+            continue
+        clave = (int(renglon["id_product"]), int(renglon["id_location_from"]))
+        pedido[clave] = pedido.get(clave, 0) + int(renglon["quantity"])
+
+    for (id_producto, id_ubicacion), solicitado in pedido.items():
+        disponible = int(db.scalar(
+            select(func.coalesce(func.sum(InventoryStock.quantity), 0)).where(
+                InventoryStock.id_product == id_producto,
+                InventoryStock.id_location == id_ubicacion,
+            )
+        ) or 0)
+        if solicitado > disponible:
+            raise AppError(
+                "errors.voucher_quantity_exceeds_stock", 409,
+                {"id_product": id_producto, "id_location": id_ubicacion,
+                 "requested": solicitado, "available": disponible},
+            )
+
+
 def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -> dict:
     """Abre un vale con sus renglones.
 
@@ -589,6 +619,13 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
                            {"entity": "proyect", "field": "id_proyect"})
 
         validados = [_validar_renglon(db, linea) for linea in renglones]
+
+        # Un prevale es una peticion, no una salida, pero pedir mas de lo que
+        # hay en esa ubicacion no es una peticion que alguien pueda surtir:
+        # nace imposible y el almacen lo descubre hasta que intenta autorizarlo.
+        # El vale de verdad ya lo rechaza al sacar el material.
+        if como_borrador:
+            _comprobar_existencia_del_borrador(db, validados)
 
         # La misma pieza dos veces en un mismo vale es una captura doble: solo
         # puede salir una vez. Sin esta comprobacion el segundo renglon falla

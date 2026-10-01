@@ -1107,6 +1107,23 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
     setCandidatos([]);
   };
 
+  // Cuanto hay para ESTE renglon: la existencia del producto en la ubicacion de
+  // la que sale, menos lo que ya piden los otros renglones del mismo producto y
+  // sitio. Lo serializado no cuenta -una pieza es una pieza-. El buscador ya
+  // trae la existencia por sitio, asi que no hace falta otra consulta.
+  const disponibleDe = (linea, indice) => {
+    if (linea.serializado) return null;
+    const sitio = (linea.sitios || []).find(
+      (s) => String(s.id_location) === String(linea.id_location_from));
+    const hay = Number(sitio?.quantity) || 0;
+    const yaPedido = borrador.lines.reduce((suma, otra, i) => (
+      i !== indice && !otra.serializado
+        && otra.id_product === linea.id_product
+        && String(otra.id_location_from) === String(linea.id_location_from)
+        ? suma + (Number(otra.quantity) || 0) : suma), 0);
+    return Math.max(0, hay - yaPedido);
+  };
+
   const cambiar = (indice, cambios) => setBorrador({
     ...borrador,
     lines: borrador.lines.map((l, i) => (i === indice ? { ...l, ...cambios } : l)),
@@ -1121,7 +1138,9 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
   // servidor conteste; el servidor lo exige igual, que es lo que cuenta.
   const listo = borrador.lines.length > 0 && borrador.id_incident_type
     && borrador.id_user && borrador.due_date && borrador.note.trim()
-    && borrador.lines.every((l) => l.serializado || l.id_location_from);
+    && borrador.lines.every((l, i) => l.serializado || (
+      l.id_location_from && Number(l.quantity) >= 1
+      && Number(l.quantity) <= disponibleDe(l, i)));
 
   return (
     <section className="vale-borrador">
@@ -1285,9 +1304,21 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
               {!linea.serializado && (
                 <label className="vale-mini">
                   <span>{t("voucher.quantity", "Cantidad")}</span>
-                  <input type="number" min="1" value={linea.quantity}
-                         onChange={(e) => cambiar(indice,
-                           { quantity: Number(e.target.value) || 1 })} />
+                  <input type="number" min="1"
+                         max={Math.max(1, disponibleDe(linea, indice))}
+                         value={linea.quantity}
+                         onChange={(e) => cambiar(indice, {
+                           // Sin pasarse de lo que hay: el servidor lo rechaza
+                           // igual, esto evita llegar hasta el error.
+                           quantity: Math.min(
+                             Number(e.target.value) || 1,
+                             Math.max(1, disponibleDe(linea, indice))),
+                         })} />
+                  <small className={disponibleDe(linea, indice) === 0 ? "vale-sin-existencia" : "muted"}>
+                    {disponibleDe(linea, indice) === 0
+                      ? t("voucher.no_stock_here", "Sin existencia aquí")
+                      : `${t("voucher.available", "Disponible")}: ${disponibleDe(linea, indice)}`}
+                  </small>
                 </label>
               )}
 

@@ -144,6 +144,8 @@
   border: 1px solid #cbd5e1; border-radius: 7px; background: #fff;
 }
 .vale-mini input[type="number"] { width: 84px; }
+.vale-mini small { font-size: 11px; }
+.vale-sin-existencia { color: #b42318; font-weight: 600; }
 /* Lo que falta para poder abrir el vale. Ambar y no rojo: no es un error, es
    un dato pendiente. */
 .vale-falta select { border-color: #b45309; background: #fffbeb; }

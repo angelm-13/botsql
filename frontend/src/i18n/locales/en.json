@@ -2655,6 +2655,7 @@
     "pos_gateway_unexpected_response": "The point of sale returned something unexpected while authenticating.",
     "permission_denied": "You do not have access to this. If the document belongs to another project, it cannot be used from yours.",
     "voucher_lines_required": "The voucher needs at least one line: with none it does not say what went out.",
+    "voucher_quantity_exceeds_stock": "You are asking for more than is in that location. Lower the quantity to what is available, or pick another location that has stock.",
     "voucher_asset_required": "That product is tracked piece by piece: say which one is going out. Handing back “a screwdriver” does not settle the loan of the one taken.",
     "voucher_asset_not_applicable": "That product is counted by quantity, not by pieces: “one piece of cement” does not exist.",
     "voucher_asset_product_mismatch": "That piece belongs to another product: the voucher would name something that never went out.",
@@ -4322,6 +4323,16 @@
     "department": {
       "subtitle": "The company areas each user belongs to."
     }
+  },
+  "stock_entry": {
+    "title": "Register stock in",
+    "quantity": "Quantity received",
+    "location": "Location",
+    "lot": "Lot",
+    "note": "Note (purchase, supplier…)",
+    "save": "Register stock in",
+    "registered": "received.",
+    "total": "Total stock of the product"
   },
   "history": {
     "title": "Product history",

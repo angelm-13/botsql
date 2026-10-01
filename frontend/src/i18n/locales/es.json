@@ -2697,6 +2697,7 @@
     "pos_gateway_unexpected_response": "El punto de venta respondió algo inesperado al autenticar.",
     "permission_denied": "No tienes acceso a esto. Si es un documento de otro proyecto, no se puede usar desde el tuyo.",
     "voucher_lines_required": "El vale necesita al menos un renglón: sin renglones no dice qué salió.",
+    "voucher_quantity_exceeds_stock": "Pides más de lo que hay en esa ubicación. Baja la cantidad a lo disponible, o elige otro sitio donde haya existencia.",
     "voucher_asset_required": "Ese producto se rastrea pieza por pieza: hay que decir cuál se lleva. Devolver «un desarmador» no cierra el préstamo del que se llevaron.",
     "voucher_asset_not_applicable": "Ese producto se cuenta por cantidad, no por piezas: «una pieza de cemento» no existe.",
     "voucher_asset_product_mismatch": "Esa pieza es de otro producto: el vale diría que se llevaron algo que no salió.",
@@ -4434,6 +4435,16 @@
     "department": {
       "subtitle": "Las áreas de la empresa a las que pertenece cada usuario."
     }
+  },
+  "stock_entry": {
+    "title": "Registrar entrada",
+    "quantity": "Cantidad que entra",
+    "location": "Ubicación",
+    "lot": "Lote",
+    "note": "Nota (compra, proveedor…)",
+    "save": "Registrar entrada",
+    "registered": "registradas.",
+    "total": "Existencia total del producto"
   },
   "history": {
     "title": "Historial del producto",
