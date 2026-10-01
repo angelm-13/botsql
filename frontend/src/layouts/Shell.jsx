@@ -118,11 +118,6 @@ const navItems = [
   { path: "/user_mfa", key: "menu.user_mfa", groupIcon: "settings", location: "settings" }
 ];
 
-const quickNavItems = [
-  { path: "/catalogo-web", key: "menu.catalogo_web", label: "Catálogo Web", entityName: "product_sale_config" },
-  { path: "/compradores-web", key: "menu.web_shoppers", label: "Compradores Web", entityName: "user" }
-];
-
 
 const groupTranslationKeys = {
   "Bancos": "group_banks", CRM: "group_crm", "Contabilidad": "group_accounting",
@@ -627,13 +622,6 @@ export default function Shell() {
             </div>
           </div>
         </header>
-        <nav className="quick-nav" aria-label={shellText("quick_access")}>
-          {quickNavItems.filter(canSeeNavItem).map((item) => (
-            <NavLink key={item.path} to={item.path} className={({ isActive }) => isActive ? "quick-nav-link active" : "quick-nav-link"}>
-              {t(item.key, item.label || item.key)}
-            </NavLink>
-          ))}
-        </nav>
         <Outlet />
       </main>
     </div>
