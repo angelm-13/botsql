@@ -712,7 +712,7 @@
       "phone": "Telefone",
       "postal_code": "Postal Código",
       "street": "Rua",
-      "tax_id": "Imposto ID",
+      "tax_id": "RFC (ID fiscal)",
       "title": "Título",
       "type": "Tipo",
       "web_site": "Web Local",
@@ -1453,7 +1453,7 @@
       "phone": "Digite telefone",
       "postal_code": "Digite postal código",
       "street": "Digite rua",
-      "tax_id": "Digite imposto id",
+      "tax_id": "Digite o RFC",
       "title": "Digite título",
       "type": "Digite tipo",
       "web_site": "Digite web local"

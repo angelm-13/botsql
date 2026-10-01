@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
-import { getAllCustomerSupplier, createCustomerSupplier, updateCustomerSupplier, deleteCustomerSupplier, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getUserOptions, getInvoiceCatalogs } from "../api";
+import { getAllCustomerSupplier, createCustomerSupplier, updateCustomerSupplier, deleteCustomerSupplier, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getInvoiceCatalogs } from "../api";
 import { fetchAllPages } from "../utils/fetchAllPages";
 import Pagination from "../components/Pagination.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
@@ -70,7 +70,6 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
   const canDelete = canUseAction(ACTION_DELETE);
   const canSubmitForm = editingId ? canUpdate : canCreate;
   const showRowActions = canRead && (canUpdate || canDelete);
-  const [userOptions, setUserOptions] = useState([]);
   const [fiscalRegimeCatalog, setFiscalRegimeCatalog] = useState({ regimen_fiscal: {}, persona_fisica: [], persona_moral: [] });
   const proyectOptions = [];
 
@@ -119,23 +118,6 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
   useEffect(() => {
     async function loadFormOptions() {
       if (!permissionReady || (!canSubmitForm && !canRead)) return;
-      if (canSeeField("id_user")) {
-        try {
-          // `getUserOptions` (`/user/options`) y no `getAllUser` (`/user/`):
-          // esta ultima exige el permiso completo de RH (`user`, modulo
-          // "seguridad"), que Gerente/Supervisor NO tienen aunque si puedan
-          // dar de alta un cliente -- el select de Vendedor se quedaba sin
-          // una sola opcion (403 silencioso, atrapado abajo) y un campo
-          // OBLIGATORIO se volvia imposible de llenar para cualquiera que no
-          // fuera Administrator. `options()` en el backend es id+nombre nada
-          // mas, sin el resto del catalogo de RH -- mismo patron ya usado en
-          // `WarehouseVoucherPage.jsx` para elegir responsable de un vale.
-          const userData = await getUserOptions();
-          setUserOptions(Array.isArray(userData) ? userData : (userData.items || []));
-        } catch (_) {
-          setUserOptions([]);
-        }
-      }
       if (canSeeField("fiscal_type")) {
         try {
           const catalogs = await getInvoiceCatalogs();
@@ -281,8 +263,11 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
     try {
       if (editingId && !canUpdate) return;
       if (!editingId && !canCreate) return;
-      if (editingId) await updateCustomerSupplier(editingId, submitPayload);
-      else await createCustomerSupplier(submitPayload);
+      // El vendedor ya no se captura a mano: en el alta lo asigna el servidor (quien
+      // captura) y en la edicion se deja el que ya tenia. Se valida con el, pero no viaja.
+      const { id_user: _vendedor, ...cuerpo } = submitPayload;
+      if (editingId) await updateCustomerSupplier(editingId, cuerpo);
+      else await createCustomerSupplier(cuerpo);
       setFormData(emptyForm); setEditingId(null); await loadData();
     } catch (error) {
       const meta = error.payload?.meta || null;
@@ -596,20 +581,6 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
             <input name="serie_csd" type="text" maxLength={25} value={formData.serie_csd ?? ""} onChange={handleChange} placeholder={t("fields.customer_supplier.serie_csd", "Serie del CFDI (opcional)")} aria-invalid={Boolean(fieldErrors["serie_csd"])} />
             <small>{t("common.serie_csd_hint", "Se usa como serie por defecto al emitir facturas de esta empresa; una factura puede capturar otra distinta.")}</small>
             {fieldErrors["serie_csd"] && <span className="field-error">{formatFieldError("serie_csd")}</span>}
-          </label>
-          )}
-          {canSeeField("id_user") && (
-          <label className="field">
-            <span>{t("fields.user.vendor", "Vendedor")}</span>
-            <select name="id_user" value={formData.id_user ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors["id_user"])} {...inputPropsForField("id_user", validationRules["id_user"], "select")}>
-              <option value="">{t("common.select_option", "Selecciona una opción")}</option>
-              {userOptions.map((item) => (
-                <option key={item.id_user ?? item.id ?? JSON.stringify(item)} value={item.id_user ?? item.id ?? ""}>
-                  {getOptionLabel(item, "user")}
-                </option>
-              ))}
-            </select>
-            {fieldErrors["id_user"] && <span className="field-error">{formatFieldError("id_user")}</span>}
           </label>
           )}
           {canSeeField("path_logo") && (

@@ -711,7 +711,7 @@
       "phone": "Telefon",
       "postal_code": "Postleitzahl Code",
       "street": "Straße",
-      "tax_id": "Steuer ID",
+      "tax_id": "RFC (Steuer-ID)",
       "title": "Titel",
       "type": "Typ",
       "web_site": "Web Standort",
@@ -1452,7 +1452,7 @@
       "phone": "Telefon eingeben",
       "postal_code": "Postleitzahl Code eingeben",
       "street": "Straße eingeben",
-      "tax_id": "Steuer ID eingeben",
+      "tax_id": "RFC eingeben",
       "title": "Titel eingeben",
       "type": "Typ eingeben",
       "web_site": "Web Standort eingeben"

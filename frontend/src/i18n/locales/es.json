@@ -737,7 +737,7 @@
       "phone": "Teléfono",
       "postal_code": "Postal Código",
       "street": "Calle",
-      "tax_id": "Impuesto ID",
+      "tax_id": "RFC",
       "title": "Título",
       "type": "Tipo",
       "web_site": "Web Sitio",
@@ -1532,7 +1532,7 @@
       "phone": "Ingresa teléfono",
       "postal_code": "Ingresa postal código",
       "street": "Ingresa calle",
-      "tax_id": "Ingresa impuesto id",
+      "tax_id": "Ingresa el RFC",
       "title": "Ingresa título",
       "type": "Ingresa tipo",
       "web_site": "Ingresa web sitio"

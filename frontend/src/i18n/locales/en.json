@@ -730,7 +730,7 @@
       "phone": "Phone",
       "postal_code": "Postal Code",
       "street": "Street",
-      "tax_id": "Tax Id",
+      "tax_id": "RFC (Tax ID)",
       "title": "Title",
       "type": "Type",
       "web_site": "Web Site",
@@ -1496,7 +1496,7 @@
       "phone": "Enter phone",
       "postal_code": "Enter postal code",
       "street": "Enter street",
-      "tax_id": "Enter tax id",
+      "tax_id": "Enter the RFC",
       "title": "Enter title",
       "type": "Enter type",
       "web_site": "Enter web site"
