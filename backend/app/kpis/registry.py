@@ -23,10 +23,11 @@ KPIs comparten clave o si alguno declara un modulo que no existe en
 from __future__ import annotations
 
 import json
+import unicodedata
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import Date, and_, case, cast, func, literal, or_, select, text
+from sqlalchemy import Date, Integer, String, and_, case, cast, func, literal, or_, select, text, type_coerce
 
 from app.models.document import Document
 from app.models.incident import Incident
@@ -1341,7 +1342,117 @@ CAMPOS_RENGLON_PRESTADO_ACTUAL = (
 )
 
 
-def material_prestado_actual_query(session, *, limit, offset, actor_project=None):
+# Columnas por las que se puede ordenar la tabla de "Material prestado ahora" (el servidor ordena, no el
+# navegador: con paginacion, ordenar solo la pagina cargada mentiria).
+PRESTADO_ORDENES = ("dias_prestado", "articulo", "responsable", "fecha_prestamo")
+
+# `translate` y no `unaccent`: no hace falta la extension, y `lower()` de Postgres no baja las mayusculas
+# con acento en una base de locale "C". Mismo resultado que `sinAcentos` de frontend/src/kpi/kpiPrestamos.js.
+_CON_ACENTO = "áàäâéèëêíìïîóòöôúùüûñÁÀÄÂÉÈËÊÍÌÏÎÓÒÖÔÚÙÜÛÑ"
+_SIN_ACENTO = "aaaaeeeeiiiioooouuuunaaaaeeeeiiiioooouuuun"
+
+
+def _sin_acentos(texto) -> str:
+    descompuesto = unicodedata.normalize("NFD", str(texto or ""))
+    return "".join(c for c in descompuesto if not unicodedata.combining(c)).lower()
+
+
+def _expresiones_de_prestamo(hoy):
+    """Las columnas que ve (y busca) quien mira la tabla, como expresiones SQL.
+
+    El articulo es el mismo que arma el renglon: descripcion, o el codigo, o "Producto #id".
+    """
+    articulo = func.coalesce(
+        func.nullif(Product.descripcion, ""),
+        func.nullif(Product.product_code, ""),
+        literal("Producto #", String) + cast(NmIncidentProduct.id_nm_incident_product, String),
+    )
+    fecha = func.to_char(Incident.incident_date, "YYYY-MM-DD")
+    dias = type_coerce(literal(hoy, Date) - cast(Incident.incident_date, Date), Integer)
+    return articulo, fecha, dias
+
+
+def _condiciones_de_prestamo(hoy, *, id_user=None, id_user_ambito=None, q=None):
+    """Que renglones cuentan como "prestados", mas los filtros de la tabla -- todo en SQL.
+
+    * `id_user_ambito`: el filtro que llega de OTRA tarjeta (clic en una barra). Acota filas y conteos.
+    * `id_user`: el desplegable "Responsable". Acota las filas, no los conteos del desplegable.
+    * `q`: la busqueda; todas las palabras tienen que aparecer, sin acentos ni mayusculas, en el articulo,
+      el responsable, la fecha del vale o los dias.
+
+    Se filtra por `id_user` (el usuario), NO por el nombre: dos personas con el mismo nombre, o un nombre
+    sucio repetido en el dato (ej. "ESTANCIA EN EL TALLER"), ya no mezclan sus renglones. Ojo: esto solo
+    evita la confusion, NO limpia el dato -- los nombres sucios siguen apareciendo tal cual hasta que se
+    limpien en origen.
+    """
+    condiciones = [
+        NmIncidentProduct.deletion_date.is_(None),
+        Incident.deletion_date.is_(None),
+        Incident.incident_date.isnot(None),
+        NmIncidentProduct.direction == SALIDA,
+        or_(
+            NmIncidentProduct.close_date.is_(None),
+            NmIncidentProduct.close_date == CIERRE_SENTINELA,
+        ),
+        or_(
+            IncidentType.incident_type_description.is_(None),
+            func.lower(func.trim(IncidentType.incident_type_description)).notin_(TIPOS_DE_BAJA),
+        ),
+    ]
+    if id_user_ambito is not None:
+        condiciones.append(Incident.id_user == id_user_ambito)
+    if id_user is not None:
+        condiciones.append(Incident.id_user == id_user)
+    palabras = _sin_acentos(q).split()
+    if palabras:
+        articulo, fecha, dias = _expresiones_de_prestamo(hoy)
+        pajar = func.lower(func.translate(
+            func.concat_ws(" ", articulo, func.coalesce(User.full_name, ""), fecha, cast(dias, String)),
+            _CON_ACENTO, _SIN_ACENTO,
+        ))
+        condiciones.extend(pajar.contains(palabra, autoescape=True) for palabra in palabras)
+    return condiciones
+
+
+def _de_prestamos(columnas):
+    return (
+        select(*columnas)
+        .select_from(NmIncidentProduct)
+        .join(Incident, Incident.id_incident == NmIncidentProduct.id_incident)
+        .join(Product, Product.id_product == NmIncidentProduct.id_product)
+        .outerjoin(IncidentType, IncidentType.id_incident_type == Incident.id_incident_type)
+        .outerjoin(User, User.id_user == Incident.id_user)
+    )
+
+
+def _orden_de_prestamos(articulo, orden, direccion, agrupar):
+    id_renglon = NmIncidentProduct.id_nm_incident_product
+    if agrupar:
+        # Cada responsable contiguo (el del prestamo mas viejo primero), y dentro de cada uno, lo mas
+        # viejo primero: asi, al paginar, un grupo no se parte entre dos paginas sin continuar.
+        return [
+            func.min(Incident.incident_date).over(partition_by=Incident.id_user).asc(),
+            User.full_name.asc().nulls_last(), Incident.id_user.asc(),
+            Incident.incident_date.asc(), id_renglon.asc(),
+        ]
+    ascendente = direccion == "asc"
+    if orden == "dias_prestado":
+        # Mas dias = fecha mas antigua: el orden por dias es el orden de la fecha, invertido.
+        principal = Incident.incident_date.desc() if ascendente else Incident.incident_date.asc()
+    elif orden == "fecha_prestamo":
+        principal = Incident.incident_date.asc() if ascendente else Incident.incident_date.desc()
+    elif orden == "responsable":
+        columna = func.lower(func.coalesce(User.full_name, ""))
+        principal = columna.asc() if ascendente else columna.desc()
+    else:  # articulo
+        columna = func.lower(articulo)
+        principal = columna.asc() if ascendente else columna.desc()
+    return [principal, Incident.incident_date.asc(), func.lower(articulo).asc(), id_renglon.asc()]
+
+
+def material_prestado_actual_query(session, *, limit, offset, actor_project=None, id_user=None,
+                                   id_user_ambito=None, q=None, orden="dias_prestado", direccion="desc",
+                                   agrupar=False):
     """KPI "vivo": renglones de vale actualmente prestados (sin devolver), por responsable.
 
     No es un KPI de `kpi_snapshot` -- ver `KpiDefinition.modo="vivo"`. Cada
@@ -1369,70 +1480,112 @@ def material_prestado_actual_query(session, *, limit, offset, actor_project=None
       placeholder ahi. `fecha_incidente` no tiene ese problema documentado en
       ningun punto de la migracion).
     * "Dias prestado" = hoy - incident_date, calculado en Python al armar
-      cada fila (no hace falta expresarlo en SQL: el ORDER BY ya ordena por
-      `incident_date` ascendente, que es equivalente a ordenar por dias
-      prestados descendente -- el mas antiguo es siempre el que mas dias
-      lleva).
+      cada fila.
     * Responsable: `Incident.id_user` (quien levanto el vale), mismo criterio
       que el resto del modulo -- no `created_by`.
     * Sin alcance de proyecto (mismo motivo que sus vecinos de este archivo);
       `actor_project` se acepta por firma pero no se usa aqui.
 
+    Filtros, busqueda y orden se aplican AQUI, en SQL, sobre TODOS los renglones prestados -- no sobre la
+    pagina que se pidio: ver `_condiciones_de_prestamo` y `PRESTADO_ORDENES`. Antes el Dashboard pedia las 50
+    mas antiguas y filtraba en el navegador, y los vales nuevos (los mas recientes) nunca llegaban.
+
     Regresa `(items, total)`: `items` ya es la pagina pedida (limit/offset a
-    nivel SQL), `total` es el conteo COMPLETO sin paginar (para que el
+    nivel SQL), `total` es el conteo de TODO lo que cumple los filtros, sin paginar (para que el
     frontend pueda mostrar "1-25 de 143").
     """
-    condiciones = [
-        NmIncidentProduct.deletion_date.is_(None),
-        Incident.deletion_date.is_(None),
-        Incident.incident_date.isnot(None),
-        NmIncidentProduct.direction == SALIDA,
-        or_(
-            NmIncidentProduct.close_date.is_(None),
-            NmIncidentProduct.close_date == CIERRE_SENTINELA,
-        ),
-        or_(
-            IncidentType.incident_type_description.is_(None),
-            func.lower(func.trim(IncidentType.incident_type_description)).notin_(TIPOS_DE_BAJA),
-        ),
-    ]
+    hoy = date.today()
+    condiciones = _condiciones_de_prestamo(hoy, id_user=id_user, id_user_ambito=id_user_ambito, q=q)
+    articulo, _fecha, _dias = _expresiones_de_prestamo(hoy)
 
-    base = (
-        select(
-            NmIncidentProduct.id_nm_incident_product,
-            Product.descripcion,
-            Product.product_code,
-            Incident.id_user,
-            User.full_name,
-            Incident.incident_date,
-        )
-        .select_from(NmIncidentProduct)
-        .join(Incident, Incident.id_incident == NmIncidentProduct.id_incident)
-        .join(Product, Product.id_product == NmIncidentProduct.id_product)
-        .outerjoin(IncidentType, IncidentType.id_incident_type == Incident.id_incident_type)
-        .outerjoin(User, User.id_user == Incident.id_user)
-        .where(*condiciones)
-    )
-
-    total = session.execute(select(func.count()).select_from(base.subquery())).scalar() or 0
+    # El total sale de la MISMA pasada que la pagina (`count(*) OVER ()`): con una busqueda de texto, cada
+    # pasada sobre los renglones es lo caro, y contar aparte la doblaba.
     filas = session.execute(
-        base.order_by(Incident.incident_date.asc(), NmIncidentProduct.id_nm_incident_product.asc())
+        _de_prestamos([
+            NmIncidentProduct.id_nm_incident_product, articulo, Incident.id_user, User.full_name,
+            Incident.incident_date, func.count().over(),
+        ])
+        .where(*condiciones)
+        .order_by(*_orden_de_prestamos(articulo, orden, direccion, agrupar))
         .limit(limit)
         .offset(offset)
     ).all()
+    if filas:
+        total = int(filas[0][5])
+    elif offset:
+        # Una pagina vacia no trae el total en sus filas (se pidio mas alla del final): se cuenta aparte.
+        total = session.execute(_de_prestamos([func.count()]).where(*condiciones)).scalar() or 0
+    else:
+        total = 0
 
-    hoy = date.today()
     items = []
-    for id_renglon, descripcion, product_code, id_user, full_name, incident_date in filas:
+    for id_renglon, nombre_articulo, id_usuario, full_name, incident_date, _total in filas:
         items.append({
             "id_nm_incident_product": id_renglon,
-            "articulo": descripcion or product_code or f"Producto #{id_renglon}",
-            "id_user": id_user,
+            "articulo": nombre_articulo,
+            "id_user": id_usuario,
             "responsable": full_name,
             "fecha_prestamo": incident_date.date().isoformat(),
             "dias_prestado": (hoy - incident_date.date()).days,
         })
     return items, total
+
+
+def material_prestado_actual_resumen_query(session, *, total, id_user=None, id_user_ambito=None, q=None):
+    """Los agregados de la tabla, en una consulta cada uno, sin importar cuantos renglones haya.
+
+    * `responsables`: uno por responsable con renglones prestados -- cuantos tiene de verdad y desde hace
+      cuantos dias el mas antiguo. UNA pasada con GROUP BY. Es lo que pinta el "(n)" del desplegable y los
+      encabezados de la vista "Por responsable". Son independientes de la busqueda y del responsable elegido
+      (solo los acota `id_user_ambito`): lo que dice cuanto tiene cada quien no cambia al buscar.
+    * `resumen`: de lo que cumple TODOS los filtros -- renglones (el `total` que ya conto la consulta de la
+      pagina), responsables distintos y el renglon mas antiguo, estos dos en una sola pasada.
+
+    Con la pagina son 3 consultas en total, constantes: no crecen con los renglones ni con los
+    responsables. Solo UNA (la de `resumen` por responsable) evita la busqueda de texto.
+    """
+    hoy = date.today()
+    en_el_ambito = _condiciones_de_prestamo(hoy, id_user_ambito=id_user_ambito)
+    filtradas = _condiciones_de_prestamo(hoy, id_user=id_user, id_user_ambito=id_user_ambito, q=q)
+    articulo, _fecha, _dias = _expresiones_de_prestamo(hoy)
+
+    por_responsable = session.execute(
+        _de_prestamos([Incident.id_user, User.full_name, func.count(), func.min(Incident.incident_date)])
+        .where(*en_el_ambito)
+        .group_by(Incident.id_user, User.full_name)
+        .order_by(func.lower(func.coalesce(User.full_name, "")), Incident.id_user)
+    ).all()
+    responsables = [
+        {
+            "id_user": id_usuario, "responsable": full_name, "renglones": int(renglones),
+            "mas_antiguo_dias": (hoy - mas_antiguo.date()).days,
+        }
+        for id_usuario, full_name, renglones, mas_antiguo in por_responsable
+    ]
+
+    # Responsables distintos y renglon mas antiguo, en UNA pasada sobre lo filtrado. El mas antiguo sale de
+    # un `MIN` sobre una llave de texto que se ordena como (fecha, id): "AAAA-MM-DD" + id con ceros a la
+    # izquierda, y despues el responsable y el articulo -- O(n), sin ordenar ni acumular las filas.
+    llave = func.concat(
+        func.to_char(Incident.incident_date, "YYYY-MM-DD"), func.lpad(cast(NmIncidentProduct.id_nm_incident_product, String), 12, "0"),
+        "|", func.coalesce(User.full_name, ""), "|", articulo,
+    )
+    distintos, mas_antiguo_llave = session.execute(
+        _de_prestamos([func.count(func.distinct(func.coalesce(Incident.id_user, 0))), func.min(llave)]).where(*filtradas)
+    ).one()
+    mas_antiguo = None
+    if mas_antiguo_llave:
+        fecha_texto, resto = mas_antiguo_llave[:10], mas_antiguo_llave[23:]   # 10 de fecha + 12 de id + "|"
+        responsable, _, nombre_articulo = resto.partition("|")
+        mas_antiguo = {
+            "dias": (hoy - date.fromisoformat(fecha_texto)).days,
+            "articulo": nombre_articulo,
+            "responsable": responsable or None,
+        }
+    return {
+        "resumen": {"renglones": total, "responsables": int(distintos), "mas_antiguo": mas_antiguo},
+        "responsables": responsables,
+    }
 
 
 # Como se llama, en el selector "Agrupar por" del editor, la dimension de un KPI
@@ -1452,7 +1605,7 @@ class KpiDefinition:
                  query_builder, *, direccion, graficas_permitidas, grafica_default,
                  agregacion=None, unidad="numero", alcance_proyecto=True, modo="snapshot",
                  colores_categoria=None, descripcion=None, etiqueta_dimension=None,
-                 orden_categorias=None, limite_categorias=None):
+                 orden_categorias=None, limite_categorias=None, resumen_builder=None):
         self.clave = clave
         self.etiqueta = etiqueta
         # Una linea corta para el selector de KPI del editor (rediseno del
@@ -1527,6 +1680,9 @@ class KpiDefinition:
         # motivo este campo -- ya anticipado en el comentario de
         # `actor_project` en `routes/kpi.py` antes de que existiera.
         self.alcance_proyecto = alcance_proyecto
+        # Solo para un KPI "vivo": calcula los agregados de su tabla (resumen y conteo por responsable) sobre
+        # TODOS los renglones, no sobre la pagina pedida. Ver `material_prestado_actual_resumen_query`.
+        self.resumen_builder = resumen_builder
 
 
 # Los 16 KPIs de siempre no restringen tipo de grafica -- hoy nada valida
@@ -1886,6 +2042,7 @@ KPI_REGISTRY = (
         dimensiones=("empleado",),
         etiqueta_dimension="Responsable",
         query_builder=material_prestado_actual_query,
+        resumen_builder=material_prestado_actual_resumen_query,
         modo="vivo",
         unidad="piezas",
         alcance_proyecto=False,
@@ -1990,6 +2147,8 @@ def _validar():
                 f"El KPI '{kpi.clave}' es de modo 'vivo': no participa del job ni del backfill, "
                 "no debe declarar 'agregacion'."
             )
+        if kpi.resumen_builder is not None and kpi.modo != "vivo":
+            raise RuntimeError(f"El KPI '{kpi.clave}' declara 'resumen_builder' sin ser de modo 'vivo'.")
         if kpi.agregacion is not None and kpi.agregacion not in AGREGACIONES:
             raise RuntimeError(
                 f"El KPI '{kpi.clave}' declara la agregacion desconocida '{kpi.agregacion}' "

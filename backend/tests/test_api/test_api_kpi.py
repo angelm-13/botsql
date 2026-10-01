@@ -279,6 +279,37 @@ class TestKpiApi(BackendTestCase):
         payload = self.json(response)["rango_a"]
         self.assertEqual({"951": 500.0}, payload["por_empleado"])
 
+    # --- KPI vivo: filtro, busqueda y orden en el servidor (ver test_kpi_material_prestado_actual_servidor) ---
+    def _url_vivo(self, **params):
+        with transaction_context() as db:
+            id_vivo = db.scalar(select(KpiDefinition.id_kpi_definition)
+                                .where(KpiDefinition.clave == "material_prestado_actual"))
+        consulta = "&".join(f"{k}={v}" for k, v in params.items())
+        return f"/kpi_definition/{id_vivo}/vivo" + (f"?{consulta}" if consulta else "")
+
+    def test_vivo_responde_con_resumen_y_conteo_por_responsable(self):
+        response = self._request(ADMIN, self._url_vivo(limit=5, q="zz-no-existe", orden="articulo", direccion="asc"))
+
+        self.assertEqual(200, response.status_code, self.json(response))
+        cuerpo = self.json(response)
+        self.assertEqual(0, cuerpo["total"])
+        self.assertEqual(0, cuerpo["resumen"]["renglones"])
+        self.assertIsNone(cuerpo["resumen"]["mas_antiguo"])
+        self.assertIsInstance(cuerpo["responsables"], list)
+
+    def test_vivo_rechaza_parametros_invalidos(self):
+        for parametros, campo in (
+            ({"orden": "contrasena"}, "orden"),
+            ({"direccion": "de_lado"}, "direccion"),
+            ({"id_user": "abc"}, "id_user"),
+            ({"id_user_ambito": "x"}, "id_user_ambito"),
+        ):
+            with self.subTest(parametros=parametros):
+                response = self._request(ADMIN, self._url_vivo(**parametros))
+                self.assertEqual(400, response.status_code)
+                self.assertEqual(campo, self.json(response)["meta"]["field"])
+
+
 
 ACTOR_A = {"id_user": 980, "id_permission": 980, "id_proyect": 980}
 ACTOR_B = {"id_user": 981, "id_permission": 981, "id_proyect": 981}

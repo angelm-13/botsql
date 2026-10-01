@@ -8,7 +8,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 
 from app.kpis.registry import (
     AGREGACION_POR_CLAVE, ALCANCE_PROYECTO_POR_CLAVE, DIMENSION_JSON_KEY, DIMENSION_POR_CLAVE, FAMILIA_SIN_ASIGNAR,
-    KPI_POR_CLAVE, LIMITE_POR_CLAVE,
+    KPI_POR_CLAVE, LIMITE_POR_CLAVE, PRESTADO_ORDENES,
 )
 from app.models.kpi_definition import KpiDefinition
 from app.models.kpi_snapshot import KpiSnapshot
@@ -46,6 +46,10 @@ def _required_date(value, field):
         return date.fromisoformat(str(value))
     except (TypeError, ValueError):
         raise AppError('errors.invalid_field', 400, {'field': field})
+
+
+def _optional_int(value, field):
+    return _required_int(value, field) if value not in (None, '') else None
 
 
 def _optional_date(value, field):
@@ -438,6 +442,23 @@ def query_kpi_vivo(user_data, id_kpi_definition):
     if offset < 0:
         raise AppError('errors.invalid_field', 400, {'field': 'offset'})
 
+    # Filtro, busqueda y orden de la tabla: los aplica el servidor sobre TODOS los renglones (ver
+    # `material_prestado_actual_query`), no el navegador sobre la pagina que alcanzo a cargar.
+    orden = request.args.get('orden') or PRESTADO_ORDENES[0]
+    if orden not in PRESTADO_ORDENES:
+        raise AppError('errors.invalid_field', 400, {'field': 'orden'})
+    direccion = request.args.get('direccion') or 'desc'
+    if direccion not in ('asc', 'desc'):
+        raise AppError('errors.invalid_field', 400, {'field': 'direccion'})
+    filtros = {
+        'id_user': _optional_int(request.args.get('id_user'), 'id_user'),
+        'id_user_ambito': _optional_int(request.args.get('id_user_ambito'), 'id_user_ambito'),
+        'q': (request.args.get('q') or '').strip()[:100] or None,
+        'orden': orden,
+        'direccion': direccion,
+        'agrupar': request.args.get('agrupar') in ('1', 'true', 'True'),
+    }
+
     with transaction_context() as db:
         if not has_kpi_permission(db, user_data, id_kpi_definition):
             raise AppError('errors.permission_denied', 403, {'kpi': id_kpi_definition})
@@ -448,9 +469,17 @@ def query_kpi_vivo(user_data, id_kpi_definition):
             raise AppError('errors.resource_not_found', 404, {'kpi': id_kpi_definition})
 
         actor_project = InvoiceService.actor_project(user_data) if kpi_def.alcance_proyecto else None
-        items, total = kpi_def.query_builder(db, limit=limit, offset=offset, actor_project=actor_project)
+        items, total = kpi_def.query_builder(
+            db, limit=limit, offset=offset, actor_project=actor_project, **filtros,
+        )
+        respuesta = {'items': items, 'total': total, 'limit': limit, 'offset': offset}
+        if kpi_def.resumen_builder is not None:
+            respuesta.update(kpi_def.resumen_builder(
+                db, total=total, id_user=filtros['id_user'], id_user_ambito=filtros['id_user_ambito'],
+                q=filtros['q'],
+            ))
 
-    return jsonify({'items': items, 'total': total, 'limit': limit, 'offset': offset})
+    return jsonify(respuesta)
 
 
 # --- kpi_dashboard: tableros del usuario, siempre privados por dueno -------
