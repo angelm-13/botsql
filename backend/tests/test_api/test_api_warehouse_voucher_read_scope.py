@@ -86,3 +86,60 @@ class TestWarehouseVoucherReadScope(BackendTestCase):
             headers=self._headers(id_user=99, id_permission=999),
         )
         self.assertEqual(403, respuesta.status_code)
+
+
+class TestOpeningAVoucherByNumberIsScoped(BackendTestCase):
+    """Abrir un vale por su numero (o bajar su PDF) respeta el mismo alcance que la lista.
+
+    Antes solo la LISTA filtraba por responsable: con el numero de un vale ajeno en
+    el buscador, un Supervisor o un Jefe de taller (solo `warehouse_prevoucher`) lo
+    abria completo. Se contesta 404, igual que un numero que no existe.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from app.models import Incident
+
+        with transaction_context() as db:
+            db.add_all([
+                EntityPermission(id_permission=201, entity_name="warehouse_prevoucher",
+                                 scope_create=4, scope_read=4, scope_update=4, created_by=1),
+                EntityPermission(id_permission=401, entity_name="warehouse_voucher",
+                                 scope_create=4, scope_read=4, scope_update=4, created_by=1),
+            ])
+            suyo = Incident(id_incident_type=1, id_user=11, created_by=1, external_folio="9001")
+            ajeno = Incident(id_incident_type=1, id_user=12, created_by=1, external_folio="9002")
+            db.add_all([suyo, ajeno])
+            db.flush()
+            self.id_suyo, self.id_ajeno = suyo.id_incident, ajeno.id_incident
+
+    def _headers(self, **claims):
+        return {"Authorization": "Bearer %s" % jwt.encode(claims, SECRET_KEY, algorithm="HS256")}
+
+    def _pide(self, ruta, **claims):
+        return self.client.get(ruta, headers=self._headers(**claims))
+
+    def test_a_requester_opens_his_own_voucher(self):
+        r = self._pide(f"/vouchers/{self.id_suyo}", id_user=11, id_permission=201)
+        self.assertEqual(200, r.status_code)
+
+    def test_a_requester_cannot_open_somebody_elses_voucher_by_id(self):
+        r = self._pide(f"/vouchers/{self.id_ajeno}", id_user=11, id_permission=201)
+        self.assertEqual(404, r.status_code)
+
+    def test_nor_by_folio(self):
+        r = self._pide("/vouchers/9002", id_user=11, id_permission=201)
+        self.assertEqual(404, r.status_code)
+
+    def test_nor_its_pdf(self):
+        r = self._pide(f"/vouchers/{self.id_ajeno}/pdf", id_user=11, id_permission=201)
+        self.assertEqual(404, r.status_code)
+
+    def test_an_existing_and_a_missing_number_look_the_same(self):
+        existe = self._pide(f"/vouchers/{self.id_ajeno}", id_user=11, id_permission=201)
+        no_existe = self._pide("/vouchers/987654", id_user=11, id_permission=201)
+        self.assertEqual(no_existe.status_code, existe.status_code)
+
+    def test_whoever_operates_the_warehouse_opens_any_voucher(self):
+        r = self._pide(f"/vouchers/{self.id_ajeno}", id_user=31, id_permission=401)
+        self.assertEqual(200, r.status_code)

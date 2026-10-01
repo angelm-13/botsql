@@ -376,6 +376,25 @@ def _vale(db, id_incident, *, para_actualizar=False) -> Incident:
     return vale
 
 
+def _exigir_que_sea_suyo(db, vale: Incident, user_data: dict) -> None:
+    """Quien solo pide material solo abre los vales a su nombre.
+
+    `buscar_vales` ya filtraba la LISTA por responsable, pero abrir un vale por
+    su numero -o bajar su PDF- no: con un numero cualquiera en el buscador, un
+    Supervisor o un Jefe de taller veia el vale de otra persona. El alcance tiene
+    que valer igual en todos los caminos que llegan a un vale.
+
+    Se contesta "no encontrado" y no "prohibido": es lo mismo que recibe quien
+    teclea un numero que no existe, asi que no se puede ir sondeando cuales
+    existen.
+    """
+    if _ve_todo_el_almacen(db, user_data):
+        return
+    if vale.id_user is None or int(vale.id_user) != _actor(user_data):
+        raise AppError("errors.not_found", 404,
+                       {"entity": "incident", "looked_up": str(vale.id_incident)})
+
+
 def _renglones(db, id_incident, *, solo_abiertos=False) -> list[NmIncidentProduct]:
     consulta = select(NmIncidentProduct).where(
         NmIncidentProduct.id_incident == int(id_incident),
@@ -1138,6 +1157,7 @@ def consultar_vale(id_incident, user_data: dict) -> dict:
     _actor(user_data)
     with transaction_context() as db:
         vale = _vale(db, id_incident)
+        _exigir_que_sea_suyo(db, vale, user_data)
         renglones = _renglones(db, vale.id_incident)
         abiertos = [r for r in renglones if r.close_date is None]
         # Las salidas y las entradas se cuentan aparte. Desde que la
@@ -1916,6 +1936,7 @@ def folio_del_vale(id_incident, user_data: dict) -> str:
     _actor(user_data)
     with transaction_context() as db:
         vale = _vale(db, id_incident)
+        _exigir_que_sea_suyo(db, vale, user_data)
         return str(vale.external_folio or vale.id_incident)
 
 
@@ -2168,6 +2189,7 @@ def pdf_del_vale(id_incident, user_data: dict, *, storage=None) -> bytes:
 
     with transaction_context() as db:
         vale = _vale(db, id_incident)
+        _exigir_que_sea_suyo(db, vale, user_data)
         expediente = _expediente_del_vale(db, vale, actor_id)
         ultima = db.scalars(
             select(DocumentVersion).where(
