@@ -1,0 +1,14 @@
+id_producto,codigo,estado_guardado,lectura,renglones_abiertos_en_prod_hoy
+228,CEP-03,DESTRUCCION,Destruccion sin ningun vale; estado del inventario inicial (2025-05-23),0
+65,TALB120,ENTRADA,Prestamo abierto pero el estado ENTRADA se puso DESPUES del prestamo: probablemente ya volvio y falta cerrar el renglon,1
+196,ARN906,ENTRADA,Prestamo abierto en el legado que prod ya cerro (gemelo del mismo vale); estado ENTRADA coincide,0
+320,PREN9,ENTRADA,Prestamo abierto y el estado ENTRADA es ANTERIOR al prestamo: el prestamo parece vigente,1
+72,BRC-42,SALIDA,Estado SALIDA pero todos sus prestamos estan devueltos: estado atrasado,0
+249,BRC-16,SALIDA,Tiene abiertos a la vez un extravio y un prestamo,2
+5,ESM222,DAÑADO,Coincide con sus vales,1
+3,SCAB-01,DESTRUCCION,Coincide con sus vales,1
+2,ESL-41,ENTRADA,Coincide con sus vales,0
+10,PINZ11,EQ. DAÑADOS,Sin vales; estado puesto en el inventario inicial (2025-05-23),0
+12,ROT1,EXTRAVIADO,Coincide con sus vales,1
+76,BRS46,SALIDA,Coincide con sus vales,1
+736,CRUZD49,SALIDA,Coincide con sus vales,0
