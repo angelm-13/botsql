@@ -75,7 +75,6 @@ import KronosPage from "./pages/KronosPage.jsx";
 import KronosDevicePage from "./pages/KronosDevicePage.jsx";
 import LogisticsAddressesPage from "./pages/logistics/LogisticsAddressesPage.jsx";
 import LogisticsBranchesPage from "./pages/logistics/LogisticsBranchesPage.jsx";
-import LogisticsContactsPage from "./pages/logistics/LogisticsContactsPage.jsx";
 import LogisticsContractsPage from "./pages/logistics/LogisticsContractsPage.jsx";
 import LogisticsInventoryPage from "./pages/logistics/LogisticsInventoryPage.jsx";
 import LogisticsEvidencesPage from "./pages/logistics/LogisticsEvidencesPage.jsx";
@@ -235,7 +234,6 @@ export default function App() {
           <Route path="/kronos/device" element={<RoleAccessRoute entityName="kronos_device"><KronosDevicePage /></RoleAccessRoute>} />
           <Route path="/logistica/clientes" element={<RoleAccessRoute entityName="customer_supplier"><CustomerSupplierPage clientsOnly /></RoleAccessRoute>} />
           <Route path="/logistica/proveedores" element={<RoleAccessRoute entityName="customer_supplier"><CustomerSupplierPage mode="suppliersOnly" /></RoleAccessRoute>} />
-          <Route path="/logistica/contactos" element={<RoleAccessRoute entityName="logistics_contact"><LogisticsContactsPage /></RoleAccessRoute>} />
           <Route path="/logistica/direcciones" element={<RoleAccessRoute entityName="logistics_address"><LogisticsAddressesPage /></RoleAccessRoute>} />
           <Route path="/logistica/contratos" element={<RoleAccessRoute entityName="logistics_contract"><LogisticsContractsPage /></RoleAccessRoute>} />
           <Route path="/logistica/tarifas" element={<RoleAccessRoute entityName="logistics_rate"><LogisticsRatesPage /></RoleAccessRoute>} />

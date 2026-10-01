@@ -133,10 +133,6 @@ export const createCustomerContact = (payload) => request("/customer_contact/", 
 export const updateCustomerContact = (id, payload) => request(`/customer_contact/${id}`, { method: "PUT", body: payload });
 export const deleteCustomerContact = (id) => request(`/customer_contact/${id}`, { method: "DELETE" });
 
-export const getAllLogisticsContact = (params = {}) => request("/logistics_contact/", { params });
-export const createLogisticsContact = (payload) => request("/logistics_contact/", { method: "POST", body: payload });
-export const updateLogisticsContact = (id, payload) => request(`/logistics_contact/${id}`, { method: "PUT", body: payload });
-export const deleteLogisticsContact = (id) => request(`/logistics_contact/${id}`, { method: "DELETE" });
 
 export const getAllLogisticsAddress = (params = {}) => request("/logistics_address/", { params });
 export const getLogisticsAddress = (id) => request(`/logistics_address/${id}`);
