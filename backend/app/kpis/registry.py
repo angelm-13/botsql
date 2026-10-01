@@ -34,6 +34,7 @@ from app.models.incident_type import IncidentType
 from app.models.inventory_asset import InventoryAsset, PRESTADA
 from app.models.inventory_asset_event import InventoryAssetEvent, PRESTAMO
 from app.models.inventory_lot import InventoryLot
+from app.models.inventory_status import InventoryStatus
 from app.models.inventory_stock import InventoryStock
 from app.models.invoice import Invoice
 from app.models.laboratory import LaboratoryServiceOrder
@@ -1053,6 +1054,98 @@ def prestamos_abiertos_por_antiguedad_query(session, fecha_inicio, fecha_fin, fi
     return filas
 
 
+# Las 6 categorias fijas de `piezas_por_estado`, en el orden en que se leen: de lo normal a lo grave.
+# Son `estado` de la dimension: texto, no ids. Los nombres son los de `material_por_estado`
+# ("Destruccion" sin acento, "Dañado" con ñ) para que los dos KPIs se lean igual.
+PIEZAS_CATEGORIAS = ("Entrada", "Salida", "En reparación", "Dañado", "Extraviado", "Destruccion")
+# Paleta de `material_por_estado`, mas violeta para "En reparación" (una pieza en el taller no esta
+# ni prestada ni perdida: no debe leerse como Salida, que es azul).
+PIEZAS_COLORES = {
+    "Entrada": "#22b573",
+    "Salida": "#2f8fe0",
+    "En reparación": "#8b6fe0",
+    "Dañado": "#f0a93b",
+    "Extraviado": "#ef6f5c",
+    "Destruccion": "#e0559b",
+}
+# Estado de catalogo (`inventory_status.inventory_status_code`, el que ya traen los productos) ->
+# categoria. Los demas codigos (`activo`, `disponible`...) no son un problema de la pieza: caen en
+# Salida/Entrada segun tenga o no un prestamo abierto.
+PIEZAS_CATEGORIA_POR_ESTADO = {
+    "retirado": "Destruccion",
+    "extraviado": "Extraviado",
+    "danado": "Dañado",
+    "en_reparacion": "En reparación",
+}
+
+
+def piezas_por_estado_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
+    """Foto de HOY: cuantas piezas hay en cada estado. PENDIENTE DE CONCILIAR contra tyakxa-dev.
+
+    PENDIENTE DE CONCILIAR contra tyakxa-dev (`id_inventory_status` real) antes de mostrarlo a
+    Adser: el CSV de estado de piezas de Alan (docs/despliegues/2026-09-30_estado_de_piezas_adser.csv)
+    trae el texto ANTIGUO del estado, no `id_inventory_status`, asi que solo valida la derivacion
+    "por analogia". Falta correr `backend/scripts/conciliar_piezas_por_estado.sql` ahi. Ver
+    docs/despliegues/2026-10-01_piezas_por_estado.md. Mientras tanto no esta en el perfil de
+    permisos ni en la plantilla del tablero de Adser.
+
+    Se cuentan PIEZAS = filas de `product` con `deletion_date IS NULL` (en Adser cada fila es una
+    herramienta fisica), no `SUM(quantity)` ni renglones de vale. Cada pieza cae en UNA categoria,
+    la primera que cumpla, en este orden:
+
+        Destruccion > Extraviado > Dañado > En reparación > Salida > Entrada
+
+    * Las cuatro primeras salen de `product.id_inventory_status` (`PIEZAS_CATEGORIA_POR_ESTADO`).
+    * Salida: la pieza tiene al menos UN renglon de vale abierto, de direccion Salida y de un vale
+      que no sea de baja. Mismo universo que `prestamos_abiertos_por_antiguedad` (abierto =
+      `close_date` nulo o el centinela de Adser, `CIERRE_SENTINELA`; sin borrados; vale con
+      `incident_date`; sin `TIPOS_DE_BAJA`). Dos renglones abiertos de la misma pieza cuentan UNA vez.
+      Una pieza Dañada que ademas esta prestada se cuenta como Dañado (gana el estado).
+    * Entrada: todo lo demas.
+    * Incluye todo `product`: `stock_purpose` no separa herramientas de consumibles (en Adser todo es
+      `uso_interno`).
+    * Las piezas serializadas (`inventory_asset.status`) quedan fuera, como en el resto de los KPIs.
+
+    El estado de catalogo no guarda historia: es una FOTO fechada en `fecha_fin` (agregacion
+    "ultimo"), no se reconstruyen dias pasados. Siempre regresa las 6 categorias, con 0 cuando no
+    hay piezas (una categoria ausente se leeria como "no calculada"). La suma de las 6 es el total
+    de piezas. Dimension "estado", sin alcance de proyecto.
+    """
+    prestada = (
+        select(NmIncidentProduct.id_product)
+        .join(Incident, Incident.id_incident == NmIncidentProduct.id_incident)
+        .outerjoin(IncidentType, IncidentType.id_incident_type == Incident.id_incident_type)
+        .where(
+            NmIncidentProduct.id_product == Product.id_product,
+            NmIncidentProduct.deletion_date.is_(None),
+            NmIncidentProduct.direction == SALIDA,
+            or_(NmIncidentProduct.close_date.is_(None), NmIncidentProduct.close_date == CIERRE_SENTINELA),
+            Incident.deletion_date.is_(None),
+            Incident.incident_date.isnot(None),
+            or_(
+                IncidentType.incident_type_description.is_(None),
+                func.lower(func.trim(IncidentType.incident_type_description)).notin_(TIPOS_DE_BAJA),
+            ),
+        )
+        .exists()
+    )
+    codigo = func.lower(func.trim(InventoryStatus.inventory_status_code))
+    categoria = case(
+        *[(codigo == estado, nombre) for estado, nombre in PIEZAS_CATEGORIA_POR_ESTADO.items()],
+        (prestada, "Salida"),
+        else_="Entrada",
+    )
+    stmt = (
+        select(categoria.label("categoria"), func.count())
+        .select_from(Product)
+        .outerjoin(InventoryStatus, InventoryStatus.id_inventory_status == Product.id_inventory_status)
+        .where(Product.deletion_date.is_(None))
+        .group_by(categoria)
+    )
+    conteos = {cat: cantidad for cat, cantidad in session.execute(stmt).all()}
+    return [(cat, fecha_fin, conteos.get(cat, 0)) for cat in PIEZAS_CATEGORIAS]
+
+
 # Que vales cuentan como una PERDIDA de herramienta en `perdidas_por_familia`: destruccion, extravio
 # y dañado, por la descripcion del tipo SIN acentos ni mayusculas (el catalogo real trae
 # "Destruccion" y "Dañado"; con `translate` tambien valen "Destrucción" y "Danado"). Reparacion NO:
@@ -1800,6 +1893,23 @@ KPI_REGISTRY = (
         graficas_permitidas=("tabla",),
         grafica_default="tabla",
         descripcion="Renglones de vale prestados sin devolver, por responsable.",
+    ),
+    KpiDefinition(
+        clave="piezas_por_estado",
+        etiqueta="Piezas por estado",
+        modulo="operaciones",
+        dimensiones=("estado",),
+        etiqueta_dimension="Estado de la pieza",
+        query_builder=piezas_por_estado_query,
+        agregacion="ultimo",
+        unidad="piezas",
+        alcance_proyecto=False,
+        direccion="neutral",
+        graficas_permitidas=("dona", "barras", "tabla"),
+        grafica_default="dona",
+        colores_categoria=PIEZAS_COLORES,
+        orden_categorias=PIEZAS_CATEGORIAS,
+        descripcion="Foto de hoy: cuántas piezas están en el almacén, prestadas, en reparación, dañadas, extraviadas o destruidas.",
     ),
 )
 
