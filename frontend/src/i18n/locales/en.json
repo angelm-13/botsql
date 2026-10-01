@@ -3473,7 +3473,7 @@
   },
   "customer_contact": {
     "title": "Contacts",
-    "subtitle": "Contact people by customer company",
+    "subtitle": "The people you deal with at each customer company. Pick the company the contact belongs to (it must already be registered under Customers); you can then choose that contact when creating a project.",
     "new_contact": "New contact",
     "edit_contact": "Edit contact",
     "full_name": "Full name",
@@ -4293,6 +4293,9 @@
     "kind_tool": "Tool — lent out and returned"
   },
   "page": {
+    "customer_client": {
+      "subtitle": "Register here the companies you sell to or serve: legal name, RFC and address. Add the company first; then, in Contacts (below), add the people you deal with there."
+    },
     "brand": {
       "subtitle": "Material manufacturers: Truper, Lion Tools. The brand is one of the three things that define a material, along with its family and description."
     },

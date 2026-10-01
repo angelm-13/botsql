@@ -3524,7 +3524,7 @@
   },
   "customer_contact": {
     "title": "Contactos",
-    "subtitle": "Personas de contacto por empresa cliente",
+    "subtitle": "Las personas con quienes tratas en cada empresa cliente. Elige la empresa a la que pertenece el contacto (debe estar registrada antes en Clientes); después podrás elegir ese contacto al crear un proyecto.",
     "new_contact": "Nuevo contacto",
     "edit_contact": "Editar contacto",
     "full_name": "Nombre completo",
@@ -4405,6 +4405,9 @@
     "kind_tool": "Herramienta — se presta y vuelve"
   },
   "page": {
+    "customer_client": {
+      "subtitle": "Aquí se registran las empresas a las que les vendes o das servicio: su razón social, RFC y dirección. Da de alta primero la empresa; después, en Contactos (más abajo), agrega a las personas con quienes tratas en ella."
+    },
     "brand": {
       "subtitle": "Los fabricantes del material: Truper, Lion Tools. La marca es una de las tres cosas que definen un material, junto con su familia y su descripción."
     },

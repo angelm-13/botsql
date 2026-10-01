@@ -434,6 +434,7 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
       <PageHeader
         eyebrow={forcedType === "client" ? "CRM" : forcedType ? "Logística" : t("common.module")}
         titulo={entityLabel}
+        subtitulo={forcedType === "client" ? t("page.customer_client.subtitle", "Aquí se registran las empresas a las que les vendes o das servicio: su razón social, RFC y dirección. Da de alta primero la empresa; después, en Contactos (más abajo), agrega a las personas con quienes tratas en ella.") : undefined}
       >
         <button className="button ghost" onClick={loadData} disabled={!canRead}><RefreshCw size={16} />{loading ? t("common.loading") : t("common.refresh")}</button>
       </PageHeader>
