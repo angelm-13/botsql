@@ -28,6 +28,7 @@ import "../styles/kpi-dashboard.css";
 import PageHeader from "../components/PageHeader.jsx";
 import TIPO_GRAFICA_COMPONENTE from "../components/kpi-widgets/tipoGraficaComponentes";
 import Skeleton from "../components/kpi-widgets/Skeleton";
+import { resolverColoresModernosParaPdf } from "../kpi/colorParaPdf";
 import SelectorDeKpi from "../components/kpi-widgets/SelectorDeKpi";
 import {
   colorDeKpi, colorEfectivoDeKpi, etiquetasDeDimension, etiquetasDeSnapshots, labelForDimension, normalizarBusqueda, unidadInfo,
@@ -619,7 +620,12 @@ export default function Dashboard() {
         // pixeles.
         const filas = medirFilasDeTarjetas(nodoGrid, ESCALA_CAPTURA_PDF);
         if (filas.length === 0) continue;
-        const canvas = await html2canvas(nodoGrid, { scale: ESCALA_CAPTURA_PDF, backgroundColor: "#ffffff" });
+        const canvas = await html2canvas(nodoGrid, {
+          scale: ESCALA_CAPTURA_PDF,
+          backgroundColor: "#ffffff",
+          // html2canvas no entiende color()/color-mix()/oklch() (ver kpi/colorParaPdf.js).
+          onclone: (_doc, clon) => resolverColoresModernosParaPdf(clon),
+        });
         agregarSeccionAlPdf({ pdf, canvas, filas, margin, tituloSeccion: dashboard.nombre, estadoPagina });
         huboContenido = true;
       }
