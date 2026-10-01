@@ -5,7 +5,7 @@ from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
 
 bp_material = Blueprint('material', __name__, url_prefix='/material')
-ALLOWED_FIELDS = ['id_material', 'material_description', 'id_unit', 'id_brand', 'id_product_family', 'id_material_type', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
+ALLOWED_FIELDS = ['id_material', 'material_description', 'id_unit', 'id_brand', 'id_product_family', 'id_material_type', 'path_imagen', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
 
 TECHNICAL_RESPONSE_FIELDS = {'id_material'}
 FIELD_READ_BIT = 2
@@ -151,3 +151,46 @@ def update_material(user_data, id_material):
 @require_entity_permission('material', 'delete')
 def delete_material(user_data, id_material):
     return jsonify(MaterialService.delete(id_material, user_id=user_data.get('id_user')))
+
+
+@bp_material.route('/<id_material>/image', methods=['POST'])
+@token_required
+@require_entity_permission('material', 'update')
+def upload_material_image(user_data, id_material):
+    """Sube la foto del material.
+
+    Se guarda en la carpeta de fotos de producto con prefijo `m_`: la sirve la
+    misma ruta (`/uploads/products/...`), vive en el mismo volumen persistente y
+    no choca con las `p_<id>` de producto ni con las numericas del sistema
+    anterior.
+    """
+    from app.routes.product import (
+        _PRODUCT_IMAGE_MAX_BYTES, _allowed_image_extension, _product_upload_dir,
+    )
+    from werkzeug.utils import secure_filename
+
+    MaterialService.get(id_material)  # 404 si no existe
+    if request.content_length and request.content_length > _PRODUCT_IMAGE_MAX_BYTES:
+        raise AppError('errors.image_too_large', 413, {'max_mb': 5})
+    from app.services.storage_service import exigir_espacio
+    exigir_espacio(request.content_length or 0)
+    file = request.files.get('file')
+    if not file or not file.filename:
+        raise AppError('errors.image_required', 400)
+    safe_original = secure_filename(file.filename)
+    if not _allowed_image_extension(safe_original):
+        raise AppError('errors.invalid_image_type', 400, {'allowed': ['jpeg', 'jpg', 'png', 'webp']})
+    filename = f"m_{id_material}.{safe_original.rsplit('.', 1)[1].lower()}"
+    payload = _filter_payload_for_actor({'path_imagen': f'uploads/products/{filename}'}, user_data)
+    if 'path_imagen' not in payload:
+        raise AppError('errors.forbidden', 403)
+    upload_dir = _product_upload_dir()
+    file.save(upload_dir / filename)
+    updated = MaterialService.update(id_material, payload, user_id=user_data.get('id_user'))
+    for anterior in upload_dir.glob(f'm_{id_material}.*'):
+        if anterior.name != filename:
+            try:
+                anterior.unlink()
+            except OSError:
+                pass
+    return _jsonify_projected_record(user_data, updated)

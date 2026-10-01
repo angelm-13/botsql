@@ -1004,7 +1004,8 @@
       "id_unit": "Unidad de medida",
       "last_update_date": "Fecha de última actualización",
       "material_description": "Material Descripción",
-      "id_material_type": "Tipo"
+      "id_material_type": "Tipo",
+      "path_imagen": "Imagen"
     },
     "material_component": {
       "created_by": "Creado por",

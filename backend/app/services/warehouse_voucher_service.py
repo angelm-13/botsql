@@ -324,7 +324,7 @@ def _fichas_de_producto(db, ids) -> dict:
             "id_product": p.id_product,
             "product_code": p.product_code,
             "descripcion": p.descripcion,
-            "path_imagen": p.path_imagen,
+            "path_imagen": p.path_imagen or getattr(material, "path_imagen", None),
             "color": p.color,
             "product_status": p.product_status,
             "tracking_mode": p.tracking_mode,

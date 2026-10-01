@@ -997,7 +997,8 @@
       "id_unit": "Id Unit",
       "last_update_date": "Last Update Date",
       "material_description": "Material Description",
-      "id_material_type": "Type"
+      "id_material_type": "Type",
+      "path_imagen": "Image"
     },
     "material_component": {
       "created_by": "Created By",

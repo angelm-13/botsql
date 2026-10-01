@@ -14,6 +14,7 @@ import {
 } from "../api";
 import { useI18n } from "../i18n";
 import PageHeader from "../components/PageHeader.jsx";
+import VisorDeFoto from "../components/VisorDeFoto";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 
 function asArray(payload) {
@@ -144,6 +145,7 @@ function isCatalogPrivilegedUser(user) {
 }
 
 export default function CatalogoWebPage() {
+  const [fotoAmpliada, setFotoAmpliada] = useState(null);
   const { t } = useI18n();
   const [tab, setTab] = useState("products");
   const [products, setProducts] = useState([]);
@@ -410,12 +412,14 @@ export default function CatalogoWebPage() {
               <tbody>
                 {filteredProducts.map((row) => {
                   const id = productId(row);
-                  return <tr key={id}>{canManageProducts && <td><input type="checkbox" checked={selectedIds.has(id)} onChange={() => toggleSelected(id)} /></td>}<td>{row.image_url || row.path_imagen ? <img className="table-image" src={row.image_url || row.path_imagen} alt="" /> : <span className="muted">—</span>}</td><td>{productSku(row)}</td><td><strong>{productName(row)}</strong><p className="cell-value">#{id}</p></td><td>{row.stock_available ?? row.stock ?? "—"}</td><td>{money(row.base_cost ?? row.cost ?? row.gross_price)}</td><td>{configValue(row, "margin_percent") ?? "—"}</td><td>{money(configValue(row, "manual_price"))}</td><td><strong>{money(finalPrice(row))}</strong></td><td><span className="catalogo-pill">{textOrDash(statusText(row))}</span></td><td>{row.is_active === false ? "—" : "✓"}</td>{canManageProducts && <td className="row-actions"><button type="button" onClick={() => startEditProduct(row)} title={t("common.edit", "Editar")}><Pencil size={15} /></button></td>}</tr>;
+                  return <tr key={id}>{canManageProducts && <td><input type="checkbox" checked={selectedIds.has(id)} onChange={() => toggleSelected(id)} /></td>}<td>{row.image_url || row.path_imagen ? <img className="table-image foto-ampliable" src={row.image_url || row.path_imagen} alt="" title={t("photo.click_to_zoom", "Clic para verla en grande")} onClick={() => setFotoAmpliada({ src: row.image_url || row.path_imagen, titulo: productName(row), descripcion: productSku(row) })} /> : <span className="muted">—</span>}</td><td>{productSku(row)}</td><td><strong>{productName(row)}</strong><p className="cell-value">#{id}</p></td><td>{row.stock_available ?? row.stock ?? "—"}</td><td>{money(row.base_cost ?? row.cost ?? row.gross_price)}</td><td>{configValue(row, "margin_percent") ?? "—"}</td><td>{money(configValue(row, "manual_price"))}</td><td><strong>{money(finalPrice(row))}</strong></td><td><span className="catalogo-pill">{textOrDash(statusText(row))}</span></td><td>{row.is_active === false ? "—" : "✓"}</td>{canManageProducts && <td className="row-actions"><button type="button" onClick={() => startEditProduct(row)} title={t("common.edit", "Editar")}><Pencil size={15} /></button></td>}</tr>;
                 })}
                 {!filteredProducts.length && <tr><td colSpan={canManageProducts ? 12 : 10} className="muted">{t("catalogo_web.no_products", "No hay productos para los filtros.")}</td></tr>}
               </tbody>
             </table>
           </div>
+
+          {fotoAmpliada && <VisorDeFoto src={fotoAmpliada.src} titulo={fotoAmpliada.titulo} descripcion={fotoAmpliada.descripcion} onCerrar={() => setFotoAmpliada(null)} />}
 
           {canManageProducts && editingProduct && <div className="catalogo-edit-grid">
             <div className="form-card">

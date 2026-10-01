@@ -34,6 +34,9 @@ class Material(Base):
     # dar un error que diga que corregir-.
     id_material_type: Mapped[int | None] = mapped_column(
         Integer, ForeignKey('material_type.id_material_type'), nullable=True)
+    # Foto del material, la que heredan los productos que no traen la suya.
+    # Misma forma que `product.path_imagen`: `uploads/products/m_<id>.<ext>`.
+    path_imagen: Mapped[object] = mapped_column(String(100), nullable=True)
     created_by: Mapped[int] = mapped_column(Integer, nullable=False)
     creation_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now())
     last_update_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
@@ -47,6 +50,7 @@ class Material(Base):
             'id_brand': to_json_value(self.id_brand),
             'id_product_family': to_json_value(self.id_product_family),
             'id_material_type': to_json_value(self.id_material_type),
+            'path_imagen': to_json_value(self.path_imagen),
             'created_by': to_json_value(self.created_by),
             'creation_date': to_json_value(self.creation_date),
             'last_update_date': to_json_value(self.last_update_date),

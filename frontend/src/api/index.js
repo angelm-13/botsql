@@ -555,6 +555,11 @@ export const getAllMaterial = (params = {}) => request("/material/", { params })
 export const getMaterial = (id) => request(`/material/${id}`);
 export const createMaterial = (payload) => request("/material/", { method: "POST", body: payload });
 export const updateMaterial = (id, payload) => request(`/material/${id}`, { method: "PUT", body: payload });
+export const uploadMaterialImage = (id, file) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  return request(`/material/${id}/image`, { method: "POST", body: formData });
+};
 export const deleteMaterial = (id) => request(`/material/${id}`, { method: "DELETE" });
 
 export const getAllMaterialComponent = (params = {}) => request("/material_component/", { params });

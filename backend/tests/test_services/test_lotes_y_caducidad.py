@@ -454,6 +454,22 @@ class TestEncenderElControlNoDejaExistenciaFuera(BaseLotes):
         self.assertEqual("errors.lot_control_needs_its_own_endpoint",
                          caja.exception.message_key)
 
+    def test_an_edit_that_sends_the_unchanged_flag_back_still_saves(self):
+        """El formulario de edicion devuelve el registro completo, `lot_control` incluido.
+
+        Rechazarlo aunque no cambiara hacia imposible guardar CUALQUIER edicion
+        de un producto (se veia como un cuadro rojo al editar una herramienta).
+        """
+        from app.services.product_service import ProductService
+
+        ProductService.update(
+            TORNILLO, {"lot_control": False, "note": "editado desde el formulario"},
+            user_id=1)
+        with transaction_context() as db:
+            producto = db.get(Product, TORNILLO)
+            self.assertEqual("editado desde el formulario", producto.note)
+            self.assertFalse(producto.lot_control)
+
     def test_turning_it_off_keeps_the_lots(self):
         """Un lote es el rastro que liga el anaquel con la factura de compra."""
         from app.services.inventory_lot_service import apagar_control_de_lotes

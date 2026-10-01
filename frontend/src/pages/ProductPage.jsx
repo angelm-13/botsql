@@ -3,6 +3,7 @@ import { ArrowUpRight, RefreshCw, Search, Tags, Trash2, Pencil, History} from "l
 import { Link } from "react-router-dom";
 import FiltroBuscable from "../components/FiltroBuscable.jsx";
 import { useI18n } from "../i18n";
+import VisorDeFoto from "../components/VisorDeFoto";
 import { getAllProduct, createProduct, updateProduct, deleteProduct, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, uploadProductImage, getAllBrand, getAllProductFamily, getAllInventoryStatus, getAllLocation, getAllMaterial, urlDeArchivo } from "../api";
 import { fetchAllPages } from "../utils/fetchAllPages";
 import { colorDeEstatus } from "../utils/estatusDePieza";
@@ -56,6 +57,13 @@ export default function ProductPage() {
   // Los productos cuya foto no cargo (archivo que no existe): se recuerdan para
   // pintar el marcador en lugar del icono de imagen rota.
   const [fotosRotas, setFotosRotas] = useState(() => new Set());
+  // La foto que se esta mirando en grande, o null.
+  const [fotoAmpliada, setFotoAmpliada] = useState(null);
+  const ampliarFoto = (item) => setFotoAmpliada({
+    src: urlDeArchivo(item.path_imagen),
+    titulo: item.descripcion || item.product_code || `#${item.id_product}`,
+    descripcion: item.product_code || "",
+  });
   const marcarFotoRota = (idProduct) => setFotosRotas((antes) => new Set(antes).add(idProduct));
   const currentUser = useMemo(() => readCurrentUser(), []);
   const isSuperUser = Boolean(currentUser?.is_superuser || currentUser?.is_bootstrap_admin || currentUser?.username === "admin1");
@@ -786,11 +794,11 @@ export default function ProductPage() {
               {canSeeField("color") && <td><pre className="cell-value">{formatTableValue(item.color)}</pre></td>}
               {canSeeField("is_directly_related_to_product_service") && <td><pre className="cell-value">{formatTableValue(item.is_directly_related_to_product_service)}</pre></td>}
               {canSeeField("product_status") && <td><span style={productStatusBadgeStyle(item.product_status)}>{productStatusDisplayLabel(item.product_status)}</span></td>}
-              {canSeeField("path_imagen") && <td>{item.path_imagen && !fotosRotas.has(item.id_product) ? <img className="table-image" src={urlDeArchivo(item.path_imagen)} alt={t("common.image", "Imagen")} onError={() => marcarFotoRota(item.id_product)} /> : <span className="muted">-</span>}</td>}
+              {canSeeField("path_imagen") && <td>{item.path_imagen && !fotosRotas.has(item.id_product) ? <img className="table-image foto-ampliable" src={urlDeArchivo(item.path_imagen)} alt={t("common.image", "Imagen")} title={t("photo.click_to_zoom", "Clic para verla en grande")} onClick={() => ampliarFoto(item)} onError={() => marcarFotoRota(item.id_product)} /> : <span className="muted">-</span>}</td>}
               {canSeeField("product_code") && <td><pre className="cell-value">{formatTableValue(item.product_code)}</pre></td>}
         </tr>)}</tbody></table></div>}
 
-      {canRead && view === "kanban" && filtered.length > 0 && <div className="kanban">{Object.entries(groups).map(([key, groupItems]) => <div className="kanban-column" key={key}><h3>{key} <span>{groupItems.length}</span></h3>{groupItems.map((item) => <article className="kanban-card product-kanban-card" style={productStatusCardStyle(item.product_status)} key={item.id_product}>{canSeeField("path_imagen") && item.path_imagen && !fotosRotas.has(item.id_product) && <img className="kanban-image" src={urlDeArchivo(item.path_imagen)} alt={t("common.image", "Imagen")} onError={() => marcarFotoRota(item.id_product)} />}<strong>{String(item.product_code ?? item.id_product)}</strong><small>#{item.id_product}</small><div className="product-kanban-details product-kanban-compact">
+      {canRead && view === "kanban" && filtered.length > 0 && <div className="kanban">{Object.entries(groups).map(([key, groupItems]) => <div className="kanban-column" key={key}><h3>{key} <span>{groupItems.length}</span></h3>{groupItems.map((item) => <article className="kanban-card product-kanban-card" style={productStatusCardStyle(item.product_status)} key={item.id_product}>{canSeeField("path_imagen") && item.path_imagen && !fotosRotas.has(item.id_product) && <img className="kanban-image foto-ampliable" src={urlDeArchivo(item.path_imagen)} alt={t("common.image", "Imagen")} title={t("photo.click_to_zoom", "Clic para verla en grande")} onClick={() => ampliarFoto(item)} onError={() => marcarFotoRota(item.id_product)} />}<strong>{String(item.product_code ?? item.id_product)}</strong><small>#{item.id_product}</small><div className="product-kanban-details product-kanban-compact">
           {canSeeField("product_status") && item.product_status && <p><span>{t("fields.product.product_status", "Estado")}:</span> <strong style={productStatusBadgeStyle(item.product_status)}>{productStatusDisplayLabel(item.product_status)}</strong></p>}
           {canSeeField("descripcion") && item.descripcion && <p className="wide"><span>{t("fields.product.descripcion", "Descripcion")}:</span> <strong>{formatTableValue(item.descripcion)}</strong></p>}
           {canSeeField("id_location") && item.id_location && <p><span>{t("fields.product.id_location", "Ubicacion")}:</span> <strong>{productKanbanDisplayLabel(locationOptions, "id_location", "location", item.id_location)}</strong></p>}
@@ -803,6 +811,15 @@ export default function ProductPage() {
           {canSeeField("last_update_date") && item.last_update_date && <p><span>{t("fields.product.last_update_date", "Actualizacion")}:</span> <strong>{formatTableValue(item.last_update_date)}</strong></p>}
           {canSeeField("note") && item.note && <p className="wide"><span>{t("fields.product.note", "Nota")}:</span> <strong>{formatTableValue(item.note)}</strong></p>}
         </div>{showRowActions && <div>{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}<button type="button" onClick={() => setFicha(item)} title={t("history.title", "Historial del producto")}><History size={15} /></button>{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</div>}</article>)}</div>)}</div>}
+
+      {fotoAmpliada && (
+        <VisorDeFoto
+          src={fotoAmpliada.src}
+          titulo={fotoAmpliada.titulo}
+          descripcion={fotoAmpliada.descripcion}
+          onCerrar={() => setFotoAmpliada(null)}
+        />
+      )}
 
       <Pagination
         page={page}
