@@ -505,6 +505,7 @@ export const updateLevel = (id, payload) => request(`/level/${id}`, { method: "P
 export const deleteLevel = (id) => request(`/level/${id}`, { method: "DELETE" });
 
 export const getAllLocation = (params = {}) => request("/location/", { params });
+export const getLocationOptions = () => request("/location/options");
 export const getLocation = (id) => request(`/location/${id}`);
 export const createLocation = (payload) => request("/location/", { method: "POST", body: payload });
 export const updateLocation = (id, payload) => request(`/location/${id}`, { method: "PUT", body: payload });

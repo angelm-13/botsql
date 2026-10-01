@@ -15,7 +15,7 @@ import {
   createWarehousePrevoucher,
   createWarehouseVoucher,
   getIncidentTypeOptions,
-  getAllLocation,
+  getLocationOptions,
   getMyPermissions,
   getUserOptions,
   getOverdueVoucherLines,
@@ -170,7 +170,10 @@ export default function WarehouseVoucherPage() {
       const [venc, tip, ubi, usr, permisosPayload] = await Promise.all([
         getOverdueVoucherLines().catch(() => ({ items: [] })),
         getIncidentTypeOptions().catch(() => []),
-        getAllLocation({ per_page: 200 }).catch(() => ({ items: [] })),
+        // `/location/options`, no `/location/`: la lista completa exige leer
+        // `location` (modulo de inventario) y un Supervisor, que solo pide
+        // material, se quedaba sin nombres -- el "Sale de" salia en blanco.
+        getLocationOptions().catch(() => []),
         getUserOptions().catch(() => []),
         privilegiado
           ? Promise.resolve({ entity_permissions: [] })
@@ -178,7 +181,7 @@ export default function WarehouseVoucherPage() {
       ]);
       setVencidos(venc?.items || []);
       setTipos(Array.isArray(tip) ? tip : tip?.items || []);
-      setUbicaciones(ubi?.items || []);
+      setUbicaciones(Array.isArray(ubi) ? ubi : ubi?.items || []);
       setUsuarios(Array.isArray(usr) ? usr : usr?.items || []);
       const filasPermiso = permisosPayload.entity_permissions || [];
       setPermisos(filasPermiso);
@@ -1091,6 +1094,13 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
         serializado,
         id_location_from: pieza?.id_location
           || producto.locations?.[0]?.id_location || "",
+        // Donde hay existencia de este producto, con su ruta. Es lo que se
+        // ofrece a quien solo pide material: no elige "de donde" entre todas
+        // las ubicaciones, sale de donde el producto esta.
+        sitios: producto.locations || [],
+        sitio_etiqueta: pieza
+          ? (pieza.location_path_label || pieza.location_description || "")
+          : "",
       }],
     });
     setBusqueda("");
@@ -1285,23 +1295,47 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
                   lo fungible hay que decirlo: descontar 5 sacos "del almacen"
                   sin decir de cual deja el saldo por ubicacion mintiendo, y ese
                   es el dato con el que alguien va a buscarlos. */}
-              <label className={`vale-mini ${!linea.serializado
-                && !linea.id_location_from ? "vale-falta" : ""}`}>
-                <span>
-                  {t("voucher.from", "Sale de")}
-                  {!linea.serializado && " *"}
-                </span>
-                <select value={linea.id_location_from}
-                        onChange={(e) => cambiar(indice,
-                          { id_location_from: e.target.value })}>
-                  <option value="">—</option>
-                  {ubicaciones.map((u) => (
-                    <option key={u.id_location} value={u.id_location}>
-                      {u.location_description}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {/* Quien solo PIDE material (Supervisor) no elige de donde sale:
+                  eso ya esta definido por donde esta el producto, y se le
+                  muestra. Solo si el producto esta repartido en varios sitios
+                  se le ofrecen ESOS sitios -no todas las ubicaciones-. */}
+              {soloPuedeSolicitar
+                && (linea.serializado || (linea.sitios || []).length === 1) ? (
+                <div className="vale-mini">
+                  <span>{t("voucher.from", "Sale de")}</span>
+                  <strong>
+                    {linea.sitio_etiqueta
+                      || linea.sitios?.[0]?.path_label
+                      || linea.sitios?.[0]?.location_description
+                      || ubicaciones.find((u) => Number(u.id_location)
+                        === Number(linea.id_location_from))?.location_description
+                      || "—"}
+                  </strong>
+                </div>
+              ) : (
+                <label className={`vale-mini ${!linea.serializado
+                  && !linea.id_location_from ? "vale-falta" : ""}`}>
+                  <span>
+                    {t("voucher.from", "Sale de")}
+                    {!linea.serializado && " *"}
+                  </span>
+                  <select value={linea.id_location_from}
+                          onChange={(e) => cambiar(indice,
+                            { id_location_from: e.target.value })}>
+                    <option value="">—</option>
+                    {(soloPuedeSolicitar && (linea.sitios || []).length > 1
+                      ? (linea.sitios || []).map((s) => ({
+                        id_location: s.id_location,
+                        location_description: s.path_label || s.location_description,
+                      }))
+                      : ubicaciones).map((u) => (
+                      <option key={u.id_location} value={u.id_location}>
+                        {u.location_description}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
 
               <button className="vale-icono vale-icono-borrar" onClick={() => quitar(indice)}
                       aria-label={t("common.delete", "Quitar")}>

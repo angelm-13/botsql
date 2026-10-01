@@ -113,6 +113,18 @@ def _jsonify_projected_list(user_data: dict, payload: dict):
 
 
 
+@bp_location.route('/options', methods=['GET'])
+@token_required
+def list_location_options(user_data):
+    """Solo id+descripcion, para el "Sale de" de un vale o prevale.
+
+    Sin permiso de entidad -- igual que `/user/options` y
+    `/incident_type/options` -- porque un Supervisor pide material sin tener el
+    modulo de inventario, y aun asi tiene que ver el nombre de la ubicacion.
+    """
+    return jsonify(LocationService.options())
+
+
 @bp_location.route('/', methods=['GET'])
 @token_required
 @require_entity_permission('location', 'read')
