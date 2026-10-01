@@ -69,6 +69,28 @@ class ConMetadatosDelRegistryTest(unittest.TestCase):
             [kpi.clave for kpi in KPI_REGISTRY if kpi.orden_categorias is not None],
         )
 
+    def test_expone_el_limite_de_categorias_solo_de_perdidas_por_familia(self):
+        fila = KpiDefinition(clave="perdidas_por_familia", etiqueta="Perdidas por familia",
+                              modulo="operaciones", dimensiones=["familia"], unidad="piezas")
+        fila.id_kpi_definition = 994
+
+        resultado = _con_metadatos_del_registry(fila)
+
+        self.assertEqual(10, resultado["limite_categorias"])
+        self.assertEqual("Familia", resultado["etiqueta_dimension"])
+        self.assertEqual(["perdidas_por_familia"], [k.clave for k in KPI_REGISTRY if k.limite_categorias is not None])
+
+    def test_un_limite_de_categorias_malo_falla_al_importar(self):
+        for malo in (0, -3, 2.5, True, "10"):
+            kpi = registry.KpiDefinition(
+                "kpi_de_prueba", "Prueba", "operaciones", ("familia",), lambda *a: [],
+                direccion="neutral", graficas_permitidas=("barras",), grafica_default="barras",
+                agregacion="suma", limite_categorias=malo,
+            )
+            with self.subTest(limite=malo), mock.patch.object(registry, "KPI_REGISTRY", (kpi,)):
+                with self.assertRaisesRegex(RuntimeError, "limite_categorias"):
+                    registry._validar()
+
     def test_un_orden_de_categorias_malo_falla_al_importar(self):
         def kpi(orden, colores):
             return registry.KpiDefinition(
@@ -100,6 +122,7 @@ class ConMetadatosDelRegistryTest(unittest.TestCase):
         self.assertEqual([], resultado["graficas_permitidas"])
         self.assertIsNone(resultado["colores_categoria"])
         self.assertIsNone(resultado["orden_categorias"])
+        self.assertIsNone(resultado["limite_categorias"])
         self.assertIsNone(resultado["descripcion"])
 
 
@@ -150,7 +173,7 @@ class EtiquetaDeDimensionTest(unittest.TestCase):
         for kpi in KPI_REGISTRY:
             self.assertTrue(kpi.etiqueta_dimension, kpi.clave)
             self.assertLessEqual(len(kpi.etiqueta_dimension), 30, kpi.clave)
-        self.assertEqual({"empleado", "producto", "estado", "global"}, set(ETIQUETA_DIMENSION_POR_OMISION))
+        self.assertEqual({"empleado", "producto", "estado", "familia", "global"}, set(ETIQUETA_DIMENSION_POR_OMISION))
 
     def test_la_api_la_expone(self):
         fila = KpiDefinition(clave="incidencias_abiertas_por_empleado", etiqueta="x", modulo="operaciones",

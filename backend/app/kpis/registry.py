@@ -63,6 +63,9 @@ DIMENSION_JSON_KEY = {
     # que guarda `dimension_key` (siempre lo compara como texto via
     # `.astext`), asi que un string de categoria funciona igual que un id.
     "estado": "estado",
+    # Familia de producto: el valor es `product.id_familia` (0 = producto sin familia). Una
+    # dimension ABIERTA (41 familias en Adser): lleva `limite_categorias` para mostrar las mayores.
+    "familia": "id_familia",
 }
 
 # Los 4 niveles de "que tan buena es una variacion" para un KPI, declarados
@@ -99,7 +102,7 @@ UNIDADES = ("numero", "porcentaje", "moneda", "dias", "piezas")
 
 # Vocabulario cerrado de dimensiones -- "estado" es nueva (ver
 # DIMENSION_JSON_KEY arriba), las otras tres ya existian sin validarse.
-DIMENSIONES = ("empleado", "producto", "global", "estado")
+DIMENSIONES = ("empleado", "producto", "global", "estado", "familia")
 
 # Como se combinan varios snapshots de un KPI (varios dias, varios proyectos)
 # en un solo numero -- lo declara cada KPI en `agregacion`, sin valor por
@@ -1050,6 +1053,56 @@ def prestamos_abiertos_por_antiguedad_query(session, fecha_inicio, fecha_fin, fi
     return filas
 
 
+# Que vales cuentan como una PERDIDA de herramienta en `perdidas_por_familia`: destruccion, extravio
+# y dañado, por la descripcion del tipo SIN acentos ni mayusculas (el catalogo real trae
+# "Destruccion" y "Dañado"; con `translate` tambien valen "Destrucción" y "Danado"). Reparacion NO:
+# una herramienta en reparacion no esta perdida.
+TIPOS_DE_PERDIDA = ("destruccion", "extraviado", "danado")
+# `product.id_familia` nulo se agrupa bajo este valor ("Sin familia"), para que su perdida no
+# desaparezca de la grafica.
+FAMILIA_SIN_ASIGNAR = 0
+
+
+def perdidas_por_familia_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
+    """Piezas perdidas por familia de producto y por dia: destruccion + extravio + dañado.
+
+    Flujo (agregacion "suma"): cada renglon de vale cuenta el dia de su `Incident.incident_date`
+    (la fecha real del vale, ver `material_por_estado_query`).
+
+    * Se cuentan PIEZAS (`SUM(NmIncidentProduct.quantity)`), no renglones: lo que importa de una
+      perdida es cuantas piezas se fueron, y un renglon de 5 piezas dañadas no es lo mismo que
+      uno de 1. Es tambien lo que cuenta el Resumen de almacen del sistema anterior.
+    * Tipos: `TIPOS_DE_PERDIDA`, sin importar la direccion del renglon (lo define el tipo del vale).
+    * Familia: `product.id_familia` (la del PRODUCTO, la columna "Familia" del sistema anterior), no
+      la del material. Sin familia -> `FAMILIA_SIN_ASIGNAR`. Los nombres no se guardan aqui: la
+      dimension lleva el id y `GET /kpi_snapshot/query` los resuelve al consultar.
+    * El top 10 NO se corta aqui: se guarda toda familia con perdidas y el corte se hace al sumar
+      el rango (`limite_categorias`).
+    * Sin alcance de proyecto, mismo motivo que el resto de los KPIs sobre `Incident`.
+    """
+    fecha_col = func.date(Incident.incident_date)
+    familia = func.coalesce(Product.id_familia, FAMILIA_SIN_ASIGNAR)
+    tipo_normalizado = func.translate(func.lower(func.trim(IncidentType.incident_type_description)), "ñáéíóú", "naeiou")
+    stmt = (
+        select(familia, fecha_col.label("fecha"), func.sum(NmIncidentProduct.quantity))
+        .select_from(NmIncidentProduct)
+        .join(Incident, Incident.id_incident == NmIncidentProduct.id_incident)
+        .join(IncidentType, IncidentType.id_incident_type == Incident.id_incident_type)
+        .join(Product, Product.id_product == NmIncidentProduct.id_product)
+        .where(
+            NmIncidentProduct.deletion_date.is_(None),
+            Incident.deletion_date.is_(None),
+            Incident.incident_date.isnot(None),
+            fecha_col >= fecha_inicio,
+            fecha_col <= fecha_fin,
+            tipo_normalizado.in_(TIPOS_DE_PERDIDA),
+        )
+        .group_by(familia, fecha_col)
+        .order_by(fecha_col, familia)
+    )
+    return [(id_familia, fecha, int(piezas)) for id_familia, fecha, piezas in session.execute(stmt).all()]
+
+
 def incidencias_abiertas_vs_cerradas_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
     """Incidencias abiertas y cerradas, por dia -- flujo, no foto.
 
@@ -1296,6 +1349,7 @@ ETIQUETA_DIMENSION_POR_OMISION = {
     "empleado": "Empleado",
     "producto": "Producto",
     "estado": "Estado",
+    "familia": "Familia",
     "global": "Total",
 }
 
@@ -1305,7 +1359,7 @@ class KpiDefinition:
                  query_builder, *, direccion, graficas_permitidas, grafica_default,
                  agregacion=None, unidad="numero", alcance_proyecto=True, modo="snapshot",
                  colores_categoria=None, descripcion=None, etiqueta_dimension=None,
-                 orden_categorias=None):
+                 orden_categorias=None, limite_categorias=None):
         self.clave = clave
         self.etiqueta = etiqueta
         # Una linea corta para el selector de KPI del editor (rediseno del
@@ -1361,6 +1415,11 @@ class KpiDefinition:
         # dato. Con None (el default, todos los demas) el Dashboard ordena por valor, de mayor a
         # menor. No se deriva de `colores_categoria`: un dict pierde el orden al serializarse.
         self.orden_categorias = tuple(orden_categorias) if orden_categorias else None
+        # Para una dimension ABIERTA con muchos valores (ej. familia, 41 en Adser): cuantos se
+        # muestran, los de mayor valor. El corte se hace al SUMAR el rango (`_totales()` en
+        # routes/kpi.py), no en el query_builder: cada dia guarda todas las familias y el top
+        # depende del rango que se pida. El "total" sigue siendo el de TODAS. None = sin corte.
+        self.limite_categorias = limite_categorias
         # Si el KPI se calcula UNA VEZ POR PROYECTO ACTIVO (True, el default
         # -- lo que ya hacian los primeros 3 KPIs, todos sobre entidades que
         # SI tienen id_proyect) o UNA SOLA VEZ, sin filtro de proyecto
@@ -1712,6 +1771,22 @@ KPI_REGISTRY = (
         descripcion="Renglones prestados sin devolver, por días desde el vale: 0-30, 31-60, 61-90 y más de 90.",
     ),
     KpiDefinition(
+        clave="perdidas_por_familia",
+        etiqueta="Pérdidas por familia",
+        modulo="operaciones",
+        dimensiones=("familia",),
+        etiqueta_dimension="Familia",
+        query_builder=perdidas_por_familia_query,
+        agregacion="suma",
+        unidad="piezas",
+        alcance_proyecto=False,
+        direccion="bajo_es_mejor",
+        graficas_permitidas=("barras",),
+        grafica_default="barras",
+        limite_categorias=10,
+        descripcion="Piezas destruidas, extraviadas o dañadas, por familia de producto: las 10 con más pérdidas.",
+    ),
+    KpiDefinition(
         clave="material_prestado_actual",
         etiqueta="Material prestado ahora",
         modulo="operaciones",
@@ -1742,6 +1817,10 @@ ALCANCE_PROYECTO_POR_CLAVE = {kpi.clave: kpi.alcance_proyecto for kpi in KPI_REG
 # (via `DIMENSION_JSON_KEY`) sin tener que resembrar la logica de dimensiones
 # fuera de este registro.
 DIMENSION_POR_CLAVE = {kpi.clave: kpi.dimensiones[0] for kpi in KPI_REGISTRY}
+
+# Cuantas categorias muestra un KPI de dimension abierta (`limite_categorias`; None = todas): lo
+# consume `_totales()` en `app/routes/kpi.py` para cortar al sumar el rango.
+LIMITE_POR_CLAVE = {kpi.clave: kpi.limite_categorias for kpi in KPI_REGISTRY}
 
 # Y para la regla de agregacion (ver AGREGACIONES): la consume `_totales()` en
 # `app/routes/kpi.py` para saber como combinar los snapshots del rango.
@@ -1822,6 +1901,11 @@ def _validar():
                     f"El KPI '{kpi.clave}' declara la dimension desconocida '{dimension}' "
                     f"(validas: {', '.join(DIMENSIONES)})."
                 )
+        if kpi.limite_categorias is not None and (
+            not isinstance(kpi.limite_categorias, int) or isinstance(kpi.limite_categorias, bool)
+            or kpi.limite_categorias < 1
+        ):
+            raise RuntimeError(f"El KPI '{kpi.clave}' declara un limite_categorias que no es un entero positivo.")
         if kpi.orden_categorias is not None:
             if len(set(kpi.orden_categorias)) != len(kpi.orden_categorias):
                 raise RuntimeError(f"El KPI '{kpi.clave}' repite una categoria en orden_categorias.")

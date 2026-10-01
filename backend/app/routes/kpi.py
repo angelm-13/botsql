@@ -7,11 +7,13 @@ from sqlalchemy import cast, func, select
 from sqlalchemy.dialects.postgresql import JSONB
 
 from app.kpis.registry import (
-    AGREGACION_POR_CLAVE, ALCANCE_PROYECTO_POR_CLAVE, DIMENSION_JSON_KEY, DIMENSION_POR_CLAVE, KPI_POR_CLAVE,
+    AGREGACION_POR_CLAVE, ALCANCE_PROYECTO_POR_CLAVE, DIMENSION_JSON_KEY, DIMENSION_POR_CLAVE, FAMILIA_SIN_ASIGNAR,
+    KPI_POR_CLAVE, LIMITE_POR_CLAVE,
 )
 from app.models.kpi_definition import KpiDefinition
 from app.models.kpi_snapshot import KpiSnapshot
 from app.models.permission import Permission
+from app.models.product_family import ProductFamily
 from app.models.session import transaction_context
 from app.models.user import User
 from app.modules.plan import limite
@@ -108,7 +110,7 @@ def _dimension_entity_expr(campo_json):
     return cast(KpiSnapshot.dimension_key, JSONB)[campo_json].astext
 
 
-def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo=False):
+def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo=False, limite=None):
     """Combina `kpi_snapshot` en el rango, en uno de tres modos:
 
     * `campo_json` es None (dimension "global", ej. ingresos/egresos
@@ -132,6 +134,11 @@ def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, enti
       se ignoran: no hay forma correcta de combinarlas.
     * "ultimo": la foto del ultimo dia del rango que tenga datos. Por periodo
       se muestra la foto de cada dia, y el total es la del ultimo.
+
+    `limite` (`KpiDefinition.limite_categorias`): en el modo por entidad, deja en
+    `por_empleado` solo las `limite` entidades de mayor valor (empate: la de menor id).
+    El corte va DESPUES de combinar el rango -- el top depende del rango pedido -- y el
+    `total` sigue siendo el de TODAS las entidades, no el de las que se muestran.
     """
     condiciones = [
         KpiSnapshot.id_kpi_definition == id_kpi_definition,
@@ -216,7 +223,26 @@ def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, enti
     ]
     por_entidad = {entidad: valor_de(*agregados) for entidad, *agregados in filas}
     total = total_de([tuple(agregados) for _, *agregados in filas])
+    if limite is not None:
+        mayores = sorted(por_entidad.items(), key=lambda par: (-par[1], str(par[0])))[:limite]
+        por_entidad = dict(mayores)
     return {**base, 'total': total, 'por_empleado': por_entidad, 'por_periodo': {}}
+
+
+def _etiquetas_de_familias(db, rangos):
+    """`{id_familia: nombre}` de las familias que aparecen en `rangos` (los dos lados de la
+    consulta). El snapshot guarda el id, no el nombre: asi renombrar una familia no parte la
+    historia. `FAMILIA_SIN_ASIGNAR` es "Sin familia"."""
+    ids = {int(id_familia) for rango in rangos if rango for id_familia in rango['por_empleado']}
+    nombres = {str(FAMILIA_SIN_ASIGNAR): 'Sin familia'}
+    reales = [i for i in ids if i != FAMILIA_SIN_ASIGNAR]
+    if reales:
+        for id_familia, nombre in db.execute(
+            select(ProductFamily.id_product_family, ProductFamily.product_family_description)
+            .where(ProductFamily.id_product_family.in_(reales))
+        ).all():
+            nombres[str(id_familia)] = nombre
+    return {str(i): nombres.get(str(i), f'#{i}') for i in ids}
 
 
 def _con_metadatos_del_registry(kpi_row: KpiDefinition) -> dict:
@@ -241,6 +267,7 @@ def _con_metadatos_del_registry(kpi_row: KpiDefinition) -> dict:
         'modo': definicion.modo if definicion else 'snapshot',
         'colores_categoria': definicion.colores_categoria if definicion else None,
         'orden_categorias': list(definicion.orden_categorias) if definicion and definicion.orden_categorias else None,
+        'limite_categorias': definicion.limite_categorias if definicion else None,
         'etiqueta_dimension': definicion.etiqueta_dimension if definicion else '',
         'descripcion': definicion.descripcion if definicion else None,
     }
@@ -367,10 +394,17 @@ def query_kpi_snapshot(user_data):
                 entidades = list(usuarios_del_departamento)
 
         agrupar_por_periodo = agrupar_por == 'periodo'
-        rango_a = _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo)
+        tope_categorias = LIMITE_POR_CLAVE.get(kpi_row.clave) if kpi_row else None
+        rango_a = _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo, tope_categorias)
         rango_b = None
         if fecha_inicio_b and fecha_fin_b:
-            rango_b = _totales(db, id_kpi_definition, fecha_inicio_b, fecha_fin_b, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo)
+            rango_b = _totales(db, id_kpi_definition, fecha_inicio_b, fecha_fin_b, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo, tope_categorias)
+        if dimension == 'familia':
+            # El snapshot guarda ids; los nombres viajan aparte para que el Dashboard los pinte.
+            etiquetas = _etiquetas_de_familias(db, (rango_a, rango_b))
+            for rango in (rango_a, rango_b):
+                if rango:
+                    rango['etiquetas'] = etiquetas
 
     return jsonify({'rango_a': rango_a, 'rango_b': rango_b})
 
