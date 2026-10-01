@@ -11,7 +11,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   CATEGORICAL, COLOR_OTHERS, buildMultiSeriesData, etiquetasDeDimension, buildPieData, buildSeriesData,
-  colorDeKpi, colorEfectivoDeKpi, formatConUnidad, labelForDimension, ordenarPorCategorias,
+  colorDeKpi, colorEfectivoDeKpi, etiquetasDeSnapshots, formatConUnidad, labelForDimension, ordenarPorCategorias,
 } from "./kpiDatos.js";
 import {
   agruparPorResponsable, duracionLegible, etiquetaDeDias, filtrarPorResponsable, gravedadDeDias, ordenarFilas,
@@ -253,6 +253,45 @@ test("los demas KPIs de estado (sin orden declarado) siguen ordenados por valor,
     agruparPorPeriodo: false, formatNumber, textos: { otros: "Otros" },
   });
   assert.deepEqual(dona.datos.map((d) => d.categoria), ["Entrada", "Dañado", "Extraviado", "Salida"]);
+});
+
+// --- dimension "familia": perdidas_por_familia ------------------------------------------------------
+const KPI_FAMILIA = {
+  id_kpi_definition: 31, clave: "perdidas_por_familia", unidad: "piezas", dimensiones: ["familia"],
+  etiqueta_dimension: "Familia", limite_categorias: 10, modulo: "operaciones",
+};
+// La API ya manda el top 10 cortado, con los nombres aparte (el snapshot solo guarda el id).
+const SNAPSHOT_FAMILIA = {
+  rango_a: { total: 181, por_empleado: { 7: 12, 1: 101, 0: 3 }, etiquetas: { 7: "Taladros", 1: "Sierras", 0: "Sin familia" } },
+  rango_b: { total: 20, por_empleado: { 7: 5, 9: 1 }, etiquetas: { 7: "Taladros", 9: "Brocas" } },
+};
+
+test("etiquetasDeSnapshots junta los nombres de los dos lados del rango y de todos los snapshots", () => {
+  assert.deepEqual(etiquetasDeSnapshots([SNAPSHOT_FAMILIA]), { 7: "Taladros", 1: "Sierras", 0: "Sin familia", 9: "Brocas" });
+  assert.deepEqual(etiquetasDeSnapshots([{ rango_a: { total: 1, por_empleado: {} }, rango_b: null }]), {});
+  assert.deepEqual(etiquetasDeSnapshots(undefined), {});
+});
+
+test("labelForDimension familia: el nombre que mando la API, o #id si no hay", () => {
+  const etiquetas = etiquetasDeSnapshots([SNAPSHOT_FAMILIA]);
+  const label = labelForDimension("familia", userLabel, userLabel, etiquetas);
+  assert.equal(label("1"), "Sierras");
+  assert.equal(label("0"), "Sin familia");
+  assert.equal(label("404"), "#404");
+  assert.equal(labelForDimension("familia", userLabel, userLabel)("5"), "#5");
+});
+
+test("barras de perdidas por familia: nombres de familia, de mayor a menor y sin 'Otros'", () => {
+  const props = propsSeries({
+    tipo: "barras", snapshots: [SNAPSHOT_FAMILIA], kpiInfos: [KPI_FAMILIA],
+    labelForId: labelForDimension("familia", userLabel, userLabel, etiquetasDeSnapshots([SNAPSHOT_FAMILIA])),
+    empleados: undefined, agruparPorPeriodo: false, coloresOverride: undefined, formatNumber, textos: TEXTOS_SERIES,
+  });
+  assert.deepEqual(props.datos.map((fila) => fila.name), ["Sierras", "Taladros", "Sin familia", "Brocas"]);
+  assert.deepEqual(props.datos.map((fila) => fila.a), [101, 12, 3, 0]);
+  // Un solo color del KPI: una familia no es una categoria fija con color propio.
+  assert.equal(props.colorPorFila, null);
+  assert.equal(etiquetasDeDimension([KPI_FAMILIA])[0], "Familia");
 });
 
 test("tabla de material prestado: id, responsable por omision y columnas", () => {
