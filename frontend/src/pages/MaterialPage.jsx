@@ -125,8 +125,19 @@ export default function MaterialPage() {
       }
       if (canSeeField("id_product_family")) {
         try {
-          const productFamilyData = await getAllProductFamily({ page: 1, per_page: 100 });
-          setProductFamilyOptions(Array.isArray(productFamilyData) ? productFamilyData : (productFamilyData.items || []));
+          // Todas las familias, no solo la primera página: con más de 100 el
+          // selector dejaba fuera las más nuevas y no había forma de elegirlas.
+          const todas = [];
+          let paginaFamilias = 1;
+          let totalPaginas = 1;
+          do {
+            const datos = await getAllProductFamily({ page: paginaFamilias, per_page: 500, sort: "product_family_description" });
+            if (Array.isArray(datos)) { todas.push(...datos); break; }
+            todas.push(...(datos.items || []));
+            totalPaginas = datos.pages || 1;
+            paginaFamilias += 1;
+          } while (paginaFamilias <= totalPaginas);
+          setProductFamilyOptions(todas);
         } catch (_) {
           setProductFamilyOptions([]);
         }
