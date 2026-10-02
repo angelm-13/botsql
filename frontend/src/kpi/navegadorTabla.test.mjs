@@ -8,8 +8,20 @@
 // `table { min-width: 900px }`), asi que ninguna prueba en servidor ni con jsdom -sin
 // layout- podia verlo.
 //
+// La tabla pide sus renglones al servidor por paginas, ya filtrados, buscados y ordenados (ver
+// kpiPrestamosServidor.js). Aqui el `fetch` SIMULA ese endpoint (GET .../vivo) sobre las filas de la
+// respuesta real: filtro por id_user, busqueda, orden, paginas, resumen y conteo por responsable. La semantica
+// REAL de esas consultas la prueban las pruebas de Postgres del backend
+// (test_kpi_material_prestado_actual_servidor.py); esto prueba el cableado y el aspecto en un Chrome de verdad.
+//
+// PENDIENTE: esta prueba (y su escenario "mas de 50 renglones") se verifica A MANO en el navegador por ahora.
+// Se vio intermitente: cada corrida con el Chrome sin terminar deja unos 10 procesos de Chromium vivos y, al
+// acumularse, las siguientes se cuelgan o fallan (sospecha: el `spawnSync` de abajo no los limpia cuando el
+// Chrome agota su tiempo). Sin arreglar todavia. Mientras tanto, no correrla en automatico.
+//
 // Sin dependencias nuevas: esbuild de Vite + el Chrome que haya (o CHROME_BIN); sin
-// ninguno, se SALTA.
+// ninguno, se SALTA. Correr los archivos de Chrome EN SERIE (`node --test --test-concurrency=1`): dos Chrome
+// a la vez pelean por el mismo perfil.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -38,13 +50,58 @@ const RESPUESTA_REAL = readFileSync(ruta("./fixtures/material_prestado_actual.re
 // app.css se carga a proposito: la regla global `table { min-width: 900px }` esta ahi.
 const GUION = `
 const RESPUESTA = ${RESPUESTA_REAL};
-window.fetch = async () => new Response(JSON.stringify(RESPUESTA), { status: 200, headers: { "content-type": "application/json" } });
+// Las filas que "tiene" el servidor; una prueba puede cambiarlas (window.__FILAS).
+const sinAcentos = (s) => String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+function servir(url) {
+  const q = new URL(url, location.href).searchParams;
+  const todas = window.__FILAS || RESPUESTA.items;
+  const ambito = q.get("id_user_ambito");
+  const idUser = q.get("id_user");
+  const palabras = sinAcentos(q.get("q")).split(/\\s+/).filter(Boolean);
+  const enAmbito = todas.filter((f) => !ambito || String(f.id_user) === ambito);
+  const filtradas = enAmbito.filter((f) => (!idUser || String(f.id_user) === idUser)
+    && palabras.every((p) => sinAcentos(f.articulo + " " + (f.responsable || "") + " " + f.fecha_prestamo + " " + f.dias_prestado).includes(p)));
+  const orden = q.get("orden") || "dias_prestado";
+  const asc = q.get("direccion") === "asc";
+  const texto = (f, campo) => sinAcentos(f[campo]);
+  const porDias = (a, b) => b.dias_prestado - a.dias_prestado || a.id_nm_incident_product - b.id_nm_incident_product;
+  let ordenadas;
+  if (q.get("agrupar")) {
+    const masViejo = (id) => Math.max(...filtradas.filter((f) => f.id_user === id).map((f) => f.dias_prestado));
+    ordenadas = [...filtradas].sort((a, b) => masViejo(b.id_user) - masViejo(a.id_user) || a.id_user - b.id_user || porDias(a, b));
+  } else if (orden === "dias_prestado") {
+    ordenadas = [...filtradas].sort((a, b) => (asc ? -1 : 1) * (b.dias_prestado - a.dias_prestado) || a.id_nm_incident_product - b.id_nm_incident_product);
+  } else if (orden === "fecha_prestamo") {
+    ordenadas = [...filtradas].sort((a, b) => (asc ? 1 : -1) * a.fecha_prestamo.localeCompare(b.fecha_prestamo) || porDias(a, b));
+  } else {
+    ordenadas = [...filtradas].sort((a, b) => (asc ? 1 : -1) * texto(a, orden).localeCompare(texto(b, orden)) || porDias(a, b));
+  }
+  const limit = Number(q.get("limit") || 25);
+  const offset = Number(q.get("offset") || 0);
+  const masAntiguo = [...filtradas].sort(porDias)[0];
+  const reales = new Map();
+  for (const f of enAmbito) {
+    const r = reales.get(f.id_user) || { id_user: f.id_user, responsable: f.responsable, renglones: 0, mas_antiguo_dias: 0 };
+    r.renglones += 1; r.mas_antiguo_dias = Math.max(r.mas_antiguo_dias, f.dias_prestado); reales.set(f.id_user, r);
+  }
+  return {
+    items: ordenadas.slice(offset, offset + limit), total: filtradas.length, limit, offset,
+    resumen: {
+      renglones: filtradas.length, responsables: new Set(filtradas.map((f) => f.id_user)).size,
+      mas_antiguo: masAntiguo ? { dias: masAntiguo.dias_prestado, articulo: masAntiguo.articulo, responsable: masAntiguo.responsable } : null,
+    },
+    responsables: [...reales.values()].sort((a, b) => String(a.responsable).localeCompare(String(b.responsable))),
+  };
+}
+window.__PETICIONES = [];
+window.fetch = async (url) => { window.__PETICIONES.push(String(url)); return new Response(JSON.stringify(servir(url)), { status: 200, headers: { "content-type": "application/json" } }); };
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 const resultados = [];
 const paso = (nombre, ok, detalle = "") => resultados.push({ nombre, ok: Boolean(ok), detalle: String(detalle) });
 const dentro = (el, caja) => { const r = el.getBoundingClientRect(); return r.width === 0 || (r.left >= caja.left - 1 && r.right <= caja.right + 1); };
 
 async function escenario(nombre, anchoCuadricula, config = {}) {
+  const textosDelFixture = !window.__FILAS;
   const contenedor = document.createElement("div");
   contenedor.className = "kpi-dashboard";
   contenedor.style.cssText = "width:" + anchoCuadricula + "px;margin:8px 0;font-family:'IBM Plex Sans',system-ui,sans-serif";
@@ -73,18 +130,22 @@ async function escenario(nombre, anchoCuadricula, config = {}) {
   const primera = filas[0];
   // El elemento MAS PROFUNDO cuyo texto contiene lo buscado (un valor puede venir partido
   // en varios nodos de texto: "512" + "días").
-  const visibles = ["Empleado demo", "sample_descripcion", "2025-", "512 días"].map((texto) => {
-    const candidatos = [...primera.querySelectorAll("*")].filter((el) => el.textContent.replace(/\\s+/g, " ").includes(texto) && ![...el.children].some((hijo) => hijo.textContent.replace(/\\s+/g, " ").includes(texto)));
-    const caja1 = candidatos[0]?.getBoundingClientRect();
-    return { texto, ok: !!caja1 && caja1.width > 4 && caja1.height > 4 && caja1.left >= caja.left && caja1.right <= caja.right + 1, rect: caja1 ? [Math.round(caja1.left), Math.round(caja1.right), Math.round(caja1.width), Math.round(caja1.height)].join("/") + " tarjeta " + Math.round(caja.left) + "-" + Math.round(caja.right) + " <" + candidatos[0].tagName + ">" : "sin elemento" };
-  });
-  paso(nombre + ": articulo, responsable, fecha y dias se ven en el primer renglon", visibles.every((v) => v.ok), visibles.filter((v) => !v.ok).map((v) => v.texto + " " + v.rect).join("; "));
+  if (textosDelFixture) {
+    const visibles = ["Empleado demo", "sample_descripcion", "2025-", "512 días"].map((texto) => {
+      const candidatos = [...primera.querySelectorAll("*")].filter((el) => el.textContent.replace(/\\s+/g, " ").includes(texto) && ![...el.children].some((hijo) => hijo.textContent.replace(/\\s+/g, " ").includes(texto)));
+      const caja1 = candidatos[0]?.getBoundingClientRect();
+      return { texto, ok: !!caja1 && caja1.width > 4 && caja1.height > 4 && caja1.left >= caja.left && caja1.right <= caja.right + 1, rect: caja1 ? [Math.round(caja1.left), Math.round(caja1.right), Math.round(caja1.width), Math.round(caja1.height)].join("/") + " tarjeta " + Math.round(caja.left) + "-" + Math.round(caja.right) + " <" + candidatos[0].tagName + ">" : "sin elemento" };
+    });
+    paso(nombre + ": articulo, responsable, fecha y dias se ven en el primer renglon", visibles.every((v) => v.ok), visibles.filter((v) => !v.ok).map((v) => v.texto + " " + v.rect).join("; "));
+  }
   return { contenedor, tarjeta, filas };
 }
 
-const click = async (el) => { el.click(); await esperar(120); };
-const seleccionar = async (select, valor) => { select.value = valor; select.dispatchEvent(new Event("change", { bubbles: true })); await esperar(120); };
-const escribir = async (input, valor) => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, valor); input.dispatchEvent(new Event("input", { bubbles: true })); await esperar(120); };
+// 500 ms: la busqueda espera 300 ms antes de pedir al servidor, y luego llega la respuesta.
+const ASENTAR = 500;
+const click = async (el) => { el.click(); await esperar(ASENTAR); };
+const seleccionar = async (select, valor) => { select.value = valor; select.dispatchEvent(new Event("change", { bubbles: true })); await esperar(ASENTAR); };
+const escribir = async (input, valor) => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, valor); input.dispatchEvent(new Event("input", { bubbles: true })); await esperar(ASENTAR); };
 const filasDe = (tarjeta) => [...tarjeta.querySelectorAll("tbody tr")];
 const textoPlano = (el) => el.textContent.replace(/\\s+/g, " ").trim();
 const boton = (tarjeta, re) => [...tarjeta.querySelectorAll("button")].find((b) => re.test(b.textContent));
@@ -162,9 +223,11 @@ async function diseno(nombre, ancho, esTabla) {
   const filtro = tarjeta.querySelector(".kpi-prestamos-control select");
   const opciones = [...filtro.options].map((o) => o.value).filter(Boolean);
   paso(nombre + ": el filtro lista los responsables", opciones.length === 2 && filtro.options[0].textContent.includes("(15)"), opciones.join("|"));
+  // El valor de cada opcion es el id_user (no el nombre): la etiqueta dice "Nombre (n)".
+  const nombreFiltrado = filtro.options[1].textContent.replace(/ \\(\\d+\\)$/, "");
   await seleccionar(filtro, opciones[0]);
   const solo = filasDe(tarjeta).filter((f) => f.getBoundingClientRect().height > 0);
-  paso(nombre + ": filtrar deja solo los renglones de ese responsable, con el orden por dias", solo.length > 0 && solo.every((f) => f.querySelector(".kpi-prestamos-responsable").textContent === opciones[0]) && solo.map((f) => +f.querySelector(".kpi-prestamos-chip-texto").textContent.split(" ")[0]).every((d, i, arr) => i === 0 || arr[i - 1] >= d));
+  paso(nombre + ": filtrar deja solo los renglones de ese responsable, con el orden por dias", solo.length > 0 && solo.every((f) => f.querySelector(".kpi-prestamos-responsable").textContent === nombreFiltrado) && solo.map((f) => +f.querySelector(".kpi-prestamos-chip-texto").textContent.split(" ")[0]).every((d, i, arr) => i === 0 || arr[i - 1] >= d));
   paso(nombre + ": el resumen se ajusta al filtro (1 responsable)", /1 responsable/.test(textoPlano(tarjeta.querySelector(".kpi-prestamos-resumen"))));
   await seleccionar(filtro, "");
   // Vista agrupada por responsable.
@@ -180,6 +243,89 @@ async function diseno(nombre, ancho, esTabla) {
     await click(tarjeta.querySelector("th button"));
     paso(nombre + ": pulsar el encabezado ordena por esa columna", filasDe(tarjeta)[0].querySelector(".kpi-prestamos-articulo").textContent === "sample_descripcion");
   }
+}
+
+
+// El caso real de Adser: mas de 50 renglones y lo nuevo (el vale de agosto de Omar) cae MAS ALLA de la fila 50.
+// Antes la tabla pedia las 50 mas antiguas y filtraba/buscaba en el navegador sobre ellas: filtrar por Omar o
+// buscar "ESCALERA" no encontraba el vale nuevo, y el conteo por responsable mentia.
+function filasDelCasoOmar() {
+  const filas = [];
+  const agregar = (id_user, responsable, articulo, fecha, dias) => {
+    filas.push({ id_nm_incident_product: filas.length + 1, id_user, responsable, articulo, fecha_prestamo: fecha, dias_prestado: dias });
+  };
+  for (let i = 0; i < 60; i += 1) agregar(1, "OMAR GONZALEZ", "TALADRO DEMO", "2025-10-09", 357);
+  for (const art of ["ESCALERA DE TIJERA", "MALETIN DE HERRAMIENTAS", "TANQUE DE CO2"]) agregar(1, "OMAR GONZALEZ", art, "2026-08-11", 51);
+  for (let i = 0; i < 40; i += 1) agregar(2, "ANA LOPEZ", "TALADRO DEMO", "2026-01-15", 259);
+  for (let i = 0; i < 5; i += 1) { agregar(3, "ESTANCIA EN EL TALLER", "TALADRO DEMO", "2026-03-01", 214); agregar(4, "ESTANCIA EN EL TALLER", "TALADRO DEMO", "2026-03-02", 213); }
+  return filas;
+}
+
+async function muchosRenglones() {
+  const nombre = "mas de 50 renglones";
+  window.__FILAS = filasDelCasoOmar();
+  const { tarjeta } = await escenario(nombre, 680);
+  const resumen = () => textoPlano(tarjeta.querySelector(".kpi-prestamos-resumen"));
+  paso(nombre + ": la tarjeta cuenta TODOS los renglones (113), no los que alcanzo a cargar", /^113 renglones/.test(resumen()), resumen());
+  const filtro = tarjeta.querySelector(".kpi-prestamos-control select");
+  const etiquetas = [...filtro.options].map((o) => o.textContent);
+  paso(nombre + ": el desplegable trae el conteo REAL de Omar (63)", etiquetas.some((e) => e === "OMAR GONZALEZ (63)"), etiquetas.join(" | "));
+  paso(nombre + ": dos responsables con el mismo nombre son dos opciones, cada una con sus 5", etiquetas.filter((e) => e === "ESTANCIA EN EL TALLER (5)").length === 2);
+  const omar = [...filtro.options].find((o) => o.textContent === "OMAR GONZALEZ (63)").value;
+  await seleccionar(filtro, omar);
+  paso(nombre + ": filtrar por Omar: 63 renglones y 1 responsable", /^63 renglones\\s*1 responsable/.test(resumen()), resumen());
+  const verTodos = boton(tarjeta, /Ver todos \\(63\\)/);
+  paso(nombre + ": 'Ver todos (63)'", !!verTodos, resumen() + " | " + [...tarjeta.querySelectorAll("button")].map((b) => b.textContent.trim()).join(" / "));
+  if (!verTodos) { window.__FILAS = null; return; }
+  await click(verTodos);
+  const dlg = document.querySelector('[role="dialog"]');
+  await esperar(800);
+  paso(nombre + ": al abrir 'Ver todos' solo se carga la primera pagina (no todo de golpe)", filasDe(dlg).length === 50, filasDe(dlg).length);
+  const lista = dlg.querySelector(".kpi-prestamos-lista");
+  const peticionesAntes = window.__PETICIONES.length;
+  await esperar(600);
+  paso(nombre + ": sin tocar nada no se piden mas paginas", window.__PETICIONES.length === peticionesAntes, window.__PETICIONES.length - peticionesAntes);
+  const selectDlg = dlg.querySelector(".kpi-prestamos-control select");
+  await seleccionar(selectDlg, omar);
+  // 50 (la primera pagina) o 63 si el observador de scroll ya pidio la siguiente: segun el modo de Chrome puede o no
+  // dispararse solo. Lo estricto -que abrir la ventana NO carga todo de golpe- se comprueba arriba.
+  paso(nombre + ": Omar en la ventana: la primera pagina (50) o ya el resto (63)", [50, 63].includes(filasDe(dlg).length), filasDe(dlg).length);
+  // El scroll infinito usa IntersectionObserver, que este Chrome sin cabeza y con tiempo virtual no dispara:
+  // se verifico aparte en un Chrome normal (Dashboard real, 63 de 63 al llegar al final). Aqui el resto se pide
+  // por el boton de respaldo, que carga lo mismo desde el servidor.
+  lista.scrollTop = lista.scrollHeight;
+  await esperar(300);
+  for (let i = 0; i < 4 && filasDe(dlg).length < 63; i += 1) {
+    const mas63 = [...dlg.querySelectorAll("button")].find((b) => /Mostrar más/.test(b.textContent));
+    if (!mas63) break;
+    await click(mas63);
+  }
+  const cuerpo = textoPlano(dlg.querySelector(".kpi-prestamos-lista"));
+  paso(nombre + ": el resto se pide al servidor: los 63 de Omar", filasDe(dlg).length === 63, filasDe(dlg).length);
+  paso(nombre + ": estan los viejos (2025-10-09) Y el vale nuevo (2026-08-11)", cuerpo.includes("2025-10-09") && cuerpo.includes("2026-08-11"));
+  paso(nombre + ": estan ESCALERA, MALETIN y TANQUE", ["ESCALERA DE TIJERA", "MALETIN DE HERRAMIENTAS", "TANQUE DE CO2"].every((a) => cuerpo.includes(a)));
+  await seleccionar(selectDlg, "");
+  const buscador = dlg.querySelector('input[type="search"]');
+  await escribir(buscador, "ESCALERA");
+  paso(nombre + ": buscar ESCALERA (mas alla de la fila 50) la encuentra", filasDe(dlg).length === 1 && textoPlano(filasDe(dlg)[0]).includes("OMAR GONZALEZ"), filasDe(dlg).length);
+  const resumenDlg = textoPlano(dlg.querySelector(".kpi-prestamos-resumen"));
+  paso(nombre + ": el resumen de la busqueda: 1 renglon, 1 responsable", /^1 renglón\\s*1 responsable/.test(resumenDlg), resumenDlg);
+  paso(nombre + ": los conteos del desplegable no cambian al buscar", [...selectDlg.options].some((o) => o.textContent === "OMAR GONZALEZ (63)"));
+  await escribir(buscador, "");
+  const mas = [...dlg.querySelectorAll("button")].find((b) => /Mostrar más/.test(b.textContent));
+  paso(nombre + ": sin filtros hay un boton 'Mostrar más' de respaldo", !!mas, filasDe(dlg).length + " filas");
+  if (!mas) { window.__FILAS = null; return; }
+  const antes = filasDe(dlg).length;
+  await click(mas);
+  paso(nombre + ": 'Mostrar más' trae otra pagina del servidor", filasDe(dlg).length === antes + 50, antes + " -> " + filasDe(dlg).length);
+  paso(nombre + ": el pie dice 'Mostrando N de 113'", /Mostrando \\d+ de 113/.test(textoPlano(dlg)));
+  const taller = [...selectDlg.options].filter((o) => o.textContent === "ESTANCIA EN EL TALLER (5)");
+  await seleccionar(selectDlg, taller[0].value);
+  const fechas = new Set(filasDe(dlg).map((f) => textoPlano(f).match(/2026-03-0\\d/)?.[0]));
+  paso(nombre + ": un responsable con nombre repetido trae solo SUS renglones", filasDe(dlg).length === 5 && fechas.size === 1, [...fechas].join());
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  await esperar(200);
+  window.__FILAS = null;
 }
 
 async function estadoVacio() {
@@ -233,6 +379,7 @@ async function todo() {
   await anchoDoble("doble a 500px", 500, 1);
   await anchoDoble("doble a 900px", 900, 2);
   await anchoDoble("doble a 1200px", 1200, 3);
+  await muchosRenglones();
   await estadoVacio();
   movimientoReducido();
   document.title = JSON.stringify({ resultados });
