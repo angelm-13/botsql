@@ -2581,6 +2581,7 @@
     "database_constraint": "Could not save because of a data constraint",
     "delete_has_related_records": "This record cannot be deleted because related records still use it. Delete or unlink the related records first.",
     "username_already_exists": "That username already exists. Use a different username.",
+    "product_family_already_exists": "A family with that name already exists (ignoring case and accents).",
     "material_already_exists": "A material with the same description, unit, brand, family and type already exists. Find it in the catalog instead of entering it again.",
     "nm_incident_product_duplicate": "That line is already on the voucher, identical in product, quantity, dates and note. If it is a different loan, change the quantity, the dates or the note.",
     "voucher_duplicate_line": "That piece appears twice on the voucher. A piece can only go out once.",
@@ -4285,6 +4286,7 @@
   "product_family": {
     "title": "Product families",
     "subtitle": "The group each material belongs to —screwdrivers, cement— and whether it is a tool that comes back or a consumable that is used up.",
+    "no_results": "No family matches the search.",
     "no_families": "No families yet. The family is the material’s group: “Screwdrivers”, “Cement”.",
     "eyebrow": "Inventory",
     "family_placeholder": "Family name (for example: Screwdrivers)",

@@ -2621,6 +2621,7 @@
     "database_constraint": "No se pudo guardar por una restricción de datos",
     "delete_has_related_records": "No se puede eliminar este registro porque está relacionado con otros registros. Primero elimina o desvincula los registros relacionados.",
     "username_already_exists": "Ese usuario ya existe. Usa otro nombre de usuario.",
+    "product_family_already_exists": "Ya existe una familia con ese nombre (sin importar mayúsculas ni acentos).",
     "material_already_exists": "Ya existe un material con la misma descripción, unidad, marca, familia y tipo. Búscalo en el catálogo en lugar de capturarlo otra vez.",
     "nm_incident_product_duplicate": "Ese renglón ya está capturado en el vale, idéntico en producto, cantidad, fechas y nota. Si es un préstamo distinto, cambia la cantidad, las fechas o la nota.",
     "voucher_duplicate_line": "Esa pieza aparece dos veces en el vale. Una pieza solo puede salir una vez.",
@@ -4397,6 +4398,7 @@
   "product_family": {
     "title": "Familias de producto",
     "subtitle": "El grupo al que pertenece cada material —desarmadores, cemento— y si es herramienta que se presta o consumible que se gasta.",
+    "no_results": "Ninguna familia coincide con la búsqueda.",
     "no_families": "No hay familias todavía. La familia es el grupo del material: «Desarmadores», «Cemento».",
     "eyebrow": "Inventario",
     "family_placeholder": "Nombre de la familia (por ejemplo: Desarmadores)",

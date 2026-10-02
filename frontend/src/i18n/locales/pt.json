@@ -2530,6 +2530,7 @@
     "database_constraint": "Não foi possível salvar devido a uma restrição de dados",
     "delete_has_related_records": "Não é possível excluir este registro porque ele está relacionado a outros registros. Primeiro exclua ou desvincule os registros relacionados.",
     "username_already_exists": "Esse usuário já existe. Use outro nome de usuário.",
+    "product_family_already_exists": "Já existe uma família com esse nome (sem diferenciar maiúsculas nem acentos).",
     "material_already_exists": "Já existe um material com a mesma descrição, unidade, marca, família e tipo.",
     "nm_incident_product_duplicate": "Essa linha já está registrada no vale, idêntica em produto, quantidade, datas e nota.",
     "voucher_duplicate_line": "Essa peça aparece duas vezes no vale.",

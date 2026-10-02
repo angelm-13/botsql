@@ -2528,6 +2528,7 @@
     "database_constraint": "Speichern wegen Datenbeschränkung nicht möglich",
     "delete_has_related_records": "Dieser Datensatz kann nicht gelöscht werden, weil andere Datensätze ihn noch verwenden. Löschen oder trennen Sie zuerst die verknüpften Datensätze.",
     "username_already_exists": "Dieser Benutzername existiert bereits. Verwenden Sie einen anderen Benutzernamen.",
+    "product_family_already_exists": "Eine Familie mit diesem Namen existiert bereits (Groß-/Kleinschreibung und Akzente werden ignoriert).",
     "material_already_exists": "Ein Material mit gleicher Beschreibung, Einheit, Marke, Familie und Typ existiert bereits.",
     "nm_incident_product_duplicate": "Diese Zeile ist im Beleg bereits erfasst, identisch in Produkt, Menge, Daten und Notiz.",
     "voucher_duplicate_line": "Dieses Teil erscheint zweimal im Beleg.",
