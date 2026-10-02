@@ -315,13 +315,14 @@ CAPACIDADES = (
     Capacidad("warehouse_voucher_authorize", "Autorizar vales de material",
               "inventario", bits=CAPTURA, menu="hidden"),
     # Ver lo que hace falta comprar: lo que los proyectos necesitan contra lo que
-    # hay en el almacen, junto, de todos los proyectos. Es de LECTURA -quien
-    # compra no necesita escribir en los proyectos de otros- y va como capacidad
+    # hay en el almacen, junto, de todos los proyectos. Es de LECTURA y REVISION -quien
+    # compra no escribe en los proyectos de otros, pero si decide si un renglon de
+    # texto libre ya existe en el almacen o hay que comprarlo- y va como capacidad
     # porque su pantalla no es el CRUD de una tabla: cruza necesidades con
     # existencias. En `inventario` y no en `operaciones` porque Almacenista, que
     # tambien la necesita, tiene aquel modulo y no este.
     Capacidad("purchase_planning", "Por comprar", "inventario",
-              bits=CONSULTA, menu="sidebar"),
+              bits=EDITAR, menu="sidebar"),
     # La bitacora diaria del taller. Solo Jefe de taller la sube -- pidio
     # negocio explicito (2026-09-28): el supervisor levanta el proyecto y pide
     # material, pero quien reporta el avance del dia en el piso es Jefe de

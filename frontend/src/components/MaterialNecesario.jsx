@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import { Plus, X } from "lucide-react";
-import FiltroBuscable from "./FiltroBuscable.jsx";
 import {
-  cancelMaterialNeed, createProyectMaterialNeed, getMaterialNeedOptions,
+  cancelMaterialNeed, createProyectMaterialNeed, getMaterialNeedSuggestions,
   getMyPermissions, getProyectMaterialNeeds, updateMaterialNeed,
 } from "../api";
 import { useI18n } from "../i18n";
@@ -20,18 +19,22 @@ function esPrivilegiado(actor) {
   return Boolean(actor.is_superuser || actor.is_bootstrap_admin || actor.username === "admin1");
 }
 
-const FORMULARIO_VACIO = { id_material: "", quantity: "1", needed_by: "", note: "" };
+const FORMULARIO_VACIO = {
+  description: "", id_material: "", material_label: "",
+  quantity: "1", unit: "", needed_by: "", note: "",
+};
 
 /**
- * Lo que el proyecto necesita de material, en el detalle del proyecto.
+ * Lo que el proyecto necesita, en el detalle del proyecto.
  *
- * El supervisor declara aqui que le hace falta; quien compra lo ve junto con el de
- * los demas proyectos en "Por comprar". Se puede pedir MAS de lo que hay en el
- * almacen: la lista sirve justo para avisar el faltante, a diferencia del prevale,
- * que es recoger material fisico y no pasa de la existencia.
+ * Texto libre primero: el catalogo de este almacen es de herramienta y equipo, y lo
+ * que una obra consume -tornillos, soldadura, discos- casi nunca esta ahi. Mientras
+ * el supervisor escribe se le sugiere lo que el catalogo parece tener; si elige una
+ * sugerencia el renglon queda vinculado (y se compara con la existencia), y si no,
+ * queda como texto y alguien que conoce el almacen lo revisa en "Por comprar".
  *
- * "Hay N" es la existencia de hoy, sin reservar: no descuenta lo que piden otros
- * proyectos. Quien compra ve el total de todos en su pantalla.
+ * Se puede pedir MAS de lo que hay: la lista sirve justo para avisar el faltante, a
+ * diferencia del prevale, que es recoger herramienta y no pasa de la existencia.
  */
 export default function MaterialNecesario({ idProyect, estatus }) {
   const { t } = useI18n();
@@ -41,12 +44,13 @@ export default function MaterialNecesario({ idProyect, estatus }) {
   traducir.current = t;
   const actor = useMemo(actorGuardado, []);
   const [items, setItems] = useState([]);
-  const [materiales, setMateriales] = useState([]);
   const [permisos, setPermisos] = useState([]);
   const [formulario, setFormulario] = useState(FORMULARIO_VACIO);
+  const [sugerencias, setSugerencias] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
+  const peticion = useRef(0);
 
   const decirError = useCallback((e, porOmision) => setError(
     e?.payload?.error_key
@@ -82,41 +86,60 @@ export default function MaterialNecesario({ idProyect, estatus }) {
     return () => { vivo = false; };
   }, []);
 
-  // Las opciones solo se piden cuando hay formulario que llenar: quien nada mas
-  // lee la lista no necesita bajar el catalogo.
+  // Las sugerencias salen de lo que se va escribiendo, con una pausa para no
+  // preguntar por cada tecla. Una respuesta tardia de un texto anterior se descarta.
   useEffect(() => {
-    if (!puedeCrear) return undefined;
-    let vivo = true;
-    getMaterialNeedOptions()
-      .then((m) => { if (vivo) setMateriales(Array.isArray(m) ? m : []); })
-      .catch(() => { if (vivo) setMateriales([]); });
-    return () => { vivo = false; };
-  }, [puedeCrear]);
+    const texto = formulario.description.trim();
+    if (!puedeCrear || formulario.id_material || texto.length < 3) {
+      setSugerencias([]);
+      return undefined;
+    }
+    const numero = ++peticion.current;
+    const temporizador = setTimeout(async () => {
+      try {
+        const lista = await getMaterialNeedSuggestions(texto);
+        if (numero === peticion.current) setSugerencias(Array.isArray(lista) ? lista : []);
+      } catch {
+        if (numero === peticion.current) setSugerencias([]);
+      }
+    }, 300);
+    return () => clearTimeout(temporizador);
+  }, [formulario.description, formulario.id_material, puedeCrear]);
 
-  const yaPedidos = useMemo(() => new Set(items.map((i) => String(i.id_material))), [items]);
-  const opciones = useMemo(() => materiales
-    .filter((m) => !yaPedidos.has(String(m.id_material)))
-    .map((m) => ({
-      value: m.id_material,
-      label: m.unit ? `${m.material_description} (${m.unit})` : m.material_description,
-    })), [materiales, yaPedidos]);
+  const cambiar = (campo) => (e) => setFormulario((f) => ({ ...f, [campo]: e.target.value }));
+
+  function elegirSugerencia(s) {
+    setFormulario((f) => ({
+      ...f, id_material: s.id_material, material_label: s.material_description,
+      unit: f.unit || s.unit || "",
+    }));
+    setSugerencias([]);
+  }
+
+  const quitarVinculo = () => setFormulario((f) => ({ ...f, id_material: "", material_label: "" }));
+
+  const listoParaAgregar = (formulario.id_material || formulario.description.trim())
+    && Number(formulario.quantity) >= 1;
 
   async function agregar(evento) {
     evento.preventDefault();
-    if (!formulario.id_material || guardando) return;
+    if (!listoParaAgregar || guardando) return;
     setGuardando(true);
     setError("");
     try {
-      await createProyectMaterialNeed(idProyect, {
-        id_material: Number(formulario.id_material),
+      const datos = {
         quantity: Number(formulario.quantity),
         needed_by: formulario.needed_by || undefined,
         note: formulario.note.trim() || undefined,
-      });
+        unit: formulario.unit.trim() || undefined,
+      };
+      if (formulario.id_material) datos.id_material = Number(formulario.id_material);
+      else datos.description = formulario.description.trim();
+      await createProyectMaterialNeed(idProyect, datos);
       setFormulario(FORMULARIO_VACIO);
       await cargar();
     } catch (e) {
-      decirError(e, "No se pudo agregar el material.");
+      decirError(e, "No se pudo agregar a la lista.");
     } finally {
       setGuardando(false);
     }
@@ -141,8 +164,21 @@ export default function MaterialNecesario({ idProyect, estatus }) {
       await cancelMaterialNeed(renglon.id_proyect_material_need);
       await cargar();
     } catch (e) {
-      decirError(e, "No se pudo quitar el material.");
+      decirError(e, "No se pudo quitar de la lista.");
     }
+  }
+
+  function estadoDe(r) {
+    if (r.linked) {
+      const falta = Math.max(0, r.quantity - r.in_stock);
+      return falta === 0
+        ? { clase: "cubierta", texto: t("material_needs.covered", "Hay suficiente en almacén") }
+        : { clase: "falta", texto: `${t("material_needs.stock", "Hay")} ${r.in_stock} · ${t("material_needs.missing", "faltan")} ${falta}` };
+    }
+    if (r.review_result === "buy") {
+      return { clase: "compra", texto: t("material_needs.to_buy", "Se comprará") };
+    }
+    return { clase: "revisar", texto: t("material_needs.to_review", "Por revisar") };
   }
 
   return (
@@ -150,40 +186,39 @@ export default function MaterialNecesario({ idProyect, estatus }) {
       <h4>{t("material_needs.title", "Material necesario")}</h4>
       <p className="muted material-necesario-ayuda">
         {t("material_needs.help",
-          "Lo que este proyecto necesita. Puedes pedir más de lo que hay: así quien compra sabe qué falta.")}
+          "Lo que este proyecto necesita, con tus palabras. Puedes pedir más de lo que hay: así quien compra sabe qué falta.")}
       </p>
 
       {error && <p className="alert error">{error}</p>}
-      {cargando && <p className="muted">{t("common.loading", "Cargando…")}</p>}
+      {cargando && items.length === 0 && <p className="muted">{t("common.loading", "Cargando…")}</p>}
 
       {!cargando && items.length === 0 && (
-        <p className="muted">{t("material_needs.empty", "Todavía no se ha pedido material.")}</p>
+        <p className="muted">{t("material_needs.empty", "Todavía no se ha pedido nada.")}</p>
       )}
 
       {items.length > 0 && (
         <ul className="necesidades-lista">
           {items.map((r) => {
-            const falta = Math.max(0, r.quantity - r.in_stock);
+            const estado = estadoDe(r);
+            const unidad = r.unit || r.material?.unit;
             return (
               <li key={r.id_proyect_material_need}>
                 <div className="necesidad-material">
-                  <strong>{r.material?.material_description || `#${r.id_material}`}</strong>
-                  {r.material?.unit && <span className="muted"> · {r.material.unit}</span>}
+                  <strong>{r.display_name || `#${r.id_proyect_material_need}`}</strong>
+                  {r.linked && (
+                    <small className="muted">{t("material_needs.in_catalog", "Del almacén")}</small>
+                  )}
                   {r.note && <small className="muted">{r.note}</small>}
                 </div>
                 <label className="necesidad-cantidad">
-                  <span>{t("material_needs.quantity", "Pide")}</span>
+                  <span>{t("material_needs.quantity", "Pide")}{unidad ? ` (${unidad})` : ""}</span>
                   {puedeEditar ? (
                     <input type="number" min="1" defaultValue={r.quantity}
                            key={`${r.id_proyect_material_need}-${r.quantity}`}
                            onBlur={(e) => cambiarCantidad(r, e.target.value)} />
                   ) : <strong>{r.quantity}</strong>}
                 </label>
-                <span className={`necesidad-estado ${falta === 0 ? "cubierta" : "falta"}`}>
-                  {falta === 0
-                    ? t("material_needs.covered", "Hay suficiente")
-                    : `${t("material_needs.stock", "Hay")} ${r.in_stock} · ${t("material_needs.missing", "faltan")} ${falta}`}
-                </span>
+                <span className={`necesidad-estado ${estado.clase}`}>{estado.texto}</span>
                 {r.needed_by && (
                   <span className="muted necesidad-fecha">
                     {t("material_needs.needed_by", "Para")}{" "}
@@ -206,33 +241,70 @@ export default function MaterialNecesario({ idProyect, estatus }) {
 
       {puedeCrear && (
         <form className="necesidad-formulario" onSubmit={agregar}>
-          <label className="field necesidad-campo-material">
-            <span>{t("material_needs.material", "Material")}</span>
-            <FiltroBuscable
-              valor={formulario.id_material}
-              opciones={opciones}
-              onChange={(v) => setFormulario((f) => ({ ...f, id_material: v }))}
-              etiqueta={t("material_needs.material", "Material")}
-              todas={t("common.select_option", "Selecciona una opción")}
-            />
+          <div className="field necesidad-campo-material">
+            <label htmlFor={`necesidad-texto-${idProyect}`}>
+              {t("material_needs.what", "¿Qué necesitas?")}
+            </label>
+            {formulario.id_material ? (
+              <div className="necesidad-vinculo">
+                <span>
+                  <strong>{formulario.material_label}</strong>
+                  <small className="muted"> · {t("material_needs.in_catalog", "Del almacén")}</small>
+                </span>
+                <button type="button" className="vale-icono" onClick={quitarVinculo}
+                        aria-label={t("material_needs.unlink", "Escribirlo con mis palabras")}
+                        title={t("material_needs.unlink", "Escribirlo con mis palabras")}>
+                  <X size={14} />
+                </button>
+              </div>
+            ) : (
+              <input id={`necesidad-texto-${idProyect}`} type="text" maxLength={200}
+                     autoComplete="off" value={formulario.description}
+                     placeholder={t("material_needs.what_placeholder", "Ej. soldadura 6013, tornillos 1/4…")}
+                     onChange={cambiar("description")} />
+            )}
+            {sugerencias.length > 0 && (
+              <div className="necesidad-sugerencias">
+                <p className="muted">
+                  {t("material_needs.suggestions", "El almacén tiene algo parecido. ¿Es lo que necesitas?")}
+                </p>
+                <ul>
+                  {sugerencias.map((s) => (
+                    <li key={s.id_material}>
+                      <span>
+                        <strong>{s.material_description}</strong>
+                        <small className="muted"> · {t("material_needs.stock", "Hay")} {s.in_stock}</small>
+                      </span>
+                      <button type="button" className="button button-quiet"
+                              onClick={() => elegirSugerencia(s)}>
+                        {t("material_needs.use_this", "Usar este")}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+          <label className="field">
+            <span>{t("material_needs.quantity_label", "Cantidad")}</span>
+            <input type="number" min="1" step="1" value={formulario.quantity}
+                   onChange={cambiar("quantity")} />
           </label>
           <label className="field">
-            <span>{t("material_needs.quantity", "Cantidad")}</span>
-            <input type="number" min="1" step="1" value={formulario.quantity}
-                   onChange={(e) => setFormulario((f) => ({ ...f, quantity: e.target.value }))} />
+            <span>{t("material_needs.unit", "Unidad")}</span>
+            <input type="text" maxLength={40} value={formulario.unit}
+                   placeholder={t("material_needs.unit_placeholder", "kg, pza, m…")}
+                   onChange={cambiar("unit")} />
           </label>
           <label className="field">
             <span>{t("material_needs.needed_by_label", "Para cuándo")}</span>
-            <input type="date" value={formulario.needed_by}
-                   onChange={(e) => setFormulario((f) => ({ ...f, needed_by: e.target.value }))} />
+            <input type="date" value={formulario.needed_by} onChange={cambiar("needed_by")} />
           </label>
           <label className="field necesidad-campo-nota">
             <span>{t("material_needs.note", "Nota")}</span>
-            <input type="text" maxLength={300} value={formulario.note}
-                   onChange={(e) => setFormulario((f) => ({ ...f, note: e.target.value }))} />
+            <input type="text" maxLength={300} value={formulario.note} onChange={cambiar("note")} />
           </label>
-          <button type="submit" className="button primary"
-                  disabled={!formulario.id_material || !(Number(formulario.quantity) >= 1) || guardando}>
+          <button type="submit" className="button primary" disabled={!listoParaAgregar || guardando}>
             <Plus size={15} />
             {t("material_needs.add", "Agregar")}
           </button>

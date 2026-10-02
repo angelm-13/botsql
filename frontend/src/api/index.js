@@ -653,7 +653,9 @@ export const getProyectMaterialNeeds = (idProyect, params = {}) => request(`/pro
 export const createProyectMaterialNeed = (idProyect, payload) => request(`/proyect/${idProyect}/material-needs`, { method: "POST", body: payload });
 export const updateMaterialNeed = (idNeed, payload) => request(`/material-needs/${idNeed}`, { method: "PUT", body: payload });
 export const cancelMaterialNeed = (idNeed) => request(`/material-needs/${idNeed}`, { method: "DELETE" });
-export const getMaterialNeedOptions = () => request("/material-needs/materials");
+export const getMaterialNeedSuggestions = (q) => request("/material-needs/suggestions", { params: { q } });
+export const linkMaterialNeed = (idNeed, idMaterial) => request(`/material-needs/${idNeed}/link`, { method: "POST", body: { id_material: idMaterial } });
+export const confirmMaterialNeedBuy = (idNeed) => request(`/material-needs/${idNeed}/confirm-buy`, { method: "POST" });
 export const getMaterialNeedsToBuy = (params = {}) => request("/material-needs/to-buy", { params });
 export const getProyect = (id) => request(`/proyect/${id}`);
 export const createProyect = (payload) => request("/proyect/", { method: "POST", body: payload });

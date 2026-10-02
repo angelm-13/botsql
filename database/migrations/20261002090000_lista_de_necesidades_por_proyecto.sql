@@ -1,15 +1,24 @@
--- La lista de necesidades de material de un proyecto.
+-- La lista de necesidades de un proyecto.
 --
--- Pedido de Adser: Compras ve los proyectos para saber que material hay que
--- comprar, y los supervisores ("ingenieros") declaran lo que necesita cada uno.
--- Hoy un proyecto no tiene ninguna lista de material que Compras pueda ver
--- (en adser-prod: 4 proyectos, 0 renglones de material).
+-- Pedido de Adser: Compras ve los proyectos para saber que hay que comprar, y los
+-- supervisores ("ingenieros") declaran lo que necesita cada uno. Hoy un proyecto no
+-- tiene ninguna lista que Compras pueda ver (en adser-prod: 4 proyectos, 0
+-- renglones de material).
+--
+-- Texto libre primero, catalogo despues. El almacen de Adser es de HERRAMIENTA: su
+-- catalogo de materiales son tipos de herramienta y equipo, y lo que una obra
+-- consume -tornillos, soldadura, discos- casi nunca esta ahi. Por eso la necesidad
+-- se describe con texto y `id_material` es OPCIONAL: se llena cuando lo pedido si
+-- existe en el catalogo.
+--
+-- Si el supervisor escribe algo que si hay en el almacen y no lo vincula, el
+-- renglon queda "por revisar" hasta que alguien (`reviewed_by`, `reviewed_date`)
+-- decida (`review_result`): `linked` -ya existe, se vinculo- o `buy` -de verdad
+-- hay que comprarlo-. Nada se oculta por parecerse a algo del catalogo.
 --
 -- Tabla propia y no `invoice_material_service`: aquel renglon cuelga de una
--- factura -precios, impuestos, claves SAT- y lo captura quien factura. Esta lista
--- la declara el supervisor, y mezclarlas obligaria a editar una cotizacion para
--- anotar que falta un tornillo. Queda una llave opcional al renglon de factura,
--- vacia, por si luego se quieren ligar.
+-- factura -precios, impuestos, claves SAT- y lo captura quien factura. Queda una
+-- llave opcional a ese renglon, vacia, por si luego se quieren ligar.
 --
 -- La necesidad NO dice como se cubre (existencia, compra o renta): eso lo decide
 -- quien compra. Puede pedir mas de lo que hay; para eso sirve.
@@ -22,11 +31,16 @@ BEGIN;
 CREATE TABLE IF NOT EXISTS proyect_material_need (
     id_proyect_material_need    SERIAL PRIMARY KEY,
     id_proyect                  INTEGER NOT NULL REFERENCES proyect(id_proyect),
-    id_material                 INTEGER NOT NULL REFERENCES material(id_material),
+    id_material                 INTEGER REFERENCES material(id_material),
+    description                 VARCHAR(200),
+    unit                        VARCHAR(40),
     quantity                    INTEGER NOT NULL,
     needed_by                   DATE,
     note                        VARCHAR(300),
     need_status                 VARCHAR(20) NOT NULL DEFAULT 'open',
+    review_result               VARCHAR(10),
+    reviewed_by                 INTEGER,
+    reviewed_date               TIMESTAMP,
     id_invoice_material_service INTEGER
         REFERENCES invoice_material_service(id_invoice_material_service),
     created_by                  INTEGER NOT NULL DEFAULT 1,
@@ -35,7 +49,11 @@ CREATE TABLE IF NOT EXISTS proyect_material_need (
     deletion_date               TIMESTAMP,
     CONSTRAINT ck_proyect_material_need_quantity CHECK (quantity > 0),
     CONSTRAINT ck_proyect_material_need_status
-        CHECK (need_status IN ('open', 'cancelled'))
+        CHECK (need_status IN ('open', 'cancelled')),
+    CONSTRAINT ck_proyect_material_need_review
+        CHECK (review_result IS NULL OR review_result IN ('linked', 'buy')),
+    CONSTRAINT ck_proyect_material_need_what
+        CHECK (id_material IS NOT NULL OR (description IS NOT NULL AND description <> ''))
 );
 
 CREATE INDEX IF NOT EXISTS idx_proyect_material_need_proyect

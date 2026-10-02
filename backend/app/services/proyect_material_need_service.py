@@ -1,33 +1,45 @@
-"""La lista de necesidades de material de un proyecto, y lo que falta comprar.
+"""La lista de necesidades de un proyecto, y lo que falta comprar.
 
 Dos vistas de la misma tabla (`proyect_material_need`):
 
-* **Por proyecto**: el supervisor declara lo que necesita su proyecto y ve, por
-  renglon, cuanto hay en el almacen.
-* **Por comprar**: quien compra ve las necesidades de TODOS los proyectos juntas,
-  agrupadas por material y contra la existencia. Un mismo material pedido por tres
-  proyectos es una sola compra, y es lo que esta vista deja ver.
+* **Por proyecto**: el supervisor declara lo que necesita su proyecto con sus
+  propias palabras y ve, si lo vinculo al catalogo, cuanto hay en el almacen.
+* **Por comprar**: quien compra ve las necesidades de TODOS los proyectos juntas.
+  Un mismo material pedido por tres proyectos es una sola compra.
+
+Texto libre, y el catalogo como ayuda
+-------------------------------------
+El catalogo de Adser es de herramienta y equipo; lo que una obra consume casi
+nunca esta ahi. Por eso un renglon se describe con texto y el vinculo al catalogo
+es opcional. Al capturar, `suggest_materials` ofrece lo que parece existir; si el
+supervisor no lo vincula, el renglon sale "por revisar" en `to_buy` hasta que
+alguien que conoce el almacen lo vincule (`link_need`) o confirme la compra
+(`confirm_buy`).
+
+Buscar por texto NO decide nada
+-------------------------------
+Las sugerencias son eso, sugerencias: el texto del supervisor casi nunca coincide
+palabra por palabra con el catalogo ("esmeril angular" puede estar como
+"amoladora"). Por eso ningun renglon se oculta ni se da por cubierto por
+parecerse a algo; el peor caso es una revision de mas, nunca una compra de mas.
 
 La existencia no se reserva
 ---------------------------
-"Hay N en el almacen" es la existencia del material hoy, sin descontar lo que
-piden otros proyectos. Reservar existencia seria decidir quien se queda con que,
-y eso es del almacen, no de esta lista. En "Por comprar" si se compara el TOTAL
-pedido contra la existencia, que es la pregunta de quien compra: ¿alcanza lo que
-hay para todos?
-
-La existencia de un material es la suma de la de todos sus productos: el material
-es lo que se pide ("disco de corte 4 1/2") y el producto es cada partida concreta
-en el almacen.
+"Hay N" es la existencia de hoy, sin descontar lo que piden otros proyectos.
+Reservar seria decidir quien se queda con que, y eso es del almacen.
 """
 from __future__ import annotations
 
+import math
+import re
+import unicodedata
 from datetime import date, datetime, timezone
 
 from sqlalchemy import func, select
 
 from app.models import (
-    InventoryStock, Material, Product, Proyect, ProyectMaterialNeed, Unit,
+    EntityPermission, InventoryStock, Material, Product, Proyect,
+    ProyectMaterialNeed, Unit,
 )
 from app.models.session import transaction_context
 from app.services.inventory_service import has_capability
@@ -40,6 +52,14 @@ PROYECTOS_QUE_YA_NO_COMPRAN = ("denied", "completed", "delivered")
 
 PURCHASE_CAPABILITY = "purchase_planning"
 NOTE_MAX = 300
+DESCRIPTION_MAX = 200
+UNIT_MAX = 40
+
+# Palabras que no distinguen nada al buscar ("disco DE corte").
+_PALABRAS_VACIAS = frozenset({
+    "los", "las", "del", "con", "sin", "para", "por", "una", "uno", "unos", "unas",
+    "que", "mas", "pza", "pzas", "pieza", "piezas",
+})
 
 
 # --- validacion de lo que llega ----------------------------------------------
@@ -73,17 +93,98 @@ def _fecha_o_nada(valor, campo: str) -> date | None:
         raise AppError("errors.invalid_field", 400, {"field": campo})
 
 
-def _nota(valor) -> str | None:
-    texto = str(valor or "").strip()
+def _texto(valor, campo: str, largo: int, *, obligatorio: bool = False) -> str | None:
+    texto = " ".join(str(valor or "").split())
     if not texto:
+        if obligatorio:
+            raise AppError("errors.invalid_field", 400, {"field": campo})
         return None
-    if len(texto) > NOTE_MAX:
+    if len(texto) > largo:
         raise AppError("errors.field_too_long", 400, {
-            "field": "note", "max_length": NOTE_MAX, "actual_length": len(texto)})
+            "field": campo, "max_length": largo, "actual_length": len(texto)})
     return texto
 
 
-# --- existencias -------------------------------------------------------------
+# --- buscar por texto --------------------------------------------------------
+
+def _normalizar(texto) -> str:
+    """Minusculas, sin acentos ni signos, un solo espacio entre palabras."""
+    sin_acentos = unicodedata.normalize("NFD", str(texto or "")).encode(
+        "ascii", "ignore").decode("ascii")
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", sin_acentos.lower()).split())
+
+
+def _raiz(palabra: str) -> str:
+    """Quita el plural mas comun: "taladros" -> "taladro", "discos" -> "disco"."""
+    if len(palabra) > 5 and palabra.endswith("es"):
+        return palabra[:-2]
+    if len(palabra) > 4 and palabra.endswith("s"):
+        return palabra[:-1]
+    return palabra
+
+
+def _palabras(texto) -> list[str]:
+    vistas, resultado = set(), []
+    for palabra in _normalizar(texto).split():
+        if len(palabra) < 3 or palabra in _PALABRAS_VACIAS:
+            continue
+        raiz = _raiz(palabra)
+        if raiz not in vistas:
+            vistas.add(raiz)
+            resultado.append(raiz)
+    return resultado
+
+
+def _sugerir(db, texto, *, limite: int = 5) -> list[dict]:
+    """Lo del catalogo que parece ser lo que el texto describe, con su existencia.
+
+    Una palabra del texto coincide con una del material si esta empieza igual
+    ("tornillo" con "TORNILLOS"), no por estar contenida en cualquier parte
+    ("arco" no es "marco"). Entran los que coinciden en todas las palabras y, si el
+    texto trae dos o mas, los que coinciden en al menos la mitad; primero los
+    completos y, entre iguales, el de nombre mas corto (el mas especifico).
+    """
+    palabras = _palabras(texto)
+    if not palabras:
+        return []
+    minimo = len(palabras) if len(palabras) == 1 else math.ceil(len(palabras) / 2)
+
+    candidatos = []
+    filas = db.execute(
+        select(Material.id_material, Material.material_description)
+        .where(Material.deletion_date.is_(None))
+    ).all()
+    for id_material, descripcion in filas:
+        del_material = _normalizar(descripcion).split()
+        aciertos = sum(
+            1 for p in palabras if any(w.startswith(p) for w in del_material))
+        if aciertos < minimo:
+            continue
+        candidatos.append((aciertos != len(palabras), -aciertos, len(descripcion or ""),
+                           id_material, descripcion))
+    candidatos.sort()
+    elegidos = candidatos[:limite]
+
+    ids = [c[3] for c in elegidos]
+    existencias = _existencias(db, ids)
+    unidades = _unidades(db, ids)
+    return [
+        {"id_material": id_material, "material_description": descripcion,
+         "unit": unidades.get(int(id_material)),
+         "in_stock": existencias.get(int(id_material), 0),
+         "complete_match": not incompleto}
+        for incompleto, _a, _l, id_material, descripcion in elegidos
+    ]
+
+
+def suggest_materials(texto, user_data: dict) -> list[dict]:
+    """Sugerencias para el que captura: lo del catalogo que parece lo que escribe."""
+    _actor(user_data)
+    with transaction_context() as db:
+        return _sugerir(db, texto)
+
+
+# --- existencias y catalogo --------------------------------------------------
 
 def _existencias(db, ids_material) -> dict[int, int]:
     """Cuanto hay de cada material, sumando todos sus productos y todos sus sitios."""
@@ -142,36 +243,25 @@ def _datos_de_materiales(db, ids_material) -> dict[int, dict]:
 
 
 def _renglon(need: ProyectMaterialNeed, materiales: dict, existencias: dict) -> dict:
-    hay = existencias.get(int(need.id_material), 0)
+    vinculado = need.id_material is not None
+    material = materiales.get(int(need.id_material)) if vinculado else None
+    hay = existencias.get(int(need.id_material), 0) if vinculado else None
     fila = need.serialize()
     fila.update({
-        "material": materiales.get(int(need.id_material)),
+        "linked": vinculado,
+        # Lo que se muestra: el nombre del catalogo si esta vinculado; si no, las
+        # palabras del supervisor.
+        "display_name": (material or {}).get("material_description") if vinculado
+        else need.description,
+        "material": material,
         "in_stock": hay,
-        # Informativo: contra la existencia de HOY, sin descontar a otros proyectos.
-        "covered_by_stock": hay >= int(need.quantity),
+        # Informativo: contra la existencia de HOY, sin descontar a otros
+        # proyectos. Solo tiene sentido si esta vinculado al catalogo.
+        "covered_by_stock": (hay >= int(need.quantity)) if vinculado else None,
+        # Texto libre que nadie ha revisado todavia.
+        "needs_review": (not vinculado) and need.review_result is None,
     })
     return fila
-
-
-def material_options() -> list[dict]:
-    """Los materiales que se pueden pedir: solo id, nombre y unidad.
-
-    Sin el permiso de lectura de `material` (modulo de inventario) a proposito,
-    como `/user/options` o `/location/options`: el supervisor pide material
-    para su proyecto sin administrar el catalogo, y sin esto el desplegable le
-    llegaba vacio en cuanto se le quito ese permiso.
-    """
-    with transaction_context() as db:
-        filas = db.execute(
-            select(Material.id_material, Material.material_description, Unit.unit_name)
-            .outerjoin(Unit, Unit.id_unit == Material.id_unit)
-            .where(Material.deletion_date.is_(None))
-            .order_by(Material.material_description)
-        ).all()
-        return [
-            {"id_material": i, "material_description": descripcion, "unit": unidad}
-            for i, descripcion, unidad in filas
-        ]
 
 
 # --- por proyecto ------------------------------------------------------------
@@ -189,6 +279,37 @@ def _necesidad(db, id_need, *, for_update=False) -> ProyectMaterialNeed:
     return need
 
 
+def _duplicada(db, id_proyecto, *, id_material=None, descripcion=None, excepto=None):
+    """Otro renglon ABIERTO del mismo proyecto que dice lo mismo, o None.
+
+    Dos renglones iguales son una lista que miente: no se sabe cual vale. Se edita
+    el que ya esta. Lo vinculado se compara por material; el texto libre, por sus
+    palabras normalizadas ("Tornillo " y "tornillo" son lo mismo).
+    """
+    consulta = select(ProyectMaterialNeed).where(
+        ProyectMaterialNeed.id_proyect == id_proyecto,
+        ProyectMaterialNeed.need_status == "open",
+        ProyectMaterialNeed.deletion_date.is_(None),
+    )
+    if excepto is not None:
+        consulta = consulta.where(
+            ProyectMaterialNeed.id_proyect_material_need != excepto)
+    if id_material is not None:
+        return db.scalars(
+            consulta.where(ProyectMaterialNeed.id_material == id_material).limit(1)
+        ).first()
+    buscada = _normalizar(descripcion)
+    for otra in db.scalars(consulta.where(ProyectMaterialNeed.id_material.is_(None))).all():
+        if _normalizar(otra.description) == buscada:
+            return otra
+    return None
+
+
+def _rechazar_duplicada(otra, **meta):
+    raise AppError("errors.need_duplicate_material", 409, {
+        "id_proyect_material_need": otra.id_proyect_material_need, **meta})
+
+
 def list_needs(id_proyect, user_data: dict, *, incluir_canceladas: bool = False) -> dict:
     """Las necesidades de UN proyecto, solo si el actor puede ver ese proyecto."""
     id_proyecto = _entero_positivo(id_proyect, "id_proyect")
@@ -201,7 +322,7 @@ def list_needs(id_proyect, user_data: dict, *, incluir_canceladas: bool = False)
         if not incluir_canceladas:
             consulta = consulta.where(ProyectMaterialNeed.need_status == "open")
         necesidades = db.scalars(consulta).all()
-        ids = {int(n.id_material) for n in necesidades}
+        ids = {int(n.id_material) for n in necesidades if n.id_material is not None}
         materiales = _datos_de_materiales(db, ids)
         existencias = _existencias(db, ids)
         return {
@@ -214,43 +335,37 @@ def create_need(id_proyect, payload: dict, user_data: dict) -> dict:
     actor = _actor(user_data)
     id_proyecto = _entero_positivo(id_proyect, "id_proyect")
     require_project_access(id_proyecto, user_data)
-    id_material = _entero_positivo(payload.get("id_material"), "id_material")
     cantidad = _entero_positivo(payload.get("quantity"), "quantity")
     necesaria_para = _fecha_o_nada(payload.get("needed_by"), "needed_by")
-    nota = _nota(payload.get("note"))
+    nota = _texto(payload.get("note"), "note", NOTE_MAX)
+    unidad = _texto(payload.get("unit"), "unit", UNIT_MAX)
+
+    hay_material = str(payload.get("id_material") or "").strip() != ""
+    id_material = _entero_positivo(payload.get("id_material"), "id_material") if hay_material else None
+    # Vinculado: el nombre es el del catalogo. Libre: las palabras del supervisor.
+    descripcion = None if hay_material else _texto(
+        payload.get("description"), "description", DESCRIPTION_MAX, obligatorio=True)
 
     with transaction_context() as db:
-        _material(db, id_material)
-
-        # Dos renglones abiertos del mismo material en un proyecto son una lista
-        # que miente: no se sabe cual vale. Se edita el que ya esta.
-        existente = db.scalars(
-            select(ProyectMaterialNeed).where(
-                ProyectMaterialNeed.id_proyect == id_proyecto,
-                ProyectMaterialNeed.id_material == id_material,
-                ProyectMaterialNeed.need_status == "open",
-                ProyectMaterialNeed.deletion_date.is_(None),
-            ).limit(1)
-        ).first()
-        if existente is not None:
-            raise AppError("errors.need_duplicate_material", 409, {
-                "id_proyect_material_need": existente.id_proyect_material_need,
-                "id_material": id_material,
-            })
+        if id_material is not None:
+            _material(db, id_material)
+        otra = _duplicada(db, id_proyecto, id_material=id_material, descripcion=descripcion)
+        if otra is not None:
+            _rechazar_duplicada(otra, id_material=id_material, description=descripcion)
 
         need = ProyectMaterialNeed(
-            id_proyect=id_proyecto, id_material=id_material, quantity=cantidad,
-            needed_by=necesaria_para, note=nota, need_status="open",
-            created_by=actor,
+            id_proyect=id_proyecto, id_material=id_material, description=descripcion,
+            unit=unidad, quantity=cantidad, needed_by=necesaria_para, note=nota,
+            need_status="open", created_by=actor,
         )
         db.add(need)
         db.flush()
-        materiales = _datos_de_materiales(db, {id_material})
-        return _renglon(need, materiales, _existencias(db, {id_material}))
+        ids = {id_material} if id_material is not None else set()
+        return _renglon(need, _datos_de_materiales(db, ids), _existencias(db, ids))
 
 
 def update_need(id_need, payload: dict, user_data: dict) -> dict:
-    """Cantidad, fecha y nota de una necesidad ABIERTA."""
+    """Cantidad, unidad, fecha, nota y -si es texto libre- su descripcion."""
     _actor(user_data)
     with transaction_context() as db:
         need = _necesidad(db, id_need, for_update=True)
@@ -264,10 +379,25 @@ def update_need(id_need, payload: dict, user_data: dict) -> dict:
         if "needed_by" in payload:
             need.needed_by = _fecha_o_nada(payload.get("needed_by"), "needed_by")
         if "note" in payload:
-            need.note = _nota(payload.get("note"))
+            need.note = _texto(payload.get("note"), "note", NOTE_MAX)
+        if "unit" in payload:
+            need.unit = _texto(payload.get("unit"), "unit", UNIT_MAX)
+        if "description" in payload and need.id_material is None:
+            nueva = _texto(payload.get("description"), "description", DESCRIPTION_MAX,
+                           obligatorio=True)
+            if _normalizar(nueva) != _normalizar(need.description):
+                otra = _duplicada(db, need.id_proyect, descripcion=nueva,
+                                  excepto=need.id_proyect_material_need)
+                if otra is not None:
+                    _rechazar_duplicada(otra, description=nueva)
+                need.description = nueva
+                # Otras palabras, otra pregunta: lo que se reviso ya no aplica.
+                need.review_result = None
+                need.reviewed_by = None
+                need.reviewed_date = None
         db.flush()
-        materiales = _datos_de_materiales(db, {int(need.id_material)})
-        return _renglon(need, materiales, _existencias(db, {int(need.id_material)}))
+        ids = {int(need.id_material)} if need.id_material is not None else set()
+        return _renglon(need, _datos_de_materiales(db, ids), _existencias(db, ids))
 
 
 def cancel_need(id_need, user_data: dict) -> dict:
@@ -283,6 +413,82 @@ def cancel_need(id_need, user_data: dict) -> dict:
         return need.serialize()
 
 
+# --- revisar el texto libre --------------------------------------------------
+
+def _puede_revisar(db, user_data: dict) -> bool:
+    """Vincular o confirmar exige EDITAR la capacidad, no solo verla."""
+    datos = user_data or {}
+    if datos.get("is_superuser") or datos.get("is_bootstrap_admin"):
+        return True
+    try:
+        id_permission = int(datos.get("id_permission") or datos.get("permission_id") or 0)
+    except (TypeError, ValueError):
+        return False
+    if not id_permission:
+        return False
+    fila = db.scalars(
+        select(EntityPermission).where(
+            EntityPermission.id_permission == id_permission,
+            EntityPermission.entity_name == PURCHASE_CAPABILITY,
+            EntityPermission.deletion_date.is_(None),
+        ).limit(1)
+    ).first()
+    return bool(fila and int(fila.scope_update or 0) != 0)
+
+
+def _necesidad_por_revisar(db, id_need, user_data: dict) -> ProyectMaterialNeed:
+    """El renglon de texto libre abierto que se va a revisar.
+
+    A diferencia de editarlo, revisarlo NO pide ver el proyecto: quien compra
+    revisa lo de todas las obras sin poder abrirlas.
+    """
+    if not _puede_revisar(db, user_data):
+        raise AppError("errors.permission_denied", 403,
+                       {"capability": PURCHASE_CAPABILITY, "action": "update"})
+    need = _necesidad(db, id_need, for_update=True)
+    if need.need_status != "open":
+        raise AppError("errors.need_not_open", 409, {
+            "id_proyect_material_need": need.id_proyect_material_need,
+            "need_status": need.need_status})
+    if need.id_material is not None:
+        raise AppError("errors.need_already_linked", 409, {
+            "id_proyect_material_need": need.id_proyect_material_need,
+            "id_material": need.id_material})
+    return need
+
+
+def link_need(id_need, id_material, user_data: dict) -> dict:
+    """"Ya existe en el almacen": se vincula al catalogo y se acaba la duda."""
+    actor = _actor(user_data)
+    id_del_material = _entero_positivo(id_material, "id_material")
+    with transaction_context() as db:
+        need = _necesidad_por_revisar(db, id_need, user_data)
+        _material(db, id_del_material)
+        otra = _duplicada(db, need.id_proyect, id_material=id_del_material,
+                          excepto=need.id_proyect_material_need)
+        if otra is not None:
+            _rechazar_duplicada(otra, id_material=id_del_material)
+        need.id_material = id_del_material
+        need.review_result = "linked"
+        need.reviewed_by = actor
+        need.reviewed_date = datetime.now(timezone.utc).replace(tzinfo=None)
+        db.flush()
+        ids = {id_del_material}
+        return _renglon(need, _datos_de_materiales(db, ids), _existencias(db, ids))
+
+
+def confirm_buy(id_need, user_data: dict) -> dict:
+    """"Si hay que comprarlo": alguien que conoce el almacen lo confirmo."""
+    actor = _actor(user_data)
+    with transaction_context() as db:
+        need = _necesidad_por_revisar(db, id_need, user_data)
+        need.review_result = "buy"
+        need.reviewed_by = actor
+        need.reviewed_date = datetime.now(timezone.utc).replace(tzinfo=None)
+        db.flush()
+        return _renglon(need, {}, {})
+
+
 # --- por comprar -------------------------------------------------------------
 
 def _puede_ver_lo_que_falta(db, user_data: dict) -> bool:
@@ -293,10 +499,11 @@ def _puede_ver_lo_que_falta(db, user_data: dict) -> bool:
 
 
 def to_buy(user_data: dict, *, solo_faltantes: bool = True) -> dict:
-    """Las necesidades de todos los proyectos, agrupadas por material.
+    """Las necesidades de todos los proyectos, agrupadas.
 
-    Por material: cuanto se pide en total, cuanto hay, y la diferencia. Y, para
-    saber a quien le toca esa compra, que proyectos lo piden y para cuando.
+    Lo vinculado al catalogo se agrupa por material y se compara con la existencia.
+    El texto libre se agrupa por sus palabras normalizadas, sin comparar con nada,
+    y mientras nadie lo revise sale "por revisar" con lo que el catalogo sugiere.
     """
     _actor(user_data)
     with transaction_context() as db:
@@ -316,24 +523,35 @@ def to_buy(user_data: dict, *, solo_faltantes: bool = True) -> dict:
             )
         ).all()
 
-        ids = {int(n.id_material) for n, *_ in filas}
+        ids = {int(n.id_material) for n, *_ in filas if n.id_material is not None}
         materiales = _datos_de_materiales(db, ids)
         existencias = _existencias(db, ids)
 
-        grupos: dict[int, dict] = {}
+        grupos: dict[tuple, dict] = {}
         for need, folio, titulo, estatus in filas:
-            id_material = int(need.id_material)
-            grupo = grupos.setdefault(id_material, {
-                "material": materiales.get(id_material),
-                "required": 0,
-                "in_stock": existencias.get(id_material, 0),
-                "needed_by": None,
-                "projects": [],
+            if need.id_material is not None:
+                llave = ("m", int(need.id_material))
+                base = {
+                    "material": materiales.get(int(need.id_material)),
+                    "description": None,
+                    "unit": (materiales.get(int(need.id_material)) or {}).get("unit"),
+                    "linked": True,
+                    "in_stock": existencias.get(int(need.id_material), 0),
+                }
+            else:
+                llave = ("d", _normalizar(need.description))
+                base = {"material": None, "description": need.description,
+                        "unit": need.unit, "linked": False, "in_stock": None}
+            grupo = grupos.setdefault(llave, {
+                **base, "key": "%s:%s" % llave, "required": 0, "needed_by": None,
+                "needs_review": False, "suggestions": [], "projects": [],
             })
             grupo["required"] += int(need.quantity)
             if need.needed_by and (grupo["needed_by"] is None
                                    or need.needed_by < grupo["needed_by"]):
                 grupo["needed_by"] = need.needed_by
+            por_revisar = need.id_material is None and need.review_result is None
+            grupo["needs_review"] = grupo["needs_review"] or por_revisar
             grupo["projects"].append({
                 "id_proyect": need.id_proyect,
                 "folio": folio,
@@ -342,13 +560,21 @@ def to_buy(user_data: dict, *, solo_faltantes: bool = True) -> dict:
                 "quantity": int(need.quantity),
                 "needed_by": need.needed_by.isoformat() if need.needed_by else None,
                 "id_proyect_material_need": need.id_proyect_material_need,
+                "needs_review": por_revisar,
             })
 
         items = []
         for grupo in grupos.values():
-            grupo["missing"] = max(0, grupo["required"] - grupo["in_stock"])
-            if solo_faltantes and grupo["missing"] == 0:
-                continue
+            if grupo["linked"]:
+                grupo["missing"] = max(0, grupo["required"] - grupo["in_stock"])
+                if solo_faltantes and grupo["missing"] == 0:
+                    continue
+            else:
+                # No se compara con nada: se pide completo hasta que alguien diga
+                # que ya existe.
+                grupo["missing"] = grupo["required"]
+                if grupo["needs_review"]:
+                    grupo["suggestions"] = _sugerir(db, grupo["description"], limite=3)
             fecha = grupo["needed_by"]
             grupo["needed_by"] = fecha.isoformat() if fecha else None
             items.append(grupo)
@@ -360,6 +586,8 @@ def to_buy(user_data: dict, *, solo_faltantes: bool = True) -> dict:
         return {
             "items": items,
             "total": len(items),
+            "to_review": sum(1 for g in items if g["needs_review"]),
             "only_missing": bool(solo_faltantes),
+            "can_review": _puede_revisar(db, user_data),
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }

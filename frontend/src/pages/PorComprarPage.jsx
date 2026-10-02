@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import PageHeader from "../components/PageHeader.jsx";
-import { getMaterialNeedsToBuy } from "../api";
+import { confirmMaterialNeedBuy, getMaterialNeedsToBuy, linkMaterialNeed } from "../api";
 import { useI18n } from "../i18n";
 import "../styles/material-necesario.css";
 
@@ -16,13 +16,15 @@ function etiquetaDeProyecto(p) {
 }
 
 /**
- * Lo que hace falta comprar: las necesidades de TODOS los proyectos, agrupadas
- * por material y contra la existencia del almacen.
+ * Lo que hace falta comprar: las necesidades de TODOS los proyectos, agrupadas.
  *
- * Un mismo material pedido por tres proyectos es UNA compra: eso es lo que esta
- * vista deja ver y la de cada proyecto no. "Hay" es la existencia de hoy y
- * "Falta" es lo pedido en total menos eso; no se reserva nada para ningun
- * proyecto en particular.
+ * Lo que el supervisor vinculo al catalogo se compara con la existencia ("Hay" y
+ * "Falta"). Lo que escribio con sus palabras NO se compara con nada: sale "Por
+ * revisar", con lo que el catalogo sugiere, y alguien que conoce el almacen decide
+ * con un clic si ya existe (se vincula) o si de verdad hay que comprarlo.
+ *
+ * Nunca se oculta algo por parecerse a una cosa del catalogo: buscar por texto no es
+ * confiable, y el peor caso tiene que ser una revision de mas, no una compra de mas.
  */
 export default function PorComprarPage() {
   const { t } = useI18n();
@@ -32,7 +34,13 @@ export default function PorComprarPage() {
   const [respuesta, setRespuesta] = useState(null);
   const [soloFaltantes, setSoloFaltantes] = useState(true);
   const [cargando, setCargando] = useState(false);
+  const [ocupado, setOcupado] = useState("");
   const [error, setError] = useState("");
+
+  const decirError = useCallback((e, porOmision) => setError(
+    e?.payload?.error_key
+      ? traducir.current(e.payload.error_key, porOmision)
+      : traducir.current("errors.request_failed", porOmision)), []);
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -40,17 +48,40 @@ export default function PorComprarPage() {
     try {
       setRespuesta(await getMaterialNeedsToBuy({ only_missing: soloFaltantes ? 1 : 0 }));
     } catch (e) {
-      setError(e?.payload?.error_key
-        ? traducir.current(e.payload.error_key, "No se pudo cargar la lista.")
-        : traducir.current("errors.request_failed", "No se pudo cargar la lista."));
+      decirError(e, "No se pudo cargar la lista.");
     } finally {
       setCargando(false);
     }
-  }, [soloFaltantes]);
+  }, [soloFaltantes, decirError]);
 
   useEffect(() => { cargar(); }, [cargar]);
 
+  // Un grupo puede juntar renglones de varios proyectos: la decision aplica a todos
+  // los que siguen sin revisar.
+  async function revisar(grupo, accion) {
+    const pendientes = grupo.projects.filter((p) => p.needs_review);
+    setOcupado(grupo.key);
+    setError("");
+    try {
+      for (const p of pendientes) {
+        // eslint-disable-next-line no-await-in-loop
+        await accion(p.id_proyect_material_need);
+      }
+    } catch (e) {
+      decirError(e, "No se pudo guardar la revisión.");
+    } finally {
+      setOcupado("");
+      await cargar();
+    }
+  }
+
+  const vincular = (grupo, sugerencia) => revisar(
+    grupo, (idNeed) => linkMaterialNeed(idNeed, sugerencia.id_material));
+  const confirmar = (grupo) => revisar(grupo, (idNeed) => confirmMaterialNeedBuy(idNeed));
+
   const items = respuesta?.items || [];
+  const porRevisar = respuesta?.to_review || 0;
+  const puedeRevisar = Boolean(respuesta?.can_review);
 
   return (
     <section className="page por-comprar">
@@ -58,7 +89,7 @@ export default function PorComprarPage() {
         eyebrow={t("purchase.eyebrow", "Compras")}
         titulo={t("purchase.title", "Por comprar")}
         subtitulo={t("purchase.subtitle",
-          "Lo que piden los proyectos contra lo que hay en el almacén. Un material que piden varios proyectos es una sola compra.")}
+          "Lo que piden los proyectos. Lo que se pide con texto libre sale por revisar hasta que alguien confirme si ya existe en el almacén o hay que comprarlo.")}
       >
         <button type="button" className="button ghost" onClick={cargar} disabled={cargando}>
           <RefreshCw size={16} />
@@ -66,11 +97,18 @@ export default function PorComprarPage() {
         </button>
       </PageHeader>
 
-      <label className="por-comprar-filtro">
-        <input type="checkbox" checked={!soloFaltantes}
-               onChange={(e) => setSoloFaltantes(!e.target.checked)} />
-        {t("purchase.show_covered", "Ver también lo que ya cubre el almacén")}
-      </label>
+      <div className="por-comprar-barra">
+        <label className="por-comprar-filtro">
+          <input type="checkbox" checked={!soloFaltantes}
+                 onChange={(e) => setSoloFaltantes(!e.target.checked)} />
+          {t("purchase.show_covered", "Ver también lo que ya cubre el almacén")}
+        </label>
+        {porRevisar > 0 && (
+          <span className="necesidad-estado revisar">
+            {porRevisar} {t("purchase.to_review", "por revisar")}
+          </span>
+        )}
+      </div>
 
       {error && <div className="alert error">{error}</div>}
 
@@ -78,7 +116,7 @@ export default function PorComprarPage() {
         <div className="empty">
           <strong>{soloFaltantes
             ? t("purchase.nothing_missing", "No falta nada por comprar.")
-            : t("purchase.nothing_asked", "Ningún proyecto ha pedido material.")}</strong>
+            : t("purchase.nothing_asked", "Ningún proyecto ha pedido nada.")}</strong>
         </div>
       )}
 
@@ -87,7 +125,7 @@ export default function PorComprarPage() {
           <table>
             <thead>
               <tr>
-                <th>{t("purchase.col_material", "Material")}</th>
+                <th>{t("purchase.col_material", "Qué")}</th>
                 <th>{t("purchase.col_required", "Piden")}</th>
                 <th>{t("purchase.col_stock", "Hay")}</th>
                 <th>{t("purchase.col_missing", "Falta")}</th>
@@ -96,30 +134,88 @@ export default function PorComprarPage() {
               </tr>
             </thead>
             <tbody>
-              {items.map((g) => (
-                <tr key={g.material?.id_material}>
-                  <td>
-                    <strong>{g.material?.material_description}</strong>
-                    {g.material?.unit && <span className="muted"> · {g.material.unit}</span>}
-                  </td>
-                  <td className="mono">{g.required}</td>
-                  <td className="mono">{g.in_stock}</td>
-                  <td className={`mono ${g.missing > 0 ? "por-comprar-falta" : "por-comprar-cubierto"}`}>
-                    {g.missing > 0 ? g.missing : t("purchase.covered", "cubierto")}
-                  </td>
-                  <td>{fechaCorta(g.needed_by) || <span className="muted">—</span>}</td>
-                  <td>
-                    <ul className="por-comprar-proyectos">
-                      {g.projects.map((p) => (
-                        <li key={p.id_proyect_material_need}>
-                          <span>{etiquetaDeProyecto(p)}</span>
-                          <span className="mono">{p.quantity}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </td>
-                </tr>
-              ))}
+              {items.map((g) => {
+                const nombre = g.linked ? g.material?.material_description : g.description;
+                return (
+                  <Fragment key={g.key}>
+                    <tr className={g.needs_review ? "por-comprar-revisar" : undefined}>
+                      <td>
+                        <strong>{nombre}</strong>
+                        {g.unit && <span className="muted"> · {g.unit}</span>}
+                        {g.linked && (
+                          <small className="muted por-comprar-origen">
+                            {t("purchase.in_catalog", "Del almacén")}
+                          </small>
+                        )}
+                        {!g.linked && (
+                          <span className={`necesidad-estado ${g.needs_review ? "revisar" : "compra"}`}>
+                            {g.needs_review
+                              ? t("purchase.badge_review", "Por revisar")
+                              : t("purchase.badge_buy", "Compra confirmada")}
+                          </span>
+                        )}
+                      </td>
+                      <td className="mono">{g.required}</td>
+                      <td className="mono">{g.linked ? g.in_stock : <span className="muted">—</span>}</td>
+                      <td className={`mono ${g.missing > 0 ? "por-comprar-falta" : "por-comprar-cubierto"}`}>
+                        {g.missing > 0 ? g.missing : t("purchase.covered", "cubierto")}
+                      </td>
+                      <td>{fechaCorta(g.needed_by) || <span className="muted">—</span>}</td>
+                      <td>
+                        <ul className="por-comprar-proyectos">
+                          {g.projects.map((p) => (
+                            <li key={p.id_proyect_material_need}>
+                              <span>{etiquetaDeProyecto(p)}</span>
+                              <span className="mono">{p.quantity}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </td>
+                    </tr>
+                    {g.needs_review && (
+                      <tr className="por-comprar-revision">
+                        <td colSpan={6}>
+                          {g.suggestions.length > 0 ? (
+                            <div className="por-comprar-sugerencias">
+                              <p className="muted">
+                                {t("purchase.maybe_exists", "El almacén tiene algo parecido. ¿Es lo mismo?")}
+                              </p>
+                              <ul>
+                                {g.suggestions.map((s) => (
+                                  <li key={s.id_material}>
+                                    <span>
+                                      <strong>{s.material_description}</strong>
+                                      <small className="muted"> · {t("purchase.in_stock", "hay")} {s.in_stock}</small>
+                                    </span>
+                                    {puedeRevisar && (
+                                      <button type="button" className="button button-quiet"
+                                              disabled={ocupado === g.key}
+                                              onClick={() => vincular(g, s)}>
+                                        {t("purchase.already_in_warehouse", "Ya está en almacén")}
+                                      </button>
+                                    )}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : (
+                            <p className="muted">
+                              {t("purchase.nothing_similar", "El almacén no tiene nada con ese nombre. Puede existir con otro: revísalo antes de comprar.")}
+                            </p>
+                          )}
+                          {puedeRevisar && (
+                            <button type="button" className="button primary"
+                                    disabled={ocupado === g.key}
+                                    onClick={() => confirmar(g)}>
+                              {t("purchase.confirm_buy", "Sí hay que comprarlo")}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>

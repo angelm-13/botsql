@@ -1,21 +1,25 @@
-"""Rutas de la lista de necesidades de material de un proyecto.
+"""Rutas de la lista de necesidades de un proyecto.
 
-Dos puertas, porque son dos preguntas:
+Tres puertas, porque son tres preguntas:
 
-* `/proyect/<id>/material-needs` -- lo de UN proyecto. Lo guarda el permiso de la
-  entidad `proyect_material_need` (que el Supervisor ya tiene desde
-  `operaciones`) y ademas la visibilidad del proyecto: nadie lee ni escribe la
-  lista de un proyecto que no puede ver.
-* `/material-needs/to-buy` -- lo de TODOS los proyectos contra la existencia. Lo
-  guarda la capacidad `purchase_planning`; no es una lectura de la tabla sino un
-  cruce con el almacen, y quien compra no tiene por que poder abrir cada proyecto.
+* `/proyect/<id>/material-needs` y `/material-needs/<id>` -- lo de UN proyecto. Lo
+  guarda el permiso de la entidad `proyect_material_need` (que el Supervisor ya
+  tiene desde `operaciones`) y ademas la visibilidad del proyecto: nadie lee ni
+  escribe la lista de un proyecto que no puede ver.
+* `/material-needs/suggestions` -- lo que el catalogo sugiere para lo que el
+  supervisor esta escribiendo. Solo ayuda a capturar.
+* `/material-needs/to-buy`, `/link` y `/confirm-buy` -- lo de TODOS los proyectos.
+  Lo guarda la capacidad `purchase_planning` (verla para leer, editarla para
+  revisar); no es una lectura de la tabla sino un cruce con el almacen, y quien
+  compra no tiene por que poder abrir cada proyecto.
 """
 from __future__ import annotations
 
 from flask import Blueprint, jsonify, request
 
 from app.services.proyect_material_need_service import (
-    cancel_need, create_need, list_needs, material_options, to_buy, update_need,
+    cancel_need, confirm_buy, create_need, link_need, list_needs, suggest_materials,
+    to_buy, update_need,
 )
 from app.utils.auth import require_entity_permission, token_required
 
@@ -63,12 +67,12 @@ def cancelar_necesidad(user_data, id_need):
     return jsonify(cancel_need(id_need, user_data))
 
 
-@bp_proyect_material_need.route("/material-needs/materials", methods=["GET"])
+@bp_proyect_material_need.route("/material-needs/suggestions", methods=["GET"])
 @token_required
 @require_entity_permission(ENTITY, "read")
-def opciones_de_material(user_data):
-    """Id, nombre y unidad: el desplegable de "que material necesito"."""
-    return jsonify(material_options())
+def sugerencias(user_data):
+    """Lo del catalogo que parece lo que el supervisor esta escribiendo."""
+    return jsonify(suggest_materials(request.args.get("q"), user_data))
 
 
 @bp_proyect_material_need.route("/material-needs/to-buy", methods=["GET"])
@@ -78,3 +82,17 @@ def por_comprar(user_data):
     # servicio, porque esta vista cruza necesidades con existencias.
     solo_faltantes = request.args.get("only_missing", "1")
     return jsonify(to_buy(user_data, solo_faltantes=_verdadero(solo_faltantes)))
+
+
+@bp_proyect_material_need.route("/material-needs/<id_need>/link", methods=["POST"])
+@token_required
+def vincular(user_data, id_need):
+    """"Ya existe en el almacen": se vincula al catalogo. Pide EDITAR la capacidad."""
+    return jsonify(link_need(id_need, _cuerpo().get("id_material"), user_data))
+
+
+@bp_proyect_material_need.route("/material-needs/<id_need>/confirm-buy", methods=["POST"])
+@token_required
+def confirmar_compra(user_data, id_need):
+    """"Si hay que comprarlo": se confirma. Pide EDITAR la capacidad."""
+    return jsonify(confirm_buy(id_need, user_data))
