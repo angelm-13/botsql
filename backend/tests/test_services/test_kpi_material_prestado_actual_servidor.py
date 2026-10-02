@@ -200,6 +200,64 @@ class MaterialPrestadoActualServidorTest(unittest.TestCase):
         invertido, _ = self._todo(id_user=OMAR, direccion="asc")
         self.assertEqual(sorted(dias), [i["dias_prestado"] for i in invertido])
 
+    def test_ordenar_por_dias_da_los_extremos_del_TOTAL_no_los_de_la_pagina(self):
+        """El servidor ordena sobre todos los renglones: lo primero de la pagina 1 es el extremo de TODO, y
+        lo ultimo de la ultima pagina es el otro extremo (no solo el mejor de las 50 que se alcanzaron a ver)."""
+        todos, total = self._todo()
+        dias = [i["dias_prestado"] for i in todos]
+        self.assertGreaterEqual(total, 63 + RENGLONES_DE_ANA + 10)
+        for direccion, primero, ultimo in (("desc", max(dias), min(dias)), ("asc", min(dias), max(dias))):
+            with self.subTest(direccion=direccion):
+                pagina_1, _ = self._pagina(orden="dias_prestado", direccion=direccion, limit=50, offset=0)
+                recorrido, _ = self._todo(orden="dias_prestado", direccion=direccion)
+                self.assertEqual(primero, pagina_1[0]["dias_prestado"])
+                self.assertEqual(ultimo, recorrido[-1]["dias_prestado"])
+                ordenados = [i["dias_prestado"] for i in recorrido]
+                self.assertEqual(sorted(dias, reverse=direccion == "desc"), ordenados)
+
+    def test_ordenar_por_fecha_del_vale_da_los_extremos_del_total(self):
+        todos, _ = self._todo()
+        fechas = [i["fecha_prestamo"] for i in todos]
+        for direccion, primero, ultimo in (("desc", max(fechas), min(fechas)), ("asc", min(fechas), max(fechas))):
+            with self.subTest(direccion=direccion):
+                pagina_1, _ = self._pagina(orden="fecha_prestamo", direccion=direccion, limit=50, offset=0)
+                recorrido, _ = self._todo(orden="fecha_prestamo", direccion=direccion)
+                self.assertEqual(primero, pagina_1[0]["fecha_prestamo"])
+                self.assertEqual(ultimo, recorrido[-1]["fecha_prestamo"])
+                self.assertEqual(sorted(fechas, reverse=direccion == "desc"), [i["fecha_prestamo"] for i in recorrido])
+
+    def test_mas_dias_primero_es_lo_mismo_que_fecha_mas_antigua_primero(self):
+        por_dias, _ = self._todo(orden="dias_prestado", direccion="desc")
+        por_fecha, _ = self._todo(orden="fecha_prestamo", direccion="asc")
+        self.assertEqual([i["fecha_prestamo"] for i in por_dias], [i["fecha_prestamo"] for i in por_fecha])
+
+    def test_cambiar_de_orden_entre_paginas_no_pierde_ni_repite_renglones(self):
+        """El usuario pide la pagina 1 en un orden y luego cambia: la pagina 1 del orden nuevo es otra consulta
+        completa. Cada orden por separado recorre TODOS los renglones una sola vez (el desempate por id hace que
+        un empate -aqui 20 renglones con los mismos dias- no baraje las paginas)."""
+        referencia = {i["id_nm_incident_product"] for i in self._todo()[0]}
+        for orden, direccion in (("dias_prestado", "desc"), ("dias_prestado", "asc"), ("fecha_prestamo", "desc"), ("fecha_prestamo", "asc")):
+            with self.subTest(orden=orden, direccion=direccion):
+                self._pagina(orden="dias_prestado", direccion="desc", limit=50, offset=0)      # lo que se veia antes
+                items, total = self._todo(orden=orden, direccion=direccion)
+                ids = [i["id_nm_incident_product"] for i in items]
+                self.assertEqual(total, len(ids))
+                self.assertEqual(len(ids), len(set(ids)))
+                self.assertEqual(referencia, set(ids))
+                # pedir la misma pagina dos veces da lo mismo: el orden es estable
+                una, _ = self._pagina(orden=orden, direccion=direccion, limit=50, offset=50)
+                otra, _ = self._pagina(orden=orden, direccion=direccion, limit=50, offset=50)
+                self.assertEqual([i["id_nm_incident_product"] for i in una], [i["id_nm_incident_product"] for i in otra])
+
+    def test_el_orden_se_conserva_al_filtrar_y_al_buscar(self):
+        items, _ = self._todo(id_user=OMAR, orden="dias_prestado", direccion="asc")
+        dias = [i["dias_prestado"] for i in items]
+        self.assertEqual(sorted(dias), dias)
+        self.assertEqual(30, dias[0])                                         # lo nuevo de Omar, primero
+        items, _ = self._todo(q="zz", orden="fecha_prestamo", direccion="desc")
+        fechas = [i["fecha_prestamo"] for i in items]
+        self.assertEqual(sorted(fechas, reverse=True), fechas)
+
     def test_ordenar_por_articulo_y_por_responsable_lo_hace_el_servidor(self):
         items, _ = self._todo(id_user=OMAR, orden="articulo", direccion="asc")
         nombres = [i["articulo"].lower() for i in items]
