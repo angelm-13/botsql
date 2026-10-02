@@ -9,6 +9,7 @@ import {
   RANGO_PERSONALIZADO, RANGO_RELATIVO_POR_OMISION, esRangoRelativoVigente,
   fechaLocalIso, periodoAnterior, rangoDesfasado, resolverRangoRelativo,
 } from "./kpiRango.js";
+import { normalizarOrdenTabla } from "./kpiPrestamos.js";
 
 /** Los `parametros` de un widget a partir del borrador del editor.
  *
@@ -25,6 +26,10 @@ export function armarParametros(estado, { esTabla = false, tieneBajoStock = fals
     const tabla = {};
     if (estado.columnas === 2) tabla.columnas = 2;
     if (estado.filas === 2) tabla.filas = 2;
+    // El orden que el usuario eligio en la tabla NO se captura en el editor, pero vive en los mismos
+    // `parametros`: si no se vuelve a escribir aqui, guardar el editor lo borraria. Solo se conserva un orden
+    // valido: uno que no lo sea vuelve al de por omision en vez de mandar al servidor algo que rechazaria (400).
+    if (estado.ordenTabla) tabla.orden_tabla = normalizarOrdenTabla(estado.ordenTabla);
     return tabla;
   }
   // Con un chip de rango relativo se guarda la INSTRUCCION (`rango_relativo`)
@@ -119,6 +124,8 @@ export function estadoDeWidget(widget, kpiCatalog, hoy = new Date()) {
     umbralBajoStock: parametros.umbral_bajo_stock != null ? String(parametros.umbral_bajo_stock) : "",
     columnas: columnasDeWidget(widget),
     filas: filasDeWidget(widget),
+    // Solo se arrastra para conservarlo al guardar (ver armarParametros); el editor no lo muestra.
+    ordenTabla: guardados.orden_tabla ? normalizarOrdenTabla(guardados.orden_tabla) : null,
   };
 }
 
