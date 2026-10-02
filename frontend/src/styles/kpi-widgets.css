@@ -121,7 +121,6 @@
 /* El selector de orden solo hace falta cuando la cabecera de la tabla (que ordena al pulsar) no se ve. */
 .kpi-preview-orden-movil { display: none; align-items: flex-end; gap: 8px; flex: 1 1 200px; min-width: 0; }
 .kpi-preview-orden-movil label { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; font-size: 11px; font-weight: 800; text-transform: uppercase; color: var(--kpi-texto-suave); }
-.kpi-preview-orden-movil .kpi-preview-tabla-orden { border: 1px solid var(--kpi-borde); border-radius: 8px; padding: 9px; background: var(--kpi-tarjeta); color: var(--kpi-ink); }
 
 /* Lista: con "Ver todos" se limita el alto y se desplaza por dentro, con el encabezado fijo. */
 /* La tarjeta tiene su ALTURA NATURAL (masonry, kpi-dashboard.css) y la lista se desplaza POR DENTRO

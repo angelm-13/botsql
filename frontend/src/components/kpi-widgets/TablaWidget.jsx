@@ -6,8 +6,8 @@ import {
 } from "lucide-react";
 import {
   RENGLONES_VISIBLES, agruparPorResponsable, anchoDeBarra, buscarEnFilas, escalaDeBarras,
-  etiquetaDeDias, filtrarPorResponsable, filtrarPorUsuario, gravedadDeDias, ordenarFilas, recortar,
-  recortarGrupos, resumenDePrestamos, responsablesDe,
+  OPCIONES_DE_ORDEN, claveDeEtiquetaDeOrden, claveDeOrden, etiquetaDeDias, filtrarPorResponsable, filtrarPorUsuario,
+  gravedadDeDias, ordenDeClave, ordenarFilas, recortar, recortarGrupos, resumenDePrestamos, responsablesDe, siguienteOrden,
 } from "../../kpi/kpiPrestamos.js";
 import {
   TAMANO_PAGINA_PANEL, TAMANO_PAGINA_TARJETA, agruparContiguos, opcionesDeResponsables, resumenDeServidor,
@@ -32,7 +32,16 @@ const ETIQUETAS_POR_OMISION = {
   sin_resultados: "Ningún renglón de {responsable}.",
   quitar_filtro: "Ver todos los responsables",
   ordenar: "Ordenar por",
-  invertir_orden: "Invertir el orden",
+  clic_invertir: "clic para invertir",
+  ordenar_columna: "Ordenar por {columna}",
+  orden_dias_prestado_desc: "Más días primero",
+  orden_dias_prestado_asc: "Menos días primero",
+  orden_fecha_prestamo_desc: "Vale más reciente primero",
+  orden_fecha_prestamo_asc: "Vale más antiguo primero",
+  orden_articulo_asc: "Artículo A–Z",
+  orden_articulo_desc: "Artículo Z–A",
+  orden_responsable_asc: "Responsable A–Z",
+  orden_responsable_desc: "Responsable Z–A",
   filtro_responsable: "Responsable",
   todos_los_responsables: "Todos los responsables",
   vista_lista: "Lista",
@@ -234,7 +243,7 @@ function ContenidoPrestamos({
   }, [enServidor, enPanel, hayMas, cargarMas, srv.items.length]);
 
   function alternarOrden(campo) {
-    setOrden((actual) => ({ campo, direccion: actual.campo === campo && actual.direccion === "desc" ? "asc" : "desc" }));
+    setOrden((actual) => siguienteOrden(actual, campo));
   }
 
   if (enServidor && !srv.resumen) {
@@ -274,16 +283,24 @@ function ContenidoPrestamos({
   const encabezado = (
     <thead>
       <tr>
-        {CAMPOS.map((campo) => (
-          <th key={campo}>
-            <button type="button" className="kpi-preview-tabla-orden" onClick={() => alternarOrden(campo)}>
-              {textos[campo]}
-              {orden.campo === campo
-                ? (orden.direccion === "desc" ? <ArrowDown size={12} aria-hidden="true" /> : <ArrowUp size={12} aria-hidden="true" />)
-                : <span className="kpi-preview-tabla-orden-inactivo kpi-prestamos-orden-espacio" aria-hidden="true" />}
-            </button>
-          </th>
-        ))}
+        {CAMPOS.map((campo) => {
+          // El sentido se DICE (tooltip, lector de pantalla y aria-sort), no solo se dibuja con una flecha: "mas dias
+          // primero" no es lo mismo que "la fecha mas reciente primero", y la flecha sola no lo aclara.
+          const activo = orden.campo === campo;
+          const ayuda = activo
+            ? `${textos[claveDeEtiquetaDeOrden(campo, orden.direccion)]} — ${textos.clic_invertir}`
+            : llenar(textos.ordenar_columna, { columna: textos[campo] });
+          return (
+            <th key={campo} aria-sort={activo ? (orden.direccion === "asc" ? "ascending" : "descending") : "none"}>
+              <button type="button" className="kpi-preview-tabla-orden" onClick={() => alternarOrden(campo)} title={ayuda} aria-label={`${textos[campo]}: ${ayuda}`}>
+                {textos[campo]}
+                {activo
+                  ? (orden.direccion === "desc" ? <ArrowDown size={12} aria-hidden="true" /> : <ArrowUp size={12} aria-hidden="true" />)
+                  : <span className="kpi-preview-tabla-orden-inactivo kpi-prestamos-orden-espacio" aria-hidden="true" />}
+              </button>
+            </th>
+          );
+        })}
       </tr>
     </thead>
   );
@@ -346,19 +363,17 @@ function ContenidoPrestamos({
         <div className="kpi-preview-orden-movil">
           <label>
             <span>{textos.ordenar}</span>
-            <select value={orden.campo} onChange={(evento) => setOrden((actual) => ({ ...actual, campo: evento.target.value }))}>
-              {CAMPOS.map((campo) => <option key={campo} value={campo}>{textos[campo]}</option>)}
+            <select
+              value={claveDeOrden(orden)}
+              onChange={(evento) => { const siguiente = ordenDeClave(evento.target.value); if (siguiente) setOrden(siguiente); }}
+            >
+              {OPCIONES_DE_ORDEN.map((opcion) => (
+                <option key={claveDeOrden(opcion)} value={claveDeOrden(opcion)}>
+                  {textos[claveDeEtiquetaDeOrden(opcion.campo, opcion.direccion)]}
+                </option>
+              ))}
             </select>
           </label>
-          <button
-            type="button"
-            className="kpi-preview-tabla-orden"
-            aria-label={textos.invertir_orden}
-            title={textos.invertir_orden}
-            onClick={() => setOrden((actual) => ({ ...actual, direccion: actual.direccion === "desc" ? "asc" : "desc" }))}
-          >
-            {orden.direccion === "desc" ? <ArrowDown size={14} aria-hidden="true" /> : <ArrowUp size={14} aria-hidden="true" />}
-          </button>
         </div>
       </div>
 

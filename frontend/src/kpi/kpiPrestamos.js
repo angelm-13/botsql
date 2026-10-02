@@ -82,6 +82,43 @@ export function escalaDeBarras(filas) {
   return Math.max(DIAS_ESCALA_MINIMA, ...(filas || []).map((fila) => fila.dias_prestado || 0));
 }
 
+// --- Orden de la tabla -------------------------------------------------------------------------------
+// Columnas por las que se ordena y su sentido: la direccion es "desc"/"asc" de la COLUMNA (el mismo vocabulario
+// que `orden`/`direccion` del servidor). Para los dias, "desc" es "mas dias primero" (la fecha mas antigua); para la
+// fecha del vale, "desc" es "la mas reciente primero".
+export const CAMPOS_DE_ORDEN = ["dias_prestado", "fecha_prestamo", "articulo", "responsable"];
+
+/** Por que sentido arranca una columna al pulsarla: los textos de la A a la Z; los dias y la fecha, de lo mas
+ * llamativo (mas dias, mas reciente) a lo menos. */
+export function direccionInicial(campo) {
+  return campo === "articulo" || campo === "responsable" ? "asc" : "desc";
+}
+
+/** El orden que sigue a pulsar una columna: la misma columna invierte el sentido; otra arranca por el suyo. */
+export function siguienteOrden(actual, campo) {
+  if (actual?.campo === campo) return { campo, direccion: actual.direccion === "desc" ? "asc" : "desc" };
+  return { campo, direccion: direccionInicial(campo) };
+}
+
+/** Clave de la etiqueta de un orden ("orden_dias_prestado_desc"): la usa el selector compacto y el tooltip. */
+export function claveDeEtiquetaDeOrden(campo, direccion) {
+  return `orden_${campo}_${direccion}`;
+}
+
+/** Todas las combinaciones (columna, sentido) en el orden en que las lista el selector compacto. */
+export const OPCIONES_DE_ORDEN = CAMPOS_DE_ORDEN.flatMap((campo) => {
+  const inicial = direccionInicial(campo);
+  const otra = inicial === "desc" ? "asc" : "desc";
+  return [{ campo, direccion: inicial }, { campo, direccion: otra }];
+});
+
+/** "dias_prestado:desc" <-> { campo, direccion }: el valor de cada opcion del selector compacto. */
+export const claveDeOrden = (orden) => `${orden.campo}:${orden.direccion}`;
+export function ordenDeClave(clave) {
+  const [campo, direccion] = String(clave).split(":");
+  return CAMPOS_DE_ORDEN.includes(campo) && (direccion === "asc" || direccion === "desc") ? { campo, direccion } : null;
+}
+
 /** Ordena sin alterar la lista recibida. Empata por fecha del vale (el mas viejo
  * primero) y por articulo, para que el orden sea siempre el mismo. */
 export function ordenarFilas(filas, campo = "dias_prestado", direccion = "desc") {
