@@ -14,7 +14,8 @@
 -- Si el supervisor escribe algo que si hay en el almacen y no lo vincula, el
 -- renglon queda "por revisar" hasta que alguien (`reviewed_by`, `reviewed_date`)
 -- decida (`review_result`): `linked` -ya existe, se vinculo- o `buy` -de verdad
--- hay que comprarlo-. Nada se oculta por parecerse a algo del catalogo.
+-- hay que comprarlo- o `returned` -no se entiende: vuelve al supervisor con su
+-- `review_note`-. Nada se oculta por parecerse a algo del catalogo.
 --
 -- Tabla propia y no `invoice_material_service`: aquel renglon cuelga de una
 -- factura -precios, impuestos, claves SAT- y lo captura quien factura. Queda una
@@ -39,6 +40,7 @@ CREATE TABLE IF NOT EXISTS proyect_material_need (
     note                        VARCHAR(300),
     need_status                 VARCHAR(20) NOT NULL DEFAULT 'open',
     review_result               VARCHAR(10),
+    review_note                 VARCHAR(300),
     reviewed_by                 INTEGER,
     reviewed_date               TIMESTAMP,
     id_invoice_material_service INTEGER
@@ -51,7 +53,7 @@ CREATE TABLE IF NOT EXISTS proyect_material_need (
     CONSTRAINT ck_proyect_material_need_status
         CHECK (need_status IN ('open', 'cancelled')),
     CONSTRAINT ck_proyect_material_need_review
-        CHECK (review_result IS NULL OR review_result IN ('linked', 'buy')),
+        CHECK (review_result IS NULL OR review_result IN ('linked', 'buy', 'returned')),
     CONSTRAINT ck_proyect_material_need_what
         CHECK (id_material IS NOT NULL OR (description IS NOT NULL AND description <> ''))
 );

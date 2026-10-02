@@ -52,7 +52,8 @@ NEED_STATUSES = ("open", "cancelled")
 # Que decidio quien reviso un renglon de texto libre:
 #   linked  -> ya existe en el almacen; se vinculo al catalogo
 #   buy     -> de verdad hay que comprarlo; se confirmo
-REVIEW_RESULTS = ("linked", "buy")
+#   returned -> no se entiende o falta algo; vuelve al supervisor con un motivo
+REVIEW_RESULTS = ("linked", "buy", "returned")
 
 
 def _valor(value):
@@ -70,7 +71,7 @@ class ProyectMaterialNeed(Base):
             name="ck_proyect_material_need_status",
         ),
         CheckConstraint(
-            "review_result IS NULL OR review_result IN ('linked', 'buy')",
+            "review_result IS NULL OR review_result IN ('linked', 'buy', 'returned')",
             name="ck_proyect_material_need_review",
         ),
         # Algo hay que decir: o se vincula al catalogo o se describe.
@@ -101,6 +102,8 @@ class ProyectMaterialNeed(Base):
     review_result: Mapped[str | None] = mapped_column(String(10), nullable=True)
     reviewed_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
     reviewed_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Por que se devolvio: lo que el supervisor tiene que corregir.
+    review_note: Mapped[str | None] = mapped_column(String(300), nullable=True)
     # Ligadura opcional con lo cotizado. Vacia hasta que alguien la pida.
     id_invoice_material_service: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("invoice_material_service.id_invoice_material_service"),

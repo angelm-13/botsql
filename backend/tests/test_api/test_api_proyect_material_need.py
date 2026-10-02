@@ -19,6 +19,7 @@ from app.models import (
     EntityPermission, InventoryStock, Material, Product, Proyect,
 )
 from app.models.session import transaction_context
+from app.services.proyect_material_need_service import descripcion_sospechosa
 from app.utils.auth import SECRET_KEY
 from tests.conftest import BackendTestCase
 from tests.model_factory import build_model
@@ -294,7 +295,7 @@ class TestListaDeNecesidades(BackendTestCase):
         self.assertEqual(403, self._sugerir("taladro", headers=sin_permiso).status_code)
 
     def json_list(self, respuesta):
-        return respuesta.get_json()
+        return respuesta.get_json()["materials"]
 
     # --- por comprar ---------------------------------------------------------
 
@@ -464,3 +465,164 @@ class TestListaDeNecesidades(BackendTestCase):
     def test_linking_to_an_unknown_material_is_a_404(self):
         id_need = self._id(self._pedir(PROYECTO_PROPIO, 1, description="Pintura"))
         self.assertEqual(404, self._vincular(id_need, 999).status_code)
+
+    # --- proteger el texto libre ---------------------------------------------
+
+    REALES = [
+        "soldadura 6013", "tornillo 1/4 x 2", "Pintura esmalte blanca", "cable THW calibre 12",
+        "electrodo E7018", "cemento gris", "lija 120", "varilla 3/8", "malla electrosoldada 6x6",
+        "construcción", "tuerca M8x1.25", "brocha 4 pulgadas", "thinner", "disco de corte 4 1/2",
+        "guantes de carnaza", "clavo 2 1/2", "cinta teflón", "pegamento PVC", "manguera 1/2 pulgada",
+        "extensión eléctrica 15 m", "grasa multiusos", "WD-40", "tubo cuadrado 2x2",
+        "perfil estructural IPR", "anclas expansivas 3/8", "cable THHN calibre 10",
+    ]
+    ABSURDOS = ["12o3pifsfjg", "asdfgh", "qwerty", "aaaaa", "xxxxx", "jjjjjjj", "123456",
+                "....", "bcdfghjk", "pifsfjg", "ab", "  "]
+
+    def test_the_rule_catches_nonsense_and_never_a_real_request(self):
+        """Probada contra 26 pedidos reales de una obra: no rechaza ninguno."""
+        self.assertEqual([], [t for t in self.REALES if descripcion_sospechosa(t)])
+        self.assertEqual([], [t for t in self.ABSURDOS if not descripcion_sospechosa(t)])
+
+    def test_nonsense_is_rejected_when_the_supervisor_types_it(self):
+        for texto in ("12o3pifsfjg", "asdfgh", "aaaaa", "6013", "ab"):
+            with self.subTest(texto=texto):
+                respuesta = self._pedir(PROYECTO_PROPIO, 1, description=texto)
+                self.assertEqual(400, respuesta.status_code)
+                self.assertEqual("errors.need_description_invalid",
+                                 self.json(respuesta)["error_key"])
+
+    def test_real_requests_all_go_through(self):
+        for texto in self.REALES:
+            with self.subTest(texto=texto):
+                self.assertEqual(201, self._pedir(PROYECTO_PROPIO, 1, description=texto).status_code)
+
+    def test_nonsense_is_also_rejected_when_editing_the_words(self):
+        id_need = self._id(self._pedir(PROYECTO_PROPIO, 1, description="Pintura"))
+        respuesta = self.client.put("/material-needs/%s" % id_need,
+                                    json={"description": "12o3pifsfjg"},
+                                    headers=self._supervisor())
+        self.assertEqual(400, respuesta.status_code)
+
+    def test_the_unit_has_to_be_one_of_the_list(self):
+        self.assertEqual(400, self._pedir(PROYECTO_PROPIO, 1, description="Pintura",
+                                          unit="kilos").status_code)
+        cuerpo = self.json(self._pedir(PROYECTO_PROPIO, 1, description="Soldadura 6013", unit="KG"))
+        self.assertEqual("kg", cuerpo["unit"])
+
+    def test_a_linked_line_takes_its_unit_from_the_catalog_and_ignores_the_typed_one(self):
+        respuesta = self._pedir(PROYECTO_PROPIO, 1, id_material=DISCO, unit="lo-que-sea")
+        self.assertEqual(201, respuesta.status_code)
+        self.assertIsNone(self.json(respuesta)["unit"])
+
+    def test_an_absurd_quantity_is_rejected(self):
+        self.assertEqual(400, self._pedir(PROYECTO_PROPIO, 100001, description="Pintura").status_code)
+        self.assertEqual(201, self._pedir(PROYECTO_PROPIO, 100000, description="Cemento gris").status_code)
+
+    # --- devolver lo que no se entiende --------------------------------------
+
+    def _devolver(self, id_need, nota="No se entiende que material es", headers=None):
+        return self.client.post("/material-needs/%s/return" % id_need, json={"note": nota},
+                                headers=headers or self._compras())
+
+    def test_the_reviewer_returns_what_does_not_make_sense_and_it_is_not_bought(self):
+        id_need = self._id(self._pedir(PROYECTO_PROPIO, 3, description="Material raro"))
+
+        respuesta = self._devolver(id_need, "Dime que material es exactamente")
+        self.assertEqual(200, respuesta.status_code)
+        cuerpo = self.json(respuesta)
+        self.assertEqual("returned", cuerpo["review_result"])
+        self.assertEqual("Dime que material es exactamente", cuerpo["review_note"])
+        self.assertTrue(cuerpo["returned"])
+        self.assertFalse(cuerpo["needs_review"])
+        self.assertEqual(USUARIO_COMPRAS, cuerpo["reviewed_by"])
+
+        # Todavia no es una compra: espera al supervisor.
+        self.assertEqual([], self._grupos(self._por_comprar()))
+        self.assertEqual(0, self.json(self._por_comprar())["to_review"])
+
+    def test_the_supervisor_sees_why_it_came_back(self):
+        id_need = self._id(self._pedir(PROYECTO_PROPIO, 3, description="Material raro"))
+        self._devolver(id_need, "Dime que material es exactamente")
+        lista = self.client.get("/proyect/%s/material-needs" % PROYECTO_PROPIO,
+                                headers=self._supervisor())
+        renglon = self.json(lista)["items"][0]
+        self.assertTrue(renglon["returned"])
+        self.assertEqual("Dime que material es exactamente", renglon["review_note"])
+
+    def test_correcting_the_words_sends_it_back_to_review(self):
+        id_need = self._id(self._pedir(PROYECTO_PROPIO, 3, description="Material raro"))
+        self._devolver(id_need)
+        editada = self.client.put("/material-needs/%s" % id_need,
+                                  json={"description": "Pintura esmalte blanca"},
+                                  headers=self._supervisor())
+        cuerpo = self.json(editada)
+        self.assertTrue(cuerpo["needs_review"])
+        self.assertFalse(cuerpo["returned"])
+        self.assertIsNone(cuerpo["review_note"])
+        self.assertEqual(1, len(self._grupos(self._por_comprar())))
+
+    def test_the_supervisor_can_resubmit_without_changing_the_words(self):
+        """Si el que reviso se equivoco, basta con explicarlo y reenviar."""
+        id_need = self._id(self._pedir(PROYECTO_PROPIO, 3, description="Material raro"))
+        self._devolver(id_need)
+        editada = self.client.put("/material-needs/%s" % id_need, json={"resubmit": True},
+                                  headers=self._supervisor())
+        self.assertTrue(self.json(editada)["needs_review"])
+
+    def test_a_returned_line_cannot_be_reviewed_until_it_is_resubmitted(self):
+        id_need = self._id(self._pedir(PROYECTO_PROPIO, 3, description="Material raro"))
+        self._devolver(id_need)
+        respuesta = self._confirmar(id_need)
+        self.assertEqual(409, respuesta.status_code)
+        self.assertEqual("errors.need_not_reviewable", self.json(respuesta)["error_key"])
+        self.assertEqual(409, self._vincular(id_need, TALADRO).status_code)
+        self.assertEqual(409, self._devolver(id_need).status_code)
+
+    def test_a_reason_is_required_to_return(self):
+        id_need = self._id(self._pedir(PROYECTO_PROPIO, 3, description="Material raro"))
+        self.assertEqual(400, self._devolver(id_need, nota="").status_code)
+        self.assertEqual(400, self._devolver(id_need, nota="no").status_code)
+
+    def test_only_a_reviewer_can_return(self):
+        id_need = self._id(self._pedir(PROYECTO_PROPIO, 3, description="Material raro"))
+        self.assertEqual(403, self._devolver(id_need, headers=self._supervisor()).status_code)
+        solo_ve = self._headers(USUARIO_COMPRAS, SOLO_VE)
+        self.assertEqual(403, self._devolver(id_need, headers=solo_ve).status_code)
+
+    def test_a_confirmed_purchase_cannot_be_returned_but_can_still_be_linked(self):
+        id_need = self._id(self._pedir(PROYECTO_PROPIO, 2, description="Taladro inalambrico"))
+        self._confirmar(id_need)
+        self.assertEqual(409, self._devolver(id_need).status_code)
+        # Se descubrio despues que si habia: vincular sigue siendo posible.
+        self.assertEqual(200, self._vincular(id_need, TALADRO).status_code)
+
+    # --- el vocabulario que ya paso por una revision -------------------------
+
+    def _previas(self, texto):
+        return self._sugerir(texto).get_json()["previous"]
+
+    def test_what_was_already_confirmed_as_a_purchase_is_suggested_again(self):
+        id_need = self._id(self._pedir(PROYECTO_PROPIO, 10, description="Soldadura 6013", unit="kg"))
+        self._confirmar(id_need)
+        # Otro proyecto la vuelve a pedir y se confirma tambien: ya son dos veces.
+        otra = self._id(self._pedir(PROYECTO_AJENO, 5, description="soldadura  6013",
+                                    headers=self._ajeno()))
+        self._confirmar(otra)
+
+        previas = self._previas("soldadura")
+        self.assertEqual(1, len(previas))
+        self.assertEqual("Soldadura 6013", previas[0]["description"])
+        self.assertEqual("kg", previas[0]["unit"])
+        self.assertEqual(2, previas[0]["times"])
+
+    def test_text_nobody_has_reviewed_or_that_was_returned_is_not_suggested(self):
+        self._pedir(PROYECTO_PROPIO, 10, description="Soldadura 6013")           # sin revisar
+        devuelto = self._id(self._pedir(PROYECTO_PROPIO, 1, description="Soldadura rara"))
+        self._devolver(devuelto)
+        self.assertEqual([], self._previas("soldadura"))
+
+    def test_every_word_has_to_be_in_the_previous_text(self):
+        self._confirmar(self._id(self._pedir(PROYECTO_PROPIO, 10, description="Soldadura 6013")))
+        self.assertEqual(1, len(self._previas("soldadura 6013")))
+        self.assertEqual([], self._previas("soldadura 7018"))

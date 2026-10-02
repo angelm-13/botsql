@@ -2661,6 +2661,8 @@
     "need_duplicate_material": "That material is already on the project list. Edit the quantity of the existing line.",
     "need_not_open": "That line was already removed from the list and cannot be edited.",
     "need_already_linked": "That line is already linked to the warehouse: there is nothing to review.",
+    "need_description_invalid": "Describe it with words, for example: 6013 welding rod.",
+    "need_not_reviewable": "That line cannot be reviewed now: it was already reviewed or it is returned, waiting for the supervisor to fix it.",
     "voucher_asset_required": "That product is tracked piece by piece: say which one is going out. Handing back “a screwdriver” does not settle the loan of the one taken.",
     "voucher_asset_not_applicable": "That product is counted by quantity, not by pieces: “one piece of cement” does not exist.",
     "voucher_asset_product_mismatch": "That piece belongs to another product: the voucher would name something that never went out.",
@@ -4356,7 +4358,14 @@
     "needed_by_label": "Needed by",
     "note": "Note",
     "remove": "Remove from the list",
-    "add": "Add"
+    "add": "Add",
+    "returned": "Returned",
+    "returned_why": "It was returned to you",
+    "resubmit": "Fix and resubmit",
+    "already_asked": "It was already requested this way. Use it so it is written the same.",
+    "use_this_text": "Use this text",
+    "ask_help": "The warehouse has what you need. To take it, request it with a pre-voucher.",
+    "ask_warehouse": "Request from the warehouse"
   },
   "purchase": {
     "eyebrow": "Purchasing",
@@ -4380,7 +4389,11 @@
     "in_stock": "in stock",
     "already_in_warehouse": "Already in the warehouse",
     "nothing_similar": "The warehouse has nothing with that name. It may exist under another: check before buying.",
-    "confirm_buy": "Yes, it has to be bought"
+    "confirm_buy": "Yes, it has to be bought",
+    "return": "Not clear: send back",
+    "return_why": "What does the supervisor need to fix?",
+    "return_placeholder": "E.g. What material exactly?",
+    "return_send": "Send back"
   },
   "stock_entry": {
     "title": "Register stock in",

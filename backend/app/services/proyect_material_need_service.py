@@ -35,7 +35,7 @@ import re
 import unicodedata
 from datetime import date, datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from app.models import (
     EntityPermission, InventoryStock, Material, Product, Proyect,
@@ -54,6 +54,16 @@ PURCHASE_CAPABILITY = "purchase_planning"
 NOTE_MAX = 300
 DESCRIPTION_MAX = 200
 UNIT_MAX = 40
+# Una cantidad absurda ("9999999") es casi siempre un error de dedo, no una necesidad.
+MAX_QUANTITY = 100000
+RETURN_NOTE_MIN = 5
+
+# Las unidades que se aceptan, en vez de texto libre: "kg", "kilo" y "kgs" son lo
+# mismo y asi no se agrupan aparte. Se guarda la clave en minusculas.
+UNIDADES = (
+    "pza", "kg", "g", "m", "cm", "mm", "m2", "m3", "lt", "ml", "galon", "cubeta",
+    "caja", "bolsa", "saco", "rollo", "juego", "par", "paquete", "tramo",
+)
 
 # Palabras que no distinguen nada al buscar ("disco DE corte").
 _PALABRAS_VACIAS = frozenset({
@@ -102,6 +112,68 @@ def _texto(valor, campo: str, largo: int, *, obligatorio: bool = False) -> str |
     if len(texto) > largo:
         raise AppError("errors.field_too_long", 400, {
             "field": campo, "max_length": largo, "actual_length": len(texto)})
+    return texto
+
+
+def _cantidad(valor) -> int:
+    cantidad = _entero_positivo(valor, "quantity")
+    if cantidad > MAX_QUANTITY:
+        raise AppError("errors.invalid_field", 400, {
+            "field": "quantity", "max": MAX_QUANTITY})
+    return cantidad
+
+
+def _unidad(valor) -> str | None:
+    """Una unidad de la lista, o nada. Texto libre no: se presta a tres escrituras."""
+    texto = _texto(valor, "unit", UNIT_MAX)
+    if texto is None:
+        return None
+    clave = texto.lower()
+    if clave not in UNIDADES:
+        raise AppError("errors.invalid_field", 400, {
+            "field": "unit", "allowed": list(UNIDADES)})
+    return clave
+
+
+_VOCALES = frozenset("aeiou")
+
+
+def descripcion_sospechosa(texto) -> str | None:
+    """Por que el texto no parece una descripcion, o None si parece una.
+
+    Solo atrapa lo EVIDENTE -"12o3pifsfjg", "asdfgh", "aaaaa"-: sin letras, de menos
+    de tres caracteres, con un caracter repetido en serie, o con un tramo de letras
+    de cinco o mas sin vocales casi ("pifsfjg"). Probada contra 26 pedidos reales
+    (soldadura 6013, tuerca M8x1.25, cable THW calibre 12, electrodo E7018...): no
+    rechaza ninguno. NO detecta texto que parece palabra ("hjkl") ni errores de
+    dedo: de eso se encarga quien revisa. Ni "THW" ni "THHN" -cables reales- tienen
+    vocales, por eso el tramo tiene que ser de cinco y no menos.
+
+    Se repite en el frontend (`utils/descripcionDeNecesidad.js`) para avisar al
+    instante; esta es la que cuenta.
+    """
+    t = _normalizar(texto)
+    if len(t.replace(" ", "")) < 3:
+        return "too_short"
+    if not re.search(r"[a-z]", t):
+        return "no_letters"
+    if re.search(r"([a-z])\1{3,}", t.replace(" ", "")):
+        return "repeated"
+    for tramo in re.findall(r"[a-z]+", t):
+        if len(tramo) < 5:
+            continue
+        if sum(1 for c in tramo if c in _VOCALES) / len(tramo) < 0.2:
+            return "few_vowels"
+        if re.search(r"[^aeiou]{5,}", tramo):
+            return "consonants"
+    return None
+
+
+def _descripcion_valida(texto) -> str:
+    motivo = descripcion_sospechosa(texto)
+    if motivo is not None:
+        raise AppError("errors.need_description_invalid", 400, {
+            "field": "description", "reason": motivo})
     return texto
 
 
@@ -177,11 +249,43 @@ def _sugerir(db, texto, *, limite: int = 5) -> list[dict]:
     ]
 
 
-def suggest_materials(texto, user_data: dict) -> list[dict]:
-    """Sugerencias para el que captura: lo del catalogo que parece lo que escribe."""
+def _previas(db, texto, *, limite: int = 5) -> list[dict]:
+    """Descripciones que alguien ya confirmo como compra y contienen lo que escribe.
+
+    Es vocabulario que ya paso por una revision: sugerirlo hace que lo mismo se escriba
+    igual en todos los proyectos y se agrupe en "Por comprar".
+    """
+    palabras = _palabras(texto)
+    if not palabras:
+        return []
+    filas = db.execute(
+        select(ProyectMaterialNeed.description, ProyectMaterialNeed.unit)
+        .where(ProyectMaterialNeed.id_material.is_(None),
+               ProyectMaterialNeed.review_result == "buy",
+               ProyectMaterialNeed.deletion_date.is_(None))
+        # La primera escritura confirmada queda como la buena: es la que las demas imitan.
+        .order_by(ProyectMaterialNeed.reviewed_date.asc())
+    ).all()
+    vistas: dict[str, dict] = {}
+    for descripcion, unidad in filas:
+        clave = _normalizar(descripcion)
+        if clave:
+            grupo = vistas.setdefault(
+                clave, {"description": descripcion, "unit": unidad, "times": 0})
+            grupo["times"] += 1
+    resultado = [
+        g for clave, g in vistas.items()
+        if all(any(w.startswith(p) for w in clave.split()) for p in palabras)
+    ]
+    resultado.sort(key=lambda g: (-g["times"], len(g["description"])))
+    return resultado[:limite]
+
+
+def suggest_materials(texto, user_data: dict) -> dict:
+    """Sugerencias para el que captura: el catalogo y lo que ya se pidio antes."""
     _actor(user_data)
     with transaction_context() as db:
-        return _sugerir(db, texto)
+        return {"materials": _sugerir(db, texto), "previous": _previas(db, texto)}
 
 
 # --- existencias y catalogo --------------------------------------------------
@@ -260,6 +364,8 @@ def _renglon(need: ProyectMaterialNeed, materiales: dict, existencias: dict) -> 
         "covered_by_stock": (hay >= int(need.quantity)) if vinculado else None,
         # Texto libre que nadie ha revisado todavia.
         "needs_review": (not vinculado) and need.review_result is None,
+        # El que reviso no lo entendio: espera a que el supervisor lo corrija.
+        "returned": need.review_result == "returned",
     })
     return fila
 
@@ -335,16 +441,17 @@ def create_need(id_proyect, payload: dict, user_data: dict) -> dict:
     actor = _actor(user_data)
     id_proyecto = _entero_positivo(id_proyect, "id_proyect")
     require_project_access(id_proyecto, user_data)
-    cantidad = _entero_positivo(payload.get("quantity"), "quantity")
+    cantidad = _cantidad(payload.get("quantity"))
     necesaria_para = _fecha_o_nada(payload.get("needed_by"), "needed_by")
     nota = _texto(payload.get("note"), "note", NOTE_MAX)
-    unidad = _texto(payload.get("unit"), "unit", UNIT_MAX)
 
     hay_material = str(payload.get("id_material") or "").strip() != ""
     id_material = _entero_positivo(payload.get("id_material"), "id_material") if hay_material else None
     # Vinculado: el nombre es el del catalogo. Libre: las palabras del supervisor.
-    descripcion = None if hay_material else _texto(
-        payload.get("description"), "description", DESCRIPTION_MAX, obligatorio=True)
+    descripcion = None if hay_material else _descripcion_valida(_texto(
+        payload.get("description"), "description", DESCRIPTION_MAX, obligatorio=True))
+    # Lo vinculado toma su unidad del catalogo; la lista cerrada es para el texto libre.
+    unidad = None if hay_material else _unidad(payload.get("unit"))
 
     with transaction_context() as db:
         if id_material is not None:
@@ -375,16 +482,17 @@ def update_need(id_need, payload: dict, user_data: dict) -> dict:
                 "id_proyect_material_need": need.id_proyect_material_need,
                 "need_status": need.need_status})
         if "quantity" in payload:
-            need.quantity = _entero_positivo(payload.get("quantity"), "quantity")
+            need.quantity = _cantidad(payload.get("quantity"))
         if "needed_by" in payload:
             need.needed_by = _fecha_o_nada(payload.get("needed_by"), "needed_by")
         if "note" in payload:
             need.note = _texto(payload.get("note"), "note", NOTE_MAX)
         if "unit" in payload:
-            need.unit = _texto(payload.get("unit"), "unit", UNIT_MAX)
+            need.unit = _unidad(payload.get("unit"))
         if "description" in payload and need.id_material is None:
-            nueva = _texto(payload.get("description"), "description", DESCRIPTION_MAX,
-                           obligatorio=True)
+            nueva = _descripcion_valida(_texto(
+                payload.get("description"), "description", DESCRIPTION_MAX,
+                obligatorio=True))
             if _normalizar(nueva) != _normalizar(need.description):
                 otra = _duplicada(db, need.id_proyect, descripcion=nueva,
                                   excepto=need.id_proyect_material_need)
@@ -395,6 +503,15 @@ def update_need(id_need, payload: dict, user_data: dict) -> dict:
                 need.review_result = None
                 need.reviewed_by = None
                 need.reviewed_date = None
+                need.review_note = None
+        # "Corregir y reenviar": el supervisor ya atendio el motivo de la devolucion
+        # -aunque sea para explicar que si era eso- y vuelve a quedar por revisar.
+        if (payload.get("resubmit") and need.id_material is None
+                and need.review_result == "returned"):
+            need.review_result = None
+            need.reviewed_by = None
+            need.reviewed_date = None
+            need.review_note = None
         db.flush()
         ids = {int(need.id_material)} if need.id_material is not None else set()
         return _renglon(need, _datos_de_materiales(db, ids), _existencias(db, ids))
@@ -436,7 +553,8 @@ def _puede_revisar(db, user_data: dict) -> bool:
     return bool(fila and int(fila.scope_update or 0) != 0)
 
 
-def _necesidad_por_revisar(db, id_need, user_data: dict) -> ProyectMaterialNeed:
+def _necesidad_por_revisar(db, id_need, user_data: dict, *,
+                           desde=(None,)) -> ProyectMaterialNeed:
     """El renglon de texto libre abierto que se va a revisar.
 
     A diferencia de editarlo, revisarlo NO pide ver el proyecto: quien compra
@@ -454,6 +572,11 @@ def _necesidad_por_revisar(db, id_need, user_data: dict) -> ProyectMaterialNeed:
         raise AppError("errors.need_already_linked", 409, {
             "id_proyect_material_need": need.id_proyect_material_need,
             "id_material": need.id_material})
+    # Un renglon devuelto espera al supervisor: no se revisa hasta que lo reenvie.
+    if need.review_result not in desde:
+        raise AppError("errors.need_not_reviewable", 409, {
+            "id_proyect_material_need": need.id_proyect_material_need,
+            "review_result": need.review_result})
     return need
 
 
@@ -462,7 +585,8 @@ def link_need(id_need, id_material, user_data: dict) -> dict:
     actor = _actor(user_data)
     id_del_material = _entero_positivo(id_material, "id_material")
     with transaction_context() as db:
-        need = _necesidad_por_revisar(db, id_need, user_data)
+        # Vincular tambien se puede despues de confirmar la compra: se descubrio que si habia.
+        need = _necesidad_por_revisar(db, id_need, user_data, desde=(None, "buy"))
         _material(db, id_del_material)
         otra = _duplicada(db, need.id_proyect, id_material=id_del_material,
                           excepto=need.id_proyect_material_need)
@@ -470,6 +594,7 @@ def link_need(id_need, id_material, user_data: dict) -> dict:
             _rechazar_duplicada(otra, id_material=id_del_material)
         need.id_material = id_del_material
         need.review_result = "linked"
+        need.review_note = None
         need.reviewed_by = actor
         need.reviewed_date = datetime.now(timezone.utc).replace(tzinfo=None)
         db.flush()
@@ -483,6 +608,27 @@ def confirm_buy(id_need, user_data: dict) -> dict:
     with transaction_context() as db:
         need = _necesidad_por_revisar(db, id_need, user_data)
         need.review_result = "buy"
+        need.reviewed_by = actor
+        need.reviewed_date = datetime.now(timezone.utc).replace(tzinfo=None)
+        db.flush()
+        return _renglon(need, {}, {})
+
+
+def return_need(id_need, nota, user_data: dict) -> dict:
+    """"No se entiende": vuelve al supervisor con un motivo y NO se compra.
+
+    Es lo que faltaba: quien revisa podia vincular o confirmar, pero no rechazar, asi
+    que un texto sin sentido solo tenia salida hacia la compra. El motivo es
+    obligatorio: el supervisor tiene que saber que corregir.
+    """
+    actor = _actor(user_data)
+    motivo = _texto(nota, "note", NOTE_MAX, obligatorio=True)
+    if len(motivo) < RETURN_NOTE_MIN:
+        raise AppError("errors.invalid_field", 400, {"field": "note"})
+    with transaction_context() as db:
+        need = _necesidad_por_revisar(db, id_need, user_data)
+        need.review_result = "returned"
+        need.review_note = motivo
         need.reviewed_by = actor
         need.reviewed_date = datetime.now(timezone.utc).replace(tzinfo=None)
         db.flush()
@@ -518,6 +664,9 @@ def to_buy(user_data: dict, *, solo_faltantes: bool = True) -> dict:
             .where(
                 ProyectMaterialNeed.need_status == "open",
                 ProyectMaterialNeed.deletion_date.is_(None),
+                # Lo devuelto espera al supervisor: todavia no es una compra.
+                or_(ProyectMaterialNeed.review_result.is_(None),
+                    ProyectMaterialNeed.review_result != "returned"),
                 Proyect.deletion_date.is_(None),
                 Proyect.proyect_status.notin_(PROYECTOS_QUE_YA_NO_COMPRAN),
             )

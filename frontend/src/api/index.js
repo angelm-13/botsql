@@ -656,6 +656,7 @@ export const cancelMaterialNeed = (idNeed) => request(`/material-needs/${idNeed}
 export const getMaterialNeedSuggestions = (q) => request("/material-needs/suggestions", { params: { q } });
 export const linkMaterialNeed = (idNeed, idMaterial) => request(`/material-needs/${idNeed}/link`, { method: "POST", body: { id_material: idMaterial } });
 export const confirmMaterialNeedBuy = (idNeed) => request(`/material-needs/${idNeed}/confirm-buy`, { method: "POST" });
+export const returnMaterialNeed = (idNeed, note) => request(`/material-needs/${idNeed}/return`, { method: "POST", body: { note } });
 export const getMaterialNeedsToBuy = (params = {}) => request("/material-needs/to-buy", { params });
 export const getProyect = (id) => request(`/proyect/${id}`);
 export const createProyect = (payload) => request("/proyect/", { method: "POST", body: payload });

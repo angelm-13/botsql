@@ -70,3 +70,16 @@
 .por-comprar-revisar td { background: #fffdf7; }
 .por-comprar-revision td { padding-top: 0; border-top: none; background: #fffdf7; }
 .por-comprar-revision .button.primary { margin-top: 8px; }
+
+/* Devolver lo que no se entiende, y pedir en almacen lo que ya hay */
+.necesidad-estado.devuelto { background: #fee2e2; color: #991b1b; }
+.necesidad-accion, .necesidad-devuelto { grid-column: 1 / -1; }
+.necesidad-accion { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding-top: 6px; border-top: 1px dashed #e2e8f0; }
+.necesidad-accion p { margin: 0; font-size: 12px; }
+.necesidad-devuelto { padding: 8px 10px; border: 1px solid #fecaca; border-radius: 8px; background: #fef2f2; font-size: 13px; }
+.necesidad-devuelto p { margin: 0 0 6px; }
+.necesidad-correccion { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.necesidad-correccion input { flex: 1; min-width: 160px; }
+.por-comprar-acciones { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.por-comprar-devolver { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin-top: 8px; }
+.por-comprar-devolver label { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 220px; font-size: 12px; color: #475569; }

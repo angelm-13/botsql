@@ -1,7 +1,9 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import PageHeader from "../components/PageHeader.jsx";
-import { confirmMaterialNeedBuy, getMaterialNeedsToBuy, linkMaterialNeed } from "../api";
+import {
+  confirmMaterialNeedBuy, getMaterialNeedsToBuy, linkMaterialNeed, returnMaterialNeed,
+} from "../api";
 import { useI18n } from "../i18n";
 import "../styles/material-necesario.css";
 
@@ -35,6 +37,8 @@ export default function PorComprarPage() {
   const [soloFaltantes, setSoloFaltantes] = useState(true);
   const [cargando, setCargando] = useState(false);
   const [ocupado, setOcupado] = useState("");
+  // Que grupo se esta devolviendo y con que motivo.
+  const [devolviendo, setDevolviendo] = useState({ key: "", motivo: "" });
   const [error, setError] = useState("");
 
   const decirError = useCallback((e, porOmision) => setError(
@@ -78,6 +82,12 @@ export default function PorComprarPage() {
   const vincular = (grupo, sugerencia) => revisar(
     grupo, (idNeed) => linkMaterialNeed(idNeed, sugerencia.id_material));
   const confirmar = (grupo) => revisar(grupo, (idNeed) => confirmMaterialNeedBuy(idNeed));
+  const devolver = async (grupo) => {
+    const motivo = devolviendo.motivo.trim();
+    if (motivo.length < 5) return;
+    await revisar(grupo, (idNeed) => returnMaterialNeed(idNeed, motivo));
+    setDevolviendo({ key: "", motivo: "" });
+  };
 
   const items = respuesta?.items || [];
   const porRevisar = respuesta?.to_review || 0;
@@ -203,12 +213,38 @@ export default function PorComprarPage() {
                               {t("purchase.nothing_similar", "El almacén no tiene nada con ese nombre. Puede existir con otro: revísalo antes de comprar.")}
                             </p>
                           )}
-                          {puedeRevisar && (
-                            <button type="button" className="button primary"
-                                    disabled={ocupado === g.key}
-                                    onClick={() => confirmar(g)}>
-                              {t("purchase.confirm_buy", "Sí hay que comprarlo")}
-                            </button>
+                          {puedeRevisar && devolviendo.key !== g.key && (
+                            <div className="por-comprar-acciones">
+                              <button type="button" className="button primary"
+                                      disabled={ocupado === g.key}
+                                      onClick={() => confirmar(g)}>
+                                {t("purchase.confirm_buy", "Sí hay que comprarlo")}
+                              </button>
+                              <button type="button" className="button button-quiet"
+                                      disabled={ocupado === g.key}
+                                      onClick={() => setDevolviendo({ key: g.key, motivo: "" })}>
+                                {t("purchase.return", "No se entiende: devolver")}
+                              </button>
+                            </div>
+                          )}
+                          {puedeRevisar && devolviendo.key === g.key && (
+                            <div className="por-comprar-devolver">
+                              <label>
+                                <span>{t("purchase.return_why", "¿Qué tiene que corregir el supervisor?")}</span>
+                                <input type="text" maxLength={300} autoFocus value={devolviendo.motivo}
+                                       placeholder={t("purchase.return_placeholder", "Ej. ¿Qué material es exactamente?")}
+                                       onChange={(e) => setDevolviendo({ key: g.key, motivo: e.target.value })} />
+                              </label>
+                              <button type="button" className="button primary"
+                                      disabled={ocupado === g.key || devolviendo.motivo.trim().length < 5}
+                                      onClick={() => devolver(g)}>
+                                {t("purchase.return_send", "Devolver")}
+                              </button>
+                              <button type="button" className="button"
+                                      onClick={() => setDevolviendo({ key: "", motivo: "" })}>
+                                {t("common.cancel", "Cancelar")}
+                              </button>
+                            </div>
                           )}
                         </td>
                       </tr>

@@ -18,8 +18,8 @@ from __future__ import annotations
 from flask import Blueprint, jsonify, request
 
 from app.services.proyect_material_need_service import (
-    cancel_need, confirm_buy, create_need, link_need, list_needs, suggest_materials,
-    to_buy, update_need,
+    cancel_need, confirm_buy, create_need, link_need, list_needs, return_need,
+    suggest_materials, to_buy, update_need,
 )
 from app.utils.auth import require_entity_permission, token_required
 
@@ -89,6 +89,13 @@ def por_comprar(user_data):
 def vincular(user_data, id_need):
     """"Ya existe en el almacen": se vincula al catalogo. Pide EDITAR la capacidad."""
     return jsonify(link_need(id_need, _cuerpo().get("id_material"), user_data))
+
+
+@bp_proyect_material_need.route("/material-needs/<id_need>/return", methods=["POST"])
+@token_required
+def devolver(user_data, id_need):
+    """"No se entiende": vuelve al supervisor con un motivo. Pide EDITAR la capacidad."""
+    return jsonify(return_need(id_need, _cuerpo().get("note"), user_data))
 
 
 @bp_proyect_material_need.route("/material-needs/<id_need>/confirm-buy", methods=["POST"])

@@ -2703,6 +2703,8 @@
     "need_duplicate_material": "Ese material ya está en la lista del proyecto. Edita la cantidad del renglón que ya existe.",
     "need_not_open": "Ese renglón ya se quitó de la lista y no se puede editar.",
     "need_already_linked": "Ese renglón ya está vinculado al almacén: no hay nada que revisar.",
+    "need_description_invalid": "Descríbelo con palabras, por ejemplo: soldadura 6013.",
+    "need_not_reviewable": "Ese renglón no se puede revisar ahora: ya se revisó o está devuelto esperando que el supervisor lo corrija.",
     "voucher_asset_required": "Ese producto se rastrea pieza por pieza: hay que decir cuál se lleva. Devolver «un desarmador» no cierra el préstamo del que se llevaron.",
     "voucher_asset_not_applicable": "Ese producto se cuenta por cantidad, no por piezas: «una pieza de cemento» no existe.",
     "voucher_asset_product_mismatch": "Esa pieza es de otro producto: el vale diría que se llevaron algo que no salió.",
@@ -4468,7 +4470,14 @@
     "needed_by_label": "Para cuándo",
     "note": "Nota",
     "remove": "Quitar de la lista",
-    "add": "Agregar"
+    "add": "Agregar",
+    "returned": "Devuelto",
+    "returned_why": "Te lo devolvieron",
+    "resubmit": "Corregir y reenviar",
+    "already_asked": "Ya se pidió así antes. Úsalo para que se escriba igual.",
+    "use_this_text": "Usar este texto",
+    "ask_help": "El almacén tiene lo que necesitas. Para llevártelo se pide con un prevale.",
+    "ask_warehouse": "Pedir en almacén"
   },
   "purchase": {
     "eyebrow": "Compras",
@@ -4492,7 +4501,11 @@
     "in_stock": "hay",
     "already_in_warehouse": "Ya está en almacén",
     "nothing_similar": "El almacén no tiene nada con ese nombre. Puede existir con otro: revísalo antes de comprar.",
-    "confirm_buy": "Sí hay que comprarlo"
+    "confirm_buy": "Sí hay que comprarlo",
+    "return": "No se entiende: devolver",
+    "return_why": "¿Qué tiene que corregir el supervisor?",
+    "return_placeholder": "Ej. ¿Qué material es exactamente?",
+    "return_send": "Devolver"
   },
   "stock_entry": {
     "title": "Registrar entrada",
