@@ -54,7 +54,7 @@ from app.modules.registry import (
 # para poblar `field`, mas `created_by`, que lo fija el servicio con el usuario
 # de la sesion.
 COLUMNAS_DE_SISTEMA = frozenset({
-    "created_by", "creation_date", "last_update_date", "deletion_date",
+    "created_by", "creation_date", "last_update_date", "deletion_date", "ajustado_por_gestor",
 })
 
 # Nombres de columna que sirven para reconocer un registro en un desplegable,

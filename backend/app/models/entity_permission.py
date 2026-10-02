@@ -32,6 +32,13 @@ class EntityPermission(Base):
     creation_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now())
     last_update_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
     deletion_date: Mapped[object | None] = mapped_column(DateTime, nullable=True)
+    # Cuando toco la fila el Gestor de roles. Lo fija el ORM (al crear y al
+    # editar); el trigger `trg_gestor_manda` descarta lo que una migracion
+    # intente cambiar sobre una fila que ya lo trae. No sale en `serialize`.
+    # Ver database/migrations/20260816000000_el_gestor_manda_sobre_las_migraciones.sql.
+    ajustado_por_gestor: Mapped[object | None] = mapped_column(
+        DateTime, nullable=True, default=func.now(), onupdate=func.now()
+    )
 
     def serialize(self) -> dict:
         return {

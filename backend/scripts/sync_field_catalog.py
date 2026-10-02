@@ -39,7 +39,7 @@ from app.models.session import transaction_context  # noqa: E402
 
 # Columnas que el sistema administra solo. No se publican como campos
 # configurables porque nadie debe capturarlas a mano.
-COLUMNAS_DE_SISTEMA = {"creation_date", "last_update_date", "deletion_date"}
+COLUMNAS_DE_SISTEMA = {"creation_date", "last_update_date", "deletion_date", "ajustado_por_gestor"}
 
 
 def columnas_publicables():
