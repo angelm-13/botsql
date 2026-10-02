@@ -492,6 +492,8 @@ export const deleteKpiDashboard = (id) => request(`/kpi_dashboard/${id}`, { meth
 export const getAllKpiDashboardWidget = (idDashboard) => request(`/kpi_dashboard/${idDashboard}/widgets/`);
 export const createKpiDashboardWidget = (idDashboard, payload) => request(`/kpi_dashboard/${idDashboard}/widgets/`, { method: "POST", body: payload });
 export const updateKpiDashboardWidget = (id, payload) => request(`/kpi_dashboard_widget/${id}`, { method: "PUT", body: payload });
+// Guarda SOLO el orden de la tabla ({campo, direccion}); el servidor lo fusiona en `parametros` sin pisar lo demas.
+export const saveKpiWidgetOrdenTabla = (id, orden) => request(`/kpi_dashboard_widget/${id}/orden_tabla`, { method: "PUT", body: orden });
 export const deleteKpiDashboardWidget = (id) => request(`/kpi_dashboard_widget/${id}`, { method: "DELETE" });
 
 export const getAllLevel = (params = {}) => request("/level/", { params });

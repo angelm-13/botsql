@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import PropTypes from "prop-types";
 import {
@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import {
   RENGLONES_VISIBLES, agruparPorResponsable, anchoDeBarra, buscarEnFilas, escalaDeBarras,
-  OPCIONES_DE_ORDEN, claveDeEtiquetaDeOrden, claveDeOrden, etiquetaDeDias, filtrarPorResponsable, filtrarPorUsuario,
+  OPCIONES_DE_ORDEN, normalizarOrdenTabla, claveDeEtiquetaDeOrden, claveDeOrden, etiquetaDeDias, filtrarPorResponsable, filtrarPorUsuario,
   gravedadDeDias, ordenDeClave, ordenarFilas, recortar, recortarGrupos, resumenDePrestamos, responsablesDe, siguienteOrden,
 } from "../../kpi/kpiPrestamos.js";
 import {
@@ -150,9 +150,10 @@ Renglon.defaultProps = { resaltada: false, onFilaClick: null };
  *   una tabla de cuatro columnas; angosto, renglones compactos sin etiquetas repetidas. */
 function ContenidoPrestamos({
   filas, resaltarResponsable, onFilaClick, total, textos, filtroExterno, onQuitarFiltroExterno, enPanel, onVerTodos,
-  servidor,
+  servidor, orden, onOrden,
 }) {
-  const [orden, setOrden] = useState({ campo: "dias_prestado", direccion: "desc" });
+  // El orden NO vive aqui: lo comparten la tarjeta y el panel "Ver todos" (un solo estado, en TablaWidget).
+  const setOrden = onOrden;
   const [responsable, setResponsable] = useState("");
   const [busqueda, setBusqueda] = useState("");
   const [agrupada, setAgrupada] = useState(false);
@@ -218,9 +219,9 @@ function ContenidoPrestamos({
   const visibles = recortar(ordenadas, enPanel, limite);
   const grupos = useMemo(() => {
     if (!agrupada) return [];
-    const agrupados = enServidor ? agruparContiguos(filasServidor, srv.responsables) : agruparPorResponsable(filtradasLocal);
+    const agrupados = enServidor ? agruparContiguos(filasServidor, srv.responsables) : agruparPorResponsable(filtradasLocal, orden);
     return recortarGrupos(agrupados, enPanel, limite);
-  }, [agrupada, enServidor, filasServidor, srv.responsables, filtradasLocal, enPanel, limite]);
+  }, [agrupada, enServidor, filasServidor, srv.responsables, filtradasLocal, enPanel, limite, orden]);
   const hayMasQueElLimite = (enServidor ? srv.total : filtradas.length) > RENGLONES_VISIBLES;
   // Las opciones del desplegable y su "(n)": reales (del servidor) o contadas sobre lo local.
   const opciones = enServidor
@@ -243,7 +244,7 @@ function ContenidoPrestamos({
   }, [enServidor, enPanel, hayMas, cargarMas, srv.items.length]);
 
   function alternarOrden(campo) {
-    setOrden((actual) => siguienteOrden(actual, campo));
+    setOrden(siguienteOrden(orden, campo));
   }
 
   if (enServidor && !srv.resumen) {
@@ -470,6 +471,8 @@ ContenidoPrestamos.propTypes = {
   enPanel: PropTypes.bool,
   onVerTodos: PropTypes.func,
   servidor: PropTypes.shape({ cargar: PropTypes.func.isRequired, onListo: PropTypes.func, sinAsignar: PropTypes.string }),
+  orden: PropTypes.shape({ campo: PropTypes.string, direccion: PropTypes.string }).isRequired,
+  onOrden: PropTypes.func.isRequired,
 };
 ContenidoPrestamos.defaultProps = {
   resaltarResponsable: null, onFilaClick: null, total: 0, filtroExterno: null, onQuitarFiltroExterno: null, enPanel: false, onVerTodos: null,
@@ -535,11 +538,22 @@ PanelDePrestamos.propTypes = {
 
 export default function TablaWidget({
   filas, resaltarResponsable, onFilaClick, total, etiquetas, filtroExterno, onQuitarFiltroExterno, servidor,
+  ordenInicial, onOrdenChange,
 }) {
   const textos = { ...ETIQUETAS_POR_OMISION, ...etiquetas };
   const [panelAbierto, setPanelAbierto] = useState(false);
   const cerrar = useMemo(() => () => setPanelAbierto(false), []);
-  const compartidas = { filas, resaltarResponsable, onFilaClick, total, textos, filtroExterno, onQuitarFiltroExterno, servidor };
+  // Un solo orden para la tarjeta y el panel "Ver todos". Arranca del guardado (`ordenInicial`, que ya viene
+  // validado o cae al de por omision) y cada cambio se avisa hacia arriba para guardarlo.
+  const [orden, setOrden] = useState(() => normalizarOrdenTabla(ordenInicial));
+  const cambiarOrden = useCallback((siguiente) => {
+    setOrden(siguiente);
+    if (onOrdenChange) onOrdenChange(siguiente);
+  }, [onOrdenChange]);
+  const compartidas = {
+    filas, resaltarResponsable, onFilaClick, total, textos, filtroExterno, onQuitarFiltroExterno, servidor,
+    orden, onOrden: cambiarOrden,
+  };
   return (
     <>
       <ContenidoPrestamos {...compartidas} onVerTodos={() => setPanelAbierto(true)} />
@@ -570,9 +584,12 @@ TablaWidget.propTypes = {
   onQuitarFiltroExterno: PropTypes.func,
   // Modo servidor: { cargar(parametros) -> Promise, onListo(), sinAsignar }. Sin el, modo local sobre `filas`.
   servidor: PropTypes.shape({ cargar: PropTypes.func.isRequired, onListo: PropTypes.func, sinAsignar: PropTypes.string }),
+  // Orden guardado del widget ({campo, direccion}) y aviso de cada cambio, para persistirlo.
+  ordenInicial: PropTypes.shape({ campo: PropTypes.string, direccion: PropTypes.string }),
+  onOrdenChange: PropTypes.func,
 };
 
 TablaWidget.defaultProps = {
   resaltarResponsable: null, onFilaClick: null, total: 0, etiquetas: null, filtroExterno: null, onQuitarFiltroExterno: null,
-  servidor: null,
+  servidor: null, ordenInicial: null, onOrdenChange: null,
 };

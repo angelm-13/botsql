@@ -19,7 +19,7 @@ import useRellenoDelGrid from "../components/kpi-widgets/useRellenoDelGrid";
 import useReordenarTarjetas, { sinColision } from "../components/kpi-widgets/useReordenarTarjetas";
 import {
   getAllKpiDashboard, createKpiDashboard, updateKpiDashboard, deleteKpiDashboard,
-  getAllKpiDashboardWidget, createKpiDashboardWidget, updateKpiDashboardWidget, deleteKpiDashboardWidget,
+  getAllKpiDashboardWidget, createKpiDashboardWidget, updateKpiDashboardWidget, deleteKpiDashboardWidget, saveKpiWidgetOrdenTabla,
   getAllKpiDefinition, queryKpiSnapshot, queryKpiVivo, getAllUser, getAllDepartment, getAllProduct,
 } from "../api";
 import "../styles/kpi-widgets.css";
@@ -1027,6 +1027,33 @@ function SortableKpiWidgetCard({ reducirMovimiento, esHueco, ...props }) {
 // Una sola lista vacia, para que el modo servidor de la tabla no reciba un arreglo nuevo en cada render.
 const SIN_RENGLONES = [];
 
+// Cuanto se espera, despues del ultimo clic en una flecha de orden, antes de guardarlo: invertir el sentido dos
+// veces seguidas es una sola peticion.
+const RETRASO_GUARDAR_ORDEN_MS = 600;
+
+// Guarda el orden elegido en la tabla (`parametros.orden_tabla` del widget). Sin permiso de actualizar el
+// widget (403), con la red caida o con cualquier otro error, el orden se queda solo en la pantalla y no se
+// avisa: elegir como ver la tabla nunca debe sentirse como un fallo. Lo pendiente se manda al desmontar.
+function useGuardarOrdenTabla(idWidget) {
+  const pendiente = useRef(null);
+  const temporizador = useRef(null);
+  const enviar = useCallback(() => {
+    clearTimeout(temporizador.current);
+    temporizador.current = null;
+    const orden = pendiente.current;
+    if (!orden || !idWidget) return;
+    pendiente.current = null;
+    saveKpiWidgetOrdenTabla(idWidget, orden).catch(() => {});
+  }, [idWidget]);
+  const guardar = useCallback((orden) => {
+    pendiente.current = orden;
+    clearTimeout(temporizador.current);
+    temporizador.current = setTimeout(enviar, RETRASO_GUARDAR_ORDEN_MS);
+  }, [enviar]);
+  useEffect(() => () => enviar(), [enviar]);
+  return guardar;
+}
+
 function useDatosDeWidget({ widget, kpiCatalog, onReady }) {
   const [snapshots, setSnapshots] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1068,6 +1095,7 @@ function useDatosDeWidget({ widget, kpiCatalog, onReady }) {
     [idVivo],
   );
   const onListoVivo = useCallback(() => onReady?.(idWidget), [onReady, idWidget]);
+  const guardarOrdenTabla = useGuardarOrdenTabla(esTablaVivo ? idWidget : null);
   useEffect(() => {
     if (esTablaVivo) { setLoading(false); setError(""); }
   }, [esTablaVivo]);
@@ -1129,7 +1157,7 @@ function useDatosDeWidget({ widget, kpiCatalog, onReady }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idsKey, esTabla, esTablaVivo, fechaInicio, fechaFin, fechaInicioB, fechaFinB, empleadosKey, departamentosKey, agruparPor]);
 
-  return { snapshots, loading, error, vivoItems: SIN_RENGLONES, vivoTotal: 0, cargarVivo, onListoVivo, kpiInfos, idsUsados, esTablaVivo };
+  return { snapshots, loading, error, vivoItems: SIN_RENGLONES, vivoTotal: 0, cargarVivo, onListoVivo, guardarOrdenTabla, kpiInfos, idsUsados, esTablaVivo };
 }
 
 // El mismo valor, pero solo despues de `ms` sin cambios -- para no pedirle datos
@@ -1157,7 +1185,7 @@ const SKELETON_POR_TIPO = { numero: "numero", dona: "dona", tabla: "tabla" };
 export function CuerpoDeWidget({
   widget, datos, userLabel, productLabel, formatNumber, t, tx, animar, filtroResponsable, onFiltrarResponsable, onQuitarFiltroResponsable,
 }) {
-  const { snapshots, loading, error, vivoItems, vivoTotal, cargarVivo, onListoVivo, kpiInfos, esTablaVivo } = datos;
+  const { snapshots, loading, error, vivoItems, vivoTotal, cargarVivo, onListoVivo, guardarOrdenTabla, kpiInfos, esTablaVivo } = datos;
   const ERRORES_CON_TEXTO_PROPIO = ["missing_range", "missing_kpi", "errors.rango_excede_limite", "tabla_no_soportada"];
   return (
     <>
@@ -1178,7 +1206,7 @@ export function CuerpoDeWidget({
         <p className="kpi-error-inline">{t(error, error)}</p>
       )}
       {!loading && !error && esTablaVivo && (
-        <KpiTablaVivo items={vivoItems} total={vivoTotal} cargar={cargarVivo} onListo={onListoVivo} tx={tx} filtroExterno={filtroResponsable} onQuitarFiltroExterno={onQuitarFiltroResponsable} />
+        <KpiTablaVivo items={vivoItems} total={vivoTotal} cargar={cargarVivo} onListo={onListoVivo} tx={tx} filtroExterno={filtroResponsable} onQuitarFiltroExterno={onQuitarFiltroResponsable} ordenInicial={widget.parametros?.orden_tabla} onOrdenChange={guardarOrdenTabla} />
       )}
       {!loading && !error && !esTablaVivo && snapshots.length > 0 && (
         <KpiChartBody
@@ -1375,12 +1403,14 @@ function KpiNumero({ widget, snapshot, kpiInfo, formatNumber, tx, animar }) {
 // eso no pasa por `KpiChartBody` (que solo sabe leer snapshots).
 // `cargar` (modo servidor): la tabla pide sus renglones por paginas, ya filtrados, buscados y ordenados por el
 // backend. Sin `cargar` (las pruebas de render, que le pasan renglones ya cargados) pinta `items` en modo local.
-function KpiTablaVivo({ items, total, cargar, onListo, tx, filtroExterno, onQuitarFiltroExterno }) {
+function KpiTablaVivo({ items, total, cargar, onListo, tx, filtroExterno, onQuitarFiltroExterno, ordenInicial, onOrdenChange }) {
   const Componente = TIPO_GRAFICA_COMPONENTE.tabla;
   const sinAsignar = tx("unknown_user", "Sin asignar");
   return (
     <Componente
       servidor={cargar ? { cargar, onListo, sinAsignar } : null}
+      ordenInicial={ordenInicial}
+      onOrdenChange={onOrdenChange}
       filas={cargar ? SIN_RENGLONES : filasTablaPrestamo(items, sinAsignar)}
       total={total}
       filtroExterno={filtroExterno}
