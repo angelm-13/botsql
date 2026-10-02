@@ -9,6 +9,12 @@ import {
   etiquetaDeDias, filtrarPorResponsable, filtrarPorUsuario, gravedadDeDias, ordenarFilas, recortar,
   recortarGrupos, resumenDePrestamos, responsablesDe,
 } from "../../kpi/kpiPrestamos.js";
+import {
+  TAMANO_PAGINA_PANEL, TAMANO_PAGINA_TARJETA, agruparContiguos, opcionesDeResponsables, resumenDeServidor,
+  totalDeResponsables,
+} from "../../kpi/kpiPrestamosServidor.js";
+import { filasTablaPrestamo } from "../../kpi/kpiAdaptadores.js";
+import useTablaServidor from "./useTablaServidor.js";
 
 const CAMPOS = ["articulo", "responsable", "fecha_prestamo", "dias_prestado"];
 
@@ -50,6 +56,10 @@ const ETIQUETAS_POR_OMISION = {
   responsables: "responsables",
   mas_antiguo: "el más antiguo",
   mas_renglones: "{n} más",
+  cargando: "Cargando…",
+  cargando_mas: "Cargando más…",
+  mostrar_mas: "Mostrar más",
+  error_carga: "No se pudo cargar la lista.",
   nivel_ok: "Reciente",
   nivel_atencion: "Requiere atención",
   nivel_critico: "Atrasado",
@@ -131,40 +141,110 @@ Renglon.defaultProps = { resaltada: false, onFilaClick: null };
  *   una tabla de cuatro columnas; angosto, renglones compactos sin etiquetas repetidas. */
 function ContenidoPrestamos({
   filas, resaltarResponsable, onFilaClick, total, textos, filtroExterno, onQuitarFiltroExterno, enPanel, onVerTodos,
+  servidor,
 }) {
   const [orden, setOrden] = useState({ campo: "dias_prestado", direccion: "desc" });
   const [responsable, setResponsable] = useState("");
   const [busqueda, setBusqueda] = useState("");
   const [agrupada, setAgrupada] = useState(false);
 
+  // MODO SERVIDOR (`servidor` presente): el filtro por responsable, la busqueda, el orden y los conteos los
+  // hace el backend sobre TODOS los renglones prestados y la tabla pide el resto por paginas (ver
+  // kpi/kpiPrestamosServidor.js). Sin `servidor` (la vista previa con datos demo) corre el modo LOCAL de
+  // siempre sobre `filas`, sin ningun cambio: sus variables se llaman `...Local`.
+  const enServidor = Boolean(servidor);
+  const srv = useTablaServidor({
+    habilitado: enServidor,
+    cargar: servidor?.cargar,
+    onListo: enPanel ? undefined : servidor?.onListo,
+    tamano: enPanel ? TAMANO_PAGINA_PANEL : TAMANO_PAGINA_TARJETA,
+    idUser: responsable,
+    ambito: filtroExterno?.id,
+    busqueda,
+    orden,
+    agrupada,
+  });
+  const opcionesServidor = useMemo(() => opcionesDeResponsables(srv.responsables), [srv.responsables]);
+  const totalServidor = useMemo(() => totalDeResponsables(srv.responsables), [srv.responsables]);
+  const filasServidor = useMemo(
+    () => filasTablaPrestamo(srv.items, servidor?.sinAsignar),
+    [srv.items, servidor?.sinAsignar],
+  );
+  // Si el responsable filtrado ya no tiene renglones (se devolvio todo su material), se quita el filtro en
+  // vez de dejar una tabla vacia.
+  useEffect(() => {
+    if (enServidor && responsable && !srv.cargando && !opcionesServidor.some((opcion) => opcion.valor === responsable)) {
+      setResponsable("");
+    }
+  }, [enServidor, responsable, srv.cargando, opcionesServidor]);
+
   // El filtro que llega de otra tarjeta (clic en una barra) recorta ANTES de todo lo demas.
   const base = useMemo(() => (filtroExterno ? filtrarPorUsuario(filas, filtroExterno.id) : filas), [filas, filtroExterno]);
   const responsables = useMemo(() => responsablesDe(base), [base]);
   // Si el responsable filtrado ya no esta en los datos (se devolvio todo su material),
   // el filtro se ignora en vez de dejar una tabla vacia.
-  const filtro = responsables.includes(responsable) ? responsable : "";
-  const filtradas = useMemo(
-    () => buscarEnFilas(filtrarPorResponsable(base, filtro), busqueda),
-    [base, filtro, busqueda],
+  const filtroLocal = responsables.includes(responsable) ? responsable : "";
+  const filtro = enServidor ? (opcionesServidor.some((opcion) => opcion.valor === responsable) ? responsable : "") : filtroLocal;
+  const filtradasLocal = useMemo(
+    () => buscarEnFilas(filtrarPorResponsable(base, filtroLocal), busqueda),
+    [base, filtroLocal, busqueda],
   );
-  const ordenadas = useMemo(() => ordenarFilas(filtradas, orden.campo, orden.direccion), [filtradas, orden]);
-  const hayRecorte = Boolean(filtro || filtroExterno || busqueda);
-  const resumen = useMemo(() => resumenDePrestamos(filtradas, hayRecorte ? 0 : total), [filtradas, hayRecorte, total]);
-  const escala = useMemo(() => escalaDeBarras(filtradas), [filtradas]);
+  const ordenadasLocal = useMemo(() => ordenarFilas(filtradasLocal, orden.campo, orden.direccion), [filtradasLocal, orden]);
+  const hayRecorte = Boolean(filtroLocal || filtroExterno || busqueda);
+  const resumenLocal = useMemo(() => resumenDePrestamos(filtradasLocal, hayRecorte ? 0 : total), [filtradasLocal, hayRecorte, total]);
+  const escalaLocal = useMemo(() => escalaDeBarras(filtradasLocal), [filtradasLocal]);
+
+  // Lo que se pinta: lo del servidor (ya filtrado, buscado y ordenado alla) o lo local.
+  const filtradas = enServidor ? filasServidor : filtradasLocal;
+  const ordenadas = enServidor ? filasServidor : ordenadasLocal;
+  const resumen = useMemo(
+    () => (enServidor ? resumenDeServidor(srv.resumen) : resumenLocal),
+    [enServidor, srv.resumen, resumenLocal],
+  );
+  const escala = enServidor
+    ? Math.max(escalaDeBarras(filasServidor), srv.resumen?.mas_antiguo?.dias || 0)
+    : escalaLocal;
 
   const limite = enPanel ? Infinity : RENGLONES_VISIBLES;
   const visibles = recortar(ordenadas, enPanel, limite);
-  const grupos = useMemo(
-    () => (agrupada ? recortarGrupos(agruparPorResponsable(filtradas), enPanel, limite) : []),
-    [agrupada, filtradas, enPanel, limite],
-  );
-  const hayMasQueElLimite = filtradas.length > RENGLONES_VISIBLES;
+  const grupos = useMemo(() => {
+    if (!agrupada) return [];
+    const agrupados = enServidor ? agruparContiguos(filasServidor, srv.responsables) : agruparPorResponsable(filtradasLocal);
+    return recortarGrupos(agrupados, enPanel, limite);
+  }, [agrupada, enServidor, filasServidor, srv.responsables, filtradasLocal, enPanel, limite]);
+  const hayMasQueElLimite = (enServidor ? srv.total : filtradas.length) > RENGLONES_VISIBLES;
+  // Las opciones del desplegable y su "(n)": reales (del servidor) o contadas sobre lo local.
+  const opciones = enServidor
+    ? opcionesServidor
+    : responsables.map((nombre) => ({ valor: nombre, nombre, renglones: filtrarPorResponsable(base, nombre).length }));
+  const totalDeOpciones = enServidor ? totalServidor : base.length;
+
+  // Panel "Ver todos" en modo servidor: al llegar al final de lo cargado se pide la pagina siguiente.
+  const centinela = useRef(null);
+  const { hayMas, cargarMas } = srv;
+  useEffect(() => {
+    if (!enServidor || !enPanel || !hayMas || typeof IntersectionObserver === "undefined") return undefined;
+    const nodo = centinela.current;
+    if (!nodo) return undefined;
+    const observador = new IntersectionObserver((entradas) => {
+      if (entradas.some((entrada) => entrada.isIntersecting)) cargarMas();
+    });
+    observador.observe(nodo);
+    return () => observador.disconnect();
+  }, [enServidor, enPanel, hayMas, cargarMas, srv.items.length]);
 
   function alternarOrden(campo) {
     setOrden((actual) => ({ campo, direccion: actual.campo === campo && actual.direccion === "desc" ? "asc" : "desc" }));
   }
 
-  if (filas.length === 0) {
+  if (enServidor && !srv.resumen) {
+    return srv.error
+      ? <p className="kpi-error-inline" role="alert">{textos.error_carga}</p>
+      : <p className="kpi-prestamos-cargando" role="status">{textos.cargando}</p>;
+  }
+  // Sin ningun renglon prestado: con el filtro de otra tarjeta puesto no se sabe si es de TODOS o solo de esa
+  // persona, y se dice lo segundo (mas abajo, `sinPrestamosDelFiltrado`).
+  if (enServidor ? (totalServidor === 0 && !filtroExterno) : filas.length === 0) {
     return (
       <div className="kpi-prestamos-vacio">
         <PackageCheck size={30} aria-hidden="true" />
@@ -176,7 +256,7 @@ function ContenidoPrestamos({
 
   // El filtro de otra tarjeta dejo la lista en blanco porque esa persona no debe nada (no porque
   // la busqueda o el responsable no coincidan): se dice asi, con un solo boton para quitarlo.
-  const sinPrestamosDelFiltrado = Boolean(filtroExterno) && base.length === 0;
+  const sinPrestamosDelFiltrado = Boolean(filtroExterno) && (enServidor ? totalServidor : base.length) === 0;
   const plural = (n, uno, varios) => `${n} ${n === 1 ? textos[uno] : textos[varios]}`;
   const renglonesTexto = resumen.renglones > resumen.cargados
     ? `${resumen.cargados} ${textos.de} ${resumen.renglones} ${textos.renglones}`
@@ -209,7 +289,10 @@ function ContenidoPrestamos({
   );
 
   return (
-    <div className={`kpi-preview-tabla-wrap kpi-prestamos ${enPanel ? "en-panel" : ""}`.trim()}>
+    <div
+      className={`kpi-preview-tabla-wrap kpi-prestamos ${enPanel ? "en-panel" : ""}`.trim()}
+      aria-busy={enServidor && (srv.cargando || srv.cargandoMas) ? "true" : undefined}
+    >
       {filtroExterno && (
         <div className="kpi-prestamos-filtro-externo">
           <span>{textos.filtrando}: <strong>{filtroExterno.nombre}</strong></span>
@@ -246,9 +329,9 @@ function ContenidoPrestamos({
         <label className="kpi-prestamos-control">
           <span>{textos.filtro_responsable}</span>
           <select value={filtro} onChange={(evento) => setResponsable(evento.target.value)}>
-            <option value="">{textos.todos_los_responsables} ({base.length})</option>
-            {responsables.map((nombre) => (
-              <option key={nombre} value={nombre}>{nombre} ({filtrarPorResponsable(base, nombre).length})</option>
+            <option value="">{textos.todos_los_responsables} ({totalDeOpciones})</option>
+            {opciones.map((opcion) => (
+              <option key={opcion.valor} value={opcion.valor}>{opcion.nombre} ({opcion.renglones})</option>
             ))}
           </select>
         </label>
@@ -279,7 +362,7 @@ function ContenidoPrestamos({
         </div>
       </div>
 
-      {filtradas.length === 0 && (
+      {filtradas.length === 0 && !(enServidor && srv.cargando) && (
         <div className="kpi-prestamos-vacio">
           {sinPrestamosDelFiltrado ? (
             <>
@@ -288,7 +371,7 @@ function ContenidoPrestamos({
             </>
           ) : (
             <>
-              <p>{busqueda ? textos.sin_coincidencias : llenar(textos.sin_resultados, { responsable })}</p>
+              <p>{busqueda ? textos.sin_coincidencias : llenar(textos.sin_resultados, { responsable: opciones.find((opcion) => opcion.valor === responsable)?.nombre || responsable })}</p>
               <button
                 type="button"
                 className="button ghost"
@@ -321,15 +404,31 @@ function ContenidoPrestamos({
               </table>
             </section>
           ))}
+          {/* Fin de lo cargado, DENTRO de la lista que se desplaza: cuando el usuario llega aqui se pide la pagina
+              siguiente. Fuera de la lista (junto al boton) estaria siempre a la vista y cargaria todo de golpe. */}
+          {enServidor && enPanel && hayMas && <div ref={centinela} className="kpi-prestamos-centinela" aria-hidden="true" />}
         </div>
       )}
 
       {!enPanel && hayMasQueElLimite && (
         <button type="button" className="kpi-prestamos-ver-todos" aria-haspopup="dialog" onClick={onVerTodos}>
-          {llenar(textos.ver_todos, { n: filtradas.length })}
+          {llenar(textos.ver_todos, { n: enServidor ? srv.total : filtradas.length })}
         </button>
       )}
-      {total > filas.length && (
+      {enServidor && enPanel && (
+        <>
+          {srv.error && <p className="kpi-error-inline" role="alert">{textos.error_carga}</p>}
+          {hayMas && (
+            <>
+              <p className="kpi-preview-tabla-total">{textos.mostrando} {srv.items.length} {textos.de} {srv.total}</p>
+              <button type="button" className="button ghost kpi-prestamos-mostrar-mas" onClick={cargarMas} disabled={srv.cargandoMas}>
+                {srv.cargandoMas ? textos.cargando_mas : textos.mostrar_mas}
+              </button>
+            </>
+          )}
+        </>
+      )}
+      {!enServidor && total > filas.length && (
         <p className="kpi-preview-tabla-total">{textos.mostrando} {filas.length} {textos.de} {total}</p>
       )}
     </div>
@@ -355,9 +454,11 @@ ContenidoPrestamos.propTypes = {
   onQuitarFiltroExterno: PropTypes.func,
   enPanel: PropTypes.bool,
   onVerTodos: PropTypes.func,
+  servidor: PropTypes.shape({ cargar: PropTypes.func.isRequired, onListo: PropTypes.func, sinAsignar: PropTypes.string }),
 };
 ContenidoPrestamos.defaultProps = {
   resaltarResponsable: null, onFilaClick: null, total: 0, filtroExterno: null, onQuitarFiltroExterno: null, enPanel: false, onVerTodos: null,
+  servidor: null,
 };
 
 const ENFOCABLES = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
@@ -418,12 +519,12 @@ PanelDePrestamos.propTypes = {
 };
 
 export default function TablaWidget({
-  filas, resaltarResponsable, onFilaClick, total, etiquetas, filtroExterno, onQuitarFiltroExterno,
+  filas, resaltarResponsable, onFilaClick, total, etiquetas, filtroExterno, onQuitarFiltroExterno, servidor,
 }) {
   const textos = { ...ETIQUETAS_POR_OMISION, ...etiquetas };
   const [panelAbierto, setPanelAbierto] = useState(false);
   const cerrar = useMemo(() => () => setPanelAbierto(false), []);
-  const compartidas = { filas, resaltarResponsable, onFilaClick, total, textos, filtroExterno, onQuitarFiltroExterno };
+  const compartidas = { filas, resaltarResponsable, onFilaClick, total, textos, filtroExterno, onQuitarFiltroExterno, servidor };
   return (
     <>
       <ContenidoPrestamos {...compartidas} onVerTodos={() => setPanelAbierto(true)} />
@@ -452,8 +553,11 @@ TablaWidget.propTypes = {
   // Filtro que llega de otra tarjeta (clic en una barra de "abiertas por responsable").
   filtroExterno: PropTypes.shape({ id: PropTypes.oneOfType([PropTypes.number, PropTypes.string]), nombre: PropTypes.string }),
   onQuitarFiltroExterno: PropTypes.func,
+  // Modo servidor: { cargar(parametros) -> Promise, onListo(), sinAsignar }. Sin el, modo local sobre `filas`.
+  servidor: PropTypes.shape({ cargar: PropTypes.func.isRequired, onListo: PropTypes.func, sinAsignar: PropTypes.string }),
 };
 
 TablaWidget.defaultProps = {
   resaltarResponsable: null, onFilaClick: null, total: 0, etiquetas: null, filtroExterno: null, onQuitarFiltroExterno: null,
+  servidor: null,
 };

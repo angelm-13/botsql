@@ -1024,15 +1024,13 @@ function SortableKpiWidgetCard({ reducirMovimiento, esHueco, ...props }) {
 // reporte PDF (ver esperarWidgetsListos en Dashboard()) necesita saber cuando
 // puede capturarla, sin importar si el resultado fue un dato real o un mensaje
 // de error ya asentado en pantalla.
+// Una sola lista vacia, para que el modo servidor de la tabla no reciba un arreglo nuevo en cada render.
+const SIN_RENGLONES = [];
+
 function useDatosDeWidget({ widget, kpiCatalog, onReady }) {
   const [snapshots, setSnapshots] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  // KPI "vivo" (ver material_prestado_actual): su propio estado, aparte del
-  // de kpi_snapshot -- ni la forma de los datos (una lista paginada, no
-  // series por entidad/dia) ni el endpoint (GET .../vivo) son los mismos.
-  const [vivoItems, setVivoItems] = useState([]);
-  const [vivoTotal, setVivoTotal] = useState(0);
 
   const idsKpiDefinition = Array.isArray(widget.ids_kpi_definition) ? widget.ids_kpi_definition : [];
   // "numero" y "dona" solo grafican un KPI (ver reglas en KpiWidgetPanel): si
@@ -1061,24 +1059,18 @@ function useDatosDeWidget({ widget, kpiCatalog, onReady }) {
   const esTablaVivo = esTabla && kpiInfos.length === 1 && kpiInfos[0]?.modo === "vivo";
   const idWidget = widget.id_kpi_dashboard_widget;
 
+  // KPI "vivo" (ver material_prestado_actual): su tabla pide sus propios datos al servidor, por paginas y con
+  // el filtro, la busqueda y el orden aplicados alla (ver TablaWidget, modo servidor). Aqui solo se le da la
+  // llamada y el aviso de "ya cargue" para el reporte PDF.
+  const idVivo = esTablaVivo ? idsUsados[0] : null;
+  const cargarVivo = useMemo(
+    () => (idVivo ? (parametros) => queryKpiVivo(idVivo, parametros) : null),
+    [idVivo],
+  );
+  const onListoVivo = useCallback(() => onReady?.(idWidget), [onReady, idWidget]);
   useEffect(() => {
-    let cancelado = false;
-    async function cargarVivo() {
-      setLoading(true);
-      setError("");
-      try {
-        const resultado = await queryKpiVivo(idsUsados[0], { limit: 50, offset: 0 });
-        if (!cancelado) { setVivoItems(resultado.items || []); setVivoTotal(resultado.total || 0); }
-      } catch (err) {
-        if (!cancelado) { setError(err.message || "errors.request_failed"); setVivoItems([]); }
-      } finally {
-        if (!cancelado) { setLoading(false); onReady?.(idWidget); }
-      }
-    }
-    if (esTablaVivo) cargarVivo();
-    return () => { cancelado = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [esTablaVivo, idsKey, onReady, idWidget]);
+    if (esTablaVivo) { setLoading(false); setError(""); }
+  }, [esTablaVivo]);
 
   useEffect(() => {
     let cancelado = false;
@@ -1137,7 +1129,7 @@ function useDatosDeWidget({ widget, kpiCatalog, onReady }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idsKey, esTabla, esTablaVivo, fechaInicio, fechaFin, fechaInicioB, fechaFinB, empleadosKey, departamentosKey, agruparPor]);
 
-  return { snapshots, loading, error, vivoItems, vivoTotal, kpiInfos, idsUsados, esTablaVivo };
+  return { snapshots, loading, error, vivoItems: SIN_RENGLONES, vivoTotal: 0, cargarVivo, onListoVivo, kpiInfos, idsUsados, esTablaVivo };
 }
 
 // El mismo valor, pero solo despues de `ms` sin cambios -- para no pedirle datos
@@ -1165,7 +1157,7 @@ const SKELETON_POR_TIPO = { numero: "numero", dona: "dona", tabla: "tabla" };
 export function CuerpoDeWidget({
   widget, datos, userLabel, productLabel, formatNumber, t, tx, animar, filtroResponsable, onFiltrarResponsable, onQuitarFiltroResponsable,
 }) {
-  const { snapshots, loading, error, vivoItems, vivoTotal, kpiInfos, esTablaVivo } = datos;
+  const { snapshots, loading, error, vivoItems, vivoTotal, cargarVivo, onListoVivo, kpiInfos, esTablaVivo } = datos;
   const ERRORES_CON_TEXTO_PROPIO = ["missing_range", "missing_kpi", "errors.rango_excede_limite", "tabla_no_soportada"];
   return (
     <>
@@ -1186,7 +1178,7 @@ export function CuerpoDeWidget({
         <p className="kpi-error-inline">{t(error, error)}</p>
       )}
       {!loading && !error && esTablaVivo && (
-        <KpiTablaVivo items={vivoItems} total={vivoTotal} tx={tx} filtroExterno={filtroResponsable} onQuitarFiltroExterno={onQuitarFiltroResponsable} />
+        <KpiTablaVivo items={vivoItems} total={vivoTotal} cargar={cargarVivo} onListo={onListoVivo} tx={tx} filtroExterno={filtroResponsable} onQuitarFiltroExterno={onQuitarFiltroResponsable} />
       )}
       {!loading && !error && !esTablaVivo && snapshots.length > 0 && (
         <KpiChartBody
@@ -1381,11 +1373,15 @@ function KpiNumero({ widget, snapshot, kpiInfo, formatNumber, tx, animar }) {
 // El unico KPI "vivo" que hoy existe (material_prestado_actual): una lista
 // paginada de renglones de vale sin devolver, no una serie por fecha -- por
 // eso no pasa por `KpiChartBody` (que solo sabe leer snapshots).
-function KpiTablaVivo({ items, total, tx, filtroExterno, onQuitarFiltroExterno }) {
+// `cargar` (modo servidor): la tabla pide sus renglones por paginas, ya filtrados, buscados y ordenados por el
+// backend. Sin `cargar` (las pruebas de render, que le pasan renglones ya cargados) pinta `items` en modo local.
+function KpiTablaVivo({ items, total, cargar, onListo, tx, filtroExterno, onQuitarFiltroExterno }) {
   const Componente = TIPO_GRAFICA_COMPONENTE.tabla;
+  const sinAsignar = tx("unknown_user", "Sin asignar");
   return (
     <Componente
-      filas={filasTablaPrestamo(items, tx("unknown_user", "Sin asignar"))}
+      servidor={cargar ? { cargar, onListo, sinAsignar } : null}
+      filas={cargar ? SIN_RENGLONES : filasTablaPrestamo(items, sinAsignar)}
       total={total}
       filtroExterno={filtroExterno}
       onQuitarFiltroExterno={onQuitarFiltroExterno}
@@ -1420,6 +1416,10 @@ function KpiTablaVivo({ items, total, tx, filtroExterno, onQuitarFiltroExterno }
         de: tx("loan_of", "de"),
         renglon: tx("loan_row", "renglón"),
         renglones: tx("loan_rows", "renglones"),
+        cargando: tx("loan_loading", "Cargando…"),
+        cargando_mas: tx("loan_loading_more", "Cargando más…"),
+        mostrar_mas: tx("loan_show_more", "Mostrar más"),
+        error_carga: tx("loan_load_error", "No se pudo cargar la lista."),
         responsable_uno: tx("loan_holder_one", "responsable"),
         responsables: tx("loan_holders", "responsables"),
         mas_antiguo: tx("loan_oldest", "el más antiguo"),
