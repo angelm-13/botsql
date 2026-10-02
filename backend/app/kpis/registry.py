@@ -1427,27 +1427,34 @@ def _de_prestamos(columnas):
 
 def _orden_de_prestamos(articulo, orden, direccion, agrupar):
     id_renglon = NmIncidentProduct.id_nm_incident_product
-    if agrupar:
-        # Cada responsable contiguo (el del prestamo mas viejo primero), y dentro de cada uno, lo mas
-        # viejo primero: asi, al paginar, un grupo no se parte entre dos paginas sin continuar.
-        return [
-            func.min(Incident.incident_date).over(partition_by=Incident.id_user).asc(),
-            User.full_name.asc().nulls_last(), Incident.id_user.asc(),
-            Incident.incident_date.asc(), id_renglon.asc(),
-        ]
     ascendente = direccion == "asc"
+    nombre_responsable = func.lower(func.coalesce(User.full_name, ""))
     if orden == "dias_prestado":
         # Mas dias = fecha mas antigua: el orden por dias es el orden de la fecha, invertido.
         principal = Incident.incident_date.desc() if ascendente else Incident.incident_date.asc()
     elif orden == "fecha_prestamo":
         principal = Incident.incident_date.asc() if ascendente else Incident.incident_date.desc()
     elif orden == "responsable":
-        columna = func.lower(func.coalesce(User.full_name, ""))
-        principal = columna.asc() if ascendente else columna.desc()
+        principal = nombre_responsable.asc() if ascendente else nombre_responsable.desc()
     else:  # articulo
         columna = func.lower(articulo)
         principal = columna.asc() if ascendente else columna.desc()
-    return [principal, Incident.incident_date.asc(), func.lower(articulo).asc(), id_renglon.asc()]
+    desempate = [Incident.incident_date.asc(), func.lower(articulo).asc(), id_renglon.asc()]
+    if agrupar:
+        # Cada responsable contiguo, para que al paginar un grupo no se parta entre dos paginas sin continuar.
+        # La direccion elegida ordena los RENGLONES dentro de cada grupo; los grupos van con el prestamo mas
+        # viejo primero, salvo que se ordene por responsable: entonces los grupos van A-Z / Z-A.
+        if orden == "responsable":
+            grupos = [principal, Incident.id_user.asc()]
+            dentro = desempate
+        else:
+            grupos = [
+                func.min(Incident.incident_date).over(partition_by=Incident.id_user).asc(),
+                nombre_responsable.asc(), Incident.id_user.asc(),
+            ]
+            dentro = [principal, *desempate]
+        return [*grupos, *dentro]
+    return [principal, *desempate]
 
 
 def material_prestado_actual_query(session, *, limit, offset, actor_project=None, id_user=None,
