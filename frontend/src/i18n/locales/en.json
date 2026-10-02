@@ -1441,7 +1441,8 @@
     "assets": "Asset tracking",
     "pos_till": "Till",
     "inventory_trace": "Locate",
-    "warehouse_voucher": "Warehouse vouchers"
+    "warehouse_voucher": "Warehouse vouchers",
+    "purchase_planning": "To buy"
   },
   "placeholders": {
     "bank": {
@@ -2657,6 +2658,8 @@
     "permission_denied": "You do not have access to this. If the document belongs to another project, it cannot be used from yours.",
     "voucher_lines_required": "The voucher needs at least one line: with none it does not say what went out.",
     "voucher_quantity_exceeds_stock": "You are asking for more than is in that location. Lower the quantity to what is available, or pick another location that has stock.",
+    "need_duplicate_material": "That material is already on the project list. Edit the quantity of the existing line.",
+    "need_not_open": "That line was already removed from the list and cannot be edited.",
     "voucher_asset_required": "That product is tracked piece by piece: say which one is going out. Handing back “a screwdriver” does not settle the loan of the one taken.",
     "voucher_asset_not_applicable": "That product is counted by quantity, not by pieces: “one piece of cement” does not exist.",
     "voucher_asset_product_mismatch": "That piece belongs to another product: the voucher would name something that never went out.",
@@ -4328,6 +4331,36 @@
     "department": {
       "subtitle": "The company areas each user belongs to."
     }
+  },
+  "material_needs": {
+    "title": "Material needed",
+    "help": "What this project needs. You can ask for more than there is: that way whoever buys knows what is missing.",
+    "empty": "No material has been requested yet.",
+    "quantity": "Needs",
+    "covered": "Enough in stock",
+    "stock": "In stock",
+    "missing": "missing",
+    "needed_by": "By",
+    "remove": "Remove from the list",
+    "material": "Material",
+    "needed_by_label": "Needed by",
+    "note": "Note",
+    "add": "Add"
+  },
+  "purchase": {
+    "eyebrow": "Purchasing",
+    "title": "To buy",
+    "subtitle": "What the projects ask for against what is in the warehouse. A material several projects ask for is a single purchase.",
+    "show_covered": "Also show what the warehouse already covers",
+    "nothing_missing": "Nothing is missing to buy.",
+    "nothing_asked": "No project has asked for material.",
+    "col_material": "Material",
+    "col_required": "Asked",
+    "col_stock": "In stock",
+    "col_missing": "Missing",
+    "col_needed_by": "Needed by",
+    "col_projects": "Projects",
+    "covered": "covered"
   },
   "stock_entry": {
     "title": "Register stock in",

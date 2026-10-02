@@ -1,0 +1,49 @@
+/* Lo que un proyecto necesita de material, y la vista de lo que falta comprar. */
+
+.material-necesario { margin-top: 18px; }
+.material-necesario h4 { margin: 0 0 4px; }
+.material-necesario-ayuda { margin: 0 0 10px; font-size: 12.5px; }
+
+.necesidades-lista { list-style: none; margin: 0 0 12px; padding: 0; }
+.necesidades-lista li {
+  display: grid; align-items: center; gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
+  padding: 9px 10px; margin-bottom: 5px;
+  border: 1px solid #e8eeeb; border-radius: 9px; background: #fff; font-size: 13px;
+}
+.necesidad-material { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.necesidad-material small { font-size: 11.5px; }
+.necesidad-cantidad { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: #64748b; }
+.necesidad-cantidad input { width: 66px; }
+.necesidad-estado {
+  padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; white-space: nowrap;
+}
+.necesidad-estado.cubierta { background: #dcfce7; color: #14532d; }
+.necesidad-estado.falta { background: #fef3c7; color: #78350f; }
+.necesidad-fecha { font-size: 11.5px; white-space: nowrap; }
+.necesidad-quitar { justify-self: end; }
+
+.necesidad-formulario {
+  display: grid; gap: 10px; align-items: end;
+  grid-template-columns: minmax(0, 2fr) 90px 150px;
+  padding: 12px; border: 1px dashed #cbd5e1; border-radius: 10px; background: #f8faf9;
+}
+.necesidad-campo-nota { grid-column: 1 / -1; }
+.necesidad-formulario .button { justify-self: start; }
+
+/* Por comprar */
+.por-comprar-filtro {
+  display: inline-flex; align-items: center; gap: 7px; margin: 4px 0 12px;
+  font-size: 13px; cursor: pointer;
+}
+.por-comprar-falta { color: #b45309; font-weight: 800; }
+.por-comprar-cubierto { color: #15803d; font-weight: 600; }
+.por-comprar-proyectos { list-style: none; margin: 0; padding: 0; }
+.por-comprar-proyectos li {
+  display: flex; justify-content: space-between; gap: 14px; font-size: 12.5px; padding: 1px 0;
+}
+
+@media (max-width: 760px) {
+  .necesidades-lista li { grid-template-columns: 1fr auto; }
+  .necesidad-formulario { grid-template-columns: 1fr; }
+}

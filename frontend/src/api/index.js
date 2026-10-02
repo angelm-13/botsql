@@ -648,6 +648,13 @@ export const getAllProyect = (params = {}) => request("/proyect/", { params });
 // para que el selector de "Obra" en un vale funcione con roles que no tienen
 // el modulo operaciones (Almacenista).
 export const getProyectOptions = (params = {}) => request("/proyect/options", { params });
+// La lista de necesidades de material de un proyecto, y lo que falta comprar.
+export const getProyectMaterialNeeds = (idProyect, params = {}) => request(`/proyect/${idProyect}/material-needs`, { params });
+export const createProyectMaterialNeed = (idProyect, payload) => request(`/proyect/${idProyect}/material-needs`, { method: "POST", body: payload });
+export const updateMaterialNeed = (idNeed, payload) => request(`/material-needs/${idNeed}`, { method: "PUT", body: payload });
+export const cancelMaterialNeed = (idNeed) => request(`/material-needs/${idNeed}`, { method: "DELETE" });
+export const getMaterialNeedOptions = () => request("/material-needs/materials");
+export const getMaterialNeedsToBuy = (params = {}) => request("/material-needs/to-buy", { params });
 export const getProyect = (id) => request(`/proyect/${id}`);
 export const createProyect = (payload) => request("/proyect/", { method: "POST", body: payload });
 export const updateProyect = (id, payload) => request(`/proyect/${id}`, { method: "PUT", body: payload });

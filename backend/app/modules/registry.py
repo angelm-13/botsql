@@ -136,6 +136,10 @@ MODULOS = (
             "proyect", "task", "task_note", "task_type", "incident",
             "incident_detail", "incident_type", "nm_incident_product",
             "template", "nm_template_task",
+            # Lo que un proyecto necesita de material. La captura el supervisor
+            # desde su proyecto, asi que va en este modulo: Supervisor ya tiene
+            # CAPTURA aqui y no hace falta concederle nada aparte.
+            "proyect_material_need",
         ),
     ),
     Modulo(
@@ -310,6 +314,14 @@ CAPACIDADES = (
     # capacidad por omision el jefe de almacen recibiria un 403 en la puerta.
     Capacidad("warehouse_voucher_authorize", "Autorizar vales de material",
               "inventario", bits=CAPTURA, menu="hidden"),
+    # Ver lo que hace falta comprar: lo que los proyectos necesitan contra lo que
+    # hay en el almacen, junto, de todos los proyectos. Es de LECTURA -quien
+    # compra no necesita escribir en los proyectos de otros- y va como capacidad
+    # porque su pantalla no es el CRUD de una tabla: cruza necesidades con
+    # existencias. En `inventario` y no en `operaciones` porque Almacenista, que
+    # tambien la necesita, tiene aquel modulo y no este.
+    Capacidad("purchase_planning", "Por comprar", "inventario",
+              bits=CONSULTA, menu="sidebar"),
     # La bitacora diaria del taller. Solo Jefe de taller la sube -- pidio
     # negocio explicito (2026-09-28): el supervisor levanta el proyecto y pide
     # material, pero quien reporta el avance del dia en el piso es Jefe de
@@ -464,7 +476,8 @@ ROLES = (
         "operaciones": EDITAR, "facturacion": CAPTURA, "crm": CAPTURA,
         "inventario": CONSULTA, "rh": CONSULTA, "logistica": CONSULTA,
         "configuracion": CONSULTA,
-    }, ["project_authorization", "incident_supervision", "pos_admin", "pos_terminal"]),
+    }, ["project_authorization", "incident_supervision", "pos_admin", "pos_terminal",
+        "purchase_planning"]),
 
     # Ve los proyectos autorizados y mueve su estatus en el taller.
     Rol(4, "Jefe de taller", {
@@ -480,7 +493,21 @@ ROLES = (
     Rol(5, "Almacenista", {
         "inventario": TOTAL, "logistica": CAPTURA, "configuracion": CONSULTA,
     }, ["inventory_adjustment", "warehouse_voucher",
-        "warehouse_voucher_authorize", "warehouse_voucher_confirm"]),
+        "warehouse_voucher_authorize", "warehouse_voucher_confirm",
+        "purchase_planning"]),
+
+    # Quien compra. Ve los proyectos y el almacen para saber que hay que comprar,
+    # y no escribe en ninguno de los dos: todo en CONSULTA. Lo que hace es
+    # convertir las necesidades en ordenes de compra, que llegan en la siguiente
+    # entrega -- por ahora solo lee.
+    #
+    # Adser ya tenia un perfil "Compras" vacio (0 permisos, 0 usuarios), traido
+    # del sistema anterior. El sembrado resuelve por NOMBRE, asi que esto se lo
+    # llena en lugar de crear uno aparte; en una instalacion que no lo tiene, lo
+    # crea vacio de usuarios.
+    Rol(8, "Compras", {
+        "operaciones": CONSULTA, "inventario": CONSULTA, "configuracion": CONSULTA,
+    }, ["purchase_planning"]),
 
     # Cuatro roles retirados, y por que
     # --------------------------------
