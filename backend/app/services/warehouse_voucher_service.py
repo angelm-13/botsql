@@ -2467,6 +2467,38 @@ def documento_del_vale(id_incident, user_data: dict) -> dict:
                 .where(User.id_user.in_(list(ids_entregado)))
             ).all())
 
+        # Lo que el papel tiene que decir de la ENTREGA y del RECIBIDO, tal como
+        # lo dice la pantalla: quien recoge, a quien se la dio almacen de verdad
+        # y si el responsable ya confirmo. Solo los vales con seguimiento
+        # (`tracks_delivery`) traen esto; los anteriores se imprimen como siempre.
+        seguimiento = bool(vale.get("tracks_delivery"))
+        recoge = _quien_recoge(db, vale, datos["lines"], entregados) if seguimiento else None
+        entrega = None
+        if seguimiento and vale.get("delivered_date"):
+            recibio = vale.get("delivered_to_name") or _persona(
+                db, vale.get("delivered_to_user"))
+            entrega = {
+                "fecha_larga": _fecha_larga(vale.get("delivered_date")),
+                "entrego": _persona(db, vale.get("delivered_by")),
+                "recibio": recibio,
+                "recibio_externo": bool(vale.get("delivered_to_name")),
+                "nota": vale.get("delivery_note"),
+            }
+        recibido = None
+        if seguimiento and vale.get("received_confirmed_date"):
+            recibido = {
+                "fecha_larga": _fecha_larga(vale.get("received_confirmed_date")),
+                "por": _persona(db, vale.get("received_confirmed_by")),
+                "ok": vale.get("receipt_ok") is not False,
+                "nota": vale.get("receipt_note"),
+            }
+        # "Complementario de": el folio del vale al que este agrega herramienta.
+        complementario_de = None
+        if vale.get("id_incident_parent"):
+            padre = db.get(Incident, int(vale["id_incident_parent"]))
+            if padre is not None:
+                complementario_de = padre.external_folio or str(padre.id_incident)
+
     salidas, entradas = [], []
     for renglon in datos["lines"]:
         producto = renglon.get("product") or {}
@@ -2525,7 +2557,31 @@ def documento_del_vale(id_incident, user_data: dict) -> dict:
         # Un vale en borrador no ha sacado nada del almacen todavia. El papel lo
         # dice en grande para que nadie lo confunda con uno autorizado.
         "es_borrador": vale.get("incident_status") == BORRADOR,
+        "con_seguimiento": seguimiento,
+        "recoge": recoge,
+        "entrega": entrega,
+        "recibido": recibido,
+        "complementario_de": complementario_de,
     }
+
+
+def _quien_recoge(db, vale: dict, renglones: list, entregados: dict) -> dict:
+    """Quien se designo para recoger el material, para el papel.
+
+    Un externo (`pickup_name`) va por su nombre; un usuario, por el de su
+    renglon; y si no se designo a nadie, recoge el propio responsable. Si
+    almacen entrego a OTRA persona, esa es quien firma (ver `entrega`), pero
+    aqui sigue constando a quien se designo al pedirlo.
+    """
+    if vale.get("pickup_name"):
+        return {"nombre": vale["pickup_name"], "externo": True, "es_responsable": False}
+    for renglon in renglones:
+        id_usuario = renglon.get("id_user_delivered_to")
+        if id_usuario and str(renglon.get("direction") or "") == SALIDA:
+            nombre = entregados.get(int(id_usuario)) or _persona(db, id_usuario)
+            return {"nombre": nombre, "externo": False, "es_responsable": False}
+    return {"nombre": _persona(db, vale.get("id_user")), "externo": False,
+            "es_responsable": True}
 
 
 def _solo_fecha(valor):

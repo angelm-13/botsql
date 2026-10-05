@@ -2191,3 +2191,133 @@ class TestLasNotificacionesLlevanAUnDestino(BaseEntrega):
                    side_effect=RuntimeError("boom")):
             notificar_entrega_registrada(
                 vale["voucher"]["id_incident"], actor_id=OPERADOR)
+
+
+# --- el PDF dice quien recoge, a quien se entrego y quien recibio -------------
+
+class TestElPdfDiceLaEntrega(BaseEntrega):
+    """El papel firmado tiene que decir lo mismo que la pantalla: quien recoge,
+    a quien se la dio almacen de verdad y si el responsable ya confirmo."""
+
+    def _ficha(self, vale):
+        return documento_del_vale(vale["voucher"]["id_incident"], ACTOR)
+
+    def _html(self, ficha):
+        """La plantilla REAL renderizada con la ficha: lo que se imprime."""
+        import os
+
+        from jinja2 import Environment, FileSystemLoader
+
+        carpeta = os.path.join(os.environ.get("DOCUMENTS_REPORTS_ROOT", "/documents-reports"),
+                               "templates")
+        if not os.path.isdir(carpeta):
+            self.skipTest("la plantilla no esta montada en este entorno")
+        plantilla = Environment(loader=FileSystemLoader(carpeta)).get_template(
+            "warehouse_voucher.html")
+        return plantilla.render(record=ficha)
+
+    def test_it_says_who_picks_it_up(self):
+        vale = self._vale([self._linea_cantidad(10)], id_user_pickup=OPERADOR)
+
+        ficha = self._ficha(vale)
+
+        self.assertEqual("Operador 2", ficha["recoge"]["nombre"])
+        self.assertFalse(ficha["recoge"]["externo"])
+        self.assertIn("Operador 2", self._html(ficha))
+
+    def test_it_says_when_an_external_picks_it_up(self):
+        vale = self._vale([self._linea_cantidad(10)], pickup_name="Juan Perez")
+
+        ficha = self._ficha(vale)
+
+        self.assertEqual({"nombre": "Juan Perez", "externo": True,
+                          "es_responsable": False}, ficha["recoge"])
+        html = self._html(ficha)
+        self.assertIn("Juan Perez", html)
+        self.assertIn("persona externa", html)
+
+    def test_without_a_designated_pickup_the_holder_picks_it_up(self):
+        vale = self._vale([self._linea_cantidad(10)])
+
+        ficha = self._ficha(vale)
+
+        self.assertTrue(ficha["recoge"]["es_responsable"])
+        self.assertIn("el responsable", self._html(ficha))
+
+    def test_it_says_to_whom_the_warehouse_really_delivered(self):
+        vale = self._vale([self._linea_cantidad(10)], id_user_pickup=OPERADOR)
+        self._otro_usuario(3)
+        entregar_vale(vale["voucher"]["id_incident"],
+                      {"id_user": 3, "note": "Fue otro por el"}, ACTOR)
+
+        ficha = self._ficha(vale)
+
+        self.assertEqual("Operador 3", ficha["entrega"]["recibio"])
+        self.assertEqual("Fue otro por el", ficha["entrega"]["nota"])
+        html = self._html(ficha)
+        self.assertIn("Fue otro por el", html)
+        # La firma de quien recibe lleva el nombre de quien SI recibio.
+        self.assertIn("Recibe: Operador 3", html)
+
+    def test_the_signature_box_names_an_external_who_receives(self):
+        vale = self._vale([self._linea_cantidad(10)], pickup_name="Juan Perez")
+        entregar_vale(vale["voucher"]["id_incident"], {}, ACTOR)
+
+        html = self._html(self._ficha(vale))
+
+        self.assertIn("Recibe: Juan Perez (persona externa)", html)
+
+    def test_a_pending_receipt_is_said_so(self):
+        vale = self._vale([self._linea_cantidad(10)])
+        entregar_vale(vale["voucher"]["id_incident"], {}, ACTOR)
+
+        html = self._html(self._ficha(vale))
+
+        self.assertIn("Pendiente de confirmar el recibido", html)
+
+    def test_a_confirmed_receipt_with_observations_is_printed(self):
+        vale = self._vale([self._linea_cantidad(10)])
+        id_vale = vale["voucher"]["id_incident"]
+        entregar_vale(id_vale, {}, ACTOR)
+        confirmar_recibido_del_vale(
+            id_vale, {"ok": False, "note": "Falto la caja de brocas"}, SUPERVISOR)
+
+        ficha = self._ficha(vale)
+
+        self.assertFalse(ficha["recibido"]["ok"])
+        self.assertIn("Recibido con observaciones: Falto la caja de brocas",
+                      self._html(ficha))
+
+    def test_a_voucher_not_yet_delivered_says_so(self):
+        vale = self._vale([self._linea_cantidad(10)])
+
+        html = self._html(self._ficha(vale))
+
+        self.assertIn("Pendiente de entrega", html)
+
+    def test_a_complementary_voucher_names_its_original(self):
+        self._proyecto_en("in_progress")
+        padre = self._vale([self._linea_cantidad(10)], id_proyect=PROYECTO)
+        hijo = self._vale([self._linea_cantidad(5)], id_proyect=PROYECTO,
+                          id_incident_parent=padre["voucher"]["id_incident"])
+
+        ficha = self._ficha(hijo)
+
+        self.assertEqual(str(padre["voucher"]["id_incident"]),
+                         ficha["complementario_de"])
+        self.assertIn("Complementario del vale", self._html(ficha))
+
+    def test_a_voucher_from_before_prints_exactly_as_it_always_did(self):
+        """Sin seguimiento no se agrega nada: ni 'Recoge' ni 'Pendiente de'."""
+        vale = self._vale([self._linea_cantidad(10)])
+        with transaction_context() as db:
+            db.get(Incident, vale["voucher"]["id_incident"]).tracks_delivery = False
+
+        ficha = self._ficha(vale)
+        html = self._html(ficha)
+
+        self.assertFalse(ficha["con_seguimiento"])
+        self.assertIsNone(ficha["recoge"])
+        self.assertNotIn("Pendiente de entrega", html)
+        self.assertNotIn("Recoge:", html)
+        self.assertNotIn("Recibe:", html)
