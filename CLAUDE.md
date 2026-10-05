@@ -59,14 +59,16 @@ responsable del vale. Verificado de punta a punta en navegador real
 `POST /vouchers/lines/2793/confirm-custody` 200 (por el supervisor) →
 "Recuperado de Roberto Cisneros" visible en el vale.
 
-**Hallazgo lateral, sin tocar**: 3 archivos (`MaterialPage.jsx`,
-`ProductPage.jsx`, `ServicePage.jsx`) tienen en el working tree local un
-cambio sin commitear (el selector de marca pide `per_page: 1000` con
-orden, en vez de 100/500) de origen desconocido para esta sesión — no
-se escribió aquí. Se dejó fuera del commit a propósito, igual que
-`ProyectoExpediente.jsx` (WIP ajeno de sesiones anteriores, sigue en el
-stash). Si alguien reconoce ese cambio como propio, falta commitearlo
-aparte.
+**Corrección a la nota anterior** (de un borrador de esta misma entrada):
+los 3 archivos con el fix del selector de marca (`MaterialPage.jsx`,
+`ProductPage.jsx`, `ServicePage.jsx`) que en un momento parecieron
+"de origen desconocido" en el working tree ya estaban commiteados y
+pusheados a `origin/initAngm` como `3df49d9` ("fix(marcas): el selector
+de marca en Material/Producto/Servicio ya trae el catalogo completo")
+antes de que esta sesión terminara de revisarlos — probablemente de un
+tick autónomo anterior de esta misma sesión, resumido fuera del
+contexto visible. Nada quedó sin commitear; `git push` confirmó
+"Everything up-to-date".
 
 ## Bitácora 2026-10-05 — el prevale puede quedar a nombre de otro operador
 
