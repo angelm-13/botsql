@@ -74,6 +74,14 @@
   padding: 9px 11px; font: inherit;
   border: 1px solid #cbd5e1; border-radius: 8px; background: #fff;
 }
+/* El responsable fijo de quien solo puede solicitar: se ve como el valor de
+   un campo -mismo padding y borde que un input-, pero sin caja de seleccion,
+   porque no hay nada mas que elegir. */
+.vale-responsable-fijo {
+  display: flex; align-items: center; gap: 6px;
+  padding: 9px 11px; border: 1px solid #e8eeeb; border-radius: 8px;
+  background: #f8faf9;
+}
 
 .vale-buscador {
   display: flex; align-items: center; gap: 9px;
