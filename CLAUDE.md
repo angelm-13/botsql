@@ -1,10 +1,99 @@
 # Contexto de sesión — tyakxa_tny (para retomar en otra conversación)
 
-Última actualización: 2026-09-30. Este archivo es el "dónde nos quedamos",
+Última actualización: 2026-10-02. Este archivo es el "dónde nos quedamos",
 aparte de `ARQUITECTURA_TYAKXA_TNY.md` (referencia técnica estable) y de
 `docs/PLAN_ACCION_MEJORA.md` (plan de mejora por auditoría). Cuando una
 sección se resuelve, se puede recortar; mientras tanto se deja completa para
 que una sesión nueva no tenga que releer el historial de chat.
+
+## ESTADO ACTUAL de `initAlan` (verificado 2026-10-02) — leer esto primero
+
+`initAlan` es la rama que importa. Las bitácoras de abajo, hasta la de
+"Plantilla del PDF de vale", están escritas desde `initAngm` (Ángel) y
+conservan su texto original; donde dicen "falta mergear" o "sin desplegar" ya
+no es cierto (ver "Superado"). Verificado con git, no de memoria.
+
+**Estado de la rama.** `origin/initAngm` está contenida por completo en
+`initAlan` (0 commits de Ángel sin traer; `initAlan` lleva 104 por delante).
+Local y `origin/initAlan` iguales tras fast-forward (los últimos commits son
+del bot de CD y de Aurora: orden de la tabla de material prestado).
+
+**Imagen que dicen los overlays del repo** (no se consultó el clúster; antes de
+afirmar qué corre en vivo, `kubectl get deploy -o wide`):
+
+| Overlay | Tag |
+|---|---|
+| tyakxa-dev | `e19f3db` (auto-deploy de `initAlan`) |
+| adser-prod | `c260f22` (séptima promoción manual) |
+| torredigital-prod | `031970b` |
+| vidrioyaluminios-prod | `abf0929` |
+
+adser-prod va unos commits atrás de tyakxa-dev (dashboard de material
+prestado de Aurora, aún sin promover). torredigital-prod y
+vidrioyaluminios-prod llevan semanas sin promoción.
+
+### Pendientes REALES (confirmados abiertos en `initAlan`)
+
+1. **Notificaciones con deep-link** — sin una línea de código
+   (`target_entity`/`destinoDeNotificacion` no existen). Diseño en memoria
+   `project_tyakxa_tny_notificaciones_deeplink_pendiente`. Faltan dos
+   decisiones de Alan: ¿abrir marca como leída? (recomendado: no) y ¿qué otros
+   módulos notifican (vales, tareas, incidencias, citas)? Hoy el único
+   productor es `_notificar_proyecto`, más los avisos de revisión de datos de
+   Adser (`0f8c696`).
+2. **Avisos de revisión de datos a `yesgo` (Adser)** — paso 6 de la promoción,
+   espera el OK de Alan (`docs/despliegues/2026-09-30_avisos_revision_datos_adser.md`).
+3. **KPI `piezas_por_estado`** — construido, NO validado con datos reales ni
+   puesto en perfil/plantilla; no mostrar a Adser hasta conciliar contra
+   tyakxa-dev con `conciliar_piezas_por_estado.sql/.py`
+   (`docs/despliegues/2026-10-01_piezas_por_estado.md`).
+4. **Dashboard de Adser:** falta confirmar `incident_date` como fecha
+   confiable; hasta entonces la plantilla se corre con `--sin-tabla`.
+   (Lo de `creation_date` ya está resuelto, ver "Superado".)
+5. **Conciliación de inventario:** `sembrar_existencia_inicial` no escribe
+   renglón de apertura en el libro y `reconcile_product_stock` lo exige;
+   decisión de diseño pendiente (hallazgo de Aurora).
+6. **Pruebas faltantes de maquila/custodia** — no hay ninguna para
+   `requires_maquila`, `asignar_entrega_de_renglon` ni
+   `confirmar_recepcion_de_renglon`; `validate_project_transition` solo tiene
+   las de antes de la maquila. Escribirlas antes de tocar ese frente.
+7. **Constraint `proyect_event_event_type_check`** sigue repetido en 4
+   migraciones (`20260911180000`, `20260918130000`, `20260921100000`,
+   `20260924190000`); al crecer la lista hay que tocar las CUATRO. Colapsar en
+   una fuente de verdad sigue pendiente.
+8. **Fase 2 de permisos** (filtrado real por Propios / Mis grupos / Todos):
+   sin empezar. `_has_entity_permission` (`utils/auth.py`) sigue booleano
+   (`scope != 0`); `incident_service`, `inventory_service` y
+   `project_management_service` también leen `scope_read != 0`. Los filtros por
+   dueño que existen (proyectos, vales, facturas) son ad hoc, no vienen del
+   alcance.
+9. **`LICENSED_MODULES`:** ningún overlay lo fija (la variable solo se lee
+   opcional desde `app-secrets`). adser-prod: diferido por instrucción de Alan.
+   torredigital-prod: política sin decidir. Rediseño central que propone Tanya
+   sin empezar; no romper `multiemisor_csd`/`licencia_independiente`.
+10. **Otros abiertos de menor peso:** CPU del clúster con reserva >90% (uso
+    real 20-40%); `LICENSED_MODULES`/multiemisor de vidrioyaluminios sin
+    decidir; traducciones pt/de apenas con corrección mínima.
+
+### Superado (no volver a abrir)
+
+- **`initAngm` "falta mergear a `initAlan`"**: ya mergeada completa.
+- **`creation_date` de `incident`/`nm_incident_product` sin default**: migración
+  `20260929110000` (DEFAULT now()) + `fix_adser_creation_date.py` de relleno
+  (`docs/despliegues/2026-09-29_creation_date_de_vales.md`). La decisión de
+  Alan ya se tomó. No verifiqué si el relleno se corrió en adser-prod: revisar
+  `2026-09-25_kpis_adser_permisos.md` §3 antes de afirmarlo.
+- **`sync_fields.sql` roto (tabla `field` vacía)**: `init_db.py` ahora siembra
+  el catálogo desde los modelos (`scripts/sync_field_catalog.py`), idempotente
+  en cada arranque.
+- **`database/seed.sql` falla en volumen limpio**: el demo de restaurante ya
+  corre solo si sus tablas existen.
+- **REP (Fase 3 de facturación)**: ya commiteado (`fb4448c`) y en la rama; el
+  "Falta commitear" del texto de la Fase 3 es viejo.
+- **Maquila, custodia por renglón, tomar/soltar proyecto, Bitácora diaria,
+  PDF del vale idéntico al anterior**: están en `initAlan` y en la imagen de
+  adser-prod (`c260f22` contiene la punta de `initAngm`). torredigital-prod
+  (`031970b`) NO los incluye.
 
 ## Bitácora 2026-09-30 (continuación) — plantilla del PDF de vale igual a la del sistema anterior
 
@@ -192,9 +281,7 @@ real (no solo API), commiteadas y pusheadas.
 
 Todo esto quedó en 2 commits sobre `initAngm`
 (`2013b4c` visibilidad+bitácora, `6c59ab6` vale de Almacenista+Vendedor),
-ya pusheados. Sin desplegar a ningún ambiente real todavía — `initAngm` no
-dispara auto-deploy (solo `initAlan` lo hace, a `tyakxa-dev`); falta
-mergear.
+ya pusheados. (Al 2026-10-02 ya mergeado a `initAlan` y en adser-prod.)
 
 ### Merge de `initAlan` (87 commits) a `initAngm` local — 2026-09-30
 
@@ -288,8 +375,7 @@ Hallazgo lateral: Jefe de taller ya no ve un proyecto sin maquila en
 absoluto (mismo `_scoped_query` de la corrección del 2026-09-29) — nunca
 le toca, ni para tomarlo.
 
-Sin desplegar todavía a ningún ambiente real (mismo estado que el resto
-de `initAngm`: falta mergear a `initAlan`). Sin pruebas automatizadas
+(Al 2026-10-02 ya mergeado a `initAlan` y en adser-prod.) Sin pruebas automatizadas
 nuevas para esta entrega — solo verificación manual en navegador; si se
 retoma este frente, vale la pena escribir los casos de
 `validate_project_transition`/`asignar_entrega_de_renglon`/
@@ -335,8 +421,9 @@ local y NO se pushean hasta que Aurora los revise en el navegador.
   `docs/despliegues/2026-09-29_kpis_dashboard_adser.md`). **No correr la tabla en
   `adser-prod` hasta que Alan confirme que `incident_date` es confiable**
   (consulta de solo lectura); mientras, `--sin-tabla`.
-- **Pendiente**: confirmación de Alan sobre `creation_date` y sobre
-  `incident_date`; correr la plantilla en `adser-prod` (aún no).
+- **Pendiente**: confirmación de Alan sobre `incident_date` (lo de
+  `creation_date` se resolvió, ver ESTADO ACTUAL); correr la plantilla en
+  `adser-prod` (aún no).
 
 ## ESTADO: alcance por acción en permisos + equipos de usuarios — Fase 1 (2026-09-14)
 
@@ -768,7 +855,7 @@ este repo). 3 fases:
   con licencia independiente (ver mecanismo de licencias abajo).
 - **Fase 3 — REP real (complemento de pago)** ✅ **completa: backend +
   frontend, probada con timbrado real de punta a punta desde la UI,
-  2026-09-08.** Falta commitear/subir a `initAlan`. Ver detalle abajo.
+  2026-09-08.** Ya commiteada (`fb4448c`). Ver detalle abajo.
 
 ### Fase 3 — spike en vivo contra Facturama real (2026-09-08)
 
