@@ -161,7 +161,8 @@ class TestElFlujoDeOperacionesSeLeeEnOrden(unittest.TestCase):
         otra lista y elegir el padre en un desplegable para escribir una nota,
         y la bitacora de una tarea no se leia junta en ningun sitio.
         """
-        for entidad in ("task_note", "nm_incident_product", "nm_template_task"):
+        for entidad in ("task_note", "nm_incident_product", "nm_template_task",
+                        "proyect_material_need"):
             with self.subTest(entidad=entidad):
                 self.assertNotIn(
                     entidad, MENU,
@@ -189,7 +190,10 @@ class TestElFlujoDeOperacionesSeLeeEnOrden(unittest.TestCase):
         """O tiene entrada, o esta en la lista de las que se abren desde su padre."""
         # Las que se capturan desde su dueno, con la razon en el propio nombre
         # de la columna que las ata: task_note.id_task, nm_*.id_*.
-        desde_el_padre = {"task_note", "nm_incident_product", "nm_template_task"}
+        # `proyect_material_need.id_proyect` lo ata a su proyecto: la lista de
+        # necesidades se abre desde el detalle del proyecto, no desde el menu.
+        desde_el_padre = {"task_note", "nm_incident_product", "nm_template_task",
+                          "proyect_material_need"}
         operaciones = MODULO_POR_CLAVE["operaciones"]
         huerfanas = sorted(
             entidad for entidad in operaciones.entidades

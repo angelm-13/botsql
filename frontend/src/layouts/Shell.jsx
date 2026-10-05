@@ -76,6 +76,12 @@ const navItems = [
   // se quedaba sin entrada de menu -tenia el permiso en la base, pero la
   // pantalla nunca aparecia para llegar a usarlo.
   { path: "/vouchers", key: "menu.warehouse_voucher", label: "Vales de almacén", entityName: ["warehouse_voucher", "warehouse_prevoucher"] },
+  // Lo que falta comprar. Capacidad de lectura (`purchase_planning`): la etiqueta,
+  // el grupo y el orden los da su fila en el backend.
+  { path: "/por-comprar", key: "menu.purchase_planning", label: "Por comprar", entityName: "purchase_planning" },
+  // De lo que falta a la compra hecha. Entidad `purchase_order`: la etiqueta, el grupo
+  // y el orden los da su fila en el backend (modulo `compras`, que se ve en Inventario).
+  { path: "/ordenes-de-compra", key: "menu.purchase_order", label: "Órdenes de compra", entityName: "purchase_order" },
   { path: "/activity-log", key: "menu.daily_activity_log", label: "Bitácora diaria", entityName: "daily_activity_log", group: "Operaciones", groupIcon: "operations", location: "sidebar", order: 78 },
   { path: "/nm_survey_user", key: "menu.nm_survey_user" },
   { path: "/nm_template_task", key: "menu.nm_template_task" },

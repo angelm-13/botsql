@@ -656,6 +656,40 @@ export const getAllProyect = (params = {}) => request("/proyect/", { params });
 // para que el selector de "Obra" en un vale funcione con roles que no tienen
 // el modulo operaciones (Almacenista).
 export const getProyectOptions = (params = {}) => request("/proyect/options", { params });
+// La lista de necesidades de material de un proyecto, y lo que falta comprar.
+export const getProyectMaterialNeeds = (idProyect, params = {}) => request(`/proyect/${idProyect}/material-needs`, { params });
+export const createProyectMaterialNeed = (idProyect, payload) => request(`/proyect/${idProyect}/material-needs`, { method: "POST", body: payload });
+export const updateMaterialNeed = (idNeed, payload) => request(`/material-needs/${idNeed}`, { method: "PUT", body: payload });
+export const cancelMaterialNeed = (idNeed) => request(`/material-needs/${idNeed}`, { method: "DELETE" });
+export const getMaterialNeedSuggestions = (q) => request("/material-needs/suggestions", { params: { q } });
+export const linkMaterialNeed = (idNeed, idMaterial) => request(`/material-needs/${idNeed}/link`, { method: "POST", body: { id_material: idMaterial } });
+export const confirmMaterialNeedBuy = (idNeed) => request(`/material-needs/${idNeed}/confirm-buy`, { method: "POST" });
+export const returnMaterialNeed = (idNeed, note) => request(`/material-needs/${idNeed}/return`, { method: "POST", body: { note } });
+export const getMaterialNeedsToBuy = (params = {}) => request("/material-needs/to-buy", { params });
+
+// Ordenes de compra: de lo que falta a la compra hecha, con su comprobante.
+export const getPurchaseOrders = (params = {}) => request("/purchase-orders", { params });
+export const getPurchaseOrder = (id) => request(`/purchase-orders/${id}`);
+export const getPurchaseSuppliers = (q) => request("/purchase-orders/suppliers", { params: { q } });
+export const createPurchaseOrder = (payload) => request("/purchase-orders", { method: "POST", body: payload });
+export const updatePurchaseOrder = (id, payload) => request(`/purchase-orders/${id}`, { method: "PUT", body: payload });
+export const submitPurchaseOrder = (id) => request(`/purchase-orders/${id}/submit`, { method: "POST" });
+export const authorizePurchaseOrder = (id, note) => request(`/purchase-orders/${id}/authorize`, { method: "POST", body: { note } });
+export const rejectPurchaseOrder = (id, note) => request(`/purchase-orders/${id}/reject`, { method: "POST", body: { note } });
+export const cancelPurchaseOrder = (id, note) => request(`/purchase-orders/${id}/cancel`, { method: "POST", body: { note } });
+export const buyPurchaseOrder = (id, payload) => request(`/purchase-orders/${id}/purchase`, { method: "POST", body: payload });
+export const uploadPurchaseVoucher = (id, file, campos = {}) => {
+  const formData = new FormData();
+  Object.entries(campos).forEach(([clave, valor]) => {
+    if (valor !== undefined && valor !== null && valor !== "") formData.append(clave, valor);
+  });
+  formData.append("file", file);
+  return request(`/purchase-orders/${id}/vouchers`, { method: "POST", body: formData });
+};
+export const removePurchaseVoucher = (idVoucher, note) => request(`/purchase-vouchers/${idVoucher}/remove`, { method: "POST", body: { note } });
+export const downloadPurchaseVoucher = (idVoucher) => requestBlob(`/purchase-vouchers/${idVoucher}/content`);
+export const getPurchasePolicy = () => request("/purchase-policy");
+export const updatePurchasePolicy = (payload) => request("/purchase-policy", { method: "PUT", body: payload });
 export const getProyect = (id) => request(`/proyect/${id}`);
 export const createProyect = (payload) => request("/proyect/", { method: "POST", body: payload });
 export const updateProyect = (id, payload) => request(`/proyect/${id}`, { method: "PUT", body: payload });

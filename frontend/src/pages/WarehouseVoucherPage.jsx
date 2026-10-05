@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { idAAbrir } from "../notifications/destino";
 import PropTypes from "prop-types";
 import VisorDeFoto from "../components/VisorDeFoto";
@@ -225,7 +225,7 @@ export default function WarehouseVoucherPage() {
 
   useEffect(() => { cargar(); }, [cargar]);
 
-  const abrirBorrador = () => setBorrador({
+  const abrirBorrador = (extra = {}) => setBorrador({
     id_incident_type: tipos[0]?.id_incident_type || "",
     // Quien solo puede solicitar es SIEMPRE el responsable de lo que pide --
     // mismo criterio que ya rige en Proyectos ("el responsable es quien crea
@@ -250,7 +250,30 @@ export default function WarehouseVoucherPage() {
     due_date: "",
     note: "",
     lines: [],
+    // Lo que trae quien llega desde "Material necesario" con "Pedir en almacen":
+    // el proyecto, lo que busca y cuanto necesita.
+    ...extra,
   });
+
+  // "Pedir en almacen" desde la lista de necesidades de un proyecto: abre el
+  // prevale con el proyecto y la busqueda ya puestos, para que solo falte elegir la
+  // pieza. Se consume una vez: el estado de la navegacion se limpia para que
+  // recargar la pagina no vuelva a abrirlo.
+  const ubicacion = useLocation();
+  const navegar = useNavigate();
+  const pendienteDeAbrir = useRef(ubicacion.state?.prevale || null);
+  useEffect(() => {
+    const p = pendienteDeAbrir.current;
+    if (!p || cargando || !tipos.length) return;
+    pendienteDeAbrir.current = null;
+    abrirBorrador({
+      id_proyect: p.id_proyect ? String(p.id_proyect) : "",
+      buscar_inicial: p.buscar || "",
+      cantidad_sugerida: Number(p.cantidad) || 1,
+    });
+    navegar(ubicacion.pathname, { replace: true, state: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cargando, tipos]);
 
   const listar = useCallback(async () => {
     setError("");
@@ -489,7 +512,7 @@ export default function WarehouseVoucherPage() {
         <RefreshCw size={16} />
         {cargando ? t("common.loading", "Cargando…") : t("common.refresh", "Actualizar")}
         </button>
-        <button className="button button-primary" onClick={abrirBorrador}
+        <button className="button button-primary" onClick={() => abrirBorrador()}
         disabled={cargando || !tipos.length}>
         <Plus size={16} />
         {soloPuedeSolicitar
@@ -1315,7 +1338,7 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
                     proyectos, onGuardar, onCancelar, onAmpliar,
                     puedeAbrirValeDirecto, soloPuedeSolicitar, nombreDelActor,
                     actorIdUser, t }) {
-  const [busqueda, setBusqueda] = useState("");
+  const [busqueda, setBusqueda] = useState(borrador.buscar_inicial || "");
   const [candidatos, setCandidatos] = useState([]);
   const [buscando, setBuscando] = useState(false);
   // Los vales del proyecto elegido, para ofrecer "Complementario de…".
@@ -1366,7 +1389,11 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
         descripcion: producto.descripcion || "",
         id_inventory_asset: pieza?.id_inventory_asset || null,
         asset_tag: pieza?.asset_tag || null,
-        quantity: serializado ? 1 : 1,
+        // Lo que se pidio desde la lista de necesidades, sin pasar de lo que hay en
+        // el sitio de donde sale: el prevale no puede pedir mas que la existencia.
+        quantity: serializado ? 1 : Math.max(1, Math.min(
+          Number(borrador.cantidad_sugerida) || 1,
+          Number(producto.locations?.[0]?.quantity) || 1)),
         serializado,
         id_location_from: pieza?.id_location
           || producto.locations?.[0]?.id_location || "",
@@ -1743,6 +1770,9 @@ Borrador.propTypes = {
     id_user_pickup: PropTypes.any,
     pickup_name: PropTypes.string,
     id_incident_parent: PropTypes.any,
+    // Lo que trae "Pedir en almacen" desde la lista de necesidades.
+    buscar_inicial: PropTypes.string,
+    cantidad_sugerida: PropTypes.number,
     id_proyect: PropTypes.any,
     due_date: PropTypes.string,
     note: PropTypes.string,
