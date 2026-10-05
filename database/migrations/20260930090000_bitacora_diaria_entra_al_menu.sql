@@ -24,6 +24,17 @@
 -- despues de aplicarse una vez la fila ya tiene grupo y etiqueta (el Gestor los
 -- conserva al guardar), asi que no vuelve a coincidir y lo que el administrador
 -- decida perdura -- el Gestor manda.
+--
+-- Corregido 2026-10-05, por la migracion
+-- `20260816000000_el_gestor_manda_sobre_las_migraciones.sql` (fecha de archivo
+-- anterior a esta, asi que corre primero): esa migracion congela TODO
+-- `entity_permission` (pone `ajustado_por_gestor`) la primera vez que corre en
+-- una base ya en uso -- torredigital-prod y adser-prod, que todavia no tienen
+-- este UPDATE aplicado. Sin fijar tambien `ajustado_por_gestor` aqui, el
+-- trigger `trg_gestor_manda` descartaria este UPDATE en esos dos ambientes (la
+-- fila ya frozen, este UPDATE no toca esa columna) y la bitacora de taller se
+-- quedaria oculta ahi para siempre, en silencio, sin error. En tyakxa-dev no
+-- cambia nada: la fila ya tiene el menu correcto desde antes.
 BEGIN;
 
 UPDATE entity_permission
@@ -31,7 +42,8 @@ UPDATE entity_permission
        menu_group = 'Operaciones',
        menu_group_icon = 'operations',
        menu_label = 'Bitacora diaria de taller',
-       menu_order = 390
+       menu_order = 390,
+       ajustado_por_gestor = now()
  WHERE entity_name = 'daily_activity_log'
    AND menu_location = 'hidden'
    AND COALESCE(menu_group, '') = ''
