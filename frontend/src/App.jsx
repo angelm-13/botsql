@@ -53,6 +53,7 @@ import PermissionPage from "./pages/PermissionPage.jsx";
 import ProductPage from "./pages/ProductPage.jsx";
 import WarehouseVoucherPage from "./pages/WarehouseVoucherPage.jsx";
 import PorComprarPage from "./pages/PorComprarPage.jsx";
+import OrdenesDeCompraPage from "./pages/OrdenesDeCompraPage.jsx";
 import ActivityLogPage from "./pages/ActivityLogPage.jsx";
 import ProductFamilyPage from "./pages/ProductFamilyPage.jsx";
 import ProductSaleConfigPage from "./pages/ProductSaleConfigPage.jsx";
@@ -287,6 +288,9 @@ export default function App() {
           <Route path="/vouchers" element={<RoleAccessRoute entityName={VOUCHER_ENTITY_NAMES}><WarehouseVoucherPage /></RoleAccessRoute>} />
           {/* Lo que falta comprar: la guarda la capacidad `purchase_planning`. */}
           <Route path="/por-comprar" element={<RoleAccessRoute entityName="purchase_planning"><PorComprarPage /></RoleAccessRoute>} />
+          {/* Las ordenes de compra: la guarda la entidad `purchase_order`; autorizar y
+              comprar lo reservado a gerencia lo exige ademas el servidor. */}
+          <Route path="/ordenes-de-compra" element={<RoleAccessRoute entityName="purchase_order"><OrdenesDeCompraPage /></RoleAccessRoute>} />
           <Route path="/activity-log" element={<RoleAccessRoute entityName="daily_activity_log"><ActivityLogPage /></RoleAccessRoute>} />
           <Route path="/product_sale_config" element={<RoleAccessRoute entityName="product_sale_config"><ProductSaleConfigPage /></RoleAccessRoute>} />
           <Route path="/proyect" element={<RoleAccessRoute entityName="proyect"><ProjectManagementPage /></RoleAccessRoute>} />

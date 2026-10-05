@@ -6,6 +6,7 @@ import {
   cancelMaterialNeed, createProyectMaterialNeed, getMaterialNeedSuggestions,
   getMyPermissions, getProyectMaterialNeeds, updateMaterialNeed,
 } from "../api";
+import { estadoDeOrden } from "../utils/ordenDeCompra";
 import { CANTIDAD_MAXIMA, UNIDADES, descripcionSospechosa } from "../utils/descripcionDeNecesidad";
 import { useI18n } from "../i18n";
 import "../styles/material-necesario.css";
@@ -222,6 +223,13 @@ export default function MaterialNecesario({ idProyect, estatus }) {
   });
 
   function estadoDe(r) {
+    // Ya va en una orden de compra: lo que importa es en que paso esta la orden.
+    if (r.order) {
+      return {
+        clase: "en-orden",
+        texto: `${r.order.folio} · ${estadoDeOrden(r.order.order_status).etiqueta}`,
+      };
+    }
     if (r.linked) {
       const falta = Math.max(0, r.quantity - r.in_stock);
       return falta === 0

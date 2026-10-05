@@ -39,7 +39,7 @@ from sqlalchemy import func, or_, select
 
 from app.models import (
     EntityPermission, InventoryStock, Material, Product, Proyect,
-    ProyectMaterialNeed, Unit,
+    ProyectMaterialNeed, PurchaseOrder, PurchaseOrderLine, Unit,
 )
 from app.models.session import transaction_context
 from app.services.inventory_service import has_capability
@@ -51,6 +51,9 @@ from app.utils.errors import AppError
 PROYECTOS_QUE_YA_NO_COMPRAN = ("denied", "completed", "delivered")
 
 PURCHASE_CAPABILITY = "purchase_planning"
+# Una orden cancelada suelta lo que sostenia; todo lo demas -incluida una rechazada,
+# que quien la armo puede corregir y reenviar- lo sigue sosteniendo.
+ORDER_STATES_THAT_RELEASE_NEEDS = ("cancelled",)
 NOTE_MAX = 300
 DESCRIPTION_MAX = 200
 UNIT_MAX = 40
@@ -416,6 +419,41 @@ def _rechazar_duplicada(otra, **meta):
         "id_proyect_material_need": otra.id_proyect_material_need, **meta})
 
 
+def needs_on_orders(db, ids_necesidad, *, excepto_orden: int | None = None) -> dict:
+    """Que necesidades estan en una orden de compra viva: id -> (id_orden, folio, estado).
+
+    Una necesidad esta en UNA orden a la vez: por eso la pregunta tiene una sola
+    respuesta, y por eso quien la pide al capturar una orden nueva se entera de cual
+    la tiene.
+    """
+    ids = {int(i) for i in ids_necesidad if i}
+    if not ids:
+        return {}
+    consulta = (
+        select(PurchaseOrderLine.id_proyect_material_need,
+               PurchaseOrder.id_purchase_order, PurchaseOrder.folio,
+               PurchaseOrder.order_status)
+        .join(PurchaseOrder,
+              PurchaseOrder.id_purchase_order == PurchaseOrderLine.id_purchase_order)
+        .where(
+            PurchaseOrderLine.id_proyect_material_need.in_(ids),
+            PurchaseOrderLine.deletion_date.is_(None),
+            PurchaseOrder.deletion_date.is_(None),
+            PurchaseOrder.order_status.notin_(ORDER_STATES_THAT_RELEASE_NEEDS),
+        )
+    )
+    if excepto_orden is not None:
+        consulta = consulta.where(PurchaseOrder.id_purchase_order != excepto_orden)
+    return {int(n): (int(o), f, e) for n, o, f, e in db.execute(consulta).all()}
+
+
+def _orden_de(en_orden: dict, id_need) -> dict | None:
+    orden = en_orden.get(int(id_need))
+    if orden is None:
+        return None
+    return {"id_purchase_order": orden[0], "folio": orden[1], "order_status": orden[2]}
+
+
 def list_needs(id_proyect, user_data: dict, *, incluir_canceladas: bool = False) -> dict:
     """Las necesidades de UN proyecto, solo si el actor puede ver ese proyecto."""
     id_proyecto = _entero_positivo(id_proyect, "id_proyect")
@@ -431,10 +469,15 @@ def list_needs(id_proyect, user_data: dict, *, incluir_canceladas: bool = False)
         ids = {int(n.id_material) for n in necesidades if n.id_material is not None}
         materiales = _datos_de_materiales(db, ids)
         existencias = _existencias(db, ids)
-        return {
-            "id_proyect": id_proyecto,
-            "items": [_renglon(n, materiales, existencias) for n in necesidades],
-        }
+        # Lo que Compras ya esta comprando, para que el supervisor lo vea sin
+        # preguntar: la orden y su estado, no el dinero.
+        en_orden = needs_on_orders(db, [n.id_proyect_material_need for n in necesidades])
+        items = []
+        for n in necesidades:
+            fila = _renglon(n, materiales, existencias)
+            fila["order"] = _orden_de(en_orden, n.id_proyect_material_need)
+            items.append(fila)
+        return {"id_proyect": id_proyecto, "items": items}
 
 
 def create_need(id_proyect, payload: dict, user_data: dict) -> dict:
@@ -525,6 +568,14 @@ def cancel_need(id_need, user_data: dict) -> dict:
         require_project_access(need.id_proyect, user_data)
         if need.need_status == "cancelled":
             return need.serialize()
+        # Lo que Compras ya esta comprando no se cancela desde el proyecto: la orden
+        # se cancela primero (con su motivo) y la necesidad queda libre.
+        orden = needs_on_orders(db, [need.id_proyect_material_need]).get(
+            need.id_proyect_material_need)
+        if orden is not None:
+            raise AppError("errors.need_in_purchase_order", 409, {
+                "id_proyect_material_need": need.id_proyect_material_need,
+                "order_folio": orden[1], "order_status": orden[2]})
         need.need_status = "cancelled"
         db.flush()
         return need.serialize()
@@ -675,6 +726,7 @@ def to_buy(user_data: dict, *, solo_faltantes: bool = True) -> dict:
         ids = {int(n.id_material) for n, *_ in filas if n.id_material is not None}
         materiales = _datos_de_materiales(db, ids)
         existencias = _existencias(db, ids)
+        en_orden = needs_on_orders(db, [n.id_proyect_material_need for n, *_ in filas])
 
         grupos: dict[tuple, dict] = {}
         for need, folio, titulo, estatus in filas:
@@ -710,6 +762,11 @@ def to_buy(user_data: dict, *, solo_faltantes: bool = True) -> dict:
                 "needed_by": need.needed_by.isoformat() if need.needed_by else None,
                 "id_proyect_material_need": need.id_proyect_material_need,
                 "needs_review": por_revisar,
+                # Se puede meter en una orden de compra solo lo que ya se confirmo
+                # que se entiende: vinculado al catalogo o con la compra confirmada.
+                "purchasable": need.review_result in ("buy", "linked"),
+                # La orden que ya lo tiene, si la hay: no se compra dos veces.
+                "order": _orden_de(en_orden, need.id_proyect_material_need),
             })
 
         items = []

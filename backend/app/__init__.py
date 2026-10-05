@@ -99,6 +99,7 @@ from app.routes.inventory_lot import bp_inventory_lot
 from app.routes.material_attribute import bp_material_attribute
 from app.routes.warehouse_voucher import bp_warehouse_voucher
 from app.routes.proyect_material_need import bp_proyect_material_need
+from app.routes.purchase_order import bp_purchase_order
 from app.routes.inventory_status import bp_inventory_status
 from app.routes.product_sale_config import bp_product_sale_config
 from app.routes.public_api_key import bp_public_api_key
@@ -771,6 +772,7 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_material_attribute)
     app.register_blueprint(bp_warehouse_voucher)
     app.register_blueprint(bp_proyect_material_need)
+    app.register_blueprint(bp_purchase_order)
     app.register_blueprint(bp_inventory_status)
     app.register_blueprint(bp_product_sale_config)
     app.register_blueprint(bp_public_api_key)

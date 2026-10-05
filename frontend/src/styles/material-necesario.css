@@ -38,6 +38,8 @@
 }
 .por-comprar-falta { color: #b45309; font-weight: 800; }
 .por-comprar-cubierto { color: #15803d; font-weight: 600; }
+.por-comprar-casilla { margin-right: 7px; vertical-align: middle; }
+.por-comprar-en-orden { margin-left: 8px; font-size: 11px; }
 .por-comprar-proyectos { list-style: none; margin: 0; padding: 0; }
 .por-comprar-proyectos li {
   display: flex; justify-content: space-between; gap: 14px; font-size: 12.5px; padding: 1px 0;
@@ -83,3 +85,5 @@
 .por-comprar-acciones { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 .por-comprar-devolver { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin-top: 8px; }
 .por-comprar-devolver label { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 220px; font-size: 12px; color: #475569; }
+
+.necesidad-estado.en-orden { background: #dbeafe; color: #1e40af; }

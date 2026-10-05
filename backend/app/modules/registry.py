@@ -130,6 +130,23 @@ MODULOS = (
         ),
         almacen=("location", "inventory_stock", "inventory_ledger"),
     ),
+    # La orden de compra y la evidencia de que se compro. Es modulo aparte de
+    # `inventario` porque los bits de un modulo son parejos para todas sus
+    # entidades: Compras necesita CAPTURAR ordenes y solo CONSULTAR el almacen, y
+    # con las dos cosas en un mismo modulo no hay forma de decirlo.
+    #
+    # Se ve en el mismo apartado del menu que "Por comprar" (el de Inventario):
+    # es un solo flujo -de lo que falta a la compra hecha- y partirlo en dos
+    # apartados obligaba a ir y venir.
+    #
+    # Sin las tablas de renglones, comprobantes ni bitacora: no son pantallas ni
+    # se conceden por separado, se editan desde la orden, igual que
+    # `nm_incident_product` desde el vale.
+    Modulo(
+        "compras", "Compras", "purchasing", 250,
+        ("purchase_order", "purchase_policy"),
+        grupo_de_menu="Inventario", icono_de_menu="inventory",
+    ),
     Modulo(
         "operaciones", "Operaciones", "operations", 300,
         (
@@ -323,6 +340,15 @@ CAPACIDADES = (
     # tambien la necesita, tiene aquel modulo y no este.
     Capacidad("purchase_planning", "Por comprar", "inventario",
               bits=EDITAR, menu="sidebar"),
+    # Autorizar una compra antes de hacerla. Aparte de poder CAPTURAR la orden
+    # porque son dos personas: quien pide el dinero no se lo autoriza. Va como
+    # capacidad y no como bit de `purchase_order` por lo mismo que
+    # `warehouse_voucher_authorize` no es un bit de `warehouse_voucher`: con una
+    # sola clave, quien escribe la orden y quien la autoriza tendrian el mismo
+    # permiso. Tambien es quien puede COMPRAR una orden que la politica reserva a
+    # la gerencia (ver `purchase_policy`).
+    Capacidad("purchase_authorize", "Autorizar compras", "compras",
+              bits=EDITAR, menu="hidden"),
     # La bitacora diaria del taller. Solo Jefe de taller la sube -- pidio
     # negocio explicito (2026-09-28): el supervisor levanta el proyecto y pide
     # material, pero quien reporta el avance del dia en el piso es Jefe de
@@ -416,6 +442,7 @@ ROLES = (
         "facturacion": TOTAL, "inventario": TOTAL, "operaciones": TOTAL,
         "logistica": TOTAL, "restaurante": TOTAL, "pos": TOTAL, "crm": TOTAL, "rh": TOTAL,
         "documentos": TOTAL, "laboratorio": TOTAL, "kpis": TOTAL,
+        "compras": TOTAL,
         "configuracion": TOTAL, "seguridad": TOTAL,
     # Todas las capacidades MENOS las dos que sacan material del almacen.
     #
@@ -473,12 +500,17 @@ ROLES = (
     # asi que agregarla a esta lista le daria a Gerente de mas. Se siembra
     # aparte, solo con `scope_read`, en
     # 20260921120000_fusionar_jefe_de_almacen_en_almacenista.sql.
+    #
+    # Autoriza las compras y, por la politica de montos, puede ser quien las haga:
+    # captura en `compras` para poder fijar esos montos y comprar lo que Compras no
+    # puede. La separacion con quien pide la orden la hace el servicio -autorizar la
+    # propia no se puede-, no el permiso.
     Rol(3, "Gerente", {
         "operaciones": EDITAR, "facturacion": CAPTURA, "crm": CAPTURA,
         "inventario": CONSULTA, "rh": CONSULTA, "logistica": CONSULTA,
-        "configuracion": CONSULTA,
+        "compras": CAPTURA, "configuracion": CONSULTA,
     }, ["project_authorization", "incident_supervision", "pos_admin", "pos_terminal",
-        "purchase_planning"]),
+        "purchase_planning", "purchase_authorize"]),
 
     # Ve los proyectos autorizados y mueve su estatus en el taller.
     Rol(4, "Jefe de taller", {
@@ -491,24 +523,32 @@ ROLES = (
     # deberes); se fusiono aqui por decision de negocio -- un solo rol de
     # almacen, sin ese segundo nivel. Ver
     # 20260921120000_fusionar_jefe_de_almacen_en_almacenista.sql.
+    #
+    # Ve las ordenes de compra para saber que va a llegar; no las escribe.
     Rol(5, "Almacenista", {
-        "inventario": TOTAL, "logistica": CAPTURA, "configuracion": CONSULTA,
+        "inventario": TOTAL, "logistica": CAPTURA, "compras": CONSULTA,
+        "configuracion": CONSULTA,
     }, ["inventory_adjustment", "warehouse_voucher",
         "warehouse_voucher_authorize", "warehouse_voucher_confirm",
         "purchase_planning"]),
 
     # Quien compra. Ve los proyectos y el almacen para saber que hay que comprar,
     # y no escribe en ninguno de los dos: todo en CONSULTA. Lo que hace es
-    # convertir las necesidades en ordenes de compra, que llegan en la siguiente
-    # entrega -- por ahora solo lee.
+    # convertir las necesidades en ordenes de compra y, ya autorizadas, comprarlas
+    # y subir el comprobante.
+    #
+    # NO fija los montos de la politica de autorizacion (`purchase_policy` en
+    # CONSULTA): quien compra no decide desde que monto necesita permiso. Y no
+    # autoriza (no tiene `purchase_authorize`).
     #
     # Adser ya tenia un perfil "Compras" vacio (0 permisos, 0 usuarios), traido
     # del sistema anterior. El sembrado resuelve por NOMBRE, asi que esto se lo
     # llena en lugar de crear uno aparte; en una instalacion que no lo tiene, lo
     # crea vacio de usuarios.
     Rol(8, "Compras", {
-        "operaciones": CONSULTA, "inventario": CONSULTA, "configuracion": CONSULTA,
-    }, ["purchase_planning"]),
+        "operaciones": CONSULTA, "inventario": CONSULTA, "compras": CAPTURA,
+        "configuracion": CONSULTA,
+    }, ["purchase_planning"], excepciones={"purchase_policy": CONSULTA}),
 
     # Cuatro roles retirados, y por que
     # --------------------------------
@@ -578,6 +618,10 @@ MENU = {
     "movement": ("Movimientos", 50),
     "material_component": ("Componentes", 60),
     "inventory_status": ("Estado de inventario", 70),
+    # Junto a "Por comprar" (capacidad del mismo grupo): de lo que falta a la
+    # compra hecha. `purchase_policy` no tiene entrada: son tres numeros que se
+    # editan dentro de la propia pantalla de ordenes, no una pantalla aparte.
+    "purchase_order": ("Ordenes de compra", 280),
     # Operaciones. El orden es el del flujo, no el alfabetico: primero el
     # proyecto, luego las tareas en que se parte, y aparte las incidencias con
     # su catalogo de tipos. El menu se leia "Detalle de incidencias,

@@ -1,11 +1,22 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { RefreshCw, ShoppingCart } from "lucide-react";
 import PageHeader from "../components/PageHeader.jsx";
 import {
-  confirmMaterialNeedBuy, getMaterialNeedsToBuy, linkMaterialNeed, returnMaterialNeed,
+  confirmMaterialNeedBuy, getMaterialNeedsToBuy, getMyPermissions, linkMaterialNeed,
+  returnMaterialNeed,
 } from "../api";
+import { estadoDeOrden } from "../utils/ordenDeCompra";
 import { useI18n } from "../i18n";
 import "../styles/material-necesario.css";
+
+function actorGuardado() {
+  try { return JSON.parse(localStorage.getItem("user") || "{}"); } catch { return {}; }
+}
+
+function esPrivilegiado(actor) {
+  return Boolean(actor.is_superuser || actor.is_bootstrap_admin || actor.username === "admin1");
+}
 
 function fechaCorta(iso) {
   if (!iso) return "";
@@ -40,6 +51,11 @@ export default function PorComprarPage() {
   // Que grupo se esta devolviendo y con que motivo.
   const [devolviendo, setDevolviendo] = useState({ key: "", motivo: "" });
   const [error, setError] = useState("");
+  const navegar = useNavigate();
+  const actor = useMemo(actorGuardado, []);
+  const [permisos, setPermisos] = useState([]);
+  // Las necesidades escogidas para armar una orden de compra.
+  const [seleccion, setSeleccion] = useState([]);
 
   const decirError = useCallback((e, porOmision) => setError(
     e?.payload?.error_key
@@ -59,6 +75,22 @@ export default function PorComprarPage() {
   }, [soloFaltantes, decirError]);
 
   useEffect(() => { cargar(); }, [cargar]);
+
+  useEffect(() => {
+    let vivo = true;
+    getMyPermissions()
+      .then((p) => { if (vivo) setPermisos(p?.entity_permissions || []); })
+      .catch(() => { if (vivo) setPermisos([]); });
+    return () => { vivo = false; };
+  }, []);
+
+  const puedeArmarOrden = esPrivilegiado(actor)
+    || Number(permisos.find((p) => p.entity_name === "purchase_order")?.scope_create || 0) !== 0;
+  const alternar = (id) => setSeleccion(
+    (s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  // Lo que ya esta en una orden no se vuelve a escoger; si se acaba de meter en una,
+  // la seleccion vieja se limpia al recargar.
+  const armarOrden = () => navegar("/ordenes-de-compra", { state: { needIds: seleccion } });
 
   // Un grupo puede juntar renglones de varios proyectos: la decision aplica a todos
   // los que siguen sin revisar.
@@ -118,6 +150,12 @@ export default function PorComprarPage() {
             {porRevisar} {t("purchase.to_review", "por revisar")}
           </span>
         )}
+        {puedeArmarOrden && seleccion.length > 0 && (
+          <button type="button" className="button primary" onClick={armarOrden}>
+            <ShoppingCart size={16} />
+            {t("purchase.make_order", "Armar orden de compra")} ({seleccion.length})
+          </button>
+        )}
       </div>
 
       {error && <div className="alert error">{error}</div>}
@@ -175,7 +213,21 @@ export default function PorComprarPage() {
                         <ul className="por-comprar-proyectos">
                           {g.projects.map((p) => (
                             <li key={p.id_proyect_material_need}>
-                              <span>{etiquetaDeProyecto(p)}</span>
+                              <span>
+                                {puedeArmarOrden && p.purchasable && !p.order && (
+                                  <input type="checkbox" className="por-comprar-casilla"
+                                         checked={seleccion.includes(p.id_proyect_material_need)}
+                                         onChange={() => alternar(p.id_proyect_material_need)}
+                                         aria-label={t("purchase.pick_for_order", "Incluir en una orden de compra")} />
+                                )}
+                                {etiquetaDeProyecto(p)}
+                                {p.order && (
+                                  <span className={`oc-estado oc-estado-${estadoDeOrden(p.order.order_status).clase} por-comprar-en-orden`}
+                                        title={estadoDeOrden(p.order.order_status).etiqueta}>
+                                    {p.order.folio}
+                                  </span>
+                                )}
+                              </span>
                               <span className="mono">{p.quantity}</span>
                             </li>
                           ))}
