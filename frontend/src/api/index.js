@@ -548,6 +548,12 @@ export const deliverWarehouseVoucherLine = (idLine, payload = {}) =>
   request(`/vouchers/lines/${idLine}/deliver-to`, { method: "POST", body: payload });
 export const confirmWarehouseVoucherLineCustody = (idLine) =>
   request(`/vouchers/lines/${idLine}/confirm-custody`, { method: "POST" });
+// El vale COMPLETO: almacen marca "entregado a X" (acto aparte de autorizar) y
+// el supervisor responsable confirma que lo recibio, con o sin observaciones.
+export const deliverWarehouseVoucher = (id, payload = {}) =>
+  request(`/vouchers/${id}/deliver`, { method: "POST", body: payload });
+export const confirmWarehouseVoucherReceipt = (id, payload = {}) =>
+  request(`/vouchers/${id}/confirm-receipt`, { method: "POST", body: payload });
 
 export const getAllMaterial = (params = {}) => request("/material/", { params });
 export const getMaterial = (id) => request(`/material/${id}`);
