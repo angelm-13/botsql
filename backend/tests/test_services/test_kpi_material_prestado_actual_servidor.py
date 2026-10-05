@@ -276,6 +276,37 @@ class MaterialPrestadoActualServidorTest(unittest.TestCase):
         # y el responsable con el prestamo mas viejo va primero (Omar: 400 dias)
         self.assertEqual(OMAR, secuencia[0])
 
+    def _tramos(self, items):
+        secuencia = [i["id_user"] for i in items]
+        return [u for n, u in enumerate(secuencia) if n == 0 or u != secuencia[n - 1]]
+
+    def test_agrupar_con_direccion_ordena_los_renglones_dentro_de_cada_grupo(self):
+        mas_dias, _ = self._todo(q="zz", agrupar=True, orden="dias_prestado", direccion="desc")
+        menos_dias, _ = self._todo(q="zz", agrupar=True, orden="dias_prestado", direccion="asc")
+        # Los grupos quedan en el mismo lugar (el del prestamo mas viejo primero), contiguos en los dos sentidos.
+        self.assertEqual(self._tramos(mas_dias), self._tramos(menos_dias))
+        self.assertEqual(len(self._tramos(menos_dias)), len(set(self._tramos(menos_dias))))
+        for sentido, items in (("desc", mas_dias), ("asc", menos_dias)):
+            for responsable in (OMAR, ANA):
+                dias = [i["dias_prestado"] for i in items if i["id_user"] == responsable]
+                self.assertEqual(sorted(dias, reverse=(sentido == "desc")), dias, (sentido, responsable))
+
+    def test_agrupar_por_responsable_ordena_los_grupos_de_la_a_a_la_z_y_al_reves(self):
+        for direccion in ("asc", "desc"):
+            items, _ = self._todo(q="zz", agrupar=True, orden="responsable", direccion=direccion)
+            tramos = self._tramos(items)
+            self.assertEqual(len(tramos), len(set(tramos)), "cada responsable en un solo tramo")
+            nombres = [USUARIOS[u].lower() for u in tramos]
+            self.assertEqual(sorted(nombres, reverse=(direccion == "desc")), nombres, direccion)
+
+    def test_con_fechas_iguales_el_orden_se_desempata_por_el_id_del_renglon_en_los_dos_sentidos(self):
+        for direccion in ("asc", "desc"):
+            for agrupar in (False, True):
+                items, _ = self._todo(id_user=TALLER_1, orden="dias_prestado", direccion=direccion, agrupar=agrupar)
+                ids = [i["id_nm_incident_product"] for i in items]
+                self.assertEqual(5, len(ids))
+                self.assertEqual(sorted(ids), ids, (direccion, agrupar))
+
     # --- responsables con el mismo nombre ----------------------------------------------------
     def test_dos_responsables_con_el_mismo_nombre_no_mezclan_renglones(self):
         """Se filtra por id_user, no por nombre. Ojo: esto NO limpia el dato: los dos siguen llamandose

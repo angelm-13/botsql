@@ -548,6 +548,14 @@ def update_kpi_dashboard_widget(user_data, id_kpi_dashboard_widget):
     return jsonify(KpiDashboardWidgetService.update_widget(user_data, id_kpi_dashboard_widget, payload))
 
 
+@bp_kpi_dashboard_widget.route('/<id_kpi_dashboard_widget>/orden_tabla', methods=['PUT'])
+@token_required
+@require_entity_permission('kpi_dashboard_widget', 'update')
+def set_kpi_dashboard_widget_orden_tabla(user_data, id_kpi_dashboard_widget):
+    payload = request.get_json(silent=True)
+    return jsonify(KpiDashboardWidgetService.set_orden_tabla(user_data, id_kpi_dashboard_widget, payload))
+
+
 @bp_kpi_dashboard_widget.route('/<id_kpi_dashboard_widget>', methods=['DELETE'])
 @token_required
 @require_entity_permission('kpi_dashboard_widget', 'delete')

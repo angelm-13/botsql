@@ -16,6 +16,7 @@ import {
 import {
   agruparPorResponsable, duracionLegible, etiquetaDeDias, filtrarPorResponsable, gravedadDeDias, ordenarFilas,
   anchoDeBarra, buscarEnFilas, escalaDeBarras, filtrarPorUsuario, recortar, recortarGrupos, resumenDePrestamos, responsablesDe,
+  ORDEN_POR_OMISION, normalizarOrdenTabla,
 } from "./kpiPrestamos.js";
 import {
   agruparKpis, claveDeGrupo, colorDeModulo, COLOR_DE_MODULO, estadoDeOpcion, esVariable, grupoInicial, resumenDeModulos,
@@ -779,6 +780,69 @@ test("agrupado por responsable: el grupo con el prestamo mas viejo primero, y su
     ["Ana", 512, [1, 3]], ["Carla", 83, [4]], ["Beto", 45, [5, 2]],
   ]);
   assert.deepEqual(agruparPorResponsable([]), []);
+});
+
+test("agrupado por responsable: la direccion elegida ordena los renglones DENTRO de cada grupo", () => {
+  const masDias = agruparPorResponsable(PRESTAMOS, { campo: "dias_prestado", direccion: "desc" });
+  const menosDias = agruparPorResponsable(PRESTAMOS, { campo: "dias_prestado", direccion: "asc" });
+  // Los grupos no se mueven (el prestamo mas viejo primero)...
+  assert.deepEqual(menosDias.map((g) => g.responsable), masDias.map((g) => g.responsable));
+  // ...y lo que cambia es el orden de adentro. Ana: 512 dias (id 1) y otro (id 3).
+  assert.deepEqual(masDias[0].filas.map((f) => f.id), [1, 3]);
+  assert.deepEqual(menosDias[0].filas.map((f) => f.id), [3, 1]);
+  assert.equal(menosDias[0].masAntiguo, 512, "el renglon mas antiguo del grupo no depende del sentido");
+  assert.deepEqual(agruparPorResponsable(PRESTAMOS).map((g) => g.responsable), masDias.map((g) => g.responsable), "sin orden = por omision");
+});
+
+test("agrupado por responsable: ordenando por responsable, los GRUPOS van de la A a la Z o al reves", () => {
+  const az = agruparPorResponsable(PRESTAMOS, { campo: "responsable", direccion: "asc" });
+  const za = agruparPorResponsable(PRESTAMOS, { campo: "responsable", direccion: "desc" });
+  assert.deepEqual(az.map((g) => g.responsable), ["Ana", "Beto", "Carla"]);
+  assert.deepEqual(za.map((g) => g.responsable), ["Carla", "Beto", "Ana"]);
+});
+
+test("con todo igual, el orden se desempata por el id del renglon (los dos sentidos)", () => {
+  const iguales = [9, 3, 5].map((id) => ({ id, articulo: "Taladro", responsable: "Ana", fecha_prestamo: "2026-05-01", dias_prestado: 40 }));
+  for (const direccion of ["asc", "desc"]) {
+    for (const campo of ["dias_prestado", "fecha_prestamo", "articulo", "responsable"]) {
+      assert.deepEqual(ordenarFilas(iguales, campo, direccion).map((f) => f.id), [3, 5, 9], `${campo} ${direccion}`);
+    }
+  }
+});
+
+test("normalizarOrdenTabla: un orden guardado valido se respeta y cualquier otra cosa vuelve a mas dias primero", () => {
+  assert.deepEqual(ORDEN_POR_OMISION, { campo: "dias_prestado", direccion: "desc" });
+  assert.deepEqual(normalizarOrdenTabla({ campo: "articulo", direccion: "asc" }), { campo: "articulo", direccion: "asc" });
+  assert.deepEqual(normalizarOrdenTabla({ campo: "fecha_prestamo", direccion: "desc" }), { campo: "fecha_prestamo", direccion: "desc" });
+  for (const raro of [undefined, null, "articulo", 7, [], {}, { campo: "id_user", direccion: "asc" }, { campo: "articulo", direccion: "arriba" }, { campo: "articulo" }]) {
+    assert.deepEqual(normalizarOrdenTabla(raro), { campo: "dias_prestado", direccion: "desc" }, JSON.stringify(raro));
+  }
+  const guardado = { campo: "articulo", direccion: "asc" };
+  assert.notEqual(normalizarOrdenTabla(guardado), guardado, "devuelve una copia, no el objeto guardado");
+});
+
+test("armarParametros: guardar el editor de una tabla CONSERVA el orden que el usuario eligio", () => {
+  const widget = {
+    id_kpi_dashboard_widget: 7, tipo_grafica: "tabla", ids_kpi_definition: [11],
+    parametros: { columnas: 2, orden_tabla: { campo: "responsable", direccion: "desc" } },
+  };
+  const estado = estadoDeWidget(widget, []);
+  assert.deepEqual(estado.ordenTabla, { campo: "responsable", direccion: "desc" });
+  assert.deepEqual(armarParametros(estado, { esTabla: true }), {
+    columnas: 2, orden_tabla: { campo: "responsable", direccion: "desc" },
+  });
+  // Un widget sin orden guardado sigue guardando lo de siempre, sin inventar uno.
+  const sinOrden = estadoDeWidget({ ...widget, parametros: { columnas: 2 } }, []);
+  assert.equal(sinOrden.ordenTabla, null);
+  assert.deepEqual(armarParametros(sinOrden, { esTabla: true }), { columnas: 2 });
+  // Un orden basura guardado no se manda al servidor (que lo rechazaria): se vuelve el de por omision.
+  const basura = estadoDeWidget({ ...widget, parametros: { orden_tabla: { campo: "x", direccion: "y" } } }, []);
+  assert.deepEqual(armarParametros(basura, { esTabla: true }), { orden_tabla: { campo: "dias_prestado", direccion: "desc" } });
+});
+
+test("armarParametros: un widget que deja de ser tabla no arrastra el orden de la tabla", () => {
+  const estado = { ...BORRADOR, ordenTabla: { campo: "articulo", direccion: "asc" } };
+  assert.equal("orden_tabla" in armarParametros(estado, {}), false);
 });
 
 test("solo se ven 10 renglones hasta pedir 'Ver todos'", () => {
