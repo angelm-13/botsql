@@ -1290,6 +1290,17 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
   const [buscando, setBuscando] = useState(false);
   // Los vales del proyecto elegido, para ofrecer "Complementario de…".
   const [valesDelProyecto, setValesDelProyecto] = useState([]);
+  // "Lo recogera otra persona": el caso normal es que recoja el responsable, asi
+  // que el campo de quien recoge no se muestra hasta marcar esto. Desmarcarlo
+  // limpia lo elegido y el vale vuelve a ser uno normal.
+  const [otraPersona, setOtraPersona] = useState(
+    Boolean(borrador.id_user_pickup || borrador.pickup_name));
+  const alternarOtraPersona = (marcada) => {
+    setOtraPersona(marcada);
+    if (!marcada) {
+      setBorrador({ ...borrador, id_user_pickup: "", pickup_name: "" });
+    }
+  };
   useEffect(() => {
     if (!borrador.id_proyect) { setValesDelProyecto([]); return undefined; }
     let vivo = true;
@@ -1427,7 +1438,14 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
             </select>
           )}
         </label>
-        <label className="field">
+        <div className="field vale-recoge">
+          <label className="vale-solo-abiertos">
+            <input type="checkbox" checked={otraPersona}
+                   onChange={(e) => alternarOtraPersona(e.target.checked)} />
+            {t("voucher.pickup_other", "Lo recogerá otra persona (no puedo ir)")}
+          </label>
+          {otraPersona && (
+          <label className="field">
           <span>{t("voucher.pickup", "¿Quién recoge el material?")}</span>
           {/* Distinto del Responsable de arriba: el vale puede quedar a
               nombre del supervisor pero recogerlo un operador. Si se deja en
@@ -1447,7 +1465,9 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
             etiquetaYo={t("voucher.holder_is_you", "(tú)")}
             idYo={actorIdUser}
           />
-        </label>
+          </label>
+          )}
+        </div>
         {/* Vale complementario: solo con proyecto, y solo de ese proyecto. */}
         {borrador.id_proyect && (
           <label className="field">
