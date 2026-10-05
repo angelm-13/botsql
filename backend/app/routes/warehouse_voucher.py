@@ -33,6 +33,7 @@ from app.services.warehouse_voucher_service import (
     crear_vale,
     historial_del_producto,
     lo_que_ha_pedido,
+    notificar_custodia_asignada,
     pdf_del_historial_de_persona,
     quien_tiene_que,
     reporte_por_almacen,
@@ -89,12 +90,30 @@ def require_warehouse_read(fn):
     return wrapper
 
 
+def _avisar_si_hay_pickup(cuerpo: dict, resultado: dict, user_data: dict) -> None:
+    """Si el vale nacio con `id_user_pickup` distinto del responsable, avisa
+    por la campanita -- DESPUES de que `crear_vale` ya cerro su transaccion
+    (ver `notificar_custodia_asignada`)."""
+    id_pickup = cuerpo.get("id_user_pickup")
+    if id_pickup is None:
+        return
+    try:
+        notificar_custodia_asignada(
+            resultado["voucher"]["id_incident"], id_pickup,
+            user_data.get("id_user"))
+    except Exception:
+        pass
+
+
 @bp_warehouse_voucher.route("/vouchers", methods=["POST"])
 @token_required
 @require_entity_permission("warehouse_voucher", "create")
 def abrir_vale(user_data):
     """Abre un vale con sus renglones. Todo o nada."""
-    return jsonify(crear_vale(_cuerpo(), user_data)), 201
+    cuerpo = _cuerpo()
+    resultado = crear_vale(cuerpo, user_data)
+    _avisar_si_hay_pickup(cuerpo, resultado, user_data)
+    return jsonify(resultado), 201
 
 
 @bp_warehouse_voucher.route("/prevouchers", methods=["POST"])
@@ -109,7 +128,10 @@ def abrir_prevale(user_data):
     dejaria de decir nada. Asi cada camino lleva su llave: esta
     `warehouse_prevoucher`, la otra `warehouse_voucher`.
     """
-    return jsonify(crear_vale(_cuerpo(), user_data, como_borrador=True)), 201
+    cuerpo = _cuerpo()
+    resultado = crear_vale(cuerpo, user_data, como_borrador=True)
+    _avisar_si_hay_pickup(cuerpo, resultado, user_data)
+    return jsonify(resultado), 201
 
 
 @bp_warehouse_voucher.route("/vouchers", methods=["GET"])
@@ -224,7 +246,15 @@ def entregar_renglon_a(user_data, id_line):
     `warehouse_prevoucher`, nunca `warehouse_voucher`- o quien opera el
     almacen. Cuerpo: `{"id_user": <operador>}`.
     """
-    return jsonify(asignar_entrega_de_renglon(id_line, _cuerpo(), user_data))
+    cuerpo = _cuerpo()
+    resultado = asignar_entrega_de_renglon(id_line, cuerpo, user_data)
+    try:
+        notificar_custodia_asignada(
+            resultado["id_incident"], cuerpo.get("id_user"),
+            user_data.get("id_user"))
+    except Exception:
+        pass
+    return jsonify(resultado)
 
 
 @bp_warehouse_voucher.route("/vouchers/lines/<id_line>/confirm-custody", methods=["POST"])

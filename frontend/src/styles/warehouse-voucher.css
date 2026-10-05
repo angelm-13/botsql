@@ -255,6 +255,11 @@
 }
 .vale-marca-mini.fuera { background: #fee2e2; color: #991b1b; }
 .vale-marca-mini.devuelto { background: #dcfce7; color: #14532d; }
+/* Entregado a alguien que no es el responsable, todavia sin confirmar --
+   tercer color a proposito, para no confundirse con "fuera" (rojo, cualquier
+   vale con material afuera) ni con "devuelto" (verde, ya en el almacen). */
+.vale-marca-mini.pendiente-custodia { background: #ffedd5; color: #9a3412; }
+.vale-estado.vale-pendiente-custodia { background: #ffedd5; color: #9a3412; }
 
 /* El enlace al historial del empleado, junto a su nombre en la cabecera del
    vale. Es la misma idea que "Marcar devuelto": una accion secundaria que no

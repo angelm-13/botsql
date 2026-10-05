@@ -19,6 +19,7 @@ celery.autodiscover_tasks([
     "app.jobs.tasks_stamping",
     "app.jobs.tasks_appointments",
     "app.jobs.tasks_kpis",
+    "app.jobs.tasks_warehouse",
 ])
 
 

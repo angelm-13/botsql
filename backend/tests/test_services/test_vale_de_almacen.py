@@ -53,13 +53,17 @@ from app.services.warehouse_voucher_service import (
     ABIERTO,
     BORRADOR,
     CERRADO,
+    asignar_entrega_de_renglon,
     autorizar_vale,
     buscar_vales,
     cerrar_renglon,
+    confirmar_recepcion_de_renglon,
     devolver_renglon,
     consultar_vale,
     crear_vale,
     documento_del_historial_de_persona,
+    documento_del_vale,
+    notificar_custodia_asignada,
     pdf_del_historial_de_persona,
     reporte_por_almacen,
     reporte_por_persona,
@@ -251,6 +255,20 @@ class BaseVale(BackendTestCase):
                 "id_location_from": NAVE}
         base.update(extra)
         return base
+
+    def _otro_usuario(self, id_user):
+        """Un segundo usuario real -- quien recoge, cuando no es el
+        responsable -- con la misma llave ajena que `sembrar_actor` ya
+        garantiza para el primero."""
+        from app.models.user import User
+
+        with transaction_context() as db:
+            db.add(User(
+                id_user=id_user, full_name="Operador %d" % id_user,
+                username="operador%d" % id_user, id_permission=1,
+                id_proyect=PROYECTO, id_status=ESTATUS, supervisor=1,
+                created_by=1))
+        return id_user
 
 
 class TestElTipoCuelgaDeLaFamilia(BaseVale):
@@ -1531,3 +1549,218 @@ class TestElHistorialDeUnaPersonaEnPdf(BaseVale):
 
         self.assertEqual(1, ficha["id_user"])
         self.assertEqual(1, ficha["total"])
+
+
+OPERADOR = 2
+
+
+class TestQuienRecogeElMaterial(BaseVale):
+    """El supervisor puede quedarse como responsable del vale y mandar a
+    alguien mas por la herramienta -- pedido de negocio, 2026-10-05, mismo
+    espiritu que "el prevale puede quedar a nombre de otro operador"
+    (2026-09-29), pero a nivel de RENGLON: el responsable (quien firma y
+    debe devolver TODO el vale) no cambia, solo queda constancia de quien va
+    a recoger cada pieza -el mismo dato que ya usaba `asignar_entrega_de_
+    renglon`, ahora capturable desde que nace el vale.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self._otro_usuario(OPERADOR)
+        self.surtir(100)
+
+    def test_a_pickup_different_from_the_holder_is_recorded_per_line(self):
+        vale = self._vale([self._linea_cantidad(10)], id_user_pickup=OPERADOR)
+
+        linea = vale["lines"][0]
+        self.assertEqual(OPERADOR, linea["id_user_delivered_to"])
+        self.assertIsNone(linea["custody_confirmed_date"])
+
+    def test_a_pickup_equal_to_the_holder_is_a_no_op(self):
+        """Nadie necesita confirmarse la entrega a si mismo."""
+        vale = self._vale([self._linea_cantidad(10)], id_user_pickup=1)
+
+        self.assertIsNone(vale["lines"][0]["id_user_delivered_to"])
+
+    def test_no_pickup_means_the_holder_picks_it_up_as_before(self):
+        """Sin este campo, el comportamiento es exactamente el de antes."""
+        vale = self._vale([self._linea_cantidad(10)])
+
+        self.assertIsNone(vale["lines"][0]["id_user_delivered_to"])
+
+    def test_it_works_the_same_for_a_prevoucher(self):
+        """El prevale tampoco mueve el almacen, pero la custodia se asigna
+        igual -es un dato del renglon, no de la salida del almacen."""
+        vale = self._vale([self._linea_cantidad(10)], id_user_pickup=OPERADOR,
+                          como_borrador=True)
+
+        self.assertEqual(OPERADOR, vale["lines"][0]["id_user_delivered_to"])
+
+    def test_the_voucher_screen_counts_it_as_pending_confirmation(self):
+        vale = self._vale([self._linea_cantidad(10)], id_user_pickup=OPERADOR)
+
+        detalle = consultar_vale(vale["voucher"]["id_incident"], ACTOR)
+
+        self.assertEqual(1, detalle["pending_custody_lines"])
+
+    def test_confirming_custody_clears_the_pending_count(self):
+        vale = self._vale([self._linea_cantidad(10)], id_user_pickup=OPERADOR)
+        linea = vale["lines"][0]["id_nm_incident_product"]
+
+        confirmar_recepcion_de_renglon(linea, ACTOR)
+
+        detalle = consultar_vale(vale["voucher"]["id_incident"], ACTOR)
+        self.assertEqual(0, detalle["pending_custody_lines"])
+
+    def test_the_list_screen_counts_it_too(self):
+        self._vale([self._linea_cantidad(10)], id_user_pickup=OPERADOR)
+
+        lista = buscar_vales(ACTOR)
+
+        self.assertEqual(1, lista["items"][0]["pending_custody_lines"])
+
+    def test_the_pdf_shows_who_will_pick_it_up(self):
+        vale = self._vale([self._linea_cantidad(10)], id_user_pickup=OPERADOR)
+
+        ficha = documento_del_vale(vale["voucher"]["id_incident"], ACTOR)
+
+        renglon = ficha["salidas"][0]
+        self.assertEqual("Operador 2", renglon["entregado_a"])
+        self.assertFalse(renglon["custodia_confirmada"])
+
+    def test_the_pdf_says_nothing_when_the_holder_picks_it_up_themselves(self):
+        vale = self._vale([self._linea_cantidad(10)])
+
+        ficha = documento_del_vale(vale["voucher"]["id_incident"], ACTOR)
+
+        self.assertIsNone(ficha["salidas"][0]["entregado_a"])
+
+
+class TestLaNotificacionDeCustodia(BaseVale):
+    """`notificar_custodia_asignada` -- siempre llamada desde la RUTA,
+    despues de que la operacion real ya cerro su propia transaccion (ver su
+    docstring). Aqui se prueba suelta, como la llamaria la ruta.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self._otro_usuario(OPERADOR)
+        self.surtir(100)
+
+    def _no_leidas(self, id_user):
+        from app.services.notification_service import get_user_notifications
+
+        return get_user_notifications(id_user, unread_only=True)
+
+    def test_it_notifies_both_the_holder_and_the_pickup_person(self):
+        vale = self._vale([self._linea_cantidad(10)], id_user_pickup=OPERADOR)
+
+        notificar_custodia_asignada(
+            vale["voucher"]["id_incident"], OPERADOR, actor_id=1)
+
+        avisos_responsable = self._no_leidas(1)
+        avisos_operador = self._no_leidas(OPERADOR)
+        self.assertEqual(1, len(avisos_responsable))
+        self.assertEqual("warehouse_voucher_custody_assigned",
+                         avisos_responsable[0].notification_type)
+        self.assertEqual(1, len(avisos_operador))
+        self.assertEqual("warehouse_voucher_pickup_assigned",
+                         avisos_operador[0].notification_type)
+
+    def test_it_does_nothing_when_the_pickup_is_the_holder(self):
+        vale = self._vale([self._linea_cantidad(10)])
+
+        notificar_custodia_asignada(
+            vale["voucher"]["id_incident"], 1, actor_id=1)
+
+        self.assertEqual(0, len(self._no_leidas(1)))
+
+    def test_it_does_nothing_without_a_pickup(self):
+        vale = self._vale([self._linea_cantidad(10)])
+
+        notificar_custodia_asignada(
+            vale["voucher"]["id_incident"], None, actor_id=1)
+
+        self.assertEqual(0, len(self._no_leidas(1)))
+
+    def test_a_notification_failure_never_raises(self):
+        """Es un aviso, no una condicion de la entrega -- ver su docstring."""
+        from unittest.mock import patch
+
+        vale = self._vale([self._linea_cantidad(10)], id_user_pickup=OPERADOR)
+
+        with patch("app.services.notification_service.create_notification",
+                   side_effect=RuntimeError("boom")):
+            notificar_custodia_asignada(
+                vale["voucher"]["id_incident"], OPERADOR, actor_id=1)
+
+
+class TestElJobDeValesVencidos(BaseVale):
+    """`notify_overdue_vouchers` -- el mismo criterio que `vales_vencidos`,
+    convertido en una notificacion real (campanita) en vez de una pregunta
+    bajo demanda."""
+
+    def setUp(self):
+        super().setUp()
+        self.surtir(100)
+
+    def _correr_job(self):
+        from app.jobs.tasks_warehouse import notify_overdue_vouchers
+
+        return notify_overdue_vouchers()
+
+    def _no_leidas(self, id_user):
+        from app.services.notification_service import get_user_notifications
+
+        return get_user_notifications(id_user, unread_only=True)
+
+    def test_it_notifies_the_holder_of_an_overdue_line(self):
+        vale = self._vale([self._linea_cantidad(10)])
+        self.vencer(vale["lines"][0]["id_nm_incident_product"])
+
+        resultado = self._correr_job()
+
+        self.assertEqual(1, resultado["count"])
+        avisos = self._no_leidas(1)
+        self.assertEqual(1, len(avisos))
+        self.assertEqual("warehouse_voucher_overdue", avisos[0].notification_type)
+
+    def test_it_notifies_the_pickup_person_when_delegated(self):
+        self._otro_usuario(OPERADOR)
+        vale = self._vale([self._linea_cantidad(10)], id_user_pickup=OPERADOR)
+        self.vencer(vale["lines"][0]["id_nm_incident_product"])
+
+        self._correr_job()
+
+        self.assertEqual(1, len(self._no_leidas(OPERADOR)))
+        self.assertEqual(0, len(self._no_leidas(1)))
+
+    def test_it_never_repeats_the_same_notification(self):
+        """Sin `overdue_notified_date` esto avisaria de nuevo cada corrida
+        mientras el renglon siga vencido -- ver el docstring del job."""
+        vale = self._vale([self._linea_cantidad(10)])
+        self.vencer(vale["lines"][0]["id_nm_incident_product"])
+
+        primera = self._correr_job()
+        segunda = self._correr_job()
+
+        self.assertEqual(1, primera["count"])
+        self.assertEqual(0, segunda["count"])
+        self.assertEqual(1, len(self._no_leidas(1)))
+
+    def test_it_ignores_lines_that_are_not_due_yet(self):
+        self._vale([self._linea_cantidad(10)])
+
+        resultado = self._correr_job()
+
+        self.assertEqual(0, resultado["count"])
+
+    def test_it_ignores_closed_lines(self):
+        vale = self._vale([self._linea_cantidad(10)])
+        linea = vale["lines"][0]["id_nm_incident_product"]
+        self.vencer(linea)
+        devolver_renglon(linea, {}, ACTOR)
+
+        resultado = self._correr_job()
+
+        self.assertEqual(0, resultado["count"])

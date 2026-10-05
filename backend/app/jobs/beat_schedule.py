@@ -33,4 +33,8 @@ BEAT_SCHEDULE = {
         "task": "app.jobs.tasks_appointments.dispatch_due_notifications",
         "schedule": crontab(minute="*/5"),
     },
+    "warehouse-overdue-vouchers-every-six-hours": {
+        "task": "app.jobs.tasks_warehouse.notify_overdue_vouchers",
+        "schedule": crontab(minute=0, hour="*/6"),
+    },
 }
