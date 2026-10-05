@@ -23,10 +23,11 @@ KPIs comparten clave o si alguno declara un modulo que no existe en
 from __future__ import annotations
 
 import json
-from datetime import date, datetime
+import unicodedata
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import Date, and_, case, cast, func, literal, or_, select, text
+from sqlalchemy import Date, Integer, String, and_, case, cast, func, literal, or_, select, text, type_coerce
 
 from app.models.document import Document
 from app.models.incident import Incident
@@ -34,6 +35,7 @@ from app.models.incident_type import IncidentType
 from app.models.inventory_asset import InventoryAsset, PRESTADA
 from app.models.inventory_asset_event import InventoryAssetEvent, PRESTAMO
 from app.models.inventory_lot import InventoryLot
+from app.models.inventory_status import InventoryStatus
 from app.models.inventory_stock import InventoryStock
 from app.models.invoice import Invoice
 from app.models.laboratory import LaboratoryServiceOrder
@@ -63,6 +65,9 @@ DIMENSION_JSON_KEY = {
     # que guarda `dimension_key` (siempre lo compara como texto via
     # `.astext`), asi que un string de categoria funciona igual que un id.
     "estado": "estado",
+    # Familia de producto: el valor es `product.id_familia` (0 = producto sin familia). Una
+    # dimension ABIERTA (41 familias en Adser): lleva `limite_categorias` para mostrar las mayores.
+    "familia": "id_familia",
 }
 
 # Los 4 niveles de "que tan buena es una variacion" para un KPI, declarados
@@ -99,7 +104,7 @@ UNIDADES = ("numero", "porcentaje", "moneda", "dias", "piezas")
 
 # Vocabulario cerrado de dimensiones -- "estado" es nueva (ver
 # DIMENSION_JSON_KEY arriba), las otras tres ya existian sin validarse.
-DIMENSIONES = ("empleado", "producto", "global", "estado")
+DIMENSIONES = ("empleado", "producto", "global", "estado", "familia")
 
 # Como se combinan varios snapshots de un KPI (varios dias, varios proyectos)
 # en un solo numero -- lo declara cada KPI en `agregacion`, sin valor por
@@ -965,6 +970,233 @@ def incidencias_pendientes_query(session, fecha_inicio, fecha_fin, filtros_dimen
     return [(None, dia, valor) for dia, valor in session.execute(stmt).all()]
 
 
+# Las 4 categorias fijas de `prestamos_abiertos_por_antiguedad`, en el orden en que se leen
+# (de menos a mas antiguo). Son `estado` de la dimension: texto, no ids.
+ANTIGUEDAD_CATEGORIAS = ("0-30", "31-60", "61-90", "+90")
+# Verde -> ambar -> naranja -> rojo: a mas dias prestado, mas urgente.
+ANTIGUEDAD_COLORES = {"0-30": "#22b573", "31-60": "#f0a93b", "61-90": "#f58a3c", "+90": "#e5484d"}
+
+
+def prestamos_abiertos_por_antiguedad_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
+    """Foto: renglones de vale prestados sin devolver, por antiguedad, en cada dia del rango.
+
+    Mismo universo que `material_prestado_actual_query` (el KPI "vivo" que lista estos
+    mismos renglones): direccion "Salida", sin vales de BAJA (`TIPOS_DE_BAJA`:
+    destruccion y extravio; "Dañado" SI cuenta), con `Incident.incident_date`, sin
+    borrados. Aqui se cuentan por antiguedad en vez de listarse.
+
+    Antiguedad en un dia D = `D - incident_date` (la misma "dias prestado" de la tabla,
+    que usa D = hoy), en 4 categorias fijas: "0-30", "31-60", "61-90" y "+90" dias.
+
+    Reconstruccion de cualquier dia pasado, igual que `incidencias_pendientes_query`: un
+    renglon estaba abierto en D si su vale ya existia (`incident_date <= D`) y NO estaba
+    cerrado en D: `close_date` nulo, el sentinel heredado de Adser (`CIERRE_SENTINELA`,
+    que no es un cierre real) o posterior a D (cerrarse EN D ya no cuenta ese dia). Asi la
+    foto de un dia anterior sale exacta, con la antiguedad que tenia ENTONCES.
+
+    Siempre regresa las 4 categorias de cada dia, con 0 cuando no hay renglones: el
+    agregado "ultimo" toma el ultimo dia con filas, y una categoria ausente se lee como
+    "no calculada", no como cero.
+
+    Dimension "estado" (categoria fija). Sin alcance de proyecto, mismo motivo que el resto
+    de los KPIs sobre `Incident` de este archivo. La unidad es renglones de vale.
+    """
+    dias = (
+        select(cast(func.generate_series(fecha_inicio, fecha_fin, text("interval '1 day'")), Date).label("dia"))
+        .subquery()
+    )
+    antiguedad = dias.c.dia - func.date(Incident.incident_date)
+    categoria = case(
+        (antiguedad <= 30, ANTIGUEDAD_CATEGORIAS[0]),
+        (antiguedad <= 60, ANTIGUEDAD_CATEGORIAS[1]),
+        (antiguedad <= 90, ANTIGUEDAD_CATEGORIAS[2]),
+        else_=ANTIGUEDAD_CATEGORIAS[3],
+    )
+    stmt = (
+        select(categoria.label("categoria"), dias.c.dia, func.count())
+        .select_from(dias)
+        .join(
+            Incident,
+            and_(
+                Incident.deletion_date.is_(None),
+                Incident.incident_date.isnot(None),
+                func.date(Incident.incident_date) <= dias.c.dia,
+            ),
+        )
+        .join(
+            NmIncidentProduct,
+            and_(
+                NmIncidentProduct.id_incident == Incident.id_incident,
+                NmIncidentProduct.deletion_date.is_(None),
+                NmIncidentProduct.direction == SALIDA,
+                or_(
+                    NmIncidentProduct.close_date.is_(None),
+                    NmIncidentProduct.close_date == CIERRE_SENTINELA,
+                    func.date(NmIncidentProduct.close_date) > dias.c.dia,
+                ),
+            ),
+        )
+        .outerjoin(IncidentType, IncidentType.id_incident_type == Incident.id_incident_type)
+        .where(
+            or_(
+                IncidentType.incident_type_description.is_(None),
+                func.lower(func.trim(IncidentType.incident_type_description)).notin_(TIPOS_DE_BAJA),
+            )
+        )
+        .group_by(categoria, dias.c.dia)
+    )
+    conteos = {(dia, cat): cantidad for cat, dia, cantidad in session.execute(stmt).all()}
+    filas = []
+    dia = fecha_inicio
+    while dia <= fecha_fin:
+        for cat in ANTIGUEDAD_CATEGORIAS:
+            filas.append((cat, dia, conteos.get((dia, cat), 0)))
+        dia += timedelta(days=1)
+    return filas
+
+
+# Las 6 categorias fijas de `piezas_por_estado`, en el orden en que se leen: de lo normal a lo grave.
+# Son `estado` de la dimension: texto, no ids. Los nombres son los de `material_por_estado`
+# ("Destruccion" sin acento, "Dañado" con ñ) para que los dos KPIs se lean igual.
+PIEZAS_CATEGORIAS = ("Entrada", "Salida", "En reparación", "Dañado", "Extraviado", "Destruccion")
+# Paleta de `material_por_estado`, mas violeta para "En reparación" (una pieza en el taller no esta
+# ni prestada ni perdida: no debe leerse como Salida, que es azul).
+PIEZAS_COLORES = {
+    "Entrada": "#22b573",
+    "Salida": "#2f8fe0",
+    "En reparación": "#8b6fe0",
+    "Dañado": "#f0a93b",
+    "Extraviado": "#ef6f5c",
+    "Destruccion": "#e0559b",
+}
+# Estado de catalogo (`inventory_status.inventory_status_code`, el que ya traen los productos) ->
+# categoria. Los demas codigos (`activo`, `disponible`...) no son un problema de la pieza: caen en
+# Salida/Entrada segun tenga o no un prestamo abierto.
+PIEZAS_CATEGORIA_POR_ESTADO = {
+    "retirado": "Destruccion",
+    "extraviado": "Extraviado",
+    "danado": "Dañado",
+    "en_reparacion": "En reparación",
+}
+
+
+def piezas_por_estado_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
+    """Foto de HOY: cuantas piezas hay en cada estado. PENDIENTE DE CONCILIAR contra tyakxa-dev.
+
+    PENDIENTE DE CONCILIAR contra tyakxa-dev (`id_inventory_status` real) antes de mostrarlo a
+    Adser: el CSV de estado de piezas de Alan (docs/despliegues/2026-09-30_estado_de_piezas_adser.csv)
+    trae el texto ANTIGUO del estado, no `id_inventory_status`, asi que solo valida la derivacion
+    "por analogia". Falta correr `backend/scripts/conciliar_piezas_por_estado.sql` ahi. Ver
+    docs/despliegues/2026-10-01_piezas_por_estado.md. Mientras tanto no esta en el perfil de
+    permisos ni en la plantilla del tablero de Adser.
+
+    Se cuentan PIEZAS = filas de `product` con `deletion_date IS NULL` (en Adser cada fila es una
+    herramienta fisica), no `SUM(quantity)` ni renglones de vale. Cada pieza cae en UNA categoria,
+    la primera que cumpla, en este orden:
+
+        Destruccion > Extraviado > Dañado > En reparación > Salida > Entrada
+
+    * Las cuatro primeras salen de `product.id_inventory_status` (`PIEZAS_CATEGORIA_POR_ESTADO`).
+    * Salida: la pieza tiene al menos UN renglon de vale abierto, de direccion Salida y de un vale
+      que no sea de baja. Mismo universo que `prestamos_abiertos_por_antiguedad` (abierto =
+      `close_date` nulo o el centinela de Adser, `CIERRE_SENTINELA`; sin borrados; vale con
+      `incident_date`; sin `TIPOS_DE_BAJA`). Dos renglones abiertos de la misma pieza cuentan UNA vez.
+      Una pieza Dañada que ademas esta prestada se cuenta como Dañado (gana el estado).
+    * Entrada: todo lo demas.
+    * Incluye todo `product`: `stock_purpose` no separa herramientas de consumibles (en Adser todo es
+      `uso_interno`).
+    * Las piezas serializadas (`inventory_asset.status`) quedan fuera, como en el resto de los KPIs.
+
+    El estado de catalogo no guarda historia: es una FOTO fechada en `fecha_fin` (agregacion
+    "ultimo"), no se reconstruyen dias pasados. Siempre regresa las 6 categorias, con 0 cuando no
+    hay piezas (una categoria ausente se leeria como "no calculada"). La suma de las 6 es el total
+    de piezas. Dimension "estado", sin alcance de proyecto.
+    """
+    prestada = (
+        select(NmIncidentProduct.id_product)
+        .join(Incident, Incident.id_incident == NmIncidentProduct.id_incident)
+        .outerjoin(IncidentType, IncidentType.id_incident_type == Incident.id_incident_type)
+        .where(
+            NmIncidentProduct.id_product == Product.id_product,
+            NmIncidentProduct.deletion_date.is_(None),
+            NmIncidentProduct.direction == SALIDA,
+            or_(NmIncidentProduct.close_date.is_(None), NmIncidentProduct.close_date == CIERRE_SENTINELA),
+            Incident.deletion_date.is_(None),
+            Incident.incident_date.isnot(None),
+            or_(
+                IncidentType.incident_type_description.is_(None),
+                func.lower(func.trim(IncidentType.incident_type_description)).notin_(TIPOS_DE_BAJA),
+            ),
+        )
+        .exists()
+    )
+    codigo = func.lower(func.trim(InventoryStatus.inventory_status_code))
+    categoria = case(
+        *[(codigo == estado, nombre) for estado, nombre in PIEZAS_CATEGORIA_POR_ESTADO.items()],
+        (prestada, "Salida"),
+        else_="Entrada",
+    )
+    stmt = (
+        select(categoria.label("categoria"), func.count())
+        .select_from(Product)
+        .outerjoin(InventoryStatus, InventoryStatus.id_inventory_status == Product.id_inventory_status)
+        .where(Product.deletion_date.is_(None))
+        .group_by(categoria)
+    )
+    conteos = {cat: cantidad for cat, cantidad in session.execute(stmt).all()}
+    return [(cat, fecha_fin, conteos.get(cat, 0)) for cat in PIEZAS_CATEGORIAS]
+
+
+# Que vales cuentan como una PERDIDA de herramienta en `perdidas_por_familia`: destruccion, extravio
+# y dañado, por la descripcion del tipo SIN acentos ni mayusculas (el catalogo real trae
+# "Destruccion" y "Dañado"; con `translate` tambien valen "Destrucción" y "Danado"). Reparacion NO:
+# una herramienta en reparacion no esta perdida.
+TIPOS_DE_PERDIDA = ("destruccion", "extraviado", "danado")
+# `product.id_familia` nulo se agrupa bajo este valor ("Sin familia"), para que su perdida no
+# desaparezca de la grafica.
+FAMILIA_SIN_ASIGNAR = 0
+
+
+def perdidas_por_familia_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
+    """Piezas perdidas por familia de producto y por dia: destruccion + extravio + dañado.
+
+    Flujo (agregacion "suma"): cada renglon de vale cuenta el dia de su `Incident.incident_date`
+    (la fecha real del vale, ver `material_por_estado_query`).
+
+    * Se cuentan PIEZAS (`SUM(NmIncidentProduct.quantity)`), no renglones: lo que importa de una
+      perdida es cuantas piezas se fueron, y un renglon de 5 piezas dañadas no es lo mismo que
+      uno de 1. Es tambien lo que cuenta el Resumen de almacen del sistema anterior.
+    * Tipos: `TIPOS_DE_PERDIDA`, sin importar la direccion del renglon (lo define el tipo del vale).
+    * Familia: `product.id_familia` (la del PRODUCTO, la columna "Familia" del sistema anterior), no
+      la del material. Sin familia -> `FAMILIA_SIN_ASIGNAR`. Los nombres no se guardan aqui: la
+      dimension lleva el id y `GET /kpi_snapshot/query` los resuelve al consultar.
+    * El top 10 NO se corta aqui: se guarda toda familia con perdidas y el corte se hace al sumar
+      el rango (`limite_categorias`).
+    * Sin alcance de proyecto, mismo motivo que el resto de los KPIs sobre `Incident`.
+    """
+    fecha_col = func.date(Incident.incident_date)
+    familia = func.coalesce(Product.id_familia, FAMILIA_SIN_ASIGNAR)
+    tipo_normalizado = func.translate(func.lower(func.trim(IncidentType.incident_type_description)), "ñáéíóú", "naeiou")
+    stmt = (
+        select(familia, fecha_col.label("fecha"), func.sum(NmIncidentProduct.quantity))
+        .select_from(NmIncidentProduct)
+        .join(Incident, Incident.id_incident == NmIncidentProduct.id_incident)
+        .join(IncidentType, IncidentType.id_incident_type == Incident.id_incident_type)
+        .join(Product, Product.id_product == NmIncidentProduct.id_product)
+        .where(
+            NmIncidentProduct.deletion_date.is_(None),
+            Incident.deletion_date.is_(None),
+            Incident.incident_date.isnot(None),
+            fecha_col >= fecha_inicio,
+            fecha_col <= fecha_fin,
+            tipo_normalizado.in_(TIPOS_DE_PERDIDA),
+        )
+        .group_by(familia, fecha_col)
+        .order_by(fecha_col, familia)
+    )
+    return [(id_familia, fecha, int(piezas)) for id_familia, fecha, piezas in session.execute(stmt).all()]
+
+
 def incidencias_abiertas_vs_cerradas_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
     """Incidencias abiertas y cerradas, por dia -- flujo, no foto.
 
@@ -1110,7 +1342,124 @@ CAMPOS_RENGLON_PRESTADO_ACTUAL = (
 )
 
 
-def material_prestado_actual_query(session, *, limit, offset, actor_project=None):
+# Columnas por las que se puede ordenar la tabla de "Material prestado ahora" (el servidor ordena, no el
+# navegador: con paginacion, ordenar solo la pagina cargada mentiria).
+PRESTADO_ORDENES = ("dias_prestado", "articulo", "responsable", "fecha_prestamo")
+
+# `translate` y no `unaccent`: no hace falta la extension, y `lower()` de Postgres no baja las mayusculas
+# con acento en una base de locale "C". Mismo resultado que `sinAcentos` de frontend/src/kpi/kpiPrestamos.js.
+_CON_ACENTO = "áàäâéèëêíìïîóòöôúùüûñÁÀÄÂÉÈËÊÍÌÏÎÓÒÖÔÚÙÜÛÑ"
+_SIN_ACENTO = "aaaaeeeeiiiioooouuuunaaaaeeeeiiiioooouuuun"
+
+
+def _sin_acentos(texto) -> str:
+    descompuesto = unicodedata.normalize("NFD", str(texto or ""))
+    return "".join(c for c in descompuesto if not unicodedata.combining(c)).lower()
+
+
+def _expresiones_de_prestamo(hoy):
+    """Las columnas que ve (y busca) quien mira la tabla, como expresiones SQL.
+
+    El articulo es el mismo que arma el renglon: descripcion, o el codigo, o "Producto #id".
+    """
+    articulo = func.coalesce(
+        func.nullif(Product.descripcion, ""),
+        func.nullif(Product.product_code, ""),
+        literal("Producto #", String) + cast(NmIncidentProduct.id_nm_incident_product, String),
+    )
+    fecha = func.to_char(Incident.incident_date, "YYYY-MM-DD")
+    dias = type_coerce(literal(hoy, Date) - cast(Incident.incident_date, Date), Integer)
+    return articulo, fecha, dias
+
+
+def _condiciones_de_prestamo(hoy, *, id_user=None, id_user_ambito=None, q=None):
+    """Que renglones cuentan como "prestados", mas los filtros de la tabla -- todo en SQL.
+
+    * `id_user_ambito`: el filtro que llega de OTRA tarjeta (clic en una barra). Acota filas y conteos.
+    * `id_user`: el desplegable "Responsable". Acota las filas, no los conteos del desplegable.
+    * `q`: la busqueda; todas las palabras tienen que aparecer, sin acentos ni mayusculas, en el articulo,
+      el responsable, la fecha del vale o los dias.
+
+    Se filtra por `id_user` (el usuario), NO por el nombre: dos personas con el mismo nombre, o un nombre
+    sucio repetido en el dato (ej. "ESTANCIA EN EL TALLER"), ya no mezclan sus renglones. Ojo: esto solo
+    evita la confusion, NO limpia el dato -- los nombres sucios siguen apareciendo tal cual hasta que se
+    limpien en origen.
+    """
+    condiciones = [
+        NmIncidentProduct.deletion_date.is_(None),
+        Incident.deletion_date.is_(None),
+        Incident.incident_date.isnot(None),
+        NmIncidentProduct.direction == SALIDA,
+        or_(
+            NmIncidentProduct.close_date.is_(None),
+            NmIncidentProduct.close_date == CIERRE_SENTINELA,
+        ),
+        or_(
+            IncidentType.incident_type_description.is_(None),
+            func.lower(func.trim(IncidentType.incident_type_description)).notin_(TIPOS_DE_BAJA),
+        ),
+    ]
+    if id_user_ambito is not None:
+        condiciones.append(Incident.id_user == id_user_ambito)
+    if id_user is not None:
+        condiciones.append(Incident.id_user == id_user)
+    palabras = _sin_acentos(q).split()
+    if palabras:
+        articulo, fecha, dias = _expresiones_de_prestamo(hoy)
+        pajar = func.lower(func.translate(
+            func.concat_ws(" ", articulo, func.coalesce(User.full_name, ""), fecha, cast(dias, String)),
+            _CON_ACENTO, _SIN_ACENTO,
+        ))
+        condiciones.extend(pajar.contains(palabra, autoescape=True) for palabra in palabras)
+    return condiciones
+
+
+def _de_prestamos(columnas):
+    return (
+        select(*columnas)
+        .select_from(NmIncidentProduct)
+        .join(Incident, Incident.id_incident == NmIncidentProduct.id_incident)
+        .join(Product, Product.id_product == NmIncidentProduct.id_product)
+        .outerjoin(IncidentType, IncidentType.id_incident_type == Incident.id_incident_type)
+        .outerjoin(User, User.id_user == Incident.id_user)
+    )
+
+
+def _orden_de_prestamos(articulo, orden, direccion, agrupar):
+    id_renglon = NmIncidentProduct.id_nm_incident_product
+    ascendente = direccion == "asc"
+    nombre_responsable = func.lower(func.coalesce(User.full_name, ""))
+    if orden == "dias_prestado":
+        # Mas dias = fecha mas antigua: el orden por dias es el orden de la fecha, invertido.
+        principal = Incident.incident_date.desc() if ascendente else Incident.incident_date.asc()
+    elif orden == "fecha_prestamo":
+        principal = Incident.incident_date.asc() if ascendente else Incident.incident_date.desc()
+    elif orden == "responsable":
+        principal = nombre_responsable.asc() if ascendente else nombre_responsable.desc()
+    else:  # articulo
+        columna = func.lower(articulo)
+        principal = columna.asc() if ascendente else columna.desc()
+    desempate = [Incident.incident_date.asc(), func.lower(articulo).asc(), id_renglon.asc()]
+    if agrupar:
+        # Cada responsable contiguo, para que al paginar un grupo no se parta entre dos paginas sin continuar.
+        # La direccion elegida ordena los RENGLONES dentro de cada grupo; los grupos van con el prestamo mas
+        # viejo primero, salvo que se ordene por responsable: entonces los grupos van A-Z / Z-A.
+        if orden == "responsable":
+            grupos = [principal, Incident.id_user.asc()]
+            dentro = desempate
+        else:
+            grupos = [
+                func.min(Incident.incident_date).over(partition_by=Incident.id_user).asc(),
+                nombre_responsable.asc(), Incident.id_user.asc(),
+            ]
+            dentro = [principal, *desempate]
+        return [*grupos, *dentro]
+    return [principal, *desempate]
+
+
+def material_prestado_actual_query(session, *, limit, offset, actor_project=None, id_user=None,
+                                   id_user_ambito=None, q=None, orden="dias_prestado", direccion="desc",
+                                   agrupar=False):
     """KPI "vivo": renglones de vale actualmente prestados (sin devolver), por responsable.
 
     No es un KPI de `kpi_snapshot` -- ver `KpiDefinition.modo="vivo"`. Cada
@@ -1138,70 +1487,112 @@ def material_prestado_actual_query(session, *, limit, offset, actor_project=None
       placeholder ahi. `fecha_incidente` no tiene ese problema documentado en
       ningun punto de la migracion).
     * "Dias prestado" = hoy - incident_date, calculado en Python al armar
-      cada fila (no hace falta expresarlo en SQL: el ORDER BY ya ordena por
-      `incident_date` ascendente, que es equivalente a ordenar por dias
-      prestados descendente -- el mas antiguo es siempre el que mas dias
-      lleva).
+      cada fila.
     * Responsable: `Incident.id_user` (quien levanto el vale), mismo criterio
       que el resto del modulo -- no `created_by`.
     * Sin alcance de proyecto (mismo motivo que sus vecinos de este archivo);
       `actor_project` se acepta por firma pero no se usa aqui.
 
+    Filtros, busqueda y orden se aplican AQUI, en SQL, sobre TODOS los renglones prestados -- no sobre la
+    pagina que se pidio: ver `_condiciones_de_prestamo` y `PRESTADO_ORDENES`. Antes el Dashboard pedia las 50
+    mas antiguas y filtraba en el navegador, y los vales nuevos (los mas recientes) nunca llegaban.
+
     Regresa `(items, total)`: `items` ya es la pagina pedida (limit/offset a
-    nivel SQL), `total` es el conteo COMPLETO sin paginar (para que el
+    nivel SQL), `total` es el conteo de TODO lo que cumple los filtros, sin paginar (para que el
     frontend pueda mostrar "1-25 de 143").
     """
-    condiciones = [
-        NmIncidentProduct.deletion_date.is_(None),
-        Incident.deletion_date.is_(None),
-        Incident.incident_date.isnot(None),
-        NmIncidentProduct.direction == SALIDA,
-        or_(
-            NmIncidentProduct.close_date.is_(None),
-            NmIncidentProduct.close_date == CIERRE_SENTINELA,
-        ),
-        or_(
-            IncidentType.incident_type_description.is_(None),
-            func.lower(func.trim(IncidentType.incident_type_description)).notin_(TIPOS_DE_BAJA),
-        ),
-    ]
+    hoy = date.today()
+    condiciones = _condiciones_de_prestamo(hoy, id_user=id_user, id_user_ambito=id_user_ambito, q=q)
+    articulo, _fecha, _dias = _expresiones_de_prestamo(hoy)
 
-    base = (
-        select(
-            NmIncidentProduct.id_nm_incident_product,
-            Product.descripcion,
-            Product.product_code,
-            Incident.id_user,
-            User.full_name,
-            Incident.incident_date,
-        )
-        .select_from(NmIncidentProduct)
-        .join(Incident, Incident.id_incident == NmIncidentProduct.id_incident)
-        .join(Product, Product.id_product == NmIncidentProduct.id_product)
-        .outerjoin(IncidentType, IncidentType.id_incident_type == Incident.id_incident_type)
-        .outerjoin(User, User.id_user == Incident.id_user)
-        .where(*condiciones)
-    )
-
-    total = session.execute(select(func.count()).select_from(base.subquery())).scalar() or 0
+    # El total sale de la MISMA pasada que la pagina (`count(*) OVER ()`): con una busqueda de texto, cada
+    # pasada sobre los renglones es lo caro, y contar aparte la doblaba.
     filas = session.execute(
-        base.order_by(Incident.incident_date.asc(), NmIncidentProduct.id_nm_incident_product.asc())
+        _de_prestamos([
+            NmIncidentProduct.id_nm_incident_product, articulo, Incident.id_user, User.full_name,
+            Incident.incident_date, func.count().over(),
+        ])
+        .where(*condiciones)
+        .order_by(*_orden_de_prestamos(articulo, orden, direccion, agrupar))
         .limit(limit)
         .offset(offset)
     ).all()
+    if filas:
+        total = int(filas[0][5])
+    elif offset:
+        # Una pagina vacia no trae el total en sus filas (se pidio mas alla del final): se cuenta aparte.
+        total = session.execute(_de_prestamos([func.count()]).where(*condiciones)).scalar() or 0
+    else:
+        total = 0
 
-    hoy = date.today()
     items = []
-    for id_renglon, descripcion, product_code, id_user, full_name, incident_date in filas:
+    for id_renglon, nombre_articulo, id_usuario, full_name, incident_date, _total in filas:
         items.append({
             "id_nm_incident_product": id_renglon,
-            "articulo": descripcion or product_code or f"Producto #{id_renglon}",
-            "id_user": id_user,
+            "articulo": nombre_articulo,
+            "id_user": id_usuario,
             "responsable": full_name,
             "fecha_prestamo": incident_date.date().isoformat(),
             "dias_prestado": (hoy - incident_date.date()).days,
         })
     return items, total
+
+
+def material_prestado_actual_resumen_query(session, *, total, id_user=None, id_user_ambito=None, q=None):
+    """Los agregados de la tabla, en una consulta cada uno, sin importar cuantos renglones haya.
+
+    * `responsables`: uno por responsable con renglones prestados -- cuantos tiene de verdad y desde hace
+      cuantos dias el mas antiguo. UNA pasada con GROUP BY. Es lo que pinta el "(n)" del desplegable y los
+      encabezados de la vista "Por responsable". Son independientes de la busqueda y del responsable elegido
+      (solo los acota `id_user_ambito`): lo que dice cuanto tiene cada quien no cambia al buscar.
+    * `resumen`: de lo que cumple TODOS los filtros -- renglones (el `total` que ya conto la consulta de la
+      pagina), responsables distintos y el renglon mas antiguo, estos dos en una sola pasada.
+
+    Con la pagina son 3 consultas en total, constantes: no crecen con los renglones ni con los
+    responsables. Solo UNA (la de `resumen` por responsable) evita la busqueda de texto.
+    """
+    hoy = date.today()
+    en_el_ambito = _condiciones_de_prestamo(hoy, id_user_ambito=id_user_ambito)
+    filtradas = _condiciones_de_prestamo(hoy, id_user=id_user, id_user_ambito=id_user_ambito, q=q)
+    articulo, _fecha, _dias = _expresiones_de_prestamo(hoy)
+
+    por_responsable = session.execute(
+        _de_prestamos([Incident.id_user, User.full_name, func.count(), func.min(Incident.incident_date)])
+        .where(*en_el_ambito)
+        .group_by(Incident.id_user, User.full_name)
+        .order_by(func.lower(func.coalesce(User.full_name, "")), Incident.id_user)
+    ).all()
+    responsables = [
+        {
+            "id_user": id_usuario, "responsable": full_name, "renglones": int(renglones),
+            "mas_antiguo_dias": (hoy - mas_antiguo.date()).days,
+        }
+        for id_usuario, full_name, renglones, mas_antiguo in por_responsable
+    ]
+
+    # Responsables distintos y renglon mas antiguo, en UNA pasada sobre lo filtrado. El mas antiguo sale de
+    # un `MIN` sobre una llave de texto que se ordena como (fecha, id): "AAAA-MM-DD" + id con ceros a la
+    # izquierda, y despues el responsable y el articulo -- O(n), sin ordenar ni acumular las filas.
+    llave = func.concat(
+        func.to_char(Incident.incident_date, "YYYY-MM-DD"), func.lpad(cast(NmIncidentProduct.id_nm_incident_product, String), 12, "0"),
+        "|", func.coalesce(User.full_name, ""), "|", articulo,
+    )
+    distintos, mas_antiguo_llave = session.execute(
+        _de_prestamos([func.count(func.distinct(func.coalesce(Incident.id_user, 0))), func.min(llave)]).where(*filtradas)
+    ).one()
+    mas_antiguo = None
+    if mas_antiguo_llave:
+        fecha_texto, resto = mas_antiguo_llave[:10], mas_antiguo_llave[23:]   # 10 de fecha + 12 de id + "|"
+        responsable, _, nombre_articulo = resto.partition("|")
+        mas_antiguo = {
+            "dias": (hoy - date.fromisoformat(fecha_texto)).days,
+            "articulo": nombre_articulo,
+            "responsable": responsable or None,
+        }
+    return {
+        "resumen": {"renglones": total, "responsables": int(distintos), "mas_antiguo": mas_antiguo},
+        "responsables": responsables,
+    }
 
 
 # Como se llama, en el selector "Agrupar por" del editor, la dimension de un KPI
@@ -1211,6 +1602,7 @@ ETIQUETA_DIMENSION_POR_OMISION = {
     "empleado": "Empleado",
     "producto": "Producto",
     "estado": "Estado",
+    "familia": "Familia",
     "global": "Total",
 }
 
@@ -1219,7 +1611,8 @@ class KpiDefinition:
     def __init__(self, clave, etiqueta, modulo, dimensiones,
                  query_builder, *, direccion, graficas_permitidas, grafica_default,
                  agregacion=None, unidad="numero", alcance_proyecto=True, modo="snapshot",
-                 colores_categoria=None, descripcion=None, etiqueta_dimension=None):
+                 colores_categoria=None, descripcion=None, etiqueta_dimension=None,
+                 orden_categorias=None, limite_categorias=None, resumen_builder=None):
         self.clave = clave
         self.etiqueta = etiqueta
         # Una linea corta para el selector de KPI del editor (rediseno del
@@ -1270,6 +1663,16 @@ class KpiDefinition:
         # toca a "Extraviado" no deberia depender de en que orden lleguen las
         # categorias a la grafica. dict {valor_de_categoria: "#rrggbb"}.
         self.colores_categoria = colores_categoria
+        # Orden de lectura de las categorias, como LISTA: solo para un KPI de categorias ORDINALES
+        # (ej. prestamos_abiertos_por_antiguedad: 0-30, 31-60, 61-90, +90), cuyo orden es parte del
+        # dato. Con None (el default, todos los demas) el Dashboard ordena por valor, de mayor a
+        # menor. No se deriva de `colores_categoria`: un dict pierde el orden al serializarse.
+        self.orden_categorias = tuple(orden_categorias) if orden_categorias else None
+        # Para una dimension ABIERTA con muchos valores (ej. familia, 41 en Adser): cuantos se
+        # muestran, los de mayor valor. El corte se hace al SUMAR el rango (`_totales()` en
+        # routes/kpi.py), no en el query_builder: cada dia guarda todas las familias y el top
+        # depende del rango que se pida. El "total" sigue siendo el de TODAS. None = sin corte.
+        self.limite_categorias = limite_categorias
         # Si el KPI se calcula UNA VEZ POR PROYECTO ACTIVO (True, el default
         # -- lo que ya hacian los primeros 3 KPIs, todos sobre entidades que
         # SI tienen id_proyect) o UNA SOLA VEZ, sin filtro de proyecto
@@ -1284,6 +1687,9 @@ class KpiDefinition:
         # motivo este campo -- ya anticipado en el comentario de
         # `actor_project` en `routes/kpi.py` antes de que existiera.
         self.alcance_proyecto = alcance_proyecto
+        # Solo para un KPI "vivo": calcula los agregados de su tabla (resumen y conteo por responsable) sobre
+        # TODOS los renglones, no sobre la pagina pedida. Ver `material_prestado_actual_resumen_query`.
+        self.resumen_builder = resumen_builder
 
 
 # Los 16 KPIs de siempre no restringen tipo de grafica -- hoy nada valida
@@ -1602,12 +2008,48 @@ KPI_REGISTRY = (
         descripcion="Entrada, salida y disposiciones especiales de cada renglon de vale.",
     ),
     KpiDefinition(
+        clave="prestamos_abiertos_por_antiguedad",
+        etiqueta="Préstamos abiertos por antigüedad",
+        modulo="operaciones",
+        dimensiones=("estado",),
+        etiqueta_dimension="Antigüedad",
+        query_builder=prestamos_abiertos_por_antiguedad_query,
+        agregacion="ultimo",
+        unidad="numero",
+        alcance_proyecto=False,
+        direccion="bajo_es_mejor",
+        graficas_permitidas=("barras", "dona", "tabla"),
+        grafica_default="barras",
+        # Verde -> ambar -> naranja -> rojo: a mas dias prestado, mas urgente. Por nombre
+        # de categoria, como material_por_estado.
+        colores_categoria=ANTIGUEDAD_COLORES,
+        orden_categorias=ANTIGUEDAD_CATEGORIAS,
+        descripcion="Renglones prestados sin devolver, por días desde el vale: 0-30, 31-60, 61-90 y más de 90.",
+    ),
+    KpiDefinition(
+        clave="perdidas_por_familia",
+        etiqueta="Pérdidas por familia",
+        modulo="operaciones",
+        dimensiones=("familia",),
+        etiqueta_dimension="Familia",
+        query_builder=perdidas_por_familia_query,
+        agregacion="suma",
+        unidad="piezas",
+        alcance_proyecto=False,
+        direccion="bajo_es_mejor",
+        graficas_permitidas=("barras",),
+        grafica_default="barras",
+        limite_categorias=10,
+        descripcion="Piezas destruidas, extraviadas o dañadas, por familia de producto: las 10 con más pérdidas.",
+    ),
+    KpiDefinition(
         clave="material_prestado_actual",
         etiqueta="Material prestado ahora",
         modulo="operaciones",
         dimensiones=("empleado",),
         etiqueta_dimension="Responsable",
         query_builder=material_prestado_actual_query,
+        resumen_builder=material_prestado_actual_resumen_query,
         modo="vivo",
         unidad="piezas",
         alcance_proyecto=False,
@@ -1615,6 +2057,23 @@ KPI_REGISTRY = (
         graficas_permitidas=("tabla",),
         grafica_default="tabla",
         descripcion="Renglones de vale prestados sin devolver, por responsable.",
+    ),
+    KpiDefinition(
+        clave="piezas_por_estado",
+        etiqueta="Piezas por estado",
+        modulo="operaciones",
+        dimensiones=("estado",),
+        etiqueta_dimension="Estado de la pieza",
+        query_builder=piezas_por_estado_query,
+        agregacion="ultimo",
+        unidad="piezas",
+        alcance_proyecto=False,
+        direccion="neutral",
+        graficas_permitidas=("dona", "barras", "tabla"),
+        grafica_default="dona",
+        colores_categoria=PIEZAS_COLORES,
+        orden_categorias=PIEZAS_CATEGORIAS,
+        descripcion="Foto de hoy: cuántas piezas están en el almacén, prestadas, en reparación, dañadas, extraviadas o destruidas.",
     ),
 )
 
@@ -1632,6 +2091,10 @@ ALCANCE_PROYECTO_POR_CLAVE = {kpi.clave: kpi.alcance_proyecto for kpi in KPI_REG
 # (via `DIMENSION_JSON_KEY`) sin tener que resembrar la logica de dimensiones
 # fuera de este registro.
 DIMENSION_POR_CLAVE = {kpi.clave: kpi.dimensiones[0] for kpi in KPI_REGISTRY}
+
+# Cuantas categorias muestra un KPI de dimension abierta (`limite_categorias`; None = todas): lo
+# consume `_totales()` en `app/routes/kpi.py` para cortar al sumar el rango.
+LIMITE_POR_CLAVE = {kpi.clave: kpi.limite_categorias for kpi in KPI_REGISTRY}
 
 # Y para la regla de agregacion (ver AGREGACIONES): la consume `_totales()` en
 # `app/routes/kpi.py` para saber como combinar los snapshots del rango.
@@ -1691,6 +2154,8 @@ def _validar():
                 f"El KPI '{kpi.clave}' es de modo 'vivo': no participa del job ni del backfill, "
                 "no debe declarar 'agregacion'."
             )
+        if kpi.resumen_builder is not None and kpi.modo != "vivo":
+            raise RuntimeError(f"El KPI '{kpi.clave}' declara 'resumen_builder' sin ser de modo 'vivo'.")
         if kpi.agregacion is not None and kpi.agregacion not in AGREGACIONES:
             raise RuntimeError(
                 f"El KPI '{kpi.clave}' declara la agregacion desconocida '{kpi.agregacion}' "
@@ -1711,6 +2176,18 @@ def _validar():
                 raise RuntimeError(
                     f"El KPI '{kpi.clave}' declara la dimension desconocida '{dimension}' "
                     f"(validas: {', '.join(DIMENSIONES)})."
+                )
+        if kpi.limite_categorias is not None and (
+            not isinstance(kpi.limite_categorias, int) or isinstance(kpi.limite_categorias, bool)
+            or kpi.limite_categorias < 1
+        ):
+            raise RuntimeError(f"El KPI '{kpi.clave}' declara un limite_categorias que no es un entero positivo.")
+        if kpi.orden_categorias is not None:
+            if len(set(kpi.orden_categorias)) != len(kpi.orden_categorias):
+                raise RuntimeError(f"El KPI '{kpi.clave}' repite una categoria en orden_categorias.")
+            if kpi.colores_categoria is not None and set(kpi.orden_categorias) != set(kpi.colores_categoria):
+                raise RuntimeError(
+                    f"El KPI '{kpi.clave}' declara orden_categorias y colores_categoria con categorias distintas."
                 )
         if not kpi.graficas_permitidas:
             raise RuntimeError(f"El KPI '{kpi.clave}' no declara ninguna grafica permitida.")

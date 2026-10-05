@@ -116,7 +116,7 @@ export default function CustomerContactsPanel() {
 
   return (
     <section className="entity-page customer-contact-panel">
-      <PageHeader eyebrow="CRM" titulo={etiqueta("title", "Contactos")} subtitulo={etiqueta("subtitle", "Personas de contacto por empresa cliente")}>
+      <PageHeader eyebrow="CRM" titulo={etiqueta("title", "Contactos")} subtitulo={etiqueta("subtitle", "Las personas con quienes tratas en cada empresa cliente. Elige la empresa a la que pertenece el contacto (debe estar registrada antes en Clientes); después podrás elegir ese contacto al crear un proyecto.")}>
         <button className="button ghost" type="button" onClick={loadData}><RefreshCw size={16} /> {t("common.refresh")}</button>
       </PageHeader>
 

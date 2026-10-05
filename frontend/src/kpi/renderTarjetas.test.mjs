@@ -182,6 +182,11 @@ test("la tabla de material prestado muestra los dias prestados y ordena por los 
   assert.ok(html.includes("45 días") && html.includes("28 días") && html.includes("9 días"), "cada renglon dice sus dias");
   const posicion = (articulo) => html.indexOf(articulo);
   assert.ok(posicion("Taladro") < posicion("Martillo") && posicion("Martillo") < posicion("Sierra"), "45, luego 28, luego 9");
-  // Y el selector de orden del modo tarjeta arranca en esa misma columna.
-  assert.match(html, /<option value="dias_prestado" selected/);
+  // Y el selector de orden del modo tarjeta arranca en esa misma columna y sentido, y ofrece las dos direcciones.
+  assert.match(html, /<option value="dias_prestado:desc" selected(="")?>Más días primero/);
+  assert.ok(html.includes('value="dias_prestado:asc"') && html.includes("Menos días primero"), "dias en los dos sentidos");
+  assert.ok(html.includes('value="fecha_prestamo:desc"') && html.includes('value="fecha_prestamo:asc"'), "fecha del vale en los dos sentidos");
+  // El encabezado activo dice su sentido (aria-sort), no solo lo dibuja con una flecha.
+  assert.match(html, /<th aria-sort="descending"><button[^>]*title="Más días primero — clic para invertir"/);
+  assert.match(html, /<th aria-sort="none"><button[^>]*title="Ordenar por Fecha del vale"/);
 });

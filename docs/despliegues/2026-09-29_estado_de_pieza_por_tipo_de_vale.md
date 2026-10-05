@@ -52,10 +52,7 @@ tanto, no se pisa.
   (`inventory_asset.status`), y marcar el producto entero porque se perdió *un*
   desarmador dejaría perdidos a todos. adser no tiene piezas serializadas, así que
   hoy no se nota, pero un cliente que sí las use necesita ese camino aparte.
-- **Existencias:** un vale de destrucción, daño o extravío sigue registrándose como
-  préstamo (`loan`) en el libro de inventario, no como `destroy`/`damage`/`loss`,
-  que el libro sí soporta. Cambiarlo altera cómo se cuentan las existencias y
-  necesita la decisión del almacén.
+- **Existencias de las bajas:** resuelto despues, ver `2026-09-29_existencia_inicial_y_bajas.md`: un vale de destruccion o extravio ya no exige que la herramienta este en el almacen (cierra el prestamo si estaba prestada, o sale con `destroy`/`loss`).
 - **Ausencias** (jornada, comida, permiso, vacaciones, maternidad): no tienen flujo
   propio; solo el CRUD genérico de Incidencias.
 

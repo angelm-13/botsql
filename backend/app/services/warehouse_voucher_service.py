@@ -51,7 +51,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, func, or_, select
 
 from app.models.customer_supplier import CustomerSupplier
 from app.models.incident import Incident
@@ -162,6 +162,22 @@ def _vales_de_baja():
         .join(IncidentType, IncidentType.id_incident_type == Incident.id_incident_type)
         .where(func.lower(func.trim(IncidentType.incident_type_description)).in_(TIPOS_DE_BAJA))
     )
+
+
+# Que movimiento del libro es cada baja, cuando la pieza SI estaba en el almacen.
+MOVIMIENTO_DE_BAJA = {"destruccion": "destroy", "extraviado": "loss"}
+# Lo destruido no vuelve, asi que su renglon nace cerrado. Lo extraviado puede
+# aparecer -en el sistema anterior, 6 de 72 productos extraviados volvieron-, asi
+# que su renglon queda abierto hasta que aparezca (y se devuelve por el camino de
+# siempre) o se cierre a mano.
+SE_CIERRA_AL_REGISTRAR = {"destruccion"}
+
+
+def _clave_de_baja(db, id_incident_type):
+    """`destruccion` o `extraviado` si el vale es de baja; None si no."""
+    tipo = db.get(IncidentType, id_incident_type)
+    clave = _clave_de_tipo(getattr(tipo, "incident_type_description", None))
+    return clave if clave in MOVIMIENTO_DE_BAJA else None
 
 
 def _entero(valor, campo, *, obligatorio=True):
@@ -308,7 +324,7 @@ def _fichas_de_producto(db, ids) -> dict:
             "id_product": p.id_product,
             "product_code": p.product_code,
             "descripcion": p.descripcion,
-            "path_imagen": p.path_imagen,
+            "path_imagen": p.path_imagen or getattr(material, "path_imagen", None),
             "color": p.color,
             "product_status": p.product_status,
             "tracking_mode": p.tracking_mode,
@@ -358,6 +374,25 @@ def _vale(db, id_incident, *, para_actualizar=False) -> Incident:
         raise AppError("errors.not_found", 404,
                        {"entity": "incident", "looked_up": crudo})
     return vale
+
+
+def _exigir_que_sea_suyo(db, vale: Incident, user_data: dict) -> None:
+    """Quien solo pide material solo abre los vales a su nombre.
+
+    `buscar_vales` ya filtraba la LISTA por responsable, pero abrir un vale por
+    su numero -o bajar su PDF- no: con un numero cualquiera en el buscador, un
+    Supervisor o un Jefe de taller veia el vale de otra persona. El alcance tiene
+    que valer igual en todos los caminos que llegan a un vale.
+
+    Se contesta "no encontrado" y no "prohibido": es lo mismo que recibe quien
+    teclea un numero que no existe, asi que no se puede ir sondeando cuales
+    existen.
+    """
+    if _ve_todo_el_almacen(db, user_data):
+        return
+    if vale.id_user is None or int(vale.id_user) != _actor(user_data):
+        raise AppError("errors.not_found", 404,
+                       {"entity": "incident", "looked_up": str(vale.id_incident)})
 
 
 def _renglones(db, id_incident, *, solo_abiertos=False) -> list[NmIncidentProduct]:
@@ -517,6 +552,36 @@ def _sincronizar_estado(db, vale: Incident) -> None:
 
 # --- operaciones ---------------------------------------------------------
 
+def _comprobar_existencia_del_borrador(db, validados: list[dict]) -> None:
+    """Rechaza el borrador que pide mas de lo que hay en su ubicacion.
+
+    Lo fungible se suma por (producto, ubicacion) ANTES de comparar: dos
+    renglones de 3 contra una existencia de 4 son 6 pedidos, y comprobarlos por
+    separado dejaria pasar los dos. Las piezas serializadas no cuentan aqui:
+    una pieza es una pieza, y su disponibilidad la comprueba el propio renglon.
+    """
+    pedido: dict[tuple[int, int], int] = {}
+    for renglon in validados:
+        if renglon["id_inventory_asset"] is not None:
+            continue
+        clave = (int(renglon["id_product"]), int(renglon["id_location_from"]))
+        pedido[clave] = pedido.get(clave, 0) + int(renglon["quantity"])
+
+    for (id_producto, id_ubicacion), solicitado in pedido.items():
+        disponible = int(db.scalar(
+            select(func.coalesce(func.sum(InventoryStock.quantity), 0)).where(
+                InventoryStock.id_product == id_producto,
+                InventoryStock.id_location == id_ubicacion,
+            )
+        ) or 0)
+        if solicitado > disponible:
+            raise AppError(
+                "errors.voucher_quantity_exceeds_stock", 409,
+                {"id_product": id_producto, "id_location": id_ubicacion,
+                 "requested": solicitado, "available": disponible},
+            )
+
+
 def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -> dict:
     """Abre un vale con sus renglones.
 
@@ -573,6 +638,13 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
                            {"entity": "proyect", "field": "id_proyect"})
 
         validados = [_validar_renglon(db, linea) for linea in renglones]
+
+        # Un prevale es una peticion, no una salida, pero pedir mas de lo que
+        # hay en esa ubicacion no es una peticion que alguien pueda surtir:
+        # nace imposible y el almacen lo descubre hasta que intenta autorizarlo.
+        # El vale de verdad ya lo rechaza al sacar el material.
+        if como_borrador:
+            _comprobar_existencia_del_borrador(db, validados)
 
         # La misma pieza dos veces en un mismo vale es una captura doble: solo
         # puede salir una vez. Sin esta comprobacion el segundo renglon falla
@@ -632,12 +704,21 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
         # vuelve a comprobar entonces -- entre que se pide y se surte pueden
         # haberse llevado la ultima pieza.
         if not como_borrador:
+            baja = _clave_de_baja(db, id_tipo)
             for renglon in renglones_escritos:
-                _sacar_del_almacen(db, renglon, user_data,
-                                   id_responsable=id_responsable, vence=vence,
-                                   motivo=motivo)
+                if baja:
+                    _registrar_baja(db, renglon, user_data, clave=baja,
+                                    id_responsable=id_responsable, vence=vence,
+                                    motivo=motivo)
+                else:
+                    _sacar_del_almacen(db, renglon, user_data,
+                                       id_responsable=id_responsable, vence=vence,
+                                       motivo=motivo)
             _marcar_estado_de_producto(db, id_tipo, renglones_escritos)
             db.flush()
+            if baja:
+                # Una destruccion nace con su renglon cerrado: el vale se deriva.
+                _sincronizar_estado(db, vale)
 
         return {
             "voucher": vale.serialize(),
@@ -708,6 +789,90 @@ def _limpiar_estado_de_producto(db, vale, renglon) -> None:
     if producto.product_status == texto:
         producto.product_status = TEXTO_DE_REGRESO
     producto.last_update_date = _ahora()
+    db.flush()
+
+
+def _registrar_baja(db, renglon, user_data, *, clave, id_responsable, vence, motivo):
+    """Registra que una herramienta se destruyo o se extravio, sin exigir que
+    este en el almacen.
+
+    Por que no es un prestamo
+    -------------------------
+    Antes un vale de baja hacia lo mismo que uno de prestamo: sacar una unidad del
+    almacen. Eso fallaba con la herramienta que mas se pierde -la que YA esta en
+    manos de alguien, con existencia 0-, que se rechazaba con "existencia
+    insuficiente", y para la que esta en el almacen dejaba el libro diciendo
+    "prestamo" de algo que nunca iba a volver.
+
+    Que hace
+    --------
+    1. Si el producto esta prestado -renglones de salida sin cerrar de vales que no
+       son de baja-, ese prestamo se CIERRA: la herramienta ya no esta con esa
+       persona. No mueve la existencia, porque una pieza prestada ya no cuenta en
+       el almacen. Se prefiere el prestamo del mismo responsable, y despues el mas
+       antiguo. Solo se cierran renglones completos.
+    2. Lo que quede por dar de baja -la herramienta si estaba en el almacen- sale
+       con el movimiento de baja del libro (`destroy` o `loss`), con su motivo.
+    3. Lo destruido cierra su renglon al registrarse; lo extraviado lo deja abierto
+       hasta que aparezca (ver SE_CIERRA_AL_REGISTRAR).
+
+    Una pieza serializada sigue el camino de siempre: su estado es de la pieza
+    (`inventory_asset`), y ese camino es otro.
+    """
+    if renglon.id_inventory_asset is not None:
+        _sacar_del_almacen(db, renglon, user_data, id_responsable=id_responsable,
+                           vence=vence, motivo=motivo)
+        return
+
+    ahora = _ahora()
+    restante = int(renglon.quantity)
+
+    prestamos = db.scalars(
+        select(NmIncidentProduct)
+        .join(Incident, Incident.id_incident == NmIncidentProduct.id_incident)
+        .where(
+            NmIncidentProduct.id_product == renglon.id_product,
+            NmIncidentProduct.id_nm_incident_product != renglon.id_nm_incident_product,
+            NmIncidentProduct.deletion_date.is_(None),
+            NmIncidentProduct.direction == SALIDA,
+            NmIncidentProduct.id_inventory_asset.is_(None),
+            or_(NmIncidentProduct.close_date.is_(None),
+                NmIncidentProduct.close_date == CIERRE_SENTINELA),
+            NmIncidentProduct.id_incident.notin_(_vales_de_baja()),
+            Incident.deletion_date.is_(None),
+        )
+        .order_by(case((Incident.id_user == id_responsable, 0), else_=1),
+                  NmIncidentProduct.start_date, NmIncidentProduct.id_nm_incident_product)
+        .with_for_update()
+    ).all()
+    vales_tocados = set()
+    for prestamo in prestamos:
+        if restante <= 0:
+            break
+        if int(prestamo.quantity) > restante:
+            continue
+        prestamo.close_date = ahora
+        restante -= int(prestamo.quantity)
+        vales_tocados.add(int(prestamo.id_incident))
+    db.flush()
+    for id_vale in vales_tocados:
+        _sincronizar_estado(db, _vale(db, id_vale, para_actualizar=True))
+
+    if restante > 0:
+        apply_movement_in_session(
+            db, renglon.id_product, user_data,
+            movement_type=MOVIMIENTO_DE_BAJA[clave],
+            quantity_delta=-restante,
+            idempotency_key="voucher:%s:line:%s:baja" % (
+                renglon.id_incident, renglon.id_nm_incident_product),
+            id_location=renglon.id_location_from,
+            reference_type="incident",
+            reference_id=str(renglon.id_incident),
+            reason=motivo,
+        )
+
+    if clave in SE_CIERRA_AL_REGISTRAR:
+        renglon.close_date = ahora
     db.flush()
 
 
@@ -992,6 +1157,7 @@ def consultar_vale(id_incident, user_data: dict) -> dict:
     _actor(user_data)
     with transaction_context() as db:
         vale = _vale(db, id_incident)
+        _exigir_que_sea_suyo(db, vale, user_data)
         renglones = _renglones(db, vale.id_incident)
         abiertos = [r for r in renglones if r.close_date is None]
         # Las salidas y las entradas se cuentan aparte. Desde que la
@@ -1123,17 +1289,25 @@ def autorizar_vale(id_incident, payload: dict, user_data: dict) -> dict:
 
         motivo = _texto(payload.get("note"), "note", largo=300,
                         obligatorio=False) or vale.note
+        baja = _clave_de_baja(db, vale.id_incident_type)
         for renglon in renglones:
             if str(renglon.direction or "").lower() != SALIDA:
                 continue
-            _sacar_del_almacen(db, renglon, user_data,
-                               id_responsable=vale.id_user,
-                               vence=renglon.due_date, motivo=motivo)
+            if baja:
+                _registrar_baja(db, renglon, user_data, clave=baja,
+                                id_responsable=vale.id_user,
+                                vence=renglon.due_date, motivo=motivo)
+            else:
+                _sacar_del_almacen(db, renglon, user_data,
+                                   id_responsable=vale.id_user,
+                                   vence=renglon.due_date, motivo=motivo)
         _marcar_estado_de_producto(db, vale.id_incident_type, renglones)
 
         vale.incident_status = ABIERTO
         vale.last_update_date = _ahora()
         db.flush()
+        if baja:
+            _sincronizar_estado(db, vale)
 
         return {
             "voucher": vale.serialize(),
@@ -1502,6 +1676,20 @@ def buscar_vales(user_data: dict, *, texto=None, estado=None, id_user=None,
                 .where(User.id_user.in_(list(ids_usuarios)))
             ).all())
 
+        # La obra de cada vale, con nombre: un supervisor con varios proyectos
+        # a la vez encuentra su vale de un vistazo en la lista, sin abrirlos
+        # uno por uno. Una consulta para toda la pagina.
+        ids_proyectos = {int(v.id_proyect) for v in vales if v.id_proyect}
+        proyectos = {}
+        if ids_proyectos:
+            proyectos = {
+                int(fila[0]): {"id_proyect": fila[0], "folio": fila[1], "title": fila[2]}
+                for fila in db.execute(
+                    select(Proyect.id_proyect, Proyect.folio, Proyect.title)
+                    .where(Proyect.id_proyect.in_(list(ids_proyectos)))
+                ).all()
+            }
+
         items = []
         for vale in vales:
             fila = vale.serialize()
@@ -1509,6 +1697,7 @@ def buscar_vales(user_data: dict, *, texto=None, estado=None, id_user=None,
                 # El folio con el que la gente lo conoce; si no lo trae, su id.
                 "folio": vale.external_folio or str(vale.id_incident),
                 "holder_name": nombres.get(int(vale.id_user)) if vale.id_user else None,
+                "proyect": proyectos.get(int(vale.id_proyect)) if vale.id_proyect else None,
                 "open_lines": pendientes.get(int(vale.id_incident), 0),
                 "total_lines": renglones.get(int(vale.id_incident), 0),
             })
@@ -1747,6 +1936,7 @@ def folio_del_vale(id_incident, user_data: dict) -> str:
     _actor(user_data)
     with transaction_context() as db:
         vale = _vale(db, id_incident)
+        _exigir_que_sea_suyo(db, vale, user_data)
         return str(vale.external_folio or vale.id_incident)
 
 
@@ -1999,6 +2189,7 @@ def pdf_del_vale(id_incident, user_data: dict, *, storage=None) -> bytes:
 
     with transaction_context() as db:
         vale = _vale(db, id_incident)
+        _exigir_que_sea_suyo(db, vale, user_data)
         expediente = _expediente_del_vale(db, vale, actor_id)
         ultima = db.scalars(
             select(DocumentVersion).where(

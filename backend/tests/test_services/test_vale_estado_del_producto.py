@@ -23,6 +23,7 @@ from app.services.warehouse_voucher_service import (
     crear_vale,
     devolver_renglon,
 )
+from app.utils.errors import AppError
 from tests.test_services.test_vale_de_almacen import (
     ACTOR,
     CEMENTO,
@@ -134,12 +135,18 @@ class TestAlRegresar(BaseEstado):
                 self._devolver(vale)
                 self.assertEqual(self.codigo_del_producto(), (None, "ENTRADA"))
 
-    def test_lo_dañado_y_lo_destruido_siguen_asi_al_volver(self):
-        for id_tipo, codigo in ((TIPO_DANADO, "danado"), (TIPO_DESTRUCCION, "retirado")):
-            with self.subTest(tipo=id_tipo):
-                vale = self._vale([self._linea_cantidad(1)], id_incident_type=id_tipo)
-                self._devolver(vale)
-                self.assertEqual(self.codigo_del_producto()[0], codigo)
+    def test_lo_dañado_sigue_dañado_al_volver(self):
+        vale = self._vale([self._linea_cantidad(1)], id_incident_type=TIPO_DANADO)
+        self._devolver(vale)
+        self.assertEqual(self.codigo_del_producto()[0], "danado")
+
+    def test_lo_destruido_no_vuelve_y_su_estado_no_cambia(self):
+        """Una destruccion nace con su renglon cerrado: no hay nada que devolver."""
+        vale = self._vale([self._linea_cantidad(1)], id_incident_type=TIPO_DESTRUCCION)
+        with self.assertRaises(AppError) as contexto:
+            self._devolver(vale)
+        self.assertEqual(contexto.exception.message_key, "errors.voucher_line_already_closed")
+        self.assertEqual(self.codigo_del_producto()[0], "retirado")
 
     def test_un_estado_puesto_a_mano_no_se_pisa(self):
         vale = self._vale([self._linea_cantidad(1)], id_incident_type=TIPO_REPARACION)
@@ -160,5 +167,6 @@ class TestLoQueNoSeToca(BaseEstado):
         with transaction_context() as db:
             db.query(InventoryStatus).delete()
         vale = self._vale([self._linea_cantidad(1)], id_incident_type=TIPO_DESTRUCCION)
-        self.assertEqual(vale["voucher"]["incident_status"], "abierto")
+        # Una destruccion nace con su renglon cerrado, asi que el vale se deriva.
+        self.assertEqual(vale["voucher"]["incident_status"], "cerrado")
         self.assertEqual(self.codigo_del_producto(), (None, None))

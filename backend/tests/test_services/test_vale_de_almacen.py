@@ -969,6 +969,68 @@ class TestElPrevaleNoMueveElAlmacen(BaseVale):
         self.assertEqual(antes - 2, self._saldo(RACK))
 
 
+class TestElPrevaleNoPideMasDeLoQueHay(BaseVale):
+    """Pedir 5 de lo que tiene 1 no es una peticion que alguien pueda surtir.
+
+    El borrador no mueve el almacen, pero antes tampoco miraba cuanto habia: la
+    cantidad solo tenia que ser mayor que cero, y el rechazo llegaba hasta que el
+    almacen intentaba autorizar. Ahora el prevale nace comprobado contra la
+    existencia de SU ubicacion (la autorizacion la vuelve a comprobar).
+    """
+
+    def _prevale(self, lineas):
+        carga = {"id_incident_type": TIPO_PRESTAMO, "id_user": 1,
+                 "note": "Obra Norte", "lines": lineas,
+                 "due_date": (datetime.now() + timedelta(days=30)).strftime(
+                     "%Y-%m-%d %H:%M:%S")}
+        return crear_vale(carga, ACTOR, como_borrador=True)
+
+    def _renglon(self, cantidad, ubicacion=RACK):
+        return {"id_product": CEMENTO, "quantity": cantidad,
+                "id_location_from": ubicacion}
+
+    def test_asking_for_more_than_there_is_is_rejected_with_the_numbers(self):
+        self.surtir(1, RACK)
+        with self.assertRaises(AppError) as cm:
+            self._prevale([self._renglon(5)])
+        self.assertEqual("errors.voucher_quantity_exceeds_stock",
+                         cm.exception.message_key)
+        self.assertEqual(5, cm.exception.meta["requested"])
+        self.assertEqual(1, cm.exception.meta["available"])
+
+    def test_asking_for_exactly_what_there_is_passes(self):
+        self.surtir(3, RACK)
+        r = self._prevale([self._renglon(3)])
+        self.assertEqual(BORRADOR, r["voucher"]["incident_status"])
+
+    def test_two_lines_of_the_same_product_are_added_before_comparing(self):
+        """Dos de 3 contra 4 son 6 pedidos: por separado, los dos pasarian."""
+        self.surtir(4, RACK)
+        with self.assertRaises(AppError) as cm:
+            self._prevale([self._renglon(3), self._renglon(3)])
+        self.assertEqual("errors.voucher_quantity_exceeds_stock",
+                         cm.exception.message_key)
+        self.assertEqual(6, cm.exception.meta["requested"])
+
+    def test_stock_in_another_location_does_not_cover_this_one(self):
+        self.surtir(10, NAVE)
+        with self.assertRaises(AppError) as cm:
+            self._prevale([self._renglon(2, RACK)])
+        self.assertEqual("errors.voucher_quantity_exceeds_stock",
+                         cm.exception.message_key)
+        self.assertEqual(0, cm.exception.meta["available"])
+
+    def test_a_rejected_draft_leaves_no_voucher_behind(self):
+        from sqlalchemy import func as _func, select as _select
+        from app.models.incident import Incident
+        self.surtir(1, RACK)
+        with self.assertRaises(AppError):
+            self._prevale([self._renglon(5)])
+        with transaction_context() as db:
+            self.assertEqual(
+                0, db.scalar(_select(_func.count()).select_from(Incident)))
+
+
 class TestLaDevolucionEsPorRenglon(BaseVale):
     """Se piden dos y se devuelve uno primero y el otro despues.
 

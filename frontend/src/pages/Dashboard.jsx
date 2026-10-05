@@ -15,10 +15,11 @@ import { useI18n } from "../i18n";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import useReducedMotion from "../components/kpi-widgets/useReducedMotion";
 import useMasonryRef from "../components/kpi-widgets/useMasonry";
-import useReordenarTarjetas, { colisionPorPuntero } from "../components/kpi-widgets/useReordenarTarjetas";
+import useRellenoDelGrid from "../components/kpi-widgets/useRellenoDelGrid";
+import useReordenarTarjetas, { sinColision } from "../components/kpi-widgets/useReordenarTarjetas";
 import {
   getAllKpiDashboard, createKpiDashboard, updateKpiDashboard, deleteKpiDashboard,
-  getAllKpiDashboardWidget, createKpiDashboardWidget, updateKpiDashboardWidget, deleteKpiDashboardWidget,
+  getAllKpiDashboardWidget, createKpiDashboardWidget, updateKpiDashboardWidget, deleteKpiDashboardWidget, saveKpiWidgetOrdenTabla,
   getAllKpiDefinition, queryKpiSnapshot, queryKpiVivo, getAllUser, getAllDepartment, getAllProduct,
 } from "../api";
 import "../styles/kpi-widgets.css";
@@ -27,9 +28,10 @@ import "../styles/kpi-dashboard.css";
 import PageHeader from "../components/PageHeader.jsx";
 import TIPO_GRAFICA_COMPONENTE from "../components/kpi-widgets/tipoGraficaComponentes";
 import Skeleton from "../components/kpi-widgets/Skeleton";
+import { resolverColoresModernosParaPdf } from "../kpi/colorParaPdf";
 import SelectorDeKpi from "../components/kpi-widgets/SelectorDeKpi";
 import {
-  colorDeKpi, colorEfectivoDeKpi, etiquetasDeDimension, labelForDimension, normalizarBusqueda, unidadInfo,
+  colorDeKpi, colorEfectivoDeKpi, etiquetasDeDimension, etiquetasDeSnapshots, labelForDimension, normalizarBusqueda, unidadInfo,
 } from "../kpi/kpiDatos.js";
 import {
   armarParametros, columnasDeWidget, estadoDeWidget, filasDeWidget, mezclaUnidades, motivoParaNoCombinar, rangoInicialDelBorrador,
@@ -362,12 +364,10 @@ function agregarSeccionAlPdf({ pdf, canvas, filas, margin, tituloSeccion, estado
   }
 }
 
-// Al arrastrar, las demas tarjetas NO se corren para hacer sitio. La estrategia por rectangulos de
-// dnd-kit supone una cuadricula donde el orden de la lista es el orden de los rectangulos; en el
-// masonry (columnas de alturas distintas) eso mostraria un acomodo que no es el que quedara al
-// soltar. Sin desplazarlas, la tarjeta arrastrada sigue al puntero, el hueco destino se decide por
-// geometria (closestCenter) y, al soltar, el orden guardado es el de la lista (`arrayMove`) y el
-// masonry se recalcula con el.
+// Al arrastrar, dnd-kit no desplaza a las vecinas: su estrategia por rectangulos supone que el orden
+// de la lista es el de los rectangulos, y en el masonry no lo es. El orden que toma el tablero lo
+// decide `elegirOrden` (kpi/kpiMasonry.js) simulando el masonry, y el navegador acomoda las tarjetas
+// con ese orden (ver useReordenarTarjetas.js).
 const sinDesplazarVecinas = () => null;
 
 export default function Dashboard() {
@@ -456,9 +456,15 @@ export default function Dashboard() {
   // (`{!loadingWidgets && (...)}` en el render), y solo un ref mutable sigue
   // reflejando el nodo ACTUAL en cada vuelta del bucle.
   const widgetGridNodeRef = useRef(null);
+  // Recuadros punteados "Agregar gráfico" que completan la cuadricula (ver useRellenoDelGrid).
+  const [rellenoCount, rellenoRef] = useRellenoDelGrid(
+    widgets.length,
+    widgets.filter((w) => columnasDeWidget(w) === 2).length,
+  );
   const widgetGridRef = useCallback((nodo) => {
     widgetGridNodeRef.current = nodo;
-  }, []);
+    rellenoRef(nodo);
+  }, [rellenoRef]);
 
   // Filtro que una tarjeta le pone a otra: un clic en la barra de un responsable en "Incidencias
   // abiertas por responsable" filtra la tabla de material prestado. Vive aqui (no en cada tarjeta)
@@ -614,7 +620,12 @@ export default function Dashboard() {
         // pixeles.
         const filas = medirFilasDeTarjetas(nodoGrid, ESCALA_CAPTURA_PDF);
         if (filas.length === 0) continue;
-        const canvas = await html2canvas(nodoGrid, { scale: ESCALA_CAPTURA_PDF, backgroundColor: "#ffffff" });
+        const canvas = await html2canvas(nodoGrid, {
+          scale: ESCALA_CAPTURA_PDF,
+          backgroundColor: "#ffffff",
+          // html2canvas no entiende color()/color-mix()/oklch() (ver kpi/colorParaPdf.js).
+          onclone: (_doc, clon) => resolverColoresModernosParaPdf(clon),
+        });
         agregarSeccionAlPdf({ pdf, canvas, filas, margin, tituloSeccion: dashboard.nombre, estadoPagina });
         huboContenido = true;
       }
@@ -875,9 +886,9 @@ export default function Dashboard() {
           {loadingWidgets && <div className="alert">{t("common.loading")}</div>}
 
           {!loadingWidgets && !widgetsError && (
-            <DndContext sensors={dragSensors} collisionDetection={colisionPorPuntero} {...reorden.handlers}>
+            <DndContext sensors={dragSensors} collisionDetection={sinColision} {...reorden.handlers}>
             <SortableContext items={reorden.idsVista} strategy={sinDesplazarVecinas}>
-            <div className="kpi-widget-grid" ref={widgetGridRef}>
+            <div className={`kpi-widget-grid${reorden.activoId ? " kpi-widget-grid-arrastrando" : ""}`} ref={widgetGridRef}>
               {reorden.widgetsVista.map((widget) => (
                 <SortableKpiWidgetCard
                   key={widget.id_kpi_dashboard_widget}
@@ -900,18 +911,22 @@ export default function Dashboard() {
                   tx={tx}
                 />
               ))}
-              {/* Un solo recuadro "Agregar gráfico", al final: con las tarjetas de varias
-                  filas y columnas, rellenar hasta "completar la fila" ya no tiene sentido
-                  (lo hace grid-auto-flow: dense) y llenaba el tablero de recuadros vacíos. */}
-              <button
-                type="button"
-                className="kpi-widget-placeholder"
-                onClick={() => abrirEditor(activeId)}
-                title={tx("add_widget", "Agregar gráfico")}
-              >
-                <Plus size={22} />
-                <span>{tx("add_widget", "Agregar gráfico")}</span>
-              </button>
+              {/* Recuadros punteados al final: con el tablero vacío llenan lo que alcanza a verse; con
+                  tarjetas, completan la última fila. Entran al masonry como tarjetas de una
+                  columna, después de todas las reales, así que no las mueven. */}
+              {Array.from({ length: rellenoCount }).map((_, index) => (
+                <button
+                  type="button"
+                  key={`kpi-widget-placeholder-${index}`}
+                  className="kpi-widget-placeholder"
+                  onClick={() => abrirEditor(activeId)}
+                  title={tx("add_widget", "Agregar gráfico")}
+                  tabIndex={reorden.activoId ? -1 : undefined}
+                >
+                  <Plus size={22} />
+                  <span>{tx("add_widget", "Agregar gráfico")}</span>
+                </button>
+              ))}
             </div>
             </SortableContext>
             {/* Lo que sigue al puntero: una copia ESTATICA de la tarjeta (su HTML), no otra tarjeta
@@ -1009,15 +1024,40 @@ function SortableKpiWidgetCard({ reducirMovimiento, esHueco, ...props }) {
 // reporte PDF (ver esperarWidgetsListos en Dashboard()) necesita saber cuando
 // puede capturarla, sin importar si el resultado fue un dato real o un mensaje
 // de error ya asentado en pantalla.
+// Una sola lista vacia, para que el modo servidor de la tabla no reciba un arreglo nuevo en cada render.
+const SIN_RENGLONES = [];
+
+// Cuanto se espera, despues del ultimo clic en una flecha de orden, antes de guardarlo: invertir el sentido dos
+// veces seguidas es una sola peticion.
+const RETRASO_GUARDAR_ORDEN_MS = 600;
+
+// Guarda el orden elegido en la tabla (`parametros.orden_tabla` del widget). Sin permiso de actualizar el
+// widget (403), con la red caida o con cualquier otro error, el orden se queda solo en la pantalla y no se
+// avisa: elegir como ver la tabla nunca debe sentirse como un fallo. Lo pendiente se manda al desmontar.
+function useGuardarOrdenTabla(idWidget) {
+  const pendiente = useRef(null);
+  const temporizador = useRef(null);
+  const enviar = useCallback(() => {
+    clearTimeout(temporizador.current);
+    temporizador.current = null;
+    const orden = pendiente.current;
+    if (!orden || !idWidget) return;
+    pendiente.current = null;
+    saveKpiWidgetOrdenTabla(idWidget, orden).catch(() => {});
+  }, [idWidget]);
+  const guardar = useCallback((orden) => {
+    pendiente.current = orden;
+    clearTimeout(temporizador.current);
+    temporizador.current = setTimeout(enviar, RETRASO_GUARDAR_ORDEN_MS);
+  }, [enviar]);
+  useEffect(() => () => enviar(), [enviar]);
+  return guardar;
+}
+
 function useDatosDeWidget({ widget, kpiCatalog, onReady }) {
   const [snapshots, setSnapshots] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  // KPI "vivo" (ver material_prestado_actual): su propio estado, aparte del
-  // de kpi_snapshot -- ni la forma de los datos (una lista paginada, no
-  // series por entidad/dia) ni el endpoint (GET .../vivo) son los mismos.
-  const [vivoItems, setVivoItems] = useState([]);
-  const [vivoTotal, setVivoTotal] = useState(0);
 
   const idsKpiDefinition = Array.isArray(widget.ids_kpi_definition) ? widget.ids_kpi_definition : [];
   // "numero" y "dona" solo grafican un KPI (ver reglas en KpiWidgetPanel): si
@@ -1046,24 +1086,19 @@ function useDatosDeWidget({ widget, kpiCatalog, onReady }) {
   const esTablaVivo = esTabla && kpiInfos.length === 1 && kpiInfos[0]?.modo === "vivo";
   const idWidget = widget.id_kpi_dashboard_widget;
 
+  // KPI "vivo" (ver material_prestado_actual): su tabla pide sus propios datos al servidor, por paginas y con
+  // el filtro, la busqueda y el orden aplicados alla (ver TablaWidget, modo servidor). Aqui solo se le da la
+  // llamada y el aviso de "ya cargue" para el reporte PDF.
+  const idVivo = esTablaVivo ? idsUsados[0] : null;
+  const cargarVivo = useMemo(
+    () => (idVivo ? (parametros) => queryKpiVivo(idVivo, parametros) : null),
+    [idVivo],
+  );
+  const onListoVivo = useCallback(() => onReady?.(idWidget), [onReady, idWidget]);
+  const guardarOrdenTabla = useGuardarOrdenTabla(esTablaVivo ? idWidget : null);
   useEffect(() => {
-    let cancelado = false;
-    async function cargarVivo() {
-      setLoading(true);
-      setError("");
-      try {
-        const resultado = await queryKpiVivo(idsUsados[0], { limit: 50, offset: 0 });
-        if (!cancelado) { setVivoItems(resultado.items || []); setVivoTotal(resultado.total || 0); }
-      } catch (err) {
-        if (!cancelado) { setError(err.message || "errors.request_failed"); setVivoItems([]); }
-      } finally {
-        if (!cancelado) { setLoading(false); onReady?.(idWidget); }
-      }
-    }
-    if (esTablaVivo) cargarVivo();
-    return () => { cancelado = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [esTablaVivo, idsKey, onReady, idWidget]);
+    if (esTablaVivo) { setLoading(false); setError(""); }
+  }, [esTablaVivo]);
 
   useEffect(() => {
     let cancelado = false;
@@ -1122,7 +1157,7 @@ function useDatosDeWidget({ widget, kpiCatalog, onReady }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idsKey, esTabla, esTablaVivo, fechaInicio, fechaFin, fechaInicioB, fechaFinB, empleadosKey, departamentosKey, agruparPor]);
 
-  return { snapshots, loading, error, vivoItems, vivoTotal, kpiInfos, idsUsados, esTablaVivo };
+  return { snapshots, loading, error, vivoItems: SIN_RENGLONES, vivoTotal: 0, cargarVivo, onListoVivo, guardarOrdenTabla, kpiInfos, idsUsados, esTablaVivo };
 }
 
 // El mismo valor, pero solo despues de `ms` sin cambios -- para no pedirle datos
@@ -1150,7 +1185,7 @@ const SKELETON_POR_TIPO = { numero: "numero", dona: "dona", tabla: "tabla" };
 export function CuerpoDeWidget({
   widget, datos, userLabel, productLabel, formatNumber, t, tx, animar, filtroResponsable, onFiltrarResponsable, onQuitarFiltroResponsable,
 }) {
-  const { snapshots, loading, error, vivoItems, vivoTotal, kpiInfos, esTablaVivo } = datos;
+  const { snapshots, loading, error, vivoItems, vivoTotal, cargarVivo, onListoVivo, guardarOrdenTabla, kpiInfos, esTablaVivo } = datos;
   const ERRORES_CON_TEXTO_PROPIO = ["missing_range", "missing_kpi", "errors.rango_excede_limite", "tabla_no_soportada"];
   return (
     <>
@@ -1171,7 +1206,7 @@ export function CuerpoDeWidget({
         <p className="kpi-error-inline">{t(error, error)}</p>
       )}
       {!loading && !error && esTablaVivo && (
-        <KpiTablaVivo items={vivoItems} total={vivoTotal} tx={tx} filtroExterno={filtroResponsable} onQuitarFiltroExterno={onQuitarFiltroResponsable} />
+        <KpiTablaVivo items={vivoItems} total={vivoTotal} cargar={cargarVivo} onListo={onListoVivo} tx={tx} filtroExterno={filtroResponsable} onQuitarFiltroExterno={onQuitarFiltroResponsable} ordenInicial={widget.parametros?.orden_tabla} onOrdenChange={guardarOrdenTabla} />
       )}
       {!loading && !error && !esTablaVivo && snapshots.length > 0 && (
         <KpiChartBody
@@ -1366,11 +1401,17 @@ function KpiNumero({ widget, snapshot, kpiInfo, formatNumber, tx, animar }) {
 // El unico KPI "vivo" que hoy existe (material_prestado_actual): una lista
 // paginada de renglones de vale sin devolver, no una serie por fecha -- por
 // eso no pasa por `KpiChartBody` (que solo sabe leer snapshots).
-function KpiTablaVivo({ items, total, tx, filtroExterno, onQuitarFiltroExterno }) {
+// `cargar` (modo servidor): la tabla pide sus renglones por paginas, ya filtrados, buscados y ordenados por el
+// backend. Sin `cargar` (las pruebas de render, que le pasan renglones ya cargados) pinta `items` en modo local.
+function KpiTablaVivo({ items, total, cargar, onListo, tx, filtroExterno, onQuitarFiltroExterno, ordenInicial, onOrdenChange }) {
   const Componente = TIPO_GRAFICA_COMPONENTE.tabla;
+  const sinAsignar = tx("unknown_user", "Sin asignar");
   return (
     <Componente
-      filas={filasTablaPrestamo(items, tx("unknown_user", "Sin asignar"))}
+      servidor={cargar ? { cargar, onListo, sinAsignar } : null}
+      ordenInicial={ordenInicial}
+      onOrdenChange={onOrdenChange}
+      filas={cargar ? SIN_RENGLONES : filasTablaPrestamo(items, sinAsignar)}
       total={total}
       filtroExterno={filtroExterno}
       onQuitarFiltroExterno={onQuitarFiltroExterno}
@@ -1385,7 +1426,16 @@ function KpiTablaVivo({ items, total, tx, filtroExterno, onQuitarFiltroExterno }
         sin_resultados: tx("loan_no_results", "Ningún renglón de {responsable}."),
         quitar_filtro: tx("loan_clear_filter", "Ver todos los responsables"),
         ordenar: tx("loan_sort_by", "Ordenar por"),
-        invertir_orden: tx("loan_sort_reverse", "Invertir el orden"),
+        clic_invertir: tx("loan_sort_click_reverse", "clic para invertir"),
+        ordenar_columna: tx("loan_sort_column", "Ordenar por {columna}"),
+        orden_dias_prestado_desc: tx("loan_sort_days_desc", "Más días primero"),
+        orden_dias_prestado_asc: tx("loan_sort_days_asc", "Menos días primero"),
+        orden_fecha_prestamo_desc: tx("loan_sort_date_desc", "Vale más reciente primero"),
+        orden_fecha_prestamo_asc: tx("loan_sort_date_asc", "Vale más antiguo primero"),
+        orden_articulo_asc: tx("loan_sort_item_asc", "Artículo A–Z"),
+        orden_articulo_desc: tx("loan_sort_item_desc", "Artículo Z–A"),
+        orden_responsable_asc: tx("loan_sort_holder_asc", "Responsable A–Z"),
+        orden_responsable_desc: tx("loan_sort_holder_desc", "Responsable Z–A"),
         filtro_responsable: tx("loan_filter_holder", "Responsable"),
         todos_los_responsables: tx("loan_all_holders", "Todos los responsables"),
         vista_lista: tx("loan_view_list", "Lista"),
@@ -1405,6 +1455,10 @@ function KpiTablaVivo({ items, total, tx, filtroExterno, onQuitarFiltroExterno }
         de: tx("loan_of", "de"),
         renglon: tx("loan_row", "renglón"),
         renglones: tx("loan_rows", "renglones"),
+        cargando: tx("loan_loading", "Cargando…"),
+        cargando_mas: tx("loan_loading_more", "Cargando más…"),
+        mostrar_mas: tx("loan_show_more", "Mostrar más"),
+        error_carga: tx("loan_load_error", "No se pudo cargar la lista."),
         responsable_uno: tx("loan_holder_one", "responsable"),
         responsables: tx("loan_holders", "responsables"),
         mas_antiguo: tx("loan_oldest", "el más antiguo"),
@@ -1425,7 +1479,9 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, fo
   const kpiInfo = kpiInfos[0];
   const parametros = widget.parametros || {};
   const agruparPorPeriodo = parametros.agrupar_por === "periodo";
-  const labelForId = agruparPorPeriodo ? (id) => id : labelForDimension(kpiInfo?.dimensiones?.[0], userLabel, productLabel);
+  const labelForId = agruparPorPeriodo
+    ? (id) => id
+    : labelForDimension(kpiInfo?.dimensiones?.[0], userLabel, productLabel, etiquetasDeSnapshots(snapshots));
   const Componente = TIPO_GRAFICA_COMPONENTE[widget.tipo_grafica];
   const sinDatos = <p className="kpi-empty-inline">{tx("no_data", "Sin datos en el rango seleccionado.")}</p>;
   if (!Componente) return null;

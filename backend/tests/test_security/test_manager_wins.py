@@ -86,6 +86,29 @@ class TestNingunaMigracionPisaAlGestor(unittest.TestCase):
             + ", ".join(culpables),
         )
 
+    def test_the_database_guard_runs_before_every_other_migration(self):
+        """El trigger que protege al Gestor tiene que existir antes que lo que protege.
+
+        `20260816000000_el_gestor_manda_sobre_las_migraciones.sql` congela lo que
+        haya en una base ya en uso la PRIMERA vez y crea el trigger que descarta
+        los UPDATE/DELETE de migraciones sobre filas ajustadas. Como db-migrate
+        corre en orden lexicografico, si apareciera una migracion anterior, en
+        la primera pasada esa pisaria las filas antes de que se congelen.
+        """
+        guardia = "20260816000000_el_gestor_manda_sobre_las_migraciones.sql"
+        self.assertEqual(
+            guardia, self._archivos()[0].name,
+            "hay una migracion que corre antes del guardia del Gestor; renombrala "
+            "con un prefijo posterior o mueve el guardia antes de ella",
+        )
+
+    # Lo de abajo YA no pisa al Gestor en la practica: el trigger de la
+    # migracion `20260816000000_el_gestor_manda_sobre_las_migraciones` descarta
+    # cualquier UPDATE/DELETE de una migracion sobre una fila que el Gestor
+    # toco (y la primera vez congela las existentes). La lista se conserva
+    # porque el detector por texto sigue sirviendo para no agregar migraciones
+    # que dependan de ese trigger para ser correctas.
+    #
     # Deuda conocida, sin resolver a proposito -- ver el comentario de abajo.
     # Cada archivo pisa scope_create/read/update/delete de una fila EXISTENTE
     # con un UPDATE incondicional (clona los permisos de una entidad "fuente"
@@ -159,6 +182,31 @@ class TestNingunaMigracionPisaAlGestor(unittest.TestCase):
             "UPDATE directo (sin ON CONFLICT), mismo problema que revierte al "
             "gestor de roles: " + ", ".join(culpables),
         )
+
+    def test_la_migracion_de_la_bitacora_no_revierte_lo_que_el_gestor_guarde(self):
+        """Las columnas de MENU tambien son del Gestor (selector «Ubicacion»).
+
+        `20260930090000_bitacora_diaria_entra_al_menu.sql` movia la pantalla al
+        menu lateral con `WHERE menu_location IS DISTINCT FROM 'sidebar'`: como
+        db-migrate la reaplica en cada arranque, un administrador que la ponia
+        en «No mostrar» la veia reaparecer en el siguiente reinicio. La forma
+        correcta es actuar solo sobre la fila que sigue como la dejo la siembra
+        (oculta y sin grupo ni etiqueta). Se comprueba sobre el texto por la
+        misma razon que el resto de esta clase.
+        """
+        texto = (MIGRACIONES / "20260930090000_bitacora_diaria_entra_al_menu.sql").read_text(
+            encoding="utf-8", errors="replace")
+        # Sin los comentarios, que citan la forma vieja para explicarla.
+        codigo = "\n".join(linea for linea in texto.splitlines() if not linea.lstrip().startswith("--"))
+        self.assertNotIn(
+            "IS DISTINCT FROM", codigo.upper(),
+            "compara contra el valor DESEADO: revierte lo que el Gestor guarde en cada reinicio")
+        for guarda in ("menu_location = 'hidden'", "COALESCE(menu_group, '') = ''",
+                       "COALESCE(menu_label, '') = ''"):
+            self.assertIn(
+                guarda, codigo,
+                f"falta la guarda `{guarda}`: sin ella la migracion pisa una fila que el "
+                "administrador ya cambio")
 
     def test_no_migration_withdraws_rows_absent_from_its_own_matrix(self):
         """Dar de baja por ausencia en una matriz vieja tambien revierte al gestor.
@@ -357,6 +405,35 @@ class TestRetirarUnPermiso(BackendTestCase):
         # coincide con lo que se ve cuesta una hora a quien lo cree.
         self.assertEqual(antes["total"] - 1, despues["total"])
         self.assertEqual(len(despues["items"]), despues["total"])
+
+
+class TestRetirarUnPermisoDeCampo(BackendTestCase):
+    """Un permiso de campo que el Gestor retira queda de baja, no se borra.
+
+    Igual que con los de entidad: con borrado fisico, el INSERT de reposicion de
+    las migraciones lo devolvia en el siguiente despliegue.
+    """
+
+    def test_withdrawing_marks_it_instead_of_removing_it(self):
+        from app.models import NmFieldPermission
+        from app.services.nm_field_permission_service import NmFieldPermissionService
+
+        with transaction_context() as db:
+            fila = NmFieldPermission(id_field=1, id_permission=90, control_type="3", created_by=1)
+            db.add(fila)
+            db.flush()
+            id_fila = fila.id_nm_field_permission
+
+        NmFieldPermissionService.delete(id_fila, user_id=1)
+        with transaction_context() as db:
+            fila = db.get(NmFieldPermission, id_fila)
+            self.assertIsNotNone(fila, "la fila se borro; tenia que quedar de baja")
+            primera = fila.deletion_date
+            self.assertIsNotNone(primera)
+
+        NmFieldPermissionService.delete(id_fila, user_id=1)
+        with transaction_context() as db:
+            self.assertEqual(primera, db.get(NmFieldPermission, id_fila).deletion_date)
 
 
 if __name__ == "__main__":

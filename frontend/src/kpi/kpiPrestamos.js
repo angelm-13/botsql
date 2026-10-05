@@ -82,8 +82,57 @@ export function escalaDeBarras(filas) {
   return Math.max(DIAS_ESCALA_MINIMA, ...(filas || []).map((fila) => fila.dias_prestado || 0));
 }
 
+// --- Orden de la tabla -------------------------------------------------------------------------------
+// Columnas por las que se ordena y su sentido: la direccion es "desc"/"asc" de la COLUMNA (el mismo vocabulario
+// que `orden`/`direccion` del servidor). Para los dias, "desc" es "mas dias primero" (la fecha mas antigua); para la
+// fecha del vale, "desc" es "la mas reciente primero".
+export const CAMPOS_DE_ORDEN = ["dias_prestado", "fecha_prestamo", "articulo", "responsable"];
+
+/** Por que sentido arranca una columna al pulsarla: los textos de la A a la Z; los dias y la fecha, de lo mas
+ * llamativo (mas dias, mas reciente) a lo menos. */
+export function direccionInicial(campo) {
+  return campo === "articulo" || campo === "responsable" ? "asc" : "desc";
+}
+
+/** El orden con el que arranca la tabla: mas dias primero (el prestamo mas antiguo arriba). */
+export const ORDEN_POR_OMISION = Object.freeze({ campo: "dias_prestado", direccion: "desc" });
+
+/** Un orden guardado (`parametros.orden_tabla`) listo para usar: si no es un `{campo, direccion}` valido
+ * (ausente, de un widget anterior, o basura) vuelve al orden por omision, sin error. */
+export function normalizarOrdenTabla(valor) {
+  const valido = valor && typeof valor === "object" && CAMPOS_DE_ORDEN.includes(valor.campo)
+    && (valor.direccion === "asc" || valor.direccion === "desc");
+  return valido ? { campo: valor.campo, direccion: valor.direccion } : { ...ORDEN_POR_OMISION };
+}
+
+/** El orden que sigue a pulsar una columna: la misma columna invierte el sentido; otra arranca por el suyo. */
+export function siguienteOrden(actual, campo) {
+  if (actual?.campo === campo) return { campo, direccion: actual.direccion === "desc" ? "asc" : "desc" };
+  return { campo, direccion: direccionInicial(campo) };
+}
+
+/** Clave de la etiqueta de un orden ("orden_dias_prestado_desc"): la usa el selector compacto y el tooltip. */
+export function claveDeEtiquetaDeOrden(campo, direccion) {
+  return `orden_${campo}_${direccion}`;
+}
+
+/** Todas las combinaciones (columna, sentido) en el orden en que las lista el selector compacto. */
+export const OPCIONES_DE_ORDEN = CAMPOS_DE_ORDEN.flatMap((campo) => {
+  const inicial = direccionInicial(campo);
+  const otra = inicial === "desc" ? "asc" : "desc";
+  return [{ campo, direccion: inicial }, { campo, direccion: otra }];
+});
+
+/** "dias_prestado:desc" <-> { campo, direccion }: el valor de cada opcion del selector compacto. */
+export const claveDeOrden = (orden) => `${orden.campo}:${orden.direccion}`;
+export function ordenDeClave(clave) {
+  const [campo, direccion] = String(clave).split(":");
+  return CAMPOS_DE_ORDEN.includes(campo) && (direccion === "asc" || direccion === "desc") ? { campo, direccion } : null;
+}
+
 /** Ordena sin alterar la lista recibida. Empata por fecha del vale (el mas viejo
- * primero) y por articulo, para que el orden sea siempre el mismo. */
+ * primero), por articulo y, al final, por el id del renglon, para que el orden sea siempre el mismo
+ * (igual que el servidor: `_orden_de_prestamos`). */
 export function ordenarFilas(filas, campo = "dias_prestado", direccion = "desc") {
   const signo = direccion === "asc" ? 1 : -1;
   return [...(filas || [])].sort((a, b) => {
@@ -92,7 +141,8 @@ export function ordenarFilas(filas, campo = "dias_prestado", direccion = "desc")
     const comparacion = typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y), "es");
     return signo * comparacion
       || String(a.fecha_prestamo).localeCompare(String(b.fecha_prestamo))
-      || String(a.articulo).localeCompare(String(b.articulo), "es");
+      || String(a.articulo).localeCompare(String(b.articulo), "es")
+      || (Number(a.id) || 0) - (Number(b.id) || 0);
   });
 }
 
@@ -110,21 +160,28 @@ export function resumenDePrestamos(filas, total = 0) {
   };
 }
 
-/** La vista agrupada por responsable: cada grupo con sus renglones (por dias) y su
- * renglon mas antiguo; el grupo con el prestamo mas viejo va primero. */
-export function agruparPorResponsable(filas) {
+/** La vista agrupada por responsable: cada grupo con sus renglones y su renglon mas antiguo. Los grupos van con
+ * el prestamo mas viejo primero, salvo que se ordene por responsable (de la A a la Z o al reves); el orden
+ * elegido ordena los renglones DENTRO de cada grupo. Mismo criterio que el servidor (`_orden_de_prestamos`). */
+export function agruparPorResponsable(filas, orden = ORDEN_POR_OMISION) {
+  const { campo, direccion } = normalizarOrdenTabla(orden);
   const grupos = new Map();
   for (const fila of filas || []) {
     const actual = grupos.get(fila.responsable) || [];
     actual.push(fila);
     grupos.set(fila.responsable, actual);
   }
+  const porNombre = (a, b) => String(a.responsable).localeCompare(String(b.responsable), "es");
   return [...grupos.entries()]
     .map(([responsable, renglones]) => {
-      const ordenados = ordenarFilas(renglones);
-      return { responsable, filas: ordenados, masAntiguo: ordenados[0].dias_prestado };
+      // Dentro de un grupo, ordenar por responsable no distingue nada (todos son el mismo): se usa el orden
+      // por omision para que el resultado siga siendo estable.
+      const ordenados = campo === "responsable" ? ordenarFilas(renglones) : ordenarFilas(renglones, campo, direccion);
+      return { responsable, filas: ordenados, masAntiguo: Math.max(...renglones.map((fila) => fila.dias_prestado)) };
     })
-    .sort((a, b) => b.masAntiguo - a.masAntiguo || String(a.responsable).localeCompare(String(b.responsable), "es"));
+    .sort(campo === "responsable"
+      ? (a, b) => (direccion === "asc" ? 1 : -1) * porNombre(a, b)
+      : (a, b) => b.masAntiguo - a.masAntiguo || porNombre(a, b));
 }
 
 /** Los primeros `limite` renglones, o todos si se pidio "Ver todos". */

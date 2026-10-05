@@ -661,6 +661,8 @@ def _clasificacion_en_lote(db, productos) -> dict[int, dict]:
                 # ningun sitio.
                 MaterialType.id_material_type,
                 MaterialType.material_type_description,
+                # La foto del material, que heredan los productos sin foto propia.
+                Material.path_imagen,
             )
             .select_from(Material)
             .outerjoin(ProductFamily,
@@ -673,8 +675,9 @@ def _clasificacion_en_lote(db, productos) -> dict[int, dict]:
         ).all()
         for (id_material, material, id_familia, familia,
              id_marca, marca, id_unidad, unidad,
-             id_tipo, tipo) in filas:
+             id_tipo, tipo, foto_material) in filas:
             por_material[id_material] = {
+                "material_path_imagen": foto_material,
                 "id_material": id_material, "material": material,
                 "id_product_family": id_familia, "family": familia,
                 "id_material_type": id_tipo, "material_type": tipo,
@@ -702,6 +705,7 @@ def _clasificacion_en_lote(db, productos) -> dict[int, dict]:
 
     VACIA = {
         "id_material": None, "material": None,
+        "material_path_imagen": None,
         "id_material_type": None, "material_type": None,
         "id_product_family": None, "family": None,
         "id_brand": None, "brand": None,
@@ -1097,7 +1101,9 @@ def localizar(consulta: str, user_data: dict, *, proposito: str | None = None,
                 "id_product": producto.id_product,
                 "product_code": producto.product_code,
                 "descripcion": producto.descripcion,
-                "path_imagen": producto.path_imagen,
+                "path_imagen": producto.path_imagen or (
+                    clasificaciones.get(producto.id_product) or {}
+                ).get("material_path_imagen"),
                 "tracking_mode": producto.tracking_mode,
                 "stock_purpose": producto.stock_purpose,
                 # El estatus tal como lo escribio el sistema anterior --

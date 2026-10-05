@@ -1,6 +1,6 @@
 from sqlalchemy import func, select
 
-from app.models import Invoice, Product
+from app.models import Invoice, Material, Product
 from app.models.session import transaction_context
 from app.services.base_service import CrudService
 from app.utils.errors import AppError
@@ -147,8 +147,56 @@ class ProductService(CrudService):
 
     @classmethod
     def update(cls, item_id, payload: dict, user_id: int | None = None):
+        payload = dict(payload or {})
+        # Los formularios de edicion devuelven el registro completo, `lot_control`
+        # incluido. Si viene igual a lo que ya hay no se esta encendiendo nada, y
+        # rechazarlo hacia imposible guardar CUALQUIER edicion de un producto.
+        if 'lot_control' in payload:
+            actual = None
+            with transaction_context() as session:
+                try:
+                    fila = session.get(Product, int(item_id))
+                except (TypeError, ValueError):
+                    fila = None
+                if fila is not None:
+                    actual = bool(fila.lot_control)
+            if actual is not None and cls._como_booleano(payload['lot_control']) == actual:
+                payload.pop('lot_control')
         return super().update(item_id, cls._rechazar_lot_control(payload),
                               user_id=user_id)
+
+    @staticmethod
+    def heredar_foto_del_material(items: list[dict]) -> list[dict]:
+        """A un producto sin foto propia le presta la de su material.
+
+        La foto se captura una vez en Materiales y la heredan todos los
+        productos que no traen la suya. Es solo de LECTURA: no escribe nada en
+        `product.path_imagen`, asi que subirle foto al producto despues la hace
+        mandar, y quitarsela devuelve la del material.
+        """
+        pendientes = {
+            int(i['id_material']) for i in items
+            if not i.get('path_imagen') and i.get('id_material')
+        }
+        if not pendientes:
+            return items
+        with transaction_context() as session:
+            fotos = dict(session.execute(
+                select(Material.id_material, Material.path_imagen).where(
+                    Material.id_material.in_(list(pendientes)),
+                    Material.path_imagen.isnot(None),
+                )
+            ).all())
+        for item in items:
+            if not item.get('path_imagen') and item.get('id_material'):
+                item['path_imagen'] = fotos.get(int(item['id_material'])) or item.get('path_imagen')
+        return items
+
+    @staticmethod
+    def _como_booleano(valor) -> bool:
+        if isinstance(valor, str):
+            return valor.strip().lower() in ('1', 'true', 't', 'yes', 'si', 'on')
+        return bool(valor)
 
     @staticmethod
     def _project_id(user_data: dict) -> int | None:

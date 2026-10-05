@@ -139,22 +139,20 @@ sesión SSH con acceso al clúster.
 punto de partida. `b21a793` es ancestro del destino, así que no hay que pasar
 por ninguna versión intermedia.
 
-**Destino: `e33126f`**, mi último commit, cabeza del push que lo subió. Su diferencia
-con `09199c7` (mi último commit con código de ejecución, la tabla de la plantilla
-de ancho doble) es solo una prueba del frontend, así que promover `e33126f` es
-promover ese código. Se elige este SHA y no otro porque **las imágenes solo se
+**Destino: `e854b32`**, la cabeza del último push y la única con imágenes
+construidas. Promoverlo trae todo el código hasta ahí. Se elige este SHA y no otro porque **las imágenes solo se
 construyen para el commit con el que termina cada `push`** (el tag es
 `git rev-parse --short HEAD` del run, ver `.github/workflows/build-images.yml`): un
 commit intermedio de un push con varios commits no tiene imagen. Antes de empezar
-confirma en GitHub → Actions que el run de `e33126f` terminó en verde, o el pod
+confirma en GitHub → Actions que el run de `e854b32` terminó en verde, o el pod
 queda en `ImagePullBackOff`. Si más adelante hay commits de código posteriores, usa
 el último *que se haya subido como cabeza de un push* y sustituye el SHA en todo
 este documento. (No uses el `deploy(tyakxa-dev): actualizar a ...` que el bot deja
 encima: es solo el cambio de tag de `tyakxa-dev`.)
 
-**Qué cambia de `b21a793` a `e33126f`: mi parte es solo código, pero llegan tres
+**Qué cambia de `b21a793` a `e854b32`: mi parte es solo código, pero llegan tres
 migraciones de Alan.** En mi trabajo no hay migraciones ni cambios de esquema
-(`git diff --name-only 8579bf4 e33126f -- database backend/app/models` solo muestra
+(`git diff --name-only 8579bf4 e854b32 -- database backend/app/models` solo muestra
 la de Alan de abajo). El rango trae:
 
 - `20260929100000_material_no_se_repite.sql`: índice único para que un material no
@@ -204,7 +202,7 @@ algo que aplicar (paso 2). Lo que reescribía `nm_field_permission`
 Lo que ya viene en `b21a793` y **no** hay que volver a hacer: la regla de
 agregación y la columna `peso`, los 4 KPIs nuevos de incidencias y material, el
 KPI en vivo `material_prestado_actual`, el tipo de widget `tabla`, el rango
-relativo y el ErrorBoundary. Lo que llega con `e33126f`: la plantilla del tablero (con la tabla de ancho doble),
+relativo y el ErrorBoundary. Lo que llega con `e854b32`: la plantilla del tablero (con la tabla de 2 columnas por 2 filas, primero), el tablero en masonry (cada tarjeta conserva su altura) con arrastre que deja un hueco del tamaño real,
 el selector de KPI con botones de módulo y buscador, la tabla de material prestado rediseñada (renglones compactos, resumen, gravedad, filtro y vista por responsable), la regla de unidades, "Tabla" solo para
 KPIs en vivo, la comparación contra "hace N días", los acentos del menú, la
 cabecera de tarjeta sin traslape y la etiqueta "Responsable" (que llega sola a
@@ -229,9 +227,9 @@ productos) y scripts que cierran vales; ninguno se deshace al volver a la imagen
 anterior. Sin respaldo no hay marcha atrás. **No pases al paso 1 sin esto:**
 
 ```bash
-kubectl -n adser-prod exec statefulset/postgres -- sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > ~/adser_antes_de_e33126f_$(date +%Y%m%d_%H%M).sql
-ls -l ~/adser_antes_de_e33126f_*.sql    # debe pesar megabytes, no 0 bytes
-tail -n 3 ~/adser_antes_de_e33126f_*.sql   # debe terminar en "PostgreSQL database dump complete"
+kubectl -n adser-prod exec statefulset/postgres -- sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > ~/adser_antes_de_e854b32_$(date +%Y%m%d_%H%M).sql
+ls -l ~/adser_antes_de_e854b32_*.sql    # debe pesar megabytes, no 0 bytes
+tail -n 3 ~/adser_antes_de_e854b32_*.sql   # debe terminar en "PostgreSQL database dump complete"
 ```
 
 Guarda el archivo fuera del clúster (`scp` a otra máquina) antes de seguir.
@@ -239,8 +237,8 @@ Guarda el archivo fuera del clúster (`scp` a otra máquina) antes de seguir.
 ### 1. Promover la imagen (en el repo, no en el VPS)
 
 En `k8s/overlays/adser-prod/kustomization.yaml`, cambiar los 4 `newTag`:
-`"b21a793"` → `"e33126f"` (tres veces) y `b21a793-adser-prod` →
-`e33126f-adser-prod`. Commitear y hacer push. Luego, desde la máquina con el
+`"b21a793"` → `"e854b32"` (tres veces) y `b21a793-adser-prod` →
+`e854b32-adser-prod`. Commitear y hacer push. Luego, desde la máquina con el
 repo:
 
 ```bash
@@ -331,6 +329,15 @@ print(recalcular_kpi_snapshots_rango(hoy - timedelta(days=364), hoy))
 
 Esperado: `{'ok': True, ... 'filas': N, ...}`. Detalle y verificaciones en
 `2026-09-25_kpi_agregacion.md` y en `2026-09-29_kpis_dashboard_adser.md`.
+
+> **DECISIÓN DE ALAN (2026-09-30): los pasos 6, 7 y 8 NO se corren en `adser-prod`.**
+> No se mueven permisos del Gestor de roles de Adser: se dejan como están. El ensayo sobre
+> una copia de prod (`2026-09-30_ensayo_general_adser.md`) mostró que `taroj` no tiene hoy
+> lectura de `kpi_definition` (la fila está dada de baja desde el 14-sep) y que el script de
+> permisos avisa por eso; la plantilla del tablero depende de esa lectura. Consecuencia
+> aceptada: `taroj` no verá el tablero de KPI hasta que Adser lo pida; si hace falta
+> activar algo en el Gestor de roles, **Adser avisa a Alan** y él decide. Del paso 9 sigue
+> vigente solo el punto 5 (las cifras de solo lectura); los puntos 1 a 4 no aplican.
 
 ### 6. Dry-run del script de permisos
 

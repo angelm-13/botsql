@@ -133,10 +133,6 @@ export const createCustomerContact = (payload) => request("/customer_contact/", 
 export const updateCustomerContact = (id, payload) => request(`/customer_contact/${id}`, { method: "PUT", body: payload });
 export const deleteCustomerContact = (id) => request(`/customer_contact/${id}`, { method: "DELETE" });
 
-export const getAllLogisticsContact = (params = {}) => request("/logistics_contact/", { params });
-export const createLogisticsContact = (payload) => request("/logistics_contact/", { method: "POST", body: payload });
-export const updateLogisticsContact = (id, payload) => request(`/logistics_contact/${id}`, { method: "PUT", body: payload });
-export const deleteLogisticsContact = (id) => request(`/logistics_contact/${id}`, { method: "DELETE" });
 
 export const getAllLogisticsAddress = (params = {}) => request("/logistics_address/", { params });
 export const getLogisticsAddress = (id) => request(`/logistics_address/${id}`);
@@ -496,6 +492,8 @@ export const deleteKpiDashboard = (id) => request(`/kpi_dashboard/${id}`, { meth
 export const getAllKpiDashboardWidget = (idDashboard) => request(`/kpi_dashboard/${idDashboard}/widgets/`);
 export const createKpiDashboardWidget = (idDashboard, payload) => request(`/kpi_dashboard/${idDashboard}/widgets/`, { method: "POST", body: payload });
 export const updateKpiDashboardWidget = (id, payload) => request(`/kpi_dashboard_widget/${id}`, { method: "PUT", body: payload });
+// Guarda SOLO el orden de la tabla ({campo, direccion}); el servidor lo fusiona en `parametros` sin pisar lo demas.
+export const saveKpiWidgetOrdenTabla = (id, orden) => request(`/kpi_dashboard_widget/${id}/orden_tabla`, { method: "PUT", body: orden });
 export const deleteKpiDashboardWidget = (id) => request(`/kpi_dashboard_widget/${id}`, { method: "DELETE" });
 
 export const getAllLevel = (params = {}) => request("/level/", { params });
@@ -505,6 +503,7 @@ export const updateLevel = (id, payload) => request(`/level/${id}`, { method: "P
 export const deleteLevel = (id) => request(`/level/${id}`, { method: "DELETE" });
 
 export const getAllLocation = (params = {}) => request("/location/", { params });
+export const getLocationOptions = () => request("/location/options");
 export const getLocation = (id) => request(`/location/${id}`);
 export const createLocation = (payload) => request("/location/", { method: "POST", body: payload });
 export const updateLocation = (id, payload) => request(`/location/${id}`, { method: "PUT", body: payload });
@@ -554,6 +553,11 @@ export const getAllMaterial = (params = {}) => request("/material/", { params })
 export const getMaterial = (id) => request(`/material/${id}`);
 export const createMaterial = (payload) => request("/material/", { method: "POST", body: payload });
 export const updateMaterial = (id, payload) => request(`/material/${id}`, { method: "PUT", body: payload });
+export const uploadMaterialImage = (id, file) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  return request(`/material/${id}/image`, { method: "POST", body: formData });
+};
 export const deleteMaterial = (id) => request(`/material/${id}`, { method: "DELETE" });
 
 export const getAllMaterialComponent = (params = {}) => request("/material_component/", { params });
@@ -779,19 +783,6 @@ export const createUserMfa = (payload) => request("/user_mfa/", { method: "POST"
 export const updateUserMfa = (id, payload) => request(`/user_mfa/${id}`, { method: "PUT", body: payload });
 export const deleteUserMfa = (id) => request(`/user_mfa/${id}`, { method: "DELETE" });
 export const updateInvoiceLineAuthorization = (id, payload) => request(`/invoice/line-authorization/${id}`, { method: "PATCH", body: payload });
-export const getSalesCatalogProducts = (params = {}) => request("/sales-catalog/products", { params });
-export const previewSalesCatalogProductPrice = (id) => request(`/sales-catalog/products/${id}/preview-price`);
-export const upsertSalesCatalogProductConfig = (id, payload) => request(`/sales-catalog/products/${id}/config`, { method: "PATCH", body: payload });
-export const bulkSalesCatalogMargin = (payload) => request("/sales-catalog/products/bulk-margin", { method: "POST", body: payload });
-export const bulkSalesCatalogPublish = (payload) => request("/sales-catalog/products/bulk-publish", { method: "POST", body: payload });
-export const getSalesCatalogApiKeys = () => request("/sales-catalog/api-keys");
-export const createSalesCatalogApiKey = (payload) => request("/sales-catalog/api-keys", { method: "POST", body: payload });
-export const updateSalesCatalogApiKey = (id, payload) => request(`/sales-catalog/api-keys/${id}`, { method: "PATCH", body: payload });
-export const revokeSalesCatalogApiKey = (id) => request(`/sales-catalog/api-keys/${id}/revoke`, { method: "POST" });
-export const getWebShoppers = (params = {}) => request("/web-shoppers", { params });
-export const getWebShopper = (id) => request(`/web-shoppers/${id}`);
-export const deactivateWebShopper = (id) => request(`/web-shoppers/${id}/deactivate`, { method: "PATCH" });
-export const reactivateWebShopper = (id) => request(`/web-shoppers/${id}/reactivate`, { method: "PATCH" });
 export const getKronosAttendance = (payload) => request("/kronos/attendance", { method: "POST", body: payload });
 export const getKronosPeople = (payload) => request("/kronos/people", { method: "POST", body: payload });
 export const saveKronosPerson = (payload) => request("/kronos/people", { method: "PUT", body: payload });

@@ -155,6 +155,11 @@ def get_customer_supplier(user_data, id_customer_supplier):
 @require_entity_permission('customer_supplier', 'create')
 def create_customer_supplier(user_data):
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
+    # `id_user` (vendedor) es NOT NULL pero ya no se captura en el formulario, y a un
+    # rol sin permiso de campo sobre el se le filtra del payload: sin esto el alta
+    # fallaba pidiendo un vendedor que nadie podia elegir. Por omision, quien captura.
+    if not payload.get('id_user'):
+        payload['id_user'] = user_data.get('id_user')
     return _jsonify_projected_record(user_data, CustomerSupplierService.create(payload, user_id=user_data.get('id_user')), status=201)
 
 

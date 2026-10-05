@@ -28,9 +28,8 @@ const navItems = [
   { path: "/bank", key: "menu.bank" },
   { path: "/bank_account", key: "menu.bank_account" },
   { path: "/brand", key: "menu.brand" },
-  { path: "/customer_supplier", key: "menu.customer_supplier" },
+  { path: "/customer_supplier", key: "menu.customer_supplier", location: "none" },
   { path: "/logistica/clientes", label: "Clientes", entityName: "customer_supplier", group: "CRM", groupIcon: "users", location: "sidebar", order: 10 },
-  { path: "/logistica/contactos", label: "Contactos", entityName: "logistics_contact", group: "CRM", groupIcon: "users", location: "sidebar", order: 20 },
   { path: "/logistica/direcciones", label: "Direcciones", entityName: "logistics_address", group: "CRM", groupIcon: "users", location: "sidebar", order: 30 },
   { path: "/logistica/contratos", label: "Contratos", entityName: "logistics_contract", group: "CRM", groupIcon: "users", location: "sidebar", order: 40 },
   { path: "/logistica/tarifas", label: "Tarifas", entityName: "logistics_rate", group: "CRM", groupIcon: "users", location: "sidebar", order: 50 },
@@ -116,11 +115,6 @@ const navItems = [
   // la pantalla donde el propio usuario activa su MFA -esta es la de
   // administracion, para ver el estado de MFA de otros usuarios.
   { path: "/user_mfa", key: "menu.user_mfa", groupIcon: "settings", location: "settings" }
-];
-
-const quickNavItems = [
-  { path: "/catalogo-web", key: "menu.catalogo_web", label: "Catálogo Web", entityName: "product_sale_config" },
-  { path: "/compradores-web", key: "menu.web_shoppers", label: "Compradores Web", entityName: "user" }
 ];
 
 
@@ -627,13 +621,6 @@ export default function Shell() {
             </div>
           </div>
         </header>
-        <nav className="quick-nav" aria-label={shellText("quick_access")}>
-          {quickNavItems.filter(canSeeNavItem).map((item) => (
-            <NavLink key={item.path} to={item.path} className={({ isActive }) => isActive ? "quick-nav-link active" : "quick-nav-link"}>
-              {t(item.key, item.label || item.key)}
-            </NavLink>
-          ))}
-        </nav>
         <Outlet />
       </main>
     </div>

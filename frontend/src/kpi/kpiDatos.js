@@ -56,6 +56,22 @@ export function colorDeCategoriaEstado(nombreCategoria, coloresCategoria, colorR
   return colorRespaldo;
 }
 
+// Orden de lectura de las categorias de un KPI ORDINAL (ej. prestamos_abiertos_por_antiguedad:
+// 0-30, 31-60, 61-90, +90): el KPI lo declara en `orden_categorias` (backend, registry.py) y las
+// filas salen en ESE orden, no por valor. Sin orden declarado (todos los demas KPIs) devuelve
+// las filas tal cual llegaron. Una categoria que no este en la lista va al final, en su orden
+// original; no se altera el arreglo recibido.
+export function ordenarPorCategorias(filas, ordenCategorias, campoId = "id") {
+  if (!Array.isArray(ordenCategorias) || ordenCategorias.length === 0) return filas;
+  const posicion = new Map(ordenCategorias.map((categoria, indice) => [String(categoria), indice]));
+  const fin = ordenCategorias.length;
+  const lugar = (fila) => posicion.get(String(fila[campoId])) ?? fin;
+  return filas
+    .map((fila, indice) => ({ fila, indice }))
+    .sort((a, b) => lugar(a.fila) - lugar(b.fila) || a.indice - b.indice)
+    .map(({ fila }) => fila);
+}
+
 // Color fijo por KPI (no por posicion en un arreglo): el modulo (`%`) sobre
 // el id real es determinista y estable entre widgets/tableros -mismo KPI,
 // mismo color, siempre- sin necesitar guardar un mapeo aparte.
@@ -76,8 +92,11 @@ export function colorEfectivoDeKpi(idKpiDefinition, coloresOverride) {
 
 // Como etiquetar una entidad segun la dimension real del KPI (empleado,
 // producto o "global" -- sin desglose).
-export function labelForDimension(dimension, userLabel, productLabel) {
+export function labelForDimension(dimension, userLabel, productLabel, etiquetas) {
   if (dimension === "producto") return productLabel;
+  // "familia": el snapshot guarda el id y la API manda los nombres aparte (`etiquetas`, ver
+  // `etiquetasDeSnapshots`); un id sin nombre (familia borrada) se muestra como "#id".
+  if (dimension === "familia") return (id) => (etiquetas && etiquetas[id]) || `#${id}`;
   if (dimension === "global") return () => "Total";
   // "estado": el id YA es el nombre legible de la categoria (ej. "abierta",
   // "Entrada") -- no hay a quien buscarle nombre, solo capitalizar. Sin este
@@ -85,6 +104,17 @@ export function labelForDimension(dimension, userLabel, productLabel) {
   // mostraba como "#abierta" al no encontrar a nadie con ese id.
   if (dimension === "estado") return (valor) => capitalizar(valor);
   return userLabel;
+}
+
+// Los nombres de entidad que la API manda junto a los totales (`rango_a.etiquetas`,
+// hoy solo la dimension "familia": `{ id: nombre }`), de todos los snapshots y los dos lados del
+// rango juntos. Vacio si el KPI no los manda.
+export function etiquetasDeSnapshots(snapshots) {
+  const etiquetas = {};
+  (snapshots || []).forEach((snapshot) => {
+    [snapshot?.rango_a, snapshot?.rango_b].forEach((rango) => Object.assign(etiquetas, rango?.etiquetas || {}));
+  });
+  return etiquetas;
 }
 
 // El nombre de campo del backend (`por_empleado`) es historico -- se
@@ -199,7 +229,7 @@ export function normalizarBusqueda(valor) {
 // suya en el registry (`etiqueta_dimension`: "Responsable", "Tecnico"...); sin
 // ella -un backend viejo, una fila huerfana- se cae a la de su dimension. Con
 // varios KPIs elegidos salen las distintas, sin repetir, separadas por " / ".
-const ETIQUETA_DIMENSION_POR_OMISION = { empleado: "Empleado", producto: "Producto", estado: "Estado", global: "Total" };
+const ETIQUETA_DIMENSION_POR_OMISION = { empleado: "Empleado", producto: "Producto", estado: "Estado", familia: "Familia", global: "Total" };
 export function etiquetasDeDimension(kpiInfos) {
   const etiquetas = (kpiInfos || []).map((info) => info?.etiqueta_dimension
     || ETIQUETA_DIMENSION_POR_OMISION[info?.dimensiones?.[0]]

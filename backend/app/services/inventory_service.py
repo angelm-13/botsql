@@ -845,7 +845,7 @@ def warehouse_stock(location_id, user_data) -> dict:
                 # almacen es una tabla de texto -mismo reclamo que ya se
                 # resolvio en Localizar-, y aqui es donde mas se nota, porque
                 # es la lista mas larga del almacen.
-                "path_imagen": getattr(product, "path_imagen", None),
+                "path_imagen": getattr(product, "path_imagen", None) or getattr(material, "path_imagen", None),
                 "tracking_mode": getattr(product, "tracking_mode", None),
                 # El estatus heredado del sistema anterior (ENTRADA, SALIDA,
                 # DAÑADO, EXTRAVIADO...) y el color, para la misma tarjeta que

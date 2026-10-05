@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowUpRight, RefreshCw, Search, Tags, Trash2, Pencil, History} from "lucide-react";
+import { ArrowUpRight, RefreshCw, Search, Tags, Trash2, Pencil, History, PackagePlus } from "lucide-react";
 import { Link } from "react-router-dom";
 import FiltroBuscable from "../components/FiltroBuscable.jsx";
 import { useI18n } from "../i18n";
-import { getAllProduct, createProduct, updateProduct, deleteProduct, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, uploadProductImage, getAllBrand, getAllProductFamily, getAllInventoryStatus, getAllLocation, getAllMaterial } from "../api";
+import VisorDeFoto from "../components/VisorDeFoto";
+import { getAllProduct, createProduct, updateProduct, deleteProduct, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, uploadProductImage, getAllBrand, getAllProductFamily, getAllInventoryStatus, getAllLocation, getAllMaterial, urlDeArchivo } from "../api";
 import { fetchAllPages } from "../utils/fetchAllPages";
+import { colorDeEstatus } from "../utils/estatusDePieza";
 import Pagination from "../components/Pagination.jsx";
 import ProductHistory from "../components/ProductHistory.jsx";
+import EntradaDeExistencia from "../components/EntradaDeExistencia.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
@@ -42,6 +45,8 @@ export default function ProductPage() {
   const [editingId, setEditingId] = useState(null);
   // El producto cuya ficha de historial esta abierta, o null.
   const [ficha, setFicha] = useState(null);
+  // El producto al que se le esta registrando una entrada de existencia, o null.
+  const [entrada, setEntrada] = useState(null);
   const [query, setQuery] = useState("");
   const [view, setView] = useState("table");
   const [page, setPage] = useState(1);
@@ -52,6 +57,17 @@ export default function ProductPage() {
   const [errorMeta, setErrorMeta] = useState(null);
   const [selectedImageFile, setSelectedImageFile] = useState(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState("");
+  // Los productos cuya foto no cargo (archivo que no existe): se recuerdan para
+  // pintar el marcador en lugar del icono de imagen rota.
+  const [fotosRotas, setFotosRotas] = useState(() => new Set());
+  // La foto que se esta mirando en grande, o null.
+  const [fotoAmpliada, setFotoAmpliada] = useState(null);
+  const ampliarFoto = (item) => setFotoAmpliada({
+    src: urlDeArchivo(item.path_imagen),
+    titulo: item.descripcion || item.product_code || `#${item.id_product}`,
+    descripcion: item.product_code || "",
+  });
+  const marcarFotoRota = (idProduct) => setFotosRotas((antes) => new Set(antes).add(idProduct));
   const currentUser = useMemo(() => readCurrentUser(), []);
   const isSuperUser = Boolean(currentUser?.is_superuser || currentUser?.is_bootstrap_admin || currentUser?.username === "admin1");
   const currentRoleId = currentUser?.id_permission;
@@ -218,14 +234,6 @@ export default function ProductPage() {
   }
 
 
-  function buildImageUrl(value) {
-    if (!value) return "";
-    const text = String(value);
-    if (/^https?:\/\//i.test(text)) return text;
-    const base = import.meta.env.VITE_API_BASE_URL || "http://localhost:5001";
-    return `${base.replace(/\/+$/, "")}/${text.replace(/^\/+/, "")}`;
-  }
-
   function clearProductImageSelection() {
     setSelectedImageFile(null);
     setImagePreviewUrl("");
@@ -273,8 +281,12 @@ export default function ProductPage() {
   }
 
   function productStatusColor(value) {
+    // El color que el administrador le puso al estado en el catalogo manda; si el
+    // texto no coincide con ninguna fila (ENTRADA, SALIDA, DESTRUCCION... no la
+    // tienen), se cae a la paleta por gravedad de `estatusDePieza.js`.
     const color = String(productStatusMeta(value)?.color || "").trim();
-    return /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(color) ? color : "";
+    if (/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(color)) return color;
+    return colorDeEstatus(value);
   }
 
   function productHexToRgba(hex, alpha) {
@@ -408,7 +420,7 @@ export default function ProductPage() {
     if (ENTITY_KEY === "user") editData.password = "";
     setFormData(editData);
     setSelectedImageFile(null);
-    setImagePreviewUrl(item.path_imagen ? buildImageUrl(item.path_imagen) : "");
+    setImagePreviewUrl(item.path_imagen ? urlDeArchivo(item.path_imagen) : "");
     setFieldErrors({});
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -777,7 +789,7 @@ export default function ProductPage() {
               {canSeeField("product_status") && <th>{t("fields.product.product_status")}</th>}
               {canSeeField("path_imagen") && <th>{t("fields.product.path_imagen")}</th>}
               {canSeeField("product_code") && <th>{t("fields.product.product_code")}</th>}
-        </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_product}>{showRowActions && <td className="row-actions">{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}<button type="button" onClick={() => setFicha(item)} title={t("history.title", "Historial del producto")}><History size={15} /></button>{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</td>}
+        </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_product}>{showRowActions && <td className="row-actions">{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{canUpdate && <button type="button" onClick={() => setEntrada(item)} title={t("stock_entry.title", "Registrar entrada")}><PackagePlus size={15} /></button>}<button type="button" onClick={() => setFicha(item)} title={t("history.title", "Historial del producto")}><History size={15} /></button>{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</td>}
               {canSeeField("id_product") && <td><pre className="cell-value">{formatTableValue(item.id_product)}</pre></td>}
               {canSeeField("id_location") && <td><pre className="cell-value">{productKanbanDisplayLabel(locationOptions, "id_location", "location", item.id_location)}</pre></td>}
               {canSeeField("id_material") && <td><pre className="cell-value">{productKanbanDisplayLabel(materialOptions, "id_material", "material", item.id_material)}</pre></td>}
@@ -785,11 +797,11 @@ export default function ProductPage() {
               {canSeeField("color") && <td><pre className="cell-value">{formatTableValue(item.color)}</pre></td>}
               {canSeeField("is_directly_related_to_product_service") && <td><pre className="cell-value">{formatTableValue(item.is_directly_related_to_product_service)}</pre></td>}
               {canSeeField("product_status") && <td><span style={productStatusBadgeStyle(item.product_status)}>{productStatusDisplayLabel(item.product_status)}</span></td>}
-              {canSeeField("path_imagen") && <td>{item.path_imagen ? <img className="table-image" src={buildImageUrl(item.path_imagen)} alt={t("common.image", "Imagen")} /> : <span className="muted">-</span>}</td>}
+              {canSeeField("path_imagen") && <td>{item.path_imagen && !fotosRotas.has(item.id_product) ? <img className="table-image foto-ampliable" src={urlDeArchivo(item.path_imagen)} alt={t("common.image", "Imagen")} title={t("photo.click_to_zoom", "Clic para verla en grande")} onClick={() => ampliarFoto(item)} onError={() => marcarFotoRota(item.id_product)} /> : <span className="muted">-</span>}</td>}
               {canSeeField("product_code") && <td><pre className="cell-value">{formatTableValue(item.product_code)}</pre></td>}
         </tr>)}</tbody></table></div>}
 
-      {canRead && view === "kanban" && filtered.length > 0 && <div className="kanban">{Object.entries(groups).map(([key, groupItems]) => <div className="kanban-column" key={key}><h3>{key} <span>{groupItems.length}</span></h3>{groupItems.map((item) => <article className="kanban-card product-kanban-card" style={productStatusCardStyle(item.product_status)} key={item.id_product}>{canSeeField("path_imagen") && item.path_imagen && <img className="kanban-image" src={buildImageUrl(item.path_imagen)} alt={t("common.image", "Imagen")} />}<strong>{String(item.product_code ?? item.id_product)}</strong><small>#{item.id_product}</small><div className="product-kanban-details product-kanban-compact">
+      {canRead && view === "kanban" && filtered.length > 0 && <div className="kanban">{Object.entries(groups).map(([key, groupItems]) => <div className="kanban-column" key={key}><h3>{key} <span>{groupItems.length}</span></h3>{groupItems.map((item) => <article className="kanban-card product-kanban-card" style={productStatusCardStyle(item.product_status)} key={item.id_product}>{canSeeField("path_imagen") && item.path_imagen && !fotosRotas.has(item.id_product) && <img className="kanban-image foto-ampliable" src={urlDeArchivo(item.path_imagen)} alt={t("common.image", "Imagen")} title={t("photo.click_to_zoom", "Clic para verla en grande")} onClick={() => ampliarFoto(item)} onError={() => marcarFotoRota(item.id_product)} />}<strong>{String(item.product_code ?? item.id_product)}</strong><small>#{item.id_product}</small><div className="product-kanban-details product-kanban-compact">
           {canSeeField("product_status") && item.product_status && <p><span>{t("fields.product.product_status", "Estado")}:</span> <strong style={productStatusBadgeStyle(item.product_status)}>{productStatusDisplayLabel(item.product_status)}</strong></p>}
           {canSeeField("descripcion") && item.descripcion && <p className="wide"><span>{t("fields.product.descripcion", "Descripcion")}:</span> <strong>{formatTableValue(item.descripcion)}</strong></p>}
           {canSeeField("id_location") && item.id_location && <p><span>{t("fields.product.id_location", "Ubicacion")}:</span> <strong>{productKanbanDisplayLabel(locationOptions, "id_location", "location", item.id_location)}</strong></p>}
@@ -801,7 +813,16 @@ export default function ProductPage() {
           {canSeeField("cantidad") && item.cantidad !== null && item.cantidad !== undefined && item.cantidad !== "" && <p><span>{t("fields.product.cantidad", "Cantidad")}:</span> <strong>{formatTableValue(item.cantidad)}</strong></p>}
           {canSeeField("last_update_date") && item.last_update_date && <p><span>{t("fields.product.last_update_date", "Actualizacion")}:</span> <strong>{formatTableValue(item.last_update_date)}</strong></p>}
           {canSeeField("note") && item.note && <p className="wide"><span>{t("fields.product.note", "Nota")}:</span> <strong>{formatTableValue(item.note)}</strong></p>}
-        </div>{showRowActions && <div>{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}<button type="button" onClick={() => setFicha(item)} title={t("history.title", "Historial del producto")}><History size={15} /></button>{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</div>}</article>)}</div>)}</div>}
+        </div>{showRowActions && <div>{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{canUpdate && <button type="button" onClick={() => setEntrada(item)} title={t("stock_entry.title", "Registrar entrada")}><PackagePlus size={15} /></button>}<button type="button" onClick={() => setFicha(item)} title={t("history.title", "Historial del producto")}><History size={15} /></button>{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</div>}</article>)}</div>)}</div>}
+
+      {fotoAmpliada && (
+        <VisorDeFoto
+          src={fotoAmpliada.src}
+          titulo={fotoAmpliada.titulo}
+          descripcion={fotoAmpliada.descripcion}
+          onCerrar={() => setFotoAmpliada(null)}
+        />
+      )}
 
       <Pagination
         page={page}
@@ -811,6 +832,13 @@ export default function ProductPage() {
         loading={loading}
         onChange={setPage}
       />
+      {entrada && (
+        <EntradaDeExistencia
+          producto={entrada}
+          onCerrar={() => setEntrada(null)}
+          onRegistrada={() => loadData()}
+        />
+      )}
       {ficha && (
         <ProductHistory
           idProduct={ficha.id_product}

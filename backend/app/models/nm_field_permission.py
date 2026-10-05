@@ -27,6 +27,10 @@ class NmFieldPermission(Base):
     creation_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now())
     last_update_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
     deletion_date: Mapped[object] = mapped_column(DateTime, nullable=True)
+    # Cuando toco la fila el Gestor de roles; ver el mismo campo en EntityPermission.
+    ajustado_por_gestor: Mapped[object] = mapped_column(
+        DateTime, nullable=True, default=func.now(), onupdate=func.now()
+    )
 
     def serialize(self) -> dict:
         return {

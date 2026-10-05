@@ -15,7 +15,7 @@ import {
   createWarehousePrevoucher,
   createWarehouseVoucher,
   getIncidentTypeOptions,
-  getAllLocation,
+  getLocationOptions,
   getMyPermissions,
   getUserOptions,
   getOverdueVoucherLines,
@@ -170,7 +170,10 @@ export default function WarehouseVoucherPage() {
       const [venc, tip, ubi, usr, permisosPayload] = await Promise.all([
         getOverdueVoucherLines().catch(() => ({ items: [] })),
         getIncidentTypeOptions().catch(() => []),
-        getAllLocation({ per_page: 200 }).catch(() => ({ items: [] })),
+        // `/location/options`, no `/location/`: la lista completa exige leer
+        // `location` (modulo de inventario) y un Supervisor, que solo pide
+        // material, se quedaba sin nombres -- el "Sale de" salia en blanco.
+        getLocationOptions().catch(() => []),
         getUserOptions().catch(() => []),
         privilegiado
           ? Promise.resolve({ entity_permissions: [] })
@@ -178,7 +181,7 @@ export default function WarehouseVoucherPage() {
       ]);
       setVencidos(venc?.items || []);
       setTipos(Array.isArray(tip) ? tip : tip?.items || []);
-      setUbicaciones(ubi?.items || []);
+      setUbicaciones(Array.isArray(ubi) ? ubi : ubi?.items || []);
       setUsuarios(Array.isArray(usr) ? usr : usr?.items || []);
       const filasPermiso = permisosPayload.entity_permissions || [];
       setPermisos(filasPermiso);
@@ -552,6 +555,17 @@ export default function WarehouseVoucherPage() {
                       <strong className="mono">{v.folio}</strong>
                       <span className="vale-lista-quien">
                         {v.holder_name || t("voucher.no_holder", "sin responsable")}
+                      </span>
+                      {/* La obra, como la nombra el resto de la pantalla: el
+                          proyecto ligado si lo hay; si no, la nota del vale,
+                          que es donde los vales migrados de Adser guardan su
+                          obra (lo mismo que agrupa el historial del empleado). */}
+                      <span className="vale-lista-proyecto"
+                            title={v.proyect?.title || v.note || undefined}>
+                        {v.proyect
+                          ? `${v.proyect.folio ? `#${v.proyect.folio}` : `#${v.proyect.id_proyect}`}${v.proyect.title ? ` — ${v.proyect.title}` : ""}`
+                          : (v.note || "").trim()
+                            || t("voucher.no_project", "Sin proyecto asignado")}
                       </span>
                       <span className={`vale-lista-estado ${v.incident_status}`}>
                         {t(`voucher.status_${v.incident_status}`, v.incident_status)}
@@ -1083,10 +1097,34 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
         serializado,
         id_location_from: pieza?.id_location
           || producto.locations?.[0]?.id_location || "",
+        // Donde hay existencia de este producto, con su ruta. Es lo que se
+        // ofrece a quien solo pide material: no elige "de donde" entre todas
+        // las ubicaciones, sale de donde el producto esta.
+        sitios: producto.locations || [],
+        sitio_etiqueta: pieza
+          ? (pieza.location_path_label || pieza.location_description || "")
+          : "",
       }],
     });
     setBusqueda("");
     setCandidatos([]);
+  };
+
+  // Cuanto hay para ESTE renglon: la existencia del producto en la ubicacion de
+  // la que sale, menos lo que ya piden los otros renglones del mismo producto y
+  // sitio. Lo serializado no cuenta -una pieza es una pieza-. El buscador ya
+  // trae la existencia por sitio, asi que no hace falta otra consulta.
+  const disponibleDe = (linea, indice) => {
+    if (linea.serializado) return null;
+    const sitio = (linea.sitios || []).find(
+      (s) => String(s.id_location) === String(linea.id_location_from));
+    const hay = Number(sitio?.quantity) || 0;
+    const yaPedido = borrador.lines.reduce((suma, otra, i) => (
+      i !== indice && !otra.serializado
+        && otra.id_product === linea.id_product
+        && String(otra.id_location_from) === String(linea.id_location_from)
+        ? suma + (Number(otra.quantity) || 0) : suma), 0);
+    return Math.max(0, hay - yaPedido);
   };
 
   const cambiar = (indice, cambios) => setBorrador({
@@ -1103,7 +1141,9 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
   // servidor conteste; el servidor lo exige igual, que es lo que cuenta.
   const listo = borrador.lines.length > 0 && borrador.id_incident_type
     && borrador.id_user && borrador.due_date && borrador.note.trim()
-    && borrador.lines.every((l) => l.serializado || l.id_location_from);
+    && borrador.lines.every((l, i) => l.serializado || (
+      l.id_location_from && Number(l.quantity) >= 1
+      && Number(l.quantity) <= disponibleDe(l, i)));
 
   return (
     <section className="vale-borrador">
@@ -1264,9 +1304,21 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
               {!linea.serializado && (
                 <label className="vale-mini">
                   <span>{t("voucher.quantity", "Cantidad")}</span>
-                  <input type="number" min="1" value={linea.quantity}
-                         onChange={(e) => cambiar(indice,
-                           { quantity: Number(e.target.value) || 1 })} />
+                  <input type="number" min="1"
+                         max={Math.max(1, disponibleDe(linea, indice))}
+                         value={linea.quantity}
+                         onChange={(e) => cambiar(indice, {
+                           // Sin pasarse de lo que hay: el servidor lo rechaza
+                           // igual, esto evita llegar hasta el error.
+                           quantity: Math.min(
+                             Number(e.target.value) || 1,
+                             Math.max(1, disponibleDe(linea, indice))),
+                         })} />
+                  <small className={disponibleDe(linea, indice) === 0 ? "vale-sin-existencia" : "muted"}>
+                    {disponibleDe(linea, indice) === 0
+                      ? t("voucher.no_stock_here", "Sin existencia aquí")
+                      : `${t("voucher.available", "Disponible")}: ${disponibleDe(linea, indice)}`}
+                  </small>
                 </label>
               )}
 
@@ -1274,23 +1326,47 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
                   lo fungible hay que decirlo: descontar 5 sacos "del almacen"
                   sin decir de cual deja el saldo por ubicacion mintiendo, y ese
                   es el dato con el que alguien va a buscarlos. */}
-              <label className={`vale-mini ${!linea.serializado
-                && !linea.id_location_from ? "vale-falta" : ""}`}>
-                <span>
-                  {t("voucher.from", "Sale de")}
-                  {!linea.serializado && " *"}
-                </span>
-                <select value={linea.id_location_from}
-                        onChange={(e) => cambiar(indice,
-                          { id_location_from: e.target.value })}>
-                  <option value="">—</option>
-                  {ubicaciones.map((u) => (
-                    <option key={u.id_location} value={u.id_location}>
-                      {u.location_description}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {/* Quien solo PIDE material (Supervisor) no elige de donde sale:
+                  eso ya esta definido por donde esta el producto, y se le
+                  muestra. Solo si el producto esta repartido en varios sitios
+                  se le ofrecen ESOS sitios -no todas las ubicaciones-. */}
+              {soloPuedeSolicitar
+                && (linea.serializado || (linea.sitios || []).length === 1) ? (
+                <div className="vale-mini">
+                  <span>{t("voucher.from", "Sale de")}</span>
+                  <strong>
+                    {linea.sitio_etiqueta
+                      || linea.sitios?.[0]?.path_label
+                      || linea.sitios?.[0]?.location_description
+                      || ubicaciones.find((u) => Number(u.id_location)
+                        === Number(linea.id_location_from))?.location_description
+                      || "—"}
+                  </strong>
+                </div>
+              ) : (
+                <label className={`vale-mini ${!linea.serializado
+                  && !linea.id_location_from ? "vale-falta" : ""}`}>
+                  <span>
+                    {t("voucher.from", "Sale de")}
+                    {!linea.serializado && " *"}
+                  </span>
+                  <select value={linea.id_location_from}
+                          onChange={(e) => cambiar(indice,
+                            { id_location_from: e.target.value })}>
+                    <option value="">—</option>
+                    {(soloPuedeSolicitar && (linea.sitios || []).length > 1
+                      ? (linea.sitios || []).map((s) => ({
+                        id_location: s.id_location,
+                        location_description: s.path_label || s.location_description,
+                      }))
+                      : ubicaciones).map((u) => (
+                      <option key={u.id_location} value={u.id_location}>
+                        {u.location_description}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
 
               <button className="vale-icono vale-icono-borrar" onClick={() => quitar(indice)}
                       aria-label={t("common.delete", "Quitar")}>

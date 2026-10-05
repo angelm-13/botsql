@@ -11,9 +11,7 @@ import KpiPermissionManagerPage from "./pages/KpiPermissionManagerPage.jsx";
 import TeamManagerPage from "./pages/TeamManagerPage.jsx";
 import QuotationPage from "./pages/QuotationPage.jsx";
 import AuthorizationTrackingPage from "./pages/AuthorizationTrackingPage.jsx";
-import CatalogoWebPage from "./pages/CatalogoWebPage.jsx";
 import ClientPortalPage from "./pages/ClientPortalPage.jsx";
-import WebShoppersPage from "./pages/WebShoppersPage.jsx";
 import BankPage from "./pages/BankPage.jsx";
 import BankAccountPage from "./pages/BankAccountPage.jsx";
 import BrandPage from "./pages/BrandPage.jsx";
@@ -77,7 +75,6 @@ import KronosPage from "./pages/KronosPage.jsx";
 import KronosDevicePage from "./pages/KronosDevicePage.jsx";
 import LogisticsAddressesPage from "./pages/logistics/LogisticsAddressesPage.jsx";
 import LogisticsBranchesPage from "./pages/logistics/LogisticsBranchesPage.jsx";
-import LogisticsContactsPage from "./pages/logistics/LogisticsContactsPage.jsx";
 import LogisticsContractsPage from "./pages/logistics/LogisticsContractsPage.jsx";
 import LogisticsInventoryPage from "./pages/logistics/LogisticsInventoryPage.jsx";
 import LogisticsEvidencesPage from "./pages/logistics/LogisticsEvidencesPage.jsx";
@@ -196,8 +193,6 @@ export default function App() {
           <Route path="/facturama-config" element={<AdminRoute><FacturamaConfigPage /></AdminRoute>} />
           <Route path="/quotation" element={<RoleAccessRoute entityName="invoice"><QuotationPage /></RoleAccessRoute>} />
           <Route path="/authorization_tracking" element={<RoleAccessRoute entityName="invoice"><AuthorizationTrackingPage /></RoleAccessRoute>} />
-          <Route path="/catalogo-web" element={<RoleAccessRoute entityName="product_sale_config"><CatalogoWebPage /></RoleAccessRoute>} />
-          <Route path="/compradores-web" element={<RoleAccessRoute entityName="user"><WebShoppersPage /></RoleAccessRoute>} />
           <Route path="/bank" element={<RoleAccessRoute entityName="bank"><BankPage /></RoleAccessRoute>} />
           <Route path="/bank_account" element={<RoleAccessRoute entityName="bank_account"><BankAccountPage /></RoleAccessRoute>} />
           <Route path="/brand" element={<RoleAccessRoute entityName="brand"><BrandPage /></RoleAccessRoute>} />
@@ -239,7 +234,6 @@ export default function App() {
           <Route path="/kronos/device" element={<RoleAccessRoute entityName="kronos_device"><KronosDevicePage /></RoleAccessRoute>} />
           <Route path="/logistica/clientes" element={<RoleAccessRoute entityName="customer_supplier"><CustomerSupplierPage clientsOnly /></RoleAccessRoute>} />
           <Route path="/logistica/proveedores" element={<RoleAccessRoute entityName="customer_supplier"><CustomerSupplierPage mode="suppliersOnly" /></RoleAccessRoute>} />
-          <Route path="/logistica/contactos" element={<RoleAccessRoute entityName="logistics_contact"><LogisticsContactsPage /></RoleAccessRoute>} />
           <Route path="/logistica/direcciones" element={<RoleAccessRoute entityName="logistics_address"><LogisticsAddressesPage /></RoleAccessRoute>} />
           <Route path="/logistica/contratos" element={<RoleAccessRoute entityName="logistics_contract"><LogisticsContractsPage /></RoleAccessRoute>} />
           <Route path="/logistica/tarifas" element={<RoleAccessRoute entityName="logistics_rate"><LogisticsRatesPage /></RoleAccessRoute>} />

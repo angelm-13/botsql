@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Pencil, RefreshCw, Search, Trash2,
 } from "lucide-react";
@@ -69,6 +69,9 @@ export default function ProductFamilyPage() {
   const [pagina, setPagina] = useState(1);
   const [porPagina, setPorPagina] = useState(25);
   const [consulta, setConsulta] = useState("");
+  // Lo que ya se le mandó al servidor: sigue a `consulta` con un retraso, para no
+  // pedir una página por cada tecla.
+  const [busqueda, setBusqueda] = useState("");
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState("");
   const [guardando, setGuardando] = useState(false);
@@ -81,7 +84,11 @@ export default function ProductFamilyPage() {
     setCargando(true);
     setError("");
     try {
-      const datos = await getAllProductFamily({ page: pagina, per_page: porPagina });
+      const datos = await getAllProductFamily({
+        page: pagina,
+        per_page: porPagina,
+        q: busqueda || undefined,
+      });
       setFamilias(datos?.items || []);
       setPaginacion({
         total: datos?.total ?? 0,
@@ -93,18 +100,19 @@ export default function ProductFamilyPage() {
     } finally {
       setCargando(false);
     }
-  }, [pagina, porPagina]);
+  }, [pagina, porPagina, busqueda]);
 
   useEffect(() => { cargar(); }, [cargar]);
 
-  // El buscador filtra lo que ya está en pantalla, igual que el resto de los
-  // módulos: la paginación la resuelve el servidor.
-  const filtradas = useMemo(() => {
-    const aguja = consulta.trim().toLowerCase();
-    if (!aguja) return familias;
-    return familias.filter((f) => Object.values(f || {})
-      .some((v) => String(v ?? "").toLowerCase().includes(aguja)));
-  }, [familias, consulta]);
+  // La búsqueda la resuelve el servidor sobre TODAS las familias: filtrar aquí
+  // solo veía la página de 25 que ya estaba cargada, y el total del paginador
+  // (que sí viene del servidor) dejaba de coincidir con las filas.
+  useEffect(() => {
+    const aguja = consulta.trim();
+    if (aguja === busqueda) return undefined;
+    const temporizador = setTimeout(() => { setBusqueda(aguja); setPagina(1); }, 300);
+    return () => clearTimeout(temporizador);
+  }, [consulta, busqueda]);
 
   const limpiar = () => { setEditando(null); setFormulario(formularioVacio); };
 
@@ -231,17 +239,19 @@ export default function ProductFamilyPage() {
       {error && <div className="alert error">{t(error, error)}</div>}
       {cargando && <div className="alert">{t("common.loading", "Cargando…")}</div>}
 
-      {!cargando && filtradas.length === 0 && (
+      {!cargando && !error && familias.length === 0 && (
         <div className="empty">
           <strong>{t("common.empty_title", "Nada que mostrar")}</strong>
           <p>
-            {t("product_family.no_families",
-              "No hay familias todavía. La familia es el grupo del material: «Desarmadores», «Cemento».")}
+            {busqueda
+              ? t("product_family.no_results", "Ninguna familia coincide con la búsqueda.")
+              : t("product_family.no_families",
+                "No hay familias todavía. La familia es el grupo del material: «Desarmadores», «Cemento».")}
           </p>
         </div>
       )}
 
-      {!cargando && filtradas.length > 0 && (
+      {!cargando && familias.length > 0 && (
         <div className="table-card">
           <table>
             <thead>
@@ -253,7 +263,7 @@ export default function ProductFamilyPage() {
               </tr>
             </thead>
             <tbody>
-              {filtradas.map((familia) => (
+              {familias.map((familia) => (
                 <tr key={familia.id_product_family}>
                   <td className="row-actions">
                     <button

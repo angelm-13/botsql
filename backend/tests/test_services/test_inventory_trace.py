@@ -408,7 +408,7 @@ class TestLosDosNivelesDeBusqueda(BackendTestCase):
         # La fecha de regreso es obligatoria: un prestamo sin ella es una baja
         # disfrazada, porque nunca esta vencido y nadie lo reclama.
         lend_asset(self._pieza_llamada("TAL-CFG-A"),
-                   {"id_holder": 1, "due_date": "2026-09-30",
+                   {"id_holder": 1, "due_date": "2027-01-01",
                     "reason": "Obra Norte"}, ACTOR)
 
         pieza = self._item("TAL-CFG-A")["assets"][0]

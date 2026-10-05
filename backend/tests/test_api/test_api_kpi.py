@@ -279,6 +279,37 @@ class TestKpiApi(BackendTestCase):
         payload = self.json(response)["rango_a"]
         self.assertEqual({"951": 500.0}, payload["por_empleado"])
 
+    # --- KPI vivo: filtro, busqueda y orden en el servidor (ver test_kpi_material_prestado_actual_servidor) ---
+    def _url_vivo(self, **params):
+        with transaction_context() as db:
+            id_vivo = db.scalar(select(KpiDefinition.id_kpi_definition)
+                                .where(KpiDefinition.clave == "material_prestado_actual"))
+        consulta = "&".join(f"{k}={v}" for k, v in params.items())
+        return f"/kpi_definition/{id_vivo}/vivo" + (f"?{consulta}" if consulta else "")
+
+    def test_vivo_responde_con_resumen_y_conteo_por_responsable(self):
+        response = self._request(ADMIN, self._url_vivo(limit=5, q="zz-no-existe", orden="articulo", direccion="asc"))
+
+        self.assertEqual(200, response.status_code, self.json(response))
+        cuerpo = self.json(response)
+        self.assertEqual(0, cuerpo["total"])
+        self.assertEqual(0, cuerpo["resumen"]["renglones"])
+        self.assertIsNone(cuerpo["resumen"]["mas_antiguo"])
+        self.assertIsInstance(cuerpo["responsables"], list)
+
+    def test_vivo_rechaza_parametros_invalidos(self):
+        for parametros, campo in (
+            ({"orden": "contrasena"}, "orden"),
+            ({"direccion": "de_lado"}, "direccion"),
+            ({"id_user": "abc"}, "id_user"),
+            ({"id_user_ambito": "x"}, "id_user_ambito"),
+        ):
+            with self.subTest(parametros=parametros):
+                response = self._request(ADMIN, self._url_vivo(**parametros))
+                self.assertEqual(400, response.status_code)
+                self.assertEqual(campo, self.json(response)["meta"]["field"])
+
+
 
 ACTOR_A = {"id_user": 980, "id_permission": 980, "id_proyect": 980}
 ACTOR_B = {"id_user": 981, "id_permission": 981, "id_proyect": 981}
@@ -504,6 +535,105 @@ class TestKpiDashboardApi(BackendTestCase):
         self.assertEqual(200, actualizado.status_code, self.json(actualizado))
         self.assertEqual("barras", self.json(actualizado)["tipo_grafica"])
         self.assertEqual([self.id_kpi, self.id_kpi_egresos], self.json(actualizado)["ids_kpi_definition"])
+
+    # --- orden de la tabla de "Material prestado ahora": parametros.orden_tabla ---
+    def _crear_widget_tabla(self, actor, id_dashboard, parametros=None):
+        cuerpo = {"ids_kpi_definition": [self.id_kpi], "tipo_grafica": "tabla"}
+        if parametros is not None:
+            cuerpo["parametros"] = parametros
+        respuesta = self._request(actor, "POST", f"/kpi_dashboard/{id_dashboard}/widgets/", cuerpo)
+        self.assertEqual(201, respuesta.status_code, self.json(respuesta))
+        return self.json(respuesta)["id_kpi_dashboard_widget"]
+
+    def _parametros_de(self, actor, id_dashboard, id_widget):
+        items = self.json(self._request(actor, "GET", f"/kpi_dashboard/{id_dashboard}/widgets/"))["items"]
+        return next(w for w in items if w["id_kpi_dashboard_widget"] == id_widget)["parametros"]
+
+    def test_el_orden_de_la_tabla_se_guarda_y_se_fusiona_sin_pisar_el_resto_de_parametros(self):
+        id_dashboard = self._crear_tablero(ACTOR_A)
+        id_widget = self._crear_widget_tabla(ACTOR_A, id_dashboard, {"columnas": 2, "filas": 2})
+
+        respuesta = self._request(ACTOR_A, "PUT", f"/kpi_dashboard_widget/{id_widget}/orden_tabla",
+                                  {"campo": "fecha_prestamo", "direccion": "asc"})
+
+        self.assertEqual(200, respuesta.status_code, self.json(respuesta))
+        self.assertEqual(
+            {"columnas": 2, "filas": 2, "orden_tabla": {"campo": "fecha_prestamo", "direccion": "asc"}},
+            self._parametros_de(ACTOR_A, id_dashboard, id_widget),
+        )
+        # Un segundo guardado reemplaza solo el orden.
+        self._request(ACTOR_A, "PUT", f"/kpi_dashboard_widget/{id_widget}/orden_tabla",
+                      {"campo": "dias_prestado", "direccion": "desc"})
+        self.assertEqual(
+            {"columnas": 2, "filas": 2, "orden_tabla": {"campo": "dias_prestado", "direccion": "desc"}},
+            self._parametros_de(ACTOR_A, id_dashboard, id_widget),
+        )
+
+    def test_un_cambio_hecho_en_otra_pestana_no_se_pisa_al_guardar_el_orden(self):
+        id_dashboard = self._crear_tablero(ACTOR_A)
+        id_widget = self._crear_widget_tabla(ACTOR_A, id_dashboard, {"columnas": 1})
+        # "Otra pestana" cambia el tamano despues de que esta ya cargo el widget...
+        self._request(ACTOR_A, "PUT", f"/kpi_dashboard_widget/{id_widget}", {"parametros": {"columnas": 2, "filas": 2}})
+        # ...y esta guarda SOLO el orden: el servidor fusiona con lo que hay ahora, no con lo que esta leyo.
+        self._request(ACTOR_A, "PUT", f"/kpi_dashboard_widget/{id_widget}/orden_tabla",
+                      {"campo": "articulo", "direccion": "asc"})
+        self.assertEqual(
+            {"columnas": 2, "filas": 2, "orden_tabla": {"campo": "articulo", "direccion": "asc"}},
+            self._parametros_de(ACTOR_A, id_dashboard, id_widget),
+        )
+
+    def test_un_orden_invalido_se_rechaza_y_no_cambia_lo_guardado(self):
+        id_dashboard = self._crear_tablero(ACTOR_A)
+        id_widget = self._crear_widget_tabla(ACTOR_A, id_dashboard, {"orden_tabla": {"campo": "articulo", "direccion": "asc"}})
+        invalidos = [
+            {"campo": "id_user", "direccion": "asc"},          # fuera de PRESTADO_ORDENES
+            {"campo": "articulo", "direccion": "arriba"},      # direccion que no es asc/desc
+            {"campo": "articulo"},                             # incompleto
+            {"campo": "articulo", "direccion": "asc", "x": 1}, # clave de mas
+            {"campo": ["articulo"], "direccion": "asc"},
+            "articulo", None, [], 7,
+        ]
+        for valor in invalidos:
+            with self.subTest(valor=valor):
+                respuesta = self._request(ACTOR_A, "PUT", f"/kpi_dashboard_widget/{id_widget}/orden_tabla", valor)
+                self.assertEqual(400, respuesta.status_code, self.json(respuesta))
+        self.assertEqual(
+            {"orden_tabla": {"campo": "articulo", "direccion": "asc"}},
+            self._parametros_de(ACTOR_A, id_dashboard, id_widget),
+        )
+
+    def test_orden_tabla_invalido_tambien_se_rechaza_al_crear_o_editar_el_widget(self):
+        id_dashboard = self._crear_tablero(ACTOR_A)
+        malo = {"orden_tabla": {"campo": "nada", "direccion": "asc"}}
+        creado = self._request(ACTOR_A, "POST", f"/kpi_dashboard/{id_dashboard}/widgets/", {
+            "ids_kpi_definition": [self.id_kpi], "tipo_grafica": "tabla", "parametros": malo,
+        })
+        self.assertEqual(400, creado.status_code)
+        id_widget = self._crear_widget_tabla(ACTOR_A, id_dashboard)
+        self.assertEqual(400, self._request(ACTOR_A, "PUT", f"/kpi_dashboard_widget/{id_widget}", {"parametros": malo}).status_code)
+        # Y uno valido pasa por el editor sin problema.
+        bueno = {"orden_tabla": {"campo": "responsable", "direccion": "desc"}}
+        self.assertEqual(200, self._request(ACTOR_A, "PUT", f"/kpi_dashboard_widget/{id_widget}", {"parametros": bueno}).status_code)
+        self.assertEqual(bueno, self._parametros_de(ACTOR_A, id_dashboard, id_widget))
+
+    def test_el_orden_solo_aplica_a_widgets_de_tabla(self):
+        id_dashboard = self._crear_tablero(ACTOR_A)
+        creado = self._request(ACTOR_A, "POST", f"/kpi_dashboard/{id_dashboard}/widgets/", {
+            "ids_kpi_definition": [self.id_kpi], "tipo_grafica": "barras",
+        })
+        id_widget = self.json(creado)["id_kpi_dashboard_widget"]
+        respuesta = self._request(ACTOR_A, "PUT", f"/kpi_dashboard_widget/{id_widget}/orden_tabla",
+                                  {"campo": "articulo", "direccion": "asc"})
+        self.assertEqual(400, respuesta.status_code)
+
+    def test_el_orden_de_un_widget_ajeno_es_404_y_sin_permiso_de_actualizar_es_403(self):
+        id_dashboard = self._crear_tablero(ACTOR_A)
+        id_widget = self._crear_widget_tabla(ACTOR_A, id_dashboard)
+        orden = {"campo": "articulo", "direccion": "asc"}
+        self.assertEqual(404, self._request(ACTOR_B, "PUT", f"/kpi_dashboard_widget/{id_widget}/orden_tabla", orden).status_code)
+        sin_permiso = {"id_user": 982, "id_permission": 982, "id_proyect": 982}
+        self.assertEqual(403, self._request(sin_permiso, "PUT", f"/kpi_dashboard_widget/{id_widget}/orden_tabla", orden).status_code)
+        self.assertEqual({}, self._parametros_de(ACTOR_A, id_dashboard, id_widget))
 
     def test_delete_dashboard_is_a_soft_delete(self):
         id_dashboard = self._crear_tablero(ACTOR_A)

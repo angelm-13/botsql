@@ -171,7 +171,9 @@ def list_product(user_data):
     per_page = int(request.args.get('per_page', 20))
     sort = request.args.get('sort')
     filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort', 'q'} and k in ALLOWED_FIELDS}
-    return _jsonify_projected_list(user_data, ProductService.list_scoped(user_data, page=page, per_page=per_page, filters=filters, sort=sort, q=request.args.get('q')))
+    resultado = ProductService.list_scoped(user_data, page=page, per_page=per_page, filters=filters, sort=sort, q=request.args.get('q'))
+    ProductService.heredar_foto_del_material(resultado.get('items', []))
+    return _jsonify_projected_list(user_data, resultado)
 
 
 @bp_product.route('/<id_product>', methods=['GET'])

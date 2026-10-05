@@ -11,11 +11,12 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   CATEGORICAL, COLOR_OTHERS, buildMultiSeriesData, etiquetasDeDimension, buildPieData, buildSeriesData,
-  colorDeKpi, colorEfectivoDeKpi, formatConUnidad, labelForDimension,
+  colorDeKpi, colorEfectivoDeKpi, etiquetasDeSnapshots, formatConUnidad, labelForDimension, ordenarPorCategorias,
 } from "./kpiDatos.js";
 import {
   agruparPorResponsable, duracionLegible, etiquetaDeDias, filtrarPorResponsable, gravedadDeDias, ordenarFilas,
   anchoDeBarra, buscarEnFilas, escalaDeBarras, filtrarPorUsuario, recortar, recortarGrupos, resumenDePrestamos, responsablesDe,
+  ORDEN_POR_OMISION, normalizarOrdenTabla,
 } from "./kpiPrestamos.js";
 import {
   agruparKpis, claveDeGrupo, colorDeModulo, COLOR_DE_MODULO, estadoDeOpcion, esVariable, grupoInicial, resumenDeModulos,
@@ -29,7 +30,6 @@ import {
 } from "./kpiRango.js";
 import { colorDeAvatar } from "../components/kpi-widgets/avatar.js";
 import { filasQueOcupa } from "../components/kpi-widgets/useMasonry.js";
-import { mismoOrden, ordenTrasMover } from "./kpiReorden.js";
 import {
   filasTablaPrestamo, propsDona, propsNumero, propsNumeroBajoStock, propsSeries,
   tendenciaDeSnapshot,
@@ -184,6 +184,115 @@ test("dona: categorias fijas con su color, abiertas con la paleta y 'Otros' al f
   assert.equal(abierta.datos.length, CATEGORICAL.length + 1);
   assert.deepEqual(abierta.datos.at(-1), { categoria: "Otros", valor: (100 - 9) + (100 - 10), color: COLOR_OTHERS });
   assert.equal(abierta.datos[0].color, CATEGORICAL[0]);
+});
+
+// --- categorias ORDINALES: prestamos_abiertos_por_antiguedad ---------------------------------------
+const ORDEN_ANTIGUEDAD = ["0-30", "31-60", "61-90", "+90"];
+const KPI_ANTIGUEDAD = {
+  id_kpi_definition: 30, clave: "prestamos_abiertos_por_antiguedad", unidad: "numero", dimensiones: ["estado"],
+  colores_categoria: { "0-30": "#22b573", "31-60": "#f0a93b", "61-90": "#f58a3c", "+90": "#e5484d" },
+  orden_categorias: ORDEN_ANTIGUEDAD, modulo: "operaciones",
+};
+// Los valores estan puestos para que ordenar por valor (lo normal) los dejara al reves: +90 primero.
+const SNAPSHOT_ANTIGUEDAD = { rango_a: { total: 15, por_empleado: { "+90": 9, "61-90": 4, "31-60": 2, "0-30": 0 } }, rango_b: null };
+const SNAPSHOT_ESTADOS = { rango_a: { total: 15, por_empleado: { Dañado: 3, Entrada: 9, Salida: 1, Extraviado: 2 } }, rango_b: null };
+
+test("ordenarPorCategorias: sigue el orden declarado, lo desconocido va al final y no altera la entrada", () => {
+  const filas = [{ id: "+90" }, { id: "raro" }, { id: "0-30" }, { id: "61-90" }, { id: "31-60" }];
+  const copia = filas.map((f) => ({ ...f }));
+  assert.deepEqual(ordenarPorCategorias(filas, ORDEN_ANTIGUEDAD).map((f) => f.id), ["0-30", "31-60", "61-90", "+90", "raro"]);
+  assert.deepEqual(filas, copia);
+  // Sin orden declarado: las mismas filas, sin tocarlas.
+  assert.equal(ordenarPorCategorias(filas, undefined), filas);
+  assert.equal(ordenarPorCategorias(filas, null), filas);
+  assert.equal(ordenarPorCategorias(filas, []), filas);
+});
+
+test("barras de antiguedad: siempre 0-30, 31-60, 61-90, +90, aunque el valor las pida al reves", () => {
+  const props = propsSeries({
+    tipo: "barras", snapshots: [SNAPSHOT_ANTIGUEDAD], kpiInfos: [KPI_ANTIGUEDAD],
+    labelForId: (id) => id, empleados: undefined, agruparPorPeriodo: false,
+    coloresOverride: undefined, formatNumber, textos: TEXTOS_SERIES,
+  });
+  assert.deepEqual(props.datos.map((fila) => fila.id), ORDEN_ANTIGUEDAD);
+  assert.deepEqual(props.datos.map((fila) => fila.a), [0, 2, 4, 9]);
+  // Cada barra con SU color declarado.
+  assert.equal(props.colorPorFila(props.datos[0]), "#22b573");
+  assert.equal(props.colorPorFila(props.datos[3]), "#e5484d");
+});
+
+test("dona de antiguedad: mismo orden fijo, no por valor", () => {
+  const dona = propsDona({
+    snapshot: SNAPSHOT_ANTIGUEDAD, kpiInfo: KPI_ANTIGUEDAD, labelForId: (id) => id,
+    agruparPorPeriodo: false, formatNumber, textos: { otros: "Otros" },
+  });
+  assert.deepEqual(dona.datos.map((d) => d.categoria), ORDEN_ANTIGUEDAD);
+  assert.deepEqual(dona.datos.map((d) => d.color), ["#22b573", "#f0a93b", "#f58a3c", "#e5484d"]);
+});
+
+test("por periodo (llaves = fechas) el orden declarado no se toca", () => {
+  const snapshot = { rango_a: { total: 3, por_periodo: { "2026-09-02": 1, "2026-09-01": 2 } }, rango_b: null };
+  const props = propsSeries({
+    tipo: "barras", snapshots: [snapshot], kpiInfos: [KPI_ANTIGUEDAD], labelForId: (id) => id,
+    empleados: undefined, agruparPorPeriodo: true, coloresOverride: undefined, formatNumber, textos: TEXTOS_SERIES,
+  });
+  assert.deepEqual(props.datos.map((fila) => fila.id), ["2026-09-01", "2026-09-02"]);
+});
+
+test("los demas KPIs de estado (sin orden declarado) siguen ordenados por valor, de mayor a menor", () => {
+  const KPI_MATERIAL = {
+    id_kpi_definition: 9, clave: "material_por_estado", unidad: "numero", dimensiones: ["estado"],
+    colores_categoria: { Entrada: "#22b573", Salida: "#2f8fe0", Dañado: "#f0a93b", Extraviado: "#ef6f5c" }, modulo: "operaciones",
+  };
+  const barras = propsSeries({
+    tipo: "barras", snapshots: [SNAPSHOT_ESTADOS], kpiInfos: [KPI_MATERIAL], labelForId: (id) => id,
+    empleados: undefined, agruparPorPeriodo: false, coloresOverride: undefined, formatNumber, textos: TEXTOS_SERIES,
+  });
+  assert.deepEqual(barras.datos.map((fila) => fila.id), ["Entrada", "Dañado", "Extraviado", "Salida"]);
+  const dona = propsDona({
+    snapshot: SNAPSHOT_ESTADOS, kpiInfo: KPI_MATERIAL, labelForId: (id) => id,
+    agruparPorPeriodo: false, formatNumber, textos: { otros: "Otros" },
+  });
+  assert.deepEqual(dona.datos.map((d) => d.categoria), ["Entrada", "Dañado", "Extraviado", "Salida"]);
+});
+
+// --- dimension "familia": perdidas_por_familia ------------------------------------------------------
+const KPI_FAMILIA = {
+  id_kpi_definition: 31, clave: "perdidas_por_familia", unidad: "piezas", dimensiones: ["familia"],
+  etiqueta_dimension: "Familia", limite_categorias: 10, modulo: "operaciones",
+};
+// La API ya manda el top 10 cortado, con los nombres aparte (el snapshot solo guarda el id).
+const SNAPSHOT_FAMILIA = {
+  rango_a: { total: 181, por_empleado: { 7: 12, 1: 101, 0: 3 }, etiquetas: { 7: "Taladros", 1: "Sierras", 0: "Sin familia" } },
+  rango_b: { total: 20, por_empleado: { 7: 5, 9: 1 }, etiquetas: { 7: "Taladros", 9: "Brocas" } },
+};
+
+test("etiquetasDeSnapshots junta los nombres de los dos lados del rango y de todos los snapshots", () => {
+  assert.deepEqual(etiquetasDeSnapshots([SNAPSHOT_FAMILIA]), { 7: "Taladros", 1: "Sierras", 0: "Sin familia", 9: "Brocas" });
+  assert.deepEqual(etiquetasDeSnapshots([{ rango_a: { total: 1, por_empleado: {} }, rango_b: null }]), {});
+  assert.deepEqual(etiquetasDeSnapshots(undefined), {});
+});
+
+test("labelForDimension familia: el nombre que mando la API, o #id si no hay", () => {
+  const etiquetas = etiquetasDeSnapshots([SNAPSHOT_FAMILIA]);
+  const label = labelForDimension("familia", userLabel, userLabel, etiquetas);
+  assert.equal(label("1"), "Sierras");
+  assert.equal(label("0"), "Sin familia");
+  assert.equal(label("404"), "#404");
+  assert.equal(labelForDimension("familia", userLabel, userLabel)("5"), "#5");
+});
+
+test("barras de perdidas por familia: nombres de familia, de mayor a menor y sin 'Otros'", () => {
+  const props = propsSeries({
+    tipo: "barras", snapshots: [SNAPSHOT_FAMILIA], kpiInfos: [KPI_FAMILIA],
+    labelForId: labelForDimension("familia", userLabel, userLabel, etiquetasDeSnapshots([SNAPSHOT_FAMILIA])),
+    empleados: undefined, agruparPorPeriodo: false, coloresOverride: undefined, formatNumber, textos: TEXTOS_SERIES,
+  });
+  assert.deepEqual(props.datos.map((fila) => fila.name), ["Sierras", "Taladros", "Sin familia", "Brocas"]);
+  assert.deepEqual(props.datos.map((fila) => fila.a), [101, 12, 3, 0]);
+  // Un solo color del KPI: una familia no es una categoria fija con color propio.
+  assert.equal(props.colorPorFila, null);
+  assert.equal(etiquetasDeDimension([KPI_FAMILIA])[0], "Familia");
 });
 
 test("tabla de material prestado: id, responsable por omision y columnas", () => {
@@ -673,6 +782,69 @@ test("agrupado por responsable: el grupo con el prestamo mas viejo primero, y su
   assert.deepEqual(agruparPorResponsable([]), []);
 });
 
+test("agrupado por responsable: la direccion elegida ordena los renglones DENTRO de cada grupo", () => {
+  const masDias = agruparPorResponsable(PRESTAMOS, { campo: "dias_prestado", direccion: "desc" });
+  const menosDias = agruparPorResponsable(PRESTAMOS, { campo: "dias_prestado", direccion: "asc" });
+  // Los grupos no se mueven (el prestamo mas viejo primero)...
+  assert.deepEqual(menosDias.map((g) => g.responsable), masDias.map((g) => g.responsable));
+  // ...y lo que cambia es el orden de adentro. Ana: 512 dias (id 1) y otro (id 3).
+  assert.deepEqual(masDias[0].filas.map((f) => f.id), [1, 3]);
+  assert.deepEqual(menosDias[0].filas.map((f) => f.id), [3, 1]);
+  assert.equal(menosDias[0].masAntiguo, 512, "el renglon mas antiguo del grupo no depende del sentido");
+  assert.deepEqual(agruparPorResponsable(PRESTAMOS).map((g) => g.responsable), masDias.map((g) => g.responsable), "sin orden = por omision");
+});
+
+test("agrupado por responsable: ordenando por responsable, los GRUPOS van de la A a la Z o al reves", () => {
+  const az = agruparPorResponsable(PRESTAMOS, { campo: "responsable", direccion: "asc" });
+  const za = agruparPorResponsable(PRESTAMOS, { campo: "responsable", direccion: "desc" });
+  assert.deepEqual(az.map((g) => g.responsable), ["Ana", "Beto", "Carla"]);
+  assert.deepEqual(za.map((g) => g.responsable), ["Carla", "Beto", "Ana"]);
+});
+
+test("con todo igual, el orden se desempata por el id del renglon (los dos sentidos)", () => {
+  const iguales = [9, 3, 5].map((id) => ({ id, articulo: "Taladro", responsable: "Ana", fecha_prestamo: "2026-05-01", dias_prestado: 40 }));
+  for (const direccion of ["asc", "desc"]) {
+    for (const campo of ["dias_prestado", "fecha_prestamo", "articulo", "responsable"]) {
+      assert.deepEqual(ordenarFilas(iguales, campo, direccion).map((f) => f.id), [3, 5, 9], `${campo} ${direccion}`);
+    }
+  }
+});
+
+test("normalizarOrdenTabla: un orden guardado valido se respeta y cualquier otra cosa vuelve a mas dias primero", () => {
+  assert.deepEqual(ORDEN_POR_OMISION, { campo: "dias_prestado", direccion: "desc" });
+  assert.deepEqual(normalizarOrdenTabla({ campo: "articulo", direccion: "asc" }), { campo: "articulo", direccion: "asc" });
+  assert.deepEqual(normalizarOrdenTabla({ campo: "fecha_prestamo", direccion: "desc" }), { campo: "fecha_prestamo", direccion: "desc" });
+  for (const raro of [undefined, null, "articulo", 7, [], {}, { campo: "id_user", direccion: "asc" }, { campo: "articulo", direccion: "arriba" }, { campo: "articulo" }]) {
+    assert.deepEqual(normalizarOrdenTabla(raro), { campo: "dias_prestado", direccion: "desc" }, JSON.stringify(raro));
+  }
+  const guardado = { campo: "articulo", direccion: "asc" };
+  assert.notEqual(normalizarOrdenTabla(guardado), guardado, "devuelve una copia, no el objeto guardado");
+});
+
+test("armarParametros: guardar el editor de una tabla CONSERVA el orden que el usuario eligio", () => {
+  const widget = {
+    id_kpi_dashboard_widget: 7, tipo_grafica: "tabla", ids_kpi_definition: [11],
+    parametros: { columnas: 2, orden_tabla: { campo: "responsable", direccion: "desc" } },
+  };
+  const estado = estadoDeWidget(widget, []);
+  assert.deepEqual(estado.ordenTabla, { campo: "responsable", direccion: "desc" });
+  assert.deepEqual(armarParametros(estado, { esTabla: true }), {
+    columnas: 2, orden_tabla: { campo: "responsable", direccion: "desc" },
+  });
+  // Un widget sin orden guardado sigue guardando lo de siempre, sin inventar uno.
+  const sinOrden = estadoDeWidget({ ...widget, parametros: { columnas: 2 } }, []);
+  assert.equal(sinOrden.ordenTabla, null);
+  assert.deepEqual(armarParametros(sinOrden, { esTabla: true }), { columnas: 2 });
+  // Un orden basura guardado no se manda al servidor (que lo rechazaria): se vuelve el de por omision.
+  const basura = estadoDeWidget({ ...widget, parametros: { orden_tabla: { campo: "x", direccion: "y" } } }, []);
+  assert.deepEqual(armarParametros(basura, { esTabla: true }), { orden_tabla: { campo: "dias_prestado", direccion: "desc" } });
+});
+
+test("armarParametros: un widget que deja de ser tabla no arrastra el orden de la tabla", () => {
+  const estado = { ...BORRADOR, ordenTabla: { campo: "articulo", direccion: "asc" } };
+  assert.equal("orden_tabla" in armarParametros(estado, {}), false);
+});
+
 test("solo se ven 10 renglones hasta pedir 'Ver todos'", () => {
   const muchas = Array.from({ length: 25 }, (_, i) => ({ id: i, dias_prestado: 100 - i }));
   assert.equal(recortar(muchas, false).length, 10);
@@ -755,29 +927,4 @@ test("masonry: una tarjeta ocupa las filas de 4px que mide, mas el hueco de abaj
     const ocupado = filasQueOcupa(alto) * 4 - 16;
     assert.ok(ocupado >= alto && ocupado - alto < 4, `alto ${alto} -> ${ocupado}`);
   }
-});
-
-test("reordenar: la tarjeta arrastrada toma el lugar de sobre la que se suelta y las demas se recorren", () => {
-  const ids = ["a", "b", "c", "d", "e"];
-  assert.deepEqual(ordenTrasMover(ids, "e", "b"), ["a", "e", "b", "c", "d"]); // hacia arriba: antes
-  assert.deepEqual(ordenTrasMover(ids, "a", "c"), ["b", "c", "a", "d", "e"]); // hacia abajo: despues
-  assert.deepEqual(ordenTrasMover(ids, "b", "a"), ["b", "a", "c", "d", "e"]);
-  assert.deepEqual(ids, ["a", "b", "c", "d", "e"], "no altera la lista recibida");
-  // Sin efecto: mismo arreglo (para que React no vuelva a renderizar).
-  assert.equal(ordenTrasMover(ids, "c", "c"), ids);
-  assert.equal(ordenTrasMover(ids, "z", "a"), ids);
-  assert.equal(ordenTrasMover(ids, "a", "z"), ids);
-});
-
-test("reordenar: lo que se ve durante el arrastre es lo que se guarda (mismo orden, misma semantica que arrayMove)", () => {
-  const ids = ["1", "2", "3", "4", "5"];
-  for (let de = 0; de < ids.length; de++) {
-    for (let a = 0; a < ids.length; a++) {
-      const esperado = [...ids]; esperado.splice(a, 0, esperado.splice(de, 1)[0]);
-      assert.deepEqual(ordenTrasMover(ids, ids[de], ids[a]), esperado, `${de} -> ${a}`);
-    }
-  }
-  assert.ok(mismoOrden(["a", "b"], ["a", "b"]));
-  assert.ok(!mismoOrden(["a", "b"], ["b", "a"]));
-  assert.ok(!mismoOrden(["a"], ["a", "b"]));
 });
