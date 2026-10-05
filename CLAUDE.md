@@ -1,10 +1,30 @@
 # Contexto de sesión — tyakxa_tny (para retomar en otra conversación)
 
-Última actualización: 2026-09-30. Este archivo es el "dónde nos quedamos",
+Última actualización: 2026-10-05. Este archivo es el "dónde nos quedamos",
 aparte de `ARQUITECTURA_TYAKXA_TNY.md` (referencia técnica estable) y de
 `docs/PLAN_ACCION_MEJORA.md` (plan de mejora por auditoría). Cuando una
 sección se resuelve, se puede recortar; mientras tanto se deja completa para
 que una sesión nueva no tenga que releer el historial de chat.
+
+## Bitácora 2026-10-05 — el prevale puede quedar a nombre de otro operador
+
+Pedido: una vez levantado el proyecto, poder generar un vale a nombre de
+alguien distinto del supervisor -- el supervisor no siempre puede salir
+de planta, y manda a un operador por la herramienta. Commit `93427c0`.
+
+El "Responsable" del prevale era FIJO en el frontend (siempre el
+supervisor que lo captura, sin selector) -- una regla de UI, no del
+backend: `crear_vale` nunca exigio que `id_user` fuera el actor, acepta
+cualquier usuario valido. Se quito el candado: el campo sigue
+precargado con el actor (con "(tú)" junto a su nombre), pero ahora es
+el mismo desplegable que ya usaba Almacenista. Quien CAPTURA el
+prevale (`created_by`) no cambia; solo el responsable ante almacen
+-quien firma y quien debe devolverlo- puede ser otra persona.
+
+Probado en navegador real como Supervisor (`vicgo`): prevale creado a
+nombre del operador Roberto Cisneros -- `POST /prevouchers` 201,
+verificado en la respuesta que `created_by` sigue siendo vicgo (56)
+pero `id_user` es el operador elegido (81).
 
 ## Bitácora 2026-09-30 (continuación) — plantilla del PDF de vale igual a la del sistema anterior
 
