@@ -54,6 +54,7 @@ from datetime import datetime
 from sqlalchemy import case, func, or_, select
 
 from app.models.customer_supplier import CustomerSupplier
+from app.models.entity_permission import EntityPermission
 from app.models.incident import Incident
 from app.models.incident_type import IncidentType
 from app.models.inventory_asset import InventoryAsset
@@ -1246,6 +1247,151 @@ def notificar_custodia_asignada(id_incident, id_entregado, actor_id: int) -> Non
             )
         except Exception:
             pass
+
+
+def _usuarios_con_capacidad(db, capacidad: str) -> list[int]:
+    """Todos los usuarios cuyo rol tiene esta capacidad concedida
+    (`scope_read>0`) -- lo contrario de `has_capability`: en vez de
+    preguntar por UN actor, junta a todos los que la tienen, para saber a
+    quien avisar. Mismo criterio que `_users_with_capability` en
+    `project_management_service.py`, copiado aqui en vez de importado para
+    no acoplar este servicio a uno ajeno por una funcion privada.
+    """
+    ids_permiso = [
+        fila[0] for fila in db.query(EntityPermission.id_permission).filter(
+            EntityPermission.entity_name == capacidad,
+            EntityPermission.scope_read > 0,
+            EntityPermission.deletion_date.is_(None),
+        ).all()
+    ]
+    if not ids_permiso:
+        return []
+    return [
+        fila[0] for fila in db.query(User.id_user).filter(
+            User.id_permission.in_(ids_permiso),
+            User.deletion_date.is_(None),
+        ).all()
+    ]
+
+
+def notificar_prevale_creado(id_incident, actor_id: int) -> None:
+    """Avisa a quien puede autorizar vales (Almacen) que hay un prevale
+    nuevo esperando -- el Supervisor ya lo pidio, falta que alguien lo
+    suelte.
+
+    Se llama SIEMPRE desde la RUTA, despues de que `crear_vale` ya cerro su
+    transaccion -- mismo motivo que `notificar_custodia_asignada`.
+    """
+    from app.services.notification_service import create_notification
+
+    with transaction_context() as db:
+        vale = _vale(db, id_incident)
+        folio = vale.external_folio or str(vale.id_incident)
+        id_incident_plano = int(vale.id_incident)
+        nombre_responsable = _persona(db, vale.id_user)
+        destinatarios = _usuarios_con_capacidad(db, "warehouse_voucher_authorize")
+
+    for id_destinatario in {int(d) for d in destinatarios if int(d) != int(actor_id)}:
+        try:
+            create_notification(
+                id_user_recipient=id_destinatario,
+                id_user_sender=actor_id,
+                notification_type="warehouse_voucher_prevoucher_pending",
+                title="Prevale #%s pendiente de autorizar" % folio,
+                message=(
+                    "%s pidió material (vale #%s). Autorízalo para que "
+                    "pueda pasar por él."
+                ) % (nombre_responsable or "Alguien", folio),
+                metadata={"id_incident": id_incident_plano},
+                created_by=actor_id,
+            )
+        except Exception:
+            continue
+
+
+def notificar_material_entregado(id_incident, actor_id: int) -> None:
+    """Avisa al responsable (y a quien recoja, si esta delegado) que el
+    material ya salio del almacen y pueden pasar por el.
+
+    Cubre los dos caminos por los que un vale entrega material: un vale
+    directo (ya sale al crearse) y un prevale recien autorizado -- en este
+    sistema "autorizar" ES "entregar", no son dos pasos. Se llama SIEMPRE
+    desde la RUTA, despues de que la operacion real ya cerro su
+    transaccion.
+    """
+    from app.services.notification_service import create_notification
+
+    with transaction_context() as db:
+        vale = _vale(db, id_incident)
+        # Una baja (destruccion/extraviado) no es "pasa por el" -- nace
+        # cerrada o no se reclama, segun `TIPOS_DE_BAJA`. Avisar "ya puedes
+        # recogerlo" ahi confundiria mas de lo que ayuda.
+        if _clave_de_baja(db, vale.id_incident_type):
+            return
+        folio = vale.external_folio or str(vale.id_incident)
+        id_incident_plano = int(vale.id_incident)
+        id_responsable = int(vale.id_user)
+        renglones = _renglones(db, vale.id_incident)
+        ids_entregado = {
+            int(r.id_user_delivered_to) for r in renglones
+            if r.id_user_delivered_to is not None
+            and str(r.direction or "") == SALIDA
+        }
+
+    destinatarios = {id_responsable} | ids_entregado
+    for id_destinatario in destinatarios:
+        if int(id_destinatario) == int(actor_id):
+            continue
+        try:
+            create_notification(
+                id_user_recipient=id_destinatario,
+                id_user_sender=actor_id,
+                notification_type="warehouse_voucher_delivered",
+                title="Vale #%s entregado" % folio,
+                message=(
+                    "El material del vale #%s ya salió del almacén. "
+                    "Puedes pasar por él."
+                ) % folio,
+                metadata={"id_incident": id_incident_plano},
+                created_by=actor_id,
+            )
+        except Exception:
+            continue
+
+
+def notificar_custodia_confirmada(id_incident, id_entregado, actor_id: int) -> None:
+    """Avisa a quien opera el almacen que el responsable ya confirmo que
+    recupero el material de la persona a la que se le habia entregado --
+    cierra el circulo de "quien se lo llevo, y quien ya dijo que se lo
+    devolvieron". Se llama SIEMPRE desde la RUTA, despues de que
+    `confirmar_recepcion_de_renglon` ya cerro su transaccion.
+    """
+    from app.services.notification_service import create_notification
+
+    resumen = _resumen_para_notificar(id_incident, id_entregado)
+
+    with transaction_context() as db:
+        destinatarios = set(_usuarios_con_capacidad(db, "warehouse_voucher"))
+
+    for id_destinatario in destinatarios:
+        if int(id_destinatario) == int(actor_id):
+            continue
+        try:
+            create_notification(
+                id_user_recipient=id_destinatario,
+                id_user_sender=actor_id,
+                notification_type="warehouse_voucher_custody_confirmed",
+                title="Confirmada la recepción del vale #%s" % resumen["folio"],
+                message=(
+                    "El responsable ya confirmó que recibió el material "
+                    "de %s (vale #%s)."
+                ) % (resumen["nombre_entregado"] or "la persona asignada",
+                     resumen["folio"]),
+                metadata={"id_incident": resumen["id_incident"]},
+                created_by=actor_id,
+            )
+        except Exception:
+            continue
 
 
 def cerrar_renglon(id_line, payload: dict, user_data: dict) -> dict:

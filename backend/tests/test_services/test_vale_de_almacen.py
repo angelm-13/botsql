@@ -64,6 +64,9 @@ from app.services.warehouse_voucher_service import (
     documento_del_historial_de_persona,
     documento_del_vale,
     notificar_custodia_asignada,
+    notificar_custodia_confirmada,
+    notificar_material_entregado,
+    notificar_prevale_creado,
     pdf_del_historial_de_persona,
     reporte_por_almacen,
     reporte_por_persona,
@@ -255,6 +258,14 @@ class BaseVale(BackendTestCase):
                 "id_location_from": NAVE}
         base.update(extra)
         return base
+
+    def _prevale(self, lineas, **extra):
+        carga = {"id_incident_type": TIPO_PRESTAMO, "id_user": 1,
+                 "note": "Obra Norte", "lines": lineas,
+                 "due_date": (datetime.now() + timedelta(days=30)).strftime(
+                     "%Y-%m-%d %H:%M:%S")}
+        carga.update(extra)
+        return crear_vale(carga, ACTOR, como_borrador=True)
 
     def _otro_usuario(self, id_user):
         """Un segundo usuario real -- quien recoge, cuando no es el
@@ -1591,9 +1602,9 @@ class TestQuienRecogeElMaterial(BaseVale):
     def test_it_works_the_same_for_a_prevoucher(self):
         """El prevale tampoco mueve el almacen, pero la custodia se asigna
         igual -es un dato del renglon, no de la salida del almacen."""
-        vale = self._vale([self._linea_cantidad(10)], id_user_pickup=OPERADOR,
-                          como_borrador=True)
+        vale = self._prevale([self._linea_cantidad(10)], id_user_pickup=OPERADOR)
 
+        self.assertEqual(BORRADOR, vale["voucher"]["incident_status"])
         self.assertEqual(OPERADOR, vale["lines"][0]["id_user_delivered_to"])
 
     def test_the_voucher_screen_counts_it_as_pending_confirmation(self):
@@ -1693,6 +1704,121 @@ class TestLaNotificacionDeCustodia(BaseVale):
                    side_effect=RuntimeError("boom")):
             notificar_custodia_asignada(
                 vale["voucher"]["id_incident"], OPERADOR, actor_id=1)
+
+
+ALMACEN = 90
+
+
+class TestLasNotificacionesDelCicloDelVale(BaseVale):
+    """Las tres notificaciones del ciclo prevale -> autorizado -> recibido,
+    pedidas aparte de la custodia (2026-10-05): avisar a quien puede
+    autorizar (Almacen) cuando nace un prevale, avisar al responsable (y a
+    quien recoja) cuando el material sale del almacen -- directo o recien
+    autorizado, son el mismo evento en este sistema -- y avisar de vuelta a
+    Almacen cuando el responsable confirma que ya lo recibio.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from app.models.entity_permission import EntityPermission
+        from app.models.permission import Permission
+        from app.models.user import User
+
+        self._otro_usuario(OPERADOR)
+        with transaction_context() as db:
+            db.add(Permission(
+                id_permission=2, permission_description="Almacen",
+                authorized_by=1, id_department=1, id_subdepartment=1,
+                id_level=1, created_by=1))
+            db.flush()
+            db.add_all([
+                EntityPermission(id_permission=2,
+                                 entity_name="warehouse_voucher_authorize",
+                                 scope_read=1, created_by=1),
+                EntityPermission(id_permission=2, entity_name="warehouse_voucher",
+                                 scope_read=1, created_by=1),
+            ])
+            db.add(User(
+                id_user=ALMACEN, full_name="Almacen de pruebas",
+                username="almacendepruebas", id_permission=2,
+                id_proyect=PROYECTO, id_status=ESTATUS, supervisor=1,
+                created_by=1))
+        self.surtir(100)
+
+    def _no_leidas(self, id_user):
+        from app.services.notification_service import get_user_notifications
+
+        return get_user_notifications(id_user, unread_only=True)
+
+    def test_a_new_prevoucher_notifies_whoever_can_authorize(self):
+        vale = self._prevale([self._linea_cantidad(10)])
+
+        notificar_prevale_creado(vale["voucher"]["id_incident"], actor_id=1)
+
+        avisos = self._no_leidas(ALMACEN)
+        self.assertEqual(1, len(avisos))
+        self.assertEqual("warehouse_voucher_prevoucher_pending",
+                         avisos[0].notification_type)
+
+    def test_authorizing_notifies_the_holder(self):
+        """El responsable (OPERADOR) es distinto de quien autoriza (ACTOR,
+        id_user=1) -- si fueran la misma persona, el aviso se excluiria a
+        si mismo (ver `test_it_excludes_the_actor_from_their_own_action`),
+        que no es lo que esta prueba quiere comprobar."""
+        vale = self._prevale([self._linea_cantidad(10)], id_user=OPERADOR)
+        autorizar_vale(vale["voucher"]["id_incident"], {}, ACTOR)
+
+        notificar_material_entregado(
+            vale["voucher"]["id_incident"], actor_id=ACTOR["id_user"])
+
+        avisos = self._no_leidas(OPERADOR)
+        self.assertEqual(1, len(avisos))
+        self.assertEqual("warehouse_voucher_delivered", avisos[0].notification_type)
+
+    def test_opening_a_direct_voucher_notifies_the_holder_too(self):
+        """Un vale directo ya saca el material al crearse -- no hay un
+        "autorizar" aparte -- asi que el mismo aviso aplica aqui."""
+        vale = self._vale([self._linea_cantidad(10)], id_user=OPERADOR)
+
+        notificar_material_entregado(vale["voucher"]["id_incident"], actor_id=1)
+
+        avisos = self._no_leidas(OPERADOR)
+        self.assertEqual(1, len(avisos))
+        self.assertEqual("warehouse_voucher_delivered", avisos[0].notification_type)
+
+    def test_it_excludes_the_actor_from_their_own_action(self):
+        vale = self._vale([self._linea_cantidad(10)])  # id_user=1, mismo actor
+
+        notificar_material_entregado(vale["voucher"]["id_incident"], actor_id=1)
+
+        self.assertEqual(0, len(self._no_leidas(1)))
+
+    def test_a_write_off_voucher_is_not_notified(self):
+        """Una baja (destruccion/extraviado) no se reclama -- avisar "pasa
+        por el" ahi confundiria. Ver `TIPOS_DE_BAJA`."""
+        with transaction_context() as db:
+            db.add(IncidentType(id_incident_type=90,
+                                incident_type_description="Destruccion",
+                                created_by=1))
+        vale = self._vale([self._linea_cantidad(10)], id_incident_type=90,
+                          id_user=OPERADOR)
+
+        notificar_material_entregado(vale["voucher"]["id_incident"], actor_id=1)
+
+        self.assertEqual(0, len(self._no_leidas(OPERADOR)))
+
+    def test_confirming_custody_notifies_whoever_operates_the_warehouse(self):
+        vale = self._vale([self._linea_cantidad(10)], id_user_pickup=OPERADOR)
+        linea = vale["lines"][0]["id_nm_incident_product"]
+        confirmar_recepcion_de_renglon(linea, ACTOR)
+
+        notificar_custodia_confirmada(
+            vale["voucher"]["id_incident"], OPERADOR, actor_id=1)
+
+        avisos = self._no_leidas(ALMACEN)
+        self.assertEqual(1, len(avisos))
+        self.assertEqual("warehouse_voucher_custody_confirmed",
+                         avisos[0].notification_type)
 
 
 class TestElJobDeValesVencidos(BaseVale):

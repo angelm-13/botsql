@@ -34,6 +34,9 @@ from app.services.warehouse_voucher_service import (
     historial_del_producto,
     lo_que_ha_pedido,
     notificar_custodia_asignada,
+    notificar_custodia_confirmada,
+    notificar_material_entregado,
+    notificar_prevale_creado,
     pdf_del_historial_de_persona,
     quien_tiene_que,
     reporte_por_almacen,
@@ -113,6 +116,13 @@ def abrir_vale(user_data):
     cuerpo = _cuerpo()
     resultado = crear_vale(cuerpo, user_data)
     _avisar_si_hay_pickup(cuerpo, resultado, user_data)
+    # Un vale directo saca el material AL CREARSE -- no hay un "autorizar"
+    # aparte, asi que el aviso de "ya puedes pasar por el" va aqui.
+    try:
+        notificar_material_entregado(
+            resultado["voucher"]["id_incident"], user_data.get("id_user"))
+    except Exception:
+        pass
     return jsonify(resultado), 201
 
 
@@ -131,6 +141,11 @@ def abrir_prevale(user_data):
     cuerpo = _cuerpo()
     resultado = crear_vale(cuerpo, user_data, como_borrador=True)
     _avisar_si_hay_pickup(cuerpo, resultado, user_data)
+    try:
+        notificar_prevale_creado(
+            resultado["voucher"]["id_incident"], user_data.get("id_user"))
+    except Exception:
+        pass
     return jsonify(resultado), 201
 
 
@@ -215,7 +230,12 @@ def autorizar(user_data, id_incident):
     material. El servicio lo vuelve a comprobar -- la ruta protege la puerta,
     pero la regla vive donde vive la operacion.
     """
-    return jsonify(autorizar_vale(id_incident, _cuerpo(), user_data)), 200
+    resultado = autorizar_vale(id_incident, _cuerpo(), user_data)
+    try:
+        notificar_material_entregado(id_incident, user_data.get("id_user"))
+    except Exception:
+        pass
+    return jsonify(resultado), 200
 
 
 @bp_warehouse_voucher.route("/vouchers/lines/<id_line>/return", methods=["POST"])
@@ -265,7 +285,14 @@ def confirmar_custodia_de_renglon(user_data, id_line):
 
     Mismo candado que `/deliver-to`, y por el mismo motivo: es SU vale.
     """
-    return jsonify(confirmar_recepcion_de_renglon(id_line, user_data))
+    resultado = confirmar_recepcion_de_renglon(id_line, user_data)
+    try:
+        notificar_custodia_confirmada(
+            resultado["id_incident"], resultado["id_user_delivered_to"],
+            user_data.get("id_user"))
+    except Exception:
+        pass
+    return jsonify(resultado)
 
 
 # --- la trazabilidad, por la cosa y por la persona ---
