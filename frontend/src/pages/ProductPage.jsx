@@ -140,7 +140,7 @@ export default function ProductPage() {
       }
       if (canSeeField("id_marca")) {
         try {
-          const brandData = await getAllBrand({ page: 1, per_page: 500 });
+          const brandData = await getAllBrand({ page: 1, per_page: 1000, sort: "brand_description" });
           setBrandOptions(Array.isArray(brandData) ? brandData : (brandData.items || []));
         } catch (_) {
           setBrandOptions([]);
