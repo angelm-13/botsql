@@ -208,10 +208,12 @@ export default function WarehouseVoucherPage() {
 
   const abrirBorrador = () => setBorrador({
     id_incident_type: tipos[0]?.id_incident_type || "",
-    // Quien solo puede solicitar es SIEMPRE el responsable de lo que pide --
-    // mismo criterio que ya rige en Proyectos ("el responsable es quien crea
-    // el proyecto"): no tiene sentido que Supervisor levante un prevale a
-    // nombre de otra persona si el es quien va a tener que devolverlo.
+    // Por omision, quien pide el prevale es su propio responsable -- el caso
+    // mas comun -- pero NO es fijo (pedido de negocio, 2026-09-30): el
+    // supervisor no siempre puede salir de planta, y a veces manda a alguien
+    // mas -un operador- por la herramienta. Sigue siendo el mismo quien
+    // captura el prevale (`created_by`, sin cambios); solo el responsable
+    // ante almacen puede ser otra persona.
     id_user: soloPuedeSolicitar ? String(actor.id_user || "") : "",
     // El proyecto al que va el material. Vacio por opcion: no todo prestamo
     // es de un proyecto -- una herramienta para el propio taller no lo es.
@@ -475,7 +477,7 @@ export default function WarehouseVoucherPage() {
           onAmpliar={setFotoAmpliada}
           puedeAbrirValeDirecto={puedeAbrirValeDirecto}
           soloPuedeSolicitar={soloPuedeSolicitar}
-          nombreDelActor={nombreDe(actor.id_user) || actor.username}
+          actorIdUser={actor.id_user}
           t={t}
         />
       )}
@@ -1059,7 +1061,8 @@ function comoFichaDeProducto(candidato) {
 /** La captura de un vale: cabecera y renglones. */
 function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
                     proyectos, onGuardar, onCancelar, onAmpliar,
-                    puedeAbrirValeDirecto, soloPuedeSolicitar, nombreDelActor, t }) {
+                    puedeAbrirValeDirecto, soloPuedeSolicitar,
+                    actorIdUser, t }) {
   const [busqueda, setBusqueda] = useState("");
   const [candidatos, setCandidatos] = useState([]);
   const [buscando, setBuscando] = useState(false);
@@ -1171,26 +1174,23 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
         </label>
         <label className="field">
           <span>{t("voucher.holder", "Responsable")}</span>
-          {/* Quien solo puede solicitar es SIEMPRE el responsable de lo que
-              pide -mismo criterio que "el responsable es quien crea el
-              proyecto"-: no hay a quien mas elegir, asi que no se ofrece un
-              desplegable que solo tendria una opcion util. */}
-          {soloPuedeSolicitar ? (
-            <span className="vale-responsable-fijo">
-              {nombreDelActor}
-              <em className="muted">{t("voucher.holder_is_you", "(tú)")}</em>
-            </span>
-          ) : (
-            <select value={borrador.id_user}
-                    onChange={(e) => setBorrador({ ...borrador, id_user: e.target.value })}>
-              <option value="">{t("voucher.pick_holder", "Elige a quién se le entrega")}</option>
-              {usuarios.map((u) => (
-                <option key={u.id_user} value={u.id_user}>
-                  {u.full_name || u.username || `#${u.id_user}`}
-                </option>
-              ))}
-            </select>
-          )}
+          {/* Por omision es quien pide el prevale (preseleccionado abajo),
+              pero deja elegir a alguien mas -pedido de negocio, 2026-09-30-:
+              el supervisor no siempre puede salir de planta, y manda a un
+              operador por la herramienta. Ese operador queda como
+              responsable ante almacen -el que firma y el que debe
+              devolverlo-, sin importar quien haya capturado el prevale. */}
+          <select value={borrador.id_user}
+                  onChange={(e) => setBorrador({ ...borrador, id_user: e.target.value })}>
+            <option value="">{t("voucher.pick_holder", "Elige a quién se le entrega")}</option>
+            {usuarios.map((u) => (
+              <option key={u.id_user} value={u.id_user}>
+                {u.full_name || u.username || `#${u.id_user}`}
+                {soloPuedeSolicitar && Number(u.id_user) === Number(actorIdUser)
+                  ? ` ${t("voucher.holder_is_you", "(tú)")}` : ""}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="field">
           <span>{t("voucher.project", "Proyecto")}</span>
@@ -1433,6 +1433,6 @@ Borrador.propTypes = {
   onAmpliar: PropTypes.func,
   puedeAbrirValeDirecto: PropTypes.bool,
   soloPuedeSolicitar: PropTypes.bool,
-  nombreDelActor: PropTypes.string,
+  actorIdUser: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
   t: PropTypes.func.isRequired,
 };

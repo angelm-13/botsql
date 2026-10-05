@@ -1,6 +1,6 @@
 # Contexto de sesión — tyakxa_tny (para retomar en otra conversación)
 
-Última actualización: 2026-10-02. Este archivo es el "dónde nos quedamos",
+Última actualización: 2026-10-05. Este archivo es el "dónde nos quedamos",
 aparte de `ARQUITECTURA_TYAKXA_TNY.md` (referencia técnica estable) y de
 `docs/PLAN_ACCION_MEJORA.md` (plan de mejora por auditoría). Cuando una
 sección se resuelve, se puede recortar; mientras tanto se deja completa para
@@ -94,6 +94,89 @@ vidrioyaluminios-prod llevan semanas sin promoción.
   PDF del vale idéntico al anterior**: están en `initAlan` y en la imagen de
   adser-prod (`c260f22` contiene la punta de `initAngm`). torredigital-prod
   (`031970b`) NO los incluye.
+## Bitácora 2026-10-05 (continuación) — merge de initAlan (129 commits) + flujo de entrega validado
+
+**Merge de `origin/initAlan` a `initAngm`**, commit `309f32e` — sin
+conflictos de código real (ni siquiera `CLAUDE.md` esta vez). Trae,
+entre otras cosas, un cambio arquitectónico grande:
+**`20260816000000_el_gestor_manda_sobre_las_migraciones.sql`** — un
+trigger (`trg_gestor_manda`) que impide que las migraciones (que se
+reaplican TODAS en cada arranque, sin tabla de control) reviertan lo
+que un administrador ya ajustó a mano en el Gestor de roles y permisos.
+Antes de este trigger, cada promoción deshacía silenciosamente esos
+ajustes — medido en `adser-prod` el 2026-10-02 (reescribió 5 grupos de
+`entity_permission` y 176 de `nm_field_permission` en una sola pasada).
+Detalle completo en `docs/despliegues/2026-10-02_el_gestor_manda_sobre_las_migraciones.md`.
+
+**Hallazgo real propio, corregido** (commit `9687325`): mi migración
+`20260930090000_bitacora_diaria_entra_al_menu.sql` hace un `UPDATE
+entity_permission` sin fijar `ajustado_por_gestor`. Como esa migración
+es de fecha POSTERIOR a la del trigger, en una base que YA está en uso
+y que nunca ha corrido ninguna de las dos (torredigital-prod,
+adser-prod — "semanas sin promover") el trigger congelaría la fila
+primero, dejando mi `UPDATE` descartado en silencio para siempre. Se
+agregó `ajustado_por_gestor = now()` al `SET`. En tyakxa-dev no cambia
+nada (la fila ya tenía el menú correcto). **Ojo para la próxima vez que
+se promueva esta rama a esos dos ambientes**: por las fechas de archivo,
+CUALQUIER migración entre `20260816000000` y la fecha de la última
+promoción real de esos ambientes que haga `UPDATE`/`DELETE` sobre
+`entity_permission`/`nm_field_permission` sin fijar esa columna corre
+el mismo riesgo — no se auditaron las demás (quedan fuera del alcance
+de esta sesión, y la mayoría son de antes del commit `9687325`, ya
+aplicadas con éxito en tyakxa-dev).
+
+Verificado con `docker compose up -d db-migrate`: `esquema al dia`, sin
+error. Suite completa: **1583 passed, 0 failed, 188 skipped** (las KPI
+de Postgres se saltan bajo SQLite por diseño, ver `backend/tests/README.md`
+y `backend/ci/run_postgres_tests.sh` — no se corrieron en esta sesión,
+quedó pendiente si se quiere verificar esa parte en detalle).
+
+**Pregunta de negocio resuelta sin tocar código** (Tania, vía el
+usuario): el flujo de "solicitud adicional dentro del mismo proyecto,
+recogida por un externo sin acceso al sistema" **ya funciona con lo
+construido el 2026-09-30** (maquila/entrega de herramienta) — no hacía
+falta ninguna función nueva. El flujo operativo correcto: el vale se
+levanta normal (responsable = el propio supervisor, sin tocarlo);
+**almacén** (que siempre puede gestionar la custodia de cualquier vale)
+marca "Entregar a" = el externo al momento de surtir; cuando el externo
+le entrega la herramienta al supervisor en planta, **el supervisor** ve
+y usa "Confirmar recepción" automáticamente, porque sigue siendo el
+responsable del vale. Verificado de punta a punta en navegador real
+(vale #144): `POST /prevouchers` 201 → `POST /vouchers/144/authorize`
+200 → `POST /vouchers/lines/2793/deliver-to` 200 (por almacén) →
+`POST /vouchers/lines/2793/confirm-custody` 200 (por el supervisor) →
+"Recuperado de Roberto Cisneros" visible en el vale.
+
+**Corrección a la nota anterior** (de un borrador de esta misma entrada):
+los 3 archivos con el fix del selector de marca (`MaterialPage.jsx`,
+`ProductPage.jsx`, `ServicePage.jsx`) que en un momento parecieron
+"de origen desconocido" en el working tree ya estaban commiteados y
+pusheados a `origin/initAngm` como `3df49d9` ("fix(marcas): el selector
+de marca en Material/Producto/Servicio ya trae el catalogo completo")
+antes de que esta sesión terminara de revisarlos — probablemente de un
+tick autónomo anterior de esta misma sesión, resumido fuera del
+contexto visible. Nada quedó sin commitear; `git push` confirmó
+"Everything up-to-date".
+
+## Bitácora 2026-10-05 — el prevale puede quedar a nombre de otro operador
+
+Pedido: una vez levantado el proyecto, poder generar un vale a nombre de
+alguien distinto del supervisor -- el supervisor no siempre puede salir
+de planta, y manda a un operador por la herramienta. Commit `93427c0`.
+
+El "Responsable" del prevale era FIJO en el frontend (siempre el
+supervisor que lo captura, sin selector) -- una regla de UI, no del
+backend: `crear_vale` nunca exigio que `id_user` fuera el actor, acepta
+cualquier usuario valido. Se quito el candado: el campo sigue
+precargado con el actor (con "(tú)" junto a su nombre), pero ahora es
+el mismo desplegable que ya usaba Almacenista. Quien CAPTURA el
+prevale (`created_by`) no cambia; solo el responsable ante almacen
+-quien firma y quien debe devolverlo- puede ser otra persona.
+
+Probado en navegador real como Supervisor (`vicgo`): prevale creado a
+nombre del operador Roberto Cisneros -- `POST /prevouchers` 201,
+verificado en la respuesta que `created_by` sigue siendo vicgo (56)
+pero `id_user` es el operador elegido (81).
 
 ## Bitácora 2026-09-30 (continuación) — plantilla del PDF de vale igual a la del sistema anterior
 
