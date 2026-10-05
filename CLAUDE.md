@@ -6,6 +6,68 @@ aparte de `ARQUITECTURA_TYAKXA_TNY.md` (referencia técnica estable) y de
 sección se resuelve, se puede recortar; mientras tanto se deja completa para
 que una sesión nueva no tenga que releer el historial de chat.
 
+## Bitácora 2026-10-05 (continuación) — merge de initAlan (129 commits) + flujo de entrega validado
+
+**Merge de `origin/initAlan` a `initAngm`**, commit `309f32e` — sin
+conflictos de código real (ni siquiera `CLAUDE.md` esta vez). Trae,
+entre otras cosas, un cambio arquitectónico grande:
+**`20260816000000_el_gestor_manda_sobre_las_migraciones.sql`** — un
+trigger (`trg_gestor_manda`) que impide que las migraciones (que se
+reaplican TODAS en cada arranque, sin tabla de control) reviertan lo
+que un administrador ya ajustó a mano en el Gestor de roles y permisos.
+Antes de este trigger, cada promoción deshacía silenciosamente esos
+ajustes — medido en `adser-prod` el 2026-10-02 (reescribió 5 grupos de
+`entity_permission` y 176 de `nm_field_permission` en una sola pasada).
+Detalle completo en `docs/despliegues/2026-10-02_el_gestor_manda_sobre_las_migraciones.md`.
+
+**Hallazgo real propio, corregido** (commit `9687325`): mi migración
+`20260930090000_bitacora_diaria_entra_al_menu.sql` hace un `UPDATE
+entity_permission` sin fijar `ajustado_por_gestor`. Como esa migración
+es de fecha POSTERIOR a la del trigger, en una base que YA está en uso
+y que nunca ha corrido ninguna de las dos (torredigital-prod,
+adser-prod — "semanas sin promover") el trigger congelaría la fila
+primero, dejando mi `UPDATE` descartado en silencio para siempre. Se
+agregó `ajustado_por_gestor = now()` al `SET`. En tyakxa-dev no cambia
+nada (la fila ya tenía el menú correcto). **Ojo para la próxima vez que
+se promueva esta rama a esos dos ambientes**: por las fechas de archivo,
+CUALQUIER migración entre `20260816000000` y la fecha de la última
+promoción real de esos ambientes que haga `UPDATE`/`DELETE` sobre
+`entity_permission`/`nm_field_permission` sin fijar esa columna corre
+el mismo riesgo — no se auditaron las demás (quedan fuera del alcance
+de esta sesión, y la mayoría son de antes del commit `9687325`, ya
+aplicadas con éxito en tyakxa-dev).
+
+Verificado con `docker compose up -d db-migrate`: `esquema al dia`, sin
+error. Suite completa: **1583 passed, 0 failed, 188 skipped** (las KPI
+de Postgres se saltan bajo SQLite por diseño, ver `backend/tests/README.md`
+y `backend/ci/run_postgres_tests.sh` — no se corrieron en esta sesión,
+quedó pendiente si se quiere verificar esa parte en detalle).
+
+**Pregunta de negocio resuelta sin tocar código** (Tania, vía el
+usuario): el flujo de "solicitud adicional dentro del mismo proyecto,
+recogida por un externo sin acceso al sistema" **ya funciona con lo
+construido el 2026-09-30** (maquila/entrega de herramienta) — no hacía
+falta ninguna función nueva. El flujo operativo correcto: el vale se
+levanta normal (responsable = el propio supervisor, sin tocarlo);
+**almacén** (que siempre puede gestionar la custodia de cualquier vale)
+marca "Entregar a" = el externo al momento de surtir; cuando el externo
+le entrega la herramienta al supervisor en planta, **el supervisor** ve
+y usa "Confirmar recepción" automáticamente, porque sigue siendo el
+responsable del vale. Verificado de punta a punta en navegador real
+(vale #144): `POST /prevouchers` 201 → `POST /vouchers/144/authorize`
+200 → `POST /vouchers/lines/2793/deliver-to` 200 (por almacén) →
+`POST /vouchers/lines/2793/confirm-custody` 200 (por el supervisor) →
+"Recuperado de Roberto Cisneros" visible en el vale.
+
+**Hallazgo lateral, sin tocar**: 3 archivos (`MaterialPage.jsx`,
+`ProductPage.jsx`, `ServicePage.jsx`) tienen en el working tree local un
+cambio sin commitear (el selector de marca pide `per_page: 1000` con
+orden, en vez de 100/500) de origen desconocido para esta sesión — no
+se escribió aquí. Se dejó fuera del commit a propósito, igual que
+`ProyectoExpediente.jsx` (WIP ajeno de sesiones anteriores, sigue en el
+stash). Si alguien reconoce ese cambio como propio, falta commitearlo
+aparte.
+
 ## Bitácora 2026-10-05 — el prevale puede quedar a nombre de otro operador
 
 Pedido: una vez levantado el proyecto, poder generar un vale a nombre de
