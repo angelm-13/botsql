@@ -58,6 +58,10 @@ class NmIncidentProduct(Base):
     id_user_delivered_to: Mapped[int | None] = mapped_column(
         Integer, ForeignKey('user.id_user'), nullable=True)
     custody_confirmed_date: Mapped[object] = mapped_column(DateTime, nullable=True)
+    # Cuando se avisó por última vez (campanita) que este renglón ya debió
+    # volver y no ha vuelto. Deduplica el job periódico que revisa vales
+    # vencidos -- sin esto, cada corrida repetiría el mismo aviso.
+    overdue_notified_date: Mapped[object] = mapped_column(DateTime, nullable=True)
     # Desde cuando y hasta cuando. `close_date` ya decia cuando se cerro, pero
     # sin `due_date` no se podia listar lo vencido, que es la razon de llevar
     # vales.
@@ -82,6 +86,7 @@ class NmIncidentProduct(Base):
             'direction': to_json_value(self.direction),
             'id_user_delivered_to': to_json_value(self.id_user_delivered_to),
             'custody_confirmed_date': to_json_value(self.custody_confirmed_date),
+            'overdue_notified_date': to_json_value(self.overdue_notified_date),
             'start_date': to_json_value(self.start_date),
             'due_date': to_json_value(self.due_date),
             'close_date': to_json_value(self.close_date),

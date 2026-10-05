@@ -215,6 +215,12 @@ export default function WarehouseVoucherPage() {
     // captura el prevale (`created_by`, sin cambios); solo el responsable
     // ante almacen puede ser otra persona.
     id_user: soloPuedeSolicitar ? String(actor.id_user || "") : "",
+    // Quien va a RECOGER el material, si no es el responsable de arriba --
+    // pedido de negocio, 2026-10-05: el supervisor puede quedarse con el
+    // vale a su nombre pero mandar a un operador por la herramienta. Vacio
+    // por omision: sin elegir a nadie aqui, el responsable es quien recoge,
+    // como ya pasaba antes de que existiera este campo.
+    id_user_pickup: "",
     // El proyecto al que va el material. Vacio por opcion: no todo prestamo
     // es de un proyecto -- una herramienta para el propio taller no lo es.
     id_proyect: "",
@@ -285,6 +291,7 @@ export default function WarehouseVoucherPage() {
       const creado = await alta({
         ...borrador,
         id_proyect: borrador.id_proyect || undefined,
+        id_user_pickup: borrador.id_user_pickup || undefined,
         lines: borrador.lines.map((l) => ({
           id_product: l.id_product,
           id_inventory_asset: l.id_inventory_asset || undefined,
@@ -576,6 +583,14 @@ export default function WarehouseVoucherPage() {
                             ? `${v.open_lines} ${t("voucher.out", "fuera")}`
                             : t("voucher.all_back", "todo devuelto")}
                         </span>
+                        {/* Entregado a alguien que no es el responsable, y ese
+                            alguien todavia no se lo ha confirmado -- para que
+                            no haga falta abrir el vale para verlo. */}
+                        {v.pending_custody_lines > 0 && (
+                          <span className="vale-marca-mini pendiente-custodia">
+                            {v.pending_custody_lines} {t("voucher.pending_custody", "por confirmar")}
+                          </span>
+                        )}
                       </span>
                       {v.incident_date && (
                         <span className="muted">
@@ -749,6 +764,18 @@ function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
                 t("voucher.open_lines", "sin devolver")}`}
           </em>
         </span>
+        {/* Entregado a alguien que no es el responsable, y ese alguien
+            todavia no se lo ha confirmado al responsable -- el aviso que
+            evita el "yo no lo recibi". */}
+        {vale.pending_custody_lines > 0 && (
+          <span className="vale-estado vale-pendiente-custodia">
+            {t("voucher.pending_custody_header", "Por confirmar")}
+            <em>
+              {vale.pending_custody_lines} {t("voucher.pending_custody_detail",
+                "renglón(es) entregado(s) a otra persona, sin confirmar")}
+            </em>
+          </span>
+        )}
       </header>
 
       {/* Autorizar es lo que saca el material, asi que va arriba y solo cuando
@@ -951,6 +978,7 @@ Vale.propTypes = {
     lines: PropTypes.array,
     open_lines: PropTypes.number,
     total_lines: PropTypes.number,
+    pending_custody_lines: PropTypes.number,
   }).isRequired,
   onCerrar: PropTypes.func.isRequired,
   onImprimir: PropTypes.func.isRequired,
@@ -1193,6 +1221,26 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
           </select>
         </label>
         <label className="field">
+          <span>{t("voucher.pickup", "¿Quién recoge el material?")}</span>
+          {/* Distinto del Responsable de arriba: el vale puede quedar a
+              nombre del supervisor pero recogerlo un operador. Si se deja en
+              blanco, el responsable es quien recoge -- sin cambio de
+              comportamiento. Si se elige a alguien mas, el responsable tendra
+              que confirmar despues que ya recibio el material de esa
+              persona (bloque de custodia, dentro del vale). */}
+          <select value={borrador.id_user_pickup}
+                  onChange={(e) => setBorrador({ ...borrador, id_user_pickup: e.target.value })}>
+            <option value="">{t("voucher.pickup_is_holder", "El responsable (por omisión)")}</option>
+            {usuarios.map((u) => (
+              <option key={u.id_user} value={u.id_user}>
+                {u.full_name || u.username || `#${u.id_user}`}
+                {Number(u.id_user) === Number(actorIdUser)
+                  ? ` ${t("voucher.holder_is_you", "(tú)")}` : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
           <span>{t("voucher.project", "Proyecto")}</span>
           <select value={borrador.id_proyect}
                   onChange={(e) => setBorrador({ ...borrador, id_proyect: e.target.value })}>
@@ -1418,6 +1466,7 @@ Borrador.propTypes = {
   borrador: PropTypes.shape({
     id_incident_type: PropTypes.any,
     id_user: PropTypes.any,
+    id_user_pickup: PropTypes.any,
     id_proyect: PropTypes.any,
     due_date: PropTypes.string,
     note: PropTypes.string,
