@@ -58,6 +58,9 @@ class NmIncidentProduct(Base):
     id_user_delivered_to: Mapped[int | None] = mapped_column(
         Integer, ForeignKey('user.id_user'), nullable=True)
     custody_confirmed_date: Mapped[object] = mapped_column(DateTime, nullable=True)
+    # A quien se entrego la pieza cuando NO es un usuario (chofer, mensajero).
+    # Excluyente con `id_user_delivered_to`.
+    delivered_to_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     # Cuando se avisó por última vez (campanita) que este renglón ya debió
     # volver y no ha vuelto. Deduplica el job periódico que revisa vales
     # vencidos -- sin esto, cada corrida repetiría el mismo aviso.
@@ -86,6 +89,7 @@ class NmIncidentProduct(Base):
             'direction': to_json_value(self.direction),
             'id_user_delivered_to': to_json_value(self.id_user_delivered_to),
             'custody_confirmed_date': to_json_value(self.custody_confirmed_date),
+            'delivered_to_name': to_json_value(self.delivered_to_name),
             'overdue_notified_date': to_json_value(self.overdue_notified_date),
             'start_date': to_json_value(self.start_date),
             'due_date': to_json_value(self.due_date),
