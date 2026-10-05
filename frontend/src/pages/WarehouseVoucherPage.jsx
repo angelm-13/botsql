@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { idAAbrir } from "../notifications/destino";
 import PropTypes from "prop-types";
 import VisorDeFoto from "../components/VisorDeFoto";
 import EmployeeVoucherHistory from "../components/EmployeeVoucherHistory.jsx";
@@ -293,6 +295,33 @@ export default function WarehouseVoucherPage() {
     }
   };
 
+  // Llegar desde una notificacion: `/vouchers?abrir=<id>` abre ese vale. Se
+  // espera a que termine de cargar la pantalla (permisos y catalogos) y se
+  // consume una vez: el parametro se limpia para que recargar no lo reabra.
+  const [parametros, setParametros] = useSearchParams();
+  const idPorAbrir = idAAbrir(parametros);
+  // El aviso de "no se pudo abrir" tiene su PROPIO estado: `listar()` y
+  // `cargar()` limpian `error` al arrancar y, segun quien gane la carrera,
+  // borraban este mensaje antes de que se leyera.
+  const [noSeAbrio, setNoSeAbrio] = useState("");
+  useEffect(() => {
+    if (!idPorAbrir || cargando) return;
+    setParametros({}, { replace: true });
+    setNoSeAbrio("");
+    (async () => {
+      try {
+        setConsultado(await getWarehouseVoucher(String(idPorAbrir)));
+      } catch {
+        // 403/404: el aviso apunta a un vale que ya no existe o que este
+        // usuario no puede ver.
+        setConsultado(null);
+        setNoSeAbrio(traducir.current("errors.not_found"));
+      }
+    })();
+    // Solo importan el id y que la pantalla ya haya cargado.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idPorAbrir, cargando]);
+
   /**
    * Guarda el vale, o lo deja en borrador.
    *
@@ -471,6 +500,7 @@ export default function WarehouseVoucherPage() {
       </PageHeader>
 
       {error && <p className="error">{error}</p>}
+      {noSeAbrio && <p className="error">{noSeAbrio}</p>}
       {aviso && <p className="vale-aviso"><Check size={15} />{aviso}</p>}
 
       {/* Lo vencido primero: es la razon de llevar vales. Si no hay nada, la

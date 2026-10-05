@@ -27,6 +27,7 @@ from app.services.warehouse_voucher_service import (
     entregar_vale,
     documento_del_historial_de_persona,
     folio_del_vale,
+    notificar_entrega_registrada,
     pdf_del_vale,
     autorizar_vale,
     buscar_vales,
@@ -232,7 +233,11 @@ def entregar(user_data, id_incident):
     entrega a quien se designo al pedirlo), y `note`, obligatoria cuando recibe
     alguien distinto del designado.
     """
-    return jsonify(entregar_vale(id_incident, _cuerpo(), user_data)), 200
+    resultado = entregar_vale(id_incident, _cuerpo(), user_data)
+    # Despues de cerrar la transaccion de la entrega, nunca dentro.
+    notificar_entrega_registrada(
+        resultado["voucher"]["id_incident"], user_data.get("id_user"))
+    return jsonify(resultado), 200
 
 
 @bp_warehouse_voucher.route("/vouchers/<id_incident>/confirm-receipt", methods=["POST"])

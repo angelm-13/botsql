@@ -1,11 +1,14 @@
 import { Bell } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { getNotifications, getUnreadCount, markNotificationAsRead } from "../api";
 import { useI18n } from "../i18n";
+import { destinoDeNotificacion } from "../notifications/destino";
 import "./NotificationBell.css";
 
 export default function NotificationBell() {
   const { t } = useI18n();
+  const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -65,6 +68,14 @@ export default function NotificationBell() {
     } finally {
       setLoading(false);
     }
+  }
+
+  // Abrir el registro del aviso NO lo marca leido: "Enterado" es un acto
+  // explicito y aparte, a proposito -- quien abre el vale sigue teniendo el
+  // aviso en la lista hasta que dice que se enteró.
+  function handleOpen(destino) {
+    setIsOpen(false);
+    navigate(destino);
   }
 
   async function handleAcknowledge(id) {
@@ -128,9 +139,25 @@ export default function NotificationBell() {
               </div>
             ) : (
               <div className="notification-list">
-                {notifications.map((notif) => (
+                {notifications.map((notif) => {
+                  const destino = destinoDeNotificacion(notif);
+                  return (
                   <div key={notif.id_notification} className="notification-item unread">
-                    <div className="notification-item-content">
+                    <div
+                      className={`notification-item-content${destino ? " has-destino" : ""}`}
+                      {...(destino ? {
+                        role: "link",
+                        tabIndex: 0,
+                        title: t("common.notification_open", "Abrir"),
+                        onClick: () => handleOpen(destino),
+                        onKeyDown: (e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            handleOpen(destino);
+                          }
+                        },
+                      } : {})}
+                    >
                       <div className="notification-item-title">
                         {notif.title}
                       </div>
@@ -144,7 +171,11 @@ export default function NotificationBell() {
                       </div>
                       <button
                         className="notification-item-acknowledge"
-                        onClick={() => handleAcknowledge(notif.id_notification)}
+                        onClick={(e) => {
+                          // El clic en "Enterado" no debe ademas abrir el registro.
+                          e.stopPropagation();
+                          handleAcknowledge(notif.id_notification);
+                        }}
                         title={t(
                           "common.acknowledge_hint",
                           "Confirmar que la leíste; es la única forma de quitarla de esta lista"
@@ -154,7 +185,8 @@ export default function NotificationBell() {
                       </button>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

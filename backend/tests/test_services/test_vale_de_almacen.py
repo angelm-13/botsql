@@ -2086,3 +2086,108 @@ class TestElValeComplementario(BaseEntrega):
 
         self.assertEqual(OPERADOR, hijo["lines"][0]["id_user_delivered_to"])
         self.assertEqual("por_entregar", self._estado(hijo))
+
+
+# --- notificaciones con destino ----------------------------------------------
+
+from app.services.warehouse_voucher_service import (  # noqa: E402
+    notificar_entrega_registrada,
+)
+
+
+class TestLasNotificacionesLlevanAUnDestino(BaseEntrega):
+    """Un clic en la campana abre el registro que origino el aviso: cada
+    notificacion trae `target_entity` + `target_id`."""
+
+    def _no_leidas(self, id_user):
+        from app.services.notification_service import get_user_notifications
+
+        return get_user_notifications(id_user, unread_only=True)
+
+    def _crear(self, **extra):
+        from app.services.notification_service import create_notification
+
+        base = {"id_user_recipient": 1, "notification_type": "custom",
+                "title": "x", "created_by": 1}
+        base.update(extra)
+        return create_notification(**base).serialize()
+
+    def test_an_explicit_target_is_kept(self):
+        n = self._crear(target_entity="voucher", target_id=7)
+
+        self.assertEqual("voucher", n["target_entity"])
+        self.assertEqual(7, n["target_id"])
+
+    def test_a_project_notification_without_target_points_at_its_project(self):
+        """Un productor viejo, que solo pasa `id_proyect`, sigue llevando al
+        proyecto sin tocar su codigo."""
+        n = self._crear(id_proyect=PROYECTO)
+
+        self.assertEqual("proyect", n["target_entity"])
+        self.assertEqual(PROYECTO, n["target_id"])
+
+    def test_half_a_target_is_no_target(self):
+        """O es un par completo o no hay destino: medio destino no abre nada."""
+        n = self._crear(target_entity="voucher")
+
+        self.assertIsNone(n["target_entity"])
+        self.assertIsNone(n["target_id"])
+
+    def test_a_notification_with_nothing_has_no_target(self):
+        n = self._crear()
+
+        self.assertIsNone(n["target_entity"])
+        self.assertIsNone(n["target_id"])
+
+    def test_the_custody_notices_point_at_the_voucher(self):
+        vale = self._vale([self._linea_cantidad(10)], id_user_pickup=OPERADOR)
+        id_vale = vale["voucher"]["id_incident"]
+
+        notificar_custodia_asignada(id_vale, OPERADOR, actor_id=1)
+
+        for id_user in (1, OPERADOR):
+            aviso = self._no_leidas(id_user)[0].serialize()
+            self.assertEqual("voucher", aviso["target_entity"])
+            self.assertEqual(id_vale, aviso["target_id"])
+
+    def test_the_overdue_job_points_at_the_voucher(self):
+        from app.jobs.tasks_warehouse import notify_overdue_vouchers
+
+        vale = self._vale([self._linea_cantidad(10)])
+        self.vencer(vale["lines"][0]["id_nm_incident_product"])
+
+        notify_overdue_vouchers.run() if hasattr(notify_overdue_vouchers, "run") \
+            else notify_overdue_vouchers()
+
+        aviso = self._no_leidas(1)[0].serialize()
+        self.assertEqual("voucher", aviso["target_entity"])
+        self.assertEqual(vale["voucher"]["id_incident"], aviso["target_id"])
+
+    def test_the_holder_is_told_when_the_warehouse_delivers(self):
+        vale = self._vale([self._linea_cantidad(10)])
+        id_vale = vale["voucher"]["id_incident"]
+
+        notificar_entrega_registrada(id_vale, actor_id=OPERADOR)
+
+        avisos = self._no_leidas(1)
+        self.assertEqual(1, len(avisos))
+        self.assertEqual("warehouse_voucher_delivered", avisos[0].notification_type)
+        self.assertEqual("voucher", avisos[0].serialize()["target_entity"])
+        self.assertEqual(id_vale, avisos[0].serialize()["target_id"])
+
+    def test_nobody_is_told_about_their_own_delivery(self):
+        vale = self._vale([self._linea_cantidad(10)])
+
+        notificar_entrega_registrada(vale["voucher"]["id_incident"], actor_id=1)
+
+        self.assertEqual(0, len(self._no_leidas(1)))
+
+    def test_a_failure_to_notify_the_delivery_never_raises(self):
+        from unittest.mock import patch
+
+        vale = self._vale([self._linea_cantidad(10)])
+
+        with patch("app.services.notification_service.create_notification",
+                   side_effect=RuntimeError("boom")):
+            notificar_entrega_registrada(
+                vale["voucher"]["id_incident"], actor_id=OPERADOR)

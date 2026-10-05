@@ -2565,6 +2565,7 @@
     "validation_authorization_status_required": "The line item could not be saved because it has no initial authorization status."
   },
   "errors": {
+    "not_found": "What you are looking for was not found: it no longer exists or you do not have access to it.",
     "request_failed": "Request failed",
     "validation_failed": "Review the highlighted fields before saving",
     "required_field": "Required field",
@@ -3396,6 +3397,7 @@
     "close": "Close",
     "confirm_delete": "Delete",
     "error_load": "Projects could not be loaded.",
+    "error_open_notification": "The project in this notice could not be opened: it no longer exists or you do not have access to it.",
     "error_prepare": "The module could not be prepared.",
     "error_save": "The project could not be saved.",
     "error_transition": "The status could not be changed.",

@@ -431,6 +431,7 @@ def _notificar_proyecto(*, destinatarios, actor_id, id_proyect, nombre_proyecto,
                 title=titulo,
                 message=f"{nombre_proyecto}: {mensaje}",
                 id_proyect=id_proyect,
+                target_entity="proyect", target_id=id_proyect,
                 created_by=actor_id,
             )
         except Exception:

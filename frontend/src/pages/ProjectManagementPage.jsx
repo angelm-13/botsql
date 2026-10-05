@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { idAAbrir } from "../notifications/destino";
 import { ArrowRight, ChevronRight, Eye, HelpingHand, LayoutGrid, List, LogOut, MessageSquare, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import {
   addProyectMessage,
@@ -208,6 +210,31 @@ export default function ProjectManagementPage() {
   const [transition, setTransition] = useState(null);
   const [detail, setDetail] = useState(null);
   const [message, setMessage] = useState("");
+  // Llegar desde una notificacion: `/proyect?abrir=<id>` abre ese proyecto. El
+  // parametro se consume una vez (se limpia) para que recargar no lo reabra.
+  const [parametros, setParametros] = useSearchParams();
+  const idPorAbrir = idAAbrir(parametros);
+  // Su PROPIO estado: `loadData` limpia `error` al arrancar y, segun quien gane
+  // la carrera, borraba este mensaje antes de que se leyera.
+  const [noSeAbrio, setNoSeAbrio] = useState("");
+  useEffect(() => {
+    if (!idPorAbrir) return;
+    // Limpiar el parametro vuelve a ejecutar este efecto (idPorAbrir pasa a
+    // null): por eso aqui NO hay guardia de "sigue vigente" -- cancelaria el
+    // `setDetail` de la peticion que acaba de salir.
+    setParametros({}, { replace: true });
+    setNoSeAbrio("");
+    (async () => {
+      try {
+        setDetail(await getProyect(idPorAbrir));
+      } catch {
+        // 403/404: el aviso apunta a un proyecto que ya no existe o que este
+        // usuario no puede ver. Se dice, no se deja la pantalla en blanco.
+        setNoSeAbrio(t("project_management.error_open_notification"));
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idPorAbrir]);
   // Las maquinas de estado, tal como las valida el servidor.
   const [catalog, setCatalog] = useState(null);
   // La tarea abierta desde el expediente, con su bitacora. Aqui se cierra el
@@ -590,6 +617,7 @@ export default function ProjectManagementPage() {
     </form>
 
     {error && <div className="alert error">{t(error, error)}</div>}
+    {noSeAbrio && <div className="alert error">{noSeAbrio}</div>}
     {loading && <div className="alert">{projectText("loading")}</div>}
     {!loading && !filtered.length && <div className="empty"><strong>{projectText("empty")}</strong><p>{projectText("empty_body")}</p></div>}
 

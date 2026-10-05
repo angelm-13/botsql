@@ -229,3 +229,9 @@
     bottom: 16px;
   }
 }
+
+/* Un aviso con destino se abre con un clic en su texto; "Enterado" es aparte. */
+.notification-item-content.has-destino { cursor: pointer; }
+.notification-item-content.has-destino:hover .notification-item-title,
+.notification-item-content.has-destino:focus-visible .notification-item-title { text-decoration: underline; }
+.notification-item-content.has-destino:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }

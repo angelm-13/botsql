@@ -1317,6 +1317,7 @@ def notificar_custodia_asignada(id_incident, id_entregado, actor_id: int) -> Non
             id_proyect=None,
             metadata={"id_incident": resumen["id_incident"],
                       "id_user_delivered_to": int(id_entregado)},
+            target_entity="voucher", target_id=resumen["id_incident"],
             created_by=actor_id,
         )
     except Exception:
@@ -1336,10 +1337,43 @@ def notificar_custodia_asignada(id_incident, id_entregado, actor_id: int) -> Non
                 ),
                 id_proyect=None,
                 metadata={"id_incident": resumen["id_incident"]},
+                target_entity="voucher", target_id=resumen["id_incident"],
                 created_by=actor_id,
             )
         except Exception:
             pass
+
+
+def notificar_entrega_registrada(id_incident, actor_id: int) -> None:
+    """Avisa (campanita) al responsable que almacen marco su vale como
+    entregado: ahora le toca confirmar el recibido.
+
+    Se llama desde la RUTA, despues de cerrar la transaccion de `entregar_vale`
+    (mismo motivo que `notificar_custodia_asignada`: `create_notification`
+    abre su propia transaccion). Si quien marco la entrega ES el responsable no
+    hay a quien avisar. Un fallo al notificar nunca revierte la entrega.
+    """
+    from app.services.notification_service import create_notification
+
+    try:
+        resumen = _resumen_para_notificar(id_incident)
+        if int(resumen["id_responsable"]) == int(actor_id):
+            return
+        create_notification(
+            id_user_recipient=resumen["id_responsable"],
+            id_user_sender=actor_id,
+            notification_type="warehouse_voucher_delivered",
+            title="Vale #%s entregado: confirma el recibido" % resumen["folio"],
+            message=(
+                "Almacén marcó como entregado el vale #%s. Cuando tengas la "
+                "herramienta, confirma que la recibiste (o avisa si faltó algo)."
+            ) % resumen["folio"],
+            metadata={"id_incident": resumen["id_incident"]},
+            target_entity="voucher", target_id=resumen["id_incident"],
+            created_by=actor_id,
+        )
+    except Exception:
+        pass
 
 
 def _poner_custodia(renglon, id_responsable: int, *, id_user=None, nombre=None) -> None:

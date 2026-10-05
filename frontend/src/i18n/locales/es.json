@@ -2605,6 +2605,7 @@
     "validation_authorization_status_required": "No se pudo guardar porque la partida no tiene estado de autorización inicial."
   },
   "errors": {
+    "not_found": "No se encontró lo que buscas: ya no existe o no tienes acceso a él.",
     "request_failed": "No se pudo completar la solicitud",
     "validation_failed": "Revisa los campos marcados antes de guardar",
     "required_field": "Campo obligatorio",
@@ -3438,6 +3439,7 @@
     "close": "Cerrar",
     "confirm_delete": "Eliminar",
     "error_load": "No fue posible cargar los proyectos.",
+    "error_open_notification": "No se pudo abrir el proyecto del aviso: ya no existe o no tienes acceso a él.",
     "error_prepare": "No fue posible preparar el módulo.",
     "error_save": "No fue posible guardar el proyecto.",
     "error_transition": "No fue posible cambiar el estado.",
