@@ -258,11 +258,15 @@ class TestLosAvisosDeLaOrden(BaseRecepcion):
         self.assertIn(("purchase_order_rejected", "purchase_order", id_orden),
                       self._avisos(COMPRAS_1))
 
-    def test_buying_warns_the_warehouse_that_it_is_coming(self):
+    def test_buying_warns_the_projects_waiting_for_the_material_and_not_the_whole_warehouse(self):
+        """El rol Almacenista lo llevan decenas de personas: avisarles a todas es ruido."""
         id_orden = self._comprada()
 
-        self.assertIn(("purchase_order_purchased", "purchase_order", id_orden),
-                      self._avisos(ALMACEN_1))
+        esperado = ("purchase_order_purchased", "purchase_order", id_orden)
+        # Los lideres de los dos proyectos que esperan material (ids 11 y 12).
+        self.assertIn(esperado, self._avisos(11))
+        self.assertIn(esperado, self._avisos(12))
+        self.assertEqual([], self._avisos(ALMACEN_1))
 
     def test_an_order_that_comes_back_for_a_new_authorization_warns_the_authorizers(self):
         self._politica(authorize_above=0, overrun=10)
@@ -274,7 +278,7 @@ class TestLosAvisosDeLaOrden(BaseRecepcion):
 
         self.assertTrue(self.json(respuesta)["reauthorization_required"])
         self.assertEqual(antes + 1, len(self._avisos(GERENTE_1)))
-        self.assertEqual([], [a for a in self._avisos(ALMACEN_1)
+        self.assertEqual([], [a for a in self._avisos(GERENTE_2)
                               if a[0] == "purchase_order_purchased"])
 
     def test_receiving_warns_the_buyer_and_the_supervisors_of_the_projects(self):

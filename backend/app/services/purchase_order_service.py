@@ -1243,7 +1243,7 @@ _AVISOS = {
     "por_autorizar": ("purchase_order_pending", "{folio} espera autorizacion"),
     "autorizada": ("purchase_order_authorized", "{folio} autorizada: ya se puede comprar"),
     "rechazada": ("purchase_order_rejected", "{folio} fue rechazada"),
-    "comprada": ("purchase_order_purchased", "{folio} comprada: falta recibirla"),
+    "comprada": ("purchase_order_purchased", "{folio} comprada: viene en camino"),
     "recibida": ("purchase_order_received", "{folio} recibida"),
     "recibida_en_parte": ("purchase_order_partially_received", "{folio} recibida en parte"),
 }
@@ -1274,17 +1274,21 @@ def notificar_orden(evento: str, ficha: dict, actor_id: int) -> None:
                 destinatarios = {ficha.get("created_by")}
                 mensaje = "La orden %s fue rechazada: %s" % (
                     folio, ficha.get("authorization_note") or "sin motivo")
-            elif evento == "comprada":
-                destinatarios = (_usuarios_con_capacidad(db, RECEIVE_CAPABILITY)
-                                 | {ficha.get("created_by")})
-                mensaje = "La orden %s ya se compro. Cuando llegue, registra la recepcion." % folio
-            else:  # recibida / recibida_en_parte
+            else:  # comprada / recibida / recibida_en_parte
                 ids_proyecto = {l.get("id_proyect") for l in ficha.get("lines") or []
                                 if l.get("id_proyect")}
                 destinatarios = ({ficha.get("created_by"), ficha.get("purchased_by")}
                                  | _de_los_proyectos(db, ids_proyecto))
-                mensaje = ("Llego todo lo de la orden %s." if evento == "recibida"
-                           else "Llego una parte de la orden %s; aun falta material.") % folio
+            if evento == "comprada":
+                # NO se avisa a todo el almacen: el rol Almacenista lo llevan decenas de
+                # personas (34 en Adser) y un aviso a todas es ruido. Quien necesita saber
+                # que el material viene en camino es quien lo espera; el almacen la ve en
+                # el filtro "Compradas" y es quien registra la recepcion.
+                mensaje = "La orden %s ya se compro: el material viene en camino." % folio
+            elif evento == "recibida":
+                mensaje = "Llego todo lo de la orden %s." % folio
+            elif evento == "recibida_en_parte":
+                mensaje = "Llego una parte de la orden %s; aun falta material." % folio
         for destino in {int(d) for d in destinatarios if d} - {int(actor_id)}:
             create_notification(
                 id_user_recipient=destino, id_user_sender=actor_id,

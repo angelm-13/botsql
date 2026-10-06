@@ -25,7 +25,7 @@ cuánto llegó de cada renglón, por partes. `POST /purchase-orders/<id>/receive
 |---|---|
 | Orden enviada (o devuelta a autorización por exceso) | quienes pueden autorizar (`purchase_authorize`) |
 | Autorizada / rechazada (con motivo) | quien pidió la orden |
-| Comprada | quienes pueden recibir (`purchase_receive`) y quien la pidió |
+| Comprada | quien la pidió y los líderes y supervisores de los proyectos (no a todo el almacén: Almacenista lo llevan decenas de personas) |
 | Recibida / recibida en parte | quien la pidió, quien la compró y los líderes y supervisores de los proyectos |
 
 Quien hace la acción no se avisa a sí mismo. Una orden por debajo del límite de autorización
