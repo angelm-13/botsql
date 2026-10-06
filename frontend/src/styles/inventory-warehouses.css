@@ -34,15 +34,18 @@
    repetidos por nivel. Con un almacen de dos niveles se leia; con cuatro, no,
    y no se podia plegar nada. Aqui la jerarquia es estructura de verdad. */
 
-.inv-arbol { display: flex; flex-direction: column; gap: 2px; }
+.inv-arbol { display: flex; flex-direction: column; gap: 3px; }
+/* Cada bodega (raiz) respira aparte de la anterior -ya no es una lista
+   continua de filas identicas, es un grupo por almacen. */
+.inv-arbol > div + div { margin-top: 10px; }
 
 .inv-nodo {
   display: grid;
   grid-template-columns: 20px 1fr auto auto;
   align-items: center;
-  gap: 10px;
-  padding: 7px 10px;
-  border-radius: 8px;
+  gap: 12px;
+  padding: 9px 12px;
+  border-radius: 10px;
   border: 1px solid transparent;
   font-size: 13.5px;
   cursor: pointer;
@@ -51,69 +54,105 @@
   width: 100%;
   font-family: inherit;
   color: inherit;
+  transition: background-color .12s ease, box-shadow .12s ease, border-color .12s ease;
 }
 .inv-nodo:hover { background: #f1f5f4; }
-.inv-nodo.es-almacen { background: #f8faf9; border-color: #d6e0dc; font-weight: 600; }
-.inv-nodo.es-almacen:hover { background: #eef3f1; }
+.inv-nodo.es-almacen {
+  background: #fff; border-color: #e2e8f0; font-weight: 600;
+  padding: 12px 14px; font-size: 14.5px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+}
+.inv-nodo.es-almacen:hover { border-color: #c9d6d1; box-shadow: 0 2px 6px rgba(15, 23, 42, .07); }
 .inv-nodo.elegida { border-color: #1b7a60; background: #ecfdf5; }
+.inv-nodo.es-almacen.elegida { box-shadow: 0 0 0 1px #1b7a60 inset; }
 /* Una ubicacion sin nada dentro se apaga: en un almacen con cuarenta baldas,
-   lo que importa es donde SI hay algo. */
-.inv-nodo.vacia { color: #8b9a95; }
+   lo que importa es donde SI hay algo. Solo se ve asi cuando "mostrar vacios"
+   la deja en pantalla -por omision, se quita de la vista en vez de apagarse. */
+.inv-nodo.vacia { color: #a3b0ac; }
+.inv-nodo.vacia .inv-barra { background: #eef2f0; }
 
 .inv-plegar {
   display: grid; place-items: center;
-  width: 20px; height: 20px; padding: 0;
-  border: 0; border-radius: 5px; background: none;
+  width: 22px; height: 22px; padding: 0;
+  border: 0; border-radius: 6px; background: none;
   color: #5c6d68; cursor: pointer;
 }
 .inv-plegar:hover { background: #e2eae7; }
 .inv-plegar.sin-hijos { visibility: hidden; }
 
-.inv-nombre { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.inv-nombre span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inv-nombre { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.inv-icono {
+  flex: none; display: grid; place-items: center;
+  width: 24px; height: 24px; border-radius: 7px;
+  background: #eef3f1; color: #3f6456;
+}
+.es-almacen .inv-icono { width: 28px; height: 28px; background: #e4f3ec; color: #1b7a60; }
+.inv-etiqueta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .inv-tipo {
   flex: none;
-  padding: 1px 7px; border-radius: 999px;
-  background: #eef3f1; color: #5c6d68;
-  font-size: 10.5px; font-weight: 600; letter-spacing: .03em;
+  padding: 2px 8px; border-radius: 999px;
+  background: #f1f5f3; color: #7c8a85;
+  font-size: 10px; font-weight: 600; letter-spacing: .04em;
   text-transform: uppercase;
 }
 
 /* Propio y acumulado. Se distinguen por peso, no por etiqueta: el numero grande
    es lo que hay contando lo que cuelga debajo, y el pequeno es lo que esta
    asentado justo ahi. Con dos columnas rotuladas "Propio" y "Acumulado" habia
-   que leer la cabecera cada vez. */
+   que leer la cabecera cada vez. Ancho minimo fijo para que la columna de
+   numeros quede alineada renglon tras renglon, no a la buena de dios. */
 .inv-cifras {
-  display: flex; align-items: baseline; gap: 8px;
+  display: flex; align-items: baseline; gap: 8px; justify-content: flex-end;
+  min-width: 56px;
   font-variant-numeric: tabular-nums;
 }
-.inv-acumulado { font-weight: 700; font-size: 14px; }
-.inv-propio { font-size: 11.5px; color: #5c6d68; }
+.inv-acumulado { font-weight: 700; font-size: 14.5px; color: #16211f; min-width: 2ch; text-align: right; }
+.inv-nodo.vacia .inv-acumulado { color: inherit; font-weight: 600; }
+.inv-propio { font-size: 11.5px; color: #5c6d68; white-space: nowrap; }
 
 /* La barra dice que parte del almacen esta en esta ubicacion. Es lo que
    contesta "donde esta concentrado" sin hacer cuentas. */
 .inv-barra {
-  flex: none; width: 54px; height: 5px; border-radius: 3px;
-  background: #e2eae7; overflow: hidden;
+  flex: none; width: 58px; height: 6px; border-radius: 999px;
+  background: #e5ebe8; overflow: hidden;
 }
-.inv-barra i { display: block; height: 100%; background: #1b7a60; }
+.inv-barra i {
+  display: block; height: 100%; border-radius: inherit;
+  background: linear-gradient(90deg, #2f9471, #1b7a60);
+}
 
 .inv-hijos {
-  margin-left: 14px;
-  padding-left: 12px;
-  border-left: 1px dashed #cbd5e1;
-  display: flex; flex-direction: column; gap: 2px;
+  margin-left: 15px;
+  padding-left: 13px;
+  border-left: 1px solid #e5e9e7;
+  display: flex; flex-direction: column; gap: 3px;
 }
 
+.inv-arbol-controles {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  margin: 0 0 14px;
+}
 .inv-buscador {
   display: flex; align-items: center; gap: 8px;
-  margin: 0 0 12px; padding: 0 11px;
+  flex: 1 1 260px; min-width: 220px;
+  padding: 0 12px;
   background: #fff; border: 1px solid #cbd5e1; border-radius: 9px;
+  color: #8b9a95;
+  transition: border-color .12s ease, box-shadow .12s ease;
 }
+.inv-buscador:focus-within { border-color: #1b7a60; box-shadow: 0 0 0 3px rgba(27, 122, 96, .12); }
 .inv-buscador input {
   flex: 1; padding: 9px 0; border: 0; outline: none; font: inherit;
-  background: transparent;
+  background: transparent; color: #16211f;
 }
+.inv-mostrar-vacios {
+  display: inline-flex; align-items: center; gap: 7px; flex: none;
+  padding: 7px 12px; border-radius: 999px;
+  background: #f8faf9; border: 1px solid #e8eeeb;
+  font-size: 12.5px; color: #475569; cursor: pointer;
+  white-space: nowrap;
+}
+.inv-mostrar-vacios:hover { background: #eef3f1; }
 
 /* El contenido del almacen elegido va PEGADO al arbol, no en una tarjeta
    trescientos pixeles mas abajo: se elige un sitio para ver lo que tiene. */
@@ -137,12 +176,14 @@
    herramienta por su forma es mas rapido que leer su descripcion completa. */
 
 .inv-existencia { list-style: none; margin: 0; padding: 0;
-  display: flex; flex-direction: column; gap: 7px; }
+  display: flex; flex-direction: column; gap: 8px; }
 .inv-existencia-item {
   display: flex; align-items: center; gap: 14px;
-  padding: 10px 14px; background: #f8faf9; border-radius: 9px;
+  padding: 10px 14px; background: #f8faf9; border-radius: 10px;
   border-left: 3px solid transparent;
+  transition: box-shadow .12s ease, transform .12s ease;
 }
+.inv-existencia-item:hover { box-shadow: 0 2px 8px rgba(15, 23, 42, .06); }
 /* El estatus heredado del sistema anterior (ENTRADA, SALIDA, DAÑADO,
    EXTRAVIADO...), por GRAVEDAD y no uno por etiqueta -mismos cinco tonos que
    ya usa Localizar, para que sea la misma pregunta en las dos pantallas. */

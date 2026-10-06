@@ -107,12 +107,18 @@ function construirRutas(nodos, ancestros = [], mapa = new Map()) {
  * que contesta "donde esta concentrado" sin hacer cuentas a mano, y es la
  * pregunta que se hace antes de ir a buscar algo.
  */
+function tieneContenido(n) {
+  if (Number(n.total_quantity || 0) > 0) return true;
+  return (n.children || []).some(tieneContenido);
+}
+
 function RamaDeUbicacion({ nodo, nivel, elegida, plegados, onElegir, onPlegar,
-                           totalDelAlmacen, filtro, t }) {
+                           totalDelAlmacen, filtro, mostrarVacios, t }) {
   const hijos = nodo.children || [];
   const plegado = plegados.has(String(nodo.id_location));
   const propio = Number(nodo.quantity || 0);
   const acumulado = Number(nodo.total_quantity || 0);
+  const vacia = acumulado === 0;
   const porcion = totalDelAlmacen > 0
     ? Math.round((acumulado / totalDelAlmacen) * 100) : 0;
 
@@ -124,6 +130,10 @@ function RamaDeUbicacion({ nodo, nivel, elegida, plegados, onElegir, onPlegar,
     return (n.children || []).some(coincide);
   };
   if (filtro && !coincide(nodo)) return null;
+  // Sin "mostrar vacios", una ubicacion sin nada -ni propio ni heredado de sus
+  // hijos- se quita de la vista: en un almacen con cuarenta baldas, la
+  // mayoria estan en cero y alargan la lista sin decir nada.
+  if (!mostrarVacios && !filtro && !tieneContenido(nodo)) return null;
 
   return (
     <div>
@@ -133,7 +143,7 @@ function RamaDeUbicacion({ nodo, nivel, elegida, plegados, onElegir, onPlegar,
           "inv-nodo",
           nodo.is_warehouse ? "es-almacen" : "",
           String(elegida) === String(nodo.id_location) ? "elegida" : "",
-          acumulado === 0 ? "vacia" : "",
+          vacia ? "vacia" : "",
         ].filter(Boolean).join(" ")}
         onClick={() => onElegir(String(nodo.id_location))}
       >
@@ -147,8 +157,10 @@ function RamaDeUbicacion({ nodo, nivel, elegida, plegados, onElegir, onPlegar,
         </span>
 
         <span className="inv-nombre">
-          {nodo.is_warehouse ? <Warehouse size={14} /> : <Boxes size={13} />}
-          <span title={nodo.location_description}>{nodo.location_description}</span>
+          <span className="inv-icono">
+            {nodo.is_warehouse ? <Warehouse size={15} /> : <Boxes size={13} />}
+          </span>
+          <span className="inv-etiqueta" title={nodo.location_description}>{nodo.location_description}</span>
           {nodo.location_type_description && (
             <em className="inv-tipo">{nodo.location_type_description}</em>
           )}
@@ -185,6 +197,7 @@ function RamaDeUbicacion({ nodo, nivel, elegida, plegados, onElegir, onPlegar,
               onPlegar={onPlegar}
               totalDelAlmacen={totalDelAlmacen}
               filtro={filtro}
+              mostrarVacios={mostrarVacios}
               t={t}
             />
           ))}
@@ -211,6 +224,7 @@ RamaDeUbicacion.propTypes = {
   onPlegar: PropTypes.func.isRequired,
   totalDelAlmacen: PropTypes.number.isRequired,
   filtro: PropTypes.string.isRequired,
+  mostrarVacios: PropTypes.bool.isRequired,
   t: PropTypes.func.isRequired,
 };
 
@@ -231,6 +245,9 @@ export default function InventoryPage() {
   // cuarenta baldas no se lee entero: se plega lo que no interesa o se busca.
   const [plegados, setPlegados] = useState(() => new Set());
   const [filtroUbicacion, setFiltroUbicacion] = useState("");
+  // Por omision, lo vacio no se ve: en un almacen grande la mayoria de las
+  // baldas estan en cero, y verlas todas alarga la lista sin decir nada.
+  const [mostrarVacios, setMostrarVacios] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [errorMeta, setErrorMeta] = useState(null);
@@ -339,15 +356,24 @@ export default function InventoryPage() {
           </p>
         )}
 
-        {locations.length > 8 && (
-          <div className="inv-buscador">
-            <Search size={15} />
-            <input
-              value={filtroUbicacion}
-              onChange={(event) => setFiltroUbicacion(event.target.value)}
-              placeholder={t("inventory.filter_locations", "Busca una nave, un pasillo o un rack")}
-              aria-label={t("inventory.filter_locations", "Buscar ubicación")}
-            />
+        {locations.length > 0 && (
+          <div className="inv-arbol-controles">
+            {locations.length > 8 && (
+              <div className="inv-buscador">
+                <Search size={15} />
+                <input
+                  value={filtroUbicacion}
+                  onChange={(event) => setFiltroUbicacion(event.target.value)}
+                  placeholder={t("inventory.filter_locations", "Busca una nave, un pasillo o un rack")}
+                  aria-label={t("inventory.filter_locations", "Buscar ubicación")}
+                />
+              </div>
+            )}
+            <label className="inv-mostrar-vacios">
+              <input type="checkbox" checked={mostrarVacios}
+                     onChange={(e) => setMostrarVacios(e.target.checked)} />
+              {t("inventory.show_empty", "Mostrar vacíos")}
+            </label>
           </div>
         )}
 
@@ -367,6 +393,7 @@ export default function InventoryPage() {
               onPlegar={plegar}
               totalDelAlmacen={Number(raiz.total_quantity || 0)}
               filtro={filtroUbicacion.trim().toLowerCase()}
+              mostrarVacios={mostrarVacios}
               t={t}
             />
           ))}
