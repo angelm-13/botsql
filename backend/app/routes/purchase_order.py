@@ -16,8 +16,9 @@ from flask import Blueprint, current_app, jsonify, request, send_file
 from app.services.document_service import SecureDocumentStorage
 from app.services.purchase_order_service import (
     add_voucher, authorize_order, cancel_order, create_order, get_order, get_policy,
-    list_orders, purchase_order, reject_order, remove_voucher, submit_order,
-    supplier_options, update_order, update_policy, voucher_content,
+    list_orders, notificar_orden, purchase_order, receive_order, reject_order,
+    remove_voucher, submit_order, supplier_options, update_order, update_policy,
+    voucher_content,
 )
 from app.utils.auth import require_entity_permission, token_required
 
@@ -78,7 +79,10 @@ def editar(user_data, id_order):
 @token_required
 @require_entity_permission(ENTITY, "update")
 def enviar(user_data, id_order):
-    return jsonify(submit_order(id_order, user_data))
+    ficha = submit_order(id_order, user_data)
+    if ficha.get("order_status") == "pending_authorization":
+        notificar_orden("por_autorizar", ficha, user_data["id_user"])
+    return jsonify(ficha)
 
 
 @bp_purchase_order.route("/purchase-orders/<id_order>/authorize", methods=["POST"])
@@ -86,21 +90,43 @@ def enviar(user_data, id_order):
 @require_entity_permission(ENTITY, "update")
 def autorizar(user_data, id_order):
     """Pide ademas la capacidad `purchase_authorize`: la comprueba el servicio."""
-    return jsonify(authorize_order(id_order, _cuerpo(), user_data))
+    ficha = authorize_order(id_order, _cuerpo(), user_data)
+    notificar_orden("autorizada", ficha, user_data["id_user"])
+    return jsonify(ficha)
 
 
 @bp_purchase_order.route("/purchase-orders/<id_order>/reject", methods=["POST"])
 @token_required
 @require_entity_permission(ENTITY, "update")
 def rechazar(user_data, id_order):
-    return jsonify(reject_order(id_order, _cuerpo(), user_data))
+    ficha = reject_order(id_order, _cuerpo(), user_data)
+    notificar_orden("rechazada", ficha, user_data["id_user"])
+    return jsonify(ficha)
 
 
 @bp_purchase_order.route("/purchase-orders/<id_order>/purchase", methods=["POST"])
 @token_required
 @require_entity_permission(ENTITY, "update")
 def comprar(user_data, id_order):
-    return jsonify(purchase_order(id_order, _cuerpo(), user_data))
+    ficha = purchase_order(id_order, _cuerpo(), user_data)
+    # Si el comprobante salio mas caro, la orden volvio a autorizacion: eso es lo que
+    # le toca saber a quien autoriza, no que "se compro".
+    notificar_orden("por_autorizar" if ficha.get("reauthorization_required") else "comprada",
+                    ficha, user_data["id_user"])
+    return jsonify(ficha)
+
+
+@bp_purchase_order.route("/purchase-orders/<id_order>/receive", methods=["POST"])
+@token_required
+@require_entity_permission(ENTITY, "read")
+def recibir(user_data, id_order):
+    """Se guarda con LEER y no con actualizar: recibir es del almacen, que solo consulta
+    las ordenes. Lo que lo limita es la capacidad `purchase_receive`, que comprueba el
+    servicio."""
+    ficha = receive_order(id_order, _cuerpo(), user_data)
+    notificar_orden("recibida" if ficha.get("order_status") == "received"
+                    else "recibida_en_parte", ficha, user_data["id_user"])
+    return jsonify(ficha)
 
 
 @bp_purchase_order.route("/purchase-orders/<id_order>/cancel", methods=["POST"])

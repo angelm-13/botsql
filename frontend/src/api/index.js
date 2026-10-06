@@ -678,6 +678,7 @@ export const authorizePurchaseOrder = (id, note) => request(`/purchase-orders/${
 export const rejectPurchaseOrder = (id, note) => request(`/purchase-orders/${id}/reject`, { method: "POST", body: { note } });
 export const cancelPurchaseOrder = (id, note) => request(`/purchase-orders/${id}/cancel`, { method: "POST", body: { note } });
 export const buyPurchaseOrder = (id, payload) => request(`/purchase-orders/${id}/purchase`, { method: "POST", body: payload });
+export const receivePurchaseOrder = (id, payload) => request(`/purchase-orders/${id}/receive`, { method: "POST", body: payload });
 export const uploadPurchaseVoucher = (id, file, campos = {}) => {
   const formData = new FormData();
   Object.entries(campos).forEach(([clave, valor]) => {

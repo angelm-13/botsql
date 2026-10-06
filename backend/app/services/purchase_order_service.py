@@ -59,6 +59,7 @@ from app.services.proyect_material_need_service import (
 from app.utils.errors import AppError
 
 AUTHORIZE_CAPABILITY = "purchase_authorize"
+RECEIVE_CAPABILITY = "purchase_receive"
 
 CURRENCIES = ("MXN", "USD")
 NOTE_MIN = 5
@@ -103,6 +104,8 @@ FILE_TYPES = {
 }
 EDITABLE_STATES = ("draft", "rejected")
 CANCELLABLE_STATES = ("draft", "pending_authorization", "authorized", "rejected")
+# Donde todavia falta (o puede faltar) material por recibir.
+RECEIVABLE_STATES = ("purchased", "partially_received")
 # Formas de pago que dejan una clave que contrastar con el estado de cuenta.
 PAYMENT_NEEDS_REFERENCE = ("transfer", "check", "card")
 
@@ -223,9 +226,18 @@ def update_policy(payload: dict, user_data: dict) -> dict:
 
 def _puede_autorizar(db, user_data: dict) -> bool:
     """Autorizar -y comprar lo que la politica reserva a gerencia- exige EDITAR la capacidad."""
+    return _tiene_capacidad(db, user_data, AUTHORIZE_CAPABILITY)
+
+
+def _puede_recibir(db, user_data: dict) -> bool:
+    """Recibir lo comprado exige EDITAR la capacidad `purchase_receive`."""
+    return _tiene_capacidad(db, user_data, RECEIVE_CAPABILITY)
+
+
+def _tiene_capacidad(db, user_data: dict, capacidad: str) -> bool:
     from app.modules.plan import entidad_habilitada
 
-    if not entidad_habilitada(AUTHORIZE_CAPABILITY):
+    if not entidad_habilitada(capacidad):
         return False
     if _sin_restriccion(user_data):
         return True
@@ -239,7 +251,7 @@ def _puede_autorizar(db, user_data: dict) -> bool:
     fila = db.scalars(
         select(EntityPermission).where(
             EntityPermission.id_permission == id_permission,
-            EntityPermission.entity_name == AUTHORIZE_CAPABILITY,
+            EntityPermission.entity_name == capacidad,
             EntityPermission.deletion_date.is_(None),
         ).limit(1)
     ).first()
@@ -249,6 +261,11 @@ def _puede_autorizar(db, user_data: dict) -> bool:
 def _exigir_autorizar(db, user_data: dict) -> None:
     if not _puede_autorizar(db, user_data):
         raise AppError("errors.permission_denied", 403, {"capability": AUTHORIZE_CAPABILITY})
+
+
+def _exigir_recibir(db, user_data: dict) -> None:
+    if not _puede_recibir(db, user_data):
+        raise AppError("errors.permission_denied", 403, {"capability": RECEIVE_CAPABILITY})
 
 
 # --- la bitacora ---------------------------------------------------------------
@@ -517,6 +534,11 @@ def _acciones(db, orden: PurchaseOrder, renglones, comprobantes, user_data: dict
         "purchase": escribe and estado == "authorized" and puede_comprar
         and bool(con_evidencia),
         "cancel": escribe and estado in CANCELLABLE_STATES,
+        # Recibir lo comprado es del almacen, que solo consulta las ordenes: lo
+        # decide la capacidad `purchase_receive`, no el permiso de escribir. Y quien
+        # compro no recibe.
+        "receive": estado in RECEIVABLE_STATES and _puede_recibir(db, user_data)
+        and (orden.purchased_by is None or int(orden.purchased_by) != actor),
         # Cuales comprobantes se pueden quitar ahora (y solo antes de comprar).
         "removable_vouchers": [
             v.id_purchase_voucher for v in comprobantes
@@ -1117,3 +1139,158 @@ def purchase_order(id_order, payload: dict, user_data: dict) -> dict:
         ficha = _ficha(db, orden, user_data)
         ficha["reauthorization_required"] = False
         return ficha
+
+
+# --- recibir --------------------------------------------------------------------
+
+def receive_order(id_order, payload: dict, user_data: dict) -> dict:
+    """Confirma que llego lo comprado, renglon por renglon y en las cantidades que llegaron.
+
+    La recepcion es PARCIAL por naturaleza: el proveedor entrega en dos viajes y
+    alguien tiene que poder decir "llegaron 60 de 100" sin cerrar la orden. Cada
+    llamada SUMA a lo ya recibido; la orden pasa a `received` cuando todos los
+    renglones estan completos y se queda en `partially_received` mientras falte.
+
+    Quien recibe es el almacen (capacidad `purchase_receive`) y NO es quien compro:
+    la misma persona no puede comprar y confirmar que llego lo que compro. Vale
+    tambien para el administrador, igual que autorizar la orden propia.
+
+    Solo confirma CANTIDAD. No da entrada al inventario: lo comprado es, casi
+    siempre, material de obra en texto libre -sin producto ni ubicacion a donde
+    meterlo-, y meterlo por la fuerza inventaria lo que no se inventaria.
+    """
+    actor = _actor(user_data)
+    nota = _nota(payload.get("note"))
+    datos = payload.get("lines")
+    if not isinstance(datos, list) or not datos:
+        raise AppError("errors.invalid_field", 400, {"field": "lines"})
+
+    with transaction_context() as db:
+        _exigir_recibir(db, user_data)
+        orden = _orden(db, id_order, for_update=True)
+        if orden.order_status not in RECEIVABLE_STATES:
+            raise AppError("errors.order_not_receivable", 409,
+                           {"order_status": orden.order_status})
+        if orden.purchased_by is not None and int(orden.purchased_by) == actor:
+            raise AppError("errors.purchase_same_person", 403, {"action": "receive"})
+
+        renglones = {r.id_purchase_order_line: r for r in _renglones(db, orden.id_purchase_order)}
+        vistos = set()
+        llegado = []
+        for dato in datos:
+            if not isinstance(dato, dict):
+                raise AppError("errors.invalid_field", 400, {"field": "lines"})
+            id_renglon = _entero_positivo(dato.get("id_purchase_order_line"),
+                                          "id_purchase_order_line")
+            if id_renglon in vistos:
+                raise AppError("errors.order_duplicate_line", 409,
+                               {"id_purchase_order_line": id_renglon})
+            vistos.add(id_renglon)
+            renglon = renglones.get(id_renglon)
+            if renglon is None:
+                raise AppError("errors.resource_not_found", 404)
+            cantidad = _cantidad(dato.get("quantity"))
+            if int(renglon.quantity_received) + cantidad > int(renglon.quantity):
+                # Recibir de mas es una discrepancia con la factura, no una recepcion:
+                # se rechaza para que alguien la mire en vez de esconderla.
+                raise AppError("errors.order_receive_exceeds", 409, {
+                    "id_purchase_order_line": id_renglon,
+                    "ordered": int(renglon.quantity),
+                    "already_received": int(renglon.quantity_received)})
+            llegado.append((renglon, cantidad))
+
+        for renglon, cantidad in llegado:
+            renglon.quantity_received = int(renglon.quantity_received) + cantidad
+
+        completa = all(int(r.quantity_received) >= int(r.quantity) for r in renglones.values())
+        nuevo = "received" if completa else "partially_received"
+        _cambiar_estado(db, orden, nuevo, "received" if completa else "partially_received",
+                        actor, nota=nota, detalle={"lines": [
+                            {"id_purchase_order_line": r.id_purchase_order_line,
+                             "description": r.description, "received_now": c,
+                             "received_total": int(r.quantity_received),
+                             "ordered": int(r.quantity)} for r, c in llegado]})
+        db.flush()
+        return _ficha(db, orden, user_data)
+
+
+# --- avisos ---------------------------------------------------------------------
+
+def _usuarios_con_capacidad(db, capacidad: str) -> set[int]:
+    """Quienes pueden EDITAR esa capacidad: a ellos les toca el siguiente paso."""
+    permisos = db.scalars(
+        select(EntityPermission.id_permission).where(
+            EntityPermission.entity_name == capacidad,
+            EntityPermission.scope_update != 0,
+            EntityPermission.deletion_date.is_(None))).all()
+    if not permisos:
+        return set()
+    return {int(i) for i in db.scalars(
+        select(User.id_user).where(User.id_permission.in_(list(permisos)),
+                                   User.deletion_date.is_(None))).all()}
+
+
+def _de_los_proyectos(db, ids_proyecto) -> set[int]:
+    if not ids_proyecto:
+        return set()
+    filas = db.execute(select(Proyect.id_supervisor, Proyect.leader)
+                       .where(Proyect.id_proyect.in_(list(ids_proyecto)))).all()
+    return {int(u) for fila in filas for u in fila if u}
+
+
+# evento -> (tipo de aviso, titulo, quien lo recibe). El mensaje lo arma `notificar_orden`.
+_AVISOS = {
+    "por_autorizar": ("purchase_order_pending", "{folio} espera autorizacion"),
+    "autorizada": ("purchase_order_authorized", "{folio} autorizada: ya se puede comprar"),
+    "rechazada": ("purchase_order_rejected", "{folio} fue rechazada"),
+    "comprada": ("purchase_order_purchased", "{folio} comprada: falta recibirla"),
+    "recibida": ("purchase_order_received", "{folio} recibida"),
+    "recibida_en_parte": ("purchase_order_partially_received", "{folio} recibida en parte"),
+}
+
+
+def notificar_orden(evento: str, ficha: dict, actor_id: int) -> None:
+    """Avisa (campana) a quien le toca el siguiente paso de la orden.
+
+    Se llama desde la RUTA, ya cerrada la transaccion: `create_notification` abre la
+    suya. Un fallo al avisar nunca revierte lo que se hizo (mismo criterio que los
+    avisos del vale). Quien hizo la accion no se avisa a si mismo.
+    """
+    from app.services.notification_service import create_notification
+
+    try:
+        if evento not in _AVISOS:
+            return
+        tipo, titulo = _AVISOS[evento]
+        folio = ficha.get("folio") or "Orden"
+        with transaction_context() as db:
+            if evento == "por_autorizar":
+                destinatarios = _usuarios_con_capacidad(db, AUTHORIZE_CAPABILITY)
+                mensaje = "La orden %s espera autorizacion." % folio
+            elif evento == "autorizada":
+                destinatarios = {ficha.get("created_by")}
+                mensaje = "La orden %s fue autorizada; ya puede comprarse." % folio
+            elif evento == "rechazada":
+                destinatarios = {ficha.get("created_by")}
+                mensaje = "La orden %s fue rechazada: %s" % (
+                    folio, ficha.get("authorization_note") or "sin motivo")
+            elif evento == "comprada":
+                destinatarios = (_usuarios_con_capacidad(db, RECEIVE_CAPABILITY)
+                                 | {ficha.get("created_by")})
+                mensaje = "La orden %s ya se compro. Cuando llegue, registra la recepcion." % folio
+            else:  # recibida / recibida_en_parte
+                ids_proyecto = {l.get("id_proyect") for l in ficha.get("lines") or []
+                                if l.get("id_proyect")}
+                destinatarios = ({ficha.get("created_by"), ficha.get("purchased_by")}
+                                 | _de_los_proyectos(db, ids_proyecto))
+                mensaje = ("Llego todo lo de la orden %s." if evento == "recibida"
+                           else "Llego una parte de la orden %s; aun falta material.") % folio
+        for destino in {int(d) for d in destinatarios if d} - {int(actor_id)}:
+            create_notification(
+                id_user_recipient=destino, id_user_sender=actor_id,
+                notification_type=tipo, title=titulo.format(folio=folio), message=mensaje,
+                metadata={"id_purchase_order": ficha.get("id_purchase_order")},
+                target_entity="purchase_order", target_id=ficha.get("id_purchase_order"),
+                created_by=actor_id)
+    except Exception:
+        pass

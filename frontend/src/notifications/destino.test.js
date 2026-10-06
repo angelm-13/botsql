@@ -7,6 +7,13 @@ test("un destino explicito lleva a su pantalla", () => {
   assert.equal(destinoDeNotificacion({ target_entity: "voucher", target_id: 7 }), "/vouchers?abrir=7");
 });
 
+test("un aviso de orden de compra abre esa orden", () => {
+  assert.equal(
+    destinoDeNotificacion({ target_entity: "purchase_order", target_id: 21 }),
+    "/ordenes-de-compra?abrir=21",
+  );
+});
+
 test("los avisos anteriores se infieren de lo que ya traian", () => {
   assert.equal(destinoDeNotificacion({ id_proyect: 3 }), "/proyect?abrir=3");
   assert.equal(destinoDeNotificacion({ metadata: { id_incident: 9 } }), "/vouchers?abrir=9");

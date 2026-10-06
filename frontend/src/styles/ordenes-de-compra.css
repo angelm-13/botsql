@@ -132,3 +132,8 @@
   .oc-libre { grid-template-columns: 1fr 1fr; }
   .oc-libre .oc-campo-ancho { grid-column: 1 / -1; }
 }
+
+/* Recepcion: lo que llego de cada renglon, en parcialidades. */
+.oc-recepcion { list-style: none; margin: 0 0 0.75rem; padding: 0; display: grid; gap: 0.5rem; }
+.oc-recepcion li { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.oc-completo { color: var(--success, #1f7a4d); font-weight: 600; }

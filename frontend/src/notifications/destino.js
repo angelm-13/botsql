@@ -10,6 +10,7 @@
 const RUTAS = {
   proyect: (id) => `/proyect?abrir=${id}`,
   voucher: (id) => `/vouchers?abrir=${id}`,
+  purchase_order: (id) => `/ordenes-de-compra?abrir=${id}`,
 };
 
 const enteroPositivo = (valor) => {

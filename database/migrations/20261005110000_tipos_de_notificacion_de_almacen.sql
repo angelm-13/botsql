@@ -14,24 +14,16 @@
 --   * warehouse_voucher_overdue: lo que ya debio volver y no ha vuelto
 --     (job periodico, antes solo visible al abrir la pantalla de vales).
 --
--- Se reaplica en cada arranque del pod (ver ARQUITECTURA_TYAKXA_TNY.md 7.1):
--- DROP CONSTRAINT IF EXISTS + ADD CONSTRAINT no truena la segunda vez.
+--
+-- 2026-10-07: ESTA MIGRACION YA NO TOCA LA RESTRICCION. Se reaplica en cada
+-- arranque y recreaba `notification_type_check` con una lista MAS CORTA que la
+-- vigente: en cuanto existia una notificacion de un tipo posterior (por ejemplo
+-- `warehouse_voucher_delivered`), el `ADD CONSTRAINT` fallaba contra esa fila y,
+-- con `set -e` + `ON_ERROR_STOP=1`, el initContainer impedia que el backend
+-- arrancara. La unica dueña de la restriccion es ahora la migracion mas nueva
+-- (`20261007100000_tipos_de_notificacion_unica_fuente.sql`), con la lista completa.
+-- Un tipo nuevo se agrega ALLI, no aqui.
+--
+-- Se deja el archivo (sin sentencias) para no renumerar migraciones ya aplicadas.
 BEGIN;
-
-ALTER TABLE notification DROP CONSTRAINT IF EXISTS notification_type_check;
-
-ALTER TABLE notification ADD CONSTRAINT notification_type_check CHECK (
-    notification_type IN (
-        'project_status_change',
-        'project_modified',
-        'activity_log_created',
-        'task_assigned',
-        'material_confirmed',
-        'warehouse_voucher_custody_assigned',
-        'warehouse_voucher_pickup_assigned',
-        'warehouse_voucher_overdue',
-        'custom'
-    )
-);
-
 COMMIT;

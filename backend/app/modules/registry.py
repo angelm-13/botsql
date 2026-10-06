@@ -349,6 +349,12 @@ CAPACIDADES = (
     # la gerencia (ver `purchase_policy`).
     Capacidad("purchase_authorize", "Autorizar compras", "compras",
               bits=EDITAR, menu="hidden"),
+    # Confirmar que lo comprado LLEGO. Capacidad aparte de `purchase_order` porque
+    # recibir es cosa del almacen y el almacen solo CONSULTA las ordenes: darle el bit
+    # de actualizar le habria dado tambien editar, enviar y cancelar. Quien compra no
+    # recibe (lo hace cumplir el servicio), asi que Compras no la lleva.
+    Capacidad("purchase_receive", "Recibir compras", "compras",
+              bits=EDITAR, menu="hidden"),
     # La bitacora diaria del taller. Solo Jefe de taller la sube -- pidio
     # negocio explicito (2026-09-28): el supervisor levanta el proyecto y pide
     # material, pero quien reporta el avance del dia en el piso es Jefe de
@@ -510,7 +516,7 @@ ROLES = (
         "inventario": CONSULTA, "rh": CONSULTA, "logistica": CONSULTA,
         "compras": CAPTURA, "configuracion": CONSULTA,
     }, ["project_authorization", "incident_supervision", "pos_admin", "pos_terminal",
-        "purchase_planning", "purchase_authorize"]),
+        "purchase_planning", "purchase_authorize", "purchase_receive"]),
 
     # Ve los proyectos autorizados y mueve su estatus en el taller.
     Rol(4, "Jefe de taller", {
@@ -530,7 +536,7 @@ ROLES = (
         "configuracion": CONSULTA,
     }, ["inventory_adjustment", "warehouse_voucher",
         "warehouse_voucher_authorize", "warehouse_voucher_confirm",
-        "purchase_planning"]),
+        "purchase_planning", "purchase_receive"]),
 
     # Quien compra. Ve los proyectos y el almacen para saber que hay que comprar,
     # y no escribe en ninguno de los dos: todo en CONSULTA. Lo que hace es

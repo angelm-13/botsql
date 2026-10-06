@@ -3,7 +3,8 @@ import PropTypes from "prop-types";
 import { AlertTriangle, ExternalLink, Paperclip } from "lucide-react";
 import {
   authorizePurchaseOrder, buyPurchaseOrder, cancelPurchaseOrder, downloadPurchaseVoucher,
-  rejectPurchaseOrder, removePurchaseVoucher, submitPurchaseOrder, uploadPurchaseVoucher,
+  receivePurchaseOrder, rejectPurchaseOrder, removePurchaseVoucher, submitPurchaseOrder,
+  uploadPurchaseVoucher,
 } from "../api";
 import {
   COMPROBANTES_DE_COMPRA, METODOS_DE_PAGO, TIPOS_DE_COMPROBANTE, agruparPorProyecto, dinero,
@@ -25,8 +26,13 @@ const EVENTOS = {
   voucher_removed: "Comprobante retirado",
   reauthorization_required: "Volvió a autorización: el comprobante sale más caro de lo autorizado",
   purchased: "Comprada",
+  partially_received: "Recibida en parte",
+  received: "Recibida completa",
   cancelled: "Cancelada",
 };
+
+// Desde aqui ya hay material comprado: la tabla de renglones muestra cuanto ha llegado.
+const ESTADOS_CON_RECEPCION = ["purchased", "partially_received", "received"];
 
 // Que comprobantes se aceptan segun el estado: la factura solo despues de autorizar.
 const TIPOS_POR_ESTADO = {
@@ -85,6 +91,8 @@ export default function OrdenDeCompraDetalle({ orden, politica, onCambio, onEdit
   const [compra, setCompra] = useState({
     purchase_date: hoyISO(), payment_method: "transfer", payment_reference: "", paid_externally: false,
   });
+  // Lo que llego en ESTA recepcion, por renglon (id -> texto), y una nota opcional.
+  const [recepcion, setRecepcion] = useState({ cantidades: {}, nota: "" });
 
   const decirError = useCallback((e, porOmision) => setError(
     e?.payload?.error_key
@@ -160,6 +168,29 @@ export default function OrdenDeCompraDetalle({ orden, politica, onCambio, onEdit
       }
     });
 
+  // Cada recepcion SUMA a lo ya recibido: se manda solo lo que llego ahora.
+  const llegado = (orden.lines || [])
+    .map((l) => ({ id_purchase_order_line: l.id_purchase_order_line,
+                   quantity: Number(recepcion.cantidades[l.id_purchase_order_line] || 0) }))
+    .filter((l) => Number.isInteger(l.quantity) && l.quantity > 0);
+  const pendiente = (l) => Math.max(0, Number(l.quantity) - Number(l.quantity_received || 0));
+  const recepcionValida = llegado.length > 0 && (orden.lines || []).every((l) => {
+    const n = Number(recepcion.cantidades[l.id_purchase_order_line] || 0);
+    return Number.isInteger(n) && n >= 0 && n <= pendiente(l);
+  });
+  const recibir = () => ejecutar(
+    () => receivePurchaseOrder(orden.id_purchase_order, {
+      lines: llegado, note: recepcion.nota.trim() || null,
+    }),
+    "No se pudo registrar la recepción.",
+    () => setRecepcion({ cantidades: {}, nota: "" }));
+  const recibirTodo = () => setRecepcion({
+    ...recepcion,
+    cantidades: Object.fromEntries((orden.lines || [])
+      .filter((l) => pendiente(l) > 0)
+      .map((l) => [l.id_purchase_order_line, String(pendiente(l))])),
+  });
+
   // El archivo se pide con el token, asi que no puede ser un enlace directo.
   async function verArchivo(v) {
     setError("");
@@ -174,6 +205,7 @@ export default function OrdenDeCompraDetalle({ orden, politica, onCambio, onEdit
   }
 
   const grupos = agruparPorProyecto(orden.lines);
+  const conRecepcion = ESTADOS_CON_RECEPCION.includes(orden.order_status);
   const notaOk = motivo.nota.trim().length >= 5;
 
   return (
@@ -245,6 +277,7 @@ export default function OrdenDeCompraDetalle({ orden, politica, onCambio, onEdit
               <tr>
                 <th>{t("order.col_what", "Qué")}</th>
                 <th>{t("order.col_qty", "Cantidad")}</th>
+                {conRecepcion && <th>{t("order.col_received", "Recibido")}</th>}
                 <th>{t("order.col_unit_cost", "Costo unitario")}</th>
                 <th>{t("order.col_subtotal", "Subtotal")}</th>
               </tr>
@@ -253,7 +286,7 @@ export default function OrdenDeCompraDetalle({ orden, politica, onCambio, onEdit
               {grupos.map((g) => (
                 <Fragment key={g.proyecto?.id_proyect || "sin-proyecto"}>
                   <tr className="oc-grupo">
-                    <td colSpan={4}>
+                    <td colSpan={conRecepcion ? 5 : 4}>
                       {g.proyecto
                         ? `#${g.proyecto.folio || g.proyecto.id_proyect}${g.proyecto.title ? ` — ${g.proyecto.title}` : ""}`
                         : t("order.no_project", "Sin proyecto (para el almacén)")}
@@ -271,6 +304,11 @@ export default function OrdenDeCompraDetalle({ orden, politica, onCambio, onEdit
                         )}
                       </td>
                       <td className="mono">{l.quantity}</td>
+                      {conRecepcion && (
+                        <td className={`mono${pendiente(l) === 0 ? " oc-completo" : ""}`}>
+                          {l.quantity_received || 0} / {l.quantity}
+                        </td>
+                      )}
                       <td className="mono">{dinero(l.unit_cost, moneda)}</td>
                       <td className="mono">{dinero(l.line_total, moneda)}</td>
                     </tr>
@@ -413,6 +451,46 @@ export default function OrdenDeCompraDetalle({ orden, politica, onCambio, onEdit
                     || (requiereReferencia(compra.payment_method) && !compra.payment_reference.trim())}>
             {t("order.mark_bought", "Marcar como comprada")}
           </button>
+        </div>
+      )}
+      {acciones.receive && (
+        <div className="oc-compra">
+          <h4>{t("order.register_reception", "Registrar la recepción")}</h4>
+          <p className="muted">
+            {t("order.reception_help", "Anota cuánto llegó de cada renglón. Puedes recibir por partes: lo que falte queda pendiente.")}
+          </p>
+          <ul className="oc-recepcion">
+            {(orden.lines || []).filter((l) => pendiente(l) > 0).map((l) => (
+              <li key={l.id_purchase_order_line}>
+                <span>
+                  {l.description}
+                  {l.unit && <span className="muted"> · {l.unit}</span>}
+                  <small className="muted"> · {t("order.pending", "faltan")} {pendiente(l)}</small>
+                </span>
+                <input type="number" min="0" max={pendiente(l)} step="1" className="oc-numero"
+                       aria-label={`${t("order.received_now", "Llegó ahora")}: ${l.description}`}
+                       value={recepcion.cantidades[l.id_purchase_order_line] ?? ""}
+                       onChange={(e) => setRecepcion({
+                         ...recepcion,
+                         cantidades: { ...recepcion.cantidades, [l.id_purchase_order_line]: e.target.value },
+                       })} />
+              </li>
+            ))}
+          </ul>
+          <label>
+            <span>{t("order.reception_note", "Nota (opcional): faltantes, daños, quién entregó")}</span>
+            <input type="text" maxLength={300} value={recepcion.nota}
+                   onChange={(e) => setRecepcion({ ...recepcion, nota: e.target.value })} />
+          </label>
+          <div className="oc-acciones">
+            <button type="button" className="button" onClick={recibirTodo} disabled={ocupado}>
+              {t("order.receive_all", "Llegó todo lo pendiente")}
+            </button>
+            <button type="button" className="button primary" onClick={recibir}
+                    disabled={ocupado || !recepcionValida}>
+              {t("order.receive", "Registrar recepción")}
+            </button>
+          </div>
         </div>
       )}
       {orden.order_status === "authorized" && !acciones.purchase && !factura && (

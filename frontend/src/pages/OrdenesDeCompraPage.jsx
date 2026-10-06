@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Plus, RefreshCw } from "lucide-react";
 import PageHeader from "../components/PageHeader.jsx";
 import OrdenDeCompraDetalle from "../components/OrdenDeCompraDetalle.jsx";
@@ -9,6 +9,7 @@ import {
   getMyPermissions, getPurchaseOrder, getPurchaseOrders, getPurchasePolicy,
 } from "../api";
 import { dinero, estadoDeOrden } from "../utils/ordenDeCompra";
+import { idAAbrir } from "../notifications/destino";
 import { useI18n } from "../i18n";
 import "../styles/ordenes-de-compra.css";
 
@@ -117,6 +118,30 @@ export default function OrdenesDeCompraPage() {
     }
   }
 
+  // Llegar desde una notificacion: `/ordenes-de-compra?abrir=<id>` abre esa orden.
+  // Se consume una vez (el parametro se limpia para que recargar no la reabra). El
+  // aviso de "no se pudo abrir" tiene su PROPIO estado: `cargar()` limpia `error` al
+  // arrancar y, segun quien gane la carrera, borraria el mensaje antes de leerse.
+  const [parametros, setParametros] = useSearchParams();
+  const idPorAbrir = idAAbrir(parametros);
+  const [noSeAbrio, setNoSeAbrio] = useState("");
+  useEffect(() => {
+    if (!idPorAbrir) return;
+    setParametros({}, { replace: true });
+    setNoSeAbrio("");
+    (async () => {
+      try {
+        setOrden(await getPurchaseOrder(idPorAbrir));
+        setModo("ver");
+      } catch {
+        // 403/404: el aviso apunta a una orden que ya no existe o que este usuario
+        // no puede ver.
+        setNoSeAbrio(traducir.current("errors.not_found", "No se encontró esa orden."));
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idPorAbrir]);
+
   // Una accion del detalle devuelve la orden ya cambiada: se pinta tal cual y se
   // refresca la lista, que es donde se ve el estado nuevo.
   function alCambiar(actualizada) {
@@ -156,6 +181,7 @@ export default function OrdenesDeCompraPage() {
                         onCambio={setPolitica} />
 
       {error && <div className="alert error">{error}</div>}
+      {noSeAbrio && <div className="alert error">{noSeAbrio}</div>}
 
       <div className="oc-layout">
         <aside className="oc-lista">

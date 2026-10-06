@@ -32,24 +32,8 @@ UPDATE notification
 
 CREATE INDEX IF NOT EXISTS ix_notification_target ON notification (target_entity, target_id);
 
--- Tipo nuevo: almacen marco la entrega y el responsable tiene que confirmar el
--- recibido. Un tipo que no esta en el CHECK revienta `create_notification` en
--- silencio (el aviso es "best effort"), asi que se agrega aqui.
-ALTER TABLE notification DROP CONSTRAINT IF EXISTS notification_type_check;
-
-ALTER TABLE notification ADD CONSTRAINT notification_type_check CHECK (
-    notification_type IN (
-        'project_status_change',
-        'project_modified',
-        'activity_log_created',
-        'task_assigned',
-        'material_confirmed',
-        'warehouse_voucher_custody_assigned',
-        'warehouse_voucher_pickup_assigned',
-        'warehouse_voucher_overdue',
-        'warehouse_voucher_delivered',
-        'custom'
-    )
-);
-
+-- La restriccion `notification_type_check` YA NO se recrea aqui (2026-10-07): la
+-- dueña unica es `20261007100000_tipos_de_notificacion_unica_fuente.sql`, con la
+-- lista completa. Recrearla en varias migraciones, cada una con su lista, hacia que
+-- una vieja la dejara mas angosta que las filas existentes y el arranque fallara.
 COMMIT;
