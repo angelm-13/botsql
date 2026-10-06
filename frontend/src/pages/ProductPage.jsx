@@ -13,6 +13,7 @@ import EntradaDeExistencia from "../components/EntradaDeExistencia.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
+import { CAMPOS_DE_AUDITORIA } from "../utils/camposDeAuditoria";
 
 const emptyForm = { id_location: "", id_material: "", gross_price: "", color: "", is_directly_related_to_product_service: false, product_status: "", path_imagen: "", product_code: "", note: "", descripcion: "", cantidad: "", id_marca: "", id_familia: "" };
 const validationRules = allValidationRules["product"] || {};
@@ -132,8 +133,11 @@ export default function ProductPage() {
       }
       if (canSeeField("id_material")) {
         try {
-          const materialData = await getAllMaterial({ page: 1, per_page: 100 });
-          setMaterialOptions(Array.isArray(materialData) ? materialData : (materialData.items || []));
+          // Todos los materiales, no solo los primeros 100: el selector busca
+          // sobre lo que tiene cargado, y con mas de 100 los materiales
+          // nuevos (ids altos) no se podian ni encontrar ni elegir.
+          const materialData = await fetchAllPages(getAllMaterial, { sort: "material_description" });
+          setMaterialOptions(materialData.items);
         } catch (_) {
           setMaterialOptions([]);
         }
@@ -230,7 +234,7 @@ export default function ProductPage() {
   function canSeeField(fieldName) {
     if (isSuperUser) return true;
     if (!permissionReady) return false;
-    return visibleFieldNames.has(fieldName);
+    return CAMPOS_DE_AUDITORIA.has(fieldName) || visibleFieldNames.has(fieldName);
   }
 
 

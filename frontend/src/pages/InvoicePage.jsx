@@ -9,6 +9,7 @@ import { inputPropsForField, validateForm, validationRules as allValidationRules
 import InvoiceUploadWidget from "../components/InvoiceUploadWidget.jsx";
 import InvoiceCreationForm from "../components/InvoiceCreationForm.jsx";
 import InvoiceFiscalPanel from "../components/InvoiceFiscalPanel.jsx";
+import { CAMPOS_DE_AUDITORIA } from "../utils/camposDeAuditoria";
 
 const emptyForm = { date_emision: "", date_expiration: "", subtotal: "", tax: "", total: "", invoice_status: "", payment_method: "", note: "", id_customer_supplier: "", fiscal_reference: "", serie_csd: "", internationalization: "", currency: "", type_exchange_rate: "", tax_certification_supplier: "", fiscal_certify_serie: "", certification_date: "", cfdi_code: "", sat_code: "", sat_certification_code: "", id_status: "", nombre_emisor: "", lugar_expedicion: "", tipo_de_comprobante: "", rfc_receptor: "", nombre_receptor: "", regimen_fiscal_receptor: "", domicilio_fiscal_receptor: "", id_proveedor_de_sello: "", folio_fiscal: "", exportacion: "", folio: "", no_certificado_sat: "", sello_sat: "", sello_certificacion_sat: "", no_certificado: "", descuento: "", metodo_pago: "", condiciones_pago: "", id_issuer_customer_supplier: "", id_proyect: "", apply_tax: false, tax_rate: "", commercial_terms: "" };
 const validationRules = allValidationRules["invoice"] || {};
@@ -199,7 +200,7 @@ export default function InvoicePage() {
   function canSeeField(fieldName) {
     if (isSuperUser) return true;
     if (!permissionReady) return false;
-    return visibleFieldNames.has(fieldName);
+    return CAMPOS_DE_AUDITORIA.has(fieldName) || visibleFieldNames.has(fieldName);
   }
 
 

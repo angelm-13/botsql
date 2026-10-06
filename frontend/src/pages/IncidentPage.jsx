@@ -8,6 +8,7 @@ import PageHeader from "../components/PageHeader.jsx";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 import "../styles/incident.css";
+import { CAMPOS_DE_AUDITORIA } from "../utils/camposDeAuditoria";
 
 // Abierta o cerrada, sin importar el texto exacto que traiga cada tipo de
 // incidencia -un prestamo dice "abierta", pero nada obliga a que una
@@ -189,7 +190,7 @@ export default function IncidentPage() {
   function canSeeField(fieldName) {
     if (isSuperUser) return true;
     if (!permissionReady) return false;
-    return visibleFieldNames.has(fieldName);
+    return CAMPOS_DE_AUDITORIA.has(fieldName) || visibleFieldNames.has(fieldName);
   }
 
 

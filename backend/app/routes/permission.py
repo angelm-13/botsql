@@ -4,6 +4,7 @@ from app.services.permission_service import PermissionService
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
 import os
+from app.utils.field_access import COLUMNAS_DE_AUDITORIA
 
 
 bp_permission = Blueprint('permission', __name__, url_prefix='/permission')
@@ -69,7 +70,7 @@ def _field_sets_for_actor(user_data: dict) -> tuple[set[str], set[str]]:
     # La llave primaria puede viajar en la respuesta para navegacion interna,
     # acciones de fila y rutas REST, aunque el frontend no la pinte si no fue
     # marcada como visible en el gestor.
-    return visible | set(TECHNICAL_RESPONSE_FIELDS), writable
+    return visible | set(TECHNICAL_RESPONSE_FIELDS) | COLUMNAS_DE_AUDITORIA, writable
 
 
 def _visible_response_fields_for_actor(user_data: dict) -> set[str]:

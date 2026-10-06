@@ -8,6 +8,7 @@ from app.services.project_management_service import require_project_access, requ
 from app.services.task_service import TaskService, add_task_note, transition_task
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
+from app.utils.field_access import COLUMNAS_DE_AUDITORIA
 
 bp_task = Blueprint('task', __name__, url_prefix='/task')
 ALLOWED_FIELDS = ['id_task', 'task_code', 'start_date', 'duration', 'type', 'owner', 'dependency', 'validation', 'task_description', 'estimated_effort', 'task_status', 'fase', 'priority', 'title', 'id_proyect', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
@@ -72,7 +73,7 @@ def _field_sets_for_actor(user_data: dict) -> tuple[set[str], set[str]]:
     # La llave primaria puede viajar en la respuesta para navegacion interna,
     # acciones de fila y rutas REST, aunque el frontend no la pinte si no fue
     # marcada como visible en el gestor.
-    return visible | set(TECHNICAL_RESPONSE_FIELDS), writable
+    return visible | set(TECHNICAL_RESPONSE_FIELDS) | COLUMNAS_DE_AUDITORIA, writable
 
 
 def _visible_response_fields_for_actor(user_data: dict) -> set[str]:
