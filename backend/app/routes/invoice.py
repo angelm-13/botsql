@@ -854,3 +854,41 @@ def upload_xml_invoice(user_data):
     if errors:
         response['message'] = '; '.join([f"{r.get('file')}: {r.get('message')} {r.get('meta', '')}" for r in errors])
     return jsonify(response), (201 if created else 422)
+
+
+@bp_invoice.route('/<id_invoice>/xml', methods=['POST'])
+@token_required
+@require_entity_permission('invoice', 'update')
+def attach_invoice_xml(user_data, id_invoice):
+    """Adjunta el XML original a una factura ya importada que se quedo sin archivo.
+
+    Subir el XML otra vez por /upload-xml no sirve para esto: el UUID ya existe
+    y se rechaza como duplicado. Aqui el UUID del XML tiene que coincidir con el
+    de la factura, para que nadie cuelgue el XML de otro comprobante.
+    """
+    from app.services.invoice_artifacts import save_invoice_xml
+    from app.services.storage_service import exigir_espacio
+
+    InvoiceService.require_scope(id_invoice, user_data)
+    uploaded = request.files.get('file')
+    if not uploaded:
+        raise AppError('errors.no_files_provided', 400)
+    exigir_espacio(request.content_length or 0)
+
+    xml_bytes = uploaded.read()
+    try:
+        cfdi_data = parse_cfdi(xml_bytes)
+    except Exception as exc:
+        raise AppError('invoice.xml_invalid', 422, {'reason': str(exc)}) from exc
+
+    with _transaction_context() as db:
+        invoice = db.get(Invoice, _safe_int_value(id_invoice))
+        if not invoice or invoice.deletion_date is not None:
+            raise AppError('errors.resource_not_found', 404)
+        invoice_uuid = str(invoice.folio_fiscal or '').strip().upper()
+    xml_uuid = str(cfdi_data.get('uuid') or '').strip().upper()
+    if not invoice_uuid or xml_uuid != invoice_uuid:
+        raise AppError('invoice.xml_uuid_mismatch', 422, {'expected': invoice_uuid, 'received': xml_uuid})
+
+    save_invoice_xml(id_invoice, xml_bytes, _current_app.config.get('UPLOAD_ROOT'))
+    return jsonify({'id_invoice': int(id_invoice), 'xml_saved': True, 'uuid': xml_uuid}), 200

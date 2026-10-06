@@ -1,7 +1,7 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
-import { BadgeCheck, ChevronDown, ChevronRight, Download, FileText, Plus, RefreshCw, Scale, Search, Trash2, Pencil, Warehouse } from "lucide-react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { BadgeCheck, ChevronDown, ChevronRight, Download, FileText, Plus, RefreshCw, Scale, Search, Trash2, Pencil, Upload, Warehouse } from "lucide-react";
 import { useI18n } from "../i18n";
-import { applyInvoiceInventory, deleteInvoice, downloadInvoicePdf, downloadInvoiceXml, getAllCustomerSupplier, getAllEntityPermission, getAllField, getAllInvoice, getAllNmFieldPermission, getAllProyect, getAllStatus, getInvoiceInventoryPreview, getInvoiceLines, resetUserMfa, stampInvoice, createInvoice, updateInvoice } from "../api";
+import { applyInvoiceInventory, deleteInvoice, downloadInvoicePdf, attachInvoiceXml, downloadInvoiceXml, getAllCustomerSupplier, getAllEntityPermission, getAllField, getAllInvoice, getAllNmFieldPermission, getAllProyect, getAllStatus, getInvoiceInventoryPreview, getInvoiceLines, resetUserMfa, stampInvoice, createInvoice, updateInvoice } from "../api";
 import { fetchAllPages } from "../utils/fetchAllPages";
 import Pagination from "../components/Pagination.jsx";
 import PageHeader from "../components/PageHeader.jsx";
@@ -70,6 +70,8 @@ export default function InvoicePage() {
   const [invoiceLinesError, setInvoiceLinesError] = useState({});
   // Factura abierta en el panel de actos fiscales (cancelar, cobrar, acreditar).
   const [fiscalInvoice, setFiscalInvoice] = useState(null);
+  const xmlInputRef = useRef(null);
+  const xmlTargetRef = useRef(null);
 
   async function loadData() {
     if (!permissionReady || !canRead) {
@@ -312,6 +314,26 @@ export default function InvoicePage() {
     }
   }
 
+  function pickXmlFor(item) {
+    xmlTargetRef.current = item;
+    if (xmlInputRef.current) { xmlInputRef.current.value = ""; xmlInputRef.current.click(); }
+  }
+
+  async function handleXmlPicked(event) {
+    const file = event.target.files?.[0];
+    const item = xmlTargetRef.current;
+    if (!file || !item) return;
+    setErrorKey("");
+    setNoticeKey("");
+    try {
+      await attachInvoiceXml(item.id_invoice, file);
+      setNoticeKey("invoice_ui.xml_attached");
+    } catch (error) {
+      setErrorKey(error.message || "errors.request_failed");
+      setErrorMeta(error.payload?.meta || null);
+    }
+  }
+
   async function handleDocument(item, type) {
     setErrorKey("");
     try {
@@ -449,10 +471,6 @@ export default function InvoicePage() {
     return rawProjectId === null || rawProjectId === undefined || String(rawProjectId).trim() === "" ? t("invoice_ui.unlinked", "Sin vincular") : t("invoice_ui.linked", "Vinculada");
   }
 
-  function invoiceDisplayFolio(invoice) {
-    return String(invoice?.folio || invoice?.folio_fiscal || invoice?.cfdi_code || invoice?.id_invoice || "—");
-  }
-
   function invoiceMoney(value) {
     const locale = lang === "ja" ? "ja-JP" : lang === "en" ? "en-US" : lang === "pt" ? "pt-BR" : lang === "de" ? "de-DE" : "es-MX";
     const n = Number(value || 0);
@@ -548,7 +566,7 @@ export default function InvoicePage() {
           <table className="invoice-project-table">
             <thead>
               <tr>
-                <th>{t("invoice_ui.invoice_uuid", "Factura / UUID")}</th>
+                <th>{t("invoice_ui.invoice_uuid", "UUID")}</th>
                 <th>{t("invoice_ui.issuer", "Emisor")}</th>
                 <th>{t("invoice_ui.receiver", "Receptor")}</th>
                 <th>{t("invoice_ui.total", "Total")}</th>
@@ -561,13 +579,13 @@ export default function InvoicePage() {
               {filtered.map((item) => (
                 <Fragment key={`invoice-link-${item.id_invoice}`}>
                 <tr>
-                  <td className="invoice-identity-cell"><button type="button" className="invoice-lines-toggle" onClick={() => toggleInvoiceLines(item.id_invoice)} aria-expanded={expandedInvoiceId === item.id_invoice} title={t("invoice_ui.view_lines")}>{expandedInvoiceId === item.id_invoice ? <ChevronDown size={17} /> : <ChevronRight size={17} />}</button><span><strong>{invoiceDisplayFolio(item)}</strong><p className="cell-value">{item.folio_fiscal || item.cfdi_code || "—"}</p></span></td>
+                  <td className="invoice-identity-cell"><button type="button" className="invoice-lines-toggle" onClick={() => toggleInvoiceLines(item.id_invoice)} aria-expanded={expandedInvoiceId === item.id_invoice} title={t("invoice_ui.view_lines")}>{expandedInvoiceId === item.id_invoice ? <ChevronDown size={17} /> : <ChevronRight size={17} />}</button><span><strong className="cell-value">{item.folio_fiscal || item.cfdi_code || item.folio || item.id_invoice || "—"}</strong></span></td>
                   <td><span>{item.nombre_emisor || "—"}</span></td>
                   <td><span>{item.nombre_receptor || item.id_customer_supplier || "—"}</span></td>
                   <td><strong>{invoiceMoney(item.total)}</strong></td>
                   <td><span>{invoiceProjectLabel(item)}</span></td>
                   <td><span className={item.id_proyect ? "invoice-link-badge linked" : "invoice-link-badge unlinked"}>{invoiceLinkStatus(item)}</span></td>
-                  <td className="row-actions">{canUpdate && <button type="button" onClick={() => startEdit(item)} title={t("invoice_ui.edit_relation")}><Pencil size={15} /></button>}{canUpdate && !item.folio_fiscal && <button type="button" onClick={() => handleStamp(item)} title={t("invoice_ui.stamp_invoice")}><BadgeCheck size={15} /></button>}{canUpdate && <button type="button" onClick={() => handleInventory(item)} title={t("invoice_ui.apply_inventory", "Aplicar al almacén")}><Warehouse size={15} /></button>}{canUpdate && item.folio_fiscal && <button type="button" onClick={() => setFiscalInvoice(item)} title={t("fiscal.open_panel", "Cancelar, cobrar o acreditar")}><Scale size={15} /></button>}<button type="button" onClick={() => handleDocument(item, "pdf")} title={t("invoice_ui.download_pdf")}><FileText size={15} /></button>{item.folio_fiscal && <button type="button" onClick={() => handleDocument(item, "xml")} title={t("invoice_ui.download_xml")}><Download size={15} /></button>}</td>
+                  <td className="row-actions">{canUpdate && <button type="button" onClick={() => startEdit(item)} title={t("invoice_ui.edit_relation")}><Pencil size={15} /></button>}{canUpdate && !item.folio_fiscal && <button type="button" onClick={() => handleStamp(item)} title={t("invoice_ui.stamp_invoice")}><BadgeCheck size={15} /></button>}{canUpdate && <button type="button" onClick={() => handleInventory(item)} title={t("invoice_ui.apply_inventory", "Aplicar al almacén")}><Warehouse size={15} /></button>}{canUpdate && item.folio_fiscal && <button type="button" onClick={() => setFiscalInvoice(item)} title={t("fiscal.open_panel", "Cancelar, cobrar o acreditar")}><Scale size={15} /></button>}<button type="button" onClick={() => handleDocument(item, "pdf")} title={t("invoice_ui.download_pdf")}><FileText size={15} /></button>{item.folio_fiscal && <button type="button" onClick={() => handleDocument(item, "xml")} title={t("invoice_ui.download_xml")}><Download size={15} /></button>}{canUpdate && item.folio_fiscal && <button type="button" onClick={() => pickXmlFor(item)} title={t("invoice_ui.attach_xml", "Adjuntar XML")}><Upload size={15} /></button>}</td>
                 </tr>
                 {expandedInvoiceId === item.id_invoice && <tr className="invoice-lines-row"><td colSpan="7">
                   {invoiceLinesLoading === item.id_invoice ? <p className="muted">{t("invoice_ui.loading_lines")}</p> : invoiceLinesError[item.id_invoice] ? <p className="field-error">{t(invoiceLinesError[item.id_invoice], invoiceLinesError[item.id_invoice])}</p> : (invoiceLines[item.id_invoice] || []).length === 0 ? <p className="muted">{t("invoice_ui.no_lines")}</p> : <div className="invoice-lines-panel"><table><thead><tr><th>{t("invoice_ui.sat_key")}</th><th>{t("invoice_ui.description")}</th><th>{t("invoice_ui.quantity")}</th><th>{t("invoice_ui.unit")}</th><th>{t("invoice_ui.unit_price")}</th><th>{t("invoice_ui.discount")}</th><th>{t("invoice_ui.tax")}</th><th>{t("invoice_ui.total")}</th></tr></thead><tbody>{invoiceLines[item.id_invoice].map((line) => <tr key={line.id_invoice_material_service}><td>{line.sat_product_key || "—"}</td><td>{line.invoice_material_service_description}</td><td>{formatTableValue(line.quantity)}</td><td>{line.sat_unit_key || "—"}</td><td>{invoiceMoney(line.gross_price)}</td><td>{invoiceMoney(line.discount)}</td><td>{invoiceMoney(line.line_tax)}</td><td><strong>{invoiceMoney(line.line_total)}</strong></td></tr>)}</tbody></table></div>}
@@ -978,6 +996,7 @@ export default function InvoicePage() {
         <button className={view === "kanban" ? "button active" : "button"} onClick={() => setView("kanban")}>{t("common.kanban")}</button>
       </div>}
 
+      <input ref={xmlInputRef} type="file" accept=".xml,application/xml,text/xml" hidden onChange={handleXmlPicked} />
       {errorKey && <div className="alert error">{renderError()}</div>}
       {noticeKey && <div className="alert success">{t(noticeKey, noticeKey)}</div>}
       {loading && <div className="alert">{t("common.loading")}</div>}
@@ -997,7 +1016,7 @@ export default function InvoicePage() {
               {canSeeField("payment_method") && <th>{t("fields.invoice.payment_method")}</th>}
               {canSeeField("note") && <th>{t("fields.invoice.note")}</th>}
               {canSeeField("id_customer_supplier") && <th>{t("fields.invoice.id_customer_supplier")}</th>}
-        </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_invoice}>{showRowActions && <td className="row-actions">{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canUpdate && !item.folio_fiscal && <button type="button" onClick={() => handleStamp(item)} title={t("invoice_ui.stamp_invoice")}><BadgeCheck size={15} /></button>}{canUpdate && <button type="button" onClick={() => handleInventory(item)} title={t("invoice_ui.apply_inventory", "Aplicar al almacén")}><Warehouse size={15} /></button>}{canUpdate && item.folio_fiscal && <button type="button" onClick={() => setFiscalInvoice(item)} title={t("fiscal.open_panel", "Cancelar, cobrar o acreditar")}><Scale size={15} /></button>}<button type="button" onClick={() => handleDocument(item, "pdf")} title={t("invoice_ui.download_pdf")}><FileText size={15} /></button>{item.folio_fiscal && <button type="button" onClick={() => handleDocument(item, "xml")} title={t("invoice_ui.download_xml")}><Download size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}</td>}
+        </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_invoice}>{showRowActions && <td className="row-actions">{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canUpdate && !item.folio_fiscal && <button type="button" onClick={() => handleStamp(item)} title={t("invoice_ui.stamp_invoice")}><BadgeCheck size={15} /></button>}{canUpdate && <button type="button" onClick={() => handleInventory(item)} title={t("invoice_ui.apply_inventory", "Aplicar al almacén")}><Warehouse size={15} /></button>}{canUpdate && item.folio_fiscal && <button type="button" onClick={() => setFiscalInvoice(item)} title={t("fiscal.open_panel", "Cancelar, cobrar o acreditar")}><Scale size={15} /></button>}<button type="button" onClick={() => handleDocument(item, "pdf")} title={t("invoice_ui.download_pdf")}><FileText size={15} /></button>{item.folio_fiscal && <button type="button" onClick={() => handleDocument(item, "xml")} title={t("invoice_ui.download_xml")}><Download size={15} /></button>}{canUpdate && item.folio_fiscal && <button type="button" onClick={() => pickXmlFor(item)} title={t("invoice_ui.attach_xml", "Adjuntar XML")}><Upload size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}</td>}
               {canSeeField("id_invoice") && <td><pre className="cell-value">{formatTableValue(item.id_invoice)}</pre></td>}
               {canSeeField("date_emision") && <td><pre className="cell-value">{formatTableValue(item.date_emision)}</pre></td>}
               {canSeeField("date_expiration") && <td><pre className="cell-value">{formatTableValue(item.date_expiration)}</pre></td>}

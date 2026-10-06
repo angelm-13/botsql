@@ -2343,7 +2343,7 @@
     "total": "Total",
     "action": "Ação",
     "error_loading_lines": "Não foi possível carregar os itens.",
-    "invoice_uuid": "Fatura / UUID",
+    "invoice_uuid": "UUID",
     "issuer": "Emissor",
     "link": "Vinculação",
     "linked": "Vinculada",

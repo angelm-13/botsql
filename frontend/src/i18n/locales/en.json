@@ -2388,7 +2388,7 @@
     "total": "Total",
     "action": "Action",
     "error_loading_lines": "The line items could not be loaded.",
-    "invoice_uuid": "Invoice / UUID",
+    "invoice_uuid": "UUID",
     "issuer": "Issuer",
     "link": "Link",
     "linked": "Linked",

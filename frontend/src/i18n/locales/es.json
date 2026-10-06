@@ -2415,6 +2415,8 @@
     "stamp_invoice": "Timbrar factura",
     "download_pdf": "Descargar PDF",
     "download_xml": "Descargar XML",
+    "attach_xml": "Adjuntar XML",
+    "xml_attached": "XML adjuntado correctamente.",
     "loading_lines": "Cargando partidas...",
     "no_lines": "Esta factura no tiene partidas guardadas.",
     "sat_key": "Clave SAT",
@@ -2427,7 +2429,7 @@
     "total": "Total",
     "action": "Acción",
     "error_loading_lines": "No fue posible cargar las partidas.",
-    "invoice_uuid": "Factura / UUID",
+    "invoice_uuid": "UUID",
     "issuer": "Emisor",
     "link": "Vinculación",
     "linked": "Vinculada",
@@ -3786,7 +3788,9 @@
     "stamped_document_invalid": "El comprobante devuelto por el PAC no cumple las reglas del SAT.",
     "stamping_missing_uuid": "El PAC no devolvio el UUID del timbre.",
     "stamping_uuid_mismatch": "El UUID del XML no coincide con el que reporto el PAC.",
-    "xml_not_available": "Esta factura todavia no tiene XML timbrado."
+    "xml_not_available": "Esta factura no tiene el archivo XML guardado. Usa el botón «Adjuntar XML» para volver a cargarlo.",
+    "xml_invalid": "El archivo no es un XML de CFDI válido.",
+    "xml_uuid_mismatch": "El UUID del XML no coincide con el de esta factura."
   },
   "stamping": {
     "provider_invalid": "El proveedor de timbrado no es valido.",

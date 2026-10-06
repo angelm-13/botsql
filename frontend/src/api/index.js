@@ -361,7 +361,12 @@ export const getStampingConfig = () => request("/stamping/config");
 export const saveStampingConfig = (payload) => request("/stamping/config", { method: "PUT", body: payload });
 export const testStampingConfig = (payload) => request("/stamping/config/test", { method: "POST", body: payload });
 export const downloadInvoiceXml = (id) => requestBlob(`/invoice/${id}/xml`);
-export const downloadInvoicePdf = (id, document = "") => requestBlob(`/invoice/${id}/pdf`, { params: { document } });
+export const attachInvoiceXml = (id, file) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  return request(`/invoice/${id}/xml`, { method: "POST", body: formData });
+};
+export const downloadInvoicePdf =(id, document = "") => requestBlob(`/invoice/${id}/pdf`, { params: { document } });
 
 export const getInventoryMovements = (id, params = {}) => request(`/product/${id}/inventory-movements`, { params });
 export const createInventoryMovement = (id, payload) => request(`/product/${id}/inventory-movements`, { method: "POST", body: { idempotency_key: crypto.randomUUID(), ...payload } });

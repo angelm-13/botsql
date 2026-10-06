@@ -2342,7 +2342,7 @@
     "total": "Gesamt",
     "action": "Aktion",
     "error_loading_lines": "Die Positionen konnten nicht geladen werden.",
-    "invoice_uuid": "Rechnung / UUID",
+    "invoice_uuid": "UUID",
     "issuer": "Aussteller",
     "link": "Zuordnung",
     "linked": "Zugeordnet",
