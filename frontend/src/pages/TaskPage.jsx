@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
-import { getAllTask, createTask, updateTask, deleteTask, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllProyect, getOperationsCatalog } from "../api";
+import { getAllTask, createTask, updateTask, deleteTask, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllProyect } from "../api";
 import { fetchAllPages } from "../utils/fetchAllPages";
 import Pagination from "../components/Pagination.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 
-const emptyForm = { task_description: "", fase: "", id_proyect: "" };
+// La fase ya no se captura aqui: el estado de la tarea se mueve desde el
+// expediente del proyecto. Al crear, el backend la deja en "en_espera"
+// (task_service.create); al editar, al no mandarla, no se toca.
+const emptyForm = { task_description: "", id_proyect: "" };
 const validationRules = allValidationRules["task"] || {};
 const ENTITY_KEY = "task";
 const ACTION_CREATE = 1;
@@ -22,11 +25,7 @@ const FIELD_VISIBLE_BIT = 2;
 // descripcion/proyecto/fase (ver 828255e) y esos otros nunca tuvieron dato
 // real por fila en produccion. Quedan fuera de esta lista, no solo ocultos:
 // dejarlos aqui sugeriria que todavia hay algo que mostrar.
-const ALL_FIELD_NAMES = ['owner', 'dependency', 'validation'];
-// Respaldo si /operations/catalog no responde (offline, permiso, etc.): las
-// mismas 5 fases que pidio Jefe de taller, para que el select no se quede
-// vacio en vez de mostrar el texto libre de antes.
-const DEFAULT_TASK_FASES = ["en_espera", "en_proceso", "bloqueado", "terminado", "entregado"];
+const ALL_FIELD_NAMES = ['task_status'];
 
 function hasBit(value, bit) {
   return (Number(value || 0) & bit) === bit;
@@ -68,19 +67,6 @@ export default function TaskPage() {
   const canSubmitForm = editingId ? canUpdate : canCreate;
   const showRowActions = canRead && (canUpdate || canDelete);
   const [proyectOptions, setProyectOptions] = useState([]);
-  const [taskFases, setTaskFases] = useState(DEFAULT_TASK_FASES);
-
-  useEffect(() => {
-    let cancelado = false;
-    getOperationsCatalog()
-      .then((data) => {
-        if (!cancelado && Array.isArray(data?.task_fase?.fases) && data.task_fase.fases.length > 0) {
-          setTaskFases(data.task_fase.fases);
-        }
-      })
-      .catch(() => {});
-    return () => { cancelado = true; };
-  }, []);
 
   async function loadData() {
     if (!permissionReady || !canRead) {
@@ -469,18 +455,6 @@ export default function TaskPage() {
             {fieldErrors["id_proyect"] && <span className="field-error">{formatFieldError("id_proyect")}</span>}
           </label>
           )}
-          {canSeeField("fase") && (
-          <label className="field">
-            <span>{t("fields.task.fase")}</span>
-            <select name="fase" value={formData.fase ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors["fase"])} {...inputPropsForField("fase", validationRules["fase"], "select")}>
-              <option value="">{t("common.select_option", "Selecciona una opción")}</option>
-              {taskFases.map((valor) => (
-                <option key={valor} value={valor}>{t(`task_fase.${valor}`, valor)}</option>
-              ))}
-            </select>
-            {fieldErrors["fase"] && <span className="field-error">{formatFieldError("fase")}</span>}
-          </label>
-          )}
         </div>
         <div className="form-actions">
           <button className="button primary" type="submit">{t("common.save")}</button>
@@ -507,19 +481,11 @@ export default function TaskPage() {
       {canRead && view === "table" && filtered.length > 0 && <div className="table-card"><table><thead><tr>{showRowActions && <th>{t("common.actions")}</th>}
               {canSeeField("task_description") && <th>{t("fields.task.task_description")}</th>}
               {canSeeField("id_proyect") && <th>{t("fields.task.id_proyect")}</th>}
-              {canSeeField("owner") && <th>{t("fields.task.owner")}</th>}
-              {canSeeField("dependency") && <th>{t("fields.task.dependency")}</th>}
-              {canSeeField("validation") && <th>{t("fields.task.validation")}</th>}
               {canSeeField("task_status") && <th>{t("fields.task.task_status")}</th>}
-              {canSeeField("fase") && <th>{t("fields.task.fase")}</th>}
         </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_task}>{showRowActions && <td className="row-actions">{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</td>}
               {canSeeField("task_description") && <td><pre className="cell-value">{formatTableValue(item.task_description)}</pre></td>}
               {canSeeField("id_proyect") && <td><pre className="cell-value">{getOptionLabel(proyectOptions.find((proyecto) => (proyecto.id_proyect ?? proyecto.id) === item.id_proyect), "proyect") || formatTableValue(item.id_proyect)}</pre></td>}
-              {canSeeField("owner") && <td><pre className="cell-value">{formatTableValue(item.owner)}</pre></td>}
-              {canSeeField("dependency") && <td><pre className="cell-value">{formatTableValue(item.dependency)}</pre></td>}
-              {canSeeField("validation") && <td><pre className="cell-value">{formatTableValue(item.validation)}</pre></td>}
               {canSeeField("task_status") && <td><pre className="cell-value">{formatTableValue(item.task_status)}</pre></td>}
-              {canSeeField("fase") && <td><pre className="cell-value">{t(`task_fase.${item.fase}`, formatTableValue(item.fase))}</pre></td>}
         </tr>)}</tbody></table></div>}
 
       {canRead && view === "kanban" && filtered.length > 0 && <div className="kanban">{Object.entries(groups).map(([key, groupItems]) => <div className="kanban-column" key={key}><h3>{key} <span>{groupItems.length}</span></h3>{groupItems.map((item) => <article className="kanban-card" key={item.id_task}><strong>{String(item.task_description ?? item.id_task)}</strong><small>#{item.id_task}</small>{showRowActions && <div>{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</div>}</article>)}</div>)}</div>}
