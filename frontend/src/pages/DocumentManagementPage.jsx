@@ -32,10 +32,11 @@ export default function DocumentManagementPage() {
 
   async function submit(event) {
     event.preventDefault(); setError("");
+    const formElement = event.currentTarget;
     if (!file) { setError("Selecciona un archivo PDF, JPEG o PNG."); return; }
     try {
       await uploadDocument(form, file);
-      setForm({ ...form, title: "", description: "" }); setFile(null); event.currentTarget.reset(); await load();
+      setForm({ ...form, title: "", description: "" }); setFile(null); formElement.reset(); await load();
     } catch (caught) { setError(caught.message); }
   }
 
