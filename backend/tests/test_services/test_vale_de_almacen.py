@@ -2321,3 +2321,48 @@ class TestElPdfDiceLaEntrega(BaseEntrega):
         self.assertNotIn("Pendiente de entrega", html)
         self.assertNotIn("Recoge:", html)
         self.assertNotIn("Recibe:", html)
+
+
+class TestElMaterialDelProyectoNoCuentaLoQueNoSalio(BaseEntrega):
+    """El proyecto dice lo que la obra se llevo: un prevale es una peticion."""
+
+    def _material(self):
+        from app.services.project_management_service import _material_del_proyecto
+
+        with transaction_context() as db:
+            return _material_del_proyecto(db, PROYECTO)
+
+    def _para_el_proyecto(self, lineas):
+        return crear_vale({
+            "id_incident_type": TIPO_PRESTAMO, "id_user": 1, "note": "Obra Norte",
+            "id_proyect": PROYECTO, "lines": lineas,
+            "due_date": (datetime.now() + timedelta(days=30)).strftime(
+                "%Y-%m-%d %H:%M:%S")}, ACTOR, como_borrador=True)
+
+    def test_a_draft_is_not_material_taken_by_the_project(self):
+        self._para_el_proyecto([self._linea_cantidad(2)])
+
+        self.assertEqual(0, self._material()["taken_total"])
+
+    def test_an_authorized_voucher_counts_for_the_project(self):
+        borrador = self._para_el_proyecto([self._linea_cantidad(2)])
+
+        autorizar_vale(borrador["voucher"]["id_incident"], {}, OTRO_ACTOR)
+
+        resumen = self._material()
+        self.assertEqual(2, resumen["taken_total"])
+        self.assertEqual(2, resumen["still_out_total"])
+
+    def test_a_cancelled_voucher_does_not_count(self):
+        borrador = self._para_el_proyecto([self._linea_cantidad(2)])
+        with transaction_context() as db:
+            db.get(Incident, borrador["voucher"]["id_incident"]).incident_status = "cancelado"
+
+        self.assertEqual(0, self._material()["taken_total"])
+
+    def test_a_voucher_from_before_without_status_still_counts(self):
+        borrador = self._para_el_proyecto([self._linea_cantidad(2)])
+        with transaction_context() as db:
+            db.get(Incident, borrador["voucher"]["id_incident"]).incident_status = None
+
+        self.assertEqual(2, self._material()["taken_total"])

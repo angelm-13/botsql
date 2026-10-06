@@ -850,6 +850,12 @@ def _material_del_proyecto(db, id_proyect) -> dict:
         .join(Product, Product.id_product == NmIncidentProduct.id_product)
         .where(Incident.id_proyect == id_proyect,
                Incident.deletion_date.is_(None),
+               # Un prevale (borrador) es una peticion y un vale cancelado no
+               # llego a salir: ninguno movio el almacen, asi que no son material
+               # que "se llevo" la obra. Un estado nulo es un vale de antes y si
+               # cuenta -- por eso el coalesce: sin el, NOT IN descarta los NULL.
+               func.coalesce(func.lower(Incident.incident_status), "")
+               .notin_(("borrador", "cancelado")),
                NmIncidentProduct.deletion_date.is_(None),
                NmIncidentProduct.direction == "salida")
         .group_by(Product.id_product, Product.descripcion, Product.product_code)
