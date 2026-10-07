@@ -17,6 +17,10 @@ mirar el --dry-run antes de aplicar. --respaldo guarda un CSV con el antes y el
 despues para poder revertir.
 
 Idempotente: una descripcion ya valida no se toca.
+
+--restaurar <csv> deshace una corrida con el CSV de --respaldo: devuelve el
+"antes" solo en las filas que siguen diciendo el "despues" (si alguien ya la
+edito a mano, no se pisa).
 """
 from __future__ import annotations
 
@@ -45,13 +49,40 @@ def esta_en_mayusculas(texto: str) -> bool:
     return not any(c.islower() for c in texto)
 
 
+def restaurar(ruta: str, dry_run: bool):
+    with open(ruta, newline='', encoding='utf-8') as f:
+        filas = list(csv.DictReader(f))
+    conn = conectar()
+    try:
+        cur = conn.cursor()
+        devueltas = 0
+        for fila in filas:
+            cur.execute(
+                "UPDATE product SET descripcion = %s "
+                "WHERE id_product = %s AND descripcion = %s",
+                (fila['antes'], int(fila['id_product']), fila['despues']))
+            devueltas += cur.rowcount
+        print(f"Filas del respaldo: {len(filas)}; restauradas: {devueltas}")
+        if dry_run:
+            conn.rollback()
+            print("[dry-run] no se escribio nada")
+        else:
+            conn.commit()
+    finally:
+        conn.close()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--incluir-mixtos', action='store_true')
     parser.add_argument('--respaldo', help='CSV con id_product, antes, despues')
     parser.add_argument('--muestra', type=int, default=15)
+    parser.add_argument('--restaurar', help='CSV de --respaldo cuyo "antes" se devuelve')
     args = parser.parse_args()
+
+    if args.restaurar:
+        return restaurar(args.restaurar, args.dry_run)
 
     conn = conectar()
     try:
