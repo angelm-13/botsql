@@ -34,3 +34,7 @@ test("la sugerencia corrige y siempre es valida", () => {
     assert.equal(descripcionValida(sugerirDescripcion(t)), true, t);
   }
 });
+
+test("la x de una medida no se queda en mayuscula", () => {
+  assert.equal(sugerirDescripcion("PERFIL 4 X 4"), "Perfil 4 x 4");
+});

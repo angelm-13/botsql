@@ -16,8 +16,8 @@ const CARACTERES_PERMITIDOS = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 /\-.,()"�
 const LETRA = /[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/;
 // Codigo de modelo (B26T600): una letra antes y otra despues de un numero.
 const CODIGO_DE_MODELO = /^[A-Z0-9-]*[A-Z]\d+[A-Z][A-Z0-9-]*$/;
-// Una letra suelta es una forma o un tipo ("prensa C"), salvo a, y, o, e, u.
-const LETRAS_QUE_SON_PALABRA = new Set(["A", "Y", "O", "E", "U"]);
+// Una letra suelta es una forma o un tipo ("prensa C"), salvo a, y, o, e, u y la x de "por" (4 x 4).
+const LETRAS_QUE_SON_PALABRA = new Set(["A", "Y", "O", "E", "U", "X"]);
 
 function seConservaEnMayusculas(nucleo) {
   if (CODIGO_DE_MODELO.test(nucleo)) return true;

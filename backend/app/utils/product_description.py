@@ -36,8 +36,8 @@ _LETRAS = re.compile(r'[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]')
 # de un numero (B26T600). "18KG" no lo es: ahi no hay letra antes del numero.
 _CODIGO_DE_MODELO = re.compile(r'^[A-Z0-9\-]*[A-Z]\d+[A-Z][A-Z0-9\-]*$')
 # Una letra suelta es una forma o un tipo ("prensa C", "perfil T"), no una
-# palabra; salvo las que en espanol SON palabras (a, y, o, e, u).
-_LETRAS_QUE_SON_PALABRA = frozenset("AYOEU")
+# palabra; salvo las que en espanol SON palabras (a, y, o, e, u) ni la x de "por" (4 x 4).
+_LETRAS_QUE_SON_PALABRA = frozenset("AYOEUX")
 
 
 def _es_sigla_con_forma(palabra: str) -> bool:

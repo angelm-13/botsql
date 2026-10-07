@@ -82,3 +82,6 @@ class TestLaExistenciaNoSeEditaAMano(BackendTestCase):
             ProductService.update(id_product, {"cantidad": 50}, user_id=1)
         self.assertEqual("cantidad", ctx.exception.meta["field"])
         self.assertEqual(5, ProductService.get(id_product)["cantidad"])
+
+    def test_the_x_of_a_measure_is_not_a_shape_letter(self):
+        self.assertEqual("Perfil 4 x 4", sugerir("PERFIL 4 X 4"))
