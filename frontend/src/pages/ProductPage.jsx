@@ -14,6 +14,7 @@ import PageHeader from "../components/PageHeader.jsx";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 import { CAMPOS_DE_AUDITORIA } from "../utils/camposDeAuditoria";
+import { descripcionValida, sugerirDescripcion } from "../utils/productDescription";
 
 const emptyForm = { id_location: "", id_material: "", gross_price: "", color: "", is_directly_related_to_product_service: false, product_status: "", path_imagen: "", product_code: "", note: "", descripcion: "", cantidad: "", id_marca: "", id_familia: "" };
 const validationRules = allValidationRules["product"] || {};
@@ -355,6 +356,9 @@ export default function ProductPage() {
       delete payload.password;
     }
     delete payload.path_imagen;
+    // La existencia no se escribe desde aqui al editar: se mueve con la entrada
+    // de existencia, el vale o el ajuste (la cantidad inicial solo al dar de alta).
+    if (editingId) delete payload.cantidad;
     return payload;
   }
 
@@ -382,6 +386,12 @@ export default function ProductPage() {
     const submitPayload = buildSubmitPayload();
     const validation = validateForm("product", submitPayload, validationRules);
     const nextFieldErrors = { ...validation.errors };
+    // El formato de oracion se exige al capturar o al CAMBIAR la descripcion; un
+    // producto migrado en mayusculas se puede seguir editando sin tocarla.
+    const descripcionOriginal = editingId ? items.find((it) => it.id_product === editingId)?.descripcion : undefined;
+    if (!descripcionValida(submitPayload.descripcion) && submitPayload.descripcion !== descripcionOriginal) {
+      nextFieldErrors.descripcion = "errors.product_description_format";
+    }
     if (ENTITY_KEY === "user" && !editingId) {
       if (isBlankValue(submitPayload.username)) nextFieldErrors.username = "validations.user.username.required";
       if (isBlankValue(submitPayload.password)) nextFieldErrors.password = "validations.user.password.required";
@@ -669,14 +679,26 @@ export default function ProductPage() {
           {canSeeField("descripcion") && (
           <label className="field">
             <span>{t("fields.product.descripcion")}</span>
-            <input name="descripcion" type="text" maxLength={250} value={formData.descripcion ?? ""} onChange={handleChange} placeholder={t("fields.product.descripcion")} aria-invalid={Boolean(fieldErrors["descripcion"])} {...inputPropsForField("descripcion", validationRules["descripcion"], "text")} />
+            <input name="descripcion" type="text" maxLength={250} list="product-descripcion-sugeridas" autoComplete="off" value={formData.descripcion ?? ""} onChange={handleChange} placeholder={t("fields.product.descripcion_ejemplo", "Ej. Pulidor chico 3/4")} aria-invalid={Boolean(fieldErrors["descripcion"])} {...inputPropsForField("descripcion", validationRules["descripcion"], "text")} />
+            <datalist id="product-descripcion-sugeridas">
+              {[...new Set(items.map((it) => it.descripcion).filter(Boolean))].map((d) => <option key={d} value={d} />)}
+            </datalist>
+            {formData.descripcion && !descripcionValida(formData.descripcion) && (
+              <button type="button" className="button-link" onClick={() => handleChange({ target: { name: "descripcion", type: "text", value: sugerirDescripcion(formData.descripcion) } })}>
+                {t("fields.product.descripcion_sugerencia", "¿Quisiste decir")} «{sugerirDescripcion(formData.descripcion)}»?
+              </button>
+            )}
             {fieldErrors["descripcion"] && <span className="field-error">{formatFieldError("descripcion")}</span>}
           </label>
           )}
-          {canSeeField("cantidad") && (
+          {/* Solo un producto que se lleva por cantidad (fungible) tiene cantidad; el
+              que se rastrea pieza por pieza tiene una fila por unidad. Al editar es de
+              solo lectura: lo que entra va por "Registrar entrada". */}
+          {canSeeField("cantidad") && (formData.tracking_mode || "fungible") === "fungible" && (
           <label className="field">
             <span>{t("fields.product.cantidad")}</span>
-            <input name="cantidad" type="number" value={formData.cantidad ?? ""} onChange={handleChange} placeholder={t("fields.product.cantidad")} aria-invalid={Boolean(fieldErrors["cantidad"])} {...inputPropsForField("cantidad", validationRules["cantidad"], "number")} />
+            <input name="cantidad" type="number" min="0" step="1" value={formData.cantidad ?? ""} onChange={handleChange} readOnly={Boolean(editingId)} placeholder={t("fields.product.cantidad")} aria-invalid={Boolean(fieldErrors["cantidad"])} {...inputPropsForField("cantidad", validationRules["cantidad"], "number")} />
+            {editingId && <span className="field-hint">{t("stock_entry.edit_hint", "Para sumar o restar existencia usa «Registrar entrada» en la fila del producto.")}</span>}
             {fieldErrors["cantidad"] && <span className="field-error">{formatFieldError("cantidad")}</span>}
           </label>
           )}

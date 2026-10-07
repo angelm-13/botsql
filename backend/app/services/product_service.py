@@ -4,6 +4,7 @@ from app.models import Invoice, Material, Product
 from app.models.session import transaction_context
 from app.services.base_service import CrudService
 from app.utils.errors import AppError
+from app.utils.product_description import es_valida, sugerir
 
 
 class ProductService(CrudService):
@@ -108,6 +109,34 @@ class ProductService(CrudService):
         return payload
 
     @classmethod
+    def exigir_descripcion_en_oracion(cls, payload: dict, item_id=None) -> None:
+        """Rechaza una descripcion que no viene en formato de oracion.
+
+        Se llama desde las rutas (la captura de una persona), no desde `create`/
+        `update`: la migracion, la recepcion de compras y las pruebas dan de alta
+        productos con sus propios textos y no deben tropezar con una regla de
+        captura. En una EDICION solo se exige si el texto cambio: el formulario
+        devuelve el registro completo, y un producto migrado en mayusculas no
+        puede quedar imposible de editar por algo que no se toco.
+        """
+        if 'descripcion' not in (payload or {}):
+            return
+        nueva = payload.get('descripcion')
+        if item_id is not None:
+            with transaction_context() as session:
+                try:
+                    fila = session.get(Product, int(item_id))
+                except (TypeError, ValueError):
+                    fila = None
+                if fila is not None and (fila.descripcion or '') == (nueva or ''):
+                    return
+        if not es_valida(nueva):
+            raise AppError(
+                'errors.product_description_format', status_code=400,
+                meta={'field': 'descripcion', 'suggestion': sugerir(nueva)},
+            )
+
+    @classmethod
     def create(cls, payload: dict, user_id: int | None = None):
         """Da de alta el producto y le da SITIO a su existencia desde el minuto uno.
 
@@ -145,9 +174,43 @@ class ProductService(CrudService):
                     sembrar_existencia_inicial(session, producto)
         return creado
 
+    @staticmethod
+    def _entero_o_none(valor):
+        try:
+            return int(float(valor))
+        except (TypeError, ValueError):
+            return None
+
+    @classmethod
+    def _rechazar_cantidad_a_mano(cls, item_id, payload: dict) -> dict:
+        """La existencia no se edita escribiendo `cantidad`.
+
+        `product.cantidad` es la suma de la existencia por ubicacion y el libro
+        de movimientos la respalda (ver `inventory_service`): escribirla directo
+        deja el saldo diciendo una cosa y el libro otra, y sin rastro de quien
+        la movio ni por que. Lo que entra va por la entrada de existencia, lo
+        que sale por el vale, y un conteo fisico por el ajuste de inventario.
+
+        El formulario de edicion devuelve el registro completo, `cantidad`
+        incluida: si viene igual a lo que ya hay no se esta moviendo nada.
+        """
+        if 'cantidad' not in payload:
+            return payload
+        with transaction_context() as session:
+            try:
+                fila = session.get(Product, int(item_id))
+            except (TypeError, ValueError):
+                fila = None
+            actual = fila.cantidad if fila is not None else None
+        if cls._entero_o_none(payload['cantidad']) == cls._entero_o_none(actual):
+            payload.pop('cantidad')
+            return payload
+        raise AppError('errors.product_quantity_via_movements', status_code=409,
+                       meta={'field': 'cantidad'})
+
     @classmethod
     def update(cls, item_id, payload: dict, user_id: int | None = None):
-        payload = dict(payload or {})
+        payload = cls._rechazar_cantidad_a_mano(item_id, dict(payload or {}))
         # Los formularios de edicion devuelven el registro completo, `lot_control`
         # incluido. Si viene igual a lo que ya hay no se esta encendiendo nada, y
         # rechazarlo hacia imposible guardar CUALQUIER edicion de un producto.

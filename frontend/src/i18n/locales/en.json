@@ -2724,6 +2724,8 @@
     "error_save": "Unable to save",
     "error_delete": "Unable to delete",
     "confirm_delete": "Delete",
+    "product_description_format": "The description must start with a capital letter, followed by lowercase letters, spaces, numbers and symbols such as slash or hyphen (e.g. Small polisher 3/4). Acronyms like PVC or LED stay uppercase.",
+    "product_quantity_via_movements": "Stock is not edited by hand: use “Register entry” for what arrives, the voucher for what leaves and an inventory adjustment for a count.",
     "refresh": "Refresh",
     "edit": "Edit",
     "save": "Save",

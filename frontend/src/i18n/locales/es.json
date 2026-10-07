@@ -2768,6 +2768,8 @@
     "error_save": "No fue posible guardar",
     "error_delete": "No fue posible eliminar",
     "confirm_delete": "Eliminar",
+    "product_description_format": "La descripción debe iniciar con mayúscula, seguida de minúsculas, espacios, números y símbolos como diagonal o guion (ej. Pulidor chico 3/4). Las siglas como PVC o LED van en mayúsculas.",
+    "product_quantity_via_movements": "La existencia no se edita a mano: usa «Registrar entrada» para lo que llega, el vale para lo que sale y el ajuste de inventario para un conteo.",
     "refresh": "Actualizar",
     "edit": "Editar",
     "save": "Guardar",
