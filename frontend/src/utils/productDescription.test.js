@@ -19,6 +19,13 @@ test("vacia se acepta porque el campo es opcional", () => {
   assert.equal(descripcionValida(null), true);
 });
 
+test("letras sueltas y codigos de modelo conservan su mayuscula", () => {
+  assert.equal(sugerirDescripcion('PRENSA C 3"'), 'Prensa C 3"');
+  assert.equal(sugerirDescripcion("PISTOLA CAFETATEADORA B26T600"), "Pistola cafetateadora B26T600");
+  assert.equal(sugerirDescripcion("ROMPEDOR 18KG"), "Rompedor 18kg");
+  assert.equal(sugerirDescripcion("TUERCA Y TORNILLO"), "Tuerca y tornillo");
+});
+
 test("la sugerencia corrige y siempre es valida", () => {
   assert.equal(sugerirDescripcion("PULIDOR CHICO 3/4"), "Pulidor chico 3/4");
   assert.equal(sugerirDescripcion("codo PVC 90"), "Codo PVC 90");

@@ -14,6 +14,15 @@ export const ACRONIMOS_CONOCIDOS = new Set([
 const MAX_LONGITUD = 250;
 const CARACTERES_PERMITIDOS = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 /\-.,()"°%#+&:]+$/;
 const LETRA = /[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/;
+// Codigo de modelo (B26T600): una letra antes y otra despues de un numero.
+const CODIGO_DE_MODELO = /^[A-Z0-9-]*[A-Z]\d+[A-Z][A-Z0-9-]*$/;
+// Una letra suelta es una forma o un tipo ("prensa C"), salvo a, y, o, e, u.
+const LETRAS_QUE_SON_PALABRA = new Set(["A", "Y", "O", "E", "U"]);
+
+function seConservaEnMayusculas(nucleo) {
+  if (CODIGO_DE_MODELO.test(nucleo)) return true;
+  return nucleo.length === 1 && /[A-ZÁÉÍÓÚÜÑ]/.test(nucleo) && !LETRAS_QUE_SON_PALABRA.has(nucleo);
+}
 
 function esSiglaConForma(palabra) {
   const letras = palabra.match(/[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/g) || [];
@@ -27,6 +36,7 @@ export function sugerirDescripcion(texto) {
   const palabras = limpio.split(" ").map((palabra) => {
     const nucleo = palabra.replace(/^[.,()"]+|[.,()"]+$/g, "");
     if (esSiglaConForma(nucleo) && (!todoEnMayusculas || ACRONIMOS_CONOCIDOS.has(nucleo))) return palabra;
+    if (seConservaEnMayusculas(nucleo)) return palabra;
     return palabra.toLowerCase();
   });
   const primera = [...palabras[0]];

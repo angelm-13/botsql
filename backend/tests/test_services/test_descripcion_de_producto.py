@@ -35,6 +35,13 @@ class TestFormatoDeOracion(unittest.TestCase):
         # En un texto todo en mayusculas solo se conservan las siglas conocidas.
         self.assertEqual("Taladro xyz", sugerir("TALADRO XYZ"))
 
+    def test_single_letters_and_model_codes_keep_their_capitals(self):
+        self.assertEqual('Prensa C 3"', sugerir('PRENSA C 3"'))
+        self.assertEqual("Pistola cafetateadora B26T600", sugerir("PISTOLA CAFETATEADORA B26T600"))
+        self.assertEqual("Rompedor 18kg", sugerir("ROMPEDOR 18KG"))
+        self.assertEqual("Tuerca y tornillo", sugerir("TUERCA Y TORNILLO"))
+        self.assertTrue(es_valida('Prensa C 3"'))
+
     def test_a_suggestion_is_always_valid(self):
         for texto in ("PULIDOR CHICO 3/4", "pulidor Chico", "CODO PVC 90", "broca HSS 1/4"):
             self.assertTrue(es_valida(sugerir(texto)), texto)
