@@ -35,6 +35,8 @@ from app.services.warehouse_voucher_service import (
     historial_del_producto,
     lo_que_ha_pedido,
     notificar_material_entregado,
+    notificar_material_devuelto,
+    notificar_prevale_autorizado,
     notificar_prevale_creado,
     pdf_del_historial_de_persona,
     quien_tiene_que,
@@ -217,6 +219,12 @@ def autorizar(user_data, id_incident):
     """
     resultado = autorizar_vale(id_incident, _cuerpo(), user_data)
     try:
+        # Notificar al supervisor que su prevale fue autorizado.
+        notificar_prevale_autorizado(id_incident, user_data.get("id_user"))
+    except Exception:
+        pass
+    try:
+        # Notificar que el material está listo para recoger.
         notificar_material_entregado(id_incident, user_data.get("id_user"))
     except Exception:
         pass
@@ -267,7 +275,13 @@ def devolver_linea(user_data, id_line):
     El cuerpo acepta `id_location` -a donde vuelve, por omision de donde salio- y
     `note`.
     """
-    return jsonify(cerrar_renglon(id_line, _cuerpo(), user_data))
+    resultado = cerrar_renglon(id_line, _cuerpo(), user_data)
+    try:
+        # Notificar a almacén que hay material devuelto.
+        notificar_material_devuelto(id_line, user_data.get("id_user"))
+    except Exception:
+        pass
+    return jsonify(resultado)
 
 
 @bp_warehouse_voucher.route("/vouchers/lines/<id_line>/report-status", methods=["POST"])

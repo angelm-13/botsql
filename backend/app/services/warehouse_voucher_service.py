@@ -1279,6 +1279,79 @@ def _usuarios_con_capacidad(db, capacidad: str) -> list[int]:
     ]
 
 
+def notificar_material_devuelto(id_line, actor_id: int) -> None:
+    """Avisa a almacén que hay material devuelto esperando ser recibido.
+
+    Se llama desde la RUTA de devolver_renglon, después de que la transacción cierre.
+    """
+    from app.services.notification_service import create_notification
+
+    with transaction_context() as db:
+        renglon = db.scalars(select(NmIncidentProduct).where(
+            NmIncidentProduct.id_nm_incident_product == int(id_line),
+            NmIncidentProduct.deletion_date.is_(None),
+        )).first()
+        if renglon is None:
+            return
+
+        vale = _vale(db, renglon.id_incident)
+        folio = vale.external_folio or str(vale.id_incident)
+        id_incident_plano = int(vale.id_incident)
+        nombre_persona = _persona(db, vale.id_user)
+        destinatarios = _usuarios_con_capacidad(db, "warehouse_voucher")
+
+    for id_destinatario in {int(d) for d in destinatarios if int(d) != int(actor_id)}:
+        try:
+            create_notification(
+                id_user_recipient=id_destinatario,
+                id_user_sender=actor_id,
+                notification_type="warehouse_voucher_return_pending",
+                title="Material devuelto del vale #%s" % folio,
+                message=(
+                    "%s devolvió material del vale #%s. "
+                    "Está en almacén esperando tu recibido."
+                ) % (nombre_persona or "Alguien", folio),
+                metadata={"id_incident": id_incident_plano},
+                target_entity="voucher", target_id=id_incident_plano,
+                created_by=actor_id,
+            )
+        except Exception:
+            continue
+
+
+def notificar_prevale_autorizado(id_incident, actor_id: int) -> None:
+    """Avisa al supervisor que su prevale fue autorizado y está listo en almacén.
+
+    Se llama desde la RUTA de autorizar_vale, después de que la transacción cierre.
+    """
+    from app.services.notification_service import create_notification
+
+    with transaction_context() as db:
+        vale = _vale(db, id_incident)
+        folio = vale.external_folio or str(vale.id_incident)
+        id_incident_plano = int(vale.id_incident)
+        id_responsable = int(vale.id_user)
+
+    if int(id_responsable) == int(actor_id):
+        return
+    try:
+        create_notification(
+            id_user_recipient=id_responsable,
+            id_user_sender=actor_id,
+            notification_type="warehouse_voucher_prevoucher_authorized",
+            title="Prevale #%s autorizado" % folio,
+            message=(
+                "Tu prevale #%s fue autorizado y está listo. "
+                "Puedes pasar por el material en almacén."
+            ) % folio,
+            metadata={"id_incident": id_incident_plano},
+            target_entity="voucher", target_id=id_incident_plano,
+            created_by=actor_id,
+        )
+    except Exception:
+        pass
+
+
 def notificar_prevale_creado(id_incident, actor_id: int) -> None:
     """Avisa a quien puede autorizar vales (Almacen) que hay un prevale
     nuevo esperando -- el Supervisor ya lo pidio, falta que alguien lo
