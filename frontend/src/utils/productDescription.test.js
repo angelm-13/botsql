@@ -35,6 +35,12 @@ test("la sugerencia corrige y siempre es valida", () => {
   }
 });
 
+test("letra pegada a numero y abreviaturas conocidas", () => {
+  assert.equal(sugerirDescripcion('PRENSA C8"'), 'Prensa C8"');
+  assert.equal(sugerirDescripcion("LLAVE LL 1/4"), "Llave LL 1/4");
+  assert.equal(sugerirDescripcion("FLEXOMETRO 8M"), "Flexometro 8m");
+});
+
 test("la x de una medida no se queda en mayuscula", () => {
   assert.equal(sugerirDescripcion("PERFIL 4 X 4"), "Perfil 4 x 4");
 });

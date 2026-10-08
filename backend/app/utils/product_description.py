@@ -25,7 +25,7 @@ import re
 ACRONIMOS_CONOCIDOS = frozenset({
     "PVC", "CPVC", "ABS", "LED", "USB", "HDMI", "HSS", "NPT", "AWG", "MDF", "OSB",
     "EPDM", "CFE", "IVA", "SDS", "RJ45", "UTP", "LCD", "GPS", "RPM", "PPR", "TIG",
-    "MIG", "AC", "DC", "NOM", "SAE", "ISO", "EPP", "IP", "PU", "PP", "PE",
+    "MIG", "LL", "SDT", "AC", "DC", "NOM", "SAE", "ISO", "EPP", "IP", "PU", "PP", "PE",
 })
 
 MAX_LONGITUD = 250
@@ -33,8 +33,10 @@ MAX_LONGITUD = 250
 _CARACTERES_PERMITIDOS = re.compile(r'^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 /\-.,()"°%#+&:]+$')
 _LETRAS = re.compile(r'[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]')
 # Un codigo de modelo mezcla letras y numeros con una letra antes y otra despues
-# de un numero (B26T600). "18KG" no lo es: ahi no hay letra antes del numero.
-_CODIGO_DE_MODELO = re.compile(r'^[A-Z0-9\-]*[A-Z]\d+[A-Z][A-Z0-9\-]*$')
+# de un numero (B26T600), o una letra pegada a su numero (C8, M8). "18KG" no lo
+# es: ahi no hay letra antes del numero.
+_CODIGO_DE_MODELO = re.compile(
+    r'^(?:[A-Z0-9\-]*[A-Z]\d+[A-Z][A-Z0-9\-]*|[A-Z]\d+)$')
 # Una letra suelta es una forma o un tipo ("prensa C", "perfil T"), no una
 # palabra; salvo las que en espanol SON palabras (a, y, o, e, u) ni la x de "por" (4 x 4).
 _LETRAS_QUE_SON_PALABRA = frozenset("AYOEUX")

@@ -8,14 +8,14 @@
 export const ACRONIMOS_CONOCIDOS = new Set([
   "PVC", "CPVC", "ABS", "LED", "USB", "HDMI", "HSS", "NPT", "AWG", "MDF", "OSB",
   "EPDM", "CFE", "IVA", "SDS", "RJ45", "UTP", "LCD", "GPS", "RPM", "PPR", "TIG",
-  "MIG", "AC", "DC", "NOM", "SAE", "ISO", "EPP", "IP", "PU", "PP", "PE",
+  "MIG", "LL", "SDT", "AC", "DC", "NOM", "SAE", "ISO", "EPP", "IP", "PU", "PP", "PE",
 ]);
 
 const MAX_LONGITUD = 250;
 const CARACTERES_PERMITIDOS = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 /\-.,()"°%#+&:]+$/;
 const LETRA = /[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/;
 // Codigo de modelo (B26T600): una letra antes y otra despues de un numero.
-const CODIGO_DE_MODELO = /^[A-Z0-9-]*[A-Z]\d+[A-Z][A-Z0-9-]*$/;
+const CODIGO_DE_MODELO = /^(?:[A-Z0-9-]*[A-Z]\d+[A-Z][A-Z0-9-]*|[A-Z]\d+)$/;
 // Una letra suelta es una forma o un tipo ("prensa C"), salvo a, y, o, e, u y la x de "por" (4 x 4).
 const LETRAS_QUE_SON_PALABRA = new Set(["A", "Y", "O", "E", "U", "X"]);
 

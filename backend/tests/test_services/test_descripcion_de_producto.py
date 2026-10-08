@@ -83,5 +83,11 @@ class TestLaExistenciaNoSeEditaAMano(BackendTestCase):
         self.assertEqual("cantidad", ctx.exception.meta["field"])
         self.assertEqual(5, ProductService.get(id_product)["cantidad"])
 
+    def test_letter_glued_to_number_and_known_abbreviations(self):
+        self.assertEqual('Prensa C8"', sugerir('PRENSA C8"'))
+        self.assertEqual("Llave LL 1/4", sugerir("LLAVE LL 1/4"))
+        self.assertEqual("Juego de llaves SDT", sugerir("JUEGO DE LLAVES SDT"))
+        self.assertEqual("Flexometro 8m", sugerir("FLEXOMETRO 8M"))
+
     def test_the_x_of_a_measure_is_not_a_shape_letter(self):
         self.assertEqual("Perfil 4 x 4", sugerir("PERFIL 4 X 4"))
