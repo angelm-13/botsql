@@ -511,12 +511,16 @@ def move_asset(id_asset, payload, user_data) -> dict:
         antes = _foto(pieza)
         reason = _texto(payload.get("reason"), "reason", obligatorio=True)
 
-        # El traslado se hace con la maquinaria de traspaso del inventario, que
-        # escribe la salida y la entrada en la misma transaccion. Repetirlo aqui
-        # a mano seria un segundo camino que toca existencias.
-        from app.services.inventory_service import transfer_inventory
+        # El traslado se hace con la maquinaria de traspaso del inventario, en
+        # la MISMA sesion -`transfer_in_session`, no `transfer_inventory`-:
+        # esta ultima abre su propia transaccion, y si algo fallaba despues
+        # de que ya hubiera comprometido el traspaso, el rollback de aqui no
+        # revertia nada (hallazgo de la auditoria de seguridad del
+        # 2026-10-06). Escribe la salida y la entrada en la misma transaccion
+        # que el evento de la pieza: todo o nada de verdad.
+        from app.services.inventory_service import transfer_in_session
 
-        transfer_inventory(pieza.id_product, {
+        transfer_in_session(db, pieza.id_product, {
             "id_location_from": antes["id_location"],
             "id_location_to": destino,
             "quantity": 1,

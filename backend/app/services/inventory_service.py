@@ -626,6 +626,138 @@ def apply_movement_in_session(
     return ledger.serialize(), True
 
 
+def transfer_in_session(db, product_id, payload, user_data):
+    """Nucleo de un traspaso, dentro de una transaccion que abre el llamador.
+
+    Existe aparte para que un traslado de pieza serializada (`move_asset`,
+    en `inventory_asset_service.py`) pueda escribir el movimiento de
+    existencia Y el evento de la pieza en la MISMA transaccion -mismo
+    motivo que separa `apply_movement_in_session` de `apply_inventory_
+    movement`-. Antes de que existiera esta version, `move_asset` llamaba a
+    la entrada publica `transfer_inventory`, que abre su PROPIA transaccion
+    independiente: si algo fallaba despues de que esa segunda transaccion ya
+    habia hecho COMMIT del traspaso, el rollback de la primera no revertia
+    nada, y el saldo quedaba movido mientras la pieza seguia apuntando a la
+    ubicacion vieja -exactamente lo que este modulo existe para impedir.
+    Hallazgo de la auditoria de seguridad del 2026-10-06.
+
+    Los validadores de la entrada publica ya corrieron cuando se llega aqui.
+    """
+    key = _idempotency_key(payload)
+    quantity = _integer_quantity(payload.get("quantity"))
+    reason = _required_reason(payload, "transfer")
+    outbound_key = f"{key}:out"
+
+    previous = db.scalars(
+        select(InventoryLedger).where(InventoryLedger.idempotency_key == outbound_key)
+    ).first()
+    if previous:
+        # Del traslado se compara la salida: mismo producto, misma cantidad
+        # y mismo origen. Trasladar 10 y despues 99 con la misma llave
+        # devolvia el par de 10 y contestaba que se habia hecho.
+        if not (
+            previous.id_product == int(product_id)
+            and int(previous.quantity_delta or 0) == -quantity
+            and int(previous.id_location or 0) == int(
+                payload.get("id_location_from") or previous.id_location or 0)
+        ):
+            raise AppError(
+                "errors.idempotency_conflict",
+                409,
+                {
+                    "idempotency_key": key,
+                    "stored": {
+                        "quantity": abs(int(previous.quantity_delta or 0)),
+                        "id_location_from": previous.id_location,
+                        "id_location_to": previous.id_location_target,
+                    },
+                },
+            )
+        pair = db.scalars(
+            select(InventoryLedger)
+            .where(InventoryLedger.transfer_group == previous.transfer_group)
+            .order_by(InventoryLedger.id_inventory_ledger)
+        ).all()
+        return {"movements": [row.serialize() for row in pair]}, False
+
+    product = _locked_product(db, product_id)
+    project_id = _authorize(db, product, user_data)
+    _ensure_stock_seeded(db, product)
+    origin = _location(db, payload.get("id_location_from"), "id_location_from")
+    target = _location(db, payload.get("id_location_to"), "id_location_to")
+    if origin.id_location == target.id_location:
+        raise AppError(
+            "errors.inventory_transfer_same_location",
+            400,
+            {"field": "id_location_to"},
+        )
+
+    actor_id = int(user_data.get("id_user") or 0)
+    # Se bloquean las dos filas en orden de identificador: si dos traspasos
+    # cruzados corren a la vez, tomar los candados siempre en el mismo
+    # orden evita que se queden esperando uno al otro.
+    first, second = sorted([origin.id_location, target.id_location])
+    rows = {
+        location_id: _stock_row(db, product.id_product, location_id, actor_id, for_update=True)
+        for location_id in (first, second)
+    }
+    origin_stock = rows[origin.id_location]
+    target_stock = rows[target.id_location]
+
+    available = int(origin_stock.quantity or 0)
+    if available < quantity:
+        raise AppError(
+            "errors.inventory_insufficient_stock",
+            409,
+            {
+                "available": available,
+                "requested": quantity,
+                "id_location": origin.id_location,
+                "location_description": origin.location_description,
+            },
+        )
+
+    origin_stock.quantity = available - quantity
+    target_stock.quantity = int(target_stock.quantity or 0) + quantity
+    db.flush()
+    # El total del producto no cambia en un traspaso, pero se recalcula
+    # para no dar por hecho el estado previo.
+    product.cantidad = _product_total(db, product.id_product)
+
+    group = str(uuid.uuid4())
+    reference_id = str(payload.get("reference_id") or "").strip()[:100] or None
+    common = {
+        "id_product": product.id_product,
+        "id_proyect": project_id,
+        "movement_type": "transfer",
+        "balance_after": product.cantidad,
+        "reference_type": _reference_type(payload) or "transfer",
+        "reference_id": reference_id,
+        "reason": reason,
+        "created_by": actor_id,
+        "transfer_group": group,
+    }
+    outbound = _append_ledger(
+        db,
+        **common,
+        quantity_delta=-quantity,
+        id_location=origin.id_location,
+        id_location_target=target.id_location,
+        location_balance_after=origin_stock.quantity,
+        idempotency_key=outbound_key,
+    )
+    inbound = _append_ledger(
+        db,
+        **common,
+        quantity_delta=quantity,
+        id_location=target.id_location,
+        id_location_target=origin.id_location,
+        location_balance_after=target_stock.quantity,
+        idempotency_key=f"{key}:in",
+    )
+    return {"movements": [outbound.serialize(), inbound.serialize()]}, True
+
+
 def transfer_inventory(product_id, payload, user_data):
     """Mueve existencia de una ubicacion a otra en una sola transaccion.
 
@@ -633,120 +765,45 @@ def transfer_inventory(product_id, payload, user_data):
     del origen y la entrada al destino. Si algo falla, no se mueve ninguna de
     las dos puntas.
     """
-    key = _idempotency_key(payload)
-    quantity = _integer_quantity(payload.get("quantity"))
-    reason = _required_reason(payload, "transfer")
+    try:
+        with transaction_context() as db:
+            return transfer_in_session(db, product_id, payload, user_data)
+    except IntegrityError:
+        # Misma carrera que ya resolvia `apply_inventory_movement` y que
+        # aqui no se resolvia hasta ahora (hallazgo de la auditoria de
+        # seguridad del 2026-10-06): dos reintentos con la misma llave de
+        # idempotencia pueden pasar los dos la comprobacion de "no existe
+        # todavia" antes de que ninguno comprometa, y el que pierde chocaba
+        # contra el indice unico con un 500 crudo -justo el cliente que
+        # reintenta por la llave, viendo fallar su reintento.
+        key = _idempotency_key(payload)
+        movimientos = _existing_transfer(f"{key}:out", product_id)
+        if movimientos is None:
+            raise
+        return movimientos, False
 
+
+def _existing_transfer(outbound_key, product_id):
+    """El par de renglones que otra llamada ya escribio con esta misma llave.
+
+    Se abre una transaccion nueva a proposito: la que perdio la carrera quedo
+    abortada por el error de integridad y no puede seguir consultando.
+    """
     with transaction_context() as db:
-        outbound_key = f"{key}:out"
         previous = db.scalars(
             select(InventoryLedger).where(InventoryLedger.idempotency_key == outbound_key)
         ).first()
-        if previous:
-            # Del traslado se compara la salida: mismo producto, misma cantidad
-            # y mismo origen. Trasladar 10 y despues 99 con la misma llave
-            # devolvia el par de 10 y contestaba que se habia hecho.
-            if not (
-                previous.id_product == int(product_id)
-                and int(previous.quantity_delta or 0) == -quantity
-                and int(previous.id_location or 0) == int(
-                    payload.get("id_location_from") or previous.id_location or 0)
-            ):
-                raise AppError(
-                    "errors.idempotency_conflict",
-                    409,
-                    {
-                        "idempotency_key": key,
-                        "stored": {
-                            "quantity": abs(int(previous.quantity_delta or 0)),
-                            "id_location_from": previous.id_location,
-                            "id_location_to": previous.id_location_target,
-                        },
-                    },
-                )
-            pair = db.scalars(
-                select(InventoryLedger)
-                .where(InventoryLedger.transfer_group == previous.transfer_group)
-                .order_by(InventoryLedger.id_inventory_ledger)
-            ).all()
-            return {"movements": [row.serialize() for row in pair]}, False
-
-        product = _locked_product(db, product_id)
-        project_id = _authorize(db, product, user_data)
-        _ensure_stock_seeded(db, product)
-        origin = _location(db, payload.get("id_location_from"), "id_location_from")
-        target = _location(db, payload.get("id_location_to"), "id_location_to")
-        if origin.id_location == target.id_location:
-            raise AppError(
-                "errors.inventory_transfer_same_location",
-                400,
-                {"field": "id_location_to"},
-            )
-
-        actor_id = int(user_data.get("id_user") or 0)
-        # Se bloquean las dos filas en orden de identificador: si dos traspasos
-        # cruzados corren a la vez, tomar los candados siempre en el mismo
-        # orden evita que se queden esperando uno al otro.
-        first, second = sorted([origin.id_location, target.id_location])
-        rows = {
-            location_id: _stock_row(db, product.id_product, location_id, actor_id, for_update=True)
-            for location_id in (first, second)
-        }
-        origin_stock = rows[origin.id_location]
-        target_stock = rows[target.id_location]
-
-        available = int(origin_stock.quantity or 0)
-        if available < quantity:
-            raise AppError(
-                "errors.inventory_insufficient_stock",
-                409,
-                {
-                    "available": available,
-                    "requested": quantity,
-                    "id_location": origin.id_location,
-                    "location_description": origin.location_description,
-                },
-            )
-
-        origin_stock.quantity = available - quantity
-        target_stock.quantity = int(target_stock.quantity or 0) + quantity
-        db.flush()
-        # El total del producto no cambia en un traspaso, pero se recalcula
-        # para no dar por hecho el estado previo.
-        product.cantidad = _product_total(db, product.id_product)
-
-        group = str(uuid.uuid4())
-        reference_id = str(payload.get("reference_id") or "").strip()[:100] or None
-        common = {
-            "id_product": product.id_product,
-            "id_proyect": project_id,
-            "movement_type": "transfer",
-            "balance_after": product.cantidad,
-            "reference_type": _reference_type(payload) or "transfer",
-            "reference_id": reference_id,
-            "reason": reason,
-            "created_by": actor_id,
-            "transfer_group": group,
-        }
-        outbound = _append_ledger(
-            db,
-            **common,
-            quantity_delta=-quantity,
-            id_location=origin.id_location,
-            id_location_target=target.id_location,
-            location_balance_after=origin_stock.quantity,
-            idempotency_key=outbound_key,
-        )
-        inbound = _append_ledger(
-            db,
-            **common,
-            quantity_delta=quantity,
-            id_location=target.id_location,
-            id_location_target=origin.id_location,
-            location_balance_after=target_stock.quantity,
-            idempotency_key=f"{key}:in",
-        )
-        return {"movements": [outbound.serialize(), inbound.serialize()]}, True
+        if previous is None:
+            return None
+        if previous.id_product != int(product_id):
+            raise AppError("errors.idempotency_conflict", 409,
+                           {"idempotency_key": outbound_key})
+        pair = db.scalars(
+            select(InventoryLedger)
+            .where(InventoryLedger.transfer_group == previous.transfer_group)
+            .order_by(InventoryLedger.id_inventory_ledger)
+        ).all()
+        return {"movements": [row.serialize() for row in pair]}
 
 
 def product_stock(product_id, user_data) -> dict:
