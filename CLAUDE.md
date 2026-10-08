@@ -6,6 +6,34 @@ aparte de `ARQUITECTURA_TYAKXA_TNY.md` (referencia técnica estable) y de
 sección se resuelve, se puede recortar; mientras tanto se deja completa para
 que una sesión nueva no tenga que releer el historial de chat.
 
+## Reglas de trabajo — respetar la arquitectura, no parchar (pedido de Adser, 2026-10-07)
+
+Aplican a toda sesión, humana o de IA.
+
+1. **Primero entender cómo está resuelto hoy.** Antes de escribir código,
+   buscar el mecanismo que ya existe para ese problema (servicio, registro de
+   módulos, libro de inventario, gestor de permisos, `/options`, etc.) y
+   usarlo. `ARQUITECTURA_TYAKXA_TNY.md` es la referencia.
+2. **Causa raíz, no síntoma.** Si algo "no se ve" o "no cuadra", encontrar por
+   qué antes de taparlo. Ejemplo real: "los materiales de Oscar no los ven los
+   demás" parecía un permiso del Gestor y era un selector que solo cargaba la
+   primera página.
+3. **Una sola fuente por regla.** Una regla de negocio se define en un lugar y
+   los demás la consumen; no se copia por pantalla. Ejemplo:
+   `backend/app/utils/product_description.py` es la regla de la descripción de
+   producto (el espejo en `frontend/src/utils/productDescription.js` se
+   mantiene igual y se prueba con los mismos casos). La existencia se mueve
+   por entrada, vale o ajuste, nunca escribiendo `product.cantidad`.
+4. **Nada de atajos silenciosos:** no saltarse permisos, validaciones o el
+   libro de movimientos para que algo "funcione"; no editar datos a mano en
+   un ambiente sin dejar un script con `--dry-run` y respaldo.
+5. **Si de verdad hay que cambiar la arquitectura, se habla con el equipo
+   antes** (Alan, Tanya, Ángel). Se propone, se explica el porqué y las
+   alternativas, y se espera el acuerdo; no se decide dentro de una tarea
+   puntual.
+6. **Dejar lo hecho verificable:** pruebas del comportamiento nuevo y suite
+   completa en verde antes del push.
+
 ## ESTADO ACTUAL de `initAlan` (verificado 2026-10-02) — leer esto primero
 
 `initAlan` es la rama que importa. Las bitácoras de abajo, hasta la de
