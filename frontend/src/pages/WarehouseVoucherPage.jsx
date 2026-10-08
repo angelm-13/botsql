@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import PropTypes from "prop-types";
 import VisorDeFoto from "../components/VisorDeFoto";
 import EmployeeVoucherHistory from "../components/EmployeeVoucherHistory.jsx";
@@ -270,6 +271,16 @@ export default function WarehouseVoucherPage() {
       decirError(e, "No se encontró ese vale.");
     }
   };
+
+  // Abrir un vale directo desde un enlace externo (la campanita de
+  // notificaciones): /vouchers?id=146 abre ESE vale sin que la lista tenga
+  // que haberlo cargado antes.
+  const [parametrosUrl] = useSearchParams();
+  useEffect(() => {
+    const idDesdeUrl = parametrosUrl.get("id");
+    if (idDesdeUrl) consultar(idDesdeUrl);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parametrosUrl]);
 
   /**
    * Guarda el vale, o lo deja en borrador.

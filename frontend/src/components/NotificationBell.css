@@ -109,6 +109,22 @@
   min-width: 0;
 }
 
+/* Solo las notificaciones que saben a donde llevar (vale o proyecto) se ven
+   como algo clicable -- el resto (ej. "custom") no promete una navegacion
+   que no puede cumplir. */
+.notification-item-clickable {
+  cursor: pointer;
+  border-radius: 6px;
+  margin: -6px;
+  padding: 6px;
+  transition: background-color .12s ease;
+}
+.notification-item-clickable:hover,
+.notification-item-clickable:focus-visible {
+  background-color: rgba(31, 92, 77, .08);
+}
+.notification-item-clickable:focus-visible { outline: 2px solid #1f5c4d; outline-offset: 1px; }
+
 .notification-item-title {
   font-weight: 600;
   color: #212529;

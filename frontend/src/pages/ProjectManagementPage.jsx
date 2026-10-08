@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ArrowRight, ChevronRight, Eye, HelpingHand, LayoutGrid, List, LogOut, MessageSquare, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import {
   addProyectMessage,
@@ -297,6 +298,16 @@ export default function ProjectManagementPage() {
   useEffect(() => {
     if (mode === "workshop") setView("board");
   }, [mode]);
+
+  // Abrir un proyecto directo desde un enlace externo (la campanita de
+  // notificaciones): /proyect?id=23 abre SU detalle sin que el tablero
+  // tenga que haberlo cargado o que este en la columna visible.
+  const [parametrosUrl] = useSearchParams();
+  useEffect(() => {
+    const idDesdeUrl = parametrosUrl.get("id");
+    if (idDesdeUrl) openDetail({ id_proyect: idDesdeUrl });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parametrosUrl]);
 
   function openCreate() {
     setEditingId(null);
