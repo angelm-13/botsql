@@ -18,6 +18,13 @@
 -- `create_notification` revienta en silencio (el aviso es "best effort") y la
 -- campana nunca los muestra.
 --
+-- Tambien se absorben aqui (y se borra esa migracion, que quedaba duplicando la
+-- restriccion): `warehouse_voucher_prevoucher_pending` y
+-- `warehouse_voucher_custody_confirmed`, de
+-- `20261005120000_notificaciones_de_ciclo_de_vale.sql` (rama `initAngm`, mergeada
+-- despues de que esta migracion ya existia -- la prueba
+-- `test_exactly_one_migration_owns_the_constraint` lo destapo).
+--
 -- Idempotente: DROP IF EXISTS + ADD. La lista es un SUPERCONJUNTO de todo lo que
 -- cualquier version anterior dejo escribir, asi que no choca con filas existentes.
 BEGIN;
@@ -34,7 +41,9 @@ ALTER TABLE notification ADD CONSTRAINT notification_type_check CHECK (
         'warehouse_voucher_custody_assigned',
         'warehouse_voucher_pickup_assigned',
         'warehouse_voucher_overdue',
+        'warehouse_voucher_prevoucher_pending',
         'warehouse_voucher_delivered',
+        'warehouse_voucher_custody_confirmed',
         'purchase_order_pending',
         'purchase_order_authorized',
         'purchase_order_rejected',
