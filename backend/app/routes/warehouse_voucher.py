@@ -42,6 +42,7 @@ from app.services.warehouse_voucher_service import (
     notificar_prevale_creado,
     pdf_del_historial_de_persona,
     quien_tiene_que,
+    reportar_estado_herramienta,
     reporte_por_almacen,
     reporte_por_persona,
     reporte_por_producto,
@@ -328,6 +329,18 @@ def confirmar_custodia_de_renglon(user_data, id_line):
     except Exception:
         pass
     return jsonify(resultado)
+
+
+@bp_warehouse_voucher.route("/vouchers/lines/<id_line>/report-status", methods=["POST"])
+@token_required
+@require_entity_permission("warehouse_voucher", "create")
+def reportar_estado(user_data, id_line):
+    """Reportar que una herramienta salió dañada, extraviada o destruida.
+
+    Cuerpo: `{"id_incident_type": <tipo>, "note": "..."}`
+    donde `id_incident_type` es el tipo dañado/extravío/destrucción.
+    """
+    return jsonify(reportar_estado_herramienta(id_line, _cuerpo(), user_data)), 201
 
 
 # --- la trazabilidad, por la cosa y por la persona ---

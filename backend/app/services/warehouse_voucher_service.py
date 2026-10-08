@@ -592,6 +592,29 @@ def _sincronizar_estado(db, vale: Incident) -> None:
 
 # --- operaciones ---------------------------------------------------------
 
+def _validar_herramientas_disponibles(db, validados: list[dict]) -> None:
+    """Verifica que ninguna pieza solicitada esté apartada en otro prevale.
+
+    Si una herramienta ya está comprometida ('apartada'), no puede usarse en
+    otro prevale. Esto evita que dos supervisores pidan la misma herramienta
+    simultáneamente.
+    """
+    for linea in validados:
+        id_asset = linea.get("id_inventory_asset")
+        if id_asset is None:
+            continue
+        apartada = db.scalars(select(NmIncidentProduct).where(
+            NmIncidentProduct.id_inventory_asset == id_asset,
+            NmIncidentProduct.status == "apartada",
+            NmIncidentProduct.deletion_date.is_(None),
+        ).limit(1)).first()
+        if apartada:
+            raise AppError("errors.voucher_tool_already_reserved", 409, {
+                "id_inventory_asset": id_asset,
+                "id_incident": apartada.id_incident,
+            })
+
+
 def _comprobar_existencia_del_borrador(db, validados: list[dict]) -> None:
     """Rechaza el borrador que pide mas de lo que hay en su ubicacion.
 
@@ -747,6 +770,7 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
         # nace imposible y el almacen lo descubre hasta que intenta autorizarlo.
         # El vale de verdad ya lo rechaza al sacar el material.
         if como_borrador:
+            _validar_herramientas_disponibles(db, validados)
             _comprobar_existencia_del_borrador(db, validados)
 
         # La misma pieza dos veces en un mismo vale es una captura doble: solo
@@ -797,6 +821,15 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
             db.add(renglon)
             renglones_escritos.append(renglon)
         db.flush()
+
+        # Si es un prevale, marcar las herramientas como apartada para que no se
+        # usen en otro prevale simultáneamente. Cuando el vale se autoriza, pasan
+        # a 'entregada', y cuando se devuelven, a 'devuelta'.
+        if como_borrador:
+            for renglon in renglones_escritos:
+                if renglon.id_inventory_asset is not None:
+                    renglon.status = "apartada"
+            db.flush()
 
         # Quien recoge, si no es el responsable: se deja constancia en cada
         # renglon desde que nace el vale -mismo dato que `asignar_entrega_de_
@@ -1102,6 +1135,9 @@ def devolver_renglon(id_line, payload: dict, user_data: dict) -> dict:
 
         ahora = _ahora()
         renglon.close_date = ahora
+        # Marcar herramienta como devuelta (para rastrear que completó su ciclo).
+        if renglon.id_inventory_asset is not None:
+            renglon.status = "devuelta"
         if nota:
             renglon.note = nota
         db.flush()
@@ -1850,6 +1886,10 @@ def autorizar_vale(id_incident, payload: dict, user_data: dict) -> dict:
                 _sacar_del_almacen(db, renglon, user_data,
                                    id_responsable=vale.id_user,
                                    vence=renglon.due_date, motivo=motivo)
+            # Herramientas apartadas pasan a entregada cuando se autoriza el prevale.
+            if renglon.status == "apartada" and renglon.id_inventory_asset is not None:
+                renglon.status = "entregada"
+        db.flush()
         _marcar_estado_de_producto(db, vale.id_incident_type, renglones)
 
         vale.incident_status = ABIERTO
@@ -1861,6 +1901,96 @@ def autorizar_vale(id_incident, payload: dict, user_data: dict) -> dict:
         return {
             "voucher": vale.serialize(),
             "lines": _con_existencias(db, _renglones(db, vale.id_incident)),
+        }
+
+
+def reportar_estado_herramienta(id_line, payload: dict, user_data: dict) -> dict:
+    """Reportar que una herramienta salió dañada, extraviada o destruida.
+
+    Crea un NUEVO vale (tipo dañado/extravío/destrucción) que referencia el
+    vale original. Marca la herramienta en el vale anterior con el estado
+    correspondiente.
+    """
+    actor = _actor(user_data)
+    id_tipo_nuevo = _entero(payload.get("id_incident_type"), "id_incident_type")
+
+    with transaction_context() as db:
+        # El renglon del vale original.
+        renglon_orig = db.scalars(
+            select(NmIncidentProduct).where(
+                NmIncidentProduct.id_nm_incident_product == _entero(
+                    id_line, "id_nm_incident_product"),
+                NmIncidentProduct.deletion_date.is_(None),
+            ).with_for_update()
+        ).first()
+        if renglon_orig is None:
+            raise AppError("errors.not_found", 404,
+                           {"entity": "nm_incident_product"})
+
+        # Validar que sea un renglon abierto (aún no devuelto).
+        if renglon_orig.close_date is not None:
+            raise AppError("errors.voucher_line_already_closed", 409,
+                           {"id_nm_incident_product": renglon_orig.id_nm_incident_product})
+
+        # El vale original.
+        vale_orig = _vale(db, renglon_orig.id_incident)
+
+        # Crear un NEW vale de tipo dañado/extravío/destrucción.
+        motivo = _texto(payload.get("note"), "note", largo=300, obligatorio=True)
+        nuevo_vale = Incident(
+            id_incident_type=id_tipo_nuevo,
+            id_user=vale_orig.id_user,
+            id_proyect=vale_orig.id_proyect,
+            incident_date=_ahora(),
+            incident_status=ABIERTO,
+            note=motivo,
+            created_by=actor,
+            id_incident_parent=vale_orig.id_incident,  # Referencia al vale original.
+            tracks_delivery=True,
+        )
+        db.add(nuevo_vale)
+        db.flush()
+
+        # Crear un renglon en el nuevo vale con los mismos datos.
+        nuevo_renglon = NmIncidentProduct(
+            id_incident=nuevo_vale.id_incident,
+            id_product=renglon_orig.id_product,
+            id_inventory_asset=renglon_orig.id_inventory_asset,
+            quantity=renglon_orig.quantity,
+            note=motivo,
+            direction=SALIDA,
+            id_location_from=renglon_orig.id_location_from,
+            id_location_to=renglon_orig.id_location_to,
+            start_date=_ahora(),
+            due_date=renglon_orig.due_date,
+            created_by=actor,
+            status="disponible",  # El nuevo renglon nace disponible.
+        )
+        db.add(nuevo_renglon)
+        db.flush()
+
+        # Marcar en el vale ORIGINAL que la herramienta está en el estado reportado.
+        # Opciones: "dañada", "extraviada", "destruida"
+        tipo_nuevo = db.scalars(
+            select(IncidentType).where(
+                IncidentType.id_incident_type == id_tipo_nuevo
+            )
+        ).first()
+        if tipo_nuevo and tipo_nuevo.description:
+            desc = str(tipo_nuevo.description).lower()
+            if "dañ" in desc:
+                renglon_orig.status = "dañada"
+            elif "extrav" in desc:
+                renglon_orig.status = "extraviada"
+            elif "destruc" in desc:
+                renglon_orig.status = "destruida"
+
+        db.flush()
+
+        return {
+            "original_line": renglon_orig.serialize(),
+            "new_voucher": nuevo_vale.serialize(),
+            "new_line": nuevo_renglon.serialize(),
         }
 
 
