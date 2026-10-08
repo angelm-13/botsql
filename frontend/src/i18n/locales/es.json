@@ -2721,6 +2721,7 @@
     "lot_product_mismatch": "Ese lote es de otro producto.",
     "lot_control_not_for_serialized": "Ese producto se rastrea pieza por pieza, así que ya tiene una fila por unidad: los lotes serían la misma cosa por dos caminos.",
     "lot_control_needs_its_own_endpoint": "El control por lote no se enciende desde aquí: hazlo desde el producto, para que la existencia que ya hay quede dentro de un lote de apertura.",
+    "cantidad_no_se_edita_directo": "La cantidad no se edita desde aquí: usa una entrada, salida, traspaso o ajuste de inventario, para que quede su motivo y su rastro.",
     "voucher_not_a_draft": "Este vale ya no es un borrador: solo un borrador se puede autorizar.",
     "voucher_self_authorization": "No puedes autorizar un vale que tú mismo pediste. Lo autoriza el jefe de almacén."
   },

@@ -2679,6 +2679,7 @@
     "lot_product_mismatch": "That lot belongs to another product.",
     "lot_control_not_for_serialized": "That product is tracked piece by piece, so it already has one row per unit: lots would be the same thing by two paths.",
     "lot_control_needs_its_own_endpoint": "Lot control is not switched on from here: do it from the product, so the stock already on hand lands inside an opening lot.",
+    "cantidad_no_se_edita_directo": "Quantity is not edited from here: use an inventory receipt, issue, transfer or adjustment, so it keeps its reason and its trail.",
     "voucher_not_a_draft": "This voucher is no longer a draft: only a draft can be authorised.",
     "voucher_self_authorization": "You cannot authorise a voucher you requested yourself. The warehouse chief authorises it."
   },

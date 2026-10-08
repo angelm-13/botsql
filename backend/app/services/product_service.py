@@ -146,6 +146,52 @@ class ProductService(CrudService):
         return creado
 
     @classmethod
+    def _rechazar_cantidad_directa(cls, item_id, payload: dict) -> dict:
+        """El saldo no se edita escribiendo la columna.
+
+        `product.cantidad` es, segun el propio `inventory_service.py`, la suma
+        de `inventory_stock` por ese producto -mantenida EXCLUSIVAMENTE por los
+        movimientos de inventario (entrada, salida, ajuste, traspaso), cada uno
+        con su capacidad, su motivo obligatorio y su renglon en el ledger-.
+        Antes de este guardia, `PUT /product/<id>` aceptaba `cantidad` como
+        cualquier otro campo: quien tuviera el permiso de campo (o fuera
+        superusuario, que se salta esa comprobacion por completo) podia
+        cambiar el saldo sin pasar por ninguna de esas protecciones -sin
+        capacidad de ajuste, sin motivo, sin ledger, sin tocar
+        `inventory_stock`-. Hallazgo de la auditoria de seguridad del
+        2026-10-06.
+
+        Los formularios de edicion devuelven el registro completo, `cantidad`
+        incluida; si viene igual a lo que ya hay no se esta cambiando nada y
+        se descarta en silencio -mismo trato que `lot_control`-, para no
+        romper el guardado de cualquier otra edicion del producto.
+        """
+        if 'cantidad' not in (payload or {}):
+            return payload
+        actual = None
+        with transaction_context() as session:
+            try:
+                fila = session.get(Product, int(item_id))
+            except (TypeError, ValueError):
+                fila = None
+            if fila is not None:
+                actual = int(fila.cantidad or 0)
+        try:
+            propuesta = int(payload['cantidad'])
+        except (TypeError, ValueError):
+            propuesta = None
+        if actual is not None and propuesta == actual:
+            payload = dict(payload)
+            payload.pop('cantidad')
+            return payload
+        raise AppError(
+            'errors.cantidad_no_se_edita_directo',
+            400,
+            {'field': 'cantidad',
+             'use': 'POST /product/<id_product>/inventory-movements'},
+        )
+
+    @classmethod
     def update(cls, item_id, payload: dict, user_id: int | None = None):
         payload = dict(payload or {})
         # Los formularios de edicion devuelven el registro completo, `lot_control`
@@ -162,6 +208,7 @@ class ProductService(CrudService):
                     actual = bool(fila.lot_control)
             if actual is not None and cls._como_booleano(payload['lot_control']) == actual:
                 payload.pop('lot_control')
+        payload = cls._rechazar_cantidad_directa(item_id, payload)
         return super().update(item_id, cls._rechazar_lot_control(payload),
                               user_id=user_id)
 

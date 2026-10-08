@@ -672,7 +672,18 @@ export default function ProductPage() {
           {canSeeField("cantidad") && (
           <label className="field">
             <span>{t("fields.product.cantidad")}</span>
-            <input name="cantidad" type="number" value={formData.cantidad ?? ""} onChange={handleChange} placeholder={t("fields.product.cantidad")} aria-invalid={Boolean(fieldErrors["cantidad"])} {...inputPropsForField("cantidad", validationRules["cantidad"], "number")} />
+            {editingId ? (
+              // Al editar, de solo lectura: el saldo ya no se cambia
+              // escribiendo la columna (el backend lo rechaza desde la
+              // auditoría de seguridad del 2026-10-06) -- se mueve con una
+              // entrada, salida, traspaso o ajuste de inventario, cada uno
+              // con su motivo y su rastro en el ledger.
+              <input type="number" value={formData.cantidad ?? ""} disabled readOnly
+                     title={t("fields.product.cantidad_readonly_hint",
+                       "La cantidad se mueve con una entrada, salida, traspaso o ajuste de inventario, no editando este campo.")} />
+            ) : (
+              <input name="cantidad" type="number" value={formData.cantidad ?? ""} onChange={handleChange} placeholder={t("fields.product.cantidad")} aria-invalid={Boolean(fieldErrors["cantidad"])} {...inputPropsForField("cantidad", validationRules["cantidad"], "number")} />
+            )}
             {fieldErrors["cantidad"] && <span className="field-error">{formatFieldError("cantidad")}</span>}
           </label>
           )}
