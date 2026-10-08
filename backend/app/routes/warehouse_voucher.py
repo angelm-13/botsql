@@ -21,8 +21,6 @@ from flask import Blueprint, current_app, jsonify, request, send_file
 
 from app.services.warehouse_voucher_service import (
     _sin_restriccion,
-    asignar_entrega_de_renglon,
-    confirmar_recepcion_de_renglon,
     confirmar_recibido_del_vale,
     entregar_vale,
     documento_del_historial_de_persona,
@@ -36,8 +34,6 @@ from app.services.warehouse_voucher_service import (
     crear_vale,
     historial_del_producto,
     lo_que_ha_pedido,
-    notificar_custodia_asignada,
-    notificar_custodia_confirmada,
     notificar_material_entregado,
     notificar_prevale_creado,
     pdf_del_historial_de_persona,
@@ -97,21 +93,6 @@ def require_warehouse_read(fn):
     return wrapper
 
 
-def _avisar_si_hay_pickup(cuerpo: dict, resultado: dict, user_data: dict) -> None:
-    """Si el vale nacio con `id_user_pickup` distinto del responsable, avisa
-    por la campanita -- DESPUES de que `crear_vale` ya cerro su transaccion
-    (ver `notificar_custodia_asignada`)."""
-    id_pickup = cuerpo.get("id_user_pickup")
-    if id_pickup is None:
-        return
-    try:
-        notificar_custodia_asignada(
-            resultado["voucher"]["id_incident"], id_pickup,
-            user_data.get("id_user"))
-    except Exception:
-        pass
-
-
 @bp_warehouse_voucher.route("/vouchers", methods=["POST"])
 @token_required
 @require_entity_permission("warehouse_voucher", "create")
@@ -119,7 +100,6 @@ def abrir_vale(user_data):
     """Abre un vale con sus renglones. Todo o nada."""
     cuerpo = _cuerpo()
     resultado = crear_vale(cuerpo, user_data)
-    _avisar_si_hay_pickup(cuerpo, resultado, user_data)
     # Un vale directo saca el material AL CREARSE -- no hay un "autorizar"
     # aparte, asi que el aviso de "ya puedes pasar por el" va aqui.
     try:
@@ -144,7 +124,6 @@ def abrir_prevale(user_data):
     """
     cuerpo = _cuerpo()
     resultado = crear_vale(cuerpo, user_data, como_borrador=True)
-    _avisar_si_hay_pickup(cuerpo, resultado, user_data)
     try:
         notificar_prevale_creado(
             resultado["voucher"]["id_incident"], user_data.get("id_user"))
@@ -266,8 +245,8 @@ def entregar(user_data, id_incident):
 def confirmar_recibido(user_data, id_incident):
     """El supervisor responsable confirma el recibido del vale completo.
 
-    Sin `require_entity_permission`, igual que `/confirm-custody`: es SU vale y
-    el candado vive en el servicio (solo el responsable o un administrador).
+    Sin `require_entity_permission`: es SU vale y el candado vive en el
+    servicio (solo el responsable o un administrador).
     Cuerpo: `{"ok": true|false, "note": "..."}`; la nota es obligatoria con
     `ok: false` (recibido con observaciones).
     """
@@ -289,46 +268,6 @@ def devolver_linea(user_data, id_line):
     `note`.
     """
     return jsonify(cerrar_renglon(id_line, _cuerpo(), user_data))
-
-
-@bp_warehouse_voucher.route("/vouchers/lines/<id_line>/deliver-to", methods=["POST"])
-@token_required
-def entregar_renglon_a(user_data, id_line):
-    """A que operador u otro supervisor se le entrega esta pieza.
-
-    Sin `require_entity_permission`: el candado real vive en el servicio
-    (`_puede_gestionar_custodia`) porque quien debe poder hacer esto es el
-    RESPONSABLE del vale -normalmente Supervisor, que solo tiene
-    `warehouse_prevoucher`, nunca `warehouse_voucher`- o quien opera el
-    almacen. Cuerpo: `{"id_user": <operador>}`.
-    """
-    cuerpo = _cuerpo()
-    resultado = asignar_entrega_de_renglon(id_line, cuerpo, user_data)
-    try:
-        notificar_custodia_asignada(
-            resultado["id_incident"], cuerpo.get("id_user"),
-            user_data.get("id_user"))
-    except Exception:
-        pass
-    return jsonify(resultado)
-
-
-@bp_warehouse_voucher.route("/vouchers/lines/<id_line>/confirm-custody", methods=["POST"])
-@token_required
-def confirmar_custodia_de_renglon(user_data, id_line):
-    """El supervisor dueño del vale confirma que recupero la pieza del
-    operador al que se la habia entregado.
-
-    Mismo candado que `/deliver-to`, y por el mismo motivo: es SU vale.
-    """
-    resultado = confirmar_recepcion_de_renglon(id_line, user_data)
-    try:
-        notificar_custodia_confirmada(
-            resultado["id_incident"], resultado["id_user_delivered_to"],
-            user_data.get("id_user"))
-    except Exception:
-        pass
-    return jsonify(resultado)
 
 
 @bp_warehouse_voucher.route("/vouchers/lines/<id_line>/report-status", methods=["POST"])

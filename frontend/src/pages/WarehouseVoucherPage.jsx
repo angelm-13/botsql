@@ -12,10 +12,8 @@ import {
   authorizeWarehouseVoucher,
   downloadWarehouseVoucherPdf,
   closeWarehouseVoucherLine,
-  deliverWarehouseVoucherLine,
   deliverWarehouseVoucher,
   confirmWarehouseVoucherReceipt,
-  confirmWarehouseVoucherLineCustody,
   createWarehousePrevoucher,
   createWarehouseVoucher,
   getIncidentTypeOptions,
@@ -232,14 +230,9 @@ export default function WarehouseVoucherPage() {
     // el proyecto"): no tiene sentido que Supervisor levante un prevale a
     // nombre de otra persona si el es quien va a tener que devolverlo.
     id_user: soloPuedeSolicitar ? String(actor.id_user || "") : "",
-    // Quien va a RECOGER el material, si no es el responsable de arriba --
-    // pedido de negocio, 2026-10-05: el supervisor puede quedarse con el
-    // vale a su nombre pero mandar a un operador por la herramienta. Vacio
-    // por omision: sin elegir a nadie aqui, el responsable es quien recoge,
-    // como ya pasaba antes de que existiera este campo.
-    id_user_pickup: "",
-    // Si quien recoge NO tiene usuario (chofer, mensajero): solo su nombre.
-    // Excluyente con `id_user_pickup`; lo llena el combobox.
+    // Quien va a RECOGER el material, si no es el responsable de arriba y no
+    // tiene usuario en el sistema (chofer, mensajero): solo su nombre. Vacio
+    // por omision: el responsable es quien recoge.
     pickup_name: "",
     // Vale complementario: el vale anterior, del mismo proyecto, al que este
     // agrega herramienta. Vacio por omision.
@@ -365,7 +358,6 @@ export default function WarehouseVoucherPage() {
       const creado = await alta({
         ...borrador,
         id_proyect: borrador.id_proyect || undefined,
-        id_user_pickup: borrador.id_user_pickup || undefined,
         pickup_name: borrador.pickup_name || undefined,
         id_incident_parent: borrador.id_incident_parent || undefined,
         lines: borrador.lines.map((l) => ({
@@ -418,20 +410,6 @@ export default function WarehouseVoucherPage() {
     }
   };
 
-  // A que operador u otro supervisor se le entrega esta pieza -- sin sacarla
-  // del almacen otra vez ni cerrar el prestamo, solo constancia de por donde
-  // anda mientras el vale sigue abierto.
-  const entregarA = async (idLinea, idUsuarioEntrega) => {
-    if (!idUsuarioEntrega) return;
-    setError("");
-    try {
-      const r = await deliverWarehouseVoucherLine(idLinea, { id_user: idUsuarioEntrega });
-      setConsultado(await getWarehouseVoucher(r.id_incident));
-    } catch (e) {
-      decirError(e, "No se pudo registrar la entrega.");
-    }
-  };
-
   // Almacen marca el vale COMPLETO como entregado (a quien se designo, o a
   // otra persona con su nota).
   const entregarVale = async (idVale, payload) => {
@@ -458,18 +436,6 @@ export default function WarehouseVoucherPage() {
       await cargar();
     } catch (e) {
       decirError(e, "No se pudo confirmar el recibido.");
-    }
-  };
-
-  // El supervisor dueño del vale confirma que ya recupero la pieza de manos
-  // del operador al que se la habia entregado.
-  const confirmarCustodia = async (idLinea) => {
-    setError("");
-    try {
-      const r = await confirmWarehouseVoucherLineCustody(idLinea);
-      setConsultado(await getWarehouseVoucher(r.id_incident));
-    } catch (e) {
-      decirError(e, "No se pudo confirmar la recepción.");
     }
   };
 
@@ -681,14 +647,6 @@ export default function WarehouseVoucherPage() {
                             ? `${v.open_lines} ${t("voucher.out", "fuera")}`
                             : t("voucher.all_back", "todo devuelto")}
                         </span>
-                        {/* Entregado a alguien que no es el responsable, y ese
-                            alguien todavia no se lo ha confirmado -- para que
-                            no haga falta abrir el vale para verlo. */}
-                        {v.pending_custody_lines > 0 && (
-                          <span className="vale-marca-mini pendiente-custodia">
-                            {v.pending_custody_lines} {t("voucher.pending_custody", "por confirmar")}
-                          </span>
-                        )}
                         {ENTREGA_TEXTO[v.delivery_status] && (
                           <span className={`vale-marca-mini entrega-${v.delivery_status}`}>
                             {t(`voucher.delivery_${ENTREGA_TEXTO[v.delivery_status][0]}`,
@@ -731,7 +689,6 @@ export default function WarehouseVoucherPage() {
                   onVerHistorial={(idUser, nombre) => setHistorialEmpleado({ idUser, nombre })}
                   puedeAutorizar={puedeAutorizar}
                   puedeCerrarRenglon={puedeCerrarRenglon}
-                  onEntregar={entregarA} onConfirmarCustodia={confirmarCustodia}
                   onEntregarVale={entregarVale} onConfirmarRecibido={confirmarRecibido}
                   privilegiado={privilegiado} actorIdUser={actor.id_user}
                   usuarios={usuarios}
@@ -767,7 +724,7 @@ export default function WarehouseVoucherPage() {
 /** El vale con sus renglones, y el estado derivado bien visible. */
 function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
                onVerHistorial, puedeAutorizar, puedeCerrarRenglon,
-               onEntregar, onConfirmarCustodia, onEntregarVale, onConfirmarRecibido,
+               onEntregarVale, onConfirmarRecibido,
                privilegiado, actorIdUser, usuarios,
                nombreDe, sitioDe, t }) {
   const cabecera = vale.voucher || {};
@@ -775,14 +732,6 @@ function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
   const cerrado = estado === "cerrado";
   // El borrador es el prevale: material pedido, todavia en el almacen.
   const borrador = estado === "borrador";
-  // Quien puede entregar una pieza a un operador o confirmar que la
-  // recupero: el responsable DE ESTE vale (normalmente Supervisor, que solo
-  // tiene `warehouse_prevoucher`, nunca `warehouse_voucher`) o quien opera
-  // el almacen.
-  const puedeGestionarCustodia = privilegiado
-    || Number(cabecera.id_user) === Number(actorIdUser)
-    || puedeCerrarRenglon;
-  const [entregaEnCaptura, setEntregaEnCaptura] = useState({});
 
   // Un prestamo real por renglon, no una fila de tabla: la devolucion agrega
   // un renglon de ENTRADA en vez de reescribir el de SALIDA (asi queda el
@@ -870,18 +819,6 @@ function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
                 t("voucher.open_lines", "sin devolver")}`}
           </em>
         </span>
-        {/* Entregado a alguien que no es el responsable, y ese alguien
-            todavia no se lo ha confirmado al responsable -- el aviso que
-            evita el "yo no lo recibi". */}
-        {vale.pending_custody_lines > 0 && (
-          <span className="vale-estado vale-pendiente-custodia">
-            {t("voucher.pending_custody_header", "Por confirmar")}
-            <em>
-              {vale.pending_custody_lines} {t("voucher.pending_custody_detail",
-                "renglón(es) entregado(s) a otra persona, sin confirmar")}
-            </em>
-          </span>
-        )}
       </header>
 
       <SeguimientoDeEntrega
@@ -980,59 +917,6 @@ function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
                             {t("voucher.close_line", "Marcar devuelto")}
                           </button>
                         )}
-                        {/* A quien se le entrega la pieza -- un operador o
-                            otro supervisor, distinto del responsable del
-                            vale -- y la confirmacion de que ya la recupero.
-                            Es un paso INTERMEDIO: la pieza sigue "fuera"
-                            hasta que alguien la devuelva de verdad con
-                            "Marcar devuelto". */}
-                        {puedeGestionarCustodia && !linea.id_user_delivered_to && !linea.delivered_to_name && (
-                          <span className="vale-custodia">
-                            <select
-                              value={entregaEnCaptura[linea.id_nm_incident_product] || ""}
-                              onChange={(e) => setEntregaEnCaptura({
-                                ...entregaEnCaptura,
-                                [linea.id_nm_incident_product]: e.target.value,
-                              })}
-                              aria-label={t("voucher.deliver_to", "Entregar a")}
-                            >
-                              <option value="">{t("voucher.deliver_to", "Entregar a…")}</option>
-                              {usuarios.map((u) => (
-                                <option key={u.id_user} value={u.id_user}>
-                                  {u.full_name || u.username}
-                                </option>
-                              ))}
-                            </select>
-                            <button className="button button-quiet"
-                                    disabled={!entregaEnCaptura[linea.id_nm_incident_product]}
-                                    onClick={() => onEntregar(
-                                      linea.id_nm_incident_product,
-                                      entregaEnCaptura[linea.id_nm_incident_product])}>
-                              {t("voucher.assign_delivery", "Asignar")}
-                            </button>
-                          </span>
-                        )}
-                        {(linea.id_user_delivered_to || linea.delivered_to_name) && !linea.custody_confirmed_date && (
-                          <span className="vale-custodia">
-                            <span className="muted">
-                              {t("voucher.delivered_to", "Con")}: {linea.delivered_to_name
-                                ? `${linea.delivered_to_name} (${t("voucher.external", "externo")})`
-                                : nombreDe(linea.id_user_delivered_to)}
-                            </span>
-                            {puedeGestionarCustodia && (
-                              <button className="button button-quiet"
-                                      onClick={() => onConfirmarCustodia(linea.id_nm_incident_product)}>
-                                <Check size={14} />
-                                {t("voucher.confirm_custody", "Confirmar recepción")}
-                              </button>
-                            )}
-                          </span>
-                        )}
-                        {(linea.id_user_delivered_to || linea.delivered_to_name) && linea.custody_confirmed_date && (
-                          <span className="vale-custodia muted">
-                            {t("voucher.custody_confirmed", "Recuperado de")} {linea.delivered_to_name || nombreDe(linea.id_user_delivered_to)}
-                          </span>
-                        )}
                       </>
                     ) : (
                       <span className="vale-marca devuelto">
@@ -1093,7 +977,6 @@ Vale.propTypes = {
     lines: PropTypes.array,
     open_lines: PropTypes.number,
     total_lines: PropTypes.number,
-    pending_custody_lines: PropTypes.number,
     delivery_status: PropTypes.string,
   }).isRequired,
   onCerrar: PropTypes.func.isRequired,
@@ -1101,8 +984,6 @@ Vale.propTypes = {
   imprimiendo: PropTypes.bool,
   onAmpliar: PropTypes.func,
   onVerHistorial: PropTypes.func.isRequired,
-  onEntregar: PropTypes.func.isRequired,
-  onConfirmarCustodia: PropTypes.func.isRequired,
   onEntregarVale: PropTypes.func.isRequired,
   onConfirmarRecibido: PropTypes.func.isRequired,
   privilegiado: PropTypes.bool,
@@ -1346,12 +1227,11 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
   // "Lo recogera otra persona": el caso normal es que recoja el responsable, asi
   // que el campo de quien recoge no se muestra hasta marcar esto. Desmarcarlo
   // limpia lo elegido y el vale vuelve a ser uno normal.
-  const [otraPersona, setOtraPersona] = useState(
-    Boolean(borrador.id_user_pickup || borrador.pickup_name));
+  const [otraPersona, setOtraPersona] = useState(Boolean(borrador.pickup_name));
   const alternarOtraPersona = (marcada) => {
     setOtraPersona(marcada);
     if (!marcada) {
-      setBorrador({ ...borrador, id_user_pickup: "", pickup_name: "" });
+      setBorrador({ ...borrador, pickup_name: "" });
     }
   };
   useEffect(() => {
