@@ -708,12 +708,12 @@ def _validar_permiso_tipo_vale(db, user_data: dict, id_tipo: int, como_borrador:
                            {"entity": "incident_type"})
 
         # Detectar si es préstamo por descripción normalizada.
-        desc = str(tipo.description or "").lower()
+        desc = str(tipo.incident_type_description or "").lower()
         if "préstamo" not in desc and "prestamo" not in desc:
             raise AppError("errors.permission_denied", 403, {
                 "action": "create",
                 "entity": "warehouse_voucher",
-                "incident_type_description": tipo.description,
+                "incident_type_description": tipo.incident_type_description,
                 "detail": "supervisors_can_only_create_loan_drafts",
             })
 
@@ -1870,8 +1870,8 @@ def reportar_estado_herramienta(id_line, payload: dict, user_data: dict) -> dict
                 IncidentType.id_incident_type == id_tipo_nuevo
             )
         ).first()
-        if tipo_nuevo and tipo_nuevo.description:
-            desc = str(tipo_nuevo.description).lower()
+        if tipo_nuevo and tipo_nuevo.incident_type_description:
+            desc = str(tipo_nuevo.incident_type_description).lower()
             if "dañ" in desc:
                 renglon_orig.status = "dañada"
             elif "extrav" in desc:
