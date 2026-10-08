@@ -18,6 +18,8 @@ def create_notification(
     id_user_sender: int = None,
     created_by: int = None,
     metadata: dict = None,
+    target_entity: str = None,
+    target_id: int = None,
 ) -> Notification:
     """
     Crea una notificación para un usuario.
@@ -31,6 +33,9 @@ def create_notification(
         id_user_sender: ID del usuario que genera la notificación (opcional)
         created_by: ID del usuario que registra la notificación en el sistema
         metadata: Datos adicionales en JSON (previous_status, new_status, reason, etc.)
+        target_entity / target_id: el registro al que lleva el aviso ('proyect',
+            'voucher'). Si no se dan pero hay `id_proyect`, el destino es ese
+            proyecto -- asi un productor viejo sigue llevando a algun lado.
 
     Returns:
         Notification: La notificación creada
@@ -41,6 +46,12 @@ def create_notification(
     if metadata is None:
         metadata = {}
 
+    if target_entity is None and id_proyect is not None:
+        target_entity, target_id = "proyect", id_proyect
+    if (target_entity is None) != (target_id is None):
+        # Medio destino no sirve: o es un par completo o no hay destino.
+        target_entity, target_id = None, None
+
     with transaction_context() as db:
         notification = Notification(
             id_user_recipient=id_user_recipient,
@@ -50,6 +61,8 @@ def create_notification(
             title=title,
             message=message,
             metadata_data=metadata,
+            target_entity=target_entity,
+            target_id=target_id,
             created_by=created_by,
         )
         db.add(notification)

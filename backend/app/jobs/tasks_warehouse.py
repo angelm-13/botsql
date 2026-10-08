@@ -86,6 +86,7 @@ def notify_overdue_vouchers() -> dict:
                     "id_incident": item["id_incident"],
                     "id_nm_incident_product": item["id_nm_incident_product"],
                 },
+                target_entity="voucher", target_id=item["id_incident"],
                 created_by=item["id_responsable"],
             )
         except Exception:

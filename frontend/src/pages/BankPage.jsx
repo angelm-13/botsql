@@ -8,6 +8,7 @@ import PageHeader from "../components/PageHeader.jsx";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 import BankStatementsPanel from "../components/BankStatementsPanel.jsx";
+import { CAMPOS_DE_AUDITORIA } from "../utils/camposDeAuditoria";
 
 const emptyForm = { bank_name: "" };
 const validationRules = allValidationRules["bank"] || {};
@@ -171,7 +172,7 @@ export default function BankPage() {
   function canSeeField(fieldName) {
     if (isSuperUser) return true;
     if (!permissionReady) return false;
-    return visibleFieldNames.has(fieldName);
+    return CAMPOS_DE_AUDITORIA.has(fieldName) || visibleFieldNames.has(fieldName);
   }
 
 

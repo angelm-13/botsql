@@ -35,6 +35,8 @@ metadata:
     # Sin cert-manager.io/cluster-issuer aquí a propósito: el Ingress de
     # arriba ya pide el certificado para este dominio; pedirlo dos veces
     # duplicaría la solicitud a Let's Encrypt.
+    # Subidas de documentos hasta 12 MB (default de nginx: 1 MB); la app limita a 10 MB.
+    nginx.ingress.kubernetes.io/proxy-body-size: "12m"
     nginx.ingress.kubernetes.io/use-regex: "true"
     nginx.ingress.kubernetes.io/rewrite-target: /$2
 spec:

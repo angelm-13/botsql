@@ -88,6 +88,9 @@ class TestCobertura(unittest.TestCase):
             # Indicadores: catalogo de KPIs predefinidos, sin pantalla propia
             # en el menu -vive dentro del Home/Dashboard actual.
             "kpis",
+            # La orden de compra y su evidencia, aparte de inventario para que
+            # Compras pueda capturar ordenes y solo consultar el almacen.
+            "compras",
         }
 
         self.assertEqual(esperados, set(registry.MODULOS_DE_NEGOCIO))
@@ -156,7 +159,11 @@ class TestAlmacenesSeparados(unittest.TestCase):
         inventario Y logistica, no solo el suyo."""
         almacenista = next(r for r in registry.ROLES if r.nombre == "Almacenista")
 
-        self.assertEqual({"inventario", "logistica", "configuracion"}, set(almacenista.modulos))
+        # `compras` solo en CONSULTA: ve las ordenes de compra para saber que va a
+        # llegar y no las escribe.
+        self.assertEqual({"inventario", "logistica", "compras", "configuracion"},
+                         set(almacenista.modulos))
+        self.assertEqual(registry.CONSULTA, almacenista.modulos["compras"])
         for ajeno in ("restaurante", "pos"):
             with self.subTest(modulo=ajeno):
                 self.assertNotIn(ajeno, almacenista.modulos)

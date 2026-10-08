@@ -23,8 +23,11 @@ from app.services.warehouse_voucher_service import (
     _sin_restriccion,
     asignar_entrega_de_renglon,
     confirmar_recepcion_de_renglon,
+    confirmar_recibido_del_vale,
+    entregar_vale,
     documento_del_historial_de_persona,
     folio_del_vale,
+    notificar_entrega_registrada,
     pdf_del_vale,
     autorizar_vale,
     buscar_vales,
@@ -169,6 +172,8 @@ def listar_vales(user_data):
         solo_con_pendientes=str(
             request.args.get("only_open") or "").strip().lower()
         in ("1", "true", "si", "yes"),
+        # Las colas de entrega: por_autorizar, por_entregar, por_confirmar.
+        entrega=request.args.get("delivery"),
         pagina=request.args.get("page"),
         por_pagina=request.args.get("per_page"),
     ))
@@ -236,6 +241,36 @@ def autorizar(user_data, id_incident):
     except Exception:
         pass
     return jsonify(resultado), 200
+
+
+@bp_warehouse_voucher.route("/vouchers/<id_incident>/deliver", methods=["POST"])
+@token_required
+@require_entity_permission("warehouse_voucher", "update")
+def entregar(user_data, id_incident):
+    """Almacen marca "entregado a X" -- acto aparte de autorizar.
+
+    Cuerpo: `{"id_user": <usuario>}` o `{"name": "<externo>"}` (o ninguno: se
+    entrega a quien se designo al pedirlo), y `note`, obligatoria cuando recibe
+    alguien distinto del designado.
+    """
+    resultado = entregar_vale(id_incident, _cuerpo(), user_data)
+    # Despues de cerrar la transaccion de la entrega, nunca dentro.
+    notificar_entrega_registrada(
+        resultado["voucher"]["id_incident"], user_data.get("id_user"))
+    return jsonify(resultado), 200
+
+
+@bp_warehouse_voucher.route("/vouchers/<id_incident>/confirm-receipt", methods=["POST"])
+@token_required
+def confirmar_recibido(user_data, id_incident):
+    """El supervisor responsable confirma el recibido del vale completo.
+
+    Sin `require_entity_permission`, igual que `/confirm-custody`: es SU vale y
+    el candado vive en el servicio (solo el responsable o un administrador).
+    Cuerpo: `{"ok": true|false, "note": "..."}`; la nota es obligatoria con
+    `ok: false` (recibido con observaciones).
+    """
+    return jsonify(confirmar_recibido_del_vale(id_incident, _cuerpo(), user_data)), 200
 
 
 @bp_warehouse_voucher.route("/vouchers/lines/<id_line>/return", methods=["POST"])

@@ -21,7 +21,10 @@ class TestLaCantidadNoSeEditaDirecto(BackendTestCase):
     ajuste, traspaso), cada uno con su capacidad, su motivo obligatorio y
     su renglon en el ledger. `PUT /product/<id>` no puede ser un segundo
     camino que cambie el saldo sin ninguna de esas protecciones -- hallazgo
-    de la auditoria de seguridad del 2026-10-06.
+    de la auditoria de seguridad del 2026-10-06, encontrado y corregido por
+    partida doble (esta rama y `initAlan`, de forma independiente); se
+    quedo el guardia de `initAlan` (`_rechazar_cantidad_a_mano`), por ser la
+    rama compartida.
     """
 
     def _producto(self, cantidad=5):
@@ -34,7 +37,7 @@ class TestLaCantidadNoSeEditaDirecto(BackendTestCase):
         with self.assertRaises(AppError) as contexto:
             ProductService.update(creado['id_product'], {'cantidad': 999})
 
-        self.assertEqual('errors.cantidad_no_se_edita_directo', contexto.exception.message_key)
+        self.assertEqual('errors.product_quantity_via_movements', contexto.exception.message_key)
         # Y el rechazo no deja el saldo a medias: sigue como nacio.
         actualizado = ProductService.list(
             page=1, per_page=1, filters={'id_product': creado['id_product']}, sort=None)

@@ -31,6 +31,10 @@ class Notification(Base):
     is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default='false', index=True)
     read_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     metadata_data: Mapped[dict] = mapped_column('metadata', JSON, nullable=False, default={}, server_default='{}')
+    # A que registro lleva el aviso ('proyect', 'voucher'): lo que la campana
+    # usa para abrirlo con un clic. Nulo = el aviso no lleva a ningun lado.
+    target_entity: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    target_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_by: Mapped[int] = mapped_column(Integer, ForeignKey('user.id_user'), nullable=False)
     creation_date: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
     last_update_date: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
@@ -48,6 +52,8 @@ class Notification(Base):
             'is_read': to_json_value(self.is_read),
             'read_date': to_json_value(self.read_date),
             'metadata': to_json_value(self.metadata_data),
+            'target_entity': to_json_value(self.target_entity),
+            'target_id': to_json_value(self.target_id),
             'created_by': to_json_value(self.created_by),
             'creation_date': to_json_value(self.creation_date),
             'last_update_date': to_json_value(self.last_update_date),

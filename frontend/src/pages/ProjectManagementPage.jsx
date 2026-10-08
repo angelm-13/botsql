@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { idAAbrir } from "../notifications/destino";
 import { ArrowRight, ChevronRight, Eye, HelpingHand, LayoutGrid, List, LogOut, MessageSquare, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import {
   addProyectMessage,
@@ -21,6 +22,7 @@ import {
   updateProyect,
 } from "../api";
 import { useI18n } from "../i18n";
+import MaterialNecesario from "../components/MaterialNecesario.jsx";
 import ProyectoExpediente from "../components/ProyectoExpediente.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 
@@ -209,6 +211,31 @@ export default function ProjectManagementPage() {
   const [transition, setTransition] = useState(null);
   const [detail, setDetail] = useState(null);
   const [message, setMessage] = useState("");
+  // Llegar desde una notificacion: `/proyect?abrir=<id>` abre ese proyecto. El
+  // parametro se consume una vez (se limpia) para que recargar no lo reabra.
+  const [parametros, setParametros] = useSearchParams();
+  const idPorAbrir = idAAbrir(parametros);
+  // Su PROPIO estado: `loadData` limpia `error` al arrancar y, segun quien gane
+  // la carrera, borraba este mensaje antes de que se leyera.
+  const [noSeAbrio, setNoSeAbrio] = useState("");
+  useEffect(() => {
+    if (!idPorAbrir) return;
+    // Limpiar el parametro vuelve a ejecutar este efecto (idPorAbrir pasa a
+    // null): por eso aqui NO hay guardia de "sigue vigente" -- cancelaria el
+    // `setDetail` de la peticion que acaba de salir.
+    setParametros({}, { replace: true });
+    setNoSeAbrio("");
+    (async () => {
+      try {
+        setDetail(await getProyect(idPorAbrir));
+      } catch {
+        // 403/404: el aviso apunta a un proyecto que ya no existe o que este
+        // usuario no puede ver. Se dice, no se deja la pantalla en blanco.
+        setNoSeAbrio(t("project_management.error_open_notification"));
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idPorAbrir]);
   // Las maquinas de estado, tal como las valida el servidor.
   const [catalog, setCatalog] = useState(null);
   // La tarea abierta desde el expediente, con su bitacora. Aqui se cierra el
@@ -298,16 +325,6 @@ export default function ProjectManagementPage() {
   useEffect(() => {
     if (mode === "workshop") setView("board");
   }, [mode]);
-
-  // Abrir un proyecto directo desde un enlace externo (la campanita de
-  // notificaciones): /proyect?id=23 abre SU detalle sin que el tablero
-  // tenga que haberlo cargado o que este en la columna visible.
-  const [parametrosUrl] = useSearchParams();
-  useEffect(() => {
-    const idDesdeUrl = parametrosUrl.get("id");
-    if (idDesdeUrl) openDetail({ id_proyect: idDesdeUrl });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [parametrosUrl]);
 
   function openCreate() {
     setEditingId(null);
@@ -601,6 +618,7 @@ export default function ProjectManagementPage() {
     </form>
 
     {error && <div className="alert error">{t(error, error)}</div>}
+    {noSeAbrio && <div className="alert error">{noSeAbrio}</div>}
     {loading && <div className="alert">{projectText("loading")}</div>}
     {!loading && !filtered.length && <div className="empty"><strong>{projectText("empty")}</strong><p>{projectText("empty_body")}</p></div>}
 
@@ -614,7 +632,7 @@ export default function ProjectManagementPage() {
 
     {transition && <div className="project-modal-backdrop" role="presentation"><form className="project-modal compact" onSubmit={applyTransition}><header><div><p className="eyebrow">{projectText("status_change")}</p><h3>{statusLabel(transition.target)}</h3></div><button className="icon-button" type="button" onClick={() => setTransition(null)} aria-label={projectText("close")}><X size={18} /></button></header><p>{transition.project.title || `${projectText("project")} #${transition.project.id_proyect}`}</p>{needsReason(transition.target) && <label className="field"><span>{projectText("reason")}</span><textarea required rows={3} value={transition.reason} onChange={(event) => setTransition({ ...transition, reason: event.target.value })} /></label>}<label className="field"><span>{projectText(transitionNoteKey(transition))}</span><textarea rows={3} value={transition.content} onChange={(event) => setTransition({ ...transition, content: event.target.value })} /></label>{transition.target === "blocked" && <label className="field"><span>{projectText("review_date")}</span><input type="datetime-local" value={transition.reviewDate} onChange={(event) => setTransition({ ...transition, reviewDate: event.target.value })} /></label>}<footer><button className="button" type="button" onClick={() => setTransition(null)}>{projectText("cancel")}</button><button className="button primary" disabled={busyId !== null}>{projectText("confirm_change")}</button></footer></form></div>}
 
-    {detail && <div className="project-modal-backdrop" role="presentation"><aside className="project-detail-panel"><header><div><p className="eyebrow">{projectText("record")} #{detail.id_proyect}</p><h3>{detail.title || projectText("project")}</h3></div><button className="icon-button" type="button" onClick={() => setDetail(null)} aria-label={projectText("close")}><X size={18} /></button></header><span className={`project-status status-${detail.proyect_status}`}>{statusLabel(detail.proyect_status)}</span>{!detail.requires_maquila && <span className="project-status no-maquila">{projectText("no_maquila_badge")}</span>}<p>{detail.proyect_description}</p><ProyectoExpediente detalle={detail} catalogo={catalog} modo={mode} onCambio={async () => setDetail(await getProyect(detail.id_proyect))} /><h4>{projectText("tasks")}</h4>{detail.tasks?.length ? detail.tasks.map((task) => <button className="project-detail-row project-task-row" type="button" key={task.id_task} onClick={() => openTask(task)} disabled={busyId !== null}><strong>{taskLabel(task)}</strong><span className="project-task-row-end"><span className={`project-status status-${task.task_status || "unknown"}`}>{taskStatusLabel(task.task_status)}</span><ChevronRight size={16} /></span></button>) : <p className="muted">{projectText("no_tasks")}</p>}<h4>{projectText("history")}</h4><div className="project-timeline">{detail.events?.slice().reverse().map((event) => <div key={event.id_proyect_event}><span>{new Date(event.creation_date).toLocaleString(document.documentElement.lang || "es")}</span><strong>{eventTitle(event)}</strong>{(event.reason || event.content) && <p>{event.reason || event.content}</p>}</div>)}</div><form className="project-message" onSubmit={sendMessage}><label className="field"><span>{projectText("new_message")}</span><textarea rows={2} value={message} onChange={(event) => setMessage(event.target.value)} placeholder={projectText("message_placeholder")} /></label><button className="button primary" disabled={!message.trim() || busyId !== null}><MessageSquare size={16} />{projectText("publish")}</button></form></aside></div>}
+    {detail && <div className="project-modal-backdrop" role="presentation"><aside className="project-detail-panel"><header><div><p className="eyebrow">{projectText("record")} #{detail.id_proyect}</p><h3>{detail.title || projectText("project")}</h3></div><button className="icon-button" type="button" onClick={() => setDetail(null)} aria-label={projectText("close")}><X size={18} /></button></header><span className={`project-status status-${detail.proyect_status}`}>{statusLabel(detail.proyect_status)}</span>{!detail.requires_maquila && <span className="project-status no-maquila">{projectText("no_maquila_badge")}</span>}<p>{detail.proyect_description}</p><ProyectoExpediente detalle={detail} catalogo={catalog} modo={mode} onCambio={async () => setDetail(await getProyect(detail.id_proyect))} /><MaterialNecesario idProyect={detail.id_proyect} estatus={detail.proyect_status} /><h4>{projectText("tasks")}</h4>{detail.tasks?.length ? detail.tasks.map((task) => <button className="project-detail-row project-task-row" type="button" key={task.id_task} onClick={() => openTask(task)} disabled={busyId !== null}><strong>{taskLabel(task)}</strong><span className="project-task-row-end"><span className={`project-status status-${task.task_status || "unknown"}`}>{taskStatusLabel(task.task_status)}</span><ChevronRight size={16} /></span></button>) : <p className="muted">{projectText("no_tasks")}</p>}<h4>{projectText("history")}</h4><div className="project-timeline">{detail.events?.slice().reverse().map((event) => <div key={event.id_proyect_event}><span>{new Date(event.creation_date).toLocaleString(document.documentElement.lang || "es")}</span><strong>{eventTitle(event)}</strong>{(event.reason || event.content) && <p>{event.reason || event.content}</p>}</div>)}</div><form className="project-message" onSubmit={sendMessage}><label className="field"><span>{projectText("new_message")}</span><textarea rows={2} value={message} onChange={(event) => setMessage(event.target.value)} placeholder={projectText("message_placeholder")} /></label><button className="button primary" disabled={!message.trim() || busyId !== null}><MessageSquare size={16} />{projectText("publish")}</button></form></aside></div>}
 
     {taskDetail && <div className="project-modal-backdrop" role="presentation"><aside className="project-detail-panel"><header><div><p className="eyebrow">{projectText("task")} #{taskDetail.task.id_task}</p><h3>{taskLabel(taskDetail.task)}</h3></div><button className="icon-button" type="button" onClick={closeTask} aria-label={projectText("close")}><X size={18} /></button></header>
       <div className="project-task-status"><span className={`project-status status-${taskDetail.task.task_status || "unknown"}`}>{taskStatusLabel(taskDetail.task.task_status)}</span>{canChangeTaskStatus && taskActionTargets(taskDetail.task).length > 0 && <label className="project-transition"><ArrowRight size={15} /><select value="" disabled={busyId !== null} onChange={(event) => event.target.value && setTaskTransition({ task: taskDetail.task, target: event.target.value, reason: "", content: "" })} aria-label={projectText("change_status")}><option value="">{projectText("change_status")}</option>{taskActionTargets(taskDetail.task).map((target) => <option value={target} key={target}>{taskStatusLabel(target)}</option>)}</select></label>}</div>

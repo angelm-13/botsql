@@ -9,6 +9,7 @@ from app.models.proyect import Proyect
 from app.models.session import transaction_context
 from app.models.task import Task
 from app.models.task_note import TaskNote
+from app.models.user import User
 from tests.conftest import BackendTestCase
 from tests.model_factory import build_model
 
@@ -130,6 +131,48 @@ class TestProjectTaskScopeApi(BackendTestCase):
             ).all()
             self.assertEqual(1, len(eventos))
             self.assertEqual("Avance de hoy", eventos[0].content)
+
+    def test_task_list_carries_the_reason_only_while_blocked(self):
+        admin = {"id_user": 11, "id_permission": 101, "is_superuser": True}
+        with transaction_context() as db:
+            task = db.get(Task, self.own_task_id)
+            task.task_status = "pendiente"
+        for target in ("en_proceso", "bloqueada"):
+            response = self._request(admin, "POST", f"/task/{self.own_task_id}/transition",
+                                     {"status": target, "reason": "sin acceso al repo"})
+            self.assertEqual(response.status_code, 200, self.json(response))
+        item = self.json(self._request(admin, "GET", "/task/?page=1&per_page=20"))["items"][0]
+        self.assertEqual(item["status_reason"], "sin acceso al repo")
+
+        response = self._request(admin, "POST", f"/task/{self.own_task_id}/transition", {"status": "en_proceso"})
+        self.assertIsNone(self.json(response)["status_reason"])
+
+    def test_create_keeps_the_actor_as_owner_unless_another_is_sent(self):
+        admin = {"id_user": 11, "id_permission": 101, "is_superuser": True}
+        with transaction_context() as db:
+            project_id = db.query(Proyect).filter(Proyect.leader == 11).first().id_proyect
+            # `owner` se valida contra usuarios reales (TaskService._existing_user).
+            for id_user in (11, 12):
+                existing = db.get(User, id_user)
+                if existing is not None:
+                    existing.deletion_date = None
+                else:
+                    db.add(User(id_user=id_user, full_name=f"Usuario {id_user}", username=f"tester{id_user}",
+                                id_permission=1, id_proyect=project_id, id_status=1,
+                                supervisor=id_user, created_by=id_user))
+        base = {"task_description": "t", "id_proyect": project_id}
+        mine = self._request(admin, "POST", "/task/", base)
+        self.assertEqual(mine.status_code, 201, self.json(mine))
+        self.assertEqual(self.json(mine)["owner"], 11)
+        other = self._request(admin, "POST", "/task/", {**base, "owner": 12})
+        self.assertEqual(other.status_code, 201, self.json(other))
+        self.assertEqual(self.json(other)["owner"], 12)
+
+        # Sin permiso de escritura sobre `owner`, lo enviado se ignora.
+        limited = self._request(self.owner, "POST", "/task/", {**base, "owner": 12})
+        self.assertNotEqual(limited.status_code, 500)
+        if limited.status_code == 201:
+            self.assertEqual(self.json(limited)["owner"], 11)
 
 
 if __name__ == "__main__":

@@ -3,24 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getNotifications, getUnreadCount, markNotificationAsRead } from "../api";
 import { useI18n } from "../i18n";
+import { destinoDeNotificacion } from "../notifications/destino";
 import "./NotificationBell.css";
-
-// A donde lleva cada tipo de notificacion, si a alguna parte. El vale guarda
-// su id en `metadata.id_incident` (vease warehouse_voucher_service.py,
-// notificar_*); el proyecto no necesita metadata porque `notification.
-// id_proyect` ya es una columna propia de la tabla. Los tipos que no
-// aparecen aqui (custom, y los que quedaron sin usarse de verdad como
-// material_confirmed) simplemente no navegan a ningun lado al hacer clic.
-function destinoDeNotificacion(notif) {
-  if (notif.notification_type === "project_status_change" && notif.id_proyect) {
-    return `/proyect?id=${notif.id_proyect}`;
-  }
-  if (String(notif.notification_type || "").startsWith("warehouse_voucher_")
-      && notif.metadata?.id_incident) {
-    return `/vouchers?id=${notif.metadata.id_incident}`;
-  }
-  return null;
-}
 
 export default function NotificationBell() {
   const { t } = useI18n();
@@ -86,6 +70,14 @@ export default function NotificationBell() {
     }
   }
 
+  // Abrir el registro del aviso NO lo marca leido: "Enterado" es un acto
+  // explicito y aparte, a proposito -- quien abre el vale sigue teniendo el
+  // aviso en la lista hasta que dice que se enteró.
+  function handleOpen(destino) {
+    setIsOpen(false);
+    navigate(destino);
+  }
+
   async function handleAcknowledge(id) {
     try {
       await markNotificationAsRead(id);
@@ -96,18 +88,6 @@ export default function NotificationBell() {
     } catch (err) {
       console.error("Error al confirmar notificación como enterado:", err);
     }
-  }
-
-  // Clic sobre el cuerpo de la notificacion (no sobre "Enterado"): lleva al
-  // vale/proyecto que la origino y de paso la marca leida -- ya se actuo
-  // sobre ella, no hace falta que el usuario encima la cierre a mano.
-  function handleOpen(notif) {
-    const destino = destinoDeNotificacion(notif);
-    if (!destino) return;
-    setIsOpen(false);
-    navigate(destino);
-    markNotificationAsRead(notif.id_notification).then(loadUnreadCount).catch(() => {});
-    setNotifications((prev) => prev.filter((n) => n.id_notification !== notif.id_notification));
   }
 
   return (
@@ -162,42 +142,49 @@ export default function NotificationBell() {
                 {notifications.map((notif) => {
                   const destino = destinoDeNotificacion(notif);
                   return (
-                    <div key={notif.id_notification} className="notification-item unread">
-                      <div
-                        className={`notification-item-content ${destino ? "notification-item-clickable" : ""}`}
-                        role={destino ? "button" : undefined}
-                        tabIndex={destino ? 0 : undefined}
-                        onClick={destino ? () => handleOpen(notif) : undefined}
-                        onKeyDown={destino ? (e) => {
-                          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleOpen(notif); }
-                        } : undefined}
-                        title={destino
-                          ? t("common.notification_open_hint", "Clic para abrirlo")
-                          : undefined}
-                      >
-                        <div className="notification-item-title">
-                          {notif.title}
-                        </div>
-                        {notif.message && (
-                          <div className="notification-item-message">
-                            {notif.message}
-                          </div>
-                        )}
-                        <div className="notification-item-time">
-                          {new Date(notif.creation_date).toLocaleString()}
-                        </div>
-                        <button
-                          className="notification-item-acknowledge"
-                          onClick={(e) => { e.stopPropagation(); handleAcknowledge(notif.id_notification); }}
-                          title={t(
-                            "common.acknowledge_hint",
-                            "Confirmar que la leíste; es la única forma de quitarla de esta lista"
-                          )}
-                        >
-                          {t("common.acknowledge", "Enterado")}
-                        </button>
+                  <div key={notif.id_notification} className="notification-item unread">
+                    <div
+                      className={`notification-item-content${destino ? " has-destino" : ""}`}
+                      {...(destino ? {
+                        role: "link",
+                        tabIndex: 0,
+                        title: t("common.notification_open", "Abrir"),
+                        onClick: () => handleOpen(destino),
+                        onKeyDown: (e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            handleOpen(destino);
+                          }
+                        },
+                      } : {})}
+                    >
+                      <div className="notification-item-title">
+                        {notif.title}
                       </div>
+                      {notif.message && (
+                        <div className="notification-item-message">
+                          {notif.message}
+                        </div>
+                      )}
+                      <div className="notification-item-time">
+                        {new Date(notif.creation_date).toLocaleString()}
+                      </div>
+                      <button
+                        className="notification-item-acknowledge"
+                        onClick={(e) => {
+                          // El clic en "Enterado" no debe ademas abrir el registro.
+                          e.stopPropagation();
+                          handleAcknowledge(notif.id_notification);
+                        }}
+                        title={t(
+                          "common.acknowledge_hint",
+                          "Confirmar que la leíste; es la única forma de quitarla de esta lista"
+                        )}
+                      >
+                        {t("common.acknowledge", "Enterado")}
+                      </button>
                     </div>
+                  </div>
                   );
                 })}
               </div>

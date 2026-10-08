@@ -7,6 +7,7 @@ import Pagination from "../components/Pagination.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
+import { CAMPOS_DE_AUDITORIA } from "../utils/camposDeAuditoria";
 
 const emptyForm = { id_location_type: "", location_description: "", id_location_reference: "" };
 const validationRules = allValidationRules["location"] || {};
@@ -170,7 +171,7 @@ export default function LocationPage() {
   function canSeeField(fieldName) {
     if (isSuperUser) return true;
     if (!permissionReady) return false;
-    return visibleFieldNames.has(fieldName);
+    return CAMPOS_DE_AUDITORIA.has(fieldName) || visibleFieldNames.has(fieldName);
   }
 
 

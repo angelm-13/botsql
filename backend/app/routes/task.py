@@ -5,14 +5,17 @@ from app.models.session import transaction_context
 from app.models.task import Task
 from app.models.task_note import TaskNote
 from app.services.project_management_service import require_project_access, require_project_taken_by_actor, require_task_access, visible_project_ids
-from app.services.task_service import TaskService, add_task_note, transition_task
+from app.services.task_service import TaskService, add_task_note, transition_task, with_status_reasons
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
+from app.utils.field_access import COLUMNAS_DE_AUDITORIA
 
 bp_task = Blueprint('task', __name__, url_prefix='/task')
 ALLOWED_FIELDS = ['id_task', 'task_code', 'start_date', 'duration', 'type', 'owner', 'dependency', 'validation', 'task_description', 'estimated_effort', 'task_status', 'fase', 'priority', 'title', 'id_proyect', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
 
-TECHNICAL_RESPONSE_FIELDS = {'id_task'}
+# `status_reason` no es columna: se deriva del ultimo cambio de estatus y viaja
+# con `task_status`, asi que no tiene permiso de campo propio.
+TECHNICAL_RESPONSE_FIELDS = {'id_task', 'status_reason'}
 FIELD_READ_BIT = 2
 # Escribir un campo exige el bit de alta o el de actualizacion, no el de
 # lectura. Sin esta distincion no se podia conceder "ver pero no editar".
@@ -37,7 +40,7 @@ def _safe_int_value(value):
 def _field_sets_for_actor(user_data: dict) -> tuple[set[str], set[str]]:
     """Campos que el actor puede ver y campos que puede escribir."""
     if _actor_has_unrestricted_field_access(user_data):
-        return set(ALLOWED_FIELDS), set(ALLOWED_FIELDS)
+        return set(ALLOWED_FIELDS) | TECHNICAL_RESPONSE_FIELDS, set(ALLOWED_FIELDS)
 
     permission_id = _safe_int_value(user_data.get('id_permission') or user_data.get('permission_id'))
     if not permission_id:
@@ -72,7 +75,7 @@ def _field_sets_for_actor(user_data: dict) -> tuple[set[str], set[str]]:
     # La llave primaria puede viajar en la respuesta para navegacion interna,
     # acciones de fila y rutas REST, aunque el frontend no la pinte si no fue
     # marcada como visible en el gestor.
-    return visible | set(TECHNICAL_RESPONSE_FIELDS), writable
+    return visible | set(TECHNICAL_RESPONSE_FIELDS) | COLUMNAS_DE_AUDITORIA, writable
 
 
 def _visible_response_fields_for_actor(user_data: dict) -> set[str]:
@@ -127,7 +130,9 @@ def list_task(user_data):
     filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort', 'q'} and k in ALLOWED_FIELDS}
     project_ids = visible_project_ids(user_data)
     if project_ids is None:
-        return _jsonify_projected_list(user_data, TaskService.list(page=page, per_page=per_page, filters=filters, sort=sort, q=request.args.get('q')))
+        payload = TaskService.list(page=page, per_page=per_page, filters=filters, sort=sort, q=request.args.get('q'))
+        with_status_reasons(payload.get('items', []))
+        return _jsonify_projected_list(user_data, payload)
     with transaction_context() as db:
         query = db.query(Task).filter(Task.deletion_date.is_(None), Task.id_proyect.in_(project_ids))
         for key, value in filters.items():
@@ -136,6 +141,7 @@ def list_task(user_data):
         total = query.with_entities(func.count()).scalar() or 0
         items = query.order_by(Task.id_task).offset((page - 1) * per_page).limit(per_page).all()
         payload = {'items': [item.serialize() for item in items], 'total': total, 'page': page, 'per_page': per_page, 'pages': (total + per_page - 1) // per_page}
+    with_status_reasons(payload['items'])
     return _jsonify_projected_list(user_data, payload)
 
 
@@ -157,14 +163,15 @@ def create_task(user_data):
     # (pedido de negocio explicito, 2026-09-28): ver
     # `require_project_taken_by_actor`.
     require_project_taken_by_actor(payload.get('id_proyect'), user_data)
-    # El responsable es siempre quien crea la tarea -- Jefe de taller es el
-    # unico que da de alta, igual que `leader` en proyectos (ver
-    # project_management_service.create_project). El formulario reducido ya
-    # no captura owner/dependency/validation, y las dos ultimas son NOT NULL
-    # en la base sin uso real como distincion de usuarios (ver docstring de
-    # task_service.py), asi que se completan aqui con un valor inerte.
+    # El responsable es quien crea la tarea, salvo que el actor tenga permiso de
+    # escritura sobre `owner` y mande otro (`_filter_payload_for_actor` quita
+    # el campo a quien no lo tiene, asi que su flujo no cambia). `dependency`
+    # y `validation` son NOT NULL en la base sin uso real como distincion de
+    # usuarios (ver docstring de task_service.py), asi que se completan aqui
+    # con un valor inerte.
     actor_id = user_data.get('id_user')
-    payload['owner'] = actor_id
+    if payload.get('owner') in (None, ''):
+        payload['owner'] = actor_id
     payload.setdefault('dependency', 0)
     payload.setdefault('validation', actor_id)
     return _jsonify_projected_record(user_data, TaskService.create(payload, user_id=actor_id), status=201)

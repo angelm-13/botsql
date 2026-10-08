@@ -14,6 +14,7 @@ from app.utils.errors import AppError
 import os
 from pathlib import Path
 from werkzeug.utils import secure_filename
+from app.utils.field_access import COLUMNAS_DE_AUDITORIA
 
 
 bp_product = Blueprint('product', __name__, url_prefix='/product')
@@ -79,7 +80,7 @@ def _field_sets_for_actor(user_data: dict) -> tuple[set[str], set[str]]:
     # La llave primaria puede viajar en la respuesta para navegacion interna,
     # acciones de fila y rutas REST, aunque el frontend no la pinte si no fue
     # marcada como visible en el gestor.
-    return visible | set(TECHNICAL_RESPONSE_FIELDS), writable
+    return visible | set(TECHNICAL_RESPONSE_FIELDS) | COLUMNAS_DE_AUDITORIA, writable
 
 
 def _visible_response_fields_for_actor(user_data: dict) -> set[str]:
@@ -189,6 +190,7 @@ def get_product(user_data, id_product):
 @require_entity_permission('product', 'create')
 def create_product(user_data):
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
+    ProductService.exigir_descripcion_en_oracion(payload)
     # Solo se comprueba el alcance cuando la captura NOMBRA una factura. Sin
     # factura, el servicio resuelve la de captura directa del propio proyecto del
     # actor, asi que no hay nada ajeno que validar.
@@ -203,6 +205,7 @@ def create_product(user_data):
 def update_product(user_data, id_product):
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
     ProductService.require_record_scope(id_product, user_data)
+    ProductService.exigir_descripcion_en_oracion(payload, item_id=id_product)
     if 'id_invoice' in payload:
         ProductService.require_invoice_scope(payload.get('id_invoice'), user_data)
     return _jsonify_projected_record(user_data, ProductService.update(id_product, payload, user_id=user_data.get('id_user')))

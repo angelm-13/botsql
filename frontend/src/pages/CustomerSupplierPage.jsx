@@ -8,6 +8,7 @@ import { inputPropsForField, validateForm, validationRules as allValidationRules
 import PageHeader from "../components/PageHeader.jsx";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import CustomerContactsPanel from "../components/CustomerContactsPanel.jsx";
+import { CAMPOS_DE_AUDITORIA } from "../utils/camposDeAuditoria";
 
 /* eslint-disable react/prop-types */
 
@@ -194,7 +195,7 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
   function canSeeField(fieldName) {
     if (isSuperUser) return true;
     if (!permissionReady) return false;
-    return visibleFieldNames.has(fieldName);
+    return CAMPOS_DE_AUDITORIA.has(fieldName) || visibleFieldNames.has(fieldName);
   }
 
 

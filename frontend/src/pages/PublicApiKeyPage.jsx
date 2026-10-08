@@ -7,6 +7,7 @@ import Pagination from "../components/Pagination.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
+import { CAMPOS_DE_AUDITORIA } from "../utils/camposDeAuditoria";
 
 const emptyForm = { label: "", key_hash: "", key_prefix: "", allowed_domains: "", rate_limit_per_min: "", is_active: false, last_used_at: "" };
 const validationRules = allValidationRules["public_api_key"] || {};
@@ -163,7 +164,7 @@ export default function PublicApiKeyPage() {
   function canSeeField(fieldName) {
     if (isSuperUser) return true;
     if (!permissionReady) return false;
-    return visibleFieldNames.has(fieldName);
+    return CAMPOS_DE_AUDITORIA.has(fieldName) || visibleFieldNames.has(fieldName);
   }
 
 

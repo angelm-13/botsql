@@ -7,6 +7,7 @@ import Pagination from "../components/Pagination.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
+import { CAMPOS_DE_AUDITORIA } from "../utils/camposDeAuditoria";
 
 const emptyForm = { inventory_status_code: "", inventory_status_description: "", color: "", entity_scope: "", flow_scope: "", id_department: "", id_subdepartment: "", id_minimum_level: "", is_active: false, is_terminal: false, visible_to_other_departments: false, sort_order: "" };
 const validationRules = allValidationRules["inventory_status"] || {};
@@ -188,7 +189,7 @@ export default function InventoryStatusPage() {
   function canSeeField(fieldName) {
     if (isSuperUser) return true;
     if (!permissionReady) return false;
-    return visibleFieldNames.has(fieldName);
+    return CAMPOS_DE_AUDITORIA.has(fieldName) || visibleFieldNames.has(fieldName);
   }
 
 

@@ -3,6 +3,7 @@ from flask import Blueprint, jsonify, request
 from app.services.product_sale_config_service import ProductSaleConfigService
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
+from app.utils.field_access import COLUMNAS_DE_AUDITORIA
 
 bp_product_sale_config = Blueprint('product_sale_config', __name__, url_prefix='/product_sale_config')
 ALLOWED_FIELDS = ['id_product_sale_config', 'id_product', 'margin_percent', 'manual_price', 'id_inventory_status', 'is_active', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
@@ -67,7 +68,7 @@ def _field_sets_for_actor(user_data: dict) -> tuple[set[str], set[str]]:
     # La llave primaria puede viajar en la respuesta para navegacion interna,
     # acciones de fila y rutas REST, aunque el frontend no la pinte si no fue
     # marcada como visible en el gestor.
-    return visible | set(TECHNICAL_RESPONSE_FIELDS), writable
+    return visible | set(TECHNICAL_RESPONSE_FIELDS) | COLUMNAS_DE_AUDITORIA, writable
 
 
 def _visible_response_fields_for_actor(user_data: dict) -> set[str]:

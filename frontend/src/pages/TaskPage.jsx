@@ -1,14 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
-import { getAllTask, createTask, updateTask, deleteTask, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllProyect, getOperationsCatalog } from "../api";
+import { getAllTask, createTask, updateTask, deleteTask, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllProyect, getUserOptions, getOperationsCatalog, transitionTask } from "../api";
 import { fetchAllPages } from "../utils/fetchAllPages";
 import Pagination from "../components/Pagination.jsx";
 import PageHeader from "../components/PageHeader.jsx";
+import TaskBoard from "../components/TaskBoard.jsx";
+import TaskCalendar from "../components/TaskCalendar.jsx";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
+import { CAMPOS_DE_AUDITORIA } from "../utils/camposDeAuditoria";
 
-const emptyForm = { task_description: "", fase: "", id_proyect: "" };
+// La fase ya no se captura aqui: el estado de la tarea se mueve desde el
+// expediente del proyecto. Al crear, el backend la deja en "en_espera"
+// (task_service.create); al editar, al no mandarla, no se toca.
+// `owner` es el responsable; llega precargado con quien captura (ver
+// `nuevoFormulario`). `start_date`/`duration` son el horario: inicio y horas.
+const emptyForm = { task_description: "", id_proyect: "", owner: "", start_date: "", duration: "" };
+const STATUS_ORDER = ["pendiente", "en_proceso", "en_revision", "bloqueada", "cancelada", "terminada"];
 const validationRules = allValidationRules["task"] || {};
 const ENTITY_KEY = "task";
 const ACTION_CREATE = 1;
@@ -22,11 +31,7 @@ const FIELD_VISIBLE_BIT = 2;
 // descripcion/proyecto/fase (ver 828255e) y esos otros nunca tuvieron dato
 // real por fila en produccion. Quedan fuera de esta lista, no solo ocultos:
 // dejarlos aqui sugeriria que todavia hay algo que mostrar.
-const ALL_FIELD_NAMES = ['owner', 'dependency', 'validation'];
-// Respaldo si /operations/catalog no responde (offline, permiso, etc.): las
-// mismas 5 fases que pidio Jefe de taller, para que el select no se quede
-// vacio en vez de mostrar el texto libre de antes.
-const DEFAULT_TASK_FASES = ["en_espera", "en_proceso", "bloqueado", "terminado", "entregado"];
+const ALL_FIELD_NAMES = ['task_status', 'owner', 'start_date', 'duration'];
 
 function hasBit(value, bit) {
   return (Number(value || 0) & bit) === bit;
@@ -40,10 +45,17 @@ function readCurrentUser() {
   try { return JSON.parse(localStorage.getItem("user") || "{}"); } catch (_) { return {}; }
 }
 
+// `datetime-local` pide "AAAA-MM-DDTHH:mm"; el servidor manda segundos.
+function toInputDateTime(value) {
+  return typeof value === "string" ? value.slice(0, 16) : "";
+}
+
 export default function TaskPage() {
   const { lang, t } = useI18n();
   const [items, setItems] = useState([]);
-  const [formData, setFormData] = useState(emptyForm);
+  const currentUser = useMemo(() => readCurrentUser(), []);
+  const nuevoFormulario = () => ({ ...emptyForm, owner: currentUser?.id_user ?? "" });
+  const [formData, setFormData] = useState(nuevoFormulario);
   const [fieldErrors, setFieldErrors] = useState({});
   const [editingId, setEditingId] = useState(null);
   const [query, setQuery] = useState("");
@@ -55,7 +67,6 @@ export default function TaskPage() {
   const [errorKey, setErrorKey] = useState("");
   const [errorMeta, setErrorMeta] = useState(null);
 
-  const currentUser = useMemo(() => readCurrentUser(), []);
   const isSuperUser = Boolean(currentUser?.is_superuser || currentUser?.is_bootstrap_admin || currentUser?.username === "admin1");
   const currentRoleId = currentUser?.id_permission;
   const [modulePermission, setModulePermission] = useState(null);
@@ -68,19 +79,8 @@ export default function TaskPage() {
   const canSubmitForm = editingId ? canUpdate : canCreate;
   const showRowActions = canRead && (canUpdate || canDelete);
   const [proyectOptions, setProyectOptions] = useState([]);
-  const [taskFases, setTaskFases] = useState(DEFAULT_TASK_FASES);
-
-  useEffect(() => {
-    let cancelado = false;
-    getOperationsCatalog()
-      .then((data) => {
-        if (!cancelado && Array.isArray(data?.task_fase?.fases) && data.task_fase.fases.length > 0) {
-          setTaskFases(data.task_fase.fases);
-        }
-      })
-      .catch(() => {});
-    return () => { cancelado = true; };
-  }, []);
+  const [userOptions, setUserOptions] = useState([]);
+  const [catalog, setCatalog] = useState(null);
 
   async function loadData() {
     if (!permissionReady || !canRead) {
@@ -90,7 +90,11 @@ export default function TaskPage() {
     }
     setLoading(true); setErrorKey(""); setErrorMeta(null);
     try {
-      const data = await getAllTask({ page, per_page: perPage, q: query || undefined });
+      // Tablero y calendario necesitan TODAS las tareas, no la pagina de la
+      // tabla: una columna con la mitad de sus tarjetas engaña.
+      const data = view === "table"
+        ? await getAllTask({ page, per_page: perPage, q: query || undefined })
+        : await fetchAllPages(getAllTask, { q: query || undefined });
       setItems(Array.isArray(data) ? data : (data.items || data.data || []));
       // La respuesta ya traia el total y el numero de paginas; antes se
       // tiraban aqui, y por eso "Siguiente" no sabia cuando parar.
@@ -113,7 +117,7 @@ export default function TaskPage() {
     const temporizador = setTimeout(() => { loadData(); }, 300);
     return () => clearTimeout(temporizador);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, perPage, permissionReady, canRead, query]);
+  }, [page, perPage, permissionReady, canRead, query, view]);
   // Buscar algo nuevo vuelve a la primera pagina: sin esto, quien esta en la 7
   // y escribe otra cosa pide la pagina 7 de un resultado distinto.
   useEffect(() => { setPage(1); }, [query]);
@@ -137,6 +141,8 @@ export default function TaskPage() {
           setProyectOptions([]);
         }
       }
+      try { setUserOptions(await getUserOptions()); } catch (_) { setUserOptions([]); }
+      try { setCatalog(await getOperationsCatalog()); } catch (_) { setCatalog(null); }
     }
     loadFormOptions();
   }, [permissionReady, canSubmitForm, canRead, visibleFieldNames]);
@@ -201,7 +207,7 @@ export default function TaskPage() {
   function canSeeField(fieldName) {
     if (isSuperUser) return true;
     if (!permissionReady) return false;
-    return visibleFieldNames.has(fieldName);
+    return CAMPOS_DE_AUDITORIA.has(fieldName) || visibleFieldNames.has(fieldName);
   }
 
 
@@ -232,8 +238,13 @@ export default function TaskPage() {
     for (const field of Object.keys(emptyForm)) {
       payload[field] = formData[field];
     }
-    if (ENTITY_KEY === "user" && editingId && isBlankValue(payload.password)) {
-      delete payload.password;
+    // Vacio = sin dato: al crear no se manda, al editar se limpia. `owner` nunca
+    // se limpia (es NOT NULL); sin valor se omite y el servidor deja el actual.
+    if (isBlankValue(payload.owner)) delete payload.owner;
+    for (const campo of ["start_date", "duration"]) {
+      if (isBlankValue(payload[campo])) {
+        if (editingId) payload[campo] = null; else delete payload[campo];
+      }
     }
     return payload;
   }
@@ -277,7 +288,7 @@ export default function TaskPage() {
       if (!editingId && !canCreate) return;
       if (editingId) await updateTask(editingId, submitPayload);
       else await createTask(submitPayload);
-      setFormData(emptyForm); setEditingId(null); await loadData();
+      setFormData(nuevoFormulario()); setEditingId(null); await loadData();
     } catch (error) {
       const meta = error.payload?.meta || null;
       setErrorKey(error.message || "errors.request_failed");
@@ -289,7 +300,7 @@ export default function TaskPage() {
   function startEdit(item) {
     if (!canUpdate) return;
     setEditingId(item.id_task);
-    const editData = { ...emptyForm, ...item };
+    const editData = { ...emptyForm, ...item, start_date: toInputDateTime(item.start_date) };
     if (ENTITY_KEY === "user") editData.password = "";
     setFormData(editData);
 
@@ -435,10 +446,30 @@ export default function TaskPage() {
   // producto 8580 aunque no se sepa como se llama.
   const filtered = items;
 
-  const groups = useMemo(() => filtered.reduce((acc, item) => {
-    const key = String(item.task_status ?? t("common.unclassified"));
-    acc[key] = acc[key] || []; acc[key].push(item); return acc;
-  }, {}), [filtered, lang]);
+  const statusLabel = (status) => (
+    !status ? t("project_management.no_status")
+      : STATUS_ORDER.includes(status) ? t(`project_management.task_status_${status}`)
+      : status
+  );
+  const ownerLabel = (id) => {
+    const user = userOptions.find((item) => String(item.id_user) === String(id));
+    return user ? (user.full_name || user.username) : (id ?? "");
+  };
+  const proyectLabel = (id) => getOptionLabel(proyectOptions.find((proyecto) => (proyecto.id_proyect ?? proyecto.id) === id), "proyect") || String(id ?? "");
+
+  async function moveTask(task, target, reason) {
+    await transitionTask(task.id_task, { status: target, reason });
+    await loadData();
+  }
+
+  function rowActions(item) {
+    return (
+      <>
+        {canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}
+        {canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}
+      </>
+    );
+  }
 
   return (
     <section className="entity-page">
@@ -478,22 +509,33 @@ export default function TaskPage() {
             {fieldErrors["id_proyect"] && <span className="field-error">{formatFieldError("id_proyect")}</span>}
           </label>
           )}
-          {canSeeField("fase") && (
+          {canSeeField("owner") && (
           <label className="field">
-            <span>{t("fields.task.fase")}</span>
-            <select name="fase" value={formData.fase ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors["fase"])} {...inputPropsForField("fase", validationRules["fase"], "select")}>
+            <span>{t("fields.task.owner")}</span>
+            <select name="owner" value={formData.owner ?? ""} onChange={handleChange}>
               <option value="">{t("common.select_option", "Selecciona una opción")}</option>
-              {taskFases.map((valor) => (
-                <option key={valor} value={valor}>{t(`task_fase.${valor}`, valor)}</option>
+              {userOptions.map((user) => (
+                <option key={user.id_user} value={user.id_user}>{user.full_name || user.username}{String(user.id_user) === String(currentUser?.id_user) ? ` (${t("project_management.current_user", "tú")})` : ""}</option>
               ))}
             </select>
-            {fieldErrors["fase"] && <span className="field-error">{formatFieldError("fase")}</span>}
+          </label>
+          )}
+          {canSeeField("start_date") && (
+          <label className="field">
+            <span>{t("fields.task.start_date")}</span>
+            <input name="start_date" type="datetime-local" value={formData.start_date ?? ""} onChange={handleChange} />
+          </label>
+          )}
+          {canSeeField("duration") && (
+          <label className="field">
+            <span>{t("fields.task.duration")}</span>
+            <input name="duration" type="number" min="0" step="0.25" value={formData.duration ?? ""} onChange={handleChange} />
           </label>
           )}
         </div>
         <div className="form-actions">
           <button className="button primary" type="submit">{t("common.save")}</button>
-          <button className="button" type="button" onClick={() => { setFormData(emptyForm); setEditingId(null); setFieldErrors({}); }}>{t("common.cancel")}</button>
+          <button className="button" type="button" onClick={() => { setFormData(nuevoFormulario()); setEditingId(null); setFieldErrors({}); }}>{t("common.cancel")}</button>
         </div>
       </FormularioPlegable>
       )}
@@ -505,42 +547,44 @@ export default function TaskPage() {
         </select>
         <button className={view === "table" ? "button active" : "button"} onClick={() => setView("table")}>{t("common.table")}</button>
         <button className={view === "kanban" ? "button active" : "button"} onClick={() => setView("kanban")}>{t("common.kanban")}</button>
+        <button className={view === "calendar" ? "button active" : "button"} onClick={() => setView("calendar")}>{t("task_calendar.title")}</button>
       </div>}
 
       {errorKey && <div className="alert error">{renderError()}</div>}
       {loading && <div className="alert">{t("common.loading")}</div>}
       {permissionReady && !canRead && !canCreate && <div className="empty"><strong>{t("security.permission.read_denied", "Sin permiso de lectura")}</strong><p>{t("common.module_hidden_hint", "Este módulo no tiene acciones seleccionadas; quedará oculto y sus campos no se mostrarán.")}</p></div>}
-      {canRead && !loading && filtered.length === 0 && <div className="empty"><strong>{t("common.empty_title")}</strong><p>{t("common.empty_body")}</p></div>}
+      {canRead && !loading && view === "table" && filtered.length === 0 && <div className="empty"><strong>{t("common.empty_title")}</strong><p>{t("common.empty_body")}</p></div>}
 
 
       {canRead && view === "table" && filtered.length > 0 && <div className="table-card"><table><thead><tr>{showRowActions && <th>{t("common.actions")}</th>}
               {canSeeField("task_description") && <th>{t("fields.task.task_description")}</th>}
               {canSeeField("id_proyect") && <th>{t("fields.task.id_proyect")}</th>}
               {canSeeField("owner") && <th>{t("fields.task.owner")}</th>}
-              {canSeeField("dependency") && <th>{t("fields.task.dependency")}</th>}
-              {canSeeField("validation") && <th>{t("fields.task.validation")}</th>}
+              {canSeeField("start_date") && <th>{t("fields.task.start_date")}</th>}
+              {canSeeField("duration") && <th>{t("fields.task.duration")}</th>}
               {canSeeField("task_status") && <th>{t("fields.task.task_status")}</th>}
-              {canSeeField("fase") && <th>{t("fields.task.fase")}</th>}
         </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_task}>{showRowActions && <td className="row-actions">{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</td>}
               {canSeeField("task_description") && <td><pre className="cell-value">{formatTableValue(item.task_description)}</pre></td>}
               {canSeeField("id_proyect") && <td><pre className="cell-value">{getOptionLabel(proyectOptions.find((proyecto) => (proyecto.id_proyect ?? proyecto.id) === item.id_proyect), "proyect") || formatTableValue(item.id_proyect)}</pre></td>}
-              {canSeeField("owner") && <td><pre className="cell-value">{formatTableValue(item.owner)}</pre></td>}
-              {canSeeField("dependency") && <td><pre className="cell-value">{formatTableValue(item.dependency)}</pre></td>}
-              {canSeeField("validation") && <td><pre className="cell-value">{formatTableValue(item.validation)}</pre></td>}
-              {canSeeField("task_status") && <td><pre className="cell-value">{formatTableValue(item.task_status)}</pre></td>}
-              {canSeeField("fase") && <td><pre className="cell-value">{t(`task_fase.${item.fase}`, formatTableValue(item.fase))}</pre></td>}
+              {canSeeField("owner") && <td><pre className="cell-value">{ownerLabel(item.owner)}</pre></td>}
+              {canSeeField("start_date") && <td><pre className="cell-value">{formatTableValue(item.start_date)}</pre></td>}
+              {canSeeField("duration") && <td><pre className="cell-value">{formatTableValue(item.duration)}</pre></td>}
+              {canSeeField("task_status") && <td><pre className="cell-value">{statusLabel(item.task_status)}{item.status_reason ? `
+${item.status_reason}` : ""}</pre></td>}
         </tr>)}</tbody></table></div>}
 
-      {canRead && view === "kanban" && filtered.length > 0 && <div className="kanban">{Object.entries(groups).map(([key, groupItems]) => <div className="kanban-column" key={key}><h3>{key} <span>{groupItems.length}</span></h3>{groupItems.map((item) => <article className="kanban-card" key={item.id_task}><strong>{String(item.task_description ?? item.id_task)}</strong><small>#{item.id_task}</small>{showRowActions && <div>{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</div>}</article>)}</div>)}</div>}
+      {canRead && view === "kanban" && !loading && <TaskBoard tareas={filtered} catalogo={catalog} etiquetaEstatus={statusLabel} etiquetaResponsable={ownerLabel} etiquetaProyecto={proyectLabel} puedeMover={canUpdate} onMover={moveTask} acciones={showRowActions ? rowActions : null} />}
 
-      <Pagination
+      {canRead && view === "calendar" && !loading && <TaskCalendar tareas={filtered} etiquetaResponsable={ownerLabel} onSeleccionar={(task) => { if (canUpdate) startEdit(task); }} />}
+
+      {view === "table" && <Pagination
         page={page}
         pages={paginacion.pages}
         total={paginacion.total}
         perPage={paginacion.perPage}
         loading={loading}
         onChange={setPage}
-      />
+      />}
     </section>
   );
 }

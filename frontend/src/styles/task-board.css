@@ -1,0 +1,39 @@
+/* Tablero y calendario de Tarea. Reusan .kanban/.kanban-column/.kanban-card de
+   app.css; aqui solo lo que esas clases no traen. */
+.task-board .kanban-column { min-height: 220px; }
+.task-board .kanban-column.task-drop-ok { outline: 2px dashed #1b7a60; outline-offset: -4px; }
+.task-card { cursor: grab; border-left: 4px solid #94a3b8; }
+.task-card.status-en_proceso { border-left-color: #2878b8; }
+.task-card.status-bloqueada { border-left-color: #c78316; }
+.task-card.status-cancelada { border-left-color: #b94343; }
+.task-card.status-terminada { border-left-color: #1b7a60; }
+.task-card-owner { color: #475569; font-weight: 700; }
+.task-card-reason { margin: 0; padding: 6px 8px; border-radius: 10px; background: #fff8e8; color: #7a5200; font-size: 12px; }
+.task-card select { width: 100%; border: 1px solid #cbd5e1; border-radius: 10px; padding: 6px 8px; background: #fff; }
+
+.task-modal-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: rgba(15, 23, 42, .45); padding: 16px; }
+.task-modal { width: min(440px, 100%); background: #fff; border-radius: 18px; padding: 22px; display: flex; flex-direction: column; gap: 12px; }
+.task-modal h3, .task-modal p { margin: 0; }
+
+.task-calendar { display: flex; flex-direction: column; gap: 12px; }
+.task-cal-toolbar { margin-top: 0; }
+.task-cal-title { flex: 1; min-width: 160px; }
+.task-cal-grid { display: grid; background: #fff; border: 1px solid #e2e8f0; border-radius: 18px; overflow: auto; max-height: 70vh; }
+.task-cal-dayhead { position: sticky; top: 0; z-index: 2; background: #f8fafc; padding: 8px; text-align: center; font-weight: 800; font-size: 12px; text-transform: uppercase; color: #64748b; border-bottom: 1px solid #e2e8f0; }
+.task-cal-dayhead.today { color: #1b7a60; }
+.task-cal-hours span { display: block; font-size: 11px; color: #94a3b8; text-align: right; padding-right: 6px; }
+.task-cal-daycol { position: relative; border-left: 1px solid #e2e8f0; background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 43px, #eef2f7 43px, #eef2f7 44px); }
+.task-cal-item { display: block; width: 100%; text-align: left; border: 0; border-left: 3px solid #94a3b8; background: #eef2f7; color: #1e293b; border-radius: 6px; padding: 2px 6px; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-cal-daycol .task-cal-item { position: absolute; left: 2px; right: 2px; width: auto; white-space: normal; }
+.task-cal-item.status-en_proceso { border-left-color: #2878b8; background: #edf6fc; }
+.task-cal-item.status-bloqueada { border-left-color: #c78316; background: #fff8e8; }
+.task-cal-item.status-cancelada { border-left-color: #b94343; background: #fff1f1; }
+.task-cal-item.status-terminada { border-left-color: #1b7a60; background: #eef8f4; }
+.task-cal-month { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 1px; background: #e2e8f0; border: 1px solid #e2e8f0; border-radius: 18px; overflow: hidden; }
+.task-cal-weekday { background: #f8fafc; padding: 8px; text-align: center; font-size: 12px; font-weight: 800; text-transform: uppercase; color: #64748b; }
+.task-cal-cell { background: #fff; min-height: 96px; padding: 4px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.task-cal-cell.outside { background: #f8fafc; color: #94a3b8; }
+.task-cal-cell.today .task-cal-daynum { background: #1b7a60; color: #fff; }
+.task-cal-daynum { align-self: flex-start; font-size: 12px; font-weight: 800; border-radius: 999px; padding: 1px 7px; }
+.task-cal-unscheduled { display: flex; flex-direction: column; gap: 6px; background: #fff; border: 1px solid #e2e8f0; border-radius: 18px; padding: 14px; }
+@media (max-width: 720px) { .task-cal-cell { min-height: 64px; } }

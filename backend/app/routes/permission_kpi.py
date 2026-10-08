@@ -6,6 +6,7 @@ from app.models.session import transaction_context
 from app.services.nm_permission_kpi_service import NmPermissionKpiService
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
+from app.utils.field_access import COLUMNAS_DE_AUDITORIA
 
 bp_permission_kpi = Blueprint('permission_kpi', __name__, url_prefix='/permission_kpi')
 ALLOWED_FIELDS = ['id_nm_permission_kpi', 'id_permission', 'id_kpi_definition', 'puede_ver', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
@@ -66,7 +67,7 @@ def _field_sets_for_actor(user_data: dict) -> tuple[set[str], set[str]]:
             if control_type & FIELD_WRITE_BITS:
                 writable.add(field_row.field_name)
 
-    return visible | set(TECHNICAL_RESPONSE_FIELDS), writable
+    return visible | set(TECHNICAL_RESPONSE_FIELDS) | COLUMNAS_DE_AUDITORIA, writable
 
 
 def _visible_response_fields_for_actor(user_data: dict) -> set[str]:

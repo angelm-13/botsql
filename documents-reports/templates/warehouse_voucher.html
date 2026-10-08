@@ -80,6 +80,18 @@
     .campo { font-size: 9.5pt; margin: 1pt 0; }
     .campo b { font-weight: bold; }
 
+    /* La entrega y el recibido, tal como los dice la pantalla. */
+    .seguimiento {
+      margin: 4pt 0;
+      padding: 4pt 6pt;
+      border: 0.9pt solid #111827;
+      background: #f3f4f6;
+      font-size: 9pt;
+    }
+    .seguimiento p { margin: 1pt 0; }
+    .seguimiento .obs { color: #991b1b; font-weight: bold; }
+    .firma-quien { display: block; margin-top: 2pt; font-size: 8pt; color: #374151; }
+
     table.renglones {
       width: 100%;
       border-collapse: collapse;
@@ -123,7 +135,17 @@
       </tr>
       <tr>
         <td>Firma Recibido Almacén</td>
-        <td>Firma Recibido Personal</td>
+        <td>
+          Firma Recibido Personal
+          {% if record.con_seguimiento %}
+            {% set quien = (record.entrega and record.entrega.recibio) or (record.recoge and record.recoge.nombre) %}
+            {% if quien %}
+              <span class="firma-quien">
+                Recibe: {{ quien }}{% if (record.entrega and record.entrega.recibio_externo) or (not record.entrega and record.recoge and record.recoge.externo) %} (persona externa){% endif %}
+              </span>
+            {% endif %}
+          {% endif %}
+        </td>
       </tr>
     </table>
 
@@ -134,6 +156,43 @@
     </div>
     <p class="campo"><b>Nota:</b> {{ record.nota or '—' }}</p>
     <p class="campo"><b>Descripcion:</b> {{ record.cliente or '—' }}</p>
+    {% if record.complementario_de %}
+    <p class="campo"><b>Complementario del vale:</b> #{{ record.complementario_de }}</p>
+    {% endif %}
+
+    {% if record.con_seguimiento %}
+    <div class="seguimiento">
+      <p>
+        <b>Recoge:</b>
+        {% if record.recoge and record.recoge.es_responsable %}
+          el responsable ({{ record.recoge.nombre or '—' }})
+        {% elif record.recoge %}
+          {{ record.recoge.nombre or '—' }}{% if record.recoge.externo %} (persona externa){% endif %}
+        {% else %}—{% endif %}
+      </p>
+      {% if record.entrega %}
+      <p>
+        <b>Entregado por almacén:</b> {{ record.entrega.entrego or '—' }}
+        · {{ record.entrega.fecha_larga or '—' }}
+        · <b>a:</b> {{ record.entrega.recibio or '—' }}{% if record.entrega.recibio_externo %} (persona externa){% endif %}
+      </p>
+      {% if record.entrega.nota %}<p><b>Nota de entrega:</b> {{ record.entrega.nota }}</p>{% endif %}
+      {% elif not record.es_borrador %}
+      <p class="vacio">Pendiente de entrega.</p>
+      {% endif %}
+      {% if record.recibido %}
+      <p>
+        <b>Recibido por el responsable:</b> {{ record.recibido.por or '—' }}
+        · {{ record.recibido.fecha_larga or '—' }}
+      </p>
+      {% if not record.recibido.ok %}
+      <p class="obs">Recibido con observaciones: {{ record.recibido.nota or '—' }}</p>
+      {% endif %}
+      {% elif record.entrega %}
+      <p class="vacio">Pendiente de confirmar el recibido.</p>
+      {% endif %}
+    </div>
+    {% endif %}
 
     <table class="renglones">
       <thead>

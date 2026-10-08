@@ -40,6 +40,29 @@ class Incident(Base):
     external_folio: Mapped[str | None] = mapped_column(String(40), nullable=True)
     # De donde vino. Un folio "140" no significa lo mismo en dos origenes.
     external_source: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # Vale complementario: el vale anterior, del mismo proyecto, al que este
+    # agrega herramienta. Solo trazabilidad.
+    id_incident_parent: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('incident.id_incident'), nullable=True)
+    # Quien recoge cuando no tiene usuario (externo). Excluyente con
+    # `nm_incident_product.id_user_delivered_to`.
+    pickup_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # true solo en los vales nuevos: de ellos se espera entrega y confirmacion.
+    # Los anteriores quedan en false ("sin seguimiento"), sin confirmaciones
+    # inventadas.
+    tracks_delivery: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default='false')
+    # Almacen marca "entregado a X", acto aparte de autorizar.
+    delivered_date: Mapped[object] = mapped_column(DateTime, nullable=True)
+    delivered_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    delivered_to_user: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    delivered_to_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    delivery_note: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    # El supervisor responsable confirma el recibido (con o sin observaciones).
+    received_confirmed_date: Mapped[object] = mapped_column(DateTime, nullable=True)
+    received_confirmed_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    receipt_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    receipt_note: Mapped[str | None] = mapped_column(String(300), nullable=True)
 
     def serialize(self) -> dict:
         return {
@@ -58,6 +81,18 @@ class Incident(Base):
             'id_lider': to_json_value(self.id_lider),
             'external_folio': to_json_value(self.external_folio),
             'external_source': to_json_value(self.external_source),
+            'id_incident_parent': to_json_value(self.id_incident_parent),
+            'pickup_name': to_json_value(self.pickup_name),
+            'tracks_delivery': bool(self.tracks_delivery),
+            'delivered_date': to_json_value(self.delivered_date),
+            'delivered_by': to_json_value(self.delivered_by),
+            'delivered_to_user': to_json_value(self.delivered_to_user),
+            'delivered_to_name': to_json_value(self.delivered_to_name),
+            'delivery_note': to_json_value(self.delivery_note),
+            'received_confirmed_date': to_json_value(self.received_confirmed_date),
+            'received_confirmed_by': to_json_value(self.received_confirmed_by),
+            'receipt_ok': to_json_value(self.receipt_ok),
+            'receipt_note': to_json_value(self.receipt_note),
         }
 
     def serialize_summary(self) -> dict:
