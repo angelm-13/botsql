@@ -80,6 +80,7 @@ def get_activities_by_range(
     end_date: date = None,
     limit: int = 100,
     offset: int = 0,
+    ids_supervisor: list = None,
 ) -> List[SupervisorActivityLog]:
     """
     Obtiene registros de actividades en un rango de fechas con filtros opcionales.
@@ -106,6 +107,10 @@ def get_activities_by_range(
 
         if id_supervisor:
             query = query.where(SupervisorActivityLog.id_supervisor == id_supervisor)
+
+        # Con Mis grupos: las bitacoras de todo el equipo (ver routes/activity_logs).
+        if ids_supervisor is not None:
+            query = query.where(SupervisorActivityLog.id_supervisor.in_(list(ids_supervisor)))
 
         # Rango de fechas
         if start_date and end_date:

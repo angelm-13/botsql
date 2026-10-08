@@ -429,7 +429,9 @@ def _exigir_que_sea_suyo(db, vale: Incident, user_data: dict) -> None:
     """
     if _ve_todo_el_almacen(db, user_data):
         return
-    if vale.id_user is None or int(vale.id_user) != _actor(user_data):
+    visible = db.scalar(select(Incident.id_incident).where(
+        Incident.id_incident == vale.id_incident, _del_solicitante(db, user_data)))
+    if visible is None:
         raise AppError("errors.not_found", 404,
                        {"entity": "incident", "looked_up": str(vale.id_incident)})
 
@@ -1597,19 +1599,26 @@ def vales_vencidos(user_data: dict) -> dict:
     preguntar, y un prestamo sin fecha de regreso es una baja disfrazada: nunca
     esta vencido, asi que nadie lo reclama.
     """
-    _actor(user_data)
+    actor = _actor(user_data)
     ahora = _ahora()
     with transaction_context() as db:
-        filas = db.scalars(
-            select(NmIncidentProduct).where(
-                NmIncidentProduct.deletion_date.is_(None),
-                NmIncidentProduct.close_date.is_(None),
-                NmIncidentProduct.due_date.isnot(None),
-                NmIncidentProduct.due_date < ahora,
-                # Una baja no se reclama: ver TIPOS_DE_BAJA.
-                NmIncidentProduct.id_incident.notin_(_vales_de_baja()),
-            ).order_by(NmIncidentProduct.due_date)
-        ).all()
+        consulta = select(NmIncidentProduct).where(
+            NmIncidentProduct.deletion_date.is_(None),
+            NmIncidentProduct.close_date.is_(None),
+            NmIncidentProduct.due_date.isnot(None),
+            NmIncidentProduct.due_date < ahora,
+            # Una baja no se reclama: ver TIPOS_DE_BAJA.
+            NmIncidentProduct.id_incident.notin_(_vales_de_baja()),
+        )
+        # Igual que el resto del modulo: quien solo pide ve lo que esta a su
+        # nombre; quien surte ve todo para poder reclamarlo.
+        if not _ve_todo_el_almacen(db, user_data):
+            consulta = consulta.where(
+                NmIncidentProduct.id_incident.in_(
+                    select(Incident.id_incident).where(_del_solicitante(db, user_data))
+                )
+            )
+        filas = db.scalars(consulta.order_by(NmIncidentProduct.due_date)).all()
         return {"items": _con_existencias(db, filas), "total": len(filas)}
 
 
@@ -1724,6 +1733,31 @@ def _ve_todo_el_almacen(db, user_data) -> bool:
     if _sin_restriccion(user_data):
         return True
     return has_capability(db, user_data, "warehouse_voucher")
+
+
+def _del_solicitante(db, user_data):
+    """Condicion SQL: los vales que este actor puede ver sin operar el almacen.
+
+    Dueno de un vale = su responsable (`id_user`), quien lo capturo
+    (`created_by`: el almacenista lo levanta a nombre del supervisor, y el
+    supervisor puede levantarlo a nombre de un operador) o quien recoge la
+    herramienta de algun renglon (`id_user_delivered_to`). Con "Mis grupos" en
+    el prevale, tambien los de los companeros de equipo (ver `app/utils/scope`).
+    """
+    from app.utils.scope import owner_ids, scope_bits
+
+    actor = _actor(user_data)
+    duenos = owner_ids(db, user_data, scope_bits(db, user_data, "warehouse_prevoucher", "read")) or set()
+    duenos.add(actor)
+    recoge = select(NmIncidentProduct.id_incident).where(
+        NmIncidentProduct.id_user_delivered_to == actor,
+        NmIncidentProduct.deletion_date.is_(None),
+    )
+    return or_(
+        Incident.id_user.in_(duenos),
+        Incident.created_by == actor,
+        Incident.id_incident.in_(recoge),
+    )
 
 
 def _sin_restriccion(user_data) -> bool:
@@ -1847,8 +1881,8 @@ def quien_tiene_que(user_data: dict, *, id_user=None) -> dict:
         # El alcance. Quien no opera el almacen ve lo que esta a SU nombre.
         pedido = _entero(id_user, "id_user", obligatorio=False)
         if not _ve_todo_el_almacen(db, user_data):
-            pedido = actor
-        if pedido is not None:
+            consulta = consulta.where(_del_solicitante(db, user_data))
+        elif pedido is not None:
             consulta = consulta.where(Incident.id_user == pedido)
 
         filas = db.scalars(
@@ -1948,7 +1982,7 @@ def historial_del_producto(id_product, user_data: dict) -> dict:
             )
         )
         if not _ve_todo_el_almacen(db, user_data):
-            consulta = consulta.where(Incident.id_user == _actor(user_data))
+            consulta = consulta.where(_del_solicitante(db, user_data))
 
         filas = db.scalars(
             consulta.order_by(NmIncidentProduct.start_date.desc())
@@ -2248,8 +2282,8 @@ def _renglones_de_reporte(db, *, fecha_inicio=None, fecha_fin=None, id_user=None
     # ve todo; quien solo pide material ve lo suyo (ver `_ve_todo_el_almacen`).
     pedido = _entero(id_user, "id_user", obligatorio=False)
     if user_data is not None and not _ve_todo_el_almacen(db, user_data):
-        pedido = _actor(user_data)
-    if pedido is not None:
+        consulta = consulta.where(_del_solicitante(db, user_data))
+    elif pedido is not None:
         consulta = consulta.where(Incident.id_user == pedido)
 
     if solo_salidas_abiertas:

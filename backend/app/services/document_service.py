@@ -158,10 +158,39 @@ class SecureDocumentStorage:
 
 class DocumentManagementService:
     @staticmethod
+    def _sin_vales_ajenos(stmt, user_data: dict):
+        """El PDF de un vale archivado como documento sigue el alcance del vale.
+
+        Se archiva con `created_by` de quien lo bajo primero y sin dueno propio,
+        asi que el alcance de `document` no sirve: quien no opera el almacen solo
+        ve el expediente de un vale que es suyo (ver `_del_solicitante`).
+        """
+        from sqlalchemy import false, String, cast
+
+        from app.models.incident import Incident
+        from app.services.warehouse_voucher_service import _del_solicitante, _ve_todo_el_almacen
+
+        with transaction_context() as db:
+            if _ve_todo_el_almacen(db, user_data):
+                return stmt
+            try:
+                suyos = select(cast(Incident.id_incident, String)).where(_del_solicitante(db, user_data))
+                ver = and_(Document.business_reference_type == "incident",
+                           Document.business_reference_value.in_(suyos))
+            except AppError:
+                ver = false()
+        es_vale = exists().where(and_(
+            DocumentCategory.id_document_category == Document.id_document_category,
+            DocumentCategory.code == "warehouse_voucher",
+        ))
+        return stmt.where(or_(~es_vale, ver))
+
+    @staticmethod
     def _scope(stmt, user_data: dict):
         if _is_unrestricted(user_data):
             return stmt
         stmt = stmt.where(Document.id_proyect == _actor_project(user_data))
+        stmt = DocumentManagementService._sin_vales_ajenos(stmt, user_data)
         if _actor_type(user_data) in {"client", "supplier"}:
             customer_relation = exists().where(
                 and_(
