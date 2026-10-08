@@ -210,7 +210,14 @@ class TaskService(CrudService):
     def create(cls, payload: dict, user_id: int | None = None):
         payload = dict(payload or {})
         payload.setdefault('task_status', DEFAULT_STATUS)
-        payload.setdefault('fase', DEFAULT_FASE)
+        # `setdefault` no alcanza: el formulario de alta (TaskPage.jsx) SIEMPRE
+        # manda la llave 'fase' -vacia si nadie toco el select-, asi que
+        # `setdefault` nunca se disparaba y la tarea nacia con `fase=NULL` en
+        # vez del default documentado. El tablero kanban del taller agrupa por
+        # fase, y NULL no entra en ninguna columna esperada. Hallazgo de la
+        # auditoria de seguridad del 2026-10-06.
+        if not payload.get('fase'):
+            payload['fase'] = DEFAULT_FASE
         return super().create(cls._validate(payload), user_id=user_id)
 
     @classmethod

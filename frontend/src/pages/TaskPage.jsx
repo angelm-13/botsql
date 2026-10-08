@@ -123,7 +123,16 @@ export default function TaskPage() {
       if (canSeeField("id_proyect")) {
         try {
           const proyectData = await getAllProyect({ page: 1, per_page: 100 });
-          setProyectOptions(Array.isArray(proyectData) ? proyectData : (proyectData.items || []));
+          const todos = Array.isArray(proyectData) ? proyectData : (proyectData.items || []);
+          // El backend exige que el proyecto este TOMADO por el actor
+          // (`require_project_taken_by_actor`, pedido de negocio del
+          // 2026-09-28) -- ofrecer aqui proyectos libres o de otro Jefe de
+          // taller era un boton visible que el servidor siempre iba a
+          // rechazar con 403. Quien es unrestricted (Administrator/
+          // superusuario) si puede dar de alta sobre cualquiera, igual que
+          // ya le permite el backend.
+          setProyectOptions(isSuperUser ? todos
+            : todos.filter((p) => Number(p.id_supervisor) === Number(currentUser?.id_user)));
         } catch (_) {
           setProyectOptions([]);
         }
