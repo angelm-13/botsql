@@ -6,7 +6,7 @@ from flask import Blueprint, jsonify, request, send_file
 from app.models import Invoice
 from app.services.invoice_service import InvoiceService
 from app.services.cfdi_xml import parse_cfdi
-from app.services.invoice_artifacts import invoice_xml_path
+from app.services.cfdi_xml_store import load_cfdi_xml, save_cfdi_xml
 from app.services.invoice_xml_classification import classify_invoice_direction, normalize_rfc
 from app.services.invoice_xml_lines import persist_xml_lines
 from app.utils.auth import token_required, require_entity_permission
@@ -234,10 +234,10 @@ def _invoice_document_access(id_invoice, user_data):
 @require_entity_permission('invoice', 'read')
 def download_invoice_xml(user_data, id_invoice):
     _invoice_document_access(id_invoice, user_data)
-    path = invoice_xml_path(id_invoice, _current_app.config.get('UPLOAD_ROOT'))
-    if not path.is_file():
+    xml_bytes = load_cfdi_xml(id_invoice, _current_app.config.get('UPLOAD_ROOT'))
+    if xml_bytes is None:
         raise AppError('invoice.xml_not_available', 404)
-    return send_file(path, mimetype='application/xml', as_attachment=True, download_name=f'CFDI-{id_invoice}.xml')
+    return send_file(BytesIO(xml_bytes), mimetype='application/xml', as_attachment=True, download_name=f'CFDI-{id_invoice}.xml')
 
 
 @bp_invoice.route('/<id_invoice>/pdf', methods=['GET'])
@@ -745,22 +745,6 @@ def _resolve_cfdi_parties(cfdi_data, principal, direction, user_id=None):
 
 
 
-# issue_12_phase7_save_original_cfdi_xml
-def _cfdi_xml_storage_path(invoice_id):
-    upload_root = _current_app.config.get('UPLOAD_ROOT') or _os.path.abspath(_os.path.join(_os.path.dirname(__file__), '..', '..', '..', 'uploads'))
-    folder = _os.path.join(upload_root, 'cfdi_xml')
-    _os.makedirs(folder, exist_ok=True)
-    return _os.path.join(folder, 'invoice_' + str(invoice_id) + '.xml')
-
-
-def _save_original_cfdi_xml(invoice_id, xml_bytes):
-    if not invoice_id or not xml_bytes:
-        return None
-    path = _cfdi_xml_storage_path(invoice_id)
-    with open(path, 'wb') as handle:
-        handle.write(xml_bytes)
-    return path
-
 @bp_invoice.route('/upload-xml', methods=['POST'])
 @token_required
 @require_entity_permission('invoice', 'create')
@@ -841,8 +825,9 @@ def upload_xml_invoice(user_data):
             invoice = InvoiceService.create(payload, user_id=user_id)
             invoice_id = invoice.get('id_invoice')
             lines = persist_xml_lines(invoice, cfdi_data.get('conceptos', []), user_id=user_id)
-            xml_path = _save_original_cfdi_xml(invoice_id, xml_bytes)
-            results.append({'file': filename, 'status': 'created', 'id_invoice': invoice_id, 'invoice_direction': direction, 'items_count': len(lines), 'xml_saved': bool(xml_path), 'data': invoice})
+            with _transaction_context() as db:
+                save_cfdi_xml(db, invoice_id, xml_bytes, _current_app.config.get('UPLOAD_ROOT'))
+            results.append({'file': filename, 'status': 'created', 'id_invoice': invoice_id, 'invoice_direction': direction, 'items_count': len(lines), 'xml_saved': True, 'data': invoice})
         except ValueError as exc:
             results.append({'file': filename, 'status': 'error', 'message': str(exc)})
         except AppError as exc:
@@ -867,7 +852,6 @@ def attach_invoice_xml(user_data, id_invoice):
     y se rechaza como duplicado. Aqui el UUID del XML tiene que coincidir con el
     de la factura, para que nadie cuelgue el XML de otro comprobante.
     """
-    from app.services.invoice_artifacts import save_invoice_xml
     from app.services.storage_service import exigir_espacio
 
     InvoiceService.require_scope(id_invoice, user_data)
@@ -891,5 +875,6 @@ def attach_invoice_xml(user_data, id_invoice):
     if not invoice_uuid or xml_uuid != invoice_uuid:
         raise AppError('invoice.xml_uuid_mismatch', 422, {'expected': invoice_uuid, 'received': xml_uuid})
 
-    save_invoice_xml(id_invoice, xml_bytes, _current_app.config.get('UPLOAD_ROOT'))
+    with _transaction_context() as db:
+        save_cfdi_xml(db, id_invoice, xml_bytes, _current_app.config.get('UPLOAD_ROOT'))
     return jsonify({'id_invoice': int(id_invoice), 'xml_saved': True, 'uuid': xml_uuid}), 200
