@@ -235,3 +235,5 @@ label:has(:is(input,select,textarea):required)::before,label:has(+ :is(input,sel
 .kpi-permission-header,.kpi-permission-row{display:grid;grid-template-columns:minmax(0,1fr) 70px;align-items:center;gap:10px}
 .kpi-permission-header{font-size:12px;text-transform:uppercase;color:#64748b;font-weight:800}
 .kpi-permission-row{border:1px solid #e2e8f0;border-radius:14px;padding:10px 12px;background:#fff}
+
+.scope-legend{display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:8px 0;font-size:13px}
