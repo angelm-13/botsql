@@ -204,8 +204,7 @@
           <th style="width:13%">Tipo</th>
           <th style="width:7%">Cantidad</th>
           <th style="width:9%">Precio Bruto</th>
-          <th style="width:14%">Entregado a</th>
-          <th style="width:16%">Recibido Sello y Firma</th>
+          <th style="width:30%">Recibido Sello y Firma</th>
         </tr>
       </thead>
       <tbody>
@@ -218,17 +217,10 @@
           <td>{{ linea.material or '—' }}</td>
           <td class="num">{{ linea.cantidad }}</td>
           <td class="num">{{ "%.2f"|format(linea.precio_bruto or 0) }}</td>
-          <td>
-            {% if linea.entregado_a %}
-              {{ linea.entregado_a }}{% if not linea.custodia_confirmada %} (pendiente de confirmar){% endif %}
-            {% else %}
-              —
-            {% endif %}
-          </td>
           <td></td>
         </tr>
         {% else %}
-        <tr><td colspan="9" class="vacio">Este vale no tiene renglones de salida.</td></tr>
+        <tr><td colspan="8" class="vacio">Este vale no tiene renglones de salida.</td></tr>
         {% endfor %}
       </tbody>
     </table>

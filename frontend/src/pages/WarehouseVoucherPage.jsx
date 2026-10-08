@@ -1384,24 +1384,12 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
           {otraPersona && (
           <label className="field">
           <span>{t("voucher.pickup", "¿Quién recoge el material?")}</span>
-          {/* Distinto del Responsable de arriba: el vale puede quedar a
-              nombre del supervisor pero recogerlo un operador. Si se deja en
-              blanco, el responsable es quien recoge -- sin cambio de
-              comportamiento. Si se elige a alguien mas, el responsable tendra
-              que confirmar despues que ya recibio el material de esa
-              persona (bloque de custodia, dentro del vale). */}
-          {/* Escribe y sugiere a los usuarios; si no es ninguno, se puede
-              usar el nombre escrito como persona externa (chofer, mensajero). */}
-          <PersonaCombobox
-            usuarios={usuarios}
-            valor={{ id_user: borrador.id_user_pickup, name: borrador.pickup_name }}
-            onChange={({ id_user, name }) => setBorrador({
-              ...borrador, id_user_pickup: id_user, pickup_name: name })}
-            vacio={t("voucher.pickup_is_holder", "El responsable (por omisión)")}
-            etiquetaExterno={t("voucher.external_person", "Persona externa")}
-            etiquetaYo={t("voucher.holder_is_you", "(tú)")}
-            idYo={actorIdUser}
-          />
+          {/* Sin usuario del sistema (chofer, mensajero): solo el nombre. Si
+              se deja en blanco, el responsable es quien recoge -- sin cambio
+              de comportamiento. */}
+          <input type="text" value={borrador.pickup_name}
+                 onChange={(e) => setBorrador({ ...borrador, pickup_name: e.target.value })}
+                 placeholder={t("voucher.pickup_is_holder", "El responsable (por omisión)")} />
           </label>
           )}
         </div>
@@ -1647,7 +1635,6 @@ Borrador.propTypes = {
   borrador: PropTypes.shape({
     id_incident_type: PropTypes.any,
     id_user: PropTypes.any,
-    id_user_pickup: PropTypes.any,
     pickup_name: PropTypes.string,
     id_incident_parent: PropTypes.any,
     // Lo que trae "Pedir en almacen" desde la lista de necesidades.
