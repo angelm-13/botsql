@@ -290,6 +290,28 @@ class TestAsignacionInterna(PiezasTestCase):
                          "una asignacion interna no saca la pieza de la empresa")
 
 
+class TestElSaldoNoSeDesajusta(PiezasTestCase):
+    def test_retiring_a_piece_that_was_in_use_takes_the_unit_out_exactly_once(self):
+        pieza = self.alta()
+        id_pieza = pieza["id_inventory_asset"]
+
+        piezas.assign_asset(id_pieza, {"id_holder": RESPONSABLE}, ACTOR)
+        self.assertEqual(1, self.existencia())
+        piezas.retire_asset(id_pieza, {"reason": "Fin de vida"}, QUIEN_AJUSTA)
+
+        self.assertEqual(0, self.existencia())
+
+    def test_returning_a_piece_that_was_in_use_does_not_add_a_unit(self):
+        pieza = self.alta()
+        id_pieza = pieza["id_inventory_asset"]
+        ubicacion = pieza["asset"]["id_location"] if "asset" in pieza else pieza["id_location"]
+
+        piezas.assign_asset(id_pieza, {"id_holder": RESPONSABLE}, ACTOR)
+        piezas.return_asset(id_pieza, {"id_location": ubicacion}, ACTOR)
+
+        self.assertEqual(1, self.existencia())
+
+
 class TestReparacionYMerma(PiezasTestCase):
     def test_sending_it_to_repair_takes_it_out_of_stock(self):
         pieza = self.alta()
@@ -409,6 +431,35 @@ class TestTraslado(PiezasTestCase):
                               {"id_location": OTRO_ALMACEN, "reason": "x"}, ACTOR)
 
         self.assertEqual("errors.inventory_asset_not_in_stock", raised.exception.message_key)
+
+    def test_a_failure_after_the_stock_moves_rolls_back_the_stock_too(self):
+        """`move_asset` escribe el traspaso de existencia Y el evento de la
+        pieza en la MISMA transaccion (`transfer_in_session`, no
+        `transfer_inventory`) -- si algo falla despues de que el saldo ya se
+        movio, el rollback tiene que deshacer las DOS cosas juntas, no solo
+        la pieza. Hallazgo de la auditoria de seguridad del 2026-10-06: antes
+        de este arreglo, `transfer_inventory` abria su propia transaccion y
+        ya habia hecho COMMIT del traspaso cuando esto fallaba -el saldo se
+        quedaba movido con la pieza todavia en la ubicacion vieja.
+        """
+        from unittest.mock import patch
+
+        pieza = self.alta()
+
+        with patch("app.services.inventory_asset_service._asentar",
+                   side_effect=RuntimeError("boom")):
+            with self.assertRaises(RuntimeError):
+                piezas.move_asset(pieza["id_inventory_asset"], {
+                    "id_location": OTRO_ALMACEN, "reason": "x",
+                }, ACTOR)
+
+        actual = piezas.asset_history(pieza["id_inventory_asset"], ACTOR)["asset"]
+        self.assertEqual(ALMACEN, actual["id_location"],
+                         "la pieza no se movio: el fallo fue despues")
+        self.assertEqual(1, self.existencia(ALMACEN),
+                         "el saldo de origen no debe quedar movido si la pieza no se movio")
+        self.assertEqual(0, self.existencia(OTRO_ALMACEN),
+                         "ni el destino debe quedar con existencia fantasma")
 
 
 class TestRastreo(PiezasTestCase):

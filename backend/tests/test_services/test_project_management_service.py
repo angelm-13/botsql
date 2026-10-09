@@ -48,3 +48,22 @@ class TestProjectStateMachine(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+    def test_a_project_without_maquila_skips_the_workshop_states(self):
+        self.assertEqual("completed", validate_project_transition(
+            "authorized", "completed", requires_maquila=False))
+        with self.assertRaises(AppError) as raised:
+            validate_project_transition(
+                "authorized", "waiting_material", requires_maquila=False)
+        self.assertEqual("errors.project_invalid_transition", raised.exception.message_key)
+
+    def test_a_stray_boolean_is_a_400_not_a_500(self):
+        from app.services.project_management_service import _booleano_estricto
+
+        valores = {"requires_maquila": "xyz"}
+        with self.assertRaises(AppError) as raised:
+            _booleano_estricto(valores, "requires_maquila")
+        self.assertEqual(400, raised.exception.status_code)
+
+        valores = {"requires_maquila": "False"}
+        _booleano_estricto(valores, "requires_maquila")
+        self.assertIs(False, valores["requires_maquila"])

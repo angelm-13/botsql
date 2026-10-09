@@ -66,6 +66,13 @@ ESTADOS = (DISPONIBLE, EN_USO, PRESTADA, EN_REPARACION, EXTRAVIADA, RETIRADA)
 # estante hay tres.
 ESTADOS_EN_EXISTENCIA = frozenset({DISPONIBLE})
 
+# Lo que cuenta el LIBRO de existencias (`inventory_stock`): ademas de lo
+# disponible, la pieza asignada dentro de la empresa, porque asignarla no
+# escribe movimiento -sigue siendo de la empresa y de su ubicacion-. Con esto un
+# retiro, una reparacion o un extravio descuenta la unidad exactamente una vez,
+# venga la pieza de `disponible` o de `en_uso`.
+ESTADOS_EN_SALDO = frozenset({DISPONIBLE, EN_USO})
+
 # Desde estos estados ya no se sale. Una pieza retirada no revive; si vuelve a
 # aparecer se da de alta como pieza nueva, para que su historia anterior quede
 # cerrada y legible.

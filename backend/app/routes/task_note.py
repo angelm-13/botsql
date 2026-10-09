@@ -155,9 +155,20 @@ def get_task_note(user_data, id_task_note):
 @token_required
 @require_entity_permission('task_note', 'create')
 def create_task_note(user_data):
+    """Da de alta la nota por el mismo camino que `/task/<id>/notes`.
+
+    Antes llamaba a `TaskNoteService.create` directo -el CRUD generico, sin
+    `_validate`-, lo que dejaba crear una nota con `task_note_description`
+    vacia y que NUNCA quedaba reflejada en `proyect_event` (el expediente
+    del proyecto no se enteraba, aunque la tarea si la tuviera). Hallazgo de
+    la auditoria de seguridad del 2026-10-06: dos caminos para el mismo
+    dato, con comportamiento distinto, para los mismos roles.
+    """
+    from app.services.task_service import add_task_note
+
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
-    require_task_access(payload.get('id_task'), user_data)
-    return _jsonify_projected_record(user_data, TaskNoteService.create(payload, user_id=user_data.get('id_user')), status=201)
+    note = add_task_note(payload.get('id_task'), payload, user_data)
+    return _jsonify_projected_record(user_data, note, status=201)
 
 
 @bp_task_note.route('/<id_task_note>', methods=['PUT'])
@@ -166,9 +177,9 @@ def create_task_note(user_data):
 def update_task_note(user_data, id_task_note):
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
     current = TaskNoteService.get(id_task_note)
-    require_task_access(current.get('id_task'), user_data)
+    require_task_access(current.get('id_task'), user_data, escribe=True)
     if payload.get('id_task') is not None:
-        require_task_access(payload.get('id_task'), user_data)
+        require_task_access(payload.get('id_task'), user_data, escribe=True)
     return _jsonify_projected_record(user_data, TaskNoteService.update(id_task_note, payload, user_id=user_data.get('id_user')))
 
 
@@ -177,5 +188,5 @@ def update_task_note(user_data, id_task_note):
 @require_entity_permission('task_note', 'delete')
 def delete_task_note(user_data, id_task_note):
     record = TaskNoteService.get(id_task_note)
-    require_task_access(record.get('id_task'), user_data)
+    require_task_access(record.get('id_task'), user_data, escribe=True)
     return jsonify(TaskNoteService.delete(id_task_note, user_id=user_data.get('id_user')))

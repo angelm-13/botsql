@@ -94,8 +94,6 @@ class Proyect(Base):
             'quotation_reference': to_json_value(self.quotation_reference),
             'requested_by': to_json_value(self.requested_by),
             'folio': to_json_value(self.folio),
-            'priority': to_json_value(self.priority),
-            'total_cost': to_json_value(self.total_cost),
             'created_by': to_json_value(self.created_by),
             'creation_date': to_json_value(self.creation_date),
             'last_update_date': to_json_value(self.last_update_date),
