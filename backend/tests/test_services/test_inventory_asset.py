@@ -290,6 +290,28 @@ class TestAsignacionInterna(PiezasTestCase):
                          "una asignacion interna no saca la pieza de la empresa")
 
 
+class TestElSaldoNoSeDesajusta(PiezasTestCase):
+    def test_retiring_a_piece_that_was_in_use_takes_the_unit_out_exactly_once(self):
+        pieza = self.alta()
+        id_pieza = pieza["id_inventory_asset"]
+
+        piezas.assign_asset(id_pieza, {"id_holder": RESPONSABLE}, ACTOR)
+        self.assertEqual(1, self.existencia())
+        piezas.retire_asset(id_pieza, {"reason": "Fin de vida"}, QUIEN_AJUSTA)
+
+        self.assertEqual(0, self.existencia())
+
+    def test_returning_a_piece_that_was_in_use_does_not_add_a_unit(self):
+        pieza = self.alta()
+        id_pieza = pieza["id_inventory_asset"]
+        ubicacion = pieza["asset"]["id_location"] if "asset" in pieza else pieza["id_location"]
+
+        piezas.assign_asset(id_pieza, {"id_holder": RESPONSABLE}, ACTOR)
+        piezas.return_asset(id_pieza, {"id_location": ubicacion}, ACTOR)
+
+        self.assertEqual(1, self.existencia())
+
+
 class TestReparacionYMerma(PiezasTestCase):
     def test_sending_it_to_repair_takes_it_out_of_stock(self):
         pieza = self.alta()

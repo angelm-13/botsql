@@ -100,6 +100,11 @@ def _integer_quantity(value, field="quantity"):
         raise AppError("errors.invalid_field", 400, {"field": field})
     try:
         quantity = int(value)
+        # 1.5 o "1.5" no es una cantidad entera: truncarlo movia 1 en silencio.
+        if isinstance(value, float) and value != quantity:
+            raise ValueError(value)
+        if isinstance(value, str) and str(quantity) != value.strip():
+            raise ValueError(value)
     except (TypeError, ValueError) as exc:
         raise AppError("errors.invalid_field", 400, {"field": field}) from exc
     if quantity <= 0:
