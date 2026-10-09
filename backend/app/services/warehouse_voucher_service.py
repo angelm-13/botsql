@@ -765,11 +765,14 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
     # responsable sigue siendo el que se pasa en `id_user`.
     id_supervisor_proyecto = _entero(payload.get("id_supervisor_project"),
                                      "id_supervisor_project", obligatorio=False)
-    # Quien recoge: el supervisor (True, default) o alguien más (False).
-    recoge_supervisor = payload.get("pickup_self", True)
     # Quien recoge cuando no es el propio responsable y no tiene usuario en el
     # sistema (chofer, mensajero): solo el nombre, en el vale completo.
-    nombre_pickup = _texto(payload.get("pickup_name"), "pickup_name", largo=120, obligatorio=not recoge_supervisor)
+    nombre_pickup = _texto(payload.get("pickup_name"), "pickup_name", largo=120, obligatorio=False)
+    # Quien recoge: si se especificó pickup_self, usar eso; si no, inferir del nombre_pickup.
+    # Default: si hay nombre, es externo; si no hay nombre, es el supervisor.
+    recoge_supervisor = payload.get("pickup_self")
+    if recoge_supervisor is None:
+        recoge_supervisor = not bool(nombre_pickup)
     # Vale complementario: el vale anterior, del mismo proyecto, al que este
     # agrega herramienta.
     id_padre = _entero(payload.get("id_incident_parent"), "id_incident_parent",

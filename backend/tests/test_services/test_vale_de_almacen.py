@@ -909,11 +909,12 @@ class TestElPrevaleNoMueveElAlmacen(BaseVale):
                             "id_location_from": RACK}])
 
         # Otro actor: el que pidio no autoriza.
-        abierto = autorizar_vale(r["voucher"]["id_incident"], {}, OTRO_ACTOR)
+        # Flujo completo: autorizar -> marcar-salido -> confirmar
+        abierto = self._autorizacion_completa(r["voucher"]["id_incident"], OTRO_ACTOR)
 
         self.assertEqual(ABIERTO, abierto["voucher"]["incident_status"])
         self.assertEqual(antes - 2, self._saldo(RACK),
-                         "al autorizar SI sale el material")
+                         "al marcar-salido SI sale el material")
 
     def test_it_cannot_be_authorised_twice(self):
         """Autorizar dos veces sacaria el material dos veces."""
@@ -1009,7 +1010,8 @@ class TestElPrevaleNoMueveElAlmacen(BaseVale):
 
         otro = {"id_user": 2, "id_proyect": PROYECTO,
                 "id_permission": JEFE_DE_ALMACEN}
-        abierto = autorizar_vale(r["voucher"]["id_incident"], {}, otro)
+        # Flujo completo: autorizar -> marcar-salido -> confirmar
+        abierto = self._autorizacion_completa(r["voucher"]["id_incident"], otro)
 
         self.assertEqual(ABIERTO, abierto["voucher"]["incident_status"])
         self.assertEqual(antes - 2, self._saldo(RACK))
