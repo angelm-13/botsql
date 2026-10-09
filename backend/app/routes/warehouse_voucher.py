@@ -28,6 +28,7 @@ from app.services.warehouse_voucher_service import (
     folio_del_vale,
     marcar_como_salido_del_almacen,
     notificar_entrega_registrada,
+    notificar_material_salido_del_almacen,
     pdf_del_vale,
     autorizar_vale,
     buscar_vales,
@@ -221,9 +222,14 @@ def autorizar(user_data, id_incident):
     4. Almacén marca "salido" (/mark-as-shipped)
     5. Supervisor confirma (/confirm-supervision-receipt)
 
-    Las notificaciones las envía la función del servicio.
+    Las notificaciones se envían después de que la transacción cierre.
     """
-    return jsonify(autorizar_vale(id_incident, _cuerpo(), user_data)), 200
+    resultado = autorizar_vale(id_incident, _cuerpo(), user_data)
+    try:
+        notificar_prevale_autorizado(id_incident, user_data.get("id_user"))
+    except Exception:
+        pass
+    return jsonify(resultado), 200
 
 
 @bp_warehouse_voucher.route("/vouchers/<id_incident>/deliver", methods=["POST"])
@@ -269,8 +275,24 @@ def marcar_salido(user_data, id_incident):
     4. Supervisor confirma (EN_TRANSITO → ABIERTO)
 
     Cuerpo: `{"note": "..."}`
+    Notifica al almacén quién va a recoger (si hay pickup_name).
     """
+    from app.services.warehouse_voucher_service import consultar_vale
+    from app.models.session import transaction_context
+
     resultado = marcar_como_salido_del_almacen(id_incident, _cuerpo(), user_data)
+
+    # Notificar al almacén quién va a recoger el material
+    try:
+        with transaction_context() as db:
+            vale = consultar_vale(db, id_incident)
+            nombre_quien_recoge = vale.pickup_name if vale.pickup_name else None
+        if nombre_quien_recoge:
+            notificar_material_salido_del_almacen(
+                id_incident, user_data.get("id_user"), nombre_quien_recoge)
+    except Exception:
+        pass
+
     return jsonify(resultado), 200
 
 
