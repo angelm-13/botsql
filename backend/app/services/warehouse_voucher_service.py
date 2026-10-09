@@ -700,64 +700,60 @@ def _validar_vale_padre(db, id_padre: int, id_proyecto, user_data: dict) -> None
                        {"id_proyect": id_proyecto, "status": estado})
 
 
-def _validar_permiso_tipo_vale(db, user_data: dict, id_tipo: int, como_borrador: bool):
-    """Valida que el usuario pueda crear este tipo de vale según su rol.
+# Tipos de vale que son de herramienta; el resto (jornada, comida, vacaciones...)
+# solo lo levanta quien administra todo (Gerencia/administrador).
+TIPOS_DE_HERRAMIENTA = ("prestamo", "reparacion", "danado", "destruccion", "extraviado")
+TIPOS_DE_SUPERVISOR = ("prestamo", "danado", "extraviado", "reparacion")
 
-    - Supervisor (warehouse_prevoucher): solo prevales de préstamo
-    - Almacén (warehouse_voucher): vales de herramienta (préstamo, reparación, dañado)
-    - Gerencia: cualquier tipo (incluyendo destrucción, extraviado)
+
+def _prefijos_de_tipo_permitidos(db, user_data: dict):
+    """None si puede levantar cualquier tipo; si no, los prefijos permitidos.
+
+    - Gerencia (`project_authorization`) y administrador: cualquiera.
+    - Almacen (`warehouse_voucher`): solo los de herramienta.
+    - Supervisor (`warehouse_prevoucher`): prestamo, danado, extraviado y
+      reparacion.
     """
-    # Los administradores no tienen restricción.
-    if _sin_restriccion(user_data):
-        return
+    if _sin_restriccion(user_data) or has_capability(db, user_data, "project_authorization"):
+        return None
+    if has_capability(db, user_data, "warehouse_voucher"):
+        return TIPOS_DE_HERRAMIENTA
+    if has_capability(db, user_data, "warehouse_prevoucher"):
+        return TIPOS_DE_SUPERVISOR
+    # Sin ninguna de las capacidades de vale: el guardia de la RUTA ya lo
+    # rechazo; aqui no se agrega una segunda regla.
+    return None
 
-    # Obtener el tipo de vale para validación
-    tipo = db.scalars(select(IncidentType).where(
-        IncidentType.id_incident_type == id_tipo
-    )).first()
+
+def filtrar_tipos_de_vale(opciones: list[dict], user_data: dict) -> list[dict]:
+    """Deja en el selector solo los tipos que el rol puede levantar."""
+    with transaction_context() as db:
+        prefijos = _prefijos_de_tipo_permitidos(db, user_data)
+    if prefijos is None:
+        return opciones
+    return [o for o in opciones if any(
+        _clave_de_tipo(o.get("incident_type_description")).startswith(t) for t in prefijos)]
+
+
+def _validar_permiso_tipo_vale(db, user_data: dict, id_tipo: int, como_borrador: bool):
+    """Rechaza un tipo de vale que el rol no puede levantar (ver arriba)."""
+    tipo = db.get(IncidentType, id_tipo)
     if tipo is None:
         raise AppError("errors.not_found", 404, {"entity": "incident_type"})
-
-    desc = str(tipo.incident_type_description or "").lower()
-
-    # Tipos de baja (destrucción, extraviado) - solo gerencia
-    tipos_baja = ["destruccion", "extraviado"]
-    es_baja = any(baja in desc for baja in tipos_baja)
-
-    # Si solo tiene warehouse_prevoucher (supervisor): solo prevales de préstamo
-    if has_capability(db, user_data, "warehouse_prevoucher"):
-        if not como_borrador:
-            raise AppError("errors.permission_denied", 403, {
-                "action": "create",
-                "entity": "warehouse_voucher",
-                "detail": "supervisors_can_only_create_drafts",
-            })
-        # Solo préstamo para supervisores
-        if "préstamo" not in desc and "prestamo" not in desc:
-            raise AppError("errors.permission_denied", 403, {
-                "action": "create",
-                "entity": "warehouse_voucher",
-                "incident_type_description": tipo.incident_type_description,
-                "detail": "supervisors_can_only_create_loan_drafts",
-            })
+    detalle = {"action": "create", "entity": "warehouse_voucher",
+               "incident_type_description": tipo.incident_type_description}
+    prefijos = _prefijos_de_tipo_permitidos(db, user_data)
+    if prefijos is None:
         return
-
-    # Si tiene warehouse_voucher (almacén): vales de herramienta, NO bajas
-    if has_capability(db, user_data, "warehouse_voucher"):
-        if es_baja:
-            raise AppError("errors.permission_denied", 403, {
-                "action": "create",
-                "entity": "warehouse_voucher",
-                "incident_type_description": tipo.incident_type_description,
-                "detail": "warehouse_can_only_create_tool_vouchers",
-            })
-        return
-
-    # Si llegó aquí sin permisos, denegar
-    raise AppError("errors.permission_denied", 403, {
-        "action": "create",
-        "entity": "warehouse_voucher",
-    })
+    solo_supervisor = (not has_capability(db, user_data, "warehouse_voucher")
+                       and has_capability(db, user_data, "warehouse_prevoucher"))
+    if solo_supervisor and not como_borrador:
+        raise AppError("errors.permission_denied", 403,
+                       {**detalle, "detail": "supervisors_can_only_create_drafts"})
+    clave = _clave_de_tipo(tipo.incident_type_description)
+    if not any(clave.startswith(t) for t in prefijos):
+        raise AppError("errors.permission_denied", 403,
+                       {**detalle, "detail": "tipo_no_permitido_para_el_rol"})
 
 
 def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -> dict:
@@ -1419,6 +1415,8 @@ def notificar_prevale_creado(id_incident, actor_id: int) -> None:
         folio = vale.external_folio or str(vale.id_incident)
         id_incident_plano = int(vale.id_incident)
         nombre_responsable = _persona(db, vale.id_user)
+        nombre_quien_levanto = _persona(db, vale.created_by) or nombre_responsable
+        quien_recoge = (vale.pickup_name or "").strip()
         destinatarios = _usuarios_con_capacidad(db, "warehouse_voucher_authorize")
 
     for id_destinatario in {int(d) for d in destinatarios if int(d) != int(actor_id)}:
@@ -1429,9 +1427,12 @@ def notificar_prevale_creado(id_incident, actor_id: int) -> None:
                 notification_type="warehouse_voucher_prevoucher_pending",
                 title="Prevale #%s pendiente de autorizar" % folio,
                 message=(
-                    "%s pidió material (vale #%s). Autorízalo para que "
-                    "pueda pasar por él."
-                ) % (nombre_responsable or "Alguien", folio),
+                    "%s levantó el prevale #%s (responsable: %s). %s "
+                    "Autorízalo para que pueda pasar por el material."
+                ) % (nombre_quien_levanto or "Alguien", folio,
+                     nombre_responsable or "—",
+                     ("Lo recoge: %s." % quien_recoge) if quien_recoge
+                     else "Lo recoge el responsable."),
                 metadata={"id_incident": id_incident_plano},
                 target_entity="voucher", target_id=id_incident_plano,
                 created_by=actor_id,
@@ -1514,44 +1515,6 @@ def notificar_entrega_registrada(id_incident, actor_id: int) -> None:
         )
     except Exception:
         pass
-
-
-def notificar_material_salido_del_almacen(id_incident, actor_id: int, nombre_quien_recoge: str = None) -> None:
-    """Notifica al almacén que el material salió y quién lo va a recoger.
-
-    Se llama desde la RUTA de marcar_como_salido_del_almacen, después de que la
-    transacción cierre. Si hay pickup_name (alguien distinto del responsable),
-    avisa al almacén quién va a recoger.
-    """
-    from app.services.notification_service import create_notification
-
-    if not nombre_quien_recoge:
-        return
-
-    with transaction_context() as db:
-        vale = _vale(db, id_incident)
-        folio = vale.external_folio or str(vale.id_incident)
-        id_incident_plano = int(vale.id_incident)
-        nombre_responsable = _persona(db, vale.id_user)
-        destinatarios = _usuarios_con_capacidad(db, "warehouse_voucher")
-
-    for id_destinatario in {int(d) for d in destinatarios if int(d) != int(actor_id)}:
-        try:
-            create_notification(
-                id_user_recipient=id_destinatario,
-                id_user_sender=actor_id,
-                notification_type="warehouse_voucher_shipped",
-                title="Vale #%s salió del almacén" % folio,
-                message=(
-                    "El vale #%s de %s salió del almacén. "
-                    "Lo recoge: %s"
-                ) % (folio, nombre_responsable or "alguien", nombre_quien_recoge),
-                metadata={"id_incident": id_incident_plano},
-                target_entity="voucher", target_id=id_incident_plano,
-                created_by=actor_id,
-            )
-        except Exception:
-            continue
 
 
 def _poner_custodia(renglon, id_responsable: int, *, id_user=None, nombre=None) -> None:
@@ -1931,8 +1894,6 @@ def marcar_como_salido_del_almacen(id_incident, payload: dict, user_data: dict) 
         if baja:
             _sincronizar_estado(db, vale)
 
-        # Notificar al supervisor que ya salió del almacén.
-        notificar_material_entregado(vale.id_incident, actor)
 
         return {
             "voucher": vale.serialize(),
@@ -1974,8 +1935,6 @@ def confirmar_recepcion_supervisada(id_incident, payload: dict, user_data: dict)
         vale.last_update_date = _ahora()
         db.flush()
 
-        # Notificar al almacén que fue entregado.
-        notificar_entrega_registrada(vale.id_incident, actor)
 
         return {
             "voucher": vale.serialize(),

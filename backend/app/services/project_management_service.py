@@ -860,7 +860,7 @@ def _material_del_proyecto(db, id_proyect) -> dict:
                # que "se llevo" la obra. Un estado nulo es un vale de antes y si
                # cuenta -- por eso el coalesce: sin el, NOT IN descarta los NULL.
                func.coalesce(func.lower(Incident.incident_status), "")
-               .notin_(("borrador", "cancelado")),
+               .notin_(("borrador", "en_espera", "cancelado")),
                NmIncidentProduct.deletion_date.is_(None),
                NmIncidentProduct.direction == "salida")
         .group_by(Product.id_product, Product.descripcion, Product.product_code)

@@ -2240,10 +2240,19 @@ class TestElMaterialDelProyectoNoCuentaLoQueNoSalio(BaseEntrega):
 
         self.assertEqual(0, self._material()["taken_total"])
 
-    def test_an_authorized_voucher_counts_for_the_project(self):
+    def test_an_authorized_voucher_is_reserved_not_taken(self):
         borrador = self._para_el_proyecto([self._linea_cantidad(2)])
 
         autorizar_vale(borrador["voucher"]["id_incident"], {}, OTRO_ACTOR)
+
+        self.assertEqual(0, self._material()["taken_total"])
+
+    def test_a_shipped_voucher_counts_for_the_project(self):
+        borrador = self._para_el_proyecto([self._linea_cantidad(2)])
+        id_vale = borrador["voucher"]["id_incident"]
+
+        autorizar_vale(id_vale, {}, OTRO_ACTOR)
+        marcar_como_salido_del_almacen(id_vale, {}, OTRO_ACTOR)
 
         resumen = self._material()
         self.assertEqual(2, resumen["taken_total"])

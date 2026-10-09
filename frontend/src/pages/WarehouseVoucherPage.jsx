@@ -642,10 +642,12 @@ export default function WarehouseVoucherPage() {
                         {t(`voucher.status_${v.incident_status}`, v.incident_status)}
                       </span>
                       <span className="vale-lista-cuenta">
-                        <span className={`vale-marca-mini ${v.open_lines > 0 ? "fuera" : "devuelto"}`}>
-                          {v.open_lines > 0
-                            ? `${v.open_lines} ${t("voucher.out", "fuera")}`
-                            : t("voucher.all_back", "todo devuelto")}
+                        <span className={`vale-marca-mini ${v.open_lines > 0 && !["borrador", "en_espera"].includes(v.incident_status) ? "fuera" : "devuelto"}`}>
+                          {["borrador", "en_espera"].includes(v.incident_status)
+                            ? t("voucher.reserved", "apartado")
+                            : v.open_lines > 0
+                              ? `${v.open_lines} ${t("voucher.out", "fuera")}`
+                              : t("voucher.all_back", "todo devuelto")}
                         </span>
                         {ENTREGA_TEXTO[v.delivery_status] && (
                           <span className={`vale-marca-mini entrega-${v.delivery_status}`}>
@@ -732,6 +734,9 @@ function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
   const cerrado = estado === "cerrado";
   // El borrador es el prevale: material pedido, todavia en el almacen.
   const borrador = estado === "borrador";
+  // Hasta que almacen lo marca como salido, el material sigue en el almacen:
+  // esta apartado, no fuera.
+  const sinSalir = ["borrador", "en_espera"].includes(estado);
 
   // Un prestamo real por renglon, no una fila de tabla: la devolucion agrega
   // un renglon de ENTRADA en vez de reescribir el de SALIDA (asi queda el
@@ -903,7 +908,12 @@ function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
                       aprender, y el objetivo es que se entienda sin
                       explicacion. */}
                   <td className="vale-tabla-estado">
-                    {abierto ? (
+                    {abierto && sinSalir ? (
+                      <span className="vale-marca devuelto">
+                        <Package size={13} />
+                        {t("voucher.reserved", "apartado")}
+                      </span>
+                    ) : abierto ? (
                       <>
                         <span className={`vale-marca fuera ${vencido ? "vencida" : ""}`}>
                           <AlertTriangle size={13} />

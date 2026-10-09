@@ -327,7 +327,7 @@ export const updateIncidentDetail = (id, payload) => request(`/incident_detail/$
 export const deleteIncidentDetail = (id) => request(`/incident_detail/${id}`, { method: "DELETE" });
 
 export const getAllIncidentType = (params = {}) => request("/incident_type/", { params });
-export const getIncidentTypeOptions = () => request("/incident_type/options");
+export const getIncidentTypeOptions = () => request("/incident_type/options?para=vale");
 export const getIncidentType = (id) => request(`/incident_type/${id}`);
 export const createIncidentType = (payload) => request("/incident_type/", { method: "POST", body: payload });
 export const updateIncidentType = (id, payload) => request(`/incident_type/${id}`, { method: "PUT", body: payload });

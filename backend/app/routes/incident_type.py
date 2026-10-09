@@ -122,7 +122,11 @@ def list_incident_type_options(user_data):
     porque un Almacenista levanta vales sin tener el modulo `operaciones`, al
     que pertenece `incident_type`.
     """
-    return jsonify(IncidentTypeService.options())
+    opciones = IncidentTypeService.options()
+    if request.args.get('para') == 'vale':
+        from app.services.warehouse_voucher_service import filtrar_tipos_de_vale
+        opciones = filtrar_tipos_de_vale(opciones, user_data)
+    return jsonify(opciones)
 
 
 @bp_incident_type.route('/', methods=['GET'])

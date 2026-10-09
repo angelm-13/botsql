@@ -403,6 +403,10 @@ def _prestado_en_lote(db, ids_productos) -> dict[int, dict]:
             NmIncidentProduct.close_date.is_(None),
             NmIncidentProduct.deletion_date.is_(None),
             Incident.deletion_date.is_(None),
+            # Un prevale o un vale en espera sigue en el almacen (apartado):
+            # nadie lo "tiene" todavia.
+            func.coalesce(func.lower(Incident.incident_status), "")
+            .notin_(("borrador", "en_espera", "cancelado")),
             # Quien "tiene" el producto ahora: una baja no esta con nadie.
             NmIncidentProduct.id_incident.notin_(_vales_de_baja()),
         )

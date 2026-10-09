@@ -28,7 +28,6 @@ from app.services.warehouse_voucher_service import (
     folio_del_vale,
     marcar_como_salido_del_almacen,
     notificar_entrega_registrada,
-    notificar_material_salido_del_almacen,
     pdf_del_vale,
     autorizar_vale,
     buscar_vales,
@@ -275,24 +274,12 @@ def marcar_salido(user_data, id_incident):
     4. Supervisor confirma (EN_TRANSITO → ABIERTO)
 
     Cuerpo: `{"note": "..."}`
-    Notifica al almacén quién va a recoger (si hay pickup_name).
     """
-    from app.services.warehouse_voucher_service import consultar_vale
-    from app.models.session import transaction_context
-
     resultado = marcar_como_salido_del_almacen(id_incident, _cuerpo(), user_data)
-
-    # Notificar al almacén quién va a recoger el material
     try:
-        with transaction_context() as db:
-            vale = consultar_vale(db, id_incident)
-            nombre_quien_recoge = vale.pickup_name if vale.pickup_name else None
-        if nombre_quien_recoge:
-            notificar_material_salido_del_almacen(
-                id_incident, user_data.get("id_user"), nombre_quien_recoge)
+        notificar_material_entregado(id_incident, user_data.get("id_user"))
     except Exception:
         pass
-
     return jsonify(resultado), 200
 
 
@@ -311,6 +298,10 @@ def confirmar_recepcion_supervision(user_data, id_incident):
     Cuerpo: `{"note": "..."}`
     """
     resultado = confirmar_recepcion_supervisada(id_incident, _cuerpo(), user_data)
+    try:
+        notificar_entrega_registrada(id_incident, user_data.get("id_user"))
+    except Exception:
+        pass
     return jsonify(resultado), 200
 
 
