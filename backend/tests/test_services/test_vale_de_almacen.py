@@ -53,7 +53,11 @@ from app.services.warehouse_voucher_service import (
     ABIERTO,
     BORRADOR,
     CERRADO,
+    EN_ESPERA,
+    EN_TRANSITO,
     autorizar_vale,
+    marcar_como_salido_del_almacen,
+    confirmar_recepcion_supervisada,
     buscar_vales,
     cerrar_renglon,
     devolver_renglon,
@@ -276,6 +280,23 @@ class BaseVale(BackendTestCase):
                 id_proyect=PROYECTO, id_status=ESTATUS, supervisor=1,
                 created_by=1))
         return id_user
+
+    def _autorizacion_completa(self, id_incident, actor=OTRO_ACTOR):
+        """Helper: autoriza + marca salido + confirma (flujo completo).
+
+        Para compatibilidad con tests que esperaban ABIERTO después de autorizar.
+        El nuevo flujo es: BORRADOR -> EN_ESPERA -> EN_TRANSITO -> ABIERTO.
+        """
+        # Paso 1: Autorizar (BORRADOR -> EN_ESPERA)
+        resultado = autorizar_vale(id_incident, {}, actor)
+
+        # Paso 2: Marcar como salido (EN_ESPERA -> EN_TRANSITO, saca del almacén)
+        resultado = marcar_como_salido_del_almacen(id_incident, {}, actor)
+
+        # Paso 3: Confirmar (EN_TRANSITO -> ABIERTO)
+        resultado = confirmar_recepcion_supervisada(id_incident, {}, ACTOR)
+
+        return resultado
 
 
 class TestElTipoCuelgaDeLaFamilia(BaseVale):

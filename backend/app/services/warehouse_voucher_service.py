@@ -765,8 +765,8 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
     # responsable sigue siendo el que se pasa en `id_user`.
     id_supervisor_proyecto = _entero(payload.get("id_supervisor_project"),
                                      "id_supervisor_project", obligatorio=False)
-    # Quien recoge: el supervisor (True) o alguien más (False).
-    recoge_supervisor = payload.get("pickup_self", False)
+    # Quien recoge: el supervisor (True, default) o alguien más (False).
+    recoge_supervisor = payload.get("pickup_self", True)
     # Quien recoge cuando no es el propio responsable y no tiene usuario en el
     # sistema (chofer, mensajero): solo el nombre, en el vale completo.
     nombre_pickup = _texto(payload.get("pickup_name"), "pickup_name", largo=120, obligatorio=not recoge_supervisor)
