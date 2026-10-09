@@ -4294,6 +4294,7 @@
     "lines": "lines",
     "back_to_list": "Back to the list",
     "status_abierto": "Open",
+    "available": "available",
     "status_en_espera": "Authorised · in warehouse",
     "status_en_transito": "Handed over · to confirm",
     "status_cerrado": "Closed",

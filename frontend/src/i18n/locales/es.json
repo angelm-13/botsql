@@ -4409,6 +4409,7 @@
     "lines": "renglones",
     "back_to_list": "Volver a la lista",
     "status_abierto": "Abierto",
+    "available": "disponibles",
     "status_en_espera": "Autorizado · en almacén",
     "status_en_transito": "Entregado · por confirmar",
     "status_cerrado": "Cerrado",

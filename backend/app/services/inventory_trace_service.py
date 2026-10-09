@@ -177,6 +177,8 @@ def _existencias_en_lote(db, ids_productos, ubicaciones: "CacheDeUbicaciones") -
     ).all()
 
     ubicaciones.precargar({f.id_location for f in filas})
+    from app.services.warehouse_voucher_service import apartado_por_sitio
+    apartado = apartado_por_sitio(db, {f.id_product for f in filas})
 
     por_producto: dict[int, list] = {}
     for fila in filas:
@@ -191,6 +193,11 @@ def _existencias_en_lote(db, ids_productos, ubicaciones: "CacheDeUbicaciones") -
             "warehouse_description": ruta["warehouse_description"],
             "id_module": ubicacion.id_module,
             "quantity": int(fila.quantity or 0),
+            # Lo que otros prevales ya apartaron aqui, y lo que de verdad se
+            # puede pedir: la existencia fisica no cambia hasta que sale.
+            "reserved": apartado.get((fila.id_product, fila.id_location), 0),
+            "available": max(0, int(fila.quantity or 0)
+                             - apartado.get((fila.id_product, fila.id_location), 0)),
             "path": ruta["segments"],
             "path_label": ruta["label"],
         })

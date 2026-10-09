@@ -596,6 +596,36 @@ def _sincronizar_estado(db, vale: Incident) -> None:
 
 # --- operaciones ---------------------------------------------------------
 
+def apartado_por_sitio(db, ids_productos, *, excepto_vale=None) -> dict[tuple[int, int], int]:
+    """Lo fungible que otros prevales y vales en espera ya tienen apartado.
+
+    Sigue en el libro -no ha salido-, pero ya esta comprometido: sin restarlo,
+    dos prevales piden la misma unica pieza y el segundo solo falla al entregar.
+    Las piezas serializadas se protegen aparte, con su estado `apartada`.
+    """
+    if not ids_productos:
+        return {}
+    consulta = (
+        select(NmIncidentProduct.id_product, NmIncidentProduct.id_location_from,
+               func.coalesce(func.sum(NmIncidentProduct.quantity), 0))
+        .join(Incident, Incident.id_incident == NmIncidentProduct.id_incident)
+        .where(
+            NmIncidentProduct.id_product.in_(list(ids_productos)),
+            NmIncidentProduct.direction == SALIDA,
+            NmIncidentProduct.close_date.is_(None),
+            NmIncidentProduct.deletion_date.is_(None),
+            NmIncidentProduct.id_inventory_asset.is_(None),
+            Incident.deletion_date.is_(None),
+            func.lower(func.coalesce(Incident.incident_status, "")).in_((BORRADOR, EN_ESPERA)),
+        )
+        .group_by(NmIncidentProduct.id_product, NmIncidentProduct.id_location_from)
+    )
+    if excepto_vale is not None:
+        consulta = consulta.where(NmIncidentProduct.id_incident != int(excepto_vale))
+    return {(int(p), int(u)): int(c) for p, u, c in db.execute(consulta).all()
+            if u is not None}
+
+
 def _validar_herramientas_disponibles(db, validados: list[dict]) -> None:
     """Verifica que ninguna pieza solicitada esté apartada en otro prevale.
 
@@ -634,13 +664,14 @@ def _comprobar_existencia_del_borrador(db, validados: list[dict]) -> None:
         clave = (int(renglon["id_product"]), int(renglon["id_location_from"]))
         pedido[clave] = pedido.get(clave, 0) + int(renglon["quantity"])
 
+    apartado = apartado_por_sitio(db, {p for p, _ in pedido})
     for (id_producto, id_ubicacion), solicitado in pedido.items():
         disponible = int(db.scalar(
             select(func.coalesce(func.sum(InventoryStock.quantity), 0)).where(
                 InventoryStock.id_product == id_producto,
                 InventoryStock.id_location == id_ubicacion,
             )
-        ) or 0)
+        ) or 0) - apartado.get((id_producto, id_ubicacion), 0)
         if solicitado > disponible:
             raise AppError(
                 "errors.voucher_quantity_exceeds_stock", 409,
@@ -660,7 +691,9 @@ def _comprobar_existencia_del_borrador_renglon(db, renglon: NmIncidentProduct) -
             InventoryStock.id_product == renglon.id_product,
             InventoryStock.id_location == renglon.id_location_from,
         )
-    ) or 0)
+    ) or 0) - apartado_por_sitio(
+        db, {renglon.id_product}, excepto_vale=renglon.id_incident
+    ).get((int(renglon.id_product), int(renglon.id_location_from)), 0)
     if int(renglon.quantity or 0) > disponible:
         raise AppError(
             "errors.voucher_quantity_exceeds_stock", 409,

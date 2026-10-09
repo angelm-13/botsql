@@ -224,7 +224,8 @@ export default function WarehouseVoucherPage() {
   useEffect(() => { cargar(); }, [cargar]);
 
   const abrirBorrador = (extra = {}) => setBorrador({
-    id_incident_type: tipos[0]?.id_incident_type || "",
+    id_incident_type: (tipos.find((x) => /pr[eé]stamo/i.test(x.incident_type_description || ""))
+      || tipos[0])?.id_incident_type || "",
     // Quien solo puede solicitar es SIEMPRE el responsable de lo que pide --
     // mismo criterio que ya rige en Proyectos ("el responsable es quien crea
     // el proyecto"): no tiene sentido que Supervisor levante un prevale a
@@ -1272,7 +1273,7 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
             return (producto.pieces || []).length > 0;
           } else {
             // Para productos fungibles, debe haber existencia en alguna ubicación
-            return (producto.locations || []).some(loc => Number(loc.quantity) > 0);
+            return (producto.locations || []).some(loc => Number(loc.available ?? loc.quantity) > 0);
           }
         });
         setCandidatos(conExistencia);
@@ -1296,7 +1297,7 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
         // el sitio de donde sale: el prevale no puede pedir mas que la existencia.
         quantity: serializado ? 1 : Math.max(1, Math.min(
           Number(borrador.cantidad_sugerida) || 1,
-          Number(producto.locations?.[0]?.quantity) || 1)),
+          Number(producto.locations?.[0]?.available ?? producto.locations?.[0]?.quantity) || 1)),
         serializado,
         id_location_from: pieza?.id_location
           || producto.locations?.[0]?.id_location || "",
@@ -1321,7 +1322,7 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
     if (linea.serializado) return null;
     const sitio = (linea.sitios || []).find(
       (s) => String(s.id_location) === String(linea.id_location_from));
-    const hay = Number(sitio?.quantity) || 0;
+    const hay = Number(sitio?.available ?? sitio?.quantity) || 0;
     const yaPedido = borrador.lines.reduce((suma, otra, i) => (
       i !== indice && !otra.serializado
         && otra.id_product === linea.id_product
@@ -1487,7 +1488,7 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
                 <em className="muted">
                   {p.tracking_mode === "serializado"
                     ? t("voucher.by_piece", "por pieza")
-                    : `${p.total} ${t("voucher.in_stock", "en existencia")}`}
+                    : `${(p.locations || []).reduce((n, l) => n + (Number(l.available ?? l.quantity) || 0), 0)} ${t("voucher.available", "disponibles")}`}
                 </em>
                 {/* Lo fungible se agrega directo; lo serializado obliga a
                     elegir la pieza, porque devolver "un desarmador" no cierra

@@ -2373,3 +2373,25 @@ class TestLosTiposDeValePorRol(BaseVale):
         confirmado = confirmar_recibido_del_vale(id_vale, {}, ACTOR)
 
         self.assertEqual(ABIERTO, confirmado["voucher"]["incident_status"])
+
+
+class TestLoApartadoNoSeVuelveAPedir(BaseVale):
+    def test_a_second_prevoucher_cannot_ask_for_the_only_unit(self):
+        self.surtir(1, RACK)
+        linea = {"id_product": CEMENTO, "quantity": 1, "id_location_from": RACK}
+        self._prevale([linea])
+
+        with self.assertRaises(AppError) as caja:
+            self._prevale([dict(linea)])
+
+        self.assertEqual("errors.voucher_quantity_exceeds_stock", caja.exception.message_key)
+
+    def test_the_trace_offers_only_what_is_not_reserved(self):
+        from app.services.inventory_trace_service import localizar
+
+        self.surtir(3, RACK)
+        self._prevale([{"id_product": CEMENTO, "quantity": 2, "id_location_from": RACK}])
+
+        sitio = localizar("cemento", ACTOR)["items"][0]["locations"][0]
+
+        self.assertEqual((3, 2, 1), (sitio["quantity"], sitio["reserved"], sitio["available"]))
