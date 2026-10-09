@@ -1650,7 +1650,7 @@ class TestLasNotificacionesDelCicloDelVale(BaseVale):
         avisos = self._no_leidas(OPERADOR)
         self.assertEqual(1, len(avisos))
         # La notificación es "prevale autorizado, puede pasar a recoger"
-        self.assertEqual("warehouse_voucher_pending", avisos[0].notification_type)
+        self.assertEqual("warehouse_voucher_prevoucher_authorized", avisos[0].notification_type)
 
     def test_opening_a_direct_voucher_notifies_the_holder_too(self):
         """Un vale directo ya saca el material al crearse -- no hay un
