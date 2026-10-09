@@ -1646,12 +1646,11 @@ class TestLasNotificacionesDelCicloDelVale(BaseVale):
         vale = self._prevale([self._linea_cantidad(10)], id_user=OPERADOR)
         autorizar_vale(vale["voucher"]["id_incident"], {}, ACTOR)
 
-        notificar_material_entregado(
-            vale["voucher"]["id_incident"], actor_id=ACTOR["id_user"])
-
+        # En el nuevo flujo, autorizar ya manda notificación al supervisor
         avisos = self._no_leidas(OPERADOR)
         self.assertEqual(1, len(avisos))
-        self.assertEqual("warehouse_voucher_delivered", avisos[0].notification_type)
+        # La notificación es "prevale autorizado, puede pasar a recoger"
+        self.assertEqual("warehouse_voucher_pending", avisos[0].notification_type)
 
     def test_opening_a_direct_voucher_notifies_the_holder_too(self):
         """Un vale directo ya saca el material al crearse -- no hay un
