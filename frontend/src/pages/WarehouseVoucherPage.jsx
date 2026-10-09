@@ -1246,13 +1246,24 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
   // Se busca en el almacen con el mismo rastreo de la pantalla de Localizar:
   // devuelve el producto, su modo de rastreo y sus piezas, que es exactamente
   // lo que el renglon necesita para saber si pedir pieza o cantidad.
+  // Se filtran los productos sin existencia (0 stock en todas las ubicaciones).
   useEffect(() => {
     if (busqueda.trim().length < 2) { setCandidatos([]); return undefined; }
     const temporizador = setTimeout(async () => {
       setBuscando(true);
       try {
         const r = await inventoryTrace({ q: busqueda, per_page: 8 });
-        setCandidatos(r?.items || []);
+        // Filtrar productos que tengan existencia en al menos una ubicación
+        const conExistencia = (r?.items || []).filter(producto => {
+          if (producto.tracking_mode === "serializado") {
+            // Para productos serializados, debe haber piezas disponibles
+            return (producto.pieces || []).length > 0;
+          } else {
+            // Para productos fungibles, debe haber existencia en alguna ubicación
+            return (producto.locations || []).some(loc => Number(loc.quantity) > 0);
+          }
+        });
+        setCandidatos(conExistencia);
       } catch { setCandidatos([]); } finally { setBuscando(false); }
     }, 350);
     return () => clearTimeout(temporizador);
