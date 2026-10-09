@@ -182,9 +182,10 @@ def create_task(user_data):
 @require_entity_permission('task', 'update')
 def update_task(user_data, id_task):
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
-    require_task_access(id_task, user_data)
+    require_task_access(id_task, user_data, escribe=True)
     if payload.get('id_proyect') is not None:
         require_project_access(payload.get('id_proyect'), user_data)
+        require_project_taken_by_actor(payload.get('id_proyect'), user_data)
     return _jsonify_projected_record(user_data, TaskService.update(id_task, payload, user_id=user_data.get('id_user')))
 
 
@@ -228,5 +229,5 @@ def create_task_note_for_task(user_data, id_task):
 @token_required
 @require_entity_permission('task', 'delete')
 def delete_task(user_data, id_task):
-    require_task_access(id_task, user_data)
+    require_task_access(id_task, user_data, escribe=True)
     return jsonify(TaskService.delete(id_task, user_id=user_data.get('id_user')))

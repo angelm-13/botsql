@@ -177,9 +177,9 @@ def create_task_note(user_data):
 def update_task_note(user_data, id_task_note):
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
     current = TaskNoteService.get(id_task_note)
-    require_task_access(current.get('id_task'), user_data)
+    require_task_access(current.get('id_task'), user_data, escribe=True)
     if payload.get('id_task') is not None:
-        require_task_access(payload.get('id_task'), user_data)
+        require_task_access(payload.get('id_task'), user_data, escribe=True)
     return _jsonify_projected_record(user_data, TaskNoteService.update(id_task_note, payload, user_id=user_data.get('id_user')))
 
 
@@ -188,5 +188,5 @@ def update_task_note(user_data, id_task_note):
 @require_entity_permission('task_note', 'delete')
 def delete_task_note(user_data, id_task_note):
     record = TaskNoteService.get(id_task_note)
-    require_task_access(record.get('id_task'), user_data)
+    require_task_access(record.get('id_task'), user_data, escribe=True)
     return jsonify(TaskNoteService.delete(id_task_note, user_id=user_data.get('id_user')))
