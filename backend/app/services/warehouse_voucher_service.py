@@ -703,19 +703,28 @@ def _validar_vale_padre(db, id_padre: int, id_proyecto, user_data: dict) -> None
 def _validar_permiso_tipo_vale(db, user_data: dict, id_tipo: int, como_borrador: bool):
     """Valida que el usuario pueda crear este tipo de vale según su rol.
 
-    - Supervisor (warehouse_prevoucher): solo prevales de tipos permitidos
-      (préstamo, dañado, extraviado, reparación)
-    - Almacén/Gerencia (warehouse_voucher): cualquier tipo
+    - Supervisor (warehouse_prevoucher): solo prevales de préstamo
+    - Almacén (warehouse_voucher): vales de herramienta (préstamo, reparación, dañado)
+    - Gerencia: cualquier tipo (incluyendo destrucción, extraviado)
     """
     # Los administradores no tienen restricción.
     if _sin_restriccion(user_data):
         return
 
-    # Si tiene warehouse_voucher (almacén/gerencia), puede crear cualquier tipo.
-    if has_capability(db, user_data, "warehouse_voucher"):
-        return
+    # Obtener el tipo de vale para validación
+    tipo = db.scalars(select(IncidentType).where(
+        IncidentType.id_incident_type == id_tipo
+    )).first()
+    if tipo is None:
+        raise AppError("errors.not_found", 404, {"entity": "incident_type"})
 
-    # Si solo tiene warehouse_prevoucher (supervisor), solo puede crear prevales de ciertos tipos.
+    desc = str(tipo.incident_type_description or "").lower()
+
+    # Tipos de baja (destrucción, extraviado) - solo gerencia
+    tipos_baja = ["destruccion", "extraviado"]
+    es_baja = any(baja in desc for baja in tipos_baja)
+
+    # Si solo tiene warehouse_prevoucher (supervisor): solo prevales de préstamo
     if has_capability(db, user_data, "warehouse_prevoucher"):
         if not como_borrador:
             raise AppError("errors.permission_denied", 403, {
@@ -723,30 +732,32 @@ def _validar_permiso_tipo_vale(db, user_data: dict, id_tipo: int, como_borrador:
                 "entity": "warehouse_voucher",
                 "detail": "supervisors_can_only_create_drafts",
             })
-
-        # Verificar que el tipo esté permitido para supervisores.
-        tipo = db.scalars(select(IncidentType).where(
-            IncidentType.id_incident_type == id_tipo
-        )).first()
-        if tipo is None:
-            raise AppError("errors.not_found", 404,
-                           {"entity": "incident_type"})
-
-        # Tipos permitidos para Supervisor:
-        # - Préstamo
-        # - Dañado
-        # - Extraviado
-        # - Reparación
-        desc = str(tipo.incident_type_description or "").lower()
-        tipos_permitidos = ["préstamo", "prestamo", "dañado", "danado",
-                           "extraviado", "reparación", "reparacion"]
-        if not any(tipo_permitido in desc for tipo_permitido in tipos_permitidos):
+        # Solo préstamo para supervisores
+        if "préstamo" not in desc and "prestamo" not in desc:
             raise AppError("errors.permission_denied", 403, {
                 "action": "create",
                 "entity": "warehouse_voucher",
                 "incident_type_description": tipo.incident_type_description,
-                "detail": "supervisors_can_only_create_specific_types",
+                "detail": "supervisors_can_only_create_loan_drafts",
             })
+        return
+
+    # Si tiene warehouse_voucher (almacén): vales de herramienta, NO bajas
+    if has_capability(db, user_data, "warehouse_voucher"):
+        if es_baja:
+            raise AppError("errors.permission_denied", 403, {
+                "action": "create",
+                "entity": "warehouse_voucher",
+                "incident_type_description": tipo.incident_type_description,
+                "detail": "warehouse_can_only_create_tool_vouchers",
+            })
+        return
+
+    # Si llegó aquí sin permisos, denegar
+    raise AppError("errors.permission_denied", 403, {
+        "action": "create",
+        "entity": "warehouse_voucher",
+    })
 
 
 def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -> dict:
