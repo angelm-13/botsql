@@ -42,7 +42,7 @@ class TestQuantityValidation(unittest.TestCase):
         self.assertEqual(_integer_quantity("3"), 3)
 
     def test_rejects_zero_negative_boolean_and_fractional_quantity(self):
-        for value in (0, -1, True, "1.5", None):
+        for value in (0, -1, True, "1.5", 1.5, None):
             with self.subTest(value=value), self.assertRaises(AppError):
                 _integer_quantity(value)
 
