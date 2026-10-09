@@ -460,13 +460,18 @@ def is_project_leader(project, user_data: dict) -> bool:
 
 def _scoped_query(db, user_data: dict):
     query = db.query(Proyect).filter(Proyect.deletion_date.is_(None))
+    from app.utils.scope import companeros
+
     scope = _scope_name(db, user_data)
     actor_id = _actor_id(user_data)
+    # Con Mis grupos en `proyect`, tambien lo de los companeros de equipo; sin el,
+    # solo el actor (la regla de siempre).
+    gente = companeros(db, user_data, "proyect")
     if scope == "ownership":
         # El lider ve su proyecto aunque no lo haya creado. Sin esto, un
         # proyecto asignado a alguien mas quedaba invisible para su propio
         # responsable, que no podia ni consultarlo.
-        query = query.filter(or_(Proyect.created_by == actor_id, Proyect.leader == actor_id))
+        query = query.filter(or_(Proyect.created_by.in_(gente), Proyect.leader.in_(gente)))
     elif scope == "execution":
         # Correccion de negocio explicita (2026-09-30): antes cualquier Jefe
         # de taller veia TODOS los proyectos en un estatus de taller activo,
@@ -478,8 +483,8 @@ def _scoped_query(db, user_data: dict):
         # Lo que tomo OTRO Jefe de taller queda fuera por completo.
         query = query.filter(
             or_(
-                Proyect.leader == actor_id,
-                Proyect.id_supervisor == actor_id,
+                Proyect.leader.in_(gente),
+                Proyect.id_supervisor.in_(gente),
                 and_(
                     Proyect.proyect_status.in_(WORKSHOP_VISIBLE_STATUSES),
                     Proyect.id_supervisor.is_(None),

@@ -30,6 +30,12 @@ def create_documents_blueprint(templates_dir: str | Path, record_loader, access_
             record = record_loader(doc['entity'], record_id)
             # issue_12_phase7_serve_original_xml
             if fmt == 'xml' and document_key == 'invoice_xml_cfdi':
+                xml_text = record.get('_xml_original_text')
+                if xml_text:
+                    response = make_response(xml_text.encode('utf-8'))
+                    response.headers['Content-Type'] = 'application/xml'
+                    response.headers['Content-Disposition'] = f'inline; filename=invoice_xml_cfdi-{record_id}.xml'
+                    return response
                 xml_path = record.get('_xml_original_path') or record.get('xml_original_path')
                 if xml_path and Path(xml_path).exists():
                     return send_file(

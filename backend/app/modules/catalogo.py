@@ -39,6 +39,8 @@ archivo solo dice que se puede ofrecer y con que nombre.
 
 from __future__ import annotations
 
+from app.utils.scope import soporta_alcance_de_dueno
+
 from app.modules.registry import (
     CAPACIDADES,
     MENU,
@@ -263,6 +265,7 @@ def catalogo_base() -> dict:
                 "is_bootstrap_only": entidad in SOLO_ARRANQUE,
                 "is_permission_source": entidad == "permission",
                 "permission_scope": "fields",
+                "supports_owner_scope": soporta_alcance_de_dueno(entidad),
                 "fields": campos,
             })
 
@@ -282,6 +285,7 @@ def catalogo_base() -> dict:
             # decirlo aqui es lo que hace que la pantalla ofrezca solo las
             # cuatro acciones en vez de una lista de campos vacia.
             "permission_scope": "actions_only",
+            "supports_owner_scope": soporta_alcance_de_dueno(capacidad.clave),
             "fields": [],
         })
 

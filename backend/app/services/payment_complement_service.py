@@ -23,7 +23,7 @@ from app.models.session import transaction_context
 from app.models.stamping_operation import StampingOperation
 from app.services.cfdi_validation import validate_cfdi_xml
 from app.services.cfdi_xml import parse_cfdi
-from app.services.invoice_artifacts import save_invoice_xml
+from app.services.cfdi_xml_store import save_cfdi_xml
 from app.services.invoice_payment_service import (
     CANCELLED,
     STAMPED,
@@ -163,7 +163,7 @@ def stamp_payment_complement(payment_id, idempotency_key, user_data, provider=No
                     operation.error_code = "cfdi_document_invalid"
                     operation.response_metadata = {**(result.metadata or {}), "cfdi_errors": document_errors}
                     raise AppError("invoice.stamped_document_invalid", 502, {"errors": document_errors})
-                save_invoice_xml(complemento.id_invoice, result.xml)
+                save_cfdi_xml(db, complemento.id_invoice, result.xml)
                 complemento.cfdi_code = fiscal_data["uuid"]
                 complemento.no_certificado = fiscal_data.get("no_certificado")
                 complemento.no_certificado_sat = fiscal_data.get("no_certificado_sat")

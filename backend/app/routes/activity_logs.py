@@ -17,7 +17,7 @@ from app.services.activity_log_service import (
 )
 from app.services.notification_service import create_notification
 from app.services.inventory_service import has_capability
-from app.services.project_management_service import require_project_taken_by_actor
+from app.services.project_management_service import require_project_access, require_project_taken_by_actor
 from app.models.session import transaction_context
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
@@ -35,6 +35,14 @@ def _puede_ver_todas(user_data) -> bool:
     """
     with transaction_context() as db:
         return has_capability(db, user_data, "project_authorization")
+
+
+def _gente_de_la_bitacora(user_data) -> set:
+    """Cuyas bitacoras ve el actor: la suya y, con Mis grupos, las de su equipo."""
+    from app.utils.scope import companeros
+
+    with transaction_context() as db:
+        return companeros(db, user_data, "daily_activity_log")
 
 
 bp_activity_logs = Blueprint("activity_logs", __name__, url_prefix="/activity-logs")
@@ -202,13 +210,21 @@ def list_activities(user_data):
     limit = min(int(request.args.get('limit', 50)), 100)
     offset = int(request.args.get('offset', 0))
 
-    # Validación: quien no sea Gerente (ni sin restricción) solo ve las suyas
+    # Validación: quien no sea Gerente (ni sin restricción) solo ve las suyas; con
+    # Mis grupos en la bitacora, tambien las de su equipo.
+    ids_supervisor = None
     if not _puede_ver_todas(user_data):
-        id_supervisor = id_user
+        gente = _gente_de_la_bitacora(user_data)
+        if id_supervisor and id_supervisor in gente:
+            ids_supervisor = [id_supervisor]
+        else:
+            ids_supervisor = sorted(gente)
+        id_supervisor = None
 
     activities = get_activities_by_range(
         id_proyect=id_proyect,
         id_supervisor=id_supervisor,
+        ids_supervisor=ids_supervisor,
         start_date=start_date,
         end_date=end_date,
         limit=limit,
@@ -235,7 +251,7 @@ def get_activity(user_data, id_activity):
 
     # Validación: quien no sea Gerente (ni sin restricción) solo ve las suyas
     if not _puede_ver_todas(user_data):
-        if activity.id_supervisor != id_user:
+        if activity.id_supervisor not in _gente_de_la_bitacora(user_data):
             raise AppError("No tienes permiso para ver esta actividad", 403)
 
     return jsonify(activity.serialize())
@@ -356,6 +372,12 @@ def get_project_activity_report(user_data, id_proyect):
     id_user = user_data.get('id_user')
     if not id_user:
         raise AppError("Usuario no autenticado", 401)
+
+    # Sin esto cualquier usuario autenticado leia la bitacora de cualquier
+    # proyecto: Gerente/administracion ven todas; el resto, solo las de un
+    # proyecto que le sea visible.
+    if not _puede_ver_todas(user_data):
+        require_project_access(id_proyect, user_data)
 
     start_date = parse_date(request.args.get('start_date'))
     end_date = parse_date(request.args.get('end_date'))

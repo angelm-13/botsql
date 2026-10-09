@@ -22,6 +22,7 @@ from app.services.kpi_dashboard_service import KpiDashboardService
 from app.services.kpi_dashboard_widget_service import KpiDashboardWidgetService
 from app.utils.auth import has_kpi_permission, require_entity_permission, token_required
 from app.utils.errors import AppError
+from app.utils.scope import owner_ids, scope_bits
 
 # Salvo que el plan del cliente declare otro valor en `limites.kpi_rango_dias_max`
 # (ver `app/modules/plan.py`), una consulta no puede pedir mas de un anio de
@@ -384,6 +385,16 @@ def query_kpi_snapshot(user_data):
         if agregacion is None:
             raise AppError('errors.resource_not_found', 404, {'kpi': id_kpi_definition})
 
+        # Alcance de lectura del actor sobre los KPIs. Con Propios o Mis grupos
+        # solo ve cifras de las personas que cubre su alcance; un KPI sin
+        # dimension de empleado (totales de empresa, por estado, por familia)
+        # no se puede recortar por persona, asi que solo lo ve quien tiene Todos.
+        duenos = owner_ids(db, user_data, scope_bits(db, user_data, 'kpi_definition', 'read'))
+        if duenos is not None:
+            if dimension != 'empleado':
+                raise AppError('errors.permission_denied', 403, {'kpi': id_kpi_definition, 'reason': 'scope'})
+            entidades = sorted(duenos) if entidades is None else [e for e in entidades if e in duenos]
+
         # id_departments se resuelve a id_user (via Permission.id_department)
         # y se combina con "entidades": si vienen los dos, interseccion; si
         # solo viene el departamento, esa lista completa hace de filtro de
@@ -469,6 +480,16 @@ def query_kpi_vivo(user_data, id_kpi_definition):
             raise AppError('errors.resource_not_found', 404, {'kpi': id_kpi_definition})
 
         actor_project = InvoiceService.actor_project(user_data) if kpi_def.alcance_proyecto else None
+        # Con Propios o Mis grupos solo se ve lo de una persona cubierta por el
+        # alcance: por omision, el propio actor.
+        duenos = owner_ids(db, user_data, scope_bits(db, user_data, 'kpi_definition', 'read'))
+        if duenos is not None:
+            pedido = filtros['id_user_ambito']
+            if pedido is None:
+                pedido = int(user_data.get('id_user') or 0)
+            if pedido not in duenos:
+                raise AppError('errors.permission_denied', 403, {'kpi': id_kpi_definition, 'reason': 'scope'})
+            filtros['id_user_ambito'] = pedido
         items, total = kpi_def.query_builder(
             db, limit=limit, offset=offset, actor_project=actor_project, **filtros,
         )

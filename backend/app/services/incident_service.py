@@ -66,16 +66,19 @@ def supervises_incidents(db, user_data) -> bool:
         return False
 
 
-def _involves_actor(incident, user_data) -> bool:
-    """La incidencia es de quien la reporto, la atiende o la lidera."""
+def _involves_actor(incident, user_data, gente=None) -> bool:
+    """La incidencia es de quien la reporto, la atiende o la lidera.
+
+    `gente` son las personas cubiertas (el actor y, con Mis grupos, su equipo).
+    """
     actor = _actor_id(user_data)
     if actor is None:
         return False
-    return actor in {
+    return bool({
         _safe(incident.id_user),
         _safe(incident.id_lider),
         _safe(incident.created_by),
-    }
+    } & (set(gente) if gente else {actor}))
 
 
 def _safe(value):
@@ -94,10 +97,13 @@ def scoped_incident_query(db, user_data):
     if actor is None:
         # Sin identidad no se devuelve nada, en lugar de devolverlo todo.
         return query.filter(Incident.id_incident.is_(None))
+    from app.utils.scope import companeros
+
+    gente = companeros(db, user_data, "incident") or {actor}
     return query.filter(or_(
-        Incident.id_user == actor,
-        Incident.id_lider == actor,
-        Incident.created_by == actor,
+        Incident.id_user.in_(gente),
+        Incident.id_lider.in_(gente),
+        Incident.created_by.in_(gente),
     ))
 
 
@@ -106,7 +112,10 @@ def require_incident_access(incident_id, user_data) -> Incident:
         incident = db.get(Incident, int(incident_id))
         if not incident or incident.deletion_date is not None:
             raise AppError("errors.resource_not_found", 404)
-        if not supervises_incidents(db, user_data) and not _involves_actor(incident, user_data):
+        from app.utils.scope import companeros
+
+        if not supervises_incidents(db, user_data) and not _involves_actor(
+                incident, user_data, companeros(db, user_data, "incident")):
             # Se responde "no existe" y no "no puedes": quien no participa
             # tampoco debe enterarse de que la incidencia existe.
             raise AppError("errors.resource_not_found", 404)

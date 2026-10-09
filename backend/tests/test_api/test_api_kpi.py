@@ -146,6 +146,60 @@ class TestKpiApi(BackendTestCase):
         self.assertEqual({"950": 1000.0}, payload["por_empleado"])
         self.assertEqual(1000.0, payload["total"])
 
+    # --- alcance de lectura sobre los KPIs (Propios / Mis grupos) ---------
+
+    def _alcance_de_kpi(self, valor):
+        with transaction_context() as db:
+            db.query(EntityPermission).filter(
+                EntityPermission.id_permission == 970,
+                EntityPermission.entity_name == "kpi_definition",
+            ).update({"scope_read": valor})
+
+    def test_propios_only_covers_the_actors_own_figures(self):
+        self._alcance_de_kpi(1)
+        payload = self.json(self._request(ACTOR_CON_KPI, self._query_url()))["rango_a"]
+        # El actor es 970 y no tiene ventas: no ve las de 950 ni 951.
+        self.assertEqual({}, payload["por_empleado"])
+
+    def test_mis_grupos_covers_teammates_figures(self):
+        from app.models.nm_team_user import NmTeamUser
+        from app.models.team import Team
+
+        self._alcance_de_kpi(2)
+        with transaction_context() as db:
+            for id_user in (970, 950):
+                db.add(User(
+                    id_user=id_user, created_by=1, full_name=f"Vendedor {id_user}", id_permission=1,
+                    id_proyect=PROYECTO_A, id_status=1, supervisor=1, username=f"kpi-equipo-{id_user}",
+                ))
+            equipo = Team(team_description="Ventas", created_by=1)
+            db.add(equipo)
+            db.flush()
+            for id_user in (970, 950):
+                db.add(NmTeamUser(id_team=equipo.id_team, id_user=id_user, created_by=1))
+        payload = self.json(self._request(ACTOR_CON_KPI, self._query_url()))["rango_a"]
+        self.assertEqual({"950": 1000.0}, payload["por_empleado"])
+
+    def test_a_requested_employee_outside_the_scope_is_dropped(self):
+        self._alcance_de_kpi(1)
+        payload = self.json(self._request(ACTOR_CON_KPI, self._query_url(empleados="950")))["rango_a"]
+        self.assertEqual({}, payload["por_empleado"])
+
+    def test_a_kpi_without_employee_dimension_needs_todos(self):
+        with transaction_context() as db:
+            id_otro = db.scalar(select(KpiDefinition.id_kpi_definition).where(KpiDefinition.clave == "material_por_estado"))
+            db.add(NmPermissionKpi(id_permission=970, id_kpi_definition=id_otro, puede_ver=True, created_by=1))
+        url = self._query_url(id_kpi_definition=id_otro)
+        self._alcance_de_kpi(1)
+        self.assertEqual(403, self._request(ACTOR_CON_KPI, url).status_code)
+        self._alcance_de_kpi(4)
+        self.assertEqual(200, self._request(ACTOR_CON_KPI, url).status_code)
+
+    def test_todos_keeps_seeing_everything(self):
+        self._alcance_de_kpi(4)
+        payload = self.json(self._request(ACTOR_CON_KPI, self._query_url()))["rango_a"]
+        self.assertEqual({"950": 1000.0, "951": 500.0}, payload["por_empleado"])
+
     def test_query_snapshot_denied_without_specific_kpi_permission(self):
         response = self._request(ACTOR_SIN_KPI_ESPECIFICO, self._query_url())
 

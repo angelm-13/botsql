@@ -23,7 +23,8 @@ from app.services.cfdi_validation import validate_cfdi_xml
 from app.services.cfdi_xml import parse_cfdi
 from app.services.invoice_builder import build_draft, inspect_draft
 from app.services.invoice_catalogs import CLAVE_UNIDAD_FRECUENTES, OBJETO_IMP_CON_DESGLOSE, RFC_PUBLICO_GENERAL
-from app.services.invoice_artifacts import build_fake_cfdi_xml, save_invoice_xml
+from app.services.cfdi_xml_store import save_cfdi_xml
+from app.services.invoice_artifacts import build_fake_cfdi_xml
 from app.utils.errors import AppError
 
 
@@ -812,7 +813,7 @@ def stamp_invoice(invoice_id, idempotency_key, user_data, provider=None):
                     operation.error_code = "cfdi_document_invalid"
                     operation.response_metadata = {**(result.metadata or {}), "cfdi_errors": document_errors}
                     raise AppError("invoice.stamped_document_invalid", 502, {"errors": document_errors})
-                save_invoice_xml(invoice.id_invoice, result.xml)
+                save_cfdi_xml(db, invoice.id_invoice, result.xml)
                 invoice.cfdi_code = fiscal_data["uuid"]
                 invoice.no_certificado = fiscal_data.get("no_certificado")
                 invoice.no_certificado_sat = fiscal_data.get("no_certificado_sat")

@@ -300,16 +300,21 @@ def _load_quotation_document_record(record_id: str) -> dict:
         from app.services.amount_in_words import importe_a_letras
         data['amount_in_words'] = importe_a_letras(data.get('total'), currency)
         # issue_12_phase7_cfdi_original_xml_path
+        # El XML timbrado manda sobre las columnas de `invoice`: de el salen el
+        # sello del emisor, el RFC del PAC, la cadena original y el QR. Se lee
+        # de la base y, si no esta, del archivo (cfdi_xml_store).
+        from app.services.cfdi_xml_store import load_cfdi_xml
+        xml_original = load_cfdi_xml(invoice_id_value, db=db_session)
         data['_xml_original_path'] = _cfdi_xml_original_path(invoice_id_value)
-        if data['_xml_original_path']:
+        if xml_original:
+            data['_xml_original_text'] = xml_original.decode('utf-8', errors='replace')
             try:
                 from app.services.cfdi_xml import parse_cfdi
-                with open(data['_xml_original_path'], 'rb') as xml_file:
-                    cfdi_data = parse_cfdi(xml_file.read())
+                cfdi_data = parse_cfdi(xml_original)
                 for field_name, value in cfdi_data.items():
                     if field_name != 'conceptos' and value not in (None, ''):
                         data[field_name] = value
-            except (OSError, ValueError):
+            except ValueError:
                 pass
 
         if data.get('uuid'):
