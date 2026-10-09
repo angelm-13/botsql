@@ -22,11 +22,9 @@ from flask import Blueprint, current_app, jsonify, request, send_file
 from app.services.warehouse_voucher_service import (
     _sin_restriccion,
     confirmar_recibido_del_vale,
-    confirmar_recepcion_supervisada,
     entregar_vale,
     documento_del_historial_de_persona,
     folio_del_vale,
-    marcar_como_salido_del_almacen,
     notificar_entrega_registrada,
     pdf_del_vale,
     autorizar_vale,
@@ -218,8 +216,8 @@ def autorizar(user_data, id_incident):
     1. Supervisor crea PREVALE (BORRADOR)
     2. Almacén autoriza PREVALE (BORRADOR → EN_ESPERA) ← AQUÍ
     3. Supervisor/designado va a recoger
-    4. Almacén marca "salido" (/mark-as-shipped)
-    5. Supervisor confirma (/confirm-supervision-receipt)
+    4. Almacén marca entregado (/deliver): el material sale del almacén
+    5. El responsable confirma que lo recibió (/confirm-receipt)
 
     Las notificaciones se envían después de que la transacción cierre.
     """
@@ -259,50 +257,6 @@ def confirmar_recibido(user_data, id_incident):
     `ok: false` (recibido con observaciones).
     """
     return jsonify(confirmar_recibido_del_vale(id_incident, _cuerpo(), user_data)), 200
-
-
-@bp_warehouse_voucher.route("/vouchers/<id_incident>/mark-as-shipped", methods=["POST"])
-@token_required
-@require_entity_permission("warehouse_voucher_authorize", "create")
-def marcar_salido(user_data, id_incident):
-    """Almacén marca como "salido del almacén" (EN_TRANSITO).
-
-    Flujo:
-    1. Almacén autoriza PREVALE (BORRADOR → EN_ESPERA)
-    2. Supervisor/designado va a recoger
-    3. Almacén marca "salido" (EN_ESPERA → EN_TRANSITO) ← AQUÍ
-    4. Supervisor confirma (EN_TRANSITO → ABIERTO)
-
-    Cuerpo: `{"note": "..."}`
-    """
-    resultado = marcar_como_salido_del_almacen(id_incident, _cuerpo(), user_data)
-    try:
-        notificar_material_entregado(id_incident, user_data.get("id_user"))
-    except Exception:
-        pass
-    return jsonify(resultado), 200
-
-
-@bp_warehouse_voucher.route("/vouchers/<id_incident>/confirm-supervision-receipt", methods=["POST"])
-@token_required
-def confirmar_recepcion_supervision(user_data, id_incident):
-    """El supervisor responsable confirma que recibió el material.
-
-    Flujo:
-    1. Almacén autoriza PREVALE (BORRADOR → EN_ESPERA)
-    2. Supervisor/designado va a recoger
-    3. Almacén marca "salido" (EN_ESPERA → EN_TRANSITO)
-    4. Supervisor confirma (EN_TRANSITO → ABIERTO) ← AQUÍ
-
-    Solo el supervisor del vale puede confirmar.
-    Cuerpo: `{"note": "..."}`
-    """
-    resultado = confirmar_recepcion_supervisada(id_incident, _cuerpo(), user_data)
-    try:
-        notificar_entrega_registrada(id_incident, user_data.get("id_user"))
-    except Exception:
-        pass
-    return jsonify(resultado), 200
 
 
 @bp_warehouse_voucher.route("/vouchers/lines/<id_line>/return", methods=["POST"])

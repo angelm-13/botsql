@@ -56,8 +56,6 @@ from app.services.warehouse_voucher_service import (
     EN_ESPERA,
     EN_TRANSITO,
     autorizar_vale,
-    marcar_como_salido_del_almacen,
-    confirmar_recepcion_supervisada,
     buscar_vales,
     cerrar_renglon,
     devolver_renglon,
@@ -290,11 +288,11 @@ class BaseVale(BackendTestCase):
         # Paso 1: Autorizar (BORRADOR -> EN_ESPERA)
         resultado = autorizar_vale(id_incident, {}, actor)
 
-        # Paso 2: Marcar como salido (EN_ESPERA -> EN_TRANSITO, saca del almacén)
-        resultado = marcar_como_salido_del_almacen(id_incident, {}, actor)
+        # Paso 2: Marcar entregado (EN_ESPERA -> EN_TRANSITO, saca del almacén)
+        entregar_vale(id_incident, {}, actor)
 
-        # Paso 3: Confirmar (EN_TRANSITO -> ABIERTO)
-        resultado = confirmar_recepcion_supervisada(id_incident, {}, ACTOR)
+        # Paso 3: El responsable confirma que lo recibió (-> ABIERTO)
+        resultado = confirmar_recibido_del_vale(id_incident, {}, ACTOR)
 
         return resultado
 
@@ -1010,10 +1008,12 @@ class TestElPrevaleNoMueveElAlmacen(BaseVale):
 
         otro = {"id_user": 2, "id_proyect": PROYECTO,
                 "id_permission": JEFE_DE_ALMACEN}
-        # Flujo completo: autorizar -> marcar-salido -> confirmar
-        abierto = self._autorizacion_completa(r["voucher"]["id_incident"], otro)
+        autorizado = autorizar_vale(r["voucher"]["id_incident"], {}, otro)
 
-        self.assertEqual(ABIERTO, abierto["voucher"]["incident_status"])
+        # Autorizar aparta: el material sigue en el almacen hasta entregarlo.
+        self.assertEqual(EN_ESPERA, autorizado["voucher"]["incident_status"])
+        self.assertEqual(antes, self._saldo(RACK))
+        entregar_vale(r["voucher"]["id_incident"], {}, ACTOR)
         self.assertEqual(antes - 2, self._saldo(RACK))
 
 
@@ -2252,7 +2252,7 @@ class TestElMaterialDelProyectoNoCuentaLoQueNoSalio(BaseEntrega):
         id_vale = borrador["voucher"]["id_incident"]
 
         autorizar_vale(id_vale, {}, OTRO_ACTOR)
-        marcar_como_salido_del_almacen(id_vale, {}, OTRO_ACTOR)
+        entregar_vale(id_vale, {}, OTRO_ACTOR)
 
         resumen = self._material()
         self.assertEqual(2, resumen["taken_total"])
@@ -2271,3 +2271,105 @@ class TestElMaterialDelProyectoNoCuentaLoQueNoSalio(BaseEntrega):
             db.get(Incident, borrador["voucher"]["id_incident"]).incident_status = None
 
         self.assertEqual(2, self._material()["taken_total"])
+
+
+class TestLosTiposDeValePorRol(BaseVale):
+    """Gerencia levanta cualquier tipo; Almacen solo los de herramienta;
+    Supervisor solo prestamo, danado, extraviado y reparacion (y como prevale)."""
+
+    P_ALMACEN, P_SUPERVISOR, P_GERENCIA = 71, 72, 73
+    T_JORNADA, T_REPARACION, T_DESTRUCCION = 191, 192, 193
+
+    def setUp(self):
+        super().setUp()
+        from app.models.entity_permission import EntityPermission
+
+        with transaction_context() as db:
+            db.add_all([
+                IncidentType(id_incident_type=self.T_JORNADA,
+                             incident_type_description="Jornada", created_by=1),
+                IncidentType(id_incident_type=self.T_REPARACION,
+                             incident_type_description="Reparación", created_by=1),
+                IncidentType(id_incident_type=self.T_DESTRUCCION,
+                             incident_type_description="Destruccion", created_by=1),
+            ])
+            for permiso, entidad in (
+                    (self.P_ALMACEN, "warehouse_voucher"),
+                    (self.P_SUPERVISOR, "warehouse_prevoucher"),
+                    (self.P_GERENCIA, "project_authorization")):
+                db.add(EntityPermission(
+                    id_permission=permiso, entity_name=entidad,
+                    scope_create=4, scope_read=4, scope_update=4, scope_delete=4,
+                    created_by=1))
+
+    def _error(self, funcion, *args, **kwargs):
+        with self.assertRaises(AppError) as caja:
+            funcion(*args, **kwargs)
+        return caja.exception
+
+    def _levantar(self, permiso, tipo, borrador):
+        self.surtir(5, RACK)
+        actor = {"id_user": 1, "id_proyect": PROYECTO, "id_permission": permiso}
+        return crear_vale(
+            {"id_incident_type": tipo, "id_user": 1, "note": "x",
+             "due_date": (datetime.now() + timedelta(days=7)).strftime(
+                 "%Y-%m-%d %H:%M:%S"),
+             "lines": [{"id_product": CEMENTO, "quantity": 1,
+                        "id_location_from": RACK}]},
+            actor, como_borrador=borrador)
+
+    def test_management_can_raise_any_type(self):
+        r = self._levantar(self.P_GERENCIA, self.T_JORNADA, False)
+
+        self.assertEqual("abierto", r["voucher"]["incident_status"])
+
+    def test_the_warehouse_cannot_raise_a_non_tool_type(self):
+        e = self._error(self._levantar, self.P_ALMACEN, self.T_JORNADA, False)
+
+        self.assertEqual(403, e.status_code)
+
+    def test_the_warehouse_can_raise_destruction(self):
+        self._levantar(self.P_ALMACEN, self.T_DESTRUCCION, False)
+
+    def test_a_supervisor_can_request_a_repair(self):
+        r = self._levantar(self.P_SUPERVISOR, self.T_REPARACION, True)
+
+        self.assertEqual(BORRADOR, r["voucher"]["incident_status"])
+
+    def test_a_supervisor_cannot_request_destruction(self):
+        e = self._error(self._levantar, self.P_SUPERVISOR, self.T_DESTRUCCION, True)
+
+        self.assertEqual(403, e.status_code)
+
+    def test_a_supervisor_cannot_open_a_voucher_directly(self):
+        e = self._error(self._levantar, self.P_SUPERVISOR, TIPO_PRESTAMO, False)
+
+        self.assertEqual(403, e.status_code)
+
+    def test_the_selector_only_offers_what_the_role_can_raise(self):
+        from app.services.warehouse_voucher_service import filtrar_tipos_de_vale
+
+        todos = [{"incident_type_description": d}
+                 for d in ("Prestamo", "Jornada", "Destruccion", "Reparación")]
+        actor = {"id_user": OPERADOR, "id_permission": self.P_SUPERVISOR}
+
+        ofrecidos = [o["incident_type_description"]
+                     for o in filtrar_tipos_de_vale(todos, actor)]
+
+        self.assertEqual(["Prestamo", "Reparación"], ofrecidos)
+
+    def test_delivering_moves_the_stock_and_confirming_opens_it(self):
+        self.surtir(5, RACK)
+        antes = self._saldo(RACK)
+        r = self._prevale([{"id_product": CEMENTO, "quantity": 2,
+                            "id_location_from": RACK}])
+        id_vale = r["voucher"]["id_incident"]
+
+        autorizar_vale(id_vale, {}, OTRO_ACTOR)
+        self.assertEqual(antes, self._saldo(RACK))
+        entregado = entregar_vale(id_vale, {}, OTRO_ACTOR)
+        self.assertEqual(EN_TRANSITO, entregado["voucher"]["incident_status"])
+        self.assertEqual(antes - 2, self._saldo(RACK))
+        confirmado = confirmar_recibido_del_vale(id_vale, {}, ACTOR)
+
+        self.assertEqual(ABIERTO, confirmado["voucher"]["incident_status"])

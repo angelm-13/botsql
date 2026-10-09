@@ -1574,6 +1574,8 @@ def entregar_vale(id_incident, payload: dict, user_data: dict) -> dict:
 
         renglones = _renglones(db, vale.id_incident)
         des_user, des_nombre = _designado_para_recoger(vale, renglones)
+        if estado == EN_ESPERA:
+            _dar_salida_al_vale(db, vale, user_data, renglones)
 
         # Sin decir a quien: se entrega a quien se designo; y si no habia
         # designado, al responsable.
@@ -1660,6 +1662,8 @@ def confirmar_recibido_del_vale(id_incident, payload: dict, user_data: dict) -> 
         vale.receipt_ok = ok
         vale.receipt_note = nota
         vale.last_update_date = ahora
+        if str(vale.incident_status or "").lower() == EN_TRANSITO:
+            vale.incident_status = ABIERTO
         for r in _renglones(db, vale.id_incident):
             if (str(r.direction or "") == SALIDA and r.close_date is None
                     and r.custody_confirmed_date is None
@@ -1840,106 +1844,32 @@ def autorizar_vale(id_incident, payload: dict, user_data: dict) -> dict:
         }
 
 
-def marcar_como_salido_del_almacen(id_incident, payload: dict, user_data: dict) -> dict:
-    """Marca el vale como EN_TRANSITO: material salió del almacén, va en camino.
+def _dar_salida_al_vale(db, vale, user_data: dict, renglones) -> None:
+    """El material sale del almacen: es el paso que mueve el libro.
 
-    Flujo:
-    1. Almacén autoriza PREVALE (BORRADOR → EN_ESPERA)
-    2. Supervisor/designado va a recoger
-    3. Almacén marca "salido" (EN_ESPERA → EN_TRANSITO) ← AQUÍ
-    4. Supervisor confirma (EN_TRANSITO → ABIERTO)
-
-    Este es el punto donde se saca del almacén.
+    Se llama al marcar la entrega de un vale EN_ESPERA (autorizado pero todavia
+    en el almacen). Antes de esto el material solo esta apartado.
     """
-    actor = _actor(user_data)
-    with transaction_context() as db:
-        if not _puede_autorizar(db, user_data):
-            raise AppError("errors.forbidden", 403,
-                           {"capability": "warehouse_voucher_authorize"})
-
-        vale = _vale(db, id_incident)
-        estado = str(vale.incident_status or "").lower()
-        if estado != EN_ESPERA:
-            raise AppError("errors.voucher_invalid_state", 409,
-                           {"id_incident": vale.id_incident, "current_status": estado,
-                            "expected_status": EN_ESPERA})
-
-        renglones = _renglones(db, vale.id_incident)
-        motivo = _texto(payload.get("note"), "note", largo=300,
-                        obligatorio=False) or vale.note
-        baja = _clave_de_baja(db, vale.id_incident_type)
-
-        # Ahora SÍ saca del almacén.
-        for renglon in renglones:
-            if str(renglon.direction or "").lower() != SALIDA:
-                continue
-            if baja:
-                _registrar_baja(db, renglon, user_data, clave=baja,
-                                id_responsable=vale.id_user,
-                                vence=renglon.due_date, motivo=motivo)
-            else:
-                _sacar_del_almacen(db, renglon, user_data,
-                                   id_responsable=vale.id_user,
-                                   vence=renglon.due_date, motivo=motivo)
-            # Herramientas apartadas pasan a entregada.
-            if renglon.status == "apartada" and renglon.id_inventory_asset is not None:
-                renglon.status = "entregada"
-        db.flush()
-        _marcar_estado_de_producto(db, vale.id_incident_type, renglones)
-
-        # Cambiar a EN_TRANSITO: ya salió, va en camino.
-        vale.incident_status = EN_TRANSITO
-        vale.last_update_date = _ahora()
-        db.flush()
+    baja = _clave_de_baja(db, vale.id_incident_type)
+    for renglon in renglones:
+        if str(renglon.direction or "").lower() != SALIDA:
+            continue
         if baja:
-            _sincronizar_estado(db, vale)
-
-
-        return {
-            "voucher": vale.serialize(),
-            "lines": _con_existencias(db, _renglones(db, vale.id_incident)),
-        }
-
-
-def confirmar_recepcion_supervisada(id_incident, payload: dict, user_data: dict) -> dict:
-    """Confirma que el supervisor/designado recibió el material.
-
-    Flujo:
-    1. Almacén autoriza PREVALE (BORRADOR → EN_ESPERA)
-    2. Supervisor/designado va a recoger
-    3. Almacén marca "salido" (EN_ESPERA → EN_TRANSITO)
-    4. Supervisor confirma (EN_TRANSITO → ABIERTO) ← AQUÍ
-
-    Solo el supervisor del vale (o quien lo designó) puede confirmar.
-    """
-    actor = _actor(user_data)
-    with transaction_context() as db:
-        if not _puede_autorizar(db, user_data):
-            raise AppError("errors.forbidden", 403,
-                           {"capability": "warehouse_voucher_authorize"})
-
-        vale = _vale(db, id_incident)
-        estado = str(vale.incident_status or "").lower()
-        if estado != EN_TRANSITO:
-            raise AppError("errors.voucher_invalid_state", 409,
-                           {"id_incident": vale.id_incident, "current_status": estado,
-                            "expected_status": EN_TRANSITO})
-
-        # El supervisor del vale es quien confirma.
-        if int(vale.id_user or 0) != _actor(user_data):
-            raise AppError("errors.voucher_only_supervisor_can_confirm", 403,
-                           {"id_incident": vale.id_incident})
-
-        # Cambiar a ABIERTO: ya en manos del supervisor.
-        vale.incident_status = ABIERTO
-        vale.last_update_date = _ahora()
-        db.flush()
-
-
-        return {
-            "voucher": vale.serialize(),
-            "lines": _con_existencias(db, _renglones(db, vale.id_incident)),
-        }
+            _registrar_baja(db, renglon, user_data, clave=baja,
+                            id_responsable=vale.id_user,
+                            vence=renglon.due_date, motivo=vale.note)
+        else:
+            _sacar_del_almacen(db, renglon, user_data,
+                               id_responsable=vale.id_user,
+                               vence=renglon.due_date, motivo=vale.note)
+        if renglon.status == "apartada" and renglon.id_inventory_asset is not None:
+            renglon.status = "entregada"
+    db.flush()
+    _marcar_estado_de_producto(db, vale.id_incident_type, renglones)
+    vale.incident_status = EN_TRANSITO
+    db.flush()
+    if baja:
+        _sincronizar_estado(db, vale)
 
 
 def reportar_estado_herramienta(id_line, payload: dict, user_data: dict) -> dict:

@@ -816,9 +816,11 @@ function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
             ? t("voucher.status_draft", "Borrador")
             : (cerrado
               ? t("voucher.status_closed", "Cerrado")
-              : t("voucher.status_open", "Abierto"))}
+              : estado === "en_espera" || estado === "en_transito"
+                ? t(`voucher.status_${estado}`, estado)
+                : t("voucher.status_open", "Abierto"))}
           <em>
-            {borrador
+            {sinSalir
               ? t("voucher.nothing_left_yet", "nada ha salido todavía")
               : `${fueraReal} ${t("voucher.of", "de")} ${totalReal} ${
                 t("voucher.open_lines", "sin devolver")}`}
@@ -885,7 +887,7 @@ function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
 
               return (
                 <tr key={linea.id_nm_incident_product}
-                    className={abierto ? "vale-renglon-fuera" : "vale-renglon-devuelto"}>
+                    className={abierto && !sinSalir ? "vale-renglon-fuera" : "vale-renglon-devuelto"}>
                   <td className="mono muted">{linea.id_nm_incident_product}</td>
                   <td className="mono">
                     {linea.product?.product_code || `#${linea.id_product}`}
