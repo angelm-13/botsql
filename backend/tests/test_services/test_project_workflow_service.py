@@ -696,6 +696,23 @@ class TestElSupervisorTomaElProyecto(TestProjectWorkflowService):
         transition_project(creado["id_proyect"], {"status": "authorized"}, self.manager)
         return creado["id_proyect"]
 
+    def test_the_workshop_cannot_write_a_task_of_a_project_it_does_not_hold(self):
+        """Ver un proyecto libre (para poder tomarlo) no autoriza a mover sus tareas."""
+        from app.services.project_management_service import require_task_access
+
+        id_proyect = self._autorizado()
+        self._add_task(id_proyect)
+        with transaction_context() as db:
+            id_task = db.query(Task).filter(Task.id_proyect == id_proyect).one().id_task
+
+        require_task_access(id_task, self.workshop)
+        with self.assertRaises(AppError) as fallo:
+            require_task_access(id_task, self.workshop, escribe=True)
+        self.assertEqual("errors.project_not_taken_by_actor", fallo.exception.message_key)
+
+        take_project(id_proyect, self.workshop)
+        require_task_access(id_task, self.workshop, escribe=True)
+
     def test_the_workshop_takes_a_free_project(self):
         id_proyect = self._autorizado()
 

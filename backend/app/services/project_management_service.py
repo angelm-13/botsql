@@ -197,7 +197,7 @@ def validate_project_transition(current_status, target_status, reason=None, *, r
     # cuanto el supervisor le avisa que ya no falta nada, lo completa
     # directo desde "autorizado" -- sin los dos pasos intermedios.
     if not requires_maquila and current == "authorized":
-        allowed_targets = allowed_targets | {"completed"}
+        allowed_targets = (allowed_targets | {"completed"}) - {"waiting_material"}
     if current not in PROJECT_TRANSITIONS or target not in allowed_targets:
         raise AppError(
             "errors.project_invalid_transition",
@@ -568,12 +568,20 @@ def require_project_access(project_id, user_data: dict) -> None:
         _get_visible_project(db, project_id, user_data)
 
 
-def require_task_access(task_id, user_data: dict) -> None:
+def require_task_access(task_id, user_data: dict, *, escribe: bool = False) -> None:
+    """La tarea es visible para el actor; con `escribe`, ademas Jefe de taller
+    solo escribe en las de un proyecto que TOMO (misma regla que al crearlas:
+    ver `require_project_taken_by_actor`). Ver una tarea de un proyecto libre
+    no autoriza a moverla."""
     with transaction_context() as db:
-        task = db.get(Task, task_id)
+        task = db.get(Task, int(task_id))
         if not task or task.deletion_date is not None:
             raise AppError("errors.resource_not_found", 404)
-        _get_visible_project(db, task.id_proyect, user_data)
+        project = _get_visible_project(db, task.id_proyect, user_data)
+        if (escribe and _scope_name(db, user_data) == "execution"
+                and _safe_int(project.id_supervisor) != _actor_id(user_data)):
+            raise AppError("errors.project_not_taken_by_actor", 403,
+                           {"id_proyect": task.id_proyect})
 
 
 def require_project_taken_by_actor(project_id, user_data: dict) -> None:
@@ -1090,6 +1098,7 @@ def create_project(payload: dict, user_data: dict) -> dict:
     """
     actor_id = _actor_id(user_data)
     values = {key: value for key, value in (payload or {}).items() if key in PROJECT_MUTABLE_FIELDS}
+    _booleano_estricto(values, "requires_maquila")
     if values.get("id_customer_contact") in (None, "") and values.get("id_customer_supplier") in (None, ""):
         raise AppError("errors.required_field", 400, {"field": "id_customer_contact"})
     if values.get("proyect_description") in (None, ""):
@@ -1214,6 +1223,7 @@ def update_project(project_id, payload: dict, user_data: dict) -> dict:
     if "proyect_status" in (payload or {}):
         raise AppError("errors.project_status_requires_transition", 409)
     values = {key: value for key, value in (payload or {}).items() if key in PROJECT_MUTABLE_FIELDS}
+    _booleano_estricto(values, "requires_maquila")
     with transaction_context() as db:
         project = _get_visible_project(db, project_id, user_data, for_update=True)
         scope = _scope_name(db, user_data)
@@ -1255,7 +1265,22 @@ def delete_project(project_id, user_data: dict) -> dict:
         return {"deleted": True, "id_proyect": project.id_proyect}
 
 
+def _booleano_estricto(values: dict, campo: str) -> None:
+    """Un booleano que llega como texto raro es un 400, no un 500 al insertar."""
+    if campo not in values:
+        return
+    crudo = values[campo]
+    validos = {True: True, False: False, 1: True, 0: False,
+               "true": True, "false": False, "1": True, "0": False}
+    clave = crudo.strip().lower() if isinstance(crudo, str) else crudo
+    if clave not in validos:
+        raise AppError("errors.invalid_field", 400, {"field": campo})
+    values[campo] = validos[clave]
+
+
 def transition_project(project_id, payload: dict, user_data: dict) -> dict:
+    if payload is not None and not isinstance(payload, dict):
+        raise AppError("errors.invalid_field", 400, {"field": "body"})
     target = normalize_project_status((payload or {}).get("status"))
     reason = (payload or {}).get("reason")
     with transaction_context() as db:

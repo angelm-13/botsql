@@ -282,7 +282,7 @@ def transition_task(task_id, payload: dict, user_data: dict) -> dict:
     """
     from app.services.project_management_service import _append_event, require_task_access
 
-    require_task_access(task_id, user_data)
+    require_task_access(task_id, user_data, escribe=True)
     target = normalize_task_status((payload or {}).get("status"))
     reason = (payload or {}).get("reason")
     content = (payload or {}).get("content")
@@ -331,7 +331,7 @@ def add_task_note(task_id, payload: dict, user_data: dict) -> dict:
     from app.services.project_management_service import _append_event, require_task_access
     from app.services.task_note_service import TaskNoteService
 
-    require_task_access(task_id, user_data)
+    require_task_access(task_id, user_data, escribe=True)
     description = str((payload or {}).get("task_note_description") or "").strip()
     if not description:
         raise AppError("errors.required_field", 400, {"field": "task_note_description"})

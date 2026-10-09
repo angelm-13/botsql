@@ -7,6 +7,7 @@ from flask_cors import CORS
 
 from app.utils.startup_guard import allowed_cors_origins, enforce_secure_configuration, is_production
 from flask_babel import Babel
+from sqlalchemy.exc import DBAPIError, IntegrityError, StatementError
 from werkzeug.exceptions import HTTPException
 from app.utils.errors import AppError
 from app.routes.health import bp_health
@@ -806,6 +807,27 @@ def create_app(testing: bool = False) -> Flask:
             'error_key': f'errors.http_{error.code}',
             'meta': {'description': error.description},
         }), error.code
+
+    # Entrada del cliente que la base o el parseo rechazan: es del cliente, no un
+    # fallo del servidor. Se registra igual para que un bug real no se esconda.
+    @app.errorhandler(IntegrityError)
+    def handle_integrity(error: IntegrityError):
+        app.logger.warning("integridad rechazada: %s", error.orig)
+        codigo = getattr(error.orig, 'pgcode', None)
+        if codigo == '23503':
+            return jsonify({'error_key': 'errors.invalid_reference'}), 409
+        if codigo in ('23502', '23514'):
+            return jsonify({'error_key': 'errors.invalid_field'}), 400
+        return handle_unexpected(error)
+
+    @app.errorhandler(DBAPIError)
+    @app.errorhandler(StatementError)
+    @app.errorhandler(ValueError)
+    def handle_bad_input(error: Exception):
+        if isinstance(error, DBAPIError) and getattr(error.orig, 'pgcode', None) is None:
+            return handle_unexpected(error)
+        app.logger.warning("entrada invalida: %s", error)
+        return jsonify({'error_key': 'errors.invalid_field'}), 400
 
     @app.errorhandler(Exception)
     def handle_unexpected(error: Exception):
