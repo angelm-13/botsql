@@ -752,19 +752,36 @@ export default function InventoryTracePage() {
                         Cuando discrepan se dice: es un dato mal capturado, y
                         esconderlo es como no tenerlo. */}
                     {it.classification?.catalog_mismatch && (
-                      <p className="trace-mismatch">
-                        <AlertTriangle size={13} />
-                        {t("trace.catalog_mismatch",
-                          "El catálogo público lo clasifica distinto:")}{" "}
+                      <>
+                        {/* Un aviso por eje, diciendo cual es: antes decia solo
+                            "lo clasifica distinto" junto a la marca aunque el
+                            problema fuera la familia. */}
                         {[
-                          it.classification.catalog_mismatch.family && (
-                            it.classification.catalog_mismatch.family.family
-                            || `${t("inventory.family", "Familia")} ${it.classification.catalog_mismatch.family.id_product_family} (${t("trace.catalog_missing", "ya no existe")})`),
-                          it.classification.catalog_mismatch.brand && (
-                            it.classification.catalog_mismatch.brand.brand
-                            || `${t("inventory.brand", "Marca")} ${it.classification.catalog_mismatch.brand.id_brand} (${t("trace.catalog_missing", "ya no existe")})`),
-                        ].filter(Boolean).join(" · ")}
-                      </p>
+                          ["family", "familia", it.classification.catalog_mismatch.family,
+                            it.classification.catalog_mismatch.family?.family,
+                            it.classification.catalog_mismatch.family?.id_product_family],
+                          ["brand", "marca", it.classification.catalog_mismatch.brand,
+                            it.classification.catalog_mismatch.brand?.brand,
+                            it.classification.catalog_mismatch.brand?.id_brand],
+                        ].filter(([, , dato]) => dato).map(([eje, , , nombre, id]) => {
+                          const texto = nombre
+                            ? t(`trace.catalog_other_${eje}`,
+                                eje === "family"
+                                  ? "El catálogo público tiene otra familia: {name}. Si no es la correcta, puedes cambiarla editando el producto."
+                                  : "El catálogo público tiene otra marca: {name}. Si no es la correcta, puedes cambiarla editando el producto.")
+                                .replace("{name}", nombre)
+                            : t(`trace.catalog_missing_${eje}`,
+                                eje === "family"
+                                  ? "La familia del catálogo público (id {id}) ya no existe. Puedes elegir otra editando el producto."
+                                  : "La marca del catálogo público (id {id}) ya no existe. Puedes elegir otra editando el producto.")
+                                .replace("{id}", id);
+                          return (
+                            <p key={eje} className="trace-mismatch">
+                              <AlertTriangle size={13} /> {texto}
+                            </p>
+                          );
+                        })}
+                      </>
                     )}
                   </div>
                   <div className="trace-total">
