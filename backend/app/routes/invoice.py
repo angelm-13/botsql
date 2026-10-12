@@ -36,6 +36,13 @@ from app.utils.field_access import COLUMNAS_DE_AUDITORIA
 
 
 bp_invoice = Blueprint('invoice', __name__, url_prefix='/invoice')
+# Una vez timbrada, el comprobante ya existe ante el SAT: sus importes y datos
+# fiscales no se reescriben (se corrige con nota de credito o cancelacion).
+CAMPOS_FISCALES_CONGELADOS = (
+    'subtotal', 'tax', 'total', 'descuento', 'tax_rate', 'apply_tax', 'currency',
+    'type_exchange_rate', 'rfc_receptor', 'nombre_receptor', 'regimen_fiscal_receptor',
+    'tipo_de_comprobante', 'metodo_pago', 'payment_method', 'folio_fiscal', 'folio',
+)
 ALLOWED_FIELDS = ['id_invoice', 'date_emision', 'date_expiration', 'subtotal', 'tax', 'total', 'invoice_status', 'invoice_direction', 'payment_method', 'note', 'id_customer_supplier', 'fiscal_reference', 'serie_csd', 'internationalization', 'currency', 'type_exchange_rate', 'tax_certification_supplier', 'fiscal_certify_serie', 'certification_date', 'cfdi_code', 'sat_code', 'sat_certification_code', 'id_status', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'nombre_emisor', 'lugar_expedicion', 'tipo_de_comprobante', 'rfc_receptor', 'nombre_receptor', 'regimen_fiscal_receptor', 'domicilio_fiscal_receptor', 'id_proveedor_de_sello', 'folio_fiscal', 'exportacion', 'folio', 'no_certificado_sat', 'sello_sat', 'sello_certificacion_sat', 'no_certificado', 'descuento', 'metodo_pago', 'condiciones_pago', 'id_issuer_customer_supplier', 'id_proyect', 'apply_tax', 'tax_rate', 'commercial_terms']
 
 TECHNICAL_RESPONSE_FIELDS = {'id_invoice'}
@@ -438,6 +445,14 @@ def _apply_inventory_after_stamp(invoice_id, payload, user_data):
 def update_invoice(user_data, id_invoice):
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
     InvoiceService.require_scope(id_invoice, user_data)
+    # El estatus no es un campo que se escriba: lo mueven la transicion de la
+    # cotizacion, la conversion y el timbrado. Un PUT con "timbrada" fabricaba
+    # una factura timbrada sin timbrar.
+    if 'invoice_status' in payload:
+        raise AppError('errors.invoice_status_not_editable', 409, {'field': 'invoice_status'})
+    if any(payload.get(campo) is not None for campo in CAMPOS_FISCALES_CONGELADOS):
+        if InvoiceService.get(id_invoice).get('folio_fiscal'):
+            raise AppError('errors.invoice_already_stamped', 409, {'id_invoice': id_invoice})
     if payload.get('id_proyect') is not None:
         # Mover la factura a otro proyecto exige poder ver el destino; si no, se
         # podria sacar una factura del alcance ajeno hacia el propio, o meter la
