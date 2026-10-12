@@ -226,3 +226,4 @@ infra/backups/
 # 10 de septiembre a peticion. Se siguen generando, pero fuera de git.
 Bitacora_*.docx
 .DS_Store
+backups/
