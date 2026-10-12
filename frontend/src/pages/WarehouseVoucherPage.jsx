@@ -754,6 +754,7 @@ function Vale({ vale, onCerrar, onAutorizar, onCancelar, onImprimir, imprimiendo
   // Hasta que almacen lo marca como salido, el material sigue en el almacen:
   // esta apartado, no fuera.
   const sinSalir = ["borrador", "en_espera"].includes(estado);
+  const cancelado = estado === "cancelado";
 
   // Un prestamo real por renglon, no una fila de tabla: la devolucion agrega
   // un renglon de ENTRADA en vez de reescribir el de SALIDA (asi queda el
@@ -828,8 +829,10 @@ function Vale({ vale, onCerrar, onAutorizar, onCancelar, onImprimir, imprimiendo
             una excepcion, el borrador, que no habla de los renglones sino de
             que todavia nadie autorizo la salida. */}
         <span className={`vale-estado ${
-          borrador ? "es-borrador" : (cerrado ? "es-cerrado" : "es-abierto")}`}>
-          {borrador
+          borrador ? "es-borrador" : (cerrado || cancelado ? "es-cerrado" : "es-abierto")}`}>
+          {cancelado
+            ? t("voucher.status_cancelado", "Cancelado")
+            : borrador
             ? t("voucher.status_draft", "Borrador")
             : (cerrado
               ? t("voucher.status_closed", "Cerrado")
@@ -837,7 +840,9 @@ function Vale({ vale, onCerrar, onAutorizar, onCancelar, onImprimir, imprimiendo
                 ? t(`voucher.status_${estado}`, estado)
                 : t("voucher.status_open", "Abierto"))}
           <em>
-            {sinSalir
+            {cancelado
+              ? t("voucher.cancelled_short", "sin material")
+              : sinSalir
               ? t("voucher.nothing_left_yet", "nada ha salido todavía")
               : `${fueraReal} ${t("voucher.of", "de")} ${totalReal} ${
                 t("voucher.open_lines", "sin devolver")}`}
@@ -959,7 +964,8 @@ function Vale({ vale, onCerrar, onAutorizar, onCancelar, onImprimir, imprimiendo
                     ) : (
                       <span className="vale-marca devuelto">
                         <Check size={13} />
-                        {t("history.returned", "devuelto")}
+                        {cancelado ? t("voucher.status_cancelado", "cancelado")
+                                   : t("history.returned", "devuelto")}
                       </span>
                     )}
                   </td>
