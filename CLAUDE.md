@@ -6,6 +6,36 @@ aparte de `ARQUITECTURA_TYAKXA_TNY.md` (referencia técnica estable) y de
 sección se resuelve, se puede recortar; mientras tanto se deja completa para
 que una sesión nueva no tenga que releer el historial de chat.
 
+## Bitacora 2026-10-12 — auditoria de punta a punta (CRM, compras, operaciones, seguridad)
+
+Cinco auditorias + dos de lo que quedo sin probar (timbrado/REP/cancelacion/notas de
+credito/citas y flujos pendientes de compras). Usuario de prueba de Compras:
+`backend/scripts/seed_usuario_compras.py` (compras1; la app solo acepta bcrypt).
+Corregido, con pruebas: token de MFA a medias ya no es sesion; PAC `fake` rechazado con
+`APP_ENV=production`; filtros/orden de listados solo sobre columnas reales (igualdad en
+numeros); `stamp_invoice` no re-timbra con otra llave (`NO_SE_TIMBRA`); cancelar factura con
+REP/nota de credito vivos da 409; total = subtotal - descuento + impuesto; abono en otra
+moneda 409; conversion llena el receptor desde el cliente; citas: zona horaria y doble
+reserva; CRM: RFC unico normalizado, tipo obligatorio, contactos validados; cotizacion
+vacia no se envia; vales: cancelar (`POST /vouchers/<id>/cancel`), el responsable puede
+verlos, baja sin fecha de regreso, responsable ya no se pisa con el Jefe de taller;
+proyecto no se cierra/cancela con vales u ordenes vivas; tareas/bitacora no en proyectos
+cerrados; compras: carrera de ordenes (bloqueo de necesidades), recepcion idempotente
+(`idempotency_key` / cabecera `Idempotency-Key`), necesidad en orden viva no se edita ni se
+devuelve, lo recibido sale de "por comprar", CFDI de orden cancelada reutilizable.
+
+**Abierto (decision del equipo)**: recibir una orden NO da entrada al inventario (el codigo
+dice que es a proposito); `APP_ENV` no esta fijado en k8s y la guarda de arranque falla
+abierta; cuentas de dev con contrasenas debiles / init_test_data crea Administradores;
+tokens de 8 h sin revocacion; contenedores como root, sin cabeceras de seguridad, imagenes
+con CVEs por version; migraciones sin candado y 36 sin `ajustado_por_gestor`; vale de
+reparacion deja la pieza "prestada"; `/assets/overdue` vs vales; pagos sobre factura sin
+timbrar; ledger sin asiento de apertura (2201 productos); `nm_incident_product.status`
+siempre 'disponible'; dos columnas de estado de proyecto que se contradicen; 9 `id_*` sin FK
+y 84 FKs sin indice; tickets sin vinculo a cliente/proyecto; `user.id_proyect`/`supervisor`
+NOT NULL heredados. Datos `AUD-*`/`AUD2-*`/`QAOPS-*`/`QAINV-*` quedaron en dev (limpiar con
+script con --dry-run).
+
 ## Bitacora 2026-10-09 — vales: un solo flujo, tipos por rol, apartado vs fuera
 
 Probado en navegador con almacen, supervisor (angelito) y jefe de taller, mas dos
