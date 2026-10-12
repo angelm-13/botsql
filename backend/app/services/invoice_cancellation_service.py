@@ -294,6 +294,28 @@ def _reverse_inventory(db, invoice, user_data, cancellation) -> list[dict]:
     return revertidos
 
 
+def _documentos_vivos_que_dependen(db, id_invoice) -> list[int]:
+    """Complementos de pago y notas de credito no cancelados de esta factura.
+
+    La sustitucion (relacion 04) no cuenta: la factura que sustituye a la
+    cancelada es justo la que se espera que exista."""
+    from app.models.cfdi_relation import CfdiRelation
+    from app.models.invoice import Invoice
+    from app.models.invoice_payment import InvoicePayment
+
+    vivos = Invoice.invoice_status.is_distinct_from("cancelada")
+    complementos = db.scalars(
+        select(Invoice.id_invoice).join(
+            InvoicePayment, InvoicePayment.id_payment_invoice == Invoice.id_invoice
+        ).where(InvoicePayment.id_invoice == int(id_invoice), vivos)).all()
+    notas = db.scalars(
+        select(Invoice.id_invoice).join(
+            CfdiRelation, CfdiRelation.id_invoice == Invoice.id_invoice
+        ).where(CfdiRelation.id_related_invoice == int(id_invoice),
+                CfdiRelation.relation_type != "04", vivos)).all()
+    return sorted({int(i) for i in (*complementos, *notas)})
+
+
 def request_cancellation(invoice_id, payload, user_data, provider=None) -> dict:
     """Solicita al SAT la cancelacion de un comprobante timbrado."""
     payload = payload or {}
@@ -318,6 +340,12 @@ def request_cancellation(invoice_id, payload, user_data, provider=None) -> dict:
 
         invoice = _load_invoice(db, invoice_id, user_data)
         _require_stamped(invoice)
+        dependientes = _documentos_vivos_que_dependen(db, invoice.id_invoice)
+        if dependientes:
+            # Cancelar la factura dejaba timbrados sus complementos de pago y sus
+            # notas de credito: documentos vivos que apuntan a un CFDI cancelado.
+            raise AppError("errors.cancellation_has_dependents", 409,
+                           {"id_invoice": invoice.id_invoice, "dependents": dependientes})
 
         vigente = _blocking_cancellation(db, invoice.id_invoice)
         if vigente is not None:

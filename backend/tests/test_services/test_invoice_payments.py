@@ -101,6 +101,12 @@ class TestPaymentRules(PaymentTestCase):
         self.assertEqual("400.00", abono["amount"])
         self.assertEqual("600.00", abono["outstanding_balance"])
 
+    def test_a_payment_in_another_currency_is_refused(self):
+        with self.assertRaises(AppError) as caja:
+            self.pay("50.00", "usd-1", currency="USD")
+
+        self.assertEqual("errors.payment_currency_mismatch", caja.exception.message_key)
+
     def test_a_cash_invoice_does_not_take_payments(self):
         """En PUE el cobro ya quedo acreditado con la factura misma."""
         with self.assertRaises(AppError) as raised:

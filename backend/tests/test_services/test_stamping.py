@@ -162,6 +162,20 @@ class TestStampInvoice(BackendTestCase):
         }, {"id_user": 1, "id_proyect": 30})
         return result["invoice"]["id_invoice"]
 
+    def test_a_stamped_invoice_is_not_stamped_again_with_another_key(self):
+        invoice_id = self._create_invoice()
+        stamp_invoice(invoice_id, "una-vez", {"id_user": 1, "id_proyect": 30}, CapturingProvider())
+
+        with self.assertRaises(AppError) as caja:
+            stamp_invoice(invoice_id, "otra-llave", {"id_user": 1, "id_proyect": 30},
+                          CapturingProvider())
+
+        self.assertEqual("errors.invoice_not_stampable", caja.exception.message_key)
+        # Y reintentar con la MISMA llave sigue devolviendo lo mismo, sin error.
+        _, creada = stamp_invoice(invoice_id, "una-vez", {"id_user": 1, "id_proyect": 30},
+                                  CapturingProvider())
+        self.assertFalse(creada)
+
     def test_manual_invoice_builds_full_payload_and_persists_stamp(self):
         invoice_id = self._create_invoice()
         provider = CapturingProvider()

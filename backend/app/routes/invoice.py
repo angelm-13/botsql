@@ -43,6 +43,30 @@ CAMPOS_FISCALES_CONGELADOS = (
     'type_exchange_rate', 'rfc_receptor', 'nombre_receptor', 'regimen_fiscal_receptor',
     'tipo_de_comprobante', 'metodo_pago', 'payment_method', 'folio_fiscal', 'folio',
 )
+def _datos_fiscales_del_cliente(invoice: dict) -> dict:
+    """Receptor del CFDI tomado del cliente cuando la cotizacion no lo traia.
+
+    Una cotizacion convertida quedaba con RFC/nombre/regimen/CP del receptor en
+    blanco: el preflight fallaba y el complemento de pago salia con receptor
+    vacio. Solo se llena lo que esta vacio; nunca se pisa lo capturado."""
+    from app.models import CustomerSupplier
+    from app.models.session import transaction_context
+
+    if not invoice.get('id_customer_supplier'):
+        return {}
+    with transaction_context() as db:
+        cliente = db.get(CustomerSupplier, int(invoice['id_customer_supplier']))
+        if cliente is None:
+            return {}
+        candidatos = {
+            'rfc_receptor': cliente.tax_id, 'nombre_receptor': cliente.name,
+            'regimen_fiscal_receptor': cliente.fiscal_type,
+            'domicilio_fiscal_receptor': cliente.postal_code,
+        }
+    return {campo: str(valor).strip() for campo, valor in candidatos.items()
+            if valor and not str(invoice.get(campo) or '').strip()}
+
+
 def _cambia(actual, nuevo) -> bool:
     """Distinto de verdad: '' y None son lo mismo, y 100 == '100.00'."""
     vacio = (None, '')
@@ -64,7 +88,7 @@ def _lineas_de(id_invoice) -> int:
             InvoiceMaterialService.deletion_date.is_(None)).count()
 
 
-ESTATUS_AL_CREAR = {'captura', 'cotizacion', 'pendiente'}
+ESTATUS_AL_CREAR = {'captura', 'cotizacion', 'pendiente', 'draft'}
 ALLOWED_FIELDS = ['id_invoice', 'date_emision', 'date_expiration', 'subtotal', 'tax', 'total', 'invoice_status', 'invoice_direction', 'payment_method', 'note', 'id_customer_supplier', 'fiscal_reference', 'serie_csd', 'internationalization', 'currency', 'type_exchange_rate', 'tax_certification_supplier', 'fiscal_certify_serie', 'certification_date', 'cfdi_code', 'sat_code', 'sat_certification_code', 'id_status', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'nombre_emisor', 'lugar_expedicion', 'tipo_de_comprobante', 'rfc_receptor', 'nombre_receptor', 'regimen_fiscal_receptor', 'domicilio_fiscal_receptor', 'id_proveedor_de_sello', 'folio_fiscal', 'exportacion', 'folio', 'no_certificado_sat', 'sello_sat', 'sello_certificacion_sat', 'no_certificado', 'descuento', 'metodo_pago', 'condiciones_pago', 'id_issuer_customer_supplier', 'id_proyect', 'apply_tax', 'tax_rate', 'commercial_terms']
 
 TECHNICAL_RESPONSE_FIELDS = {'id_invoice'}
@@ -697,6 +721,7 @@ def convert_quotation_invoice(user_data, id_invoice):
         'date_emision': datetime.utcnow().isoformat(),
     }
 
+    payload.update(_datos_fiscales_del_cliente(invoice))
     updated = InvoiceService.update(id_invoice, payload, user_id=user_data.get('id_user'))
 
     return jsonify({
