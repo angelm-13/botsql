@@ -614,6 +614,13 @@ def _descendientes(db, id_location) -> list[int]:
     return encontrados
 
 
+# Los valores con que se migro lo que no traia dato (ver migrate_adser.py):
+# material.id_brand / id_product_family son NOT NULL, asi que "no se sabe" es
+# una fila mas del catalogo.
+MARCA_SIN_DATO = "Sin marca específica"
+FAMILIA_SIN_DATO = "Sin categoría"
+
+
 def _clasificacion_en_lote(db, productos) -> dict[int, dict]:
     """A que familia pertenece cada producto, de que marca es y en que se mide.
 
@@ -635,7 +642,10 @@ def _clasificacion_en_lote(db, productos) -> dict[int, dict]:
 
     No se elige una en silencio. Manda la del material -es la que el almacen usa
     y la unica obligatoria- y si la del catalogo apunta a otra parte se dice, en
-    `catalog_mismatch`. Una discrepancia asi es un dato mal capturado y
+    `catalog_mismatch`. Excepcion: si el material esta en "Sin marca
+    especifica" / "Sin categoria" no dice nada, y entonces se toma la del
+    producto (la marca vive en el producto: un material tiene productos de
+    varias). Un id del producto que ya no existe tambien se avisa. Una discrepancia asi es un dato mal capturado y
     esconderla es como no tenerla.
     """
     from app.models.brand import Brand
@@ -715,16 +725,29 @@ def _clasificacion_en_lote(db, productos) -> dict[int, dict]:
     for producto in productos:
         base = dict(por_material.get(producto.id_material) or VACIA)
         discrepancias = {}
+        # El material es el TIPO de pieza y la marca vive en el producto: un
+        # material sin marca ("Sin marca especifica") tiene productos de varias.
+        # Cuando el material no dice nada, la clasificacion toma la del
+        # producto; solo se avisa si ambos dicen algo y no coinciden, o si el
+        # id del producto ya no existe.
         if producto.id_familia and producto.id_familia != base["id_product_family"]:
-            discrepancias["family"] = {
-                "id_product_family": producto.id_familia,
-                "family": nombre_familia.get(producto.id_familia),
-            }
+            nombre = nombre_familia.get(producto.id_familia)
+            if nombre and base["family"] in (None, FAMILIA_SIN_DATO):
+                base["id_product_family"] = producto.id_familia
+                base["family"] = nombre
+            else:
+                discrepancias["family"] = {
+                    "id_product_family": producto.id_familia, "family": nombre,
+                }
         if producto.id_marca and producto.id_marca != base["id_brand"]:
-            discrepancias["brand"] = {
-                "id_brand": producto.id_marca,
-                "brand": nombre_marca.get(producto.id_marca),
-            }
+            nombre = nombre_marca.get(producto.id_marca)
+            if nombre and base["brand"] in (None, MARCA_SIN_DATO):
+                base["id_brand"] = producto.id_marca
+                base["brand"] = nombre
+            else:
+                discrepancias["brand"] = {
+                    "id_brand": producto.id_marca, "brand": nombre,
+                }
         base["catalog_mismatch"] = discrepancias or None
         salida[producto.id_product] = base
     return salida
@@ -998,9 +1021,13 @@ def localizar(consulta: str, user_data: dict, *, proposito: str | None = None,
                 Material, Material.id_material == Product.id_material)
             if id_familia:
                 por_clasificacion = por_clasificacion.where(
-                    Material.id_product_family == id_familia)
+                    or_(Material.id_product_family == id_familia,
+                        Product.id_familia == id_familia))
             if id_marca:
-                por_clasificacion = por_clasificacion.where(Material.id_brand == id_marca)
+                # La marca puede estar en el material o, si este no dice
+                # ninguna, en el producto (ver `_clasificacion_en_lote`).
+                por_clasificacion = por_clasificacion.where(
+                    or_(Material.id_brand == id_marca, Product.id_marca == id_marca))
             if id_material:
                 por_clasificacion = por_clasificacion.where(Material.id_material == id_material)
             _recortar(db.scalars(por_clasificacion).all())
