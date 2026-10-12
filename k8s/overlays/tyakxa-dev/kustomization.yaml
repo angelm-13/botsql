@@ -26,6 +26,47 @@ resources:
   - ../../base
   - ingress-single-origin.yaml
 patches:
+  # tyakxa-dev NO es produccion: el base fija APP_ENV=production (guarda de arranque
+  # estricta) y aqui se baja a staging para que no se caiga por secretos de pruebas.
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: backend
+      spec:
+        template:
+          spec:
+            containers:
+              - name: backend
+                env:
+                  - name: APP_ENV
+                    value: staging
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: celery-worker
+      spec:
+        template:
+          spec:
+            containers:
+              - name: celery-worker
+                env:
+                  - name: APP_ENV
+                    value: staging
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: celery-beat
+      spec:
+        template:
+          spec:
+            containers:
+              - name: celery-beat
+                env:
+                  - name: APP_ENV
+                    value: staging
   - patch: |-
       apiVersion: networking.k8s.io/v1
       kind: Ingress

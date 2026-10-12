@@ -128,6 +128,11 @@ spec:
             # valor que .env usa en desarrollo local.
             - name: TZ
               value: America/Mexico_City
+            # Produccion por defecto: la guarda de arranque exige secretos fuertes,
+            # CORS definido y proveedor de timbrado real (ver startup_guard.py).
+            # Un ambiente que NO es de verdad lo baja en su overlay (APP_ENV=staging).
+            - name: APP_ENV
+              value: production
           envFrom:
             - secretRef:
                 name: app-secrets
@@ -213,6 +218,11 @@ spec:
             # Ver nota de TZ en el Deployment "backend": misma app, mismo reloj.
             - name: TZ
               value: America/Mexico_City
+            # Produccion por defecto: la guarda de arranque exige secretos fuertes,
+            # CORS definido y proveedor de timbrado real (ver startup_guard.py).
+            # Un ambiente que NO es de verdad lo baja en su overlay (APP_ENV=staging).
+            - name: APP_ENV
+              value: production
           envFrom:
             - secretRef:
                 name: app-secrets
@@ -286,6 +296,11 @@ spec:
             # Ver nota de TZ en el Deployment "backend": misma app, mismo reloj.
             - name: TZ
               value: America/Mexico_City
+            # Produccion por defecto: la guarda de arranque exige secretos fuertes,
+            # CORS definido y proveedor de timbrado real (ver startup_guard.py).
+            # Un ambiente que NO es de verdad lo baja en su overlay (APP_ENV=staging).
+            - name: APP_ENV
+              value: production
           envFrom:
             - secretRef:
                 name: app-secrets

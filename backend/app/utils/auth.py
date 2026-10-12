@@ -17,6 +17,52 @@ ADMIN_PERMISSION_ENTITIES = {'permission', 'entity_permission', 'nm_field_permis
 ADMIN_PERMISSION_READ_ENTITIES = ADMIN_PERMISSION_ENTITIES | {'user', 'department', 'subdepartment', 'level'}
 
 
+# Cuanto se recuerda que un usuario sigue vigente. Es el retraso maximo con que un
+# despido o un cambio de rol surte efecto sobre una sesion ya abierta (por proceso).
+VIGENCIA_DE_SESION_SEGUNDOS = int(os.getenv('SESSION_REVALIDATE_SECONDS', '30'))
+_vigencia: dict[int, tuple[float, bool, int | None]] = {}
+
+
+def olvidar_vigencias() -> None:
+    _vigencia.clear()
+
+
+def sesion_vigente(user_data: dict) -> bool:
+    """El token es una foto de hace hasta 8 horas: sin esto, dar de baja a alguien o
+    quitarle un rol no hacia nada hasta que el token expiraba. Se revisa contra la
+    base (con una cache corta) que el usuario exista, no este dado de baja y siga
+    con el rol del token."""
+    import time
+
+    if str(os.getenv('TESTING') or '').strip().lower() in {'1', 'true', 'yes'}:
+        return True
+    try:
+        id_user = int(user_data.get('id_user') or user_data.get('user_id') or 0)
+    except (TypeError, ValueError):
+        return False
+    if not id_user:
+        return False
+    ahora = time.monotonic()
+    guardado = _vigencia.get(id_user)
+    if guardado is None or guardado[0] < ahora:
+        from sqlalchemy import select
+        from app.models.session import transaction_context
+        from app.models.user import User
+
+        with transaction_context() as db:
+            fila = db.execute(select(User.deletion_date, User.id_permission)
+                              .where(User.id_user == id_user)).first()
+        guardado = (ahora + VIGENCIA_DE_SESION_SEGUNDOS,
+                    fila is not None and fila[0] is None,
+                    fila[1] if fila is not None else None)
+        _vigencia[id_user] = guardado
+    _, vivo, permiso_actual = guardado
+    if not vivo:
+        return False
+    permiso_token = _get_permission_id(user_data)
+    return permiso_token is None or permiso_actual is None or int(permiso_actual) == permiso_token
+
+
 def token_required(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
@@ -33,6 +79,8 @@ def token_required(fn):
         # sesion: solo `/auth/mfa/verify-login` lo acepta, y lo decodifica aparte.
         if user_data.get('mfa_step'):
             return jsonify({'error_key': 'errors.invalid_token'}), 401
+        if not sesion_vigente(user_data):
+            return jsonify({'error_key': 'errors.session_revoked'}), 401
         return fn(user_data, *args, **kwargs)
     return wrapper
 
