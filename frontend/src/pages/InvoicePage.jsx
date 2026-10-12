@@ -3,6 +3,7 @@ import { BadgeCheck, ChevronDown, ChevronRight, Download, FileText, Plus, Refres
 import { useI18n } from "../i18n";
 import { applyInvoiceInventory, deleteInvoice, downloadInvoicePdf, attachInvoiceXml, downloadInvoiceXml, getAllCustomerSupplier, getAllEntityPermission, getAllField, getAllInvoice, getAllNmFieldPermission, getAllProyect, getAllStatus, getInvoiceInventoryPreview, getInvoiceLines, resetUserMfa, stampInvoice, createInvoice, updateInvoice } from "../api";
 import { fetchAllPages } from "../utils/fetchAllPages";
+import { stampingOutcome } from "../utils/stampingOutcome";
 import Pagination from "../components/Pagination.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
@@ -306,8 +307,9 @@ export default function InvoicePage() {
     setErrorKey("");
     setNoticeKey("");
     try {
-      await stampInvoice(item.id_invoice);
-      setNoticeKey("Factura timbrada correctamente.");
+      const outcome = stampingOutcome(await stampInvoice(item.id_invoice));
+      if (outcome.ok) setNoticeKey("Factura timbrada correctamente.");
+      else { setErrorKey(outcome.message); setErrorMeta(null); }
       await loadData();
     } catch (error) {
       setErrorKey(error.message || "errors.request_failed");
