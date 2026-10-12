@@ -611,6 +611,24 @@ def require_task_access(task_id, user_data: dict, *, escribe: bool = False) -> N
                            {"id_proyect": task.id_proyect})
 
 
+def require_project_open(project_id) -> None:
+    """No se capturan tareas ni bitacora en un proyecto que ya no trabaja:
+    denegado, completado, entregado o cancelado por gerencia."""
+    id_proyecto = _safe_int(project_id)
+    if id_proyecto is None:
+        raise AppError("errors.invalid_field", 400, {"field": "id_proyect"})
+    with transaction_context() as db:
+        project = db.get(Proyect, id_proyecto)
+        if not project or project.deletion_date is not None:
+            raise AppError("errors.resource_not_found", 404)
+        if (normalize_project_status(project.proyect_status) in {"denied", "completed", "delivered"}
+                or str(project.management_status or "").lower() == "cancelado"):
+            raise AppError("errors.project_closed", 409,
+                           {"id_proyect": project.id_proyect,
+                            "status": project.proyect_status,
+                            "management_status": project.management_status})
+
+
 def require_project_taken_by_actor(project_id, user_data: dict) -> None:
     """El proyecto debe estar TOMADO por este actor (`take_project`).
 

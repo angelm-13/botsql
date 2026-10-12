@@ -2444,3 +2444,71 @@ class TestUnProyectoNoSeCierraConMaterialPendiente(BaseVale):
             transition_management(PROYECTO, {"management_status": "cancelado"}, ACTOR)
 
         self.assertEqual("errors.project_open_vouchers", caja.exception.message_key)
+
+
+class TestCancelarUnVale(BaseVale):
+    def _prevale_con_stock(self, **extra):
+        self.surtir(2, RACK)
+        return self._prevale([{"id_product": CEMENTO, "quantity": 2, "id_location_from": RACK}], **extra)
+
+    def test_cancelling_a_draft_releases_what_it_reserved(self):
+        from app.services.warehouse_voucher_service import cancelar_vale
+
+        r = self._prevale_con_stock()
+        with self.assertRaises(AppError):
+            self._prevale([{"id_product": CEMENTO, "quantity": 1, "id_location_from": RACK}])
+
+        cancelado = cancelar_vale(r["voucher"]["id_incident"], {"note": "ya no se necesita"}, ACTOR)
+
+        self.assertEqual("cancelado", cancelado["voucher"]["incident_status"])
+        self._prevale([{"id_product": CEMENTO, "quantity": 2, "id_location_from": RACK}])
+
+    def test_a_cancelled_vale_leaves_no_open_lines(self):
+        from app.services.warehouse_voucher_service import cancelar_vale, vales_vencidos
+
+        r = self._prevale_con_stock()
+        cancelar_vale(r["voucher"]["id_incident"], {"note": "error de captura"}, ACTOR)
+
+        self.assertEqual([], [x for x in vales_vencidos(ACTOR)["items"]
+                              if x.get("id_incident") == r["voucher"]["id_incident"]])
+
+    def test_the_reason_is_required(self):
+        from app.services.warehouse_voucher_service import cancelar_vale
+
+        r = self._prevale_con_stock()
+        with self.assertRaises(AppError) as caja:
+            cancelar_vale(r["voucher"]["id_incident"], {}, ACTOR)
+
+        self.assertEqual(400, caja.exception.status_code)
+
+    def test_a_vale_that_already_gave_out_material_cannot_be_cancelled(self):
+        from app.services.warehouse_voucher_service import cancelar_vale
+
+        r = self._prevale_con_stock()
+        id_vale = r["voucher"]["id_incident"]
+        autorizar_vale(id_vale, {}, OTRO_ACTOR)
+        entregar_vale(id_vale, {}, OTRO_ACTOR)
+
+        with self.assertRaises(AppError) as caja:
+            cancelar_vale(id_vale, {"note": "tarde"}, ACTOR)
+
+        self.assertEqual("errors.voucher_not_cancellable", caja.exception.message_key)
+
+    def test_a_stranger_without_warehouse_rights_cannot_cancel_it(self):
+        from app.services.warehouse_voucher_service import cancelar_vale
+
+        r = self._prevale_con_stock()
+        extrano = {"id_user": 2, "id_permission": 999}
+        with self.assertRaises(AppError) as caja:
+            cancelar_vale(r["voucher"]["id_incident"], {"note": "x"}, extrano)
+
+        self.assertEqual(404, caja.exception.status_code)
+
+    def test_a_destruction_vale_needs_no_return_date(self):
+        self.surtir(3, RACK)
+        with transaction_context() as db:
+            db.add(IncidentType(id_incident_type=555, incident_type_description="Destruccion",
+                                created_by=1))
+        crear_vale({"id_incident_type": 555, "id_user": 1, "note": "se rompio",
+                    "lines": [{"id_product": CEMENTO, "quantity": 1, "id_location_from": RACK}]},
+                   ACTOR)

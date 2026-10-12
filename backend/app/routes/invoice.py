@@ -43,6 +43,28 @@ CAMPOS_FISCALES_CONGELADOS = (
     'type_exchange_rate', 'rfc_receptor', 'nombre_receptor', 'regimen_fiscal_receptor',
     'tipo_de_comprobante', 'metodo_pago', 'payment_method', 'folio_fiscal', 'folio',
 )
+def _cambia(actual, nuevo) -> bool:
+    """Distinto de verdad: '' y None son lo mismo, y 100 == '100.00'."""
+    vacio = (None, '')
+    if actual in vacio and nuevo in vacio:
+        return False
+    try:
+        from decimal import Decimal
+        return Decimal(str(actual)) != Decimal(str(nuevo))
+    except Exception:
+        return str(actual).strip().lower() != str(nuevo).strip().lower()
+
+
+def _lineas_de(id_invoice) -> int:
+    from app.models import InvoiceMaterialService
+    from app.models.session import transaction_context
+    with transaction_context() as db:
+        return db.query(InvoiceMaterialService).filter(
+            InvoiceMaterialService.id_invoice == int(id_invoice),
+            InvoiceMaterialService.deletion_date.is_(None)).count()
+
+
+ESTATUS_AL_CREAR = {'captura', 'cotizacion', 'pendiente'}
 ALLOWED_FIELDS = ['id_invoice', 'date_emision', 'date_expiration', 'subtotal', 'tax', 'total', 'invoice_status', 'invoice_direction', 'payment_method', 'note', 'id_customer_supplier', 'fiscal_reference', 'serie_csd', 'internationalization', 'currency', 'type_exchange_rate', 'tax_certification_supplier', 'fiscal_certify_serie', 'certification_date', 'cfdi_code', 'sat_code', 'sat_certification_code', 'id_status', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'nombre_emisor', 'lugar_expedicion', 'tipo_de_comprobante', 'rfc_receptor', 'nombre_receptor', 'regimen_fiscal_receptor', 'domicilio_fiscal_receptor', 'id_proveedor_de_sello', 'folio_fiscal', 'exportacion', 'folio', 'no_certificado_sat', 'sello_sat', 'sello_certificacion_sat', 'no_certificado', 'descuento', 'metodo_pago', 'condiciones_pago', 'id_issuer_customer_supplier', 'id_proyect', 'apply_tax', 'tax_rate', 'commercial_terms']
 
 TECHNICAL_RESPONSE_FIELDS = {'id_invoice'}
@@ -274,6 +296,10 @@ def download_invoice_pdf(user_data, id_invoice):
 @require_entity_permission('invoice', 'create')
 def create_invoice(user_data):
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
+    estatus = str(payload.get('invoice_status') or '').strip().lower()
+    if estatus and estatus not in ESTATUS_AL_CREAR:
+        raise AppError('errors.invoice_status_not_editable', 400,
+                       {'field': 'invoice_status', 'allowed': sorted(ESTATUS_AL_CREAR)})
     InvoiceService.require_project_for_write(payload.get('id_proyect'), user_data)
     return _jsonify_projected_record(user_data, InvoiceService.create(payload, user_id=user_data.get('id_user')), status=201)
 
@@ -447,12 +473,17 @@ def update_invoice(user_data, id_invoice):
     InvoiceService.require_scope(id_invoice, user_data)
     # El estatus no es un campo que se escriba: lo mueven la transicion de la
     # cotizacion, la conversion y el timbrado. Un PUT con "timbrada" fabricaba
-    # una factura timbrada sin timbrar.
-    if 'invoice_status' in payload:
+    # una factura timbrada sin timbrar. Reenviar el mismo valor (la pantalla
+    # manda todos los campos) no es un cambio.
+    actual = InvoiceService.get(id_invoice)
+    if 'invoice_status' in payload and _cambia(actual.get('invoice_status'), payload['invoice_status']):
         raise AppError('errors.invoice_status_not_editable', 409, {'field': 'invoice_status'})
-    if any(payload.get(campo) is not None for campo in CAMPOS_FISCALES_CONGELADOS):
-        if InvoiceService.get(id_invoice).get('folio_fiscal'):
-            raise AppError('errors.invoice_already_stamped', 409, {'id_invoice': id_invoice})
+    if actual.get('folio_fiscal'):
+        congelados = [c for c in CAMPOS_FISCALES_CONGELADOS
+                      if c in payload and _cambia(actual.get(c), payload[c])]
+        if congelados:
+            raise AppError('errors.invoice_already_stamped', 409,
+                           {'id_invoice': id_invoice, 'fields': congelados})
     if payload.get('id_proyect') is not None:
         # Mover la factura a otro proyecto exige poder ver el destino; si no, se
         # podria sacar una factura del alcance ajeno hacia el propio, o meter la
@@ -470,6 +501,9 @@ def transition_quotation(user_data, id_invoice):
     if not invoice:
         raise AppError('errors.resource_not_found', 404)
     target_status = validate_transition(invoice.get('invoice_status'), (request.get_json(silent=True) or {}).get('status'))
+    if target_status in ('sent', 'approved', 'partially_approved') and not _lineas_de(id_invoice):
+        # Una cotizacion sin renglones no se envia ni se aprueba: no hay que convertir.
+        raise AppError('errors.quotation_without_lines', 409, {'id_invoice': id_invoice})
     updated = InvoiceService.update(
         id_invoice,
         {'invoice_status': target_status},

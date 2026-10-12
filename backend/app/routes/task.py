@@ -4,7 +4,7 @@ from sqlalchemy import func
 from app.models.session import transaction_context
 from app.models.task import Task
 from app.models.task_note import TaskNote
-from app.services.project_management_service import require_project_access, require_project_taken_by_actor, require_task_access, visible_project_ids
+from app.services.project_management_service import require_project_access, require_project_open, require_project_taken_by_actor, require_task_access, visible_project_ids
 from app.services.task_service import TaskService, add_task_note, transition_task, with_status_reasons
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
@@ -162,6 +162,7 @@ def create_task(user_data):
     # Del proyecto al que se asigno, no de cualquiera visible del taller
     # (pedido de negocio explicito, 2026-09-28): ver
     # `require_project_taken_by_actor`.
+    require_project_open(payload.get('id_proyect'))
     require_project_taken_by_actor(payload.get('id_proyect'), user_data)
     # El responsable es quien crea la tarea, salvo que el actor tenga permiso de
     # escritura sobre `owner` y mande otro (`_filter_payload_for_actor` quita

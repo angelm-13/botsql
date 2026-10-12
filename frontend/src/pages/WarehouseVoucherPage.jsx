@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import {
   authorizeWarehouseVoucher,
+  cancelWarehouseVoucher,
   downloadWarehouseVoucherPdf,
   closeWarehouseVoucherLine,
   deliverWarehouseVoucher,
@@ -397,6 +398,21 @@ export default function WarehouseVoucherPage() {
     }
   };
 
+  const cancelar = async (idVale) => {
+    const motivo = window.prompt(t("voucher.cancel_reason", "Motivo de la cancelación"));
+    if (!motivo || !motivo.trim()) return;
+    setError("");
+    setAviso("");
+    try {
+      const r = await cancelWarehouseVoucher(idVale, motivo.trim());
+      setConsultado(await getWarehouseVoucher(r.voucher.id_incident));
+      setAviso(t("voucher.cancelled", "Vale cancelado: el material apartado se liberó."));
+      await cargar();
+    } catch (e) {
+      decirError(e, "No se pudo cancelar el vale.");
+    }
+  };
+
   const cerrar = async (idLinea) => {
     setError("");
     try {
@@ -686,7 +702,7 @@ export default function WarehouseVoucherPage() {
               <ArrowLeft size={15} />
               {t("voucher.back_to_list", "Volver a la lista")}
             </button>
-            <Vale vale={consultado} onCerrar={cerrar} onAutorizar={autorizar}
+            <Vale vale={consultado} onCerrar={cerrar} onAutorizar={autorizar} onCancelar={cancelar}
                   onImprimir={imprimir} imprimiendo={imprimiendo}
                   onAmpliar={setFotoAmpliada}
                   onVerHistorial={(idUser, nombre) => setHistorialEmpleado({ idUser, nombre })}
@@ -725,7 +741,7 @@ export default function WarehouseVoucherPage() {
 }
 
 /** El vale con sus renglones, y el estado derivado bien visible. */
-function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
+function Vale({ vale, onCerrar, onAutorizar, onCancelar, onImprimir, imprimiendo, onAmpliar,
                onVerHistorial, puedeAutorizar, puedeCerrarRenglon,
                onEntregarVale, onConfirmarRecibido,
                privilegiado, actorIdUser, usuarios,
@@ -850,6 +866,15 @@ function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
             {t("voucher.authorize_help",
               "Al autorizar sale el material del almacén. Lo hace el jefe de almacén, y no puede ser quien pidió el vale.")}
           </span>
+        </p>
+      )}
+
+      {sinSalir && (
+        <p className="vale-cancelar">
+          <button className="button button-quiet"
+                  onClick={() => onCancelar(cabecera.id_incident)}>
+            {t("voucher.cancel", "Cancelar vale")}
+          </button>
         </p>
       )}
 
@@ -980,6 +1005,7 @@ function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
 
 Vale.propTypes = {
   onAutorizar: PropTypes.func.isRequired,
+  onCancelar: PropTypes.func.isRequired,
   vale: PropTypes.shape({
     voucher: PropTypes.object,
     proyect: PropTypes.shape({

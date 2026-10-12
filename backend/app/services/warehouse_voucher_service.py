@@ -913,7 +913,10 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
             raise AppError("errors.voucher_duplicate_line", 409, {"field": "lines"})
 
         inicio = _ahora()
-        vence = _fecha_de_regreso(payload.get("due_date"))
+        # Lo destruido o extraviado no tiene "fecha de regreso": se pide solo a
+        # los demas tipos; para la baja, sin fecha, vale el dia del registro.
+        vence = (inicio if _clave_de_baja(db, id_tipo) and not payload.get("due_date")
+                 else _fecha_de_regreso(payload.get("due_date")))
         motivo = _texto(payload.get("note"), "note", largo=300, obligatorio=True)
 
         # Borrador o vale. Lo decide la RUTA por la que se entro, no un campo
@@ -1829,6 +1832,69 @@ def _puede_autorizar(db, user_data) -> bool:
     return has_capability(db, user_data, "warehouse_voucher_authorize")
 
 
+def cancelar_vale(id_incident, payload: dict, user_data: dict) -> dict:
+    """Cancela un vale que todavia no saco material: borrador o en espera.
+
+    Libera la reserva (lo apartado deja de restar disponibilidad) y cierra los
+    renglones para que no cuenten como material fuera ni como vencidos. Una vez
+    entregado ya no se cancela: lo que salio se devuelve renglon por renglon.
+    Lo cancela quien lo pidio, su responsable o quien opera el almacen.
+    """
+    actor = _actor(user_data)
+    motivo = _texto(payload.get("note"), "note", largo=300)
+    if not motivo:
+        raise AppError("errors.required_field", 400, {"field": "note"})
+    with transaction_context() as db:
+        vale = _vale(db, id_incident, para_actualizar=True)
+        permitido = (
+            _sin_restriccion(user_data)
+            or has_capability(db, user_data, "warehouse_voucher")
+            or actor in {int(vale.created_by or 0), int(vale.id_user or 0)}
+        )
+        if not permitido:
+            raise AppError("errors.not_found", 404,
+                           {"entity": "incident", "looked_up": str(vale.id_incident)})
+        estado = str(vale.incident_status or "").lower()
+        if estado not in (BORRADOR, EN_ESPERA):
+            raise AppError("errors.voucher_not_cancellable", 409,
+                           {"id_incident": vale.id_incident, "status": estado})
+        ahora = _ahora()
+        for renglon in _renglones(db, vale.id_incident, solo_abiertos=True):
+            if renglon.status == "apartada":
+                renglon.status = "disponible"
+            renglon.close_date = ahora
+        vale.incident_status = CANCELADO
+        vale.note = ("%s [Cancelado: %s]" % (vale.note or "", motivo)).strip()[:600]
+        vale.last_update_date = ahora
+        db.flush()
+        return {"voucher": vale.serialize(),
+                "lines": _con_existencias(db, _renglones(db, vale.id_incident))}
+
+
+def notificar_vale_cancelado(id_incident, actor_id: int) -> None:
+    """Avisa al responsable y a quien lo pidio (si no son quien cancelo)."""
+    from app.services.notification_service import create_notification
+
+    with transaction_context() as db:
+        vale = _vale(db, id_incident)
+        folio = vale.external_folio or str(vale.id_incident)
+        id_incident_plano = int(vale.id_incident)
+        destinatarios = {int(d) for d in (vale.id_user, vale.created_by) if d}
+    for id_destinatario in destinatarios - {int(actor_id)}:
+        try:
+            create_notification(
+                id_user_recipient=id_destinatario, id_user_sender=actor_id,
+                notification_type="warehouse_voucher_cancelled",
+                title="Vale #%s cancelado" % folio,
+                message="El vale #%s fue cancelado y su material apartado se liberó." % folio,
+                metadata={"id_incident": id_incident_plano},
+                target_entity="voucher", target_id=id_incident_plano,
+                created_by=actor_id,
+            )
+        except Exception:
+            continue
+
+
 def autorizar_vale(id_incident, payload: dict, user_data: dict) -> dict:
     """Autoriza un prevale: comprueba disponibilidad, cambia a EN_ESPERA.
 
@@ -2010,6 +2076,15 @@ def _ve_todo_el_almacen(db, user_data) -> bool:
     if _sin_restriccion(user_data):
         return True
     return has_capability(db, user_data, "warehouse_voucher")
+
+
+def es_dueno_de_algun_vale(db, user_data) -> bool:
+    """Quien responde por un vale, o lo capturo, o lo recoge, puede VERLO aunque
+    su rol no opere el almacen (un operador o Jefe de taller a quien se le puso
+    el vale): si no, confirma lo que no puede ni leer ni imprimir."""
+    return db.scalar(select(Incident.id_incident).where(
+        Incident.deletion_date.is_(None), _del_solicitante(db, user_data)
+    ).limit(1)) is not None
 
 
 def _del_solicitante(db, user_data):

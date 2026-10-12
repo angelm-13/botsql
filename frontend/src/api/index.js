@@ -535,6 +535,8 @@ export const createWarehousePrevoucher = (payload) => request("/prevouchers", { 
 // Lo guarda `warehouse_voucher_authorize`, que solo tiene el jefe de almacen.
 export const authorizeWarehouseVoucher = (id, payload = {}) =>
   request(`/vouchers/${id}/authorize`, { method: "POST", body: payload });
+export const cancelWarehouseVoucher = (id, note) =>
+  request(`/vouchers/${id}/cancel`, { method: "POST", body: { note } });
 export const getWarehouseVoucher = (id) => request(`/vouchers/${id}`);
 
 // El vale para imprimir y firmar. Pide `read`, la misma que ver el vale en

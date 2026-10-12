@@ -44,6 +44,7 @@ ALTER TABLE notification ADD CONSTRAINT notification_type_check CHECK (
         'warehouse_voucher_prevoucher_pending',
         'warehouse_voucher_prevoucher_authorized',
         'warehouse_voucher_return_pending',
+        'warehouse_voucher_cancelled',
         'warehouse_voucher_delivered',
         'warehouse_voucher_custody_confirmed',
         'purchase_order_pending',

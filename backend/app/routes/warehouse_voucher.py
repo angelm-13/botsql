@@ -21,6 +21,7 @@ from flask import Blueprint, current_app, jsonify, request, send_file
 
 from app.services.warehouse_voucher_service import (
     _sin_restriccion,
+    es_dueno_de_algun_vale,
     confirmar_recibido_del_vale,
     entregar_vale,
     documento_del_historial_de_persona,
@@ -28,6 +29,8 @@ from app.services.warehouse_voucher_service import (
     notificar_entrega_registrada,
     pdf_del_vale,
     autorizar_vale,
+    cancelar_vale,
+    notificar_vale_cancelado,
     buscar_vales,
     cerrar_renglon,
     consultar_vale,
@@ -85,6 +88,7 @@ def require_warehouse_read(fn):
                 _sin_restriccion(user_data)
                 or has_capability(db, user_data, "warehouse_voucher")
                 or has_capability(db, user_data, "warehouse_prevoucher")
+                or es_dueno_de_algun_vale(db, user_data)
             )
         if not permitido:
             return jsonify({
@@ -224,6 +228,23 @@ def autorizar(user_data, id_incident):
     resultado = autorizar_vale(id_incident, _cuerpo(), user_data)
     try:
         notificar_prevale_autorizado(id_incident, user_data.get("id_user"))
+    except Exception:
+        pass
+    return jsonify(resultado), 200
+
+
+@bp_warehouse_voucher.route("/vouchers/<id_incident>/cancel", methods=["POST"])
+@token_required
+@require_warehouse_read
+def cancelar(user_data, id_incident):
+    """Cancela un borrador o un vale en espera (antes de que salga material).
+
+    Cuerpo: `{"note": "<motivo>"}`. Lo cancela quien lo pidio, su responsable o
+    Almacen; el servicio comprueba cual.
+    """
+    resultado = cancelar_vale(id_incident, _cuerpo(), user_data)
+    try:
+        notificar_vale_cancelado(id_incident, user_data.get("id_user"))
     except Exception:
         pass
     return jsonify(resultado), 200
