@@ -11,16 +11,16 @@ namespace: torredigital-prod
 images:
   - name: DB_INIT_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-db-init
-    newTag: "2d38557"
+    newTag: "73cbed7"
   - name: BACKEND_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-backend
-    newTag: "2d38557"
+    newTag: "73cbed7"
   - name: WORKER_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-worker
-    newTag: "2d38557"
+    newTag: "73cbed7"
   - name: FRONTEND_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-frontend
-    newTag: 2d38557-torredigital-prod
+    newTag: 73cbed7-torredigital-prod
 resources:
   - ../../base
   - ingress-single-origin.yaml
