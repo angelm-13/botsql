@@ -589,6 +589,11 @@ def configured_provider():
     credentials = provider_credentials()
     provider_name = credentials["provider"]
     if provider_name == "fake":
+        # Un proveedor de mentiras "timbra" CFDI que no existen: en produccion
+        # una instalacion sin STAMPING_PROVIDER no debe caer aqui en silencio.
+        from app.utils.startup_guard import is_production
+        if is_production():
+            raise AppError("stamping.fake_provider_not_allowed", 503)
         return FakeStampingProvider()
     if provider_name in {"facturama_sandbox", "facturama"}:
         provider = FacturamaSandboxProvider(

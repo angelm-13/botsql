@@ -392,15 +392,20 @@ class CrudService:
             if busqueda is not None:
                 stmt = stmt.where(busqueda)
             for key, value in filters.items():
-                if not hasattr(cls.model, key) or value in (None, ''):
+                model_column = cls._columns().get(key)
+                # Solo columnas reales: un atributo cualquiera del modelo
+                # (metadata, registry...) no es un filtro valido.
+                if model_column is None or value in (None, ''):
                     continue
                 column = getattr(cls.model, key)
-                model_column = cls._columns().get(key)
-                if isinstance(value, str) and not isinstance(model_column.type, Enum):
+                # Buscar por coincidencia parcial solo tiene sentido en texto:
+                # `id_customer_supplier ILIKE '%10%'` revienta en Postgres.
+                if (isinstance(value, str) and isinstance(model_column.type, String)
+                        and not isinstance(model_column.type, Enum)):
                     stmt = stmt.where(column.ilike(f'%{value}%'))
                 else:
                     stmt = stmt.where(column == value)
-            if sort and hasattr(cls.model, sort.lstrip('-')):
+            if sort and sort.lstrip('-') in cls._columns():
                 col = getattr(cls.model, sort.lstrip('-'))
                 stmt = stmt.order_by(col.desc() if sort.startswith('-') else col.asc())
             total = session.scalar(select(func.count()).select_from(stmt.subquery())) or 0

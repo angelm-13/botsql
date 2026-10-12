@@ -29,6 +29,10 @@ def token_required(fn):
             return jsonify({'error_key': 'errors.invalid_token'}), 401
         if str(user_data.get('scope') or '').strip().lower() == str(PUBLIC_JWT_SCOPE).strip().lower():
             return jsonify({'error_key': 'errors.invalid_token'}), 401
+        # El token del paso 1 del login con MFA (solo contrasena) no es una
+        # sesion: solo `/auth/mfa/verify-login` lo acepta, y lo decodifica aparte.
+        if user_data.get('mfa_step'):
+            return jsonify({'error_key': 'errors.invalid_token'}), 401
         return fn(user_data, *args, **kwargs)
     return wrapper
 
