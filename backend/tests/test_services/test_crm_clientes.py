@@ -46,3 +46,35 @@ class TestClientesYContactos(BackendTestCase):
         with self.assertRaises(AppError) as caja:
             CustomerContactService.create({**base, "email": "ANA@empresa.com"}, user_id=1)
         self.assertEqual(409, caja.exception.status_code)
+
+
+class TestElTotalDeUnaFacturaConDescuento(BackendTestCase):
+    def test_total_is_subtotal_minus_discount_plus_tax(self):
+        from app.validations.validator import validate_payload
+
+        validate_payload("invoice", {"subtotal": 3000, "descuento": 100, "tax": 464, "total": 3364},
+                         partial=True)
+
+        with self.assertRaises(AppError):
+            validate_payload("invoice", {"subtotal": 3000, "descuento": 100, "tax": 464, "total": 3464},
+                             partial=True)
+
+    def test_without_discount_it_is_still_subtotal_plus_tax(self):
+        from app.validations.validator import validate_payload
+
+        validate_payload("invoice", {"subtotal": 100, "tax": 16, "total": 116}, partial=True)
+        with self.assertRaises(AppError):
+            validate_payload("invoice", {"subtotal": 100, "tax": 16, "total": 120}, partial=True)
+
+
+class TestHorariosYaAgendados(BackendTestCase):
+    def test_an_instant_with_a_zone_is_converted_not_relabelled(self):
+        from datetime import datetime, timedelta, timezone
+        from app.services.appointment_service import _a_utc
+
+        mexico = timezone(timedelta(hours=-6))
+        con_zona = datetime(2026, 10, 20, 10, 0, tzinfo=mexico)
+
+        self.assertEqual(datetime(2026, 10, 20, 16, 0, tzinfo=timezone.utc), _a_utc(con_zona))
+        self.assertEqual(datetime(2026, 10, 20, 10, 0, tzinfo=timezone.utc),
+                         _a_utc(datetime(2026, 10, 20, 10, 0)))

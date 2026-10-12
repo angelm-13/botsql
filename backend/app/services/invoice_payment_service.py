@@ -254,6 +254,14 @@ def register_payment(invoice_id, payload, user_data) -> dict:
                 {"amount": format(amount, "f"), "outstanding": format(saldo_anterior, "f")},
             )
 
+        # Un abono en otra moneda restaba su importe tal cual del saldo (50 MXN
+        # contra una factura de 116 USD bajaba el saldo en 50). Sin una regla de
+        # conversion definida, se exige la moneda de la factura.
+        moneda_factura = str(invoice.currency or "MXN")[:3].upper()
+        if moneda is not None and moneda != moneda_factura:
+            raise AppError("errors.payment_currency_mismatch", 409,
+                           {"payment_currency": moneda, "invoice_currency": moneda_factura})
+
         parcialidad = len(_payments(db, invoice.id_invoice)) + 1
         abono = InvoicePayment(
             id_invoice=invoice.id_invoice,

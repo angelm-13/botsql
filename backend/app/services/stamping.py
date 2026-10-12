@@ -756,6 +756,10 @@ def preflight_invoice(invoice_id, user_data) -> dict:
         }
 
 
+NO_SE_TIMBRA = {"timbrada", "cancelada", "pagada", "draft", "sent", "approved",
+                "partially_approved", "rejected", "cotizacion", "cotización"}
+
+
 def stamp_invoice(invoice_id, idempotency_key, user_data, provider=None):
     key = str(idempotency_key or "").strip()
     if not key or len(key) > 100:
@@ -772,6 +776,14 @@ def stamp_invoice(invoice_id, idempotency_key, user_data, provider=None):
         pending_invoice = db.get(Invoice, invoice_id)
         if not pending_invoice:
             raise AppError("errors.resource_not_found", 404)
+        # Timbrar de nuevo con otra llave de idempotencia generaba un segundo UUID
+        # sobre la misma factura (y revivia una cancelada). Una factura ya
+        # timbrada o cancelada no se timbra otra vez, y una cotizacion que no se
+        # ha convertido todavia no es una factura.
+        estatus = str(pending_invoice.invoice_status or "").strip().lower()
+        if pending_invoice.folio_fiscal or estatus in NO_SE_TIMBRA:
+            raise AppError("errors.invoice_not_stampable", 409,
+                           {"id_invoice": pending_invoice.id_invoice, "status": estatus})
         next_folio_if_missing(db, pending_invoice)
 
         invoice, draft = _load_draft(db, invoice_id, user_data)

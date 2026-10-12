@@ -82,6 +82,18 @@ class QuotationConversionTestCase(BackendTestCase):
     def _convert(self, invoice_id):
         return self.client.patch(f"/invoice/convert-quotation/{invoice_id}", headers=self._headers())
 
+    def test_conversion_fills_the_receiver_from_the_customer(self):
+        invoice_id = self._quotation()
+
+        self._convert(invoice_id)
+
+        with transaction_context() as db:
+            invoice = db.get(Invoice, invoice_id)
+            self.assertEqual("WWW010101WWW", invoice.rfc_receptor)
+            self.assertEqual("Cliente Cotizacion", invoice.nombre_receptor)
+            self.assertEqual("601", invoice.regimen_fiscal_receptor)
+            self.assertEqual("37100", invoice.domicilio_fiscal_receptor)
+
     def test_pending_lines_are_authorized_automatically_on_conversion(self):
         invoice_id = self._quotation(lines=(("pending", 1, "100"), ("pending", 2, "50")))
 

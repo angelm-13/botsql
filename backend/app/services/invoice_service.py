@@ -30,7 +30,7 @@ vez de en once rutas.
 
 from __future__ import annotations
 
-from sqlalchemy import func, select
+from sqlalchemy import String, func, select
 
 from app.models import Invoice
 from app.models.session import transaction_context
@@ -84,13 +84,16 @@ class InvoiceService(CrudService):
             if busqueda is not None:
                 stmt = stmt.where(busqueda)
             for key, value in filters.items():
-                if not hasattr(Invoice, key) or value in (None, ''):
+                tipo = cls._columns().get(key)
+                if tipo is None or value in (None, ''):
                     continue
                 column = getattr(Invoice, key)
+                # Coincidencia parcial solo en texto; en numeros revienta en Postgres.
                 stmt = stmt.where(
-                    column.ilike(f'%{value}%') if isinstance(value, str) else column == value
+                    column.ilike(f'%{value}%') if isinstance(value, str) and isinstance(tipo.type, String)
+                    else column == value
                 )
-            if sort and hasattr(Invoice, sort.lstrip('-')):
+            if sort and sort.lstrip('-') in cls._columns():
                 column = getattr(Invoice, sort.lstrip('-'))
                 stmt = stmt.order_by(column.desc() if sort.startswith('-') else column.asc())
             else:
