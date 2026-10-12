@@ -98,6 +98,7 @@ import RestaurantKitchenPage from "./pages/restaurant/RestaurantKitchenPage.jsx"
 import RestaurantCashierPage from "./pages/restaurant/RestaurantCashierPage.jsx";
 import RestaurantAdminPage from "./pages/restaurant/RestaurantAdminPage.jsx";
 import AppointmentsPage from "./pages/AppointmentsPage.jsx";
+import BiPage from "./pages/BiPage.jsx";
 import DocumentManagementPage from "./pages/DocumentManagementPage.jsx";
 import LaboratoryManagementPage from "./pages/LaboratoryManagementPage.jsx";
 import PublicCalendarPage from "./pages/PublicCalendarPage.jsx";
@@ -178,6 +179,7 @@ export default function App() {
         <Route path="/calendar/:code" element={<PublicCalendarPage />} />
         <Route path="/" element={<ProtectedRoute><Shell /></ProtectedRoute>}>
           <Route index element={<Dashboard />} />
+          <Route path="/bi" element={<BiPage />} />
           <Route path="/mfa-setup" element={<MfaSetupPage />} />
           <Route path="/change-password" element={<ChangePasswordPage />} />
           <Route path="/role_permissions" element={<AdminRoute><RolePermissionManagerPage /></AdminRoute>} />

@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { Boxes, Briefcase, CalendarDays, ChevronDown, ClipboardList, Contact, FileText, FlaskConical, Landmark, LayoutDashboard, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Receipt, Settings, ShieldCheck, ShoppingCart, SlidersHorizontal, Truck, UserCog, Users, Utensils, Warehouse } from "lucide-react";
+import { Boxes, Briefcase, CalendarDays, ChartBar, ChevronDown, ClipboardList, Contact, FileText, FlaskConical, Landmark, LayoutDashboard, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Receipt, Settings, ShieldCheck, ShoppingCart, SlidersHorizontal, Truck, UserCog, Users, Utensils, Warehouse } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { deploymentPlan, getMyPermissions } from "../api";
 import LanguagePicker from "../components/LanguagePicker";
@@ -8,6 +8,7 @@ import { moduleSectionsEnPlan } from "./moduleSections";
 
 const navItems = [
   { path: "/", key: "common.dashboard", exact: true },
+  { path: "/bi", label: "Análisis BI", key: "menu.bi_analysis", group: "Analytics", groupIcon: "chart-bar", location: "sidebar", order: 5 },
   // Configuracion vivia repartida en tres sitios: MFA fijo arriba del menu,
   // Gestor de roles y Perfiles fijos en la barra superior (a mano, sin pasar
   // por el gestor de roles), y Usuarios/Departamentos/etc. en el menu
