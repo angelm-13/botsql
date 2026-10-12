@@ -799,4 +799,20 @@ def create_app(testing: bool = False) -> Flask:
         app.logger.exception(error)
         return jsonify({'error_key': 'errors.internal_server_error'}), 500
 
+    # === MÓDULO BI: INTELIGENCIA DE NEGOCIOS ===
+    try:
+        from bi.api import crear_blueprint
+        from bi.config import AjustesBI
+        from bi.llm_provider import ProveedorOllama
+
+        bi_blueprint = crear_blueprint(
+            engine=db.engine,
+            ajustes=AjustesBI.desde_entorno(),
+            proveedor=ProveedorOllama(),
+        )
+        app.register_blueprint(bi_blueprint, url_prefix="/api/v1/bi")
+        app.logger.info("✅ [BI] Módulo de Inteligencia de Negocios registrado en /api/v1/bi")
+    except Exception as e:
+        app.logger.warning(f"⚠️  [BI] No se pudo registrar el módulo BI: {e}")
+
     return app

@@ -1,6 +1,7 @@
 services:
   db:
     image: postgres:16-alpine
+    container_name: db-with-bi
     restart: unless-stopped
     env_file: [.env]
     environment:
@@ -102,6 +103,7 @@ services:
     networks: [tyakxa_net]
 
   backend:
+    container_name: backend-with-bi
     build:
       context: .
       dockerfile: infra/docker/backend.Dockerfile
@@ -170,6 +172,7 @@ services:
     networks: [tyakxa_net]
 
   frontend:
+    container_name: frontend-with-bi
     build:
       context: .
       dockerfile: infra/docker/frontend.Dockerfile
