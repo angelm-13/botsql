@@ -14,6 +14,7 @@ from sqlalchemy import select
 
 from app.models import EntityPermission, Notification, User
 from app.models.session import transaction_context
+from app.utils.errors import AppError
 from tests.model_factory import build_model
 from tests.test_api.test_api_purchase_order import (
     ALMACEN, ALMACEN_1, BaseOrdenes, COMPRAS, COMPRAS_1, GERENTE, GERENTE_1, GERENTE_2,
@@ -77,6 +78,66 @@ class TestRecibirLaCompra(BaseRecepcion):
         self.assertEqual([l["quantity"] for l in lineas],
                          [l["quantity_received"] for l in cuerpo["lines"]])
         self.assertIn("received", self._eventos(id_orden))
+
+    def test_the_same_receipt_sent_twice_counts_once(self):
+        id_orden = self._comprada()
+        primero = self._renglon(id_orden)
+        lineas = [{"id_purchase_order_line": primero["id_purchase_order_line"], "quantity": 2}]
+
+        self.assertEqual(200, self._recibir(id_orden, lineas, idempotency_key="clic-1").status_code)
+        repetida = self._recibir(id_orden, lineas, idempotency_key="clic-1")
+
+        self.assertEqual(200, repetida.status_code)
+        self.assertEqual(2, self._renglon(id_orden)["quantity_received"])
+        self.assertEqual(200, self._recibir(id_orden, lineas, idempotency_key="clic-2").status_code)
+        self.assertEqual(4, self._renglon(id_orden)["quantity_received"])
+
+    def test_a_need_on_a_live_order_cannot_be_edited_or_returned(self):
+        id_orden = self._comprada()
+        id_need = next(l["id_proyect_material_need"] for l in self._leer(id_orden)["lines"]
+                       if l.get("id_proyect_material_need"))
+
+        from app.services.proyect_material_need_service import update_need
+
+        with self.assertRaises(AppError) as caja:
+            update_need(id_need, {"quantity": 99}, {"id_user": 1, "is_superuser": True})
+        devolver = self.client.post("/material-needs/%s/return" % id_need,
+                                    json={"note": "no se entiende"}, headers=self._compras())
+
+        self.assertEqual("errors.need_already_in_order", caja.exception.message_key)
+        self.assertEqual(409, devolver.status_code)
+
+    def test_a_project_with_a_live_purchase_order_cannot_be_cancelled(self):
+        from app.services.project_management_service import transition_management
+
+        id_orden = self._comprada()
+        id_proyecto = next(l["id_proyect"] for l in self._leer(id_orden)["lines"]
+                           if l.get("id_proyect"))
+
+        with self.assertRaises(AppError) as caja:
+            transition_management(id_proyecto, {"management_status": "cancelado"},
+                                  {"id_user": 1, "is_superuser": True})
+
+        self.assertEqual("errors.project_open_orders", caja.exception.message_key)
+
+    def test_what_already_arrived_stops_being_a_pending_purchase(self):
+        id_orden = self._comprada()
+        antes = {p["id_proyect_material_need"]
+                 for g in self.json(self.client.get("/material-needs/to-buy",
+                                                    headers=self._compras()))["items"]
+                 for p in g["projects"] if p["order"]}
+        self.assertTrue(antes)
+        lineas = self._leer(id_orden)["lines"]
+
+        self._recibir(id_orden, [
+            {"id_purchase_order_line": l["id_purchase_order_line"], "quantity": l["quantity"]}
+            for l in lineas])
+
+        despues = {p["id_proyect_material_need"]
+                   for g in self.json(self.client.get("/material-needs/to-buy",
+                                                      headers=self._compras()))["items"]
+                   for p in g["projects"]}
+        self.assertFalse(antes & despues)
 
     def test_a_partial_delivery_leaves_the_order_partially_received_until_the_rest_arrives(self):
         id_orden = self._comprada()

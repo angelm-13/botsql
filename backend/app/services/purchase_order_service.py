@@ -35,6 +35,7 @@ todo se autoriza y nadie compra por su cuenta.
 from __future__ import annotations
 
 import json
+import re
 import hashlib
 import uuid
 from datetime import date, datetime, timedelta, timezone
@@ -90,11 +91,13 @@ VOUCHER_STATES = {
     "receipt": ("authorized",),
     "payment_proof": ("authorized", "purchased", "partially_received", "received"),
 }
+# Tambien en `cancelled`: una orden cancelada seguia reteniendo su CFDI, que ya
+# no se podia subir a una orden nueva (voucher_duplicate).
 VOUCHER_REMOVABLE = {
-    "quote": ("draft", "pending_authorization", "authorized", "rejected"),
-    "invoice": ("authorized", "rejected"),
-    "receipt": ("authorized", "rejected"),
-    "payment_proof": ("authorized", "rejected"),
+    "quote": ("draft", "pending_authorization", "authorized", "rejected", "cancelled"),
+    "invoice": ("authorized", "rejected", "cancelled"),
+    "receipt": ("authorized", "rejected", "cancelled"),
+    "payment_proof": ("authorized", "rejected", "cancelled"),
 }
 FILE_TYPES = {
     "pdf": "application/pdf",
@@ -457,8 +460,15 @@ def _preparar_renglones(db, datos, *, excepto_orden: int | None = None) -> list[
             raise AppError("errors.order_duplicate_line", 409, {
                 "id_proyect_material_need": i})
         vistas.add(str(i))
-    tomadas = needs_on_orders(db, [int(i) for i in ids if str(i).isdigit()],
-                              excepto_orden=excepto_orden)
+    numericas = sorted({int(i) for i in ids if str(i).isdigit()})
+    if numericas:
+        # Dos ordenes creadas a la vez por la misma necesidad leian "nadie la
+        # tiene" las dos. Se bloquean las filas (en orden, para no abrazarse) y
+        # LUEGO se mira quien la tiene: la segunda espera y ya ve a la primera.
+        db.execute(select(ProyectMaterialNeed.id_proyect_material_need).where(
+            ProyectMaterialNeed.id_proyect_material_need.in_(numericas)
+        ).order_by(ProyectMaterialNeed.id_proyect_material_need).with_for_update())
+    tomadas = needs_on_orders(db, numericas, excepto_orden=excepto_orden)
     resultado = []
     for dato in datos:
         if not isinstance(dato, dict):
@@ -1164,10 +1174,19 @@ def receive_order(id_order, payload: dict, user_data: dict) -> dict:
     datos = payload.get("lines")
     if not isinstance(datos, list) or not datos:
         raise AppError("errors.invalid_field", 400, {"field": "lines"})
+    # Una llave por intento: el doble clic o el reintento de red no suma dos veces.
+    llave = re.sub(r"[^A-Za-z0-9_.:-]", "", str(payload.get("idempotency_key") or ""))[:80]
 
     with transaction_context() as db:
         _exigir_recibir(db, user_data)
         orden = _orden(db, id_order, for_update=True)
+        if llave and db.scalar(select(PurchaseEvent.id_purchase_event).where(
+                PurchaseEvent.id_purchase_order == orden.id_purchase_order,
+                PurchaseEvent.event_type.in_(("received", "partially_received")),
+                PurchaseEvent.detail.like('%"key": "' + llave + '"%')).limit(1)):
+            ficha = _ficha(db, orden, user_data)
+            ficha["replayed"] = True
+            return ficha
         if orden.order_status not in RECEIVABLE_STATES:
             raise AppError("errors.order_not_receivable", 409,
                            {"order_status": orden.order_status})
@@ -1205,7 +1224,7 @@ def receive_order(id_order, payload: dict, user_data: dict) -> dict:
         completa = all(int(r.quantity_received) >= int(r.quantity) for r in renglones.values())
         nuevo = "received" if completa else "partially_received"
         _cambiar_estado(db, orden, nuevo, "received" if completa else "partially_received",
-                        actor, nota=nota, detalle={"lines": [
+                        actor, nota=nota, detalle={"key": llave or None, "lines": [
                             {"id_purchase_order_line": r.id_purchase_order_line,
                              "description": r.description, "received_now": c,
                              "received_total": int(r.quantity_received),
