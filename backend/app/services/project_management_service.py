@@ -279,6 +279,23 @@ def _vales_con_material_pendiente(db, id_proyect) -> int:
     ).distinct().count()
 
 
+def _ordenes_de_compra_vivas(db, id_proyect) -> list[str]:
+    """Folios de las ordenes de compra que todavia incluyen renglones de este
+    proyecto (no canceladas ni rechazadas): comprar para un proyecto cancelado."""
+    from app.models.purchase_order import PurchaseOrder, PurchaseOrderLine
+    from app.services.proyect_material_need_service import ORDER_STATES_THAT_RELEASE_NEEDS
+
+    filas = db.query(PurchaseOrder.folio).join(
+        PurchaseOrderLine, PurchaseOrderLine.id_purchase_order == PurchaseOrder.id_purchase_order
+    ).filter(
+        PurchaseOrderLine.id_proyect == id_proyect,
+        PurchaseOrderLine.deletion_date.is_(None),
+        PurchaseOrder.deletion_date.is_(None),
+        PurchaseOrder.order_status.notin_(ORDER_STATES_THAT_RELEASE_NEEDS),
+    ).distinct().all()
+    return [f[0] for f in filas]
+
+
 def transition_management(project_id, payload: dict, user_data: dict) -> dict:
     """Mueve el proyecto por el recorrido de GERENCIA, no por el de taller.
 
@@ -296,6 +313,9 @@ def transition_management(project_id, payload: dict, user_data: dict) -> dict:
             if pendientes:
                 raise AppError("errors.project_open_vouchers", 409,
                                {"open_vouchers": pendientes})
+            ordenes = _ordenes_de_compra_vivas(db, project.id_proyect)
+            if ordenes:
+                raise AppError("errors.project_open_orders", 409, {"open_orders": ordenes})
         project.management_status = destino
         # Queda en la MISMA bitacora que el recorrido de taller: quien mira la
         # historia de un proyecto quiere los dos hilos en orden, no dos listas.

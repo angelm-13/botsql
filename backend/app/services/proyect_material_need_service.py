@@ -517,12 +517,24 @@ def create_need(id_proyect, payload: dict, user_data: dict) -> dict:
         return _renglon(need, _datos_de_materiales(db, ids), _existencias(db, ids))
 
 
+def _exigir_que_no_este_en_una_orden(db, need) -> None:
+    """Lo que ya esta en una orden viva no cambia ni se devuelve: la orden se
+    quedaria con la cantidad o las palabras de antes."""
+    orden = needs_on_orders(db, [need.id_proyect_material_need]).get(
+        int(need.id_proyect_material_need))
+    if orden is not None:
+        raise AppError("errors.need_already_in_order", 409, {
+            "id_proyect_material_need": need.id_proyect_material_need,
+            "id_purchase_order": orden[0], "folio": orden[1]})
+
+
 def update_need(id_need, payload: dict, user_data: dict) -> dict:
     """Cantidad, unidad, fecha, nota y -si es texto libre- su descripcion."""
     _actor(user_data)
     with transaction_context() as db:
         need = _necesidad(db, id_need, for_update=True)
         require_project_access(need.id_proyect, user_data)
+        _exigir_que_no_este_en_una_orden(db, need)
         if need.need_status != "open":
             raise AppError("errors.need_not_open", 409, {
                 "id_proyect_material_need": need.id_proyect_material_need,
@@ -622,6 +634,7 @@ def _necesidad_por_revisar(db, id_need, user_data: dict, *,
         raise AppError("errors.need_not_open", 409, {
             "id_proyect_material_need": need.id_proyect_material_need,
             "need_status": need.need_status})
+    _exigir_que_no_este_en_una_orden(db, need)
     if need.id_material is not None:
         raise AppError("errors.need_already_linked", 409, {
             "id_proyect_material_need": need.id_proyect_material_need,
@@ -733,6 +746,12 @@ def to_buy(user_data: dict, *, solo_faltantes: bool = True) -> dict:
 
         grupos: dict[tuple, dict] = {}
         for need, folio, titulo, estatus in filas:
+            # Lo que ya llego (su orden esta recibida completa) deja de ser una
+            # compra pendiente; el supervisor lo sigue viendo en su lista, con la
+            # orden recibida.
+            en_su_orden = en_orden.get(int(need.id_proyect_material_need))
+            if en_su_orden is not None and en_su_orden[2] == "received":
+                continue
             if need.id_material is not None:
                 llave = ("m", int(need.id_material))
                 base = {

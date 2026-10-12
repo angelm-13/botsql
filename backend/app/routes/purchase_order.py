@@ -123,9 +123,12 @@ def recibir(user_data, id_order):
     """Se guarda con LEER y no con actualizar: recibir es del almacen, que solo consulta
     las ordenes. Lo que lo limita es la capacidad `purchase_receive`, que comprueba el
     servicio."""
-    ficha = receive_order(id_order, _cuerpo(), user_data)
-    notificar_orden("recibida" if ficha.get("order_status") == "received"
-                    else "recibida_en_parte", ficha, user_data["id_user"])
+    cuerpo = _cuerpo()
+    cuerpo.setdefault("idempotency_key", request.headers.get("Idempotency-Key"))
+    ficha = receive_order(id_order, cuerpo, user_data)
+    if not ficha.get("replayed"):
+        notificar_orden("recibida" if ficha.get("order_status") == "received"
+                        else "recibida_en_parte", ficha, user_data["id_user"])
     return jsonify(ficha)
 
 
