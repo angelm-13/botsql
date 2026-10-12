@@ -2395,3 +2395,52 @@ class TestLoApartadoNoSeVuelveAPedir(BaseVale):
         sitio = localizar("cemento", ACTOR)["items"][0]["locations"][0]
 
         self.assertEqual((3, 2, 1), (sitio["quantity"], sitio["reserved"], sitio["available"]))
+
+
+class TestQuienResponde(TestLosTiposDeValePorRol):
+    """El supervisor del proyecto responde solo cuando GERENCIA levanta el vale;
+    `proyect.id_supervisor` (Jefe de taller que lo tomo) nunca pisa a nadie."""
+
+    def _en_proyecto(self, permiso, id_user, tipo=TIPO_PRESTAMO, borrador=False):
+        self.surtir(5, RACK)
+        actor = {"id_user": 1, "id_proyect": PROYECTO, "id_permission": permiso}
+        return crear_vale(
+            {"id_incident_type": tipo, "id_user": id_user, "note": "x", "id_proyect": PROYECTO,
+             "due_date": (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S"),
+             "lines": [{"id_product": CEMENTO, "quantity": 1, "id_location_from": RACK}]},
+            actor, como_borrador=borrador)
+
+    def _proyecto_con_lider_y_jefe_de_taller(self, lider, jefe):
+        with transaction_context() as db:
+            p = db.get(Proyect, PROYECTO)
+            p.leader, p.id_supervisor = lider, jefe
+
+    def test_management_assigns_the_project_supervisor_as_responsible(self):
+        lider = self._otro_usuario(7)
+        self._proyecto_con_lider_y_jefe_de_taller(lider, 1)
+
+        r = self._en_proyecto(self.P_GERENCIA, id_user=1)
+
+        self.assertEqual(lider, r["voucher"]["id_user"])
+
+    def test_a_supervisor_keeps_whoever_they_chose_even_if_a_workshop_head_took_the_project(self):
+        jefe = self._otro_usuario(8)
+        self._proyecto_con_lider_y_jefe_de_taller(1, jefe)
+
+        r = self._en_proyecto(self.P_SUPERVISOR, id_user=1, borrador=True)
+
+        self.assertEqual(1, r["voucher"]["id_user"])
+
+
+class TestUnProyectoNoSeCierraConMaterialPendiente(BaseVale):
+    def test_cancelling_the_project_is_refused_while_a_voucher_holds_material(self):
+        from app.services.project_management_service import transition_management
+
+        self.surtir(5, RACK)
+        self._prevale([{"id_product": CEMENTO, "quantity": 1, "id_location_from": RACK}],
+                      id_proyect=PROYECTO)
+
+        with self.assertRaises(AppError) as caja:
+            transition_management(PROYECTO, {"management_status": "cancelado"}, ACTOR)
+
+        self.assertEqual("errors.project_open_vouchers", caja.exception.message_key)

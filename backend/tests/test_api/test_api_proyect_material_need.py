@@ -114,6 +114,17 @@ class TestListaDeNecesidades(BackendTestCase):
         self.assertEqual("2026-11-01", cuerpo["needed_by"])
         self.assertFalse(cuerpo["needs_review"])
 
+    def test_a_need_that_names_a_catalog_material_is_born_linked(self):
+        """Si no, ni se podia ordenar (need_not_purchasable) ni confirmar la compra."""
+        from app.models.proyect_material_need import ProyectMaterialNeed
+        from app.models.session import transaction_context
+
+        cuerpo = self.json(self._pedir(PROYECTO_PROPIO, 3, id_material=DISCO))
+
+        with transaction_context() as db:
+            necesidad = db.get(ProyectMaterialNeed, cuerpo["id_proyect_material_need"])
+            self.assertEqual("linked", necesidad.review_result)
+
     def test_it_may_ask_for_more_than_there_is(self):
         """A diferencia del prevale, esta lista sirve justo para avisar el faltante."""
         cuerpo = self.json(self._pedir(PROYECTO_PROPIO, 50, id_material=DISCO))

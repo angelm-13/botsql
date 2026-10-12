@@ -257,6 +257,28 @@ def _require_management_scope(db, user_data: dict) -> None:
         raise AppError("errors.permission_denied", 403, {"scope": scope})
 
 
+def _vales_con_material_pendiente(db, id_proyect) -> int:
+    """Vales vivos del proyecto con renglones de salida sin devolver.
+
+    Incluye lo apartado (prevale y vale en espera): un proyecto que se cierra o
+    se cancela con material pedido, entregado o prestado deja una deuda de
+    almacen sin dueno.
+    """
+    from app.models.incident import Incident
+    from app.models.nm_incident_product import NmIncidentProduct
+
+    return db.query(Incident.id_incident).join(
+        NmIncidentProduct, NmIncidentProduct.id_incident == Incident.id_incident
+    ).filter(
+        Incident.id_proyect == id_proyect,
+        Incident.deletion_date.is_(None),
+        func.lower(func.coalesce(Incident.incident_status, "")).notin_(("cerrada", "cerrado", "cancelado")),
+        NmIncidentProduct.deletion_date.is_(None),
+        NmIncidentProduct.direction == "salida",
+        NmIncidentProduct.close_date.is_(None),
+    ).distinct().count()
+
+
 def transition_management(project_id, payload: dict, user_data: dict) -> dict:
     """Mueve el proyecto por el recorrido de GERENCIA, no por el de taller.
 
@@ -269,6 +291,11 @@ def transition_management(project_id, payload: dict, user_data: dict) -> dict:
         destino = validate_management_transition(
             project.management_status, (payload or {}).get("management_status"))
         anterior = project.management_status
+        if destino == "cancelado":
+            pendientes = _vales_con_material_pendiente(db, project.id_proyect)
+            if pendientes:
+                raise AppError("errors.project_open_vouchers", 409,
+                               {"open_vouchers": pendientes})
         project.management_status = destino
         # Queda en la MISMA bitacora que el recorrido de taller: quien mira la
         # historia de un proyecto quiere los dos hilos en orden, no dos listas.
@@ -1389,6 +1416,10 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
                     409,
                     {"open_tasks": tareas_abiertas},
                 )
+            pendientes = _vales_con_material_pendiente(db, project.id_proyect)
+            if pendientes:
+                raise AppError("errors.project_open_vouchers", 409,
+                               {"open_vouchers": pendientes})
 
         project.proyect_status = validated_target
         _append_event(

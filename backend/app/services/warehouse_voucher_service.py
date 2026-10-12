@@ -867,9 +867,15 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
                 raise AppError("errors.not_found", 404,
                                {"entity": "proyect", "field": "id_proyect"})
 
-            # Si hay proyecto y no se especificó supervisor, usar el del proyecto.
-            if id_supervisor_proyecto is None and proyecto.id_supervisor is not None:
-                id_supervisor_proyecto = proyecto.id_supervisor
+            # Cuando GERENCIA levanta el vale de un proyecto y no eligio otro
+            # responsable, responde el supervisor del proyecto (su lider). No
+            # aplica a quien levanta su propio prevale -- Supervisor, Almacen--
+            # ni pisa a quien eligio a alguien: `proyect.id_supervisor` es el
+            # Jefe de taller que lo tomo, no el supervisor del proyecto.
+            if (id_supervisor_proyecto is None and id_responsable == actor
+                    and has_capability(db, user_data, "project_authorization")
+                    and not _sin_restriccion(user_data)):
+                id_supervisor_proyecto = proyecto.leader or proyecto.created_by
 
         # Supervisor designado (ya sea explícitamente o del proyecto).
         # Si se pasa, lo usa como responsable en lugar del id_user original.

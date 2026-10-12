@@ -507,6 +507,9 @@ def create_need(id_proyect, payload: dict, user_data: dict) -> dict:
             id_proyect=id_proyecto, id_material=id_material, description=descripcion,
             unit=unidad, quantity=cantidad, needed_by=necesaria_para, note=nota,
             need_status="open", created_by=actor,
+            # Una necesidad que ya nombra un material del catalogo no hay que
+            # revisarla: nace vinculada, y asi se puede meter en una orden.
+            review_result="linked" if id_material is not None else None,
         )
         db.add(need)
         db.flush()
