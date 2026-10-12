@@ -757,8 +757,12 @@ export default function InventoryTracePage() {
                         {t("trace.catalog_mismatch",
                           "El catálogo público lo clasifica distinto:")}{" "}
                         {[
-                          it.classification.catalog_mismatch.family?.family,
-                          it.classification.catalog_mismatch.brand?.brand,
+                          it.classification.catalog_mismatch.family && (
+                            it.classification.catalog_mismatch.family.family
+                            || `${t("inventory.family", "Familia")} ${it.classification.catalog_mismatch.family.id_product_family} (${t("trace.catalog_missing", "ya no existe")})`),
+                          it.classification.catalog_mismatch.brand && (
+                            it.classification.catalog_mismatch.brand.brand
+                            || `${t("inventory.brand", "Marca")} ${it.classification.catalog_mismatch.brand.id_brand} (${t("trace.catalog_missing", "ya no existe")})`),
                         ].filter(Boolean).join(" · ")}
                       </p>
                     )}
