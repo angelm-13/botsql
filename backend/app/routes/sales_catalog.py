@@ -9,6 +9,7 @@ from app.models.session import transaction_context
 from app.services.pricing_service import PricingService
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
+from app.utils.public_url import image_url
 
 
 bp_sales_catalog = Blueprint('sales_catalog', __name__, url_prefix='/sales-catalog')
@@ -62,17 +63,7 @@ def _decimal_or_none(value, field='price'):
         raise AppError('errors.invalid_field', 400, {'field': field})
 
 
-def _public_base_url():
-    return (os.getenv('PUBLIC_BASE_URL') or request.host_url or '').rstrip('/')
-
-
-def _image_url(path_value):
-    raw = str(path_value or '').strip()
-    if not raw:
-        return ''
-    if raw.startswith(('http://', 'https://')):
-        return raw
-    return _public_base_url() + '/' + raw.lstrip('/')
+_image_url = image_url
 
 
 def _web_status_by_code(session, code: str) -> InventoryStatus:

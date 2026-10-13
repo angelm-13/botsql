@@ -668,6 +668,12 @@ def _register_documents_blueprint(app: Flask) -> None:
 
 def create_app(testing: bool = False) -> Flask:
     app = Flask(__name__)
+    # `/user` y `/user/` responden lo mismo. Con la regla estricta (default de
+    # Flask), pedir una coleccion sin la barra final devolvia un 308 a una
+    # ruta SIN el prefijo `/api` -- el Ingress lo reescribe antes de llegar
+    # aqui --, que cae en el frontend y contesta HTML: n8n, Postman o un script
+    # recibian la pagina de React en vez de JSON. Antes de registrar rutas.
+    app.url_map.strict_slashes = False
     app.config['TESTING'] = testing
     app.config['BABEL_DEFAULT_LOCALE'] = os.getenv('DEFAULT_LOCALE', 'es')
     app.config['JSON_SORT_KEYS'] = False
