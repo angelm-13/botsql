@@ -70,7 +70,7 @@ from app.services.inventory_asset_service import (
     DISPONIBLE, PRESTADA, transicion_en_sesion,
 )
 from app.services.inventory_service import (
-    apply_movement_in_session, has_capability,
+    apply_movement_in_session, has_capability, ubicacion_general,
 )
 from app.utils.errors import AppError
 
@@ -1093,11 +1093,47 @@ def devolver_renglon(id_line, payload: dict, user_data: dict) -> dict:
                             "close_date": renglon.close_date.isoformat()})
 
         nota = _texto(payload.get("note"), "note", largo=300)
+        # Quien la trae de vuelta, solo si no es el responsable del vale: un
+        # usuario o, si es externo, un nombre. Una cosa o la otra.
+        devuelve_usuario = _entero(payload.get("returned_by"), "returned_by",
+                                   obligatorio=False)
+        devuelve_nombre = _texto(payload.get("returned_by_name"),
+                                 "returned_by_name", largo=120)
+        if devuelve_usuario and devuelve_nombre:
+            raise AppError("errors.invalid_field", 400,
+                           {"field": "returned_by_name"})
+        if devuelve_usuario or devuelve_nombre:
+            # Solo cuando el supervisor dijo, al pedirlo, que lo recogeria otra
+            # persona (el renglon quedo a nombre de alguien que no es el
+            # responsable, o de un externo). Si el responsable lo saco el
+            # mismo, almacen no puede decidir que lo devolvio alguien mas.
+            vale_del_renglon = _vale(db, renglon.id_incident)
+            lo_recogio_otro = bool(
+                renglon.delivered_to_name
+                or (renglon.id_user_delivered_to is not None
+                    and int(renglon.id_user_delivered_to)
+                    != int(vale_del_renglon.id_user)))
+            if not lo_recogio_otro:
+                raise AppError("errors.voucher_return_by_not_designated", 409,
+                               {"id_nm_incident_product":
+                                renglon.id_nm_incident_product})
+        if devuelve_usuario and db.get(User, devuelve_usuario) is None:
+            raise AppError("errors.not_found", 404,
+                           {"entity": "user", "field": "returned_by"})
         # A donde vuelve. Por omision al sitio de donde salio, que es lo que
         # pasa casi siempre; se puede decir otro, porque a veces se devuelve en
         # otra nave.
+        #
+        # Lo migrado del sistema anterior (330 salidas abiertas en adser-prod)
+        # no trae `id_location_from`: el vale legado nunca dijo de que rack
+        # salio. Sin respaldo, "Marcar devuelto" contestaba 400 en TODOS esos
+        # renglones. Se cae a la ubicacion propia del producto y, de ultima, a
+        # la general del almacen -la misma cadena que ya usa
+        # `sembrar_existencia_inicial` para existencia sin sitio-.
         vuelve_a = _entero(payload.get("id_location"), "id_location",
                            obligatorio=False) or renglon.id_location_from
+        if vuelve_a is None:
+            vuelve_a = _ubicacion_de_regreso(db, renglon.id_product)
         if vuelve_a is None:
             raise AppError("errors.required_field", 400, {"field": "id_location"})
 
@@ -1121,6 +1157,8 @@ def devolver_renglon(id_line, payload: dict, user_data: dict) -> dict:
             close_date=ahora,
             due_date=None,
             note=nota,
+            returned_by_user=devuelve_usuario,
+            returned_by_name=devuelve_nombre,
             created_by=actor,
         )
         db.add(entrada)
@@ -1141,6 +1179,20 @@ def devolver_renglon(id_line, payload: dict, user_data: dict) -> dict:
             "closed_the_voucher": str(vale.incident_status or "") == CERRADO,
             "actor": actor,
         }
+
+
+def _ubicacion_de_regreso(db, id_producto):
+    """Donde poner lo que vuelve cuando el renglon no dice de donde salio."""
+    propia = db.scalar(
+        select(Location.id_location)
+        .join(Product, Product.id_location == Location.id_location)
+        .where(Product.id_product == id_producto,
+               Location.deletion_date.is_(None))
+    )
+    if propia:
+        return propia
+    general = ubicacion_general(db)
+    return general.id_location if general is not None else None
 
 
 def _devolver_al_almacen(db, renglon, user_data, *, vuelve_a, motivo, id_entrada):

@@ -132,6 +132,21 @@ function normalizarEstatus(valor) {
     .trim();
 }
 
+// El estatus que se pinta. `product_status` es un texto que dejo el sistema
+// anterior y los vales de prestamo nuevos no lo escriben ni lo corrigen: un
+// producto con salidas abiertas seguia en "ENTRADA" (verde) aunque el cartel
+// de abajo dijera "Nada en el almacen: todo esta fuera". Lo que esta fuera se
+// sabe por los datos vivos -- salidas sin cerrar y ninguna existencia -- y
+// esos mandan sobre un texto viejo. Solo se corrige el verde engañoso: un
+// estatus de dañado, extraviado o destruido es una decision y no se pisa.
+function estatusPintado(it) {
+  const guardado = normalizarEstatus(it.product_status);
+  const todoFuera = Number(it.on_loan?.quantity) > 0
+    && (it.locations || []).length === 0;
+  if (todoFuera && (guardado === "" || guardado === "ENTRADA")) return "SALIDA";
+  return guardado;
+}
+
 const TONO_DE_ESTADO = {
   disponible: "ok",
   en_uso: "info",
@@ -607,7 +622,7 @@ export default function InventoryTracePage() {
           return (
             <article
               className={`trace-card estatus-${
-                TONO_DE_ESTATUS[normalizarEstatus(it.product_status)] || "sin"}`}
+                TONO_DE_ESTATUS[estatusPintado(it)] || "sin"}`}
               key={it.id_product}
             >
               <div className="trace-photo">
@@ -666,12 +681,14 @@ export default function InventoryTracePage() {
                         ambar con en reparacion. Y hay quien no distingue esos
                         tonos: el color nunca puede ser el unico portador del
                         dato. */}
-                    {it.product_status && (
+                    {(it.product_status || estatusPintado(it)) && (
                       <p className="trace-estatus">
                         <span className={`trace-chip ${
-                          TONO_DE_ESTATUS[normalizarEstatus(it.product_status)] || "muted"}`}>
-                          {t(`trace.status_${normalizarEstatus(it.product_status)
-                            .toLowerCase().replace(/[^a-z]+/g, "_")}`, it.product_status)}
+                          TONO_DE_ESTATUS[estatusPintado(it)] || "muted"}`}>
+                          {t(`trace.status_${estatusPintado(it)
+                            .toLowerCase().replace(/[^a-z]+/g, "_")}`,
+                          estatusPintado(it) === normalizarEstatus(it.product_status)
+                            ? it.product_status : "SALIDA")}
                         </span>
                       </p>
                     )}

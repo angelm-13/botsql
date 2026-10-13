@@ -12,7 +12,6 @@ import {
   authorizeWarehouseVoucher,
   downloadWarehouseVoucherPdf,
   closeWarehouseVoucherLine,
-  deliverWarehouseVoucherLine,
   deliverWarehouseVoucher,
   confirmWarehouseVoucherReceipt,
   confirmWarehouseVoucherLineCustody,
@@ -404,10 +403,10 @@ export default function WarehouseVoucherPage() {
     }
   };
 
-  const cerrar = async (idLinea) => {
+  const cerrar = async (idLinea, payload = {}) => {
     setError("");
     try {
-      const r = await closeWarehouseVoucherLine(idLinea);
+      const r = await closeWarehouseVoucherLine(idLinea, payload);
       setConsultado(await getWarehouseVoucher(r.voucher.id_incident));
       setAviso(r.closed_the_voucher
         ? t("voucher.closed_all", "Era el último renglón: el vale queda cerrado.")
@@ -415,20 +414,6 @@ export default function WarehouseVoucherPage() {
       await cargar();
     } catch (e) {
       decirError(e, "No se pudo cerrar el renglón.");
-    }
-  };
-
-  // A que operador u otro supervisor se le entrega esta pieza -- sin sacarla
-  // del almacen otra vez ni cerrar el prestamo, solo constancia de por donde
-  // anda mientras el vale sigue abierto.
-  const entregarA = async (idLinea, idUsuarioEntrega) => {
-    if (!idUsuarioEntrega) return;
-    setError("");
-    try {
-      const r = await deliverWarehouseVoucherLine(idLinea, { id_user: idUsuarioEntrega });
-      setConsultado(await getWarehouseVoucher(r.id_incident));
-    } catch (e) {
-      decirError(e, "No se pudo registrar la entrega.");
     }
   };
 
@@ -731,7 +716,7 @@ export default function WarehouseVoucherPage() {
                   onVerHistorial={(idUser, nombre) => setHistorialEmpleado({ idUser, nombre })}
                   puedeAutorizar={puedeAutorizar}
                   puedeCerrarRenglon={puedeCerrarRenglon}
-                  onEntregar={entregarA} onConfirmarCustodia={confirmarCustodia}
+                  onConfirmarCustodia={confirmarCustodia}
                   onEntregarVale={entregarVale} onConfirmarRecibido={confirmarRecibido}
                   privilegiado={privilegiado} actorIdUser={actor.id_user}
                   usuarios={usuarios}
@@ -767,7 +752,7 @@ export default function WarehouseVoucherPage() {
 /** El vale con sus renglones, y el estado derivado bien visible. */
 function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
                onVerHistorial, puedeAutorizar, puedeCerrarRenglon,
-               onEntregar, onConfirmarCustodia, onEntregarVale, onConfirmarRecibido,
+               onConfirmarCustodia, onEntregarVale, onConfirmarRecibido,
                privilegiado, actorIdUser, usuarios,
                nombreDe, sitioDe, t }) {
   const cabecera = vale.voucher || {};
@@ -782,7 +767,8 @@ function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
   const puedeGestionarCustodia = privilegiado
     || Number(cabecera.id_user) === Number(actorIdUser)
     || puedeCerrarRenglon;
-  const [entregaEnCaptura, setEntregaEnCaptura] = useState({});
+  const [devuelvePor, setDevuelvePor] = useState({});
+  const [devuelveNombre, setDevuelveNombre] = useState({});
 
   // Un prestamo real por renglon, no una fila de tabla: la devolucion agrega
   // un renglon de ENTRADA en vez de reescribir el de SALIDA (asi queda el
@@ -941,6 +927,16 @@ function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
               const origen = salida?.id_location_from ?? linea.id_location_from;
               const mostrarDestino = destino && String(destino) !== String(origen);
 
+              // Lo recogio alguien distinto del responsable: el renglon quedo a
+              // nombre de otro usuario o de un externo al autorizar el vale.
+              const recogeOtro = abierto && Boolean(salida.delivered_to_name
+                || (salida.id_user_delivered_to
+                  && Number(salida.id_user_delivered_to) !== Number(cabecera.id_user)));
+              const idSalida = salida?.id_nm_incident_product;
+              const quien = devuelvePor[idSalida] ?? (salida?.delivered_to_name
+                ? "externo" : String(salida?.id_user_delivered_to || ""));
+              const nombreExterno = devuelveNombre[idSalida] ?? (salida?.delivered_to_name || "");
+
               return (
                 <tr key={linea.id_nm_incident_product}
                     className={abierto ? "vale-renglon-fuera" : "vale-renglon-devuelto"}>
@@ -973,42 +969,49 @@ function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
                           {t("voucher.out", "fuera")}
                           {vencido && <> · {t("history.overdue", "vencido")}</>}
                         </span>
-                        {puedeCerrarRenglon && (
+                        {/* Quien la trae de vuelta, al cerrar. Solo si el
+                            supervisor dijo al pedirlo que lo recogeria otra
+                            persona (el renglon quedo a nombre de alguien que
+                            no es el responsable, o de un externo): viene
+                            preseleccionada esa persona y se puede corregir.
+                            Si el responsable lo saco el mismo, no hay nada
+                            que elegir y almacen no puede asignarlo a otro. */}
+                        {puedeCerrarRenglon && !recogeOtro && (
                           <button className="button button-quiet"
                                   onClick={() => onCerrar(salida.id_nm_incident_product)}>
                             <Check size={14} />
                             {t("voucher.close_line", "Marcar devuelto")}
                           </button>
                         )}
-                        {/* A quien se le entrega la pieza -- un operador o
-                            otro supervisor, distinto del responsable del
-                            vale -- y la confirmacion de que ya la recupero.
-                            Es un paso INTERMEDIO: la pieza sigue "fuera"
-                            hasta que alguien la devuelva de verdad con
-                            "Marcar devuelto". */}
-                        {puedeGestionarCustodia && !linea.id_user_delivered_to && !linea.delivered_to_name && (
+                        {puedeCerrarRenglon && recogeOtro && (
                           <span className="vale-custodia">
                             <select
-                              value={entregaEnCaptura[linea.id_nm_incident_product] || ""}
-                              onChange={(e) => setEntregaEnCaptura({
-                                ...entregaEnCaptura,
-                                [linea.id_nm_incident_product]: e.target.value,
-                              })}
-                              aria-label={t("voucher.deliver_to", "Entregar a")}
+                              value={quien}
+                              onChange={(e) => setDevuelvePor({ ...devuelvePor, [idSalida]: e.target.value })}
+                              aria-label={t("voucher.returned_by", "Devuelve")}
                             >
-                              <option value="">{t("voucher.deliver_to", "Entregar a…")}</option>
                               {usuarios.map((u) => (
                                 <option key={u.id_user} value={u.id_user}>
                                   {u.full_name || u.username}
                                 </option>
                               ))}
+                              <option value="externo">{t("voucher.returned_by_external", "Otra persona (externo)…")}</option>
                             </select>
+                            {quien === "externo" && (
+                              <input
+                                type="text" maxLength={120}
+                                placeholder={t("voucher.returned_by_name", "Nombre de quien devuelve")}
+                                value={nombreExterno}
+                                onChange={(e) => setDevuelveNombre({ ...devuelveNombre, [idSalida]: e.target.value })}
+                              />
+                            )}
                             <button className="button button-quiet"
-                                    disabled={!entregaEnCaptura[linea.id_nm_incident_product]}
-                                    onClick={() => onEntregar(
-                                      linea.id_nm_incident_product,
-                                      entregaEnCaptura[linea.id_nm_incident_product])}>
-                              {t("voucher.assign_delivery", "Asignar")}
+                                    disabled={quien === "externo" && !nombreExterno.trim()}
+                                    onClick={() => onCerrar(idSalida, quien === "externo"
+                                      ? { returned_by_name: nombreExterno.trim() }
+                                      : { returned_by: Number(quien) })}>
+                              <Check size={14} />
+                              {t("voucher.close_line", "Marcar devuelto")}
                             </button>
                           </span>
                         )}
@@ -1038,6 +1041,14 @@ function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
                       <span className="vale-marca devuelto">
                         <Check size={13} />
                         {t("history.returned", "devuelto")}
+                      </span>
+                    )}
+                    {entrada && (entrada.returned_by_user || entrada.returned_by_name) && (
+                      <span className="muted">
+                        {" "}{t("voucher.returned_by_label", "Devuelto por")}:{" "}
+                        {entrada.returned_by_name
+                          ? `${entrada.returned_by_name} (${t("voucher.external", "externo")})`
+                          : nombreDe(entrada.returned_by_user)}
                       </span>
                     )}
                   </td>
@@ -1101,7 +1112,6 @@ Vale.propTypes = {
   imprimiendo: PropTypes.bool,
   onAmpliar: PropTypes.func,
   onVerHistorial: PropTypes.func.isRequired,
-  onEntregar: PropTypes.func.isRequired,
   onConfirmarCustodia: PropTypes.func.isRequired,
   onEntregarVale: PropTypes.func.isRequired,
   onConfirmarRecibido: PropTypes.func.isRequired,
