@@ -380,6 +380,10 @@ class CrudService:
     def list(cls, page: int = 1, per_page: int = 20, filters: dict | None = None,
              sort: str | None = None, q: str | None = None):
         filters = filters or {}
+        # Sin tope, per_page=100000 trae la tabla entera; el techo deja pasar a
+        # los selectores que cargan catalogos completos (per_page=5000).
+        page = max(1, int(page))
+        per_page = min(max(1, int(per_page)), 5000)
         with transaction_context() as session:
             stmt = select(cls.model)
             if cls.solo_vigentes and hasattr(cls.model, 'deletion_date'):

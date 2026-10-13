@@ -17,7 +17,7 @@ from app.services.activity_log_service import (
 )
 from app.services.notification_service import create_notification
 from app.services.inventory_service import has_capability
-from app.services.project_management_service import require_project_access, require_project_taken_by_actor
+from app.services.project_management_service import require_project_access, require_project_open, require_project_taken_by_actor
 from app.models.session import transaction_context
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
@@ -94,6 +94,7 @@ def create_activity_log(user_data):
         raise AppError("id_proyect es requerido", 400)
     # Del proyecto al que se asigno, no de cualquiera (pedido de negocio
     # explicito, 2026-09-28): ver `require_project_taken_by_actor`.
+    require_project_open(id_proyect)
     require_project_taken_by_actor(id_proyect, user_data)
     if not activity_date_str:
         raise AppError("activity_date es requerido", 400)
