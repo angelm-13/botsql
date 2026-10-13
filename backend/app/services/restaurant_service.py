@@ -24,6 +24,7 @@ from app.models.restaurant import (
     RestaurantWaiter,
 )
 from app.security.audit import audit_event
+from app.services.restaurant_rules import ESTADO_DE_VENTA
 from app.utils.errors import AppError
 
 
@@ -790,7 +791,7 @@ class RestaurantService:
 
     def kpis(self) -> dict:
         paid = self.db.scalars(
-            _order_query(self.project_id).where(RestaurantOrder.status == "pagado")
+            _order_query(self.project_id).where(RestaurantOrder.status == ESTADO_DE_VENTA)
         ).unique().all()
         total_sales = sum(order.subtotal for order in paid)
         tips = sum(float(order.tip_amount or 0) for order in paid)
@@ -834,7 +835,7 @@ class RestaurantService:
 
     def sales_report(self, start: str | None, end: str | None) -> dict:
         orders = self.db.scalars(
-            _order_query(self.project_id).where(RestaurantOrder.status == "pagado")
+            _order_query(self.project_id).where(RestaurantOrder.status == ESTADO_DE_VENTA)
         ).unique().all()
         start_date = date.fromisoformat(start) if start else None
         end_date = date.fromisoformat(end) if end else None
@@ -906,7 +907,7 @@ class RestaurantService:
             raise AppError("restaurant.register_not_open", 409)
         paid = self.db.scalars(
             _order_query(self.project_id).where(
-                RestaurantOrder.status == "pagado", RestaurantOrder.paid_at >= session.opened_at
+                RestaurantOrder.status == ESTADO_DE_VENTA, RestaurantOrder.paid_at >= session.opened_at
             )
         ).unique().all()
         # Solo el efectivo debe cuadrar contra el cajon. Antes se sumaba

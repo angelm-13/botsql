@@ -47,6 +47,7 @@ from app.services.warehouse_voucher_service import (
     CIERRE_SENTINELA, SALIDA, TIPOS_DE_BAJA, _estado_del_renglon, _vales_de_baja,
 )
 from app.modules.registry import MODULO_POR_CLAVE
+from app.kpis.dimensiones import CATALOGO as CATALOGO_DE_DIMENSIONES, DIMENSION_POR_CLAVE as CATALOGO_POR_CLAVE
 
 # Que llave de `dimension_key` (JSONB, en `kpi_snapshot`) le corresponde a cada
 # tipo de dimension declarado en `KpiDefinition.dimensiones`. "global" no
@@ -54,21 +55,15 @@ from app.modules.registry import MODULO_POR_CLAVE
 # guarda `id_proyect` cuando aplica (ver `alcance_proyecto`). La consumen
 # `app/jobs/tasks_kpis.py` (para saber que llave escribir al insertar el
 # snapshot) y `app/routes/kpi.py` (para saber que llave leer al sumar).
-DIMENSION_JSON_KEY = {
-    "empleado": "id_user",
-    "producto": "id_product",
-    "global": None,
-    # El valor de cada fila no es un id de entidad sino el nombre de una
-    # categoria fija (ej. "abierta"/"cerrada", "Entrada"/"Salida"/...) -- ver
-    # `incidencias_abiertas_vs_cerradas_query`/`material_por_estado_query`.
-    # `_totales()` en routes/kpi.py ya es generico sobre el TIPO del valor
-    # que guarda `dimension_key` (siempre lo compara como texto via
-    # `.astext`), asi que un string de categoria funciona igual que un id.
-    "estado": "estado",
-    # Familia de producto: el valor es `product.id_familia` (0 = producto sin familia). Una
-    # dimension ABIERTA (41 familias en Adser): lleva `limite_categorias` para mostrar las mayores.
-    "familia": "id_familia",
-}
+#
+# Ya no se escribe a mano: se DERIVA del catalogo de `app/kpis/dimensiones.py`,
+# donde cada dimension (empleado, producto, familia, mesero, platillo, mesa,
+# cliente, unidad, operador...) se declara una sola vez con su llave, su
+# etiqueta, su tipo y quien resuelve los nombres. Para "estado" el valor de cada
+# fila no es un id sino el nombre de una categoria fija ("abierta"/"cerrada",
+# "Entrada"/"Salida"/...); `_totales()` en routes/kpi.py ya es generico sobre el
+# TIPO del valor porque siempre lo compara como texto (`.astext`).
+DIMENSION_JSON_KEY = {d.clave: d.json_key for d in CATALOGO_DE_DIMENSIONES}
 
 # Los 4 niveles de "que tan buena es una variacion" para un KPI, declarados
 # por cada uno en `direccion` (ver KpiDefinition): "alto_es_mejor" (ventas,
@@ -100,11 +95,12 @@ MODOS = ("snapshot", "vivo")
 # importar si un KPI declara una que no este aqui. El formato visual de cada
 # una (que sufijo/simbolo mostrar) es trabajo del frontend, no de este
 # registro -- ver el rediseno del dashboard.
-UNIDADES = ("numero", "porcentaje", "moneda", "dias", "piezas")
+UNIDADES = ("numero", "porcentaje", "moneda", "dias", "piezas", "minutos")
 
-# Vocabulario cerrado de dimensiones -- "estado" es nueva (ver
-# DIMENSION_JSON_KEY arriba), las otras tres ya existian sin validarse.
-DIMENSIONES = ("empleado", "producto", "global", "estado", "familia")
+# Vocabulario cerrado de dimensiones: las claves del catalogo de
+# `app/kpis/dimensiones.py` (las cinco de siempre, en su orden, y despues las de
+# restaurante y logistica).
+DIMENSIONES = tuple(d.clave for d in CATALOGO_DE_DIMENSIONES)
 
 # Como se combinan varios snapshots de un KPI (varios dias, varios proyectos)
 # en un solo numero -- lo declara cada KPI en `agregacion`, sin valor por
@@ -1598,13 +1594,7 @@ def material_prestado_actual_resumen_query(session, *, total, id_user=None, id_u
 # Como se llama, en el selector "Agrupar por" del editor, la dimension de un KPI
 # cuando el KPI no declara una propia (`etiqueta_dimension`). "global" es un
 # KPI sin desglose: su unica "fila" es el total.
-ETIQUETA_DIMENSION_POR_OMISION = {
-    "empleado": "Empleado",
-    "producto": "Producto",
-    "estado": "Estado",
-    "familia": "Familia",
-    "global": "Total",
-}
+ETIQUETA_DIMENSION_POR_OMISION = {d.clave: d.etiqueta for d in CATALOGO_DE_DIMENSIONES}
 
 
 class KpiDefinition:
@@ -1612,7 +1602,7 @@ class KpiDefinition:
                  query_builder, *, direccion, graficas_permitidas, grafica_default,
                  agregacion=None, unidad="numero", alcance_proyecto=True, modo="snapshot",
                  colores_categoria=None, descripcion=None, etiqueta_dimension=None,
-                 orden_categorias=None, limite_categorias=None, resumen_builder=None):
+                 orden_categorias=None, limite_categorias=None, resumen_builder=None, sin_asignar=False):
         self.clave = clave
         self.etiqueta = etiqueta
         # Una linea corta para el selector de KPI del editor (rediseno del
@@ -1690,6 +1680,13 @@ class KpiDefinition:
         # Solo para un KPI "vivo": calcula los agregados de su tabla (resumen y conteo por responsable) sobre
         # TODOS los renglones, no sobre la pagina pedida. Ver `material_prestado_actual_resumen_query`.
         self.resumen_builder = resumen_builder
+        # Si las filas sin entidad (un pedido sin mesero, un viaje sin unidad: `dimension_key` con la
+        # llave en NULL) se muestran bajo "Sin asignar" -- en la lista y en el total -- o se descartan,
+        # que es lo que `_totales()` hacia siempre. Opt-in: apagada en los 24 KPIs de siempre (ninguno
+        # puede devolver entidad nula hoy, y asi sus respuestas no cambian) y encendida en los KPIs de
+        # los modulos nuevos, donde la entidad es opcional en el dato (ver `app/kpis/modulos/`). No tiene
+        # sentido en dimensiones `global` ni `estado`: `_validar()` lo rechaza.
+        self.sin_asignar = sin_asignar
 
 
 # Los 16 KPIs de siempre no restringen tipo de grafica -- hoy nada valida
@@ -2078,6 +2075,14 @@ KPI_REGISTRY = (
 )
 
 
+# KPIs de los modulos nuevos: viven en `app/kpis/modulos/<modulo>.py` y se agregan
+# AL FINAL, despues de los de siempre (que no se mueven). Se importan aqui, ya
+# definida `KpiDefinition`, porque cada archivo la pide dentro de `definiciones()`.
+from app.kpis.modulos import restaurante as _restaurante  # noqa: E402
+
+KPI_REGISTRY = KPI_REGISTRY + _restaurante.definiciones()
+
+
 # `id_kpi_definition` en `kpi_snapshot`/las rutas es un entero de BD -- este
 # mapa resuelve `alcance_proyecto` a partir de la `clave` de KpiDefinition
 # (la fila real de `kpi_definition` trae `clave`, sembrada 1 a 1 desde este
@@ -2095,6 +2100,10 @@ DIMENSION_POR_CLAVE = {kpi.clave: kpi.dimensiones[0] for kpi in KPI_REGISTRY}
 # Cuantas categorias muestra un KPI de dimension abierta (`limite_categorias`; None = todas): lo
 # consume `_totales()` en `app/routes/kpi.py` para cortar al sumar el rango.
 LIMITE_POR_CLAVE = {kpi.clave: kpi.limite_categorias for kpi in KPI_REGISTRY}
+
+# Si el KPI muestra las filas sin entidad como "Sin asignar" (`KpiDefinition.sin_asignar`): lo consume
+# `routes/kpi.py` al sumar el rango y al armar las etiquetas.
+SIN_ASIGNAR_POR_CLAVE = {kpi.clave: kpi.sin_asignar for kpi in KPI_REGISTRY}
 
 # Y para la regla de agregacion (ver AGREGACIONES): la consume `_totales()` en
 # `app/routes/kpi.py` para saber como combinar los snapshots del rango.
@@ -2177,6 +2186,11 @@ def _validar():
                     f"El KPI '{kpi.clave}' declara la dimension desconocida '{dimension}' "
                     f"(validas: {', '.join(DIMENSIONES)})."
                 )
+        if kpi.sin_asignar and CATALOGO_POR_CLAVE[kpi.dimensiones[0]].tipo in ("global", "categoria"):
+            raise RuntimeError(
+                f"El KPI '{kpi.clave}' pide 'sin_asignar' pero su dimension '{kpi.dimensiones[0]}' "
+                "no tiene entidades que puedan faltar."
+            )
         if kpi.limite_categorias is not None and (
             not isinstance(kpi.limite_categorias, int) or isinstance(kpi.limite_categorias, bool)
             or kpi.limite_categorias < 1

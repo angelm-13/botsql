@@ -80,7 +80,12 @@ class ConMetadatosDelRegistryTest(unittest.TestCase):
 
         self.assertEqual(10, resultado["limite_categorias"])
         self.assertEqual("Familia", resultado["etiqueta_dimension"])
-        self.assertEqual(["perdidas_por_familia"], [k.clave for k in KPI_REGISTRY if k.limite_categorias is not None])
+        # Entre los 24 de siempre, solo uno corta categorias; los de restaurante cortan sus "top 10".
+        self.assertEqual(["perdidas_por_familia"], [k.clave for k in KPI_REGISTRY[:24] if k.limite_categorias is not None])
+        self.assertEqual(
+            {"platillos_mas_vendidos", "frecuencia_por_platillo", "top_mesas"},
+            {k.clave for k in KPI_REGISTRY[24:] if k.limite_categorias is not None},
+        )
 
     def test_un_limite_de_categorias_malo_falla_al_importar(self):
         for malo in (0, -3, 2.5, True, "10"):
@@ -92,6 +97,30 @@ class ConMetadatosDelRegistryTest(unittest.TestCase):
             with self.subTest(limite=malo), mock.patch.object(registry, "KPI_REGISTRY", (kpi,)):
                 with self.assertRaisesRegex(RuntimeError, "limite_categorias"):
                     registry._validar()
+
+    def test_sin_asignar_solo_tiene_sentido_con_entidades_que_puedan_faltar(self):
+        def kpi(dimension, sin_asignar):
+            return registry.KpiDefinition(
+                "kpi_de_prueba", "Prueba", "operaciones", (dimension,), lambda *a: [],
+                direccion="neutral", graficas_permitidas=("barras",), grafica_default="barras",
+                agregacion="suma", sin_asignar=sin_asignar,
+            )
+
+        for dimension in ("mesero", "empleado", "platillo"):
+            with self.subTest(dimension=dimension), mock.patch.object(registry, "KPI_REGISTRY", (kpi(dimension, True),)):
+                registry._validar()  # no revienta
+        for dimension in ("global", "estado"):
+            with self.subTest(dimension=dimension), mock.patch.object(registry, "KPI_REGISTRY", (kpi(dimension, True),)):
+                with self.assertRaisesRegex(RuntimeError, "sin_asignar"):
+                    registry._validar()
+
+    def test_los_24_kpis_de_siempre_no_muestran_sin_asignar(self):
+        self.assertEqual([], [k.clave for k in KPI_REGISTRY[:24] if k.sin_asignar])
+        self.assertEqual({k.clave: k.sin_asignar for k in KPI_REGISTRY}, registry.SIN_ASIGNAR_POR_CLAVE)
+
+    def test_la_unidad_minutos_es_valida(self):
+        self.assertIn("minutos", registry.UNIDADES)
+        self.assertEqual("minutos", KPI_POR_CLAVE["tiempo_de_entrega"].unidad)
 
     def test_un_orden_de_categorias_malo_falla_al_importar(self):
         def kpi(orden, colores):
@@ -175,7 +204,12 @@ class EtiquetaDeDimensionTest(unittest.TestCase):
         for kpi in KPI_REGISTRY:
             self.assertTrue(kpi.etiqueta_dimension, kpi.clave)
             self.assertLessEqual(len(kpi.etiqueta_dimension), 30, kpi.clave)
-        self.assertEqual({"empleado", "producto", "estado", "familia", "global"}, set(ETIQUETA_DIMENSION_POR_OMISION))
+        # Las cinco de siempre mas las de restaurante y logistica (catalogo en app/kpis/dimensiones.py).
+        self.assertEqual(
+            {"empleado", "producto", "estado", "familia", "global",
+             "mesero", "platillo", "mesa", "cliente", "unidad", "operador"},
+            set(ETIQUETA_DIMENSION_POR_OMISION),
+        )
 
     def test_la_api_la_expone(self):
         fila = KpiDefinition(clave="incidencias_abiertas_por_empleado", etiqueta="x", modulo="operaciones",
