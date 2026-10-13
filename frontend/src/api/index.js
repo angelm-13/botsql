@@ -23,6 +23,7 @@ export const getDocuments = (params = {}) => request("/document/", { params });
 export const getDocument = (id) => request(`/document/${id}`);
 export const getDocumentCategories = () => request("/document/categories");
 export const getDocumentEmployees = () => request("/document/employees");
+export const getDocumentUploaders = () => request("/document/uploaders");
 export const uploadDocument = (payload, file) => {
   const formData = new FormData();
   Object.entries(payload).forEach(([key, value]) => { if (value !== undefined && value !== null && value !== "") formData.append(key, value); });

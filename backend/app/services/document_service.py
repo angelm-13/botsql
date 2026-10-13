@@ -8,7 +8,10 @@ from pathlib import Path
 
 from sqlalchemy import and_, exists, func, or_, select
 
-from app.models import CustomerSupplier, Document, DocumentCategory, DocumentRelation, DocumentVersion, User
+from app.models import (
+    CustomerSupplier, Document, DocumentCategory, DocumentRelation, DocumentVersion,
+    LaboratoryEquipment, LaboratoryServiceOrder, User,
+)
 from app.models.session import transaction_context
 from app.utils.errors import AppError
 
@@ -39,6 +42,11 @@ PROJECT_ATTACHMENT_FILE_TYPES = {
 }
 DOCUMENT_STATUSES = {"draft", "issued", "signed", "rejected", "cancelled"}
 VERSION_SOURCES = {"uploaded", "generated", "signed_scan"}
+# Un documento lo genero el sistema -vale de almacen, reporte de diagnostico y
+# su copia firmada- cuando alguna de sus versiones no es una subida a mano. Se
+# decide por la version y no por la categoria: la categoria la puede elegir
+# cualquiera al subir un archivo, el origen de la version no.
+SYSTEM_VERSION_SOURCES = ("generated", "signed_scan")
 
 
 def _safe_int(value, field: str) -> int:
@@ -226,15 +234,109 @@ class DocumentManagementService:
             if filters.get("search"):
                 pattern = f"%{str(filters['search']).strip()}%"
                 stmt = stmt.where(or_(Document.title.ilike(pattern), Document.description.ilike(pattern)))
+            stmt = cls._filter_by_person(stmt, filters)
+            if filters.get("created_by"):
+                stmt = stmt.where(Document.created_by == _safe_int(filters["created_by"], "created_by"))
+            for field, column, operator in (
+                ("issue_date_from", Document.issue_date, "ge"), ("issue_date_to", Document.issue_date, "le"),
+                ("expiration_date_from", Document.expiration_date, "ge"), ("expiration_date_to", Document.expiration_date, "le"),
+            ):
+                value = _date_value(filters.get(field), field)
+                if value is not None:
+                    stmt = stmt.where(column >= value if operator == "ge" else column <= value)
             count = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
-            records = db.scalars(stmt.order_by(Document.creation_date.desc()).offset((page - 1) * per_page).limit(per_page)).all()
-            return {"items": [record.serialize() for record in records], "total": count, "page": page, "per_page": per_page}
+            records = db.scalars(stmt.order_by(Document.creation_date.desc(), Document.id_document.desc()).offset((page - 1) * per_page).limit(per_page)).all()
+            return {"items": cls._enrich(db, records), "total": count, "page": page, "per_page": per_page}
+
+    @staticmethod
+    def _filter_by_person(stmt, filters):
+        """Persona = a quien esta ligado el documento (empleado o cliente/proveedor).
+
+        Va por `document_relation`, igual que el alcance del cliente: un
+        documento que no esta ligado a nadie -el PDF de un vale- no sale al
+        filtrar por persona, y eso es lo correcto.
+        """
+        for field, column in (("id_employee", DocumentRelation.id_employee), ("id_customer_supplier", DocumentRelation.id_customer_supplier)):
+            if filters.get(field):
+                target = _safe_int(filters[field], field)
+                stmt = stmt.where(exists().where(and_(
+                    DocumentRelation.id_document == Document.id_document,
+                    DocumentRelation.deletion_date.is_(None),
+                    column == target,
+                )))
+        return stmt
+
+    @staticmethod
+    def generated_by_system():
+        """Condicion SQL: alguna version viva del documento no fue subida a mano."""
+        return exists().where(and_(
+            DocumentVersion.id_document == Document.id_document,
+            DocumentVersion.deletion_date.is_(None),
+            DocumentVersion.source.in_(SYSTEM_VERSION_SOURCES),
+        ))
+
+    @classmethod
+    def _enrich(cls, db, records) -> list[dict]:
+        """La ficha del documento con lo que la pantalla necesita para pintar.
+
+        Un numero fijo de consultas por pagina, no una por fila: las ligas, y
+        despues categorias, personas, clientes, equipos y ordenes en bloque,
+        mas cuales documentos genero el sistema.
+        """
+        if not records:
+            return []
+        ids = [record.id_document for record in records]
+        relations = db.scalars(select(DocumentRelation).where(
+            DocumentRelation.id_document.in_(ids), DocumentRelation.deletion_date.is_(None),
+        ).order_by(DocumentRelation.id_document_relation)).all()
+
+        categories = {item.id_document_category: item for item in db.scalars(select(DocumentCategory).where(
+            DocumentCategory.id_document_category.in_({record.id_document_category for record in records}))).all()}
+        user_ids = {record.created_by for record in records} | {item.id_employee for item in relations if item.id_employee}
+        users = {item.id_user: item.full_name for item in db.scalars(select(User).where(User.id_user.in_(user_ids))).all()}
+        customer_ids = {item.id_customer_supplier for item in relations if item.id_customer_supplier}
+        customers = {item.id_customer_supplier: item.name for item in db.scalars(select(CustomerSupplier).where(
+            CustomerSupplier.id_customer_supplier.in_(customer_ids))).all()} if customer_ids else {}
+        equipment_ids = {item.id_laboratory_equipment for item in relations if item.id_laboratory_equipment}
+        equipment = {
+            item.id_laboratory_equipment: " ".join(str(part) for part in (item.equipment_type, item.brand, item.model, item.serial_number) if part)
+            for item in db.scalars(select(LaboratoryEquipment).where(LaboratoryEquipment.id_laboratory_equipment.in_(equipment_ids))).all()
+        } if equipment_ids else {}
+        order_ids = {item.id_laboratory_service_order for item in relations if item.id_laboratory_service_order}
+        orders = {item.id_laboratory_service_order: item.folio for item in db.scalars(select(LaboratoryServiceOrder).where(
+            LaboratoryServiceOrder.id_laboratory_service_order.in_(order_ids))).all()} if order_ids else {}
+        generated = set(db.scalars(select(Document.id_document).where(
+            Document.id_document.in_(ids), cls.generated_by_system())).all())
+
+        related: dict[int, list[dict]] = {}
+        for item in relations:
+            if item.id_employee:
+                target = {"target": "employee", "id": item.id_employee, "name": users.get(item.id_employee)}
+            elif item.id_customer_supplier:
+                target = {"target": "customer_supplier", "id": item.id_customer_supplier, "name": customers.get(item.id_customer_supplier)}
+            elif item.id_laboratory_equipment:
+                target = {"target": "equipment", "id": item.id_laboratory_equipment, "name": equipment.get(item.id_laboratory_equipment)}
+            else:
+                target = {"target": "service_order", "id": item.id_laboratory_service_order, "name": orders.get(item.id_laboratory_service_order)}
+            related.setdefault(item.id_document, []).append({"relation_type": item.relation_type, **target})
+
+        items = []
+        for record in records:
+            payload = record.serialize()
+            category = categories.get(record.id_document_category)
+            payload["category_code"] = category.code if category else None
+            payload["category_name"] = category.name if category else None
+            payload["created_by_name"] = users.get(record.created_by)
+            payload["related"] = related.get(record.id_document, [])
+            payload["system_generated"] = record.id_document in generated
+            items.append(payload)
+        return items
 
     @classmethod
     def get(cls, document_id: int, user_data: dict):
         with transaction_context() as db:
             record = cls._get(db, document_id, user_data)
-            payload = record.serialize()
+            payload = cls._enrich(db, [record])[0]
             payload["relations"] = [item.serialize() for item in db.scalars(select(DocumentRelation).where(DocumentRelation.id_document == record.id_document, DocumentRelation.deletion_date.is_(None))).all()]
             payload["versions"] = [item.serialize() for item in db.scalars(select(DocumentVersion).where(DocumentVersion.id_document == record.id_document, DocumentVersion.deletion_date.is_(None)).order_by(DocumentVersion.version.desc())).all()]
             for version in payload["versions"]:
@@ -256,6 +358,14 @@ class DocumentManagementService:
                 User.is_employee.is_(True),
                 User.deletion_date.is_(None),
             ).order_by(User.full_name)).all()
+            return [{"id_user": record.id_user, "full_name": record.full_name} for record in records]
+
+    @classmethod
+    def uploaders(cls, user_data: dict):
+        """Quienes han subido algun documento que el actor puede ver (filtro "Subido por")."""
+        with transaction_context() as db:
+            visibles = cls._scope(select(Document.created_by).where(Document.deletion_date.is_(None)), user_data)
+            records = db.scalars(select(User).where(User.id_user.in_(visibles.distinct())).order_by(User.full_name)).all()
             return [{"id_user": record.id_user, "full_name": record.full_name} for record in records]
 
     @classmethod
@@ -368,4 +478,11 @@ class DocumentManagementService:
         from datetime import datetime, timezone
         with transaction_context() as db:
             document = cls._get(db, document_id, user_data)
+            # El PDF del vale y el reporte de diagnostico son el expediente de
+            # algo que sigue vivo: borrarlos deja al vale o a la orden sin su
+            # historial (laboratorio, de hecho, abriria un documento nuevo desde
+            # cero). El permiso de borrar no basta, ni siquiera el del admin.
+            if db.scalar(select(Document.id_document).where(
+                    Document.id_document == document.id_document, cls.generated_by_system())) is not None:
+                raise AppError("documents.system_generated_not_deletable", 409)
             document.deletion_date = datetime.now(timezone.utc).replace(tzinfo=None)
