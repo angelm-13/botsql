@@ -2577,6 +2577,7 @@
     "validation_authorization_status_required": "The line item could not be saved because it has no initial authorization status."
   },
   "errors": {
+    "kpi_sin_eje_de_proyecto": "This KPI is not limited to a project: it shows company-wide data, and it can only be assigned to a role with the All scope over KPIs.",
     "permission_scope_only_all": "This row has no per-record owner: it only accepts No access or All.",
     "permission_manager_lockout": "You cannot remove your own role's access to the permissions manager.",
     "not_found": "What you are looking for was not found: it no longer exists or you do not have access to it.",

@@ -4,7 +4,7 @@ import {
   AreaChart as AreaChartIcon, BarChart2, Boxes, ChevronDown, ChevronUp,
   Check, ClipboardList, FileDown, FileText, FlaskConical, GripVertical, Hash, LineChart as LineChartIcon,
   Loader2, Pencil, PieChart as PieChartIcon, Plus, Receipt,
-  RefreshCw, SlidersHorizontal, Table as TableIcon, Trash2, User,
+  RefreshCw, SlidersHorizontal, Table as TableIcon, Trash2, User, Utensils,
 } from "lucide-react";
 import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, useSortable } from "@dnd-kit/sortable";
@@ -20,7 +20,7 @@ import useReordenarTarjetas, { sinColision } from "../components/kpi-widgets/use
 import {
   getAllKpiDashboard, createKpiDashboard, updateKpiDashboard, deleteKpiDashboard,
   getAllKpiDashboardWidget, createKpiDashboardWidget, updateKpiDashboardWidget, deleteKpiDashboardWidget, saveKpiWidgetOrdenTabla,
-  getAllKpiDefinition, queryKpiSnapshot, queryKpiVivo, getAllUser, getAllDepartment, getAllProduct,
+  getAllKpiDefinition, getKpiDimensions, queryKpiSnapshot, queryKpiVivo, getUserOptions, getAllDepartment,
 } from "../api";
 import "../styles/kpi-widgets.css";
 import "../styles/kpi-editor.css";
@@ -31,7 +31,8 @@ import Skeleton from "../components/kpi-widgets/Skeleton";
 import { resolverColoresModernosParaPdf } from "../kpi/colorParaPdf";
 import SelectorDeKpi from "../components/kpi-widgets/SelectorDeKpi";
 import {
-  colorDeKpi, colorEfectivoDeKpi, etiquetasDeDimension, etiquetasDeSnapshots, labelForDimension, normalizarBusqueda, unidadInfo,
+  colorDeKpi, colorEfectivoDeKpi, enriquecerCatalogo, etiquetasDeDimension, etiquetasDeSnapshots, labelForDimension,
+  muestraFiltroDePersonas, normalizarBusqueda, unidadInfo,
 } from "../kpi/kpiDatos.js";
 import {
   armarParametros, columnasDeWidget, estadoDeWidget, filasDeWidget, mezclaUnidades, motivoParaNoCombinar, rangoInicialDelBorrador,
@@ -107,6 +108,7 @@ const KPI_MODULE_META = {
   inventario: { icon: Boxes, label: "Inventario" },
   laboratorio: { icon: FlaskConical, label: "Laboratorio" },
   documentos: { icon: FileText, label: "Documentos" },
+  restaurante: { icon: Utensils, label: "Restaurante" },
 };
 const DEFAULT_MODULE_ICON = SlidersHorizontal;
 
@@ -388,7 +390,6 @@ export default function Dashboard() {
   const [kpiCatalog, setKpiCatalog] = useState([]);
   const [users, setUsers] = useState([]);
   const [departments, setDepartments] = useState([]);
-  const [products, setProducts] = useState([]);
 
   // Borrador del panel "Agregar grafico", uno por tablero (`id_kpi_dashboard`):
   // el panel ya no se desmonta al cambiar de tablero, asi que su estado no
@@ -691,10 +692,16 @@ export default function Dashboard() {
 
   useEffect(() => {
     let cancelado = false;
-    getAllKpiDefinition().then((data) => { if (!cancelado) setKpiCatalog(listOf(data)); }).catch(() => { if (!cancelado) setKpiCatalog([]); });
-    getAllUser({ per_page: 500 }).then((data) => { if (!cancelado) setUsers(listOf(data)); }).catch(() => { if (!cancelado) setUsers([]); });
+    // El catalogo de KPIs y el de dimensiones (persona/catalogo/categoria/global) se piden juntos:
+    // a cada KPI se le agrega el tipo de su dimension. Sin el catalogo de dimensiones (backend
+    // viejo) el Dashboard se comporta como siempre.
+    Promise.all([getAllKpiDefinition(), getKpiDimensions().catch(() => [])])
+      .then(([definiciones, dimensiones]) => { if (!cancelado) setKpiCatalog(enriquecerCatalogo(listOf(definiciones), listOf(dimensiones))); })
+      .catch(() => { if (!cancelado) setKpiCatalog([]); });
+    // Solo id+nombre, sin pedir el catalogo de RH completo (`GET /user/` exige permiso de seguridad):
+    // sirve al filtro por empleados. Los nombres de las graficas los manda el backend.
+    getUserOptions().then((data) => { if (!cancelado) setUsers(listOf(data)); }).catch(() => { if (!cancelado) setUsers([]); });
     getAllDepartment({ per_page: 500 }).then((data) => { if (!cancelado) setDepartments(listOf(data)); }).catch(() => { if (!cancelado) setDepartments([]); });
-    getAllProduct({ per_page: 5000 }).then((data) => { if (!cancelado) setProducts(listOf(data)); }).catch(() => { if (!cancelado) setProducts([]); });
     return () => { cancelado = true; };
   }, []);
 
@@ -703,10 +710,8 @@ export default function Dashboard() {
     return found?.full_name || found?.username || `#${idUser}`;
   }, [users]);
 
-  const productLabel = useCallback((idProduct) => {
-    const found = products.find((product) => String(product.id_product) === String(idProduct));
-    return found?.descripcion || found?.product_code || `#${idProduct}`;
-  }, [products]);
+  // Respaldo: el nombre del producto lo manda el backend (`etiquetas`); ya no se carga el catalogo.
+  const productLabel = useCallback((idProduct) => `#${idProduct}`, []);
 
   async function handleCreateDashboard() {
     const nombre = window.prompt(tx("new_dashboard_prompt", "Nombre del nuevo tablero"));
@@ -1594,6 +1599,8 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
     .map((id) => kpiCatalog.find((kpi) => String(kpi.id_kpi_definition) === id))
     .filter(Boolean);
   const primeraDimension = kpisSeleccionadosInfo[0]?.dimensiones?.[0];
+  // El filtro por empleados/departamentos solo aplica a KPIs que desglosan por persona (ids de usuario).
+  const mostrarFiltroDePersonas = muestraFiltroDePersonas(kpisSeleccionadosInfo);
   // Lo que se desglosa, con el nombre que le da cada KPI ("Responsable", "Tecnico"...).
   // Las dos etiquetas de siempre conservan su traduccion.
   const etiquetaDeAgrupar = etiquetasDeDimension(kpisSeleccionadosInfo)
@@ -2019,7 +2026,7 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
     ),
     filtros: (
       <>
-            {users.length > 0 && (
+            {mostrarFiltroDePersonas && users.length > 0 && (
               <div className="kpi-employee-picker">
                 <KpiDropdownPicker
                   label={
@@ -2062,7 +2069,7 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
               </div>
             )}
 
-            {departments.length > 0 && (
+            {mostrarFiltroDePersonas && departments.length > 0 && (
               <div className="kpi-department-picker">
                 <span className="kpi-department-picker-label">{tx("departments_filter", "Filtrar por departamento (opcional)")}</span>
                 <div className="kpi-department-list">
