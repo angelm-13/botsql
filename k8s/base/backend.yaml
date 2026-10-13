@@ -133,6 +133,13 @@ spec:
             # Un ambiente que NO es de verdad lo baja en su overlay (APP_ENV=staging).
             - name: APP_ENV
               value: production
+          # Endurecimiento sin cambiar de usuario: el backend sigue como root porque en
+          # adser-prod escribe en un hostPath del nodo cuyo dueno es root (ver CLAUDE.md);
+          # pasar a no-root exige antes cambiar ese dueno, y es una decision por cliente.
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
           envFrom:
             - secretRef:
                 name: app-secrets
@@ -223,6 +230,13 @@ spec:
             # Un ambiente que NO es de verdad lo baja en su overlay (APP_ENV=staging).
             - name: APP_ENV
               value: production
+          # Endurecimiento sin cambiar de usuario: el backend sigue como root porque en
+          # adser-prod escribe en un hostPath del nodo cuyo dueno es root (ver CLAUDE.md);
+          # pasar a no-root exige antes cambiar ese dueno, y es una decision por cliente.
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
           envFrom:
             - secretRef:
                 name: app-secrets
@@ -301,6 +315,13 @@ spec:
             # Un ambiente que NO es de verdad lo baja en su overlay (APP_ENV=staging).
             - name: APP_ENV
               value: production
+          # Endurecimiento sin cambiar de usuario: el backend sigue como root porque en
+          # adser-prod escribe en un hostPath del nodo cuyo dueno es root (ver CLAUDE.md);
+          # pasar a no-root exige antes cambiar ese dueno, y es una decision por cliente.
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
           envFrom:
             - secretRef:
                 name: app-secrets

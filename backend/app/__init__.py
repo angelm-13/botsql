@@ -793,6 +793,26 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_activity_logs)
     _register_documents_blueprint(app)
 
+    # El catalogo de documentos solo lo ve quien tiene sesion: no hay motivo para que
+    # sea publico (lista que documentos y entidades existen).
+    from app.utils.auth import token_required as _token_required
+    _manifiesto = app.view_functions.get('documents.manifest')
+    if _manifiesto is not None:
+        app.view_functions['documents.manifest'] = _token_required(lambda user_data: _manifiesto())
+
+    @app.after_request
+    def _cabeceras_de_seguridad(respuesta):
+        # Baratas y sin efectos laterales: el navegador no adivina tipos, no deja
+        # incrustar el sitio en otro (los PDF propios si, mismo origen), y no filtra la URL.
+        respuesta.headers.setdefault('X-Content-Type-Options', 'nosniff')
+        respuesta.headers.setdefault('X-Frame-Options', 'SAMEORIGIN')
+        respuesta.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+        respuesta.headers.setdefault('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+        from app.utils.startup_guard import is_production
+        if is_production() and (request.is_secure or request.headers.get('X-Forwarded-Proto') == 'https'):
+            respuesta.headers.setdefault('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+        return respuesta
+
     @app.route('/uploads/products/<path:filename>')
     def uploaded_product_image(filename):
         return send_from_directory(os.path.join(app.config['UPLOAD_ROOT'], 'products'), filename)

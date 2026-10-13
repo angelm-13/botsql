@@ -56,8 +56,8 @@ def _bool(value) -> bool:
 
 
 def _client_ip() -> str:
-    forwarded = request.headers.get('X-Forwarded-For', '')
-    return (forwarded.split(',')[0].strip() or request.remote_addr or '')[:45]
+    from app.utils.client_ip import client_ip
+    return client_ip()
 
 
 def _check_rate(bucket: str, limit: int, seconds: int) -> bool:

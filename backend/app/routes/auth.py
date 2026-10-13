@@ -197,8 +197,8 @@ def _login_error(error_key: str, status_code: int):
 
 
 def _client_ip() -> str:
-    forwarded = request.headers.get('X-Forwarded-For', '')
-    return (forwarded.split(',')[0].strip() or request.remote_addr or '')[:45]
+    from app.utils.client_ip import client_ip
+    return client_ip()
 
 
 @bp_auth.route('/login', methods=['POST'])
