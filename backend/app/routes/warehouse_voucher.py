@@ -21,7 +21,6 @@ from flask import Blueprint, current_app, jsonify, request, send_file
 
 from app.services.warehouse_voucher_service import (
     _sin_restriccion,
-    asignar_entrega_de_renglon,
     confirmar_recepcion_de_renglon,
     confirmar_recibido_del_vale,
     entregar_vale,
@@ -270,35 +269,13 @@ def devolver_linea(user_data, id_line):
     return jsonify(cerrar_renglon(id_line, _cuerpo(), user_data))
 
 
-@bp_warehouse_voucher.route("/vouchers/lines/<id_line>/deliver-to", methods=["POST"])
-@token_required
-def entregar_renglon_a(user_data, id_line):
-    """A que operador u otro supervisor se le entrega esta pieza.
-
-    Sin `require_entity_permission`: el candado real vive en el servicio
-    (`_puede_gestionar_custodia`) porque quien debe poder hacer esto es el
-    RESPONSABLE del vale -normalmente Supervisor, que solo tiene
-    `warehouse_prevoucher`, nunca `warehouse_voucher`- o quien opera el
-    almacen. Cuerpo: `{"id_user": <operador>}`.
-    """
-    cuerpo = _cuerpo()
-    resultado = asignar_entrega_de_renglon(id_line, cuerpo, user_data)
-    try:
-        notificar_custodia_asignada(
-            resultado["id_incident"], cuerpo.get("id_user"),
-            user_data.get("id_user"))
-    except Exception:
-        pass
-    return jsonify(resultado)
-
-
 @bp_warehouse_voucher.route("/vouchers/lines/<id_line>/confirm-custody", methods=["POST"])
 @token_required
 def confirmar_custodia_de_renglon(user_data, id_line):
     """El supervisor dueño del vale confirma que recupero la pieza del
     operador al que se la habia entregado.
 
-    Mismo candado que `/deliver-to`, y por el mismo motivo: es SU vale.
+    Sin `require_entity_permission` a proposito: es SU vale (el candado vive en el servicio).
     """
     return jsonify(confirmar_recepcion_de_renglon(id_line, user_data))
 

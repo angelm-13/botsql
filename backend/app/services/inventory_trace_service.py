@@ -362,6 +362,25 @@ def _bitacoras_en_lote(db, ids_piezas, ubicaciones: "CacheDeUbicaciones") -> dic
     return por_pieza
 
 
+def estatus_efectivo(product_status, on_loan, sitios) -> str:
+    """El estatus que debe pintar la pantalla, a partir de datos vivos.
+
+    `product.product_status` es un texto que dejo el sistema anterior: los
+    vales de prestamo nuevos no lo escriben ni lo corrigen, asi que un producto
+    con salidas abiertas seguia en "ENTRADA" (verde) aunque no hubiera nada en
+    el almacen. Lo que esta fuera se sabe por las salidas sin cerrar y la
+    ausencia de existencia, y eso manda sobre el texto viejo.
+
+    Solo se corrige el verde enganoso (ENTRADA o vacio): dañado, extraviado,
+    destruido o en reparacion son decisiones y no se pisan.
+    """
+    texto = str(product_status or "")
+    todo_fuera = bool(on_loan and int(on_loan.get("quantity") or 0) > 0 and not sitios)
+    if todo_fuera and texto.strip().upper() in ("", "ENTRADA"):
+        return "SALIDA"
+    return texto
+
+
 def _prestado_en_lote(db, ids_productos) -> dict[int, dict]:
     """Que hay fuera de cada producto y quien lo tiene.
 
@@ -1139,6 +1158,10 @@ def localizar(consulta: str, user_data: dict, *, proposito: str | None = None,
                 # catalogo `inventory_status` no tiene fila para EXTRAVIADO, asi
                 # que 65 productos lo traen aqui y con el FK en nulo.
                 "product_status": producto.product_status,
+                # Lo que se pinta: el de arriba corregido con lo vivo (ver
+                # `estatus_efectivo`). El texto original se sigue mandando.
+                "effective_status": estatus_efectivo(
+                    producto.product_status, prestados.get(producto.id_product), sitios),
                 "id_proyect": del_proyecto,
                 # A que familia pertenece, de que marca es, de que material y en
                 # que unidad se mide. Estaba a dos saltos en la base y obligaba a

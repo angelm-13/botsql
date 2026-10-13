@@ -53,7 +53,6 @@ from app.services.warehouse_voucher_service import (
     ABIERTO,
     BORRADOR,
     CERRADO,
-    asignar_entrega_de_renglon,
     autorizar_vale,
     buscar_vales,
     cerrar_renglon,

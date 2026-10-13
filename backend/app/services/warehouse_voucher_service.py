@@ -1243,49 +1243,6 @@ def _puede_gestionar_custodia(db, vale: Incident, user_data: dict) -> bool:
     return has_capability(db, user_data, "warehouse_voucher")
 
 
-def asignar_entrega_de_renglon(id_line, payload: dict, user_data: dict) -> dict:
-    """A que operador u otro supervisor se le entrega esta pieza del vale.
-
-    Es un dato aparte del responsable del vale completo (`incident.id_user`):
-    el vale puede salir a nombre de un supervisor y la herramienta pasar de
-    sus manos a las de un operador que de verdad la va a usar. No mueve nada
-    del almacen -eso ya paso al abrir o autorizar el vale- ni cierra el
-    prestamo -eso lo sigue haciendo `devolver_renglon`-, solo deja constancia
-    de por donde anda la pieza mientras tanto.
-    """
-    id_user_entrega = _entero(payload.get("id_user"), "id_user")
-    with transaction_context() as db:
-        renglon = db.scalars(
-            select(NmIncidentProduct).where(
-                NmIncidentProduct.id_nm_incident_product == _entero(
-                    id_line, "id_nm_incident_product"),
-                NmIncidentProduct.deletion_date.is_(None),
-            ).with_for_update()
-        ).first()
-        if renglon is None:
-            raise AppError("errors.not_found", 404,
-                           {"entity": "nm_incident_product"})
-        if str(renglon.direction or "") != SALIDA:
-            raise AppError("errors.voucher_line_not_a_loan", 409,
-                           {"id_nm_incident_product": renglon.id_nm_incident_product,
-                            "direction": renglon.direction})
-        if renglon.close_date is not None:
-            raise AppError("errors.voucher_line_already_closed", 409,
-                           {"id_nm_incident_product": renglon.id_nm_incident_product,
-                            "close_date": renglon.close_date.isoformat()})
-        vale = _vale(db, renglon.id_incident)
-        if not _puede_gestionar_custodia(db, vale, user_data):
-            raise AppError("errors.permission_denied", 403,
-                           {"action": "deliver_line"})
-        renglon.id_user_delivered_to = id_user_entrega
-        # Un nuevo destinatario invalida cualquier confirmacion anterior: si
-        # ya se habia confirmado la recepcion del operador A, entregarsela
-        # ahora al operador B no puede seguir contando esa confirmacion vieja.
-        renglon.custody_confirmed_date = None
-        db.flush()
-        return renglon.serialize()
-
-
 def confirmar_recepcion_de_renglon(id_line, user_data: dict) -> dict:
     """El supervisor dueño del vale confirma que recupero esta pieza de manos
     del operador al que se la habia entregado.
@@ -1336,7 +1293,7 @@ def _resumen_para_notificar(id_incident, id_entregado=None) -> dict:
 def notificar_custodia_asignada(id_incident, id_entregado, actor_id: int) -> None:
     """Avisa (campanita) cuando la custodia de un renglon de vale queda en
     manos de alguien distinto del responsable -- al crear el vale con
-    `id_user_pickup`, o al usar `/deliver-to` despues.
+    `id_user_pickup`.
 
     Se llama SIEMPRE desde la RUTA, despues de que el `with
     transaction_context()` de la operacion real ya cerro -- mismo motivo que

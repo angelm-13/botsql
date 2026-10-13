@@ -122,6 +122,38 @@ vidrioyaluminios-prod llevan semanas sin promoción.
   PDF del vale idéntico al anterior**: están en `initAlan` y en la imagen de
   adser-prod (`c260f22` contiene la punta de `initAngm`). torredigital-prod
   (`031970b`) NO los incluye.
+## Bitácora 2026-10-13 — devolver renglones migrados, "Devuelto por", color de Localizar
+
+Reportado desde adser-prod (vale #94, EXT302): "Marcar devuelto" daba 400.
+Commiteado a `initAlan`; **sin promover a adser-prod** (necesita la migración
+`20261012090000`).
+
+1. **Causa raíz del 400**: `devolver_renglon` exigía `id_location` (cuerpo o
+   `id_location_from` del renglón) y las **330 salidas abiertas migradas de
+   adser** no traen `id_location_from` (verificado contra la base real; todas
+   sus productos sí tienen ubicación propia y existe "Almacen general").
+   Ahora cae a la ubicación del producto y luego a `ubicacion_general`.
+2. **CAMBIO DE FLUJO (avisar a Ángel y Tanya)**: el selector **"Entregar a"
+   por renglón** (maquila/custodia del 2026-09-30) se **quitó**: asignaba
+   recogedor a una pieza que ya había salido. Se borraron la ruta
+   `POST /vouchers/lines/<id>/deliver-to`, `asignar_entrega_de_renglon` y
+   `deliverWarehouseVoucherLine`. Quién recoge se dice al pedir/autorizar el
+   vale (`id_user_pickup` / `pickup_name`); `confirm-custody` sigue para los
+   datos existentes.
+3. **"Devuelto por"**: al cerrar un renglón se puede decir quién lo devuelve
+   (`returned_by` usuario, o `returned_by_name` externo), guardado en el
+   renglón de ENTRADA (`returned_by_user`/`returned_by_name`, migración
+   `20261012090000`). Solo se acepta si el renglón quedó a nombre de otro
+   recogedor (409 `voucher_return_by_not_designated` si no); la pantalla solo
+   ofrece el desplegable en esos renglones.
+4. **Color de Localizar**: `product.product_status` es texto del sistema
+   anterior y los vales de préstamo nuevos no lo actualizan (29 productos de
+   adser con salidas abiertas decían ENTRADA). La regla vive en el backend:
+   `estatus_efectivo()` (`inventory_trace_service.py`) → `effective_status`;
+   solo corrige ENTRADA/vacío a SALIDA cuando hay salidas abiertas y nada en
+   almacén. **Pendiente**: el caso mixto (algo fuera y algo en almacén) sigue
+   mostrando el estatus guardado.
+
 ## Bitácora 2026-10-05 (continuación) — merge de initAlan (129 commits) + flujo de entrega validado
 
 **Merge de `origin/initAlan` a `initAngm`**, commit `309f32e` — sin
