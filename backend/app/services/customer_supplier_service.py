@@ -1,7 +1,5 @@
 from decimal import Decimal, InvalidOperation
 
-from sqlalchemy import func
-
 from app.models import CustomerSupplier
 from app.services.base_service import CrudService
 from app.models.session import transaction_context
@@ -88,42 +86,19 @@ class CustomerSupplierService(CrudService):
             session.flush()
             return item.serialize()
 
-    # RFC genericos: legitimamente se repiten (publico en general, extranjero).
-    RFC_GENERICOS = {'XAXX010101000', 'XEXX010101000'}
-
+    # El RFC se guarda en mayusculas y sin espacios, para que la busqueda y la
+    # importacion por XML lo encuentren sin importar como se capturo.
+    #
+    # A proposito NO se rechaza un RFC repetido: en multiemisor una misma razon
+    # social puede tener varias fichas emisoras (torredigital-prod: fichas 1 y 31,
+    # las dos con facturas, folios y CSD propios). La regla de unicidad (95c5e64 de
+    # initAngm) queda pendiente de decidir con Tanya si se acota a quien no emite.
     @classmethod
-    def _normalizar_rfc(cls, payload: dict, item_id=None) -> dict:
-        """RFC en mayusculas y sin espacios, y uno solo por cliente/proveedor.
-
-        Con dos filas del mismo RFC la factura importada por XML se liga a la
-        primera que encuentre -- el cliente equivocado."""
+    def _normalizar_rfc(cls, payload: dict) -> dict:
         if 'tax_id' not in payload or payload.get('tax_id') in (None, ''):
             return payload
         payload = dict(payload)
-        rfc = ''.join(str(payload['tax_id']).split()).upper()
-        payload['tax_id'] = rfc
-        if rfc in cls.RFC_GENERICOS:
-            return payload
-        with transaction_context() as session:
-            if item_id is not None:
-                # La pantalla reenvia todos los campos al editar. Solo se valida el
-                # RFC cuando CAMBIA: una ficha que ya lo tenia repetido (dos emisores
-                # de la misma razon social con historial fiscal propio, como en
-                # torredigital-prod) debe poder editarse sin tocar el RFC. Crear uno
-                # repetido, o cambiar al de otra fila, sigue dando 409.
-                actual = session.query(CustomerSupplier.tax_id).filter(
-                    CustomerSupplier.id_customer_supplier == int(item_id)).scalar()
-                if ''.join(str(actual or '').split()).upper() == rfc:
-                    return payload
-            consulta = session.query(CustomerSupplier.id_customer_supplier).filter(
-                func.upper(func.replace(CustomerSupplier.tax_id, ' ', '')) == rfc,
-                CustomerSupplier.deletion_date.is_(None))
-            if item_id is not None:
-                consulta = consulta.filter(CustomerSupplier.id_customer_supplier != int(item_id))
-            otro = consulta.first()
-        if otro:
-            raise AppError('validations.customer_supplier.tax_id.duplicate', 409,
-                           meta={'field': 'tax_id', 'id_customer_supplier': otro[0]})
+        payload['tax_id'] = ''.join(str(payload['tax_id']).split()).upper()
         return payload
 
     @classmethod
@@ -140,7 +115,7 @@ class CustomerSupplierService(CrudService):
 
     @classmethod
     def update(cls, item_id, payload: dict, user_id: int | None = None):
-        payload = cls._normalizar_rfc(payload, item_id)
+        payload = cls._normalizar_rfc(payload)
         payload = cls._validate_logistics_fields(payload)
         has_principal_value = 'is_principal' in payload
         is_principal = cls._as_boolean(payload.pop('is_principal', False))
