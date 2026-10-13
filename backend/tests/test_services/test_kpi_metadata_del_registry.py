@@ -67,7 +67,7 @@ class ConMetadatosDelRegistryTest(unittest.TestCase):
         # Solo los de categorias con un orden de lectura propio: las ordinales de antiguedad y los
         # estados de la pieza (de lo normal a lo grave).
         self.assertEqual(
-            ["prestamos_abiertos_por_antiguedad", "piezas_por_estado"],
+            ["prestamos_abiertos_por_antiguedad", "piezas_por_estado", "pedidos_del_dia", "mesas_ocupadas"],
             [kpi.clave for kpi in KPI_REGISTRY if kpi.orden_categorias is not None],
         )
 

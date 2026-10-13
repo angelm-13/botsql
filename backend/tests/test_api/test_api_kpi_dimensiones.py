@@ -160,6 +160,16 @@ class TestKpiDimensionesApi(BackendTestCase):
         rango = self.json(self._get(ADMIN, self._consulta(id_estado)))["rango_a"]
         self.assertNotIn("etiquetas", rango)
 
+    def test_un_kpi_de_categorias_con_nombres_propios_los_manda_como_etiquetas(self):
+        with transaction_context() as db:
+            id_mesas = db.scalar(select(KpiDefinition.id_kpi_definition).where(KpiDefinition.clave == "mesas_ocupadas"))
+            db.add(KpiSnapshot(id_kpi_definition=id_mesas, dimension_key={"estado": "por_liberar", "id_proyect": PROYECTO_A},
+                               periodo=date(2026, 9, 2), valor=Decimal("3")))
+        rango = self.json(self._get(ADMIN, self._consulta(id_mesas)))["rango_a"]
+        self.assertEqual({"por_liberar": 3.0}, rango["por_empleado"])
+        self.assertEqual("Pagada, aún ocupada", rango["etiquetas"]["por_liberar"])
+        self.assertEqual("Libre", rango["etiquetas"]["libre"])
+
     def test_sin_datos_no_hay_filas_y_el_total_es_cero(self):
         rango = self.json(self._get(ACTOR_TODOS, self._consulta(self.id_mesero, fecha_inicio="2025-01-01", fecha_fin="2025-01-31")))["rango_a"]
         self.assertEqual({}, rango["por_empleado"])
