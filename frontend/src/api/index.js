@@ -631,6 +631,9 @@ export const updatePayrollPeriod = (id, payload) => request(`/payroll_period/${i
 export const deletePayrollPeriod = (id) => request(`/payroll_period/${id}`, { method: "DELETE" });
 
 export const getAllPermission = (params = {}) => request("/permission/", { params });
+// Solo id+nombre del rol, sin permiso de entidad -- igual que `getUserOptions` --:
+// quien da de alta usuarios elige un rol sin poder administrar el catalogo.
+export const getPermissionOptions = () => request("/permission/options");
 export const getPermission = (id) => request(`/permission/${id}`);
 export const createPermission = (payload) => request("/permission/", { method: "POST", body: payload });
 export const updatePermission = (id, payload) => request(`/permission/${id}`, { method: "PUT", body: payload });

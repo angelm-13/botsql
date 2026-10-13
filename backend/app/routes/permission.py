@@ -175,8 +175,9 @@ def _is_protected_permission_payload(payload):
         return False
     if _is_protected_permission_id(payload.get('id_permission')):
         return True
-    if _is_protected_level_id(payload.get('id_level')):
-        return True
+    # El nivel NO cuenta: `permission.id_level` nace con DEFAULT 1 (el nivel
+    # 'General' del sembrado), asi que tratar el nivel 1 como "de superusuario"
+    # escondia y bloqueaba TODOS los roles a quien no fuera el bootstrap.
     description = str(payload.get('permission_description') or '').strip().lower()
     return 'superusuario' in description or 'superuser' in description or 'admin1' in description or 'bootstrap' in description
 
@@ -201,7 +202,7 @@ def _filter_protected_permission_list(user_data, result):
         return result
     items = [
         item for item in result.get('items', [])
-        if not _is_protected_permission_id(item.get('id_permission')) and not _is_protected_level_id(item.get('id_level'))
+        if not _is_protected_permission_id(item.get('id_permission'))
     ]
     removed = len(result.get('items', [])) - len(items)
     if not removed:
@@ -251,10 +252,7 @@ def _list_permission_protected(user_data, page, per_page, filters, sort, service
 def _get_permission_protected(user_data, target_id, service_cls):
     if not _actor_is_bootstrap(user_data) and _is_protected_permission_id(target_id):
         return _hidden_bootstrap_response()
-    record = service_cls.get(target_id)
-    if not _actor_is_bootstrap(user_data) and record and _is_protected_level_id(record.get('id_level')):
-        return _hidden_bootstrap_response()
-    return _jsonify_projected_record(user_data, record)
+    return _jsonify_projected_record(user_data, service_cls.get(target_id))
 
 
 def _create_permission_protected(user_data, payload, service_cls):
@@ -273,6 +271,24 @@ def _delete_permission_protected(user_data, target_id, service_cls):
     if not _actor_is_bootstrap(user_data) and _is_protected_permission_id(target_id):
         return _protected_bootstrap_response()
     return jsonify(service_cls.delete(target_id, user_id=user_data.get('id_user')))
+
+
+@bp_permission.route('/options', methods=['GET'])
+@token_required
+def list_permission_options(user_data):
+    """Solo id+nombre de los roles vigentes, para el selector "Rol/perfil" del
+    alta de usuario.
+
+    Sin permiso de entidad a proposito -- igual que `/user/options` y
+    `/incident_type/options` --: quien da de alta usuarios necesita ELEGIR un
+    rol sin poder administrar el catalogo de roles (eso sigue siendo
+    `require_entity_permission('permission', ...)` en las demas rutas). El rol
+    bootstrap no se ofrece a nadie que no sea el propio bootstrap.
+    """
+    options = PermissionService.options()
+    if not _actor_is_bootstrap(user_data):
+        options = [item for item in options if not _is_protected_permission_id(item['id_permission'])]
+    return jsonify(options)
 
 
 @bp_permission.route('/', methods=['GET'])

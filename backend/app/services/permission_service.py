@@ -23,6 +23,25 @@ class PermissionService(CrudService):
     solo_vigentes = True
 
     @classmethod
+    def options(cls) -> list[dict]:
+        """Solo id+nombre de los roles vigentes, para el selector "Rol/perfil"
+        del alta de usuario. A proposito no exige el permiso de lectura de
+        `permission`: quien da de alta usuarios elige un rol sin administrar el
+        catalogo de roles.
+        """
+        with transaction_context() as session:
+            filas = (
+                session.query(Permission.id_permission, Permission.permission_description)
+                .filter(Permission.deletion_date.is_(None))
+                .order_by(Permission.permission_description)
+                .all()
+            )
+            return [
+                {'id_permission': fila[0], 'permission_description': fila[1]}
+                for fila in filas
+            ]
+
+    @classmethod
     def delete(cls, item_id, user_id: int | None = None):
         """Retirar un perfil lo marca de baja; no borra la fila.
 

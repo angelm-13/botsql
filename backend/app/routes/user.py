@@ -11,6 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError, StatementError
 from app.models.session import transaction_context
 from app.utils.field_access import COLUMNAS_DE_AUDITORIA
+from app.routes.permission import _is_protected_permission_id
 
 
 bp_user = Blueprint('user', __name__, url_prefix='/user')
@@ -178,7 +179,7 @@ def _actor_is_company_admin(user_data):
 
 def _get_user_row(session, target_user_id):
     return session.execute(
-        text('SELECT id_user, username, user_type FROM "user" WHERE id_user = :id_user'),
+        text('SELECT id_user, username, user_type, id_permission FROM "user" WHERE id_user = :id_user'),
         {'id_user': target_user_id},
     ).mappings().first()
 
@@ -239,6 +240,21 @@ def _payload_attempts_forbidden_bootstrap_identity(payload):
         return True
     username = str(payload.get('username') or '').strip()
     return _bootstrap_enabled() and username == _bootstrap_admin_username()
+
+
+def _payload_assigns_protected_role(user_data, payload, target=None):
+    """Quien no es el bootstrap no puede asignar el rol bootstrap a nadie.
+
+    El selector ya no lo ofrece (`/permission/options`), pero esconderlo en la
+    pantalla no basta: la API aceptaba cualquier `id_permission`. Conservar el
+    rol que el usuario ya tenia no cuenta (editar otros campos de un usuario
+    que ya lo tiene reenvia el mismo valor).
+    """
+    if _actor_is_bootstrap(user_data) or not payload or 'id_permission' not in payload:
+        return False
+    if not _is_protected_permission_id(payload.get('id_permission')):
+        return False
+    return not _is_protected_permission_id((target or {}).get('id_permission'))
 
 
 def _payload_elevates_beyond_actor(user_data, target, payload):
@@ -342,6 +358,8 @@ def _create_user_protected(user_data, payload, service_cls):
         return duplicate
     if _payload_attempts_forbidden_bootstrap_identity(payload):
         return _protected_bootstrap_response()
+    if _payload_assigns_protected_role(user_data, payload):
+        return _protected_bootstrap_response()
     if not _can_create_user_payload(user_data, payload):
         return _create_hierarchy_denied_response()
     return _jsonify_projected_record(user_data, service_cls.create(payload, user_id=user_data.get('id_user')), status=201)
@@ -356,6 +374,8 @@ def _update_user_protected(user_data, target_user_id, payload, service_cls):
             return _hierarchy_denied_response()
         if _payload_elevates_beyond_actor(user_data, target, payload):
             return _create_hierarchy_denied_response()
+        if _payload_assigns_protected_role(user_data, payload, target):
+            return _protected_bootstrap_response()
     duplicate = _validate_user_unique_fields(payload, exclude_user_id=target_user_id)
     if duplicate:
         return duplicate
