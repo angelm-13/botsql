@@ -105,6 +105,16 @@ class CustomerSupplierService(CrudService):
         if rfc in cls.RFC_GENERICOS:
             return payload
         with transaction_context() as session:
+            if item_id is not None:
+                # La pantalla reenvia todos los campos al editar. Solo se valida el
+                # RFC cuando CAMBIA: una ficha que ya lo tenia repetido (dos emisores
+                # de la misma razon social con historial fiscal propio, como en
+                # torredigital-prod) debe poder editarse sin tocar el RFC. Crear uno
+                # repetido, o cambiar al de otra fila, sigue dando 409.
+                actual = session.query(CustomerSupplier.tax_id).filter(
+                    CustomerSupplier.id_customer_supplier == int(item_id)).scalar()
+                if ''.join(str(actual or '').split()).upper() == rfc:
+                    return payload
             consulta = session.query(CustomerSupplier.id_customer_supplier).filter(
                 func.upper(func.replace(CustomerSupplier.tax_id, ' ', '')) == rfc,
                 CustomerSupplier.deletion_date.is_(None))

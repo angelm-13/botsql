@@ -19,6 +19,32 @@ class TestClientesYContactos(BackendTestCase):
                 _cliente("Otro", rfc)
             self.assertEqual(409, caja.exception.status_code)
 
+    def test_a_row_that_already_shares_its_rfc_can_be_edited_without_changing_it(self):
+        """Dos fichas de la misma razon social con historial fiscal propio (caso real de
+        torredigital-prod): la pantalla reenvia el RFC al editar y no debe dar 409."""
+        primero = _cliente("Uno", "AAA010101AAA")
+        with transaction_context() as db:
+            from app.models import CustomerSupplier
+            gemelo = CustomerSupplier(name="Gemelo", tax_id="AAA010101AAA", type="client",
+                                      email="g@b.com", id_user=1, created_by=1)
+            db.add(gemelo)
+            db.flush()
+            id_gemelo = gemelo.id_customer_supplier
+
+        editado = CustomerSupplierService.update(
+            id_gemelo, {"name": "Gemelo editado", "tax_id": " aaa010101aaa "}, user_id=1)
+        self.assertEqual("Gemelo editado", editado["name"])
+        CustomerSupplierService.update(
+            primero["id_customer_supplier"], {"tax_id": "AAA010101AAA", "name": "Uno editado"}, user_id=1)
+
+    def test_changing_to_the_rfc_of_another_row_is_still_rejected(self):
+        _cliente("Uno", "AAA010101AAA")
+        otro = _cliente("Dos", "BBB010101BBB")
+
+        with self.assertRaises(AppError) as caja:
+            CustomerSupplierService.update(otro["id_customer_supplier"], {"tax_id": "aaa010101aaa"}, user_id=1)
+        self.assertEqual(409, caja.exception.status_code)
+
     def test_generic_rfcs_may_repeat(self):
         _cliente("Publico 1", "XAXX010101000")
         _cliente("Publico 2", "XAXX010101000")
