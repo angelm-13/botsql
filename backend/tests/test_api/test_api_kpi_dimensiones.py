@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import unittest
 from datetime import date
 from decimal import Decimal
@@ -7,7 +8,7 @@ from unittest.mock import patch
 
 from sqlalchemy import select, text
 
-from app.kpis.registry import seed_kpi_definitions
+from app.kpis.registry import KPI_REGISTRY, seed_kpi_definitions
 from app.models import (
     CustomerSupplier, Department, EntityPermission, KpiDefinition, KpiSnapshot, Level, NmPermissionKpi, Permission,
     Proyect, RestaurantWaiter, Status, Subdepartment, User,
@@ -169,6 +170,70 @@ class TestKpiDimensionesApi(BackendTestCase):
         self.assertEqual({"por_liberar": 3.0}, rango["por_empleado"])
         self.assertEqual("Pagada, aún ocupada", rango["etiquetas"]["por_liberar"])
         self.assertEqual("Libre", rango["etiquetas"]["libre"])
+
+    # --- vista previa de KPIs no disponibles --------------------------------------
+
+    def _no_disponibles(self, actor, query=""):
+        return self._get(actor, "/kpi_definition/no_disponibles" + query)
+
+    def _sin_restaurante(self):
+        """Un plan que incluye KPIs pero no el modulo restaurante."""
+        plan = '{"modulos": ["kpis", "operaciones", "facturacion", "inventario", "laboratorio", "documentos"]}'
+        parche = patch.dict(os.environ, {"TYAKXA_PLAN": plan})
+        parche.start()
+        reiniciar_plan()
+        self.addCleanup(reiniciar_plan)
+        self.addCleanup(parche.stop)
+
+    def test_no_disponibles_lista_los_que_el_rol_no_ve_y_nunca_los_que_si(self):
+        items = self.json(self._no_disponibles(ACTOR_TODOS))["items"]
+        claves = {item["clave"] for item in items}
+        self.assertNotIn("ventas_por_mesero", claves)     # el rol los tiene concedidos
+        self.assertNotIn("ventas_por_empleado", claves)
+        self.assertIn("mesas_ocupadas", claves)
+        self.assertEqual({"sin_permiso"}, {item["motivo"] for item in items})
+        self.assertEqual(len(KPI_REGISTRY) - 2, len(items))
+        self.assertEqual([], self.json(self._no_disponibles(ADMIN))["items"], "un superusuario ve todos")
+
+    def test_no_disponibles_solo_trae_metadata_y_motivo_sin_ids_conteos_ni_permisos(self):
+        items = self.json(self._no_disponibles(ACTOR_TODOS))["items"]
+        permitidas = {
+            "clave", "etiqueta", "modulo", "dimensiones", "unidad", "direccion", "graficas_permitidas", "grafica_default",
+            "modo", "colores_categoria", "orden_categorias", "etiquetas_categoria", "limite_categorias",
+            "etiqueta_dimension", "descripcion", "motivo",
+        }
+        for item in items:
+            # Solo metadata + motivo: ni id, ni snapshots, ni conteos, ni quien tiene el permiso.
+            self.assertLessEqual(set(item), permitidas, item["clave"])
+            self.assertIn("motivo", item)
+        (mesas,) = [i for i in items if i["clave"] == "mesas_ocupadas"]
+        self.assertEqual("Pagada, aún ocupada", mesas["etiquetas_categoria"]["por_liberar"])
+        # La ruta no lee la tabla de snapshots: sus filas siguen siendo las 5 del setUp.
+        with transaction_context() as db:
+            self.assertEqual(5, db.scalar(text("select count(*) from kpi_snapshot")))
+
+    def test_no_disponibles_deja_fuera_los_modulos_no_habilitados_por_omision(self):
+        self._sin_restaurante()
+        claves = {i["clave"] for i in self.json(self._no_disponibles(ACTOR_TODOS))["items"]}
+        self.assertNotIn("mesas_ocupadas", claves)
+        self.assertIn("incidencias_pendientes", claves)
+
+    def test_el_parametro_de_modulos_no_habilitados_no_hace_nada_si_el_servidor_no_lo_enciende(self):
+        self._sin_restaurante()
+        claves = {i["clave"] for i in self.json(self._no_disponibles(ACTOR_TODOS, "?incluir_modulo_no_habilitado=1"))["items"]}
+        self.assertNotIn("mesas_ocupadas", claves)
+
+    def test_con_el_interruptor_del_servidor_y_el_parametro_salen_con_su_motivo(self):
+        self._sin_restaurante()
+        with patch.dict(os.environ, {"KPI_PREVIEW_INCLUIR_MODULOS_NO_HABILITADOS": "1"}):
+            con = {i["clave"]: i["motivo"] for i in self.json(self._no_disponibles(ACTOR_TODOS, "?incluir_modulo_no_habilitado=1"))["items"]}
+            sin_pedir = {i["clave"] for i in self.json(self._no_disponibles(ACTOR_TODOS))["items"]}
+        self.assertEqual("modulo_no_habilitado", con["mesas_ocupadas"])
+        self.assertEqual("sin_permiso", con["incidencias_pendientes"])
+        self.assertNotIn("mesas_ocupadas", sin_pedir, "el servidor lo permite pero la peticion no lo pidio")
+
+    def test_no_disponibles_exige_el_permiso_de_kpi_definition(self):
+        self.assertEqual(403, self._no_disponibles(ACTOR_SIN_MODULO).status_code)
 
     def test_sin_datos_no_hay_filas_y_el_total_es_cero(self):
         rango = self.json(self._get(ACTOR_TODOS, self._consulta(self.id_mesero, fecha_inicio="2025-01-01", fecha_fin="2025-01-31")))["rango_a"]
