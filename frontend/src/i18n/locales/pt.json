@@ -2524,6 +2524,7 @@
     "validation_authorization_status_required": "Não foi possível salvar porque o item não tem estado inicial de autorização."
   },
   "errors": {
+    "kpi_sin_eje_de_proyecto": "Este KPI não está limitado a um projeto: mostra dados de toda a empresa e só pode ser atribuído a um perfil com alcance Todos sobre os KPIs.",
     "permission_scope_only_all": "Esta linha não tem dono por registro: só aceita Sem acesso ou Todos.",
     "permission_manager_lockout": "Você não pode remover do seu próprio perfil o acesso ao gerenciador de permissões.",
     "request_failed": "Não foi possível concluir a solicitação",

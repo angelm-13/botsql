@@ -2619,6 +2619,7 @@
     "validation_authorization_status_required": "No se pudo guardar porque la partida no tiene estado de autorización inicial."
   },
   "errors": {
+    "kpi_sin_eje_de_proyecto": "Este KPI no está limitado a un proyecto: muestra datos de toda la empresa, y solo se puede asignar a un perfil con alcance Todos sobre los KPIs.",
     "permission_scope_only_all": "Esta fila no tiene dueño por registro: solo admite Sin acceso o Todos.",
     "permission_manager_lockout": "No puedes quitarle a tu propio rol el acceso al Gestor de permisos.",
     "not_found": "No se encontró lo que buscas: ya no existe o no tienes acceso a él.",

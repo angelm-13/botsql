@@ -476,6 +476,8 @@ export const updateInvoiceMaterialService = (id, payload) => request(`/invoice_m
 export const deleteInvoiceMaterialService = (id) => request(`/invoice_material_service/${id}`, { method: "DELETE" });
 
 export const getAllKpiDefinition = () => request("/kpi_definition/");
+// Catalogo de dimensiones (empleado, mesero, platillo...): clave, etiqueta, tipo y si es abierta.
+export const getKpiDimensions = () => request("/kpi_dimension/");
 export const queryKpiSnapshot = (params = {}) => request("/kpi_snapshot/query", { params });
 // KPI "vivo" (modo === "vivo", ej. material_prestado_actual): no pasa por
 // kpi_snapshot, se llama directo cada vez -- ver GET /kpi_definition/<id>/vivo
