@@ -80,3 +80,17 @@ class TestArchivosDeMigracion(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_no_migration_aborts_because_a_base_role_was_retired(self):
+        """Retirar un rol desde el Gestor no puede dejar al backend sin arrancar.
+
+        Las migraciones se reaplican en CADA arranque del pod y `db-migrate`
+        aborta el arranque si una falla. `20260908100000` exigia 4 o 5 de los
+        roles base vigentes; comala retiro tres y quedo en `Init:Error` -- con
+        `Recreate`, sin API. Las migraciones que resuelven un rol por NOMBRE
+        deben tolerar que ya no exista (el INSERT con JOIN simplemente no
+        siembra nada), nunca abortar por eso.
+        """
+        archivo = MIGRACIONES / "20260908100000_roles_con_los_ids_de_la_base.sql"
+        sql = archivo.read_text(encoding="utf-8")
+        self.assertNotIn("RAISE EXCEPTION", sql)

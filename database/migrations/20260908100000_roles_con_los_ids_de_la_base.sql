@@ -85,10 +85,19 @@ WHERE permission_description IN
 -- en el archivo se queda sin aplicar). Con 4 sigue detectando el problema
 -- real que esta comprobacion queria atrapar -- una instalacion donde falta
 -- alguno de los roles core, no solo el que se retiro a proposito despues.
+--
+-- Corregido 2026-10-13 (comala-prod): ya NO aborta. Un cliente puede retirar
+-- desde el Gestor los roles que no usa (comala dejo solo Supervisor), y como
+-- esta migracion se reaplica en CADA arranque, el RAISE dejaba el backend en
+-- Init:CrashLoopBackOff para siempre -- con la estrategia Recreate, sin API.
+-- La comprobacion ya no protege nada: lo unico que queda de esta migracion es
+-- el INSERT de la parte 1, que junta con `role_ids` por nombre y por tanto solo
+-- toca los roles que de verdad existen; un rol ausente simplemente no recibe
+-- filas.
 DO $$
 BEGIN
     IF (SELECT count(*) FROM role_ids) NOT IN (4, 5) THEN
-        RAISE EXCEPTION 'Se esperaban 4 o 5 roles (Supervisor, Gerente, Jefe de taller, Almacenista, y "Jefe de almacen" solo si esta instalacion no lo retiro todavia) en permission y se encontraron %. Revisar antes de continuar.',
+        RAISE NOTICE 'Roles base vigentes: % de 5 (Supervisor, Gerente, Jefe de taller, Almacenista, Jefe de almacen). Se siembran solo los que existen.',
             (SELECT count(*) FROM role_ids);
     END IF;
 END $$;
