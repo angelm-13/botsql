@@ -445,6 +445,10 @@ def query_kpi_snapshot(user_data):
         # que cargar catalogos enteros solo para ponerlos. Cada dimension declara quien los resuelve
         # (`app/kpis/dimensiones.py`); estado y global no llevan.
         etiquetas = etiquetas_de_dimension(db, dimension, (rango_a, rango_b), con_sin_asignar)
+        definicion = KPI_POR_CLAVE.get(kpi_row.clave) if kpi_row else None
+        if etiquetas is None and definicion is not None and definicion.etiquetas_categoria:
+            # Dimension de categoria con nombres propios del KPI (no hay catalogo que resolver).
+            etiquetas = dict(definicion.etiquetas_categoria)
         if etiquetas is not None:
             for rango in (rango_a, rango_b):
                 if rango:

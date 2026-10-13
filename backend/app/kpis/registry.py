@@ -1602,7 +1602,8 @@ class KpiDefinition:
                  query_builder, *, direccion, graficas_permitidas, grafica_default,
                  agregacion=None, unidad="numero", alcance_proyecto=True, modo="snapshot",
                  colores_categoria=None, descripcion=None, etiqueta_dimension=None,
-                 orden_categorias=None, limite_categorias=None, resumen_builder=None, sin_asignar=False):
+                 orden_categorias=None, limite_categorias=None, resumen_builder=None, sin_asignar=False,
+                 etiquetas_categoria=None):
         self.clave = clave
         self.etiqueta = etiqueta
         # Una linea corta para el selector de KPI del editor (rediseno del
@@ -1658,6 +1659,10 @@ class KpiDefinition:
         # dato. Con None (el default, todos los demas) el Dashboard ordena por valor, de mayor a
         # menor. No se deriva de `colores_categoria`: un dict pierde el orden al serializarse.
         self.orden_categorias = tuple(orden_categorias) if orden_categorias else None
+        # Nombre visible de cada categoria de una dimension "estado" cuando la clave (la que se guarda en el
+        # snapshot) no se lee bien sola, ej. {"por_liberar": "Pagada, aún ocupada"}. None = la clave se muestra
+        # capitalizada. `routes/kpi.py` la manda como `etiquetas` junto a los totales.
+        self.etiquetas_categoria = dict(etiquetas_categoria) if etiquetas_categoria else None
         # Para una dimension ABIERTA con muchos valores (ej. familia, 41 en Adser): cuantos se
         # muestran, los de mayor valor. El corte se hace al SUMAR el rango (`_totales()` en
         # routes/kpi.py), no en el query_builder: cada dia guarda todas las familias y el top
@@ -2203,6 +2208,11 @@ def _validar():
                 raise RuntimeError(
                     f"El KPI '{kpi.clave}' declara orden_categorias y colores_categoria con categorias distintas."
                 )
+        if kpi.etiquetas_categoria is not None:
+            if CATALOGO_POR_CLAVE[kpi.dimensiones[0]].tipo != "categoria":
+                raise RuntimeError(f"El KPI '{kpi.clave}' declara etiquetas_categoria sin ser de una dimension de categoria.")
+            if kpi.orden_categorias is not None and set(kpi.etiquetas_categoria) != set(kpi.orden_categorias):
+                raise RuntimeError(f"El KPI '{kpi.clave}' declara etiquetas_categoria y orden_categorias con categorias distintas.")
         if not kpi.graficas_permitidas:
             raise RuntimeError(f"El KPI '{kpi.clave}' no declara ninguna grafica permitida.")
         for grafica in kpi.graficas_permitidas:

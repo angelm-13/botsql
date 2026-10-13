@@ -121,6 +121,14 @@ test("KPI de categorias fijas (estado): cada barra con SU color declarado", () =
   assert.deepEqual(props.datos.map((f) => props.colorPorFila(f)), ["#ef6f5c", "#22b573"]);
 });
 
+test("estado: usa el nombre que manda el backend (etiquetas) y, sin el, la clave capitalizada", () => {
+  const etiquetas = { por_liberar: "Pagada, aún ocupada" };
+  const conNombre = labelForDimension("estado", userLabel, userLabel, etiquetas);
+  assert.equal(conNombre("por_liberar"), "Pagada, aún ocupada");
+  assert.equal(conNombre("libre"), "Libre");
+  assert.equal(labelForDimension("estado", userLabel, userLabel)("abierta"), "Abierta");
+});
+
 test("artículos bajo stock: solo quedan los que estan por debajo del umbral", () => {
   const kpi = { id_kpi_definition: 1, clave: "articulos_bajo_stock", unidad: "piezas", dimensiones: ["producto"] };
   const snapshot = { rango_a: { total: 0, por_empleado: { 10: 2, 11: 50, 12: 9 } }, rango_b: null };
