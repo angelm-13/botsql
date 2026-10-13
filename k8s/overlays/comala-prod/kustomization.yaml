@@ -1,4 +1,4 @@
-﻿# Overlay real de produccion para comala (cliente real del ERP, base limpia,
+# Overlay real de produccion para comala (cliente real del ERP, base limpia,
 # todos los modulos: el alcance real se limita desde el Gestor de roles y
 # permisos, por eso NO se fija LICENSED_MODULES).
 #
@@ -11,16 +11,16 @@ namespace: comala-prod
 images:
   - name: DB_INIT_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-db-init
-    newTag: ed8901e
+    newTag: 9854f33
   - name: BACKEND_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-backend
-    newTag: ed8901e
+    newTag: 9854f33
   - name: WORKER_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-worker
-    newTag: ed8901e
+    newTag: 9854f33
   - name: FRONTEND_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-frontend
-    newTag: ed8901e-comala-prod
+    newTag: 9854f33-comala-prod
 resources:
   - ../../base
   - ingress-single-origin.yaml
