@@ -2577,6 +2577,7 @@
     "validation_authorization_status_required": "The line item could not be saved because it has no initial authorization status."
   },
   "errors": {
+    "kpi_sin_eje_de_proyecto": "This KPI is not limited to a project: it shows company-wide data, and it can only be assigned to a role with the All scope over KPIs.",
     "permission_scope_only_all": "This row has no per-record owner: it only accepts No access or All.",
     "permission_manager_lockout": "You cannot remove your own role's access to the permissions manager.",
     "not_found": "What you are looking for was not found: it no longer exists or you do not have access to it.",
@@ -4196,6 +4197,10 @@
     "showing_first": "showing the first",
     "clear_filters": "Clear filters",
     "catalog_mismatch": "The public catalogue classifies it differently:",
+    "catalog_other_family": "The public catalogue has a different family: {name}. If it is not the right one, you can change it by editing the product.",
+    "catalog_other_brand": "The public catalogue has a different brand: {name}. If it is not the right one, you can change it by editing the product.",
+    "catalog_missing_family": "The public catalogue's family (id {id}) no longer exists. You can pick another by editing the product.",
+    "catalog_missing_brand": "The public catalogue's brand (id {id}) no longer exists. You can pick another by editing the product.",
     "home_differs": "Its record says",
     "but_stock_elsewhere": "but the units are somewhere else.",
     "page_of": "page",

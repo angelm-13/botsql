@@ -1,0 +1,47 @@
+# Overlay real de produccion para comala (cliente real del ERP, base limpia,
+# todos los modulos: el alcance real se limita desde el Gestor de roles y
+# permisos, por eso NO se fija LICENSED_MODULES).
+#
+# Un solo origen (front + API bajo /api), mismo patron que adser-prod; por
+# eso el Ingress del base se elimina y se usa ingress-single-origin.yaml.
+#
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: comala-prod
+images:
+  - name: DB_INIT_IMAGE_PLACEHOLDER
+    newName: ghcr.io/tyakxa/tyakxa-tny-db-init
+    newTag: d89b9de
+  - name: BACKEND_IMAGE_PLACEHOLDER
+    newName: ghcr.io/tyakxa/tyakxa-tny-backend
+    newTag: d89b9de
+  - name: WORKER_IMAGE_PLACEHOLDER
+    newName: ghcr.io/tyakxa/tyakxa-tny-worker
+    newTag: d89b9de
+  - name: FRONTEND_IMAGE_PLACEHOLDER
+    newName: ghcr.io/tyakxa/tyakxa-tny-frontend
+    newTag: d89b9de-comala-prod
+resources:
+  - ../../base
+  - ingress-single-origin.yaml
+patches:
+  - patch: |-
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: tyakxa-tny
+      $patch: delete
+  # PriorityClass del cliente ERP (ver p3-comala-prod, aplicada al cluster
+  # con kubectl apply -f priority-classes.yaml).
+  - target:
+      kind: Deployment
+    patch: |-
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: p3-comala-prod
+  - target:
+      kind: StatefulSet
+    patch: |-
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: p3-comala-prod

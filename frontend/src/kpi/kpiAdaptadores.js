@@ -115,7 +115,7 @@ export function propsSeries({
 /** Props de DonaWidget. */
 export function propsDona({ snapshot, kpiInfo, labelForId, agruparPorPeriodo, formatNumber, textos }) {
   const dimension = kpiInfo?.dimensiones?.[0];
-  const crudas = buildPieData(snapshot, labelForId, textos.otros, agruparPorPeriodo, dimension);
+  const crudas = buildPieData(snapshot, labelForId, textos.otros, agruparPorPeriodo, dimension, kpiInfo?.dimension_abierta);
   const rebanadas = agruparPorPeriodo ? crudas : ordenarPorCategorias(crudas, kpiInfo?.orden_categorias);
   const coloresCategoria = kpiInfo?.colores_categoria;
   const datos = rebanadas.map((entrada, indice) => ({

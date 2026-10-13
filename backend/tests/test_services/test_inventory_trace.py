@@ -669,6 +669,76 @@ class TestLaCadenaDeClasificacionYElSitio(BackendTestCase):
         self.assertIsNone(
             localizar("TAL-900", ACTOR)["items"][0]["classification"]["catalog_mismatch"])
 
+    # Un material sin marca/familia ("no se sabe") y el producto que si la trae.
+    SIN_MARCA, PRETUL, SIN_FAMILIA = 8861, 8862, 8863
+
+    def _material_sin_clasificar(self):
+        with transaction_context() as db:
+            db.add_all([
+                Brand(id_brand=self.SIN_MARCA, brand_description="Sin marca específica",
+                      created_by=1),
+                Brand(id_brand=self.PRETUL, brand_description="Pretul", created_by=1),
+                ProductFamily(id_product_family=self.SIN_FAMILIA,
+                              product_family_description="Sin categoría", created_by=1),
+            ])
+            db.flush()
+            material = db.get(Material, self.MAT_TALADRO)
+            material.id_brand = self.SIN_MARCA
+            material.id_product_family = self.SIN_FAMILIA
+
+    def test_an_unclassified_material_takes_the_brand_and_family_of_the_product(self):
+        """La marca vive en el producto; el material es solo el tipo de pieza."""
+        self._material_sin_clasificar()
+        with transaction_context() as db:
+            taladro = db.get(Product, self.TALADRO)
+            taladro.id_marca = self.PRETUL
+            taladro.id_familia = self.FAM_OBRA
+
+        clasificacion = localizar("TAL-900", ACTOR)["items"][0]["classification"]
+        self.assertEqual("Pretul", clasificacion["brand"])
+        self.assertEqual(self.PRETUL, clasificacion["id_brand"])
+        self.assertEqual("Material de obra", clasificacion["family"])
+        self.assertIsNone(clasificacion["catalog_mismatch"])
+
+    def test_an_unclassified_material_and_product_just_say_nothing(self):
+        self._material_sin_clasificar()
+        clasificacion = localizar("TAL-900", ACTOR)["items"][0]["classification"]
+        self.assertEqual("Sin marca específica", clasificacion["brand"])
+        self.assertIsNone(clasificacion["catalog_mismatch"])
+
+    def test_two_real_brands_that_disagree_are_still_reported(self):
+        with transaction_context() as db:
+            db.get(Product, self.TALADRO).id_marca = self.MARCA_CEMEX
+
+        clasificacion = localizar("TAL-900", ACTOR)["items"][0]["classification"]
+        self.assertEqual("Bosch", clasificacion["brand"])
+        self.assertEqual("Cemex", clasificacion["catalog_mismatch"]["brand"]["brand"])
+
+    def test_an_id_that_no_longer_exists_is_reported_with_its_id(self):
+        """Sin nombre que mostrar, el aviso tiene que dar al menos el id."""
+        with transaction_context() as db:
+            db.get(Product, self.TALADRO).id_familia = 987654
+
+        mismatch = localizar("TAL-900", ACTOR)["items"][0]["classification"]["catalog_mismatch"]
+        self.assertEqual(987654, mismatch["family"]["id_product_family"])
+        self.assertIsNone(mismatch["family"]["family"])
+
+    def test_an_orphan_id_does_not_replace_an_unclassified_material(self):
+        self._material_sin_clasificar()
+        with transaction_context() as db:
+            db.get(Product, self.TALADRO).id_marca = 987654
+
+        clasificacion = localizar("TAL-900", ACTOR)["items"][0]["classification"]
+        self.assertEqual("Sin marca específica", clasificacion["brand"])
+        self.assertEqual(987654, clasificacion["catalog_mismatch"]["brand"]["id_brand"])
+
+    def test_filtering_by_a_brand_finds_it_on_the_product_when_the_material_has_none(self):
+        self._material_sin_clasificar()
+        with transaction_context() as db:
+            db.get(Product, self.TALADRO).id_marca = self.PRETUL
+
+        self.assertEqual(["TAL-900"], self._codigos(id_marca=self.PRETUL))
+
     # --- el sitio ----------------------------------------------------------
 
     def test_the_location_comes_with_its_full_branch(self):

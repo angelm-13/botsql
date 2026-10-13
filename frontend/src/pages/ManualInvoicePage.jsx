@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { BadgeCheck, Download, FileCheck2, FileText, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { createManualInvoice, downloadInvoicePdf, downloadInvoiceXml, getAllCustomerSupplier, getAllProyect, getInvoiceCatalogs, preflightInvoiceStamping, previewManualInvoice, stampInvoice } from "../api";
+import { stampingOutcome } from "../utils/stampingOutcome";
 import SatProductKeyField from "../components/SatProductKeyField";
 import { useI18n } from "../i18n";
 
@@ -172,6 +173,11 @@ export default function ManualInvoicePage() {
     setError("");
     try {
       const result = await stampInvoice(createdInvoice.id_invoice);
+      const outcome = stampingOutcome(result);
+      if (!outcome.ok) {
+        setError(outcome.message);
+        return;
+      }
       setCreatedInvoice((current) => ({ ...current, folio_fiscal: result.operation.provider_reference }));
       setMessage(`${t("manual_invoice.invoice")} #${createdInvoice.id_invoice} ${t("manual_invoice.stamped_success")}`);
     } catch (requestError) {

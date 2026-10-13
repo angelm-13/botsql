@@ -2522,6 +2522,7 @@
     "validation_authorization_status_required": "Die Position konnte nicht gespeichert werden, weil kein anfänglicher Autorisierungsstatus vorhanden ist."
   },
   "errors": {
+    "kpi_sin_eje_de_proyecto": "Dieser KPI ist nicht auf ein Projekt beschränkt: er zeigt Daten des gesamten Unternehmens und kann nur einer Rolle mit dem Umfang „Alle“ für KPIs zugewiesen werden.",
     "permission_scope_only_all": "Diese Zeile hat keinen Eigentümer pro Datensatz: nur Kein Zugriff oder Alle.",
     "permission_manager_lockout": "Sie können Ihrer eigenen Rolle den Zugriff auf den Berechtigungs-Manager nicht entziehen.",
     "request_failed": "Anfrage konnte nicht abgeschlossen werden",

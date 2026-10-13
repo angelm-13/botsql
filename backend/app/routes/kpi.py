@@ -6,9 +6,13 @@ from flask import Blueprint, jsonify, request
 from sqlalchemy import cast, func, select
 from sqlalchemy.dialects.postgresql import JSONB
 
+from app.kpis.dimensiones import (
+    CATALOGO as CATALOGO_DE_DIMENSIONES, DIMENSION_POR_CLAVE as DIMENSION_DECLARADA, SIN_ASIGNAR, _familias,
+    etiquetas_de_dimension,
+)
 from app.kpis.registry import (
-    AGREGACION_POR_CLAVE, ALCANCE_PROYECTO_POR_CLAVE, DIMENSION_JSON_KEY, DIMENSION_POR_CLAVE, FAMILIA_SIN_ASIGNAR,
-    KPI_POR_CLAVE, LIMITE_POR_CLAVE, PRESTADO_ORDENES,
+    AGREGACION_POR_CLAVE, ALCANCE_PROYECTO_POR_CLAVE, DIMENSION_JSON_KEY, DIMENSION_POR_CLAVE,
+    KPI_POR_CLAVE, LIMITE_POR_CLAVE, PRESTADO_ORDENES, SIN_ASIGNAR_POR_CLAVE,
 )
 from app.models.kpi_definition import KpiDefinition
 from app.models.kpi_snapshot import KpiSnapshot
@@ -115,7 +119,7 @@ def _dimension_entity_expr(campo_json):
     return cast(KpiSnapshot.dimension_key, JSONB)[campo_json].astext
 
 
-def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo=False, limite=None):
+def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo=False, limite=None, sin_asignar=False):
     """Combina `kpi_snapshot` en el rango, en uno de tres modos:
 
     * `campo_json` es None (dimension "global", ej. ingresos/egresos
@@ -217,12 +221,18 @@ def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, enti
         fila = db.execute(select(*columnas).where(*condiciones)).one()
         return {**base, 'total': valor_de(*fila), 'por_empleado': {}, 'por_periodo': {}}
 
+    # Una fila sin entidad (un pedido sin mesero, un viaje sin unidad): con `sin_asignar` (opt-in por
+    # KPI, `KpiDefinition.sin_asignar`) se agrupa bajo `SIN_ASIGNAR` y asi aparece en la lista y cuenta
+    # en el total; sin el, se descarta de las dos, que es lo que este archivo hacia siempre. El filtro
+    # por `entidades` (arriba) se aplica sobre la expresion original, por lo que esas filas quedan fuera
+    # cuando alguien pide entidades concretas.
+    grupo_expr = func.coalesce(entidad_expr, SIN_ASIGNAR) if sin_asignar else entidad_expr
     filas = [
         (entidad, *agregados)
         for entidad, *agregados in db.execute(
-            select(entidad_expr, *columnas)
+            select(grupo_expr, *columnas)
             .where(*condiciones)
-            .group_by(entidad_expr)
+            .group_by(grupo_expr)
         ).all()
         if entidad is not None
     ]
@@ -237,17 +247,13 @@ def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, enti
 def _etiquetas_de_familias(db, rangos):
     """`{id_familia: nombre}` de las familias que aparecen en `rangos` (los dos lados de la
     consulta). El snapshot guarda el id, no el nombre: asi renombrar una familia no parte la
-    historia. `FAMILIA_SIN_ASIGNAR` es "Sin familia"."""
-    ids = {int(id_familia) for rango in rangos if rango for id_familia in rango['por_empleado']}
-    nombres = {str(FAMILIA_SIN_ASIGNAR): 'Sin familia'}
-    reales = [i for i in ids if i != FAMILIA_SIN_ASIGNAR]
-    if reales:
-        for id_familia, nombre in db.execute(
-            select(ProductFamily.id_product_family, ProductFamily.product_family_description)
-            .where(ProductFamily.id_product_family.in_(reales))
-        ).all():
-            nombres[str(id_familia)] = nombre
-    return {str(i): nombres.get(str(i), f'#{i}') for i in ids}
+    historia. `FAMILIA_SIN_ASIGNAR` es "Sin familia".
+
+    La resolucion vive ahora en el catalogo de dimensiones (`app/kpis/dimensiones.py`); esta
+    funcion se conserva porque las pruebas de `perdidas_por_familia` la llaman por su nombre.
+    """
+    ids = {llave for rango in rangos if rango for llave in rango['por_empleado']}
+    return _familias(db, sorted(ids))
 
 
 def _con_metadatos_del_registry(kpi_row: KpiDefinition) -> dict:
@@ -276,6 +282,26 @@ def _con_metadatos_del_registry(kpi_row: KpiDefinition) -> dict:
         'etiqueta_dimension': definicion.etiqueta_dimension if definicion else '',
         'descripcion': definicion.descripcion if definicion else None,
     }
+
+
+def _tipo_de(dimension: str) -> str:
+    """`persona|catalogo|categoria|global` de una dimension. Una desconocida se trata como
+    `persona`, que es lo que asumia este archivo antes de que existiera el catalogo."""
+    declarada = DIMENSION_DECLARADA.get(dimension)
+    return declarada.tipo if declarada else 'persona'
+
+
+@bp_kpi.route('/kpi_dimension/', methods=['GET'])
+@token_required
+@require_entity_permission('kpi_definition', 'read')
+def list_kpi_dimensions(user_data):
+    """Catalogo de dimensiones (clave, etiqueta, tipo, si es abierta).
+
+    Es un endpoint aparte, y no campos nuevos de `GET /kpi_definition/`, a proposito: el
+    catalogo de KPIs de siempre no cambia ni un byte. El Dashboard lo usa para saber cuando
+    ofrecer el filtro por empleados (solo `tipo == 'persona'`) y cuando agrupar en "Otros".
+    """
+    return jsonify({'items': [dimension.serializar() for dimension in CATALOGO_DE_DIMENSIONES]})
 
 
 @bp_kpi.route('/kpi_definition/', methods=['GET'])
@@ -391,7 +417,7 @@ def query_kpi_snapshot(user_data):
         # no se puede recortar por persona, asi que solo lo ve quien tiene Todos.
         duenos = owner_ids(db, user_data, scope_bits(db, user_data, 'kpi_definition', 'read'))
         if duenos is not None:
-            if dimension != 'empleado':
+            if _tipo_de(dimension) != 'persona':
                 raise AppError('errors.permission_denied', 403, {'kpi': id_kpi_definition, 'reason': 'scope'})
             entidades = sorted(duenos) if entidades is None else [e for e in entidades if e in duenos]
 
@@ -401,7 +427,7 @@ def query_kpi_snapshot(user_data):
         # empleados. Una lista vacia (departamento sin nadie) filtra a
         # "nadie" -- ver el comentario en `_totales`. Solo aplica a KPIs por
         # empleado -- un producto no tiene departamento.
-        if id_departments and dimension == 'empleado':
+        if id_departments and _tipo_de(dimension) == 'persona':
             usuarios_del_departamento = _empleados_de_departamentos(db, id_departments)
             if entidades is not None:
                 entidades = [id_empleado for id_empleado in entidades if id_empleado in usuarios_del_departamento]
@@ -410,13 +436,16 @@ def query_kpi_snapshot(user_data):
 
         agrupar_por_periodo = agrupar_por == 'periodo'
         tope_categorias = LIMITE_POR_CLAVE.get(kpi_row.clave) if kpi_row else None
-        rango_a = _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo, tope_categorias)
+        con_sin_asignar = SIN_ASIGNAR_POR_CLAVE.get(kpi_row.clave, False) if kpi_row else False
+        rango_a = _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo, tope_categorias, con_sin_asignar)
         rango_b = None
         if fecha_inicio_b and fecha_fin_b:
-            rango_b = _totales(db, id_kpi_definition, fecha_inicio_b, fecha_fin_b, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo, tope_categorias)
-        if dimension == 'familia':
-            # El snapshot guarda ids; los nombres viajan aparte para que el Dashboard los pinte.
-            etiquetas = _etiquetas_de_familias(db, (rango_a, rango_b))
+            rango_b = _totales(db, id_kpi_definition, fecha_inicio_b, fecha_fin_b, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo, tope_categorias, con_sin_asignar)
+        # El snapshot guarda ids; los nombres viajan aparte (`etiquetas`) para que el Dashboard no tenga
+        # que cargar catalogos enteros solo para ponerlos. Cada dimension declara quien los resuelve
+        # (`app/kpis/dimensiones.py`); estado y global no llevan.
+        etiquetas = etiquetas_de_dimension(db, dimension, (rango_a, rango_b), con_sin_asignar)
+        if etiquetas is not None:
             for rango in (rango_a, rango_b):
                 if rango:
                     rango['etiquetas'] = etiquetas

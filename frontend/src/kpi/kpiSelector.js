@@ -16,7 +16,7 @@ export function esVariable(kpi) {
 // Orden fijo de los botones de modulo. El catalogo llega en el orden de la base de
 // datos (arbitrario), y un selector que reordena sus botones segun la consulta se
 // siente roto; los modulos que no esten aqui van despues, por nombre.
-export const ORDEN_DE_MODULOS = ["operaciones", "inventario", "facturacion", "laboratorio", "documentos"];
+export const ORDEN_DE_MODULOS = ["operaciones", "inventario", "facturacion", "laboratorio", "documentos", "restaurante"];
 const posicionDeModulo = (clave) => {
   const posicion = ORDEN_DE_MODULOS.indexOf(clave);
   return posicion === -1 ? ORDEN_DE_MODULOS.length : posicion;
@@ -77,6 +77,7 @@ export const COLOR_DE_MODULO = {
   inventario: CATEGORICAL[2],
   laboratorio: CATEGORICAL[6],
   documentos: CATEGORICAL[5],
+  restaurante: CATEGORICAL[3],
   [GRUPO_VARIABLES]: CATEGORICAL[4],
 };
 

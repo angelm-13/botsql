@@ -25,6 +25,7 @@ export const UNIDAD_INFO = {
   moneda: { etiquetaSelector: "$", prefijo: "$", sufijo: "" },
   dias: { etiquetaSelector: "Días", prefijo: "", sufijo: " días" },
   piezas: { etiquetaSelector: "Piezas", prefijo: "", sufijo: " piezas" },
+  minutos: { etiquetaSelector: "Min", prefijo: "", sufijo: " min" },
 };
 
 export function unidadInfo(unidad) {
@@ -90,20 +91,68 @@ export function colorEfectivoDeKpi(idKpiDefinition, coloresOverride) {
   return override || colorDeKpi(idKpiDefinition);
 }
 
-// Como etiquetar una entidad segun la dimension real del KPI (empleado,
-// producto o "global" -- sin desglose).
+// Llave bajo la que el backend agrupa las filas sin entidad (un pedido sin mesero, un
+// viaje sin unidad): ver `SIN_ASIGNAR` en backend/app/kpis/dimensiones.py.
+export const SIN_ASIGNAR = "sin_asignar";
+const ETIQUETA_SIN_ASIGNAR = "Sin asignar";
+
+// Como etiquetar una entidad segun la dimension real del KPI.
+//
+// Los nombres los manda el BACKEND (`etiquetas` en cada lado del rango, ver
+// `etiquetasDeSnapshots`): el Dashboard ya no carga catalogos enteros de usuarios o
+// productos solo para ponerlos. `userLabel`/`productLabel` quedan como respaldo para
+// un backend que no mande la etiqueta; un id sin nombre se muestra como "#id".
 export function labelForDimension(dimension, userLabel, productLabel, etiquetas) {
-  if (dimension === "producto") return productLabel;
-  // "familia": el snapshot guarda el id y la API manda los nombres aparte (`etiquetas`, ver
-  // `etiquetasDeSnapshots`); un id sin nombre (familia borrada) se muestra como "#id".
-  if (dimension === "familia") return (id) => (etiquetas && etiquetas[id]) || `#${id}`;
+  const delBackend = (id) => (etiquetas ? etiquetas[id] : undefined);
   if (dimension === "global") return () => "Total";
-  // "estado": el id YA es el nombre legible de la categoria (ej. "abierta",
-  // "Entrada") -- no hay a quien buscarle nombre, solo capitalizar. Sin este
-  // caso caia en userLabel, que trataba "abierta" como un id_user y lo
-  // mostraba como "#abierta" al no encontrar a nadie con ese id.
-  if (dimension === "estado") return (valor) => capitalizar(valor);
-  return userLabel;
+  const conSinAsignar = (resolver) => (id) => (
+    id === SIN_ASIGNAR ? (delBackend(id) || ETIQUETA_SIN_ASIGNAR) : resolver(id)
+  );
+  if (dimension === "producto") return conSinAsignar((id) => delBackend(id) ?? productLabel(id));
+  // "familia": el snapshot guarda el id y la API manda los nombres aparte; un id sin nombre
+  // (familia borrada) se muestra como "#id".
+  if (dimension === "familia") return conSinAsignar((id) => delBackend(id) || `#${id}`);
+  // "estado": el id YA es el nombre legible de la categoria (ej. "abierta", "Entrada") --
+  // no hay a quien buscarle nombre, solo capitalizar. Sin este caso caia en userLabel, que
+  // trataba "abierta" como un id_user y lo mostraba como "#abierta".
+  if (dimension === "estado") return conSinAsignar((valor) => capitalizar(valor));
+  // Las dimensiones de catalogo (mesero, platillo, mesa, cliente, unidad, operador): su nombre
+  // viene de la API; sin el, "#id". Nunca se busca entre los usuarios.
+  if (dimension && dimension !== "empleado") return conSinAsignar((id) => delBackend(id) || `#${id}`);
+  return conSinAsignar((id) => delBackend(id) ?? userLabel(id));
+}
+
+// Tipo de cada dimension para un backend viejo que no tenga `GET /kpi_dimension/`: es lo que
+// el Dashboard asumia antes de que existiera el catalogo. Una dimension desconocida se trata
+// como "catalogo" (nunca como persona: ofreceria filtrar por empleados algo que no lo es).
+const TIPO_DE_DIMENSION_LEGADO = { empleado: "persona", producto: "catalogo", familia: "catalogo", estado: "categoria", global: "global" };
+
+/** `persona|catalogo|categoria|global` de una dimension, segun el catalogo del backend
+ * (`dimensiones`, la lista de `GET /kpi_dimension/`) o, sin el, el de siempre. */
+export function tipoDeDimension(dimension, dimensiones) {
+  const declarada = (dimensiones || []).find((d) => d.clave === dimension);
+  return declarada ? declarada.tipo : (TIPO_DE_DIMENSION_LEGADO[dimension] || "catalogo");
+}
+
+/** Le agrega a cada KPI del catalogo el tipo de su dimension y si es abierta. Aditivo: no
+ * quita ni cambia ningun campo que ya trajera. */
+export function enriquecerCatalogo(catalogo, dimensiones) {
+  return (catalogo || []).map((kpi) => {
+    const clave = kpi?.dimensiones?.[0];
+    const declarada = (dimensiones || []).find((d) => d.clave === clave);
+    return {
+      ...kpi,
+      dimension_tipo: tipoDeDimension(clave, dimensiones),
+      ...(declarada ? { dimension_abierta: declarada.abierta } : {}),
+    };
+  });
+}
+
+/** Si el filtro por empleados (y el de departamentos) tiene sentido: solo cuando alguno de los
+ * KPIs elegidos desglosa por PERSONA (ids de usuario). Con un KPI por estado, por mesero o por
+ * unidad el filtro compararia ids de otra cosa y devolveria vacio. */
+export function muestraFiltroDePersonas(kpiInfos) {
+  return (kpiInfos || []).some((info) => (info?.dimension_tipo ?? tipoDeDimension(info?.dimensiones?.[0])) === "persona");
 }
 
 // Los nombres de entidad que la API manda junto a los totales (`rango_a.etiquetas`,
@@ -198,12 +247,13 @@ export function kpiSeriesLabel(kpiInfo, index) {
 // alguien una categoria real detras de un "Otros" que nunca hacia falta.
 export const DIMENSIONES_ABIERTAS = new Set(["empleado", "producto"]);
 
-export function buildPieData(snapshot, labelForId, othersLabel, agruparPorPeriodo, dimension) {
+export function buildPieData(snapshot, labelForId, othersLabel, agruparPorPeriodo, dimension, abiertaDeclarada) {
   const porA = entradasPorModo(snapshot?.rango_a, agruparPorPeriodo);
   const entradas = agruparPorPeriodo
     ? Object.entries(porA).sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0))
     : Object.entries(porA).sort((x, y) => y[1] - x[1]);
-  if (!DIMENSIONES_ABIERTAS.has(dimension)) {
+  const abierta = abiertaDeclarada ?? DIMENSIONES_ABIERTAS.has(dimension);
+  if (!abierta) {
     return entradas.map(([id, valor]) => ({ id, name: labelForId(id), value: valor }));
   }
   const principales = entradas.slice(0, CATEGORICAL.length);

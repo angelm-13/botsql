@@ -376,7 +376,12 @@ class FacturamaSandboxProvider(StampingProvider):
                 result = json.loads(response.read().decode("utf-8"))
             stamp = result.get("Complement", {}).get("TaxStamp", {})
             reference = stamp.get("Uuid") or result.get("Uuid") or result.get("Id")
-            return StampingResult("stamped", reference, {"http_status": response.status, "facturama_id": result.get("Id")}, xml=result.get("Xml"))
+            # La respuesta del timbrado trae el Id pero no el XML: hay que
+            # pedirlo aparte. Si la descarga falla el CFDI ya esta timbrado en
+            # el PAC, asi que no se convierte en error; queda recuperable con
+            # download_xml() usando el facturama_id guardado en la operacion.
+            xml = result.get("Xml") or self.download_xml(result.get("Id"))
+            return StampingResult("stamped", reference, {"http_status": response.status, "facturama_id": result.get("Id")}, xml=xml)
         except HTTPError as exc:
             # El motivo del rechazo viaja en el cuerpo de la respuesta: sin el,
             # un 400 de validacion no dice que corregir.
@@ -391,6 +396,27 @@ class FacturamaSandboxProvider(StampingProvider):
             )
         except (TimeoutError, socket.timeout, URLError):
             return StampingResult("uncertain", error_code="provider_timeout")
+
+    DOWNLOAD_TYPE = "issued"
+
+    def download_xml(self, facturama_id):
+        """XML timbrado de un CFDI emitido (GET /api/Cfdi/xml/<tipo>/<id>); None si no se pudo."""
+        if not facturama_id:
+            return None
+        request = Request(
+            f"{self.base_url}/api/Cfdi/xml/{self.DOWNLOAD_TYPE}/{facturama_id}",
+            headers={"Authorization": self._authorization_header()},
+            method="GET",
+        )
+        try:
+            with urlopen(request, timeout=self.timeout) as response:
+                body = json.loads(response.read().decode("utf-8"))
+            content = body.get("Content") if isinstance(body, dict) else None
+            if not content:
+                return None
+            return base64.urlsafe_b64decode(content.encode("utf-8")).decode("utf-8")
+        except (HTTPError, TimeoutError, socket.timeout, URLError, ValueError):
+            return None
 
     def reconcile(self, reference):
         return StampingResult("uncertain", reference, error_code="reconciliation_required")
@@ -475,6 +501,7 @@ class FacturamaMultiemisorProvider(FacturamaSandboxProvider):
 
     name = "facturama_multiemisor"
     CFDIS_PATH = "/api-lite/3/cfdis"
+    DOWNLOAD_TYPE = "issuedLite"
     CSDS_PATH = "/api-lite/csds"
 
     def build_request_body(self, payload):
