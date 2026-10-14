@@ -235,6 +235,27 @@ class TestProjectWorkflowService(BackendTestCase):
         en_proceso = transition_project(project, {"status": "in_progress"}, self.manager)
         self.assertEqual("in_progress", en_proceso["proyect_status"])
 
+    def test_project_with_unreceived_material_needs_a_reason_to_start(self):
+        """Arrancar con material por recibir exige motivo de quien autoriza."""
+        from app.models.proyect_material_need import ProyectMaterialNeed
+
+        project = self._create()["id_proyect"]
+        transition_project(project, {"status": "authorized"}, self.manager)
+        self._add_task(project)
+        with transaction_context() as db:
+            db.add(ProyectMaterialNeed(
+                id_proyect=project, description="Lamina", quantity=5, created_by=11))
+        transition_project(project, {"status": "waiting_material"}, self.manager)
+
+        with self.assertRaises(AppError) as raised:
+            transition_project(project, {"status": "in_progress"}, self.manager)
+        self.assertEqual("errors.project_material_pending", raised.exception.message_key)
+        self.assertEqual(1, get_project_detail(project, self.manager)["material_readiness"]["not_ordered"])
+
+        en_proceso = transition_project(
+            project, {"status": "in_progress", "reason": "Llega el lunes"}, self.manager)
+        self.assertEqual("in_progress", en_proceso["proyect_status"])
+
     def test_project_cannot_be_completed_with_open_tasks(self):
         """No se completa el proyecto si todavia hay tareas sin cerrar."""
         project = self._create()["id_proyect"]

@@ -2556,6 +2556,7 @@
     "project_not_editable": "O projeto não pode mais ser editado no status atual.",
     "project_open_tasks": "Não é possível entregar o projeto: ainda há tarefas em aberto.",
     "project_requires_task": "Não é possível iniciar o projeto: adicione ao menos uma tarefa antes de movê-lo para em andamento.",
+    "project_material_pending": "O projeto ainda tem material não recebido. Para iniciar mesmo assim, informe um motivo.",
     "project_tasks_not_completed": "Não é possível concluir o projeto: ainda há tarefas em aberto."
   },
   "logistics": {
