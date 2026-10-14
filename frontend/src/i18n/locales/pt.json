@@ -3360,6 +3360,10 @@
     },
     "form": {
       "employee_no": "Número do colaborador",
+
+      "type_label": "Tipo",
+
+      "gender_label": "Gênero",
       "name": "Nome",
       "type": {
         "options": {
@@ -3381,6 +3385,12 @@
         "to": "a"
       }
     },
+    "directory": {
+      "eyebrow": "DIRETÓRIO",
+      "title": "Pessoas do dispositivo"
+
+    },
+
     "person": {
       "no_name": "Sem nome",
       "default_employee": "Colaborador"

@@ -3728,6 +3728,10 @@
     },
     "form": {
       "employee_no": "Número de empleado",
+
+      "type_label": "Tipo",
+
+      "gender_label": "Género",
       "name": "Nombre",
       "type": {
         "options": {
@@ -3749,6 +3753,12 @@
         "to": "a"
       }
     },
+    "directory": {
+      "eyebrow": "DIRECTORIO",
+      "title": "Personas del dispositivo"
+
+    },
+
     "person": {
       "no_name": "Sin nombre",
       "default_employee": "Empleado"

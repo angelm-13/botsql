@@ -3675,6 +3675,10 @@
     },
     "form": {
       "employee_no": "Employee number",
+
+      "type_label": "Type",
+
+      "gender_label": "Gender",
       "name": "Name",
       "type": {
         "options": {
@@ -3696,6 +3700,12 @@
         "to": "to"
       }
     },
+    "directory": {
+      "eyebrow": "DIRECTORY",
+      "title": "Device people"
+
+    },
+
     "person": {
       "no_name": "No name",
       "default_employee": "Employee"
