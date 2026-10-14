@@ -736,6 +736,7 @@ def to_buy(user_data: dict, *, solo_faltantes: bool = True) -> dict:
                     ProyectMaterialNeed.review_result != "returned"),
                 Proyect.deletion_date.is_(None),
                 Proyect.proyect_status.notin_(PROYECTOS_QUE_YA_NO_COMPRAN),
+                or_(Proyect.management_status.is_(None), Proyect.management_status != "cancelado"),
             )
         ).all()
 

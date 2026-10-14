@@ -90,3 +90,31 @@ class TestProyectoContraOrdenes(BaseRecepcion):
         self._en_espera_con_tarea()
         self.assertTrue(self._estado()["ready"])
         self.assertEqual("in_progress", self._arrancar()["proyect_status"])
+
+    def test_a_project_with_a_live_purchase_order_cannot_be_denied(self):
+        id_orden = self._comprada()
+        id_proyecto = next(l["id_proyect"] for l in self._leer(id_orden)["lines"]
+                           if l.get("id_proyect"))
+        with transaction_context() as db:  # solo un proyecto bloqueado puede negarse
+            db.get(Proyect, id_proyecto).proyect_status = "blocked"
+        with self.assertRaises(AppError) as e:
+            transition_project(id_proyecto, {"status": "denied", "reason": "No procede"},
+                               self.gerente_datos)
+        self.assertEqual("errors.project_open_orders", e.exception.message_key)
+
+    def test_the_public_api_default_rate_limit_reads_the_environment(self):
+        import os
+        from app.routes.public_catalog import _default_public_api_rate_limit
+
+        os.environ["PUBLIC_API_RATE_LIMIT_DEFAULT"] = "7"
+        try:
+            self.assertEqual(7, _default_public_api_rate_limit())
+        finally:
+            del os.environ["PUBLIC_API_RATE_LIMIT_DEFAULT"]
+
+    def test_a_cancelled_project_cannot_be_bought_for(self):
+        with transaction_context() as db:
+            db.get(Proyect, PROYECTO_B).management_status = "cancelado"
+        respuesta = self._crear()  # incluye una necesidad del proyecto cancelado
+        self.assertEqual(409, respuesta.status_code)
+        self.assertEqual("errors.need_not_open", self._error(respuesta))

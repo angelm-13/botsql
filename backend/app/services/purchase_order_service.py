@@ -381,7 +381,8 @@ def _renglon_de_necesidad(db, dato: dict, tomadas: dict, excepto_orden) -> dict:
             "id_proyect_material_need": id_necesidad,
             "review_result": necesidad.review_result})
     proyecto = db.get(Proyect, necesidad.id_proyect)
-    if proyecto is None or proyecto.proyect_status in PROYECTOS_QUE_YA_NO_COMPRAN:
+    if (proyecto is None or proyecto.proyect_status in PROYECTOS_QUE_YA_NO_COMPRAN
+            or proyecto.management_status == "cancelado"):
         raise AppError("errors.need_not_open", 409, {"id_proyect_material_need": id_necesidad})
     en_orden = tomadas.get(id_necesidad)
     if en_orden is not None and en_orden[0] != excepto_orden:

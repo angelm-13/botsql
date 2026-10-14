@@ -1463,6 +1463,12 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
                 {"target_status": validated_target, "scope": scope, "is_leader": leads_it},
             )
 
+        if validated_target == "denied":
+            # Igual que cancelar por gerencia: no se niega un proyecto con compras vivas.
+            ordenes = _ordenes_de_compra_vivas(db, project.id_proyect)
+            if ordenes:
+                raise AppError("errors.project_open_orders", 409, {"open_orders": ordenes})
+
         if validated_target == "in_progress" and current == "waiting_material":
             # El taller no arranca un proyecto sin tener que trabajar: si no
             # hay ni una tarea capturada todavia, no hay nada que ejecutar.
