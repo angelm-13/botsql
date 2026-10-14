@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from app.models import (
     Proyect, PurchaseBudget, PurchaseBudgetEvent, PurchaseOrder, PurchaseOrderLine, User,
@@ -54,8 +54,13 @@ def _importe_de_renglon(renglon) -> Decimal:
     return Decimal(renglon.quantity) * Decimal(renglon.unit_cost)
 
 
-def comprometido(db, ids_proyecto, *, moneda: str, excepto_orden: int | None = None) -> dict[int, Decimal]:
-    """Lo comprometido por proyecto, en esa moneda, sin contar `excepto_orden`."""
+def comprometido(db, ids_proyecto, *, moneda: str, excepto_orden: int | None = None,
+                 pendientes_anteriores_a: int | None = None) -> dict[int, Decimal]:
+    """Lo comprometido por proyecto, en esa moneda, sin contar `excepto_orden`.
+
+    Con `pendientes_anteriores_a`, las ordenes todavia por autorizar solo cuentan si se
+    enviaron antes que esa: al autorizar, una orden posterior en la fila no le quita su lugar.
+    """
     ids = {int(i) for i in ids_proyecto if i}
     if not ids:
         return {}
@@ -75,10 +80,14 @@ def comprometido(db, ids_proyecto, *, moneda: str, excepto_orden: int | None = N
     )
     if excepto_orden is not None:
         consulta = consulta.where(PurchaseOrder.id_purchase_order != int(excepto_orden))
+    if pendientes_anteriores_a is not None:
+        consulta = consulta.where(or_(
+            PurchaseOrder.order_status != "pending_authorization",
+            PurchaseOrder.id_purchase_order < int(pendientes_anteriores_a)))
     return {int(i): _dinero(total) for i, total in db.execute(consulta).all()}
 
 
-def evaluar_orden(db, orden: PurchaseOrder, renglones) -> list[dict]:
+def evaluar_orden(db, orden: PurchaseOrder, renglones, *, al_autorizar: bool = False) -> list[dict]:
     """Una fila por proyecto de la orden QUE TENGA presupuesto.
 
     Cada fila dice el presupuesto, lo ya comprometido por las demas ordenes, lo que pide
@@ -92,7 +101,10 @@ def evaluar_orden(db, orden: PurchaseOrder, renglones) -> list[dict]:
     if not pedido:
         return []
     presupuestos = {int(b.id_proyect): b for b in db.scalars(
-        select(PurchaseBudget).where(PurchaseBudget.id_proyect.in_(list(pedido))))}
+        # Se bloquean las filas: dos ordenes enviadas a la vez no deben pasar ambas
+        # por el mismo saldo.
+        select(PurchaseBudget).where(PurchaseBudget.id_proyect.in_(list(pedido)))
+        .order_by(PurchaseBudget.id_proyect).with_for_update())}
     if not presupuestos:
         return []
     proyectos = {int(i): (f, t) for i, f, t in db.execute(
@@ -104,7 +116,9 @@ def evaluar_orden(db, orden: PurchaseOrder, renglones) -> list[dict]:
         presupuesto = presupuestos[id_proyecto]
         pide = _dinero(pedido[id_proyecto])
         ya = comprometido(db, [id_proyecto], moneda=presupuesto.currency,
-                          excepto_orden=orden.id_purchase_order).get(id_proyecto, Decimal("0"))
+                          excepto_orden=orden.id_purchase_order,
+                          pendientes_anteriores_a=orden.id_purchase_order if al_autorizar else None,
+                          ).get(id_proyecto, Decimal("0"))
         monto = _dinero(presupuesto.amount)
         folio, titulo = proyectos.get(id_proyecto, (None, None))
         fila = {

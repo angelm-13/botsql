@@ -100,9 +100,22 @@ def _parse_amount(value, field) -> Decimal:
         amount = Decimal(str(value))
     except (InvalidOperation, TypeError, ValueError) as exc:
         raise AppError("errors.invalid_field", 400, {"field": field}) from exc
-    if amount <= 0:
+    if not amount.is_finite():
+        raise AppError("errors.invalid_field", 400, {"field": field})
+    # Se mide ya redondeado: 0.001 es positivo pero se guardaria como 0.00.
+    if _money(amount) <= 0:
         raise AppError("errors.payment_amount_must_be_positive", 400, {"field": field})
     return _money(amount)
+
+
+def _parse_exchange_rate(value) -> Decimal:
+    try:
+        rate = Decimal(str(value or 1))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise AppError("errors.invalid_field", 400, {"field": "exchange_rate"}) from exc
+    if not rate.is_finite() or rate <= 0:
+        raise AppError("errors.invalid_field", 400, {"field": "exchange_rate"})
+    return rate
 
 
 def _parse_date(value, field):
@@ -115,6 +128,10 @@ def _parse_date(value, field):
 
 
 def _require_deferred_invoice(invoice):
+    # Los abonos son de un ingreso PPD, no de una nota de credito ni de un REP.
+    if str(invoice.tipo_de_comprobante or "").strip().upper() in {"E", "P", "T"}:
+        raise AppError("errors.payment_invoice_status_not_allowed", 409,
+                       {"tipo_de_comprobante": invoice.tipo_de_comprobante})
     metodo = str(invoice.metodo_pago or "").strip().upper()
     if metodo != DEFERRED_METHOD:
         raise AppError(
@@ -197,6 +214,7 @@ def register_payment(invoice_id, payload, user_data) -> dict:
             select(InvoicePayment).where(InvoicePayment.idempotency_key == key)
         ).first()
         if previo:
+            _load_invoice(db, invoice_id, user_data)  # el reintento tambien se autoriza
             # Una llave de idempotencia promete que repetir la MISMA peticion no
             # cobra dos veces. No promete nada sobre repetir la llave con otros
             # datos, y el guardia anterior solo comparaba la factura: abonar 100
@@ -269,7 +287,7 @@ def register_payment(invoice_id, payload, user_data) -> dict:
             paid_at=paid_at,
             payment_form=payment_form,
             currency=moneda or str(invoice.currency or "MXN")[:3].upper(),
-            exchange_rate=Decimal(str(payload.get("exchange_rate") or 1)),
+            exchange_rate=_parse_exchange_rate(payload.get("exchange_rate")),
             instalment=parcialidad,
             previous_balance=saldo_anterior,
             amount=amount,

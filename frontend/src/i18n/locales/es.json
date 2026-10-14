@@ -2752,6 +2752,8 @@
     "voucher_asset_not_applicable": "Ese producto se cuenta por cantidad, no por piezas: «una pieza de cemento» no existe.",
     "voucher_asset_product_mismatch": "Esa pieza es de otro producto: el vale diría que se llevaron algo que no salió.",
     "voucher_line_already_closed": "Ese renglón ya se devolvió. Volver a cerrarlo perdería la fecha en que regresó.",
+    "voucher_line_not_delivered_yet": "Ese renglón todavía no sale del almacén: no se puede devolver lo que no se ha entregado.",
+    "invoice_cannot_delete_stamped": "Una factura timbrada no se borra: se cancela.",
     "voucher_line_not_a_loan": "Ese renglón es una devolución, no un préstamo: no hay nada que devolver.",
     "voucher_due_date_in_the_past": "La fecha de regreso ya pasó: el vale nacería vencido.",
     "material_attribute_already_exists": "Esa familia ya tiene una característica con ese nombre. Con dos vivas, la mitad de los materiales llena una y la mitad la otra.",

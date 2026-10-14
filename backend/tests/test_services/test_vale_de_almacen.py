@@ -1179,6 +1179,34 @@ class TestLaDevolucionEsPorRenglon(BaseVale):
         self.assertEqual(tras_salir + 5, self._saldo(RACK))
 
 
+class TestRegresionesDeLaAuditoria(BaseVale):
+    def test_a_line_not_yet_delivered_cannot_be_returned(self):
+        self.surtir(10, NAVE)
+        antes = self._saldo(NAVE)
+        r = self._prevale([self._linea_cantidad(4)])
+        with self.assertRaises(AppError) as e:
+            devolver_renglon(r["lines"][0]["id_nm_incident_product"], {}, ACTOR)
+        self.assertEqual(409, e.exception.status_code)
+        self.assertEqual(antes, self._saldo(NAVE), "no suma lo que nunca salio")
+
+    def test_a_direct_voucher_cannot_take_what_a_prevoucher_reserved(self):
+        self.surtir(5, NAVE)
+        r = self._prevale([self._linea_cantidad(5)])
+        autorizar_vale(r["voucher"]["id_incident"], {}, OTRO_ACTOR)
+        with self.assertRaises(AppError) as e:
+            self._vale([self._linea_cantidad(5)])
+        self.assertEqual(409, e.exception.status_code)
+        self.assertEqual(5, self._saldo(NAVE))
+
+    def test_a_fractional_or_boolean_quantity_is_rejected(self):
+        self.surtir(10, NAVE)
+        for cantidad in (2.9, True):
+            with self.subTest(cantidad=cantidad), self.assertRaises(AppError) as e:
+                self._vale([self._linea_cantidad(cantidad)])
+            self.assertEqual(400, e.exception.status_code)
+
+
+
 if __name__ == "__main__":
     unittest.main()
 

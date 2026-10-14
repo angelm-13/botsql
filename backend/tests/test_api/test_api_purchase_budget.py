@@ -87,3 +87,17 @@ class TestPresupuestoDeCompras(BaseOrdenes):
         cuerpo = self.json(self._accion(self._id(self._crear()), "submit"))
         self.assertEqual("authorized", cuerpo["order_status"])
         self.assertEqual([], cuerpo["budget"])
+
+    def test_authorizing_is_not_blocked_by_a_later_pending_order(self):
+        """A y B caben cada una sola pero no juntas: B sale marcada, A se autoriza sin nota."""
+        self._politica(authorize_above=0)
+        self._fijar(PROYECTO_A, 5000)
+        primera = self._id(self._crear())
+        self.assertFalse(self.json(self._accion(primera, "submit"))["exceeds_budget"])
+        segunda = self._id(self._crear(lineas=[
+            {"description": "Mas soldadura", "quantity": 1, "unit_cost": 2000,
+             "id_proyect": PROYECTO_A}]))
+        self.assertTrue(self.json(self._accion(segunda, "submit"))["exceeds_budget"])
+        # Pendiente y sin marca: la primera se autoriza sin motivo pese a la segunda.
+        r = self._accion(primera, "authorize", self._gerente(2))
+        self.assertEqual(200, r.status_code, r.get_data(as_text=True))

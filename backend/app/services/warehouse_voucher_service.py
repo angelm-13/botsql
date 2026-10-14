@@ -227,6 +227,9 @@ def _entero(valor, campo, *, obligatorio=True):
         if obligatorio:
             raise AppError("errors.required_field", 400, {"field": campo})
         return None
+    # `int(2.9)` es 2 y `int(True)` es 1: se guardaban en silencio.
+    if isinstance(valor, bool) or (isinstance(valor, float) and not valor.is_integer()):
+        raise AppError("errors.invalid_field", 400, {"field": campo})
     try:
         return int(valor)
     except (TypeError, ValueError) as exc:
@@ -899,10 +902,10 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
         # Un prevale es una peticion, no una salida, pero pedir mas de lo que
         # hay en esa ubicacion no es una peticion que alguien pueda surtir:
         # nace imposible y el almacen lo descubre hasta que intenta autorizarlo.
-        # El vale de verdad ya lo rechaza al sacar el material.
-        if como_borrador:
-            _validar_herramientas_disponibles(db, validados)
-            _comprobar_existencia_del_borrador(db, validados)
+        # El vale directo tambien: sacar del libro no mira lo apartado por otros
+        # prevales, y sin esto se llevaria lo que ya esta comprometido.
+        _validar_herramientas_disponibles(db, validados)
+        _comprobar_existencia_del_borrador(db, validados)
 
         # La misma pieza dos veces en un mismo vale es una captura doble: solo
         # puede salir una vez. Sin esta comprobacion el segundo renglon falla
@@ -1240,6 +1243,13 @@ def devolver_renglon(id_line, payload: dict, user_data: dict) -> dict:
             raise AppError("errors.voucher_line_already_closed", 409,
                            {"id_nm_incident_product": renglon.id_nm_incident_product,
                             "close_date": renglon.close_date.isoformat()})
+        # Solo vuelve lo que ya salio: en borrador o en espera el libro no ha
+        # movido nada, y devolverlo sumaria existencia que nunca salio.
+        estado_del_vale = _vale(db, renglon.id_incident).incident_status
+        if estado_del_vale in (BORRADOR, EN_ESPERA, CANCELADO):
+            raise AppError("errors.voucher_line_not_delivered_yet", 409,
+                           {"id_nm_incident_product": renglon.id_nm_incident_product,
+                            "incident_status": estado_del_vale})
 
         nota = _texto(payload.get("note"), "note", largo=300)
         # Quien la trae de vuelta, solo si no es el responsable del vale: un

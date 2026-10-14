@@ -850,7 +850,7 @@ def authorize_order(id_order, payload: dict, user_data: dict) -> dict:
             raise AppError("errors.purchase_same_person", 403, {"action": "authorize"})
         # Otras ordenes pudieron comprometer el presupuesto desde que esta se envio.
         evaluacion = presupuesto_de_compras.evaluar_orden(
-            db, orden, _renglones(db, orden.id_purchase_order))
+            db, orden, _renglones(db, orden.id_purchase_order), al_autorizar=True)
         orden.exceeds_budget = presupuesto_de_compras.excede(evaluacion)
         orden.budget_detail = json.dumps(evaluacion) if evaluacion else None
         if orden.exceeds_budget and not nota:

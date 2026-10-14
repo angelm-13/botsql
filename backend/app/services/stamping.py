@@ -703,7 +703,7 @@ def next_folio_if_missing(db, invoice) -> None:
 def _load_draft(db, invoice_id, user_data):
     """Carga la factura, sus partidas autorizadas y arma el borrador CFDI."""
     invoice = db.get(Invoice, invoice_id)
-    if not invoice or not invoice.id_proyect:
+    if not invoice or invoice.deletion_date is not None or not invoice.id_proyect:
         raise AppError("errors.resource_not_found", 404)
     actor_project = user_data.get("id_proyect") or user_data.get("project_id")
     unrestricted = bool(user_data.get("is_superuser") or user_data.get("is_bootstrap_admin"))
@@ -801,7 +801,7 @@ def stamp_invoice(invoice_id, idempotency_key, user_data, provider=None):
             return previous.serialize(), False
 
         pending_invoice = db.get(Invoice, invoice_id)
-        if not pending_invoice:
+        if not pending_invoice or pending_invoice.deletion_date is not None:
             raise AppError("errors.resource_not_found", 404)
         # Timbrar de nuevo con otra llave de idempotencia generaba un segundo UUID
         # sobre la misma factura (y revivia una cancelada). Una factura ya

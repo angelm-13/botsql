@@ -299,11 +299,23 @@ def devolver_linea(user_data, id_line):
 
 @bp_warehouse_voucher.route("/vouchers/lines/<id_line>/confirm-custody", methods=["POST"])
 @token_required
+def confirmar_custodia_de_renglon(user_data, id_line):
+    """El supervisor dueño del vale confirma que recupero la pieza del
+    operador al que se la habia entregado.
+
+    Sin `require_entity_permission` a proposito: es SU vale (el candado vive en el servicio).
+    """
+    return jsonify(confirmar_recepcion_de_renglon(id_line, user_data))
+
+
+@bp_warehouse_voucher.route("/vouchers/lines/<id_line>/report-status", methods=["POST"])
+@token_required
 @require_entity_permission("warehouse_voucher", "create")
 def reportar_estado(user_data, id_line):
     """Reportar que una herramienta salió dañada, extraviada o destruida.
 
-    Sin `require_entity_permission` a proposito: es SU vale (el candado vive en el servicio).
+    Cuerpo: `{"id_incident_type": <tipo>, "note": "..."}`
+    donde `id_incident_type` es el tipo dañado/extravío/destrucción.
     """
     return jsonify(reportar_estado_herramienta(id_line, _cuerpo(), user_data)), 201
 
