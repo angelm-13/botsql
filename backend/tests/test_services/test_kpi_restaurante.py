@@ -571,10 +571,25 @@ class KpiRestauranteTest(unittest.TestCase):
         self._orden(97002, [(1, 50)], visita=VISITA_A, estado="entregado")
         self.assertEqual(self._mesas(ocupada_con_cuenta_pendiente=2), self._foto(kpis_restaurante.mesas_ocupadas_query))
 
-    def test_una_orden_vacia_en_borrador_tambien_cuenta_como_sin_pagar(self):
+    def test_un_borrador_vacio_se_ignora_no_retiene_la_mesa_ni_cuenta_como_orden(self):
+        q = kpis_restaurante.mesas_ocupadas_query
+        # Pagada + el lugar vacio de otro comensal: la mesa esta por liberar.
         self._orden(97001, [(1, 100)], visita=VISITA_A)
         self._orden(97002, [], visita=VISITA_A, estado="borrador")
-        self.assertEqual(self._mesas(ocupada_con_cuenta_pendiente=2), self._foto(kpis_restaurante.mesas_ocupadas_query))
+        self.assertEqual(self._mesas(ocupada_con_cuenta_pendiente=1, por_liberar=1), self._foto(q))
+        # Solo borradores vacios: es como una visita sin ordenes (ocupada, aun sin cuenta), no "por liberar".
+        self._orden(97003, [], visita=VISITA_A2, estado="borrador")
+        self.assertEqual(self._mesas(ocupada_con_cuenta_pendiente=1, por_liberar=1), self._foto(q))
+        # En cambio un borrador CON partidas si es una cuenta en curso y retiene la mesa.
+        self._orden(97004, [(1, 5)], visita=VISITA_A, estado="borrador")
+        self.assertEqual(self._mesas(ocupada_con_cuenta_pendiente=2), self._foto(q))
+
+    def test_pedidos_del_dia_ignora_los_borradores_vacios_y_con_partidas(self):
+        q = kpis_restaurante.pedidos_del_dia_query
+        self._orden(97001, [(1, 10)], enviada=DIA)
+        self._orden(97002, [], estado="borrador", enviada=DIA)        # vacio: se ignora
+        self._orden(97003, [(1, 10)], estado="borrador", enviada=DIA)  # aun no es un pedido hecho
+        self.assertEqual({"cobrado": 1, "entregado_sin_cobrar": 0, "en_curso": 0}, self._foto(q))
 
     def test_una_visita_con_todas_sus_ordenes_pagadas_es_por_liberar_aunque_nadie_la_cerro(self):
         self._orden(97001, [(1, 100)], visita=VISITA_A)

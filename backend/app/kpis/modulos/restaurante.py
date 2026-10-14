@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from sqlalchemy import case, exists, func, select
+from sqlalchemy import and_, case, exists, func, select
 
 from app.models.restaurant import (
     RestaurantCashSession, RestaurantOrder, RestaurantOrderItem, RestaurantTable, RestaurantVisit,
@@ -317,6 +317,7 @@ PEDIDOS_COLORES = {PEDIDO_COBRADO: "#22b573", PEDIDO_ENTREGADO_SIN_COBRAR: "#f0a
 # Estatus de una orden que ya salio de `borrador` y todavia no se entrega (`ORDER_TRANSITIONS` del servicio).
 ESTATUS_EN_CURSO = ("pedido", "en_preparacion", "listo_para_entrega")
 ESTATUS_ENTREGADO = "entregado"
+ESTATUS_BORRADOR = "borrador"
 
 MESA_LIBRE = "libre"
 MESA_CON_CUENTA_PENDIENTE = "ocupada_con_cuenta_pendiente"
@@ -388,16 +389,24 @@ def mesas_ocupadas_query(session, fecha_inicio, fecha_fin, filtros_dimension, ac
     Una mesa se libera cuando el mesero CIERRA la visita (`RestaurantService.close_visit`), NO al cobrar:
     `pay_order` y `pay_visit` solo marcan la orden `pagado` y la visita sigue `active` hasta que alguien la
     cierra. Las categorias no se traslapan:
-    * `por_liberar` ("Pagada, aun ocupada"): visita `active` con al menos UNA orden (no borrada) y TODAS
-      pagadas. Si el mesero no la cierra, sigue apareciendo asi.
+    * `por_liberar` ("Pagada, aun ocupada"): visita `active` con al menos UNA orden (no borrada, y sin contar
+      borradores vacios) y TODAS pagadas. Si el mesero no la cierra, sigue apareciendo asi.
     * `ocupada_con_cuenta_pendiente`: el resto de las visitas `active`: alguna orden sin pagar, o ninguna
-      orden todavia (recien sentados). Una orden vacia en `borrador` cuenta como sin pagar.
+      orden todavia (recien sentados). Un `borrador` sin partidas se IGNORA (no es una orden ni retiene la mesa).
     * `libre`: mesa activa y no borrada sin visita `active`.
     Las visitas para llevar no tienen mesa y no cuentan. La suma de las tres es el numero de mesas activas.
     """
+    # Un borrador SIN partidas (el lugar de un comensal que aun no pide nada) se IGNORA: ni retiene la mesa ni
+    # cuenta como orden. Un borrador con partidas si es una cuenta en curso.
+    borrador_vacio = and_(
+        RestaurantOrder.status == ESTATUS_BORRADOR,
+        ~exists(select(RestaurantOrderItem.id_restaurant_order_item).where(
+            RestaurantOrderItem.id_restaurant_order == RestaurantOrder.id_restaurant_order)),
+    )
     ordenes_vivas = (
         RestaurantOrder.id_restaurant_visit == RestaurantVisit.id_restaurant_visit,
         RestaurantOrder.deletion_date.is_(None),
+        ~borrador_vacio,
     )
     con_ordenes = exists(select(RestaurantOrder.id_restaurant_order).where(*ordenes_vivas))
     sin_pagar = exists(select(RestaurantOrder.id_restaurant_order).where(*ordenes_vivas, RestaurantOrder.status != ESTADO_DE_VENTA))
