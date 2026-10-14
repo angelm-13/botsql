@@ -4614,5 +4614,22 @@
     "bloqueado": "Blocked",
     "terminado": "Finished",
     "entregado": "Delivered"
+  },
+  "kpi_dashboard": {
+    "example_banner": "Preview with sample data. This is how this KPI would look; it is not available for your role or has no data yet",
+    "example_badge": "SAMPLE",
+    "example_tag": "Sample",
+    "example_reason_sin_permiso": "Not available for your role.",
+    "example_reason_sin_datos": "No data yet.",
+    "example_reason_modulo": "Module not enabled.",
+    "example_view": "View sample",
+    "example_hide": "Hide sample",
+    "example_cannot_save": "A sample KPI is only a preview: it cannot be added to the dashboard.",
+    "example_cannot_combine": "Cannot combine: a sample KPI can only be viewed on its own, not mixed with real KPIs.",
+    "example_no_data_hint": "No data in the selected range.",
+    "example_entity": "Sample",
+    "example_category": "Category",
+    "example_item": "Sample item",
+    "example_person": "Sample person"
   }
 }
