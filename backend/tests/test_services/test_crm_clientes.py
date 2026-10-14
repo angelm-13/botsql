@@ -11,13 +11,13 @@ def _cliente(nombre, rfc, **extra):
 
 
 class TestClientesYContactos(BackendTestCase):
-    def test_the_same_rfc_cannot_be_registered_twice_even_with_other_case_or_spaces(self):
-        _cliente("Uno", "AAA010101AAA")
+    def test_a_repeated_rfc_is_allowed_but_stored_normalised(self):
+        """Multiemisor: la misma razon social puede tener varias fichas emisoras."""
+        uno = _cliente("Uno", "AAA010101AAA")
+        dos = _cliente("Dos", " aaa010101aaa ")
 
-        for rfc in ("AAA010101AAA", " aaa010101aaa "):
-            with self.subTest(rfc=rfc), self.assertRaises(AppError) as caja:
-                _cliente("Otro", rfc)
-            self.assertEqual(409, caja.exception.status_code)
+        self.assertEqual("AAA010101AAA", dos["tax_id"])
+        self.assertNotEqual(uno["id_customer_supplier"], dos["id_customer_supplier"])
 
     def test_generic_rfcs_may_repeat(self):
         _cliente("Publico 1", "XAXX010101000")

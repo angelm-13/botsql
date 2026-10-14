@@ -23,6 +23,7 @@ export const getDocuments = (params = {}) => request("/document/", { params });
 export const getDocument = (id) => request(`/document/${id}`);
 export const getDocumentCategories = () => request("/document/categories");
 export const getDocumentEmployees = () => request("/document/employees");
+export const getDocumentUploaders = () => request("/document/uploaders");
 export const uploadDocument = (payload, file) => {
   const formData = new FormData();
   Object.entries(payload).forEach(([key, value]) => { if (value !== undefined && value !== null && value !== "") formData.append(key, value); });
@@ -476,6 +477,9 @@ export const updateInvoiceMaterialService = (id, payload) => request(`/invoice_m
 export const deleteInvoiceMaterialService = (id) => request(`/invoice_material_service/${id}`, { method: "DELETE" });
 
 export const getAllKpiDefinition = () => request("/kpi_definition/");
+// KPIs que el usuario no puede usar (solo metadatos + motivo), para la vista previa con datos de ejemplo del
+// selector de "Agregar gráfico". No lleva ids ni datos: ver GET /kpi_definition/no_disponibles.
+export const getKpiNoDisponibles = () => request("/kpi_definition/no_disponibles");
 // Catalogo de dimensiones (empleado, mesero, platillo...): clave, etiqueta, tipo y si es abierta.
 export const getKpiDimensions = () => request("/kpi_dimension/");
 export const queryKpiSnapshot = (params = {}) => request("/kpi_snapshot/query", { params });
@@ -550,6 +554,10 @@ export const getOverdueVoucherLines = () => request("/vouchers/overdue");
 export const getAssetStatusSummary = (params = {}) => request("/assets/summary", { params });
 export const closeWarehouseVoucherLine = (idLine, payload = {}) =>
   request(`/vouchers/lines/${idLine}/close`, { method: "POST", body: payload });
+// El dueno del vale confirma que recupero la pieza de quien la recogio -- paso
+// intermedio, no la devolucion al almacen (esa es `closeWarehouseVoucherLine`).
+export const confirmWarehouseVoucherLineCustody = (idLine) =>
+  request(`/vouchers/lines/${idLine}/confirm-custody`, { method: "POST" });
 // El vale COMPLETO: almacen marca "entregado a X" (acto aparte de autorizar) y
 // el supervisor responsable confirma que lo recibio, con o sin observaciones.
 export const deliverWarehouseVoucher = (id, payload = {}) =>
@@ -629,6 +637,9 @@ export const updatePayrollPeriod = (id, payload) => request(`/payroll_period/${i
 export const deletePayrollPeriod = (id) => request(`/payroll_period/${id}`, { method: "DELETE" });
 
 export const getAllPermission = (params = {}) => request("/permission/", { params });
+// Solo id+nombre del rol, sin permiso de entidad -- igual que `getUserOptions` --:
+// quien da de alta usuarios elige un rol sin poder administrar el catalogo.
+export const getPermissionOptions = () => request("/permission/options");
 export const getPermission = (id) => request(`/permission/${id}`);
 export const createPermission = (payload) => request("/permission/", { method: "POST", body: payload });
 export const updatePermission = (id, payload) => request(`/permission/${id}`, { method: "PUT", body: payload });

@@ -21,11 +21,13 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, case, exists, func, select
 
-from app.models.restaurant import RestaurantCashSession, RestaurantOrder, RestaurantOrderItem, RestaurantVisit
+from app.models.restaurant import (
+    RestaurantCashSession, RestaurantOrder, RestaurantOrderItem, RestaurantTable, RestaurantVisit,
+)
 from app.services.restaurant_rules import (
-    condiciones_de_venta, importe_de_renglon, subtotal_por_orden,
+    ESTADO_DE_VENTA, condiciones_de_venta, importe_de_renglon, subtotal_por_orden,
 )
 
 CENTAVOS = Decimal("0.01")
@@ -269,15 +271,15 @@ def tiempo_de_entrega_query(session, fecha_inicio, fecha_fin, filtros_dimension,
 # --- caja ---------------------------------------------------------------------------------
 
 def diferencia_de_caja_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
-    """Diferencia de caja de las sesiones cerradas, CON SIGNO, por cajero y por dia de cierre.
+    """Desviacion de caja: suma de |difference| de cada sesion cerrada, por cajero y por dia de cierre.
 
-    POR CONFIRMAR con negocio (signo, direccion, y si se mide por cajero o por sesion).
-    Mientras tanto:
     * `restaurant_cash_session.difference` = lo contado menos lo esperado
-      (`RestaurantService.close_cash_session`): negativo es faltante, positivo es sobrante. Se
-      suma tal cual, sin valor absoluto, asi que faltantes y sobrantes se compensan.
+      (`RestaurantService.close_cash_session`): negativo es faltante, positivo es sobrante.
+    * Sobrante y faltante pesan igual: se toma el valor absoluto POR SESION y despues se suma, no
+      el absoluto de la suma, para que +100 y -100 del mismo dia den 200 y no se compensen.
     * Solo sesiones `closed` y no borradas; el dia es el de `closed_at`.
     * Cajero: `closed_by_id` (un usuario).
+    * La clave sigue siendo `diferencia_de_caja` (el seed no borra filas: un renombre dejaria una huerfana).
     """
     fecha_col = func.date(RestaurantCashSession.closed_at)
     condiciones = _por_proyecto(
@@ -292,12 +294,138 @@ def diferencia_de_caja_query(session, fecha_inicio, fecha_fin, filtros_dimension
         RestaurantCashSession.id_proyect, actor_project,
     )
     stmt = (
-        select(RestaurantCashSession.closed_by_id, fecha_col.label("fecha"), func.sum(RestaurantCashSession.difference))
+        select(RestaurantCashSession.closed_by_id, fecha_col.label("fecha"), func.sum(func.abs(RestaurantCashSession.difference)))
         .where(*condiciones)
         .group_by(RestaurantCashSession.closed_by_id, fecha_col)
         .order_by(RestaurantCashSession.closed_by_id, fecha_col)
     )
     return session.execute(stmt).all()
+
+
+# --- fotos del dia en curso (agregacion "ultimo") ----------------------------------------------
+#
+# Las tres leen el estado de AHORA, no un periodo: `fecha_inicio` se ignora y la foto se fecha en
+# `fecha_fin`. La corrida frecuente (`app/kpis/frecuencia.py`) las repite cada pocos minutos solo para hoy.
+# Siempre regresan TODAS sus categorias, con 0 si no hay nada: una categoria ausente se leeria como
+# "no calculada". Ninguna usa `sin_asignar`: sus categorias son texto fijo, no entidades que puedan faltar.
+
+PEDIDO_COBRADO = "cobrado"
+PEDIDO_ENTREGADO_SIN_COBRAR = "entregado_sin_cobrar"
+PEDIDO_EN_CURSO = "en_curso"
+PEDIDOS_CATEGORIAS = (PEDIDO_COBRADO, PEDIDO_ENTREGADO_SIN_COBRAR, PEDIDO_EN_CURSO)
+PEDIDOS_COLORES = {PEDIDO_COBRADO: "#22b573", PEDIDO_ENTREGADO_SIN_COBRAR: "#f0a93b", PEDIDO_EN_CURSO: "#2f8fe0"}
+# Estatus de una orden que ya salio de `borrador` y todavia no se entrega (`ORDER_TRANSITIONS` del servicio).
+ESTATUS_EN_CURSO = ("pedido", "en_preparacion", "listo_para_entrega")
+ESTATUS_ENTREGADO = "entregado"
+ESTATUS_BORRADOR = "borrador"
+
+MESA_LIBRE = "libre"
+MESA_CON_CUENTA_PENDIENTE = "ocupada_con_cuenta_pendiente"
+MESA_POR_LIBERAR = "por_liberar"
+MESAS_CATEGORIAS = (MESA_LIBRE, MESA_CON_CUENTA_PENDIENTE, MESA_POR_LIBERAR)
+MESAS_ETIQUETAS = {
+    MESA_LIBRE: "Libre",
+    MESA_CON_CUENTA_PENDIENTE: "Ocupada con cuenta pendiente",
+    MESA_POR_LIBERAR: "Pagada, aún ocupada",
+}
+MESAS_COLORES = {MESA_LIBRE: "#22b573", MESA_CON_CUENTA_PENDIENTE: "#ef6f5c", MESA_POR_LIBERAR: "#2f8fe0"}
+
+
+def pedidos_del_dia_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
+    """Pedidos HECHOS en `fecha_fin`, en tres categorias que no se traslapan segun su estatus de ahora.
+
+    * Pedido hecho: orden no borrada que ya salio de `borrador`, y cuyo dia de envio a cocina
+      (`sent_at`; `started_at` si falta) es `fecha_fin`. Un `borrador` no cuenta.
+    * `cobrado` = `pagado`; `entregado_sin_cobrar` = `entregado`; `en_curso` = `pedido`,
+      `en_preparacion` o `listo_para_entrega`.
+    * La suma de las tres es el total de pedidos hechos ese dia. Se agrupa por el dia en que se HIZO el
+      pedido, no por el de cobro (para eso esta `ventas_restaurante`): una orden enviada ayer y cobrada hoy
+      es de ayer.
+    """
+    dia = func.date(func.coalesce(RestaurantOrder.sent_at, RestaurantOrder.started_at))
+    categoria = case(
+        (RestaurantOrder.status == ESTADO_DE_VENTA, PEDIDO_COBRADO),
+        (RestaurantOrder.status == ESTATUS_ENTREGADO, PEDIDO_ENTREGADO_SIN_COBRAR),
+        else_=PEDIDO_EN_CURSO,
+    )
+    condiciones = _por_proyecto(
+        [
+            RestaurantOrder.deletion_date.is_(None),
+            RestaurantOrder.status.in_((ESTADO_DE_VENTA, ESTATUS_ENTREGADO, *ESTATUS_EN_CURSO)),
+            dia == fecha_fin,
+        ],
+        RestaurantOrder.id_proyect, actor_project,
+    )
+    stmt = select(categoria, func.count(RestaurantOrder.id_restaurant_order)).where(*condiciones).group_by(categoria)
+    conteos = {cat: int(n) for cat, n in session.execute(stmt).all()}
+    return [(cat, fecha_fin, conteos.get(cat, 0)) for cat in PEDIDOS_CATEGORIAS]
+
+
+def cuentas_sin_cobrar_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
+    """Monto (subtotal, sin propina) de las ordenes ENTREGADAS que todavia no se cobran, de cualquier dia.
+
+    Es el dinero que el cliente ya consumio y aun no entra a la caja: explica una desviacion de caja (la
+    caja espera lo cobrado, no lo entregado). Es un saldo, no un periodo: una cuenta entregada ayer y sin
+    cobrar sigue contando hoy. Mismo importe que la venta (`importe_de_renglon`), asi que al cobrarse pasa
+    tal cual a `ventas_restaurante`.
+    """
+    sub = subtotal_por_orden()
+    condiciones = _por_proyecto(
+        [RestaurantOrder.deletion_date.is_(None), RestaurantOrder.status == ESTATUS_ENTREGADO],
+        RestaurantOrder.id_proyect, actor_project,
+    )
+    stmt = (
+        select(func.coalesce(func.sum(func.coalesce(sub.c.subtotal, 0)), 0))
+        .select_from(RestaurantOrder)
+        .outerjoin(sub, sub.c.id_restaurant_order == RestaurantOrder.id_restaurant_order)
+        .where(*condiciones)
+    )
+    return [(None, fecha_fin, Decimal(session.scalar(stmt)).quantize(CENTAVOS))]
+
+
+def mesas_ocupadas_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
+    """Estado de las mesas activas AHORA: libre, ocupada con cuenta pendiente, o pagada y aun ocupada.
+
+    Una mesa se libera cuando el mesero CIERRA la visita (`RestaurantService.close_visit`), NO al cobrar:
+    `pay_order` y `pay_visit` solo marcan la orden `pagado` y la visita sigue `active` hasta que alguien la
+    cierra. Las categorias no se traslapan:
+    * `por_liberar` ("Pagada, aun ocupada"): visita `active` con al menos UNA orden (no borrada, y sin contar
+      borradores vacios) y TODAS pagadas. Si el mesero no la cierra, sigue apareciendo asi.
+    * `ocupada_con_cuenta_pendiente`: el resto de las visitas `active`: alguna orden sin pagar, o ninguna
+      orden todavia (recien sentados). Un `borrador` sin partidas se IGNORA (no es una orden ni retiene la mesa).
+    * `libre`: mesa activa y no borrada sin visita `active`.
+    Las visitas para llevar no tienen mesa y no cuentan. La suma de las tres es el numero de mesas activas.
+    """
+    # Un borrador SIN partidas (el lugar de un comensal que aun no pide nada) se IGNORA: ni retiene la mesa ni
+    # cuenta como orden. Un borrador con partidas si es una cuenta en curso.
+    borrador_vacio = and_(
+        RestaurantOrder.status == ESTATUS_BORRADOR,
+        ~exists(select(RestaurantOrderItem.id_restaurant_order_item).where(
+            RestaurantOrderItem.id_restaurant_order == RestaurantOrder.id_restaurant_order)),
+    )
+    ordenes_vivas = (
+        RestaurantOrder.id_restaurant_visit == RestaurantVisit.id_restaurant_visit,
+        RestaurantOrder.deletion_date.is_(None),
+        ~borrador_vacio,
+    )
+    con_ordenes = exists(select(RestaurantOrder.id_restaurant_order).where(*ordenes_vivas))
+    sin_pagar = exists(select(RestaurantOrder.id_restaurant_order).where(*ordenes_vivas, RestaurantOrder.status != ESTADO_DE_VENTA))
+    categoria = case((con_ordenes & ~sin_pagar, MESA_POR_LIBERAR), else_=MESA_CON_CUENTA_PENDIENTE)
+    mesas_activas = _por_proyecto(
+        [RestaurantTable.deletion_date.is_(None), RestaurantTable.is_active.is_(True)],
+        RestaurantTable.id_proyect, actor_project,
+    )
+    ocupadas = (
+        select(categoria, func.count(func.distinct(RestaurantTable.id_restaurant_table)))
+        .select_from(RestaurantVisit)
+        .join(RestaurantTable, RestaurantTable.id_restaurant_table == RestaurantVisit.id_restaurant_table)
+        .where(*mesas_activas, RestaurantVisit.status == "active", RestaurantVisit.deletion_date.is_(None))
+        .group_by(categoria)
+    )
+    conteos = {cat: int(n) for cat, n in session.execute(ocupadas).all()}
+    total = int(session.scalar(select(func.count(RestaurantTable.id_restaurant_table)).where(*mesas_activas)) or 0)
+    conteos[MESA_LIBRE] = total - conteos.get(MESA_CON_CUENTA_PENDIENTE, 0) - conteos.get(MESA_POR_LIBERAR, 0)
+    return [(cat, fecha_fin, conteos.get(cat, 0)) for cat in MESAS_CATEGORIAS]
 
 
 def definiciones():
@@ -352,9 +480,9 @@ def definiciones():
             query_builder=propinas_restaurante_query,
             agregacion="suma",
             unidad="moneda",
-            direccion="alto_es_mejor",
+            direccion="neutral",
             graficas_permitidas=("numero", "barras", "linea", "area"),
-            grafica_default="linea",
+            grafica_default="numero",
             descripcion="Propinas de las órdenes cobradas, por día de cobro. Se reparten entre todos: no hay versión por mesero.",
         ),
         KpiDefinition(
@@ -440,11 +568,14 @@ def definiciones():
             direccion="bajo_es_mejor",
             graficas_permitidas=("numero", "barras", "linea", "area"),
             grafica_default="linea",
-            descripcion="Minutos promedio entre «lista para entrega» y «entregado», por orden.",
+            descripcion=(
+                "Minutos promedio entre «lista para entrega» y «entregado», por orden. Cuenta toda orden "
+                "entregada, cobrada o no (vista en vivo para el gerente)."
+            ),
         ),
         KpiDefinition(
             clave="diferencia_de_caja",
-            etiqueta="Diferencia de caja",
+            etiqueta="Desviación de caja",
             modulo="restaurante",
             dimensiones=("empleado",),
             etiqueta_dimension="Cajero",
@@ -452,12 +583,68 @@ def definiciones():
             agregacion="suma",
             unidad="moneda",
             sin_asignar=True,
-            direccion="neutral",
+            direccion="bajo_es_mejor",
             graficas_permitidas=("barras", "numero"),
             grafica_default="barras",
             descripcion=(
-                "Por confirmar. Suma con signo de lo contado menos lo esperado en las sesiones cerradas "
-                "(negativo: faltante; positivo: sobrante), por cajero y día de cierre."
+                "Suma del valor absoluto de la diferencia de cada sesión de caja cerrada (sobrante y faltante "
+                "pesan igual y no se compensan), por cajero y día de cierre."
+            ),
+        ),
+        KpiDefinition(
+            clave="pedidos_del_dia",
+            etiqueta="Pedidos del día",
+            modulo="restaurante",
+            dimensiones=("estado",),
+            etiqueta_dimension="Estado del pedido",
+            query_builder=pedidos_del_dia_query,
+            agregacion="ultimo",
+            unidad="numero",
+            direccion="neutral",
+            graficas_permitidas=("dona", "barras"),
+            grafica_default="dona",
+            colores_categoria=PEDIDOS_COLORES,
+            orden_categorias=PEDIDOS_CATEGORIAS,
+            descripcion=(
+                "Foto de hoy: pedidos hechos (sin borradores) cobrados, entregados sin cobrar y en curso "
+                "(pedido, en preparación, lista para entrega). La suma es el total de pedidos hechos hoy."
+            ),
+        ),
+        KpiDefinition(
+            clave="cuentas_sin_cobrar",
+            etiqueta="Cuentas sin cobrar",
+            modulo="restaurante",
+            dimensiones=("global",),
+            query_builder=cuentas_sin_cobrar_query,
+            agregacion="ultimo",
+            unidad="moneda",
+            direccion="neutral",
+            graficas_permitidas=("numero", "barras", "linea"),
+            grafica_default="numero",
+            descripcion=(
+                "Foto de hoy: monto (sin propina) de las órdenes entregadas que aún no se cobran, de cualquier día. "
+                "Explica una desviación de caja: es consumo ya entregado que todavía no entra a la caja."
+            ),
+        ),
+        KpiDefinition(
+            clave="mesas_ocupadas",
+            etiqueta="Mesas ocupadas",
+            modulo="restaurante",
+            dimensiones=("estado",),
+            etiqueta_dimension="Estado de la mesa",
+            query_builder=mesas_ocupadas_query,
+            agregacion="ultimo",
+            unidad="numero",
+            direccion="neutral",
+            graficas_permitidas=("dona", "barras"),
+            grafica_default="dona",
+            colores_categoria=MESAS_COLORES,
+            orden_categorias=MESAS_CATEGORIAS,
+            etiquetas_categoria=MESAS_ETIQUETAS,
+            descripcion=(
+                "Foto de hoy: mesas libres, ocupadas con cuenta pendiente y «Pagada, aún ocupada» (visita activa con al "
+                "menos una orden y todas pagadas). La mesa se libera cuando el mesero cierra la visita, no al cobrar: si "
+                "el mesero no la cierra, seguirá apareciendo como «Pagada, aún ocupada»."
             ),
         ),
     )

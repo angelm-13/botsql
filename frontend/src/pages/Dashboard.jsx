@@ -20,7 +20,7 @@ import useReordenarTarjetas, { sinColision } from "../components/kpi-widgets/use
 import {
   getAllKpiDashboard, createKpiDashboard, updateKpiDashboard, deleteKpiDashboard,
   getAllKpiDashboardWidget, createKpiDashboardWidget, updateKpiDashboardWidget, deleteKpiDashboardWidget, saveKpiWidgetOrdenTabla,
-  getAllKpiDefinition, getKpiDimensions, queryKpiSnapshot, queryKpiVivo, getUserOptions, getAllDepartment,
+  getAllKpiDefinition, getKpiDimensions, getKpiNoDisponibles, queryKpiSnapshot, queryKpiVivo, getUserOptions, getAllDepartment,
 } from "../api";
 import "../styles/kpi-widgets.css";
 import "../styles/kpi-editor.css";
@@ -42,6 +42,10 @@ import {
   DESFASES_DE_COMPARACION, ETIQUETA_RANGO_POR_OMISION, RANGOS_RELATIVOS, RANGO_PERSONALIZADO, fechaLocalIso,
   parametrosEfectivos, periodoAnterior, rangoDesfasado, resolverRangoRelativo,
 } from "../kpi/kpiRango.js";
+import { datosDeEjemplo, filasVivasDeEjemplo, rangoVacio } from "../kpi/datosDeEjemplo.js";
+import {
+  MOTIVO_SIN_DATOS, catalogoConEjemplos, esIdDeEjemplo, hayEjemploEnSeleccion, sePuedeGuardar,
+} from "../kpi/vistaPreviaDeEjemplo.js";
 import {
   filasTablaPrestamo, propsDona, propsNumero,
   propsNumeroBajoStock, propsSeries, tendenciaDeSnapshot,
@@ -388,6 +392,8 @@ export default function Dashboard() {
   const [widgetsError, setWidgetsError] = useState("");
 
   const [kpiCatalog, setKpiCatalog] = useState([]);
+  // KPIs que el usuario no puede usar (solo metadatos + motivo): se ofrecen en el selector con datos de EJEMPLO.
+  const [kpisNoDisponibles, setKpisNoDisponibles] = useState([]);
   const [users, setUsers] = useState([]);
   const [departments, setDepartments] = useState([]);
 
@@ -695,8 +701,13 @@ export default function Dashboard() {
     // El catalogo de KPIs y el de dimensiones (persona/catalogo/categoria/global) se piden juntos:
     // a cada KPI se le agrega el tipo de su dimension. Sin el catalogo de dimensiones (backend
     // viejo) el Dashboard se comporta como siempre.
-    Promise.all([getAllKpiDefinition(), getKpiDimensions().catch(() => [])])
-      .then(([definiciones, dimensiones]) => { if (!cancelado) setKpiCatalog(enriquecerCatalogo(listOf(definiciones), listOf(dimensiones))); })
+    // La vista previa de KPIs no disponibles es opcional: si el endpoint falla, el Dashboard sigue como siempre.
+    Promise.all([getAllKpiDefinition(), getKpiDimensions().catch(() => []), getKpiNoDisponibles().catch(() => [])])
+      .then(([definiciones, dimensiones, noDisponibles]) => {
+        if (cancelado) return;
+        setKpiCatalog(enriquecerCatalogo(listOf(definiciones), listOf(dimensiones)));
+        setKpisNoDisponibles(enriquecerCatalogo(listOf(noDisponibles), listOf(dimensiones)));
+      })
       .catch(() => { if (!cancelado) setKpiCatalog([]); });
     // Solo id+nombre, sin pedir el catalogo de RH completo (`GET /user/` exige permiso de seguridad):
     // sirve al filtro por empleados. Los nombres de las graficas los manda el backend.
@@ -782,6 +793,8 @@ export default function Dashboard() {
   }
 
   async function handleSaveWidget(payload, editingWidgetId) {
+    // Segunda barrera: un KPI de ejemplo (vista previa) jamas se guarda en un tablero.
+    if (!sePuedeGuardar(payload?.ids_kpi_definition)) throw new Error("kpi_example_not_saved");
     let creado = null;
     if (editingWidgetId) {
       await updateKpiDashboardWidget(editingWidgetId, payload);
@@ -963,6 +976,7 @@ export default function Dashboard() {
               panelState={currentPanelState}
               onChangePanelState={(patch) => updatePanelState(activeId, patch)}
               kpiCatalog={kpiCatalog}
+              kpisNoDisponibles={kpisNoDisponibles}
               users={users}
               departments={departments}
               userLabel={userLabel}
@@ -1059,7 +1073,7 @@ function useGuardarOrdenTabla(idWidget) {
   return guardar;
 }
 
-function useDatosDeWidget({ widget, kpiCatalog, onReady }) {
+function useDatosDeWidget({ widget, kpiCatalog, onReady, textosEjemplo }) {
   const [snapshots, setSnapshots] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -1094,7 +1108,10 @@ function useDatosDeWidget({ widget, kpiCatalog, onReady }) {
   // KPI "vivo" (ver material_prestado_actual): su tabla pide sus propios datos al servidor, por paginas y con
   // el filtro, la busqueda y el orden aplicados alla (ver TablaWidget, modo servidor). Aqui solo se le da la
   // llamada y el aviso de "ya cargue" para el reporte PDF.
-  const idVivo = esTablaVivo ? idsUsados[0] : null;
+  // Un KPI de EJEMPLO (vista previa de uno no disponible) no consulta nada: sus datos se arman aqui, con los
+  // metadatos del KPI, y nunca se guardan.
+  const esEjemplo = idsUsados.some(esIdDeEjemplo);
+  const idVivo = esTablaVivo && !esEjemplo ? idsUsados[0] : null;
   const cargarVivo = useMemo(
     () => (idVivo ? (parametros) => queryKpiVivo(idVivo, parametros) : null),
     [idVivo],
@@ -1111,6 +1128,13 @@ function useDatosDeWidget({ widget, kpiCatalog, onReady }) {
       // El KPI "vivo" ya tiene su propio efecto (arriba) -- este solo
       // atiende a los widgets de kpi_snapshot de siempre.
       if (esTablaVivo) return;
+      if (esEjemplo) {
+        setSnapshots(kpiInfos.filter(Boolean).map((info) => datosDeEjemplo(info, { textos: textosEjemplo })));
+        setLoading(false);
+        setError("");
+        onReady?.(idWidget);
+        return;
+      }
       if (esTabla) {
         setLoading(false);
         setSnapshots([]);
@@ -1160,9 +1184,10 @@ function useDatosDeWidget({ widget, kpiCatalog, onReady }) {
   // `idsKey` es el proxy estable de `idsUsados` (un array nuevo cada
   // render); `idsUsados` en si mismo nunca deberia ir en las dependencias.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idsKey, esTabla, esTablaVivo, fechaInicio, fechaFin, fechaInicioB, fechaFinB, empleadosKey, departamentosKey, agruparPor]);
+  }, [idsKey, esEjemplo, esTabla, esTablaVivo, fechaInicio, fechaFin, fechaInicioB, fechaFinB, empleadosKey, departamentosKey, agruparPor]);
 
-  return { snapshots, loading, error, vivoItems: SIN_RENGLONES, vivoTotal: 0, cargarVivo, onListoVivo, guardarOrdenTabla, kpiInfos, idsUsados, esTablaVivo };
+  const vivoEjemplo = esTablaVivo && esEjemplo ? filasVivasDeEjemplo(kpiInfos[0], { textos: textosEjemplo }) : null;
+  return { snapshots, loading, error, vivoItems: vivoEjemplo?.items || SIN_RENGLONES, vivoTotal: vivoEjemplo?.total || 0, cargarVivo, onListoVivo, guardarOrdenTabla, kpiInfos, idsUsados, esTablaVivo, esEjemplo };
 }
 
 // El mismo valor, pero solo despues de `ms` sin cambios -- para no pedirle datos
@@ -1235,22 +1260,72 @@ export function CuerpoDeWidget({
 // borrador pasa por armarParametros, igual que al guardar) y lo pinta con el
 // mismo cuerpo que la tarjeta del tablero. Skeleton mientras espera -tanto la
 // pausa de tecleo como la respuesta del servidor-.
-function VistaPreviaEditor({ widget, kpiCatalog, userLabel, productLabel, formatNumber, t, tx }) {
+function VistaPreviaEditor({ widget, kpiCatalog, userLabel, productLabel, formatNumber, t, tx, textosEjemplo }) {
   const widgetRetrasado = useValorRetrasado(widget, 400);
-  const datos = useDatosDeWidget({ widget: widgetRetrasado, kpiCatalog });
+  const datos = useDatosDeWidget({ widget: widgetRetrasado, kpiCatalog, textosEjemplo });
   const pendiente = JSON.stringify(widget) !== JSON.stringify(widgetRetrasado);
+  // "Sin datos": deteccion perezosa. Si la consulta REAL del rango vuelve vacia, se ofrece «Ver ejemplo»; el
+  // ejemplo es solo de pantalla y no cambia el borrador (que sigue siendo el KPI real).
+  const [verEjemplo, setVerEjemplo] = useState(false);
+  const claveBorrador = JSON.stringify(widget);
+  useEffect(() => { setVerEjemplo(false); }, [claveBorrador]);
+  const kpiReal = datos.kpiInfos.length === 1 ? datos.kpiInfos[0] : null;
+  const sinDatos = Boolean(
+    kpiReal && !datos.esEjemplo && !datos.esTablaVivo && !datos.loading && !pendiente && !datos.error
+    && datos.snapshots.length === 1 && rangoVacio(datos.snapshots[0]),
+  );
+  const datosDeVista = verEjemplo && sinDatos
+    ? { ...datos, snapshots: [datosDeEjemplo(kpiReal, { textos: textosEjemplo })] }
+    : datos;
+  const mostrandoEjemplo = datos.esEjemplo || (verEjemplo && sinDatos);
+  const motivo = datos.esEjemplo ? datos.kpiInfos[0]?.motivo : MOTIVO_SIN_DATOS;
+  const cuerpo = (
+    <CuerpoDeWidget
+      widget={widgetRetrasado}
+      datos={{ ...datosDeVista, loading: datosDeVista.loading || pendiente }}
+      userLabel={userLabel}
+      productLabel={productLabel}
+      formatNumber={formatNumber}
+      t={t}
+      tx={tx}
+      animar={false}
+    />
+  );
   return (
     <div className="kpi-editor-vista-previa-cuerpo">
-      <CuerpoDeWidget
-        widget={widgetRetrasado}
-        datos={{ ...datos, loading: datos.loading || pendiente }}
-        userLabel={userLabel}
-        productLabel={productLabel}
-        formatNumber={formatNumber}
-        t={t}
-        tx={tx}
-        animar={false}
-      />
+      {mostrandoEjemplo ? <MarcoDeEjemplo tx={tx} motivo={motivo}>{cuerpo}</MarcoDeEjemplo> : cuerpo}
+      {sinDatos && (
+        <div className="kpi-ejemplo-sin-datos">
+          <span className="muted">{tx("example_no_data_hint", "Sin datos en el rango elegido.")}</span>
+          <button type="button" className="button ghost" onClick={() => setVerEjemplo((actual) => !actual)}>
+            {verEjemplo ? tx("example_hide", "Ocultar ejemplo") : tx("example_view", "Ver ejemplo")}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Aviso y marca de una vista previa con datos de EJEMPLO: el texto fijo va siempre arriba, el sello "EJEMPLO"
+// dentro de la propia grafica (para que una captura de pantalla tampoco se confunda con datos reales). Vive solo
+// en el editor, fuera de las tarjetas (`.kpi-widget-card`) que captura el reporte PDF.
+// eslint-disable-next-line react-refresh/only-export-components
+export function MarcoDeEjemplo({ tx, motivo, children }) {
+  const razon = {
+    sin_permiso: tx("example_reason_sin_permiso", "No disponible para tu rol."),
+    sin_datos: tx("example_reason_sin_datos", "Aún no tiene datos."),
+    modulo_no_habilitado: tx("example_reason_modulo", "Módulo no habilitado."),
+  }[motivo];
+  return (
+    <div className="kpi-ejemplo-marco" data-ejemplo="true">
+      <p className="kpi-ejemplo-aviso" role="status">
+        {tx("example_banner", "Vista previa con datos de ejemplo. Así se vería este KPI; no está disponible para tu rol o aún no tiene datos")}
+        {razon && <em>{razon}</em>}
+      </p>
+      <div className="kpi-ejemplo-grafica" data-marca={tx("example_badge", "EJEMPLO")}>
+        <span className="kpi-ejemplo-sello" aria-hidden="true">{tx("example_badge", "EJEMPLO")}</span>
+        {children}
+      </div>
     </div>
   );
 }
@@ -1561,7 +1636,7 @@ function tiposDeGraficaPermitidos(kpiInfos) {
   return tiposPermitidosPorKpi(kpiInfos, CHART_TYPES.map((opt) => opt.value));
 }
 
-function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, departments, userLabel, productLabel, formatNumber, onCancel, onSave, onAbierto, t, tx }) {
+function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog: kpiCatalogReal, kpisNoDisponibles, users, departments, userLabel, productLabel, formatNumber, onCancel, onSave, onAbierto, t, tx }) {
   const {
     editingWidgetId,
     colapsado,
@@ -1590,6 +1665,17 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
   const [error, setError] = useState("");
   const [avisoKpi, setAvisoKpi] = useState("");
   const multiKpiPermitido = esTipoMultiKpi(tipoGrafica);
+  // El catalogo del selector: los KPIs reales y, aparte y marcados, los no disponibles como EJEMPLO (solo vista previa).
+  const kpiCatalog = useMemo(() => catalogoConEjemplos(kpiCatalogReal, kpisNoDisponibles), [kpiCatalogReal, kpisNoDisponibles]);
+  const hayEjemplo = hayEjemploEnSeleccion(idsKpiSeleccionados);
+  // Palabras genericas de los datos de ejemplo, traducidas ("Ejemplo 1", "Categoría 1"...).
+  const textosEjemplo = useMemo(() => ({
+    entidad: tx("example_entity", "Ejemplo"),
+    categoria: tx("example_category", "Categoría"),
+    articulo: tx("example_item", "Artículo de ejemplo"),
+    responsable: tx("example_person", "Persona de ejemplo"),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [tx]);
 
   // Info de los KPIs ya elegidos -- de aqui salen la etiqueta del toggle
   // "Agrupar por" (Empleado/Producto, segun la dimension real del primer KPI
@@ -1655,6 +1741,7 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
   }
 
   function textoDeBloqueo(kpi, motivo) {
+    if (motivo === "ejemplo") return tx("example_cannot_combine", "No se puede combinar: un KPI de ejemplo solo se puede ver solo, sin mezclarlo con KPIs reales.");
     if (motivo === "modo") return tx("kpi_mode_mismatch", "No se puede combinar: un KPI en vivo (tabla) no comparte gráfico con uno de serie.");
     const unidadElegida = unidadInfo(unidadDeKpi(kpisSeleccionadosInfo[0])).etiquetaSelector;
     const unidadKpi = unidadInfo(unidadDeKpi(kpi)).etiquetaSelector;
@@ -1759,6 +1846,8 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
       throw NO_CERRAR;
     }
     if (idsKpiSeleccionados.length === 0) rechazar(tx("kpi_required", "Elige al menos un KPI."));
+    // Un KPI de ejemplo es solo una vista previa: no se agrega al tablero.
+    if (hayEjemplo) rechazar(tx("example_cannot_save", "Un KPI de ejemplo es solo una vista previa: no se puede agregar al tablero."));
     // Lo que se valida es lo que se va a guardar (armarParametros): con un
     // chip relativo, las fechas ya vienen calculadas al dia de hoy.
     const parametros = armarParametros(panelState, { esTabla, tieneBajoStock: tieneBajoStockSeleccionado });
@@ -1773,6 +1862,7 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
       }
     }
 
+    if (!sePuedeGuardar(idsKpiSeleccionados)) rechazar(tx("example_cannot_save", "Un KPI de ejemplo es solo una vista previa: no se puede agregar al tablero."));
     const payload = { ids_kpi_definition: idsKpiSeleccionados.map(Number), tipo_grafica: tipoGrafica, parametros };
     setSaving(true);
     try {
@@ -1897,6 +1987,9 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
                   variables: tx("kpi_variables_group", "Variables"),
                   variablesAyuda: tx("kpi_variables_help", "Sin desglose: sirven para combinar en un mismo gráfico."),
                   elegirColor: tx("kpi_color_choose", "Elegir color"),
+                  ejemplo: tx("example_tag", "Ejemplo"),
+                  motivoSinPermiso: tx("example_reason_sin_permiso", "No disponible para tu rol."),
+                  motivoModulo: tx("example_reason_modulo", "Módulo no habilitado."),
                 }}
               />
             </div>
@@ -2162,6 +2255,7 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
                     formatNumber={formatNumber}
                     t={t}
                     tx={tx}
+                    textosEjemplo={textosEjemplo}
                   />
                 </div>
               )}
@@ -2183,7 +2277,12 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
                   {tx("step_next", "Siguiente")}
                 </button>
               ) : (
-                <button type="submit" className="button primary" disabled={saving || idsKpiSeleccionados.length === 0}>
+                <button
+                  type="submit"
+                  className="button primary"
+                  disabled={saving || idsKpiSeleccionados.length === 0 || hayEjemplo}
+                  title={hayEjemplo ? tx("example_cannot_save", "Un KPI de ejemplo es solo una vista previa: no se puede agregar al tablero.") : undefined}
+                >
                   {editingWidgetId ? tx("update_widget", "Actualizar") : tx("add_widget", "Agregar gráfico")}
                 </button>
               )}

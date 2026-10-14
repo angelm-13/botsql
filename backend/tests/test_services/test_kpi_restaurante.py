@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import copy
 import unittest
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from unittest import mock
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 
 from app.jobs import tasks_kpis
-from app.kpis.registry import KPI_POR_CLAVE
+from app.jobs.beat_schedule import BEAT_SCHEDULE
+from app.kpis import frecuencia
+from app.kpis.registry import KPI_POR_CLAVE, KPI_REGISTRY, MODULO_POR_CLAVE
 from app.kpis.dimensiones import etiquetas_de_dimension
 from app.kpis.modulos import restaurante as kpis_restaurante
 from app.kpis.modulos.restaurante import (
@@ -466,28 +469,263 @@ class KpiRestauranteTest(unittest.TestCase):
 
     # --- caja -------------------------------------------------------------------
 
-    def test_diferencia_de_caja_suma_con_signo_las_sesiones_cerradas_por_cajero(self):
+    def test_desviacion_de_caja_suma_el_absoluto_de_cada_sesion_por_cajero(self):
         self._sesion(97001, Decimal("-50.00"), cierra=CAJERO_A)
         self._sesion(97002, Decimal("20.00"), cierra=CAJERO_A)
         self._sesion(97003, Decimal("5.00"), cierra=CAJERO_B)
         self._sesion(97004, None, estado="open")  # abierta: no cuenta
         filas = {fila[0]: fila[2] for fila in self._consulta(kpis_restaurante.diferencia_de_caja_query)}
-        self.assertEqual({CAJERO_A: Decimal("-30.00"), CAJERO_B: Decimal("5.00")}, filas)
+        self.assertEqual({CAJERO_A: Decimal("70.00"), CAJERO_B: Decimal("5.00")}, filas)
 
-    def test_diferencia_de_caja_esta_por_confirmar_neutral_y_sin_sembrar_a_ningun_rol(self):
+    def test_un_sobrante_y_un_faltante_del_mismo_dia_no_se_compensan(self):
+        self._sesion(97001, Decimal("100.00"), cierra=CAJERO_A)
+        self._sesion(97002, Decimal("-100.00"), cierra=CAJERO_A)
+        (fila,) = self._consulta(kpis_restaurante.diferencia_de_caja_query)
+        self.assertEqual(Decimal("200.00"), fila[2])
+
+    def test_desviacion_de_caja_es_bajo_es_mejor_conserva_su_clave_y_no_se_siembra_a_ningun_rol(self):
         from scripts.seed_kpi_permissions import ASIGNACIONES
 
         kpi = KPI_POR_CLAVE["diferencia_de_caja"]
-        self.assertEqual("neutral", kpi.direccion)
-        self.assertIn("Por confirmar", kpi.descripcion)
+        self.assertEqual("bajo_es_mejor", kpi.direccion)
+        self.assertEqual("Desviación de caja", kpi.etiqueta)
         asignadas = {clave for perfil in ASIGNACIONES.values() for rol in perfil for clave in rol.kpis}
         self.assertFalse(asignadas & {k.clave for k in definiciones()}, "ningun KPI de restaurante se siembra a un rol")
+
+    def test_propinas_son_neutrales_con_numero_por_omision_y_el_porcentaje_es_alto_es_mejor(self):
+        self.assertEqual("neutral", KPI_POR_CLAVE["propinas_restaurante"].direccion)
+        self.assertEqual("numero", KPI_POR_CLAVE["propinas_restaurante"].grafica_default)
+        self.assertEqual("alto_es_mejor", KPI_POR_CLAVE["propina_pct_de_venta"].direccion)
+        self.assertEqual(10, KPI_POR_CLAVE["frecuencia_por_platillo"].limite_categorias)
+
+    def test_tiempo_de_entrega_cuenta_la_orden_entregada_aunque_no_este_cobrada(self):
+        lista = datetime(2026, 9, 15, 13, 0)
+        self._orden(97001, [(1, 10)], estado="entregado", lista=lista, entregada=datetime(2026, 9, 15, 13, 10))
+        self.assertEqual([(None, DIA.date(), Decimal("10.00"), 1)], self._consulta(kpis_restaurante.tiempo_de_entrega_query))
 
     def test_una_sesion_sin_cajero_sale_como_sin_asignar(self):
         self._sesion(97001, Decimal("-10.00"), cierra=None)
         ids = self._correr_job("diferencia_de_caja")
         rango = self._rango(ids, "diferencia_de_caja", "id_user", "suma")
-        self.assertEqual({"sin_asignar": -10.0}, rango["por_empleado"])
+        self.assertEqual({"sin_asignar": 10.0}, rango["por_empleado"])
+
+    # === fotos del dia en curso + corrida frecuente =====================================
+
+    def _foto(self, query, actor_project=PROYECTO_A):
+        """La foto de `query` fechada en DIA, como {categoria: valor}."""
+        filas = self._consulta(query, actor_project, desde=DIA.date(), hasta=DIA.date())
+        self.assertTrue(all(fila[1] == DIA.date() for fila in filas))
+        return {fila[0]: fila[2] for fila in filas}
+
+    def test_pedidos_del_dia_separa_cobrado_entregado_sin_cobrar_y_en_curso_sin_borradores(self):
+        q = kpis_restaurante.pedidos_del_dia_query
+        self.assertEqual({"cobrado": 0, "entregado_sin_cobrar": 0, "en_curso": 0}, self._foto(q))
+        self._orden(97001, [(1, 10)], enviada=DIA)                                    # cobrado
+        self._orden(97002, [(1, 10)], enviada=DIA, estado="entregado")                # entregado sin cobrar
+        for id_orden, estado in enumerate(("pedido", "en_preparacion", "listo_para_entrega"), 97003):
+            self._orden(id_orden, [(1, 10)], enviada=DIA, estado=estado)              # en curso x3
+        self._orden(97006, [(1, 10)], estado="borrador")                              # borrador: no es un pedido hecho
+        self._orden(97007, [(1, 10)], enviada=DIA, borrada=datetime(2026, 9, 16))     # borrada
+        self._orden(97008, [(1, 10)], enviada=DIA, proyecto=PROYECTO_B, mesero=None)  # otro restaurante
+        foto = self._foto(q)
+        self.assertEqual({"cobrado": 1, "entregado_sin_cobrar": 1, "en_curso": 3}, foto)
+        self.assertEqual(5, sum(foto.values()), "la suma de las tres es el total de pedidos hechos")
+        self.assertEqual(6, sum(self._foto(q, None).values()), "sin proyecto: se suma el otro restaurante")
+
+    def test_pedidos_del_dia_cuenta_por_dia_de_envio_no_por_dia_de_cobro(self):
+        self._orden(97001, [(1, 10)], enviada=DIA - timedelta(days=1), pagada=DIA)
+        self.assertEqual({"cobrado": 0, "entregado_sin_cobrar": 0, "en_curso": 0}, self._foto(kpis_restaurante.pedidos_del_dia_query))
+
+    def test_cuentas_sin_cobrar_suma_lo_entregado_de_cualquier_dia_y_sin_propina(self):
+        q = kpis_restaurante.cuentas_sin_cobrar_query
+        self.assertEqual({None: Decimal("0.00")}, self._foto(q))
+        self._orden(97001, [(3, 50), (1, 100)], estado="entregado", propina=30)                 # 250
+        self._orden(97002, [(2, 20)], estado="entregado", enviada=DIA - timedelta(days=3))       # 40, de hace 3 dias
+        self._orden(97003, [(1, 999)], estado="listo_para_entrega")                              # aun no se entrega
+        self._orden(97004, [(1, 999)])                                                           # cobrada
+        self._orden(97005, [(1, 999)], estado="entregado", borrada=datetime(2026, 9, 16))        # borrada
+        self._orden(97006, [(1, 7)], estado="entregado", proyecto=PROYECTO_B, mesero=None)
+        self.assertEqual({None: Decimal("290.00")}, self._foto(q))
+        self.assertEqual({None: Decimal("297.00")}, self._foto(q, None))
+
+    def test_cobrar_una_cuenta_la_pasa_de_cuentas_sin_cobrar_a_ventas(self):
+        self._orden(97001, [(1, 100)], estado="entregado")
+        self.assertEqual(Decimal("100.00"), self._foto(kpis_restaurante.cuentas_sin_cobrar_query)[None])
+        with transaction_context() as db:
+            db.execute(update(RestaurantOrder).where(RestaurantOrder.id_restaurant_order == 97001)
+                       .values(status="pagado", paid_at=DIA))
+        self.assertEqual(Decimal("0.00"), self._foto(kpis_restaurante.cuentas_sin_cobrar_query)[None])
+        self.assertEqual(Decimal("100.00"), self._ventas()[0][2])
+
+    CERO = {"libre": 0, "ocupada_con_cuenta_pendiente": 0, "por_liberar": 0}
+
+    def _mesas(self, **cuentas):
+        return {**self.CERO, **cuentas}
+
+    def test_una_visita_sin_ordenes_cuenta_como_ocupada_con_cuenta_pendiente(self):
+        # setUp deja dos visitas activas (mesas 7 y 8), todavia sin ninguna orden.
+        self.assertEqual(self._mesas(ocupada_con_cuenta_pendiente=2), self._foto(kpis_restaurante.mesas_ocupadas_query))
+
+    def test_una_visita_con_una_orden_pagada_y_otra_sin_pagar_sigue_con_cuenta_pendiente(self):
+        self._orden(97001, [(1, 100)], visita=VISITA_A)
+        self._orden(97002, [(1, 50)], visita=VISITA_A, estado="entregado")
+        self.assertEqual(self._mesas(ocupada_con_cuenta_pendiente=2), self._foto(kpis_restaurante.mesas_ocupadas_query))
+
+    def test_un_borrador_vacio_se_ignora_no_retiene_la_mesa_ni_cuenta_como_orden(self):
+        q = kpis_restaurante.mesas_ocupadas_query
+        # Pagada + el lugar vacio de otro comensal: la mesa esta por liberar.
+        self._orden(97001, [(1, 100)], visita=VISITA_A)
+        self._orden(97002, [], visita=VISITA_A, estado="borrador")
+        self.assertEqual(self._mesas(ocupada_con_cuenta_pendiente=1, por_liberar=1), self._foto(q))
+        # Solo borradores vacios: es como una visita sin ordenes (ocupada, aun sin cuenta), no "por liberar".
+        self._orden(97003, [], visita=VISITA_A2, estado="borrador")
+        self.assertEqual(self._mesas(ocupada_con_cuenta_pendiente=1, por_liberar=1), self._foto(q))
+        # En cambio un borrador CON partidas si es una cuenta en curso y retiene la mesa.
+        self._orden(97004, [(1, 5)], visita=VISITA_A, estado="borrador")
+        self.assertEqual(self._mesas(ocupada_con_cuenta_pendiente=2), self._foto(q))
+
+    def test_pedidos_del_dia_ignora_los_borradores_vacios_y_con_partidas(self):
+        q = kpis_restaurante.pedidos_del_dia_query
+        self._orden(97001, [(1, 10)], enviada=DIA)
+        self._orden(97002, [], estado="borrador", enviada=DIA)        # vacio: se ignora
+        self._orden(97003, [(1, 10)], estado="borrador", enviada=DIA)  # aun no es un pedido hecho
+        self.assertEqual({"cobrado": 1, "entregado_sin_cobrar": 0, "en_curso": 0}, self._foto(q))
+
+    def test_una_visita_con_todas_sus_ordenes_pagadas_es_por_liberar_aunque_nadie_la_cerro(self):
+        self._orden(97001, [(1, 100)], visita=VISITA_A)
+        self._orden(97002, [(2, 50)], visita=VISITA_A)
+        self.assertEqual(self._mesas(ocupada_con_cuenta_pendiente=1, por_liberar=1),
+                         self._foto(kpis_restaurante.mesas_ocupadas_query))
+
+    def test_una_orden_borrada_no_cuenta_ni_para_pagada_ni_para_pendiente(self):
+        self._orden(97001, [(1, 100)], visita=VISITA_A)
+        self._orden(97002, [(1, 50)], visita=VISITA_A, estado="entregado", borrada=datetime(2026, 9, 16))
+        self.assertEqual(self._mesas(ocupada_con_cuenta_pendiente=1, por_liberar=1),
+                         self._foto(kpis_restaurante.mesas_ocupadas_query))
+
+    def test_una_mesa_sin_visita_activa_esta_libre_y_cerrar_la_visita_la_libera(self):
+        q = kpis_restaurante.mesas_ocupadas_query
+        with transaction_context() as db:
+            db.add(RestaurantTable(id_restaurant_table=9703, id_proyect=PROYECTO_A, number=9, created_by=ADMIN_ID))
+            db.add(RestaurantTable(id_restaurant_table=9704, id_proyect=PROYECTO_A, number=10, is_active=False, created_by=ADMIN_ID))
+            db.add(RestaurantTable(id_restaurant_table=9705, id_proyect=PROYECTO_A, number=11, deletion_date=DIA, created_by=ADMIN_ID))
+        self.assertEqual(self._mesas(libre=1, ocupada_con_cuenta_pendiente=2), self._foto(q))  # inactiva y borrada no cuentan
+        self._orden(97001, [(1, 100)], visita=VISITA_A)
+        self.assertEqual(self._mesas(libre=1, ocupada_con_cuenta_pendiente=1, por_liberar=1), self._foto(q))
+        with transaction_context() as db:  # cobrar no libero la mesa; cerrar la visita si
+            db.execute(update(RestaurantVisit).where(RestaurantVisit.id_restaurant_visit == VISITA_A)
+                       .values(status="closed", closed_at=DIA))
+        self.assertEqual(self._mesas(libre=2, ocupada_con_cuenta_pendiente=1), self._foto(q))
+
+    def test_las_categorias_de_mesas_tienen_su_etiqueta_visible(self):
+        kpi = KPI_POR_CLAVE["mesas_ocupadas"]
+        self.assertEqual(
+            {"libre": "Libre", "ocupada_con_cuenta_pendiente": "Ocupada con cuenta pendiente", "por_liberar": "Pagada, aún ocupada"},
+            kpi.etiquetas_categoria,
+        )
+        self.assertIn("cuando el mesero cierra la visita, no al cobrar", kpi.descripcion)
+        self.assertIn("seguirá apareciendo como «Pagada, aún ocupada»", kpi.descripcion)
+
+    def test_las_mesas_de_un_restaurante_no_cuentan_en_otro(self):
+        self.assertEqual({"libre": 0, "ocupada_con_cuenta_pendiente": 0, "por_liberar": 0},
+                         self._foto(kpis_restaurante.mesas_ocupadas_query, PROYECTO_B))
+
+    def test_las_tres_fotos_son_ultimo_con_dimension_estado_y_colores_fijos(self):
+        for clave, categorias in (("pedidos_del_dia", ("cobrado", "entregado_sin_cobrar", "en_curso")),
+                                  ("mesas_ocupadas", ("libre", "ocupada_con_cuenta_pendiente", "por_liberar"))):
+            kpi = KPI_POR_CLAVE[clave]
+            self.assertEqual("ultimo", kpi.agregacion)
+            self.assertEqual(("estado",), kpi.dimensiones)
+            self.assertEqual(categorias, kpi.orden_categorias)
+            self.assertEqual(set(categorias), set(kpi.colores_categoria))
+            self.assertEqual("dona", kpi.grafica_default)
+            self.assertFalse(kpi.sin_asignar, "sin_asignar no aplica: la categoria es texto fijo")
+        self.assertEqual("ultimo", KPI_POR_CLAVE["cuentas_sin_cobrar"].agregacion)
+        self.assertEqual("moneda", KPI_POR_CLAVE["cuentas_sin_cobrar"].unidad)
+
+    def test_la_foto_llega_al_dashboard_con_sus_tres_categorias_aunque_valgan_cero(self):
+        self._orden(97001, [(1, 10)], enviada=DIA, estado="entregado")
+        kpis = tuple(k for k in definiciones() if k.clave in ("pedidos_del_dia", "mesas_ocupadas"))
+        ids = self._registrar(kpis)
+        with mock.patch.object(tasks_kpis, "KPI_REGISTRY", kpis):
+            tasks_kpis.recalcular_kpi_snapshots_rango(DIA.date(), DIA.date())  # la foto de ese dia
+        pedidos = self._rango(ids, "pedidos_del_dia", "estado", "ultimo")
+        mesas = self._rango(ids, "mesas_ocupadas", "estado", "ultimo")
+        self.assertEqual({"cobrado": 0.0, "entregado_sin_cobrar": 1.0, "en_curso": 0.0}, pedidos["por_empleado"])
+        self.assertEqual({"libre": 0.0, "ocupada_con_cuenta_pendiente": 2.0, "por_liberar": 0.0}, mesas["por_empleado"])
+
+    # --- corrida frecuente ---------------------------------------------------------
+
+    def _registrar(self, kpis):
+        ids, creadas = {}, []
+        with transaction_context() as db:
+            for kpi in kpis:
+                fila = db.scalar(select(KpiDefinition).where(KpiDefinition.clave == kpi.clave))
+                if fila is None:
+                    fila = KpiDefinition(clave=kpi.clave, etiqueta=kpi.etiqueta, modulo=kpi.modulo,
+                                         dimensiones=list(kpi.dimensiones), unidad=kpi.unidad)
+                    db.add(fila)
+                    db.flush()
+                    creadas.append(fila.id_kpi_definition)
+                ids[kpi.clave] = fila.id_kpi_definition
+        self.addCleanup(self._borrar_definiciones, ids, creadas)
+        return ids
+
+    def _hoy(self):
+        falso = mock.MagicMock(wraps=date)
+        falso.today.return_value = DIA.date()
+        return mock.patch.object(tasks_kpis, "date", falso)
+
+    def test_la_corrida_frecuente_solo_toca_restaurante_y_pos_y_solo_el_dia_de_hoy(self):
+        ajeno = copy.copy(KPI_REGISTRY[0])
+        self.assertNotIn(ajeno.modulo, frecuencia.MODULOS_FRECUENTES)
+        ajeno.query_builder = mock.Mock(return_value=[])
+        kpis = tuple(definiciones()) + (ajeno,)
+        ids = self._registrar(kpis)
+        self._orden(97001, [(1, 100)], pagada=DIA)                       # hoy
+        self._orden(97002, [(1, 40)], pagada=DIA - timedelta(days=2))    # antier: la frecuente no lo recalcula
+        with mock.patch.object(tasks_kpis, "KPI_REGISTRY", kpis), self._hoy():
+            resultado = tasks_kpis.recalculate_kpi_snapshots_frecuentes()
+        self.assertEqual(DIA.date().isoformat(), resultado["fecha_inicio"])
+        self.assertEqual(DIA.date().isoformat(), resultado["fecha_fin"])
+        ajeno.query_builder.assert_not_called()
+        with transaction_context() as db:
+            periodos = set(db.scalars(select(KpiSnapshot.periodo).where(
+                KpiSnapshot.id_kpi_definition == ids["ventas_restaurante"])))
+        self.assertEqual({DIA.date()}, periodos)
+
+    def test_la_corrida_nocturna_sigue_recalculando_todos_los_modulos_con_su_ventana_de_7_dias(self):
+        ajeno = copy.copy(KPI_REGISTRY[0])
+        ajeno.query_builder = mock.Mock(return_value=[])
+        kpis = tuple(definiciones()) + (ajeno,)
+        ids = self._registrar(kpis)
+        self._orden(97001, [(1, 100)], pagada=DIA)
+        self._orden(97002, [(1, 40)], pagada=DIA - timedelta(days=2))
+        with mock.patch.object(tasks_kpis, "KPI_REGISTRY", kpis), self._hoy():
+            resultado = tasks_kpis.recalculate_kpi_snapshots()
+        self.assertEqual((DIA.date() - timedelta(days=6)).isoformat(), resultado["fecha_inicio"])
+        ajeno.query_builder.assert_called()
+        with transaction_context() as db:
+            periodos = set(db.scalars(select(KpiSnapshot.periodo).where(
+                KpiSnapshot.id_kpi_definition == ids["ventas_restaurante"])))
+        self.assertEqual({DIA.date(), DIA.date() - timedelta(days=2)}, periodos)
+
+    def test_el_intervalo_es_una_constante_de_5_minutos_en_el_beat(self):
+        self.assertEqual(5, frecuencia.INTERVALO_MINUTOS_POR_OMISION)
+        with mock.patch.dict("os.environ", {}, clear=False):
+            import os
+            os.environ.pop(frecuencia.INTERVALO_ENV, None)
+            self.assertEqual(5, frecuencia.intervalo_minutos())
+        for crudo, esperado in (("10", 10), ("0", 5), ("999", 5), ("x", 5), ("", 5)):
+            with mock.patch.dict("os.environ", {frecuencia.INTERVALO_ENV: crudo}):
+                self.assertEqual(esperado, frecuencia.intervalo_minutos(), crudo)
+        entrada = BEAT_SCHEDULE["recalculate-kpi-snapshots-frecuentes"]
+        self.assertEqual("app.jobs.tasks_kpis.recalculate_kpi_snapshots_frecuentes", entrada["task"])
+        self.assertEqual(timedelta(minutes=5), entrada["schedule"])
+        self.assertEqual("app.jobs.tasks_kpis.recalculate_kpi_snapshots", BEAT_SCHEDULE["recalculate-kpi-snapshots-nightly"]["task"])
+
+    def test_los_modulos_frecuentes_existen_en_el_registro_de_modulos(self):
+        self.assertEqual([], [m for m in frecuencia.MODULOS_FRECUENTES if m not in MODULO_POR_CLAVE])
 
     # --- las banderas -----------------------------------------------------------
 

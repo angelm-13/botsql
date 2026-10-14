@@ -398,25 +398,10 @@ export default function WarehouseVoucherPage() {
     }
   };
 
-  const cancelar = async (idVale) => {
-    const motivo = window.prompt(t("voucher.cancel_reason", "Motivo de la cancelación"));
-    if (!motivo || !motivo.trim()) return;
-    setError("");
-    setAviso("");
-    try {
-      const r = await cancelWarehouseVoucher(idVale, motivo.trim());
-      setConsultado(await getWarehouseVoucher(r.voucher.id_incident));
-      setAviso(t("voucher.cancelled", "Vale cancelado: el material apartado se liberó."));
-      await cargar();
-    } catch (e) {
-      decirError(e, "No se pudo cancelar el vale.");
-    }
-  };
-
-  const cerrar = async (idLinea) => {
+  const cerrar = async (idLinea, payload = {}) => {
     setError("");
     try {
-      const r = await closeWarehouseVoucherLine(idLinea);
+      const r = await closeWarehouseVoucherLine(idLinea, payload);
       setConsultado(await getWarehouseVoucher(r.voucher.id_incident));
       setAviso(r.closed_the_voucher
         ? t("voucher.closed_all", "Era el último renglón: el vale queda cerrado.")
@@ -708,6 +693,7 @@ export default function WarehouseVoucherPage() {
                   onVerHistorial={(idUser, nombre) => setHistorialEmpleado({ idUser, nombre })}
                   puedeAutorizar={puedeAutorizar}
                   puedeCerrarRenglon={puedeCerrarRenglon}
+                  onConfirmarCustodia={confirmarCustodia}
                   onEntregarVale={entregarVale} onConfirmarRecibido={confirmarRecibido}
                   privilegiado={privilegiado} actorIdUser={actor.id_user}
                   usuarios={usuarios}
@@ -743,7 +729,7 @@ export default function WarehouseVoucherPage() {
 /** El vale con sus renglones, y el estado derivado bien visible. */
 function Vale({ vale, onCerrar, onAutorizar, onCancelar, onImprimir, imprimiendo, onAmpliar,
                onVerHistorial, puedeAutorizar, puedeCerrarRenglon,
-               onEntregarVale, onConfirmarRecibido,
+               onConfirmarCustodia, onEntregarVale, onConfirmarRecibido,
                privilegiado, actorIdUser, usuarios,
                nombreDe, sitioDe, t }) {
   const cabecera = vale.voucher || {};
@@ -751,10 +737,15 @@ function Vale({ vale, onCerrar, onAutorizar, onCancelar, onImprimir, imprimiendo
   const cerrado = estado === "cerrado";
   // El borrador es el prevale: material pedido, todavia en el almacen.
   const borrador = estado === "borrador";
-  // Hasta que almacen lo marca como salido, el material sigue en el almacen:
-  // esta apartado, no fuera.
-  const sinSalir = ["borrador", "en_espera"].includes(estado);
-  const cancelado = estado === "cancelado";
+  // Quien puede entregar una pieza a un operador o confirmar que la
+  // recupero: el responsable DE ESTE vale (normalmente Supervisor, que solo
+  // tiene `warehouse_prevoucher`, nunca `warehouse_voucher`) o quien opera
+  // el almacen.
+  const puedeGestionarCustodia = privilegiado
+    || Number(cabecera.id_user) === Number(actorIdUser)
+    || puedeCerrarRenglon;
+  const [devuelvePor, setDevuelvePor] = useState({});
+  const [devuelveNombre, setDevuelveNombre] = useState({});
 
   // Un prestamo real por renglon, no una fila de tabla: la devolucion agrega
   // un renglon de ENTRADA en vez de reescribir el de SALIDA (asi queda el
@@ -916,6 +907,16 @@ function Vale({ vale, onCerrar, onAutorizar, onCancelar, onImprimir, imprimiendo
               const origen = salida?.id_location_from ?? linea.id_location_from;
               const mostrarDestino = destino && String(destino) !== String(origen);
 
+              // Lo recogio alguien distinto del responsable: el renglon quedo a
+              // nombre de otro usuario o de un externo al autorizar el vale.
+              const recogeOtro = abierto && Boolean(salida.delivered_to_name
+                || (salida.id_user_delivered_to
+                  && Number(salida.id_user_delivered_to) !== Number(cabecera.id_user)));
+              const idSalida = salida?.id_nm_incident_product;
+              const quien = devuelvePor[idSalida] ?? (salida?.delivered_to_name
+                ? "externo" : String(salida?.id_user_delivered_to || ""));
+              const nombreExterno = devuelveNombre[idSalida] ?? (salida?.delivered_to_name || "");
+
               return (
                 <tr key={linea.id_nm_incident_product}
                     className={abierto && !sinSalir ? "vale-renglon-fuera" : "vale-renglon-devuelto"}>
@@ -953,12 +954,72 @@ function Vale({ vale, onCerrar, onAutorizar, onCancelar, onImprimir, imprimiendo
                           {t("voucher.out", "fuera")}
                           {vencido && <> · {t("history.overdue", "vencido")}</>}
                         </span>
-                        {puedeCerrarRenglon && (
+                        {/* Quien la trae de vuelta, al cerrar. Solo si el
+                            supervisor dijo al pedirlo que lo recogeria otra
+                            persona (el renglon quedo a nombre de alguien que
+                            no es el responsable, o de un externo): viene
+                            preseleccionada esa persona y se puede corregir.
+                            Si el responsable lo saco el mismo, no hay nada
+                            que elegir y almacen no puede asignarlo a otro. */}
+                        {puedeCerrarRenglon && !recogeOtro && (
                           <button className="button button-quiet"
                                   onClick={() => onCerrar(salida.id_nm_incident_product)}>
                             <Check size={14} />
                             {t("voucher.close_line", "Marcar devuelto")}
                           </button>
+                        )}
+                        {puedeCerrarRenglon && recogeOtro && (
+                          <span className="vale-custodia">
+                            <select
+                              value={quien}
+                              onChange={(e) => setDevuelvePor({ ...devuelvePor, [idSalida]: e.target.value })}
+                              aria-label={t("voucher.returned_by", "Devuelve")}
+                            >
+                              {usuarios.map((u) => (
+                                <option key={u.id_user} value={u.id_user}>
+                                  {u.full_name || u.username}
+                                </option>
+                              ))}
+                              <option value="externo">{t("voucher.returned_by_external", "Otra persona (externo)…")}</option>
+                            </select>
+                            {quien === "externo" && (
+                              <input
+                                type="text" maxLength={120}
+                                placeholder={t("voucher.returned_by_name", "Nombre de quien devuelve")}
+                                value={nombreExterno}
+                                onChange={(e) => setDevuelveNombre({ ...devuelveNombre, [idSalida]: e.target.value })}
+                              />
+                            )}
+                            <button className="button button-quiet"
+                                    disabled={quien === "externo" && !nombreExterno.trim()}
+                                    onClick={() => onCerrar(idSalida, quien === "externo"
+                                      ? { returned_by_name: nombreExterno.trim() }
+                                      : { returned_by: Number(quien) })}>
+                              <Check size={14} />
+                              {t("voucher.close_line", "Marcar devuelto")}
+                            </button>
+                          </span>
+                        )}
+                        {(linea.id_user_delivered_to || linea.delivered_to_name) && !linea.custody_confirmed_date && (
+                          <span className="vale-custodia">
+                            <span className="muted">
+                              {t("voucher.delivered_to", "Con")}: {linea.delivered_to_name
+                                ? `${linea.delivered_to_name} (${t("voucher.external", "externo")})`
+                                : nombreDe(linea.id_user_delivered_to)}
+                            </span>
+                            {puedeGestionarCustodia && (
+                              <button className="button button-quiet"
+                                      onClick={() => onConfirmarCustodia(linea.id_nm_incident_product)}>
+                                <Check size={14} />
+                                {t("voucher.confirm_custody", "Confirmar recepción")}
+                              </button>
+                            )}
+                          </span>
+                        )}
+                        {(linea.id_user_delivered_to || linea.delivered_to_name) && linea.custody_confirmed_date && (
+                          <span className="vale-custodia muted">
+                            {t("voucher.custody_confirmed", "Recuperado de")} {linea.delivered_to_name || nombreDe(linea.id_user_delivered_to)}
+                          </span>
                         )}
                       </>
                     ) : (
@@ -966,6 +1027,14 @@ function Vale({ vale, onCerrar, onAutorizar, onCancelar, onImprimir, imprimiendo
                         <Check size={13} />
                         {cancelado ? t("voucher.status_cancelado", "cancelado")
                                    : t("history.returned", "devuelto")}
+                      </span>
+                    )}
+                    {entrada && (entrada.returned_by_user || entrada.returned_by_name) && (
+                      <span className="muted">
+                        {" "}{t("voucher.returned_by_label", "Devuelto por")}:{" "}
+                        {entrada.returned_by_name
+                          ? `${entrada.returned_by_name} (${t("voucher.external", "externo")})`
+                          : nombreDe(entrada.returned_by_user)}
                       </span>
                     )}
                   </td>
@@ -1029,6 +1098,7 @@ Vale.propTypes = {
   imprimiendo: PropTypes.bool,
   onAmpliar: PropTypes.func,
   onVerHistorial: PropTypes.func.isRequired,
+  onConfirmarCustodia: PropTypes.func.isRequired,
   onEntregarVale: PropTypes.func.isRequired,
   onConfirmarRecibido: PropTypes.func.isRequired,
   privilegiado: PropTypes.bool,

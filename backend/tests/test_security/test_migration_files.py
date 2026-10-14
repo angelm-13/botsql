@@ -77,6 +77,32 @@ class TestArchivosDeMigracion(unittest.TestCase):
                 ilegibles.append(f"{archivo.name}: {error}")
         self.assertEqual([], ilegibles, "\n" + "\n".join(ilegibles))
 
+    def test_no_migration_aborts_on_the_state_of_a_customer_database(self):
+        """Ninguna migracion puede abortar por como esta la base de un cliente.
+
+        Las migraciones se reaplican en CADA arranque del pod y `db-migrate`
+        detiene el arranque si una falla. Una comprobacion de "se esperaban N
+        filas" deja de ser cierta en cuanto un cliente personaliza su
+        instalacion: `20260908100000` exigia 4 o 5 roles base y comala retiro
+        tres desde el Gestor -> `Init:Error`, y con `Recreate`, sin API. Ya
+        habia pasado igual el 2026-09-23 ("exigir 5 reventaba en cada
+        reinicio"). Se vigilan TODAS las migraciones, no solo esa: un
+        `RAISE EXCEPTION` aqui es siempre una apuesta sobre datos que el
+        cliente puede cambiar. Si algo debe avisar, `RAISE NOTICE`.
+
+        Se ignoran los comentarios `--`: los que cuentan la historia de un
+        aborto ya corregido pueden nombrar la sentencia sin ejecutarla.
+        """
+        con_aborto = []
+        for archivo in sorted(MIGRACIONES.glob("*.sql")):
+            sin_comentarios = "\n".join(
+                linea.split("--", 1)[0]
+                for linea in archivo.read_text(encoding="utf-8").splitlines()
+            )
+            if "RAISE EXCEPTION" in sin_comentarios.upper():
+                con_aborto.append(archivo.name)
+        self.assertEqual([], con_aborto, "\n" + "\n".join(con_aborto))
+
 
 if __name__ == "__main__":
     unittest.main()

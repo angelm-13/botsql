@@ -37,7 +37,9 @@ from app.models import (
 )
 from app.models.session import transaction_context
 from app.services.inventory_service import apply_inventory_movement
-from app.services.inventory_trace_service import _clasificar, localizar
+from app.services.inventory_trace_service import (
+    _clasificar, estatus_efectivo, localizar,
+)
 from tests.conftest import BackendTestCase
 from tests.model_factory import sembrar_actor
 
@@ -145,6 +147,27 @@ class TestComoSeClasificaCadaMovimiento(unittest.TestCase):
             _clasificar("destroy", None),
         }
         self.assertEqual(4, len(nombres), f"se solaparon: {nombres}")
+
+
+class TestElEstatusQueSePinta(unittest.TestCase):
+    """El verde de una tarjeta no puede contradecir lo que esta fuera."""
+
+    SALIDAS = {"quantity": 1}
+
+    def test_open_loans_and_nothing_in_stock_override_a_stale_entrada(self):
+        self.assertEqual("SALIDA", estatus_efectivo("ENTRADA", self.SALIDAS, []))
+        self.assertEqual("SALIDA", estatus_efectivo(None, self.SALIDAS, []))
+
+    def test_stock_still_in_the_warehouse_keeps_the_stored_status(self):
+        self.assertEqual("ENTRADA", estatus_efectivo(
+            "ENTRADA", self.SALIDAS, [{"quantity": 3}]))
+
+    def test_nothing_out_keeps_the_stored_status(self):
+        self.assertEqual("ENTRADA", estatus_efectivo("ENTRADA", None, []))
+
+    def test_a_decision_is_never_overridden(self):
+        for estatus in ("EXTRAVIADO", "DESTRUCCION", "DAÑADO", "EN REPARACION"):
+            self.assertEqual(estatus, estatus_efectivo(estatus, self.SALIDAS, []))
 
 
 class TestLocalizar(BackendTestCase):

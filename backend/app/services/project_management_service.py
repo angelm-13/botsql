@@ -296,42 +296,6 @@ def _ordenes_de_compra_vivas(db, id_proyect) -> list[str]:
     return [f[0] for f in filas]
 
 
-def material_readiness(db, id_proyect) -> dict:
-    """Como va el material que el proyecto pidio: cuantas necesidades abiertas
-    ya llegaron, cuales vienen en una orden y cuales ni siquiera se han pedido.
-
-    Una necesidad llego cuando su renglon de orden ya recibio todo lo ordenado.
-    Sin necesidades abiertas no hay nada que esperar (`ready` True).
-    """
-    from app.models.proyect_material_need import ProyectMaterialNeed
-    from app.models.purchase_order import PurchaseOrder, PurchaseOrderLine
-    from app.services.proyect_material_need_service import ORDER_STATES_THAT_RELEASE_NEEDS
-
-    necesidades = [n for (n,) in db.query(ProyectMaterialNeed.id_proyect_material_need).filter(
-        ProyectMaterialNeed.id_proyect == id_proyect,
-        ProyectMaterialNeed.need_status == "open",
-        ProyectMaterialNeed.deletion_date.is_(None)).all()]
-    renglones = {}
-    if necesidades:
-        for need, ordenado, recibido in db.query(
-                PurchaseOrderLine.id_proyect_material_need,
-                PurchaseOrderLine.quantity, PurchaseOrderLine.quantity_received
-        ).join(PurchaseOrder, PurchaseOrder.id_purchase_order == PurchaseOrderLine.id_purchase_order
-               ).filter(
-            PurchaseOrderLine.id_proyect_material_need.in_(necesidades),
-            PurchaseOrderLine.deletion_date.is_(None),
-            PurchaseOrder.deletion_date.is_(None),
-            PurchaseOrder.order_status.notin_(ORDER_STATES_THAT_RELEASE_NEEDS)).all():
-            renglones[need] = (ordenado, recibido)
-    recibidas = sum(1 for n in necesidades if n in renglones and renglones[n][1] >= renglones[n][0])
-    en_orden = sum(1 for n in necesidades if n in renglones) - recibidas
-    return {
-        "total": len(necesidades), "received": recibidas, "on_order": en_orden,
-        "not_ordered": len(necesidades) - recibidas - en_orden,
-        "ready": recibidas == len(necesidades),
-    }
-
-
 def transition_management(project_id, payload: dict, user_data: dict) -> dict:
     """Mueve el proyecto por el recorrido de GERENCIA, no por el de taller.
 

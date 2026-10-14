@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
-import { getAllUser, createUser, updateUser, deleteUser, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllPermission, getAllProyect, getAllStatus } from "../api";
+import { getAllUser, createUser, updateUser, deleteUser, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getPermissionOptions, getAllProyect, getAllStatus } from "../api";
 import { fetchAllPages } from "../utils/fetchAllPages";
 import Pagination from "../components/Pagination.jsx";
 import PageHeader from "../components/PageHeader.jsx";
@@ -104,7 +104,7 @@ export default function UserPage() {
       if (!permissionReady || (!canSubmitForm && !canRead)) return;
       if (canSeeField("id_permission")) {
         try {
-          const permissionData = await getAllPermission({ page: 1, per_page: 100 });
+          const permissionData = await getPermissionOptions();
           setPermissionOptions(Array.isArray(permissionData) ? permissionData : (permissionData.items || []));
         } catch (_) {
           setPermissionOptions([]);

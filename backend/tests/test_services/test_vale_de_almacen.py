@@ -53,8 +53,6 @@ from app.services.warehouse_voucher_service import (
     ABIERTO,
     BORRADOR,
     CERRADO,
-    EN_ESPERA,
-    EN_TRANSITO,
     autorizar_vale,
     buscar_vales,
     cerrar_renglon,
@@ -698,6 +696,72 @@ class TestElValeMueveElAlmacen(BaseVale):
         devolver_renglon(r["lines"][0]["id_nm_incident_product"], {}, ACTOR)
 
         self.assertEqual(100, self._saldo())
+
+    def _sin_origen(self, id_linea):
+        """Deja el renglon como lo migro el sistema anterior: sin ubicacion."""
+        from app.models.nm_incident_product import NmIncidentProduct
+
+        with transaction_context() as db:
+            db.get(NmIncidentProduct, id_linea).id_location_from = None
+
+    def test_returning_a_migrated_line_without_origin_uses_the_product_location(self):
+        """Lo migrado de Adser no trae `id_location_from`: devolver daba 400."""
+        from app.models.product import Product
+
+        self.surtir(100)
+        r = self._vale([self._linea_cantidad(30)])
+        id_linea = r["lines"][0]["id_nm_incident_product"]
+        self._sin_origen(id_linea)
+        with transaction_context() as db:
+            db.get(Product, CEMENTO).id_location = NAVE
+
+        devolver_renglon(id_linea, {}, ACTOR)
+
+        self.assertEqual(100, self._saldo())
+
+    def _recogido_por(self, id_linea, **campos):
+        """Deja el renglon como lo deja un vale autorizado con otro recogedor."""
+        from app.models.nm_incident_product import NmIncidentProduct
+
+        with transaction_context() as db:
+            for campo, valor in campos.items():
+                setattr(db.get(NmIncidentProduct, id_linea), campo, valor)
+
+    def test_the_return_records_who_brought_it_back(self):
+        """Lo recogio otra persona: al cerrar se dice quien lo devuelve."""
+        self.surtir(100)
+        r = self._vale([self._linea_cantidad(10), self._linea_cantidad(5)])
+        a, b = (x["id_nm_incident_product"] for x in r["lines"])
+        self._recogido_por(a, delivered_to_name="Juan Perez")
+        self._recogido_por(b, id_user_delivered_to=ACTOR["id_user"] + 1)
+
+        externo = devolver_renglon(a, {"returned_by_name": "  Juan Perez  "}, ACTOR)
+        usuario = devolver_renglon(b, {"returned_by": ACTOR["id_user"]}, ACTOR)
+
+        self.assertEqual("Juan Perez", externo["entry"]["returned_by_name"])
+        self.assertIsNone(externo["entry"]["returned_by_user"])
+        self.assertEqual(ACTOR["id_user"], usuario["entry"]["returned_by_user"])
+
+    def test_almacen_cannot_name_who_returns_when_nobody_else_was_to_pick_up(self):
+        """Si el responsable lo saco el mismo, nadie mas puede figurar."""
+        self.surtir(100)
+        r = self._vale([self._linea_cantidad(10)])
+        with self.assertRaises(AppError) as caja:
+            devolver_renglon(r["lines"][0]["id_nm_incident_product"],
+                             {"returned_by_name": "Juan"}, ACTOR)
+        self.assertEqual("errors.voucher_return_by_not_designated",
+                         caja.exception.message_key)
+
+    def test_the_return_cannot_name_a_user_and_an_outsider_at_once(self):
+        self.surtir(100)
+        r = self._vale([self._linea_cantidad(10)])
+        self._recogido_por(r["lines"][0]["id_nm_incident_product"],
+                           delivered_to_name="Juan")
+        with self.assertRaises(AppError) as caja:
+            devolver_renglon(r["lines"][0]["id_nm_incident_product"],
+                             {"returned_by": ACTOR["id_user"],
+                              "returned_by_name": "Juan"}, ACTOR)
+        self.assertEqual("errors.invalid_field", caja.exception.message_key)
 
     def test_the_return_adds_an_entry_line_instead_of_rewriting_the_exit(self):
         """Salio un registro, volvio otro. La historia no se corrige, se continua."""

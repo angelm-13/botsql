@@ -10,6 +10,7 @@ from app.models.session import transaction_context
 from app.services.pricing_service import PricingService
 from app.services.public_api_key_manager import PublicApiKeyManager
 from app.utils.errors import AppError
+from app.utils.public_url import image_url
 
 
 bp_public_catalog = Blueprint('public_catalog', __name__, url_prefix='/public')
@@ -116,17 +117,7 @@ def _to_int(value, default=None):
         return default
 
 
-def _public_base_url():
-    return (request.host_url or '').rstrip('/')
-
-
-def _image_url(path_value):
-    raw = str(path_value or '').strip()
-    if not raw:
-        return ''
-    if raw.startswith(('http://', 'https://')):
-        return raw
-    return _public_base_url() + '/' + raw.lstrip('/')
+_image_url = image_url
 
 
 def _has_public_price(config) -> bool:

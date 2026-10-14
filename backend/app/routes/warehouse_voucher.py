@@ -21,7 +21,7 @@ from flask import Blueprint, current_app, jsonify, request, send_file
 
 from app.services.warehouse_voucher_service import (
     _sin_restriccion,
-    es_dueno_de_algun_vale,
+    confirmar_recepcion_de_renglon,
     confirmar_recibido_del_vale,
     entregar_vale,
     documento_del_historial_de_persona,
@@ -294,23 +294,16 @@ def devolver_linea(user_data, id_line):
     El cuerpo acepta `id_location` -a donde vuelve, por omision de donde salio- y
     `note`.
     """
-    resultado = cerrar_renglon(id_line, _cuerpo(), user_data)
-    try:
-        # Notificar a almacén que hay material devuelto.
-        notificar_material_devuelto(id_line, user_data.get("id_user"))
-    except Exception:
-        pass
-    return jsonify(resultado)
+    return jsonify(cerrar_renglon(id_line, _cuerpo(), user_data))
 
 
-@bp_warehouse_voucher.route("/vouchers/lines/<id_line>/report-status", methods=["POST"])
+@bp_warehouse_voucher.route("/vouchers/lines/<id_line>/confirm-custody", methods=["POST"])
 @token_required
 @require_entity_permission("warehouse_voucher", "create")
 def reportar_estado(user_data, id_line):
     """Reportar que una herramienta salió dañada, extraviada o destruida.
 
-    Cuerpo: `{"id_incident_type": <tipo>, "note": "..."}`
-    donde `id_incident_type` es el tipo dañado/extravío/destrucción.
+    Sin `require_entity_permission` a proposito: es SU vale (el candado vive en el servicio).
     """
     return jsonify(reportar_estado_herramienta(id_line, _cuerpo(), user_data)), 201
 

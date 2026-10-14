@@ -142,6 +142,13 @@ function normalizarEstatus(valor) {
     .trim();
 }
 
+// El estatus que se pinta lo calcula el backend (`effective_status`): el texto
+// viejo de `product_status` corregido con las salidas abiertas. La regla vive
+// alli para que cualquier pantalla la lea igual.
+function estatusPintado(it) {
+  return normalizarEstatus(it.effective_status ?? it.product_status);
+}
+
 const TONO_DE_ESTADO = {
   disponible: "ok",
   en_uso: "info",
@@ -617,7 +624,7 @@ export default function InventoryTracePage() {
           return (
             <article
               className={`trace-card estatus-${
-                TONO_DE_ESTATUS[estatusEfectivo(it)] || "sin"}`}
+                TONO_DE_ESTATUS[estatusPintado(it)] || "sin"}`}
               key={it.id_product}
             >
               <div className="trace-photo">
@@ -676,12 +683,13 @@ export default function InventoryTracePage() {
                         ambar con en reparacion. Y hay quien no distingue esos
                         tonos: el color nunca puede ser el unico portador del
                         dato. */}
-                    {(it.product_status || estatusEfectivo(it)) && (
+                    {(it.effective_status || it.product_status) && (
                       <p className="trace-estatus">
                         <span className={`trace-chip ${
-                          TONO_DE_ESTATUS[estatusEfectivo(it)] || "muted"}`}>
-                          {t(`trace.status_${estatusEfectivo(it)
-                            .toLowerCase().replace(/[^a-z]+/g, "_")}`, estatusEfectivo(it))}
+                          TONO_DE_ESTATUS[estatusPintado(it)] || "muted"}`}>
+                          {t(`trace.status_${estatusPintado(it)
+                            .toLowerCase().replace(/[^a-z]+/g, "_")}`,
+                          it.effective_status || it.product_status)}
                         </span>
                       </p>
                     )}

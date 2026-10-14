@@ -71,7 +71,7 @@ from app.services.inventory_asset_service import (
     DISPONIBLE, PRESTADA, transicion_en_sesion,
 )
 from app.services.inventory_service import (
-    apply_movement_in_session, has_capability,
+    apply_movement_in_session, has_capability, ubicacion_general,
 )
 from app.utils.errors import AppError
 
@@ -1242,11 +1242,47 @@ def devolver_renglon(id_line, payload: dict, user_data: dict) -> dict:
                             "close_date": renglon.close_date.isoformat()})
 
         nota = _texto(payload.get("note"), "note", largo=300)
+        # Quien la trae de vuelta, solo si no es el responsable del vale: un
+        # usuario o, si es externo, un nombre. Una cosa o la otra.
+        devuelve_usuario = _entero(payload.get("returned_by"), "returned_by",
+                                   obligatorio=False)
+        devuelve_nombre = _texto(payload.get("returned_by_name"),
+                                 "returned_by_name", largo=120)
+        if devuelve_usuario and devuelve_nombre:
+            raise AppError("errors.invalid_field", 400,
+                           {"field": "returned_by_name"})
+        if devuelve_usuario or devuelve_nombre:
+            # Solo cuando el supervisor dijo, al pedirlo, que lo recogeria otra
+            # persona (el renglon quedo a nombre de alguien que no es el
+            # responsable, o de un externo). Si el responsable lo saco el
+            # mismo, almacen no puede decidir que lo devolvio alguien mas.
+            vale_del_renglon = _vale(db, renglon.id_incident)
+            lo_recogio_otro = bool(
+                renglon.delivered_to_name
+                or (renglon.id_user_delivered_to is not None
+                    and int(renglon.id_user_delivered_to)
+                    != int(vale_del_renglon.id_user)))
+            if not lo_recogio_otro:
+                raise AppError("errors.voucher_return_by_not_designated", 409,
+                               {"id_nm_incident_product":
+                                renglon.id_nm_incident_product})
+        if devuelve_usuario and db.get(User, devuelve_usuario) is None:
+            raise AppError("errors.not_found", 404,
+                           {"entity": "user", "field": "returned_by"})
         # A donde vuelve. Por omision al sitio de donde salio, que es lo que
         # pasa casi siempre; se puede decir otro, porque a veces se devuelve en
         # otra nave.
+        #
+        # Lo migrado del sistema anterior (330 salidas abiertas en adser-prod)
+        # no trae `id_location_from`: el vale legado nunca dijo de que rack
+        # salio. Sin respaldo, "Marcar devuelto" contestaba 400 en TODOS esos
+        # renglones. Se cae a la ubicacion propia del producto y, de ultima, a
+        # la general del almacen -la misma cadena que ya usa
+        # `sembrar_existencia_inicial` para existencia sin sitio-.
         vuelve_a = _entero(payload.get("id_location"), "id_location",
                            obligatorio=False) or renglon.id_location_from
+        if vuelve_a is None:
+            vuelve_a = _ubicacion_de_regreso(db, renglon.id_product)
         if vuelve_a is None:
             raise AppError("errors.required_field", 400, {"field": "id_location"})
 
@@ -1273,6 +1309,8 @@ def devolver_renglon(id_line, payload: dict, user_data: dict) -> dict:
             close_date=ahora,
             due_date=None,
             note=nota,
+            returned_by_user=devuelve_usuario,
+            returned_by_name=devuelve_nombre,
             created_by=actor,
         )
         db.add(entrada)
@@ -1293,6 +1331,20 @@ def devolver_renglon(id_line, payload: dict, user_data: dict) -> dict:
             "closed_the_voucher": str(vale.incident_status or "") == CERRADO,
             "actor": actor,
         }
+
+
+def _ubicacion_de_regreso(db, id_producto):
+    """Donde poner lo que vuelve cuando el renglon no dice de donde salio."""
+    propia = db.scalar(
+        select(Location.id_location)
+        .join(Product, Product.id_location == Location.id_location)
+        .where(Product.id_product == id_producto,
+               Location.deletion_date.is_(None))
+    )
+    if propia:
+        return propia
+    general = ubicacion_general(db)
+    return general.id_location if general is not None else None
 
 
 def _devolver_al_almacen(db, renglon, user_data, *, vuelve_a, motivo, id_entrada):
@@ -1327,6 +1379,54 @@ def _devolver_al_almacen(db, renglon, user_data, *, vuelve_a, motivo, id_entrada
     )
 
 
+def _puede_gestionar_custodia(db, vale: Incident, user_data: dict) -> bool:
+    """Quien puede decir a quien se entrega una pieza, o confirmar que la
+    recupero: el responsable del vale (de quien se trata todo esto) o quien
+    opera el almacen (`warehouse_voucher`). NO se exige con
+    `require_entity_permission` en la ruta -a diferencia de `/return`- porque
+    el responsable de un prevale suele ser Supervisor, que nunca tiene
+    `warehouse_voucher` -- solo `warehouse_prevoucher`. Es SU vale y tiene
+    que poder gestionar la entrega de su propia herramienta.
+    """
+    if _sin_restriccion(user_data):
+        return True
+    if int(vale.id_user) == _actor(user_data):
+        return True
+    return has_capability(db, user_data, "warehouse_voucher")
+
+
+def confirmar_recepcion_de_renglon(id_line, user_data: dict) -> dict:
+    """El supervisor dueño del vale confirma que recupero esta pieza de manos
+    del operador al que se la habia entregado.
+
+    Es un paso INTERMEDIO: la pieza sigue fuera del almacen (`close_date`
+    sigue vacio) hasta que alguien la devuelva de verdad con
+    `devolver_renglon`. Esto solo contesta "¿ya la tienes de vuelta?", que
+    antes se preguntaba a mano por whatsapp y no quedaba en ningun lado.
+    """
+    with transaction_context() as db:
+        renglon = db.scalars(
+            select(NmIncidentProduct).where(
+                NmIncidentProduct.id_nm_incident_product == _entero(
+                    id_line, "id_nm_incident_product"),
+                NmIncidentProduct.deletion_date.is_(None),
+            ).with_for_update()
+        ).first()
+        if renglon is None:
+            raise AppError("errors.not_found", 404,
+                           {"entity": "nm_incident_product"})
+        if renglon.id_user_delivered_to is None and not renglon.delivered_to_name:
+            raise AppError("errors.voucher_line_not_delivered", 409,
+                           {"id_nm_incident_product": renglon.id_nm_incident_product})
+        vale = _vale(db, renglon.id_incident)
+        if not _puede_gestionar_custodia(db, vale, user_data):
+            raise AppError("errors.permission_denied", 403,
+                           {"action": "confirm_custody"})
+        renglon.custody_confirmed_date = _ahora()
+        db.flush()
+        return renglon.serialize()
+
+
 def _resumen_para_notificar(id_incident, id_entregado=None) -> dict:
     """Datos PLANOS (ya resueltos, no objetos ORM) para armar un aviso de
     custodia: nombres incluidos, para no tener que volver a consultar nada
@@ -1342,35 +1442,20 @@ def _resumen_para_notificar(id_incident, id_entregado=None) -> dict:
         }
 
 
-def _usuarios_con_capacidad(db, capacidad: str) -> list[int]:
-    """Todos los usuarios cuyo rol tiene esta capacidad concedida
-    (`scope_read>0`) -- lo contrario de `has_capability`: en vez de
-    preguntar por UN actor, junta a todos los que la tienen, para saber a
-    quien avisar. Mismo criterio que `_users_with_capability` en
-    `project_management_service.py`, copiado aqui en vez de importado para
-    no acoplar este servicio a uno ajeno por una funcion privada.
-    """
-    ids_permiso = [
-        fila[0] for fila in db.query(EntityPermission.id_permission).filter(
-            EntityPermission.entity_name == capacidad,
-            EntityPermission.scope_read > 0,
-            EntityPermission.deletion_date.is_(None),
-        ).all()
-    ]
-    if not ids_permiso:
-        return []
-    return [
-        fila[0] for fila in db.query(User.id_user).filter(
-            User.id_permission.in_(ids_permiso),
-            User.deletion_date.is_(None),
-        ).all()
-    ]
+def notificar_custodia_asignada(id_incident, id_entregado, actor_id: int) -> None:
+    """Avisa (campanita) cuando la custodia de un renglon de vale queda en
+    manos de alguien distinto del responsable -- al crear el vale con
+    `id_user_pickup`.
 
+    Se llama SIEMPRE desde la RUTA, despues de que el `with
+    transaction_context()` de la operacion real ya cerro -- mismo motivo que
+    `_notificar_proyecto` en `project_management_service.py`:
+    `create_notification` abre su PROPIA transaccion, y anidarla con otra ya
+    abierta en la misma peticion se queda esperando una conexion libre del
+    pool para siempre (medido alla, no se repite la prueba aqui).
 
-def notificar_material_devuelto(id_line, actor_id: int) -> None:
-    """Avisa a almacén que hay material devuelto esperando ser recibido.
-
-    Se llama desde la RUTA de devolver_renglon, después de que la transacción cierre.
+    Un fallo al notificar no debe tronar la peticion que ya tuvo exito: la
+    notificacion es un aviso, no una condicion de la entrega.
     """
     from app.services.notification_service import create_notification
 
