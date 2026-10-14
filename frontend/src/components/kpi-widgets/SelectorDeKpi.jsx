@@ -13,6 +13,9 @@ const TEXTOS_POR_OMISION = {
   variables: "Variables",
   variablesAyuda: "Sin desglose: sirven para combinar en un mismo gráfico.",
   elegirColor: "Elegir color",
+  ejemplo: "Ejemplo",
+  motivoSinPermiso: "No disponible para tu rol.",
+  motivoModulo: "Módulo no habilitado.",
   modulos: "Módulos",
   elegidosEnModulo: "elegidos en este módulo",
 };
@@ -156,6 +159,14 @@ export default function SelectorDeKpi({
                       <span className="kpi-editor-kpi-nombre">
                         {multiple && elegida && <span className="kpi-chip-badge">{posicion + 1}</span>}
                         {kpi.etiqueta || kpi.clave}
+                        {kpi.esEjemplo && (
+                          <span
+                            className="kpi-editor-kpi-ejemplo"
+                            title={kpi.motivo === "modulo_no_habilitado" ? t.motivoModulo : t.motivoSinPermiso}
+                          >
+                            {t.ejemplo}
+                          </span>
+                        )}
                         {elegida && <Check size={13} className="kpi-selector-check" aria-hidden="true" />}
                       </span>
                       <span className="kpi-editor-kpi-unidad">{unidadInfo(kpi.unidad).etiquetaSelector}</span>

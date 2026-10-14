@@ -2,7 +2,7 @@
 // tarjeta y el cuerpo del Dashboard en servidor (renderToStaticMarkup) para
 // que la prueba pueda comprobar que NINGUNA combinacion lanza al renderizar.
 import { renderToStaticMarkup } from "react-dom/server";
-import { CuerpoDeWidget, KpiWidgetCard } from "../pages/Dashboard.jsx";
+import { CuerpoDeWidget, KpiWidgetCard, MarcoDeEjemplo } from "../pages/Dashboard.jsx";
 import SelectorDeKpi from "../components/kpi-widgets/SelectorDeKpi.jsx";
 
 const t = (clave, respaldo) => (typeof respaldo === "string" ? respaldo : clave);
@@ -61,4 +61,9 @@ export function pintarSelector(props) {
       {...props}
     />,
   );
+}
+
+/** El aviso y la marca de una vista previa con datos de ejemplo (texto en espanol, como el `tx` de prueba). */
+export function pintarMarcoEjemplo({ motivo, hijo = "contenido" }) {
+  return renderToStaticMarkup(<MarcoDeEjemplo tx={tx} motivo={motivo}>{hijo}</MarcoDeEjemplo>);
 }

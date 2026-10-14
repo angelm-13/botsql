@@ -158,3 +158,72 @@
   position: absolute; top: 5px; left: 6px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px;
   background: var(--tinte, #173b66); color: #fff; font-size: 10px; font-weight: 800; line-height: 16px; text-align: center;
 }
+
+/* --- Vista previa con datos de EJEMPLO (KPI no disponible o sin datos) --------------------------------
+   Aviso fijo arriba, marco punteado y un sello "EJEMPLO" dentro de la grafica: que ni una captura de pantalla
+   se confunda con datos reales. Solo vive en el editor, fuera de las tarjetas (.kpi-widget-card) que captura
+   el reporte PDF. Colores con los tokens de tema (--kpi-atrasado*), asi sirven en claro y oscuro. */
+.kpi-editor-kpi-ejemplo {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border: 1px dashed var(--kpi-atrasado);
+  border-radius: 999px;
+  background: var(--kpi-atrasado-fondo);
+  color: var(--kpi-atrasado);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+.kpi-ejemplo-marco { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.kpi-ejemplo-aviso {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--kpi-atrasado);
+  border-radius: 8px;
+  background: var(--kpi-atrasado-fondo);
+  color: var(--kpi-ink);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.kpi-ejemplo-aviso em { display: block; margin-top: 2px; font-style: normal; font-weight: 600; color: var(--kpi-atrasado); }
+.kpi-ejemplo-grafica {
+  position: relative;
+  overflow: hidden;
+  padding: 8px;
+  border: 2px dashed var(--kpi-atrasado);
+  border-radius: 10px;
+}
+.kpi-ejemplo-sello {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 2;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--kpi-atrasado);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  pointer-events: none;
+}
+/* Marca de agua diagonal sobre toda la grafica. */
+.kpi-ejemplo-grafica::after {
+  content: attr(data-marca);
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: rotate(-18deg);
+  font-size: 44px;
+  font-weight: 900;
+  letter-spacing: .2em;
+  color: var(--kpi-atrasado);
+  opacity: .12;
+  pointer-events: none;
+}
+.kpi-ejemplo-sin-datos { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }

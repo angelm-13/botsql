@@ -115,7 +115,9 @@ export function labelForDimension(dimension, userLabel, productLabel, etiquetas)
   // "estado": el id YA es el nombre legible de la categoria (ej. "abierta", "Entrada") --
   // no hay a quien buscarle nombre, solo capitalizar. Sin este caso caia en userLabel, que
   // trataba "abierta" como un id_user y lo mostraba como "#abierta".
-  if (dimension === "estado") return conSinAsignar((valor) => capitalizar(valor));
+  // Si el KPI declara nombres propios para sus categorias (`etiquetas_categoria`, ej. mesas_ocupadas), la API los manda
+  // en `etiquetas` y se usan; sin ellos, la clave capitalizada.
+  if (dimension === "estado") return conSinAsignar((valor) => delBackend(valor) ?? capitalizar(valor));
   // Las dimensiones de catalogo (mesero, platillo, mesa, cliente, unidad, operador): su nombre
   // viene de la API; sin el, "#id". Nunca se busca entre los usuarios.
   if (dimension && dimension !== "empleado") return conSinAsignar((id) => delBackend(id) || `#${id}`);

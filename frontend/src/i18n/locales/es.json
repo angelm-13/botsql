@@ -4740,5 +4740,22 @@
     "bloqueado": "Bloqueado",
     "terminado": "Terminado",
     "entregado": "Entregado"
+  },
+  "kpi_dashboard": {
+    "example_banner": "Vista previa con datos de ejemplo. Así se vería este KPI; no está disponible para tu rol o aún no tiene datos",
+    "example_badge": "EJEMPLO",
+    "example_tag": "Ejemplo",
+    "example_reason_sin_permiso": "No disponible para tu rol.",
+    "example_reason_sin_datos": "Aún no tiene datos.",
+    "example_reason_modulo": "Módulo no habilitado.",
+    "example_view": "Ver ejemplo",
+    "example_hide": "Ocultar ejemplo",
+    "example_cannot_save": "Un KPI de ejemplo es solo una vista previa: no se puede agregar al tablero.",
+    "example_cannot_combine": "No se puede combinar: un KPI de ejemplo solo se puede ver solo, sin mezclarlo con KPIs reales.",
+    "example_no_data_hint": "Sin datos en el rango elegido.",
+    "example_entity": "Ejemplo",
+    "example_category": "Categoría",
+    "example_item": "Artículo de ejemplo",
+    "example_person": "Persona de ejemplo"
   }
 }

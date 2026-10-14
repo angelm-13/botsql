@@ -29,6 +29,7 @@ import {
   fechaLocalIso, parametrosEfectivos, periodoAnterior, rangoDesfasado, resolverRangoRelativo,
 } from "./kpiRango.js";
 import { colorDeAvatar } from "../components/kpi-widgets/avatar.js";
+import { datosDeEjemplo, filasVivasDeEjemplo, rangoVacio } from "./datosDeEjemplo.js";
 import { filasQueOcupa } from "../components/kpi-widgets/useMasonry.js";
 import {
   filasTablaPrestamo, propsDona, propsNumero, propsNumeroBajoStock, propsSeries,
@@ -119,6 +120,83 @@ test("KPI de categorias fijas (estado): cada barra con SU color declarado", () =
   });
   assert.deepEqual(props.datos.map((f) => f.name), ["Abierta", "Cerrada"]);
   assert.deepEqual(props.datos.map((f) => props.colorPorFila(f)), ["#ef6f5c", "#22b573"]);
+});
+
+test("estado: usa el nombre que manda el backend (etiquetas) y, sin el, la clave capitalizada", () => {
+  const etiquetas = { por_liberar: "Pagada, aún ocupada" };
+  const conNombre = labelForDimension("estado", userLabel, userLabel, etiquetas);
+  assert.equal(conNombre("por_liberar"), "Pagada, aún ocupada");
+  assert.equal(conNombre("libre"), "Libre");
+  assert.equal(labelForDimension("estado", userLabel, userLabel)("abierta"), "Abierta");
+});
+
+// --- datos de ejemplo (vista previa de KPIs no disponibles) ---
+
+const HOY_EJEMPLO = new Date(2026, 9, 13);
+const KPI_EJEMPLO_GLOBAL = { clave: "ventas_restaurante", unidad: "moneda", dimensiones: ["global"], direccion: "alto_es_mejor" };
+const KPI_EJEMPLO_ESTADO = {
+  clave: "mesas_ocupadas", unidad: "numero", dimensiones: ["estado"], dimension_tipo: "categoria",
+  orden_categorias: ["libre", "ocupada_con_cuenta_pendiente", "por_liberar"],
+  etiquetas_categoria: { libre: "Libre", ocupada_con_cuenta_pendiente: "Ocupada con cuenta pendiente", por_liberar: "Pagada, aún ocupada" },
+  colores_categoria: { libre: "#22b573", ocupada_con_cuenta_pendiente: "#ef6f5c", por_liberar: "#2f8fe0" },
+};
+
+test("datos de ejemplo: el mismo KPI da siempre los mismos numeros y otro KPI da otros", () => {
+  const uno = datosDeEjemplo(KPI_EJEMPLO_GLOBAL, { hoy: HOY_EJEMPLO });
+  assert.deepEqual(uno, datosDeEjemplo(KPI_EJEMPLO_GLOBAL, { hoy: HOY_EJEMPLO }));
+  assert.deepEqual(
+    Object.values(uno.rango_a.por_periodo),
+    Object.values(datosDeEjemplo(KPI_EJEMPLO_GLOBAL, { hoy: new Date(2027, 0, 5) }).rango_a.por_periodo),
+    "cambiar el dia de hoy mueve las fechas, no los valores",
+  );
+  assert.notDeepEqual(
+    Object.values(uno.rango_a.por_periodo),
+    Object.values(datosDeEjemplo({ ...KPI_EJEMPLO_GLOBAL, clave: "otro_kpi" }, { hoy: HOY_EJEMPLO }).rango_a.por_periodo),
+  );
+});
+
+test("datos de ejemplo: forma de /kpi_snapshot/query, 14 dias y total coherente con la unidad", () => {
+  const { rango_a: a, rango_b: b } = datosDeEjemplo(KPI_EJEMPLO_GLOBAL, { hoy: HOY_EJEMPLO });
+  assert.equal(b, null);
+  assert.equal(Object.keys(a.por_periodo).length, 14);
+  assert.equal(Object.keys(a.por_periodo).at(-1), "2026-10-13");
+  assert.deepEqual(a.por_empleado, {});
+  assert.equal(a.total, Object.values(a.por_periodo).reduce((x, y) => x + y, 0), "moneda: se suma");
+  const porcentaje = datosDeEjemplo({ clave: "p", unidad: "porcentaje", dimensiones: ["global"] }, { hoy: HOY_EJEMPLO }).rango_a;
+  assert.ok(porcentaje.total >= 20 && porcentaje.total <= 90, "porcentaje: se promedia, queda entre 20 y 90");
+});
+
+test("datos de ejemplo: un KPI de estado usa sus categorias y sus nombres declarados", () => {
+  const { rango_a: a } = datosDeEjemplo(KPI_EJEMPLO_ESTADO, { hoy: HOY_EJEMPLO });
+  assert.deepEqual(Object.keys(a.por_empleado).sort(), [...KPI_EJEMPLO_ESTADO.orden_categorias].sort());
+  assert.equal(a.etiquetas.por_liberar, "Pagada, aún ocupada");
+  const props = propsDona({
+    snapshot: { rango_a: a }, kpiInfo: KPI_EJEMPLO_ESTADO, labelForId: labelForDimension("estado", userLabel, userLabel, a.etiquetas),
+    agruparPorPeriodo: false, formatNumber, textos: { otros: "Otros" },
+  });
+  assert.deepEqual(props.datos.map((d) => d.categoria).sort(), ["Libre", "Ocupada con cuenta pendiente", "Pagada, aún ocupada"]);
+  assert.deepEqual(props.datos.map((d) => d.color).sort(), ["#22b573", "#2f8fe0", "#ef6f5c"]);
+});
+
+test("datos de ejemplo: persona/catalogo usan entidades genericas, nunca nombres reales", () => {
+  const { rango_a: a } = datosDeEjemplo({ clave: "x", unidad: "numero", dimensiones: ["empleado"] }, { hoy: HOY_EJEMPLO });
+  assert.equal(Object.keys(a.por_empleado).length, 5);
+  assert.deepEqual(Object.values(a.etiquetas), ["Ejemplo 1", "Ejemplo 2", "Ejemplo 3", "Ejemplo 4", "Ejemplo 5"]);
+  const recortado = datosDeEjemplo({ clave: "x", unidad: "numero", dimensiones: ["platillo"], limite_categorias: 3 }, { hoy: HOY_EJEMPLO });
+  assert.equal(Object.keys(recortado.rango_a.por_empleado).length, 3);
+  const traducido = datosDeEjemplo({ clave: "x", unidad: "numero", dimensiones: ["empleado"] }, { hoy: HOY_EJEMPLO, textos: { entidad: "Example" } });
+  assert.equal(traducido.rango_a.etiquetas["1"], "Example 1");
+});
+
+test("datos de ejemplo: las filas de un KPI vivo son genericas y estables, y rangoVacio detecta una respuesta sin datos", () => {
+  const filas = filasVivasDeEjemplo({ clave: "material_prestado_actual" }, { hoy: HOY_EJEMPLO });
+  assert.equal(filas.total, 8);
+  assert.deepEqual(filas, filasVivasDeEjemplo({ clave: "material_prestado_actual" }, { hoy: HOY_EJEMPLO }));
+  assert.match(filas.items[0].articulo, /^Artículo de ejemplo 1$/);
+  assert.equal(rangoVacio({ rango_a: { total: 0, por_empleado: {}, por_periodo: {} } }), true);
+  assert.equal(rangoVacio(null), true);
+  assert.equal(rangoVacio({ rango_a: { total: 3, por_empleado: { a: 3 }, por_periodo: {} } }), false);
+  assert.equal(rangoVacio({ rango_a: datosDeEjemplo(KPI_EJEMPLO_GLOBAL).rango_a }), false);
 });
 
 test("artículos bajo stock: solo quedan los que estan por debajo del umbral", () => {

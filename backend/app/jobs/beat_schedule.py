@@ -1,13 +1,24 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 from celery.schedules import crontab
+
+from app.kpis.frecuencia import intervalo_minutos
 
 
 BEAT_SCHEDULE = {
     "recalculate-kpi-snapshots-nightly": {
         "task": "app.jobs.tasks_kpis.recalculate_kpi_snapshots",
         "schedule": crontab(hour=1, minute=0),
+    },
+    # Solo el dia de hoy y solo restaurante/POS (`app/kpis/frecuencia.py`). `expires`: si una corrida tarda
+    # mas que el intervalo, la siguiente no se apila.
+    "recalculate-kpi-snapshots-frecuentes": {
+        "task": "app.jobs.tasks_kpis.recalculate_kpi_snapshots_frecuentes",
+        "schedule": timedelta(minutes=intervalo_minutos()),
+        "options": {"expires": intervalo_minutos() * 60},
     },
     "audit-entities-nightly": {
         "task": "app.jobs.tasks_entity.run_all_entity_audits",
