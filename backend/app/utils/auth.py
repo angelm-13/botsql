@@ -79,6 +79,8 @@ def token_required(fn):
         # sesion: solo `/auth/mfa/verify-login` lo acepta, y lo decodifica aparte.
         if user_data.get('mfa_step'):
             return jsonify({'error_key': 'errors.invalid_token'}), 401
+        if not sesion_vigente(user_data):
+            return jsonify({'error_key': 'errors.session_revoked'}), 401
         return fn(user_data, *args, **kwargs)
     return wrapper
 

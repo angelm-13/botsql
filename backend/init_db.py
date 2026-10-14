@@ -75,7 +75,16 @@ def bootstrap_admin_username() -> str:
 
 
 def bootstrap_admin_password() -> str:
-    return os.getenv("BOOTSTRAP_ADMIN_PASSWORD") or DEFAULT_BOOTSTRAP_PASSWORD
+    clave = os.getenv("BOOTSTRAP_ADMIN_PASSWORD")
+    if clave:
+        return clave
+    # La contrasena de reserva existe solo para desarrollo: en produccion un
+    # administrador con "test password" es una puerta abierta.
+    from app.utils.startup_guard import is_production
+    if is_production():
+        raise RuntimeError("BOOTSTRAP_ADMIN_PASSWORD no esta definida: en produccion no se "
+                           "crea el administrador inicial con una contrasena de ejemplo.")
+    return DEFAULT_BOOTSTRAP_PASSWORD
 
 
 def bootstrap_admin_email() -> str:

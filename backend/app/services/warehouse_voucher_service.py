@@ -1442,6 +1442,31 @@ def _resumen_para_notificar(id_incident, id_entregado=None) -> dict:
         }
 
 
+def _usuarios_con_capacidad(db, capacidad: str) -> list[int]:
+    """Todos los usuarios cuyo rol tiene esta capacidad concedida
+    (`scope_read>0`) -- lo contrario de `has_capability`: en vez de
+    preguntar por UN actor, junta a todos los que la tienen, para saber a
+    quien avisar. Mismo criterio que `_users_with_capability` en
+    `project_management_service.py`, copiado aqui en vez de importado para
+    no acoplar este servicio a uno ajeno por una funcion privada.
+    """
+    ids_permiso = [
+        fila[0] for fila in db.query(EntityPermission.id_permission).filter(
+            EntityPermission.entity_name == capacidad,
+            EntityPermission.scope_read > 0,
+            EntityPermission.deletion_date.is_(None),
+        ).all()
+    ]
+    if not ids_permiso:
+        return []
+    return [
+        fila[0] for fila in db.query(User.id_user).filter(
+            User.id_permission.in_(ids_permiso),
+            User.deletion_date.is_(None),
+        ).all()
+    ]
+
+
 def notificar_custodia_asignada(id_incident, id_entregado, actor_id: int) -> None:
     """Avisa (campanita) cuando la custodia de un renglon de vale queda en
     manos de alguien distinto del responsable -- al crear el vale con
@@ -1457,39 +1482,54 @@ def notificar_custodia_asignada(id_incident, id_entregado, actor_id: int) -> Non
     Un fallo al notificar no debe tronar la peticion que ya tuvo exito: la
     notificacion es un aviso, no una condicion de la entrega.
     """
+    if id_entregado is None:
+        return
     from app.services.notification_service import create_notification
 
-    with transaction_context() as db:
-        renglon = db.scalars(select(NmIncidentProduct).where(
-            NmIncidentProduct.id_nm_incident_product == int(id_line),
-            NmIncidentProduct.deletion_date.is_(None),
-        )).first()
-        if renglon is None:
-            return
+    resumen = _resumen_para_notificar(id_incident, id_entregado)
+    if int(id_entregado) == resumen["id_responsable"]:
+        return
 
-        vale = _vale(db, renglon.id_incident)
-        folio = vale.external_folio or str(vale.id_incident)
-        id_incident_plano = int(vale.id_incident)
-        nombre_persona = _persona(db, vale.id_user)
-        destinatarios = _usuarios_con_capacidad(db, "warehouse_voucher")
+    try:
+        create_notification(
+            id_user_recipient=resumen["id_responsable"],
+            id_user_sender=actor_id,
+            notification_type="warehouse_voucher_custody_assigned",
+            title="Confirma la recepción del vale #%s" % resumen["folio"],
+            message=(
+                "%s va a recoger (o ya recogió) el material del vale #%s. "
+                "Cuando te lo entregue, confirma la recepción en el vale "
+                "para que quede registrado -- evita el \"yo no lo recibí\"."
+            ) % (resumen["nombre_entregado"] or "La persona asignada",
+                 resumen["folio"]),
+            id_proyect=None,
+            metadata={"id_incident": resumen["id_incident"],
+                      "id_user_delivered_to": int(id_entregado)},
+            target_entity="voucher", target_id=resumen["id_incident"],
+            created_by=actor_id,
+        )
+    except Exception:
+        pass
 
-    for id_destinatario in {int(d) for d in destinatarios if int(d) != int(actor_id)}:
+    if int(id_entregado) != int(actor_id):
         try:
             create_notification(
-                id_user_recipient=id_destinatario,
+                id_user_recipient=int(id_entregado),
                 id_user_sender=actor_id,
-                notification_type="warehouse_voucher_return_pending",
-                title="Material devuelto del vale #%s" % folio,
+                notification_type="warehouse_voucher_pickup_assigned",
+                title="Te asignaron recoger el vale #%s" % resumen["folio"],
                 message=(
-                    "%s devolvió material del vale #%s. "
-                    "Está en almacén esperando tu recibido."
-                ) % (nombre_persona or "Alguien", folio),
-                metadata={"id_incident": id_incident_plano},
-                target_entity="voucher", target_id=id_incident_plano,
+                    "Pasa a almacén por el material. El responsable del vale "
+                    "debe confirmar que te lo entregó; avísale cuando lo "
+                    "tengas en tus manos."
+                ),
+                id_proyect=None,
+                metadata={"id_incident": resumen["id_incident"]},
+                target_entity="voucher", target_id=resumen["id_incident"],
                 created_by=actor_id,
             )
         except Exception:
-            continue
+            pass
 
 
 def notificar_prevale_autorizado(id_incident, actor_id: int) -> None:

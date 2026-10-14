@@ -21,6 +21,7 @@ from flask import Blueprint, current_app, jsonify, request, send_file
 
 from app.services.warehouse_voucher_service import (
     _sin_restriccion,
+    es_dueno_de_algun_vale,
     confirmar_recepcion_de_renglon,
     confirmar_recibido_del_vale,
     entregar_vale,
@@ -38,7 +39,6 @@ from app.services.warehouse_voucher_service import (
     historial_del_producto,
     lo_que_ha_pedido,
     notificar_material_entregado,
-    notificar_material_devuelto,
     notificar_prevale_autorizado,
     notificar_prevale_creado,
     pdf_del_historial_de_persona,
