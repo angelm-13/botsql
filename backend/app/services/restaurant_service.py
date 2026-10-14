@@ -26,6 +26,7 @@ from app.models.restaurant import (
 from app.security.audit import audit_event
 from app.services.restaurant_rules import ESTADO_DE_VENTA
 from app.utils.errors import AppError
+from app.utils.tiempo import a_iso_utc
 
 
 DISH_CATEGORIES = {
@@ -194,8 +195,7 @@ class RestaurantService:
                 "entity_name": row.table_name,
                 "action": row.event_detail or row.action,
                 "metadata_json": row.after_value or {},
-                "creation_date": (row.creation_date.isoformat()
-                                  if row.creation_date else None),
+                "creation_date": a_iso_utc(row.creation_date),
             }
             for row in rows
         ]

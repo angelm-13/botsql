@@ -6,6 +6,7 @@ from app.models import User, EventLog
 from app.models.session import transaction_context
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
+from app.utils.tiempo import a_iso_utc
 
 
 bp_web_shoppers = Blueprint('web_shoppers', __name__, url_prefix='/web-shoppers')
@@ -57,8 +58,8 @@ def _serialize_web_shopper(user: User, session=None) -> dict:
         'id_status': status_id,
         'is_active': str(status_id if status_id is not None else ACTIVE_STATUS_ID).strip() == str(ACTIVE_STATUS_ID),
         'accepts_marketing': bool(getattr(user, 'accepts_marketing', False)),
-        'creation_date': getattr(user, 'creation_date', None).isoformat() if getattr(user, 'creation_date', None) else None,
-        'last_update_date': getattr(user, 'last_update_date', None).isoformat() if getattr(user, 'last_update_date', None) else None,
+        'creation_date': a_iso_utc(getattr(user, 'creation_date', None)),
+        'last_update_date': a_iso_utc(getattr(user, 'last_update_date', None)),
         'last_login_at': last_login.isoformat() if last_login else None,
         'total_orders': 0,
     }

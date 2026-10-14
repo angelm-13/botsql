@@ -47,6 +47,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.utils.tiempo import a_iso_utc
 
 
 # Estados de una pieza. El nombre dice donde esta y de quien es la
@@ -174,5 +175,5 @@ class InventoryAsset(Base):
             "note": self.note,
             "counts_as_stock": self.cuenta_como_existencia,
             "created_by": self.created_by,
-            "creation_date": self.creation_date.isoformat() if self.creation_date else None,
+            "creation_date": a_iso_utc(self.creation_date),
         }

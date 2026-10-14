@@ -9,6 +9,7 @@ import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import VisorDeFoto from "../components/VisorDeFoto";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 import { CAMPOS_DE_AUDITORIA } from "../utils/camposDeAuditoria";
+import { formatearFechaHora } from "../utils/fechas";
 
 const emptyForm = { material_description: "", id_unit: "", id_brand: "", id_product_family: "" };
 const validationRules = allValidationRules["material"] || {};
@@ -374,11 +375,8 @@ export default function MaterialPage() {
     }
     if (typeof value === "number") return new Intl.NumberFormat(locale).format(value);
     if (typeof value === "string" && /^[0-9]{4}-[0-9]{2}-[0-9]{2}T/.test(value)) {
-      const date = new Date(value);
-      if (!Number.isNaN(date.getTime())) {
-        const hasTime = !/T00:00(?::00)?/.test(value);
-        return new Intl.DateTimeFormat(locale, hasTime ? { dateStyle: "medium", timeStyle: "short" } : { dateStyle: "medium" }).format(date);
-      }
+      const formateada = formatearFechaHora(value, locale);
+      if (formateada) return formateada;
     }
     if (Array.isArray(value)) return value.map((item) => formatTableValue(item)).filter(Boolean).join(", ");
     if (typeof value === "object") {

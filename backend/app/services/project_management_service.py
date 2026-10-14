@@ -16,6 +16,7 @@ from app.models.user import User
 from app.services.notification_service import create_notification
 from app.services.operations_workflow import TASK_CLOSED_STATUSES
 from app.utils.errors import AppError
+from app.utils.tiempo import a_iso_utc
 
 
 # El recorrido del TALLER. Los dos ultimos se agregaron con la orden de trabajo
@@ -581,7 +582,7 @@ def _project_payload(project: Proyect, events=None, *, gerente_visible: bool = T
         (event for event in (events or []) if event.event_type == "status_changed" and event.new_status == "submitted"),
         None,
     )
-    payload["submitted_date"] = submitted_event.creation_date.isoformat() if submitted_event else None
+    payload["submitted_date"] = a_iso_utc(submitted_event.creation_date) if submitted_event else None
     # Candado real, no solo de UI: quien no tiene el alcance comercial no ve
     # `priority`/`total_cost` ni el estado de cobro derivado, aunque el
     # proyecto ya los tenga capturados por Gerencia.

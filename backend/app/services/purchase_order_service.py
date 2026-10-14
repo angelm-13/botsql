@@ -58,6 +58,7 @@ from app.services.proyect_material_need_service import (
     needs_on_orders,
 )
 from app.utils.errors import AppError
+from app.utils.tiempo import a_iso_utc
 
 AUTHORIZE_CAPABILITY = "purchase_authorize"
 RECEIVE_CAPABILITY = "purchase_receive"
@@ -181,7 +182,7 @@ def _ficha_de_politica(fila: PurchasePolicy) -> dict:
                                if fila.manager_buys_above is not None else None),
         "overrun_percent": float(fila.overrun_percent),
         "updated_by": fila.updated_by,
-        "last_update_date": fila.last_update_date.isoformat() if fila.last_update_date else None,
+        "last_update_date": a_iso_utc(fila.last_update_date),
     }
 
 

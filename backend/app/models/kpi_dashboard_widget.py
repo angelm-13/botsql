@@ -5,6 +5,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import String, Integer, JSON, DateTime, ForeignKey, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from app.models.base import Base
+from app.utils.tiempo import a_iso_utc
 
 
 def to_json_value(value):
@@ -35,8 +36,8 @@ class KpiDashboardWidget(Base):
             'tipo_grafica': to_json_value(self.tipo_grafica),
             'parametros': to_json_value(self.parametros),
             'posicion_orden': to_json_value(self.posicion_orden),
-            'creation_date': to_json_value(self.creation_date),
-            'deletion_date': to_json_value(self.deletion_date),
+            'creation_date': a_iso_utc(self.creation_date),
+            'deletion_date': a_iso_utc(self.deletion_date),
         }
 
     def serialize_summary(self) -> dict:

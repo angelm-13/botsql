@@ -11,7 +11,7 @@ from app.utils.errors import AppError
 from app.utils.field_access import COLUMNAS_DE_AUDITORIA
 
 bp_incident = Blueprint('incident', __name__, url_prefix='/incident')
-ALLOWED_FIELDS = ['id_incident', 'incident_date', 'id_incident_type', 'note', 'id_user', 'incident_status', 'close_date', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'id_lider']
+ALLOWED_FIELDS = ['id_incident', 'incident_date', 'id_incident_type', 'note', 'id_user', 'incident_status', 'close_date', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'id_lider', 'latitude', 'longitude', 'distance_m']
 
 TECHNICAL_RESPONSE_FIELDS = {'id_incident'}
 FIELD_READ_BIT = 2

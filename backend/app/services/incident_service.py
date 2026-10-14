@@ -6,7 +6,8 @@ cerrada antes de haber ocurrido, y el estatus "cerrada" sin fecha de cierre.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
+from decimal import Decimal, InvalidOperation
 
 from sqlalchemy import or_
 
@@ -22,6 +23,7 @@ from app.services.operations_workflow import (
     validate_transition,
 )
 from app.utils.errors import AppError
+from app.utils.tiempo import ZONA_NEGOCIO, ahora_negocio
 
 
 DEFAULT_STATUS = "abierta"
@@ -124,18 +126,30 @@ def require_incident_access(incident_id, user_data) -> Incident:
 
 
 def _as_datetime(value, field):
+    """La fecha como hora de pared del negocio, sin zona.
+
+    `incident_date` y los cierres son fechas de negocio: se guardan en la hora
+    local del cliente. Si el llamador manda una con zona -n8n con `-06:00`, un
+    `...Z`- se convierte a esa hora; antes se le quitaba la zona sin convertir,
+    y una hora en UTC quedaba guardada como si fuera local.
+    """
     if value in (None, ""):
         return None
-    if isinstance(value, datetime):
-        return value.replace(tzinfo=None)
     try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).replace(tzinfo=None)
+        fecha = value if isinstance(value, datetime) else datetime.fromisoformat(
+            str(value).replace("Z", "+00:00"))
     except ValueError as exc:
         raise AppError("errors.invalid_field", 400, {"field": field}) from exc
+    if fecha.tzinfo is not None:
+        fecha = fecha.astimezone(ZONA_NEGOCIO)
+    return fecha.replace(tzinfo=None)
 
 
 def _now():
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    # Contra esta hora se compara `incident_date` y con ella se completa un
+    # cierre, y ambas son hora de pared del negocio: con la hora UTC, una
+    # incidencia podia fecharse hasta 6 horas en el futuro sin rechazarse.
+    return ahora_negocio()
 
 
 class IncidentService(CrudService):
@@ -159,7 +173,28 @@ class IncidentService(CrudService):
             payload['incident_status'] = cls._resolve_status(payload, current)
 
         cls._validate_dates(payload, current)
+        cls._validate_geo(payload)
         return payload
+
+    @staticmethod
+    def _validate_geo(payload):
+        """Latitud, longitud y distancia: numeros dentro de su rango real.
+
+        Llegan de n8n como texto o numero; un valor fuera de rango (latitud 200,
+        distancia negativa) es un error del flujo que conviene rechazar aqui y
+        no guardarlo para que el reporte lo muestre como si fuera cierto.
+        """
+        limites = {'latitude': (-90, 90), 'longitude': (-180, 180), 'distance_m': (0, None)}
+        for campo, (minimo, maximo) in limites.items():
+            valor = payload.get(campo)
+            if valor in (None, ''):
+                continue
+            try:
+                numero = Decimal(str(valor).strip())
+            except InvalidOperation as exc:
+                raise AppError("errors.invalid_field", 400, {"field": campo}) from exc
+            if not numero.is_finite() or numero < minimo or (maximo is not None and numero > maximo):
+                raise AppError("errors.invalid_field", 400, {"field": campo})
 
     @staticmethod
     def _existing_id(value, model, field):
@@ -214,6 +249,11 @@ class IncidentService(CrudService):
         status = payload.get('incident_status') or normalize_incident_status(
             getattr(current, 'incident_status', None)
         )
+        # Lo que se guarda es la hora de pared ya normalizada, no el texto que
+        # mando el llamador (que puede traer zona).
+        for campo, valor in (('incident_date', incident_date), ('close_date', close_date)):
+            if campo in payload and payload[campo] not in (None, ''):
+                payload[campo] = valor
 
         if incident_date and incident_date > _now():
             raise AppError(

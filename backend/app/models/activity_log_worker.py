@@ -4,6 +4,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import Integer, DateTime, ForeignKey, UniqueConstraint, func
 from app.models.base import Base
+from app.utils.tiempo import a_iso_utc
 
 
 def to_json_value(value):
@@ -40,6 +41,6 @@ class ActivityLogWorker(Base):
             'id_activity': to_json_value(self.id_activity),
             'id_user': to_json_value(self.id_user),
             'created_by': to_json_value(self.created_by),
-            'creation_date': to_json_value(self.creation_date),
-            'deletion_date': to_json_value(self.deletion_date),
+            'creation_date': a_iso_utc(self.creation_date),
+            'deletion_date': a_iso_utc(self.deletion_date),
         }

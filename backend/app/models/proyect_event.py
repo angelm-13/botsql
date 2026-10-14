@@ -6,6 +6,7 @@ from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.utils.tiempo import a_iso_utc
 
 
 def to_json_value(value):
@@ -46,7 +47,7 @@ class ProyectEvent(Base):
             "content": self.content,
             "reason": self.reason,
             "review_date": to_json_value(self.review_date),
-            "creation_date": to_json_value(self.creation_date),
+            "creation_date": a_iso_utc(self.creation_date),
         }
 
     def serialize_summary(self) -> dict:

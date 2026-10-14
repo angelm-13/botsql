@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { getNotifications, getUnreadCount, markNotificationAsRead } from "../api";
 import { useI18n } from "../i18n";
 import { destinoDeNotificacion } from "../notifications/destino";
+import { formatearFechaHora } from "../utils/fechas";
 import "./NotificationBell.css";
 
 export default function NotificationBell() {
@@ -167,7 +168,7 @@ export default function NotificationBell() {
                         </div>
                       )}
                       <div className="notification-item-time">
-                        {new Date(notif.creation_date).toLocaleString()}
+                        {formatearFechaHora(notif.creation_date, "es-MX")}
                       </div>
                       <button
                         className="notification-item-acknowledge"

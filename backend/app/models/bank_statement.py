@@ -7,6 +7,7 @@ from sqlalchemy import Date, DateTime, ForeignKey, Integer, JSON, Numeric, Strin
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.utils.tiempo import a_iso_utc
 
 
 class BankStatement(Base):
@@ -53,7 +54,7 @@ class BankStatement(Base):
             "extraction_errors": self.extraction_errors or [],
             "reconciliation_data": self.reconciliation_data or {},
             "created_by": self.created_by,
-            "creation_date": self.creation_date.isoformat() if self.creation_date else None,
+            "creation_date": a_iso_utc(self.creation_date),
         }
 
 

@@ -33,6 +33,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.utils.tiempo import a_iso_utc
 
 
 # Que le paso a la pieza. Se nombran por el hecho, no por el estado al que
@@ -128,5 +129,5 @@ class InventoryAssetEvent(Base):
             "reference_id": self.reference_id,
             "reason": self.reason,
             "created_by": self.created_by,
-            "creation_date": self.creation_date.isoformat() if self.creation_date else None,
+            "creation_date": a_iso_utc(self.creation_date),
         }

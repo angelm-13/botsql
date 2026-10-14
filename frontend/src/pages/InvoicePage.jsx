@@ -11,6 +11,7 @@ import InvoiceUploadWidget from "../components/InvoiceUploadWidget.jsx";
 import InvoiceCreationForm from "../components/InvoiceCreationForm.jsx";
 import InvoiceFiscalPanel from "../components/InvoiceFiscalPanel.jsx";
 import { CAMPOS_DE_AUDITORIA } from "../utils/camposDeAuditoria";
+import { formatearFechaHora } from "../utils/fechas";
 
 const emptyForm = { date_emision: "", date_expiration: "", subtotal: "", tax: "", total: "", invoice_status: "", payment_method: "", note: "", id_customer_supplier: "", fiscal_reference: "", serie_csd: "", internationalization: "", currency: "", type_exchange_rate: "", tax_certification_supplier: "", fiscal_certify_serie: "", certification_date: "", cfdi_code: "", sat_code: "", sat_certification_code: "", id_status: "", nombre_emisor: "", lugar_expedicion: "", tipo_de_comprobante: "", rfc_receptor: "", nombre_receptor: "", regimen_fiscal_receptor: "", domicilio_fiscal_receptor: "", id_proveedor_de_sello: "", folio_fiscal: "", exportacion: "", folio: "", no_certificado_sat: "", sello_sat: "", sello_certificacion_sat: "", no_certificado: "", descuento: "", metodo_pago: "", condiciones_pago: "", id_issuer_customer_supplier: "", id_proyect: "", apply_tax: false, tax_rate: "", commercial_terms: "" };
 const validationRules = allValidationRules["invoice"] || {};
@@ -384,11 +385,8 @@ export default function InvoicePage() {
     }
     if (typeof value === "number") return new Intl.NumberFormat(locale).format(value);
     if (typeof value === "string" && /^[0-9]{4}-[0-9]{2}-[0-9]{2}T/.test(value)) {
-      const date = new Date(value);
-      if (!Number.isNaN(date.getTime())) {
-        const hasTime = !/T00:00(?::00)?/.test(value);
-        return new Intl.DateTimeFormat(locale, hasTime ? { dateStyle: "medium", timeStyle: "short" } : { dateStyle: "medium" }).format(date);
-      }
+      const formateada = formatearFechaHora(value, locale);
+      if (formateada) return formateada;
     }
     if (Array.isArray(value)) return value.map((item) => formatTableValue(item)).filter(Boolean).join(", ");
     if (typeof value === "object") {
