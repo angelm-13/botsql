@@ -387,4 +387,5 @@ def list_incidents(user_data, *, page=1, per_page=20, filters=None, sort=None) -
             "page": page,
             "per_page": per_page,
             "total": total,
+            "pages": (total + per_page - 1) // per_page,
         }

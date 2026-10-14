@@ -803,7 +803,10 @@ def list_projects(user_data: dict, *, page=1, per_page=20, filters=None, sort=No
             )
             for item in items
         ]
-        return {"items": payloads, "page": page, "per_page": per_page, "total": total}
+        return {
+            "items": payloads, "page": page, "per_page": per_page, "total": total,
+            "pages": (total + per_page - 1) // per_page,
+        }
 
 
 def get_project_detail(project_id, user_data: dict) -> dict:
