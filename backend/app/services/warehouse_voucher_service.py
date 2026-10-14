@@ -652,13 +652,17 @@ def _validar_herramientas_disponibles(db, validados: list[dict]) -> None:
             })
 
 
-def _comprobar_existencia_del_borrador(db, validados: list[dict]) -> None:
+def _comprobar_existencia_del_borrador(db, validados: list[dict], *, solo_lo_apartado=False) -> None:
     """Rechaza el borrador que pide mas de lo que hay en su ubicacion.
 
     Lo fungible se suma por (producto, ubicacion) ANTES de comparar: dos
     renglones de 3 contra una existencia de 4 son 6 pedidos, y comprobarlos por
     separado dejaria pasar los dos. Las piezas serializadas no cuentan aqui:
     una pieza es una pieza, y su disponibilidad la comprueba el propio renglon.
+
+    Con `solo_lo_apartado` (el vale directo) solo se rechaza cuando lo apartado por
+    otros prevales es lo que falta; la falta de existencia a secas y la baja de
+    algo prestado las resuelve despues el movimiento del libro, con su propio error.
     """
     pedido: dict[tuple[int, int], int] = {}
     for renglon in validados:
@@ -675,6 +679,8 @@ def _comprobar_existencia_del_borrador(db, validados: list[dict]) -> None:
                 InventoryStock.id_location == id_ubicacion,
             )
         ) or 0) - apartado.get((id_producto, id_ubicacion), 0)
+        if solo_lo_apartado and not apartado.get((id_producto, id_ubicacion), 0):
+            continue
         if solicitado > disponible:
             raise AppError(
                 "errors.voucher_quantity_exceeds_stock", 409,
@@ -905,7 +911,7 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
         # El vale directo tambien: sacar del libro no mira lo apartado por otros
         # prevales, y sin esto se llevaria lo que ya esta comprometido.
         _validar_herramientas_disponibles(db, validados)
-        _comprobar_existencia_del_borrador(db, validados)
+        _comprobar_existencia_del_borrador(db, validados, solo_lo_apartado=not como_borrador)
 
         # La misma pieza dos veces en un mismo vale es una captura doble: solo
         # puede salir una vez. Sin esta comprobacion el segundo renglon falla
