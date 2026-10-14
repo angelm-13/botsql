@@ -1279,6 +1279,20 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
       setBorrador({ ...borrador, pickup_name: "" });
     }
   };
+  // Al elegir la obra el responsable es el supervisor de esa obra. Solo quien no
+  // es el solicitante lo cambia (el supervisor siempre responde por si mismo).
+  const elegirProyecto = (id) => {
+    const obra = proyectos.find((p) => String(p.id_proyect) === String(id));
+    const cambios = { id_proyect: id };
+    if (!soloPuedeSolicitar && obra?.id_supervisor) cambios.id_user = String(obra.id_supervisor);
+    setBorrador({ ...borrador, ...cambios });
+  };
+  // Obra sin supervisor: solo se ofrecen usuarios con rol de supervisor.
+  const obraElegida = proyectos.find((p) => String(p.id_proyect) === String(borrador.id_proyect));
+  const candidatosAResponsable = (obraElegida && !obraElegida.id_supervisor)
+    ? usuarios.filter((u) => /supervisor/i.test(u.role || "")
+      || String(u.id_user) === String(borrador.id_user))
+    : usuarios;
   useEffect(() => {
     if (!borrador.id_proyect) { setValesDelProyecto([]); return undefined; }
     let vivo = true;
@@ -1423,7 +1437,7 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
             <select value={borrador.id_user}
                     onChange={(e) => setBorrador({ ...borrador, id_user: e.target.value })}>
               <option value="">{t("voucher.pick_holder", "Elige a quién se le entrega")}</option>
-              {usuarios.map((u) => (
+              {candidatosAResponsable.map((u) => (
                 <option key={u.id_user} value={u.id_user}>
                   {u.full_name || u.username || `#${u.id_user}`}
                 </option>
@@ -1468,7 +1482,7 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
         <label className="field">
           <span>{t("voucher.project", "Proyecto")}</span>
           <select value={borrador.id_proyect}
-                  onChange={(e) => setBorrador({ ...borrador, id_proyect: e.target.value })}>
+                  onChange={(e) => elegirProyecto(e.target.value)}>
             <option value="">{t("voucher.no_project", "Sin proyecto asignado")}</option>
             {proyectos.map((p) => (
               <option key={p.id_proyect} value={p.id_proyect}>

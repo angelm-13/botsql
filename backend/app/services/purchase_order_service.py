@@ -52,6 +52,7 @@ from app.models.purchase_order import PAYMENT_METHODS, VOUCHER_KINDS
 from app.models.session import transaction_context
 from app.services.cfdi_xml import parse_cfdi
 from app.services.document_service import SecureDocumentStorage
+from app.services import purchase_budget_service as presupuesto_de_compras
 from app.services.proyect_material_need_service import (
     PROYECTOS_QUE_YA_NO_COMPRAN, _actor, _cantidad, _datos_de_materiales,
     _descripcion_valida, _entero_positivo, _fecha_o_nada, _texto, _unidad,
@@ -591,6 +592,7 @@ def _ficha(db, orden: PurchaseOrder, user_data: dict, *, detalle: bool = True) -
         "lines_total": (float(_total_de_renglones(renglones))
                         if renglones and _total_de_renglones(renglones) is not None else None),
         "projects": sorted(proyectos.values(), key=lambda p: p["id_proyect"]),
+        "budget": (json.loads(orden.budget_detail) if orden.budget_detail else []),
         "vouchers": [v.serialize() for v in comprobantes],
         "actions": _acciones(db, orden, renglones, comprobantes, user_data, actor),
     })
@@ -799,6 +801,12 @@ def submit_order(id_order, user_data: dict) -> dict:
 
         politica = _politica(db)
         requiere = total > politica.authorize_above
+        evaluacion = presupuesto_de_compras.evaluar_orden(db, orden, renglones)
+        se_pasa = presupuesto_de_compras.excede(evaluacion)
+        # Pasarse del presupuesto de un proyecto exige autorizacion aunque el monto sea chico.
+        requiere = requiere or se_pasa
+        orden.exceeds_budget = se_pasa
+        orden.budget_detail = json.dumps(evaluacion) if evaluacion else None
         gerente = (politica.manager_buys_above is not None
                    and total > politica.manager_buys_above)
         orden.quoted_total = total
@@ -809,7 +817,8 @@ def submit_order(id_order, user_data: dict) -> dict:
         orden.authorization_note = None
         orden.authorized_total = None
         detalle = {"total": total, "authorize_above": politica.authorize_above,
-                   "manager_buys_above": politica.manager_buys_above}
+                   "manager_buys_above": politica.manager_buys_above,
+                   "exceeds_budget": se_pasa}
         anterior = orden.order_status
         if requiere:
             _cambiar_estado(db, orden, "pending_authorization", "submitted", actor,
@@ -838,6 +847,15 @@ def authorize_order(id_order, payload: dict, user_data: dict) -> dict:
         # Quien pide el dinero no se lo autoriza. Vale tambien para el administrador.
         if int(orden.created_by) == actor:
             raise AppError("errors.purchase_same_person", 403, {"action": "authorize"})
+        # Otras ordenes pudieron comprometer el presupuesto desde que esta se envio.
+        evaluacion = presupuesto_de_compras.evaluar_orden(
+            db, orden, _renglones(db, orden.id_purchase_order))
+        orden.exceeds_budget = presupuesto_de_compras.excede(evaluacion)
+        orden.budget_detail = json.dumps(evaluacion) if evaluacion else None
+        if orden.exceeds_budget and not nota:
+            # Autorizar por encima del presupuesto deja el motivo por escrito.
+            raise AppError("errors.budget_note_required", 400, {
+                "detail": presupuesto_de_compras.resumen_del_exceso(evaluacion)})
         orden.authorized_by = actor
         orden.authorized_date = _ahora()
         orden.authorization_note = nota
@@ -1286,6 +1304,9 @@ def notificar_orden(evento: str, ficha: dict, actor_id: int) -> None:
             if evento == "por_autorizar":
                 destinatarios = _usuarios_con_capacidad(db, AUTHORIZE_CAPABILITY)
                 mensaje = "La orden %s espera autorizacion." % folio
+                if ficha.get("exceeds_budget"):
+                    mensaje = ("La orden %s excede el presupuesto de un proyecto "
+                               "y espera autorizacion." % folio)
             elif evento == "autorizada":
                 destinatarios = {ficha.get("created_by")}
                 mensaje = "La orden %s fue autorizada; ya puede comprarse." % folio

@@ -137,3 +137,8 @@
 .oc-recepcion { list-style: none; margin: 0 0 0.75rem; padding: 0; display: grid; gap: 0.5rem; }
 .oc-recepcion li { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
 .oc-completo { color: var(--success, #1f7a4d); font-weight: 600; }
+
+.oc-presupuesto { width: 100%; font-size: 13px; margin: 8px 0; border-collapse: collapse; }
+.oc-presupuesto th, .oc-presupuesto td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #e3eae6; }
+.oc-presupuesto input[type="number"] { width: 110px; }
+.oc-sobregiro td { color: #b3261e; font-weight: 600; }

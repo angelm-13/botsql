@@ -382,7 +382,7 @@ def project_options(*, id_leader: int | None = None) -> list[dict]:
     """
     with transaction_context() as db:
         consulta = db.query(Proyect.id_proyect, Proyect.folio, Proyect.title,
-                            Proyect.proyect_description)
+                            Proyect.proyect_description, Proyect.id_supervisor)
         if id_leader is not None:
             consulta = consulta.filter(Proyect.leader == id_leader)
         filas = (
@@ -391,7 +391,9 @@ def project_options(*, id_leader: int | None = None) -> list[dict]:
             .all()
         )
         return [
-            {"id_proyect": f[0], "folio": f[1], "title": f[2], "description": f[3]}
+            {"id_proyect": f[0], "folio": f[1], "title": f[2], "description": f[3],
+             # Quien responde por la obra: el vale la propone como responsable.
+             "id_supervisor": f[4]}
             for f in filas
         ]
 

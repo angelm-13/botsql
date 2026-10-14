@@ -692,6 +692,8 @@ export const uploadPurchaseVoucher = (id, file, campos = {}) => {
 export const removePurchaseVoucher = (idVoucher, note) => request(`/purchase-vouchers/${idVoucher}/remove`, { method: "POST", body: { note } });
 export const downloadPurchaseVoucher = (idVoucher) => requestBlob(`/purchase-vouchers/${idVoucher}/content`);
 export const getPurchasePolicy = () => request("/purchase-policy");
+export const getPurchaseBudgets = (params = {}) => request("/purchase-budgets", { params });
+export const setPurchaseBudget = (idProyect, payload) => request(`/purchase-budgets/${idProyect}`, { method: "PUT", body: payload });
 export const updatePurchasePolicy = (payload) => request("/purchase-policy", { method: "PUT", body: payload });
 export const getProyect = (id) => request(`/proyect/${id}`);
 export const createProyect = (payload) => request("/proyect/", { method: "POST", body: payload });

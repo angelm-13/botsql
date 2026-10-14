@@ -6,6 +6,20 @@ aparte de `ARQUITECTURA_TYAKXA_TNY.md` (referencia técnica estable) y de
 sección se resuelve, se puede recortar; mientras tanto se deja completa para
 que una sesión nueva no tenga que releer el historial de chat.
 
+## Bitacora 2026-10-13 — presupuesto de compras por proyecto y responsable del vale
+
+**Presupuesto por proyecto** (`purchase_budget_service.py`, migracion `20261013100000`):
+gerencia fija el tope (`PUT /purchase-budgets/<proyecto>`, permiso `purchase_policy`; Compras
+solo consulta). Comprometido = ordenes por autorizar/autorizadas/compradas/recibidas/cerradas.
+Una orden que haga pasar el tope queda `exceeds_budget` y va a autorizacion aunque este bajo
+`authorize_above`; se reevalua al autorizar y exige nota; el autor no la libera. Sin
+presupuesto = sin tope; moneda distinta = se trata como excedida. UI: panel
+`PresupuestosDeCompra.jsx` en Ordenes de compra y tabla/aviso en el detalle de la orden.
+**Vales**: al elegir proyecto el responsable es el supervisor de la obra; sin supervisor,
+solo usuarios con rol Supervisor (se reconoce por el nombre del permiso: fragil si se
+renombra el rol). `/user/options` trae `role`, `/proyect/options` trae `id_supervisor`.
+Probado el ciclo de cada tipo (prestamo, reparacion, danado, destruccion, extraviado).
+
 ## Bitacora 2026-10-12 — auditoria de punta a punta (CRM, compras, operaciones, seguridad)
 
 Cinco auditorias + dos de lo que quedo sin probar (timbrado/REP/cancelacion/notas de

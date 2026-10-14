@@ -2512,3 +2512,52 @@ class TestCancelarUnVale(BaseVale):
         crear_vale({"id_incident_type": 555, "id_user": 1, "note": "se rompio",
                     "lines": [{"id_product": CEMENTO, "quantity": 1, "id_location_from": RACK}]},
                    ACTOR)
+
+
+class TestCadaTipoDeValeCompletaSuCiclo(BaseVale):
+    """Prestamo, reparacion, danado, destruccion y extraviado: levantar, autorizar,
+    entregar y confirmar sin trabarse, y la existencia baja una sola vez."""
+
+    TIPOS = {"Préstamo": 181, "Reparación": 182, "Dañado": 183,
+             "Destrucción": 184, "Extraviado": 185}
+
+    def _ciclo(self, descripcion):
+        with transaction_context() as db:
+            db.add(IncidentType(id_incident_type=self.TIPOS[descripcion],
+                                incident_type_description=descripcion, created_by=1))
+        self.surtir(5, RACK)
+        antes = self._saldo(RACK, CEMENTO)
+        borrador = crear_vale(
+            {"id_incident_type": self.TIPOS[descripcion], "id_user": 1, "note": "prueba",
+             "due_date": (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S"),
+             "lines": [{"id_product": CEMENTO, "quantity": 1, "id_location_from": RACK}]},
+            ACTOR, como_borrador=True)
+        id_vale = borrador["voucher"]["id_incident"]
+        self.assertEqual(BORRADOR, borrador["voucher"]["incident_status"])
+        # Apartado: todavia no sale del almacen.
+        autorizar_vale(id_vale, {}, OTRO_ACTOR)
+        self.assertEqual(antes, self._saldo(RACK, CEMENTO))
+        entregar_vale(id_vale, {}, OTRO_ACTOR)
+        self.assertEqual(antes - 1, self._saldo(RACK, CEMENTO))
+        cierre = confirmar_recibido_del_vale(id_vale, {}, ACTOR)
+        return id_vale, antes, cierre
+
+    def _prueba(self, descripcion, final="abierto"):
+        _, _, cierre = self._ciclo(descripcion)
+        self.assertEqual(final, cierre["voucher"]["incident_status"])
+
+    def test_prestamo(self):
+        self._prueba("Préstamo")
+
+    def test_reparacion(self):
+        self._prueba("Reparación")
+
+    def test_danado(self):
+        self._prueba("Dañado")
+
+    def test_destruccion(self):
+        # Nada que devolver: la destruccion se cierra al confirmarse.
+        self._prueba("Destrucción", final="cerrado")
+
+    def test_extraviado(self):
+        self._prueba("Extraviado")
