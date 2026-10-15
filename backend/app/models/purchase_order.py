@@ -89,6 +89,13 @@ class PurchaseOrder(_Serializable, Base):
         String(24), nullable=False, default="draft", server_default=text("'draft'"))
     description: Mapped[str | None] = mapped_column(String(300), nullable=True)
     expected_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Esta orden haria pasar el presupuesto de algun proyecto: aunque su monto este
+    # debajo del limite normal de autorizacion, la libera solo quien autoriza, con motivo.
+    exceeds_budget: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false"))
+    # Foto (JSON) del presupuesto de cada proyecto al enviar la orden: lo que se
+    # autorizo, lo comprometido, lo que pide esta orden y cuanto se pasa.
+    budget_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Tres cifras distintas, a proposito: lo cotizado, lo autorizado y lo comprobado.
     # Si la factura sale mas cara de lo autorizado, la diferencia es la alarma.
@@ -254,3 +261,45 @@ class PurchasePolicy(_Serializable, Base):
     updated_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_update_date: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class PurchaseBudget(_Serializable, Base):
+    """El presupuesto de compras de UN proyecto, autorizado por gerencia.
+
+    Un proyecto sin fila no tiene tope: la orden se rige solo por la politica de montos.
+    Con fila, lo que las ordenes vivas del proyecto comprometen (por autorizar, autorizadas,
+    compradas, recibidas) no puede pasar de `amount` sin que quien autoriza lo libere.
+    """
+    __tablename__ = "purchase_budget"
+    __table_args__ = (
+        CheckConstraint("amount >= 0", name="ck_purchase_budget_amount"),
+    )
+
+    id_purchase_budget: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    id_proyect: Mapped[int] = mapped_column(
+        Integer, ForeignKey("proyect.id_proyect"), nullable=False, unique=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    currency: Mapped[str] = mapped_column(
+        String(3), nullable=False, default="MXN", server_default=text("'MXN'"))
+    note: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    updated_by: Mapped[int] = mapped_column(Integer, nullable=False)
+    creation_date: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now())
+    last_update_date: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class PurchaseBudgetEvent(_Serializable, Base):
+    """Quien fijo o cambio el presupuesto de un proyecto, de cuanto a cuanto. Solo se agrega."""
+    __tablename__ = "purchase_budget_event"
+
+    id_purchase_budget_event: Mapped[int] = mapped_column(
+        Integer, primary_key=True, autoincrement=True)
+    id_proyect: Mapped[int] = mapped_column(
+        Integer, ForeignKey("proyect.id_proyect"), nullable=False, index=True)
+    amount_before: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    amount_after: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    note: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    created_by: Mapped[int] = mapped_column(Integer, nullable=False)
+    creation_date: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now())

@@ -297,6 +297,42 @@ def _ordenes_de_compra_vivas(db, id_proyect) -> list[str]:
     return [f[0] for f in filas]
 
 
+def material_readiness(db, id_proyect) -> dict:
+    """Como va el material que el proyecto pidio: cuantas necesidades abiertas
+    ya llegaron, cuales vienen en una orden y cuales ni siquiera se han pedido.
+
+    Una necesidad llego cuando su renglon de orden ya recibio todo lo ordenado.
+    Sin necesidades abiertas no hay nada que esperar (`ready` True).
+    """
+    from app.models.proyect_material_need import ProyectMaterialNeed
+    from app.models.purchase_order import PurchaseOrder, PurchaseOrderLine
+    from app.services.proyect_material_need_service import ORDER_STATES_THAT_RELEASE_NEEDS
+
+    necesidades = [n for (n,) in db.query(ProyectMaterialNeed.id_proyect_material_need).filter(
+        ProyectMaterialNeed.id_proyect == id_proyect,
+        ProyectMaterialNeed.need_status == "open",
+        ProyectMaterialNeed.deletion_date.is_(None)).all()]
+    renglones = {}
+    if necesidades:
+        for need, ordenado, recibido in db.query(
+                PurchaseOrderLine.id_proyect_material_need,
+                PurchaseOrderLine.quantity, PurchaseOrderLine.quantity_received
+        ).join(PurchaseOrder, PurchaseOrder.id_purchase_order == PurchaseOrderLine.id_purchase_order
+               ).filter(
+            PurchaseOrderLine.id_proyect_material_need.in_(necesidades),
+            PurchaseOrderLine.deletion_date.is_(None),
+            PurchaseOrder.deletion_date.is_(None),
+            PurchaseOrder.order_status.notin_(ORDER_STATES_THAT_RELEASE_NEEDS)).all():
+            renglones[need] = (ordenado, recibido)
+    recibidas = sum(1 for n in necesidades if n in renglones and renglones[n][1] >= renglones[n][0])
+    en_orden = sum(1 for n in necesidades if n in renglones) - recibidas
+    return {
+        "total": len(necesidades), "received": recibidas, "on_order": en_orden,
+        "not_ordered": len(necesidades) - recibidas - en_orden,
+        "ready": recibidas == len(necesidades),
+    }
+
+
 def transition_management(project_id, payload: dict, user_data: dict) -> dict:
     """Mueve el proyecto por el recorrido de GERENCIA, no por el de taller.
 
@@ -347,7 +383,7 @@ def project_options(*, id_leader: int | None = None) -> list[dict]:
     """
     with transaction_context() as db:
         consulta = db.query(Proyect.id_proyect, Proyect.folio, Proyect.title,
-                            Proyect.proyect_description)
+                            Proyect.proyect_description, Proyect.id_supervisor)
         if id_leader is not None:
             consulta = consulta.filter(Proyect.leader == id_leader)
         filas = (
@@ -356,7 +392,9 @@ def project_options(*, id_leader: int | None = None) -> list[dict]:
             .all()
         )
         return [
-            {"id_proyect": f[0], "folio": f[1], "title": f[2], "description": f[3]}
+            {"id_proyect": f[0], "folio": f[1], "title": f[2], "description": f[3],
+             # Quien responde por la obra: el vale la propone como responsable.
+             "id_supervisor": f[4]}
             for f in filas
         ]
 
@@ -864,6 +902,12 @@ def get_project_detail(project_id, user_data: dict) -> dict:
         payload["events"] = [event.serialize() for event in events]
         payload["incidents"] = _vales_con_material(db, incidencias)
         payload["material_summary"] = _material_del_proyecto(db, project.id_proyect)
+        payload["material_readiness"] = material_readiness(db, project.id_proyect)
+        vivas = [t for t in tasks if (t.task_status or "") != "cancelada"]
+        payload["task_progress"] = {
+            "total": len(vivas),
+            "done": sum(1 for t in vivas if t.task_status == "terminada"),
+        }
         payload["appointments"] = [c.serialize() for c in citas]
         payload["payments"] = [p.serialize() for p in pagos]
         payload["payment_summary"] = resumen_pagos
@@ -937,7 +981,7 @@ def _material_del_proyecto(db, id_proyect) -> dict:
                # que "se llevo" la obra. Un estado nulo es un vale de antes y si
                # cuenta -- por eso el coalesce: sin el, NOT IN descarta los NULL.
                func.coalesce(func.lower(Incident.incident_status), "")
-               .notin_(("borrador", "cancelado")),
+               .notin_(("borrador", "en_espera", "cancelado")),
                NmIncidentProduct.deletion_date.is_(None),
                NmIncidentProduct.direction == "salida")
         .group_by(Product.id_product, Product.descripcion, Product.product_code)
@@ -1423,6 +1467,12 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
                 {"target_status": validated_target, "scope": scope, "is_leader": leads_it},
             )
 
+        if validated_target == "denied":
+            # Igual que cancelar por gerencia: no se niega un proyecto con compras vivas.
+            ordenes = _ordenes_de_compra_vivas(db, project.id_proyect)
+            if ordenes:
+                raise AppError("errors.project_open_orders", 409, {"open_orders": ordenes})
+
         if validated_target == "in_progress" and current == "waiting_material":
             # El taller no arranca un proyecto sin tener que trabajar: si no
             # hay ni una tarea capturada todavia, no hay nada que ejecutar.
@@ -1437,6 +1487,11 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
             )
             if not tiene_tareas:
                 raise AppError("errors.project_requires_task", 409)
+            # Arrancar con material pendiente lo decide quien autoriza, pero
+            # dejando el motivo: queda en la bitacora del proyecto.
+            material = material_readiness(db, project.id_proyect)
+            if not material["ready"] and not str(reason or "").strip():
+                raise AppError("errors.project_material_pending", 409, material)
 
         if validated_target in {"completed", "delivered"}:
             # No se completa ni se entrega con tareas todavia abiertas --

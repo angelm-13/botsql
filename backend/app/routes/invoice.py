@@ -541,6 +541,12 @@ def transition_quotation(user_data, id_invoice):
 @require_entity_permission('invoice', 'delete')
 def delete_invoice(user_data, id_invoice):
     InvoiceService.require_scope(id_invoice, user_data)
+    factura = InvoiceService.get(id_invoice) or {}
+    # Un CFDI timbrado (o ya cancelado) es un documento fiscal: se cancela ante
+    # el SAT, no se borra de la base.
+    if factura.get('folio_fiscal') or str(factura.get('invoice_status') or '').strip().lower() in {
+            'timbrada', 'cancelada', 'pagada', 'parcial'}:
+        raise AppError('errors.invoice_cannot_delete_stamped', 409, {'id_invoice': id_invoice})
     return jsonify(InvoiceService.delete(id_invoice, user_id=user_data.get('id_user')))
 
 
@@ -548,6 +554,16 @@ def delete_invoice(user_data, id_invoice):
 @token_required
 @require_entity_permission('invoice', 'update')
 def update_invoice_line_authorization(user_data, id_invoice_material_service):
+    from app.models import InvoiceMaterialService
+    from app.models.session import transaction_context
+
+    with transaction_context() as db_session:
+        linea = db_session.get(InvoiceMaterialService, int(id_invoice_material_service))
+        id_factura_de_la_linea = linea.id_invoice if linea is not None else None
+    if id_factura_de_la_linea is None:
+        raise AppError('errors.resource_not_found', 404)
+    InvoiceService.require_scope(id_factura_de_la_linea, user_data)
+
     data = request.get_json(silent=True) or {}
     authorization_status = str(data.get('authorization_status') or '').strip().lower()
     allowed_statuses = {'pending', 'authorized', 'rejected'}
@@ -590,6 +606,7 @@ def update_invoice_line_authorization(user_data, id_invoice_material_service):
 @require_entity_permission('invoice', 'update')
 def convert_quotation_invoice(user_data, id_invoice):
     data = request.get_json(silent=True) or {}
+    InvoiceService.require_scope(id_invoice, user_data)
     invoice = InvoiceService.get(id_invoice)
     if not invoice:
         raise AppError('errors.resource_not_found', 404)
@@ -625,6 +642,7 @@ def convert_quotation_invoice(user_data, id_invoice):
         line_rows = (
             db_session.query(InvoiceMaterialService)
             .filter(InvoiceMaterialService.id_invoice == invoice_id_value)
+            .filter(InvoiceMaterialService.deletion_date.is_(None))
             .order_by(InvoiceMaterialService.id_invoice_material_service.asc())
             .all()
         )

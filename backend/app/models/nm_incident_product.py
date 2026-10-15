@@ -71,6 +71,10 @@ class NmIncidentProduct(Base):
     # volver y no ha vuelto. Deduplica el job periódico que revisa vales
     # vencidos -- sin esto, cada corrida repetiría el mismo aviso.
     overdue_notified_date: Mapped[object] = mapped_column(DateTime, nullable=True)
+    # Estado de la herramienta en el vale: disponible, apartada, entregada,
+    # en_transito, devuelta, dañada, extraviada, destruida. Rastrea si está
+    # comprometida en otro vale.
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default='disponible', server_default='disponible')
     # Desde cuando y hasta cuando. `close_date` ya decia cuando se cerro, pero
     # sin `due_date` no se podia listar lo vencido, que es la razon de llevar
     # vales.
@@ -106,6 +110,7 @@ class NmIncidentProduct(Base):
             'creation_date': a_iso_utc(self.creation_date),
             'last_update_date': a_iso_utc(self.last_update_date),
             'deletion_date': a_iso_utc(self.deletion_date),
+            'status': to_json_value(self.status),
         }
 
     def serialize_summary(self) -> dict:

@@ -125,6 +125,16 @@ const TONO_DE_ESTATUS = {
 
 // Sin acentos y en mayusculas: en los datos conviven "DAÑADO" y "DANADO", y
 // "DESTRUCCION" nunca trae tilde aunque se diga "destrucción".
+// El estatus que se pinta: un prestamo nuevo no reescribe `product_status` (queda
+// en ENTRADA del sistema anterior), asi que si hay unidades fuera y el texto
+// dice ENTRADA, manda lo que esta pasando: SALIDA. Lo grave -danado, perdido,
+// destruido- nunca se tapa.
+function estatusEfectivo(it) {
+  const estatus = normalizarEstatus(it.product_status);
+  const fuera = Number(it.on_loan?.quantity) > 0;
+  return fuera && (estatus === "ENTRADA" || estatus === "") ? "SALIDA" : estatus;
+}
+
 function normalizarEstatus(valor) {
   return String(valor || "")
     .toUpperCase()
@@ -938,6 +948,11 @@ export default function InventoryTracePage() {
                           {u.id_module && <em className="trace-module">{u.id_module}</em>}
                         </span>
                         <strong className="mono">{u.quantity}</strong>
+                        {u.reserved > 0 && (
+                          <em className="muted">
+                            {" "}({u.reserved} {t("trace.reserved", "apartado(s) en un vale")})
+                          </em>
+                        )}
                       </li>
                     ))}
                   </ul>

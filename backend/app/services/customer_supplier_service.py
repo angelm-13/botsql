@@ -1,5 +1,7 @@
 from decimal import Decimal, InvalidOperation
 
+from sqlalchemy import func
+
 from app.models import CustomerSupplier
 from app.services.base_service import CrudService
 from app.models.session import transaction_context

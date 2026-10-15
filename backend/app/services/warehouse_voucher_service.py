@@ -54,6 +54,7 @@ from datetime import datetime
 from sqlalchemy import case, func, or_, select
 
 from app.models.customer_supplier import CustomerSupplier
+from app.models.entity_permission import EntityPermission
 from app.models.incident import Incident
 from app.models.incident_type import IncidentType
 from app.models.inventory_asset import InventoryAsset
@@ -93,6 +94,8 @@ DIRECCIONES = (SALIDA, ENTRADA, TRASLADO)
 # Separar las dos cosas es el control: quien pide el material no es quien decide
 # que sale del almacen.
 BORRADOR = "borrador"
+EN_ESPERA = "en_espera"
+EN_TRANSITO = "en_transito"
 ABIERTO = "abierto"
 CERRADO = "cerrado"
 CANCELADO = "cancelado"
@@ -224,6 +227,9 @@ def _entero(valor, campo, *, obligatorio=True):
         if obligatorio:
             raise AppError("errors.required_field", 400, {"field": campo})
         return None
+    # `int(2.9)` es 2 y `int(True)` es 1: se guardaban en silencio.
+    if isinstance(valor, bool) or (isinstance(valor, float) and not valor.is_integer()):
+        raise AppError("errors.invalid_field", 400, {"field": campo})
     try:
         return int(valor)
     except (TypeError, ValueError) as exc:
@@ -593,13 +599,70 @@ def _sincronizar_estado(db, vale: Incident) -> None:
 
 # --- operaciones ---------------------------------------------------------
 
-def _comprobar_existencia_del_borrador(db, validados: list[dict]) -> None:
+def apartado_por_sitio(db, ids_productos, *, excepto_vale=None) -> dict[tuple[int, int], int]:
+    """Lo fungible que otros prevales y vales en espera ya tienen apartado.
+
+    Sigue en el libro -no ha salido-, pero ya esta comprometido: sin restarlo,
+    dos prevales piden la misma unica pieza y el segundo solo falla al entregar.
+    Las piezas serializadas se protegen aparte, con su estado `apartada`.
+    """
+    if not ids_productos:
+        return {}
+    consulta = (
+        select(NmIncidentProduct.id_product, NmIncidentProduct.id_location_from,
+               func.coalesce(func.sum(NmIncidentProduct.quantity), 0))
+        .join(Incident, Incident.id_incident == NmIncidentProduct.id_incident)
+        .where(
+            NmIncidentProduct.id_product.in_(list(ids_productos)),
+            NmIncidentProduct.direction == SALIDA,
+            NmIncidentProduct.close_date.is_(None),
+            NmIncidentProduct.deletion_date.is_(None),
+            NmIncidentProduct.id_inventory_asset.is_(None),
+            Incident.deletion_date.is_(None),
+            func.lower(func.coalesce(Incident.incident_status, "")).in_((BORRADOR, EN_ESPERA)),
+        )
+        .group_by(NmIncidentProduct.id_product, NmIncidentProduct.id_location_from)
+    )
+    if excepto_vale is not None:
+        consulta = consulta.where(NmIncidentProduct.id_incident != int(excepto_vale))
+    return {(int(p), int(u)): int(c) for p, u, c in db.execute(consulta).all()
+            if u is not None}
+
+
+def _validar_herramientas_disponibles(db, validados: list[dict]) -> None:
+    """Verifica que ninguna pieza solicitada esté apartada en otro prevale.
+
+    Si una herramienta ya está comprometida ('apartada'), no puede usarse en
+    otro prevale. Esto evita que dos supervisores pidan la misma herramienta
+    simultáneamente.
+    """
+    for linea in validados:
+        id_asset = linea.get("id_inventory_asset")
+        if id_asset is None:
+            continue
+        apartada = db.scalars(select(NmIncidentProduct).where(
+            NmIncidentProduct.id_inventory_asset == id_asset,
+            NmIncidentProduct.status == "apartada",
+            NmIncidentProduct.deletion_date.is_(None),
+        ).limit(1)).first()
+        if apartada:
+            raise AppError("errors.voucher_tool_already_reserved", 409, {
+                "id_inventory_asset": id_asset,
+                "id_incident": apartada.id_incident,
+            })
+
+
+def _comprobar_existencia_del_borrador(db, validados: list[dict], *, solo_lo_apartado=False) -> None:
     """Rechaza el borrador que pide mas de lo que hay en su ubicacion.
 
     Lo fungible se suma por (producto, ubicacion) ANTES de comparar: dos
     renglones de 3 contra una existencia de 4 son 6 pedidos, y comprobarlos por
     separado dejaria pasar los dos. Las piezas serializadas no cuentan aqui:
     una pieza es una pieza, y su disponibilidad la comprueba el propio renglon.
+
+    Con `solo_lo_apartado` (el vale directo) solo se rechaza cuando lo apartado por
+    otros prevales es lo que falta; la falta de existencia a secas y la baja de
+    algo prestado las resuelve despues el movimiento del libro, con su propio error.
     """
     pedido: dict[tuple[int, int], int] = {}
     for renglon in validados:
@@ -608,19 +671,44 @@ def _comprobar_existencia_del_borrador(db, validados: list[dict]) -> None:
         clave = (int(renglon["id_product"]), int(renglon["id_location_from"]))
         pedido[clave] = pedido.get(clave, 0) + int(renglon["quantity"])
 
+    apartado = apartado_por_sitio(db, {p for p, _ in pedido})
     for (id_producto, id_ubicacion), solicitado in pedido.items():
         disponible = int(db.scalar(
             select(func.coalesce(func.sum(InventoryStock.quantity), 0)).where(
                 InventoryStock.id_product == id_producto,
                 InventoryStock.id_location == id_ubicacion,
             )
-        ) or 0)
+        ) or 0) - apartado.get((id_producto, id_ubicacion), 0)
+        if solo_lo_apartado and not apartado.get((id_producto, id_ubicacion), 0):
+            continue
         if solicitado > disponible:
             raise AppError(
                 "errors.voucher_quantity_exceeds_stock", 409,
                 {"id_product": id_producto, "id_location": id_ubicacion,
                  "requested": solicitado, "available": disponible},
             )
+
+
+def _comprobar_existencia_del_borrador_renglon(db, renglon: NmIncidentProduct) -> None:
+    """Comprueba disponibilidad de un renglon específico. Para uso en autorización."""
+    if renglon.id_inventory_asset is not None:
+        return  # Piezas serializadas se validan por su estado.
+    if renglon.id_location_from is None:
+        return  # Sin ubicación, no hay stock que validar.
+    disponible = int(db.scalar(
+        select(func.coalesce(func.sum(InventoryStock.quantity), 0)).where(
+            InventoryStock.id_product == renglon.id_product,
+            InventoryStock.id_location == renglon.id_location_from,
+        )
+    ) or 0) - apartado_por_sitio(
+        db, {renglon.id_product}, excepto_vale=renglon.id_incident
+    ).get((int(renglon.id_product), int(renglon.id_location_from)), 0)
+    if int(renglon.quantity or 0) > disponible:
+        raise AppError(
+            "errors.voucher_quantity_exceeds_stock", 409,
+            {"id_product": renglon.id_product, "id_location": renglon.id_location_from,
+             "requested": renglon.quantity, "available": disponible},
+        )
 
 
 def _validar_vale_padre(db, id_padre: int, id_proyecto, user_data: dict) -> None:
@@ -654,6 +742,62 @@ def _validar_vale_padre(db, id_padre: int, id_proyecto, user_data: dict) -> None
                        {"id_proyect": id_proyecto, "status": estado})
 
 
+# Tipos de vale que son de herramienta; el resto (jornada, comida, vacaciones...)
+# solo lo levanta quien administra todo (Gerencia/administrador).
+TIPOS_DE_HERRAMIENTA = ("prestamo", "reparacion", "danado", "destruccion", "extraviado")
+TIPOS_DE_SUPERVISOR = ("prestamo", "danado", "extraviado", "reparacion")
+
+
+def _prefijos_de_tipo_permitidos(db, user_data: dict):
+    """None si puede levantar cualquier tipo; si no, los prefijos permitidos.
+
+    - Gerencia (`project_authorization`) y administrador: cualquiera.
+    - Almacen (`warehouse_voucher`): solo los de herramienta.
+    - Supervisor (`warehouse_prevoucher`): prestamo, danado, extraviado y
+      reparacion.
+    """
+    if _sin_restriccion(user_data) or has_capability(db, user_data, "project_authorization"):
+        return None
+    if has_capability(db, user_data, "warehouse_voucher"):
+        return TIPOS_DE_HERRAMIENTA
+    if has_capability(db, user_data, "warehouse_prevoucher"):
+        return TIPOS_DE_SUPERVISOR
+    # Sin ninguna de las capacidades de vale: el guardia de la RUTA ya lo
+    # rechazo; aqui no se agrega una segunda regla.
+    return None
+
+
+def filtrar_tipos_de_vale(opciones: list[dict], user_data: dict) -> list[dict]:
+    """Deja en el selector solo los tipos que el rol puede levantar."""
+    with transaction_context() as db:
+        prefijos = _prefijos_de_tipo_permitidos(db, user_data)
+    if prefijos is None:
+        return opciones
+    return [o for o in opciones if any(
+        _clave_de_tipo(o.get("incident_type_description")).startswith(t) for t in prefijos)]
+
+
+def _validar_permiso_tipo_vale(db, user_data: dict, id_tipo: int, como_borrador: bool):
+    """Rechaza un tipo de vale que el rol no puede levantar (ver arriba)."""
+    tipo = db.get(IncidentType, id_tipo)
+    if tipo is None:
+        raise AppError("errors.not_found", 404, {"entity": "incident_type"})
+    detalle = {"action": "create", "entity": "warehouse_voucher",
+               "incident_type_description": tipo.incident_type_description}
+    prefijos = _prefijos_de_tipo_permitidos(db, user_data)
+    if prefijos is None:
+        return
+    solo_supervisor = (not has_capability(db, user_data, "warehouse_voucher")
+                       and has_capability(db, user_data, "warehouse_prevoucher"))
+    if solo_supervisor and not como_borrador:
+        raise AppError("errors.permission_denied", 403,
+                       {**detalle, "detail": "supervisors_can_only_create_drafts"})
+    clave = _clave_de_tipo(tipo.incident_type_description)
+    if not any(clave.startswith(t) for t in prefijos):
+        raise AppError("errors.permission_denied", 403,
+                       {**detalle, "detail": "tipo_no_permitido_para_el_rol"})
+
+
 def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -> dict:
     """Abre un vale con sus renglones.
 
@@ -672,19 +816,19 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
     # proyecto -- una herramienta para el taller no lo es --, y exigirlo
     # obligaria a inventar un proyecto para cada vale suelto.
     id_proyecto = _entero(payload.get("id_proyect"), "id_proyect", obligatorio=False)
-    # Quien va a RECOGER el material, si no es el propio responsable del vale
-    # (el supervisor puede mandar a un operador por la herramienta). Opcional:
-    # si no se manda, el responsable es quien recoge, como ya pasaba antes de
-    # que existiera este campo.
-    id_pickup = _entero(payload.get("id_user_pickup"), "id_user_pickup",
-                        obligatorio=False)
-    # Quien recoge cuando NO tiene usuario (chofer, mensajero): solo el nombre.
-    # Excluyente con `id_user_pickup` -- o es alguien del sistema o es un
-    # externo, nunca las dos cosas a la vez.
-    nombre_pickup = _texto(payload.get("pickup_name"), "pickup_name", largo=120)
-    if nombre_pickup and id_pickup is not None:
-        raise AppError("errors.voucher_pickup_conflict", 400,
-                       {"fields": ["id_user_pickup", "pickup_name"]})
+    # Cuando gerencia levanta un vale de herramienta para un proyecto, PUEDE
+    # designar un supervisor distinto. Opcional: si no se especifica, el
+    # responsable sigue siendo el que se pasa en `id_user`.
+    id_supervisor_proyecto = _entero(payload.get("id_supervisor_project"),
+                                     "id_supervisor_project", obligatorio=False)
+    # Quien recoge cuando no es el propio responsable y no tiene usuario en el
+    # sistema (chofer, mensajero): solo el nombre, en el vale completo.
+    nombre_pickup = _texto(payload.get("pickup_name"), "pickup_name", largo=120, obligatorio=False)
+    # Quien recoge: si se especificó pickup_self, usar eso; si no, inferir del nombre_pickup.
+    # Default: si hay nombre, es externo; si no hay nombre, es el supervisor.
+    recoge_supervisor = payload.get("pickup_self")
+    if recoge_supervisor is None:
+        recoge_supervisor = not bool(nombre_pickup)
     # Vale complementario: el vale anterior, del mismo proyecto, al que este
     # agrega herramienta.
     id_padre = _entero(payload.get("id_incident_parent"), "id_incident_parent",
@@ -697,6 +841,9 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
         )).first() is None:
             raise AppError("errors.not_found", 404,
                            {"entity": "incident_type", "field": "id_incident_type"})
+
+        # Validar que el usuario tenga permiso para crear este tipo de vale.
+        _validar_permiso_tipo_vale(db, user_data, id_tipo, como_borrador)
 
         # El responsable, comprobado. `incident.id_user` tiene llave ajena
         # DIFERIDA, asi que un identificador inventado no falla al asignarlo:
@@ -714,29 +861,44 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
             raise AppError("errors.not_found", 404,
                            {"entity": "user", "field": "id_user"})
 
-        # Quien recoge, si es alguien distinto del responsable: mismo motivo
-        # que arriba, un identificador inventado debe fallar como 404 y no
-        # como 500 en el commit.
-        if id_pickup is not None and db.scalars(
-            select(User.id_user).where(
-                User.id_user == id_pickup,
-                User.deletion_date.is_(None),
-            ).limit(1)
-        ).first() is None:
-            raise AppError("errors.not_found", 404,
-                           {"entity": "user", "field": "id_user_pickup"})
-
         # El proyecto, comprobado por el mismo motivo que el responsable: su
         # llave ajena tambien es diferida, asi que un identificador inventado
         # reventaria en el COMMIT como un 500 en vez de como el 404 que toca.
-        if id_proyecto is not None and db.scalars(
-            select(Proyect.id_proyect).where(
-                Proyect.id_proyect == id_proyecto,
-                Proyect.deletion_date.is_(None),
-            ).limit(1)
-        ).first() is None:
-            raise AppError("errors.not_found", 404,
-                           {"entity": "proyect", "field": "id_proyect"})
+        proyecto = None
+        if id_proyecto is not None:
+            proyecto = db.scalars(
+                select(Proyect).where(
+                    Proyect.id_proyect == id_proyecto,
+                    Proyect.deletion_date.is_(None),
+                ).limit(1)
+            ).first()
+            if proyecto is None:
+                raise AppError("errors.not_found", 404,
+                               {"entity": "proyect", "field": "id_proyect"})
+
+            # Cuando GERENCIA levanta el vale de un proyecto y no eligio otro
+            # responsable, responde el supervisor del proyecto (su lider). No
+            # aplica a quien levanta su propio prevale -- Supervisor, Almacen--
+            # ni pisa a quien eligio a alguien: `proyect.id_supervisor` es el
+            # Jefe de taller que lo tomo, no el supervisor del proyecto.
+            if (id_supervisor_proyecto is None and id_responsable == actor
+                    and has_capability(db, user_data, "project_authorization")
+                    and not _sin_restriccion(user_data)):
+                id_supervisor_proyecto = proyecto.leader or proyecto.created_by
+
+        # Supervisor designado (ya sea explícitamente o del proyecto).
+        # Si se pasa, lo usa como responsable en lugar del id_user original.
+        if id_supervisor_proyecto is not None:
+            if db.scalars(
+                select(User.id_user).where(
+                    User.id_user == id_supervisor_proyecto,
+                    User.deletion_date.is_(None),
+                ).limit(1)
+            ).first() is None:
+                raise AppError("errors.not_found", 404,
+                               {"entity": "user", "field": "id_supervisor_project"})
+            # Usar este supervisor como responsable.
+            id_responsable = id_supervisor_proyecto
 
         if id_padre is not None:
             _validar_vale_padre(db, id_padre, id_proyecto, user_data)
@@ -746,9 +908,10 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
         # Un prevale es una peticion, no una salida, pero pedir mas de lo que
         # hay en esa ubicacion no es una peticion que alguien pueda surtir:
         # nace imposible y el almacen lo descubre hasta que intenta autorizarlo.
-        # El vale de verdad ya lo rechaza al sacar el material.
-        if como_borrador:
-            _comprobar_existencia_del_borrador(db, validados)
+        # El vale directo tambien: sacar del libro no mira lo apartado por otros
+        # prevales, y sin esto se llevaria lo que ya esta comprometido.
+        _validar_herramientas_disponibles(db, validados)
+        _comprobar_existencia_del_borrador(db, validados, solo_lo_apartado=not como_borrador)
 
         # La misma pieza dos veces en un mismo vale es una captura doble: solo
         # puede salir una vez. Sin esta comprobacion el segundo renglon falla
@@ -759,7 +922,10 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
             raise AppError("errors.voucher_duplicate_line", 409, {"field": "lines"})
 
         inicio = _ahora()
-        vence = _fecha_de_regreso(payload.get("due_date"))
+        # Lo destruido o extraviado no tiene "fecha de regreso": se pide solo a
+        # los demas tipos; para la baja, sin fecha, vale el dia del registro.
+        vence = (inicio if _clave_de_baja(db, id_tipo) and not payload.get("due_date")
+                 else _fecha_de_regreso(payload.get("due_date")))
         motivo = _texto(payload.get("note"), "note", largo=300, obligatorio=True)
 
         # Borrador o vale. Lo decide la RUTA por la que se entro, no un campo
@@ -779,7 +945,7 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
             note=motivo,
             created_by=actor,
             id_incident_parent=id_padre,
-            pickup_name=nombre_pickup,
+            pickup_name=nombre_pickup if not recoge_supervisor else None,
             # Todo vale nuevo lleva seguimiento de entrega y recibido.
             tracks_delivery=True,
         )
@@ -799,21 +965,13 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
             renglones_escritos.append(renglon)
         db.flush()
 
-        # Quien recoge, si no es el responsable: se deja constancia en cada
-        # renglon desde que nace el vale -mismo dato que `asignar_entrega_de_
-        # renglon` escribe despues, a mano, renglon por renglon-. No mueve
-        # nada del almacen (eso lo sigue haciendo lo de abajo); solo dice por
-        # donde va a andar la herramienta.
-        if id_pickup is not None and int(id_pickup) != int(id_responsable):
+        # Si es un prevale, marcar las herramientas como apartada para que no se
+        # usen en otro prevale simultáneamente. Cuando el vale se autoriza, pasan
+        # a 'entregada', y cuando se devuelven, a 'devuelta'.
+        if como_borrador:
             for renglon in renglones_escritos:
-                if str(renglon.direction or "") == SALIDA:
-                    renglon.id_user_delivered_to = id_pickup
-            db.flush()
-        elif nombre_pickup:
-            # Un externo no tiene usuario: el nombre queda en el renglon.
-            for renglon in renglones_escritos:
-                if str(renglon.direction or "") == SALIDA:
-                    renglon.delivered_to_name = nombre_pickup
+                if renglon.id_inventory_asset is not None:
+                    renglon.status = "apartada"
             db.flush()
 
         # Y ahora lo que faltaba: que el vale MUEVA el almacen.
@@ -1091,6 +1249,13 @@ def devolver_renglon(id_line, payload: dict, user_data: dict) -> dict:
             raise AppError("errors.voucher_line_already_closed", 409,
                            {"id_nm_incident_product": renglon.id_nm_incident_product,
                             "close_date": renglon.close_date.isoformat()})
+        # Solo vuelve lo que ya salio: en borrador o en espera el libro no ha
+        # movido nada, y devolverlo sumaria existencia que nunca salio.
+        estado_del_vale = _vale(db, renglon.id_incident).incident_status
+        if estado_del_vale in (BORRADOR, EN_ESPERA, CANCELADO):
+            raise AppError("errors.voucher_line_not_delivered_yet", 409,
+                           {"id_nm_incident_product": renglon.id_nm_incident_product,
+                            "incident_status": estado_del_vale})
 
         nota = _texto(payload.get("note"), "note", largo=300)
         # Quien la trae de vuelta, solo si no es el responsable del vale: un
@@ -1139,6 +1304,9 @@ def devolver_renglon(id_line, payload: dict, user_data: dict) -> dict:
 
         ahora = _ahora()
         renglon.close_date = ahora
+        # Marcar herramienta como devuelta (para rastrear que completó su ciclo).
+        if renglon.id_inventory_asset is not None:
+            renglon.status = "devuelta"
         if nota:
             renglon.note = nota
         db.flush()
@@ -1290,6 +1458,31 @@ def _resumen_para_notificar(id_incident, id_entregado=None) -> dict:
         }
 
 
+def _usuarios_con_capacidad(db, capacidad: str) -> list[int]:
+    """Todos los usuarios cuyo rol tiene esta capacidad concedida
+    (`scope_read>0`) -- lo contrario de `has_capability`: en vez de
+    preguntar por UN actor, junta a todos los que la tienen, para saber a
+    quien avisar. Mismo criterio que `_users_with_capability` en
+    `project_management_service.py`, copiado aqui en vez de importado para
+    no acoplar este servicio a uno ajeno por una funcion privada.
+    """
+    ids_permiso = [
+        fila[0] for fila in db.query(EntityPermission.id_permission).filter(
+            EntityPermission.entity_name == capacidad,
+            EntityPermission.scope_read > 0,
+            EntityPermission.deletion_date.is_(None),
+        ).all()
+    ]
+    if not ids_permiso:
+        return []
+    return [
+        fila[0] for fila in db.query(User.id_user).filter(
+            User.id_permission.in_(ids_permiso),
+            User.deletion_date.is_(None),
+        ).all()
+    ]
+
+
 def notificar_custodia_asignada(id_incident, id_entregado, actor_id: int) -> None:
     """Avisa (campanita) cuando la custodia de un renglon de vale queda en
     manos de alguien distinto del responsable -- al crear el vale con
@@ -1355,14 +1548,134 @@ def notificar_custodia_asignada(id_incident, id_entregado, actor_id: int) -> Non
             pass
 
 
+def notificar_prevale_autorizado(id_incident, actor_id: int) -> None:
+    """Avisa al supervisor que su prevale fue autorizado y está listo en almacén.
+
+    Se llama desde la RUTA de autorizar_vale, después de que la transacción cierre.
+    """
+    from app.services.notification_service import create_notification
+
+    with transaction_context() as db:
+        vale = _vale(db, id_incident)
+        folio = vale.external_folio or str(vale.id_incident)
+        id_incident_plano = int(vale.id_incident)
+        id_responsable = int(vale.id_user)
+
+    if int(id_responsable) == int(actor_id):
+        return
+    try:
+        create_notification(
+            id_user_recipient=id_responsable,
+            id_user_sender=actor_id,
+            notification_type="warehouse_voucher_prevoucher_authorized",
+            title="Prevale #%s autorizado" % folio,
+            message=(
+                "Tu prevale #%s fue autorizado y está listo. "
+                "Puedes pasar por el material en almacén."
+            ) % folio,
+            metadata={"id_incident": id_incident_plano},
+            target_entity="voucher", target_id=id_incident_plano,
+            created_by=actor_id,
+        )
+    except Exception:
+        pass
+
+
+def notificar_prevale_creado(id_incident, actor_id: int) -> None:
+    """Avisa a quien puede autorizar vales (Almacen) que hay un prevale
+    nuevo esperando -- el Supervisor ya lo pidio, falta que alguien lo
+    suelte.
+
+    Se llama SIEMPRE desde la RUTA, despues de que `crear_vale` ya cerro su
+    transaccion: `create_notification` abre su PROPIA transaccion, y
+    anidarla con otra ya abierta en la misma peticion se queda esperando una
+    conexion libre del pool para siempre.
+    """
+    from app.services.notification_service import create_notification
+
+    with transaction_context() as db:
+        vale = _vale(db, id_incident)
+        folio = vale.external_folio or str(vale.id_incident)
+        id_incident_plano = int(vale.id_incident)
+        nombre_responsable = _persona(db, vale.id_user)
+        nombre_quien_levanto = _persona(db, vale.created_by) or nombre_responsable
+        quien_recoge = (vale.pickup_name or "").strip()
+        destinatarios = _usuarios_con_capacidad(db, "warehouse_voucher_authorize")
+
+    for id_destinatario in {int(d) for d in destinatarios if int(d) != int(actor_id)}:
+        try:
+            create_notification(
+                id_user_recipient=id_destinatario,
+                id_user_sender=actor_id,
+                notification_type="warehouse_voucher_prevoucher_pending",
+                title="Prevale #%s pendiente de autorizar" % folio,
+                message=(
+                    "%s levantó el prevale #%s (responsable: %s). %s "
+                    "Autorízalo para que pueda pasar por el material."
+                ) % (nombre_quien_levanto or "Alguien", folio,
+                     nombre_responsable or "—",
+                     ("Lo recoge: %s." % quien_recoge) if quien_recoge
+                     else "Lo recoge el responsable."),
+                metadata={"id_incident": id_incident_plano},
+                target_entity="voucher", target_id=id_incident_plano,
+                created_by=actor_id,
+            )
+        except Exception:
+            continue
+
+
+def notificar_material_entregado(id_incident, actor_id: int) -> None:
+    """Avisa al responsable que el material ya salio del almacen y puede
+    pasar por el.
+
+    Cubre los dos caminos por los que un vale entrega material: un vale
+    directo (ya sale al crearse) y un prevale recien autorizado -- en este
+    sistema "autorizar" ES "entregar", no son dos pasos. Se llama SIEMPRE
+    desde la RUTA, despues de que la operacion real ya cerro su
+    transaccion.
+    """
+    from app.services.notification_service import create_notification
+
+    with transaction_context() as db:
+        vale = _vale(db, id_incident)
+        # Una baja (destruccion/extraviado) no es "pasa por el" -- nace
+        # cerrada o no se reclama, segun `TIPOS_DE_BAJA`. Avisar "ya puedes
+        # recogerlo" ahi confundiria mas de lo que ayuda.
+        if _clave_de_baja(db, vale.id_incident_type):
+            return
+        folio = vale.external_folio or str(vale.id_incident)
+        id_incident_plano = int(vale.id_incident)
+        id_responsable = int(vale.id_user)
+
+    if int(id_responsable) == int(actor_id):
+        return
+    try:
+        create_notification(
+            id_user_recipient=id_responsable,
+            id_user_sender=actor_id,
+            notification_type="warehouse_voucher_delivered",
+            title="Vale #%s entregado" % folio,
+            message=(
+                "El material del vale #%s ya salió del almacén. "
+                "Puedes pasar por él."
+            ) % folio,
+            metadata={"id_incident": id_incident_plano},
+            target_entity="voucher", target_id=id_incident_plano,
+            created_by=actor_id,
+        )
+    except Exception:
+        pass
+
+
 def notificar_entrega_registrada(id_incident, actor_id: int) -> None:
     """Avisa (campanita) al responsable que almacen marco su vale como
     entregado: ahora le toca confirmar el recibido.
 
-    Se llama desde la RUTA, despues de cerrar la transaccion de `entregar_vale`
-    (mismo motivo que `notificar_custodia_asignada`: `create_notification`
-    abre su propia transaccion). Si quien marco la entrega ES el responsable no
-    hay a quien avisar. Un fallo al notificar nunca revierte la entrega.
+    Se llama desde la RUTA, despues de cerrar la transaccion de `entregar_vale`:
+    `create_notification` abre su propia transaccion, y anidarla con otra ya
+    abierta se queda esperando una conexion libre del pool para siempre. Si
+    quien marco la entrega ES el responsable no hay a quien avisar. Un fallo
+    al notificar nunca revierte la entrega.
     """
     from app.services.notification_service import create_notification
 
@@ -1444,6 +1757,8 @@ def entregar_vale(id_incident, payload: dict, user_data: dict) -> dict:
 
         renglones = _renglones(db, vale.id_incident)
         des_user, des_nombre = _designado_para_recoger(vale, renglones)
+        if estado == EN_ESPERA:
+            _dar_salida_al_vale(db, vale, user_data, renglones)
 
         # Sin decir a quien: se entrega a quien se designo; y si no habia
         # designado, al responsable.
@@ -1530,6 +1845,8 @@ def confirmar_recibido_del_vale(id_incident, payload: dict, user_data: dict) -> 
         vale.receipt_ok = ok
         vale.receipt_note = nota
         vale.last_update_date = ahora
+        if str(vale.incident_status or "").lower() == EN_TRANSITO:
+            vale.incident_status = ABIERTO
         for r in _renglones(db, vale.id_incident):
             if (str(r.direction or "") == SALIDA and r.close_date is None
                     and r.custody_confirmed_date is None
@@ -1565,16 +1882,6 @@ def consultar_vale(id_incident, user_data: dict) -> dict:
         # en pantalla parece que se llevaron el doble.
         salidas = [r for r in renglones if str(r.direction or "") == SALIDA]
         entradas = [r for r in renglones if str(r.direction or "") == ENTRADA]
-        # Entregado a alguien que no es el responsable, y ese alguien todavia
-        # no se lo ha confirmado: el hueco que esta pantalla necesita ver para
-        # que no se preste a malos entendidos ("yo no lo recibi").
-        pendientes_custodia = [
-            r for r in abiertos
-            if ((r.id_user_delivered_to is not None
-                 and int(r.id_user_delivered_to) != int(vale.id_user))
-                or r.delivered_to_name)
-            and r.custody_confirmed_date is None
-        ]
         # El proyecto al que va el material, con su nombre: en pantalla un
         # "#7" no dice a que obra se lo llevaron.
         proyecto = None
@@ -1596,7 +1903,6 @@ def consultar_vale(id_incident, user_data: dict) -> dict:
             "exit_lines": len(salidas),
             "entry_lines": len(entradas),
             "total_lines": len(renglones),
-            "pending_custody_lines": len(pendientes_custodia),
             "delivery_status": estado_de_entrega(vale),
         }
 
@@ -1667,19 +1973,78 @@ def _puede_autorizar(db, user_data) -> bool:
     return has_capability(db, user_data, "warehouse_voucher_authorize")
 
 
+def cancelar_vale(id_incident, payload: dict, user_data: dict) -> dict:
+    """Cancela un vale que todavia no saco material: borrador o en espera.
+
+    Libera la reserva (lo apartado deja de restar disponibilidad) y cierra los
+    renglones para que no cuenten como material fuera ni como vencidos. Una vez
+    entregado ya no se cancela: lo que salio se devuelve renglon por renglon.
+    Lo cancela quien lo pidio, su responsable o quien opera el almacen.
+    """
+    actor = _actor(user_data)
+    motivo = _texto(payload.get("note"), "note", largo=300)
+    if not motivo:
+        raise AppError("errors.required_field", 400, {"field": "note"})
+    with transaction_context() as db:
+        vale = _vale(db, id_incident, para_actualizar=True)
+        permitido = (
+            _sin_restriccion(user_data)
+            or has_capability(db, user_data, "warehouse_voucher")
+            or actor in {int(vale.created_by or 0), int(vale.id_user or 0)}
+        )
+        if not permitido:
+            raise AppError("errors.not_found", 404,
+                           {"entity": "incident", "looked_up": str(vale.id_incident)})
+        estado = str(vale.incident_status or "").lower()
+        if estado not in (BORRADOR, EN_ESPERA):
+            raise AppError("errors.voucher_not_cancellable", 409,
+                           {"id_incident": vale.id_incident, "status": estado})
+        ahora = _ahora()
+        for renglon in _renglones(db, vale.id_incident, solo_abiertos=True):
+            if renglon.status == "apartada":
+                renglon.status = "disponible"
+            renglon.close_date = ahora
+        vale.incident_status = CANCELADO
+        vale.note = ("%s [Cancelado: %s]" % (vale.note or "", motivo)).strip()[:600]
+        vale.last_update_date = ahora
+        db.flush()
+        return {"voucher": vale.serialize(),
+                "lines": _con_existencias(db, _renglones(db, vale.id_incident))}
+
+
+def notificar_vale_cancelado(id_incident, actor_id: int) -> None:
+    """Avisa al responsable y a quien lo pidio (si no son quien cancelo)."""
+    from app.services.notification_service import create_notification
+
+    with transaction_context() as db:
+        vale = _vale(db, id_incident)
+        folio = vale.external_folio or str(vale.id_incident)
+        id_incident_plano = int(vale.id_incident)
+        destinatarios = {int(d) for d in (vale.id_user, vale.created_by) if d}
+    for id_destinatario in destinatarios - {int(actor_id)}:
+        try:
+            create_notification(
+                id_user_recipient=id_destinatario, id_user_sender=actor_id,
+                notification_type="warehouse_voucher_cancelled",
+                title="Vale #%s cancelado" % folio,
+                message="El vale #%s fue cancelado y su material apartado se liberó." % folio,
+                metadata={"id_incident": id_incident_plano},
+                target_entity="voucher", target_id=id_incident_plano,
+                created_by=actor_id,
+            )
+        except Exception:
+            continue
+
+
 def autorizar_vale(id_incident, payload: dict, user_data: dict) -> dict:
-    """Convierte un borrador en un vale: lo abre y saca el material.
+    """Autoriza un prevale: comprueba disponibilidad, cambia a EN_ESPERA.
 
-    Es el acto que mueve el almacen. Antes de esto el borrador es una peticion:
-    dice que se pidieron dos taladros, no que salieran.
-
-    La existencia se vuelve a comprobar AQUI y no se confia en la del borrador:
-    entre que alguien pide y alguien surte puede haberse llevado la ultima
-    pieza, y autorizar contra un saldo viejo dejaria el almacen en negativo.
-    Eso lo hace `_sacar_del_almacen`, que es la misma puerta de siempre.
-
-    Solo desde borrador. Autorizar un vale ya abierto sacaria el material dos
-    veces, y autorizar uno cerrado o cancelado sacaria lo que ya volvio.
+    Flujo:
+    1. Supervisor crea PREVALE (BORRADOR)
+    2. Almacén autoriza PREVALE (BORRADOR → EN_ESPERA) - solo comprueba, notifica
+    3. Supervisor/designado va a recoger
+    4. Almacén marca "salido" (EN_ESPERA → EN_TRANSITO) - aquí saca del almacén
+    5. Supervisor confirma (EN_TRANSITO → ABIERTO)
     """
     actor = _actor(user_data)
     with transaction_context() as db:
@@ -1705,31 +2070,141 @@ def autorizar_vale(id_incident, payload: dict, user_data: dict) -> dict:
             raise AppError("errors.voucher_lines_required", 400,
                            {"field": "lines"})
 
+        # Comprueba disponibilidad pero NO saca del almacén aún.
         motivo = _texto(payload.get("note"), "note", largo=300,
                         obligatorio=False) or vale.note
-        baja = _clave_de_baja(db, vale.id_incident_type)
         for renglon in renglones:
             if str(renglon.direction or "").lower() != SALIDA:
                 continue
-            if baja:
-                _registrar_baja(db, renglon, user_data, clave=baja,
-                                id_responsable=vale.id_user,
-                                vence=renglon.due_date, motivo=motivo)
-            else:
-                _sacar_del_almacen(db, renglon, user_data,
-                                   id_responsable=vale.id_user,
-                                   vence=renglon.due_date, motivo=motivo)
-        _marcar_estado_de_producto(db, vale.id_incident_type, renglones)
+            # Verificar que el material existe (sin sacarlo).
+            _comprobar_existencia_del_borrador_renglon(db, renglon)
 
-        vale.incident_status = ABIERTO
+        # Cambiar estado a EN_ESPERA - supervisor puede venir a recoger.
+        vale.incident_status = EN_ESPERA
         vale.last_update_date = _ahora()
         db.flush()
-        if baja:
-            _sincronizar_estado(db, vale)
 
         return {
             "voucher": vale.serialize(),
             "lines": _con_existencias(db, _renglones(db, vale.id_incident)),
+        }
+
+
+def _dar_salida_al_vale(db, vale, user_data: dict, renglones) -> None:
+    """El material sale del almacen: es el paso que mueve el libro.
+
+    Se llama al marcar la entrega de un vale EN_ESPERA (autorizado pero todavia
+    en el almacen). Antes de esto el material solo esta apartado.
+    """
+    baja = _clave_de_baja(db, vale.id_incident_type)
+    for renglon in renglones:
+        if str(renglon.direction or "").lower() != SALIDA:
+            continue
+        if baja:
+            _registrar_baja(db, renglon, user_data, clave=baja,
+                            id_responsable=vale.id_user,
+                            vence=renglon.due_date, motivo=vale.note)
+        else:
+            _sacar_del_almacen(db, renglon, user_data,
+                               id_responsable=vale.id_user,
+                               vence=renglon.due_date, motivo=vale.note)
+        if renglon.status == "apartada" and renglon.id_inventory_asset is not None:
+            renglon.status = "entregada"
+    db.flush()
+    _marcar_estado_de_producto(db, vale.id_incident_type, renglones)
+    vale.incident_status = EN_TRANSITO
+    db.flush()
+    if baja:
+        _sincronizar_estado(db, vale)
+
+
+def reportar_estado_herramienta(id_line, payload: dict, user_data: dict) -> dict:
+    """Reportar que una herramienta salió dañada, extraviada o destruida.
+
+    Crea un NUEVO vale (tipo dañado/extravío/destrucción) que referencia el
+    vale original. Marca la herramienta en el vale anterior con el estado
+    correspondiente.
+    """
+    actor = _actor(user_data)
+    id_tipo_nuevo = _entero(payload.get("id_incident_type"), "id_incident_type")
+
+    with transaction_context() as db:
+        # El renglon del vale original.
+        renglon_orig = db.scalars(
+            select(NmIncidentProduct).where(
+                NmIncidentProduct.id_nm_incident_product == _entero(
+                    id_line, "id_nm_incident_product"),
+                NmIncidentProduct.deletion_date.is_(None),
+            ).with_for_update()
+        ).first()
+        if renglon_orig is None:
+            raise AppError("errors.not_found", 404,
+                           {"entity": "nm_incident_product"})
+
+        # Validar que sea un renglon abierto (aún no devuelto).
+        if renglon_orig.close_date is not None:
+            raise AppError("errors.voucher_line_already_closed", 409,
+                           {"id_nm_incident_product": renglon_orig.id_nm_incident_product})
+
+        # El vale original.
+        vale_orig = _vale(db, renglon_orig.id_incident)
+
+        # Crear un NEW vale de tipo dañado/extravío/destrucción.
+        motivo = _texto(payload.get("note"), "note", largo=300, obligatorio=True)
+        nuevo_vale = Incident(
+            id_incident_type=id_tipo_nuevo,
+            id_user=vale_orig.id_user,
+            id_proyect=vale_orig.id_proyect,
+            incident_date=_ahora(),
+            incident_status=ABIERTO,
+            note=motivo,
+            created_by=actor,
+            id_incident_parent=vale_orig.id_incident,  # Referencia al vale original.
+            tracks_delivery=True,
+        )
+        db.add(nuevo_vale)
+        db.flush()
+
+        # Crear un renglon en el nuevo vale con los mismos datos.
+        nuevo_renglon = NmIncidentProduct(
+            id_incident=nuevo_vale.id_incident,
+            id_product=renglon_orig.id_product,
+            id_inventory_asset=renglon_orig.id_inventory_asset,
+            quantity=renglon_orig.quantity,
+            note=motivo,
+            direction=SALIDA,
+            id_location_from=renglon_orig.id_location_from,
+            id_location_to=renglon_orig.id_location_to,
+            start_date=_ahora(),
+            due_date=renglon_orig.due_date,
+            created_by=actor,
+            status="disponible",  # El nuevo renglon nace disponible.
+        )
+        db.add(nuevo_renglon)
+        db.flush()
+
+        # Marcar en el vale ORIGINAL que la herramienta está en el estado reportado.
+        # Opciones: "dañada", "extraviada", "destruida"
+        tipo_nuevo = db.scalars(
+            select(IncidentType).where(
+                IncidentType.id_incident_type == id_tipo_nuevo
+            )
+        ).first()
+        if tipo_nuevo and tipo_nuevo.incident_type_description:
+            desc = str(tipo_nuevo.incident_type_description).lower()
+            if "dañ" in desc:
+                renglon_orig.status = "dañada"
+            elif "extrav" in desc:
+                renglon_orig.status = "extraviada"
+            elif "destruc" in desc:
+                renglon_orig.status = "destruida"
+
+        db.flush()
+
+        return {
+            "original_line": renglon_orig.serialize(),
+            "new_voucher": nuevo_vale.serialize(),
+            "new_line": nuevo_renglon.serialize(),
         }
 
 
@@ -1742,6 +2217,15 @@ def _ve_todo_el_almacen(db, user_data) -> bool:
     if _sin_restriccion(user_data):
         return True
     return has_capability(db, user_data, "warehouse_voucher")
+
+
+def es_dueno_de_algun_vale(db, user_data) -> bool:
+    """Quien responde por un vale, o lo capturo, o lo recoge, puede VERLO aunque
+    su rol no opere el almacen (un operador o Jefe de taller a quien se le puso
+    el vale): si no, confirma lo que no puede ni leer ni imprimir."""
+    return db.scalar(select(Incident.id_incident).where(
+        Incident.deletion_date.is_(None), _del_solicitante(db, user_data)
+    ).limit(1)) is not None
 
 
 def _del_solicitante(db, user_data):
@@ -2135,27 +2619,6 @@ def buscar_vales(user_data: dict, *, texto=None, estado=None, id_user=None,
                 pendientes[int(id_vale)] = int(abiertos or 0)
                 renglones[int(id_vale)] = int(todos or 0)
 
-        # Entregado a alguien que no es el responsable, todavia sin
-        # confirmar: mismo hueco que `consultar_vale`, aqui agregado para que
-        # la lista lo muestre sin tener que abrir cada vale uno por uno.
-        responsables = {int(v.id_incident): int(v.id_user) for v in vales if v.id_user}
-        pendientes_custodia: dict[int, int] = {}
-        if ids:
-            for id_vale, id_entregado in db.execute(
-                select(NmIncidentProduct.id_incident,
-                       NmIncidentProduct.id_user_delivered_to)
-                .where(NmIncidentProduct.id_incident.in_(ids),
-                       NmIncidentProduct.deletion_date.is_(None),
-                       NmIncidentProduct.direction == SALIDA,
-                       NmIncidentProduct.close_date.is_(None),
-                       NmIncidentProduct.custody_confirmed_date.is_(None),
-                       or_(NmIncidentProduct.id_user_delivered_to.isnot(None),
-                           NmIncidentProduct.delivered_to_name.isnot(None)))
-            ).all():
-                # Un externo no tiene usuario: siempre es "otra persona".
-                if id_entregado is None or int(id_entregado) != responsables.get(int(id_vale)):
-                    pendientes_custodia[int(id_vale)] = pendientes_custodia.get(int(id_vale), 0) + 1
-
         nombres = {}
         ids_usuarios = {int(v.id_user) for v in vales if v.id_user}
         if ids_usuarios:
@@ -2188,7 +2651,6 @@ def buscar_vales(user_data: dict, *, texto=None, estado=None, id_user=None,
                 "proyect": proyectos.get(int(vale.id_proyect)) if vale.id_proyect else None,
                 "open_lines": pendientes.get(int(vale.id_incident), 0),
                 "total_lines": renglones.get(int(vale.id_incident), 0),
-                "pending_custody_lines": pendientes_custodia.get(int(vale.id_incident), 0),
                 "delivery_status": estado_de_entrega(vale),
             })
             items.append(fila)
@@ -2496,26 +2958,12 @@ def documento_del_vale(id_incident, user_data: dict) -> dict:
         ).first()
         cliente = _cliente_del_vale(db, vale.get("id_proyect"))
 
-        # Quien recoge cada renglon, cuando es alguien distinto del
-        # responsable -- el papel firmado tiene que decir lo mismo que la
-        # pantalla, y en pantalla esto ya se ve (bloque de custodia).
-        entregados = {}
-        ids_entregado = {
-            int(renglon["id_user_delivered_to"]) for renglon in datos["lines"]
-            if renglon.get("id_user_delivered_to")
-        }
-        if ids_entregado:
-            entregados = dict(db.execute(
-                select(User.id_user, User.full_name)
-                .where(User.id_user.in_(list(ids_entregado)))
-            ).all())
-
         # Lo que el papel tiene que decir de la ENTREGA y del RECIBIDO, tal como
         # lo dice la pantalla: quien recoge, a quien se la dio almacen de verdad
         # y si el responsable ya confirmo. Solo los vales con seguimiento
         # (`tracks_delivery`) traen esto; los anteriores se imprimen como siempre.
         seguimiento = bool(vale.get("tracks_delivery"))
-        recoge = _quien_recoge(db, vale, datos["lines"], entregados) if seguimiento else None
+        recoge = _quien_recoge(db, vale) if seguimiento else None
         entrega = None
         if seguimiento and vale.get("delivered_date"):
             recibio = vale.get("delivered_to_name") or _persona(
@@ -2545,11 +2993,6 @@ def documento_del_vale(id_incident, user_data: dict) -> dict:
     salidas, entradas = [], []
     for renglon in datos["lines"]:
         producto = renglon.get("product") or {}
-        id_entregado = renglon.get("id_user_delivered_to")
-        entregado_a_otro = (
-            id_entregado is not None
-            and int(id_entregado) != int(vale.get("id_user") or 0)
-        )
         fila = {
             "id_product": renglon.get("id_product"),
             "cantidad": renglon.get("quantity"),
@@ -2571,14 +3014,6 @@ def documento_del_vale(id_incident, user_data: dict) -> dict:
             # Devuelto o no: es la unica pregunta que alguien le hace a un vale
             # viejo, asi que va en su propia columna y no escondida en la fecha.
             "devuelto": renglon.get("close_date") is not None,
-            # Solo cuando es alguien distinto del responsable: lo normal (el
-            # responsable recoge su propio vale) no necesita decirlo.
-            # Un externo no tiene usuario: va su nombre tal cual.
-            "entregado_a": (renglon.get("delivered_to_name")
-                            or (entregados.get(id_entregado) if entregado_a_otro else None)),
-            "custodia_confirmada": (
-                bool(renglon.get("custody_confirmed_date"))
-                if (entregado_a_otro or renglon.get("delivered_to_name")) else None),
         }
         (entradas if str(renglon.get("direction") or "") == ENTRADA else salidas).append(fila)
 
@@ -2608,21 +3043,15 @@ def documento_del_vale(id_incident, user_data: dict) -> dict:
     }
 
 
-def _quien_recoge(db, vale: dict, renglones: list, entregados: dict) -> dict:
+def _quien_recoge(db, vale: dict) -> dict:
     """Quien se designo para recoger el material, para el papel.
 
-    Un externo (`pickup_name`) va por su nombre; un usuario, por el de su
-    renglon; y si no se designo a nadie, recoge el propio responsable. Si
-    almacen entrego a OTRA persona, esa es quien firma (ver `entrega`), pero
-    aqui sigue constando a quien se designo al pedirlo.
+    Un externo (`pickup_name`) va por su nombre; si no se designo a nadie,
+    recoge el propio responsable. Si almacen entrego a OTRA persona, esa es
+    quien firma (ver `entrega`).
     """
     if vale.get("pickup_name"):
         return {"nombre": vale["pickup_name"], "externo": True, "es_responsable": False}
-    for renglon in renglones:
-        id_usuario = renglon.get("id_user_delivered_to")
-        if id_usuario and str(renglon.get("direction") or "") == SALIDA:
-            nombre = entregados.get(int(id_usuario)) or _persona(db, id_usuario)
-            return {"nombre": nombre, "externo": False, "es_responsable": False}
     return {"nombre": _persona(db, vale.get("id_user")), "externo": False,
             "es_responsable": True}
 

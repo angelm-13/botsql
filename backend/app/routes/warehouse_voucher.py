@@ -21,6 +21,7 @@ from flask import Blueprint, current_app, jsonify, request, send_file
 
 from app.services.warehouse_voucher_service import (
     _sin_restriccion,
+    es_dueno_de_algun_vale,
     confirmar_recepcion_de_renglon,
     confirmar_recibido_del_vale,
     entregar_vale,
@@ -29,15 +30,20 @@ from app.services.warehouse_voucher_service import (
     notificar_entrega_registrada,
     pdf_del_vale,
     autorizar_vale,
+    cancelar_vale,
+    notificar_vale_cancelado,
     buscar_vales,
     cerrar_renglon,
     consultar_vale,
     crear_vale,
     historial_del_producto,
     lo_que_ha_pedido,
-    notificar_custodia_asignada,
+    notificar_material_entregado,
+    notificar_prevale_autorizado,
+    notificar_prevale_creado,
     pdf_del_historial_de_persona,
     quien_tiene_que,
+    reportar_estado_herramienta,
     reporte_por_almacen,
     reporte_por_persona,
     reporte_por_producto,
@@ -82,6 +88,7 @@ def require_warehouse_read(fn):
                 _sin_restriccion(user_data)
                 or has_capability(db, user_data, "warehouse_voucher")
                 or has_capability(db, user_data, "warehouse_prevoucher")
+                or es_dueno_de_algun_vale(db, user_data)
             )
         if not permitido:
             return jsonify({
@@ -92,21 +99,6 @@ def require_warehouse_read(fn):
     return wrapper
 
 
-def _avisar_si_hay_pickup(cuerpo: dict, resultado: dict, user_data: dict) -> None:
-    """Si el vale nacio con `id_user_pickup` distinto del responsable, avisa
-    por la campanita -- DESPUES de que `crear_vale` ya cerro su transaccion
-    (ver `notificar_custodia_asignada`)."""
-    id_pickup = cuerpo.get("id_user_pickup")
-    if id_pickup is None:
-        return
-    try:
-        notificar_custodia_asignada(
-            resultado["voucher"]["id_incident"], id_pickup,
-            user_data.get("id_user"))
-    except Exception:
-        pass
-
-
 @bp_warehouse_voucher.route("/vouchers", methods=["POST"])
 @token_required
 @require_entity_permission("warehouse_voucher", "create")
@@ -114,7 +106,13 @@ def abrir_vale(user_data):
     """Abre un vale con sus renglones. Todo o nada."""
     cuerpo = _cuerpo()
     resultado = crear_vale(cuerpo, user_data)
-    _avisar_si_hay_pickup(cuerpo, resultado, user_data)
+    # Un vale directo saca el material AL CREARSE -- no hay un "autorizar"
+    # aparte, asi que el aviso de "ya puedes pasar por el" va aqui.
+    try:
+        notificar_material_entregado(
+            resultado["voucher"]["id_incident"], user_data.get("id_user"))
+    except Exception:
+        pass
     return jsonify(resultado), 201
 
 
@@ -132,7 +130,11 @@ def abrir_prevale(user_data):
     """
     cuerpo = _cuerpo()
     resultado = crear_vale(cuerpo, user_data, como_borrador=True)
-    _avisar_si_hay_pickup(cuerpo, resultado, user_data)
+    try:
+        notificar_prevale_creado(
+            resultado["voucher"]["id_incident"], user_data.get("id_user"))
+    except Exception:
+        pass
     return jsonify(resultado), 201
 
 
@@ -212,14 +214,40 @@ def vale_en_pdf(user_data, id_incident):
 @token_required
 @require_entity_permission("warehouse_voucher_authorize", "create")
 def autorizar(user_data, id_incident):
-    """Convierte un borrador en vale: lo abre y saca el material.
+    """Autoriza un prevale: comprueba disponibilidad, cambia a EN_ESPERA.
 
-    Se guarda con `warehouse_voucher_authorize` y no con `warehouse_voucher`
-    porque son dos derechos distintos: escribir el prevale y soltar el
-    material. El servicio lo vuelve a comprobar -- la ruta protege la puerta,
-    pero la regla vive donde vive la operacion.
+    Flujo:
+    1. Supervisor crea PREVALE (BORRADOR)
+    2. Almacén autoriza PREVALE (BORRADOR → EN_ESPERA) ← AQUÍ
+    3. Supervisor/designado va a recoger
+    4. Almacén marca entregado (/deliver): el material sale del almacén
+    5. El responsable confirma que lo recibió (/confirm-receipt)
+
+    Las notificaciones se envían después de que la transacción cierre.
     """
-    return jsonify(autorizar_vale(id_incident, _cuerpo(), user_data)), 200
+    resultado = autorizar_vale(id_incident, _cuerpo(), user_data)
+    try:
+        notificar_prevale_autorizado(id_incident, user_data.get("id_user"))
+    except Exception:
+        pass
+    return jsonify(resultado), 200
+
+
+@bp_warehouse_voucher.route("/vouchers/<id_incident>/cancel", methods=["POST"])
+@token_required
+@require_warehouse_read
+def cancelar(user_data, id_incident):
+    """Cancela un borrador o un vale en espera (antes de que salga material).
+
+    Cuerpo: `{"note": "<motivo>"}`. Lo cancela quien lo pidio, su responsable o
+    Almacen; el servicio comprueba cual.
+    """
+    resultado = cancelar_vale(id_incident, _cuerpo(), user_data)
+    try:
+        notificar_vale_cancelado(id_incident, user_data.get("id_user"))
+    except Exception:
+        pass
+    return jsonify(resultado), 200
 
 
 @bp_warehouse_voucher.route("/vouchers/<id_incident>/deliver", methods=["POST"])
@@ -244,8 +272,8 @@ def entregar(user_data, id_incident):
 def confirmar_recibido(user_data, id_incident):
     """El supervisor responsable confirma el recibido del vale completo.
 
-    Sin `require_entity_permission`, igual que `/confirm-custody`: es SU vale y
-    el candado vive en el servicio (solo el responsable o un administrador).
+    Sin `require_entity_permission`: es SU vale y el candado vive en el
+    servicio (solo el responsable o un administrador).
     Cuerpo: `{"ok": true|false, "note": "..."}`; la nota es obligatoria con
     `ok: false` (recibido con observaciones).
     """
@@ -278,6 +306,18 @@ def confirmar_custodia_de_renglon(user_data, id_line):
     Sin `require_entity_permission` a proposito: es SU vale (el candado vive en el servicio).
     """
     return jsonify(confirmar_recepcion_de_renglon(id_line, user_data))
+
+
+@bp_warehouse_voucher.route("/vouchers/lines/<id_line>/report-status", methods=["POST"])
+@token_required
+@require_entity_permission("warehouse_voucher", "create")
+def reportar_estado(user_data, id_line):
+    """Reportar que una herramienta salió dañada, extraviada o destruida.
+
+    Cuerpo: `{"id_incident_type": <tipo>, "note": "..."}`
+    donde `id_incident_type` es el tipo dañado/extravío/destrucción.
+    """
+    return jsonify(reportar_estado_herramienta(id_line, _cuerpo(), user_data)), 201
 
 
 # --- la trazabilidad, por la cosa y por la persona ---

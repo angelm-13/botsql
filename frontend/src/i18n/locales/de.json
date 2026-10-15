@@ -2557,6 +2557,7 @@
     "project_not_editable": "Das Projekt kann im aktuellen Status nicht mehr bearbeitet werden.",
     "project_open_tasks": "Das Projekt kann nicht ausgeliefert werden: es gibt noch offene Aufgaben.",
     "project_requires_task": "Das Projekt kann nicht gestartet werden: fügen Sie mindestens eine Aufgabe hinzu, bevor Sie es in Bearbeitung setzen.",
+    "project_material_pending": "Das Projekt hat noch nicht eingegangenes Material. Um trotzdem zu starten, geben Sie einen Grund an.",
     "project_tasks_not_completed": "Das Projekt kann nicht abgeschlossen werden: es gibt noch offene Aufgaben."
   },
   "logistics": {

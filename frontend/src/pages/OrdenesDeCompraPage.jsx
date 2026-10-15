@@ -5,6 +5,7 @@ import PageHeader from "../components/PageHeader.jsx";
 import OrdenDeCompraDetalle from "../components/OrdenDeCompraDetalle.jsx";
 import OrdenDeCompraEditor from "../components/OrdenDeCompraEditor.jsx";
 import PoliticaDeCompra from "../components/PoliticaDeCompra.jsx";
+import PresupuestosDeCompra from "../components/PresupuestosDeCompra.jsx";
 import {
   getMyPermissions, getPurchaseOrder, getPurchaseOrders, getPurchasePolicy,
 } from "../api";
@@ -179,6 +180,7 @@ export default function OrdenesDeCompraPage() {
 
       <PoliticaDeCompra politica={politica} puedeEditar={puede("purchase_policy", "scope_update")}
                         onCambio={setPolitica} />
+      <PresupuestosDeCompra puedeEditar={puede("purchase_policy", "scope_update")} />
 
       {error && <div className="alert error">{error}</div>}
       {noSeAbrio && <div className="alert error">{noSeAbrio}</div>}

@@ -185,6 +185,10 @@ def _validate_relation_type(value) -> str:
 
 
 def _require_creditable(invoice):
+    # Una nota de credito o un REP no se acreditan: solo se acredita un ingreso.
+    if str(invoice.tipo_de_comprobante or "").strip().upper() in {"E", "P", "T"}:
+        raise AppError("errors.credit_note_invoice_status_not_allowed", 409,
+                       {"tipo_de_comprobante": invoice.tipo_de_comprobante})
     if not str(invoice.folio_fiscal or "").strip():
         raise AppError(
             "errors.credit_note_requires_stamped_invoice",
@@ -358,6 +362,13 @@ def create_credit_note(invoice_id, payload, user_data) -> dict:
             select(CfdiRelation).where(CfdiRelation.idempotency_key == key)
         ).first()
         if previa:
+            # La llave solo devuelve lo que ya se creo SOBRE ESTA factura y para
+            # quien puede verla: sin esto, otra factura u otro proyecto leian la
+            # nota ajena con solo repetir la llave.
+            _load_invoice(db, invoice_id, user_data)
+            if previa.id_related_invoice not in (None, int(invoice_id)):
+                raise AppError("errors.idempotency_conflict", 409,
+                               {"idempotency_key": key})
             nota = db.get(Invoice, previa.id_invoice)
             return {
                 "credit_note": nota.serialize(),

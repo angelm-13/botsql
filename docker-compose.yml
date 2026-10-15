@@ -107,6 +107,9 @@ services:
       dockerfile: infra/docker/backend.Dockerfile
     restart: unless-stopped
     env_file: [.env]
+    environment:
+      APP_ENV: development
+      FLASK_ENV: development
     depends_on:
       db:
         condition: service_healthy
@@ -137,6 +140,9 @@ services:
       dockerfile: infra/docker/worker.Dockerfile
     restart: unless-stopped
     env_file: [.env]
+    environment:
+      APP_ENV: development
+      FLASK_ENV: development
     depends_on:
       backend:
         condition: service_healthy
@@ -156,6 +162,9 @@ services:
       dockerfile: infra/docker/worker.Dockerfile
     restart: unless-stopped
     env_file: [.env]
+    environment:
+      APP_ENV: development
+      FLASK_ENV: development
     depends_on:
       backend:
         condition: service_healthy

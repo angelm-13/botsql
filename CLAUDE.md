@@ -6,6 +6,84 @@ aparte de `ARQUITECTURA_TYAKXA_TNY.md` (referencia técnica estable) y de
 sección se resuelve, se puede recortar; mientras tanto se deja completa para
 que una sesión nueva no tenga que releer el historial de chat.
 
+## Bitacora 2026-10-13 — presupuesto de compras por proyecto y responsable del vale
+
+**Presupuesto por proyecto** (`purchase_budget_service.py`, migracion `20261013100000`):
+gerencia fija el tope (`PUT /purchase-budgets/<proyecto>`, permiso `purchase_policy`; Compras
+solo consulta). Comprometido = ordenes por autorizar/autorizadas/compradas/recibidas/cerradas.
+Una orden que haga pasar el tope queda `exceeds_budget` y va a autorizacion aunque este bajo
+`authorize_above`; se reevalua al autorizar y exige nota; el autor no la libera. Sin
+presupuesto = sin tope; moneda distinta = se trata como excedida. UI: panel
+`PresupuestosDeCompra.jsx` en Ordenes de compra y tabla/aviso en el detalle de la orden.
+**Vales**: al elegir proyecto el responsable es el supervisor de la obra; sin supervisor,
+solo usuarios con rol Supervisor (se reconoce por el nombre del permiso: fragil si se
+renombra el rol). `/user/options` trae `role`, `/proyect/options` trae `id_supervisor`.
+Probado el ciclo de cada tipo (prestamo, reparacion, danado, destruccion, extraviado).
+
+## Bitacora 2026-10-12 — auditoria de punta a punta (CRM, compras, operaciones, seguridad)
+
+Cinco auditorias + dos de lo que quedo sin probar (timbrado/REP/cancelacion/notas de
+credito/citas y flujos pendientes de compras). Usuario de prueba de Compras:
+`backend/scripts/seed_usuario_compras.py` (compras1; la app solo acepta bcrypt).
+Corregido, con pruebas: token de MFA a medias ya no es sesion; PAC `fake` rechazado con
+`APP_ENV=production`; filtros/orden de listados solo sobre columnas reales (igualdad en
+numeros); `stamp_invoice` no re-timbra con otra llave (`NO_SE_TIMBRA`); cancelar factura con
+REP/nota de credito vivos da 409; total = subtotal - descuento + impuesto; abono en otra
+moneda 409; conversion llena el receptor desde el cliente; citas: zona horaria y doble
+reserva; CRM: RFC unico normalizado, tipo obligatorio, contactos validados; cotizacion
+vacia no se envia; vales: cancelar (`POST /vouchers/<id>/cancel`), el responsable puede
+verlos, baja sin fecha de regreso, responsable ya no se pisa con el Jefe de taller;
+proyecto no se cierra/cancela con vales u ordenes vivas; tareas/bitacora no en proyectos
+cerrados; compras: carrera de ordenes (bloqueo de necesidades), recepcion idempotente
+(`idempotency_key` / cabecera `Idempotency-Key`), necesidad en orden viva no se edita ni se
+devuelve, lo recibido sale de "por comprar", CFDI de orden cancelada reutilizable.
+
+**Abierto (decision del equipo)**: recibir una orden NO da entrada al inventario (el codigo
+dice que es a proposito); `APP_ENV` no esta fijado en k8s y la guarda de arranque falla
+abierta; cuentas de dev con contrasenas debiles / init_test_data crea Administradores;
+tokens de 8 h sin revocacion; contenedores como root, sin cabeceras de seguridad, imagenes
+con CVEs por version; migraciones sin candado y 36 sin `ajustado_por_gestor`; vale de
+reparacion deja la pieza "prestada"; `/assets/overdue` vs vales; pagos sobre factura sin
+timbrar; ledger sin asiento de apertura (2201 productos); `nm_incident_product.status`
+siempre 'disponible'; dos columnas de estado de proyecto que se contradicen; 9 `id_*` sin FK
+y 84 FKs sin indice; tickets sin vinculo a cliente/proyecto; `user.id_proyect`/`supervisor`
+NOT NULL heredados. Datos `AUD-*`/`AUD2-*`/`QAOPS-*`/`QAINV-*` quedaron en dev (limpiar con
+script con --dry-run).
+
+## Bitacora 2026-10-09 — vales: un solo flujo, tipos por rol, apartado vs fuera
+
+Probado en navegador con almacen, supervisor (angelito) y jefe de taller, mas dos
+barridos de API (inventario completo y proyectos/tareas, con usuarios de prueba
+`QAINV-*`/`QAOPS-*` que quedaron en la base de desarrollo).
+
+- **Flujo del vale (un solo camino).** Supervisor levanta prevale (borrador) ->
+  Almacen autoriza (`en_espera`: el material queda APARTADO, no sale) ->
+  Almacen "Marcar entregado" (`entregar_vale`: aqui sale del almacen, `en_transito`)
+  -> el responsable "Confirmar que lo recibi" (`confirmar_recibido_del_vale`, `abierto`).
+  Se retiraron las rutas paralelas `mark-as-shipped` y `confirm-supervision-receipt`
+  (el supervisor no podia confirmar: exigian `warehouse_voucher_authorize`).
+- **Tipos por rol, una regla** (`_prefijos_de_tipo_permitidos`): Gerencia
+  (`project_authorization`) y admin todos; Almacen solo herramienta (prestamo,
+  reparacion, danado, destruccion, extraviado); Supervisor solo prevales de prestamo,
+  danado, extraviado y reparacion. El selector la usa: `/incident_type/options?para=vale`.
+- **Apartado no es fuera.** Prevale/en espera no cuentan en Localizar, resumen del
+  proyecto ni pantalla del vale. Lo fungible apartado se resta (`apartado_por_sitio`,
+  `reserved`/`available` en Localizar): dos prevales ya no piden la misma unica unidad.
+- **El aviso de autorizado nunca llegaba**: `notification_type_check` no traia
+  `warehouse_voucher_prevoucher_authorized` ni `_return_pending` y el `except: pass`
+  lo tragaba. Siguen en la migracion unica `20261007100000`. Si se agrega un tipo,
+  agregarlo ahi y probar la insercion contra Postgres real, no SQLite.
+- **Piezas**: el signo del movimiento sale de entrar/salir del saldo
+  (`ESTADOS_EN_SALDO` = disponible + en_uso), no del nombre del evento.
+- **Operaciones**: entradas invalidas ya dan 4xx (manejadores globales en
+  `__init__.py`); Jefe de taller solo escribe tareas/notas de proyectos que tomo;
+  un proyecto sin maquila ya no entra a "espera de material".
+- **Sin decidir (preguntar a Alan/Tanya)**: `PUT /task` con `fase` reabre una tarea
+  terminada (hay un comentario que dice que es a proposito); Supervisor puede
+  escribir el catalogo `task_type`; `nm_template_task` acepta duplicados; catalogos
+  (marca, unidad...) aceptan nombres repetidos; el selector de proyecto de un vale
+  tambien lista proyectos cancelados.
+
 ## Reglas de trabajo — respetar la arquitectura, no parchar (pedido de Adser, 2026-10-07)
 
 Aplican a toda sesión, humana o de IA.

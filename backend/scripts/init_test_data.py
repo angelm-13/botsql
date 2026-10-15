@@ -12,9 +12,10 @@ RAIZ = pathlib.Path(__file__).resolve().parents[1]
 if str(RAIZ) not in sys.path:
     sys.path.insert(0, str(RAIZ))
 
-from werkzeug.security import generate_password_hash
+import bcrypt
 from sqlalchemy import select, func
 from app.models.session import transaction_context
+from app.utils.startup_guard import is_production
 from app.models.user import User
 from app.models.product import Product
 from app.models.location import Location
@@ -24,8 +25,8 @@ from app.models.nm_field_permission import NmFieldPermission
 
 
 def hash_password(password: str) -> str:
-    """Genera hash de contraseña compatible con werkzeug."""
-    return generate_password_hash(password, method='pbkdf2:sha256')
+    """Hash bcrypt, el unico formato que acepta el login."""
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode()
 
 
 def create_test_users(db):
@@ -39,6 +40,7 @@ def create_test_users(db):
             "email": "supervisor1@test.com",
             "user_type": "employee",
             "password": "supervisor1",
+            "rol": 3,   # Supervisor
         },
         {
             "username": "almacen1",
@@ -46,6 +48,7 @@ def create_test_users(db):
             "email": "almacen1@test.com",
             "user_type": "employee",
             "password": "almacen1",
+            "rol": 6,   # Almacenista
         },
         {
             "username": "gerencia1",
@@ -53,6 +56,7 @@ def create_test_users(db):
             "email": "gerencia1@test.com",
             "user_type": "employee",
             "password": "gerencia1",
+            "rol": 4,   # Gerente
         },
     ]
 
@@ -77,14 +81,14 @@ def create_test_users(db):
             password=hash_password(usuario["password"]),
             created_by=1,        # bootstrap admin
             is_employee=True,
-            id_permission=1,     # rol por defecto
+            id_permission=usuario["rol"],
             id_proyect=1,        # proyecto por defecto
             id_status=1,         # estado activo
             supervisor=1,        # supervisor por defecto (bootstrap admin)
         )
         db.add(nuevo_user)
         db.flush()
-        print(f"  ✅ Creado: {usuario['username']} (ID: {nuevo_user.id_user}, contraseña: {usuario['password']})")
+        print(f"  ✅ Creado: {usuario['username']} (ID: {nuevo_user.id_user})")
         created_users[usuario["username"]] = nuevo_user.id_user
 
     return created_users
@@ -193,6 +197,8 @@ def create_test_products(db):
 
 def main():
     """Ejecuta la inicialización de datos de prueba."""
+    if is_production():
+        sys.exit("Este script crea usuarios con contrasenas de ejemplo: no se corre en produccion.")
     print("\n" + "="*60)
     print("🚀 Inicializando datos de prueba para vales")
     print("="*60 + "\n")

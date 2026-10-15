@@ -230,6 +230,38 @@ export default function OrdenDeCompraDetalle({ orden, politica, onCambio, onEdit
           {t("order.exceeded_banner", "Esta orden volvió a autorización porque el comprobante sale más caro de lo autorizado. Se autoriza el monto real o se rechaza.")}
         </div>
       )}
+      {orden.exceeds_budget && (
+        <div className="alert warning oc-exceso">
+          <AlertTriangle size={16} />
+          {t("budget.exceeds_banner", "Esta orden excede el presupuesto de compras de un proyecto: solo se autoriza con un motivo por escrito.")}
+        </div>
+      )}
+      {(orden.budget || []).length > 0 && (
+        <table className="oc-tabla oc-presupuesto">
+          <thead>
+            <tr>
+              <th>{t("budget.project", "Proyecto")}</th>
+              <th>{t("budget.budget", "Presupuesto")}</th>
+              <th>{t("budget.committed", "Ya comprometido")}</th>
+              <th>{t("budget.requested", "Esta orden")}</th>
+              <th>{t("budget.left", "Quedaría")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {orden.budget.map((b) => (
+              <tr key={b.id_proyect} className={b.exceeds ? "oc-sobregiro" : ""}>
+                <td>{b.folio || `#${b.id_proyect}`}{b.title ? ` — ${b.title}` : ""}</td>
+                <td>{dinero(b.budget)}</td>
+                <td>{dinero(b.committed)}</td>
+                <td>{dinero(b.requested)}</td>
+                <td>{b.remaining_after === null
+                  ? t("budget.other_currency", "Moneda distinta")
+                  : dinero(b.remaining_after)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
       {orden.order_status === "rejected" && orden.authorization_note && (
         <div className="alert warning">
           <strong>{t("order.rejected_because", "Se rechazó:")}</strong> {orden.authorization_note}
@@ -543,14 +575,16 @@ export default function OrdenDeCompraDetalle({ orden, politica, onCambio, onEdit
           <label>
             <span>
               {motivo.accion === "autorizar"
-                ? t("order.authorize_note", "Nota (opcional)")
+                ? (orden.exceeds_budget
+                  ? t("budget.note_required", "Motivo por exceder el presupuesto (obligatorio, mínimo 5 letras)")
+                  : t("order.authorize_note", "Nota (opcional)"))
                 : t("order.why", "¿Por qué? (queda en la bitácora, mínimo 5 letras)")}
             </span>
             <input type="text" maxLength={300} autoFocus value={motivo.nota}
                    onChange={(e) => setMotivo({ ...motivo, nota: e.target.value })} />
           </label>
           <button type="button" className="button primary"
-                  disabled={ocupado || (motivo.accion !== "autorizar" && !notaOk)}
+                  disabled={ocupado || ((motivo.accion !== "autorizar" || orden.exceeds_budget) && !notaOk)}
                   onClick={{ autorizar, rechazar, cancelar }[motivo.accion]}>
             {t("common.confirm", "Confirmar")}
           </button>

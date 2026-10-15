@@ -210,6 +210,15 @@ class ProductService(CrudService):
 
     @classmethod
     def update(cls, item_id, payload: dict, user_id: int | None = None):
+        # `_rechazar_cantidad_a_mano` es el mismo guardia que escribio por su
+        # cuenta `initAlan` (ver su docstring): `PUT /product/<id>` aceptaba
+        # `cantidad` como cualquier otro campo, y quien tuviera el permiso de
+        # campo (o fuera superusuario, que se salta esa comprobacion por
+        # completo) podia cambiar el saldo sin capacidad de ajuste, sin
+        # motivo y sin renglon en el ledger -- mismo hallazgo de la auditoria
+        # de seguridad del 2026-10-06 que esta rama encontro por su lado;
+        # dos arreglos del mismo bug, se queda el de `initAlan` por ser la
+        # rama compartida.
         payload = cls._rechazar_cantidad_a_mano(item_id, dict(payload or {}))
         # Los formularios de edicion devuelven el registro completo, `lot_control`
         # incluido. Si viene igual a lo que ya hay no se esta encendiendo nada, y
