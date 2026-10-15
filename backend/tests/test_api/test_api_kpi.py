@@ -10,7 +10,7 @@ from sqlalchemy import select, text
 
 from app.kpis.registry import seed_kpi_definitions
 from app.models import (
-    CustomerSupplier, Department, EntityPermission, KpiDashboard, KpiDefinition, KpiSnapshot, Level,
+    CustomerSupplier, Department, EntityPermission, EventLog, KpiDashboard, KpiDefinition, KpiSnapshot, Level,
     NmPermissionKpi, Permission, Proyect, Status, Subdepartment, User,
 )
 from app.models.session import engine, transaction_context
@@ -700,6 +700,42 @@ class TestKpiDashboardApi(BackendTestCase):
             fila = db.get(KpiDashboard, id_dashboard)
             self.assertIsNotNone(fila, "la fila sigue existiendo: es baja logica, no fisica")
             self.assertIsNotNone(fila.deletion_date)
+
+    def test_actor_can_update_own_dashboard_and_the_change_is_persisted_and_audited(self):
+        id_dashboard = self._crear_tablero(ACTOR_A, nombre="Mi tablero")
+
+        # Un actor ajeno con el modulo intenta editarlo: 404 y el tablero no cambia.
+        intruso = self._request(ACTOR_B, "PUT", f"/kpi_dashboard/{id_dashboard}", {"nombre": "Intrusion", "orden": 1})
+        self.assertEqual(404, intruso.status_code)
+        propio = self.json(self._request(ACTOR_A, "GET", "/kpi_dashboard/"))["items"]
+        self.assertEqual(["Mi tablero"], [d["nombre"] for d in propio])
+
+        # El dueno lo edita. El payload intenta reasignar el dueno: no debe poder.
+        response = self._request(ACTOR_A, "PUT", f"/kpi_dashboard/{id_dashboard}", {
+            "nombre": "Tablero editado", "orden": 7, "id_user": ACTOR_B["id_user"],
+        })
+        self.assertEqual(200, response.status_code, self.json(response))
+        cuerpo = self.json(response)
+        self.assertEqual(("Tablero editado", 7, ACTOR_A["id_user"]), (cuerpo["nombre"], cuerpo["orden"], cuerpo["id_user"]))
+
+        # Persistido: el listado del dueno lo trae editado, el de otro actor sigue vacio y la fila coincide.
+        items = self.json(self._request(ACTOR_A, "GET", "/kpi_dashboard/"))["items"]
+        self.assertEqual([(id_dashboard, "Tablero editado", 7)], [(d["id_kpi_dashboard"], d["nombre"], d["orden"]) for d in items])
+        self.assertEqual([], self.json(self._request(ACTOR_B, "GET", "/kpi_dashboard/"))["items"])
+        with transaction_context() as db:
+            fila = db.get(KpiDashboard, id_dashboard)
+            self.assertEqual(("Tablero editado", 7, ACTOR_A["id_user"]), (fila.nombre, fila.orden, fila.id_user))
+            self.assertIsNone(fila.deletion_date)
+            asientos = db.scalars(
+                select(EventLog)
+                .where(EventLog.table_name == "kpi_dashboard", EventLog.action == "update")
+                .order_by(EventLog.field_name)
+            ).all()
+            cambios = {a.field_name: (a.before_value, a.after_value, a.created_by) for a in asientos}
+        # Un asiento por campo que cambio de verdad, firmado por el dueno; el dueno reasignado no cambio, no hay asiento.
+        self.assertEqual({"nombre", "orden"}, set(cambios), cambios)
+        self.assertEqual(("Mi tablero", "Tablero editado", ACTOR_A["id_user"]), cambios["nombre"])
+        self.assertEqual((100, 7, ACTOR_A["id_user"]), cambios["orden"])
 
 
 ACTOR_ADMINISTRA_PERMISOS_KPI = {"id_user": 990, "id_permission": 990, "user_type": "admin"}
