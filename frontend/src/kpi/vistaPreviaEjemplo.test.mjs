@@ -83,10 +83,12 @@ test("el reporte PDF solo captura las tarjetas del tablero, nunca la vista previ
   assert.ok(dashboard.includes("|| hayEjemplo"), "Terminar queda deshabilitado");
 });
 
-test("todos los textos nuevos de la vista previa existen en es, en, pt y de", () => {
+test("todos los textos nuevos de la vista previa y del selector existen en es, en, pt y de", () => {
   const dashboard = readFileSync(new URL("../pages/Dashboard.jsx", import.meta.url), "utf8");
-  const claves = [...new Set([...dashboard.matchAll(/tx\("(example_[a-z_]+)"/g)].map((m) => m[1]))];
+  // `example_*`: la vista previa de KPIs no disponibles; `selector_*`: los textos nuevos del selector de KPI.
+  const claves = [...new Set([...dashboard.matchAll(/tx\("((?:example|selector)_[a-z_]+)"/g)].map((m) => m[1]))];
   assert.ok(claves.length >= 14, `se esperaban los textos de ejemplo en Dashboard.jsx (hay ${claves.length})`);
+  assert.ok(claves.includes("selector_combinables") && claves.includes("selector_variables_ayuda"), "los textos nuevos del selector se revisan aqui");
   const catalogos = {};
   for (const idioma of ["es", "en", "pt", "de"]) {
     catalogos[idioma] = JSON.parse(readFileSync(new URL(`../i18n/locales/${idioma}.json`, import.meta.url), "utf8")).kpi_dashboard;
@@ -94,7 +96,11 @@ test("todos los textos nuevos de la vista previa existen en es, en, pt y de", ()
   }
   // El aviso acordado, tal cual, en espanol; y los demas idiomas no se quedan con el texto en espanol.
   assert.equal(catalogos.es.example_banner, "Vista previa con datos de ejemplo. Así se vería este KPI; no está disponible para tu rol o aún no tiene datos");
+  assert.equal(catalogos.es.selector_combinables, "Combinables (sin desglose)");
   for (const idioma of ["en", "pt", "de"]) {
+    for (const clave of ["selector_combinables", "selector_variables_ayuda"]) {
+      assert.notEqual(catalogos[idioma][clave], catalogos.es[clave], `${idioma}: ${clave} sin traducir`);
+    }
     assert.notEqual(catalogos[idioma].example_banner, catalogos.es.example_banner, `${idioma}: banner sin traducir`);
     assert.notEqual(catalogos[idioma].example_cannot_save, catalogos.es.example_cannot_save, `${idioma}: aviso de guardado sin traducir`);
   }

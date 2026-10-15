@@ -4637,6 +4637,8 @@
     "example_reason_modulo": "Module not enabled.",
     "example_view": "View sample",
     "example_hide": "Hide sample",
+    "selector_combinables": "Combinable (no breakdown)",
+    "selector_variables_ayuda": "All KPIs with no breakdown, from any module: they can be combined in the same chart.",
     "example_cannot_save": "A sample KPI is only a preview: it cannot be added to the dashboard.",
     "example_cannot_combine": "Cannot combine: a sample KPI can only be viewed on its own, not mixed with real KPIs.",
     "example_no_data_hint": "No data in the selected range.",

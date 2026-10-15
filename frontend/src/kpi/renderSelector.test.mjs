@@ -1,7 +1,10 @@
 // Prueba de RENDER del selector de KPI del editor (SelectorDeKpi.jsx): que
-// agrupe por modulo, que "Variables" sea un grupo mas, que el buscador filtre y
-// que las opciones de otra unidad salgan deshabilitadas y con tooltip.
+// agrupe por modulo (cada pestana con TODOS los KPIs de su modulo, los sin desglose al final
+// como "Combinables"), que "Variables" sea la vista transversal con la etiqueta del modulo de
+// cada tarjeta, que el buscador filtre y que las opciones de otra unidad salgan deshabilitadas
+// y con tooltip.
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test, { before } from "node:test";
 import { cargarRender } from "./bundleRender.mjs";
 
@@ -36,12 +39,11 @@ const gruposVisibles = (html) => [...html.matchAll(/data-grupo="([^"]+)"/g)].map
 
 test("arriba hay un boton por modulo, con su conteo, y las variables son un boton mas al final", () => {
   const botones = botonesDeModulo(pintar({}));
-  assert.deepEqual(botones.map((b) => b.clave), ["operaciones", "inventario", "variables"]);
+  assert.deepEqual(botones.map((b) => b.clave), ["operaciones", "inventario", "facturacion", "variables"]);
   assert.match(botones[0].texto, /Modulo operaciones 4/, "operaciones tiene 4 KPIs (3 de serie y 1 en vivo)");
   assert.match(botones[1].texto, /Modulo inventario 1/);
-  assert.match(botones[2].texto, /Variables 2/);
-  // Facturacion solo aporta variables: no es un modulo aparte.
-  assert.ok(!botones.some((b) => b.clave === "facturacion"));
+  assert.match(botones[2].texto, /Modulo facturacion 2/, "facturacion solo tiene KPIs sin desglose y aun asi es una pestana con su total");
+  assert.match(botones[3].texto, /Variables 2/);
 });
 
 test("abre en el primer modulo y muestra SOLO sus KPIs, no la lista completa", () => {
@@ -59,9 +61,9 @@ test("abre en el primer modulo y muestra SOLO sus KPIs, no la lista completa", (
 test("abre en el modulo del primer KPI ya elegido", () => {
   const enInventario = pintar({ seleccionados: ["4"] });
   assert.deepEqual(gruposVisibles(enInventario), ["inventario"]);
-  const enVariables = pintar({ seleccionados: ["6", "1"] }); // el primero elegido manda
-  assert.deepEqual(gruposVisibles(enVariables), ["variables"]);
-  assert.ok(enVariables.includes("Egresos totales") && enVariables.includes("Sin desglose"));
+  const enFacturacion = pintar({ seleccionados: ["6", "1"] }); // el primero elegido manda; un sin desglose abre en SU modulo
+  assert.deepEqual(gruposVisibles(enFacturacion), ["facturacion"]);
+  assert.ok(enFacturacion.includes("Egresos totales") && enFacturacion.includes("Combinables (sin desglose)"));
 });
 
 test("cada boton de modulo dice cuantos de sus KPIs estan elegidos (la seleccion se conserva al cambiar)", () => {
@@ -82,14 +84,14 @@ test("con un solo modulo en el catalogo no hay fila de botones, pero si el titul
   assert.ok(!html.includes("kpi-selector-modulos"));
   assert.deepEqual(gruposVisibles(html), ["operaciones"]);
   assert.ok(html.includes("Modulo operaciones"), "sin botones, el titulo dice en que modulo se esta");
-  // Un catalogo que solo trae variables tampoco muestra botones.
+  // Un catalogo que solo trae sin desglose de UN modulo tiene dos pestanas: su modulo y Variables.
   const soloVariables = CATALOGO.filter((kpi) => kpi.dimensiones.includes("global"));
-  assert.deepEqual(botonesDeModulo(pintarSelector({ catalogo: soloVariables, seleccionados: [], multiple: false })), []);
+  assert.deepEqual(botonesDeModulo(pintarSelector({ catalogo: soloVariables, seleccionados: [], multiple: false })).map((b) => b.clave), ["facturacion", "variables"]);
 });
 
 test("un modulo que no llega en el catalogo (plan o permiso) no tiene boton", () => {
   const sinInventario = CATALOGO.filter((kpi) => kpi.modulo !== "inventario");
-  assert.deepEqual(botonesDeModulo(pintar({ catalogo: sinInventario })).map((b) => b.clave), ["operaciones", "variables"]);
+  assert.deepEqual(botonesDeModulo(pintar({ catalogo: sinInventario })).map((b) => b.clave), ["operaciones", "facturacion", "variables"]);
 });
 
 test("cada opcion muestra nombre, unidad con su etiqueta y descripcion", () => {
@@ -102,10 +104,10 @@ test("cada opcion muestra nombre, unidad con su etiqueta y descripcion", () => {
 test("con texto, el buscador recorre TODOS los modulos y muestra los resultados agrupados por modulo", () => {
   const html = pintar({ busquedaInicial: "por empleado" }); // 3 de operaciones; nada de inventario
   assert.deepEqual(gruposVisibles(html), ["operaciones"]);
-  const varios = pintar({ busquedaInicial: "totales" }); // ingresos y egresos: variables
-  assert.deepEqual(gruposVisibles(varios), ["variables"]);
+  const varios = pintar({ busquedaInicial: "totales" }); // ingresos y egresos: su modulo y Variables
+  assert.deepEqual(gruposVisibles(varios), ["facturacion", "variables"]);
   const cruza = pintar({ busquedaInicial: "de" }); // aparece en todos los modulos
-  assert.deepEqual(gruposVisibles(cruza), ["operaciones", "inventario", "variables"]);
+  assert.deepEqual(gruposVisibles(cruza), ["operaciones", "inventario", "facturacion", "variables"]);
   assert.ok(cruza.includes("Modulo operaciones") && cruza.includes("Modulo inventario"), "cada grupo con su titulo");
 });
 
@@ -156,4 +158,91 @@ test("un KPI ya elegido nunca se bloquea, lleva su numero de orden y su color", 
   assert.ok(!primera.includes("disabled") && !segunda.includes("disabled"));
   assert.ok(html.includes("kpi-color-swatch") && html.includes("background:#123456"), "el circulo de color usa el override");
   assert.ok(primera.includes("activo") && primera.includes('aria-pressed="true"'));
+});
+
+// --- cada pestana con TODOS sus KPIs; "Variables" transversal con etiqueta de modulo -------------------
+// Un KPI sin desglose de operaciones, para tener un modulo con las dos clases.
+const CON_COMBINABLE = [...CATALOGO, KPI(7, "Pendientes hoy", "operaciones", "numero", { dimensiones: ["global"] })];
+const etiquetaDeModulo = (html, etiqueta) => /data-modulo-tag="([^"]+)"[^>]*>([^<]*)</.exec(filaDe(html, etiqueta) || "")?.slice(1);
+
+test("la pestana de un modulo muestra todos sus KPIs: primero los de desglose y al final «Combinables (sin desglose)»", () => {
+  const html = pintar({ catalogo: CON_COMBINABLE, moduloInicial: "operaciones" });
+  assert.deepEqual(gruposVisibles(html), ["operaciones"]);
+  assert.ok(html.includes('data-seccion="combinables"') && html.includes("Combinables (sin desglose)"));
+  const posicion = (texto) => html.indexOf(texto);
+  assert.ok(posicion("Cancelaciones por empleado") < posicion("Combinables (sin desglose)"), "los de desglose van antes de la seccion");
+  assert.ok(posicion("Combinables (sin desglose)") < posicion("Pendientes hoy"), "el sin desglose va dentro de la seccion, al final");
+  // Un modulo sin KPIs sin desglose no lleva la seccion.
+  assert.ok(!pintar({ catalogo: CON_COMBINABLE, moduloInicial: "inventario" }).includes("Combinables"));
+  // Un modulo con solo sin desglose (facturacion) la lleva y tambien su pestana.
+  const facturacion = pintar({ moduloInicial: "facturacion" });
+  assert.ok(facturacion.includes("Combinables (sin desglose)") && facturacion.includes("Ingresos totales") && facturacion.includes("Egresos totales"));
+});
+
+test("el contador de la pestana es el total del modulo, con sus combinables", () => {
+  const botones = botonesDeModulo(pintar({ catalogo: CON_COMBINABLE }));
+  assert.match(botones.find((b) => b.clave === "operaciones").texto, /Modulo operaciones 5/, "4 de siempre + 1 sin desglose");
+  assert.match(botones.find((b) => b.clave === "variables").texto, /Variables 3/, "los 3 sin desglose, de dos modulos");
+});
+
+test("«Variables» junta los sin desglose de todos los modulos y cada tarjeta lleva la etiqueta de su modulo", () => {
+  const variables = pintar({ catalogo: CON_COMBINABLE, moduloInicial: "variables" });
+  assert.deepEqual(gruposVisibles(variables), ["variables"]);
+  assert.deepEqual(etiquetaDeModulo(variables, "Ingresos totales"), ["facturacion", "Modulo facturacion"]);
+  assert.deepEqual(etiquetaDeModulo(variables, "Egresos totales"), ["facturacion", "Modulo facturacion"]);
+  assert.deepEqual(etiquetaDeModulo(variables, "Pendientes hoy"), ["operaciones", "Modulo operaciones"]);
+  assert.equal(filas(variables).length, 3);
+  assert.ok(!variables.includes("Cancelaciones por empleado"), "los que tienen desglose no son variables");
+  // En la pestana de su modulo no hace falta la etiqueta.
+  assert.ok(!pintar({ catalogo: CON_COMBINABLE, moduloInicial: "facturacion" }).includes("kpi-selector-modulo-tag"));
+});
+
+test("un KPI que sale en dos pestanas se elige y se comporta igual: mismo id, mismo orden, mismo bloqueo", () => {
+  for (const moduloInicial of ["facturacion", "variables"]) {
+    const elegido = pintar({ catalogo: CON_COMBINABLE, seleccionados: ["5"], multiple: true, moduloInicial });
+    const fila = filaDe(elegido, "Ingresos totales");
+    assert.ok(fila.includes('aria-pressed="true"') && fila.includes("kpi-chip-badge") && fila.includes(">1<"), `${moduloInicial}: elegido y con su numero`);
+    // Con un KPI de otra unidad elegido (numero vs moneda), se bloquea igual en las dos pestanas.
+    const bloqueado = filaDe(pintar({ catalogo: CON_COMBINABLE, seleccionados: ["1"], multiple: true, moduloInicial }), "Ingresos totales");
+    assert.ok(bloqueado.includes("disabled") && bloqueado.includes('title="BLOQUEADO(unidad): Ingresos totales"'), `${moduloInicial}: bloqueado por unidad`);
+    // Y uno de la misma unidad (moneda: Egresos) sigue libre en las dos.
+    const libre = filaDe(pintar({ catalogo: CON_COMBINABLE, seleccionados: ["5"], multiple: true, moduloInicial }), "Egresos totales");
+    assert.ok(!libre.includes("disabled") && !libre.includes("BLOQUEADO"), `${moduloInicial}: misma unidad, sin bloqueo`);
+  }
+  // El contador "elegidos" de las dos pestanas refleja la misma seleccion.
+  const botones = Object.fromEntries(botonesDeModulo(pintar({ catalogo: CON_COMBINABLE, seleccionados: ["5"], multiple: true })).map((b) => [b.clave, b.html]));
+  assert.ok(botones.facturacion.includes("kpi-selector-modulo-elegidos") && botones.variables.includes("kpi-selector-modulo-elegidos"));
+  assert.ok(!botones.operaciones.includes("kpi-selector-modulo-elegidos"));
+});
+
+test("al buscar un sin desglose sale en su modulo y en Variables (con etiqueta solo en Variables)", () => {
+  const html = pintar({ busquedaInicial: "ingresos" });
+  assert.deepEqual(gruposVisibles(html), ["facturacion", "variables"]);
+  const apariciones = filas(html).filter((fila) => fila.includes("Ingresos totales"));
+  assert.equal(apariciones.length, 2);
+  assert.equal(apariciones.filter((fila) => fila.includes("kpi-selector-modulo-tag")).length, 1, "solo la de Variables lleva la etiqueta");
+});
+
+// --- con los 38 KPIs del registry ----------------------------------------------------------------
+const REGISTRY = JSON.parse(readFileSync(new URL("./fixtures/catalogo_del_registry.json", import.meta.url), "utf8"))
+  .map((kpi) => ({ ...kpi, descripcion: `Descripcion de ${kpi.etiqueta}` }));
+const SIN_DESGLOSE_DE_RESTAURANTE = ["Ventas del restaurante", "Ticket promedio", "Propinas del restaurante", "Propina como % de la venta", "Tiempo de entrega", "Cuentas sin cobrar"];
+
+test("con los 38 KPIs del registry: conteos por pestana y los 6 sin desglose de restaurante dentro de Restaurante", () => {
+  const botones = botonesDeModulo(pintarSelector({ catalogo: REGISTRY, seleccionados: [], multiple: false }));
+  assert.deepEqual(botones.map((b) => [b.clave, b.texto.match(/(\d+)$/)[1]]), [
+    ["operaciones", "12"], ["inventario", "4"], ["facturacion", "4"], ["laboratorio", "3"], ["documentos", "1"], ["restaurante", "14"], ["variables", "9"],
+  ]);
+  const restaurante = pintarSelector({ catalogo: REGISTRY, seleccionados: [], multiple: false, moduloInicial: "restaurante" });
+  assert.equal(filas(restaurante).length, 14, "la pestana Restaurante trae TODOS sus KPIs");
+  for (const etiqueta of SIN_DESGLOSE_DE_RESTAURANTE) assert.ok(filaDe(restaurante, etiqueta), `${etiqueta} esta en Restaurante`);
+  assert.ok(restaurante.includes('data-seccion="combinables"') && restaurante.includes("Combinables (sin desglose)"));
+  const combinables = restaurante.slice(restaurante.indexOf('data-seccion="combinables"'));
+  assert.equal(filas(combinables).length, 6, "los 6 sin desglose, juntos al final");
+  assert.ok(!filas(combinables).some((fila) => fila.includes("Mesas ocupadas")), "los de desglose quedan arriba");
+  const variables = pintarSelector({ catalogo: REGISTRY, seleccionados: [], multiple: false, moduloInicial: "variables" });
+  assert.equal(filas(variables).length, 9);
+  assert.ok(filas(variables).every((fila) => fila.includes("kpi-selector-modulo-tag")), "las 9 tarjetas de Variables llevan su modulo");
+  assert.deepEqual(etiquetaDeModulo(variables, "Ticket promedio"), ["restaurante", "Modulo restaurante"]);
+  assert.deepEqual(etiquetaDeModulo(variables, "Incidencias pendientes"), ["operaciones", "Modulo operaciones"]);
 });

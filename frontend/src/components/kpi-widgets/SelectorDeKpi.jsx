@@ -11,7 +11,8 @@ const TEXTOS_POR_OMISION = {
   buscar: "Buscar KPI…",
   sinResultados: "Ningún KPI coincide con la búsqueda.",
   variables: "Variables",
-  variablesAyuda: "Sin desglose: sirven para combinar en un mismo gráfico.",
+  variablesAyuda: "Todos los KPIs sin desglose, de cualquier módulo: sirven para combinar en un mismo gráfico.",
+  combinables: "Combinables (sin desglose)",
   elegirColor: "Elegir color",
   ejemplo: "Ejemplo",
   motivoSinPermiso: "No disponible para tu rol.",
@@ -24,9 +25,13 @@ const TEXTOS_POR_OMISION = {
  * de los KPIs del modulo elegido, con un buscador que recorre todos.
  *
  * - Los botones (icono, nombre y cuantos KPIs tiene) usan el estilo de los de tipo
- *   de grafica. Las variables sueltas son un boton mas. Con un solo modulo en el
- *   catalogo no hay botones; un modulo sin KPIs visibles -por plan o permiso- no
- *   llega en el catalogo y por lo tanto no tiene boton.
+ *   de grafica. Cada modulo muestra TODOS sus KPIs (el conteo es el total del modulo):
+ *   los que tienen desglose primero y, al final, la seccion "Combinables (sin
+ *   desglose)". "Variables" es un boton mas, la vista transversal de todos los KPIs
+ *   sin desglose, y cada tarjeta lleva una etiqueta con su modulo. Un KPI que sale en
+ *   dos pestanas es el MISMO (mismo id y mismas reglas de combinacion). Con un solo
+ *   modulo en el catalogo no hay botones; un modulo sin KPIs visibles -por plan o
+ *   permiso- no llega en el catalogo y por lo tanto no tiene boton.
  * - Abre en el modulo del primer KPI ya elegido, o en el primero de la lista. Los
  *   KPIs elegidos se conservan al cambiar de modulo: cada boton avisa cuantos de
  *   los suyos estan elegidos.
@@ -70,6 +75,88 @@ export default function SelectorDeKpi({
     document.addEventListener("mousedown", alHacerClic);
     return () => document.removeEventListener("mousedown", alHacerClic);
   }, [colorAbierto]);
+
+  // Una fila de KPI. Un KPI sin desglose sale en dos pestanas (la de su modulo y "Variables"):
+  // es el mismo id y el mismo estado, asi que elegirlo en una se ve elegido en la otra.
+  // El popover de color se identifica por grupo+id para que no se abra en las dos a la vez.
+  const renderFila = (kpi, grupo) => {
+    const id = String(kpi.id_kpi_definition);
+    const { elegida, motivo } = estadoDeOpcion({ kpi, seleccionados, catalogo, multiple });
+    const bloqueo = motivo ? textoDeBloqueo(kpi, motivo) : undefined;
+    const posicion = seleccionados.indexOf(id);
+    const color = colorEfectivoDeKpi(id, coloresKpi);
+    const clavePopover = `${grupo.clave}:${id}`;
+    const etiquetaModulo = grupo.esVariables && kpi.modulo ? metaDeModulo(kpi.modulo).label : null;
+    return (
+      <div
+        key={id}
+        className={`kpi-selector-fila ${motivo ? "bloqueada" : ""}`}
+        title={bloqueo}
+      >
+        <button
+          type="button"
+          className={`kpi-editor-kpi-opcion ${elegida ? "activo" : ""}`}
+          aria-pressed={elegida}
+          disabled={Boolean(motivo)}
+          onClick={() => onAlternar(id)}
+        >
+          <span className="kpi-editor-kpi-nombre">
+            {multiple && elegida && <span className="kpi-chip-badge">{posicion + 1}</span>}
+            {kpi.etiqueta || kpi.clave}
+            {etiquetaModulo && (
+              <span
+                className="kpi-selector-modulo-tag"
+                data-modulo-tag={kpi.modulo}
+                style={{ "--tinte": colorDeModulo(kpi.modulo) }}
+              >
+                {etiquetaModulo}
+              </span>
+            )}
+            {kpi.esEjemplo && (
+              <span
+                className="kpi-editor-kpi-ejemplo"
+                title={kpi.motivo === "modulo_no_habilitado" ? t.motivoModulo : t.motivoSinPermiso}
+              >
+                {t.ejemplo}
+              </span>
+            )}
+            {elegida && <Check size={13} className="kpi-selector-check" aria-hidden="true" />}
+          </span>
+          <span className="kpi-editor-kpi-unidad">{unidadInfo(kpi.unidad).etiquetaSelector}</span>
+          {kpi.descripcion && <span className="kpi-editor-kpi-descripcion">{kpi.descripcion}</span>}
+        </button>
+        {multiple && elegida && onElegirColor && (
+          <div className="kpi-color-swatch-wrap">
+            <button
+              type="button"
+              className="kpi-color-swatch"
+              style={{ background: color }}
+              title={t.elegirColor}
+              aria-label={t.elegirColor}
+              aria-expanded={colorAbierto === clavePopover}
+              onClick={() => setColorAbierto((actual) => (actual === clavePopover ? null : clavePopover))}
+            />
+            {colorAbierto === clavePopover && (
+              <div className="kpi-color-popover" role="menu">
+                {CATEGORICAL.map((opcion) => (
+                  <button
+                    type="button"
+                    key={opcion}
+                    className={`kpi-color-option ${color === opcion ? "active" : ""}`}
+                    style={{ background: opcion }}
+                    aria-label={opcion}
+                    role="menuitemradio"
+                    aria-checked={color === opcion}
+                    onClick={() => { onElegirColor(id, opcion); setColorAbierto(null); }}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="kpi-selector">
@@ -127,6 +214,12 @@ export default function SelectorDeKpi({
       {grupos.map((grupo) => {
         const meta = grupo.esVariables ? { icon: Hash, label: t.variables } : metaDeModulo(grupo.modulo);
         const IconoGrupo = meta.icon || Boxes;
+        // En "Variables" cada tarjeta dice de que modulo es.
+        const lista = (kpis) => (
+          <div className="kpi-editor-kpi-lista">
+            {kpis.map((kpi) => renderFila(kpi, grupo))}
+          </div>
+        );
         return (
           <div key={grupo.clave} className="kpi-editor-grupo-modulo kpi-selector-grupo" data-grupo={grupo.clave}>
             {(hayBusqueda || !hayFilaDeModulos) && (
@@ -136,75 +229,20 @@ export default function SelectorDeKpi({
               </p>
             )}
             {grupo.esVariables && <p className="kpi-selector-ayuda">{t.variablesAyuda}</p>}
-            <div className="kpi-editor-kpi-lista">
-              {grupo.kpis.map((kpi) => {
-                const id = String(kpi.id_kpi_definition);
-                const { elegida, motivo } = estadoDeOpcion({ kpi, seleccionados, catalogo, multiple });
-                const bloqueo = motivo ? textoDeBloqueo(kpi, motivo) : undefined;
-                const posicion = seleccionados.indexOf(id);
-                const color = colorEfectivoDeKpi(id, coloresKpi);
-                return (
-                  <div
-                    key={id}
-                    className={`kpi-selector-fila ${motivo ? "bloqueada" : ""}`}
-                    title={bloqueo}
-                  >
-                    <button
-                      type="button"
-                      className={`kpi-editor-kpi-opcion ${elegida ? "activo" : ""}`}
-                      aria-pressed={elegida}
-                      disabled={Boolean(motivo)}
-                      onClick={() => onAlternar(id)}
-                    >
-                      <span className="kpi-editor-kpi-nombre">
-                        {multiple && elegida && <span className="kpi-chip-badge">{posicion + 1}</span>}
-                        {kpi.etiqueta || kpi.clave}
-                        {kpi.esEjemplo && (
-                          <span
-                            className="kpi-editor-kpi-ejemplo"
-                            title={kpi.motivo === "modulo_no_habilitado" ? t.motivoModulo : t.motivoSinPermiso}
-                          >
-                            {t.ejemplo}
-                          </span>
-                        )}
-                        {elegida && <Check size={13} className="kpi-selector-check" aria-hidden="true" />}
-                      </span>
-                      <span className="kpi-editor-kpi-unidad">{unidadInfo(kpi.unidad).etiquetaSelector}</span>
-                      {kpi.descripcion && <span className="kpi-editor-kpi-descripcion">{kpi.descripcion}</span>}
-                    </button>
-                    {multiple && elegida && onElegirColor && (
-                      <div className="kpi-color-swatch-wrap">
-                        <button
-                          type="button"
-                          className="kpi-color-swatch"
-                          style={{ background: color }}
-                          title={t.elegirColor}
-                          aria-label={t.elegirColor}
-                          aria-expanded={colorAbierto === id}
-                          onClick={() => setColorAbierto((actual) => (actual === id ? null : id))}
-                        />
-                        {colorAbierto === id && (
-                          <div className="kpi-color-popover" role="menu">
-                            {CATEGORICAL.map((opcion) => (
-                              <button
-                                type="button"
-                                key={opcion}
-                                className={`kpi-color-option ${color === opcion ? "active" : ""}`}
-                                style={{ background: opcion }}
-                                aria-label={opcion}
-                                role="menuitemradio"
-                                aria-checked={color === opcion}
-                                onClick={() => { onElegirColor(id, opcion); setColorAbierto(null); }}
-                              />
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
+            {grupo.esVariables ? lista(grupo.kpis) : (
+              <>
+                {grupo.conDesglose.length > 0 && lista(grupo.conDesglose)}
+                {grupo.combinables.length > 0 && (
+                  <div className="kpi-selector-combinables" data-seccion="combinables">
+                    <p className="kpi-selector-combinables-titulo">
+                      <Hash size={13} aria-hidden="true" /> {t.combinables}
+                      <span className="kpi-selector-cuenta">{grupo.combinables.length}</span>
+                    </p>
+                    {lista(grupo.combinables)}
                   </div>
-                );
-              })}
-            </div>
+                )}
+              </>
+            )}
           </div>
         );
       })}

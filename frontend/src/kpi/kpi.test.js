@@ -692,16 +692,19 @@ const SEL = [
 
 test("selector: agrupa por modulo en un orden fijo (no el del catalogo) y deja 'Variables' al final", () => {
   const grupos = agruparKpis(SEL);
-  assert.deepEqual(grupos.map((g) => g.clave), ["operaciones", "inventario", "variables"]);
+  assert.deepEqual(grupos.map((g) => g.clave), ["operaciones", "inventario", "facturacion", "variables"]);
   assert.deepEqual(grupos[0].kpis.map((k) => k.etiqueta), ["Incidencias abiertas", "Cancelaciones"]);
   assert.equal(esVariable(SEL[1]), true);
-  assert.equal(grupos[2].esVariables, true);
+  assert.equal(grupos[3].esVariables, true);
+  // Un modulo cuyos KPIs son todos sin desglose (facturacion aqui) tiene su propia pestana.
+  assert.deepEqual(grupos[2].combinables.map((k) => k.etiqueta), ["Ingresos totales"]);
+  assert.deepEqual(grupos[3].kpis.map((k) => k.etiqueta), ["Ingresos totales"], "y el mismo KPI sale tambien en Variables");
 });
 
 test("selector: la busqueda mira nombre, descripcion y clave, sin acentos, y quita grupos vacios", () => {
   assert.deepEqual(agruparKpis(SEL, "cuantas").map((g) => g.clave), ["operaciones"], "por descripcion, sin acento");
-  assert.deepEqual(agruparKpis(SEL, "INGRESOS").map((g) => g.clave), ["variables"]);
-  assert.deepEqual(agruparKpis(SEL, "").length, 3);
+  assert.deepEqual(agruparKpis(SEL, "INGRESOS").map((g) => g.clave), ["facturacion", "variables"], "un sin desglose sale en su modulo y en Variables");
+  assert.deepEqual(agruparKpis(SEL, "").length, 4);
   assert.deepEqual(agruparKpis(SEL, "nada de esto"), []);
   assert.deepEqual(agruparKpis([], "x"), []);
 });
@@ -742,28 +745,28 @@ test("modulo inicial: el del primer KPI ya elegido; si no hay, el primero de la 
   const grupos = agruparKpis(SEL);
   assert.equal(grupoInicial(grupos, SEL, []), "operaciones");
   assert.equal(grupoInicial(grupos, SEL, ["3"]), "inventario");
-  assert.equal(grupoInicial(grupos, SEL, ["2", "1"]), "variables", "manda el PRIMERO elegido, no el de menor id");
+  assert.equal(grupoInicial(grupos, SEL, ["2", "1"]), "facturacion", "manda el PRIMERO elegido, no el de menor id; un sin desglose abre en su modulo");
   assert.equal(grupoInicial(grupos, SEL, ["999"]), "operaciones", "un id que ya no existe no rompe nada");
   assert.equal(grupoInicial([], [], []), null);
-  assert.equal(claveDeGrupo(SEL[1]), "variables");
+  assert.equal(claveDeGrupo(SEL[1]), "facturacion", "un sin desglose abre en su modulo (ahi estan todos sus KPIs)");
   assert.equal(claveDeGrupo(SEL[0]), "operaciones");
 });
 
 test("resumen de modulos: total, coincidencias con la busqueda y elegidos por modulo", () => {
   const sinBuscar = resumenDeModulos(SEL, "", ["1", "4"]);
   assert.deepEqual(sinBuscar.map((m) => [m.clave, m.total, m.coincidencias, m.elegidos]), [
-    ["operaciones", 2, 2, 2], ["inventario", 1, 1, 0], ["variables", 1, 1, 0],
+    ["operaciones", 2, 2, 2], ["inventario", 1, 1, 0], ["facturacion", 1, 1, 0], ["variables", 1, 1, 0],
   ]);
   const buscando = resumenDeModulos(SEL, "cancel", ["1"]);
   assert.deepEqual(buscando.map((m) => [m.clave, m.total, m.coincidencias]), [
-    ["operaciones", 2, 1], ["inventario", 1, 0], ["variables", 1, 0],
+    ["operaciones", 2, 1], ["inventario", 1, 0], ["facturacion", 1, 0], ["variables", 1, 0],
   ], "el total no cambia al buscar; las coincidencias si");
   assert.equal(buscando[0].elegidos, 1, "la seleccion se conserva mientras se busca");
 });
 
 test("un modulo sin KPIs en el catalogo (plan o permiso) no aparece en el resumen", () => {
   const sinInventario = SEL.filter((kpi) => kpi.modulo !== "inventario");
-  assert.deepEqual(resumenDeModulos(sinInventario, "", []).map((m) => m.clave), ["operaciones", "variables"]);
+  assert.deepEqual(resumenDeModulos(sinInventario, "", []).map((m) => m.clave), ["operaciones", "facturacion", "variables"]);
   assert.deepEqual(resumenDeModulos([], "", []), []);
 });
 
@@ -785,7 +788,7 @@ test("el orden de los modulos no depende del orden en que llegue el catalogo", (
     { id_kpi_definition: 6, etiqueta: "f", modulo: "inventario", dimensiones: ["global"] },
   ];
   const orden = agruparKpis(mezclado).map((g) => g.clave);
-  assert.deepEqual(orden, ["operaciones", "facturacion", "documentos", "alfa_nuevo", "zeta_nuevo", "variables"]);
+  assert.deepEqual(orden, ["operaciones", "inventario", "facturacion", "documentos", "alfa_nuevo", "zeta_nuevo", "variables"]);
   assert.deepEqual(agruparKpis([...mezclado].reverse()).map((g) => g.clave), orden);
 });
 

@@ -1,0 +1,420 @@
+[
+ {
+  "id_kpi_definition": 1,
+  "clave": "ventas_por_empleado",
+  "etiqueta": "Ventas por empleado",
+  "modulo": "facturacion",
+  "dimensiones": [
+   "empleado"
+  ],
+  "unidad": "moneda",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 2,
+  "clave": "egresos_por_empleado",
+  "etiqueta": "Egresos por empleado",
+  "modulo": "facturacion",
+  "dimensiones": [
+   "empleado"
+  ],
+  "unidad": "moneda",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 3,
+  "clave": "desarrollo_por_empleado",
+  "etiqueta": "Desarrollo por empleado",
+  "modulo": "operaciones",
+  "dimensiones": [
+   "empleado"
+  ],
+  "unidad": "porcentaje",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 4,
+  "clave": "vales_vencidos_por_responsable",
+  "etiqueta": "Vales vencidos por responsable",
+  "modulo": "operaciones",
+  "dimensiones": [
+   "empleado"
+  ],
+  "unidad": "numero",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 5,
+  "clave": "incidentes_resueltos_por_empleado",
+  "etiqueta": "Incidentes resueltos por empleado",
+  "modulo": "operaciones",
+  "dimensiones": [
+   "empleado"
+  ],
+  "unidad": "porcentaje",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 6,
+  "clave": "cancelaciones_por_empleado",
+  "etiqueta": "Cancelaciones por empleado",
+  "modulo": "operaciones",
+  "dimensiones": [
+   "empleado"
+  ],
+  "unidad": "numero",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 7,
+  "clave": "ordenes_laboratorio_entregadas_por_tecnico",
+  "etiqueta": "Órdenes de laboratorio entregadas por técnico",
+  "modulo": "laboratorio",
+  "dimensiones": [
+   "empleado"
+  ],
+  "unidad": "numero",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 8,
+  "clave": "tiempo_promedio_reparacion_laboratorio_por_tecnico",
+  "etiqueta": "Tiempo promedio de reparación por técnico",
+  "modulo": "laboratorio",
+  "dimensiones": [
+   "empleado"
+  ],
+  "unidad": "dias",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 9,
+  "clave": "costo_promedio_reparacion_laboratorio_por_tecnico",
+  "etiqueta": "Costo promedio de reparación por técnico",
+  "modulo": "laboratorio",
+  "dimensiones": [
+   "empleado"
+  ],
+  "unidad": "moneda",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 10,
+  "clave": "documentos_vencidos_por_responsable",
+  "etiqueta": "Documentos vencidos por responsable",
+  "modulo": "documentos",
+  "dimensiones": [
+   "empleado"
+  ],
+  "unidad": "numero",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 11,
+  "clave": "ingresos_totales",
+  "etiqueta": "Ingresos totales",
+  "modulo": "facturacion",
+  "dimensiones": [
+   "global"
+  ],
+  "unidad": "moneda",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 12,
+  "clave": "egresos_totales",
+  "etiqueta": "Egresos totales",
+  "modulo": "facturacion",
+  "dimensiones": [
+   "global"
+  ],
+  "unidad": "moneda",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 13,
+  "clave": "material_prestado_por_responsable",
+  "etiqueta": "Material prestado por responsable",
+  "modulo": "inventario",
+  "dimensiones": [
+   "empleado"
+  ],
+  "unidad": "numero",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 14,
+  "clave": "prestamos_vencidos_por_responsable",
+  "etiqueta": "Préstamos de material vencidos por responsable",
+  "modulo": "inventario",
+  "dimensiones": [
+   "empleado"
+  ],
+  "unidad": "numero",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 15,
+  "clave": "lotes_proximos_a_caducar",
+  "etiqueta": "Lotes próximos a caducar",
+  "modulo": "inventario",
+  "dimensiones": [
+   "producto"
+  ],
+  "unidad": "numero",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 16,
+  "clave": "articulos_bajo_stock",
+  "etiqueta": "Artículos bajo stock",
+  "modulo": "inventario",
+  "dimensiones": [
+   "producto"
+  ],
+  "unidad": "numero",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 17,
+  "clave": "incidencias_abiertas_por_empleado",
+  "etiqueta": "Incidencias abiertas por responsable",
+  "modulo": "operaciones",
+  "dimensiones": [
+   "empleado"
+  ],
+  "unidad": "numero",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 18,
+  "clave": "incidencias_pendientes",
+  "etiqueta": "Incidencias pendientes",
+  "modulo": "operaciones",
+  "dimensiones": [
+   "global"
+  ],
+  "unidad": "numero",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 19,
+  "clave": "incidencias_abiertas_vs_cerradas",
+  "etiqueta": "Incidencias abiertas vs. cerradas",
+  "modulo": "operaciones",
+  "dimensiones": [
+   "estado"
+  ],
+  "unidad": "numero",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 20,
+  "clave": "material_por_estado",
+  "etiqueta": "Material por estado",
+  "modulo": "operaciones",
+  "dimensiones": [
+   "estado"
+  ],
+  "unidad": "numero",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 21,
+  "clave": "prestamos_abiertos_por_antiguedad",
+  "etiqueta": "Préstamos abiertos por antigüedad",
+  "modulo": "operaciones",
+  "dimensiones": [
+   "estado"
+  ],
+  "unidad": "numero",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 22,
+  "clave": "perdidas_por_familia",
+  "etiqueta": "Pérdidas por familia",
+  "modulo": "operaciones",
+  "dimensiones": [
+   "familia"
+  ],
+  "unidad": "piezas",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 23,
+  "clave": "material_prestado_actual",
+  "etiqueta": "Material prestado ahora",
+  "modulo": "operaciones",
+  "dimensiones": [
+   "empleado"
+  ],
+  "unidad": "piezas",
+  "modo": "vivo"
+ },
+ {
+  "id_kpi_definition": 24,
+  "clave": "piezas_por_estado",
+  "etiqueta": "Piezas por estado",
+  "modulo": "operaciones",
+  "dimensiones": [
+   "estado"
+  ],
+  "unidad": "piezas",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 25,
+  "clave": "ventas_restaurante",
+  "etiqueta": "Ventas del restaurante",
+  "modulo": "restaurante",
+  "dimensiones": [
+   "global"
+  ],
+  "unidad": "moneda",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 26,
+  "clave": "ventas_por_mesero",
+  "etiqueta": "Ventas por mesero",
+  "modulo": "restaurante",
+  "dimensiones": [
+   "mesero"
+  ],
+  "unidad": "moneda",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 27,
+  "clave": "ticket_promedio",
+  "etiqueta": "Ticket promedio",
+  "modulo": "restaurante",
+  "dimensiones": [
+   "global"
+  ],
+  "unidad": "moneda",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 28,
+  "clave": "propinas_restaurante",
+  "etiqueta": "Propinas del restaurante",
+  "modulo": "restaurante",
+  "dimensiones": [
+   "global"
+  ],
+  "unidad": "moneda",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 29,
+  "clave": "propina_pct_de_venta",
+  "etiqueta": "Propina como % de la venta",
+  "modulo": "restaurante",
+  "dimensiones": [
+   "global"
+  ],
+  "unidad": "porcentaje",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 30,
+  "clave": "platillos_mas_vendidos",
+  "etiqueta": "Platillos más vendidos",
+  "modulo": "restaurante",
+  "dimensiones": [
+   "platillo"
+  ],
+  "unidad": "numero",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 31,
+  "clave": "frecuencia_por_platillo",
+  "etiqueta": "Frecuencia por platillo",
+  "modulo": "restaurante",
+  "dimensiones": [
+   "platillo"
+  ],
+  "unidad": "numero",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 32,
+  "clave": "top_mesas",
+  "etiqueta": "Mesas con más venta",
+  "modulo": "restaurante",
+  "dimensiones": [
+   "mesa"
+  ],
+  "unidad": "moneda",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 33,
+  "clave": "servicios_por_mesero",
+  "etiqueta": "Servicios por mesero",
+  "modulo": "restaurante",
+  "dimensiones": [
+   "mesero"
+  ],
+  "unidad": "numero",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 34,
+  "clave": "tiempo_de_entrega",
+  "etiqueta": "Tiempo de entrega",
+  "modulo": "restaurante",
+  "dimensiones": [
+   "global"
+  ],
+  "unidad": "minutos",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 35,
+  "clave": "diferencia_de_caja",
+  "etiqueta": "Desviación de caja",
+  "modulo": "restaurante",
+  "dimensiones": [
+   "empleado"
+  ],
+  "unidad": "moneda",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 36,
+  "clave": "pedidos_del_dia",
+  "etiqueta": "Pedidos del día",
+  "modulo": "restaurante",
+  "dimensiones": [
+   "estado"
+  ],
+  "unidad": "numero",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 37,
+  "clave": "cuentas_sin_cobrar",
+  "etiqueta": "Cuentas sin cobrar",
+  "modulo": "restaurante",
+  "dimensiones": [
+   "global"
+  ],
+  "unidad": "moneda",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 38,
+  "clave": "mesas_ocupadas",
+  "etiqueta": "Mesas ocupadas",
+  "modulo": "restaurante",
+  "dimensiones": [
+   "estado"
+  ],
+  "unidad": "numero",
+  "modo": "snapshot"
+ }
+]

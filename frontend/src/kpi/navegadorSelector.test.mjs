@@ -72,10 +72,10 @@ const opcion = (c, nombre) => fila(c, nombre).querySelector(".kpi-editor-kpi-opc
 async function todo() {
   // 1. Abre en el primer modulo, con boton por modulo y solo sus KPIs.
   let c = await montar({});
-  paso("hay un boton por modulo (4: operaciones, inventario, laboratorio, documentos) mas Variables", botones(c).map((b) => b.dataset.modulo).join() === "operaciones,inventario,laboratorio,documentos,variables", botones(c).map((b) => b.dataset.modulo).join());
+  paso("hay un boton por modulo (5: operaciones, inventario, facturacion, laboratorio, documentos) mas Variables", botones(c).map((b) => b.dataset.modulo).join() === "operaciones,inventario,facturacion,laboratorio,documentos,variables", botones(c).map((b) => b.dataset.modulo).join());
   paso("abre en el primer modulo", activo(c).join() === "operaciones", activo(c).join());
   paso("muestra SOLO los KPIs de ese modulo", nombres(c).join("|") === "Incidencias abiertas|Incidentes resueltos|Cancelaciones", nombres(c).join("|"));
-  paso("cada boton dice cuantos KPIs tiene", botones(c).map((b) => b.querySelector(".kpi-selector-modulo-cuenta").textContent).join() === "3,2,1,1,1", botones(c).map((b) => b.querySelector(".kpi-selector-modulo-cuenta").textContent).join());
+  paso("cada boton dice cuantos KPIs tiene", botones(c).map((b) => b.querySelector(".kpi-selector-modulo-cuenta").textContent).join() === "3,2,1,1,1,1", botones(c).map((b) => b.querySelector(".kpi-selector-modulo-cuenta").textContent).join());
   paso("los iconos de los botones son distintos entre si", new Set(botones(c).map((b) => b.querySelector("svg").innerHTML)).size === botones(c).length);
   paso("el boton activo lleva check ademas del color y del borde", !!botones(c)[0].querySelector(".kpi-editor-tipo-check") && getComputedStyle(botones(c)[0]).borderColor !== getComputedStyle(botones(c)[1]).borderColor);
   paso("los botones en reposo son neutros (mismo fondo gris que los de tipo de grafica)", getComputedStyle(botones(c)[1]).backgroundColor === "rgb(244, 246, 249)", getComputedStyle(botones(c)[1]).backgroundColor);
@@ -84,8 +84,11 @@ async function todo() {
   // 2. Cambiar de modulo.
   await click(botones(c)[1]);
   paso("al elegir Inventario cambia el boton activo y la lista", activo(c).join() === "inventario" && nombres(c).join("|") === "Existencias|Lotes por caducar", activo(c).join() + " / " + nombres(c).join("|"));
+  await click(botones(c).find((b) => b.dataset.modulo === "facturacion"));
+  paso("Facturacion (solo sin desglose) es una pestana con su seccion «Combinables (sin desglose)»", activo(c).join() === "facturacion" && nombres(c).join("|") === "Ingresos totales" && !!c.querySelector('[data-seccion="combinables"]') && c.textContent.includes("Combinables (sin desglose)"), activo(c).join() + " / " + nombres(c).join("|"));
+  paso("en la pestana de su modulo la tarjeta no lleva etiqueta de modulo", !c.querySelector(".kpi-selector-modulo-tag"));
   await click(botones(c).find((b) => b.dataset.modulo === "variables"));
-  paso("Variables es un boton mas y muestra su ayuda", nombres(c).join("|") === "Ingresos totales" && c.textContent.includes("Sin desglose"));
+  paso("Variables es un boton mas, muestra su ayuda y la tarjeta lleva la etiqueta de su modulo", nombres(c).length === 1 && nombres(c)[0].startsWith("Ingresos totales") && c.textContent.includes("sin desglose, de cualquier módulo") && c.querySelector(".kpi-selector-modulo-tag")?.textContent === "Facturación", nombres(c).join("|"));
 
   // 3. La seleccion se conserva al cambiar de modulo (varios KPIs de la misma unidad).
   c = await montar({ multiple: true });
