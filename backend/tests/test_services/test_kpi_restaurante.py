@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import copy
 import unittest
 from datetime import date, datetime, timedelta
@@ -185,10 +186,11 @@ class KpiRestauranteTest(unittest.TestCase):
         self.assertEqual(Decimal("100.00"), self._ventas()[0][2])
 
     def test_se_cuenta_el_dia_del_cobro_y_el_rango_incluye_sus_extremos(self):
-        self._orden(97001, [(1, 10)], pagada=datetime(2026, 9, 1, 0, 5))
-        self._orden(97002, [(1, 20)], pagada=datetime(2026, 9, 30, 23, 55))
-        self._orden(97003, [(1, 400)], pagada=datetime(2026, 8, 31, 23, 59))
-        self._orden(97004, [(1, 800)], pagada=datetime(2026, 10, 1, 0, 0))
+        # Horas en UTC; el dia es el LOCAL (UTC-6): 1-sep 00:05, 30-sep 23:55, 31-ago 23:59 y 1-oct 00:00 locales.
+        self._orden(97001, [(1, 10)], pagada=datetime(2026, 9, 1, 6, 5))
+        self._orden(97002, [(1, 20)], pagada=datetime(2026, 10, 1, 5, 55))
+        self._orden(97003, [(1, 400)], pagada=datetime(2026, 9, 1, 5, 59))
+        self._orden(97004, [(1, 800)], pagada=datetime(2026, 10, 1, 6, 0))
         self.assertEqual(
             [(None, date(2026, 9, 1), Decimal("10.00")), (None, date(2026, 9, 30), Decimal("20.00"))],
             self._ventas(),
@@ -672,9 +674,13 @@ class KpiRestauranteTest(unittest.TestCase):
         return ids
 
     def _hoy(self):
+        # La corrida frecuente fecha en el dia del NEGOCIO (`hoy_negocio`); la nocturna sigue con `date.today()`.
         falso = mock.MagicMock(wraps=date)
         falso.today.return_value = DIA.date()
-        return mock.patch.object(tasks_kpis, "date", falso)
+        pila = contextlib.ExitStack()
+        pila.enter_context(mock.patch.object(tasks_kpis, "date", falso))
+        pila.enter_context(mock.patch.object(tasks_kpis, "hoy_negocio", return_value=DIA.date()))
+        return pila
 
     def test_la_corrida_frecuente_solo_toca_restaurante_y_pos_y_solo_el_dia_de_hoy(self):
         ajeno = copy.copy(KPI_REGISTRY[0])
@@ -726,6 +732,29 @@ class KpiRestauranteTest(unittest.TestCase):
 
     def test_los_modulos_frecuentes_existen_en_el_registro_de_modulos(self):
         self.assertEqual([], [m for m in frecuencia.MODULOS_FRECUENTES if m not in MODULO_POR_CLAVE])
+
+    # --- zona horaria: el dia es el del negocio, no el de UTC ----------------------------------
+    # La base guarda UTC; America/Mexico_City es UTC-6 todo el ano. 18:10 local = 00:10 UTC del dia siguiente.
+
+    def test_un_cobro_a_las_18_10_locales_queda_en_el_mismo_dia_local(self):
+        self._orden(97001, [(1, 100)], pagada=datetime(2026, 9, 16, 0, 10))   # 15-sep 18:10 local
+        self.assertEqual([(None, date(2026, 9, 15), Decimal("100"))], self._ventas())
+
+    def test_un_cobro_a_las_23_50_y_otro_a_las_00_10_locales_quedan_en_dias_distintos(self):
+        self._orden(97001, [(1, 100)], pagada=datetime(2026, 9, 16, 5, 50))   # 15-sep 23:50 local
+        self._orden(97002, [(1, 40)], pagada=datetime(2026, 9, 16, 6, 10))    # 16-sep 00:10 local
+        self.assertEqual(
+            [(None, date(2026, 9, 15), Decimal("100")), (None, date(2026, 9, 16), Decimal("40"))],
+            self._ventas())
+
+    def test_el_dia_local_tambien_rige_envio_entrega_y_cierre_de_caja_y_pedidos_del_dia(self):
+        tarde = datetime(2026, 9, 16, 3, 0)   # 15-sep 21:00 local
+        self._orden(97001, [(1, 10)], enviada=tarde, lista=tarde - timedelta(minutes=10), entregada=tarde)
+        self._sesion(97001, 5, cerrada=tarde)
+        self.assertEqual([(MESERO_ROSA, date(2026, 9, 15), 1)], [tuple(f) for f in self._consulta(kpis_restaurante.servicios_por_mesero_query)])
+        self.assertEqual(date(2026, 9, 15), self._consulta(kpis_restaurante.tiempo_de_entrega_query)[0][1])
+        self.assertEqual(date(2026, 9, 15), self._consulta(kpis_restaurante.diferencia_de_caja_query)[0][1])
+        self.assertEqual(1, self._foto(kpis_restaurante.pedidos_del_dia_query)["cobrado"])
 
     # --- las banderas -----------------------------------------------------------
 

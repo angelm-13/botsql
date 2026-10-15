@@ -26,6 +26,7 @@ from sqlalchemy import and_, case, exists, func, select
 from app.models.restaurant import (
     RestaurantCashSession, RestaurantOrder, RestaurantOrderItem, RestaurantTable, RestaurantVisit,
 )
+from app.utils.tiempo import dia_local
 from app.services.restaurant_rules import (
     ESTADO_DE_VENTA, condiciones_de_venta, importe_de_renglon, subtotal_por_orden,
 )
@@ -44,7 +45,7 @@ def _por_proyecto(condiciones: list, columna, actor_project) -> list:
 
 def _renglones_vendidos(session, fecha_inicio, fecha_fin, actor_project, columnas_de_grupo, agregado, *, visita=False):
     """`agregado` sobre los renglones de las ordenes cobradas, por dia de cobro y `columnas_de_grupo`."""
-    fecha_col = func.date(RestaurantOrder.paid_at)
+    fecha_col = dia_local(RestaurantOrder.paid_at)
     condiciones = _por_proyecto(
         [*condiciones_de_venta(), fecha_col >= fecha_inicio, fecha_col <= fecha_fin],
         RestaurantOrder.id_proyect, actor_project,
@@ -67,7 +68,7 @@ def _renglones_vendidos(session, fecha_inicio, fecha_fin, actor_project, columna
 def _ordenes_cobradas_por_dia(session, fecha_inicio, fecha_fin, actor_project):
     """`(fecha, subtotal de las ordenes, propinas, numero de ordenes)` por dia de cobro."""
     sub = subtotal_por_orden()
-    fecha_col = func.date(RestaurantOrder.paid_at)
+    fecha_col = dia_local(RestaurantOrder.paid_at)
     condiciones = _por_proyecto(
         [*condiciones_de_venta(), fecha_col >= fecha_inicio, fecha_col <= fecha_fin],
         RestaurantOrder.id_proyect, actor_project,
@@ -215,7 +216,7 @@ def servicios_por_mesero_query(session, fecha_inicio, fecha_fin, filtros_dimensi
     Un servicio es una orden que salio de `borrador` (`sent_at` no nulo), se cobre o no: mide
     cuanto atendio cada mesero, no cuanto vendio. Las ordenes borradas no cuentan.
     """
-    fecha_col = func.date(RestaurantOrder.sent_at)
+    fecha_col = dia_local(RestaurantOrder.sent_at)
     condiciones = _por_proyecto(
         [
             RestaurantOrder.deletion_date.is_(None),
@@ -244,7 +245,7 @@ def tiempo_de_entrega_query(session, fecha_inicio, fecha_fin, filtros_dimension,
     ordenes ya COBRADAS y esta cuenta toda orden entregada (una entregada sin cobrar todavia
     midio su tiempo de entrega).
     """
-    fecha_col = func.date(RestaurantOrder.delivered_at)
+    fecha_col = dia_local(RestaurantOrder.delivered_at)
     minutos = func.extract("epoch", RestaurantOrder.delivered_at - RestaurantOrder.ready_at) / 60.0
     condiciones = _por_proyecto(
         [
@@ -281,7 +282,7 @@ def diferencia_de_caja_query(session, fecha_inicio, fecha_fin, filtros_dimension
     * Cajero: `closed_by_id` (un usuario).
     * La clave sigue siendo `diferencia_de_caja` (el seed no borra filas: un renombre dejaria una huerfana).
     """
-    fecha_col = func.date(RestaurantCashSession.closed_at)
+    fecha_col = dia_local(RestaurantCashSession.closed_at)
     condiciones = _por_proyecto(
         [
             RestaurantCashSession.deletion_date.is_(None),
@@ -342,7 +343,7 @@ def pedidos_del_dia_query(session, fecha_inicio, fecha_fin, filtros_dimension, a
       pedido, no por el de cobro (para eso esta `ventas_restaurante`): una orden enviada ayer y cobrada hoy
       es de ayer.
     """
-    dia = func.date(func.coalesce(RestaurantOrder.sent_at, RestaurantOrder.started_at))
+    dia = dia_local(func.coalesce(RestaurantOrder.sent_at, RestaurantOrder.started_at))
     categoria = case(
         (RestaurantOrder.status == ESTADO_DE_VENTA, PEDIDO_COBRADO),
         (RestaurantOrder.status == ESTATUS_ENTREGADO, PEDIDO_ENTREGADO_SIN_COBRAR),

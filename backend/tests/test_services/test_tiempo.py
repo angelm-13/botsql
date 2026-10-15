@@ -80,3 +80,27 @@ class TestFechasEnLaApi(OperationsTestCase):
         marca = Brand(brand_description='x', created_by=1, creation_date=datetime(2026, 10, 14, 20, 33))
         self.assertEqual('2026-10-14T20:33:00Z', marca.serialize()['creation_date'])
         self.assertIsNone(marca.serialize()['deletion_date'])
+
+
+class TestDiaLocalEnSql(TestCase):
+    """`dia_local` agrupa por el dia del negocio, no por el de UTC (en SQLite aqui; en Postgres, en test_kpi_restaurante)."""
+
+    def _dia(self, momento):
+        from sqlalchemy import create_engine, literal, select
+
+        from app.utils.tiempo import dia_local
+
+        with create_engine("sqlite://").connect() as con:
+            return con.execute(select(dia_local(literal(momento.strftime("%Y-%m-%d %H:%M:%S"))))).scalar()
+
+    def test_a_sale_at_18_10_local_stays_on_the_same_local_day(self):
+        self.assertEqual(date(2026, 9, 15), self._dia(datetime(2026, 9, 16, 0, 10)))
+
+    def test_23_50_and_00_10_local_fall_on_different_days(self):
+        self.assertEqual(date(2026, 9, 15), self._dia(datetime(2026, 9, 16, 5, 50)))
+        self.assertEqual(date(2026, 9, 16), self._dia(datetime(2026, 9, 16, 6, 10)))
+
+    def test_hoy_negocio_is_the_business_date_not_the_container_date(self):
+        from app.utils.tiempo import hoy_negocio
+
+        self.assertEqual(ahora_negocio().date(), hoy_negocio())

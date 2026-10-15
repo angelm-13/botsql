@@ -13,6 +13,7 @@ from app.models.kpi_definition import KpiDefinition
 from app.models.kpi_snapshot import KpiSnapshot
 from app.models.proyect import Proyect
 from app.models.session import transaction_context
+from app.utils.tiempo import hoy_negocio
 
 # Ventana de 7 dias (hoy incluido) para que una factura corregida un par de
 # dias despues tambien se refleje, no solo el dia exacto en que se calculo.
@@ -143,7 +144,8 @@ def recalculate_kpi_snapshots_frecuentes() -> dict:
     La corrida nocturna sigue haciendo todo, con su ventana de 7 dias; esta solo mantiene al dia el
     dia en curso para que el gerente vea las ventas, las cuentas y las mesas de ahora.
     """
-    hoy = date.today()
+    # El dia del NEGOCIO, no el del contenedor (UTC): las fotos y los KPIs se fechan en hora local.
+    hoy = hoy_negocio()
 
     with transaction_context() as session:
         filas_escritas = _recalcular_kpi_snapshots_en_sesion(session, hoy, hoy, modulos=MODULOS_FRECUENTES)
