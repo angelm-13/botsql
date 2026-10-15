@@ -716,6 +716,34 @@ class KpiRestauranteTest(unittest.TestCase):
                 KpiSnapshot.id_kpi_definition == ids["ventas_restaurante"])))
         self.assertEqual({DIA.date(), DIA.date() - timedelta(days=2)}, periodos)
 
+    def _valor_de_la_foto(self, id_definicion, periodo, categoria=None):
+        with transaction_context() as db:
+            filas = db.execute(select(KpiSnapshot.dimension_key, KpiSnapshot.valor).where(
+                KpiSnapshot.id_kpi_definition == id_definicion, KpiSnapshot.periodo == periodo,
+                KpiSnapshot.dimension_key["id_proyect"].as_integer() == PROYECTO_A)).all()
+        return {(clave or {}).get("estado"): float(valor) for clave, valor in filas}
+
+    def test_la_corrida_nocturna_no_sobrescribe_las_fotos_de_dias_anteriores(self):
+        # Las fotos (agregacion "ultimo") solo se escriben en la fecha de la corrida: la nocturna recorre una ventana
+        # de 7 dias, pero una foto de ayer es lo que ERA ayer y no debe reescribirse con el estado de hoy.
+        kpis = tuple(k for k in definiciones() if k.clave in ("mesas_ocupadas", "cuentas_sin_cobrar", "pedidos_del_dia"))
+        ids = self._registrar(kpis)
+        ayer = DIA.date() - timedelta(days=1)
+        self._orden(97001, [(1, 100)], estado="entregado", enviada=DIA - timedelta(days=1))
+        with mock.patch.object(tasks_kpis, "KPI_REGISTRY", kpis):
+            tasks_kpis.recalcular_kpi_snapshots_rango(ayer, ayer)           # la foto de ayer
+        self.assertEqual({None: 100.0}, self._valor_de_la_foto(ids["cuentas_sin_cobrar"], ayer))
+        self.assertEqual(1.0, self._valor_de_la_foto(ids["pedidos_del_dia"], ayer)["entregado_sin_cobrar"])
+        mesas_ayer = self._valor_de_la_foto(ids["mesas_ocupadas"], ayer)
+        self._orden(97002, [(1, 50)], estado="entregado", enviada=DIA)    # hoy cambia el estado
+        with mock.patch.object(tasks_kpis, "KPI_REGISTRY", kpis), self._hoy():
+            tasks_kpis.recalculate_kpi_snapshots()                           # nocturna: ventana de 7 dias
+        self.assertEqual({None: 100.0}, self._valor_de_la_foto(ids["cuentas_sin_cobrar"], ayer), "ayer no cambia")
+        self.assertEqual(mesas_ayer, self._valor_de_la_foto(ids["mesas_ocupadas"], ayer))
+        self.assertEqual(1.0, self._valor_de_la_foto(ids["pedidos_del_dia"], ayer)["entregado_sin_cobrar"])
+        self.assertEqual({None: 150.0}, self._valor_de_la_foto(ids["cuentas_sin_cobrar"], DIA.date()), "hoy si")
+        self.assertEqual(1.0, self._valor_de_la_foto(ids["pedidos_del_dia"], DIA.date())["entregado_sin_cobrar"])
+
     def test_el_intervalo_es_una_constante_de_5_minutos_en_el_beat(self):
         self.assertEqual(5, frecuencia.INTERVALO_MINUTOS_POR_OMISION)
         with mock.patch.dict("os.environ", {}, clear=False):
