@@ -813,6 +813,9 @@
       "id_incident": "ID Incidente",
       "id_incident_type": "ID Tipo de incidente",
       "id_lider": "ID Líder",
+      "latitude": "Latitude",
+      "longitude": "Longitude",
+      "distance_m": "Distância (m)",
       "id_user": "ID Usuário",
       "incident_date": "Incidente Data",
       "incident_status": "Incidente Status",
@@ -3361,6 +3364,10 @@
     },
     "form": {
       "employee_no": "Número do colaborador",
+
+      "type_label": "Tipo",
+
+      "gender_label": "Gênero",
       "name": "Nome",
       "type": {
         "options": {
@@ -3382,6 +3389,12 @@
         "to": "a"
       }
     },
+    "directory": {
+      "eyebrow": "DIRETÓRIO",
+      "title": "Pessoas do dispositivo"
+
+    },
+
     "person": {
       "no_name": "Sem nome",
       "default_employee": "Colaborador"

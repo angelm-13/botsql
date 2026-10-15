@@ -4,6 +4,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import String, Integer, BigInteger, SmallInteger, Boolean, Date, DateTime, Float, Numeric, ForeignKey, Text, JSON, Enum, LargeBinary, UniqueConstraint, func, text
 from app.models.base import Base
+from app.utils.tiempo import a_iso_utc
 
 
 def to_json_value(value):
@@ -79,9 +80,9 @@ class InvoiceMaterialService(Base):
             'gross_price': to_json_value(self.gross_price),
             'quantity': to_json_value(self.quantity),
             'created_by': to_json_value(self.created_by),
-            'creation_date': to_json_value(self.creation_date),
-            'last_update_date': to_json_value(self.last_update_date),
-            'deletion_date': to_json_value(self.deletion_date),
+            'creation_date': a_iso_utc(self.creation_date),
+            'last_update_date': a_iso_utc(self.last_update_date),
+            'deletion_date': a_iso_utc(self.deletion_date),
             'id_product': to_json_value(self.id_product),
             'line_type': to_json_value(self.line_type),
             'tax_applicable': to_json_value(self.tax_applicable),

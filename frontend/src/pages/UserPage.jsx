@@ -8,6 +8,7 @@ import PageHeader from "../components/PageHeader.jsx";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 import { CAMPOS_DE_AUDITORIA } from "../utils/camposDeAuditoria";
+import { formatearFechaHora } from "../utils/fechas";
 
 const emptyForm = { date_born: "", date_start: "", email: "", first_name: "", id_permission: "", full_name: "", id_proyect: "", last_name_father: "", last_name_mother: "", national_id: "", password: "", principal_phone: "", secundary_phone: "", ssn: "", supervisor: "", base_salary: "", hire_date: "", id_status: "", tax_id: "", title: "", user_type: "", username: "", puesto: "", is_employee: false, accepts_marketing: false };
 const validationRules = allValidationRules["user"] || {};
@@ -331,11 +332,8 @@ export default function UserPage() {
     }
     if (typeof value === "number") return new Intl.NumberFormat(locale).format(value);
     if (typeof value === "string" && /^[0-9]{4}-[0-9]{2}-[0-9]{2}T/.test(value)) {
-      const date = new Date(value);
-      if (!Number.isNaN(date.getTime())) {
-        const hasTime = !/T00:00(?::00)?/.test(value);
-        return new Intl.DateTimeFormat(locale, hasTime ? { dateStyle: "medium", timeStyle: "short" } : { dateStyle: "medium" }).format(date);
-      }
+      const formateada = formatearFechaHora(value, locale);
+      if (formateada) return formateada;
     }
     if (Array.isArray(value)) return value.map((item) => formatTableValue(item)).filter(Boolean).join(", ");
     if (typeof value === "object") {

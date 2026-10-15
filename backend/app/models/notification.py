@@ -4,6 +4,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import String, Integer, BigInteger, SmallInteger, Boolean, Date, DateTime, Float, Numeric, ForeignKey, Text, JSON, Enum, LargeBinary, UniqueConstraint, func
 from app.models.base import Base
+from app.utils.tiempo import a_iso_utc
 
 
 def to_json_value(value):
@@ -55,9 +56,9 @@ class Notification(Base):
             'target_entity': to_json_value(self.target_entity),
             'target_id': to_json_value(self.target_id),
             'created_by': to_json_value(self.created_by),
-            'creation_date': to_json_value(self.creation_date),
-            'last_update_date': to_json_value(self.last_update_date),
-            'deletion_date': to_json_value(self.deletion_date),
+            'creation_date': a_iso_utc(self.creation_date),
+            'last_update_date': a_iso_utc(self.last_update_date),
+            'deletion_date': a_iso_utc(self.deletion_date),
         }
 
     def serialize_summary(self) -> dict:
@@ -65,5 +66,5 @@ class Notification(Base):
             'id_notification': self.id_notification,
             'title': self.title,
             'is_read': self.is_read,
-            'creation_date': self.creation_date.isoformat() if self.creation_date else None,
+            'creation_date': a_iso_utc(self.creation_date),
         }

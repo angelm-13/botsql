@@ -812,6 +812,9 @@
       "id_incident": "ID Vorfall",
       "id_incident_type": "ID Vorfalltyp",
       "id_lider": "ID Leiter",
+      "latitude": "Breitengrad",
+      "longitude": "Längengrad",
+      "distance_m": "Entfernung (m)",
       "id_user": "ID Benutzer",
       "incident_date": "Vorfall Datum",
       "incident_status": "Vorfall Status",
@@ -3355,6 +3358,10 @@
     },
     "form": {
       "employee_no": "Mitarbeiternummer",
+
+      "type_label": "Typ",
+
+      "gender_label": "Geschlecht",
       "name": "Name",
       "type": {
         "options": {
@@ -3376,6 +3383,12 @@
         "to": "bis"
       }
     },
+    "directory": {
+      "eyebrow": "VERZEICHNIS",
+      "title": "Personen im Gerät"
+
+    },
+
     "person": {
       "no_name": "Kein Name",
       "default_employee": "Mitarbeiter"

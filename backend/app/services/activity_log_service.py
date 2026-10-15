@@ -13,6 +13,7 @@ from app.models.nm_team_user import NmTeamUser
 from app.models.user import User
 from app.models.session import transaction_context
 from app.utils.errors import AppError
+from app.utils.tiempo import ahora_utc
 
 
 def create_activity(
@@ -231,7 +232,7 @@ def delete_activity(id_activity: int, id_supervisor: int = None) -> bool:
         if not activity:
             return False
 
-        activity.deletion_date = datetime.now()
+        activity.deletion_date = ahora_utc()
         db.flush()
         return True
 

@@ -60,6 +60,7 @@ from app.services.inventory_service import (
     _actor_project_id,
     _warehouse_payload,
 )
+from app.utils.tiempo import a_iso_utc
 
 
 # Como se lee cada movimiento del libro para contarlo. La llave es el
@@ -494,7 +495,7 @@ def _ultimo_movimiento_en_lote(db, ids_productos) -> dict[int, dict]:
             "quantity_delta": int(fila.quantity_delta or 0),
             "reason": fila.reason,
             "source_module": fila.source_module,
-            "creation_date": fila.creation_date.isoformat() if fila.creation_date else None,
+            "creation_date": a_iso_utc(fila.creation_date),
         }
         for fila in filas
     }

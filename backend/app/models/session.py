@@ -32,12 +32,25 @@ def database_url() -> str:
 _URL = database_url()
 _ES_SQLITE = _URL.startswith('sqlite')
 
+
+def _connect_args() -> dict:
+    if _ES_SQLITE:
+        # Este ajuste y el StaticPool de abajo existen para compartir una sola
+        # base en memoria entre hilos; con PostgreSQL estorban, porque impiden el pool real que
+        # hace falta justo para probar concurrencia.
+        return {'check_same_thread': False}
+    if _URL.startswith('postgresql'):
+        # La sesion corre en UTC sin importar como este configurado el servidor
+        # (el contenedor local usaba la hora de Mexico, el cluster UTC): asi
+        # `now()` -creation_date, last_update_date- es la misma hora en todos
+        # lados y la API la entrega como UTC. Ver app/utils/tiempo.py.
+        return {'options': '-c timezone=UTC'}
+    return {}
+
+
 engine = create_engine(
     _URL,
-    # Estos dos ajustes existen para compartir una sola base en memoria entre
-    # hilos; con PostgreSQL estorban, porque impiden el pool real que hace falta
-    # justo para probar concurrencia.
-    connect_args={'check_same_thread': False} if _ES_SQLITE else {},
+    connect_args=_connect_args(),
     poolclass=StaticPool if _ES_SQLITE else None,
     pool_pre_ping=True,
 )

@@ -9,6 +9,7 @@ import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 import "../styles/incident.css";
 import { CAMPOS_DE_AUDITORIA } from "../utils/camposDeAuditoria";
+import { formatearFechaHora } from "../utils/fechas";
 
 // Abierta o cerrada, sin importar el texto exacto que traiga cada tipo de
 // incidencia -un prestamo dice "abierta", pero nada obliga a que una
@@ -30,7 +31,33 @@ const ACTION_UPDATE = 4;
 const ACTION_DELETE = 8;
 const SCOPE_FIELD_BY_BIT = { [ACTION_CREATE]: "scope_create", [ACTION_READ]: "scope_read", [ACTION_UPDATE]: "scope_update", [ACTION_DELETE]: "scope_delete" };
 const FIELD_VISIBLE_BIT = 2;
-const ALL_FIELD_NAMES = ['id_incident', 'incident_date', 'id_incident_type', 'note', 'id_user', 'incident_status', 'close_date', 'created_by', 'creation_date', 'last_update_date'];
+const ALL_FIELD_NAMES = ['id_incident', 'incident_date', 'id_incident_type', 'note', 'id_user', 'incident_status', 'close_date', 'created_by', 'creation_date', 'last_update_date', 'latitude', 'longitude', 'distance_m'];
+
+// Los renglones de checada (n8n por WhatsApp) traen donde estaba la persona y a
+// cuantos metros del punto. Las demas incidencias no, asi que las columnas solo
+// aparecen cuando la pagina tiene al menos una checada; no se ata a un nombre de
+// tipo porque el catalogo de tipos lo escribe cada cliente.
+const CAMPOS_DE_CHECADA = ['latitude', 'longitude', 'distance_m'];
+
+function tieneDatosDeChecada(item) {
+  return CAMPOS_DE_CHECADA.some((campo) => item?.[campo] !== null && item?.[campo] !== undefined && item?.[campo] !== "");
+}
+
+// Latitud y longitud con 6 decimales (~10 cm): el formato numerico general
+// recortaba a 3 y dejaba la coordenada a ~100 m de donde era.
+function formatearCoordenada(valor, locale) {
+  if (valor === null || valor === undefined || valor === "") return "";
+  const numero = Number(valor);
+  if (!Number.isFinite(numero)) return String(valor);
+  return new Intl.NumberFormat(locale, { minimumFractionDigits: 6, maximumFractionDigits: 6 }).format(numero);
+}
+
+function formatearDistancia(valor, locale) {
+  if (valor === null || valor === undefined || valor === "") return "";
+  const numero = Number(valor);
+  if (!Number.isFinite(numero)) return String(valor);
+  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(numero)} m`;
+}
 
 function hasBit(value, bit) {
   return (Number(value || 0) & bit) === bit;
@@ -330,11 +357,8 @@ export default function IncidentPage() {
     }
     if (typeof value === "number") return new Intl.NumberFormat(locale).format(value);
     if (typeof value === "string" && /^[0-9]{4}-[0-9]{2}-[0-9]{2}T/.test(value)) {
-      const date = new Date(value);
-      if (!Number.isNaN(date.getTime())) {
-        const hasTime = !/T00:00(?::00)?/.test(value);
-        return new Intl.DateTimeFormat(locale, hasTime ? { dateStyle: "medium", timeStyle: "short" } : { dateStyle: "medium" }).format(date);
-      }
+      const formateada = formatearFechaHora(value, locale);
+      if (formateada) return formateada;
     }
     if (Array.isArray(value)) return value.map((item) => formatTableValue(item)).filter(Boolean).join(", ");
     if (typeof value === "object") {
@@ -427,6 +451,9 @@ export default function IncidentPage() {
       return right - left;
     });
   }, [items, query, incidentTypeOptions, userOptions]);
+
+  const localeDeNumeros = lang === "ja" ? "ja-JP" : lang === "en" ? "en-US" : lang === "pt" ? "pt-BR" : lang === "de" ? "de-DE" : "es-MX";
+  const mostrarChecada = useMemo(() => filtered.some(tieneDatosDeChecada), [filtered]);
 
   const groups = useMemo(() => filtered.reduce((acc, item) => {
     const key = String(item.incident_status ?? t("common.unclassified"));
@@ -541,6 +568,9 @@ export default function IncidentPage() {
               {canSeeField("incident_date") && <th>{t("fields.incident.incident_date")}</th>}
               {canSeeField("id_incident_type") && <th>{t("fields.incident.id_incident_type")}</th>}
               {canSeeField("note") && <th>{t("fields.incident.note")}</th>}
+              {mostrarChecada && canSeeField("latitude") && <th>{t("fields.incident.latitude")}</th>}
+              {mostrarChecada && canSeeField("longitude") && <th>{t("fields.incident.longitude")}</th>}
+              {mostrarChecada && canSeeField("distance_m") && <th>{t("fields.incident.distance_m")}</th>}
               {canSeeField("id_user") && <th>{t("fields.incident.id_user")}</th>}
               {canSeeField("incident_status") && <th>{t("fields.incident.incident_status")}</th>}
               {canSeeField("close_date") && <th>{t("fields.incident.close_date")}</th>}
@@ -552,6 +582,9 @@ export default function IncidentPage() {
               {canSeeField("incident_date") && <td><pre className="cell-value">{formatTableValue(item.incident_date)}</pre></td>}
               {canSeeField("id_incident_type") && <td><pre className="cell-value">{incidentDisplayLabel(incidentTypeOptions, "id_incident_type", "incident_type", item.id_incident_type)}</pre></td>}
               {canSeeField("note") && <td><pre className="cell-value">{formatTableValue(item.note)}</pre></td>}
+              {mostrarChecada && canSeeField("latitude") && <td><pre className="cell-value">{formatearCoordenada(item.latitude, localeDeNumeros)}</pre></td>}
+              {mostrarChecada && canSeeField("longitude") && <td><pre className="cell-value">{formatearCoordenada(item.longitude, localeDeNumeros)}</pre></td>}
+              {mostrarChecada && canSeeField("distance_m") && <td><pre className="cell-value">{formatearDistancia(item.distance_m, localeDeNumeros)}</pre></td>}
               {canSeeField("id_user") && <td><pre className="cell-value">{incidentDisplayLabel(userOptions, "id_user", "user", item.id_user)}</pre></td>}
               {canSeeField("incident_status") && <td>{item.incident_status
                 ? <span className={`incident-estado ${tonoDeIncidencia(item.incident_status)}`}>

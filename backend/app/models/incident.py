@@ -4,6 +4,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import String, Integer, BigInteger, SmallInteger, Boolean, Date, DateTime, Float, Numeric, ForeignKey, Text, JSON, Enum, LargeBinary, UniqueConstraint, func
 from app.models.base import Base
+from app.utils.tiempo import a_iso_utc
 
 
 def to_json_value(value):
@@ -63,6 +64,12 @@ class Incident(Base):
     received_confirmed_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
     receipt_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     receipt_note: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    # Donde estaba la persona al checar asistencia (n8n por WhatsApp) y a
+    # cuantos metros del punto de checada. Solo las incidencias tipo "checador"
+    # las traen; en el resto quedan nulas.
+    latitude: Mapped[Decimal | None] = mapped_column(Numeric(10, 7), nullable=True)
+    longitude: Mapped[Decimal | None] = mapped_column(Numeric(10, 7), nullable=True)
+    distance_m: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
 
     def serialize(self) -> dict:
         return {
@@ -74,9 +81,9 @@ class Incident(Base):
             'incident_status': to_json_value(self.incident_status),
             'close_date': to_json_value(self.close_date),
             'created_by': to_json_value(self.created_by),
-            'creation_date': to_json_value(self.creation_date),
-            'last_update_date': to_json_value(self.last_update_date),
-            'deletion_date': to_json_value(self.deletion_date),
+            'creation_date': a_iso_utc(self.creation_date),
+            'last_update_date': a_iso_utc(self.last_update_date),
+            'deletion_date': a_iso_utc(self.deletion_date),
             'id_proyect': to_json_value(self.id_proyect),
             'id_lider': to_json_value(self.id_lider),
             'external_folio': to_json_value(self.external_folio),
@@ -93,6 +100,9 @@ class Incident(Base):
             'received_confirmed_by': to_json_value(self.received_confirmed_by),
             'receipt_ok': to_json_value(self.receipt_ok),
             'receipt_note': to_json_value(self.receipt_note),
+            'latitude': to_json_value(self.latitude),
+            'longitude': to_json_value(self.longitude),
+            'distance_m': to_json_value(self.distance_m),
         }
 
     def serialize_summary(self) -> dict:

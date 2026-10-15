@@ -29,6 +29,7 @@ from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.utils.tiempo import a_iso_utc
 
 
 class MaterialType(Base):
@@ -60,11 +61,11 @@ class MaterialType(Base):
             "id_product_family": self.id_product_family,
             "material_type_description": self.material_type_description,
             "created_by": self.created_by,
-            "creation_date": self.creation_date.isoformat() if self.creation_date else None,
+            "creation_date": a_iso_utc(self.creation_date),
             "last_update_date": (
-                self.last_update_date.isoformat() if self.last_update_date else None
+                a_iso_utc(self.last_update_date)
             ),
-            "deletion_date": self.deletion_date.isoformat() if self.deletion_date else None,
+            "deletion_date": a_iso_utc(self.deletion_date),
         }
 
     def serialize_summary(self) -> dict:

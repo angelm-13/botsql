@@ -14,6 +14,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.utils.tiempo import a_iso_utc
 
 
 class CfdiRelation(Base):
@@ -63,5 +64,5 @@ class CfdiRelation(Base):
             "id_related_invoice": self.id_related_invoice,
             "idempotency_key": self.idempotency_key,
             "created_by": self.created_by,
-            "creation_date": self.creation_date.isoformat() if self.creation_date else None,
+            "creation_date": a_iso_utc(self.creation_date),
         }

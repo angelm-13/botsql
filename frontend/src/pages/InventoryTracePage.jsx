@@ -16,6 +16,7 @@ import ProductHistory from "../components/ProductHistory.jsx";
 import { useI18n } from "../i18n";
 import VisorDeFoto from "../components/VisorDeFoto";
 import "../styles/inventory-trace.css";
+import { formatearFechaHora } from "../utils/fechas";
 import PageHeader from "../components/PageHeader.jsx";
 
 /**
@@ -217,7 +218,7 @@ function Pieza({ pieza, destacada, t }) {
           {pieza.timeline.map((e) => (
             <li key={e.id_inventory_asset_event}>
               <span className="trace-when">
-                {e.creation_date ? new Date(e.creation_date).toLocaleString("es-MX") : ""}
+                {e.creation_date ? formatearFechaHora(e.creation_date, "es-MX") : ""}
               </span>
               <span className="trace-what">
                 {t(`trace.event_${e.event_type}`, e.etiqueta)}
@@ -1018,7 +1019,7 @@ export default function InventoryTracePage() {
                     {t(`trace.kind_${it.last_movement.clasificacion}`, it.last_movement.clasificacion)}
                     {" "}({it.last_movement.quantity_delta}){" "}
                     {it.last_movement.reason && <>· {it.last_movement.reason} </>}
-                    · {new Date(it.last_movement.creation_date).toLocaleString("es-MX")}
+                    · {formatearFechaHora(it.last_movement.creation_date, "es-MX")}
                   </p>
                 )}
               </div>

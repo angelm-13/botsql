@@ -72,6 +72,16 @@ class TestProjectWorkflowService(BackendTestCase):
         self.assertEqual(result["total"], 1)
         self.assertEqual(result["items"][0]["created_by"], 11)
 
+    def test_the_listing_says_how_many_pages_there_are(self):
+        """Sin `pages` la pantalla asume una sola y deshabilita Siguiente."""
+        for nombre in ("Uno", "Dos", "Tres"):
+            self._create(self.supervisor, nombre)
+
+        result = list_projects(self.supervisor, per_page=2)
+
+        self.assertEqual(3, result["total"])
+        self.assertEqual(2, result["pages"])
+
     def test_workshop_only_sees_authorized_or_operational_projects(self):
         project = self._create()
         self.assertEqual(list_projects(self.workshop)["total"], 0)

@@ -6,6 +6,7 @@ from sqlalchemy import DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.utils.tiempo import a_iso_utc
 
 
 class QuotationComment(Base):
@@ -22,5 +23,5 @@ class QuotationComment(Base):
             "id_quotation_comment": self.id_quotation_comment,
             "id_invoice": self.id_invoice,
             "message": self.message,
-            "creation_date": self.creation_date.isoformat() if self.creation_date else None,
+            "creation_date": a_iso_utc(self.creation_date),
         }

@@ -7,6 +7,7 @@ from sqlalchemy import select, desc
 
 from app.models.notification import Notification
 from app.models.session import transaction_context
+from app.utils.tiempo import ahora_utc
 
 
 def create_notification(
@@ -191,7 +192,7 @@ def delete_notification(id_notification: int, id_user: int) -> bool:
         if not notification:
             return False
 
-        notification.deletion_date = datetime.now()
+        notification.deletion_date = ahora_utc()
         db.flush()
         return True
 

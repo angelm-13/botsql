@@ -6,6 +6,7 @@ from sqlalchemy import DateTime, ForeignKey, Index, Integer, JSON, String, Uniqu
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.utils.tiempo import a_iso_utc
 
 
 class StampingOperation(Base):
@@ -41,6 +42,6 @@ class StampingOperation(Base):
             # El diagnostico del PAC es lo que permite corregir un rechazo:
             # sin esto la API solo devolvia el codigo HTTP.
             "response_metadata": self.response_metadata,
-            "creation_date": self.creation_date.isoformat() if self.creation_date else None,
-            "last_update_date": self.last_update_date.isoformat() if self.last_update_date else None,
+            "creation_date": a_iso_utc(self.creation_date),
+            "last_update_date": a_iso_utc(self.last_update_date),
         }
