@@ -11,6 +11,7 @@ import {
 import {
   authorizeWarehouseVoucher,
   cancelWarehouseVoucher,
+  confirmWarehouseVoucherLineCustody,
   downloadWarehouseVoucherPdf,
   closeWarehouseVoucherLine,
   deliverWarehouseVoucher,
@@ -398,6 +399,21 @@ export default function WarehouseVoucherPage() {
     }
   };
 
+  const cancelar = async (idVale) => {
+    const motivo = window.prompt(t("voucher.cancel_reason", "Motivo de la cancelación"));
+    if (!motivo || !motivo.trim()) return;
+    setError("");
+    setAviso("");
+    try {
+      const r = await cancelWarehouseVoucher(idVale, motivo.trim());
+      setConsultado(await getWarehouseVoucher(r.voucher.id_incident));
+      setAviso(t("voucher.cancelled", "Vale cancelado: el material apartado se liberó."));
+      await cargar();
+    } catch (e) {
+      decirError(e, "No se pudo cancelar el vale.");
+    }
+  };
+
   const cerrar = async (idLinea, payload = {}) => {
     setError("");
     try {
@@ -414,6 +430,18 @@ export default function WarehouseVoucherPage() {
 
   // Almacen marca el vale COMPLETO como entregado (a quien se designo, o a
   // otra persona con su nota).
+  // El supervisor dueño del vale confirma que ya recupero la pieza de manos
+  // del operador al que se la habia entregado.
+  const confirmarCustodia = async (idLinea) => {
+    setError("");
+    try {
+      const r = await confirmWarehouseVoucherLineCustody(idLinea);
+      setConsultado(await getWarehouseVoucher(r.id_incident));
+    } catch (e) {
+      decirError(e, "No se pudo confirmar la recepción.");
+    }
+  };
+
   const entregarVale = async (idVale, payload) => {
     setError("");
     setAviso("");
@@ -737,6 +765,10 @@ function Vale({ vale, onCerrar, onAutorizar, onCancelar, onImprimir, imprimiendo
   const cerrado = estado === "cerrado";
   // El borrador es el prevale: material pedido, todavia en el almacen.
   const borrador = estado === "borrador";
+  // Hasta que almacen lo marca como salido, el material sigue en el almacen:
+  // esta apartado, no fuera.
+  const sinSalir = ["borrador", "en_espera"].includes(estado);
+  const cancelado = estado === "cancelado";
   // Quien puede entregar una pieza a un operador o confirmar que la
   // recupero: el responsable DE ESTE vale (normalmente Supervisor, que solo
   // tiene `warehouse_prevoucher`, nunca `warehouse_voucher`) o quien opera

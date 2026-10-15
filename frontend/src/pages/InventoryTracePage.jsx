@@ -895,7 +895,7 @@ export default function InventoryTracePage() {
                             || t("trace.unknown_holder", "sin responsable")}</strong>
                           <span className="muted">
                             {" · "}{t("trace.voucher", "vale")}{" "}
-                            <span className="mono">{h.voucher_folio}</span>
+                            <Link className="mono" to={`/vouchers?abrir=${h.id_incident}`}>{h.voucher_folio}</Link>
                             {h.quantity > 1 && ` · ${h.quantity}`}
                             {h.due_date && (
                               <>
