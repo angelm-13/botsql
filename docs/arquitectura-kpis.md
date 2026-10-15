@@ -582,6 +582,56 @@ sigue mostrando la del último día con filas (agregación `ultimo`).
 **NO VERIFICADO:** el rendimiento de la corrida frecuente con volumen real (ver medición local en la
 bitácora de la sesión): se midió solo con la base local, casi vacía.
 
+### 2.1.2 Zona horaria y día operativo (implementado 2026-10-15)
+
+**Zona horaria.** Las columnas de evento (`paid_at`, `sent_at`, `delivered_at`, `opened_at`, `closed_at`) se
+guardan en UTC. Antes los KPIs agrupaban con `date(columna)`, es decir por día UTC: un cobro a las 19:00 de
+México caía en el día siguiente. Ahora todo pasa por `dia_local()` (`app/utils/tiempo.py`), que usa
+`APP_TIMEZONE`: en PostgreSQL `CAST(timezone(zona, timezone('UTC', col)) AS DATE)` (con la base de zonas de
+Postgres, respeta el horario de verano de cada fecha); en SQLite —solo pruebas— `date(col, '<desfase> minutes')` con el
+desfase de la zona al momento de compilar (exacto para America/Mexico_City, UTC-6 fijo). La corrida frecuente fecha
+"hoy" con `hoy_negocio()`, no con `date.today()` del contenedor.
+
+**Día operativo.** El día de cada KPI de restaurante es el de la **sesión de caja** que estaba abierta en
+ese instante (`restaurant_rules.dia_operativo`): la fecha local de su `opened_at`. Un turno que abre a las 18:00 y cierra a las
+02:00 cuenta completo en el día en que abrió. Si ninguna sesión contiene el instante (p. ej. un cobro con
+tarjeta o transferencia con la caja cerrada) se usa la fecha calendario local. No hay columnas ni migraciones: ni la
+orden ni el cobro guardan la sesión; se vincula por tiempo y proyecto, igual que `close_cash_session`
+(`paid_at >= opened_at`), y como solo hay una sesión abierta por proyecto, las sesiones no se traslapan.
+La **desviación de caja** pasa de `closed_at` a `opened_at` (el día del turno, no el del cierre).
+
+**Riesgos conocidos.**
+
+1. **Turno abierto varios días.** Una caja que nadie cierra absorbe todo lo que ocurra después en el día en
+   que abrió: `closed_at IS NULL` no tiene tope. Las ventas de los días siguientes salen en el día de apertura
+   hasta que alguien haga el corte. Medida: cerrar la caja cada día; el gerente ve la sesión abierta en caja.
+2. **Cobros sin sesión.** Tarjeta/transferencia con la caja cerrada caen en el día calendario local, no en
+   ningún turno. Es lo esperable, pero una venta de las 00:30 con la caja ya cerrada a las 00:00 cuenta en el día nuevo.
+3. **Las fotos (`pedidos_del_dia`, `mesas_ocupadas`, `cuentas_sin_cobrar`) se fechan en `hoy_negocio()`** (día
+   calendario). Si un turno abierto ayer sigue operando a las 00:30, `pedidos_del_dia` de "hoy" cuenta 0 hasta que abra
+   una caja nueva: sus pedidos son del día operativo de ayer. No se corrigió por no ser parte del pedido; es una decisión de
+   producto (¿"hoy" del tablero = calendario u operativo?).
+4. **Reprocesar el histórico** cambia cifras ya vistas (ventas que se movían de día). `recalcular_kpi_snapshots_rango`
+   recalcula todos los módulos y las fotos solo se escriben en `fecha_fin`; las fotos de días pasados no se pueden
+   reconstruir. En la base local no había órdenes de restaurante (solo 21 fotos), así que no hubo nada que reprocesar;
+   **en producción lo decide Alan** (ver `docs/despliegues/2026-10-15_kpis_restaurante_zona_horaria_y_dia_operativo.md`).
+5. **Se cruza con Celery.** Ver el hallazgo de `CELERY_TIMEZONE` en esa misma nota.
+
+**Rendimiento (medido 2026-10-15, base local con datos sintéticos: 200 mil órdenes cobradas de un solo restaurante, 366 sesiones).**
+La sesión se busca con una subconsulta correlacionada por orden. Sin cuidado era lenta (8.9 s por un año, 3.1 s por un día);
+`restaurant_rules.en_dias_operativos` agrega una ventana de tiempo exacta sobre la columna cruda (derivada de las sesiones que abren
+en el rango) para que solo se evalúe en las órdenes del rango.
+
+| Consulta (ticket_promedio) | Sin índice nuevo | Con índice `(id_proyect, opened_at)` en `restaurant_cash_session` |
+|---|---|---|
+| 1 día (corrida frecuente) | 74 ms | 20 ms |
+| 7 días (corrida nocturna) | 385 ms | 85 ms |
+| 1 año (backfill) | 19 s | 4.3 s |
+
+Los KPIs por `sent_at`/`delivered_at` (`servicios_por_mesero`, `pedidos_del_dia`) tardan ~350–420 ms por día porque esa columna no
+tiene índice. El índice de sesiones **no se creó** (sería una migración; queda como propuesta para Alan). Aceptable por ahora: la
+corrida frecuente son decenas de ms a unos cientos de ms por proyecto cada 5 minutos, y el Dashboard lee `kpi_snapshot`.
+
 ## 2.2 Logística
 
 **Tablas** (21, todas **sin `id_proyect`**; eje disponible: `id_customer_supplier`
