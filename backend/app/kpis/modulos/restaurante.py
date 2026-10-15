@@ -5,6 +5,8 @@ un renglon, el subtotal de una orden -- que son las mismas que usan el corte de 
 reportes del servicio, y tienen alcance por proyecto: toda tabla `restaurant_*` trae
 `id_proyect NOT NULL`.
 
+El dia de cada KPI es el dia operativo (`restaurant_rules.dia_operativo`, hora local del negocio).
+
 Cada consulta regresa `(entidad, fecha, valor[, peso])` (ver `AGREGACIONES` en `registry.py`):
 una fila por dia y por entidad, solo para los dias que tienen datos. Un dia sin ordenes no
 genera fila, asi que ningun promedio divide entre cero y "sin datos" es "sin filas".
@@ -28,7 +30,7 @@ from app.models.restaurant import (
 )
 from app.utils.tiempo import dia_local
 from app.services.restaurant_rules import (
-    ESTADO_DE_VENTA, condiciones_de_venta, importe_de_renglon, subtotal_por_orden,
+    ESTADO_DE_VENTA, condiciones_de_venta, dia_operativo, en_dias_operativos, importe_de_renglon, subtotal_por_orden,
 )
 
 CENTAVOS = Decimal("0.01")
@@ -45,9 +47,9 @@ def _por_proyecto(condiciones: list, columna, actor_project) -> list:
 
 def _renglones_vendidos(session, fecha_inicio, fecha_fin, actor_project, columnas_de_grupo, agregado, *, visita=False):
     """`agregado` sobre los renglones de las ordenes cobradas, por dia de cobro y `columnas_de_grupo`."""
-    fecha_col = dia_local(RestaurantOrder.paid_at)
+    fecha_col = dia_operativo(RestaurantOrder.paid_at)
     condiciones = _por_proyecto(
-        [*condiciones_de_venta(), fecha_col >= fecha_inicio, fecha_col <= fecha_fin],
+        [*condiciones_de_venta(), *en_dias_operativos(RestaurantOrder.paid_at, fecha_inicio, fecha_fin, actor_project)],
         RestaurantOrder.id_proyect, actor_project,
     )
     stmt = (
@@ -68,9 +70,9 @@ def _renglones_vendidos(session, fecha_inicio, fecha_fin, actor_project, columna
 def _ordenes_cobradas_por_dia(session, fecha_inicio, fecha_fin, actor_project):
     """`(fecha, subtotal de las ordenes, propinas, numero de ordenes)` por dia de cobro."""
     sub = subtotal_por_orden()
-    fecha_col = dia_local(RestaurantOrder.paid_at)
+    fecha_col = dia_operativo(RestaurantOrder.paid_at)
     condiciones = _por_proyecto(
-        [*condiciones_de_venta(), fecha_col >= fecha_inicio, fecha_col <= fecha_fin],
+        [*condiciones_de_venta(), *en_dias_operativos(RestaurantOrder.paid_at, fecha_inicio, fecha_fin, actor_project)],
         RestaurantOrder.id_proyect, actor_project,
     )
     stmt = (
@@ -216,13 +218,12 @@ def servicios_por_mesero_query(session, fecha_inicio, fecha_fin, filtros_dimensi
     Un servicio es una orden que salio de `borrador` (`sent_at` no nulo), se cobre o no: mide
     cuanto atendio cada mesero, no cuanto vendio. Las ordenes borradas no cuentan.
     """
-    fecha_col = dia_local(RestaurantOrder.sent_at)
+    fecha_col = dia_operativo(RestaurantOrder.sent_at)
     condiciones = _por_proyecto(
         [
             RestaurantOrder.deletion_date.is_(None),
             RestaurantOrder.sent_at.isnot(None),
-            fecha_col >= fecha_inicio,
-            fecha_col <= fecha_fin,
+            *en_dias_operativos(RestaurantOrder.sent_at, fecha_inicio, fecha_fin, actor_project),
         ],
         RestaurantOrder.id_proyect, actor_project,
     )
@@ -245,15 +246,14 @@ def tiempo_de_entrega_query(session, fecha_inicio, fecha_fin, filtros_dimension,
     ordenes ya COBRADAS y esta cuenta toda orden entregada (una entregada sin cobrar todavia
     midio su tiempo de entrega).
     """
-    fecha_col = dia_local(RestaurantOrder.delivered_at)
+    fecha_col = dia_operativo(RestaurantOrder.delivered_at)
     minutos = func.extract("epoch", RestaurantOrder.delivered_at - RestaurantOrder.ready_at) / 60.0
     condiciones = _por_proyecto(
         [
             RestaurantOrder.deletion_date.is_(None),
             RestaurantOrder.ready_at.isnot(None),
             RestaurantOrder.delivered_at.isnot(None),
-            fecha_col >= fecha_inicio,
-            fecha_col <= fecha_fin,
+            *en_dias_operativos(RestaurantOrder.delivered_at, fecha_inicio, fecha_fin, actor_project),
         ],
         RestaurantOrder.id_proyect, actor_project,
     )
@@ -272,17 +272,18 @@ def tiempo_de_entrega_query(session, fecha_inicio, fecha_fin, filtros_dimension,
 # --- caja ---------------------------------------------------------------------------------
 
 def diferencia_de_caja_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
-    """Desviacion de caja: suma de |difference| de cada sesion cerrada, por cajero y por dia de cierre.
+    """Desviacion de caja: suma de |difference| de cada sesion cerrada, por cajero y por dia operativo.
 
     * `restaurant_cash_session.difference` = lo contado menos lo esperado
       (`RestaurantService.close_cash_session`): negativo es faltante, positivo es sobrante.
     * Sobrante y faltante pesan igual: se toma el valor absoluto POR SESION y despues se suma, no
       el absoluto de la suma, para que +100 y -100 del mismo dia den 200 y no se compensen.
-    * Solo sesiones `closed` y no borradas; el dia es el de `closed_at`.
+    * Solo sesiones `closed` y no borradas; el dia es el LOCAL de `opened_at` (el dia operativo del turno:
+      un turno que cierra despues de la medianoche cuenta en el dia en que abrio).
     * Cajero: `closed_by_id` (un usuario).
     * La clave sigue siendo `diferencia_de_caja` (el seed no borra filas: un renombre dejaria una huerfana).
     """
-    fecha_col = dia_local(RestaurantCashSession.closed_at)
+    fecha_col = dia_local(RestaurantCashSession.opened_at)
     condiciones = _por_proyecto(
         [
             RestaurantCashSession.deletion_date.is_(None),
@@ -348,7 +349,7 @@ def pedidos_del_dia_query(session, fecha_inicio, fecha_fin, filtros_dimension, a
       pedido, no por el de cobro (para eso esta `ventas_restaurante`): una orden enviada ayer y cobrada hoy
       es de ayer.
     """
-    dia = dia_local(func.coalesce(RestaurantOrder.sent_at, RestaurantOrder.started_at))
+    hecho_en = func.coalesce(RestaurantOrder.sent_at, RestaurantOrder.started_at)
     categoria = case(
         (RestaurantOrder.status == ESTADO_DE_VENTA, PEDIDO_COBRADO),
         (RestaurantOrder.status == ESTATUS_ENTREGADO, PEDIDO_ENTREGADO_SIN_COBRAR),
@@ -358,7 +359,7 @@ def pedidos_del_dia_query(session, fecha_inicio, fecha_fin, filtros_dimension, a
         [
             RestaurantOrder.deletion_date.is_(None),
             RestaurantOrder.status.in_((ESTADO_DE_VENTA, ESTATUS_ENTREGADO, *ESTATUS_EN_CURSO)),
-            dia == fecha_fin,
+            *en_dias_operativos(hecho_en, fecha_fin, fecha_fin, actor_project),
         ],
         RestaurantOrder.id_proyect, actor_project,
     )

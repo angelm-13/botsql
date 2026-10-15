@@ -23,7 +23,7 @@ import os
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import Date, cast, func, literal_column
+from sqlalchemy import Date, DateTime, cast, func, literal_column
 from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.sql.expression import FunctionElement
 
@@ -83,6 +83,18 @@ def hoy_negocio() -> date:
     return ahora_negocio().date()
 
 
+def rango_utc_de_dias(fecha_inicio: date, fecha_fin: date) -> tuple[datetime, datetime]:
+    """`[inicio, fin)` en UTC (sin zona) que cubre del primer al ultimo dia LOCAL, ambos incluidos.
+
+    Para acotar una consulta sobre una columna en UTC por indice o por volumen antes de aplicar
+    `dia_local`. Respeta el horario de verano de cada fecha si la zona lo tiene.
+    """
+    def a_utc(dia: date) -> datetime:
+        return datetime.combine(dia, datetime.min.time(), ZONA_NEGOCIO).astimezone(timezone.utc).replace(tzinfo=None)
+
+    return a_utc(fecha_inicio), a_utc(fecha_fin + timedelta(days=1))
+
+
 class dia_local(FunctionElement):  # noqa: N801 -- se usa como una funcion SQL
     """Expresion SQL: el DIA, en la zona del negocio, de una columna guardada en UTC.
 
@@ -124,3 +136,39 @@ def _dia_local_sqlite(element, compiler, **kw):
     columna = list(element.clauses)[0]
     minutos = int(datetime.now(ZONA_NEGOCIO).utcoffset().total_seconds() // 60)
     return compiler.process(func.date(columna, literal_column(f"'{minutos:+d} minutes'")), **kw)
+
+
+class menor_de(FunctionElement):  # noqa: N801
+    """El menor de dos valores NO nulos (`least` en PostgreSQL, `min(a, b)` en SQLite)."""
+
+    type = DateTime()
+    inherit_cache = True
+    name = "menor_de"
+
+
+class mayor_de(FunctionElement):  # noqa: N801
+    """El mayor de dos valores NO nulos (`greatest` en PostgreSQL, `max(a, b)` en SQLite)."""
+
+    type = DateTime()
+    inherit_cache = True
+    name = "mayor_de"
+
+
+@compiles(menor_de)
+def _menor_de_generico(element, compiler, **kw):
+    return compiler.process(func.min(*element.clauses), **kw)  # SQLite: min con varios argumentos
+
+
+@compiles(menor_de, "postgresql")
+def _menor_de_postgres(element, compiler, **kw):
+    return compiler.process(func.least(*element.clauses), **kw)
+
+
+@compiles(mayor_de)
+def _mayor_de_generico(element, compiler, **kw):
+    return compiler.process(func.max(*element.clauses), **kw)
+
+
+@compiles(mayor_de, "postgresql")
+def _mayor_de_postgres(element, compiler, **kw):
+    return compiler.process(func.greatest(*element.clauses), **kw)

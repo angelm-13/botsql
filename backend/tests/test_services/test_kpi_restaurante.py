@@ -136,10 +136,12 @@ class KpiRestauranteTest(unittest.TestCase):
                     quantity=cantidad, unit_price=precio, created_by=ADMIN_ID,
                 ))
 
-    def _sesion(self, id_sesion, diferencia, *, cierra=CAJERO_A, estado="closed", cerrada=DIA, proyecto=PROYECTO_A):
+    def _sesion(self, id_sesion, diferencia, *, cierra=CAJERO_A, estado="closed", cerrada=DIA, proyecto=PROYECTO_A,
+                abierta=None):
         with transaction_context() as db:
             db.add(RestaurantCashSession(
                 id_restaurant_cash_session=id_sesion, id_proyect=proyecto, opened_by_id=ADMIN_ID,
+                opened_at=abierta or (cerrada - timedelta(hours=6) if cerrada else DIA),
                 opening_amount=500, closed_by_id=cierra if estado == "closed" else None,
                 closed_at=cerrada if estado == "closed" else None, difference=diferencia if estado == "closed" else None,
                 status=estado, created_by=ADMIN_ID,
@@ -790,6 +792,57 @@ class KpiRestauranteTest(unittest.TestCase):
         self.assertEqual([(MESERO_ROSA, date(2026, 9, 15), 1)], [tuple(f) for f in self._consulta(kpis_restaurante.servicios_por_mesero_query)])
         self.assertEqual(date(2026, 9, 15), self._consulta(kpis_restaurante.tiempo_de_entrega_query)[0][1])
         self.assertEqual(date(2026, 9, 15), self._consulta(kpis_restaurante.diferencia_de_caja_query)[0][1])
+        self.assertEqual(1, self._foto(kpis_restaurante.pedidos_del_dia_query)["cobrado"])
+
+    # --- dia operativo: el turno de caja manda sobre el reloj ------------------------------------
+    # Horas en UTC (local = UTC-6). Turno del 15-sep: abre 18:00 local (00:00 UTC del 16), cierra 02:00 local del 16.
+
+    TURNO_ABRE = datetime(2026, 9, 16, 0, 0)
+    TURNO_CIERRA = datetime(2026, 9, 16, 8, 0)
+
+    def test_un_cobro_despues_de_medianoche_dentro_del_turno_cuenta_en_el_dia_en_que_abrio_la_caja(self):
+        self._sesion(97001, 0, abierta=self.TURNO_ABRE, cerrada=self.TURNO_CIERRA)
+        self._orden(97001, [(1, 100)], pagada=datetime(2026, 9, 16, 4, 0))     # 15-sep 22:00 local
+        self._orden(97002, [(1, 40)], pagada=datetime(2026, 9, 16, 6, 30))     # 16-sep 00:30 local, mismo turno
+        self.assertEqual([(None, date(2026, 9, 15), Decimal("140"))], self._ventas())
+
+    def test_un_cobro_sin_sesion_de_caja_cae_en_la_fecha_calendario_local(self):
+        self._sesion(97001, 0, abierta=self.TURNO_ABRE, cerrada=self.TURNO_CIERRA)
+        self._orden(97001, [(1, 100)], pagada=datetime(2026, 9, 16, 16, 0))    # 16-sep 10:00 local, caja cerrada
+        self._orden(97002, [(1, 7)], pagada=datetime(2026, 9, 16, 5, 59))      # 15-sep 23:59 local, dentro del turno
+        self.assertEqual(
+            [(None, date(2026, 9, 15), Decimal("7")), (None, date(2026, 9, 16), Decimal("100"))], self._ventas())
+
+    def test_la_sesion_de_otro_restaurante_no_define_el_dia(self):
+        self._sesion(97001, 0, abierta=self.TURNO_ABRE, cerrada=self.TURNO_CIERRA, proyecto=PROYECTO_B)
+        self._orden(97001, [(1, 100)], pagada=datetime(2026, 9, 16, 6, 30))    # 16-sep 00:30 local, sin turno propio
+        self.assertEqual([(None, date(2026, 9, 16), Decimal("100"))], self._ventas())
+
+    def test_el_turno_pasa_el_borde_exacto_de_apertura_y_cierre(self):
+        self._sesion(97001, 0, abierta=self.TURNO_ABRE, cerrada=self.TURNO_CIERRA)
+        self._orden(97001, [(1, 1)], pagada=self.TURNO_ABRE)                   # justo al abrir: dentro
+        self._orden(97002, [(1, 2)], pagada=self.TURNO_CIERRA)                 # justo al cerrar: dentro
+        self._orden(97003, [(1, 4)], pagada=self.TURNO_CIERRA + timedelta(minutes=1))  # 02:01 local: fuera, calendario
+        self.assertEqual(
+            [(None, date(2026, 9, 15), Decimal("3")), (None, date(2026, 9, 16), Decimal("4"))], self._ventas())
+
+    def test_un_turno_abierto_varios_dias_se_lleva_todo_al_dia_en_que_abrio(self):
+        # Riesgo documentado (docs/arquitectura-kpis.md): una caja que nadie cierra absorbe los dias siguientes.
+        self._sesion(97001, 0, estado="open", abierta=self.TURNO_ABRE)
+        self._orden(97001, [(1, 100)], pagada=datetime(2026, 9, 18, 18, 0))    # 18-sep 12:00 local
+        self.assertEqual([(None, date(2026, 9, 15), Decimal("100"))], self._ventas())
+
+    def test_la_desviacion_de_caja_cuenta_en_el_dia_en_que_abrio_el_turno_no_en_el_que_cerro(self):
+        self._sesion(97001, -30, abierta=self.TURNO_ABRE, cerrada=self.TURNO_CIERRA)
+        filas = self._consulta(kpis_restaurante.diferencia_de_caja_query)
+        self.assertEqual([(CAJERO_A, date(2026, 9, 15), Decimal("30"))], [tuple(f) for f in filas])
+
+    def test_servicio_y_entrega_tambien_usan_el_dia_operativo_y_el_resto_de_kpis_de_pedidos(self):
+        self._sesion(97001, 0, abierta=self.TURNO_ABRE, cerrada=self.TURNO_CIERRA)
+        tarde = datetime(2026, 9, 16, 6, 30)   # 16-sep 00:30 local, dentro del turno del 15
+        self._orden(97001, [(1, 10)], enviada=tarde, lista=tarde - timedelta(minutes=10), entregada=tarde)
+        self.assertEqual([(MESERO_ROSA, date(2026, 9, 15), 1)], [tuple(f) for f in self._consulta(kpis_restaurante.servicios_por_mesero_query)])
+        self.assertEqual(date(2026, 9, 15), self._consulta(kpis_restaurante.tiempo_de_entrega_query)[0][1])
         self.assertEqual(1, self._foto(kpis_restaurante.pedidos_del_dia_query)["cobrado"])
 
     # --- las banderas -----------------------------------------------------------
