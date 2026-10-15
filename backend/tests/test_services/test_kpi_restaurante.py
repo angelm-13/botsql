@@ -845,6 +845,70 @@ class KpiRestauranteTest(unittest.TestCase):
         self.assertEqual(date(2026, 9, 15), self._consulta(kpis_restaurante.tiempo_de_entrega_query)[0][1])
         self.assertEqual(1, self._foto(kpis_restaurante.pedidos_del_dia_query)["cobrado"])
 
+    # --- las tarjetas de "Administracion del restaurante" son los mismos KPIs, acumulados --------------------
+
+    def _tarjetas(self, proyecto=PROYECTO_A):
+        with transaction_context() as db:
+            return RestaurantService(db, proyecto, ADMIN_ID).kpis()
+
+    def _datos_de_paridad(self):
+        lista = datetime(2026, 9, 15, 13, 0)
+        self._sesion(97001, 0, abierta=datetime(2026, 9, 15, 12, 0), cerrada=datetime(2026, 9, 16, 8, 0))
+        self._orden(97001, [(3, 50), (1, 100)], propina=40, pagada=datetime(2026, 9, 16, 4, 0),
+                    lista=lista, entregada=lista + timedelta(minutes=12))                      # 250, mesa 7
+        self._orden(97002, [(2, 30, PLATILLO_2)], propina=10, pagada=datetime(2026, 9, 16, 6, 30), mesero=MESERO_LUIS,
+                    visita=VISITA_A2, lista=lista, entregada=lista + timedelta(minutes=20))   # 60, mesa 8 (turno: 15-sep)
+        self._orden(97003, [(1, 200)], propina=0, pagada=datetime(2026, 9, 20, 17, 0), visita=VISITA_LLEVAR)  # 200, para llevar
+        self._orden(97004, [(1, 999)], estado="entregado", lista=lista, entregada=lista + timedelta(minutes=34))  # no cobrada
+
+    def test_las_tarjetas_del_restaurante_coinciden_con_sus_kpis_del_rango_completo(self):
+        self._datos_de_paridad()
+        ids = self._correr_job("ventas_restaurante", "propinas_restaurante", "ticket_promedio", "tiempo_de_entrega",
+                               "platillos_mas_vendidos", "mesas_ocupadas")
+        tarjetas = self._tarjetas()
+        ventas = self._rango(ids, "ventas_restaurante", None, "suma")["total"]
+        propinas = self._rango(ids, "propinas_restaurante", None, "suma")["total"]
+        ticket = self._rango(ids, "ticket_promedio", None, "promedio_ponderado")["total"]
+        entrega = self._rango(ids, "tiempo_de_entrega", None, "promedio_ponderado")["total"]
+        platillos = self._rango(ids, "platillos_mas_vendidos", "id_restaurant_dish", "suma")["por_empleado"]
+        mesas = self._rango(ids, "mesas_ocupadas", "estado", "ultimo")["por_empleado"]
+        self.assertEqual(510.0, tarjetas["total_sales"])
+        self.assertEqual(float(ventas), tarjetas["total_sales"])
+        self.assertEqual(50.0, tarjetas["tips"])
+        self.assertEqual(float(propinas), tarjetas["tips"])
+        self.assertEqual(170.0, tarjetas["avg_ticket"])
+        self.assertEqual(round(float(ticket), 2), tarjetas["avg_ticket"])
+        # Entrega promedio: TODA orden entregada, tambien la no cobrada: (12 + 20 + 34) / 3 = 22.
+        self.assertEqual(22.0, tarjetas["avg_minutes_from_ready_to_delivered"])
+        self.assertEqual(round(float(entrega), 2), tarjetas["avg_minutes_from_ready_to_delivered"])
+        # Mesas activas: las dos mesas con visita activa, SIN la visita para llevar (que antes inflaba la tarjeta).
+        self.assertEqual(2, tarjetas["active_tables"])
+        self.assertEqual(tarjetas["active_tables"], mesas["ocupada_con_cuenta_pendiente"] + mesas["por_liberar"])
+        # Platillos: 3 + 1 + 1 tacos (PLATILLO) y 2 tortas (PLATILLO_2).
+        self.assertEqual({"Taco": 5, "Torta": 2}, {d["dish"]: d["quantity"] for d in tarjetas["top_dishes"]})
+        self.assertEqual({str(PLATILLO): 5.0, str(PLATILLO_2): 2.0}, {str(k): float(v) for k, v in platillos.items()})
+
+    def test_las_tarjetas_conservan_las_claves_y_los_tipos_de_siempre(self):
+        self.assertEqual(
+            {"total_sales", "tips", "avg_ticket", "avg_minutes_from_ready_to_delivered", "active_tables",
+             "top_dishes", "top_tables"},
+            set(self._tarjetas()))
+        self.assertEqual(
+            {"total_sales": 0.0, "tips": 0.0, "avg_ticket": 0, "avg_minutes_from_ready_to_delivered": 0,
+             "active_tables": 2, "top_dishes": [], "top_tables": []},
+            self._tarjetas())
+
+    def test_las_tarjetas_de_un_restaurante_no_mezclan_al_otro(self):
+        self._datos_de_paridad()
+        self._orden(97010, [(1, 7)], proyecto=PROYECTO_B, mesero=None)
+        self.assertEqual(510.0, self._tarjetas()["total_sales"])
+        self.assertEqual(7.0, self._tarjetas(PROYECTO_B)["total_sales"])
+
+    def test_top_tables_cuenta_servicios_cobrados_por_mesa_sin_el_mostrador(self):
+        self._datos_de_paridad()
+        self._orden(97005, [(1, 10)], visita=VISITA_A, pagada=datetime(2026, 9, 21, 17, 0))
+        self.assertEqual([{"table": 7, "services": 2}, {"table": 8, "services": 1}], self._tarjetas()["top_tables"])
+
     # --- las banderas -----------------------------------------------------------
 
     def test_sin_asignar_esta_encendida_en_los_nuevos_con_entidad_opcional_y_apagada_en_los_24_originales(self):

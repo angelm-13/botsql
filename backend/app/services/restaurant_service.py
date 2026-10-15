@@ -24,7 +24,10 @@ from app.models.restaurant import (
     RestaurantWaiter,
 )
 from app.security.audit import audit_event
-from app.services.restaurant_rules import ESTADO_DE_VENTA
+from app.services.restaurant_rules import (
+    ESTADO_DE_VENTA, MESA_CON_CUENTA_PENDIENTE, MESA_POR_LIBERAR, entregas, mesas_por_estado, ordenes_cobradas,
+    renglones_vendidos, servicios_por_mesa,
+)
 from app.utils.errors import AppError
 from app.utils.tiempo import a_iso_utc
 
@@ -790,46 +793,42 @@ class RestaurantService:
         return sorted(orders, key=lambda order: order["started_at"] or "")
 
     def kpis(self) -> dict:
-        paid = self.db.scalars(
-            _order_query(self.project_id).where(RestaurantOrder.status == ESTADO_DE_VENTA)
-        ).unique().all()
-        total_sales = sum(order.subtotal for order in paid)
-        tips = sum(float(order.tip_amount or 0) for order in paid)
+        """Las tarjetas de "Administracion del restaurante": el ACUMULADO, con las mismas reglas que los KPIs del Dashboard.
+
+        Cada cifra sale de `restaurant_rules` (una consulta agregada en SQL), la misma que usa el KPI correspondiente
+        con el rango completo: ventas/propinas/ticket = `ventas_restaurante`/`propinas_restaurante`/`ticket_promedio`;
+        entrega promedio = `tiempo_de_entrega` (TODA orden entregada, cobrada o no); mesas activas = ocupadas +
+        pagadas aun ocupadas de `mesas_ocupadas` (sin para llevar); platillos = `platillos_mas_vendidos`.
+        El contrato (las claves) no cambia.
+        """
+        subtotal, tips, ordenes = ordenes_cobradas(self.db, None, None, self.project_id, por_dia=False)
+        total_sales = float(subtotal)
+        entrega_promedio, _entregadas = entregas(self.db, None, None, self.project_id, por_dia=False)
+        mesas = mesas_por_estado(self.db, self.project_id)
+        # Dos platillos con el mismo titulo suman juntos: la tarjeta muestra nombres, no ids.
+        titulos = dict(self.db.execute(
+            select(RestaurantDish.id_restaurant_dish, RestaurantDish.title).where(RestaurantDish.id_proyect == self.project_id)
+        ).all())
         dish_totals: dict[str, int] = {}
-        table_totals: dict[int, int] = {}
-        delivery_minutes = []
-        for order in paid:
-            if order.visit and order.visit.table:
-                table_totals[order.visit.table.number] = table_totals.get(order.visit.table.number, 0) + 1
-            for item in order.items:
-                title = item.dish.title if item.dish else "Sin platillo"
-                dish_totals[title] = dish_totals.get(title, 0) + item.quantity
-            if order.ready_at and order.delivered_at:
-                delivery_minutes.append((order.delivered_at - order.ready_at).total_seconds() / 60)
-        active_tables = self.db.scalar(
-            select(func.count(RestaurantVisit.id_restaurant_visit)).where(
-                RestaurantVisit.id_proyect == self.project_id,
-                RestaurantVisit.status == "active",
-                RestaurantVisit.deletion_date.is_(None),
-            )
-        )
+        for id_platillo, cantidad in renglones_vendidos(
+            self.db, None, None, self.project_id, (RestaurantOrderItem.id_restaurant_dish,),
+            func.sum(RestaurantOrderItem.quantity), por_dia=False,
+        ):
+            titulo = titulos.get(id_platillo, "Sin platillo")
+            dish_totals[titulo] = dish_totals.get(titulo, 0) + int(cantidad)
         return {
             "total_sales": round(total_sales, 2),
-            "tips": round(tips, 2),
-            "avg_ticket": round(total_sales / len(paid), 2) if paid else 0,
-            "avg_minutes_from_ready_to_delivered": round(
-                sum(delivery_minutes) / len(delivery_minutes), 2
-            )
-            if delivery_minutes
-            else 0,
-            "active_tables": int(active_tables or 0),
+            "tips": round(float(tips), 2),
+            "avg_ticket": round(total_sales / ordenes, 2) if ordenes else 0,
+            "avg_minutes_from_ready_to_delivered": round(float(entrega_promedio), 2) if entrega_promedio is not None else 0,
+            "active_tables": mesas[MESA_CON_CUENTA_PENDIENTE] + mesas[MESA_POR_LIBERAR],
             "top_dishes": [
                 {"dish": name, "quantity": quantity}
                 for name, quantity in sorted(dish_totals.items(), key=lambda item: item[1], reverse=True)[:5]
             ],
             "top_tables": [
-                {"table": number, "services": services}
-                for number, services in sorted(table_totals.items(), key=lambda item: item[1], reverse=True)[:5]
+                {"table": number, "services": int(services)}
+                for number, services in sorted(servicios_por_mesa(self.db, self.project_id), key=lambda item: item[1], reverse=True)[:5]
             ],
         }
 

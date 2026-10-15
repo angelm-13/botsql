@@ -21,6 +21,10 @@ La regla
   Facturacion mide `subtotal` y no `total`. La propina es de la ORDEN y se reparte entre todo el
   personal: no se atribuye a un mesero.
 * Un "servicio" es una orden enviada a cocina (`sent_at` no nulo), cobrada o no.
+* Los calculos de abajo (`ordenes_cobradas`, `renglones_vendidos`, `entregas`, `mesas_por_estado`,
+  `servicios_por_mesa`) los usan LOS DOS lectores: los KPIs del Dashboard (por dia operativo) y las
+  tarjetas de "Administracion del restaurante" (`RestaurantService.kpis()`, acumulado: sin fechas).
+  Cada uno es una consulta agregada en SQL; ninguna carga ordenes a memoria.
 * El dia de un KPI es el DIA OPERATIVO (`dia_operativo`): el de la apertura de la sesion de caja
   que estaba abierta en ese instante. Un turno que cierra pasada la medianoche cuenta completo en
   el dia en que abrio. Sin ninguna sesion que lo contenga, es el dia calendario del negocio.
@@ -30,10 +34,12 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import case, exists, func, or_, select
+from sqlalchemy import and_, case, exists, func, or_, select
 from sqlalchemy.orm import aliased
 
-from app.models.restaurant import RestaurantCashSession, RestaurantOrder, RestaurantOrderItem
+from app.models.restaurant import (
+    RestaurantCashSession, RestaurantOrder, RestaurantOrderItem, RestaurantTable, RestaurantVisit,
+)
 from app.utils.tiempo import dia_local, mayor_de, menor_de, rango_utc_de_dias
 
 # Cota superior de "sin cierre": una sesion que sigue abierta no tiene tope.
@@ -140,3 +146,170 @@ def en_dias_operativos(columna, fecha_inicio, fecha_fin, actor_project=None) -> 
     hasta = mayor_de(fin_utc, func.coalesce(case((alguna_abierta, SIN_TOPE), else_=ultimo_cierre), fin_utc))
     dia = dia_operativo(columna)
     return [columna >= desde, columna <= hasta, dia >= fecha_inicio, dia <= fecha_fin]
+
+
+# --- calculos compartidos entre los KPIs del Dashboard y las tarjetas del restaurante ---------
+#
+# Todos reciben `fecha_inicio`/`fecha_fin` (dia operativo, ambos incluidos) o `None, None` para el ACUMULADO
+# de siempre -las tarjetas-, y `actor_project` (`None` = todos los restaurantes). Con `por_dia=True` regresan una
+# fila por dia operativo; con `por_dia=False`, una sola fila sin fecha.
+
+ESTATUS_BORRADOR = "borrador"
+
+MESA_LIBRE = "libre"
+MESA_CON_CUENTA_PENDIENTE = "ocupada_con_cuenta_pendiente"
+MESA_POR_LIBERAR = "por_liberar"
+MESAS_CATEGORIAS = (MESA_LIBRE, MESA_CON_CUENTA_PENDIENTE, MESA_POR_LIBERAR)
+
+
+def por_proyecto(condiciones: list, columna, actor_project) -> list:
+    """Agrega `columna == actor_project` a `condiciones` si hay proyecto (la regla de alcance de todo `restaurant_*`)."""
+    if actor_project is not None:
+        condiciones.append(columna == actor_project)
+    return condiciones
+
+
+def _rango_de_ventas(fecha_inicio, fecha_fin, actor_project) -> list:
+    if fecha_inicio is None and fecha_fin is None:
+        return []
+    return en_dias_operativos(RestaurantOrder.paid_at, fecha_inicio, fecha_fin, actor_project)
+
+
+def renglones_vendidos(session, fecha_inicio, fecha_fin, actor_project, columnas_de_grupo, agregado, *,
+                       visita=False, por_dia=True):
+    """`agregado` sobre los renglones de las ordenes cobradas, por `columnas_de_grupo` (y por dia operativo de cobro)."""
+    condiciones = por_proyecto(
+        [*condiciones_de_venta(), *_rango_de_ventas(fecha_inicio, fecha_fin, actor_project)],
+        RestaurantOrder.id_proyect, actor_project,
+    )
+    fecha_col = dia_operativo(RestaurantOrder.paid_at)
+    grupo = (*columnas_de_grupo, fecha_col) if por_dia else tuple(columnas_de_grupo)
+    columnas = (*columnas_de_grupo, fecha_col.label("fecha")) if por_dia else tuple(columnas_de_grupo)
+    stmt = (
+        select(*columnas, agregado)
+        .select_from(RestaurantOrderItem)
+        .join(RestaurantOrder, RestaurantOrder.id_restaurant_order == RestaurantOrderItem.id_restaurant_order)
+    )
+    if visita:
+        stmt = stmt.join(RestaurantVisit, RestaurantVisit.id_restaurant_visit == RestaurantOrder.id_restaurant_visit)
+    stmt = stmt.where(*condiciones)
+    if grupo:
+        stmt = stmt.group_by(*grupo).order_by(*grupo)
+    return session.execute(stmt).all()
+
+
+def ordenes_cobradas(session, fecha_inicio, fecha_fin, actor_project, *, por_dia=True):
+    """`(fecha, subtotal de las ordenes, propinas, numero de ordenes)` por dia operativo de cobro.
+
+    Con `por_dia=False`, `(subtotal, propinas, ordenes)` del acumulado. Una orden cobrada sin renglones cuenta como
+    orden (subtotal 0): el ticket promedio divide entre TODAS las cobradas.
+    """
+    sub = subtotal_por_orden()
+    condiciones = por_proyecto(
+        [*condiciones_de_venta(), *_rango_de_ventas(fecha_inicio, fecha_fin, actor_project)],
+        RestaurantOrder.id_proyect, actor_project,
+    )
+    fecha_col = dia_operativo(RestaurantOrder.paid_at)
+    medidas = (
+        func.coalesce(func.sum(func.coalesce(sub.c.subtotal, 0)), 0),
+        func.coalesce(func.sum(RestaurantOrder.tip_amount), 0),
+        func.count(RestaurantOrder.id_restaurant_order),
+    )
+    stmt = (
+        select(*((fecha_col.label("fecha"),) if por_dia else ()), *medidas)
+        .select_from(RestaurantOrder)
+        .outerjoin(sub, sub.c.id_restaurant_order == RestaurantOrder.id_restaurant_order)
+        .where(*condiciones)
+    )
+    if por_dia:
+        stmt = stmt.group_by(fecha_col).order_by(fecha_col)
+        return session.execute(stmt).all()
+    return session.execute(stmt).one()
+
+
+def entregas(session, fecha_inicio, fecha_fin, actor_project, *, por_dia=True):
+    """`(fecha, minutos promedio de ready_at a delivered_at, ordenes)` por dia operativo de entrega.
+
+    Cuenta TODA orden entregada con ambas marcas, se haya cobrado o no. Con `por_dia=False`,
+    `(promedio, ordenes)` del acumulado; el promedio es `None` si no hay ninguna.
+    """
+    fecha_col = dia_operativo(RestaurantOrder.delivered_at)
+    minutos = func.extract("epoch", RestaurantOrder.delivered_at - RestaurantOrder.ready_at) / 60.0
+    rango = (
+        [] if fecha_inicio is None and fecha_fin is None
+        else en_dias_operativos(RestaurantOrder.delivered_at, fecha_inicio, fecha_fin, actor_project)
+    )
+    condiciones = por_proyecto(
+        [
+            RestaurantOrder.deletion_date.is_(None),
+            RestaurantOrder.ready_at.isnot(None),
+            RestaurantOrder.delivered_at.isnot(None),
+            *rango,
+        ],
+        RestaurantOrder.id_proyect, actor_project,
+    )
+    medidas = (func.avg(minutos), func.count(RestaurantOrder.id_restaurant_order))
+    stmt = select(*((fecha_col.label("fecha"),) if por_dia else ()), *medidas).where(*condiciones)
+    if por_dia:
+        stmt = stmt.group_by(fecha_col).order_by(fecha_col)
+        return session.execute(stmt).all()
+    return session.execute(stmt).one()
+
+
+def mesas_por_estado(session, actor_project) -> dict:
+    """Mesas activas AHORA por estado: `libre`, `ocupada_con_cuenta_pendiente` y `por_liberar`.
+
+    Una mesa se libera cuando el mesero CIERRA la visita (`RestaurantService.close_visit`), NO al cobrar:
+    `pay_order` y `pay_visit` solo marcan la orden `pagado` y la visita sigue `active` hasta que alguien la
+    cierra. Las categorias no se traslapan:
+    * `por_liberar` ("Pagada, aun ocupada"): visita `active` con al menos UNA orden (no borrada, y sin contar
+      borradores vacios) y TODAS pagadas.
+    * `ocupada_con_cuenta_pendiente`: el resto de las visitas `active`: alguna orden sin pagar, o ninguna
+      orden todavia (recien sentados). Un `borrador` sin partidas se IGNORA.
+    * `libre`: mesa activa y no borrada sin visita `active`.
+    Las visitas para llevar no tienen mesa y no cuentan. La suma de las tres es el numero de mesas activas.
+    """
+    # Un borrador SIN partidas (el lugar de un comensal que aun no pide nada) se IGNORA: ni retiene la mesa ni
+    # cuenta como orden. Un borrador con partidas si es una cuenta en curso.
+    borrador_vacio = and_(
+        RestaurantOrder.status == ESTATUS_BORRADOR,
+        ~exists(select(RestaurantOrderItem.id_restaurant_order_item).where(
+            RestaurantOrderItem.id_restaurant_order == RestaurantOrder.id_restaurant_order)),
+    )
+    ordenes_vivas = (
+        RestaurantOrder.id_restaurant_visit == RestaurantVisit.id_restaurant_visit,
+        RestaurantOrder.deletion_date.is_(None),
+        ~borrador_vacio,
+    )
+    con_ordenes = exists(select(RestaurantOrder.id_restaurant_order).where(*ordenes_vivas))
+    sin_pagar = exists(select(RestaurantOrder.id_restaurant_order).where(*ordenes_vivas, RestaurantOrder.status != ESTADO_DE_VENTA))
+    categoria = case((con_ordenes & ~sin_pagar, MESA_POR_LIBERAR), else_=MESA_CON_CUENTA_PENDIENTE)
+    mesas_activas = por_proyecto(
+        [RestaurantTable.deletion_date.is_(None), RestaurantTable.is_active.is_(True)],
+        RestaurantTable.id_proyect, actor_project,
+    )
+    ocupadas = (
+        select(categoria, func.count(func.distinct(RestaurantTable.id_restaurant_table)))
+        .select_from(RestaurantVisit)
+        .join(RestaurantTable, RestaurantTable.id_restaurant_table == RestaurantVisit.id_restaurant_table)
+        .where(*mesas_activas, RestaurantVisit.status == "active", RestaurantVisit.deletion_date.is_(None))
+        .group_by(categoria)
+    )
+    conteos = {cat: int(n) for cat, n in session.execute(ocupadas).all()}
+    total = int(session.scalar(select(func.count(RestaurantTable.id_restaurant_table)).where(*mesas_activas)) or 0)
+    conteos[MESA_LIBRE] = total - conteos.get(MESA_CON_CUENTA_PENDIENTE, 0) - conteos.get(MESA_POR_LIBERAR, 0)
+    return {cat: conteos.get(cat, 0) for cat in MESAS_CATEGORIAS}
+
+
+def servicios_por_mesa(session, actor_project):
+    """`(numero de mesa, ordenes cobradas)` por mesa, acumulado. Las de para llevar (sin mesa) no cuentan."""
+    condiciones = por_proyecto([*condiciones_de_venta()], RestaurantOrder.id_proyect, actor_project)
+    stmt = (
+        select(RestaurantTable.number, func.count(RestaurantOrder.id_restaurant_order))
+        .select_from(RestaurantOrder)
+        .join(RestaurantVisit, RestaurantVisit.id_restaurant_visit == RestaurantOrder.id_restaurant_visit)
+        .join(RestaurantTable, RestaurantTable.id_restaurant_table == RestaurantVisit.id_restaurant_table)
+        .where(*condiciones)
+        .group_by(RestaurantTable.number)
+    )
+    return session.execute(stmt).all()
