@@ -490,6 +490,22 @@ class TestProjectLeaderRights(TestProjectWorkflowService):
 
         self.assertEqual(1, list_projects(self.workshop)["total"])
 
+    def test_who_can_create_is_decided_by_the_role_manager_not_the_scope(self):
+        """Gerente y Jefe de taller crean si el Gestor se lo concedio.
+
+        La ruta ya exige `scope_create` de `proyect`; el servicio no pone un
+        segundo candado por ambito. El creador queda como responsable y ve su
+        propio proyecto.
+        """
+        del_gerente = self._create(self.manager, "Del gerente")
+        del_taller = self._create(self.workshop, "Del taller")
+
+        self.assertEqual(self.manager["id_user"], del_gerente["leader"])
+        self.assertEqual(self.workshop["id_user"], del_taller["leader"])
+        self.assertEqual("draft", del_taller["proyect_status"])
+        self.assertEqual(2, list_projects(self.manager)["total"])
+        self.assertEqual(1, list_projects(self.workshop)["total"])
+
 
 class TestLaOrdenDeTrabajo(TestProjectWorkflowService):
     """Los atributos de la orden de trabajo (migracion 20260911180000)."""
