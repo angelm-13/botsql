@@ -1211,6 +1211,10 @@ def create_project(payload: dict, user_data: dict) -> dict:
     """
     actor_id = _actor_id(user_data)
     values = {key: value for key, value in (payload or {}).items() if key in PROJECT_MUTABLE_FIELDS}
+    # Un texto de solo espacios no es un dato: se recorta y cuenta como vacio.
+    for campo in ("title", "proyect_description"):
+        if isinstance(values.get(campo), str):
+            values[campo] = values[campo].strip()
     _booleano_estricto(values, "requires_maquila")
     if values.get("id_customer_contact") in (None, "") and values.get("id_customer_supplier") in (None, ""):
         raise AppError("errors.required_field", 400, {"field": "id_customer_contact"})

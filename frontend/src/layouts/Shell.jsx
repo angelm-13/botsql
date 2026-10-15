@@ -315,14 +315,6 @@ export default function Shell() {
     return [item.entityName || String(item.path || "").replace(/^\//, "")];
   }
 
-  // `item.entityName` normalmente es una sola clave, pero una pantalla que
-  // comparten dos roles sin capacidad en comun -como `/vouchers`, entre
-  // Almacenista y Supervisor- necesita aceptar CUALQUIERA de varias.
-  function entityNamesFor(item) {
-    if (Array.isArray(item.entityName)) return item.entityName;
-    return [item.entityName || String(item.path || "").replace(/^\//, "")];
-  }
-
   function canSeeNavItem(item) {
     if (item.exact || item.path === "/mfa-setup" || item.path === "/change-password") return true;
     if (technicalPaths.includes(item.path)) return isBootstrapAdmin;

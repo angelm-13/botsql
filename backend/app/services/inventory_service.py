@@ -107,7 +107,8 @@ def _integer_quantity(value, field="quantity"):
             raise ValueError(value)
     except (TypeError, ValueError) as exc:
         raise AppError("errors.invalid_field", 400, {"field": field}) from exc
-    if quantity <= 0:
+    # Tope del entero de la base: mas alla desbordaba con un 500.
+    if quantity <= 0 or quantity > 2**31 - 1:
         raise AppError("errors.invalid_field", 400, {"field": field})
     return quantity
 

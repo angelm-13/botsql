@@ -357,6 +357,10 @@ class CrudService:
             tipo = columna.type
             if isinstance(tipo, (Enum, Date, DateTime, Boolean)):
                 continue
+            # La caja de busqueda no es un oraculo sobre secretos: sin esto
+            # `?q=$2b$12$` encontraba usuarios por el prefijo de su hash.
+            if "password" in nombre.lower():
+                continue
             atributo = getattr(cls.model, nombre, None)
             if atributo is None:
                 continue
@@ -399,7 +403,7 @@ class CrudService:
                 model_column = cls._columns().get(key)
                 # Solo columnas reales: un atributo cualquiera del modelo
                 # (metadata, registry...) no es un filtro valido.
-                if model_column is None or value in (None, ''):
+                if model_column is None or value in (None, '') or 'password' in key.lower():
                     continue
                 column = getattr(cls.model, key)
                 # Buscar por coincidencia parcial solo tiene sentido en texto:

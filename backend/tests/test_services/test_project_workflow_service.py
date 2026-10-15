@@ -245,6 +245,12 @@ class TestProjectWorkflowService(BackendTestCase):
         en_proceso = transition_project(project, {"status": "in_progress"}, self.manager)
         self.assertEqual("in_progress", en_proceso["proyect_status"])
 
+    def test_a_blank_description_is_not_a_description(self):
+        with self.assertRaises(AppError) as e:
+            create_project({"id_customer_supplier": 1, "proyect_description": "   ",
+                            "title": "T"}, self.supervisor)
+        self.assertEqual(400, e.exception.status_code)
+
     def test_project_with_unreceived_material_needs_a_reason_to_start(self):
         """Arrancar con material por recibir exige motivo de quien autoriza."""
         from app.models.proyect_material_need import ProyectMaterialNeed
