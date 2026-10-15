@@ -10,8 +10,8 @@ from sqlalchemy import select, text
 
 from app.kpis.registry import seed_kpi_definitions
 from app.models import (
-    CustomerSupplier, Department, EntityPermission, EventLog, KpiDashboard, KpiDefinition, KpiSnapshot, Level,
-    NmPermissionKpi, Permission, Proyect, Status, Subdepartment, User,
+    CustomerSupplier, Department, EntityPermission, EventLog, KpiDashboard, KpiDashboardWidget, KpiDefinition,
+    KpiSnapshot, Level, NmPermissionKpi, Permission, Proyect, Status, Subdepartment, User,
 )
 from app.models.session import engine, transaction_context
 from app.modules.plan import reiniciar_plan
@@ -736,6 +736,47 @@ class TestKpiDashboardApi(BackendTestCase):
         self.assertEqual({"nombre", "orden"}, set(cambios), cambios)
         self.assertEqual(("Mi tablero", "Tablero editado", ACTOR_A["id_user"]), cambios["nombre"])
         self.assertEqual((100, 7, ACTOR_A["id_user"]), cambios["orden"])
+
+    def test_delete_widget_is_a_soft_delete_and_only_the_owner_can_do_it(self):
+        id_dashboard = self._crear_tablero(ACTOR_A)
+        creado = self._request(ACTOR_A, "POST", f"/kpi_dashboard/{id_dashboard}/widgets/", {
+            "ids_kpi_definition": [self.id_kpi], "tipo_grafica": "barras",
+        })
+        self.assertEqual(201, creado.status_code, self.json(creado))
+        id_barras = self.json(creado)["id_kpi_dashboard_widget"]
+        id_tabla = self._crear_widget_tabla(ACTOR_A, id_dashboard)
+
+        def widgets_visibles():
+            items = self.json(self._request(ACTOR_A, "GET", f"/kpi_dashboard/{id_dashboard}/widgets/"))["items"]
+            return {w["id_kpi_dashboard_widget"] for w in items}
+
+        # Quien no es el dueno no puede borrarlo: 404 si tiene el modulo, 403 si no tiene permiso de borrar la entidad.
+        self.assertEqual(404, self._request(ACTOR_B, "DELETE", f"/kpi_dashboard_widget/{id_barras}").status_code)
+        sin_permiso = {"id_user": 982, "id_permission": 982, "id_proyect": 982}
+        self.assertEqual(403, self._request(sin_permiso, "DELETE", f"/kpi_dashboard_widget/{id_barras}").status_code)
+        self.assertEqual({id_barras, id_tabla}, widgets_visibles())
+
+        # El dueno lo borra.
+        response = self._request(ACTOR_A, "DELETE", f"/kpi_dashboard_widget/{id_barras}")
+        self.assertEqual(200, response.status_code, self.json(response))
+        self.assertEqual("success.deleted", self.json(response)["message_key"])
+
+        # Ya no sale en el listado del tablero, pero el otro widget sigue.
+        self.assertEqual({id_tabla}, widgets_visibles())
+        # Baja logica: la fila sigue y solo el widget borrado tiene `deletion_date`.
+        with transaction_context() as db:
+            borrado = db.get(KpiDashboardWidget, id_barras)
+            vigente = db.get(KpiDashboardWidget, id_tabla)
+            self.assertIsNotNone(borrado, "la fila sigue existiendo: es baja logica, no fisica")
+            self.assertIsNotNone(borrado.deletion_date)
+            self.assertIsNone(vigente.deletion_date)
+            asientos = db.scalars(
+                select(EventLog).where(EventLog.table_name == "kpi_dashboard_widget", EventLog.action == "delete")
+            ).all()
+            self.assertEqual([(ACTOR_A["id_user"], "Widget eliminado")], [(a.created_by, a.after_value) for a in asientos])
+
+        # Un widget ya borrado no existe para nadie: repetir el DELETE es 404.
+        self.assertEqual(404, self._request(ACTOR_A, "DELETE", f"/kpi_dashboard_widget/{id_barras}").status_code)
 
 
 ACTOR_ADMINISTRA_PERMISOS_KPI = {"id_user": 990, "id_permission": 990, "user_type": "admin"}
