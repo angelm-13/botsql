@@ -314,6 +314,11 @@ PEDIDO_COBRADO = "cobrado"
 PEDIDO_ENTREGADO_SIN_COBRAR = "entregado_sin_cobrar"
 PEDIDO_EN_CURSO = "en_curso"
 PEDIDOS_CATEGORIAS = (PEDIDO_COBRADO, PEDIDO_ENTREGADO_SIN_COBRAR, PEDIDO_EN_CURSO)
+PEDIDOS_ETIQUETAS = {
+    PEDIDO_COBRADO: "Cobrado",
+    PEDIDO_ENTREGADO_SIN_COBRAR: "Entregado sin cobrar",
+    PEDIDO_EN_CURSO: "En curso",
+}
 PEDIDOS_COLORES = {PEDIDO_COBRADO: "#22b573", PEDIDO_ENTREGADO_SIN_COBRAR: "#f0a93b", PEDIDO_EN_CURSO: "#2f8fe0"}
 # Estatus de una orden que ya salio de `borrador` y todavia no se entrega (`ORDER_TRANSITIONS` del servicio).
 ESTATUS_EN_CURSO = ("pedido", "en_preparacion", "listo_para_entrega")
@@ -606,6 +611,7 @@ def definiciones():
             grafica_default="dona",
             colores_categoria=PEDIDOS_COLORES,
             orden_categorias=PEDIDOS_CATEGORIAS,
+            etiquetas_categoria=PEDIDOS_ETIQUETAS,
             descripcion=(
                 "Foto de hoy: pedidos hechos (sin borradores) cobrados, entregados sin cobrar y en curso "
                 "(pedido, en preparación, lista para entrega). La suma es el total de pedidos hechos hoy."

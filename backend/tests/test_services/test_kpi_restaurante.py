@@ -628,6 +628,14 @@ class KpiRestauranteTest(unittest.TestCase):
         self.assertIn("cuando el mesero cierra la visita, no al cobrar", kpi.descripcion)
         self.assertIn("seguirá apareciendo como «Pagada, aún ocupada»", kpi.descripcion)
 
+    def test_las_categorias_de_pedidos_tienen_su_etiqueta_visible(self):
+        kpi = KPI_POR_CLAVE["pedidos_del_dia"]
+        self.assertEqual(
+            {"cobrado": "Cobrado", "entregado_sin_cobrar": "Entregado sin cobrar", "en_curso": "En curso"},
+            kpi.etiquetas_categoria,
+        )
+        self.assertEqual(set(kpi.orden_categorias), set(kpi.etiquetas_categoria))
+
     def test_las_mesas_de_un_restaurante_no_cuentan_en_otro(self):
         self.assertEqual({"libre": 0, "ocupada_con_cuenta_pendiente": 0, "por_liberar": 0},
                          self._foto(kpis_restaurante.mesas_ocupadas_query, PROYECTO_B))
