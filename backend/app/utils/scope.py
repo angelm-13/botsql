@@ -40,12 +40,11 @@ ACTION_COLUMNS = {
 
 
 def _sin_restriccion(user_data: dict | None) -> bool:
+    # Solo el superusuario esta por encima del Gestor. `user_type` es la
+    # naturaleza de la cuenta (admin/client/employee...), no un permiso: quien
+    # administra una instalacion lo hace con el rol que se le asigno.
     datos = user_data or {}
-    return bool(
-        datos.get("is_superuser")
-        or datos.get("is_bootstrap_admin")
-        or str(datos.get("user_type") or "").lower() == "admin"
-    )
+    return bool(datos.get("is_superuser") or datos.get("is_bootstrap_admin"))
 
 
 def scope_bits(db, user_data: dict | None, entity_name: str, action: str) -> int:

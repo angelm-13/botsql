@@ -4,14 +4,15 @@ from app.services.pac_config_service import get_config, provider_credentials, sa
 from app.services.payment_complement_service import stamp_payment_complement
 from app.services.stamping import FacturamaSandboxProvider, preflight_invoice, stamp_invoice
 from app.utils.errors import AppError
-from app.utils.auth import require_entity_permission, token_required
+from app.utils.auth import _has_entity_permission, require_entity_permission, token_required
 
 
 bp_stamping = Blueprint("stamping", __name__, url_prefix="/stamping")
 
 
 def _require_admin(user_data):
-    if not (user_data.get("is_superuser") or user_data.get("is_bootstrap_admin") or str(user_data.get("user_type") or "").lower() == "admin"):
+    """La configuracion del PAC (credenciales) la manda el Gestor: editar `fiscal_stamp`."""
+    if not _has_entity_permission(user_data, "fiscal_stamp", "update"):
         raise AppError("errors.permission_denied", 403)
 
 

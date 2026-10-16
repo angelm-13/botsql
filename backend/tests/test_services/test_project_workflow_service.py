@@ -38,6 +38,12 @@ class TestProjectWorkflowService(BackendTestCase):
             db.add_all([
                 EntityPermission(id_permission=201, entity_name="project_authorization", scope_read=4, created_by=21),
                 EntityPermission(id_permission=301, entity_name="project_execution", scope_read=4, created_by=31),
+                # Borrar lo manda `scope_delete` de `proyect` (Gestor): Propios
+                # para quien levanta/ejecuta, Todos para Gerente.
+                EntityPermission(id_permission=101, entity_name="proyect", scope_delete=1, created_by=11),
+                EntityPermission(id_permission=201, entity_name="proyect", scope_delete=4, created_by=21),
+                EntityPermission(id_permission=301, entity_name="proyect", scope_delete=1, created_by=31),
+                EntityPermission(id_permission=401, entity_name="proyect", scope_delete=1, created_by=41),
             ])
 
     def _create(self, actor=None, title="Proyecto"):
@@ -468,6 +474,30 @@ class TestProjectLeaderRights(TestProjectWorkflowService):
         project = self._create_led_by_leader()["id_proyect"]
 
         self.assertTrue(delete_project(project, self.supervisor)["deleted"])
+
+    def test_who_can_delete_is_decided_by_the_role_manager_scope(self):
+        """Todos borra el de cualquiera; Propios solo el que el actor creo; sin permiso, nada."""
+        del_supervisor = self._create(self.supervisor, "Del supervisor")["id_proyect"]
+        del_gerente = self._create(self.manager, "Del gerente")["id_proyect"]
+        del_taller = self._create(self.workshop, "Del taller")["id_proyect"]
+
+        # Propios: el jefe de taller no borra el del supervisor.
+        with self.assertRaises(AppError):
+            delete_project(del_supervisor, self.workshop)
+        self.assertTrue(delete_project(del_taller, self.workshop)["deleted"])
+        # Todos: el gerente borra el que levanto otro.
+        self.assertTrue(delete_project(del_supervisor, self.manager)["deleted"])
+        self.assertTrue(delete_project(del_gerente, self.manager)["deleted"])
+
+    def test_without_delete_permission_nobody_deletes_even_their_own(self):
+        project = self._create(self.supervisor)["id_proyect"]
+        with transaction_context() as db:
+            db.query(EntityPermission).filter_by(
+                id_permission=101, entity_name="proyect").update({"scope_delete": 0})
+
+        with self.assertRaises(AppError) as raised:
+            delete_project(project, self.supervisor)
+        self.assertEqual("errors.permission_denied", raised.exception.message_key)
 
     def test_the_leader_edits_their_project_while_it_is_editable(self):
         project = self._create_led_by_leader()["id_proyect"]

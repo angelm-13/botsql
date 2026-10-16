@@ -1771,8 +1771,7 @@ def _del_solicitante(db, user_data):
 
 def _sin_restriccion(user_data) -> bool:
     datos = user_data or {}
-    return bool(datos.get("is_superuser") or datos.get("is_bootstrap_admin")
-                or str(datos.get("user_type") or "").lower() == "admin")
+    return bool(datos.get("is_superuser") or datos.get("is_bootstrap_admin"))
 
 
 def _renglones_con_contexto(db, filas) -> list[dict]:

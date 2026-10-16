@@ -16,6 +16,7 @@ from app.models.user import User
 from app.services.notification_service import create_notification
 from app.services.operations_workflow import TASK_CLOSED_STATUSES
 from app.utils.errors import AppError
+from app.utils.scope import owner_ids, scope_bits
 from app.utils.tiempo import a_iso_utc
 
 
@@ -1314,12 +1315,13 @@ def update_project(project_id, payload: dict, user_data: dict) -> dict:
 def delete_project(project_id, user_data: dict) -> dict:
     with transaction_context() as db:
         project = _get_visible_project(db, project_id, user_data, for_update=True)
-        scope = _scope_name(db, user_data)
-        # Borrar queda con quien lo creo: el lider saca el proyecto adelante,
-        # pero no lo elimina.
-        if scope not in {"ownership", "unrestricted"} or (
-            scope == "ownership" and _safe_int(project.created_by) != _actor_id(user_data)
-        ):
+        # Quien puede borrar y a quien lo manda el Gestor: `scope_delete` de
+        # `proyect`. Propios = lo que el actor creo (el lider saca el proyecto
+        # adelante, pero no lo elimina); Mis grupos suma a su equipo; Todos no
+        # filtra. Antes un candado por ambito dejaba borrar solo a Supervisor
+        # aunque el Gestor se lo concediera a Gerente.
+        duenos = owner_ids(db, user_data, scope_bits(db, user_data, "proyect", "delete"))
+        if duenos is not None and _safe_int(project.created_by) not in duenos:
             raise AppError("errors.permission_denied", 403)
         if normalize_project_status(project.proyect_status) != "draft":
             raise AppError("errors.project_not_editable", 409, {"status": project.proyect_status})
