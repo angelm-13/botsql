@@ -16,6 +16,8 @@ from datetime import datetime
 import jwt
 
 from app.models.entity_permission import EntityPermission
+from app.models.field import Field
+from app.models.nm_field_permission import NmFieldPermission
 from app.models.permission import Permission
 from app.models.session import transaction_context
 from app.models.user import User
@@ -56,6 +58,14 @@ class TestAsignarRolSinGestionarRoles(BackendTestCase):
                 _usuario(71, OPERADOR),
                 _usuario(72, ADMINISTRATOR),
             ])
+            # Sus permisos de CAMPO en el Gestor: `user_type="admin"` ya no los
+            # concede por si solo, solo el superusuario esta por encima.
+            campos = [Field(table_name="user", field_name=nombre, created_by=1)
+                      for nombre in ("id_permission", "username", "full_name", "user_type")]
+            db.add_all(campos)
+            db.flush()
+            db.add_all([NmFieldPermission(id_field=campo.id_field, id_permission=ROL_DEL_ACTOR,
+                                          control_type="7", created_by=1) for campo in campos])
 
     def _headers(self, **claims):
         claims.setdefault("id_user", 41)

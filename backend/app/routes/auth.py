@@ -15,7 +15,8 @@ from flask import Blueprint, jsonify, request, current_app
 from sqlalchemy import select
 from app.models.session import transaction_context
 from app.models import User, UserMfa
-from app.utils.auth import SECRET_KEY, token_required
+from app.utils.auth import SECRET_KEY, _has_entity_permission, token_required
+from app.utils.user_access import can_manage_user
 
 bp_auth = Blueprint('auth', __name__, url_prefix='/auth')
 JWT_ALGORITHM = 'HS256'
@@ -129,40 +130,14 @@ def _normalize_user_type(value) -> str:
     return str(value or '').strip().lower()
 
 
-def _company_admin_types() -> set[str]:
-    raw = os.getenv('COMPANY_ADMIN_USER_TYPES', 'admin')
-    return {item.strip().lower() for item in raw.split(',') if item.strip()} or {'admin'}
-
-
-def _request_is_company_admin(user_data: dict) -> bool:
-    return _normalize_user_type(user_data.get('user_type')) in _company_admin_types()
-
-
-def _user_hierarchy_rank_from_type(user_type) -> int:
-    ranks = {'admin': 80, 'client': 50, 'supplier': 50, 'employee': 40, 'user': 20, '': 10}
-    raw = os.getenv('USER_HIERARCHY_RANKS', '')
-    for part in raw.split(','):
-        if ':' not in part:
-            continue
-        key, value = part.split(':', 1)
-        try:
-            ranks[key.strip().lower()] = int(value.strip())
-        except (TypeError, ValueError):
-            continue
-    return ranks.get(_normalize_user_type(user_type), ranks.get('', 10))
-
-
 def _request_can_manage_target_user(user_data: dict, target: User) -> bool:
+    """Mismas protecciones que `routes/user.py`: ver `app/utils/user_access.py`."""
     if _request_is_bootstrap_admin(user_data):
         return True
     if not target or _is_bootstrap_admin(target):
         return False
-    # Company admins can reset/manage other normal admins and lower users.
-    if _request_is_company_admin(user_data):
-        return True
-    actor_rank = _user_hierarchy_rank_from_type(user_data.get('user_type'))
-    target_rank = _user_hierarchy_rank_from_type(getattr(target, 'user_type', None))
-    return actor_rank > target_rank
+    return can_manage_user(user_data, getattr(target, 'id_permission', None),
+                           actor_is_bootstrap=False, target_is_bootstrap=False)
 
 
 def _verify_password(raw_password: str, stored_value: str) -> bool:
@@ -348,7 +323,9 @@ def enable_mfa(user_data):
 @bp_auth.route('/mfa/reset/<int:target_user_id>', methods=['POST'])
 @token_required
 def reset_user_mfa(user_data, target_user_id):
-    if not (str(user_data.get('user_type') or '').strip().lower() == 'admin' or _request_is_bootstrap_admin(user_data)):
+    # Reiniciar el MFA de otra persona es administrar usuarios: lo concede el
+    # Gestor (editar `user`), no el tipo de cuenta.
+    if not _has_entity_permission(user_data, 'user', 'update'):
         return jsonify({'error_key': 'errors.forbidden'}), 403
     with transaction_context() as db:
         target = db.get(User, target_user_id)

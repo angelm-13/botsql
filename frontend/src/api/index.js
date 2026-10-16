@@ -72,8 +72,7 @@ function isPrivilegedPermissionUser() {
   return Boolean(
     user?.is_superuser ||
     user?.is_bootstrap_admin ||
-    user?.username === bootstrapUsername ||
-    String(user?.user_type || "").toLowerCase() === "admin"
+    user?.username === bootstrapUsername
   );
 }
 
