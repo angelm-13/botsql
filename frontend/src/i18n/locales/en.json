@@ -4631,7 +4631,6 @@
   "kpi_dashboard": {
     "example_banner": "Preview with sample data. This is how this KPI would look once it has data.",
     "example_badge": "SAMPLE",
-    "example_reason_sin_datos": "No data yet.",
     "example_view": "View sample",
     "example_hide": "Hide sample",
     "selector_combinables": "Combinable (no breakdown)",

@@ -43,7 +43,7 @@ import {
   parametrosEfectivos, periodoAnterior, rangoDesfasado, resolverRangoRelativo,
 } from "../kpi/kpiRango.js";
 import { datosDeEjemplo } from "../kpi/datosDeEjemplo.js";
-import { MOTIVO_SIN_DATOS, ofreceVerEjemplo } from "../kpi/vistaPreviaDeEjemplo.js";
+import { ofreceVerEjemplo } from "../kpi/vistaPreviaDeEjemplo.js";
 import {
   filasTablaPrestamo, propsDona, propsNumero,
   propsNumeroBajoStock, propsSeries, tendenciaDeSnapshot,
@@ -1271,7 +1271,7 @@ function VistaPreviaEditor({ widget, kpiCatalog, userLabel, productLabel, format
   );
   return (
     <div className="kpi-editor-vista-previa-cuerpo">
-      {mostrandoEjemplo ? <MarcoDeEjemplo tx={tx} motivo={MOTIVO_SIN_DATOS}>{cuerpo}</MarcoDeEjemplo> : cuerpo}
+      {mostrandoEjemplo ? <MarcoDeEjemplo tx={tx}>{cuerpo}</MarcoDeEjemplo> : cuerpo}
       {sinDatos && (
         <div className="kpi-ejemplo-sin-datos">
           <span className="muted">{tx("example_no_data_hint", "Sin datos en el rango elegido.")}</span>
@@ -1288,15 +1288,11 @@ function VistaPreviaEditor({ widget, kpiCatalog, userLabel, productLabel, format
 // dentro de la propia grafica (para que una captura de pantalla tampoco se confunda con datos reales). Vive solo
 // en el editor, fuera de las tarjetas (`.kpi-widget-card`) que captura el reporte PDF.
 // eslint-disable-next-line react-refresh/only-export-components
-export function MarcoDeEjemplo({ tx, motivo, children }) {
-  const razon = {
-    sin_datos: tx("example_reason_sin_datos", "Aún no tiene datos."),
-  }[motivo];
+export function MarcoDeEjemplo({ tx, children }) {
   return (
     <div className="kpi-ejemplo-marco" data-ejemplo="true">
       <p className="kpi-ejemplo-aviso" role="status">
         {tx("example_banner", "Vista previa con datos de ejemplo. Así se vería este KPI cuando tenga datos.")}
-        {razon && <em>{razon}</em>}
       </p>
       <div className="kpi-ejemplo-grafica" data-marca={tx("example_badge", "EJEMPLO")}>
         <span className="kpi-ejemplo-sello" aria-hidden="true">{tx("example_badge", "EJEMPLO")}</span>

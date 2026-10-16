@@ -33,13 +33,14 @@ test("«Ver ejemplo» solo se ofrece para un KPI REAL (permitido) cuya consulta 
   assert.ok(dashboard.includes('tx("example_view", "Ver ejemplo")') && dashboard.includes("{sinDatos && ("));
 });
 
-test("el aviso lleva el texto acordado y el sello EJEMPLO, con su motivo", () => {
-  const html = pintarMarcoEjemplo({ motivo: "sin_datos" });
+test("el aviso lleva el texto acordado y el sello EJEMPLO, sin ninguna frase de motivo debajo", () => {
+  const html = pintarMarcoEjemplo();
   assert.ok(html.includes("Vista previa con datos de ejemplo. Así se vería este KPI cuando tenga datos."));
   assert.ok(!html.includes("tu rol"), "el aviso ya no habla de permisos: solo aplica a un KPI permitido sin datos");
   assert.ok(html.includes("kpi-ejemplo-sello") && html.includes(">EJEMPLO<"));
   assert.ok(html.includes('data-marca="EJEMPLO"'), "la marca de agua toma el texto traducido");
-  assert.ok(html.includes("Aún no tiene datos."));
+  // La frase «Aún no tiene datos.» se quito: repetia el aviso, y ni siquiera era exacta (el rango esta vacio, no el KPI).
+  assert.ok(!html.includes("Aún no tiene datos") && !html.includes("<em>"), "el aviso es una sola frase");
 });
 
 test("el reporte PDF solo captura las tarjetas del tablero, nunca la vista previa del editor", () => {
@@ -61,8 +62,11 @@ test("todos los textos de la vista previa y del selector existen en es, en, pt y
   for (const clave of ["kpi_search_placeholder", "kpi_search_empty", "kpi_variables_group", "kpi_color_choose", "selector_combinables", "selector_variables_ayuda"]) {
     assert.ok(delSelector.includes(clave), `el selector recibe ${clave}: la prueba tiene que vigilarlo`);
   }
+  for (const clave of ["example_banner", "example_badge", "example_view", "example_hide", "example_no_data_hint"]) {
+    assert.ok(porPrefijo.includes(clave), `la vista previa usa ${clave}: la prueba tiene que vigilarlo`);
+  }
+  assert.ok(!porPrefijo.includes("example_reason_sin_datos"), "esa frase se quito del aviso");
   const claves = [...new Set([...porPrefijo, ...delSelector])];
-  assert.ok(claves.length >= 14, `se esperaban los textos de ejemplo y del selector en Dashboard.jsx (hay ${claves.length})`);
 
   const catalogos = {};
   for (const idioma of ["es", "en", "pt", "de"]) {

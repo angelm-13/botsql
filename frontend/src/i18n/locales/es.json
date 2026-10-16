@@ -4747,7 +4747,6 @@
   "kpi_dashboard": {
     "example_banner": "Vista previa con datos de ejemplo. Así se vería este KPI cuando tenga datos.",
     "example_badge": "EJEMPLO",
-    "example_reason_sin_datos": "Aún no tiene datos.",
     "example_view": "Ver ejemplo",
     "example_hide": "Ocultar ejemplo",
     "selector_combinables": "Combinables (sin desglose)",

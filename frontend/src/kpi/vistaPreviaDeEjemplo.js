@@ -7,8 +7,6 @@
 
 import { rangoVacio } from "./datosDeEjemplo.js";
 
-export const MOTIVO_SIN_DATOS = "sin_datos";
-
 /** Si la vista previa del editor ofrece «Ver ejemplo»: deteccion perezosa de un KPI REAL (permitido) cuya consulta del
  * rango volvio vacia. Solo con UN KPI real elegido, ya cargado y sin errores; las tablas en vivo no lo ofrecen
  * (no tienen "rango vacio"). */

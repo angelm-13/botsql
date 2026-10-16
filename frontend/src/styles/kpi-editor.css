@@ -179,7 +179,6 @@
   font-size: 12px;
   line-height: 1.4;
 }
-.kpi-ejemplo-aviso em { display: block; margin-top: 2px; font-style: normal; font-weight: 600; color: var(--kpi-atrasado); }
 .kpi-ejemplo-grafica {
   position: relative;
   overflow: hidden;

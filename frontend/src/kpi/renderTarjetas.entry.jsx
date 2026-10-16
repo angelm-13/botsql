@@ -64,6 +64,6 @@ export function pintarSelector(props) {
 }
 
 /** El aviso y la marca de una vista previa con datos de ejemplo (texto en espanol, como el `tx` de prueba). */
-export function pintarMarcoEjemplo({ motivo, hijo = "contenido" }) {
-  return renderToStaticMarkup(<MarcoDeEjemplo tx={tx} motivo={motivo}>{hijo}</MarcoDeEjemplo>);
+export function pintarMarcoEjemplo({ hijo = "contenido" } = {}) {
+  return renderToStaticMarkup(<MarcoDeEjemplo tx={tx}>{hijo}</MarcoDeEjemplo>);
 }
