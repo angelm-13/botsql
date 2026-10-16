@@ -487,6 +487,17 @@ def _notificar_proyecto(*, destinatarios, actor_id, id_proyect, nombre_proyecto,
             pass
 
 
+def _puede_ejecutar(db, user_data: dict) -> bool:
+    """Tiene la capacidad `project_execution` en el Gestor, junto con cualquier otra.
+
+    `_scope_name` devuelve UNA sola etiqueta (primero autoriza), asi que quien
+    tiene autorizar Y ejecutar quedaba como "autoriza" y la capacidad de
+    ejecutar que el Gestor le concede no hacia nada. Las capacidades suman: lo
+    que decide ejecutar se pregunta directo, no por la etiqueta.
+    """
+    return _has_capability(db, user_data, "project_execution")
+
+
 def _scope_name(db, user_data: dict) -> str:
     if _is_unrestricted(user_data):
         return "unrestricted"
@@ -1236,7 +1247,7 @@ def take_project(project_id, user_data: dict) -> dict:
     with transaction_context() as db:
         project = _get_visible_project(db, project_id, user_data, for_update=True)
         scope = _scope_name(db, user_data)
-        if scope not in {"execution", "unrestricted"}:
+        if not _puede_ejecutar(db, user_data):
             raise AppError("errors.permission_denied", 403,
                            {"action": "take_project", "scope": scope})
         actual = _safe_int(project.id_supervisor)
@@ -1368,7 +1379,7 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
         # apruebe y cierre su propio proyecto.
         puede_autorizar = scope in {"authorization", "unrestricted"}
         # Quien lo ejecuta: el taller, o el lider sobre el proyecto que lidera.
-        puede_ejecutar = scope in {"execution", "unrestricted"} or leads_it
+        puede_ejecutar = _puede_ejecutar(db, user_data) or leads_it
         # Entregar al cliente es responsabilidad de quien lidera el proyecto
         # (normalmente Supervisor, quien lo crea), no del taller: "completado"
         # es que el trabajo esta hecho, "entregado" es un hecho comercial
