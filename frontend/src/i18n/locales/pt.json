@@ -3421,7 +3421,7 @@
     "entregado": "Entregue"
   },
   "kpi_dashboard": {
-    "example_banner": "Pré-visualização com dados de exemplo. Assim este KPI seria exibido; não está disponível para o seu perfil ou ainda não tem dados",
+    "example_banner": "Pré-visualização com dados de exemplo. Assim este KPI seria exibido quando tiver dados.",
     "example_badge": "EXEMPLO",
     "example_reason_sin_datos": "Ainda sem dados.",
     "example_view": "Ver exemplo",

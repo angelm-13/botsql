@@ -35,7 +35,8 @@ test("«Ver ejemplo» solo se ofrece para un KPI REAL (permitido) cuya consulta 
 
 test("el aviso lleva el texto acordado y el sello EJEMPLO, con su motivo", () => {
   const html = pintarMarcoEjemplo({ motivo: "sin_datos" });
-  assert.ok(html.includes("Vista previa con datos de ejemplo. Así se vería este KPI; no está disponible para tu rol o aún no tiene datos"));
+  assert.ok(html.includes("Vista previa con datos de ejemplo. Así se vería este KPI cuando tenga datos."));
+  assert.ok(!html.includes("tu rol"), "el aviso ya no habla de permisos: solo aplica a un KPI permitido sin datos");
   assert.ok(html.includes("kpi-ejemplo-sello") && html.includes(">EJEMPLO<"));
   assert.ok(html.includes('data-marca="EJEMPLO"'), "la marca de agua toma el texto traducido");
   assert.ok(html.includes("Aún no tiene datos."));
@@ -59,7 +60,12 @@ test("todos los textos de la vista previa y del selector existen en es, en, pt y
     for (const clave of claves) assert.ok(catalogos[idioma]?.[clave], `${idioma}: falta kpi_dashboard.${clave}`);
   }
   // El aviso acordado, tal cual, en espanol; y los demas idiomas no se quedan con el texto en espanol.
-  assert.equal(catalogos.es.example_banner, "Vista previa con datos de ejemplo. Así se vería este KPI; no está disponible para tu rol o aún no tiene datos");
+  assert.equal(catalogos.es.example_banner, "Vista previa con datos de ejemplo. Así se vería este KPI cuando tenga datos.");
+  // Ya no habla de permisos ni de modulos no habilitados, en ningun idioma.
+  const PALABRAS_DE_PERMISO = { es: /\brol\b/i, en: /\brole\b/i, pt: /perfil/i, de: /Rolle/i };
+  for (const idioma of Object.keys(PALABRAS_DE_PERMISO)) {
+    assert.ok(!PALABRAS_DE_PERMISO[idioma].test(catalogos[idioma].example_banner), `${idioma}: el aviso no debe hablar de permisos`);
+  }
   assert.equal(catalogos.es.selector_combinables, "Combinables (sin desglose)");
   for (const idioma of ["en", "pt", "de"]) {
     for (const clave of ["selector_combinables", "selector_variables_ayuda"]) {

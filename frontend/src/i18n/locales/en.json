@@ -4629,7 +4629,7 @@
     "entregado": "Delivered"
   },
   "kpi_dashboard": {
-    "example_banner": "Preview with sample data. This is how this KPI would look; it is not available for your role or has no data yet",
+    "example_banner": "Preview with sample data. This is how this KPI would look once it has data.",
     "example_badge": "SAMPLE",
     "example_reason_sin_datos": "No data yet.",
     "example_view": "View sample",

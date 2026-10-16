@@ -1295,7 +1295,7 @@ export function MarcoDeEjemplo({ tx, motivo, children }) {
   return (
     <div className="kpi-ejemplo-marco" data-ejemplo="true">
       <p className="kpi-ejemplo-aviso" role="status">
-        {tx("example_banner", "Vista previa con datos de ejemplo. Así se vería este KPI; no está disponible para tu rol o aún no tiene datos")}
+        {tx("example_banner", "Vista previa con datos de ejemplo. Así se vería este KPI cuando tenga datos.")}
         {razon && <em>{razon}</em>}
       </p>
       <div className="kpi-ejemplo-grafica" data-marca={tx("example_badge", "EJEMPLO")}>
