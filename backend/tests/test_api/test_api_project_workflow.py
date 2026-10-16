@@ -18,8 +18,11 @@ class TestProjectWorkflowApi(BackendTestCase):
         self.workshop = {"id_user": 31, "id_permission": 301}
         with transaction_context() as db:
             db.add_all([
-                EntityPermission(id_permission=101, entity_name="proyect", scope_create=4, scope_read=4, scope_update=4, created_by=11),
-                EntityPermission(id_permission=102, entity_name="proyect", scope_create=4, scope_read=4, scope_update=4, created_by=12),
+                # Lo que ve y edita un Supervisor lo manda el Gestor: Propios.
+                # Con "Todos" vería (y editaría) los proyectos de los demás;
+                # antes de 2026-10-16 el código ignoraba "Todos" aquí.
+                EntityPermission(id_permission=101, entity_name="proyect", scope_create=4, scope_read=1, scope_update=1, created_by=11),
+                EntityPermission(id_permission=102, entity_name="proyect", scope_create=4, scope_read=1, scope_update=1, created_by=12),
                 EntityPermission(id_permission=201, entity_name="proyect", scope_read=4, scope_update=4, created_by=21),
                 EntityPermission(id_permission=201, entity_name="project_authorization", scope_read=4, created_by=21),
                 EntityPermission(id_permission=301, entity_name="proyect", scope_read=4, scope_update=4, created_by=31),
@@ -66,7 +69,8 @@ class TestProjectWorkflowApi(BackendTestCase):
         # test_supervisor_cannot_submit_or_authorize_through_http).
         manager_list = self._request(self.manager, "GET", "/proyect/?page=1&per_page=20")
         manager_project = self.json(manager_list)["items"][0]
-        self.assertEqual(manager_project["folio"], f"PRJ-{project_id:06d}")
+        # La partida es opcional y no se inventa: sin capturarla, queda vacia.
+        self.assertIsNone(manager_project["folio"])
 
         tomorrow = (datetime.fromisoformat(manager_project["creation_date"]) + timedelta(days=1)).date().isoformat()
         future_list = self._request(

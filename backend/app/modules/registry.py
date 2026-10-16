@@ -291,6 +291,16 @@ class Capacidad:
 CAPACIDADES = (
     Capacidad("project_authorization", "Autorizar proyectos", "operaciones", menu="hidden"),
     Capacidad("project_execution", "Ejecutar proyectos en taller", "operaciones", menu="hidden"),
+    # Confirmar que el material de un proyecto autorizado esta por llegar o ya
+    # llego: los dos pasos `authorized -> waiting_material` y
+    # `waiting_material -> in_progress`. Quien COMPRA sabe cuando llega lo que
+    # pidio, no el taller; `project_authorization` (Gerente) conserva esos pasos
+    # como respaldo sin necesitar esta (ver `transition_project`). No se concede
+    # por omision a ningun rol: el Gestor de roles y permisos decide a quien
+    # (hoy, Compras en adser). Da los dos pasos y nada mas -no edita el
+    # proyecto ni lo autoriza-; ver cuales proyectos se ven lo decide la celda
+    # `proyect.scope_read` del mismo rol.
+    Capacidad("project_supply", "Confirmar material de proyectos", "operaciones", menu="hidden"),
     Capacidad("incident_supervision", "Supervisar incidencias ajenas", "operaciones"),
     # El ajuste es el unico movimiento sin documento detras y sin tope: crea o
     # destruye existencia por cualquier cantidad. Es la operacion con la que se

@@ -226,6 +226,42 @@ vidrioyaluminios-prod llevan semanas sin promoción.
   PDF del vale idéntico al anterior**: están en `initAlan` y en la imagen de
   adser-prod (`c260f22` contiene la punta de `initAngm`). torredigital-prod
   (`031970b`) NO los incluye.
+## Bitácora 2026-10-16 — partida libre y material confirmado por Compras
+
+Observaciones de Adser sobre proyectos; construido en la rama de trabajo, **sin
+commitear ni promover** (pasos en
+`docs/despliegues/2026-10-16_partida_libre_y_material_por_compras.md`).
+
+1. **La "Partida" es `proyect.folio`**: referencia libre de ellos. Opcional,
+   puede repetirse, no se autogenera. Causa raíz del 500 que veían: el índice
+   único `uq_proyect_folio` + `handle_integrity` sin caso 23505 (en los logs de
+   adser-prod del 15/10). Se quitó el índice único, el relleno `OT-` (ambos en
+   migraciones viejas que se reaplican en cada arranque: había que editarlas, no
+   solo añadir una) y el respaldo `PRJ-`. Script `limpiar_folios_autogenerados.py`
+   para lo ya rellenado (proyecto 7 de adser).
+2. **`authorized → waiting_material → in_progress` ya no es solo de Gerente**
+   (revierte la decisión del 2026-09-25): capacidad nueva `project_supply`
+   (Compras), Gerente de respaldo con `project_authorization`. La tarea ya no es
+   obligatoria para arrancar. El candado suave de material (Ángel, `bb72a66`)
+   se queda.
+   **Sin maquila** (a propósito, como ellos lo pidieron): ya no salta de
+   autorizado a completado (retira el atajo del 2026-09-30). Pasa por los mismos
+   dos pasos de Compras y lo lleva el supervisor que lo lidera; el Jefe de taller
+   ni lo ve. Quien confirma el material solo ve proyectos de autorizado en
+   adelante (regla de etapa en `_scoped_query`, suma a `scope_read`). En pantalla los
+   dos pasos son un botón en la fila, "Material en camino" / "Material recibido,
+   iniciar" (`PASO_DE_MATERIAL`), no una opción del desplegable de estatus.
+3. **El Gestor manda sobre lo que se ve**: `_scoped_query` respeta
+   `proyect.scope_read` para roles sin capacidad de proyecto y `update_project`
+   filtra por `scope_update`. **Cambia el comportamiento de los Supervisores
+   sembrados en Todos** (verían todo): medir con
+   `scripts/medir_alcance_de_proyectos.py` y pasar a Propios en el Gestor antes de
+   promover. `_scope_name` (autoriza/ejecuta/propio) sigue siendo código, deuda
+   conocida; no se le añadió ninguna rama.
+4. Pendiente de Adser sin reproducir: "el supervisor que creó el proyecto ya no
+   lo ve en proceso" (el backend sí se lo muestra a vicgo en el proyecto 3);
+   falta el caso concreto (qué supervisor, qué proyecto).
+
 ## Bitácora 2026-10-13 — devolver renglones migrados, "Devuelto por", color de Localizar
 
 Reportado desde adser-prod (vale #94, EXT302): "Marcar devuelto" daba 400.

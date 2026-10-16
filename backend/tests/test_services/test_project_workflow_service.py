@@ -36,8 +36,19 @@ class TestProjectWorkflowService(BackendTestCase):
         self.workshop = {"id_user": 31, "id_permission": 301}
         # Un rol al que el Gestor le concede AUTORIZAR y EJECUTAR a la vez.
         self.dual = {"id_user": 51, "id_permission": 501}
+        # Compras: el Gestor le concede `project_supply` (los dos pasos de
+        # material), ver todos los proyectos (`scope_read` Todos) y actualizar
+        # solo lo propio (`scope_update` Propios: el paso de transicion lo pide
+        # la ruta, pero no le da editar proyectos ajenos). No autoriza ni ejecuta.
+        self.compras = {"id_user": 61, "id_permission": 601}
+        # Un rol que solo CONSULTA proyectos: lectura Todos y actualizar Propios,
+        # sin ninguna capacidad de proyecto (ni autorizar, ni ejecutar, ni material).
+        self.lector = {"id_user": 71, "id_permission": 701}
         with transaction_context() as db:
             db.add_all([
+                EntityPermission(id_permission=701, entity_name="proyect", scope_read=4, scope_update=1, created_by=71),
+                EntityPermission(id_permission=601, entity_name="project_supply", scope_read=4, created_by=61),
+                EntityPermission(id_permission=601, entity_name="proyect", scope_read=4, scope_update=1, created_by=61),
                 EntityPermission(id_permission=501, entity_name="project_authorization", scope_read=4, created_by=51),
                 EntityPermission(id_permission=501, entity_name="project_execution", scope_read=4, created_by=51),
                 EntityPermission(id_permission=501, entity_name="proyect", scope_delete=4, created_by=51),
@@ -45,10 +56,13 @@ class TestProjectWorkflowService(BackendTestCase):
                 EntityPermission(id_permission=301, entity_name="project_execution", scope_read=4, created_by=31),
                 # Borrar lo manda `scope_delete` de `proyect` (Gestor): Propios
                 # para quien levanta/ejecuta, Todos para Gerente.
-                EntityPermission(id_permission=101, entity_name="proyect", scope_delete=1, created_by=11),
+                EntityPermission(id_permission=101, entity_name="proyect", scope_update=1, scope_delete=1, created_by=11),
+                # Editar lo manda `scope_update` (Gestor): Propios para quien
+                # levanta proyectos.
+                EntityPermission(id_permission=102, entity_name="proyect", scope_update=1, created_by=12),
                 EntityPermission(id_permission=201, entity_name="proyect", scope_delete=4, created_by=21),
                 EntityPermission(id_permission=301, entity_name="proyect", scope_delete=1, created_by=31),
-                EntityPermission(id_permission=401, entity_name="proyect", scope_delete=1, created_by=41),
+                EntityPermission(id_permission=401, entity_name="proyect", scope_update=1, scope_delete=1, created_by=41),
             ])
 
     def _create(self, actor=None, title="Proyecto"):
@@ -171,11 +185,11 @@ class TestProjectWorkflowService(BackendTestCase):
                 transition_project(project, {"status": "in_progress"}, actor)
             self.assertEqual("errors.project_invalid_transition", raised.exception.message_key)
 
-    def test_only_the_manager_opens_and_closes_the_wait_for_material(self):
-        """Entrar a la espera y salir de ella hacia el trabajo real las
-        decide quien autoriza/compra (Gerente), no el taller -- es quien
-        sabe si la compra ya llego. El taller SI puede pausar un proyecto ya
-        en curso por falta de material (`in_progress -> waiting_material`,
+    def test_only_who_gives_the_material_opens_and_closes_the_wait_for_it(self):
+        """Entrar a la espera y salir de ella hacia el trabajo real las da
+        quien confirma el material (Compras con `project_supply`, o Gerente de
+        respaldo), no el taller. El taller SI puede pausar un proyecto ya en
+        curso por falta de material (`in_progress -> waiting_material`,
         cubierto en `test_full_cycle_writes_ordered_immutable_history`), pero
         no controla la espera de arranque.
         """
@@ -236,25 +250,187 @@ class TestProjectWorkflowService(BackendTestCase):
         )
         self.assertEqual("blocked", blocked["proyect_status"])
 
-    def test_project_cannot_move_to_in_progress_without_tasks(self):
-        """No se arranca un proyecto que todavia no tiene tareas.
+    def test_project_can_move_to_in_progress_without_tasks(self):
+        """Tener una tarea capturada YA NO es condicion para arrancar (2026-10-16).
 
-        El candado vive en la salida real hacia el trabajo
-        (`waiting_material -> in_progress`), no al entrar a la espera de
-        material -- las tareas se van definiendo mientras el material esta
-        en camino, no antes.
+        Quien confirma el material es Compras, que no captura tareas; el taller
+        las va definiendo cuando le toca.
         """
         project = self._create()["id_proyect"]
         transition_project(project, {"status": "authorized"}, self.manager)
         transition_project(project, {"status": "waiting_material"}, self.manager)
 
-        with self.assertRaises(AppError) as raised:
-            transition_project(project, {"status": "in_progress"}, self.manager)
-        self.assertEqual("errors.project_requires_task", raised.exception.message_key)
-
-        self._add_task(project)
         en_proceso = transition_project(project, {"status": "in_progress"}, self.manager)
+
         self.assertEqual("in_progress", en_proceso["proyect_status"])
+
+    def test_compras_gives_the_two_material_steps(self):
+        """Compras (capacidad `project_supply`) pasa a espera y de ahi a proceso."""
+        project = self._create()["id_proyect"]
+        transition_project(project, {"status": "authorized"}, self.manager)
+
+        en_espera = transition_project(project, {"status": "waiting_material"}, self.compras)
+        self.assertEqual("waiting_material", en_espera["proyect_status"])
+
+        en_proceso = transition_project(project, {"status": "in_progress"}, self.compras)
+        self.assertEqual("in_progress", en_proceso["proyect_status"])
+
+    def test_compras_gives_only_those_two_steps(self):
+        """Confirmar el material no autoriza, ni deniega, ni cierra el trabajo."""
+        project = self._create()["id_proyect"]
+
+        # Un borrador ni siquiera lo ve (404): autorizar es de quien autoriza.
+        with self.assertRaises(AppError) as raised:
+            transition_project(project, {"status": "authorized"}, self.compras)
+        self.assertEqual(404, raised.exception.status_code)
+
+        transition_project(project, {"status": "authorized"}, self.manager)
+        transition_project(project, {"status": "waiting_material"}, self.compras)
+        transition_project(project, {"status": "in_progress"}, self.compras)
+
+        # Ya en curso: pausar, detener, completar y entregar no son suyos.
+        for destino in ("waiting_material", "stopped", "completed"):
+            with self.subTest(destino=destino), self.assertRaises(AppError) as raised:
+                transition_project(project, {"status": destino, "reason": "x"}, self.compras)
+            self.assertEqual("errors.permission_denied", raised.exception.message_key)
+
+    def test_the_manager_still_gives_the_material_steps_as_a_backup(self):
+        """Gerente (`project_authorization`) no necesita `project_supply`."""
+        project = self._create()["id_proyect"]
+        transition_project(project, {"status": "authorized"}, self.manager)
+
+        transition_project(project, {"status": "waiting_material"}, self.manager)
+        en_proceso = transition_project(project, {"status": "in_progress"}, self.manager)
+
+        self.assertEqual("in_progress", en_proceso["proyect_status"])
+
+    def test_the_workshop_does_not_get_the_material_steps_from_compras(self):
+        """Dar el material no se le concede a quien ejecuta por serlo."""
+        project = self._create()["id_proyect"]
+        transition_project(project, {"status": "authorized"}, self.manager)
+
+        with self.assertRaises(AppError) as raised:
+            transition_project(project, {"status": "waiting_material"}, self.workshop)
+        self.assertEqual("errors.permission_denied", raised.exception.message_key)
+
+    def test_authorizing_tells_compras_there_is_material_to_get(self):
+        from app.models.notification import Notification
+        from app.models.user import User
+
+        # `_users_with_capability` busca usuarios reales con ese rol.
+        with transaction_context() as db:
+            db.add(User(id_user=61, created_by=1, full_name="Compras", id_permission=601,
+                        id_proyect=1, id_status=1, supervisor=1, user_type="employee",
+                        is_employee=True, username="compras-prueba"))
+        project = self._create()["id_proyect"]
+
+        transition_project(project, {"status": "authorized"}, self.manager)
+
+        with transaction_context() as db:
+            titulos = [n.title for n in db.query(Notification).filter_by(id_user_recipient=61).all()]
+        self.assertEqual(["Proyecto autorizado: falta conseguir el material"], titulos)
+
+    def _create_without_maquila(self, title="Sin maquila"):
+        return create_project({
+            "id_customer_supplier": 1, "proyect_description": "Pintura", "title": title,
+            "requires_maquila": False,
+        }, self.supervisor)["id_proyect"]
+
+    def test_a_project_without_maquila_goes_through_compras_and_the_supervisor_closes_it(self):
+        """Sin maquila: Compras confirma el material y lo lleva el supervisor.
+
+        No salta de autorizado a completado (atajo retirado 2026-10-16) y el
+        Jefe de taller no participa en ningun paso.
+        """
+        project = self._create_without_maquila()
+        transition_project(project, {"status": "authorized"}, self.manager)
+
+        with self.assertRaises(AppError) as raised:
+            transition_project(project, {"status": "completed"}, self.manager)
+        self.assertEqual("errors.project_invalid_transition", raised.exception.message_key)
+
+        transition_project(project, {"status": "waiting_material"}, self.compras)
+        en_proceso = transition_project(project, {"status": "in_progress"}, self.compras)
+        self.assertEqual("in_progress", en_proceso["proyect_status"])
+
+        # Lo lleva quien lo lidera (self.supervisor lo creo): lo completa y lo entrega.
+        completado = transition_project(project, {"status": "completed"}, self.supervisor)
+        self.assertEqual("completed", completado["proyect_status"])
+        entregado = transition_project(project, {"status": "delivered"}, self.supervisor)
+        self.assertEqual("delivered", entregado["proyect_status"])
+
+    def test_the_workshop_never_sees_a_project_without_maquila(self):
+        project = self._create_without_maquila()
+        transition_project(project, {"status": "authorized"}, self.manager)
+        transition_project(project, {"status": "waiting_material"}, self.compras)
+        transition_project(project, {"status": "in_progress"}, self.compras)
+
+        self.assertEqual(0, list_projects(self.workshop)["total"])
+        with self.assertRaises(AppError) as raised:
+            get_project_detail(project, self.workshop)
+        self.assertEqual(404, raised.exception.status_code)
+
+    def test_compras_only_sees_projects_from_authorized_onward(self):
+        """Quien confirma el material no ve borradores ajenos; si lo propio."""
+        ajeno_borrador = self._create(self.supervisor, "Borrador ajeno")["id_proyect"]
+        autorizado = self._create(self.supervisor, "Autorizado")["id_proyect"]
+        transition_project(autorizado, {"status": "authorized"}, self.manager)
+        propio_borrador = self._create(self.compras, "Borrador propio")["id_proyect"]
+
+        visibles = {p["id_proyect"] for p in list_projects(self.compras)["items"]}
+
+        self.assertEqual({autorizado, propio_borrador}, visibles)
+        with self.assertRaises(AppError) as raised:
+            get_project_detail(ajeno_borrador, self.compras)
+        self.assertEqual(404, raised.exception.status_code)
+
+    def test_who_authorizes_still_sees_the_drafts(self):
+        borrador = self._create(self.supervisor, "Borrador")["id_proyect"]
+
+        self.assertIn(borrador, {p["id_proyect"] for p in list_projects(self.manager)["items"]})
+
+    def test_starting_tells_the_workshop_who_took_the_project(self):
+        from app.models.notification import Notification
+
+        project = self._create()["id_proyect"]
+        transition_project(project, {"status": "authorized"}, self.manager)
+        take_project(project, self.workshop)
+        transition_project(project, {"status": "waiting_material"}, self.compras)
+
+        transition_project(project, {"status": "in_progress"}, self.compras)
+
+        with transaction_context() as db:
+            titulos = [n.title for n in db.query(Notification).filter_by(id_user_recipient=31).all()]
+        self.assertIn("Proyecto en proceso", titulos)
+
+    def test_what_a_role_sees_is_decided_by_its_read_cell_in_the_manager(self):
+        """Sin capacidad de proyecto, `proyect.scope_read` manda: Todos ve todo,
+        Propios solo lo propio. Antes Todos no hacia nada (se veia solo lo propio)."""
+        ajeno = self._create(self.other_supervisor, "Ajeno")["id_proyect"]
+        propio = self._create(self.lector, "Propio")["id_proyect"]
+
+        todos = {p["id_proyect"] for p in list_projects(self.lector)["items"]}
+        self.assertEqual({ajeno, propio}, todos)
+
+        with transaction_context() as db:
+            celda = db.query(EntityPermission).filter_by(id_permission=701, entity_name="proyect").one()
+            celda.scope_read = 1
+        propios = {p["id_proyect"] for p in list_projects(self.lector)["items"]}
+        self.assertEqual({propio}, propios)
+
+    def test_seeing_a_foreign_draft_does_not_allow_editing_it(self):
+        """Editar lo manda `scope_update`: Propios no alcanza un borrador ajeno."""
+        ajeno = self._create(self.other_supervisor, "Ajeno")["id_proyect"]
+
+        with self.assertRaises(AppError) as raised:
+            update_project(ajeno, {"title": "Cambiado"}, self.lector)
+        self.assertEqual("errors.permission_denied", raised.exception.message_key)
+
+        with transaction_context() as db:
+            celda = db.query(EntityPermission).filter_by(id_permission=701, entity_name="proyect").one()
+            celda.scope_update = 4
+        editado = update_project(ajeno, {"title": "Cambiado"}, self.lector)
+        self.assertEqual("Cambiado", editado["title"])
 
     def test_a_blank_description_is_not_a_description(self):
         with self.assertRaises(AppError) as e:
@@ -617,13 +793,60 @@ class TestLaOrdenDeTrabajo(TestProjectWorkflowService):
 
         self.assertEqual("OT-2026-0042", detalle["folio"])
 
-    def test_a_project_without_a_folio_still_gets_the_generated_one(self):
-        """El folio "PRJ-000006" sigue existiendo para quien no captura folio."""
+    def test_a_project_without_a_partida_stays_empty(self):
+        """La partida es opcional: vacia se queda vacia, no se inventa ninguna.
+
+        Antes se rellenaba con "PRJ-000006" al pintar, y una migracion la
+        cambiaba a "OT-..." en el siguiente despliegue (2026-10-16).
+        """
         creado = self._create()
 
         detalle = get_project_detail(creado["id_proyect"], self.supervisor)
 
-        self.assertEqual("PRJ-%06d" % creado["id_proyect"], detalle["folio"])
+        self.assertIsNone(detalle["folio"])
+
+    def test_a_blank_partida_is_stored_as_null(self):
+        """Espacios o texto vacio equivalen a "no la puso"."""
+        creado = create_project({
+            "id_customer_supplier": 1, "proyect_description": "Partida en blanco",
+            "folio": "   ",
+        }, self.supervisor)
+
+        self.assertIsNone(get_project_detail(creado["id_proyect"], self.supervisor)["folio"])
+
+    def test_the_partida_can_repeat_between_projects(self):
+        """Es una referencia de ellos, no una llave: dos proyectos pueden llevar "1"."""
+        primero = create_project({
+            "id_customer_supplier": 1, "proyect_description": "Uno", "folio": "1",
+        }, self.supervisor)
+        segundo = create_project({
+            "id_customer_supplier": 1, "proyect_description": "Dos", "folio": "1",
+        }, self.supervisor)
+
+        self.assertNotEqual(primero["id_proyect"], segundo["id_proyect"])
+        self.assertEqual("1", get_project_detail(primero["id_proyect"], self.supervisor)["folio"])
+        self.assertEqual("1", get_project_detail(segundo["id_proyect"], self.supervisor)["folio"])
+
+    def test_the_partida_can_be_cleared_when_editing(self):
+        creado = create_project({
+            "id_customer_supplier": 1, "proyect_description": "Con partida", "folio": "A-7",
+        }, self.supervisor)
+
+        update_project(creado["id_proyect"], {"folio": ""}, self.supervisor)
+
+        self.assertIsNone(get_project_detail(creado["id_proyect"], self.supervisor)["folio"])
+
+    def test_the_list_can_be_searched_by_partida(self):
+        create_project({
+            "id_customer_supplier": 1, "proyect_description": "Estructura", "folio": "10130",
+        }, self.supervisor)
+        create_project({
+            "id_customer_supplier": 1, "proyect_description": "Otra cosa", "folio": "999",
+        }, self.supervisor)
+
+        encontrados = list_projects(self.supervisor, filters={"search": "10130"})
+
+        self.assertEqual(1, encontrados["total"])
 
     def _invoice(self, id_invoice):
         """Un `invoice` minimo, real, para las pruebas de cotizacion.

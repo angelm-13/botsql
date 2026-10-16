@@ -45,15 +45,17 @@ class TestProjectStateMachine(unittest.TestCase):
                 validate_project_transition(current, target)
             self.assertEqual("errors.project_invalid_transition", raised.exception.message_key)
 
+    def test_the_machine_is_the_same_with_or_without_maquila(self):
+        """Sin maquila recorre los mismos estatus; solo cambia quien lo lleva.
 
-if __name__ == "__main__":
-    unittest.main()
-    def test_a_project_without_maquila_skips_the_workshop_states(self):
-        self.assertEqual("completed", validate_project_transition(
-            "authorized", "completed", requires_maquila=False))
+        Hasta 2026-10-16 saltaba de autorizado a completado; ese atajo se
+        retiro: pasa por la espera de material (Compras) y por en proceso.
+        """
+        self.assertEqual("waiting_material", validate_project_transition("authorized", "waiting_material"))
+        self.assertEqual("in_progress", validate_project_transition("waiting_material", "in_progress"))
+        self.assertEqual("completed", validate_project_transition("in_progress", "completed"))
         with self.assertRaises(AppError) as raised:
-            validate_project_transition(
-                "authorized", "waiting_material", requires_maquila=False)
+            validate_project_transition("authorized", "completed")
         self.assertEqual("errors.project_invalid_transition", raised.exception.message_key)
 
     def test_a_stray_boolean_is_a_400_not_a_500(self):
@@ -67,3 +69,7 @@ if __name__ == "__main__":
         valores = {"requires_maquila": "False"}
         _booleano_estricto(valores, "requires_maquila")
         self.assertIs(False, valores["requires_maquila"])
+
+
+if __name__ == "__main__":
+    unittest.main()

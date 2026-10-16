@@ -26,8 +26,9 @@ class TestProyectDocumentsApi(BackendTestCase):
         self.other_supervisor = {"id_user": 12, "id_permission": 102}
         with transaction_context() as db:
             db.add_all([
-                EntityPermission(id_permission=101, entity_name="proyect", scope_create=4, scope_read=4, scope_update=4, created_by=11),
-                EntityPermission(id_permission=102, entity_name="proyect", scope_create=4, scope_read=4, scope_update=4, created_by=12),
+                # Propios: ver lo ajeno lo da "Todos" en el Gestor (2026-10-16).
+                EntityPermission(id_permission=101, entity_name="proyect", scope_create=4, scope_read=1, scope_update=1, created_by=11),
+                EntityPermission(id_permission=102, entity_name="proyect", scope_create=4, scope_read=1, scope_update=1, created_by=12),
             ])
         self._upload_dir = tempfile.mkdtemp()
         self.app.config["UPLOAD_ROOT"] = self._upload_dir

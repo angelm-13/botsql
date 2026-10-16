@@ -62,8 +62,9 @@ const ROLE_TARGETS = {
     draft: ["authorized", "denied", "blocked"],
     submitted: ["authorized", "denied", "blocked"],
     blocked: ["authorized", "denied", "blocked"],
-    // La espera de material es obligatoria y la abre Gerente, no el
-    // taller -- es quien sabe si la compra ya llego.
+    // La espera de material es obligatoria y la abre quien confirma el
+    // material, no el taller: Gerente de respaldo y, desde 2026-10-16, quien
+    // tenga `project_supply` (Compras; ver `puedeDarMaterial` en actionTargets).
     authorized: ["waiting_material"],
     waiting_material: ["in_progress"],
   },
@@ -112,6 +113,11 @@ const EMPTY_FORM = {
 };
 
 const PROJECT_PRIORITIES = ["baja", "media", "alta"];
+
+// Los dos pasos del material, por estatus de partida. Quien los da (Compras)
+// los ve como un boton en la fila, con el texto de la accion y no el del
+// estatus; el resto de los cambios siguen en el desplegable.
+const PASO_DE_MATERIAL = { authorized: "waiting_material", waiting_material: "in_progress" };
 
 function orderedStatuses(fromServer, order) {
   if (!fromServer?.length) return order;
@@ -252,6 +258,10 @@ export default function ProjectManagementPage() {
   // Las capacidades suman: quien tiene autorizar Y ejecutar en el Gestor es "manager" para la
   // pantalla, pero tambien puede ejecutar (tomar el proyecto). El servidor decide igual.
   const puedeEjecutar = privileged || hasRead(permissions, "project_execution");
+  // Los dos pasos de material (a "en espera" y de ahi a "en proceso"): quien
+  // tiene `project_supply` (Compras) o, de respaldo, quien autoriza -- igual
+  // que `_puede_dar_el_material` en el servidor.
+  const puedeDarMaterial = privileged || hasRead(permissions, "project_supply") || hasRead(permissions, "project_authorization");
   const statusCodes = useMemo(() => orderedStatuses(catalog?.proyect?.statuses, STATUS_ORDER), [catalog]);
   const needsReason = (target) => (catalog?.proyect?.reason_required || []).includes(target);
   const taskNeedsReason = (target) => (catalog?.task?.reason_required || []).includes(target);
@@ -376,7 +386,9 @@ export default function ProjectManagementPage() {
       // Supervisor el formulario ni la muestra, y aqui se manda `undefined`
       // para no pisar lo ya capturado con vacio.
       purchase_order: canEditManagement ? (form.purchase_order.trim() || undefined) : undefined,
-      folio: form.folio.trim() || undefined,
+      // La partida es opcional y de ellos: vacia se manda como null, para que
+      // al editar tambien se pueda quitar (con `undefined` no viajaba).
+      folio: form.folio.trim() || null,
       delivery_date: form.delivery_date || undefined,
       // Prioridad y costo total: mismo candado que orden de compra -- el
       // backend los ignora en silencio si el actor no tiene el alcance, pero
@@ -494,14 +506,23 @@ export default function ProjectManagementPage() {
     if (leadsIt && desdeElServidor.includes("delivered") && !resultado.includes("delivered")) {
       resultado = [...resultado, "delivered"];
     }
-    // Un proyecto sin maquila salta directo de "autorizado" a "completado":
-    // el catalogo del servidor es el mismo para todos (no sabe de este
-    // proyecto en concreto), asi que esta es la MISMA excepcion puntual que
-    // "entregado" arriba -- por proyecto, no por catalogo -- y el servidor
-    // (`transition_project`) la vuelve a comprobar de verdad.
-    if (!project.requires_maquila && project.proyect_status === "authorized"
-        && (mode === "manager" || mode === "unrestricted") && !resultado.includes("completed")) {
-      resultado = [...resultado, "completed"];
+    // Los pasos de material los da quien tiene `project_supply` aunque su rol
+    // no sea "manager" (Compras cae en el modo "supervisor", sin acciones por
+    // papel). Lo mismo con o sin maquila: los dos pasan por Compras.
+    const pasoDeMaterial = PASO_DE_MATERIAL[project.proyect_status];
+    if (puedeDarMaterial && pasoDeMaterial && desdeElServidor.includes(pasoDeMaterial)
+        && !resultado.includes(pasoDeMaterial)) {
+      resultado = [...resultado, pasoDeMaterial];
+    }
+    // Un proyecto sin maquila no lo lleva el Jefe de taller sino quien lo
+    // lidera (el supervisor): ya en proceso, lo detiene, lo reanuda y lo
+    // completa. Es por proyecto y no por rol, como "entregado" arriba; el
+    // servidor (`transition_project`, via `leads_it`) lo vuelve a comprobar.
+    if (leadsIt && !project.requires_maquila) {
+      const delSupervisor = { in_progress: ["stopped", "completed"], stopped: ["in_progress"] }[project.proyect_status] || [];
+      for (const destino of delSupervisor) {
+        if (desdeElServidor.includes(destino) && !resultado.includes(destino)) resultado = [...resultado, destino];
+      }
     }
     return resultado;
   }
@@ -585,7 +606,12 @@ export default function ProjectManagementPage() {
   }
 
   function ProjectActions({ project }) {
-    const targets = actionTargets(project);
+    const todos = actionTargets(project);
+    // El paso del material sale como boton a la vista ("Material en camino" /
+    // "Material recibido, iniciar"); el desplegable queda con lo demas.
+    const pasoDeMaterial = puedeDarMaterial && todos.includes(PASO_DE_MATERIAL[project.proyect_status])
+      ? PASO_DE_MATERIAL[project.proyect_status] : null;
+    const targets = todos.filter((target) => target !== pasoDeMaterial);
     // El proyecto no se asigna: lo toma quien lo va a sacar adelante. Si
     // aparece en esta lista y sigue sin supervisor, es porque `_scoped_query`
     // (backend) ya lo dejo ver como libre -- un Jefe de taller nunca ve lo
@@ -595,10 +621,16 @@ export default function ProjectManagementPage() {
     const puedeSoltar = Number(project.id_supervisor) === Number(actor.id_user);
     return <div className="project-actions">
       <button className="icon-button" type="button" title={projectText("view_detail")} onClick={() => openDetail(project)}><Eye size={16} /></button>
-      {(((mode === "supervisor" || mode === "unrestricted" || Number(project.leader) === Number(actor.id_user)) && ["draft", "blocked"].includes(project.proyect_status)) || canEditManagement) && <button className="icon-button" type="button" title={projectText("edit")} onClick={() => openEdit(project)}><Pencil size={16} /></button>}
+      {(((mode === "unrestricted" || Number(project.leader) === Number(actor.id_user)
+          // Ver un proyecto ajeno (`scope_read` Todos) no es poder editarlo: eso lo manda
+          // `scope_update` -- Propios solo alcanza lo propio; Mis grupos o Todos, mas.
+          || (mode === "supervisor" && (Number(project.created_by) === Number(actor.id_user)
+              || (Number(projectPermission?.scope_update || 0) & 6) !== 0))
+         ) && ["draft", "blocked"].includes(project.proyect_status)) || canEditManagement) && <button className="icon-button" type="button" title={projectText("edit")} onClick={() => openEdit(project)}><Pencil size={16} /></button>}
       {canDelete && project.proyect_status === "draft" && <button className="icon-button danger" type="button" title={projectText("delete")} onClick={() => removeProject(project)}><Trash2 size={16} /></button>}
       {puedeTomar && <button className="icon-button" type="button" title={projectText("take_project")} disabled={busyId === project.id_proyect} onClick={() => tomarProyecto(project)}><HelpingHand size={16} /></button>}
       {puedeSoltar && <button className="icon-button" type="button" title={projectText("release_project")} disabled={busyId === project.id_proyect} onClick={() => soltarProyecto(project)}><LogOut size={16} /></button>}
+      {pasoDeMaterial && <button className="button primary small" type="button" disabled={busyId === project.id_proyect} onClick={() => setTransition({ project, target: pasoDeMaterial, reason: "", content: "", reviewDate: "" })}>{projectText(pasoDeMaterial === "waiting_material" ? "material_en_camino" : "material_recibido")}</button>}
       {targets.length > 0 && <label className="project-transition"><ArrowRight size={15} /><select value="" disabled={busyId === project.id_proyect} onChange={(event) => event.target.value && setTransition({ project, target: event.target.value, reason: "", content: "", reviewDate: "" })} aria-label={`${projectText("change_status")}: ${project.title}`}><option value="">{projectText("change_status")}</option>{targets.map((target) => <option value={target} key={target}>{statusLabel(target)}</option>)}</select></label>}
     </div>;
   }
@@ -628,7 +660,7 @@ export default function ProjectManagementPage() {
     {loading && <div className="alert">{projectText("loading")}</div>}
     {!loading && !filtered.length && <div className="empty"><strong>{projectText("empty")}</strong><p>{projectText("empty_body")}</p></div>}
 
-    {!loading && filtered.length > 0 && view === "table" && <div className="table-card"><div className="table-wrap"><table><thead><tr><th>{projectText("folio")}</th><th>{projectText("project")}</th><th>{projectText("customer")}</th><th>{projectText("creator")}</th><th>{projectText("created")}</th><th>{projectText("status")}</th><th>{projectText("updated")}</th><th>{projectText("delivery_date")}</th>{canEditManagement && <th>{projectText("priority")}</th>}{canEditManagement && <th>{projectText("collection_status")}</th>}<th>{projectText("actions")}</th></tr></thead><tbody>{filtered.map((project) => <tr key={project.id_proyect}><td><strong>{project.folio || `PRJ-${String(project.id_proyect).padStart(6, "0")}`}</strong></td><td><strong>{project.title || `${projectText("project")} #${project.id_proyect}`}</strong>{!project.requires_maquila && <span className="project-status no-maquila">{projectText("no_maquila_badge")}</span>}<p className="cell-value">{project.proyect_description}</p></td><td>{customerLabel(customerById[project.id_customer_supplier], projectText("customer"))}</td><td>{userLabel(userById[project.created_by], project.created_by, projectText("user"))}</td><td>{dateLabel(project.creation_date)}</td><td><span className={`project-status status-${project.proyect_status}`}>{statusLabel(project.proyect_status)}</span></td><td>{dateLabel(project.last_update_date)}</td><td>{dateLabel(project.delivery_date)}</td>{canEditManagement && <td>{project.priority ? <span className={`project-status priority-${project.priority}`}>{priorityLabel(project.priority)}</span> : "—"}</td>}{canEditManagement && <td>{project.collection_status ? <span className={`project-status collection-${project.collection_status}`}>{collectionStatusLabel(project.collection_status)}</span> : "—"}</td>}<td><ProjectActions project={project} /></td></tr>)}</tbody></table></div></div>}
+    {!loading && filtered.length > 0 && view === "table" && <div className="table-card"><div className="table-wrap"><table><thead><tr><th>{projectText("folio")}</th><th>{projectText("project")}</th><th>{projectText("customer")}</th><th>{projectText("creator")}</th><th>{projectText("created")}</th><th>{projectText("status")}</th><th>{projectText("updated")}</th><th>{projectText("delivery_date")}</th>{canEditManagement && <th>{projectText("priority")}</th>}{canEditManagement && <th>{projectText("collection_status")}</th>}<th>{projectText("actions")}</th></tr></thead><tbody>{filtered.map((project) => <tr key={project.id_proyect}><td><strong>{project.folio || "—"}</strong></td><td><strong>{project.title || `${projectText("project")} #${project.id_proyect}`}</strong>{!project.requires_maquila && <span className="project-status no-maquila">{projectText("no_maquila_badge")}</span>}<p className="cell-value">{project.proyect_description}</p></td><td>{customerLabel(customerById[project.id_customer_supplier], projectText("customer"))}</td><td>{userLabel(userById[project.created_by], project.created_by, projectText("user"))}</td><td>{dateLabel(project.creation_date)}</td><td><span className={`project-status status-${project.proyect_status}`}>{statusLabel(project.proyect_status)}</span></td><td>{dateLabel(project.last_update_date)}</td><td>{dateLabel(project.delivery_date)}</td>{canEditManagement && <td>{project.priority ? <span className={`project-status priority-${project.priority}`}>{priorityLabel(project.priority)}</span> : "—"}</td>}{canEditManagement && <td>{project.collection_status ? <span className={`project-status collection-${project.collection_status}`}>{collectionStatusLabel(project.collection_status)}</span> : "—"}</td>}<td><ProjectActions project={project} /></td></tr>)}</tbody></table></div></div>}
 
     {!loading && view === "board" && <div className="project-board">{statusCodes.map((status) => { const cards = filtered.filter((project) => project.proyect_status === status); return <section className={`project-column status-${status}`} key={status}><header><strong>{statusLabel(status)}</strong><span>{cards.length}</span></header><div>{cards.map((project) => <article className="project-card" key={project.id_proyect}><strong>{project.title || `${projectText("project")} #${project.id_proyect}`}</strong><p>{customerLabel(customerById[project.id_customer_supplier], projectText("customer"))}</p><small>{project.proyect_description}</small><ProjectActions project={project} /></article>)}{!cards.length && <p className="project-column-empty">{projectText("no_projects")}</p>}</div></section>; })}</div>}
 
