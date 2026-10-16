@@ -14,8 +14,26 @@ from scripts.exportar_catalogo_kpis import RUTA_DEL_FIXTURE, catalogo_del_regist
 # del contenedor del backend (que solo ve ./backend) la raiz es `/` y docker-compose.yml monta
 # ./frontend/src/kpi/fixtures en /frontend/src/kpi/fixtures, de solo lectura (mismo patron que
 # ./database -> /database para las pruebas de migraciones).
+#
+# Si la CARPETA no esta (un contenedor creado antes del montaje, o una copia del backend sin el frontend),
+# las pruebas que comparan se SALTAN con un mensaje que dice por que: no hay nada que comparar y eso no es un
+# defecto del codigo. Si la carpeta esta pero el archivo no, FALLA: alguien lo movio o lo borro.
 RAIZ = Path(__file__).resolve().parents[3]
 FIXTURE = RAIZ / RUTA_DEL_FIXTURE
+CARPETA_DEL_FIXTURE = FIXTURE.parent
+
+MENSAJE_SIN_MONTAJE = (
+    f"SALTADA, no verificada: no hay {CARPETA_DEL_FIXTURE}, asi que no se pudo comparar el catalogo del frontend con "
+    "KPI_REGISTRY. En el repo esa carpeta siempre existe; dentro del contenedor del backend la pone el montaje "
+    "`./frontend/src/kpi/fixtures:/frontend/src/kpi/fixtures:ro` de docker-compose.yml. Si es un contenedor creado "
+    "antes de ese montaje, recrealo (`docker compose up -d backend`); ver docs/despliegues/"
+    "2026-10-16_montaje_de_fixtures_de_kpi_en_el_compose.md."
+)
+
+MENSAJE_SIN_ARCHIVO = (
+    f"Existe {CARPETA_DEL_FIXTURE} pero no {FIXTURE.name}: alguien lo movio o lo borro. Se regenera con "
+    "scripts/exportar_catalogo_kpis.py (el comando esta en su cabecera)."
+)
 
 COMO_ACTUALIZAR = (
     "Para actualizarlo, desde la raiz del repo:\n"
@@ -46,16 +64,17 @@ def _diferencias(fixture: list[dict], registry: list[dict]) -> list[str]:
 
 
 class CatalogoDelRegistryTest(unittest.TestCase):
+    def setUp(self):
+        if not CARPETA_DEL_FIXTURE.is_dir():
+            self.skipTest(MENSAJE_SIN_MONTAJE)
+
     def test_el_fixture_esta_donde_se_espera(self):
-        # Si no aparece, la prueba de abajo no tiene con que comparar: que avise en vez de pasar vacia.
-        self.assertTrue(
-            FIXTURE.is_file(),
-            f"No se encontro {FIXTURE}. Dentro del contenedor del backend solo se ve ./backend: docker-compose.yml "
-            "monta ./frontend/src/kpi/fixtures en /frontend/src/kpi/fixtures. Si el montaje ya esta en el compose y "
-            "aun asi falta, recrea el contenedor: `docker compose up -d backend`.",
-        )
+        # La carpeta esta (si no, setUp salto la prueba): que el archivo no falte, para que la comparacion de abajo
+        # no pase vacia.
+        self.assertTrue(FIXTURE.is_file(), MENSAJE_SIN_ARCHIVO)
 
     def test_el_fixture_del_frontend_coincide_con_kpi_registry(self):
+        self.assertTrue(FIXTURE.is_file(), MENSAJE_SIN_ARCHIVO)
         fixture = json.loads(FIXTURE.read_text(encoding="utf-8"))
         registry = catalogo_del_registry()
         if fixture == registry:
@@ -71,6 +90,10 @@ class CatalogoDelRegistryTest(unittest.TestCase):
             + "\n\n"
             + COMO_ACTUALIZAR
         )
+
+
+class CatalogoExportadoTest(unittest.TestCase):
+    """No necesita el fixture: corre siempre, tambien en un contenedor sin el montaje."""
 
     def test_el_catalogo_exportado_son_los_campos_que_el_frontend_lee(self):
         # Si se agrega o se quita un campo aqui, el fixture y las pruebas del front deben enterarse a proposito.

@@ -83,6 +83,9 @@ El contenedor del backend solo ve `./backend`; el resto llega por montajes de so
 usan las pruebas del front). Las rutas se calculan igual en el repo y en el contenedor
 (`Path(__file__).parents[3]`). Si una de estas pruebas no encuentra su archivo después de
 actualizar el compose, el contenedor en marcha es anterior al montaje: `docker compose up -d backend`.
+La excepción es `test_kpi_catalogo_del_registry.py`: sin la carpeta montada **se salta** (con el motivo en
+el mensaje; pytest `-rs` lo muestra) en vez de fallar. Una prueba saltada no comprobó nada. Ver
+`docs/despliegues/2026-10-16_montaje_de_fixtures_de_kpi_en_el_compose.md`.
 
 `tests/test_services/test_kpi_catalogo_del_registry.py` falla si esa copia no coincide con
 `KPI_REGISTRY` (KPI nuevo, o cambio de módulo, unidad o nombre). El mensaje trae el comando para
