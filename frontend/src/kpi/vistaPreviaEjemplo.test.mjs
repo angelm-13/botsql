@@ -49,6 +49,21 @@ test("el reporte PDF solo captura las tarjetas del tablero, nunca la vista previ
   assert.ok(!/kpi-ejemplo[^"]*kpi-widget-card|kpi-widget-card[^"]*kpi-ejemplo/.test(dashboard), "el marco de ejemplo no es una tarjeta");
 });
 
+test("Dashboard.jsx le pasa al selector TODOS los textos que este trae por omision", () => {
+  // Un texto que el Dashboard no pasa se queda con su valor por omision (espanol) en cualquier idioma: asi se
+  // quedaron sin traducir `modulos` (aria-label) y `elegidosEnModulo` (tooltip).
+  const selector = readFileSync(new URL("../components/kpi-widgets/SelectorDeKpi.jsx", import.meta.url), "utf8");
+  const porOmision = selector.slice(selector.indexOf("const TEXTOS_POR_OMISION = {"));
+  const claves = (bloque) => [...bloque.matchAll(/^\s+([a-zA-Z]+): /gm)].map((m) => m[1]).sort();
+  const declarados = claves(porOmision.slice(0, porOmision.indexOf("};")));
+  const dashboard = readFileSync(new URL("../pages/Dashboard.jsx", import.meta.url), "utf8");
+  const desdeSelector = dashboard.slice(dashboard.indexOf("<SelectorDeKpi"));
+  const inicio = desdeSelector.indexOf("textos={{");
+  const pasados = claves(desdeSelector.slice(inicio + "textos={{".length, desdeSelector.indexOf("}}", inicio)));
+  assert.ok(declarados.length >= 8, `no se leyeron los textos por omision del selector (${declarados})`);
+  assert.deepEqual(pasados, declarados, "Dashboard.jsx debe pasar exactamente los textos que SelectorDeKpi declara por omision");
+});
+
 test("todos los textos de la vista previa y del selector existen en es, en, pt y de", () => {
   const dashboard = readFileSync(new URL("../pages/Dashboard.jsx", import.meta.url), "utf8");
   // 1) `example_*`: la vista previa con datos de ejemplo; `selector_*`: los textos nuevos del selector de KPI.
@@ -59,7 +74,10 @@ test("todos los textos de la vista previa y del selector existen en es, en, pt y
   const textosDelSelector = desdeSelector.slice(desdeSelector.indexOf("textos={{"), desdeSelector.indexOf("}}", desdeSelector.indexOf("textos={{")));
   const pares = [...textosDelSelector.matchAll(/tx\("([a-z_]+)",\s*"((?:[^"\\]|\\.)*)"\)/g)].map((m) => ({ clave: m[1], respaldo: m[2] }));
   const delSelector = pares.map((par) => par.clave);
-  for (const clave of ["kpi_search_placeholder", "kpi_search_empty", "kpi_variables_group", "kpi_color_choose", "selector_combinables", "selector_variables_ayuda"]) {
+  for (const clave of [
+    "kpi_search_placeholder", "kpi_search_empty", "kpi_variables_group", "kpi_color_choose", "selector_combinables",
+    "selector_variables_ayuda", "selector_modulos", "selector_elegidos_en_modulo",
+  ]) {
     assert.ok(delSelector.includes(clave), `el selector recibe ${clave}: la prueba tiene que vigilarlo`);
   }
   for (const clave of ["example_banner", "example_badge", "example_view", "example_hide", "example_no_data_hint"]) {
@@ -86,12 +104,12 @@ test("todos los textos de la vista previa y del selector existen en es, en, pt y
     assert.ok(!PALABRAS_DE_PERMISO[idioma].test(catalogos[idioma].example_banner), `${idioma}: el aviso no debe hablar de permisos`);
   }
   assert.equal(catalogos.es.selector_combinables, "Combinables (sin desglose)");
-  // Traducidos de verdad: ninguno de en/pt/de repite el texto en espanol. Unica excepcion: "Variables" es igual en
-  // ingles (es la misma palabra), no una traduccion que falte.
-  const IGUAL_EN_INGLES = new Set(["kpi_variables_group"]);
+  // Traducidos de verdad: ninguno de en/pt/de repite el texto en espanol. Unicas excepciones, palabras que se escriben
+  // igual (no una traduccion que falte): "Variables" en ingles y "Módulos" en portugues.
+  const IGUAL_QUE_EN_ESPANOL = { kpi_variables_group: ["en"], selector_modulos: ["pt"] };
   for (const idioma of ["en", "pt", "de"]) {
     for (const clave of claves) {
-      if (idioma === "en" && IGUAL_EN_INGLES.has(clave)) continue;
+      if (IGUAL_QUE_EN_ESPANOL[clave]?.includes(idioma)) continue;
       assert.notEqual(catalogos[idioma][clave], catalogos.es[clave], `${idioma}: ${clave} sin traducir`);
     }
   }

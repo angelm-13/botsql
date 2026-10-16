@@ -1951,6 +1951,8 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
                   variablesAyuda: tx("selector_variables_ayuda", "Todos los KPIs sin desglose, de cualquier módulo: sirven para combinar en un mismo gráfico."),
                   combinables: tx("selector_combinables", "Combinables (sin desglose)"),
                   elegirColor: tx("kpi_color_choose", "Elegir color"),
+                  modulos: tx("selector_modulos", "Módulos"),
+                  elegidosEnModulo: tx("selector_elegidos_en_modulo", "elegidos en este módulo"),
                 }}
               />
             </div>

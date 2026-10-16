@@ -4751,6 +4751,8 @@
     "example_hide": "Ocultar ejemplo",
     "selector_combinables": "Combinables (sin desglose)",
     "selector_variables_ayuda": "Todos los KPIs sin desglose, de cualquier módulo: sirven para combinar en un mismo gráfico.",
+    "selector_modulos": "Módulos",
+    "selector_elegidos_en_modulo": "elegidos en este módulo",
     "kpi_variables_group": "Variables",
     "kpi_search_placeholder": "Buscar KPI…",
     "kpi_search_empty": "Ningún KPI coincide con la búsqueda.",

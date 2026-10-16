@@ -58,6 +58,19 @@ test("abre en el primer modulo y muestra SOLO sus KPIs, no la lista completa", (
   assert.ok(activo[0].html.includes("--tinte"), "y su color propio");
 });
 
+test("los textos del selector se pueden traducir: el aria-label de los modulos y el tooltip de los elegidos", () => {
+  // Por omision, en espanol.
+  const porOmision = pintar({ seleccionados: ["1", "3", "4"], multiple: true });
+  assert.ok(porOmision.includes('aria-label="Módulos"'));
+  assert.ok(porOmision.includes('title="2 elegidos en este módulo"') && porOmision.includes('title="1 elegidos en este módulo"'));
+  // Con los textos que manda el Dashboard en otro idioma.
+  const textos = { modulos: "Modules", elegidosEnModulo: "selected in this module" };
+  const traducido = pintar({ seleccionados: ["1", "3", "4"], multiple: true, textos });
+  assert.ok(traducido.includes('aria-label="Modules"') && !traducido.includes('aria-label="Módulos"'));
+  assert.ok(traducido.includes('title="2 selected in this module"') && traducido.includes('title="1 selected in this module"'));
+  assert.ok(!traducido.includes("elegidos en este módulo"));
+});
+
 test("abre en el modulo del primer KPI ya elegido", () => {
   const enInventario = pintar({ seleccionados: ["4"] });
   assert.deepEqual(gruposVisibles(enInventario), ["inventario"]);

@@ -3421,6 +3421,8 @@
     "example_hide": "Beispiel ausblenden",
     "selector_combinables": "Kombinierbar (ohne Aufschlüsselung)",
     "selector_variables_ayuda": "Alle KPIs ohne Aufschlüsselung aus allen Modulen: Sie lassen sich in einem Diagramm kombinieren.",
+    "selector_modulos": "Module",
+    "selector_elegidos_en_modulo": "in diesem Modul ausgewählt",
     "kpi_variables_group": "Variablen",
     "kpi_search_placeholder": "KPI suchen…",
     "kpi_search_empty": "Kein KPI entspricht der Suche.",
