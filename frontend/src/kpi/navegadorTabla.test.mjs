@@ -14,14 +14,28 @@
 // REAL de esas consultas la prueban las pruebas de Postgres del backend
 // (test_kpi_material_prestado_actual_servidor.py); esto prueba el cableado y el aspecto en un Chrome de verdad.
 //
-// PENDIENTE: esta prueba (y su escenario "mas de 50 renglones") se verifica A MANO en el navegador por ahora.
-// Se vio intermitente: cada corrida con el Chrome sin terminar deja unos 10 procesos de Chromium vivos y, al
-// acumularse, las siguientes se cuelgan o fallan (sospecha: el `spawnSync` de abajo no los limpia cuando el
-// Chrome agota su tiempo). Sin arreglar todavia. Mientras tanto, no correrla en automatico.
+// OPT-IN: esta prueba NO corre por omision. Hay que pedirla con `KPI_CHROME_TESTS=1` (y tener Chrome/Chromium o
+// CHROME_BIN); sin la variable se SALTA con un mensaje y `node --test src/kpi/` / `npm test` ya no la ejecutan.
 //
-// Sin dependencias nuevas: esbuild de Vite + el Chrome que haya (o CHROME_BIN); sin
-// ninguno, se SALTA. Correr los archivos de Chrome EN SERIE (`node --test --test-concurrency=1`): dos Chrome
-// a la vez pelean por el mismo perfil.
+//   KPI_CHROME_TESTS=1 node --test --test-concurrency=1 src/kpi/navegadorTabla.test.mjs
+//
+// Por que: es INTERMITENTE. Medido el 2026-10-16 en un Chromium 149 headless dentro de un contenedor: falla entre
+// el 10 % y el 40 % de las corridas (una comparacion intercalada de 25 rondas dio 6 y 10 fallas segun la version del
+// codigo, y otra tanda 8 de 20 contra 2 de 20: la tasa cambia con la carga de la maquina), siempre en las mismas dos
+// comprobaciones del escenario de "mas de 50 renglones": «al abrir 'Ver todos' solo se carga la primera pagina»
+// (llegan 100 renglones en vez de 50) y «'Mostrar mas' trae otra pagina del servidor» (100 -> 113). Fallaba igual
+// antes de los cambios de ese dia, asi que no es una regresion de ellos.
+//
+// Lo que NO es: la sospecha anterior (procesos de Chromium que se acumulan y cuelgan las corridas siguientes) no se
+// confirmo -- despues de cada corrida no quedaba ningun Chromium vivo, y la falla es una asercion de la propia prueba
+// con Chrome devolviendo datos. La CAUSA DE FONDO no se ha investigado: puede ser de la prueba, del tiempo virtual
+// (`--virtual-time-budget`) o de la propia tabla. Hasta saberlo, el escenario se verifica tambien A MANO en el navegador.
+//
+// Antes este comentario decia "no correrla en automatico", pero `node --test src/kpi/` la corria sola en cualquier
+// maquina con Chrome; por eso ahora lo impide la propia prueba.
+//
+// Sin dependencias nuevas: esbuild de Vite + el Chrome que haya (o CHROME_BIN). Correr los archivos de Chrome EN
+// SERIE (`node --test --test-concurrency=1`): dos Chrome a la vez pelean por el mismo perfil.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -408,7 +422,15 @@ async function construir(nombrePagina) {
   return pagina;
 }
 
-test("la tabla de material prestado en Chrome, con la respuesta REAL del backend, a tres anchos", { skip: CHROME ? false : "no hay Chrome/Chromium (define CHROME_BIN)" }, async () => {
+// Opt-in: ver el comentario de arriba. `1`, `true` o `si`, como las demas variables de entorno del proyecto.
+const PEDIDA = ["1", "true", "si"].includes(String(process.env.KPI_CHROME_TESTS || "").trim().toLowerCase());
+const MOTIVO_DE_SALTO = !CHROME
+  ? "no hay Chrome/Chromium (define CHROME_BIN)"
+  : !PEDIDA
+    ? "opt-in: es intermitente (ver el comentario del archivo); define KPI_CHROME_TESTS=1 para correrla"
+    : false;
+
+test("la tabla de material prestado en Chrome, con la respuesta REAL del backend, a tres anchos", { skip: MOTIVO_DE_SALTO }, async () => {
   const pagina = await construir("tabla");
   for (const [modo, banderas] of [["normal", []], ["con movimiento reducido", ["--force-prefers-reduced-motion"]]]) {
     const corrida = spawnSync(CHROME, ["--headless=new", "--disable-gpu", "--no-sandbox", ...banderas, "--window-size=1500,4000", "--virtual-time-budget=60000", "--dump-dom", pathToFileURL(pagina).href], { encoding: "utf8", timeout: 180000, maxBuffer: 64 * 1024 * 1024 });
