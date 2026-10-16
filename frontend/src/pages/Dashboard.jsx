@@ -42,9 +42,9 @@ import {
   DESFASES_DE_COMPARACION, ETIQUETA_RANGO_POR_OMISION, RANGOS_RELATIVOS, RANGO_PERSONALIZADO, fechaLocalIso,
   parametrosEfectivos, periodoAnterior, rangoDesfasado, resolverRangoRelativo,
 } from "../kpi/kpiRango.js";
-import { datosDeEjemplo, filasVivasDeEjemplo, rangoVacio } from "../kpi/datosDeEjemplo.js";
+import { datosDeEjemplo, filasVivasDeEjemplo } from "../kpi/datosDeEjemplo.js";
 import {
-  MOTIVO_SIN_DATOS, catalogoConEjemplos, esIdDeEjemplo, hayEjemploEnSeleccion, sePuedeGuardar,
+  MOTIVO_SIN_DATOS, catalogoConEjemplos, esIdDeEjemplo, hayEjemploEnSeleccion, ofreceVerEjemplo, sePuedeGuardar,
 } from "../kpi/vistaPreviaDeEjemplo.js";
 import {
   filasTablaPrestamo, propsDona, propsNumero,
@@ -1270,10 +1270,9 @@ function VistaPreviaEditor({ widget, kpiCatalog, userLabel, productLabel, format
   const claveBorrador = JSON.stringify(widget);
   useEffect(() => { setVerEjemplo(false); }, [claveBorrador]);
   const kpiReal = datos.kpiInfos.length === 1 ? datos.kpiInfos[0] : null;
-  const sinDatos = Boolean(
-    kpiReal && !datos.esEjemplo && !datos.esTablaVivo && !datos.loading && !pendiente && !datos.error
-    && datos.snapshots.length === 1 && rangoVacio(datos.snapshots[0]),
-  );
+  const sinDatos = ofreceVerEjemplo({
+    kpiReal, esEjemplo: datos.esEjemplo, esTablaVivo: datos.esTablaVivo, loading: datos.loading, pendiente, error: datos.error, snapshots: datos.snapshots,
+  });
   const datosDeVista = verEjemplo && sinDatos
     ? { ...datos, snapshots: [datosDeEjemplo(kpiReal, { textos: textosEjemplo })] }
     : datos;
@@ -1312,7 +1311,6 @@ function VistaPreviaEditor({ widget, kpiCatalog, userLabel, productLabel, format
 // eslint-disable-next-line react-refresh/only-export-components
 export function MarcoDeEjemplo({ tx, motivo, children }) {
   const razon = {
-    sin_permiso: tx("example_reason_sin_permiso", "No disponible para tu rol."),
     sin_datos: tx("example_reason_sin_datos", "Aún no tiene datos."),
     modulo_no_habilitado: tx("example_reason_modulo", "Módulo no habilitado."),
   }[motivo];
@@ -1989,7 +1987,6 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog: kpiCatalog
                   combinables: tx("selector_combinables", "Combinables (sin desglose)"),
                   elegirColor: tx("kpi_color_choose", "Elegir color"),
                   ejemplo: tx("example_tag", "Ejemplo"),
-                  motivoSinPermiso: tx("example_reason_sin_permiso", "No disponible para tu rol."),
                   motivoModulo: tx("example_reason_modulo", "Módulo no habilitado."),
                 }}
               />

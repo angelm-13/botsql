@@ -4748,7 +4748,6 @@
     "example_banner": "Vista previa con datos de ejemplo. Así se vería este KPI; no está disponible para tu rol o aún no tiene datos",
     "example_badge": "EJEMPLO",
     "example_tag": "Ejemplo",
-    "example_reason_sin_permiso": "No disponible para tu rol.",
     "example_reason_sin_datos": "Aún no tiene datos.",
     "example_reason_modulo": "Módulo no habilitado.",
     "example_view": "Ver ejemplo",

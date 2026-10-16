@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test, { before } from "node:test";
 import { cargarRender } from "./bundleRender.mjs";
+import { catalogoConEjemplos } from "./vistaPreviaDeEjemplo.js";
 
 let pintarSelector;
 
@@ -84,9 +85,12 @@ test("con un solo modulo en el catalogo no hay fila de botones, pero si el titul
   assert.ok(!html.includes("kpi-selector-modulos"));
   assert.deepEqual(gruposVisibles(html), ["operaciones"]);
   assert.ok(html.includes("Modulo operaciones"), "sin botones, el titulo dice en que modulo se esta");
-  // Un catalogo que solo trae sin desglose de UN modulo tiene dos pestanas: su modulo y Variables.
+  // Un catalogo que solo trae sin desglose de UN modulo tampoco: «Variables» es la vista transversal y con un solo
+  // modulo no hay nada que cruzar (seria repetir sus combinables).
   const soloVariables = CATALOGO.filter((kpi) => kpi.dimensiones.includes("global"));
-  assert.deepEqual(botonesDeModulo(pintarSelector({ catalogo: soloVariables, seleccionados: [], multiple: false })).map((b) => b.clave), ["facturacion", "variables"]);
+  const htmlSoloVariables = pintarSelector({ catalogo: soloVariables, seleccionados: [], multiple: false });
+  assert.deepEqual(botonesDeModulo(htmlSoloVariables), []);
+  assert.deepEqual(gruposVisibles(htmlSoloVariables), ["facturacion"]);
 });
 
 test("un modulo que no llega en el catalogo (plan o permiso) no tiene boton", () => {
@@ -245,4 +249,54 @@ test("con los 38 KPIs del registry: conteos por pestana y los 6 sin desglose de 
   assert.ok(filas(variables).every((fila) => fila.includes("kpi-selector-modulo-tag")), "las 9 tarjetas de Variables llevan su modulo");
   assert.deepEqual(etiquetaDeModulo(variables, "Ticket promedio"), ["restaurante", "Modulo restaurante"]);
   assert.deepEqual(etiquetaDeModulo(variables, "Incidencias pendientes"), ["operaciones", "Modulo operaciones"]);
+});
+
+// --- un rol solo ve los KPIs que tiene permitidos ------------------------------------------------------
+// El catalogo del selector es `GET /kpi_definition/` (solo lo permitido) mas, antes, los ejemplos de lo que no
+// tenia permiso: esos ya no entran.
+const SIN_PERMISO = Array.from({ length: 10 }, (_, i) => ({
+  clave: `otro_${i}`, etiqueta: `Otro KPI ${i}`, unidad: "numero", dimensiones: ["empleado"], modulo: i % 2 ? "restaurante" : "inventario",
+  modo: "snapshot", motivo: "sin_permiso",
+}));
+const UN_KPI = [KPI(21, "Asistencias del mes", "operaciones", "numero")];
+
+test("un rol con UN solo KPI ve una pestana, una tarjeta y ningun ejemplo de otros", () => {
+  // Como lo arma el editor: el catalogo real mas lo que mande /no_disponibles (aunque un backend viejo mande 10 sin permiso).
+  const html = pintarSelector({ catalogo: catalogoConEjemplos(UN_KPI, SIN_PERMISO), seleccionados: [], multiple: false });
+  assert.deepEqual(gruposVisibles(html), ["operaciones"], "una sola pestana (un solo modulo: sin fila de botones, con su titulo)");
+  assert.deepEqual(botonesDeModulo(html), []);
+  assert.equal(filas(html).length, 1, "una tarjeta");
+  assert.ok(filas(html)[0].includes("Asistencias del mes"));
+  assert.ok(!html.includes("kpi-editor-kpi-ejemplo") && !html.includes("Otro KPI"), "ningun ejemplo de otros ni su nombre");
+  assert.ok(html.includes("Modulo operaciones"), "el titulo del modulo con su conteo");
+  assert.match(html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " "), /Modulo operaciones 1/);
+  // Un solo KPI sin desglose: su modulo, sin una segunda pestana «Variables» que repita lo mismo.
+  const global = pintarSelector({ catalogo: [KPI(22, "Pendientes hoy", "operaciones", "numero", { dimensiones: ["global"] })], seleccionados: [], multiple: false });
+  assert.deepEqual(gruposVisibles(global), ["operaciones"]);
+  assert.equal(filas(global).length, 1);
+  assert.ok(global.includes("Combinables (sin desglose)"));
+});
+
+test("las pestanas sin KPIs permitidos no aparecen y los contadores son solo de lo permitido", () => {
+  // Un rol con 3 KPIs en 2 modulos: dos pestanas (+ Variables) y nada de inventario ni restaurante.
+  const rol = [
+    KPI(31, "Asistencias del mes", "operaciones", "numero"),
+    KPI(32, "Retardos", "operaciones", "numero"),
+    KPI(33, "Ventas del restaurante", "restaurante", "moneda", { dimensiones: ["global"] }),
+  ];
+  const html = pintarSelector({ catalogo: catalogoConEjemplos(rol, SIN_PERMISO), seleccionados: [], multiple: false });
+  const botones = botonesDeModulo(html);
+  assert.deepEqual(botones.map((b) => b.clave), ["operaciones", "restaurante", "variables"]);
+  assert.match(botones[0].texto, /Modulo operaciones 2/);
+  assert.match(botones[1].texto, /Modulo restaurante 1/, "cuenta solo el KPI que SI tiene, no los 5 ejemplos del modulo");
+  assert.match(botones[2].texto, /Variables 1/);
+  assert.ok(!botones.some((b) => b.clave === "inventario"), "sin KPIs permitidos de inventario no hay pestana");
+});
+
+test("el superusuario ve todo como antes: los 38 KPIs, 7 pestanas, sin ejemplos", () => {
+  // Un superusuario no recibe ejemplos (todo lo tiene permitido): el catalogo es el registry completo.
+  const registro = REGISTRY;
+  const html = pintarSelector({ catalogo: catalogoConEjemplos(registro, []), seleccionados: [], multiple: false });
+  assert.deepEqual(botonesDeModulo(html).map((b) => b.clave), ["operaciones", "inventario", "facturacion", "laboratorio", "documentos", "restaurante", "variables"]);
+  assert.ok(!html.includes("kpi-editor-kpi-ejemplo"));
 });

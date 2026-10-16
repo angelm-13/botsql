@@ -322,12 +322,13 @@ def list_kpi_definitions(user_data):
     return jsonify({'items': items})
 
 
-# Motivos por los que un KPI no esta disponible para quien pide la vista previa. Solo estos valores salen de la ruta.
-MOTIVO_SIN_PERMISO = 'sin_permiso'
+# Motivo por el que un KPI sale en la vista previa. Un KPI SIN PERMISO del rol ya no se ofrece nunca (decision de
+# producto: un rol solo ve en "Agregar grafico" los KPIs que tiene habilitados; los demas ni se listan ni se
+# da a entender que existen). Queda un unico motivo, detras de dos candados apagados por omision.
 MOTIVO_MODULO_NO_HABILITADO = 'modulo_no_habilitado'
-# Interruptor del SERVIDOR (apagado por omision) para ofrecer tambien los KPIs de modulos fuera del plan, con
-# el motivo `modulo_no_habilitado`. Sin el, el parametro de la peticion no hace nada: un cliente no se entera
-# de que existen KPIs de modulos que no compro.
+# Interruptor del SERVIDOR (apagado por omision) para ofrecer los KPIs de modulos fuera del plan, con el motivo
+# `modulo_no_habilitado`. Sin el, el parametro de la peticion no hace nada: un cliente no se entera de que
+# existen KPIs de modulos que no compro.
 PREVIEW_MODULOS_NO_HABILITADOS_ENV = 'KPI_PREVIEW_INCLUIR_MODULOS_NO_HABILITADOS'
 
 
@@ -335,20 +336,21 @@ PREVIEW_MODULOS_NO_HABILITADOS_ENV = 'KPI_PREVIEW_INCLUIR_MODULOS_NO_HABILITADOS
 @token_required
 @require_entity_permission('kpi_definition', 'read')
 def list_unavailable_kpi_definitions(user_data):
-    """KPIs que el usuario NO puede usar, para mostrarlos con datos de EJEMPLO en el selector.
+    """KPIs de modulos FUERA DEL PLAN, para mostrarlos con datos de EJEMPLO en el selector (solo con los dos candados).
+
+    Los KPIs a los que el rol no tiene permiso ya NO salen aqui: un rol solo ve los suyos (`GET /kpi_definition/`).
+    Sin los dos candados la lista siempre va vacia: el interruptor del servidor
+    (`KPI_PREVIEW_INCLUIR_MODULOS_NO_HABILITADOS`) Y la peticion (`incluir_modulo_no_habilitado=1`).
 
     Devuelve solo metadatos del KPI (los mismos que `GET /kpi_definition/`: etiqueta, modulo, unidad,
     dimension, graficas, categorias...) mas el `motivo`. Nada de conteos, ids ni snapshots, y tampoco
     quien tiene el permiso: ni siquiera el `id_kpi_definition`, porque la vista previa no consulta ni
     guarda nada (la clave basta para identificarlo).
-
-    Por omision solo salen los KPIs de modulos habilitados a los que el rol no tiene permiso
-    (`sin_permiso`). Los de modulos fuera del plan solo salen si el servidor lo permite
-    (`KPI_PREVIEW_INCLUIR_MODULOS_NO_HABILITADOS`) Y la peticion lo pide (`incluir_modulo_no_habilitado=1`).
     """
     por_servidor = str(os.getenv(PREVIEW_MODULOS_NO_HABILITADOS_ENV) or '').strip().lower() in ('1', 'true', 'si')
     pedido = str(request.args.get('incluir_modulo_no_habilitado') or '').strip().lower() in ('1', 'true', 'si')
-    incluir_fuera_del_plan = por_servidor and pedido
+    if not (por_servidor and pedido):
+        return jsonify({'items': []})
     with transaction_context() as db:
         kpis = db.scalars(
             select(KpiDefinition).where(KpiDefinition.deletion_date.is_(None))
@@ -357,17 +359,13 @@ def list_unavailable_kpi_definitions(user_data):
         for kpi in kpis:
             if KPI_POR_CLAVE.get(kpi.clave) is None:
                 continue
-            if has_kpi_permission(db, user_data, kpi.id_kpi_definition):
-                continue
+            # Solo los de modulos fuera del plan: un KPI de un modulo habilitado al que el rol no tiene
+            # permiso no se ofrece (ni su existencia).
             if modulo_habilitado(kpi.modulo):
-                motivo = MOTIVO_SIN_PERMISO
-            elif incluir_fuera_del_plan:
-                motivo = MOTIVO_MODULO_NO_HABILITADO
-            else:
                 continue
             metadatos = _con_metadatos_del_registry(kpi)
             metadatos.pop('id_kpi_definition', None)
-            items.append({**metadatos, 'motivo': motivo})
+            items.append({**metadatos, 'motivo': MOTIVO_MODULO_NO_HABILITADO})
     return jsonify({'items': items})
 
 

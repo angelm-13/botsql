@@ -23,13 +23,17 @@ const posicionDeModulo = (clave) => {
   return posicion === -1 ? ORDEN_DE_MODULOS.length : posicion;
 };
 
+/** Cuantos modulos distintos hay en el catalogo (el que le llega al rol: solo sus KPIs permitidos). */
+const modulosDelCatalogo = (catalogo) => new Set((catalogo || []).map((kpi) => kpi.modulo).filter(Boolean)).size;
+
 /** El catalogo agrupado por modulo, con "Variables" como una vista transversal al final.
  *
  * - Cada grupo de modulo trae TODOS los KPIs de ese modulo (`kpis`), tambien los sin
  *   desglose: primero los que tienen desglose (`conDesglose`) y al final los
  *   combinables (`combinables`), que la pantalla muestra en su propia seccion.
  *   Un modulo cuyos KPIs son todos sin desglose tambien tiene su grupo.
- * - "Variables" repite los KPIs sin desglose de TODOS los modulos. Es el MISMO objeto
+ * - "Variables" repite los KPIs sin desglose de TODOS los modulos (solo si el catalogo tiene mas de un
+ *   modulo: con uno solo es la misma lista que sus combinables). Es el MISMO objeto
  *   de KPI (mismo id) que en su modulo: elegirlo en una pestana o en otra es lo mismo.
  * - El modulo de cada KPI es `kpi.modulo` (de `kpi_definition.modulo`); un modulo nuevo
  *   (logistica, RH, POS...) tiene su grupo solo, sin tocar nada aqui.
@@ -60,7 +64,10 @@ export function agruparKpis(catalogo, busqueda = "") {
       clave: modulo, modulo, esVariables: false, conDesglose, combinables, kpis: [...conDesglose, ...combinables],
     }))
     .sort((a, b) => posicionDeModulo(a.clave) - posicionDeModulo(b.clave) || a.clave.localeCompare(b.clave));
-  if (variables.length) {
+  // "Variables" es la vista TRANSVERSAL: con un solo modulo en el catalogo (un rol con pocos KPIs) no hay nada
+  // que cruzar y seria repetir los combinables de esa unica pestana. Se decide con el catalogo COMPLETO, no con
+  // el resultado de la busqueda, para que la pestana no aparezca y desaparezca al teclear.
+  if (variables.length && modulosDelCatalogo(catalogo) > 1) {
     grupos.push({ clave: GRUPO_VARIABLES, modulo: null, esVariables: true, conDesglose: [], combinables: variables, kpis: variables });
   }
   return grupos;
@@ -118,7 +125,8 @@ export function grupoInicial(grupos, catalogo, seleccionados) {
   return grupos.some((grupo) => grupo.clave === clave) ? clave : grupos[0]?.clave ?? null;
 }
 
-/** Lo que muestra cada boton de modulo: cuantos KPIs tiene (el TOTAL del modulo, con sus combinables), cuantos coinciden con
+/** Lo que muestra cada boton de modulo: cuantos KPIs tiene (el TOTAL del modulo, con sus combinables; el catalogo ya trae
+ * solo los KPIs permitidos del rol, asi que un modulo sin KPIs permitidos no tiene boton), cuantos coinciden con
  * la busqueda actual y cuantos de los YA ELEGIDOS caen ahi (la seleccion se
  * conserva al cambiar de modulo, y esto es lo que la deja ver). Solo aparecen los
  * modulos con al menos un KPI en el catalogo: lo que no llega en

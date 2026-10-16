@@ -4,7 +4,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test, { before } from "node:test";
 import { cargarRender } from "./bundleRender.mjs";
-import { catalogoConEjemplos, esIdDeEjemplo, hayEjemploEnSeleccion, kpiDeEjemplo, sePuedeGuardar } from "./vistaPreviaDeEjemplo.js";
+import {
+  catalogoConEjemplos, esIdDeEjemplo, hayEjemploEnSeleccion, kpiDeEjemplo, ofreceVerEjemplo, sePuedeGuardar,
+} from "./vistaPreviaDeEjemplo.js";
 import { motivoParaNoCombinar, widgetDeBorrador } from "./kpiParametros.js";
 
 let pintarSelector;
@@ -15,17 +17,48 @@ before(async () => {
 });
 
 const REAL = { id_kpi_definition: 4, clave: "ingresos_totales", etiqueta: "Ingresos", unidad: "moneda", dimensiones: ["global"], modulo: "facturacion", modo: "snapshot" };
-const NO_DISPONIBLE = { clave: "mesas_ocupadas", etiqueta: "Mesas ocupadas", unidad: "numero", dimensiones: ["estado"], modulo: "restaurante", modo: "snapshot", motivo: "sin_permiso", descripcion: "Foto de hoy" };
-const CATALOGO = catalogoConEjemplos([REAL], [NO_DISPONIBLE, { ...REAL, id_kpi_definition: undefined, motivo: "sin_permiso" }]);
+const NO_DISPONIBLE = { clave: "mesas_ocupadas", etiqueta: "Mesas ocupadas", unidad: "numero", dimensiones: ["estado"], modulo: "restaurante", modo: "snapshot", motivo: "modulo_no_habilitado", descripcion: "Foto de hoy" };
+const CATALOGO = catalogoConEjemplos([REAL], [NO_DISPONIBLE, { ...REAL, id_kpi_definition: undefined, motivo: "modulo_no_habilitado" }]);
 
 test("un KPI no disponible entra al catalogo como ejemplo con un id que nunca es numerico", () => {
   const ejemplo = CATALOGO.find((k) => k.clave === "mesas_ocupadas");
   assert.equal(ejemplo.id_kpi_definition, "ejemplo:mesas_ocupadas");
   assert.equal(esIdDeEjemplo(ejemplo.id_kpi_definition), true);
   assert.equal(ejemplo.esEjemplo, true);
-  assert.equal(ejemplo.motivo, "sin_permiso");
+  assert.equal(ejemplo.motivo, "modulo_no_habilitado");
   assert.equal(CATALOGO.filter((k) => k.clave === "ingresos_totales").length, 1, "uno que SI esta disponible no se duplica");
   assert.equal(kpiDeEjemplo({ clave: "x" }, "sin_datos").motivo, "sin_datos");
+});
+
+test("un KPI sin permiso ya no se ofrece como ejemplo: un rol solo ve los suyos", () => {
+  const sinPermiso = (clave) => ({ clave, etiqueta: clave, unidad: "numero", dimensiones: ["empleado"], modulo: "operaciones", modo: "snapshot", motivo: "sin_permiso" });
+  const diez = Array.from({ length: 10 }, (_, i) => sinPermiso(`otro_${i}`));
+  // El rol solo tiene REAL: un backend viejo que mande 10 sin_permiso no los destapa.
+  assert.deepEqual(catalogoConEjemplos([REAL], diez), [REAL]);
+  assert.equal(catalogoConEjemplos([REAL], diez).filter((k) => k.esEjemplo).length, 0, "ningun ejemplo de otros");
+  // Un fuera-del-plan (candados apagados por omision) sigue entrando como ejemplo; uno sin permiso mezclado con el, no.
+  const mezclado = catalogoConEjemplos([REAL], [NO_DISPONIBLE, ...diez]);
+  assert.deepEqual(mezclado.filter((k) => k.esEjemplo).map((k) => k.clave), ["mesas_ocupadas"]);
+});
+
+test("«Ver ejemplo» solo se ofrece para un KPI REAL (permitido) cuya consulta del rango volvio vacia", () => {
+  const vacio = { rango_a: { total: 0, por_empleado: {}, por_periodo: {} } };
+  const conDatos = { rango_a: { total: 3, por_empleado: { a: 3 }, por_periodo: {} } };
+  const listo = { kpiReal: REAL, esEjemplo: false, esTablaVivo: false, loading: false, pendiente: false, error: null, snapshots: [vacio] };
+  assert.equal(ofreceVerEjemplo(listo), true, "permitido y sin datos: el boton");
+  assert.equal(ofreceVerEjemplo({ ...listo, snapshots: [conDatos] }), false, "con datos no hay nada que ejemplificar");
+  assert.equal(ofreceVerEjemplo({ ...listo, snapshots: [null] }), true, "una respuesta sin rango tambien es vacia");
+  assert.equal(ofreceVerEjemplo({ ...listo, kpiReal: null }), false, "sin KPI real (o con varios) no hay boton");
+  assert.equal(ofreceVerEjemplo({ ...listo, loading: true }), false, "mientras carga no");
+  assert.equal(ofreceVerEjemplo({ ...listo, pendiente: true }), false, "ni con el borrador sin asentar");
+  assert.equal(ofreceVerEjemplo({ ...listo, error: "x" }), false, "ni con un error");
+  assert.equal(ofreceVerEjemplo({ ...listo, esTablaVivo: true }), false, "una tabla en vivo no tiene rango vacio");
+  assert.equal(ofreceVerEjemplo({ ...listo, esEjemplo: true }), false, "un ejemplo no ofrece ejemplo");
+  assert.equal(ofreceVerEjemplo({ ...listo, snapshots: [vacio, vacio] }), false, "solo con un KPI");
+  // El boton sigue cableado en la pantalla con esa decision y los textos de siempre.
+  const dashboard = readFileSync(new URL("../pages/Dashboard.jsx", import.meta.url), "utf8");
+  assert.ok(dashboard.includes("const sinDatos = ofreceVerEjemplo("), "el editor decide con ofreceVerEjemplo");
+  assert.ok(dashboard.includes('tx("example_view", "Ver ejemplo")') && dashboard.includes("{sinDatos && ("));
 });
 
 test("un ejemplo nunca se puede guardar: ni el borrador ni la barrera final", () => {
@@ -64,13 +97,14 @@ test("el selector marca los ejemplos con una etiqueta y los bloquea al combinar 
 });
 
 test("el aviso lleva el texto acordado y el sello EJEMPLO, con su motivo", () => {
-  const html = pintarMarcoEjemplo({ motivo: "sin_permiso" });
+  const html = pintarMarcoEjemplo({ motivo: "sin_datos" });
   assert.ok(html.includes("Vista previa con datos de ejemplo. Así se vería este KPI; no está disponible para tu rol o aún no tiene datos"));
   assert.ok(html.includes("kpi-ejemplo-sello") && html.includes(">EJEMPLO<"));
   assert.ok(html.includes('data-marca="EJEMPLO"'), "la marca de agua toma el texto traducido");
-  assert.ok(html.includes("No disponible para tu rol."));
-  assert.ok(pintarMarcoEjemplo({ motivo: "sin_datos" }).includes("Aún no tiene datos."));
+  assert.ok(html.includes("Aún no tiene datos."));
   assert.ok(pintarMarcoEjemplo({ motivo: "modulo_no_habilitado" }).includes("Módulo no habilitado."));
+  // El motivo «sin permiso» ya no existe: no hay texto "No disponible para tu rol." en el motivo.
+  assert.ok(!pintarMarcoEjemplo({ motivo: "sin_permiso" }).includes("No disponible para tu rol."));
 });
 
 test("el reporte PDF solo captura las tarjetas del tablero, nunca la vista previa del editor", () => {

@@ -15,7 +15,6 @@ const TEXTOS_POR_OMISION = {
   combinables: "Combinables (sin desglose)",
   elegirColor: "Elegir color",
   ejemplo: "Ejemplo",
-  motivoSinPermiso: "No disponible para tu rol.",
   motivoModulo: "Módulo no habilitado.",
   modulos: "Módulos",
   elegidosEnModulo: "elegidos en este módulo",
@@ -115,7 +114,7 @@ export default function SelectorDeKpi({
             {kpi.esEjemplo && (
               <span
                 className="kpi-editor-kpi-ejemplo"
-                title={kpi.motivo === "modulo_no_habilitado" ? t.motivoModulo : t.motivoSinPermiso}
+                title={t.motivoModulo}
               >
                 {t.ejemplo}
               </span>

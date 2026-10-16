@@ -137,3 +137,31 @@ test("un módulo nuevo (logística, RH, POS) cae solo en su pestaña, sin tocar 
   assert.equal(variables.kpis.length, 11);
   assert.deepEqual(resumenDeModulos([...CATALOGO, ...nuevos], "", []).map((m) => m.clave).slice(-4), ["logistica", "pos", "rh", "variables"]);
 });
+
+test("«Variables» es transversal: con un solo módulo en el catálogo (un rol con pocos KPIs) no aparece", () => {
+  const unKpi = [CATALOGO.find((k) => k.clave === "ventas_por_empleado")];
+  assert.deepEqual(agruparKpis(unKpi).map((g) => g.clave), ["facturacion"], "un KPI, una pestaña");
+  // Un solo KPI sin desglose: su módulo (con la sección «Combinables»), sin repetirlo en «Variables».
+  const unaVariable = [CATALOGO.find((k) => k.clave === "ingresos_totales")];
+  const grupos = agruparKpis(unaVariable);
+  assert.deepEqual(grupos.map((g) => g.clave), ["facturacion"]);
+  assert.equal(grupos[0].combinables.length, 1);
+  assert.deepEqual(resumenDeModulos(unaVariable, "", []).map((m) => [m.clave, m.total]), [["facturacion", 1]]);
+  // Todo un módulo de un rol (restaurante): sus 14 KPIs en su pestaña y ninguna segunda con los 6 sin desglose.
+  const soloRestaurante = CATALOGO.filter((k) => k.modulo === "restaurante");
+  assert.deepEqual(agruparKpis(soloRestaurante).map((g) => g.clave), ["restaurante"]);
+  // Con dos módulos vuelve a haber vista transversal.
+  const dos = [...unaVariable, CATALOGO.find((k) => k.clave === "ventas_restaurante")];
+  assert.deepEqual(agruparKpis(dos).map((g) => g.clave), ["facturacion", "restaurante", "variables"]);
+  // Buscar no la hace aparecer ni desaparecer: se decide con el catálogo completo.
+  assert.deepEqual(agruparKpis(soloRestaurante, "ticket").map((g) => g.clave), ["restaurante"]);
+  assert.deepEqual(agruparKpis(dos, "ingresos").map((g) => g.clave), ["facturacion", "variables"]);
+});
+
+test("las pestañas salen solo de los módulos con KPIs permitidos y el contador es de lo permitido", () => {
+  const rol = CATALOGO.filter((k) => ["ventas_por_empleado", "ventas_restaurante", "ticket_promedio"].includes(k.clave));
+  const resumen = resumenDeModulos(rol, "", []);
+  assert.deepEqual(resumen.map((m) => [m.clave, m.total]), [["facturacion", 1], ["restaurante", 2], ["variables", 2]]);
+  assert.equal(resumen.some((m) => m.clave === "operaciones"), false, "sin KPIs permitidos de operaciones no hay pestaña");
+  assert.deepEqual(resumenDeModulos([], "", []), [], "un rol sin ningún KPI no tiene pestañas");
+});
