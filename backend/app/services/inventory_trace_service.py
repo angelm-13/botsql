@@ -379,13 +379,22 @@ def estatus_efectivo(product_status, on_loan, sitios) -> str:
     el almacen. Lo que esta fuera se sabe por las salidas sin cerrar y la
     ausencia de existencia, y eso manda sobre el texto viejo.
 
-    Solo se corrige el verde enganoso (ENTRADA o vacio): dañado, extraviado,
-    destruido o en reparacion son decisiones y no se pisan.
+    Se corrige en los dos sentidos, solo entre ENTRADA/vacio y SALIDA: dañado,
+    extraviado, destruido o en reparacion son decisiones y no se pisan.
+
+    - Verde enganoso: ENTRADA o vacio con todo fuera -> SALIDA.
+    - Azul enganoso: SALIDA sin ninguna salida abierta y con existencia en el
+      almacen -> ENTRADA. El texto lo dejo el sistema anterior mientras algo
+      estaba prestado y nada lo bajaba al volver; 123 productos de adser-prod
+      decian "Salio del almacen" con todas sus salidas cerradas.
     """
     texto = str(product_status or "")
-    todo_fuera = bool(on_loan and int(on_loan.get("quantity") or 0) > 0 and not sitios)
-    if todo_fuera and texto.strip().upper() in ("", "ENTRADA"):
+    clave = texto.strip().upper()
+    fuera = int((on_loan or {}).get("quantity") or 0) > 0
+    if fuera and not sitios and clave in ("", "ENTRADA"):
         return "SALIDA"
+    if clave == "SALIDA" and not fuera and sitios:
+        return "ENTRADA"
     return texto
 
 

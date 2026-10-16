@@ -169,6 +169,20 @@ class TestElEstatusQueSePinta(unittest.TestCase):
         for estatus in ("EXTRAVIADO", "DESTRUCCION", "DAÑADO", "EN REPARACION"):
             self.assertEqual(estatus, estatus_efectivo(estatus, self.SALIDAS, []))
 
+    def test_a_stale_salida_with_everything_back_is_shown_as_entrada(self):
+        """Todas las salidas cerradas y existencia en el almacen: el azul de
+        "salio del almacen" que dejo el sistema anterior es mentira."""
+        self.assertEqual("ENTRADA", estatus_efectivo("SALIDA", None, [{"quantity": 1}]))
+
+    def test_salida_stays_while_something_is_still_out(self):
+        self.assertEqual("SALIDA", estatus_efectivo("SALIDA", self.SALIDAS, []))
+        # Caso mixto: algo fuera y algo en el almacen. No se adivina.
+        self.assertEqual("SALIDA", estatus_efectivo(
+            "SALIDA", self.SALIDAS, [{"quantity": 3}]))
+
+    def test_salida_with_nothing_anywhere_is_left_alone(self):
+        self.assertEqual("SALIDA", estatus_efectivo("SALIDA", None, []))
+
 
 class TestLocalizar(BackendTestCase):
 

@@ -1179,6 +1179,50 @@ class TestLaDevolucionEsPorRenglon(BaseVale):
         self.assertEqual(tras_salir + 5, self._saldo(RACK))
 
 
+class TestElTextoSalidaDelSistemaAnterior(BaseVale):
+    """Lo migrado traia `product_status = SALIDA` y nada lo bajaba al volver:
+    el producto aparecia "fuera" en Localizar con todo en su sitio."""
+
+    def _texto(self, valor=None):
+        with transaction_context() as db:
+            producto = db.get(Product, CEMENTO)
+            if valor is not None:
+                producto.product_status = valor
+            return producto.product_status
+
+    def test_returning_the_last_loan_clears_a_stale_salida(self):
+        self.surtir(10, RACK)
+        self._texto("SALIDA")
+        r = self._vale([{"id_product": CEMENTO, "quantity": 2, "id_location_from": RACK}])
+
+        devolver_renglon(r["lines"][0]["id_nm_incident_product"], {}, ACTOR)
+
+        self.assertEqual("ENTRADA", self._texto())
+
+    def test_it_stays_salida_while_another_loan_is_still_out(self):
+        self.surtir(10, RACK)
+        self._texto("SALIDA")
+        r = self._vale([
+            {"id_product": CEMENTO, "quantity": 2, "id_location_from": RACK},
+            {"id_product": CEMENTO, "quantity": 3, "id_location_from": RACK},
+        ])
+
+        devolver_renglon(r["lines"][0]["id_nm_incident_product"], {}, ACTOR)
+        self.assertEqual("SALIDA", self._texto())
+
+        devolver_renglon(r["lines"][1]["id_nm_incident_product"], {}, ACTOR)
+        self.assertEqual("ENTRADA", self._texto())
+
+    def test_a_decision_text_is_not_touched_by_a_return(self):
+        self.surtir(10, RACK)
+        self._texto("DAÑADO")
+        r = self._vale([{"id_product": CEMENTO, "quantity": 2, "id_location_from": RACK}])
+
+        devolver_renglon(r["lines"][0]["id_nm_incident_product"], {}, ACTOR)
+
+        self.assertEqual("DAÑADO", self._texto())
+
+
 class TestRegresionesDeLaAuditoria(BaseVale):
     def test_a_line_not_yet_delivered_cannot_be_returned(self):
         self.surtir(10, NAVE)

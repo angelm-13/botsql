@@ -1092,6 +1092,29 @@ def _limpiar_estado_de_producto(db, vale, renglon) -> None:
     db.flush()
 
 
+def _bajar_salida_obsoleta(db, id_producto) -> None:
+    """Cuando ya no queda nada fuera, el texto historico "SALIDA" deja de ser verdad.
+
+    El sistema anterior escribia SALIDA en `product.product_status` al prestar y
+    ENTRADA al volver; este solo mueve la existencia. Un producto migrado con
+    SALIDA que se devolvia aqui seguia diciendo "Salio del almacen" (azul) con
+    todo en su sitio: 123 en adser-prod, entre ellos el ROT201 del vale #128.
+
+    Solo toca el texto exacto SALIDA y solo si no queda ninguna salida abierta
+    del producto: dañado, extraviado o en reparacion son decisiones y no se pisan.
+    """
+    producto = db.get(Product, id_producto)
+    if producto is None or str(producto.product_status or "").strip().upper() != "SALIDA":
+        return
+    # Import local: el servicio de rastreo ya importa de este.
+    from app.services.inventory_trace_service import _prestado_en_lote
+    if _prestado_en_lote(db, [id_producto]).get(int(id_producto)):
+        return
+    producto.product_status = TEXTO_DE_REGRESO
+    producto.last_update_date = _ahora()
+    db.flush()
+
+
 def _registrar_baja(db, renglon, user_data, *, clave, id_responsable, vence, motivo):
     """Registra que una herramienta se destruyo o se extravio, sin exigir que
     este en el almacen.
@@ -1356,6 +1379,7 @@ def devolver_renglon(id_line, payload: dict, user_data: dict) -> dict:
         vale = _vale(db, renglon.id_incident, para_actualizar=True)
         _sincronizar_estado(db, vale)
         _limpiar_estado_de_producto(db, vale, renglon)
+        _bajar_salida_obsoleta(db, renglon.id_product)
         _bitacora(db, user_data, vale, "renglon_devuelto",
                   id_renglon=renglon.id_nm_incident_product,
                   id_producto=renglon.id_product, cantidad=float(renglon.quantity),
