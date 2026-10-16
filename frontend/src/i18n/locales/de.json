@@ -3422,6 +3422,10 @@
     "example_hide": "Beispiel ausblenden",
     "selector_combinables": "Kombinierbar (ohne Aufschlüsselung)",
     "selector_variables_ayuda": "Alle KPIs ohne Aufschlüsselung aus allen Modulen: Sie lassen sich in einem Diagramm kombinieren.",
+    "kpi_variables_group": "Variablen",
+    "kpi_search_placeholder": "KPI suchen…",
+    "kpi_search_empty": "Kein KPI entspricht der Suche.",
+    "kpi_color_choose": "Farbe wählen",
     "example_no_data_hint": "Keine Daten im gewählten Zeitraum.",
     "example_entity": "Beispiel",
     "example_category": "Kategorie"

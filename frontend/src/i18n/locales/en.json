@@ -4636,6 +4636,10 @@
     "example_hide": "Hide sample",
     "selector_combinables": "Combinable (no breakdown)",
     "selector_variables_ayuda": "All KPIs with no breakdown, from any module: they can be combined in the same chart.",
+    "kpi_variables_group": "Variables",
+    "kpi_search_placeholder": "Search KPIs…",
+    "kpi_search_empty": "No KPI matches your search.",
+    "kpi_color_choose": "Choose color",
     "example_no_data_hint": "No data in the selected range.",
     "example_entity": "Sample",
     "example_category": "Category"

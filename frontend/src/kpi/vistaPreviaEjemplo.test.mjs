@@ -50,15 +50,30 @@ test("el reporte PDF solo captura las tarjetas del tablero, nunca la vista previ
 
 test("todos los textos de la vista previa y del selector existen en es, en, pt y de", () => {
   const dashboard = readFileSync(new URL("../pages/Dashboard.jsx", import.meta.url), "utf8");
-  // `example_*`: la vista previa con datos de ejemplo; `selector_*`: los textos nuevos del selector de KPI.
-  const claves = [...new Set([...dashboard.matchAll(/tx\("((?:example|selector)_[a-z_]+)"/g)].map((m) => m[1]))];
-  assert.ok(claves.length >= 10, `se esperaban los textos de ejemplo en Dashboard.jsx (hay ${claves.length})`);
-  assert.ok(claves.includes("selector_combinables") && claves.includes("selector_variables_ayuda"), "los textos nuevos del selector se revisan aqui");
+  // 1) `example_*`: la vista previa con datos de ejemplo; `selector_*`: los textos nuevos del selector de KPI.
+  const porPrefijo = [...dashboard.matchAll(/tx\("((?:example|selector)_[a-z_]+)"/g)].map((m) => m[1]);
+  // 2) TODO lo que el Dashboard le pasa al selector en `textos={{ ... }}` (buscador, "Variables", color...): un texto
+  // nuevo ahi queda exigido solo, sin tener que acordarse de agregarle un prefijo a la lista de arriba.
+  const desdeSelector = dashboard.slice(dashboard.indexOf("<SelectorDeKpi"));
+  const textosDelSelector = desdeSelector.slice(desdeSelector.indexOf("textos={{"), desdeSelector.indexOf("}}", desdeSelector.indexOf("textos={{")));
+  const pares = [...textosDelSelector.matchAll(/tx\("([a-z_]+)",\s*"((?:[^"\\]|\\.)*)"\)/g)].map((m) => ({ clave: m[1], respaldo: m[2] }));
+  const delSelector = pares.map((par) => par.clave);
+  for (const clave of ["kpi_search_placeholder", "kpi_search_empty", "kpi_variables_group", "kpi_color_choose", "selector_combinables", "selector_variables_ayuda"]) {
+    assert.ok(delSelector.includes(clave), `el selector recibe ${clave}: la prueba tiene que vigilarlo`);
+  }
+  const claves = [...new Set([...porPrefijo, ...delSelector])];
+  assert.ok(claves.length >= 14, `se esperaban los textos de ejemplo y del selector en Dashboard.jsx (hay ${claves.length})`);
+
   const catalogos = {};
   for (const idioma of ["es", "en", "pt", "de"]) {
     catalogos[idioma] = JSON.parse(readFileSync(new URL(`../i18n/locales/${idioma}.json`, import.meta.url), "utf8")).kpi_dashboard;
-    for (const clave of claves) assert.ok(catalogos[idioma]?.[clave], `${idioma}: falta kpi_dashboard.${clave}`);
+    for (const clave of claves) {
+      assert.equal(typeof catalogos[idioma]?.[clave], "string", `${idioma}: falta kpi_dashboard.${clave}`);
+      assert.ok(catalogos[idioma][clave].trim(), `${idioma}: kpi_dashboard.${clave} esta vacio`);
+    }
   }
+  // El catalogo en espanol dice lo mismo que el texto de respaldo del codigo: no se desfasan.
+  for (const { clave, respaldo } of pares) assert.equal(catalogos.es[clave], respaldo, `es: ${clave} difiere del texto de respaldo de Dashboard.jsx`);
   // El aviso acordado, tal cual, en espanol; y los demas idiomas no se quedan con el texto en espanol.
   assert.equal(catalogos.es.example_banner, "Vista previa con datos de ejemplo. Así se vería este KPI cuando tenga datos.");
   // Ya no habla de permisos ni de modulos no habilitados, en ningun idioma.
@@ -67,10 +82,13 @@ test("todos los textos de la vista previa y del selector existen en es, en, pt y
     assert.ok(!PALABRAS_DE_PERMISO[idioma].test(catalogos[idioma].example_banner), `${idioma}: el aviso no debe hablar de permisos`);
   }
   assert.equal(catalogos.es.selector_combinables, "Combinables (sin desglose)");
+  // Traducidos de verdad: ninguno de en/pt/de repite el texto en espanol. Unica excepcion: "Variables" es igual en
+  // ingles (es la misma palabra), no una traduccion que falte.
+  const IGUAL_EN_INGLES = new Set(["kpi_variables_group"]);
   for (const idioma of ["en", "pt", "de"]) {
-    for (const clave of ["selector_combinables", "selector_variables_ayuda"]) {
+    for (const clave of claves) {
+      if (idioma === "en" && IGUAL_EN_INGLES.has(clave)) continue;
       assert.notEqual(catalogos[idioma][clave], catalogos.es[clave], `${idioma}: ${clave} sin traducir`);
     }
-    assert.notEqual(catalogos[idioma].example_banner, catalogos.es.example_banner, `${idioma}: banner sin traducir`);
   }
 });

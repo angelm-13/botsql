@@ -3428,6 +3428,10 @@
     "example_hide": "Ocultar exemplo",
     "selector_combinables": "Combináveis (sem detalhamento)",
     "selector_variables_ayuda": "Todos os KPIs sem detalhamento, de qualquer módulo: servem para combinar no mesmo gráfico.",
+    "kpi_variables_group": "Variáveis",
+    "kpi_search_placeholder": "Pesquisar KPI…",
+    "kpi_search_empty": "Nenhum KPI corresponde à pesquisa.",
+    "kpi_color_choose": "Escolher cor",
     "example_no_data_hint": "Sem dados no intervalo escolhido.",
     "example_entity": "Exemplo",
     "example_category": "Categoria"
