@@ -115,6 +115,13 @@ const ENTREGA_TEXTO = {
   recibido_con_observaciones: ["received_obs", "Recibido con observaciones"],
 };
 
+// El vale directo nace abierto y con el material ya fuera: mientras nadie
+// registre la entrega, su etiqueta de entrega dice "por entregar" aunque no
+// haya nada que sacar. Un prevale autorizado, en cambio, esta en espera.
+function valeDirectoSinEntregar(estadoDelVale, estadoDeEntrega) {
+  return String(estadoDelVale || "") === "abierto" && estadoDeEntrega === "por_entregar";
+}
+
 export default function WarehouseVoucherPage() {
   const { t } = useI18n();
   const actor = useMemo(actorGuardado, []);
@@ -681,8 +688,10 @@ export default function WarehouseVoucherPage() {
                         </span>
                         {ENTREGA_TEXTO[v.delivery_status] && (
                           <span className={`vale-marca-mini entrega-${v.delivery_status}`}>
-                            {t(`voucher.delivery_${ENTREGA_TEXTO[v.delivery_status][0]}`,
-                              ENTREGA_TEXTO[v.delivery_status][1])}
+                            {valeDirectoSinEntregar(v.incident_status, v.delivery_status)
+                              ? t("voucher.delivery_direct_out", "Material ya salió")
+                              : t(`voucher.delivery_${ENTREGA_TEXTO[v.delivery_status][0]}`,
+                                ENTREGA_TEXTO[v.delivery_status][1])}
                           </span>
                         )}
                       </span>
@@ -1272,6 +1281,13 @@ function SeguimientoDeEntrega({ vale, onEntregarVale, onConfirmarRecibido,
       {cab.receipt_ok === false && (
         <p className="vale-observaciones">
           {t("voucher.receipt_obs", "Recibido con observaciones")}: {cab.receipt_note}
+        </p>
+      )}
+
+      {estado === "por_entregar" && valeDirectoSinEntregar(cab.incident_status, estado) && (
+        <p className="muted">
+          {t("voucher.direct_out_note",
+            "El material ya salió del almacén al abrir este vale. Registra la entrega solo para dejar a quién se le dio; no vuelve a descontar existencia.")}
         </p>
       )}
 
