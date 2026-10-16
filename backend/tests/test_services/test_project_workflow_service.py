@@ -34,8 +34,13 @@ class TestProjectWorkflowService(BackendTestCase):
         self.other_supervisor = {"id_user": 12, "id_permission": 102}
         self.manager = {"id_user": 21, "id_permission": 201}
         self.workshop = {"id_user": 31, "id_permission": 301}
+        # Un rol al que el Gestor le concede AUTORIZAR y EJECUTAR a la vez.
+        self.dual = {"id_user": 51, "id_permission": 501}
         with transaction_context() as db:
             db.add_all([
+                EntityPermission(id_permission=501, entity_name="project_authorization", scope_read=4, created_by=51),
+                EntityPermission(id_permission=501, entity_name="project_execution", scope_read=4, created_by=51),
+                EntityPermission(id_permission=501, entity_name="proyect", scope_delete=4, created_by=51),
                 EntityPermission(id_permission=201, entity_name="project_authorization", scope_read=4, created_by=21),
                 EntityPermission(id_permission=301, entity_name="project_execution", scope_read=4, created_by=31),
                 # Borrar lo manda `scope_delete` de `proyect` (Gestor): Propios
@@ -802,6 +807,35 @@ class TestElSupervisorTomaElProyecto(TestProjectWorkflowService):
         tomado = take_project(id_proyect, self.workshop)
 
         self.assertEqual(self.workshop["id_user"], tomado["id_supervisor"])
+
+    def test_a_role_with_both_capabilities_can_take_a_free_project(self):
+        """Autorizar y ejecutar suman: la de ejecutar no se pierde por tener tambien la otra."""
+        id_proyect = self._autorizado()
+
+        tomado = take_project(id_proyect, self.dual)
+
+        self.assertEqual(self.dual["id_user"], tomado["id_supervisor"])
+
+    def test_a_role_with_both_capabilities_still_authorizes_and_also_executes(self):
+        id_proyect = self._create(title="Todo en uno")["id_proyect"]
+        self.assertEqual("authorized", transition_project(id_proyect, {"status": "authorized"}, self.dual)["proyect_status"])
+        take_project(id_proyect, self.dual)
+        self._add_task(id_proyect)
+        transition_project(id_proyect, {"status": "waiting_material"}, self.dual)
+        transition_project(id_proyect, {"status": "in_progress"}, self.dual)
+
+        detenido = transition_project(id_proyect, {"status": "stopped", "reason": "Falta material"}, self.dual)
+
+        self.assertEqual("stopped", detenido["proyect_status"])
+
+    def test_authorizing_alone_still_cannot_take_or_execute(self):
+        """Sin la capacidad de ejecutar, autorizar no basta (Gerente tal como esta en dev)."""
+        id_proyect = self._autorizado()
+
+        with self.assertRaises(AppError) as fallo:
+            take_project(id_proyect, self.manager)
+
+        self.assertEqual("errors.permission_denied", fallo.exception.message_key)
 
     def test_it_is_written_in_the_file(self):
         """Quien lo tenia cuando paso lo que paso se lee en el expediente."""

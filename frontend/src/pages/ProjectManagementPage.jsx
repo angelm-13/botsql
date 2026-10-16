@@ -249,6 +249,9 @@ export default function ProjectManagementPage() {
   const [taskNote, setTaskNote] = useState("");
 
   const mode = privileged ? "unrestricted" : hasRead(permissions, "project_authorization") ? "manager" : hasRead(permissions, "project_execution") ? "workshop" : "supervisor";
+  // Las capacidades suman: quien tiene autorizar Y ejecutar en el Gestor es "manager" para la
+  // pantalla, pero tambien puede ejecutar (tomar el proyecto). El servidor decide igual.
+  const puedeEjecutar = privileged || hasRead(permissions, "project_execution");
   const statusCodes = useMemo(() => orderedStatuses(catalog?.proyect?.statuses, STATUS_ORDER), [catalog]);
   const needsReason = (target) => (catalog?.proyect?.reason_required || []).includes(target);
   const taskNeedsReason = (target) => (catalog?.task?.reason_required || []).includes(target);
@@ -588,7 +591,7 @@ export default function ProjectManagementPage() {
     // (backend) ya lo dejo ver como libre -- un Jefe de taller nunca ve lo
     // que ya tomo otro companero, asi que no hace falta repetir aqui esa
     // comprobacion de estatus.
-    const puedeTomar = (mode === "workshop" || mode === "unrestricted") && !project.id_supervisor;
+    const puedeTomar = puedeEjecutar && !project.id_supervisor;
     const puedeSoltar = Number(project.id_supervisor) === Number(actor.id_user);
     return <div className="project-actions">
       <button className="icon-button" type="button" title={projectText("view_detail")} onClick={() => openDetail(project)}><Eye size={16} /></button>
