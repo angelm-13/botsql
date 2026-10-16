@@ -477,9 +477,6 @@ export const updateInvoiceMaterialService = (id, payload) => request(`/invoice_m
 export const deleteInvoiceMaterialService = (id) => request(`/invoice_material_service/${id}`, { method: "DELETE" });
 
 export const getAllKpiDefinition = () => request("/kpi_definition/");
-// KPIs que el usuario no puede usar (solo metadatos + motivo), para la vista previa con datos de ejemplo del
-// selector de "Agregar gráfico". No lleva ids ni datos: ver GET /kpi_definition/no_disponibles.
-export const getKpiNoDisponibles = () => request("/kpi_definition/no_disponibles");
 // Catalogo de dimensiones (empleado, mesero, platillo...): clave, etiqueta, tipo y si es abierta.
 export const getKpiDimensions = () => request("/kpi_dimension/");
 export const queryKpiSnapshot = (params = {}) => request("/kpi_snapshot/query", { params });

@@ -1,6 +1,6 @@
-// Datos de EJEMPLO para la vista previa de un KPI que el usuario no puede usar (sin permiso o sin datos).
+// Datos de EJEMPLO para la vista previa de un KPI permitido cuyo rango vuelve vacio («Ver ejemplo»).
 // Puro y sin React, y SIN tocar la API ni `kpi_snapshot`: se arman solo a partir de los metadatos del KPI
-// (`/kpi_definition/` o `/kpi_definition/no_disponibles`: unidad, dimension, categorias, etiquetas...).
+// (`/kpi_definition/`: unidad, dimension, categorias, etiquetas...).
 //
 // Producen la MISMA forma que `/kpi_snapshot/query` (`{ rango_a, rango_b }`), asi la tarjeta se pinta con los
 // adaptadores reales (`propsNumero`, `propsSeries`, `propsDona`) y el ejemplo no puede divergir de lo real.
@@ -11,13 +11,10 @@ import { tipoDeDimension } from "./kpiDatos.js";
 
 export const DIAS_DE_EJEMPLO = 14;
 export const ENTIDADES_DE_EJEMPLO = 5;
-export const FILAS_DE_TABLA_DE_EJEMPLO = 8;
 
 const TEXTOS_POR_OMISION = {
   entidad: "Ejemplo",
   categoria: "Categoría",
-  articulo: "Artículo de ejemplo",
-  responsable: "Persona de ejemplo",
 };
 
 // [minimo, maximo, decimales] segun la unidad.
@@ -125,25 +122,6 @@ export function datosDeEjemplo(kpiInfo, { hoy = new Date(), textos = {} } = {}) 
     rango_a: { total: combinar(valores, unidad), por_empleado: porEmpleado, por_periodo: porPeriodo, etiquetas },
     rango_b: null,
   };
-}
-
-/** Filas de ejemplo para un KPI "vivo" de tabla (con la forma de `material_prestado_actual`). */
-export function filasVivasDeEjemplo(kpiInfo, { hoy = new Date(), textos = {} } = {}) {
-  const t = { ...TEXTOS_POR_OMISION, ...textos };
-  const aleatorio = generador(semilla(kpiInfo?.clave || "kpi"));
-  const hoyUtc = Date.UTC(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
-  const items = Array.from({ length: FILAS_DE_TABLA_DE_EJEMPLO }, (_, i) => {
-    const dias = 1 + Math.floor(aleatorio() * 30);
-    return {
-      id_nm_incident_product: i + 1,
-      id_user: (i % ENTIDADES_DE_EJEMPLO) + 1,
-      articulo: `${t.articulo} ${i + 1}`,
-      responsable: `${t.responsable} ${(i % ENTIDADES_DE_EJEMPLO) + 1}`,
-      fecha_prestamo: new Date(hoyUtc - dias * 86400000).toISOString().slice(0, 10),
-      dias_prestado: dias,
-    };
-  });
-  return { items, total: items.length };
 }
 
 /** Si una respuesta de `/kpi_snapshot/query` no trae nada (el KPI aun no tiene datos en el rango). */

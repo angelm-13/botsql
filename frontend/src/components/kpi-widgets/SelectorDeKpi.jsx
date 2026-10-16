@@ -14,8 +14,6 @@ const TEXTOS_POR_OMISION = {
   variablesAyuda: "Todos los KPIs sin desglose, de cualquier módulo: sirven para combinar en un mismo gráfico.",
   combinables: "Combinables (sin desglose)",
   elegirColor: "Elegir color",
-  ejemplo: "Ejemplo",
-  motivoModulo: "Módulo no habilitado.",
   modulos: "Módulos",
   elegidosEnModulo: "elegidos en este módulo",
 };
@@ -109,14 +107,6 @@ export default function SelectorDeKpi({
                 style={{ "--tinte": colorDeModulo(kpi.modulo) }}
               >
                 {etiquetaModulo}
-              </span>
-            )}
-            {kpi.esEjemplo && (
-              <span
-                className="kpi-editor-kpi-ejemplo"
-                title={t.motivoModulo}
-              >
-                {t.ejemplo}
               </span>
             )}
             {elegida && <Check size={13} className="kpi-selector-check" aria-hidden="true" />}

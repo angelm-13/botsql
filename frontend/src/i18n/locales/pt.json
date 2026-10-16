@@ -3423,19 +3423,13 @@
   "kpi_dashboard": {
     "example_banner": "Pré-visualização com dados de exemplo. Assim este KPI seria exibido; não está disponível para o seu perfil ou ainda não tem dados",
     "example_badge": "EXEMPLO",
-    "example_tag": "Exemplo",
     "example_reason_sin_datos": "Ainda sem dados.",
-    "example_reason_modulo": "Módulo não habilitado.",
     "example_view": "Ver exemplo",
     "example_hide": "Ocultar exemplo",
     "selector_combinables": "Combináveis (sem detalhamento)",
     "selector_variables_ayuda": "Todos os KPIs sem detalhamento, de qualquer módulo: servem para combinar no mesmo gráfico.",
-    "example_cannot_save": "Um KPI de exemplo é apenas uma pré-visualização: não pode ser adicionado ao painel.",
-    "example_cannot_combine": "Não é possível combinar: um KPI de exemplo só pode ser visto sozinho, sem misturar com KPIs reais.",
     "example_no_data_hint": "Sem dados no intervalo escolhido.",
     "example_entity": "Exemplo",
-    "example_category": "Categoria",
-    "example_item": "Item de exemplo",
-    "example_person": "Pessoa de exemplo"
+    "example_category": "Categoria"
   }
 }

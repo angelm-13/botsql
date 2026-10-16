@@ -10,7 +10,6 @@ import {
   fechaLocalIso, periodoAnterior, rangoDesfasado, resolverRangoRelativo,
 } from "./kpiRango.js";
 import { normalizarOrdenTabla } from "./kpiPrestamos.js";
-import { esIdDeEjemplo } from "./vistaPreviaDeEjemplo.js";
 
 /** Los `parametros` de un widget a partir del borrador del editor.
  *
@@ -79,8 +78,7 @@ export function armarParametros(estado, { esTabla = false, tieneBajoStock = fals
 export function widgetDeBorrador(estado, opciones) {
   return {
     tipo_grafica: estado.tipoGrafica,
-    // Un KPI de ejemplo (vista previa) conserva su id textual: nunca se vuelve un numero que se pueda guardar.
-    ids_kpi_definition: estado.idsKpiSeleccionados.map((id) => (esIdDeEjemplo(id) ? id : Number(id))),
+    ids_kpi_definition: estado.idsKpiSeleccionados.map(Number),
     parametros: armarParametros(estado, opciones),
   };
 }
@@ -173,13 +171,9 @@ export function mezclaUnidades(kpiInfos) {
  *   cantidad) comparten el eje Y del grafico y el de escala menor queda
  *   invisible.
  * - "modo": un KPI en vivo (tabla) y uno de serie no comparten ninguna grafica.
- * - "ejemplo": un KPI de ejemplo (vista previa) no se combina con nada.
  */
 export function motivoParaNoCombinar(seleccionados, candidato) {
   if (!seleccionados.length) return null;
-  // Un KPI de ejemplo (vista previa de uno no disponible) solo se ve solo: nunca se mezcla con KPIs reales ni
-  // con otro ejemplo, para que datos inventados no aparezcan junto a datos de verdad.
-  if (candidato.esEjemplo || seleccionados.some((info) => info.esEjemplo)) return "ejemplo";
   const esVivo = candidato.modo === "vivo";
   if (seleccionados.some((info) => (info.modo === "vivo") !== esVivo)) return "modo";
   const unidad = unidadDeKpi(candidato);

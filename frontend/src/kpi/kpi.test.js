@@ -29,7 +29,7 @@ import {
   fechaLocalIso, parametrosEfectivos, periodoAnterior, rangoDesfasado, resolverRangoRelativo,
 } from "./kpiRango.js";
 import { colorDeAvatar } from "../components/kpi-widgets/avatar.js";
-import { datosDeEjemplo, filasVivasDeEjemplo, rangoVacio } from "./datosDeEjemplo.js";
+import { datosDeEjemplo, rangoVacio } from "./datosDeEjemplo.js";
 import { filasQueOcupa } from "../components/kpi-widgets/useMasonry.js";
 import {
   filasTablaPrestamo, propsDona, propsNumero, propsNumeroBajoStock, propsSeries,
@@ -130,7 +130,7 @@ test("estado: usa el nombre que manda el backend (etiquetas) y, sin el, la clave
   assert.equal(labelForDimension("estado", userLabel, userLabel)("abierta"), "Abierta");
 });
 
-// --- datos de ejemplo (vista previa de KPIs no disponibles) ---
+// --- datos de ejemplo («Ver ejemplo» de un KPI permitido sin datos) ---
 
 const HOY_EJEMPLO = new Date(2026, 9, 13);
 const KPI_EJEMPLO_GLOBAL = { clave: "ventas_restaurante", unidad: "moneda", dimensiones: ["global"], direccion: "alto_es_mejor" };
@@ -188,11 +188,7 @@ test("datos de ejemplo: persona/catalogo usan entidades genericas, nunca nombres
   assert.equal(traducido.rango_a.etiquetas["1"], "Example 1");
 });
 
-test("datos de ejemplo: las filas de un KPI vivo son genericas y estables, y rangoVacio detecta una respuesta sin datos", () => {
-  const filas = filasVivasDeEjemplo({ clave: "material_prestado_actual" }, { hoy: HOY_EJEMPLO });
-  assert.equal(filas.total, 8);
-  assert.deepEqual(filas, filasVivasDeEjemplo({ clave: "material_prestado_actual" }, { hoy: HOY_EJEMPLO }));
-  assert.match(filas.items[0].articulo, /^Artículo de ejemplo 1$/);
+test("rangoVacio detecta una respuesta sin datos", () => {
   assert.equal(rangoVacio({ rango_a: { total: 0, por_empleado: {}, por_periodo: {} } }), true);
   assert.equal(rangoVacio(null), true);
   assert.equal(rangoVacio({ rango_a: { total: 3, por_empleado: { a: 3 }, por_periodo: {} } }), false);

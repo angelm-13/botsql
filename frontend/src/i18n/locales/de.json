@@ -3417,19 +3417,13 @@
   "kpi_dashboard": {
     "example_banner": "Vorschau mit Beispieldaten. So würde dieser KPI aussehen; er ist für Ihre Rolle nicht verfügbar oder hat noch keine Daten",
     "example_badge": "BEISPIEL",
-    "example_tag": "Beispiel",
     "example_reason_sin_datos": "Noch keine Daten.",
-    "example_reason_modulo": "Modul nicht aktiviert.",
     "example_view": "Beispiel ansehen",
     "example_hide": "Beispiel ausblenden",
     "selector_combinables": "Kombinierbar (ohne Aufschlüsselung)",
     "selector_variables_ayuda": "Alle KPIs ohne Aufschlüsselung aus allen Modulen: Sie lassen sich in einem Diagramm kombinieren.",
-    "example_cannot_save": "Ein Beispiel-KPI ist nur eine Vorschau: Er kann dem Dashboard nicht hinzugefügt werden.",
-    "example_cannot_combine": "Kombination nicht möglich: Ein Beispiel-KPI kann nur einzeln angezeigt werden, nicht zusammen mit echten KPIs.",
     "example_no_data_hint": "Keine Daten im gewählten Zeitraum.",
     "example_entity": "Beispiel",
-    "example_category": "Kategorie",
-    "example_item": "Beispielartikel",
-    "example_person": "Beispielperson"
+    "example_category": "Kategorie"
   }
 }
