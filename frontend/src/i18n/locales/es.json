@@ -2775,7 +2775,12 @@
     "product_description_format": "La descripción debe iniciar con mayúscula, seguida de minúsculas, espacios, números y símbolos como diagonal o guion (ej. Pulidor chico 3/4). Las siglas como PVC o LED van en mayúsculas.",
     "product_quantity_via_movements": "La existencia no se edita a mano: usa «Registrar entrada» para lo que llega, el vale para lo que sale y el ajuste de inventario para un conteo.",
     "voucher_not_a_draft": "Este vale ya no es un borrador: solo un borrador se puede autorizar.",
-    "voucher_self_authorization": "No puedes autorizar un vale que tú mismo pediste. Lo autoriza el jefe de almacén."
+    "voucher_self_authorization": "No puedes autorizar un vale que tú mismo pediste. Lo autoriza el jefe de almacén.",
+    "payroll_period_closed": "El periodo está cerrado: no se puede recalcular ni editar.",
+    "payroll_period_not_calculated": "Primero calcula la nómina del periodo.",
+    "payroll_period_not_closed": "El periodo no está cerrado.",
+    "payroll_parameters_missing": "Faltan cifras oficiales de nómina (UMA, salario mínimo, IMSS) vigentes para la fecha del periodo.",
+    "payroll_isr_table_missing": "No está capturada la tarifa del ISR del año del periodo."
   },
   "logistics": {
     "module": "Logística",
@@ -3653,7 +3658,24 @@
       "from": "Desde",
       "to": "Hasta",
       "timezone": "Zona horaria",
-      "generate": "Generar reporte"
+      "generate": "Generar reporte",
+      "source": "Origen",
+      "source_device": "Checador en vivo",
+      "source_saved": "Guardado en el sistema",
+      "save": "Guardar en el sistema"
+    },
+    "import": {
+      "done": "Checadas guardadas en el sistema",
+      "saved": "Nuevas",
+      "already_saved": "Ya estaban",
+      "skipped": "Descartadas",
+      "needs_connection": "Primero configura el checador para poder guardar."
+    },
+    "link": {
+      "column": "Empleado del sistema",
+      "none": "Sin ligar",
+      "done": "Empleado ligado",
+      "removed": "Vínculo quitado"
     },
     "metrics": {
       "people": "Personas",
@@ -4760,5 +4782,33 @@
     "example_category": "Categoría",
     "example_item": "Artículo de ejemplo",
     "example_person": "Persona de ejemplo"
+  },
+  "payroll_calc": {
+    "button": "Calcular nómina",
+    "title": "Nómina calculada",
+    "employee": "Empleado",
+    "days": "Días trabajados",
+    "daily": "Salario diario",
+    "salary": "Sueldo",
+    "earnings": "Percepciones",
+    "deductions": "Deducciones",
+    "net": "Neto",
+    "total": "Total a pagar",
+    "without_salary": "Sin salario diario capturado (no se calcularon)",
+    "empty": "No hay empleados con salario diario capturado.",
+    "hint": "Días trabajados = días con al menos una checada guardada y ligada al empleado. Recalcular reemplaza solo el sueldo; lo capturado a mano se respeta.",
+    "close": "Cerrar periodo",
+    "reopen": "Reabrir periodo",
+    "view": "Ver resultado",
+    "receipt": "Recibo PDF",
+    "state_open": "Abierto",
+    "state_calculated": "Calculado",
+    "state_closed": "Cerrado",
+    "confirm_close": "¿Cerrar el periodo? Ya no se podrá recalcular ni editar.",
+    "confirm_reopen": "¿Reabrir el periodo? Quedará registro de quién lo reabrió.",
+    "closed_done": "Periodo cerrado.",
+    "reopened_done": "Periodo reabierto.",
+    "isr_hint": "ISR de tarifa menos subsidio para el empleo",
+    "tax_hint": "ISR con la tarifa oficial vigente y el subsidio para el empleo ya restado; IMSS es la cuota del trabajador. Las cifras oficiales se revisan con el contador."
   }
 }

@@ -2731,7 +2731,12 @@
     "product_description_format": "The description must start with a capital letter, followed by lowercase letters, spaces, numbers and symbols such as slash or hyphen (e.g. Small polisher 3/4). Acronyms like PVC or LED stay uppercase.",
     "product_quantity_via_movements": "Stock is not edited by hand: use “Register entry” for what arrives, the voucher for what leaves and an inventory adjustment for a count.",
     "voucher_not_a_draft": "This voucher is no longer a draft: only a draft can be authorised.",
-    "voucher_self_authorization": "You cannot authorise a voucher you requested yourself. The warehouse chief authorises it."
+    "voucher_self_authorization": "You cannot authorise a voucher you requested yourself. The warehouse chief authorises it.",
+    "payroll_period_closed": "The period is closed: it cannot be recalculated or edited.",
+    "payroll_period_not_calculated": "Calculate the period payroll first.",
+    "payroll_period_not_closed": "The period is not closed.",
+    "payroll_parameters_missing": "Official payroll figures (UMA, minimum wage, IMSS) are missing for the period date.",
+    "payroll_isr_table_missing": "The income tax tariff for the period year is not loaded."
   },
   "logistics": {
     "module": "Logistics",
@@ -3600,7 +3605,24 @@
       "from": "From",
       "to": "To",
       "timezone": "Timezone",
-      "generate": "Generate report"
+      "generate": "Generate report",
+      "source": "Source",
+      "source_device": "Live time clock",
+      "source_saved": "Saved in the system",
+      "save": "Save to the system"
+    },
+    "import": {
+      "done": "Check-ins saved to the system",
+      "saved": "New",
+      "already_saved": "Already saved",
+      "skipped": "Skipped",
+      "needs_connection": "Set up the time clock first to be able to save."
+    },
+    "link": {
+      "column": "System employee",
+      "none": "Not linked",
+      "done": "Employee linked",
+      "removed": "Link removed"
     },
     "metrics": {
       "people": "People",
@@ -4644,5 +4666,33 @@
     "example_category": "Category",
     "example_item": "Sample item",
     "example_person": "Sample person"
+  },
+  "payroll_calc": {
+    "button": "Calculate payroll",
+    "title": "Payroll calculated",
+    "employee": "Employee",
+    "days": "Days worked",
+    "daily": "Daily salary",
+    "salary": "Salary",
+    "earnings": "Earnings",
+    "deductions": "Deductions",
+    "net": "Net pay",
+    "total": "Total to pay",
+    "without_salary": "No daily salary set (not calculated)",
+    "empty": "No employees have a daily salary set.",
+    "hint": "Days worked = days with at least one saved check-in linked to the employee. Recalculating replaces only the salary; manual entries are kept.",
+    "close": "Close period",
+    "reopen": "Reopen period",
+    "view": "View result",
+    "receipt": "PDF receipt",
+    "state_open": "Open",
+    "state_calculated": "Calculated",
+    "state_closed": "Closed",
+    "confirm_close": "Close the period? It can no longer be recalculated or edited.",
+    "confirm_reopen": "Reopen the period? Who reopened it will be recorded.",
+    "closed_done": "Period closed.",
+    "reopened_done": "Period reopened.",
+    "isr_hint": "Tariff income tax minus employment subsidy",
+    "tax_hint": "Income tax with the current official tariff and the employment subsidy already subtracted; IMSS is the employee contribution. Official figures should be reviewed with the accountant."
   }
 }

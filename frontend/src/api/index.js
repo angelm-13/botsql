@@ -630,6 +630,11 @@ export const deletePayrollMovement = (id) => request(`/payroll_movement/${id}`, 
 
 export const getAllPayrollPeriod = (params = {}) => request("/payroll_period/", { params });
 export const getPayrollPeriod = (id) => request(`/payroll_period/${id}`);
+export const calculatePayrollPeriod = (id) => request(`/payroll_period/${id}/calculate`, { method: "POST" });
+export const closePayrollPeriod = (id) => request(`/payroll_period/${id}/close`, { method: "POST" });
+export const reopenPayrollPeriod = (id) => request(`/payroll_period/${id}/reopen`, { method: "POST" });
+export const getPayrollPeriodSummary = (id) => request(`/payroll_period/${id}/summary`);
+export const downloadPayrollReceipt = (id, idUser) => requestBlob(`/payroll_period/${id}/receipt/${idUser}`);
 export const createPayrollPeriod = (payload) => request("/payroll_period/", { method: "POST", body: payload });
 export const updatePayrollPeriod = (id, payload) => request(`/payroll_period/${id}`, { method: "PUT", body: payload });
 export const deletePayrollPeriod = (id) => request(`/payroll_period/${id}`, { method: "DELETE" });
@@ -836,6 +841,12 @@ export const updateUserMfa = (id, payload) => request(`/user_mfa/${id}`, { metho
 export const deleteUserMfa = (id) => request(`/user_mfa/${id}`, { method: "DELETE" });
 export const updateInvoiceLineAuthorization = (id, payload) => request(`/invoice/line-authorization/${id}`, { method: "PATCH", body: payload });
 export const getKronosAttendance = (payload) => request("/kronos/attendance", { method: "POST", body: payload });
+export const importKronosAttendance = (payload) => request("/kronos/attendance/import", { method: "POST", body: payload });
+export const getSavedAttendance = ({ startDate, endDate }) => request(`/kronos/attendance/saved?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`);
+export const getEmployeeLinks = () => request("/kronos/employee-links");
+export const getAttendanceEmployeeOptions = () => request("/kronos/employee-options");
+export const linkEmployee = (employeeNo, idUser) => request(`/kronos/employee-links/${encodeURIComponent(employeeNo)}`, { method: "PUT", body: { id_user: idUser } });
+export const unlinkEmployee = (employeeNo) => request(`/kronos/employee-links/${encodeURIComponent(employeeNo)}`, { method: "DELETE" });
 export const getKronosPeople = (payload) => request("/kronos/people", { method: "POST", body: payload });
 export const saveKronosPerson = (payload) => request("/kronos/people", { method: "PUT", body: payload });
 export const deleteKronosPerson = (employeeNo, payload) => request(`/kronos/people/${encodeURIComponent(employeeNo)}`, { method: "DELETE", body: payload });

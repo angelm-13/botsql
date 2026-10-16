@@ -1,0 +1,461 @@
+"""Calculo de la nomina de un periodo a partir de las checadas guardadas.
+
+Antes las tablas `payroll_*` solo tenian altas y bajas: nadie calculaba nada y
+el sueldo se escribia a mano. Aqui vive la primera regla de calculo:
+
+* Dias trabajados: los dias distintos del periodo en que el empleado tiene al
+  menos una checada en `attendance_record` (ya ligada a su usuario).
+* Sueldo del periodo: `user.base_salary` (salario DIARIO) x dias trabajados.
+  Se guarda como un movimiento con el concepto SUELDO.
+* ISR (con el subsidio para el empleo ya restado) e IMSS (cuota del
+  trabajador): dos movimientos de deduccion, ISR e IMSS. Las reglas estan en
+  payroll_tax_rules.py y las cifras oficiales en `payroll_isr_bracket` y
+  `payroll_parameter`. La base del ISR son las percepciones marcadas como
+  gravables (`is_taxable`), las capturadas a mano incluidas.
+* Totales del detalle: percepciones y deducciones salen de TODOS sus
+  movimientos -los que genera este calculo y los que alguien capturo a mano
+  (un bono, un descuento)-; el neto es percepciones menos deducciones. Las
+  aportaciones patronales (`employer_contribution`) no le tocan al empleado y
+  no entran al neto.
+
+Recalcular no duplica: el detalle del empleado en el periodo se reusa y solo
+se reemplazan los movimientos SUELDO, ISR e IMSS, que son los que escribe este
+calculo. Lo capturado a mano no se toca.
+
+Estados del periodo (columna `period_state`):
+
+* 'open'        recien creado.
+* 'calculated'  ya se calculo; se puede recalcular.
+* 'closed'      pagado: congelado. No se recalcula ni se edita nada de el
+                -fechas, detalles, movimientos-, ni desde la pantalla ni por la
+                API. Solo quien administra nomina (permiso de borrar periodos,
+                que el registro solo le da a Administrator) lo puede reabrir, y
+                queda registro de quien y cuando.
+
+"""
+from __future__ import annotations
+
+from datetime import datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
+
+from sqlalchemy import func, select
+
+from app.models import (AttendanceRecord, PayrollConcept, PayrollDetail, PayrollIsrBracket, PayrollMovement,
+                        PayrollParameter, PayrollPeriod, User)
+from app.services import payroll_tax_rules as ley
+from app.models.session import transaction_context
+from app.utils.errors import AppError
+from app.utils.tiempo import ahora_utc
+
+CODIGO_SUELDO = "SUELDO"
+ABIERTO, CALCULADO, CERRADO = "open", "calculated", "closed"
+# Columnas que solo mueven calcular/cerrar/reabrir; la captura generica no.
+CAMPOS_DEL_ESTADO = ("period_state", "closed_at", "closed_by", "reopened_at", "reopened_by")
+CENTAVOS = Decimal("0.01")
+
+
+def _dinero(valor) -> Decimal:
+    return Decimal(str(valor or 0)).quantize(CENTAVOS, rounding=ROUND_HALF_UP)
+
+
+# Conceptos que escribe el calculo: codigo -> (descripcion, tipo, grava ISR, integra IMSS).
+CONCEPTOS_DEL_CALCULO = {
+    CODIGO_SUELDO: ("Sueldo", "earning", True, True),
+    "ISR": ("ISR retenido (subsidio para el empleo aplicado)", "deduction", False, False),
+    "IMSS": ("Cuota obrera IMSS", "deduction", False, False),
+}
+
+# Valores que el calculo necesita de payroll_parameter.
+PARAMETROS_REQUERIDOS = (
+    "uma_daily", "uma_monthly", "minimum_wage_daily", "subsidy_pct", "subsidy_income_limit",
+    "imss_em_surplus_pct", "imss_em_cash_pct", "imss_em_pensioners_pct", "imss_iv_pct", "imss_cv_pct",
+    "imss_surplus_umas", "sbc_cap_umas", "aguinaldo_days", "vacation_premium_pct",
+)
+
+
+def _concepto(db, codigo: str, user_id: int) -> PayrollConcept:
+    """Un concepto del calculo; se crea la primera vez que se calcula una nomina."""
+    concepto = db.scalars(
+        select(PayrollConcept)
+        .where(PayrollConcept.payroll_code == codigo)
+        .where(PayrollConcept.deletion_date.is_(None))
+    ).first()
+    if concepto is None:
+        descripcion, tipo, gravable, imss = CONCEPTOS_DEL_CALCULO[codigo]
+        concepto = PayrollConcept(
+            payroll_code=codigo, payroll_concept_description=descripcion,
+            type=tipo, is_taxable=gravable, is_imss=imss, created_by=user_id)
+        db.add(concepto)
+        db.flush()
+    return concepto
+
+
+def _concepto_sueldo(db, user_id: int) -> PayrollConcept:
+    return _concepto(db, CODIGO_SUELDO, user_id)
+
+
+def _parametros(db, al_dia) -> dict:
+    """Los parametros vigentes `al_dia`; si falta alguno, no se calcula a ciegas."""
+    valores, faltan = {}, []
+    for clave in PARAMETROS_REQUERIDOS:
+        fila = db.scalars(
+            select(PayrollParameter)
+            .where(PayrollParameter.parameter_key == clave)
+            .where(PayrollParameter.deletion_date.is_(None))
+            .where(PayrollParameter.valid_from <= al_dia)
+            .where((PayrollParameter.valid_to.is_(None)) | (PayrollParameter.valid_to >= al_dia))
+            .order_by(PayrollParameter.valid_from.desc())
+        ).first()
+        if fila is None:
+            faltan.append(clave)
+        else:
+            valores[clave] = Decimal(str(fila.value))
+    if faltan:
+        raise AppError("errors.payroll_parameters_missing", 409, {"date": al_dia.isoformat(), "keys": faltan})
+    return valores
+
+
+def _tarifa_isr(db, anio: int, dias: int):
+    tabla, factor = ley.tabla_para_dias(dias)
+    tramos = [
+        (t.lower_limit, t.upper_limit, t.fixed_fee, t.rate_pct)
+        for t in db.scalars(
+            select(PayrollIsrBracket)
+            .where(PayrollIsrBracket.valid_year == anio)
+            .where(PayrollIsrBracket.period_days == tabla)
+            .where(PayrollIsrBracket.deletion_date.is_(None))
+        )
+    ]
+    if not tramos:
+        raise AppError("errors.payroll_isr_table_missing", 409, {"year": anio, "period_days": tabla})
+    return tramos, factor
+
+
+def _reemplazar_movimiento(db, detalle: PayrollDetail, concepto: PayrollConcept, monto: Decimal, user_id: int) -> None:
+    """Cierra el movimiento anterior de este concepto y escribe el nuevo (si no es cero)."""
+    for anterior in db.scalars(
+        select(PayrollMovement)
+        .where(PayrollMovement.id_payroll_detail == detalle.id_payroll_detail)
+        .where(PayrollMovement.id_payroll_concept == concepto.id_payroll_concept)
+        .where(PayrollMovement.deletion_date.is_(None))
+    ):
+        anterior.deletion_date = ahora_utc()
+    if monto > 0:
+        db.add(PayrollMovement(id_payroll_detail=detalle.id_payroll_detail,
+                               id_payroll_concept=concepto.id_payroll_concept,
+                               amount=monto, created_by=user_id))
+    db.flush()
+
+
+def _percepciones_gravables(db, detalle: PayrollDetail) -> Decimal:
+    total = db.scalar(
+        select(func.coalesce(func.sum(PayrollMovement.amount), 0))
+        .join(PayrollConcept, PayrollConcept.id_payroll_concept == PayrollMovement.id_payroll_concept)
+        .where(PayrollMovement.id_payroll_detail == detalle.id_payroll_detail)
+        .where(PayrollMovement.deletion_date.is_(None))
+        .where(PayrollConcept.type == "earning")
+        .where(PayrollConcept.is_taxable.is_(True))
+    )
+    return _dinero(total)
+
+
+def _dias_trabajados(db, inicio, fin) -> dict[int, int]:
+    """Dias distintos con al menos una checada, por empleado ligado."""
+    dia = func.date(AttendanceRecord.check_time)
+    filas = db.execute(
+        select(AttendanceRecord.id_user, func.count(func.distinct(dia)))
+        .where(AttendanceRecord.id_user.isnot(None))
+        .where(AttendanceRecord.deletion_date.is_(None))
+        .where(AttendanceRecord.check_time >= datetime.combine(inicio, datetime.min.time()))
+        .where(AttendanceRecord.check_time < datetime.combine(fin + timedelta(days=1), datetime.min.time()))
+        .group_by(AttendanceRecord.id_user)
+    ).all()
+    return {id_user: int(dias) for id_user, dias in filas}
+
+
+def _totales(db, detalle: PayrollDetail) -> tuple[Decimal, Decimal]:
+    filas = db.execute(
+        select(PayrollConcept.type, func.coalesce(func.sum(PayrollMovement.amount), 0))
+        .join(PayrollConcept, PayrollConcept.id_payroll_concept == PayrollMovement.id_payroll_concept)
+        .where(PayrollMovement.id_payroll_detail == detalle.id_payroll_detail)
+        .where(PayrollMovement.deletion_date.is_(None))
+        .group_by(PayrollConcept.type)
+    ).all()
+    por_tipo = {tipo: _dinero(total) for tipo, total in filas}
+    return por_tipo.get("earning", _dinero(0)), por_tipo.get("deduction", _dinero(0))
+
+
+def _periodo(db, id_payroll_period) -> PayrollPeriod:
+    try:
+        id_payroll_period = int(id_payroll_period)
+    except (TypeError, ValueError) as exc:
+        raise AppError("errors.resource_not_found", 404) from exc
+    periodo = db.get(PayrollPeriod, id_payroll_period)
+    if periodo is None or periodo.deletion_date is not None:
+        raise AppError("errors.resource_not_found", 404)
+    return periodo
+
+
+def exigir_periodo_no_cerrado(db, id_payroll_period) -> None:
+    """La unica puerta: nada de un periodo cerrado se escribe."""
+    if id_payroll_period in (None, ""):
+        return
+    try:
+        periodo = db.get(PayrollPeriod, int(id_payroll_period))
+    except (TypeError, ValueError):
+        return
+    if periodo is not None and periodo.period_state == CERRADO:
+        raise AppError("errors.payroll_period_closed", 409, {"id_payroll_period": periodo.id_payroll_period})
+
+
+def _registrar(db, antes: str, despues: str, user_id: int) -> None:
+    """Deja el cambio de estado en la bitacora del sistema (event_log)."""
+    from app.services.payroll_period_service import PayrollPeriodService
+    PayrollPeriodService._write_event_log(
+        db, action="update", actor_id=user_id, before=antes, after=despues, field_name="period_state")
+
+
+def calcular_periodo(id_payroll_period, user_id: int) -> dict:
+    """Calcula (o recalcula) la nomina de todos los empleados con sueldo."""
+    with transaction_context() as db:
+        periodo = _periodo(db, id_payroll_period)
+        id_payroll_period = periodo.id_payroll_period
+        if periodo.period_state == CERRADO:
+            raise AppError("errors.payroll_period_closed", 409, {"id_payroll_period": id_payroll_period})
+        if not periodo.period_start or not periodo.period_end or periodo.period_start > periodo.period_end:
+            raise AppError("errors.invalid_field", 400, {"field": "period_start", "reason": "invalid_period"})
+
+        empleados = db.scalars(
+            select(User)
+            .where(User.deletion_date.is_(None))
+            .where(User.is_employee.is_(True))
+            .order_by(User.full_name)
+        ).all()
+        dias = _dias_trabajados(db, periodo.period_start, periodo.period_end)
+        conceptos = {codigo: _concepto(db, codigo, user_id) for codigo in CONCEPTOS_DEL_CALCULO}
+        # Las cifras oficiales son las vigentes al ultimo dia del periodo.
+        al_dia = periodo.period_end
+        dias_del_periodo = (periodo.period_end - periodo.period_start).days + 1
+        parametros = _parametros(db, al_dia)
+        tramos, factor_tarifa = _tarifa_isr(db, al_dia.year, dias_del_periodo)
+
+        calculados, sin_sueldo = [], []
+        for empleado in empleados:
+            diario = _dinero(empleado.base_salary)
+            if diario <= 0:
+                sin_sueldo.append({"id_user": empleado.id_user, "full_name": empleado.full_name or ""})
+                continue
+            trabajados = dias.get(empleado.id_user, 0)
+            sueldo = _dinero(diario * trabajados)
+
+            detalle = db.scalars(
+                select(PayrollDetail)
+                .where(PayrollDetail.id_payroll_period == periodo.id_payroll_period)
+                .where(PayrollDetail.id_user == empleado.id_user)
+                .where(PayrollDetail.deletion_date.is_(None))
+            ).first()
+            if detalle is None:
+                detalle = PayrollDetail(id_payroll_period=periodo.id_payroll_period,
+                                        id_user=empleado.id_user, created_by=user_id)
+                db.add(detalle)
+                db.flush()
+
+            # Solo se reemplaza lo que escribe este calculo: SUELDO, ISR e IMSS.
+            _reemplazar_movimiento(db, detalle, conceptos[CODIGO_SUELDO], sueldo, user_id)
+
+            gravable = _percepciones_gravables(db, detalle)
+            isr_tarifa = ley.isr_por_tarifa(gravable, tramos, factor_tarifa)
+            subsidio = ley.subsidio_para_el_empleo(
+                gravable, dias_del_periodo, parametros["uma_monthly"], parametros["subsidy_pct"],
+                parametros["subsidy_income_limit"])
+            isr = max(isr_tarifa - subsidio, _dinero(0))
+            _reemplazar_movimiento(db, detalle, conceptos["ISR"], isr, user_id)
+
+            vacaciones = ley.dias_de_vacaciones(ley.anios_cumplidos(empleado.hire_date, al_dia))
+            factor = ley.factor_de_integracion(parametros["aguinaldo_days"], vacaciones,
+                                               parametros["vacation_premium_pct"])
+            sbc = ley.salario_base_de_cotizacion(diario, factor, parametros["minimum_wage_daily"],
+                                                 parametros["uma_daily"], parametros["sbc_cap_umas"])
+            imss = ley.cuota_obrera_imss(sbc, trabajados, diario, parametros["minimum_wage_daily"],
+                                         parametros["uma_daily"], parametros)
+            _reemplazar_movimiento(db, detalle, conceptos["IMSS"], imss, user_id)
+
+            percepciones, deducciones = _totales(db, detalle)
+            detalle.gross_salary = sueldo
+            detalle.total_earnings = percepciones
+            detalle.total_deductions = deducciones
+            detalle.net_pay = percepciones - deducciones
+            detalle.days_worked = trabajados
+            calculados.append({
+                "id_user": empleado.id_user,
+                "full_name": empleado.full_name or "",
+                "days_worked": trabajados,
+                "daily_salary": float(diario),
+                "salary": float(sueldo),
+                "taxable_income": float(gravable),
+                "isr_before_subsidy": float(isr_tarifa),
+                "employment_subsidy": float(subsidio),
+                "isr": float(isr),
+                "integration_factor": float(factor),
+                "sbc": float(sbc),
+                "imss": float(imss),
+                "total_earnings": float(percepciones),
+                "total_deductions": float(deducciones),
+                "net_pay": float(percepciones - deducciones),
+            })
+
+        periodo.period_state = CALCULADO
+
+    return {
+        "id_payroll_period": id_payroll_period,
+        "period_state": CALCULADO,
+        "employees": calculados,
+        "without_salary": sin_sueldo,
+        "total_net_pay": float(sum((_dinero(e["net_pay"]) for e in calculados), _dinero(0))),
+    }
+
+
+def cerrar_periodo(id_payroll_period, user_id: int) -> dict:
+    """Congela un periodo ya calculado."""
+    with transaction_context() as db:
+        periodo = _periodo(db, id_payroll_period)
+        if periodo.period_state != CALCULADO:
+            raise AppError("errors.payroll_period_not_calculated", 409,
+                           {"id_payroll_period": periodo.id_payroll_period, "period_state": periodo.period_state})
+        periodo.period_state = CERRADO
+        periodo.closed_at = ahora_utc()
+        periodo.closed_by = user_id
+        _registrar(db, CALCULADO, CERRADO, user_id)
+        return periodo.serialize()
+
+
+def reabrir_periodo(id_payroll_period, user_id: int) -> dict:
+    """Regresa un periodo cerrado a 'calculado'. La ruta exige administrar nomina."""
+    with transaction_context() as db:
+        periodo = _periodo(db, id_payroll_period)
+        if periodo.period_state != CERRADO:
+            raise AppError("errors.payroll_period_not_closed", 409,
+                           {"id_payroll_period": periodo.id_payroll_period, "period_state": periodo.period_state})
+        periodo.period_state = CALCULADO
+        periodo.reopened_at = ahora_utc()
+        periodo.reopened_by = user_id
+        _registrar(db, CERRADO, CALCULADO, user_id)
+        return periodo.serialize()
+
+
+def _movimientos(db, detalle: PayrollDetail) -> list[dict]:
+    filas = db.execute(
+        select(PayrollConcept.payroll_code, PayrollConcept.payroll_concept_description,
+               PayrollConcept.type, PayrollMovement.amount)
+        .join(PayrollConcept, PayrollConcept.id_payroll_concept == PayrollMovement.id_payroll_concept)
+        .where(PayrollMovement.id_payroll_detail == detalle.id_payroll_detail)
+        .where(PayrollMovement.deletion_date.is_(None))
+        .order_by(PayrollConcept.type, PayrollConcept.payroll_concept_description)
+    ).all()
+    return [{"code": codigo or "", "description": descripcion or "", "type": tipo, "amount": float(_dinero(monto))}
+            for codigo, descripcion, tipo, monto in filas]
+
+
+def resumen_periodo(id_payroll_period) -> dict:
+    """Lo ya calculado del periodo, sin recalcular (sirve tambien si esta cerrado)."""
+    with transaction_context() as db:
+        periodo = _periodo(db, id_payroll_period)
+        filas = db.execute(
+            select(PayrollDetail, User)
+            .join(User, User.id_user == PayrollDetail.id_user)
+            .where(PayrollDetail.id_payroll_period == periodo.id_payroll_period)
+            .where(PayrollDetail.deletion_date.is_(None))
+            .order_by(User.full_name)
+        ).all()
+        empleados = []
+        for detalle, empleado in filas:
+            por_codigo = {m["code"]: m["amount"] for m in _movimientos(db, detalle)}
+            empleados.append({
+                "id_user": empleado.id_user,
+                "full_name": empleado.full_name or "",
+                "days_worked": detalle.days_worked or 0,
+                "daily_salary": float(_dinero(empleado.base_salary)),
+                "salary": float(_dinero(detalle.gross_salary)),
+                "isr": por_codigo.get("ISR", 0.0),
+                "imss": por_codigo.get("IMSS", 0.0),
+                "total_earnings": float(_dinero(detalle.total_earnings)),
+                "total_deductions": float(_dinero(detalle.total_deductions)),
+                "net_pay": float(_dinero(detalle.net_pay)),
+            })
+        return {
+            "id_payroll_period": periodo.id_payroll_period,
+            "period_state": periodo.period_state,
+            "employees": empleados,
+            "without_salary": [],
+            "total_net_pay": float(sum((_dinero(e["net_pay"]) for e in empleados), _dinero(0))),
+        }
+
+
+def datos_del_recibo(id_payroll_period, id_user) -> dict:
+    """Todo lo que imprime el recibo de un empleado en un periodo ya calculado."""
+    from app.models import CustomerSupplier
+    with transaction_context() as db:
+        periodo = _periodo(db, id_payroll_period)
+        if periodo.period_state == ABIERTO:
+            raise AppError("errors.payroll_period_not_calculated", 409,
+                           {"id_payroll_period": periodo.id_payroll_period, "period_state": periodo.period_state})
+        try:
+            id_user = int(id_user)
+        except (TypeError, ValueError) as exc:
+            raise AppError("errors.resource_not_found", 404) from exc
+        detalle = db.scalars(
+            select(PayrollDetail)
+            .where(PayrollDetail.id_payroll_period == periodo.id_payroll_period)
+            .where(PayrollDetail.id_user == id_user)
+            .where(PayrollDetail.deletion_date.is_(None))
+        ).first()
+        empleado = db.get(User, id_user)
+        if detalle is None or empleado is None:
+            raise AppError("errors.resource_not_found", 404)
+        empresa = db.scalars(
+            select(CustomerSupplier)
+            .where(CustomerSupplier.is_principal.is_(True))
+            .where(CustomerSupplier.deletion_date.is_(None))
+            .order_by(CustomerSupplier.id_customer_supplier)
+        ).first()
+        movimientos = _movimientos(db, detalle)
+        return {
+            "company": (empresa.name if empresa else "") or "",
+            "company_tax_id": (empresa.tax_id if empresa else "") or "",
+            "id_payroll_period": periodo.id_payroll_period,
+            "period_start": periodo.period_start.isoformat() if periodo.period_start else "",
+            "period_end": periodo.period_end.isoformat() if periodo.period_end else "",
+            "payment_date": periodo.payment_date.isoformat() if periodo.payment_date else "",
+            "period_state": periodo.period_state,
+            "employee": empleado.full_name or empleado.username or "",
+            "position": empleado.puesto or "",
+            "days_worked": detalle.days_worked or 0,
+            "daily_salary": float(_dinero(empleado.base_salary)),
+            "earnings": [m for m in movimientos if m["type"] == "earning"],
+            "deductions": [m for m in movimientos if m["type"] == "deduction"],
+            "total_earnings": float(_dinero(detalle.total_earnings)),
+            "total_deductions": float(_dinero(detalle.total_deductions)),
+            "net_pay": float(_dinero(detalle.net_pay)),
+        }
+
+
+def pdf_del_recibo(id_payroll_period, id_user) -> tuple[bytes, str]:
+    """El recibo en PDF y su nombre de archivo.
+
+    Se dibuja con el mismo motor de documentos que el vale y el laboratorio
+    (plantilla documents-reports/templates/payroll_period_receipt.html), pero sin
+    registrarlo en el catalogo generico: asi la ruta /documents/<clave>/<id> no
+    puede abrirlo con datos que no son los suyos.
+    """
+    import os
+    import sys
+    datos = datos_del_recibo(id_payroll_period, id_user)
+    app_path = os.getenv("DOCUMENTS_REPORTS_APP_PATH", "/documents-reports/app")
+    if app_path not in sys.path:
+        sys.path.insert(0, app_path)
+    from documents.service import DocumentService
+    plantillas = os.getenv("DOCUMENTS_TEMPLATES_DIR", "/documents-reports/templates")
+    html = DocumentService(plantillas).env.get_template("payroll_period_receipt.html").render(record=datos)
+    from weasyprint import HTML
+    pdf = HTML(string=html, base_url=plantillas).write_pdf()
+    return pdf, f"recibo_periodo_{datos['id_payroll_period']}_empleado_{int(id_user)}.pdf"

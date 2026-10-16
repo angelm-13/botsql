@@ -2557,7 +2557,12 @@
     "project_not_editable": "Das Projekt kann im aktuellen Status nicht mehr bearbeitet werden.",
     "project_open_tasks": "Das Projekt kann nicht ausgeliefert werden: es gibt noch offene Aufgaben.",
     "project_requires_task": "Das Projekt kann nicht gestartet werden: fügen Sie mindestens eine Aufgabe hinzu, bevor Sie es in Bearbeitung setzen.",
-    "project_tasks_not_completed": "Das Projekt kann nicht abgeschlossen werden: es gibt noch offene Aufgaben."
+    "project_tasks_not_completed": "Das Projekt kann nicht abgeschlossen werden: es gibt noch offene Aufgaben.",
+    "payroll_period_closed": "Der Zeitraum ist abgeschlossen: keine Neuberechnung oder Bearbeitung.",
+    "payroll_period_not_calculated": "Berechnen Sie zuerst den Lohn des Zeitraums.",
+    "payroll_period_not_closed": "Der Zeitraum ist nicht abgeschlossen.",
+    "payroll_parameters_missing": "Amtliche Lohnwerte (UMA, Mindestlohn, IMSS) für das Datum des Zeitraums fehlen.",
+    "payroll_isr_table_missing": "Der Lohnsteuertarif für das Jahr des Zeitraums ist nicht erfasst."
   },
   "logistics": {
     "module": "Logistik",
@@ -3279,7 +3284,24 @@
       "from": "Von",
       "to": "Bis",
       "timezone": "Zeitzone",
-      "generate": "Bericht erstellen"
+      "generate": "Bericht erstellen",
+      "source": "Quelle",
+      "source_device": "Stempeluhr live",
+      "source_saved": "Im System gespeichert",
+      "save": "Im System speichern"
+    },
+    "import": {
+      "done": "Stempelungen im System gespeichert",
+      "saved": "Neu",
+      "already_saved": "Bereits vorhanden",
+      "skipped": "Verworfen",
+      "needs_connection": "Richten Sie zuerst die Stempeluhr ein, um zu speichern."
+    },
+    "link": {
+      "column": "Mitarbeiter im System",
+      "none": "Nicht verknüpft",
+      "done": "Mitarbeiter verknüpft",
+      "removed": "Verknüpfung entfernt"
     },
     "metrics": {
       "people": "Personen",
@@ -3430,5 +3452,33 @@
     "example_category": "Kategorie",
     "example_item": "Beispielartikel",
     "example_person": "Beispielperson"
+  },
+  "payroll_calc": {
+    "button": "Lohn berechnen",
+    "title": "Lohn berechnet",
+    "employee": "Mitarbeiter",
+    "days": "Arbeitstage",
+    "daily": "Tageslohn",
+    "salary": "Lohn",
+    "earnings": "Bezüge",
+    "deductions": "Abzüge",
+    "net": "Netto",
+    "total": "Gesamt zu zahlen",
+    "without_salary": "Kein Tageslohn erfasst (nicht berechnet)",
+    "empty": "Kein Mitarbeiter hat einen Tageslohn.",
+    "hint": "Arbeitstage = Tage mit mindestens einer gespeicherten, verknüpften Stempelung. Neu berechnen ersetzt nur den Lohn; manuelle Einträge bleiben.",
+    "close": "Zeitraum abschließen",
+    "reopen": "Zeitraum wieder öffnen",
+    "view": "Ergebnis ansehen",
+    "receipt": "PDF-Beleg",
+    "state_open": "Offen",
+    "state_calculated": "Berechnet",
+    "state_closed": "Abgeschlossen",
+    "confirm_close": "Zeitraum abschließen? Er kann dann nicht mehr neu berechnet oder bearbeitet werden.",
+    "confirm_reopen": "Zeitraum wieder öffnen? Es wird festgehalten, wer ihn geöffnet hat.",
+    "closed_done": "Zeitraum abgeschlossen.",
+    "reopened_done": "Zeitraum wieder geöffnet.",
+    "isr_hint": "Lohnsteuer laut Tarif minus Beschäftigungszuschuss",
+    "tax_hint": "Lohnsteuer nach geltendem amtlichem Tarif, Beschäftigungszuschuss bereits abgezogen; IMSS ist der Arbeitnehmeranteil. Amtliche Werte mit dem Steuerberater prüfen."
   }
 }

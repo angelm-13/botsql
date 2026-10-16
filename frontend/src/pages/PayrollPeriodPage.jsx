@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { RefreshCw, Search, Trash2, Pencil } from "lucide-react";
+import { Calculator, Eye, FileDown, Lock, Unlock, RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
-import { getAllPayrollPeriod, createPayrollPeriod, updatePayrollPeriod, deletePayrollPeriod, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllStatus } from "../api";
+import { calculatePayrollPeriod, closePayrollPeriod, downloadPayrollReceipt, getPayrollPeriodSummary, reopenPayrollPeriod, getAllPayrollPeriod, createPayrollPeriod, updatePayrollPeriod, deletePayrollPeriod, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllStatus } from "../api";
 import { fetchAllPages } from "../utils/fetchAllPages";
 import Pagination from "../components/Pagination.jsx";
 import PageHeader from "../components/PageHeader.jsx";
@@ -47,6 +47,9 @@ export default function PayrollPeriodPage() {
   const [loading, setLoading] = useState(false);
   const [errorKey, setErrorKey] = useState("");
   const [errorMeta, setErrorMeta] = useState(null);
+  // Resultado del ultimo "Calcular nomina" (payroll_calculation_service).
+  const [calculation, setCalculation] = useState(null);
+  const [notice, setNotice] = useState("");
 
   const currentUser = useMemo(() => readCurrentUser(), []);
   const isSuperUser = Boolean(currentUser?.is_superuser || currentUser?.is_bootstrap_admin || currentUser?.username === "admin1");
@@ -59,7 +62,8 @@ export default function PayrollPeriodPage() {
   const canUpdate = canUseAction(ACTION_UPDATE);
   const canDelete = canUseAction(ACTION_DELETE);
   const canSubmitForm = editingId ? canUpdate : canCreate;
-  const showRowActions = canRead && (canUpdate || canDelete);
+  // Tambien para quien solo consulta: ve el estado del periodo y su resultado.
+  const showRowActions = canRead;
   const [statusOptions, setStatusOptions] = useState([]);
 
   async function loadData() {
@@ -393,6 +397,66 @@ export default function PayrollPeriodPage() {
   // producto 8580 aunque no se sepa como se llama.
   const filtered = items;
 
+  // Abierto -> Calculado -> Cerrado. Las reglas viven en el backend
+  // (payroll_calculation_service.py); aqui solo se ofrecen los botones que
+  // tienen sentido para cada estado.
+  async function periodAction(action, { confirmKey, doneKey, reload } = {}) {
+    if (confirmKey && !window.confirm(t(confirmKey))) return;
+    setErrorKey("");
+    setErrorMeta(null);
+    setNotice("");
+    try {
+      const result = await action();
+      if (doneKey) setNotice(t(doneKey));
+      if (reload) await loadData();
+      return result;
+    } catch (error) {
+      setErrorKey(error.message || "errors.request_failed");
+      setErrorMeta(error.payload?.meta || null);
+      return null;
+    }
+  }
+
+  async function runCalculation(item) {
+    setCalculation(null);
+    const result = await periodAction(() => calculatePayrollPeriod(item.id_payroll_period), { reload: true });
+    if (result) setCalculation(result);
+  }
+
+  async function viewCalculation(item) {
+    setCalculation(null);
+    const result = await periodAction(() => getPayrollPeriodSummary(item.id_payroll_period));
+    if (result) setCalculation(result);
+  }
+
+  async function closePeriod(item) {
+    await periodAction(() => closePayrollPeriod(item.id_payroll_period),
+      { confirmKey: "payroll_calc.confirm_close", doneKey: "payroll_calc.closed_done", reload: true });
+    if (calculation?.id_payroll_period === item.id_payroll_period) setCalculation({ ...calculation, period_state: "closed" });
+  }
+
+  async function reopenPeriod(item) {
+    await periodAction(() => reopenPayrollPeriod(item.id_payroll_period),
+      { confirmKey: "payroll_calc.confirm_reopen", doneKey: "payroll_calc.reopened_done", reload: true });
+    if (calculation?.id_payroll_period === item.id_payroll_period) setCalculation({ ...calculation, period_state: "calculated" });
+  }
+
+  async function openReceipt(idUser) {
+    const blob = await periodAction(() => downloadPayrollReceipt(calculation.id_payroll_period, idUser));
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank", "noopener");
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+
+  const stateBadge = (state) => {
+    const value = state || "open";
+    const tone = value === "closed" ? "status-converted" : value === "calculated" ? "status-sent" : "";
+    return <span className={`quotation-status-badge ${tone}`}>{t(`payroll_calc.state_${value}`)}</span>;
+  };
+
+  const money = (value) => new Intl.NumberFormat(lang, { style: "currency", currency: "MXN" }).format(Number(value || 0));
+
   const groups = useMemo(() => filtered.reduce((acc, item) => {
     const key = String(item.id_status ?? t("common.unclassified"));
     acc[key] = acc[key] || []; acc[key].push(item); return acc;
@@ -469,6 +533,34 @@ export default function PayrollPeriodPage() {
 
       {errorKey && <div className="alert error">{renderError()}</div>}
       {loading && <div className="alert">{t("common.loading")}</div>}
+      {notice && <div className="alert success" role="status">{notice}</div>}
+      {calculation && (
+        <div className="table-card">
+          <h3>{t("payroll_calc.title")} · #{calculation.id_payroll_period} {stateBadge(calculation.period_state)}</h3>
+          <p className="muted">{t("payroll_calc.hint")}</p>
+          <p className="muted">{t("payroll_calc.tax_hint")}</p>
+          {calculation.employees.length ? (
+            <table>
+              <thead><tr>
+                <th>{t("payroll_calc.employee")}</th><th>{t("payroll_calc.days")}</th><th>{t("payroll_calc.daily")}</th>
+                <th>{t("payroll_calc.salary")}</th><th>{t("payroll_calc.earnings")}</th><th>ISR</th><th>IMSS</th><th>{t("payroll_calc.deductions")}</th><th>{t("payroll_calc.net")}</th>
+                <th>{t("payroll_calc.receipt")}</th>
+              </tr></thead>
+              <tbody>{calculation.employees.map((row) => (
+                <tr key={row.id_user}>
+                  <td>{row.full_name}</td><td>{row.days_worked}</td><td>{money(row.daily_salary)}</td>
+                  <td>{money(row.salary)}</td><td>{money(row.total_earnings)}</td><td title={row.employment_subsidy ? `${t("payroll_calc.isr_hint")}: ${money(row.isr_before_subsidy)} - ${money(row.employment_subsidy)}` : undefined}>{money(row.isr)}</td><td title={row.sbc ? `SBC ${money(row.sbc)}` : undefined}>{money(row.imss)}</td><td>{money(row.total_deductions)}</td><td><strong>{money(row.net_pay)}</strong></td>
+                  <td><button type="button" className="button ghost" onClick={() => openReceipt(row.id_user)} aria-label={`${t("payroll_calc.receipt")} ${row.full_name}`}><FileDown size={15} /> PDF</button></td>
+                </tr>
+              ))}</tbody>
+              <tfoot><tr><td colSpan="8"><strong>{t("payroll_calc.total")}</strong></td><td><strong>{money(calculation.total_net_pay)}</strong></td><td /></tr></tfoot>
+            </table>
+          ) : <p>{t("payroll_calc.empty")}</p>}
+          {calculation.without_salary.length > 0 && (
+            <p className="muted">{t("payroll_calc.without_salary")}: {calculation.without_salary.map((row) => row.full_name).join(", ")}</p>
+          )}
+        </div>
+      )}
       {permissionReady && !canRead && !canCreate && <div className="empty"><strong>{t("security.permission.read_denied", "Sin permiso de lectura")}</strong><p>{t("common.module_hidden_hint", "Este módulo no tiene acciones seleccionadas; quedará oculto y sus campos no se mostrarán.")}</p></div>}
       {canRead && !loading && filtered.length === 0 && <div className="empty"><strong>{t("common.empty_title")}</strong><p>{t("common.empty_body")}</p></div>}
 
@@ -483,7 +575,7 @@ export default function PayrollPeriodPage() {
               {canSeeField("creation_date") && <th>{t("fields.payroll_period.creation_date")}</th>}
               {canSeeField("last_update_date") && <th>{t("fields.payroll_period.last_update_date")}</th>}
               {canSeeField("deletion_date") && <th>{t("fields.payroll_period.deletion_date")}</th>}
-        </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_payroll_period}>{showRowActions && <td className="row-actions">{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</td>}
+        </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_payroll_period}>{showRowActions && <td className="row-actions">{stateBadge(item.period_state)}{canUpdate && item.period_state !== "closed" && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && item.period_state !== "closed" && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{canUpdate && item.period_state !== "closed" && <button type="button" onClick={() => runCalculation(item)} title={t("payroll_calc.button")} aria-label={`${t("payroll_calc.button")} #${item.id_payroll_period}`}><Calculator size={15} /></button>}{item.period_state && item.period_state !== "open" && <button type="button" onClick={() => viewCalculation(item)} title={t("payroll_calc.view")} aria-label={`${t("payroll_calc.view")} #${item.id_payroll_period}`}><Eye size={15} /></button>}{canUpdate && item.period_state === "calculated" && <button type="button" onClick={() => closePeriod(item)} title={t("payroll_calc.close")} aria-label={`${t("payroll_calc.close")} #${item.id_payroll_period}`}><Lock size={15} /></button>}{canDelete && item.period_state === "closed" && <button type="button" onClick={() => reopenPeriod(item)} title={t("payroll_calc.reopen")} aria-label={`${t("payroll_calc.reopen")} #${item.id_payroll_period}`}><Unlock size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</td>}
               {canSeeField("id_payroll_period") && <td><pre className="cell-value">{formatTableValue(item.id_payroll_period)}</pre></td>}
               {canSeeField("period_start") && <td><pre className="cell-value">{formatTableValue(item.period_start)}</pre></td>}
               {canSeeField("period_end") && <td><pre className="cell-value">{formatTableValue(item.period_end)}</pre></td>}

@@ -53,6 +53,17 @@ def ahora_negocio() -> datetime:
     return datetime.now(ZONA_NEGOCIO).replace(tzinfo=None)
 
 
+def a_hora_negocio(valor: datetime) -> datetime:
+    """Una fecha que trae un dispositivo, como hora de pared del negocio sin zona.
+
+    Con zona (`-06:00`, `Z`) se convierte a la del negocio; sin zona se toma
+    como ya local y se deja igual.
+    """
+    if valor.tzinfo is not None:
+        valor = valor.astimezone(ZONA_NEGOCIO)
+    return valor.replace(tzinfo=None)
+
+
 def a_iso_utc(valor):
     """Una fecha de auditoria como texto ISO con zona explicita (`...Z`).
 

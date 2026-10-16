@@ -27,6 +27,8 @@ class PayrollDetail(Base):
     total_earnings: Mapped[float] = mapped_column(Numeric(12,2), nullable=True)
     total_deductions: Mapped[float] = mapped_column(Numeric(12,2), nullable=True)
     net_pay: Mapped[float] = mapped_column(Numeric(12,2), nullable=True)
+    # Dias con checada que uso el calculo de nomina; los muestra el recibo.
+    days_worked: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_by: Mapped[int] = mapped_column(Integer, nullable=False)
     creation_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now())
     last_update_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
@@ -41,6 +43,7 @@ class PayrollDetail(Base):
             'total_earnings': to_json_value(self.total_earnings),
             'total_deductions': to_json_value(self.total_deductions),
             'net_pay': to_json_value(self.net_pay),
+            'days_worked': to_json_value(self.days_worked),
             'created_by': to_json_value(self.created_by),
             'creation_date': a_iso_utc(self.creation_date),
             'last_update_date': a_iso_utc(self.last_update_date),

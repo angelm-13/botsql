@@ -2559,7 +2559,12 @@
     "project_not_editable": "O projeto não pode mais ser editado no status atual.",
     "project_open_tasks": "Não é possível entregar o projeto: ainda há tarefas em aberto.",
     "project_requires_task": "Não é possível iniciar o projeto: adicione ao menos uma tarefa antes de movê-lo para em andamento.",
-    "project_tasks_not_completed": "Não é possível concluir o projeto: ainda há tarefas em aberto."
+    "project_tasks_not_completed": "Não é possível concluir o projeto: ainda há tarefas em aberto.",
+    "payroll_period_closed": "O período está fechado: não pode ser recalculado nem editado.",
+    "payroll_period_not_calculated": "Primeiro calcule a folha do período.",
+    "payroll_period_not_closed": "O período não está fechado.",
+    "payroll_parameters_missing": "Faltam valores oficiais da folha (UMA, salário mínimo, IMSS) vigentes na data do período.",
+    "payroll_isr_table_missing": "A tabela do ISR do ano do período não está cadastrada."
   },
   "logistics": {
     "module": "Logística",
@@ -3285,7 +3290,24 @@
       "from": "De",
       "to": "Até",
       "timezone": "Fuso horário",
-      "generate": "Gerar relatório"
+      "generate": "Gerar relatório",
+      "source": "Origem",
+      "source_device": "Relógio ao vivo",
+      "source_saved": "Salvo no sistema",
+      "save": "Salvar no sistema"
+    },
+    "import": {
+      "done": "Marcações salvas no sistema",
+      "saved": "Novas",
+      "already_saved": "Já estavam",
+      "skipped": "Descartadas",
+      "needs_connection": "Configure o relógio primeiro para poder salvar."
+    },
+    "link": {
+      "column": "Funcionário do sistema",
+      "none": "Sem vínculo",
+      "done": "Funcionário vinculado",
+      "removed": "Vínculo removido"
     },
     "metrics": {
       "people": "Pessoas",
@@ -3436,5 +3458,33 @@
     "example_category": "Categoria",
     "example_item": "Item de exemplo",
     "example_person": "Pessoa de exemplo"
+  },
+  "payroll_calc": {
+    "button": "Calcular folha",
+    "title": "Folha calculada",
+    "employee": "Funcionário",
+    "days": "Dias trabalhados",
+    "daily": "Salário diário",
+    "salary": "Salário",
+    "earnings": "Proventos",
+    "deductions": "Descontos",
+    "net": "Líquido",
+    "total": "Total a pagar",
+    "without_salary": "Sem salário diário (não calculados)",
+    "empty": "Nenhum funcionário tem salário diário.",
+    "hint": "Dias trabalhados = dias com ao menos uma marcação salva e vinculada ao funcionário. Recalcular substitui só o salário; o lançado à mão é mantido.",
+    "close": "Fechar período",
+    "reopen": "Reabrir período",
+    "view": "Ver resultado",
+    "receipt": "Recibo PDF",
+    "state_open": "Aberto",
+    "state_calculated": "Calculado",
+    "state_closed": "Fechado",
+    "confirm_close": "Fechar o período? Não poderá mais ser recalculado nem editado.",
+    "confirm_reopen": "Reabrir o período? Ficará registrado quem o reabriu.",
+    "closed_done": "Período fechado.",
+    "reopened_done": "Período reaberto.",
+    "isr_hint": "ISR da tabela menos subsídio ao emprego",
+    "tax_hint": "ISR com a tabela oficial vigente e o subsídio ao emprego já descontado; IMSS é a contribuição do trabalhador. Revise os valores oficiais com o contador."
   }
 }
