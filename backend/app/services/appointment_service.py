@@ -69,9 +69,13 @@ def _parse_date(value, field: str) -> date:
 
 def _parse_time(value, field: str) -> time:
     try:
-        return time.fromisoformat(str(value))
+        parsed = time.fromisoformat(str(value))
     except ValueError as exc:
         raise AppError("errors.invalid_field", 400, {"field": field}) from exc
+    # Una hora con zona no se compara con una sin zona: daba TypeError (500).
+    if parsed.tzinfo is not None:
+        raise AppError("errors.invalid_field", 400, {"field": field})
+    return parsed
 
 
 def _parse_datetime(value, field: str) -> datetime:

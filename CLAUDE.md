@@ -6,6 +6,32 @@ aparte de `ARQUITECTURA_TYAKXA_TNY.md` (referencia técnica estable) y de
 sección se resuelve, se puede recortar; mientras tanto se deja completa para
 que una sesión nueva no tenga que releer el historial de chat.
 
+## Bitacora 2026-10-16 — baja logica en el CRUD comun y vales en el registro de eventos
+
+Pedido: que cancelar vales (y cualquier alta/cambio/baja) quede en `event_log`, y que
+borrar solo quite de pantalla, no de la base. Sin commitear aun.
+
+1. **Baja logica** (`base_service.py`): `CrudService.delete` pone `deletion_date` en vez de
+   `session.delete` cuando el modelo tiene esa columna (95 modelos); sin la columna sigue
+   siendo borrado fisico. `get`/`update`/`delete` de una fila dada de baja dan 404 y
+   `solo_vigentes` ahora es `True` por omision (antes solo permisos/campos): el listado la
+   esconde. El asiento `delete` del registro de eventos se sigue escribiendo igual.
+2. **Vales al registro de eventos**: el CRUD ya registraba alta/cambio/baja, pero los flujos
+   del vale (`warehouse_voucher_service.py`) escriben directo y no dejaban nada. Nuevo
+   `_bitacora()` -> `audit_event` (`event_type="voucher_transition"`, categoria `transition`,
+   `event_detail` = prevale/creado/autorizado/entregado/recibido/cancelado/renglon_devuelto/
+   reporte_de_estado) en la misma transaccion del paso.
+3. Pruebas: `test_creating_and_cancelling_leave_a_trace_in_the_event_log` (vales) y
+   `test_deleting_is_a_soft_delete_that_hides_it_and_logs_it` (ubicaciones). Vales + almacen:
+   230 passed. Suite completa: ver resultado al cierre de la sesion.
+4. **Riesgos / decisiones para el equipo**: (a) borrar ya no da 409
+   `delete_has_related_records` -- una entidad con registros ligados (cliente con facturas)
+   se oculta en vez de bloquearse; (b) un registro dado de baja sigue ocupando sus llaves
+   unicas (username, codigos), recrearlo con el mismo valor da 409; (c) filas migradas con
+   `deletion_date` ya puesto dejan de verse en los listados genericos -- revisar antes de
+   promover a adser-prod; (d) otros servicios que escriben directo (proyectos, compras,
+   facturas) siguen sin asiento propio: se cubrio vales, no "cualquier" flujo.
+
 ## Bitacora 2026-10-13 — presupuesto de compras por proyecto y responsable del vale
 
 **Presupuesto por proyecto** (`purchase_budget_service.py`, migracion `20261013100000`):

@@ -2598,6 +2598,20 @@ class TestCancelarUnVale(BaseVale):
 
         self.assertEqual(404, caja.exception.status_code)
 
+    def test_creating_and_cancelling_leave_a_trace_in_the_event_log(self):
+        from app.models import EventLog
+        from app.services.warehouse_voucher_service import cancelar_vale
+
+        r = self._prevale_con_stock()
+        id_vale = r["voucher"]["id_incident"]
+        cancelar_vale(id_vale, {"note": "error de captura"}, ACTOR)
+
+        with transaction_context() as db:
+            filas = db.query(EventLog).filter(EventLog.table_name == "incident").all()
+            verbos = [f.event_detail for f in filas
+                      if (f.after_value or {}).get("id_incident") == id_vale]
+        self.assertEqual(["prevale", "cancelado"], verbos)
+
     def test_a_destruction_vale_needs_no_return_date(self):
         self.surtir(3, RACK)
         with transaction_context() as db:

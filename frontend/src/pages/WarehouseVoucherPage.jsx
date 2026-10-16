@@ -391,7 +391,7 @@ export default function WarehouseVoucherPage() {
     }
   };
 
-  /** Autoriza un borrador: aparta el material (queda en espera); sale al entregar. */
+  /** Autoriza un borrador: lo abre y saca el material. */
   const autorizar = async (idVale) => {
     setError("");
     setAviso("");
@@ -399,7 +399,7 @@ export default function WarehouseVoucherPage() {
       const r = await authorizeWarehouseVoucher(idVale);
       setConsultado(await getWarehouseVoucher(r.voucher.id_incident));
       setAviso(t("voucher.authorized",
-        "Vale autorizado: el material quedó apartado; sale del almacén al entregarlo."));
+        "Vale autorizado: el material salió del almacén."));
       await cargar();
     } catch (e) {
       decirError(e, "No se pudo autorizar el vale.");
@@ -421,18 +421,6 @@ export default function WarehouseVoucherPage() {
     }
   };
 
-  // El supervisor dueño del vale confirma que ya recupero la pieza de manos
-  // del operador al que se la habia entregado.
-  const confirmarCustodia = async (idLinea) => {
-    setError("");
-    try {
-      const r = await confirmWarehouseVoucherLineCustody(idLinea);
-      setConsultado(await getWarehouseVoucher(r.id_incident));
-    } catch (e) {
-      decirError(e, "No se pudo confirmar la recepción.");
-    }
-  };
-
   const cerrar = async (idLinea, payload = {}) => {
     setError("");
     try {
@@ -449,6 +437,18 @@ export default function WarehouseVoucherPage() {
 
   // Almacen marca el vale COMPLETO como entregado (a quien se designo, o a
   // otra persona con su nota).
+  // El supervisor dueño del vale confirma que ya recupero la pieza de manos
+  // del operador al que se la habia entregado.
+  const confirmarCustodia = async (idLinea) => {
+    setError("");
+    try {
+      const r = await confirmWarehouseVoucherLineCustody(idLinea);
+      setConsultado(await getWarehouseVoucher(r.id_incident));
+    } catch (e) {
+      decirError(e, "No se pudo confirmar la recepción.");
+    }
+  };
+
   const entregarVale = async (idVale, payload) => {
     setError("");
     setAviso("");

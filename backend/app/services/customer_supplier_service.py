@@ -52,6 +52,12 @@ class CustomerSupplierService(CrudService):
                     status_code=400,
                     meta={'field': 'credit_limit'},
                 ) from exc
+            if not credit_limit.is_finite():
+                raise AppError(
+                    'validations.customer_supplier.credit_limit.invalid',
+                    status_code=400,
+                    meta={'field': 'credit_limit'},
+                )
             if credit_limit < 0:
                 raise AppError(
                     'validations.customer_supplier.credit_limit.negative',

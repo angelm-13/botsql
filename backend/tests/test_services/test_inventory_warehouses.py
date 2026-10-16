@@ -456,6 +456,23 @@ class TestLocationHierarchyIntegrity(WarehouseTestCase):
     def test_an_empty_leaf_can_be_deleted(self):
         self.assertTrue(LocationService.delete(RACK_A1, user_id=1))
 
+    def test_deleting_is_a_soft_delete_that_hides_it_and_logs_it(self):
+        from app.models import EventLog
+
+        LocationService.delete(RACK_A1, user_id=1)
+
+        with transaction_context() as db:
+            fila = db.get(Location, RACK_A1)
+            self.assertIsNotNone(fila)  # sigue en la base
+            self.assertIsNotNone(fila.deletion_date)
+            self.assertEqual(1, db.query(EventLog).filter_by(
+                table_name="location", action="delete").count())
+        with self.assertRaises(AppError):
+            LocationService.get(RACK_A1)
+        self.assertNotIn(RACK_A1, [i["id_location"] for i in LocationService.list(per_page=500)["items"]])
+        with self.assertRaises(AppError):
+            LocationService.delete(RACK_A1, user_id=1)
+
 
 class TestReconciliation(WarehouseTestCase):
     def test_reconciles_ledger_stock_and_product_total(self):

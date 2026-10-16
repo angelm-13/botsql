@@ -404,6 +404,14 @@ class DocumentManagementService:
                 employee = db.get(User, employee_id)
                 if not employee or employee.deletion_date is not None or employee.id_proyect != project_id or not employee.is_employee:
                     raise AppError("errors.invalid_field", 400, {"field": "id_employee"})
+            for campo, modelo in (("id_laboratory_equipment", LaboratoryEquipment),
+                                  ("id_laboratory_service_order", LaboratoryServiceOrder)):
+                destino = target_fields.get(campo)
+                if destino:
+                    fila = db.get(modelo, destino)
+                    if (not fila or getattr(fila, "deletion_date", None) is not None
+                            or fila.id_proyect != project_id):
+                        raise AppError("errors.invalid_field", 400, {"field": campo})
             document = Document(
                 id_proyect=project_id, id_document_category=category_id,
                 title=str(metadata.get("title") or original_filename).strip()[:200],
