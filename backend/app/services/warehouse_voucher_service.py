@@ -266,6 +266,21 @@ def _actor(user_data: dict) -> int:
     return id_usuario
 
 
+def _bitacora(db, user_data: dict, vale, accion: str, **datos) -> None:
+    """Deja en `event_log` lo que le paso al vale (alta, autorizacion, entrega,
+    cancelacion...). Va en la misma transaccion: si el paso falla, no queda rastro
+    de algo que no ocurrio."""
+    from app.security.audit import audit_event
+
+    audit_event(
+        db, user_data, event_type="voucher_transition", entity_name="incident",
+        action=accion,
+        metadata={"id_incident": int(vale.id_incident),
+                  "id_proyect": vale.id_proyect,
+                  "status": str(vale.incident_status or ""), **datos},
+    )
+
+
 def _fecha_de_regreso(valor):
     """Cuando debe volver. No es opcional.
 
@@ -951,6 +966,8 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
         )
         db.add(vale)
         db.flush()
+        _bitacora(db, user_data, vale, "prevale" if como_borrador else "creado",
+                  lineas=len(validados), nota=motivo)
 
         renglones_escritos = []
         for datos in validados:
@@ -1339,6 +1356,11 @@ def devolver_renglon(id_line, payload: dict, user_data: dict) -> dict:
         vale = _vale(db, renglon.id_incident, para_actualizar=True)
         _sincronizar_estado(db, vale)
         _limpiar_estado_de_producto(db, vale, renglon)
+        _bitacora(db, user_data, vale, "renglon_devuelto",
+                  id_renglon=renglon.id_nm_incident_product,
+                  id_producto=renglon.id_product, cantidad=float(renglon.quantity),
+                  devuelto_por_usuario=devuelve_usuario,
+                  devuelto_por_nombre=devuelve_nombre, nota=nota)
 
         return {
             "line": renglon.serialize(),
@@ -1801,6 +1823,8 @@ def entregar_vale(id_incident, payload: dict, user_data: dict) -> dict:
                 if str(r.direction or "") == SALIDA and r.close_date is None:
                     _poner_custodia(r, vale.id_user, id_user=id_recibe, nombre=nombre)
         db.flush()
+        _bitacora(db, user_data, vale, "entregado", previo=estado,
+                  entregado_a_usuario=id_recibe, entregado_a_nombre=nombre, nota=nota)
         return {"voucher": vale.serialize(),
                 "delivery_status": estado_de_entrega(vale)}
 
@@ -1853,6 +1877,7 @@ def confirmar_recibido_del_vale(id_incident, payload: dict, user_data: dict) -> 
                     and (r.id_user_delivered_to is not None or r.delivered_to_name)):
                 r.custody_confirmed_date = ahora
         db.flush()
+        _bitacora(db, user_data, vale, "recibido", conforme=ok, nota=nota)
         return {"voucher": vale.serialize(),
                 "delivery_status": estado_de_entrega(vale)}
 
@@ -2008,6 +2033,7 @@ def cancelar_vale(id_incident, payload: dict, user_data: dict) -> dict:
         vale.note = ("%s [Cancelado: %s]" % (vale.note or "", motivo)).strip()[:600]
         vale.last_update_date = ahora
         db.flush()
+        _bitacora(db, user_data, vale, "cancelado", previo=estado, motivo=motivo)
         return {"voucher": vale.serialize(),
                 "lines": _con_existencias(db, _renglones(db, vale.id_incident))}
 
@@ -2083,6 +2109,7 @@ def autorizar_vale(id_incident, payload: dict, user_data: dict) -> dict:
         vale.incident_status = EN_ESPERA
         vale.last_update_date = _ahora()
         db.flush()
+        _bitacora(db, user_data, vale, "autorizado", previo=estado)
 
         return {
             "voucher": vale.serialize(),
@@ -2200,6 +2227,9 @@ def reportar_estado_herramienta(id_line, payload: dict, user_data: dict) -> dict
                 renglon_orig.status = "destruida"
 
         db.flush()
+        _bitacora(db, user_data, nuevo_vale, "reporte_de_estado",
+                  id_vale_original=vale_orig.id_incident,
+                  id_renglon=renglon_orig.id_nm_incident_product, nota=motivo)
 
         return {
             "original_line": renglon_orig.serialize(),

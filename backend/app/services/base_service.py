@@ -317,10 +317,17 @@ class CrudService:
             )
         if cls.entity_name == 'user' and ('uq_user_username' in normalized or 'user_username_key' in normalized or ('duplicate key' in normalized and 'username' in normalized)):
             raise AppError('errors.username_already_exists', status_code=409)
-        raise AppError('errors.database_constraint', status_code=400, meta={'detail': detail})
+        # El mensaje crudo de la base (tablas, valores, SQL) no sale al cliente: va al log.
+        # Solo el nombre de la restriccion, que algunas pantallas usan para explicar el error.
+        import logging
+        import re
+        logging.getLogger(__name__).warning("restriccion de base de datos: %s", detail)
+        nombre = re.search(r'constraint "?([A-Za-z0-9_]+)"?', detail)
+        raise AppError('errors.database_constraint', status_code=400,
+                       meta={'detail': nombre.group(1) if nombre else None})
 
     @classmethod
-    def _busqueda_libre(cls, texto):
+    def _busqueda_libre(cls, texto, campos=None):
         """Una sola caja de texto que busca por lo que sea.
 
         Por que hace falta
@@ -361,6 +368,10 @@ class CrudService:
             # `?q=$2b$12$` encontraba usuarios por el prefijo de su hash.
             if "password" in nombre.lower():
                 continue
+            # `campos`: solo lo que el actor puede ver; sin esto la busqueda era
+            # un oraculo sobre columnas ocultas (RFC, SSN, salario...).
+            if campos is not None and nombre not in campos:
+                continue
             atributo = getattr(cls.model, nombre, None)
             if atributo is None:
                 continue
@@ -371,18 +382,21 @@ class CrudService:
                 condiciones.append(atributo.ilike("%" + limpio + "%"))
         return or_(*condiciones) if condiciones else None
 
-    # Si el listado esconde lo que esta de baja.
-    #
-    # Se deja apagado por omision: el CRUD generico nunca filtro, y encenderlo
-    # para todas las entidades a la vez cambiaria lo que ensenan 60 pantallas de
-    # golpe. Se enciende donde una fila de baja NO significa "un registro
-    # historico" sino "esto ya no rige" -- perfiles y permisos --, porque ahi
-    # ensenarla es ofrecer algo que el guardia de peticion va a negar.
-    solo_vigentes = False
+    # Si el listado esconde lo que esta de baja. Como borrar es una baja logica
+    # (`deletion_date`), lo borrado no debe volver a salir en pantalla.
+    solo_vigentes = True
+
+    @classmethod
+    def _tiene_baja_logica(cls) -> bool:
+        return 'deletion_date' in cls._columns()
+
+    @classmethod
+    def _esta_de_baja(cls, item) -> bool:
+        return cls._tiene_baja_logica() and getattr(item, 'deletion_date', None) is not None
 
     @classmethod
     def list(cls, page: int = 1, per_page: int = 20, filters: dict | None = None,
-             sort: str | None = None, q: str | None = None):
+             sort: str | None = None, q: str | None = None, search_fields=None):
         filters = filters or {}
         # Sin tope, per_page=100000 trae la tabla entera; el techo deja pasar a
         # los selectores que cargan catalogos completos (per_page=5000).
@@ -396,7 +410,7 @@ class CrudService:
                 # ve, y en una pantalla de permisos esa mentira pequena cuesta
                 # una hora a quien la cree.
                 stmt = stmt.where(cls.model.deletion_date.is_(None))
-            busqueda = cls._busqueda_libre(q)
+            busqueda = cls._busqueda_libre(q, search_fields)
             if busqueda is not None:
                 stmt = stmt.where(busqueda)
             for key, value in filters.items():
@@ -424,7 +438,7 @@ class CrudService:
     def get(cls, item_id):
         with transaction_context() as session:
             item = session.get(cls.model, item_id)
-            if not item:
+            if not item or (cls.solo_vigentes and cls._esta_de_baja(item)):
                 raise AppError('errors.resource_not_found', status_code=404)
             return item.serialize()
 
@@ -460,11 +474,13 @@ class CrudService:
         try:
             with transaction_context() as session:
                 item = session.get(cls.model, item_id)
-                if not item:
+                if not item or cls._esta_de_baja(item):
                     raise AppError('errors.resource_not_found', status_code=404)
                 before = item.serialize()
+                llaves = {c.name for c in cls.model.__table__.primary_key.columns}
                 for key, value in payload.items():
-                    if hasattr(item, key):
+                    # La llave primaria no se reescribe por un PUT.
+                    if hasattr(item, key) and key not in llaves:
                         setattr(item, key, value)
                 session.flush()
                 after = item.serialize()
@@ -484,10 +500,15 @@ class CrudService:
         try:
             with transaction_context() as session:
                 item = session.get(cls.model, item_id)
-                if not item:
+                if not item or cls._esta_de_baja(item):
                     raise AppError('errors.resource_not_found', status_code=404)
                 before = item.serialize()
-                session.delete(item)
+                if cls._tiene_baja_logica():
+                    # Baja logica: la fila se queda en la base (con su historia y
+                    # lo que la referencia) y solo deja de salir en pantalla.
+                    item.deletion_date = datetime.now(timezone.utc).replace(tzinfo=None)
+                else:
+                    session.delete(item)
                 cls._write_event_log(
                     session,
                     action='delete',
