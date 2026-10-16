@@ -16,6 +16,7 @@ from app.models.user import User
 from app.services.notification_service import create_notification
 from app.services.operations_workflow import TASK_CLOSED_STATUSES
 from app.utils.errors import AppError
+from app.utils.scope import owner_ids, scope_bits
 from app.utils.tiempo import a_iso_utc
 
 
@@ -1217,25 +1218,19 @@ def create_project(payload: dict, user_data: dict) -> dict:
     if values.get("proyect_description") in (None, ""):
         raise AppError("errors.required_field", 400, {"field": "proyect_description"})
     values["created_by"] = actor_id
-    # El responsable es siempre quien crea el proyecto -- solo Supervisor (y
-    # roles sin restriccion) pueden crear, y no hace falta que nadie elija a
-    # otro responsable. Ignora cualquier `leader` que venga en el payload
+    # El responsable es siempre quien crea el proyecto, y no hace falta que
+    # nadie elija a otro responsable. Ignora cualquier `leader` que venga en el payload
     # (ya no llega: no esta en PROJECT_MUTABLE_FIELDS).
     values["leader"] = actor_id
     values["proyect_status"] = "draft"
     _parsear_fecha_de_la_orden(values)
     with transaction_context() as db:
-        # Correccion de negocio explicita (2026-09-28): solo Supervisor
-        # levanta el proyecto. Antes esto dependia nada mas del bit CREAR de
-        # la entidad `proyect`, y Jefe de taller tambien lo tiene (CAPTURA en
-        # "operaciones", igual que Supervisor) -- asi que sin este candado
-        # Jefe de taller podia levantar proyectos propios, cuando su papel es
-        # TOMAR los que ya existen (`take_project`) y ejecutarlos. Gerente
-        # tampoco crea: solo autoriza o cancela lo que Supervisor ya levanto.
-        scope = _scope_name(db, user_data)
-        if scope not in {"ownership", "unrestricted"}:
-            raise AppError("errors.permission_denied", 403,
-                           {"action": "create_project", "scope": scope})
+        # Decision de Alan (2026-10-15): quien puede crear lo manda el Gestor de
+        # roles y permisos (`scope_create` de `proyect`, que ya valida la ruta
+        # con `require_entity_permission`), no el ambito. Antes un candado
+        # aqui (2026-09-28) dejaba crear solo a Supervisor aunque el Gestor
+        # se lo concediera a Gerente o Jefe de taller: la pantalla ofrecia el
+        # boton y el servidor respondia 403.
         values["id_quotation"], values["quotation_reference"] = _resolver_cotizacion(
             db, (payload or {}).get("id_quotation"))
         _validar_referencias_de_la_orden(db, values)
@@ -1364,12 +1359,13 @@ def update_project(project_id, payload: dict, user_data: dict) -> dict:
 def delete_project(project_id, user_data: dict) -> dict:
     with transaction_context() as db:
         project = _get_visible_project(db, project_id, user_data, for_update=True)
-        scope = _scope_name(db, user_data)
-        # Borrar queda con quien lo creo: el lider saca el proyecto adelante,
-        # pero no lo elimina.
-        if scope not in {"ownership", "unrestricted"} or (
-            scope == "ownership" and _safe_int(project.created_by) != _actor_id(user_data)
-        ):
+        # Quien puede borrar y a quien lo manda el Gestor: `scope_delete` de
+        # `proyect`. Propios = lo que el actor creo (el lider saca el proyecto
+        # adelante, pero no lo elimina); Mis grupos suma a su equipo; Todos no
+        # filtra. Antes un candado por ambito dejaba borrar solo a Supervisor
+        # aunque el Gestor se lo concediera a Gerente.
+        duenos = owner_ids(db, user_data, scope_bits(db, user_data, "proyect", "delete"))
+        if duenos is not None and _safe_int(project.created_by) not in duenos:
             raise AppError("errors.permission_denied", 403)
         if normalize_project_status(project.proyect_status) != "draft":
             raise AppError("errors.project_not_editable", 409, {"status": project.proyect_status})

@@ -1,7 +1,7 @@
 from __future__ import annotations
 from copy import deepcopy
 from flask import Blueprint, jsonify
-from app.utils.auth import token_required
+from app.utils.auth import _has_entity_permission, token_required
 
 bp_security = Blueprint('security', __name__, url_prefix='/security')
 
@@ -24,11 +24,9 @@ def _catalogo_base() -> dict:
 
 
 def _is_admin_actor(user_data: dict) -> bool:
-    return bool(
-        user_data.get('is_superuser')
-        or user_data.get('is_bootstrap_admin')
-        or str(user_data.get('user_type') or '').strip().lower() == 'admin'
-    )
+    """Quien puede abrir el gestor de roles: el que tiene `entity_permission` (Gestor)
+    o el superusuario. Antes bastaba con ser cuenta de tipo admin, que no es el rol."""
+    return _has_entity_permission(user_data, 'entity_permission', 'read')
 
 
 def _catalog_for_actor(user_data: dict) -> dict:

@@ -592,7 +592,7 @@ export default function ProjectManagementPage() {
     const puedeSoltar = Number(project.id_supervisor) === Number(actor.id_user);
     return <div className="project-actions">
       <button className="icon-button" type="button" title={projectText("view_detail")} onClick={() => openDetail(project)}><Eye size={16} /></button>
-      {(((mode === "supervisor" || mode === "unrestricted") && ["draft", "blocked"].includes(project.proyect_status)) || canEditManagement) && <button className="icon-button" type="button" title={projectText("edit")} onClick={() => openEdit(project)}><Pencil size={16} /></button>}
+      {(((mode === "supervisor" || mode === "unrestricted" || Number(project.leader) === Number(actor.id_user)) && ["draft", "blocked"].includes(project.proyect_status)) || canEditManagement) && <button className="icon-button" type="button" title={projectText("edit")} onClick={() => openEdit(project)}><Pencil size={16} /></button>}
       {canDelete && project.proyect_status === "draft" && <button className="icon-button danger" type="button" title={projectText("delete")} onClick={() => removeProject(project)}><Trash2 size={16} /></button>}
       {puedeTomar && <button className="icon-button" type="button" title={projectText("take_project")} disabled={busyId === project.id_proyect} onClick={() => tomarProyecto(project)}><HelpingHand size={16} /></button>}
       {puedeSoltar && <button className="icon-button" type="button" title={projectText("release_project")} disabled={busyId === project.id_proyect} onClick={() => soltarProyecto(project)}><LogOut size={16} /></button>}
