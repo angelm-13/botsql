@@ -9,9 +9,10 @@ El criterio de checada vive en UN lugar, `es_checada()`; las consultas de este a
 vengan, como "marcas fuera de radio") lo reutilizan en vez de repetirlo.
 
 Equipo = parque. La relacion es `incident.id_user` -> `nm_team_user` -> `team`. Una persona puede
-estar en varios equipos y cuenta en CADA uno; una persona sin equipo no aparece en los KPIs por
-equipo (no hay a quien atribuirla) pero si en el de horas por empleado. Por eso estos KPIs NO se
-pueden sumar entre equipos: ver `graficas_permitidas` mas abajo.
+estar en varios equipos y cuenta en CADA uno. Una persona SIN equipo vigente (sin membresia, o solo
+en equipos dados de baja) sale en una fila propia, "Sin equipo" (`sin_asignar=True`), y NO cuenta en
+ningun equipo; quien tiene equipo nunca cuenta en "Sin equipo". Por eso estos KPIs NO se pueden
+sumar entre equipos: ver `graficas_permitidas` mas abajo.
 
 Tiempo. `incident_date` y `close_date` son hora de pared del negocio (GMT-6) SIN zona; `creation_date`
 es UTC y aqui no se usa. "Ahora", "hoy" y la antiguedad salen de `app.utils.tiempo.ahora_negocio()`,
@@ -24,7 +25,7 @@ from collections import defaultdict
 from datetime import timedelta
 from decimal import Decimal
 
-from sqlalchemy import Date, func, or_, select, type_coerce
+from sqlalchemy import Date, exists, func, or_, select, type_coerce
 
 from app.models.incident import Incident
 from app.models.nm_team_user import NmTeamUser
@@ -97,6 +98,31 @@ def _personas_por_equipo(session, *condiciones) -> dict[int, int]:
     return {int(id_team): int(personas) for id_team, personas in filas}
 
 
+def _tiene_equipo():
+    """Condicion SQL: la persona de la checada esta en al menos un equipo VIGENTE (membresia y equipo sin baja).
+
+    Es un `NOT EXISTS` y no un `LEFT JOIN` a proposito: con el `LEFT JOIN`, quien tiene un equipo vigente y otro
+    dado de baja saldria tambien como "sin equipo".
+    """
+    return exists(
+        select(NmTeamUser.id_nm_team_user)
+        .join(Team, Team.id_team == NmTeamUser.id_team)
+        .where(
+            NmTeamUser.id_user == Incident.id_user,
+            NmTeamUser.deletion_date.is_(None),
+            Team.deletion_date.is_(None),
+        )
+    )
+
+
+def _personas_sin_equipo(session, *condiciones) -> int:
+    """Personas DISTINTAS con una checada que cumple `condiciones` y ningun equipo vigente."""
+    return int(session.scalar(
+        select(func.count(func.distinct(Incident.id_user)))
+        .where(*checadas_vigentes(), ~_tiene_equipo(), *condiciones)
+    ) or 0)
+
+
 def _foto_por_equipo(session, fecha_fin, antiguedad):
     """Una fila por equipo vigente, fechada en `fecha_fin`, SOLO si `fecha_fin` es hoy (dia local).
 
@@ -104,22 +130,24 @@ def _foto_por_equipo(session, fecha_fin, antiguedad):
       el dia local de hoy (un backfill de un rango pasado, o un contenedor en UTC que ya cambio de dia a las
       18:00 de Mexico) no se emite nada, en lugar de guardar el estado de ahora bajo una fecha que no es.
     * Cada equipo vigente sale CON SU CERO. Es obligatorio: el upsert solo actualiza las filas que la consulta
-      regresa, asi que un equipo que pasa de 3 personas a 0 y no saliera conservaria el 3 para siempre.
+      regresa, asi que un equipo que pasa de 3 personas a 0 y no saliera conservaria el 3 para siempre. Lo mismo
+      vale para "Sin equipo" (entidad `None`): sale siempre, con su cero.
     * No filtra por dia calendario: una entrada de las 23:50 sigue "en turno" a las 00:10 del dia siguiente.
     """
     ahora = ahora_negocio()
     if fecha_fin != ahora.date():
         return []
-    conteos = _personas_por_equipo(
-        session,
-        Incident.close_date.is_(None),
-        antiguedad(Incident.incident_date, ahora - UMBRAL_SIN_SALIDA),
-    )
-    return [(id_team, fecha_fin, conteos.get(id_team, 0)) for id_team in _equipos_vigentes(session)]
+    condiciones = (Incident.close_date.is_(None), antiguedad(Incident.incident_date, ahora - UMBRAL_SIN_SALIDA))
+    conteos = _personas_por_equipo(session, *condiciones)
+    filas = [(id_team, fecha_fin, conteos.get(id_team, 0)) for id_team in _equipos_vigentes(session)]
+    return filas + [(None, fecha_fin, _personas_sin_equipo(session, *condiciones))]
 
 
 def checadas_en_turno_por_equipo_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
-    """Foto: personas distintas con una checada ABIERTA (sin `close_date`) de MENOS de 12 horas, por equipo."""
+    """Foto: personas distintas con una checada ABIERTA (sin `close_date`) de MENOS de 12 horas, por equipo.
+
+    "Abierta" es no tener `close_date`: una checada en `abierta` o en `en_proceso` cuenta. Mas la fila "Sin equipo".
+    """
     return _foto_por_equipo(session, fecha_fin, lambda columna, corte: columna > corte)
 
 
@@ -225,12 +253,14 @@ def definiciones():
             agregacion="ultimo",
             unidad="numero",
             alcance_proyecto=False,
+            sin_asignar=True,
             direccion="neutral",
             graficas_permitidas=barras,
             grafica_default="barras",
             descripcion=(
                 f"Foto de ahora: personas distintas con una checada abierta de menos de {UMBRAL_SIN_SALIDA_HORAS} horas, "
-                "por equipo. Una persona en dos equipos cuenta en cada uno: no sumes los equipos."
+                "por equipo, y «Sin equipo» para quien no está en ninguno. Una persona en dos equipos cuenta en cada uno: "
+                "no sumes los equipos."
             ),
         ),
         KpiDefinition(
@@ -243,12 +273,14 @@ def definiciones():
             agregacion="ultimo",
             unidad="numero",
             alcance_proyecto=False,
+            sin_asignar=True,
             direccion="bajo_es_mejor",
             graficas_permitidas=barras,
             grafica_default="barras",
             descripcion=(
                 f"Foto de ahora: personas distintas con una checada abierta de {UMBRAL_SIN_SALIDA_HORAS} horas o más "
-                "(se les olvidó marcar la salida), por equipo. Una persona en dos equipos cuenta en cada uno."
+                "(se les olvidó marcar la salida), por equipo, y «Sin equipo» para quien no está en ninguno. Una persona en "
+                "dos equipos cuenta en cada uno."
             ),
         ),
         KpiDefinition(

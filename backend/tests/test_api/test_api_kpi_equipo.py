@@ -28,7 +28,7 @@ ACTOR_PROPIOS = {"id_user": 951, "id_permission": 971, "id_proyect": 970}
 ACTOR_MIS_GRUPOS = {"id_user": 950, "id_permission": 972, "id_proyect": 970}
 
 PROYECTO = 970
-ANA, BETO, CARLA = 950, 951, 952
+ANA, BETO, CARLA, DIEGO = 950, 951, 952, 953      # Diego no esta en ningun equipo
 T1, T2, T3 = 9701, 9702, 9703       # T1 = {Ana, Beto}; T2 = {Beto, Carla}; T3 = sin miembros
 ROL_TODOS, ROL_PROPIOS, ROL_MIS_GRUPOS = 970, 971, 972
 
@@ -52,7 +52,7 @@ class TestKpiFiltroPorEquipoApi(BackendTestCase):
                 id_user=1, created_by=1, full_name="Admin", id_permission=1, id_proyect=PROYECTO,
                 id_status=1, supervisor=1, user_type="admin", username="kpi-eq-admin",
             ))
-            for id_user, nombre in ((ANA, "Ana Torres"), (BETO, "Beto Luna"), (CARLA, "Carla Rios")):
+            for id_user, nombre in ((ANA, "Ana Torres"), (BETO, "Beto Luna"), (CARLA, "Carla Rios"), (DIEGO, "Diego Paz")):
                 db.add(User(
                     id_user=id_user, created_by=1, full_name=nombre, id_permission=1, id_proyect=PROYECTO,
                     id_status=1, supervisor=1, user_type="employee", username=f"kpi-eq-{id_user}",
@@ -92,6 +92,8 @@ class TestKpiFiltroPorEquipoApi(BackendTestCase):
                 KpiSnapshot(id_kpi_definition=self.id_equipo, dimension_key={"id_team": T1}, periodo=date(2026, 9, 2), valor=Decimal("2")),
                 KpiSnapshot(id_kpi_definition=self.id_equipo, dimension_key={"id_team": T2}, periodo=date(2026, 9, 2), valor=Decimal("3")),
                 KpiSnapshot(id_kpi_definition=self.id_equipo, dimension_key={"id_team": T3}, periodo=date(2026, 9, 2), valor=Decimal("0")),
+                # Gente sin equipo: el job guarda la llave con valor nulo.
+                KpiSnapshot(id_kpi_definition=self.id_equipo, dimension_key={"id_team": None}, periodo=date(2026, 9, 2), valor=Decimal("4")),
                 KpiSnapshot(id_kpi_definition=self.id_global, dimension_key={}, periodo=date(2026, 9, 2), valor=Decimal("4")),
             ])
 
@@ -107,7 +109,7 @@ class TestKpiFiltroPorEquipoApi(BackendTestCase):
     def _por_empleado(self, actor, id_kpi, **params):
         respuesta = self._get(actor, self._consulta(id_kpi, **params))
         self.assertEqual(200, respuesta.status_code, self.json(respuesta))
-        return {int(k): v for k, v in self.json(respuesta)["rango_a"]["por_empleado"].items()}
+        return {(int(k) if k.isdigit() else k): v for k, v in self.json(respuesta)["rango_a"]["por_empleado"].items()}
 
     # --- KPI por empleado: id_teams deja a los miembros ---------------------------------------------
 
@@ -147,11 +149,22 @@ class TestKpiFiltroPorEquipoApi(BackendTestCase):
 
     # --- KPI por equipo --------------------------------------------------------------------------------------
 
-    def test_un_kpi_por_equipo_trae_el_nombre_de_cada_equipo(self):
+    def test_un_kpi_por_equipo_trae_el_nombre_de_cada_equipo_y_la_fila_sin_equipo(self):
         rango = self.json(self._get(ACTOR_TODOS, self._consulta(self.id_equipo)))["rango_a"]
-        self.assertEqual({str(T1): 2.0, str(T2): 3.0, str(T3): 0.0}, rango["por_empleado"])
+        self.assertEqual({str(T1): 2.0, str(T2): 3.0, str(T3): 0.0, "sin_asignar": 4.0}, rango["por_empleado"])
         self.assertEqual("Parque Norte", rango["etiquetas"][str(T1)])
         self.assertEqual("Parque Sur", rango["etiquetas"][str(T2)])
+        # La fila sin entidad se llama "Sin equipo" (y no "Sin asignar") y cuenta en el total.
+        self.assertEqual("Sin equipo", rango["etiquetas"]["sin_asignar"])
+        self.assertEqual(9.0, rango["total"])
+
+    def test_con_id_teams_la_fila_sin_equipo_no_aparece(self):
+        rango = self.json(self._get(ACTOR_TODOS, self._consulta(self.id_equipo, id_teams=f"{T1},{T2}")))["rango_a"]
+        self.assertEqual({str(T1): 2.0, str(T2): 3.0}, rango["por_empleado"])
+        self.assertNotIn("sin_asignar", rango["por_empleado"], "pedir equipos concretos deja fuera a quien no tiene equipo")
+        # Tampoco con `entidades`, el filtro generico de siempre.
+        rango = self.json(self._get(ACTOR_TODOS, self._consulta(self.id_equipo, entidades=T1)))["rango_a"]
+        self.assertEqual({str(T1): 2.0}, rango["por_empleado"])
 
     def test_id_teams_deja_solo_esos_equipos_en_un_kpi_por_equipo(self):
         self.assertEqual({T1: 2.0}, self._por_empleado(ACTOR_TODOS, self.id_equipo, id_teams=T1))
@@ -206,21 +219,25 @@ class TestKpiFiltroPorEquipoApi(BackendTestCase):
                 KpiDefinition.clave == "checadas_sin_salida_por_equipo"))
         self._checada_abierta(1, ANA, 10)          # Ana: Norte
         self._checada_abierta(2, BETO, 11)         # Beto: Norte y Sur
+        self._checada_abierta(3, DIEGO, 11)        # Diego: ningun equipo
         self._correr_frecuente(15)
 
         rango = self.json(self._get(ADMIN, self._consulta(self.id_equipo, fecha_inicio="2026-10-09", fecha_fin="2026-10-15")))["rango_a"]
         # Beto cuenta en cada uno de sus dos equipos; el equipo sin nadie sale con su cero, no desaparece.
-        self.assertEqual({str(T1): 2.0, str(T2): 1.0, str(T3): 0.0}, rango["por_empleado"])
+        self.assertEqual({str(T1): 2.0, str(T2): 1.0, str(T3): 0.0, "sin_asignar": 1.0}, rango["por_empleado"])
         self.assertEqual("Parque Norte", rango["etiquetas"][str(T1)])
         self.assertEqual("Parque Vacio", rango["etiquetas"][str(T3)])
+        self.assertEqual("Sin equipo", rango["etiquetas"]["sin_asignar"], "Diego no tiene equipo")
         nadie = self.json(self._get(ADMIN, self._consulta(id_sin_salida, fecha_inicio="2026-10-09", fecha_fin="2026-10-15")))["rango_a"]
-        self.assertEqual({str(T1): 0.0, str(T2): 0.0, str(T3): 0.0}, nadie["por_empleado"])
+        self.assertEqual({str(T1): 0.0, str(T2): 0.0, str(T3): 0.0, "sin_asignar": 0.0}, nadie["por_empleado"])
 
         # Pasan las horas: a las 22:30 la entrada de las 10:00 lleva 12 h 30 min abierta ("sin salida") y la de las
         # 11:00 solo 11 h 30 min. Lo que era "en turno" se actualiza en el mismo dia, no queda el valor anterior.
         self._correr_frecuente(22, 30)
         en_turno = self.json(self._get(ADMIN, self._consulta(self.id_equipo, fecha_inicio="2026-10-09", fecha_fin="2026-10-15")))["rango_a"]
-        self.assertEqual({str(T1): 1.0, str(T2): 1.0, str(T3): 0.0}, en_turno["por_empleado"], "queda Beto (11:00)")
+        self.assertEqual({str(T1): 1.0, str(T2): 1.0, str(T3): 0.0, "sin_asignar": 1.0}, en_turno["por_empleado"],
+                         "quedan Beto y Diego (11:00)")
         sin_salida = self.json(self._get(ADMIN, self._consulta(id_sin_salida, fecha_inicio="2026-10-09", fecha_fin="2026-10-15")))["rango_a"]
-        self.assertEqual({str(T1): 1.0, str(T2): 0.0, str(T3): 0.0}, sin_salida["por_empleado"], "Ana (10:00) ya paso de 12 h")
+        self.assertEqual({str(T1): 1.0, str(T2): 0.0, str(T3): 0.0, "sin_asignar": 0.0}, sin_salida["por_empleado"],
+                         "Ana (10:00) ya paso de 12 h")
 

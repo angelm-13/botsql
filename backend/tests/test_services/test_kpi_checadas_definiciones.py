@@ -31,6 +31,7 @@ class DefinicionesDeChecadasTest(unittest.TestCase):
             self.assertEqual("ultimo", kpi.agregacion, clave)
             self.assertEqual("snapshot", kpi.modo, clave)
             self.assertFalse(kpi.alcance_proyecto, clave)
+            self.assertTrue(kpi.sin_asignar, f"{clave}: la gente sin equipo sale en la fila 'Sin equipo'")
             # Una persona en dos equipos cuenta en cada uno: el total entre equipos la contaria dos veces. Solo
             # barras (un valor por equipo); "numero" y "linea" usan ese total.
             self.assertEqual(("barras",), tuple(kpi.graficas_permitidas), clave)

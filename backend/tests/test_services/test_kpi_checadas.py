@@ -37,7 +37,7 @@ from tests.conftest import BackendTestCase
 from tests.reloj import ahora_local, reloj_en_utc
 
 # Personas
-ANA, BETO, CARLA, DIEGO, ELENA = 101, 102, 103, 104, 105
+ANA, BETO, CARLA, DIEGO, ELENA, FRANCO = 101, 102, 103, 104, 105, 106
 # Equipos (parques)
 NORTE, SUR, VACIO, BAJA = 7001, 7002, 7003, 7004
 PROYECTO_OTRO = 2
@@ -73,7 +73,7 @@ class ChecadasBase(BackendTestCase):
                 id_user=1, created_by=1, full_name="Admin", id_permission=1, id_proyect=1,
                 id_status=1, supervisor=1, user_type="admin", username="checadas-admin",
             ))
-            for id_user, nombre in ((ANA, "Ana"), (BETO, "Beto"), (CARLA, "Carla"), (DIEGO, "Diego"), (ELENA, "Elena")):
+            for id_user, nombre in ((ANA, "Ana"), (BETO, "Beto"), (CARLA, "Carla"), (DIEGO, "Diego"), (ELENA, "Elena"), (FRANCO, "Franco")):
                 db.add(User(
                     id_user=id_user, created_by=1, full_name=nombre, id_permission=1, id_proyect=1,
                     id_status=1, supervisor=1, user_type="employee", username=f"checadas-{id_user}",
@@ -95,11 +95,12 @@ class ChecadasBase(BackendTestCase):
             ):
                 db.add(Team(id_team=id_team, team_description=nombre, created_by=1, deletion_date=baja))
             db.flush()
-            # Beto esta en DOS equipos; Diego en ninguno; la membresia de Elena en Norte esta dada de baja;
-            # Ana tambien esta en un equipo que ya no existe (no debe aparecer).
+            # Beto esta en DOS equipos; Diego en ninguno; la membresia de Elena en Norte esta dada de baja (sin equipo);
+            # Ana tambien esta en un equipo que ya no existe (le basta Norte); Franco SOLO esta en ese equipo que ya no
+            # existe (sin equipo vigente).
             for id_team, id_user, baja in (
                 (NORTE, ANA, None), (NORTE, BETO, None), (SUR, BETO, None), (SUR, CARLA, None),
-                (NORTE, ELENA, datetime(2026, 6, 1)), (BAJA, ANA, None),
+                (NORTE, ELENA, datetime(2026, 6, 1)), (BAJA, ANA, None), (BAJA, FRANCO, None),
             ):
                 db.add(NmTeamUser(id_team=id_team, id_user=id_user, created_by=1, deletion_date=baja))
         self._siguiente_id = 0
@@ -128,11 +129,21 @@ class ChecadasBase(BackendTestCase):
 class FotosDeChecadasTest(ChecadasBase):
     """`checadas_en_turno_por_equipo` y `checadas_sin_salida_por_equipo`: fotos de AHORA, por antiguedad."""
 
+    def _por_equipo(self, consulta, fecha_fin):
+        # Solo los equipos: la fila "Sin equipo" (entidad None) se mira aparte, con `sin_equipo_*`.
+        return {id_team: valor for id_team, (_, valor) in self._foto(consulta, fecha_fin).items() if id_team is not None}
+
     def en_turno(self, fecha_fin=D):
-        return {id_team: valor for id_team, (_, valor) in self._foto(checadas_en_turno_por_equipo_query, fecha_fin).items()}
+        return self._por_equipo(checadas_en_turno_por_equipo_query, fecha_fin)
 
     def sin_salida(self, fecha_fin=D):
-        return {id_team: valor for id_team, (_, valor) in self._foto(checadas_sin_salida_por_equipo_query, fecha_fin).items()}
+        return self._por_equipo(checadas_sin_salida_por_equipo_query, fecha_fin)
+
+    def sin_equipo_en_turno(self, fecha_fin=D):
+        return self._foto(checadas_en_turno_por_equipo_query, fecha_fin)[None][1]
+
+    def sin_equipo_sin_salida(self, fecha_fin=D):
+        return self._foto(checadas_sin_salida_por_equipo_query, fecha_fin)[None][1]
 
     # --- el umbral de 12 horas ----------------------------------------------------------------
 
@@ -231,18 +242,53 @@ class FotosDeChecadasTest(ChecadasBase):
         # La consulta solo entrega una fila por equipo: ninguna que sume Norte + Sur (seria contar a Beto dos veces).
         self.assertEqual({NORTE, SUR, VACIO}, set(filas))
 
-    def test_una_persona_sin_equipo_no_aparece_en_ningun_equipo(self):
+    def test_una_persona_sin_equipo_sale_en_sin_equipo_y_en_ningun_equipo(self):
         self._checada(DIEGO, local(D, 10, 0))
         with ahora_local(local(D, 15, 0)):
             self.assertEqual({NORTE: 0, SUR: 0, VACIO: 0}, self.en_turno())
+            self.assertEqual(1, self.sin_equipo_en_turno())
+            self.assertEqual(0, self.sin_equipo_sin_salida())
+        with ahora_local(local(D1, 0, 0)):                 # 14 h abierta
+            self.assertEqual(0, self.sin_equipo_en_turno(D1))
+            self.assertEqual(1, self.sin_equipo_sin_salida(D1))
 
-    def test_una_membresia_o_un_equipo_dados_de_baja_no_cuentan(self):
-        self._checada(ELENA, local(D, 10, 0))    # su membresia en Norte esta dada de baja
-        self._checada(ANA, local(D, 10, 0))      # Ana tambien esta en un equipo dado de baja
+    def test_quien_tiene_equipo_no_cuenta_en_sin_equipo(self):
+        self._checada(ANA, local(D, 10, 0))      # Norte
+        self._checada(CARLA, local(D, 10, 0))    # Sur
         with ahora_local(local(D, 15, 0)):
-            filas = self.en_turno()
-        self.assertEqual(1, filas[NORTE], "solo Ana, por su membresia vigente")
-        self.assertNotIn(BAJA, filas, "un equipo dado de baja no se emite")
+            self.assertEqual({NORTE: 1, SUR: 1, VACIO: 0}, self.en_turno())
+            self.assertEqual(0, self.sin_equipo_en_turno())
+
+    def test_una_persona_en_dos_equipos_cuenta_en_cada_uno_y_no_en_sin_equipo(self):
+        self._checada(BETO, local(D, 10, 0))     # Norte y Sur
+        with ahora_local(local(D, 15, 0)):
+            self.assertEqual({NORTE: 1, SUR: 1, VACIO: 0}, self.en_turno())
+            self.assertEqual(0, self.sin_equipo_en_turno())
+
+    def test_sin_equipo_son_personas_distintas_y_respeta_las_mismas_reglas_que_los_equipos(self):
+        self._checada(DIEGO, local(D, 9, 0))
+        self._checada(DIEGO, local(D, 10, 0))                                  # la misma persona dos veces: una
+        self._checada(DIEGO, local(D, 11, 0), local(D, 12, 0))                 # cerrada: no cuenta
+        self._checada(DIEGO, local(D, 11, 0), status="cancelada")              # cancelada: no cuenta
+        self._checada(DIEGO, local(D, 11, 0), latitude=None)                   # sin coordenadas: no cuenta
+        self._checada(DIEGO, local(D, 11, 0), baja=datetime(2026, 10, 15, 12, 0))
+        with ahora_local(local(D, 15, 0)):
+            self.assertEqual(1, self.sin_equipo_en_turno())
+
+    def test_sin_equipo_es_tambien_quien_solo_tiene_membresias_o_equipos_dados_de_baja(self):
+        self._checada(ELENA, local(D, 10, 0))    # su unica membresia (Norte) esta dada de baja
+        self._checada(FRANCO, local(D, 10, 0))   # su unico equipo esta dado de baja
+        self._checada(ANA, local(D, 10, 0))      # Norte vigente (aunque tambien este en un equipo dado de baja)
+        with ahora_local(local(D, 15, 0)):
+            self.assertEqual(2, self.sin_equipo_en_turno(), "Elena y Franco")
+            self.assertEqual(1, self.en_turno()[NORTE], "solo Ana")
+            self.assertNotIn(BAJA, self.en_turno(), "un equipo dado de baja no se emite")
+
+    def test_la_fila_sin_equipo_sale_siempre_con_su_cero(self):
+        # Igual que cada equipo: sin la fila en cero, un "Sin equipo" que baja a 0 conservaria el valor viejo.
+        with ahora_local(local(D, 15, 0)):
+            self.assertEqual(0, self.sin_equipo_en_turno())
+            self.assertEqual(0, self.sin_equipo_sin_salida())
 
     def test_cada_equipo_vigente_sale_con_su_cero(self):
         # Obligatorio: el upsert solo actualiza lo que la consulta regresa; sin la fila en cero, un equipo que pasa
@@ -271,7 +317,7 @@ class FotosDeChecadasTest(ChecadasBase):
         # 18:00 en Mexico = 00:00 UTC del 16: el dia UTC ya cambio, el de Mexico sigue siendo el 15.
         with reloj_en_utc(datetime(2026, 10, 16, 0, 0)):
             filas = self._foto(checadas_en_turno_por_equipo_query, D)
-            self.assertEqual({NORTE: (D, 1), SUR: (D, 0), VACIO: (D, 0)}, filas, "18:00 locales: hoy es el 15")
+            self.assertEqual({NORTE: (D, 1), SUR: (D, 0), VACIO: (D, 0), None: (D, 0)}, filas, "18:00 locales: hoy es el 15")
             self.assertEqual({}, self._foto(checadas_en_turno_por_equipo_query, D1), "el 16 es el dia UTC, no el local")
         # 19:00 en Mexico = 01:00 UTC del 16.
         with reloj_en_utc(datetime(2026, 10, 16, 1, 0)):
@@ -294,7 +340,7 @@ class FotosDeChecadasTest(ChecadasBase):
         with ahora_local(local(D, 15, 0)):
             with transaction_context() as db:
                 filas = checadas_en_turno_por_equipo_query(db, D - timedelta(days=6), D, {}, None)
-        self.assertEqual([(NORTE, D, 0), (SUR, D, 0), (VACIO, D, 0)], filas)
+        self.assertEqual([(NORTE, D, 0), (SUR, D, 0), (VACIO, D, 0), (None, D, 0)], filas, "los equipos por id y al final Sin equipo")
 
 
 class FlujosDeChecadasTest(ChecadasBase):
@@ -505,21 +551,21 @@ class CorridaFrecuenteDeChecadasTest(ChecadasBase):
         self.assertEqual(list(frecuencia.KPIS_FRECUENTES), resultado["claves"])
         self.assertEqual(D.isoformat(), resultado["fecha_inicio"])
         self.assertEqual(D.isoformat(), resultado["fecha_fin"])
-        self.assertEqual({D: {NORTE: 1.0, SUR: 0.0, VACIO: 0.0}}, self._guardado("checadas_en_turno_por_equipo"))
-        self.assertEqual({D: {NORTE: 0.0, SUR: 0.0, VACIO: 0.0}}, self._guardado("checadas_sin_salida_por_equipo"))
+        self.assertEqual({D: {NORTE: 1.0, SUR: 0.0, VACIO: 0.0, None: 0.0}}, self._guardado("checadas_en_turno_por_equipo"))
+        self.assertEqual({D: {NORTE: 0.0, SUR: 0.0, VACIO: 0.0, None: 0.0}}, self._guardado("checadas_sin_salida_por_equipo"))
 
     def test_un_equipo_que_pasa_de_dos_personas_a_cero_no_conserva_el_dos(self):
         a = self._checada(ANA, local(D, 10, 0))
         b = self._checada(BETO, local(D, 11, 0))            # Beto esta en Norte y en Sur
         with self._con_registro(self.fotos), ahora_local(local(D, 15, 0)):
             tasks_kpis.recalculate_kpi_snapshots_frecuentes()
-        self.assertEqual({D: {NORTE: 2.0, SUR: 1.0, VACIO: 0.0}}, self._guardado("checadas_en_turno_por_equipo"))
+        self.assertEqual({D: {NORTE: 2.0, SUR: 1.0, VACIO: 0.0, None: 0.0}}, self._guardado("checadas_en_turno_por_equipo"))
         self._cerrar(a, local(D, 15, 30))
         self._cerrar(b, local(D, 15, 40))
         with self._con_registro(self.fotos), ahora_local(local(D, 16, 0)):
             tasks_kpis.recalculate_kpi_snapshots_frecuentes()
         # La MISMA fila (kpi, equipo, dia) se sobrescribe con 0; no queda el 2 viejo ni filas de mas.
-        self.assertEqual({D: {NORTE: 0.0, SUR: 0.0, VACIO: 0.0}}, self._guardado("checadas_en_turno_por_equipo"))
+        self.assertEqual({D: {NORTE: 0.0, SUR: 0.0, VACIO: 0.0, None: 0.0}}, self._guardado("checadas_en_turno_por_equipo"))
 
     def test_la_nocturna_de_7_dias_solo_escribe_hoy_y_no_pisa_la_foto_de_los_dias_anteriores(self):
         ayer = D - timedelta(days=1)
@@ -533,7 +579,7 @@ class CorridaFrecuenteDeChecadasTest(ChecadasBase):
         guardado = self._guardado("checadas_en_turno_por_equipo")
         self.assertEqual({ayer, D}, set(guardado), "de los 7 dias solo se escribe hoy")
         self.assertEqual({NORTE: 5.0}, guardado[ayer], "la foto de ayer es lo que era ayer: no se reescribe")
-        self.assertEqual({NORTE: 1.0, SUR: 0.0, VACIO: 0.0}, guardado[D])
+        self.assertEqual({NORTE: 1.0, SUR: 0.0, VACIO: 0.0, None: 0.0}, guardado[D])
 
     def test_la_nocturna_de_un_contenedor_en_utc_no_guarda_la_foto_bajo_el_dia_utc(self):
         # 19:00 en Mexico = 01:00 UTC del dia siguiente: el contenedor (UTC) cree que hoy es D1, pero hoy es D.
