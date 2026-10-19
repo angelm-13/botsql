@@ -113,7 +113,7 @@ class TestKpiDimensionesApi(BackendTestCase):
         self.assertEqual(200, respuesta.status_code)
         porclave = {d["clave"]: d for d in self.json(respuesta)["items"]}
         self.assertEqual(
-            ["empleado", "producto", "global", "estado", "familia", "mesero", "platillo", "mesa", "cliente", "unidad", "operador"],
+            ["empleado", "producto", "global", "estado", "familia", "mesero", "platillo", "mesa", "cliente", "unidad", "operador", "equipo"],
             list(porclave),
         )
         # Solo el empleado son ids de usuario: la unica "persona".
@@ -122,6 +122,10 @@ class TestKpiDimensionesApi(BackendTestCase):
         self.assertEqual("global", porclave["global"]["tipo"])
         self.assertFalse(porclave["estado"]["abierta"])
         self.assertTrue(porclave["mesero"]["abierta"])
+        # Un equipo es un catalogo cerrado (pocos parques) y NO una persona: su id no es de usuario.
+        self.assertEqual("catalogo", porclave["equipo"]["tipo"])
+        self.assertFalse(porclave["equipo"]["abierta"])
+        self.assertEqual("id_team", porclave["equipo"]["json_key"])
         self.assertEqual("id_restaurant_waiter", porclave["mesero"]["json_key"])
 
     def test_el_catalogo_de_dimensiones_exige_el_modulo_de_kpis(self):

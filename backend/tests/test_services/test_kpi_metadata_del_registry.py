@@ -204,10 +204,10 @@ class EtiquetaDeDimensionTest(unittest.TestCase):
         for kpi in KPI_REGISTRY:
             self.assertTrue(kpi.etiqueta_dimension, kpi.clave)
             self.assertLessEqual(len(kpi.etiqueta_dimension), 30, kpi.clave)
-        # Las cinco de siempre mas las de restaurante y logistica (catalogo en app/kpis/dimensiones.py).
+        # Las cinco de siempre mas las de restaurante, logistica y equipos (catalogo en app/kpis/dimensiones.py).
         self.assertEqual(
             {"empleado", "producto", "estado", "familia", "global",
-             "mesero", "platillo", "mesa", "cliente", "unidad", "operador"},
+             "mesero", "platillo", "mesa", "cliente", "unidad", "operador", "equipo"},
             set(ETIQUETA_DIMENSION_POR_OMISION),
         )
 

@@ -18,7 +18,7 @@ demas capas necesitan saber de ella:
 * `tipo`: `persona` (los ids son `user.id_user`, asi que aplican el filtro por
   empleados, el de departamentos y el alcance Propios/Mis grupos),
   `catalogo` (ids de otra tabla: mesero, platillo, mesa, cliente, unidad,
-  operador, producto, familia), `categoria` (el valor ES el nombre: "abierta",
+  operador, producto, familia, equipo), `categoria` (el valor ES el nombre: "abierta",
   "Entrada") o `global` (sin desglose).
 * `resolver_etiquetas(db, ids)`: los nombres legibles de esos ids. Los calcula el
   backend, para que el frontend no tenga que cargar catalogos enteros
@@ -172,6 +172,12 @@ def _operadores(db, ids):
     return _por_tabla(db, LogisticsOperator.id_logistics_operator, LogisticsOperator.full_name, ids)
 
 
+def _equipos(db, ids):
+    from app.models.team import Team
+
+    return _por_tabla(db, Team.id_team, Team.team_description, ids)
+
+
 # El orden es el de siempre para las cinco primeras (`DIMENSIONES` lo deriva).
 CATALOGO = (
     Dimension("empleado", "id_user", "Empleado", True, "persona", _usuarios),
@@ -185,6 +191,10 @@ CATALOGO = (
     Dimension("cliente", "id_customer_supplier", "Cliente", True, "catalogo", _clientes),
     Dimension("unidad", "id_logistics_unit", "Unidad", True, "catalogo", _unidades),
     Dimension("operador", "id_logistics_operator", "Operador", True, "catalogo", _operadores),
+    # Un equipo (`team`) es un grupo de usuarios (`nm_team_user`); en Comala, un parque. NO es `persona`:
+    # su id es `team.id_team`, no `user.id_user`. No es `abierta`: son pocos y cada uno importa, asi que
+    # el Dashboard no los agrupa en "Otros".
+    Dimension("equipo", "id_team", "Equipo", False, "catalogo", _equipos),
 )
 
 DIMENSION_POR_CLAVE = {d.clave: d for d in CATALOGO}
