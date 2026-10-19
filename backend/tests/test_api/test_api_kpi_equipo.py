@@ -1,23 +1,28 @@
 from __future__ import annotations
 
 import unittest
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
+from unittest import mock
 from unittest.mock import patch
 
 from sqlalchemy import select, text
 
-from app.kpis.registry import seed_kpi_definitions
+from app.jobs import tasks_kpis
+from app.kpis import frecuencia
+from app.kpis.registry import KPI_POR_CLAVE, seed_kpi_definitions
 from app.models import (
-    CustomerSupplier, Department, EntityPermission, KpiDefinition, KpiSnapshot, Level, NmPermissionKpi, NmTeamUser,
-    Permission, Proyect, Status, Subdepartment, Team, User,
+    CustomerSupplier, Department, EntityPermission, Incident, IncidentType, KpiDefinition, KpiSnapshot, Level,
+    NmPermissionKpi, NmTeamUser, Permission, Proyect, Status, Subdepartment, Team, User,
 )
 from app.models.session import engine, transaction_context
 from app.modules.plan import reiniciar_plan
 from tests.conftest import BackendTestCase
+from tests.reloj import ahora_local
 
 # Filtro `id_teams` de GET /kpi_snapshot/query y la dimension `equipo`. Solo PostgreSQL, como el resto de las pruebas
 # de la API de KPIs: el filtro de snapshots usa JSONB.
+ADMIN = {"id_user": 1, "is_superuser": True}
 ACTOR_TODOS = {"id_user": 970, "id_permission": 970, "id_proyect": 970}
 ACTOR_PROPIOS = {"id_user": 951, "id_permission": 971, "id_proyect": 970}
 ACTOR_MIS_GRUPOS = {"id_user": 950, "id_permission": 972, "id_proyect": 970}
@@ -177,3 +182,45 @@ class TestKpiFiltroPorEquipoApi(BackendTestCase):
         respuesta = self._get(ACTOR_TODOS, self._consulta(self.id_empleado, id_teams="abc"))
         self.assertEqual(400, respuesta.status_code)
         self.assertEqual("id_teams", self.json(respuesta)["meta"]["field"])
+
+    # --- de punta a punta: checada -> corrida frecuente -> /kpi_snapshot/query ----------------------------
+
+    def _checada_abierta(self, id_incident, id_user, hora):
+        with transaction_context() as db:
+            if db.get(IncidentType, 1) is None:
+                db.add(IncidentType(id_incident_type=1, incident_type_description="Checador", created_by=1))
+                db.flush()
+            db.add(Incident(
+                id_incident=id_incident, id_incident_type=1, id_user=id_user, created_by=id_user, incident_status="abierta",
+                incident_date=datetime(2026, 10, 15, hora, 0), latitude=Decimal("21.1161741"),
+            ))
+
+    def _correr_frecuente(self, hora_local, minuto=0):
+        fotos = tuple(KPI_POR_CLAVE[clave] for clave in frecuencia.KPIS_FRECUENTES)
+        with mock.patch.object(tasks_kpis, "KPI_REGISTRY", fotos), ahora_local(datetime(2026, 10, 15, hora_local, minuto)):
+            tasks_kpis.recalculate_kpi_snapshots_frecuentes()
+
+    def test_de_punta_a_punta_la_checada_llega_al_dashboard_por_equipo_y_se_actualiza(self):
+        with transaction_context() as db:
+            id_sin_salida = db.scalar(select(KpiDefinition.id_kpi_definition).where(
+                KpiDefinition.clave == "checadas_sin_salida_por_equipo"))
+        self._checada_abierta(1, ANA, 10)          # Ana: Norte
+        self._checada_abierta(2, BETO, 11)         # Beto: Norte y Sur
+        self._correr_frecuente(15)
+
+        rango = self.json(self._get(ADMIN, self._consulta(self.id_equipo, fecha_inicio="2026-10-09", fecha_fin="2026-10-15")))["rango_a"]
+        # Beto cuenta en cada uno de sus dos equipos; el equipo sin nadie sale con su cero, no desaparece.
+        self.assertEqual({str(T1): 2.0, str(T2): 1.0, str(T3): 0.0}, rango["por_empleado"])
+        self.assertEqual("Parque Norte", rango["etiquetas"][str(T1)])
+        self.assertEqual("Parque Vacio", rango["etiquetas"][str(T3)])
+        nadie = self.json(self._get(ADMIN, self._consulta(id_sin_salida, fecha_inicio="2026-10-09", fecha_fin="2026-10-15")))["rango_a"]
+        self.assertEqual({str(T1): 0.0, str(T2): 0.0, str(T3): 0.0}, nadie["por_empleado"])
+
+        # Pasan las horas: a las 22:30 la entrada de las 10:00 lleva 12 h 30 min abierta ("sin salida") y la de las
+        # 11:00 solo 11 h 30 min. Lo que era "en turno" se actualiza en el mismo dia, no queda el valor anterior.
+        self._correr_frecuente(22, 30)
+        en_turno = self.json(self._get(ADMIN, self._consulta(self.id_equipo, fecha_inicio="2026-10-09", fecha_fin="2026-10-15")))["rango_a"]
+        self.assertEqual({str(T1): 1.0, str(T2): 1.0, str(T3): 0.0}, en_turno["por_empleado"], "queda Beto (11:00)")
+        sin_salida = self.json(self._get(ADMIN, self._consulta(id_sin_salida, fecha_inicio="2026-10-09", fecha_fin="2026-10-15")))["rango_a"]
+        self.assertEqual({str(T1): 1.0, str(T2): 0.0, str(T3): 0.0}, sin_salida["por_empleado"], "Ana (10:00) ya paso de 12 h")
+

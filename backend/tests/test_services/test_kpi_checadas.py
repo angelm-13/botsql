@@ -9,11 +9,9 @@ from __future__ import annotations
 
 import copy
 import unittest
-from contextlib import contextmanager
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from unittest import mock
-from unittest.mock import patch
 
 from sqlalchemy import select, text
 
@@ -24,9 +22,9 @@ from app.kpis.modulos.checadas import (
     UMBRAL_SIN_SALIDA_HORAS,
     checadas_en_turno_por_equipo_query,
     checadas_entradas_por_equipo_query,
-    horas_trabajadas_por_empleado_query,
     checadas_salidas_por_equipo_query,
     checadas_sin_salida_por_equipo_query,
+    horas_trabajadas_por_empleado_query,
 )
 from app.kpis.registry import KPI_POR_CLAVE, seed_kpi_definitions
 from app.models import (
@@ -35,6 +33,7 @@ from app.models import (
 )
 from app.models.session import engine, transaction_context
 from tests.conftest import BackendTestCase
+from tests.reloj import ahora_local, reloj_en_utc
 
 # Personas
 ANA, BETO, CARLA, DIEGO, ELENA = 101, 102, 103, 104, 105
@@ -51,29 +50,6 @@ D1 = date(2026, 10, 16)
 def local(dia: date, hora: int, minuto: int = 0, segundo: int = 0) -> datetime:
     """Una hora de pared del negocio, sin zona: como se guarda `incident_date`."""
     return datetime(dia.year, dia.month, dia.day, hora, minuto, segundo)
-
-
-@contextmanager
-def reloj_en_utc(instante_utc: datetime):
-    """Congela `datetime.now(...)` de `app.utils.tiempo` en un instante UTC.
-
-    `ahora_negocio()` sigue convirtiendo con `ZONA_NEGOCIO`: lo que se prueba es esa conversion real, no una
-    hora local escrita a mano.
-    """
-    fijo = instante_utc.replace(tzinfo=timezone.utc)
-
-    class _Reloj(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return fijo.astimezone(tz) if tz else fijo.replace(tzinfo=None)
-
-    with patch("app.utils.tiempo.datetime", _Reloj):
-        yield
-
-
-def ahora_local(hora_local: datetime):
-    """El mismo reloj, dado en hora de Mexico (UTC-6): las 15:00 locales son las 21:00 UTC."""
-    return reloj_en_utc(hora_local + timedelta(hours=6))
 
 
 class ChecadasBase(BackendTestCase):
