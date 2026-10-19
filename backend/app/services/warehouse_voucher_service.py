@@ -282,15 +282,15 @@ def _bitacora(db, user_data: dict, vale, accion: str, **datos) -> None:
 
 
 def _fecha_de_regreso(valor):
-    """Cuando debe volver. No es opcional.
+    """Cuando debe volver. Opcional: el prestamo no tiene fecha fija.
 
-    Un vale sin fecha de regreso nunca esta vencido, asi que no sale en
-    `vales_vencidos` y nadie lo reclama: es una baja disfrazada de prestamo. El
-    modulo ya lo decia en un comentario y no lo exigia.
+    Sin fecha el vale nunca esta vencido (no sale en `vales_vencidos`); se
+    reclama por el vale abierto, no por una fecha. Si se manda una, no puede ser
+    pasada.
     """
     fecha = _fecha(valor)
     if fecha is None:
-        raise AppError("errors.required_field", 400, {"field": "due_date"})
+        return None
     if fecha.date() < _ahora().date():
         # Una fecha pasada nace vencida. Casi siempre es un dedazo en el ano, y
         # deja el vale en la lista de vencidos desde el primer dia.
@@ -939,8 +939,9 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
         inicio = _ahora()
         # Lo destruido o extraviado no tiene "fecha de regreso": se pide solo a
         # los demas tipos; para la baja, sin fecha, vale el dia del registro.
-        vence = (inicio if _clave_de_baja(db, id_tipo) and not payload.get("due_date")
-                 else _fecha_de_regreso(payload.get("due_date")))
+        vence = _fecha_de_regreso(payload.get("due_date"))
+        if vence is None and _clave_de_baja(db, id_tipo):
+            vence = inicio
         motivo = _texto(payload.get("note"), "note", largo=300, obligatorio=True)
 
         # Borrador o vale. Lo decide la RUTA por la que se entro, no un campo
@@ -1219,7 +1220,7 @@ def _sacar_del_almacen(db, renglon, user_data, *, id_responsable, vence, motivo)
             db, renglon.id_inventory_asset,
             {
                 "id_holder": id_responsable,
-                "due_date": vence.date().isoformat(),
+                "due_date": vence.date().isoformat() if vence else None,
                 "reason": motivo,
                 "reference_type": "incident",
                 "reference_id": str(renglon.id_incident),
@@ -1230,7 +1231,7 @@ def _sacar_del_almacen(db, renglon, user_data, *, id_responsable, vence, motivo)
             },
             user_data,
             evento=PRESTAMO, destino=PRESTADA,
-            exige_responsable=True, exige_fecha=True,
+            exige_responsable=True, exige_fecha=vence is not None,
         )
         return
 

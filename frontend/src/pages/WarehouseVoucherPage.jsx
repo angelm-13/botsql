@@ -551,10 +551,12 @@ export default function WarehouseVoucherPage() {
                     ? `${t("voucher.piece", "pieza")} #${linea.id_inventory_asset}`
                     : `${linea.quantity} ${t("voucher.units", "unidades")}`}
                 </span>
-                <span className="muted">
-                  {t("voucher.was_due", "vencía")}{" "}
-                  {new Date(linea.due_date).toLocaleDateString("es-MX")}
-                </span>
+                {linea.due_date && (
+                  <span className="muted">
+                    {t("voucher.was_due", "vencía")}{" "}
+                    {new Date(linea.due_date).toLocaleDateString("es-MX")}
+                  </span>
+                )}
                 {/* Quien solo puede pedir material (Supervisor) no lo recibe
                     ni lo suelta: marcarlo devuelto es lo mismo derecho de
                     `warehouse_voucher` que abrir el vale. */}
@@ -1504,11 +1506,11 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
     lines: borrador.lines.filter((_, i) => i !== indice),
   });
 
-  // La fecha de regreso y el motivo van siempre, y el origen en lo fungible.
+  // El motivo va siempre, y el origen en lo fungible.
   // Se comprueba aqui para decirlo antes de mandar, no despues de que el
   // servidor conteste; el servidor lo exige igual, que es lo que cuenta.
   const listo = borrador.lines.length > 0 && borrador.id_incident_type
-    && borrador.id_user && borrador.due_date && borrador.note.trim()
+    && borrador.id_user && borrador.note.trim()
     && borrador.lines.every((l, i) => l.serializado || (
       l.id_location_from && Number(l.quantity) >= 1
       && Number(l.quantity) <= disponibleDe(l, i)));
@@ -1609,14 +1611,6 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
               </option>
             ))}
           </select>
-        </label>
-        <label className="field">
-          {/* Sin fecha de regreso el vale nunca esta vencido, asi que nadie lo
-              reclama: un prestamo sin fecha es una baja disfrazada. */}
-          <span>{t("voucher.due", "Debe volver el")}</span>
-          <input type="date" value={borrador.due_date} required
-                 min={new Date().toISOString().slice(0, 10)}
-                 onChange={(e) => setBorrador({ ...borrador, due_date: e.target.value })} />
         </label>
         <label className="field field-ancho">
           <span>{t("voucher.note", "Motivo")} *</span>
