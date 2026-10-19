@@ -178,21 +178,56 @@ def _marcas_por_equipo_y_dia(session, fecha_col, fecha_inicio, fecha_fin, *condi
     return [(int(id_team), fecha, int(marcas)) for id_team, fecha, marcas in filas]
 
 
+def _marcas_sin_equipo_por_dia(session, fecha_col, fecha_inicio, fecha_fin, *condiciones):
+    filas = session.execute(
+        select(fecha_col.label("fecha"), func.count(func.distinct(Incident.id_incident)))
+        .where(
+            *checadas_vigentes(),
+            ~_tiene_equipo(),
+            fecha_col >= fecha_inicio,
+            fecha_col <= fecha_fin,
+            *condiciones,
+        )
+        .group_by(fecha_col)
+    ).all()
+    return {fecha: int(marcas) for fecha, marcas in filas}
+
+
+def _flujo_por_equipo(session, fecha_col, fecha_inicio, fecha_fin, *condiciones):
+    """Una fila por equipo vigente y por dia del rango, mas una de "Sin equipo" (entidad `None`) por dia.
+
+    Cada equipo sale CON SU CERO cada dia, no solo los dias con marcas. Igual que en las fotos: el upsert solo actualiza lo
+    que la consulta devuelve, asi que si se cancela la unica entrada de un dia y la fila en cero no saliera, el valor viejo se
+    quedaria pegado. Con la corrida de 5 minutos (que recalcula solo hoy) esto pasa en el mismo dia.
+    Orden: los equipos por id, cada uno con sus dias; al final "Sin equipo".
+    """
+    por_equipo = {(id_team, dia): n for id_team, dia, n in _marcas_por_equipo_y_dia(session, fecha_col, fecha_inicio, fecha_fin, *condiciones)}
+    sin_equipo = _marcas_sin_equipo_por_dia(session, fecha_col, fecha_inicio, fecha_fin, *condiciones)
+    dias = [fecha_inicio + timedelta(days=i) for i in range((fecha_fin - fecha_inicio).days + 1)]
+    filas = [
+        (id_team, dia, por_equipo.get((id_team, dia), 0))
+        for id_team in _equipos_vigentes(session) for dia in dias
+    ]
+    return filas + [(None, dia, sin_equipo.get(dia, 0)) for dia in dias]
+
+
 def checadas_entradas_por_equipo_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
-    """Entradas (checadas abiertas ese dia) por equipo y por dia local de `incident_date`.
+    """Entradas (checadas abiertas ese dia) por equipo y por dia local de `incident_date`, mas "Sin equipo".
 
     Cuenta checadas, no personas: dos entradas de la misma persona el mismo dia son dos. Una entrada que se marca a
-    las 23:50 es del dia en que se marco, aunque la salida sea a las 00:10 del siguiente. Solo salen los dias con datos.
+    las 23:50 es del dia en que se marco, aunque la salida sea a las 00:10 del siguiente. Una fila por equipo y por dia
+    del rango, con su cero (ver `_flujo_por_equipo`).
     """
-    return _marcas_por_equipo_y_dia(session, _dia(Incident.incident_date), fecha_inicio, fecha_fin)
+    return _flujo_por_equipo(session, _dia(Incident.incident_date), fecha_inicio, fecha_fin)
 
 
 def checadas_salidas_por_equipo_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
-    """Salidas (checadas cerradas ese dia) por equipo y por dia local de `close_date`.
+    """Salidas (checadas cerradas ese dia) por equipo y por dia local de `close_date`, mas "Sin equipo".
 
-    Una salida a las 00:10 es del dia siguiente al de su entrada de las 23:50. Solo salen los dias con datos.
+    Una salida a las 00:10 es del dia siguiente al de su entrada de las 23:50. Una fila por equipo y por dia del rango,
+    con su cero (ver `_flujo_por_equipo`).
     """
-    return _marcas_por_equipo_y_dia(
+    return _flujo_por_equipo(
         session, _dia(Incident.close_date), fecha_inicio, fecha_fin, Incident.close_date.isnot(None),
     )
 
@@ -293,12 +328,13 @@ def definiciones():
             agregacion="suma",
             unidad="numero",
             alcance_proyecto=False,
+            sin_asignar=True,
             direccion="neutral",
             graficas_permitidas=barras,
             grafica_default="barras",
             descripcion=(
-                "Entradas (checadas abiertas) por equipo y por día local de la entrada. Cuenta checadas, no personas. "
-                "Una persona en dos equipos cuenta en cada uno."
+                "Entradas (checadas abiertas) por equipo y por día local de la entrada, y «Sin equipo» para quien no está "
+                "en ninguno. Cuenta checadas, no personas. Una persona en dos equipos cuenta en cada uno."
             ),
         ),
         KpiDefinition(
@@ -311,12 +347,14 @@ def definiciones():
             agregacion="suma",
             unidad="numero",
             alcance_proyecto=False,
+            sin_asignar=True,
             direccion="neutral",
             graficas_permitidas=barras,
             grafica_default="barras",
             descripcion=(
                 "Salidas (checadas cerradas) por equipo y por día local de la salida: una salida a las 00:10 es del "
-                "día siguiente a su entrada de las 23:50. Una persona en dos equipos cuenta en cada uno."
+                "día siguiente a su entrada de las 23:50. «Sin equipo» para quien no está en ninguno. Una persona en dos "
+                "equipos cuenta en cada uno."
             ),
         ),
         KpiDefinition(

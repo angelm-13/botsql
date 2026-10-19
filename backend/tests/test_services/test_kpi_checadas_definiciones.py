@@ -58,4 +58,5 @@ class DefinicionesDeFlujosTest(unittest.TestCase):
             self.assertEqual("suma", kpi.agregacion, clave)
             self.assertEqual("snapshot", kpi.modo, clave)
             self.assertFalse(kpi.alcance_proyecto, clave)
+            self.assertTrue(kpi.sin_asignar, f"{clave}: tambien llevan la fila 'Sin equipo', como las fotos")
             self.assertEqual(("barras",), tuple(kpi.graficas_permitidas), clave)

@@ -346,11 +346,25 @@ class FotosDeChecadasTest(ChecadasBase):
 class FlujosDeChecadasTest(ChecadasBase):
     """`checadas_entradas_por_equipo` y `checadas_salidas_por_equipo`: marcas por equipo y por dia local."""
 
-    def entradas(self, inicio=D, fin=D1):
+    def entradas_todas(self, inicio=D, fin=D1):
         return self._marcas(checadas_entradas_por_equipo_query, inicio, fin)
 
-    def salidas(self, inicio=D, fin=D1):
+    def salidas_todas(self, inicio=D, fin=D1):
         return self._marcas(checadas_salidas_por_equipo_query, inicio, fin)
+
+    # Solo lo que tiene marcas, por equipo (sin los ceros ni la fila "Sin equipo"): lo que miran casi todas las pruebas.
+    def entradas(self, inicio=D, fin=D1):
+        return [f for f in self.entradas_todas(inicio, fin) if f[0] is not None and f[2]]
+
+    def salidas(self, inicio=D, fin=D1):
+        return [f for f in self.salidas_todas(inicio, fin) if f[0] is not None and f[2]]
+
+    # La fila "Sin equipo" (entidad None): `[(dia, marcas)]` de los dias que tienen alguna.
+    def entradas_sin_equipo(self, inicio=D, fin=D1):
+        return [(f[1], f[2]) for f in self.entradas_todas(inicio, fin) if f[0] is None and f[2]]
+
+    def salidas_sin_equipo(self, inicio=D, fin=D1):
+        return [(f[1], f[2]) for f in self.salidas_todas(inicio, fin) if f[0] is None and f[2]]
 
     # --- cruzar la medianoche -------------------------------------------------------------------
 
@@ -393,10 +407,53 @@ class FlujosDeChecadasTest(ChecadasBase):
         self.assertEqual([(NORTE, D, 1), (SUR, D, 1)], self.entradas())
         self.assertEqual([(NORTE, D, 1), (SUR, D, 1)], self.salidas())
 
-    def test_una_persona_sin_equipo_no_cuenta(self):
+    def test_una_persona_sin_equipo_sale_en_sin_equipo_y_en_ningun_equipo(self):
         self._checada(DIEGO, local(D, 8, 0), local(D, 16, 0))
-        self.assertEqual([], self.entradas())
+        self.assertEqual([], self.entradas(), "no cuenta en ningun equipo")
         self.assertEqual([], self.salidas())
+        self.assertEqual([(D, 1)], self.entradas_sin_equipo())
+        self.assertEqual([(D, 1)], self.salidas_sin_equipo())
+
+    def test_quien_tiene_equipo_no_cuenta_en_sin_equipo_y_quien_esta_en_dos_cuenta_en_cada_uno(self):
+        self._checada(ANA, local(D, 8, 0), local(D, 16, 0))      # Norte
+        self._checada(BETO, local(D, 8, 0), local(D, 16, 0))     # Norte y Sur
+        self.assertEqual([(NORTE, D, 2), (SUR, D, 1)], self.entradas())
+        self.assertEqual([], self.entradas_sin_equipo())
+        self.assertEqual([], self.salidas_sin_equipo())
+
+    def test_sin_equipo_incluye_membresias_y_equipos_dados_de_baja_y_cuenta_checadas(self):
+        self._checada(ELENA, local(D, 8, 0), local(D, 12, 0))    # su unica membresia esta dada de baja
+        self._checada(FRANCO, local(D, 9, 0), local(D, 13, 0))   # su unico equipo esta dado de baja
+        self._checada(DIEGO, local(D, 10, 0), local(D, 14, 0))   # nunca tuvo equipo
+        self._checada(DIEGO, local(D, 15, 0), local(D, 17, 0))   # dos turnos: son dos entradas
+        self.assertEqual([(D, 4)], self.entradas_sin_equipo())
+        self.assertEqual([(D, 4)], self.salidas_sin_equipo())
+
+    def test_sin_equipo_respeta_las_mismas_reglas_que_los_equipos(self):
+        self._checada(DIEGO, local(D, 8, 0), local(D, 16, 0), latitude=None)
+        self._checada(DIEGO, local(D, 8, 0), local(D, 16, 0), status="cancelada")
+        self._checada(DIEGO, local(D, 8, 0), local(D, 16, 0), baja=datetime(2026, 10, 15, 17, 0))
+        self._checada(DIEGO, local(D, 8, 0))                      # abierta: entrada, pero todavia no salida
+        self.assertEqual([(D, 1)], self.entradas_sin_equipo())
+        self.assertEqual([], self.salidas_sin_equipo())
+
+    def test_cada_equipo_vigente_y_sin_equipo_salen_con_su_cero_cada_dia_del_rango(self):
+        # Obligatorio: el upsert solo actualiza lo que la consulta devuelve. Sin los ceros, un dia que se queda sin
+        # marcas (se cancelo la unica) conservaria el valor viejo.
+        D2 = D + timedelta(days=2)
+        esperado = (
+            [(id_team, dia, 0) for id_team in (NORTE, SUR, VACIO) for dia in (D, D1, D2)]
+            + [(None, dia, 0) for dia in (D, D1, D2)]
+        )
+        self.assertEqual(esperado, self.entradas_todas(D, D2), "sin checadas: todo en cero, y no sale el equipo dado de baja")
+        self.assertEqual(esperado, self.salidas_todas(D, D2))
+
+    def test_un_dia_con_marcas_y_otro_sin_ellas_mezclan_valores_y_ceros(self):
+        self._checada(ANA, local(D, 8, 0), local(D, 16, 0))
+        filas = self.entradas_todas(D, D1)
+        self.assertEqual(1, dict(((t, d), n) for t, d, n in filas)[(NORTE, D)])
+        self.assertEqual(0, dict(((t, d), n) for t, d, n in filas)[(NORTE, D1)])
+        self.assertEqual(0, dict(((t, d), n) for t, d, n in filas)[(None, D)])
 
     def test_una_incidencia_sin_coordenadas_se_excluye(self):
         self._checada(ANA, local(D, 8, 0), local(D, 16, 0), latitude=None)
@@ -409,11 +466,12 @@ class FlujosDeChecadasTest(ChecadasBase):
         self.assertEqual([], self.entradas())
         self.assertEqual([], self.salidas())
 
-    def test_una_membresia_o_un_equipo_dados_de_baja_no_cuentan(self):
+    def test_una_membresia_o_un_equipo_dados_de_baja_no_cuentan_como_equipo(self):
         self._checada(ELENA, local(D, 8, 0), local(D, 16, 0))     # membresia en Norte dada de baja
         self._checada(ANA, local(D, 8, 0), local(D, 16, 0))       # Ana: Norte (vigente) y un equipo dado de baja
-        self.assertEqual([(NORTE, D, 1)], self.entradas())
+        self.assertEqual([(NORTE, D, 1)], self.entradas(), "solo Ana")
         self.assertEqual([(NORTE, D, 1)], self.salidas())
+        self.assertEqual([(D, 1)], self.entradas_sin_equipo(), "Elena")
 
     def test_una_checada_de_otro_proyecto_cuenta_igual(self):
         self._checada(ANA, local(D, 8, 0), local(D, 16, 0), id_proyect=PROYECTO_OTRO)
