@@ -42,6 +42,60 @@ class TestRegresionesDeQA(BackendTestCase):
         self.assertEqual(400, e.exception.status_code)
         self.assertEqual(5, _integer_quantity(5))
 
+    def test_a_non_object_json_body_is_a_400_not_a_500(self):
+        from unittest.mock import patch
+
+        actor = {"id_user": 1, "is_superuser": True, "id_proyect": 1}
+        with patch("app.utils.auth.jwt.decode", return_value=actor):
+            for ruta in ("/logistics_unit/", "/product/1/inventory-movements"):
+                with self.subTest(ruta=ruta):
+                    r = self.client.post(ruta, json=[1], headers={"Authorization": "Bearer x"})
+                    self.assertLess(r.status_code, 500, r.get_data(as_text=True))
+
+    def test_a_principal_customer_without_rfc_is_not_saved_at_all(self):
+        from app.models.customer_supplier import CustomerSupplier
+        from app.models.session import transaction_context
+
+        with self.assertRaises(AppError) as e:
+            CustomerSupplierService.create(
+                {"name": "SinRFC", "type": "client", "is_principal": True}, user_id=1)
+        self.assertEqual(400, e.exception.status_code)
+        with transaction_context() as db:
+            self.assertEqual(0, db.query(CustomerSupplier).filter(
+                CustomerSupplier.name == "SinRFC").count())
+
+    def test_a_put_cannot_rewrite_the_primary_key(self):
+        from app.services.brand_service import BrandService
+
+        marca = BrandService.create({"brand_description": "Marca QA"}, user_id=1)
+        id_marca = marca["id_brand"]
+        BrandService.update(id_marca, {"id_brand": 9999, "brand_description": "Otra"}, user_id=1)
+        self.assertEqual("Otra", BrandService.get(id_marca)["brand_description"])
+
+    def test_contacts_reject_blank_names_bad_status_and_moving_into_a_duplicate(self):
+        from app.models.customer_supplier import CustomerSupplier
+        from app.models.session import transaction_context
+        from app.services.customer_contact_service import CustomerContactService
+        from tests.model_factory import build_model
+
+        with transaction_context() as db:
+            for n in (10, 20):
+                fila = build_model(CustomerSupplier, name="C%d" % n, type="client")
+                fila.id_customer_supplier = n
+                db.add(fila)
+        base = {"full_name": "Ana", "email": "ana@x.com"}
+        CustomerContactService.create({**base, "id_customer_supplier": 10}, user_id=1)
+        b = CustomerContactService.create({**base, "id_customer_supplier": 20}, user_id=1)
+
+        for malo in ({"full_name": "   "}, {"status": "banana"}):
+            with self.subTest(malo=malo), self.assertRaises(AppError) as e:
+                CustomerContactService.create(
+                    {"full_name": "X", "id_customer_supplier": 10, **malo}, user_id=1)
+            self.assertEqual(400, e.exception.status_code)
+        with self.assertRaises(AppError) as e:
+            CustomerContactService.update(b["id_customer_contact"], {"id_customer_supplier": 10}, user_id=1)
+        self.assertEqual(409, e.exception.status_code)
+
 
 if __name__ == "__main__":
     unittest.main()

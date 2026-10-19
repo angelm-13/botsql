@@ -234,8 +234,8 @@ def _payload_elevates_beyond_actor(user_data, target, payload):
     return changes_own_role(user_data, target, payload)
 
 
-def _list_users_protected(user_data, page, per_page, filters, sort, service_cls):
-    result = service_cls.list(page=page, per_page=per_page, filters=filters, sort=sort, q=request.args.get('q'))
+def _list_users_protected(user_data, page, per_page, filters, sort, service_cls, search_fields=None):
+    result = service_cls.list(page=page, per_page=per_page, filters=filters, sort=sort, q=request.args.get('q'), search_fields=search_fields)
     original_items = list(result.get('items', []) or [])
     items = [
         item for item in original_items
@@ -415,8 +415,11 @@ def list_user(user_data):
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 20))
     sort = request.args.get('sort')
-    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort', 'q'} and k in ALLOWED_FIELDS}
-    return _list_users_protected(user_data, page, per_page, filters, sort, UserService)
+    visible = _visible_response_fields_for_actor(user_data)
+    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort', 'q'} and k in visible and k in ALLOWED_FIELDS}
+    if sort and sort.lstrip('-') not in visible:
+        sort = None
+    return _list_users_protected(user_data, page, per_page, filters, sort, UserService, visible)
 
 
 @bp_user.route('/<id_user>', methods=['GET'])

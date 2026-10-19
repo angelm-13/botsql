@@ -73,6 +73,15 @@ class CustomerSupplierService(CrudService):
             return value.strip().lower() in {'1', 'true', 'yes', 'on'}
         return bool(value)
 
+    @staticmethod
+    def _exigir_rfc_para_principal(tax_id) -> None:
+        if not str(tax_id or '').strip():
+            raise AppError(
+                'validations.customer_supplier.principal_tax_id.required',
+                status_code=400,
+                meta={'field': 'tax_id'},
+            )
+
     @classmethod
     def _set_principal_state(cls, item_id, enabled: bool):
         with transaction_context() as session:
@@ -116,6 +125,8 @@ class CustomerSupplierService(CrudService):
         payload = cls._normalizar_rfc(payload)
         payload = cls._validate_logistics_fields(payload)
         is_principal = cls._as_boolean(payload.pop('is_principal', False))
+        if is_principal:  # antes de escribir: un 400 no puede dejar el registro guardado
+            cls._exigir_rfc_para_principal(payload.get('tax_id'))
         created = super().create(payload, user_id=user_id)
         if is_principal:
             return cls._set_principal_state(created['id_customer_supplier'], True)
@@ -127,6 +138,14 @@ class CustomerSupplierService(CrudService):
         payload = cls._validate_logistics_fields(payload)
         has_principal_value = 'is_principal' in payload
         is_principal = cls._as_boolean(payload.pop('is_principal', False))
+        if has_principal_value and is_principal:
+            if 'tax_id' in payload:
+                rfc = payload.get('tax_id')
+            else:
+                with transaction_context() as session:
+                    actual = session.get(CustomerSupplier, item_id)
+                    rfc = actual.tax_id if actual else None
+            cls._exigir_rfc_para_principal(rfc)
         updated = super().update(item_id, payload, user_id=user_id)
         if has_principal_value:
             return cls._set_principal_state(item_id, is_principal)

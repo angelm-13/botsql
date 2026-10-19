@@ -1,5 +1,7 @@
 from __future__ import annotations
+import decimal
 import os
+import re
 import sys
 import jwt
 from flask import Flask, jsonify, request, send_from_directory
@@ -854,6 +856,28 @@ def create_app(testing: bool = False) -> Flask:
             return handle_unexpected(error)
         app.logger.warning("entrada invalida: %s", error)
         return jsonify({'error_key': 'errors.invalid_field'}), 400
+
+    # NaN/Infinity en un Decimal y un cuerpo JSON que no es objeto (`[1]`, `"x"`)
+    # son entrada del cliente: antes salian como 500 desde decenas de rutas.
+    @app.errorhandler(decimal.InvalidOperation)
+    def handle_bad_decimal(error: Exception):
+        app.logger.warning("decimal invalido: %s", error)
+        return jsonify({'error_key': 'errors.invalid_field'}), 400
+
+    @app.errorhandler(AttributeError)
+    def handle_attribute_error(error: AttributeError):
+        if re.search(r"'(list|str|int|float|bool)' object has no attribute '(get|items|keys|pop)'", str(error)):
+            app.logger.warning("cuerpo con forma inesperada: %s", error)
+            return jsonify({'error_key': 'errors.invalid_field'}), 400
+        return handle_unexpected(error)
+
+    @app.errorhandler(TypeError)
+    def handle_type_error(error: TypeError):
+        # `dict([1])` al volcar un cuerpo JSON que no es objeto.
+        if 'cannot convert dictionary update sequence' in str(error):
+            app.logger.warning("cuerpo con forma inesperada: %s", error)
+            return jsonify({'error_key': 'errors.invalid_field'}), 400
+        return handle_unexpected(error)
 
     @app.errorhandler(Exception)
     def handle_unexpected(error: Exception):
