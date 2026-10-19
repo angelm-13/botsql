@@ -36,9 +36,11 @@ from app.models.user import User
 from app.models.product import Product
 from app.models.session import transaction_context
 from app.services.inventory_lot_service import (
+    LOTE_DE_APERTURA,
     asentar_desglose as asentar_desglose_de_lotes,
     entrada_en_sesion as entrada_de_lote,
     lleva_lotes,
+    lotes_de_un_movimiento,
     salida_en_sesion as salida_de_lote,
 )
 from app.utils.errors import AppError
@@ -66,7 +68,17 @@ DEFAULT_SOURCE_MODULE = "nucleo"
 
 # Movimientos que exigen un motivo escrito: cambian la existencia sin un
 # documento detras, asi que sin motivo el inventario deja de ser auditable.
-REASON_REQUIRED_MOVEMENTS = {"adjustment", "damage", "destroy", "loss", "expiry", "transfer"}
+# `receive` y `return` entran por la puerta publica sin documento, igual que un
+# ajuste; los flujos internos (vale, factura, compra) no pasan por aqui y traen
+# su propio documento.
+REASON_REQUIRED_MOVEMENTS = {
+    "adjustment", "damage", "destroy", "loss", "expiry", "transfer",
+    "receive", "return",
+}
+
+# Entradas de la puerta publica: suman existencia, y por eso valen lo mismo que
+# un ajuste salvo que citen un documento que las respalde.
+ENTRY_MOVEMENTS = {"receive", "return"}
 
 REFERENCE_TYPES = {
     "invoice", "invoice_line", "purchase", "project", "task", "incident",
@@ -86,11 +98,13 @@ REFERENCE_TYPES = {
 # Es una red contra datos ciclicos, no un limite de dise~no.
 MAX_LOCATION_DEPTH = 20
 
-# El ajuste es el unico movimiento sin documento detras y sin tope: puede
-# crear o destruir existencia por cualquier cantidad. Es justo la operacion con
-# la que se tapa un faltante, asi que exige una capacidad aparte en lugar de
-# bastar con el permiso de editar productos. Los demas movimientos estan
-# acotados por un documento o por la existencia disponible.
+# El ajuste puede crear o destruir existencia por cualquier cantidad sin
+# documento detras. Es justo la operacion con la que se tapa un faltante, asi
+# que exige una capacidad aparte en lugar de bastar con el permiso de editar
+# productos. Lo mismo vale para una entrada (`receive`/`return`) por la puerta
+# publica que no cite un documento verificable: ver `_exigir_respaldo_de_entrada`.
+# Los demas movimientos estan acotados por un documento o por la existencia
+# disponible.
 ADJUSTMENT_CAPABILITY = "inventory_adjustment"
 READ_BIT = 2
 
@@ -156,6 +170,70 @@ def _require_adjustment_capability(db, user_data):
             403,
             {"capability": ADJUSTMENT_CAPABILITY},
         )
+
+
+def _referencia_respalda_la_entrada(db, product_id, reference_type, reference_id) -> bool:
+    """Si el documento citado existe y de verdad involucra a este producto.
+
+    Solo `purchase` -una orden ya recibida con un renglon de su material- e
+    `incident` -un vale con una salida de este producto- se verifican. Cualquier
+    otra referencia (`manual`, `count`, ninguna) es texto que alguien escribio y
+    no respalda nada.
+    """
+    from app.models import Incident, PurchaseOrder, PurchaseOrderLine
+    from app.models.nm_incident_product import NmIncidentProduct
+
+    try:
+        id_documento = int(str(reference_id).strip())
+    except (TypeError, ValueError):
+        return False
+    if reference_type == "purchase":
+        orden = db.get(PurchaseOrder, id_documento)
+        if orden is None or orden.deletion_date is not None \
+                or orden.order_status not in ("received", "partially_received"):
+            return False
+        return db.scalar(
+            select(PurchaseOrderLine.id_purchase_order_line)
+            .join(Product, Product.id_material == PurchaseOrderLine.id_material)
+            .where(PurchaseOrderLine.id_purchase_order == id_documento,
+                   Product.id_product == int(product_id))
+            .limit(1)
+        ) is not None
+    if reference_type == "incident":
+        vale = db.get(Incident, id_documento)
+        if vale is None or vale.deletion_date is not None:
+            return False
+        return db.scalar(
+            select(NmIncidentProduct.id_nm_incident_product)
+            .where(NmIncidentProduct.id_incident == id_documento,
+                   NmIncidentProduct.id_product == int(product_id),
+                   NmIncidentProduct.direction == "salida",
+                   NmIncidentProduct.deletion_date.is_(None))
+            .limit(1)
+        ) is not None
+    return False
+
+
+def _exigir_respaldo_de_entrada(db, user_data, product_id, movement_type,
+                                reference_type, reference_id):
+    """Una entrada sin documento verificable vale lo mismo que un ajuste.
+
+    `receive` y `return` por la puerta publica no tenian tope ni documento: con
+    solo el permiso de editar productos se podia inflar el saldo sin dejar de
+    ser un "movimiento normal". Se exige la misma capacidad que el ajuste, salvo
+    que la entrada cite una orden de compra recibida o un vale de este producto.
+    """
+    if movement_type not in ENTRY_MOVEMENTS:
+        return
+    if has_capability(db, user_data, ADJUSTMENT_CAPABILITY):
+        return
+    if _referencia_respalda_la_entrada(db, product_id, reference_type, reference_id):
+        return
+    raise AppError(
+        "errors.inventory_entry_not_authorized",
+        403,
+        {"capability": ADJUSTMENT_CAPABILITY, "movement_type": movement_type},
+    )
 
 
 def _actor_project_id(user_data):
@@ -418,6 +496,9 @@ def apply_inventory_movement(product_id, payload, user_data):
 
     try:
         with transaction_context() as db:
+            _exigir_respaldo_de_entrada(
+                db, user_data, product_id, movement_type,
+                reference_type, payload.get("reference_id"))
             return apply_movement_in_session(
                 db,
                 product_id,
@@ -632,6 +713,49 @@ def apply_movement_in_session(
     return ledger.serialize(), True
 
 
+def reponer_en_sus_lotes(db, product_id, user_data, *, quantity, idempotency_key,
+                         de_la_salida=None, lotes=None, **movimiento) -> list[dict]:
+    """Repone lo que una salida saco, en los lotes de los que salio.
+
+    Una entrada a un producto con lotes tiene que nombrar su lote, y quien devuelve
+    -un vale, una cancelacion, una nota de credito- no lo escribe: ya lo dijo la
+    salida, que dejo su desglose por lote. `de_la_salida` es la llave de idempotencia
+    del renglon del libro de esa salida; o `lotes`, `[(id_lote, cantidad)]` ya
+    calculado cuando la devolucion no corresponde a una sola salida. Cada lote recibe
+    lo que dio, por la misma puerta de siempre (`apply_movement_in_session`), con la
+    llave `<idempotency_key>:lot<id>`.
+
+    Lo que la salida no explica -no tiene desglose, es anterior al control por lote o
+    el lote ya se dio de baja- entra al lote de apertura, que no lleva fecha: es el
+    ultimo en salir, y ninguna fecha inventada. Un producto sin lotes se repone con un
+    solo movimiento, igual que antes. `movimiento` lleva el resto del movimiento
+    (`movement_type`, `id_location`, `reference_type`, `reference_id`, `reason`).
+    Devuelve los renglones del libro escritos.
+    """
+    quantity = int(quantity)
+    producto = db.get(Product, int(product_id))
+    if producto is None or not lleva_lotes(producto):
+        return [apply_movement_in_session(
+            db, product_id, user_data, quantity_delta=quantity,
+            idempotency_key=idempotency_key, **movimiento)[0]]
+
+    if lotes is None:
+        lotes = lotes_de_un_movimiento(db, llave=de_la_salida)
+    partes, restante = [], quantity
+    for id_lote, dado in lotes:
+        tomado = min(dado, restante)
+        if tomado > 0:
+            partes.append((f"lot{id_lote}", {"id_inventory_lot": id_lote}, tomado))
+            restante -= tomado
+    if restante > 0:
+        partes.append(("apertura", {"lot_code": LOTE_DE_APERTURA}, restante))
+
+    return [apply_movement_in_session(
+        db, product_id, user_data, quantity_delta=cantidad,
+        idempotency_key=f"{idempotency_key}:{sufijo}", lot=lote, **movimiento)[0]
+        for sufijo, lote, cantidad in partes]
+
+
 def transfer_in_session(db, product_id, payload, user_data):
     """Nucleo de un traspaso, dentro de una transaccion que abre el llamador.
 
@@ -730,6 +854,26 @@ def transfer_in_session(db, product_id, payload, user_data):
     # para no dar por hecho el estado previo.
     product.cantidad = _product_total(db, product.id_product)
 
+    # Los lotes viajan con la existencia: sale de los del origen -el que vence
+    # primero, o el que nombre `lot`- y los MISMOS lotes entran al destino. Sin esto el
+    # saldo por lote se quedaba en el origen y una salida desde el destino fallaba con
+    # existencia que el stock decia que habia.
+    sacados, recibidos = [], []
+    if lleva_lotes(product):
+        sacados = salida_de_lote(
+            db, product=product, id_location=origin.id_location,
+            cantidad=quantity, lote_pedido=payload.get("lot"), actor=actor_id)
+        for lote, delta in sacados:
+            recibidos += entrada_de_lote(
+                db, product=product, id_location=target.id_location,
+                cantidad=-int(delta), lote_pedido={"id_inventory_lot": lote.id_inventory_lot},
+                actor=actor_id)
+    elif payload.get("lot"):
+        # Igual que en `apply_movement_in_session`: nombrar un lote de algo que no
+        # los lleva casi siempre es el producto equivocado.
+        raise AppError("errors.lot_not_applicable", 400,
+                       {"field": "lot", "id_product": product.id_product})
+
     group = str(uuid.uuid4())
     reference_id = str(payload.get("reference_id") or "").strip()[:100] or None
     common = {
@@ -761,6 +905,9 @@ def transfer_in_session(db, product_id, payload, user_data):
         location_balance_after=target_stock.quantity,
         idempotency_key=f"{key}:in",
     )
+    if sacados:
+        asentar_desglose_de_lotes(db, outbound, sacados, actor_id)
+        asentar_desglose_de_lotes(db, inbound, recibidos, actor_id)
     return {"movements": [outbound.serialize(), inbound.serialize()]}, True
 
 

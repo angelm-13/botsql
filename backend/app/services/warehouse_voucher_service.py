@@ -71,7 +71,8 @@ from app.services.inventory_asset_service import (
     DISPONIBLE, PRESTADA, transicion_en_sesion,
 )
 from app.services.inventory_service import (
-    apply_movement_in_session, has_capability, ubicacion_general,
+    apply_movement_in_session, has_capability, reponer_en_sus_lotes,
+    ubicacion_general,
 )
 from app.utils.errors import AppError
 
@@ -1429,12 +1430,16 @@ def _devolver_al_almacen(db, renglon, user_data, *, vuelve_a, motivo, id_entrada
         )
         return
 
-    apply_movement_in_session(
+    # Un producto con lotes vuelve a los lotes de los que salio (los dice el desglose
+    # de la salida del renglon); uno sin lotes, como siempre, con un solo movimiento.
+    reponer_en_sus_lotes(
         db, renglon.id_product, user_data,
-        movement_type="return",
-        quantity_delta=int(renglon.quantity),
+        de_la_salida="voucher:%s:line:%s:out" % (
+            renglon.id_incident, renglon.id_nm_incident_product),
+        quantity=int(renglon.quantity),
         idempotency_key="voucher:%s:line:%s:in" % (
             renglon.id_incident, id_entrada),
+        movement_type="return",
         id_location=vuelve_a,
         reference_type="incident",
         reference_id=str(renglon.id_incident),

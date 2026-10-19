@@ -43,9 +43,10 @@ from app.services.inventory_service import (
 from app.services.location_service import LocationService, location_tree
 from app.utils.errors import AppError
 from tests.conftest import BackendTestCase
+from tests.model_factory import dar_capacidad
 
 
-ACTOR = {"id_user": 1, "id_proyect": 30}
+ACTOR = {"id_user": 1, "id_permission": 910, "id_proyect": 30}
 OUTSIDER = {"id_user": 2, "id_proyect": 99}
 
 # Tipos de ubicacion
@@ -65,6 +66,7 @@ class WarehouseTestCase(BackendTestCase):
     def setUp(self):
         super().setUp()
         with transaction_context() as db:
+            dar_capacidad(db, 910)
             db.add_all([
                 CustomerSupplier(
                     id_customer_supplier=20, name="Cliente", tax_id="BBB010101BB1",
@@ -113,7 +115,8 @@ class WarehouseTestCase(BackendTestCase):
     def receive(self, quantity, location, key, **extra):
         return apply_inventory_movement(PRODUCT, {
             "movement_type": "receive", "quantity": quantity,
-            "id_location": location, "idempotency_key": key, **extra,
+            "id_location": location, "idempotency_key": key,
+            "reason": "Compra", **extra,
         }, ACTOR)
 
     def transfer(self, quantity, origin, target, key, **extra):
@@ -159,6 +162,7 @@ class TestStockPerLocation(WarehouseTestCase):
         """Compatibilidad: las llamadas anteriores no indicaban ubicacion."""
         movement, _ = apply_inventory_movement(PRODUCT, {
             "movement_type": "receive", "quantity": 9, "idempotency_key": "sin-ubicacion",
+            "reason": "Compra",
         }, ACTOR)
 
         self.assertEqual(CENTRAL, movement["id_location"])
@@ -508,11 +512,11 @@ if __name__ == "__main__":
 class TestAdjustmentRequiresItsOwnCapability(WarehouseTestCase):
     """Separacion de funciones en el almacen.
 
-    El ajuste es el unico movimiento sin documento detras y sin tope: puede
-    crear existencia de la nada o destruirla por cualquier cantidad. Es la
-    operacion con la que se tapa un faltante, asi que no puede bastar con el
-    permiso de operar productos, el mismo que necesita quien recibe y despacha
-    todos los dias.
+    El ajuste puede crear existencia de la nada o destruirla por cualquier
+    cantidad. Es la operacion con la que se tapa un faltante, asi que no puede
+    bastar con el permiso de operar productos, el mismo que necesita quien
+    despacha todos los dias. Lo mismo vale para una entrada manual, sin orden
+    de compra ni vale que la respalde: crea existencia igual que un ajuste.
     """
 
     ALMACENISTA = {"id_user": 50, "id_proyect": 30, "id_permission": 500}
@@ -527,10 +531,12 @@ class TestAdjustmentRequiresItsOwnCapability(WarehouseTestCase):
             ))
 
     def _move(self, actor, **payload):
+        if payload.get("movement_type") in ("receive", "return"):
+            payload.setdefault("reason", "Compra")
         return apply_inventory_movement(PRODUCT, payload, actor)
 
-    def test_the_clerk_receives_issues_and_transfers(self):
-        self._move(self.ALMACENISTA, movement_type="receive", quantity=10,
+    def test_the_clerk_issues_and_transfers(self):
+        self._move(self.JEFE_ALMACEN, movement_type="receive", quantity=10,
                    id_location=RACK_A1, idempotency_key="c-r")
         self._move(self.ALMACENISTA, movement_type="issue", quantity=3,
                    id_location=RACK_A1, idempotency_key="c-i")
@@ -542,8 +548,16 @@ class TestAdjustmentRequiresItsOwnCapability(WarehouseTestCase):
         self.assertEqual(5, self.stock_at(RACK_A1))
         self.assertEqual(2, self.stock_at(NORTE))
 
+    def test_the_clerk_cannot_receive_without_a_document(self):
+        with self.assertRaises(AppError) as raised:
+            self._move(self.ALMACENISTA, movement_type="receive", quantity=10,
+                       id_location=RACK_A1, idempotency_key="c-r0")
+
+        self.assertEqual("errors.inventory_entry_not_authorized", raised.exception.message_key)
+        self.assertIsNone(self.stock_at(RACK_A1))
+
     def test_the_clerk_records_shrinkage_with_a_reason(self):
-        self._move(self.ALMACENISTA, movement_type="receive", quantity=5,
+        self._move(self.JEFE_ALMACEN, movement_type="receive", quantity=5,
                    id_location=RACK_A1, idempotency_key="c-r")
 
         self._move(self.ALMACENISTA, movement_type="loss", quantity=1,

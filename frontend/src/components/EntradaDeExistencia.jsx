@@ -24,6 +24,7 @@ export default function EntradaDeExistencia({ producto, onCerrar, onRegistrada }
   const [idUbicacion, setIdUbicacion] = useState(producto.id_location ?? "");
   const [nota, setNota] = useState("");
   const [lote, setLote] = useState("");
+  const [vence, setVence] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
   const [resultado, setResultado] = useState(null);
@@ -40,7 +41,9 @@ export default function EntradaDeExistencia({ producto, onCerrar, onRegistrada }
   const numero = Number(cantidad);
   const cantidadValida = Number.isInteger(numero) && numero >= 1;
   const llevaLotes = Boolean(producto.lot_control);
-  const listo = cantidadValida && idUbicacion !== "" && (!llevaLotes || lote.trim());
+  // El motivo es obligatorio: una entrada sin documento deja rastro solo si dice por que.
+  const listo = cantidadValida && idUbicacion !== "" && nota.trim() !== ""
+    && (!llevaLotes || lote.trim());
 
   async function guardar(evento) {
     evento.preventDefault();
@@ -53,8 +56,11 @@ export default function EntradaDeExistencia({ producto, onCerrar, onRegistrada }
         quantity: numero,
         id_location: Number(idUbicacion),
         reference_type: "manual",
-        reason: nota.trim() || undefined,
-        lot: llevaLotes ? lote.trim() : undefined,
+        reason: nota.trim(),
+        // El backend espera el lote como objeto; un texto suelto se rechaza.
+        lot: llevaLotes
+          ? { lot_code: lote.trim(), ...(vence ? { expiry_date: vence } : {}) }
+          : undefined,
       });
       setResultado(movement);
       onRegistrada?.(movement);
@@ -125,16 +131,23 @@ export default function EntradaDeExistencia({ producto, onCerrar, onRegistrada }
                 </select>
               </label>
               {llevaLotes && (
-                <label className="field">
-                  <span>{t("stock_entry.lot", "Lote")} *</span>
-                  <input type="text" maxLength={60} value={lote}
-                         onChange={(e) => setLote(e.target.value)} required />
-                </label>
+                <>
+                  <label className="field">
+                    <span>{t("stock_entry.lot", "Lote")} *</span>
+                    <input type="text" maxLength={60} value={lote}
+                           onChange={(e) => setLote(e.target.value)} required />
+                  </label>
+                  <label className="field">
+                    <span>{t("stock_entry.expiry", "Caducidad del lote")}</span>
+                    <input type="date" value={vence}
+                           onChange={(e) => setVence(e.target.value)} />
+                  </label>
+                </>
               )}
               <label className="field">
-                <span>{t("stock_entry.note", "Nota (compra, proveedor…)")}</span>
+                <span>{t("stock_entry.note", "Motivo (compra, proveedor…)")} *</span>
                 <input type="text" maxLength={250} value={nota}
-                       onChange={(e) => setNota(e.target.value)} />
+                       onChange={(e) => setNota(e.target.value)} required />
               </label>
               {error && <p className="alert error">{error}</p>}
               <div className="form-actions">

@@ -480,6 +480,20 @@ class TestEncenderElControlNoDejaExistenciaFuera(BaseLotes):
 
         self.assertEqual(1, lotes_del_producto(TORNILLO, ACTOR)["total"])
 
+    def test_turning_it_off_and_on_again_does_not_double_the_lots(self):
+        """Apagar, recibir sin lote y volver a encender sumaba la existencia otra vez."""
+        from app.services.inventory_lot_service import apagar_control_de_lotes
+
+        self.recibir(15, codigo=None, id_product=TORNILLO)
+        self._encender()
+        apagar_control_de_lotes(TORNILLO, ACTOR)
+        self.recibir(5, codigo=None, id_product=TORNILLO, clave="in:sin-lote")
+
+        self._encender()
+
+        self.assertEqual({"APERTURA": 20}, self.saldos(TORNILLO))
+        self.assertTrue(cuadre_de_lotes(TORNILLO, ACTOR)["balanced"])
+
 
 if __name__ == "__main__":
     unittest.main()
