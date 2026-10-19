@@ -32,6 +32,7 @@ from app.models import (
     Proyect, Status, Subdepartment, Team, User,
 )
 from app.models.session import engine, transaction_context
+from app.services.incident_service import IncidentService
 from tests.conftest import BackendTestCase
 from tests.reloj import ahora_local, reloj_en_utc
 
@@ -171,6 +172,34 @@ class FotosDeChecadasTest(ChecadasBase):
             self.assertEqual(1, self.en_turno(D1)[NORTE], "11 h 59 min")
         with ahora_local(local(D1, 11, 50)):
             self.assertEqual(1, self.sin_salida(D1)[NORTE], "12 h exactas desde las 23:50")
+
+    # --- "abierta" es no tener close_date, no un estatus concreto ------------------------------------
+
+    def test_una_checada_en_proceso_cuenta_como_abierta(self):
+        # El flujo permite abierta -> en_proceso -> resuelta, y en_proceso no es un estatus de cierre: sin close_date
+        # la persona no ha marcado su salida, tenga el estatus que tenga.
+        self._checada(ANA, local(D, 10, 0), status="en_proceso")
+        with ahora_local(local(D, 15, 0)):
+            self.assertEqual(1, self.en_turno()[NORTE])
+        with ahora_local(local(D1, 0, 0)):
+            self.assertEqual(1, self.sin_salida(D1)[NORTE], "14 h abierta, aunque este en proceso")
+
+    def test_el_ciclo_real_de_la_incidencia_cierra_y_reabre_la_checada(self):
+        # Con el servicio de verdad: resolver pone close_date (ya no cuenta) y reabrir la borra (vuelve a contar,
+        # con su entrada original).
+        creada = IncidentService.create({
+            "incident_date": "2026-10-15T10:00:00", "incident_status": "abierta", "id_incident_type": 1,
+            "id_user": ANA, "created_by": ANA, "latitude": "21.1161741", "longitude": "-101.6625754", "distance_m": 9,
+        })
+        with ahora_local(local(D, 15, 0)):
+            self.assertEqual(1, self.en_turno()[NORTE], "abierta")
+        IncidentService.update(creada["id_incident"], {"incident_status": "resuelta"})
+        with ahora_local(local(D, 15, 0)):
+            self.assertEqual(0, self.en_turno()[NORTE], "resuelta: tiene close_date")
+            self.assertEqual(0, self.sin_salida()[NORTE])
+        IncidentService.update(creada["id_incident"], {"incident_status": "en_proceso"})
+        with ahora_local(local(D, 15, 0)):
+            self.assertEqual(1, self.en_turno()[NORTE], "reabierta: se borro el close_date")
 
     # --- quien cuenta -----------------------------------------------------------------------------
 
