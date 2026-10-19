@@ -38,3 +38,13 @@ class DimensionEquipoTest(BackendTestCase):
         self.assertEqual("Parque Viejo", etiquetas["8"])
         # Un id sin fila cae a "#id" en lugar de romper la respuesta.
         self.assertEqual("#99", etiquetas["99"])
+
+    def test_la_fila_sin_equipo_se_llama_sin_equipo_y_las_demas_siguen_diciendo_sin_asignar(self):
+        rangos = ({"por_empleado": {"sin_asignar": 2.0}}, None)
+        with transaction_context() as db:
+            self.assertEqual("Sin equipo", etiquetas_de_dimension(db, "equipo", rangos, True)["sin_asignar"])
+            # Las dimensiones que no declaran otro nombre conservan el de siempre.
+            self.assertEqual("Sin asignar", etiquetas_de_dimension(db, "mesero", rangos, True)["sin_asignar"])
+            self.assertEqual("Sin asignar", etiquetas_de_dimension(db, "empleado", rangos, True)["sin_asignar"])
+            # Y solo aparece si el KPI la pide.
+            self.assertNotIn("sin_asignar", etiquetas_de_dimension(db, "equipo", rangos, False))
