@@ -16,9 +16,11 @@ from app.kpis.registry import (
 )
 from app.models.kpi_definition import KpiDefinition
 from app.models.kpi_snapshot import KpiSnapshot
+from app.models.nm_team_user import NmTeamUser
 from app.models.permission import Permission
 from app.models.product_family import ProductFamily
 from app.models.session import transaction_context
+from app.models.team import Team
 from app.models.user import User
 from app.modules.plan import limite
 from app.services.invoice_service import InvoiceService
@@ -84,6 +86,10 @@ def _optional_id_departments(value):
     return _optional_int_list(value, 'id_departments')
 
 
+def _optional_id_teams(value):
+    return _optional_int_list(value, 'id_teams')
+
+
 def _validar_rango(fecha_inicio, fecha_fin, dias_maximo, field):
     dias = (fecha_fin - fecha_inicio).days
     if dias > dias_maximo:
@@ -103,6 +109,27 @@ def _empleados_de_departamentos(db, id_departments):
             User.id_permission.in_(permisos_del_departamento),
             User.deletion_date.is_(None),
         )
+    ).all()
+
+
+def _empleados_de_equipos(db, id_teams):
+    """`id_user` de los miembros vigentes de los equipos `id_teams`.
+
+    La pertenencia vive en `nm_team_user` (un usuario puede estar en varios equipos). Cuentan
+    solo los equipos y las membresias sin baja y los usuarios activos, igual que en
+    `_empleados_de_departamentos`.
+    """
+    return db.scalars(
+        select(NmTeamUser.id_user)
+        .join(Team, Team.id_team == NmTeamUser.id_team)
+        .join(User, User.id_user == NmTeamUser.id_user)
+        .where(
+            NmTeamUser.id_team.in_(id_teams),
+            NmTeamUser.deletion_date.is_(None),
+            Team.deletion_date.is_(None),
+            User.deletion_date.is_(None),
+        )
+        .distinct()
     ).all()
 
 
@@ -364,6 +391,7 @@ def query_kpi_snapshot(user_data):
     fecha_fin_b = _optional_date(request.args.get('fecha_fin_b'), 'fecha_fin_b')
     empleados = _optional_empleados(request.args.get('empleados'))
     id_departments = _optional_id_departments(request.args.get('id_departments'))
+    id_teams = _optional_id_teams(request.args.get('id_teams'))
     # "empleados" sigue siendo el nombre que manda el frontend hoy para
     # cualquier KPI por empleado; "entidades" es el nombre nuevo,
     # dimension-agnostico (para KPIs por producto). Si llega el primero se
@@ -434,6 +462,19 @@ def query_kpi_snapshot(user_data):
                 entidades = [id_empleado for id_empleado in entidades if id_empleado in usuarios_del_departamento]
             else:
                 entidades = list(usuarios_del_departamento)
+
+        # id_teams recorta, nunca amplia: va DESPUES del alcance del actor, asi que quien tiene Propios o
+        # Mis grupos no ve a nadie fuera de lo que ya cubria por pasar un equipo ajeno.
+        #   * KPI por empleado (persona): los miembros de esos equipos (interseccion con lo anterior).
+        #   * KPI por equipo: esos equipos (interseccion con `entidades`, que es el mismo filtro generico).
+        #   * Cualquier otro KPI: no aplica, igual que id_departments.
+        # Una lista de equipos sin miembros filtra a "nadie": no se salta el filtro.
+        if id_teams:
+            if _tipo_de(dimension) == 'persona':
+                miembros = set(_empleados_de_equipos(db, id_teams))
+                entidades = sorted(miembros) if entidades is None else [e for e in entidades if e in miembros]
+            elif dimension == 'equipo':
+                entidades = list(id_teams) if entidades is None else [e for e in entidades if e in id_teams]
 
         agrupar_por_periodo = agrupar_por == 'periodo'
         tope_categorias = LIMITE_POR_CLAVE.get(kpi_row.clave) if kpi_row else None
