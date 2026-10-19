@@ -2,7 +2,7 @@
 // cada pestaña de módulo trae TODOS los KPIs de su módulo (los sin desglose, al final, como
 // "combinables") y "Variables" es la vista transversal de todos los sin desglose.
 //
-// El catálogo es una copia de los 38 KPIs del registry (fixtures/catalogo_del_registry.json:
+// El catálogo es una copia de los 40 KPIs del registry (fixtures/catalogo_del_registry.json:
 // clave, módulo, dimensiones y unidad tal como los siembra `kpi_definition`). Si cambia el
 // registry, se actualiza esa copia.
 import assert from "node:assert/strict";
@@ -22,8 +22,8 @@ const SIN_DESGLOSE_DE_RESTAURANTE = [
   "ventas_restaurante", "ticket_promedio", "propinas_restaurante", "propina_pct_de_venta", "tiempo_de_entrega", "cuentas_sin_cobrar",
 ];
 
-test("el catálogo de la prueba son los 38 KPIs del registry: 9 sin desglose, 6 de ellos de restaurante", () => {
-  assert.equal(CATALOGO.length, 38);
+test("el catálogo de la prueba son los 40 KPIs del registry: 9 sin desglose, 6 de ellos de restaurante", () => {
+  assert.equal(CATALOGO.length, 40);
   assert.equal(CATALOGO.filter(esVariable).length, 9);
   assert.deepEqual(claves(CATALOGO.filter((k) => k.modulo === "restaurante" && esVariable(k))).sort(), [...SIN_DESGLOSE_DE_RESTAURANTE].sort());
 });
@@ -36,7 +36,7 @@ test("cada KPI está en la pestaña de SU módulo, con todos los de ese módulo 
     assert.ok(ids(grupo.kpis).includes(kpi.id_kpi_definition), `${kpi.clave} no está en ${kpi.modulo}`);
   }
   const totales = Object.fromEntries(grupos.filter((g) => !g.esVariables).map((g) => [g.clave, g.kpis.length]));
-  assert.deepEqual(totales, { operaciones: 12, inventario: 4, facturacion: 4, laboratorio: 3, documentos: 1, restaurante: 14 });
+  assert.deepEqual(totales, { operaciones: 14, inventario: 4, facturacion: 4, laboratorio: 3, documentos: 1, restaurante: 14 });
   assert.deepEqual(grupos.map((g) => g.clave), [...ORDEN_DE_MODULOS, "variables"], "orden fijo y Variables al final");
 });
 
@@ -92,7 +92,7 @@ test("un KPI que sale en dos pestañas es el mismo: mismo id, mismo objeto y mis
 test("los conteos de las pestañas son el total del módulo (con sus combinables) y Variables cuenta los sin desglose", () => {
   const resumen = resumenDeModulos(CATALOGO, "", []);
   assert.deepEqual(resumen.map((m) => [m.clave, m.total]), [
-    ["operaciones", 12], ["inventario", 4], ["facturacion", 4], ["laboratorio", 3], ["documentos", 1], ["restaurante", 14], ["variables", 9],
+    ["operaciones", 14], ["inventario", 4], ["facturacion", 4], ["laboratorio", 3], ["documentos", 1], ["restaurante", 14], ["variables", 9],
   ]);
   // Elegir un sin desglose cuenta en su módulo y en Variables (la selección es la misma).
   const ventas = CATALOGO.find((k) => k.clave === "ventas_restaurante");

@@ -416,5 +416,27 @@
   ],
   "unidad": "numero",
   "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 39,
+  "clave": "checadas_en_turno_por_equipo",
+  "etiqueta": "Personas en turno por equipo",
+  "modulo": "operaciones",
+  "dimensiones": [
+   "equipo"
+  ],
+  "unidad": "numero",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 40,
+  "clave": "checadas_sin_salida_por_equipo",
+  "etiqueta": "Personas sin salida por equipo",
+  "modulo": "operaciones",
+  "dimensiones": [
+   "equipo"
+  ],
+  "unidad": "numero",
+  "modo": "snapshot"
  }
 ]

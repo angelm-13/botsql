@@ -2083,9 +2083,10 @@ KPI_REGISTRY = (
 # KPIs de los modulos nuevos: viven en `app/kpis/modulos/<modulo>.py` y se agregan
 # AL FINAL, despues de los de siempre (que no se mueven). Se importan aqui, ya
 # definida `KpiDefinition`, porque cada archivo la pide dentro de `definiciones()`.
+from app.kpis.modulos import checadas as _checadas  # noqa: E402
 from app.kpis.modulos import restaurante as _restaurante  # noqa: E402
 
-KPI_REGISTRY = KPI_REGISTRY + _restaurante.definiciones()
+KPI_REGISTRY = KPI_REGISTRY + _restaurante.definiciones() + _checadas.definiciones()
 
 
 # `id_kpi_definition` en `kpi_snapshot`/las rutas es un entero de BD -- este
