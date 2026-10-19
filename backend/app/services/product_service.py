@@ -150,6 +150,7 @@ class ProductService(CrudService):
         como llega casi todo lo del sistema original.
         """
         payload = cls._rechazar_lot_control(dict(payload or {}))
+        payload = cls._sincronizar_estado(None, payload)
 
         # Sin factura no se rechaza: se resuelve la de captura directa. Es lo que
         # permite dar de alta un desarmador sin inventarse un documento de
@@ -209,6 +210,82 @@ class ProductService(CrudService):
                        meta={'field': 'cantidad'})
 
     @classmethod
+    def _sincronizar_estado(cls, item_id, payload: dict) -> dict:
+        """Escribe `product_status` e `id_inventory_status` juntos.
+
+        Antes cada uno se guardaba por su lado: el formulario cambiaba solo el
+        texto y el vale solo el catalogo, y el producto quedaba diciendo dos
+        cosas (3 en adser-prod, MARR4 "usado" con el catalogo en "extraviado").
+
+        El formulario manda el registro completo, asi que lo que cuenta es lo que
+        CAMBIO frente a lo guardado:
+        - cambio el texto -> manda el texto: su codigo de catalogo pasa a
+          `id_inventory_status`; si el texto no es un estado (ENTRADA, SALIDA,
+          vacio) el catalogo se limpia, porque dejarlo diria otra cosa;
+        - cambio el catalogo -> manda el catalogo: el texto pasa a su codigo;
+        - cambiaron los dos -> manda el catalogo, que es el dato nuevo.
+        """
+        if 'product_status' not in payload and 'id_inventory_status' not in payload:
+            return payload
+        from app.models.inventory_status import InventoryStatus
+        from app.utils.product_status import clave, codigo_de_catalogo
+
+        payload = dict(payload)
+        with transaction_context() as session:
+            fila = None
+            if item_id is not None:
+                try:
+                    fila = session.get(Product, int(item_id))
+                except (TypeError, ValueError):
+                    fila = None
+            texto_actual = fila.product_status if fila is not None else None
+            id_actual = fila.id_inventory_status if fila is not None else None
+
+            def _id(valor):
+                try:
+                    return int(valor) if str(valor).strip() != '' else None
+                except (TypeError, ValueError):
+                    return None
+
+            cambio_texto = ('product_status' in payload
+                            and clave(payload['product_status']) != clave(texto_actual))
+            cambio_id = ('id_inventory_status' in payload
+                         and _id(payload['id_inventory_status']) != id_actual)
+
+            if cambio_id:
+                nuevo_id = _id(payload['id_inventory_status'])
+                if nuevo_id is None:
+                    # Sin estado de catalogo: un texto que diga uno contradice.
+                    texto = payload.get('product_status', texto_actual)
+                    if codigo_de_catalogo(texto):
+                        payload['product_status'] = None
+                    return payload
+                estado = session.get(InventoryStatus, nuevo_id)
+                if estado is not None and estado.deletion_date is None:
+                    # Si el texto ya dice lo mismo (DAÑADO y danado), se respeta
+                    # tal cual: no se reescribe una historia que no se contradice.
+                    if codigo_de_catalogo(payload.get('product_status')) != estado.inventory_status_code:
+                        payload['product_status'] = estado.inventory_status_code
+                return payload
+
+            if cambio_texto:
+                codigo = codigo_de_catalogo(payload['product_status'])
+                if codigo is None:
+                    payload['id_inventory_status'] = None
+                    return payload
+                encontrado = session.scalars(
+                    select(InventoryStatus.id_inventory_status).where(
+                        InventoryStatus.inventory_status_code == codigo,
+                        InventoryStatus.entity_scope == 'product',
+                        InventoryStatus.deletion_date.is_(None),
+                    ).limit(1)
+                ).first()
+                # Un catalogo sin sembrar no tumba el guardado: se deja el id como esta.
+                if encontrado is not None:
+                    payload['id_inventory_status'] = encontrado
+        return payload
+
+    @classmethod
     def update(cls, item_id, payload: dict, user_id: int | None = None):
         # `_rechazar_cantidad_a_mano` es el mismo guardia que escribio por su
         # cuenta `initAlan` (ver su docstring): `PUT /product/<id>` aceptaba
@@ -220,6 +297,7 @@ class ProductService(CrudService):
         # dos arreglos del mismo bug, se queda el de `initAlan` por ser la
         # rama compartida.
         payload = cls._rechazar_cantidad_a_mano(item_id, dict(payload or {}))
+        payload = cls._sincronizar_estado(item_id, payload)
         # Los formularios de edicion devuelven el registro completo, `lot_control`
         # incluido. Si viene igual a lo que ya hay no se esta encendiendo nada, y
         # rechazarlo hacia imposible guardar CUALQUIER edicion de un producto.
