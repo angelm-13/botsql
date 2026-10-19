@@ -13,7 +13,8 @@ y que se note. Lo que protege es, en este orden:
 * el comprobante es obligatorio para comprar;
 * un comprobante no puede justificar dos ordenes (la misma huella de archivo, el mismo
   folio del mismo proveedor, el mismo UUID de CFDI);
-* quien compra no autoriza, y quien compra no recibe;
+* quien compra no autoriza; recibir lo decide la capacidad `purchase_receive` del
+  Gestor, sin regla por persona;
 * nada se edita en silencio: cada cambio de estado queda con quien y cuando.
 
 Una orden, varios proyectos

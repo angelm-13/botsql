@@ -3,7 +3,8 @@
 Lo que estas pruebas sostienen:
 
 * la recepcion es del almacen -capacidad `purchase_receive`, no el permiso de escribir
-  ordenes- y quien compro no recibe lo que compro;
+  ordenes-; quien compro puede recibir si su rol la tiene (2026-10-19), no hay regla
+  por persona;
 * se recibe por renglon y en parcialidades: la orden queda `partially_received` hasta
   que llega todo, y recibir de mas se rechaza en vez de esconderse;
 * a cada paso le toca avisar a quien sigue: autorizar, comprar, recibir.
@@ -239,18 +240,19 @@ class TestRecibirLaCompra(BaseRecepcion):
             {"id_purchase_order_line": id_renglon, "quantity": 1}], self._nadie()).status_code,
             (401, 403))
 
-    def test_whoever_bought_cannot_receive_even_with_the_capability(self):
-        """El gerente compra lo que la politica le reserva y no puede recibirlo."""
+    def test_whoever_bought_can_receive_if_the_role_has_the_capability(self):
+        """Quien recibe lo manda el Gestor, no la persona: el gerente que compro,
+        y tiene la capacidad, tambien confirma que llego (pedido de Adser)."""
         self._politica(authorize_above=0, manager_buys_above=5000)
         id_orden = self._autorizada()
         self._factura(id_orden)
         self.assertEqual(200, self._comprar(id_orden, self._gerente(1)).status_code)
         id_renglon = self._renglon(id_orden)["id_purchase_order_line"]
 
+        self.assertTrue(self._leer(id_orden, self._gerente(1))["actions"]["receive"])
         propia = self._recibir(id_orden, [
             {"id_purchase_order_line": id_renglon, "quantity": 1}], self._gerente(1))
-        self.assertEqual(403, propia.status_code)
-        self.assertEqual("errors.purchase_same_person", self._error(propia))
+        self.assertEqual(200, propia.status_code)
 
         ajena = self._recibir(id_orden, [
             {"id_purchase_order_line": id_renglon, "quantity": 1}], self._gerente(2))

@@ -548,10 +548,9 @@ def _acciones(db, orden: PurchaseOrder, renglones, comprobantes, user_data: dict
         and bool(con_evidencia),
         "cancel": escribe and estado in CANCELLABLE_STATES,
         # Recibir lo comprado es del almacen, que solo consulta las ordenes: lo
-        # decide la capacidad `purchase_receive`, no el permiso de escribir. Y quien
-        # compro no recibe.
-        "receive": estado in RECEIVABLE_STATES and _puede_recibir(db, user_data)
-        and (orden.purchased_by is None or int(orden.purchased_by) != actor),
+        # decide la capacidad `purchase_receive`, no el permiso de escribir. Quien
+        # puede recibir lo manda el Gestor: no hay regla por persona.
+        "receive": estado in RECEIVABLE_STATES and _puede_recibir(db, user_data),
         # Cuales comprobantes se pueden quitar ahora (y solo antes de comprar).
         "removable_vouchers": [
             v.id_purchase_voucher for v in comprobantes
@@ -1181,9 +1180,9 @@ def receive_order(id_order, payload: dict, user_data: dict) -> dict:
     llamada SUMA a lo ya recibido; la orden pasa a `received` cuando todos los
     renglones estan completos y se queda en `partially_received` mientras falte.
 
-    Quien recibe es el almacen (capacidad `purchase_receive`) y NO es quien compro:
-    la misma persona no puede comprar y confirmar que llego lo que compro. Vale
-    tambien para el administrador, igual que autorizar la orden propia.
+    Quien recibe lo decide la capacidad `purchase_receive` en el Gestor (Almacen, o
+    Compras si se le concede). Ya no hay regla por persona: quien compro puede
+    confirmar que llego, si su rol tiene la capacidad (2026-10-19, pedido de Adser).
 
     Solo confirma CANTIDAD. No da entrada al inventario: lo comprado es, casi
     siempre, material de obra en texto libre -sin producto ni ubicacion a donde
@@ -1210,10 +1209,8 @@ def receive_order(id_order, payload: dict, user_data: dict) -> dict:
         if orden.order_status not in RECEIVABLE_STATES:
             raise AppError("errors.order_not_receivable", 409,
                            {"order_status": orden.order_status})
-        if orden.purchased_by is not None and int(orden.purchased_by) == actor:
-            raise AppError("errors.purchase_same_person", 403, {"action": "receive"})
 
-        renglones = {r.id_purchase_order_line: r for r in _renglones(db, orden.id_purchase_order)}
+        renglones ={r.id_purchase_order_line: r for r in _renglones(db, orden.id_purchase_order)}
         vistos = set()
         llegado = []
         for dato in datos:
