@@ -251,6 +251,16 @@ commitear ni promover** (pasos en
    adelante (regla de etapa en `_scoped_query`, suma a `scope_read`). En pantalla los
    dos pasos son un botón en la fila, "Material en camino" / "Material recibido,
    iniciar" (`PASO_DE_MATERIAL`), no una opción del desplegable de estatus.
+   **Material parcial** (2026-10-19, regla para todos los proyectos, sin columna
+   nueva: en adser-prod ningún proyecto en proceso tiene necesidades abiertas): se
+   puede arrancar con lo que ya llegó, sin motivo, y el sistema asienta "Arranca con
+   material parcial: X de Y recibido" (si no ha llegado nada, pide motivo como antes);
+   **no se completa** con necesidades abiertas sin recibir
+   (`errors.project_material_incomplete`, 409; las que ya no apliquen se cancelan).
+   Al recibir una orden y quedar el proyecto sin material pendiente se avisa
+   "Material completo" al responsable, supervisor y Compras
+   (`avisar_material_completo`, una sola vez); la lista muestra "Material X/Y". La
+   cuenta sale de `material_readiness_por_proyecto` (necesidades + renglones de orden).
 3. **El Gestor manda sobre lo que se ve**: `_scoped_query` respeta
    `proyect.scope_read` para roles sin capacidad de proyecto y `update_project`
    filtra por `scope_update`. **Cambia el comportamiento de los Supervisores

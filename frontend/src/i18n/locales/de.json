@@ -2557,6 +2557,7 @@
     "project_not_editable": "Das Projekt kann im aktuellen Status nicht mehr bearbeitet werden.",
     "project_open_tasks": "Das Projekt kann nicht ausgeliefert werden: es gibt noch offene Aufgaben.",
     "project_material_pending": "Das Projekt hat noch nicht eingegangenes Material. Um trotzdem zu starten, geben Sie einen Grund an.",
+    "project_material_incomplete": "Es fehlt noch Material. Das Projekt kann erst abgeschlossen werden, wenn es eingetroffen ist oder die nicht mehr benötigten Bedarfe storniert wurden.",
     "project_tasks_not_completed": "Das Projekt kann nicht abgeschlossen werden: es gibt noch offene Aufgaben."
   },
   "logistics": {
@@ -3208,6 +3209,8 @@
     "delete": "Löschen",
     "change_status": "Status ändern",
     "material_en_camino": "Material unterwegs",
+    "material_label": "Material",
+    "material_parcial": "Mit Teilmaterial starten",
     "material_recibido": "Material erhalten, starten",
     "filter_status": "Nach Status filtern",
     "filter_supervisor": "Nach Projektleiter filtern",

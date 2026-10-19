@@ -11,7 +11,7 @@ from app.services.project_management_service import (
     material_readiness, transition_project,
 )
 from app.utils.errors import AppError
-from tests.test_api.test_api_purchase_order import GERENTE, GERENTE_1, PROYECTO_B
+from tests.test_api.test_api_purchase_order import ALMACEN_1, GERENTE, GERENTE_1, PROYECTO_B
 from tests.test_api.test_api_purchase_receive import BaseRecepcion
 
 
@@ -90,6 +90,120 @@ class TestProyectoContraOrdenes(BaseRecepcion):
         self._en_espera_con_tarea()
         self.assertTrue(self._estado()["ready"])
         self.assertEqual("in_progress", self._arrancar()["proyect_status"])
+
+    # --- material parcial: arrancar con lo que llego, completar con todo --------
+
+    def _con_control(self, *, segunda_necesidad=True):
+        """PROYECTO_B lo lidera el gerente de la prueba. Con `segunda_necesidad`,
+        queda una que nunca entra en la orden."""
+        with transaction_context() as db:
+            db.get(Proyect, PROYECTO_B).leader = GERENTE_1
+            if segunda_necesidad:
+                db.add(self._necesidad(9001, PROYECTO_B, "Varilla", 3, "pza", "buy"))
+
+    def _recibir_el_cemento(self):
+        id_orden = self._comprada()
+        linea = next(l for l in self._leer(id_orden)["lines"] if l["id_proyect"] == PROYECTO_B)
+        self.assertEqual(200, self._recibir(id_orden, [
+            {"id_purchase_order_line": linea["id_purchase_order_line"],
+             "quantity": linea["quantity"]}]).status_code)
+
+    def _cerrar_tareas(self):
+        with transaction_context() as db:
+            db.query(Task).filter(Task.id_proyect == PROYECTO_B).update({"task_status": "terminada"})
+
+    def test_a_project_starts_with_what_arrived_and_records_what_is_missing(self):
+        from app.models.proyect_event import ProyectEvent
+
+        self._con_control()
+        self._en_espera_con_tarea()
+        with self.assertRaises(AppError) as e:  # nada ha llegado: pide el motivo de siempre
+            self._arrancar()
+        self.assertEqual("errors.project_material_pending", e.exception.message_key)
+
+        self._recibir_el_cemento()
+        self.assertEqual({"total": 2, "received": 1, "on_order": 0, "not_ordered": 1,
+                          "ready": False}, self._estado())
+        self.assertEqual("in_progress", self._arrancar()["proyect_status"])  # sin motivo
+        with transaction_context() as db:
+            evento = db.query(ProyectEvent).filter(
+                ProyectEvent.id_proyect == PROYECTO_B, ProyectEvent.new_status == "in_progress").one()
+            self.assertEqual("Arranca con material parcial: 1 de 2 recibido", evento.reason)
+
+    def test_a_project_cannot_be_completed_until_the_rest_arrives(self):
+        from app.models import ProyectMaterialNeed
+
+        self._con_control()
+        self._en_espera_con_tarea()
+        self._recibir_el_cemento()
+        self._arrancar()
+        self._cerrar_tareas()
+        with self.assertRaises(AppError) as e:
+            transition_project(PROYECTO_B, {"status": "completed"}, self.gerente_datos)
+        self.assertEqual("errors.project_material_incomplete", e.exception.message_key)
+        self.assertEqual(409, e.exception.status_code)
+
+        with transaction_context() as db:  # lo que ya no aplica se cancela
+            db.query(ProyectMaterialNeed).filter(ProyectMaterialNeed.id_proyect_material_need == 9001
+                                                 ).update({"need_status": "cancelled"})
+        self.assertEqual("completed", transition_project(
+            PROYECTO_B, {"status": "completed"}, self.gerente_datos)["proyect_status"])
+
+    def test_a_project_without_material_needs_completes_freely(self):
+        with transaction_context() as db:
+            from app.models import ProyectMaterialNeed
+            db.query(ProyectMaterialNeed).filter(
+                ProyectMaterialNeed.id_proyect == PROYECTO_B).delete()
+            db.get(Proyect, PROYECTO_B).leader = GERENTE_1
+        self._en_espera_con_tarea()
+        self._arrancar()
+        self._cerrar_tareas()
+        self.assertEqual("completed", transition_project(
+            PROYECTO_B, {"status": "completed"}, self.gerente_datos)["proyect_status"])
+
+    def test_the_list_shows_how_much_material_is_missing(self):
+        from app.services.project_management_service import list_projects
+
+        self._con_control()
+        self._en_espera_con_tarea()
+        self._recibir_el_cemento()
+        fila = next(p for p in list_projects(self.gerente_datos, per_page=100)["items"]
+                    if p["id_proyect"] == PROYECTO_B)
+        self.assertEqual(1, fila["material_readiness"]["received"])
+        self.assertEqual(2, fila["material_readiness"]["total"])
+
+    def _avisos_de_material_completo(self):
+        from app.models import Notification
+
+        with transaction_context() as db:
+            return sorted(n.id_user_recipient for n in db.query(Notification).filter(
+                Notification.id_proyect == PROYECTO_B, Notification.title == "Material completo"))
+
+    def test_the_project_is_told_once_when_all_its_material_has_arrived(self):
+        from app.services.project_management_service import avisar_material_completo
+
+        self._con_control(segunda_necesidad=False)
+        self._en_espera_con_tarea()
+        self.assertEqual([], self._avisos_de_material_completo())
+
+        self._recibir_el_cemento()  # era lo unico que pidio
+        self.assertEqual([GERENTE_1], self._avisos_de_material_completo())
+        avisar_material_completo({PROYECTO_B}, ALMACEN_1)  # otra recepcion de la misma orden
+        self.assertEqual([GERENTE_1], self._avisos_de_material_completo())
+
+    def test_no_notice_while_some_material_is_still_missing(self):
+        self._con_control()
+        self._en_espera_con_tarea()
+        self._recibir_el_cemento()
+        self.assertEqual([], self._avisos_de_material_completo())
+
+    def test_a_project_that_has_not_reached_the_wait_gets_no_material_notice(self):
+        """Autorizado todavia no se abastece: no hay aviso aunque llegue todo."""
+        self._con_control(segunda_necesidad=False)
+        with transaction_context() as db:
+            db.get(Proyect, PROYECTO_B).proyect_status = "authorized"
+        self._recibir_el_cemento()
+        self.assertEqual([], self._avisos_de_material_completo())
 
     def test_a_project_with_a_live_purchase_order_cannot_be_denied(self):
         id_orden = self._comprada()

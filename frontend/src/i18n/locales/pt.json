@@ -2559,6 +2559,7 @@
     "project_not_editable": "O projeto não pode mais ser editado no status atual.",
     "project_open_tasks": "Não é possível entregar o projeto: ainda há tarefas em aberto.",
     "project_material_pending": "O projeto ainda tem material não recebido. Para iniciar mesmo assim, informe um motivo.",
+    "project_material_incomplete": "Ainda falta material a receber. O projeto não pode ser concluído até que chegue, ou até cancelar as necessidades que não se aplicam mais.",
     "project_tasks_not_completed": "Não é possível concluir o projeto: ainda há tarefas em aberto."
   },
   "logistics": {
@@ -3214,6 +3215,8 @@
     "delete": "Excluir",
     "change_status": "Alterar status",
     "material_en_camino": "Material a caminho",
+    "material_label": "Material",
+    "material_parcial": "Iniciar com material parcial",
     "material_recibido": "Material recebido, iniciar",
     "filter_status": "Filtrar por status",
     "filter_supervisor": "Filtrar por responsavel",

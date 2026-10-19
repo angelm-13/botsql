@@ -34,6 +34,22 @@ se inventa nada (vacía se queda vacía).
   completado, entregado), más los que él mismo creó o lidera. Es una regla de
   etapa del flujo, no una celda del Gestor: se suma a `proyect.scope_read`.
 
+**Material parcial (2026-10-19).** Se puede arrancar con lo que ya llegó y se
+completa solo con todo el material:
+- `waiting_material → in_progress` con material incompleto: si ya llegó algo, pasa
+  sin motivo y queda asentado "Arranca con material parcial: X de Y recibido"; si no
+  ha llegado nada, pide motivo (candado suave de siempre).
+- **Completar** con necesidades de material abiertas sin recibir da 409
+  `errors.project_material_incomplete`. Una necesidad que ya no aplica se cancela en
+  la lista de necesidades.
+- Al recibir una orden, si el proyecto (en espera, en proceso o detenido) ya no
+  tiene material pendiente, se avisa "Material completo" a responsable, supervisor y
+  Compras, una sola vez. La lista de proyectos muestra "Material X/Y" mientras falte.
+- Es una regla para todos los proyectos, sin columna nueva. **Medido antes de
+  promover (solo lectura, 2026-10-19): adser-prod no tiene ningún proyecto en
+  proceso con necesidades abiertas** (solo 2 autorizados, aún sin arrancar), así que
+  ninguno queda trabado para completarse. Repetir la medición antes de promover.
+
 **Proyectos sin maquila: ya no saltan a completado** (retira el atajo del
 2026-09-30). Recorren los mismos estatus: autorizado → en espera de material
 (Compras) → en proceso (Compras) → completado y entregado, estos dos por el

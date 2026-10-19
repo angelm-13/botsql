@@ -1340,3 +1340,22 @@ def notificar_orden(evento: str, ficha: dict, actor_id: int) -> None:
                 created_by=actor_id)
     except Exception:
         pass
+    if evento in ("recibida", "recibida_en_parte"):
+        _avisar_material_completo_de(ficha, actor_id)
+
+
+def _avisar_material_completo_de(ficha: dict, actor_id: int) -> None:
+    """Tras recibir material, avisa de los proyectos a los que ya les llego todo.
+
+    El aviso por orden de arriba dice que llego algo de ESA orden; el del proyecto
+    dice que ya no falta nada de lo que pidio, que es lo que necesita quien lo
+    lleva para saber que puede completarlo.
+    """
+    try:
+        from app.services.project_management_service import avisar_material_completo
+
+        ids = {l.get("id_proyect") for l in ficha.get("lines") or [] if l.get("id_proyect")}
+        if ids:
+            avisar_material_completo(ids, int(actor_id))
+    except Exception:
+        pass

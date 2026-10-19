@@ -113,6 +113,12 @@ WORKSHOP_VISIBLE_STATUSES = {"authorized", "in_progress", "waiting_material",
 # Los estatus que ve quien confirma el material (`project_supply`): de
 # autorizado en adelante. Ver `_scoped_query`.
 SUPPLY_VISIBLE_STATUSES = WORKSHOP_VISIBLE_STATUSES
+
+# Mientras el proyecto esta en estos estatus se lleva la cuenta del material que
+# falta (indicador en la lista y aviso de "material completo"). Antes de la
+# espera todavia no se ha empezado a abastecer; despues de completado, ya no
+# hay nada que esperar.
+MATERIAL_TRACKED_STATUSES = ("waiting_material", "in_progress", "stopped")
 PROJECT_MUTABLE_FIELDS = {
     "id_customer_supplier", "id_customer_contact", "proyect_description", "title",
     # Los de la orden de trabajo. El estado NO esta aqui: se mueve por
@@ -303,6 +309,49 @@ def _ordenes_de_compra_vivas(db, id_proyect) -> list[str]:
     return [f[0] for f in filas]
 
 
+def material_readiness_por_proyecto(db, ids_proyect) -> dict:
+    """`material_readiness` de varios proyectos en dos consultas (la lista lo pide
+    por pagina; uno por uno eran dos consultas por fila)."""
+    from app.models.proyect_material_need import ProyectMaterialNeed
+    from app.models.purchase_order import PurchaseOrder, PurchaseOrderLine
+    from app.services.proyect_material_need_service import ORDER_STATES_THAT_RELEASE_NEEDS
+
+    ids = [int(i) for i in ids_proyect]
+    resultado = {i: {"total": 0, "received": 0, "on_order": 0, "not_ordered": 0, "ready": True}
+                 for i in ids}
+    if not ids:
+        return resultado
+    proyecto_de = dict(db.query(
+        ProyectMaterialNeed.id_proyect_material_need, ProyectMaterialNeed.id_proyect).filter(
+        ProyectMaterialNeed.id_proyect.in_(ids),
+        ProyectMaterialNeed.need_status == "open",
+        ProyectMaterialNeed.deletion_date.is_(None)).all())
+    renglones = {}
+    if proyecto_de:
+        for need, ordenado, recibido in db.query(
+                PurchaseOrderLine.id_proyect_material_need,
+                PurchaseOrderLine.quantity, PurchaseOrderLine.quantity_received
+        ).join(PurchaseOrder, PurchaseOrder.id_purchase_order == PurchaseOrderLine.id_purchase_order
+               ).filter(
+            PurchaseOrderLine.id_proyect_material_need.in_(list(proyecto_de)),
+            PurchaseOrderLine.deletion_date.is_(None),
+            PurchaseOrder.deletion_date.is_(None),
+            PurchaseOrder.order_status.notin_(ORDER_STATES_THAT_RELEASE_NEEDS)).all():
+            renglones[need] = (ordenado, recibido)
+    for need, id_proyect in proyecto_de.items():
+        cuenta = resultado[int(id_proyect)]
+        cuenta["total"] += 1
+        if need not in renglones:
+            cuenta["not_ordered"] += 1
+        elif renglones[need][1] >= renglones[need][0]:
+            cuenta["received"] += 1
+        else:
+            cuenta["on_order"] += 1
+    for cuenta in resultado.values():
+        cuenta["ready"] = cuenta["received"] == cuenta["total"]
+    return resultado
+
+
 def material_readiness(db, id_proyect) -> dict:
     """Como va el material que el proyecto pidio: cuantas necesidades abiertas
     ya llegaron, cuales vienen en una orden y cuales ni siquiera se han pedido.
@@ -310,33 +359,52 @@ def material_readiness(db, id_proyect) -> dict:
     Una necesidad llego cuando su renglon de orden ya recibio todo lo ordenado.
     Sin necesidades abiertas no hay nada que esperar (`ready` True).
     """
-    from app.models.proyect_material_need import ProyectMaterialNeed
-    from app.models.purchase_order import PurchaseOrder, PurchaseOrderLine
-    from app.services.proyect_material_need_service import ORDER_STATES_THAT_RELEASE_NEEDS
+    return material_readiness_por_proyecto(db, [id_proyect])[int(id_proyect)]
 
-    necesidades = [n for (n,) in db.query(ProyectMaterialNeed.id_proyect_material_need).filter(
-        ProyectMaterialNeed.id_proyect == id_proyect,
-        ProyectMaterialNeed.need_status == "open",
-        ProyectMaterialNeed.deletion_date.is_(None)).all()]
-    renglones = {}
-    if necesidades:
-        for need, ordenado, recibido in db.query(
-                PurchaseOrderLine.id_proyect_material_need,
-                PurchaseOrderLine.quantity, PurchaseOrderLine.quantity_received
-        ).join(PurchaseOrder, PurchaseOrder.id_purchase_order == PurchaseOrderLine.id_purchase_order
-               ).filter(
-            PurchaseOrderLine.id_proyect_material_need.in_(necesidades),
-            PurchaseOrderLine.deletion_date.is_(None),
-            PurchaseOrder.deletion_date.is_(None),
-            PurchaseOrder.order_status.notin_(ORDER_STATES_THAT_RELEASE_NEEDS)).all():
-            renglones[need] = (ordenado, recibido)
-    recibidas = sum(1 for n in necesidades if n in renglones and renglones[n][1] >= renglones[n][0])
-    en_orden = sum(1 for n in necesidades if n in renglones) - recibidas
-    return {
-        "total": len(necesidades), "received": recibidas, "on_order": en_orden,
-        "not_ordered": len(necesidades) - recibidas - en_orden,
-        "ready": recibidas == len(necesidades),
-    }
+
+def avisar_material_completo(ids_proyect, actor_id) -> None:
+    """Avisa que a un proyecto ya le llego TODO el material que pidio.
+
+    Se llama desde la recepcion de una orden, ya cerrada su transaccion (misma
+    razon que `_notificar_proyecto`). Solo avisa de proyectos con control de
+    material que ya pasaron a la espera, con al menos una necesidad, y no repite
+    el aviso: una recepcion parcial de una orden con renglones de varios
+    proyectos pasa por aqui otra vez con los que ya estaban completos.
+    """
+    from app.models.notification import Notification
+
+    pendientes = []
+    try:
+        with transaction_context() as db:
+            proyectos = db.query(Proyect).filter(
+                Proyect.id_proyect.in_([int(i) for i in ids_proyect]),
+                Proyect.deletion_date.is_(None),
+                Proyect.proyect_status.in_(MATERIAL_TRACKED_STATUSES),
+            ).all()
+            avance = material_readiness_por_proyecto(db, [p.id_proyect for p in proyectos])
+            compras = _users_with_capability(db, "project_supply")
+            for proyecto in proyectos:
+                material = avance[proyecto.id_proyect]
+                if not material["total"] or not material["ready"]:
+                    continue
+                mensaje = "ya llego todo el material pedido (%d)" % material["total"]
+                ya_avisado = db.query(Notification.id_notification).filter(
+                    Notification.id_proyect == proyecto.id_proyect,
+                    Notification.title == "Material completo",
+                    Notification.message.like("%" + mensaje),
+                ).first()
+                if ya_avisado:
+                    continue
+                pendientes.append(dict(
+                    id_proyect=proyecto.id_proyect,
+                    nombre_proyecto=proyecto.title or proyecto.proyect_description
+                    or f"Proyecto {proyecto.id_proyect}",
+                    destinatarios=[proyecto.leader, proyecto.id_supervisor, *compras],
+                    titulo="Material completo", mensaje=mensaje))
+    except Exception:
+        return
+    for aviso in pendientes:
+        _notificar_proyecto(actor_id=actor_id, **aviso)
 
 
 def transition_management(project_id, payload: dict, user_data: dict) -> dict:
@@ -890,6 +958,17 @@ def list_projects(user_data: dict, *, page=1, per_page=20, filters=None, sort=No
             )
             for item in items
         ]
+        # Cuanto material falta, solo de los proyectos que ya estan en la espera o
+        # en curso (una consulta para toda la pagina).
+        en_seguimiento = [
+            item.id_proyect for item in items
+            if normalize_project_status(item.proyect_status) in MATERIAL_TRACKED_STATUSES
+        ]
+        if en_seguimiento:
+            avance = material_readiness_por_proyecto(db, en_seguimiento)
+            for item, payload_item in zip(items, payloads):
+                if item.id_proyect in avance:
+                    payload_item["material_readiness"] = avance[item.id_proyect]
         return {
             "items": payloads, "page": page, "per_page": per_page, "total": total,
             "pages": (total + per_page - 1) // per_page,
@@ -1551,8 +1630,26 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
             # Arrancar con material pendiente lo decide quien da el paso,
             # pero dejando el motivo: queda en la bitacora del proyecto.
             material = material_readiness(db, project.id_proyect)
-            if not material["ready"] and not str(reason or "").strip():
-                raise AppError("errors.project_material_pending", 409, material)
+            arranca_parcial = False
+            if not material["ready"]:
+                # Material incompleto: si ya llego ALGO se puede
+                # arrancar con eso sin dar motivo -el sistema deja asentado
+                # cuanto falta- y el resto se espera mientras se trabaja. Si no
+                # ha llegado nada, sigue pidiendo el motivo de siempre.
+                arranca_parcial = material["received"] > 0
+                if arranca_parcial and not str(reason or "").strip():
+                    reason = "Arranca con material parcial: %d de %d recibido" % (
+                        material["received"], material["total"])
+                elif not str(reason or "").strip():
+                    raise AppError("errors.project_material_pending", 409, material)
+
+        if validated_target == "completed":
+            # El material que falta es necesario para terminar: no se completa un
+            # proyecto con necesidades que todavia no llegan. Las que ya no
+            # apliquen se cancelan en la lista de necesidades.
+            material = material_readiness(db, project.id_proyect)
+            if not material["ready"]:
+                raise AppError("errors.project_material_incomplete", 409, material)
 
         if validated_target in {"completed", "delivered"}:
             # No se completa ni se entrega con tareas todavia abiertas --
@@ -1628,7 +1725,9 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
             avisos.append(dict(
                 destinatarios=[project.leader, project.id_supervisor],
                 titulo="Proyecto en proceso",
-                mensaje="ya se confirmo el material; puede arrancar",
+                mensaje=("arranca con material parcial (%d de %d recibido); falta el resto"
+                         % (material["received"], material["total"]))
+                if arranca_parcial else "ya se confirmo el material; puede arrancar",
             ))
         elif validated_target == "completed":
             avisos.append(dict(
