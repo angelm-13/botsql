@@ -28,6 +28,19 @@ test("el catálogo de la prueba son los 43 KPIs del registry: 9 sin desglose, 6 
   assert.deepEqual(claves(CATALOGO.filter((k) => k.modulo === "restaurante" && esVariable(k))).sort(), [...SIN_DESGLOSE_DE_RESTAURANTE].sort());
 });
 
+test("los 5 KPIs de checadas salen en la pestaña Operaciones y ninguno en Variables (todos tienen desglose)", () => {
+  const CHECADAS = [
+    "checadas_en_turno_por_equipo", "checadas_sin_salida_por_equipo", "checadas_entradas_por_equipo",
+    "checadas_salidas_por_equipo", "horas_trabajadas_por_empleado",
+  ];
+  const grupos = agruparKpis(CATALOGO, "");
+  const operaciones = grupoDe(grupos, "operaciones");
+  const enOperaciones = new Set(claves([...operaciones.kpis, ...operaciones.combinables]));
+  for (const clave of CHECADAS) assert.ok(enOperaciones.has(clave), `${clave} esta en Operaciones`);
+  assert.deepEqual(claves(grupoDe(grupos, "variables").kpis).filter((clave) => CHECADAS.includes(clave)), [], "ninguno es sin desglose");
+  assert.equal(CATALOGO.filter(esVariable).length, 9, "las Variables siguen siendo las mismas 9");
+});
+
 test("cada KPI está en la pestaña de SU módulo, con todos los de ese módulo (también los sin desglose)", () => {
   const grupos = agruparKpis(CATALOGO);
   for (const kpi of CATALOGO) {
