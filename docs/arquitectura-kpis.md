@@ -33,6 +33,7 @@ Rama `initAlan` · análisis del 2026-10-12 · **documento de revisión, sin com
   - [2.4 Finanzas](#24-finanzas)
   - [2.5 Punto de Venta](#25-punto-de-venta)
   - [2.6 Nóminas](#26-nóminas)
+  - [2.7 Checadas de asistencia (operaciones)](#27-checadas-de-asistencia-operaciones)
 - [Parte 3 — Arquitectura objetivo](#parte-3--arquitectura-objetivo)
   - [3.1 Organizar `KPI_REGISTRY`](#31-organizar-kpi_registry-para-6-áreas)
   - [3.2 Generalizar la dimensión](#32-generalizar-la-dimensión-por-empleado)
@@ -141,6 +142,9 @@ Rama `initAlan` · análisis del 2026-10-12 · **documento de revisión, sin com
   `INSERT … ON CONFLICT ON CONSTRAINT uq_kpi_snapshot_dia DO UPDATE`
   (`:100-111`). Es **solo upsert**: nunca borra filas.
 - Los KPIs `vivo` se saltan (`:43-51`).
+- La corrida frecuente (`recalculate_kpi_snapshots_frecuentes`, cada 5 min, solo hoy) elige por **módulo**
+  (`MODULOS_FRECUENTES`) **y por clave de KPI** (`KPIS_FRECUENTES`, `app/kpis/frecuencia.py`): un KPI entra si su
+  módulo o su clave están. Sirve para meter dos fotos de `operaciones` sin recalcular el resto del módulo (§2.7).
 
 ### Capa 4 — `kpi_snapshot`
 
@@ -178,7 +182,7 @@ Además el endpoint exige `require_entity_permission('kpi_definition','read')`
 |---|---|---|
 | `GET /kpi_definition/` | `:281` | Catálogo filtrado por `has_kpi_permission`; devuelve fila BD + metadatos del registro. |
 | `GET /kpi_definition/all` | `:297` | Catálogo completo para la pantalla de permisos (`/kpi_permissions`). |
-| `GET /kpi_snapshot/query` | `:329` | Params: `id_kpi_definition`, `fecha_inicio/fin`, `fecha_inicio_b/fin_b`, `empleados`\|`entidades`, `id_departments`, `agrupar_por=entidad\|periodo`. Devuelve `{rango_a, rango_b}`, cada uno `{inicio, fin, total, por_empleado{id:valor}, por_periodo{fecha:valor}[, etiquetas]}`. |
+| `GET /kpi_snapshot/query` | `:329` | Params: `id_kpi_definition`, `fecha_inicio/fin`, `fecha_inicio_b/fin_b`, `empleados`\|`entidades`, `id_departments`, `id_teams`, `agrupar_por=entidad\|periodo`. Devuelve `{rango_a, rango_b}`, cada uno `{inicio, fin, total, por_empleado{id:valor}, por_periodo{fecha:valor}[, etiquetas]}`. |
 | `GET /kpi_definition/<id>/vivo` | `:434` | KPIs `vivo`: llama `query_builder` en caliente con `limit/offset/id_user/q/orden/…` (firma **distinta**). |
 | CRUD `/kpi_dashboard`, `/kpi_dashboard_widget` | `:519-584` | Tableros privados por dueño. |
 
@@ -564,7 +568,7 @@ motor actual). Filas locales: 0.
 **Cómo se refrescan los KPIs.** La corrida nocturna (`recalculate_kpi_snapshots`, 01:00) recalcula una
 ventana de 7 días de TODOS los módulos: sin cambios. Además, `recalculate_kpi_snapshots_frecuentes` recalcula
 **solo hoy** y **solo los módulos de `MODULOS_FRECUENTES`** (`restaurante`, `pos`;
-`app/kpis/frecuencia.py`) cada `INTERVALO_MINUTOS_POR_OMISION` = 5 minutos (beat con `timedelta`; la variable
+`app/kpis/frecuencia.py`) más los KPIs sueltos de `KPIS_FRECUENTES` (§2.7) cada `INTERVALO_MINUTOS_POR_OMISION` = 5 minutos (beat con `timedelta`; la variable
 `KPI_FRECUENTES_INTERVALO_MIN`, 1 a 60, solo la sobreescribe; el beat expira cada corrida al llegar la
 siguiente para que no se apilen). Una venta de hoy aparece en el Dashboard en ≤ 5 minutos en vez de al día
 siguiente. `pos` aún no tiene KPIs: quedó declarado para que los primeros entren sin tocar el job.
@@ -786,6 +790,91 @@ necesitaría para ser medible:
 - Clasificación del concepto ya existente (`payroll_concept.type`), usada también
   para contribuciones patronales.
 - Política de visibilidad por campo para los KPIs (D13).
+
+## 2.7 Checadas de asistencia (operaciones)
+
+Implementado el 2026-10-19 para Comala. **Sin tablas, columnas, índices ni migraciones nuevas**: una checada es una
+fila de `incident`. Todo el código está en `app/kpis/modulos/checadas.py`.
+
+### Qué es una checada
+
+- **Criterio único:** `Incident.latitude IS NOT NULL` (`es_checada()`). Es el mismo criterio con que
+  `IncidentPage.jsx` decide mostrar las columnas de coordenadas, **con una diferencia**: la pantalla (`tieneDatosDeChecada`)
+  acepta latitud, longitud **o** distancia; el backend solo la latitud. Una fila con solo distancia o solo longitud se
+  vería como checada en la pantalla y no contaría en los KPIs. n8n manda las tres juntas, así que hoy no se nota.
+  `checadas_vigentes()` agrega lo común: sin baja (`deletion_date`) y no cancelada.
+- **Ciclo de vida** (verificado en `incident_service.py` y `operations_workflow.py`): la entrada es un `POST /incident/`
+  (estado `abierta`, `incident_date` = hora de pared GMT-6 sin zona, más latitud, longitud y distancia). La salida es
+  `close_date` más un estado de cierre. Desde `abierta` no se llega a `cerrada` (409): la salida queda en `resuelta`. Nada en
+  el servidor cierra una checada sola, ni impide dos abiertas del mismo usuario.
+- **Una cancelada no cuenta** ni como entrada, ni como salida, ni como horas: es un error de captura.
+
+### Equipo = parque
+
+`incident.id_user` → `nm_team_user` → `team`. Dimensión nueva `equipo` (`app/kpis/dimensiones.py`, `json_key = id_team`, tipo
+`catalogo`, **no** `abierta`: son pocos y el Dashboard no los agrupa en «Otros»).
+
+- Una persona en **dos equipos cuenta en cada uno**.
+- Una persona **sin equipo no aparece** en los KPIs por equipo (no hay a quién atribuirla); sí suma en el de tiempo trabajado.
+- Las membresías y los equipos con baja no cuentan.
+- Por eso **estos KPIs no son aditivos entre equipos**: el `total` que `_totales()` suma contaría dos veces a quien está en dos.
+  El registro no tiene una marca de «no aditivo»; la mitigación es que los cinco solo permiten **barras** (un valor por equipo; la
+  barra no usa el `total`, el «número» y la serie por periodo sí). Si algún día se permiten otras gráficas, hay que agregar esa marca.
+
+### Umbral
+
+`UMBRAL_SIN_SALIDA_HORAS = 12`. Una checada **abierta** (sin `close_date`) es «en turno» mientras lleve **menos** de 12 horas
+abierta; con 12 horas **exactas** o más es «sin salida».
+
+### Los cinco KPIs (todos `operaciones`, `alcance_proyecto=False`, solo barras)
+
+| KPI | Agregación · dimensión | Qué mide | Día |
+|---|---|---|---|
+| `checadas_en_turno_por_equipo` | `ultimo` · `equipo` | Foto de ahora: personas **distintas** con una checada abierta de < 12 h | — (foto de hoy) |
+| `checadas_sin_salida_por_equipo` | `ultimo` · `equipo` | Foto de ahora: personas distintas con una checada abierta de ≥ 12 h | — (foto de hoy) |
+| `checadas_entradas_por_equipo` | `suma` · `equipo` | Checadas abiertas ese día (cuenta checadas, no personas) | `date(incident_date)` |
+| `checadas_salidas_por_equipo` | `suma` · `equipo` | Checadas cerradas ese día | `date(close_date)` |
+| `horas_trabajadas_por_empleado` | `suma` · `empleado`, unidad `minutos` | `close_date - incident_date` de las cerradas | `date(incident_date)` (día de la entrada) |
+
+Entradas y salidas son **dos KPIs** y no uno con dos series porque el snapshot guarda una sola dimensión por fila y su llave única es
+`(kpi, dimension_key, periodo)`: con `equipo` como dimensión, la entrada y la salida del mismo equipo y día se pisarían.
+
+### Tiempo
+
+`incident_date` y `close_date` son hora de pared GMT-6 **sin zona**; `creation_date` es UTC y no se usa. «Ahora», «hoy» y la
+antigüedad salen de `ahora_negocio()` (`app/utils/tiempo.py`), nunca de `now()` en UTC (el día UTC cambia a las 18:00 de México). El día
+de un flujo es `date(columna)` **sin convertir**: ya es local. Casos de borde probados: entrada a las 23:50 y salida a las 00:10 del día
+siguiente (la entrada es del día D, la salida del D+1, y son 20 minutos del día D); una entrada exactamente a 12 h es «sin salida»; consulta a las
+18:00 y a las 19:00 de México (el día es el 15, no el 16).
+
+Las fotos **no filtran por día calendario**, solo por antigüedad: una entrada de las 23:50 sigue en turno a las 00:10.
+
+### Frecuencia y qué hace la corrida nocturna
+
+- Las dos fotos entran a la corrida de 5 minutos **por clave** (`KPIS_FRECUENTES`), sin arrastrar al resto de `operaciones`. Entradas, salidas
+  y tiempo trabajado siguen **solo con la corrida nocturna** (01:00 UTC = 19:00 de México, ventana de 7 días).
+- **Cada equipo vigente sale con su cero.** El upsert (`ON CONFLICT … DO UPDATE`) solo actualiza lo que la consulta devuelve: si un
+  equipo pasa de 3 personas a 0 y no saliera, conservaría el 3.
+- **La foto solo se emite si `fecha_fin` es el día local de hoy.** Efecto sobre la nocturna: de los 7 días de la ventana solo se escribe hoy; la
+  foto de ayer no se reescribe con el estado de hoy. Si el contenedor corre en UTC, a las 19:00 de México su `date.today()` ya es el día siguiente: la
+  consulta ve que no es hoy y no escribe nada (la corrida frecuente, que fecha con `hoy_negocio()`, la mantiene). Un backfill de un rango pasado
+  (`recalculate_kpi_snapshots_range.py`) no inventa fotos. *Diferencia con las fotos de restaurante*, que sí escriben «el estado de ahora» bajo la
+  `fecha_fin` que reciban.
+- **Tiempo trabajado y las salidas tardías:** el día D se recalcula solo mientras esté en la ventana de 7 días. Una salida capturada después
+  de eso no cambia las horas de D; hay que reprocesar el rango con el script.
+
+### Alcance y filtro por equipo
+
+- Los KPIs por equipo **no son «persona»**: siguen la regla de siempre, solo los ve quien tiene alcance **Todos** (403 con motivo `scope` para
+  Propios y Mis grupos). No se relajó. Relajarla para «Mis grupos» (que viera sus propios equipos) es una decisión aparte.
+- `GET /kpi_snapshot/query` acepta `id_teams` (lista de `id_team`): en un KPI por empleado deja a los miembros de esos equipos; en uno por equipo, esos
+  equipos; en cualquier otro no aplica. Va **después** del alcance del actor, así que solo recorta. **El Dashboard todavía no lo manda**: es solo API.
+
+### Qué no se hizo
+
+«Marcas fuera de radio» y «llegadas tarde» (no hay turnos, horarios ni descansos en el modelo: llegar tarde exigiría tablas nuevas). La asignación de los KPIs a un rol de Comala (`adm_asistencias`):
+se hace a mano en `/kpi_permissions` o con un perfil `comala` en `scripts/seed_kpi_permissions.py` (todavía no existe; hoy solo está `adser`).
+Sin esa asignación, ningún rol que no sea superusuario ve los KPIs nuevos.
 
 ---
 

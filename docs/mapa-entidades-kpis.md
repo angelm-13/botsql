@@ -165,7 +165,31 @@ comprueba que el operador exista y no esté borrado (`_fk`, `logistics_workflow_
 (`license_expiration` no se lee en ningún servicio), y no hay conflicto de horario
 entre viajes del mismo operador.
 
-## 8. NO VERIFICADO
+## 8. Checadas de asistencia (Comala, `operaciones`) — 2026-10-19
+
+Sin tablas nuevas: una checada es una fila de `incident`. Detalle y decisiones en `docs/arquitectura-kpis.md` §2.7.
+
+| Entidad | Tabla real | Columnas usadas | Criterio / diferencia | Dimensión |
+|---|---|---|---|---|
+| Checada | `incident` | `latitude`, `incident_date`, `close_date`, `incident_status`, `id_user`, `deletion_date` | **`latitude IS NOT NULL`** (`es_checada()`). La pantalla de incidencias acepta además longitud o distancia solas; el backend no. Sin baja y no cancelada. | — |
+| Entrada | `incident` | `incident_date` (hora de pared GMT-6, sin zona) | El día es `date(incident_date)`, sin convertir | — |
+| Salida | `incident` | `close_date` + estado de cierre | `abierta → cerrada` da 409: la salida queda en `resuelta`. Nada cierra una checada solo | — |
+| Parque | `team` | `id_team`, `team_description`, `deletion_date` | Equipo = parque | `equipo` (`id_team`, catálogo cerrado) |
+| Pertenencia | `nm_team_user` | `id_team`, `id_user`, `deletion_date` | Una persona en dos equipos cuenta en cada uno; sin equipo no aparece | — |
+
+| Umbral | Valor |
+|---|---|
+| «En turno» | checada abierta con **menos** de 12 h (`UMBRAL_SIN_SALIDA_HORAS`) |
+| «Sin salida» | checada abierta con 12 h **exactas** o más |
+
+| KPI | Frescura |
+|---|---|
+| `checadas_en_turno_por_equipo`, `checadas_sin_salida_por_equipo` | cada 5 min, por clave (`KPIS_FRECUENTES`) |
+| `checadas_entradas_por_equipo`, `checadas_salidas_por_equipo`, `horas_trabajadas_por_empleado` | solo la corrida nocturna (ventana de 7 días) |
+
+Fuera de alcance, y por qué: «llegadas tarde» (no hay turnos, horarios ni descansos) y «marcas fuera de radio» (se pidió no implementarlo).
+
+## 9. NO VERIFICADO
 
 - Que `customer_supplier.creation_date` esté poblada en datos migrados de un
   sistema legado.
@@ -174,3 +198,5 @@ entre viajes del mismo operador.
   `logistics_file.id_invoice` o `logistics_receivable.id_invoice`).
 - Ningún dato real de clientes: todas las tablas de restaurante y logística están
   vacías en la base local.
+- Checadas: no hay ninguna en la base local (0 con coordenadas), así que el volumen y la calidad de los datos reales de Comala (si n8n
+  manda siempre latitud, qué estado usa para la salida, si hay entradas duplicadas) no se pudieron comprobar. Las pruebas usan fixtures propias.
