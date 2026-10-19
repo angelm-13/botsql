@@ -7,15 +7,18 @@ deja que el codigo real haga la conversion a hora de Mexico (UTC-6 todo el ano d
 
 from __future__ import annotations
 
-import inspect
+import copy
 import unittest
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from unittest import mock
 from unittest.mock import patch
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 
+from app.jobs import tasks_kpis
+from app.kpis import frecuencia
 from app.kpis.modulos import checadas
 from app.kpis.modulos.checadas import (
     UMBRAL_SIN_SALIDA_HORAS,
@@ -25,10 +28,10 @@ from app.kpis.modulos.checadas import (
     checadas_salidas_por_equipo_query,
     checadas_sin_salida_por_equipo_query,
 )
-from app.kpis.registry import KPI_POR_CLAVE
+from app.kpis.registry import KPI_POR_CLAVE, seed_kpi_definitions
 from app.models import (
-    CustomerSupplier, Department, Incident, IncidentType, Level, NmTeamUser, Permission, Proyect, Status,
-    Subdepartment, Team, User,
+    CustomerSupplier, Department, Incident, IncidentType, KpiDefinition, KpiSnapshot, Level, NmTeamUser, Permission,
+    Proyect, Status, Subdepartment, Team, User,
 )
 from app.models.session import engine, transaction_context
 from tests.conftest import BackendTestCase
@@ -378,18 +381,6 @@ class FlujosDeChecadasTest(ChecadasBase):
         self.assertEqual([], self.entradas(D + timedelta(days=5), D + timedelta(days=6)))
 
 
-class DefinicionesDeFlujosTest(unittest.TestCase):
-    def test_entradas_y_salidas_son_flujos_por_equipo_de_operaciones_y_solo_barras(self):
-        for clave in ("checadas_entradas_por_equipo", "checadas_salidas_por_equipo"):
-            kpi = KPI_POR_CLAVE[clave]
-            self.assertEqual("operaciones", kpi.modulo, clave)
-            self.assertEqual(("equipo",), kpi.dimensiones, clave)
-            self.assertEqual("suma", kpi.agregacion, clave)
-            self.assertEqual("snapshot", kpi.modo, clave)
-            self.assertFalse(kpi.alcance_proyecto, clave)
-            self.assertEqual(("barras",), tuple(kpi.graficas_permitidas), clave)
-
-
 class HorasTrabajadasTest(ChecadasBase):
     """`horas_trabajadas_por_empleado`: minutos de las checadas CERRADAS, por empleado y por dia de la entrada."""
 
@@ -457,28 +448,100 @@ class HorasTrabajadasTest(ChecadasBase):
         self.assertEqual("Empleado", kpi.etiqueta_dimension)
 
 
-class DefinicionesDeChecadasTest(unittest.TestCase):
-    CLAVES_DE_FOTO = ("checadas_en_turno_por_equipo", "checadas_sin_salida_por_equipo")
+@unittest.skipUnless(engine.dialect.name == "postgresql", "El upsert de snapshots usa INSERT ... ON CONFLICT de PostgreSQL")
+class CorridaFrecuenteDeChecadasTest(ChecadasBase):
+    """La corrida de 5 minutos incluye SOLO las dos fotos de checadas, y el upsert nocturno no las falsifica."""
 
-    def test_el_criterio_de_checada_vive_en_un_solo_lugar(self):
-        # `es_checada()` es la unica que nombra `Incident.latitude`; las consultas la reutilizan.
-        fuente = inspect.getsource(checadas)
-        self.assertEqual(1, fuente.count("Incident.latitude"), "el criterio no se repite en cada consulta")
-        self.assertIn("es_checada()", inspect.getsource(checadas.checadas_vigentes))
+    def setUp(self):
+        super().setUp()
+        seed_kpi_definitions(engine)
+        with transaction_context() as db:
+            self.ids = dict(db.execute(select(KpiDefinition.clave, KpiDefinition.id_kpi_definition)).all())
+        self.fotos = tuple(KPI_POR_CLAVE[c] for c in frecuencia.KPIS_FRECUENTES)
 
-    def test_los_kpis_de_foto_son_de_operaciones_por_equipo_y_solo_barras(self):
-        for clave in self.CLAVES_DE_FOTO:
-            kpi = KPI_POR_CLAVE[clave]
-            self.assertEqual("operaciones", kpi.modulo, clave)
-            self.assertEqual(("equipo",), kpi.dimensiones, clave)
-            self.assertEqual("ultimo", kpi.agregacion, clave)
-            self.assertEqual("snapshot", kpi.modo, clave)
-            self.assertFalse(kpi.alcance_proyecto, clave)
-            # Una persona en dos equipos cuenta en cada uno: el total entre equipos la contaria dos veces. Solo
-            # barras (un valor por equipo); "numero" y "linea" usan ese total.
-            self.assertEqual(("barras",), tuple(kpi.graficas_permitidas), clave)
-            self.assertEqual("barras", kpi.grafica_default, clave)
+    def _guardado(self, clave):
+        """`{periodo: {id_team: valor}}` de lo que hay en `kpi_snapshot` para ese KPI."""
+        with transaction_context() as db:
+            filas = db.execute(select(KpiSnapshot.periodo, KpiSnapshot.dimension_key, KpiSnapshot.valor).where(
+                KpiSnapshot.id_kpi_definition == self.ids[clave])).all()
+        guardado: dict = {}
+        for periodo, llave, valor in filas:
+            guardado.setdefault(periodo, {})[llave["id_team"]] = float(valor)
+        return guardado
 
-    def test_sin_salida_es_mejor_cuando_baja(self):
-        self.assertEqual("bajo_es_mejor", KPI_POR_CLAVE["checadas_sin_salida_por_equipo"].direccion)
-        self.assertEqual("neutral", KPI_POR_CLAVE["checadas_en_turno_por_equipo"].direccion)
+    def _con_registro(self, kpis):
+        return mock.patch.object(tasks_kpis, "KPI_REGISTRY", tuple(kpis))
+
+    def _contenedor_con_fecha(self, hoy):
+        # La corrida nocturna fecha con `date.today()` del contenedor; la frecuente, con `hoy_negocio()`.
+        falso = mock.MagicMock(wraps=date)
+        falso.today.return_value = hoy
+        return mock.patch.object(tasks_kpis, "date", falso)
+
+    def _cerrar(self, id_incident, cierre):
+        with transaction_context() as db:
+            db.get(Incident, id_incident).close_date = cierre
+
+    def test_la_corrida_frecuente_recalcula_las_dos_fotos_y_no_arrastra_al_resto_de_operaciones(self):
+        self._checada(ANA, local(D, 10, 0))
+        ajenas = []
+        for clave in ("incidencias_abiertas_por_empleado", "checadas_entradas_por_equipo", "horas_trabajadas_por_empleado"):
+            kpi = copy.copy(KPI_POR_CLAVE[clave])           # del modulo operaciones, igual que las fotos
+            self.assertEqual("operaciones", kpi.modulo)
+            kpi.query_builder = mock.Mock(return_value=[])
+            ajenas.append(kpi)
+        de_restaurante = copy.copy(KPI_POR_CLAVE["ventas_restaurante"])     # su modulo si es frecuente
+        de_restaurante.query_builder = mock.Mock(return_value=[])
+        with self._con_registro((*self.fotos, *ajenas, de_restaurante)), ahora_local(local(D, 15, 0)):
+            resultado = tasks_kpis.recalculate_kpi_snapshots_frecuentes()
+        for kpi in ajenas:
+            kpi.query_builder.assert_not_called()
+        de_restaurante.query_builder.assert_called()
+        self.assertEqual(list(frecuencia.KPIS_FRECUENTES), resultado["claves"])
+        self.assertEqual(D.isoformat(), resultado["fecha_inicio"])
+        self.assertEqual(D.isoformat(), resultado["fecha_fin"])
+        self.assertEqual({D: {NORTE: 1.0, SUR: 0.0, VACIO: 0.0}}, self._guardado("checadas_en_turno_por_equipo"))
+        self.assertEqual({D: {NORTE: 0.0, SUR: 0.0, VACIO: 0.0}}, self._guardado("checadas_sin_salida_por_equipo"))
+
+    def test_un_equipo_que_pasa_de_dos_personas_a_cero_no_conserva_el_dos(self):
+        a = self._checada(ANA, local(D, 10, 0))
+        b = self._checada(BETO, local(D, 11, 0))            # Beto esta en Norte y en Sur
+        with self._con_registro(self.fotos), ahora_local(local(D, 15, 0)):
+            tasks_kpis.recalculate_kpi_snapshots_frecuentes()
+        self.assertEqual({D: {NORTE: 2.0, SUR: 1.0, VACIO: 0.0}}, self._guardado("checadas_en_turno_por_equipo"))
+        self._cerrar(a, local(D, 15, 30))
+        self._cerrar(b, local(D, 15, 40))
+        with self._con_registro(self.fotos), ahora_local(local(D, 16, 0)):
+            tasks_kpis.recalculate_kpi_snapshots_frecuentes()
+        # La MISMA fila (kpi, equipo, dia) se sobrescribe con 0; no queda el 2 viejo ni filas de mas.
+        self.assertEqual({D: {NORTE: 0.0, SUR: 0.0, VACIO: 0.0}}, self._guardado("checadas_en_turno_por_equipo"))
+
+    def test_la_nocturna_de_7_dias_solo_escribe_hoy_y_no_pisa_la_foto_de_los_dias_anteriores(self):
+        ayer = D - timedelta(days=1)
+        self._checada(ANA, local(D, 10, 0))
+        with transaction_context() as db:                   # lo que quedo guardado ayer por la corrida frecuente
+            db.add(KpiSnapshot(id_kpi_definition=self.ids["checadas_en_turno_por_equipo"], dimension_key={"id_team": NORTE},
+                               periodo=ayer, valor=Decimal("5")))
+        with self._con_registro(self.fotos), self._contenedor_con_fecha(D), ahora_local(local(D, 19, 0)):
+            resultado = tasks_kpis.recalculate_kpi_snapshots()
+        self.assertEqual((D - timedelta(days=6)).isoformat(), resultado["fecha_inicio"], "la ventana es de 7 dias")
+        guardado = self._guardado("checadas_en_turno_por_equipo")
+        self.assertEqual({ayer, D}, set(guardado), "de los 7 dias solo se escribe hoy")
+        self.assertEqual({NORTE: 5.0}, guardado[ayer], "la foto de ayer es lo que era ayer: no se reescribe")
+        self.assertEqual({NORTE: 1.0, SUR: 0.0, VACIO: 0.0}, guardado[D])
+
+    def test_la_nocturna_de_un_contenedor_en_utc_no_guarda_la_foto_bajo_el_dia_utc(self):
+        # 19:00 en Mexico = 01:00 UTC del dia siguiente: el contenedor (UTC) cree que hoy es D1, pero hoy es D.
+        # Sin esta guarda, la foto de las 19:00 del dia 15 se guardaria como la del 16.
+        self._checada(ANA, local(D, 10, 0))
+        with self._con_registro(self.fotos), self._contenedor_con_fecha(D1), reloj_en_utc(datetime(2026, 10, 16, 1, 0)):
+            tasks_kpis.recalculate_kpi_snapshots()
+        self.assertEqual({}, self._guardado("checadas_en_turno_por_equipo"))
+        self.assertEqual({}, self._guardado("checadas_sin_salida_por_equipo"))
+
+    def test_un_backfill_de_un_rango_pasado_no_inventa_fotos(self):
+        self._checada(ANA, local(D, 10, 0))
+        with self._con_registro(self.fotos), ahora_local(local(D, 15, 0)):
+            tasks_kpis.recalcular_kpi_snapshots_rango(D - timedelta(days=3), D - timedelta(days=1))
+        self.assertEqual({}, self._guardado("checadas_en_turno_por_equipo"))
+

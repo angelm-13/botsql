@@ -7,7 +7,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.jobs.celery_app import celery
 from app.jobs.task_helpers import result_ok
-from app.kpis.frecuencia import MODULOS_FRECUENTES
+from app.kpis.frecuencia import KPIS_FRECUENTES, MODULOS_FRECUENTES
 from app.kpis.registry import DIMENSION_JSON_KEY, KPI_REGISTRY
 from app.models.kpi_definition import KpiDefinition
 from app.models.kpi_snapshot import KpiSnapshot
@@ -20,7 +20,7 @@ from app.utils.tiempo import hoy_negocio
 VENTANA_DIAS = 7
 
 
-def _recalcular_kpi_snapshots_en_sesion(session, fecha_inicio: date, fecha_fin: date, *, modulos=None) -> int:
+def _recalcular_kpi_snapshots_en_sesion(session, fecha_inicio: date, fecha_fin: date, *, modulos=None, claves=None) -> int:
     """El calculo real, sobre una sesion/transaccion ya abierta.
 
     Extraido de `recalculate_kpi_snapshots` para que el rango de fechas sea un
@@ -30,8 +30,8 @@ def _recalcular_kpi_snapshots_en_sesion(session, fecha_inicio: date, fecha_fin: 
     con fechas pasadas, que la ventana rodante nunca alcanza -- puede llamarlo
     con cualquier rango arbitrario.
 
-    `modulos`: si se da, solo se recalculan los KPIs de esos modulos (la corrida frecuente del dia en
-    curso). Con `None` -- el valor de siempre -- se recalculan todos.
+    `modulos` y `claves`: si se da alguno, solo se recalculan los KPIs de esos modulos Y los de esas claves
+    (la corrida frecuente del dia en curso). Con los dos en `None` -- el valor de siempre -- se recalculan todos.
     """
     filas_escritas = 0
     id_kpi_definition_por_clave = {
@@ -54,7 +54,7 @@ def _recalcular_kpi_snapshots_en_sesion(session, fecha_inicio: date, fecha_fin: 
             # TypeError -- se salta por diseno, no participa del job ni del
             # backfill.
             continue
-        if modulos is not None and kpi.modulo not in modulos:
+        if (modulos is not None or claves is not None) and kpi.modulo not in (modulos or ()) and kpi.clave not in (claves or ()):
             continue
         id_kpi_definition = id_kpi_definition_por_clave.get(kpi.clave)
         if id_kpi_definition is None:
@@ -139,16 +139,19 @@ def recalculate_kpi_snapshots() -> dict:
 
 @celery.task(name="app.jobs.tasks_kpis.recalculate_kpi_snapshots_frecuentes")
 def recalculate_kpi_snapshots_frecuentes() -> dict:
-    """Recalcula SOLO el dia de hoy y SOLO los modulos de `MODULOS_FRECUENTES` (ver `app/kpis/frecuencia.py`).
+    """Recalcula SOLO el dia de hoy y SOLO los modulos de `MODULOS_FRECUENTES` y los KPIs de `KPIS_FRECUENTES`
+    (ver `app/kpis/frecuencia.py`).
 
     La corrida nocturna sigue haciendo todo, con su ventana de 7 dias; esta solo mantiene al dia el
-    dia en curso para que el gerente vea las ventas, las cuentas y las mesas de ahora.
+    dia en curso para que el gerente vea las ventas, las cuentas y las mesas de ahora, y quien esta en turno.
     """
     # El dia del NEGOCIO, no el del contenedor (UTC): las fotos y los KPIs se fechan en hora local.
     hoy = hoy_negocio()
 
     with transaction_context() as session:
-        filas_escritas = _recalcular_kpi_snapshots_en_sesion(session, hoy, hoy, modulos=MODULOS_FRECUENTES)
+        filas_escritas = _recalcular_kpi_snapshots_en_sesion(
+            session, hoy, hoy, modulos=MODULOS_FRECUENTES, claves=KPIS_FRECUENTES,
+        )
 
     return result_ok(
         "jobs.kpis.snapshots_recalculated",
@@ -156,6 +159,7 @@ def recalculate_kpi_snapshots_frecuentes() -> dict:
         fecha_inicio=hoy.isoformat(),
         fecha_fin=hoy.isoformat(),
         modulos=list(MODULOS_FRECUENTES),
+        claves=list(KPIS_FRECUENTES),
     )
 
 
