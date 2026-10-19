@@ -21,6 +21,7 @@ from app.kpis.modulos.checadas import (
     UMBRAL_SIN_SALIDA_HORAS,
     checadas_en_turno_por_equipo_query,
     checadas_entradas_por_equipo_query,
+    horas_trabajadas_por_empleado_query,
     checadas_salidas_por_equipo_query,
     checadas_sin_salida_por_equipo_query,
 )
@@ -387,6 +388,73 @@ class DefinicionesDeFlujosTest(unittest.TestCase):
             self.assertEqual("snapshot", kpi.modo, clave)
             self.assertFalse(kpi.alcance_proyecto, clave)
             self.assertEqual(("barras",), tuple(kpi.graficas_permitidas), clave)
+
+
+class HorasTrabajadasTest(ChecadasBase):
+    """`horas_trabajadas_por_empleado`: minutos de las checadas CERRADAS, por empleado y por dia de la entrada."""
+
+    def horas(self, inicio=D, fin=D1):
+        return self._marcas(horas_trabajadas_por_empleado_query, inicio, fin)
+
+    def test_una_entrada_de_las_2350_y_su_salida_de_las_0010_son_20_minutos_del_dia_de_la_entrada(self):
+        self._checada(ANA, local(D, 23, 50), local(D1, 0, 10))
+        self.assertEqual([(ANA, D, Decimal("20.00"))], self.horas())
+        self.assertEqual([], self.horas(D1, D1), "no se parte en dos dias: el turno es del dia en que empezo")
+
+    def test_suma_los_turnos_del_mismo_dia(self):
+        self._checada(ANA, local(D, 8, 0), local(D, 16, 0))        # 480
+        self._checada(ANA, local(D, 18, 0), local(D, 18, 30))      # 30
+        self.assertEqual([(ANA, D, Decimal("510.00"))], self.horas())
+
+    def test_los_segundos_cuentan_como_fraccion_de_minuto(self):
+        self._checada(ANA, local(D, 8, 0, 0), local(D, 8, 1, 30))
+        self.assertEqual([(ANA, D, Decimal("1.50"))], self.horas())
+
+    def test_una_abierta_todavia_no_suma(self):
+        self._checada(ANA, local(D, 8, 0))
+        self.assertEqual([], self.horas())
+
+    def test_una_incidencia_sin_coordenadas_cancelada_o_con_baja_no_suma(self):
+        self._checada(ANA, local(D, 8, 0), local(D, 16, 0), latitude=None)
+        self._checada(ANA, local(D, 8, 0), local(D, 16, 0), status="cancelada")
+        self._checada(ANA, local(D, 8, 0), local(D, 16, 0), baja=datetime(2026, 10, 15, 17, 0))
+        self.assertEqual([], self.horas())
+
+    def test_una_salida_anterior_a_su_entrada_no_es_un_turno(self):
+        self._checada(ANA, local(D, 16, 0), local(D, 8, 0))
+        self.assertEqual([], self.horas())
+
+    def test_no_depende_del_equipo_ni_se_duplica_por_estar_en_dos(self):
+        self._checada(DIEGO, local(D, 8, 0), local(D, 10, 0))      # sin equipo: suma igual
+        self._checada(BETO, local(D, 8, 0), local(D, 9, 0))        # en dos equipos: una sola vez
+        self.assertEqual([(BETO, D, Decimal("60.00")), (DIEGO, D, Decimal("120.00"))], self.horas())
+
+    def test_una_checada_de_otro_proyecto_suma_igual(self):
+        self._checada(ANA, local(D, 8, 0), local(D, 9, 0), id_proyect=PROYECTO_OTRO)
+        self.assertEqual([(ANA, D, Decimal("60.00"))], self.horas())
+
+    def test_el_dia_es_el_de_la_entrada_y_el_rango_incluye_sus_extremos(self):
+        dia_anterior = D - timedelta(days=1)
+        self._checada(ANA, local(dia_anterior, 23, 50), local(D, 0, 10))   # empezo antes del rango
+        self._checada(ANA, local(D, 8, 0), local(D, 9, 0))
+        self._checada(ANA, local(D1, 8, 0), local(D1, 10, 0))
+        self.assertEqual([(ANA, D, Decimal("60.00")), (ANA, D1, Decimal("120.00"))], self.horas(D, D1))
+        self.assertEqual([(ANA, D1, Decimal("120.00"))], self.horas(D1, D1))
+
+    def test_no_depende_del_reloj_de_hoy(self):
+        self._checada(ANA, local(D, 8, 0), local(D, 9, 0))
+        with ahora_local(local(date(2030, 1, 1), 3, 0)):
+            self.assertEqual([(ANA, D, Decimal("60.00"))], self.horas())
+
+    def test_es_un_kpi_por_empleado_en_minutos_de_operaciones(self):
+        kpi = KPI_POR_CLAVE["horas_trabajadas_por_empleado"]
+        self.assertEqual("operaciones", kpi.modulo)
+        self.assertEqual(("empleado",), kpi.dimensiones)
+        self.assertEqual("suma", kpi.agregacion)
+        self.assertEqual("minutos", kpi.unidad)
+        self.assertFalse(kpi.alcance_proyecto)
+        self.assertEqual(("barras",), tuple(kpi.graficas_permitidas))
+        self.assertEqual("Empleado", kpi.etiqueta_dimension)
 
 
 class DefinicionesDeChecadasTest(unittest.TestCase):

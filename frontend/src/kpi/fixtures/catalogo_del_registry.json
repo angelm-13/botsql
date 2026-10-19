@@ -460,5 +460,16 @@
   ],
   "unidad": "numero",
   "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 43,
+  "clave": "horas_trabajadas_por_empleado",
+  "etiqueta": "Tiempo trabajado por empleado",
+  "modulo": "operaciones",
+  "dimensiones": [
+   "empleado"
+  ],
+  "unidad": "minutos",
+  "modo": "snapshot"
  }
 ]

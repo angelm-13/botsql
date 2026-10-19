@@ -20,7 +20,9 @@ nunca de `now()` en UTC: el dia UTC cambia a las 18:00 de Mexico y ahi se equivo
 
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import timedelta
+from decimal import Decimal
 
 from sqlalchemy import Date, func, or_, select, type_coerce
 
@@ -37,6 +39,8 @@ UMBRAL_SIN_SALIDA = timedelta(hours=UMBRAL_SIN_SALIDA_HORAS)
 # Estatus con el que se anula una incidencia (`INCIDENT_CLOSED_STATUSES` en operations_workflow). Una checada
 # cancelada es un error de captura: no es una entrada, ni una salida, ni horas trabajadas.
 ESTATUS_CANCELADA = "cancelada"
+
+CENTESIMAS = Decimal("0.01")
 
 
 # --- el criterio de checada ----------------------------------------------------------------
@@ -165,6 +169,40 @@ def checadas_salidas_por_equipo_query(session, fecha_inicio, fecha_fin, filtros_
     )
 
 
+# --- horas trabajadas ------------------------------------------------------------------------
+
+def horas_trabajadas_por_empleado_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
+    """Minutos trabajados por empleado y por dia: `close_date - incident_date` de las checadas CERRADAS.
+
+    * Dia: el de la ENTRADA (`incident_date`). Un turno nocturno de 23:50 a 00:10 son 20 minutos del dia en que
+      empezo, no se parten en dos dias.
+    * Una checada abierta no suma (todavia no se sabe cuanto va a durar) y una cancelada tampoco.
+    * No depende del equipo: quien no tiene equipo tambien suma.
+    * Se suma en Python y no en SQL: restar fechas es distinto en SQLite y en PostgreSQL, y el rango es de siete dias
+      en la corrida nocturna, asi que son pocas filas.
+    """
+    dia = _dia(Incident.incident_date)
+    filas = session.execute(
+        select(Incident.id_user, Incident.incident_date, Incident.close_date)
+        .where(
+            *checadas_vigentes(),
+            Incident.incident_date.isnot(None),
+            Incident.close_date.isnot(None),
+            # Una salida anterior a su entrada no es un turno: el servicio la rechaza, pero un dato directo en BD no.
+            Incident.close_date >= Incident.incident_date,
+            dia >= fecha_inicio,
+            dia <= fecha_fin,
+        )
+    ).all()
+    minutos: dict[tuple[int, object], Decimal] = defaultdict(Decimal)
+    for id_user, abre, cierra in filas:
+        minutos[(int(id_user), abre.date())] += Decimal((cierra - abre).total_seconds()) / 60
+    return [
+        (id_user, fecha, total.quantize(CENTESIMAS))
+        for (id_user, fecha), total in sorted(minutos.items())
+    ]
+
+
 # --- definiciones ----------------------------------------------------------------------------
 
 def definiciones():
@@ -247,6 +285,23 @@ def definiciones():
             descripcion=(
                 "Salidas (checadas cerradas) por equipo y por día local de la salida: una salida a las 00:10 es del "
                 "día siguiente a su entrada de las 23:50. Una persona en dos equipos cuenta en cada uno."
+            ),
+        ),
+        KpiDefinition(
+            clave="horas_trabajadas_por_empleado",
+            etiqueta="Tiempo trabajado por empleado",
+            modulo="operaciones",
+            dimensiones=("empleado",),
+            query_builder=horas_trabajadas_por_empleado_query,
+            agregacion="suma",
+            unidad="minutos",
+            alcance_proyecto=False,
+            direccion="neutral",
+            graficas_permitidas=barras,
+            grafica_default="barras",
+            descripcion=(
+                "Minutos trabajados por empleado: suma de (salida - entrada) de las checadas cerradas, por día de la "
+                "entrada. Una checada sin salida todavía no suma."
             ),
         ),
     )
