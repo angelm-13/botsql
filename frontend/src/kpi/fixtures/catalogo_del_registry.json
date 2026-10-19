@@ -438,5 +438,27 @@
   ],
   "unidad": "numero",
   "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 41,
+  "clave": "checadas_entradas_por_equipo",
+  "etiqueta": "Entradas por equipo",
+  "modulo": "operaciones",
+  "dimensiones": [
+   "equipo"
+  ],
+  "unidad": "numero",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 42,
+  "clave": "checadas_salidas_por_equipo",
+  "etiqueta": "Salidas por equipo",
+  "modulo": "operaciones",
+  "dimensiones": [
+   "equipo"
+  ],
+  "unidad": "numero",
+  "modo": "snapshot"
  }
 ]

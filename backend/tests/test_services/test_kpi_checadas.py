@@ -20,6 +20,8 @@ from app.kpis.modulos import checadas
 from app.kpis.modulos.checadas import (
     UMBRAL_SIN_SALIDA_HORAS,
     checadas_en_turno_por_equipo_query,
+    checadas_entradas_por_equipo_query,
+    checadas_salidas_por_equipo_query,
     checadas_sin_salida_por_equipo_query,
 )
 from app.kpis.registry import KPI_POR_CLAVE
@@ -131,6 +133,10 @@ class ChecadasBase(BackendTestCase):
                 deletion_date=baja,
             ))
         return self._siguiente_id
+
+    def _marcas(self, consulta, inicio, fin):
+        with transaction_context() as db:
+            return consulta(db, inicio, fin, {}, None)
 
     def _foto(self, consulta, fecha_fin):
         with transaction_context() as db:
@@ -280,6 +286,107 @@ class FotosDeChecadasTest(ChecadasBase):
             with transaction_context() as db:
                 filas = checadas_en_turno_por_equipo_query(db, D - timedelta(days=6), D, {}, None)
         self.assertEqual([(NORTE, D, 0), (SUR, D, 0), (VACIO, D, 0)], filas)
+
+
+class FlujosDeChecadasTest(ChecadasBase):
+    """`checadas_entradas_por_equipo` y `checadas_salidas_por_equipo`: marcas por equipo y por dia local."""
+
+    def entradas(self, inicio=D, fin=D1):
+        return self._marcas(checadas_entradas_por_equipo_query, inicio, fin)
+
+    def salidas(self, inicio=D, fin=D1):
+        return self._marcas(checadas_salidas_por_equipo_query, inicio, fin)
+
+    # --- cruzar la medianoche -------------------------------------------------------------------
+
+    def test_una_entrada_de_las_2350_y_su_salida_de_las_0010_caen_en_dias_distintos(self):
+        self._checada(ANA, local(D, 23, 50), local(D1, 0, 10))
+        self.assertEqual([(NORTE, D, 1)], self.entradas(), "la entrada es del dia en que se marco")
+        self.assertEqual([(NORTE, D1, 1)], self.salidas(), "la salida de las 00:10 es del dia siguiente")
+        self.assertEqual([], self.salidas(D, D), "el dia de la entrada todavia no tiene esa salida")
+        self.assertEqual([], self.entradas(D1, D1), "ni el dia de la salida tiene esa entrada")
+
+    def test_el_dia_es_la_hora_de_pared_sin_convertir_a_utc(self):
+        # 19:30 locales son las 01:30 UTC del dia siguiente: contarla ahi seria el error de las 18:00.
+        self._checada(ANA, local(D, 19, 30))
+        self._checada(ANA, local(D, 23, 59, 59))
+        self._checada(ANA, local(D1, 0, 0, 0))
+        self.assertEqual([(NORTE, D, 2), (NORTE, D1, 1)], self.entradas())
+
+    def test_no_depende_del_reloj_de_hoy(self):
+        # Son flujos de dias ya ocurridos, no una foto de ahora: el reloj no los cambia.
+        self._checada(ANA, local(D, 10, 0), local(D, 18, 0))
+        sin_reloj = (self.entradas(), self.salidas())
+        with ahora_local(local(date(2030, 1, 1), 3, 0)):
+            self.assertEqual(sin_reloj, (self.entradas(), self.salidas()))
+
+    # --- que cuenta ----------------------------------------------------------------------------------
+
+    def test_cuenta_checadas_y_no_personas(self):
+        self._checada(ANA, local(D, 8, 0), local(D, 12, 0))
+        self._checada(ANA, local(D, 13, 0), local(D, 17, 0))      # dos turnos el mismo dia
+        self.assertEqual([(NORTE, D, 2)], self.entradas())
+        self.assertEqual([(NORTE, D, 2)], self.salidas())
+
+    def test_una_abierta_es_entrada_pero_todavia_no_es_salida(self):
+        self._checada(ANA, local(D, 8, 0))
+        self.assertEqual([(NORTE, D, 1)], self.entradas())
+        self.assertEqual([], self.salidas())
+
+    def test_una_persona_en_dos_equipos_cuenta_en_cada_uno(self):
+        self._checada(BETO, local(D, 8, 0), local(D, 16, 0))
+        self.assertEqual([(NORTE, D, 1), (SUR, D, 1)], self.entradas())
+        self.assertEqual([(NORTE, D, 1), (SUR, D, 1)], self.salidas())
+
+    def test_una_persona_sin_equipo_no_cuenta(self):
+        self._checada(DIEGO, local(D, 8, 0), local(D, 16, 0))
+        self.assertEqual([], self.entradas())
+        self.assertEqual([], self.salidas())
+
+    def test_una_incidencia_sin_coordenadas_se_excluye(self):
+        self._checada(ANA, local(D, 8, 0), local(D, 16, 0), latitude=None)
+        self.assertEqual([], self.entradas())
+        self.assertEqual([], self.salidas())
+
+    def test_una_cancelada_o_con_baja_no_es_ni_entrada_ni_salida(self):
+        self._checada(ANA, local(D, 8, 0), local(D, 9, 0), status="cancelada")
+        self._checada(ANA, local(D, 10, 0), local(D, 11, 0), baja=datetime(2026, 10, 15, 12, 0))
+        self.assertEqual([], self.entradas())
+        self.assertEqual([], self.salidas())
+
+    def test_una_membresia_o_un_equipo_dados_de_baja_no_cuentan(self):
+        self._checada(ELENA, local(D, 8, 0), local(D, 16, 0))     # membresia en Norte dada de baja
+        self._checada(ANA, local(D, 8, 0), local(D, 16, 0))       # Ana: Norte (vigente) y un equipo dado de baja
+        self.assertEqual([(NORTE, D, 1)], self.entradas())
+        self.assertEqual([(NORTE, D, 1)], self.salidas())
+
+    def test_una_checada_de_otro_proyecto_cuenta_igual(self):
+        self._checada(ANA, local(D, 8, 0), local(D, 16, 0), id_proyect=PROYECTO_OTRO)
+        self.assertEqual([(NORTE, D, 1)], self.entradas())
+
+    # --- el rango -----------------------------------------------------------------------------------
+
+    def test_solo_salen_los_dias_con_datos_y_dentro_del_rango_incluidos_los_extremos(self):
+        dia_anterior = D - timedelta(days=1)
+        self._checada(ANA, local(dia_anterior, 8, 0), local(dia_anterior, 16, 0))
+        self._checada(ANA, local(D, 8, 0), local(D, 16, 0))
+        self._checada(ANA, local(D1, 8, 0), local(D1, 16, 0))
+        self._checada(ANA, local(D + timedelta(days=2), 8, 0), local(D + timedelta(days=2), 16, 0))
+        self.assertEqual([(NORTE, D, 1), (NORTE, D1, 1)], self.entradas(D, D1), "ni el dia anterior ni el posterior")
+        self.assertEqual([(NORTE, D1, 1)], self.entradas(D1, D1))
+        self.assertEqual([], self.entradas(D + timedelta(days=5), D + timedelta(days=6)))
+
+
+class DefinicionesDeFlujosTest(unittest.TestCase):
+    def test_entradas_y_salidas_son_flujos_por_equipo_de_operaciones_y_solo_barras(self):
+        for clave in ("checadas_entradas_por_equipo", "checadas_salidas_por_equipo"):
+            kpi = KPI_POR_CLAVE[clave]
+            self.assertEqual("operaciones", kpi.modulo, clave)
+            self.assertEqual(("equipo",), kpi.dimensiones, clave)
+            self.assertEqual("suma", kpi.agregacion, clave)
+            self.assertEqual("snapshot", kpi.modo, clave)
+            self.assertFalse(kpi.alcance_proyecto, clave)
+            self.assertEqual(("barras",), tuple(kpi.graficas_permitidas), clave)
 
 
 class DefinicionesDeChecadasTest(unittest.TestCase):

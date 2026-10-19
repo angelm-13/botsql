@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import Date, func, or_, select, type_coerce
 
 from app.models.incident import Incident
 from app.models.nm_team_user import NmTeamUser
@@ -58,6 +58,12 @@ def checadas_vigentes():
         es_checada(),
         or_(Incident.incident_status.is_(None), Incident.incident_status != ESTATUS_CANCELADA),
     ]
+
+
+def _dia(columna):
+    # `date(columna)` sobre una hora de pared ya es el dia local: no hay nada que convertir. `type_coerce` hace
+    # que SQLite (solo pruebas) regrese un `date` y no el texto, igual que PostgreSQL.
+    return type_coerce(func.date(columna), Date)
 
 
 # --- fotos: personas en turno y sin salida --------------------------------------------------
@@ -118,6 +124,47 @@ def checadas_sin_salida_por_equipo_query(session, fecha_inicio, fecha_fin, filtr
     return _foto_por_equipo(session, fecha_fin, lambda columna, corte: columna <= corte)
 
 
+# --- flujos: entradas y salidas por dia local ------------------------------------------------
+
+def _marcas_por_equipo_y_dia(session, fecha_col, fecha_inicio, fecha_fin, *condiciones):
+    filas = session.execute(
+        select(NmTeamUser.id_team, fecha_col.label("fecha"), func.count(func.distinct(Incident.id_incident)))
+        .select_from(Incident)
+        .join(NmTeamUser, NmTeamUser.id_user == Incident.id_user)
+        .join(Team, Team.id_team == NmTeamUser.id_team)
+        .where(
+            *checadas_vigentes(),
+            NmTeamUser.deletion_date.is_(None),
+            Team.deletion_date.is_(None),
+            fecha_col >= fecha_inicio,
+            fecha_col <= fecha_fin,
+            *condiciones,
+        )
+        .group_by(NmTeamUser.id_team, fecha_col)
+        .order_by(NmTeamUser.id_team, fecha_col)
+    ).all()
+    return [(int(id_team), fecha, int(marcas)) for id_team, fecha, marcas in filas]
+
+
+def checadas_entradas_por_equipo_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
+    """Entradas (checadas abiertas ese dia) por equipo y por dia local de `incident_date`.
+
+    Cuenta checadas, no personas: dos entradas de la misma persona el mismo dia son dos. Una entrada que se marca a
+    las 23:50 es del dia en que se marco, aunque la salida sea a las 00:10 del siguiente. Solo salen los dias con datos.
+    """
+    return _marcas_por_equipo_y_dia(session, _dia(Incident.incident_date), fecha_inicio, fecha_fin)
+
+
+def checadas_salidas_por_equipo_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
+    """Salidas (checadas cerradas ese dia) por equipo y por dia local de `close_date`.
+
+    Una salida a las 00:10 es del dia siguiente al de su entrada de las 23:50. Solo salen los dias con datos.
+    """
+    return _marcas_por_equipo_y_dia(
+        session, _dia(Incident.close_date), fecha_inicio, fecha_fin, Incident.close_date.isnot(None),
+    )
+
+
 # --- definiciones ----------------------------------------------------------------------------
 
 def definiciones():
@@ -164,6 +211,42 @@ def definiciones():
             descripcion=(
                 f"Foto de ahora: personas distintas con una checada abierta de {UMBRAL_SIN_SALIDA_HORAS} horas o más "
                 "(se les olvidó marcar la salida), por equipo. Una persona en dos equipos cuenta en cada uno."
+            ),
+        ),
+        KpiDefinition(
+            clave="checadas_entradas_por_equipo",
+            etiqueta="Entradas por equipo",
+            modulo="operaciones",
+            dimensiones=("equipo",),
+            etiqueta_dimension="Equipo (parque)",
+            query_builder=checadas_entradas_por_equipo_query,
+            agregacion="suma",
+            unidad="numero",
+            alcance_proyecto=False,
+            direccion="neutral",
+            graficas_permitidas=barras,
+            grafica_default="barras",
+            descripcion=(
+                "Entradas (checadas abiertas) por equipo y por día local de la entrada. Cuenta checadas, no personas. "
+                "Una persona en dos equipos cuenta en cada uno."
+            ),
+        ),
+        KpiDefinition(
+            clave="checadas_salidas_por_equipo",
+            etiqueta="Salidas por equipo",
+            modulo="operaciones",
+            dimensiones=("equipo",),
+            etiqueta_dimension="Equipo (parque)",
+            query_builder=checadas_salidas_por_equipo_query,
+            agregacion="suma",
+            unidad="numero",
+            alcance_proyecto=False,
+            direccion="neutral",
+            graficas_permitidas=barras,
+            grafica_default="barras",
+            descripcion=(
+                "Salidas (checadas cerradas) por equipo y por día local de la salida: una salida a las 00:10 es del "
+                "día siguiente a su entrada de las 23:50. Una persona en dos equipos cuenta en cada uno."
             ),
         ),
     )
