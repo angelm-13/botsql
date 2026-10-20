@@ -242,6 +242,52 @@ class TestKpiFiltroPorEquipoApi(BackendTestCase):
         self.assertEqual({str(T1): 1.0, str(T2): 0.0, str(T3): 0.0, "sin_asignar": 0.0}, sin_salida["por_empleado"],
                          "Ana (10:00) ya paso de 12 h")
 
+    # --- de punta a punta: entradas, salidas y minutos por persona -----------------------------------------
+
+    def _id_de(self, clave):
+        with transaction_context() as db:
+            return db.scalar(select(KpiDefinition.id_kpi_definition).where(KpiDefinition.clave == clave))
+
+    def _rango(self, clave):
+        consulta = self._consulta(self._id_de(clave), fecha_inicio="2026-10-09", fecha_fin="2026-10-15")
+        return self.json(self._get(ADMIN, consulta))["rango_a"]
+
+    def test_de_punta_a_punta_entradas_salidas_y_quien_esta_en_turno(self):
+        self._checada_abierta(1, ANA, 10)          # Norte
+        self._checada_abierta(2, BETO, 11)         # Norte y Sur
+        self._checada_abierta(3, DIEGO, 11)        # ningun equipo
+        self._correr_frecuente(15)
+
+        entradas = self._rango("checadas_entradas_por_equipo")
+        self.assertEqual({str(T1): 2.0, str(T2): 1.0, str(T3): 0.0, "sin_asignar": 1.0}, entradas["por_empleado"])
+        self.assertEqual("Sin equipo", entradas["etiquetas"]["sin_asignar"])
+        salidas = self._rango("checadas_salidas_por_equipo")
+        self.assertEqual({str(T1): 0.0, str(T2): 0.0, str(T3): 0.0, "sin_asignar": 0.0}, salidas["por_empleado"])
+        # Minutos por persona (a las 15:00): Ana lleva 5 h, Beto y Diego 4 h; con su nombre.
+        en_turno = self._rango("checadas_en_turno_por_empleado")
+        self.assertEqual({str(ANA): 300.0, str(BETO): 240.0, str(DIEGO): 240.0}, en_turno["por_empleado"])
+        self.assertEqual("Ana Torres", en_turno["etiquetas"][str(ANA)])
+
+        # A las 16:30: Ana sale (resuelta, 16:00) y la entrada de Beto se anula. Lo que se habia contado se corrige
+        # en el mismo dia: el equipo Sur baja de 1 a 0 (el cero pisa el valor viejo) y quien salio deja de aparecer.
+        with transaction_context() as db:
+            ana = db.get(Incident, 1)
+            ana.incident_status, ana.close_date = "resuelta", datetime(2026, 10, 15, 16, 0)
+            beto = db.get(Incident, 2)
+            beto.incident_status, beto.close_date = "cancelada", datetime(2026, 10, 15, 16, 5)
+        self._correr_frecuente(16, 30)
+
+        entradas = self._rango("checadas_entradas_por_equipo")
+        self.assertEqual({str(T1): 1.0, str(T2): 0.0, str(T3): 0.0, "sin_asignar": 1.0}, entradas["por_empleado"],
+                         "la entrada anulada de Beto ya no cuenta: ni en Norte ni en Sur")
+        salidas = self._rango("checadas_salidas_por_equipo")
+        self.assertEqual({str(T1): 1.0, str(T2): 0.0, str(T3): 0.0, "sin_asignar": 0.0}, salidas["por_empleado"],
+                         "la salida de Ana cuenta; la anulacion de Beto no es una salida")
+        en_turno = self._rango("checadas_en_turno_por_empleado")
+        self.assertEqual({str(DIEGO): 330.0}, en_turno["por_empleado"],
+                         "Ana (salio) y Beto (anulada) quedan en cero y la API no los pinta; Diego lleva 5 h 30 min")
+        self.assertEqual({str(DIEGO)}, set(en_turno["etiquetas"]), "tampoco viaja el nombre de quien no se pinta")
+
     # --- ocultar_ceros ---------------------------------------------------------------------------------------
 
     def _sembrar_un_cero(self):
