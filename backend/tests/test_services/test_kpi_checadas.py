@@ -680,23 +680,23 @@ class HorasTrabajadasTest(ChecadasBase):
 
 @unittest.skipUnless(engine.dialect.name == "postgresql", "El upsert de snapshots usa INSERT ... ON CONFLICT de PostgreSQL")
 class CorridaFrecuenteDeChecadasTest(ChecadasBase):
-    """La corrida de 5 minutos incluye SOLO las dos fotos de checadas, y el upsert nocturno no las falsifica."""
+    """La corrida de 5 minutos incluye SOLO los KPIs de KPIS_FRECUENTES, y el upsert nocturno no falsifica las fotos."""
 
     def setUp(self):
         super().setUp()
         seed_kpi_definitions(engine)
         with transaction_context() as db:
             self.ids = dict(db.execute(select(KpiDefinition.clave, KpiDefinition.id_kpi_definition)).all())
-        self.fotos = tuple(KPI_POR_CLAVE[c] for c in frecuencia.KPIS_FRECUENTES)
+        self.frecuentes = tuple(KPI_POR_CLAVE[c] for c in frecuencia.KPIS_FRECUENTES)   # los cinco
 
-    def _guardado(self, clave):
-        """`{periodo: {id_team: valor}}` de lo que hay en `kpi_snapshot` para ese KPI."""
+    def _guardado(self, clave, entidad="id_team"):
+        """`{periodo: {id_team|id_user: valor}}` de lo que hay en `kpi_snapshot` para ese KPI."""
         with transaction_context() as db:
             filas = db.execute(select(KpiSnapshot.periodo, KpiSnapshot.dimension_key, KpiSnapshot.valor).where(
                 KpiSnapshot.id_kpi_definition == self.ids[clave])).all()
         guardado: dict = {}
         for periodo, llave, valor in filas:
-            guardado.setdefault(periodo, {})[llave["id_team"]] = float(valor)
+            guardado.setdefault(periodo, {})[llave[entidad]] = float(valor)
         return guardado
 
     def _con_registro(self, kpis):
@@ -712,17 +712,17 @@ class CorridaFrecuenteDeChecadasTest(ChecadasBase):
         with transaction_context() as db:
             db.get(Incident, id_incident).close_date = cierre
 
-    def test_la_corrida_frecuente_recalcula_las_dos_fotos_y_no_arrastra_al_resto_de_operaciones(self):
+    def test_la_corrida_frecuente_recalcula_sus_cinco_kpis_y_no_arrastra_al_resto_de_operaciones(self):
         self._checada(ANA, local(D, 10, 0))
         ajenas = []
-        for clave in ("incidencias_abiertas_por_empleado", "checadas_entradas_por_equipo", "horas_trabajadas_por_empleado"):
-            kpi = copy.copy(KPI_POR_CLAVE[clave])           # del modulo operaciones, igual que las fotos
+        for clave in ("incidencias_abiertas_por_empleado", "horas_trabajadas_por_empleado"):
+            kpi = copy.copy(KPI_POR_CLAVE[clave])           # del modulo operaciones, igual que los de checadas
             self.assertEqual("operaciones", kpi.modulo)
             kpi.query_builder = mock.Mock(return_value=[])
             ajenas.append(kpi)
         de_restaurante = copy.copy(KPI_POR_CLAVE["ventas_restaurante"])     # su modulo si es frecuente
         de_restaurante.query_builder = mock.Mock(return_value=[])
-        with self._con_registro((*self.fotos, *ajenas, de_restaurante)), ahora_local(local(D, 15, 0)):
+        with self._con_registro((*self.frecuentes, *ajenas, de_restaurante)), ahora_local(local(D, 15, 0)):
             resultado = tasks_kpis.recalculate_kpi_snapshots_frecuentes()
         for kpi in ajenas:
             kpi.query_builder.assert_not_called()
@@ -732,16 +732,20 @@ class CorridaFrecuenteDeChecadasTest(ChecadasBase):
         self.assertEqual(D.isoformat(), resultado["fecha_fin"])
         self.assertEqual({D: {NORTE: 1.0, SUR: 0.0, VACIO: 0.0, None: 0.0}}, self._guardado("checadas_en_turno_por_equipo"))
         self.assertEqual({D: {NORTE: 0.0, SUR: 0.0, VACIO: 0.0, None: 0.0}}, self._guardado("checadas_sin_salida_por_equipo"))
+        # Y los tres que llegaron con esta ampliacion: entradas de hoy, salidas de hoy y minutos por persona.
+        self.assertEqual({D: {NORTE: 1.0, SUR: 0.0, VACIO: 0.0, None: 0.0}}, self._guardado("checadas_entradas_por_equipo"))
+        self.assertEqual({D: {NORTE: 0.0, SUR: 0.0, VACIO: 0.0, None: 0.0}}, self._guardado("checadas_salidas_por_equipo"))
+        self.assertEqual({D: {ANA: 300.0}}, self._guardado("checadas_en_turno_por_empleado", "id_user"))
 
     def test_un_equipo_que_pasa_de_dos_personas_a_cero_no_conserva_el_dos(self):
         a = self._checada(ANA, local(D, 10, 0))
         b = self._checada(BETO, local(D, 11, 0))            # Beto esta en Norte y en Sur
-        with self._con_registro(self.fotos), ahora_local(local(D, 15, 0)):
+        with self._con_registro(self.frecuentes), ahora_local(local(D, 15, 0)):
             tasks_kpis.recalculate_kpi_snapshots_frecuentes()
         self.assertEqual({D: {NORTE: 2.0, SUR: 1.0, VACIO: 0.0, None: 0.0}}, self._guardado("checadas_en_turno_por_equipo"))
         self._cerrar(a, local(D, 15, 30))
         self._cerrar(b, local(D, 15, 40))
-        with self._con_registro(self.fotos), ahora_local(local(D, 16, 0)):
+        with self._con_registro(self.frecuentes), ahora_local(local(D, 16, 0)):
             tasks_kpis.recalculate_kpi_snapshots_frecuentes()
         # La MISMA fila (kpi, equipo, dia) se sobrescribe con 0; no queda el 2 viejo ni filas de mas.
         self.assertEqual({D: {NORTE: 0.0, SUR: 0.0, VACIO: 0.0, None: 0.0}}, self._guardado("checadas_en_turno_por_equipo"))
@@ -752,7 +756,7 @@ class CorridaFrecuenteDeChecadasTest(ChecadasBase):
         with transaction_context() as db:                   # lo que quedo guardado ayer por la corrida frecuente
             db.add(KpiSnapshot(id_kpi_definition=self.ids["checadas_en_turno_por_equipo"], dimension_key={"id_team": NORTE},
                                periodo=ayer, valor=Decimal("5")))
-        with self._con_registro(self.fotos), self._contenedor_con_fecha(D), ahora_local(local(D, 19, 0)):
+        with self._con_registro(self.frecuentes), self._contenedor_con_fecha(D), ahora_local(local(D, 19, 0)):
             resultado = tasks_kpis.recalculate_kpi_snapshots()
         self.assertEqual((D - timedelta(days=6)).isoformat(), resultado["fecha_inicio"], "la ventana es de 7 dias")
         guardado = self._guardado("checadas_en_turno_por_equipo")
@@ -764,14 +768,67 @@ class CorridaFrecuenteDeChecadasTest(ChecadasBase):
         # 19:00 en Mexico = 01:00 UTC del dia siguiente: el contenedor (UTC) cree que hoy es D1, pero hoy es D.
         # Sin esta guarda, la foto de las 19:00 del dia 15 se guardaria como la del 16.
         self._checada(ANA, local(D, 10, 0))
-        with self._con_registro(self.fotos), self._contenedor_con_fecha(D1), reloj_en_utc(datetime(2026, 10, 16, 1, 0)):
+        with self._con_registro(self.frecuentes), self._contenedor_con_fecha(D1), reloj_en_utc(datetime(2026, 10, 16, 1, 0)):
             tasks_kpis.recalculate_kpi_snapshots()
         self.assertEqual({}, self._guardado("checadas_en_turno_por_equipo"))
         self.assertEqual({}, self._guardado("checadas_sin_salida_por_equipo"))
 
     def test_un_backfill_de_un_rango_pasado_no_inventa_fotos(self):
         self._checada(ANA, local(D, 10, 0))
-        with self._con_registro(self.fotos), ahora_local(local(D, 15, 0)):
+        with self._con_registro(self.frecuentes), ahora_local(local(D, 15, 0)):
             tasks_kpis.recalcular_kpi_snapshots_rango(D - timedelta(days=3), D - timedelta(days=1))
         self.assertEqual({}, self._guardado("checadas_en_turno_por_equipo"))
+
+    # --- entradas y salidas: KPIs de rango en la corrida de 5 minutos ----------------------------------------
+
+    def test_la_corrida_frecuente_recalcula_solo_hoy_en_entradas_y_salidas_y_no_pisa_otros_dias(self):
+        ayer = D - timedelta(days=1)
+        for clave in ("checadas_entradas_por_equipo", "checadas_salidas_por_equipo"):
+            with transaction_context() as db:                # lo que ya estaba guardado de ayer (y que ya no cambia)
+                db.add(KpiSnapshot(id_kpi_definition=self.ids[clave], dimension_key={"id_team": NORTE}, periodo=ayer, valor=Decimal("7")))
+        self._checada(ANA, local(ayer, 9, 0), local(ayer, 17, 0))      # una checada de ayer: la corrida de 5 min no la mira
+        self._checada(ANA, local(D, 9, 0), local(D, 12, 0))            # una de hoy, ya cerrada
+        with self._con_registro(self.frecuentes), ahora_local(local(D, 15, 0)):
+            tasks_kpis.recalculate_kpi_snapshots_frecuentes()
+        for clave in ("checadas_entradas_por_equipo", "checadas_salidas_por_equipo"):
+            guardado = self._guardado(clave)
+            self.assertEqual({ayer, D}, set(guardado), f"{clave}: no inventa ni toca otros dias")
+            self.assertEqual({NORTE: 7.0}, guardado[ayer], f"{clave}: ayer sigue como estaba")
+            self.assertEqual({NORTE: 1.0, SUR: 0.0, VACIO: 0.0, None: 0.0}, guardado[D], clave)
+
+    def test_cancelar_la_unica_entrada_del_dia_baja_el_conteo_a_cero_en_la_corrida_siguiente(self):
+        # El cero explicito por equipo y dia: si la fila no saliera, el 1 de antes se quedaria pegado.
+        id_checada = self._checada(ANA, local(D, 9, 0))
+        with self._con_registro(self.frecuentes), ahora_local(local(D, 10, 0)):
+            tasks_kpis.recalculate_kpi_snapshots_frecuentes()
+        self.assertEqual(1.0, self._guardado("checadas_entradas_por_equipo")[D][NORTE])
+        with transaction_context() as db:
+            db.get(Incident, id_checada).incident_status = "cancelada"
+        with self._con_registro(self.frecuentes), ahora_local(local(D, 10, 5)):
+            tasks_kpis.recalculate_kpi_snapshots_frecuentes()
+        self.assertEqual(0.0, self._guardado("checadas_entradas_por_equipo")[D][NORTE])
+
+    def test_la_nocturna_si_recalcula_los_siete_dias_de_entradas_y_salidas(self):
+        antier = D - timedelta(days=2)
+        self._checada(ANA, local(antier, 9, 0), local(antier, 17, 0))
+        with self._con_registro(self.frecuentes), self._contenedor_con_fecha(D), ahora_local(local(D, 19, 0)):
+            tasks_kpis.recalculate_kpi_snapshots()
+        entradas = self._guardado("checadas_entradas_por_equipo")
+        self.assertEqual(7, len(entradas), "los siete dias de la ventana, cada uno con sus ceros")
+        self.assertEqual(1.0, entradas[antier][NORTE])
+        self.assertEqual(0.0, entradas[D][NORTE])
+
+    # --- la foto por persona -------------------------------------------------------------------------------
+
+    def test_quien_sale_de_turno_queda_en_cero_en_la_corrida_siguiente(self):
+        a = self._checada(ANA, local(D, 12, 0))
+        self._checada(BETO, local(D, 13, 0))
+        with self._con_registro(self.frecuentes), ahora_local(local(D, 15, 0)):
+            tasks_kpis.recalculate_kpi_snapshots_frecuentes()
+        self.assertEqual({D: {ANA: 180.0, BETO: 120.0}}, self._guardado("checadas_en_turno_por_empleado", "id_user"))
+        self._cerrar(a, local(D, 15, 10))
+        with self._con_registro(self.frecuentes), ahora_local(local(D, 15, 30)):
+            tasks_kpis.recalculate_kpi_snapshots_frecuentes()
+        # Ana no desaparece: su fila se pisa con 0 (la API la oculta), y Beto sigue sumando minutos.
+        self.assertEqual({D: {ANA: 0.0, BETO: 150.0}}, self._guardado("checadas_en_turno_por_empleado", "id_user"))
 

@@ -38,9 +38,14 @@ class DefinicionesDeChecadasTest(unittest.TestCase):
             self.assertEqual(("barras",), tuple(kpi.graficas_permitidas), clave)
             self.assertEqual("barras", kpi.grafica_default, clave)
 
-    def test_las_dos_fotos_son_los_unicos_kpis_que_entran_a_la_corrida_frecuente(self):
+    def test_los_kpis_que_entran_a_la_corrida_frecuente_son_estos_y_no_las_horas(self):
+        esperados = {
+            "checadas_en_turno_por_equipo", "checadas_sin_salida_por_equipo", "checadas_entradas_por_equipo",
+            "checadas_salidas_por_equipo", "checadas_en_turno_por_empleado",
+        }
         self.assertEqual([], [c for c in frecuencia.KPIS_FRECUENTES if c not in KPI_POR_CLAVE])
-        self.assertEqual(set(self.CLAVES_DE_FOTO), set(frecuencia.KPIS_FRECUENTES))
+        self.assertEqual(esperados, set(frecuencia.KPIS_FRECUENTES))
+        self.assertNotIn("horas_trabajadas_por_empleado", frecuencia.KPIS_FRECUENTES, "las horas siguen solo nocturnas")
         for clave in frecuencia.KPIS_FRECUENTES:
             self.assertEqual("snapshot", KPI_POR_CLAVE[clave].modo, clave)
             self.assertNotIn(KPI_POR_CLAVE[clave].modulo, frecuencia.MODULOS_FRECUENTES, "entra por su clave, no por su modulo")
