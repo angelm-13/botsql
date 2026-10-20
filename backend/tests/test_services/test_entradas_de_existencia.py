@@ -127,8 +127,48 @@ class TestElValeRespaldaLaEntrada(BaseEntradas):
 class TestLaCompraRespaldaLaEntrada(recepcion.BaseRecepcion):
 
     def _producto_de_la_orden(self, id_orden):
-        # Misma ayuda que usan las pruebas de recepcion: un producto para el material.
-        return recepcion.TestLaRecepcionEntraAlAlmacen._producto_para(self, id_orden)
+        # Un producto para el material 900 del primer renglon de la orden. Es la
+        # misma preparacion de datos que usaban las pruebas de recepcion, copiada
+        # aqui para no depender de ellas.
+        from decimal import Decimal
+
+        from sqlalchemy import select
+
+        from app.models import (
+            Brand, CustomerSupplier, Invoice, Location, LocationType, Material,
+            ProductFamily, PurchaseOrderLine, Status, Unit,
+        )
+        with transaction_context() as db:
+            db.add_all([
+                CustomerSupplier(id_customer_supplier=900, name="Mi Empresa", tax_id="AAA010101AA1",
+                                 postal_code="37000", fiscal_type="601", type="supplier",
+                                 is_principal=True, id_user=1, created_by=1),
+                LocationType(id_location_type=900, location_type_description="Almacen",
+                             is_warehouse=True, created_by=1),
+                Brand(id_brand=900, brand_description="Generica", created_by=1),
+                ProductFamily(id_product_family=900, product_family_description="General", created_by=1),
+                Unit(id_unit=900, unit_name="Pieza", is_active=True, measurement_system="metric", created_by=1),
+                Status(id_status=900, status_description="Activo", category="invoice",
+                       is_terminal=False, sort_order="asc", created_by=1),
+            ])
+            db.flush()
+            db.add_all([
+                Location(id_location=900, id_location_type=900, location_description="Central", created_by=1),
+                Material(id_material=900, material_description="Cemento", id_unit=900, id_brand=900,
+                         id_product_family=900, created_by=1),
+            ])
+            db.flush()
+            db.add(Invoice(id_invoice=900, id_customer_supplier=900, id_issuer_customer_supplier=900,
+                           id_proyect=PROYECTO_A, id_status=900, invoice_status="pendiente",
+                           tax_certification_supplier=900, apply_tax=False, total=Decimal("0"),
+                           currency="MXN", created_by=1))
+            db.flush()
+            db.add(Product(id_product=900, id_invoice=900, id_location=900, id_material=900,
+                           is_directly_related_to_product_service=False, cantidad=0, created_by=1))
+            line = db.scalars(select(PurchaseOrderLine).where(
+                PurchaseOrderLine.id_purchase_order == id_orden)).first()
+            line.id_material = 900
+            return line.id_purchase_order_line, int(line.quantity)
 
     def _entrada_manual(self, id_orden, clave):
         actor = {"id_user": 2, "id_proyect": PROYECTO_A, "id_permission": 99}
