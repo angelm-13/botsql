@@ -6,6 +6,7 @@ from datetime import datetime
 
 from sqlalchemy import select
 
+from app.kpis.modulos import checadas
 from app.models.entity_permission import EntityPermission
 from app.models.kpi_definition import KpiDefinition
 from app.models.nm_permission_kpi import NmPermissionKpi
@@ -49,6 +50,31 @@ class TestValidacionDeAsignaciones(BackendTestCase):
         self.assertEqual(1, len(errores))
         self.assertIn("articulos_bajo_stock", errores[0])
         self.assertIn("acotado a proyecto", errores[0])
+
+    def test_la_asignacion_de_comala_es_valida(self):
+        self.assertEqual([], validar(ASIGNACIONES["comala"]))
+
+    def test_comala_da_a_adm_asistencias_los_siete_kpis_de_checadas_y_ninguno_mas(self):
+        (asignacion,) = ASIGNACIONES["comala"]
+        self.assertEqual("adm_asistencias", asignacion.rol)
+        self.assertFalse(asignacion.acotado_a_proyecto, "una checada no tiene proyecto")
+        self.assertEqual(7, len(asignacion.kpis))
+        # La lista se compara con el modulo, no con una copia: un KPI de checadas nuevo que no se asigne aqui hace fallar esta prueba.
+        self.assertEqual({kpi.clave for kpi in checadas.definiciones()}, set(asignacion.kpis))
+        self.assertIn("checadas_con_duracion_anomala", asignacion.kpis)
+
+    def test_comala_no_hereda_nada_de_adser(self):
+        de_adser = {clave for asignacion in ASIGNACIONES["adser"] for clave in asignacion.kpis}
+        de_comala = {clave for asignacion in ASIGNACIONES["comala"] for clave in asignacion.kpis}
+        self.assertEqual(set(), de_adser & de_comala)
+        self.assertEqual({"adser", "comala"}, set(ASIGNACIONES))
+
+    def test_un_rol_acotado_a_proyecto_no_podria_recibir_los_kpis_de_checadas(self):
+        # Por eso adm_asistencias va con acotado_a_proyecto=False: los siete son alcance_proyecto=False.
+        (asignacion,) = ASIGNACIONES["comala"]
+        errores = validar((AsignacionRol(asignacion.rol, acotado_a_proyecto=True, kpis=asignacion.kpis),))
+        self.assertEqual(7, len(errores))
+        self.assertTrue(all("acotado a proyecto" in error for error in errores))
 
     def test_clave_inexistente_es_error(self):
         errores = validar((AsignacionRol("Administrator", False, ("no_existe",)),))
@@ -172,6 +198,65 @@ class TestSiembraDePermisosDeKpi(BackendTestCase):
             fila.scope_read = 0
 
         codigo, salida = self._correr("--perfil", "adser", "--dry-run")
+
+        self.assertEqual(0, codigo)
+        self.assertIn("no tiene lectura de kpi_definition", salida)
+
+
+ADM_ASISTENCIAS = 7
+
+
+class TestDryRunDelPerfilComala(BackendTestCase):
+    """`--perfil comala --dry-run` sobre la base de la prueba: lista lo que haria y no escribe nada."""
+
+    def setUp(self):
+        super().setUp()
+        with transaction_context() as db:
+            db.add_all([
+                Permission(id_permission=ADM_ASISTENCIAS, permission_description="adm_asistencias", created_by=1,
+                           authorized_by=1, id_department=1, id_subdepartment=1, id_level=1),
+                EntityPermission(id_permission=ADM_ASISTENCIAS, entity_name="kpi_definition", scope_create=0,
+                                 scope_read=4, scope_update=0, scope_delete=0, created_by=1),
+            ])
+            for clave in ASIGNACIONES["comala"][0].kpis:
+                db.add(KpiDefinition(clave=clave, etiqueta=clave, modulo="operaciones", dimensiones=["empleado"]))
+
+    def _correr(self, *argv):
+        salida = io.StringIO()
+        with contextlib.redirect_stdout(salida):
+            codigo = main(list(argv))
+        return codigo, salida.getvalue()
+
+    def test_dry_run_de_comala_lista_los_siete_y_no_escribe_nada(self):
+        codigo, salida = self._correr("--perfil", "comala", "--dry-run")
+
+        self.assertEqual(0, codigo)
+        self.assertIn("dry-run: no se escribe nada", salida)
+        self.assertIn("Se insertarian: 7", salida)
+        for clave in ASIGNACIONES["comala"][0].kpis:
+            self.assertRegex(salida, rf"adm_asistencias\s+{clave}\s+INSERTAR")
+        self.assertNotIn("ROL INEXISTENTE", salida)
+        self.assertNotIn("AVISO", salida, "el rol ya tiene la capa 1: sin avisos")
+        with transaction_context() as db:
+            self.assertEqual(0, len(db.scalars(select(NmPermissionKpi)).all()), "el dry-run no escribe")
+
+    def test_dry_run_de_comala_avisa_si_el_rol_no_existe_y_no_lo_crea(self):
+        with transaction_context() as db:
+            db.get(Permission, ADM_ASISTENCIAS).deletion_date = datetime(2026, 10, 1)
+
+        codigo, salida = self._correr("--perfil", "comala", "--dry-run")
+
+        self.assertEqual(2, codigo)
+        self.assertIn("ROL INEXISTENTE: 'adm_asistencias'", salida)
+        with transaction_context() as db:
+            self.assertEqual(0, len(db.scalars(select(NmPermissionKpi)).all()))
+            self.assertEqual(1, len(db.scalars(select(Permission)).all()), "no crea roles")
+
+    def test_dry_run_de_comala_avisa_si_al_rol_le_falta_la_capa_de_modulo(self):
+        with transaction_context() as db:
+            db.scalar(select(EntityPermission).where(EntityPermission.entity_name == "kpi_definition")).scope_read = 0
+
+        codigo, salida = self._correr("--perfil", "comala", "--dry-run")
 
         self.assertEqual(0, codigo)
         self.assertIn("no tiene lectura de kpi_definition", salida)

@@ -459,7 +459,7 @@ Ordenados por impacto. "Por lectura" = deducido del código sin reproducirlo.
 | D8 | **Tres listas de módulos en frontend** y claves literales en `Dashboard.jsx`. | §1.5. | Módulo nuevo = icono genérico/orden al final. |
 | D9 | **Frontend carga `GET /user/` y `GET /product/` (hasta 5000) en cada montaje.** | `Dashboard.jsx:695-697`. | Etiquetas rotas para roles sin permiso de usuarios; carga innecesaria. |
 | D10 | **Seed del catálogo no fatal.** | `init_db.py:117-122`. | KPI nuevo no aparece y solo hay un `print`. |
-| D11 | **Solo el perfil `adser` en `ASIGNACIONES`**; local con 2 filas. | `seed_kpi_permissions.py:78`. | KPIs de áreas nuevas serían invisibles salvo para superusuario. |
+| D11 | **Solo los perfiles `adser` y `comala` en `ASIGNACIONES`** (`comala`, agregado el 2026-10-20, está escrito y probado pero **no se ha aplicado a ninguna base**); local con 2 filas. | `seed_kpi_permissions.py:78`. | KPIs de áreas nuevas serían invisibles salvo para superusuario. |
 | D12 | **`nm_permission_kpi.id_permission` y `kpi_dashboard.id_user` sin FK.** | `\d` de ambas. | Huérfanos al borrar roles/usuarios. |
 | D13 | **Los KPIs saltan los permisos por campo** (`nm_field_permission`). | `routes/kpi.py` completo: no los consulta. | KPIs de nómina/salario expondrían montos a quien tenga `puede_ver`. |
 | D14 | **Tests de KPI solo en Postgres y sin CI.** | `tests/README.md`. | Un KPI nuevo puede romperse sin que la suite normal lo note (188 saltadas). |
@@ -975,7 +975,7 @@ pasada queda **redundante pero inofensiva**: recalcula lo mismo que la nocturna,
 ### Qué no se hizo
 
 «Marcas fuera de radio» y «llegadas tarde» (no hay turnos, horarios ni descansos en el modelo: llegar tarde exigiría tablas nuevas). La asignación de los KPIs a un rol de Comala (`adm_asistencias`):
-se hace a mano en `/kpi_permissions` o con un perfil `comala` en `scripts/seed_kpi_permissions.py` (todavía no existe; hoy solo está `adser`).
+se hace a mano en `/kpi_permissions` o con el perfil `comala` de `scripts/seed_kpi_permissions.py` (escrito el 2026-10-20: `adm_asistencias`, `acotado_a_proyecto=False`, los siete KPIs; probado con `validar` y con el `--dry-run` sobre la base de la prueba; **no se ha corrido contra ninguna base**; corre siempre primero `python -m scripts.seed_kpi_permissions --perfil comala --dry-run`).
 Sin esa asignación, ningún rol que no sea superusuario ve los siete KPIs de checadas. Los KPIs por equipo además exigen alcance **Todos** (ver arriba), y los de `alcance_proyecto=False` solo se pueden dar a un rol **no acotado a proyecto** (`acotado_a_proyecto=False`).
 
 ---
