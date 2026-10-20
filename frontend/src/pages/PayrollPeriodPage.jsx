@@ -10,7 +10,7 @@ import { inputPropsForField, validateForm, validationRules as allValidationRules
 import { CAMPOS_DE_AUDITORIA } from "../utils/camposDeAuditoria";
 import { formatearFechaHora } from "../utils/fechas";
 
-const emptyForm = { period_start: "", period_end: "", payment_date: "", id_status: "" };
+const emptyForm = { period_start: "", period_end: "", payment_date: "", id_status: "", includes_aguinaldo: false };
 const validationRules = allValidationRules["payroll_period"] || {};
 const ENTITY_KEY = "payroll_period";
 const ACTION_CREATE = 1;
@@ -19,7 +19,7 @@ const ACTION_UPDATE = 4;
 const ACTION_DELETE = 8;
 const SCOPE_FIELD_BY_BIT = { [ACTION_CREATE]: "scope_create", [ACTION_READ]: "scope_read", [ACTION_UPDATE]: "scope_update", [ACTION_DELETE]: "scope_delete" };
 const FIELD_VISIBLE_BIT = 2;
-const ALL_FIELD_NAMES = ['id_payroll_period', 'period_start', 'period_end', 'payment_date', 'id_status', 'created_by', 'creation_date', 'last_update_date', 'deletion_date'];
+const ALL_FIELD_NAMES = ['id_payroll_period', 'period_start', 'period_end', 'payment_date', 'id_status', 'includes_aguinaldo', 'created_by', 'creation_date', 'last_update_date', 'deletion_date'];
 
 function hasBit(value, bit) {
   return (Number(value || 0) & bit) === bit;
@@ -461,6 +461,8 @@ export default function PayrollPeriodPage() {
     const key = String(item.id_status ?? t("common.unclassified"));
     acc[key] = acc[key] || []; acc[key].push(item); return acc;
   }, {}), [filtered, lang]);
+  // Las columnas de aguinaldo y prima solo se muestran si alguien las cobra en el periodo.
+  const conPrestaciones = Boolean(calculation?.employees.some((row) => row.aguinaldo || row.vacation_premium));
 
   return (
     <section className="entity-page">
@@ -498,6 +500,12 @@ export default function PayrollPeriodPage() {
             <span>{t("fields.payroll_period.payment_date")}</span>
             <input name="payment_date" type="date" value={formData.payment_date ?? ""} onChange={handleChange} placeholder={t("fields.payroll_period.payment_date")} aria-invalid={Boolean(fieldErrors["payment_date"])} {...inputPropsForField("payment_date", validationRules["payment_date"], "date")} />
             {fieldErrors["payment_date"] && <span className="field-error">{formatFieldError("payment_date")}</span>}
+          </label>
+          )}
+          {canSeeField("includes_aguinaldo") && (
+          <label className="checkbox-inline">
+            <input name="includes_aguinaldo" type="checkbox" checked={Boolean(formData.includes_aguinaldo)} onChange={handleChange} />
+            <span>{t("fields.payroll_period.includes_aguinaldo")}</span>
           </label>
           )}
           {canSeeField("id_status") && (
@@ -539,23 +547,27 @@ export default function PayrollPeriodPage() {
           <h3>{t("payroll_calc.title")} · #{calculation.id_payroll_period} {stateBadge(calculation.period_state)}</h3>
           <p className="muted">{t("payroll_calc.hint")}</p>
           <p className="muted">{t("payroll_calc.tax_hint")}</p>
+          <p className="muted">{t("payroll_calc.aguinaldo_hint")}</p>
           {calculation.employees.length ? (
             <table>
               <thead><tr>
-                <th>{t("payroll_calc.employee")}</th><th>{t("payroll_calc.days")}</th><th>{t("payroll_calc.daily")}</th>
-                <th>{t("payroll_calc.salary")}</th><th>{t("payroll_calc.earnings")}</th><th>ISR</th><th>IMSS</th><th>{t("payroll_calc.deductions")}</th><th>{t("payroll_calc.net")}</th>
+                <th>{t("payroll_calc.employee")}</th><th>{t("payroll_calc.days")}</th><th>{t("payroll_calc.absences")}</th><th>{t("payroll_calc.daily")}</th>
+                <th>{t("payroll_calc.salary")}</th>{conPrestaciones && <><th>{t("payroll_calc.aguinaldo")}</th><th>{t("payroll_calc.vacation_premium")}</th></>}<th>{t("payroll_calc.earnings")}</th><th>ISR</th><th>IMSS</th><th>{t("payroll_calc.deductions")}</th><th>{t("payroll_calc.net")}</th>
                 <th>{t("payroll_calc.receipt")}</th>
               </tr></thead>
               <tbody>{calculation.employees.map((row) => (
                 <tr key={row.id_user}>
-                  <td>{row.full_name}</td><td>{row.days_worked}</td><td>{money(row.daily_salary)}</td>
-                  <td>{money(row.salary)}</td><td>{money(row.total_earnings)}</td><td title={row.employment_subsidy ? `${t("payroll_calc.isr_hint")}: ${money(row.isr_before_subsidy)} - ${money(row.employment_subsidy)}` : undefined}>{money(row.isr)}</td><td title={row.sbc ? `SBC ${money(row.sbc)}` : undefined}>{money(row.imss)}</td><td>{money(row.total_deductions)}</td><td><strong>{money(row.net_pay)}</strong></td>
+                  <td>{row.full_name}</td><td>{row.days_worked}</td><td>{row.absences || 0}</td><td>{money(row.daily_salary)}</td>
+                  <td>{money(row.salary)}</td>{conPrestaciones && <><td>{money(row.aguinaldo)}</td><td title={row.vacation_days ? `${row.vacation_days} d` : undefined}>{money(row.vacation_premium)}</td></>}<td>{money(row.total_earnings)}</td><td title={row.employment_subsidy ? `${t("payroll_calc.isr_hint")}: ${money(row.isr_before_subsidy)} - ${money(row.employment_subsidy)}` : undefined}>{money(row.isr)}</td><td title={row.sbc ? `SBC ${money(row.sbc)}` : undefined}>{money(row.imss)}</td><td>{money(row.total_deductions)}</td><td><strong>{money(row.net_pay)}</strong></td>
                   <td><button type="button" className="button ghost" onClick={() => openReceipt(row.id_user)} aria-label={`${t("payroll_calc.receipt")} ${row.full_name}`}><FileDown size={15} /> PDF</button></td>
                 </tr>
               ))}</tbody>
-              <tfoot><tr><td colSpan="8"><strong>{t("payroll_calc.total")}</strong></td><td><strong>{money(calculation.total_net_pay)}</strong></td><td /></tr></tfoot>
+              <tfoot><tr><td colSpan={conPrestaciones ? 11 : 9}><strong>{t("payroll_calc.total")}</strong></td><td><strong>{money(calculation.total_net_pay)}</strong></td><td /></tr></tfoot>
             </table>
           ) : <p>{t("payroll_calc.empty")}</p>}
+          {calculation.without_hire_date?.length > 0 && (
+            <p className="muted">{t("payroll_calc.without_hire_date")}: {calculation.without_hire_date.map((row) => row.full_name).join(", ")}</p>
+          )}
           {calculation.without_salary.length > 0 && (
             <p className="muted">{t("payroll_calc.without_salary")}: {calculation.without_salary.map((row) => row.full_name).join(", ")}</p>
           )}

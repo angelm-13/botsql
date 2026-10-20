@@ -5,6 +5,7 @@ import { loadKronosConnection } from "../utils/kronosConnection";
 import "../styles/kronos.css";
 import { useI18n } from "../i18n";
 import PageHeader from "../components/PageHeader.jsx";
+import IncidenciasAsistencia from "../components/IncidenciasAsistencia.jsx";
 
 function localDate(date) {
   const offset = date.getTimezoneOffset() * 60000;
@@ -267,12 +268,15 @@ export default function KronosPage() {
       <div className="kronos-tabs" role="tablist" aria-label={t('kronos.tabs.aria_label')}>
         <button type="button" role="tab" aria-selected={view === 'attendance'} className={view === 'attendance' ? 'active' : ''} onClick={() => { setView('attendance'); setQuery(''); }}>{t('kronos.tabs.attendance')}</button>
         <button type="button" role="tab" aria-selected={view === 'people'} className={view === 'people' ? 'active' : ''} onClick={() => { setView('people'); setQuery(''); }}>{t('kronos.tabs.people')}</button>
+        <button type="button" role="tab" aria-selected={view === 'incidences'} className={view === 'incidences' ? 'active' : ''} onClick={() => { setView('incidences'); setQuery(''); }}>{t('kronos.tabs.incidences')}</button>
       </div>
 
       {error && <div className="alert error" role="alert">{error}</div>}
       {notice && <div className="alert success" role="status">{notice}</div>}
 
-      {view === 'attendance' ? (
+      {view === 'incidences' && <IncidenciasAsistencia t={t} describirError={describeError} />}
+
+      {view === 'incidences' ? null : view === 'attendance' ? (
         <>
           <form className="form-card kronos-filter" onSubmit={loadAttendance}>
             <label className="field">{t('kronos.filter.from')}<input required type="date" value={period.startDate} onChange={(event) => setPeriod((current) => ({ ...current, startDate: event.target.value }))} /></label>

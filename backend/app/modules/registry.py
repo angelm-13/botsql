@@ -227,7 +227,10 @@ MODULOS = (
         # oficiales (UMA, salario minimo, IMSS) que usa el calculo de nomina.
         ("payroll_concept", "payroll_detail", "payroll_movement", "payroll_period",
          "attendance_record", "attendance_employee_link",
-         "payroll_isr_bracket", "payroll_parameter"),
+         "payroll_isr_bracket", "payroll_parameter",
+         # Horarios, su asignacion a empleados y dias festivos: retardos, faltas
+         # y dias pagados (pantalla propia /work_schedules).
+         "work_schedule", "work_schedule_day", "employee_schedule", "payroll_holiday"),
     ),
     # Sus pantallas no tienen apartado propio en el menu lateral: viven dentro
     # del Home/Dashboard actual (ruta "/"), que ya es de acceso libre para

@@ -49,6 +49,8 @@ import PayrollConceptPage from "./pages/PayrollConceptPage.jsx";
 import PayrollDetailPage from "./pages/PayrollDetailPage.jsx";
 import PayrollMovementPage from "./pages/PayrollMovementPage.jsx";
 import PayrollPeriodPage from "./pages/PayrollPeriodPage.jsx";
+import PayrollSettingsPage from "./pages/PayrollSettingsPage.jsx";
+import WorkSchedulesPage from "./pages/WorkSchedulesPage.jsx";
 import PermissionPage from "./pages/PermissionPage.jsx";
 import ProductPage from "./pages/ProductPage.jsx";
 import WarehouseVoucherPage from "./pages/WarehouseVoucherPage.jsx";
@@ -232,6 +234,8 @@ export default function App() {
           <Route path="/payroll_detail" element={<RoleAccessRoute entityName="payroll_detail"><PayrollDetailPage /></RoleAccessRoute>} />
           <Route path="/payroll_movement" element={<RoleAccessRoute entityName="payroll_movement"><PayrollMovementPage /></RoleAccessRoute>} />
           <Route path="/payroll_period" element={<RoleAccessRoute entityName="payroll_period"><PayrollPeriodPage /></RoleAccessRoute>} />
+          <Route path="/payroll_settings" element={<RoleAccessRoute entityName="payroll_parameter"><PayrollSettingsPage /></RoleAccessRoute>} />
+          <Route path="/work_schedules" element={<RoleAccessRoute entityName="work_schedule"><WorkSchedulesPage /></RoleAccessRoute>} />
           <Route path="/kronos" element={<RoleAccessRoute entityName="payroll_period"><KronosPage /></RoleAccessRoute>} />
           <Route path="/kronos/device" element={<RoleAccessRoute entityName="kronos_device"><KronosDevicePage /></RoleAccessRoute>} />
           <Route path="/logistica/clientes" element={<RoleAccessRoute entityName="customer_supplier"><CustomerSupplierPage clientsOnly /></RoleAccessRoute>} />

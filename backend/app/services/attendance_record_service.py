@@ -286,3 +286,75 @@ def desligar_empleado(employee_no, user_id: int, fuente: str = FUENTE_KRONOS) ->
         actual.deletion_date = ahora_utc()
         checadas = _asignar_checadas(db, fuente, numero, None)
     return {"employee_no": numero, "id_user": None, "records_unlinked": checadas}
+
+
+def asistencia_por_empleado(db, desde: date, hasta: date, ids=None) -> dict:
+    """{id_user: [Dia, ...]} del rango, con las reglas de services/attendance_rules.py.
+
+    `ids`: limita a esos empleados; si no se da, toma a quien tenga horario en
+    el rango o checadas ligadas en el rango.
+    """
+    from app.models import EmployeeSchedule, PayrollHoliday, WorkSchedule, WorkScheduleDay
+    from app.services import attendance_rules as reglas
+
+    asignaciones = list(db.scalars(
+        select(EmployeeSchedule)
+        .where(EmployeeSchedule.deletion_date.is_(None))
+        .where(EmployeeSchedule.valid_from <= hasta)
+        .where((EmployeeSchedule.valid_to.is_(None)) | (EmployeeSchedule.valid_to >= desde))
+    ))
+    horarios = {h.id_work_schedule: h for h in db.scalars(select(WorkSchedule))}
+    dias_de_horario: dict[int, dict[int, tuple]] = {}
+    for d in db.scalars(select(WorkScheduleDay).where(WorkScheduleDay.deletion_date.is_(None))):
+        dias_de_horario.setdefault(d.id_work_schedule, {})[d.weekday] = (d.start_time, d.end_time)
+    festivos = set(db.scalars(
+        select(PayrollHoliday.holiday_date)
+        .where(PayrollHoliday.deletion_date.is_(None))
+        .where(PayrollHoliday.holiday_date >= desde)
+        .where(PayrollHoliday.holiday_date <= hasta)
+    ))
+    marcas: dict[int, dict[date, list]] = {}
+    for id_user, hora in db.execute(
+        select(AttendanceRecord.id_user, AttendanceRecord.check_time)
+        .where(AttendanceRecord.id_user.isnot(None))
+        .where(AttendanceRecord.deletion_date.is_(None))
+        .where(AttendanceRecord.check_time >= datetime.combine(desde, datetime.min.time()))
+        .where(AttendanceRecord.check_time < datetime.combine(hasta + timedelta(days=1), datetime.min.time()))
+    ):
+        marcas.setdefault(id_user, {}).setdefault(hora.date(), []).append(hora)
+
+    if ids is None:
+        ids = {a.id_user for a in asignaciones} | set(marcas)
+    resultado = {}
+    for id_user in ids:
+        propias = [a for a in asignaciones if a.id_user == id_user]
+        dias = []
+        for fecha in reglas.dias_del_rango(desde, hasta):
+            asignada = next((a for a in propias
+                             if a.valid_from <= fecha and (a.valid_to is None or a.valid_to >= fecha)), None)
+            horario = horarios.get(asignada.id_work_schedule) if asignada else None
+            dias.append(reglas.clasificar_dia(
+                fecha, marcas.get(id_user, {}).get(fecha, []),
+                dias_de_horario.get(asignada.id_work_schedule, {}).get(fecha.weekday()) if asignada else None,
+                fecha in festivos, horario.tolerance_minutes if horario else 0, asignada is not None))
+        resultado[id_user] = dias
+    return resultado
+
+
+def incidencias(desde: date, hasta: date) -> list[dict]:
+    """Reporte de retardos, faltas e incompletas por empleado (solo informativo)."""
+    from app.services import attendance_rules as reglas
+    with transaction_context() as db:
+        por_empleado = asistencia_por_empleado(db, desde, hasta)
+        nombres = dict(db.execute(select(User.id_user, User.full_name)
+                                  .where(User.id_user.in_(list(por_empleado) or [0]))).all())
+    filas = []
+    for id_user, dias in por_empleado.items():
+        filas.append({
+            "id_user": id_user,
+            "full_name": nombres.get(id_user) or f"#{id_user}",
+            "has_schedule": any(d.con_horario for d in dias),
+            **reglas.resumen(dias),
+            "days": [d.como_dict() for d in dias],
+        })
+    return sorted(filas, key=lambda f: f["full_name"])

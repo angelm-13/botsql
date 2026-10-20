@@ -55,7 +55,8 @@
   <div class="grid">
     <div class="cell"><span class="label">Nombre</span><span class="value">{{ record.employee }}</span></div>
     <div class="cell"><span class="label">Puesto</span><span class="value">{{ record.position or "—" }}</span></div>
-    <div class="cell"><span class="label">Dias trabajados</span><span class="value">{{ record.days_worked }}</span></div>
+    <div class="cell"><span class="label">Dias pagados</span><span class="value">{{ record.days_worked }}</span></div>
+    <div class="cell"><span class="label">Faltas</span><span class="value">{{ record.absences or 0 }}</span></div>
     <div class="cell"><span class="label">Salario diario</span><span class="value">$ {{ "{:,.2f}".format(record.daily_salary) }}</span></div>
   </div>
 

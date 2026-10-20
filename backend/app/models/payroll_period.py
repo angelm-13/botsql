@@ -40,6 +40,9 @@ class PayrollPeriod(Base):
     closed_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
     reopened_at: Mapped[object] = mapped_column(DateTime, nullable=True)
     reopened_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Si esta marcada, el calculo paga el aguinaldo en este periodo
+    # (migracion 20261020110000_aguinaldo_y_prima_vacacional.sql).
+    includes_aguinaldo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default='false')
 
     def serialize(self) -> dict:
         return {
@@ -57,6 +60,7 @@ class PayrollPeriod(Base):
             'closed_by': to_json_value(self.closed_by),
             'reopened_at': a_iso_utc(self.reopened_at),
             'reopened_by': to_json_value(self.reopened_by),
+            'includes_aguinaldo': bool(self.includes_aguinaldo),
         }
 
     def serialize_summary(self) -> dict:

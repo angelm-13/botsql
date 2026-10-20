@@ -11,6 +11,7 @@ from app.services.attendance_record_service import (
     desligar_empleado,
     empleados_para_ligar,
     importar_eventos_kronos,
+    incidencias,
     ligar_empleado,
     nombres_de_empleados,
     vinculos_de_empleados,
@@ -131,6 +132,15 @@ def saved_attendance(_user_data):
             "statistics": attendance_statistics(report),
         }
     )
+
+
+@bp_kronos.get("/attendance/incidences")
+@token_required
+@require_entity_permission("attendance_record", "read")
+def attendance_incidences(_user_data):
+    """Retardos, faltas y checadas incompletas por empleado segun su horario (solo informativo)."""
+    start, end = _saved_period()
+    return jsonify({"employees": incidencias(start, end)})
 
 
 @bp_kronos.get("/employee-links")

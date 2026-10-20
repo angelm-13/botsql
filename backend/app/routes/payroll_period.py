@@ -6,7 +6,7 @@ from app.utils.errors import AppError
 from app.utils.field_access import COLUMNAS_DE_AUDITORIA
 
 bp_payroll_period = Blueprint('payroll_period', __name__, url_prefix='/payroll_period')
-ALLOWED_FIELDS = ['id_payroll_period', 'period_start', 'period_end', 'payment_date', 'id_status', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'period_state', 'closed_at', 'closed_by', 'reopened_at', 'reopened_by']
+ALLOWED_FIELDS = ['id_payroll_period', 'period_start', 'period_end', 'payment_date', 'id_status', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'period_state', 'closed_at', 'closed_by', 'reopened_at', 'reopened_by', 'includes_aguinaldo']
 
 TECHNICAL_RESPONSE_FIELDS = {'id_payroll_period'}
 FIELD_READ_BIT = 2

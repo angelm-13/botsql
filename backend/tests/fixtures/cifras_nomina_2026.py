@@ -1,5 +1,6 @@
 """Cifras oficiales 2026 para las pruebas de nomina (copia de lo que siembra
-database/migrations/20261016130000_tablas_isr_y_parametros_de_nomina.sql).
+database/migrations/20261016130000_tablas_isr_y_parametros_de_nomina.sql
+y 20261020110000_aguinaldo_y_prima_vacacional.sql).
 
 En SQLite no corren las migraciones, asi que las pruebas las cargan con esto.
 Solo las tarifas que usan las pruebas: diaria (1), quincenal (15) y mensual (30).
@@ -44,6 +45,8 @@ PARAMETROS_2026 = [
     ("sbc_cap_umas", "25", date(2026, 1, 1), None),
     ("aguinaldo_days", "15", date(2026, 1, 1), None),
     ("vacation_premium_pct", "25", date(2026, 1, 1), None),
+    ("aguinaldo_exempt_umas", "30", date(2026, 1, 1), None),
+    ("vacation_premium_exempt_umas", "15", date(2026, 1, 1), None),
 ]
 
 

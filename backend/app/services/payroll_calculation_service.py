@@ -3,9 +3,11 @@
 Antes las tablas `payroll_*` solo tenian altas y bajas: nadie calculaba nada y
 el sueldo se escribia a mano. Aqui vive la primera regla de calculo:
 
-* Dias trabajados: los dias distintos del periodo en que el empleado tiene al
-  menos una checada en `attendance_record` (ya ligada a su usuario).
-* Sueldo del periodo: `user.base_salary` (salario DIARIO) x dias trabajados.
+* Dias pagados (services/attendance_rules.py): con horario asignado, todos los
+  dias del periodo -descansos y festivos incluidos- menos las faltas; sin
+  horario, solo los dias con al menos una checada ligada (como antes de que
+  existieran los horarios). Los retardos no afectan la nomina.
+* Sueldo del periodo: `user.base_salary` (salario DIARIO) x dias pagados.
   Se guarda como un movimiento con el concepto SUELDO.
 * ISR (con el subsidio para el empleo ya restado) e IMSS (cuota del
   trabajador): dos movimientos de deduccion, ISR e IMSS. Las reglas estan en
@@ -17,10 +19,15 @@ el sueldo se escribia a mano. Aqui vive la primera regla de calculo:
   (un bono, un descuento)-; el neto es percepciones menos deducciones. Las
   aportaciones patronales (`employer_contribution`) no le tocan al empleado y
   no entran al neto.
+* Aguinaldo (si el periodo tiene marcada `includes_aguinaldo`) y prima
+  vacacional (si en el periodo cae el aniversario de ingreso): movimientos
+  AGUINALDO y PRIMA_VAC. Sus conceptos no se marcan gravables porque solo
+  grava lo que pasa del tope exento; esa parte la suma este calculo a la base
+  del ISR. Reglas en payroll_tax_rules.py.
 
 Recalcular no duplica: el detalle del empleado en el periodo se reusa y solo
-se reemplazan los movimientos SUELDO, ISR e IMSS, que son los que escribe este
-calculo. Lo capturado a mano no se toca.
+se reemplazan los movimientos que escribe este calculo (SUELDO, AGUINALDO,
+PRIMA_VAC, ISR e IMSS). Lo capturado a mano no se toca.
 
 Estados del periodo (columna `period_state`):
 
@@ -40,7 +47,7 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import func, select
 
-from app.models import (AttendanceRecord, PayrollConcept, PayrollDetail, PayrollIsrBracket, PayrollMovement,
+from app.models import (PayrollConcept, PayrollDetail, PayrollIsrBracket, PayrollMovement,
                         PayrollParameter, PayrollPeriod, User)
 from app.services import payroll_tax_rules as ley
 from app.models.session import transaction_context
@@ -48,6 +55,7 @@ from app.utils.errors import AppError
 from app.utils.tiempo import ahora_utc
 
 CODIGO_SUELDO = "SUELDO"
+CODIGO_AGUINALDO, CODIGO_PRIMA = "AGUINALDO", "PRIMA_VAC"
 ABIERTO, CALCULADO, CERRADO = "open", "calculated", "closed"
 # Columnas que solo mueven calcular/cerrar/reabrir; la captura generica no.
 CAMPOS_DEL_ESTADO = ("period_state", "closed_at", "closed_by", "reopened_at", "reopened_by")
@@ -61,6 +69,8 @@ def _dinero(valor) -> Decimal:
 # Conceptos que escribe el calculo: codigo -> (descripcion, tipo, grava ISR, integra IMSS).
 CONCEPTOS_DEL_CALCULO = {
     CODIGO_SUELDO: ("Sueldo", "earning", True, True),
+    CODIGO_AGUINALDO: ("Aguinaldo", "earning", False, False),
+    CODIGO_PRIMA: ("Prima vacacional", "earning", False, False),
     "ISR": ("ISR retenido (subsidio para el empleo aplicado)", "deduction", False, False),
     "IMSS": ("Cuota obrera IMSS", "deduction", False, False),
 }
@@ -70,6 +80,7 @@ PARAMETROS_REQUERIDOS = (
     "uma_daily", "uma_monthly", "minimum_wage_daily", "subsidy_pct", "subsidy_income_limit",
     "imss_em_surplus_pct", "imss_em_cash_pct", "imss_em_pensioners_pct", "imss_iv_pct", "imss_cv_pct",
     "imss_surplus_umas", "sbc_cap_umas", "aguinaldo_days", "vacation_premium_pct",
+    "aguinaldo_exempt_umas", "vacation_premium_exempt_umas",
 )
 
 
@@ -148,6 +159,9 @@ def _reemplazar_movimiento(db, detalle: PayrollDetail, concepto: PayrollConcept,
 
 
 def _percepciones_gravables(db, detalle: PayrollDetail) -> Decimal:
+    """Percepciones gravables completas. AGUINALDO y PRIMA_VAC quedan fuera
+    aunque alguien marque su concepto como gravable: de ellos solo grava lo que
+    pasa del tope exento, y eso lo suma el calculo."""
     total = db.scalar(
         select(func.coalesce(func.sum(PayrollMovement.amount), 0))
         .join(PayrollConcept, PayrollConcept.id_payroll_concept == PayrollMovement.id_payroll_concept)
@@ -155,22 +169,9 @@ def _percepciones_gravables(db, detalle: PayrollDetail) -> Decimal:
         .where(PayrollMovement.deletion_date.is_(None))
         .where(PayrollConcept.type == "earning")
         .where(PayrollConcept.is_taxable.is_(True))
+        .where(PayrollConcept.payroll_code.not_in((CODIGO_AGUINALDO, CODIGO_PRIMA)))
     )
     return _dinero(total)
-
-
-def _dias_trabajados(db, inicio, fin) -> dict[int, int]:
-    """Dias distintos con al menos una checada, por empleado ligado."""
-    dia = func.date(AttendanceRecord.check_time)
-    filas = db.execute(
-        select(AttendanceRecord.id_user, func.count(func.distinct(dia)))
-        .where(AttendanceRecord.id_user.isnot(None))
-        .where(AttendanceRecord.deletion_date.is_(None))
-        .where(AttendanceRecord.check_time >= datetime.combine(inicio, datetime.min.time()))
-        .where(AttendanceRecord.check_time < datetime.combine(fin + timedelta(days=1), datetime.min.time()))
-        .group_by(AttendanceRecord.id_user)
-    ).all()
-    return {id_user: int(dias) for id_user, dias in filas}
 
 
 def _totales(db, detalle: PayrollDetail) -> tuple[Decimal, Decimal]:
@@ -231,7 +232,10 @@ def calcular_periodo(id_payroll_period, user_id: int) -> dict:
             .where(User.is_employee.is_(True))
             .order_by(User.full_name)
         ).all()
-        dias = _dias_trabajados(db, periodo.period_start, periodo.period_end)
+        from app.services.attendance_record_service import asistencia_por_empleado
+        from app.services.attendance_rules import resumen as resumen_de_asistencia
+        asistencia = asistencia_por_empleado(db, periodo.period_start, periodo.period_end,
+                                             ids=[e.id_user for e in empleados])
         conceptos = {codigo: _concepto(db, codigo, user_id) for codigo in CONCEPTOS_DEL_CALCULO}
         # Las cifras oficiales son las vigentes al ultimo dia del periodo.
         al_dia = periodo.period_end
@@ -239,13 +243,14 @@ def calcular_periodo(id_payroll_period, user_id: int) -> dict:
         parametros = _parametros(db, al_dia)
         tramos, factor_tarifa = _tarifa_isr(db, al_dia.year, dias_del_periodo)
 
-        calculados, sin_sueldo = [], []
+        calculados, sin_sueldo, sin_ingreso = [], [], []
         for empleado in empleados:
             diario = _dinero(empleado.base_salary)
             if diario <= 0:
                 sin_sueldo.append({"id_user": empleado.id_user, "full_name": empleado.full_name or ""})
                 continue
-            trabajados = dias.get(empleado.id_user, 0)
+            totales = resumen_de_asistencia(asistencia.get(empleado.id_user, []))
+            trabajados, faltas = totales["paid_days"], totales["absences"]
             sueldo = _dinero(diario * trabajados)
 
             detalle = db.scalars(
@@ -260,10 +265,29 @@ def calcular_periodo(id_payroll_period, user_id: int) -> dict:
                 db.add(detalle)
                 db.flush()
 
-            # Solo se reemplaza lo que escribe este calculo: SUELDO, ISR e IMSS.
+            # Solo se reemplaza lo que escribe este calculo: SUELDO, AGUINALDO,
+            # PRIMA_VAC, ISR e IMSS.
             _reemplazar_movimiento(db, detalle, conceptos[CODIGO_SUELDO], sueldo, user_id)
 
-            gravable = _percepciones_gravables(db, detalle)
+            if not empleado.hire_date:
+                sin_ingreso.append({"id_user": empleado.id_user, "full_name": empleado.full_name or ""})
+            monto_aguinaldo = _dinero(0)
+            if periodo.includes_aguinaldo:
+                monto_aguinaldo = ley.aguinaldo(diario, parametros["aguinaldo_days"], empleado.hire_date, al_dia.year)
+            _reemplazar_movimiento(db, detalle, conceptos[CODIGO_AGUINALDO], monto_aguinaldo, user_id)
+
+            dias_vacaciones, prima = 0, _dinero(0)
+            aniversario = ley.aniversario_en(empleado.hire_date, periodo.period_start, periodo.period_end)
+            if aniversario:
+                dias_vacaciones, prima = ley.prima_vacacional(
+                    diario, ley.anios_cumplidos(empleado.hire_date, aniversario), parametros["vacation_premium_pct"])
+            _reemplazar_movimiento(db, detalle, conceptos[CODIGO_PRIMA], prima, user_id)
+
+            aguinaldo_gravado = ley.parte_gravada(monto_aguinaldo, parametros["uma_daily"],
+                                                  parametros["aguinaldo_exempt_umas"])
+            prima_gravada = ley.parte_gravada(prima, parametros["uma_daily"],
+                                              parametros["vacation_premium_exempt_umas"])
+            gravable = _percepciones_gravables(db, detalle) + aguinaldo_gravado + prima_gravada
             isr_tarifa = ley.isr_por_tarifa(gravable, tramos, factor_tarifa)
             subsidio = ley.subsidio_para_el_empleo(
                 gravable, dias_del_periodo, parametros["uma_monthly"], parametros["subsidy_pct"],
@@ -286,12 +310,19 @@ def calcular_periodo(id_payroll_period, user_id: int) -> dict:
             detalle.total_deductions = deducciones
             detalle.net_pay = percepciones - deducciones
             detalle.days_worked = trabajados
+            detalle.absences = faltas
             calculados.append({
                 "id_user": empleado.id_user,
                 "full_name": empleado.full_name or "",
                 "days_worked": trabajados,
+                "absences": faltas,
                 "daily_salary": float(diario),
                 "salary": float(sueldo),
+                "aguinaldo": float(monto_aguinaldo),
+                "aguinaldo_taxable": float(aguinaldo_gravado),
+                "vacation_premium": float(prima),
+                "vacation_premium_taxable": float(prima_gravada),
+                "vacation_days": dias_vacaciones,
                 "taxable_income": float(gravable),
                 "isr_before_subsidy": float(isr_tarifa),
                 "employment_subsidy": float(subsidio),
@@ -311,6 +342,7 @@ def calcular_periodo(id_payroll_period, user_id: int) -> dict:
         "period_state": CALCULADO,
         "employees": calculados,
         "without_salary": sin_sueldo,
+        "without_hire_date": sin_ingreso,
         "total_net_pay": float(sum((_dinero(e["net_pay"]) for e in calculados), _dinero(0))),
     }
 
@@ -374,8 +406,11 @@ def resumen_periodo(id_payroll_period) -> dict:
                 "id_user": empleado.id_user,
                 "full_name": empleado.full_name or "",
                 "days_worked": detalle.days_worked or 0,
+                "absences": detalle.absences or 0,
                 "daily_salary": float(_dinero(empleado.base_salary)),
                 "salary": float(_dinero(detalle.gross_salary)),
+                "aguinaldo": por_codigo.get(CODIGO_AGUINALDO, 0.0),
+                "vacation_premium": por_codigo.get(CODIGO_PRIMA, 0.0),
                 "isr": por_codigo.get("ISR", 0.0),
                 "imss": por_codigo.get("IMSS", 0.0),
                 "total_earnings": float(_dinero(detalle.total_earnings)),
@@ -387,6 +422,7 @@ def resumen_periodo(id_payroll_period) -> dict:
             "period_state": periodo.period_state,
             "employees": empleados,
             "without_salary": [],
+            "without_hire_date": [],
             "total_net_pay": float(sum((_dinero(e["net_pay"]) for e in empleados), _dinero(0))),
         }
 
@@ -430,6 +466,7 @@ def datos_del_recibo(id_payroll_period, id_user) -> dict:
             "employee": empleado.full_name or empleado.username or "",
             "position": empleado.puesto or "",
             "days_worked": detalle.days_worked or 0,
+            "absences": detalle.absences or 0,
             "daily_salary": float(_dinero(empleado.base_salary)),
             "earnings": [m for m in movimientos if m["type"] == "earning"],
             "deductions": [m for m in movimientos if m["type"] == "deduction"],

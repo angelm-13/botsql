@@ -28,8 +28,23 @@ IMSS, cuota del trabajador (Ley del Seguro Social)
     positivo) x excedente. Quien gana el salario minimo no paga cuota obrera: la
     cubre el patron (art. 36).
 
+Aguinaldo (LFT art. 87)
+    Salario diario x dias de aguinaldo x (dias del año desde el ingreso, o
+    desde el 1 de enero, hasta el 31 de diciembre / dias del año). Las faltas
+    no lo reducen.
+
+Prima vacacional (LFT art. 80)
+    Se paga al cumplir cada año de servicio: dias de vacaciones del año que se
+    cumplio x salario diario x porcentaje de prima.
+
+Exencion del ISR (LISR art. 93 fr. XIV)
+    El aguinaldo esta exento hasta 30 UMA y la prima vacacional hasta 15; solo
+    lo que pase del tope se suma a la base gravable del periodo. No pagan cuota
+    extra del IMSS: ya estan dentro del factor de integracion.
+
 Fuera de alcance: integrar al SBC las percepciones variables, INFONAVIT, la
-cuota patronal y el ajuste anual del ISR.
+cuota patronal, el ajuste anual del ISR y el calculo opcional del ISR del
+aguinaldo del art. 174 RLISR.
 """
 from __future__ import annotations
 
@@ -132,3 +147,45 @@ def cuota_obrera_imss(sbc, dias, salario_diario, salario_minimo, uma_diaria, p: 
     excedente = max(sbc - Decimal(str(p["imss_surplus_umas"])) * Decimal(str(uma_diaria)), Decimal(0))
     por_dia = sbc * sobre_sbc + excedente * Decimal(str(p["imss_em_surplus_pct"])) / 100
     return dinero(por_dia * dias)
+
+
+def aguinaldo(salario_diario, dias_aguinaldo, ingreso: date | None, anio: int) -> Decimal:
+    """Aguinaldo del `anio`, proporcional si entro ese mismo año. Sin fecha de
+    ingreso se paga completo (el calculo lo avisa aparte)."""
+    inicio, fin = date(anio, 1, 1), date(anio, 12, 31)
+    if ingreso and ingreso > fin:
+        return dinero(0)
+    desde = max(ingreso, inicio) if ingreso else inicio
+    dias_del_anio = (fin - inicio).days + 1
+    trabajados = (fin - desde).days + 1
+    return dinero(Decimal(str(salario_diario)) * Decimal(str(dias_aguinaldo)) * trabajados / dias_del_anio)
+
+
+def aniversario_en(ingreso: date | None, inicio: date, fin: date) -> date | None:
+    """El aniversario de ingreso que cae entre `inicio` y `fin` (sin contar el
+    propio dia de ingreso). Quien entro un 29 de febrero cumple el 28 en años
+    no bisiestos."""
+    if not ingreso:
+        return None
+    for anio in range(inicio.year, fin.year + 1):
+        try:
+            dia = date(anio, ingreso.month, ingreso.day)
+        except ValueError:
+            dia = date(anio, 2, 28)
+        if dia > ingreso and inicio <= dia <= fin:
+            return dia
+    return None
+
+
+def prima_vacacional(salario_diario, anios_de_servicio: int, prima_pct) -> tuple[int, Decimal]:
+    """(dias de vacaciones del año cumplido, prima) al cumplir `anios_de_servicio`."""
+    if anios_de_servicio < 1:
+        return 0, dinero(0)
+    dias = dias_de_vacaciones(anios_de_servicio - 1)
+    return dias, dinero(Decimal(str(salario_diario)) * dias * Decimal(str(prima_pct)) / 100)
+
+
+def parte_gravada(monto, uma_diaria, umas_exentas) -> Decimal:
+    """Lo que pasa del tope exento (art. 93 fr. XIV LISR)."""
+    exento = Decimal(str(uma_diaria)) * Decimal(str(umas_exentas))
+    return dinero(max(Decimal(str(monto or 0)) - exento, Decimal(0)))
