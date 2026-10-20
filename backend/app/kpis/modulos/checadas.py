@@ -37,6 +37,12 @@ from app.utils.tiempo import ahora_negocio
 UMBRAL_SIN_SALIDA_HORAS = 12
 UMBRAL_SIN_SALIDA = timedelta(hours=UMBRAL_SIN_SALIDA_HORAS)
 
+# Una checada CERRADA que dura MAS de este tiempo entre la entrada y la salida casi seguro tiene la salida mal capturada
+# (se olvido de marcarla y se cerro despues): no es tiempo trabajado. Exactamente 16 horas SI cuenta. Las que pasan el tope
+# no suman en `horas_trabajadas_por_empleado` y se reportan aparte en `checadas_con_duracion_anomala`.
+TOPE_DURACION_CHECADA_HORAS = 16
+TOPE_DURACION_CHECADA = timedelta(hours=TOPE_DURACION_CHECADA_HORAS)
+
 # Estatus con el que se anula una incidencia (`INCIDENT_CLOSED_STATUSES` en operations_workflow). Una checada
 # cancelada es un error de captura: no es una entrada, ni una salida, ni horas trabajadas.
 ESTATUS_CANCELADA = "cancelada"
@@ -268,12 +274,20 @@ def checadas_salidas_por_equipo_query(session, fecha_inicio, fecha_fin, filtros_
 
 # --- horas trabajadas ------------------------------------------------------------------------
 
+def _supera_el_tope(abre, cierra) -> bool:
+    """La checada cerrada dura MAS de `TOPE_DURACION_CHECADA` (16 h exactas no lo supera). Es el unico lugar que lo decide."""
+    return cierra - abre > TOPE_DURACION_CHECADA
+
+
 def horas_trabajadas_por_empleado_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
     """Minutos trabajados por empleado y por dia: `close_date - incident_date` de las checadas CERRADAS.
 
     * Dia: el de la ENTRADA (`incident_date`). Un turno nocturno de 23:50 a 00:10 son 20 minutos del dia en que
       empezo, no se parten en dos dias.
     * Una checada abierta no suma (todavia no se sabe cuanto va a durar) y una cancelada tampoco.
+    * Una cerrada con MAS de `TOPE_DURACION_CHECADA_HORAS` (16) entre la entrada y la salida tampoco suma: casi seguro la
+      salida se olvido y se capturo despues. Se cuenta aparte en `checadas_con_duracion_anomala`, que la fecha por el dia
+      de la SALIDA (este KPI usa el de la entrada). Con exactamente 16 horas SI suma.
     * No depende del equipo: quien no tiene equipo tambien suma.
     * Se suma en Python y no en SQL: restar fechas es distinto en SQLite y en PostgreSQL, y el rango es de siete dias
       en la corrida nocturna, asi que son pocas filas.
@@ -293,6 +307,8 @@ def horas_trabajadas_por_empleado_query(session, fecha_inicio, fecha_fin, filtro
     ).all()
     minutos: dict[tuple[int, object], Decimal] = defaultdict(Decimal)
     for id_user, abre, cierra in filas:
+        if _supera_el_tope(abre, cierra):
+            continue
         minutos[(int(id_user), abre.date())] += Decimal((cierra - abre).total_seconds()) / 60
     return [
         (id_user, fecha, total.quantize(CENTESIMAS))
@@ -405,7 +421,8 @@ def definiciones():
             grafica_default="barras",
             descripcion=(
                 "Minutos trabajados por empleado: suma de (salida - entrada) de las checadas cerradas, por día de la "
-                "entrada. Una checada sin salida todavía no suma."
+                f"entrada. Una checada sin salida todavía no suma, y una de más de {TOPE_DURACION_CHECADA_HORAS} horas "
+                "tampoco (casi seguro se olvidó la salida): esas salen en «Checadas con duración anómala»."
             ),
         ),
         KpiDefinition(

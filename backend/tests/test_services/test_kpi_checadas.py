@@ -19,6 +19,7 @@ from app.jobs import tasks_kpis
 from app.kpis import frecuencia
 from app.kpis.modulos import checadas
 from app.kpis.modulos.checadas import (
+    TOPE_DURACION_CHECADA_HORAS,
     UMBRAL_SIN_SALIDA_HORAS,
     checadas_en_turno_por_empleado_query,
     checadas_en_turno_por_equipo_query,
@@ -644,6 +645,46 @@ class HorasTrabajadasTest(ChecadasBase):
     def test_una_salida_anterior_a_su_entrada_no_es_un_turno(self):
         self._checada(ANA, local(D, 16, 0), local(D, 8, 0))
         self.assertEqual([], self.horas())
+
+    # --- el tope de 16 horas ------------------------------------------------------------------
+
+    def test_el_tope_es_una_constante_con_nombre(self):
+        self.assertEqual(16, TOPE_DURACION_CHECADA_HORAS)
+
+    def test_15_h_59_min_y_16_h_exactas_suman_y_16_h_1_min_no(self):
+        self._checada(ANA, local(D, 0, 0), local(D, 15, 59))               # 15 h 59 min
+        self._checada(BETO, local(D, 0, 0), local(D, 16, 0))               # 16 h exactas: SI cuenta
+        self._checada(CARLA, local(D, 0, 0), local(D, 16, 1))              # 16 h 1 min: no
+        self.assertEqual([(ANA, D, Decimal("959.00")), (BETO, D, Decimal("960.00"))], self.horas())
+
+    def test_un_segundo_por_encima_del_tope_ya_no_suma(self):
+        self._checada(ANA, local(D, 0, 0, 0), local(D, 16, 0, 0))
+        self._checada(BETO, local(D, 0, 0, 0), local(D, 16, 0, 1))
+        self.assertEqual([(ANA, D, Decimal("960.00"))], self.horas())
+
+    def test_una_cerrada_al_dia_siguiente_cuenta_en_el_dia_de_la_entrada_si_no_pasa_el_tope(self):
+        self._checada(ANA, local(D, 12, 0), local(D1, 4, 0))               # 16 h exactas, cruza la medianoche
+        self._checada(BETO, local(D, 20, 0), local(D1, 11, 59))            # 15 h 59 min
+        self.assertEqual([(ANA, D, Decimal("960.00")), (BETO, D, Decimal("959.00"))], self.horas())
+        self.assertEqual([], self.horas(D1, D1), "el dia de la salida no suma: es el de la entrada")
+
+    def test_una_cerrada_al_dia_siguiente_que_pasa_el_tope_no_suma_en_ningun_dia(self):
+        self._checada(ANA, local(D, 8, 0), local(D1, 8, 0))                # 24 h
+        self.assertEqual([], self.horas(D, D1))
+
+    def test_una_cerrada_despues_de_mas_de_7_dias_no_suma_en_ningun_dia(self):
+        self._checada(ANA, local(D - timedelta(days=10), 8, 0), local(D, 9, 0))
+        self.assertEqual([], self.horas(D - timedelta(days=10), D))
+
+    def test_la_anomala_no_arrastra_a_las_demas_checadas_del_mismo_dia(self):
+        self._checada(ANA, local(D, 8, 0), local(D, 16, 0))                # 480
+        self._checada(ANA, local(D, 17, 0), local(D1, 14, 0))              # 21 h: fuera
+        self.assertEqual([(ANA, D, Decimal("480.00"))], self.horas())
+
+    def test_una_anomala_cancelada_o_sin_coordenadas_sigue_sin_sumar(self):
+        self._checada(ANA, local(D, 0, 0), local(D1, 0, 0), status="cancelada")
+        self._checada(BETO, local(D, 0, 0), local(D1, 0, 0), latitude=None)
+        self.assertEqual([], self.horas(D, D1))
 
     def test_no_depende_del_equipo_ni_se_duplica_por_estar_en_dos(self):
         self._checada(DIEGO, local(D, 8, 0), local(D, 10, 0))      # sin equipo: suma igual
