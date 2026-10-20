@@ -11,7 +11,7 @@ import unittest
 
 from app.kpis import frecuencia
 from app.kpis.modulos import checadas
-from app.kpis.modulos.checadas import UMBRAL_SIN_SALIDA_HORAS
+from app.kpis.modulos.checadas import TOPE_DURACION_CHECADA_HORAS, UMBRAL_SIN_SALIDA_HORAS
 from app.kpis.registry import KPI_POR_CLAVE
 
 
@@ -46,6 +46,7 @@ class DefinicionesDeChecadasTest(unittest.TestCase):
         self.assertEqual([], [c for c in frecuencia.KPIS_FRECUENTES if c not in KPI_POR_CLAVE])
         self.assertEqual(esperados, set(frecuencia.KPIS_FRECUENTES))
         self.assertNotIn("horas_trabajadas_por_empleado", frecuencia.KPIS_FRECUENTES, "las horas siguen solo nocturnas")
+        self.assertNotIn("checadas_con_duracion_anomala", frecuencia.KPIS_FRECUENTES, "las anomalias tambien: solo nocturnas")
         for clave in frecuencia.KPIS_FRECUENTES:
             self.assertEqual("snapshot", KPI_POR_CLAVE[clave].modo, clave)
             self.assertNotIn(KPI_POR_CLAVE[clave].modulo, frecuencia.MODULOS_FRECUENTES, "entra por su clave, no por su modulo")
@@ -87,3 +88,27 @@ class DefinicionDeEnTurnoPorEmpleadoTest(unittest.TestCase):
         con_ceros_ocultos = [k.clave for k in KPI_POR_CLAVE.values() if k.ocultar_ceros]
         self.assertEqual(["checadas_en_turno_por_empleado"], con_ceros_ocultos)
 
+
+
+class DefinicionDeDuracionAnomalaTest(unittest.TestCase):
+    def test_es_un_conteo_por_empleado_de_operaciones_que_solo_se_pinta_en_barras(self):
+        kpi = KPI_POR_CLAVE["checadas_con_duracion_anomala"]
+        self.assertEqual("operaciones", kpi.modulo)
+        self.assertEqual(("empleado",), kpi.dimensiones)
+        self.assertEqual("suma", kpi.agregacion)
+        self.assertEqual("snapshot", kpi.modo)
+        self.assertEqual("numero", kpi.unidad)
+        self.assertFalse(kpi.alcance_proyecto)
+        self.assertEqual("bajo_es_mejor", kpi.direccion)
+        self.assertEqual(("barras",), tuple(kpi.graficas_permitidas))
+        self.assertEqual("barras", kpi.grafica_default)
+        self.assertFalse(kpi.sin_asignar, "una persona siempre es alguien")
+        self.assertFalse(kpi.ocultar_ceros, "no emite ceros: solo los dias con anomalias")
+        self.assertIn(str(TOPE_DURACION_CHECADA_HORAS), kpi.descripcion)
+
+    def test_el_tope_de_las_horas_y_el_de_las_anomalias_son_la_misma_constante(self):
+        # Una sola decision: lo que las horas dejan fuera es lo que las anomalias cuentan.
+        fuente = inspect.getsource(checadas)
+        self.assertEqual(1, fuente.count("cierra - abre > TOPE_DURACION_CHECADA"), "la comparacion vive en un solo helper")
+        self.assertIn("_supera_el_tope", inspect.getsource(checadas.horas_trabajadas_por_empleado_query))
+        self.assertIn("_supera_el_tope", inspect.getsource(checadas.checadas_con_duracion_anomala_query))

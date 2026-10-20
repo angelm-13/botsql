@@ -21,6 +21,7 @@ from app.kpis.modulos import checadas
 from app.kpis.modulos.checadas import (
     TOPE_DURACION_CHECADA_HORAS,
     UMBRAL_SIN_SALIDA_HORAS,
+    checadas_con_duracion_anomala_query,
     checadas_en_turno_por_empleado_query,
     checadas_en_turno_por_equipo_query,
     checadas_entradas_por_equipo_query,
@@ -719,6 +720,100 @@ class HorasTrabajadasTest(ChecadasBase):
         self.assertEqual("Empleado", kpi.etiqueta_dimension)
 
 
+class DuracionAnomalaTest(ChecadasBase):
+    """`checadas_con_duracion_anomala`: cerradas con MAS de 16 h, por empleado y por dia de la SALIDA."""
+
+    def anomalas(self, inicio=D, fin=D1):
+        return self._marcas(checadas_con_duracion_anomala_query, inicio, fin)
+
+    def test_15_h_59_min_y_16_h_exactas_no_son_anomalas_y_16_h_1_min_si(self):
+        self._checada(ANA, local(D, 0, 0), local(D, 15, 59))
+        self._checada(BETO, local(D, 0, 0), local(D, 16, 0))               # 16 h exactas: no es anomala
+        self._checada(CARLA, local(D, 0, 0), local(D, 16, 1))
+        self.assertEqual([(CARLA, D, 1)], self.anomalas())
+
+    def test_un_segundo_por_encima_del_tope_ya_es_anomala(self):
+        self._checada(ANA, local(D, 0, 0, 0), local(D, 16, 0, 0))
+        self._checada(BETO, local(D, 0, 0, 0), local(D, 16, 0, 1))
+        self.assertEqual([(BETO, D, 1)], self.anomalas())
+
+    def test_una_cerrada_al_dia_siguiente_cuenta_en_el_dia_de_la_salida_no_en_el_de_la_entrada(self):
+        self._checada(ANA, local(D, 8, 0), local(D1, 8, 0))                # 24 h
+        self.assertEqual([(ANA, D1, 1)], self.anomalas(D, D1))
+        self.assertEqual([], self.anomalas(D, D), "el dia de la entrada no la ve: es del dia de la salida")
+
+    def test_una_cerrada_al_dia_siguiente_dentro_del_tope_no_es_anomala(self):
+        self._checada(ANA, local(D, 22, 0), local(D1, 6, 0))               # 8 h
+        self._checada(BETO, local(D, 12, 0), local(D1, 4, 0))              # 16 h exactas
+        self.assertEqual([], self.anomalas())
+
+    def test_una_cerrada_despues_de_mas_de_7_dias_aparece_el_dia_de_la_captura(self):
+        entrada = D - timedelta(days=10)
+        self._checada(ANA, local(entrada, 8, 0), local(D, 9, 0))
+        # La ventana de la corrida nocturna (7 dias terminando hoy) ya no alcanza la entrada, pero si la salida.
+        self.assertEqual([(ANA, D, 1)], self.anomalas(D - timedelta(days=6), D))
+        self.assertEqual([], self.anomalas(entrada, entrada), "el dia de la entrada no la ve")
+        # Y es justo la que las horas dejan fuera, en cualquier dia.
+        self.assertEqual([], self._marcas(horas_trabajadas_por_empleado_query, entrada, D))
+
+    def test_una_abierta_no_es_anomala_por_vieja_que_sea(self):
+        self._checada(ANA, local(D - timedelta(days=3), 8, 0))
+        self.assertEqual([], self.anomalas(D - timedelta(days=3), D1))
+
+    def test_una_cancelada_con_baja_o_sin_coordenadas_no_cuenta(self):
+        self._checada(ANA, local(D, 0, 0), local(D1, 0, 0), status="cancelada")
+        self._checada(BETO, local(D, 0, 0), local(D1, 0, 0), baja=datetime(2026, 10, 16, 9, 0))
+        self._checada(CARLA, local(D, 0, 0), local(D1, 0, 0), latitude=None)
+        self.assertEqual([], self.anomalas())
+
+    def test_una_salida_anterior_a_su_entrada_no_es_anomala(self):
+        self._checada(ANA, local(D1, 8, 0), local(D, 8, 0))
+        self.assertEqual([], self.anomalas())
+
+    def test_cruce_de_medianoche_solo_es_anomalo_si_pasa_el_tope(self):
+        self._checada(ANA, local(D, 23, 50), local(D1, 0, 10))             # 20 min: no
+        self._checada(BETO, local(D, 23, 0), local(D1, 16, 30))            # 17 h 30 min: si, y el dia es el de la salida
+        self.assertEqual([(BETO, D1, 1)], self.anomalas())
+
+    def test_el_dia_es_la_hora_de_pared_de_la_salida_sin_convertir_a_utc(self):
+        self._checada(ANA, local(D, 1, 0), local(D, 23, 30))               # 22 h 30 min, salida a las 23:30 locales
+        self.assertEqual([(ANA, D, 1)], self.anomalas())
+
+    def test_cuenta_checadas_y_no_personas_y_separa_empleados_y_dias(self):
+        self._checada(ANA, local(D, 0, 0), local(D, 17, 0))
+        self._checada(ANA, local(D, 0, 30), local(D, 18, 0))               # segunda anomalia de Ana el mismo dia: son 2
+        self._checada(ANA, local(D, 0, 0), local(D1, 17, 0))               # y una de otro dia
+        self._checada(BETO, local(D, 0, 0), local(D, 20, 0))
+        self.assertEqual([(ANA, D, 2), (ANA, D1, 1), (BETO, D, 1)], self.anomalas())
+
+    def test_no_depende_del_equipo_ni_se_duplica_por_estar_en_dos(self):
+        self._checada(DIEGO, local(D, 0, 0), local(D, 20, 0))              # sin equipo: cuenta igual
+        self._checada(BETO, local(D, 0, 0), local(D, 20, 0))               # en dos equipos: una sola vez
+        self.assertEqual([(BETO, D, 1), (DIEGO, D, 1)], self.anomalas())
+
+    def test_una_checada_de_otro_proyecto_cuenta_igual(self):
+        self._checada(ANA, local(D, 0, 0), local(D, 20, 0), id_proyect=PROYECTO_OTRO)
+        self.assertEqual([(ANA, D, 1)], self.anomalas())
+
+    def test_el_rango_incluye_sus_extremos(self):
+        self._checada(ANA, local(D - timedelta(days=1), 0, 0), local(D - timedelta(days=1), 20, 0))
+        self._checada(ANA, local(D, 0, 0), local(D, 20, 0))
+        self._checada(ANA, local(D1, 0, 0), local(D1, 20, 0))
+        self.assertEqual([(ANA, D, 1), (ANA, D1, 1)], self.anomalas(D, D1))
+        self.assertEqual([(ANA, D1, 1)], self.anomalas(D1, D1))
+
+    def test_no_depende_del_reloj_de_hoy(self):
+        self._checada(ANA, local(D, 0, 0), local(D, 20, 0))
+        with ahora_local(local(date(2030, 1, 1), 3, 0)):
+            self.assertEqual([(ANA, D, 1)], self.anomalas())
+
+    def test_lo_que_las_horas_dejan_fuera_es_exactamente_lo_que_las_anomalias_cuentan(self):
+        self._checada(ANA, local(D, 8, 0), local(D, 16, 0))                # 8 h: horas, no anomalia
+        self._checada(ANA, local(D, 17, 0), local(D1, 14, 0))              # 21 h: anomalia, no horas
+        self.assertEqual([(ANA, D, Decimal("480.00"))], self._marcas(horas_trabajadas_por_empleado_query, D, D1))
+        self.assertEqual([(ANA, D1, 1)], self.anomalas())
+
+
 @unittest.skipUnless(engine.dialect.name == "postgresql", "El upsert de snapshots usa INSERT ... ON CONFLICT de PostgreSQL")
 class CorridaFrecuenteDeChecadasTest(ChecadasBase):
     """La corrida de 5 minutos incluye SOLO los KPIs de KPIS_FRECUENTES, y el upsert nocturno no falsifica las fotos."""
@@ -858,6 +953,20 @@ class CorridaFrecuenteDeChecadasTest(ChecadasBase):
         self.assertEqual(7, len(entradas), "los siete dias de la ventana, cada uno con sus ceros")
         self.assertEqual(1.0, entradas[antier][NORTE])
         self.assertEqual(0.0, entradas[D][NORTE])
+
+    # --- las anomalias son nocturnas -----------------------------------------------------------------------
+
+    def test_las_anomalias_las_escribe_la_nocturna_por_dia_de_salida_y_la_corrida_de_5_minutos_no_las_toca(self):
+        anomala = KPI_POR_CLAVE["checadas_con_duracion_anomala"]
+        self._checada(ANA, local(D - timedelta(days=10), 8, 0), local(D, 9, 0))      # entrada de hace 10 dias, salida hoy
+        with self._con_registro((*self.frecuentes, anomala)), ahora_local(local(D, 15, 0)):
+            resultado = tasks_kpis.recalculate_kpi_snapshots_frecuentes()
+        self.assertNotIn("checadas_con_duracion_anomala", resultado["claves"])
+        self.assertEqual({}, self._guardado("checadas_con_duracion_anomala", "id_user"), "la de 5 minutos no la calcula")
+        with self._con_registro((*self.frecuentes, anomala)), self._contenedor_con_fecha(D), ahora_local(local(D, 19, 0)):
+            tasks_kpis.recalculate_kpi_snapshots()
+        self.assertEqual({D: {ANA: 1.0}}, self._guardado("checadas_con_duracion_anomala", "id_user"),
+                         "la nocturna la ve el dia de la salida, aunque la entrada ya no este en su ventana de 7 dias")
 
     # --- la foto por persona -------------------------------------------------------------------------------
 

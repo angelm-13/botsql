@@ -482,5 +482,16 @@
   ],
   "unidad": "minutos",
   "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 45,
+  "clave": "checadas_con_duracion_anomala",
+  "etiqueta": "Checadas con duración anómala por empleado",
+  "modulo": "operaciones",
+  "dimensiones": [
+   "empleado"
+  ],
+  "unidad": "numero",
+  "modo": "snapshot"
  }
 ]

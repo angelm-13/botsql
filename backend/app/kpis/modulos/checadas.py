@@ -274,6 +274,22 @@ def checadas_salidas_por_equipo_query(session, fecha_inicio, fecha_fin, filtros_
 
 # --- horas trabajadas ------------------------------------------------------------------------
 
+def _cerradas_del_rango(session, dia, fecha_inicio, fecha_fin):
+    """`(id_user, entrada, salida)` de las checadas CERRADAS cuyo `dia` (el de la entrada o el de la salida) cae en el rango."""
+    return session.execute(
+        select(Incident.id_user, Incident.incident_date, Incident.close_date)
+        .where(
+            *checadas_vigentes(),
+            Incident.incident_date.isnot(None),
+            Incident.close_date.isnot(None),
+            # Una salida anterior a su entrada no es un turno: el servicio la rechaza, pero un dato directo en BD no.
+            Incident.close_date >= Incident.incident_date,
+            dia >= fecha_inicio,
+            dia <= fecha_fin,
+        )
+    ).all()
+
+
 def _supera_el_tope(abre, cierra) -> bool:
     """La checada cerrada dura MAS de `TOPE_DURACION_CHECADA` (16 h exactas no lo supera). Es el unico lugar que lo decide."""
     return cierra - abre > TOPE_DURACION_CHECADA
@@ -292,19 +308,7 @@ def horas_trabajadas_por_empleado_query(session, fecha_inicio, fecha_fin, filtro
     * Se suma en Python y no en SQL: restar fechas es distinto en SQLite y en PostgreSQL, y el rango es de siete dias
       en la corrida nocturna, asi que son pocas filas.
     """
-    dia = _dia(Incident.incident_date)
-    filas = session.execute(
-        select(Incident.id_user, Incident.incident_date, Incident.close_date)
-        .where(
-            *checadas_vigentes(),
-            Incident.incident_date.isnot(None),
-            Incident.close_date.isnot(None),
-            # Una salida anterior a su entrada no es un turno: el servicio la rechaza, pero un dato directo en BD no.
-            Incident.close_date >= Incident.incident_date,
-            dia >= fecha_inicio,
-            dia <= fecha_fin,
-        )
-    ).all()
+    filas = _cerradas_del_rango(session, _dia(Incident.incident_date), fecha_inicio, fecha_fin)
     minutos: dict[tuple[int, object], Decimal] = defaultdict(Decimal)
     for id_user, abre, cierra in filas:
         if _supera_el_tope(abre, cierra):
@@ -314,6 +318,25 @@ def horas_trabajadas_por_empleado_query(session, fecha_inicio, fecha_fin, filtro
         (id_user, fecha, total.quantize(CENTESIMAS))
         for (id_user, fecha), total in sorted(minutos.items())
     ]
+
+
+def checadas_con_duracion_anomala_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
+    """Checadas cerradas con MAS de `TOPE_DURACION_CHECADA_HORAS` (16) entre la entrada y la salida, por empleado y por dia.
+
+    * Dia: el de la SALIDA (`close_date`), a diferencia de `horas_trabajadas_por_empleado`, que usa el de la entrada. Asi una
+      salida olvidada se detecta el dia en que se captura, aunque la entrada sea de hace mas de siete dias y ya no caiga
+      en la ventana de la corrida nocturna; con el dia de la entrada esa anomalia nunca se veria.
+    * Es el complemento de las horas: lo que el tope saca de ahi aparece aqui. Con exactamente 16 horas no es anomala.
+    * Cuenta checadas, no personas: dos anomalias del mismo empleado el mismo dia son dos. Una abierta no es anomala (para
+      eso esta "sin salida"), y una cancelada o sin coordenadas no es checada.
+    * Solo emite los dias con anomalias. Si una se corrige despues (se edita la salida), la fila que la corrida nocturna ya
+      guardo no se limpia: el upsert solo actualiza lo que la consulta devuelve.
+    """
+    anomalas: dict[tuple[int, object], int] = defaultdict(int)
+    for id_user, abre, cierra in _cerradas_del_rango(session, _dia(Incident.close_date), fecha_inicio, fecha_fin):
+        if _supera_el_tope(abre, cierra):
+            anomalas[(int(id_user), cierra.date())] += 1
+    return [(id_user, fecha, total) for (id_user, fecha), total in sorted(anomalas.items())]
 
 
 # --- definiciones ----------------------------------------------------------------------------
@@ -422,7 +445,7 @@ def definiciones():
             descripcion=(
                 "Minutos trabajados por empleado: suma de (salida - entrada) de las checadas cerradas, por día de la "
                 f"entrada. Una checada sin salida todavía no suma, y una de más de {TOPE_DURACION_CHECADA_HORAS} horas "
-                "tampoco (casi seguro se olvidó la salida): esas salen en «Checadas con duración anómala»."
+                "tampoco (casi seguro se olvidó la salida): esas salen en «Checadas con duración anómala por empleado»."
             ),
         ),
         KpiDefinition(
@@ -442,6 +465,25 @@ def definiciones():
                 f"Foto de ahora: quién está en turno y cuántos minutos lleva desde su entrada (checada abierta de menos de "
                 f"{UMBRAL_SIN_SALIDA_HORAS} horas). Si tiene varias abiertas, cuenta la más reciente. Quien ya no está en "
                 "turno no aparece."
+            ),
+        ),
+        KpiDefinition(
+            clave="checadas_con_duracion_anomala",
+            etiqueta="Checadas con duración anómala por empleado",
+            modulo="operaciones",
+            dimensiones=("empleado",),
+            query_builder=checadas_con_duracion_anomala_query,
+            agregacion="suma",
+            unidad="numero",
+            alcance_proyecto=False,
+            direccion="bajo_es_mejor",
+            graficas_permitidas=barras,
+            grafica_default="barras",
+            descripcion=(
+                f"Checadas cerradas que duraron más de {TOPE_DURACION_CHECADA_HORAS} horas entre la entrada y la salida "
+                "(casi siempre una salida olvidada que se capturó tarde), por empleado y por día de la salida: se ven el "
+                "día en que se capturan, aunque la entrada sea de hace más de una semana. No suman en «Tiempo trabajado "
+                "por empleado», que usa el día de la entrada."
             ),
         ),
     )
