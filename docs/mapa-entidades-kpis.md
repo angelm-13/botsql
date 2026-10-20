@@ -175,17 +175,28 @@ Sin tablas nuevas: una checada es una fila de `incident`. Detalle y decisiones e
 | Entrada | `incident` | `incident_date` (hora de pared GMT-6, sin zona) | El día es `date(incident_date)`, sin convertir | — |
 | Salida | `incident` | `close_date` + estado de cierre | `abierta → cerrada` da 409: la salida queda en `resuelta`. Nada cierra una checada solo | — |
 | Parque | `team` | `id_team`, `team_description`, `deletion_date` | Equipo = parque | `equipo` (`id_team`, catálogo cerrado) |
-| Pertenencia | `nm_team_user` | `id_team`, `id_user`, `deletion_date` | Una persona en dos equipos cuenta en cada uno; sin equipo no aparece | — |
+| Pertenencia | `nm_team_user` | `id_team`, `id_user`, `deletion_date` | Una persona en dos equipos cuenta en cada uno. Sin equipo vigente (sin membresía, o solo con membresías/equipos dados de baja) sale en la fila **«Sin equipo»** (entidad `None`, `sin_asignar=True`, etiqueta de la dimensión `equipo`) y no cuenta en ningún equipo | — |
 
 | Umbral | Valor |
 |---|---|
 | «En turno» | checada abierta con **menos** de 12 h (`UMBRAL_SIN_SALIDA_HORAS`) |
 | «Sin salida» | checada abierta con 12 h **exactas** o más |
+| «Duración anómala» | checada **cerrada** con **más de** 16 h entre entrada y salida (`TOPE_DURACION_CHECADA_HORAS`); 16 h exactas **no** lo es |
 
-| KPI | Frescura |
-|---|---|
-| `checadas_en_turno_por_equipo`, `checadas_sin_salida_por_equipo` | cada 5 min, por clave (`KPIS_FRECUENTES`) |
-| `checadas_entradas_por_equipo`, `checadas_salidas_por_equipo`, `horas_trabajadas_por_empleado` | solo la corrida nocturna (ventana de 7 días) |
+**Abierta** = sin `close_date`, tenga el estatus que tenga: una `en_proceso` cuenta como abierta. **Reabrir** (`resuelta → en_proceso`) borra el `close_date` y **conserva la entrada original**.
+
+| KPI | Dimensión · día | Frescura |
+|---|---|---|
+| `checadas_en_turno_por_equipo`, `checadas_sin_salida_por_equipo` | `equipo` · foto de hoy | cada 5 min, por clave (`KPIS_FRECUENTES`) |
+| `checadas_entradas_por_equipo` | `equipo` · `date(incident_date)` | cada 5 min, solo las filas de hoy; el resto de los días, la corrida nocturna |
+| `checadas_salidas_por_equipo` | `equipo` · `date(close_date)` | ídem |
+| `checadas_en_turno_por_empleado` | `empleado` · foto de hoy (minutos); `ocultar_ceros`: la API omite a quien ya salió | cada 5 min, por clave |
+| `horas_trabajadas_por_empleado` | `empleado` · `date(incident_date)` (día de la **entrada**); excluye las de más de 16 h | solo la corrida nocturna (ventana de 7 días) |
+| `checadas_con_duracion_anomala` | `empleado` · `date(close_date)` (día de la **salida**); cuenta las de más de 16 h | solo la corrida nocturna |
+
+`KPIS_FRECUENTES` son las cinco claves de las filas «cada 5 min». «Corrida nocturna» = 01:00 **UTC** = 19:00 de México (`CELERY_TIMEZONE` vale `UTC` por omisión; ver `docs/arquitectura-kpis.md` §2.1.1).
+Rendimiento medido con 50 000 checadas en una base aislada: una corrida completa de 5 minutos escribe 243 filas y tarda ~215 ms (SELECT 62 ms, upserts 37 ms); todas las consultas son `Seq Scan` de 4–7 ms sin índices por fecha
+(detalle, planes y los índices candidatos —solo descritos— en `docs/arquitectura-kpis.md` §2.7).
 
 Fuera de alcance, y por qué: «llegadas tarde» (no hay turnos, horarios ni descansos) y «marcas fuera de radio» (se pidió no implementarlo).
 
@@ -200,3 +211,5 @@ Fuera de alcance, y por qué: «llegadas tarde» (no hay turnos, horarios ni des
   vacías en la base local.
 - Checadas: no hay ninguna en la base local (0 con coordenadas), así que el volumen y la calidad de los datos reales de Comala (si n8n
   manda siempre latitud, qué estado usa para la salida, si hay entradas duplicadas) no se pudieron comprobar. Las pruebas usan fixtures propias.
+  La medición de rendimiento (2026-10-20) usó 50 000 checadas **sintéticas** en una base aislada; el volumen real de Comala sigue sin conocerse.
+- Si el tope de 16 h es el correcto para los turnos reales de Comala: es una constante (`TOPE_DURACION_CHECADA_HORAS`), no un dato medido.

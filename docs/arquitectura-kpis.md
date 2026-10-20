@@ -144,7 +144,7 @@ Rama `initAlan` · análisis del 2026-10-12 · **documento de revisión, sin com
 - Los KPIs `vivo` se saltan (`:43-51`).
 - La corrida frecuente (`recalculate_kpi_snapshots_frecuentes`, cada 5 min, solo hoy) elige por **módulo**
   (`MODULOS_FRECUENTES`) **y por clave de KPI** (`KPIS_FRECUENTES`, `app/kpis/frecuencia.py`): un KPI entra si su
-  módulo o su clave están. Sirve para meter dos fotos de `operaciones` sin recalcular el resto del módulo (§2.7).
+  módulo o su clave están. Sirve para meter cinco KPIs de checadas de `operaciones` sin recalcular el resto del módulo (§2.7).
 
 ### Capa 4 — `kpi_snapshot`
 
@@ -565,8 +565,11 @@ motor actual). Filas locales: 0.
 
 ### 2.1.1 Fotos del día en curso y refresco frecuente (implementado)
 
-**Cómo se refrescan los KPIs.** La corrida nocturna (`recalculate_kpi_snapshots`, 01:00) recalcula una
-ventana de 7 días de TODOS los módulos: sin cambios. Además, `recalculate_kpi_snapshots_frecuentes` recalcula
+**Cómo se refrescan los KPIs.** La corrida nocturna (`recalculate_kpi_snapshots`, `crontab(hour=1)`) recalcula una
+ventana de 7 días de TODOS los módulos: sin cambios. **Corre a las 01:00 UTC = 19:00 de México**: Celery usa
+`CELERY_TIMEZONE`, que vale `UTC` por omisión y ningún archivo del repo fija (`docker-compose.yml` y `k8s/` no la mencionan); verificado el 2026-10-20 en el contenedor local de `celery-beat`
+(`celery.conf.timezone = UTC`, próxima corrida 01:00 UTC). Un secreto de un clúster real podría fijarla: no se consultó. Decisión pendiente
+documentada en `docs/despliegues/2026-10-15_kpis_restaurante_zona_horaria_y_dia_operativo.md`. Además, `recalculate_kpi_snapshots_frecuentes` recalcula
 **solo hoy** y **solo los módulos de `MODULOS_FRECUENTES`** (`restaurante`, `pos`;
 `app/kpis/frecuencia.py`) más los KPIs sueltos de `KPIS_FRECUENTES` (§2.7) cada `INTERVALO_MINUTOS_POR_OMISION` = 5 minutos (beat con `timedelta`; la variable
 `KPI_FRECUENTES_INTERVALO_MIN`, 1 a 60, solo la sobreescribe; el beat expira cada corrida al llegar la
@@ -795,6 +798,7 @@ necesitaría para ser medible:
 
 Implementado el 2026-10-19 para Comala. **Sin tablas, columnas, índices ni migraciones nuevas**: una checada es una
 fila de `incident`. Todo el código está en `app/kpis/modulos/checadas.py`.
+Ampliado el 2026-10-20: tope de duración de 16 h y el KPI `checadas_con_duracion_anomala` (siete KPIs en total), medición con 50 000 checadas y una propuesta pendiente de refresco.
 
 ### Qué es una checada
 
@@ -808,6 +812,12 @@ fila de `incident`. Todo el código está en `app/kpis/modulos/checadas.py`.
   `close_date` más un estado de cierre. Desde `abierta` no se llega a `cerrada` (409): la salida queda en `resuelta`. Nada en
   el servidor cierra una checada sola, ni impide dos abiertas del mismo usuario.
 - **Una cancelada no cuenta** ni como entrada, ni como salida, ni como horas: es un error de captura.
+- **«Abierta» es no tener `close_date`, no un estatus concreto.** Una checada `en_proceso` (el flujo permite `abierta → en_proceso → resuelta`;
+  `en_proceso` no es un estatus de cierre) cuenta como abierta: la persona no ha marcado su salida, tenga el estatus que tenga.
+  **Reabrir** (`resuelta → en_proceso`) borra el `close_date` y **conserva la entrada original**: la checada vuelve a contar como abierta y su antigüedad corre
+  desde la entrada de siempre, así que una reabierta puede caer de golpe en «sin salida»; y si se vuelve a cerrar días después, su duración se mide contra esa
+  entrada original (puede salir como anomalía, ver «Duración anómala»). Probado con el servicio real
+  (`test_el_ciclo_real_de_la_incidencia_cierra_y_reabre_la_checada`).
 
 ### Equipo = parque
 
@@ -815,10 +825,13 @@ fila de `incident`. Todo el código está en `app/kpis/modulos/checadas.py`.
 `catalogo`, **no** `abierta`: son pocos y el Dashboard no los agrupa en «Otros»).
 
 - Una persona en **dos equipos cuenta en cada uno**.
-- Una persona **sin equipo no aparece** en los KPIs por equipo (no hay a quién atribuirla); sí suma en el de tiempo trabajado.
+- Una persona **sin equipo vigente** (sin membresía, o solo con membresías o equipos dados de baja) sale en una fila propia, **«Sin equipo»**
+  (la consulta emite entidad `None`; los cuatro KPIs por equipo declaran `sin_asignar=True`, `_totales()` la agrupa bajo la llave `sin_asignar` y la dimensión `equipo` la rotula «Sin equipo» con `etiqueta_sin_asignar`), y **no cuenta en ningún equipo**; quien
+  tiene equipo nunca cuenta en «Sin equipo». La condición es un `NOT EXISTS` (`_tiene_equipo()`) y no un `LEFT JOIN`: con el `LEFT JOIN`, quien tiene un
+  equipo vigente y otro dado de baja saldría también como «sin equipo». La fila sale **siempre, con su cero**. El KPI de tiempo trabajado no depende del equipo.
 - Las membresías y los equipos con baja no cuentan.
-- Por eso **estos KPIs no son aditivos entre equipos**: el `total` que `_totales()` suma contaría dos veces a quien está en dos.
-  El registro no tiene una marca de «no aditivo»; la mitigación es que los cinco solo permiten **barras** (un valor por equipo; la
+- Por eso **los KPIs por equipo no son aditivos entre equipos**: el `total` que `_totales()` suma contaría dos veces a quien está en dos.
+  El registro no tiene una marca de «no aditivo»; la mitigación es que todos los KPIs de checadas solo permiten **barras** (un valor por equipo; la
   barra no usa el `total`, el «número» y la serie por periodo sí). Si algún día se permiten otras gráficas, hay que agregar esa marca.
 
 ### Umbral
@@ -826,7 +839,27 @@ fila de `incident`. Todo el código está en `app/kpis/modulos/checadas.py`.
 `UMBRAL_SIN_SALIDA_HORAS = 12`. Una checada **abierta** (sin `close_date`) es «en turno» mientras lleve **menos** de 12 horas
 abierta; con 12 horas **exactas** o más es «sin salida».
 
-### Los cinco KPIs (todos `operaciones`, `alcance_proyecto=False`, solo barras)
+### Duración anómala: el tope de 16 horas
+
+`TOPE_DURACION_CHECADA_HORAS = 16` (`TOPE_DURACION_CHECADA`). Una checada **cerrada** con **más de** 16 horas entre `incident_date` y `close_date` casi seguro tiene
+la salida mal capturada (se olvidó de marcarla y se cerró después): no es tiempo trabajado. **Exactamente 16 horas sí cuenta** (la comparación es estricta, en un
+solo helper, `_supera_el_tope()`, que usan los dos KPIs; 16 h y 1 segundo ya la supera).
+
+- `horas_trabajadas_por_empleado` **excluye** esas checadas. Sigue contando por el día de la **entrada**.
+- `checadas_con_duracion_anomala` las **cuenta**, por empleado y por el día de la **salida** (`close_date`).
+
+**Por qué los dos KPIs fechan distinto.** Una salida olvidada se descubre cuando alguien la captura, no cuando ocurrió. Si la anomalía se fechara por la entrada, una
+checada abierta hace 10 días y cerrada hoy caería en un día que la corrida nocturna (ventana de 7 días terminando hoy) ya no recalcula, y **nunca se vería**. Por la
+salida cae en el día de la captura, que siempre está dentro de la ventana. Efecto: una checada de 24 h (entrada el 15 a las 08:00, salida el 16 a las 08:00) **no suma horas en
+ningún día** y aparece como anomalía el **16**. Con 16 h exactas pasa lo contrario: suma 960 minutos el día 15 y no es anomalía. Cuenta **checadas**, no personas (dos
+anomalías del mismo empleado el mismo día son dos). Una abierta no es anomalía por vieja que sea (para eso está «sin salida»).
+
+**Limitación conocida.** Solo emite los días con anomalías, sin ceros explícitos (no hay un conjunto acotado de empleado × día como equipos × día). Si una anomalía se
+corrige después (se edita la salida y ya no pasa de 16 h), la fila que la corrida nocturna ya guardó **no se limpia**: el upsert solo actualiza lo que la consulta devuelve y
+nunca borra. Es la misma limitación que ya tiene `horas_trabajadas_por_empleado` si se cancela una checada después de contarla. Resolverla es tocar el job compartido
+(borrar o poner en cero las filas del rango que ya no salen), una decisión de arquitectura aparte.
+
+### Los siete KPIs (todos `operaciones`, `alcance_proyecto=False`, solo barras)
 
 | KPI | Agregación · dimensión | Qué mide | Día |
 |---|---|---|---|
@@ -834,7 +867,13 @@ abierta; con 12 horas **exactas** o más es «sin salida».
 | `checadas_sin_salida_por_equipo` | `ultimo` · `equipo` | Foto de ahora: personas distintas con una checada abierta de ≥ 12 h | — (foto de hoy) |
 | `checadas_entradas_por_equipo` | `suma` · `equipo` | Checadas abiertas ese día (cuenta checadas, no personas) | `date(incident_date)` |
 | `checadas_salidas_por_equipo` | `suma` · `equipo` | Checadas cerradas ese día | `date(close_date)` |
-| `horas_trabajadas_por_empleado` | `suma` · `empleado`, unidad `minutos` | `close_date - incident_date` de las cerradas | `date(incident_date)` (día de la entrada) |
+| `horas_trabajadas_por_empleado` | `suma` · `empleado`, unidad `minutos` | `close_date - incident_date` de las cerradas **de 16 h o menos** | `date(incident_date)` (día de la **entrada**) |
+| `checadas_en_turno_por_empleado` | `ultimo` · `empleado`, unidad `minutos` | Foto de ahora: minutos desde la entrada de cada persona con una checada abierta de < 12 h (si tiene varias, la más reciente). Quien ya no está en turno sale en **cero** y la API lo omite (`ocultar_ceros=True`) | — (foto de hoy) |
+| `checadas_con_duracion_anomala` | `suma` · `empleado`, unidad `numero`, `bajo_es_mejor` | Cerradas con **más de 16 h**: cuenta checadas | `date(close_date)` (día de la **salida**) |
+
+`ocultar_ceros` (campo de `KpiDefinition`, validado: solo un KPI `snapshot` con entidades) hace que `_totales()` no devuelva las entidades cuyo valor es 0. Solo lo usa
+`checadas_en_turno_por_empleado`: el job escribe un 0 para quien ya salió (para que el valor viejo no se quede pegado) y ese 0 no debe pintarse como una barra vacía por
+cada persona que ya se fue. Los equipos en cero **sí** se pintan (un parque sin nadie es un dato). El total no cambia: un cero no suma.
 
 Entradas y salidas son **dos KPIs** y no uno con dos series porque el snapshot guarda una sola dimensión por fila y su llave única es
 `(kpi, dimension_key, periodo)`: con `equipo` como dimensión, la entrada y la salida del mismo equipo y día se pisarían.
@@ -851,10 +890,17 @@ Las fotos **no filtran por día calendario**, solo por antigüedad: una entrada 
 
 ### Frecuencia y qué hace la corrida nocturna
 
-- Las dos fotos entran a la corrida de 5 minutos **por clave** (`KPIS_FRECUENTES`), sin arrastrar al resto de `operaciones`. Entradas, salidas
-  y tiempo trabajado siguen **solo con la corrida nocturna** (01:00 UTC = 19:00 de México, ventana de 7 días).
+- **`KPIS_FRECUENTES` tiene cinco claves** y entran a la corrida de 5 minutos **por clave**, sin arrastrar al resto de `operaciones`:
+  `checadas_en_turno_por_equipo`, `checadas_sin_salida_por_equipo`, `checadas_entradas_por_equipo`, `checadas_salidas_por_equipo` y
+  `checadas_en_turno_por_empleado`. La corrida llama a cada una con `(hoy, hoy)`: una foto escribe hoy, y entradas/salidas recalculan **solo las filas de hoy** sin tocar los
+  días ya guardados. **Horas trabajadas y duración anómala siguen solo con la corrida nocturna**: dependen de salidas que se capturan después.
+- **«Nocturna» es 01:00 UTC = 19:00 de México** (ventana de 7 días; ver §2.1.1). Consecuencias: una salida o un cierre capturados a las 20:00 se cuentan en horas
+  y anomalías hasta las 19:00 del día siguiente; y las filas de entradas/salidas de un día ya terminado (D) se completan hasta las 19:00 del día D+1: entre medianoche y esa hora
+  solo traen lo que escribió la última corrida de 5 minutos de D (ver «Propuesta pendiente»).
 - **Cada equipo vigente sale con su cero.** El upsert (`ON CONFLICT … DO UPDATE`) solo actualiza lo que la consulta devuelve: si un
-  equipo pasa de 3 personas a 0 y no saliera, conservaría el 3.
+  equipo pasa de 3 personas a 0 y no saliera, conservaría el 3. Lo mismo vale para «Sin equipo» y, en entradas y salidas, para **cada día del rango**
+  (cancelar la única entrada del día debe bajarla a 0), y en el KPI por persona para quien ya salió de turno (candidatos: quien tiene una checada desde 12 h antes de que
+  comenzara hoy; se calculan sin mirar si se canceló o se borró).
 - **La foto solo se emite si `fecha_fin` es el día local de hoy.** Efecto sobre la nocturna: de los 7 días de la ventana solo se escribe hoy; la
   foto de ayer no se reescribe con el estado de hoy. Si el contenedor corre en UTC, a las 19:00 de México su `date.today()` ya es el día siguiente: la
   consulta ve que no es hoy y no escribe nada (la corrida frecuente, que fecha con `hoy_negocio()`, la mantiene). Un backfill de un rango pasado
@@ -862,6 +908,57 @@ Las fotos **no filtran por día calendario**, solo por antigüedad: una entrada 
   `fecha_fin` que reciban.
 - **Tiempo trabajado y las salidas tardías:** el día D se recalcula solo mientras esté en la ventana de 7 días. Una salida capturada después
   de eso no cambia las horas de D; hay que reprocesar el rango con el script.
+
+### Medición con 50 000 checadas (2026-10-20)
+
+**Cómo.** Base PostgreSQL **aislada** (proyecto de compose propio, creado y borrado para la medición; nunca la base local), `postgres:16-alpine` con los valores por omisión
+(`shared_buffers` 128 MB, `work_mem` 4 MB), esquema real (`init.sql` + las 137 migraciones) y datos sintéticos con semilla fija: 50 000 checadas (200 empleados × 250 días; 8 equipos vigentes y 1 de
+baja; 20 personas en dos equipos y 20 sin equipo vigente; 639 abiertas, 729 cerradas con más de 16 h, 502 canceladas, 275 con baja) más 5 000 incidencias sin latitud. Tabla e índices: 9.2 MB, todo en caché. Las consultas son las
+funciones reales de `checadas.py` (se capturó el SQL de SQLAlchemy y se repitió bajo `EXPLAIN (ANALYZE, BUFFERS)`). `incident` solo tiene índices por `id_user`, `id_incident_type`, `created_by`, `external_folio` e
+`id_proyect`; **ninguno por `incident_date`, `close_date` ni `latitude`**.
+
+| KPI (llamado con `(hoy, hoy)`) | Función completa (mediana, 15 corridas) | Sentencias SELECT (Execution Time de Postgres) |
+|---|---|---|
+| `checadas_en_turno_por_equipo` | 12.5 ms | 4.8 · 0.05 · 4.5 ms |
+| `checadas_sin_salida_por_equipo` | 12.2 ms | 4.8 · 0.03 · 4.7 ms |
+| `checadas_entradas_por_equipo` | 15.3 ms | 7.1 · 6.2 · 0.04 ms |
+| `checadas_salidas_por_equipo` | 15.7 ms | 6.6 · 6.4 · 0.02 ms |
+| `checadas_en_turno_por_empleado` | 10.8 ms | 4.5 · 4.3 ms |
+| *Nocturnas, ventana de 7 días:* `horas_trabajadas_por_empleado` · `checadas_con_duracion_anomala` | 12.4 ms · 11.1 ms | 7.0 · 7.1 ms |
+
+**Planes.** Todas son `Seq Scan` sobre `incident` (823 buffers; descartan unas 54 800 de ~55 000 filas). Las de en turno / sin salida filtran por
+`latitude IS NOT NULL AND close_date IS NULL AND incident_date > corte` (109 filas). Entradas y salidas filtran por **`date(incident_date)`** / **`date(close_date)`** (`func.date(columna)`): un filtro **no
+sargable**, así que un índice simple por `incident_date` o `close_date` no se usaría tal como están escritas.
+
+**Una corrida completa de 5 minutos** (`_recalcular_kpi_snapshots_en_sesion` con `KPIS_FRECUENTES` y `MODULOS_FRECUENTES`, 40 corridas, máquina en reposo): **243 filas escritas**
+(31 SELECT y 243 upserts de una fila), **mediana 215 ms** (mínimo 206 ms). De eso, SELECT 62 ms y upserts 37 ms (0.15 ms por fila); el COMMIT es 0.8 ms; los ~115 ms restantes están fuera del cursor
+de la base y son, por inferencia (no se perfiló), la construcción y compilación de las 243 sentencias de upsert en Python. Es menos del 0.1 % del intervalo de 300 s. Con la máquina bajo carga ajena la
+mediana subió a 1.3 s: sigue siendo irrelevante para el intervalo, pero las cifras de milisegundos son de una ventana tranquila.
+
+**Extrapolación (estimación, no medida).** El `Seq Scan` cuesta ~0.08–0.13 µs por fila de `incident`, lineal. Con 10 veces más filas (~550 000: 2 000 empleados durante un año, o ~10 años de los 200 de la prueba)
+serían unos 45–70 ms por sentencia y ~0.5 s de SELECT por corrida; con 100 veces, 4–7 s por sentencia. Hoy no hay motivo para un índice.
+
+**Índices candidatos (solo descritos: no se crearon ni se probaron, ni siquiera en la base de la medición; la decisión es de Alan).**
+1. Para las fotos (en turno, sin salida, en turno por persona): un índice **parcial** sobre `incident (incident_date) WHERE latitude IS NOT NULL AND close_date IS NULL AND deletion_date IS NULL`. Cubriría
+   ~640 de 50 000 filas (1.3 %), así que sería diminuto. Para el KPI por persona, la consulta de candidatos no filtra por `close_date`, y se serviría mejor con `WHERE latitude IS NOT NULL`.
+2. Para entradas y salidas: o índices de **expresión** sobre `date(incident_date)` y `date(close_date)` (parciales, `WHERE latitude IS NOT NULL`), o **reescribir el filtro** como rango semiabierto
+   (`col >= d AND col < d + 1`), con lo que un índice simple por `incident_date` / `close_date` sí se usaría. Reescribir toca código del KPI, no esquema.
+Los de horas y anomalías (nocturnos) filtran por `date(...)` y por `close_date IS NOT NULL`: se beneficiarían de lo mismo.
+
+### Propuesta pendiente (no implementada): completar el día anterior después de medianoche
+
+**Problema.** La corrida de 5 minutos recalcula solo hoy, y la nocturna corre a las 19:00 de México. Cuando termina el día D, las filas de `checadas_entradas_por_equipo` y `checadas_salidas_por_equipo` de D se quedan con lo que escribió la
+última corrida de 5 minutos de D (puede faltar lo marcado en los últimos ≤ 5 minutos antes de medianoche, p. ej. un turno nocturno que entra a las 23:58) **hasta las 19:00 del día D+1**: unas 19 horas.
+
+**Propuesta.** En `recalculate_kpi_snapshots_frecuentes`, durante la primera hora local del día (12 corridas), llamar a los cinco KPIs de `KPIS_FRECUENTES` con `(ayer, hoy)` en lugar de `(hoy, hoy)`. Las fotos usan solo `fecha_fin` (`_foto_por_equipo` y el
+KPI por persona regresan `[]` si no es hoy), así que no cambian; entradas y salidas recalculan los dos días, con sus ceros. La regla de «primera hora» se evalúa con `ahora_negocio()`, nunca con el reloj del contenedor.
+
+**Costo (medido en la base de la medición, 40 corridas).** Con `(ayer, hoy)`: **261 filas** en vez de 243 (+18 upserts: 2 KPIs × 9 filas × 1 día), mediana **221 ms** contra 215 ms (**+6 ms, ~3 %**). Los SELECT no cambian (~62 ms) porque ya son un recorrido completo
+de la tabla sea cual sea el rango. Son 12 corridas al día: ~0.1 s diarios en total. Para recorrer **todas** las corridas con `(ayer, hoy)` (sin regla horaria) el costo sería el mismo +6 ms × 288 corridas/día.
+**No medido:** si `(ayer, hoy)` se aplicara también a los KPIs de restaurante de `MODULOS_FRECUENTES` (la función recibe un solo rango para todo lo que corre), habría que medirlo; la propuesta lo evita llamando solo a las cinco claves.
+
+**Valoración.** Costo despreciable; el beneficio es acotado (≤ 5 minutos de datos en las filas de ayer, durante ≤ 19 horas) y solo lo nota quien mire «ayer» después de medianoche o tenga turnos que crucen la hora. El arreglo de fondo es otro: que la
+nocturna corra de noche en hora local (`CELERY_TIMEZONE`), decisión pendiente de Alan que mueve todas las tareas programadas.
 
 ### Alcance y filtro por equipo
 
@@ -874,7 +971,7 @@ Las fotos **no filtran por día calendario**, solo por antigüedad: una entrada 
 
 «Marcas fuera de radio» y «llegadas tarde» (no hay turnos, horarios ni descansos en el modelo: llegar tarde exigiría tablas nuevas). La asignación de los KPIs a un rol de Comala (`adm_asistencias`):
 se hace a mano en `/kpi_permissions` o con un perfil `comala` en `scripts/seed_kpi_permissions.py` (todavía no existe; hoy solo está `adser`).
-Sin esa asignación, ningún rol que no sea superusuario ve los KPIs nuevos.
+Sin esa asignación, ningún rol que no sea superusuario ve los siete KPIs de checadas. Los KPIs por equipo además exigen alcance **Todos** (ver arriba), y los de `alcance_proyecto=False` solo se pueden dar a un rol **no acotado a proyecto** (`acotado_a_proyecto=False`).
 
 ---
 
