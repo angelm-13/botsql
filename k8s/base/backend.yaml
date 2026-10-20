@@ -240,13 +240,18 @@ spec:
           envFrom:
             - secretRef:
                 name: app-secrets
+          # Memoria: 320Mi se quedaba corto. El livenessProbe de abajo arranca un
+          # segundo interprete de Python (inspect ping) DENTRO del contenedor y,
+          # sumado a los 3 procesos del worker, rebasaba el limite: OOMKilled cada
+          # pocas horas (2026-10-20: 8 reinicios en adser-prod, 18 en comala-prod,
+          # 23 en torredigital-prod; Last State OOMKilled en los tres).
           resources:
             requests:
               cpu: 100m
-              memory: 160Mi
+              memory: 256Mi
             limits:
               cpu: 400m
-              memory: 320Mi
+              memory: 512Mi
           livenessProbe:
             # No hay endpoint HTTP en un worker de Celery — "inspect ping"
             # confirma que el proceso sigue respondiendo a control commands
