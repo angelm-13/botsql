@@ -165,6 +165,31 @@ class FotosDeChecadasTest(ChecadasBase):
             self.assertEqual(0, self.en_turno()[NORTE], "12 h exactas: ya no esta en turno")
             self.assertEqual(1, self.sin_salida()[NORTE], "12 h exactas: sin salida")
 
+    def test_el_borde_de_12_h_separa_a_varias_personas_a_la_vez_sin_solaparse(self):
+        ahora = local(D, 15, 0)
+        self._checada(ANA, ahora - timedelta(hours=11, minutes=59, seconds=59))    # Norte
+        self._checada(BETO, ahora - timedelta(hours=12))                           # Norte y Sur: 12 h exactas
+        self._checada(CARLA, ahora - timedelta(hours=12, seconds=1))               # Sur
+        with ahora_local(ahora):
+            self.assertEqual({NORTE: 1, SUR: 0, VACIO: 0}, self.en_turno(), "solo Ana esta en turno")
+            self.assertEqual({NORTE: 1, SUR: 2, VACIO: 0}, self.sin_salida(), "Beto (12 h exactas, en sus dos equipos) y Carla")
+
+    def test_el_borde_de_12_h_cruzando_la_medianoche(self):
+        # A las 08:00 del dia siguiente: la de las 20:00 lleva 12 h exactas (sin salida) y la de las 20:00:01 un segundo menos (en turno).
+        self._checada(ANA, local(D, 20, 0, 0))              # Norte
+        self._checada(CARLA, local(D, 20, 0, 1))            # Sur
+        with ahora_local(local(D1, 8, 0, 0)):
+            self.assertEqual({NORTE: 0, SUR: 1, VACIO: 0}, self.en_turno(D1))
+            self.assertEqual({NORTE: 1, SUR: 0, VACIO: 0}, self.sin_salida(D1))
+
+    def test_el_borde_de_12_h_tambien_separa_a_quien_no_tiene_equipo(self):
+        ahora = local(D, 15, 0)
+        self._checada(DIEGO, ahora - timedelta(hours=11, minutes=59, seconds=59))
+        self._checada(FRANCO, ahora - timedelta(hours=12))                         # solo esta en un equipo dado de baja: sin equipo
+        with ahora_local(ahora):
+            self.assertEqual(1, self.sin_equipo_en_turno(), "Diego")
+            self.assertEqual(1, self.sin_equipo_sin_salida(), "Franco, con 12 h exactas")
+
     def test_el_umbral_es_una_constante_con_nombre(self):
         self.assertEqual(12, UMBRAL_SIN_SALIDA_HORAS)
         self.assertEqual(timedelta(hours=12), checadas.UMBRAL_SIN_SALIDA)
@@ -370,6 +395,40 @@ class EnTurnoPorEmpleadoTest(ChecadasBase):
         self._checada(ANA, local(D, 3, 0))
         with ahora_local(local(D, 15, 0)):
             self.assertEqual(Decimal("0.00"), self.foto()[ANA], "12 h exactas: sin salida, no en turno")
+
+    def test_el_borde_de_12_h_con_varias_personas_a_la_vez(self):
+        ahora = local(D, 15, 0)
+        self._checada(ANA, ahora - timedelta(hours=11, minutes=59, seconds=59))
+        self._checada(BETO, ahora - timedelta(hours=12))
+        self._checada(CARLA, ahora - timedelta(hours=12, seconds=1))
+        with ahora_local(ahora):
+            foto = self.foto()
+        self.assertEqual(Decimal("719.98"), foto[ANA], "11 h 59 min 59 s: sigue en turno")
+        self.assertEqual(Decimal("0.00"), foto[BETO], "12 h exactas: fuera de turno")
+        self.assertEqual(Decimal("0.00"), foto[CARLA], "12 h y un segundo: fuera de turno")
+
+    def test_el_borde_de_12_h_cruzando_la_medianoche(self):
+        self._checada(ANA, local(D, 20, 0, 0))              # a las 08:00 del dia siguiente: 12 h exactas
+        self._checada(CARLA, local(D, 20, 0, 1))            # un segundo menos
+        with ahora_local(local(D1, 8, 0, 0)):
+            foto = self.foto(D1)
+        self.assertEqual(Decimal("0.00"), foto[ANA])
+        self.assertEqual(Decimal("719.98"), foto[CARLA])
+
+    def test_las_tres_consultas_coinciden_en_quien_esta_en_turno_en_el_borde_de_12_h(self):
+        # El KPI por persona y las dos fotos por equipo comparten el corte de 12 h: nadie puede estar en turno en una y sin salida en otra.
+        ahora = local(D, 15, 0)
+        self._checada(ANA, ahora - timedelta(hours=11, minutes=59, seconds=59))    # Norte, en turno
+        self._checada(BETO, ahora - timedelta(hours=12))                           # Norte y Sur, sin salida
+        self._checada(DIEGO, ahora - timedelta(hours=11, minutes=59, seconds=59))  # sin equipo, en turno
+        self._checada(FRANCO, ahora - timedelta(hours=12))                         # sin equipo, sin salida
+        with ahora_local(ahora):
+            en_turno_por_persona = {u for u, minutos in self.foto().items() if minutos > 0}
+            en_turno = {id_team: valor for id_team, (_, valor) in self._foto(checadas_en_turno_por_equipo_query, D).items()}
+            sin_salida = {id_team: valor for id_team, (_, valor) in self._foto(checadas_sin_salida_por_equipo_query, D).items()}
+        self.assertEqual({ANA, DIEGO}, en_turno_por_persona)
+        self.assertEqual({NORTE: 1, SUR: 0, VACIO: 0, None: 1}, en_turno)
+        self.assertEqual({NORTE: 1, SUR: 1, VACIO: 0, None: 1}, sin_salida)
 
     def test_una_entrada_que_cruza_la_medianoche_sigue_contando_sus_minutos(self):
         self._checada(ANA, local(D, 23, 50))
