@@ -682,6 +682,14 @@ export default function InventoryTracePage() {
                             .toLowerCase().replace(/[^a-z]+/g, "_")}`,
                           it.effective_status || it.product_status)}
                         </span>
+                        {/* La condicion (nuevo / usado) no pinta el color -ese lo
+                            decide donde esta la pieza-, pero se sigue diciendo. */}
+                        {["NUEVO", "USADO"].includes(normalizarEstatus(it.product_status)) && (
+                          <span className="trace-chip muted">
+                            {t(`trace.condition_${normalizarEstatus(it.product_status).toLowerCase()}`,
+                              normalizarEstatus(it.product_status) === "NUEVO" ? "Nuevo" : "Usado")}
+                          </span>
+                        )}
                       </p>
                     )}
 

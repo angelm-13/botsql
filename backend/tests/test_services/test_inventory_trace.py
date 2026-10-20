@@ -180,6 +180,18 @@ class TestElEstatusQueSePinta(unittest.TestCase):
         self.assertEqual("SALIDA", estatus_efectivo(
             "SALIDA", self.SALIDAS, [{"quantity": 3}]))
 
+    def test_nuevo_and_usado_are_condition_not_location(self):
+        """Quien marca "usado" desde el selector del producto no puede escoger
+        ENTRADA (no esta en el catalogo): con existencia en el almacen se ve verde."""
+        for estado in ("usado", "nuevo", "Usado"):
+            with self.subTest(estado=estado):
+                self.assertEqual("ENTRADA", estatus_efectivo(estado, None, [{"quantity": 1}]))
+                self.assertEqual("ENTRADA", estatus_efectivo(
+                    estado, self.SALIDAS, [{"quantity": 1}]))
+                self.assertEqual("SALIDA", estatus_efectivo(estado, self.SALIDAS, []))
+                # Sin existencia ni salidas no hay de donde concluir.
+                self.assertEqual(estado, estatus_efectivo(estado, None, []))
+
     def test_salida_with_nothing_anywhere_is_left_alone(self):
         self.assertEqual("SALIDA", estatus_efectivo("SALIDA", None, []))
 

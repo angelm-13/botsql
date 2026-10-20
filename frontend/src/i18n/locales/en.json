@@ -4582,6 +4582,18 @@
     "return_placeholder": "E.g. What material exactly?",
     "return_send": "Send back"
   },
+  "stock_adjust": {
+    "title": "Adjust stock",
+    "hint": "History is never deleted: the adjustment is recorded with your name, the date and the reason.",
+    "direction": "What is being corrected?",
+    "remove": "Remove stock (entered too much)",
+    "add": "Add stock (the count found more)",
+    "quantity": "Quantity",
+    "reason": "Reason",
+    "reason_placeholder": "E.g. the entry was captured twice",
+    "save": "Record adjustment",
+    "registered": "adjusted."
+  },
   "stock_entry": {
     "title": "Register stock in",
     "quantity": "Quantity received",

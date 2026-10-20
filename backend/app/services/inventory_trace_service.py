@@ -391,6 +391,17 @@ def estatus_efectivo(product_status, on_loan, sitios) -> str:
     texto = str(product_status or "")
     clave = texto.strip().upper()
     fuera = int((on_loan or {}).get("quantity") or 0) > 0
+    # NUEVO y USADO son la condicion de la pieza, no donde esta: el selector del
+    # producto solo ofrece los estados del catalogo -ENTRADA no esta-, asi que
+    # quien lo marca "usado" nunca lo veia verde por mas existencia que hubiera.
+    # Para el color se tratan como ENTRADA mientras haya algo en el almacen, y
+    # como SALIDA si todo salio; la condicion se sigue mandando en `product_status`.
+    if clave in ("NUEVO", "USADO"):
+        if sitios:
+            return "ENTRADA"
+        if fuera:
+            return "SALIDA"
+        return texto
     if fuera and not sitios and clave in ("", "ENTRADA"):
         return "SALIDA"
     if clave == "SALIDA" and not fuera and sitios:

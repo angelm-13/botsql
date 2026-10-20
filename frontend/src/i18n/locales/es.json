@@ -4698,6 +4698,18 @@
     "return_placeholder": "Ej. ¿Qué material es exactamente?",
     "return_send": "Devolver"
   },
+  "stock_adjust": {
+    "title": "Ajustar existencia",
+    "hint": "El historial no se borra: el ajuste queda registrado con tu nombre, la fecha y el motivo.",
+    "direction": "¿Qué se corrige?",
+    "remove": "Quitar existencia (capturé de más)",
+    "add": "Agregar existencia (el conteo encontró de más)",
+    "quantity": "Cantidad",
+    "reason": "Motivo",
+    "reason_placeholder": "Ej. la entrada se capturó dos veces",
+    "save": "Registrar ajuste",
+    "registered": "ajustadas."
+  },
   "stock_entry": {
     "title": "Registrar entrada",
     "quantity": "Cantidad que entra",
