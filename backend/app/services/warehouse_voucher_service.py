@@ -282,6 +282,20 @@ def _bitacora(db, user_data: dict, vale, accion: str, **datos) -> None:
     )
 
 
+def _fecha_en_que_se_necesita(valor):
+    """Para cuando se necesita la herramienta. Opcional y solo informativa.
+
+    Una fecha ya pasada se rechaza: casi siempre es un dedazo en el ano.
+    """
+    fecha = _fecha(valor, campo="needed_date")
+    if fecha is None:
+        return None
+    if fecha.date() < _ahora().date():
+        raise AppError("errors.voucher_needed_date_in_the_past", 400,
+                       {"field": "needed_date"})
+    return fecha.date()
+
+
 def _fecha_de_regreso(valor):
     """Cuando debe volver. Opcional: el prestamo no tiene fecha fija.
 
@@ -943,6 +957,7 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
         vence = _fecha_de_regreso(payload.get("due_date"))
         if vence is None and _clave_de_baja(db, id_tipo):
             vence = inicio
+        se_necesita = _fecha_en_que_se_necesita(payload.get("needed_date"))
         motivo = _texto(payload.get("note"), "note", largo=300, obligatorio=True)
 
         # Borrador o vale. Lo decide la RUTA por la que se entro, no un campo
@@ -963,6 +978,7 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
             created_by=actor,
             id_incident_parent=id_padre,
             pickup_name=nombre_pickup if not recoge_supervisor else None,
+            needed_date=se_necesita,
             # Todo vale nuevo lleva seguimiento de entrega y recibido.
             tracks_delivery=True,
         )
@@ -2013,7 +2029,7 @@ def vales_vencidos(user_data: dict) -> dict:
         return {"items": _con_existencias(db, filas), "total": len(filas)}
 
 
-def _fecha(valor):
+def _fecha(valor, campo="due_date"):
     """Una fecha del cliente, o un error que dice cual campo."""
     if isinstance(valor, datetime):
         return valor
@@ -2025,7 +2041,7 @@ def _fecha(valor):
             return datetime.strptime(texto, formato)
         except ValueError:
             continue
-    raise AppError("errors.invalid_field", 400, {"field": "due_date"})
+    raise AppError("errors.invalid_field", 400, {"field": campo})
 
 # --- las tres preguntas que se le hacen a un almacen de herramienta ------
 #

@@ -469,7 +469,7 @@ def project_options(*, id_leader: int | None = None) -> list[dict]:
     """
     with transaction_context() as db:
         consulta = db.query(Proyect.id_proyect, Proyect.folio, Proyect.title,
-                            Proyect.proyect_description, Proyect.id_supervisor)
+                            Proyect.proyect_description, Proyect.id_supervisor, Proyect.leader)
         if id_leader is not None:
             consulta = consulta.filter(Proyect.leader == id_leader)
         filas = (
@@ -477,10 +477,16 @@ def project_options(*, id_leader: int | None = None) -> list[dict]:
             .order_by(Proyect.id_proyect.desc())
             .all()
         )
+        # A cargo de la obra: quien la lleva (supervisor) o, sin el, quien la lidera.
+        a_cargo = {f[0]: f[4] or f[5] for f in filas}
+        nombres = dict(db.query(User.id_user, User.full_name).filter(
+            User.id_user.in_({i for i in a_cargo.values() if i})).all()) if any(a_cargo.values()) else {}
         return [
             {"id_proyect": f[0], "folio": f[1], "title": f[2], "description": f[3],
              # Quien responde por la obra: el vale la propone como responsable.
-             "id_supervisor": f[4]}
+             "id_supervisor": f[4],
+             # Y el nombre de quien esta a cargo, para verlo en el selector.
+             "id_in_charge": a_cargo[f[0]], "in_charge_name": nombres.get(a_cargo[f[0]])}
             for f in filas
         ]
 

@@ -823,7 +823,7 @@ export const getAllUser = (params = {}) => request("/user/", { params });
 // Solo id+nombre, para selectores (ej. "Responsable" en un vale de almacen
 // o el lider de un proyecto) -- cualquier usuario autenticado puede
 // llamarlo, sin exigir el permiso de lectura completo de user.
-export const getUserOptions = () => request("/user/options");
+export const getUserOptions = (params = {}) => request("/user/options", { params });
 // Solo id+nombre de los equipos vigentes, sin permiso de entidad -- igual que `getUserOptions` --: el editor de
 // graficos del Dashboard elige equipos sin tener el modulo de seguridad (`GET /team/` se lo negaria).
 export const getTeamOptions = () => request("/team/options");

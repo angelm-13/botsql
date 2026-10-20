@@ -333,6 +333,15 @@ CAPACIDADES = (
               "inventario"),
     Capacidad("warehouse_voucher", "Vales de almacen", "inventario",
               bits=CAPTURA, menu="sidebar"),
+    # Quien puede ser el RESPONSABLE de un vale o prevale de material: el que firma
+    # lo que se lleva y responde por devolverlo. Es una designacion, no una pantalla:
+    # el desplegable "Responsable" del vale ofrece solo a quien la tiene, y se
+    # concede o se quita en el Gestor de roles y permisos. Por omision la llevan los
+    # roles que piden herramienta -Supervisor, Gerente, Jefe de taller y Compras-,
+    # pero un vale puede levantarse a nombre de cualquiera de ellos, no solo del
+    # supervisor del proyecto.
+    Capacidad("warehouse_voucher_holder", "Puede ser responsable de vales de material",
+              "inventario"),
     # Convertir un borrador en un vale, que es el acto que saca el material.
     #
     # Aparte de `warehouse_voucher` por el mismo motivo que el prevale esta
@@ -475,7 +484,11 @@ ROLES = (
     # comprobaciones de capacidad por completo (`_sin_restriccion`). Esto
     # gobierna a cualquier OTRO usuario que lleve el rol Administrator.
     }, [c.clave for c in CAPACIDADES
-        if c.clave not in ("warehouse_voucher", "warehouse_voucher_authorize")]),
+        if c.clave not in ("warehouse_voucher", "warehouse_voucher_authorize",
+                           # Quien administra el sistema no responde por material:
+                           # se designa a gerentes, supervisores, jefes de taller o
+                           # Compras, y el Gestor puede concederlo a quien haga falta.
+                           "warehouse_voucher_holder")]),
 
     # Los cuatro roles del negocio, en los identificadores que tiene la BASE.
     #
@@ -509,7 +522,7 @@ ROLES = (
     # por instalacion, una vez.
     Rol(2, "Supervisor", {
         "operaciones": CAPTURA, "inventario": CONSULTA, "configuracion": CONSULTA,
-    }, ["incident_supervision", "warehouse_prevoucher"],
+    }, ["incident_supervision", "warehouse_prevoucher", "warehouse_voucher_holder"],
         excepciones={"task": CONSULTA, "incident": CONSULTA}),
 
     # Ve y busca el almacen sin modificarlo -`inventario` en CONSULTA- y
@@ -541,7 +554,8 @@ ROLES = (
         "operaciones": CONSULTA, "facturacion": CONSULTA, "crm": CONSULTA,
         "inventario": CONSULTA, "rh": CONSULTA, "logistica": CONSULTA,
         "compras": CAPTURA, "configuracion": CONSULTA,
-    }, ["project_oversight", "incident_supervision", "purchase_authorize"]),
+    }, ["project_oversight", "incident_supervision", "purchase_authorize",
+        "warehouse_voucher_holder"]),
 
     # El tecnico es de CAMPO: autoriza, deniega y bloquea proyectos y los edita, y
     # pide material con prevales (`warehouse_prevoucher`). De compras y almacen solo
@@ -549,12 +563,14 @@ ROLES = (
     Rol(3, "Gerente Tecnico", {
         "operaciones": EDITAR, "inventario": CONSULTA, "compras": CONSULTA,
         "configuracion": CONSULTA,
-    }, ["project_authorization", "incident_supervision", "warehouse_prevoucher"]),
+    }, ["project_authorization", "incident_supervision", "warehouse_prevoucher",
+        "warehouse_voucher_holder"]),
 
     # Ve los proyectos autorizados y mueve su estatus en el taller.
     Rol(4, "Jefe de taller", {
         "operaciones": CAPTURA, "inventario": CONSULTA, "configuracion": CONSULTA,
-    }, ["project_execution", "incident_supervision", "daily_activity_log"]),
+    }, ["project_execution", "incident_supervision", "daily_activity_log",
+        "warehouse_voucher_holder"]),
 
     # Opera el almacen entero: da de alta productos, levanta vales, los
     # asigna, autoriza/entrega, confirma devoluciones y ajusta inventario.
@@ -587,7 +603,8 @@ ROLES = (
     Rol(8, "Compras", {
         "operaciones": CONSULTA, "inventario": CONSULTA, "compras": CAPTURA,
         "configuracion": CONSULTA,
-    }, ["purchase_planning"], excepciones={"purchase_policy": CONSULTA}),
+    }, ["purchase_planning", "warehouse_voucher_holder"],
+        excepciones={"purchase_policy": CONSULTA}),
 
     # Cuatro roles retirados, y por que
     # --------------------------------

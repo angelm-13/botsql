@@ -18,8 +18,9 @@ import { CAMPOS_DE_AUDITORIA } from "../utils/camposDeAuditoria";
 import { descripcionValida, sugerirDescripcion } from "../utils/productDescription";
 import { formatearFechaHora } from "../utils/fechas";
 import { useDialogo } from "../dialogo/useDialogo.js";
+import { CLASES_DE_ARTICULO } from "../utils/clasesDeProducto";
 
-const emptyForm = { id_location: "", id_material: "", gross_price: "", color: "", is_directly_related_to_product_service: false, product_status: "", path_imagen: "", product_code: "", note: "", descripcion: "", cantidad: "", id_marca: "", id_familia: "" };
+const emptyForm = { id_location: "", id_material: "", gross_price: "", color: "", is_directly_related_to_product_service: false, product_status: "", path_imagen: "", product_code: "", note: "", descripcion: "", cantidad: "", id_marca: "", id_familia: "", item_class: "" };
 const validationRules = allValidationRules["product"] || {};
 const ENTITY_KEY = "product";
 const ACTION_CREATE = 1;
@@ -663,6 +664,18 @@ export default function ProductPage() {
               ))}
             </select>
             {fieldErrors["product_status"] && <span className="field-error">{formatFieldError("product_status")}</span>}
+          </label>
+          )}
+          {canSeeField("item_class") && (
+          <label className="field">
+            <span>{t("fields.product.item_class", "Clase")}</span>
+            <select name="item_class" value={formData.item_class ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors["item_class"])}>
+              <option value="">{t("item_class.from_material", "La de su material")}</option>
+              {CLASES_DE_ARTICULO.map((c) => (
+                <option key={c.clave} value={c.clave}>{t(`item_class.${c.clave}`, c.etiqueta)}</option>
+              ))}
+            </select>
+            {fieldErrors["item_class"] && <span className="field-error">{formatFieldError("item_class")}</span>}
           </label>
           )}
           {canSeeField("path_imagen") && (

@@ -1,9 +1,10 @@
 from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from sqlalchemy import String, Integer, BigInteger, SmallInteger, Boolean, Date, DateTime, Float, Numeric, ForeignKey, Text, JSON, Enum, LargeBinary, UniqueConstraint, func
 from app.models.base import Base
+from app.utils.item_class import normalize_item_class
 from app.utils.tiempo import a_iso_utc
 
 
@@ -38,13 +39,21 @@ class Material(Base):
     # Foto del material, la que heredan los productos que no traen la suya.
     # Misma forma que `product.path_imagen`: `uploads/products/m_<id>.<ext>`.
     path_imagen: Mapped[object] = mapped_column(String(100), nullable=True)
+    # herramienta / consumible / sobrante / recargable. La clase por omision de los
+    # productos de este material (ver `app/utils/item_class.py`).
+    item_class: Mapped[str | None] = mapped_column(String(20), nullable=True)
     created_by: Mapped[int] = mapped_column(Integer, nullable=False)
     creation_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now())
     last_update_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
     deletion_date: Mapped[object] = mapped_column(DateTime, nullable=True)
 
+    @validates('item_class')
+    def _validar_clase(self, _llave, valor):
+        return normalize_item_class(valor)
+
     def serialize(self) -> dict:
         return {
+            'item_class': self.item_class,
             'id_material': to_json_value(self.id_material),
             'material_description': to_json_value(self.material_description),
             'id_unit': to_json_value(self.id_unit),

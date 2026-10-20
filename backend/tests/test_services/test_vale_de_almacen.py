@@ -509,10 +509,31 @@ class TestLoQueElValeExige(BaseVale):
         r = self._vale([self._linea_cantidad(1, direction="traslado")])
         self.assertEqual("salida", r["lines"][0]["direction"])
 
-    def test_a_voucher_without_a_return_date_is_accepted(self):
-        """El prestamo no tiene fecha fija: la fecha de regreso es opcional."""
+    def test_a_voucher_without_a_return_date_is_accepted_and_never_overdue(self):
+        """El prestamo no tiene fecha fija de regreso: sin ella no sale en vencidos."""
         r = self._vale([self._linea_pieza(self._pieza("DES-031"))], due_date=None)
         self.assertIsNone(r["lines"][0]["due_date"])
+        self.assertEqual([], vales_vencidos(ACTOR)["items"])
+
+    def test_the_voucher_says_for_when_the_tool_is_needed(self):
+        para = (datetime.now() + timedelta(days=5)).strftime("%Y-%m-%d")
+        r = self._vale([self._linea_pieza(self._pieza("DES-034"))], needed_date=para)
+        self.assertEqual(para, r["voucher"]["needed_date"])
+
+    def test_the_needed_date_is_optional(self):
+        r = self._vale([self._linea_pieza(self._pieza("DES-035"))])
+        self.assertIsNone(r["voucher"]["needed_date"])
+
+    def test_a_needed_date_already_past_is_refused(self):
+        ayer = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        with self.assertRaises(AppError) as caja:
+            self._vale([self._linea_pieza(self._pieza("DES-036"))], needed_date=ayer)
+        self.assertEqual("errors.voucher_needed_date_in_the_past", caja.exception.message_key)
+
+    def test_a_garbled_needed_date_names_its_field(self):
+        with self.assertRaises(AppError) as caja:
+            self._vale([self._linea_pieza(self._pieza("DES-037"))], needed_date="manana")
+        self.assertEqual("needed_date", caja.exception.meta.get("field"))
 
     def test_a_return_date_already_past_is_refused(self):
         """Nace vencido, y casi siempre es un dedazo en el ano."""

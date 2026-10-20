@@ -2762,6 +2762,7 @@
     "invoice_cannot_delete_stamped": "Una factura timbrada no se borra: se cancela.",
     "voucher_line_not_a_loan": "Ese renglón es una devolución, no un préstamo: no hay nada que devolver.",
     "voucher_due_date_in_the_past": "La fecha de regreso ya pasó: el vale nacería vencido.",
+    "voucher_needed_date_in_the_past": "La fecha en que se necesita ya pasó.",
     "material_attribute_already_exists": "Esa familia ya tiene una característica con ese nombre. Con dos vivas, la mitad de los materiales llena una y la mitad la otra.",
     "material_attribute_options_required": "Una lista necesita sus valores permitidos: sin ellos es un campo de texto con otro nombre.",
     "material_attribute_options_not_applicable": "Esa característica no es una lista, así que no lleva valores permitidos.",
@@ -4378,6 +4379,16 @@
     "legend_end_of_life": "Fin de vida",
     "kind_inicial": "existencia inicial"
   },
+  "item_class": {
+    "label": "Clase",
+    "all": "Todas las clases",
+    "none": "Sin clase",
+    "from_material": "La de su material",
+    "herramienta": "Herramienta",
+    "consumible": "Consumible",
+    "sobrante": "Sobrante",
+    "recargable": "Recargable"
+  },
   "voucher": {
     "eyebrow": "Almacén",
     "title": "Vales de almacén",
@@ -4402,6 +4413,10 @@
     "type": "Tipo de vale",
     "holder": "Responsable",
     "pick_holder": "Elige a quién se le entrega",
+    "due": "Debe volver el",
+    "needed": "Se necesita el",
+    "step_needed": "Se necesita el",
+    "in_charge": "a cargo",
     "note": "Motivo",
     "note_placeholder": "Por ejemplo: Obra Norte",
     "what": "Qué se lleva",

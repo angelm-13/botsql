@@ -148,6 +148,9 @@ export default function WarehouseVoucherPage() {
   const [tipos, setTipos] = useState([]);
   const [ubicaciones, setUbicaciones] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
+  // Los que el Gestor de roles y permisos designo como posibles responsables de un
+  // vale (`warehouse_voucher_holder`): lo que ofrece el desplegable "Responsable".
+  const [responsables, setResponsables] = useState([]);
   // Las obras a las que se le puede ligar un vale. Se pide con `/options`,
   // que no exige el modulo `operaciones` -- el Almacenista no lo tiene.
   const [proyectos, setProyectos] = useState([]);
@@ -195,7 +198,7 @@ export default function WarehouseVoucherPage() {
       // sin permiso de entidad, como usuarios y proyectos), y un solo 403 aqui tumbaba las demas tambien --
       // dejaba "Levantar vale" deshabilitado por falta de tipos aunque
       // ubicaciones/usuarios si hubieran cargado bien.
-      const [venc, tip, ubi, usr, permisosPayload] = await Promise.all([
+      const [venc, tip, ubi, usr, resp, permisosPayload] = await Promise.all([
         getOverdueVoucherLines().catch(() => ({ items: [] })),
         getIncidentTypeOptions().catch(() => []),
         // `/location/options`, no `/location/`: la lista completa exige leer
@@ -203,6 +206,7 @@ export default function WarehouseVoucherPage() {
         // material, se quedaba sin nombres -- el "Sale de" salia en blanco.
         getLocationOptions().catch(() => []),
         getUserOptions().catch(() => []),
+        getUserOptions({ para: "vale_responsable" }).catch(() => []),
         privilegiado
           ? Promise.resolve({ entity_permissions: [] })
           : getMyPermissions().catch(() => ({ entity_permissions: [] })),
@@ -211,6 +215,7 @@ export default function WarehouseVoucherPage() {
       setTipos(Array.isArray(tip) ? tip : tip?.items || []);
       setUbicaciones(Array.isArray(ubi) ? ubi : ubi?.items || []);
       setUsuarios(Array.isArray(usr) ? usr : usr?.items || []);
+      setResponsables(Array.isArray(resp) ? resp : resp?.items || []);
       const filasPermiso = permisosPayload.entity_permissions || [];
       setPermisos(filasPermiso);
 
@@ -252,7 +257,9 @@ export default function WarehouseVoucherPage() {
     // El proyecto al que va el material. Vacio por opcion: no todo prestamo
     // es de un proyecto -- una herramienta para el propio taller no lo es.
     id_proyect: "",
-    due_date: "",
+    // Para cuando se necesita la herramienta (no la fecha de regreso: el prestamo no
+    // tiene una fija).
+    needed_date: "",
     note: "",
     lines: [],
     // Lo que trae quien llega desde "Material necesario" con "Pedir en almacen":
@@ -581,7 +588,7 @@ export default function WarehouseVoucherPage() {
           setBorrador={setBorrador}
           tipos={tipos}
           ubicaciones={ubicaciones}
-          usuarios={usuarios}
+          usuarios={responsables}
           proyectos={proyectos}
           onGuardar={guardar}
           onCancelar={() => setBorrador(null)}
@@ -1272,6 +1279,8 @@ function SeguimientoDeEntrega({ vale, onEntregarVale, onConfirmarRecibido,
     <section className="vale-seguimiento">
       <ol className="vale-linea-tiempo">
         {paso(true, t("voucher.step_requested", "Solicitado"), fecha(cab.incident_date))}
+        {cab.needed_date && paso(false, t("voucher.step_needed", "Se necesita el"),
+          new Date(`${String(cab.needed_date).slice(0, 10)}T12:00:00`).toLocaleDateString("es-MX"))}
         {paso(autorizado, t("voucher.step_authorized", "Autorizado"))}
         {paso(entregado, t("voucher.step_delivered", "Entregado"),
           entregado ? `${receptor ? `a ${receptor} · ` : ""}${fecha(cab.delivered_date)}` : (
@@ -1406,15 +1415,15 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
   const elegirProyecto = (id) => {
     const obra = proyectos.find((p) => String(p.id_proyect) === String(id));
     const cambios = { id_proyect: id };
-    if (!soloPuedeSolicitar && obra?.id_supervisor) cambios.id_user = String(obra.id_supervisor);
+    const aCargo = obra?.id_in_charge || obra?.id_supervisor;
+    if (!soloPuedeSolicitar && aCargo && usuarios.some((u) => String(u.id_user) === String(aCargo))) {
+      cambios.id_user = String(aCargo);
+    }
     setBorrador({ ...borrador, ...cambios });
   };
-  // Obra sin supervisor: solo se ofrecen usuarios con rol de supervisor.
-  const obraElegida = proyectos.find((p) => String(p.id_proyect) === String(borrador.id_proyect));
-  const candidatosAResponsable = (obraElegida && !obraElegida.id_supervisor)
-    ? usuarios.filter((u) => /supervisor/i.test(u.role || "")
-      || String(u.id_user) === String(borrador.id_user))
-    : usuarios;
+  // `usuarios` ya es la lista de quienes pueden ser responsables de un vale (la
+  // designacion se hace en el Gestor de roles y permisos).
+  const candidatosAResponsable = usuarios;
   useEffect(() => {
     if (!borrador.id_proyect) { setValesDelProyecto([]); return undefined; }
     let vivo = true;
@@ -1508,11 +1517,11 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
     lines: borrador.lines.filter((_, i) => i !== indice),
   });
 
-  // El motivo va siempre, y el origen en lo fungible.
+  // La fecha en que se necesita y el motivo van siempre, y el origen en lo fungible.
   // Se comprueba aqui para decirlo antes de mandar, no despues de que el
   // servidor conteste; el servidor lo exige igual, que es lo que cuenta.
   const listo = borrador.lines.length > 0 && borrador.id_incident_type
-    && borrador.id_user && borrador.note.trim()
+    && borrador.id_user && borrador.needed_date && borrador.note.trim()
     && borrador.lines.every((l, i) => l.serializado || (
       l.id_location_from && Number(l.quantity) >= 1
       && Number(l.quantity) <= disponibleDe(l, i)));
@@ -1610,9 +1619,17 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
               <option key={p.id_proyect} value={p.id_proyect}>
                 {p.folio ? `#${p.folio}` : `#${p.id_proyect}`}
                 {p.title ? ` — ${p.title}` : ""}
+                {p.in_charge_name ? ` · ${t("voucher.in_charge", "a cargo")}: ${p.in_charge_name}` : ""}
               </option>
             ))}
           </select>
+        </label>
+        <label className="field">
+          {/* Para cuando se necesita la herramienta; la de regreso ya no se pide. */}
+          <span>{t("voucher.needed", "Se necesita el")}</span>
+          <input type="date" value={borrador.needed_date} required
+                 min={new Date().toISOString().slice(0, 10)}
+                 onChange={(e) => setBorrador({ ...borrador, needed_date: e.target.value })} />
         </label>
         <label className="field field-ancho">
           <span>{t("voucher.note", "Motivo")} *</span>
@@ -1825,7 +1842,7 @@ Borrador.propTypes = {
     buscar_inicial: PropTypes.string,
     cantidad_sugerida: PropTypes.number,
     id_proyect: PropTypes.any,
-    due_date: PropTypes.string,
+    needed_date: PropTypes.string,
     note: PropTypes.string,
     lines: PropTypes.array,
   }).isRequired,

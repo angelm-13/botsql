@@ -59,6 +59,7 @@ from app.services.proyect_material_need_service import (
     needs_on_orders,
 )
 from app.utils.errors import AppError
+from app.utils.item_class import normalize_item_class
 from app.utils.tiempo import a_iso_utc
 
 AUTHORIZE_CAPABILITY = "purchase_authorize"
@@ -409,12 +410,21 @@ def _renglon_de_necesidad(db, dato: dict, tomadas: dict, excepto_orden) -> dict:
         "id_proyect_material_need": id_necesidad,
         "id_proyect": necesidad.id_proyect,
         "id_material": necesidad.id_material,
+        "item_class": _clase_del_renglon(db, dato, necesidad.id_material),
         "description": descripcion,
         "unit": unidad,
         "quantity": cantidad,
         "unit_cost": _decimal(dato.get("unit_cost"), "unit_cost", maximo=MAX_UNIT_COST,
                               cuantos="0.0001", obligatorio=False),
     }
+
+
+def _clase_del_renglon(db, dato: dict, id_material) -> str | None:
+    """La clase que dice el renglon o, sin ella, la de su material."""
+    clase = normalize_item_class(dato.get("item_class"))
+    if clase is None and id_material:
+        clase = db.scalar(select(Material.item_class).where(Material.id_material == id_material))
+    return clase
 
 
 def _renglon_libre(db, dato: dict) -> dict:
@@ -442,6 +452,7 @@ def _renglon_libre(db, dato: dict) -> dict:
         "id_proyect_material_need": None,
         "id_proyect": id_proyecto,
         "id_material": id_material,
+        "item_class": _clase_del_renglon(db, dato, id_material),
         "description": descripcion,
         "unit": unidad,
         "quantity": _cantidad(dato.get("quantity")),

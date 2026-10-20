@@ -42,7 +42,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 
 from app.models.incident import Incident
 from app.models.inventory_ledger import InventoryLedger
@@ -60,6 +60,7 @@ from app.services.inventory_service import (
     _actor_project_id,
     _warehouse_payload,
 )
+from app.utils.item_class import normalize_item_class
 from app.utils.tiempo import a_iso_utc
 
 
@@ -967,7 +968,7 @@ def _pagina(pagina, por_pagina) -> tuple[int, int]:
 def localizar(consulta: str, user_data: dict, *, proposito: str | None = None,
               con_piezas: bool = True, id_familia=None, id_marca=None,
               id_material=None, id_ubicacion=None, estado_pieza: str | None = None,
-              pagina=1, por_pagina=None) -> dict:
+              clase=None, pagina=1, por_pagina=None) -> dict:
     """Busca en el almacen y devuelve todo lo que se sabe de cada coincidencia.
 
     Busca por codigo, descripcion y etiqueta de pieza. La etiqueta se incluye
@@ -1004,6 +1005,8 @@ def localizar(consulta: str, user_data: dict, *, proposito: str | None = None,
     id_material = _entero_o_nada(id_material)
     id_ubicacion = _entero_o_nada(id_ubicacion)
     estado_pieza = (estado_pieza or "").strip() or None
+    # herramienta / consumible / sobrante / recargable; una clase desconocida es un 400.
+    clase = normalize_item_class(clase, "item_class")
     numero_de_pagina, tamano_de_pagina = _pagina(pagina, por_pagina)
 
     sin_restriccion = bool(user_data.get("is_superuser") or user_data.get("is_bootstrap_admin"))
@@ -1048,6 +1051,13 @@ def localizar(consulta: str, user_data: dict, *, proposito: str | None = None,
             query = query.where(or_(*condiciones))
         if proposito:
             query = query.where(Product.stock_purpose == proposito)
+        if clase:
+            # La clase del producto o, si no la tiene, la de su material.
+            from app.models.material import Material as _Material
+            query = query.where(or_(
+                Product.item_class == clase,
+                and_(Product.item_class.is_(None), Product.id_material.in_(
+                    select(_Material.id_material).where(_Material.item_class == clase)))))
 
         # El orden es por descripcion y no por identificador: la pantalla es
         # una lista que se lee, y el orden de captura no significa nada para
@@ -1155,6 +1165,11 @@ def localizar(consulta: str, user_data: dict, *, proposito: str | None = None,
         ubicaciones.precargar(
             {pr.id_location for pr in productos if pr.id_location})
         clasificaciones = _clasificacion_en_lote(db, productos)
+        from app.models.material import Material as _MaterialDeClase
+        ids_de_material = {pr.id_material for pr in productos if pr.id_material}
+        clases_de_material = dict(db.execute(
+            select(_MaterialDeClase.id_material, _MaterialDeClase.item_class)
+            .where(_MaterialDeClase.id_material.in_(ids_de_material))).all()) if ids_de_material else {}
         existencias = _existencias_en_lote(db, ids, ubicaciones)
         historias = _historia_en_lote(db, ids)
         ultimos = _ultimo_movimiento_en_lote(db, ids)
@@ -1210,6 +1225,7 @@ def localizar(consulta: str, user_data: dict, *, proposito: str | None = None,
                 ).get("material_path_imagen"),
                 "tracking_mode": producto.tracking_mode,
                 "stock_purpose": producto.stock_purpose,
+                "item_class": producto.item_class or clases_de_material.get(producto.id_material),
                 # El estatus tal como lo escribio el sistema anterior --
                 # ENTRADA, SALIDA, DANADO, DESTRUCCION, EXTRAVIADO--, que es el
                 # unico sitio donde estan los seis valores completos: el
@@ -1264,6 +1280,7 @@ def localizar(consulta: str, user_data: dict, *, proposito: str | None = None,
                 "id_material": id_material,
                 "id_location": id_ubicacion,
                 "asset_status": estado_pieza,
+                "item_class": clase,
             },
             # Con que se puede filtrar y cuanto hay detras de cada opcion. Se
             # calcula sobre todo lo visible -no sobre la pagina- para que un

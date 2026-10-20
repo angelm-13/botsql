@@ -17,6 +17,7 @@ import { useI18n } from "../i18n";
 import VisorDeFoto from "../components/VisorDeFoto";
 import "../styles/inventory-trace.css";
 import { formatearFechaHora } from "../utils/fechas";
+import { CLASES_DE_ARTICULO, etiquetaDeClase } from "../utils/clasesDeProducto";
 import PageHeader from "../components/PageHeader.jsx";
 
 /**
@@ -257,6 +258,7 @@ const SIN_FILTROS = {
   id_location: "",
   asset_status: "",
   id_material: "",
+  item_class: "",
 };
 
 export default function InventoryTracePage() {
@@ -414,6 +416,19 @@ export default function InventoryTracePage() {
           >
             {Icono && <Icono size={15} />}
             {t(`trace.${clave}`, texto)}
+          </button>
+        ))}
+      </div>
+
+      {/* La clase del articulo -herramienta, consumible, sobrante, recargable-:
+          otro recorte, independiente de la naturaleza de arriba. */}
+      <div className="trace-naturalezas" role="group"
+           aria-label={t("item_class.label", "Clase")}>
+        {[{ clave: "", etiqueta: "Todas" }, ...CLASES_DE_ARTICULO].map((c) => (
+          <button key={c.clave || "todas"} type="button"
+                  className={`trace-naturaleza ${filtros.item_class === c.clave ? "activa" : ""}`}
+                  onClick={() => cambiarFiltro("item_class", c.clave)}>
+            {c.clave ? t(`item_class.${c.clave}`, c.etiqueta) : t("item_class.all", "Todas las clases")}
           </button>
         ))}
       </div>
@@ -662,6 +677,7 @@ export default function InventoryTracePage() {
                       {it.product_code || `#${it.id_product}`}
                       {" · "}
                       {t(`trace.purpose_${it.stock_purpose}`, it.stock_purpose)}
+                      {it.item_class && <> · {etiquetaDeClase(it.item_class, t)}</>}
                       {it.tracking_mode === "serializado" && (
                         <> · <Wrench size={12} /> {t("trace.serialized", "pieza por pieza")}</>
                       )}
