@@ -126,6 +126,7 @@ const CATALOGO_DEL_REGISTRY = JSON.parse(readFileSync(new URL("./fixtures/catalo
 const CLAVES_DE_CHECADAS = [
   "checadas_en_turno_por_equipo", "checadas_sin_salida_por_equipo", "checadas_entradas_por_equipo",
   "checadas_salidas_por_equipo", "horas_trabajadas_por_empleado", "checadas_en_turno_por_empleado",
+  "checadas_con_duracion_anomala",
 ];
 
 test("equipo (parque): un catalogo cerrado que no es una persona (sin filtro de empleados ni «Otros»)", () => {
@@ -145,10 +146,11 @@ test("los KPIs de checadas estan en el catalogo, en Operaciones, con su dimensio
   assert.deepEqual(CLAVES_DE_CHECADAS.map((c) => porClave[c].modulo), Array(CLAVES_DE_CHECADAS.length).fill("operaciones"));
   assert.deepEqual(
     CLAVES_DE_CHECADAS.map((c) => porClave[c].dimensiones[0]),
-    ["equipo", "equipo", "equipo", "equipo", "empleado", "empleado"],
+    ["equipo", "equipo", "equipo", "equipo", "empleado", "empleado", "empleado"],
   );
   assert.equal(porClave.horas_trabajadas_por_empleado.unidad, "minutos");
   assert.equal(porClave.checadas_en_turno_por_empleado.unidad, "minutos");
+  assert.equal(porClave.checadas_con_duracion_anomala.unidad, "numero", "cuenta checadas, no minutos");
   assert.deepEqual(CLAVES_DE_CHECADAS.map((c) => porClave[c].modo), Array(CLAVES_DE_CHECADAS.length).fill("snapshot"));
 });
 
