@@ -684,12 +684,12 @@ class KpiRestauranteTest(unittest.TestCase):
         return ids
 
     def _hoy(self):
-        # La corrida frecuente fecha en el dia del NEGOCIO (`hoy_negocio`); la nocturna sigue con `date.today()`.
+        # La corrida frecuente fecha en el dia del NEGOCIO (`ahora_negocio()`, a las 13:00, fuera de la primera hora local); la nocturna sigue con `date.today()`.
         falso = mock.MagicMock(wraps=date)
         falso.today.return_value = DIA.date()
         pila = contextlib.ExitStack()
         pila.enter_context(mock.patch.object(tasks_kpis, "date", falso))
-        pila.enter_context(mock.patch.object(tasks_kpis, "hoy_negocio", return_value=DIA.date()))
+        pila.enter_context(mock.patch.object(tasks_kpis, "ahora_negocio", return_value=DIA))
         return pila
 
     def test_la_corrida_frecuente_solo_toca_restaurante_y_pos_y_solo_el_dia_de_hoy(self):

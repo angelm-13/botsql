@@ -7,13 +7,13 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.jobs.celery_app import celery
 from app.jobs.task_helpers import result_ok
-from app.kpis.frecuencia import KPIS_FRECUENTES, MODULOS_FRECUENTES
+from app.kpis.frecuencia import KPIS_FRECUENTES, MODULOS_FRECUENTES, rango_de_las_claves_frecuentes
 from app.kpis.registry import DIMENSION_JSON_KEY, KPI_REGISTRY
 from app.models.kpi_definition import KpiDefinition
 from app.models.kpi_snapshot import KpiSnapshot
 from app.models.proyect import Proyect
 from app.models.session import transaction_context
-from app.utils.tiempo import hoy_negocio
+from app.utils.tiempo import ahora_negocio
 
 # Ventana de 7 dias (hoy incluido) para que una factura corregida un par de
 # dias despues tambien se refleje, no solo el dia exacto en que se calculo.
@@ -144,20 +144,32 @@ def recalculate_kpi_snapshots_frecuentes() -> dict:
 
     La corrida nocturna sigue haciendo todo, con su ventana de 7 dias; esta solo mantiene al dia el
     dia en curso para que el gerente vea las ventas, las cuentas y las mesas de ahora, y quien esta en turno.
+
+    Excepcion, solo para las cinco claves de `KPIS_FRECUENTES` y solo de las 00:00 a las 00:59 hora de Mexico: se llaman con (ayer, hoy) para completar las
+    entradas y las salidas del dia que acaba de terminar (`rango_de_las_claves_frecuentes`). Restaurante y POS no cambian: siempre (hoy, hoy).
     """
-    # El dia del NEGOCIO, no el del contenedor (UTC): las fotos y los KPIs se fechan en hora local.
-    hoy = hoy_negocio()
+    # El dia del NEGOCIO, no el del contenedor (UTC): las fotos y los KPIs se fechan en hora local. Un solo `ahora` para la hora y el dia, para que
+    # la corrida que cae justo en la medianoche no mezcle dos dias distintos.
+    ahora = ahora_negocio()
+    hoy = ahora.date()
+    inicio_claves, fin_claves = rango_de_las_claves_frecuentes(ahora)
 
     with transaction_context() as session:
-        filas_escritas = _recalcular_kpi_snapshots_en_sesion(
-            session, hoy, hoy, modulos=MODULOS_FRECUENTES, claves=KPIS_FRECUENTES,
-        )
+        if (inicio_claves, fin_claves) == (hoy, hoy):
+            filas_escritas = _recalcular_kpi_snapshots_en_sesion(
+                session, hoy, hoy, modulos=MODULOS_FRECUENTES, claves=KPIS_FRECUENTES,
+            )
+        else:
+            # Dos llamadas con rangos distintos: la funcion recibe un solo rango para todo lo que corre.
+            filas_escritas = _recalcular_kpi_snapshots_en_sesion(session, hoy, hoy, modulos=MODULOS_FRECUENTES)
+            filas_escritas += _recalcular_kpi_snapshots_en_sesion(session, inicio_claves, fin_claves, claves=KPIS_FRECUENTES)
 
     return result_ok(
         "jobs.kpis.snapshots_recalculated",
         filas=filas_escritas,
         fecha_inicio=hoy.isoformat(),
         fecha_fin=hoy.isoformat(),
+        fecha_inicio_claves=inicio_claves.isoformat(),
         modulos=list(MODULOS_FRECUENTES),
         claves=list(KPIS_FRECUENTES),
     )

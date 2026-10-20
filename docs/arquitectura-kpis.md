@@ -798,7 +798,7 @@ necesitaría para ser medible:
 
 Implementado el 2026-10-19 para Comala. **Sin tablas, columnas, índices ni migraciones nuevas**: una checada es una
 fila de `incident`. Todo el código está en `app/kpis/modulos/checadas.py`.
-Ampliado el 2026-10-20: tope de duración de 16 h y el KPI `checadas_con_duracion_anomala` (siete KPIs en total), medición con 50 000 checadas y una propuesta pendiente de refresco.
+Ampliado el 2026-10-20: tope de duración de 16 h y el KPI `checadas_con_duracion_anomala` (siete KPIs en total), medición con 50 000 checadas y el refresco de la primera hora local (ayer y hoy).
 
 ### Qué es una checada
 
@@ -892,11 +892,11 @@ Las fotos **no filtran por día calendario**, solo por antigüedad: una entrada 
 
 - **`KPIS_FRECUENTES` tiene cinco claves** y entran a la corrida de 5 minutos **por clave**, sin arrastrar al resto de `operaciones`:
   `checadas_en_turno_por_equipo`, `checadas_sin_salida_por_equipo`, `checadas_entradas_por_equipo`, `checadas_salidas_por_equipo` y
-  `checadas_en_turno_por_empleado`. La corrida llama a cada una con `(hoy, hoy)`: una foto escribe hoy, y entradas/salidas recalculan **solo las filas de hoy** sin tocar los
+  `checadas_en_turno_por_empleado`. La corrida llama a cada una con `(hoy, hoy)` —salvo de las 00:00 a las 00:59 hora de México, que es `(ayer, hoy)`, ver «Implementado: la primera hora local incluye ayer»—: una foto escribe hoy, y entradas/salidas recalculan **solo las filas de hoy** (y las de ayer en esa primera hora) sin tocar los
   días ya guardados. **Horas trabajadas y duración anómala siguen solo con la corrida nocturna**: dependen de salidas que se capturan después.
 - **«Nocturna» es 01:00 UTC = 19:00 de México** (ventana de 7 días; ver §2.1.1). Consecuencias: una salida o un cierre capturados a las 20:00 se cuentan en horas
   y anomalías hasta las 19:00 del día siguiente; y las filas de entradas/salidas de un día ya terminado (D) se completan hasta las 19:00 del día D+1: entre medianoche y esa hora
-  solo traen lo que escribió la última corrida de 5 minutos de D (ver «Propuesta pendiente»).
+  solo traen lo que escribió la última corrida de 5 minutos de D, **salvo en la primera hora local**, en que la corrida de 5 minutos las completa (ver «Implementado: la primera hora local incluye ayer»).
 - **Cada equipo vigente sale con su cero.** El upsert (`ON CONFLICT … DO UPDATE`) solo actualiza lo que la consulta devuelve: si un
   equipo pasa de 3 personas a 0 y no saliera, conservaría el 3. Lo mismo vale para «Sin equipo» y, en entradas y salidas, para **cada día del rango**
   (cancelar la única entrada del día debe bajarla a 0), y en el KPI por persona para quien ya salió de turno (candidatos: quien tiene una checada desde 12 h antes de que
@@ -945,20 +945,25 @@ serían unos 45–70 ms por sentencia y ~0.5 s de SELECT por corrida; con 100 ve
    (`col >= d AND col < d + 1`), con lo que un índice simple por `incident_date` / `close_date` sí se usaría. Reescribir toca código del KPI, no esquema.
 Los de horas y anomalías (nocturnos) filtran por `date(...)` y por `close_date IS NOT NULL`: se beneficiarían de lo mismo.
 
-### Propuesta pendiente (no implementada): completar el día anterior después de medianoche
+### Implementado: la primera hora local incluye ayer
 
 **Problema.** La corrida de 5 minutos recalcula solo hoy, y la nocturna corre a las 19:00 de México. Cuando termina el día D, las filas de `checadas_entradas_por_equipo` y `checadas_salidas_por_equipo` de D se quedan con lo que escribió la
 última corrida de 5 minutos de D (puede faltar lo marcado en los últimos ≤ 5 minutos antes de medianoche, p. ej. un turno nocturno que entra a las 23:58) **hasta las 19:00 del día D+1**: unas 19 horas.
 
-**Propuesta.** En `recalculate_kpi_snapshots_frecuentes`, durante la primera hora local del día (12 corridas), llamar a los cinco KPIs de `KPIS_FRECUENTES` con `(ayer, hoy)` en lugar de `(hoy, hoy)`. Las fotos usan solo `fecha_fin` (`_foto_por_equipo` y el
-KPI por persona regresan `[]` si no es hoy), así que no cambian; entradas y salidas recalculan los dos días, con sus ceros. La regla de «primera hora» se evalúa con `ahora_negocio()`, nunca con el reloj del contenedor.
+**Qué hace.** De las **00:00 a las 00:59 hora de México** (12 corridas), `recalculate_kpi_snapshots_frecuentes` llama a las cinco claves de `KPIS_FRECUENTES` con `(ayer, hoy)` en lugar de `(hoy, hoy)`. A la 01:00 en punto vuelve a `(hoy, hoy)`.
+La regla es una función pura de `app/kpis/frecuencia.py`, `rango_de_las_claves_frecuentes(ahora)`, que recibe `ahora_negocio()` (nunca el reloj del contenedor) y la constante `HORAS_CON_AYER_TRAS_MEDIANOCHE = 1`.
 
-**Costo (medido en la base de la medición, 40 corridas).** Con `(ayer, hoy)`: **261 filas** en vez de 243 (+18 upserts: 2 KPIs × 9 filas × 1 día), mediana **221 ms** contra 215 ms (**+6 ms, ~3 %**). Los SELECT no cambian (~62 ms) porque ya son un recorrido completo
-de la tabla sea cual sea el rango. Son 12 corridas al día: ~0.1 s diarios en total. Para recorrer **todas** las corridas con `(ayer, hoy)` (sin regla horaria) el costo sería el mismo +6 ms × 288 corridas/día.
-**No medido:** si `(ayer, hoy)` se aplicara también a los KPIs de restaurante de `MODULOS_FRECUENTES` (la función recibe un solo rango para todo lo que corre), habría que medirlo; la propuesta lo evita llamando solo a las cinco claves.
+- **Solo esas cinco claves.** Restaurante y POS (`MODULOS_FRECUENTES`) siguen siempre con `(hoy, hoy)`: como la función de recálculo recibe un solo rango para todo lo que corre, durante la primera hora la tarea hace **dos llamadas**
+  (módulos con `(hoy, hoy)`, claves con `(ayer, hoy)`). Fuera de esa hora hace la misma llamada única de siempre. El resultado de la tarea trae `fecha_inicio_claves`, además de `fecha_inicio` y `fecha_fin` (que son los de hoy).
+- **Las fotos no cambian** (en turno, sin salida, en turno por empleado): solo miran `fecha_fin`, que es siempre hoy, y siguen sin escribir bajo ayer.
+- **Entradas y salidas recalculan los dos días**, cada uno con sus ceros: una marca de ayer capturada a las 00:30 completa las filas de ayer. A la 01:00 en punto una marca tardía de ayer ya no se refleja desde la corrida de 5 minutos.
+- **Es un solo `ahora`** para la hora y el día, de modo que la corrida que cae justo en la medianoche no mezcla dos días.
 
-**Valoración.** Costo despreciable; el beneficio es acotado (≤ 5 minutos de datos en las filas de ayer, durante ≤ 19 horas) y solo lo nota quien mire «ayer» después de medianoche o tenga turnos que crucen la hora. El arreglo de fondo es otro: que la
-nocturna corra de noche en hora local (`CELERY_TIMEZONE`), decisión pendiente de Alan que mueve todas las tareas programadas.
+**Costo (medido con 50 000 checadas, 40 corridas).** Con `(ayer, hoy)`: **261 filas** en vez de 243 (+18 upserts: 2 KPIs × 9 filas × 1 día), mediana **221 ms** contra 215 ms (**+6 ms, ~3 %**). Los SELECT no cambian (~62 ms) porque ya son un recorrido completo
+de la tabla sea cual sea el rango. Son 12 corridas al día: ~0.1 s diarios en total. La medición se hizo con la función directa; la llamada doble de la tarea agrega la consulta de `kpi_definition` y de proyectos activos una vez más (despreciable, no medida por separado).
+
+**Si se fija `CELERY_TIMEZONE`.** La causa de fondo es que la «nocturna» corre a las 19:00 de México (`CELERY_TIMEZONE` vale `UTC` por omisión; decisión pendiente de Alan que mueve todas las tareas programadas). Si se fija a la hora de México y la nocturna pasa a las 01:00 local, esta
+pasada queda **redundante pero inofensiva**: recalcula lo mismo que la nocturna, solo unos minutos antes, y no escribe nada distinto. Se puede dejar o quitar (`HORAS_CON_AYER_TRAS_MEDIANOCHE = 0` la apaga).
 
 ### Alcance y filtro por equipo
 

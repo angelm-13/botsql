@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import inspect
 import unittest
+from datetime import date, datetime
 
 from app.kpis import frecuencia
+from app.kpis.frecuencia import rango_de_las_claves_frecuentes
 from app.kpis.modulos import checadas
 from app.kpis.modulos.checadas import TOPE_DURACION_CHECADA_HORAS, UMBRAL_SIN_SALIDA_HORAS
 from app.kpis.registry import KPI_POR_CLAVE
@@ -112,3 +114,41 @@ class DefinicionDeDuracionAnomalaTest(unittest.TestCase):
         self.assertEqual(1, fuente.count("cierra - abre > TOPE_DURACION_CHECADA"), "la comparacion vive en un solo helper")
         self.assertIn("_supera_el_tope", inspect.getsource(checadas.horas_trabajadas_por_empleado_query))
         self.assertIn("_supera_el_tope", inspect.getsource(checadas.checadas_con_duracion_anomala_query))
+
+
+class RangoDeLaCorridaFrecuenteTest(unittest.TestCase):
+    """`rango_de_las_claves_frecuentes`: (hoy, hoy) salvo de las 00:00 a las 00:59, que es (ayer, hoy). Pura: recibe la hora, no la lee."""
+
+    D, D1 = date(2026, 10, 15), date(2026, 10, 16)
+
+    def test_los_limites_de_la_primera_hora_local(self):
+        casos = [
+            (datetime(2026, 10, 15, 23, 59), (self.D, self.D), "23:59: aun es hoy"),
+            (datetime(2026, 10, 15, 23, 59, 59, 999999), (self.D, self.D), "el ultimo instante de D"),
+            (datetime(2026, 10, 16, 0, 0), (self.D, self.D1), "00:00 en punto: ya entra ayer"),
+            (datetime(2026, 10, 16, 0, 0, 0, 1), (self.D, self.D1), "00:00:00.000001"),
+            (datetime(2026, 10, 16, 0, 30), (self.D, self.D1), "00:30"),
+            (datetime(2026, 10, 16, 0, 59), (self.D, self.D1), "00:59"),
+            (datetime(2026, 10, 16, 0, 59, 59, 999999), (self.D, self.D1), "el ultimo instante de la primera hora"),
+            (datetime(2026, 10, 16, 1, 0), (self.D1, self.D1), "01:00 en punto: ya es solo hoy"),
+            (datetime(2026, 10, 16, 1, 5), (self.D1, self.D1), "01:05"),
+            (datetime(2026, 10, 16, 12, 0), (self.D1, self.D1), "mediodia"),
+        ]
+        for ahora, esperado, motivo in casos:
+            with self.subTest(motivo):
+                self.assertEqual(esperado, rango_de_las_claves_frecuentes(ahora))
+
+    def test_ayer_es_el_dia_anterior_tambien_al_cruzar_un_mes_o_un_anio(self):
+        self.assertEqual((date(2026, 10, 31), date(2026, 11, 1)), rango_de_las_claves_frecuentes(datetime(2026, 11, 1, 0, 30)))
+        self.assertEqual((date(2026, 12, 31), date(2027, 1, 1)), rango_de_las_claves_frecuentes(datetime(2027, 1, 1, 0, 0)))
+        self.assertEqual((date(2028, 2, 29), date(2028, 3, 1)), rango_de_las_claves_frecuentes(datetime(2028, 3, 1, 0, 59)))
+
+    def test_la_primera_hora_es_una_constante_con_nombre(self):
+        self.assertEqual(1, frecuencia.HORAS_CON_AYER_TRAS_MEDIANOCHE)
+
+    def test_el_fin_es_siempre_hoy_para_que_las_fotos_no_cambien(self):
+        # Las fotos solo miran `fin` (`_foto_por_equipo`, en turno por empleado): con (ayer, hoy) emiten lo mismo que con (hoy, hoy).
+        for hora in (0, 1, 12, 23):
+            with self.subTest(hora=hora):
+                ahora = datetime(2026, 10, 16, hora, 30)
+                self.assertEqual(ahora.date(), rango_de_las_claves_frecuentes(ahora)[1])

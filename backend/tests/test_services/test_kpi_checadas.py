@@ -954,6 +954,89 @@ class CorridaFrecuenteDeChecadasTest(ChecadasBase):
         self.assertEqual(1.0, entradas[antier][NORTE])
         self.assertEqual(0.0, entradas[D][NORTE])
 
+    # --- la primera hora local: las cinco claves con (ayer, hoy) ----------------------------------------------
+
+    def _llamadas_con_rango_a_las(self, hora_local):
+        """`(rango de las cinco claves, rango de restaurante)` con el que la corrida de 5 minutos llamo a cada KPI a esa hora local."""
+        espias = []
+        for kpi in self.frecuentes:
+            copia = copy.copy(kpi)
+            copia.query_builder = mock.Mock(return_value=[])
+            espias.append(copia)
+        restaurante = copy.copy(KPI_POR_CLAVE["ventas_restaurante"])
+        restaurante.query_builder = mock.Mock(return_value=[])
+        with self._con_registro((*espias, restaurante)), ahora_local(hora_local):
+            resultado = tasks_kpis.recalculate_kpi_snapshots_frecuentes()
+
+        def rangos(kpi):
+            return {(llamada.args[1], llamada.args[2]) for llamada in kpi.query_builder.call_args_list}
+
+        de_las_claves = set().union(*(rangos(kpi) for kpi in espias))
+        for kpi in espias:
+            self.assertTrue(kpi.query_builder.called, f"{kpi.clave} se llama siempre")
+        return de_las_claves, rangos(restaurante), resultado
+
+    def test_los_limites_de_la_primera_hora_en_la_corrida_real(self):
+        casos = [
+            (local(D, 23, 59), (D, D), "23:59"),
+            (local(D1, 0, 0), (D, D1), "00:00"),
+            (local(D1, 0, 59), (D, D1), "00:59"),
+            (local(D1, 1, 0), (D1, D1), "01:00"),
+        ]
+        for hora, (inicio, fin), motivo in casos:
+            with self.subTest(motivo):
+                de_las_claves, de_restaurante, resultado = self._llamadas_con_rango_a_las(hora)
+                self.assertEqual({(inicio, fin)}, de_las_claves, "las cinco claves, todas con el mismo rango")
+                hoy = hora.date()
+                self.assertEqual({(hoy, hoy)}, de_restaurante, "restaurante nunca incluye ayer")
+                self.assertEqual(inicio.isoformat(), resultado["fecha_inicio_claves"])
+                self.assertEqual((hoy.isoformat(), hoy.isoformat()), (resultado["fecha_inicio"], resultado["fecha_fin"]))
+
+    def test_en_la_primera_hora_el_resto_de_operaciones_sigue_sin_correr(self):
+        ajena = copy.copy(KPI_POR_CLAVE["incidencias_abiertas_por_empleado"])
+        ajena.query_builder = mock.Mock(return_value=[])
+        with self._con_registro((*self.frecuentes, ajena)), ahora_local(local(D1, 0, 30)):
+            tasks_kpis.recalculate_kpi_snapshots_frecuentes()
+        ajena.query_builder.assert_not_called()
+
+    def test_las_fotos_no_cambian_en_la_primera_hora(self):
+        self._checada(ANA, local(D, 22, 0))                 # a las 00:30 lleva 2 h 30 min: en turno (Norte)
+        self._checada(BETO, local(D, 11, 0))                # 13 h 30 min: sin salida (Norte y Sur); no es candidata del KPI por persona
+        for clave in ("checadas_en_turno_por_equipo", "checadas_sin_salida_por_equipo"):
+            with transaction_context() as db:               # lo que dejo ayer la corrida de 5 minutos: una foto de ayer no se reescribe
+                db.add(KpiSnapshot(id_kpi_definition=self.ids[clave], dimension_key={"id_team": NORTE}, periodo=D, valor=Decimal("5")))
+        with self._con_registro(self.frecuentes), ahora_local(local(D1, 0, 30)):
+            tasks_kpis.recalculate_kpi_snapshots_frecuentes()
+        en_turno = self._guardado("checadas_en_turno_por_equipo")
+        sin_salida = self._guardado("checadas_sin_salida_por_equipo")
+        self.assertEqual({D, D1}, set(en_turno), "solo hoy; ayer es el que ya estaba")
+        self.assertEqual({NORTE: 5.0}, en_turno[D])
+        self.assertEqual({NORTE: 1.0, SUR: 0.0, VACIO: 0.0, None: 0.0}, en_turno[D1])
+        self.assertEqual({NORTE: 5.0}, sin_salida[D])
+        self.assertEqual({NORTE: 1.0, SUR: 1.0, VACIO: 0.0, None: 0.0}, sin_salida[D1])
+        self.assertEqual({D1: {ANA: 150.0}}, self._guardado("checadas_en_turno_por_empleado", "id_user"))
+
+    def test_una_marca_de_ayer_capturada_a_las_0030_completa_sus_entradas_y_salidas(self):
+        with self._con_registro(self.frecuentes), ahora_local(local(D, 23, 55)):         # la ultima corrida de ayer
+            tasks_kpis.recalculate_kpi_snapshots_frecuentes()
+        self.assertEqual({D: {NORTE: 0.0, SUR: 0.0, VACIO: 0.0, None: 0.0}}, self._guardado("checadas_entradas_por_equipo"))
+        self._checada(ANA, local(D, 23, 58), local(D, 23, 59))      # una marca de ayer que n8n capturo despues de medianoche
+        with self._con_registro(self.frecuentes), ahora_local(local(D1, 0, 30)):
+            tasks_kpis.recalculate_kpi_snapshots_frecuentes()
+        for clave in ("checadas_entradas_por_equipo", "checadas_salidas_por_equipo"):
+            guardado = self._guardado(clave)
+            self.assertEqual({NORTE: 1.0, SUR: 0.0, VACIO: 0.0, None: 0.0}, guardado[D], f"{clave}: ayer se completa a las 00:30")
+            self.assertEqual({NORTE: 0.0, SUR: 0.0, VACIO: 0.0, None: 0.0}, guardado[D1], f"{clave}: hoy, con sus ceros")
+
+    def test_a_la_1_en_punto_una_marca_tardia_de_ayer_ya_no_se_refleja_en_la_corrida_de_5_minutos(self):
+        with self._con_registro(self.frecuentes), ahora_local(local(D1, 0, 59)):
+            tasks_kpis.recalculate_kpi_snapshots_frecuentes()
+        self._checada(ANA, local(D, 23, 58), local(D, 23, 59))
+        with self._con_registro(self.frecuentes), ahora_local(local(D1, 1, 0)):
+            resultado = tasks_kpis.recalculate_kpi_snapshots_frecuentes()
+        self.assertEqual(D1.isoformat(), resultado["fecha_inicio_claves"])
+        self.assertEqual(0.0, self._guardado("checadas_entradas_por_equipo")[D][NORTE], "esa la completa la corrida nocturna, no esta")
+
     # --- las anomalias son nocturnas -----------------------------------------------------------------------
 
     def test_las_anomalias_las_escribe_la_nocturna_por_dia_de_salida_y_la_corrida_de_5_minutos_no_las_toca(self):
