@@ -125,7 +125,7 @@ test("la unidad 'minutos' se muestra con su sufijo y tiene etiqueta en el select
 const CATALOGO_DEL_REGISTRY = JSON.parse(readFileSync(new URL("./fixtures/catalogo_del_registry.json", import.meta.url), "utf8"));
 const CLAVES_DE_CHECADAS = [
   "checadas_en_turno_por_equipo", "checadas_sin_salida_por_equipo", "checadas_entradas_por_equipo",
-  "checadas_salidas_por_equipo", "horas_trabajadas_por_empleado",
+  "checadas_salidas_por_equipo", "horas_trabajadas_por_empleado", "checadas_en_turno_por_empleado",
 ];
 
 test("equipo (parque): un catalogo cerrado que no es una persona (sin filtro de empleados ni «Otros»)", () => {
@@ -139,13 +139,17 @@ test("equipo (parque): un catalogo cerrado que no es una persona (sin filtro de 
   assert.equal(muestraFiltroDePersonas([kpi]), false, "un equipo no es un usuario: no ofrece el filtro por empleados");
 });
 
-test("los 5 KPIs de checadas estan en el catalogo, en Operaciones, con su dimension y su unidad", () => {
+test("los KPIs de checadas estan en el catalogo, en Operaciones, con su dimension y su unidad", () => {
   const porClave = Object.fromEntries(CATALOGO_DEL_REGISTRY.map((kpi) => [kpi.clave, kpi]));
   for (const clave of CLAVES_DE_CHECADAS) assert.ok(porClave[clave], clave);
-  assert.deepEqual(CLAVES_DE_CHECADAS.map((c) => porClave[c].modulo), Array(5).fill("operaciones"));
-  assert.deepEqual(CLAVES_DE_CHECADAS.map((c) => porClave[c].dimensiones[0]), ["equipo", "equipo", "equipo", "equipo", "empleado"]);
+  assert.deepEqual(CLAVES_DE_CHECADAS.map((c) => porClave[c].modulo), Array(CLAVES_DE_CHECADAS.length).fill("operaciones"));
+  assert.deepEqual(
+    CLAVES_DE_CHECADAS.map((c) => porClave[c].dimensiones[0]),
+    ["equipo", "equipo", "equipo", "equipo", "empleado", "empleado"],
+  );
   assert.equal(porClave.horas_trabajadas_por_empleado.unidad, "minutos");
-  assert.deepEqual(CLAVES_DE_CHECADAS.map((c) => porClave[c].modo), Array(5).fill("snapshot"));
+  assert.equal(porClave.checadas_en_turno_por_empleado.unidad, "minutos");
+  assert.deepEqual(CLAVES_DE_CHECADAS.map((c) => porClave[c].modo), Array(CLAVES_DE_CHECADAS.length).fill("snapshot"));
 });
 
 test("«Ver ejemplo» funciona para cada KPI de checadas: entidades genericas, 14 dias, siempre los mismos numeros", () => {

@@ -11,6 +11,7 @@ import unittest
 
 from app.kpis import frecuencia
 from app.kpis.modulos import checadas
+from app.kpis.modulos.checadas import UMBRAL_SIN_SALIDA_HORAS
 from app.kpis.registry import KPI_POR_CLAVE
 
 
@@ -60,3 +61,24 @@ class DefinicionesDeFlujosTest(unittest.TestCase):
             self.assertFalse(kpi.alcance_proyecto, clave)
             self.assertTrue(kpi.sin_asignar, f"{clave}: tambien llevan la fila 'Sin equipo', como las fotos")
             self.assertEqual(("barras",), tuple(kpi.graficas_permitidas), clave)
+
+
+class DefinicionDeEnTurnoPorEmpleadoTest(unittest.TestCase):
+    def test_es_una_foto_por_empleado_en_minutos_que_oculta_a_quien_ya_salio(self):
+        kpi = KPI_POR_CLAVE["checadas_en_turno_por_empleado"]
+        self.assertEqual("operaciones", kpi.modulo)
+        self.assertEqual(("empleado",), kpi.dimensiones)
+        self.assertEqual("ultimo", kpi.agregacion)
+        self.assertEqual("snapshot", kpi.modo)
+        self.assertEqual("minutos", kpi.unidad)
+        self.assertFalse(kpi.alcance_proyecto)
+        self.assertEqual(("barras",), tuple(kpi.graficas_permitidas))
+        self.assertTrue(kpi.ocultar_ceros, "la API no pinta a quien ya salio de turno")
+        self.assertFalse(kpi.sin_asignar, "una persona siempre es alguien: no hay fila 'sin asignar'")
+        self.assertIn(str(UMBRAL_SIN_SALIDA_HORAS), kpi.descripcion)
+
+    def test_solo_este_kpi_de_checadas_oculta_ceros(self):
+        # Los equipos en cero SI se pintan (un parque sin nadie es un dato); solo la foto por persona los oculta.
+        con_ceros_ocultos = [k.clave for k in KPI_POR_CLAVE.values() if k.ocultar_ceros]
+        self.assertEqual(["checadas_en_turno_por_empleado"], con_ceros_ocultos)
+

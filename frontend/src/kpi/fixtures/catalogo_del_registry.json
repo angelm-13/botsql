@@ -471,5 +471,16 @@
   ],
   "unidad": "minutos",
   "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 44,
+  "clave": "checadas_en_turno_por_empleado",
+  "etiqueta": "Tiempo en turno por empleado",
+  "modulo": "operaciones",
+  "dimensiones": [
+   "empleado"
+  ],
+  "unidad": "minutos",
+  "modo": "snapshot"
  }
 ]

@@ -20,6 +20,7 @@ from app.kpis import frecuencia
 from app.kpis.modulos import checadas
 from app.kpis.modulos.checadas import (
     UMBRAL_SIN_SALIDA_HORAS,
+    checadas_en_turno_por_empleado_query,
     checadas_en_turno_por_equipo_query,
     checadas_entradas_por_equipo_query,
     checadas_salidas_por_equipo_query,
@@ -341,6 +342,126 @@ class FotosDeChecadasTest(ChecadasBase):
             with transaction_context() as db:
                 filas = checadas_en_turno_por_equipo_query(db, D - timedelta(days=6), D, {}, None)
         self.assertEqual([(NORTE, D, 0), (SUR, D, 0), (VACIO, D, 0), (None, D, 0)], filas, "los equipos por id y al final Sin equipo")
+
+
+class EnTurnoPorEmpleadoTest(ChecadasBase):
+    """`checadas_en_turno_por_empleado`: foto con los minutos que lleva en turno cada persona."""
+
+    def foto(self, fecha_fin=D):
+        with transaction_context() as db:
+            filas = checadas_en_turno_por_empleado_query(db, fecha_fin - timedelta(days=6), fecha_fin, {}, None)
+        return {id_user: valor for id_user, _, valor in filas}
+
+    # --- los minutos y el umbral de 12 horas ---------------------------------------------------------
+
+    def test_una_abierta_de_2_horas_son_120_minutos(self):
+        self._checada(ANA, local(D, 13, 0))
+        with ahora_local(local(D, 15, 0)):
+            self.assertEqual(Decimal("120.00"), self.foto()[ANA])
+
+    def test_una_abierta_de_11_h_59_min_sigue_en_turno(self):
+        self._checada(ANA, local(D, 3, 1))
+        with ahora_local(local(D, 15, 0)):
+            self.assertEqual(Decimal("719.00"), self.foto()[ANA])
+
+    def test_a_exactamente_12_horas_ya_no_esta_en_turno_y_queda_en_cero(self):
+        self._checada(ANA, local(D, 3, 0))
+        with ahora_local(local(D, 15, 0)):
+            self.assertEqual(Decimal("0.00"), self.foto()[ANA], "12 h exactas: sin salida, no en turno")
+
+    def test_una_entrada_que_cruza_la_medianoche_sigue_contando_sus_minutos(self):
+        self._checada(ANA, local(D, 23, 50))
+        with ahora_local(local(D1, 0, 10)):
+            self.assertEqual(Decimal("20.00"), self.foto(D1)[ANA])
+
+    def test_los_segundos_son_fraccion_de_minuto(self):
+        self._checada(ANA, local(D, 14, 58, 30))
+        with ahora_local(local(D, 15, 0, 0)):
+            self.assertEqual(Decimal("1.50"), self.foto()[ANA])
+
+    # --- quien cuenta -------------------------------------------------------------------------------------
+
+    def test_una_checada_cerrada_deja_a_la_persona_en_cero(self):
+        self._checada(ANA, local(D, 10, 0), local(D, 12, 0))
+        with ahora_local(local(D, 15, 0)):
+            self.assertEqual(Decimal("0.00"), self.foto()[ANA])
+
+    def test_una_incidencia_sin_coordenadas_no_es_checada_y_no_genera_fila(self):
+        self._checada(ANA, local(D, 13, 0), latitude=None)
+        with ahora_local(local(D, 15, 0)):
+            self.assertEqual({}, self.foto())
+
+    def test_con_dos_abiertas_cuenta_la_mas_reciente(self):
+        self._checada(ANA, local(D, 9, 0))     # 6 h
+        self._checada(ANA, local(D, 12, 0))    # 3 h: la que esta en curso
+        with ahora_local(local(D, 15, 0)):
+            self.assertEqual(Decimal("180.00"), self.foto()[ANA])
+
+    def test_una_abierta_de_12_horas_o_mas_no_le_gana_a_una_reciente_ni_cuenta_sola(self):
+        self._checada(ANA, local(D, 1, 0))      # 14 h: sin salida
+        self._checada(BETO, local(D, 1, 0))     # 14 h: sin salida, y es la unica
+        self._checada(ANA, local(D, 14, 0))     # 1 h: en curso
+        with ahora_local(local(D, 15, 0)):
+            foto = self.foto()
+        self.assertEqual(Decimal("60.00"), foto[ANA])
+        self.assertEqual(Decimal("0.00"), foto[BETO], "solo tiene una de 14 h: no esta en turno")
+
+    def test_una_en_proceso_cuenta_como_abierta(self):
+        self._checada(ANA, local(D, 13, 0), status="en_proceso")
+        with ahora_local(local(D, 15, 0)):
+            self.assertEqual(Decimal("120.00"), self.foto()[ANA])
+
+    def test_cualquier_persona_cuenta_tenga_equipo_o_no_y_sin_importar_el_proyecto(self):
+        self._checada(DIEGO, local(D, 14, 0))                              # sin equipo
+        self._checada(BETO, local(D, 14, 0), id_proyect=PROYECTO_OTRO)     # en dos equipos: una sola fila
+        with ahora_local(local(D, 15, 0)):
+            foto = self.foto()
+        self.assertEqual({DIEGO: Decimal("60.00"), BETO: Decimal("60.00")}, foto)
+
+    # --- los ceros: que un valor viejo no se quede pegado --------------------------------------------------
+
+    def test_quien_ya_no_esta_en_turno_sigue_saliendo_con_cero(self):
+        # Por la tarde Ana llevaba 3 h en turno; por la noche cerro. La consulta de la noche la devuelve en CERO (el
+        # upsert la pisa); sin esa fila su valor de la tarde se quedaria pegado.
+        id_ana = self._checada(ANA, local(D, 12, 0))
+        with ahora_local(local(D, 15, 0)):
+            self.assertEqual(Decimal("180.00"), self.foto()[ANA])
+        with transaction_context() as db:
+            db.get(Incident, id_ana).close_date = local(D, 16, 0)
+        with ahora_local(local(D, 20, 0)):
+            self.assertEqual({ANA: Decimal("0.00")}, self.foto())
+
+    def test_una_checada_cancelada_o_borrada_despues_de_contar_tambien_deja_a_la_persona_en_cero(self):
+        # Los candidatos se calculan SIN mirar la cancelacion ni la baja: si no, quien se anulo despues de contar
+        # desapareceria de la consulta y conservaria su valor.
+        self._checada(ANA, local(D, 13, 0), status="cancelada")
+        self._checada(BETO, local(D, 13, 0), baja=datetime(2026, 10, 15, 14, 0))
+        with ahora_local(local(D, 15, 0)):
+            self.assertEqual({ANA: Decimal("0.00"), BETO: Decimal("0.00")}, self.foto())
+
+    def test_solo_salen_quienes_pudieron_estar_en_turno_hoy(self):
+        # Pudo estar en turno hoy quien entro desde 12 horas antes de las 00:00: desde ayer a las 12:00.
+        self._checada(ANA, local(D - timedelta(days=1), 12, 0), local(D - timedelta(days=1), 20, 0))     # candidata
+        self._checada(CARLA, local(D - timedelta(days=1), 11, 59), local(D - timedelta(days=1), 20, 0))  # ya no
+        with ahora_local(local(D, 15, 0)):
+            self.assertEqual({ANA: Decimal("0.00")}, self.foto())
+
+    # --- el dia es el local y es una foto de ahora -------------------------------------------------------
+
+    def test_a_las_18_y_a_las_19_hora_de_mexico_el_dia_es_el_local(self):
+        self._checada(ANA, local(D, 17, 50))
+        with reloj_en_utc(datetime(2026, 10, 16, 0, 0)):                      # 18:00 en Mexico
+            self.assertEqual({ANA: Decimal("10.00")}, self.foto(D))
+            self.assertEqual({}, self.foto(D1), "el 16 es el dia UTC, no el local")
+        with reloj_en_utc(datetime(2026, 10, 16, 1, 0)):                      # 19:00 en Mexico
+            self.assertEqual({ANA: Decimal("70.00")}, self.foto(D))
+            self.assertEqual({}, self.foto(D1))
+
+    def test_no_se_inventa_una_foto_para_otro_dia(self):
+        self._checada(ANA, local(D, 13, 0))
+        with ahora_local(local(D, 15, 0)):
+            self.assertEqual({}, self.foto(D - timedelta(days=1)))
+            self.assertEqual({}, self.foto(D1))
 
 
 class FlujosDeChecadasTest(ChecadasBase):

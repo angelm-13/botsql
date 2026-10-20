@@ -22,7 +22,7 @@ nunca de `now()` en UTC: el dia UTC cambia a las 18:00 de Mexico y ahi se equivo
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 from decimal import Decimal
 
 from sqlalchemy import Date, exists, func, or_, select, type_coerce
@@ -154,6 +154,40 @@ def checadas_en_turno_por_equipo_query(session, fecha_inicio, fecha_fin, filtros
 def checadas_sin_salida_por_equipo_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
     """Foto: personas distintas con una checada ABIERTA de 12 horas o MAS (olvidaron marcar la salida), por equipo."""
     return _foto_por_equipo(session, fecha_fin, lambda columna, corte: columna <= corte)
+
+
+# --- foto por persona: quien esta en turno y cuanto lleva ----------------------------------------
+
+def checadas_en_turno_por_empleado_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
+    """Foto: minutos que lleva en turno cada persona con una checada ABIERTA de MENOS de 12 horas.
+
+    * Valor: minutos desde la ENTRADA. Si una persona tiene varias abiertas de menos de 12 horas, cuenta la MAS RECIENTE
+      (la que esta en curso; una mas vieja es casi seguro una entrada duplicada).
+    * Quien ya no esta en turno sale en CERO, no desaparece: el upsert solo actualiza lo que la consulta devuelve, asi que
+      sin ese cero el valor de hace un rato se quedaria pegado. Los candidatos son todas las personas con una checada que
+      EMPEZO desde 12 horas antes de que comenzara hoy: nadie que entrara antes pudo estar en turno hoy. Se calculan sin
+      mirar si la checada se cancelo o se borro: una checada anulada despues de contar tambien debe dejar de contar.
+      La API omite esos ceros (`ocultar_ceros`): el Dashboard solo pinta a quien esta en turno.
+    * Una foto de AHORA: solo se emite si `fecha_fin` es el dia local de hoy (ver `_foto_por_equipo`).
+    """
+    ahora = ahora_negocio()
+    if fecha_fin != ahora.date():
+        return []
+    en_curso = dict(session.execute(
+        select(Incident.id_user, func.max(Incident.incident_date))
+        .where(*checadas_vigentes(), Incident.close_date.is_(None), Incident.incident_date > ahora - UMBRAL_SIN_SALIDA)
+        .group_by(Incident.id_user)
+    ).all())
+    desde = datetime.combine(ahora.date(), time.min) - UMBRAL_SIN_SALIDA
+    candidatos = set(session.scalars(
+        select(func.distinct(Incident.id_user)).where(es_checada(), Incident.incident_date >= desde)
+    ))
+    filas = []
+    for id_user in sorted(candidatos | set(en_curso)):
+        entrada = en_curso.get(id_user)
+        minutos = max(Decimal(0), Decimal((ahora - entrada).total_seconds()) / 60) if entrada else Decimal(0)
+        filas.append((int(id_user), fecha_fin, minutos.quantize(CENTESIMAS)))
+    return filas
 
 
 # --- flujos: entradas y salidas por dia local ------------------------------------------------
@@ -372,6 +406,25 @@ def definiciones():
             descripcion=(
                 "Minutos trabajados por empleado: suma de (salida - entrada) de las checadas cerradas, por día de la "
                 "entrada. Una checada sin salida todavía no suma."
+            ),
+        ),
+        KpiDefinition(
+            clave="checadas_en_turno_por_empleado",
+            etiqueta="Tiempo en turno por empleado",
+            modulo="operaciones",
+            dimensiones=("empleado",),
+            query_builder=checadas_en_turno_por_empleado_query,
+            agregacion="ultimo",
+            unidad="minutos",
+            alcance_proyecto=False,
+            direccion="neutral",
+            graficas_permitidas=barras,
+            grafica_default="barras",
+            ocultar_ceros=True,
+            descripcion=(
+                f"Foto de ahora: quién está en turno y cuántos minutos lleva desde su entrada (checada abierta de menos de "
+                f"{UMBRAL_SIN_SALIDA_HORAS} horas). Si tiene varias abiertas, cuenta la más reciente. Quien ya no está en "
+                "turno no aparece."
             ),
         ),
     )
