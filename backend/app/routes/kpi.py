@@ -12,7 +12,7 @@ from app.kpis.dimensiones import (
 )
 from app.kpis.registry import (
     AGREGACION_POR_CLAVE, ALCANCE_PROYECTO_POR_CLAVE, DIMENSION_JSON_KEY, DIMENSION_POR_CLAVE,
-    KPI_POR_CLAVE, LIMITE_POR_CLAVE, PRESTADO_ORDENES, SIN_ASIGNAR_POR_CLAVE,
+    KPI_POR_CLAVE, LIMITE_POR_CLAVE, OCULTAR_CEROS_POR_CLAVE, PRESTADO_ORDENES, SIN_ASIGNAR_POR_CLAVE,
 )
 from app.models.kpi_definition import KpiDefinition
 from app.models.kpi_snapshot import KpiSnapshot
@@ -146,7 +146,7 @@ def _dimension_entity_expr(campo_json):
     return cast(KpiSnapshot.dimension_key, JSONB)[campo_json].astext
 
 
-def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo=False, limite=None, sin_asignar=False):
+def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo=False, limite=None, sin_asignar=False, ocultar_ceros=False):
     """Combina `kpi_snapshot` en el rango, en uno de tres modos:
 
     * `campo_json` es None (dimension "global", ej. ingresos/egresos
@@ -170,6 +170,10 @@ def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, enti
       se ignoran: no hay forma correcta de combinarlas.
     * "ultimo": la foto del ultimo dia del rango que tenga datos. Por periodo
       se muestra la foto de cada dia, y el total es la del ultimo.
+
+    `ocultar_ceros` (`KpiDefinition.ocultar_ceros`): en el modo por entidad, quita de `por_empleado` las entidades cuyo
+    valor combinado es 0 (la foto de "quien esta en turno" deja un 0 por cada persona que ya salio). Va ANTES de `limite`,
+    y el `total` no cambia.
 
     `limite` (`KpiDefinition.limite_categorias`): en el modo por entidad, deja en
     `por_empleado` solo las `limite` entidades de mayor valor (empate: la de menor id).
@@ -265,6 +269,8 @@ def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, enti
     ]
     por_entidad = {entidad: valor_de(*agregados) for entidad, *agregados in filas}
     total = total_de([tuple(agregados) for _, *agregados in filas])
+    if ocultar_ceros:
+        por_entidad = {entidad: valor for entidad, valor in por_entidad.items() if valor}
     if limite is not None:
         mayores = sorted(por_entidad.items(), key=lambda par: (-par[1], str(par[0])))[:limite]
         por_entidad = dict(mayores)
@@ -479,10 +485,11 @@ def query_kpi_snapshot(user_data):
         agrupar_por_periodo = agrupar_por == 'periodo'
         tope_categorias = LIMITE_POR_CLAVE.get(kpi_row.clave) if kpi_row else None
         con_sin_asignar = SIN_ASIGNAR_POR_CLAVE.get(kpi_row.clave, False) if kpi_row else False
-        rango_a = _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo, tope_categorias, con_sin_asignar)
+        sin_ceros = OCULTAR_CEROS_POR_CLAVE.get(kpi_row.clave, False) if kpi_row else False
+        rango_a = _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo, tope_categorias, con_sin_asignar, sin_ceros)
         rango_b = None
         if fecha_inicio_b and fecha_fin_b:
-            rango_b = _totales(db, id_kpi_definition, fecha_inicio_b, fecha_fin_b, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo, tope_categorias, con_sin_asignar)
+            rango_b = _totales(db, id_kpi_definition, fecha_inicio_b, fecha_fin_b, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo, tope_categorias, con_sin_asignar, sin_ceros)
         # El snapshot guarda ids; los nombres viajan aparte (`etiquetas`) para que el Dashboard no tenga
         # que cargar catalogos enteros solo para ponerlos. Cada dimension declara quien los resuelve
         # (`app/kpis/dimensiones.py`); estado y global no llevan.

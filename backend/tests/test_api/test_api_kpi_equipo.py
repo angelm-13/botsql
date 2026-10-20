@@ -17,6 +17,7 @@ from app.models import (
 )
 from app.models.session import engine, transaction_context
 from app.modules.plan import reiniciar_plan
+from app.routes.kpi import _totales
 from tests.conftest import BackendTestCase
 from tests.reloj import ahora_local
 
@@ -241,3 +242,27 @@ class TestKpiFiltroPorEquipoApi(BackendTestCase):
         self.assertEqual({str(T1): 1.0, str(T2): 0.0, str(T3): 0.0, "sin_asignar": 0.0}, sin_salida["por_empleado"],
                          "Ana (10:00) ya paso de 12 h")
 
+    # --- ocultar_ceros ---------------------------------------------------------------------------------------
+
+    def _sembrar_un_cero(self):
+        with transaction_context() as db:
+            db.add(KpiSnapshot(id_kpi_definition=self.id_empleado, dimension_key={"id_user": DIEGO, "id_proyect": PROYECTO},
+                               periodo=date(2026, 9, 1), valor=Decimal("0")))
+
+    def _totales_de_empleados(self, **extra):
+        with transaction_context() as db:
+            return _totales(db, self.id_empleado, date(2026, 9, 1), date(2026, 9, 30), PROYECTO, None, "id_user", "suma", **extra)
+
+    def test_ocultar_ceros_quita_las_entidades_en_cero_y_no_cambia_el_total(self):
+        self._sembrar_un_cero()
+        con = self._totales_de_empleados()
+        sin = self._totales_de_empleados(ocultar_ceros=True)
+        self.assertEqual({str(ANA), str(BETO), str(CARLA), str(DIEGO)}, set(con["por_empleado"]), "por omision se ven todas")
+        self.assertEqual({str(ANA), str(BETO), str(CARLA)}, set(sin["por_empleado"]), "Diego (0) ya no sale")
+        self.assertEqual(con["total"], sin["total"], "un cero no suma")
+
+    def test_ocultar_ceros_va_antes_del_limite(self):
+        # Con limite 4 y cuatro entidades (una en cero) salen tres: el cero no ocupa un lugar del top.
+        self._sembrar_un_cero()
+        self.assertEqual(4, len(self._totales_de_empleados(limite=4)["por_empleado"]))
+        self.assertEqual(3, len(self._totales_de_empleados(ocultar_ceros=True, limite=4)["por_empleado"]))

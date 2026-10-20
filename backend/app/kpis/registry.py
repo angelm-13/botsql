@@ -1603,7 +1603,7 @@ class KpiDefinition:
                  agregacion=None, unidad="numero", alcance_proyecto=True, modo="snapshot",
                  colores_categoria=None, descripcion=None, etiqueta_dimension=None,
                  orden_categorias=None, limite_categorias=None, resumen_builder=None, sin_asignar=False,
-                 etiquetas_categoria=None):
+                 etiquetas_categoria=None, ocultar_ceros=False):
         self.clave = clave
         self.etiqueta = etiqueta
         # Una linea corta para el selector de KPI del editor (rediseno del
@@ -1668,6 +1668,10 @@ class KpiDefinition:
         # routes/kpi.py), no en el query_builder: cada dia guarda todas las familias y el top
         # depende del rango que se pida. El "total" sigue siendo el de TODAS. None = sin corte.
         self.limite_categorias = limite_categorias
+        # La API no devuelve las entidades cuyo valor es 0 (`por_empleado`). Para una foto por persona ("quien esta en
+        # turno ahora"): el job escribe un 0 para quien ya salio, para que el valor viejo no se quede pegado, y ese 0 no
+        # debe pintarse como una barra vacia por cada persona que ya se fue. El total no cambia (un cero no suma).
+        self.ocultar_ceros = ocultar_ceros
         # Si el KPI se calcula UNA VEZ POR PROYECTO ACTIVO (True, el default
         # -- lo que ya hacian los primeros 3 KPIs, todos sobre entidades que
         # SI tienen id_proyect) o UNA SOLA VEZ, sin filtro de proyecto
@@ -2107,6 +2111,9 @@ DIMENSION_POR_CLAVE = {kpi.clave: kpi.dimensiones[0] for kpi in KPI_REGISTRY}
 # consume `_totales()` en `app/routes/kpi.py` para cortar al sumar el rango.
 LIMITE_POR_CLAVE = {kpi.clave: kpi.limite_categorias for kpi in KPI_REGISTRY}
 
+# Si la API omite las entidades en cero (`KpiDefinition.ocultar_ceros`): lo consume `_totales()` en `routes/kpi.py`.
+OCULTAR_CEROS_POR_CLAVE = {kpi.clave: kpi.ocultar_ceros for kpi in KPI_REGISTRY}
+
 # Si el KPI muestra las filas sin entidad como "Sin asignar" (`KpiDefinition.sin_asignar`): lo consume
 # `routes/kpi.py` al sumar el rango y al armar las etiquetas.
 SIN_ASIGNAR_POR_CLAVE = {kpi.clave: kpi.sin_asignar for kpi in KPI_REGISTRY}
@@ -2196,6 +2203,11 @@ def _validar():
             raise RuntimeError(
                 f"El KPI '{kpi.clave}' pide 'sin_asignar' pero su dimension '{kpi.dimensiones[0]}' "
                 "no tiene entidades que puedan faltar."
+            )
+        if kpi.ocultar_ceros and (kpi.modo != "snapshot" or CATALOGO_POR_CLAVE[kpi.dimensiones[0]].tipo in ("global", "categoria")):
+            raise RuntimeError(
+                f"El KPI '{kpi.clave}' pide 'ocultar_ceros' pero solo aplica a un KPI snapshot con entidades "
+                "(persona o catalogo): en uno global no hay entidad y en uno de categorias un cero es un dato."
             )
         if kpi.limite_categorias is not None and (
             not isinstance(kpi.limite_categorias, int) or isinstance(kpi.limite_categorias, bool)

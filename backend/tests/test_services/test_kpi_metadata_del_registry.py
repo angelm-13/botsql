@@ -98,6 +98,30 @@ class ConMetadatosDelRegistryTest(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "limite_categorias"):
                     registry._validar()
 
+    def test_ocultar_ceros_solo_tiene_sentido_en_un_kpi_snapshot_con_entidades(self):
+        def kpi(dimension, **extra):
+            return registry.KpiDefinition(
+                "kpi_de_prueba", "Prueba", "operaciones", (dimension,), lambda *a: [],
+                direccion="neutral", graficas_permitidas=("barras",), grafica_default="barras",
+                **{"agregacion": "ultimo", **extra, "ocultar_ceros": True},
+            )
+
+        for dimension in ("empleado", "equipo", "mesero"):
+            with self.subTest(dimension=dimension), mock.patch.object(registry, "KPI_REGISTRY", (kpi(dimension),)):
+                registry._validar()  # no revienta
+        for dimension in ("global", "estado"):
+            with self.subTest(dimension=dimension), mock.patch.object(registry, "KPI_REGISTRY", (kpi(dimension),)):
+                with self.assertRaisesRegex(RuntimeError, "ocultar_ceros"):
+                    registry._validar()
+        with self.subTest(modo="vivo"), mock.patch.object(registry, "KPI_REGISTRY", (kpi("empleado", modo="vivo", agregacion=None),)):
+            with self.assertRaisesRegex(RuntimeError, "ocultar_ceros"):
+                registry._validar()
+
+    def test_ocultar_ceros_es_false_por_omision_y_el_mapa_lo_refleja(self):
+        for kpi in KPI_REGISTRY:
+            self.assertEqual(kpi.ocultar_ceros, registry.OCULTAR_CEROS_POR_CLAVE[kpi.clave], kpi.clave)
+        self.assertFalse(KPI_POR_CLAVE["ventas_por_empleado"].ocultar_ceros, "un KPI de siempre no cambia")
+
     def test_sin_asignar_solo_tiene_sentido_con_entidades_que_puedan_faltar(self):
         def kpi(dimension, sin_asignar):
             return registry.KpiDefinition(
