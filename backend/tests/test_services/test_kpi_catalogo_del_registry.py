@@ -99,7 +99,7 @@ class CatalogoExportadoTest(unittest.TestCase):
         # Si se agrega o se quita un campo aqui, el fixture y las pruebas del front deben enterarse a proposito.
         for fila in catalogo_del_registry():
             self.assertEqual(
-                ["id_kpi_definition", "clave", "etiqueta", "modulo", "dimensiones", "unidad", "modo"], list(fila), fila["clave"],
+                ["id_kpi_definition", "clave", "etiqueta", "modulo", "grupo", "dimensiones", "unidad", "modo"], list(fila), fila["clave"],
             )
 
 

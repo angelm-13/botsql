@@ -97,6 +97,12 @@ MODOS = ("snapshot", "vivo")
 # registro -- ver el rediseno del dashboard.
 UNIDADES = ("numero", "porcentaje", "moneda", "dias", "piezas", "minutos")
 
+# Pestanas del selector de KPI del Dashboard que NO son un modulo del plan. Un KPI con `grupo` sale en esa pestana
+# en vez de en la de su `modulo`, pero su modulo no cambia: licencias (`modulo_habilitado`), permisos, el job y el
+# PDF siguen leyendo `modulo`. Vocabulario cerrado, igual que las demas listas de aqui: un `grupo` mal escrito
+# dejaria al KPI en una pestana que el frontend no conoce, y revienta al importar.
+GRUPOS_DE_SELECTOR = ("asistencias",)
+
 # Vocabulario cerrado de dimensiones: las claves del catalogo de
 # `app/kpis/dimensiones.py` (las cinco de siempre, en su orden, y despues las de
 # restaurante y logistica).
@@ -1603,9 +1609,14 @@ class KpiDefinition:
                  agregacion=None, unidad="numero", alcance_proyecto=True, modo="snapshot",
                  colores_categoria=None, descripcion=None, etiqueta_dimension=None,
                  orden_categorias=None, limite_categorias=None, resumen_builder=None, sin_asignar=False,
-                 etiquetas_categoria=None, ocultar_ceros=False):
+                 etiquetas_categoria=None, ocultar_ceros=False, grupo=None):
         self.clave = clave
         self.etiqueta = etiqueta
+        # Pestana del selector de KPI donde se muestra en vez de la de su modulo (ver GRUPOS_DE_SELECTOR). None = la
+        # de su `modulo`, que es lo de siempre. Solo agrupa en pantalla: no cambia licencias, permisos ni el job.
+        # Vive aqui y `GET /kpi_definition/` lo entrega desde el registry, como `direccion` o `descripcion`: no es
+        # una columna de `kpi_definition`.
+        self.grupo = grupo
         # Una linea corta para el selector de KPI del editor (rediseno del
         # dashboard) -- opcional, sin default obligatorio: un KPI viejo sin
         # descripcion simplemente no muestra esa linea, no revienta nada.
@@ -2155,6 +2166,11 @@ def _validar():
         if kpi.modulo not in MODULO_POR_CLAVE:
             raise RuntimeError(
                 f"El KPI '{kpi.clave}' apunta al modulo inexistente '{kpi.modulo}'."
+            )
+        if kpi.grupo is not None and kpi.grupo not in GRUPOS_DE_SELECTOR:
+            raise RuntimeError(
+                f"El KPI '{kpi.clave}' declara el grupo desconocido '{kpi.grupo}' "
+                f"(validos: {', '.join(GRUPOS_DE_SELECTOR)})."
             )
         if not kpi.etiqueta_dimension or len(kpi.etiqueta_dimension) > 30:
             raise RuntimeError(

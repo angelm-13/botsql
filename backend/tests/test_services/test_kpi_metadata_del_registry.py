@@ -243,3 +243,67 @@ class EtiquetaDeDimensionTest(unittest.TestCase):
         huerfana = KpiDefinition(clave="ya_no_existe", etiqueta="x", modulo="operaciones", dimensiones=["empleado"], unidad="numero")
         huerfana.id_kpi_definition = 996
         self.assertEqual("", _con_metadatos_del_registry(huerfana)["etiqueta_dimension"])
+
+
+CHECADAS = (
+    "checadas_en_turno_por_equipo", "checadas_sin_salida_por_equipo", "checadas_entradas_por_equipo",
+    "checadas_salidas_por_equipo", "checadas_en_turno_por_empleado", "horas_trabajadas_por_empleado",
+    "checadas_con_duracion_anomala",
+)
+
+
+class GrupoDelSelectorTest(unittest.TestCase):
+    """`grupo`: la pestana del selector de KPI donde sale un KPI en vez de la de su modulo. Solo agrupa en pantalla."""
+
+    def test_los_siete_kpis_de_checadas_van_a_asistencias_sin_dejar_de_ser_de_operaciones(self):
+        for clave in CHECADAS:
+            kpi = KPI_POR_CLAVE[clave]
+            self.assertEqual("asistencias", kpi.grupo, clave)
+            self.assertEqual("operaciones", kpi.modulo, f"{clave}: el modulo real no cambia (licencias, permisos, job)")
+
+    def test_ningun_otro_kpi_declara_grupo(self):
+        self.assertEqual(set(CHECADAS), {kpi.clave for kpi in KPI_REGISTRY if kpi.grupo is not None})
+
+    def test_la_api_entrega_el_grupo_junto_al_modulo_real(self):
+        agrupado = KpiDefinition(clave="checadas_en_turno_por_equipo", etiqueta="x", modulo="operaciones",
+                                  dimensiones=["equipo"], unidad="numero")
+        agrupado.id_kpi_definition = 990
+        resultado = _con_metadatos_del_registry(agrupado)
+        self.assertEqual("asistencias", resultado["grupo"])
+        self.assertEqual("operaciones", resultado["modulo"])
+
+        de_siempre = KpiDefinition(clave="ventas_por_empleado", etiqueta="x", modulo="facturacion",
+                                    dimensiones=["empleado"], unidad="moneda")
+        de_siempre.id_kpi_definition = 991
+        self.assertIsNone(_con_metadatos_del_registry(de_siempre)["grupo"])
+
+        huerfana = KpiDefinition(clave="ya_no_existe", etiqueta="x", modulo="operaciones",
+                                  dimensiones=["empleado"], unidad="numero")
+        huerfana.id_kpi_definition = 992
+        self.assertIsNone(_con_metadatos_del_registry(huerfana)["grupo"])
+
+    def test_un_grupo_desconocido_falla_al_importar(self):
+        def kpi(grupo):
+            return registry.KpiDefinition(
+                "kpi_de_prueba", "Prueba", "operaciones", ("empleado",), lambda *a: [],
+                direccion="neutral", graficas_permitidas=("barras",), grafica_default="barras",
+                agregacion="suma", grupo=grupo,
+            )
+
+        with mock.patch.object(registry, "KPI_REGISTRY", (kpi("asistencias"),)):
+            registry._validar()  # no revienta
+        for malo in ("asistenciass", "operaciones", ""):
+            with self.subTest(grupo=malo), mock.patch.object(registry, "KPI_REGISTRY", (kpi(malo),)):
+                with self.assertRaisesRegex(RuntimeError, "grupo desconocido"):
+                    registry._validar()
+
+    def test_un_grupo_no_se_llama_como_un_modulo_real(self):
+        # La pestana se identifica por una sola clave: la de su grupo o, si no tiene, la de su modulo. Si un grupo
+        # se llamara como un modulo, el selector fundiria las dos pestanas en una.
+        from app.modules.registry import MODULO_POR_CLAVE
+
+        self.assertEqual(set(), set(registry.GRUPOS_DE_SELECTOR) & set(MODULO_POR_CLAVE))
+
+    def test_el_grupo_no_es_una_columna_de_kpi_definition(self):
+        # Vive en el registry y la API lo entrega desde ahi (como `direccion` o `descripcion`): no hay migracion.
+        self.assertNotIn("grupo", KpiDefinition.__table__.columns)

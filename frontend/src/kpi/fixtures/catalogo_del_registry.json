@@ -4,6 +4,7 @@
   "clave": "ventas_por_empleado",
   "etiqueta": "Ventas por empleado",
   "modulo": "facturacion",
+  "grupo": null,
   "dimensiones": [
    "empleado"
   ],
@@ -15,6 +16,7 @@
   "clave": "egresos_por_empleado",
   "etiqueta": "Egresos por empleado",
   "modulo": "facturacion",
+  "grupo": null,
   "dimensiones": [
    "empleado"
   ],
@@ -26,6 +28,7 @@
   "clave": "desarrollo_por_empleado",
   "etiqueta": "Desarrollo por empleado",
   "modulo": "operaciones",
+  "grupo": null,
   "dimensiones": [
    "empleado"
   ],
@@ -37,6 +40,7 @@
   "clave": "vales_vencidos_por_responsable",
   "etiqueta": "Vales vencidos por responsable",
   "modulo": "operaciones",
+  "grupo": null,
   "dimensiones": [
    "empleado"
   ],
@@ -48,6 +52,7 @@
   "clave": "incidentes_resueltos_por_empleado",
   "etiqueta": "Incidentes resueltos por empleado",
   "modulo": "operaciones",
+  "grupo": null,
   "dimensiones": [
    "empleado"
   ],
@@ -59,6 +64,7 @@
   "clave": "cancelaciones_por_empleado",
   "etiqueta": "Cancelaciones por empleado",
   "modulo": "operaciones",
+  "grupo": null,
   "dimensiones": [
    "empleado"
   ],
@@ -70,6 +76,7 @@
   "clave": "ordenes_laboratorio_entregadas_por_tecnico",
   "etiqueta": "Órdenes de laboratorio entregadas por técnico",
   "modulo": "laboratorio",
+  "grupo": null,
   "dimensiones": [
    "empleado"
   ],
@@ -81,6 +88,7 @@
   "clave": "tiempo_promedio_reparacion_laboratorio_por_tecnico",
   "etiqueta": "Tiempo promedio de reparación por técnico",
   "modulo": "laboratorio",
+  "grupo": null,
   "dimensiones": [
    "empleado"
   ],
@@ -92,6 +100,7 @@
   "clave": "costo_promedio_reparacion_laboratorio_por_tecnico",
   "etiqueta": "Costo promedio de reparación por técnico",
   "modulo": "laboratorio",
+  "grupo": null,
   "dimensiones": [
    "empleado"
   ],
@@ -103,6 +112,7 @@
   "clave": "documentos_vencidos_por_responsable",
   "etiqueta": "Documentos vencidos por responsable",
   "modulo": "documentos",
+  "grupo": null,
   "dimensiones": [
    "empleado"
   ],
@@ -114,6 +124,7 @@
   "clave": "ingresos_totales",
   "etiqueta": "Ingresos totales",
   "modulo": "facturacion",
+  "grupo": null,
   "dimensiones": [
    "global"
   ],
@@ -125,6 +136,7 @@
   "clave": "egresos_totales",
   "etiqueta": "Egresos totales",
   "modulo": "facturacion",
+  "grupo": null,
   "dimensiones": [
    "global"
   ],
@@ -136,6 +148,7 @@
   "clave": "material_prestado_por_responsable",
   "etiqueta": "Material prestado por responsable",
   "modulo": "inventario",
+  "grupo": null,
   "dimensiones": [
    "empleado"
   ],
@@ -147,6 +160,7 @@
   "clave": "prestamos_vencidos_por_responsable",
   "etiqueta": "Préstamos de material vencidos por responsable",
   "modulo": "inventario",
+  "grupo": null,
   "dimensiones": [
    "empleado"
   ],
@@ -158,6 +172,7 @@
   "clave": "lotes_proximos_a_caducar",
   "etiqueta": "Lotes próximos a caducar",
   "modulo": "inventario",
+  "grupo": null,
   "dimensiones": [
    "producto"
   ],
@@ -169,6 +184,7 @@
   "clave": "articulos_bajo_stock",
   "etiqueta": "Artículos bajo stock",
   "modulo": "inventario",
+  "grupo": null,
   "dimensiones": [
    "producto"
   ],
@@ -180,6 +196,7 @@
   "clave": "incidencias_abiertas_por_empleado",
   "etiqueta": "Incidencias abiertas por responsable",
   "modulo": "operaciones",
+  "grupo": null,
   "dimensiones": [
    "empleado"
   ],
@@ -191,6 +208,7 @@
   "clave": "incidencias_pendientes",
   "etiqueta": "Incidencias pendientes",
   "modulo": "operaciones",
+  "grupo": null,
   "dimensiones": [
    "global"
   ],
@@ -202,6 +220,7 @@
   "clave": "incidencias_abiertas_vs_cerradas",
   "etiqueta": "Incidencias abiertas vs. cerradas",
   "modulo": "operaciones",
+  "grupo": null,
   "dimensiones": [
    "estado"
   ],
@@ -213,6 +232,7 @@
   "clave": "material_por_estado",
   "etiqueta": "Material por estado",
   "modulo": "operaciones",
+  "grupo": null,
   "dimensiones": [
    "estado"
   ],
@@ -224,6 +244,7 @@
   "clave": "prestamos_abiertos_por_antiguedad",
   "etiqueta": "Préstamos abiertos por antigüedad",
   "modulo": "operaciones",
+  "grupo": null,
   "dimensiones": [
    "estado"
   ],
@@ -235,6 +256,7 @@
   "clave": "perdidas_por_familia",
   "etiqueta": "Pérdidas por familia",
   "modulo": "operaciones",
+  "grupo": null,
   "dimensiones": [
    "familia"
   ],
@@ -246,6 +268,7 @@
   "clave": "material_prestado_actual",
   "etiqueta": "Material prestado ahora",
   "modulo": "operaciones",
+  "grupo": null,
   "dimensiones": [
    "empleado"
   ],
@@ -257,6 +280,7 @@
   "clave": "piezas_por_estado",
   "etiqueta": "Piezas por estado",
   "modulo": "operaciones",
+  "grupo": null,
   "dimensiones": [
    "estado"
   ],
@@ -268,6 +292,7 @@
   "clave": "ventas_restaurante",
   "etiqueta": "Ventas del restaurante",
   "modulo": "restaurante",
+  "grupo": null,
   "dimensiones": [
    "global"
   ],
@@ -279,6 +304,7 @@
   "clave": "ventas_por_mesero",
   "etiqueta": "Ventas por mesero",
   "modulo": "restaurante",
+  "grupo": null,
   "dimensiones": [
    "mesero"
   ],
@@ -290,6 +316,7 @@
   "clave": "ticket_promedio",
   "etiqueta": "Ticket promedio",
   "modulo": "restaurante",
+  "grupo": null,
   "dimensiones": [
    "global"
   ],
@@ -301,6 +328,7 @@
   "clave": "propinas_restaurante",
   "etiqueta": "Propinas del restaurante",
   "modulo": "restaurante",
+  "grupo": null,
   "dimensiones": [
    "global"
   ],
@@ -312,6 +340,7 @@
   "clave": "propina_pct_de_venta",
   "etiqueta": "Propina como % de la venta",
   "modulo": "restaurante",
+  "grupo": null,
   "dimensiones": [
    "global"
   ],
@@ -323,6 +352,7 @@
   "clave": "platillos_mas_vendidos",
   "etiqueta": "Platillos más vendidos",
   "modulo": "restaurante",
+  "grupo": null,
   "dimensiones": [
    "platillo"
   ],
@@ -334,6 +364,7 @@
   "clave": "frecuencia_por_platillo",
   "etiqueta": "Frecuencia por platillo",
   "modulo": "restaurante",
+  "grupo": null,
   "dimensiones": [
    "platillo"
   ],
@@ -345,6 +376,7 @@
   "clave": "top_mesas",
   "etiqueta": "Mesas con más venta",
   "modulo": "restaurante",
+  "grupo": null,
   "dimensiones": [
    "mesa"
   ],
@@ -356,6 +388,7 @@
   "clave": "servicios_por_mesero",
   "etiqueta": "Servicios por mesero",
   "modulo": "restaurante",
+  "grupo": null,
   "dimensiones": [
    "mesero"
   ],
@@ -367,6 +400,7 @@
   "clave": "tiempo_de_entrega",
   "etiqueta": "Tiempo de entrega",
   "modulo": "restaurante",
+  "grupo": null,
   "dimensiones": [
    "global"
   ],
@@ -378,6 +412,7 @@
   "clave": "diferencia_de_caja",
   "etiqueta": "Desviación de caja",
   "modulo": "restaurante",
+  "grupo": null,
   "dimensiones": [
    "empleado"
   ],
@@ -389,6 +424,7 @@
   "clave": "pedidos_del_dia",
   "etiqueta": "Pedidos del día",
   "modulo": "restaurante",
+  "grupo": null,
   "dimensiones": [
    "estado"
   ],
@@ -400,6 +436,7 @@
   "clave": "cuentas_sin_cobrar",
   "etiqueta": "Cuentas sin cobrar",
   "modulo": "restaurante",
+  "grupo": null,
   "dimensiones": [
    "global"
   ],
@@ -411,6 +448,7 @@
   "clave": "mesas_ocupadas",
   "etiqueta": "Mesas ocupadas",
   "modulo": "restaurante",
+  "grupo": null,
   "dimensiones": [
    "estado"
   ],
@@ -422,6 +460,7 @@
   "clave": "checadas_en_turno_por_equipo",
   "etiqueta": "Personas en turno por equipo",
   "modulo": "operaciones",
+  "grupo": "asistencias",
   "dimensiones": [
    "equipo"
   ],
@@ -433,6 +472,7 @@
   "clave": "checadas_sin_salida_por_equipo",
   "etiqueta": "Personas sin salida por equipo",
   "modulo": "operaciones",
+  "grupo": "asistencias",
   "dimensiones": [
    "equipo"
   ],
@@ -444,6 +484,7 @@
   "clave": "checadas_entradas_por_equipo",
   "etiqueta": "Entradas por equipo",
   "modulo": "operaciones",
+  "grupo": "asistencias",
   "dimensiones": [
    "equipo"
   ],
@@ -455,6 +496,7 @@
   "clave": "checadas_salidas_por_equipo",
   "etiqueta": "Salidas por equipo",
   "modulo": "operaciones",
+  "grupo": "asistencias",
   "dimensiones": [
    "equipo"
   ],
@@ -466,6 +508,7 @@
   "clave": "horas_trabajadas_por_empleado",
   "etiqueta": "Tiempo trabajado por empleado",
   "modulo": "operaciones",
+  "grupo": "asistencias",
   "dimensiones": [
    "empleado"
   ],
@@ -477,6 +520,7 @@
   "clave": "checadas_en_turno_por_empleado",
   "etiqueta": "Tiempo en turno por empleado",
   "modulo": "operaciones",
+  "grupo": "asistencias",
   "dimensiones": [
    "empleado"
   ],
@@ -488,6 +532,7 @@
   "clave": "checadas_con_duracion_anomala",
   "etiqueta": "Checadas con duración anómala por empleado",
   "modulo": "operaciones",
+  "grupo": "asistencias",
   "dimensiones": [
    "empleado"
   ],

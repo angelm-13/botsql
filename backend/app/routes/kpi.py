@@ -303,6 +303,9 @@ def _con_metadatos_del_registry(kpi_row: KpiDefinition) -> dict:
         'clave': kpi_row.clave,
         'etiqueta': kpi_row.etiqueta,
         'modulo': kpi_row.modulo,
+        # Pestana del selector si no es la de su modulo (hoy "asistencias"); None para casi todos. `modulo` sigue
+        # mandando en licencias, permisos y filtros: esto solo agrupa en pantalla.
+        'grupo': definicion.grupo if definicion else None,
         'dimensiones': kpi_row.dimensiones,
         'unidad': kpi_row.unidad,
         'direccion': definicion.direccion if definicion else 'neutral',

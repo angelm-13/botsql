@@ -125,6 +125,9 @@ class TestKpiApi(BackendTestCase):
         self.assertEqual("snapshot", fila["modo"])
         self.assertIn(fila["grafica_default"], fila["graficas_permitidas"])
         self.assertIsNone(fila["colores_categoria"])
+        # `grupo` (pestana del selector) viaja siempre, vacio para casi todos: no es del modulo.
+        self.assertIn("grupo", fila)
+        self.assertIsNone(fila["grupo"])
 
         sin_permiso_puntual = self._request(ACTOR_SIN_KPI_ESPECIFICO, "/kpi_definition/")
         self.assertEqual(200, sin_permiso_puntual.status_code)

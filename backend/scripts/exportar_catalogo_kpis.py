@@ -52,6 +52,7 @@ def catalogo_del_registry() -> list[dict]:
             "clave": kpi.clave,
             "etiqueta": kpi.etiqueta,
             "modulo": kpi.modulo,
+            "grupo": kpi.grupo,
             "dimensiones": list(kpi.dimensiones),
             "unidad": kpi.unidad,
             "modo": kpi.modo,
