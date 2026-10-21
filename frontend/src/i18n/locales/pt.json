@@ -3429,6 +3429,7 @@
     "selector_variables_ayuda": "Todos os KPIs sem detalhamento, de qualquer módulo: servem para combinar no mesmo gráfico.",
     "selector_modulos": "Módulos",
     "selector_elegidos_en_modulo": "selecionados neste módulo",
+    "selector_grupo_asistencias": "Presenças",
     "kpi_variables_group": "Variáveis",
     "kpi_search_placeholder": "Pesquisar KPI…",
     "kpi_search_empty": "Nenhum KPI corresponde à pesquisa.",

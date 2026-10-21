@@ -2,8 +2,9 @@
 // tarjeta y el cuerpo del Dashboard en servidor (renderToStaticMarkup) para
 // que la prueba pueda comprobar que NINGUNA combinacion lanza al renderizar.
 import { renderToStaticMarkup } from "react-dom/server";
-import { CuerpoDeWidget, KpiWidgetCard, MarcoDeEjemplo } from "../pages/Dashboard.jsx";
+import { CuerpoDeWidget, KpiWidgetCard, KpiWidgetPanel, MarcoDeEjemplo } from "../pages/Dashboard.jsx";
 import SelectorDeKpi from "../components/kpi-widgets/SelectorDeKpi.jsx";
+import { rangoInicialDelBorrador } from "./kpiParametros.js";
 
 const t = (clave, respaldo) => (typeof respaldo === "string" ? respaldo : clave);
 const tx = (clave, respaldo) => respaldo ?? clave;
@@ -59,6 +60,35 @@ export function pintarSelector(props) {
       metaDeModulo={(modulo) => ({ icon: null, label: `Modulo ${modulo}` })}
       textoDeBloqueo={(kpi, motivo) => `BLOQUEADO(${motivo}): ${kpi.etiqueta}`}
       {...props}
+    />,
+  );
+}
+
+/** El panel "Agregar grafico" abierto en su primer paso («Que medir»), con su selector de KPI cableado como en la pantalla
+ * real: sirve para comprobar lo que el Dashboard le pasa al selector (iconos y nombres de pestana, traducciones).
+ * `traducir` (opcional) reemplaza al `tx` de prueba, que devuelve el texto de respaldo. */
+export function pintarPanel({ kpiCatalog, idsKpiSeleccionados = [], traducir } = {}) {
+  const panelState = {
+    editingWidgetId: null, colapsado: false, paso: 0, idsKpiSeleccionados, tipoGrafica: "barras",
+    ...rangoInicialDelBorrador(), comparar: false, desfaseComparacion: null,
+    fechaInicioB: "", fechaFinB: "", empleadosSeleccionados: [], departamentosSeleccionados: [], coloresKpi: {},
+    agruparPor: "entidad", umbralBajoStock: "", filas: 1,
+  };
+  return renderToStaticMarkup(
+    <KpiWidgetPanel
+      panelState={panelState}
+      onChangePanelState={() => {}}
+      kpiCatalog={kpiCatalog}
+      users={[]}
+      departments={[]}
+      userLabel={userLabel}
+      productLabel={productLabel}
+      formatNumber={formatNumber}
+      onCancel={() => {}}
+      onSave={() => {}}
+      onAbierto={() => {}}
+      t={t}
+      tx={traducir || tx}
     />,
   );
 }

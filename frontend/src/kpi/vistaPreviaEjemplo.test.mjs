@@ -4,6 +4,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test, { before } from "node:test";
 import { cargarRender } from "./bundleRender.mjs";
+import { datosDeEjemplo, rangoVacio } from "./datosDeEjemplo.js";
+import { agruparKpis } from "./kpiSelector.js";
 import { ofreceVerEjemplo } from "./vistaPreviaDeEjemplo.js";
 
 let pintarMarcoEjemplo;
@@ -31,6 +33,27 @@ test("«Ver ejemplo» solo se ofrece para un KPI REAL (permitido) cuya consulta 
   const dashboard = readFileSync(new URL("../pages/Dashboard.jsx", import.meta.url), "utf8");
   assert.ok(dashboard.includes("const sinDatos = ofreceVerEjemplo("), "el editor decide con ofreceVerEjemplo");
   assert.ok(dashboard.includes('tx("example_view", "Ver ejemplo")') && dashboard.includes("{sinDatos && ("));
+});
+
+test("«Ver ejemplo» dentro de Asistencias: un KPI de checadas permitido con el rango vacio lo ofrece, igual que cualquier otro", () => {
+  const catalogo = JSON.parse(readFileSync(new URL("./fixtures/catalogo_del_registry.json", import.meta.url), "utf8"));
+  const kpi = catalogo.find((k) => k.clave === "checadas_en_turno_por_equipo"); // grupo asistencias, modulo operaciones
+  assert.deepEqual([kpi.grupo, kpi.modulo], ["asistencias", "operaciones"]);
+  const vacio = { rango_a: { total: 0, por_empleado: {}, por_periodo: {} } };
+  const conDatos = { rango_a: { total: 3, por_empleado: { a: 3 }, por_periodo: {} } };
+  const listo = { kpiReal: kpi, esTablaVivo: false, loading: false, pendiente: false, error: null, snapshots: [vacio] };
+  assert.equal(ofreceVerEjemplo(listo), true, "permitido y sin datos: el boton");
+  assert.equal(ofreceVerEjemplo({ ...listo, snapshots: [conDatos] }), false, "con datos no hay nada que ejemplificar");
+  assert.equal(ofreceVerEjemplo({ ...listo, kpiReal: null }), false, "sin KPI real no hay boton");
+  // Solo de un KPI permitido: el editor toma el KPI real del catalogo que le llega al rol, y uno que no esta ahi no se puede elegir.
+  const sinPermiso = catalogo.filter((k) => k.clave !== kpi.clave);
+  assert.ok(!agruparKpis(sinPermiso).some((g) => g.kpis.some((k) => k.clave === kpi.clave)), "un KPI no permitido no sale en ninguna pestana");
+  // El ejemplo se arma con la forma del KPI (dimension, unidad), no con su pestana: con o sin grupo es el mismo.
+  const hoy = new Date(2026, 9, 21);
+  const ejemplo = datosDeEjemplo(kpi, { hoy });
+  assert.equal(rangoVacio(ejemplo), false);
+  assert.equal(Object.keys(ejemplo.rango_a.por_empleado).length, 5, "cinco entidades de ejemplo, nunca nombres reales");
+  assert.deepEqual(datosDeEjemplo({ ...kpi, grupo: null }, { hoy }), ejemplo);
 });
 
 test("el aviso lleva el texto acordado y el sello EJEMPLO, sin ninguna frase de motivo debajo", () => {
@@ -84,6 +107,7 @@ test("todos los textos de la vista previa y del selector existen en es, en, pt y
     assert.ok(porPrefijo.includes(clave), `la vista previa usa ${clave}: la prueba tiene que vigilarlo`);
   }
   assert.ok(!porPrefijo.includes("example_reason_sin_datos"), "esa frase se quito del aviso");
+  assert.ok(porPrefijo.includes("selector_grupo_asistencias"), "el nombre de la pestana Asistencias se traduce: la prueba tiene que vigilarlo");
   const claves = [...new Set([...porPrefijo, ...delSelector])];
 
   const catalogos = {};

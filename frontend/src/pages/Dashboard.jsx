@@ -4,7 +4,7 @@ import {
   AreaChart as AreaChartIcon, BarChart2, Boxes, ChevronDown, ChevronUp,
   Check, ClipboardList, FileDown, FileText, FlaskConical, GripVertical, Hash, LineChart as LineChartIcon,
   Loader2, Pencil, PieChart as PieChartIcon, Plus, Receipt,
-  RefreshCw, SlidersHorizontal, Table as TableIcon, Trash2, User, Utensils,
+  RefreshCw, SlidersHorizontal, Table as TableIcon, Trash2, User, UserCheck, Utensils,
 } from "lucide-react";
 import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, useSortable } from "@dnd-kit/sortable";
@@ -104,6 +104,10 @@ const CHART_TYPE_ICONS = {
 // la categoria del KPI, se reutiliza el que el usuario ya asocia con ese
 // modulo en el menu. Un modulo de KPI que todavia no este aqui cae en el
 // icono generico, no revienta.
+//
+// "asistencias" NO es un modulo del plan: es el `grupo` con el que el registry saca los KPIs de checadas en su propia
+// pestana del selector (su modulo real sigue siendo "operaciones"). Tiene entrada aqui porque el selector pide icono
+// y nombre por clave de pestana.
 const KPI_MODULE_META = {
   facturacion: { icon: Receipt, label: "Facturación" },
   operaciones: { icon: ClipboardList, label: "Operaciones" },
@@ -111,6 +115,7 @@ const KPI_MODULE_META = {
   laboratorio: { icon: FlaskConical, label: "Laboratorio" },
   documentos: { icon: FileText, label: "Documentos" },
   restaurante: { icon: Utensils, label: "Restaurante" },
+  asistencias: { icon: UserCheck, label: "Asistencias" },
 };
 const DEFAULT_MODULE_ICON = SlidersHorizontal;
 
@@ -119,6 +124,13 @@ function kpiModuleMeta(modulo) {
     icon: DEFAULT_MODULE_ICON,
     label: modulo ? modulo.charAt(0).toUpperCase() + modulo.slice(1) : "",
   };
+}
+
+// Icono y nombre de una pestana del selector de KPI (`SelectorDeKpi` pide `metaDeModulo(clave)`). Los modulos llevan su
+// nombre en espanol en KPI_MODULE_META; el grupo "asistencias" es nuevo y ya sale traducido.
+function kpiPestanaMeta(clave, tx) {
+  const meta = kpiModuleMeta(clave);
+  return clave === "asistencias" ? { ...meta, label: tx("selector_grupo_asistencias", meta.label) } : meta;
 }
 
 // Avatar por omision para un empleado: no hay fotos de perfil reales, asi que
@@ -1608,7 +1620,7 @@ function tiposDeGraficaPermitidos(kpiInfos) {
   return tiposPermitidosPorKpi(kpiInfos, CHART_TYPES.map((opt) => opt.value));
 }
 
-function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, departments, userLabel, productLabel, formatNumber, onCancel, onSave, onAbierto, t, tx }) {
+export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, departments, userLabel, productLabel, formatNumber, onCancel, onSave, onAbierto, t, tx }) {
   const {
     editingWidgetId,
     colapsado,
@@ -1940,7 +1952,7 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, dep
                 seleccionados={idsKpiSeleccionados}
                 multiple={multiKpiPermitido}
                 onAlternar={toggleKpi}
-                metaDeModulo={kpiModuleMeta}
+                metaDeModulo={(clave) => kpiPestanaMeta(clave, tx)}
                 textoDeBloqueo={textoDeBloqueo}
                 coloresKpi={coloresKpi}
                 onElegirColor={elegirColorKpi}

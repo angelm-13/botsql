@@ -4,7 +4,7 @@ import { Boxes, Check, Hash, Search } from "lucide-react";
 import { CATEGORICAL, colorEfectivoDeKpi, unidadInfo } from "../../kpi/kpiDatos.js";
 import { normalizarBusqueda } from "../../kpi/kpiDatos.js";
 import {
-  agruparKpis, colorDeModulo, estadoDeOpcion, grupoInicial, resumenDeModulos,
+  agruparKpis, colorDeModulo, estadoDeOpcion, grupoInicial, pestanaDeKpi, resumenDeModulos,
 } from "../../kpi/kpiSelector.js";
 
 const TEXTOS_POR_OMISION = {
@@ -83,7 +83,9 @@ export default function SelectorDeKpi({
     const posicion = seleccionados.indexOf(id);
     const color = colorEfectivoDeKpi(id, coloresKpi);
     const clavePopover = `${grupo.clave}:${id}`;
-    const etiquetaModulo = grupo.esVariables && kpi.modulo ? metaDeModulo(kpi.modulo).label : null;
+    // La etiqueta dice la pestana donde vive el KPI (su grupo, si lo tiene), no su modulo real.
+    const pestana = pestanaDeKpi(kpi);
+    const etiquetaModulo = grupo.esVariables && pestana ? metaDeModulo(pestana).label : null;
     return (
       <div
         key={id}
@@ -103,8 +105,8 @@ export default function SelectorDeKpi({
             {etiquetaModulo && (
               <span
                 className="kpi-selector-modulo-tag"
-                data-modulo-tag={kpi.modulo}
-                style={{ "--tinte": colorDeModulo(kpi.modulo) }}
+                data-modulo-tag={pestana}
+                style={{ "--tinte": colorDeModulo(pestana) }}
               >
                 {etiquetaModulo}
               </span>

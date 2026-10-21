@@ -4637,6 +4637,7 @@
     "selector_variables_ayuda": "All KPIs with no breakdown, from any module: they can be combined in the same chart.",
     "selector_modulos": "Modules",
     "selector_elegidos_en_modulo": "selected in this module",
+    "selector_grupo_asistencias": "Attendance",
     "kpi_variables_group": "Variables",
     "kpi_search_placeholder": "Search KPIs…",
     "kpi_search_empty": "No KPI matches your search.",
