@@ -180,8 +180,8 @@ Además el endpoint exige `require_entity_permission('kpi_definition','read')`
 
 | Endpoint | Línea | Contrato |
 |---|---|---|
-| `GET /kpi_definition/` | `:281` | Catálogo filtrado por `has_kpi_permission`; devuelve fila BD + metadatos del registro. |
-| `GET /kpi_definition/all` | `:297` | Catálogo completo para la pantalla de permisos (`/kpi_permissions`). |
+| `GET /kpi_definition/` | `:281` | Catálogo filtrado por `has_kpi_permission`; devuelve fila BD + metadatos del registro (incluido `grupo`: la pestaña del selector, `null` salvo en los siete KPIs de checadas, §2.7). |
+| `GET /kpi_definition/all` | `:297` | Catálogo completo para la pantalla de permisos (`/kpi_permissions`). Sin metadatos del registro: no trae `grupo`, esa pantalla agrupa por `modulo`. |
 | `GET /kpi_snapshot/query` | `:329` | Params: `id_kpi_definition`, `fecha_inicio/fin`, `fecha_inicio_b/fin_b`, `empleados`\|`entidades`, `id_departments`, `id_teams`, `agrupar_por=entidad\|periodo`. Devuelve `{rango_a, rango_b}`, cada uno `{inicio, fin, total, por_empleado{id:valor}, por_periodo{fecha:valor}[, etiquetas]}`. |
 | `GET /kpi_definition/<id>/vivo` | `:434` | KPIs `vivo`: llama `query_builder` en caliente con `limit/offset/id_user/q/orden/…` (firma **distinta**). |
 | CRUD `/kpi_dashboard`, `/kpi_dashboard_widget` | `:519-584` | Tableros privados por dueño. |
@@ -207,6 +207,9 @@ con datos); aplica `limite_categorias` después de combinar (`:231-233`).
   widget en `parametros.colores_kpi`.
 - Un widget guarda `tipo_grafica` + `parametros` (JSONB) + KPIs en la tabla
   puente `kpi_dashboard_widget_kpi`.
+- El selector de KPI arma sus pestañas con `pestanaDeKpi(kpi)` = `kpi.grupo || kpi.modulo`
+  (`kpiSelector.js`). `kpi.modulo` sigue siendo el módulo real y es lo que leen licencias,
+  permisos y filtros; `grupo` solo decide en qué pestaña se muestra (§2.7).
 
 ## 1.2 Diagramas
 
@@ -310,7 +313,8 @@ efectivo; "dónde se valida" cuando aplica.
 |---|---|---|---|
 | `clave` | sí | Identidad única (≤80, columna `String(80)`). | BD (`UNIQUE`), `KPI_POR_CLAVE`, permisos por nombre, hardcodes de frontend (§1.5). Validado `_validar:2130`. |
 | `etiqueta` | sí | Nombre visible (≤150). | `kpi_definition.etiqueta`, selector. |
-| `modulo` | sí | Clave de `MODULOS` (`modules/registry.py`). | `has_kpi_permission` (plan), agrupación del selector, `kpi_definition.modulo`. Validado `:2133`. |
+| `modulo` | sí | Clave de `MODULOS` (`modules/registry.py`). | `has_kpi_permission` (plan), agrupación del selector (salvo que el KPI declare `grupo`), `kpi_definition.modulo`. Validado `:2133`. |
+| `grupo` | no (`None`) | Pestaña del selector donde se muestra **en vez de** la de su `modulo` (vocabulario cerrado `GRUPOS_DE_SELECTOR`, hoy solo `asistencias`). No cambia el módulo real. Vive en el registry, no es columna de `kpi_definition`. | `GET /kpi_definition/`, `pestanaDeKpi` (`kpiSelector.js`). Validado en `_validar` (grupo desconocido → no arranca). Ver §2.7. |
 | `dimensiones` | sí | Tupla; **solo `[0]` se usa**. | `DIMENSION_POR_CLAVE:2093`, job `:62`, ruta `:379`, frontend `dimensiones?.[0]`. |
 | `query_builder` | sí | Función de cálculo. | Job (snapshot) o ruta vivo. |
 | `direccion` | sí (kwarg sin default) | `alto_es_mejor`/`bajo_es_mejor`/`neutral`. | Frontend: color de la flecha de variación. |
@@ -799,6 +803,7 @@ necesitaría para ser medible:
 Implementado el 2026-10-19 para Comala. **Sin tablas, columnas, índices ni migraciones nuevas**: una checada es una
 fila de `incident`. Todo el código está en `app/kpis/modulos/checadas.py`.
 Ampliado el 2026-10-20: tope de duración de 16 h y el KPI `checadas_con_duracion_anomala` (siete KPIs en total), medición con 50 000 checadas y el refresco de la primera hora local (ayer y hoy).
+Ampliado el 2026-10-21: pestaña «Asistencias» en el selector de KPI (ver «Pestaña Asistencias en el selector»).
 
 ### Qué es una checada
 
@@ -971,6 +976,45 @@ pasada queda **redundante pero inofensiva**: recalcula lo mismo que la nocturna,
   Propios y Mis grupos). No se relajó. Relajarla para «Mis grupos» (que viera sus propios equipos) es una decisión aparte.
 - `GET /kpi_snapshot/query` acepta `id_teams` (lista de `id_team`): en un KPI por empleado deja a los miembros de esos equipos; en uno por equipo, esos
   equipos; en cualquier otro no aplica. Va **después** del alcance del actor, así que solo recorta. **El Dashboard todavía no lo manda**: es solo API.
+
+### Pestaña «Asistencias» en el selector (2026-10-21)
+
+**Qué es.** En el editor «Agregar gráfico» los siete KPIs de checadas salen en su propia pestaña **Asistencias** (icono `UserCheck`, justo después de
+Operaciones; nombre traducido en es/en/pt/de) y Operaciones deja de listarlos (**19 → 12**). Variables no cambia: los siete tienen desglose. Es solo
+agrupación en pantalla: no hay tabla, columna ni migración nuevas.
+
+**El módulo real sigue siendo `operaciones`, a propósito.** `kpi.modulo` lo leen cosas que no deben enterarse de esta pestaña:
+`has_kpi_permission` → `modulo_habilitado(kpi.modulo)` (plan y `LICENSED_MODULES`), el job de snapshots (filtra por `modulos=`, y `MODULOS_FRECUENTES`),
+`seed_kpi_definitions` (reescribe `kpi_definition.modulo` en cada arranque) y la pantalla `/kpi_permissions`. El perfil `comala` de `seed_kpi_permissions`
+trabaja por clave de KPI y no cambia. Por eso la pestaña se decide con un campo aparte, `grupo`, y no cambiando `modulo`.
+
+**Opción elegida: (B), atributo `grupo` en el registry.** `KpiDefinition(grupo="asistencias")`, con vocabulario cerrado `GRUPOS_DE_SELECTOR` validado al
+importar (un grupo mal escrito no arranca). `GET /kpi_definition/` lo entrega junto a `modulo` desde el registry, como ya hace con `direccion` o
+`descripcion`: **no es una columna** (`kpi_definition` no tiene ninguna de metadatos libres; `dimensiones` es la lista de dimensiones y el código lee `[0]`,
+no se reutiliza). El front decide la pestaña con `pestanaDeKpi(kpi) = kpi.grupo || kpi.modulo`. El fixture del catálogo
+(`frontend/src/kpi/fixtures/catalogo_del_registry.json`) lleva la llave `grupo` y `test_kpi_catalogo_del_registry.py` la cruza con el registry.
+
+| Opción | A favor | En contra |
+|---|---|---|
+| **A.** Lista de claves en el front | Cero backend | Segunda fuente de verdad: un KPI nuevo de checadas exige acordarse de tocar el front, y ninguna prueba puede cruzar esa lista con el registry |
+| **B.** `grupo` en el registry *(elegida)* | Una sola fuente (el KPI declara dónde se muestra); sin migración; el fixture lo cruza con el registry; sirve para otro grupo | Campo nuevo, aditivo, en `GET /kpi_definition/` y en el fixture; el selector debe usar `pestanaDeKpi` y no `kpi.modulo` |
+| **C.** Módulo nuevo `asistencias` | Un solo concepto (módulo = pestaña) | Es un módulo del **plan**: un despliegue con `LICENSED_MODULES` que no lo liste perdería los siete KPIs aunque tenga `operaciones` (`has_kpi_permission`), `seed_kpi_definitions` cambiaría `modulo` en las 7 filas de cada ambiente y habría que tocar el perfil de Comala. Comala hoy corre sin `LICENSED_MODULES` (todos los módulos), así que ahí no se rompería; en uno licenciado sí. **No implementada** |
+
+**Qué queda inconsistente (a propósito, no se tocó):**
+
+- `/kpi_permissions` agrupa por `modulo`: ahí los siete se siguen listando bajo «Operaciones», no bajo «Asistencias» (`GET /kpi_definition/all` no trae metadatos del registry).
+- La insignia de la tarjeta de tipo número (`KpiNumero` en `Dashboard.jsx`) usa el icono del módulo real (Operaciones), no el de Asistencias.
+- Los nombres de los demás módulos en el selector siguen en español fijo (`KPI_MODULE_META`); solo Asistencias sale traducido (`kpi_dashboard.selector_grupo_asistencias`).
+
+**Reglas del selector que se conservan:** un rol solo ve las pestañas (y los contadores) de los KPIs que tiene permitidos; sin ninguno de los siete no hay pestaña
+Asistencias, y con solo algunos ve únicamente Asistencias con su contador (los siete tienen módulo `operaciones`, pero eso no hace aparecer una pestaña
+Operaciones); «Ver ejemplo» sigue siendo solo para KPIs permitidos con el rango vacío; y la regla de unidades (los de otra unidad se atenúan) es la misma.
+
+**Agregar otro grupo:** la clave en `GRUPOS_DE_SELECTOR` (registry) y `grupo=` en los KPIs; en el front, su entrada en `KPI_MODULE_META` y `COLOR_DE_MODULO`,
+su lugar en `ORDEN_DE_MODULOS`, la rama de `kpiPestanaMeta` (hoy solo `asistencias` se traduce) y la clave de traducción en los cuatro idiomas. Después regenerar el fixture
+con `scripts/exportar_catalogo_kpis.py`. La clave de un grupo no puede coincidir con la de un módulo real: el selector las fundiría en una pestaña.
+
+**Verificación manual:** `docs/verificaciones/README.md`, sección «Pestaña Asistencias».
 
 ### Qué no se hizo
 
