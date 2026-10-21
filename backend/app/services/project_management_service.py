@@ -1752,6 +1752,24 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
     return payload_transicion
 
 
+def avisar_material_solicitado(id_proyect, que_se_pidio: str, destinatarios, user_data: dict) -> None:
+    """Avisa a `destinatarios` (quien compra) que se pidio material para el proyecto.
+
+    Llamar DESPUES de cerrar la transaccion de quien pide (ver
+    `_notificar_proyecto`). Quien es "quien compra" lo decide quien llama; el
+    propio solicitante no se avisa a si mismo.
+    """
+    with transaction_context() as db:
+        project = db.get(Proyect, id_proyect)
+        if project is None:
+            return
+        nombre = project.title or project.proyect_description or f"Proyecto {id_proyect}"
+    _notificar_proyecto(
+        destinatarios=destinatarios, actor_id=_actor_id(user_data), id_proyect=id_proyect,
+        nombre_proyecto=nombre, titulo="Material solicitado",
+        mensaje=f"se solicito material: {que_se_pidio}")
+
+
 def add_project_message(project_id, payload: dict, user_data: dict) -> dict:
     content = str((payload or {}).get("content") or "").strip()
     if not content:
