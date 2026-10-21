@@ -166,26 +166,23 @@ def _doc_join(parts) -> str:
 
 
 def _doc_logo_uri(path_value) -> str:
+    """El logo es texto libre que escribe quien da de alta al cliente y el motor de PDF
+    lo descarga: solo se acepta una imagen en `data:` o un archivo DENTRO de
+    UPLOAD_ROOT. Antes pasaba cualquier http(s) (SSRF) y cualquier ruta, incluso con
+    `../` o absoluta (lectura de archivos del servidor al dibujarlos en el PDF)."""
     raw = str(path_value or '').strip()
     if not raw:
         return ''
-    if raw.startswith(('http://', 'https://', 'data:')):
-        return raw
-    normalized = raw.replace('\\', '/').lstrip('/')
-    candidates = []
-    if os.path.isabs(raw):
-        candidates.append(raw)
-    if normalized.startswith('uploads/'):
-        candidates.append('/' + normalized)
-    upload_root = os.getenv('UPLOAD_ROOT', '/uploads').rstrip('/') or '/uploads'
-    if normalized.startswith('uploads/'):
-        candidates.append(os.path.join(os.path.dirname(upload_root), normalized))
-    else:
-        candidates.append(os.path.join(upload_root, normalized))
-    candidates.append(os.path.join(os.getcwd(), normalized))
-    for candidate in candidates:
-        if candidate and os.path.isfile(candidate):
-            return 'file://' + os.path.abspath(candidate)
+    if raw.lower().startswith('data:'):
+        return raw if re.match(r'data:image/(png|jpe?g|gif|webp)[;,]', raw, re.I) else ''
+    if '://' in raw:
+        return ''
+    upload_root = os.path.realpath(os.getenv('UPLOAD_ROOT', '/uploads'))
+    relative = raw.replace('\\', '/').lstrip('/')
+    relative = relative[len('uploads/'):] if relative.startswith('uploads/') else relative
+    candidate = os.path.realpath(os.path.join(upload_root, relative))
+    if os.path.commonpath([upload_root, candidate]) == upload_root and os.path.isfile(candidate):
+        return 'file://' + candidate
     return ''
 
 

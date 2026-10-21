@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -7,6 +8,42 @@ from typing import Any, Callable
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from .manifest import DOCUMENTS
+
+
+def _check_local_only(url: str, templates_dir: Path) -> None:
+    """Lo unico que el PDF puede cargar: `data:` y archivos de las plantillas o de
+    UPLOAD_ROOT. Un campo de texto libre (el logo) que llegue a `<img src>` no debe
+    poder hacer que el servidor pida una URL interna ni lea un archivo ajeno."""
+    from urllib.parse import unquote, urlparse
+
+    parsed = urlparse(url)
+    if parsed.scheme == 'data':
+        return
+    if parsed.scheme == 'file':
+        target = Path(unquote(parsed.path)).resolve()
+        roots = [Path(templates_dir).resolve(), Path(os.getenv('UPLOAD_ROOT', '/uploads')).resolve()]
+        if any(target.is_relative_to(root) for root in roots):
+            return
+    raise ValueError(f'Recurso externo bloqueado en el PDF: {parsed.scheme or "?"}')
+
+
+def _local_only_fetcher(templates_dir: Path):
+    """`url_fetcher` de WeasyPrint. Desde la 66 es una clase (`URLFetcher`); antes, una funcion."""
+    try:
+        from weasyprint.urls import URLFetcher
+    except ImportError:
+        from weasyprint import default_url_fetcher
+
+        def fetcher(url, *args, **kwargs):
+            _check_local_only(url, templates_dir)
+            return default_url_fetcher(url, *args, **kwargs)
+        return fetcher
+
+    class LocalOnly(URLFetcher):
+        def fetch(self, url, headers=None):
+            _check_local_only(url, templates_dir)
+            return super().fetch(url, headers)
+    return LocalOnly(allowed_protocols=('data', 'file'))
 
 
 class DocumentError(Exception):
@@ -57,6 +94,7 @@ class DocumentService:
         html = self.render_html(document_key, record, lang)
         try:
             from weasyprint import HTML
-            return HTML(string=html, base_url=str(self.templates_dir)).write_pdf()
+            return HTML(string=html, base_url=str(self.templates_dir),
+                        url_fetcher=_local_only_fetcher(self.templates_dir)).write_pdf()
         except Exception as exc:
             raise DocumentError('document.pdf_renderer_unavailable', {'error': str(exc)}) from exc

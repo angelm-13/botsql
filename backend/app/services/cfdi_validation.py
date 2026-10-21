@@ -18,6 +18,8 @@ import re
 import xml.etree.ElementTree as ET
 from decimal import Decimal, InvalidOperation
 
+from app.services.cfdi_xml import tiene_dtd
+
 from app.services.invoice_catalogs import (
     CLAVE_PROD_SERV_PATTERN,
     CLAVE_UNIDAD_PATTERN,
@@ -403,8 +405,7 @@ def inspect_cfdi_xml(xml_content) -> dict[str, list[str]]:
     if not payload:
         return {"errors": ["cfdi.xml_vacio"], "warnings": []}
 
-    lowered = payload[:8192].lower()
-    if b"<!doctype" in lowered or b"<!entity" in lowered:
+    if tiene_dtd(payload):
         return {"errors": ["cfdi.xml_con_dtd_o_entidades"], "warnings": []}
 
     try:
