@@ -1413,7 +1413,8 @@
     "restaurant_kitchen": "Küche",
     "restaurant_admin": "Admin",
     "payroll_settings": "Amtliche Werte",
-    "work_schedules": "Arbeitszeiten"
+    "work_schedules": "Arbeitszeiten",
+    "employee_leaves": "Urlaub und Abwesenheit"
   },
   "placeholders": {
     "bank": {
@@ -2570,7 +2571,14 @@
     "payroll_isr_bracket_overlap": "Diese Stufe überschneidet sich mit einer anderen desselben Tarifs.",
     "work_schedule_day_duplicate": "That day is already in the schedule.",
     "employee_schedule_overlap": "That employee already has a schedule on those dates.",
-    "payroll_holiday_duplicate": "There is already a holiday on that date."
+    "payroll_holiday_duplicate": "There is already a holiday on that date.",
+    "employee_leave_overlap": "This employee already has leave on those dates.",
+    "employee_leave_no_hire_date": "The employee has no hire date; set it in their record.",
+    "employee_leave_first_year": "No vacation before the first year of service",
+    "employee_leave_crosses_anniversary": "Vacation cannot cross the hire anniversary",
+    "employee_leave_needs_schedule": "For vacation the employee needs a schedule over the whole range.",
+    "employee_leave_no_workdays": "There are no workdays of the schedule on those dates.",
+    "employee_leave_insufficient_balance": "Nicht genug Urlaubstage"
   },
   "logistics": {
     "module": "Logistik",
@@ -3326,7 +3334,11 @@
       "rest_day_worked": "Checked in on rest day",
       "holiday": "Holiday",
       "no_schedule": "No schedule assigned",
-      "empty": "No employees with a schedule or check-ins in that range."
+      "empty": "No employees with a schedule or check-ins in that range.",
+      "vacation": "Urlaub",
+      "leave": "Freistellung",
+      "disability": "Krankheit",
+      "checked_during_leave": "Gestempelt trotz Abwesenheit"
     },
     "link": {
       "column": "Mitarbeiter im System",
@@ -3515,7 +3527,8 @@
     "aguinaldo": "Weihnachtsgeld",
     "vacation_premium": "Urlaubsprämie",
     "without_hire_date": "Ohne Eintrittsdatum (volles Weihnachtsgeld, keine Urlaubsprämie)",
-    "aguinaldo_hint": "Weihnachtsgeld: nur wenn im Zeitraum das Kästchen markiert ist. Urlaubsprämie: im Zeitraum des Eintrittsjubiläums. Besteuert wird nur, was 30 UMA (Weihnachtsgeld) bzw. 15 UMA (Prämie) übersteigt."
+    "aguinaldo_hint": "Weihnachtsgeld: nur wenn im Zeitraum das Kästchen markiert ist. Urlaubsprämie: im Zeitraum des Eintrittsjubiläums. Besteuert wird nur, was 30 UMA (Weihnachtsgeld) bzw. 15 UMA (Prämie) übersteigt.",
+    "leaves": "Abwesenheit"
   },
   "payroll_settings": {
     "eyebrow": "PERSONAL",
@@ -3619,5 +3632,46 @@
     "weekday_short_4": "Fr",
     "weekday_short_5": "Sa",
     "weekday_short_6": "Su"
+  },
+  "employee_leaves": {
+    "eyebrow": "Personal",
+    "title": "Urlaub und Abwesenheit",
+    "subtitle": "Urlaub, Freistellung und Krankheit: diese Tage sind keine Fehltage.",
+    "tab_leaves": "Abwesenheiten",
+    "tab_balances": "Urlaubskonto",
+    "new_leave": "Neue Abwesenheit",
+    "employee": "Mitarbeiter",
+    "type": "Art",
+    "from": "Von",
+    "to": "Bis",
+    "notes": "Notizen",
+    "type_vacation": "Urlaub",
+    "type_paid_leave": "Bezahlte Freistellung",
+    "type_unpaid_leave": "Unbezahlte Freistellung",
+    "type_disability": "Krankmeldung IMSS",
+    "hint_vacation": "Paid and taken from the balance; only workdays of the schedule count.",
+    "hint_paid_leave": "Not an absence and paid.",
+    "hint_unpaid_leave": "Not an absence, but its workdays are not paid.",
+    "hint_disability": "Not an absence and no day of the range is paid: IMSS covers it. Write the folio in Notes.",
+    "leaves_title": "Erfasste Abwesenheiten",
+    "no_leaves": "Keine Abwesenheiten erfasst.",
+    "balances_title": "Urlaubskonto je Mitarbeiter",
+    "balances_hint": "Each completed year of service grants its days (LFT art. 76). Available = granted minus taken since the last anniversary; unused days do not carry over.",
+    "hire_date": "Eintrittsdatum",
+    "service_years": "Years of service",
+    "service_year": "Service year",
+    "entitled": "Anspruch",
+    "taken": "Genommen",
+    "available": "Verfügbar",
+    "requested": "Beantragt",
+    "no_hire_date": "No hire date",
+    "no_employees": "No employees.",
+    "saved": "Abwesenheit gespeichert.",
+    "deleted": "Abwesenheit gelöscht.",
+    "confirm_delete": "Diese Abwesenheit löschen?",
+    "short_vacation": "Vac",
+    "short_paid_leave": "Leave",
+    "short_unpaid_leave": "Unpaid",
+    "short_disability": "Sick"
   }
 }

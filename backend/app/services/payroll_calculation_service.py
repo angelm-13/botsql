@@ -6,7 +6,9 @@ el sueldo se escribia a mano. Aqui vive la primera regla de calculo:
 * Dias pagados (services/attendance_rules.py): con horario asignado, todos los
   dias del periodo -descansos y festivos incluidos- menos las faltas; sin
   horario, solo los dias con al menos una checada ligada (como antes de que
-  existieran los horarios). Los retardos no afectan la nomina.
+  existieran los horarios). Los retardos no afectan la nomina. Vacaciones,
+  permisos e incapacidades (employee_leave) no son falta; cuales se pagan lo
+  decide la misma regla.
 * Sueldo del periodo: `user.base_salary` (salario DIARIO) x dias pagados.
   Se guarda como un movimiento con el concepto SUELDO.
 * ISR (con el subsidio para el empleo ya restado) e IMSS (cuota del
@@ -60,6 +62,8 @@ ABIERTO, CALCULADO, CERRADO = "open", "calculated", "closed"
 # Columnas que solo mueven calcular/cerrar/reabrir; la captura generica no.
 CAMPOS_DEL_ESTADO = ("period_state", "closed_at", "closed_by", "reopened_at", "reopened_by")
 CENTAVOS = Decimal("0.01")
+# Dias de ausencia justificada que se guardan en el detalle (attendance_rules.resumen).
+CAMPOS_DE_AUSENCIA = ("vacation_days", "paid_leave_days", "unpaid_leave_days", "disability_days")
 
 
 def _dinero(valor) -> Decimal:
@@ -251,6 +255,7 @@ def calcular_periodo(id_payroll_period, user_id: int) -> dict:
                 continue
             totales = resumen_de_asistencia(asistencia.get(empleado.id_user, []))
             trabajados, faltas = totales["paid_days"], totales["absences"]
+            ausencias = {k: totales[k] for k in CAMPOS_DE_AUSENCIA}
             sueldo = _dinero(diario * trabajados)
 
             detalle = db.scalars(
@@ -311,18 +316,21 @@ def calcular_periodo(id_payroll_period, user_id: int) -> dict:
             detalle.net_pay = percepciones - deducciones
             detalle.days_worked = trabajados
             detalle.absences = faltas
+            for campo, dias in ausencias.items():
+                setattr(detalle, campo, dias)
             calculados.append({
                 "id_user": empleado.id_user,
                 "full_name": empleado.full_name or "",
                 "days_worked": trabajados,
                 "absences": faltas,
+                **ausencias,
                 "daily_salary": float(diario),
                 "salary": float(sueldo),
                 "aguinaldo": float(monto_aguinaldo),
                 "aguinaldo_taxable": float(aguinaldo_gravado),
                 "vacation_premium": float(prima),
                 "vacation_premium_taxable": float(prima_gravada),
-                "vacation_days": dias_vacaciones,
+                "vacation_premium_days": dias_vacaciones,
                 "taxable_income": float(gravable),
                 "isr_before_subsidy": float(isr_tarifa),
                 "employment_subsidy": float(subsidio),
@@ -407,6 +415,7 @@ def resumen_periodo(id_payroll_period) -> dict:
                 "full_name": empleado.full_name or "",
                 "days_worked": detalle.days_worked or 0,
                 "absences": detalle.absences or 0,
+                **{campo: getattr(detalle, campo) or 0 for campo in CAMPOS_DE_AUSENCIA},
                 "daily_salary": float(_dinero(empleado.base_salary)),
                 "salary": float(_dinero(detalle.gross_salary)),
                 "aguinaldo": por_codigo.get(CODIGO_AGUINALDO, 0.0),
@@ -467,6 +476,7 @@ def datos_del_recibo(id_payroll_period, id_user) -> dict:
             "position": empleado.puesto or "",
             "days_worked": detalle.days_worked or 0,
             "absences": detalle.absences or 0,
+            **{campo: getattr(detalle, campo) or 0 for campo in CAMPOS_DE_AUSENCIA},
             "daily_salary": float(_dinero(empleado.base_salary)),
             "earnings": [m for m in movimientos if m["type"] == "earning"],
             "deductions": [m for m in movimientos if m["type"] == "deduction"],

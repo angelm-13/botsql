@@ -31,6 +31,11 @@ class PayrollDetail(Base):
     days_worked: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Faltas del periodo (dias laborales de su horario sin checada).
     absences: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Dias de ausencia justificada por tipo (ver services/attendance_rules.py).
+    vacation_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    paid_leave_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    unpaid_leave_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    disability_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_by: Mapped[int] = mapped_column(Integer, nullable=False)
     creation_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now())
     last_update_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
@@ -47,6 +52,10 @@ class PayrollDetail(Base):
             'net_pay': to_json_value(self.net_pay),
             'days_worked': to_json_value(self.days_worked),
             'absences': to_json_value(self.absences),
+            'vacation_days': to_json_value(self.vacation_days),
+            'paid_leave_days': to_json_value(self.paid_leave_days),
+            'unpaid_leave_days': to_json_value(self.unpaid_leave_days),
+            'disability_days': to_json_value(self.disability_days),
             'created_by': to_json_value(self.created_by),
             'creation_date': a_iso_utc(self.creation_date),
             'last_update_date': a_iso_utc(self.last_update_date),

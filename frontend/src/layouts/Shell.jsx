@@ -94,6 +94,8 @@ const navItems = [
   { path: "/payroll_settings", key: "menu.payroll_settings", label: "Cifras oficiales", entityName: "payroll_parameter", group: "Recursos humanos", location: "sidebar", order: 705 },
   // work_schedule tambien esta sembrada "hidden": pantalla propia en la barra.
   { path: "/work_schedules", key: "menu.work_schedules", label: "Horarios", entityName: "work_schedule", group: "Recursos humanos", location: "sidebar", order: 706 },
+  // employee_leave igual: sembrada "hidden", pantalla propia en la barra.
+  { path: "/employee_leaves", key: "menu.employee_leaves", label: "Vacaciones y permisos", entityName: "employee_leave", group: "Recursos humanos", location: "sidebar", order: 707 },
   { path: "/kronos", key: "menu.kronos", label: "Asistencias", entityName: "payroll_period" },
   { path: "/kronos/device", key: "menu.kronos_device", label: "Conexión al dispositivo", entityName: "kronos_device" },
   { path: "/restaurant/waiter", key: "menu.restaurant_waiter", label: "Meseros", entityName: "restaurant_waiter" },

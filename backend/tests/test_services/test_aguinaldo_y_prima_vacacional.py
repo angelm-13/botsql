@@ -76,7 +76,7 @@ class TestEnElCalculo(_ConPeriodoDePrueba):
         self.assertEqual(1500.0, ana["salary"])
         self.assertEqual(7500.0, ana["aguinaldo"])
         self.assertEqual(3980.70, ana["aguinaldo_taxable"])
-        self.assertEqual(12, ana["vacation_days"])
+        self.assertEqual(12, ana["vacation_premium_days"])
         self.assertEqual(1500.0, ana["vacation_premium"])
         self.assertEqual(0.0, ana["vacation_premium_taxable"])
         self.assertEqual(5480.70, ana["taxable_income"])

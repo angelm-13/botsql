@@ -1495,7 +1495,8 @@
     "purchase_planning": "Por comprar",
     "purchase_order": "Órdenes de compra",
     "payroll_settings": "Cifras oficiales",
-    "work_schedules": "Horarios"
+    "work_schedules": "Horarios",
+    "employee_leaves": "Vacaciones y permisos"
   },
   "placeholders": {
     "bank": {
@@ -2788,7 +2789,14 @@
     "payroll_isr_bracket_overlap": "Ese tramo se encima con otro de la misma tarifa.",
     "work_schedule_day_duplicate": "Ese día ya está en el horario.",
     "employee_schedule_overlap": "Ese empleado ya tiene un horario en esas fechas.",
-    "payroll_holiday_duplicate": "Ya hay un festivo en esa fecha."
+    "payroll_holiday_duplicate": "Ya hay un festivo en esa fecha.",
+    "employee_leave_overlap": "Ya hay otra ausencia de este empleado en esas fechas.",
+    "employee_leave_no_hire_date": "El empleado no tiene fecha de ingreso; captúrala en su ficha.",
+    "employee_leave_first_year": "No hay vacaciones antes de cumplir el primer año",
+    "employee_leave_crosses_anniversary": "Las vacaciones no pueden cruzar el aniversario de ingreso",
+    "employee_leave_needs_schedule": "Para vacaciones el empleado necesita horario asignado en todo el rango.",
+    "employee_leave_no_workdays": "En esas fechas no hay días laborables de su horario.",
+    "employee_leave_insufficient_balance": "No le alcanzan los días de vacaciones"
   },
   "logistics": {
     "module": "Logística",
@@ -3700,7 +3708,11 @@
       "rest_day_worked": "Checó en descanso",
       "holiday": "Festivo",
       "no_schedule": "Sin horario asignado",
-      "empty": "No hay empleados con horario o checadas en ese rango."
+      "empty": "No hay empleados con horario o checadas en ese rango.",
+      "vacation": "Vacaciones",
+      "leave": "Permisos",
+      "disability": "Incapacidad",
+      "checked_during_leave": "Checó estando ausente"
     },
     "link": {
       "column": "Empleado del sistema",
@@ -4845,7 +4857,8 @@
     "aguinaldo": "Aguinaldo",
     "vacation_premium": "Prima vacacional",
     "without_hire_date": "Sin fecha de ingreso (aguinaldo de año completo y sin prima vacacional)",
-    "aguinaldo_hint": "Aguinaldo: solo si el periodo tiene marcada la casilla. Prima vacacional: en el periodo de su aniversario de ingreso. Solo grava ISR lo que pasa de 30 UMA (aguinaldo) y 15 UMA (prima)."
+    "aguinaldo_hint": "Aguinaldo: solo si el periodo tiene marcada la casilla. Prima vacacional: en el periodo de su aniversario de ingreso. Solo grava ISR lo que pasa de 30 UMA (aguinaldo) y 15 UMA (prima).",
+    "leaves": "Ausencias"
   },
   "payroll_settings": {
     "eyebrow": "RECURSOS HUMANOS",
@@ -4949,5 +4962,46 @@
     "weekday_short_4": "Vi",
     "weekday_short_5": "Sá",
     "weekday_short_6": "Do"
+  },
+  "employee_leaves": {
+    "eyebrow": "Recursos humanos",
+    "title": "Vacaciones y permisos",
+    "subtitle": "Vacaciones, permisos e incapacidades: esos días no cuentan como falta.",
+    "tab_leaves": "Ausencias",
+    "tab_balances": "Saldo de vacaciones",
+    "new_leave": "Nueva ausencia",
+    "employee": "Empleado",
+    "type": "Tipo",
+    "from": "Desde",
+    "to": "Hasta",
+    "notes": "Notas",
+    "type_vacation": "Vacaciones",
+    "type_paid_leave": "Permiso con goce",
+    "type_unpaid_leave": "Permiso sin goce",
+    "type_disability": "Incapacidad IMSS",
+    "hint_vacation": "Se pagan y se descuentan del saldo; solo cuentan los días laborables de su horario.",
+    "hint_paid_leave": "No es falta y se paga.",
+    "hint_unpaid_leave": "No es falta, pero sus días laborables no se pagan.",
+    "hint_disability": "No es falta y no se paga ningún día del rango: el IMSS cubre el subsidio. Anota el folio en Notas.",
+    "leaves_title": "Ausencias registradas",
+    "no_leaves": "No hay ausencias registradas.",
+    "balances_title": "Saldo de vacaciones por empleado",
+    "balances_hint": "Al cumplir cada año de servicio le tocan sus días (LFT art. 76). Disponibles = los que le tocan menos los tomados desde su último aniversario; los no usados no se acumulan.",
+    "hire_date": "Fecha de ingreso",
+    "service_years": "Años cumplidos",
+    "service_year": "Año de servicio",
+    "entitled": "Le tocan",
+    "taken": "Tomados",
+    "available": "Disponibles",
+    "requested": "Pedidos",
+    "no_hire_date": "Sin fecha de ingreso",
+    "no_employees": "No hay empleados.",
+    "saved": "Ausencia guardada.",
+    "deleted": "Ausencia eliminada.",
+    "confirm_delete": "¿Eliminar esta ausencia?",
+    "short_vacation": "Vac",
+    "short_paid_leave": "Perm",
+    "short_unpaid_leave": "Sin goce",
+    "short_disability": "Incap"
   }
 }

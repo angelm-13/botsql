@@ -29,6 +29,7 @@ from app.routes.work_schedule import bp_work_schedule
 from app.routes.work_schedule_day import bp_work_schedule_day
 from app.routes.employee_schedule import bp_employee_schedule
 from app.routes.payroll_holiday import bp_payroll_holiday
+from app.routes.employee_leave import bp_employee_leave
 from app.routes.payroll_movement import bp_payroll_movement
 from app.routes.customer_contact import bp_customer_contact
 from app.routes.customer_supplier import bp_customer_supplier
@@ -720,6 +721,7 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_work_schedule_day)
     app.register_blueprint(bp_employee_schedule)
     app.register_blueprint(bp_payroll_holiday)
+    app.register_blueprint(bp_employee_leave)
     app.register_blueprint(bp_payroll_movement)
     app.register_blueprint(bp_customer_supplier)
     app.register_blueprint(bp_customer_contact)

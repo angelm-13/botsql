@@ -294,7 +294,7 @@ def asistencia_por_empleado(db, desde: date, hasta: date, ids=None) -> dict:
     `ids`: limita a esos empleados; si no se da, toma a quien tenga horario en
     el rango o checadas ligadas en el rango.
     """
-    from app.models import EmployeeSchedule, PayrollHoliday, WorkSchedule, WorkScheduleDay
+    from app.models import EmployeeLeave, EmployeeSchedule, PayrollHoliday, WorkSchedule, WorkScheduleDay
     from app.services import attendance_rules as reglas
 
     asignaciones = list(db.scalars(
@@ -323,8 +323,15 @@ def asistencia_por_empleado(db, desde: date, hasta: date, ids=None) -> dict:
     ):
         marcas.setdefault(id_user, {}).setdefault(hora.date(), []).append(hora)
 
+    ausencias: dict[int, list] = {}
+    for a in db.scalars(select(EmployeeLeave)
+                        .where(EmployeeLeave.deletion_date.is_(None))
+                        .where(EmployeeLeave.start_date <= hasta)
+                        .where(EmployeeLeave.end_date >= desde)):
+        ausencias.setdefault(a.id_user, []).append(a)
+
     if ids is None:
-        ids = {a.id_user for a in asignaciones} | set(marcas)
+        ids = {a.id_user for a in asignaciones} | set(marcas) | set(ausencias)
     resultado = {}
     for id_user in ids:
         propias = [a for a in asignaciones if a.id_user == id_user]
@@ -333,10 +340,12 @@ def asistencia_por_empleado(db, desde: date, hasta: date, ids=None) -> dict:
             asignada = next((a for a in propias
                              if a.valid_from <= fecha and (a.valid_to is None or a.valid_to >= fecha)), None)
             horario = horarios.get(asignada.id_work_schedule) if asignada else None
+            ausencia = next((a.leave_type for a in ausencias.get(id_user, [])
+                             if a.start_date <= fecha <= a.end_date), None)
             dias.append(reglas.clasificar_dia(
                 fecha, marcas.get(id_user, {}).get(fecha, []),
                 dias_de_horario.get(asignada.id_work_schedule, {}).get(fecha.weekday()) if asignada else None,
-                fecha in festivos, horario.tolerance_minutes if horario else 0, asignada is not None))
+                fecha in festivos, horario.tolerance_minutes if horario else 0, asignada is not None, ausencia))
         resultado[id_user] = dias
     return resultado
 

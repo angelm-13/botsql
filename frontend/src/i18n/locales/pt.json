@@ -1414,7 +1414,8 @@
     "restaurant_kitchen": "Cozinha",
     "restaurant_admin": "Admin",
     "payroll_settings": "Valores oficiais",
-    "work_schedules": "Horários"
+    "work_schedules": "Horários",
+    "employee_leaves": "Férias e licenças"
   },
   "placeholders": {
     "bank": {
@@ -2572,7 +2573,14 @@
     "payroll_isr_bracket_overlap": "Essa faixa se sobrepõe a outra da mesma tabela.",
     "work_schedule_day_duplicate": "That day is already in the schedule.",
     "employee_schedule_overlap": "That employee already has a schedule on those dates.",
-    "payroll_holiday_duplicate": "There is already a holiday on that date."
+    "payroll_holiday_duplicate": "There is already a holiday on that date.",
+    "employee_leave_overlap": "This employee already has leave on those dates.",
+    "employee_leave_no_hire_date": "The employee has no hire date; set it in their record.",
+    "employee_leave_first_year": "No vacation before the first year of service",
+    "employee_leave_crosses_anniversary": "Vacation cannot cross the hire anniversary",
+    "employee_leave_needs_schedule": "For vacation the employee needs a schedule over the whole range.",
+    "employee_leave_no_workdays": "There are no workdays of the schedule on those dates.",
+    "employee_leave_insufficient_balance": "Não há dias de férias suficientes"
   },
   "logistics": {
     "module": "Logística",
@@ -3332,7 +3340,11 @@
       "rest_day_worked": "Checked in on rest day",
       "holiday": "Holiday",
       "no_schedule": "No schedule assigned",
-      "empty": "No employees with a schedule or check-ins in that range."
+      "empty": "No employees with a schedule or check-ins in that range.",
+      "vacation": "Férias",
+      "leave": "Licenças",
+      "disability": "Afastamento",
+      "checked_during_leave": "Marcou estando ausente"
     },
     "link": {
       "column": "Funcionário do sistema",
@@ -3521,7 +3533,8 @@
     "aguinaldo": "Abono de Natal",
     "vacation_premium": "Prêmio de férias",
     "without_hire_date": "Sem data de admissão (abono do ano inteiro, sem prêmio de férias)",
-    "aguinaldo_hint": "Abono de Natal: só se o período tiver a caixa marcada. Prêmio de férias: no período do aniversário de admissão. Só é tributado o que passa de 30 UMA (abono) e 15 UMA (prêmio)."
+    "aguinaldo_hint": "Abono de Natal: só se o período tiver a caixa marcada. Prêmio de férias: no período do aniversário de admissão. Só é tributado o que passa de 30 UMA (abono) e 15 UMA (prêmio).",
+    "leaves": "Ausências"
   },
   "payroll_settings": {
     "eyebrow": "RECURSOS HUMANOS",
@@ -3625,5 +3638,46 @@
     "weekday_short_4": "Fr",
     "weekday_short_5": "Sa",
     "weekday_short_6": "Su"
+  },
+  "employee_leaves": {
+    "eyebrow": "Recursos humanos",
+    "title": "Férias e licenças",
+    "subtitle": "Férias, licenças e afastamentos: esses dias não contam como falta.",
+    "tab_leaves": "Ausências",
+    "tab_balances": "Saldo de férias",
+    "new_leave": "Nova ausência",
+    "employee": "Funcionário",
+    "type": "Tipo",
+    "from": "De",
+    "to": "Até",
+    "notes": "Notas",
+    "type_vacation": "Férias",
+    "type_paid_leave": "Licença remunerada",
+    "type_unpaid_leave": "Licença não remunerada",
+    "type_disability": "Afastamento IMSS",
+    "hint_vacation": "Paid and taken from the balance; only workdays of the schedule count.",
+    "hint_paid_leave": "Not an absence and paid.",
+    "hint_unpaid_leave": "Not an absence, but its workdays are not paid.",
+    "hint_disability": "Not an absence and no day of the range is paid: IMSS covers it. Write the folio in Notes.",
+    "leaves_title": "Ausências registradas",
+    "no_leaves": "Nenhuma ausência registrada.",
+    "balances_title": "Saldo de férias por funcionário",
+    "balances_hint": "Each completed year of service grants its days (LFT art. 76). Available = granted minus taken since the last anniversary; unused days do not carry over.",
+    "hire_date": "Data de admissão",
+    "service_years": "Years of service",
+    "service_year": "Service year",
+    "entitled": "Direito",
+    "taken": "Usados",
+    "available": "Disponíveis",
+    "requested": "Pedidos",
+    "no_hire_date": "No hire date",
+    "no_employees": "No employees.",
+    "saved": "Ausência salva.",
+    "deleted": "Ausência excluída.",
+    "confirm_delete": "Excluir esta ausência?",
+    "short_vacation": "Vac",
+    "short_paid_leave": "Leave",
+    "short_unpaid_leave": "Unpaid",
+    "short_disability": "Sick"
   }
 }

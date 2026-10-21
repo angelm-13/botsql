@@ -59,6 +59,14 @@
     <div class="cell"><span class="label">Faltas</span><span class="value">{{ record.absences or 0 }}</span></div>
     <div class="cell"><span class="label">Salario diario</span><span class="value">$ {{ "{:,.2f}".format(record.daily_salary) }}</span></div>
   </div>
+  {% if record.vacation_days or record.paid_leave_days or record.unpaid_leave_days or record.disability_days %}
+  <div class="grid">
+    <div class="cell"><span class="label">Vacaciones</span><span class="value">{{ record.vacation_days or 0 }}</span></div>
+    <div class="cell"><span class="label">Permiso con goce</span><span class="value">{{ record.paid_leave_days or 0 }}</span></div>
+    <div class="cell"><span class="label">Permiso sin goce</span><span class="value">{{ record.unpaid_leave_days or 0 }}</span></div>
+    <div class="cell"><span class="label">Incapacidad IMSS</span><span class="value">{{ record.disability_days or 0 }}</span></div>
+  </div>
+  {% endif %}
 
   <h2>Percepciones</h2>
   <table>

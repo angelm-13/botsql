@@ -230,7 +230,9 @@ MODULOS = (
          "payroll_isr_bracket", "payroll_parameter",
          # Horarios, su asignacion a empleados y dias festivos: retardos, faltas
          # y dias pagados (pantalla propia /work_schedules).
-         "work_schedule", "work_schedule_day", "employee_schedule", "payroll_holiday"),
+         "work_schedule", "work_schedule_day", "employee_schedule", "payroll_holiday",
+         # Vacaciones, permisos e incapacidades (pantalla propia /employee_leaves).
+         "employee_leave"),
     ),
     # Sus pantallas no tienen apartado propio en el menu lateral: viven dentro
     # del Home/Dashboard actual (ruta "/"), que ya es de acceso libre para

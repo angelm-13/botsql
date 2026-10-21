@@ -3,7 +3,8 @@ import { RefreshCw } from "lucide-react";
 import { getAttendanceIncidences } from "../api";
 
 // Pestaña "Incidencias" de Asistencias: retardos, faltas y checadas incompletas
-// por empleado segun su horario. Es solo un reporte para que los
+// por empleado segun su horario, y los dias de vacaciones, permisos e
+// incapacidades (employee_leave), que no son falta. Es solo un reporte para que los
 // administrativos tomen sus medidas: los retardos no cambian la nomina. La regla
 // vive en el backend (services/attendance_rules.py).
 
@@ -34,6 +35,8 @@ export default function IncidenciasAsistencia({ t, describirError }) {
   }
 
   const etiquetasDelDia = (d) => [
+    d.leave && t(`employee_leaves.type_${d.leave}`),
+    d.checked_during_leave && t("kronos.incidences.checked_during_leave"),
     d.absence && t("kronos.incidences.absence"),
     d.late && `${t("kronos.incidences.late")} (${d.late_minutes} min)`,
     d.incomplete && t("kronos.incidences.incomplete"),
@@ -62,7 +65,8 @@ export default function IncidenciasAsistencia({ t, describirError }) {
               <thead><tr>
                 <th>{t("kronos.incidences.employee")}</th><th>{t("kronos.incidences.workdays")}</th><th>{t("kronos.incidences.attended")}</th>
                 <th>{t("kronos.incidences.absences")}</th><th>{t("kronos.incidences.lates")}</th><th>{t("kronos.incidences.late_minutes")}</th>
-                <th>{t("kronos.incidences.incompletes")}</th><th>{t("kronos.incidences.paid_days")}</th>
+                <th>{t("kronos.incidences.incompletes")}</th><th>{t("kronos.incidences.vacation")}</th>
+                <th>{t("kronos.incidences.leave")}</th><th>{t("kronos.incidences.disability")}</th><th>{t("kronos.incidences.paid_days")}</th>
               </tr></thead>
               <tbody>
                 {empleados.length ? empleados.map((e) => (
@@ -71,11 +75,13 @@ export default function IncidenciasAsistencia({ t, describirError }) {
                       <td><strong>{e.full_name}</strong>{!e.has_schedule && <small>{t("kronos.incidences.no_schedule")}</small>}</td>
                       <td>{e.workdays}</td><td>{e.attended}</td>
                       <td>{e.absences ? <strong>{e.absences}</strong> : 0}</td>
-                      <td>{e.late}</td><td>{e.late_minutes}</td><td>{e.incomplete}</td><td>{e.paid_days}</td>
+                      <td>{e.late}</td><td>{e.late_minutes}</td><td>{e.incomplete}</td>
+                      <td>{e.vacation_days || 0}</td><td>{(e.paid_leave_days || 0) + (e.unpaid_leave_days || 0)}</td><td>{e.disability_days || 0}</td>
+                      <td>{e.paid_days}</td>
                     </tr>
                     {abierto === e.id_user && (
                       <tr>
-                        <td colSpan="8">
+                        <td colSpan="11">
                           <table>
                             <thead><tr><th>{t("kronos.csv.headers.date")}</th><th>{t("kronos.incidences.schedule")}</th><th>{t("kronos.csv.headers.first")}</th><th>{t("kronos.csv.headers.last")}</th><th>{t("kronos.incidences.what")}</th></tr></thead>
                             <tbody>{e.days.filter((d) => etiquetasDelDia(d).length).map((d) => (
@@ -91,7 +97,7 @@ export default function IncidenciasAsistencia({ t, describirError }) {
                       </tr>
                     )}
                   </Fragment>
-                )) : <tr><td colSpan="8" className="kronos-empty">{t("kronos.incidences.empty")}</td></tr>}
+                )) : <tr><td colSpan="11" className="kronos-empty">{t("kronos.incidences.empty")}</td></tr>}
               </tbody>
             </table>
           </div>

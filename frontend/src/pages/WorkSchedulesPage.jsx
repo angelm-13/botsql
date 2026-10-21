@@ -61,9 +61,10 @@ export default function WorkSchedulesPage() {
     return clave ? tr(clave, tr("errors.request_failed")) : tr("errors.request_failed");
   }, []);
 
+  // Recargar no borra el aviso de error: se llama justo despues de un guardado
+  // que fallo, y si lo borrara el usuario nunca veria por que no se guardo.
   const cargar = useCallback(async () => {
     setLoading(true);
-    setError("");
     try {
       const vivos = (r) => (r?.items || []).filter((x) => !x.deletion_date);
       const [h, d, a, f] = await Promise.all([
@@ -163,7 +164,7 @@ export default function WorkSchedulesPage() {
   return (
     <section className="entity-page kronos-page">
       <PageHeader eyebrow={t("work_schedules.eyebrow")} titulo={t("work_schedules.title")} subtitulo={t("work_schedules.subtitle")}>
-        <button className="button ghost" onClick={cargar} disabled={loading}><RefreshCw size={16} />{loading ? t("common.loading") : t("common.refresh")}</button>
+        <button className="button ghost" onClick={() => { setError(""); cargar(); }} disabled={loading}><RefreshCw size={16} />{loading ? t("common.loading") : t("common.refresh")}</button>
       </PageHeader>
       <div className="kronos-tabs" role="tablist">{pestana("schedules")}{pestana("assignments")}{pestana("holidays")}</div>
       {error && <div className="alert error" role="alert">{error}</div>}

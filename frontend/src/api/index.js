@@ -627,6 +627,11 @@ export const getAllPayrollHoliday = (params = {}) => request("/payroll_holiday/"
 export const createPayrollHoliday = (payload) => request("/payroll_holiday/", { method: "POST", body: payload });
 export const updatePayrollHoliday = (id, payload) => request(`/payroll_holiday/${id}`, { method: "PUT", body: payload });
 export const deletePayrollHoliday = (id) => request(`/payroll_holiday/${id}`, { method: "DELETE" });
+export const getAllEmployeeLeave = (params = {}) => request("/employee_leave/", { params });
+export const createEmployeeLeave = (payload) => request("/employee_leave/", { method: "POST", body: payload });
+export const updateEmployeeLeave = (id, payload) => request(`/employee_leave/${id}`, { method: "PUT", body: payload });
+export const deleteEmployeeLeave = (id) => request(`/employee_leave/${id}`, { method: "DELETE" });
+export const getEmployeeLeaveBalances = () => request("/employee_leave/balances");
 export const getAttendanceIncidences = ({ startDate, endDate }) => request(`/kronos/attendance/incidences?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`);
 export const getAllPayrollParameter = (params = {}) => request("/payroll_parameter/", { params });
 export const createPayrollParameter = (payload) => request("/payroll_parameter/", { method: "POST", body: payload });

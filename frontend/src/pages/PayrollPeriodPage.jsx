@@ -463,6 +463,14 @@ export default function PayrollPeriodPage() {
   }, {}), [filtered, lang]);
   // Las columnas de aguinaldo y prima solo se muestran si alguien las cobra en el periodo.
   const conPrestaciones = Boolean(calculation?.employees.some((row) => row.aguinaldo || row.vacation_premium));
+  // Igual con las ausencias justificadas (vacaciones, permisos, incapacidad).
+  const conAusencias = Boolean(calculation?.employees.some((row) => row.vacation_days || row.paid_leave_days || row.unpaid_leave_days || row.disability_days));
+  const ausenciasDe = (row) => [
+    row.vacation_days && `${t("employee_leaves.short_vacation")} ${row.vacation_days}`,
+    row.paid_leave_days && `${t("employee_leaves.short_paid_leave")} ${row.paid_leave_days}`,
+    row.unpaid_leave_days && `${t("employee_leaves.short_unpaid_leave")} ${row.unpaid_leave_days}`,
+    row.disability_days && `${t("employee_leaves.short_disability")} ${row.disability_days}`,
+  ].filter(Boolean).join(" · ") || "—";
 
   return (
     <section className="entity-page">
@@ -551,18 +559,18 @@ export default function PayrollPeriodPage() {
           {calculation.employees.length ? (
             <table>
               <thead><tr>
-                <th>{t("payroll_calc.employee")}</th><th>{t("payroll_calc.days")}</th><th>{t("payroll_calc.absences")}</th><th>{t("payroll_calc.daily")}</th>
+                <th>{t("payroll_calc.employee")}</th><th>{t("payroll_calc.days")}</th><th>{t("payroll_calc.absences")}</th>{conAusencias && <th>{t("payroll_calc.leaves")}</th>}<th>{t("payroll_calc.daily")}</th>
                 <th>{t("payroll_calc.salary")}</th>{conPrestaciones && <><th>{t("payroll_calc.aguinaldo")}</th><th>{t("payroll_calc.vacation_premium")}</th></>}<th>{t("payroll_calc.earnings")}</th><th>ISR</th><th>IMSS</th><th>{t("payroll_calc.deductions")}</th><th>{t("payroll_calc.net")}</th>
                 <th>{t("payroll_calc.receipt")}</th>
               </tr></thead>
               <tbody>{calculation.employees.map((row) => (
                 <tr key={row.id_user}>
-                  <td>{row.full_name}</td><td>{row.days_worked}</td><td>{row.absences || 0}</td><td>{money(row.daily_salary)}</td>
-                  <td>{money(row.salary)}</td>{conPrestaciones && <><td>{money(row.aguinaldo)}</td><td title={row.vacation_days ? `${row.vacation_days} d` : undefined}>{money(row.vacation_premium)}</td></>}<td>{money(row.total_earnings)}</td><td title={row.employment_subsidy ? `${t("payroll_calc.isr_hint")}: ${money(row.isr_before_subsidy)} - ${money(row.employment_subsidy)}` : undefined}>{money(row.isr)}</td><td title={row.sbc ? `SBC ${money(row.sbc)}` : undefined}>{money(row.imss)}</td><td>{money(row.total_deductions)}</td><td><strong>{money(row.net_pay)}</strong></td>
+                  <td>{row.full_name}</td><td>{row.days_worked}</td><td>{row.absences || 0}</td>{conAusencias && <td><small>{ausenciasDe(row)}</small></td>}<td>{money(row.daily_salary)}</td>
+                  <td>{money(row.salary)}</td>{conPrestaciones && <><td>{money(row.aguinaldo)}</td><td title={row.vacation_premium_days ? `${row.vacation_premium_days} d` : undefined}>{money(row.vacation_premium)}</td></>}<td>{money(row.total_earnings)}</td><td title={row.employment_subsidy ? `${t("payroll_calc.isr_hint")}: ${money(row.isr_before_subsidy)} - ${money(row.employment_subsidy)}` : undefined}>{money(row.isr)}</td><td title={row.sbc ? `SBC ${money(row.sbc)}` : undefined}>{money(row.imss)}</td><td>{money(row.total_deductions)}</td><td><strong>{money(row.net_pay)}</strong></td>
                   <td><button type="button" className="button ghost" onClick={() => openReceipt(row.id_user)} aria-label={`${t("payroll_calc.receipt")} ${row.full_name}`}><FileDown size={15} /> PDF</button></td>
                 </tr>
               ))}</tbody>
-              <tfoot><tr><td colSpan={conPrestaciones ? 11 : 9}><strong>{t("payroll_calc.total")}</strong></td><td><strong>{money(calculation.total_net_pay)}</strong></td><td /></tr></tfoot>
+              <tfoot><tr><td colSpan={9 + (conPrestaciones ? 2 : 0) + (conAusencias ? 1 : 0)}><strong>{t("payroll_calc.total")}</strong></td><td><strong>{money(calculation.total_net_pay)}</strong></td><td /></tr></tfoot>
             </table>
           ) : <p>{t("payroll_calc.empty")}</p>}
           {calculation.without_hire_date?.length > 0 && (
