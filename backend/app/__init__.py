@@ -610,16 +610,10 @@ def _register_documents_blueprint(app: Flask) -> None:
             from sqlalchemy import inspect as sqlalchemy_inspect
             from app.models.invoice import Invoice
             from app.models.session import transaction_context
-            from app.utils.auth import PUBLIC_JWT_SCOPE, SECRET_KEY, _has_entity_permission
+            from app.utils.auth import _has_entity_permission, decode_session
 
-            token = request.headers.get('Authorization', '').replace('Bearer ', '')
-            if not token:
-                return False, 401
-            try:
-                user_data = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
-            except Exception:
-                return False, 401
-            if str(user_data.get('scope') or '').strip().lower() == str(PUBLIC_JWT_SCOPE).strip().lower():
+            user_data, error_key = decode_session(request.headers.get('Authorization', '').replace('Bearer ', ''))
+            if error_key:
                 return False, 401
             entity = str(doc.get('entity') or '').strip()
             if not entity or not _has_entity_permission(user_data, entity, 'read'):

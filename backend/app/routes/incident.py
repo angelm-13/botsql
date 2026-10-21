@@ -4,6 +4,7 @@ from app.services.incident_service import (
     IncidentService,
     list_incidents,
     require_incident_access,
+    require_voucher_flow,
     transition_incident,
 )
 from app.utils.auth import token_required, require_entity_permission
@@ -140,6 +141,7 @@ def get_incident(user_data, id_incident):
 @token_required
 @require_entity_permission('incident', 'create')
 def create_incident(user_data):
+    require_voucher_flow(user_data)
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
     return _jsonify_projected_record(user_data, IncidentService.create(payload, user_id=user_data.get('id_user')), status=201)
 
@@ -148,6 +150,7 @@ def create_incident(user_data):
 @token_required
 @require_entity_permission('incident', 'update')
 def update_incident(user_data, id_incident):
+    require_voucher_flow(user_data)
     require_incident_access(id_incident, user_data)
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
     return _jsonify_projected_record(user_data, IncidentService.update(id_incident, payload, user_id=user_data.get('id_user')))
@@ -157,6 +160,7 @@ def update_incident(user_data, id_incident):
 @token_required
 @require_entity_permission('incident', 'update')
 def transition_incident_status(user_data, id_incident):
+    require_voucher_flow(user_data)
     """Cambio de estatus guiado, como en proyectos y tareas."""
     return _jsonify_projected_record(user_data, transition_incident(id_incident, request.get_json() or {}, user_data))
 
@@ -165,5 +169,6 @@ def transition_incident_status(user_data, id_incident):
 @token_required
 @require_entity_permission('incident', 'delete')
 def delete_incident(user_data, id_incident):
+    require_voucher_flow(user_data)
     require_incident_access(id_incident, user_data)
     return jsonify(IncidentService.delete(id_incident, user_id=user_data.get('id_user')))

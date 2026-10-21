@@ -63,24 +63,34 @@ def sesion_vigente(user_data: dict) -> bool:
     return permiso_token is None or permiso_actual is None or int(permiso_actual) == permiso_token
 
 
+def decode_session(token: str):
+    """(user_data, None) si el token es una sesion de personal vigente; si no,
+    (None, clave_de_error). Una sola regla para `token_required` y para toda ruta
+    que lea el token por su cuenta (ej. la descarga de `/documents`): antes esa
+    ruta aceptaba el token de MFA a medias y no miraba la revocacion."""
+    if not token:
+        return None, 'errors.auth_required'
+    try:
+        user_data = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
+    except Exception:
+        return None, 'errors.invalid_token'
+    if str(user_data.get('scope') or '').strip().lower() == str(PUBLIC_JWT_SCOPE).strip().lower():
+        return None, 'errors.invalid_token'
+    # El token del paso 1 del login con MFA (solo contrasena) no es una
+    # sesion: solo `/auth/mfa/verify-login` lo acepta, y lo decodifica aparte.
+    if user_data.get('mfa_step'):
+        return None, 'errors.invalid_token'
+    if not sesion_vigente(user_data):
+        return None, 'errors.session_revoked'
+    return user_data, None
+
+
 def token_required(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
-        token = request.headers.get('Authorization', '').replace('Bearer ', '')
-        if not token:
-            return jsonify({'error_key': 'errors.auth_required'}), 401
-        try:
-            user_data = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
-        except Exception:
-            return jsonify({'error_key': 'errors.invalid_token'}), 401
-        if str(user_data.get('scope') or '').strip().lower() == str(PUBLIC_JWT_SCOPE).strip().lower():
-            return jsonify({'error_key': 'errors.invalid_token'}), 401
-        # El token del paso 1 del login con MFA (solo contrasena) no es una
-        # sesion: solo `/auth/mfa/verify-login` lo acepta, y lo decodifica aparte.
-        if user_data.get('mfa_step'):
-            return jsonify({'error_key': 'errors.invalid_token'}), 401
-        if not sesion_vigente(user_data):
-            return jsonify({'error_key': 'errors.session_revoked'}), 401
+        user_data, error_key = decode_session(request.headers.get('Authorization', '').replace('Bearer ', ''))
+        if error_key:
+            return jsonify({'error_key': error_key}), 401
         return fn(user_data, *args, **kwargs)
     return wrapper
 

@@ -109,6 +109,15 @@ def scoped_incident_query(db, user_data):
     ))
 
 
+def require_voucher_flow(user_data) -> None:
+    """`incident` y `nm_incident_product` SON el vale y sus renglones. Escribirlos
+    por el CRUD generico salta el libro de inventario, el candado de que quien pide
+    no surte y el registro de eventos del vale: solo se mueven por `/vouchers`.
+    Queda abierto para el administrador, que corrige datos."""
+    if not (user_data.get("is_superuser") or user_data.get("is_bootstrap_admin")):
+        raise AppError("errors.voucher_use_voucher_flow", 403)
+
+
 def require_incident_access(incident_id, user_data) -> Incident:
     with transaction_context() as db:
         incident = db.get(Incident, int(incident_id))
