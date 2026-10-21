@@ -52,17 +52,16 @@ PROJECT_STATUSES = (
     "in_progress",
     "waiting_material",
     "stopped",
+    "collected",
     "completed",
-    "delivered",
 )
 
 PROJECT_TRANSITIONS = {
-    # Gerente mueve el proyecto directo desde Borrador -- al recibir la
-    # orden de compra del cliente -- sin que Supervisor tenga que "enviarlo
-    # a revision" primero. `submitted` se deja alcanzable por compatibilidad
-    # con lo que ya se hubiera capturado antes de este cambio, pero ya nadie
-    # tiene permiso para pedirlo (ver `transition_project`).
-    "draft": {"submitted", "authorized", "denied", "blocked"},
+    # Supervisor levanta el proyecto; Gerencia lo pasa a "en revision" y de ahi
+    # a autorizado -- o lo deniega/bloquea desde cualquiera de los dos. Ya no
+    # hay salto directo de Borrador a Autorizado (decision de negocio,
+    # 2026-10-19): la revision es un paso real.
+    "draft": {"submitted", "denied", "blocked"},
     "submitted": {"authorized", "denied", "blocked"},
     "blocked": {"submitted", "authorized", "denied"},
     # Ya NO hay salida directa a `in_progress`: todo proyecto autorizado pasa
@@ -75,7 +74,10 @@ PROJECT_TRANSITIONS = {
     # (`stopped`). Ver el candado de rol en `transition_project`. Volver de
     # un bloqueo en curso pasa por Gerente (blocked -> authorized ->
     # in_progress), a proposito: quien bloquea no se autoriza solo de vuelta.
-    "in_progress": {"waiting_material", "stopped", "completed", "blocked"},
+    #
+    # El final es el mismo con o sin maquila: se RECOLECTA (`collected`) y de ahi
+    # se completa. Quien lo pide cambia (ver `transition_project`).
+    "in_progress": {"waiting_material", "stopped", "collected", "blocked"},
     # `waiting_material` sirve DOS momentos distintos con el mismo estatus:
     # la espera obligatoria de entrada (desde `authorized`, la controla
     # Gerente) y la pausa a medio trabajo (desde `in_progress`, la controla
@@ -87,11 +89,10 @@ PROJECT_TRANSITIONS = {
     # justo para poder terminarlo.
     "waiting_material": {"in_progress", "stopped"},
     "stopped": {"in_progress"},
-    # Terminado es que el taller acabo; entregado, que salio hacia el cliente.
-    # Son dos hechos con dias de diferencia y alguien pregunta por los dos.
-    "completed": {"delivered"},
+    "collected": {"completed"},
+    # `completed` es el final: de ahi el proyecto ya no se mueve.
+    "completed": set(),
     "denied": set(),
-    "delivered": set(),
 }
 
 REASON_REQUIRED_TARGETS = {"denied", "blocked", "stopped"}
@@ -100,16 +101,17 @@ REASON_REQUIRED_TARGETS = {"denied", "blocked", "stopped"}
 # Se DERIVABA de `PROJECT_TRANSITIONS` -- "los que no tienen salida" -- y
 # funcionaba mientras terminar fuera el final. Dejo de funcionar al agregar
 # `delivered`: `completed` paso a tener salida y, con la regla vieja, un
-# proyecto terminado volvia a aceptar tareas nuevas. Lo detecto
+# proyecto terminado volvia a aceptar tareas nuevas. (`delivered` ya no existe:
+# 2026-10-19 se retiro y quedo solo `collected`; el aviso sigue valido.) Lo detecto
 # `test_no_new_task_in_a_closed_project`.
 #
 # La leccion es que eran dos cosas distintas que coincidian: "no avanza mas" y
 # "no acepta mas trabajo". Un proyecto TERMINADO todavia avanza -- falta
 # entregarlo -- pero el trabajo ya se hizo. Asi que se declara, y el aviso
 # original sigue vigente: una sola lista, aqui, no una copia en `task_service`.
-PROJECT_CLOSED_STATUSES = frozenset({"completed", "delivered", "denied"})
+PROJECT_CLOSED_STATUSES = frozenset({"collected", "completed", "denied"})
 WORKSHOP_VISIBLE_STATUSES = {"authorized", "in_progress", "waiting_material",
-                             "stopped", "completed", "delivered"}
+                             "stopped", "collected", "completed"}
 # Los estatus que ve quien confirma el material (`project_supply`): de
 # autorizado en adelante. Ver `_scoped_query`.
 SUPPLY_VISIBLE_STATUSES = WORKSHOP_VISIBLE_STATUSES
@@ -793,7 +795,7 @@ def require_project_open(project_id) -> None:
         project = db.get(Proyect, id_proyecto)
         if not project or project.deletion_date is not None:
             raise AppError("errors.resource_not_found", 404)
-        if (normalize_project_status(project.proyect_status) in {"denied", "completed", "delivered"}
+        if (normalize_project_status(project.proyect_status) in {"denied", "collected", "completed"}
                 or str(project.management_status or "").lower() == "cancelado"):
             raise AppError("errors.project_closed", 409,
                            {"id_proyect": project.id_proyect,
@@ -1557,11 +1559,8 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
         scope = _scope_name(db, user_data)
         leads_it = is_project_leader(project, user_data)
 
-        # Enviar a revision ya no lo pide nadie a proposito: Gerente mueve el
-        # proyecto directo desde Borrador (al recibir la orden de compra), y
-        # ni Supervisor ni el lider tienen esta puerta -- decision de negocio.
-        # `submitted` se queda en PROJECT_TRANSITIONS por compatibilidad con
-        # lo que ya se hubiera capturado antes, pero nadie puede pedirlo.
+        # Pasar a revision, autorizar, denegar o bloquear: solo la capacidad
+        # de autorizacion. Supervisor levanta el proyecto y ahi se queda.
         #
         # Quien autoriza, deniega o bloquea: solo la capacidad de autorizacion.
         # El lider NO entra aqui a proposito: quien ejecuta el trabajo no debe
@@ -1573,14 +1572,15 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
         # Dar los dos pasos de material: `project_supply` (Compras) o, de
         # respaldo, quien autoriza.
         puede_dar_material = _puede_dar_el_material(db, user_data)
-        # Entregar al cliente es responsabilidad de quien lidera el proyecto
-        # (normalmente Supervisor, quien lo crea), no del taller: "completado"
-        # es que el trabajo esta hecho, "entregado" es un hecho comercial
-        # aparte, con el cliente de por medio.
-        puede_entregar = leads_it or scope == "unrestricted"
+        # Recolectar: con maquila lo cambia el Jefe de taller; sin ella, el
+        # supervisor responsable (el taller ni ve ese proyecto). Completar lo
+        # recolectado (fase final) es del responsable o de Gerencia.
+        puede_recolectar = (_puede_ejecutar(db, user_data) if project.requires_maquila
+                            else leads_it) or scope == "unrestricted"
+        puede_cerrar_el_ciclo = leads_it or puede_autorizar
 
         allowed_scope = (
-            (validated_target in {"authorized", "denied", "blocked"} and puede_autorizar)
+            (validated_target in {"submitted", "authorized", "denied", "blocked"} and puede_autorizar)
             # El material de una orden de compra puede surtir a varios
             # proyectos a la vez (ver el comentario en PROJECT_STATUSES):
             # entrar a la espera obligatoria (desde `authorized`) y salir de
@@ -1593,7 +1593,9 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
             # El resto de "en proceso" (reanudar tras un paro) y
             # "detenido"/"terminado" los sigue controlando quien ejecuta.
             or (validated_target == "in_progress" and current == "stopped" and puede_ejecutar)
-            or (validated_target in {"stopped", "completed"} and puede_ejecutar)
+            or (validated_target == "stopped" and puede_ejecutar)
+            or (validated_target == "collected" and puede_recolectar)
+            or (validated_target == "completed" and current == "collected" and puede_cerrar_el_ciclo)
             # La pausa a medio trabajo (`in_progress -> waiting_material`, el
             # material se acaba ya arrancado) SI es del taller -- a
             # diferencia de la espera de entrada de arriba. Antes esta
@@ -1608,7 +1610,6 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
             # `puede_ejecutar` alcanzaba para esto y el taller si podia
             # bloquear -- se separo a proposito.
             or (validated_target == "blocked" and current == "in_progress" and (leads_it or scope == "unrestricted"))
-            or (validated_target == "delivered" and puede_entregar)
         )
         if not allowed_scope:
             raise AppError(
@@ -1627,8 +1628,10 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
             # Tener al menos una tarea YA NO es condicion para arrancar
             # (2026-10-16): quien confirma el material es Compras, que no
             # captura tareas, y el taller las va definiendo cuando le toca.
-            # Arrancar con material pendiente lo decide quien da el paso,
-            # pero dejando el motivo: queda en la bitacora del proyecto.
+            # En cuanto llega UNA pieza de lo pedido se puede empezar a
+            # trabajar aunque falte el resto (2026-10-19). Sin que haya llegado
+            # nada, arrancar lo decide quien da el paso, dejando el motivo: queda
+            # en la bitacora del proyecto.
             material = material_readiness(db, project.id_proyect)
             arranca_parcial = False
             if not material["ready"]:
@@ -1651,9 +1654,9 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
             if not material["ready"]:
                 raise AppError("errors.project_material_incomplete", 409, material)
 
-        if validated_target in {"completed", "delivered"}:
-            # No se completa ni se entrega con tareas todavia abiertas --
-            # "completado"/"entregado" es el estatus del proyecto, no
+        if validated_target in {"completed", "collected"}:
+            # No se completa ni se recolecta con tareas todavia abiertas --
+            # "completado"/"recolectado" es el estatus del proyecto, no
             # garantiza que cada tarea individual ya se haya cerrado en el
             # taller.
             tareas_abiertas = (
@@ -1699,8 +1702,9 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
         # para poder consultar `_users_with_capability`) pero disparado
         # DESPUES de cerrar el `with` -- ver docstring de `_notificar_proyecto`.
         avisos = []
-        if validated_target in {"authorized", "denied", "blocked"}:
+        if validated_target in {"submitted", "authorized", "denied", "blocked"}:
             etiqueta = {
+                "submitted": "paso a revision de gerencia",
                 "authorized": "fue autorizado por gerencia",
                 "denied": "fue denegado por gerencia",
                 "blocked": "quedo bloqueado",
@@ -1734,10 +1738,10 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
                 destinatarios=[project.leader],
                 titulo="Proyecto completado", mensaje="el taller termino el trabajo",
             ))
-        elif validated_target == "delivered":
+        elif validated_target == "collected":
             avisos.append(dict(
-                destinatarios=_users_with_capability(db, "project_authorization"),
-                titulo="Proyecto entregado", mensaje="ya se entrego al cliente",
+                destinatarios=[project.leader] + _users_with_capability(db, "project_authorization"),
+                titulo="Proyecto recolectado", mensaje="el trabajo salio del taller",
             ))
 
     for aviso in avisos:

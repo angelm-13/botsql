@@ -3505,7 +3505,7 @@
     "status_completed": "Completed",
     "status_denied": "Denied",
     "status_waiting_material": "Waiting for material",
-    "status_delivered": "Delivered",
+    "status_collected": "Collected",
     "new_task_note": "New note",
     "no_task_notes": "No notes recorded.",
     "task_note_event": "Task note",

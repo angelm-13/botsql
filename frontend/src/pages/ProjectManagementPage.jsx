@@ -33,7 +33,7 @@ import { formatearFechaHora } from "../utils/fechas";
 // no la conoce: el catalogo dice cuales existen, esto en que orden se pintan.
 // Un estatus que el catalogo traiga y esta lista no nombre se pinta al final,
 // en vez de desaparecer del tablero.
-const STATUS_ORDER = ["draft", "submitted", "blocked", "authorized", "waiting_material", "in_progress", "stopped", "completed", "denied"];
+const STATUS_ORDER = ["draft", "submitted", "blocked", "authorized", "waiting_material", "in_progress", "stopped", "collected", "completed", "denied"];
 const TASK_STATUS_ORDER = ["pendiente", "en_proceso", "bloqueada", "en_revision", "terminada", "cancelada"];
 
 // Lo que cada papel puede PEDIR, con los mismos grupos que comprueba
@@ -59,7 +59,8 @@ const ROLE_TARGETS = {
   // catalogo del servidor traiga para el estado actual.
   supervisor: {},
   manager: {
-    draft: ["authorized", "denied", "blocked"],
+    // Gerencia primero lo pasa a revision; de ahi lo autoriza.
+    draft: ["submitted", "denied", "blocked"],
     submitted: ["authorized", "denied", "blocked"],
     blocked: ["authorized", "denied", "blocked"],
     // La espera de material es obligatoria y la abre quien confirma el
@@ -67,6 +68,8 @@ const ROLE_TARGETS = {
     // tenga `project_supply` (Compras; ver `puedeDarMaterial` en actionTargets).
     authorized: ["waiting_material"],
     waiting_material: ["in_progress"],
+    // Completar lo recolectado es del responsable o de Gerencia.
+    collected: ["completed"],
   },
   workshop: {
     // Taller NO tiene "blocked": para un proyecto ya en curso, lo suyo es
@@ -75,7 +78,9 @@ const ROLE_TARGETS = {
     // `transition_project` (backend). La pausa a medio trabajo (el
     // material se acaba ya arrancado) SI es del taller -- a diferencia de
     // la espera de entrada, que controla Gerente arriba.
-    in_progress: ["waiting_material", "stopped", "completed"],
+    // Recolectar lo cambia el taller cuando el proyecto lleva maquila (sin
+    // maquila lo cambia el supervisor, ver `leadsIt` abajo).
+    in_progress: ["waiting_material", "stopped", "collected"],
     waiting_material: ["stopped"],
     stopped: ["in_progress"],
   },
@@ -511,13 +516,13 @@ export default function ProjectManagementPage() {
     const permitidos = porPapel ? (porPapel[project.proyect_status] || []) : null;
     const base = permitidos ? desdeElServidor.filter((target) => permitidos.includes(target)) : desdeElServidor;
     let resultado = base;
-    // Entregar al cliente es del LIDER del proyecto (normalmente Supervisor,
-    // quien lo crea), no del rol -- igual que el candado real en
+    // Completar lo recolectado es del LIDER del proyecto (normalmente
+    // Supervisor, quien lo crea), no del rol -- igual que el candado real en
     // `transition_project` (backend). Por eso no vive en ROLE_TARGETS: ese
     // mapa es por papel, esto es por quien lidera este proyecto en concreto.
     const leadsIt = Number(project.leader) === Number(actor.id_user);
-    if (leadsIt && desdeElServidor.includes("delivered") && !resultado.includes("delivered")) {
-      resultado = [...resultado, "delivered"];
+    if (leadsIt && project.proyect_status === "collected" && !resultado.includes("completed")) {
+      resultado = [...resultado, "completed"];
     }
     // Los pasos de material los da quien tiene `project_supply` aunque su rol
     // no sea "manager" (Compras cae en el modo "supervisor", sin acciones por
@@ -532,7 +537,7 @@ export default function ProjectManagementPage() {
     // completa. Es por proyecto y no por rol, como "entregado" arriba; el
     // servidor (`transition_project`, via `leads_it`) lo vuelve a comprobar.
     if (leadsIt && !project.requires_maquila) {
-      const delSupervisor = { in_progress: ["stopped", "completed"], stopped: ["in_progress"] }[project.proyect_status] || [];
+      const delSupervisor = { in_progress: ["stopped", "collected"], stopped: ["in_progress"] }[project.proyect_status] || [];
       for (const destino of delSupervisor) {
         if (desdeElServidor.includes(destino) && !resultado.includes(destino)) resultado = [...resultado, destino];
       }

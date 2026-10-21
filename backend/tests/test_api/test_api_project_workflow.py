@@ -80,8 +80,9 @@ class TestProjectWorkflowApi(BackendTestCase):
         )
         self.assertEqual(self.json(future_list)["total"], 0)
 
-        authorized = self._request(self.manager, "POST", f"/proyect/{project_id}/transition", {"status": "authorized"})
-        self.assertEqual(authorized.status_code, 200)
+        for status in ("submitted", "authorized"):
+            authorized = self._request(self.manager, "POST", f"/proyect/{project_id}/transition", {"status": status})
+            self.assertEqual(authorized.status_code, 200)
 
         workshop_after = self._request(self.workshop, "GET", "/proyect/?page=1&per_page=20")
         self.assertEqual(self.json(workshop_after)["total"], 1)
@@ -104,7 +105,7 @@ class TestProjectWorkflowApi(BackendTestCase):
         for status, reason in (
             ("stopped", "Espera de material"),
             ("in_progress", None),
-            ("completed", None),
+            ("collected", None),
         ):
             payload = {"status": status}
             if reason:
@@ -112,14 +113,18 @@ class TestProjectWorkflowApi(BackendTestCase):
             response = self._request(self.workshop, "POST", f"/proyect/{project_id}/transition", payload)
             self.assertEqual(response.status_code, 200)
 
+        # Con maquila recolecta el taller; completa el responsable (quien lo levanto).
+        response = self._request(self.supervisor, "POST", f"/proyect/{project_id}/transition", {"status": "completed"})
+        self.assertEqual(response.status_code, 200)
+
         detail = self._request(self.workshop, "GET", f"/proyect/{project_id}")
         detail_payload = self.json(detail)
         self.assertEqual(detail.status_code, 200)
         self.assertEqual(detail_payload["proyect_status"], "completed")
-        # created, authorized, waiting_material, in_progress, stopped,
-        # in_progress, completed.
-        self.assertEqual(len(detail_payload["events"]), 7)
-        self.assertEqual(detail_payload["events"][4]["reason"], "Espera de material")
+        # created, submitted, authorized, waiting_material, in_progress,
+        # stopped, in_progress, collected, completed.
+        self.assertEqual(len(detail_payload["events"]), 9)
+        self.assertEqual(detail_payload["events"][5]["reason"], "Espera de material")
 
     def test_http_rejects_manual_status_and_wrong_role_transition(self):
         project = self._create_project()
@@ -140,7 +145,7 @@ class TestProjectWorkflowApi(BackendTestCase):
         project = self._create_project()
         project_id = project["id_proyect"]
 
-        for destino in ("submitted", "authorized"):
+        for destino in ("submitted", "denied"):
             response = self._request(
                 self.supervisor, "POST", f"/proyect/{project_id}/transition",
                 {"status": destino, "reason": "Motivo"},

@@ -12,7 +12,7 @@ import { useI18n } from "../i18n";
 import "../styles/material-necesario.css";
 
 // Un proyecto cerrado ya no compra: la lista se ve, pero no se toca.
-const ESTATUS_CERRADOS = ["denied", "completed", "delivered"];
+const ESTATUS_CERRADOS = ["denied", "collected", "completed"];
 
 function actorGuardado() {
   try { return JSON.parse(localStorage.getItem("user") || "{}"); } catch { return {}; }

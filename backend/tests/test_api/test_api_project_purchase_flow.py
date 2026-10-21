@@ -130,14 +130,24 @@ class TestProyectoContraOrdenes(BaseRecepcion):
                 ProyectEvent.id_proyect == PROYECTO_B, ProyectEvent.new_status == "in_progress").one()
             self.assertEqual("Arranca con material parcial: 1 de 2 recibido", evento.reason)
 
+    def _sin_maquila_y_a_cargo_de_gerente(self):
+        """Sin maquila recolecta quien lleva el proyecto, no el taller."""
+        with transaction_context() as db:
+            proyecto = db.get(Proyect, PROYECTO_B)
+            proyecto.requires_maquila = False
+            proyecto.leader = GERENTE_1
+
     def test_a_project_cannot_be_completed_until_the_rest_arrives(self):
         from app.models import ProyectMaterialNeed
 
         self._con_control()
+        self._sin_maquila_y_a_cargo_de_gerente()
         self._en_espera_con_tarea()
         self._recibir_el_cemento()
         self._arrancar()
         self._cerrar_tareas()
+        # Recolectar no pide el material: lo que falta se exige al completar.
+        transition_project(PROYECTO_B, {"status": "collected"}, self.gerente_datos)
         with self.assertRaises(AppError) as e:
             transition_project(PROYECTO_B, {"status": "completed"}, self.gerente_datos)
         self.assertEqual("errors.project_material_incomplete", e.exception.message_key)
@@ -155,9 +165,11 @@ class TestProyectoContraOrdenes(BaseRecepcion):
             db.query(ProyectMaterialNeed).filter(
                 ProyectMaterialNeed.id_proyect == PROYECTO_B).delete()
             db.get(Proyect, PROYECTO_B).leader = GERENTE_1
+        self._sin_maquila_y_a_cargo_de_gerente()
         self._en_espera_con_tarea()
         self._arrancar()
         self._cerrar_tareas()
+        transition_project(PROYECTO_B, {"status": "collected"}, self.gerente_datos)
         self.assertEqual("completed", transition_project(
             PROYECTO_B, {"status": "completed"}, self.gerente_datos)["proyect_status"])
 

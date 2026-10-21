@@ -80,12 +80,49 @@ class TestProjectWorkflowService(BackendTestCase):
                 created_by=self.workshop["id_user"],
             ))
 
+    def _autorizar(self, project_id):
+        """Gerencia pasa el proyecto por "en revision" antes de autorizarlo."""
+        transition_project(project_id, {"status": "submitted"}, self.manager)
+        return transition_project(project_id, {"status": "authorized"}, self.manager)
+
     def _start_work(self, project_id):
         """De `authorized` a `in_progress` pasando por la espera de material
         obligatoria -- ambos saltos los pide Gerente, no el taller (ver el
         comentario de PROJECT_STATUSES en project_management_service.py)."""
         transition_project(project_id, {"status": "waiting_material"}, self.manager)
         return transition_project(project_id, {"status": "in_progress"}, self.manager)
+
+    def _sin_maquila(self, project):
+        with transaction_context() as db:
+            db.get(Proyect, project).requires_maquila = False
+
+    def test_the_role_manager_decides_who_sees_and_who_edits_projects(self):
+        compras = self.compras
+        ajeno = self._create(self.other_supervisor, "Ajeno")["id_proyect"]
+        self._autorizar(ajeno)  # Compras solo ve de autorizado en adelante
+
+        # Lectura Todos: lo ve aunque no sea suyo. Propios (el supervisor, sin celda): no.
+        self.assertEqual(1, list_projects(compras)["total"])
+        self.assertEqual(0, list_projects(self.supervisor)["total"])
+        # Verlo no es poder editarlo: `scope_update` es Propios y no lo creo ella.
+        with self.assertRaises(AppError) as raised:
+            update_project(ajeno, {"title": "Cambio"}, compras)
+        self.assertEqual("errors.permission_denied", raised.exception.message_key)
+
+    def test_a_project_without_maquila_is_collected_and_completed_by_the_supervisor(self):
+        project = self._create()["id_proyect"]
+        self._sin_maquila(project)
+        self._autorizar(project)
+        self._start_work(project)
+
+        with self.assertRaises(AppError) as raised:
+            transition_project(project, {"status": "completed"}, self.supervisor)
+        self.assertEqual("errors.project_invalid_transition", raised.exception.message_key)
+
+        self.assertEqual("collected",
+                         transition_project(project, {"status": "collected"}, self.supervisor)["proyect_status"])
+        self.assertEqual("completed",
+                         transition_project(project, {"status": "completed"}, self.supervisor)["proyect_status"])
 
     def test_supervisor_creation_defaults_to_draft_and_is_owner_scoped(self):
         own = self._create()
@@ -111,32 +148,32 @@ class TestProjectWorkflowService(BackendTestCase):
         project = self._create()
         self.assertEqual(list_projects(self.workshop)["total"], 0)
 
-        transition_project(project["id_proyect"], {"status": "authorized"}, self.manager)
+        self._autorizar(project["id_proyect"])
         self.assertEqual(list_projects(self.workshop)["total"], 1)
 
     def test_full_cycle_writes_ordered_immutable_history(self):
-        # Gerente mueve el proyecto directo desde Borrador -- al recibir la
-        # orden de compra -- sin que Supervisor lo "envie a revision" primero.
         project = self._create()
         project_id = project["id_proyect"]
-        transition_project(project_id, {"status": "authorized"}, self.manager)
+        self._autorizar(project_id)
         self._add_task(project_id, "terminada")
         self._start_work(project_id)
         transition_project(project_id, {"status": "stopped", "reason": "Falta material"}, self.workshop)
         transition_project(project_id, {"status": "in_progress"}, self.workshop)
-        transition_project(project_id, {"status": "completed"}, self.workshop)
+        # Con maquila el taller lo marca RECOLECTADO y lo completa el
+        # responsable (quien lo levanto).
+        transition_project(project_id, {"status": "collected"}, self.workshop)
+        transition_project(project_id, {"status": "completed"}, self.supervisor)
 
         detail = get_project_detail(project_id, self.workshop)
 
         self.assertEqual(detail["proyect_status"], "completed")
-        # created, authorized, waiting_material, in_progress, stopped,
-        # in_progress, completed -- un evento mas que antes de que la espera
-        # de material fuera obligatoria.
-        self.assertEqual(len(detail["events"]), 7)
+        # created, submitted, authorized, waiting_material, in_progress, stopped,
+        # in_progress, collected, completed.
+        self.assertEqual(len(detail["events"]), 9)
         self.assertEqual(detail["events"][0]["event_type"], "created")
-        self.assertEqual(detail["events"][4]["reason"], "Falta material")
+        self.assertEqual(detail["events"][5]["reason"], "Falta material")
         with transaction_context() as db:
-            self.assertEqual(db.query(ProyectEvent).filter_by(id_proyect=project_id).count(), 7)
+            self.assertEqual(db.query(ProyectEvent).filter_by(id_proyect=project_id).count(), 9)
 
     def test_direct_status_update_is_rejected(self):
         project = self._create()
@@ -156,34 +193,94 @@ class TestProjectWorkflowService(BackendTestCase):
         """
         project = self._create()["id_proyect"]
 
-        for destino in ("submitted", "authorized", "denied", "blocked"):
+        for destino in ("submitted", "denied", "blocked"):
             with self.subTest(destino=destino), self.assertRaises(AppError) as raised:
                 transition_project(project, {"status": destino, "reason": "Motivo"}, self.supervisor)
             self.assertEqual("errors.permission_denied", raised.exception.message_key)
 
-    def test_manager_authorizes_a_draft_directly_without_a_submit_step(self):
-        """Gerente mueve el proyecto directo desde Borrador -> Autorizado."""
+    def test_manager_passes_a_draft_through_review_before_authorizing(self):
+        """Borrador -> En revision -> Autorizado; no hay salto directo."""
         project = self._create()["id_proyect"]
 
-        autorizado = transition_project(project, {"status": "authorized"}, self.manager)
+        with self.assertRaises(AppError) as raised:
+            transition_project(project, {"status": "authorized"}, self.manager)
+        self.assertEqual("errors.project_invalid_transition", raised.exception.message_key)
 
+        en_revision = transition_project(project, {"status": "submitted"}, self.manager)
+        self.assertEqual("submitted", en_revision["proyect_status"])
+        autorizado = transition_project(project, {"status": "authorized"}, self.manager)
         self.assertEqual("authorized", autorizado["proyect_status"])
 
-    def test_an_authorized_project_cannot_skip_the_wait_for_material(self):
-        """Ya no hay salida directa de `authorized` a `in_progress` -- una
-        orden de compra puede surtir a varios proyectos a la vez (ej. los
-        mismos costales de cemento), asi que autorizar no significa que el
-        taller ya tenga en mano lo que necesita. Debe pasar por
-        `waiting_material`, sin importar quien lo pida.
-        """
+    def test_the_manager_denies_or_blocks_from_draft_or_review(self):
+        for previo in ("draft", "submitted"):
+            for destino in ("denied", "blocked"):
+                with self.subTest(previo=previo, destino=destino):
+                    project = self._create()["id_proyect"]
+                    if previo == "submitted":
+                        transition_project(project, {"status": "submitted"}, self.manager)
+                    hecho = transition_project(project, {"status": destino, "reason": "Motivo"}, self.manager)
+                    self.assertEqual(destino, hecho["proyect_status"])
+
+    def test_with_maquila_the_end_goes_through_collected_and_completed_is_final(self):
         project = self._create()["id_proyect"]
-        transition_project(project, {"status": "authorized"}, self.manager)
-        self._add_task(project)
+        self._autorizar(project)
+        self._start_work(project)
+
+        with self.assertRaises(AppError) as raised:
+            transition_project(project, {"status": "completed"}, self.workshop)
+        self.assertEqual("errors.project_invalid_transition", raised.exception.message_key)
+
+        # Con maquila recolectar es del taller, no del supervisor.
+        with self.assertRaises(AppError) as raised:
+            transition_project(project, {"status": "collected"}, self.supervisor)
+        self.assertEqual("errors.permission_denied", raised.exception.message_key)
+        self.assertEqual("collected",
+                         transition_project(project, {"status": "collected"}, self.workshop)["proyect_status"])
+        # Cerrar el recorrido es del responsable o de Gerencia, no del taller.
+        with self.assertRaises(AppError) as raised:
+            transition_project(project, {"status": "completed"}, self.workshop)
+        self.assertEqual("errors.permission_denied", raised.exception.message_key)
+        self.assertEqual("completed",
+                         transition_project(project, {"status": "completed"}, self.supervisor)["proyect_status"])
+
+        # De "completado" ya no se mueve.
+        for destino in ("in_progress", "collected", "stopped", "blocked"):
+            with self.subTest(destino=destino), self.assertRaises(AppError) as raised:
+                transition_project(project, {"status": destino, "reason": "Motivo"}, self.manager)
+            self.assertEqual("errors.project_invalid_transition", raised.exception.message_key)
+
+    def test_an_authorized_project_cannot_skip_the_wait_for_material(self):
+        """Todo proyecto autorizado pasa por `waiting_material` (Compras), haya
+        o no material por pedir: no hay salida directa a `in_progress`."""
+        project = self._create()["id_proyect"]
+        self._autorizar(project)
 
         for actor in (self.manager, self.workshop):
             with self.subTest(actor=actor), self.assertRaises(AppError) as raised:
                 transition_project(project, {"status": "in_progress"}, actor)
             self.assertEqual("errors.project_invalid_transition", raised.exception.message_key)
+
+    def test_collecting_belongs_to_the_workshop_with_maquila_and_to_the_supervisor_without(self):
+        con = self._create()["id_proyect"]
+        self._autorizar(con)
+        self._start_work(con)
+        sin = self._create(title="Sin maquila")["id_proyect"]
+        self._sin_maquila(sin)
+        self._autorizar(sin)
+        self._start_work(sin)
+
+        # Con maquila: ni el supervisor ni Gerencia; el taller si.
+        for actor in (self.supervisor, self.manager):
+            with self.subTest(proyecto="con", actor=actor), self.assertRaises(AppError) as raised:
+                transition_project(con, {"status": "collected"}, actor)
+            self.assertEqual("errors.permission_denied", raised.exception.message_key)
+        self.assertEqual("collected", transition_project(con, {"status": "collected"}, self.workshop)["proyect_status"])
+
+        # Sin maquila: el taller ni lo ve; el supervisor lo recolecta.
+        with self.assertRaises(AppError) as raised:
+            transition_project(sin, {"status": "collected"}, self.workshop)
+        self.assertEqual(404, raised.exception.status_code)
+        self.assertEqual("collected", transition_project(sin, {"status": "collected"}, self.supervisor)["proyect_status"])
 
     def test_only_who_gives_the_material_opens_and_closes_the_wait_for_it(self):
         """Entrar a la espera y salir de ella hacia el trabajo real las da
@@ -194,7 +291,7 @@ class TestProjectWorkflowService(BackendTestCase):
         no controla la espera de arranque.
         """
         project = self._create()["id_proyect"]
-        transition_project(project, {"status": "authorized"}, self.manager)
+        self._autorizar(project)
         self._add_task(project)
 
         with self.assertRaises(AppError) as raised:
@@ -226,7 +323,7 @@ class TestProjectWorkflowService(BackendTestCase):
         quien lo lidera (o quien autoriza).
         """
         project = self._create()["id_proyect"]
-        transition_project(project, {"status": "authorized"}, self.manager)
+        self._autorizar(project)
         self._add_task(project)
         self._start_work(project)
 
@@ -241,7 +338,7 @@ class TestProjectWorkflowService(BackendTestCase):
         """Quien lidera el proyecto si puede bloquearlo en curso, aunque no
         tenga la capacidad de autorizacion ni sea del taller."""
         project = self._create()["id_proyect"]  # self.supervisor es el lider por defecto.
-        transition_project(project, {"status": "authorized"}, self.manager)
+        self._autorizar(project)
         self._add_task(project)
         self._start_work(project)
 
@@ -257,7 +354,7 @@ class TestProjectWorkflowService(BackendTestCase):
         las va definiendo cuando le toca.
         """
         project = self._create()["id_proyect"]
-        transition_project(project, {"status": "authorized"}, self.manager)
+        self._autorizar(project)
         transition_project(project, {"status": "waiting_material"}, self.manager)
 
         en_proceso = transition_project(project, {"status": "in_progress"}, self.manager)
@@ -267,7 +364,7 @@ class TestProjectWorkflowService(BackendTestCase):
     def test_compras_gives_the_two_material_steps(self):
         """Compras (capacidad `project_supply`) pasa a espera y de ahi a proceso."""
         project = self._create()["id_proyect"]
-        transition_project(project, {"status": "authorized"}, self.manager)
+        self._autorizar(project)
 
         en_espera = transition_project(project, {"status": "waiting_material"}, self.compras)
         self.assertEqual("waiting_material", en_espera["proyect_status"])
@@ -284,12 +381,12 @@ class TestProjectWorkflowService(BackendTestCase):
             transition_project(project, {"status": "authorized"}, self.compras)
         self.assertEqual(404, raised.exception.status_code)
 
-        transition_project(project, {"status": "authorized"}, self.manager)
+        self._autorizar(project)
         transition_project(project, {"status": "waiting_material"}, self.compras)
         transition_project(project, {"status": "in_progress"}, self.compras)
 
         # Ya en curso: pausar, detener, completar y entregar no son suyos.
-        for destino in ("waiting_material", "stopped", "completed"):
+        for destino in ("waiting_material", "stopped", "collected"):
             with self.subTest(destino=destino), self.assertRaises(AppError) as raised:
                 transition_project(project, {"status": destino, "reason": "x"}, self.compras)
             self.assertEqual("errors.permission_denied", raised.exception.message_key)
@@ -297,7 +394,7 @@ class TestProjectWorkflowService(BackendTestCase):
     def test_the_manager_still_gives_the_material_steps_as_a_backup(self):
         """Gerente (`project_authorization`) no necesita `project_supply`."""
         project = self._create()["id_proyect"]
-        transition_project(project, {"status": "authorized"}, self.manager)
+        self._autorizar(project)
 
         transition_project(project, {"status": "waiting_material"}, self.manager)
         en_proceso = transition_project(project, {"status": "in_progress"}, self.manager)
@@ -307,7 +404,7 @@ class TestProjectWorkflowService(BackendTestCase):
     def test_the_workshop_does_not_get_the_material_steps_from_compras(self):
         """Dar el material no se le concede a quien ejecuta por serlo."""
         project = self._create()["id_proyect"]
-        transition_project(project, {"status": "authorized"}, self.manager)
+        self._autorizar(project)
 
         with self.assertRaises(AppError) as raised:
             transition_project(project, {"status": "waiting_material"}, self.workshop)
@@ -324,7 +421,7 @@ class TestProjectWorkflowService(BackendTestCase):
                         is_employee=True, username="compras-prueba"))
         project = self._create()["id_proyect"]
 
-        transition_project(project, {"status": "authorized"}, self.manager)
+        self._autorizar(project)
 
         with transaction_context() as db:
             titulos = [n.title for n in db.query(Notification).filter_by(id_user_recipient=61).all()]
@@ -343,7 +440,7 @@ class TestProjectWorkflowService(BackendTestCase):
         Jefe de taller no participa en ningun paso.
         """
         project = self._create_without_maquila()
-        transition_project(project, {"status": "authorized"}, self.manager)
+        self._autorizar(project)
 
         with self.assertRaises(AppError) as raised:
             transition_project(project, {"status": "completed"}, self.manager)
@@ -353,15 +450,15 @@ class TestProjectWorkflowService(BackendTestCase):
         en_proceso = transition_project(project, {"status": "in_progress"}, self.compras)
         self.assertEqual("in_progress", en_proceso["proyect_status"])
 
-        # Lo lleva quien lo lidera (self.supervisor lo creo): lo completa y lo entrega.
+        # Lo lleva quien lo lidera (self.supervisor lo creo): lo recolecta y lo completa.
+        recolectado = transition_project(project, {"status": "collected"}, self.supervisor)
+        self.assertEqual("collected", recolectado["proyect_status"])
         completado = transition_project(project, {"status": "completed"}, self.supervisor)
         self.assertEqual("completed", completado["proyect_status"])
-        entregado = transition_project(project, {"status": "delivered"}, self.supervisor)
-        self.assertEqual("delivered", entregado["proyect_status"])
 
     def test_the_workshop_never_sees_a_project_without_maquila(self):
         project = self._create_without_maquila()
-        transition_project(project, {"status": "authorized"}, self.manager)
+        self._autorizar(project)
         transition_project(project, {"status": "waiting_material"}, self.compras)
         transition_project(project, {"status": "in_progress"}, self.compras)
 
@@ -374,7 +471,7 @@ class TestProjectWorkflowService(BackendTestCase):
         """Quien confirma el material no ve borradores ajenos; si lo propio."""
         ajeno_borrador = self._create(self.supervisor, "Borrador ajeno")["id_proyect"]
         autorizado = self._create(self.supervisor, "Autorizado")["id_proyect"]
-        transition_project(autorizado, {"status": "authorized"}, self.manager)
+        self._autorizar(autorizado)
         propio_borrador = self._create(self.compras, "Borrador propio")["id_proyect"]
 
         visibles = {p["id_proyect"] for p in list_projects(self.compras)["items"]}
@@ -393,7 +490,7 @@ class TestProjectWorkflowService(BackendTestCase):
         from app.models.notification import Notification
 
         project = self._create()["id_proyect"]
-        transition_project(project, {"status": "authorized"}, self.manager)
+        self._autorizar(project)
         take_project(project, self.workshop)
         transition_project(project, {"status": "waiting_material"}, self.compras)
 
@@ -443,7 +540,7 @@ class TestProjectWorkflowService(BackendTestCase):
         from app.models.proyect_material_need import ProyectMaterialNeed
 
         project = self._create()["id_proyect"]
-        transition_project(project, {"status": "authorized"}, self.manager)
+        self._autorizar(project)
         self._add_task(project)
         with transaction_context() as db:
             db.add(ProyectMaterialNeed(
@@ -459,22 +556,22 @@ class TestProjectWorkflowService(BackendTestCase):
             project, {"status": "in_progress", "reason": "Llega el lunes"}, self.manager)
         self.assertEqual("in_progress", en_proceso["proyect_status"])
 
-    def test_project_cannot_be_completed_with_open_tasks(self):
-        """No se completa el proyecto si todavia hay tareas sin cerrar."""
+    def test_project_cannot_be_collected_with_open_tasks(self):
+        """No se recolecta el proyecto si todavia hay tareas sin cerrar."""
         project = self._create()["id_proyect"]
-        transition_project(project, {"status": "authorized"}, self.manager)
+        self._autorizar(project)
         self._add_task(project, "pendiente")
         self._start_work(project)
 
         with self.assertRaises(AppError) as raised:
-            transition_project(project, {"status": "completed"}, self.workshop)
-        self.assertEqual("errors.project_tasks_not_completed", raised.exception.message_key)
+            transition_project(project, {"status": "collected"}, self.workshop)
+        self.assertEqual("errors.project_open_tasks", raised.exception.message_key)
 
         with transaction_context() as db:
             db.query(Task).filter(Task.id_proyect == project).update({"task_status": "terminada"})
 
-        completado = transition_project(project, {"status": "completed"}, self.workshop)
-        self.assertEqual("completed", completado["proyect_status"])
+        recolectado = transition_project(project, {"status": "collected"}, self.workshop)
+        self.assertEqual("collected", recolectado["proyect_status"])
 
     def test_workshop_cannot_block_a_project_before_it_starts(self):
         """Rechazar antes de iniciar sigue siendo exclusivo de Gerente.
@@ -626,15 +723,28 @@ class TestProjectLeaderRights(TestProjectWorkflowService):
         -- no el lider -- porque es quien sabe si la compra ya llego.
         """
         project = self._create_led_by_leader()["id_proyect"]
+        self._sin_maquila(project)  # sin maquila cierra el supervisor; con ella, el taller
         self._add_task(project, "terminada")
 
-        transition_project(project, {"status": "authorized"}, self.manager)
+        self._autorizar(project)
         self._start_work(project)
 
+        transition_project(project, {"status": "collected"}, self.leader)
         self.assertEqual(
             "completed",
             transition_project(project, {"status": "completed"}, self.leader)["proyect_status"],
         )
+
+    def test_the_leader_cannot_skip_the_collection_of_a_project_that_needs_maquila(self):
+        """Con maquila el final pasa por "recolectado": no se completa directo."""
+        project = self._create_led_by_leader()["id_proyect"]
+        self._add_task(project, "terminada")
+        self._autorizar(project)
+        self._start_work(project)
+
+        with self.assertRaises(AppError) as raised:
+            transition_project(project, {"status": "completed"}, self.leader)
+        self.assertEqual("errors.project_invalid_transition", raised.exception.message_key)
 
     def test_the_leader_cannot_authorize_their_own_project(self):
         """Separacion de funciones: quien ejecuta el trabajo no lo aprueba.
@@ -644,15 +754,16 @@ class TestProjectLeaderRights(TestProjectWorkflowService):
         """
         project = self._create_led_by_leader()["id_proyect"]
 
-        for target in ("authorized", "denied", "blocked"):
+        for target in ("submitted", "denied", "blocked"):
             with self.subTest(target=target), self.assertRaises(AppError) as raised:
                 transition_project(project, {"status": target, "reason": "Motivo"}, self.leader)
             self.assertEqual("errors.permission_denied", raised.exception.message_key)
 
     def test_the_leader_can_stop_and_resume_with_a_reason(self):
         project = self._create_led_by_leader()["id_proyect"]
+        self._sin_maquila(project)
         self._add_task(project)
-        transition_project(project, {"status": "authorized"}, self.manager)
+        self._autorizar(project)
         self._start_work(project)
 
         with self.assertRaises(AppError):
@@ -1004,7 +1115,7 @@ class TestElSupervisorTomaElProyecto(TestProjectWorkflowService):
         `transition_project`).
         """
         creado = self._create(title=title)
-        transition_project(creado["id_proyect"], {"status": "authorized"}, self.manager)
+        self._autorizar(creado["id_proyect"])
         return creado["id_proyect"]
 
     def test_the_workshop_cannot_write_a_task_of_a_project_it_does_not_hold(self):
@@ -1041,6 +1152,7 @@ class TestElSupervisorTomaElProyecto(TestProjectWorkflowService):
 
     def test_a_role_with_both_capabilities_still_authorizes_and_also_executes(self):
         id_proyect = self._create(title="Todo en uno")["id_proyect"]
+        transition_project(id_proyect, {"status": "submitted"}, self.dual)
         self.assertEqual("authorized", transition_project(id_proyect, {"status": "authorized"}, self.dual)["proyect_status"])
         take_project(id_proyect, self.dual)
         self._add_task(id_proyect)

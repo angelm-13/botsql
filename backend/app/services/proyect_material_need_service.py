@@ -48,7 +48,7 @@ from app.utils.errors import AppError
 
 # Un proyecto cerrado o negado ya no compra: sus necesidades abiertas son
 # residuo, y contarlas inflaria lo que parece faltar.
-PROYECTOS_QUE_YA_NO_COMPRAN = ("denied", "completed", "delivered")
+PROYECTOS_QUE_YA_NO_COMPRAN = ("denied", "collected", "completed")
 
 PURCHASE_CAPABILITY = "purchase_planning"
 # Una orden cancelada suelta lo que sostenia; todo lo demas -incluida una rechazada,
