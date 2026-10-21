@@ -1,6 +1,6 @@
 from sqlalchemy import func, select
 
-from app.models import Invoice, Material, Product
+from app.models import Invoice, InventoryStock, Material, Product
 from app.models.session import transaction_context
 from app.services.base_service import CrudService
 from app.utils.errors import AppError
@@ -87,6 +87,78 @@ class ProductService(CrudService):
         return factura.id_invoice
 
     @classmethod
+    def _rechazar_codigo_repetido(cls, item_id, payload: dict) -> dict:
+        """El codigo identifica a UN producto vivo.
+
+        Nada lo impedia: ESC-06 se capturo dos veces (ids 2132 y 2516) y el
+        buscador devolvia dos productos con el mismo codigo. Solo se compara si el
+        codigo viene y es distinto del que ya tiene -la base migrada trae codigos
+        repetidos y editar otro campo de esos productos tiene que seguir
+        funcionando-; un producto dado de baja no cuenta.
+        """
+        codigo = str(payload.get('product_code') or '').strip()
+        if not codigo:
+            return payload
+        with transaction_context() as session:
+            if item_id is not None:
+                actual = session.get(Product, int(item_id))
+                if actual is not None and str(actual.product_code or '').strip().upper() == codigo.upper():
+                    return payload
+            repetido = session.scalars(
+                select(Product.id_product).where(
+                    func.upper(func.trim(Product.product_code)) == codigo.upper(),
+                    Product.deletion_date.is_(None),
+                ).limit(1)
+            ).first()
+        if repetido is not None:
+            raise AppError('errors.product_code_duplicate', status_code=409,
+                           meta={'field': 'product_code', 'id_product': repetido})
+        return payload
+
+    ESTADOS_QUE_EXIGEN_EXISTENCIA = ('nuevo', 'usado')
+
+    @classmethod
+    def _exigir_existencia_para_nuevo_o_usado(cls, item_id, payload: dict) -> dict:
+        """Un producto no pasa a Nuevo o Usado sin existencia.
+
+        Cambiar el estado a Nuevo o Usado dice "esta en el almacen y se puede usar",
+        pero el estado solo es un texto: si la existencia esta en 0 el producto queda
+        diciendo una cosa y el libro otra, y el buscador del vale no lo ofrece. Se
+        pide primero la entrada de existencia (al menos 1) y despues el cambio.
+
+        Solo se mira cuando el estado CAMBIA a uno de esos dos: guardar otro campo
+        de un producto que ya es Nuevo o Usado, o que esta en 0 por estar prestado,
+        sigue funcionando. Se llama DESPUES de `_sincronizar_estado`, que deja
+        `product_status` con el codigo del catalogo cuando manda el catalogo.
+        """
+        from app.utils.product_status import codigo_de_catalogo
+
+        if 'product_status' not in payload:
+            return payload
+        destino = codigo_de_catalogo(payload.get('product_status'))
+        if destino not in cls.ESTADOS_QUE_EXIGEN_EXISTENCIA:
+            return payload
+        with transaction_context() as session:
+            if item_id is None:
+                # Alta: la existencia es la que se declara al crear.
+                existencia = cls._entero_o_none(payload.get('cantidad')) or 0
+            else:
+                fila = session.get(Product, int(item_id))
+                if fila is None:
+                    return payload
+                if codigo_de_catalogo(fila.product_status) == destino:
+                    return payload
+                por_ubicacion = session.scalar(
+                    select(func.coalesce(func.sum(InventoryStock.quantity), 0))
+                    .where(InventoryStock.id_product == int(item_id)))
+                existencia = int(por_ubicacion or 0) or int(fila.cantidad or 0)
+        if existencia < 1:
+            raise AppError('errors.product_status_needs_stock', status_code=409,
+                           meta={'field': 'product_status', 'status': destino,
+                                 'existencia': existencia})
+        return payload
+
+    @classmethod
     def _rechazar_lot_control(cls, payload: dict) -> dict:
         """El control por lote no se enciende escribiendo la columna.
 
@@ -149,8 +221,9 @@ class ProductService(CrudService):
         Cae en la ubicacion general cuando el producto no trae una propia, que es
         como llega casi todo lo del sistema original.
         """
-        payload = cls._rechazar_lot_control(dict(payload or {}))
+        payload = cls._rechazar_codigo_repetido(None, cls._rechazar_lot_control(dict(payload or {})))
         payload = cls._sincronizar_estado(None, payload)
+        payload = cls._exigir_existencia_para_nuevo_o_usado(None, payload)
 
         # Sin factura no se rechaza: se resuelve la de captura directa. Es lo que
         # permite dar de alta un desarmador sin inventarse un documento de
@@ -296,8 +369,9 @@ class ProductService(CrudService):
         # de seguridad del 2026-10-06 que esta rama encontro por su lado;
         # dos arreglos del mismo bug, se queda el de `initAlan` por ser la
         # rama compartida.
-        payload = cls._rechazar_cantidad_a_mano(item_id, dict(payload or {}))
+        payload = cls._rechazar_codigo_repetido(item_id, cls._rechazar_cantidad_a_mano(item_id, dict(payload or {})))
         payload = cls._sincronizar_estado(item_id, payload)
+        payload = cls._exigir_existencia_para_nuevo_o_usado(item_id, payload)
         # Los formularios de edicion devuelven el registro completo, `lot_control`
         # incluido. Si viene igual a lo que ya hay no se esta encendiendo nada, y
         # rechazarlo hacia imposible guardar CUALQUIER edicion de un producto.
