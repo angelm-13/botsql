@@ -378,6 +378,10 @@ class TestArmarLaOrden(BaseOrdenes):
             "/purchase-orders?q=norte", headers=self._compras()))
         self.assertEqual(2, buscadas["total"])
         self.assertEqual(2, todas["items"][1]["projects_count"])
+        # El resumen de arriba de la pantalla cuenta por estado, sin los filtros.
+        self.assertEqual({"pending_authorization": 1}, {
+            k: v for k, v in por_estado["by_status"].items() if k == "pending_authorization"})
+        self.assertEqual(2, sum(por_estado["by_status"].values()))
 
     def test_only_the_registered_suppliers_are_offered(self):
         respuesta = self.client.get("/purchase-orders/suppliers", headers=self._compras())

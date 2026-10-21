@@ -675,7 +675,16 @@ def list_orders(user_data: dict, *, status=None, id_supplier=None, q=None,
                 "created_by_name": nombres.get(int(orden.created_by)),
             })
             items.append(fila)
-        return {"items": items, "total": int(total or 0), "limit": limite, "offset": desde}
+        # Cuantas hay en cada estado, sin los filtros de la lista: es el resumen
+        # que se ve arriba de la pantalla (por autorizar, por comprar, por recibir).
+        por_estado = {
+            str(estado): int(n) for estado, n in db.execute(
+                select(PurchaseOrder.order_status, func.count())
+                .where(PurchaseOrder.deletion_date.is_(None))
+                .group_by(PurchaseOrder.order_status)).all()
+        }
+        return {"items": items, "total": int(total or 0), "limit": limite, "offset": desde,
+                "by_status": por_estado}
 
 
 def get_order(id_order, user_data: dict) -> dict:
