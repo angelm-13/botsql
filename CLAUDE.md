@@ -6,6 +6,32 @@ aparte de `ARQUITECTURA_TYAKXA_TNY.md` (referencia técnica estable) y de
 sección se resuelve, se puede recortar; mientras tanto se deja completa para
 que una sesión nueva no tenga que releer el historial de chat.
 
+## Bitacora 2026-10-21 — traida selectiva de initAngm (9 commits de Angel del 10-19)
+
+Local en `initAlan`, **sin pushear** (un push despliega solo a tyakxa-dev). Suite completa:
+2277 passed, 0 failed (se excluye `test_baja_de_usuario.py`, trabajo sin commitear de Alan).
+
+**Traido**: cherry-pick de `d3689bd` (400 en entradas invalidas), `2602199` (lotes y puente de
+logistica; mas `cd3dd61`, que hace autosuficiente su test), `21e84ee`+`98f5bd2` (facturacion),
+`4826bb3` (script `limpiar_folios_automaticos`) y `29deac4`+`5d15ad6` (tarjetas por estado,
+tabla de ordenes y urgencia en "Por comprar": frontend sin probar en navegador, se prueba en
+sistema-test; los textos nuevos solo tienen espanol por defecto). Aplicado a mano:
+`131e539` proyectos (`delivered` se retira, final `collected -> completed`, Gerencia pasa por
+"en revision") y `b5e4a4e` aviso a Compras al pedir material (sin restriccion de quien pide).
+Se conserva nuestra regla de material parcial.
+
+**Fuera por decision de Alan** (no reabrir sin pedido): avance automatico del proyecto por la
+orden de compra (consultar con Adser), entrada al libro al recibir una orden (averiguar como
+lo hace hoy el almacen de Adser), quien puede pedir material, reglas de comprobantes y de
+presupuesto con el comprobante, y "regresar a espera de material exige una pieza". Moneda y
+autorizador de Angel: sin decidir. Detalle de la comparacion en la memoria
+`project_tyakxa_tny_traida_initangm_20261021`.
+
+**Antes de promover a adser-prod**: contar proyectos en `delivered` (la migracion los pasa a
+`collected`; probada dos veces y con un `delivered` real en la base local); probar en
+sistema-test las pantallas de proyectos (Recolectar/Completar, "en revision") y de compras;
+falta `status_collected` en pt/de (caen al espanol).
+
 ## Bitacora 2026-10-16 — baja logica en el CRUD comun y vales en el registro de eventos
 
 Pedido: que cancelar vales (y cualquier alta/cambio/baja) quede en `event_log`, y que
