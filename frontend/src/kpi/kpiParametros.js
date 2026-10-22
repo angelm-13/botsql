@@ -61,6 +61,7 @@ export function armarParametros(estado, { esTabla = false, tieneBajoStock = fals
   }
   if (estado.empleadosSeleccionados.length) parametros.empleados = estado.empleadosSeleccionados.map(Number);
   if (estado.departamentosSeleccionados.length) parametros.id_departments = estado.departamentosSeleccionados.map(Number);
+  if (estado.equiposSeleccionados?.length) parametros.id_teams = estado.equiposSeleccionados.map(Number);
   // Solo los overrides de KPIs que siguen seleccionados -- un KPI que se
   // quito de la seleccion no debe dejar un color huerfano guardado.
   const coloresVigentes = Object.fromEntries(
@@ -117,6 +118,8 @@ export function estadoDeWidget(widget, kpiCatalog, hoy = new Date()) {
     fechaFinB: parametros.fecha_fin_b || "",
     empleadosSeleccionados: Array.isArray(parametros.empleados) ? parametros.empleados.map(String) : [],
     departamentosSeleccionados: Array.isArray(parametros.id_departments) ? parametros.id_departments.map(String) : [],
+    // Si no se vuelve a leer aqui, editar un widget y guardarlo borraria el filtro (igual que `orden_tabla`).
+    equiposSeleccionados: Array.isArray(parametros.id_teams) ? parametros.id_teams.map(String) : [],
     // Las llaves de `colores_kpi` ya llegan como string desde el JSON
     // guardado -- se copian tal cual, sin volver a tocar el tipo.
     coloresKpi: parametros.colores_kpi && typeof parametros.colores_kpi === "object" ? { ...parametros.colores_kpi } : {},

@@ -20,7 +20,7 @@ import useReordenarTarjetas, { sinColision } from "../components/kpi-widgets/use
 import {
   getAllKpiDashboard, createKpiDashboard, updateKpiDashboard, deleteKpiDashboard,
   getAllKpiDashboardWidget, createKpiDashboardWidget, updateKpiDashboardWidget, deleteKpiDashboardWidget, saveKpiWidgetOrdenTabla,
-  getAllKpiDefinition, getKpiDimensions, queryKpiSnapshot, queryKpiVivo, getUserOptions, getAllDepartment,
+  getAllKpiDefinition, getKpiDimensions, queryKpiSnapshot, queryKpiVivo, getUserOptions, getAllDepartment, getTeamOptions,
 } from "../api";
 import "../styles/kpi-widgets.css";
 import "../styles/kpi-editor.css";
@@ -31,8 +31,8 @@ import Skeleton from "../components/kpi-widgets/Skeleton";
 import { resolverColoresModernosParaPdf } from "../kpi/colorParaPdf";
 import SelectorDeKpi from "../components/kpi-widgets/SelectorDeKpi";
 import {
-  colorDeKpi, colorEfectivoDeKpi, enriquecerCatalogo, etiquetasDeDimension, etiquetasDeSnapshots, labelForDimension,
-  muestraFiltroDePersonas, normalizarBusqueda, unidadInfo,
+  colorDeKpi, colorEfectivoDeKpi, desglosaPorEquipo, enriquecerCatalogo, etiquetasDeDimension, etiquetasDeSnapshots, labelForDimension,
+  muestraFiltroDeEquipos, muestraFiltroDePersonas, normalizarBusqueda, unidadInfo,
 } from "../kpi/kpiDatos.js";
 import {
   armarParametros, columnasDeWidget, estadoDeWidget, filasDeWidget, mezclaUnidades, motivoParaNoCombinar, rangoInicialDelBorrador,
@@ -250,6 +250,9 @@ function defaultPanelState() {
     fechaFinB: "",
     empleadosSeleccionados: [],
     departamentosSeleccionados: [],
+    // Ids de `team` (como texto). Filtra los equipos de un KPI por equipo y, en uno por persona, deja a quienes
+    // estaban en esos equipos cada dia. Con equipos elegidos desaparece la fila "Sin equipo".
+    equiposSeleccionados: [],
     coloresKpi: {},
     // "entidad": desglosado por empleado/producto (comportamiento de
     // siempre). "periodo": una sola serie sumada entre todas las entidades,
@@ -404,6 +407,7 @@ export default function Dashboard() {
   const [kpiCatalog, setKpiCatalog] = useState([]);
   const [users, setUsers] = useState([]);
   const [departments, setDepartments] = useState([]);
+  const [teams, setTeams] = useState([]);
 
   // Borrador del panel "Agregar grafico", uno por tablero (`id_kpi_dashboard`):
   // el panel ya no se desmonta al cambiar de tablero, asi que su estado no
@@ -719,6 +723,8 @@ export default function Dashboard() {
     // sirve al filtro por empleados. Los nombres de las graficas los manda el backend.
     getUserOptions().then((data) => { if (!cancelado) setUsers(listOf(data)); }).catch(() => { if (!cancelado) setUsers([]); });
     getAllDepartment({ per_page: 500 }).then((data) => { if (!cancelado) setDepartments(listOf(data)); }).catch(() => { if (!cancelado) setDepartments([]); });
+    // Solo id+nombre de los equipos vigentes, sin pedir `GET /team/` (exige el modulo de seguridad).
+    getTeamOptions().then((data) => { if (!cancelado) setTeams(listOf(data)); }).catch(() => { if (!cancelado) setTeams([]); });
     return () => { cancelado = true; };
   }, []);
 
@@ -982,6 +988,7 @@ export default function Dashboard() {
               kpiCatalog={kpiCatalog}
               users={users}
               departments={departments}
+              teams={teams}
               userLabel={userLabel}
               productLabel={productLabel}
               formatNumber={formatNumber}
@@ -1097,6 +1104,7 @@ function useDatosDeWidget({ widget, kpiCatalog, onReady }) {
   const fechaFinB = parametros.fecha_fin_b;
   const empleadosKey = Array.isArray(parametros.empleados) ? parametros.empleados.join(",") : "";
   const departamentosKey = Array.isArray(parametros.id_departments) ? parametros.id_departments.join(",") : "";
+  const equiposKey = Array.isArray(parametros.id_teams) ? parametros.id_teams.join(",") : "";
   const agruparPor = parametros.agrupar_por === "periodo" ? "periodo" : "entidad";
   // Un widget "tabla" solo tiene sentido con un unico KPI "vivo" (hoy,
   // material_prestado_actual) -- ver KpiWidgetPanel, que ya restringe la
@@ -1159,6 +1167,7 @@ function useDatosDeWidget({ widget, kpiCatalog, onReady }) {
         }
         if (empleadosKey) paramsComunes.empleados = empleadosKey;
         if (departamentosKey) paramsComunes.id_departments = departamentosKey;
+        if (equiposKey) paramsComunes.id_teams = equiposKey;
         if (agruparPor === "periodo") paramsComunes.agrupar_por = agruparPor;
         const resultados = await Promise.all(
           idsUsados.map((id) => queryKpiSnapshot({ ...paramsComunes, id_kpi_definition: id })),
@@ -1177,7 +1186,7 @@ function useDatosDeWidget({ widget, kpiCatalog, onReady }) {
   // `idsKey` es el proxy estable de `idsUsados` (un array nuevo cada
   // render); `idsUsados` en si mismo nunca deberia ir en las dependencias.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idsKey, esTabla, esTablaVivo, fechaInicio, fechaFin, fechaInicioB, fechaFinB, empleadosKey, departamentosKey, agruparPor]);
+  }, [idsKey, esTabla, esTablaVivo, fechaInicio, fechaFin, fechaInicioB, fechaFinB, empleadosKey, departamentosKey, equiposKey, agruparPor]);
 
   return { snapshots, loading, error, vivoItems: SIN_RENGLONES, vivoTotal: 0, cargarVivo, onListoVivo, guardarOrdenTabla, kpiInfos, idsUsados, esTablaVivo };
 }
@@ -1405,10 +1414,11 @@ export function KpiWidgetCard({
 // acompana al valor principal, no la comparacion en si (esa ya la muestra el
 // delta de al lado). Devuelve una serie de numeros lista para NumeroWidget, o
 // null mientras carga / si no hay al menos 2 puntos que dibujar.
-function useTendenciaKpi({ activo, idKpiDefinition, fechaInicio, fechaFin, empleados, idDepartments }) {
+function useTendenciaKpi({ activo, idKpiDefinition, fechaInicio, fechaFin, empleados, idDepartments, idTeams }) {
   const [serie, setSerie] = useState(null);
   const empleadosKey = Array.isArray(empleados) ? empleados.join(",") : "";
   const idDepartmentsKey = Array.isArray(idDepartments) ? idDepartments.join(",") : "";
+  const idTeamsKey = Array.isArray(idTeams) ? idTeams.join(",") : "";
 
   useEffect(() => {
     let cancelado = false;
@@ -1416,11 +1426,12 @@ function useTendenciaKpi({ activo, idKpiDefinition, fechaInicio, fechaFin, emple
     const params = { id_kpi_definition: idKpiDefinition, fecha_inicio: fechaInicio, fecha_fin: fechaFin, agrupar_por: "periodo" };
     if (empleadosKey) params.empleados = empleadosKey;
     if (idDepartmentsKey) params.id_departments = idDepartmentsKey;
+    if (idTeamsKey) params.id_teams = idTeamsKey;
     queryKpiSnapshot(params)
       .then((resultado) => { if (!cancelado) setSerie(tendenciaDeSnapshot(resultado)); })
       .catch(() => { if (!cancelado) setSerie([]); });
     return () => { cancelado = true; };
-  }, [activo, idKpiDefinition, fechaInicio, fechaFin, empleadosKey, idDepartmentsKey]);
+  }, [activo, idKpiDefinition, fechaInicio, fechaFin, empleadosKey, idDepartmentsKey, idTeamsKey]);
 
   return serie && serie.length >= 2 ? serie : null;
 }
@@ -1439,6 +1450,7 @@ function KpiNumero({ widget, snapshot, kpiInfo, formatNumber, tx, animar }) {
     fechaFin: parametros.fecha_fin,
     empleados: parametros.empleados,
     idDepartments: parametros.id_departments,
+    idTeams: parametros.id_teams,
   });
   const props = propsNumero({
     snapshot,
@@ -1620,7 +1632,7 @@ function tiposDeGraficaPermitidos(kpiInfos) {
   return tiposPermitidosPorKpi(kpiInfos, CHART_TYPES.map((opt) => opt.value));
 }
 
-export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, departments, userLabel, productLabel, formatNumber, onCancel, onSave, onAbierto, t, tx }) {
+export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, departments, teams = [], userLabel, productLabel, formatNumber, onCancel, onSave, onAbierto, t, tx }) {
   const {
     editingWidgetId,
     colapsado,
@@ -1635,6 +1647,7 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
     fechaFinB,
     empleadosSeleccionados,
     departamentosSeleccionados,
+    equiposSeleccionados = [],
     coloresKpi,
     desfaseComparacion,
     agruparPor,
@@ -1666,6 +1679,11 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
   const primeraDimension = kpisSeleccionadosInfo[0]?.dimensiones?.[0];
   // El filtro por empleados/departamentos solo aplica a KPIs que desglosan por persona (ids de usuario).
   const mostrarFiltroDePersonas = muestraFiltroDePersonas(kpisSeleccionadosInfo);
+  // El de equipos aplica a KPIs por equipo y por persona; el mensaje de la fila "Sin equipo" solo a los por equipo.
+  const mostrarFiltroDeEquipos = muestraFiltroDeEquipos(kpisSeleccionadosInfo) && teams.length > 0;
+  const kpiPorEquipoElegido = desglosaPorEquipo(kpisSeleccionadosInfo);
+  // Si ningun filtro aplica a lo elegido (un KPI por estado, por mesero o global), el paso no se queda en blanco.
+  const hayAlgunFiltro = (mostrarFiltroDePersonas && (users.length > 0 || departments.length > 0)) || mostrarFiltroDeEquipos;
   // Lo que se desglosa, con el nombre que le da cada KPI ("Responsable", "Tecnico"...).
   // Las dos etiquetas de siempre conservan su traduccion.
   const etiquetaDeAgrupar = etiquetasDeDimension(kpisSeleccionadosInfo)
@@ -1774,6 +1792,14 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
       empleadosSeleccionados: empleadosSeleccionados.includes(idUser)
         ? empleadosSeleccionados.filter((item) => item !== idUser)
         : [...empleadosSeleccionados, idUser],
+    });
+  }
+
+  function toggleEquipo(idEquipo) {
+    onChangePanelState({
+      equiposSeleccionados: equiposSeleccionados.includes(idEquipo)
+        ? equiposSeleccionados.filter((item) => item !== idEquipo)
+        : [...equiposSeleccionados, idEquipo],
     });
   }
 
@@ -2165,6 +2191,58 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
                   ))}
                 </div>
               </div>
+            )}
+
+            {mostrarFiltroDeEquipos && (
+              <div className="kpi-team-picker">
+                <KpiDropdownPicker
+                  label={
+                    equiposSeleccionados.length > 0
+                      ? `${equiposSeleccionados.length} ${tx("teams_selected", "equipo(s) seleccionado(s)")}`
+                      : tx("teams_filter", "Filtrar por equipos (opcional)")
+                  }
+                  searchPlaceholder={tx("dropdown_search_placeholder", "Buscar...")}
+                  renderOptions={(filtro) => {
+                    const equiposFiltrados = filtro
+                      ? teams.filter((team) => normalizarBusqueda(team.team_description || `#${team.id_team}`).includes(filtro))
+                      : teams;
+                    if (equiposFiltrados.length === 0) {
+                      return <p className="kpi-dropdown-picker-empty">{tx("no_results", "Sin resultados")}</p>;
+                    }
+                    return (
+                      <div className="kpi-employee-list">
+                        {equiposFiltrados.map((team) => {
+                          const activo = equiposSeleccionados.includes(String(team.id_team));
+                          const colorEquipo = colorDeKpi(`equipo-${team.id_team}`);
+                          return (
+                            <button
+                              type="button"
+                              className={`kpi-employee-chip ${activo ? "active" : ""}`}
+                              key={team.id_team}
+                              style={{ "--employee-color": colorEquipo }}
+                              onClick={() => toggleEquipo(String(team.id_team))}
+                              aria-pressed={activo}
+                              title={team.team_description || `#${team.id_team}`}
+                            >
+                              <span>{team.team_description || `#${team.id_team}`}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  }}
+                />
+                {kpiPorEquipoElegido && (
+                  <p className="kpi-editor-ayuda">{tx("teams_filter_help", "Si eliges equipos, la fila «Sin equipo» deja de mostrarse.")}</p>
+                )}
+                {mostrarFiltroDePersonas && (
+                  <p className="kpi-editor-ayuda">{tx("teams_filter_history_help", "Cada día cuenta en el equipo que la persona tenía ese día.")}</p>
+                )}
+              </div>
+            )}
+
+            {!hayAlgunFiltro && (
+              <p className="kpi-editor-sin-filtros">{tx("no_filters", "Este KPI no tiene filtros")}</p>
             )}
       </>
     ),

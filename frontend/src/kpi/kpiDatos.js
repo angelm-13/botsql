@@ -157,6 +157,21 @@ export function muestraFiltroDePersonas(kpiInfos) {
   return (kpiInfos || []).some((info) => (info?.dimension_tipo ?? tipoDeDimension(info?.dimensiones?.[0])) === "persona");
 }
 
+/** Si el filtro por equipos tiene sentido: cuando algun KPI elegido desglosa por EQUIPO (filtra los equipos que se
+ * pintan) o por PERSONA (deja a quienes estaban en esos equipos, cada dia en el que tenian). Con un KPI por estado,
+ * por mesero o global no hay nada que filtrar por equipo. */
+export function muestraFiltroDeEquipos(kpiInfos) {
+  return (kpiInfos || []).some((info) => {
+    const dimension = info?.dimensiones?.[0];
+    return dimension === "equipo" || (info?.dimension_tipo ?? tipoDeDimension(dimension)) === "persona";
+  });
+}
+
+/** Si algun KPI elegido desglosa por EQUIPO: ese es el que tiene la fila «Sin equipo», que se va al filtrar. */
+export function desglosaPorEquipo(kpiInfos) {
+  return (kpiInfos || []).some((info) => info?.dimensiones?.[0] === "equipo");
+}
+
 // Los nombres de entidad que la API manda junto a los totales (`rango_a.etiquetas`,
 // hoy solo la dimension "familia": `{ id: nombre }`), de todos los snapshots y los dos lados del
 // rango juntos. Vacio si el KPI no los manda.

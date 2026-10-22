@@ -821,6 +821,9 @@ export const getAllUser = (params = {}) => request("/user/", { params });
 // o el lider de un proyecto) -- cualquier usuario autenticado puede
 // llamarlo, sin exigir el permiso de lectura completo de user.
 export const getUserOptions = () => request("/user/options");
+// Solo id+nombre de los equipos vigentes, sin permiso de entidad -- igual que `getUserOptions` --: el editor de
+// graficos del Dashboard elige equipos sin tener el modulo de seguridad (`GET /team/` se lo negaria).
+export const getTeamOptions = () => request("/team/options");
 export const getUser = (id) => request(`/user/${id}`);
 export const createUser = (payload) => request("/user/", { method: "POST", body: payload });
 export const updateUser = (id, payload) => request(`/user/${id}`, { method: "PUT", body: payload });

@@ -110,6 +110,9 @@
 
 .kpi-editor-rango-resuelto { margin: 8px 0 0; font-size: 12px; font-weight: 700; color: var(--kpi-ink-suave); }
 .kpi-editor-rango-resuelto span { font-weight: 400; color: var(--kpi-texto-suave); }
+/* Texto de ayuda bajo un campo del editor, y lo que se ve en un paso sin controles ("Este KPI no tiene filtros"). */
+.kpi-editor-ayuda { margin: 0; font-size: 12px; color: var(--kpi-texto-suave); }
+.kpi-editor-sin-filtros { margin: 0; padding: 14px 0; font-size: 13px; color: var(--kpi-texto-suave); }
 
 /* --- Selector de KPI (components/kpi-widgets/SelectorDeKpi.jsx) ---------------- */
 .kpi-selector { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
