@@ -19,6 +19,7 @@ from app.models.session import engine, transaction_context
 from app.modules.plan import reiniciar_plan
 from app.routes.kpi import _totales
 from tests.conftest import BackendTestCase
+from app.utils.tiempo import pared_a_utc
 from tests.reloj import ahora_local
 
 # Filtro `id_teams` de GET /kpi_snapshot/query y la dimension `equipo`. Solo PostgreSQL, como el resto de las pruebas
@@ -68,8 +69,9 @@ class TestKpiFiltroPorEquipoApi(BackendTestCase):
                 db.add(Team(id_team=id_team, team_description=nombre, created_by=1))
             db.flush()
             # Beto esta en los dos equipos con miembros.
+            # Desde antes de cualquier dia de las pruebas: cada fila cuenta en el equipo que la persona tenia ese dia.
             for id_team, id_user in ((T1, ANA), (T1, BETO), (T2, BETO), (T2, CARLA)):
-                db.add(NmTeamUser(id_team=id_team, id_user=id_user, created_by=1))
+                db.add(NmTeamUser(id_team=id_team, id_user=id_user, created_by=1, creation_date=datetime(2026, 8, 1)))
             db.add_all([
                 EntityPermission(id_permission=ROL_TODOS, entity_name="kpi_definition", scope_create=4, scope_read=4, scope_update=4, scope_delete=4, created_by=1),
                 EntityPermission(id_permission=ROL_PROPIOS, entity_name="kpi_definition", scope_create=1, scope_read=1, scope_update=1, scope_delete=1, created_by=1),
@@ -137,6 +139,76 @@ class TestKpiFiltroPorEquipoApi(BackendTestCase):
     def test_id_teams_se_combina_con_empleados_por_interseccion(self):
         self.assertEqual({BETO: 200.0}, self._por_empleado(ACTOR_TODOS, self.id_empleado, id_teams=T1, empleados=BETO))
         self.assertEqual({}, self._por_empleado(ACTOR_TODOS, self.id_empleado, id_teams=T1, empleados=CARLA))
+
+    # --- id_teams atribuye cada DIA al equipo que la persona tenia ese dia ---------------------------------
+
+    def _diego(self, *, snapshots, membresias):
+        """Diego (sin equipo en el fixture) con `membresias` [(equipo, desde, hasta)] en hora de pared, y un snapshot por dia."""
+        with transaction_context() as db:
+            for id_team, desde, hasta in membresias:
+                db.add(NmTeamUser(
+                    id_team=id_team, id_user=DIEGO, created_by=1, creation_date=pared_a_utc(desde),
+                    deletion_date=None if hasta is None else pared_a_utc(hasta),
+                ))
+            for dia, valor in snapshots.items():
+                db.add(KpiSnapshot(
+                    id_kpi_definition=self.id_empleado, dimension_key={"id_user": DIEGO, "id_proyect": PROYECTO},
+                    periodo=dia, valor=Decimal(valor),
+                ))
+
+    def _de_diego(self, **params):
+        params.setdefault("fecha_inicio", "2026-10-01")
+        params.setdefault("fecha_fin", "2026-10-31")
+        return self._por_empleado(ACTOR_TODOS, self.id_empleado, **params).get(DIEGO)
+
+    def test_quien_pasa_de_t1_a_t2_el_miercoles_conserva_en_t1_los_dias_de_antes(self):
+        self._diego(
+            snapshots={date(2026, 10, 5): "10", date(2026, 10, 6): "20", date(2026, 10, 7): "30", date(2026, 10, 8): "40"},
+            membresias=[
+                (T1, datetime(2026, 10, 5, 0, 0), datetime(2026, 10, 7, 9, 0)),
+                (T2, datetime(2026, 10, 7, 9, 0), None),
+            ],
+        )
+
+        self.assertEqual(30.0, self._de_diego(id_teams=T1), "lunes y martes")
+        self.assertEqual(70.0, self._de_diego(id_teams=T2), "el miercoles (se movio a las 9:00) y el jueves")
+        self.assertEqual(100.0, self._de_diego(id_teams=f"{T1},{T2}"), "la union; un dia nunca cuenta dos veces")
+        self.assertEqual(100.0, self._de_diego(), "sin filtro, todo")
+        self.assertIsNone(self._de_diego(id_teams=T3))
+
+    def test_un_dia_anterior_al_alta_en_el_equipo_no_cuenta(self):
+        self._diego(
+            snapshots={date(2026, 10, 5): "10", date(2026, 10, 6): "20"},
+            membresias=[(T1, datetime(2026, 10, 6, 0, 0), None)],
+        )
+
+        self.assertEqual(20.0, self._de_diego(id_teams=T1), "el dia 5 la persona todavia no estaba en el equipo")
+
+    def test_un_equipo_dado_de_baja_conserva_a_sus_integrantes_en_los_dias_en_que_existio(self):
+        self._diego(
+            snapshots={date(2026, 10, 5): "10", date(2026, 10, 6): "20", date(2026, 10, 7): "30", date(2026, 10, 8): "40"},
+            membresias=[(T1, datetime(2026, 10, 5, 0, 0), None)],
+        )
+        with transaction_context() as db:
+            db.get(Team, T1).deletion_date = pared_a_utc(datetime(2026, 10, 7, 12, 0))
+
+        self.assertEqual(30.0, self._de_diego(id_teams=T1), "los dias 5 y 6; el 7 ya termino sin el equipo")
+
+    def test_la_medianoche_utc_no_mueve_a_la_persona_un_dia(self):
+        # Alta a las 19:00 locales del dia 6 = 01:00 UTC del dia 7. El dia local 6 termina con la persona en T1.
+        self._diego(
+            snapshots={date(2026, 10, 5): "10", date(2026, 10, 6): "20", date(2026, 10, 7): "30"},
+            membresias=[(T1, datetime(2026, 10, 6, 19, 0), None)],
+        )
+
+        self.assertEqual(50.0, self._de_diego(id_teams=T1), "los dias 6 y 7, no el 5")
+
+    def test_la_persona_dada_de_baja_del_sistema_no_cuenta_igual_que_antes(self):
+        self._diego(snapshots={date(2026, 10, 5): "10"}, membresias=[(T1, datetime(2026, 10, 1, 0, 0), None)])
+        with transaction_context() as db:
+            db.get(User, DIEGO).deletion_date = datetime(2026, 10, 20)
+
+        self.assertIsNone(self._de_diego(id_teams=T1))
 
     # --- el alcance de lectura manda: id_teams recorta, nunca amplia ------------------------------------
 

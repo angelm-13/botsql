@@ -3,24 +3,23 @@ from __future__ import annotations
 from datetime import date
 
 from flask import Blueprint, jsonify, request
-from sqlalchemy import cast, func, select
+from sqlalchemy import Integer, cast, func, select
 from sqlalchemy.dialects.postgresql import JSONB
 
 from app.kpis.dimensiones import (
     CATALOGO as CATALOGO_DE_DIMENSIONES, DIMENSION_POR_CLAVE as DIMENSION_DECLARADA, SIN_ASIGNAR, _familias,
     etiquetas_de_dimension,
 )
+from app.kpis.modulos.checadas import persona_en_equipos_el_dia
 from app.kpis.registry import (
     AGREGACION_POR_CLAVE, ALCANCE_PROYECTO_POR_CLAVE, DIMENSION_JSON_KEY, DIMENSION_POR_CLAVE,
     KPI_POR_CLAVE, LIMITE_POR_CLAVE, OCULTAR_CEROS_POR_CLAVE, PRESTADO_ORDENES, SIN_ASIGNAR_POR_CLAVE,
 )
 from app.models.kpi_definition import KpiDefinition
 from app.models.kpi_snapshot import KpiSnapshot
-from app.models.nm_team_user import NmTeamUser
 from app.models.permission import Permission
 from app.models.product_family import ProductFamily
 from app.models.session import transaction_context
-from app.models.team import Team
 from app.models.user import User
 from app.modules.plan import limite
 from app.services.invoice_service import InvoiceService
@@ -112,27 +111,6 @@ def _empleados_de_departamentos(db, id_departments):
     ).all()
 
 
-def _empleados_de_equipos(db, id_teams):
-    """`id_user` de los miembros vigentes de los equipos `id_teams`.
-
-    La pertenencia vive en `nm_team_user` (un usuario puede estar en varios equipos). Cuentan
-    solo los equipos y las membresias sin baja y los usuarios activos, igual que en
-    `_empleados_de_departamentos`.
-    """
-    return db.scalars(
-        select(NmTeamUser.id_user)
-        .join(Team, Team.id_team == NmTeamUser.id_team)
-        .join(User, User.id_user == NmTeamUser.id_user)
-        .where(
-            NmTeamUser.id_team.in_(id_teams),
-            NmTeamUser.deletion_date.is_(None),
-            Team.deletion_date.is_(None),
-            User.deletion_date.is_(None),
-        )
-        .distinct()
-    ).all()
-
-
 def _dimension_entity_expr(campo_json):
     # `.contains()`/`[]` sobre `dimension_key` necesitan `cast(..., JSONB)`:
     # el tipo declarado en el modelo es el JSON generico con variante, y
@@ -146,7 +124,7 @@ def _dimension_entity_expr(campo_json):
     return cast(KpiSnapshot.dimension_key, JSONB)[campo_json].astext
 
 
-def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo=False, limite=None, sin_asignar=False, ocultar_ceros=False):
+def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo=False, limite=None, sin_asignar=False, ocultar_ceros=False, condiciones_extra=None):
     """Combina `kpi_snapshot` en el rango, en uno de tres modos:
 
     * `campo_json` es None (dimension "global", ej. ingresos/egresos
@@ -175,6 +153,9 @@ def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, enti
     valor combinado es 0 (la foto de "quien esta en turno" deja un 0 por cada persona que ya salio). Va ANTES de `limite`,
     y el `total` no cambia.
 
+    `condiciones_extra`: condiciones SQL que se suman a las del rango y a las de `entidades` (hoy, la de `id_teams` en los
+    KPIs por persona: cada fila cuenta en el equipo que la persona tenia ese dia).
+
     `limite` (`KpiDefinition.limite_categorias`): en el modo por entidad, deja en
     `por_empleado` solo las `limite` entidades de mayor valor (empate: la de menor id).
     El corte va DESPUES de combinar el rango -- el top depende del rango pedido -- y el
@@ -195,6 +176,7 @@ def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, enti
     # condicion siempre falsa, asi que es seguro.
     if entidad_expr is not None and entidades is not None:
         condiciones.append(entidad_expr.in_([str(entidad) for entidad in entidades]))
+    condiciones.extend(condiciones_extra or [])
 
     base = {'inicio': fecha_inicio.isoformat(), 'fin': fecha_fin.isoformat()}
 
@@ -474,14 +456,18 @@ def query_kpi_snapshot(user_data):
 
         # id_teams recorta, nunca amplia: va DESPUES del alcance del actor, asi que quien tiene Propios o
         # Mis grupos no ve a nadie fuera de lo que ya cubria por pasar un equipo ajeno.
-        #   * KPI por empleado (persona): los miembros de esos equipos (interseccion con lo anterior).
+        #   * KPI por empleado (persona): cada fila (persona y dia) cuenta en el equipo que la persona tenia ESE dia
+        #     (`persona_en_equipos_el_dia`), no en el de hoy: quien paso de A a B el miercoles sigue en A el lunes y el
+        #     martes. Es una condicion mas, que se suma a `entidades` (el alcance del actor y los departamentos).
         #   * KPI por equipo: esos equipos (interseccion con `entidades`, que es el mismo filtro generico).
         #   * Cualquier otro KPI: no aplica, igual que id_departments.
         # Una lista de equipos sin miembros filtra a "nadie": no se salta el filtro.
+        condiciones_extra = []
         if id_teams:
             if _tipo_de(dimension) == 'persona':
-                miembros = set(_empleados_de_equipos(db, id_teams))
-                entidades = sorted(miembros) if entidades is None else [e for e in entidades if e in miembros]
+                condiciones_extra.append(persona_en_equipos_el_dia(
+                    cast(_dimension_entity_expr(campo_json), Integer), id_teams, KpiSnapshot.periodo,
+                ))
             elif dimension == 'equipo':
                 entidades = list(id_teams) if entidades is None else [e for e in entidades if e in id_teams]
 
@@ -489,10 +475,10 @@ def query_kpi_snapshot(user_data):
         tope_categorias = LIMITE_POR_CLAVE.get(kpi_row.clave) if kpi_row else None
         con_sin_asignar = SIN_ASIGNAR_POR_CLAVE.get(kpi_row.clave, False) if kpi_row else False
         sin_ceros = OCULTAR_CEROS_POR_CLAVE.get(kpi_row.clave, False) if kpi_row else False
-        rango_a = _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo, tope_categorias, con_sin_asignar, sin_ceros)
+        rango_a = _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo, tope_categorias, con_sin_asignar, sin_ceros, condiciones_extra)
         rango_b = None
         if fecha_inicio_b and fecha_fin_b:
-            rango_b = _totales(db, id_kpi_definition, fecha_inicio_b, fecha_fin_b, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo, tope_categorias, con_sin_asignar, sin_ceros)
+            rango_b = _totales(db, id_kpi_definition, fecha_inicio_b, fecha_fin_b, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo, tope_categorias, con_sin_asignar, sin_ceros, condiciones_extra)
         # El snapshot guarda ids; los nombres viajan aparte (`etiquetas`) para que el Dashboard no tenga
         # que cargar catalogos enteros solo para ponerlos. Cada dimension declara quien los resuelve
         # (`app/kpis/dimensiones.py`); estado y global no llevan.
