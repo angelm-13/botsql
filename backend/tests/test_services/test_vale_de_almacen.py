@@ -57,6 +57,7 @@ from app.services.warehouse_voucher_service import (
     EN_TRANSITO,
     autorizar_vale,
     buscar_vales,
+    cancelar_vale,
     cerrar_renglon,
     devolver_renglon,
     consultar_vale,
@@ -1079,6 +1080,38 @@ class TestElPrevaleNoMueveElAlmacen(BaseVale):
         self.assertEqual(antes, self._saldo(RACK))
         entregar_vale(r["voucher"]["id_incident"], {}, ACTOR)
         self.assertEqual(antes - 2, self._saldo(RACK))
+
+    def _cancelar_como(self, id_permiso, scope_update):
+        """Cancela un prevale ajeno con un rol que tiene `warehouse_voucher`."""
+        from app.models.entity_permission import EntityPermission
+
+        with transaction_context() as db:
+            db.add(EntityPermission(
+                id_permission=id_permiso, entity_name="warehouse_voucher",
+                scope_read=4, scope_update=scope_update, created_by=1))
+        self.surtir(5, RACK)
+        r = self._prevale([{"id_product": CEMENTO, "quantity": 2,
+                            "id_location_from": RACK}])
+        ajeno = {"id_user": 9, "id_proyect": PROYECTO, "id_permission": id_permiso}
+        return r["voucher"]["id_incident"], ajeno
+
+    def test_a_read_only_warehouse_role_cannot_cancel_someone_elses_voucher(self):
+        """Gerente Comercial lee los vales (`scope_read`) y no puede cancelarlos.
+
+        `has_capability` basta con `scope_read`, asi que sin pedir escritura la
+        fila de solo lectura lo hacia pasar por quien opera el almacen.
+        """
+        id_vale, solo_lectura = self._cancelar_como(777, scope_update=0)
+        with self.assertRaises(AppError) as cm:
+            cancelar_vale(id_vale, {"note": "no me toca"}, solo_lectura)
+        self.assertEqual(404, cm.exception.status_code)
+        self.assertEqual(BORRADOR, consultar_vale(id_vale, ACTOR)["voucher"]["incident_status"])
+
+    def test_a_warehouse_role_with_write_can_cancel_someone_elses_voucher(self):
+        """La otra mitad: con escritura si cancela, o la prueba de arriba pasaria igual."""
+        id_vale, operador = self._cancelar_como(778, scope_update=4)
+        cancelado = cancelar_vale(id_vale, {"note": "ya no se necesita"}, operador)
+        self.assertEqual("cancelado", cancelado["voucher"]["incident_status"])
 
 
 class TestElPrevaleNoPideMasDeLoQueHay(BaseVale):

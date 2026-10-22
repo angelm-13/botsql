@@ -1447,6 +1447,27 @@ def _devolver_al_almacen(db, renglon, user_data, *, vuelve_a, motivo, id_entrada
     )
 
 
+def _opera_el_almacen(db, user_data: dict) -> bool:
+    """`warehouse_voucher` con ESCRITURA, no solo lectura.
+
+    `has_capability` da por concedida una capacidad con solo `scope_read`, y
+    Gerente Comercial tiene una fila de solo lectura de `warehouse_voucher` para ver
+    los vales (20261021110000): con ella pasaba por quien opera el almacen y podia
+    cancelar vales o gestionar su custodia. Se pide ademas `scope_update`.
+    """
+    if _sin_restriccion(user_data):
+        return True
+    if not has_capability(db, user_data, "warehouse_voucher"):
+        return False
+    permiso = (user_data or {}).get("id_permission") or (user_data or {}).get("permission_id")
+    fila = db.query(EntityPermission).filter(
+        EntityPermission.id_permission == permiso,
+        EntityPermission.entity_name == "warehouse_voucher",
+        EntityPermission.deletion_date.is_(None),
+    ).first()
+    return bool(fila and int(fila.scope_update or 0) != 0)
+
+
 def _puede_gestionar_custodia(db, vale: Incident, user_data: dict) -> bool:
     """Quien puede decir a quien se entrega una pieza, o confirmar que la
     recupero: el responsable del vale (de quien se trata todo esto) o quien
@@ -1460,7 +1481,7 @@ def _puede_gestionar_custodia(db, vale: Incident, user_data: dict) -> bool:
         return True
     if int(vale.id_user) == _actor(user_data):
         return True
-    return has_capability(db, user_data, "warehouse_voucher")
+    return _opera_el_almacen(db, user_data)
 
 
 def confirmar_recepcion_de_renglon(id_line, user_data: dict) -> dict:
@@ -2043,8 +2064,7 @@ def cancelar_vale(id_incident, payload: dict, user_data: dict) -> dict:
     with transaction_context() as db:
         vale = _vale(db, id_incident, para_actualizar=True)
         permitido = (
-            _sin_restriccion(user_data)
-            or has_capability(db, user_data, "warehouse_voucher")
+            _opera_el_almacen(db, user_data)
             or actor in {int(vale.created_by or 0), int(vale.id_user or 0)}
         )
         if not permitido:
