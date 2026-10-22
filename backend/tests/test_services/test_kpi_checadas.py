@@ -13,6 +13,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from unittest import mock
 
+import jwt
 from sqlalchemy import select, text
 
 from app.jobs import tasks_kpis
@@ -36,6 +37,7 @@ from app.models import (
 )
 from app.models.session import engine, transaction_context
 from app.services.incident_service import IncidentService
+from app.utils.auth import SECRET_KEY
 from tests.conftest import BackendTestCase
 from tests.reloj import ahora_local, reloj_en_utc
 
@@ -1123,4 +1125,45 @@ class CorridaFrecuenteDeChecadasTest(ChecadasBase):
             tasks_kpis.recalculate_kpi_snapshots_frecuentes()
         # Ana no desaparece: su fila se pisa con 0 (la API la oculta), y Beto sigue sumando minutos.
         self.assertEqual({D: {ANA: 0.0, BETO: 150.0}}, self._guardado("checadas_en_turno_por_empleado", "id_user"))
+
+
+class EquipoDadoDeBajaEnLosKpisTest(ChecadasBase):
+    """Dar de baja un equipo POR LA API (no escribiendo `deletion_date` a mano): sus integrantes pasan a «Sin equipo»."""
+
+    def _dar_de_baja_el_equipo(self, id_team):
+        token = jwt.encode({"id_user": 1, "is_superuser": True}, SECRET_KEY, algorithm="HS256")
+        respuesta = self.client.delete(f"/team/{id_team}", headers={"Authorization": f"Bearer {token}"})
+        self.assertEqual(200, respuesta.status_code, respuesta.get_json())
+
+    def _foto_de(self, consulta):
+        return {id_team: valor for id_team, (_, valor) in self._foto(consulta, D).items()}
+
+    def test_los_integrantes_pasan_a_sin_equipo_si_no_tienen_otro_equipo_vigente(self):
+        self._checada(ANA, local(D, 10, 0))      # Norte (y el equipo que ya no existe)
+        self._checada(BETO, local(D, 10, 0))     # Norte y Sur
+        self._checada(CARLA, local(D, 10, 0))    # Sur
+        with ahora_local(local(D, 15, 0)):
+            antes = self._foto_de(checadas_en_turno_por_equipo_query)
+        self.assertEqual({NORTE: 2, SUR: 2, VACIO: 0, None: 0}, antes)
+
+        self._dar_de_baja_el_equipo(NORTE)
+
+        with ahora_local(local(D, 15, 0)):
+            despues = self._foto_de(checadas_en_turno_por_equipo_query)
+        self.assertNotIn(NORTE, despues, "un equipo de baja ya no sale como equipo")
+        self.assertEqual(2, despues[SUR], "Beto y Carla siguen en Sur")
+        self.assertEqual(1, despues[None], "Ana se quedo sin ningun equipo vigente: «Sin equipo»")
+
+    def test_quien_sale_de_un_equipo_por_la_api_y_no_tiene_otro_pasa_a_sin_equipo(self):
+        self._checada(CARLA, local(D, 10, 0))    # Sur
+        with transaction_context() as db:
+            membresia = db.query(NmTeamUser).filter_by(id_team=SUR, id_user=CARLA).one().id_nm_team_user
+        token = jwt.encode({"id_user": 1, "is_superuser": True}, SECRET_KEY, algorithm="HS256")
+
+        respuesta = self.client.delete(f"/nm_team_user/{membresia}", headers={"Authorization": f"Bearer {token}"})
+
+        self.assertEqual(200, respuesta.status_code)
+        with ahora_local(local(D, 15, 0)):
+            foto = self._foto_de(checadas_en_turno_por_equipo_query)
+        self.assertEqual({NORTE: 0, SUR: 0, VACIO: 0, None: 1}, foto)
 

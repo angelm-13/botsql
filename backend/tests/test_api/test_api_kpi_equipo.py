@@ -102,6 +102,10 @@ class TestKpiFiltroPorEquipoApi(BackendTestCase):
         with patch("app.utils.auth.jwt.decode", return_value=actor):
             return self.client.get(path, headers={"Authorization": "Bearer kpi-eq-test"})
 
+    def _delete(self, actor, path):
+        with patch("app.utils.auth.jwt.decode", return_value=actor):
+            return self.client.delete(path, headers={"Authorization": "Bearer kpi-eq-test"})
+
     def _consulta(self, id_kpi, **params):
         params.setdefault("fecha_inicio", "2026-09-01")
         params.setdefault("fecha_fin", "2026-09-30")
@@ -158,6 +162,18 @@ class TestKpiFiltroPorEquipoApi(BackendTestCase):
         # La fila sin entidad se llama "Sin equipo" (y no "Sin asignar") y cuenta en el total.
         self.assertEqual("Sin equipo", rango["etiquetas"]["sin_asignar"])
         self.assertEqual(9.0, rango["total"])
+
+    def test_un_equipo_dado_de_baja_por_la_api_conserva_su_nombre_y_sus_cifras_en_el_historico(self):
+        # Los snapshots guardan el id del equipo: si la baja lo borrara, esas cifras quedarian sin nombre ("#9701").
+        respuesta = self._delete(ADMIN, f"/team/{T1}")
+        self.assertEqual(200, respuesta.status_code, self.json(respuesta))
+
+        rango = self.json(self._get(ACTOR_TODOS, self._consulta(self.id_equipo)))["rango_a"]
+
+        self.assertEqual(2.0, rango["por_empleado"][str(T1)], "lo que ya se midio no se pierde")
+        self.assertEqual("Parque Norte", rango["etiquetas"][str(T1)], "sigue con su nombre")
+        with transaction_context() as db:
+            self.assertIsNotNone(db.get(Team, T1).deletion_date, "la fila sigue ahi, de baja")
 
     def test_con_id_teams_la_fila_sin_equipo_no_aparece(self):
         rango = self.json(self._get(ACTOR_TODOS, self._consulta(self.id_equipo, id_teams=f"{T1},{T2}")))["rango_a"]
