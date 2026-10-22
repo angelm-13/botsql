@@ -7,6 +7,12 @@ class PayrollMovementService(CrudService):
     model = PayrollMovement
     primary_key = 'id_payroll_movement'
     entity_name = 'payroll_movement'
+    # Al recalcular, el movimiento anterior de SUELDO, ISR, IMSS... queda con
+    # borrado logico. La lista solo muestra los vigentes (filtrado en SQL, asi el
+    # total y la paginacion cuadran); los reemplazados siguen en la base y en la
+    # bitacora para auditoria. Solo esta entidad de RH: las demas pantallas
+    # genericas del sistema no cambian.
+    solo_vigentes = True
 
     # Un movimiento de un periodo cerrado no se da de alta, ni se edita, ni se
     # pasa a otro detalle, ni se borra (ver payroll_calculation_service.py). El

@@ -1415,7 +1415,8 @@
     "restaurant_admin": "Admin",
     "payroll_settings": "Valores oficiais",
     "work_schedules": "Horários",
-    "employee_leaves": "Férias e licenças"
+    "employee_leaves": "Férias e licenças",
+    "my_leaves": "Minhas férias"
   },
   "placeholders": {
     "bank": {
@@ -2580,7 +2581,8 @@
     "employee_leave_crosses_anniversary": "Vacation cannot cross the hire anniversary",
     "employee_leave_needs_schedule": "For vacation the employee needs a schedule over the whole range.",
     "employee_leave_no_workdays": "There are no workdays of the schedule on those dates.",
-    "employee_leave_insufficient_balance": "Não há dias de férias suficientes"
+    "employee_leave_insufficient_balance": "Não há dias de férias suficientes",
+    "employee_leave_not_pending": "A solicitação não está mais pendente."
   },
   "logistics": {
     "module": "Logística",
@@ -3679,5 +3681,36 @@
     "short_paid_leave": "Leave",
     "short_unpaid_leave": "Unpaid",
     "short_disability": "Sick"
+  },
+  "my_leaves": {
+    "title": "Minhas férias",
+    "subtitle": "Request vacation or leave and check your balance. Your manager or HR approves.",
+    "tab_mine": "Minhas solicitações",
+    "tab_review": "Para aprovar",
+    "balance_title": "My vacation balance",
+    "new_request": "Nova solicitação",
+    "send": "Send request",
+    "pending": "Pending",
+    "request_hint": "It stays pending until your manager or HR approves it. Pending days are held from your balance. Sick leave is registered by HR.",
+    "mine_title": "My requests and absences",
+    "status": "Status",
+    "review_note": "Review note",
+    "status_requested": "Pendente",
+    "status_approved": "Aprovada",
+    "status_rejected": "Rejeitada",
+    "status_cancelled": "Cancelada",
+    "cancel_request": "Cancel request",
+    "no_requests": "You have no requests.",
+    "review_title": "Your team's requests",
+    "review_hint": "Approving checks the balance and dates again.",
+    "approve": "Aprovar",
+    "reject": "Rejeitar",
+    "reject_note": "Reason for rejection (optional):",
+    "no_pending": "No requests to approve.",
+    "not_employee": "Your user is not marked as an employee.",
+    "requested_done": "Request sent.",
+    "cancelled_done": "Request cancelled.",
+    "approved_done": "Request approved.",
+    "rejected_done": "Request rejected."
   }
 }

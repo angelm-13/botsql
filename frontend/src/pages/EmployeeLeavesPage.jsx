@@ -162,7 +162,7 @@ export default function EmployeeLeavesPage() {
               {puede("scope_create") && <button className="button" type="button" onClick={() => setForm({ id_user: "", leave_type: "vacation", start_date: hoy(), end_date: hoy(), notes: "" })}><Plus size={16} /> {t("employee_leaves.new_leave")}</button>}
             </div>
             <table>
-              <thead><tr><th>{t("employee_leaves.employee")}</th><th>{t("employee_leaves.type")}</th><th>{t("employee_leaves.from")}</th><th>{t("employee_leaves.to")}</th><th>{t("employee_leaves.notes")}</th><th>{t("common.actions")}</th></tr></thead>
+              <thead><tr><th>{t("employee_leaves.employee")}</th><th>{t("employee_leaves.type")}</th><th>{t("employee_leaves.from")}</th><th>{t("employee_leaves.to")}</th><th>{t("employee_leaves.notes")}</th><th>{t("my_leaves.status")}</th><th>{t("common.actions")}</th></tr></thead>
               <tbody>{ordenadas.length ? ordenadas.map((a) => (
                 <tr key={a.id_employee_leave}>
                   <td><strong>{nombreEmpleado(a.id_user)}</strong></td>
@@ -170,12 +170,13 @@ export default function EmployeeLeavesPage() {
                   <td>{a.start_date}</td>
                   <td>{a.end_date}</td>
                   <td><small>{a.notes || "—"}</small></td>
+                  <td>{t(`my_leaves.status_${a.leave_status || "approved"}`)}</td>
                   <td className="row-actions">
                     {puede("scope_update") && <button type="button" title={t("common.edit")} onClick={() => setForm({ ...a, notes: a.notes || "" })}><Pencil size={15} /></button>}
                     {puede("scope_delete") && <button type="button" title={t("common.delete")} onClick={() => borrar(a)}><Trash2 size={15} /></button>}
                   </td>
                 </tr>
-              )) : <tr><td colSpan="6" className="kronos-empty">{t("employee_leaves.no_leaves")}</td></tr>}</tbody>
+              )) : <tr><td colSpan="7" className="kronos-empty">{t("employee_leaves.no_leaves")}</td></tr>}</tbody>
             </table>
           </div>
         </>
@@ -188,7 +189,7 @@ export default function EmployeeLeavesPage() {
           </div>
           <p className="muted">{t("employee_leaves.balances_hint")}</p>
           <table>
-            <thead><tr><th>{t("employee_leaves.employee")}</th><th>{t("employee_leaves.hire_date")}</th><th>{t("employee_leaves.service_years")}</th><th>{t("employee_leaves.service_year")}</th><th>{t("employee_leaves.entitled")}</th><th>{t("employee_leaves.taken")}</th><th>{t("employee_leaves.available")}</th></tr></thead>
+            <thead><tr><th>{t("employee_leaves.employee")}</th><th>{t("employee_leaves.hire_date")}</th><th>{t("employee_leaves.service_years")}</th><th>{t("employee_leaves.service_year")}</th><th>{t("employee_leaves.entitled")}</th><th>{t("employee_leaves.taken")}</th><th>{t("my_leaves.pending")}</th><th>{t("employee_leaves.available")}</th></tr></thead>
             <tbody>{saldos.length ? saldos.map((s) => (
               <tr key={s.id_user}>
                 <td><strong>{s.full_name || `#${s.id_user}`}</strong></td>
@@ -197,9 +198,10 @@ export default function EmployeeLeavesPage() {
                 <td><small>{s.year_start ? `${s.year_start} – ${s.year_end}` : "—"}</small></td>
                 <td>{s.entitled}</td>
                 <td>{s.taken}</td>
+                <td>{s.pending || 0}</td>
                 <td><strong>{s.available}</strong></td>
               </tr>
-            )) : <tr><td colSpan="7" className="kronos-empty">{t("employee_leaves.no_employees")}</td></tr>}</tbody>
+            )) : <tr><td colSpan="8" className="kronos-empty">{t("employee_leaves.no_employees")}</td></tr>}</tbody>
           </table>
         </div>
       )}

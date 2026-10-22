@@ -95,6 +95,9 @@ const navItems = [
   // work_schedule tambien esta sembrada "hidden": pantalla propia en la barra.
   { path: "/work_schedules", key: "menu.work_schedules", label: "Horarios", entityName: "work_schedule", group: "Recursos humanos", location: "sidebar", order: 706 },
   // employee_leave igual: sembrada "hidden", pantalla propia en la barra.
+  // Autoservicio, como /mfa-setup: cualquier usuario la ve; el backend solo le
+  // muestra lo suyo (o lo de su equipo si es jefe).
+  { path: "/my_leaves", key: "menu.my_leaves", label: "Mis vacaciones", group: "Recursos humanos", location: "sidebar", order: 708 },
   { path: "/employee_leaves", key: "menu.employee_leaves", label: "Vacaciones y permisos", entityName: "employee_leave", group: "Recursos humanos", location: "sidebar", order: 707 },
   { path: "/kronos", key: "menu.kronos", label: "Asistencias", entityName: "payroll_period" },
   { path: "/kronos/device", key: "menu.kronos_device", label: "Conexión al dispositivo", entityName: "kronos_device" },
@@ -331,7 +334,7 @@ export default function Shell() {
   }
 
   function canSeeNavItem(item) {
-    if (item.exact || item.path === "/mfa-setup" || item.path === "/change-password") return true;
+    if (item.exact || item.path === "/mfa-setup" || item.path === "/change-password" || item.path === "/my_leaves") return true;
     if (technicalPaths.includes(item.path)) return isBootstrapAdmin;
     if (item.adminOnly) return isAdminUser;
     if (isBootstrapAdmin) return true;

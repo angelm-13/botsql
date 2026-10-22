@@ -1414,7 +1414,8 @@
     "restaurant_admin": "Admin",
     "payroll_settings": "Amtliche Werte",
     "work_schedules": "Arbeitszeiten",
-    "employee_leaves": "Urlaub und Abwesenheit"
+    "employee_leaves": "Urlaub und Abwesenheit",
+    "my_leaves": "Mein Urlaub"
   },
   "placeholders": {
     "bank": {
@@ -2578,7 +2579,8 @@
     "employee_leave_crosses_anniversary": "Vacation cannot cross the hire anniversary",
     "employee_leave_needs_schedule": "For vacation the employee needs a schedule over the whole range.",
     "employee_leave_no_workdays": "There are no workdays of the schedule on those dates.",
-    "employee_leave_insufficient_balance": "Nicht genug Urlaubstage"
+    "employee_leave_insufficient_balance": "Nicht genug Urlaubstage",
+    "employee_leave_not_pending": "Der Antrag ist nicht mehr offen."
   },
   "logistics": {
     "module": "Logistik",
@@ -3673,5 +3675,36 @@
     "short_paid_leave": "Leave",
     "short_unpaid_leave": "Unpaid",
     "short_disability": "Sick"
+  },
+  "my_leaves": {
+    "title": "Mein Urlaub",
+    "subtitle": "Request vacation or leave and check your balance. Your manager or HR approves.",
+    "tab_mine": "Meine Anträge",
+    "tab_review": "Zu genehmigen",
+    "balance_title": "My vacation balance",
+    "new_request": "Neuer Antrag",
+    "send": "Send request",
+    "pending": "Pending",
+    "request_hint": "It stays pending until your manager or HR approves it. Pending days are held from your balance. Sick leave is registered by HR.",
+    "mine_title": "My requests and absences",
+    "status": "Status",
+    "review_note": "Review note",
+    "status_requested": "Offen",
+    "status_approved": "Genehmigt",
+    "status_rejected": "Abgelehnt",
+    "status_cancelled": "Storniert",
+    "cancel_request": "Cancel request",
+    "no_requests": "You have no requests.",
+    "review_title": "Your team's requests",
+    "review_hint": "Approving checks the balance and dates again.",
+    "approve": "Genehmigen",
+    "reject": "Ablehnen",
+    "reject_note": "Reason for rejection (optional):",
+    "no_pending": "No requests to approve.",
+    "not_employee": "Your user is not marked as an employee.",
+    "requested_done": "Request sent.",
+    "cancelled_done": "Request cancelled.",
+    "approved_done": "Request approved.",
+    "rejected_done": "Request rejected."
   }
 }

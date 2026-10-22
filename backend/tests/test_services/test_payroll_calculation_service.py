@@ -306,3 +306,18 @@ class TestIsrEImssEnElPeriodo(_ConPeriodoDePrueba):
             db.get(User, 71).base_salary = Decimal("315.04")
         ana = calcular_periodo(5, 1)["employees"][0]
         self.assertEqual(0.0, ana["imss"])
+
+
+class TestMovimientosVigentes(_ConPeriodoDePrueba):
+    def test_la_lista_no_muestra_los_movimientos_reemplazados(self):
+        from app.services.payroll_movement_service import PayrollMovementService
+        calcular_periodo(5, 1)
+        calcular_periodo(5, 1)   # el recalculo deja los anteriores con borrado logico
+        lista = PayrollMovementService.list(page=1, per_page=50, filters={})
+        self.assertTrue(lista["items"])
+        self.assertTrue(all(m["deletion_date"] is None for m in lista["items"]))
+        with transaction_context() as db:
+            vivos = db.query(PayrollMovement).filter(PayrollMovement.deletion_date.is_(None)).count()
+            todos = db.query(PayrollMovement).count()
+        self.assertEqual(vivos, lista["total"])
+        self.assertGreater(todos, vivos)   # los reemplazados siguen en la base

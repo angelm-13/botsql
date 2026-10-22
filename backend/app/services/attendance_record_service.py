@@ -288,11 +288,14 @@ def desligar_empleado(employee_no, user_id: int, fuente: str = FUENTE_KRONOS) ->
     return {"employee_no": numero, "id_user": None, "records_unlinked": checadas}
 
 
-def asistencia_por_empleado(db, desde: date, hasta: date, ids=None) -> dict:
+def asistencia_por_empleado(db, desde: date, hasta: date, ids=None, con_checadas: bool = True) -> dict:
     """{id_user: [Dia, ...]} del rango, con las reglas de services/attendance_rules.py.
 
     `ids`: limita a esos empleados; si no se da, toma a quien tenga horario en
     el rango o checadas ligadas en el rango.
+    `con_checadas=False`: solo el calendario (que dia es laboral, festivo o
+    ausencia), sin leer checadas; sirve para contar dias laborables, que no
+    dependen de si la persona checo.
     """
     from app.models import EmployeeLeave, EmployeeSchedule, PayrollHoliday, WorkSchedule, WorkScheduleDay
     from app.services import attendance_rules as reglas
@@ -314,18 +317,20 @@ def asistencia_por_empleado(db, desde: date, hasta: date, ids=None) -> dict:
         .where(PayrollHoliday.holiday_date <= hasta)
     ))
     marcas: dict[int, dict[date, list]] = {}
-    for id_user, hora in db.execute(
+    for id_user, hora in (db.execute(
         select(AttendanceRecord.id_user, AttendanceRecord.check_time)
         .where(AttendanceRecord.id_user.isnot(None))
         .where(AttendanceRecord.deletion_date.is_(None))
         .where(AttendanceRecord.check_time >= datetime.combine(desde, datetime.min.time()))
         .where(AttendanceRecord.check_time < datetime.combine(hasta + timedelta(days=1), datetime.min.time()))
-    ):
+    ) if con_checadas else ()):
         marcas.setdefault(id_user, {}).setdefault(hora.date(), []).append(hora)
 
     ausencias: dict[int, list] = {}
+    # Solo lo aprobado: una solicitud pendiente o rechazada no justifica el dia.
     for a in db.scalars(select(EmployeeLeave)
                         .where(EmployeeLeave.deletion_date.is_(None))
+                        .where(EmployeeLeave.leave_status == "approved")
                         .where(EmployeeLeave.start_date <= hasta)
                         .where(EmployeeLeave.end_date >= desde)):
         ausencias.setdefault(a.id_user, []).append(a)

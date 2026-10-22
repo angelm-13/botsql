@@ -52,6 +52,7 @@ import PayrollPeriodPage from "./pages/PayrollPeriodPage.jsx";
 import PayrollSettingsPage from "./pages/PayrollSettingsPage.jsx";
 import WorkSchedulesPage from "./pages/WorkSchedulesPage.jsx";
 import EmployeeLeavesPage from "./pages/EmployeeLeavesPage.jsx";
+import MyLeavesPage from "./pages/MyLeavesPage.jsx";
 import PermissionPage from "./pages/PermissionPage.jsx";
 import ProductPage from "./pages/ProductPage.jsx";
 import WarehouseVoucherPage from "./pages/WarehouseVoucherPage.jsx";
@@ -193,6 +194,8 @@ export default function App() {
           />
           <Route path="/mfa-setup" element={<MfaSetupPage />} />
           <Route path="/change-password" element={<ChangePasswordPage />} />
+          {/* Como /change-password: cualquier usuario con sesion; el backend decide que ve. */}
+          <Route path="/my_leaves" element={<MyLeavesPage />} />
           <Route path="/role_permissions" element={<AdminRoute><RolePermissionManagerPage /></AdminRoute>} />
           <Route path="/kpi_permissions" element={<AdminRoute><KpiPermissionManagerPage /></AdminRoute>} />
           <Route path="/facturama-config" element={<AdminRoute><FacturamaConfigPage /></AdminRoute>} />

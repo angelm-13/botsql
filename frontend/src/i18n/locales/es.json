@@ -1496,7 +1496,8 @@
     "purchase_order": "Órdenes de compra",
     "payroll_settings": "Cifras oficiales",
     "work_schedules": "Horarios",
-    "employee_leaves": "Vacaciones y permisos"
+    "employee_leaves": "Vacaciones y permisos",
+    "my_leaves": "Mis vacaciones"
   },
   "placeholders": {
     "bank": {
@@ -2796,7 +2797,8 @@
     "employee_leave_crosses_anniversary": "Las vacaciones no pueden cruzar el aniversario de ingreso",
     "employee_leave_needs_schedule": "Para vacaciones el empleado necesita horario asignado en todo el rango.",
     "employee_leave_no_workdays": "En esas fechas no hay días laborables de su horario.",
-    "employee_leave_insufficient_balance": "No le alcanzan los días de vacaciones"
+    "employee_leave_insufficient_balance": "No le alcanzan los días de vacaciones",
+    "employee_leave_not_pending": "La solicitud ya no está pendiente."
   },
   "logistics": {
     "module": "Logística",
@@ -5003,5 +5005,36 @@
     "short_paid_leave": "Perm",
     "short_unpaid_leave": "Sin goce",
     "short_disability": "Incap"
+  },
+  "my_leaves": {
+    "title": "Mis vacaciones",
+    "subtitle": "Pide vacaciones o permisos y revisa tu saldo. Tu jefe o RH los autoriza.",
+    "tab_mine": "Mis solicitudes",
+    "tab_review": "Por autorizar",
+    "balance_title": "Mi saldo de vacaciones",
+    "new_request": "Nueva solicitud",
+    "send": "Enviar solicitud",
+    "pending": "Pendientes",
+    "request_hint": "Queda pendiente hasta que tu jefe o RH la autorice. Los días pendientes se apartan de tu saldo. Las incapacidades las registra RH.",
+    "mine_title": "Mis solicitudes y ausencias",
+    "status": "Estado",
+    "review_note": "Nota de revisión",
+    "status_requested": "Pendiente",
+    "status_approved": "Aprobada",
+    "status_rejected": "Rechazada",
+    "status_cancelled": "Cancelada",
+    "cancel_request": "Cancelar solicitud",
+    "no_requests": "No tienes solicitudes.",
+    "review_title": "Solicitudes de tu equipo",
+    "review_hint": "Al aprobar se vuelve a revisar el saldo y las fechas.",
+    "approve": "Aprobar",
+    "reject": "Rechazar",
+    "reject_note": "Motivo del rechazo (opcional):",
+    "no_pending": "No hay solicitudes por autorizar.",
+    "not_employee": "Tu usuario no está marcado como empleado.",
+    "requested_done": "Solicitud enviada.",
+    "cancelled_done": "Solicitud cancelada.",
+    "approved_done": "Solicitud aprobada.",
+    "rejected_done": "Solicitud rechazada."
   }
 }

@@ -6,7 +6,7 @@ from app.utils.errors import AppError
 from app.utils.field_access import COLUMNAS_DE_AUDITORIA
 
 bp_employee_leave = Blueprint('employee_leave', __name__, url_prefix='/employee_leave')
-ALLOWED_FIELDS = ['id_employee_leave', 'id_user', 'leave_type', 'start_date', 'end_date', 'notes', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
+ALLOWED_FIELDS = ['id_employee_leave', 'id_user', 'leave_type', 'start_date', 'end_date', 'notes', 'leave_status', 'requested_by', 'reviewed_by', 'reviewed_at', 'review_note', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
 
 TECHNICAL_RESPONSE_FIELDS = {'id_employee_leave'}
 FIELD_READ_BIT = 2
@@ -161,3 +161,54 @@ def employee_leave_balances(user_data):
     """Saldo de vacaciones de cada empleado al dia de hoy (ver employee_leave_service)."""
     from app.services.employee_leave_service import saldos
     return jsonify({'employees': saldos()})
+
+
+
+# Solicitudes del propio empleado: solo exigen sesion; quien puede ver, pedir,
+# cancelar o revisar que lo decide employee_leave_service (lo propio, su equipo o RH).
+@bp_employee_leave.route('/mine', methods=['GET'])
+@token_required
+def my_employee_leaves(user_data):
+    """Saldo y ausencias del propio empleado."""
+    from app.services.employee_leave_service import mis_ausencias
+    return jsonify(mis_ausencias(user_data.get('id_user')))
+
+
+@bp_employee_leave.route('/request', methods=['POST'])
+@token_required
+def request_employee_leave(user_data):
+    """El empleado pide vacaciones o un permiso; queda pendiente de autorizar."""
+    from app.services.employee_leave_service import solicitar
+    return jsonify(solicitar(user_data.get('id_user'), request.get_json() or {})), 201
+
+
+@bp_employee_leave.route('/<id_employee_leave>/cancel', methods=['POST'])
+@token_required
+def cancel_employee_leave(user_data, id_employee_leave):
+    """El empleado cancela su solicitud pendiente."""
+    from app.services.employee_leave_service import cancelar
+    return jsonify(cancelar(user_data.get('id_user'), id_employee_leave))
+
+
+@bp_employee_leave.route('/pending', methods=['GET'])
+@token_required
+def pending_employee_leaves(user_data):
+    """Solicitudes por autorizar: las del equipo del supervisor, o todas para RH."""
+    from app.services.employee_leave_service import por_autorizar
+    return jsonify({'requests': por_autorizar(user_data)})
+
+
+@bp_employee_leave.route('/<id_employee_leave>/approve', methods=['POST'])
+@token_required
+def approve_employee_leave(user_data, id_employee_leave):
+    """Aprueba una solicitud (su supervisor o RH); se vuelven a validar saldo y fechas."""
+    from app.services.employee_leave_service import revisar
+    return jsonify(revisar(user_data, id_employee_leave, True, (request.get_json(silent=True) or {}).get('review_note')))
+
+
+@bp_employee_leave.route('/<id_employee_leave>/reject', methods=['POST'])
+@token_required
+def reject_employee_leave(user_data, id_employee_leave):
+    """Rechaza una solicitud (su supervisor o RH), con nota opcional."""
+    from app.services.employee_leave_service import revisar
+    return jsonify(revisar(user_data, id_employee_leave, False, (request.get_json(silent=True) or {}).get('review_note')))

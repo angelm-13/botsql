@@ -47,7 +47,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from app.models import (PayrollConcept, PayrollDetail, PayrollIsrBracket, PayrollMovement,
                         PayrollParameter, PayrollPeriod, User)
@@ -110,21 +110,22 @@ def _concepto_sueldo(db, user_id: int) -> PayrollConcept:
 
 
 def _parametros(db, al_dia) -> dict:
-    """Los parametros vigentes `al_dia`; si falta alguno, no se calcula a ciegas."""
-    valores, faltan = {}, []
-    for clave in PARAMETROS_REQUERIDOS:
-        fila = db.scalars(
-            select(PayrollParameter)
-            .where(PayrollParameter.parameter_key == clave)
-            .where(PayrollParameter.deletion_date.is_(None))
-            .where(PayrollParameter.valid_from <= al_dia)
-            .where((PayrollParameter.valid_to.is_(None)) | (PayrollParameter.valid_to >= al_dia))
-            .order_by(PayrollParameter.valid_from.desc())
-        ).first()
-        if fila is None:
-            faltan.append(clave)
-        else:
-            valores[clave] = Decimal(str(fila.value))
+    """Los parametros vigentes `al_dia`; si falta alguno, no se calcula a ciegas.
+
+    Una sola consulta para todas las claves; si una clave tiene dos vigencias que
+    cubren el dia, gana la que empezo despues.
+    """
+    valores = {}
+    for fila in db.scalars(
+        select(PayrollParameter)
+        .where(PayrollParameter.parameter_key.in_(PARAMETROS_REQUERIDOS))
+        .where(PayrollParameter.deletion_date.is_(None))
+        .where(PayrollParameter.valid_from <= al_dia)
+        .where((PayrollParameter.valid_to.is_(None)) | (PayrollParameter.valid_to >= al_dia))
+        .order_by(PayrollParameter.valid_from.desc())
+    ):
+        valores.setdefault(fila.parameter_key, Decimal(str(fila.value)))
+    faltan = [clave for clave in PARAMETROS_REQUERIDOS if clave not in valores]
     if faltan:
         raise AppError("errors.payroll_parameters_missing", 409, {"date": al_dia.isoformat(), "keys": faltan})
     return valores
@@ -146,48 +147,54 @@ def _tarifa_isr(db, anio: int, dias: int):
     return tramos, factor
 
 
-def _reemplazar_movimiento(db, detalle: PayrollDetail, concepto: PayrollConcept, monto: Decimal, user_id: int) -> None:
-    """Cierra el movimiento anterior de este concepto y escribe el nuevo (si no es cero)."""
-    for anterior in db.scalars(
-        select(PayrollMovement)
-        .where(PayrollMovement.id_payroll_detail == detalle.id_payroll_detail)
-        .where(PayrollMovement.id_payroll_concept == concepto.id_payroll_concept)
-        .where(PayrollMovement.deletion_date.is_(None))
-    ):
-        anterior.deletion_date = ahora_utc()
-    if monto > 0:
-        db.add(PayrollMovement(id_payroll_detail=detalle.id_payroll_detail,
-                               id_payroll_concept=concepto.id_payroll_concept,
-                               amount=monto, created_by=user_id))
-    db.flush()
+class _MovimientosDelPeriodo:
+    """Los movimientos vivos de los detalles de un periodo, leidos en UNA consulta.
 
+    Antes, por cada empleado se buscaba y reemplazaba cada movimiento por separado
+    y se sumaban percepciones y totales con otra consulta: unas 14 consultas por
+    empleado (1,462 con 100 empleados). Aqui se leen todos juntos, se reemplazan
+    en memoria y se guardan de una vez al cerrar la transaccion. Las sumas son las
+    mismas que hacian las consultas: lo capturado a mano tambien cuenta.
+    """
 
-def _percepciones_gravables(db, detalle: PayrollDetail) -> Decimal:
-    """Percepciones gravables completas. AGUINALDO y PRIMA_VAC quedan fuera
-    aunque alguien marque su concepto como gravable: de ellos solo grava lo que
-    pasa del tope exento, y eso lo suma el calculo."""
-    total = db.scalar(
-        select(func.coalesce(func.sum(PayrollMovement.amount), 0))
-        .join(PayrollConcept, PayrollConcept.id_payroll_concept == PayrollMovement.id_payroll_concept)
-        .where(PayrollMovement.id_payroll_detail == detalle.id_payroll_detail)
-        .where(PayrollMovement.deletion_date.is_(None))
-        .where(PayrollConcept.type == "earning")
-        .where(PayrollConcept.is_taxable.is_(True))
-        .where(PayrollConcept.payroll_code.not_in((CODIGO_AGUINALDO, CODIGO_PRIMA)))
-    )
-    return _dinero(total)
+    def __init__(self, db, ids_detalle):
+        self._db = db
+        self._vivos: dict[int, list] = {i: [] for i in ids_detalle}
+        if ids_detalle:
+            for movimiento, concepto in db.execute(
+                select(PayrollMovement, PayrollConcept)
+                .join(PayrollConcept, PayrollConcept.id_payroll_concept == PayrollMovement.id_payroll_concept)
+                .where(PayrollMovement.id_payroll_detail.in_(list(ids_detalle)))
+                .where(PayrollMovement.deletion_date.is_(None))
+            ):
+                self._vivos[movimiento.id_payroll_detail].append((movimiento, concepto))
 
+    def reemplazar(self, detalle: PayrollDetail, concepto: PayrollConcept, monto: Decimal, user_id: int) -> None:
+        """Cierra el movimiento anterior de este concepto y escribe el nuevo (si no es cero)."""
+        vivos = self._vivos.setdefault(detalle.id_payroll_detail, [])
+        for par in [par for par in vivos if par[1].id_payroll_concept == concepto.id_payroll_concept]:
+            par[0].deletion_date = ahora_utc()
+            vivos.remove(par)
+        if monto > 0:
+            nuevo = PayrollMovement(id_payroll_detail=detalle.id_payroll_detail,
+                                    id_payroll_concept=concepto.id_payroll_concept,
+                                    amount=monto, created_by=user_id)
+            self._db.add(nuevo)
+            vivos.append((nuevo, concepto))
 
-def _totales(db, detalle: PayrollDetail) -> tuple[Decimal, Decimal]:
-    filas = db.execute(
-        select(PayrollConcept.type, func.coalesce(func.sum(PayrollMovement.amount), 0))
-        .join(PayrollConcept, PayrollConcept.id_payroll_concept == PayrollMovement.id_payroll_concept)
-        .where(PayrollMovement.id_payroll_detail == detalle.id_payroll_detail)
-        .where(PayrollMovement.deletion_date.is_(None))
-        .group_by(PayrollConcept.type)
-    ).all()
-    por_tipo = {tipo: _dinero(total) for tipo, total in filas}
-    return por_tipo.get("earning", _dinero(0)), por_tipo.get("deduction", _dinero(0))
+    def percepciones_gravables(self, detalle: PayrollDetail) -> Decimal:
+        """Percepciones gravables completas. AGUINALDO y PRIMA_VAC quedan fuera
+        aunque alguien marque su concepto como gravable: de ellos solo grava lo que
+        pasa del tope exento, y eso lo suma el calculo."""
+        return _dinero(sum((Decimal(str(m.amount)) for m, c in self._vivos.get(detalle.id_payroll_detail, [])
+                            if c.type == "earning" and c.is_taxable is True
+                            and c.payroll_code not in (CODIGO_AGUINALDO, CODIGO_PRIMA)), Decimal(0)))
+
+    def totales(self, detalle: PayrollDetail) -> tuple[Decimal, Decimal]:
+        por_tipo: dict[str, Decimal] = {}
+        for m, c in self._vivos.get(detalle.id_payroll_detail, []):
+            por_tipo[c.type] = por_tipo.get(c.type, Decimal(0)) + Decimal(str(m.amount))
+        return _dinero(por_tipo.get("earning")), _dinero(por_tipo.get("deduction"))
 
 
 def _periodo(db, id_payroll_period) -> PayrollPeriod:
@@ -247,6 +254,21 @@ def calcular_periodo(id_payroll_period, user_id: int) -> dict:
         parametros = _parametros(db, al_dia)
         tramos, factor_tarifa = _tarifa_isr(db, al_dia.year, dias_del_periodo)
 
+        # Los detalles del periodo (y los que falten) y sus movimientos, de una vez.
+        detalles: dict[int, PayrollDetail] = {}
+        for d in db.scalars(select(PayrollDetail)
+                            .where(PayrollDetail.id_payroll_period == periodo.id_payroll_period)
+                            .where(PayrollDetail.deletion_date.is_(None))
+                            .order_by(PayrollDetail.id_payroll_detail)):
+            detalles.setdefault(d.id_user, d)
+        nuevos = [PayrollDetail(id_payroll_period=periodo.id_payroll_period, id_user=e.id_user, created_by=user_id)
+                  for e in empleados if _dinero(e.base_salary) > 0 and e.id_user not in detalles]
+        if nuevos:
+            db.add_all(nuevos)
+            db.flush()
+            detalles.update({d.id_user: d for d in nuevos})
+        movimientos = _MovimientosDelPeriodo(db, [d.id_payroll_detail for d in detalles.values()])
+
         calculados, sin_sueldo, sin_ingreso = [], [], []
         for empleado in empleados:
             diario = _dinero(empleado.base_salary)
@@ -258,47 +280,37 @@ def calcular_periodo(id_payroll_period, user_id: int) -> dict:
             ausencias = {k: totales[k] for k in CAMPOS_DE_AUSENCIA}
             sueldo = _dinero(diario * trabajados)
 
-            detalle = db.scalars(
-                select(PayrollDetail)
-                .where(PayrollDetail.id_payroll_period == periodo.id_payroll_period)
-                .where(PayrollDetail.id_user == empleado.id_user)
-                .where(PayrollDetail.deletion_date.is_(None))
-            ).first()
-            if detalle is None:
-                detalle = PayrollDetail(id_payroll_period=periodo.id_payroll_period,
-                                        id_user=empleado.id_user, created_by=user_id)
-                db.add(detalle)
-                db.flush()
+            detalle = detalles[empleado.id_user]
 
             # Solo se reemplaza lo que escribe este calculo: SUELDO, AGUINALDO,
             # PRIMA_VAC, ISR e IMSS.
-            _reemplazar_movimiento(db, detalle, conceptos[CODIGO_SUELDO], sueldo, user_id)
+            movimientos.reemplazar(detalle, conceptos[CODIGO_SUELDO], sueldo, user_id)
 
             if not empleado.hire_date:
                 sin_ingreso.append({"id_user": empleado.id_user, "full_name": empleado.full_name or ""})
             monto_aguinaldo = _dinero(0)
             if periodo.includes_aguinaldo:
                 monto_aguinaldo = ley.aguinaldo(diario, parametros["aguinaldo_days"], empleado.hire_date, al_dia.year)
-            _reemplazar_movimiento(db, detalle, conceptos[CODIGO_AGUINALDO], monto_aguinaldo, user_id)
+            movimientos.reemplazar(detalle, conceptos[CODIGO_AGUINALDO], monto_aguinaldo, user_id)
 
             dias_vacaciones, prima = 0, _dinero(0)
             aniversario = ley.aniversario_en(empleado.hire_date, periodo.period_start, periodo.period_end)
             if aniversario:
                 dias_vacaciones, prima = ley.prima_vacacional(
                     diario, ley.anios_cumplidos(empleado.hire_date, aniversario), parametros["vacation_premium_pct"])
-            _reemplazar_movimiento(db, detalle, conceptos[CODIGO_PRIMA], prima, user_id)
+            movimientos.reemplazar(detalle, conceptos[CODIGO_PRIMA], prima, user_id)
 
             aguinaldo_gravado = ley.parte_gravada(monto_aguinaldo, parametros["uma_daily"],
                                                   parametros["aguinaldo_exempt_umas"])
             prima_gravada = ley.parte_gravada(prima, parametros["uma_daily"],
                                               parametros["vacation_premium_exempt_umas"])
-            gravable = _percepciones_gravables(db, detalle) + aguinaldo_gravado + prima_gravada
+            gravable = movimientos.percepciones_gravables(detalle) + aguinaldo_gravado + prima_gravada
             isr_tarifa = ley.isr_por_tarifa(gravable, tramos, factor_tarifa)
             subsidio = ley.subsidio_para_el_empleo(
                 gravable, dias_del_periodo, parametros["uma_monthly"], parametros["subsidy_pct"],
                 parametros["subsidy_income_limit"])
             isr = max(isr_tarifa - subsidio, _dinero(0))
-            _reemplazar_movimiento(db, detalle, conceptos["ISR"], isr, user_id)
+            movimientos.reemplazar(detalle, conceptos["ISR"], isr, user_id)
 
             vacaciones = ley.dias_de_vacaciones(ley.anios_cumplidos(empleado.hire_date, al_dia))
             factor = ley.factor_de_integracion(parametros["aguinaldo_days"], vacaciones,
@@ -307,9 +319,9 @@ def calcular_periodo(id_payroll_period, user_id: int) -> dict:
                                                  parametros["uma_daily"], parametros["sbc_cap_umas"])
             imss = ley.cuota_obrera_imss(sbc, trabajados, diario, parametros["minimum_wage_daily"],
                                          parametros["uma_daily"], parametros)
-            _reemplazar_movimiento(db, detalle, conceptos["IMSS"], imss, user_id)
+            movimientos.reemplazar(detalle, conceptos["IMSS"], imss, user_id)
 
-            percepciones, deducciones = _totales(db, detalle)
+            percepciones, deducciones = movimientos.totales(detalle)
             detalle.gross_salary = sueldo
             detalle.total_earnings = percepciones
             detalle.total_deductions = deducciones
@@ -383,17 +395,26 @@ def reabrir_periodo(id_payroll_period, user_id: int) -> dict:
         return periodo.serialize()
 
 
-def _movimientos(db, detalle: PayrollDetail) -> list[dict]:
-    filas = db.execute(
-        select(PayrollConcept.payroll_code, PayrollConcept.payroll_concept_description,
-               PayrollConcept.type, PayrollMovement.amount)
+def _movimientos_por_detalle(db, ids_detalle) -> dict[int, list[dict]]:
+    """Movimientos vivos de varios detalles en una sola consulta (antes era una por empleado)."""
+    salida: dict[int, list[dict]] = {i: [] for i in ids_detalle}
+    if not ids_detalle:
+        return salida
+    for id_detalle, codigo, descripcion, tipo, monto in db.execute(
+        select(PayrollMovement.id_payroll_detail, PayrollConcept.payroll_code,
+               PayrollConcept.payroll_concept_description, PayrollConcept.type, PayrollMovement.amount)
         .join(PayrollConcept, PayrollConcept.id_payroll_concept == PayrollMovement.id_payroll_concept)
-        .where(PayrollMovement.id_payroll_detail == detalle.id_payroll_detail)
+        .where(PayrollMovement.id_payroll_detail.in_(list(ids_detalle)))
         .where(PayrollMovement.deletion_date.is_(None))
         .order_by(PayrollConcept.type, PayrollConcept.payroll_concept_description)
-    ).all()
-    return [{"code": codigo or "", "description": descripcion or "", "type": tipo, "amount": float(_dinero(monto))}
-            for codigo, descripcion, tipo, monto in filas]
+    ):
+        salida[id_detalle].append({"code": codigo or "", "description": descripcion or "", "type": tipo,
+                                   "amount": float(_dinero(monto))})
+    return salida
+
+
+def _movimientos(db, detalle: PayrollDetail) -> list[dict]:
+    return _movimientos_por_detalle(db, [detalle.id_payroll_detail])[detalle.id_payroll_detail]
 
 
 def resumen_periodo(id_payroll_period) -> dict:
@@ -408,8 +429,9 @@ def resumen_periodo(id_payroll_period) -> dict:
             .order_by(User.full_name)
         ).all()
         empleados = []
+        de_cada_uno = _movimientos_por_detalle(db, [detalle.id_payroll_detail for detalle, _ in filas])
         for detalle, empleado in filas:
-            por_codigo = {m["code"]: m["amount"] for m in _movimientos(db, detalle)}
+            por_codigo = {m["code"]: m["amount"] for m in de_cada_uno[detalle.id_payroll_detail]}
             empleados.append({
                 "id_user": empleado.id_user,
                 "full_name": empleado.full_name or "",

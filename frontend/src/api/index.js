@@ -632,6 +632,12 @@ export const createEmployeeLeave = (payload) => request("/employee_leave/", { me
 export const updateEmployeeLeave = (id, payload) => request(`/employee_leave/${id}`, { method: "PUT", body: payload });
 export const deleteEmployeeLeave = (id) => request(`/employee_leave/${id}`, { method: "DELETE" });
 export const getEmployeeLeaveBalances = () => request("/employee_leave/balances");
+export const getMyEmployeeLeaves = () => request("/employee_leave/mine");
+export const requestEmployeeLeave = (payload) => request("/employee_leave/request", { method: "POST", body: payload });
+export const cancelEmployeeLeave = (id) => request(`/employee_leave/${id}/cancel`, { method: "POST" });
+export const getPendingEmployeeLeaves = () => request("/employee_leave/pending");
+export const approveEmployeeLeave = (id, payload = {}) => request(`/employee_leave/${id}/approve`, { method: "POST", body: payload });
+export const rejectEmployeeLeave = (id, payload = {}) => request(`/employee_leave/${id}/reject`, { method: "POST", body: payload });
 export const getAttendanceIncidences = ({ startDate, endDate }) => request(`/kronos/attendance/incidences?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`);
 export const getAllPayrollParameter = (params = {}) => request("/payroll_parameter/", { params });
 export const createPayrollParameter = (payload) => request("/payroll_parameter/", { method: "POST", body: payload });
