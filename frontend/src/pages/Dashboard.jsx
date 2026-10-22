@@ -35,8 +35,9 @@ import {
   muestraFiltroDeEquipos, muestraFiltroDePersonas, normalizarBusqueda, unidadInfo,
 } from "../kpi/kpiDatos.js";
 import {
-  armarParametros, columnasDeWidget, estadoDeWidget, filasDeWidget, mezclaUnidades, motivoParaNoCombinar, rangoInicialDelBorrador,
-  tiposDeGraficaPermitidos as tiposPermitidosPorKpi, unidadDeKpi, widgetDeBorrador,
+  TITULO_MAX, armarParametros, columnasDeWidget, estadoDeWidget, filasDeWidget, mezclaUnidades, motivoParaNoCombinar,
+  rangoInicialDelBorrador, tiposDeGraficaPermitidos as tiposPermitidosPorKpi, tituloConHtml, tituloDeWidget, unidadDeKpi,
+  widgetDeBorrador,
 } from "../kpi/kpiParametros.js";
 import {
   DESFASES_DE_COMPARACION, ETIQUETA_RANGO_POR_OMISION, RANGOS_RELATIVOS, RANGO_PERSONALIZADO, fechaLocalIso,
@@ -253,6 +254,8 @@ function defaultPanelState() {
     // Ids de `team` (como texto). Filtra los equipos de un KPI por equipo y, en uno por persona, deja a quienes
     // estaban en esos equipos cada dia. Con equipos elegidos desaparece la fila "Sin equipo".
     equiposSeleccionados: [],
+    // Titulo propio del grafico (opcional, hasta TITULO_MAX caracteres): vacio = el nombre del KPI.
+    titulo: "",
     coloresKpi: {},
     // "entidad": desglosado por empleado/producto (comportamiento de
     // siempre). "periodo": una sola serie sumada entre todas las entidades,
@@ -1348,9 +1351,11 @@ export function KpiWidgetCard({
     ? tx("live_data", "En vivo · actualizado ahora")
     : (fechaInicio && fechaFin ? `${etiquetaRango}${fechaInicio} → ${fechaFin}` : tx("missing_range", "Sin rango de fechas configurado"));
   const rangoBTexto = fechaInicioB && fechaFinB ? `${fechaInicioB} → ${fechaFinB}` : "";
-  const titulo = kpiInfos.length > 1
+  const nombreDeLosKpis = kpiInfos.length > 1
     ? kpiInfos.map((info, index) => info?.etiqueta || `KPI #${idsUsados[index]}`).join(" + ")
     : (kpiInfos[0]?.etiqueta || tx("unknown_kpi", `KPI #${idsUsados[0] ?? "?"}`));
+  // El titulo propio gana; sin el, el nombre del KPI (o los de varios). Tambien lo que sale en el PDF.
+  const titulo = tituloDeWidget(widget.parametros, nombreDeLosKpis);
 
   // Acento de la tarjeta: el color del primer KPI (mismo `colorEfectivoDeKpi`
   // de siempre, override manual incluido) en vez de la franja neutra fija --
@@ -1648,6 +1653,7 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
     empleadosSeleccionados,
     departamentosSeleccionados,
     equiposSeleccionados = [],
+    titulo = "",
     coloresKpi,
     desfaseComparacion,
     agruparPor,
@@ -1850,6 +1856,7 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
       throw NO_CERRAR;
     }
     if (idsKpiSeleccionados.length === 0) rechazar(tx("kpi_required", "Elige al menos un KPI."));
+    if (tituloConHtml(titulo)) rechazar(tx("chart_title_html", "El título no puede llevar etiquetas HTML."));
     // Lo que se valida es lo que se va a guardar (armarParametros): con un
     // chip relativo, las fechas ya vienen calculadas al dia de hoy.
     const parametros = armarParametros(panelState, { esTabla, tieneBajoStock: tieneBajoStockSeleccionado });
@@ -1993,6 +2000,20 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
                   elegidosEnModulo: tx("selector_elegidos_en_modulo", "elegidos en este módulo"),
                 }}
               />
+            </div>
+
+            <div className="kpi-picker-section">
+              <span>{tx("chart_title", "Título del gráfico (opcional)")}</span>
+              <input
+                type="text"
+                className="kpi-editor-titulo"
+                value={titulo}
+                maxLength={TITULO_MAX}
+                placeholder={tx("chart_title_placeholder", "Si lo dejas vacío se usa el nombre del KPI")}
+                onChange={(event) => onChangePanelState({ titulo: event.target.value })}
+                aria-label={tx("chart_title", "Título del gráfico (opcional)")}
+              />
+              <p className="kpi-editor-ayuda">{Array.from(titulo).length}/{TITULO_MAX}</p>
             </div>
       </>
     ),
@@ -2296,7 +2317,7 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
                 <p className="muted">{tx("preview_empty", "Elige un KPI para ver cómo quedará.")}</p>
               ) : (
                 <div className="kpi-editor-vista-previa-tarjeta">
-                  <strong>{kpisSeleccionadosInfo.map((kpi) => kpi.etiqueta || kpi.clave).join(" + ")}</strong>
+                  <strong>{tituloDeWidget({ titulo }, kpisSeleccionadosInfo.map((kpi) => kpi.etiqueta || kpi.clave).join(" + "))}</strong>
                   {kpisSeleccionadosInfo.length === 1 && kpisSeleccionadosInfo[0].descripcion && (
                     <span className="muted">{kpisSeleccionadosInfo[0].descripcion}</span>
                   )}

@@ -11,6 +11,28 @@ import {
 } from "./kpiRango.js";
 import { normalizarOrdenTabla } from "./kpiPrestamos.js";
 
+// El titulo propio de un grafico (`parametros.titulo`). El limite es el del servidor (`TITULO_MAX` en
+// `kpi_dashboard_widget_service.py`): uno mas largo se rechaza alla con 400, asi que aqui se corta antes de guardar.
+export const TITULO_MAX = 80;
+
+/** El titulo recortado de espacios y de hasta `TITULO_MAX` caracteres (se cuentan caracteres, como el servidor, no unidades
+ * UTF-16), o "" si no hay. Cualquier cosa que no sea texto es "sin titulo". */
+export function normalizarTitulo(valor) {
+  if (typeof valor !== "string") return "";
+  return Array.from(valor.trim()).slice(0, TITULO_MAX).join("").trim();
+}
+
+/** Si el texto trae una etiqueta o un comentario HTML (lo que el servidor rechaza). `<12 h` o `a < b` son texto. */
+export function tituloConHtml(valor) {
+  return typeof valor === "string" && /<[A-Za-z/!?]/.test(valor);
+}
+
+/** Lo que dice el encabezado de una tarjeta (y de la vista previa): el titulo propio si lo tiene y, si no, el nombre del KPI
+ * (o los nombres, unidos con " + ", en un grafico de varios). Es el unico lugar que lo decide; el PDF captura las tarjetas. */
+export function tituloDeWidget(parametros, nombreDeLosKpis) {
+  return normalizarTitulo(parametros?.titulo) || nombreDeLosKpis;
+}
+
 /** Los `parametros` de un widget a partir del borrador del editor.
  *
  * - `esTabla`: un widget de tabla (KPI "vivo") son datos de "ahora": no guarda
@@ -30,6 +52,9 @@ export function armarParametros(estado, { esTabla = false, tieneBajoStock = fals
     // `parametros`: si no se vuelve a escribir aqui, guardar el editor lo borraria. Solo se conserva un orden
     // valido: uno que no lo sea vuelve al de por omision en vez de mandar al servidor algo que rechazaria (400).
     if (estado.ordenTabla) tabla.orden_tabla = normalizarOrdenTabla(estado.ordenTabla);
+    // El titulo propio vale tambien en una tabla (es lo unico que su asistente de un solo paso no borraria al guardar).
+    const tituloTabla = normalizarTitulo(estado.titulo);
+    if (tituloTabla) tabla.titulo = tituloTabla;
     return tabla;
   }
   // Con un chip de rango relativo se guarda la INSTRUCCION (`rango_relativo`)
@@ -69,6 +94,8 @@ export function armarParametros(estado, { esTabla = false, tieneBajoStock = fals
   );
   if (Object.keys(coloresVigentes).length) parametros.colores_kpi = coloresVigentes;
   if (estado.agruparPor === "periodo") parametros.agrupar_por = "periodo";
+  const titulo = normalizarTitulo(estado.titulo);
+  if (titulo) parametros.titulo = titulo;
   if (tieneBajoStock && estado.umbralBajoStock !== "" && Number.isFinite(Number(estado.umbralBajoStock))) {
     parametros.umbral_bajo_stock = Number(estado.umbralBajoStock);
   }
@@ -127,6 +154,8 @@ export function estadoDeWidget(widget, kpiCatalog, hoy = new Date()) {
     umbralBajoStock: parametros.umbral_bajo_stock != null ? String(parametros.umbral_bajo_stock) : "",
     columnas: columnasDeWidget(widget),
     filas: filasDeWidget(widget),
+    // Si no se vuelve a leer aqui, editar un widget y guardarlo borraria su titulo (igual que `id_teams`).
+    titulo: typeof guardados.titulo === "string" ? guardados.titulo : "",
     // Solo se arrastra para conservarlo al guardar (ver armarParametros); el editor no lo muestra.
     ordenTabla: guardados.orden_tabla ? normalizarOrdenTabla(guardados.orden_tabla) : null,
   };
