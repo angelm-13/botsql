@@ -1001,10 +1001,10 @@ class TestElRegistroDeRoles(BaseOrdenes):
 
     def test_the_manager_authorizes(self):
         # Gerencia son dos roles: autoriza las compras el general (revision).
-        self.assertIn("purchase_authorize", self._rol("Gerente general").capacidades)
-        self.assertTrue(self._rol("Gerente general").modulos["compras"] & registry.CREAR)
+        self.assertIn("purchase_authorize", self._rol("Gerente Comercial").capacidades)
+        self.assertTrue(self._rol("Gerente Comercial").modulos["compras"] & registry.CREAR)
         # El tecnico es de campo: ve compras pero no las autoriza.
-        self.assertNotIn("purchase_authorize", self._rol("Gerente tecnico").capacidades)
+        self.assertNotIn("purchase_authorize", self._rol("Gerente Tecnico").capacidades)
 
     def test_the_warehouse_only_looks(self):
         self.assertEqual(registry.CONSULTA, self._rol("Almacenista").modulos["compras"])

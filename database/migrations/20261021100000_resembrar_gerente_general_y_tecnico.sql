@@ -38,31 +38,31 @@
 -- 349 filas.
 --
 --   facturacion      9 entidades
---     Administrator (administrar), Gerente general (consultar)
+--     Administrator (administrar), Gerente Comercial (consultar)
 --   inventario      11 entidades  [almacen propio]
---     Administrator (administrar), Supervisor (consultar), Gerente general (consultar), Gerente tecnico (consultar), Jefe de taller (consultar), Almacenista (administrar), Compras (consultar)
+--     Administrator (administrar), Supervisor (consultar), Gerente Comercial (consultar), Gerente Tecnico (consultar), Jefe de taller (consultar), Almacenista (administrar), Compras (consultar)
 --   compras          2 entidades
---     Administrator (administrar), Gerente general (capturar), Gerente tecnico (consultar), Almacenista (consultar), Compras (capturar)
+--     Administrator (administrar), Gerente Comercial (capturar), Gerente Tecnico (consultar), Almacenista (consultar), Compras (capturar)
 --   operaciones     11 entidades
---     Administrator (administrar), Supervisor (capturar), Gerente general (consultar), Gerente tecnico (editar), Jefe de taller (capturar), Compras (consultar)
+--     Administrator (administrar), Supervisor (capturar), Gerente Comercial (consultar), Gerente Tecnico (editar), Jefe de taller (capturar), Compras (consultar)
 --   logistica       21 entidades  [almacen propio]
---     Administrator (administrar), Gerente general (consultar), Almacenista (capturar)
+--     Administrator (administrar), Gerente Comercial (consultar), Almacenista (capturar)
 --   restaurante      0 entidades  [almacen propio]
 --     Administrator (administrar)
 --   pos              0 entidades
 --     Administrator (administrar)
 --   crm              8 entidades
---     Administrator (administrar), Gerente general (consultar)
+--     Administrator (administrar), Gerente Comercial (consultar)
 --   documentos       4 entidades
 --     Administrator (administrar)
 --   laboratorio      3 entidades
 --     Administrator (administrar)
 --   rh               4 entidades
---     Administrator (administrar), Gerente general (consultar)
+--     Administrator (administrar), Gerente Comercial (consultar)
 --   kpis             4 entidades
 --     Administrator (administrar)
 --   configuracion    5 entidades
---     Administrator (administrar), Supervisor (consultar), Gerente general (consultar), Gerente tecnico (consultar), Jefe de taller (consultar), Almacenista (consultar), Compras (consultar)
+--     Administrator (administrar), Supervisor (consultar), Gerente Comercial (consultar), Gerente Tecnico (consultar), Jefe de taller (consultar), Almacenista (consultar), Compras (consultar)
 --   seguridad        9 entidades
 --     Administrator (administrar)
 
@@ -127,8 +127,8 @@ SELECT r.id_permission, 1, 1, r.role_name, 1, 1, 1
   FROM (VALUES
     (1, 'Administrator'),
     (2, 'Supervisor'),
-    (9, 'Gerente general'),
-    (3, 'Gerente tecnico'),
+    (9, 'Gerente Comercial'),
+    (3, 'Gerente Tecnico'),
     (4, 'Jefe de taller'),
     (5, 'Almacenista'),
     (8, 'Compras')
@@ -152,8 +152,8 @@ SELECT 1, 1, r.role_name, 1, 1, 1
   FROM (VALUES
     (1, 'Administrator'),
     (2, 'Supervisor'),
-    (9, 'Gerente general'),
-    (3, 'Gerente tecnico'),
+    (9, 'Gerente Comercial'),
+    (3, 'Gerente Tecnico'),
     (4, 'Jefe de taller'),
     (5, 'Almacenista'),
     (8, 'Compras')
@@ -327,112 +327,112 @@ SELECT * FROM (VALUES
     ('Supervisor', 'template', 4, 4, 4, 0, 'sidebar', 'Operaciones', 'operations', 'Plantillas de tarea', 340, 'operaciones'),   -- Supervisor / capturar
     ('Supervisor', 'incident_supervision', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Supervisor / consultar
     ('Supervisor', 'warehouse_prevoucher', 4, 4, 4, 0, 'sidebar', 'Inventario', 'inventory', 'Prevales de material', 290, 'inventario'),   -- Supervisor / capturar
-    ('Gerente general', 'purchase_order', 4, 4, 4, 0, 'sidebar', 'Inventario', 'inventory', 'Ordenes de compra', 530, 'compras'),   -- Gerente general / capturar
-    ('Gerente general', 'purchase_policy', 4, 4, 4, 0, 'hidden', NULL, NULL, NULL, 340, 'compras'),   -- Gerente general / capturar
-    ('Gerente general', 'department', 0, 4, 0, 0, 'settings', 'Configuracion', 'settings', 'Departamentos', 830, 'configuracion'),   -- Gerente general / consultar
-    ('Gerente general', 'level', 0, 4, 0, 0, 'settings', 'Configuracion', 'settings', 'Niveles', 850, 'configuracion'),   -- Gerente general / consultar
-    ('Gerente general', 'status', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 890, 'configuracion'),   -- Gerente general / consultar
-    ('Gerente general', 'subdepartment', 0, 4, 0, 0, 'settings', 'Configuracion', 'settings', 'Subdepartamentos', 840, 'configuracion'),   -- Gerente general / consultar
-    ('Gerente general', 'theme', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 890, 'configuracion'),   -- Gerente general / consultar
-    ('Gerente general', 'appointment', 0, 4, 0, 0, 'sidebar', 'CRM', 'crm', 'Calendario', 630, 'crm'),   -- Gerente general / consultar
-    ('Gerente general', 'customer_contact', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 690, 'crm'),   -- Gerente general / consultar
-    ('Gerente general', 'customer_supplier', 0, 4, 0, 0, 'sidebar', 'CRM', 'crm', 'Clientes y proveedores', 620, 'crm'),   -- Gerente general / consultar
-    ('Gerente general', 'nm_survey_user', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 690, 'crm'),   -- Gerente general / consultar
-    ('Gerente general', 'product_sale_config', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 690, 'crm'),   -- Gerente general / consultar
-    ('Gerente general', 'public_api_key', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 690, 'crm'),   -- Gerente general / consultar
-    ('Gerente general', 'survey_multiple_answer', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 690, 'crm'),   -- Gerente general / consultar
-    ('Gerente general', 'survey_question', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 690, 'crm'),   -- Gerente general / consultar
-    ('Gerente general', 'bank', 0, 4, 0, 0, 'sidebar', 'Facturacion', 'billing', 'Bancos', 140, 'facturacion'),   -- Gerente general / consultar
-    ('Gerente general', 'bank_account', 0, 4, 0, 0, 'sidebar', 'Facturacion', 'billing', 'Cuentas bancarias', 150, 'facturacion'),   -- Gerente general / consultar
-    ('Gerente general', 'fiscal_account', 0, 4, 0, 0, 'sidebar', 'Facturacion', 'billing', 'Cuentas fiscales', 130, 'facturacion'),   -- Gerente general / consultar
-    ('Gerente general', 'fiscal_record', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 190, 'facturacion'),   -- Gerente general / consultar
-    ('Gerente general', 'fiscal_stamp', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 190, 'facturacion'),   -- Gerente general / consultar
-    ('Gerente general', 'invoice', 0, 4, 0, 0, 'sidebar', 'Facturacion', 'billing', 'Facturas', 110, 'facturacion'),   -- Gerente general / consultar
-    ('Gerente general', 'invoice_material_service', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 190, 'facturacion'),   -- Gerente general / consultar
-    ('Gerente general', 'service', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 190, 'facturacion'),   -- Gerente general / consultar
-    ('Gerente general', 'ticket', 0, 4, 0, 0, 'sidebar', 'Facturacion', 'billing', 'Tickets', 160, 'facturacion'),   -- Gerente general / consultar
-    ('Gerente general', 'brand', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Marcas', 214, 'inventario'),   -- Gerente general / consultar
-    ('Gerente general', 'inventory_status', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Estado de inventario', 270, 'inventario'),   -- Gerente general / consultar
-    ('Gerente general', 'location', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Ubicaciones', 220, 'inventario'),   -- Gerente general / consultar
-    ('Gerente general', 'location_type', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Tipos de ubicacion', 230, 'inventario'),   -- Gerente general / consultar
-    ('Gerente general', 'material', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Materiales', 240, 'inventario'),   -- Gerente general / consultar
-    ('Gerente general', 'material_attribute', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 290, 'inventario'),   -- Gerente general / consultar
-    ('Gerente general', 'material_component', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Componentes', 260, 'inventario'),   -- Gerente general / consultar
-    ('Gerente general', 'movement', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Movimientos', 250, 'inventario'),   -- Gerente general / consultar
-    ('Gerente general', 'product', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Productos', 210, 'inventario'),   -- Gerente general / consultar
-    ('Gerente general', 'product_family', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Familias de producto', 212, 'inventario'),   -- Gerente general / consultar
-    ('Gerente general', 'unit', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Unidades', 216, 'inventario'),   -- Gerente general / consultar
-    ('Gerente general', 'logistics_address', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Direcciones', 412, 'logistica'),   -- Gerente general / consultar
-    ('Gerente general', 'logistics_branch', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Sucursales', 410, 'logistica'),   -- Gerente general / consultar
-    ('Gerente general', 'logistics_contact', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Contactos', 414, 'logistica'),   -- Gerente general / consultar
-    ('Gerente general', 'logistics_contract', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Contratos', 416, 'logistica'),   -- Gerente general / consultar
-    ('Gerente general', 'logistics_evidence', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Evidencias', 446, 'logistica'),   -- Gerente general / consultar
-    ('Gerente general', 'logistics_file', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Expedientes', 462, 'logistica'),   -- Gerente general / consultar
-    ('Gerente general', 'logistics_incident', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Incidencias', 448, 'logistica'),   -- Gerente general / consultar
-    ('Gerente general', 'logistics_inventory', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Inventario', 436, 'logistica'),   -- Gerente general / consultar
-    ('Gerente general', 'logistics_location', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Ubicaciones', 432, 'logistica'),   -- Gerente general / consultar
-    ('Gerente general', 'logistics_maintenance', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Mantenimientos', 456, 'logistica'),   -- Gerente general / consultar
-    ('Gerente general', 'logistics_operator', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Operadores', 454, 'logistica'),   -- Gerente general / consultar
-    ('Gerente general', 'logistics_quotation', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Cotizaciones', 420, 'logistica'),   -- Gerente general / consultar
-    ('Gerente general', 'logistics_rack', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Racks', 434, 'logistica'),   -- Gerente general / consultar
-    ('Gerente general', 'logistics_rate', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Tarifas', 418, 'logistica'),   -- Gerente general / consultar
-    ('Gerente general', 'logistics_receivable', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Cuentas por cobrar', 460, 'logistica'),   -- Gerente general / consultar
-    ('Gerente general', 'logistics_service_request', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Solicitudes de servicio', 440, 'logistica'),   -- Gerente general / consultar
-    ('Gerente general', 'logistics_shipment', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Embarques', 444, 'logistica'),   -- Gerente general / consultar
-    ('Gerente general', 'logistics_trailer', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Remolques', 452, 'logistica'),   -- Gerente general / consultar
-    ('Gerente general', 'logistics_trip', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Viajes', 442, 'logistica'),   -- Gerente general / consultar
-    ('Gerente general', 'logistics_unit', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Unidades', 450, 'logistica'),   -- Gerente general / consultar
-    ('Gerente general', 'logistics_warehouse', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Almacenes', 430, 'logistica'),   -- Gerente general / consultar
-    ('Gerente general', 'incident', 0, 4, 0, 0, 'sidebar', 'Operaciones', 'operations', 'Incidencias', 330, 'operaciones'),   -- Gerente general / consultar
-    ('Gerente general', 'incident_detail', 0, 4, 0, 0, 'sidebar', 'Operaciones', 'operations', 'Subtipos de incidencia', 334, 'operaciones'),   -- Gerente general / consultar
-    ('Gerente general', 'incident_type', 0, 4, 0, 0, 'sidebar', 'Operaciones', 'operations', 'Tipos de incidencia', 332, 'operaciones'),   -- Gerente general / consultar
-    ('Gerente general', 'nm_incident_product', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente general / consultar
-    ('Gerente general', 'nm_template_task', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente general / consultar
-    ('Gerente general', 'proyect', 0, 4, 0, 0, 'sidebar', 'Operaciones', 'operations', 'Proyectos', 310, 'operaciones'),   -- Gerente general / consultar
-    ('Gerente general', 'proyect_material_need', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente general / consultar
-    ('Gerente general', 'task', 0, 4, 0, 0, 'sidebar', 'Operaciones', 'operations', 'Tareas', 320, 'operaciones'),   -- Gerente general / consultar
-    ('Gerente general', 'task_note', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente general / consultar
-    ('Gerente general', 'task_type', 0, 4, 0, 0, 'sidebar', 'Operaciones', 'operations', 'Tipos de tarea', 342, 'operaciones'),   -- Gerente general / consultar
-    ('Gerente general', 'template', 0, 4, 0, 0, 'sidebar', 'Operaciones', 'operations', 'Plantillas de tarea', 340, 'operaciones'),   -- Gerente general / consultar
-    ('Gerente general', 'payroll_concept', 0, 4, 0, 0, 'sidebar', 'Recursos humanos', 'hr', 'Conceptos', 720, 'rh'),   -- Gerente general / consultar
-    ('Gerente general', 'payroll_detail', 0, 4, 0, 0, 'sidebar', 'Recursos humanos', 'hr', 'Detalle', 740, 'rh'),   -- Gerente general / consultar
-    ('Gerente general', 'payroll_movement', 0, 4, 0, 0, 'sidebar', 'Recursos humanos', 'hr', 'Movimientos', 730, 'rh'),   -- Gerente general / consultar
-    ('Gerente general', 'payroll_period', 0, 4, 0, 0, 'sidebar', 'Recursos humanos', 'hr', 'Periodos de nomina', 710, 'rh'),   -- Gerente general / consultar
-    ('Gerente general', 'incident_supervision', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente general / consultar
-    ('Gerente general', 'project_oversight', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente general / consultar
-    ('Gerente general', 'purchase_authorize', 0, 4, 4, 0, 'hidden', NULL, NULL, NULL, 340, 'compras'),   -- Gerente general / editar
-    ('Gerente tecnico', 'purchase_order', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Ordenes de compra', 530, 'compras'),   -- Gerente tecnico / consultar
-    ('Gerente tecnico', 'purchase_policy', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 340, 'compras'),   -- Gerente tecnico / consultar
-    ('Gerente tecnico', 'department', 0, 4, 0, 0, 'settings', 'Configuracion', 'settings', 'Departamentos', 830, 'configuracion'),   -- Gerente tecnico / consultar
-    ('Gerente tecnico', 'level', 0, 4, 0, 0, 'settings', 'Configuracion', 'settings', 'Niveles', 850, 'configuracion'),   -- Gerente tecnico / consultar
-    ('Gerente tecnico', 'status', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 890, 'configuracion'),   -- Gerente tecnico / consultar
-    ('Gerente tecnico', 'subdepartment', 0, 4, 0, 0, 'settings', 'Configuracion', 'settings', 'Subdepartamentos', 840, 'configuracion'),   -- Gerente tecnico / consultar
-    ('Gerente tecnico', 'theme', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 890, 'configuracion'),   -- Gerente tecnico / consultar
-    ('Gerente tecnico', 'brand', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Marcas', 214, 'inventario'),   -- Gerente tecnico / consultar
-    ('Gerente tecnico', 'inventory_status', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Estado de inventario', 270, 'inventario'),   -- Gerente tecnico / consultar
-    ('Gerente tecnico', 'location', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Ubicaciones', 220, 'inventario'),   -- Gerente tecnico / consultar
-    ('Gerente tecnico', 'location_type', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Tipos de ubicacion', 230, 'inventario'),   -- Gerente tecnico / consultar
-    ('Gerente tecnico', 'material', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Materiales', 240, 'inventario'),   -- Gerente tecnico / consultar
-    ('Gerente tecnico', 'material_attribute', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 290, 'inventario'),   -- Gerente tecnico / consultar
-    ('Gerente tecnico', 'material_component', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Componentes', 260, 'inventario'),   -- Gerente tecnico / consultar
-    ('Gerente tecnico', 'movement', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Movimientos', 250, 'inventario'),   -- Gerente tecnico / consultar
-    ('Gerente tecnico', 'product', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Productos', 210, 'inventario'),   -- Gerente tecnico / consultar
-    ('Gerente tecnico', 'product_family', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Familias de producto', 212, 'inventario'),   -- Gerente tecnico / consultar
-    ('Gerente tecnico', 'unit', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Unidades', 216, 'inventario'),   -- Gerente tecnico / consultar
-    ('Gerente tecnico', 'incident', 0, 4, 4, 0, 'sidebar', 'Operaciones', 'operations', 'Incidencias', 330, 'operaciones'),   -- Gerente tecnico / editar
-    ('Gerente tecnico', 'incident_detail', 0, 4, 4, 0, 'sidebar', 'Operaciones', 'operations', 'Subtipos de incidencia', 334, 'operaciones'),   -- Gerente tecnico / editar
-    ('Gerente tecnico', 'incident_type', 0, 4, 4, 0, 'sidebar', 'Operaciones', 'operations', 'Tipos de incidencia', 332, 'operaciones'),   -- Gerente tecnico / editar
-    ('Gerente tecnico', 'nm_incident_product', 0, 4, 4, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente tecnico / editar
-    ('Gerente tecnico', 'nm_template_task', 0, 4, 4, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente tecnico / editar
-    ('Gerente tecnico', 'proyect', 0, 4, 4, 0, 'sidebar', 'Operaciones', 'operations', 'Proyectos', 310, 'operaciones'),   -- Gerente tecnico / editar
-    ('Gerente tecnico', 'proyect_material_need', 0, 4, 4, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente tecnico / editar
-    ('Gerente tecnico', 'task', 0, 4, 4, 0, 'sidebar', 'Operaciones', 'operations', 'Tareas', 320, 'operaciones'),   -- Gerente tecnico / editar
-    ('Gerente tecnico', 'task_note', 0, 4, 4, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente tecnico / editar
-    ('Gerente tecnico', 'task_type', 0, 4, 4, 0, 'sidebar', 'Operaciones', 'operations', 'Tipos de tarea', 342, 'operaciones'),   -- Gerente tecnico / editar
-    ('Gerente tecnico', 'template', 0, 4, 4, 0, 'sidebar', 'Operaciones', 'operations', 'Plantillas de tarea', 340, 'operaciones'),   -- Gerente tecnico / editar
-    ('Gerente tecnico', 'incident_supervision', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente tecnico / consultar
-    ('Gerente tecnico', 'project_authorization', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente tecnico / consultar
-    ('Gerente tecnico', 'warehouse_prevoucher', 4, 4, 4, 0, 'sidebar', 'Inventario', 'inventory', 'Prevales de material', 290, 'inventario'),   -- Gerente tecnico / capturar
+    ('Gerente Comercial', 'purchase_order', 4, 4, 4, 0, 'sidebar', 'Inventario', 'inventory', 'Ordenes de compra', 530, 'compras'),   -- Gerente Comercial / capturar
+    ('Gerente Comercial', 'purchase_policy', 4, 4, 4, 0, 'hidden', NULL, NULL, NULL, 340, 'compras'),   -- Gerente Comercial / capturar
+    ('Gerente Comercial', 'department', 0, 4, 0, 0, 'settings', 'Configuracion', 'settings', 'Departamentos', 830, 'configuracion'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'level', 0, 4, 0, 0, 'settings', 'Configuracion', 'settings', 'Niveles', 850, 'configuracion'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'status', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 890, 'configuracion'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'subdepartment', 0, 4, 0, 0, 'settings', 'Configuracion', 'settings', 'Subdepartamentos', 840, 'configuracion'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'theme', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 890, 'configuracion'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'appointment', 0, 4, 0, 0, 'sidebar', 'CRM', 'crm', 'Calendario', 630, 'crm'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'customer_contact', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 690, 'crm'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'customer_supplier', 0, 4, 0, 0, 'sidebar', 'CRM', 'crm', 'Clientes y proveedores', 620, 'crm'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'nm_survey_user', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 690, 'crm'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'product_sale_config', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 690, 'crm'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'public_api_key', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 690, 'crm'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'survey_multiple_answer', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 690, 'crm'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'survey_question', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 690, 'crm'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'bank', 0, 4, 0, 0, 'sidebar', 'Facturacion', 'billing', 'Bancos', 140, 'facturacion'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'bank_account', 0, 4, 0, 0, 'sidebar', 'Facturacion', 'billing', 'Cuentas bancarias', 150, 'facturacion'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'fiscal_account', 0, 4, 0, 0, 'sidebar', 'Facturacion', 'billing', 'Cuentas fiscales', 130, 'facturacion'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'fiscal_record', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 190, 'facturacion'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'fiscal_stamp', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 190, 'facturacion'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'invoice', 0, 4, 0, 0, 'sidebar', 'Facturacion', 'billing', 'Facturas', 110, 'facturacion'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'invoice_material_service', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 190, 'facturacion'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'service', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 190, 'facturacion'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'ticket', 0, 4, 0, 0, 'sidebar', 'Facturacion', 'billing', 'Tickets', 160, 'facturacion'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'brand', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Marcas', 214, 'inventario'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'inventory_status', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Estado de inventario', 270, 'inventario'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'location', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Ubicaciones', 220, 'inventario'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'location_type', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Tipos de ubicacion', 230, 'inventario'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'material', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Materiales', 240, 'inventario'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'material_attribute', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 290, 'inventario'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'material_component', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Componentes', 260, 'inventario'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'movement', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Movimientos', 250, 'inventario'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'product', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Productos', 210, 'inventario'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'product_family', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Familias de producto', 212, 'inventario'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'unit', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Unidades', 216, 'inventario'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'logistics_address', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Direcciones', 412, 'logistica'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'logistics_branch', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Sucursales', 410, 'logistica'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'logistics_contact', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Contactos', 414, 'logistica'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'logistics_contract', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Contratos', 416, 'logistica'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'logistics_evidence', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Evidencias', 446, 'logistica'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'logistics_file', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Expedientes', 462, 'logistica'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'logistics_incident', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Incidencias', 448, 'logistica'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'logistics_inventory', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Inventario', 436, 'logistica'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'logistics_location', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Ubicaciones', 432, 'logistica'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'logistics_maintenance', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Mantenimientos', 456, 'logistica'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'logistics_operator', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Operadores', 454, 'logistica'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'logistics_quotation', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Cotizaciones', 420, 'logistica'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'logistics_rack', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Racks', 434, 'logistica'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'logistics_rate', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Tarifas', 418, 'logistica'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'logistics_receivable', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Cuentas por cobrar', 460, 'logistica'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'logistics_service_request', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Solicitudes de servicio', 440, 'logistica'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'logistics_shipment', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Embarques', 444, 'logistica'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'logistics_trailer', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Remolques', 452, 'logistica'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'logistics_trip', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Viajes', 442, 'logistica'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'logistics_unit', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Unidades', 450, 'logistica'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'logistics_warehouse', 0, 4, 0, 0, 'sidebar', 'Logistica', 'logistics', 'Almacenes', 430, 'logistica'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'incident', 0, 4, 0, 0, 'sidebar', 'Operaciones', 'operations', 'Incidencias', 330, 'operaciones'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'incident_detail', 0, 4, 0, 0, 'sidebar', 'Operaciones', 'operations', 'Subtipos de incidencia', 334, 'operaciones'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'incident_type', 0, 4, 0, 0, 'sidebar', 'Operaciones', 'operations', 'Tipos de incidencia', 332, 'operaciones'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'nm_incident_product', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'nm_template_task', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'proyect', 0, 4, 0, 0, 'sidebar', 'Operaciones', 'operations', 'Proyectos', 310, 'operaciones'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'proyect_material_need', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'task', 0, 4, 0, 0, 'sidebar', 'Operaciones', 'operations', 'Tareas', 320, 'operaciones'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'task_note', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'task_type', 0, 4, 0, 0, 'sidebar', 'Operaciones', 'operations', 'Tipos de tarea', 342, 'operaciones'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'template', 0, 4, 0, 0, 'sidebar', 'Operaciones', 'operations', 'Plantillas de tarea', 340, 'operaciones'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'payroll_concept', 0, 4, 0, 0, 'sidebar', 'Recursos humanos', 'hr', 'Conceptos', 720, 'rh'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'payroll_detail', 0, 4, 0, 0, 'sidebar', 'Recursos humanos', 'hr', 'Detalle', 740, 'rh'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'payroll_movement', 0, 4, 0, 0, 'sidebar', 'Recursos humanos', 'hr', 'Movimientos', 730, 'rh'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'payroll_period', 0, 4, 0, 0, 'sidebar', 'Recursos humanos', 'hr', 'Periodos de nomina', 710, 'rh'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'incident_supervision', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'project_oversight', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente Comercial / consultar
+    ('Gerente Comercial', 'purchase_authorize', 0, 4, 4, 0, 'hidden', NULL, NULL, NULL, 340, 'compras'),   -- Gerente Comercial / editar
+    ('Gerente Tecnico', 'purchase_order', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Ordenes de compra', 530, 'compras'),   -- Gerente Tecnico / consultar
+    ('Gerente Tecnico', 'purchase_policy', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 340, 'compras'),   -- Gerente Tecnico / consultar
+    ('Gerente Tecnico', 'department', 0, 4, 0, 0, 'settings', 'Configuracion', 'settings', 'Departamentos', 830, 'configuracion'),   -- Gerente Tecnico / consultar
+    ('Gerente Tecnico', 'level', 0, 4, 0, 0, 'settings', 'Configuracion', 'settings', 'Niveles', 850, 'configuracion'),   -- Gerente Tecnico / consultar
+    ('Gerente Tecnico', 'status', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 890, 'configuracion'),   -- Gerente Tecnico / consultar
+    ('Gerente Tecnico', 'subdepartment', 0, 4, 0, 0, 'settings', 'Configuracion', 'settings', 'Subdepartamentos', 840, 'configuracion'),   -- Gerente Tecnico / consultar
+    ('Gerente Tecnico', 'theme', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 890, 'configuracion'),   -- Gerente Tecnico / consultar
+    ('Gerente Tecnico', 'brand', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Marcas', 214, 'inventario'),   -- Gerente Tecnico / consultar
+    ('Gerente Tecnico', 'inventory_status', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Estado de inventario', 270, 'inventario'),   -- Gerente Tecnico / consultar
+    ('Gerente Tecnico', 'location', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Ubicaciones', 220, 'inventario'),   -- Gerente Tecnico / consultar
+    ('Gerente Tecnico', 'location_type', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Tipos de ubicacion', 230, 'inventario'),   -- Gerente Tecnico / consultar
+    ('Gerente Tecnico', 'material', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Materiales', 240, 'inventario'),   -- Gerente Tecnico / consultar
+    ('Gerente Tecnico', 'material_attribute', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 290, 'inventario'),   -- Gerente Tecnico / consultar
+    ('Gerente Tecnico', 'material_component', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Componentes', 260, 'inventario'),   -- Gerente Tecnico / consultar
+    ('Gerente Tecnico', 'movement', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Movimientos', 250, 'inventario'),   -- Gerente Tecnico / consultar
+    ('Gerente Tecnico', 'product', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Productos', 210, 'inventario'),   -- Gerente Tecnico / consultar
+    ('Gerente Tecnico', 'product_family', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Familias de producto', 212, 'inventario'),   -- Gerente Tecnico / consultar
+    ('Gerente Tecnico', 'unit', 0, 4, 0, 0, 'sidebar', 'Inventario', 'inventory', 'Unidades', 216, 'inventario'),   -- Gerente Tecnico / consultar
+    ('Gerente Tecnico', 'incident', 0, 4, 4, 0, 'sidebar', 'Operaciones', 'operations', 'Incidencias', 330, 'operaciones'),   -- Gerente Tecnico / editar
+    ('Gerente Tecnico', 'incident_detail', 0, 4, 4, 0, 'sidebar', 'Operaciones', 'operations', 'Subtipos de incidencia', 334, 'operaciones'),   -- Gerente Tecnico / editar
+    ('Gerente Tecnico', 'incident_type', 0, 4, 4, 0, 'sidebar', 'Operaciones', 'operations', 'Tipos de incidencia', 332, 'operaciones'),   -- Gerente Tecnico / editar
+    ('Gerente Tecnico', 'nm_incident_product', 0, 4, 4, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente Tecnico / editar
+    ('Gerente Tecnico', 'nm_template_task', 0, 4, 4, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente Tecnico / editar
+    ('Gerente Tecnico', 'proyect', 0, 4, 4, 0, 'sidebar', 'Operaciones', 'operations', 'Proyectos', 310, 'operaciones'),   -- Gerente Tecnico / editar
+    ('Gerente Tecnico', 'proyect_material_need', 0, 4, 4, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente Tecnico / editar
+    ('Gerente Tecnico', 'task', 0, 4, 4, 0, 'sidebar', 'Operaciones', 'operations', 'Tareas', 320, 'operaciones'),   -- Gerente Tecnico / editar
+    ('Gerente Tecnico', 'task_note', 0, 4, 4, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente Tecnico / editar
+    ('Gerente Tecnico', 'task_type', 0, 4, 4, 0, 'sidebar', 'Operaciones', 'operations', 'Tipos de tarea', 342, 'operaciones'),   -- Gerente Tecnico / editar
+    ('Gerente Tecnico', 'template', 0, 4, 4, 0, 'sidebar', 'Operaciones', 'operations', 'Plantillas de tarea', 340, 'operaciones'),   -- Gerente Tecnico / editar
+    ('Gerente Tecnico', 'incident_supervision', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente Tecnico / consultar
+    ('Gerente Tecnico', 'project_authorization', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 390, 'operaciones'),   -- Gerente Tecnico / consultar
+    ('Gerente Tecnico', 'warehouse_prevoucher', 4, 4, 4, 0, 'sidebar', 'Inventario', 'inventory', 'Prevales de material', 290, 'inventario'),   -- Gerente Tecnico / capturar
     ('Jefe de taller', 'department', 0, 4, 0, 0, 'settings', 'Configuracion', 'settings', 'Departamentos', 830, 'configuracion'),   -- Jefe de taller / consultar
     ('Jefe de taller', 'level', 0, 4, 0, 0, 'settings', 'Configuracion', 'settings', 'Niveles', 850, 'configuracion'),   -- Jefe de taller / consultar
     ('Jefe de taller', 'status', 0, 4, 0, 0, 'hidden', NULL, NULL, NULL, 890, 'configuracion'),   -- Jefe de taller / consultar

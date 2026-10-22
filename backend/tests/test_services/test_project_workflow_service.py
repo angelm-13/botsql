@@ -487,7 +487,7 @@ class TestProjectWorkflowService(BackendTestCase):
         self.assertIn(borrador, {p["id_proyect"] for p in list_projects(self.manager)["items"]})
 
     def test_the_general_manager_sees_everything_but_authorizes_nothing(self):
-        """`project_oversight` (Gerente general): ve todos los proyectos y su
+        """`project_oversight` (Gerente Comercial): ve todos los proyectos y su
         parte comercial, pero ninguna transicion de gerencia es suya."""
         general = {"id_user": 81, "id_permission": 801}
         with transaction_context() as db:

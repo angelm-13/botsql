@@ -386,11 +386,11 @@ class TestElRegistroDeLaRecepcion(BaseRecepcion):
         return next(r for r in registry.ROLES if r.nombre == nombre)
 
     def test_the_warehouse_receives_and_neither_purchasing_nor_management_does(self):
-        # El Gerente general (revision) solo aprueba compras: ya no recibe. Lo recibe el
+        # El Gerente Comercial (revision) solo aprueba compras: ya no recibe. Lo recibe el
         # almacen, o Compras si el Gestor se lo concede.
         self.assertIn("purchase_receive", self._rol("Almacenista").capacidades)
-        self.assertNotIn("purchase_receive", self._rol("Gerente general").capacidades)
-        self.assertNotIn("purchase_receive", self._rol("Gerente tecnico").capacidades)
+        self.assertNotIn("purchase_receive", self._rol("Gerente Comercial").capacidades)
+        self.assertNotIn("purchase_receive", self._rol("Gerente Tecnico").capacidades)
         self.assertNotIn("purchase_receive", self._rol("Compras").capacidades)
 
     def test_the_warehouse_still_cannot_write_orders(self):

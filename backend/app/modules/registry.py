@@ -292,7 +292,7 @@ CAPACIDADES = (
     Capacidad("project_authorization", "Autorizar proyectos", "operaciones", menu="hidden"),
     Capacidad("project_execution", "Ejecutar proyectos en taller", "operaciones", menu="hidden"),
     # Ver TODOS los proyectos -con prioridad, costo y estado de cobro- sin poder
-    # autorizarlos ni escribirlos: el Gerente general. Es el "ver" de
+    # autorizarlos ni escribirlos: el Gerente Comercial. Es el "ver" de
     # `project_authorization` dicho aparte, para conceder uno sin el otro; quien
     # autoriza ya ve todo y no necesita esta.
     Capacidad("project_oversight", "Ver todos los proyectos", "operaciones", menu="hidden"),
@@ -537,7 +537,7 @@ ROLES = (
     # Las filas de quien ya era "Gerente" no se tocan -el Gestor manda-: esa
     # cuenta pasa a ser el tecnico (ver 20261021090000) y el general se siembra
     # nuevo.
-    Rol(9, "Gerente general", {
+    Rol(9, "Gerente Comercial", {
         "operaciones": CONSULTA, "facturacion": CONSULTA, "crm": CONSULTA,
         "inventario": CONSULTA, "rh": CONSULTA, "logistica": CONSULTA,
         "compras": CAPTURA, "configuracion": CONSULTA,
@@ -546,7 +546,7 @@ ROLES = (
     # El tecnico es de CAMPO: autoriza, deniega y bloquea proyectos y los edita, y
     # pide material con prevales (`warehouse_prevoucher`). De compras y almacen solo
     # consulta; sin facturacion, CRM, RH ni logistica.
-    Rol(3, "Gerente tecnico", {
+    Rol(3, "Gerente Tecnico", {
         "operaciones": EDITAR, "inventario": CONSULTA, "compras": CONSULTA,
         "configuracion": CONSULTA,
     }, ["project_authorization", "incident_supervision", "warehouse_prevoucher"]),

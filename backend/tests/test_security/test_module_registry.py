@@ -290,8 +290,8 @@ class TestMatrizDePermisos(unittest.TestCase):
         autorice.
         """
         taller = next(r for r in registry.ROLES if r.nombre == "Jefe de taller")
-        gerente = next(r for r in registry.ROLES if r.nombre == "Gerente tecnico")
-        general = next(r for r in registry.ROLES if r.nombre == "Gerente general")
+        gerente = next(r for r in registry.ROLES if r.nombre == "Gerente Tecnico")
+        general = next(r for r in registry.ROLES if r.nombre == "Gerente Comercial")
 
         self.assertIn("project_execution", taller.capacidades)
         self.assertNotIn("project_authorization", taller.capacidades)

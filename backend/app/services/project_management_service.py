@@ -263,7 +263,7 @@ def _ve_lo_comercial(db, user_data: dict) -> bool:
     """Ve `priority`, `total_cost` y el estado de cobro (sin poder escribirlos).
 
     Quien autoriza los ve y los escribe (`_tiene_alcance_comercial`); quien solo
-    supervisa (`project_oversight`, Gerente general) los ve y nada mas.
+    supervisa (`project_oversight`, Gerente Comercial) los ve y nada mas.
     """
     return (_tiene_alcance_comercial(db, user_data)
             or _scope_name(db, user_data) == "oversight")

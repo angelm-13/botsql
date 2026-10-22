@@ -1,4 +1,4 @@
--- El Gerente general (revision) lee los vales y el almacen sin poder levantarlos
+-- El Gerente Comercial (revision) lee los vales y el almacen sin poder levantarlos
 -- ni autorizarlos: una fila `warehouse_voucher` con solo `scope_read`. No va en el
 -- registro porque los bits de una capacidad son uno solo para todo el que la
 -- tenga (ver el comentario de ROLES); mismo trato que tuvo Gerente en
@@ -29,7 +29,7 @@ IF EXISTS (
     LEFT JOIN entity_permission referencia ON referencia.id_permission = almacenista.id_permission
                                             AND referencia.entity_name = 'warehouse_voucher'
                                             AND referencia.deletion_date IS NULL
-    WHERE general.permission_description = 'Gerente general' AND general.deletion_date IS NULL
+    WHERE general.permission_description = 'Gerente Comercial' AND general.deletion_date IS NULL
     ON CONFLICT (id_permission, entity_name) DO NOTHING;
 END IF;
 END $$;
