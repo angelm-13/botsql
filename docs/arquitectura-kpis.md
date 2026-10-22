@@ -206,7 +206,10 @@ con datos); aplica `limite_categorias` después de combinar (`:231-233`).
 - `colorDeKpi(id)` = `CATEGORICAL[id % 8]` (`kpiDatos.js:78`); override por
   widget en `parametros.colores_kpi`.
 - Un widget guarda `tipo_grafica` + `parametros` (JSONB) + KPIs en la tabla
-  puente `kpi_dashboard_widget_kpi`.
+  puente `kpi_dashboard_widget_kpi`. Dos llaves de `parametros` se agregaron el 2026-10-22, ambas aditivas (un widget sin ellas se ve igual que antes):
+  `id_teams` (filtro por equipos, ver §2.7 «Equipo en el momento de la marca») y `titulo` (título propio de la tarjeta: texto de una línea, recortado,
+  **máximo 80 caracteres**, **sin HTML**; lo valida `_validar_parametros` —400 si no cabe o trae etiquetas— y lo muestra `tituloDeWidget()`, que usan la tarjeta y la vista previa;
+  el PDF captura las tarjetas, así que lo hereda). Si `armarParametros` o `estadoDeWidget` olvidan una llave, editar el widget y guardarlo la borra: las dos la conservan (con prueba).
 - El selector de KPI arma sus pestañas con `pestanaDeKpi(kpi)` = `kpi.grupo || kpi.modulo`
   (`kpiSelector.js`). `kpi.modulo` sigue siendo el módulo real y es lo que leen licencias,
   permisos y filtros; `grupo` solo decide en qué pestaña se muestra (§2.7).
@@ -830,14 +833,49 @@ Ampliado el 2026-10-21: pestaña «Asistencias» en el selector de KPI (ver «Pe
 `catalogo`, **no** `abierta`: son pocos y el Dashboard no los agrupa en «Otros»).
 
 - Una persona en **dos equipos cuenta en cada uno**.
-- Una persona **sin equipo vigente** (sin membresía, o solo con membresías o equipos dados de baja) sale en una fila propia, **«Sin equipo»**
+- Una persona **sin equipo en ese momento** (sin membresía, o solo con membresías o equipos dados de baja) sale en una fila propia, **«Sin equipo»**
   (la consulta emite entidad `None`; los cuatro KPIs por equipo declaran `sin_asignar=True`, `_totales()` la agrupa bajo la llave `sin_asignar` y la dimensión `equipo` la rotula «Sin equipo» con `etiqueta_sin_asignar`), y **no cuenta en ningún equipo**; quien
   tiene equipo nunca cuenta en «Sin equipo». La condición es un `NOT EXISTS` (`_tiene_equipo()`) y no un `LEFT JOIN`: con el `LEFT JOIN`, quien tiene un
   equipo vigente y otro dado de baja saldría también como «sin equipo». La fila sale **siempre, con su cero**. El KPI de tiempo trabajado no depende del equipo.
-- Las membresías y los equipos con baja no cuentan.
+- Las membresías y los equipos con baja **ya no cuentan desde su baja**, pero cuentan en los días anteriores: ver «Equipo en el momento de la marca».
 - Por eso **los KPIs por equipo no son aditivos entre equipos**: el `total` que `_totales()` suma contaría dos veces a quien está en dos.
   El registro no tiene una marca de «no aditivo»; la mitigación es que todos los KPIs de checadas solo permiten **barras** (un valor por equipo; la
   barra no usa el `total`, el «número» y la serie por periodo sí). Si algún día se permiten otras gráficas, hay que agregar esa marca.
+
+### Equipo en el momento de la marca (2026-10-22)
+
+**Regla.** Cada marca cuenta en el equipo que la persona tenía **en ese instante**, no en el de hoy: quien pasa del equipo A al B el miércoles conserva el lunes y el
+martes en A. Una membresía rige si `creation_date <= instante < deletion_date` (`deletion_date` nula = sigue vigente) y el equipo no estaba de baja todavía
+(`instante < team.deletion_date`); el intervalo es semiabierto: en el instante exacto de la baja ya es del siguiente. Vive en **un solo lugar**,
+`membresia_vigente_en()` (`checadas.py`); `equipos_de_la_persona_en(session, id_user, instante_pared)` es el mismo criterio por persona e instante.
+
+**Zona horaria.** `incident_date` y `close_date` son hora de pared GMT-6 sin zona; `creation_date` y `deletion_date` son UTC. Antes de comparar se convierte la hora de pared
+a UTC (`pared_a_utc` en Python, `hora_pared_a_utc` en SQL, ambas en `app/utils/tiempo.py`); sin esa conversión una marca de las 20:00 en México se compararía como las 20:00 UTC, seis horas antes de lo que pasó
+(pruebas en las 18:00 de México = medianoche UTC y en la medianoche local).
+
+**Qué instante usa cada KPI.**
+
+| KPI | Instante | Equipo |
+|---|---|---|
+| `checadas_entradas_por_equipo` | `incident_date` de cada checada | el que la persona tenía al marcar la entrada |
+| `checadas_salidas_por_equipo` | `close_date` de cada checada | el que tenía al marcar la **salida** (puede ser otro que el de la entrada) |
+| `checadas_en_turno_por_equipo`, `checadas_sin_salida_por_equipo` | ahora (fotos) | el **vigente hoy**: solo se mira que membresía y equipo no estén de baja |
+| `horas_trabajadas_por_empleado`, `checadas_con_duracion_anomala`, `checadas_en_turno_por_empleado` | — | no dependen del equipo (el filtro `id_teams` los atribuye por día, abajo) |
+
+**Filas con cero.** Los equipos de las filas de entradas y salidas son los que **existieron en el rango** (`_equipos_del_rango`), y cada uno solo hasta el día local de su baja: un equipo dado de baja a media semana conserva
+los días en que existió, y uno dado de baja antes del rango no aparece. Las fotos siguen emitiendo una fila por equipo **vigente** (hoy).
+
+**Filtro `id_teams` en un KPI por persona** (`persona_en_equipos_el_dia`). Los snapshots son por persona y por día y no guardan a qué hora ocurrió cada cosa, así que un día cuenta para el equipo que la persona tenía **al
+terminarlo** (o ahora, si es hoy): es la misma regla evaluada en el último instante del día, escrita con días locales; una prueba comprueba que coinciden en una matriz de bordes. Quien pasa de T1 a T2 el miércoles a las 9:00
+queda en T1 el lunes y el martes y en T2 desde el miércoles **completo**. *Decisión mía, por confirmar:* la alternativa era contar el día del cambio en los dos equipos. Es una condición más que se suma al alcance del actor (`condiciones_extra` de `_totales`): sigue recortando y nunca amplía.
+
+**Altas y bajas (sin tablas ni columnas nuevas).** Equipos y membresías se **dan de baja** (`deletion_date`), no se borran (`services/baja_logica.py`, solo para `team` y `nm_team_user`; el `delete` global no cambia).
+La baja de un equipo da de baja sus membresías vigentes en el mismo instante. Volver a agregar a alguien a un equipo del que se le dio de baja crea una membresía **nueva** y la anterior queda como historia. Para eso se cambió
+`uq_nm_team_user UNIQUE (id_team, id_user)` por el índice único **parcial** `uq_nm_team_user_vigente ... WHERE deletion_date IS NULL` (excepción puntual a la regla de «sin índices», autorizada por Aurora; ver `mapa-entidades-kpis.md` §8).
+El nombre de un equipo es único entre los vigentes (409, sin importar mayúsculas ni espacios de los lados); `GET /team/options` da id y nombre de los vigentes sin permiso de entidad (sesión obligatoria).
+
+**Consecuencia que conviene saber.** La atribución usa `creation_date` de la membresía. Un equipo recién armado **no reescribe el pasado**: las marcas anteriores a la alta de la persona en el equipo cuentan en «Sin equipo», y no hay pantalla para
+fechar una membresía hacia atrás (haría falta una columna «desde» o editar `creation_date` a mano). Está pendiente de decidir con Alan/Aurora cómo se quiere cargar el historial de Comala.
 
 ### Umbral
 
@@ -902,7 +940,7 @@ Las fotos **no filtran por día calendario**, solo por antigüedad: una entrada 
 - **«Nocturna» es 01:00 UTC = 19:00 de México** (ventana de 7 días; ver §2.1.1). Consecuencias: una salida o un cierre capturados a las 20:00 se cuentan en horas
   y anomalías hasta las 19:00 del día siguiente; y las filas de entradas/salidas de un día ya terminado (D) se completan hasta las 19:00 del día D+1: entre medianoche y esa hora
   solo traen lo que escribió la última corrida de 5 minutos de D, **salvo en la primera hora local**, en que la corrida de 5 minutos las completa (ver «Implementado: la primera hora local incluye ayer»).
-- **Cada equipo vigente sale con su cero.** El upsert (`ON CONFLICT … DO UPDATE`) solo actualiza lo que la consulta devuelve: si un
+- **Cada equipo sale con su cero** (en las fotos, los vigentes; en entradas y salidas, los que existieron en el rango, hasta su día de baja). El upsert (`ON CONFLICT … DO UPDATE`) solo actualiza lo que la consulta devuelve: si un
   equipo pasa de 3 personas a 0 y no saliera, conservaría el 3. Lo mismo vale para «Sin equipo» y, en entradas y salidas, para **cada día del rango**
   (cancelar la única entrada del día debe bajarla a 0), y en el KPI por persona para quien ya salió de turno (candidatos: quien tiene una checada desde 12 h antes de que
   comenzara hoy; se calculan sin mirar si se canceló o se borró).
@@ -974,8 +1012,10 @@ pasada queda **redundante pero inofensiva**: recalcula lo mismo que la nocturna,
 
 - Los KPIs por equipo **no son «persona»**: siguen la regla de siempre, solo los ve quien tiene alcance **Todos** (403 con motivo `scope` para
   Propios y Mis grupos). No se relajó. Relajarla para «Mis grupos» (que viera sus propios equipos) es una decisión aparte.
-- `GET /kpi_snapshot/query` acepta `id_teams` (lista de `id_team`): en un KPI por empleado deja a los miembros de esos equipos; en uno por equipo, esos
-  equipos; en cualquier otro no aplica. Va **después** del alcance del actor, así que solo recorta. **El Dashboard todavía no lo manda**: es solo API.
+- `GET /kpi_snapshot/query` acepta `id_teams` (lista de `id_team`): en un KPI por empleado deja, **cada día**, a quienes estaban en esos equipos ese día (ver «Equipo en el momento de la marca»); en uno por equipo, esos
+  equipos; en cualquier otro no aplica. Va **después** del alcance del actor, así que solo recorta. **El editor del Dashboard ya lo manda** (2026-10-22): paso 3 «Filtros», selector múltiple con los equipos de
+  `GET /team/options`, para los KPIs por equipo y por persona; se guarda en `parametros.id_teams` y se envía en los dos puntos que consultan `/kpi_snapshot/query` (la tarjeta y la mini-tendencia del número).
+  Al elegir equipos desaparece la fila «Sin equipo» (lo dice el texto de ayuda). Un paso 3 sin ningún filtro aplicable dice «Este KPI no tiene filtros» en vez de quedar en blanco.
 
 ### Pestaña «Asistencias» en el selector (2026-10-21)
 
@@ -1020,7 +1060,8 @@ con `scripts/exportar_catalogo_kpis.py`. La clave de un grupo no puede coincidir
 
 «Marcas fuera de radio» y «llegadas tarde» (no hay turnos, horarios ni descansos en el modelo: llegar tarde exigiría tablas nuevas). La asignación de los KPIs a un rol de Comala (`adm_asistencias`):
 se hace a mano en `/kpi_permissions` o con el perfil `comala` de `scripts/seed_kpi_permissions.py` (escrito el 2026-10-20: `adm_asistencias`, `acotado_a_proyecto=False`, los siete KPIs; probado con `validar` y con el `--dry-run` sobre la base de la prueba; **no se ha corrido contra ninguna base**; corre siempre primero `python -m scripts.seed_kpi_permissions --perfil comala --dry-run`).
-Sin esa asignación, ningún rol que no sea superusuario ve los siete KPIs de checadas. Los KPIs por equipo además exigen alcance **Todos** (ver arriba), y los de `alcance_proyecto=False` solo se pueden dar a un rol **no acotado a proyecto** (`acotado_a_proyecto=False`).
+Sin esa asignación, ningún rol que no sea superusuario ve los siete KPIs de checadas.
+**Permisos para que `adm_asistencias` abra `/team`: solo hay propuesta, no se aplicó nada.** Falta `team` (y `nm_team_user`, que el Gestor oculta: está en `INTERNAL_PERMISSION_ENTITIES` de `RolePermissionManagerPage.jsx` y la API lo exige), y la pantalla pide `GET /user/` (permiso `user`, el catálogo de RH). La propuesta (qué filas dar, cómo, y por qué conviene que la pantalla use `GET /user/options` en vez de pedir `user`) se entregó aparte, pendiente de decisión. Los KPIs por equipo además exigen alcance **Todos** (ver arriba), y los de `alcance_proyecto=False` solo se pueden dar a un rol **no acotado a proyecto** (`acotado_a_proyecto=False`).
 
 ---
 

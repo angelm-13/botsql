@@ -57,6 +57,48 @@ done
 
 `limpiar` borra lo marcado y confirma con un conteo que quedó en cero. Si algo falla a medias, vuelve a correr `limpiar`.
 
+## `receta_equipos.py`: equipos con baja lógica, historia, filtro y título propio
+
+Comprueba, **por la API real** (cliente de Flask con un token de superusuario) y con las consultas reales, lo del lote 6. Siembra dos equipos, **«Manzanillo 1» y «Culiacán prueba»** (así, con acento), y una persona (`990101`) que
+**pasa del uno al otro**: la API la da de alta en Manzanillo, la da de baja de ahí (baja lógica) y la agrega a Culiacán (membresía **nueva**). Como eso acaba de pasar hoy, lo único que se escribe a mano (SQL) es la
+fecha de las membresías, para que el cambio haya sido a las 09:00 de «hace 2 días». Siembra 5 checadas en los 4 días previos a hoy (todas de días completos, así que no depende de la hora a la que corras) y recalcula los snapshots.
+
+| Día | Checada | Equipo que se espera |
+|---|---|---|
+| hace 4 días | 10:00–18:00 | Manzanillo 1 |
+| hace 3 días | 10:00–18:00 | Manzanillo 1 |
+| hace 2 días (día del cambio) | 08:00–08:30, antes de las 09:00 | Manzanillo 1 |
+| hace 2 días (día del cambio) | 10:00–17:00, después de las 09:00 | Culiacán prueba |
+| hace 1 día | 10:00–18:00 | Culiacán prueba |
+
+Subcomandos: `sembrar`, `verificar` (no escribe), `dar_de_baja_equipo` (da de baja «Culiacán prueba» **por la API** y comprueba que la historia sigue en pie) y `limpiar`. Verifica, en este orden: la baja es lógica
+(la membresía vieja sigue, la nueva es otra fila, los listados solo traen lo vigente); cada marca cuenta en el equipo de **ese momento** (con los bordes: un minuto antes del cambio y el instante exacto); lo mismo por la API
+`/kpi_snapshot/query`, con la etiqueta de cada equipo; el filtro `id_teams` en un KPI por persona (minutos de los días de A, de B, la unión sin contar dos veces y sin filtro); y el título propio (recortado al guardar,
+rechazado con 400 si pasa de 80 caracteres o trae HTML, y lo guardado no cambia).
+
+**Corre solo sobre una copia.** `sembrar` recalcula los snapshots de varios KPIs (también los de «Sin equipo» y de otra gente) y `limpiar` no los puede deshacer. Desde la raíz del repo, con el stack arriba:
+
+```bash
+# 1. Copia (tyakxa_erp no se modifica; solo se lee) y migraciones al dia sobre la copia
+docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d postgres -c "CREATE DATABASE tyakxa_verif" \
+  && pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" | psql -U "$POSTGRES_USER" -d tyakxa_verif -q'
+docker compose run --rm --no-deps -T -e PGDATABASE=tyakxa_verif db-migrate
+
+# 2. Sembrar, verificar y dar de baja un equipo, apuntando a la copia
+for paso in sembrar verificar dar_de_baja_equipo; do
+  docker compose run --rm --no-deps -T \
+    -e DB_NAME=tyakxa_verif -e RECETA_BASE_ESPERADA=tyakxa_verif -e PYTHONPATH=/app \
+    -v "$PWD/docs/verificaciones/receta_equipos.py:/receta_equipos.py:ro" \
+    --entrypoint python backend /receta_equipos.py "$paso"
+done
+
+# 3. Borrar la copia
+docker compose exec -T db sh -c 'psql -U "$POSTGRES_USER" -d postgres -c "DROP DATABASE tyakxa_verif"'
+```
+
+Resultado esperado (corrida del 2026-10-22 sobre una copia de `tyakxa_erp`): `verificar` termina en `RESULTADO: 23/23 OK` y `dar_de_baja_equipo` en `RESULTADO: 9/9 OK`. El paso `db-migrate` deja la copia con el esquema que se va a desplegar (incluido el índice parcial de `nm_team_user`); esta receta no vuelve a agregar a nadie al mismo equipo, así que también corre sin él, pero entonces
+no prueba el esquema nuevo (con el índice viejo, esa alta repetida falla: lo cubren las pruebas automáticas, no esta receta). Cada línea es `OK` o `MAL` con lo esperado y lo obtenido; el esperado sale del diseño de la tabla de arriba, no de la implementación.
+
 ## Cómo leer el resultado
 
 - Cada línea es `OK` o `MAL` con lo esperado y lo obtenido; el final dice `RESULTADO: n/n OK`.
