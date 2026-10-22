@@ -177,6 +177,8 @@ Sin tablas nuevas: una checada es una fila de `incident`. Detalle y decisiones e
 | Parque | `team` | `id_team`, `team_description`, `deletion_date` | Equipo = parque | `equipo` (`id_team`, catálogo cerrado) |
 | Pertenencia | `nm_team_user` | `id_team`, `id_user`, `deletion_date` | Una persona en dos equipos cuenta en cada uno. Sin equipo vigente (sin membresía, o solo con membresías/equipos dados de baja) sale en la fila **«Sin equipo»** (entidad `None`, `sin_asignar=True`, etiqueta de la dimensión `equipo`) y no cuenta en ningún equipo | — |
 
+**Unicidad de la pertenencia (cambio de esquema, 2026-10-22).** `nm_team_user` tenía `uq_nm_team_user UNIQUE (id_team, id_user)` sobre **todas** las filas, también las de baja; eso impedía volver a agregar a una persona a un equipo del que ya se le había dado de baja, y la única salida (reactivar la fila vieja) falsea el histórico (A → B → A). Ahora es el índice único **parcial** `uq_nm_team_user_vigente ON nm_team_user (id_team, id_user) WHERE deletion_date IS NULL`: no hay dos membresías **vigentes** iguales, y cada periodo en un equipo es su propia fila con su `creation_date` y su `deletion_date`. Migración `20261022100000_unicidad_nm_team_user_solo_vigentes.sql` (idempotente: `DROP CONSTRAINT IF EXISTS` + `CREATE UNIQUE INDEX IF NOT EXISTS`) y el mismo índice en `__table_args__` de `NmTeamUser`, con su equivalente en SQLite. Sin tablas ni columnas nuevas. Excepción puntual, autorizada por Aurora a la regla de «sin índices ni migraciones»; **pendiente de comentar con Alan**. Para revertirla: restaurar el constraint, lo que vuelve a prohibir la alta repetida.
+
 | Umbral | Valor |
 |---|---|
 | «En turno» | checada abierta con **menos** de 12 h (`UMBRAL_SIN_SALIDA_HORAS`) |
