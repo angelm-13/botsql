@@ -40,6 +40,22 @@ class TeamService(BajaLogicaMixin, CrudService):
                 raise AppError('errors.team_name_duplicate', status_code=409, meta={'field': 'team_description'})
 
     @classmethod
+    def options(cls) -> list[dict]:
+        """Solo id+nombre de los equipos VIGENTES, para el selector de equipos de un grafico del Dashboard.
+
+        A proposito no exige el permiso de lectura de `team` (modulo `seguridad`): quien arma un grafico elige
+        equipos sin administrar el catalogo de equipos ni ver a sus miembros. Igual que `/user/options`.
+        """
+        with transaction_context() as session:
+            filas = (
+                session.query(Team.id_team, Team.team_description)
+                .filter(Team.deletion_date.is_(None))
+                .order_by(Team.team_description, Team.id_team)
+                .all()
+            )
+            return [{'id_team': fila[0], 'team_description': fila[1]} for fila in filas]
+
+    @classmethod
     def create(cls, payload: dict, user_id: int | None = None):
         payload = cls._limpio(payload)
         cls._rechazar_nombre_repetido(payload.get('team_description'))
