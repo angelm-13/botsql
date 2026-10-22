@@ -290,11 +290,15 @@ class TestMatrizDePermisos(unittest.TestCase):
         autorice.
         """
         taller = next(r for r in registry.ROLES if r.nombre == "Jefe de taller")
-        gerente = next(r for r in registry.ROLES if r.nombre == "Gerente")
+        gerente = next(r for r in registry.ROLES if r.nombre == "Gerente tecnico")
+        general = next(r for r in registry.ROLES if r.nombre == "Gerente general")
 
         self.assertIn("project_execution", taller.capacidades)
         self.assertNotIn("project_authorization", taller.capacidades)
         self.assertIn("project_authorization", gerente.capacidades)
+        # El general ve todo y no autoriza.
+        self.assertNotIn("project_authorization", general.capacidades)
+        self.assertIn("project_oversight", general.capacidades)
 
     def test_no_role_exists_only_to_carry_one_capability(self):
         """Un rol que no concede ningun modulo propio es el mismo derecho dicho dos veces.

@@ -486,6 +486,33 @@ class TestProjectWorkflowService(BackendTestCase):
 
         self.assertIn(borrador, {p["id_proyect"] for p in list_projects(self.manager)["items"]})
 
+    def test_the_general_manager_sees_everything_but_authorizes_nothing(self):
+        """`project_oversight` (Gerente general): ve todos los proyectos y su
+        parte comercial, pero ninguna transicion de gerencia es suya."""
+        general = {"id_user": 81, "id_permission": 801}
+        with transaction_context() as db:
+            db.add(EntityPermission(id_permission=801, entity_name="project_oversight",
+                                    scope_read=4, created_by=81))
+        borrador = self._create(self.supervisor, "Borrador")["id_proyect"]
+        update_project(borrador, {"total_cost": "500"}, self.manager)
+
+        visto = {p["id_proyect"]: p for p in list_projects(general)["items"]}
+        self.assertIn(borrador, visto)
+        self.assertEqual("500.00", f"{visto[borrador]['total_cost']:.2f}")
+
+        for accion in (
+            lambda: transition_project(borrador, {"status": "submitted"}, general),
+            lambda: transition_management(borrador, {"management_status": "autorizado"}, general),
+        ):
+            with self.assertRaises(AppError) as raised:
+                accion()
+            self.assertEqual("errors.permission_denied", raised.exception.message_key)
+
+        # Escribir el costo es de quien autoriza: el del general se descarta.
+        update_project(borrador, {"total_cost": "1"}, general)
+        visto = {p["id_proyect"]: p for p in list_projects(general)["items"]}
+        self.assertEqual("500.00", f"{visto[borrador]['total_cost']:.2f}")
+
     def test_starting_tells_the_workshop_who_took_the_project(self):
         from app.models.notification import Notification
 

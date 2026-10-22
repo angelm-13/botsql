@@ -64,7 +64,7 @@ class BaseEstadoDoble(BackendTestCase):
         """Un producto con el estado dado. Se escribe directo en la base: el alta
         pasa por la fabrica de pruebas, que rellena ambos campos con basura."""
         id_producto = ProductService.create(build_payload(
-            ProductService, {"created_by": 1, "descripcion": "herramienta", "cantidad": 0}
+            ProductService, {"created_by": 1, "descripcion": "herramienta", "cantidad": 1}
         ))["id_product"]
         with transaction_context() as db:
             producto = db.get(Product, id_producto)

@@ -291,6 +291,11 @@ class Capacidad:
 CAPACIDADES = (
     Capacidad("project_authorization", "Autorizar proyectos", "operaciones", menu="hidden"),
     Capacidad("project_execution", "Ejecutar proyectos en taller", "operaciones", menu="hidden"),
+    # Ver TODOS los proyectos -con prioridad, costo y estado de cobro- sin poder
+    # autorizarlos ni escribirlos: el Gerente general. Es el "ver" de
+    # `project_authorization` dicho aparte, para conceder uno sin el otro; quien
+    # autoriza ya ve todo y no necesita esta.
+    Capacidad("project_oversight", "Ver todos los proyectos", "operaciones", menu="hidden"),
     # Confirmar que el material de un proyecto autorizado esta por llegar o ya
     # llego: los dos pasos `authorized -> waiting_material` y
     # `waiting_material -> in_progress`. Quien COMPRA sabe cuando llega lo que
@@ -521,12 +526,30 @@ ROLES = (
     # captura en `compras` para poder fijar esos montos y comprar lo que Compras no
     # puede. La separacion con quien pide la orden la hace el servicio -autorizar la
     # propia no se puede-, no el permiso.
-    Rol(3, "Gerente", {
-        "operaciones": EDITAR, "facturacion": CAPTURA, "crm": CAPTURA,
+    #
+    # Gerencia son DOS roles (2026-10-21). El general es de REVISION: ve el estado
+    # de los proyectos, los vales, el almacen y lo comercial, todo en consulta, y
+    # solo aprueba las compras (por eso `compras` en CAPTURA: autorizar una orden
+    # la escribe). No autoriza proyectos, no surte ni pide material. Los vales los
+    # lee con una fila de solo lectura (ver 20261021110000): `Capacidad.bits` es
+    # uno solo para todo el que la tenga y daria de mas.
+    #
+    # Las filas de quien ya era "Gerente" no se tocan -el Gestor manda-: esa
+    # cuenta pasa a ser el tecnico (ver 20261021090000) y el general se siembra
+    # nuevo.
+    Rol(9, "Gerente general", {
+        "operaciones": CONSULTA, "facturacion": CONSULTA, "crm": CONSULTA,
         "inventario": CONSULTA, "rh": CONSULTA, "logistica": CONSULTA,
         "compras": CAPTURA, "configuracion": CONSULTA,
-    }, ["project_authorization", "incident_supervision", "pos_admin", "pos_terminal",
-        "purchase_planning", "purchase_authorize", "purchase_receive"]),
+    }, ["project_oversight", "incident_supervision", "purchase_authorize"]),
+
+    # El tecnico es de CAMPO: autoriza, deniega y bloquea proyectos y los edita, y
+    # pide material con prevales (`warehouse_prevoucher`). De compras y almacen solo
+    # consulta; sin facturacion, CRM, RH ni logistica.
+    Rol(3, "Gerente tecnico", {
+        "operaciones": EDITAR, "inventario": CONSULTA, "compras": CONSULTA,
+        "configuracion": CONSULTA,
+    }, ["project_authorization", "incident_supervision", "warehouse_prevoucher"]),
 
     # Ve los proyectos autorizados y mueve su estatus en el taller.
     Rol(4, "Jefe de taller", {

@@ -259,6 +259,16 @@ def _tiene_alcance_comercial(db, user_data: dict) -> bool:
     return _scope_name(db, user_data) in {"authorization", "unrestricted"}
 
 
+def _ve_lo_comercial(db, user_data: dict) -> bool:
+    """Ve `priority`, `total_cost` y el estado de cobro (sin poder escribirlos).
+
+    Quien autoriza los ve y los escribe (`_tiene_alcance_comercial`); quien solo
+    supervisa (`project_oversight`, Gerente general) los ve y nada mas.
+    """
+    return (_tiene_alcance_comercial(db, user_data)
+            or _scope_name(db, user_data) == "oversight")
+
+
 def _require_management_scope(db, user_data: dict) -> None:
     """Candado de rol compartido por todo el recorrido de GERENCIA.
 
@@ -629,6 +639,8 @@ def _scope_name(db, user_data: dict) -> str:
         return "unrestricted"
     if _has_capability(db, user_data, "project_authorization"):
         return "authorization"
+    if _has_capability(db, user_data, "project_oversight"):
+        return "oversight"
     if _has_capability(db, user_data, "project_execution"):
         return "execution"
     return "ownership"
@@ -701,8 +713,8 @@ def _scoped_query(db, user_data: dict):
                 ),
             )
         )
-    elif scope == "authorization":
-        # Quien autoriza ve todo, y ademas lo que lidera.
+    elif scope in {"authorization", "oversight"}:
+        # Quien autoriza (o supervisa sin autorizar) ve todo.
         return query
     return query
 
@@ -759,7 +771,7 @@ def _get_visible_project(db, project_id, user_data: dict, *, for_update=False) -
 
 def visible_project_ids(user_data: dict) -> list[int] | None:
     with transaction_context() as db:
-        if _scope_name(db, user_data) in {"unrestricted", "authorization"}:
+        if _scope_name(db, user_data) in {"unrestricted", "authorization", "oversight"}:
             return None
         return [row[0] for row in _scoped_query(db, user_data).with_entities(Proyect.id_proyect).all()]
 
@@ -893,7 +905,7 @@ def list_projects(user_data: dict, *, page=1, per_page=20, filters=None, sort=No
                 raise AppError("errors.invalid_field", 400, {"field": "proyect_status"})
             query = query.filter(Proyect.proyect_status == status)
         owner = _safe_int(filters.get("created_by"))
-        if owner and _scope_name(db, user_data) in {"unrestricted", "authorization"}:
+        if owner and _scope_name(db, user_data) in {"unrestricted", "authorization", "oversight"}:
             query = query.filter(Proyect.created_by == owner)
         customer = _safe_int(filters.get("id_customer_supplier"))
         if customer:
@@ -939,7 +951,7 @@ def list_projects(user_data: dict, *, page=1, per_page=20, filters=None, sort=No
         # El estado de cobro es Gerencia-only, igual que `priority`/`total_cost`
         # (ver `_project_payload`): sin ese alcance, ni se molesta en sumar lo
         # cobrado de cada proyecto de la pagina.
-        gerente_visible = _tiene_alcance_comercial(db, user_data)
+        gerente_visible = _ve_lo_comercial(db, user_data)
         collected_by_project: dict = {}
         if gerente_visible and project_ids:
             collected_by_project = dict(db.execute(
@@ -1025,7 +1037,7 @@ def get_project_detail(project_id, user_data: dict) -> dict:
         resumen_pagos = _resumen_de_pagos(pagos)
         payload = _project_payload(
             project, events,
-            gerente_visible=_tiene_alcance_comercial(db, user_data),
+            gerente_visible=_ve_lo_comercial(db, user_data),
             collected_total=resumen_pagos["collected_total"],
         )
         payload["tasks"] = [task.serialize() for task in tasks]
