@@ -777,6 +777,9 @@ def visible_project_ids(user_data: dict) -> list[int] | None:
 
 
 def require_project_access(project_id, user_data: dict) -> None:
+    # Sin proyecto no hay "no encontrado": falta el dato (antes daba 404).
+    if project_id in (None, ""):
+        raise AppError("errors.required_field", 400, {"field": "id_proyect"})
     with transaction_context() as db:
         _get_visible_project(db, project_id, user_data)
 

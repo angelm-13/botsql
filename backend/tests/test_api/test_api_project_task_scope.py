@@ -91,6 +91,14 @@ class TestProjectTaskScopeApi(BackendTestCase):
             self.assertEqual(response.status_code, 404)
             self.assertEqual(self.json(response)["error_key"], "errors.resource_not_found")
 
+    def test_creating_a_task_without_a_project_says_the_project_is_missing(self):
+        """Sin `id_proyect` el error es de dato faltante (400), no "no encontrado" (404)."""
+        for body in ({"task_description": "t"}, {"task_description": "t", "id_proyect": ""}):
+            response = self._request(self.owner, "POST", "/task/", body)
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(self.json(response)["error_key"], "errors.required_field")
+            self.assertEqual(self.json(response)["meta"]["field"], "id_proyect")
+
     def test_task_note_list_and_crud_are_owner_scoped(self):
         listing = self._request(self.owner, "GET", "/task_note/?page=1&per_page=20")
         self.assertEqual(listing.status_code, 200)
