@@ -9,10 +9,15 @@ El criterio de checada vive en UN lugar, `es_checada()`; las consultas de este a
 vengan, como "marcas fuera de radio") lo reutilizan en vez de repetirlo.
 
 Equipo = parque. La relacion es `incident.id_user` -> `nm_team_user` -> `team`. Una persona puede
-estar en varios equipos y cuenta en CADA uno. Una persona SIN equipo vigente (sin membresia, o solo
-en equipos dados de baja) sale en una fila propia, "Sin equipo" (`sin_asignar=True`), y NO cuenta en
+estar en varios equipos y cuenta en CADA uno. Una persona SIN equipo (sin membresia, o solo en
+equipos dados de baja) sale en una fila propia, "Sin equipo" (`sin_asignar=True`), y NO cuenta en
 ningun equipo; quien tiene equipo nunca cuenta en "Sin equipo". Por eso estos KPIs NO se pueden
 sumar entre equipos: ver `graficas_permitidas` mas abajo.
+
+CADA MARCA cuenta en el equipo que la persona tenia EN ESE MOMENTO, no en el que tiene hoy: una persona
+que pasa del equipo A al B el miercoles conserva el lunes y el martes en A. La membresia cubre desde su
+`creation_date` hasta su `deletion_date` (nula = sigue vigente). La regla vive en UN lugar,
+`membresia_vigente_en()`; las fotos de "ahora" (en turno, sin salida) usan el equipo vigente hoy.
 
 Tiempo. `incident_date` y `close_date` son hora de pared del negocio (GMT-6) SIN zona; `creation_date`
 es UTC y aqui no se usa. "Ahora", "hoy" y la antiguedad salen de `app.utils.tiempo.ahora_negocio()`,
@@ -22,7 +27,7 @@ nunca de `now()` en UTC: el dia UTC cambia a las 18:00 de Mexico y ahi se equivo
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from sqlalchemy import Date, exists, func, or_, select, type_coerce
@@ -30,7 +35,8 @@ from sqlalchemy import Date, exists, func, or_, select, type_coerce
 from app.models.incident import Incident
 from app.models.nm_team_user import NmTeamUser
 from app.models.team import Team
-from app.utils.tiempo import ahora_negocio
+from app.models.user import User
+from app.utils.tiempo import ahora_negocio, dia_local, hora_pared_a_utc, pared_a_utc, rango_utc_de_dias, utc_a_pared
 
 # Una checada abierta cuenta como "en turno" mientras lleve MENOS de este tiempo abierta; con esto o mas
 # es "sin salida" (se olvido de marcar). Una entrada exactamente a 12 horas ya es "sin salida".
@@ -77,6 +83,85 @@ def _dia(columna):
     return type_coerce(func.date(columna), Date)
 
 
+# --- equipo: a cual pertenecia una persona, y cuando -----------------------------------------------
+
+def membresia_vigente_en(instante_utc=None) -> list:
+    """LA regla del equipo: condiciones SQL sobre `nm_team_user` y `team` (el llamador los une) para "esta membresia rige en `instante_utc`".
+
+    * `instante_utc`: un instante en UTC y sin zona (un literal o una columna ya convertida con `hora_pared_a_utc`; una
+      hora de pared de `incident_date` NO se compara tal cual contra `creation_date`: son seis horas distintas). La
+      membresia rige si `creation_date <= instante < deletion_date` (`deletion_date` nula = sigue vigente) y el equipo no
+      estaba de baja todavia (`instante < team.deletion_date`). Es de intervalo semiabierto: en el instante exacto de la
+      baja la persona ya no esta en el equipo, y en el de la alta ya esta.
+    * `None` = AHORA: solo se mira que ni la membresia ni el equipo esten de baja. Es lo que usan las fotos ("quien esta en
+      turno ahora"), que son del equipo vigente hoy; no compara fechas.
+
+    Es el unico lugar que decide a que equipo pertenece una persona. Lo usan todos los KPIs por equipo y
+    `equipos_de_la_persona_en`.
+    """
+    if instante_utc is None:
+        return [NmTeamUser.deletion_date.is_(None), Team.deletion_date.is_(None)]
+    return [
+        NmTeamUser.creation_date <= instante_utc,
+        or_(NmTeamUser.deletion_date.is_(None), instante_utc < NmTeamUser.deletion_date),
+        or_(Team.deletion_date.is_(None), instante_utc < Team.deletion_date),
+    ]
+
+
+def equipos_de_la_persona_en(session, id_user, instante_pared: datetime) -> tuple[int, ...]:
+    """Los equipos (ids, ordenados) de `id_user` en `instante_pared`, una hora de pared del negocio como `incident_date`.
+
+    Convierte la hora de pared a UTC (`pared_a_utc`) antes de compararla con `creation_date`/`deletion_date`, y aplica
+    `membresia_vigente_en`. Una persona sin equipo en ese instante regresa `()`; en dos equipos, los dos.
+    """
+    instante = pared_a_utc(instante_pared)
+    return tuple(sorted(set(session.scalars(
+        select(NmTeamUser.id_team)
+        .join(Team, Team.id_team == NmTeamUser.id_team)
+        .where(NmTeamUser.id_user == int(id_user), *membresia_vigente_en(instante))
+    ))))
+
+
+def persona_en_equipos_el_dia(id_user, id_teams, dia):
+    """Condicion SQL (un `EXISTS`): `id_user` esta en alguno de `id_teams` el dia local `dia`.
+
+    Para filtrar filas que ya vienen por persona y por dia (los snapshots de `kpi_snapshot`: `periodo`), que no
+    guardan a que hora del dia ocurrio cada cosa. Un dia cuenta para el equipo que la persona tenia AL TERMINAR ese
+    dia, o ahora si es hoy: es `membresia_vigente_en` evaluada en el ultimo instante del dia, escrita con dias locales
+    (`dia_local`) para no repetir la conversion de zona por fila. Quien se mueve de A a B el miercoles tiene el lunes y
+    el martes en A y el miercoles en B. Solo usuarios sin baja, igual que antes.
+
+    * `id_user`: expresion numerica (la entidad del snapshot).
+    * `dia`: expresion de fecha (`KpiSnapshot.periodo`).
+    """
+    return exists(
+        select(NmTeamUser.id_nm_team_user)
+        .join(Team, Team.id_team == NmTeamUser.id_team)
+        .join(User, User.id_user == NmTeamUser.id_user)
+        .where(
+            NmTeamUser.id_user == id_user,
+            NmTeamUser.id_team.in_(list(id_teams)),
+            dia_local(NmTeamUser.creation_date) <= dia,
+            or_(NmTeamUser.deletion_date.is_(None), dia < dia_local(NmTeamUser.deletion_date)),
+            or_(Team.deletion_date.is_(None), dia < dia_local(Team.deletion_date)),
+            User.deletion_date.is_(None),
+        )
+    )
+
+
+def _tiene_equipo(instante_utc=None):
+    """Condicion SQL: la persona de la checada esta en al menos un equipo en `instante_utc` (ver `membresia_vigente_en`).
+
+    Es un `NOT EXISTS` (negandola) y no un `LEFT JOIN` a proposito: con el `LEFT JOIN`, quien tiene un equipo vigente y otro
+    dado de baja saldria tambien como "sin equipo".
+    """
+    return exists(
+        select(NmTeamUser.id_nm_team_user)
+        .join(Team, Team.id_team == NmTeamUser.id_team)
+        .where(NmTeamUser.id_user == Incident.id_user, *membresia_vigente_en(instante_utc))
+    )
+
+
 # --- fotos: personas en turno y sin salida --------------------------------------------------
 
 def _equipos_vigentes(session) -> list[int]:
@@ -84,7 +169,7 @@ def _equipos_vigentes(session) -> list[int]:
 
 
 def _personas_por_equipo(session, *condiciones) -> dict[int, int]:
-    """`{id_team: personas DISTINTAS}` con una checada que cumple `condiciones`.
+    """`{id_team: personas DISTINTAS}` con una checada que cumple `condiciones`, en el equipo vigente HOY.
 
     Una persona con dos checadas abiertas cuenta una vez; una persona en dos equipos cuenta en los dos.
     """
@@ -95,30 +180,12 @@ def _personas_por_equipo(session, *condiciones) -> dict[int, int]:
         .join(Team, Team.id_team == NmTeamUser.id_team)
         .where(
             *checadas_vigentes(),
-            NmTeamUser.deletion_date.is_(None),
-            Team.deletion_date.is_(None),
+            *membresia_vigente_en(),
             *condiciones,
         )
         .group_by(NmTeamUser.id_team)
     ).all()
     return {int(id_team): int(personas) for id_team, personas in filas}
-
-
-def _tiene_equipo():
-    """Condicion SQL: la persona de la checada esta en al menos un equipo VIGENTE (membresia y equipo sin baja).
-
-    Es un `NOT EXISTS` y no un `LEFT JOIN` a proposito: con el `LEFT JOIN`, quien tiene un equipo vigente y otro
-    dado de baja saldria tambien como "sin equipo".
-    """
-    return exists(
-        select(NmTeamUser.id_nm_team_user)
-        .join(Team, Team.id_team == NmTeamUser.id_team)
-        .where(
-            NmTeamUser.id_user == Incident.id_user,
-            NmTeamUser.deletion_date.is_(None),
-            Team.deletion_date.is_(None),
-        )
-    )
 
 
 def _personas_sin_equipo(session, *condiciones) -> int:
@@ -198,7 +265,9 @@ def checadas_en_turno_por_empleado_query(session, fecha_inicio, fecha_fin, filtr
 
 # --- flujos: entradas y salidas por dia local ------------------------------------------------
 
-def _marcas_por_equipo_y_dia(session, fecha_col, fecha_inicio, fecha_fin, *condiciones):
+def _marcas_por_equipo_y_dia(session, instante_col, fecha_inicio, fecha_fin, *condiciones):
+    """`[(id_team, dia, marcas)]`: cada marca en el equipo que la persona tenia en `instante_col` (hora de pared)."""
+    fecha_col = _dia(instante_col)
     filas = session.execute(
         select(NmTeamUser.id_team, fecha_col.label("fecha"), func.count(func.distinct(Incident.id_incident)))
         .select_from(Incident)
@@ -206,8 +275,7 @@ def _marcas_por_equipo_y_dia(session, fecha_col, fecha_inicio, fecha_fin, *condi
         .join(Team, Team.id_team == NmTeamUser.id_team)
         .where(
             *checadas_vigentes(),
-            NmTeamUser.deletion_date.is_(None),
-            Team.deletion_date.is_(None),
+            *membresia_vigente_en(hora_pared_a_utc(instante_col)),
             fecha_col >= fecha_inicio,
             fecha_col <= fecha_fin,
             *condiciones,
@@ -218,12 +286,14 @@ def _marcas_por_equipo_y_dia(session, fecha_col, fecha_inicio, fecha_fin, *condi
     return [(int(id_team), fecha, int(marcas)) for id_team, fecha, marcas in filas]
 
 
-def _marcas_sin_equipo_por_dia(session, fecha_col, fecha_inicio, fecha_fin, *condiciones):
+def _marcas_sin_equipo_por_dia(session, instante_col, fecha_inicio, fecha_fin, *condiciones):
+    """`{dia: marcas}` de las marcas de una persona que en `instante_col` no estaba en ningun equipo."""
+    fecha_col = _dia(instante_col)
     filas = session.execute(
         select(fecha_col.label("fecha"), func.count(func.distinct(Incident.id_incident)))
         .where(
             *checadas_vigentes(),
-            ~_tiene_equipo(),
+            ~_tiene_equipo(hora_pared_a_utc(instante_col)),
             fecha_col >= fecha_inicio,
             fecha_col <= fecha_fin,
             *condiciones,
@@ -233,20 +303,41 @@ def _marcas_sin_equipo_por_dia(session, fecha_col, fecha_inicio, fecha_fin, *con
     return {fecha: int(marcas) for fecha, marcas in filas}
 
 
-def _flujo_por_equipo(session, fecha_col, fecha_inicio, fecha_fin, *condiciones):
-    """Una fila por equipo vigente y por dia del rango, mas una de "Sin equipo" (entidad `None`) por dia.
+def _equipos_del_rango(session, fecha_inicio, fecha_fin) -> dict[int, date | None]:
+    """`{id_team: ultimo dia local en que existio, o None si sigue vigente}` de los equipos que existieron en el rango.
+
+    Un equipo dado de baja DENTRO o DESPUES del inicio del rango sigue contando para los dias en que existio: una marca
+    del martes es del equipo que la persona tenia el martes, aunque el miercoles ese equipo se haya dado de baja. Uno dado de
+    baja ANTES del rango no tiene nada que ver con el.
+    """
+    inicio_utc, _ = rango_utc_de_dias(fecha_inicio, fecha_fin)
+    filas = session.execute(
+        select(Team.id_team, Team.deletion_date)
+        .where(or_(Team.deletion_date.is_(None), Team.deletion_date > inicio_utc))
+        .order_by(Team.id_team)
+    ).all()
+    return {int(id_team): (None if baja is None else utc_a_pared(baja).date()) for id_team, baja in filas}
+
+
+def _flujo_por_equipo(session, instante_col, fecha_inicio, fecha_fin, *condiciones):
+    """Una fila por equipo y por dia del rango, mas una de "Sin equipo" (entidad `None`) por dia.
+
+    Cada marca va al equipo que la persona tenia en ESE instante (`instante_col`: `incident_date` para las entradas,
+    `close_date` para las salidas), y los equipos son los que existieron en el rango (`_equipos_del_rango`): uno dado de
+    baja a media semana conserva los dias en que existio y no suma filas de los dias posteriores.
 
     Cada equipo sale CON SU CERO cada dia, no solo los dias con marcas. Igual que en las fotos: el upsert solo actualiza lo
     que la consulta devuelve, asi que si se cancela la unica entrada de un dia y la fila en cero no saliera, el valor viejo se
     quedaria pegado. Con la corrida de 5 minutos (que recalcula solo hoy) esto pasa en el mismo dia.
     Orden: los equipos por id, cada uno con sus dias; al final "Sin equipo".
     """
-    por_equipo = {(id_team, dia): n for id_team, dia, n in _marcas_por_equipo_y_dia(session, fecha_col, fecha_inicio, fecha_fin, *condiciones)}
-    sin_equipo = _marcas_sin_equipo_por_dia(session, fecha_col, fecha_inicio, fecha_fin, *condiciones)
+    por_equipo = {(id_team, dia): n for id_team, dia, n in _marcas_por_equipo_y_dia(session, instante_col, fecha_inicio, fecha_fin, *condiciones)}
+    sin_equipo = _marcas_sin_equipo_por_dia(session, instante_col, fecha_inicio, fecha_fin, *condiciones)
     dias = [fecha_inicio + timedelta(days=i) for i in range((fecha_fin - fecha_inicio).days + 1)]
     filas = [
         (id_team, dia, por_equipo.get((id_team, dia), 0))
-        for id_team in _equipos_vigentes(session) for dia in dias
+        for id_team, ultimo_dia in _equipos_del_rango(session, fecha_inicio, fecha_fin).items()
+        for dia in dias if ultimo_dia is None or dia <= ultimo_dia
     ]
     return filas + [(None, dia, sin_equipo.get(dia, 0)) for dia in dias]
 
@@ -255,20 +346,20 @@ def checadas_entradas_por_equipo_query(session, fecha_inicio, fecha_fin, filtros
     """Entradas (checadas abiertas ese dia) por equipo y por dia local de `incident_date`, mas "Sin equipo".
 
     Cuenta checadas, no personas: dos entradas de la misma persona el mismo dia son dos. Una entrada que se marca a
-    las 23:50 es del dia en que se marco, aunque la salida sea a las 00:10 del siguiente. Una fila por equipo y por dia
-    del rango, con su cero (ver `_flujo_por_equipo`).
+    las 23:50 es del dia en que se marco, aunque la salida sea a las 00:10 del siguiente. Cada una va al equipo que la
+    persona tenia al marcarla. Una fila por equipo y por dia del rango, con su cero (ver `_flujo_por_equipo`).
     """
-    return _flujo_por_equipo(session, _dia(Incident.incident_date), fecha_inicio, fecha_fin)
+    return _flujo_por_equipo(session, Incident.incident_date, fecha_inicio, fecha_fin)
 
 
 def checadas_salidas_por_equipo_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
     """Salidas (checadas cerradas ese dia) por equipo y por dia local de `close_date`, mas "Sin equipo".
 
-    Una salida a las 00:10 es del dia siguiente al de su entrada de las 23:50. Una fila por equipo y por dia del rango,
-    con su cero (ver `_flujo_por_equipo`).
+    Una salida a las 00:10 es del dia siguiente al de su entrada de las 23:50, y va al equipo que la persona tenia al
+    marcar la SALIDA. Una fila por equipo y por dia del rango, con su cero (ver `_flujo_por_equipo`).
     """
     return _flujo_por_equipo(
-        session, _dia(Incident.close_date), fecha_inicio, fecha_fin, Incident.close_date.isnot(None),
+        session, Incident.close_date, fecha_inicio, fecha_fin, Incident.close_date.isnot(None),
     )
 
 

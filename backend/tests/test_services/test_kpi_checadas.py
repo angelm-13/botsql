@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import copy
 import unittest
-from datetime import date, datetime, timedelta
+from collections import defaultdict
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from unittest import mock
 
 import jwt
-from sqlalchemy import select, text
+from sqlalchemy import Date, literal, select, text
 
 from app.jobs import tasks_kpis
 from app.kpis import frecuencia
@@ -22,6 +23,8 @@ from app.kpis.modulos import checadas
 from app.kpis.modulos.checadas import (
     TOPE_DURACION_CHECADA_HORAS,
     UMBRAL_SIN_SALIDA_HORAS,
+    equipos_de_la_persona_en,
+    persona_en_equipos_el_dia,
     checadas_con_duracion_anomala_query,
     checadas_en_turno_por_empleado_query,
     checadas_en_turno_por_equipo_query,
@@ -38,6 +41,7 @@ from app.models import (
 from app.models.session import engine, transaction_context
 from app.services.incident_service import IncidentService
 from app.utils.auth import SECRET_KEY
+from app.utils.tiempo import pared_a_utc
 from tests.conftest import BackendTestCase
 from tests.reloj import ahora_local, reloj_en_utc
 
@@ -47,6 +51,9 @@ ANA, BETO, CARLA, DIEGO, ELENA, FRANCO = 101, 102, 103, 104, 105, 106
 NORTE, SUR, VACIO, BAJA = 7001, 7002, 7003, 7004
 PROYECTO_OTRO = 2
 LATITUD = Decimal("21.1161741")
+
+# Desde cuando estan en su equipo las personas del fixture: antes de cualquier marca de las pruebas.
+DESDE = datetime(2026, 1, 1)
 
 # Un dia de referencia (jueves 15 de octubre de 2026) y su siguiente.
 D = date(2026, 10, 15)
@@ -102,12 +109,13 @@ class ChecadasBase(BackendTestCase):
             db.flush()
             # Beto esta en DOS equipos; Diego en ninguno; la membresia de Elena en Norte esta dada de baja (sin equipo);
             # Ana tambien esta en un equipo que ya no existe (le basta Norte); Franco SOLO esta en ese equipo que ya no
-            # existe (sin equipo vigente).
+            # existe (sin equipo vigente). Todas empezaron ANTES de las marcas de las pruebas (`DESDE`): el equipo de una
+            # marca es el que la persona tenia en ese momento, no el de hoy.
             for id_team, id_user, baja in (
                 (NORTE, ANA, None), (NORTE, BETO, None), (SUR, BETO, None), (SUR, CARLA, None),
                 (NORTE, ELENA, datetime(2026, 6, 1)), (BAJA, ANA, None), (BAJA, FRANCO, None),
             ):
-                db.add(NmTeamUser(id_team=id_team, id_user=id_user, created_by=1, deletion_date=baja))
+                db.add(NmTeamUser(id_team=id_team, id_user=id_user, created_by=1, creation_date=DESDE, deletion_date=baja))
         self._siguiente_id = 0
 
     def _checada(self, id_user, abre, cierra=None, *, latitude=LATITUD, status=None, id_proyect=None, baja=None):
@@ -1166,4 +1174,272 @@ class EquipoDadoDeBajaEnLosKpisTest(ChecadasBase):
         with ahora_local(local(D, 15, 0)):
             foto = self._foto_de(checadas_en_turno_por_equipo_query)
         self.assertEqual({NORTE: 0, SUR: 0, VACIO: 0, None: 1}, foto)
+
+
+# Lunes a jueves de la semana de referencia: D es jueves 15 de octubre de 2026.
+LUN, MAR, MIE, JUE = D - timedelta(days=3), D - timedelta(days=2), D - timedelta(days=1), D
+
+
+class EquipoEnElMomentoDeLaMarcaTest(ChecadasBase):
+    """Cada marca cuenta en el equipo que la persona tenia EN ESE MOMENTO, no en el de hoy.
+
+    Diego no tiene equipo en el fixture: aqui se le arman membresias a la medida. Las fechas de las membresias se
+    escriben en hora de pared y se guardan en UTC (como las guarda el sistema): la conversion es lo que se prueba.
+    """
+
+    def _membresia(self, id_team, desde_pared, hasta_pared=None, id_user=DIEGO):
+        with transaction_context() as db:
+            db.add(NmTeamUser(
+                id_team=id_team, id_user=id_user, created_by=1, creation_date=pared_a_utc(desde_pared),
+                deletion_date=None if hasta_pared is None else pared_a_utc(hasta_pared),
+            ))
+
+    def _entradas(self, inicio=LUN, fin=JUE):
+        """`{(id_team, dia): entradas}` de los equipos, sin los ceros; y `{dia: entradas}` de «Sin equipo»."""
+        filas = self._marcas(checadas_entradas_por_equipo_query, inicio, fin)
+        equipos = {(id_team, dia): n for id_team, dia, n in filas if id_team is not None and n}
+        sin_equipo = {dia: n for id_team, dia, n in filas if id_team is None and n}
+        return equipos, sin_equipo
+
+    def _salidas(self, inicio=LUN, fin=JUE):
+        filas = self._marcas(checadas_salidas_por_equipo_query, inicio, fin)
+        equipos = {(id_team, dia): n for id_team, dia, n in filas if id_team is not None and n}
+        sin_equipo = {dia: n for id_team, dia, n in filas if id_team is None and n}
+        return equipos, sin_equipo
+
+    # --- pasar de un equipo a otro --------------------------------------------------------------------------
+
+    def test_quien_pasa_de_a_a_b_el_miercoles_conserva_el_lunes_y_el_martes_en_a(self):
+        self._membresia(NORTE, local(LUN, 0, 0), local(MIE, 9, 0))
+        self._membresia(SUR, local(MIE, 9, 0))
+        for dia, hora in ((LUN, 10), (MAR, 15), (MIE, 8), (MIE, 10), (JUE, 10)):
+            self._checada(DIEGO, local(dia, hora, 0))
+
+        equipos, sin_equipo = self._entradas()
+
+        self.assertEqual(
+            {(NORTE, LUN): 1, (NORTE, MAR): 1, (NORTE, MIE): 1, (SUR, MIE): 1, (SUR, JUE): 1}, equipos,
+            "lunes, martes y el miercoles antes de las 9:00 son de Norte; desde las 9:00 del miercoles, de Sur",
+        )
+        self.assertEqual({}, sin_equipo)
+
+    def test_el_equipo_de_hoy_no_reescribe_el_pasado(self):
+        # Hoy Diego esta en Sur; sus marcas de la semana pasada siguen siendo de Norte.
+        self._membresia(NORTE, local(LUN, 0, 0), local(JUE, 0, 0))
+        self._membresia(SUR, local(JUE, 0, 0))
+        self._checada(DIEGO, local(LUN, 10, 0))
+
+        with ahora_local(local(JUE, 15, 0)):
+            equipos, _ = self._entradas()
+
+        self.assertEqual({(NORTE, LUN): 1}, equipos)
+
+    def test_de_a_a_b_y_de_vuelta_a_a_atribuye_cada_marca_a_su_periodo(self):
+        self._membresia(NORTE, local(LUN, 0, 0), local(MAR, 12, 0))
+        self._membresia(SUR, local(MAR, 12, 0), local(MIE, 12, 0))
+        self._membresia(NORTE, local(MIE, 12, 0))
+        for dia, hora in ((MAR, 10), (MAR, 14), (MIE, 10), (MIE, 14)):
+            self._checada(DIEGO, local(dia, hora, 0))
+
+        equipos, _ = self._entradas()
+
+        self.assertEqual({(NORTE, MAR): 1, (SUR, MAR): 1, (SUR, MIE): 1, (NORTE, MIE): 1}, equipos)
+
+    def test_la_salida_va_al_equipo_que_la_persona_tenia_al_marcar_la_salida(self):
+        self._membresia(NORTE, local(LUN, 0, 0), local(MIE, 12, 0))
+        self._membresia(SUR, local(MIE, 12, 0))
+        self._checada(DIEGO, local(MIE, 8, 0), local(MIE, 17, 0))     # entra en Norte, sale en Sur
+
+        entradas, _ = self._entradas()
+        salidas, _ = self._salidas()
+
+        self.assertEqual({(NORTE, MIE): 1}, entradas)
+        self.assertEqual({(SUR, MIE): 1}, salidas)
+
+    # --- los bordes del intervalo y de la zona -------------------------------------------------------------
+
+    def test_la_membresia_cubre_desde_su_alta_hasta_su_baja_y_el_instante_exacto_de_la_baja_ya_es_del_siguiente(self):
+        self._membresia(NORTE, local(MIE, 9, 0), local(MIE, 12, 0))
+        self._membresia(SUR, local(MIE, 12, 0))
+        self._checada(DIEGO, local(MIE, 8, 59, 59))     # un segundo antes del alta: sin equipo
+        self._checada(DIEGO, local(MIE, 9, 0, 0))       # el instante exacto del alta: ya esta en Norte
+        self._checada(DIEGO, local(MIE, 11, 59, 59))    # un segundo antes de la baja: Norte
+        self._checada(DIEGO, local(MIE, 12, 0, 0))      # el instante exacto de la baja: ya es de Sur
+
+        equipos, sin_equipo = self._entradas()
+
+        self.assertEqual({(NORTE, MIE): 2, (SUR, MIE): 1}, equipos)
+        self.assertEqual({MIE: 1}, sin_equipo)
+
+    def test_cruce_de_medianoche_local(self):
+        self._membresia(NORTE, local(LUN, 0, 0), local(MAR, 23, 59, 59))
+        self._membresia(SUR, local(MAR, 23, 59, 59))
+        self._checada(DIEGO, local(MAR, 23, 59, 58))
+        self._checada(DIEGO, local(MIE, 0, 0, 1))
+
+        equipos, _ = self._entradas()
+
+        self.assertEqual({(NORTE, MAR): 1, (SUR, MIE): 1}, equipos)
+
+    def test_cruce_de_medianoche_utc_las_18_horas_de_mexico(self):
+        # Sur empieza a las 19:00 locales del miercoles = 01:00 UTC del jueves. Una marca de las 20:00 locales (02:00 UTC del
+        # jueves) ya es de Sur; sin convertir la zona se compararia "miercoles 20:00" contra "jueves 01:00" y saldria de Norte.
+        self._membresia(NORTE, local(LUN, 0, 0), local(MIE, 19, 0))
+        self._membresia(SUR, local(MIE, 19, 0))
+        self._checada(DIEGO, local(MIE, 18, 30))
+        self._checada(DIEGO, local(MIE, 20, 0))
+
+        equipos, _ = self._entradas()
+
+        self.assertEqual({(NORTE, MIE): 1, (SUR, MIE): 1}, equipos)
+
+    def test_las_checadas_de_noche_en_hora_utc_del_dia_siguiente_se_comparan_por_el_instante_real(self):
+        # 23:50 de Mexico del martes ya es miercoles 05:50 UTC. Norte se dio de baja el martes a las 23:00 locales (05:00 UTC).
+        self._membresia(NORTE, local(LUN, 0, 0), local(MAR, 23, 0))
+        self._checada(DIEGO, local(MAR, 22, 59))
+        self._checada(DIEGO, local(MAR, 23, 50))
+
+        equipos, sin_equipo = self._entradas()
+
+        self.assertEqual({(NORTE, MAR): 1}, equipos)
+        self.assertEqual({MAR: 1}, sin_equipo)
+
+    # --- sin equipo y varios equipos -----------------------------------------------------------------------
+
+    def test_una_membresia_creada_despues_de_la_marca_no_cuenta(self):
+        self._membresia(SUR, local(JUE, 12, 0))
+        self._checada(DIEGO, local(JUE, 10, 0))
+        self._checada(DIEGO, local(JUE, 13, 0))
+
+        equipos, sin_equipo = self._entradas()
+
+        self.assertEqual({(SUR, JUE): 1}, equipos, "solo la de las 13:00")
+        self.assertEqual({JUE: 1}, sin_equipo, "la de las 10:00 es de cuando todavia no tenia equipo")
+
+    def test_quien_nunca_tuvo_equipo_cuenta_en_sin_equipo(self):
+        self._checada(DIEGO, local(MAR, 10, 0))
+        self._checada(DIEGO, local(MIE, 10, 0))
+
+        equipos, sin_equipo = self._entradas()
+
+        self.assertEqual({}, equipos)
+        self.assertEqual({MAR: 1, MIE: 1}, sin_equipo)
+
+    def test_en_dos_equipos_a_la_vez_la_marca_cuenta_en_cada_uno(self):
+        self._membresia(NORTE, local(LUN, 0, 0), local(MIE, 9, 0))
+        self._membresia(SUR, local(MAR, 0, 0))                      # entre el martes y el miercoles esta en los dos
+        self._checada(DIEGO, local(LUN, 10, 0))
+        self._checada(DIEGO, local(MAR, 10, 0))
+        self._checada(DIEGO, local(MIE, 10, 0))
+
+        equipos, sin_equipo = self._entradas()
+
+        self.assertEqual({(NORTE, LUN): 1, (NORTE, MAR): 1, (SUR, MAR): 1, (SUR, MIE): 1}, equipos)
+        self.assertEqual({}, sin_equipo, "quien tiene equipo en ese momento nunca cuenta en «Sin equipo»")
+
+    def test_quien_esta_en_un_equipo_dado_de_baja_y_en_otro_vigente_no_sale_en_sin_equipo(self):
+        # Ana (fixture) esta en Norte y en el equipo que ya no existe.
+        self._checada(ANA, local(MAR, 10, 0))
+
+        equipos, sin_equipo = self._entradas()
+
+        self.assertEqual({(NORTE, MAR): 1}, equipos)
+        self.assertEqual({}, sin_equipo)
+
+    # --- un equipo dado de baja a media semana ---------------------------------------------------------------
+
+    def test_un_equipo_dado_de_baja_a_media_semana_conserva_los_dias_en_que_existio(self):
+        with transaction_context() as db:
+            db.add(Team(id_team=7010, team_description="Parque temporal", created_by=1, deletion_date=pared_a_utc(local(MIE, 12, 0))))
+        self._membresia(7010, local(LUN, 0, 0), local(MIE, 12, 0))
+        for dia, hora in ((LUN, 10), (MAR, 10), (MIE, 10), (MIE, 13), (JUE, 10)):
+            self._checada(DIEGO, local(dia, hora, 0))
+
+        with transaction_context() as db:
+            filas = checadas_entradas_por_equipo_query(db, LUN, JUE, {}, None)
+
+        del_equipo = {dia: n for id_team, dia, n in filas if id_team == 7010}
+        self.assertEqual({LUN: 1, MAR: 1, MIE: 1}, del_equipo, "tiene fila (con su cero o su cuenta) solo hasta el dia de su baja")
+        self.assertEqual({MIE: 1, JUE: 1}, {dia: n for id_team, dia, n in filas if id_team is None and n},
+                         "despues de la baja, Diego queda sin equipo")
+
+    def test_un_equipo_dado_de_baja_antes_del_rango_no_aparece(self):
+        with transaction_context() as db:
+            filas = checadas_entradas_por_equipo_query(db, LUN, JUE, {}, None)
+
+        self.assertNotIn(BAJA, {id_team for id_team, _, _ in filas}, "el equipo cerrado en enero no tiene nada que ver con octubre")
+
+    # --- las fotos de AHORA usan el equipo vigente hoy ------------------------------------------------------------
+
+    def test_la_foto_de_ahora_usa_el_equipo_vigente_hoy(self):
+        self._membresia(NORTE, local(LUN, 0, 0), local(MIE, 9, 0))
+        self._membresia(SUR, local(MIE, 9, 0))
+        self._checada(DIEGO, local(JUE, 10, 0))
+
+        with ahora_local(local(JUE, 15, 0)):
+            foto = {id_team: valor for id_team, (_, valor) in self._foto(checadas_en_turno_por_equipo_query, JUE).items()}
+
+        # Diego suma a Sur, su equipo de hoy, y no a Norte, el de la semana pasada; nadie mas tiene checada abierta.
+        self.assertEqual({NORTE: 0, SUR: 1, VACIO: 0, None: 0}, foto)
+
+    # --- el ayudante: los equipos de una persona en un instante ------------------------------------------------
+
+    def test_equipos_de_la_persona_en_un_instante(self):
+        self._membresia(NORTE, local(MAR, 0, 0), local(MIE, 9, 0))
+        self._membresia(SUR, local(MIE, 9, 0))
+        self._membresia(VACIO, local(MIE, 9, 0), local(MIE, 18, 0))
+
+        with transaction_context() as db:
+            en = lambda pared: equipos_de_la_persona_en(db, DIEGO, pared)    # noqa: E731
+            self.assertEqual((), en(local(LUN, 23, 59, 59)), "antes de su primer equipo")
+            self.assertEqual((NORTE,), en(local(MAR, 0, 0)), "el instante exacto del alta ya cuenta")
+            self.assertEqual((NORTE,), en(local(MIE, 8, 59, 59)))
+            self.assertEqual((SUR, VACIO), en(local(MIE, 9, 0)), "el instante exacto de la baja ya no es del equipo; en dos equipos, los dos")
+            self.assertEqual((SUR,), en(local(MIE, 18, 0)), "Vacio termina a las 18:00")
+            self.assertEqual((SUR,), en(local(JUE, 10, 0)))
+
+    def test_el_ayudante_convierte_la_hora_de_pared_a_utc_antes_de_comparar(self):
+        # Sur empieza a las 19:00 locales = 01:00 UTC del dia siguiente.
+        self._membresia(SUR, local(MIE, 19, 0))
+
+        with transaction_context() as db:
+            self.assertEqual((), equipos_de_la_persona_en(db, DIEGO, local(MIE, 18, 59)))
+            self.assertEqual((SUR,), equipos_de_la_persona_en(db, DIEGO, local(MIE, 20, 0)))
+
+    def test_el_ayudante_coincide_con_lo_que_cuentan_los_kpis(self):
+        self._membresia(NORTE, local(LUN, 0, 0), local(MAR, 15, 0))
+        self._membresia(SUR, local(MAR, 15, 0))
+        marcas = [local(LUN, 10, 0), local(MAR, 14, 59), local(MAR, 15, 0), local(MIE, 10, 0)]
+        for marca in marcas:
+            self._checada(DIEGO, marca)
+
+        equipos, _ = self._entradas()
+
+        with transaction_context() as db:
+            esperado = defaultdict(int)
+            for marca in marcas:
+                for id_team in equipos_de_la_persona_en(db, DIEGO, marca):
+                    esperado[(id_team, marca.date())] += 1
+        self.assertEqual(dict(esperado), equipos)
+
+    # --- el dia completo (snapshots por persona) es la misma regla, evaluada al terminar el dia ---------------------
+
+    def test_persona_en_equipos_el_dia_coincide_con_la_regla_por_instante_al_terminar_el_dia(self):
+        casos = []
+        altas = (local(MAR, 23, 59, 59), local(MIE, 0, 0, 0), local(MIE, 12, 0, 0))
+        bajas = (None, local(MIE, 23, 59, 59), local(JUE, 0, 0, 0), local(JUE, 0, 0, 1))
+        for alta in altas:
+            for baja in bajas:
+                casos.append((alta, baja))
+        for alta, baja in casos:
+            with self.subTest(alta=alta, baja=baja):
+                with transaction_context() as db:
+                    db.query(NmTeamUser).filter(NmTeamUser.id_user == DIEGO).delete()
+                self._membresia(SUR, alta, baja)
+                with transaction_context() as db:
+                    for dia in (MAR, MIE, JUE):
+                        fin_del_dia = datetime.combine(dia + timedelta(days=1), time.min) - timedelta(microseconds=1)
+                        por_instante = SUR in equipos_de_la_persona_en(db, DIEGO, fin_del_dia)
+                        por_dia = db.scalar(select(persona_en_equipos_el_dia(literal(DIEGO), [SUR], literal(dia, Date))))
+                        self.assertEqual(por_instante, bool(por_dia), f"dia {dia}")
 
