@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { RefreshCw, Search, Trash2, Pencil } from "lucide-react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { ArrowDown, ArrowUp, RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
 import { getAllEventLog, createEventLog, updateEventLog, deleteEventLog, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa } from "../api";
 import { fetchAllPages } from "../utils/fetchAllPages";
@@ -19,6 +19,9 @@ const ACTION_UPDATE = 4;
 const ACTION_DELETE = 8;
 const SCOPE_FIELD_BY_BIT = { [ACTION_CREATE]: "scope_create", [ACTION_READ]: "scope_read", [ACTION_UPDATE]: "scope_update", [ACTION_DELETE]: "scope_delete" };
 const FIELD_VISIBLE_BIT = 2;
+// Columnas por las que se puede ordenar; lo mas reciente va primero por omision.
+const SORTABLE_FIELDS = new Set(["id_event_log", "table_name", "action", "creation_date", "last_update_date"]);
+const DEFAULT_SORT = "-creation_date";
 const ALL_FIELD_NAMES = ['id_event_log', 'table_name', 'field_name', 'action', 'before_value', 'after_value', 'created_by', 'creation_date', 'last_update_date', 'deletion_date'];
 
 function hasBit(value, bit) {
@@ -44,6 +47,7 @@ export default function EventLogPage() {
   const [page, setPage] = useState(1);
   const [paginacion, setPaginacion] = useState({ total: 0, pages: 1, perPage: 0 });
   const [perPage, setPerPage] = useState(10);
+  const [sort, setSort] = useState(DEFAULT_SORT);
   const [loading, setLoading] = useState(false);
   const [errorKey, setErrorKey] = useState("");
   const [errorMeta, setErrorMeta] = useState(null);
@@ -70,7 +74,7 @@ export default function EventLogPage() {
     }
     setLoading(true); setErrorKey(""); setErrorMeta(null);
     try {
-      const data = await getAllEventLog({ page, per_page: perPage, q: query || undefined });
+      const data = await getAllEventLog({ page, per_page: perPage, q: query || undefined, sort });
       setItems(Array.isArray(data) ? data : (data.items || data.data || []));
       // La respuesta ya traia el total y el numero de paginas; antes se
       // tiraban aqui, y por eso "Siguiente" no sabia cuando parar.
@@ -93,7 +97,7 @@ export default function EventLogPage() {
     const temporizador = setTimeout(() => { loadData(); }, 300);
     return () => clearTimeout(temporizador);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, perPage, permissionReady, canRead, query]);
+  }, [page, perPage, permissionReady, canRead, query, sort]);
   // Buscar algo nuevo vuelve a la primera pagina: sin esto, quien esta en la 7
   // y escribe otra cosa pide la pagina 7 de un resultado distinto.
   useEffect(() => { setPage(1); }, [query]);
@@ -168,6 +172,28 @@ export default function EventLogPage() {
     return CAMPOS_DE_AUDITORIA.has(fieldName) || visibleFieldNames.has(fieldName);
   }
 
+
+  // Un clic ordena de mayor a menor (lo mas reciente / el id mas alto primero);
+  // otro clic en la misma columna invierte el sentido.
+  function toggleSort(field) {
+    setSort((current) => (current === `-${field}` ? field : `-${field}`));
+    setPage(1);
+  }
+
+  function renderHeader(field) {
+    const label = t(`fields.event_log.${field}`);
+    if (!SORTABLE_FIELDS.has(field)) return <th>{label}</th>;
+    const active = sort === field || sort === `-${field}`;
+    const descending = sort === `-${field}`;
+    return (
+      <th aria-sort={active ? (descending ? "descending" : "ascending") : "none"}>
+        <button type="button" className="th-sort" onClick={() => toggleSort(field)} title={t("common.sort_by", "Ordenar por") + ": " + label}>
+          {label}
+          {active && (descending ? <ArrowDown size={12} aria-hidden="true" /> : <ArrowUp size={12} aria-hidden="true" />)}
+        </button>
+      </th>
+    );
+  }
 
   function handleChange(event) {
     const { name, type, checked, value } = event.target;
@@ -417,16 +443,7 @@ export default function EventLogPage() {
 
 
       {canRead && view === "table" && filtered.length > 0 && <div className="table-card"><table><thead><tr>{showRowActions && <th>{t("common.actions")}</th>}
-              {canSeeField("id_event_log") && <th>{t("fields.event_log.id_event_log")}</th>}
-              {canSeeField("table_name") && <th>{t("fields.event_log.table_name")}</th>}
-              {canSeeField("field_name") && <th>{t("fields.event_log.field_name")}</th>}
-              {canSeeField("action") && <th>{t("fields.event_log.action")}</th>}
-              {canSeeField("before_value") && <th>{t("fields.event_log.before_value")}</th>}
-              {canSeeField("after_value") && <th>{t("fields.event_log.after_value")}</th>}
-              {canSeeField("created_by") && <th>{t("fields.event_log.created_by")}</th>}
-              {canSeeField("creation_date") && <th>{t("fields.event_log.creation_date")}</th>}
-              {canSeeField("last_update_date") && <th>{t("fields.event_log.last_update_date")}</th>}
-              {canSeeField("deletion_date") && <th>{t("fields.event_log.deletion_date")}</th>}
+              {ALL_FIELD_NAMES.filter(canSeeField).map((field) => <Fragment key={field}>{renderHeader(field)}</Fragment>)}
         </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_event_log}>{showRowActions && <td className="row-actions">{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</td>}
               {canSeeField("id_event_log") && <td><pre className="cell-value">{formatTableValue(item.id_event_log)}</pre></td>}
               {canSeeField("table_name") && <td><pre className="cell-value">{formatTableValue(item.table_name)}</pre></td>}

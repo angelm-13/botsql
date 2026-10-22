@@ -116,9 +116,17 @@ class CrudService:
                 payload[name] = now
 
 
+    # Acciones de CRUD de esta entidad que NO dejan asiento. El registro de
+    # eventos se salta solo el alta (ver EventLogService): editar o borrar un
+    # asiento si tiene que quedar asentado.
+    acciones_sin_asiento: frozenset = frozenset()
+
+    # Orden del listado cuando la pantalla no pide uno (p. ej. '-creation_date').
+    orden_por_omision: str | None = None
+
     @classmethod
     def _audit_enabled(cls) -> bool:
-        return cls.entity_name != 'event_log'
+        return True
 
     @staticmethod
     def _redact_audit_value(field_name: str, value):
@@ -185,7 +193,7 @@ class CrudService:
 
     @classmethod
     def _write_event_log(cls, session, *, action: str, actor_id: int | None, before=None, after=None, field_name: str = '*') -> None:
-        if not cls._audit_enabled():
+        if not cls._audit_enabled() or action in cls.acciones_sin_asiento:
             return
         try:
             from app.models import EventLog
@@ -427,9 +435,18 @@ class CrudService:
                     stmt = stmt.where(column.ilike(f'%{value}%'))
                 else:
                     stmt = stmt.where(column == value)
+            sort = sort or cls.orden_por_omision
             if sort and sort.lstrip('-') in cls._columns():
                 col = getattr(cls.model, sort.lstrip('-'))
-                stmt = stmt.order_by(col.desc() if sort.startswith('-') else col.asc())
+                descendente = sort.startswith('-')
+                # La llave primaria desempata: varias filas comparten fecha (un
+                # mismo guardado escribe varias) y, sin desempate, una fila puede
+                # caer en dos paginas o en ninguna.
+                orden = [col.desc() if descendente else col.asc()]
+                for llave in cls.model.__table__.primary_key.columns:
+                    if llave.name != sort.lstrip('-'):
+                        orden.append(llave.desc() if descendente else llave.asc())
+                stmt = stmt.order_by(*orden)
             total = session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
             items = session.scalars(stmt.offset((page - 1) * per_page).limit(per_page)).all()
             return {'items': [item.serialize() for item in items], 'total': total, 'page': page, 'per_page': per_page, 'pages': (total + per_page - 1) // per_page}
