@@ -6,6 +6,24 @@ aparte de `ARQUITECTURA_TYAKXA_TNY.md` (referencia técnica estable) y de
 sección se resuelve, se puede recortar; mientras tanto se deja completa para
 que una sesión nueva no tenga que releer el historial de chat.
 
+## Bitacora 2026-10-22 — PROMOVIDO a adser-prod (`2c8ba33`, 13a promocion)
+
+adser-prod pasa de `fcaae54` a `2c8ba33` (28 commits: traida de initAngm, estados del
+producto, Gerente Comercial/Tecnico). Respaldo previo en el VPS:
+`/home/alanp/adser_antes_de_2c8ba33_20261022_2209.sql`. Verificado: 0 proyectos en `delivered`,
+124 productos Nuevo/Usado -> En almacen, esquema al dia, sitio y API 200, sin reinicios.
+
+**Roles de Gerencia**: en BD el rol se llama exactamente "Gerente Comercial" y "Gerente
+Tecnico" (la resiembra los crea por nombre exacto). En adser-prod el "Gerente" (2 usuarios)
+paso a Tecnico con sus filas y se creo el Comercial (0 usuarios: **reasignar a mano a quien
+corresponda**). La configuracion se llevo de tyakxa-dev con
+`backend/scripts/aplicar_permisos_de_roles.py` (datos en
+`docs/despliegues/datos/2026-10-22_roles_gerencia_de_tyakxa_dev.json`; simulacion por omision,
+`--aplicar`, respaldo CSV, idempotente): Tecnico 63 -> 34 filas, Comercial 75 -> 61. Respaldos
+de las filas previas: `/home/alanp/backups_roles_20261022/`. `nm_field_permission` NO tiene
+restriccion unica por (campo, rol) y hay varias filas por par: hay que operar por clave primaria.
+Para devolver un rol: reactivar las filas del CSV de respaldo.
+
 ## Bitacora 2026-10-21 — traida selectiva de initAngm (9 commits de Angel del 10-19)
 
 Local en `initAlan`, **sin pushear** (un push despliega solo a tyakxa-dev). Suite completa:
