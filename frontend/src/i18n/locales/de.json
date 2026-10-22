@@ -2531,7 +2531,7 @@
     "request_failed": "Anfrage konnte nicht abgeschlossen werden",
     "product_description_format": "Die Beschreibung beginnt mit einem Großbuchstaben, gefolgt von Kleinbuchstaben, Leerzeichen, Zahlen und Zeichen wie Schrägstrich oder Bindestrich (z. B. Kleiner Polierer 3/4). Abkürzungen wie PVC oder LED bleiben groß.",
     "product_code_duplicate": "Es gibt bereits ein Produkt mit diesem Code. Suchen und bearbeiten Sie es oder verwenden Sie einen anderen Code.",
-    "product_status_needs_stock": "Ein Produkt ohne Bestand kann nicht als Neu oder Gebraucht markiert werden. Erfassen Sie zuerst einen Zugang von mindestens 1 Stück und ändern Sie dann den Status.",
+    "product_status_needs_stock": "Ein Produkt ohne Bestand kann nicht als Im Lager markiert werden. Erfassen Sie zuerst einen Zugang von mindestens 1 Stück und ändern Sie dann den Status.",
     "product_quantity_via_movements": "Der Bestand wird nicht von Hand geändert: «Zugang erfassen» für Eingänge, den Beleg für Ausgänge und die Bestandskorrektur für eine Zählung.",
     "validation_failed": "Prüfen Sie die markierten Felder vor dem Speichern",
     "required_field": "Pflichtfeld",

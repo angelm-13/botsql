@@ -2733,7 +2733,7 @@
     "lot_control_needs_its_own_endpoint": "Lot control is not switched on from here: do it from the product, so the stock already on hand lands inside an opening lot.",
     "product_description_format": "The description must start with a capital letter, followed by lowercase letters, spaces, numbers and symbols such as slash or hyphen (e.g. Small polisher 3/4). Acronyms like PVC or LED stay uppercase.",
     "product_code_duplicate": "A product with that code already exists. Find and edit it, or use another code.",
-    "product_status_needs_stock": "A product without stock cannot be marked as New or Used. First register an entry of at least 1 unit (\"Register entry\" button) and then change the status.",
+    "product_status_needs_stock": "A product without stock cannot be marked as In warehouse. First register an entry of at least 1 unit (\"Register entry\" button) and then change the status.",
     "product_quantity_via_movements": "Stock is not edited by hand: use “Register entry” for what arrives, the voucher for what leaves and an inventory adjustment for a count.",
     "voucher_not_a_draft": "This voucher is no longer a draft: only a draft can be authorised.",
     "voucher_self_authorization": "You cannot authorise a voucher you requested yourself. The warehouse chief authorises it."
@@ -4367,6 +4367,7 @@
     "unit": "Unit"
   },
   "product": {
+    "status_in_warehouse": "In warehouse",
     "classification": "Classification",
     "see_families": "see families and types",
     "classification_help": "The family groups, the type tells them apart within it, and the material is the concrete thing. If one is missing, add it in Families and types."

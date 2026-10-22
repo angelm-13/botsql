@@ -2533,7 +2533,7 @@
     "request_failed": "Não foi possível concluir a solicitação",
     "product_description_format": "A descrição deve começar com maiúscula, seguida de minúsculas, espaços, números e símbolos como barra ou hífen (ex.: Polidor pequeno 3/4). Siglas como PVC ou LED ficam em maiúsculas.",
     "product_code_duplicate": "Já existe um produto com esse código. Procure-o e edite-o, ou use outro código.",
-    "product_status_needs_stock": "Um produto sem estoque não pode ser marcado como Novo ou Usado. Primeiro registre a entrada de pelo menos 1 unidade e depois altere o status.",
+    "product_status_needs_stock": "Um produto sem estoque não pode ser marcado como No armazém. Primeiro registre a entrada de pelo menos 1 unidade e depois altere o status.",
     "product_quantity_via_movements": "O estoque não se edita à mão: use «Registrar entrada» para o que chega, o vale para o que sai e o ajuste de inventário para uma contagem.",
     "validation_failed": "Revise os campos destacados antes de salvar",
     "required_field": "Campo obrigatório",

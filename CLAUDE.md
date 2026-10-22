@@ -29,9 +29,11 @@ autorizador de Angel: sin decidir. Detalle de la comparacion en la memoria
 
 **Segunda tanda (10-22, commits de Angel del 10-21)**: seguridad `e719470` (`/documents` con
 sesion real y vales solo por `/vouchers`) y `eb5b904` (SSRF del logo y DTD en CFDI);
-`ddfe735` codigo de producto unico (de `8ab3ae4`) MAS una guarda propia: cambiar un producto a
-Nuevo/Usado con existencia 0 da 409 `product_status_needs_stock` (primero registrar la entrada);
-**no** se trajo su retiro de Nuevo/Usado ni "En almacen". `06227ec` Gerente general (revision:
+`ddfe735` codigo de producto unico (de `8ab3ae4`). Estados del producto (decision de Alan
+2026-10-22, enfoque de Angel): Nuevo y Usado se retiran y todo pasa a "En almacen" (ENTRADA,
+verde; migracion `20261021120000` y opcion en el selector), MAS una guarda propia: cambiar un
+producto a En almacen en una edicion con existencia 0 da 409 `product_status_needs_stock`
+(primero registrar la entrada). El alta y los que ya estan En almacen no se rechazan. `06227ec` Gerente general (revision:
 todo en consulta, aprueba compras, ya NO recibe ordenes) y Gerente tecnico (campo: autoriza
 proyectos); el "Gerente" con usuarios pasa a tecnico CON SUS FILAS, el vacio se retira; la
 resiembra se regenero con `seed_module_permissions.py` sin `warehouse_voucher_holder` (depende de

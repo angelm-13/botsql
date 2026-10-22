@@ -115,46 +115,35 @@ class ProductService(CrudService):
                            meta={'field': 'product_code', 'id_product': repetido})
         return payload
 
-    ESTADOS_QUE_EXIGEN_EXISTENCIA = ('nuevo', 'usado')
-
     @classmethod
-    def _exigir_existencia_para_nuevo_o_usado(cls, item_id, payload: dict) -> dict:
-        """Un producto no pasa a Nuevo o Usado sin existencia.
+    def _exigir_existencia_para_en_almacen(cls, item_id, payload: dict) -> dict:
+        """Un producto no se marca "En almacen" (ENTRADA) sin existencia.
 
-        Cambiar el estado a Nuevo o Usado dice "esta en el almacen y se puede usar",
-        pero el estado solo es un texto: si la existencia esta en 0 el producto queda
-        diciendo una cosa y el libro otra, y el buscador del vale no lo ofrece. Se
-        pide primero la entrada de existencia (al menos 1) y despues el cambio.
+        El estado es solo un texto: marcar En almacen una pieza con existencia 0 la deja
+        diciendo "esta aqui" sin que el libro lo respalde, y el buscador del vale no la
+        ofrece. Se pide primero la entrada de existencia (al menos 1) y despues el
+        cambio.
 
-        Solo se mira cuando el estado CAMBIA a uno de esos dos: guardar otro campo
-        de un producto que ya es Nuevo o Usado, o que esta en 0 por estar prestado,
-        sigue funcionando. Se llama DESPUES de `_sincronizar_estado`, que deja
-        `product_status` con el codigo del catalogo cuando manda el catalogo.
+        Solo se mira cuando el estado CAMBIA a En almacen en una edicion: guardar otro
+        campo de un producto que ya esta En almacen, o dar de alta uno, sigue igual.
         """
-        from app.utils.product_status import codigo_de_catalogo
+        from app.utils.product_status import clave
 
-        if 'product_status' not in payload:
+        if item_id is None or 'product_status' not in payload:
             return payload
-        destino = codigo_de_catalogo(payload.get('product_status'))
-        if destino not in cls.ESTADOS_QUE_EXIGEN_EXISTENCIA:
+        if clave(payload.get('product_status')) != 'entrada':
             return payload
         with transaction_context() as session:
-            if item_id is None:
-                # Alta: la existencia es la que se declara al crear.
-                existencia = cls._entero_o_none(payload.get('cantidad')) or 0
-            else:
-                fila = session.get(Product, int(item_id))
-                if fila is None:
-                    return payload
-                if codigo_de_catalogo(fila.product_status) == destino:
-                    return payload
-                por_ubicacion = session.scalar(
-                    select(func.coalesce(func.sum(InventoryStock.quantity), 0))
-                    .where(InventoryStock.id_product == int(item_id)))
-                existencia = int(por_ubicacion or 0) or int(fila.cantidad or 0)
+            fila = session.get(Product, int(item_id))
+            if fila is None or clave(fila.product_status) == 'entrada':
+                return payload
+            por_ubicacion = session.scalar(
+                select(func.coalesce(func.sum(InventoryStock.quantity), 0))
+                .where(InventoryStock.id_product == int(item_id)))
+            existencia = int(por_ubicacion or 0) or int(fila.cantidad or 0)
         if existencia < 1:
             raise AppError('errors.product_status_needs_stock', status_code=409,
-                           meta={'field': 'product_status', 'status': destino,
+                           meta={'field': 'product_status', 'status': 'ENTRADA',
                                  'existencia': existencia})
         return payload
 
@@ -223,7 +212,6 @@ class ProductService(CrudService):
         """
         payload = cls._rechazar_codigo_repetido(None, cls._rechazar_lot_control(dict(payload or {})))
         payload = cls._sincronizar_estado(None, payload)
-        payload = cls._exigir_existencia_para_nuevo_o_usado(None, payload)
 
         # Sin factura no se rechaza: se resuelve la de captura directa. Es lo que
         # permite dar de alta un desarmador sin inventarse un documento de
@@ -371,7 +359,7 @@ class ProductService(CrudService):
         # rama compartida.
         payload = cls._rechazar_codigo_repetido(item_id, cls._rechazar_cantidad_a_mano(item_id, dict(payload or {})))
         payload = cls._sincronizar_estado(item_id, payload)
-        payload = cls._exigir_existencia_para_nuevo_o_usado(item_id, payload)
+        payload = cls._exigir_existencia_para_en_almacen(item_id, payload)
         # Los formularios de edicion devuelven el registro completo, `lot_control`
         # incluido. Si viene igual a lo que ya hay no se esta encendiendo nada, y
         # rechazarlo hacia imposible guardar CUALQUIER edicion de un producto.

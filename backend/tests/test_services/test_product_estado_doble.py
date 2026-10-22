@@ -64,7 +64,7 @@ class BaseEstadoDoble(BackendTestCase):
         """Un producto con el estado dado. Se escribe directo en la base: el alta
         pasa por la fabrica de pruebas, que rellena ambos campos con basura."""
         id_producto = ProductService.create(build_payload(
-            ProductService, {"created_by": 1, "descripcion": "herramienta", "cantidad": 1}
+            ProductService, {"created_by": 1, "descripcion": "herramienta", "cantidad": 0}
         ))["id_product"]
         with transaction_context() as db:
             producto = db.get(Product, id_producto)
@@ -109,6 +109,9 @@ class TestElEstadoSeEscribeEnLasDosColumnas(BaseEstadoDoble):
     def test_un_texto_que_no_es_estado_limpia_el_catalogo(self):
         id_producto = self._producto(
             product_status="EXTRAVIADO", id_inventory_status=self._id_de("extraviado"))
+        # Volver a En almacen exige existencia (ver test_product_estado_exige_existencia).
+        with transaction_context() as db:
+            db.get(Product, id_producto).cantidad = 1
         ProductService.update(id_producto, {"product_status": "ENTRADA"}, user_id=1)
         self.assertEqual((None, "ENTRADA"), self._estado(id_producto))
 

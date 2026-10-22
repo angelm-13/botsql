@@ -285,6 +285,7 @@ export default function ProductPage() {
 
   function productStatusDisplayLabel(value) {
     if (value === null || value === undefined || value === "") return "";
+    if (String(value).trim().toUpperCase() === "ENTRADA") return t("product.status_in_warehouse", "En almacén");
     const match = productStatusMeta(value);
     return match ? productInventoryStatusLabel(match) : formatTableValue(value);
   }
@@ -644,6 +645,8 @@ export default function ProductPage() {
             <span>{t("fields.product.product_status")}</span>
             <select name="product_status" value={formData.product_status ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors["product_status"])} {...inputPropsForField("product_status", validationRules["product_status"], "select")}>
               <option value="">{t("common.select_option", "Selecciona una opción")}</option>
+              {/* ENTRADA no es un estado del catalogo sino "esta en el almacen": sin esta opcion no habia como devolver a disponible una pieza marcada extraviada o con salida. */}
+              <option value="ENTRADA">{t("product.status_in_warehouse", "En almacén")}</option>
               {inventoryStatusOptions.map((item) => (
                 <option key={item.id_inventory_status ?? item.inventory_status_code ?? JSON.stringify(item)} value={item.inventory_status_code ?? ""}>
                   {productInventoryStatusLabel(item)}

@@ -51,7 +51,10 @@ class TestElCodigoNoSeRepite(BackendTestCase):
     def test_entrada_es_un_estado_valido_y_limpia_el_del_catalogo(self):
         id_producto = self._crear("BRS-9")
         with transaction_context() as db:
-            db.get(Product, id_producto).product_status = "EXTRAVIADO"
+            producto = db.get(Product, id_producto)
+            producto.product_status = "EXTRAVIADO"
+            # Volver a En almacen exige existencia (ver test_product_estado_exige_existencia).
+            producto.cantidad = 1
         ProductService.update(id_producto, {"product_status": "ENTRADA"}, user_id=1)
         with transaction_context() as db:
             producto = db.get(Product, id_producto)

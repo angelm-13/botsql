@@ -2777,7 +2777,7 @@
     "lot_control_needs_its_own_endpoint": "El control por lote no se enciende desde aquí: hazlo desde el producto, para que la existencia que ya hay quede dentro de un lote de apertura.",
     "product_description_format": "La descripción debe iniciar con mayúscula, seguida de minúsculas, espacios, números y símbolos como diagonal o guion (ej. Pulidor chico 3/4). Las siglas como PVC o LED van en mayúsculas.",
     "product_code_duplicate": "Ya existe un producto con ese código. Búscalo y edítalo, o usa otro código.",
-    "product_status_needs_stock": "No se puede marcar como Nuevo o Usado un producto sin existencia. Primero registra la entrada de al menos 1 pieza (botón «Registrar entrada») y luego cambia el estado.",
+    "product_status_needs_stock": "No se puede marcar como En almacén un producto sin existencia. Primero registra la entrada de al menos 1 pieza (botón «Registrar entrada») y luego cambia el estado.",
     "product_quantity_via_movements": "La existencia no se edita a mano: usa «Registrar entrada» para lo que llega, el vale para lo que sale y el ajuste de inventario para un conteo.",
     "voucher_not_a_draft": "Este vale ya no es un borrador: solo un borrador se puede autorizar.",
     "voucher_self_authorization": "No puedes autorizar un vale que tú mismo pediste. Lo autoriza el jefe de almacén."
@@ -4483,6 +4483,7 @@
     "unit": "Unidad"
   },
   "product": {
+    "status_in_warehouse": "En almacén",
     "classification": "Clasificación",
     "see_families": "ver familias y tipos",
     "classification_help": "La familia agrupa, el tipo distingue dentro de ella y el material es la cosa concreta. Si falta alguna, se da de alta en Familias y tipos."
