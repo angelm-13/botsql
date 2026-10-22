@@ -27,6 +27,17 @@ presupuesto con el comprobante, y "regresar a espera de material exige una pieza
 autorizador de Angel: sin decidir. Detalle de la comparacion en la memoria
 `project_tyakxa_tny_traida_initangm_20261021`.
 
+**Segunda tanda (10-22, commits de Angel del 10-21)**: seguridad `e719470` (`/documents` con
+sesion real y vales solo por `/vouchers`) y `eb5b904` (SSRF del logo y DTD en CFDI);
+`ddfe735` codigo de producto unico (de `8ab3ae4`) MAS una guarda propia: cambiar un producto a
+Nuevo/Usado con existencia 0 da 409 `product_status_needs_stock` (primero registrar la entrada);
+**no** se trajo su retiro de Nuevo/Usado ni "En almacen". `06227ec` Gerente general (revision:
+todo en consulta, aprueba compras, ya NO recibe ordenes) y Gerente tecnico (campo: autoriza
+proyectos); el "Gerente" con usuarios pasa a tecnico CON SUS FILAS, el vacio se retira; la
+resiembra se regenero con `seed_module_permissions.py` sin `warehouse_voucher_holder` (depende de
+`6f4b523`, vales con responsables designados, sin revisar). Si se trae `6f4b523` o el merge
+completo de initAngm, la resiembra `20261021100000` chocara: regenerarla. Suite: 2309 passed.
+
 **Antes de promover a adser-prod**: contar proyectos en `delivered` (la migracion los pasa a
 `collected`; probada dos veces y con un `delivered` real en la base local); probar en
 sistema-test las pantallas de proyectos (Recolectar/Completar, "en revision") y de compras;
