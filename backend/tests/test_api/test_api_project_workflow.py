@@ -27,7 +27,15 @@ class TestProjectWorkflowApi(BackendTestCase):
                 EntityPermission(id_permission=201, entity_name="project_authorization", scope_read=4, created_by=21),
                 EntityPermission(id_permission=301, entity_name="proyect", scope_read=4, scope_update=4, created_by=31),
                 EntityPermission(id_permission=301, entity_name="project_execution", scope_read=4, created_by=31),
+                # Compras con `project_supply`: ve los proyectos y da los pasos de
+                # material sin poder editarlos (`proyect` solo en lectura).
+                EntityPermission(id_permission=401, entity_name="proyect", scope_read=4, created_by=41),
+                EntityPermission(id_permission=401, entity_name="project_supply", scope_read=4, created_by=41),
+                # El mismo rol sin la capacidad: leer no basta para mover el estatus.
+                EntityPermission(id_permission=402, entity_name="proyect", scope_read=4, created_by=42),
             ])
+        self.buyer = {"id_user": 41, "id_permission": 401}
+        self.reader = {"id_user": 42, "id_permission": 402}
 
     def _request(self, actor, method, path, payload=None):
         with patch("app.utils.auth.jwt.decode", return_value=actor):
@@ -152,6 +160,31 @@ class TestProjectWorkflowApi(BackendTestCase):
             )
             self.assertEqual(403, response.status_code)
             self.assertEqual("errors.permission_denied", self.json(response)["error_key"])
+
+    def test_project_supply_gives_the_material_steps_without_editing_projects(self):
+        """Compras da los dos pasos de material con `project_supply` y `proyect` en consulta.
+
+        Antes la ruta exigia `proyect` + actualizar, asi que la capacidad no
+        servia de nada para un rol que solo consulta: 403 aunque el servicio la
+        reconociera.
+        """
+        project_id = self._create_project()["id_proyect"]
+        for status in ("submitted", "authorized"):
+            self.assertEqual(200, self._request(
+                self.manager, "POST", f"/proyect/{project_id}/transition", {"status": status}).status_code)
+        ruta = f"/proyect/{project_id}/transition"
+
+        sin_capacidad = self._request(self.reader, "POST", ruta, {"status": "waiting_material"})
+        self.assertEqual(403, sin_capacidad.status_code)
+
+        for status in ("waiting_material", "in_progress"):
+            self.assertEqual(200, self._request(self.buyer, "POST", ruta, {"status": status}).status_code)
+
+        # Y nada mas: ni detiene el proyecto ni lo edita.
+        self.assertEqual(403, self._request(
+            self.buyer, "POST", ruta, {"status": "stopped", "reason": "x"}).status_code)
+        self.assertEqual(403, self._request(
+            self.buyer, "PUT", f"/proyect/{project_id}", {"title": "Cambiado por Compras"}).status_code)
 
     def test_http_requires_reason_for_blocking(self):
         project = self._create_project()

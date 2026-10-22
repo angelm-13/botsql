@@ -211,6 +211,25 @@ def has_kpi_permission(session, user_data: dict, id_kpi_definition) -> bool:
     return bool(record) and bool(record.puede_ver)
 
 
+def require_any_entity_permission(*requisitos: tuple[str, str]):
+    """Pasa quien cumple CUALQUIERA de los pares (entidad, accion).
+
+    Para una ruta que abre una capacidad estrecha ademas del permiso general: el
+    error, si nadie cumple, es el del primer par.
+    """
+    def decorator(fn):
+        @wraps(fn)
+        def wrapper(user_data, *args, **kwargs):
+            if any(_has_entity_permission(user_data, entidad, accion) for entidad, accion in requisitos):
+                return fn(user_data, *args, **kwargs)
+            entidad, accion = requisitos[0]
+            if not _plan_permite(entidad):
+                return jsonify({'error_key': 'errors.module_not_in_plan', 'meta': {'entity': entidad}}), 403
+            return jsonify({'error_key': 'errors.permission_denied', 'meta': {'entity': entidad, 'action': accion}}), 403
+        return wrapper
+    return decorator
+
+
 def require_entity_permission(entity_name: str, action: str):
     def decorator(fn):
         @wraps(fn)

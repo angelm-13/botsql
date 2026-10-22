@@ -21,7 +21,7 @@ from app.services.project_management_service import (
     transition_project,
     update_project,
 )
-from app.utils.auth import token_required, require_entity_permission
+from app.utils.auth import token_required, require_any_entity_permission, require_entity_permission
 from app.utils.field_access import COLUMNAS_DE_AUDITORIA
 
 
@@ -206,7 +206,9 @@ def update_proyect(user_data, id_proyect):
 
 @bp_proyect.route('/<id_proyect>/transition', methods=['POST'])
 @token_required
-@require_entity_permission('proyect', 'update')
+# `project_supply` (Compras) da los pasos de material sin editar el proyecto; el
+# servicio decide cuales transiciones le tocan a cada quien.
+@require_any_entity_permission(('proyect', 'update'), ('project_supply', 'read'))
 def transition_proyect(user_data, id_proyect):
     return jsonify(transition_project(id_proyect, request.get_json() or {}, user_data))
 
