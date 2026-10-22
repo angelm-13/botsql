@@ -673,6 +673,74 @@ class TestKpiDashboardApi(BackendTestCase):
         self.assertEqual(200, self._request(ACTOR_A, "PUT", f"/kpi_dashboard_widget/{id_widget}", {"parametros": bueno}).status_code)
         self.assertEqual(bueno, self._parametros_de(ACTOR_A, id_dashboard, id_widget))
 
+    # --- titulo propio del grafico: parametros.titulo ---
+    def _crear_widget(self, actor, id_dashboard, parametros=None, tipo="barras"):
+        cuerpo = {"ids_kpi_definition": [self.id_kpi], "tipo_grafica": tipo}
+        if parametros is not None:
+            cuerpo["parametros"] = parametros
+        respuesta = self._request(actor, "POST", f"/kpi_dashboard/{id_dashboard}/widgets/", cuerpo)
+        self.assertEqual(201, respuesta.status_code, self.json(respuesta))
+        return self.json(respuesta)
+
+    def test_el_titulo_propio_se_guarda_recortado_al_crear_se_conserva_al_editar_y_se_puede_cambiar(self):
+        id_dashboard = self._crear_tablero(ACTOR_A)
+        creado = self._crear_widget(ACTOR_A, id_dashboard, {"fecha_inicio": "2026-09-01", "fecha_fin": "2026-09-30", "titulo": "  Entradas de Manzanillo  "})
+        id_widget = creado["id_kpi_dashboard_widget"]
+        self.assertEqual("Entradas de Manzanillo", creado["parametros"]["titulo"], "la respuesta ya trae el titulo recortado")
+        self.assertEqual("Entradas de Manzanillo", self._parametros_de(ACTOR_A, id_dashboard, id_widget)["titulo"])
+
+        # Editar el widget (el editor manda TODOS los parametros): lo guardado es lo que se mando, titulo incluido.
+        editado = self._request(ACTOR_A, "PUT", f"/kpi_dashboard_widget/{id_widget}", {
+            "parametros": {"fecha_inicio": "2026-09-01", "fecha_fin": "2026-09-30", "titulo": "Salidas de Culiacán"},
+        })
+        self.assertEqual(200, editado.status_code, self.json(editado))
+        self.assertEqual("Salidas de Culiacán", self._parametros_de(ACTOR_A, id_dashboard, id_widget)["titulo"])
+
+        # Y si el editor lo vacia, la llave se va y la tarjeta vuelve al nombre del KPI.
+        vaciado = self._request(ACTOR_A, "PUT", f"/kpi_dashboard_widget/{id_widget}", {
+            "parametros": {"fecha_inicio": "2026-09-01", "fecha_fin": "2026-09-30", "titulo": "   "},
+        })
+        self.assertEqual(200, vaciado.status_code)
+        self.assertNotIn("titulo", self._parametros_de(ACTOR_A, id_dashboard, id_widget))
+
+    def test_el_titulo_se_conserva_al_guardar_el_orden_de_una_tabla(self):
+        id_dashboard = self._crear_tablero(ACTOR_A)
+        id_widget = self._crear_widget(ACTOR_A, id_dashboard, {"columnas": 2, "titulo": "Material afuera"}, tipo="tabla")["id_kpi_dashboard_widget"]
+
+        self._request(ACTOR_A, "PUT", f"/kpi_dashboard_widget/{id_widget}/orden_tabla", {"campo": "articulo", "direccion": "asc"})
+
+        self.assertEqual(
+            {"columnas": 2, "titulo": "Material afuera", "orden_tabla": {"campo": "articulo", "direccion": "asc"}},
+            self._parametros_de(ACTOR_A, id_dashboard, id_widget),
+        )
+
+    def test_el_limite_de_80_caracteres_se_respeta_al_crear_y_al_editar(self):
+        id_dashboard = self._crear_tablero(ACTOR_A)
+        justo = "á" * 80
+        creado = self._crear_widget(ACTOR_A, id_dashboard, {"titulo": justo})
+        self.assertEqual(justo, creado["parametros"]["titulo"], "80 caben")
+        id_widget = creado["id_kpi_dashboard_widget"]
+
+        largo = "a" * 81
+        malo_al_crear = self._request(ACTOR_A, "POST", f"/kpi_dashboard/{id_dashboard}/widgets/", {
+            "ids_kpi_definition": [self.id_kpi], "tipo_grafica": "barras", "parametros": {"titulo": largo},
+        })
+        self.assertEqual(400, malo_al_crear.status_code)
+        self.assertEqual("errors.field_too_long", self.json(malo_al_crear)["error_key"])
+        self.assertEqual(80, self.json(malo_al_crear)["meta"]["max_length"])
+        malo_al_editar = self._request(ACTOR_A, "PUT", f"/kpi_dashboard_widget/{id_widget}", {"parametros": {"titulo": largo}})
+        self.assertEqual(400, malo_al_editar.status_code)
+        self.assertEqual({"titulo": justo}, self._parametros_de(ACTOR_A, id_dashboard, id_widget), "lo guardado no cambia")
+
+    def test_un_titulo_con_html_o_que_no_es_texto_se_rechaza(self):
+        id_dashboard = self._crear_tablero(ACTOR_A)
+        id_widget = self._crear_widget(ACTOR_A, id_dashboard, {"titulo": "Bueno"})["id_kpi_dashboard_widget"]
+        for malo in ("<b>Hola</b>", "<script>alert(1)</script>", "dos\nlineas", 7, ["x"]):
+            with self.subTest(titulo=malo):
+                respuesta = self._request(ACTOR_A, "PUT", f"/kpi_dashboard_widget/{id_widget}", {"parametros": {"titulo": malo}})
+                self.assertEqual(400, respuesta.status_code, self.json(respuesta))
+        self.assertEqual({"titulo": "Bueno"}, self._parametros_de(ACTOR_A, id_dashboard, id_widget))
+
     def test_el_orden_solo_aplica_a_widgets_de_tabla(self):
         id_dashboard = self._crear_tablero(ACTOR_A)
         creado = self._request(ACTOR_A, "POST", f"/kpi_dashboard/{id_dashboard}/widgets/", {
