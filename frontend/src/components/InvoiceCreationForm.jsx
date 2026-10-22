@@ -117,7 +117,6 @@ export default function InvoiceCreationForm({ onCreated }) {
   const currentUser = JSON.parse(localStorage.getItem("user") || "null") || {};
   // Solo para saber si el boton dice "timbrar" o "simulado" -- la edicion de
   // la cuenta de Facturama vive en su propia pagina de Configuracion.
-  const isAdmin = Boolean(currentUser.is_superuser || currentUser.is_bootstrap_admin || String(currentUser.user_type || "").toLowerCase() === "admin");
   const [stampingProvider, setStampingProvider] = useState("fake");
   const [contacts, setContacts] = useState([]);
   const [projects, setProjects] = useState([]);
@@ -140,7 +139,7 @@ export default function InvoiceCreationForm({ onCreated }) {
     let mounted = true;
     Promise.all([
       getAllCustomerSupplier({ page: 1, per_page: 500 }), getAllProyect({ page: 1, per_page: 500 }),
-      getInvoiceCatalogs(), isAdmin ? getStampingConfig() : Promise.resolve(null),
+      getInvoiceCatalogs(), getStampingConfig().catch(() => null),
     ]).then(([contactPayload, projectPayload, catalogPayload, configPayload]) => {
       if (!mounted) return;
       const nextContacts = asItems(contactPayload);
@@ -151,7 +150,7 @@ export default function InvoiceCreationForm({ onCreated }) {
     }).catch((requestError) => setError(requestError.message || "invoice_creation.error_catalogs"))
       .finally(() => { if (mounted) setLoading(false); });
     return () => { mounted = false; };
-  }, [isAdmin]);
+  }, []);
 
   const payload = useMemo(() => ({
     ...form,

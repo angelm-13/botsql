@@ -52,6 +52,7 @@ from app.models.purchase_order import PAYMENT_METHODS, VOUCHER_KINDS
 from app.models.session import transaction_context
 from app.services.cfdi_xml import parse_cfdi
 from app.services.document_service import SecureDocumentStorage
+from app.services import purchase_budget_service as presupuesto_de_compras
 from app.services.proyect_material_need_service import (
     PROYECTOS_QUE_YA_NO_COMPRAN, _actor, _cantidad, _datos_de_materiales,
     _descripcion_valida, _entero_positivo, _fecha_o_nada, _texto, _unidad,
@@ -381,7 +382,8 @@ def _renglon_de_necesidad(db, dato: dict, tomadas: dict, excepto_orden) -> dict:
             "id_proyect_material_need": id_necesidad,
             "review_result": necesidad.review_result})
     proyecto = db.get(Proyect, necesidad.id_proyect)
-    if proyecto is None or proyecto.proyect_status in PROYECTOS_QUE_YA_NO_COMPRAN:
+    if (proyecto is None or proyecto.proyect_status in PROYECTOS_QUE_YA_NO_COMPRAN
+            or proyecto.management_status == "cancelado"):
         raise AppError("errors.need_not_open", 409, {"id_proyect_material_need": id_necesidad})
     en_orden = tomadas.get(id_necesidad)
     if en_orden is not None and en_orden[0] != excepto_orden:
@@ -546,10 +548,9 @@ def _acciones(db, orden: PurchaseOrder, renglones, comprobantes, user_data: dict
         and bool(con_evidencia),
         "cancel": escribe and estado in CANCELLABLE_STATES,
         # Recibir lo comprado es del almacen, que solo consulta las ordenes: lo
-        # decide la capacidad `purchase_receive`, no el permiso de escribir. Y quien
-        # compro no recibe.
-        "receive": estado in RECEIVABLE_STATES and _puede_recibir(db, user_data)
-        and (orden.purchased_by is None or int(orden.purchased_by) != actor),
+        # decide la capacidad `purchase_receive`, no el permiso de escribir. Quien
+        # puede recibir lo manda el Gestor: no hay regla por persona.
+        "receive": estado in RECEIVABLE_STATES and _puede_recibir(db, user_data),
         # Cuales comprobantes se pueden quitar ahora (y solo antes de comprar).
         "removable_vouchers": [
             v.id_purchase_voucher for v in comprobantes
@@ -592,6 +593,7 @@ def _ficha(db, orden: PurchaseOrder, user_data: dict, *, detalle: bool = True) -
         "lines_total": (float(_total_de_renglones(renglones))
                         if renglones and _total_de_renglones(renglones) is not None else None),
         "projects": sorted(proyectos.values(), key=lambda p: p["id_proyect"]),
+        "budget": (json.loads(orden.budget_detail) if orden.budget_detail else []),
         "vouchers": [v.serialize() for v in comprobantes],
         "actions": _acciones(db, orden, renglones, comprobantes, user_data, actor),
     })
@@ -673,7 +675,16 @@ def list_orders(user_data: dict, *, status=None, id_supplier=None, q=None,
                 "created_by_name": nombres.get(int(orden.created_by)),
             })
             items.append(fila)
-        return {"items": items, "total": int(total or 0), "limit": limite, "offset": desde}
+        # Cuantas hay en cada estado, sin los filtros de la lista: es el resumen
+        # que se ve arriba de la pantalla (por autorizar, por comprar, por recibir).
+        por_estado = {
+            str(estado): int(n) for estado, n in db.execute(
+                select(PurchaseOrder.order_status, func.count())
+                .where(PurchaseOrder.deletion_date.is_(None))
+                .group_by(PurchaseOrder.order_status)).all()
+        }
+        return {"items": items, "total": int(total or 0), "limit": limite, "offset": desde,
+                "by_status": por_estado}
 
 
 def get_order(id_order, user_data: dict) -> dict:
@@ -800,6 +811,12 @@ def submit_order(id_order, user_data: dict) -> dict:
 
         politica = _politica(db)
         requiere = total > politica.authorize_above
+        evaluacion = presupuesto_de_compras.evaluar_orden(db, orden, renglones)
+        se_pasa = presupuesto_de_compras.excede(evaluacion)
+        # Pasarse del presupuesto de un proyecto exige autorizacion aunque el monto sea chico.
+        requiere = requiere or se_pasa
+        orden.exceeds_budget = se_pasa
+        orden.budget_detail = json.dumps(evaluacion) if evaluacion else None
         gerente = (politica.manager_buys_above is not None
                    and total > politica.manager_buys_above)
         orden.quoted_total = total
@@ -810,7 +827,8 @@ def submit_order(id_order, user_data: dict) -> dict:
         orden.authorization_note = None
         orden.authorized_total = None
         detalle = {"total": total, "authorize_above": politica.authorize_above,
-                   "manager_buys_above": politica.manager_buys_above}
+                   "manager_buys_above": politica.manager_buys_above,
+                   "exceeds_budget": se_pasa}
         anterior = orden.order_status
         if requiere:
             _cambiar_estado(db, orden, "pending_authorization", "submitted", actor,
@@ -839,6 +857,15 @@ def authorize_order(id_order, payload: dict, user_data: dict) -> dict:
         # Quien pide el dinero no se lo autoriza. Vale tambien para el administrador.
         if int(orden.created_by) == actor:
             raise AppError("errors.purchase_same_person", 403, {"action": "authorize"})
+        # Otras ordenes pudieron comprometer el presupuesto desde que esta se envio.
+        evaluacion = presupuesto_de_compras.evaluar_orden(
+            db, orden, _renglones(db, orden.id_purchase_order), al_autorizar=True)
+        orden.exceeds_budget = presupuesto_de_compras.excede(evaluacion)
+        orden.budget_detail = json.dumps(evaluacion) if evaluacion else None
+        if orden.exceeds_budget and not nota:
+            # Autorizar por encima del presupuesto deja el motivo por escrito.
+            raise AppError("errors.budget_note_required", 400, {
+                "detail": presupuesto_de_compras.resumen_del_exceso(evaluacion)})
         orden.authorized_by = actor
         orden.authorized_date = _ahora()
         orden.authorization_note = nota
@@ -1162,9 +1189,9 @@ def receive_order(id_order, payload: dict, user_data: dict) -> dict:
     llamada SUMA a lo ya recibido; la orden pasa a `received` cuando todos los
     renglones estan completos y se queda en `partially_received` mientras falte.
 
-    Quien recibe es el almacen (capacidad `purchase_receive`) y NO es quien compro:
-    la misma persona no puede comprar y confirmar que llego lo que compro. Vale
-    tambien para el administrador, igual que autorizar la orden propia.
+    Quien recibe lo decide la capacidad `purchase_receive` en el Gestor (Almacen, o
+    Compras si se le concede). Ya no hay regla por persona: quien compro puede
+    confirmar que llego, si su rol tiene la capacidad (2026-10-19, pedido de Adser).
 
     Solo confirma CANTIDAD. No da entrada al inventario: lo comprado es, casi
     siempre, material de obra en texto libre -sin producto ni ubicacion a donde
@@ -1191,10 +1218,8 @@ def receive_order(id_order, payload: dict, user_data: dict) -> dict:
         if orden.order_status not in RECEIVABLE_STATES:
             raise AppError("errors.order_not_receivable", 409,
                            {"order_status": orden.order_status})
-        if orden.purchased_by is not None and int(orden.purchased_by) == actor:
-            raise AppError("errors.purchase_same_person", 403, {"action": "receive"})
 
-        renglones = {r.id_purchase_order_line: r for r in _renglones(db, orden.id_purchase_order)}
+        renglones ={r.id_purchase_order_line: r for r in _renglones(db, orden.id_purchase_order)}
         vistos = set()
         llegado = []
         for dato in datos:
@@ -1287,6 +1312,9 @@ def notificar_orden(evento: str, ficha: dict, actor_id: int) -> None:
             if evento == "por_autorizar":
                 destinatarios = _usuarios_con_capacidad(db, AUTHORIZE_CAPABILITY)
                 mensaje = "La orden %s espera autorizacion." % folio
+                if ficha.get("exceeds_budget"):
+                    mensaje = ("La orden %s excede el presupuesto de un proyecto "
+                               "y espera autorizacion." % folio)
             elif evento == "autorizada":
                 destinatarios = {ficha.get("created_by")}
                 mensaje = "La orden %s fue autorizada; ya puede comprarse." % folio
@@ -1316,5 +1344,24 @@ def notificar_orden(evento: str, ficha: dict, actor_id: int) -> None:
                 metadata={"id_purchase_order": ficha.get("id_purchase_order")},
                 target_entity="purchase_order", target_id=ficha.get("id_purchase_order"),
                 created_by=actor_id)
+    except Exception:
+        pass
+    if evento in ("recibida", "recibida_en_parte"):
+        _avisar_material_completo_de(ficha, actor_id)
+
+
+def _avisar_material_completo_de(ficha: dict, actor_id: int) -> None:
+    """Tras recibir material, avisa de los proyectos a los que ya les llego todo.
+
+    El aviso por orden de arriba dice que llego algo de ESA orden; el del proyecto
+    dice que ya no falta nada de lo que pidio, que es lo que necesita quien lo
+    lleva para saber que puede completarlo.
+    """
+    try:
+        from app.services.project_management_service import avisar_material_completo
+
+        ids = {l.get("id_proyect") for l in ficha.get("lines") or [] if l.get("id_proyect")}
+        if ids:
+            avisar_material_completo(ids, int(actor_id))
     except Exception:
         pass

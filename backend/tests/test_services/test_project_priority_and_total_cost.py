@@ -29,10 +29,18 @@ class TestProjectPriorityAndTotalCost(BackendTestCase):
         self.supervisor = {"id_user": 11, "id_permission": 101}
         self.manager = {"id_user": 21, "id_permission": 201}
         with transaction_context() as db:
-            db.add(EntityPermission(
-                id_permission=201, entity_name="project_authorization",
-                scope_read=4, created_by=21,
-            ))
+            db.add_all([
+                EntityPermission(
+                    id_permission=201, entity_name="project_authorization",
+                    scope_read=4, created_by=21,
+                ),
+                # Editar lo manda `scope_update` (Gestor): Propios para quien
+                # levanta proyectos.
+                EntityPermission(
+                    id_permission=101, entity_name="proyect",
+                    scope_update=1, created_by=11,
+                ),
+            ])
 
     def _create(self, actor, **extra):
         return create_project({
@@ -171,10 +179,18 @@ class TestManagementStatusFollowsCollection(BackendTestCase):
         self.supervisor = {"id_user": 11, "id_permission": 101}
         self.manager = {"id_user": 21, "id_permission": 201}
         with transaction_context() as db:
-            db.add(EntityPermission(
-                id_permission=201, entity_name="project_authorization",
-                scope_read=4, created_by=21,
-            ))
+            db.add_all([
+                EntityPermission(
+                    id_permission=201, entity_name="project_authorization",
+                    scope_read=4, created_by=21,
+                ),
+                # Editar lo manda `scope_update` (Gestor): Propios para quien
+                # levanta proyectos.
+                EntityPermission(
+                    id_permission=101, entity_name="proyect",
+                    scope_update=1, created_by=11,
+                ),
+            ])
 
     def _create(self, **extra):
         # Gerencia ya no crea proyectos (correccion de negocio 2026-09-28):

@@ -48,9 +48,10 @@ from app.services.invoice_inventory_service import (
 )
 from app.utils.errors import AppError
 from tests.conftest import BackendTestCase
+from tests.model_factory import dar_capacidad
 
 
-ACTOR = {"id_user": 1, "id_proyect": 30}
+ACTOR = {"id_user": 1, "id_proyect": 30, "id_permission": 910}
 OUTSIDER = {"id_user": 2, "id_proyect": 99}
 
 PRINCIPAL = 10   # la empresa que emite: sus facturas son ventas
@@ -74,6 +75,7 @@ class TestLaFacturaQueDocumentaUnaVenta(BackendTestCase):
     def setUp(self):
         super().setUp()
         with transaction_context() as db:
+            dar_capacidad(db, 910)
             db.add_all([
                 CustomerSupplier(
                     id_customer_supplier=PRINCIPAL, name="Mi Empresa", tax_id="AAA010101AA1",
@@ -123,7 +125,8 @@ class TestLaFacturaQueDocumentaUnaVenta(BackendTestCase):
         apply_inventory_movement(PRODUCT, {
             "movement_type": "receive", "quantity": 10,
             "id_location": WAREHOUSE, "reference_type": "purchase",
-            "reference_id": str(PURCHASE), "idempotency_key": "alta-inicial",
+            "reference_id": str(PURCHASE), "reason": "Compra",
+            "idempotency_key": "alta-inicial",
         }, ACTOR)
         with transaction_context() as db:
             from app.services.inventory_service import apply_movement_in_session

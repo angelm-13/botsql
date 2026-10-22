@@ -58,6 +58,11 @@ def stamp_payment_complement(payment_id, idempotency_key, user_data, provider=No
             # se confia en la llave, igual que hace register_payment.
             if abono_actual.id_payment_invoice and abono_actual.id_payment_invoice != previous.id_invoice:
                 raise AppError("errors.idempotency_conflict", 409)
+            # Una llave que timbro una FACTURA no es la de un REP: devolverla
+            # haria creer que el complemento quedo timbrado.
+            del_intento = db.get(Invoice, previous.id_invoice)
+            if del_intento is not None and str(del_intento.tipo_de_comprobante or "").upper() != "P":
+                raise AppError("errors.idempotency_conflict", 409)
             return previous.serialize(), False
 
         abono = db.get(InvoicePayment, int(payment_id))

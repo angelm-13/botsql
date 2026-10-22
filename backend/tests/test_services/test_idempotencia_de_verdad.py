@@ -126,7 +126,8 @@ class TestLaLlaveDelAlmacen(BaseIdempotencia):
 
         carga = {"movement_type": "receive", "quantity": cantidad,
                  "id_location": NAVE_A, "reference_type": "purchase",
-                 "reference_id": str(COMPRA), "idempotency_key": llave}
+                 "reference_id": str(COMPRA), "idempotency_key": llave,
+                 "reason": "Compra"}
         carga.update(extra)
         return apply_inventory_movement(PRODUCTO, carga, ACTOR)
 
@@ -196,7 +197,7 @@ class TestLaLlaveDelAlmacen(BaseIdempotencia):
         self._conflicto(apply_inventory_movement, PRODUCTO + 1, {
             "movement_type": "receive", "quantity": 10, "id_location": NAVE_A,
             "reference_type": "purchase", "reference_id": str(COMPRA),
-            "idempotency_key": "K"}, ACTOR)
+            "reason": "Compra", "idempotency_key": "K"}, ACTOR)
 
 
 class TestLaLlaveDelTraslado(BaseIdempotencia):
@@ -208,7 +209,7 @@ class TestLaLlaveDelTraslado(BaseIdempotencia):
         apply_inventory_movement(PRODUCTO, {
             "movement_type": "receive", "quantity": 40, "id_location": NAVE_A,
             "reference_type": "purchase", "reference_id": str(COMPRA),
-            "idempotency_key": "entrada"}, ACTOR)
+            "reason": "Compra", "idempotency_key": "entrada"}, ACTOR)
 
     def _trasladar(self, cantidad, llave, **extra):
         from app.services.inventory_service import transfer_inventory

@@ -9,10 +9,10 @@ from app.utils.errors import AppError
 class TestProjectStateMachine(unittest.TestCase):
     def test_accepts_complete_project_lifecycle(self):
         allowed = {
-            # Gerente mueve el proyecto directo desde Borrador, sin pasar
-            # por "submitted" -- ver test_project_workflow_service.py para
-            # quien tiene permiso de pedir cada una.
-            "draft": ("submitted", "authorized", "denied", "blocked"),
+            # Gerencia pasa por "en revision" antes de autorizar -- ver
+            # test_project_workflow_service.py para quien tiene permiso de
+            # pedir cada una.
+            "draft": ("submitted", "denied", "blocked"),
             "submitted": ("authorized", "denied", "blocked"),
             "blocked": ("submitted", "authorized", "denied"),
             # Ya no hay salida directa a "in_progress": toda autorizacion
@@ -20,7 +20,8 @@ class TestProjectStateMachine(unittest.TestCase):
             # test_project_workflow_service.py::test_an_authorized_project_cannot_skip_the_wait_for_material).
             "authorized": ("waiting_material",),
             "waiting_material": ("in_progress", "stopped"),
-            "in_progress": ("stopped", "completed"),
+            "in_progress": ("stopped", "collected"),
+            "collected": ("completed",),
             "stopped": ("in_progress",),
         }
         for current, targets in allowed.items():
@@ -40,21 +41,27 @@ class TestProjectStateMachine(unittest.TestCase):
             validate_project_transition("in_progress", "stopped")
 
     def test_rejects_unlisted_transitions(self):
-        for current, target in (("draft", "in_progress"), ("authorized", "completed"), ("denied", "draft"), ("completed", "in_progress")):
+        for current, target in (("draft", "in_progress"), ("draft", "authorized"), ("authorized", "completed"), ("denied", "draft"), ("completed", "in_progress")):
             with self.assertRaises(AppError) as raised:
                 validate_project_transition(current, target)
             self.assertEqual("errors.project_invalid_transition", raised.exception.message_key)
 
+    def test_the_machine_is_the_same_with_or_without_maquila(self):
+        """Sin maquila recorre los mismos estatus; solo cambia quien lo lleva.
 
-if __name__ == "__main__":
-    unittest.main()
-    def test_a_project_without_maquila_skips_the_workshop_states(self):
-        self.assertEqual("completed", validate_project_transition(
-            "authorized", "completed", requires_maquila=False))
-        with self.assertRaises(AppError) as raised:
-            validate_project_transition(
-                "authorized", "waiting_material", requires_maquila=False)
-        self.assertEqual("errors.project_invalid_transition", raised.exception.message_key)
+        Hasta 2026-10-16 saltaba de autorizado a completado; ese atajo se
+        retiro: pasa por la espera de material (Compras) y por en proceso.
+        """
+        self.assertEqual("waiting_material", validate_project_transition("authorized", "waiting_material"))
+        self.assertEqual("in_progress", validate_project_transition("waiting_material", "in_progress"))
+        self.assertEqual("collected", validate_project_transition("in_progress", "collected"))
+        self.assertEqual("completed", validate_project_transition("collected", "completed"))
+        # Ni "completado" desde antes de recolectar, ni "entregado" (ya no existe).
+        for current, target in (("authorized", "completed"), ("in_progress", "completed"),
+                                ("completed", "delivered"), ("collected", "delivered")):
+            with self.subTest(current=current, target=target), self.assertRaises(AppError) as raised:
+                validate_project_transition(current, target)
+            self.assertEqual("errors.project_invalid_transition", raised.exception.message_key)
 
     def test_a_stray_boolean_is_a_400_not_a_500(self):
         from app.services.project_management_service import _booleano_estricto
@@ -67,3 +74,7 @@ if __name__ == "__main__":
         valores = {"requires_maquila": "False"}
         _booleano_estricto(valores, "requires_maquila")
         self.assertIs(False, valores["requires_maquila"])
+
+
+if __name__ == "__main__":
+    unittest.main()

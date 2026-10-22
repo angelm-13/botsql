@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { Plus, RefreshCw } from "lucide-react";
+import { ArrowLeft, Plus, RefreshCw } from "lucide-react";
 import PageHeader from "../components/PageHeader.jsx";
 import OrdenDeCompraDetalle from "../components/OrdenDeCompraDetalle.jsx";
 import OrdenDeCompraEditor from "../components/OrdenDeCompraEditor.jsx";
 import PoliticaDeCompra from "../components/PoliticaDeCompra.jsx";
+import PresupuestosDeCompra from "../components/PresupuestosDeCompra.jsx";
 import {
   getMyPermissions, getPurchaseOrder, getPurchaseOrders, getPurchasePolicy,
 } from "../api";
@@ -17,6 +18,7 @@ const FILTROS = [
   { clave: "", etiqueta: "Todas", estados: "" },
   { clave: "pending", etiqueta: "Por autorizar", estados: "pending_authorization" },
   { clave: "authorized", etiqueta: "Por comprar", estados: "authorized" },
+  { clave: "receiving", etiqueta: "Por recibir", estados: "purchased,partially_received" },
   { clave: "bought", etiqueta: "Compradas", estados: "purchased,partially_received,received,closed" },
   { clave: "open", etiqueta: "Borradores", estados: "draft,rejected" },
   { clave: "cancelled", etiqueta: "Canceladas", estados: "cancelled" },
@@ -29,6 +31,14 @@ function actorGuardado() {
 function esPrivilegiado(actor) {
   return Boolean(actor.is_superuser || actor.is_bootstrap_admin || actor.username === "admin1");
 }
+
+// Las tarjetas de arriba: cada una es un filtro y dice cuantas hay en esos estados.
+const RESUMEN = [
+  { clave: "pending", etiqueta: "Por autorizar", estados: ["pending_authorization"], tono: "alerta" },
+  { clave: "authorized", etiqueta: "Por comprar", estados: ["authorized"], tono: "info" },
+  { clave: "receiving", etiqueta: "Por recibir", estados: ["purchased", "partially_received"], tono: "ok" },
+  { clave: "open", etiqueta: "Borradores", estados: ["draft", "rejected"], tono: "neutro" },
+];
 
 function fechaCorta(iso) {
   if (!iso) return "";
@@ -156,6 +166,10 @@ export default function OrdenesDeCompraPage() {
   }
 
   const items = lista.items || [];
+  const porEstado = lista.by_status || {};
+  // Sin orden abierta la lista ocupa todo el ancho como tabla; al abrir una, pasa a
+  // tarjetas a la izquierda para dejar sitio al detalle.
+  const vistaTabla = modo === "ver" && !orden;
 
   return (
     <section className="page ordenes-de-compra">
@@ -179,12 +193,33 @@ export default function OrdenesDeCompraPage() {
 
       <PoliticaDeCompra politica={politica} puedeEditar={puede("purchase_policy", "scope_update")}
                         onCambio={setPolitica} />
+      <PresupuestosDeCompra puedeEditar={puede("purchase_policy", "scope_update")} />
 
       {error && <div className="alert error">{error}</div>}
       {noSeAbrio && <div className="alert error">{noSeAbrio}</div>}
 
-      <div className="oc-layout">
+      <div className="oc-resumen">
+        {RESUMEN.map((r) => {
+          const cuantas = r.estados.reduce((suma, e) => suma + (porEstado[e] || 0), 0);
+          return (
+            <button key={r.clave} type="button"
+                    className={`oc-resumen-tarjeta oc-tono-${r.tono}${filtro === r.clave ? " activa" : ""}${cuantas === 0 ? " vacia" : ""}`}
+                    onClick={() => setFiltro(filtro === r.clave ? "" : r.clave)}>
+              <strong>{cuantas}</strong>
+              <span>{t(`order.filter_${r.clave}`, r.etiqueta)}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className={`oc-layout${vistaTabla ? " oc-layout-tabla" : ""}`}>
         <aside className="oc-lista">
+          {!vistaTabla && (
+            <button type="button" className="button ghost oc-todas"
+                    onClick={() => { setOrden(null); setModo("ver"); setPrecarga([]); }}>
+              <ArrowLeft size={14} /> {t("order.all_orders", "Todas las órdenes")}
+            </button>
+          )}
           <div className="oc-filtros" role="tablist">
             {FILTROS.map((f) => (
               <button key={f.clave} type="button" role="tab" aria-selected={filtro === f.clave}
@@ -204,7 +239,50 @@ export default function OrdenesDeCompraPage() {
             </div>
           )}
 
-          <ul className="oc-ordenes">
+          {vistaTabla && items.length > 0 && (
+            <div className="table-card">
+              <div className="table-wrap">
+                <table className="oc-tabla-lista">
+                  <thead>
+                    <tr>
+                      <th>{t("order.col_folio", "Folio")}</th>
+                      <th>{t("order.col_supplier", "Proveedor")}</th>
+                      <th>{t("order.col_projects", "Proyectos")}</th>
+                      <th className="num">{t("order.col_total", "Total")}</th>
+                      <th>{t("order.col_created", "Creada")}</th>
+                      <th>{t("order.col_status", "Estado")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((o) => {
+                      const estado = estadoDeOrden(o.order_status);
+                      return (
+                        <tr key={o.id_purchase_order} tabIndex={0} className="oc-fila"
+                            onClick={() => abrir(o.id_purchase_order)}
+                            onKeyDown={(e) => { if (e.key === "Enter") abrir(o.id_purchase_order); }}>
+                          <td><strong>{o.folio}</strong></td>
+                          <td>{o.supplier_name}</td>
+                          <td>
+                            {o.projects_count > 0
+                              ? `${o.projects_count} ${o.projects_count === 1 ? "proyecto" : "proyectos"}`
+                              : `${o.lines_count} renglones`}
+                          </td>
+                          <td className="num mono">{dinero(o.total_amount ?? o.authorized_total ?? o.quoted_total, o.currency)}</td>
+                          <td>
+                            {fechaCorta(o.creation_date)}
+                            <small className="muted oc-creador">{o.created_by_name || `#${o.created_by}`}</small>
+                          </td>
+                          <td><span className={`oc-estado oc-estado-${estado.clase}`}>{estado.etiqueta}</span></td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          <ul className="oc-ordenes" hidden={vistaTabla}>
             {items.map((o) => {
               const estado = estadoDeOrden(o.order_status);
               return (
@@ -233,7 +311,7 @@ export default function OrdenesDeCompraPage() {
           </ul>
         </aside>
 
-        <div className="oc-panel">
+        {!vistaTabla && <div className="oc-panel">
           {modo === "nueva" && (
             <OrdenDeCompraEditor precargar={precarga} onGuardada={alGuardar}
                                  onCancelar={() => { setModo("ver"); setPrecarga([]); }} />
@@ -245,15 +323,7 @@ export default function OrdenesDeCompraPage() {
             <OrdenDeCompraDetalle orden={orden} politica={politica} onCambio={alCambiar}
                                   onEditar={() => setModo("editar")} />
           )}
-          {modo === "ver" && !orden && (
-            <div className="empty">
-              <strong>{t("order.pick_one", "Elige una orden para verla.")}</strong>
-              <p className="muted">
-                {t("order.pick_one_help", "O arma una nueva con lo que falta por comprar.")}
-              </p>
-            </div>
-          )}
-        </div>
+        </div>}
       </div>
     </section>
   );

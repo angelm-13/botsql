@@ -22,9 +22,9 @@ const navItems = [
   // importar su rol -- no hay fila de entity_permission que la gatee, ver
   // el caso especial en canSeeNavItem.
   { path: "/change-password", key: "common.change_password", group: "Configuracion", groupIcon: "settings", location: "settings", order: 920 },
-  { path: "/role_permissions", key: "common.role_permission_manager", adminOnly: true, groupIcon: "settings", location: "settings" },
-  { path: "/kpi_permissions", key: "common.kpi_permission_manager", adminOnly: true, groupIcon: "settings", location: "settings" },
-  { path: "/facturama-config", key: "menu.facturama_config", adminOnly: true, groupIcon: "settings", location: "settings" },
+  { path: "/role_permissions", entityName: "entity_permission", key: "common.role_permission_manager", adminOnly: true, groupIcon: "settings", location: "settings" },
+  { path: "/kpi_permissions", entityName: "nm_permission_kpi", key: "common.kpi_permission_manager", adminOnly: true, groupIcon: "settings", location: "settings" },
+  { path: "/facturama-config", entityName: "fiscal_stamp", key: "menu.facturama_config", adminOnly: true, groupIcon: "settings", location: "settings" },
   { path: "/bank", key: "menu.bank" },
   { path: "/bank_account", key: "menu.bank_account" },
   { path: "/brand", key: "menu.brand" },
@@ -232,7 +232,6 @@ export default function Shell() {
   const currentUser = JSON.parse(localStorage.getItem("user") || "null");
   const bootstrapUsername = import.meta.env.VITE_BOOTSTRAP_ADMIN_USERNAME || "admin1";
   const isBootstrapAdmin = Boolean(currentUser?.username === bootstrapUsername && (currentUser?.is_bootstrap_admin || currentUser?.is_superuser || currentUser?.username === bootstrapUsername));
-  const isAdminUser = Boolean(isBootstrapAdmin || currentUser?.is_superuser || String(currentUser?.user_type || "").toLowerCase() === "admin");
   const technicalPaths = ["/user_mfa", "/event_log"];
 
   useEffect(() => {
@@ -315,18 +314,9 @@ export default function Shell() {
     return [item.entityName || String(item.path || "").replace(/^\//, "")];
   }
 
-  // `item.entityName` normalmente es una sola clave, pero una pantalla que
-  // comparten dos roles sin capacidad en comun -como `/vouchers`, entre
-  // Almacenista y Supervisor- necesita aceptar CUALQUIERA de varias.
-  function entityNamesFor(item) {
-    if (Array.isArray(item.entityName)) return item.entityName;
-    return [item.entityName || String(item.path || "").replace(/^\//, "")];
-  }
-
   function canSeeNavItem(item) {
     if (item.exact || item.path === "/mfa-setup" || item.path === "/change-password") return true;
     if (technicalPaths.includes(item.path)) return isBootstrapAdmin;
-    if (item.adminOnly) return isAdminUser;
     if (isBootstrapAdmin) return true;
     if (!rolePermissionsLoaded) return false;
     const entityNames = entityNamesFor(item);
@@ -338,7 +328,7 @@ export default function Shell() {
 
   function canSeeSectionItem(item) {
     const entityName = item[2];
-    if (item[3] === "admin") return isAdminUser;
+    if (item[3] === "admin") return isBootstrapAdmin || permissionByEntity.has(entityName);
     if (item[3] === "technical") return isBootstrapAdmin;
     return !entityName || isBootstrapAdmin || permissionByEntity.has(entityName);
   }

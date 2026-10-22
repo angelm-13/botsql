@@ -95,10 +95,14 @@ ALTER TABLE proyect
 -- retira: el recorrido de taller vive en `proyect_status`.
 ALTER TABLE proyect DROP COLUMN IF EXISTS shop_status;
 
--- El folio es unico entre los proyectos vivos. Parcial y no total: un proyecto
--- dado de baja no debe impedir reusar su folio.
-CREATE UNIQUE INDEX IF NOT EXISTS uq_proyect_folio
-    ON proyect (folio) WHERE folio IS NOT NULL AND deletion_date IS NULL;
+-- El folio (la "Partida" en pantalla) YA NO es unico (2026-10-16): es una
+-- referencia libre de quien captura -p. ej. el numero del sistema anterior- y
+-- puede repetirse entre proyectos. Aqui se creaba `uq_proyect_folio`, y como
+-- esta migracion se reaplica en CADA arranque del pod, dejar la linea habria
+-- hecho fallar el CREATE contra la primera partida repetida y tumbado el
+-- backend. El indice normal para buscar lo crea
+-- `20261016090000_la_partida_es_una_referencia_libre.sql`, que ademas retira
+-- el unico en las bases que ya lo tenian.
 
 CREATE INDEX IF NOT EXISTS idx_proyect_entrega
     ON proyect (delivery_date) WHERE deletion_date IS NULL;

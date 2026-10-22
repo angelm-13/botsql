@@ -31,8 +31,10 @@ class LaboratoryReportService:
         value = str(path_value or "").strip().replace("\\", "/")
         if not value:
             return ""
-        candidate = Path(value) if Path(value).is_absolute() else storage_root / value.removeprefix("uploads/")
-        return candidate.resolve().as_uri() if candidate.is_file() else ""
+        # Solo archivos dentro del almacen: el logo es texto libre (ver `_doc_logo_uri`).
+        root = Path(storage_root).resolve()
+        candidate = (root / value.lstrip("/").removeprefix("uploads/")).resolve()
+        return candidate.as_uri() if candidate.is_relative_to(root) and candidate.is_file() else ""
 
     @classmethod
     def snapshot(cls, order_id: int, user_data: dict, storage_root: Path) -> dict:

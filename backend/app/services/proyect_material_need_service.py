@@ -42,15 +42,20 @@ from app.models import (
     ProyectMaterialNeed, PurchaseOrder, PurchaseOrderLine, Unit,
 )
 from app.models.session import transaction_context
+from app.models.user import User
 from app.services.inventory_service import has_capability
-from app.services.project_management_service import require_project_access
+from app.services.project_management_service import avisar_material_solicitado, require_project_access
 from app.utils.errors import AppError
 
 # Un proyecto cerrado o negado ya no compra: sus necesidades abiertas son
 # residuo, y contarlas inflaria lo que parece faltar.
-PROYECTOS_QUE_YA_NO_COMPRAN = ("denied", "completed", "delivered")
+PROYECTOS_QUE_YA_NO_COMPRAN = ("denied", "collected", "completed")
 
 PURCHASE_CAPABILITY = "purchase_planning"
+# Quien compra NO autoriza ni recibe lo comprado (separacion de funciones que el
+# servicio de ordenes hace cumplir): las dos capacidades separan a Compras de
+# Gerencia y de Almacen, que tambien ven "Por comprar".
+NOT_A_BUYER_CAPABILITIES = ("purchase_authorize", "purchase_receive")
 # Una orden cancelada suelta lo que sostenia; todo lo demas -incluida una rechazada,
 # que quien la armo puede corregir y reenviar- lo sigue sosteniendo.
 ORDER_STATES_THAT_RELEASE_NEEDS = ("cancelled",)
@@ -514,7 +519,37 @@ def create_need(id_proyect, payload: dict, user_data: dict) -> dict:
         db.add(need)
         db.flush()
         ids = {id_material} if id_material is not None else set()
-        return _renglon(need, _datos_de_materiales(db, ids), _existencias(db, ids))
+        fila = _renglon(need, _datos_de_materiales(db, ids), _existencias(db, ids))
+        compradores = _quien_compra(db)
+    # Ya cerrada la transaccion: el aviso abre la suya. Compras se entera de que
+    # hay algo nuevo por comprar sin tener que abrir la lista a ver si hay.
+    avisar_material_solicitado(
+        id_proyecto, "%s x %s" % (fila["display_name"], cantidad), compradores, user_data)
+    return fila
+
+
+def _usuarios_con(db, capacidades) -> set[int]:
+    permisos = db.scalars(
+        select(EntityPermission.id_permission).where(
+            EntityPermission.entity_name.in_(list(capacidades)),
+            EntityPermission.scope_read != 0,
+            EntityPermission.deletion_date.is_(None))).all()
+    if not permisos:
+        return set()
+    return {int(i) for i in db.scalars(
+        select(User.id_user).where(User.id_permission.in_(list(permisos)),
+                                   User.deletion_date.is_(None))).all()}
+
+
+def _quien_compra(db) -> set[int]:
+    """Quienes ven "Por comprar" y no son de Gerencia ni de Almacen.
+
+    Gerente y Almacenista tambien llevan `purchase_planning`, pero el aviso de
+    "se pidio material" es para Compras: a Gerencia le toca despues, cuando
+    Compras hace la orden.
+    """
+    return (_usuarios_con(db, [PURCHASE_CAPABILITY])
+            - _usuarios_con(db, NOT_A_BUYER_CAPABILITIES))
 
 
 def _exigir_que_no_este_en_una_orden(db, need) -> None:
@@ -736,6 +771,7 @@ def to_buy(user_data: dict, *, solo_faltantes: bool = True) -> dict:
                     ProyectMaterialNeed.review_result != "returned"),
                 Proyect.deletion_date.is_(None),
                 Proyect.proyect_status.notin_(PROYECTOS_QUE_YA_NO_COMPRAN),
+                or_(Proyect.management_status.is_(None), Proyect.management_status != "cancelado"),
             )
         ).all()
 

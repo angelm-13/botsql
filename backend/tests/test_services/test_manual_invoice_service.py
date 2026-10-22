@@ -99,3 +99,25 @@ def test_preview_marks_non_taxable_concepts_without_breakdown():
     assert concept["tax_object"] == "01"
     assert concept["iva"] == "0.00"
     assert result["total"] == "100.00"
+
+
+def test_preview_rejects_non_finite_amounts_and_a_negative_total():
+    """NaN/Infinity daban 500; retenciones al 100% dejaban un total negativo."""
+    import pytest
+    from app.utils.errors import AppError
+
+    concept = {"description": "S", "quantity": 1, "unit_price": 1000,
+               "sat_product_key": "81111500", "sat_unit_key": "E48"}
+    for campo, valor in (("quantity", "NaN"), ("unit_price", "Infinity")):
+        with pytest.raises(AppError) as e:
+            preview_manual_invoice({"concepts": [{**concept, campo: valor}]})
+        assert e.value.status_code == 400
+
+    negativo = preview_manual_invoice({
+        "concepts": [concept], "iva_rate": "16", "isr_ret_rate": "100", "iva_ret_rate": "100"})
+    assert negativo["can_create"] is False
+    assert "manual_invoice.total_negative" in negativo["errors"]
+
+    from app.services.manual_invoice_service import _tipo_de_cambio_por_omision
+    with pytest.raises(AppError):
+        _tipo_de_cambio_por_omision({"currency": "USD", "type_exchange_rate": "-5"})

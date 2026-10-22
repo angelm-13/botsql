@@ -23,7 +23,10 @@ python init_db.py
 # este contenedor arranque. Es una herramienta de desarrollo aparte, para
 # correr a mano con su propio DATABASE_URL.
 
-if [ "${FLASK_ENV:-development}" = "development" ]; then
+# El servidor de desarrollo (con el depurador de Werkzeug, que ejecuta codigo desde
+# el navegador) solo si se pide EXPLICITAMENTE. Sin variable -- o en cualquier otro
+# valor -- se arranca gunicorn: olvidar la variable no debe abrir el depurador.
+if [ "${FLASK_ENV:-}" = "development" ] || [ "${APP_ENV:-}" = "development" ]; then
   flask --app app run --host=0.0.0.0 --port=${BACKEND_PORT:-5001} --debug
 else
   gunicorn "app:create_app()" --bind 0.0.0.0:${BACKEND_PORT:-5001} --workers 3 --timeout 120

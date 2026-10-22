@@ -21,7 +21,6 @@ def _actor_has_unrestricted_field_access(user_data: dict) -> bool:
     return bool(
         user_data.get('is_superuser')
         or user_data.get('is_bootstrap_admin')
-        or user_data.get('user_type') == 'admin'
     )
 
 
@@ -140,8 +139,12 @@ def list_customer_supplier(user_data):
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 20))
     sort = request.args.get('sort')
-    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort', 'q'} and k in ALLOWED_FIELDS}
-    return _jsonify_projected_list(user_data, CustomerSupplierService.list(page=page, per_page=per_page, filters=filters, sort=sort, q=request.args.get('q')))
+    # Filtrar, ordenar o buscar por un campo equivale a leerlo: solo los que el rol ve.
+    visible = _visible_response_fields_for_actor(user_data)
+    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort', 'q'} and k in visible and k in ALLOWED_FIELDS}
+    if sort and sort.lstrip('-') not in visible:
+        sort = None
+    return _jsonify_projected_list(user_data, CustomerSupplierService.list(page=page, per_page=per_page, filters=filters, sort=sort, q=request.args.get('q'), search_fields=visible))
 
 
 @bp_customer_supplier.route('/<id_customer_supplier>', methods=['GET'])

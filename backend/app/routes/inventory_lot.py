@@ -18,6 +18,7 @@ from app.services.inventory_lot_service import (
     lotes_del_producto,
     por_caducar,
 )
+from app.services.product_service import ProductService
 from app.utils.auth import require_entity_permission, token_required
 
 
@@ -29,6 +30,7 @@ bp_inventory_lot = Blueprint("inventory_lot", __name__)
 @require_entity_permission("product", "read")
 def lotes_de_un_producto(user_data, id_product):
     """Los lotes vivos, con lo que queda de cada uno y en que sitio."""
+    ProductService.require_record_scope(id_product, user_data)
     return jsonify(lotes_del_producto(id_product, user_data))
 
 
@@ -54,6 +56,7 @@ def cuadre(user_data, id_product):
     Que no cuadre significa que algo movio existencia sin pasar por la puerta de
     siempre, y eso es lo que hay que ir a buscar.
     """
+    ProductService.require_record_scope(id_product, user_data)
     return jsonify(cuadre_de_lotes(id_product, user_data))
 
 
@@ -68,6 +71,7 @@ def encender(user_data, id_product):
     sirve de los lotes-. Aqui se crea el lote de APERTURA con lo que ya habia, en
     la misma transaccion.
     """
+    ProductService.require_record_scope(id_product, user_data)
     return jsonify(encender_control_de_lotes(
         id_product, request.get_json(silent=True) or {}, user_data))
 
@@ -77,4 +81,5 @@ def encender(user_data, id_product):
 @require_entity_permission("product", "update")
 def apagar(user_data, id_product):
     """Apaga el control. Los lotes se conservan: son el rastro de lo que paso."""
+    ProductService.require_record_scope(id_product, user_data)
     return jsonify(apagar_control_de_lotes(id_product, user_data))

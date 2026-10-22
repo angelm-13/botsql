@@ -251,6 +251,19 @@ class TestVentaDelPuntoDeVenta(InventarioUnicoTestCase):
 
         self.assertEqual(15, self.existencia())
 
+    def test_the_same_product_on_two_lines_discounts_both(self):
+        """La llave llevaba folio+producto: el segundo renglon se tomaba por replay."""
+        resultado = pos_service.cobrar({
+            "sale_type": "takeout",
+            "items": [{"id_product": PRODUCTO, "quantity": 1, "unit_price": "10"},
+                      {"id_product": PRODUCTO, "quantity": 2, "unit_price": "10"}],
+            "payments": [{"method": "cash", "amount": "30"}],
+            "id_location": ALMACEN,
+        }, ACTOR)
+
+        self.assertEqual("paid", resultado["sale"]["sale_status"])
+        self.assertEqual(17, self.existencia())
+
     def test_the_change_given_is_not_counted_as_money_in_the_drawer(self):
         """Una venta de 100 pagada con 200 deja 100 en el cajon, no 200.
 
@@ -487,6 +500,16 @@ class TestMercanciaDeLogistica(InventarioUnicoTestCase):
         self.assertEqual("logistica", ultimo.source_module)
         self.assertEqual("receive", ultimo.movement_type)
         self.assertEqual("logistics_inventory", ultimo.reference_type)
+
+    def test_a_balance_that_returns_to_an_earlier_value_still_moves_the_ledger(self):
+        """10 -> 5 -> 8 -> 5: la llave repetia fila+saldo y el libro se quedaba atras."""
+        from decimal import Decimal
+
+        for id_, (anterior, ahora) in enumerate(((0, 10), (10, 5), (5, 8), (8, 5)), start=1):
+            fallo = self.reflejar(self.Fila(7, Decimal(ahora)), Decimal(anterior))
+            self.assertIsNone(fallo)
+
+        self.assertEqual(20 + 5, self.existencia(), "el libro termina donde termina la fila")
 
     def test_no_change_writes_nothing(self):
         """Guardar una fila sin tocar la cantidad no es un movimiento."""

@@ -20,6 +20,7 @@ from app.models.inventory_status import InventoryStatus
 from app.models.session import transaction_context
 from app.services.warehouse_voucher_service import (
     autorizar_vale,
+    entregar_vale,
     crear_vale,
     devolver_renglon,
 )
@@ -107,14 +108,17 @@ class TestElTipoFijaElEstadoDelProducto(BaseEstado):
         self._vale([self._linea_cantidad(1)])
         self.assertEqual(self.codigo_del_producto(), (None, None))
 
-    def test_un_borrador_no_mueve_nada_y_al_autorizarlo_si(self):
+    def test_un_borrador_no_mueve_nada_y_al_entregarlo_si(self):
         borrador = crear_vale({
             "id_incident_type": TIPO_EXTRAVIADO, "id_user": 1, "note": "Se perdio",
             "lines": [self._linea_cantidad(1)],
             "due_date": "2099-01-01 00:00:00",
         }, ACTOR, como_borrador=True)
         self.assertEqual(self.codigo_del_producto(), (None, None))
-        autorizar_vale(borrador["voucher"]["id_incident"], {}, OTRO_ACTOR)
+        id_vale = borrador["voucher"]["id_incident"]
+        autorizar_vale(id_vale, {}, OTRO_ACTOR)
+        self.assertEqual(self.codigo_del_producto(), (None, None))
+        entregar_vale(id_vale, {}, OTRO_ACTOR)
         self.assertEqual(self.codigo_del_producto()[0], "extraviado")
 
 

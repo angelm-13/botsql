@@ -59,9 +59,10 @@ from app.models.session import transaction_context
 from app.services.inventory_service import apply_inventory_movement
 from app.services.inventory_trace_service import localizar
 from tests.conftest import BackendTestCase
+from tests.model_factory import dar_capacidad
 
 
-ACTOR = {"id_user": 1, "id_proyect": 70}
+ACTOR = {"id_user": 1, "id_proyect": 70, "id_permission": 910}
 
 # El techo. No es el numero medido -13 en Postgres con la pagina llena- sino
 # margen sobre el: subirlo tiene que ser una decision consciente, no algo que
@@ -105,6 +106,7 @@ class BaseDelAlmacen(BackendTestCase):
     def setUp(self):
         super().setUp()
         with transaction_context() as db:
+            dar_capacidad(db, 910)
             db.add_all([
                 CustomerSupplier(
                     id_customer_supplier=9010, name="Mi Empresa",
@@ -168,7 +170,7 @@ class BaseDelAlmacen(BackendTestCase):
             apply_inventory_movement(desde + i, {
                 "movement_type": "receive", "quantity": 10,
                 "id_location": self.RACK, "reference_type": "purchase",
-                "reference_id": str(self.COMPRA),
+                "reference_id": str(self.COMPRA), "reason": "Compra",
                 "idempotency_key": f"carga-{desde + i}",
             }, ACTOR)
 
@@ -229,7 +231,7 @@ class TestElRastreoNoConsultaPorProducto(BaseDelAlmacen):
         apply_inventory_movement(9400, {
             "movement_type": "receive", "quantity": 50, "id_location": self.RACK,
             "reference_type": "purchase", "reference_id": str(self.COMPRA),
-            "idempotency_key": "carga-extra-9400",
+            "reason": "Compra", "idempotency_key": "carga-extra-9400",
         }, ACTOR)
         uno, _ = self._consultas_de(consulta="Tornillo")
 

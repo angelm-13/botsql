@@ -107,6 +107,14 @@ def _document_taxes(root, concepts):
     )
 
 
+def tiene_dtd(xml_bytes) -> bool:
+    """Un CFDI nunca lleva DTD ni entidades. Se busca en TODO el contenido (antes solo
+    en los primeros 8 KB, y bastaba anteponer comentarios para esquivarlo) y sin los
+    bytes NUL, para que el mismo texto en UTF-16 tampoco pase."""
+    plano = bytes(xml_bytes).replace(b"\x00", b"").lower()
+    return b"<!doctype" in plano or b"<!entity" in plano
+
+
 def parse_cfdi(xml_bytes, max_bytes=None):
     max_size = max_bytes or int(os.getenv("CFDI_XML_MAX_BYTES", DEFAULT_MAX_XML_BYTES))
     if not xml_bytes:
@@ -114,8 +122,7 @@ def parse_cfdi(xml_bytes, max_bytes=None):
     if len(xml_bytes) > max_size:
         raise ValueError(f"El archivo XML excede el limite de {max_size} bytes")
 
-    lowered = xml_bytes[:8192].lower()
-    if b"<!doctype" in lowered or b"<!entity" in lowered:
+    if tiene_dtd(xml_bytes):
         raise ValueError("El XML contiene declaraciones DTD o entidades no permitidas")
 
     try:

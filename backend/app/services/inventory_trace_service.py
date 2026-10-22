@@ -178,6 +178,8 @@ def _existencias_en_lote(db, ids_productos, ubicaciones: "CacheDeUbicaciones") -
     ).all()
 
     ubicaciones.precargar({f.id_location for f in filas})
+    from app.services.warehouse_voucher_service import apartado_por_sitio
+    apartado = apartado_por_sitio(db, {f.id_product for f in filas})
 
     por_producto: dict[int, list] = {}
     for fila in filas:
@@ -192,6 +194,11 @@ def _existencias_en_lote(db, ids_productos, ubicaciones: "CacheDeUbicaciones") -
             "warehouse_description": ruta["warehouse_description"],
             "id_module": ubicacion.id_module,
             "quantity": int(fila.quantity or 0),
+            # Lo que otros prevales ya apartaron aqui, y lo que de verdad se
+            # puede pedir: la existencia fisica no cambia hasta que sale.
+            "reserved": apartado.get((fila.id_product, fila.id_location), 0),
+            "available": max(0, int(fila.quantity or 0)
+                             - apartado.get((fila.id_product, fila.id_location), 0)),
             "path": ruta["segments"],
             "path_label": ruta["label"],
         })
@@ -372,13 +379,33 @@ def estatus_efectivo(product_status, on_loan, sitios) -> str:
     el almacen. Lo que esta fuera se sabe por las salidas sin cerrar y la
     ausencia de existencia, y eso manda sobre el texto viejo.
 
-    Solo se corrige el verde enganoso (ENTRADA o vacio): dañado, extraviado,
-    destruido o en reparacion son decisiones y no se pisan.
+    Se corrige en los dos sentidos, solo entre ENTRADA/vacio y SALIDA: dañado,
+    extraviado, destruido o en reparacion son decisiones y no se pisan.
+
+    - Verde enganoso: ENTRADA o vacio con todo fuera -> SALIDA.
+    - Azul enganoso: SALIDA sin ninguna salida abierta y con existencia en el
+      almacen -> ENTRADA. El texto lo dejo el sistema anterior mientras algo
+      estaba prestado y nada lo bajaba al volver; 123 productos de adser-prod
+      decian "Salio del almacen" con todas sus salidas cerradas.
     """
     texto = str(product_status or "")
-    todo_fuera = bool(on_loan and int(on_loan.get("quantity") or 0) > 0 and not sitios)
-    if todo_fuera and texto.strip().upper() in ("", "ENTRADA"):
+    clave = texto.strip().upper()
+    fuera = int((on_loan or {}).get("quantity") or 0) > 0
+    # NUEVO y USADO son la condicion de la pieza, no donde esta: el selector del
+    # producto solo ofrece los estados del catalogo -ENTRADA no esta-, asi que
+    # quien lo marca "usado" nunca lo veia verde por mas existencia que hubiera.
+    # Para el color se tratan como ENTRADA mientras haya algo en el almacen, y
+    # como SALIDA si todo salio; la condicion se sigue mandando en `product_status`.
+    if clave in ("NUEVO", "USADO"):
+        if sitios:
+            return "ENTRADA"
+        if fuera:
+            return "SALIDA"
+        return texto
+    if fuera and not sitios and clave in ("", "ENTRADA"):
         return "SALIDA"
+    if clave == "SALIDA" and not fuera and sitios:
+        return "ENTRADA"
     return texto
 
 
@@ -423,6 +450,10 @@ def _prestado_en_lote(db, ids_productos) -> dict[int, dict]:
             NmIncidentProduct.close_date.is_(None),
             NmIncidentProduct.deletion_date.is_(None),
             Incident.deletion_date.is_(None),
+            # Un prevale o un vale en espera sigue en el almacen (apartado):
+            # nadie lo "tiene" todavia.
+            func.coalesce(func.lower(Incident.incident_status), "")
+            .notin_(("borrador", "en_espera", "cancelado")),
             # Quien "tiene" el producto ahora: una baja no esta con nadie.
             NmIncidentProduct.id_incident.notin_(_vales_de_baja()),
         )

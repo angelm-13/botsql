@@ -15,8 +15,8 @@ _rate_limit_hits = defaultdict(deque)
 
 
 def _client_ip() -> str:
-    forwarded = request.headers.get("X-Forwarded-For", "")
-    return (forwarded.split(",")[0].strip() or request.remote_addr or "")[:45]
+    from app.utils.client_ip import client_ip
+    return client_ip()
 
 
 def _enforce_rate(action: str, limit: int, seconds: int) -> None:

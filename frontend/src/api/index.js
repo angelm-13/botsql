@@ -72,8 +72,7 @@ function isPrivilegedPermissionUser() {
   return Boolean(
     user?.is_superuser ||
     user?.is_bootstrap_admin ||
-    user?.username === bootstrapUsername ||
-    String(user?.user_type || "").toLowerCase() === "admin"
+    user?.username === bootstrapUsername
   );
 }
 
@@ -328,7 +327,7 @@ export const updateIncidentDetail = (id, payload) => request(`/incident_detail/$
 export const deleteIncidentDetail = (id) => request(`/incident_detail/${id}`, { method: "DELETE" });
 
 export const getAllIncidentType = (params = {}) => request("/incident_type/", { params });
-export const getIncidentTypeOptions = () => request("/incident_type/options");
+export const getIncidentTypeOptions = () => request("/incident_type/options?para=vale");
 export const getIncidentType = (id) => request(`/incident_type/${id}`);
 export const createIncidentType = (payload) => request("/incident_type/", { method: "POST", body: payload });
 export const updateIncidentType = (id, payload) => request(`/incident_type/${id}`, { method: "PUT", body: payload });
@@ -538,6 +537,8 @@ export const createWarehousePrevoucher = (payload) => request("/prevouchers", { 
 // Lo guarda `warehouse_voucher_authorize`, que solo tiene el jefe de almacen.
 export const authorizeWarehouseVoucher = (id, payload = {}) =>
   request(`/vouchers/${id}/authorize`, { method: "POST", body: payload });
+export const cancelWarehouseVoucher = (id, note) =>
+  request(`/vouchers/${id}/cancel`, { method: "POST", body: { note } });
 export const getWarehouseVoucher = (id) => request(`/vouchers/${id}`);
 
 // El vale para imprimir y firmar. Pide `read`, la misma que ver el vale en
@@ -698,6 +699,8 @@ export const uploadPurchaseVoucher = (id, file, campos = {}) => {
 export const removePurchaseVoucher = (idVoucher, note) => request(`/purchase-vouchers/${idVoucher}/remove`, { method: "POST", body: { note } });
 export const downloadPurchaseVoucher = (idVoucher) => requestBlob(`/purchase-vouchers/${idVoucher}/content`);
 export const getPurchasePolicy = () => request("/purchase-policy");
+export const getPurchaseBudgets = (params = {}) => request("/purchase-budgets", { params });
+export const setPurchaseBudget = (idProyect, payload) => request(`/purchase-budgets/${idProyect}`, { method: "PUT", body: payload });
 export const updatePurchasePolicy = (payload) => request("/purchase-policy", { method: "PUT", body: payload });
 export const getProyect = (id) => request(`/proyect/${id}`);
 export const createProyect = (payload) => request("/proyect/", { method: "POST", body: payload });

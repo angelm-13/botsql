@@ -1,5 +1,7 @@
 from __future__ import annotations
+import decimal
 import os
+import re
 import sys
 import jwt
 from flask import Flask, jsonify, request, send_from_directory
@@ -164,26 +166,23 @@ def _doc_join(parts) -> str:
 
 
 def _doc_logo_uri(path_value) -> str:
+    """El logo es texto libre que escribe quien da de alta al cliente y el motor de PDF
+    lo descarga: solo se acepta una imagen en `data:` o un archivo DENTRO de
+    UPLOAD_ROOT. Antes pasaba cualquier http(s) (SSRF) y cualquier ruta, incluso con
+    `../` o absoluta (lectura de archivos del servidor al dibujarlos en el PDF)."""
     raw = str(path_value or '').strip()
     if not raw:
         return ''
-    if raw.startswith(('http://', 'https://', 'data:')):
-        return raw
-    normalized = raw.replace('\\', '/').lstrip('/')
-    candidates = []
-    if os.path.isabs(raw):
-        candidates.append(raw)
-    if normalized.startswith('uploads/'):
-        candidates.append('/' + normalized)
-    upload_root = os.getenv('UPLOAD_ROOT', '/uploads').rstrip('/') or '/uploads'
-    if normalized.startswith('uploads/'):
-        candidates.append(os.path.join(os.path.dirname(upload_root), normalized))
-    else:
-        candidates.append(os.path.join(upload_root, normalized))
-    candidates.append(os.path.join(os.getcwd(), normalized))
-    for candidate in candidates:
-        if candidate and os.path.isfile(candidate):
-            return 'file://' + os.path.abspath(candidate)
+    if raw.lower().startswith('data:'):
+        return raw if re.match(r'data:image/(png|jpe?g|gif|webp)[;,]', raw, re.I) else ''
+    if '://' in raw:
+        return ''
+    upload_root = os.path.realpath(os.getenv('UPLOAD_ROOT', '/uploads'))
+    relative = raw.replace('\\', '/').lstrip('/')
+    relative = relative[len('uploads/'):] if relative.startswith('uploads/') else relative
+    candidate = os.path.realpath(os.path.join(upload_root, relative))
+    if os.path.commonpath([upload_root, candidate]) == upload_root and os.path.isfile(candidate):
+        return 'file://' + candidate
     return ''
 
 
@@ -608,16 +607,10 @@ def _register_documents_blueprint(app: Flask) -> None:
             from sqlalchemy import inspect as sqlalchemy_inspect
             from app.models.invoice import Invoice
             from app.models.session import transaction_context
-            from app.utils.auth import PUBLIC_JWT_SCOPE, SECRET_KEY, _has_entity_permission
+            from app.utils.auth import _has_entity_permission, decode_session
 
-            token = request.headers.get('Authorization', '').replace('Bearer ', '')
-            if not token:
-                return False, 401
-            try:
-                user_data = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
-            except Exception:
-                return False, 401
-            if str(user_data.get('scope') or '').strip().lower() == str(PUBLIC_JWT_SCOPE).strip().lower():
+            user_data, error_key = decode_session(request.headers.get('Authorization', '').replace('Bearer ', ''))
+            if error_key:
                 return False, 401
             entity = str(doc.get('entity') or '').strip()
             if not entity or not _has_entity_permission(user_data, entity, 'read'):
@@ -799,6 +792,26 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_activity_logs)
     _register_documents_blueprint(app)
 
+    # El catalogo de documentos solo lo ve quien tiene sesion: no hay motivo para que
+    # sea publico (lista que documentos y entidades existen).
+    from app.utils.auth import token_required as _token_required
+    _manifiesto = app.view_functions.get('documents.manifest')
+    if _manifiesto is not None:
+        app.view_functions['documents.manifest'] = _token_required(lambda user_data: _manifiesto())
+
+    @app.after_request
+    def _cabeceras_de_seguridad(respuesta):
+        # Baratas y sin efectos laterales: el navegador no adivina tipos, no deja
+        # incrustar el sitio en otro (los PDF propios si, mismo origen), y no filtra la URL.
+        respuesta.headers.setdefault('X-Content-Type-Options', 'nosniff')
+        respuesta.headers.setdefault('X-Frame-Options', 'SAMEORIGIN')
+        respuesta.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+        respuesta.headers.setdefault('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+        from app.utils.startup_guard import is_production
+        if is_production() and (request.is_secure or request.headers.get('X-Forwarded-Proto') == 'https'):
+            respuesta.headers.setdefault('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+        return respuesta
+
     @app.route('/uploads/products/<path:filename>')
     def uploaded_product_image(filename):
         return send_from_directory(os.path.join(app.config['UPLOAD_ROOT'], 'products'), filename)
@@ -834,6 +847,28 @@ def create_app(testing: bool = False) -> Flask:
             return handle_unexpected(error)
         app.logger.warning("entrada invalida: %s", error)
         return jsonify({'error_key': 'errors.invalid_field'}), 400
+
+    # NaN/Infinity en un Decimal y un cuerpo JSON que no es objeto (`[1]`, `"x"`)
+    # son entrada del cliente: antes salian como 500 desde decenas de rutas.
+    @app.errorhandler(decimal.InvalidOperation)
+    def handle_bad_decimal(error: Exception):
+        app.logger.warning("decimal invalido: %s", error)
+        return jsonify({'error_key': 'errors.invalid_field'}), 400
+
+    @app.errorhandler(AttributeError)
+    def handle_attribute_error(error: AttributeError):
+        if re.search(r"'(list|str|int|float|bool)' object has no attribute '(get|items|keys|pop)'", str(error)):
+            app.logger.warning("cuerpo con forma inesperada: %s", error)
+            return jsonify({'error_key': 'errors.invalid_field'}), 400
+        return handle_unexpected(error)
+
+    @app.errorhandler(TypeError)
+    def handle_type_error(error: TypeError):
+        # `dict([1])` al volcar un cuerpo JSON que no es objeto.
+        if 'cannot convert dictionary update sequence' in str(error):
+            app.logger.warning("cuerpo con forma inesperada: %s", error)
+            return jsonify({'error_key': 'errors.invalid_field'}), 400
+        return handle_unexpected(error)
 
     @app.errorhandler(Exception)
     def handle_unexpected(error: Exception):

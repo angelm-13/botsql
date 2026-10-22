@@ -117,17 +117,8 @@ function isBootstrapUser() {
   return Boolean(currentUser?.username === bootstrapUsername && (currentUser?.is_bootstrap_admin || currentUser?.is_superuser || currentUser?.username === bootstrapUsername));
 }
 
-function isAdminUser() {
-  const currentUser = JSON.parse(localStorage.getItem("user") || "null");
-  return isBootstrapUser() || String(currentUser?.user_type || "").toLowerCase() === "admin" || Boolean(currentUser?.is_superuser);
-}
-
 function TechnicalRoute({ children }) {
   return isBootstrapUser() ? children : <Navigate to="/" replace />;
-}
-
-function AdminRoute({ children }) {
-  return isAdminUser() ? children : <Navigate to="/" replace />;
 }
 
 // Referencia estable para que <RoleAccessRoute> no la reciba como un arreglo
@@ -190,9 +181,9 @@ export default function App() {
           />
           <Route path="/mfa-setup" element={<MfaSetupPage />} />
           <Route path="/change-password" element={<ChangePasswordPage />} />
-          <Route path="/role_permissions" element={<AdminRoute><RolePermissionManagerPage /></AdminRoute>} />
-          <Route path="/kpi_permissions" element={<AdminRoute><KpiPermissionManagerPage /></AdminRoute>} />
-          <Route path="/facturama-config" element={<AdminRoute><FacturamaConfigPage /></AdminRoute>} />
+          <Route path="/role_permissions" element={<RoleAccessRoute entityName="entity_permission"><RolePermissionManagerPage /></RoleAccessRoute>} />
+          <Route path="/kpi_permissions" element={<RoleAccessRoute entityName="nm_permission_kpi"><KpiPermissionManagerPage /></RoleAccessRoute>} />
+          <Route path="/facturama-config" element={<RoleAccessRoute entityName="fiscal_stamp"><FacturamaConfigPage /></RoleAccessRoute>} />
           <Route path="/quotation" element={<RoleAccessRoute entityName="invoice"><QuotationPage /></RoleAccessRoute>} />
           <Route path="/authorization_tracking" element={<RoleAccessRoute entityName="invoice"><AuthorizationTrackingPage /></RoleAccessRoute>} />
           <Route path="/bank" element={<RoleAccessRoute entityName="bank"><BankPage /></RoleAccessRoute>} />
@@ -200,7 +191,7 @@ export default function App() {
           <Route path="/brand" element={<RoleAccessRoute entityName="brand"><BrandPage /></RoleAccessRoute>} />
           <Route path="/customer_supplier" element={<RoleAccessRoute entityName="customer_supplier"><CustomerSupplierPage /></RoleAccessRoute>} />
           <Route path="/department" element={<RoleAccessRoute entityName="department"><DepartmentPage /></RoleAccessRoute>} />
-          <Route path="/entity_permission" element={<AdminRoute><EntityPermissionPage /></AdminRoute>} />
+          <Route path="/entity_permission" element={<RoleAccessRoute entityName="entity_permission"><EntityPermissionPage /></RoleAccessRoute>} />
           <Route path="/event_log" element={<TechnicalRoute><EventLogPage /></TechnicalRoute>} />
           <Route path="/field" element={<RoleAccessRoute entityName="field"><FieldPage /></RoleAccessRoute>} />
           <Route path="/fiscal_account" element={<RoleAccessRoute entityName="fiscal_account"><FiscalAccountPage /></RoleAccessRoute>} />
@@ -224,7 +215,7 @@ export default function App() {
           <Route path="/location" element={<RoleAccessRoute entityName="location"><LocationPage /></RoleAccessRoute>} />
           <Route path="/location_type" element={<RoleAccessRoute entityName="location_type"><LocationTypePage /></RoleAccessRoute>} />
           <Route path="/material" element={<RoleAccessRoute entityName="material"><MaterialPage /></RoleAccessRoute>} />
-          <Route path="/nm_field_permission" element={<AdminRoute><NmFieldPermissionPage /></AdminRoute>} />
+          <Route path="/nm_field_permission" element={<RoleAccessRoute entityName="nm_field_permission"><NmFieldPermissionPage /></RoleAccessRoute>} />
           <Route path="/nm_incident_product" element={<RoleAccessRoute entityName="nm_incident_product"><NmIncidentProductPage /></RoleAccessRoute>} />
           <Route path="/nm_survey_user" element={<RoleAccessRoute entityName="nm_survey_user"><NmSurveyUserPage /></RoleAccessRoute>} />
           <Route path="/nm_template_task" element={<RoleAccessRoute entityName="nm_template_task"><NmTemplateTaskPage /></RoleAccessRoute>} />
