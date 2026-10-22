@@ -404,12 +404,24 @@ class DocumentManagementService:
                 employee = db.get(User, employee_id)
                 if not employee or employee.deletion_date is not None or employee.id_proyect != project_id or not employee.is_employee:
                     raise AppError("errors.invalid_field", 400, {"field": "id_employee"})
+            for campo, modelo in (("id_laboratory_equipment", LaboratoryEquipment),
+                                  ("id_laboratory_service_order", LaboratoryServiceOrder)):
+                destino = target_fields.get(campo)
+                if destino:
+                    fila = db.get(modelo, destino)
+                    if (not fila or getattr(fila, "deletion_date", None) is not None
+                            or fila.id_proyect != project_id):
+                        raise AppError("errors.invalid_field", 400, {"field": campo})
+            fecha_emision = _date_value(metadata.get("issue_date"), "issue_date")
+            fecha_vencimiento = _date_value(metadata.get("expiration_date"), "expiration_date")
+            if fecha_emision and fecha_vencimiento and fecha_vencimiento < fecha_emision:
+                raise AppError("errors.invalid_field", 400, {"field": "expiration_date"})
             document = Document(
                 id_proyect=project_id, id_document_category=category_id,
                 title=str(metadata.get("title") or original_filename).strip()[:200],
                 description=metadata.get("description"), status=status,
-                issue_date=_date_value(metadata.get("issue_date"), "issue_date"),
-                expiration_date=_date_value(metadata.get("expiration_date"), "expiration_date"),
+                issue_date=fecha_emision,
+                expiration_date=fecha_vencimiento,
                 business_reference_type=metadata.get("business_reference_type"),
                 business_reference_value=metadata.get("business_reference_value"), created_by=actor_id,
             )

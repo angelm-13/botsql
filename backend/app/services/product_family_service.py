@@ -48,7 +48,7 @@ class ProductFamilyService(CrudService):
     entity_name = 'product_family'
 
     @classmethod
-    def _busqueda_libre(cls, texto):
+    def _busqueda_libre(cls, texto, campos=None):
         """Busqueda por descripcion sin importar mayusculas ni acentos.
 
         Solo para esta entidad: la busqueda generica (`CrudService`) sigue

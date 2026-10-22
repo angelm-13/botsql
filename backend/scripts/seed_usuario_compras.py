@@ -16,6 +16,10 @@ import bcrypt
 
 from app.models.session import transaction_context
 from app.models.user import User
+from app.utils.startup_guard import is_production
+
+if is_production():
+    sys.exit("Usuario de prueba con contrasena de ejemplo: no se corre en produccion.")
 
 ROL_COMPRAS = 8
 

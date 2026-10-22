@@ -74,9 +74,12 @@ def _decimal(valor, campo, *, por_omision=None):
             return Decimal(str(por_omision))
         raise AppError("errors.validation", 422, {"field": campo})
     try:
-        return Decimal(str(valor))
+        numero = Decimal(str(valor))
     except (InvalidOperation, TypeError, ValueError):
         raise AppError("errors.validation", 422, {"field": campo})
+    if not numero.is_finite():  # NaN/Infinity daban 500 o ventas con cambio infinito
+        raise AppError("errors.validation", 422, {"field": campo})
+    return numero
 
 
 def _unidades(cantidad):
@@ -429,7 +432,10 @@ def cobrar(payload, user_data) -> dict:
                 quantity_delta=-unidades,
                 # El folio de la venta en la llave: reintentar el mismo cobro no
                 # descuenta dos veces.
-                idempotency_key=("pos-%s-%s" % (folio, id_product))[:90],
+                # El renglon en la llave: dos renglones del mismo producto en una
+                # venta no pueden compartirla (el segundo se tomaba por replay y
+                # el saldo bajaba una sola vez).
+                idempotency_key=("pos-%s-%s-%d" % (folio, id_product, indice))[:90],
                 id_location=id_location,
                 reference_type="sale",
                 reference_id=folio,

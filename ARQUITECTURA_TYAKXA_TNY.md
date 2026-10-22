@@ -372,8 +372,13 @@ Ademas del CRUD estandar, las superficies principales son:
     (`id_user`), capturista (`created_by`) o quien recoge la herramienta de un
     renglon (`id_user_delivered_to`); con Mis grupos en `warehouse_prevoucher`,
     tambien los companeros de equipo (`warehouse_voucher_service._del_solicitante`).
-    Proyectos, incidencias y bitacora conservan su filtro propio
-    (`_scoped_query`, `scoped_incident_query`), que NO lee `scope_*`.
+    Incidencias y bitacora conservan su filtro propio (`scoped_incident_query`),
+    que NO lee `scope_*`. **Proyectos si lo lee, desde 2026-10-16**: para un rol
+    sin capacidad de proyecto (ni `project_authorization` ni `project_execution`),
+    `_scoped_query` respeta `proyect.scope_read` (Todos = sin filtro, Mis grupos =
+    su equipo, Propios = lo propio) y `update_project` filtra por dueno con
+    `scope_update`, igual que `delete_project`. Quien autoriza o ejecuta conserva
+    sus reglas de flujo (ver todo / ver lo libre y lo tomado).
   - **Solo esta conectado en vales.** En el resto de modulos 1/2/4 siguen
     permitiendo por igual (el guardia es booleano). No ofrecer Propios/Mis
     grupos en un rol de relevo (Gerente, Almacenista, Compras, Jefe de taller):
@@ -382,10 +387,13 @@ Ademas del CRUD estandar, las superficies principales son:
   - **Que modulos ofrecen Propios/Mis grupos**: solo los de
     `ENTIDADES_CON_ALCANCE_DE_DUENO` (`utils/scope.py`: `warehouse_prevoucher` y
     `kpi_definition`, `proyect`, `incident`, `daily_activity_log`); en estos tres
-    ultimos, que ya tenian su regla de dueno por capacidad, la celda solo AMPLIA:
-    Mis grupos suma lo de los companeros de equipo (`utils/scope.companeros`),
-    Propios y Todos dejan la regla como estaba (un Supervisor sembrado en Todos
-    no pasa a ver todos los proyectos); el catalogo lo expone como `supports_owner_scope` y el
+    ultimos, que ya tenian su regla de dueno por capacidad, la celda AMPLIA:
+    Mis grupos suma lo de los companeros de equipo (`utils/scope.companeros`).
+    En `incident` y `daily_activity_log` Propios y Todos dejan la regla como
+    estaba; en `proyect` (rol sin capacidad de proyecto) Todos ya SI quita el
+    filtro -un Supervisor en Todos ve todos los proyectos: antes de promover hay
+    que medir con `scripts/medir_alcance_de_proyectos.py` y pasar a Propios en el
+    Gestor a quien no deba-; el catalogo lo expone como `supports_owner_scope` y el
     Gestor solo ofrece Sin acceso/Todos en los demas (un 1/2 ya guardado se
     muestra "sin efecto" y no se cambia en silencio). Para sumar un modulo hay
     que declarar su columna de dueno en el servicio y agregarlo a esa lista.

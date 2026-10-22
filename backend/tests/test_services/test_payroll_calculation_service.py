@@ -27,6 +27,19 @@ from tests.conftest import BackendTestCase
 from tests.fixtures.cifras_nomina_2026 import sembrar_cifras_2026
 
 
+def dar_todos_los_campos(db, id_permission, tablas):
+    """Permiso de CAMPO sobre todas las columnas: user_type ya no da acceso a campos (390e0dc)."""
+    from app.models import Field, NmFieldPermission
+    from app.models.base import Base
+    for tabla in tablas:
+        for columna in Base.metadata.tables[tabla].columns:
+            campo = Field(table_name=tabla, field_name=columna.name, created_by=1)
+            db.add(campo)
+            db.flush()
+            db.add(NmFieldPermission(id_field=campo.id_field, id_permission=id_permission, control_type="7",
+                                     created_by=1))
+
+
 def _checada(id_user, cuando, n):
     return AttendanceRecord(id_user=id_user, employee_no=str(id_user), check_time=cuando,
                             source="kronos", source_ref=f"t:{n}", created_by=1)
@@ -147,6 +160,7 @@ class TestCierreDelPeriodo(_ConPeriodoDePrueba):
                                         scope_read=4, scope_update=4, scope_delete=4, created_by=1))
                 db.add(EntityPermission(id_permission=802, entity_name=entidad, scope_create=4,
                                         scope_read=4, scope_update=4, scope_delete=0, created_by=1))
+            dar_todos_los_campos(db, 801, ("payroll_period", "payroll_detail", "payroll_movement"))
 
     def _estado(self):
         with transaction_context() as db:
@@ -191,9 +205,9 @@ class TestCierreDelPeriodo(_ConPeriodoDePrueba):
             id_detalle, id_movimiento, id_concepto = (detalle.id_payroll_detail, movimiento.id_payroll_movement,
                                                       movimiento.id_payroll_concept)
         cerrar_periodo(5, 1)
-        # Administrador: puede escribir todos los campos, asi que lo unico que lo
-        # detiene es que el periodo este cerrado.
-        h = self._headers(801, user_type="admin")
+        # 801 puede escribir todos los campos, asi que lo unico que lo detiene es
+        # que el periodo este cerrado.
+        h = self._headers(801)
 
         intentos = [
             self.client.put("/payroll_period/5", json={"payment_date": "2026-10-20"}, headers=h),
@@ -211,7 +225,7 @@ class TestCierreDelPeriodo(_ConPeriodoDePrueba):
 
     def test_el_estado_no_se_escribe_por_la_captura_generica(self):
         self._permisos()
-        h = self._headers(801, user_type="admin")
+        h = self._headers(801)
         self.assertEqual(200, self.client.put("/payroll_period/5", json={"period_state": "closed"},
                                               headers=h).status_code)
         self.assertEqual("open", self._estado())

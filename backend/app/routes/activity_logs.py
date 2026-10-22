@@ -34,7 +34,8 @@ def _puede_ver_todas(user_data) -> bool:
     verdad distingue a Gerente de los demas roles operativos.
     """
     with transaction_context() as db:
-        return has_capability(db, user_data, "project_authorization")
+        return (has_capability(db, user_data, "project_authorization")
+                or has_capability(db, user_data, "project_oversight"))
 
 
 def _gente_de_la_bitacora(user_data) -> set:

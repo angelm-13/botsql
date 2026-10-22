@@ -32,9 +32,9 @@ class Proyect(Base):
     # El recorrido del TALLER. Ver PROJECT_STATUSES en project_management_service.
     proyect_status: Mapped[object] = mapped_column(String(20), nullable=False, default='draft', server_default=text("'draft'"))
     # Si el proyecto pasa por el taller (maquila) o no (pinturas, drenaje,
-    # cimientos, etc). Un proyecto sin maquila salta directo de "autorizado" a
-    # "completado" -- ver PROJECT_TRANSITIONS -- y queda fuera de las
-    # pantallas de Jefe de taller (_scoped_query, scope "execution").
+    # cimientos, etc). Recorre los mismos estatus que uno con maquila, pero lo
+    # lleva el supervisor que lo lidera y queda fuera de las pantallas de Jefe
+    # de taller (_scoped_query, scope "execution").
     requires_maquila: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text('true'))
     # --- la orden de trabajo (migracion 20260911180000) ---
     folio: Mapped[object] = mapped_column(String(40), nullable=True)

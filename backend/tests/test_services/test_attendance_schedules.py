@@ -17,7 +17,7 @@ from app.models.session import transaction_context
 from app.services import attendance_rules as reglas
 from app.services.payroll_calculation_service import calcular_periodo
 from app.utils.auth import SECRET_KEY
-from tests.test_services.test_payroll_calculation_service import _ConPeriodoDePrueba
+from tests.test_services.test_payroll_calculation_service import _ConPeriodoDePrueba, dar_todos_los_campos
 
 NUEVE, SEIS = time(9, 0), time(18, 0)
 
@@ -148,7 +148,9 @@ class TestValidacionesDeHorarios(_ConPeriodoDePrueba):
             for entidad in ("work_schedule", "work_schedule_day", "employee_schedule", "payroll_holiday"):
                 db.add(EntityPermission(id_permission=952, entity_name=entidad, scope_create=4,
                                         scope_read=4, scope_update=4, scope_delete=4, created_by=1))
-        token = jwt.encode({"id_user": 1, "id_permission": 952, "user_type": "admin"}, SECRET_KEY, algorithm="HS256")
+            dar_todos_los_campos(db, 952, ("work_schedule", "work_schedule_day", "employee_schedule",
+                                           "payroll_holiday"))
+        token = jwt.encode({"id_user": 1, "id_permission": 952}, SECRET_KEY, algorithm="HS256")
         self.h = {"Authorization": f"Bearer {token}"}
         self.horario = self.json(self.client.post("/work_schedule/", json={"schedule_name": "L-V"}, headers=self.h))
 

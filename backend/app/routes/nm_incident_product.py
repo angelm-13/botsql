@@ -19,7 +19,6 @@ def _actor_has_unrestricted_field_access(user_data: dict) -> bool:
     return bool(
         user_data.get('is_superuser')
         or user_data.get('is_bootstrap_admin')
-        or user_data.get('user_type') == 'admin'
     )
 
 
@@ -185,6 +184,9 @@ def get_nm_incident_product(user_data, id_nm_incident_product):
 @token_required
 @require_entity_permission('nm_incident_product', 'create')
 def create_nm_incident_product(user_data):
+    from app.services.incident_service import require_voucher_flow
+
+    require_voucher_flow(user_data)
     from app.services.incident_service import require_incident_access
 
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
@@ -196,6 +198,9 @@ def create_nm_incident_product(user_data):
 @token_required
 @require_entity_permission('nm_incident_product', 'update')
 def update_nm_incident_product(user_data, id_nm_incident_product):
+    from app.services.incident_service import require_voucher_flow
+
+    require_voucher_flow(user_data)
     from app.services.incident_service import require_incident_access
 
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
@@ -209,5 +214,8 @@ def update_nm_incident_product(user_data, id_nm_incident_product):
 @token_required
 @require_entity_permission('nm_incident_product', 'delete')
 def delete_nm_incident_product(user_data, id_nm_incident_product):
+    from app.services.incident_service import require_voucher_flow
+
+    require_voucher_flow(user_data)
     _require_incident_scope(id_nm_incident_product, user_data)
     return jsonify(NmIncidentProductService.delete(id_nm_incident_product, user_id=user_data.get('id_user')))

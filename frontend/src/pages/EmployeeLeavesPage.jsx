@@ -39,7 +39,7 @@ export default function EmployeeLeavesPage() {
   const [form, setForm] = useState(null);
 
   const actor = useMemo(actorGuardado, []);
-  const privilegiado = Boolean(actor.is_superuser || actor.is_bootstrap_admin || actor.username === "admin1" || actor.user_type === "admin");
+  const privilegiado = Boolean(actor.is_superuser || actor.is_bootstrap_admin || actor.username === "admin1");
   const puede = (campo) => privilegiado || Number(permisos.find((p) => p.entity_name === "employee_leave")?.[campo] || 0) !== 0;
 
   const describirError = useCallback((e) => {

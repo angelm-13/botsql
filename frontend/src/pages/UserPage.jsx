@@ -622,7 +622,9 @@ export default function UserPage() {
             <span>{t("fields.user.user_type")}</span>
             <select name="user_type" value={formData.user_type ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors["user_type"])} {...inputPropsForField("user_type", validationRules["user_type"], "select")}>
               <option value="">{t("common.select_option", "Selecciona una opción")}</option>
-              <option key="admin" value="admin">admin</option>
+              {/* `admin` ya no da ningun acceso (lo da el rol en el Gestor): solo se ofrece
+                  para no borrarlo a quien ya lo tiene. */}
+              {formData.user_type === "admin" && <option key="admin" value="admin">admin</option>}
               <option key="client" value="client">client</option>
               <option key="supplier" value="supplier">supplier</option>
               <option key="employee" value="employee">employee</option>

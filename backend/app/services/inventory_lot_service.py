@@ -89,6 +89,20 @@ def lleva_lotes(product) -> bool:
 
 # --- el lote --------------------------------------------------------------
 
+def _lote_como_objeto(valor) -> dict:
+    """El lote que nombra la captura, siempre como objeto.
+
+    Es `{"lot_code": ..., "expiry_date": ...}` o `{"id_inventory_lot": ...}`. Un
+    texto suelto ("L-441") no dice si es codigo o identificador, y antes reventaba
+    al leerlo como diccionario: se rechaza con el campo que falla.
+    """
+    if valor in (None, ""):
+        return {}
+    if not isinstance(valor, dict):
+        raise AppError("errors.invalid_field", 400, {"field": "lot"})
+    return valor
+
+
 def _lote(db, id_lote, *, para_escribir=False) -> InventoryLot:
     consulta = select(InventoryLot).where(
         InventoryLot.id_inventory_lot == _entero(id_lote, "id_inventory_lot"),
@@ -113,7 +127,7 @@ def lote_en_sesion(db, id_product, datos: dict, actor: int) -> InventoryLot:
     el mismo lote capturado dos veces, y con los dos vivos la mitad de las
     salidas descontaria de uno y la mitad del otro.
     """
-    datos = datos or {}
+    datos = _lote_como_objeto(datos)
     id_lote = _entero(datos.get("id_inventory_lot"), "id_inventory_lot",
                       obligatorio=False)
     if id_lote is not None:
@@ -208,7 +222,7 @@ def salida_en_sesion(db, *, product, id_location, cantidad, lote_pedido, actor):
     una lista y no un lote.
     """
     pedido = int(cantidad)
-    pedido_lote = _entero((lote_pedido or {}).get("id_inventory_lot"),
+    pedido_lote = _entero(_lote_como_objeto(lote_pedido).get("id_inventory_lot"),
                           "id_inventory_lot", obligatorio=False)
 
     consulta = (
@@ -261,6 +275,58 @@ def salida_en_sesion(db, *, product, id_location, cantidad, lote_pedido, actor):
         )
     db.flush()
     return tomado
+
+
+def lotes_de_un_movimiento(db, *, llave=None, id_ledger=None) -> list[tuple[int, int]]:
+    """De que lotes vivos salio (o entro) un movimiento: `[(id_lote, cantidad)]`, cantidades positivas.
+
+    Se busca por la llave de idempotencia del renglon del libro o por su identificador.
+    Sirve para devolver lo que salio a los lotes de los que salio: una devolucion que no
+    sabe de donde vino no puede decir que lote le corresponde. Un movimiento sin desglose
+    -anterior al control por lote, o migrado- devuelve una lista vacia.
+    """
+    if id_ledger is None:
+        from app.models.inventory_ledger import InventoryLedger
+
+        id_ledger = db.scalar(select(InventoryLedger.id_inventory_ledger)
+                              .where(InventoryLedger.idempotency_key == llave))
+        if id_ledger is None:
+            return []
+    filas = db.execute(
+        select(NmInventoryLedgerLot.id_inventory_lot,
+               func.sum(NmInventoryLedgerLot.quantity_delta))
+        .join(InventoryLot,
+              InventoryLot.id_inventory_lot == NmInventoryLedgerLot.id_inventory_lot)
+        .where(NmInventoryLedgerLot.id_inventory_ledger == int(id_ledger),
+               InventoryLot.deletion_date.is_(None))
+        .group_by(NmInventoryLedgerLot.id_inventory_lot)
+        .order_by(NmInventoryLedgerLot.id_inventory_lot)
+    ).all()
+    return [(int(lote), abs(int(cantidad))) for lote, cantidad in filas if cantidad]
+
+
+def lotes_por_regresar(db, ids_ledger) -> list[tuple[int, int]]:
+    """De que lotes vivos salio lo que esos renglones del libro sacaron y aun no ha vuelto.
+
+    Suma el desglose con su signo -las salidas restan, las reposiciones suman- y deja lo
+    que sigue fuera: `[(id_lote, cantidad)]`. Es lo que permite que una segunda nota de
+    credito sobre la misma venta no vuelva a contar lo que la primera ya repuso.
+    """
+    ids_ledger = [int(i) for i in ids_ledger]
+    if not ids_ledger:
+        return []
+    filas = db.execute(
+        select(NmInventoryLedgerLot.id_inventory_lot,
+               func.sum(NmInventoryLedgerLot.quantity_delta))
+        .join(InventoryLot,
+              InventoryLot.id_inventory_lot == NmInventoryLedgerLot.id_inventory_lot)
+        .where(NmInventoryLedgerLot.id_inventory_ledger.in_(ids_ledger),
+               InventoryLot.deletion_date.is_(None))
+        .group_by(NmInventoryLedgerLot.id_inventory_lot)
+        .having(func.sum(NmInventoryLedgerLot.quantity_delta) < 0)
+        .order_by(NmInventoryLedgerLot.id_inventory_lot)
+    ).all()
+    return [(int(lote), -int(cantidad)) for lote, cantidad in filas]
 
 
 def asentar_desglose(db, ledger, movidos, actor) -> None:
@@ -494,9 +560,22 @@ def encender_control_de_lotes(id_product, payload: dict, user_data) -> dict:
                         "porque no se llevaba.",
             }, actor)
             for id_ubicacion, cantidad in existencias:
+                # Solo lo que ningun lote lleva ya: tras apagar y volver a encender,
+                # los saldos de lote quedan viejos y sumar la existencia entera otra
+                # vez los duplicaba (lotes 35 contra existencia 20).
+                en_lotes = int(db.scalar(
+                    select(func.coalesce(func.sum(InventoryLotBalance.quantity), 0))
+                    .join(InventoryLot, InventoryLot.id_inventory_lot == InventoryLotBalance.id_inventory_lot)
+                    .where(InventoryLot.id_product == producto.id_product,
+                           InventoryLot.deletion_date.is_(None),
+                           InventoryLotBalance.id_location == int(id_ubicacion))
+                ) or 0)
+                faltante = int(cantidad or 0) - en_lotes
+                if faltante <= 0:
+                    continue
                 saldo = _saldo_de_lote(db, apertura.id_inventory_lot,
                                        id_ubicacion, actor, para_escribir=True)
-                saldo.quantity = int(saldo.quantity or 0) + int(cantidad or 0)
+                saldo.quantity = int(saldo.quantity or 0) + faltante
 
         producto.lot_control = True
         db.flush()

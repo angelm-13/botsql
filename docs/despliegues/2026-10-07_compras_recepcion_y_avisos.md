@@ -10,7 +10,9 @@ cuánto llegó de cada renglón, por partes. `POST /purchase-orders/<id>/receive
   `partially_received` y, cuando todos los renglones están completos, a `received`.
 - Recibir de más se rechaza (`errors.order_receive_exceeds`): es una discrepancia con la
   factura, no una recepción. Todo o nada: un renglón malo revierte los demás.
-- **Quien compró no recibe** (`errors.purchase_same_person`), ni siquiera con la capacidad.
+- ~~Quien compró no recibe~~ **Retirado el 2026-10-19 (pedido de Adser)**: recibir lo decide solo
+  la capacidad `purchase_receive` en el Gestor; Compras puede confirmar lo que compró si se
+  le concede. Autorizar y comprar siguen con `errors.purchase_same_person`.
 - Solo confirma **cantidad**. No da entrada al inventario: lo comprado suele ser material de
   obra en texto libre, sin producto ni ubicación donde meterlo.
 - Capacidad nueva **`purchase_receive`** (módulo `compras`, oculta): la llevan Almacenista,

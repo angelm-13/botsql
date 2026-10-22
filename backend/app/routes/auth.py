@@ -15,7 +15,8 @@ from flask import Blueprint, jsonify, request, current_app
 from sqlalchemy import select
 from app.models.session import transaction_context
 from app.models import User, UserMfa
-from app.utils.auth import SECRET_KEY, token_required
+from app.utils.auth import SECRET_KEY, _has_entity_permission, token_required
+from app.utils.user_access import can_manage_user
 
 bp_auth = Blueprint('auth', __name__, url_prefix='/auth')
 JWT_ALGORITHM = 'HS256'
@@ -129,40 +130,14 @@ def _normalize_user_type(value) -> str:
     return str(value or '').strip().lower()
 
 
-def _company_admin_types() -> set[str]:
-    raw = os.getenv('COMPANY_ADMIN_USER_TYPES', 'admin')
-    return {item.strip().lower() for item in raw.split(',') if item.strip()} or {'admin'}
-
-
-def _request_is_company_admin(user_data: dict) -> bool:
-    return _normalize_user_type(user_data.get('user_type')) in _company_admin_types()
-
-
-def _user_hierarchy_rank_from_type(user_type) -> int:
-    ranks = {'admin': 80, 'client': 50, 'supplier': 50, 'employee': 40, 'user': 20, '': 10}
-    raw = os.getenv('USER_HIERARCHY_RANKS', '')
-    for part in raw.split(','):
-        if ':' not in part:
-            continue
-        key, value = part.split(':', 1)
-        try:
-            ranks[key.strip().lower()] = int(value.strip())
-        except (TypeError, ValueError):
-            continue
-    return ranks.get(_normalize_user_type(user_type), ranks.get('', 10))
-
-
 def _request_can_manage_target_user(user_data: dict, target: User) -> bool:
+    """Mismas protecciones que `routes/user.py`: ver `app/utils/user_access.py`."""
     if _request_is_bootstrap_admin(user_data):
         return True
     if not target or _is_bootstrap_admin(target):
         return False
-    # Company admins can reset/manage other normal admins and lower users.
-    if _request_is_company_admin(user_data):
-        return True
-    actor_rank = _user_hierarchy_rank_from_type(user_data.get('user_type'))
-    target_rank = _user_hierarchy_rank_from_type(getattr(target, 'user_type', None))
-    return actor_rank > target_rank
+    return can_manage_user(user_data, getattr(target, 'id_permission', None),
+                           actor_is_bootstrap=False, target_is_bootstrap=False)
 
 
 def _verify_password(raw_password: str, stored_value: str) -> bool:
@@ -197,13 +172,15 @@ def _login_error(error_key: str, status_code: int):
 
 
 def _client_ip() -> str:
-    forwarded = request.headers.get('X-Forwarded-For', '')
-    return (forwarded.split(',')[0].strip() or request.remote_addr or '')[:45]
+    from app.utils.client_ip import client_ip
+    return client_ip()
 
 
 @bp_auth.route('/login', methods=['POST'])
 def login():
-    data = request.get_json() or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return _login_error('errors.auth_missing_credentials', 400)
     username = str(data.get('username') or '').strip()
     password = str(data.get('password') or '')
     if not username or not password:
@@ -223,7 +200,8 @@ def login():
         return respuesta, 429
 
     with transaction_context() as db:
-        user = db.scalars(select(User).where(User.username == username)).first()
+        user = db.scalars(select(User).where(
+            User.username == username, User.deletion_date.is_(None))).first()
         if user and _normalize_user_type(getattr(user, 'user_type', None)) == 'web_shopper':
             login_throttle.registrar_fallo(username, origen)
             return _login_error('errors.auth_invalid_credentials', 401)
@@ -247,7 +225,9 @@ def login():
 
 @bp_auth.route('/mfa/verify-login', methods=['POST'])
 def verify_login_mfa():
-    data = request.get_json() or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({'error_key': 'errors.mfa_missing_code'}), 400
     temp_token = str(data.get('temp_token') or '')
     code = str(data.get('code') or '').replace(' ', '')
     if not temp_token or not code:
@@ -260,17 +240,30 @@ def verify_login_mfa():
     if not payload.get('mfa_step'):
         return jsonify({'error_key': 'errors.invalid_token'}), 401
 
+    # Con la contrasena ya dada, 10^6 codigos son pocos: mismo freno que el login,
+    # por usuario y por origen, para que el segundo factor no se pueda adivinar.
+    llave_mfa = 'mfa:%s' % payload.get('id_user')
+    origen = _client_ip()
+    if login_throttle.esta_bloqueado(llave_mfa, origen):
+        espera = login_throttle.segundos_para_reintentar(llave_mfa, origen)
+        respuesta = jsonify({'error_key': 'errors.auth_too_many_attempts',
+                             'meta': {'retry_after_seconds': espera}})
+        respuesta.headers['Retry-After'] = str(espera)
+        return respuesta, 429
+
     with transaction_context() as db:
         user = db.get(User, payload.get('id_user'))
         mfa = db.scalars(select(UserMfa).where(UserMfa.id_user == payload.get('id_user'), UserMfa.enabled == True)).first()
-        if not user or not mfa:
+        if not user or user.deletion_date is not None or not mfa:
             return jsonify({'error_key': 'errors.mfa_not_enabled'}), 404
         secret = _mfa_decrypt_secret(mfa)
         if not secret:
             return jsonify({'error_key': 'errors.mfa_not_configured'}), 404
         totp = pyotp.TOTP(secret)
         if not totp.verify(code, valid_window=1):
+            login_throttle.registrar_fallo(llave_mfa, origen)
             return jsonify({'error_key': 'errors.mfa_invalid_code'}), 401
+        login_throttle.registrar_exito(llave_mfa)
         user_payload = _user_payload(user, mfa_enabled=True)
         access_token = _issue_token(user_payload, ACCESS_TOKEN_MINUTES)
         return jsonify({'token': access_token, 'user': user_payload, 'message_key': 'auth.login_success'})
@@ -330,7 +323,9 @@ def enable_mfa(user_data):
 @bp_auth.route('/mfa/reset/<int:target_user_id>', methods=['POST'])
 @token_required
 def reset_user_mfa(user_data, target_user_id):
-    if not (str(user_data.get('user_type') or '').strip().lower() == 'admin' or _request_is_bootstrap_admin(user_data)):
+    # Reiniciar el MFA de otra persona es administrar usuarios: lo concede el
+    # Gestor (editar `user`), no el tipo de cuenta.
+    if not _has_entity_permission(user_data, 'user', 'update'):
         return jsonify({'error_key': 'errors.forbidden'}), 403
     with transaction_context() as db:
         target = db.get(User, target_user_id)

@@ -49,10 +49,17 @@ ALTER TABLE proyect_event ADD CONSTRAINT proyect_event_event_type_check CHECK (
 ALTER TABLE proyect DROP CONSTRAINT IF EXISTS ck_proyect_status;
 ALTER TABLE proyect DROP CONSTRAINT IF EXISTS proyect_proyect_status_check;
 
+-- 2026-10-19: el estatus 'delivered' (entregado) se retiro; queda solo
+-- 'collected' (recolectado). Los proyectos que estaban entregados pasan a
+-- recolectado. Va DESPUES de soltar el CHECK viejo y ANTES de re-crearlo: esta migracion corre en cada
+-- arranque, y un CHECK sin 'delivered' contra una fila vieja tumbaria el pod.
+UPDATE proyect SET proyect_status = 'collected', last_update_date = CURRENT_TIMESTAMP
+WHERE proyect_status = 'delivered';
+
 ALTER TABLE proyect ADD CONSTRAINT ck_proyect_status CHECK (
     proyect_status IN (
         'draft', 'submitted', 'authorized', 'denied', 'blocked',
-        'in_progress', 'waiting_material', 'stopped', 'completed', 'delivered'
+        'in_progress', 'waiting_material', 'stopped', 'collected', 'completed'
     )
 );
 

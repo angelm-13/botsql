@@ -378,6 +378,10 @@ class TestArmarLaOrden(BaseOrdenes):
             "/purchase-orders?q=norte", headers=self._compras()))
         self.assertEqual(2, buscadas["total"])
         self.assertEqual(2, todas["items"][1]["projects_count"])
+        # El resumen de arriba de la pantalla cuenta por estado, sin los filtros.
+        self.assertEqual({"pending_authorization": 1}, {
+            k: v for k, v in por_estado["by_status"].items() if k == "pending_authorization"})
+        self.assertEqual(2, sum(por_estado["by_status"].values()))
 
     def test_only_the_registered_suppliers_are_offered(self):
         respuesta = self.client.get("/purchase-orders/suppliers", headers=self._compras())
@@ -996,8 +1000,11 @@ class TestElRegistroDeRoles(BaseOrdenes):
         self.assertTrue(compras.modulos["compras"] & registry.CREAR)
 
     def test_the_manager_authorizes(self):
-        self.assertIn("purchase_authorize", self._rol("Gerente").capacidades)
-        self.assertTrue(self._rol("Gerente").modulos["compras"] & registry.CREAR)
+        # Gerencia son dos roles: autoriza las compras el general (revision).
+        self.assertIn("purchase_authorize", self._rol("Gerente general").capacidades)
+        self.assertTrue(self._rol("Gerente general").modulos["compras"] & registry.CREAR)
+        # El tecnico es de campo: ve compras pero no las autoriza.
+        self.assertNotIn("purchase_authorize", self._rol("Gerente tecnico").capacidades)
 
     def test_the_warehouse_only_looks(self):
         self.assertEqual(registry.CONSULTA, self._rol("Almacenista").modulos["compras"])

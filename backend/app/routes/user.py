@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError, StatementError
 from app.models.session import transaction_context
 from app.utils.field_access import COLUMNAS_DE_AUDITORIA
 from app.routes.permission import _is_protected_permission_id
+from app.utils.user_access import can_manage_user, changes_own_role
 
 
 bp_user = Blueprint('user', __name__, url_prefix='/user')
@@ -28,7 +29,6 @@ def _actor_has_unrestricted_field_access(user_data: dict) -> bool:
     return bool(
         user_data.get('is_superuser')
         or user_data.get('is_bootstrap_admin')
-        or user_data.get('user_type') == 'admin'
     )
 
 
@@ -150,33 +150,6 @@ def _normalize_user_type(value):
     return str(value or '').strip().lower()
 
 
-def _company_admin_types():
-    raw = os.getenv('COMPANY_ADMIN_USER_TYPES', 'admin')
-    return {item.strip().lower() for item in raw.split(',') if item.strip()} or {'admin'}
-
-
-def _user_hierarchy_rank_from_type(user_type):
-    # Flexible default hierarchy. It can be extended later with USER_HIERARCHY_RANKS,
-    # for example: USER_HIERARCHY_RANKS="admin:80,manager:60,employee:40".
-    # If level grows a formal hierarchy field in a later phase, only this central
-    # function should be adapted to read that rank.
-    ranks = {'admin': 80, 'client': 50, 'supplier': 50, 'employee': 40, 'user': 20, '': 10}
-    raw = os.getenv('USER_HIERARCHY_RANKS', '')
-    for part in raw.split(','):
-        if ':' not in part:
-            continue
-        key, value = part.split(':', 1)
-        try:
-            ranks[key.strip().lower()] = int(value.strip())
-        except (TypeError, ValueError):
-            continue
-    return ranks.get(_normalize_user_type(user_type), ranks.get('', 10))
-
-
-def _actor_is_company_admin(user_data):
-    return _normalize_user_type(user_data.get('user_type')) in _company_admin_types()
-
-
 def _get_user_row(session, target_user_id):
     return session.execute(
         text('SELECT id_user, username, user_type, id_permission FROM "user" WHERE id_user = :id_user'),
@@ -202,34 +175,28 @@ def _create_hierarchy_denied_response():
 
 
 def _can_manage_user_row(user_data, target):
+    """Si el actor puede editar o borrar a este usuario.
+
+    Que pueda gestionar usuarios en general lo decide el Gestor (la ruta ya lo
+    exige); aqui solo rigen las protecciones de `app/utils/user_access.py`,
+    ninguna por `user_type`.
+    """
     if _actor_is_bootstrap(user_data):
         return True
     if not target:
         return False
-    if _row_is_bootstrap(target):
-        return False
-    # The company admin is the operational owner. It may manage other normal
-    # admins and lower users, but never the unique bootstrap/superuser.
-    if _actor_is_company_admin(user_data):
-        return True
-    actor_rank = _user_hierarchy_rank_from_type(user_data.get('user_type'))
-    target_rank = _user_hierarchy_rank_from_type(target.get('user_type'))
-    return actor_rank > target_rank
+    return can_manage_user(user_data, target.get('id_permission'),
+                           actor_is_bootstrap=False, target_is_bootstrap=_row_is_bootstrap(target))
 
 
 def _can_create_user_payload(user_data, payload):
     if _actor_is_bootstrap(user_data):
         return True
+    # Nadie crea una cuenta que se haga pasar por el superusuario. Asignar el
+    # rol Administrator lo cubre `_payload_assigns_protected_role`; fuera de eso
+    # quien puede dar de alta usuarios lo decide el Gestor.
     target_type = _normalize_user_type((payload or {}).get('user_type')) or 'employee'
-    if target_type in {'superuser', 'bootstrap', 'bootstrap_admin'}:
-        return False
-    # Company admins may create other normal admins and lower users because they
-    # administer the client installation after delivery.
-    if _actor_is_company_admin(user_data):
-        return True
-    actor_rank = _user_hierarchy_rank_from_type(user_data.get('user_type'))
-    target_rank = _user_hierarchy_rank_from_type(target_type)
-    return actor_rank > target_rank
+    return target_type not in {'superuser', 'bootstrap', 'bootstrap_admin'}
 
 
 def _payload_attempts_forbidden_bootstrap_identity(payload):
@@ -262,21 +229,13 @@ def _payload_elevates_beyond_actor(user_data, target, payload):
         return False
     if _payload_attempts_forbidden_bootstrap_identity(payload):
         return True
-    if not payload or 'user_type' not in payload:
-        return False
-    desired_type = _normalize_user_type(payload.get('user_type'))
-    current_type = _normalize_user_type((target or {}).get('user_type'))
-    if desired_type == current_type:
-        return False
-    if _actor_is_company_admin(user_data):
-        return False
-    actor_rank = _user_hierarchy_rank_from_type(user_data.get('user_type'))
-    desired_rank = _user_hierarchy_rank_from_type(desired_type)
-    return desired_rank >= actor_rank
+    # Autoescalada: nadie se cambia a si mismo el rol. `user_type` ya no cuenta:
+    # describe la cuenta, no da autoridad.
+    return changes_own_role(user_data, target, payload)
 
 
-def _list_users_protected(user_data, page, per_page, filters, sort, service_cls):
-    result = service_cls.list(page=page, per_page=per_page, filters=filters, sort=sort, q=request.args.get('q'))
+def _list_users_protected(user_data, page, per_page, filters, sort, service_cls, search_fields=None):
+    result = service_cls.list(page=page, per_page=per_page, filters=filters, sort=sort, q=request.args.get('q'), search_fields=search_fields)
     original_items = list(result.get('items', []) or [])
     items = [
         item for item in original_items
@@ -456,8 +415,11 @@ def list_user(user_data):
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 20))
     sort = request.args.get('sort')
-    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort', 'q'} and k in ALLOWED_FIELDS}
-    return _list_users_protected(user_data, page, per_page, filters, sort, UserService)
+    visible = _visible_response_fields_for_actor(user_data)
+    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort', 'q'} and k in visible and k in ALLOWED_FIELDS}
+    if sort and sort.lstrip('-') not in visible:
+        sort = None
+    return _list_users_protected(user_data, page, per_page, filters, sort, UserService, visible)
 
 
 @bp_user.route('/<id_user>', methods=['GET'])

@@ -21,7 +21,7 @@ from decimal import Decimal
 
 import jwt
 
-from app.models import EntityPermission, PayrollConcept, PayrollMovement, PayrollPeriod, User
+from app.models import EntityPermission, Field, NmFieldPermission, PayrollConcept, PayrollMovement, PayrollPeriod, User
 from app.models.session import transaction_context
 from app.services import payroll_tax_rules as ley
 from app.services.payroll_calculation_service import calcular_periodo
@@ -141,7 +141,12 @@ class TestEnElCalculo(_ConPeriodoDePrueba):
         with transaction_context() as db:
             db.add(EntityPermission(id_permission=901, entity_name="payroll_period", scope_create=4,
                                     scope_read=4, scope_update=4, scope_delete=4, created_by=1))
-        token = jwt.encode({"id_user": 1, "id_permission": 901, "user_type": "admin"}, SECRET_KEY, algorithm="HS256")
+            # Permiso de CAMPO para leer y escribir la casilla (user_type ya no da acceso).
+            campo = Field(table_name="payroll_period", field_name="includes_aguinaldo", created_by=1)
+            db.add(campo)
+            db.flush()
+            db.add(NmFieldPermission(id_field=campo.id_field, id_permission=901, control_type="7", created_by=1))
+        token = jwt.encode({"id_user": 1, "id_permission": 901}, SECRET_KEY, algorithm="HS256")
         headers = {"Authorization": f"Bearer {token}"}
         respuesta = self.client.put("/payroll_period/5", json={"includes_aguinaldo": False}, headers=headers)
         self.assertEqual(200, respuesta.status_code)

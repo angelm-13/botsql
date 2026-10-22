@@ -15,7 +15,7 @@ from datetime import date, datetime, time
 
 import jwt
 
-from app.models import EmployeeLeave, EntityPermission, PayrollPeriod, User
+from app.models import EmployeeLeave, EntityPermission, Field, NmFieldPermission, PayrollPeriod, User
 from app.models.session import transaction_context
 from app.services import attendance_rules as reglas
 from app.services.employee_leave_service import EmployeeLeaveService, saldo_de_vacaciones
@@ -194,6 +194,12 @@ class TestValidacionesDeAusencias(_ConAusencias):
         with transaction_context() as db:
             db.add(EntityPermission(id_permission=951, entity_name="employee_leave", scope_create=4,
                                     scope_read=4, scope_update=4, scope_delete=4, created_by=1))
+            # Permiso de CAMPO: la ruta descarta del cuerpo lo que el rol no puede escribir.
+            for nombre in ("id_user", "leave_type", "start_date", "end_date"):
+                campo = Field(table_name="employee_leave", field_name=nombre, created_by=1)
+                db.add(campo)
+                db.flush()
+                db.add(NmFieldPermission(id_field=campo.id_field, id_permission=951, control_type="7", created_by=1))
 
         def headers(id_permission, **extra):
             token = jwt.encode({"id_user": 41, "id_permission": id_permission, **extra}, SECRET_KEY, algorithm="HS256")
@@ -202,10 +208,7 @@ class TestValidacionesDeAusencias(_ConAusencias):
         cuerpo = {"id_user": 71, "leave_type": "paid_leave", "start_date": "2026-10-06", "end_date": "2026-10-06"}
         self.assertEqual(403, self.client.post("/employee_leave/", json=cuerpo, headers=headers(999)).status_code)
         self.assertEqual(403, self.client.get("/employee_leave/balances", headers=headers(999)).status_code)
-        # Para escribir, la ruta tambien filtra por permiso de CAMPO (nm_field_permission);
-        # aqui el actor es de tipo admin, que tiene todos los campos.
-        self.assertEqual(201, self.client.post("/employee_leave/", json=cuerpo,
-                                               headers=headers(951, user_type="admin")).status_code)
+        self.assertEqual(201, self.client.post("/employee_leave/", json=cuerpo, headers=headers(951)).status_code)
         saldos = self.json(self.client.get("/employee_leave/balances", headers=headers(951)))["employees"]
         self.assertIn(71, [s["id_user"] for s in saldos])
         with transaction_context() as db:

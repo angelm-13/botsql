@@ -122,9 +122,11 @@ class TestMisGrupos(Base):
 
 
 class TestPropiosYTodosNoCambianLaReglaDeAntes(Base):
-    def test_todos_does_not_widen_to_everyone(self):
+    def test_todos_widens_projects_but_not_incidents_or_the_log(self):
+        """Proyectos: la celda `scope_read` manda (desde 2026-10-16), asi que
+        Todos ve todos. Incidencias y bitacora conservan su regla de antes."""
         self._equipo(YO, COMPANERO)
-        self.assertEqual({self.p_yo}, self.proyectos())
+        self.assertEqual({self.p_yo, self.p_companero, self.p_extrano}, self.proyectos())
         self.assertEqual({self.i_yo}, self.incidencias())
         self.assertEqual({self.p_yo}, self.bitacoras())
 

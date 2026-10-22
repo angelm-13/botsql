@@ -102,6 +102,36 @@ class TestProjectTaskScopeApi(BackendTestCase):
             self.assertEqual(response.status_code, 404)
             self.assertEqual(self.json(response)["error_key"], "errors.resource_not_found")
 
+    def test_creating_a_task_note_through_the_generic_crud_requires_a_description(self):
+        """Antes `POST /task_note/` llamaba a `TaskNoteService.create` directo
+        -el CRUD generico, sin validar nada- y aceptaba una nota vacia.
+        Hallazgo de la auditoria de seguridad del 2026-10-06."""
+        response = self._request(self.owner, "POST", "/task_note/", {
+            "id_task": self.own_task_id, "task_note_description": "   ",
+        })
+        self.assertEqual(400, response.status_code)
+        self.assertEqual("errors.required_field", self.json(response)["error_key"])
+
+    def test_creating_a_task_note_through_the_generic_crud_reaches_the_project_expediente(self):
+        """La misma nota que antes solo vivia en `task_note` y nunca aparecia
+        en `proyect_event` -el expediente del proyecto no se enteraba-.
+        Hallazgo de la auditoria de seguridad del 2026-10-06."""
+        from app.models.proyect_event import ProyectEvent
+        from app.models.session import transaction_context as _tc
+
+        response = self._request(self.owner, "POST", "/task_note/", {
+            "id_task": self.own_task_id, "task_note_description": "Avance de hoy",
+        })
+        self.assertEqual(201, response.status_code)
+
+        with _tc() as db:
+            eventos = db.query(ProyectEvent).filter(
+                ProyectEvent.id_task == self.own_task_id,
+                ProyectEvent.event_type == "task_note",
+            ).all()
+            self.assertEqual(1, len(eventos))
+            self.assertEqual("Avance de hoy", eventos[0].content)
+
     def test_task_list_carries_the_reason_only_while_blocked(self):
         admin = {"id_user": 11, "id_permission": 101, "is_superuser": True}
         with transaction_context() as db:

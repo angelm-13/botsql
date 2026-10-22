@@ -27,6 +27,21 @@ class CustomerContactService(CrudService):
         CustomerContactService._validar_correo(payload)
         return payload
 
+    ESTADOS = {'activo', 'inactivo'}
+
+    @classmethod
+    def _validar_nombre_y_estado(cls, payload: dict, *, creando: bool) -> dict:
+        """El nombre no es solo espacios y el estado es uno de los que la pantalla ofrece."""
+        payload = dict(payload)
+        if 'full_name' in payload or creando:
+            nombre = str(payload.get('full_name') or '').strip()
+            if not nombre:
+                raise AppError('errors.required_field', status_code=400, meta={'field': 'full_name'})
+            payload['full_name'] = nombre
+        if payload.get('status') not in (None, '') and payload['status'] not in cls.ESTADOS:
+            raise AppError('errors.invalid_field', status_code=400, meta={'field': 'status'})
+        return payload
+
     @staticmethod
     def _validar_correo(payload: dict) -> None:
         correo = str(payload.get('email') or '').strip()
@@ -52,6 +67,7 @@ class CustomerContactService(CrudService):
     @classmethod
     def create(cls, payload: dict, user_id: int | None = None):
         payload = cls._validate_customer(payload)
+        payload = cls._validar_nombre_y_estado(payload, creando=True)
         cls._rechazar_duplicado(payload)
         return super().create(payload, user_id=user_id)
 
@@ -60,8 +76,12 @@ class CustomerContactService(CrudService):
         payload = dict(payload or {})
         if 'id_customer_supplier' in payload:
             payload = cls._validate_customer(payload)
+        payload = cls._validar_nombre_y_estado(payload, creando=False)
         if payload.get('email'):
             cls._validar_correo(payload)
+        # Tambien al mover el contacto de cliente: el correo que ya tenia puede estar
+        # repetido en el cliente de destino.
+        if payload.get('email') or 'id_customer_supplier' in payload:
             cls._rechazar_duplicado({**cls.get(item_id), **payload}, item_id)
         return super().update(item_id, payload, user_id=user_id)
 

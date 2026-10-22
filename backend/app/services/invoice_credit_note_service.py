@@ -28,14 +28,16 @@ from __future__ import annotations
 
 from decimal import Decimal, ROUND_HALF_UP
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from app.models.cfdi_relation import CfdiRelation
 from app.models.invoice import Invoice
 from app.models.inventory_ledger import InventoryLedger
 from app.models.invoice_material_service import InvoiceMaterialService
+from app.models.product import Product
 from app.models.session import transaction_context
-from app.services.inventory_service import apply_movement_in_session
+from app.services.inventory_lot_service import lleva_lotes, lotes_por_regresar
+from app.services.inventory_service import reponer_en_sus_lotes
 from app.services.invoice_catalogs import (
     TIPO_RELACION_DEVUELVE_MERCANCIA,
     TIPO_RELACION_NOTA_CREDITO,
@@ -98,6 +100,15 @@ def _credit_notes(db, invoice):
 
 def _credited_so_far(db, invoice) -> Decimal:
     return _money(sum((_money(nota.total) for nota in _credit_notes(db, invoice)), Decimal("0")))
+
+
+def credited_amount(db, invoice) -> Decimal:
+    """Lo que las notas de credito vigentes ya acreditaron de esta factura.
+
+    Lo usan los abonos: lo acreditado ya no se cobra, y sin restarlo se podia recibir el
+    total de una factura acreditada por completo.
+    """
+    return _credited_so_far(db, invoice)
 
 
 def _credited_quantity_by_original_line(db, original_invoice) -> dict[int, Decimal]:
@@ -185,6 +196,10 @@ def _validate_relation_type(value) -> str:
 
 
 def _require_creditable(invoice):
+    # Una nota de credito o un REP no se acreditan: solo se acredita un ingreso.
+    if str(invoice.tipo_de_comprobante or "").strip().upper() in {"E", "P", "T"}:
+        raise AppError("errors.credit_note_invoice_status_not_allowed", 409,
+                       {"tipo_de_comprobante": invoice.tipo_de_comprobante})
     if not str(invoice.folio_fiscal or "").strip():
         raise AppError(
             "errors.credit_note_requires_stamped_invoice",
@@ -265,6 +280,47 @@ def _build_concepts(payload) -> list[dict]:
     return conceptos
 
 
+def _ids_de_lineas(db, factura) -> list[str]:
+    """Las partidas vivas de la factura, como texto: es como las guarda el libro (`reference_id`)."""
+    return [
+        str(linea.id_invoice_material_service)
+        for linea in db.scalars(
+            select(InvoiceMaterialService)
+            .where(InvoiceMaterialService.id_invoice == factura.id_invoice)
+            .where(InvoiceMaterialService.deletion_date.is_(None))
+        ).all()
+    ]
+
+
+def _lotes_por_devolver(db, original, id_product) -> list[tuple[int, int]]:
+    """De que lotes salio lo que la venta se llevo de este producto y aun no ha vuelto.
+
+    Parte del desglose de las salidas de la factura y le resta lo que las notas por
+    devolucion anteriores ya repusieron, para que una segunda nota no vuelva a contar
+    los mismos lotes.
+    """
+    salidas = db.scalars(
+        select(InventoryLedger.id_inventory_ledger)
+        .where(InventoryLedger.reference_type == "invoice_line")
+        .where(InventoryLedger.reference_id.in_(_ids_de_lineas(db, original) or [""]))
+        .where(InventoryLedger.id_product == int(id_product))
+        .where(InventoryLedger.quantity_delta < 0)
+    ).all()
+    notas = db.scalars(
+        select(CfdiRelation.id_invoice)
+        .where(CfdiRelation.id_related_invoice == original.id_invoice)
+        .where(CfdiRelation.relation_type == TIPO_RELACION_DEVUELVE_MERCANCIA)
+    ).all()
+    repuestas = db.scalars(
+        select(InventoryLedger.id_inventory_ledger)
+        .where(or_(*[InventoryLedger.idempotency_key.like(f"credit-{nota}-line-%")
+                     for nota in notas]))
+        .where(InventoryLedger.id_product == int(id_product))
+        .where(InventoryLedger.quantity_delta > 0)
+    ).all() if notas else []
+    return lotes_por_regresar(db, [*salidas, *repuestas])
+
+
 def _origin_locations(db, original) -> dict[int, int]:
     """Producto -> ubicacion de la que salio al facturar.
 
@@ -278,14 +334,7 @@ def _origin_locations(db, original) -> dict[int, int]:
 
     Se lee del libro de inventario, igual que hace el reverso por cancelacion.
     """
-    lineas = [
-        str(linea.id_invoice_material_service)
-        for linea in db.scalars(
-            select(InvoiceMaterialService)
-            .where(InvoiceMaterialService.id_invoice == original.id_invoice)
-            .where(InvoiceMaterialService.deletion_date.is_(None))
-        ).all()
-    ]
+    lineas = _ids_de_lineas(db, original)
     if not lineas:
         return {}
 
@@ -322,21 +371,26 @@ def _return_goods(db, credit_note, original, user_data, conceptos_creados):
                 "skipped": "quantity_not_whole_units",
             })
             continue
-        movimiento, _ = apply_movement_in_session(
+        producto = db.get(Product, int(linea.id_product))
+        # Un producto con lotes vuelve a los lotes de los que salio la venta; uno sin
+        # lotes, con un solo movimiento, como siempre.
+        lotes = (_lotes_por_devolver(db, original, linea.id_product)
+                 if producto is not None and lleva_lotes(producto) else None)
+        movimientos.extend(reponer_en_sus_lotes(
             db,
             linea.id_product,
             user_data,
-            movement_type="return",
-            quantity_delta=int(cantidad),
+            quantity=int(cantidad),
             idempotency_key=f"credit-{credit_note.id_invoice}-line-{linea.id_invoice_material_service}",
+            lotes=lotes,
+            movement_type="return",
             # Si la factura original nunca se aplico al almacen no hay origen
             # que respetar, y entonces si toca el almacen por omision.
             id_location=origenes.get(int(linea.id_product)),
             reference_type="invoice_line",
             reference_id=str(linea.id_invoice_material_service),
             reason=f"Devolucion por nota de credito de la factura {original.id_invoice}",
-        )
-        movimientos.append(movimiento)
+        ))
     return movimientos
 
 
@@ -358,6 +412,13 @@ def create_credit_note(invoice_id, payload, user_data) -> dict:
             select(CfdiRelation).where(CfdiRelation.idempotency_key == key)
         ).first()
         if previa:
+            # La llave solo devuelve lo que ya se creo SOBRE ESTA factura y para
+            # quien puede verla: sin esto, otra factura u otro proyecto leian la
+            # nota ajena con solo repetir la llave.
+            _load_invoice(db, invoice_id, user_data)
+            if previa.id_related_invoice not in (None, int(invoice_id)):
+                raise AppError("errors.idempotency_conflict", 409,
+                               {"idempotency_key": key})
             nota = db.get(Invoice, previa.id_invoice)
             return {
                 "credit_note": nota.serialize(),

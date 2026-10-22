@@ -34,6 +34,7 @@ from typing import Any
 CATEGORIA = {
     "permission_denied": "denied",
     "incident_transition": "transition",
+    "voucher_transition": "transition",
 }
 
 

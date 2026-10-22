@@ -682,6 +682,14 @@ export default function InventoryTracePage() {
                             .toLowerCase().replace(/[^a-z]+/g, "_")}`,
                           it.effective_status || it.product_status)}
                         </span>
+                        {/* La condicion (nuevo / usado) no pinta el color -ese lo
+                            decide donde esta la pieza-, pero se sigue diciendo. */}
+                        {["NUEVO", "USADO"].includes(normalizarEstatus(it.product_status)) && (
+                          <span className="trace-chip muted">
+                            {t(`trace.condition_${normalizarEstatus(it.product_status).toLowerCase()}`,
+                              normalizarEstatus(it.product_status) === "NUEVO" ? "Nuevo" : "Usado")}
+                          </span>
+                        )}
                       </p>
                     )}
 
@@ -885,7 +893,7 @@ export default function InventoryTracePage() {
                             || t("trace.unknown_holder", "sin responsable")}</strong>
                           <span className="muted">
                             {" · "}{t("trace.voucher", "vale")}{" "}
-                            <span className="mono">{h.voucher_folio}</span>
+                            <Link className="mono" to={`/vouchers?abrir=${h.id_incident}`}>{h.voucher_folio}</Link>
                             {h.quantity > 1 && ` · ${h.quantity}`}
                             {h.due_date && (
                               <>
@@ -938,6 +946,11 @@ export default function InventoryTracePage() {
                           {u.id_module && <em className="trace-module">{u.id_module}</em>}
                         </span>
                         <strong className="mono">{u.quantity}</strong>
+                        {u.reserved > 0 && (
+                          <em className="muted">
+                            {" "}({u.reserved} {t("trace.reserved", "apartado(s) en un vale")})
+                          </em>
+                        )}
                       </li>
                     ))}
                   </ul>

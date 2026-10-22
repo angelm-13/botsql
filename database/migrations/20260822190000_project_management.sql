@@ -24,11 +24,18 @@ ALTER TABLE proyect
 -- no solo lo que existia en 2026-08-22 -- si esa lista vuelve a crecer, hay
 -- que actualizar las dos migraciones a la vez, o la de aqui se convierte en
 -- una bomba de tiempo para el proximo restart.
+-- 2026-10-19: el estatus 'delivered' (entregado) se retiro; queda solo
+-- 'collected' (recolectado). Los proyectos que estaban entregados pasan a
+-- recolectado. Va DESPUES de soltar el CHECK viejo y ANTES de re-crearlo: esta migracion corre en cada
+-- arranque, y un CHECK sin 'delivered' contra una fila vieja tumbaria el pod.
+UPDATE proyect SET proyect_status = 'collected', last_update_date = CURRENT_TIMESTAMP
+WHERE proyect_status = 'delivered';
+
 ALTER TABLE proyect
     ADD CONSTRAINT ck_proyect_status CHECK (
         proyect_status IN (
             'draft', 'submitted', 'authorized', 'denied', 'blocked',
-            'in_progress', 'waiting_material', 'stopped', 'completed', 'delivered'
+            'in_progress', 'waiting_material', 'stopped', 'collected', 'completed'
         )
     );
 

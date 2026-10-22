@@ -52,7 +52,7 @@ export default function WorkSchedulesPage() {
   const [formFestivo, setFormFestivo] = useState(null);
 
   const actor = useMemo(actorGuardado, []);
-  const privilegiado = Boolean(actor.is_superuser || actor.is_bootstrap_admin || actor.username === "admin1" || actor.user_type === "admin");
+  const privilegiado = Boolean(actor.is_superuser || actor.is_bootstrap_admin || actor.username === "admin1");
   const puede = (entidad, campo) => privilegiado || Number(permisos.find((p) => p.entity_name === entidad)?.[campo] || 0) !== 0;
 
   const describirError = useCallback((e) => {

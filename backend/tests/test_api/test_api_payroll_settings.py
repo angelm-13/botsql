@@ -13,6 +13,7 @@ from app.models.session import transaction_context
 from app.utils.auth import SECRET_KEY
 from tests.conftest import BackendTestCase
 from tests.fixtures.cifras_nomina_2026 import sembrar_cifras_2026
+from tests.test_services.test_payroll_calculation_service import dar_todos_los_campos
 
 
 class TestCifrasOficiales(BackendTestCase):
@@ -26,9 +27,10 @@ class TestCifrasOficiales(BackendTestCase):
                                         scope_read=4, scope_update=4, scope_delete=4, created_by=1))
                 db.add(EntityPermission(id_permission=902, entity_name=entidad, scope_create=0,
                                         scope_read=4, scope_update=0, scope_delete=0, created_by=1))
+            dar_todos_los_campos(db, 901, ("payroll_parameter", "payroll_isr_bracket"))
 
     def _admin(self):
-        token = jwt.encode({"id_user": 1, "id_permission": 901, "user_type": "admin"}, SECRET_KEY, algorithm="HS256")
+        token = jwt.encode({"id_user": 1, "id_permission": 901}, SECRET_KEY, algorithm="HS256")
         return {"Authorization": f"Bearer {token}"}
 
     def _solo_consulta(self):

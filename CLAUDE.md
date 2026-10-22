@@ -6,6 +6,149 @@ aparte de `ARQUITECTURA_TYAKXA_TNY.md` (referencia técnica estable) y de
 sección se resuelve, se puede recortar; mientras tanto se deja completa para
 que una sesión nueva no tenga que releer el historial de chat.
 
+## Bitacora 2026-10-21 — traida selectiva de initAngm (9 commits de Angel del 10-19)
+
+Local en `initAlan`, **sin pushear** (un push despliega solo a tyakxa-dev). Suite completa:
+2277 passed, 0 failed (se excluye `test_baja_de_usuario.py`, trabajo sin commitear de Alan).
+
+**Traido**: cherry-pick de `d3689bd` (400 en entradas invalidas), `2602199` (lotes y puente de
+logistica; mas `cd3dd61`, que hace autosuficiente su test), `21e84ee`+`98f5bd2` (facturacion),
+`4826bb3` (script `limpiar_folios_automaticos`) y `29deac4`+`5d15ad6` (tarjetas por estado,
+tabla de ordenes y urgencia en "Por comprar": frontend sin probar en navegador, se prueba en
+sistema-test; los textos nuevos solo tienen espanol por defecto). Aplicado a mano:
+`131e539` proyectos (`delivered` se retira, final `collected -> completed`, Gerencia pasa por
+"en revision") y `b5e4a4e` aviso a Compras al pedir material (sin restriccion de quien pide).
+Se conserva nuestra regla de material parcial.
+
+**Fuera por decision de Alan** (no reabrir sin pedido): avance automatico del proyecto por la
+orden de compra (consultar con Adser), entrada al libro al recibir una orden (averiguar como
+lo hace hoy el almacen de Adser), quien puede pedir material, reglas de comprobantes y de
+presupuesto con el comprobante, y "regresar a espera de material exige una pieza". Moneda y
+autorizador de Angel: sin decidir. Detalle de la comparacion en la memoria
+`project_tyakxa_tny_traida_initangm_20261021`.
+
+**Segunda tanda (10-22, commits de Angel del 10-21)**: seguridad `e719470` (`/documents` con
+sesion real y vales solo por `/vouchers`) y `eb5b904` (SSRF del logo y DTD en CFDI);
+`ddfe735` codigo de producto unico (de `8ab3ae4`). Estados del producto (decision de Alan
+2026-10-22, enfoque de Angel): Nuevo y Usado se retiran y todo pasa a "En almacen" (ENTRADA,
+verde; migracion `20261021120000` y opcion en el selector), MAS una guarda propia: cambiar un
+producto a En almacen en una edicion con existencia 0 da 409 `product_status_needs_stock`
+(primero registrar la entrada). El alta y los que ya estan En almacen no se rechazan. `06227ec` Gerente general (revision:
+todo en consulta, aprueba compras, ya NO recibe ordenes) y Gerente tecnico (campo: autoriza
+proyectos); el "Gerente" con usuarios pasa a tecnico CON SUS FILAS, el vacio se retira; la
+resiembra se regenero con `seed_module_permissions.py` sin `warehouse_voucher_holder` (depende de
+`6f4b523`, vales con responsables designados, sin revisar). Si se trae `6f4b523` o el merge
+completo de initAngm, la resiembra `20261021100000` chocara: regenerarla. Suite: 2309 passed.
+
+**Antes de promover a adser-prod**: contar proyectos en `delivered` (la migracion los pasa a
+`collected`; probada dos veces y con un `delivered` real en la base local); probar en
+sistema-test las pantallas de proyectos (Recolectar/Completar, "en revision") y de compras;
+falta `status_collected` en pt/de (caen al espanol).
+
+## Bitacora 2026-10-16 — baja logica en el CRUD comun y vales en el registro de eventos
+
+Pedido: que cancelar vales (y cualquier alta/cambio/baja) quede en `event_log`, y que
+borrar solo quite de pantalla, no de la base. Sin commitear aun.
+
+1. **Baja logica** (`base_service.py`): `CrudService.delete` pone `deletion_date` en vez de
+   `session.delete` cuando el modelo tiene esa columna (95 modelos); sin la columna sigue
+   siendo borrado fisico. `get`/`update`/`delete` de una fila dada de baja dan 404 y
+   `solo_vigentes` ahora es `True` por omision (antes solo permisos/campos): el listado la
+   esconde. El asiento `delete` del registro de eventos se sigue escribiendo igual.
+2. **Vales al registro de eventos**: el CRUD ya registraba alta/cambio/baja, pero los flujos
+   del vale (`warehouse_voucher_service.py`) escriben directo y no dejaban nada. Nuevo
+   `_bitacora()` -> `audit_event` (`event_type="voucher_transition"`, categoria `transition`,
+   `event_detail` = prevale/creado/autorizado/entregado/recibido/cancelado/renglon_devuelto/
+   reporte_de_estado) en la misma transaccion del paso.
+3. Pruebas: `test_creating_and_cancelling_leave_a_trace_in_the_event_log` (vales) y
+   `test_deleting_is_a_soft_delete_that_hides_it_and_logs_it` (ubicaciones). Vales + almacen:
+   230 passed. Suite completa: ver resultado al cierre de la sesion.
+4. **Riesgos / decisiones para el equipo**: (a) borrar ya no da 409
+   `delete_has_related_records` -- una entidad con registros ligados (cliente con facturas)
+   se oculta en vez de bloquearse; (b) un registro dado de baja sigue ocupando sus llaves
+   unicas (username, codigos), recrearlo con el mismo valor da 409; (c) filas migradas con
+   `deletion_date` ya puesto dejan de verse en los listados genericos -- revisar antes de
+   promover a adser-prod; (d) otros servicios que escriben directo (proyectos, compras,
+   facturas) siguen sin asiento propio: se cubrio vales, no "cualquier" flujo.
+
+## Bitacora 2026-10-13 — presupuesto de compras por proyecto y responsable del vale
+
+**Presupuesto por proyecto** (`purchase_budget_service.py`, migracion `20261013100000`):
+gerencia fija el tope (`PUT /purchase-budgets/<proyecto>`, permiso `purchase_policy`; Compras
+solo consulta). Comprometido = ordenes por autorizar/autorizadas/compradas/recibidas/cerradas.
+Una orden que haga pasar el tope queda `exceeds_budget` y va a autorizacion aunque este bajo
+`authorize_above`; se reevalua al autorizar y exige nota; el autor no la libera. Sin
+presupuesto = sin tope; moneda distinta = se trata como excedida. UI: panel
+`PresupuestosDeCompra.jsx` en Ordenes de compra y tabla/aviso en el detalle de la orden.
+**Vales**: al elegir proyecto el responsable es el supervisor de la obra; sin supervisor,
+solo usuarios con rol Supervisor (se reconoce por el nombre del permiso: fragil si se
+renombra el rol). `/user/options` trae `role`, `/proyect/options` trae `id_supervisor`.
+Probado el ciclo de cada tipo (prestamo, reparacion, danado, destruccion, extraviado).
+
+## Bitacora 2026-10-12 — auditoria de punta a punta (CRM, compras, operaciones, seguridad)
+
+Cinco auditorias + dos de lo que quedo sin probar (timbrado/REP/cancelacion/notas de
+credito/citas y flujos pendientes de compras). Usuario de prueba de Compras:
+`backend/scripts/seed_usuario_compras.py` (compras1; la app solo acepta bcrypt).
+Corregido, con pruebas: token de MFA a medias ya no es sesion; PAC `fake` rechazado con
+`APP_ENV=production`; filtros/orden de listados solo sobre columnas reales (igualdad en
+numeros); `stamp_invoice` no re-timbra con otra llave (`NO_SE_TIMBRA`); cancelar factura con
+REP/nota de credito vivos da 409; total = subtotal - descuento + impuesto; abono en otra
+moneda 409; conversion llena el receptor desde el cliente; citas: zona horaria y doble
+reserva; CRM: RFC unico normalizado, tipo obligatorio, contactos validados; cotizacion
+vacia no se envia; vales: cancelar (`POST /vouchers/<id>/cancel`), el responsable puede
+verlos, baja sin fecha de regreso, responsable ya no se pisa con el Jefe de taller;
+proyecto no se cierra/cancela con vales u ordenes vivas; tareas/bitacora no en proyectos
+cerrados; compras: carrera de ordenes (bloqueo de necesidades), recepcion idempotente
+(`idempotency_key` / cabecera `Idempotency-Key`), necesidad en orden viva no se edita ni se
+devuelve, lo recibido sale de "por comprar", CFDI de orden cancelada reutilizable.
+
+**Abierto (decision del equipo)**: recibir una orden NO da entrada al inventario (el codigo
+dice que es a proposito); `APP_ENV` no esta fijado en k8s y la guarda de arranque falla
+abierta; cuentas de dev con contrasenas debiles / init_test_data crea Administradores;
+tokens de 8 h sin revocacion; contenedores como root, sin cabeceras de seguridad, imagenes
+con CVEs por version; migraciones sin candado y 36 sin `ajustado_por_gestor`; vale de
+reparacion deja la pieza "prestada"; `/assets/overdue` vs vales; pagos sobre factura sin
+timbrar; ledger sin asiento de apertura (2201 productos); `nm_incident_product.status`
+siempre 'disponible'; dos columnas de estado de proyecto que se contradicen; 9 `id_*` sin FK
+y 84 FKs sin indice; tickets sin vinculo a cliente/proyecto; `user.id_proyect`/`supervisor`
+NOT NULL heredados. Datos `AUD-*`/`AUD2-*`/`QAOPS-*`/`QAINV-*` quedaron en dev (limpiar con
+script con --dry-run).
+
+## Bitacora 2026-10-09 — vales: un solo flujo, tipos por rol, apartado vs fuera
+
+Probado en navegador con almacen, supervisor (angelito) y jefe de taller, mas dos
+barridos de API (inventario completo y proyectos/tareas, con usuarios de prueba
+`QAINV-*`/`QAOPS-*` que quedaron en la base de desarrollo).
+
+- **Flujo del vale (un solo camino).** Supervisor levanta prevale (borrador) ->
+  Almacen autoriza (`en_espera`: el material queda APARTADO, no sale) ->
+  Almacen "Marcar entregado" (`entregar_vale`: aqui sale del almacen, `en_transito`)
+  -> el responsable "Confirmar que lo recibi" (`confirmar_recibido_del_vale`, `abierto`).
+  Se retiraron las rutas paralelas `mark-as-shipped` y `confirm-supervision-receipt`
+  (el supervisor no podia confirmar: exigian `warehouse_voucher_authorize`).
+- **Tipos por rol, una regla** (`_prefijos_de_tipo_permitidos`): Gerencia
+  (`project_authorization`) y admin todos; Almacen solo herramienta (prestamo,
+  reparacion, danado, destruccion, extraviado); Supervisor solo prevales de prestamo,
+  danado, extraviado y reparacion. El selector la usa: `/incident_type/options?para=vale`.
+- **Apartado no es fuera.** Prevale/en espera no cuentan en Localizar, resumen del
+  proyecto ni pantalla del vale. Lo fungible apartado se resta (`apartado_por_sitio`,
+  `reserved`/`available` en Localizar): dos prevales ya no piden la misma unica unidad.
+- **El aviso de autorizado nunca llegaba**: `notification_type_check` no traia
+  `warehouse_voucher_prevoucher_authorized` ni `_return_pending` y el `except: pass`
+  lo tragaba. Siguen en la migracion unica `20261007100000`. Si se agrega un tipo,
+  agregarlo ahi y probar la insercion contra Postgres real, no SQLite.
+- **Piezas**: el signo del movimiento sale de entrar/salir del saldo
+  (`ESTADOS_EN_SALDO` = disponible + en_uso), no del nombre del evento.
+- **Operaciones**: entradas invalidas ya dan 4xx (manejadores globales en
+  `__init__.py`); Jefe de taller solo escribe tareas/notas de proyectos que tomo;
+  un proyecto sin maquila ya no entra a "espera de material".
+- **Sin decidir (preguntar a Alan/Tanya)**: `PUT /task` con `fase` reabre una tarea
+  terminada (hay un comentario que dice que es a proposito); Supervisor puede
+  escribir el catalogo `task_type`; `nm_template_task` acepta duplicados; catalogos
+  (marca, unidad...) aceptan nombres repetidos; el selector de proyecto de un vale
+  tambien lista proyectos cancelados.
+
 ## Reglas de trabajo — respetar la arquitectura, no parchar (pedido de Adser, 2026-10-07)
 
 Aplican a toda sesión, humana o de IA.
@@ -122,6 +265,52 @@ vidrioyaluminios-prod llevan semanas sin promoción.
   PDF del vale idéntico al anterior**: están en `initAlan` y en la imagen de
   adser-prod (`c260f22` contiene la punta de `initAngm`). torredigital-prod
   (`031970b`) NO los incluye.
+## Bitácora 2026-10-16 — partida libre y material confirmado por Compras
+
+Observaciones de Adser sobre proyectos; construido en la rama de trabajo, **sin
+commitear ni promover** (pasos en
+`docs/despliegues/2026-10-16_partida_libre_y_material_por_compras.md`).
+
+1. **La "Partida" es `proyect.folio`**: referencia libre de ellos. Opcional,
+   puede repetirse, no se autogenera. Causa raíz del 500 que veían: el índice
+   único `uq_proyect_folio` + `handle_integrity` sin caso 23505 (en los logs de
+   adser-prod del 15/10). Se quitó el índice único, el relleno `OT-` (ambos en
+   migraciones viejas que se reaplican en cada arranque: había que editarlas, no
+   solo añadir una) y el respaldo `PRJ-`. Script `limpiar_folios_autogenerados.py`
+   para lo ya rellenado (proyecto 7 de adser).
+2. **`authorized → waiting_material → in_progress` ya no es solo de Gerente**
+   (revierte la decisión del 2026-09-25): capacidad nueva `project_supply`
+   (Compras), Gerente de respaldo con `project_authorization`. La tarea ya no es
+   obligatoria para arrancar. El candado suave de material (Ángel, `bb72a66`)
+   se queda.
+   **Sin maquila** (a propósito, como ellos lo pidieron): ya no salta de
+   autorizado a completado (retira el atajo del 2026-09-30). Pasa por los mismos
+   dos pasos de Compras y lo lleva el supervisor que lo lidera; el Jefe de taller
+   ni lo ve. Quien confirma el material solo ve proyectos de autorizado en
+   adelante (regla de etapa en `_scoped_query`, suma a `scope_read`). En pantalla los
+   dos pasos son un botón en la fila, "Material en camino" / "Material recibido,
+   iniciar" (`PASO_DE_MATERIAL`), no una opción del desplegable de estatus.
+   **Material parcial** (2026-10-19, regla para todos los proyectos, sin columna
+   nueva: en adser-prod ningún proyecto en proceso tiene necesidades abiertas): se
+   puede arrancar con lo que ya llegó, sin motivo, y el sistema asienta "Arranca con
+   material parcial: X de Y recibido" (si no ha llegado nada, pide motivo como antes);
+   **no se completa** con necesidades abiertas sin recibir
+   (`errors.project_material_incomplete`, 409; las que ya no apliquen se cancelan).
+   Al recibir una orden y quedar el proyecto sin material pendiente se avisa
+   "Material completo" al responsable, supervisor y Compras
+   (`avisar_material_completo`, una sola vez); la lista muestra "Material X/Y". La
+   cuenta sale de `material_readiness_por_proyecto` (necesidades + renglones de orden).
+3. **El Gestor manda sobre lo que se ve**: `_scoped_query` respeta
+   `proyect.scope_read` para roles sin capacidad de proyecto y `update_project`
+   filtra por `scope_update`. **Cambia el comportamiento de los Supervisores
+   sembrados en Todos** (verían todo): medir con
+   `scripts/medir_alcance_de_proyectos.py` y pasar a Propios en el Gestor antes de
+   promover. `_scope_name` (autoriza/ejecuta/propio) sigue siendo código, deuda
+   conocida; no se le añadió ninguna rama.
+4. Pendiente de Adser sin reproducir: "el supervisor que creó el proyecto ya no
+   lo ve en proceso" (el backend sí se lo muestra a vicgo en el proyecto 3);
+   falta el caso concreto (qué supervisor, qué proyecto).
+
 ## Bitácora 2026-10-13 — devolver renglones migrados, "Devuelto por", color de Localizar
 
 Reportado desde adser-prod (vale #94, EXT302): "Marcar devuelto" daba 400.

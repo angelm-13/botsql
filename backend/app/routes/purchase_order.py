@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from flask import Blueprint, current_app, jsonify, request, send_file
 
+from app.services import purchase_budget_service as presupuestos
 from app.services.document_service import SecureDocumentStorage
 from app.services.purchase_order_service import (
     add_voucher, authorize_order, cancel_order, create_order, get_order, get_policy,
@@ -178,3 +179,32 @@ def leer_politica(user_data):
 @require_entity_permission(POLICY_ENTITY, "update")
 def fijar_politica(user_data):
     return jsonify(update_policy(_cuerpo(), user_data))
+
+
+@bp_purchase_order.route("/purchase-budgets", methods=["GET"])
+@token_required
+@require_entity_permission(POLICY_ENTITY, "read")
+def listar_presupuestos(user_data):
+    return jsonify(presupuestos.list_budgets(user_data, q=request.args.get("q")))
+
+
+@bp_purchase_order.route("/purchase-budgets/<id_proyect>", methods=["GET"])
+@token_required
+@require_entity_permission(POLICY_ENTITY, "read")
+def leer_presupuesto(user_data, id_proyect):
+    return jsonify(presupuestos.get_budget(id_proyect, user_data))
+
+
+@bp_purchase_order.route("/purchase-budgets/<id_proyect>", methods=["PUT"])
+@token_required
+@require_entity_permission(POLICY_ENTITY, "update")
+def fijar_presupuesto(user_data, id_proyect):
+    return jsonify(presupuestos.set_budget(id_proyect, _cuerpo(), user_data))
+
+
+@bp_purchase_order.route("/purchase-budgets/<id_proyect>/history", methods=["GET"])
+@token_required
+@require_entity_permission(POLICY_ENTITY, "read")
+def historial_presupuesto(user_data, id_proyect):
+    return jsonify(presupuestos.budget_history(id_proyect, user_data))
+

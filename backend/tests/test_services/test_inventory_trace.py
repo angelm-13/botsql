@@ -41,10 +41,10 @@ from app.services.inventory_trace_service import (
     _clasificar, estatus_efectivo, localizar,
 )
 from tests.conftest import BackendTestCase
-from tests.model_factory import sembrar_actor
+from tests.model_factory import dar_capacidad, sembrar_actor
 
 
-ACTOR = {"id_user": 1, "id_proyect": 70}
+ACTOR = {"id_user": 1, "id_proyect": 70, "id_permission": 910}
 AJENO = {"id_user": 2, "id_proyect": 99}
 
 EMPRESA = 10
@@ -169,12 +169,39 @@ class TestElEstatusQueSePinta(unittest.TestCase):
         for estatus in ("EXTRAVIADO", "DESTRUCCION", "DAÑADO", "EN REPARACION"):
             self.assertEqual(estatus, estatus_efectivo(estatus, self.SALIDAS, []))
 
+    def test_a_stale_salida_with_everything_back_is_shown_as_entrada(self):
+        """Todas las salidas cerradas y existencia en el almacen: el azul de
+        "salio del almacen" que dejo el sistema anterior es mentira."""
+        self.assertEqual("ENTRADA", estatus_efectivo("SALIDA", None, [{"quantity": 1}]))
+
+    def test_salida_stays_while_something_is_still_out(self):
+        self.assertEqual("SALIDA", estatus_efectivo("SALIDA", self.SALIDAS, []))
+        # Caso mixto: algo fuera y algo en el almacen. No se adivina.
+        self.assertEqual("SALIDA", estatus_efectivo(
+            "SALIDA", self.SALIDAS, [{"quantity": 3}]))
+
+    def test_nuevo_and_usado_are_condition_not_location(self):
+        """Quien marca "usado" desde el selector del producto no puede escoger
+        ENTRADA (no esta en el catalogo): con existencia en el almacen se ve verde."""
+        for estado in ("usado", "nuevo", "Usado"):
+            with self.subTest(estado=estado):
+                self.assertEqual("ENTRADA", estatus_efectivo(estado, None, [{"quantity": 1}]))
+                self.assertEqual("ENTRADA", estatus_efectivo(
+                    estado, self.SALIDAS, [{"quantity": 1}]))
+                self.assertEqual("SALIDA", estatus_efectivo(estado, self.SALIDAS, []))
+                # Sin existencia ni salidas no hay de donde concluir.
+                self.assertEqual(estado, estatus_efectivo(estado, None, []))
+
+    def test_salida_with_nothing_anywhere_is_left_alone(self):
+        self.assertEqual("SALIDA", estatus_efectivo("SALIDA", None, []))
+
 
 class TestLocalizar(BackendTestCase):
 
     def setUp(self):
         super().setUp()
         with transaction_context() as db:
+            dar_capacidad(db, 910)
             db.add_all([
                 CustomerSupplier(
                     id_customer_supplier=EMPRESA, name="Mi Empresa", tax_id="AAA010101AA1",
@@ -230,7 +257,7 @@ class TestLocalizar(BackendTestCase):
         apply_inventory_movement(MERCANCIA, {
             "movement_type": "receive", "quantity": 50, "id_location": ALMACEN,
             "reference_type": "purchase", "reference_id": str(COMPRA),
-            "idempotency_key": "compra-inicial",
+            "reason": "Compra", "idempotency_key": "compra-inicial",
         }, ACTOR)
         apply_inventory_movement(MERCANCIA, {
             "movement_type": "issue", "quantity": 6, "id_location": ALMACEN,
@@ -474,6 +501,7 @@ class TestElTrasladoNoCuentaDoble(BackendTestCase):
     def setUp(self):
         super().setUp()
         with transaction_context() as db:
+            dar_capacidad(db, 910)
             _sembrar_lo_minimo(db, id_invoice=self.COMPRA3, ubicaciones={
                 self.ALMACEN_A: "Nave A", self.ALMACEN_B: "Nave B",
             })
@@ -488,7 +516,7 @@ class TestElTrasladoNoCuentaDoble(BackendTestCase):
         apply_inventory_movement(self.PRODUCTO, {
             "movement_type": "receive", "quantity": 30, "id_location": self.ALMACEN_A,
             "reference_type": "purchase", "reference_id": "1",
-            "idempotency_key": "tor-compra",
+            "reason": "Compra", "idempotency_key": "tor-compra",
         }, ACTOR)
 
     def _trasladar(self, llave):
@@ -568,6 +596,7 @@ class TestLaCadenaDeClasificacionYElSitio(BackendTestCase):
     def setUp(self):
         super().setUp()
         with transaction_context() as db:
+            dar_capacidad(db, 910)
             db.add_all([
                 CustomerSupplier(
                     id_customer_supplier=EMPRESA, name="Mi Empresa",
@@ -645,12 +674,12 @@ class TestLaCadenaDeClasificacionYElSitio(BackendTestCase):
         apply_inventory_movement(self.TALADRO, {
             "movement_type": "receive", "quantity": 4, "id_location": self.RACK_A,
             "reference_type": "purchase", "reference_id": str(self.COMPRA),
-            "idempotency_key": "tal-compra",
+            "reason": "Compra", "idempotency_key": "tal-compra",
         }, ACTOR)
         apply_inventory_movement(self.CEMENTO, {
             "movement_type": "receive", "quantity": 80, "id_location": self.NAVE_B,
             "reference_type": "purchase", "reference_id": str(self.COMPRA),
-            "idempotency_key": "cem-compra",
+            "reason": "Compra", "idempotency_key": "cem-compra",
         }, ACTOR)
 
     def _codigos(self, **kwargs):

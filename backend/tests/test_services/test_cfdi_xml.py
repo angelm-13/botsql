@@ -52,6 +52,16 @@ class TestCfdiXmlParser(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "DTD"):
             parse_cfdi(malicious)
 
+    def test_rejects_a_dtd_hidden_after_a_long_prefix_or_encoded_as_utf16(self):
+        dtd = '<!DOCTYPE x [<!ENTITY a "aaaa"><!ENTITY b "&a;&a;&a;">]><Comprobante Version="4.0">&b;</Comprobante>'
+        relleno = b"<!--" + b"x" * 9000 + b"-->"
+
+        for nombre, xml in (("relleno de mas de 8 KB", relleno + dtd.encode()),
+                            ("UTF-16", dtd.encode("utf-16"))):
+            with self.subTest(nombre):
+                with self.assertRaisesRegex(ValueError, "DTD"):
+                    parse_cfdi(xml)
+
     def test_rejects_oversized_xml(self):
         with self.assertRaisesRegex(ValueError, "excede"):
             parse_cfdi(VALID_CFDI, max_bytes=10)

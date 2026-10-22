@@ -52,6 +52,7 @@ def produccion_segura(**extra):
         "JWT_SECRET": SECRETO_VALIDO,
         "SECRET_KEY": SECRETO_VALIDO,
         "CORS_ORIGINS": "https://app.tyakxa.mx",
+        "BOOTSTRAP_ADMIN_PASSWORD": "una-clave-larga-y-unica-1",
     }
     base.update(extra)
     return base
@@ -119,9 +120,16 @@ class TestStartupGuard(unittest.TestCase):
         for valor in ("production", "produccion", "prod", "PRODUCTION"):
             with self.subTest(valor=valor), entorno(APP_ENV=valor):
                 self.assertTrue(is_production())
-        for valor in ("development", "staging", ""):
+        for valor in ("development", "dev", "local", "testing", "staging"):
             with self.subTest(valor=valor), entorno(APP_ENV=valor):
                 self.assertFalse(is_production())
+
+    def test_a_forgotten_variable_is_production(self):
+        """Falla cerrado: no decir nada no debe abrir el sistema."""
+        with entorno():
+            self.assertTrue(is_production())
+        with entorno(APP_ENV=""):
+            self.assertTrue(is_production())
 
 
 class TestCorsOrigins(unittest.TestCase):
@@ -219,3 +227,20 @@ class TestLoginThrottle(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestAdministradorInicial(unittest.TestCase):
+    def test_the_default_bootstrap_admin_counts_as_weak_when_the_variable_is_unset(self):
+        from app.utils.startup_guard import collect_configuration_problems
+
+        with entorno(APP_ENV="production", JWT_SECRET="x" * 40, SECRET_KEY="y" * 40,
+                     CORS_ORIGINS="https://a.mx"):
+            problemas = collect_configuration_problems()
+        self.assertTrue(any("administrador inicial" in p for p in problemas))
+
+    def test_a_strong_password_clears_it(self):
+        from app.utils.startup_guard import collect_configuration_problems
+
+        with entorno(APP_ENV="production", JWT_SECRET="x" * 40, SECRET_KEY="y" * 40,
+                     CORS_ORIGINS="https://a.mx", BOOTSTRAP_ADMIN_PASSWORD="una-clave-larga-y-unica-1"):
+            self.assertEqual([], collect_configuration_problems())

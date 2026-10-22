@@ -69,9 +69,13 @@ def _parse_date(value, field: str) -> date:
 
 def _parse_time(value, field: str) -> time:
     try:
-        return time.fromisoformat(str(value))
+        parsed = time.fromisoformat(str(value))
     except ValueError as exc:
         raise AppError("errors.invalid_field", 400, {"field": field}) from exc
+    # Una hora con zona no se compara con una sin zona: daba TypeError (500).
+    if parsed.tzinfo is not None:
+        raise AppError("errors.invalid_field", 400, {"field": field})
+    return parsed
 
 
 def _parse_datetime(value, field: str) -> datetime:
@@ -108,7 +112,8 @@ def _profile_for_actor(db, profile_id, user_data: dict) -> CalendarProfile:
 def create_profile(payload: dict, user_data: dict) -> dict:
     actor_id, project_id = _actor(user_data)
     code = re.sub(r"[^a-z0-9-]", "-", str(payload.get("calendar_code") or "").strip().lower()).strip("-")
-    if not code or not payload.get("display_name"):
+    nombre = payload.get("display_name")
+    if not code or not isinstance(nombre, str) or not nombre.strip():
         raise AppError("errors.invalid_field", 400, {"field": "calendar_code" if not code else "display_name"})
     zone_name = str(payload.get("timezone") or "UTC")
     _zone(zone_name)
@@ -212,7 +217,9 @@ def create_availability_rule(profile_id, payload: dict, user_data: dict) -> dict
 def create_availability_override(profile_id, payload: dict, user_data: dict) -> dict:
     with transaction_context() as db:
         profile = _profile_for_actor(db, profile_id, user_data)
-        is_available = bool(payload.get("is_available", False))
+        is_available = payload.get("is_available", False)
+        if not isinstance(is_available, bool):  # "false" (texto) se guardaba como True
+            raise AppError("errors.invalid_field", 400, {"field": "is_available"})
         start = _parse_time(payload.get("start_time"), "start_time") if is_available else None
         end = _parse_time(payload.get("end_time"), "end_time") if is_available else None
         if is_available and start >= end:

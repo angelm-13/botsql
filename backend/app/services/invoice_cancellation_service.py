@@ -30,7 +30,7 @@ from app.models.inventory_ledger import InventoryLedger
 from app.models.invoice import Invoice
 from app.models.invoice_cancellation import InvoiceCancellation
 from app.models.session import transaction_context
-from app.services.inventory_service import apply_movement_in_session
+from app.services.inventory_service import apply_movement_in_session, reponer_en_sus_lotes
 from app.utils.errors import AppError
 
 
@@ -276,21 +276,27 @@ def _reverse_inventory(db, invoice, user_data, cancellation) -> list[dict]:
     revertidos = []
     for original in originales:
         contrario = -int(original.quantity_delta)
-        movimiento, _ = apply_movement_in_session(
-            db,
-            original.id_product,
-            user_data,
-            # Lo que salio por una venta vuelve como devolucion; lo que entro
-            # por una compra sale como salida.
+        movimiento = dict(
             movement_type="return" if contrario > 0 else "issue",
-            quantity_delta=contrario,
-            idempotency_key=f"cancel-{cancellation.id_invoice_cancellation}-ledger-{original.id_inventory_ledger}",
             id_location=original.id_location,
             reference_type="invoice_line",
             reference_id=original.reference_id,
             reason=f"Reverso por cancelacion de la factura {invoice.id_invoice}",
         )
-        revertidos.append(movimiento)
+        llave = f"cancel-{cancellation.id_invoice_cancellation}-ledger-{original.id_inventory_ledger}"
+        if contrario > 0:
+            # Lo que salio por una venta vuelve como devolucion, a los lotes de los
+            # que salio cuando el producto los lleva.
+            revertidos.extend(reponer_en_sus_lotes(
+                db, original.id_product, user_data,
+                de_la_salida=original.idempotency_key, quantity=contrario,
+                idempotency_key=llave, **movimiento))
+        else:
+            # Lo que entro por una compra sale como salida.
+            registro, _ = apply_movement_in_session(
+                db, original.id_product, user_data, quantity_delta=contrario,
+                idempotency_key=llave, **movimiento)
+            revertidos.append(registro)
     return revertidos
 
 

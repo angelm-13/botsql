@@ -40,10 +40,13 @@
 .por-comprar-cubierto { color: #15803d; font-weight: 600; }
 .por-comprar-casilla { margin-right: 7px; vertical-align: middle; }
 .por-comprar-en-orden { margin-left: 8px; font-size: 11px; }
-.por-comprar-proyectos { list-style: none; margin: 0; padding: 0; }
-.por-comprar-proyectos li {
-  display: flex; justify-content: space-between; gap: 14px; font-size: 12.5px; padding: 1px 0;
+/* Cada proyecto es una ficha con su cantidad, en lugar de renglones pegados. */
+.por-comprar-proyectos { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.por-comprar-proyectos li, .por-comprar-chip {
+  display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 3px 9px;
+  border: 1px solid #e3eae6; border-radius: 999px; background: #f8faf9;
 }
+.por-comprar-cantidad { font-weight: 700; }
 
 @media (max-width: 760px) {
   .necesidades-lista li { grid-template-columns: 1fr auto; }
@@ -66,7 +69,10 @@
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   padding: 3px 0; font-size: 13px;
 }
-.por-comprar-barra { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 4px 0 12px; }
+.por-comprar-barra {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 4px 0 12px;
+  position: sticky; top: 0; z-index: 5; padding: 8px 0; background: var(--page-bg, #fff);
+}
 .por-comprar-barra .por-comprar-filtro { margin: 0; }
 .por-comprar-origen { display: block; font-size: 11px; }
 .por-comprar-revisar td { background: #fffdf7; }
@@ -87,3 +93,15 @@
 .por-comprar-devolver label { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 220px; font-size: 12px; color: #475569; }
 
 .necesidad-estado.en-orden { background: #dbeafe; color: #1e40af; }
+
+/* Por comprar: secciones y urgencia */
+.por-comprar-seccion { display: flex; align-items: center; gap: 8px; margin: 18px 0 4px; font-size: 15px; }
+.por-comprar-seccion-ayuda { margin: 0 0 8px; font-size: 12.5px; }
+.por-comprar-vencida td:first-child { box-shadow: inset 3px 0 0 #dc2626; }
+.por-comprar-proxima td:first-child { box-shadow: inset 3px 0 0 #f59e0b; }
+.por-comprar-plazo {
+  display: block; width: fit-content; margin-top: 3px; padding: 1px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 700;
+}
+.por-comprar-plazo.vencida { background: #fee2e2; color: #7f1d1d; }
+.por-comprar-plazo.proxima { background: #fef3c7; color: #78350f; }

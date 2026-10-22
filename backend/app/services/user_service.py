@@ -1,4 +1,4 @@
-from app.models import User
+from app.models import Permission, User
 from app.models.session import transaction_context
 from app.services.base_service import CrudService
 
@@ -18,12 +18,15 @@ class UserService(CrudService):
         """
         with transaction_context() as session:
             filas = (
-                session.query(User.id_user, User.full_name, User.username)
+                session.query(User.id_user, User.full_name, User.username,
+                              Permission.permission_description)
+                .outerjoin(Permission, Permission.id_permission == User.id_permission)
                 .filter(User.deletion_date.is_(None))
                 .order_by(User.full_name)
                 .all()
             )
             return [
-                {'id_user': fila[0], 'full_name': fila[1], 'username': fila[2]}
+                {'id_user': fila[0], 'full_name': fila[1], 'username': fila[2],
+                 'role': fila[3]}
                 for fila in filas
             ]
