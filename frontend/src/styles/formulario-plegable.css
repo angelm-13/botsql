@@ -62,4 +62,3 @@
    por omision: el cuerpo ya separa. */
 .plegable-cuerpo .form-actions { margin-top: 18px; }
 
-.form-card.plegable :focus-visible { outline: 2px solid #1b7a60; outline-offset: -2px; }

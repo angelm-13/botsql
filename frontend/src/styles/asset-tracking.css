@@ -320,7 +320,6 @@
   margin: 0 0 12px;
 }
 
-.asset-page :focus-visible { outline: 2px solid #1b7a60; outline-offset: 2px; }
 
 @media (max-width: 640px) {
   .asset-drawer-backdrop { padding: 0; }

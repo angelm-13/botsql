@@ -139,7 +139,6 @@
 .kpi-prestamos-buscador { flex: 2 1 240px; }
 .kpi-prestamos-buscador-caja { display: flex; align-items: center; gap: 6px; border: 1px solid var(--kpi-borde); border-radius: 8px; padding: 0 8px; background: var(--kpi-tarjeta); color: var(--kpi-texto-suave); text-transform: none; font-weight: 400; }
 .kpi-prestamos-buscador-caja input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--kpi-ink); font: inherit; font-size: 13px; padding: 8px 0; }
-.kpi-prestamos-buscador-caja:focus-within { border-color: var(--kpi-acento); box-shadow: 0 0 0 2px color-mix(in srgb, var(--kpi-acento) 25%, transparent); }
 
 /* Ventana "Ver todos". */
 .kpi-prestamos-modal-fondo { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 16px; background: rgba(15, 23, 42, .55); }
