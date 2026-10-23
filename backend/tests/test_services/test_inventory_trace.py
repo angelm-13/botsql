@@ -701,17 +701,14 @@ class TestLaCadenaDeClasificacionYElSitio(BackendTestCase):
         self.assertEqual(self.FAM_HERRAMIENTA, item["classification"]["id_product_family"])
         self.assertEqual(self.MARCA_BOSCH, item["classification"]["id_brand"])
 
-    def test_a_disagreeing_public_catalogue_is_reported_not_hidden(self):
-        """`product.id_familia` es la familia de la tienda, no la del material."""
+    def test_the_family_of_the_product_defines_it_over_its_material(self):
         with transaction_context() as db:
             db.get(Product, self.TALADRO).id_familia = self.FAM_OBRA
 
         clasificacion = localizar("TAL-900", ACTOR)["items"][0]["classification"]
-        # Manda la del material: es la que el almacen usa y la unica obligatoria.
-        self.assertEqual("Herramienta", clasificacion["family"])
-        # Y la otra se dice, en vez de elegir una en silencio.
-        self.assertEqual("Material de obra",
-                         clasificacion["catalog_mismatch"]["family"]["family"])
+        # La familia es del producto: es su material mas su familia y su marca.
+        self.assertEqual("Material de obra", clasificacion["family"])
+        self.assertIsNone(clasificacion["catalog_mismatch"])
 
     def test_no_mismatch_is_reported_when_they_agree(self):
         """El aviso solo aparece cuando hay algo que avisar."""
@@ -758,13 +755,51 @@ class TestLaCadenaDeClasificacionYElSitio(BackendTestCase):
         self.assertEqual("Sin marca específica", clasificacion["brand"])
         self.assertIsNone(clasificacion["catalog_mismatch"])
 
-    def test_two_real_brands_that_disagree_are_still_reported(self):
+    def test_filtering_by_brand_and_family_uses_the_ones_the_card_shows(self):
+        """Un producto no sale bajo una marca o familia que su tarjeta no dice."""
+        with transaction_context() as db:
+            taladro = db.get(Product, self.TALADRO)
+            taladro.id_marca = self.MARCA_CEMEX  # la del producto, no la de su material
+            taladro.id_familia = self.FAM_OBRA
+
+        self.assertEqual([], self._codigos(id_marca=self.MARCA_BOSCH))
+        self.assertEqual(["CEM-500", "TAL-900"], self._codigos(id_marca=self.MARCA_CEMEX))
+        self.assertEqual([], self._codigos(id_familia=self.FAM_HERRAMIENTA))
+        self.assertEqual(["CEM-500", "TAL-900"], self._codigos(id_familia=self.FAM_OBRA))
+
+    def test_the_brand_of_a_product_in_an_unclassified_material_is_filterable_and_offered(self):
+        self._material_sin_clasificar()
+        with transaction_context() as db:
+            db.get(Product, self.TALADRO).id_marca = self.PRETUL
+
+        self.assertEqual(["TAL-900"], self._codigos(id_marca=self.PRETUL))
+        self.assertEqual([], self._codigos(id_marca=self.SIN_MARCA))
+        marcas = [b["brand"] for b in localizar("", ACTOR)["catalog"]["brands"]]
+        self.assertIn("Pretul", marcas)
+
+    def test_a_product_keeps_its_own_brand_and_family_and_borrows_the_material_ones_only_when_missing(self):
+        from app.services.product_service import ProductService
+
+        propio = {"id_material": self.MAT_TALADRO, "id_marca": self.MARCA_CEMEX, "id_familia": self.FAM_OBRA}
+        resuelto = ProductService._clasificacion_del_material(dict(propio))
+        self.assertEqual((self.MARCA_CEMEX, self.FAM_OBRA),
+                         (resuelto["id_marca"], resuelto["id_familia"]))
+
+        vacio = ProductService._clasificacion_del_material({"id_material": self.MAT_TALADRO})
+        self.assertEqual((self.MARCA_BOSCH, self.FAM_HERRAMIENTA),
+                         (vacio["id_marca"], vacio["id_familia"]))
+
+        self._material_sin_clasificar()
+        vacio = ProductService._clasificacion_del_material({"id_material": self.MAT_TALADRO})
+        self.assertNotIn("id_marca", vacio)  # "Sin marca especifica" no se propone
+
+    def test_the_brand_of_the_product_wins_over_the_one_of_its_material(self):
         with transaction_context() as db:
             db.get(Product, self.TALADRO).id_marca = self.MARCA_CEMEX
 
         clasificacion = localizar("TAL-900", ACTOR)["items"][0]["classification"]
-        self.assertEqual("Bosch", clasificacion["brand"])
-        self.assertEqual("Cemex", clasificacion["catalog_mismatch"]["brand"]["brand"])
+        self.assertEqual("Cemex", clasificacion["brand"])
+        self.assertIsNone(clasificacion["catalog_mismatch"])
 
     def test_an_id_that_no_longer_exists_is_reported_with_its_id(self):
         """Sin nombre que mostrar, el aviso tiene que dar al menos el id."""

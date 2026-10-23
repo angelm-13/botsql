@@ -582,6 +582,19 @@ def _users_with_capability(db, capability: str) -> list[int]:
     ]
 
 
+def _asignar_jefe_de_taller(db, project) -> None:
+    """Un proyecto con maquila le toca al Jefe de taller, sin botón de "tomar".
+
+    Solo se asigna cuando hay UN solo usuario con `project_execution` (hoy es así); con
+    varios no se adivina a cuál y el proyecto sigue libre para `take_project`.
+    """
+    if not project.requires_maquila or project.id_supervisor is not None:
+        return
+    jefes = _users_with_capability(db, "project_execution")
+    if len(jefes) == 1:
+        project.id_supervisor = jefes[0]
+
+
 def _notificar_proyecto(*, destinatarios, actor_id, id_proyect, nombre_proyecto, titulo, mensaje) -> None:
     """Dispara una notificacion por proyecto, sin tronar la operacion real.
 
@@ -1406,6 +1419,7 @@ def create_project(payload: dict, user_data: dict) -> dict:
         project = Proyect(**values)
         db.add(project)
         db.flush()
+        _asignar_jefe_de_taller(db, project)  # tras el flush: ahi toma el default de la maquila
         _append_event(db, project, user_data, "created", new_status="draft")
         db.flush()
         destinatarios = _users_with_capability(db, "project_authorization")
@@ -1529,6 +1543,7 @@ def update_project(project_id, payload: dict, user_data: dict) -> dict:
         _apply_management_only_fields(db, user_data, payload, values)
         for field, value in values.items():
             setattr(project, field, value)
+        _asignar_jefe_de_taller(db, project)
         # Si el costo total cambio, el estado de cobro que se sigue de el
         # puede haber cambiado tambien -- se resincroniza aqui, no solo
         # cuando se toca una parcialidad.

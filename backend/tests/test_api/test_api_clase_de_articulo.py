@@ -35,10 +35,12 @@ class TestLaListaDeClases(unittest.TestCase):
         self.assertEqual(400, e.exception.status_code)
         self.assertEqual("item_class", e.exception.meta["field"])
 
-    def test_the_product_class_wins_over_its_material(self):
+    def test_the_material_class_wins_over_the_product(self):
         material = type("M", (), {"item_class": "consumible"})()
+        sin_clase = type("M", (), {"item_class": None})()
         self.assertEqual("consumible", effective_item_class(type("P", (), {"item_class": None})(), material))
-        self.assertEqual("herramienta", effective_item_class(type("P", (), {"item_class": "herramienta"})(), material))
+        self.assertEqual("consumible", effective_item_class(type("P", (), {"item_class": "herramienta"})(), material))
+        self.assertEqual("herramienta", effective_item_class(type("P", (), {"item_class": "herramienta"})(), sin_clase))
         self.assertIsNone(effective_item_class(type("P", (), {"item_class": None})(), None))
 
 
@@ -84,34 +86,33 @@ class TestLaClaseEnLaOrdenDeCompra(BaseRecepcionAlmacen):
         self.assertEqual(201, respuesta.status_code, respuesta.get_data(as_text=True))
         self.assertEqual("recargable", self.json(respuesta)["lines"][0]["item_class"])
 
-    def test_receiving_classifies_a_product_that_has_no_class(self):
+    def test_receiving_classifies_a_material_that_has_no_class(self):
         id_orden, id_linea, cantidad = self._preparar()
         with transaction_context() as db:
             from app.models import PurchaseOrderLine
             linea = db.get(PurchaseOrderLine, id_linea)
             linea.item_class = "recargable"
-            id_producto = db.query(Product.id_product).filter(
-                Product.id_material == linea.id_material).scalar()
+            id_material = linea.id_material
+            db.get(Material, id_material).item_class = None
 
         self.assertEqual(200, self._recibir_renglon(id_orden, id_linea, cantidad).status_code)
 
         with transaction_context() as db:
-            self.assertEqual("recargable", db.get(Product, id_producto).item_class)
+            self.assertEqual("recargable", db.get(Material, id_material).item_class)
 
-    def test_receiving_does_not_overwrite_the_class_a_product_already_has(self):
+    def test_receiving_does_not_overwrite_the_class_a_material_already_has(self):
         id_orden, id_linea, cantidad = self._preparar()
         with transaction_context() as db:
             from app.models import PurchaseOrderLine
             linea = db.get(PurchaseOrderLine, id_linea)
             linea.item_class = "consumible"
-            producto = db.query(Product).filter(Product.id_material == linea.id_material).one()
-            producto.item_class = "herramienta"
-            id_producto = producto.id_product
+            id_material = linea.id_material
+            db.get(Material, id_material).item_class = "herramienta"
 
         self.assertEqual(200, self._recibir_renglon(id_orden, id_linea, cantidad).status_code)
 
         with transaction_context() as db:
-            self.assertEqual("herramienta", db.get(Product, id_producto).item_class)
+            self.assertEqual("herramienta", db.get(Material, id_material).item_class)
 
 
 class TestFiltrarPorClase(BackendTestCase):
@@ -143,12 +144,16 @@ class TestFiltrarPorClase(BackendTestCase):
     def _descripciones(self, resultado):
         return {i["descripcion"].split(" (")[0] for i in resultado["items"]}
 
-    def test_a_class_filters_what_the_product_says(self):
+    def test_a_product_of_a_material_without_class_uses_its_own(self):
         self.assertEqual({"Extintor"}, self._descripciones(self._buscar(clase="recargable")))
         self.assertEqual({"Disco de corte"}, self._descripciones(self._buscar(clase="consumible")))
 
-    def test_a_product_without_class_counts_with_the_one_of_its_material(self):
+    def test_the_class_of_the_material_wins_over_the_product(self):
+        with transaction_context() as db:
+            producto = db.get(Product, 1)
+            producto.item_class = "consumible"
         self.assertEqual({"Taladro"}, self._descripciones(self._buscar(clase="herramienta")))
+        self.assertNotIn("Taladro", self._descripciones(self._buscar(clase="consumible")))
 
     def test_without_a_filter_everything_is_listed_with_its_effective_class(self):
         resultado = self._buscar()

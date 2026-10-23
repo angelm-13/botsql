@@ -1,7 +1,8 @@
 """La clase de un articulo del almacen: herramienta, consumible, sobrante o recargable.
 
-Una sola lista, aqui. El material (catalogo) trae la clase por omision, cada producto la
-hereda y puede cambiarla, y el renglon de una orden de compra la lleva hasta el producto.
+Una sola lista, aqui. La clase es del material (catalogo): cada producto la hereda y no se captura en el
+producto (`Product.item_class` solo sirve de respaldo si el material no la tiene). El renglon
+de una orden de compra la lleva hasta el material.
 La pantalla repite la lista en `frontend/src/utils/clasesDeProducto.js`; si se agrega una,
 va en los dos y en el CHECK de la migracion `20261020120000`.
 
@@ -28,6 +29,6 @@ def normalize_item_class(valor, campo: str = "item_class") -> str | None:
 
 
 def effective_item_class(producto, material=None) -> str | None:
-    """La clase del producto o, si no la tiene, la de su material."""
-    return (getattr(producto, "item_class", None)
-            or getattr(material, "item_class", None) or None)
+    """La clase de su material o, si el material no la tiene, la que traiga el producto."""
+    return (getattr(material, "item_class", None)
+            or getattr(producto, "item_class", None) or None)

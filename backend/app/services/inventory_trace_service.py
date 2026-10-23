@@ -810,7 +810,8 @@ def _clasificacion_en_lote(db, productos) -> dict[int, dict]:
         # id del producto ya no existe.
         if producto.id_familia and producto.id_familia != base["id_product_family"]:
             nombre = nombre_familia.get(producto.id_familia)
-            if nombre and base["family"] in (None, FAMILIA_SIN_DATO):
+            if nombre:
+                # La familia es del producto, igual que la marca.
                 base["id_product_family"] = producto.id_familia
                 base["family"] = nombre
             else:
@@ -819,7 +820,8 @@ def _clasificacion_en_lote(db, productos) -> dict[int, dict]:
                 }
         if producto.id_marca and producto.id_marca != base["id_brand"]:
             nombre = nombre_marca.get(producto.id_marca)
-            if nombre and base["brand"] in (None, MARCA_SIN_DATO):
+            if nombre:
+                # La marca es del producto: un producto es su material mas su marca.
                 base["id_brand"] = producto.id_marca
                 base["brand"] = nombre
             else:
@@ -831,7 +833,36 @@ def _clasificacion_en_lote(db, productos) -> dict[int, dict]:
     return salida
 
 
-def _catalogos(db, ids_productos, ubicaciones: "CacheDeUbicaciones") -> dict:
+def _clasificacion_efectiva(db, ids_productos) -> tuple[dict, dict, dict]:
+    """La familia y la marca CON QUE se muestra cada producto: `{id: (familia, marca)}`.
+
+    Es la misma regla de `_clasificacion_en_lote`, para que filtrar, contar y pintar digan
+    lo mismo. La familia y la marca las define el producto -es su material mas su familia y su
+    marca- y, si no trae una que exista, cae la del material.
+    Devuelve tambien los nombres `{id: nombre}` de familias y de marcas.
+    """
+    from app.models.brand import Brand
+    from app.models.material import Material
+    from app.models.product_family import ProductFamily
+
+    familias = dict(db.execute(select(
+        ProductFamily.id_product_family, ProductFamily.product_family_description)).all())
+    marcas = dict(db.execute(select(Brand.id_brand, Brand.brand_description)).all())
+    efectiva = {}
+    filas = db.execute(
+        select(Product.id_product, Material.id_product_family, Product.id_familia,
+               Material.id_brand, Product.id_marca)
+        .join(Material, Material.id_material == Product.id_material)
+        .where(Product.id_product.in_(list(ids_productos)))
+    ).all() if ids_productos else []
+    for id_producto, familia_m, familia_p, marca_m, marca_p in filas:
+        efectiva[id_producto] = (familia_p if familia_p in familias else familia_m,
+                                 marca_p if marca_p in marcas else marca_m)
+    return efectiva, familias, marcas
+
+
+def _catalogos(db, ids_productos, ubicaciones: "CacheDeUbicaciones",
+               clasificacion: tuple[dict, dict, dict]) -> dict:
     """Las familias, marcas y almacenes que de verdad tienen algo.
 
     Alimenta los filtros de la pantalla. Se calculan sobre lo que el usuario
@@ -847,32 +878,22 @@ def _catalogos(db, ids_productos, ubicaciones: "CacheDeUbicaciones") -> dict:
         return {"families": [], "brands": [], "warehouses": [],
                 "materials": [], "locations": []}
 
-    filas = db.execute(
-        select(
-            ProductFamily.id_product_family, ProductFamily.product_family_description,
-            Brand.id_brand, Brand.brand_description,
-            func.count(Product.id_product),
-        )
-        .select_from(Product)
-        .join(Material, Material.id_material == Product.id_material)
-        .join(ProductFamily, ProductFamily.id_product_family == Material.id_product_family)
-        .join(Brand, Brand.id_brand == Material.id_brand)
-        .where(Product.id_product.in_(list(ids_productos)))
-        .group_by(
-            ProductFamily.id_product_family, ProductFamily.product_family_description,
-            Brand.id_brand, Brand.brand_description,
-        )
-    ).all()
-
+    # Con la familia y la marca con que se muestra cada producto -no solo las del
+    # material-: de lo contrario la marca real de un producto cuyo material es "Sin marca
+    # especifica" no aparecia nunca en el desplegable.
+    efectiva, nombre_familia, nombre_marca = clasificacion
     familias: dict[int, dict] = {}
     marcas: dict[int, dict] = {}
-    for id_familia, familia, id_marca, marca, cuantos in filas:
-        entrada = familias.setdefault(
-            id_familia, {"id_product_family": id_familia, "family": familia, "products": 0})
-        entrada["products"] += int(cuantos or 0)
-        entrada = marcas.setdefault(
-            id_marca, {"id_brand": id_marca, "brand": marca, "products": 0})
-        entrada["products"] += int(cuantos or 0)
+    for id_producto in ids_productos:
+        id_familia, id_marca = efectiva.get(id_producto, (None, None))
+        if id_familia is not None:
+            familias.setdefault(id_familia, {
+                "id_product_family": id_familia, "family": nombre_familia.get(id_familia),
+                "products": 0})["products"] += 1
+        if id_marca is not None:
+            marcas.setdefault(id_marca, {
+                "id_brand": id_marca, "brand": nombre_marca.get(id_marca),
+                "products": 0})["products"] += 1
 
     # Los almacenes salen de donde hay existencia, subiendo por el arbol: una
     # nave sin nada dentro no es un sitio donde buscar.
@@ -1052,12 +1073,15 @@ def localizar(consulta: str, user_data: dict, *, proposito: str | None = None,
         if proposito:
             query = query.where(Product.stock_purpose == proposito)
         if clase:
-            # La clase del producto o, si no la tiene, la de su material.
+            # La clase de su material o, si el material no la tiene, la del producto.
             from app.models.material import Material as _Material
             query = query.where(or_(
-                Product.item_class == clase,
-                and_(Product.item_class.is_(None), Product.id_material.in_(
-                    select(_Material.id_material).where(_Material.item_class == clase)))))
+                Product.id_material.in_(
+                    select(_Material.id_material).where(_Material.item_class == clase)),
+                and_(Product.item_class == clase, or_(
+                    Product.id_material.is_(None),
+                    Product.id_material.not_in(
+                        select(_Material.id_material).where(_Material.item_class.is_not(None)))))))
 
         # El orden es por descripcion y no por identificador: la pantalla es
         # una lista que se lee, y el orden de captura no significa nada para
@@ -1088,7 +1112,8 @@ def localizar(consulta: str, user_data: dict, *, proposito: str | None = None,
         # vaciaba las otras listas -y la propia, cuando la eleccion se quedaba
         # sin resultados-, asi que el filtro activo desaparecia del desplegable
         # que lo mostraba.
-        catalogo = _catalogos(db, visibles, ubicaciones)
+        clasificacion = _clasificacion_efectiva(db, visibles)
+        catalogo = _catalogos(db, visibles, ubicaciones, clasificacion)
 
         # Los filtros, cada uno como un conjunto de identificadores. Se
         # intersectan en Python en vez de encadenarse en el SQL porque el
@@ -1102,22 +1127,20 @@ def localizar(consulta: str, user_data: dict, *, proposito: str | None = None,
             permitidos = nuevos if permitidos is None else (permitidos & nuevos)
 
         if id_familia or id_marca or id_material:
-            from app.models.material import Material
-
-            por_clasificacion = select(Product.id_product).join(
-                Material, Material.id_material == Product.id_material)
-            if id_familia:
-                por_clasificacion = por_clasificacion.where(
-                    or_(Material.id_product_family == id_familia,
-                        Product.id_familia == id_familia))
-            if id_marca:
-                # La marca puede estar en el material o, si este no dice
-                # ninguna, en el producto (ver `_clasificacion_en_lote`).
-                por_clasificacion = por_clasificacion.where(
-                    or_(Material.id_brand == id_marca, Product.id_marca == id_marca))
+            # La familia y la marca se filtran con las que se muestran (ver
+            # `_clasificacion_efectiva`): un producto no sale bajo una marca distinta
+            # de la que dice su tarjeta.
+            efectiva = clasificacion[0]
+            ids_clasificados = [
+                i for i in visibles
+                if (not id_familia or efectiva.get(i, (None, None))[0] == id_familia)
+                and (not id_marca or efectiva.get(i, (None, None))[1] == id_marca)]
             if id_material:
-                por_clasificacion = por_clasificacion.where(Material.id_material == id_material)
-            _recortar(db.scalars(por_clasificacion).all())
+                ids_clasificados = db.scalars(
+                    select(Product.id_product).where(
+                        Product.id_product.in_(ids_clasificados),
+                        Product.id_material == id_material)).all() if ids_clasificados else []
+            _recortar(ids_clasificados)
 
         if id_ubicacion:
             # Con existencia ahi, no "asentado ahi": un producto cuya ficha dice
@@ -1225,7 +1248,7 @@ def localizar(consulta: str, user_data: dict, *, proposito: str | None = None,
                 ).get("material_path_imagen"),
                 "tracking_mode": producto.tracking_mode,
                 "stock_purpose": producto.stock_purpose,
-                "item_class": producto.item_class or clases_de_material.get(producto.id_material),
+                "item_class": clases_de_material.get(producto.id_material) or producto.item_class,
                 # El estatus tal como lo escribio el sistema anterior --
                 # ENTRADA, SALIDA, DANADO, DESTRUCCION, EXTRAVIADO--, que es el
                 # unico sitio donde estan los seis valores completos: el

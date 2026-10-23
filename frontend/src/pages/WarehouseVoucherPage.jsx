@@ -541,12 +541,12 @@ export default function WarehouseVoucherPage() {
       {/* Lo vencido primero: es la razon de llevar vales. Si no hay nada, la
           seccion no aparece en vez de decir "0 vencidos", que es ruido. */}
       {vencidos.length > 0 && (
-        <section className="vale-vencidos">
-          <h2>
+        <details className="vale-vencidos">
+          <summary>
             <AlertTriangle size={16} />
             {t("voucher.overdue", "Ya debió volver y no ha vuelto")}
             <span>{vencidos.length}</span>
-          </h2>
+          </summary>
           <ul>
             {vencidos.map((linea) => (
               <li key={linea.id_nm_incident_product}>
@@ -579,7 +579,7 @@ export default function WarehouseVoucherPage() {
               </li>
             ))}
           </ul>
-        </section>
+        </details>
       )}
 
       {borrador && (

@@ -1192,6 +1192,20 @@ def purchase_order(id_order, payload: dict, user_data: dict) -> dict:
 
 # --- recibir --------------------------------------------------------------------
 
+def _clasificar_material_al_recibir(db, renglon: PurchaseOrderLine) -> None:
+    """El material que aun no tiene clase toma la del renglon con que se compro.
+
+    La clase (herramienta, consumible, sobrante, recargable) es del material, no del
+    producto: lo comprado la trae del renglon y, al recibirlo, el material la hereda si
+    nadie se la habia dado. Solo llena un hueco; nunca pisa la que ya tiene.
+    """
+    if not renglon.item_class or not renglon.id_material:
+        return
+    material = db.get(Material, renglon.id_material)
+    if material is not None and not material.item_class:
+        material.item_class = renglon.item_class
+
+
 def receive_order(id_order, payload: dict, user_data: dict) -> dict:
     """Confirma que llego lo comprado, renglon por renglon y en las cantidades que llegaron.
 
@@ -1257,6 +1271,7 @@ def receive_order(id_order, payload: dict, user_data: dict) -> dict:
 
         for renglon, cantidad in llegado:
             renglon.quantity_received = int(renglon.quantity_received) + cantidad
+            _clasificar_material_al_recibir(db, renglon)
 
         completa = all(int(r.quantity_received) >= int(r.quantity) for r in renglones.values())
         nuevo = "received" if completa else "partially_received"

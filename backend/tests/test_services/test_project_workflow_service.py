@@ -1169,6 +1169,32 @@ class TestElSupervisorTomaElProyecto(TestProjectWorkflowService):
 
         self.assertEqual(self.workshop["id_user"], tomado["id_supervisor"])
 
+    def _con_un_solo_jefe_de_taller(self):
+        """Solo el rol 301 ejecuta: el dual (501) se deja sin usuarios."""
+        from app.models.user import User
+
+        with transaction_context() as db:
+            db.add(User(id_user=31, created_by=1, full_name="Jefe de taller", id_permission=301,
+                        id_proyect=1, id_status=1, supervisor=1, username="jefe-taller-prueba"))
+
+    def test_a_maquila_project_goes_to_the_only_workshop_head_without_taking_it(self):
+        self._con_un_solo_jefe_de_taller()
+
+        creado = self._create()
+
+        self.assertEqual(self.workshop["id_user"], creado["id_supervisor"])
+
+    def test_a_project_without_maquila_stays_with_the_supervisor(self):
+        self._con_un_solo_jefe_de_taller()
+        proyecto = self._create()["id_proyect"]
+
+        sin_maquila = update_project(proyecto, {"requires_maquila": False}, self.supervisor)
+
+        self.assertEqual(self.workshop["id_user"], sin_maquila["id_supervisor"])  # ya lo tenia
+        otro = create_project({"id_customer_supplier": 1, "proyect_description": "Pintura",
+                               "title": "Sin taller", "requires_maquila": False}, self.supervisor)
+        self.assertIsNone(otro["id_supervisor"])
+
     def test_a_role_with_both_capabilities_can_take_a_free_project(self):
         """Autorizar y ejecutar suman: la de ejecutar no se pierde por tener tambien la otra."""
         id_proyect = self._autorizado()

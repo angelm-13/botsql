@@ -21,16 +21,20 @@
   margin: 0 0 20px; padding: 16px 18px;
   background: #fff1f2; border: 1px solid #fecdd3; border-radius: 10px;
 }
-.vale-vencidos h2 {
-  display: flex; align-items: center; gap: 9px;
-  margin: 0 0 12px; font-size: 1.02rem; color: #9f1239;
+/* Cerrada por omision y con la lista acotada: unos cuantos vencidos no deben empujar
+   el resto de la pantalla hacia abajo. */
+.vale-vencidos summary {
+  display: flex; align-items: center; gap: 9px; cursor: pointer;
+  font-size: 1.02rem; font-weight: 600; color: #9f1239;
 }
-.vale-vencidos h2 span {
+.vale-vencidos[open] summary { margin-bottom: 12px; }
+.vale-vencidos summary span {
   margin-left: auto; padding: 1px 9px; border-radius: 999px;
   background: #9f1239; color: #fff; font-size: 12px;
 }
 .vale-vencidos ul { list-style: none; margin: 0; padding: 0;
-  display: flex; flex-direction: column; gap: 7px; }
+  display: flex; flex-direction: column; gap: 7px;
+  max-height: 320px; overflow-y: auto; }
 .vale-vencidos li {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
   padding: 9px 12px; background: #fff; border-radius: 8px; font-size: 13.5px;

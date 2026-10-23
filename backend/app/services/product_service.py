@@ -197,6 +197,37 @@ class ProductService(CrudService):
                 meta={'field': 'descripcion', 'suggestion': sugerir(nueva)},
             )
 
+    @staticmethod
+    def _clasificacion_del_material(payload: dict) -> dict:
+        """La familia y la marca las define el producto; si no se dan, se parte de las del material.
+
+        Un producto es su material mas su familia y su marca: lo que el producto traiga se
+        respeta. Solo cuando falta se completa con la del material, y solo si esa es real (no
+        "Sin categoria" / "Sin marca especifica", que significan "no se sabe").
+        """
+        from app.models.brand import Brand
+        from app.models.product_family import ProductFamily
+        from app.services.inventory_trace_service import FAMILIA_SIN_DATO, MARCA_SIN_DATO
+
+        id_material = ProductService._entero_o_none(payload.get('id_material'))
+        if id_material is None:
+            return payload
+        with transaction_context() as session:
+            fila = session.execute(
+                select(Material.id_brand, Brand.brand_description,
+                       Material.id_product_family, ProductFamily.product_family_description)
+                .join(Brand, Brand.id_brand == Material.id_brand)
+                .join(ProductFamily, ProductFamily.id_product_family == Material.id_product_family)
+                .where(Material.id_material == id_material)).first()
+        if fila is None:
+            return payload
+        id_marca, marca, id_familia, familia = fila
+        if marca != MARCA_SIN_DATO and not str(payload.get('id_marca') or '').strip():
+            payload['id_marca'] = id_marca
+        if familia != FAMILIA_SIN_DATO and not str(payload.get('id_familia') or '').strip():
+            payload['id_familia'] = id_familia
+        return payload
+
     @classmethod
     def create(cls, payload: dict, user_id: int | None = None):
         """Da de alta el producto y le da SITIO a su existencia desde el minuto uno.
@@ -212,6 +243,7 @@ class ProductService(CrudService):
         """
         payload = cls._rechazar_codigo_repetido(None, cls._rechazar_lot_control(dict(payload or {})))
         payload = cls._sincronizar_estado(None, payload)
+        payload = cls._clasificacion_del_material(payload)
 
         # Sin factura no se rechaza: se resuelve la de captura directa. Es lo que
         # permite dar de alta un desarmador sin inventarse un documento de
@@ -360,6 +392,7 @@ class ProductService(CrudService):
         payload = cls._rechazar_codigo_repetido(item_id, cls._rechazar_cantidad_a_mano(item_id, dict(payload or {})))
         payload = cls._sincronizar_estado(item_id, payload)
         payload = cls._exigir_existencia_para_en_almacen(item_id, payload)
+        payload = cls._clasificacion_del_material(payload)
         # Los formularios de edicion devuelven el registro completo, `lot_control`
         # incluido. Si viene igual a lo que ya hay no se esta encendiendo nada, y
         # rechazarlo hacia imposible guardar CUALQUIER edicion de un producto.

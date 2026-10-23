@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { idAAbrir } from "../notifications/destino";
-import { ArrowRight, ChevronRight, Eye, HelpingHand, LayoutGrid, List, LogOut, MessageSquare, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { ArrowRight, ChevronRight, Eye, LayoutGrid, List, MessageSquare, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import {
   addProyectMessage,
   addTaskNote,
@@ -15,8 +15,6 @@ import {
   getOperationsCatalog,
   getProyect,
   getTaskNotes,
-  releaseProyect,
-  takeProyect,
   transitionProyect,
   transitionTask,
   updateProyect,
@@ -277,7 +275,6 @@ export default function ProjectManagementPage() {
   const mode = privileged ? "unrestricted" : hasRead(permissions, "project_authorization") ? "manager" : hasRead(permissions, "project_execution") ? "workshop" : "supervisor";
   // Las capacidades suman: quien tiene autorizar Y ejecutar en el Gestor es "manager" para la
   // pantalla, pero tambien puede ejecutar (tomar el proyecto). El servidor decide igual.
-  const puedeEjecutar = privileged || hasRead(permissions, "project_execution");
   // Los dos pasos de material (a "en espera" y de ahi a "en proceso"): quien
   // tiene `project_supply` (Compras) o, de respaldo, quien autoriza -- igual
   // que `_puede_dar_el_material` en el servidor.
@@ -425,38 +422,6 @@ export default function ProjectManagementPage() {
       await loadData();
     } catch (requestError) {
       setError(requestError.message || projectText("error_save"));
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  // El proyecto no se asigna: lo toma quien lo va a sacar adelante
-  // (`take_project`, backend). Existia la ruta y el cliente de API
-  // (`takeProyect`) pero nunca se conecto a ningun boton -- Jefe de taller
-  // no tenia como tomar un proyecto libre desde la pantalla.
-  async function tomarProyecto(project) {
-    setBusyId(project.id_proyect);
-    setError("");
-    try {
-      await takeProyect(project.id_proyect);
-      await loadData();
-      if (detail?.id_proyect === project.id_proyect) setDetail(await getProyect(project.id_proyect));
-    } catch (requestError) {
-      setError(requestError.message || projectText("error_transition"));
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  async function soltarProyecto(project) {
-    setBusyId(project.id_proyect);
-    setError("");
-    try {
-      await releaseProyect(project.id_proyect);
-      await loadData();
-      if (detail?.id_proyect === project.id_proyect) setDetail(await getProyect(project.id_proyect));
-    } catch (requestError) {
-      setError(requestError.message || projectText("error_transition"));
     } finally {
       setBusyId(null);
     }
@@ -632,13 +597,6 @@ export default function ProjectManagementPage() {
     const pasoDeMaterial = puedeDarMaterial && todos.includes(PASO_DE_MATERIAL[project.proyect_status])
       ? PASO_DE_MATERIAL[project.proyect_status] : null;
     const targets = todos.filter((target) => target !== pasoDeMaterial);
-    // El proyecto no se asigna: lo toma quien lo va a sacar adelante. Si
-    // aparece en esta lista y sigue sin supervisor, es porque `_scoped_query`
-    // (backend) ya lo dejo ver como libre -- un Jefe de taller nunca ve lo
-    // que ya tomo otro companero, asi que no hace falta repetir aqui esa
-    // comprobacion de estatus.
-    const puedeTomar = puedeEjecutar && !project.id_supervisor;
-    const puedeSoltar = Number(project.id_supervisor) === Number(actor.id_user);
     return <div className="project-actions">
       <button className="icon-button" type="button" title={projectText("view_detail")} onClick={() => openDetail(project)}><Eye size={16} /></button>
       {(((mode === "unrestricted" || Number(project.leader) === Number(actor.id_user)
@@ -648,8 +606,6 @@ export default function ProjectManagementPage() {
               || (Number(projectPermission?.scope_update || 0) & 6) !== 0))
          ) && ["draft", "blocked"].includes(project.proyect_status)) || canEditManagement) && <button className="icon-button" type="button" title={projectText("edit")} onClick={() => openEdit(project)}><Pencil size={16} /></button>}
       {canDelete && project.proyect_status === "draft" && <button className="icon-button danger" type="button" title={projectText("delete")} onClick={() => removeProject(project)}><Trash2 size={16} /></button>}
-      {puedeTomar && <button className="icon-button" type="button" title={projectText("take_project")} disabled={busyId === project.id_proyect} onClick={() => tomarProyecto(project)}><HelpingHand size={16} /></button>}
-      {puedeSoltar && <button className="icon-button" type="button" title={projectText("release_project")} disabled={busyId === project.id_proyect} onClick={() => soltarProyecto(project)}><LogOut size={16} /></button>}
       {pasoDeMaterial && <button className="button primary small" type="button" disabled={busyId === project.id_proyect} onClick={() => setTransition({ project, target: pasoDeMaterial, reason: "", content: "", reviewDate: "" })}>{projectText(pasoDeMaterial === "waiting_material" ? "material_en_camino" : (materialPendiente(project)?.received > 0 ? "material_parcial" : "material_recibido"))}</button>}
       {targets.length > 0 && <label className="project-transition"><ArrowRight size={15} /><select value="" disabled={busyId === project.id_proyect} onChange={(event) => event.target.value && setTransition({ project, target: event.target.value, reason: "", content: "", reviewDate: "" })} aria-label={`${projectText("change_status")}: ${project.title}`}><option value="">{projectText("change_status")}</option>{targets.map((target) => <option value={target} key={target}>{statusLabel(target)}</option>)}</select></label>}
     </div>;
