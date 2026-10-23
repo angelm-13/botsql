@@ -26,6 +26,7 @@ import MaterialNecesario from "../components/MaterialNecesario.jsx";
 import ProyectoExpediente from "../components/ProyectoExpediente.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import { formatearFechaHora } from "../utils/fechas";
+import { useDialogo } from "../dialogo/useDialogo.js";
 
 /* eslint-disable react/prop-types */
 
@@ -181,6 +182,7 @@ function dateLabel(value) {
 
 export default function ProjectManagementPage() {
   const { t } = useI18n();
+  const dialogo = useDialogo();
   const projectText = (key) => t(`project_management.${key}`);
   const statusLabel = (status) => projectText(`status_${status}`);
   // El estatus de tarea puede traer texto libre de cuando el campo no
@@ -461,7 +463,7 @@ export default function ProjectManagementPage() {
   }
 
   async function removeProject(project) {
-    if (!window.confirm(`${projectText("confirm_delete")} ${project.title || projectText("project")}?`)) return;
+    if (!(await dialogo.confirmar(`${projectText("confirm_delete")} ${project.title || projectText("project")}?`))) return;
     setBusyId(project.id_proyect);
     try { await deleteProyect(project.id_proyect); await loadData(); }
     catch (requestError) { setError(requestError.message); }

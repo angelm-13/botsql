@@ -11,6 +11,7 @@ import {
   transitionProyectManagement, uploadProyectDocument,
 } from "../api";
 import "../styles/proyecto-expediente.css";
+import { useDialogo } from "../dialogo/useDialogo.js";
 
 /**
  * El expediente de un proyecto de taller: la orden de trabajo, el cobro y todo
@@ -33,6 +34,7 @@ import "../styles/proyecto-expediente.css";
  */
 export default function ProyectoExpediente({ detalle, catalogo, modo, onCambio }) {
   const { t } = useI18n();
+  const dialogo = useDialogo();
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState("");
   const [pago, setPago] = useState({ payment_date: "", amount: "", agreed_percent: "", notes: "" });
@@ -103,7 +105,7 @@ export default function ProyectoExpediente({ detalle, catalogo, modo, onCambio }
   }
 
   async function borrarAdjunto(documento) {
-    if (!window.confirm(etiqueta("confirm_delete_attachment", "¿Eliminar este archivo?"))) return;
+    if (!(await dialogo.confirmar(etiqueta("confirm_delete_attachment", "¿Eliminar este archivo?")))) return;
     setOcupado(true); setError("");
     try {
       await deleteProyectDocument(documento.id_proyect_document);

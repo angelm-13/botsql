@@ -24,6 +24,7 @@ import {
 import { useI18n } from "../i18n";
 import PageHeader from "../components/PageHeader.jsx";
 import { fetchAllPages } from "../utils/fetchAllPages";
+import { useDialogo } from "../dialogo/useDialogo.js";
 
 // Alcance por accion: reemplaza el viejo booleano por 4 niveles. Los valores
 // son bits (1/2/4) para poder combinarlos a futuro (3/5/6/7) sin volver a
@@ -181,6 +182,7 @@ async function runInBatches(items, worker, batchSize = SAVE_BATCH_SIZE) {
 
 export default function RolePermissionManagerPage() {
   const { t } = useI18n();
+  const dialogo = useDialogo();
   const currentUser = JSON.parse(localStorage.getItem("user") || "null");
   const [catalog, setCatalog] = useState([]);
   const [roles, setRoles] = useState([]);
@@ -486,7 +488,7 @@ export default function RolePermissionManagerPage() {
     }
     const selected = roles.find((role) => Number(role.id_permission) === Number(selectedRoleId));
     const label = selected ? roleLabel(selected) : selectedRoleId;
-    if (!window.confirm(t("common.confirm_delete_role", `¿Eliminar rol ${label}? Se eliminarán también sus permisos configurados.`))) return;
+    if (!(await dialogo.confirmar(t("common.confirm_delete_role", `¿Eliminar rol ${label}? Se eliminarán también sus permisos configurados.`)))) return;
     setSavingRole(true); setError(""); setNotice("");
     try {
       const roleId = Number(selectedRoleId);

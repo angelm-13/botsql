@@ -13,6 +13,7 @@ import {
 import { useI18n } from "../i18n";
 import PageHeader from "../components/PageHeader.jsx";
 import { fetchAllPages } from "../utils/fetchAllPages";
+import { useDialogo } from "../dialogo/useDialogo.js";
 
 function asItems(payload) {
   if (Array.isArray(payload)) return payload;
@@ -38,6 +39,7 @@ function userLabel(user) {
  */
 export default function TeamManagerPage() {
   const { t } = useI18n();
+  const dialogo = useDialogo();
   const [teams, setTeams] = useState([]);
   const [users, setUsers] = useState([]);
   const [memberships, setMemberships] = useState([]);
@@ -149,7 +151,7 @@ export default function TeamManagerPage() {
   // paso, por eso aqui ya no se quitan los miembros uno por uno). Queda la historia de quien estuvo en que equipo, y
   // con ella las checadas de antes se siguen atribuyendo a ese equipo.
   async function handleDeleteTeam(team) {
-    if (!window.confirm(t("common.confirm_delete_team", `¿Dar de baja el equipo "${team.team_description}"? Sus miembros dejan de pertenecer a él; la historia de quién estuvo en el equipo se conserva.`))) return;
+    if (!(await dialogo.confirmar(t("common.confirm_delete_team", `¿Dar de baja el equipo "${team.team_description}"? Sus miembros dejan de pertenecer a él; la historia de quién estuvo en el equipo se conserva.`)))) return;
     setSaving(true); setError(""); setNotice("");
     try {
       await deleteTeam(team.id_team);

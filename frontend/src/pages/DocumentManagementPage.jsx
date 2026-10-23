@@ -6,6 +6,7 @@ import {
   getDocumentCategories, getDocumentEmployees, getDocumentUploaders, getDocuments, uploadDocument,
 } from "../api";
 import "../styles/laboratory.css";
+import { useDialogo } from "../dialogo/useDialogo.js";
 
 const PER_PAGE = 20;
 const EMPTY_FILTERS = { search: "", status: "", id_document_category: "", person: "", created_by: "", issue_date_from: "", issue_date_to: "" };
@@ -42,6 +43,7 @@ function previewKind(version) {
 }
 
 export default function DocumentManagementPage() {
+  const dialogo = useDialogo();
   const currentUser = useMemo(readCurrentUser, []);
   const isSuperUser = Boolean(currentUser?.is_superuser || currentUser?.is_bootstrap_admin);
   const roleId = currentUser?.id_permission;
@@ -171,7 +173,7 @@ export default function DocumentManagementPage() {
   }
 
   async function remove(item) {
-    if (!window.confirm(`Eliminar el documento "${item.title}"? Dejara de aparecer en el listado.`)) return;
+    if (!(await dialogo.confirmar(`Eliminar el documento "${item.title}"? Dejara de aparecer en el listado.`))) return;
     setError("");
     try {
       await deleteDocument(item.id_document);

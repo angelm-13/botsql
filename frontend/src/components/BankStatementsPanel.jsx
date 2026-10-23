@@ -15,6 +15,7 @@ import {
   previewBankStatement,
 } from "../api";
 import { useI18n } from "../i18n";
+import { useDialogo } from "../dialogo/useDialogo.js";
 
 function money(value, locale) {
   return Number(value || 0).toLocaleString(locale, { style: "currency", currency: "MXN" });
@@ -32,6 +33,7 @@ function messageFrom(error, t) {
 
 export default function BankStatementsPanel({ canManage, canCreateAccount }) {
   const { lang, t } = useI18n();
+  const dialogo = useDialogo();
   const formatMoney = (value) => money(value, lang);
   const formatDate = (value) => dateLabel(value, lang);
   const errorMessage = (error) => messageFrom(error, t);
@@ -159,7 +161,7 @@ export default function BankStatementsPanel({ canManage, canCreateAccount }) {
       await matchBankStatementMovement(movement.id_bank_statement_movement, { id_invoice: invoiceId || null, force });
       await loadMovements(selectedId);
     } catch (requestError) {
-      if (requestError.status === 409 && requestError.payload?.meta?.force_allowed && window.confirm(t("bank_statements.confirm_force_match"))) {
+      if (requestError.status === 409 && requestError.payload?.meta?.force_allowed && await dialogo.confirmar(t("bank_statements.confirm_force_match"))) {
         await handleMatch(movement, invoiceId, true);
         return;
       }
@@ -168,7 +170,7 @@ export default function BankStatementsPanel({ canManage, canCreateAccount }) {
   }
 
   async function handleDelete(statementId) {
-    if (!window.confirm(t("bank_statements.confirm_delete"))) return;
+    if (!(await dialogo.confirmar(t("bank_statements.confirm_delete")))) return;
     try {
       await deleteBankStatement(statementId);
       if (selectedId === statementId) { setSelectedId(null); setMovements([]); }

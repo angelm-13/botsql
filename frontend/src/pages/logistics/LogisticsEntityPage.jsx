@@ -5,6 +5,7 @@ import { getAllCustomerSupplier } from "../../api";
 import { useI18n } from "../../i18n";
 import PageHeader from "../../components/PageHeader.jsx";
 import FormularioPlegable from "../../components/FormularioPlegable.jsx";
+import { useDialogo } from "../../dialogo/useDialogo.js";
 
 /* eslint-disable react/prop-types */
 
@@ -25,6 +26,7 @@ const clientRelation = {
 
 export default function LogisticsEntityPage({ config }) {
   const { t } = useI18n();
+  const dialogo = useDialogo();
   const translate = (key, fallback) => key ? t(key, fallback) : fallback;
   const singular = translate(config.singularKey, config.singular);
   const plural = translate(config.pluralKey, config.plural);
@@ -144,7 +146,7 @@ export default function LogisticsEntityPage({ config }) {
 
   async function removeItem(item) {
     const itemName = item[config.displayField] || item[config.idField];
-    if (!window.confirm(`${t("logistics.confirm_delete")} ${article} ${singular.toLowerCase()} ${itemName}?`)) return;
+    if (!(await dialogo.confirmar(`${t("logistics.confirm_delete")} ${article} ${singular.toLowerCase()} ${itemName}?`))) return;
     try {
       await config.remove(item[config.idField]);
       await loadData();

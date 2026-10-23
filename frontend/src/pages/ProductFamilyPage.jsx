@@ -12,6 +12,7 @@ import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import Pagination from "../components/Pagination.jsx";
 import { useI18n } from "../i18n";
+import { useDialogo } from "../dialogo/useDialogo.js";
 
 /**
  * Familias de producto: cómo se agrupa el material.
@@ -64,6 +65,7 @@ const formularioVacio = { descripcion: "", tipo: "" };
 
 export default function ProductFamilyPage() {
   const { t } = useI18n();
+  const dialogo = useDialogo();
   const [familias, setFamilias] = useState([]);
   const [paginacion, setPaginacion] = useState({ total: 0, pages: 1, perPage: 0 });
   const [pagina, setPagina] = useState(1);
@@ -149,7 +151,7 @@ export default function ProductFamilyPage() {
   };
 
   const borrar = async (familia) => {
-    if (!window.confirm(t("common.confirm_delete", "¿Eliminar?"))) return;
+    if (!(await dialogo.confirmar(t("common.confirm_delete", "¿Eliminar?")))) return;
     setError("");
     try {
       await deleteProductFamily(familia.id_product_family);
