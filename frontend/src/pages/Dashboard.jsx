@@ -12,6 +12,7 @@ import { CSS as DndCss } from "@dnd-kit/utilities";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import { useI18n } from "../i18n";
+import { useDialogo } from "../dialogo/useDialogo.js";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import useReducedMotion from "../components/kpi-widgets/useReducedMotion";
 import useMasonryRef from "../components/kpi-widgets/useMasonry";
@@ -394,6 +395,7 @@ const sinDesplazarVecinas = () => null;
 
 export default function Dashboard() {
   const { lang, t } = useI18n();
+  const dialogo = useDialogo();
   const tx = useCallback((key, fallback) => t(`kpi_dashboard.${key}`, fallback), [t]);
   const locale = localeFor(lang);
   const formatNumber = useCallback((value) => new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(value || 0), [locale]);
@@ -552,7 +554,7 @@ export default function Dashboard() {
   const dragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   function notifyError(error) {
-    window.alert(t(error.message || "errors.request_failed", error.message || "errors.request_failed"));
+    dialogo.avisar(t(error.message || "errors.request_failed", error.message || "errors.request_failed"));
   }
 
   // --- Reporte PDF (exportar el dashboard, ver generarReportePdf mas abajo) ---
@@ -653,7 +655,7 @@ export default function Dashboard() {
       }
 
       if (!huboContenido) {
-        window.alert(tx("pdf_report_empty", "Ninguno de los paneles tiene gráficos para incluir en el reporte."));
+        await dialogo.avisar(tx("pdf_report_empty", "Ninguno de los paneles tiene gráficos para incluir en el reporte."));
         return;
       }
       pdf.save(`reporte-kpis-${todayIso()}.pdf`);
@@ -740,7 +742,7 @@ export default function Dashboard() {
   const productLabel = useCallback((idProduct) => `#${idProduct}`, []);
 
   async function handleCreateDashboard() {
-    const nombre = window.prompt(tx("new_dashboard_prompt", "Nombre del nuevo tablero"));
+    const nombre = await dialogo.pedirTexto(tx("new_dashboard_prompt", "Nombre del nuevo tablero"));
     if (nombre === null) return;
     const trimmed = nombre.trim();
     if (!trimmed) return;
@@ -753,7 +755,7 @@ export default function Dashboard() {
   }
 
   async function handleRenameDashboard(dashboard) {
-    const nombre = window.prompt(tx("rename_dashboard_prompt", "Nuevo nombre del tablero"), dashboard.nombre);
+    const nombre = await dialogo.pedirTexto(tx("rename_dashboard_prompt", "Nuevo nombre del tablero"), dashboard.nombre);
     if (nombre === null) return;
     const trimmed = nombre.trim();
     if (!trimmed || trimmed === dashboard.nombre) return;
@@ -767,7 +769,7 @@ export default function Dashboard() {
 
   async function handleDeleteDashboard(dashboard) {
     const pregunta = tx("delete_dashboard_confirm", `¿Eliminar el tablero "${dashboard.nombre}"? Esta acción no se puede deshacer.`);
-    if (!window.confirm(pregunta)) return;
+    if (!(await dialogo.confirmar(pregunta))) return;
     try {
       await deleteKpiDashboard(dashboard.id_kpi_dashboard);
       // Limpia tambien el borrador del panel de ESTE tablero -- ya no existe,
@@ -784,7 +786,7 @@ export default function Dashboard() {
   }
 
   async function handleDeleteWidget(widget) {
-    if (!window.confirm(tx("delete_widget_confirm", "¿Quitar este gráfico del tablero?"))) return;
+    if (!(await dialogo.confirmar(tx("delete_widget_confirm", "¿Quitar este gráfico del tablero?")))) return;
     try {
       await deleteKpiDashboardWidget(widget.id_kpi_dashboard_widget);
       // Si el panel de este tablero estaba editando justo el widget que se
