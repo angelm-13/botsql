@@ -3441,6 +3441,7 @@
     "progress_material": "Material received",
     "progress_not_ordered": "not ordered",
     "take_project": "Take project",
+    "assign_workshop_head": "Assign workshop head",
     "release_project": "Release project",
     "project": "Project",
     "task": "Task",

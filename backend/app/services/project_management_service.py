@@ -582,18 +582,24 @@ def _users_with_capability(db, capability: str) -> list[int]:
     ]
 
 
+def _jefes_de_taller(db) -> list[int]:
+    """Quien ejecuta (`project_execution`) y no autoriza (`project_authorization`).
+
+    Los roles de administracion tienen las dos capacidades y no son jefes de taller.
+    """
+    return sorted(set(_users_with_capability(db, "project_execution"))
+                  - set(_users_with_capability(db, "project_authorization")))
+
+
 def _asignar_jefe_de_taller(db, project) -> None:
     """Un proyecto con maquila le toca al Jefe de taller, sin botón de "tomar".
 
-    Solo se asigna cuando hay UN solo Jefe de taller: quien ejecuta (`project_execution`) y no
-    autoriza (`project_authorization`) -los roles de administracion tienen las dos y no son
-    jefes de taller-. Con varios no se adivina a cuál y el proyecto sigue libre para
-    `take_project`.
+    Solo se asigna cuando hay UN solo Jefe de taller. Con varios no se adivina a cuál: el
+    proyecto queda libre y quien autoriza lo asigna (`assign_project`).
     """
     if not project.requires_maquila or project.id_supervisor is not None:
         return
-    jefes = sorted(set(_users_with_capability(db, "project_execution"))
-                   - set(_users_with_capability(db, "project_authorization")))
+    jefes = _jefes_de_taller(db)
     if len(jefes) == 1:
         project.id_supervisor = jefes[0]
 
@@ -1488,6 +1494,65 @@ def take_project(project_id, user_data: dict) -> dict:
         mensaje="ya esta trabajando en el",
     )
     return payload_tomado
+
+
+def _require_can_assign(db, user_data: dict) -> None:
+    """Asignar el proyecto a un jefe de taller es de quien autoriza (y del administrador)."""
+    if not _has_capability(db, user_data, "project_authorization"):
+        raise AppError("errors.permission_denied", 403, {"action": "assign_project"})
+
+
+def workshop_heads(user_data: dict) -> list[dict]:
+    """Los jefes de taller a quienes se puede asignar un proyecto."""
+    with transaction_context() as db:
+        _require_can_assign(db, user_data)
+        ids = _jefes_de_taller(db)
+        filas = db.query(User.id_user, User.full_name).filter(
+            User.id_user.in_(ids)).order_by(User.full_name).all() if ids else []
+    return [{"id_user": i, "full_name": nombre} for i, nombre in filas]
+
+
+def assign_project(project_id, id_user, user_data: dict) -> dict:
+    """Quien autoriza asigna el proyecto con maquila a un jefe de taller, o lo deja libre.
+
+    Existe porque ya no hay boton de "tomar": con un solo jefe de taller el proyecto se le
+    asigna solo (`_asignar_jefe_de_taller`); con varios, o con ninguno, lo asigna Gerencia o el
+    administrador. `id_user` vacío lo deja sin asignar.
+    """
+    destino = _safe_int(id_user)
+    with transaction_context() as db:
+        project = _get_visible_project(db, project_id, user_data, for_update=True)
+        _require_can_assign(db, user_data)
+        if (normalize_project_status(project.proyect_status) in {"denied", "collected", "completed"}
+                or str(project.management_status or "").lower() == "cancelado"):
+            raise AppError("errors.project_closed", 409, {"id_proyect": project.id_proyect})
+        if not project.requires_maquila:
+            raise AppError("errors.invalid_field", 400, {"field": "requires_maquila"})
+        if destino is None:
+            if project.id_supervisor is not None:
+                project.id_supervisor = None
+                _append_event(db, project, user_data, "released")
+            db.flush()
+            return project.serialize()
+        if destino not in _jefes_de_taller(db):
+            raise AppError("errors.invalid_field", 400, {"field": "id_user"})
+        actor_id = _actor_id(user_data)
+        id_proyect = project.id_proyect
+        nombre_proyecto = project.title or project.proyect_description or f"Proyecto {id_proyect}"
+        cambia = _safe_int(project.id_supervisor) != destino
+        if cambia:
+            project.id_supervisor = destino
+            _append_event(db, project, user_data, "taken")
+        db.flush()
+        payload = project.serialize()
+
+    if cambia:
+        _notificar_proyecto(
+            destinatarios=[destino], actor_id=actor_id, id_proyect=id_proyect,
+            nombre_proyecto=nombre_proyecto, titulo="Te asignaron un proyecto",
+            mensaje="quedó a tu cargo",
+        )
+    return payload
 
 
 def release_project(project_id, user_data: dict) -> dict:

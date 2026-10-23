@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { idAAbrir } from "../notifications/destino";
-import { ArrowRight, ChevronRight, Eye, LayoutGrid, List, MessageSquare, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { ArrowRight, ChevronRight, Eye, LayoutGrid, List, MessageSquare, Wrench, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import {
   addProyectMessage,
   addTaskNote,
@@ -13,7 +13,9 @@ import {
   getUserOptions,
   getMyPermissions,
   getOperationsCatalog,
+  assignProyect,
   getProyect,
+  getWorkshopHeads,
   getTaskNotes,
   transitionProyect,
   transitionTask,
@@ -288,6 +290,26 @@ export default function ProjectManagementPage() {
   const customerById = useMemo(() => Object.fromEntries(customers.map((item) => [item.id_customer_supplier, item])), [customers]);
   const userById = useMemo(() => Object.fromEntries(users.map((item) => [item.id_user, item])), [users]);
   const canEditManagement = mode === "manager" || mode === "unrestricted";
+  // Con varios jefes de taller el proyecto no se asigna solo: lo asigna quien autoriza.
+  const [jefesDeTaller, setJefesDeTaller] = useState([]);
+  useEffect(() => {
+    if (!canEditManagement) return;
+    getWorkshopHeads().then((lista) => setJefesDeTaller(Array.isArray(lista) ? lista : [])).catch(() => setJefesDeTaller([]));
+  }, [canEditManagement]);
+
+  async function asignarJefe(project, idUser) {
+    setBusyId(project.id_proyect);
+    setError("");
+    try {
+      await assignProyect(project.id_proyect, idUser);
+      await loadData();
+      if (detail?.id_proyect === project.id_proyect) setDetail(await getProyect(project.id_proyect));
+    } catch (requestError) {
+      setError(requestError.message || projectText("error_transition"));
+    } finally {
+      setBusyId(null);
+    }
+  }
   // Cambiar el estatus de una tarea (taller) es capacidad de Gerente/Jefe de
   // taller/administrador -- ver seed de `entity_permission` para "task"
   // (`scope_update`): Supervisor solo tiene lectura. El backend ya lo exige
@@ -606,6 +628,9 @@ export default function ProjectManagementPage() {
               || (Number(projectPermission?.scope_update || 0) & 6) !== 0))
          ) && ["draft", "blocked"].includes(project.proyect_status)) || canEditManagement) && <button className="icon-button" type="button" title={projectText("edit")} onClick={() => openEdit(project)}><Pencil size={16} /></button>}
       {canDelete && project.proyect_status === "draft" && <button className="icon-button danger" type="button" title={projectText("delete")} onClick={() => removeProject(project)}><Trash2 size={16} /></button>}
+      {canEditManagement && project.requires_maquila && jefesDeTaller.length > 0
+        && !["denied", "collected", "completed"].includes(project.proyect_status)
+        && <label className="project-transition"><Wrench size={15} /><select value={project.id_supervisor ?? ""} disabled={busyId === project.id_proyect} onChange={(event) => asignarJefe(project, event.target.value)} aria-label={`${projectText("assign_workshop_head")}: ${project.title}`}><option value="">{projectText("assign_workshop_head")}</option>{jefesDeTaller.map((jefe) => <option value={jefe.id_user} key={jefe.id_user}>{jefe.full_name}</option>)}</select></label>}
       {pasoDeMaterial && <button className="button primary small" type="button" disabled={busyId === project.id_proyect} onClick={() => setTransition({ project, target: pasoDeMaterial, reason: "", content: "", reviewDate: "" })}>{projectText(pasoDeMaterial === "waiting_material" ? "material_en_camino" : (materialPendiente(project)?.received > 0 ? "material_parcial" : "material_recibido"))}</button>}
       {targets.length > 0 && <label className="project-transition"><ArrowRight size={15} /><select value="" disabled={busyId === project.id_proyect} onChange={(event) => event.target.value && setTransition({ project, target: event.target.value, reason: "", content: "", reviewDate: "" })} aria-label={`${projectText("change_status")}: ${project.title}`}><option value="">{projectText("change_status")}</option>{targets.map((target) => <option value={target} key={target}>{statusLabel(target)}</option>)}</select></label>}
     </div>;

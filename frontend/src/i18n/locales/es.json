@@ -3485,6 +3485,7 @@
     "progress_material": "Material recibido",
     "progress_not_ordered": "sin pedir",
     "take_project": "Tomar proyecto",
+    "assign_workshop_head": "Asignar jefe de taller",
     "release_project": "Soltar proyecto",
     "project": "Proyecto",
     "task": "Tarea",
