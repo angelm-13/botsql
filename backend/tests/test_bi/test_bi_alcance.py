@@ -32,8 +32,12 @@ def test_todos_y_admin_no_cambian_el_sql():
     assert acotar_sql(q, Acceso("a", True, None), ESQ) == q
 
 
-def test_tabla_sin_dueno_se_trata_como_todos():
-    a = Acceso("r", False, None, permisos=(("brand", 4, 1, 4, 4),), user_id=7)
+def test_tabla_limitada_sin_dueno_se_niega_y_con_todos_pasa():
+    for leer in (1, 2):
+        a = Acceso("r", False, None, permisos=(("brand", 4, leer, 4, 4),), user_id=7)
+        with pytest.raises(SqlRechazado):
+            acotar_sql("SELECT * FROM brand", a, ESQ)
+    a = Acceso("r", False, None, permisos=(("brand", 4, 4, 4, 4),), user_id=7)
     assert acotar_sql("SELECT * FROM brand", a, ESQ) == "SELECT * FROM brand"
 
 
@@ -51,15 +55,6 @@ def test_no_se_deja_saltar_el_filtro(q):
 def test_sin_usuario_falla_cerrado():
     with pytest.raises(SqlRechazado):
         acotar_sql("SELECT * FROM invoice", acc(1, uid=None), ESQ)
-
-
-def test_tabla_sensible_sin_dueno_se_niega_con_alcance_limitado():
-    for leer in (1, 2):
-        a = Acceso("r", False, None, permisos=(("purchase_budget", 4, leer, 4, 4),), user_id=7)
-        with pytest.raises(SqlRechazado):
-            acotar_sql("SELECT * FROM purchase_budget", a, ESQ)
-    a = Acceso("r", False, None, permisos=(("purchase_budget", 4, 4, 4, 4),), user_id=7)
-    assert acotar_sql("SELECT * FROM purchase_budget", a, ESQ) == "SELECT * FROM purchase_budget"
 
 
 def test_auditor_llm_registra_sin_bloquear(caplog, monkeypatch):

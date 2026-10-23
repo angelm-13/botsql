@@ -33,12 +33,6 @@ SOLO_ADMIN = {
     "bi_department_permission", "event_log", "user_mfa", "password_reset_token",
     "public_api_key", "pac_config",
 }
-# Sensibles y sin columna `created_by`: no se pueden acotar por dueno, asi que con
-# alcance Propios/Mis grupos se niegan (solo las lee quien tiene Todos).
-SIN_DUENO_SENSIBLES = {
-    "bank_statement_movement", "invoice_cfdi_xml", "purchase_budget", "purchase_policy",
-    "quotation_comment", "document_version", "kpi_snapshot",
-}
 # Ademas de `created_by`, quien tambien es dueno de la fila (misma regla que
 # project_management_service: el lider ve su proyecto aunque no lo haya creado).
 DUENO_ADICIONAL = {"proyect": "leader"}
@@ -214,8 +208,8 @@ def acotar_sql(sql: str, acceso, esquema) -> str:
     Antepone un CTE con el nombre de la tabla (`WITH invoice AS (SELECT * FROM
     invoice WHERE created_by = ...)`), que tapa a la tabla real en toda la
     consulta: lo que escriba el modelo ya no puede ver otras filas. Dueno de la
-    fila = columna `created_by`; una tabla sin ella (catalogos) se trata como
-    "Todos". Mis grupos = yo + quienes comparten un equipo (`nm_team_user`).
+    fila = columna `created_by`; una tabla limitada que no la
+    tiene se niega. Mis grupos = yo + quienes comparten un equipo (`nm_team_user`).
     """
     from . import security
 
@@ -227,16 +221,18 @@ def acotar_sql(sql: str, acceso, esquema) -> str:
     # (y `relaciones_referenciadas` no lo cuenta como tabla): se rechaza.
     texto = security._sin_from_de_funciones(security.esqueleto(sql))
     for cte in {n.lower() for n in security._ALIAS_DE_CTE.findall(texto)}:
-        if cte in por_tabla and (acceso.alcance_lectura(cte) != 4 or cte in SIN_DUENO_SENSIBLES):
+        if cte in por_tabla and acceso.alcance_lectura(cte) != 4:
             raise security.SqlRechazado("alcance_no_aplicable", cte)
     for ref in security.relaciones_referenciadas(sql):
         corto = ref.split(".")[-1].lower()
         rel = por_tabla.get(corto)
         alcance = acceso.alcance_lectura(corto)
-        if alcance != 4 and corto in SIN_DUENO_SENSIBLES:
-            raise security.SqlRechazado("alcance_no_aplicable", ref)
-        if rel is None or alcance == 4 or not any(c.nombre.lower() == "created_by" for c in rel.columnas):
+        if rel is None or alcance == 4:
             continue
+        if not any(c.nombre.lower() == "created_by" for c in rel.columnas):
+            # Alguien limito esta tabla a Propios/Mis grupos y no hay columna dueno
+            # para filtrar: se niega en vez de dejarla abierta.
+            raise security.SqlRechazado("alcance_no_aplicable", ref)
         if "." in ref or acceso.user_id is None or re.search(r"\brecursive\b", sql, re.I):
             # Con el nombre calificado se saltaria el CTE; sin usuario no hay filtro posible.
             raise security.SqlRechazado("alcance_no_aplicable", ref)
