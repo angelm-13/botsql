@@ -10,7 +10,8 @@ dia lo que se levanto antes, que quedo con `id_supervisor` vacio.
 Que toca (y que NO)
 -------------------
 Solo proyectos vivos con maquila y sin supervisor, y solo si hay exactamente un usuario con la
-capacidad `project_execution`; con cero o varios no hace nada. No toca los que ya tienen
+capacidad `project_execution` y sin `project_authorization` (los roles de administracion
+tienen las dos y no son jefes de taller); con cero o varios no hace nada. No toca los que ya tienen
 supervisor ni los de proyectos sin maquila.
 
 Uso (dentro del backend del ambiente):
@@ -48,9 +49,11 @@ def main():
         cur.execute(
             "SELECT id_user, full_name FROM \"user\" WHERE deletion_date IS NULL AND id_permission IN ("
             "SELECT id_permission FROM entity_permission WHERE entity_name = 'project_execution' "
+            "AND scope_read > 0 AND deletion_date IS NULL) AND id_permission NOT IN ("
+            "SELECT id_permission FROM entity_permission WHERE entity_name = 'project_authorization' "
             "AND scope_read > 0 AND deletion_date IS NULL)")
         jefes = cur.fetchall()
-        print(f"usuarios con project_execution: {len(jefes)}")
+        print(f"jefes de taller (ejecutan y no autorizan): {len(jefes)}")
         if len(jefes) != 1:
             print("no hay exactamente uno: no se asigna nada.")
             return

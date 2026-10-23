@@ -4163,7 +4163,7 @@
     "purpose": "What it is for",
     "all_purposes": "Whole warehouse",
     "internal_use": "Internal use",
-    "purpose_mercancia": "consumable",
+    "purpose_mercancia": "merchandise (for sale)",
     "purpose_uso_interno": "internal use",
     "by_status": "By piece status",
     "any_status": "Any status",
@@ -4388,6 +4388,7 @@
     "status_in_warehouse": "In warehouse",
     "classification": "Classification",
     "see_families": "see families and types",
+    "class_from_material": "set by its material",
     "classification_help": "The family groups, the type tells them apart within it, and the material is the concrete thing. If one is missing, add it in Families and types."
   },
   "material": {

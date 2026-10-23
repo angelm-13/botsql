@@ -1170,12 +1170,16 @@ class TestElSupervisorTomaElProyecto(TestProjectWorkflowService):
         self.assertEqual(self.workshop["id_user"], tomado["id_supervisor"])
 
     def _con_un_solo_jefe_de_taller(self):
-        """Solo el rol 301 ejecuta: el dual (501) se deja sin usuarios."""
+        """El rol 301 solo ejecuta; el 501 ejecuta Y autoriza (como un administrador) y no cuenta."""
         from app.models.user import User
 
         with transaction_context() as db:
-            db.add(User(id_user=31, created_by=1, full_name="Jefe de taller", id_permission=301,
-                        id_proyect=1, id_status=1, supervisor=1, username="jefe-taller-prueba"))
+            db.add_all([
+                User(id_user=31, created_by=1, full_name="Jefe de taller", id_permission=301,
+                     id_proyect=1, id_status=1, supervisor=1, username="jefe-taller-prueba"),
+                User(id_user=51, created_by=1, full_name="Administrador", id_permission=501,
+                     id_proyect=1, id_status=1, supervisor=1, username="admin-prueba"),
+            ])
 
     def test_a_maquila_project_goes_to_the_only_workshop_head_without_taking_it(self):
         self._con_un_solo_jefe_de_taller()

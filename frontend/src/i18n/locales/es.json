@@ -4278,7 +4278,7 @@
     "purpose": "Para qué sirve",
     "all_purposes": "Todo el almacén",
     "internal_use": "Uso interno",
-    "purpose_mercancia": "consumible",
+    "purpose_mercancia": "mercancía (para venta)",
     "purpose_uso_interno": "uso interno",
     "by_status": "Por estado de la pieza",
     "any_status": "Cualquier estado",
@@ -4504,6 +4504,7 @@
     "status_in_warehouse": "En almacén",
     "classification": "Clasificación",
     "see_families": "ver familias y tipos",
+    "class_from_material": "la define su material",
     "classification_help": "La familia agrupa, el tipo distingue dentro de ella y el material es la cosa concreta. Si falta alguna, se da de alta en Familias y tipos."
   },
   "material": {
