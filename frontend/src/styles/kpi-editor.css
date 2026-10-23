@@ -117,6 +117,8 @@
 .kpi-titulo-editable:hover, .kpi-titulo-editable:focus-within { border-color: var(--kpi-ink-suave); }
 .kpi-titulo-editable > strong, .kpi-titulo-editable > input { flex: 1; min-width: 0; font: inherit; font-weight: 700; overflow-wrap: anywhere; }
 .kpi-titulo-editable > input { border: 0; outline: none; padding: 0; background: transparent; color: inherit; }
+/* Sin borde ni sombra propios aun enfocado: el rectángulo exterior es el que cambia de color (foco.css). */
+.kpi-titulo-editable > input:focus { border: 0; outline: none; box-shadow: none; }
 .kpi-titulo-editable .kpi-icon-button { flex: none; }
 .kpi-titulo-contador { margin: 2px 0 0; font-size: 12px; color: var(--kpi-texto-suave); }
 .kpi-editor-titulo:focus { outline: none; border-color: var(--kpi-ink-suave); }
