@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  TITULO_MAX, armarParametros, estadoDeWidget, normalizarTitulo, tituloConHtml, tituloDeWidget, widgetDeBorrador,
+  TITULO_MAX, armarParametros, contadorDeTitulo, tituloEditado, estadoDeWidget, normalizarTitulo, tituloConHtml, tituloDeWidget, widgetDeBorrador,
 } from "./kpiParametros.js";
 
 const BORRADOR = {
@@ -118,7 +118,8 @@ test("la tarjeta y la vista previa del editor usan tituloDeWidget, la unica regl
   const fuente = readFileSync(new URL("../pages/Dashboard.jsx", import.meta.url), "utf8");
   assert.match(fuente, /const titulo = tituloDeWidget\(widget\.parametros, nombreDeLosKpis\)/, "el encabezado de la tarjeta");
   assert.match(fuente, /<h4>\{titulo\}<\/h4>/, "y lo pinta");
-  assert.match(fuente, /<strong>\{tituloDeWidget\(\{ titulo \}, /, "la vista previa del editor");
+  assert.match(fuente, /<TituloEditable\s+valor=\{titulo\}/, "la vista previa del editor edita el titulo en el lugar");
+  assert.doesNotMatch(fuente, /className="kpi-editor-titulo"/, "ya no hay un segundo campo de titulo en el formulario");
   // El PDF no arma titulos aparte: captura las tarjetas con html2canvas (solo el nombre del tablero va como titulo de seccion).
   assert.match(fuente, /tituloSeccion: dashboard\.nombre/);
 });
@@ -155,4 +156,22 @@ test("los textos del titulo existen en es, en, pt y de, distintos de un idioma a
     const llaves = llavesDeLaSeccion(locale(idioma), "kpi_dashboard");
     assert.deepEqual(llaves.filter((llave, i) => llaves.indexOf(llave) !== i), [], `${idioma}: llaves repetidas`);
   }
+});
+
+// --- edicion en el lugar (vista previa) ----------------------------------------------------------
+
+test("tituloEditado: al guardar recorta, corta a 80 caracteres y vacio vuelve al titulo por defecto", () => {
+  assert.equal(tituloEditado("  Entradas  "), "Entradas");
+  assert.equal(tituloEditado("a".repeat(120)), "a".repeat(TITULO_MAX));
+  assert.equal(tituloEditado("   "), "");
+  // El valor guardado llega a parametros.titulo, y vacio no deja la llave: el widget usa el nombre del KPI.
+  assert.equal(armarParametros({ ...BORRADOR, titulo: tituloEditado("  Mi grafico ") }, HOY).titulo, "Mi grafico");
+  assert.equal("titulo" in armarParametros({ ...BORRADOR, titulo: tituloEditado("  ") }, HOY), false);
+  assert.equal(tituloDeWidget({ titulo: tituloEditado("  ") }, "Pendientes"), "Pendientes");
+});
+
+test("contadorDeTitulo: aparece solo al acercarse al limite", () => {
+  assert.equal(contadorDeTitulo("a".repeat(63)), null);
+  assert.deepEqual(contadorDeTitulo("a".repeat(64)), { usados: 64, max: 80 });
+  assert.deepEqual(contadorDeTitulo("a".repeat(80)), { usados: 80, max: 80 });
 });

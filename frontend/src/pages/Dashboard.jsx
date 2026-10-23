@@ -12,6 +12,7 @@ import { CSS as DndCss } from "@dnd-kit/utilities";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import { useI18n } from "../i18n";
+import TituloEditable from "../components/kpi-widgets/TituloEditable.jsx";
 import { useDialogo } from "../dialogo/useDialogo.js";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import useReducedMotion from "../components/kpi-widgets/useReducedMotion";
@@ -36,7 +37,7 @@ import {
   muestraFiltroDeEquipos, muestraFiltroDePersonas, normalizarBusqueda, unidadInfo,
 } from "../kpi/kpiDatos.js";
 import {
-  TITULO_MAX, armarParametros, columnasDeWidget, estadoDeWidget, filasDeWidget, mezclaUnidades, motivoParaNoCombinar,
+  armarParametros, columnasDeWidget, estadoDeWidget, filasDeWidget, mezclaUnidades, motivoParaNoCombinar,
   rangoInicialDelBorrador, tiposDeGraficaPermitidos as tiposPermitidosPorKpi, tituloConHtml, tituloDeWidget, unidadDeKpi,
   widgetDeBorrador,
 } from "../kpi/kpiParametros.js";
@@ -2004,19 +2005,6 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
               />
             </div>
 
-            <div className="kpi-picker-section">
-              <span>{tx("chart_title", "Título del gráfico (opcional)")}</span>
-              <input
-                type="text"
-                className="kpi-editor-titulo"
-                value={titulo}
-                maxLength={TITULO_MAX}
-                placeholder={tx("chart_title_placeholder", "Si lo dejas vacío se usa el nombre del KPI")}
-                onChange={(event) => onChangePanelState({ titulo: event.target.value })}
-                aria-label={tx("chart_title", "Título del gráfico (opcional)")}
-              />
-              <p className="kpi-editor-ayuda">{Array.from(titulo).length}/{TITULO_MAX}</p>
-            </div>
       </>
     ),
     periodo: (
@@ -2319,7 +2307,13 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
                 <p className="muted">{tx("preview_empty", "Elige un KPI para ver cómo quedará.")}</p>
               ) : (
                 <div className="kpi-editor-vista-previa-tarjeta">
-                  <strong>{tituloDeWidget({ titulo }, kpisSeleccionadosInfo.map((kpi) => kpi.etiqueta || kpi.clave).join(" + "))}</strong>
+                  <TituloEditable
+                    valor={titulo}
+                    porDefecto={kpisSeleccionadosInfo.map((kpi) => kpi.etiqueta || kpi.clave).join(" + ")}
+                    onGuardar={(nuevo) => onChangePanelState({ titulo: nuevo })}
+                    etiqueta={tx("chart_title", "Título del gráfico (opcional)")}
+                    editar={t("common.edit")}
+                  />
                   {kpisSeleccionadosInfo.length === 1 && kpisSeleccionadosInfo[0].descripcion && (
                     <span className="muted">{kpisSeleccionadosInfo[0].descripcion}</span>
                   )}

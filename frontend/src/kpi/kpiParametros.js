@@ -22,6 +22,18 @@ export function normalizarTitulo(valor) {
   return Array.from(valor.trim()).slice(0, TITULO_MAX).join("").trim();
 }
 
+/** Cuantos caracteres faltan para el limite cuando el texto ya se acerca (80 % o mas), o null si aun hay holgura:
+ * el contador del editor solo aparece cerca del limite. */
+export function contadorDeTitulo(texto) {
+  const usados = Array.from(typeof texto === "string" ? texto : "").length;
+  return usados >= TITULO_MAX * 0.8 ? { usados, max: TITULO_MAX } : null;
+}
+
+/** Lo que se guarda al confirmar la edicion en el lugar (Enter): el texto normalizado. Vacio vuelve al titulo por defecto. */
+export function tituloEditado(texto) {
+  return normalizarTitulo(texto);
+}
+
 /** Si el texto trae una etiqueta o un comentario HTML (lo que el servidor rechaza). `<12 h` o `a < b` son texto. */
 export function tituloConHtml(valor) {
   return typeof valor === "string" && /<[A-Za-z/!?]/.test(valor);
