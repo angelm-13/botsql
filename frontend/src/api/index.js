@@ -817,3 +817,8 @@ export const disableLotControl = (idProduct) =>
 // numero con el que la gente conoce el papel: el del sistema anterior cuando lo
 // trae, y si no el identificador.
 export const listWarehouseVouchers = (params = {}) => request("/vouchers", { params });
+
+// Modulo BI: pregunta en lenguaje natural -> datos + grafica. Tarda: el modelo
+// local puede pensar 1-2 minutos en CPU, por eso el cliente no corta antes.
+export const biQuery = (prompt) => request("/api/v1/bi/query", { method: "POST", body: { prompt } });
+export const biHealth = () => request("/api/v1/bi/health");

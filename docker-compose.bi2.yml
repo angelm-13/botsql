@@ -1,0 +1,64 @@
+# Segunda instancia aislada para probar el agente de IA (modulo BI).
+# Proyecto distinto, volumenes propios y puertos del host que no chocan con
+# tyakxa2 (3000/5001/5433/5672/15672/8080) ni con botsql (8090).
+#
+#   Frontend (Vite)  http://localhost:3002
+#   Nginx            http://localhost:8081   <- entrada recomendada
+#   Backend          http://localhost:5002
+#   Postgres         localhost:5434
+#   RabbitMQ         localhost:5673 / UI 15673
+#   Ollama           http://localhost:11435
+#
+# Uso: docker compose -p tyakxa-bi2 -f docker-compose.yml -f docker-compose.bi2.yml up -d --build
+# Ollama corre dentro del proyecto y reutiliza el volumen que ya trae
+# qwen2.5-coder (nkpm-logistics_ollama_data) para no re-descargar el modelo.
+services:
+  # La BD de bi2 es una copia de la de tyakxa2 (datos reales de adser), cuyo
+  # esquema es MAS NUEVO que las migraciones de esta rama: correr todas truena
+  # en 20260911180000 (CHECK de proyect_event contra tipos que esta rama no
+  # conoce) y, como el backend espera a db-migrate, nada arrancaria. Aqui solo
+  # se aplica lo propio del modulo BI.
+  db-migrate:
+    command: !override
+      - sh
+      - -c
+      - |
+        until pg_isready -q; do sleep 2; done
+        psql -v ON_ERROR_STOP=1 -q -f /migrations/20261014000000_bi_department_permissions.sql
+        echo "db-migrate: solo migraciones del modulo BI"
+  db:
+    container_name: !reset null
+    ports: !override ["5434:5432"]
+  rabbitmq:
+    ports: !override ["5673:5672", "15673:15672"]
+  ollama:
+    container_name: !reset null
+    ports: !override ["11435:11434"]
+    volumes: !override
+      - ollama_models:/root/.ollama
+  backend:
+    container_name: !reset null
+    ports: !override ["5002:5001"]
+    environment:
+      BI_OLLAMA_URL: http://host.docker.internal:11434
+      BI_MODEL: qwen2.5-coder:3b
+      BI_LLM_TIMEOUT: "600"
+      BI_KB_ADMIN_DIRS: /kb
+      BI_SAMPLE_VALUES: "1"
+      CORS_ORIGINS: http://localhost:3002,http://localhost:8081
+      PUBLIC_BASE_URL: http://localhost:5002
+    volumes:
+      # Documentacion tecnica: solo la usan las respuestas de ayuda del administrador.
+      - ./docs:/kb/docs:ro
+      - ./ARQUITECTURA_TYAKXA_TNY.md:/kb/ARQUITECTURA_TYAKXA_TNY.md:ro
+      - ./SECURITY_ARCHITECTURE.md:/kb/SECURITY_ARCHITECTURE.md:ro
+  frontend:
+    container_name: !reset null
+    ports: !override ["3002:3000"]
+  nginx:
+    ports: !override ["8081:80"]
+
+volumes:
+  ollama_models:
+    external: true
+    name: nkpm-logistics_ollama_data

@@ -19,67 +19,80 @@ pequenos en la practica y no de la teoria:
 
 from __future__ import annotations
 
+import re
 from datetime import date
 
-PLANTILLA = """Eres un asistente de Inteligencia de Negocios (BI) experto en SQL y analisis de datos. Tu tarea es convertir preguntas en lenguaje natural en consultas SQL precisas y estructurar las directivas necesarias para generar dashboards, graficas o tarjetas de KPIs en el frontend.
+from .schema_linking import ddl_para_pregunta
 
-### MOTOR DE BASE DE DATOS OBJETIVO:
-{db_engine_name}
+EJEMPLOS_BASE = """EJEMPLOS (mismo esquema; copia el estilo, no los nombres si la pregunta es otra):
+P: cuantos productos hay -> SELECT COUNT(*) AS total_productos FROM product WHERE deletion_date IS NULL
+P: top 8 productos por existencias -> SELECT descripcion AS producto, cantidad AS existencias FROM product WHERE deletion_date IS NULL ORDER BY cantidad DESC LIMIT 8
+P: facturado por cliente -> SELECT c.name AS cliente, SUM(i.total) AS total_facturado FROM invoice i JOIN customer_supplier c ON c.id_customer_supplier = i.id_customer_supplier WHERE i.deletion_date IS NULL GROUP BY c.name ORDER BY total_facturado DESC LIMIT 10
+P: incidencias por tipo -> SELECT t.incident_type_description AS tipo, COUNT(*) AS incidencias FROM incident n JOIN incident_type t ON t.id_incident_type = n.id_incident_type WHERE n.deletion_date IS NULL GROUP BY t.incident_type_description ORDER BY incidencias DESC LIMIT 20
+P: herramientas del vale 140 -> SELECT p.descripcion AS herramienta, SUM(n.quantity) AS cantidad FROM nm_incident_product n JOIN product p ON p.id_product = n.id_product WHERE n.id_incident = 140 AND n.deletion_date IS NULL GROUP BY p.descripcion ORDER BY cantidad DESC LIMIT 10
+P: incidencias abiertas por responsable -> SELECT u.full_name AS responsable, COUNT(*) AS abiertas FROM incident n JOIN "user" u ON u.id_user = n.id_user WHERE n.incident_status = 'abierta' AND n.deletion_date IS NULL GROUP BY u.full_name ORDER BY abiertas DESC LIMIT 10
+P: facturas por mes -> SELECT date_trunc('month', date_emision) AS mes, SUM(total) AS total FROM invoice WHERE deletion_date IS NULL GROUP BY 1 ORDER BY 1 LIMIT 24
 
-### ESQUEMA COMPLETO DE LA BASE DE DATOS (DDL):
+"""
+
+PLANTILLA = """Eres un asistente de BI experto en SQL. Conviertes preguntas en lenguaje natural en UNA consulta SQL de solo lectura y la directiva de visualizacion. Responde SOLO con JSON.
+
+REGLAS:
+1. Solo SELECT. Prohibido INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE, GRANT. Si piden modificar o borrar datos responde {{"error": "Accion no permitida por seguridad"}}.
+2. Usa unicamente tablas y columnas del ESQUEMA de abajo, con sus nombres exactos. No inventes campos. Cada tabla tiene su llave como id_<tabla>; las llaves foraneas se llaman id_<otra_tabla>.
+3. Agrega con SUM, COUNT, AVG, GROUP BY y ordena con ORDER BY. Si una tabla trae deletion_date, filtra deletion_date IS NULL. Al ordenar DESC agrega NULLS LAST. Alias de tabla de una o dos letras que NO sean palabras reservadas (usa p, i, n, st, c; nunca is, in, on, or, to, by).
+4. Acota las filas. Sintaxis en este motor: {limit_syntax}. Nunca mas de {row_limit} filas.
+5. Hoy es {today}. Resuelve con esa fecha "este mes", "el ano pasado", "ultimos 30 dias".
+6. Da un alias a cada columna calculada y usa ese mismo alias en x_axis, y_axis y metric_label.
+7. Usa chart_type table por omision. Solo si el usuario pide una grafica usa bar, line, pie o area (bar para categorias, line para fechas). Un conteo o total unico usa kpi_card.
+
+FORMATO (JSON estricto, sin markdown):
+Una grafica o KPI:
+{{"is_dashboard": false, "sql_query": "SELECT ...", "explanation": "que calcula, en una frase", "visualization": {{"recommended": true, "chart_type": "bar | line | pie | kpi_card | table", "title": "titulo", "x_axis": "columna_x", "y_axis": "columna_y", "metric_label": "etiqueta si es kpi_card"}}}}
+
+Si piden un "Dashboard" o analisis general:
+{{"is_dashboard": true, "dashboard_title": "titulo", "widgets": [{{"sql_query": "...", "explanation": "...", "visualization": {{"chart_type": "kpi_card", "title": "...", "metric_label": "..."}}}}, {{"sql_query": "...", "explanation": "...", "visualization": {{"chart_type": "bar", "title": "...", "x_axis": "...", "y_axis": "..."}}}}]}}
+
+GLOSARIO DEL NEGOCIO (usa estas tablas y valores, son los reales):
+- vale = incidencia: tabla incident (id_incident, incident_date, incident_status, id_user, id_incident_type). incident_status vale: abierta, borrador, cancelado, cerrada, en_espera, en_transito. Tipo en incident_type.incident_type_description (Prestamo Material, Jornada, Comida, Reparacion, Destruccion, Dañado, Extraviado...).
+- vale VENCIDO / atrasado (NO existe estatus 'vencido'): vale abierto con renglones en nm_incident_product con due_date < now() y close_date IS NULL (herramienta sin devolver), con incident_status NOT IN ('cerrada','cancelado').
+- herramientas/articulos/productos de un vale: nm_incident_product (id_incident, id_product, quantity, direction entrada|salida) unida a product.
+- producto/herramienta = product (descripcion, cantidad, product_code, product_status: ENTRADA, SALIDA, DAÑADO, EXTRAVIADO...). Existencias por ubicacion: inventory_stock (id_product, id_location, quantity) con location.location_description.
+- cliente/proveedor = customer_supplier (name). factura = invoice (date_emision, total, invoice_status, id_customer_supplier).
+- existencias de un producto = product.cantidad; "total de existencias" = SUM(product.cantidad). product.id_marca -> brand(brand_description), product.id_familia -> product_family(product_family_description). inventory_stock es solo por ubicacion.
+- empleado = "user" con is_employee = true. Estatus de proyecto en espanol: borrador=draft, autorizado=authorized, en proceso=in_progress, esperando material=waiting_material, bloqueado=blocked, completado=completed, entregado=delivered, rechazado=denied.
+- proyecto/orden de trabajo = proyect (title, proyect_status: draft, authorized, in_progress, waiting_material, blocked, completed, delivered, denied; total_cost). tarea = task (id_proyect, task_status, title).
+- empleado/usuario/responsable = "user" (first_name, last_name_father, full_name). Escribe SIEMPRE "user" entre comillas dobles: sin comillas es una palabra reservada.
+
+{ejemplos}### MOTOR: {db_engine_name}
+
+### ESQUEMA:
 {dynamic_db_schema}
-
-### REGLAS DE SEGURIDAD Y EJECUCION (ESTRICTAS):
-1. SOLO puedes generar consultas de lectura (SELECT). Queda estrictamente PROHIBIDO emitir comandos DDL/DML como INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE, EXEC o GRANT.
-2. Si la consulta del usuario intenta modificar o destruir datos, responde con un JSON que contenga "error": "Accion no permitida por seguridad".
-3. Utiliza unicamente las tablas, vistas y columnas presentes en el ESQUEMA DDL proporcionado. No inventes campos.
-4. Aplica agregaciones (SUM, COUNT, AVG, GROUP BY) y ordenamientos (ORDER BY, LIMIT) apropiados para responder a la consulta del usuario.
-5. Acota siempre el numero de filas. En este motor la sintaxis es: {limit_syntax}. Nunca devuelvas mas de {row_limit} filas.
-6. Hoy es {today}. Resuelve con esa fecha cualquier periodo relativo ("este mes", "el ano pasado", "ultimos 30 dias").
-7. Da un alias explicito a cada columna calculada, y usa ese mismo alias en x_axis, y_axis y metric_label. El frontend busca las columnas por nombre: si no coinciden, la grafica sale vacia.
-
-### FORMATO DE SALIDA (ESTRICTAMENTE JSON, SIN NINGUN BLOQUE MARKDOWN ADICIONAL):
-
-Si la respuesta requiere solo un componente o grafica:
-{{
-  "is_dashboard": false,
-  "sql_query": "Consulta SQL limpia y ejecutable",
-  "explanation": "Explicacion breve de lo que calcula la consulta",
-  "visualization": {{
-    "recommended": true,
-    "chart_type": "bar | line | pie | kpi_card | table",
-    "title": "Titulo sugerido para la grafica o KPI",
-    "x_axis": "nombre_columna_eje_x",
-    "y_axis": "nombre_columna_eje_y",
-    "metric_label": "Etiqueta para el valor si es kpi_card"
-  }}
-}}
-
-Si el usuario solicita expresamente un "Dashboard" o analisis general multidimensional:
-{{
-  "is_dashboard": true,
-  "dashboard_title": "Titulo General del Dashboard",
-  "widgets": [
-    {{
-      "sql_query": "Consulta SQL 1 (ej: KPI total)",
-      "explanation": "Explicacion KPI",
-      "visualization": {{ "chart_type": "kpi_card", "title": "Ventas Totales", "metric_label": "Monto Total" }}
-    }},
-    {{
-      "sql_query": "Consulta SQL 2 (ej: Tendencia temporal)",
-      "explanation": "Explicacion Tendencia",
-      "visualization": {{ "chart_type": "line", "title": "Tendencia Mensual", "x_axis": "mes", "y_axis": "total" }}
-    }},
-    {{
-      "sql_query": "Consulta SQL 3 (ej: Comparativa categorica)",
-      "explanation": "Explicacion Comparativa",
-      "visualization": {{ "chart_type": "bar", "title": "Top 5 Productos", "x_axis": "producto", "y_axis": "total" }}
-    }}
-  ]
-}}
 
 ### PREGUNTA DEL USUARIO:
 {user_query}"""
+
+
+_TOP_N = re.compile(
+    r"\b(?:top|los|las|primeros|primeras|mejores|principales|mayores|menores)\s+(\d{1,3})\b"
+    r"|\b(\d{1,3})\s+(?:mejores|principales|primeros|primeras|mayores|menores|productos|clientes|"
+    r"proveedores|registros|elementos)\b",
+    re.IGNORECASE,
+)
+
+
+def detectar_top_n(pregunta: str) -> int | None:
+    """El N de un "top N" / "los 8 mejores", si la pregunta lo pide.
+
+    El modelo chico copiaba el numero del ejemplo del prompt ("Top 5") en vez
+    del que pidio el usuario; por eso el numero se lee aqui y se le dice al
+    modelo de forma explicita.
+    """
+    m = _TOP_N.search(pregunta or "")
+    if not m:
+        return None
+    n = int(m.group(1) or m.group(2))
+    return n if 1 <= n <= 100 else None
 
 
 def construir_prompt(
@@ -89,6 +102,7 @@ def construir_prompt(
     limite_filas: int,
     hoy: date | None = None,
     max_widgets: int = 8,
+    ejemplos: str = "",
 ) -> str:
     """Arma el prompt final para una pregunta concreta.
 
@@ -98,10 +112,16 @@ def construir_prompt(
     """
     texto = PLANTILLA.format(
         db_engine_name=esquema.motor_legible,
-        dynamic_db_schema=esquema.a_ddl(),
+        dynamic_db_schema=ddl_para_pregunta(esquema, pregunta),
         limit_syntax=esquema.sintaxis_de_limite,
         row_limit=limite_filas,
         today=(hoy or date.today()).isoformat(),
         user_query=pregunta,
+        ejemplos=ejemplos or EJEMPLOS_BASE,
     )
-    return texto + f"\n\n(Un dashboard no puede tener mas de {max_widgets} widgets.)"
+    texto += f"\n\n(Un dashboard no puede tener mas de {max_widgets} widgets.)"
+    n = detectar_top_n(pregunta)
+    if n:
+        texto += (f"\n(El usuario pidio EXACTAMENTE {n} resultados: usa ORDER BY y "
+                  f"LIMIT {n}; ni mas ni menos.)")
+    return texto

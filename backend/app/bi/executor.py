@@ -32,7 +32,7 @@ from decimal import Decimal
 
 from sqlalchemy import text
 
-from bi.schema_extractor import acotar_tiempo
+from .schema_extractor import acotar_tiempo
 
 
 @dataclass

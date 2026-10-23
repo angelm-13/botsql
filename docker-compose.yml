@@ -102,6 +102,25 @@ services:
       retries: 10
     networks: [tyakxa_net]
 
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama-with-bi
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      OLLAMA_KEEP_ALIVE: 24h
+      OLLAMA_HOST: 0.0.0.0:11434
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks: [tyakxa_net]
+
   backend:
     container_name: backend-with-bi
     build:
@@ -119,6 +138,8 @@ services:
         condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
+      ollama:
+        condition: service_started
     ports:
       - "${BACKEND_PORT:-5001}:${BACKEND_PORT:-5001}"
     volumes:
@@ -207,6 +228,7 @@ services:
 
 volumes:
   db_data:
+  ollama_data:
 networks:
   tyakxa_net:
     driver: bridge

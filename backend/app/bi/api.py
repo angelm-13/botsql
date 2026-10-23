@@ -30,9 +30,9 @@ from __future__ import annotations
 
 from flask import Blueprint, current_app, jsonify, request
 
-from bi import service
-from bi.schema_extractor import CacheDeEsquema
-from bi.security import advertencias_de_despliegue
+from . import service
+from .schema_extractor import CacheDeEsquema
+from .security import advertencias_de_despliegue
 
 
 def crear_blueprint(
@@ -45,6 +45,8 @@ def crear_blueprint(
     contexto=None,
     gancho_sql=None,
     relaciones=None,
+    acceso=None,
+    requiere_sesion: bool = False,
     nombre: str = "bi",
 ) -> Blueprint:
     bp = Blueprint(nombre, __name__, url_prefix=ajustes.prefijo_api)
@@ -54,6 +56,16 @@ def crear_blueprint(
 
     def _contexto() -> dict:
         return contexto() if contexto is not None else {}
+
+    def _acceso(ctx: dict):
+        return acceso(ctx).con_usuario(ctx) if acceso is not None else None
+
+    @bp.before_request
+    def _exige_sesion():
+        # /health queda abierto (lo usan el healthcheck y el despliegue).
+        if requiere_sesion and not (request.endpoint or "").endswith(".salud") and not _contexto():
+            return jsonify({"ok": False, "error": {
+                "tipo": "no_autenticado", "mensaje": "Inicia sesion para consultar."}}), 401
 
     @bp.post("/query")
     def consultar():
@@ -72,6 +84,14 @@ def crear_blueprint(
         gancho = (lambda con: gancho_sql(con, ctx)) if gancho_sql is not None else None
         permitidas = relaciones(ctx) if relaciones is not None else None
 
+        # Extraer departamento del contexto para filtrado horizontal
+        from .config import departamento_del_usuario
+        id_department = departamento_del_usuario(ctx)
+
+        acc = _acceso(ctx)
+        # El SQL solo se devuelve a un administrador que lo pide a proposito.
+        exponer = bool(acc and acc.es_admin and request.args.get("debug_sql") in ("1", "true"))
+
         respuesta = service.responder(
             pregunta,
             engine=engine,
@@ -81,6 +101,10 @@ def crear_blueprint(
             gancho=gancho,
             relaciones_permitidas=permitidas,
             cache_preguntas=cache_preg,
+            id_department=id_department,
+            acceso=acc,
+            exponer_sql=exponer,
+            usuario=ctx,
         )
         return jsonify(respuesta.a_dict()), respuesta.http
 
@@ -90,7 +114,18 @@ def crear_blueprint(
         asistente contesta mal: casi siempre la tabla que hacia falta estaba
         filtrada, o la columna se llama distinto."""
         forzar = request.args.get("refresh") in ("1", "true", "True")
-        actual = cache.obtener(forzar=forzar)
+        acc = _acceso(_contexto())
+        if acc is not None and not acc.es_admin:
+            return jsonify({"ok": False, "error": {
+                "tipo": "sin_permiso",
+                "mensaje": "Solo un administrador puede ver el esquema."}}), 403
+
+        # Extraer departamento del contexto para filtrado horizontal
+        from .config import departamento_del_usuario
+        ctx = _contexto()
+        id_department = departamento_del_usuario(ctx)
+
+        actual = cache.obtener(forzar=forzar, id_department=id_department, acceso=acc)
         salida = actual.resumen()
         salida["cache"] = cache.estado
         if request.args.get("ddl") in ("1", "true", "True"):

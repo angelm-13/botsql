@@ -106,6 +106,41 @@ class ProveedorDeGuion(ProveedorLLM):
         return True
 
 
+# Esquema JSON que Ollama usa para RESTRINGIR la generacion (decodificacion
+# guiada por gramatica): el modelo no puede emitir texto fuera de este contrato
+# ni dejar el JSON a medias. Con `format: "json"` a secas, un 3B a veces se
+# iba hasta el tope de tokens sin cerrar el objeto (medido: 700 tokens, sin JSON).
+_VIS = {
+    "type": "object",
+    "properties": {
+        "recommended": {"type": "boolean"},
+        "chart_type": {"type": "string", "enum": ["bar", "line", "pie", "area", "kpi_card", "table"]},
+        "title": {"type": "string"},
+        "x_axis": {"type": "string"},
+        "y_axis": {"type": "string"},
+        "metric_label": {"type": "string"},
+    },
+    "required": ["chart_type", "title"],
+}
+ESQUEMA_DE_RESPUESTA = {
+    "type": "object",
+    "properties": {
+        "is_dashboard": {"type": "boolean"},
+        "dashboard_title": {"type": "string"},
+        "sql_query": {"type": "string"},
+        "explanation": {"type": "string"},
+        "visualization": _VIS,
+        "widgets": {"type": "array", "items": {
+            "type": "object",
+            "properties": {"sql_query": {"type": "string"}, "explanation": {"type": "string"},
+                           "visualization": _VIS},
+            "required": ["sql_query", "visualization"]}},
+        "error": {"type": "string"},
+    },
+    "required": ["is_dashboard"],
+}
+
+
 class ProveedorOllama(ProveedorLLM):
     """Habla con un Ollama local por HTTP.
 
@@ -138,22 +173,24 @@ class ProveedorOllama(ProveedorLLM):
         # Medido real, sin GPU: una pregunta libre de este modulo tardo
         # 90-100s de punta a punta en CPU pura, y 166s dentro de Docker con
         # otros contenedores compitiendo por CPU. Con GPU baja a segundos.
-        timeout: int = 270,
+        timeout: int = 600,
         temperatura: float = 0.0,
-        num_ctx: int = 8192,
+        num_ctx: int = 4096,
+        num_hilos: int = 0,
     ):
         self.url = url.rstrip("/")
         self.modelo = modelo
         self.timeout = timeout
         self.temperatura = temperatura
         self.num_ctx = num_ctx
+        self.num_hilos = num_hilos
 
-    def generar(self, prompt: str, pregunta: str = "") -> RespuestaLLM:
+    def generar(self, prompt: str, pregunta: str = "", formato=None) -> RespuestaLLM:
         cuerpo = json.dumps({
             "model": self.modelo,
             "prompt": prompt,
             "stream": False,
-            "format": "json",
+            "format": formato or ESQUEMA_DE_RESPUESTA,
             "keep_alive": -1,
             "options": {
                 "temperature": self.temperatura,
@@ -161,7 +198,8 @@ class ProveedorOllama(ProveedorLLM):
                 # la ventana por omision de Ollama (2048) el esquema se
                 # trunca en silencio y el modelo inventa columnas.
                 "num_ctx": self.num_ctx,
-                "num_predict": 1200,
+                "num_predict": 500,
+                **({"num_thread": self.num_hilos} if self.num_hilos else {}),
             },
         }).encode("utf-8")
 

@@ -800,19 +800,35 @@ def create_app(testing: bool = False) -> Flask:
         return jsonify({'error_key': 'errors.internal_server_error'}), 500
 
     # === MÓDULO BI: INTELIGENCIA DE NEGOCIOS ===
+    # Pregunta en lenguaje natural -> SQL de solo lectura -> grafica. Exige
+    # sesion, y lo que cada usuario puede consultar sale de su rol (tablas por
+    # entity_permission, columnas por nm_field_permission); el administrador
+    # ve todo. Ver app/bi/acceso.py.
     try:
-        from bi.api import crear_blueprint
-        from bi.config import AjustesBI
-        from bi.llm_provider import ProveedorOllama
+        from sqlalchemy import create_engine
+        from app.bi import acceso as bi_acceso
+        from app.bi.api import crear_blueprint
+        from app.bi.config import AjustesBI
+        from app.bi.llm_provider import ProveedorOllama
+        from app.models.session import engine as _engine_app
 
+        ajustes_bi = AjustesBI.desde_entorno()
+        # BI_DATABASE_URL permite apuntar a una replica/usuario de solo lectura.
+        _engine_bi = (create_engine(ajustes_bi.database_url, pool_pre_ping=True)
+                      if ajustes_bi.database_url else _engine_app)
         bi_blueprint = crear_blueprint(
-            engine=db.engine,
-            ajustes=AjustesBI.desde_entorno(),
-            proveedor=ProveedorOllama(),
+            engine=_engine_bi,
+            ajustes=ajustes_bi,
+            proveedor=ProveedorOllama(url=ajustes_bi.ollama_url, modelo=ajustes_bi.modelo,
+                                      timeout=ajustes_bi.timeout_llm,
+                                      num_ctx=ajustes_bi.num_ctx, num_hilos=ajustes_bi.num_hilos),
+            contexto=lambda: bi_acceso.usuario_del_token(request),
+            acceso=bi_acceso.resolver_acceso,
+            requiere_sesion=True,
         )
         app.register_blueprint(bi_blueprint, url_prefix="/api/v1/bi")
-        app.logger.info("✅ [BI] Módulo de Inteligencia de Negocios registrado en /api/v1/bi")
+        app.logger.info("[BI] Modulo de Inteligencia de Negocios registrado en /api/v1/bi")
     except Exception as e:
-        app.logger.warning(f"⚠️  [BI] No se pudo registrar el módulo BI: {e}")
+        app.logger.warning(f"[BI] No se pudo registrar el modulo BI: {e}")
 
     return app

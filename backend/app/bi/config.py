@@ -47,7 +47,7 @@ class AjustesBI:
     excluir: tuple[str, ...] = EXCLUIR_POR_OMISION
     columnas_ocultas: tuple[str, ...] = COLUMNAS_OCULTAS_POR_OMISION
     incluir_vistas: bool = True
-    max_tablas: int = 60                   # tope duro del DDL que entra al prompt
+    max_tablas: int = 500                  # tope duro del catalogo; al prompt entran las relevantes (schema_linking)
     con_muestras: bool = False             # valores de ejemplo de columnas categoricas
     max_muestras: int = 5
 
@@ -66,7 +66,12 @@ class AjustesBI:
     # gunicorn y de nginx (backend/Dockerfile, frontend/nginx.conf, 300s los
     # dos): si esta capa no corta primero, el sintoma que ve quien pregunta
     # es un 504 vacio en vez del error claro que da esta aplicacion.
-    timeout_llm: int = 270
+    timeout_llm: int = 600
+    # Hilos de CPU de Ollama (0 = automatico). En un equipo cargado, dejar que
+    # use todos los nucleos hace que el decode colapse (medido: 0.3 vs 3.3
+    # tokens/s con 3 hilos en un i5 de 6 nucleos compartido).
+    num_hilos: int = 0
+    num_ctx: int = 4096
     temperatura: float = 0.0
 
     # -- ejecucion -----------------------------------------------------------
@@ -126,6 +131,8 @@ class AjustesBI:
             ollama_url=env.get("BI_OLLAMA_URL", base.ollama_url),
             modelo=env.get("BI_MODEL", base.modelo),
             timeout_llm=entero("BI_LLM_TIMEOUT", base.timeout_llm),
+            num_hilos=entero("BI_OLLAMA_THREADS", base.num_hilos),
+            num_ctx=entero("BI_NUM_CTX", base.num_ctx),
             limite_filas=entero("BI_ROW_LIMIT", base.limite_filas),
             timeout_sql_ms=entero("BI_SQL_TIMEOUT_MS", base.timeout_sql_ms),
             max_widgets=entero("BI_MAX_WIDGETS", base.max_widgets),
@@ -134,6 +141,27 @@ class AjustesBI:
             prefijo_api=env.get("BI_API_PREFIX", base.prefijo_api),
             cors_origenes=lista("BI_CORS_ORIGINS", base.cors_origenes),
         )
+
+
+def departamento_del_usuario(user_data: dict | None) -> int | None:
+    """Extrae id_departamento del contexto de usuario autenticado.
+
+    user_data viene del decorator @token_required y contiene id_permission.
+    Se usa para filtrar qué tablas ve cada usuario en el módulo BI.
+    """
+    if not user_data:
+        return None
+
+    id_permission = user_data.get("id_permission")
+    if not id_permission:
+        return None
+
+    try:
+        from app.models import Permission
+        perm = Permission.query.get(id_permission)
+        return perm.id_department if perm else None
+    except Exception:
+        return None
 
 
 def puerto_disponible(host: str, puerto: int) -> bool:

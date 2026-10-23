@@ -249,3 +249,6 @@ label:has(:is(input,select,textarea):required)::before,label:has(+ :is(input,sel
 .kpi-permission-header,.kpi-permission-row{display:grid;grid-template-columns:minmax(0,1fr) 70px;align-items:center;gap:10px}
 .kpi-permission-header{font-size:12px;text-transform:uppercase;color:#64748b;font-weight:800}
 .kpi-permission-row{border:1px solid #e2e8f0;border-radius:14px;padding:10px 12px;background:#fff}
+.bi-button{background:#1b7a60;color:#fff;border-color:#1b7a60;text-decoration:none;white-space:nowrap}
+.bi-button:hover{background:#15624d}
+.bi-button.primary{box-shadow:0 0 0 3px rgba(27,122,96,.25)}

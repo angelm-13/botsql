@@ -32,6 +32,7 @@ aguas abajo tiene que rearmarse.
 from __future__ import annotations
 
 import hashlib
+import re
 import threading
 import time
 from dataclasses import dataclass, field
@@ -67,6 +68,15 @@ SINTAXIS_DE_LIMITE: dict[str, str] = {
 # Tipos cuyos valores de ejemplo ayudan al modelo (un estatus, una categoria).
 # Un texto libre o un blob no ayudan y ocupan tokens.
 _TIPOS_MUESTREABLES = ("VARCHAR", "CHAR", "TEXT", "ENUM", "NVARCHAR")
+# Solo columnas categoricas (estatus, tipo) y la descripcion de catalogos chicos:
+# muestrear nombres, RFC o correos mandaria datos personales al modelo.
+_CATEGORICA = re.compile(r"(status|estatus|estado|type|tipo)$")
+_CATALOGO = re.compile(r"(_type|_family)$|^(brand|status)$")
+
+
+def _vale_muestrear(tabla: str, columna: str) -> bool:
+    c, t = columna.lower(), tabla.lower()
+    return bool(_CATEGORICA.search(c) or (c.endswith("_description") and _CATALOGO.search(t)))
 
 
 @dataclass(frozen=True)
@@ -297,15 +307,36 @@ def _muestras_de_columna(engine, relacion: str, esquema: str | None,
     return tuple(str(f[0])[:40] for f in filas if f[0] is not None)
 
 
-def extraer_esquema(engine: Engine, ajustes) -> EsquemaDB:
+def extraer_esquema(engine: Engine, ajustes, id_department: int | None = None, acceso=None) -> EsquemaDB:
     """Inspecciona la base viva y devuelve su esquema filtrado.
 
     No importa si detras hay PostgreSQL, MySQL, SQLite o SQL Server: el
     `Inspector` normaliza nombres, tipos, llaves primarias y foraneas.
+
+    Si id_department es provided, solo incluye tablas visibles para ese
+    departamento segun bi_department_permission.
     """
     inspector = inspect(engine)
     dialecto = engine.dialect.name
     esquemas = ajustes.esquemas or (None,)
+    negadas = acceso.columnas_negadas if acceso is not None else frozenset()
+
+    # Leer tablas permitidas por departamento si aplica
+    tablas_permitidas: set[str] | None = None
+    if id_department is not None:
+        try:
+            from sqlalchemy import text
+            with engine.connect() as con:
+                query = text("""
+                    SELECT table_name FROM bi_department_permission
+                    WHERE id_department = :dept AND visible = true
+                """)
+                result = con.execute(query, {"dept": id_department})
+                tablas_permitidas = {row[0] for row in result}
+        except Exception:
+            # Si la tabla no existe o hay error, permitir todas
+            # (comportamiento fail-open para compatibilidad hacia atrás)
+            pass
 
     encontradas: list[tuple[str | None, str, bool]] = []
     for esq in esquemas:
@@ -321,8 +352,14 @@ def extraer_esquema(engine: Engine, ajustes) -> EsquemaDB:
     excluidas: list[str] = []
     elegidas: list[tuple[str | None, str, bool]] = []
     for esq, nombre, es_vista in encontradas:
-        if _entra(nombre, ajustes.incluir, ajustes.excluir):
-            elegidas.append((esq, nombre, es_vista))
+        if acceso is not None and not acceso.permite_tabla(nombre):
+            excluidas.append(f"{nombre} (sin permiso de lectura para el rol)")
+        elif _entra(nombre, ajustes.incluir, ajustes.excluir):
+            # Aplicar filtro adicional de departamento si existe
+            if tablas_permitidas is not None and nombre not in tablas_permitidas:
+                excluidas.append(f"{nombre} (no permitido para dept {id_department})")
+            else:
+                elegidas.append((esq, nombre, es_vista))
         else:
             excluidas.append(nombre)
 
@@ -332,7 +369,7 @@ def extraer_esquema(engine: Engine, ajustes) -> EsquemaDB:
 
     relaciones: list[Relacion] = []
     for esq, nombre, es_vista in elegidas:
-        relacion = _leer_relacion(engine, inspector, esq, nombre, es_vista, ajustes)
+        relacion = _leer_relacion(engine, inspector, esq, nombre, es_vista, ajustes, negadas)
         if relacion is not None and relacion.columnas:
             relaciones.append(relacion)
 
@@ -347,7 +384,7 @@ def extraer_esquema(engine: Engine, ajustes) -> EsquemaDB:
     )
 
 
-def _leer_relacion(engine, inspector, esq, nombre, es_vista, ajustes) -> Relacion | None:
+def _leer_relacion(engine, inspector, esq, nombre, es_vista, ajustes, negadas=frozenset()) -> Relacion | None:
     try:
         columnas_crudas = inspector.get_columns(nombre, schema=esq)
     except SQLAlchemyError:
@@ -375,13 +412,14 @@ def _leer_relacion(engine, inspector, esq, nombre, es_vista, ajustes) -> Relacio
     omitidas: list[str] = []
     for cruda in columnas_crudas:
         nombre_col = cruda["name"]
-        if _coincide(nombre_col, ajustes.columnas_ocultas):
+        if _coincide(nombre_col, ajustes.columnas_ocultas) or nombre_col.lower() in negadas:
             omitidas.append(nombre_col)
             continue
 
         tipo = _tipo_legible(cruda.get("type"))
         muestras: tuple[str, ...] = ()
-        if ajustes.con_muestras and any(t in tipo.upper() for t in _TIPOS_MUESTREABLES):
+        if (ajustes.con_muestras and _vale_muestrear(nombre, nombre_col)
+                and any(t in tipo.upper() for t in _TIPOS_MUESTREABLES)):
             muestras = _muestras_de_columna(
                 engine, nombre, esq, nombre_col,
                 ajustes.max_muestras, ajustes.timeout_sql_ms,
@@ -447,35 +485,36 @@ class CacheDeEsquema:
         self._engine = engine
         self._ajustes = ajustes
         self._lock = threading.Lock()
-        self._esquema: EsquemaDB | None = None
-        self._vence_en: float = 0.0
+        # Un esquema por perfil: lo que ve un rol no es lo que ve otro, y
+        # mezclarlos en una sola entrada filtraria tablas entre usuarios.
+        self._entradas: dict[str, tuple[EsquemaDB, float]] = {}
         self.aciertos = 0
         self.extracciones = 0
 
-    def obtener(self, *, forzar: bool = False) -> EsquemaDB:
+    def obtener(self, *, forzar: bool = False, id_department: int | None = None,
+                acceso=None) -> EsquemaDB:
         ahora = time.time()
+        clave = (acceso.clave if acceso is not None else "global") + f"|d{id_department}"
         with self._lock:
-            vigente = self._esquema is not None and ahora < self._vence_en
-            if vigente and not forzar:
+            previo = self._entradas.get(clave)
+            if previo and not forzar and ahora < previo[1]:
                 self.aciertos += 1
-                return self._esquema            # type: ignore[return-value]
+                return previo[0]
 
-            esquema = extraer_esquema(self._engine, self._ajustes)
-            self._esquema = esquema
-            self._vence_en = ahora + self._ajustes.ttl_esquema_s
+            esquema = extraer_esquema(self._engine, self._ajustes,
+                                      id_department=id_department, acceso=acceso)
+            self._entradas[clave] = (esquema, ahora + self._ajustes.ttl_esquema_s)
             self.extracciones += 1
             return esquema
 
     def invalidar(self) -> None:
         with self._lock:
-            self._esquema = None
-            self._vence_en = 0.0
+            self._entradas.clear()
 
     @property
     def estado(self) -> dict:
         return {
             "aciertos": self.aciertos,
             "extracciones": self.extracciones,
-            "vigente_hasta": self._vence_en,
-            "huella": self._esquema.huella if self._esquema else None,
+            "perfiles_en_cache": len(self._entradas),
         }
