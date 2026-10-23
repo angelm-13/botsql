@@ -136,6 +136,7 @@ MODULOS = (
             "proyect", "task", "task_note", "task_type", "incident",
             "incident_detail", "incident_type", "nm_incident_product",
             "template", "nm_template_task",
+            "notification", "supervisor_activity_log", "supervisor_daily_attachment",
         ),
     ),
     Modulo(
@@ -556,6 +557,10 @@ MENU = {
     # queda en el menu -el permiso existe y la pantalla captura- pero al final
     # del grupo, para que no se lea como un paso del flujo.
     "task_type": ("Tipos de tarea", 42),
+    # `supervisor_daily_attachment` no tiene entrada: los adjuntos se suben y se
+    # leen dentro de la bitacora del dia, como `task_note` dentro de la tarea.
+    "supervisor_activity_log": ("Bitacora de actividades", 44),
+    "notification": ("Notificaciones", 46),
     "payroll_period": ("Periodos de nomina", 10),
     "payroll_concept": ("Conceptos", 20),
     "payroll_movement": ("Movimientos", 30),

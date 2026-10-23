@@ -70,9 +70,8 @@ class SupervisorDailyAttachmentService:
             sha256_hash = hashlib.sha256(file_data).hexdigest()
 
             # Crear ruta: /uploads/supervisor_daily/YYYY/MM/DD/sha256.ext
-            date_str = activity_log.activity_date
-            year, month, day = date_str.split("-") if "-" in date_str else ("2026", "09", "25")
-            dir_path = f"{SupervisorDailyAttachmentService.UPLOAD_BASE_DIR}/{year}/{month}/{day}"
+            # activity_date es una columna Date: llega como datetime.date, no str.
+            dir_path = f"{SupervisorDailyAttachmentService.UPLOAD_BASE_DIR}/{activity_log.activity_date:%Y/%m/%d}"
             os.makedirs(dir_path, exist_ok=True)
 
             file_path = f"{dir_path}/{sha256_hash}{file_ext}"

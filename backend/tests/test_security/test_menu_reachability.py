@@ -189,7 +189,10 @@ class TestElFlujoDeOperacionesSeLeeEnOrden(unittest.TestCase):
         """O tiene entrada, o esta en la lista de las que se abren desde su padre."""
         # Las que se capturan desde su dueno, con la razon en el propio nombre
         # de la columna que las ata: task_note.id_task, nm_*.id_*.
-        desde_el_padre = {"task_note", "nm_incident_product", "nm_template_task"}
+        desde_el_padre = {
+            "task_note", "nm_incident_product", "nm_template_task",
+            "supervisor_daily_attachment",
+        }
         operaciones = MODULO_POR_CLAVE["operaciones"]
         huerfanas = sorted(
             entidad for entidad in operaciones.entidades

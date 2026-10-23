@@ -86,6 +86,9 @@ from app.routes.permission import bp_permission
 from app.routes.nm_field_permission import bp_nm_field_permission
 from app.routes.team import bp_team
 from app.routes.nm_team_user import bp_nm_team_user
+from app.routes.notification import bp_notification
+from app.routes.supervisor_activity_log import bp_supervisor_activity_log
+from app.routes.supervisor_daily_attachment import bp as bp_supervisor_daily_attachment
 from app.routes.event_log import bp_event_log
 from app.routes.task_type import bp_task_type
 from app.routes.template import bp_template
@@ -754,6 +757,9 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_permission)
     app.register_blueprint(bp_team)
     app.register_blueprint(bp_nm_team_user)
+    app.register_blueprint(bp_notification)
+    app.register_blueprint(bp_supervisor_activity_log)
+    app.register_blueprint(bp_supervisor_daily_attachment)
     app.register_blueprint(bp_nm_field_permission)
     app.register_blueprint(bp_event_log)
     app.register_blueprint(bp_task_type)

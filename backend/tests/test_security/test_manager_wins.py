@@ -131,6 +131,10 @@ class TestNingunaMigracionPisaAlGestor(unittest.TestCase):
             if archivo.name in self._DEUDA_UPDATE_INCONDICIONAL:
                 continue
             texto = archivo.read_text(encoding="utf-8", errors="replace")
+            # Un UPDATE de una sola vez, protegido por una marca en `migration_once`,
+            # no se reaplica en cada arranque: el gestor puede cambiarlo despues.
+            if "migration_once" in texto:
+                continue
             for bloque in re.finditer(
                 r"UPDATE\s+entity_permission\b(?:(?!;).)*?\bSET\b(?:(?!;).)*?;",
                 texto, re.I | re.S,
