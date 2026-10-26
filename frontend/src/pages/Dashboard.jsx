@@ -4,7 +4,7 @@ import {
   AreaChart as AreaChartIcon, BarChart2, Boxes, ChevronDown, ChevronUp,
   Check, ClipboardList, FileDown, FileText, FlaskConical, GripVertical, Hash, LineChart as LineChartIcon,
   Loader2, Pencil, PieChart as PieChartIcon, Plus, Receipt,
-  RefreshCw, SlidersHorizontal, Table as TableIcon, Trash2, User, Utensils,
+  RefreshCw, SlidersHorizontal, Table as TableIcon, Trash2, User, UserCheck, Utensils,
 } from "lucide-react";
 import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, useSortable } from "@dnd-kit/sortable";
@@ -12,6 +12,8 @@ import { CSS as DndCss } from "@dnd-kit/utilities";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import { useI18n } from "../i18n";
+import TituloEditable from "../components/kpi-widgets/TituloEditable.jsx";
+import { useDialogo } from "../dialogo/useDialogo.js";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import useReducedMotion from "../components/kpi-widgets/useReducedMotion";
 import useMasonryRef from "../components/kpi-widgets/useMasonry";
@@ -20,7 +22,7 @@ import useReordenarTarjetas, { sinColision } from "../components/kpi-widgets/use
 import {
   getAllKpiDashboard, createKpiDashboard, updateKpiDashboard, deleteKpiDashboard,
   getAllKpiDashboardWidget, createKpiDashboardWidget, updateKpiDashboardWidget, deleteKpiDashboardWidget, saveKpiWidgetOrdenTabla,
-  getAllKpiDefinition, getKpiDimensions, getKpiNoDisponibles, queryKpiSnapshot, queryKpiVivo, getUserOptions, getAllDepartment,
+  getAllKpiDefinition, getKpiDimensions, queryKpiSnapshot, queryKpiVivo, getUserOptions, getAllDepartment, getTeamOptions,
 } from "../api";
 import "../styles/kpi-widgets.css";
 import "../styles/kpi-editor.css";
@@ -31,21 +33,20 @@ import Skeleton from "../components/kpi-widgets/Skeleton";
 import { resolverColoresModernosParaPdf } from "../kpi/colorParaPdf";
 import SelectorDeKpi from "../components/kpi-widgets/SelectorDeKpi";
 import {
-  colorDeKpi, colorEfectivoDeKpi, enriquecerCatalogo, etiquetasDeDimension, etiquetasDeSnapshots, labelForDimension,
-  muestraFiltroDePersonas, normalizarBusqueda, unidadInfo,
+  colorDeKpi, colorEfectivoDeKpi, desglosaPorEquipo, enriquecerCatalogo, etiquetasDeDimension, etiquetasDeSnapshots, labelForDimension,
+  muestraFiltroDeEquipos, muestraFiltroDePersonas, normalizarBusqueda, unidadInfo,
 } from "../kpi/kpiDatos.js";
 import {
-  armarParametros, columnasDeWidget, estadoDeWidget, filasDeWidget, mezclaUnidades, motivoParaNoCombinar, rangoInicialDelBorrador,
-  tiposDeGraficaPermitidos as tiposPermitidosPorKpi, unidadDeKpi, widgetDeBorrador,
+  armarParametros, columnasDeWidget, estadoDeWidget, filasDeWidget, mezclaUnidades, motivoParaNoCombinar,
+  rangoInicialDelBorrador, tiposDeGraficaPermitidos as tiposPermitidosPorKpi, tituloConHtml, tituloDeWidget, unidadDeKpi,
+  widgetDeBorrador,
 } from "../kpi/kpiParametros.js";
 import {
   DESFASES_DE_COMPARACION, ETIQUETA_RANGO_POR_OMISION, RANGOS_RELATIVOS, RANGO_PERSONALIZADO, fechaLocalIso,
   parametrosEfectivos, periodoAnterior, rangoDesfasado, resolverRangoRelativo,
 } from "../kpi/kpiRango.js";
-import { datosDeEjemplo, filasVivasDeEjemplo, rangoVacio } from "../kpi/datosDeEjemplo.js";
-import {
-  MOTIVO_SIN_DATOS, catalogoConEjemplos, esIdDeEjemplo, hayEjemploEnSeleccion, sePuedeGuardar,
-} from "../kpi/vistaPreviaDeEjemplo.js";
+import { datosDeEjemplo } from "../kpi/datosDeEjemplo.js";
+import { ofreceVerEjemplo } from "../kpi/vistaPreviaDeEjemplo.js";
 import {
   filasTablaPrestamo, propsDona, propsNumero,
   propsNumeroBajoStock, propsSeries, tendenciaDeSnapshot,
@@ -106,6 +107,10 @@ const CHART_TYPE_ICONS = {
 // la categoria del KPI, se reutiliza el que el usuario ya asocia con ese
 // modulo en el menu. Un modulo de KPI que todavia no este aqui cae en el
 // icono generico, no revienta.
+//
+// "asistencias" NO es un modulo del plan: es el `grupo` con el que el registry saca los KPIs de checadas en su propia
+// pestana del selector (su modulo real sigue siendo "operaciones"). Tiene entrada aqui porque el selector pide icono
+// y nombre por clave de pestana.
 const KPI_MODULE_META = {
   facturacion: { icon: Receipt, label: "Facturación" },
   operaciones: { icon: ClipboardList, label: "Operaciones" },
@@ -113,6 +118,7 @@ const KPI_MODULE_META = {
   laboratorio: { icon: FlaskConical, label: "Laboratorio" },
   documentos: { icon: FileText, label: "Documentos" },
   restaurante: { icon: Utensils, label: "Restaurante" },
+  asistencias: { icon: UserCheck, label: "Asistencias" },
 };
 const DEFAULT_MODULE_ICON = SlidersHorizontal;
 
@@ -121,6 +127,13 @@ function kpiModuleMeta(modulo) {
     icon: DEFAULT_MODULE_ICON,
     label: modulo ? modulo.charAt(0).toUpperCase() + modulo.slice(1) : "",
   };
+}
+
+// Icono y nombre de una pestana del selector de KPI (`SelectorDeKpi` pide `metaDeModulo(clave)`). Los modulos llevan su
+// nombre en espanol en KPI_MODULE_META; el grupo "asistencias" es nuevo y ya sale traducido.
+function kpiPestanaMeta(clave, tx) {
+  const meta = kpiModuleMeta(clave);
+  return clave === "asistencias" ? { ...meta, label: tx("selector_grupo_asistencias", meta.label) } : meta;
 }
 
 // Avatar por omision para un empleado: no hay fotos de perfil reales, asi que
@@ -240,6 +253,11 @@ function defaultPanelState() {
     fechaFinB: "",
     empleadosSeleccionados: [],
     departamentosSeleccionados: [],
+    // Ids de `team` (como texto). Filtra los equipos de un KPI por equipo y, en uno por persona, deja a quienes
+    // estaban en esos equipos cada dia. Con equipos elegidos desaparece la fila "Sin equipo".
+    equiposSeleccionados: [],
+    // Titulo propio del grafico (opcional, hasta TITULO_MAX caracteres): vacio = el nombre del KPI.
+    titulo: "",
     coloresKpi: {},
     // "entidad": desglosado por empleado/producto (comportamiento de
     // siempre). "periodo": una sola serie sumada entre todas las entidades,
@@ -378,6 +396,7 @@ const sinDesplazarVecinas = () => null;
 
 export default function Dashboard() {
   const { lang, t } = useI18n();
+  const dialogo = useDialogo();
   const tx = useCallback((key, fallback) => t(`kpi_dashboard.${key}`, fallback), [t]);
   const locale = localeFor(lang);
   const formatNumber = useCallback((value) => new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(value || 0), [locale]);
@@ -392,10 +411,9 @@ export default function Dashboard() {
   const [widgetsError, setWidgetsError] = useState("");
 
   const [kpiCatalog, setKpiCatalog] = useState([]);
-  // KPIs que el usuario no puede usar (solo metadatos + motivo): se ofrecen en el selector con datos de EJEMPLO.
-  const [kpisNoDisponibles, setKpisNoDisponibles] = useState([]);
   const [users, setUsers] = useState([]);
   const [departments, setDepartments] = useState([]);
+  const [teams, setTeams] = useState([]);
 
   // Borrador del panel "Agregar grafico", uno por tablero (`id_kpi_dashboard`):
   // el panel ya no se desmonta al cambiar de tablero, asi que su estado no
@@ -537,7 +555,7 @@ export default function Dashboard() {
   const dragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   function notifyError(error) {
-    window.alert(t(error.message || "errors.request_failed", error.message || "errors.request_failed"));
+    dialogo.avisar(t(error.message || "errors.request_failed", error.message || "errors.request_failed"));
   }
 
   // --- Reporte PDF (exportar el dashboard, ver generarReportePdf mas abajo) ---
@@ -638,7 +656,7 @@ export default function Dashboard() {
       }
 
       if (!huboContenido) {
-        window.alert(tx("pdf_report_empty", "Ninguno de los paneles tiene gráficos para incluir en el reporte."));
+        await dialogo.avisar(tx("pdf_report_empty", "Ninguno de los paneles tiene gráficos para incluir en el reporte."));
         return;
       }
       pdf.save(`reporte-kpis-${todayIso()}.pdf`);
@@ -701,18 +719,18 @@ export default function Dashboard() {
     // El catalogo de KPIs y el de dimensiones (persona/catalogo/categoria/global) se piden juntos:
     // a cada KPI se le agrega el tipo de su dimension. Sin el catalogo de dimensiones (backend
     // viejo) el Dashboard se comporta como siempre.
-    // La vista previa de KPIs no disponibles es opcional: si el endpoint falla, el Dashboard sigue como siempre.
-    Promise.all([getAllKpiDefinition(), getKpiDimensions().catch(() => []), getKpiNoDisponibles().catch(() => [])])
-      .then(([definiciones, dimensiones, noDisponibles]) => {
+    Promise.all([getAllKpiDefinition(), getKpiDimensions().catch(() => [])])
+      .then(([definiciones, dimensiones]) => {
         if (cancelado) return;
         setKpiCatalog(enriquecerCatalogo(listOf(definiciones), listOf(dimensiones)));
-        setKpisNoDisponibles(enriquecerCatalogo(listOf(noDisponibles), listOf(dimensiones)));
       })
       .catch(() => { if (!cancelado) setKpiCatalog([]); });
     // Solo id+nombre, sin pedir el catalogo de RH completo (`GET /user/` exige permiso de seguridad):
     // sirve al filtro por empleados. Los nombres de las graficas los manda el backend.
     getUserOptions().then((data) => { if (!cancelado) setUsers(listOf(data)); }).catch(() => { if (!cancelado) setUsers([]); });
     getAllDepartment({ per_page: 500 }).then((data) => { if (!cancelado) setDepartments(listOf(data)); }).catch(() => { if (!cancelado) setDepartments([]); });
+    // Solo id+nombre de los equipos vigentes, sin pedir `GET /team/` (exige el modulo de seguridad).
+    getTeamOptions().then((data) => { if (!cancelado) setTeams(listOf(data)); }).catch(() => { if (!cancelado) setTeams([]); });
     return () => { cancelado = true; };
   }, []);
 
@@ -725,7 +743,7 @@ export default function Dashboard() {
   const productLabel = useCallback((idProduct) => `#${idProduct}`, []);
 
   async function handleCreateDashboard() {
-    const nombre = window.prompt(tx("new_dashboard_prompt", "Nombre del nuevo tablero"));
+    const nombre = await dialogo.pedirTexto(tx("new_dashboard_prompt", "Nombre del nuevo tablero"));
     if (nombre === null) return;
     const trimmed = nombre.trim();
     if (!trimmed) return;
@@ -738,7 +756,7 @@ export default function Dashboard() {
   }
 
   async function handleRenameDashboard(dashboard) {
-    const nombre = window.prompt(tx("rename_dashboard_prompt", "Nuevo nombre del tablero"), dashboard.nombre);
+    const nombre = await dialogo.pedirTexto(tx("rename_dashboard_prompt", "Nuevo nombre del tablero"), dashboard.nombre);
     if (nombre === null) return;
     const trimmed = nombre.trim();
     if (!trimmed || trimmed === dashboard.nombre) return;
@@ -752,7 +770,7 @@ export default function Dashboard() {
 
   async function handleDeleteDashboard(dashboard) {
     const pregunta = tx("delete_dashboard_confirm", `¿Eliminar el tablero "${dashboard.nombre}"? Esta acción no se puede deshacer.`);
-    if (!window.confirm(pregunta)) return;
+    if (!(await dialogo.confirmar(pregunta))) return;
     try {
       await deleteKpiDashboard(dashboard.id_kpi_dashboard);
       // Limpia tambien el borrador del panel de ESTE tablero -- ya no existe,
@@ -769,7 +787,7 @@ export default function Dashboard() {
   }
 
   async function handleDeleteWidget(widget) {
-    if (!window.confirm(tx("delete_widget_confirm", "¿Quitar este gráfico del tablero?"))) return;
+    if (!(await dialogo.confirmar(tx("delete_widget_confirm", "¿Quitar este gráfico del tablero?")))) return;
     try {
       await deleteKpiDashboardWidget(widget.id_kpi_dashboard_widget);
       // Si el panel de este tablero estaba editando justo el widget que se
@@ -793,8 +811,6 @@ export default function Dashboard() {
   }
 
   async function handleSaveWidget(payload, editingWidgetId) {
-    // Segunda barrera: un KPI de ejemplo (vista previa) jamas se guarda en un tablero.
-    if (!sePuedeGuardar(payload?.ids_kpi_definition)) throw new Error("kpi_example_not_saved");
     let creado = null;
     if (editingWidgetId) {
       await updateKpiDashboardWidget(editingWidgetId, payload);
@@ -976,9 +992,9 @@ export default function Dashboard() {
               panelState={currentPanelState}
               onChangePanelState={(patch) => updatePanelState(activeId, patch)}
               kpiCatalog={kpiCatalog}
-              kpisNoDisponibles={kpisNoDisponibles}
               users={users}
               departments={departments}
+              teams={teams}
               userLabel={userLabel}
               productLabel={productLabel}
               formatNumber={formatNumber}
@@ -1073,7 +1089,7 @@ function useGuardarOrdenTabla(idWidget) {
   return guardar;
 }
 
-function useDatosDeWidget({ widget, kpiCatalog, onReady, textosEjemplo }) {
+function useDatosDeWidget({ widget, kpiCatalog, onReady }) {
   const [snapshots, setSnapshots] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -1094,6 +1110,7 @@ function useDatosDeWidget({ widget, kpiCatalog, onReady, textosEjemplo }) {
   const fechaFinB = parametros.fecha_fin_b;
   const empleadosKey = Array.isArray(parametros.empleados) ? parametros.empleados.join(",") : "";
   const departamentosKey = Array.isArray(parametros.id_departments) ? parametros.id_departments.join(",") : "";
+  const equiposKey = Array.isArray(parametros.id_teams) ? parametros.id_teams.join(",") : "";
   const agruparPor = parametros.agrupar_por === "periodo" ? "periodo" : "entidad";
   // Un widget "tabla" solo tiene sentido con un unico KPI "vivo" (hoy,
   // material_prestado_actual) -- ver KpiWidgetPanel, que ya restringe la
@@ -1108,10 +1125,7 @@ function useDatosDeWidget({ widget, kpiCatalog, onReady, textosEjemplo }) {
   // KPI "vivo" (ver material_prestado_actual): su tabla pide sus propios datos al servidor, por paginas y con
   // el filtro, la busqueda y el orden aplicados alla (ver TablaWidget, modo servidor). Aqui solo se le da la
   // llamada y el aviso de "ya cargue" para el reporte PDF.
-  // Un KPI de EJEMPLO (vista previa de uno no disponible) no consulta nada: sus datos se arman aqui, con los
-  // metadatos del KPI, y nunca se guardan.
-  const esEjemplo = idsUsados.some(esIdDeEjemplo);
-  const idVivo = esTablaVivo && !esEjemplo ? idsUsados[0] : null;
+  const idVivo = esTablaVivo ? idsUsados[0] : null;
   const cargarVivo = useMemo(
     () => (idVivo ? (parametros) => queryKpiVivo(idVivo, parametros) : null),
     [idVivo],
@@ -1128,13 +1142,6 @@ function useDatosDeWidget({ widget, kpiCatalog, onReady, textosEjemplo }) {
       // El KPI "vivo" ya tiene su propio efecto (arriba) -- este solo
       // atiende a los widgets de kpi_snapshot de siempre.
       if (esTablaVivo) return;
-      if (esEjemplo) {
-        setSnapshots(kpiInfos.filter(Boolean).map((info) => datosDeEjemplo(info, { textos: textosEjemplo })));
-        setLoading(false);
-        setError("");
-        onReady?.(idWidget);
-        return;
-      }
       if (esTabla) {
         setLoading(false);
         setSnapshots([]);
@@ -1166,6 +1173,7 @@ function useDatosDeWidget({ widget, kpiCatalog, onReady, textosEjemplo }) {
         }
         if (empleadosKey) paramsComunes.empleados = empleadosKey;
         if (departamentosKey) paramsComunes.id_departments = departamentosKey;
+        if (equiposKey) paramsComunes.id_teams = equiposKey;
         if (agruparPor === "periodo") paramsComunes.agrupar_por = agruparPor;
         const resultados = await Promise.all(
           idsUsados.map((id) => queryKpiSnapshot({ ...paramsComunes, id_kpi_definition: id })),
@@ -1184,10 +1192,9 @@ function useDatosDeWidget({ widget, kpiCatalog, onReady, textosEjemplo }) {
   // `idsKey` es el proxy estable de `idsUsados` (un array nuevo cada
   // render); `idsUsados` en si mismo nunca deberia ir en las dependencias.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idsKey, esEjemplo, esTabla, esTablaVivo, fechaInicio, fechaFin, fechaInicioB, fechaFinB, empleadosKey, departamentosKey, agruparPor]);
+  }, [idsKey, esTabla, esTablaVivo, fechaInicio, fechaFin, fechaInicioB, fechaFinB, empleadosKey, departamentosKey, equiposKey, agruparPor]);
 
-  const vivoEjemplo = esTablaVivo && esEjemplo ? filasVivasDeEjemplo(kpiInfos[0], { textos: textosEjemplo }) : null;
-  return { snapshots, loading, error, vivoItems: vivoEjemplo?.items || SIN_RENGLONES, vivoTotal: vivoEjemplo?.total || 0, cargarVivo, onListoVivo, guardarOrdenTabla, kpiInfos, idsUsados, esTablaVivo, esEjemplo };
+  return { snapshots, loading, error, vivoItems: SIN_RENGLONES, vivoTotal: 0, cargarVivo, onListoVivo, guardarOrdenTabla, kpiInfos, idsUsados, esTablaVivo };
 }
 
 // El mismo valor, pero solo despues de `ms` sin cambios -- para no pedirle datos
@@ -1262,7 +1269,7 @@ export function CuerpoDeWidget({
 // pausa de tecleo como la respuesta del servidor-.
 function VistaPreviaEditor({ widget, kpiCatalog, userLabel, productLabel, formatNumber, t, tx, textosEjemplo }) {
   const widgetRetrasado = useValorRetrasado(widget, 400);
-  const datos = useDatosDeWidget({ widget: widgetRetrasado, kpiCatalog, textosEjemplo });
+  const datos = useDatosDeWidget({ widget: widgetRetrasado, kpiCatalog });
   const pendiente = JSON.stringify(widget) !== JSON.stringify(widgetRetrasado);
   // "Sin datos": deteccion perezosa. Si la consulta REAL del rango vuelve vacia, se ofrece «Ver ejemplo»; el
   // ejemplo es solo de pantalla y no cambia el borrador (que sigue siendo el KPI real).
@@ -1270,15 +1277,13 @@ function VistaPreviaEditor({ widget, kpiCatalog, userLabel, productLabel, format
   const claveBorrador = JSON.stringify(widget);
   useEffect(() => { setVerEjemplo(false); }, [claveBorrador]);
   const kpiReal = datos.kpiInfos.length === 1 ? datos.kpiInfos[0] : null;
-  const sinDatos = Boolean(
-    kpiReal && !datos.esEjemplo && !datos.esTablaVivo && !datos.loading && !pendiente && !datos.error
-    && datos.snapshots.length === 1 && rangoVacio(datos.snapshots[0]),
-  );
-  const datosDeVista = verEjemplo && sinDatos
+  const sinDatos = ofreceVerEjemplo({
+    kpiReal, esTablaVivo: datos.esTablaVivo, loading: datos.loading, pendiente, error: datos.error, snapshots: datos.snapshots,
+  });
+  const mostrandoEjemplo = verEjemplo && sinDatos;
+  const datosDeVista = mostrandoEjemplo
     ? { ...datos, snapshots: [datosDeEjemplo(kpiReal, { textos: textosEjemplo })] }
     : datos;
-  const mostrandoEjemplo = datos.esEjemplo || (verEjemplo && sinDatos);
-  const motivo = datos.esEjemplo ? datos.kpiInfos[0]?.motivo : MOTIVO_SIN_DATOS;
   const cuerpo = (
     <CuerpoDeWidget
       widget={widgetRetrasado}
@@ -1293,7 +1298,7 @@ function VistaPreviaEditor({ widget, kpiCatalog, userLabel, productLabel, format
   );
   return (
     <div className="kpi-editor-vista-previa-cuerpo">
-      {mostrandoEjemplo ? <MarcoDeEjemplo tx={tx} motivo={motivo}>{cuerpo}</MarcoDeEjemplo> : cuerpo}
+      {mostrandoEjemplo ? <MarcoDeEjemplo tx={tx}>{cuerpo}</MarcoDeEjemplo> : cuerpo}
       {sinDatos && (
         <div className="kpi-ejemplo-sin-datos">
           <span className="muted">{tx("example_no_data_hint", "Sin datos en el rango elegido.")}</span>
@@ -1310,17 +1315,11 @@ function VistaPreviaEditor({ widget, kpiCatalog, userLabel, productLabel, format
 // dentro de la propia grafica (para que una captura de pantalla tampoco se confunda con datos reales). Vive solo
 // en el editor, fuera de las tarjetas (`.kpi-widget-card`) que captura el reporte PDF.
 // eslint-disable-next-line react-refresh/only-export-components
-export function MarcoDeEjemplo({ tx, motivo, children }) {
-  const razon = {
-    sin_permiso: tx("example_reason_sin_permiso", "No disponible para tu rol."),
-    sin_datos: tx("example_reason_sin_datos", "Aún no tiene datos."),
-    modulo_no_habilitado: tx("example_reason_modulo", "Módulo no habilitado."),
-  }[motivo];
+export function MarcoDeEjemplo({ tx, children }) {
   return (
     <div className="kpi-ejemplo-marco" data-ejemplo="true">
       <p className="kpi-ejemplo-aviso" role="status">
-        {tx("example_banner", "Vista previa con datos de ejemplo. Así se vería este KPI; no está disponible para tu rol o aún no tiene datos")}
-        {razon && <em>{razon}</em>}
+        {tx("example_banner", "Vista previa con datos de ejemplo. Así se vería este KPI cuando tenga datos.")}
       </p>
       <div className="kpi-ejemplo-grafica" data-marca={tx("example_badge", "EJEMPLO")}>
         <span className="kpi-ejemplo-sello" aria-hidden="true">{tx("example_badge", "EJEMPLO")}</span>
@@ -1355,9 +1354,11 @@ export function KpiWidgetCard({
     ? tx("live_data", "En vivo · actualizado ahora")
     : (fechaInicio && fechaFin ? `${etiquetaRango}${fechaInicio} → ${fechaFin}` : tx("missing_range", "Sin rango de fechas configurado"));
   const rangoBTexto = fechaInicioB && fechaFinB ? `${fechaInicioB} → ${fechaFinB}` : "";
-  const titulo = kpiInfos.length > 1
+  const nombreDeLosKpis = kpiInfos.length > 1
     ? kpiInfos.map((info, index) => info?.etiqueta || `KPI #${idsUsados[index]}`).join(" + ")
     : (kpiInfos[0]?.etiqueta || tx("unknown_kpi", `KPI #${idsUsados[0] ?? "?"}`));
+  // El titulo propio gana; sin el, el nombre del KPI (o los de varios). Tambien lo que sale en el PDF.
+  const titulo = tituloDeWidget(widget.parametros, nombreDeLosKpis);
 
   // Acento de la tarjeta: el color del primer KPI (mismo `colorEfectivoDeKpi`
   // de siempre, override manual incluido) en vez de la franja neutra fija --
@@ -1421,10 +1422,11 @@ export function KpiWidgetCard({
 // acompana al valor principal, no la comparacion en si (esa ya la muestra el
 // delta de al lado). Devuelve una serie de numeros lista para NumeroWidget, o
 // null mientras carga / si no hay al menos 2 puntos que dibujar.
-function useTendenciaKpi({ activo, idKpiDefinition, fechaInicio, fechaFin, empleados, idDepartments }) {
+function useTendenciaKpi({ activo, idKpiDefinition, fechaInicio, fechaFin, empleados, idDepartments, idTeams }) {
   const [serie, setSerie] = useState(null);
   const empleadosKey = Array.isArray(empleados) ? empleados.join(",") : "";
   const idDepartmentsKey = Array.isArray(idDepartments) ? idDepartments.join(",") : "";
+  const idTeamsKey = Array.isArray(idTeams) ? idTeams.join(",") : "";
 
   useEffect(() => {
     let cancelado = false;
@@ -1432,11 +1434,12 @@ function useTendenciaKpi({ activo, idKpiDefinition, fechaInicio, fechaFin, emple
     const params = { id_kpi_definition: idKpiDefinition, fecha_inicio: fechaInicio, fecha_fin: fechaFin, agrupar_por: "periodo" };
     if (empleadosKey) params.empleados = empleadosKey;
     if (idDepartmentsKey) params.id_departments = idDepartmentsKey;
+    if (idTeamsKey) params.id_teams = idTeamsKey;
     queryKpiSnapshot(params)
       .then((resultado) => { if (!cancelado) setSerie(tendenciaDeSnapshot(resultado)); })
       .catch(() => { if (!cancelado) setSerie([]); });
     return () => { cancelado = true; };
-  }, [activo, idKpiDefinition, fechaInicio, fechaFin, empleadosKey, idDepartmentsKey]);
+  }, [activo, idKpiDefinition, fechaInicio, fechaFin, empleadosKey, idDepartmentsKey, idTeamsKey]);
 
   return serie && serie.length >= 2 ? serie : null;
 }
@@ -1455,6 +1458,7 @@ function KpiNumero({ widget, snapshot, kpiInfo, formatNumber, tx, animar }) {
     fechaFin: parametros.fecha_fin,
     empleados: parametros.empleados,
     idDepartments: parametros.id_departments,
+    idTeams: parametros.id_teams,
   });
   const props = propsNumero({
     snapshot,
@@ -1636,7 +1640,7 @@ function tiposDeGraficaPermitidos(kpiInfos) {
   return tiposPermitidosPorKpi(kpiInfos, CHART_TYPES.map((opt) => opt.value));
 }
 
-function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog: kpiCatalogReal, kpisNoDisponibles, users, departments, userLabel, productLabel, formatNumber, onCancel, onSave, onAbierto, t, tx }) {
+export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, departments, teams = [], userLabel, productLabel, formatNumber, onCancel, onSave, onAbierto, t, tx }) {
   const {
     editingWidgetId,
     colapsado,
@@ -1651,6 +1655,8 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog: kpiCatalog
     fechaFinB,
     empleadosSeleccionados,
     departamentosSeleccionados,
+    equiposSeleccionados = [],
+    titulo = "",
     coloresKpi,
     desfaseComparacion,
     agruparPor,
@@ -1665,15 +1671,10 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog: kpiCatalog
   const [error, setError] = useState("");
   const [avisoKpi, setAvisoKpi] = useState("");
   const multiKpiPermitido = esTipoMultiKpi(tipoGrafica);
-  // El catalogo del selector: los KPIs reales y, aparte y marcados, los no disponibles como EJEMPLO (solo vista previa).
-  const kpiCatalog = useMemo(() => catalogoConEjemplos(kpiCatalogReal, kpisNoDisponibles), [kpiCatalogReal, kpisNoDisponibles]);
-  const hayEjemplo = hayEjemploEnSeleccion(idsKpiSeleccionados);
   // Palabras genericas de los datos de ejemplo, traducidas ("Ejemplo 1", "Categoría 1"...).
   const textosEjemplo = useMemo(() => ({
     entidad: tx("example_entity", "Ejemplo"),
     categoria: tx("example_category", "Categoría"),
-    articulo: tx("example_item", "Artículo de ejemplo"),
-    responsable: tx("example_person", "Persona de ejemplo"),
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [tx]);
 
@@ -1687,6 +1688,11 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog: kpiCatalog
   const primeraDimension = kpisSeleccionadosInfo[0]?.dimensiones?.[0];
   // El filtro por empleados/departamentos solo aplica a KPIs que desglosan por persona (ids de usuario).
   const mostrarFiltroDePersonas = muestraFiltroDePersonas(kpisSeleccionadosInfo);
+  // El de equipos aplica a KPIs por equipo y por persona; el mensaje de la fila "Sin equipo" solo a los por equipo.
+  const mostrarFiltroDeEquipos = muestraFiltroDeEquipos(kpisSeleccionadosInfo) && teams.length > 0;
+  const kpiPorEquipoElegido = desglosaPorEquipo(kpisSeleccionadosInfo);
+  // Si ningun filtro aplica a lo elegido (un KPI por estado, por mesero o global), el paso no se queda en blanco.
+  const hayAlgunFiltro = (mostrarFiltroDePersonas && (users.length > 0 || departments.length > 0)) || mostrarFiltroDeEquipos;
   // Lo que se desglosa, con el nombre que le da cada KPI ("Responsable", "Tecnico"...).
   // Las dos etiquetas de siempre conservan su traduccion.
   const etiquetaDeAgrupar = etiquetasDeDimension(kpisSeleccionadosInfo)
@@ -1741,7 +1747,6 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog: kpiCatalog
   }
 
   function textoDeBloqueo(kpi, motivo) {
-    if (motivo === "ejemplo") return tx("example_cannot_combine", "No se puede combinar: un KPI de ejemplo solo se puede ver solo, sin mezclarlo con KPIs reales.");
     if (motivo === "modo") return tx("kpi_mode_mismatch", "No se puede combinar: un KPI en vivo (tabla) no comparte gráfico con uno de serie.");
     const unidadElegida = unidadInfo(unidadDeKpi(kpisSeleccionadosInfo[0])).etiquetaSelector;
     const unidadKpi = unidadInfo(unidadDeKpi(kpi)).etiquetaSelector;
@@ -1799,6 +1804,14 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog: kpiCatalog
     });
   }
 
+  function toggleEquipo(idEquipo) {
+    onChangePanelState({
+      equiposSeleccionados: equiposSeleccionados.includes(idEquipo)
+        ? equiposSeleccionados.filter((item) => item !== idEquipo)
+        : [...equiposSeleccionados, idEquipo],
+    });
+  }
+
   function toggleDepartamento(idDepartamento) {
     onChangePanelState({
       departamentosSeleccionados: departamentosSeleccionados.includes(idDepartamento)
@@ -1846,8 +1859,7 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog: kpiCatalog
       throw NO_CERRAR;
     }
     if (idsKpiSeleccionados.length === 0) rechazar(tx("kpi_required", "Elige al menos un KPI."));
-    // Un KPI de ejemplo es solo una vista previa: no se agrega al tablero.
-    if (hayEjemplo) rechazar(tx("example_cannot_save", "Un KPI de ejemplo es solo una vista previa: no se puede agregar al tablero."));
+    if (tituloConHtml(titulo)) rechazar(tx("chart_title_html", "El título no puede llevar etiquetas HTML."));
     // Lo que se valida es lo que se va a guardar (armarParametros): con un
     // chip relativo, las fechas ya vienen calculadas al dia de hoy.
     const parametros = armarParametros(panelState, { esTabla, tieneBajoStock: tieneBajoStockSeleccionado });
@@ -1862,7 +1874,6 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog: kpiCatalog
       }
     }
 
-    if (!sePuedeGuardar(idsKpiSeleccionados)) rechazar(tx("example_cannot_save", "Un KPI de ejemplo es solo una vista previa: no se puede agregar al tablero."));
     const payload = { ids_kpi_definition: idsKpiSeleccionados.map(Number), tipo_grafica: tipoGrafica, parametros };
     setSaving(true);
     try {
@@ -1977,7 +1988,7 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog: kpiCatalog
                 seleccionados={idsKpiSeleccionados}
                 multiple={multiKpiPermitido}
                 onAlternar={toggleKpi}
-                metaDeModulo={kpiModuleMeta}
+                metaDeModulo={(clave) => kpiPestanaMeta(clave, tx)}
                 textoDeBloqueo={textoDeBloqueo}
                 coloresKpi={coloresKpi}
                 onElegirColor={elegirColorKpi}
@@ -1985,14 +1996,15 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog: kpiCatalog
                   buscar: tx("kpi_search_placeholder", "Buscar KPI…"),
                   sinResultados: tx("kpi_search_empty", "Ningún KPI coincide con la búsqueda."),
                   variables: tx("kpi_variables_group", "Variables"),
-                  variablesAyuda: tx("kpi_variables_help", "Sin desglose: sirven para combinar en un mismo gráfico."),
+                  variablesAyuda: tx("selector_variables_ayuda", "Todos los KPIs sin desglose, de cualquier módulo: sirven para combinar en un mismo gráfico."),
+                  combinables: tx("selector_combinables", "Combinables (sin desglose)"),
                   elegirColor: tx("kpi_color_choose", "Elegir color"),
-                  ejemplo: tx("example_tag", "Ejemplo"),
-                  motivoSinPermiso: tx("example_reason_sin_permiso", "No disponible para tu rol."),
-                  motivoModulo: tx("example_reason_modulo", "Módulo no habilitado."),
+                  modulos: tx("selector_modulos", "Módulos"),
+                  elegidosEnModulo: tx("selector_elegidos_en_modulo", "elegidos en este módulo"),
                 }}
               />
             </div>
+
       </>
     ),
     periodo: (
@@ -2191,6 +2203,58 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog: kpiCatalog
                 </div>
               </div>
             )}
+
+            {mostrarFiltroDeEquipos && (
+              <div className="kpi-team-picker">
+                <KpiDropdownPicker
+                  label={
+                    equiposSeleccionados.length > 0
+                      ? `${equiposSeleccionados.length} ${tx("teams_selected", "equipo(s) seleccionado(s)")}`
+                      : tx("teams_filter", "Filtrar por equipos (opcional)")
+                  }
+                  searchPlaceholder={tx("dropdown_search_placeholder", "Buscar...")}
+                  renderOptions={(filtro) => {
+                    const equiposFiltrados = filtro
+                      ? teams.filter((team) => normalizarBusqueda(team.team_description || `#${team.id_team}`).includes(filtro))
+                      : teams;
+                    if (equiposFiltrados.length === 0) {
+                      return <p className="kpi-dropdown-picker-empty">{tx("no_results", "Sin resultados")}</p>;
+                    }
+                    return (
+                      <div className="kpi-employee-list">
+                        {equiposFiltrados.map((team) => {
+                          const activo = equiposSeleccionados.includes(String(team.id_team));
+                          const colorEquipo = colorDeKpi(`equipo-${team.id_team}`);
+                          return (
+                            <button
+                              type="button"
+                              className={`kpi-employee-chip ${activo ? "active" : ""}`}
+                              key={team.id_team}
+                              style={{ "--employee-color": colorEquipo }}
+                              onClick={() => toggleEquipo(String(team.id_team))}
+                              aria-pressed={activo}
+                              title={team.team_description || `#${team.id_team}`}
+                            >
+                              <span>{team.team_description || `#${team.id_team}`}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  }}
+                />
+                {kpiPorEquipoElegido && (
+                  <p className="kpi-editor-ayuda">{tx("teams_filter_help", "Si eliges equipos, la fila «Sin equipo» deja de mostrarse.")}</p>
+                )}
+                {mostrarFiltroDePersonas && (
+                  <p className="kpi-editor-ayuda">{tx("teams_filter_history_help", "Cada día cuenta en el equipo que la persona tenía ese día.")}</p>
+                )}
+              </div>
+            )}
+
+            {!hayAlgunFiltro && (
+              <p className="kpi-editor-sin-filtros">{tx("no_filters", "Este KPI no tiene filtros")}</p>
+            )}
       </>
     ),
   };
@@ -2243,7 +2307,13 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog: kpiCatalog
                 <p className="muted">{tx("preview_empty", "Elige un KPI para ver cómo quedará.")}</p>
               ) : (
                 <div className="kpi-editor-vista-previa-tarjeta">
-                  <strong>{kpisSeleccionadosInfo.map((kpi) => kpi.etiqueta || kpi.clave).join(" + ")}</strong>
+                  <TituloEditable
+                    valor={titulo}
+                    porDefecto={kpisSeleccionadosInfo.map((kpi) => kpi.etiqueta || kpi.clave).join(" + ")}
+                    onGuardar={(nuevo) => onChangePanelState({ titulo: nuevo })}
+                    etiqueta={tx("chart_title", "Título del gráfico (opcional)")}
+                    editar={t("common.edit")}
+                  />
                   {kpisSeleccionadosInfo.length === 1 && kpisSeleccionadosInfo[0].descripcion && (
                     <span className="muted">{kpisSeleccionadosInfo[0].descripcion}</span>
                   )}
@@ -2280,8 +2350,7 @@ function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog: kpiCatalog
                 <button
                   type="submit"
                   className="button primary"
-                  disabled={saving || idsKpiSeleccionados.length === 0 || hayEjemplo}
-                  title={hayEjemplo ? tx("example_cannot_save", "Un KPI de ejemplo es solo una vista previa: no se puede agregar al tablero.") : undefined}
+                  disabled={saving || idsKpiSeleccionados.length === 0}
                 >
                   {editingWidgetId ? tx("update_widget", "Actualizar") : tx("add_widget", "Agregar gráfico")}
                 </button>

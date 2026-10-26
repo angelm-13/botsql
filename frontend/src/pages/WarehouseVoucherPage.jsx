@@ -33,6 +33,7 @@ import Pagination from "../components/Pagination.jsx";
 import PersonaCombobox from "../components/PersonaCombobox.jsx";
 import { agruparRenglones } from "../utils/renglonesDelVale";
 import { useI18n } from "../i18n";
+import { useDialogo } from "../dialogo/useDialogo.js";
 import "../styles/warehouse-voucher.css";
 import PageHeader from "../components/PageHeader.jsx";
 
@@ -124,6 +125,7 @@ function valeDirectoSinEntregar(estadoDelVale, estadoDeEntrega) {
 
 export default function WarehouseVoucherPage() {
   const { t } = useI18n();
+  const dialogo = useDialogo();
   const actor = useMemo(actorGuardado, []);
   const privilegiado = esPrivilegiado(actor);
   const [permisos, setPermisos] = useState([]);
@@ -407,7 +409,7 @@ export default function WarehouseVoucherPage() {
   };
 
   const cancelar = async (idVale) => {
-    const motivo = window.prompt(t("voucher.cancel_reason", "Motivo de la cancelación"));
+    const motivo = await dialogo.pedirTexto(t("voucher.cancel_reason", "Motivo de la cancelación"));
     if (!motivo || !motivo.trim()) return;
     setError("");
     setAviso("");

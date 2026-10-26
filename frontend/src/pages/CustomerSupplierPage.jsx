@@ -10,6 +10,7 @@ import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import CustomerContactsPanel from "../components/CustomerContactsPanel.jsx";
 import { CAMPOS_DE_AUDITORIA } from "../utils/camposDeAuditoria";
 import { formatearFechaHora } from "../utils/fechas";
+import { useDialogo } from "../dialogo/useDialogo.js";
 
 /* eslint-disable react/prop-types */
 
@@ -38,6 +39,7 @@ function readCurrentUser() {
 
 export default function CustomerSupplierPage({ clientsOnly = false, mode = "all", entityType = "" }) {
   const { lang, t } = useI18n();
+  const dialogo = useDialogo();
   const forcedType = entityType || (mode === "suppliersOnly" ? "supplier" : clientsOnly || mode === "clientsOnly" ? "client" : "");
   const entityLabel = forcedType === "client" ? "Clientes" : forcedType === "supplier" ? "Proveedores" : t("menu.customer_supplier");
   const currentUser = useMemo(() => readCurrentUser(), []);
@@ -292,7 +294,7 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
 
   async function removeItem(item) {
     if (!canDelete) return;
-    if (!window.confirm(t("common.confirm_delete"))) return;
+    if (!(await dialogo.confirmar(t("common.confirm_delete")))) return;
     try { await deleteCustomerSupplier(item.id_customer_supplier); await loadData(); } catch (error) { setErrorKey(error.message || "errors.request_failed"); setErrorMeta(error.payload?.meta || null); }
   }
 
@@ -302,7 +304,7 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
     if (ENTITY_KEY !== "user") return;
     const targetId = item.id_user ?? item.id;
     if (!targetId) return;
-    if (!window.confirm(t("common.mfa_reset_confirm", "¿Restablecer MFA de este usuario?"))) return;
+    if (!(await dialogo.confirmar(t("common.mfa_reset_confirm", "¿Restablecer MFA de este usuario?")))) return;
     setErrorKey("");
     setErrorMeta(null);
     setNoticeKey("");

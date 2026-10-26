@@ -5,6 +5,7 @@ import { loadKronosConnection } from "../utils/kronosConnection";
 import "../styles/kronos.css";
 import { useI18n } from "../i18n";
 import PageHeader from "../components/PageHeader.jsx";
+import { useDialogo } from "../dialogo/useDialogo.js";
 
 function localDate(date) {
   const offset = date.getTimezoneOffset() * 60000;
@@ -61,6 +62,7 @@ function emptyPerson() {
 export default function KronosPage() {
   const personDialog = useRef(null);
   const { lang, t } = useI18n();
+  const dialogo = useDialogo();
   const [view, setView] = useState("attendance");
   const [connection] = useState(loadKronosConnection);
   const [period, setPeriod] = useState({ startDate: localDate(new Date(today.getFullYear(), today.getMonth(), 1)), endDate: localDate(today), timezone: "-06:00" });
@@ -151,7 +153,7 @@ export default function KronosPage() {
   }
 
   async function removePerson(person) {
-    if (!window.confirm(`${t('kronos.action.delete_person')} ${person.name || person.employeeNo}?`) || !ensureConnection()) return;
+    if (!(await dialogo.confirmar(`${t('kronos.action.delete_person')} ${person.name || person.employeeNo}?`)) || !ensureConnection()) return;
     setLoading(true);
     setError("");
     try {

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import copy
 import unittest
 from datetime import date, datetime, timedelta
@@ -135,10 +136,12 @@ class KpiRestauranteTest(unittest.TestCase):
                     quantity=cantidad, unit_price=precio, created_by=ADMIN_ID,
                 ))
 
-    def _sesion(self, id_sesion, diferencia, *, cierra=CAJERO_A, estado="closed", cerrada=DIA, proyecto=PROYECTO_A):
+    def _sesion(self, id_sesion, diferencia, *, cierra=CAJERO_A, estado="closed", cerrada=DIA, proyecto=PROYECTO_A,
+                abierta=None):
         with transaction_context() as db:
             db.add(RestaurantCashSession(
                 id_restaurant_cash_session=id_sesion, id_proyect=proyecto, opened_by_id=ADMIN_ID,
+                opened_at=abierta or (cerrada - timedelta(hours=6) if cerrada else DIA),
                 opening_amount=500, closed_by_id=cierra if estado == "closed" else None,
                 closed_at=cerrada if estado == "closed" else None, difference=diferencia if estado == "closed" else None,
                 status=estado, created_by=ADMIN_ID,
@@ -185,10 +188,11 @@ class KpiRestauranteTest(unittest.TestCase):
         self.assertEqual(Decimal("100.00"), self._ventas()[0][2])
 
     def test_se_cuenta_el_dia_del_cobro_y_el_rango_incluye_sus_extremos(self):
-        self._orden(97001, [(1, 10)], pagada=datetime(2026, 9, 1, 0, 5))
-        self._orden(97002, [(1, 20)], pagada=datetime(2026, 9, 30, 23, 55))
-        self._orden(97003, [(1, 400)], pagada=datetime(2026, 8, 31, 23, 59))
-        self._orden(97004, [(1, 800)], pagada=datetime(2026, 10, 1, 0, 0))
+        # Horas en UTC; el dia es el LOCAL (UTC-6): 1-sep 00:05, 30-sep 23:55, 31-ago 23:59 y 1-oct 00:00 locales.
+        self._orden(97001, [(1, 10)], pagada=datetime(2026, 9, 1, 6, 5))
+        self._orden(97002, [(1, 20)], pagada=datetime(2026, 10, 1, 5, 55))
+        self._orden(97003, [(1, 400)], pagada=datetime(2026, 9, 1, 5, 59))
+        self._orden(97004, [(1, 800)], pagada=datetime(2026, 10, 1, 6, 0))
         self.assertEqual(
             [(None, date(2026, 9, 1), Decimal("10.00")), (None, date(2026, 9, 30), Decimal("20.00"))],
             self._ventas(),
@@ -626,6 +630,14 @@ class KpiRestauranteTest(unittest.TestCase):
         self.assertIn("cuando el mesero cierra la visita, no al cobrar", kpi.descripcion)
         self.assertIn("seguirá apareciendo como «Pagada, aún ocupada»", kpi.descripcion)
 
+    def test_las_categorias_de_pedidos_tienen_su_etiqueta_visible(self):
+        kpi = KPI_POR_CLAVE["pedidos_del_dia"]
+        self.assertEqual(
+            {"cobrado": "Cobrado", "entregado_sin_cobrar": "Entregado sin cobrar", "en_curso": "En curso"},
+            kpi.etiquetas_categoria,
+        )
+        self.assertEqual(set(kpi.orden_categorias), set(kpi.etiquetas_categoria))
+
     def test_las_mesas_de_un_restaurante_no_cuentan_en_otro(self):
         self.assertEqual({"libre": 0, "ocupada_con_cuenta_pendiente": 0, "por_liberar": 0},
                          self._foto(kpis_restaurante.mesas_ocupadas_query, PROYECTO_B))
@@ -672,9 +684,13 @@ class KpiRestauranteTest(unittest.TestCase):
         return ids
 
     def _hoy(self):
+        # La corrida frecuente fecha en el dia del NEGOCIO (`ahora_negocio()`, a las 13:00, fuera de la primera hora local); la nocturna sigue con `date.today()`.
         falso = mock.MagicMock(wraps=date)
         falso.today.return_value = DIA.date()
-        return mock.patch.object(tasks_kpis, "date", falso)
+        pila = contextlib.ExitStack()
+        pila.enter_context(mock.patch.object(tasks_kpis, "date", falso))
+        pila.enter_context(mock.patch.object(tasks_kpis, "ahora_negocio", return_value=DIA))
+        return pila
 
     def test_la_corrida_frecuente_solo_toca_restaurante_y_pos_y_solo_el_dia_de_hoy(self):
         ajeno = copy.copy(KPI_REGISTRY[0])
@@ -710,6 +726,34 @@ class KpiRestauranteTest(unittest.TestCase):
                 KpiSnapshot.id_kpi_definition == ids["ventas_restaurante"])))
         self.assertEqual({DIA.date(), DIA.date() - timedelta(days=2)}, periodos)
 
+    def _valor_de_la_foto(self, id_definicion, periodo, categoria=None):
+        with transaction_context() as db:
+            filas = db.execute(select(KpiSnapshot.dimension_key, KpiSnapshot.valor).where(
+                KpiSnapshot.id_kpi_definition == id_definicion, KpiSnapshot.periodo == periodo,
+                KpiSnapshot.dimension_key["id_proyect"].as_integer() == PROYECTO_A)).all()
+        return {(clave or {}).get("estado"): float(valor) for clave, valor in filas}
+
+    def test_la_corrida_nocturna_no_sobrescribe_las_fotos_de_dias_anteriores(self):
+        # Las fotos (agregacion "ultimo") solo se escriben en la fecha de la corrida: la nocturna recorre una ventana
+        # de 7 dias, pero una foto de ayer es lo que ERA ayer y no debe reescribirse con el estado de hoy.
+        kpis = tuple(k for k in definiciones() if k.clave in ("mesas_ocupadas", "cuentas_sin_cobrar", "pedidos_del_dia"))
+        ids = self._registrar(kpis)
+        ayer = DIA.date() - timedelta(days=1)
+        self._orden(97001, [(1, 100)], estado="entregado", enviada=DIA - timedelta(days=1))
+        with mock.patch.object(tasks_kpis, "KPI_REGISTRY", kpis):
+            tasks_kpis.recalcular_kpi_snapshots_rango(ayer, ayer)           # la foto de ayer
+        self.assertEqual({None: 100.0}, self._valor_de_la_foto(ids["cuentas_sin_cobrar"], ayer))
+        self.assertEqual(1.0, self._valor_de_la_foto(ids["pedidos_del_dia"], ayer)["entregado_sin_cobrar"])
+        mesas_ayer = self._valor_de_la_foto(ids["mesas_ocupadas"], ayer)
+        self._orden(97002, [(1, 50)], estado="entregado", enviada=DIA)    # hoy cambia el estado
+        with mock.patch.object(tasks_kpis, "KPI_REGISTRY", kpis), self._hoy():
+            tasks_kpis.recalculate_kpi_snapshots()                           # nocturna: ventana de 7 dias
+        self.assertEqual({None: 100.0}, self._valor_de_la_foto(ids["cuentas_sin_cobrar"], ayer), "ayer no cambia")
+        self.assertEqual(mesas_ayer, self._valor_de_la_foto(ids["mesas_ocupadas"], ayer))
+        self.assertEqual(1.0, self._valor_de_la_foto(ids["pedidos_del_dia"], ayer)["entregado_sin_cobrar"])
+        self.assertEqual({None: 150.0}, self._valor_de_la_foto(ids["cuentas_sin_cobrar"], DIA.date()), "hoy si")
+        self.assertEqual(1.0, self._valor_de_la_foto(ids["pedidos_del_dia"], DIA.date())["entregado_sin_cobrar"])
+
     def test_el_intervalo_es_una_constante_de_5_minutos_en_el_beat(self):
         self.assertEqual(5, frecuencia.INTERVALO_MINUTOS_POR_OMISION)
         with mock.patch.dict("os.environ", {}, clear=False):
@@ -726,6 +770,144 @@ class KpiRestauranteTest(unittest.TestCase):
 
     def test_los_modulos_frecuentes_existen_en_el_registro_de_modulos(self):
         self.assertEqual([], [m for m in frecuencia.MODULOS_FRECUENTES if m not in MODULO_POR_CLAVE])
+
+    # --- zona horaria: el dia es el del negocio, no el de UTC ----------------------------------
+    # La base guarda UTC; America/Mexico_City es UTC-6 todo el ano. 18:10 local = 00:10 UTC del dia siguiente.
+
+    def test_un_cobro_a_las_18_10_locales_queda_en_el_mismo_dia_local(self):
+        self._orden(97001, [(1, 100)], pagada=datetime(2026, 9, 16, 0, 10))   # 15-sep 18:10 local
+        self.assertEqual([(None, date(2026, 9, 15), Decimal("100"))], self._ventas())
+
+    def test_un_cobro_a_las_23_50_y_otro_a_las_00_10_locales_quedan_en_dias_distintos(self):
+        self._orden(97001, [(1, 100)], pagada=datetime(2026, 9, 16, 5, 50))   # 15-sep 23:50 local
+        self._orden(97002, [(1, 40)], pagada=datetime(2026, 9, 16, 6, 10))    # 16-sep 00:10 local
+        self.assertEqual(
+            [(None, date(2026, 9, 15), Decimal("100")), (None, date(2026, 9, 16), Decimal("40"))],
+            self._ventas())
+
+    def test_el_dia_local_tambien_rige_envio_entrega_y_cierre_de_caja_y_pedidos_del_dia(self):
+        tarde = datetime(2026, 9, 16, 3, 0)   # 15-sep 21:00 local
+        self._orden(97001, [(1, 10)], enviada=tarde, lista=tarde - timedelta(minutes=10), entregada=tarde)
+        self._sesion(97001, 5, cerrada=tarde)
+        self.assertEqual([(MESERO_ROSA, date(2026, 9, 15), 1)], [tuple(f) for f in self._consulta(kpis_restaurante.servicios_por_mesero_query)])
+        self.assertEqual(date(2026, 9, 15), self._consulta(kpis_restaurante.tiempo_de_entrega_query)[0][1])
+        self.assertEqual(date(2026, 9, 15), self._consulta(kpis_restaurante.diferencia_de_caja_query)[0][1])
+        self.assertEqual(1, self._foto(kpis_restaurante.pedidos_del_dia_query)["cobrado"])
+
+    # --- dia operativo: el turno de caja manda sobre el reloj ------------------------------------
+    # Horas en UTC (local = UTC-6). Turno del 15-sep: abre 18:00 local (00:00 UTC del 16), cierra 02:00 local del 16.
+
+    TURNO_ABRE = datetime(2026, 9, 16, 0, 0)
+    TURNO_CIERRA = datetime(2026, 9, 16, 8, 0)
+
+    def test_un_cobro_despues_de_medianoche_dentro_del_turno_cuenta_en_el_dia_en_que_abrio_la_caja(self):
+        self._sesion(97001, 0, abierta=self.TURNO_ABRE, cerrada=self.TURNO_CIERRA)
+        self._orden(97001, [(1, 100)], pagada=datetime(2026, 9, 16, 4, 0))     # 15-sep 22:00 local
+        self._orden(97002, [(1, 40)], pagada=datetime(2026, 9, 16, 6, 30))     # 16-sep 00:30 local, mismo turno
+        self.assertEqual([(None, date(2026, 9, 15), Decimal("140"))], self._ventas())
+
+    def test_un_cobro_sin_sesion_de_caja_cae_en_la_fecha_calendario_local(self):
+        self._sesion(97001, 0, abierta=self.TURNO_ABRE, cerrada=self.TURNO_CIERRA)
+        self._orden(97001, [(1, 100)], pagada=datetime(2026, 9, 16, 16, 0))    # 16-sep 10:00 local, caja cerrada
+        self._orden(97002, [(1, 7)], pagada=datetime(2026, 9, 16, 5, 59))      # 15-sep 23:59 local, dentro del turno
+        self.assertEqual(
+            [(None, date(2026, 9, 15), Decimal("7")), (None, date(2026, 9, 16), Decimal("100"))], self._ventas())
+
+    def test_la_sesion_de_otro_restaurante_no_define_el_dia(self):
+        self._sesion(97001, 0, abierta=self.TURNO_ABRE, cerrada=self.TURNO_CIERRA, proyecto=PROYECTO_B)
+        self._orden(97001, [(1, 100)], pagada=datetime(2026, 9, 16, 6, 30))    # 16-sep 00:30 local, sin turno propio
+        self.assertEqual([(None, date(2026, 9, 16), Decimal("100"))], self._ventas())
+
+    def test_el_turno_pasa_el_borde_exacto_de_apertura_y_cierre(self):
+        self._sesion(97001, 0, abierta=self.TURNO_ABRE, cerrada=self.TURNO_CIERRA)
+        self._orden(97001, [(1, 1)], pagada=self.TURNO_ABRE)                   # justo al abrir: dentro
+        self._orden(97002, [(1, 2)], pagada=self.TURNO_CIERRA)                 # justo al cerrar: dentro
+        self._orden(97003, [(1, 4)], pagada=self.TURNO_CIERRA + timedelta(minutes=1))  # 02:01 local: fuera, calendario
+        self.assertEqual(
+            [(None, date(2026, 9, 15), Decimal("3")), (None, date(2026, 9, 16), Decimal("4"))], self._ventas())
+
+    def test_un_turno_abierto_varios_dias_se_lleva_todo_al_dia_en_que_abrio(self):
+        # Riesgo documentado (docs/arquitectura-kpis.md): una caja que nadie cierra absorbe los dias siguientes.
+        self._sesion(97001, 0, estado="open", abierta=self.TURNO_ABRE)
+        self._orden(97001, [(1, 100)], pagada=datetime(2026, 9, 18, 18, 0))    # 18-sep 12:00 local
+        self.assertEqual([(None, date(2026, 9, 15), Decimal("100"))], self._ventas())
+
+    def test_la_desviacion_de_caja_cuenta_en_el_dia_en_que_abrio_el_turno_no_en_el_que_cerro(self):
+        self._sesion(97001, -30, abierta=self.TURNO_ABRE, cerrada=self.TURNO_CIERRA)
+        filas = self._consulta(kpis_restaurante.diferencia_de_caja_query)
+        self.assertEqual([(CAJERO_A, date(2026, 9, 15), Decimal("30"))], [tuple(f) for f in filas])
+
+    def test_servicio_y_entrega_tambien_usan_el_dia_operativo_y_el_resto_de_kpis_de_pedidos(self):
+        self._sesion(97001, 0, abierta=self.TURNO_ABRE, cerrada=self.TURNO_CIERRA)
+        tarde = datetime(2026, 9, 16, 6, 30)   # 16-sep 00:30 local, dentro del turno del 15
+        self._orden(97001, [(1, 10)], enviada=tarde, lista=tarde - timedelta(minutes=10), entregada=tarde)
+        self.assertEqual([(MESERO_ROSA, date(2026, 9, 15), 1)], [tuple(f) for f in self._consulta(kpis_restaurante.servicios_por_mesero_query)])
+        self.assertEqual(date(2026, 9, 15), self._consulta(kpis_restaurante.tiempo_de_entrega_query)[0][1])
+        self.assertEqual(1, self._foto(kpis_restaurante.pedidos_del_dia_query)["cobrado"])
+
+    # --- las tarjetas de "Administracion del restaurante" son los mismos KPIs, acumulados --------------------
+
+    def _tarjetas(self, proyecto=PROYECTO_A):
+        with transaction_context() as db:
+            return RestaurantService(db, proyecto, ADMIN_ID).kpis()
+
+    def _datos_de_paridad(self):
+        lista = datetime(2026, 9, 15, 13, 0)
+        self._sesion(97001, 0, abierta=datetime(2026, 9, 15, 12, 0), cerrada=datetime(2026, 9, 16, 8, 0))
+        self._orden(97001, [(3, 50), (1, 100)], propina=40, pagada=datetime(2026, 9, 16, 4, 0),
+                    lista=lista, entregada=lista + timedelta(minutes=12))                      # 250, mesa 7
+        self._orden(97002, [(2, 30, PLATILLO_2)], propina=10, pagada=datetime(2026, 9, 16, 6, 30), mesero=MESERO_LUIS,
+                    visita=VISITA_A2, lista=lista, entregada=lista + timedelta(minutes=20))   # 60, mesa 8 (turno: 15-sep)
+        self._orden(97003, [(1, 200)], propina=0, pagada=datetime(2026, 9, 20, 17, 0), visita=VISITA_LLEVAR)  # 200, para llevar
+        self._orden(97004, [(1, 999)], estado="entregado", lista=lista, entregada=lista + timedelta(minutes=34))  # no cobrada
+
+    def test_las_tarjetas_del_restaurante_coinciden_con_sus_kpis_del_rango_completo(self):
+        self._datos_de_paridad()
+        ids = self._correr_job("ventas_restaurante", "propinas_restaurante", "ticket_promedio", "tiempo_de_entrega",
+                               "platillos_mas_vendidos", "mesas_ocupadas")
+        tarjetas = self._tarjetas()
+        ventas = self._rango(ids, "ventas_restaurante", None, "suma")["total"]
+        propinas = self._rango(ids, "propinas_restaurante", None, "suma")["total"]
+        ticket = self._rango(ids, "ticket_promedio", None, "promedio_ponderado")["total"]
+        entrega = self._rango(ids, "tiempo_de_entrega", None, "promedio_ponderado")["total"]
+        platillos = self._rango(ids, "platillos_mas_vendidos", "id_restaurant_dish", "suma")["por_empleado"]
+        mesas = self._rango(ids, "mesas_ocupadas", "estado", "ultimo")["por_empleado"]
+        self.assertEqual(510.0, tarjetas["total_sales"])
+        self.assertEqual(float(ventas), tarjetas["total_sales"])
+        self.assertEqual(50.0, tarjetas["tips"])
+        self.assertEqual(float(propinas), tarjetas["tips"])
+        self.assertEqual(170.0, tarjetas["avg_ticket"])
+        self.assertEqual(round(float(ticket), 2), tarjetas["avg_ticket"])
+        # Entrega promedio: TODA orden entregada, tambien la no cobrada: (12 + 20 + 34) / 3 = 22.
+        self.assertEqual(22.0, tarjetas["avg_minutes_from_ready_to_delivered"])
+        self.assertEqual(round(float(entrega), 2), tarjetas["avg_minutes_from_ready_to_delivered"])
+        # Mesas activas: las dos mesas con visita activa, SIN la visita para llevar (que antes inflaba la tarjeta).
+        self.assertEqual(2, tarjetas["active_tables"])
+        self.assertEqual(tarjetas["active_tables"], mesas["ocupada_con_cuenta_pendiente"] + mesas["por_liberar"])
+        # Platillos: 3 + 1 + 1 tacos (PLATILLO) y 2 tortas (PLATILLO_2).
+        self.assertEqual({"Taco": 5, "Torta": 2}, {d["dish"]: d["quantity"] for d in tarjetas["top_dishes"]})
+        self.assertEqual({str(PLATILLO): 5.0, str(PLATILLO_2): 2.0}, {str(k): float(v) for k, v in platillos.items()})
+
+    def test_las_tarjetas_conservan_las_claves_y_los_tipos_de_siempre(self):
+        self.assertEqual(
+            {"total_sales", "tips", "avg_ticket", "avg_minutes_from_ready_to_delivered", "active_tables",
+             "top_dishes", "top_tables"},
+            set(self._tarjetas()))
+        self.assertEqual(
+            {"total_sales": 0.0, "tips": 0.0, "avg_ticket": 0, "avg_minutes_from_ready_to_delivered": 0,
+             "active_tables": 2, "top_dishes": [], "top_tables": []},
+            self._tarjetas())
+
+    def test_las_tarjetas_de_un_restaurante_no_mezclan_al_otro(self):
+        self._datos_de_paridad()
+        self._orden(97010, [(1, 7)], proyecto=PROYECTO_B, mesero=None)
+        self.assertEqual(510.0, self._tarjetas()["total_sales"])
+        self.assertEqual(7.0, self._tarjetas(PROYECTO_B)["total_sales"])
+
+    def test_top_tables_cuenta_servicios_cobrados_por_mesa_sin_el_mostrador(self):
+        self._datos_de_paridad()
+        self._orden(97005, [(1, 10)], visita=VISITA_A, pagada=datetime(2026, 9, 21, 17, 0))
+        self.assertEqual([{"table": 7, "services": 2}, {"table": 8, "services": 1}], self._tarjetas()["top_tables"])
 
     # --- las banderas -----------------------------------------------------------
 

@@ -165,7 +165,46 @@ comprueba que el operador exista y no esté borrado (`_fk`, `logistics_workflow_
 (`license_expiration` no se lee en ningún servicio), y no hay conflicto de horario
 entre viajes del mismo operador.
 
-## 8. NO VERIFICADO
+## 8. Checadas de asistencia (Comala, `operaciones`) — 2026-10-19
+
+Sin tablas nuevas: una checada es una fila de `incident`. Detalle y decisiones en `docs/arquitectura-kpis.md` §2.7.
+
+| Entidad | Tabla real | Columnas usadas | Criterio / diferencia | Dimensión |
+|---|---|---|---|---|
+| Checada | `incident` | `latitude`, `incident_date`, `close_date`, `incident_status`, `id_user`, `deletion_date` | **`latitude IS NOT NULL`** (`es_checada()`). La pantalla de incidencias acepta además longitud o distancia solas; el backend no. Sin baja y no cancelada. | — |
+| Entrada | `incident` | `incident_date` (hora de pared GMT-6, sin zona) | El día es `date(incident_date)`, sin convertir | — |
+| Salida | `incident` | `close_date` + estado de cierre | `abierta → cerrada` da 409: la salida queda en `resuelta`. Nada cierra una checada solo | — |
+| Parque | `team` | `id_team`, `team_description`, `deletion_date` | Equipo = parque. Se da de baja, no se borra (con sus membresías vigentes, en el mismo instante); el nombre de un equipo dado de baja se conserva en las etiquetas del histórico. Nombre único entre los vigentes | `equipo` (`id_team`, catálogo cerrado) |
+| Pertenencia | `nm_team_user` | `id_team`, `id_user`, `creation_date`, `deletion_date` | Una persona en dos equipos cuenta en cada uno. **Cada marca cuenta en el equipo que la persona tenía en ese instante** (`creation_date <= instante < deletion_date`, con la hora de pared convertida a UTC): entradas por `incident_date`, salidas por `close_date`; las fotos de «ahora» usan el equipo vigente hoy. Sin equipo en ese momento (sin membresía, o solo con membresías/equipos dados de baja, o con la membresía creada **después** de la marca) sale en la fila **«Sin equipo»** (entidad `None`, `sin_asignar=True`, etiqueta de la dimensión `equipo`) y no cuenta en ningún equipo | — |
+
+**Baja lógica y `id_teams` (2026-10-22).** `DELETE /team/<id>` y `DELETE /nm_team_user/<id>` ponen `deletion_date`; `GET /team/` y `GET /nm_team_user/` devuelven solo lo vigente (`services/baja_logica.py`). El filtro `id_teams` en un KPI por persona atribuye cada **día** al equipo que la persona tenía al terminarlo (`persona_en_equipos_el_dia`). `parametros.titulo` (≤ 80 caracteres, sin HTML) y `parametros.id_teams` son llaves nuevas, aditivas, de `kpi_dashboard_widget.parametros`. Detalle y decisiones: `docs/arquitectura-kpis.md` §2.7.
+
+**Unicidad de la pertenencia (cambio de esquema, 2026-10-22).** `nm_team_user` tenía `uq_nm_team_user UNIQUE (id_team, id_user)` sobre **todas** las filas, también las de baja; eso impedía volver a agregar a una persona a un equipo del que ya se le había dado de baja, y la única salida (reactivar la fila vieja) falsea el histórico (A → B → A). Ahora es el índice único **parcial** `uq_nm_team_user_vigente ON nm_team_user (id_team, id_user) WHERE deletion_date IS NULL`: no hay dos membresías **vigentes** iguales, y cada periodo en un equipo es su propia fila con su `creation_date` y su `deletion_date`. Migración `20261022100000_unicidad_nm_team_user_solo_vigentes.sql` (idempotente: `DROP CONSTRAINT IF EXISTS` + `CREATE UNIQUE INDEX IF NOT EXISTS`) y el mismo índice en `__table_args__` de `NmTeamUser`, con su equivalente en SQLite. Sin tablas ni columnas nuevas. Excepción puntual, autorizada por Aurora a la regla de «sin índices ni migraciones»; **pendiente de comentar con Alan**. Para revertirla: restaurar el constraint, lo que vuelve a prohibir la alta repetida.
+
+| Umbral | Valor |
+|---|---|
+| «En turno» | checada abierta con **menos** de 12 h (`UMBRAL_SIN_SALIDA_HORAS`) |
+| «Sin salida» | checada abierta con 12 h **exactas** o más |
+| «Duración anómala» | checada **cerrada** con **más de** 16 h entre entrada y salida (`TOPE_DURACION_CHECADA_HORAS`); 16 h exactas **no** lo es |
+
+**Abierta** = sin `close_date`, tenga el estatus que tenga: una `en_proceso` cuenta como abierta. **Reabrir** (`resuelta → en_proceso`) borra el `close_date` y **conserva la entrada original**.
+
+| KPI | Dimensión · día | Frescura |
+|---|---|---|
+| `checadas_en_turno_por_equipo`, `checadas_sin_salida_por_equipo` | `equipo` · foto de hoy | cada 5 min, por clave (`KPIS_FRECUENTES`) |
+| `checadas_entradas_por_equipo` | `equipo` · `date(incident_date)` | cada 5 min, solo las filas de hoy; el resto de los días, la corrida nocturna |
+| `checadas_salidas_por_equipo` | `equipo` · `date(close_date)` | ídem |
+| `checadas_en_turno_por_empleado` | `empleado` · foto de hoy (minutos); `ocultar_ceros`: la API omite a quien ya salió | cada 5 min, por clave |
+| `horas_trabajadas_por_empleado` | `empleado` · `date(incident_date)` (día de la **entrada**); excluye las de más de 16 h | solo la corrida nocturna (ventana de 7 días) |
+| `checadas_con_duracion_anomala` | `empleado` · `date(close_date)` (día de la **salida**); cuenta las de más de 16 h | solo la corrida nocturna |
+
+`KPIS_FRECUENTES` son las cinco claves de las filas «cada 5 min». «Corrida nocturna» = 01:00 **UTC** = 19:00 de México (`CELERY_TIMEZONE` vale `UTC` por omisión; ver `docs/arquitectura-kpis.md` §2.1.1).
+Rendimiento medido con 50 000 checadas en una base aislada: una corrida completa de 5 minutos escribe 243 filas y tarda ~215 ms (SELECT 62 ms, upserts 37 ms); todas las consultas son `Seq Scan` de 4–7 ms sin índices por fecha
+(detalle, planes y los índices candidatos —solo descritos— en `docs/arquitectura-kpis.md` §2.7).
+
+Fuera de alcance, y por qué: «llegadas tarde» (no hay turnos, horarios ni descansos) y «marcas fuera de radio» (se pidió no implementarlo).
+
+## 9. NO VERIFICADO
 
 - Que `customer_supplier.creation_date` esté poblada en datos migrados de un
   sistema legado.
@@ -174,3 +213,7 @@ entre viajes del mismo operador.
   `logistics_file.id_invoice` o `logistics_receivable.id_invoice`).
 - Ningún dato real de clientes: todas las tablas de restaurante y logística están
   vacías en la base local.
+- Checadas: no hay ninguna en la base local (0 con coordenadas), así que el volumen y la calidad de los datos reales de Comala (si n8n
+  manda siempre latitud, qué estado usa para la salida, si hay entradas duplicadas) no se pudieron comprobar. Las pruebas usan fixtures propias.
+  La medición de rendimiento (2026-10-20) usó 50 000 checadas **sintéticas** en una base aislada; el volumen real de Comala sigue sin conocerse.
+- Si el tope de 16 h es el correcto para los turnos reales de Comala: es una constante (`TOPE_DURACION_CHECADA_HORAS`), no un dato medido.

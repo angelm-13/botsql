@@ -111,6 +111,17 @@ def _jsonify_projected_list(user_data: dict, payload: dict):
     return jsonify(_project_list_payload(payload, _visible_response_fields_for_actor(user_data)))
 
 
+@bp_team.route('/options', methods=['GET'])
+@token_required
+def list_team_options(user_data):
+    """Solo id+nombre de los equipos vigentes, para el selector de equipos de un grafico.
+
+    Sin permiso de entidad a proposito -- igual que `/user/options` y `/incident_type/options` --: quien arma un
+    grafico en el Dashboard elige equipos sin tener el modulo `seguridad`, al que pertenece `team`. Exige sesion.
+    """
+    return jsonify(TeamService.options())
+
+
 @bp_team.route('/', methods=['GET'])
 @token_required
 @require_entity_permission('team', 'read')

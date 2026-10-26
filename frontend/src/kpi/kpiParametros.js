@@ -10,7 +10,40 @@ import {
   fechaLocalIso, periodoAnterior, rangoDesfasado, resolverRangoRelativo,
 } from "./kpiRango.js";
 import { normalizarOrdenTabla } from "./kpiPrestamos.js";
-import { esIdDeEjemplo } from "./vistaPreviaDeEjemplo.js";
+
+// El titulo propio de un grafico (`parametros.titulo`). El limite es el del servidor (`TITULO_MAX` en
+// `kpi_dashboard_widget_service.py`): uno mas largo se rechaza alla con 400, asi que aqui se corta antes de guardar.
+export const TITULO_MAX = 80;
+
+/** El titulo recortado de espacios y de hasta `TITULO_MAX` caracteres (se cuentan caracteres, como el servidor, no unidades
+ * UTF-16), o "" si no hay. Cualquier cosa que no sea texto es "sin titulo". */
+export function normalizarTitulo(valor) {
+  if (typeof valor !== "string") return "";
+  return Array.from(valor.trim()).slice(0, TITULO_MAX).join("").trim();
+}
+
+/** Cuantos caracteres faltan para el limite cuando el texto ya se acerca (80 % o mas), o null si aun hay holgura:
+ * el contador del editor solo aparece cerca del limite. */
+export function contadorDeTitulo(texto) {
+  const usados = Array.from(typeof texto === "string" ? texto : "").length;
+  return usados >= TITULO_MAX * 0.8 ? { usados, max: TITULO_MAX } : null;
+}
+
+/** Lo que se guarda al confirmar la edicion en el lugar (Enter): el texto normalizado. Vacio vuelve al titulo por defecto. */
+export function tituloEditado(texto) {
+  return normalizarTitulo(texto);
+}
+
+/** Si el texto trae una etiqueta o un comentario HTML (lo que el servidor rechaza). `<12 h` o `a < b` son texto. */
+export function tituloConHtml(valor) {
+  return typeof valor === "string" && /<[A-Za-z/!?]/.test(valor);
+}
+
+/** Lo que dice el encabezado de una tarjeta (y de la vista previa): el titulo propio si lo tiene y, si no, el nombre del KPI
+ * (o los nombres, unidos con " + ", en un grafico de varios). Es el unico lugar que lo decide; el PDF captura las tarjetas. */
+export function tituloDeWidget(parametros, nombreDeLosKpis) {
+  return normalizarTitulo(parametros?.titulo) || nombreDeLosKpis;
+}
 
 /** Los `parametros` de un widget a partir del borrador del editor.
  *
@@ -31,6 +64,9 @@ export function armarParametros(estado, { esTabla = false, tieneBajoStock = fals
     // `parametros`: si no se vuelve a escribir aqui, guardar el editor lo borraria. Solo se conserva un orden
     // valido: uno que no lo sea vuelve al de por omision en vez de mandar al servidor algo que rechazaria (400).
     if (estado.ordenTabla) tabla.orden_tabla = normalizarOrdenTabla(estado.ordenTabla);
+    // El titulo propio vale tambien en una tabla (es lo unico que su asistente de un solo paso no borraria al guardar).
+    const tituloTabla = normalizarTitulo(estado.titulo);
+    if (tituloTabla) tabla.titulo = tituloTabla;
     return tabla;
   }
   // Con un chip de rango relativo se guarda la INSTRUCCION (`rango_relativo`)
@@ -62,6 +98,7 @@ export function armarParametros(estado, { esTabla = false, tieneBajoStock = fals
   }
   if (estado.empleadosSeleccionados.length) parametros.empleados = estado.empleadosSeleccionados.map(Number);
   if (estado.departamentosSeleccionados.length) parametros.id_departments = estado.departamentosSeleccionados.map(Number);
+  if (estado.equiposSeleccionados?.length) parametros.id_teams = estado.equiposSeleccionados.map(Number);
   // Solo los overrides de KPIs que siguen seleccionados -- un KPI que se
   // quito de la seleccion no debe dejar un color huerfano guardado.
   const coloresVigentes = Object.fromEntries(
@@ -69,6 +106,8 @@ export function armarParametros(estado, { esTabla = false, tieneBajoStock = fals
   );
   if (Object.keys(coloresVigentes).length) parametros.colores_kpi = coloresVigentes;
   if (estado.agruparPor === "periodo") parametros.agrupar_por = "periodo";
+  const titulo = normalizarTitulo(estado.titulo);
+  if (titulo) parametros.titulo = titulo;
   if (tieneBajoStock && estado.umbralBajoStock !== "" && Number.isFinite(Number(estado.umbralBajoStock))) {
     parametros.umbral_bajo_stock = Number(estado.umbralBajoStock);
   }
@@ -79,8 +118,7 @@ export function armarParametros(estado, { esTabla = false, tieneBajoStock = fals
 export function widgetDeBorrador(estado, opciones) {
   return {
     tipo_grafica: estado.tipoGrafica,
-    // Un KPI de ejemplo (vista previa) conserva su id textual: nunca se vuelve un numero que se pueda guardar.
-    ids_kpi_definition: estado.idsKpiSeleccionados.map((id) => (esIdDeEjemplo(id) ? id : Number(id))),
+    ids_kpi_definition: estado.idsKpiSeleccionados.map(Number),
     parametros: armarParametros(estado, opciones),
   };
 }
@@ -119,6 +157,8 @@ export function estadoDeWidget(widget, kpiCatalog, hoy = new Date()) {
     fechaFinB: parametros.fecha_fin_b || "",
     empleadosSeleccionados: Array.isArray(parametros.empleados) ? parametros.empleados.map(String) : [],
     departamentosSeleccionados: Array.isArray(parametros.id_departments) ? parametros.id_departments.map(String) : [],
+    // Si no se vuelve a leer aqui, editar un widget y guardarlo borraria el filtro (igual que `orden_tabla`).
+    equiposSeleccionados: Array.isArray(parametros.id_teams) ? parametros.id_teams.map(String) : [],
     // Las llaves de `colores_kpi` ya llegan como string desde el JSON
     // guardado -- se copian tal cual, sin volver a tocar el tipo.
     coloresKpi: parametros.colores_kpi && typeof parametros.colores_kpi === "object" ? { ...parametros.colores_kpi } : {},
@@ -126,6 +166,8 @@ export function estadoDeWidget(widget, kpiCatalog, hoy = new Date()) {
     umbralBajoStock: parametros.umbral_bajo_stock != null ? String(parametros.umbral_bajo_stock) : "",
     columnas: columnasDeWidget(widget),
     filas: filasDeWidget(widget),
+    // Si no se vuelve a leer aqui, editar un widget y guardarlo borraria su titulo (igual que `id_teams`).
+    titulo: typeof guardados.titulo === "string" ? guardados.titulo : "",
     // Solo se arrastra para conservarlo al guardar (ver armarParametros); el editor no lo muestra.
     ordenTabla: guardados.orden_tabla ? normalizarOrdenTabla(guardados.orden_tabla) : null,
   };
@@ -173,13 +215,9 @@ export function mezclaUnidades(kpiInfos) {
  *   cantidad) comparten el eje Y del grafico y el de escala menor queda
  *   invisible.
  * - "modo": un KPI en vivo (tabla) y uno de serie no comparten ninguna grafica.
- * - "ejemplo": un KPI de ejemplo (vista previa) no se combina con nada.
  */
 export function motivoParaNoCombinar(seleccionados, candidato) {
   if (!seleccionados.length) return null;
-  // Un KPI de ejemplo (vista previa de uno no disponible) solo se ve solo: nunca se mezcla con KPIs reales ni
-  // con otro ejemplo, para que datos inventados no aparezcan junto a datos de verdad.
-  if (candidato.esEjemplo || seleccionados.some((info) => info.esEjemplo)) return "ejemplo";
   const esVivo = candidato.modo === "vivo";
   if (seleccionados.some((info) => (info.modo === "vivo") !== esVivo)) return "modo";
   const unidad = unidadDeKpi(candidato);

@@ -11,6 +11,7 @@ import {
 import { useI18n } from "../i18n";
 import PageHeader from "./PageHeader.jsx";
 import FormularioPlegable from "./FormularioPlegable.jsx";
+import { useDialogo } from "../dialogo/useDialogo.js";
 
 /* eslint-disable react/prop-types */
 
@@ -33,6 +34,7 @@ function listItems(payload) {
 // `logistics_contact` dentro de Logística.
 export default function CustomerContactsPanel() {
   const { t } = useI18n();
+  const dialogo = useDialogo();
   const [contacts, setContacts] = useState([]);
   const [clients, setClients] = useState([]);
   const [form, setForm] = useState(emptyForm);
@@ -105,7 +107,7 @@ export default function CustomerContactsPanel() {
   }
 
   async function removeContact(contact) {
-    if (!window.confirm(`${etiqueta("confirm_delete", "¿Eliminar este contacto?")} ${contact.full_name}`)) return;
+    if (!(await dialogo.confirmar(`${etiqueta("confirm_delete", "¿Eliminar este contacto?")} ${contact.full_name}`))) return;
     try {
       await deleteCustomerContact(contact.id_customer_contact);
       await loadData();

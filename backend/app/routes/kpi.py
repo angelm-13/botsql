@@ -1,19 +1,19 @@
 from __future__ import annotations
 
-import os
 from datetime import date
 
 from flask import Blueprint, jsonify, request
-from sqlalchemy import cast, func, select
+from sqlalchemy import Integer, cast, func, select
 from sqlalchemy.dialects.postgresql import JSONB
 
 from app.kpis.dimensiones import (
     CATALOGO as CATALOGO_DE_DIMENSIONES, DIMENSION_POR_CLAVE as DIMENSION_DECLARADA, SIN_ASIGNAR, _familias,
     etiquetas_de_dimension,
 )
+from app.kpis.modulos.checadas import persona_en_equipos_el_dia
 from app.kpis.registry import (
     AGREGACION_POR_CLAVE, ALCANCE_PROYECTO_POR_CLAVE, DIMENSION_JSON_KEY, DIMENSION_POR_CLAVE,
-    KPI_POR_CLAVE, LIMITE_POR_CLAVE, PRESTADO_ORDENES, SIN_ASIGNAR_POR_CLAVE,
+    KPI_POR_CLAVE, LIMITE_POR_CLAVE, OCULTAR_CEROS_POR_CLAVE, PRESTADO_ORDENES, SIN_ASIGNAR_POR_CLAVE,
 )
 from app.models.kpi_definition import KpiDefinition
 from app.models.kpi_snapshot import KpiSnapshot
@@ -21,7 +21,7 @@ from app.models.permission import Permission
 from app.models.product_family import ProductFamily
 from app.models.session import transaction_context
 from app.models.user import User
-from app.modules.plan import limite, modulo_habilitado
+from app.modules.plan import limite
 from app.services.invoice_service import InvoiceService
 from app.services.kpi_dashboard_service import KpiDashboardService
 from app.services.kpi_dashboard_widget_service import KpiDashboardWidgetService
@@ -85,6 +85,10 @@ def _optional_id_departments(value):
     return _optional_int_list(value, 'id_departments')
 
 
+def _optional_id_teams(value):
+    return _optional_int_list(value, 'id_teams')
+
+
 def _validar_rango(fecha_inicio, fecha_fin, dias_maximo, field):
     dias = (fecha_fin - fecha_inicio).days
     if dias > dias_maximo:
@@ -120,7 +124,7 @@ def _dimension_entity_expr(campo_json):
     return cast(KpiSnapshot.dimension_key, JSONB)[campo_json].astext
 
 
-def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo=False, limite=None, sin_asignar=False):
+def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo=False, limite=None, sin_asignar=False, ocultar_ceros=False, condiciones_extra=None):
     """Combina `kpi_snapshot` en el rango, en uno de tres modos:
 
     * `campo_json` es None (dimension "global", ej. ingresos/egresos
@@ -145,6 +149,13 @@ def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, enti
     * "ultimo": la foto del ultimo dia del rango que tenga datos. Por periodo
       se muestra la foto de cada dia, y el total es la del ultimo.
 
+    `ocultar_ceros` (`KpiDefinition.ocultar_ceros`): en el modo por entidad, quita de `por_empleado` las entidades cuyo
+    valor combinado es 0 (la foto de "quien esta en turno" deja un 0 por cada persona que ya salio). Va ANTES de `limite`,
+    y el `total` no cambia.
+
+    `condiciones_extra`: condiciones SQL que se suman a las del rango y a las de `entidades` (hoy, la de `id_teams` en los
+    KPIs por persona: cada fila cuenta en el equipo que la persona tenia ese dia).
+
     `limite` (`KpiDefinition.limite_categorias`): en el modo por entidad, deja en
     `por_empleado` solo las `limite` entidades de mayor valor (empate: la de menor id).
     El corte va DESPUES de combinar el rango -- el top depende del rango pedido -- y el
@@ -165,6 +176,7 @@ def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, enti
     # condicion siempre falsa, asi que es seguro.
     if entidad_expr is not None and entidades is not None:
         condiciones.append(entidad_expr.in_([str(entidad) for entidad in entidades]))
+    condiciones.extend(condiciones_extra or [])
 
     base = {'inicio': fecha_inicio.isoformat(), 'fin': fecha_fin.isoformat()}
 
@@ -239,6 +251,8 @@ def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, enti
     ]
     por_entidad = {entidad: valor_de(*agregados) for entidad, *agregados in filas}
     total = total_de([tuple(agregados) for _, *agregados in filas])
+    if ocultar_ceros:
+        por_entidad = {entidad: valor for entidad, valor in por_entidad.items() if valor}
     if limite is not None:
         mayores = sorted(por_entidad.items(), key=lambda par: (-par[1], str(par[0])))[:limite]
         por_entidad = dict(mayores)
@@ -271,6 +285,9 @@ def _con_metadatos_del_registry(kpi_row: KpiDefinition) -> dict:
         'clave': kpi_row.clave,
         'etiqueta': kpi_row.etiqueta,
         'modulo': kpi_row.modulo,
+        # Pestana del selector si no es la de su modulo (hoy "asistencias"); None para casi todos. `modulo` sigue
+        # mandando en licencias, permisos y filtros: esto solo agrupa en pantalla.
+        'grupo': definicion.grupo if definicion else None,
         'dimensiones': kpi_row.dimensiones,
         'unidad': kpi_row.unidad,
         'direccion': definicion.direccion if definicion else 'neutral',
@@ -322,55 +339,6 @@ def list_kpi_definitions(user_data):
     return jsonify({'items': items})
 
 
-# Motivos por los que un KPI no esta disponible para quien pide la vista previa. Solo estos valores salen de la ruta.
-MOTIVO_SIN_PERMISO = 'sin_permiso'
-MOTIVO_MODULO_NO_HABILITADO = 'modulo_no_habilitado'
-# Interruptor del SERVIDOR (apagado por omision) para ofrecer tambien los KPIs de modulos fuera del plan, con
-# el motivo `modulo_no_habilitado`. Sin el, el parametro de la peticion no hace nada: un cliente no se entera
-# de que existen KPIs de modulos que no compro.
-PREVIEW_MODULOS_NO_HABILITADOS_ENV = 'KPI_PREVIEW_INCLUIR_MODULOS_NO_HABILITADOS'
-
-
-@bp_kpi.route('/kpi_definition/no_disponibles', methods=['GET'])
-@token_required
-@require_entity_permission('kpi_definition', 'read')
-def list_unavailable_kpi_definitions(user_data):
-    """KPIs que el usuario NO puede usar, para mostrarlos con datos de EJEMPLO en el selector.
-
-    Devuelve solo metadatos del KPI (los mismos que `GET /kpi_definition/`: etiqueta, modulo, unidad,
-    dimension, graficas, categorias...) mas el `motivo`. Nada de conteos, ids ni snapshots, y tampoco
-    quien tiene el permiso: ni siquiera el `id_kpi_definition`, porque la vista previa no consulta ni
-    guarda nada (la clave basta para identificarlo).
-
-    Por omision solo salen los KPIs de modulos habilitados a los que el rol no tiene permiso
-    (`sin_permiso`). Los de modulos fuera del plan solo salen si el servidor lo permite
-    (`KPI_PREVIEW_INCLUIR_MODULOS_NO_HABILITADOS`) Y la peticion lo pide (`incluir_modulo_no_habilitado=1`).
-    """
-    por_servidor = str(os.getenv(PREVIEW_MODULOS_NO_HABILITADOS_ENV) or '').strip().lower() in ('1', 'true', 'si')
-    pedido = str(request.args.get('incluir_modulo_no_habilitado') or '').strip().lower() in ('1', 'true', 'si')
-    incluir_fuera_del_plan = por_servidor and pedido
-    with transaction_context() as db:
-        kpis = db.scalars(
-            select(KpiDefinition).where(KpiDefinition.deletion_date.is_(None))
-        ).all()
-        items = []
-        for kpi in kpis:
-            if KPI_POR_CLAVE.get(kpi.clave) is None:
-                continue
-            if has_kpi_permission(db, user_data, kpi.id_kpi_definition):
-                continue
-            if modulo_habilitado(kpi.modulo):
-                motivo = MOTIVO_SIN_PERMISO
-            elif incluir_fuera_del_plan:
-                motivo = MOTIVO_MODULO_NO_HABILITADO
-            else:
-                continue
-            metadatos = _con_metadatos_del_registry(kpi)
-            metadatos.pop('id_kpi_definition', None)
-            items.append({**metadatos, 'motivo': motivo})
-    return jsonify({'items': items})
-
-
 @bp_kpi.route('/kpi_definition/all', methods=['GET'])
 @token_required
 @require_entity_permission('nm_permission_kpi', 'read')
@@ -414,6 +382,7 @@ def query_kpi_snapshot(user_data):
     fecha_fin_b = _optional_date(request.args.get('fecha_fin_b'), 'fecha_fin_b')
     empleados = _optional_empleados(request.args.get('empleados'))
     id_departments = _optional_id_departments(request.args.get('id_departments'))
+    id_teams = _optional_id_teams(request.args.get('id_teams'))
     # "empleados" sigue siendo el nombre que manda el frontend hoy para
     # cualquier KPI por empleado; "entidades" es el nombre nuevo,
     # dimension-agnostico (para KPIs por producto). Si llega el primero se
@@ -485,13 +454,31 @@ def query_kpi_snapshot(user_data):
             else:
                 entidades = list(usuarios_del_departamento)
 
+        # id_teams recorta, nunca amplia: va DESPUES del alcance del actor, asi que quien tiene Propios o
+        # Mis grupos no ve a nadie fuera de lo que ya cubria por pasar un equipo ajeno.
+        #   * KPI por empleado (persona): cada fila (persona y dia) cuenta en el equipo que la persona tenia ESE dia
+        #     (`persona_en_equipos_el_dia`), no en el de hoy: quien paso de A a B el miercoles sigue en A el lunes y el
+        #     martes. Es una condicion mas, que se suma a `entidades` (el alcance del actor y los departamentos).
+        #   * KPI por equipo: esos equipos (interseccion con `entidades`, que es el mismo filtro generico).
+        #   * Cualquier otro KPI: no aplica, igual que id_departments.
+        # Una lista de equipos sin miembros filtra a "nadie": no se salta el filtro.
+        condiciones_extra = []
+        if id_teams:
+            if _tipo_de(dimension) == 'persona':
+                condiciones_extra.append(persona_en_equipos_el_dia(
+                    cast(_dimension_entity_expr(campo_json), Integer), id_teams, KpiSnapshot.periodo,
+                ))
+            elif dimension == 'equipo':
+                entidades = list(id_teams) if entidades is None else [e for e in entidades if e in id_teams]
+
         agrupar_por_periodo = agrupar_por == 'periodo'
         tope_categorias = LIMITE_POR_CLAVE.get(kpi_row.clave) if kpi_row else None
         con_sin_asignar = SIN_ASIGNAR_POR_CLAVE.get(kpi_row.clave, False) if kpi_row else False
-        rango_a = _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo, tope_categorias, con_sin_asignar)
+        sin_ceros = OCULTAR_CEROS_POR_CLAVE.get(kpi_row.clave, False) if kpi_row else False
+        rango_a = _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo, tope_categorias, con_sin_asignar, sin_ceros, condiciones_extra)
         rango_b = None
         if fecha_inicio_b and fecha_fin_b:
-            rango_b = _totales(db, id_kpi_definition, fecha_inicio_b, fecha_fin_b, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo, tope_categorias, con_sin_asignar)
+            rango_b = _totales(db, id_kpi_definition, fecha_inicio_b, fecha_fin_b, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo, tope_categorias, con_sin_asignar, sin_ceros, condiciones_extra)
         # El snapshot guarda ids; los nombres viajan aparte (`etiquetas`) para que el Dashboard no tenga
         # que cargar catalogos enteros solo para ponerlos. Cada dimension declara quien los resuelve
         # (`app/kpis/dimensiones.py`); estado y global no llevan.

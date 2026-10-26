@@ -8,6 +8,7 @@ no delatar que el tablero ajeno existe- antes de tocar el widget.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 
 from sqlalchemy import delete, select
@@ -30,6 +31,12 @@ from app.utils.errors import AppError
 # realmente "vivo" lo decide el editor del Dashboard, no este servicio.
 TIPOS_GRAFICA = {'numero', 'barras', 'linea', 'area', 'dona', 'tabla'}
 
+# Un titulo propio es una etiqueta corta, no un parrafo: cabe en el encabezado de la tarjeta y en el PDF.
+TITULO_MAX = 80
+_CODIGOS_DE_CONTROL = re.compile(r'[\x00-\x1f\x7f]')
+# Una etiqueta o un comentario de HTML (`<b>`, `</b>`, `<!--`, `<?xml`). `<12 h` o `a < b` NO lo son: son texto.
+_ETIQUETA_HTML = re.compile(r'<[A-Za-z/!?]')
+
 
 def validar_orden_tabla(valor) -> dict:
     """`{campo, direccion}` con un campo de `PRESTADO_ORDENES` y asc/desc; cualquier otra cosa es 400.
@@ -45,6 +52,30 @@ def validar_orden_tabla(valor) -> dict:
     ):
         raise AppError('errors.invalid_field', 400, {'field': 'orden_tabla', 'allowed_campo': list(PRESTADO_ORDENES)})
     return {'campo': valor['campo'], 'direccion': valor['direccion']}
+
+
+def validar_titulo(valor) -> str | None:
+    """El titulo propio de un grafico (`parametros.titulo`), ya recortado, o `None` si no hay titulo.
+
+    * Texto corto: recortado de espacios por los lados, maximo `TITULO_MAX` (80) caracteres. Uno mas largo es 400
+      (`errors.field_too_long`), no se corta en silencio: el editor ya limita el campo, y lo que llegue de otro cliente
+      tiene que decir que no cupo.
+    * Sin HTML: una etiqueta o un comentario es 400 (`errors.invalid_field`). Tampoco lleva saltos de linea ni otros
+      codigos de control: es una sola linea.
+    * Vacio (o solo espacios) o `null` es "sin titulo": no se guarda la llave y la tarjeta usa el nombre del KPI.
+    """
+    if valor is None:
+        return None
+    if not isinstance(valor, str):
+        raise AppError('errors.invalid_field', 400, {'field': 'titulo'})
+    titulo = valor.strip()
+    if not titulo:
+        return None
+    if len(titulo) > TITULO_MAX:
+        raise AppError('errors.field_too_long', 400, {'field': 'titulo', 'max_length': TITULO_MAX, 'actual_length': len(titulo)})
+    if _CODIGOS_DE_CONTROL.search(titulo) or _ETIQUETA_HTML.search(titulo):
+        raise AppError('errors.invalid_field', 400, {'field': 'titulo'})
+    return titulo
 
 
 class KpiDashboardWidgetService(CrudService):
@@ -187,11 +218,20 @@ class KpiDashboardWidgetService(CrudService):
         return tipo_grafica
 
     @staticmethod
-    def _validar_parametros(parametros) -> None:
+    def _validar_parametros(parametros) -> dict:
+        """Valida `parametros` y regresa lo que se guarda: una copia, con el titulo ya recortado (o sin la llave si esta vacio)."""
         if not isinstance(parametros, dict):
             raise AppError('errors.invalid_field', 400, {'field': 'parametros'})
+        parametros = dict(parametros)
         if 'orden_tabla' in parametros:
             validar_orden_tabla(parametros['orden_tabla'])
+        if 'titulo' in parametros:
+            titulo = validar_titulo(parametros['titulo'])
+            if titulo is None:
+                del parametros['titulo']
+            else:
+                parametros['titulo'] = titulo
+        return parametros
 
     @classmethod
     def set_orden_tabla(cls, user_data: dict, id_kpi_dashboard_widget, payload: dict) -> dict:
@@ -253,8 +293,7 @@ class KpiDashboardWidgetService(CrudService):
             'tipo_grafica': tipo_grafica,
         }
         if payload.get('parametros') is not None:
-            cls._validar_parametros(payload['parametros'])
-            data['parametros'] = payload['parametros']
+            data['parametros'] = cls._validar_parametros(payload['parametros'])
         if payload.get('posicion_orden') not in (None, ''):
             data['posicion_orden'] = payload['posicion_orden']
 
@@ -277,7 +316,7 @@ class KpiDashboardWidgetService(CrudService):
         payload.pop('id_kpi_dashboard', None)
         payload.pop('id_kpi_dashboard_widget', None)
         if payload.get('parametros') is not None:
-            cls._validar_parametros(payload['parametros'])
+            payload['parametros'] = cls._validar_parametros(payload['parametros'])
         hay_lista_nueva = 'ids_kpi_definition' in payload
         ids_kpi_definition_crudo = payload.pop('ids_kpi_definition', None)
 

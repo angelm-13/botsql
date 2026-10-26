@@ -1,0 +1,40 @@
+/* Foco, una sola regla para toda la app: al enfocar un campo solo cambia el
+   color de su borde (sin outline ni sombra). Va después de app.css. */
+
+:root { --foco-borde: #1b7a60; }
+
+/* Campos de texto, listas y áreas. Los checkbox/radio/archivo conservan el suyo. */
+input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"]):focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  box-shadow: none;
+  border-color: var(--foco-borde);
+}
+
+/* Buscadores y cajas que dibujan el borde por fuera y dejan el input sin borde:
+   el que cambia de color es el borde exterior. */
+.search-box:focus-within,
+.kronos-search:focus-within,
+.inv-buscador:focus-within,
+.kpi-editor-buscador:focus-within,
+.kpi-prestamos-buscador-caja:focus-within,
+.kpi-titulo-editable:focus-within {
+  border-color: var(--foco-borde);
+  box-shadow: none;
+}
+
+/* Teclado: botones con borde de color, discreto; enlaces con un trazo fino. */
+button:focus-visible,
+[role="button"]:focus-visible,
+summary:focus-visible {
+  outline: none;
+  border-color: var(--foco-borde);
+  /* Los botones de icono no tienen borde: este trazo interior fino es su indicador. */
+  box-shadow: inset 0 0 0 1px var(--foco-borde);
+}
+
+a:focus-visible {
+  outline: 1px solid var(--foco-borde);
+  outline-offset: 1px;
+}

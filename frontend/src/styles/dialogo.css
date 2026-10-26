@@ -1,0 +1,29 @@
+/* Diálogos propios (confirmar / pedir texto / avisar). Mismos colores que las
+   ventanas existentes (.ficha, .project-modal) y el verde de .btn-primary. */
+
+.dialogo-fondo {
+  position: fixed; inset: 0; z-index: 1500;
+  display: grid; place-items: center; padding: 20px;
+  background: rgba(17, 31, 39, .48);
+}
+
+.dialogo {
+  width: min(440px, 100%);
+  padding: 20px;
+  background: #fff; border: 1px solid #d6e0dc; border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(12, 34, 47, .25);
+  color: #132238;
+}
+
+.dialogo-mensaje { margin: 0 0 16px; font-weight: 700; white-space: pre-line; overflow-wrap: anywhere; }
+
+.dialogo-entrada {
+  width: 100%; box-sizing: border-box; margin-bottom: 16px;
+  padding: 10px 12px; font: inherit;
+  border: 1px solid #cbd5e1; border-radius: 10px;
+}
+
+.dialogo-acciones { display: flex; justify-content: flex-end; gap: 8px; }
+
+.dialogo-aceptar { background: #1b7a60; border-color: #1b7a60; color: #fff; }
+.dialogo-aceptar:disabled { opacity: .5; cursor: not-allowed; }

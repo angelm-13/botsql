@@ -2,7 +2,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import Integer, DateTime, ForeignKey, UniqueConstraint, func
+from sqlalchemy import Index, Integer, DateTime, ForeignKey, func, text
 from app.models.base import Base
 from app.utils.tiempo import a_iso_utc
 
@@ -19,8 +19,15 @@ def to_json_value(value):
 
 class NmTeamUser(Base):
     __tablename__ = 'nm_team_user'
+    # Una persona no esta dos veces en el mismo equipo a la vez, pero puede volver a uno del que
+    # ya se le dio de baja: cada periodo es su propia fila. Igual que la migracion
+    # `20261022100000_unicidad_nm_team_user_solo_vigentes.sql`.
     __table_args__ = (
-        UniqueConstraint('id_team', 'id_user', name='uq_nm_team_user'),
+        Index(
+            'uq_nm_team_user_vigente', 'id_team', 'id_user', unique=True,
+            postgresql_where=text('deletion_date IS NULL'),
+            sqlite_where=text('deletion_date IS NULL'),
+        ),
     )
 
     id_nm_team_user: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, nullable=False)

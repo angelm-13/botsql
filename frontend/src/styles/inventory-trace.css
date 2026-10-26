@@ -179,7 +179,6 @@
 
 .trace-last { margin: 14px 0 0; font-size: 12.5px; }
 
-.trace-page :focus-visible { outline: 2px solid #1b7a60; outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) {
   .trace-page * { transition: none !important; animation: none !important; }
 }

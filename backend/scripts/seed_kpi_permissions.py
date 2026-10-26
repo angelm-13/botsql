@@ -36,6 +36,7 @@ Uso
 ---
     python -m scripts.seed_kpi_permissions --perfil adser --dry-run
     python -m scripts.seed_kpi_permissions --perfil adser
+    python -m scripts.seed_kpi_permissions --perfil comala --dry-run     # siempre el dry-run primero
 
 En k8s (ver docs/despliegues/2026-09-25_kpis_adser_permisos.md):
 
@@ -107,6 +108,30 @@ ASIGNACIONES = {
                 "incidencias_pendientes",
                 "incidencias_abiertas_vs_cerradas",
                 "material_por_estado",
+            ),
+        ),
+    ),
+    "comala": (
+        # Checadas de asistencia (`app/kpis/modulos/checadas.py`). `adm_asistencias` NO esta acotado a proyecto: una checada no tiene proyecto
+        # (`incident.id_proyect` no interviene) y los siete KPIs son `alcance_proyecto=False`, asi que `validar` rechazaria un rol acotado.
+        #
+        # Son TODOS los KPIs de ese modulo; una prueba compara esta lista con `definiciones()` para que no se quede atras cuando se agregue uno.
+        # `horas_trabajadas_por_empleado` y `checadas_con_duracion_anomala` son nocturnos (la corrida de las 19:00 de Mexico); los otros cinco
+        # entran a la corrida de 5 minutos (`KPIS_FRECUENTES`).
+        #
+        # Este script solo da `puede_ver` (capa 2). Antes, el rol necesita en `entity_permission` la lectura de `kpi_definition` (capa 1, el script
+        # solo avisa si falta) y alcance TODOS para los KPIs por equipo (con Propios o Mis grupos la API responde 403 con motivo `scope`).
+        AsignacionRol(
+            rol="adm_asistencias",
+            acotado_a_proyecto=False,
+            kpis=(
+                "checadas_en_turno_por_equipo",
+                "checadas_sin_salida_por_equipo",
+                "checadas_entradas_por_equipo",
+                "checadas_salidas_por_equipo",
+                "checadas_en_turno_por_empleado",
+                "horas_trabajadas_por_empleado",
+                "checadas_con_duracion_anomala",
             ),
         ),
     ),

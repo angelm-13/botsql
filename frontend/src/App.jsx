@@ -109,6 +109,7 @@ import ProtectedRoute from "./auth/ProtectedRoute";
 import { useEffect, useState } from "react";
 import { getAllEntityPermission } from "./api";
 import "./styles/app.css";
+import "./styles/foco.css";
 import "./styles/sat-key.css";
 
 function isBootstrapUser() {

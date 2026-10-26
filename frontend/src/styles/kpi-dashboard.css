@@ -152,7 +152,7 @@
 .kpi-shortcut-button:hover{background:#eef2f6;border-color:#173b66}
 .kpi-shortcut-button.active{background:#eef4fb;border-color:#173b66;color:#173b66}
 
-.kpi-employee-picker,.kpi-department-picker{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+.kpi-employee-picker,.kpi-department-picker,.kpi-team-picker{display:flex;flex-direction:column;gap:8px;margin-top:6px}
 .kpi-department-picker-label{font-weight:800;color:#334155;font-size:13px}
 .kpi-department-list{display:flex;flex-wrap:wrap;gap:6px;max-height:160px;overflow:auto;padding:4px}
 .kpi-employee-list{display:flex;flex-wrap:wrap;gap:6px}

@@ -18,7 +18,7 @@ demas capas necesitan saber de ella:
 * `tipo`: `persona` (los ids son `user.id_user`, asi que aplican el filtro por
   empleados, el de departamentos y el alcance Propios/Mis grupos),
   `catalogo` (ids de otra tabla: mesero, platillo, mesa, cliente, unidad,
-  operador, producto, familia), `categoria` (el valor ES el nombre: "abierta",
+  operador, producto, familia, equipo), `categoria` (el valor ES el nombre: "abierta",
   "Entrada") o `global` (sin desglose).
 * `resolver_etiquetas(db, ids)`: los nombres legibles de esos ids. Los calcula el
   backend, para que el frontend no tenga que cargar catalogos enteros
@@ -33,7 +33,8 @@ usuario compararia cosas distintas.
 Una fila de snapshot cuya entidad es NULL (un pedido sin mesero, un viaje sin
 unidad) se agrupa bajo `SIN_ASIGNAR` en `routes/kpi.py` y `etiquetas_de_dimension`
 le pone la etiqueta, pero SOLO si el KPI lo pide (`KpiDefinition.sin_asignar`):
-los 24 KPIs de siempre la descartan, como hacian antes.
+los 24 KPIs de siempre la descartan, como hacian antes. La etiqueta es "Sin asignar" salvo que
+la dimension declare otra (`etiqueta_sin_asignar`: los equipos dicen "Sin equipo").
 """
 
 from __future__ import annotations
@@ -59,6 +60,9 @@ class Dimension:
     abierta: bool
     tipo: str
     resolver_etiquetas: Optional[Callable] = None
+    # Como se llama la fila sin entidad cuando el KPI la pide (`KpiDefinition.sin_asignar`). "Sin asignar" salvo que la
+    # dimension tenga un nombre mas claro ("Sin equipo"). La llave que viaja es siempre `SIN_ASIGNAR`.
+    etiqueta_sin_asignar: str = ETIQUETA_SIN_ASIGNAR
 
     def __post_init__(self):
         if self.tipo not in TIPOS:
@@ -172,6 +176,12 @@ def _operadores(db, ids):
     return _por_tabla(db, LogisticsOperator.id_logistics_operator, LogisticsOperator.full_name, ids)
 
 
+def _equipos(db, ids):
+    from app.models.team import Team
+
+    return _por_tabla(db, Team.id_team, Team.team_description, ids)
+
+
 # El orden es el de siempre para las cinco primeras (`DIMENSIONES` lo deriva).
 CATALOGO = (
     Dimension("empleado", "id_user", "Empleado", True, "persona", _usuarios),
@@ -185,6 +195,10 @@ CATALOGO = (
     Dimension("cliente", "id_customer_supplier", "Cliente", True, "catalogo", _clientes),
     Dimension("unidad", "id_logistics_unit", "Unidad", True, "catalogo", _unidades),
     Dimension("operador", "id_logistics_operator", "Operador", True, "catalogo", _operadores),
+    # Un equipo (`team`) es un grupo de usuarios (`nm_team_user`); en Comala, un parque. NO es `persona`:
+    # su id es `team.id_team`, no `user.id_user`. No es `abierta`: son pocos y cada uno importa, asi que
+    # el Dashboard no los agrupa en "Otros".
+    Dimension("equipo", "id_team", "Equipo", False, "catalogo", _equipos, etiqueta_sin_asignar="Sin equipo"),
 )
 
 DIMENSION_POR_CLAVE = {d.clave: d for d in CATALOGO}
@@ -211,5 +225,5 @@ def etiquetas_de_dimension(db, clave: str, rangos, con_sin_asignar: bool = False
     })
     etiquetas = dimension.resolver_etiquetas(db, ids) if ids else {}
     if con_sin_asignar:
-        etiquetas[SIN_ASIGNAR] = ETIQUETA_SIN_ASIGNAR
+        etiquetas[SIN_ASIGNAR] = dimension.etiqueta_sin_asignar
     return etiquetas

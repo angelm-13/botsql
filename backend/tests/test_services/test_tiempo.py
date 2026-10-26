@@ -10,9 +10,15 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from unittest import TestCase
 
+from sqlalchemy import DateTime, literal, select
+
 from app.models import Brand
+from app.models.session import transaction_context
 from app.services.incident_service import IncidentService, _as_datetime
-from app.utils.tiempo import ZONA_NEGOCIO, a_iso_utc, ahora_negocio, ahora_utc
+from app.utils.tiempo import (
+    ZONA_NEGOCIO, a_iso_utc, ahora_negocio, ahora_utc, hora_pared_a_utc, pared_a_utc, utc_a_pared,
+)
+from tests.conftest import BackendTestCase
 from tests.test_services.test_operations_workflow import OperationsTestCase
 
 
@@ -27,6 +33,43 @@ class TestAIsoUtc(TestCase):
     def test_none_stays_none_and_a_plain_date_has_no_zone(self):
         self.assertIsNone(a_iso_utc(None))
         self.assertEqual("2026-10-14", a_iso_utc(date(2026, 10, 14)))
+
+
+class TestParedAUtc(TestCase):
+    """`incident_date` es hora de pared (GMT-6); `creation_date`/`deletion_date` son UTC. Comparar sin convertir se equivoca 6 h."""
+
+    def test_las_20_horas_de_mexico_son_las_2_de_la_madrugada_del_dia_siguiente_en_utc(self):
+        self.assertEqual(datetime(2026, 10, 16, 2, 0), pared_a_utc(datetime(2026, 10, 15, 20, 0)))
+
+    def test_conserva_los_microsegundos(self):
+        self.assertEqual(datetime(2026, 10, 16, 2, 0, 0, 123456), pared_a_utc(datetime(2026, 10, 15, 20, 0, 0, 123456)))
+
+    def test_el_borde_de_las_18_horas_locales_es_la_medianoche_utc(self):
+        self.assertEqual(datetime(2026, 10, 15, 23, 59, 59), pared_a_utc(datetime(2026, 10, 15, 17, 59, 59)))
+        self.assertEqual(datetime(2026, 10, 16, 0, 0, 0), pared_a_utc(datetime(2026, 10, 15, 18, 0, 0)))
+
+    def test_ida_y_vuelta(self):
+        pared = datetime(2026, 10, 15, 23, 50, 7, 5)
+        self.assertEqual(pared, utc_a_pared(pared_a_utc(pared)))
+
+    def test_una_fecha_con_zona_se_convierte_a_utc_tal_cual(self):
+        menos_seis = timezone(timedelta(hours=-6))
+        self.assertEqual(datetime(2026, 10, 16, 2, 0), pared_a_utc(datetime(2026, 10, 15, 20, 0, tzinfo=menos_seis)))
+
+
+class TestHoraParedAUtcEnSql(BackendTestCase):
+    """La misma conversion, escrita en SQL para compararla dentro de una consulta (en PostgreSQL se prueba con las checadas)."""
+
+    def _en_sql(self, pared):
+        with transaction_context() as db:
+            return db.scalar(select(hora_pared_a_utc(literal(pared, DateTime))))
+
+    def test_coincide_con_la_conversion_de_python(self):
+        for pared in (
+            datetime(2026, 10, 15, 20, 0), datetime(2026, 10, 15, 17, 59, 59), datetime(2026, 10, 15, 18, 0, 0),
+            datetime(2026, 10, 15, 23, 59, 59), datetime(2026, 12, 31, 20, 30), datetime(2026, 10, 15, 20, 0, 0, 123456),
+        ):
+            self.assertEqual(pared_a_utc(pared), self._en_sql(pared), pared)
 
 
 class TestRelojDelNegocio(TestCase):
@@ -80,3 +123,27 @@ class TestFechasEnLaApi(OperationsTestCase):
         marca = Brand(brand_description='x', created_by=1, creation_date=datetime(2026, 10, 14, 20, 33))
         self.assertEqual('2026-10-14T20:33:00Z', marca.serialize()['creation_date'])
         self.assertIsNone(marca.serialize()['deletion_date'])
+
+
+class TestDiaLocalEnSql(TestCase):
+    """`dia_local` agrupa por el dia del negocio, no por el de UTC (en SQLite aqui; en Postgres, en test_kpi_restaurante)."""
+
+    def _dia(self, momento):
+        from sqlalchemy import create_engine, literal, select
+
+        from app.utils.tiempo import dia_local
+
+        with create_engine("sqlite://").connect() as con:
+            return con.execute(select(dia_local(literal(momento.strftime("%Y-%m-%d %H:%M:%S"))))).scalar()
+
+    def test_a_sale_at_18_10_local_stays_on_the_same_local_day(self):
+        self.assertEqual(date(2026, 9, 15), self._dia(datetime(2026, 9, 16, 0, 10)))
+
+    def test_23_50_and_00_10_local_fall_on_different_days(self):
+        self.assertEqual(date(2026, 9, 15), self._dia(datetime(2026, 9, 16, 5, 50)))
+        self.assertEqual(date(2026, 9, 16), self._dia(datetime(2026, 9, 16, 6, 10)))
+
+    def test_hoy_negocio_is_the_business_date_not_the_container_date(self):
+        from app.utils.tiempo import hoy_negocio
+
+        self.assertEqual(ahora_negocio().date(), hoy_negocio())

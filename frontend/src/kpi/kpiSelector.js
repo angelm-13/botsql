@@ -6,23 +6,44 @@ import { motivoParaNoCombinar } from "./kpiParametros.js";
 
 export const GRUPO_VARIABLES = "variables";
 
-/** Un KPI "variable suelta": sin desglose (dimension "global", ej. ingresos y
- * egresos totales). No se elige "por modulo" sino para combinarlo con otros en
- * un mismo grafico, asi que vive en su propio grupo. */
+/** Un KPI "variable suelta" / combinable: sin desglose (dimension "global", ej.
+ * ingresos y egresos totales). Sirve para combinarlo con otros en un mismo grafico.
+ * Aparece en la pestana de SU modulo (en la seccion "Combinables") y tambien en
+ * "Variables", la vista transversal de todos los KPIs sin desglose. */
 export function esVariable(kpi) {
   return kpi?.dimensiones?.[0] === "global";
 }
 
+/** La pestana del selector donde sale un KPI: su `grupo` si el registry se lo declara (hoy "asistencias": los KPIs de
+ * checadas), y si no, su `modulo`. Solo decide DONDE se muestra: `kpi.modulo` sigue siendo el modulo real y es lo que
+ * leen licencias, permisos, filtros y PDF. `grupo` llega de `GET /kpi_definition/` (`GRUPOS_DE_SELECTOR` del registry). */
+export const pestanaDeKpi = (kpi) => kpi?.grupo || kpi?.modulo;
+
 // Orden fijo de los botones de modulo. El catalogo llega en el orden de la base de
 // datos (arbitrario), y un selector que reordena sus botones segun la consulta se
-// siente roto; los modulos que no esten aqui van despues, por nombre.
-export const ORDEN_DE_MODULOS = ["operaciones", "inventario", "facturacion", "laboratorio", "documentos", "restaurante"];
+// siente roto; los modulos que no esten aqui van despues, por nombre. "asistencias" no es un modulo del plan sino
+// un grupo (`pestanaDeKpi`): va justo despues de Operaciones, de donde salen sus KPIs.
+export const ORDEN_DE_MODULOS = ["operaciones", "asistencias", "inventario", "facturacion", "laboratorio", "documentos", "restaurante"];
 const posicionDeModulo = (clave) => {
   const posicion = ORDEN_DE_MODULOS.indexOf(clave);
   return posicion === -1 ? ORDEN_DE_MODULOS.length : posicion;
 };
 
-/** El catalogo agrupado por modulo, con "Variables" como un grupo mas al final.
+/** Cuantas pestanas distintas hay en el catalogo (el que le llega al rol: solo sus KPIs permitidos). */
+const modulosDelCatalogo = (catalogo) => new Set((catalogo || []).map(pestanaDeKpi).filter(Boolean)).size;
+
+/** El catalogo agrupado por modulo, con "Variables" como una vista transversal al final.
+ *
+ * - Cada grupo de modulo trae TODOS los KPIs de ese modulo (`kpis`), tambien los sin
+ *   desglose: primero los que tienen desglose (`conDesglose`) y al final los
+ *   combinables (`combinables`), que la pantalla muestra en su propia seccion.
+ *   Un modulo cuyos KPIs son todos sin desglose tambien tiene su grupo.
+ * - "Variables" repite los KPIs sin desglose de TODOS los modulos (solo si el catalogo tiene mas de un
+ *   modulo: con uno solo es la misma lista que sus combinables). Es el MISMO objeto
+ *   de KPI (mismo id) que en su modulo: elegirlo en una pestana o en otra es lo mismo.
+ * - La pestana de cada KPI es `pestanaDeKpi(kpi)`: su `grupo` si lo declara y, si no, `kpi.modulo` (de
+ *   `kpi_definition.modulo`); un modulo nuevo (logistica, RH, POS...) tiene su grupo solo, sin tocar nada aqui.
+ *   En el grupo devuelto, `clave` y `modulo` son esa clave de pestana (ej. "asistencias"): no el modulo real del KPI.
  *
  * `busqueda` (ya escrita por la persona, sin normalizar) filtra por nombre,
  * descripcion y clave, sin distinguir mayusculas ni acentos; un grupo que se
@@ -36,19 +57,27 @@ export function agruparKpis(catalogo, busqueda = "") {
   const porModulo = new Map();
   const variables = [];
   (catalogo || []).filter(coincide).forEach((kpi) => {
-    if (esVariable(kpi)) {
-      variables.push(kpi);
-      return;
-    }
-    const lista = porModulo.get(kpi.modulo) || [];
-    lista.push(kpi);
-    porModulo.set(kpi.modulo, lista);
+    const sinDesglose = esVariable(kpi);
+    if (sinDesglose) variables.push(kpi);
+    // Un KPI sin desglose y sin modulo declarado (no deberia pasar) solo vive en "Variables".
+    const pestana = pestanaDeKpi(kpi);
+    if (sinDesglose && !pestana) return;
+    const grupo = porModulo.get(pestana) || { conDesglose: [], combinables: [] };
+    (sinDesglose ? grupo.combinables : grupo.conDesglose).push(kpi);
+    porModulo.set(pestana, grupo);
   });
 
   const grupos = [...porModulo.entries()]
-    .map(([modulo, kpis]) => ({ clave: modulo, modulo, esVariables: false, kpis }))
+    .map(([modulo, { conDesglose, combinables }]) => ({
+      clave: modulo, modulo, esVariables: false, conDesglose, combinables, kpis: [...conDesglose, ...combinables],
+    }))
     .sort((a, b) => posicionDeModulo(a.clave) - posicionDeModulo(b.clave) || a.clave.localeCompare(b.clave));
-  if (variables.length) grupos.push({ clave: GRUPO_VARIABLES, modulo: null, esVariables: true, kpis: variables });
+  // "Variables" es la vista TRANSVERSAL: con un solo modulo en el catalogo (un rol con pocos KPIs) no hay nada
+  // que cruzar y seria repetir los combinables de esa unica pestana. Se decide con el catalogo COMPLETO, no con
+  // el resultado de la busqueda, para que la pestana no aparezca y desaparezca al teclear.
+  if (variables.length && modulosDelCatalogo(catalogo) > 1) {
+    grupos.push({ clave: GRUPO_VARIABLES, modulo: null, esVariables: true, conDesglose: [], combinables: variables, kpis: variables });
+  }
   return grupos;
 }
 
@@ -68,7 +97,7 @@ export function estadoDeOpcion({ kpi, seleccionados, catalogo, multiple }) {
 }
 
 // Un color por modulo para el boton del selector: neutro en reposo, a color al
-// elegirlo. Los cinco modulos con KPIs hoy tienen el suyo fijo (mismos tonos vivos
+// elegirlo. Los modulos (y el grupo "asistencias") con KPIs hoy tienen el suyo fijo (mismos tonos vivos
 // de la paleta categorica, distintos entre si); un modulo nuevo cae a un tono de
 // la paleta segun su nombre, siempre el mismo.
 export const COLOR_DE_MODULO = {
@@ -78,6 +107,7 @@ export const COLOR_DE_MODULO = {
   laboratorio: CATEGORICAL[6],
   documentos: CATEGORICAL[5],
   restaurante: CATEGORICAL[3],
+  asistencias: CATEGORICAL[7],
   [GRUPO_VARIABLES]: CATEGORICAL[4],
 };
 
@@ -88,9 +118,10 @@ export function colorDeModulo(clave) {
   return CATEGORICAL[suma % CATEGORICAL.length];
 }
 
-/** La clave del grupo al que pertenece un KPI en el selector. */
+/** La clave del grupo con el que abre el selector para un KPI: su PESTANA (`pestanaDeKpi`: ahi estan todos
+ * sus KPIs, tambien los sin desglose). "Variables" solo si el KPI no declara modulo ni grupo. */
 export function claveDeGrupo(kpi) {
-  return esVariable(kpi) ? GRUPO_VARIABLES : kpi.modulo;
+  return pestanaDeKpi(kpi) || (esVariable(kpi) ? GRUPO_VARIABLES : kpi.modulo);
 }
 
 /** Modulo con el que abre el selector: el del primer KPI ya elegido, o si no hay
@@ -103,7 +134,8 @@ export function grupoInicial(grupos, catalogo, seleccionados) {
   return grupos.some((grupo) => grupo.clave === clave) ? clave : grupos[0]?.clave ?? null;
 }
 
-/** Lo que muestra cada boton de modulo: cuantos KPIs tiene, cuantos coinciden con
+/** Lo que muestra cada boton de modulo: cuantos KPIs tiene (el TOTAL del modulo, con sus combinables; el catalogo ya trae
+ * solo los KPIs permitidos del rol, asi que un modulo sin KPIs permitidos no tiene boton), cuantos coinciden con
  * la busqueda actual y cuantos de los YA ELEGIDOS caen ahi (la seleccion se
  * conserva al cambiar de modulo, y esto es lo que la deja ver). Solo aparecen los
  * modulos con al menos un KPI en el catalogo: lo que no llega en

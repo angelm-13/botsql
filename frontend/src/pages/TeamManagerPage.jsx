@@ -13,6 +13,7 @@ import {
 import { useI18n } from "../i18n";
 import PageHeader from "../components/PageHeader.jsx";
 import { fetchAllPages } from "../utils/fetchAllPages";
+import { useDialogo } from "../dialogo/useDialogo.js";
 
 function asItems(payload) {
   if (Array.isArray(payload)) return payload;
@@ -30,9 +31,15 @@ function userLabel(user) {
  * usuarios para el alcance "Mis grupos" del gestor de roles/permisos -- este
  * cambio (Fase 1) solo entrega la entidad y la membresia; el filtrado real
  * por equipo todavia no esta conectado (ver ARQUITECTURA_TYAKXA_TNY.md).
+ *
+ * Equipos y membresias se dan de baja, no se borran: cada periodo de una
+ * persona en un equipo es una fila (`creation_date` -> `deletion_date`), y los
+ * KPIs de asistencia atribuyen cada marca al equipo que la persona tenia
+ * entonces. Quitar a alguien y volver a agregarlo crea una membresia nueva.
  */
 export default function TeamManagerPage() {
   const { t } = useI18n();
+  const dialogo = useDialogo();
   const [teams, setTeams] = useState([]);
   const [users, setUsers] = useState([]);
   const [memberships, setMemberships] = useState([]);
@@ -140,20 +147,19 @@ export default function TeamManagerPage() {
     }
   }
 
+  // Dar de baja un equipo NO lo borra: el servidor le pone fecha de baja a el y a sus membresias vigentes (en un solo
+  // paso, por eso aqui ya no se quitan los miembros uno por uno). Queda la historia de quien estuvo en que equipo, y
+  // con ella las checadas de antes se siguen atribuyendo a ese equipo.
   async function handleDeleteTeam(team) {
-    if (!window.confirm(t("common.confirm_delete_team", `¿Eliminar el equipo "${team.team_description}"? Se quitarán también sus miembros.`))) return;
+    if (!(await dialogo.confirmar(t("common.confirm_delete_team", `¿Dar de baja el equipo "${team.team_description}"? Sus miembros dejan de pertenecer a él; la historia de quién estuvo en el equipo se conserva.`)))) return;
     setSaving(true); setError(""); setNotice("");
     try {
-      const rows = memberships.filter((row) => String(row.id_team) === String(team.id_team));
-      for (const row of rows) {
-        if (row.id_nm_team_user) await deleteNmTeamUser(row.id_nm_team_user);
-      }
       await deleteTeam(team.id_team);
       if (String(selectedTeamId) === String(team.id_team)) setSelectedTeamId("");
       await loadAll();
-      setNotice(t("common.team_deleted", "Equipo eliminado correctamente"));
+      setNotice(t("common.team_deleted", "Equipo dado de baja correctamente"));
     } catch (err) {
-      setError(t(err.message, err.message || "No se pudo eliminar el equipo"));
+      setError(t(err.message, err.message || "No se pudo dar de baja el equipo"));
     } finally {
       setSaving(false);
     }

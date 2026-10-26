@@ -476,9 +476,6 @@ export const updateInvoiceMaterialService = (id, payload) => request(`/invoice_m
 export const deleteInvoiceMaterialService = (id) => request(`/invoice_material_service/${id}`, { method: "DELETE" });
 
 export const getAllKpiDefinition = () => request("/kpi_definition/");
-// KPIs que el usuario no puede usar (solo metadatos + motivo), para la vista previa con datos de ejemplo del
-// selector de "Agregar gráfico". No lleva ids ni datos: ver GET /kpi_definition/no_disponibles.
-export const getKpiNoDisponibles = () => request("/kpi_definition/no_disponibles");
 // Catalogo de dimensiones (empleado, mesero, platillo...): clave, etiqueta, tipo y si es abierta.
 export const getKpiDimensions = () => request("/kpi_dimension/");
 export const queryKpiSnapshot = (params = {}) => request("/kpi_snapshot/query", { params });
@@ -827,6 +824,9 @@ export const getAllUser = (params = {}) => request("/user/", { params });
 // o el lider de un proyecto) -- cualquier usuario autenticado puede
 // llamarlo, sin exigir el permiso de lectura completo de user.
 export const getUserOptions = () => request("/user/options");
+// Solo id+nombre de los equipos vigentes, sin permiso de entidad -- igual que `getUserOptions` --: el editor de
+// graficos del Dashboard elige equipos sin tener el modulo de seguridad (`GET /team/` se lo negaria).
+export const getTeamOptions = () => request("/team/options");
 export const getUser = (id) => request(`/user/${id}`);
 export const createUser = (payload) => request("/user/", { method: "POST", body: payload });
 export const updateUser = (id, payload) => request(`/user/${id}`, { method: "PUT", body: payload });

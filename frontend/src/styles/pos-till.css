@@ -165,7 +165,6 @@
 .till-folio { margin: 0; color: #64748b; font-size: 13px; }
 .till-receipt-total { margin: 0; font-size: 32px; font-weight: 700; color: #0f172a; }
 
-.till-page :focus-visible { outline: 2px solid #1b7a60; outline-offset: 2px; }
 
 @media (prefers-reduced-motion: reduce) {
   .till-page * { transition: none !important; animation: none !important; }

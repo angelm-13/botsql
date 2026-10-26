@@ -15,6 +15,7 @@ import {
   requestInvoiceCancellation,
   stampPaymentComplement
 } from "../api";
+import { useDialogo } from "../dialogo/useDialogo.js";
 
 // El panel abre sobre una factura ya timbrada. Los tres actos que reune
 // -cancelar, abonar y acreditar- solo existen para un CFDI con folio fiscal,
@@ -50,6 +51,7 @@ const conceptoVacio = () => ({
 
 export default function InvoiceFiscalPanel({ invoice, onClose, onChanged }) {
   const { t } = useI18n();
+  const dialogo = useDialogo();
   const [tab, setTab] = useState("cancellation");
   const [catalogs, setCatalogs] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -155,7 +157,7 @@ export default function InvoiceFiscalPanel({ invoice, onClose, onChanged }) {
 
   // --- cancelacion --------------------------------------------------------
 
-  function enviarCancelacion(evento) {
+  async function enviarCancelacion(evento) {
     evento.preventDefault();
     const etiqueta = cancellation?.motives?.[motive] || motive;
     const aviso = [
@@ -173,7 +175,7 @@ export default function InvoiceFiscalPanel({ invoice, onClose, onChanged }) {
     ]
       .filter(Boolean)
       .join("\n");
-    if (!window.confirm(aviso)) return;
+    if (!(await dialogo.confirmar(aviso))) return;
 
     actuar(
       () =>
@@ -601,7 +603,7 @@ export default function InvoiceFiscalPanel({ invoice, onClose, onChanged }) {
     [concepts]
   );
 
-  function enviarNota(evento) {
+  async function enviarNota(evento) {
     evento.preventDefault();
     const devuelve = relationType === RELATION_RETURNS_GOODS;
     const aviso = [
@@ -617,7 +619,7 @@ export default function InvoiceFiscalPanel({ invoice, onClose, onChanged }) {
       "",
       t("common.continue", "¿Continuar?")
     ].join("\n");
-    if (!window.confirm(aviso)) return;
+    if (!(await dialogo.confirmar(aviso))) return;
 
     actuar(
       () =>

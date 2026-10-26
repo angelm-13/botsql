@@ -127,6 +127,9 @@ services:
       - ./uploads:/uploads
       - ./documents-reports:/documents-reports
       - ./database:/database:ro
+      # Copia de los KPIs del registry que usan las pruebas del front: la prueba
+      # tests/test_services/test_kpi_catalogo_del_registry.py la compara con KPI_REGISTRY.
+      - ./frontend/src/kpi/fixtures:/frontend/src/kpi/fixtures:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:${BACKEND_PORT:-5001}/health || exit 1"]
       interval: 10s

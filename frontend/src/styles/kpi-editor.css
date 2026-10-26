@@ -110,12 +110,30 @@
 
 .kpi-editor-rango-resuelto { margin: 8px 0 0; font-size: 12px; font-weight: 700; color: var(--kpi-ink-suave); }
 .kpi-editor-rango-resuelto span { font-weight: 400; color: var(--kpi-texto-suave); }
+/* Texto de ayuda bajo un campo del editor, y lo que se ve en un paso sin controles ("Este KPI no tiene filtros"). */
+.kpi-editor-ayuda { margin: 0; font-size: 12px; color: var(--kpi-texto-suave); }
+.kpi-editor-titulo { width: 100%; box-sizing: border-box; border: 1px solid var(--kpi-borde); border-radius: 10px; padding: 9px 12px; font: inherit; font-size: 13px; color: inherit; background: transparent; }
+.kpi-titulo-editable { display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box; border: 1px solid var(--kpi-borde); border-radius: 10px; padding: 7px 8px 7px 12px; cursor: text; }
+.kpi-titulo-editable:hover, .kpi-titulo-editable:focus-within { border-color: var(--kpi-ink-suave); }
+.kpi-titulo-editable > strong, .kpi-titulo-editable > input { flex: 1; min-width: 0; font: inherit; font-weight: 700; overflow-wrap: anywhere; }
+.kpi-titulo-editable > input { border: 0; outline: none; padding: 0; background: transparent; color: inherit; }
+/* Sin borde ni sombra propios aun enfocado: el rectángulo exterior es el que cambia de color (foco.css). */
+.kpi-titulo-editable > input:focus { border: 0; outline: none; box-shadow: none; }
+.kpi-titulo-editable .kpi-icon-button { flex: none; }
+.kpi-titulo-contador { margin: 2px 0 0; font-size: 12px; color: var(--kpi-texto-suave); }
+.kpi-editor-titulo:focus { outline: none; border-color: var(--kpi-ink-suave); }
+.kpi-editor-sin-filtros { margin: 0; padding: 14px 0; font-size: 13px; color: var(--kpi-texto-suave); }
 
 /* --- Selector de KPI (components/kpi-widgets/SelectorDeKpi.jsx) ---------------- */
 .kpi-selector { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .kpi-selector-grupo { display: flex; flex-direction: column; gap: 6px; }
 .kpi-selector-cuenta { margin-left: 4px; padding: 0 7px; border-radius: 999px; background: var(--kpi-borde); color: var(--kpi-texto-suave); font-size: 10px; }
 .kpi-selector-ayuda { margin: 0; font-size: 12px; color: var(--kpi-texto-suave); }
+/* Seccion "Combinables (sin desglose)" al final de la pestana de un modulo. */
+.kpi-selector-combinables { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; padding-top: 10px; border-top: 1px dashed var(--kpi-borde); }
+.kpi-selector-combinables-titulo { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--kpi-texto-suave); font-weight: 800; }
+/* Etiqueta con el modulo de un KPI, en la vista transversal "Variables". */
+.kpi-selector-modulo-tag { padding: 0 7px; border: 1px solid var(--tinte, var(--kpi-borde)); border-radius: 999px; color: var(--tinte, var(--kpi-texto-suave)); font-size: 10px; font-weight: 700; letter-spacing: .03em; line-height: 16px; white-space: nowrap; }
 .kpi-selector-vacio { margin: 0; padding: 14px; text-align: center; color: var(--kpi-texto-suave); border: 1px dashed var(--kpi-borde); border-radius: 10px; }
 .kpi-selector-fila { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
 .kpi-selector-fila > .kpi-editor-kpi-opcion { flex: 1 1 auto; min-width: 0; }
@@ -159,23 +177,10 @@
   background: var(--tinte, #173b66); color: #fff; font-size: 10px; font-weight: 800; line-height: 16px; text-align: center;
 }
 
-/* --- Vista previa con datos de EJEMPLO (KPI no disponible o sin datos) --------------------------------
+/* --- Vista previa con datos de EJEMPLO («Ver ejemplo»: KPI permitido sin datos en el rango) ----------
    Aviso fijo arriba, marco punteado y un sello "EJEMPLO" dentro de la grafica: que ni una captura de pantalla
    se confunda con datos reales. Solo vive en el editor, fuera de las tarjetas (.kpi-widget-card) que captura
    el reporte PDF. Colores con los tokens de tema (--kpi-atrasado*), asi sirven en claro y oscuro. */
-.kpi-editor-kpi-ejemplo {
-  margin-left: 8px;
-  padding: 1px 7px;
-  border: 1px dashed var(--kpi-atrasado);
-  border-radius: 999px;
-  background: var(--kpi-atrasado-fondo);
-  color: var(--kpi-atrasado);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-  vertical-align: middle;
-}
 .kpi-ejemplo-marco { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .kpi-ejemplo-aviso {
   margin: 0;
@@ -187,7 +192,6 @@
   font-size: 12px;
   line-height: 1.4;
 }
-.kpi-ejemplo-aviso em { display: block; margin-top: 2px; font-style: normal; font-weight: 600; color: var(--kpi-atrasado); }
 .kpi-ejemplo-grafica {
   position: relative;
   overflow: hidden;

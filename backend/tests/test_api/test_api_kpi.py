@@ -10,8 +10,8 @@ from sqlalchemy import select, text
 
 from app.kpis.registry import seed_kpi_definitions
 from app.models import (
-    CustomerSupplier, Department, EntityPermission, KpiDashboard, KpiDefinition, KpiSnapshot, Level,
-    NmPermissionKpi, Permission, Proyect, Status, Subdepartment, User,
+    CustomerSupplier, Department, EntityPermission, EventLog, KpiDashboard, KpiDashboardWidget, KpiDefinition,
+    KpiSnapshot, Level, NmPermissionKpi, Permission, Proyect, Status, Subdepartment, User,
 )
 from app.models.session import engine, transaction_context
 from app.modules.plan import reiniciar_plan
@@ -125,6 +125,9 @@ class TestKpiApi(BackendTestCase):
         self.assertEqual("snapshot", fila["modo"])
         self.assertIn(fila["grafica_default"], fila["graficas_permitidas"])
         self.assertIsNone(fila["colores_categoria"])
+        # `grupo` (pestana del selector) viaja siempre, vacio para casi todos: no es del modulo.
+        self.assertIn("grupo", fila)
+        self.assertIsNone(fila["grupo"])
 
         sin_permiso_puntual = self._request(ACTOR_SIN_KPI_ESPECIFICO, "/kpi_definition/")
         self.assertEqual(200, sin_permiso_puntual.status_code)
@@ -670,6 +673,74 @@ class TestKpiDashboardApi(BackendTestCase):
         self.assertEqual(200, self._request(ACTOR_A, "PUT", f"/kpi_dashboard_widget/{id_widget}", {"parametros": bueno}).status_code)
         self.assertEqual(bueno, self._parametros_de(ACTOR_A, id_dashboard, id_widget))
 
+    # --- titulo propio del grafico: parametros.titulo ---
+    def _crear_widget(self, actor, id_dashboard, parametros=None, tipo="barras"):
+        cuerpo = {"ids_kpi_definition": [self.id_kpi], "tipo_grafica": tipo}
+        if parametros is not None:
+            cuerpo["parametros"] = parametros
+        respuesta = self._request(actor, "POST", f"/kpi_dashboard/{id_dashboard}/widgets/", cuerpo)
+        self.assertEqual(201, respuesta.status_code, self.json(respuesta))
+        return self.json(respuesta)
+
+    def test_el_titulo_propio_se_guarda_recortado_al_crear_se_conserva_al_editar_y_se_puede_cambiar(self):
+        id_dashboard = self._crear_tablero(ACTOR_A)
+        creado = self._crear_widget(ACTOR_A, id_dashboard, {"fecha_inicio": "2026-09-01", "fecha_fin": "2026-09-30", "titulo": "  Entradas de Manzanillo  "})
+        id_widget = creado["id_kpi_dashboard_widget"]
+        self.assertEqual("Entradas de Manzanillo", creado["parametros"]["titulo"], "la respuesta ya trae el titulo recortado")
+        self.assertEqual("Entradas de Manzanillo", self._parametros_de(ACTOR_A, id_dashboard, id_widget)["titulo"])
+
+        # Editar el widget (el editor manda TODOS los parametros): lo guardado es lo que se mando, titulo incluido.
+        editado = self._request(ACTOR_A, "PUT", f"/kpi_dashboard_widget/{id_widget}", {
+            "parametros": {"fecha_inicio": "2026-09-01", "fecha_fin": "2026-09-30", "titulo": "Salidas de Culiacán"},
+        })
+        self.assertEqual(200, editado.status_code, self.json(editado))
+        self.assertEqual("Salidas de Culiacán", self._parametros_de(ACTOR_A, id_dashboard, id_widget)["titulo"])
+
+        # Y si el editor lo vacia, la llave se va y la tarjeta vuelve al nombre del KPI.
+        vaciado = self._request(ACTOR_A, "PUT", f"/kpi_dashboard_widget/{id_widget}", {
+            "parametros": {"fecha_inicio": "2026-09-01", "fecha_fin": "2026-09-30", "titulo": "   "},
+        })
+        self.assertEqual(200, vaciado.status_code)
+        self.assertNotIn("titulo", self._parametros_de(ACTOR_A, id_dashboard, id_widget))
+
+    def test_el_titulo_se_conserva_al_guardar_el_orden_de_una_tabla(self):
+        id_dashboard = self._crear_tablero(ACTOR_A)
+        id_widget = self._crear_widget(ACTOR_A, id_dashboard, {"columnas": 2, "titulo": "Material afuera"}, tipo="tabla")["id_kpi_dashboard_widget"]
+
+        self._request(ACTOR_A, "PUT", f"/kpi_dashboard_widget/{id_widget}/orden_tabla", {"campo": "articulo", "direccion": "asc"})
+
+        self.assertEqual(
+            {"columnas": 2, "titulo": "Material afuera", "orden_tabla": {"campo": "articulo", "direccion": "asc"}},
+            self._parametros_de(ACTOR_A, id_dashboard, id_widget),
+        )
+
+    def test_el_limite_de_80_caracteres_se_respeta_al_crear_y_al_editar(self):
+        id_dashboard = self._crear_tablero(ACTOR_A)
+        justo = "á" * 80
+        creado = self._crear_widget(ACTOR_A, id_dashboard, {"titulo": justo})
+        self.assertEqual(justo, creado["parametros"]["titulo"], "80 caben")
+        id_widget = creado["id_kpi_dashboard_widget"]
+
+        largo = "a" * 81
+        malo_al_crear = self._request(ACTOR_A, "POST", f"/kpi_dashboard/{id_dashboard}/widgets/", {
+            "ids_kpi_definition": [self.id_kpi], "tipo_grafica": "barras", "parametros": {"titulo": largo},
+        })
+        self.assertEqual(400, malo_al_crear.status_code)
+        self.assertEqual("errors.field_too_long", self.json(malo_al_crear)["error_key"])
+        self.assertEqual(80, self.json(malo_al_crear)["meta"]["max_length"])
+        malo_al_editar = self._request(ACTOR_A, "PUT", f"/kpi_dashboard_widget/{id_widget}", {"parametros": {"titulo": largo}})
+        self.assertEqual(400, malo_al_editar.status_code)
+        self.assertEqual({"titulo": justo}, self._parametros_de(ACTOR_A, id_dashboard, id_widget), "lo guardado no cambia")
+
+    def test_un_titulo_con_html_o_que_no_es_texto_se_rechaza(self):
+        id_dashboard = self._crear_tablero(ACTOR_A)
+        id_widget = self._crear_widget(ACTOR_A, id_dashboard, {"titulo": "Bueno"})["id_kpi_dashboard_widget"]
+        for malo in ("<b>Hola</b>", "<script>alert(1)</script>", "dos\nlineas", 7, ["x"]):
+            with self.subTest(titulo=malo):
+                respuesta = self._request(ACTOR_A, "PUT", f"/kpi_dashboard_widget/{id_widget}", {"parametros": {"titulo": malo}})
+                self.assertEqual(400, respuesta.status_code, self.json(respuesta))
+        self.assertEqual({"titulo": "Bueno"}, self._parametros_de(ACTOR_A, id_dashboard, id_widget))
+
     def test_el_orden_solo_aplica_a_widgets_de_tabla(self):
         id_dashboard = self._crear_tablero(ACTOR_A)
         creado = self._request(ACTOR_A, "POST", f"/kpi_dashboard/{id_dashboard}/widgets/", {
@@ -700,6 +771,83 @@ class TestKpiDashboardApi(BackendTestCase):
             fila = db.get(KpiDashboard, id_dashboard)
             self.assertIsNotNone(fila, "la fila sigue existiendo: es baja logica, no fisica")
             self.assertIsNotNone(fila.deletion_date)
+
+    def test_actor_can_update_own_dashboard_and_the_change_is_persisted_and_audited(self):
+        id_dashboard = self._crear_tablero(ACTOR_A, nombre="Mi tablero")
+
+        # Un actor ajeno con el modulo intenta editarlo: 404 y el tablero no cambia.
+        intruso = self._request(ACTOR_B, "PUT", f"/kpi_dashboard/{id_dashboard}", {"nombre": "Intrusion", "orden": 1})
+        self.assertEqual(404, intruso.status_code)
+        propio = self.json(self._request(ACTOR_A, "GET", "/kpi_dashboard/"))["items"]
+        self.assertEqual(["Mi tablero"], [d["nombre"] for d in propio])
+
+        # El dueno lo edita. El payload intenta reasignar el dueno: no debe poder.
+        response = self._request(ACTOR_A, "PUT", f"/kpi_dashboard/{id_dashboard}", {
+            "nombre": "Tablero editado", "orden": 7, "id_user": ACTOR_B["id_user"],
+        })
+        self.assertEqual(200, response.status_code, self.json(response))
+        cuerpo = self.json(response)
+        self.assertEqual(("Tablero editado", 7, ACTOR_A["id_user"]), (cuerpo["nombre"], cuerpo["orden"], cuerpo["id_user"]))
+
+        # Persistido: el listado del dueno lo trae editado, el de otro actor sigue vacio y la fila coincide.
+        items = self.json(self._request(ACTOR_A, "GET", "/kpi_dashboard/"))["items"]
+        self.assertEqual([(id_dashboard, "Tablero editado", 7)], [(d["id_kpi_dashboard"], d["nombre"], d["orden"]) for d in items])
+        self.assertEqual([], self.json(self._request(ACTOR_B, "GET", "/kpi_dashboard/"))["items"])
+        with transaction_context() as db:
+            fila = db.get(KpiDashboard, id_dashboard)
+            self.assertEqual(("Tablero editado", 7, ACTOR_A["id_user"]), (fila.nombre, fila.orden, fila.id_user))
+            self.assertIsNone(fila.deletion_date)
+            asientos = db.scalars(
+                select(EventLog)
+                .where(EventLog.table_name == "kpi_dashboard", EventLog.action == "update")
+                .order_by(EventLog.field_name)
+            ).all()
+            cambios = {a.field_name: (a.before_value, a.after_value, a.created_by) for a in asientos}
+        # Un asiento por campo que cambio de verdad, firmado por el dueno; el dueno reasignado no cambio, no hay asiento.
+        self.assertEqual({"nombre", "orden"}, set(cambios), cambios)
+        self.assertEqual(("Mi tablero", "Tablero editado", ACTOR_A["id_user"]), cambios["nombre"])
+        self.assertEqual((100, 7, ACTOR_A["id_user"]), cambios["orden"])
+
+    def test_delete_widget_is_a_soft_delete_and_only_the_owner_can_do_it(self):
+        id_dashboard = self._crear_tablero(ACTOR_A)
+        creado = self._request(ACTOR_A, "POST", f"/kpi_dashboard/{id_dashboard}/widgets/", {
+            "ids_kpi_definition": [self.id_kpi], "tipo_grafica": "barras",
+        })
+        self.assertEqual(201, creado.status_code, self.json(creado))
+        id_barras = self.json(creado)["id_kpi_dashboard_widget"]
+        id_tabla = self._crear_widget_tabla(ACTOR_A, id_dashboard)
+
+        def widgets_visibles():
+            items = self.json(self._request(ACTOR_A, "GET", f"/kpi_dashboard/{id_dashboard}/widgets/"))["items"]
+            return {w["id_kpi_dashboard_widget"] for w in items}
+
+        # Quien no es el dueno no puede borrarlo: 404 si tiene el modulo, 403 si no tiene permiso de borrar la entidad.
+        self.assertEqual(404, self._request(ACTOR_B, "DELETE", f"/kpi_dashboard_widget/{id_barras}").status_code)
+        sin_permiso = {"id_user": 982, "id_permission": 982, "id_proyect": 982}
+        self.assertEqual(403, self._request(sin_permiso, "DELETE", f"/kpi_dashboard_widget/{id_barras}").status_code)
+        self.assertEqual({id_barras, id_tabla}, widgets_visibles())
+
+        # El dueno lo borra.
+        response = self._request(ACTOR_A, "DELETE", f"/kpi_dashboard_widget/{id_barras}")
+        self.assertEqual(200, response.status_code, self.json(response))
+        self.assertEqual("success.deleted", self.json(response)["message_key"])
+
+        # Ya no sale en el listado del tablero, pero el otro widget sigue.
+        self.assertEqual({id_tabla}, widgets_visibles())
+        # Baja logica: la fila sigue y solo el widget borrado tiene `deletion_date`.
+        with transaction_context() as db:
+            borrado = db.get(KpiDashboardWidget, id_barras)
+            vigente = db.get(KpiDashboardWidget, id_tabla)
+            self.assertIsNotNone(borrado, "la fila sigue existiendo: es baja logica, no fisica")
+            self.assertIsNotNone(borrado.deletion_date)
+            self.assertIsNone(vigente.deletion_date)
+            asientos = db.scalars(
+                select(EventLog).where(EventLog.table_name == "kpi_dashboard_widget", EventLog.action == "delete")
+            ).all()
+            self.assertEqual([(ACTOR_A["id_user"], "Widget eliminado")], [(a.created_by, a.after_value) for a in asientos])
+
+        # Un widget ya borrado no existe para nadie: repetir el DELETE es 404.
+        self.assertEqual(404, self._request(ACTOR_A, "DELETE", f"/kpi_dashboard_widget/{id_barras}").status_code)
 
 
 ACTOR_ADMINISTRA_PERMISOS_KPI = {"id_user": 990, "id_permission": 990, "user_type": "admin"}

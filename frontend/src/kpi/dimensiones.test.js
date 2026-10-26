@@ -1,5 +1,6 @@
 // Pruebas de las dimensiones de KPI en el Dashboard: el backend manda los nombres, el filtro por
 // empleados solo aplica a KPIs "por persona" y los widgets ya guardados no cambian.
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -7,6 +8,7 @@ import {
   muestraFiltroDePersonas, tipoDeDimension, unidadInfo,
 } from "./kpiDatos.js";
 import { armarParametros, estadoDeWidget } from "./kpiParametros.js";
+import { datosDeEjemplo } from "./datosDeEjemplo.js";
 import { propsDona } from "./kpiAdaptadores.js";
 
 const DIMENSIONES = [
@@ -116,4 +118,54 @@ test("la unidad 'minutos' se muestra con su sufijo y tiene etiqueta en el select
   assert.equal(unidadInfo("minutos").etiquetaSelector, "Min");
   // Una unidad desconocida sigue cayendo en "numero", sin imprimir la palabra cruda.
   assert.equal(formatConUnidad("7", "kilos"), "7");
+});
+
+// --- equipo (parque) y los KPIs de checadas -------------------------------------------------------------
+
+const CATALOGO_DEL_REGISTRY = JSON.parse(readFileSync(new URL("./fixtures/catalogo_del_registry.json", import.meta.url), "utf8"));
+const CLAVES_DE_CHECADAS = [
+  "checadas_en_turno_por_equipo", "checadas_sin_salida_por_equipo", "checadas_entradas_por_equipo",
+  "checadas_salidas_por_equipo", "horas_trabajadas_por_empleado", "checadas_en_turno_por_empleado",
+  "checadas_con_duracion_anomala",
+];
+
+test("equipo (parque): un catalogo cerrado que no es una persona (sin filtro de empleados ni «Otros»)", () => {
+  const dims = [...DIMENSIONES, { clave: "equipo", tipo: "catalogo", abierta: false }];
+  assert.equal(tipoDeDimension("equipo", dims), "catalogo");
+  // Un front sin el catalogo de dimensiones tampoco lo toma por persona.
+  assert.equal(tipoDeDimension("equipo"), "catalogo");
+  const [kpi] = enriquecerCatalogo([{ clave: "checadas_en_turno_por_equipo", dimensiones: ["equipo"], unidad: "numero" }], dims);
+  assert.equal(kpi.dimension_tipo, "catalogo");
+  assert.equal(kpi.dimension_abierta, false);
+  assert.equal(muestraFiltroDePersonas([kpi]), false, "un equipo no es un usuario: no ofrece el filtro por empleados");
+});
+
+test("los KPIs de checadas estan en el catalogo, en Operaciones, con su dimension y su unidad", () => {
+  const porClave = Object.fromEntries(CATALOGO_DEL_REGISTRY.map((kpi) => [kpi.clave, kpi]));
+  for (const clave of CLAVES_DE_CHECADAS) assert.ok(porClave[clave], clave);
+  assert.deepEqual(CLAVES_DE_CHECADAS.map((c) => porClave[c].modulo), Array(CLAVES_DE_CHECADAS.length).fill("operaciones"));
+  assert.deepEqual(
+    CLAVES_DE_CHECADAS.map((c) => porClave[c].dimensiones[0]),
+    ["equipo", "equipo", "equipo", "equipo", "empleado", "empleado", "empleado"],
+  );
+  assert.equal(porClave.horas_trabajadas_por_empleado.unidad, "minutos");
+  assert.equal(porClave.checadas_en_turno_por_empleado.unidad, "minutos");
+  assert.equal(porClave.checadas_con_duracion_anomala.unidad, "numero", "cuenta checadas, no minutos");
+  assert.deepEqual(CLAVES_DE_CHECADAS.map((c) => porClave[c].modo), Array(CLAVES_DE_CHECADAS.length).fill("snapshot"));
+});
+
+test("«Ver ejemplo» funciona para cada KPI de checadas: entidades genericas, 14 dias, siempre los mismos numeros", () => {
+  const hoy = new Date(2026, 9, 15);
+  for (const clave of CLAVES_DE_CHECADAS) {
+    const kpi = CATALOGO_DEL_REGISTRY.find((k) => k.clave === clave);
+    const a = datosDeEjemplo(kpi, { hoy }).rango_a;
+    const otra = datosDeEjemplo(kpi, { hoy }).rango_a;
+    assert.deepEqual(a, otra, `${clave}: determinista`);
+    assert.deepEqual(Object.values(a.etiquetas), ["Ejemplo 1", "Ejemplo 2", "Ejemplo 3", "Ejemplo 4", "Ejemplo 5"], clave);
+    assert.equal(Object.keys(a.por_periodo).length, 14, clave);
+    assert.ok(Object.values(a.por_empleado).every((valor) => Number.isFinite(valor) && valor > 0), clave);
+  }
+  // En minutos el ejemplo cae en el rango de minutos, no en el de dinero.
+  const horas = datosDeEjemplo(CATALOGO_DEL_REGISTRY.find((k) => k.clave === "horas_trabajadas_por_empleado"), { hoy }).rango_a;
+  assert.ok(Object.values(horas.por_empleado).every((minutos) => minutos >= 8 && minutos <= 45));
 });
