@@ -70,7 +70,7 @@ class TestResponsablesDeVale(BackendTestCase):
         claves = {c.clave for c in registry.CAPACIDADES}
         self.assertIn("warehouse_voucher_holder", claves)
         por_rol = {r.nombre: set(r.capacidades) for r in registry.ROLES}
-        for rol in ("Supervisor", "Gerente", "Jefe de taller", "Compras"):
+        for rol in ("Supervisor", "Gerente Comercial", "Gerente Tecnico", "Jefe de taller", "Compras"):
             self.assertIn("warehouse_voucher_holder", por_rol[rol], rol)
         # Almacen opera los vales y Administrator administra: ninguno responde por ellos.
         for rol in ("Almacenista", "Administrator"):

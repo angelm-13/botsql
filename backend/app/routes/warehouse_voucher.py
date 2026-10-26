@@ -51,7 +51,7 @@ from app.services.warehouse_voucher_service import (
     vales_vencidos,
 )
 from app.services.inventory_service import has_capability
-from app.utils.auth import require_entity_permission, token_required
+from app.utils.auth import require_any_entity_permission, require_entity_permission, token_required
 
 
 bp_warehouse_voucher = Blueprint("warehouse_voucher", __name__)
@@ -118,7 +118,10 @@ def abrir_vale(user_data):
 
 @bp_warehouse_voucher.route("/prevouchers", methods=["POST"])
 @token_required
-@require_entity_permission("warehouse_prevoucher", "create")
+# `warehouse_incident_report` (Gerente Comercial) tambien abre la puerta, pero el servicio
+# solo le deja levantar reportes de suceso y siempre como borrador.
+@require_any_entity_permission(("warehouse_prevoucher", "create"),
+                               ("warehouse_incident_report", "read"))
 def abrir_prevale(user_data):
     """Deja un PREVALE: el material pedido, en borrador, sin mover el almacen.
 

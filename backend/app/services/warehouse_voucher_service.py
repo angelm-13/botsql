@@ -786,8 +786,9 @@ def _validar_vale_padre(db, id_padre: int, id_proyecto, user_data: dict) -> None
 # solo lo levanta quien administra todo (Gerencia/administrador).
 TIPOS_DE_HERRAMIENTA = ("prestamo", "reparacion", "danado", "destruccion", "extraviado")
 TIPOS_DE_SUPERVISOR = ("prestamo",)
-# Dañado, extraviado, destruccion y reparacion reportan un suceso y los levanta SOLO el almacen
-# (y el administrador): ni el supervisor ni Gerencia.
+# Dañado, extraviado, destruccion y reparacion reportan un suceso. Los levanta quien tiene la
+# capacidad `warehouse_incident_report` (por omision Almacen y Gerente Comercial) y el
+# administrador; el supervisor no.
 TIPOS_DE_REPORTE = tuple(ESTADO_POR_TIPO)
 
 
@@ -795,25 +796,35 @@ def _prefijos_de_tipo_permitidos(db, user_data: dict):
     """None si puede levantar cualquier tipo; si no, los prefijos permitidos.
 
     - Gerencia (`project_authorization`) y administrador: cualquiera, salvo que los
-      reportes de suceso (`TIPOS_DE_REPORTE`) solo los levanta el almacen o el administrador
-      (`_puede_levantar_reportes`).
+      reportes de suceso (`TIPOS_DE_REPORTE`) los levanta quien tiene
+      `warehouse_incident_report` (`_puede_levantar_reportes`).
     - Almacen (`warehouse_voucher`): solo los de herramienta.
     - Supervisor (`warehouse_prevoucher`): solo prestamo.
+    - Quien solo tiene `warehouse_incident_report` (Gerente Comercial): solo los reportes.
     """
     if _sin_restriccion(user_data) or has_capability(db, user_data, "project_authorization"):
         return None
-    if has_capability(db, user_data, "warehouse_voucher"):
+    # `_opera_el_almacen` y no `has_capability`: este solo mira lectura, y Gerente Comercial
+    # lee los vales con una fila de solo lectura sin operar el almacen.
+    if _opera_el_almacen(db, user_data):
         return TIPOS_DE_HERRAMIENTA
     if has_capability(db, user_data, "warehouse_prevoucher"):
         return TIPOS_DE_SUPERVISOR
+    if has_capability(db, user_data, "warehouse_incident_report"):
+        return TIPOS_DE_REPORTE
     # Sin ninguna de las capacidades de vale: el guardia de la RUTA ya lo
     # rechazo; aqui no se agrega una segunda regla.
     return None
 
 
 def _puede_levantar_reportes(db, user_data: dict) -> bool:
-    """Dañado, extraviado, destruccion y reparacion: solo el almacen y el administrador."""
-    return _sin_restriccion(user_data) or has_capability(db, user_data, "warehouse_voucher")
+    """Dañado, extraviado, destruccion y reparacion: quien tiene `warehouse_incident_report`.
+
+    Es una capacidad propia y no `warehouse_voucher`: ese es el permiso de operar el almacen
+    y `has_capability` basta con leerlo, asi que Gerente Comercial, que lee los vales,
+    pasaria por almacen. Se concede en el Gestor de roles y permisos.
+    """
+    return _sin_restriccion(user_data) or has_capability(db, user_data, "warehouse_incident_report")
 
 
 def _es_tipo_de_reporte(descripcion) -> bool:
@@ -847,8 +858,10 @@ def _validar_permiso_tipo_vale(db, user_data: dict, id_tipo: int, como_borrador:
     prefijos = _prefijos_de_tipo_permitidos(db, user_data)
     if prefijos is None:
         return
-    solo_supervisor = (not has_capability(db, user_data, "warehouse_voucher")
-                       and has_capability(db, user_data, "warehouse_prevoucher"))
+    # Sin `warehouse_voucher` solo se pide: borrador, que el almacen autoriza.
+    solo_supervisor = (not _opera_el_almacen(db, user_data)
+                       and (has_capability(db, user_data, "warehouse_prevoucher")
+                            or has_capability(db, user_data, "warehouse_incident_report")))
     if solo_supervisor and not como_borrador:
         raise AppError("errors.permission_denied", 403,
                        {**detalle, "detail": "supervisors_can_only_create_drafts"})

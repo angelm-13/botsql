@@ -342,6 +342,15 @@ CAPACIDADES = (
     # supervisor del proyecto.
     Capacidad("warehouse_voucher_holder", "Puede ser responsable de vales de material",
               "inventario"),
+    # Levantar el reporte de un SUCESO -danado, extraviado, destruccion o reparacion-:
+    # no se presta nada, se deja constancia de lo que paso con una pieza. Capacidad
+    # aparte de `warehouse_voucher` a proposito: ese es el permiso de OPERAR el almacen
+    # (surtir, devolver, cancelar) y concederlo para esto dejaria a Gerencia operando
+    # el almacen. Quien solo tiene esta levanta el reporte como borrador (prevale) y
+    # el almacen lo autoriza. Se concede o se quita en el Gestor de roles y permisos;
+    # por omision la llevan Almacenista y Gerente Comercial.
+    Capacidad("warehouse_incident_report", "Levantar reportes de suceso de material",
+              "inventario"),
     # Convertir un borrador en un vale, que es el acto que saca el material.
     #
     # Aparte de `warehouse_voucher` por el mismo motivo que el prevale esta
@@ -555,7 +564,7 @@ ROLES = (
         "inventario": CONSULTA, "rh": CONSULTA, "logistica": CONSULTA,
         "compras": CAPTURA, "configuracion": CONSULTA,
     }, ["project_oversight", "incident_supervision", "purchase_authorize",
-        "warehouse_voucher_holder"]),
+        "warehouse_voucher_holder", "warehouse_incident_report"]),
 
     # El tecnico es de CAMPO: autoriza, deniega y bloquea proyectos y los edita, y
     # pide material con prevales (`warehouse_prevoucher`). De compras y almacen solo
@@ -585,6 +594,7 @@ ROLES = (
         "configuracion": CONSULTA,
     }, ["inventory_adjustment", "warehouse_voucher",
         "warehouse_voucher_authorize", "warehouse_voucher_confirm",
+        "warehouse_incident_report",
         "purchase_planning", "purchase_receive"]),
 
     # Quien compra. Ve los proyectos y el almacen para saber que hay que comprar,

@@ -153,7 +153,9 @@ export default function WarehouseVoucherPage() {
   // material, nunca surtirlo. Es el caso de Supervisor -y de Administrator
   // real, que tiene la misma separacion-, nunca el de Almacenista.
   const soloPuedeSolicitar = !puedeAbrirValeDirecto
-    && (privilegiado || tieneCapacidad(permisos, "warehouse_prevoucher", "scope_create"));
+    && (privilegiado || tieneCapacidad(permisos, "warehouse_prevoucher", "scope_create")
+      // Gerente Comercial: solo levanta reportes de suceso, como borrador.
+      || tieneCapacidad(permisos, "warehouse_incident_report", "scope_read"));
   const [vencidos, setVencidos] = useState([]);
   const [tipos, setTipos] = useState([]);
   const [ubicaciones, setUbicaciones] = useState([]);

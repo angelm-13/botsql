@@ -2464,10 +2464,12 @@ class TestElMaterialDelProyectoNoCuentaLoQueNoSalio(BaseEntrega):
 
 
 class TestLosTiposDeValePorRol(BaseVale):
-    """Gerencia levanta cualquier tipo; Almacen solo los de herramienta;
-    Supervisor solo prestamo, danado, extraviado y reparacion (y como prevale)."""
+    """Gerencia levanta cualquier tipo salvo los reportes; Almacen solo los de herramienta;
+    Supervisor solo prestamo (y como prevale); los reportes de suceso -danado, extraviado,
+    destruccion, reparacion- los levanta quien tiene `warehouse_incident_report`: Almacen
+    y Gerente Comercial (este, solo como borrador)."""
 
-    P_ALMACEN, P_SUPERVISOR, P_GERENCIA = 71, 72, 73
+    P_ALMACEN, P_SUPERVISOR, P_GERENCIA, P_COMERCIAL = 71, 72, 73, 74
     T_JORNADA, T_REPARACION, T_DESTRUCCION = 191, 192, 193
 
     def setUp(self):
@@ -2491,6 +2493,16 @@ class TestLosTiposDeValePorRol(BaseVale):
                     id_permission=permiso, entity_name=entidad,
                     scope_create=4, scope_read=4, scope_update=4, scope_delete=4,
                     created_by=1))
+            db.add_all([
+                # Almacen levanta reportes con su capacidad propia, no con `warehouse_voucher`.
+                EntityPermission(id_permission=self.P_ALMACEN, entity_name="warehouse_incident_report",
+                                 scope_read=4, created_by=1),
+                # Gerente Comercial: lee los vales (fila de solo lectura) y levanta reportes.
+                EntityPermission(id_permission=self.P_COMERCIAL, entity_name="warehouse_voucher",
+                                 scope_read=4, created_by=1),
+                EntityPermission(id_permission=self.P_COMERCIAL, entity_name="warehouse_incident_report",
+                                 scope_read=4, created_by=1),
+            ])
 
     def _error(self, funcion, *args, **kwargs):
         with self.assertRaises(AppError) as caja:
@@ -2528,7 +2540,7 @@ class TestLosTiposDeValePorRol(BaseVale):
                 e = self._error(self._levantar, self.P_SUPERVISOR, tipo, True)
                 self.assertEqual(403, e.status_code)
 
-    def test_management_cannot_raise_an_incident_report_either(self):
+    def test_management_without_the_report_capability_cannot_raise_one(self):
         for tipo in (self.T_REPARACION, self.T_DESTRUCCION):
             with self.subTest(tipo=tipo):
                 e = self._error(self._levantar, self.P_GERENCIA, tipo, False)
@@ -2536,6 +2548,35 @@ class TestLosTiposDeValePorRol(BaseVale):
 
     def test_the_warehouse_can_raise_a_repair(self):
         self._levantar(self.P_ALMACEN, self.T_REPARACION, False)
+
+    def test_the_warehouse_without_the_report_capability_cannot_raise_one(self):
+        """`warehouse_voucher` solo es operar el almacen: los reportes son otra capacidad."""
+        from app.models.entity_permission import EntityPermission
+
+        with transaction_context() as db:
+            db.query(EntityPermission).filter_by(
+                id_permission=self.P_ALMACEN, entity_name="warehouse_incident_report").delete()
+
+        e = self._error(self._levantar, self.P_ALMACEN, self.T_REPARACION, False)
+
+        self.assertEqual(403, e.status_code)
+
+    def test_the_commercial_manager_can_request_an_incident_report_as_a_draft(self):
+        for tipo in (self.T_REPARACION, self.T_DESTRUCCION):
+            with self.subTest(tipo=tipo):
+                r = self._levantar(self.P_COMERCIAL, tipo, True)
+                self.assertEqual(BORRADOR, r["voucher"]["incident_status"])
+
+    def test_the_commercial_manager_cannot_open_a_report_directly(self):
+        """Sin `warehouse_voucher` con escritura solo se pide: el almacen lo autoriza."""
+        e = self._error(self._levantar, self.P_COMERCIAL, self.T_REPARACION, False)
+
+        self.assertEqual(403, e.status_code)
+
+    def test_the_commercial_manager_cannot_request_a_loan(self):
+        e = self._error(self._levantar, self.P_COMERCIAL, TIPO_PRESTAMO, True)
+
+        self.assertEqual(403, e.status_code)
 
     def test_a_supervisor_cannot_open_a_voucher_directly(self):
         e = self._error(self._levantar, self.P_SUPERVISOR, TIPO_PRESTAMO, False)
@@ -2560,6 +2601,9 @@ class TestLosTiposDeValePorRol(BaseVale):
         almacen = {"id_user": OPERADOR, "id_permission": self.P_ALMACEN}
         self.assertEqual(["Prestamo", "Destruccion", "Reparación"], [
             o["incident_type_description"] for o in filtrar_tipos_de_vale(todos, almacen)])
+        comercial = {"id_user": OPERADOR, "id_permission": self.P_COMERCIAL}
+        self.assertEqual(["Destruccion", "Reparación"], [
+            o["incident_type_description"] for o in filtrar_tipos_de_vale(todos, comercial)])
 
     def test_delivering_moves_the_stock_and_confirming_opens_it(self):
         self.surtir(5, RACK)

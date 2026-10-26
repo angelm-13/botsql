@@ -17,7 +17,7 @@ from app.utils.item_class import ITEM_CLASSES, effective_item_class, normalize_i
 from app.services.inventory_trace_service import localizar
 from tests.conftest import BackendTestCase
 from tests.model_factory import build_model
-from tests.test_api.test_api_purchase_receive_stock import BaseRecepcionAlmacen
+from tests.test_api.test_api_purchase_receive import BaseRecepcion
 
 
 class TestLaListaDeClases(unittest.TestCase):
@@ -44,7 +44,7 @@ class TestLaListaDeClases(unittest.TestCase):
         self.assertIsNone(effective_item_class(type("P", (), {"item_class": None})(), None))
 
 
-class TestLaClaseEnLosModelos(BaseRecepcionAlmacen):
+class TestLaClaseEnLosModelos(unittest.TestCase):
     def test_a_material_and_a_product_reject_an_unknown_class(self):
         with self.assertRaises(AppError):
             Material(item_class="chatarra")
@@ -56,7 +56,7 @@ class TestLaClaseEnLosModelos(BaseRecepcionAlmacen):
         self.assertEqual("sobrante", Product(item_class="sobrante").serialize()["item_class"])
 
 
-class TestLaClaseEnLaOrdenDeCompra(BaseRecepcionAlmacen):
+class TestLaClaseEnLaOrdenDeCompra(BaseRecepcion):
     def _renglon_libre(self, **extra):
         return {"description": "Extintor 6 kg PQS", "quantity": 2, "unit_cost": 800, **extra}
 
@@ -86,30 +86,37 @@ class TestLaClaseEnLaOrdenDeCompra(BaseRecepcionAlmacen):
         self.assertEqual(201, respuesta.status_code, respuesta.get_data(as_text=True))
         self.assertEqual("recargable", self.json(respuesta)["lines"][0]["item_class"])
 
-    def test_receiving_classifies_a_material_that_has_no_class(self):
-        id_orden, id_linea, cantidad = self._preparar()
+    def _comprada_de_un_material(self, clase_del_material, clase_del_renglon):
+        """Una orden comprada con un solo renglon de un material; devuelve (orden, renglon, material)."""
         with transaction_context() as db:
-            from app.models import PurchaseOrderLine
-            linea = db.get(PurchaseOrderLine, id_linea)
-            linea.item_class = "recargable"
-            id_material = linea.id_material
-            db.get(Material, id_material).item_class = None
+            material = build_model(Material, material_description="Tanque de gas")
+            material.id_material = 810
+            material.item_class = clase_del_material
+            db.add(material)
+        id_orden = self._orden_completa(lineas=[{
+            "description": "Tanque de gas", "quantity": 2, "unit_cost": 5000,
+            "id_material": 810, "item_class": clase_del_renglon}])
+        self.assertEqual(200, self._comprar(id_orden).status_code)
+        linea = self._leer(id_orden)["lines"][0]
+        return id_orden, linea, 810
 
-        self.assertEqual(200, self._recibir_renglon(id_orden, id_linea, cantidad).status_code)
+    def _recibir_todo(self, id_orden, linea):
+        return self._recibir(id_orden, [{
+            "id_purchase_order_line": linea["id_purchase_order_line"],
+            "quantity": linea["quantity"]}])
+
+    def test_receiving_classifies_a_material_that_has_no_class(self):
+        id_orden, linea, id_material = self._comprada_de_un_material(None, "recargable")
+
+        self.assertEqual(200, self._recibir_todo(id_orden, linea).status_code)
 
         with transaction_context() as db:
             self.assertEqual("recargable", db.get(Material, id_material).item_class)
 
     def test_receiving_does_not_overwrite_the_class_a_material_already_has(self):
-        id_orden, id_linea, cantidad = self._preparar()
-        with transaction_context() as db:
-            from app.models import PurchaseOrderLine
-            linea = db.get(PurchaseOrderLine, id_linea)
-            linea.item_class = "consumible"
-            id_material = linea.id_material
-            db.get(Material, id_material).item_class = "herramienta"
+        id_orden, linea, id_material = self._comprada_de_un_material("herramienta", "consumible")
 
-        self.assertEqual(200, self._recibir_renglon(id_orden, id_linea, cantidad).status_code)
+        self.assertEqual(200, self._recibir_todo(id_orden, linea).status_code)
 
         with transaction_context() as db:
             self.assertEqual("herramienta", db.get(Material, id_material).item_class)
