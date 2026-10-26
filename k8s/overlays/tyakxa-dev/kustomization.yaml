@@ -25,6 +25,10 @@ images:
 resources:
   - ../../base
   - ingress-single-origin.yaml
+# Respaldo diario de Postgres (CronJob pg-backup + PVC pg-backups). Se ensaya
+# primero aqui; los clientes reales lo activan despues, uno por uno.
+components:
+  - ../../components/respaldo-postgres
 patches:
   # tyakxa-dev NO es produccion: el base fija APP_ENV=production (guarda de arranque
   # estricta) y aqui se baja a staging para que no se caiga por secretos de pruebas.
@@ -129,4 +133,12 @@ patches:
     patch: |-
       - op: add
         path: /spec/template/spec/priorityClassName
+        value: p5-tyakxa-dev
+  # Los dos patches de arriba no alcanzan a un CronJob: su pod vive en
+  # jobTemplate.
+  - target:
+      kind: CronJob
+    patch: |-
+      - op: add
+        path: /spec/jobTemplate/spec/template/spec/priorityClassName
         value: p5-tyakxa-dev

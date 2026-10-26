@@ -1,0 +1,125 @@
+# Respaldo diario de Postgres (pg_dump) a un volumen propio.
+#
+# Por que existe: antes de esto no habia ningun respaldo automatico de datos;
+# las unicas copias eran dumps manuales. Con local-path (RWO, atado al nodo) un
+# nodo caido deja la base inaccesible hasta que vuelva o se restaure.
+#
+# Donde cae el pod (afinidad, sin nombres de nodo a mano):
+#   - tier=big: solo master1/master4 (los nodos con disco y RAM de sobra; los
+#     "small" tienen el disco casi lleno de imagenes).
+#   - anti-afinidad con app=postgres: NUNCA en el mismo nodo que la base. Una
+#     copia en el nodo de la base muere con ese nodo. Si algun dia Postgres se
+#     mueve al nodo donde ya vive este volumen, el pod queda Pending (visible),
+#     no corre en silencio en el nodo equivocado.
+# El PVC local-path se ata al nodo donde corre el primer Job y ahi se queda.
+#
+# Imagen: la misma db-init (postgres:16-alpine) del StatefulSet, asi pg_dump
+# siempre es de la misma version mayor que el servidor. Se sustituye por el
+# overlay igual que en postgres.yaml.
+#
+# ATENCION: el StorageClass local-path tiene reclaimPolicy Delete. Borrar este
+# PVC borra los respaldos; copiar lo que importe antes (o pasar su PV a Retain).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pg-backups
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pg-backup
+spec:
+  schedule: "30 3 * * *"
+  timeZone: America/Mexico_City
+  # Nunca dos a la vez, y si se salto la hora (nodo caido) alcanza hasta 1h tarde.
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      # Un dump trabado no debe quedarse vivo para siempre.
+      activeDeadlineSeconds: 900
+      template:
+        metadata:
+          labels:
+            app: pg-backup
+        spec:
+          restartPolicy: Never
+          enableServiceLinks: false
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                  - matchExpressions:
+                      - key: tier
+                        operator: In
+                        values: ["big"]
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app: postgres
+                  topologyKey: kubernetes.io/hostname
+          containers:
+            - name: pg-backup
+              image: DB_INIT_IMAGE_PLACEHOLDER
+              # Sin envFrom (mismo criterio que postgres.yaml): solo las 3
+              # claves de BD, traducidas a las variables PG* de libpq.
+              env:
+                - name: PGHOST
+                  value: postgres
+                - name: PGDATABASE
+                  valueFrom: { secretKeyRef: { name: app-secrets, key: DB_NAME } }
+                - name: PGUSER
+                  valueFrom: { secretKeyRef: { name: app-secrets, key: DB_USER } }
+                - name: PGPASSWORD
+                  valueFrom: { secretKeyRef: { name: app-secrets, key: DB_PASSWORD } }
+              # command (no args) para saltarse el entrypoint de postgres de la imagen.
+              command:
+                - sh
+                - -c
+                - |
+                  set -eu
+                  umask 077
+                  destino="/backups/${PGDATABASE}_$(date +%Y%m%d_%H%M%S).sql"
+                  trap 'rm -f "$destino" "$destino.gz"' EXIT
+                  # A archivo y no por pipe: si pg_dump falla, set -e corta aqui
+                  # y no queda un .gz "valido" pero truncado.
+                  pg_dump -f "$destino"
+                  gzip -9 "$destino"
+                  gzip -t "$destino.gz"
+                  tablas=$(zcat "$destino.gz" | grep -c '^CREATE TABLE' || true)
+                  echo "respaldo $(basename "$destino.gz"): $(wc -c < "$destino.gz") bytes, $tablas tablas"
+                  # El .gz ya esta completo y verificado: se confirma el nombre
+                  # y el trap deja de borrarlo.
+                  trap - EXIT
+                  # Retencion: 14 dias. Solo se limpia despues de un respaldo bueno.
+                  find /backups -name '*.sql.gz' -mtime +14 -print -delete
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 32Mi
+                limits:
+                  cpu: 300m
+                  memory: 256Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                seccompProfile:
+                  type: RuntimeDefault
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+          volumes:
+            - name: backups
+              persistentVolumeClaim:
+                claimName: pg-backups
