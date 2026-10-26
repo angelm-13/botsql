@@ -4826,8 +4826,33 @@
       "aguinaldo_days": "Christmas bonus",
       "vacation_premium_pct": "Vacation premium",
       "aguinaldo_exempt_umas": "ISR-exempt Christmas bonus",
-      "vacation_premium_exempt_umas": "ISR-exempt vacation premium"
-    }
+      "vacation_premium_exempt_umas": "ISR-exempt vacation premium",
+      "option_imss_on_absences": "Pay IMSS on absence days",
+      "option_aguinaldo_discounts": "Deduct unexcused absences and general illness leave from the Christmas bonus",
+      "option_subsidy_month_days": "Employment subsidy with the real days of the month (not 30.4)",
+      "vacation_days_year_1": "Year 1",
+      "vacation_days_year_2": "Year 2",
+      "vacation_days_year_3": "Year 3",
+      "vacation_days_year_4": "Year 4",
+      "vacation_days_year_5": "Year 5",
+      "vacation_days_years_6_10": "Years 6 to 10",
+      "vacation_days_years_11_15": "Years 11 to 15",
+      "vacation_days_years_16_20": "Years 16 to 20",
+      "vacation_days_years_21_25": "Years 21 to 25",
+      "vacation_days_years_26_30": "Years 26 to 30",
+      "vacation_days_years_31_plus": "Years 31 onwards"
+    },
+    "tab_options": "Calculation options",
+    "tab_vacations": "Vacation table",
+    "options_title": "How this company calculates",
+    "options_hint": "Decisions each company makes differently. If not set, they are «No». Each change has its start date, like any figure.",
+    "vacations_title": "Vacation days by seniority",
+    "vacations_hint": "Only for companies that give more days than the law. If not set, the law applies, and the calculation never gives fewer days than the law.",
+    "option_yes": "Yes",
+    "option_no": "No",
+    "option_default": "Not set: No (the law's default).",
+    "vacation_default": "Not set: the law applies",
+    "below_law": "less than the law; the law applies"
   },
   "work_schedules": {
     "eyebrow": "HUMAN RESOURCES",
@@ -4918,7 +4943,12 @@
     "short_vacation": "Vac",
     "short_paid_leave": "Leave",
     "short_unpaid_leave": "Unpaid",
-    "short_disability": "Sick"
+    "short_disability": "Sick",
+    "disability_type": "Disability type",
+    "disability_none": "Not specified",
+    "disability_general_illness": "General illness",
+    "disability_work_risk": "Work risk",
+    "disability_maternity": "Maternity"
   },
   "my_leaves": {
     "title": "My time off",

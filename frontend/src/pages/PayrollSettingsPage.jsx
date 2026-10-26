@@ -13,7 +13,8 @@ import "../styles/kronos.css";
 // rangos, vigencias que no se enciman- las valida el backend; aqui solo se
 // muestran ordenadas y se capturan.
 
-// Orden y unidad en que se muestran. Una clave que no este aqui igual se ve, al final.
+// Orden, unidad y pestaña en que se muestran. Una clave que no este aqui igual
+// se ve, al final de las cifras oficiales.
 const PARAMETROS = [
   ["uma_daily", "money"], ["uma_monthly", "money"], ["minimum_wage_daily", "money"],
   ["subsidy_pct", "pct"], ["subsidy_income_limit", "money"],
@@ -21,9 +22,28 @@ const PARAMETROS = [
   ["imss_em_surplus_pct", "pct"], ["imss_surplus_umas", "uma"], ["sbc_cap_umas", "uma"],
   ["aguinaldo_days", "days"], ["vacation_premium_pct", "pct"],
   ["aguinaldo_exempt_umas", "uma"], ["vacation_premium_exempt_umas", "uma"],
-];
+  // Opciones de calculo de la empresa (1 = si, 0 = no); sin capturar, "no".
+  ["option_imss_on_absences", "option", "options"], ["option_aguinaldo_discounts", "option", "options"],
+  ["option_subsidy_month_days", "option", "options"],
+  // Tabla de vacaciones de la empresa; sin capturar, la de la ley.
+  ["vacation_days_year_1", "days", "vacations"], ["vacation_days_year_2", "days", "vacations"],
+  ["vacation_days_year_3", "days", "vacations"], ["vacation_days_year_4", "days", "vacations"],
+  ["vacation_days_year_5", "days", "vacations"], ["vacation_days_years_6_10", "days", "vacations"],
+  ["vacation_days_years_11_15", "days", "vacations"], ["vacation_days_years_16_20", "days", "vacations"],
+  ["vacation_days_years_21_25", "days", "vacations"], ["vacation_days_years_26_30", "days", "vacations"],
+  ["vacation_days_years_31_plus", "days", "vacations"],
+].map(([clave, unidad, grupo = "parameters"]) => ({ clave, unidad, grupo }));
+// Dias de la ley (LFT art. 76) al empezar cada renglon de la tabla; el backend
+// nunca da menos que esto aunque se capture menos.
+const DIAS_DE_LEY = {
+  vacation_days_year_1: 12, vacation_days_year_2: 14, vacation_days_year_3: 16, vacation_days_year_4: 18,
+  vacation_days_year_5: 20, vacation_days_years_6_10: 22, vacation_days_years_11_15: 24,
+  vacation_days_years_16_20: 26, vacation_days_years_21_25: 28, vacation_days_years_26_30: 30,
+  vacation_days_years_31_plus: 32,
+};
+const PESTANAS = ["parameters", "options", "vacations", "isr"];
 const PERIODICIDADES = [1, 7, 10, 15, 30];
-const PARAMETRO_VACIO = { parameter_key: "uma_daily", value: "", valid_from: "", valid_to: "", source: "" };
+const PARAMETRO_VACIO = { value: "", valid_from: "", valid_to: "", source: "" };
 const TRAMO_VACIO = { lower_limit: "", upper_limit: "", fixed_fee: "", rate_pct: "", source: "" };
 
 function actorGuardado() {
@@ -60,6 +80,7 @@ export default function PayrollSettingsPage() {
     if (unidad === "pct") return `${Number(v)} %`;
     if (unidad === "uma") return `${Number(v)} UMA`;
     if (unidad === "days") return `${Number(v)} ${t("payroll_settings.days")}`;
+    if (unidad === "option") return Number(v) === 1 ? t("payroll_settings.option_yes") : t("payroll_settings.option_no");
     return String(v);
   };
 
@@ -95,16 +116,24 @@ export default function PayrollSettingsPage() {
   }, []);
 
   const fechaHoy = hoy();
+  const grupoDe = (clave) => PARAMETROS.find((p) => p.clave === clave)?.grupo || "parameters";
+  const unidadDe = (clave) => PARAMETROS.find((p) => p.clave === clave)?.unidad || "number";
+  const clavesDe = (grupo) => PARAMETROS.filter((p) => p.grupo === grupo).map((p) => p.clave);
   const porClave = useMemo(() => {
-    const grupos = new Map(PARAMETROS.map(([k]) => [k, []]));
+    const grupos = new Map(PARAMETROS.filter((p) => p.grupo === view).map((p) => [p.clave, []]));
     for (const fila of parametros) {
+      if (grupoDe(fila.parameter_key) !== view) continue;
       if (!grupos.has(fila.parameter_key)) grupos.set(fila.parameter_key, []);
       grupos.get(fila.parameter_key).push(fila);
     }
     for (const filas of grupos.values()) filas.sort((a, b) => String(b.valid_from).localeCompare(String(a.valid_from)));
     return grupos;
-  }, [parametros]);
-  const unidadDe = (clave) => PARAMETROS.find(([k]) => k === clave)?.[1] || "number";
+  }, [parametros, view]);
+  const sinCapturar = (clave) => {
+    if (grupoDe(clave) === "options") return t("payroll_settings.option_default");
+    if (grupoDe(clave) === "vacations") return `${t("payroll_settings.vacation_default")} (${DIAS_DE_LEY[clave]} ${t("payroll_settings.days")})`;
+    return t("payroll_settings.missing");
+  };
   const vigente = (fila) => fila.valid_from <= fechaHoy && (!fila.valid_to || fila.valid_to >= fechaHoy);
 
   const anios = useMemo(() => {
@@ -163,14 +192,16 @@ export default function PayrollSettingsPage() {
       </PageHeader>
 
       <div className="kronos-tabs" role="tablist">
-        <button type="button" role="tab" aria-selected={view === "parameters"} className={view === "parameters" ? "active" : ""} onClick={() => setView("parameters")}>{t("payroll_settings.tab_parameters")}</button>
-        <button type="button" role="tab" aria-selected={view === "isr"} className={view === "isr" ? "active" : ""} onClick={() => setView("isr")}>{t("payroll_settings.tab_isr")}</button>
+        {PESTANAS.map((p) => (
+          <button key={p} type="button" role="tab" aria-selected={view === p} className={view === p ? "active" : ""}
+            onClick={() => { setView(p); setFormParametro(null); }}>{t(`payroll_settings.tab_${p}`)}</button>
+        ))}
       </div>
 
       {error && <div className="alert error" role="alert">{error}</div>}
       {notice && <div className="alert success" role="status">{notice}</div>}
 
-      {view === "parameters" && (
+      {view !== "isr" && (
         <>
           {formParametro && (
             <form className="form-card" onSubmit={guardarParametro}>
@@ -178,10 +209,19 @@ export default function PayrollSettingsPage() {
               <div className="form-grid">
                 <label className="field">{t("payroll_settings.field_key")}
                   <select value={formParametro.parameter_key} disabled={Boolean(formParametro.id_payroll_parameter)} onChange={(e) => setFormParametro((f) => ({ ...f, parameter_key: e.target.value }))}>
-                    {PARAMETROS.map(([k]) => <option key={k} value={k}>{t(`payroll_settings.keys.${k}`)}</option>)}
+                    {clavesDe(view).map((k) => <option key={k} value={k}>{t(`payroll_settings.keys.${k}`)}</option>)}
                   </select>
                 </label>
-                <label className="field">{t("payroll_settings.field_value")}{campo(formParametro, setFormParametro, "value", { required: true, type: "number", step: "any", min: 0 })}</label>
+                <label className="field">{t("payroll_settings.field_value")}
+                  {unidadDe(formParametro.parameter_key) === "option" ? (
+                    <select required value={String(formParametro.value)} onChange={(e) => setFormParametro((f) => ({ ...f, value: e.target.value }))}>
+                      <option value="">{t("common.select_option", "Selecciona una opción")}</option>
+                      <option value="1">{t("payroll_settings.option_yes")}</option>
+                      <option value="0">{t("payroll_settings.option_no")}</option>
+                    </select>
+                  ) : campo(formParametro, setFormParametro, "value", { required: true, type: "number", min: 0,
+                    step: grupoDe(formParametro.parameter_key) === "vacations" ? 1 : "any" })}
+                </label>
                 <label className="field">{t("payroll_settings.field_from")}{campo(formParametro, setFormParametro, "valid_from", { required: true, type: "date" })}</label>
                 <label className="field">{t("payroll_settings.field_to")}{campo(formParametro, setFormParametro, "valid_to", { type: "date" })}</label>
                 <label className="field">{t("payroll_settings.field_source")}{campo(formParametro, setFormParametro, "source", { maxLength: 200 })}</label>
@@ -194,9 +234,10 @@ export default function PayrollSettingsPage() {
           )}
           <div className="table-card">
             <div className="kronos-table-heading">
-              <div><p className="eyebrow">{t("payroll_settings.tab_parameters")}</p><h3>{t("payroll_settings.parameters_title")}</h3></div>
-              {puede("payroll_parameter", "scope_create") && <button className="button" type="button" onClick={() => setFormParametro({ ...PARAMETRO_VACIO, valid_from: fechaHoy })}><Plus size={16} /> {t("payroll_settings.new_value")}</button>}
+              <div><p className="eyebrow">{t(`payroll_settings.tab_${view}`)}</p><h3>{t(`payroll_settings.${view}_title`)}</h3></div>
+              {puede("payroll_parameter", "scope_create") && <button className="button" type="button" onClick={() => setFormParametro({ ...PARAMETRO_VACIO, parameter_key: clavesDe(view)[0], valid_from: fechaHoy })}><Plus size={16} /> {t("payroll_settings.new_value")}</button>}
             </div>
+            {view !== "parameters" && <p className="muted">{t(`payroll_settings.${view}_hint`)}</p>}
             <table>
               <thead><tr>
                 <th>{t("payroll_settings.field_key")}</th><th>{t("payroll_settings.field_value")}</th><th>{t("payroll_settings.field_from")}</th>
@@ -208,7 +249,10 @@ export default function PayrollSettingsPage() {
                     {i === 0 && <td rowSpan={Math.max(filas.length, 1)}><strong>{t(`payroll_settings.keys.${clave}`, clave)}</strong></td>}
                     {fila ? (
                       <>
-                        <td>{formato(unidadDe(clave), fila.value)} {vigente(fila) && <span className="quotation-status-badge status-approved">{t("payroll_settings.current")}</span>}</td>
+                        <td>
+                          {formato(unidadDe(clave), fila.value)} {vigente(fila) && <span className="quotation-status-badge status-approved">{t("payroll_settings.current")}</span>}
+                          {DIAS_DE_LEY[clave] > Number(fila.value) && <small className="muted"> · {t("payroll_settings.below_law")} ({DIAS_DE_LEY[clave]} {t("payroll_settings.days")})</small>}
+                        </td>
                         <td>{fila.valid_from}</td>
                         <td>{fila.valid_to || t("payroll_settings.no_end")}</td>
                         <td><small>{fila.source || "—"}</small></td>
@@ -217,7 +261,7 @@ export default function PayrollSettingsPage() {
                           {puede("payroll_parameter", "scope_delete") && <button type="button" title={t("common.delete")} onClick={() => borrar(() => deletePayrollParameter(fila.id_payroll_parameter))}><Trash2 size={15} /></button>}
                         </td>
                       </>
-                    ) : <td colSpan="5" className="kronos-empty">{t("payroll_settings.missing")}</td>}
+                    ) : <td colSpan="5" className="kronos-empty">{sinCapturar(clave)}</td>}
                   </tr>
                 )))}
               </tbody>

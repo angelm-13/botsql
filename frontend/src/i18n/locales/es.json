@@ -4942,8 +4942,33 @@
       "aguinaldo_days": "Aguinaldo",
       "vacation_premium_pct": "Prima vacacional",
       "aguinaldo_exempt_umas": "Aguinaldo exento de ISR",
-      "vacation_premium_exempt_umas": "Prima vacacional exenta de ISR"
-    }
+      "vacation_premium_exempt_umas": "Prima vacacional exenta de ISR",
+      "option_imss_on_absences": "Cotizar IMSS en días de falta",
+      "option_aguinaldo_discounts": "Descontar del aguinaldo faltas injustificadas e incapacidad por enfermedad general",
+      "option_subsidy_month_days": "Subsidio con los días reales del mes (y no 30.4)",
+      "vacation_days_year_1": "Año 1",
+      "vacation_days_year_2": "Año 2",
+      "vacation_days_year_3": "Año 3",
+      "vacation_days_year_4": "Año 4",
+      "vacation_days_year_5": "Año 5",
+      "vacation_days_years_6_10": "Años 6 a 10",
+      "vacation_days_years_11_15": "Años 11 a 15",
+      "vacation_days_years_16_20": "Años 16 a 20",
+      "vacation_days_years_21_25": "Años 21 a 25",
+      "vacation_days_years_26_30": "Años 26 a 30",
+      "vacation_days_years_31_plus": "Años 31 en adelante"
+    },
+    "tab_options": "Opciones de cálculo",
+    "tab_vacations": "Tabla de vacaciones",
+    "options_title": "Cómo calcula esta empresa",
+    "options_hint": "Decisiones que cada empresa toma de forma distinta. Sin capturar, valen «No». Cada cambio lleva su fecha de inicio, como cualquier cifra.",
+    "vacations_title": "Días de vacaciones por antigüedad",
+    "vacations_hint": "Solo para empresas que dan más días que la ley. Sin capturar se usa la ley, y el cálculo nunca da menos días que la ley aunque se capture menos.",
+    "option_yes": "Sí",
+    "option_no": "No",
+    "option_default": "Sin capturar: No (como la ley lo permite por omisión).",
+    "vacation_default": "Sin capturar: se usa la ley",
+    "below_law": "menos que la ley; se usa la ley"
   },
   "work_schedules": {
     "eyebrow": "RECURSOS HUMANOS",
@@ -5034,7 +5059,12 @@
     "short_vacation": "Vac",
     "short_paid_leave": "Perm",
     "short_unpaid_leave": "Sin goce",
-    "short_disability": "Incap"
+    "short_disability": "Incap",
+    "disability_type": "Tipo de incapacidad",
+    "disability_none": "Sin especificar",
+    "disability_general_illness": "Enfermedad general",
+    "disability_work_risk": "Riesgo de trabajo",
+    "disability_maternity": "Maternidad"
   },
   "my_leaves": {
     "title": "Mis vacaciones",

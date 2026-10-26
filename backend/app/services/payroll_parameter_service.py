@@ -36,6 +36,9 @@ def _numero(valor, campo):
 class PayrollParameterService(CrudService):
     """Cifras oficiales de nomina con vigencia (ver payroll_calculation_service).
 
+    Tambien guarda las opciones de calculo de la empresa y su tabla de
+    vacaciones (PARAMETROS_OPCIONALES), con la misma vigencia y fuente.
+
     Se valida aqui y no en la pantalla, para que valga igual por la API: solo
     las claves que el calculo conoce, valores dentro de rango y, para una misma
     clave, vigencias que no se enciman (si se enciman, el calculo no sabria
@@ -48,13 +51,20 @@ class PayrollParameterService(CrudService):
 
     @classmethod
     def _validar(cls, datos: dict, excluir_id=None) -> None:
-        from app.services.payroll_calculation_service import PARAMETROS_REQUERIDOS
+        from app.services.payroll_calculation_service import (OPCIONES, PARAMETROS_OPCIONALES,
+                                                              PARAMETROS_REQUERIDOS, TABLA_DE_VACACIONES)
+        claves = PARAMETROS_REQUERIDOS + PARAMETROS_OPCIONALES
         clave = str(datos.get("parameter_key") or "").strip()
-        if clave not in PARAMETROS_REQUERIDOS:
-            raise AppError("errors.invalid_field", 400, {"field": "parameter_key", "allowed": list(PARAMETROS_REQUERIDOS)})
+        if clave not in claves:
+            raise AppError("errors.invalid_field", 400, {"field": "parameter_key", "allowed": list(claves)})
         valor = _numero(datos.get("value"), "value")
         if valor < 0 or (clave in CLAVES_PORCENTAJE and valor > 100):
             raise AppError("errors.invalid_field", 400, {"field": "value"})
+        # Una opcion es si (1) o no (0); los dias de vacaciones, enteros de 1 a 365.
+        if clave in OPCIONES and valor not in (0, 1):
+            raise AppError("errors.invalid_field", 400, {"field": "value", "allowed": [0, 1]})
+        if clave in TABLA_DE_VACACIONES and (valor != valor.to_integral_value() or not 1 <= valor <= 365):
+            raise AppError("errors.invalid_field", 400, {"field": "value", "reason": "whole_days"})
         desde = _fecha(datos.get("valid_from"), "valid_from")
         hasta = _fecha(datos.get("valid_to"), "valid_to")
         if desde is None:

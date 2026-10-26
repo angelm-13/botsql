@@ -6,7 +6,7 @@ from app.utils.errors import AppError
 from app.utils.field_access import COLUMNAS_DE_AUDITORIA
 
 bp_employee_leave = Blueprint('employee_leave', __name__, url_prefix='/employee_leave')
-ALLOWED_FIELDS = ['id_employee_leave', 'id_user', 'leave_type', 'start_date', 'end_date', 'notes', 'leave_status', 'requested_by', 'reviewed_by', 'reviewed_at', 'review_note', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
+ALLOWED_FIELDS = ['id_employee_leave', 'id_user', 'leave_type', 'start_date', 'end_date', 'notes', 'disability_type', 'leave_status', 'requested_by', 'reviewed_by', 'reviewed_at', 'review_note', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
 
 TECHNICAL_RESPONSE_FIELDS = {'id_employee_leave'}
 FIELD_READ_BIT = 2

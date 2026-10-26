@@ -16,6 +16,11 @@ TIPOS_DE_AUSENCIA = ('vacation', 'paid_leave', 'unpaid_leave', 'disability')
 SOLICITADA, APROBADA, RECHAZADA, CANCELADA = 'requested', 'approved', 'rejected', 'cancelled'
 ESTADOS_DE_AUSENCIA = (SOLICITADA, APROBADA, RECHAZADA, CANCELADA)
 ESTADOS_VIGENTES = (SOLICITADA, APROBADA)
+# Tipo de incapacidad (migracion 20261026100000): solo la de enfermedad general
+# puede bajar el aguinaldo, si la empresa lo elige; riesgo de trabajo y
+# maternidad nunca (LFT). Sin capturar = no se descuenta.
+INCAPACIDAD_GENERAL, INCAPACIDAD_RIESGO, INCAPACIDAD_MATERNIDAD = 'general_illness', 'work_risk', 'maternity'
+TIPOS_DE_INCAPACIDAD = (INCAPACIDAD_GENERAL, INCAPACIDAD_RIESGO, INCAPACIDAD_MATERNIDAD)
 
 
 class EmployeeLeave(Base):
@@ -28,6 +33,8 @@ class EmployeeLeave(Base):
         CheckConstraint('end_date >= start_date', name='ck_employee_leave_dates'),
         CheckConstraint("leave_status IN ('requested', 'approved', 'rejected', 'cancelled')",
                         name='ck_employee_leave_status'),
+        CheckConstraint("disability_type IS NULL OR disability_type IN ('general_illness', 'work_risk', 'maternity')",
+                        name='ck_employee_leave_disability_type'),
     )
 
     id_employee_leave: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, nullable=False)
@@ -36,6 +43,7 @@ class EmployeeLeave(Base):
     start_date: Mapped[object] = mapped_column(Date, nullable=False)
     end_date: Mapped[object] = mapped_column(Date, nullable=False)
     notes: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    disability_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     leave_status: Mapped[str] = mapped_column(String(20), nullable=False, default=APROBADA, server_default=APROBADA)
     requested_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
     reviewed_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -50,6 +58,7 @@ class EmployeeLeave(Base):
         return {'id_employee_leave': self.id_employee_leave, 'id_user': self.id_user,
                 'leave_type': self.leave_type, 'start_date': to_json_value(self.start_date),
                 'end_date': to_json_value(self.end_date), 'notes': self.notes,
+                'disability_type': self.disability_type,
                 'leave_status': self.leave_status, 'requested_by': self.requested_by,
                 'reviewed_by': self.reviewed_by, 'reviewed_at': a_iso_utc(self.reviewed_at),
                 'review_note': self.review_note, **_auditoria(self)}

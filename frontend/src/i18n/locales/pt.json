@@ -3595,8 +3595,33 @@
       "aguinaldo_days": "Abono de Natal",
       "vacation_premium_pct": "Prêmio de férias",
       "aguinaldo_exempt_umas": "Abono de Natal isento de ISR",
-      "vacation_premium_exempt_umas": "Prêmio de férias isento de ISR"
-    }
+      "vacation_premium_exempt_umas": "Prêmio de férias isento de ISR",
+      "option_imss_on_absences": "Contribuir ao IMSS em dias de falta",
+      "option_aguinaldo_discounts": "Descontar do 13º faltas injustificadas e licença por doença geral",
+      "option_subsidy_month_days": "Subsídio com os dias reais do mês (e não 30,4)",
+      "vacation_days_year_1": "Ano 1",
+      "vacation_days_year_2": "Ano 2",
+      "vacation_days_year_3": "Ano 3",
+      "vacation_days_year_4": "Ano 4",
+      "vacation_days_year_5": "Ano 5",
+      "vacation_days_years_6_10": "Anos 6 a 10",
+      "vacation_days_years_11_15": "Anos 11 a 15",
+      "vacation_days_years_16_20": "Anos 16 a 20",
+      "vacation_days_years_21_25": "Anos 21 a 25",
+      "vacation_days_years_26_30": "Anos 26 a 30",
+      "vacation_days_years_31_plus": "Anos 31 em diante"
+    },
+    "tab_options": "Opções de cálculo",
+    "tab_vacations": "Tabela de férias",
+    "options_title": "Como esta empresa calcula",
+    "options_hint": "Decisões que cada empresa toma de forma diferente. Sem valor, valem «Não». Cada mudança tem sua data de início.",
+    "vacations_title": "Dias de férias por antiguidade",
+    "vacations_hint": "Só para empresas que dão mais dias que a lei. Sem valor, vale a lei, e o cálculo nunca dá menos dias que a lei.",
+    "option_yes": "Sim",
+    "option_no": "Não",
+    "option_default": "Sem valor: Não (padrão da lei).",
+    "vacation_default": "Sem valor: vale a lei",
+    "below_law": "menos que a lei; vale a lei"
   },
   "work_schedules": {
     "eyebrow": "HUMAN RESOURCES",
@@ -3687,7 +3712,12 @@
     "short_vacation": "Vac",
     "short_paid_leave": "Leave",
     "short_unpaid_leave": "Unpaid",
-    "short_disability": "Sick"
+    "short_disability": "Sick",
+    "disability_type": "Tipo de licença médica",
+    "disability_none": "Não especificado",
+    "disability_general_illness": "Doença geral",
+    "disability_work_risk": "Acidente de trabalho",
+    "disability_maternity": "Maternidade"
   },
   "my_leaves": {
     "title": "Minhas férias",

@@ -3589,8 +3589,33 @@
       "aguinaldo_days": "Weihnachtsgeld",
       "vacation_premium_pct": "Urlaubsprämie",
       "aguinaldo_exempt_umas": "Steuerfreies Weihnachtsgeld",
-      "vacation_premium_exempt_umas": "Steuerfreie Urlaubsprämie"
-    }
+      "vacation_premium_exempt_umas": "Steuerfreie Urlaubsprämie",
+      "option_imss_on_absences": "IMSS-Beiträge an Fehltagen zahlen",
+      "option_aguinaldo_discounts": "Unentschuldigte Fehltage und Krankheit vom Weihnachtsgeld abziehen",
+      "option_subsidy_month_days": "Beschäftigungszuschuss mit den echten Monatstagen (statt 30,4)",
+      "vacation_days_year_1": "Jahr 1",
+      "vacation_days_year_2": "Jahr 2",
+      "vacation_days_year_3": "Jahr 3",
+      "vacation_days_year_4": "Jahr 4",
+      "vacation_days_year_5": "Jahr 5",
+      "vacation_days_years_6_10": "Jahre 6 bis 10",
+      "vacation_days_years_11_15": "Jahre 11 bis 15",
+      "vacation_days_years_16_20": "Jahre 16 bis 20",
+      "vacation_days_years_21_25": "Jahre 21 bis 25",
+      "vacation_days_years_26_30": "Jahre 26 bis 30",
+      "vacation_days_years_31_plus": "Ab Jahr 31"
+    },
+    "tab_options": "Berechnungsoptionen",
+    "tab_vacations": "Urlaubstabelle",
+    "options_title": "Wie dieses Unternehmen rechnet",
+    "options_hint": "Entscheidungen, die jedes Unternehmen anders trifft. Ohne Wert gilt «Nein». Jede Änderung hat ihr Startdatum.",
+    "vacations_title": "Urlaubstage nach Betriebszugehörigkeit",
+    "vacations_hint": "Nur für Unternehmen, die mehr Tage als das Gesetz geben. Ohne Wert gilt das Gesetz; die Berechnung gibt nie weniger Tage.",
+    "option_yes": "Ja",
+    "option_no": "Nein",
+    "option_default": "Ohne Wert: Nein (gesetzlicher Standard).",
+    "vacation_default": "Ohne Wert: es gilt das Gesetz",
+    "below_law": "weniger als das Gesetz; es gilt das Gesetz"
   },
   "work_schedules": {
     "eyebrow": "HUMAN RESOURCES",
@@ -3681,7 +3706,12 @@
     "short_vacation": "Vac",
     "short_paid_leave": "Leave",
     "short_unpaid_leave": "Unpaid",
-    "short_disability": "Sick"
+    "short_disability": "Sick",
+    "disability_type": "Art der Arbeitsunfähigkeit",
+    "disability_none": "Nicht angegeben",
+    "disability_general_illness": "Allgemeine Krankheit",
+    "disability_work_risk": "Arbeitsunfall",
+    "disability_maternity": "Mutterschaft"
   },
   "my_leaves": {
     "title": "Mein Urlaub",

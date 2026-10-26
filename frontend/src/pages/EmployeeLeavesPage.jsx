@@ -14,6 +14,9 @@ import "../styles/kronos.css";
 // el backend (services/employee_leave_service.py).
 
 const TIPOS = ["vacation", "paid_leave", "unpaid_leave", "disability"];
+// Tipo de incapacidad: solo la de enfermedad general puede bajar el aguinaldo
+// (si la empresa lo elige en Ajustes de nomina); la regla vive en el backend.
+const TIPOS_DE_INCAPACIDAD = ["general_illness", "work_risk", "maternity"];
 
 function hoy() {
   const d = new Date();
@@ -86,7 +89,8 @@ export default function EmployeeLeavesPage() {
     setNotice("");
     const { id_employee_leave: id, ...datos } = form;
     const cuerpo = { id_user: Number(datos.id_user), leave_type: datos.leave_type, start_date: datos.start_date,
-      end_date: datos.end_date, notes: datos.notes || null };
+      end_date: datos.end_date, notes: datos.notes || null,
+      disability_type: datos.leave_type === "disability" ? (datos.disability_type || null) : null };
     try {
       if (id) await updateEmployeeLeave(id, cuerpo);
       else await createEmployeeLeave(cuerpo);
@@ -145,6 +149,14 @@ export default function EmployeeLeavesPage() {
                     {TIPOS.map((tipo) => <option key={tipo} value={tipo}>{t(`employee_leaves.type_${tipo}`)}</option>)}
                   </select>
                 </label>
+                {form.leave_type === "disability" && (
+                  <label className="field">{t("employee_leaves.disability_type")}
+                    <select value={form.disability_type || ""} onChange={(e) => setForm((f) => ({ ...f, disability_type: e.target.value }))}>
+                      <option value="">{t("employee_leaves.disability_none")}</option>
+                      {TIPOS_DE_INCAPACIDAD.map((tipo) => <option key={tipo} value={tipo}>{t(`employee_leaves.disability_${tipo}`)}</option>)}
+                    </select>
+                  </label>
+                )}
                 <label className="field">{t("employee_leaves.from")}{campo("start_date", { required: true, type: "date" })}</label>
                 <label className="field">{t("employee_leaves.to")}{campo("end_date", { required: true, type: "date", min: form.start_date || undefined })}</label>
                 <label className="field">{t("employee_leaves.notes")}{campo("notes", { maxLength: 300 })}</label>
@@ -166,13 +178,13 @@ export default function EmployeeLeavesPage() {
               <tbody>{ordenadas.length ? ordenadas.map((a) => (
                 <tr key={a.id_employee_leave}>
                   <td><strong>{nombreEmpleado(a.id_user)}</strong></td>
-                  <td>{t(`employee_leaves.type_${a.leave_type}`)}</td>
+                  <td>{t(`employee_leaves.type_${a.leave_type}`)}{a.disability_type && <small> · {t(`employee_leaves.disability_${a.disability_type}`)}</small>}</td>
                   <td>{a.start_date}</td>
                   <td>{a.end_date}</td>
                   <td><small>{a.notes || "—"}</small></td>
                   <td>{t(`my_leaves.status_${a.leave_status || "approved"}`)}</td>
                   <td className="row-actions">
-                    {puede("scope_update") && <button type="button" title={t("common.edit")} onClick={() => setForm({ ...a, notes: a.notes || "" })}><Pencil size={15} /></button>}
+                    {puede("scope_update") && <button type="button" title={t("common.edit")} onClick={() => setForm({ ...a, notes: a.notes || "", disability_type: a.disability_type || "" })}><Pencil size={15} /></button>}
                     {puede("scope_delete") && <button type="button" title={t("common.delete")} onClick={() => borrar(a)}><Trash2 size={15} /></button>}
                   </td>
                 </tr>

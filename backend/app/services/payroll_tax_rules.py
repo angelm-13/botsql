@@ -16,13 +16,16 @@ Subsidio para el empleo (decreto, DOF 31/12/2025)
     limite. Monto: UMA mensual x porcentaje; en periodos menores a un mes se
     divide entre 30.4 y se multiplica por los dias. Se resta del ISR y nunca lo
     vuelve negativo (desde 2024 ya no hay subsidio "a favor" en efectivo).
+    Opcion de la empresa: usar los dias reales del mes (28 a 31) en lugar de
+    30.4 (revision contable, 2026-10-26: muchas empresas lo hacen asi).
 
 IMSS, cuota del trabajador (Ley del Seguro Social)
     Salario base de cotizacion (SBC) = salario diario x factor de integracion,
     con piso en el salario minimo y tope de 25 UMA (art. 28).
     Factor = 1 + (dias de aguinaldo + dias de vacaciones x prima vacacional) / 365
     (LFT arts. 76, 80 y 87). Las vacaciones dependen de la antiguedad (art. 76,
-    reforma 2023: 12 dias el primer año).
+    reforma 2023: 12 dias el primer año). Una empresa con prestaciones
+    superiores captura su propia tabla; nunca da menos dias que la ley.
     Cuota por dia = SBC x (prestaciones en dinero + gastos medicos de
     pensionados + invalidez y vida + cesantia y vejez) + (SBC - 3 UMA, si es
     positivo) x excedente. Quien gana el salario minimo no paga cuota obrera: la
@@ -30,8 +33,10 @@ IMSS, cuota del trabajador (Ley del Seguro Social)
 
 Aguinaldo (LFT art. 87)
     Salario diario x dias de aguinaldo x (dias del año desde el ingreso, o
-    desde el 1 de enero, hasta el 31 de diciembre / dias del año). Las faltas
-    no lo reducen.
+    desde el 1 de enero, hasta el 31 de diciembre / dias del año). Por omision
+    las faltas no lo reducen; la empresa puede elegir descontar las faltas
+    injustificadas y las incapacidades por enfermedad general (las de riesgo de
+    trabajo y maternidad nunca se descuentan).
 
 Prima vacacional (LFT art. 80)
     Se paga al cumplir cada año de servicio: dias de vacaciones del año que se
@@ -93,28 +98,41 @@ def isr_por_tarifa(base, tramos, factor=Decimal(1)) -> Decimal:
     return dinero(Decimal(str(cuota)) * factor + (base - inferior) * Decimal(str(pct)) / 100)
 
 
-def subsidio_para_el_empleo(base_gravable, dias: int, uma_mensual, porcentaje, limite_mensual) -> Decimal:
-    """Subsidio del periodo; 0 si el ingreso llevado a mes pasa del limite."""
+def subsidio_para_el_empleo(base_gravable, dias: int, uma_mensual, porcentaje, limite_mensual,
+                            dias_del_mes: int | None = None) -> Decimal:
+    """Subsidio del periodo; 0 si el ingreso llevado a mes pasa del limite.
+
+    `dias_del_mes`: si se da, el periodo se lleva a mes con los dias reales del
+    mes (28 a 31) en lugar de 30.4.
+    """
     base = Decimal(str(base_gravable or 0))
     if base <= 0 or dias <= 0:
         return dinero(0)
     mensual = Decimal(str(uma_mensual)) * Decimal(str(porcentaje)) / 100
+    dias_mes = Decimal(dias_del_mes) if dias_del_mes else DIAS_MES
     if 28 <= dias <= 31:
         ingreso_mensual, monto = base, mensual
     else:
-        ingreso_mensual = base / dias * DIAS_MES
-        monto = mensual / DIAS_MES * dias
+        ingreso_mensual = base / dias * dias_mes
+        monto = mensual / dias_mes * dias
     if ingreso_mensual > Decimal(str(limite_mensual)):
         return dinero(0)
     return dinero(monto)
 
 
-def dias_de_vacaciones(anios_cumplidos: int) -> int:
-    """Vacaciones del año de servicio en curso (LFT art. 76, reforma 2023)."""
+def dias_de_vacaciones(anios_cumplidos: int, tabla: dict[int, int] | None = None) -> int:
+    """Vacaciones del año de servicio en curso (LFT art. 76, reforma 2023).
+
+    `tabla`: la de la empresa, {año de servicio en que empieza el renglon: dias};
+    vale el ultimo renglon que ya empezo. Nunca da menos dias que la ley.
+    """
     anio = max(0, int(anios_cumplidos)) + 1
     if anio <= 5:
-        return 10 + 2 * anio          # 12, 14, 16, 18, 20
-    return 20 + 2 * ((anio - 1) // 5)  # 6-10: 22, 11-15: 24, 16-20: 26, ...
+        ley = 10 + 2 * anio          # 12, 14, 16, 18, 20
+    else:
+        ley = 20 + 2 * ((anio - 1) // 5)  # 6-10: 22, 11-15: 24, 16-20: 26, ...
+    empiezan = [desde for desde in (tabla or {}) if desde <= anio]
+    return max(ley, int(tabla[max(empiezan)])) if empiezan else ley
 
 
 def anios_cumplidos(ingreso: date | None, al_dia: date) -> int:
@@ -149,15 +167,16 @@ def cuota_obrera_imss(sbc, dias, salario_diario, salario_minimo, uma_diaria, p: 
     return dinero(por_dia * dias)
 
 
-def aguinaldo(salario_diario, dias_aguinaldo, ingreso: date | None, anio: int) -> Decimal:
+def aguinaldo(salario_diario, dias_aguinaldo, ingreso: date | None, anio: int, dias_descontados: int = 0) -> Decimal:
     """Aguinaldo del `anio`, proporcional si entro ese mismo año. Sin fecha de
-    ingreso se paga completo (el calculo lo avisa aparte)."""
+    ingreso se paga completo (el calculo lo avisa aparte). `dias_descontados`:
+    faltas e incapacidades que la empresa eligio descontar."""
     inicio, fin = date(anio, 1, 1), date(anio, 12, 31)
     if ingreso and ingreso > fin:
         return dinero(0)
     desde = max(ingreso, inicio) if ingreso else inicio
     dias_del_anio = (fin - inicio).days + 1
-    trabajados = (fin - desde).days + 1
+    trabajados = max((fin - desde).days + 1 - int(dias_descontados or 0), 0)
     return dinero(Decimal(str(salario_diario)) * Decimal(str(dias_aguinaldo)) * trabajados / dias_del_anio)
 
 
@@ -177,11 +196,12 @@ def aniversario_en(ingreso: date | None, inicio: date, fin: date) -> date | None
     return None
 
 
-def prima_vacacional(salario_diario, anios_de_servicio: int, prima_pct) -> tuple[int, Decimal]:
+def prima_vacacional(salario_diario, anios_de_servicio: int, prima_pct,
+                     tabla: dict[int, int] | None = None) -> tuple[int, Decimal]:
     """(dias de vacaciones del año cumplido, prima) al cumplir `anios_de_servicio`."""
     if anios_de_servicio < 1:
         return 0, dinero(0)
-    dias = dias_de_vacaciones(anios_de_servicio - 1)
+    dias = dias_de_vacaciones(anios_de_servicio - 1, tabla)
     return dias, dinero(Decimal(str(salario_diario)) * dias * Decimal(str(prima_pct)) / 100)
 
 

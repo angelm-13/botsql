@@ -16,7 +16,9 @@ el backend para que valgan igual por la API:
 Saldo de vacaciones: al cumplir cada año de servicio le tocan los dias de ese
 año; disponibles = los que le tocan - los tomados (aprobados) - los pendientes
 (solicitados), desde su ultimo aniversario. Los dias no usados del año anterior
-no se acumulan (decision de RH, 2026-10-21).
+no se acumulan (decision de RH, 2026-10-21; la revision contable confirma que es
+valido si esta en el contrato firmado). Los dias de cada año salen de la tabla de
+la empresa si la hay (Ajustes de nomina), nunca menos que la ley.
 
 Solicitudes (decisiones de RH, 2026-10-22): el empleado pide vacaciones o un
 permiso (la incapacidad la registra RH); lo aprueba o rechaza su supervisor
@@ -32,7 +34,7 @@ from sqlalchemy import select
 
 from app.models import EmployeeLeave, PayrollPeriod, User
 from app.models.employee_leave import (APROBADA, CANCELADA, ESTADOS_VIGENTES, RECHAZADA, SOLICITADA,
-                                       TIPOS_DE_AUSENCIA)
+                                       TIPOS_DE_AUSENCIA, TIPOS_DE_INCAPACIDAD)
 from app.models.session import transaction_context
 from app.services import payroll_tax_rules as ley
 from app.services.base_service import CrudService
@@ -115,6 +117,8 @@ def _saldos(db, empleados, al_dia: date, excluir_id=None) -> list[dict]:
             ventanas[empleado.id_user] = (inicio, fin)
         datos.append((empleado, (anios, inicio, fin)))
     tomadas = _vacaciones_tomadas(db, ventanas, excluir_id)
+    from app.services.payroll_calculation_service import tabla_de_vacaciones
+    tabla = tabla_de_vacaciones(db, al_dia)
     salida = []
     for empleado, ano in datos:
         if ano is None:
@@ -123,7 +127,7 @@ def _saldos(db, empleados, al_dia: date, excluir_id=None) -> list[dict]:
                            "year_start": None, "year_end": None})
             continue
         anios, inicio, fin = ano
-        derecho = ley.dias_de_vacaciones(anios - 1) if anios >= 1 else 0
+        derecho = ley.dias_de_vacaciones(anios - 1, tabla) if anios >= 1 else 0
         tomados, pendientes = tomadas.get(empleado.id_user, (0, 0))
         salida.append({"id_user": empleado.id_user, "full_name": empleado.full_name or "",
                        "hire_date": empleado.hire_date.isoformat(), "service_years": anios, "entitled": derecho,
@@ -158,6 +162,17 @@ def _exigir_fuera_de_periodo_cerrado(db, desde: date, hasta: date) -> None:
         raise AppError("errors.payroll_period_closed", 409, {"id_payroll_period": cerrado.id_payroll_period})
 
 
+def _con_tipo_de_incapacidad(payload: dict, actual: dict | None = None) -> dict:
+    """El tipo de incapacidad solo lo lleva una incapacidad; vacio = sin capturar."""
+    payload = dict(payload)
+    tipo = payload.get("leave_type", (actual or {}).get("leave_type"))
+    if payload.get("disability_type") == "":
+        payload["disability_type"] = None
+    if tipo != "disability" and (payload.get("disability_type") or (actual or {}).get("disability_type")):
+        payload["disability_type"] = None
+    return payload
+
+
 class EmployeeLeaveService(CrudService):
     model = EmployeeLeave
     primary_key = 'id_employee_leave'
@@ -175,6 +190,9 @@ class EmployeeLeaveService(CrudService):
             raise AppError("errors.invalid_field", 400, {"field": "end_date"})
         if len(str(datos.get("notes") or "")) > 300:
             raise AppError("errors.invalid_field", 400, {"field": "notes"})
+        if datos.get("disability_type") not in (None, *TIPOS_DE_INCAPACIDAD):
+            raise AppError("errors.invalid_field", 400, {"field": "disability_type",
+                                                         "allowed": list(TIPOS_DE_INCAPACIDAD)})
         with transaction_context() as db:
             empleado = db.get(User, id_user)
             if empleado is None or empleado.deletion_date is not None or not empleado.is_employee:
@@ -224,7 +242,8 @@ class EmployeeLeaveService(CrudService):
     @classmethod
     def create(cls, payload: dict, user_id: int | None = None):
         # Lo que registra RH queda aprobado de una vez; el estado no se escribe a mano.
-        payload = {k: v for k, v in dict(payload or {}).items() if k not in CAMPOS_DEL_FLUJO}
+        payload = _con_tipo_de_incapacidad(
+            {k: v for k, v in dict(payload or {}).items() if k not in CAMPOS_DEL_FLUJO})
         cls._validar(payload)
         payload.update(leave_status=APROBADA, reviewed_by=user_id, reviewed_at=ahora_utc())
         return super().create(payload, user_id=user_id)
@@ -233,6 +252,7 @@ class EmployeeLeaveService(CrudService):
     def update(cls, item_id, payload: dict, user_id: int | None = None):
         payload = {k: v for k, v in dict(payload or {}).items() if k not in CAMPOS_DEL_FLUJO}
         actual = cls._actual(item_id)
+        payload = _con_tipo_de_incapacidad(payload, actual)
         with transaction_context() as db:
             _exigir_fuera_de_periodo_cerrado(db, _fecha(actual["start_date"], "start_date"),
                                              _fecha(actual["end_date"], "end_date"))
