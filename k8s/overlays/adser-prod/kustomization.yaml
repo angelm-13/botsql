@@ -54,6 +54,28 @@ patches:
                 hostPath:
                   path: /home/infra-k8s/imagenes/producto
                   type: Directory
+  # Memoria del backend de adser: con el limite de base (512Mi) el pod llego a
+  # 446Mi tras 4 dias en marcha (2026-10-26), solo 66Mi de margen. Si lo pasa, el
+  # kernel lo mata (OOMKilled) y, al ser Recreate, la API cae unos segundos.
+  # Se sube el limite a 768Mi y el request a 384Mi (cerca del uso real, para que
+  # el scheduler cuente lo que de verdad ocupa). Va solo aqui, no en base.
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: backend
+      spec:
+        template:
+          spec:
+            containers:
+              - name: backend
+                resources:
+                  requests:
+                    cpu: 100m
+                    memory: 384Mi
+                  limits:
+                    cpu: 500m
+                    memory: 768Mi
   # PriorityClass del cliente ERP #2 (ver p2-adser-prod, aplicada al clúster
   # con kubectl apply -f priority-classes.yaml).
   - target:
