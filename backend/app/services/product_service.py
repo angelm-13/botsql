@@ -148,6 +148,67 @@ class ProductService(CrudService):
         return payload
 
     @classmethod
+    def _estado_solo_por_vale(cls, item_id, payload: dict) -> dict:
+        """A mano el estado solo puede pasar a "En almacen", y no con un vale abierto.
+
+        Danado, extraviado, retirado y en reparacion los pone UNICAMENTE el vale
+        correspondiente (`_marcar_estado_de_producto`). La edicion manual existe para lo
+        contrario: una pieza que la migracion dejo como extraviada o danada y que esta fisica
+        en el almacen, o que regresa o se encuentra. Y solo si no esta en un vale abierto: ahi
+        el camino es devolver el renglon del vale, no editar el producto.
+
+        Solo cuenta lo que CAMBIA frente a lo guardado -el formulario manda el registro
+        completo-, para que editar otro campo de un producto con estado heredado siga siendo
+        posible. En el alta, un estado de catalogo tampoco se acepta.
+        """
+        from app.models.nm_incident_product import NmIncidentProduct
+        from app.models.incident import Incident
+        from app.utils.product_status import clave, codigo_de_catalogo
+
+        if 'product_status' not in payload and 'id_inventory_status' not in payload:
+            return payload
+
+        def _id(valor):
+            return cls._entero_o_none(valor) if str(valor).strip() != '' else None
+
+        if item_id is None:
+            if (codigo_de_catalogo(payload.get('product_status')) is not None
+                    or _id(payload.get('id_inventory_status')) is not None):
+                raise AppError('errors.product_status_via_voucher', status_code=409,
+                               meta={'field': 'product_status'})
+            return payload
+
+        with transaction_context() as session:
+            fila = session.get(Product, int(item_id))
+            if fila is None:
+                return payload
+            cambio_texto = ('product_status' in payload
+                            and clave(payload['product_status']) != clave(fila.product_status))
+            cambio_id = ('id_inventory_status' in payload
+                         and _id(payload['id_inventory_status']) != fila.id_inventory_status)
+            if not (cambio_texto or cambio_id):
+                return payload
+            if ((cambio_texto and clave(payload['product_status']) != 'entrada')
+                    or (cambio_id and _id(payload['id_inventory_status']) is not None)):
+                raise AppError('errors.product_status_via_voucher', status_code=409,
+                               meta={'field': 'product_status'})
+            en_vale = session.scalar(
+                select(Incident.id_incident)
+                .join(NmIncidentProduct, NmIncidentProduct.id_incident == Incident.id_incident)
+                .where(NmIncidentProduct.id_product == int(item_id),
+                       NmIncidentProduct.close_date.is_(None),
+                       NmIncidentProduct.deletion_date.is_(None),
+                       func.coalesce(NmIncidentProduct.direction, 'salida') == 'salida',
+                       Incident.deletion_date.is_(None),
+                       func.coalesce(func.lower(Incident.incident_status), '')
+                       .notin_(('cancelado', 'cerrada')))
+                .limit(1))
+        if en_vale is not None:
+            raise AppError('errors.product_status_in_open_voucher', status_code=409,
+                           meta={'field': 'product_status', 'id_incident': en_vale})
+        return payload
+
+    @classmethod
     def _rechazar_lot_control(cls, payload: dict) -> dict:
         """El control por lote no se enciende escribiendo la columna.
 
@@ -242,6 +303,7 @@ class ProductService(CrudService):
         como llega casi todo lo del sistema original.
         """
         payload = cls._rechazar_codigo_repetido(None, cls._rechazar_lot_control(dict(payload or {})))
+        payload = cls._estado_solo_por_vale(None, payload)
         payload = cls._sincronizar_estado(None, payload)
         payload = cls._clasificacion_del_material(payload)
 
@@ -390,6 +452,7 @@ class ProductService(CrudService):
         # dos arreglos del mismo bug, se queda el de `initAlan` por ser la
         # rama compartida.
         payload = cls._rechazar_codigo_repetido(item_id, cls._rechazar_cantidad_a_mano(item_id, dict(payload or {})))
+        payload = cls._estado_solo_por_vale(item_id, payload)
         payload = cls._sincronizar_estado(item_id, payload)
         payload = cls._exigir_existencia_para_en_almacen(item_id, payload)
         payload = cls._clasificacion_del_material(payload)

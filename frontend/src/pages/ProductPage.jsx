@@ -675,14 +675,15 @@ export default function ProductPage() {
             <span>{t("fields.product.product_status")}</span>
             <select name="product_status" value={formData.product_status ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors["product_status"])} {...inputPropsForField("product_status", validationRules["product_status"], "select")}>
               <option value="">{t("common.select_option", "Selecciona una opción")}</option>
-              {/* ENTRADA no es un estado del catalogo sino "esta en el almacen": sin esta opcion no habia como devolver a disponible una pieza marcada extraviada o con salida. */}
+              {/* A mano solo se marca "En almacen" (la pieza regresa o se encuentra). Danado, extraviado,
+                  retirado y en reparacion los pone UNICAMENTE el vale correspondiente; si el producto ya
+                  trae uno de esos estados se muestra, pero no se puede elegir. */}
               <option value="ENTRADA">{t("product.status_in_warehouse", "En almacén")}</option>
-              {inventoryStatusOptions.map((item) => (
-                <option key={item.id_inventory_status ?? item.inventory_status_code ?? JSON.stringify(item)} value={item.inventory_status_code ?? ""}>
-                  {productInventoryStatusLabel(item)}
-                </option>
-              ))}
+              {formData.product_status && String(formData.product_status).toUpperCase() !== "ENTRADA" && (
+                <option value={formData.product_status} disabled>{formData.product_status}</option>
+              )}
             </select>
+            <small className="muted">{t("product.status_manual_help", "A mano solo se marca «En almacén» cuando la pieza regresa o se encuentra y no está en un vale. Dañado, extraviado, retirado y en reparación se ponen levantando el vale correspondiente.")}</small>
             {fieldErrors["product_status"] && <span className="field-error">{formatFieldError("product_status")}</span>}
           </label>
           )}

@@ -2737,6 +2737,8 @@
     "lot_control_needs_its_own_endpoint": "Lot control is not switched on from here: do it from the product, so the stock already on hand lands inside an opening lot.",
     "product_description_format": "The description must start with a capital letter, followed by lowercase letters, spaces, numbers and symbols such as slash or hyphen (e.g. Small polisher 3/4). Acronyms like PVC or LED stay uppercase.",
     "product_code_duplicate": "A product with that code already exists. Find and edit it, or use another code.",
+    "product_status_via_voucher": "The status cannot be changed by hand: damaged, lost, withdrawn and under repair are set by raising the matching voucher. By hand you can only mark \"In warehouse\".",
+    "product_status_in_open_voucher": "The product is on an open voucher. Return the voucher line to change its status; it cannot be edited by hand.",
     "product_status_needs_stock": "A product without stock cannot be marked as In warehouse. First register an entry of at least 1 unit (\"Register entry\" button) and then change the status.",
     "product_quantity_via_movements": "Stock is not edited by hand: use “Register entry” for what arrives, the voucher for what leaves and an inventory adjustment for a count.",
     "voucher_not_a_draft": "This voucher is no longer a draft: only a draft can be authorised.",

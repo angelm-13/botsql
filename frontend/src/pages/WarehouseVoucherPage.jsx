@@ -81,6 +81,16 @@ import PageHeader from "../components/PageHeader.jsx";
 // vuelve a comprobar la capacidad exacta-, pero un boton que el servidor
 // siempre va a rechazar no debe estar ahi para empezar: confunde mas de lo
 // que "cuida" un permiso que la pantalla ya conoce.
+// Dañado, extraviado, destruccion y reparacion reportan un SUCESO: no llevan "se necesita el" ni
+// quien recoge, que son del prestamo. Misma lista que `ESTADO_POR_TIPO` del servidor.
+const CLAVES_DE_REPORTE = ["danado", "extraviado", "destruccion", "reparacion"];
+const esReporteDeIncidente = (tipos, idTipo) => {
+  const tipo = (tipos || []).find((x) => String(x.id_incident_type) === String(idTipo));
+  const clave = String(tipo?.incident_type_description || "").trim().toLowerCase()
+    .normalize("NFD").replace(/[̀-ͯ]/g, "");
+  return CLAVES_DE_REPORTE.includes(clave);
+};
+
 function actorGuardado() {
   try { return JSON.parse(localStorage.getItem("user") || "{}"); } catch { return {}; }
 }
@@ -374,10 +384,12 @@ export default function WarehouseVoucherPage() {
     setAviso("");
     const alta = comoPrevale ? createWarehousePrevoucher : createWarehouseVoucher;
     try {
+      const reporte = esReporteDeIncidente(tipos, borrador.id_incident_type);
       const creado = await alta({
         ...borrador,
         id_proyect: borrador.id_proyect || undefined,
-        pickup_name: borrador.pickup_name || undefined,
+        needed_date: reporte ? undefined : borrador.needed_date,
+        pickup_name: reporte ? undefined : (borrador.pickup_name || undefined),
         id_incident_parent: borrador.id_incident_parent || undefined,
         lines: borrador.lines.map((l) => ({
           id_product: l.id_product,
@@ -1520,8 +1532,9 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
   // La fecha en que se necesita y el motivo van siempre, y el origen en lo fungible.
   // Se comprueba aqui para decirlo antes de mandar, no despues de que el
   // servidor conteste; el servidor lo exige igual, que es lo que cuenta.
+  const esReporte = esReporteDeIncidente(tipos, borrador.id_incident_type);
   const listo = borrador.lines.length > 0 && borrador.id_incident_type
-    && borrador.id_user && borrador.needed_date && borrador.note.trim()
+    && borrador.id_user && (esReporte || borrador.needed_date) && borrador.note.trim()
     && borrador.lines.every((l, i) => l.serializado || (
       l.id_location_from && Number(l.quantity) >= 1
       && Number(l.quantity) <= disponibleDe(l, i)));
@@ -1576,6 +1589,7 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
             </select>
           )}
         </label>
+        {!esReporte && (
         <div className="field vale-recoge">
           <label className="vale-solo-abiertos">
             <input type="checkbox" checked={otraPersona}
@@ -1594,6 +1608,7 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
           </label>
           )}
         </div>
+        )}
         {/* Vale complementario: solo con proyecto, y solo de ese proyecto. */}
         {borrador.id_proyect && (
           <label className="field">
@@ -1624,6 +1639,7 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
             ))}
           </select>
         </label>
+        {!esReporte && (
         <label className="field">
           {/* Para cuando se necesita la herramienta; la de regreso ya no se pide. */}
           <span>{t("voucher.needed", "Se necesita el")}</span>
@@ -1631,6 +1647,7 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
                  min={new Date().toISOString().slice(0, 10)}
                  onChange={(e) => setBorrador({ ...borrador, needed_date: e.target.value })} />
         </label>
+        )}
         <label className="field field-ancho">
           <span>{t("voucher.note", "Motivo")} *</span>
           <input value={borrador.note} maxLength={300} required

@@ -145,3 +145,30 @@ class TestCualPrestamoSeCierra(BaseBaja):
             self.baja(TIPO_EXTRAVIADO, cantidad=2)
         self.assertEqual(contexto.exception.message_key, "errors.inventory_insufficient_stock")
         self.assertIsNone(self.cierre_de(self.linea(prestamo)))
+
+
+class TestUnReporteNoLlevaFechaNiQuienRecoge(BaseBaja):
+    """Dañado, extraviado, destruccion y reparacion reportan un suceso: no hay "se necesita el"
+    ni quien recoge, que son del prestamo."""
+
+    def _cabecera(self, resultado):
+        with transaction_context() as db:
+            vale = db.get(Incident, resultado["voucher"]["id_incident"])
+            return vale.needed_date, vale.pickup_name
+
+    def test_un_reporte_descarta_la_fecha_y_quien_recoge(self):
+        self.surtir(10)
+        baja = self._vale([self._linea_cantidad(1)], id_incident_type=TIPO_EXTRAVIADO,
+                          note="Se perdio en obra", needed_date="2099-01-01",
+                          pickup_name="Chofer externo")
+
+        self.assertEqual((None, None), self._cabecera(baja))
+
+    def test_un_prestamo_si_conserva_fecha_y_quien_recoge(self):
+        self.surtir(10)
+        prestamo = self._vale([self._linea_cantidad(1)], needed_date="2099-01-01",
+                              pickup_name="Chofer externo")
+
+        needed, pickup = self._cabecera(prestamo)
+        self.assertEqual("2099-01-01", str(needed))
+        self.assertEqual("Chofer externo", pickup)

@@ -2521,15 +2521,21 @@ class TestLosTiposDeValePorRol(BaseVale):
     def test_the_warehouse_can_raise_destruction(self):
         self._levantar(self.P_ALMACEN, self.T_DESTRUCCION, False)
 
-    def test_a_supervisor_can_request_a_repair(self):
-        r = self._levantar(self.P_SUPERVISOR, self.T_REPARACION, True)
+    def test_a_supervisor_cannot_request_an_incident_report(self):
+        """Dañado, extraviado, destruccion y reparacion los levanta solo el almacen."""
+        for tipo in (self.T_REPARACION, self.T_DESTRUCCION):
+            with self.subTest(tipo=tipo):
+                e = self._error(self._levantar, self.P_SUPERVISOR, tipo, True)
+                self.assertEqual(403, e.status_code)
 
-        self.assertEqual(BORRADOR, r["voucher"]["incident_status"])
+    def test_management_cannot_raise_an_incident_report_either(self):
+        for tipo in (self.T_REPARACION, self.T_DESTRUCCION):
+            with self.subTest(tipo=tipo):
+                e = self._error(self._levantar, self.P_GERENCIA, tipo, False)
+                self.assertEqual(403, e.status_code)
 
-    def test_a_supervisor_cannot_request_destruction(self):
-        e = self._error(self._levantar, self.P_SUPERVISOR, self.T_DESTRUCCION, True)
-
-        self.assertEqual(403, e.status_code)
+    def test_the_warehouse_can_raise_a_repair(self):
+        self._levantar(self.P_ALMACEN, self.T_REPARACION, False)
 
     def test_a_supervisor_cannot_open_a_voucher_directly(self):
         e = self._error(self._levantar, self.P_SUPERVISOR, TIPO_PRESTAMO, False)
@@ -2546,7 +2552,14 @@ class TestLosTiposDeValePorRol(BaseVale):
         ofrecidos = [o["incident_type_description"]
                      for o in filtrar_tipos_de_vale(todos, actor)]
 
-        self.assertEqual(["Prestamo", "Reparación"], ofrecidos)
+        self.assertEqual(["Prestamo"], ofrecidos)
+
+        gerencia = {"id_user": OPERADOR, "id_permission": self.P_GERENCIA}
+        self.assertEqual(["Prestamo", "Jornada"], [
+            o["incident_type_description"] for o in filtrar_tipos_de_vale(todos, gerencia)])
+        almacen = {"id_user": OPERADOR, "id_permission": self.P_ALMACEN}
+        self.assertEqual(["Prestamo", "Destruccion", "Reparación"], [
+            o["incident_type_description"] for o in filtrar_tipos_de_vale(todos, almacen)])
 
     def test_delivering_moves_the_stock_and_confirming_opens_it(self):
         self.surtir(5, RACK)

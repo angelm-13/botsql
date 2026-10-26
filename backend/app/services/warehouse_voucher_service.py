@@ -216,6 +216,16 @@ MOVIMIENTO_DE_BAJA = {"destruccion": "destroy", "extraviado": "loss"}
 SE_CIERRA_AL_REGISTRAR = {"destruccion"}
 
 
+def _es_reporte_de_incidente(db, id_incident_type) -> bool:
+    """Dañado, extraviado, destruccion o reparacion: se reporta un SUCESO, no se presta nada.
+
+    Por eso no llevan "se necesita el" ni quien recoge: eso es del prestamo y de la salida
+    a obra.
+    """
+    tipo = db.get(IncidentType, id_incident_type)
+    return _clave_de_tipo(getattr(tipo, "incident_type_description", None)) in ESTADO_POR_TIPO
+
+
 def _clave_de_baja(db, id_incident_type):
     """`destruccion` o `extraviado` si el vale es de baja; None si no."""
     tipo = db.get(IncidentType, id_incident_type)
@@ -775,16 +785,20 @@ def _validar_vale_padre(db, id_padre: int, id_proyecto, user_data: dict) -> None
 # Tipos de vale que son de herramienta; el resto (jornada, comida, vacaciones...)
 # solo lo levanta quien administra todo (Gerencia/administrador).
 TIPOS_DE_HERRAMIENTA = ("prestamo", "reparacion", "danado", "destruccion", "extraviado")
-TIPOS_DE_SUPERVISOR = ("prestamo", "danado", "extraviado", "reparacion")
+TIPOS_DE_SUPERVISOR = ("prestamo",)
+# Dañado, extraviado, destruccion y reparacion reportan un suceso y los levanta SOLO el almacen
+# (y el administrador): ni el supervisor ni Gerencia.
+TIPOS_DE_REPORTE = tuple(ESTADO_POR_TIPO)
 
 
 def _prefijos_de_tipo_permitidos(db, user_data: dict):
     """None si puede levantar cualquier tipo; si no, los prefijos permitidos.
 
-    - Gerencia (`project_authorization`) y administrador: cualquiera.
+    - Gerencia (`project_authorization`) y administrador: cualquiera, salvo que los
+      reportes de suceso (`TIPOS_DE_REPORTE`) solo los levanta el almacen o el administrador
+      (`_puede_levantar_reportes`).
     - Almacen (`warehouse_voucher`): solo los de herramienta.
-    - Supervisor (`warehouse_prevoucher`): prestamo, danado, extraviado y
-      reparacion.
+    - Supervisor (`warehouse_prevoucher`): solo prestamo.
     """
     if _sin_restriccion(user_data) or has_capability(db, user_data, "project_authorization"):
         return None
@@ -797,10 +811,23 @@ def _prefijos_de_tipo_permitidos(db, user_data: dict):
     return None
 
 
+def _puede_levantar_reportes(db, user_data: dict) -> bool:
+    """Dañado, extraviado, destruccion y reparacion: solo el almacen y el administrador."""
+    return _sin_restriccion(user_data) or has_capability(db, user_data, "warehouse_voucher")
+
+
+def _es_tipo_de_reporte(descripcion) -> bool:
+    return _clave_de_tipo(descripcion).startswith(TIPOS_DE_REPORTE)
+
+
 def filtrar_tipos_de_vale(opciones: list[dict], user_data: dict) -> list[dict]:
     """Deja en el selector solo los tipos que el rol puede levantar."""
     with transaction_context() as db:
         prefijos = _prefijos_de_tipo_permitidos(db, user_data)
+        reportes = _puede_levantar_reportes(db, user_data)
+    if not reportes:
+        opciones = [o for o in opciones
+                    if not _es_tipo_de_reporte(o.get("incident_type_description"))]
     if prefijos is None:
         return opciones
     return [o for o in opciones if any(
@@ -814,6 +841,9 @@ def _validar_permiso_tipo_vale(db, user_data: dict, id_tipo: int, como_borrador:
         raise AppError("errors.not_found", 404, {"entity": "incident_type"})
     detalle = {"action": "create", "entity": "warehouse_voucher",
                "incident_type_description": tipo.incident_type_description}
+    if _es_tipo_de_reporte(tipo.incident_type_description) and not _puede_levantar_reportes(db, user_data):
+        raise AppError("errors.permission_denied", 403,
+                       {**detalle, "detail": "los_reportes_los_levanta_el_almacen"})
     prefijos = _prefijos_de_tipo_permitidos(db, user_data)
     if prefijos is None:
         return
@@ -959,6 +989,10 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
             vence = inicio
         se_necesita = _fecha_en_que_se_necesita(payload.get("needed_date"))
         motivo = _texto(payload.get("note"), "note", largo=300, obligatorio=True)
+        if _es_reporte_de_incidente(db, id_tipo):
+            # Un reporte de suceso no tiene "se necesita el" ni quien recoge.
+            se_necesita = None
+            nombre_pickup, recoge_supervisor = None, True
 
         # Borrador o vale. Lo decide la RUTA por la que se entro, no un campo
         # del cuerpo: `POST /prevouchers` esta guardada con
