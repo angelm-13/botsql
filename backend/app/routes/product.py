@@ -120,7 +120,12 @@ def _jsonify_projected_record(user_data: dict, record: dict | None, status: int 
 
 
 def _jsonify_projected_list(user_data: dict, payload: dict):
-    return jsonify(_project_list_payload(payload, _visible_response_fields_for_actor(user_data)))
+    visibles = _visible_response_fields_for_actor(user_data)
+    # `effective_status` no es una columna: es `product_status` corregido con lo
+    # vivo, y lo ve quien ve `product_status`.
+    if 'product_status' in visibles:
+        visibles = visibles | {'effective_status'}
+    return jsonify(_project_list_payload(payload, visibles))
 
 
 
@@ -173,6 +178,7 @@ def list_product(user_data):
     filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort', 'q'} and k in ALLOWED_FIELDS}
     resultado = ProductService.list_scoped(user_data, page=page, per_page=per_page, filters=filters, sort=sort, q=request.args.get('q'))
     ProductService.heredar_foto_del_material(resultado.get('items', []))
+    ProductService.agregar_estado_efectivo(resultado.get('items', []))
     return _jsonify_projected_list(user_data, resultado)
 
 

@@ -405,6 +405,29 @@ class ProductService(CrudService):
         return items
 
     @staticmethod
+    def agregar_estado_efectivo(items: list[dict]) -> list[dict]:
+        """Agrega `effective_status` a cada producto: el que se pinta.
+
+        `product_status` es un texto que los vales de prestamo no actualizan, asi
+        que un producto prestado seguia diciendo ENTRADA. La regla es la de
+        Localizar (`estatus_efectivo`); no se copia. Solo LECTURA.
+        """
+        # Import local: el servicio de rastreo importa de los de vales e inventario.
+        from app.services.inventory_trace_service import estatus_efectivo_en_lote
+
+        ids = {int(i['id_product']): i.get('product_status')
+               for i in items if i.get('id_product') is not None}
+        if not ids:
+            return items
+        with transaction_context() as session:
+            efectivos = estatus_efectivo_en_lote(session, ids)
+        for item in items:
+            if item.get('id_product') is not None:
+                item['effective_status'] = efectivos.get(
+                    int(item['id_product']), item.get('product_status'))
+        return items
+
+    @staticmethod
     def _como_booleano(valor) -> bool:
         if isinstance(valor, str):
             return valor.strip().lower() in ('1', 'true', 't', 'yes', 'si', 'on')

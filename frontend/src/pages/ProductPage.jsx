@@ -283,6 +283,13 @@ export default function ProductPage() {
     }) || null;
   }
 
+  // El estado que se pinta: el del servidor (`effective_status`, la misma regla de
+  // Localizar) y, si no vino, el texto guardado. `product_status` se sigue usando
+  // para editar: ahi se cambia lo que esta guardado.
+  function estadoQueSePinta(item) {
+    return item?.effective_status ?? item?.product_status;
+  }
+
   function productStatusDisplayLabel(value) {
     if (value === null || value === undefined || value === "") return "";
     if (String(value).trim().toUpperCase() === "ENTRADA") return t("product.status_in_warehouse", "En almacén");
@@ -574,7 +581,7 @@ export default function ProductPage() {
     if (!needle) return items;
     return items.filter((item) => {
       const values = Object.values(item || {}).map((value) => String(value ?? ""));
-      if (canSeeField("product_status")) values.push(productStatusDisplayLabel(item.product_status));
+      if (canSeeField("product_status")) values.push(productStatusDisplayLabel(estadoQueSePinta(item)));
       if (canSeeField("id_location")) values.push(productKanbanDisplayLabel(locationOptions, "id_location", "location", item.id_location));
       if (canSeeField("id_material")) values.push(productKanbanDisplayLabel(materialOptions, "id_material", "material", item.id_material));
       if (canSeeField("id_marca")) values.push(productKanbanDisplayLabel(brandOptions, "id_brand", "brand", item.id_marca));
@@ -584,7 +591,7 @@ export default function ProductPage() {
   }, [items, query, inventoryStatusOptions, locationOptions, materialOptions, brandOptions, productFamilyOptions]);
 
   const groups = useMemo(() => filtered.reduce((acc, item) => {
-    const key = String(item.product_status ?? t("common.unclassified"));
+    const key = String(estadoQueSePinta(item) ?? t("common.unclassified"));
     acc[key] = acc[key] || []; acc[key].push(item); return acc;
   }, {}), [filtered, lang]);
 
@@ -826,13 +833,13 @@ export default function ProductPage() {
               {canSeeField("gross_price") && <td><pre className="cell-value">{formatTableValue(item.gross_price)}</pre></td>}
               {canSeeField("color") && <td><pre className="cell-value">{formatTableValue(item.color)}</pre></td>}
               {canSeeField("is_directly_related_to_product_service") && <td><pre className="cell-value">{formatTableValue(item.is_directly_related_to_product_service)}</pre></td>}
-              {canSeeField("product_status") && <td><span style={productStatusBadgeStyle(item.product_status)}>{productStatusDisplayLabel(item.product_status)}</span></td>}
+              {canSeeField("product_status") && <td><span style={productStatusBadgeStyle(estadoQueSePinta(item))}>{productStatusDisplayLabel(estadoQueSePinta(item))}</span></td>}
               {canSeeField("path_imagen") && <td>{item.path_imagen && !fotosRotas.has(item.id_product) ? <img className="table-image foto-ampliable" src={urlDeArchivo(item.path_imagen)} alt={t("common.image", "Imagen")} title={t("photo.click_to_zoom", "Clic para verla en grande")} onClick={() => ampliarFoto(item)} onError={() => marcarFotoRota(item.id_product)} /> : <span className="muted">-</span>}</td>}
               {canSeeField("product_code") && <td><pre className="cell-value">{formatTableValue(item.product_code)}</pre></td>}
         </tr>)}</tbody></table></div>}
 
       {canRead && view === "kanban" && filtered.length > 0 && <div className="kanban">{Object.entries(groups).map(([key, groupItems]) => <div className="kanban-column" key={key}><h3>{key} <span>{groupItems.length}</span></h3>{groupItems.map((item) => <article className="kanban-card product-kanban-card" style={productStatusCardStyle(item.product_status)} key={item.id_product}>{canSeeField("path_imagen") && item.path_imagen && !fotosRotas.has(item.id_product) && <img className="kanban-image foto-ampliable" src={urlDeArchivo(item.path_imagen)} alt={t("common.image", "Imagen")} title={t("photo.click_to_zoom", "Clic para verla en grande")} onClick={() => ampliarFoto(item)} onError={() => marcarFotoRota(item.id_product)} />}<strong>{String(item.product_code ?? item.id_product)}</strong><small>#{item.id_product}</small><div className="product-kanban-details product-kanban-compact">
-          {canSeeField("product_status") && item.product_status && <p><span>{t("fields.product.product_status", "Estado")}:</span> <strong style={productStatusBadgeStyle(item.product_status)}>{productStatusDisplayLabel(item.product_status)}</strong></p>}
+          {canSeeField("product_status") && estadoQueSePinta(item) && <p><span>{t("fields.product.product_status", "Estado")}:</span> <strong style={productStatusBadgeStyle(estadoQueSePinta(item))}>{productStatusDisplayLabel(estadoQueSePinta(item))}</strong></p>}
           {canSeeField("descripcion") && item.descripcion && <p className="wide"><span>{t("fields.product.descripcion", "Descripcion")}:</span> <strong>{formatTableValue(item.descripcion)}</strong></p>}
           {canSeeField("id_location") && item.id_location && <p><span>{t("fields.product.id_location", "Ubicacion")}:</span> <strong>{productKanbanDisplayLabel(locationOptions, "id_location", "location", item.id_location)}</strong></p>}
           {canSeeField("id_material") && item.id_material && <p><span>{t("fields.product.id_material", "Material")}:</span> <strong>{productKanbanDisplayLabel(materialOptions, "id_material", "material", item.id_material)}</strong></p>}

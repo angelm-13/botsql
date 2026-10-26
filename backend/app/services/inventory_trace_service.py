@@ -409,6 +409,32 @@ def estatus_efectivo(product_status, on_loan, sitios) -> str:
     return texto
 
 
+def estatus_efectivo_en_lote(db, estatus_por_producto: dict[int, str | None]) -> dict[int, str]:
+    """`estatus_efectivo` para una pagina de productos que no pasa por el rastreo.
+
+    La pantalla de Productos pintaba `product.product_status` tal cual y decia
+    "En almacen" de lo que Localizar mostraba fuera (MARR01 con el vale 182
+    abierto). La regla es la misma funcion; aqui solo se juntan sus dos entradas
+    en dos consultas para toda la pagina: lo que esta fuera y si queda algo en el
+    almacen.
+    """
+    if not estatus_por_producto:
+        return {}
+    ids = list(estatus_por_producto)
+    prestados = _prestado_en_lote(db, ids)
+    con_existencia = set(db.scalars(
+        select(InventoryStock.id_product).where(
+            InventoryStock.id_product.in_(ids),
+            InventoryStock.quantity > 0,
+        ).distinct()
+    ).all())
+    return {
+        id_producto: estatus_efectivo(
+            texto, prestados.get(id_producto), id_producto in con_existencia)
+        for id_producto, texto in estatus_por_producto.items()
+    }
+
+
 def _prestado_en_lote(db, ids_productos) -> dict[int, dict]:
     """Que hay fuera de cada producto y quien lo tiene.
 
