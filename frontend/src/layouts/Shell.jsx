@@ -89,6 +89,16 @@ const navItems = [
   { path: "/payroll_detail", key: "menu.payroll_detail" },
   { path: "/payroll_movement", key: "menu.payroll_movement" },
   { path: "/payroll_period", key: "menu.payroll_period" },
+  // payroll_parameter esta sembrada "hidden" (no tiene pantalla generica); esta
+  // pantalla propia se declara en la barra, como /activity-log.
+  { path: "/payroll_settings", key: "menu.payroll_settings", label: "Cifras oficiales", entityName: "payroll_parameter", group: "Recursos humanos", location: "sidebar", order: 705 },
+  // work_schedule tambien esta sembrada "hidden": pantalla propia en la barra.
+  { path: "/work_schedules", key: "menu.work_schedules", label: "Horarios", entityName: "work_schedule", group: "Recursos humanos", location: "sidebar", order: 706 },
+  // employee_leave igual: sembrada "hidden", pantalla propia en la barra.
+  // Autoservicio, como /mfa-setup: cualquier usuario la ve; el backend solo le
+  // muestra lo suyo (o lo de su equipo si es jefe).
+  { path: "/my_leaves", key: "menu.my_leaves", label: "Mis vacaciones", group: "Recursos humanos", location: "sidebar", order: 708 },
+  { path: "/employee_leaves", key: "menu.employee_leaves", label: "Vacaciones y permisos", entityName: "employee_leave", group: "Recursos humanos", location: "sidebar", order: 707 },
   { path: "/kronos", key: "menu.kronos", label: "Asistencias", entityName: "payroll_period" },
   { path: "/kronos/device", key: "menu.kronos_device", label: "Conexión al dispositivo", entityName: "kronos_device" },
   { path: "/restaurant/waiter", key: "menu.restaurant_waiter", label: "Meseros", entityName: "restaurant_waiter" },
@@ -315,7 +325,7 @@ export default function Shell() {
   }
 
   function canSeeNavItem(item) {
-    if (item.exact || item.path === "/mfa-setup" || item.path === "/change-password") return true;
+    if (item.exact || item.path === "/mfa-setup" || item.path === "/change-password" || item.path === "/my_leaves") return true;
     if (technicalPaths.includes(item.path)) return isBootstrapAdmin;
     if (isBootstrapAdmin) return true;
     if (!rolePermissionsLoaded) return false;

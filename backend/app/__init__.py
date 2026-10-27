@@ -25,6 +25,13 @@ from app.routes.user_mfa import bp_user_mfa
 from app.routes.payroll_period import bp_payroll_period
 from app.routes.payroll_detail import bp_payroll_detail
 from app.routes.payroll_concept import bp_payroll_concept
+from app.routes.payroll_isr_bracket import bp_payroll_isr_bracket
+from app.routes.payroll_parameter import bp_payroll_parameter
+from app.routes.work_schedule import bp_work_schedule
+from app.routes.work_schedule_day import bp_work_schedule_day
+from app.routes.employee_schedule import bp_employee_schedule
+from app.routes.payroll_holiday import bp_payroll_holiday
+from app.routes.employee_leave import bp_employee_leave
 from app.routes.payroll_movement import bp_payroll_movement
 from app.routes.customer_contact import bp_customer_contact
 from app.routes.customer_supplier import bp_customer_supplier
@@ -701,6 +708,13 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_payroll_period)
     app.register_blueprint(bp_payroll_detail)
     app.register_blueprint(bp_payroll_concept)
+    app.register_blueprint(bp_payroll_isr_bracket)
+    app.register_blueprint(bp_payroll_parameter)
+    app.register_blueprint(bp_work_schedule)
+    app.register_blueprint(bp_work_schedule_day)
+    app.register_blueprint(bp_employee_schedule)
+    app.register_blueprint(bp_payroll_holiday)
+    app.register_blueprint(bp_employee_leave)
     app.register_blueprint(bp_payroll_movement)
     app.register_blueprint(bp_customer_supplier)
     app.register_blueprint(bp_customer_contact)

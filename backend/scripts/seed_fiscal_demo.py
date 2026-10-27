@@ -130,7 +130,7 @@ def seed_fiscal_demo(actor_id=None):
         project = _first_or_create(db, Proyect, {"title": "Demo fiscal 2026"}, {
             "id_customer_supplier": receiver.id_customer_supplier, "leader": actor_id,
             "proyect_description": "Escenario para probar cotizacion, factura manual, XML y PDF",
-            "title": "Demo fiscal 2026", "proyect_status": "activo", "created_by": actor_id,
+            "title": "Demo fiscal 2026", "proyect_status": "in_progress", "created_by": actor_id,
         })
         quotation = _create_invoice(
             db, reference=QUOTATION_REFERENCE, status_name="Cotizacion", actor_id=actor_id,

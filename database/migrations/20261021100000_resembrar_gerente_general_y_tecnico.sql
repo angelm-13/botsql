@@ -141,6 +141,18 @@ SELECT r.id_permission, 1, 1, r.role_name, 1, 1, 1
          SELECT 1 FROM permission p WHERE p.id_permission = r.id_permission
        );
 
+-- Antes de pedirle numero a la secuencia hay que realinearla: el INSERT de arriba
+-- fija ids explicitos (no la avanza) y las resiembras anteriores la dejan en el
+-- MAX(id) previo. En una base donde el id del registro de un rol ya lo ocupa otro
+-- (p. ej. id 3 = "Supervisor", no "Gerente"), nextval devolvia justo el id que el
+-- INSERT de arriba acababa de usar (9, "Gerente general") y la migracion fallaba en
+-- cada arranque. Agregado al juntar initAlan en initMarc (2026-10-22); revisar con
+-- Alan. En una base donde ya funcionaba no cambia nada.
+SELECT setval(
+    pg_get_serial_sequence('permission', 'id_permission'),
+    GREATEST((SELECT MAX(id_permission) FROM permission), 1)
+);
+
 -- El mismo rol, cuando su numero del registro ya lo ocupa otro. Deja que la
 -- secuencia asigne uno: lo que importa es que el rol exista y se llame como el
 -- registro dice, porque la matriz de abajo resuelve por nombre.

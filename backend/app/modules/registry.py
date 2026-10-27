@@ -220,7 +220,19 @@ MODULOS = (
     ),
     Modulo(
         "rh", "Recursos humanos", "hr", 700,
-        ("payroll_concept", "payroll_detail", "payroll_movement", "payroll_period"),
+        # attendance_record (las checadas guardadas) y attendance_employee_link
+        # (que empleado es cada numero del checador) no tienen entrada en MENU:
+        # se ven dentro de Asistencias (/kronos), asi que quedan "hidden".
+        # payroll_isr_bracket y payroll_parameter: tarifas del ISR y cifras
+        # oficiales (UMA, salario minimo, IMSS) que usa el calculo de nomina.
+        ("payroll_concept", "payroll_detail", "payroll_movement", "payroll_period",
+         "attendance_record", "attendance_employee_link",
+         "payroll_isr_bracket", "payroll_parameter",
+         # Horarios, su asignacion a empleados y dias festivos: retardos, faltas
+         # y dias pagados (pantalla propia /work_schedules).
+         "work_schedule", "work_schedule_day", "employee_schedule", "payroll_holiday",
+         # Vacaciones, permisos e incapacidades (pantalla propia /employee_leaves).
+         "employee_leave"),
     ),
     # Sus pantallas no tienen apartado propio en el menu lateral: viven dentro
     # del Home/Dashboard actual (ruta "/"), que ya es de acceso libre para

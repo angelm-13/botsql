@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
-import { getAllPayrollMovement, createPayrollMovement, updatePayrollMovement, deletePayrollMovement, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllPayrollDetail, getAllPayrollConcept } from "../api";
+import { getAllPayrollMovement, createPayrollMovement, updatePayrollMovement, deletePayrollMovement, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllPayrollDetail, getAllPayrollConcept, getAllPayrollPeriod, getUserOptions } from "../api";
+import { crearEtiquetas } from "../utils/etiquetasNomina";
 import { fetchAllPages } from "../utils/fetchAllPages";
 import Pagination from "../components/Pagination.jsx";
 import PageHeader from "../components/PageHeader.jsx";
@@ -64,6 +65,12 @@ export default function PayrollMovementPage() {
   const showRowActions = canRead && (canUpdate || canDelete);
   const [payrollDetailOptions, setPayrollDetailOptions] = useState([]);
   const [payrollConceptOptions, setPayrollConceptOptions] = useState([]);
+  const [periodOptions, setPeriodOptions] = useState([]);
+  const [userOptions, setUserOptions] = useState([]);
+  // Nombres en lugar de ids en la tabla (ver utils/etiquetasNomina.js).
+  const etiquetas = useMemo(() => crearEtiquetas({
+    periodos: periodOptions, usuarios: userOptions, detalles: payrollDetailOptions, conceptos: payrollConceptOptions,
+  }), [periodOptions, userOptions, payrollDetailOptions, payrollConceptOptions]);
 
   async function loadData() {
     if (!permissionReady || !canRead) {
@@ -105,16 +112,18 @@ export default function PayrollMovementPage() {
       if (!permissionReady || (!canSubmitForm && !canRead)) return;
       if (canSeeField("id_payroll_detail")) {
         try {
-          const payrollDetailData = await getAllPayrollDetail({ page: 1, per_page: 100 });
-          setPayrollDetailOptions(Array.isArray(payrollDetailData) ? payrollDetailData : (payrollDetailData.items || []));
+          setPayrollDetailOptions((await fetchAllPages(getAllPayrollDetail)).items || []);
+          // Para nombrar cada detalle: de quien es y de que periodo.
+          setPeriodOptions((await fetchAllPages(getAllPayrollPeriod).catch(() => ({}))).items || []);
+          const usuarios = await getUserOptions().catch(() => []);
+          setUserOptions(Array.isArray(usuarios) ? usuarios : []);
         } catch (_) {
           setPayrollDetailOptions([]);
         }
       }
       if (canSeeField("id_payroll_concept")) {
         try {
-          const payrollConceptData = await getAllPayrollConcept({ page: 1, per_page: 100 });
-          setPayrollConceptOptions(Array.isArray(payrollConceptData) ? payrollConceptData : (payrollConceptData.items || []));
+          setPayrollConceptOptions((await fetchAllPages(getAllPayrollConcept)).items || []);
         } catch (_) {
           setPayrollConceptOptions([]);
         }
@@ -433,7 +442,7 @@ export default function PayrollMovementPage() {
               <option value="">{t("common.select_option", "Selecciona una opción")}</option>
               {payrollDetailOptions.map((item) => (
                 <option key={item.id_payroll_detail ?? item.id ?? JSON.stringify(item)} value={item.id_payroll_detail ?? item.id ?? ""}>
-                  {getOptionLabel(item, "payroll_detail")}
+                  {etiquetas.detalle(item.id_payroll_detail)}
                 </option>
               ))}
             </select>
@@ -447,7 +456,7 @@ export default function PayrollMovementPage() {
               <option value="">{t("common.select_option", "Selecciona una opción")}</option>
               {payrollConceptOptions.map((item) => (
                 <option key={item.id_payroll_concept ?? item.id ?? JSON.stringify(item)} value={item.id_payroll_concept ?? item.id ?? ""}>
-                  {getOptionLabel(item, "payroll_concept")}
+                  {etiquetas.concepto(item.id_payroll_concept)}
                 </option>
               ))}
             </select>
@@ -495,10 +504,10 @@ export default function PayrollMovementPage() {
               {canSeeField("deletion_date") && <th>{t("fields.payroll_movement.deletion_date")}</th>}
         </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_payroll_movement}>{showRowActions && <td className="row-actions">{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</td>}
               {canSeeField("id_payroll_movement") && <td><pre className="cell-value">{formatTableValue(item.id_payroll_movement)}</pre></td>}
-              {canSeeField("id_payroll_detail") && <td><pre className="cell-value">{formatTableValue(item.id_payroll_detail)}</pre></td>}
-              {canSeeField("id_payroll_concept") && <td><pre className="cell-value">{formatTableValue(item.id_payroll_concept)}</pre></td>}
+              {canSeeField("id_payroll_detail") && <td><pre className="cell-value">{etiquetas.detalle(item.id_payroll_detail)}</pre></td>}
+              {canSeeField("id_payroll_concept") && <td><pre className="cell-value">{etiquetas.concepto(item.id_payroll_concept)}</pre></td>}
               {canSeeField("amount") && <td><pre className="cell-value">{formatTableValue(item.amount)}</pre></td>}
-              {canSeeField("created_by") && <td><pre className="cell-value">{formatTableValue(item.created_by)}</pre></td>}
+              {canSeeField("created_by") && <td><pre className="cell-value">{etiquetas.usuario(item.created_by)}</pre></td>}
               {canSeeField("creation_date") && <td><pre className="cell-value">{formatTableValue(item.creation_date)}</pre></td>}
               {canSeeField("last_update_date") && <td><pre className="cell-value">{formatTableValue(item.last_update_date)}</pre></td>}
               {canSeeField("deletion_date") && <td><pre className="cell-value">{formatTableValue(item.deletion_date)}</pre></td>}
