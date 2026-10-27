@@ -25,7 +25,7 @@ ROL_COMPRAS = 8
 
 with transaction_context() as db:
     existente = db.scalars(select(User).where(User.username == "compras1")).first()
-    modelo = db.scalars(select(User).where(User.username == "almacen")).first()
+    modelo = db.scalars(select(User).where(User.username.in_(("almacen", "almacen1")))).first()
     if existente:
         existente.password = bcrypt.hashpw(b"Compras4682.", bcrypt.gensalt()).decode()
         print("compras1 ya existe (id %s): contrasena restablecida" % existente.id_user)

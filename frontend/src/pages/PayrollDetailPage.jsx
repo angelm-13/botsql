@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
-import { getAllPayrollDetail, createPayrollDetail, updatePayrollDetail, deletePayrollDetail, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllPayrollPeriod, getAllUser } from "../api";
+import { getAllPayrollDetail, createPayrollDetail, updatePayrollDetail, deletePayrollDetail, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllPayrollPeriod, getUserOptions } from "../api";
+import { crearEtiquetas } from "../utils/etiquetasNomina";
 import { fetchAllPages } from "../utils/fetchAllPages";
 import Pagination from "../components/Pagination.jsx";
 import PageHeader from "../components/PageHeader.jsx";
@@ -64,6 +65,9 @@ export default function PayrollDetailPage() {
   const showRowActions = canRead && (canUpdate || canDelete);
   const [payrollPeriodOptions, setPayrollPeriodOptions] = useState([]);
   const [userOptions, setUserOptions] = useState([]);
+  // Nombres en lugar de ids en la tabla (ver utils/etiquetasNomina.js).
+  const etiquetas = useMemo(() => crearEtiquetas({ periodos: payrollPeriodOptions, usuarios: userOptions }),
+    [payrollPeriodOptions, userOptions]);
 
   async function loadData() {
     if (!permissionReady || !canRead) {
@@ -105,16 +109,17 @@ export default function PayrollDetailPage() {
       if (!permissionReady || (!canSubmitForm && !canRead)) return;
       if (canSeeField("id_payroll_period")) {
         try {
-          const payrollPeriodData = await getAllPayrollPeriod({ page: 1, per_page: 100 });
-          setPayrollPeriodOptions(Array.isArray(payrollPeriodData) ? payrollPeriodData : (payrollPeriodData.items || []));
+          setPayrollPeriodOptions((await fetchAllPages(getAllPayrollPeriod)).items || []);
         } catch (_) {
           setPayrollPeriodOptions([]);
         }
       }
       if (canSeeField("id_user")) {
         try {
-          const userData = await getAllUser({ page: 1, per_page: 100 });
-          setUserOptions(Array.isArray(userData) ? userData : (userData.items || []));
+          // /user/options (id y nombre) y no /user/: la lista completa de
+          // usuarios es de Seguridad, y sin ella el Gerente veia el selector vacio.
+          const userData = await getUserOptions();
+          setUserOptions(Array.isArray(userData) ? userData : []);
         } catch (_) {
           setUserOptions([]);
         }
@@ -433,7 +438,7 @@ export default function PayrollDetailPage() {
               <option value="">{t("common.select_option", "Selecciona una opción")}</option>
               {payrollPeriodOptions.map((item) => (
                 <option key={item.id_payroll_period ?? item.id ?? JSON.stringify(item)} value={item.id_payroll_period ?? item.id ?? ""}>
-                  {getOptionLabel(item, "payroll_period")}
+                  {etiquetas.periodo(item.id_payroll_period)}
                 </option>
               ))}
             </select>
@@ -518,13 +523,13 @@ export default function PayrollDetailPage() {
               {canSeeField("last_update_date") && <th>{t("fields.payroll_detail.last_update_date")}</th>}
         </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_payroll_detail}>{showRowActions && <td className="row-actions">{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</td>}
               {canSeeField("id_payroll_detail") && <td><pre className="cell-value">{formatTableValue(item.id_payroll_detail)}</pre></td>}
-              {canSeeField("id_payroll_period") && <td><pre className="cell-value">{formatTableValue(item.id_payroll_period)}</pre></td>}
-              {canSeeField("id_user") && <td><pre className="cell-value">{formatTableValue(item.id_user)}</pre></td>}
+              {canSeeField("id_payroll_period") && <td><pre className="cell-value">{etiquetas.periodo(item.id_payroll_period)}</pre></td>}
+              {canSeeField("id_user") && <td><pre className="cell-value">{etiquetas.usuario(item.id_user)}</pre></td>}
               {canSeeField("gross_salary") && <td><pre className="cell-value">{formatTableValue(item.gross_salary)}</pre></td>}
               {canSeeField("total_earnings") && <td><pre className="cell-value">{formatTableValue(item.total_earnings)}</pre></td>}
               {canSeeField("total_deductions") && <td><pre className="cell-value">{formatTableValue(item.total_deductions)}</pre></td>}
               {canSeeField("net_pay") && <td><pre className="cell-value">{formatTableValue(item.net_pay)}</pre></td>}
-              {canSeeField("created_by") && <td><pre className="cell-value">{formatTableValue(item.created_by)}</pre></td>}
+              {canSeeField("created_by") && <td><pre className="cell-value">{etiquetas.usuario(item.created_by)}</pre></td>}
               {canSeeField("creation_date") && <td><pre className="cell-value">{formatTableValue(item.creation_date)}</pre></td>}
               {canSeeField("last_update_date") && <td><pre className="cell-value">{formatTableValue(item.last_update_date)}</pre></td>}
         </tr>)}</tbody></table></div>}

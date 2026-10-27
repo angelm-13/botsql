@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Recibo de nomina {{ record.employee }} - periodo {{ record.id_payroll_period }}</title>
+  <style>
+    @page {
+      size: letter;
+      margin: 16mm 14mm 20mm;
+      @bottom-left { content: "Comprobante interno de nomina. No es un CFDI."; color: #5f6d73; font: 7.5pt sans-serif; }
+      @bottom-right { content: "Pagina " counter(page) " de " counter(pages); color: #5f6d73; font: 7.5pt sans-serif; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #172329; font: 9pt "DejaVu Sans", sans-serif; line-height: 1.45; }
+    header { display: table; width: 100%; padding-bottom: 10px; border-bottom: 3px solid #173b66; }
+    .brand, .heading { display: table-cell; vertical-align: middle; }
+    .brand strong { color: #173b66; font-size: 14pt; }
+    .company-line { color: #52636a; font-size: 7.5pt; }
+    .heading { text-align: right; }
+    h1 { margin: 0; color: #173b66; font-size: 16pt; }
+    .sub { margin-top: 3px; color: #52636a; font-size: 8pt; }
+    h2 { margin: 14px 0 0; padding: 5px 7px; background: #173b66; color: white; font-size: 8pt; text-transform: uppercase; }
+    .grid { display: table; width: 100%; table-layout: fixed; border: 1px solid #aebdc2; border-top: 0; }
+    .cell { display: table-cell; padding: 6px 8px; vertical-align: top; border-right: 1px solid #d7e0e3; }
+    .cell:last-child { border-right: 0; }
+    .label { display: block; color: #52636a; font-size: 6.8pt; font-weight: 700; text-transform: uppercase; }
+    .value { display: block; margin-top: 2px; }
+    table { width: 100%; border-collapse: collapse; border: 1px solid #aebdc2; border-top: 0; }
+    th { padding: 5px 8px; background: #eef2f5; color: #34464d; font-size: 7pt; text-align: left; text-transform: uppercase; }
+    td { padding: 5px 8px; border-top: 1px solid #e3e9ec; }
+    .amount { text-align: right; white-space: nowrap; }
+    .empty { color: #6b7a80; font-style: italic; }
+    .totals { margin-top: 14px; width: 55%; margin-left: 45%; border: 1px solid #aebdc2; }
+    .totals td { border-top: 1px solid #e3e9ec; }
+    .totals tr:first-child td { border-top: 0; }
+    .net td { background: #173b66; color: white; font-size: 11pt; font-weight: 700; }
+    .signature { margin-top: 48px; width: 55%; margin-left: 22.5%; border-top: 1px solid #172329; padding-top: 4px; text-align: center; font-size: 8pt; }
+    .note { margin-top: 18px; color: #52636a; font-size: 7.5pt; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <strong>{{ record.company or "Empresa" }}</strong>
+      {% if record.company_tax_id %}<div class="company-line">RFC {{ record.company_tax_id }}</div>{% endif %}
+    </div>
+    <div class="heading">
+      <h1>Recibo de nomina</h1>
+      <div class="sub">Periodo #{{ record.id_payroll_period }} &middot; del {{ record.period_start }} al {{ record.period_end }}</div>
+      <div class="sub">Fecha de pago: {{ record.payment_date or "—" }}</div>
+    </div>
+  </header>
+
+  <h2>Empleado</h2>
+  <div class="grid">
+    <div class="cell"><span class="label">Nombre</span><span class="value">{{ record.employee }}</span></div>
+    <div class="cell"><span class="label">Puesto</span><span class="value">{{ record.position or "—" }}</span></div>
+    <div class="cell"><span class="label">Dias pagados</span><span class="value">{{ record.days_worked }}</span></div>
+    <div class="cell"><span class="label">Faltas</span><span class="value">{{ record.absences or 0 }}</span></div>
+    <div class="cell"><span class="label">Salario diario</span><span class="value">$ {{ "{:,.2f}".format(record.daily_salary) }}</span></div>
+  </div>
+  {% if record.vacation_days or record.paid_leave_days or record.unpaid_leave_days or record.disability_days %}
+  <div class="grid">
+    <div class="cell"><span class="label">Vacaciones</span><span class="value">{{ record.vacation_days or 0 }}</span></div>
+    <div class="cell"><span class="label">Permiso con goce</span><span class="value">{{ record.paid_leave_days or 0 }}</span></div>
+    <div class="cell"><span class="label">Permiso sin goce</span><span class="value">{{ record.unpaid_leave_days or 0 }}</span></div>
+    <div class="cell"><span class="label">Incapacidad IMSS</span><span class="value">{{ record.disability_days or 0 }}</span></div>
+  </div>
+  {% endif %}
+
+  <h2>Percepciones</h2>
+  <table>
+    <thead><tr><th>Concepto</th><th class="amount">Importe</th></tr></thead>
+    <tbody>
+      {% for m in record.earnings %}
+      <tr><td>{{ m.description }}{% if m.code %} ({{ m.code }}){% endif %}</td><td class="amount">$ {{ "{:,.2f}".format(m.amount) }}</td></tr>
+      {% else %}
+      <tr><td class="empty" colspan="2">Sin percepciones</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Deducciones</h2>
+  <table>
+    <thead><tr><th>Concepto</th><th class="amount">Importe</th></tr></thead>
+    <tbody>
+      {% for m in record.deductions %}
+      <tr><td>{{ m.description }}{% if m.code %} ({{ m.code }}){% endif %}</td><td class="amount">$ {{ "{:,.2f}".format(m.amount) }}</td></tr>
+      {% else %}
+      <tr><td class="empty" colspan="2">Sin deducciones</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <table class="totals">
+    <tr><td>Total de percepciones</td><td class="amount">$ {{ "{:,.2f}".format(record.total_earnings) }}</td></tr>
+    <tr><td>Total de deducciones</td><td class="amount">$ {{ "{:,.2f}".format(record.total_deductions) }}</td></tr>
+    <tr class="net"><td>Neto a pagar</td><td class="amount">$ {{ "{:,.2f}".format(record.net_pay) }}</td></tr>
+  </table>
+
+  <div class="signature">Firma de conformidad del empleado</div>
+
+  <p class="note">Comprobante interno generado por TYAKXA. No es un Comprobante Fiscal Digital (CFDI) ni sustituye al recibo timbrado.
+    {% if record.period_state != "closed" %}El periodo aun no esta cerrado: los importes pueden cambiar si se recalcula.{% endif %}</p>
+</body>
+</html>
