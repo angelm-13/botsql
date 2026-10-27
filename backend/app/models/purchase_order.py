@@ -159,6 +159,9 @@ class PurchaseOrderLine(_Serializable, Base):
     unit: Mapped[str | None] = mapped_column(String(40), nullable=True)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     unit_cost: Mapped[Decimal | None] = mapped_column(Numeric(14, 4), nullable=True)
+    # La clase de lo que se compra (herramienta, consumible, sobrante, recargable). Al
+    # recibir, el producto que aun no tiene clase la toma de aqui.
+    item_class: Mapped[str | None] = mapped_column(String(20), nullable=True)
     quantity_received: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default=text("0"))
     created_by: Mapped[int] = mapped_column(

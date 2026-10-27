@@ -713,6 +713,9 @@ export const addProyectMessage = (id, payload) => request(`/proyect/${id}/messag
 // cuerpo, que es lo que hace que sea TOMAR y no asignar.
 export const takeProyect = (id) => request(`/proyect/${id}/take`, { method: "POST" });
 export const releaseProyect = (id) => request(`/proyect/${id}/release`, { method: "POST" });
+// Quien autoriza asigna el proyecto con maquila a un jefe de taller (`id_user` vacio lo deja libre).
+export const getWorkshopHeads = () => request("/proyect/workshop-heads");
+export const assignProyect = (id, id_user) => request(`/proyect/${id}/assign`, { method: "POST", body: { id_user: id_user || null } });
 
 // Adjuntos de requerimientos (PDF/DOCX), aparte del modulo /document generico
 // -- ver el comentario de `add_project_document` en el backend.
@@ -823,7 +826,7 @@ export const getAllUser = (params = {}) => request("/user/", { params });
 // Solo id+nombre, para selectores (ej. "Responsable" en un vale de almacen
 // o el lider de un proyecto) -- cualquier usuario autenticado puede
 // llamarlo, sin exigir el permiso de lectura completo de user.
-export const getUserOptions = () => request("/user/options");
+export const getUserOptions = (params = {}) => request("/user/options", { params });
 // Solo id+nombre de los equipos vigentes, sin permiso de entidad -- igual que `getUserOptions` --: el editor de
 // graficos del Dashboard elige equipos sin tener el modulo de seguridad (`GET /team/` se lo negaria).
 export const getTeamOptions = () => request("/team/options");

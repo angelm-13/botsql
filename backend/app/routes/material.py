@@ -6,7 +6,7 @@ from app.utils.errors import AppError
 from app.utils.field_access import COLUMNAS_DE_AUDITORIA
 
 bp_material = Blueprint('material', __name__, url_prefix='/material')
-ALLOWED_FIELDS = ['id_material', 'material_description', 'id_unit', 'id_brand', 'id_product_family', 'id_material_type', 'path_imagen', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
+ALLOWED_FIELDS = ['id_material', 'material_description', 'id_unit', 'id_brand', 'id_product_family', 'id_material_type', 'item_class', 'path_imagen', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
 
 TECHNICAL_RESPONSE_FIELDS = {'id_material'}
 FIELD_READ_BIT = 2

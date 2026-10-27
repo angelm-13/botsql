@@ -11,8 +11,9 @@ import { inputPropsForField, validateForm, validationRules as allValidationRules
 import { CAMPOS_DE_AUDITORIA } from "../utils/camposDeAuditoria";
 import { formatearFechaHora } from "../utils/fechas";
 import { useDialogo } from "../dialogo/useDialogo.js";
+import { CLASES_DE_ARTICULO } from "../utils/clasesDeProducto";
 
-const emptyForm = { material_description: "", id_unit: "", id_brand: "", id_product_family: "" };
+const emptyForm = { material_description: "", id_unit: "", id_brand: "", id_product_family: "", item_class: "" };
 const validationRules = allValidationRules["material"] || {};
 const ENTITY_KEY = "material";
 const ACTION_CREATE = 1;
@@ -541,6 +542,18 @@ export default function MaterialPage() {
               ))}
             </select>
             {fieldErrors["id_product_family"] && <span className="field-error">{formatFieldError("id_product_family")}</span>}
+          </label>
+          )}
+          {canSeeField("item_class") && (
+          <label className="field">
+            <span>{t("fields.material.item_class", "Clase")}</span>
+            <select name="item_class" value={formData.item_class ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors["item_class"])}>
+              <option value="">{t("item_class.none", "Sin clase")}</option>
+              {CLASES_DE_ARTICULO.map((c) => (
+                <option key={c.clave} value={c.clave}>{t(`item_class.${c.clave}`, c.etiqueta)}</option>
+              ))}
+            </select>
+            {fieldErrors["item_class"] && <span className="field-error">{formatFieldError("item_class")}</span>}
           </label>
           )}
           {canSeeField("path_imagen") && (

@@ -8,6 +8,7 @@ quedaba diciendo dos cosas: MARR4 "usado" con el catalogo en "extraviado".
 from __future__ import annotations
 
 import unittest
+from unittest import mock
 
 from app.models import Product
 from app.models.inventory_status import InventoryStatus
@@ -48,6 +49,13 @@ class BaseEstadoDoble(BackendTestCase):
 
     def setUp(self):
         super().setUp()
+        # Aqui se prueba la SINCRONIZACION de las dos columnas, no quien puede cambiar el estado
+        # (a mano solo "En almacen", el resto por vale: ver test_product_estado_solo_por_vale).
+        permitir = mock.patch.object(
+            ProductService, "_estado_solo_por_vale",
+            new=classmethod(lambda cls, item_id, payload: payload))
+        permitir.start()
+        self.addCleanup(permitir.stop)
         if self.sembrar_catalogo:
             with transaction_context() as db:
                 db.add_all([

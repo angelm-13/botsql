@@ -18,9 +18,14 @@ import { CAMPOS_DE_AUDITORIA } from "../utils/camposDeAuditoria";
 import { descripcionValida, sugerirDescripcion } from "../utils/productDescription";
 import { formatearFechaHora } from "../utils/fechas";
 import { useDialogo } from "../dialogo/useDialogo.js";
+import { etiquetaDeClase } from "../utils/clasesDeProducto";
 
 const emptyForm = { id_location: "", id_material: "", gross_price: "", color: "", is_directly_related_to_product_service: false, product_status: "", path_imagen: "", product_code: "", note: "", descripcion: "", cantidad: "", id_marca: "", id_familia: "" };
 const validationRules = allValidationRules["product"] || {};
+// Los nombres con que el catalogo marca "el material no dice": no se ofrecen como valor de partida
+// al elegir material. Son los de `MARCA_SIN_DATO` / `FAMILIA_SIN_DATO` (inventory_trace_service.py).
+const MARCA_SIN_DATO = "Sin marca específica";
+const FAMILIA_SIN_DATO = "Sin categoría";
 const ENTITY_KEY = "product";
 const ACTION_CREATE = 1;
 const ACTION_READ = 2;
@@ -273,6 +278,22 @@ export default function ProductPage() {
     const description = item.inventory_status_description || item.inventory_status_code || "";
     const department = item.department_description || item.id_department_label || "";
     return [description, department].filter(Boolean).join(" - ");
+  }
+
+  // La familia y la marca las define el producto (es su material mas su familia y su marca). Al
+  // elegir el material se propone la suya si trae una real; la clase si es del material.
+  const materialElegido = materialOptions.find((m) => String(m.id_material) === String(formData.id_material ?? ""));
+
+  function elegirMaterial(valor) {
+    const material = materialOptions.find((m) => String(m.id_material) === String(valor));
+    const marca = brandOptions.find((b) => String(b.id_brand) === String(material?.id_brand));
+    const familia = productFamilyOptions.find((f) => String(f.id_product_family) === String(material?.id_product_family));
+    setFormData((prev) => ({
+      ...prev,
+      id_material: valor,
+      id_marca: prev.id_marca || (marca && marca.brand_description !== MARCA_SIN_DATO ? marca.id_brand : ""),
+      id_familia: prev.id_familia || (familia && familia.product_family_description !== FAMILIA_SIN_DATO ? familia.id_product_family : ""),
+    }));
   }
 
   function productStatusMeta(value) {
@@ -654,14 +675,15 @@ export default function ProductPage() {
             <span>{t("fields.product.product_status")}</span>
             <select name="product_status" value={formData.product_status ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors["product_status"])} {...inputPropsForField("product_status", validationRules["product_status"], "select")}>
               <option value="">{t("common.select_option", "Selecciona una opción")}</option>
-              {/* ENTRADA no es un estado del catalogo sino "esta en el almacen": sin esta opcion no habia como devolver a disponible una pieza marcada extraviada o con salida. */}
+              {/* A mano solo se marca "En almacen" (la pieza regresa o se encuentra). Danado, extraviado,
+                  retirado y en reparacion los pone UNICAMENTE el vale correspondiente; si el producto ya
+                  trae uno de esos estados se muestra, pero no se puede elegir. */}
               <option value="ENTRADA">{t("product.status_in_warehouse", "En almacén")}</option>
-              {inventoryStatusOptions.map((item) => (
-                <option key={item.id_inventory_status ?? item.inventory_status_code ?? JSON.stringify(item)} value={item.inventory_status_code ?? ""}>
-                  {productInventoryStatusLabel(item)}
-                </option>
-              ))}
+              {formData.product_status && String(formData.product_status).toUpperCase() !== "ENTRADA" && (
+                <option value={formData.product_status} disabled>{formData.product_status}</option>
+              )}
             </select>
+            <small className="muted">{t("product.status_manual_help", "A mano solo se marca «En almacén» cuando la pieza regresa o se encuentra y no está en un vale. Dañado, extraviado, retirado y en reparación se ponen levantando el vale correspondiente.")}</small>
             {fieldErrors["product_status"] && <span className="field-error">{formatFieldError("product_status")}</span>}
           </label>
           )}
@@ -747,7 +769,7 @@ export default function ProductPage() {
                       value: m.id_material ?? m.id ?? "",
                       label: getOptionLabel(m, "material"),
                     }))}
-                    onChange={(v) => setFormData((prev) => ({ ...prev, id_material: v }))}
+                    onChange={elegirMaterial}
                     etiqueta={t("fields.product.id_material")}
                     todas={t("common.select_option", "Selecciona una opción")}
                   />
@@ -755,6 +777,12 @@ export default function ProductPage() {
                     <span className="field-error">{formatFieldError("id_material")}</span>
                   )}
                 </label>
+              )}
+              {materialElegido?.item_class && (
+                <p className="muted clasificacion-ayuda">
+                  {t("fields.material.item_class", "Clase")}: <strong>{etiquetaDeClase(materialElegido.item_class, t)}</strong>
+                  {" · "}{t("product.class_from_material", "la define su material")}
+                </p>
               )}
               {canSeeField("id_familia") && (
                 <label className="field">

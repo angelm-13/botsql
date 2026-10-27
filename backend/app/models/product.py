@@ -1,9 +1,10 @@
 from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from sqlalchemy import String, Integer, BigInteger, SmallInteger, Boolean, Date, DateTime, Float, Numeric, ForeignKey, Text, JSON, Enum, LargeBinary, UniqueConstraint, func, text
 from app.models.base import Base
+from app.utils.item_class import normalize_item_class
 from app.utils.tiempo import a_iso_utc
 
 
@@ -78,6 +79,9 @@ class Product(Base):
     lot_control: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false")
     )
+    # herramienta / consumible / sobrante / recargable. Vacia: hereda la de su material
+    # (`effective_item_class` en `app/utils/item_class.py`).
+    item_class: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # El rastro del sistema anterior. `external_id` es lo que permite repetir la
     # carga sin duplicar y ligar los renglones de vale con su producto.
     external_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -91,8 +95,13 @@ class Product(Base):
     id_marca: Mapped[int] = mapped_column(Integer, nullable=True)
     id_familia: Mapped[int] = mapped_column(Integer, nullable=True)
 
+    @validates('item_class')
+    def _validar_clase(self, _llave, valor):
+        return normalize_item_class(valor)
+
     def serialize(self) -> dict:
         return {
+            'item_class': self.item_class,
             'id_product': to_json_value(self.id_product),
             'id_invoice': to_json_value(self.id_invoice),
             'id_location': to_json_value(self.id_location),

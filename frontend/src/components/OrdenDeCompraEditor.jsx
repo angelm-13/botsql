@@ -8,9 +8,10 @@ import {
 import { CANTIDAD_MAXIMA, UNIDADES, descripcionSospechosa } from "../utils/descripcionDeNecesidad";
 import { dinero, totalDeRenglones } from "../utils/ordenDeCompra";
 import { useI18n } from "../i18n";
+import { CLASES_DE_ARTICULO } from "../utils/clasesDeProducto";
 import "../styles/ordenes-de-compra.css";
 
-const LIBRE_VACIO = { description: "", quantity: "1", unit: "", unit_cost: "" };
+const LIBRE_VACIO = { description: "", quantity: "1", unit: "", unit_cost: "", item_class: "" };
 
 function etiquetaDeProyecto(p) {
   if (!p) return "";
@@ -24,6 +25,7 @@ function desdeRenglon(l) {
     id_proyect_material_need: l.id_proyect_material_need,
     id_proyect: l.id_proyect,
     id_material: l.id_material,
+    item_class: l.item_class || "",
     description: l.description,
     unit: l.unit || "",
     quantity: String(l.quantity),
@@ -143,7 +145,7 @@ export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCa
     setRenglones((rs) => [...rs, {
       key: `f${Date.now()}`, id_proyect_material_need: null, id_proyect: null, id_material: null,
       description: descripcion, unit: libre.unit, quantity: String(cantidad),
-      unit_cost: libre.unit_cost, proyecto: "",
+      unit_cost: libre.unit_cost, item_class: libre.item_class, proyecto: "",
     }]);
     setLibre(LIBRE_VACIO);
   }
@@ -155,7 +157,10 @@ export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCa
       expected_date: form.expected_date || null,
       currency: form.currency,
       lines: renglones.map((r) => {
-        const base = { quantity: r.quantity, unit_cost: r.unit_cost === "" ? null : r.unit_cost };
+        const base = {
+          quantity: r.quantity, unit_cost: r.unit_cost === "" ? null : r.unit_cost,
+          item_class: r.item_class || null,
+        };
         if (r.id_proyect_material_need) return { id_proyect_material_need: r.id_proyect_material_need, ...base };
         return {
           description: r.description, unit: r.unit || null, id_proyect: r.id_proyect || null,
@@ -244,6 +249,7 @@ export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCa
               <tr>
                 <th>{t("order.col_what", "Qué")}</th>
                 <th>{t("order.col_project", "Proyecto")}</th>
+                <th>{t("item_class.label", "Clase")}</th>
                 <th>{t("order.col_qty", "Cantidad")}</th>
                 <th>{t("order.col_unit_cost", "Costo unitario")}</th>
                 <th>{t("order.col_subtotal", "Subtotal")}</th>
@@ -265,6 +271,15 @@ export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCa
                       )}
                     </td>
                     <td>{r.proyecto || <span className="muted">—</span>}</td>
+                    <td>
+                      <select value={r.item_class} aria-label={t("item_class.label", "Clase")}
+                              onChange={(e) => cambiarRenglon(r.key, "item_class", e.target.value)}>
+                        <option value="">—</option>
+                        {CLASES_DE_ARTICULO.map((c) => (
+                          <option key={c.clave} value={c.clave}>{t(`item_class.${c.clave}`, c.etiqueta)}</option>
+                        ))}
+                      </select>
+                    </td>
                     <td>
                       <input type="number" min="1" max={r.maxQuantity || CANTIDAD_MAXIMA} step="1"
                              className="oc-numero" value={r.quantity}
@@ -289,7 +304,7 @@ export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCa
             </tbody>
             <tfoot>
               <tr>
-                <td colSpan={4} className="oc-total-etiqueta">{t("order.total", "Total cotizado")}</td>
+                <td colSpan={5} className="oc-total-etiqueta">{t("order.total", "Total cotizado")}</td>
                 <td className="mono oc-total">{total === null ? "—" : dinero(total, form.currency)}</td>
                 <td />
               </tr>
@@ -341,6 +356,15 @@ export default function OrdenDeCompraEditor({ orden, precargar, onGuardada, onCa
             <select value={libre.unit} onChange={(e) => setLibre({ ...libre, unit: e.target.value })}>
               <option value="">—</option>
               {UNIDADES.map((u) => <option key={u} value={u}>{u}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>{t("item_class.label", "Clase")}</span>
+            <select value={libre.item_class} onChange={(e) => setLibre({ ...libre, item_class: e.target.value })}>
+              <option value="">—</option>
+              {CLASES_DE_ARTICULO.map((c) => (
+                <option key={c.clave} value={c.clave}>{t(`item_class.${c.clave}`, c.etiqueta)}</option>
+              ))}
             </select>
           </label>
           <label>
