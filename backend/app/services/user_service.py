@@ -1,3 +1,4 @@
+from sqlalchemy import or_
 from app.models import EntityPermission, Permission, User
 from app.models.session import transaction_context
 from app.services.base_service import CrudService
@@ -25,6 +26,9 @@ class UserService(CrudService):
                               Permission.permission_description)
                 .outerjoin(Permission, Permission.id_permission == User.id_permission)
                 .filter(User.deletion_date.is_(None))
+                # Los compradores de la tienda en linea no son personal: su
+                # username es su correo y no deben salir en un selector.
+                .filter(or_(User.user_type.is_(None), User.user_type != 'web_shopper'))
             )
             if capability:
                 concedida = session.query(EntityPermission.id_permission).filter(
