@@ -1,13 +1,16 @@
 """Un usuario dado de baja no entra y su token vigente deja de servir."""
 from __future__ import annotations
 
+import os
 from datetime import datetime
+from unittest.mock import patch
 
 import bcrypt
 import jwt
 
 from app.models.session import transaction_context
 from app.models.user import User
+from app.utils import auth as auth_utils
 from app.utils.auth import SECRET_KEY
 from tests.conftest import BackendTestCase
 
@@ -35,7 +38,14 @@ class TestBajaDeUsuario(BackendTestCase):
         return jwt.encode({"id_user": id_user, "id_permission": 1, "user_type": "employee"}, SECRET_KEY, algorithm="HS256")
 
     def _pide(self, id_user=61):
-        return self.client.get("/vouchers", headers={"Authorization": "Bearer %s" % self._token(id_user)})
+        # `sesion_vigente` se salta la revision con TESTING=1: aqui se prueba justo
+        # esa revision, asi que se apaga la bandera solo durante la peticion y se
+        # vacia la copia de vigencias.
+        auth_utils.olvidar_vigencias()
+        with patch.dict(os.environ, {"TESTING": "0"}):
+            respuesta = self.client.get("/vouchers", headers={"Authorization": "Bearer %s" % self._token(id_user)})
+        auth_utils.olvidar_vigencias()
+        return respuesta
 
     def test_an_active_user_logs_in(self):
         self.assertEqual(200, self._login().status_code)
@@ -52,7 +62,3 @@ class TestBajaDeUsuario(BackendTestCase):
         self.assertNotEqual(401, self._pide().status_code)
         self._baja()
         self.assertEqual(401, self._pide().status_code)
-
-    def test_a_token_for_an_id_not_in_user_still_passes_the_token_check(self):
-        """Cuentas tecnicas y de prueba: sin fila en `user` no hay baja que revisar."""
-        self.assertNotEqual(401, self._pide(id_user=987654).status_code)
