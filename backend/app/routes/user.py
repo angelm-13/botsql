@@ -16,6 +16,9 @@ from app.utils.user_access import can_manage_user, changes_own_role
 
 
 bp_user = Blueprint('user', __name__, url_prefix='/user')
+
+# La capacidad que designa a quien puede ser responsable de un vale de material.
+RESPONSABLE_DE_VALE = 'warehouse_voucher_holder'
 ALLOWED_FIELDS = ['id_user', 'created_by', 'creation_date', 'date_born', 'date_start', 'deletion_date', 'email', 'first_name', 'id_permission', 'full_name', 'id_proyect', 'last_name_father', 'last_name_mother', 'last_update_date', 'national_id', 'principal_phone', 'secundary_phone', 'ssn', 'supervisor', 'base_salary', 'hire_date', 'id_status', 'tax_id', 'title', 'user_type', 'username', 'supervisor', 'puesto', 'is_employee', 'accepts_marketing']
 
 TECHNICAL_RESPONSE_FIELDS = {'id_user'}
@@ -404,8 +407,12 @@ def list_user_options(user_data):
     autenticado puede necesitar asignarle algo a un companero (un vale, un
     proyecto) sin tener acceso al catalogo de RH completo -- solo id+nombre,
     nada de puesto/salario/RFC/etc.
+
+    `?para=vale_responsable` deja solo a quienes el Gestor de roles y permisos
+    designo como posibles responsables de un vale de material.
     """
-    return jsonify(UserService.options())
+    capacidad = RESPONSABLE_DE_VALE if request.args.get("para") == "vale_responsable" else None
+    return jsonify(UserService.options(capability=capacidad))
 
 
 @bp_user.route('/', methods=['GET'])

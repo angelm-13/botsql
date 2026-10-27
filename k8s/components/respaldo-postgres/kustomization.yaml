@@ -1,0 +1,10 @@
+# Componente opcional: respaldo diario de Postgres. Cada overlay lo activa con
+#   components:
+#     - ../../components/respaldo-postgres
+# y le pone su propia PriorityClass al CronJob (los patches "kind: Deployment/
+# StatefulSet" de los overlays no alcanzan a un CronJob). No esta en base/ para
+# poder activarlo ambiente por ambiente.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - respaldo-postgres.yaml

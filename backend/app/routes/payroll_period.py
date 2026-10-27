@@ -6,7 +6,7 @@ from app.utils.errors import AppError
 from app.utils.field_access import COLUMNAS_DE_AUDITORIA
 
 bp_payroll_period = Blueprint('payroll_period', __name__, url_prefix='/payroll_period')
-ALLOWED_FIELDS = ['id_payroll_period', 'period_start', 'period_end', 'payment_date', 'id_status', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
+ALLOWED_FIELDS = ['id_payroll_period', 'period_start', 'period_end', 'payment_date', 'id_status', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'period_state', 'closed_at', 'closed_by', 'reopened_at', 'reopened_by', 'includes_aguinaldo']
 
 TECHNICAL_RESPONSE_FIELDS = {'id_payroll_period'}
 FIELD_READ_BIT = 2
@@ -151,3 +151,52 @@ def update_payroll_period(user_data, id_payroll_period):
 @require_entity_permission('payroll_period', 'delete')
 def delete_payroll_period(user_data, id_payroll_period):
     return jsonify(PayrollPeriodService.delete(id_payroll_period, user_id=user_data.get('id_user')))
+
+
+@bp_payroll_period.route('/<id_payroll_period>/calculate', methods=['POST'])
+@token_required
+@require_entity_permission('payroll_detail', 'create')
+def calculate_payroll_period(user_data, id_payroll_period):
+    """Calcula la nomina del periodo con las checadas guardadas (ver payroll_calculation_service)."""
+    from app.services.payroll_calculation_service import calcular_periodo
+    return jsonify(calcular_periodo(id_payroll_period, user_data.get('id_user')))
+
+
+@bp_payroll_period.route('/<id_payroll_period>/close', methods=['POST'])
+@token_required
+@require_entity_permission('payroll_period', 'update')
+def close_payroll_period(user_data, id_payroll_period):
+    """Congela un periodo ya calculado (ver payroll_calculation_service)."""
+    from app.services.payroll_calculation_service import cerrar_periodo
+    return jsonify(cerrar_periodo(id_payroll_period, user_data.get('id_user')))
+
+
+@bp_payroll_period.route('/<id_payroll_period>/reopen', methods=['POST'])
+@token_required
+# Reabrir es de quien administra nomina: el permiso de borrar periodos, que el
+# registro de modulos solo le da a Administrator.
+@require_entity_permission('payroll_period', 'delete')
+def reopen_payroll_period(user_data, id_payroll_period):
+    from app.services.payroll_calculation_service import reabrir_periodo
+    return jsonify(reabrir_periodo(id_payroll_period, user_data.get('id_user')))
+
+
+@bp_payroll_period.route('/<id_payroll_period>/summary', methods=['GET'])
+@token_required
+@require_entity_permission('payroll_detail', 'read')
+def summary_payroll_period(user_data, id_payroll_period):
+    """Lo ya calculado del periodo, sin recalcular."""
+    from app.services.payroll_calculation_service import resumen_periodo
+    return jsonify(resumen_periodo(id_payroll_period))
+
+
+@bp_payroll_period.route('/<id_payroll_period>/receipt/<id_user>', methods=['GET'])
+@token_required
+@require_entity_permission('payroll_detail', 'read')
+def receipt_payroll_period(user_data, id_payroll_period, id_user):
+    """Recibo de nomina en PDF de un empleado (comprobante interno, no CFDI)."""
+    from flask import Response
+    from app.services.payroll_calculation_service import pdf_del_recibo
+    pdf, nombre = pdf_del_recibo(id_payroll_period, id_user)
+    return Response(pdf, mimetype='application/pdf',
+                    headers={'Content-Disposition': f'inline; filename="{nombre}"'})

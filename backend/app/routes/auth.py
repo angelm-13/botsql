@@ -206,7 +206,9 @@ def login():
             login_throttle.registrar_fallo(username, origen)
             return _login_error('errors.auth_invalid_credentials', 401)
         stored_password = getattr(user, 'password', None) or getattr(user, 'password_hash', '')
-        if not user or not _verify_password(password, stored_password):
+        # Un usuario dado de baja no entra: misma respuesta que una contrasena
+        # mala, para no revelar que la cuenta existio.
+        if not user or user.deletion_date is not None or not _verify_password(password, stored_password):
             login_throttle.registrar_fallo(username, origen)
             return _login_error('errors.auth_invalid_credentials', 401)
 

@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import { AlertTriangle, ExternalLink, Paperclip } from "lucide-react";
+import { etiquetaDeClase } from "../utils/clasesDeProducto";
 import {
   authorizePurchaseOrder, buyPurchaseOrder, cancelPurchaseOrder, downloadPurchaseVoucher,
   receivePurchaseOrder, rejectPurchaseOrder, removePurchaseVoucher, submitPurchaseOrder,
@@ -329,6 +330,9 @@ export default function OrdenDeCompraDetalle({ orden, politica, onCambio, onEdit
                       <td>
                         {l.description}
                         {l.unit && <span className="muted"> · {l.unit}</span>}
+                        {l.item_class && (
+                          <span className="oc-etiqueta">{etiquetaDeClase(l.item_class, t)}</span>
+                        )}
                         {!l.from_need && (
                           <span className="oc-etiqueta oc-etiqueta-propio">
                             {t("order.own_line", "agregado por Compras")}

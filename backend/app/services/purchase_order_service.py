@@ -59,6 +59,7 @@ from app.services.proyect_material_need_service import (
     needs_on_orders,
 )
 from app.utils.errors import AppError
+from app.utils.item_class import normalize_item_class
 from app.utils.tiempo import a_iso_utc
 
 AUTHORIZE_CAPABILITY = "purchase_authorize"
@@ -409,12 +410,21 @@ def _renglon_de_necesidad(db, dato: dict, tomadas: dict, excepto_orden) -> dict:
         "id_proyect_material_need": id_necesidad,
         "id_proyect": necesidad.id_proyect,
         "id_material": necesidad.id_material,
+        "item_class": _clase_del_renglon(db, dato, necesidad.id_material),
         "description": descripcion,
         "unit": unidad,
         "quantity": cantidad,
         "unit_cost": _decimal(dato.get("unit_cost"), "unit_cost", maximo=MAX_UNIT_COST,
                               cuantos="0.0001", obligatorio=False),
     }
+
+
+def _clase_del_renglon(db, dato: dict, id_material) -> str | None:
+    """La clase que dice el renglon o, sin ella, la de su material."""
+    clase = normalize_item_class(dato.get("item_class"))
+    if clase is None and id_material:
+        clase = db.scalar(select(Material.item_class).where(Material.id_material == id_material))
+    return clase
 
 
 def _renglon_libre(db, dato: dict) -> dict:
@@ -442,6 +452,7 @@ def _renglon_libre(db, dato: dict) -> dict:
         "id_proyect_material_need": None,
         "id_proyect": id_proyecto,
         "id_material": id_material,
+        "item_class": _clase_del_renglon(db, dato, id_material),
         "description": descripcion,
         "unit": unidad,
         "quantity": _cantidad(dato.get("quantity")),
@@ -1181,6 +1192,20 @@ def purchase_order(id_order, payload: dict, user_data: dict) -> dict:
 
 # --- recibir --------------------------------------------------------------------
 
+def _clasificar_material_al_recibir(db, renglon: PurchaseOrderLine) -> None:
+    """El material que aun no tiene clase toma la del renglon con que se compro.
+
+    La clase (herramienta, consumible, sobrante, recargable) es del material, no del
+    producto: lo comprado la trae del renglon y, al recibirlo, el material la hereda si
+    nadie se la habia dado. Solo llena un hueco; nunca pisa la que ya tiene.
+    """
+    if not renglon.item_class or not renglon.id_material:
+        return
+    material = db.get(Material, renglon.id_material)
+    if material is not None and not material.item_class:
+        material.item_class = renglon.item_class
+
+
 def receive_order(id_order, payload: dict, user_data: dict) -> dict:
     """Confirma que llego lo comprado, renglon por renglon y en las cantidades que llegaron.
 
@@ -1246,6 +1271,7 @@ def receive_order(id_order, payload: dict, user_data: dict) -> dict:
 
         for renglon, cantidad in llegado:
             renglon.quantity_received = int(renglon.quantity_received) + cantidad
+            _clasificar_material_al_recibir(db, renglon)
 
         completa = all(int(r.quantity_received) >= int(r.quantity) for r in renglones.values())
         nuevo = "received" if completa else "partially_received"

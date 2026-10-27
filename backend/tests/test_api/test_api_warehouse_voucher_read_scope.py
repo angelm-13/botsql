@@ -143,3 +143,42 @@ class TestOpeningAVoucherByNumberIsScoped(BackendTestCase):
     def test_whoever_operates_the_warehouse_opens_any_voucher(self):
         r = self._pide(f"/vouchers/{self.id_ajeno}", id_user=31, id_permission=401)
         self.assertEqual(200, r.status_code)
+
+
+class TestQuienSoloLevantaReportes(BackendTestCase):
+    """Gerente Comercial lee los vales y, con `warehouse_incident_report`, levanta reportes.
+
+    La capacidad abre la puerta de `POST /prevouchers` (el borrador que el almacen autoriza)
+    y nada mas: no `POST /vouchers`, que saca material, ni lo demas que opera el almacen.
+    """
+
+    def setUp(self):
+        super().setUp()
+        with transaction_context() as db:
+            db.add_all([
+                EntityPermission(id_permission=401, entity_name="warehouse_voucher",
+                                 scope_read=4, created_by=1),
+                EntityPermission(id_permission=401, entity_name="warehouse_incident_report",
+                                 scope_read=4, created_by=1),
+                # El mismo rol sin la capacidad: leer los vales no basta para levantar nada.
+                EntityPermission(id_permission=402, entity_name="warehouse_voucher",
+                                 scope_read=4, created_by=1),
+            ])
+
+    def _headers(self, **claims):
+        return {"Authorization": "Bearer %s" % jwt.encode(claims, SECRET_KEY, algorithm="HS256")}
+
+    def _pedir(self, ruta, id_permission):
+        return self.client.post(
+            ruta, json={"id_incident_type": 1, "id_user": 31, "lines": []},
+            headers=self._headers(id_user=31, id_permission=id_permission))
+
+    def test_the_capability_opens_the_prevoucher_door(self):
+        # Pasa la guarda de la ruta: lo que falte del cuerpo es un 400, no un 403.
+        self.assertNotEqual(403, self._pedir("/prevouchers", 401).status_code)
+
+    def test_without_the_capability_the_prevoucher_door_stays_shut(self):
+        self.assertEqual(403, self._pedir("/prevouchers", 402).status_code)
+
+    def test_the_capability_does_not_open_a_voucher_directly(self):
+        self.assertEqual(403, self._pedir("/vouchers", 401).status_code)

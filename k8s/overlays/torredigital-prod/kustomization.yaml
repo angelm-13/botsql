@@ -24,6 +24,12 @@ images:
 resources:
   - ../../base
   - ingress-single-origin.yaml
+# Respaldo diario de Postgres (ensayado en tyakxa-dev). En produccion se aplica
+# SOLO este componente, con `kubectl apply -k <overlay> -l
+# app.kubernetes.io/component=respaldo-postgres`, para no arrastrar otros
+# cambios pendientes del base.
+components:
+  - ../../components/respaldo-postgres
 patches:
   - patch: |-
       apiVersion: networking.k8s.io/v1
@@ -46,4 +52,12 @@ patches:
     patch: |-
       - op: add
         path: /spec/template/spec/priorityClassName
+        value: p1-torredigital-prod
+  # Los dos patches de arriba no alcanzan a un CronJob: su pod vive en
+  # jobTemplate.
+  - target:
+      kind: CronJob
+    patch: |-
+      - op: add
+        path: /spec/jobTemplate/spec/template/spec/priorityClassName
         value: p1-torredigital-prod

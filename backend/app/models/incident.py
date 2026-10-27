@@ -45,6 +45,9 @@ class Incident(Base):
     # agrega herramienta. Solo trazabilidad.
     id_incident_parent: Mapped[int | None] = mapped_column(
         Integer, ForeignKey('incident.id_incident'), nullable=True)
+    # Para cuando se necesita la herramienta. Informativa: no marca vencidos
+    # (eso es `nm_incident_product.due_date`, que ya no se pide).
+    needed_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     # Quien recoge cuando no tiene usuario (externo). Excluyente con
     # `nm_incident_product.id_user_delivered_to`.
     pickup_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
@@ -89,6 +92,7 @@ class Incident(Base):
             'external_folio': to_json_value(self.external_folio),
             'external_source': to_json_value(self.external_source),
             'id_incident_parent': to_json_value(self.id_incident_parent),
+            'needed_date': to_json_value(self.needed_date),
             'pickup_name': to_json_value(self.pickup_name),
             'tracks_delivery': bool(self.tracks_delivery),
             'delivered_date': to_json_value(self.delivered_date),

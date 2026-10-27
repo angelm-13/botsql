@@ -216,6 +216,16 @@ MOVIMIENTO_DE_BAJA = {"destruccion": "destroy", "extraviado": "loss"}
 SE_CIERRA_AL_REGISTRAR = {"destruccion"}
 
 
+def _es_reporte_de_incidente(db, id_incident_type) -> bool:
+    """Dañado, extraviado, destruccion o reparacion: se reporta un SUCESO, no se presta nada.
+
+    Por eso no llevan "se necesita el" ni quien recoge: eso es del prestamo y de la salida
+    a obra.
+    """
+    tipo = db.get(IncidentType, id_incident_type)
+    return _clave_de_tipo(getattr(tipo, "incident_type_description", None)) in ESTADO_POR_TIPO
+
+
 def _clave_de_baja(db, id_incident_type):
     """`destruccion` o `extraviado` si el vale es de baja; None si no."""
     tipo = db.get(IncidentType, id_incident_type)
@@ -280,6 +290,20 @@ def _bitacora(db, user_data: dict, vale, accion: str, **datos) -> None:
                   "id_proyect": vale.id_proyect,
                   "status": str(vale.incident_status or ""), **datos},
     )
+
+
+def _fecha_en_que_se_necesita(valor):
+    """Para cuando se necesita la herramienta. Opcional y solo informativa.
+
+    Una fecha ya pasada se rechaza: casi siempre es un dedazo en el ano.
+    """
+    fecha = _fecha(valor, campo="needed_date")
+    if fecha is None:
+        return None
+    if fecha.date() < _ahora().date():
+        raise AppError("errors.voucher_needed_date_in_the_past", 400,
+                       {"field": "needed_date"})
+    return fecha.date()
 
 
 def _fecha_de_regreso(valor):
@@ -761,32 +785,60 @@ def _validar_vale_padre(db, id_padre: int, id_proyecto, user_data: dict) -> None
 # Tipos de vale que son de herramienta; el resto (jornada, comida, vacaciones...)
 # solo lo levanta quien administra todo (Gerencia/administrador).
 TIPOS_DE_HERRAMIENTA = ("prestamo", "reparacion", "danado", "destruccion", "extraviado")
-TIPOS_DE_SUPERVISOR = ("prestamo", "danado", "extraviado", "reparacion")
+TIPOS_DE_SUPERVISOR = ("prestamo",)
+# Dañado, extraviado, destruccion y reparacion reportan un suceso. Los levanta quien tiene la
+# capacidad `warehouse_incident_report` (por omision Almacen y Gerente Comercial) y el
+# administrador; el supervisor no.
+TIPOS_DE_REPORTE = tuple(ESTADO_POR_TIPO)
 
 
 def _prefijos_de_tipo_permitidos(db, user_data: dict):
     """None si puede levantar cualquier tipo; si no, los prefijos permitidos.
 
-    - Gerencia (`project_authorization`) y administrador: cualquiera.
+    - Gerencia (`project_authorization`) y administrador: cualquiera, salvo que los
+      reportes de suceso (`TIPOS_DE_REPORTE`) los levanta quien tiene
+      `warehouse_incident_report` (`_puede_levantar_reportes`).
     - Almacen (`warehouse_voucher`): solo los de herramienta.
-    - Supervisor (`warehouse_prevoucher`): prestamo, danado, extraviado y
-      reparacion.
+    - Supervisor (`warehouse_prevoucher`): solo prestamo.
+    - Quien solo tiene `warehouse_incident_report` (Gerente Comercial): solo los reportes.
     """
     if _sin_restriccion(user_data) or has_capability(db, user_data, "project_authorization"):
         return None
-    if has_capability(db, user_data, "warehouse_voucher"):
+    # `_opera_el_almacen` y no `has_capability`: este solo mira lectura, y Gerente Comercial
+    # lee los vales con una fila de solo lectura sin operar el almacen.
+    if _opera_el_almacen(db, user_data):
         return TIPOS_DE_HERRAMIENTA
     if has_capability(db, user_data, "warehouse_prevoucher"):
         return TIPOS_DE_SUPERVISOR
+    if has_capability(db, user_data, "warehouse_incident_report"):
+        return TIPOS_DE_REPORTE
     # Sin ninguna de las capacidades de vale: el guardia de la RUTA ya lo
     # rechazo; aqui no se agrega una segunda regla.
     return None
+
+
+def _puede_levantar_reportes(db, user_data: dict) -> bool:
+    """Dañado, extraviado, destruccion y reparacion: quien tiene `warehouse_incident_report`.
+
+    Es una capacidad propia y no `warehouse_voucher`: ese es el permiso de operar el almacen
+    y `has_capability` basta con leerlo, asi que Gerente Comercial, que lee los vales,
+    pasaria por almacen. Se concede en el Gestor de roles y permisos.
+    """
+    return _sin_restriccion(user_data) or has_capability(db, user_data, "warehouse_incident_report")
+
+
+def _es_tipo_de_reporte(descripcion) -> bool:
+    return _clave_de_tipo(descripcion).startswith(TIPOS_DE_REPORTE)
 
 
 def filtrar_tipos_de_vale(opciones: list[dict], user_data: dict) -> list[dict]:
     """Deja en el selector solo los tipos que el rol puede levantar."""
     with transaction_context() as db:
         prefijos = _prefijos_de_tipo_permitidos(db, user_data)
+        reportes = _puede_levantar_reportes(db, user_data)
+    if not reportes:
+        opciones = [o for o in opciones
+                    if not _es_tipo_de_reporte(o.get("incident_type_description"))]
     if prefijos is None:
         return opciones
     return [o for o in opciones if any(
@@ -800,11 +852,16 @@ def _validar_permiso_tipo_vale(db, user_data: dict, id_tipo: int, como_borrador:
         raise AppError("errors.not_found", 404, {"entity": "incident_type"})
     detalle = {"action": "create", "entity": "warehouse_voucher",
                "incident_type_description": tipo.incident_type_description}
+    if _es_tipo_de_reporte(tipo.incident_type_description) and not _puede_levantar_reportes(db, user_data):
+        raise AppError("errors.permission_denied", 403,
+                       {**detalle, "detail": "los_reportes_los_levanta_el_almacen"})
     prefijos = _prefijos_de_tipo_permitidos(db, user_data)
     if prefijos is None:
         return
-    solo_supervisor = (not has_capability(db, user_data, "warehouse_voucher")
-                       and has_capability(db, user_data, "warehouse_prevoucher"))
+    # Sin `warehouse_voucher` solo se pide: borrador, que el almacen autoriza.
+    solo_supervisor = (not _opera_el_almacen(db, user_data)
+                       and (has_capability(db, user_data, "warehouse_prevoucher")
+                            or has_capability(db, user_data, "warehouse_incident_report")))
     if solo_supervisor and not como_borrador:
         raise AppError("errors.permission_denied", 403,
                        {**detalle, "detail": "supervisors_can_only_create_drafts"})
@@ -943,7 +1000,12 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
         vence = _fecha_de_regreso(payload.get("due_date"))
         if vence is None and _clave_de_baja(db, id_tipo):
             vence = inicio
+        se_necesita = _fecha_en_que_se_necesita(payload.get("needed_date"))
         motivo = _texto(payload.get("note"), "note", largo=300, obligatorio=True)
+        if _es_reporte_de_incidente(db, id_tipo):
+            # Un reporte de suceso no tiene "se necesita el" ni quien recoge.
+            se_necesita = None
+            nombre_pickup, recoge_supervisor = None, True
 
         # Borrador o vale. Lo decide la RUTA por la que se entro, no un campo
         # del cuerpo: `POST /prevouchers` esta guardada con
@@ -963,6 +1025,7 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
             created_by=actor,
             id_incident_parent=id_padre,
             pickup_name=nombre_pickup if not recoge_supervisor else None,
+            needed_date=se_necesita,
             # Todo vale nuevo lleva seguimiento de entrega y recibido.
             tracks_delivery=True,
         )
@@ -1447,6 +1510,27 @@ def _devolver_al_almacen(db, renglon, user_data, *, vuelve_a, motivo, id_entrada
     )
 
 
+def _opera_el_almacen(db, user_data: dict) -> bool:
+    """`warehouse_voucher` con ESCRITURA, no solo lectura.
+
+    `has_capability` da por concedida una capacidad con solo `scope_read`, y
+    Gerente Comercial tiene una fila de solo lectura de `warehouse_voucher` para ver
+    los vales (20261021110000): con ella pasaba por quien opera el almacen y podia
+    cancelar vales o gestionar su custodia. Se pide ademas `scope_update`.
+    """
+    if _sin_restriccion(user_data):
+        return True
+    if not has_capability(db, user_data, "warehouse_voucher"):
+        return False
+    permiso = (user_data or {}).get("id_permission") or (user_data or {}).get("permission_id")
+    fila = db.query(EntityPermission).filter(
+        EntityPermission.id_permission == permiso,
+        EntityPermission.entity_name == "warehouse_voucher",
+        EntityPermission.deletion_date.is_(None),
+    ).first()
+    return bool(fila and int(fila.scope_update or 0) != 0)
+
+
 def _puede_gestionar_custodia(db, vale: Incident, user_data: dict) -> bool:
     """Quien puede decir a quien se entrega una pieza, o confirmar que la
     recupero: el responsable del vale (de quien se trata todo esto) o quien
@@ -1460,7 +1544,7 @@ def _puede_gestionar_custodia(db, vale: Incident, user_data: dict) -> bool:
         return True
     if int(vale.id_user) == _actor(user_data):
         return True
-    return has_capability(db, user_data, "warehouse_voucher")
+    return _opera_el_almacen(db, user_data)
 
 
 def confirmar_recepcion_de_renglon(id_line, user_data: dict) -> dict:
@@ -1992,7 +2076,7 @@ def vales_vencidos(user_data: dict) -> dict:
         return {"items": _con_existencias(db, filas), "total": len(filas)}
 
 
-def _fecha(valor):
+def _fecha(valor, campo="due_date"):
     """Una fecha del cliente, o un error que dice cual campo."""
     if isinstance(valor, datetime):
         return valor
@@ -2004,7 +2088,7 @@ def _fecha(valor):
             return datetime.strptime(texto, formato)
         except ValueError:
             continue
-    raise AppError("errors.invalid_field", 400, {"field": "due_date"})
+    raise AppError("errors.invalid_field", 400, {"field": campo})
 
 # --- las tres preguntas que se le hacen a un almacen de herramienta ------
 #
@@ -2043,8 +2127,7 @@ def cancelar_vale(id_incident, payload: dict, user_data: dict) -> dict:
     with transaction_context() as db:
         vale = _vale(db, id_incident, para_actualizar=True)
         permitido = (
-            _sin_restriccion(user_data)
-            or has_capability(db, user_data, "warehouse_voucher")
+            _opera_el_almacen(db, user_data)
             or actor in {int(vale.created_by or 0), int(vale.id_user or 0)}
         )
         if not permitido:

@@ -62,12 +62,14 @@ class TestEnAlmacenExigeExistencia(BackendTestCase):
         ProductService.update(id_producto, {"product_status": "ENTRADA"}, user_id=1)
         self.assertEqual("ENTRADA", self._estado(id_producto))
 
-    def test_otros_estados_no_piden_existencia(self):
+    def test_otros_estados_ya_no_se_ponen_a_mano(self):
         id_producto = self._crear("BRO-4", estado="ENTRADA")
 
-        ProductService.update(id_producto, {"product_status": "DAÑADO"}, user_id=1)
+        with self.assertRaises(AppError) as raised:
+            ProductService.update(id_producto, {"product_status": "DAÑADO"}, user_id=1)
 
-        self.assertEqual("DAÑADO", self._estado(id_producto))
+        self.assertEqual("errors.product_status_via_voucher", raised.exception.message_key)
+        self.assertEqual("ENTRADA", self._estado(id_producto))
 
     def test_guardar_otro_campo_de_un_producto_que_ya_esta_en_almacen_en_cero_sigue_funcionando(self):
         # Una pieza En almacen sin existencia (heredada, o con todo prestado): editarle

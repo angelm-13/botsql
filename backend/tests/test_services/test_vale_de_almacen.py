@@ -57,6 +57,7 @@ from app.services.warehouse_voucher_service import (
     EN_TRANSITO,
     autorizar_vale,
     buscar_vales,
+    cancelar_vale,
     cerrar_renglon,
     devolver_renglon,
     consultar_vale,
@@ -508,10 +509,31 @@ class TestLoQueElValeExige(BaseVale):
         r = self._vale([self._linea_cantidad(1, direction="traslado")])
         self.assertEqual("salida", r["lines"][0]["direction"])
 
-    def test_a_voucher_without_a_return_date_is_accepted(self):
-        """El prestamo no tiene fecha fija: la fecha de regreso es opcional."""
+    def test_a_voucher_without_a_return_date_is_accepted_and_never_overdue(self):
+        """El prestamo no tiene fecha fija de regreso: sin ella no sale en vencidos."""
         r = self._vale([self._linea_pieza(self._pieza("DES-031"))], due_date=None)
         self.assertIsNone(r["lines"][0]["due_date"])
+        self.assertEqual([], vales_vencidos(ACTOR)["items"])
+
+    def test_the_voucher_says_for_when_the_tool_is_needed(self):
+        para = (datetime.now() + timedelta(days=5)).strftime("%Y-%m-%d")
+        r = self._vale([self._linea_pieza(self._pieza("DES-034"))], needed_date=para)
+        self.assertEqual(para, r["voucher"]["needed_date"])
+
+    def test_the_needed_date_is_optional(self):
+        r = self._vale([self._linea_pieza(self._pieza("DES-035"))])
+        self.assertIsNone(r["voucher"]["needed_date"])
+
+    def test_a_needed_date_already_past_is_refused(self):
+        ayer = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        with self.assertRaises(AppError) as caja:
+            self._vale([self._linea_pieza(self._pieza("DES-036"))], needed_date=ayer)
+        self.assertEqual("errors.voucher_needed_date_in_the_past", caja.exception.message_key)
+
+    def test_a_garbled_needed_date_names_its_field(self):
+        with self.assertRaises(AppError) as caja:
+            self._vale([self._linea_pieza(self._pieza("DES-037"))], needed_date="manana")
+        self.assertEqual("needed_date", caja.exception.meta.get("field"))
 
     def test_a_return_date_already_past_is_refused(self):
         """Nace vencido, y casi siempre es un dedazo en el ano."""
@@ -1079,6 +1101,38 @@ class TestElPrevaleNoMueveElAlmacen(BaseVale):
         self.assertEqual(antes, self._saldo(RACK))
         entregar_vale(r["voucher"]["id_incident"], {}, ACTOR)
         self.assertEqual(antes - 2, self._saldo(RACK))
+
+    def _cancelar_como(self, id_permiso, scope_update):
+        """Cancela un prevale ajeno con un rol que tiene `warehouse_voucher`."""
+        from app.models.entity_permission import EntityPermission
+
+        with transaction_context() as db:
+            db.add(EntityPermission(
+                id_permission=id_permiso, entity_name="warehouse_voucher",
+                scope_read=4, scope_update=scope_update, created_by=1))
+        self.surtir(5, RACK)
+        r = self._prevale([{"id_product": CEMENTO, "quantity": 2,
+                            "id_location_from": RACK}])
+        ajeno = {"id_user": 9, "id_proyect": PROYECTO, "id_permission": id_permiso}
+        return r["voucher"]["id_incident"], ajeno
+
+    def test_a_read_only_warehouse_role_cannot_cancel_someone_elses_voucher(self):
+        """Gerente Comercial lee los vales (`scope_read`) y no puede cancelarlos.
+
+        `has_capability` basta con `scope_read`, asi que sin pedir escritura la
+        fila de solo lectura lo hacia pasar por quien opera el almacen.
+        """
+        id_vale, solo_lectura = self._cancelar_como(777, scope_update=0)
+        with self.assertRaises(AppError) as cm:
+            cancelar_vale(id_vale, {"note": "no me toca"}, solo_lectura)
+        self.assertEqual(404, cm.exception.status_code)
+        self.assertEqual(BORRADOR, consultar_vale(id_vale, ACTOR)["voucher"]["incident_status"])
+
+    def test_a_warehouse_role_with_write_can_cancel_someone_elses_voucher(self):
+        """La otra mitad: con escritura si cancela, o la prueba de arriba pasaria igual."""
+        id_vale, operador = self._cancelar_como(778, scope_update=4)
+        cancelado = cancelar_vale(id_vale, {"note": "ya no se necesita"}, operador)
+        self.assertEqual("cancelado", cancelado["voucher"]["incident_status"])
 
 
 class TestElPrevaleNoPideMasDeLoQueHay(BaseVale):
@@ -2410,10 +2464,12 @@ class TestElMaterialDelProyectoNoCuentaLoQueNoSalio(BaseEntrega):
 
 
 class TestLosTiposDeValePorRol(BaseVale):
-    """Gerencia levanta cualquier tipo; Almacen solo los de herramienta;
-    Supervisor solo prestamo, danado, extraviado y reparacion (y como prevale)."""
+    """Gerencia levanta cualquier tipo salvo los reportes; Almacen solo los de herramienta;
+    Supervisor solo prestamo (y como prevale); los reportes de suceso -danado, extraviado,
+    destruccion, reparacion- los levanta quien tiene `warehouse_incident_report`: Almacen
+    y Gerente Comercial (este, solo como borrador)."""
 
-    P_ALMACEN, P_SUPERVISOR, P_GERENCIA = 71, 72, 73
+    P_ALMACEN, P_SUPERVISOR, P_GERENCIA, P_COMERCIAL = 71, 72, 73, 74
     T_JORNADA, T_REPARACION, T_DESTRUCCION = 191, 192, 193
 
     def setUp(self):
@@ -2437,6 +2493,16 @@ class TestLosTiposDeValePorRol(BaseVale):
                     id_permission=permiso, entity_name=entidad,
                     scope_create=4, scope_read=4, scope_update=4, scope_delete=4,
                     created_by=1))
+            db.add_all([
+                # Almacen levanta reportes con su capacidad propia, no con `warehouse_voucher`.
+                EntityPermission(id_permission=self.P_ALMACEN, entity_name="warehouse_incident_report",
+                                 scope_read=4, created_by=1),
+                # Gerente Comercial: lee los vales (fila de solo lectura) y levanta reportes.
+                EntityPermission(id_permission=self.P_COMERCIAL, entity_name="warehouse_voucher",
+                                 scope_read=4, created_by=1),
+                EntityPermission(id_permission=self.P_COMERCIAL, entity_name="warehouse_incident_report",
+                                 scope_read=4, created_by=1),
+            ])
 
     def _error(self, funcion, *args, **kwargs):
         with self.assertRaises(AppError) as caja:
@@ -2467,13 +2533,48 @@ class TestLosTiposDeValePorRol(BaseVale):
     def test_the_warehouse_can_raise_destruction(self):
         self._levantar(self.P_ALMACEN, self.T_DESTRUCCION, False)
 
-    def test_a_supervisor_can_request_a_repair(self):
-        r = self._levantar(self.P_SUPERVISOR, self.T_REPARACION, True)
+    def test_a_supervisor_cannot_request_an_incident_report(self):
+        """Dañado, extraviado, destruccion y reparacion los levanta solo el almacen."""
+        for tipo in (self.T_REPARACION, self.T_DESTRUCCION):
+            with self.subTest(tipo=tipo):
+                e = self._error(self._levantar, self.P_SUPERVISOR, tipo, True)
+                self.assertEqual(403, e.status_code)
 
-        self.assertEqual(BORRADOR, r["voucher"]["incident_status"])
+    def test_management_without_the_report_capability_cannot_raise_one(self):
+        for tipo in (self.T_REPARACION, self.T_DESTRUCCION):
+            with self.subTest(tipo=tipo):
+                e = self._error(self._levantar, self.P_GERENCIA, tipo, False)
+                self.assertEqual(403, e.status_code)
 
-    def test_a_supervisor_cannot_request_destruction(self):
-        e = self._error(self._levantar, self.P_SUPERVISOR, self.T_DESTRUCCION, True)
+    def test_the_warehouse_can_raise_a_repair(self):
+        self._levantar(self.P_ALMACEN, self.T_REPARACION, False)
+
+    def test_the_warehouse_without_the_report_capability_cannot_raise_one(self):
+        """`warehouse_voucher` solo es operar el almacen: los reportes son otra capacidad."""
+        from app.models.entity_permission import EntityPermission
+
+        with transaction_context() as db:
+            db.query(EntityPermission).filter_by(
+                id_permission=self.P_ALMACEN, entity_name="warehouse_incident_report").delete()
+
+        e = self._error(self._levantar, self.P_ALMACEN, self.T_REPARACION, False)
+
+        self.assertEqual(403, e.status_code)
+
+    def test_the_commercial_manager_can_request_an_incident_report_as_a_draft(self):
+        for tipo in (self.T_REPARACION, self.T_DESTRUCCION):
+            with self.subTest(tipo=tipo):
+                r = self._levantar(self.P_COMERCIAL, tipo, True)
+                self.assertEqual(BORRADOR, r["voucher"]["incident_status"])
+
+    def test_the_commercial_manager_cannot_open_a_report_directly(self):
+        """Sin `warehouse_voucher` con escritura solo se pide: el almacen lo autoriza."""
+        e = self._error(self._levantar, self.P_COMERCIAL, self.T_REPARACION, False)
+
+        self.assertEqual(403, e.status_code)
+
+    def test_the_commercial_manager_cannot_request_a_loan(self):
+        e = self._error(self._levantar, self.P_COMERCIAL, TIPO_PRESTAMO, True)
 
         self.assertEqual(403, e.status_code)
 
@@ -2492,7 +2593,17 @@ class TestLosTiposDeValePorRol(BaseVale):
         ofrecidos = [o["incident_type_description"]
                      for o in filtrar_tipos_de_vale(todos, actor)]
 
-        self.assertEqual(["Prestamo", "Reparación"], ofrecidos)
+        self.assertEqual(["Prestamo"], ofrecidos)
+
+        gerencia = {"id_user": OPERADOR, "id_permission": self.P_GERENCIA}
+        self.assertEqual(["Prestamo", "Jornada"], [
+            o["incident_type_description"] for o in filtrar_tipos_de_vale(todos, gerencia)])
+        almacen = {"id_user": OPERADOR, "id_permission": self.P_ALMACEN}
+        self.assertEqual(["Prestamo", "Destruccion", "Reparación"], [
+            o["incident_type_description"] for o in filtrar_tipos_de_vale(todos, almacen)])
+        comercial = {"id_user": OPERADOR, "id_permission": self.P_COMERCIAL}
+        self.assertEqual(["Destruccion", "Reparación"], [
+            o["incident_type_description"] for o in filtrar_tipos_de_vale(todos, comercial)])
 
     def test_delivering_moves_the_stock_and_confirming_opens_it(self):
         self.surtir(5, RACK)

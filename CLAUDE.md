@@ -6,6 +6,47 @@ aparte de `ARQUITECTURA_TYAKXA_TNY.md` (referencia técnica estable) y de
 sección se resuelve, se puede recortar; mientras tanto se deja completa para
 que una sesión nueva no tenga que releer el historial de chat.
 
+## Bitacora 2026-10-27 — bloque de vales e inventario de initAngm (rama `traer/initangm-bloque-vales`)
+
+Local, **sin pushear ni promover**. Cherry-pick de `6f4b523`, `85d234cb`, `8711b1e5`, `d4ab2546` y
+`2483e5ac` (de Angel) mas un commit de ajustes nuestro. Antes ya entraron a `initAlan` `b2bd3a1a`,
+`79c5296f`, `87dbadfc` y `e2f36682`.
+
+**Que entra**: "Se necesita el" (`incident.needed_date`) sustituye a la fecha de regreso (opcional; sin
+ella no sale en vencidos); capacidad `warehouse_voucher_holder` (quien puede ser responsable de un vale,
+en el Gestor); clase del articulo (herramienta/consumible/sobrante/recargable) en el MATERIAL, y marca/
+familia en el producto; Jefe de taller: se quitan Tomar/Soltar, el proyecto con maquila se asigna solo si
+hay un unico jefe o lo asigna quien autoriza; el estado manual del producto solo pasa a "En almacen" y no
+con un vale abierto (se conserva ademas nuestra guarda de existencia > 0).
+
+**Ajustes nuestros sobre el codigo de Angel** (decision de Alan 2026-10-27):
+- Los reportes de suceso (danado, extraviado, destruccion, reparacion) los levanta quien tiene la
+  capacidad NUEVA `warehouse_incident_report`, concedida en el Gestor: por omision Almacenista y Gerente
+  Comercial (este solo como borrador por `POST /prevouchers`, que el almacen autoriza; no abre vales
+  directos ni pide prestamos). No se ataron a `warehouse_voucher` porque es el permiso de operar el
+  almacen y `has_capability` basta con leerlo.
+- `_prefijos_de_tipo_permitidos` y `_validar_permiso_tipo_vale` usan `_opera_el_almacen` (escritura): sin
+  eso el Gerente Comercial, que lee los vales, pasaba por almacen y veia el tipo "prestamo".
+- Se retiro la resiembra de Angel `20261020110000` (revivia el rol "Gerente", 81 filas) y se regenero
+  `20261021100000` con `seed_module_permissions.py` (roles Gerente Comercial/Tecnico + capacidades nuevas).
+- `purchase_order_service`: NO se trajo la entrada al libro al recibir (sigue fuera por decision de Alan);
+  la clase del material se asienta en `receive_order` sin tocar inventario.
+
+**Verificado**: pruebas de vales, proyectos, compras, inventario y permisos en verde (SQLite);
+migraciones aplicadas dos veces sobre Postgres 16 desechable; `vite build` compila. Las 2 pruebas de
+frontend que fallan (274 pasan) fallan igual sin este bloque.
+
+**Hallazgo preexistente (no es de este bloque)**: sobre una base LIMPIA, `20261021100000` falla con
+`duplicate key ... permission_pkey` (linea 164): el segundo INSERT de roles usa la secuencia antes de
+alinearla y choca con el id 9 recien insertado. Ocurre igual en `initAlan` sin estos cambios. Las
+instalaciones existentes (adser-prod, tyakxa-dev) no lo sufren; una instalacion nueva si. Arreglo
+pendiente en `seed_module_permissions.py` (alinear la secuencia entre los dos INSERT).
+
+**Antes de promover a adser-prod**: avisar a Angel de los ajustes; configurar en el Gestor quien lleva
+`warehouse_voucher_holder`; medir el efecto del cambio de Jefe de taller con quien use ese rol; probar
+en sistema-test las pantallas de vales (fecha "Se necesita el", reportes, selector de responsable),
+Productos/Material (clase) y Proyectos (asignar jefe de taller).
+
 ## Bitacora 2026-10-22 — PROMOVIDO a adser-prod (`2c8ba33`, 13a promocion)
 
 adser-prod pasa de `fcaae54` a `2c8ba33` (28 commits: traida de initAngm, estados del

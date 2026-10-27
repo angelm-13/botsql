@@ -1169,6 +1169,68 @@ class TestElSupervisorTomaElProyecto(TestProjectWorkflowService):
 
         self.assertEqual(self.workshop["id_user"], tomado["id_supervisor"])
 
+    def _con_un_solo_jefe_de_taller(self):
+        """El rol 301 solo ejecuta; el 501 ejecuta Y autoriza (como un administrador) y no cuenta."""
+        from app.models.user import User
+
+        with transaction_context() as db:
+            db.add_all([
+                User(id_user=31, created_by=1, full_name="Jefe de taller", id_permission=301,
+                     id_proyect=1, id_status=1, supervisor=1, username="jefe-taller-prueba"),
+                User(id_user=51, created_by=1, full_name="Administrador", id_permission=501,
+                     id_proyect=1, id_status=1, supervisor=1, username="admin-prueba"),
+            ])
+
+    def test_a_maquila_project_goes_to_the_only_workshop_head_without_taking_it(self):
+        self._con_un_solo_jefe_de_taller()
+
+        creado = self._create()
+
+        self.assertEqual(self.workshop["id_user"], creado["id_supervisor"])
+
+    def test_with_several_workshop_heads_the_manager_assigns_the_project(self):
+        from app.models.user import User
+        from app.services.project_management_service import assign_project, workshop_heads
+
+        self._con_un_solo_jefe_de_taller()
+        with transaction_context() as db:
+            db.add(User(id_user=32, created_by=1, full_name="Otro jefe", id_permission=301,
+                        id_proyect=1, id_status=1, supervisor=1, username="jefe-taller-2-prueba"))
+        proyecto = self._create()["id_proyect"]
+        self.assertIsNone(get_project_detail(proyecto, self.manager)["id_supervisor"])  # dos jefes: no se adivina
+
+        self.assertEqual([31, 32], [j["id_user"] for j in workshop_heads(self.manager)])
+        self.assertEqual(32, assign_project(proyecto, 32, self.manager)["id_supervisor"])
+        # El administrador (51 ejecuta y autoriza) no es jefe de taller.
+        with self.assertRaises(AppError) as raised:
+            assign_project(proyecto, 51, self.manager)
+        self.assertEqual("errors.invalid_field", raised.exception.message_key)
+        # Solo quien autoriza asigna: el supervisor que lo levanto, no.
+        with self.assertRaises(AppError) as raised:
+            assign_project(proyecto, 31, self.supervisor)
+        self.assertEqual("errors.permission_denied", raised.exception.message_key)
+        self.assertIsNone(assign_project(proyecto, None, self.manager)["id_supervisor"])
+
+    def test_a_project_without_maquila_cannot_be_assigned_to_a_workshop_head(self):
+        from app.services.project_management_service import assign_project
+
+        proyecto = self._create()["id_proyect"]
+        self._sin_maquila(proyecto)
+        with self.assertRaises(AppError) as raised:
+            assign_project(proyecto, 31, self.manager)
+        self.assertEqual("errors.invalid_field", raised.exception.message_key)
+
+    def test_a_project_without_maquila_stays_with_the_supervisor(self):
+        self._con_un_solo_jefe_de_taller()
+        proyecto = self._create()["id_proyect"]
+
+        sin_maquila = update_project(proyecto, {"requires_maquila": False}, self.supervisor)
+
+        self.assertEqual(self.workshop["id_user"], sin_maquila["id_supervisor"])  # ya lo tenia
+        otro = create_project({"id_customer_supplier": 1, "proyect_description": "Pintura",
+                               "title": "Sin taller", "requires_maquila": False}, self.supervisor)
+        self.assertIsNone(otro["id_supervisor"])
+
     def test_a_role_with_both_capabilities_can_take_a_free_project(self):
         """Autorizar y ejecutar suman: la de ejecutar no se pierde por tener tambien la otra."""
         id_proyect = self._autorizado()
