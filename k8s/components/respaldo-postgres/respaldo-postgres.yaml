@@ -23,6 +23,13 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: pg-backups
+  # Etiqueta para aplicar SOLO el respaldo con `kubectl apply -k ... -l
+  # app.kubernetes.io/component=respaldo-postgres` (la usan los overlays de
+  # produccion, que tienen otros cambios del base aun sin aplicar). Va en cada
+  # objeto y no como `labels:` del componente: ese transformador se aplicaria
+  # tambien a los recursos del base.
+  labels:
+    app.kubernetes.io/component: respaldo-postgres
 spec:
   accessModes: ["ReadWriteOnce"]
   storageClassName: local-path
@@ -34,6 +41,8 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: pg-backup
+  labels:
+    app.kubernetes.io/component: respaldo-postgres
 spec:
   schedule: "30 3 * * *"
   timeZone: America/Mexico_City
