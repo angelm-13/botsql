@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { RefreshCw, Search, Trash2, Pencil } from "lucide-react";
+import { RefreshCw, Search, Trash2, Pencil, Image } from "lucide-react";
 import { useI18n } from "../i18n";
-import { getAllIncident, createIncident, updateIncident, deleteIncident, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllIncidentType, getAllUser } from "../api";
+import { getIncident, getAllIncident, createIncident, updateIncident, deleteIncident, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllIncidentType, getAllUser } from "../api";
 import { fetchAllPages } from "../utils/fetchAllPages";
 import Pagination from "../components/Pagination.jsx";
 import PageHeader from "../components/PageHeader.jsx";
@@ -32,7 +32,20 @@ const ACTION_UPDATE = 4;
 const ACTION_DELETE = 8;
 const SCOPE_FIELD_BY_BIT = { [ACTION_CREATE]: "scope_create", [ACTION_READ]: "scope_read", [ACTION_UPDATE]: "scope_update", [ACTION_DELETE]: "scope_delete" };
 const FIELD_VISIBLE_BIT = 2;
-const ALL_FIELD_NAMES = ['id_incident', 'incident_date', 'id_incident_type', 'note', 'id_user', 'incident_status', 'close_date', 'created_by', 'creation_date', 'last_update_date', 'latitude', 'longitude', 'distance_m'];
+const ALL_FIELD_NAMES = ['id_incident', 'incident_date', 'id_incident_type', 'note', 'id_user', 'incident_status', 'close_date', 'created_by', 'creation_date', 'last_update_date', 'latitude', 'longitude', 'distance_m', 'photo_base64'];
+
+// n8n manda la foto como base64 pelado (sin "data:"): el tipo se reconoce por los
+// primeros caracteres de la cadena, que son la firma del archivo. Solo se arma el
+// src con texto que ya paso la validacion de la API (alfabeto base64).
+function srcDeFoto(base64) {
+  if (!base64) return "";
+  if (base64.startsWith("data:image/")) return base64;
+  const tipo = base64.startsWith("iVBOR") ? "image/png"
+    : base64.startsWith("R0lGOD") ? "image/gif"
+    : base64.startsWith("UklGR") ? "image/webp"
+    : "image/jpeg";
+  return `data:${tipo};base64,${base64}`;
+}
 
 // Los renglones de checada (n8n por WhatsApp) traen donde estaba la persona y a
 // cuantos metros del punto. Las demas incidencias no, asi que las columnas solo
@@ -102,6 +115,18 @@ export default function IncidentPage() {
   const showRowActions = canRead && (canUpdate || canDelete);
   const [incidentTypeOptions, setIncidentTypeOptions] = useState([]);
   const [userOptions, setUserOptions] = useState([]);
+  // La foto no viene en el listado (pesa megas): se pide al abrirla.
+  const [foto, setFoto] = useState(null);
+
+  async function verFoto(item) {
+    setFoto({ id: item.id_incident, src: "", cargando: true, error: false });
+    try {
+      const detalle = await getIncident(item.id_incident);
+      setFoto({ id: item.id_incident, src: srcDeFoto(detalle?.photo_base64), cargando: false, error: !detalle?.photo_base64 });
+    } catch (_) {
+      setFoto({ id: item.id_incident, src: "", cargando: false, error: true });
+    }
+  }
 
   async function loadData() {
     if (!permissionReady || !canRead) {
@@ -456,6 +481,7 @@ export default function IncidentPage() {
 
   const localeDeNumeros = lang === "ja" ? "ja-JP" : lang === "en" ? "en-US" : lang === "pt" ? "pt-BR" : lang === "de" ? "de-DE" : "es-MX";
   const mostrarChecada = useMemo(() => filtered.some(tieneDatosDeChecada), [filtered]);
+  const mostrarFoto = useMemo(() => filtered.some((item) => item?.has_photo), [filtered]);
 
   const groups = useMemo(() => filtered.reduce((acc, item) => {
     const key = String(item.incident_status ?? t("common.unclassified"));
@@ -573,6 +599,7 @@ export default function IncidentPage() {
               {mostrarChecada && canSeeField("latitude") && <th>{t("fields.incident.latitude")}</th>}
               {mostrarChecada && canSeeField("longitude") && <th>{t("fields.incident.longitude")}</th>}
               {mostrarChecada && canSeeField("distance_m") && <th>{t("fields.incident.distance_m")}</th>}
+              {mostrarFoto && canSeeField("photo_base64") && <th>{t("fields.incident.photo_base64")}</th>}
               {canSeeField("id_user") && <th>{t("fields.incident.id_user")}</th>}
               {canSeeField("incident_status") && <th>{t("fields.incident.incident_status")}</th>}
               {canSeeField("close_date") && <th>{t("fields.incident.close_date")}</th>}
@@ -587,6 +614,7 @@ export default function IncidentPage() {
               {mostrarChecada && canSeeField("latitude") && <td><pre className="cell-value">{formatearCoordenada(item.latitude, localeDeNumeros)}</pre></td>}
               {mostrarChecada && canSeeField("longitude") && <td><pre className="cell-value">{formatearCoordenada(item.longitude, localeDeNumeros)}</pre></td>}
               {mostrarChecada && canSeeField("distance_m") && <td><pre className="cell-value">{formatearDistancia(item.distance_m, localeDeNumeros)}</pre></td>}
+              {mostrarFoto && canSeeField("photo_base64") && <td>{item.has_photo && <button type="button" className="button ghost" onClick={() => verFoto(item)}><Image size={15} />{t("fields.incident.view_photo")}</button>}</td>}
               {canSeeField("id_user") && <td><pre className="cell-value">{incidentDisplayLabel(userOptions, "id_user", "user", item.id_user)}</pre></td>}
               {canSeeField("incident_status") && <td>{item.incident_status
                 ? <span className={`incident-estado ${tonoDeIncidencia(item.incident_status)}`}>
@@ -606,6 +634,19 @@ export default function IncidentPage() {
           {canSeeField("close_date") && item.close_date && <p><span>{t("fields.incident.close_date", "Cierre")}:</span> <strong>{formatTableValue(item.close_date)}</strong></p>}
           {canSeeField("note") && item.note && <p className="wide"><span>{t("fields.incident.note", "Nota")}:</span> <strong>{formatTableValue(item.note)}</strong></p>}
         </div>{showRowActions && <div>{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</div>}</article>)}</div>)}</div>}
+
+      {foto && (
+        <div className="dialogo-fondo" role="dialog" aria-modal="true" onClick={() => setFoto(null)}>
+          <div className="dialogo incident-foto" onClick={(e) => e.stopPropagation()}>
+            {foto.cargando && <p className="dialogo-mensaje">{t("common.loading")}</p>}
+            {foto.error && <p className="dialogo-mensaje">{t("fields.incident.photo_unavailable")}</p>}
+            {foto.src && <img src={foto.src} alt={`${t("fields.incident.photo_base64")} #${foto.id}`} />}
+            <div className="dialogo-acciones">
+              <button type="button" className="button" onClick={() => setFoto(null)}>{t("common.close", "Cerrar")}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <Pagination
         page={page}

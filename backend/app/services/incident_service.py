@@ -6,10 +6,12 @@ cerrada antes de haber ocurrido, y el estatus "cerrada" sin fecha de cierre.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
 from sqlalchemy import or_
+from sqlalchemy.orm import defer
 
 from app.models import Incident, IncidentType, User
 from app.models.entity_permission import EntityPermission
@@ -33,6 +35,14 @@ DEFAULT_STATUS = "abierta"
 # Antes cualquiera con permiso de lectura veia las de toda la empresa.
 SUPERVISION_CAPABILITY = "incident_supervision"
 READ_BIT = 2
+
+# Tope de la foto en base64 (caracteres): ~12 MB de texto, por debajo del limite
+# de cuerpo del ingress (proxy-body-size 12m) para que el rechazo lo de la API
+# con un error claro y no el proxy con un 413 sin cuerpo.
+FOTO_MAX_CARACTERES = 11_000_000
+# Prefijo opcional "data:image/jpeg;base64," y luego solo alfabeto base64.
+_FOTO_PREFIJO = re.compile(r'^data:image/[a-zA-Z0-9.+-]+;base64,')
+_FOTO_BASE64 = re.compile(r'^[A-Za-z0-9+/]*={0,2}$')
 
 
 def _is_unrestricted(user_data) -> bool:
@@ -183,7 +193,40 @@ class IncidentService(CrudService):
 
         cls._validate_dates(payload, current)
         cls._validate_geo(payload)
+        cls._validate_foto(payload)
         return payload
+
+    @staticmethod
+    def _redact_audit_value(field_name: str, value):
+        # La foto en base64 pesa megas: el registro de eventos guarda que cambio
+        # y de que tamano, no la imagen entera (dos veces, antes y despues).
+        if field_name == 'photo_base64':
+            return f'[imagen: {len(value)} caracteres]' if value else value
+        return CrudService._redact_audit_value(field_name, value)
+
+    @staticmethod
+    def _validate_foto(payload):
+        """La foto llega de n8n como texto base64, con o sin prefijo `data:`.
+
+        Se guarda sin saltos de linea ni espacios (n8n a veces parte la cadena) y
+        solo si es base64 de verdad: la pantalla la pone en un `<img src>`, asi que
+        no se acepta cualquier texto en esa columna.
+        """
+        if 'photo_base64' not in payload:
+            return
+        valor = payload['photo_base64']
+        if valor in (None, ''):
+            payload['photo_base64'] = None
+            return
+        if not isinstance(valor, str):
+            raise AppError("errors.invalid_field", 400, {"field": "photo_base64"})
+        limpio = re.sub(r'\s+', '', valor)
+        if len(limpio) > FOTO_MAX_CARACTERES:
+            raise AppError("errors.invalid_field", 400, {"field": "photo_base64"})
+        cuerpo = _FOTO_PREFIJO.sub('', limpio, count=1)
+        if not cuerpo or not _FOTO_BASE64.match(cuerpo):
+            raise AppError("errors.invalid_field", 400, {"field": "photo_base64"})
+        payload['photo_base64'] = limpio
 
     @staticmethod
     def _validate_geo(payload):
@@ -390,9 +433,24 @@ def list_incidents(user_data, *, page=1, per_page=20, filters=None, sort=None) -
         query = query.order_by(columna.desc() if descendente else columna.asc(), Incident.id_incident.desc())
 
         total = query.count()
-        filas = query.offset((page - 1) * per_page).limit(per_page).all()
+        # La foto en base64 pesa megas: el listado no la lee (defer), solo averigua
+        # cuales filas la tienen. La imagen se pide con el detalle de la incidencia.
+        filas = (
+            query.options(defer(Incident.photo_base64))
+            .offset((page - 1) * per_page).limit(per_page).all()
+        )
+        ids = [fila.id_incident for fila in filas]
+        con_foto = set()
+        if ids:
+            con_foto = {
+                fila_id for (fila_id,) in db.query(Incident.id_incident)
+                .filter(Incident.id_incident.in_(ids), Incident.photo_base64.isnot(None))
+            }
         return {
-            "items": [fila.serialize() for fila in filas],
+            "items": [
+                fila.serialize(con_foto=False, tiene_foto=fila.id_incident in con_foto)
+                for fila in filas
+            ],
             "page": page,
             "per_page": per_page,
             "total": total,

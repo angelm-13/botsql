@@ -12,7 +12,9 @@ from app.utils.errors import AppError
 from app.utils.field_access import COLUMNAS_DE_AUDITORIA
 
 bp_incident = Blueprint('incident', __name__, url_prefix='/incident')
-ALLOWED_FIELDS = ['id_incident', 'incident_date', 'id_incident_type', 'note', 'id_user', 'incident_status', 'close_date', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'id_lider', 'latitude', 'longitude', 'distance_m']
+ALLOWED_FIELDS = ['id_incident', 'incident_date', 'id_incident_type', 'note', 'id_user', 'incident_status', 'close_date', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'id_lider', 'latitude', 'longitude', 'distance_m', 'photo_base64']
+# Campos que no se filtran por igualdad desde la URL (un base64 de megas no es filtro).
+NON_FILTERABLE_FIELDS = {'photo_base64'}
 
 TECHNICAL_RESPONSE_FIELDS = {'id_incident'}
 FIELD_READ_BIT = 2
@@ -77,7 +79,11 @@ def _field_sets_for_actor(user_data: dict) -> tuple[set[str], set[str]]:
 
 
 def _visible_response_fields_for_actor(user_data: dict) -> set[str]:
-    return _field_sets_for_actor(user_data)[0]
+    visibles = _field_sets_for_actor(user_data)[0]
+    # `has_photo` es solo el aviso de que hay foto: lo ve quien puede ver la foto.
+    if 'photo_base64' in visibles:
+        visibles = visibles | {'has_photo'}
+    return visibles
 
 
 def _writable_request_fields_for_actor(user_data: dict) -> set[str]:
@@ -125,7 +131,7 @@ def list_incident(user_data):
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 20))
     sort = request.args.get('sort')
-    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort', 'q'} and k in ALLOWED_FIELDS}
+    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort', 'q'} and k in ALLOWED_FIELDS and k not in NON_FILTERABLE_FIELDS}
     return _jsonify_projected_list(user_data, list_incidents(user_data, page=page, per_page=per_page, filters=filters, sort=sort))
 
 
