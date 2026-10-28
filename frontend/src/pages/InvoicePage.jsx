@@ -1,3 +1,4 @@
+import { LLAVE_BORRADO_BLOQUEADO, mensajeDeBorradoBloqueado } from "../utils/registrosRelacionados.js";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { BadgeCheck, ChevronDown, ChevronRight, Download, FileText, Plus, RefreshCw, Scale, Search, Trash2, Pencil, Upload, Warehouse } from "lucide-react";
 import { useI18n } from "../i18n";
@@ -611,7 +612,7 @@ export default function InvoicePage() {
     if (errorKey === "errors.invalid_field" && errorMeta?.field) {
       return `${t(errorKey, errorKey)}: ${fieldLabel}`;
     }
-    return t(errorKey, errorKey);
+    return errorKey === LLAVE_BORRADO_BLOQUEADO ? mensajeDeBorradoBloqueado(t, errorMeta) : t(errorKey, errorKey);
   }
 
   // El buscador pregunta al SERVIDOR, asi que lo que llega ya viene filtrado.
