@@ -1,5 +1,5 @@
 from __future__ import annotations
-from datetime import datetime
+from datetime import datetime, timezone
 import re
 from flask import Blueprint, jsonify, request
 import bcrypt
@@ -366,14 +366,16 @@ def _delete_user_or_retire_bootstrap(user_data, target_user_id, service_cls):
             if not _can_manage_user_row(user_data, target):
                 return _hierarchy_denied_response()
             item = session.get(service_cls.model, target_user_id)
-            if not item:
+            if not item or item.deletion_date is not None:
                 raise AppError('errors.resource_not_found', status_code=404)
-            # User MFA is a technical dependent record. Remove it in the same
-            # transaction before deleting regular users so admins can remove
-            # users that already completed MFA without violating FK constraints.
+            # Baja logica, igual que el resto de las entidades: un usuario tiene
+            # vales, equipos, eventos y autorias colgando, y el borrado fisico lo
+            # frenaba con un 409 en cuanto habia historial. Con `deletion_date` ya
+            # no entra (login), su token vivo deja de servir (`sesion_vigente`) y
+            # no sale en listados ni selectores; la fila y su historia se quedan.
+            # Su `username` sigue reservado: el indice unico no distingue bajas.
             before = item.serialize()
-            session.execute(text('DELETE FROM user_mfa WHERE id_user = :id_user'), {'id_user': target_user_id})
-            session.delete(item)
+            item.deletion_date = datetime.now(timezone.utc).replace(tzinfo=None)
             try:
                 from app.models import EventLog
                 session.add(EventLog(

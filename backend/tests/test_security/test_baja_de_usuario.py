@@ -62,3 +62,35 @@ class TestBajaDeUsuario(BackendTestCase):
         self.assertNotEqual(401, self._pide().status_code)
         self._baja()
         self.assertEqual(401, self._pide().status_code)
+
+    # --- eliminar desde la pantalla: baja logica -------------------------------------------------
+
+    def _elimina(self):
+        # El usuario 61 trae el rol Administrator: lo gestiona otro Administrator o el superusuario.
+        token = jwt.encode({"id_user": 1, "id_permission": 1, "is_superuser": True}, SECRET_KEY, algorithm="HS256")
+        return self.client.delete("/user/61", headers={"Authorization": "Bearer %s" % token})
+
+    def _fecha_de_baja(self):
+        with transaction_context() as db:
+            return db.get(User, 61).deletion_date
+
+    def test_eliminar_pone_fecha_de_baja_y_no_borra_la_fila(self):
+        self.assertIsNone(self._fecha_de_baja())
+
+        respuesta = self._elimina()
+
+        self.assertEqual(200, respuesta.status_code, self.json(respuesta))
+        self.assertIsNotNone(self._fecha_de_baja())
+
+    def test_el_eliminado_ya_no_entra_ni_sale_en_el_listado(self):
+        self._elimina()
+
+        self.assertEqual(401, self._login().status_code)
+        token = jwt.encode({"id_user": 1, "id_permission": 1, "is_superuser": True}, SECRET_KEY, algorithm="HS256")
+        listado = self.client.get("/user/?per_page=100", headers={"Authorization": "Bearer %s" % token})
+        self.assertNotIn(61, [u["id_user"] for u in self.json(listado)["items"]])
+
+    def test_eliminar_dos_veces_da_404(self):
+        self._elimina()
+
+        self.assertEqual(404, self._elimina().status_code)
