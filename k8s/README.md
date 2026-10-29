@@ -49,8 +49,10 @@ hablarlo con Alan. Cada quien toca solo su carpeta de overlay.
    todas las imágenes, incluida la de tu frontend.
 3. **Crea el overlay**: `cp -r k8s/overlays/_template k8s/overlays/<cliente>-<env>`
    y reemplaza `CLIENTE-ENV`, `DOMINIO` y `REEMPLAZAR_SHA` en sus dos archivos.
-   Verifica el dominio con `nslookup`; el DNS (registro A a master1) lo pide
-   Tanya. Los comentarios de la plantilla explican cada bloque.
+   Los clientes del ERP usan un solo dominio, `<cliente>.torredigital.mx` (por
+   ejemplo `comala.torredigital.mx`); confírmalo con Alan. Verifica el dominio
+   con `nslookup`; el DNS (registro A a master1) lo pide Tanya. Los comentarios
+   de la plantilla explican cada bloque.
 4. **Valida que compila**: `kubectl kustomize k8s/overlays/<cliente>-<env>`
    (debe terminar sin error; revisa que salga tu namespace y tu dominio).
 5. **Commit y push a tu rama** (no a `initAlan`), solo de tu overlay y de

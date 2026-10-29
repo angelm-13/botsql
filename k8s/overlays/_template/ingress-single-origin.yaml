@@ -1,5 +1,7 @@
 # Plantilla del Ingress de un cliente con UN SOLO dominio (mismo patrón que
 # comala-prod, adser-prod y torredigital-prod). Reemplaza CLIENTE-ENV y DOMINIO.
+# El dominio de los clientes del ERP es <cliente>.torredigital.mx (ej.
+# comala.torredigital.mx); confírmalo con Alan antes de pedir el DNS.
 #
 # Son DOS objetos Ingress a propósito: nginx.ingress.kubernetes.io/rewrite-target
 # aplica a TODO el Ingress, así que /api necesita su propio objeto separado de
