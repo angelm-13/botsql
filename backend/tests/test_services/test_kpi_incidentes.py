@@ -20,6 +20,7 @@ from app.models import (
 )
 from app.models.session import engine, transaction_context
 from app.services.warehouse_voucher_service import CIERRE_SENTINELA
+from app.utils.tiempo import ahora_negocio
 
 # Mismo criterio que test_kpi_ventas_por_empleado.py: se corre solo contra
 # PostgreSQL real y reutiliza el bootstrap de siempre (customer_supplier=1,
@@ -41,7 +42,7 @@ MATERIAL = 970
 INVOICE = 970
 PRODUCT = 970
 
-AHORA = datetime.now()
+AHORA = ahora_negocio()
 HOY = AHORA.date()
 
 

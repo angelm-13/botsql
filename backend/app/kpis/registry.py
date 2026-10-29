@@ -47,6 +47,7 @@ from app.services.warehouse_voucher_service import (
     CIERRE_SENTINELA, SALIDA, TIPOS_DE_BAJA, _estado_del_renglon, _vales_de_baja,
 )
 from app.modules.registry import MODULO_POR_CLAVE
+from app.utils.tiempo import ahora_negocio, hoy_negocio
 from app.kpis.dimensiones import CATALOGO as CATALOGO_DE_DIMENSIONES, DIMENSION_POR_CLAVE as CATALOGO_POR_CLAVE
 
 # Que llave de `dimension_key` (JSONB, en `kpi_snapshot`) le corresponde a cada
@@ -309,7 +310,7 @@ def vales_vencidos_por_responsable_query(session, fecha_inicio, fecha_fin, filtr
       una vez por proyecto activo) y `actor_project` se ignora aqui a
       proposito.
     """
-    ahora = datetime.now()
+    ahora = ahora_negocio()
     fecha_col = func.date(NmIncidentProduct.due_date)
     condiciones = [
         NmIncidentProduct.deletion_date.is_(None),
@@ -606,7 +607,7 @@ def documentos_vencidos_por_responsable_query(session, fecha_inicio, fecha_fin, 
     * Vigencia: `deletion_date IS NULL`, `status == "signed"` (ver
       `DOCUMENT_EXPIRABLE_STATUS`).
     * Vencido: `expiration_date` (columna `Date`, no `DateTime`) < HOY real
-      (`date.today()`), evaluado siempre contra el momento real -- mismo
+      (`hoy_negocio()`, el dia en la zona del negocio), evaluado siempre contra el momento real -- mismo
       criterio que `vales_vencidos_por_responsable_query`: un documento
       vencido hace 3 dias sigue vencido hoy, sin importar que dia se
       recalcule.
@@ -616,7 +617,7 @@ def documentos_vencidos_por_responsable_query(session, fecha_inicio, fecha_fin, 
     * Alcance: `Document.id_proyect` existe (columna real, NOT NULL) --
       este KPI SI tiene alcance por proyecto.
     """
-    hoy = date.today()
+    hoy = hoy_negocio()
     condiciones = [
         Document.deletion_date.is_(None),
         Document.status == DOCUMENT_EXPIRABLE_STATUS,
@@ -763,7 +764,7 @@ def prestamos_vencidos_por_responsable_query(session, fecha_inicio, fecha_fin, f
     Sin alcance de proyecto, mismo motivo que
     `material_prestado_por_responsable_query`.
     """
-    ahora = datetime.now()
+    ahora = ahora_negocio()
     fecha_col = func.date(InventoryAsset.due_date)
     condiciones = [
         InventoryAsset.deletion_date.is_(None),
@@ -1503,7 +1504,7 @@ def material_prestado_actual_query(session, *, limit, offset, actor_project=None
     nivel SQL), `total` es el conteo de TODO lo que cumple los filtros, sin paginar (para que el
     frontend pueda mostrar "1-25 de 143").
     """
-    hoy = date.today()
+    hoy = hoy_negocio()
     condiciones = _condiciones_de_prestamo(hoy, id_user=id_user, id_user_ambito=id_user_ambito, q=q)
     articulo, _fecha, _dias = _expresiones_de_prestamo(hoy)
 
@@ -1553,7 +1554,7 @@ def material_prestado_actual_resumen_query(session, *, total, id_user=None, id_u
     Con la pagina son 3 consultas en total, constantes: no crecen con los renglones ni con los
     responsables. Solo UNA (la de `resumen` por responsable) evita la busqueda de texto.
     """
-    hoy = date.today()
+    hoy = hoy_negocio()
     en_el_ambito = _condiciones_de_prestamo(hoy, id_user_ambito=id_user_ambito)
     filtradas = _condiciones_de_prestamo(hoy, id_user=id_user, id_user_ambito=id_user_ambito, q=q)
     articulo, _fecha, _dias = _expresiones_de_prestamo(hoy)

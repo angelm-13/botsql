@@ -8,6 +8,7 @@ from sqlalchemy import delete
 from app.kpis.registry import documentos_vencidos_por_responsable_query
 from app.models import Document, DocumentCategory, Proyect, User
 from app.models.session import engine, transaction_context
+from app.utils.tiempo import hoy_negocio
 
 ADMIN_ID = 1
 RESPONSABLE_A = 990
@@ -16,7 +17,7 @@ PROYECTO_ACTOR = 990
 PROYECTO_OTRO = 991
 CATEGORIA = 990
 
-HOY = date.today()
+HOY = hoy_negocio()
 AYER = HOY - timedelta(days=1)
 
 

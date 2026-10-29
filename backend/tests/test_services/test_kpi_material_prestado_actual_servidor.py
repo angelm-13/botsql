@@ -24,6 +24,7 @@ from app.models import (
     Material, NmIncidentProduct, Product, ProductFamily, Unit, User,
 )
 from app.models.session import engine, transaction_context
+from app.utils.tiempo import ahora_negocio
 
 ADMIN_ID = 1
 # IDs propios (970+) para no chocar con los demas archivos de KPI.
@@ -36,7 +37,7 @@ P_COMUN, P_ESCALERA, P_MALETIN, P_TANQUE = 970, 971, 972, 973
 PRODUCTOS = [P_COMUN, P_ESCALERA, P_MALETIN, P_TANQUE]
 PRIMER_VALE, PRIMER_RENGLON = 97000, 970000
 
-HOY = datetime.now().replace(hour=12, minute=0, second=0, microsecond=0)
+HOY = ahora_negocio().replace(hour=12, minute=0, second=0, microsecond=0)
 VIEJOS_DE_OMAR = 60   # mas de 50: lo nuevo de Omar cae mas alla de la fila 50
 RENGLONES_DE_ANA = 40
 

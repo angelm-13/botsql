@@ -15,6 +15,7 @@ from app.models import (
     ProductFamily, Proyect, Unit, User,
 )
 from app.models.session import engine, transaction_context
+from app.utils.tiempo import ahora_negocio, hoy_negocio
 
 # Se prueba contra PostgreSQL real, no SQLite: el UNIQUE de `kpi_snapshot` es
 # sobre una columna JSONB (`dimension_key`) y el upsert de la tarea usa
@@ -29,7 +30,7 @@ PROYECTO_A = 960
 PROYECTO_B = 961
 PROYECTO_BAJA = 962
 
-HOY = date.today()
+HOY = hoy_negocio()
 FECHA_RECIENTE = HOY - timedelta(days=2)     # dentro de la ventana de 7 dias
 FECHA_FUERA = HOY - timedelta(days=10)       # fuera de la ventana
 
@@ -234,7 +235,7 @@ class RecalculateKpiSnapshotsSinAlcanceDeProyectoTest(unittest.TestCase):
             db.flush()
             db.add(NmIncidentProduct(
                 id_nm_incident_product=VALE_JOB, id_incident=INCIDENT_JOB, id_product=PRODUCT_JOB,
-                quantity=1, due_date=datetime.now() - timedelta(days=1), created_by=ADMIN_ID,
+                quantity=1, due_date=ahora_negocio() - timedelta(days=1), created_by=ADMIN_ID,
             ))
 
     def tearDown(self):
