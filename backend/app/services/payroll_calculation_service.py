@@ -26,10 +26,14 @@ el sueldo se escribia a mano. Aqui vive la primera regla de calculo:
   AGUINALDO y PRIMA_VAC. Sus conceptos no se marcan gravables porque solo
   grava lo que pasa del tope exento; esa parte la suma este calculo a la base
   del ISR. Reglas en payroll_tax_rules.py.
+* Grupo de pago (payroll_group_service.py): un periodo de un grupo calcula solo
+  a sus empleados, exige el largo de su periodicidad y usa su tarifa del ISR.
+  Si la UMA (u otra de CIFRAS_POR_DIA) cambia dentro del periodo, el IMSS y el
+  subsidio se calculan por tramos, cada dia con sus cifras.
 
 Recalcular no duplica: el detalle del empleado en el periodo se reusa y solo
-se reemplazan los movimientos que escribe este calculo (SUELDO, AGUINALDO,
-PRIMA_VAC, ISR e IMSS). Lo capturado a mano no se toca.
+se reemplazan los movimientos que escribe este calculo (SUELDO, VAC_PAGADAS,
+AGUINALDO, PRIMA_VAC, ISR e IMSS). Lo capturado a mano no se toca.
 
 Estados del periodo (columna `period_state`):
 
@@ -53,12 +57,16 @@ from sqlalchemy import select
 from app.models import (PayrollConcept, PayrollDetail, PayrollIsrBracket, PayrollMovement,
                         PayrollParameter, PayrollPeriod, User)
 from app.services import payroll_tax_rules as ley
+from app.services.attendance_correction_service import POLITICA_DE_CHECADAS
+from app.services.politica_de_vacaciones import POLITICA as POLITICA_DE_VACACIONES
 from app.models.session import transaction_context
 from app.utils.errors import AppError
 from app.utils.tiempo import ahora_utc
 
 CODIGO_SUELDO = "SUELDO"
 CODIGO_AGUINALDO, CODIGO_PRIMA = "AGUINALDO", "PRIMA_VAC"
+# Vacaciones no usadas que se pagan al vencer (politica de la empresa).
+CODIGO_VACACIONES_PAGADAS = "VAC_PAGADAS"
 ABIERTO, CALCULADO, CERRADO = "open", "calculated", "closed"
 # Columnas que solo mueven calcular/cerrar/reabrir; la captura generica no.
 CAMPOS_DEL_ESTADO = ("period_state", "closed_at", "closed_by", "reopened_at", "reopened_by")
@@ -76,6 +84,7 @@ CONCEPTOS_DEL_CALCULO = {
     CODIGO_SUELDO: ("Sueldo", "earning", True, True),
     CODIGO_AGUINALDO: ("Aguinaldo", "earning", False, False),
     CODIGO_PRIMA: ("Prima vacacional", "earning", False, False),
+    CODIGO_VACACIONES_PAGADAS: ("Vacaciones no disfrutadas pagadas", "earning", True, False),
     "ISR": ("ISR retenido (subsidio para el empleo aplicado)", "deduction", False, False),
     "IMSS": ("Cuota obrera IMSS", "deduction", False, False),
 }
@@ -103,7 +112,12 @@ TABLA_DE_VACACIONES = {
     "vacation_days_years_11_15": 11, "vacation_days_years_16_20": 16, "vacation_days_years_21_25": 21,
     "vacation_days_years_26_30": 26, "vacation_days_years_31_plus": 31,
 }
-PARAMETROS_OPCIONALES = OPCIONES + tuple(TABLA_DE_VACACIONES)
+# Politica de vacaciones (services/politica_de_vacaciones.py): como se ganan, si
+# se adelantan, cuanto duran, que pasa con lo no usado y cuando se avisa.
+# y el limite de correcciones de checadas (services/attendance_correction_service.py).
+# clave -> (valor por omision, valores permitidos); los valida payroll_parameter_service.
+POLITICAS = {**POLITICA_DE_VACACIONES, **POLITICA_DE_CHECADAS}
+PARAMETROS_OPCIONALES = OPCIONES + tuple(TABLA_DE_VACACIONES) + tuple(POLITICAS)
 
 
 def _concepto(db, codigo: str, user_id: int) -> PayrollConcept:
@@ -161,13 +175,39 @@ def _tabla_de(valores: dict) -> dict[int, int]:
     return {desde: int(valores[clave]) for clave, desde in TABLA_DE_VACACIONES.items() if clave in valores}
 
 
+# Cifras que cambian a mitad del año (la UMA el 1 de febrero; el salario minimo
+# y el porcentaje del subsidio el 1 de enero). Si una cambia dentro del periodo,
+# cada dia usa la suya para el IMSS y el subsidio (revision contable 2026-10-28,
+# pregunta 4: un periodo semanal o catorcenal que cruza el 1 de febrero).
+CIFRAS_POR_DIA = ("uma_daily", "uma_monthly", "minimum_wage_daily", "subsidy_pct")
+
+
+def _tramos_de_cifras(db, inicio, fin, parametros: dict) -> list[tuple]:
+    """[(desde, hasta, parametros)] del periodo: uno solo, salvo que una de
+    CIFRAS_POR_DIA empiece una vigencia nueva dentro de el. Si en un tramo falta
+    alguna de esas cifras, se queda la del ultimo dia del periodo."""
+    cortes = sorted({fila.valid_from for fila in db.scalars(
+        select(PayrollParameter)
+        .where(PayrollParameter.parameter_key.in_(CIFRAS_POR_DIA))
+        .where(PayrollParameter.deletion_date.is_(None))
+        .where(PayrollParameter.valid_from > inicio)
+        .where(PayrollParameter.valid_from <= fin))})
+    if not cortes:
+        return [(inicio, fin, parametros)]
+    tramos, desde = [], inicio
+    for corte in cortes + [fin + timedelta(days=1)]:
+        tramos.append((desde, corte - timedelta(days=1), {**parametros, **_vigentes(db, CIFRAS_POR_DIA, desde)}))
+        desde = corte
+    return tramos
+
+
 def tabla_de_vacaciones(db, al_dia) -> dict[int, int]:
     """La tabla de vacaciones de la empresa vigente `al_dia` (vacia = la de la ley)."""
     return _tabla_de(_vigentes(db, tuple(TABLA_DE_VACACIONES), al_dia))
 
 
-def _tarifa_isr(db, anio: int, dias: int):
-    tabla, factor = ley.tabla_para_dias(dias)
+def _tarifa_isr(db, anio: int, dias: int, periodicidad: str | None = None):
+    tabla, factor = ley.tabla_para_periodicidad(periodicidad) if periodicidad else ley.tabla_para_dias(dias)
     tramos = [
         (t.lower_limit, t.upper_limit, t.fixed_fee, t.rate_pct)
         for t in db.scalars(
@@ -278,6 +318,13 @@ def calcular_periodo(id_payroll_period, user_id: int) -> dict:
             .where(User.is_employee.is_(True))
             .order_by(User.full_name)
         ).all()
+        # Un periodo de un grupo de pago calcula solo a sus empleados y usa la
+        # tarifa de su periodicidad; uno sin grupo (de antes) calcula como siempre.
+        from app.services.payroll_group_service import empleados_del_grupo, exigir_largo_del_periodo, grupo_del_periodo
+        grupo = grupo_del_periodo(db, periodo)
+        if grupo is not None:
+            exigir_largo_del_periodo(grupo, periodo.period_start, periodo.period_end)
+            empleados = empleados_del_grupo(db, grupo, periodo.period_end, empleados)
         from app.services.attendance_record_service import asistencia_por_empleado
         from app.services.attendance_rules import resumen as resumen_de_asistencia
         asistencia = asistencia_por_empleado(db, periodo.period_start, periodo.period_end,
@@ -287,7 +334,8 @@ def calcular_periodo(id_payroll_period, user_id: int) -> dict:
         al_dia = periodo.period_end
         dias_del_periodo = (periodo.period_end - periodo.period_start).days + 1
         parametros = _parametros(db, al_dia)
-        tramos, factor_tarifa = _tarifa_isr(db, al_dia.year, dias_del_periodo)
+        tramos, factor_tarifa = _tarifa_isr(db, al_dia.year, dias_del_periodo, grupo.pay_frequency if grupo else None)
+        tramos_de_cifras = _tramos_de_cifras(db, periodo.period_start, periodo.period_end, parametros)
 
         # Los detalles del periodo (y los que falten) y sus movimientos, de una vez.
         detalles: dict[int, PayrollDetail] = {}
@@ -309,6 +357,8 @@ def calcular_periodo(id_payroll_period, user_id: int) -> dict:
         dias_del_mes = calendar.monthrange(al_dia.year, al_dia.month)[1] \
             if parametros[OPCION_SUBSIDIO_DIAS_DEL_MES] else None
         tabla_vacaciones = parametros["vacation_table"]
+        from app.services.employee_leave_service import vacaciones_no_usadas_que_vencen
+        por_pagar = vacaciones_no_usadas_que_vencen(db, empleados, periodo.period_start, periodo.period_end)
 
         calculados, sin_sueldo, sin_ingreso = [], [], []
         for empleado in empleados:
@@ -323,9 +373,13 @@ def calcular_periodo(id_payroll_period, user_id: int) -> dict:
 
             detalle = detalles[empleado.id_user]
 
-            # Solo se reemplaza lo que escribe este calculo: SUELDO, AGUINALDO,
-            # PRIMA_VAC, ISR e IMSS.
+            # Solo se reemplaza lo que escribe este calculo: SUELDO, VAC_PAGADAS,
+            # AGUINALDO, PRIMA_VAC, ISR e IMSS.
             movimientos.reemplazar(detalle, conceptos[CODIGO_SUELDO], sueldo, user_id)
+            # Vacaciones sin usar que vencen en el periodo, si la empresa las paga: grava como sueldo.
+            vacaciones_pagadas = por_pagar.get(empleado.id_user, 0)
+            monto_vacaciones = _dinero(diario * vacaciones_pagadas)
+            movimientos.reemplazar(detalle, conceptos[CODIGO_VACACIONES_PAGADAS], monto_vacaciones, user_id)
 
             if not empleado.hire_date:
                 sin_ingreso.append({"id_user": empleado.id_user, "full_name": empleado.full_name or ""})
@@ -350,21 +404,37 @@ def calcular_periodo(id_payroll_period, user_id: int) -> dict:
                                               parametros["vacation_premium_exempt_umas"])
             gravable = movimientos.percepciones_gravables(detalle) + aguinaldo_gravado + prima_gravada
             isr_tarifa = ley.isr_por_tarifa(gravable, tramos, factor_tarifa)
-            subsidio = ley.subsidio_para_el_empleo(
-                gravable, dias_del_periodo, parametros["uma_monthly"], parametros["subsidy_pct"],
-                parametros["subsidy_income_limit"], dias_del_mes)
+            if len(tramos_de_cifras) == 1:
+                subsidio = ley.subsidio_para_el_empleo(
+                    gravable, dias_del_periodo, parametros["uma_monthly"], parametros["subsidy_pct"],
+                    parametros["subsidy_income_limit"], dias_del_mes)
+            else:
+                # Cada tramo, con sus dias y su parte del ingreso (llevado a mes da lo mismo).
+                subsidio = _dinero(sum((ley.subsidio_para_el_empleo(
+                    gravable * ((hasta - desde).days + 1) / dias_del_periodo, (hasta - desde).days + 1,
+                    cifras["uma_monthly"], cifras["subsidy_pct"], cifras["subsidy_income_limit"], dias_del_mes)
+                    for desde, hasta, cifras in tramos_de_cifras), Decimal(0)))
             isr = max(isr_tarifa - subsidio, _dinero(0))
             movimientos.reemplazar(detalle, conceptos["ISR"], isr, user_id)
 
             vacaciones = ley.dias_de_vacaciones(ley.anios_cumplidos(empleado.hire_date, al_dia), tabla_vacaciones)
             factor = ley.factor_de_integracion(parametros["aguinaldo_days"], vacaciones,
                                                parametros["vacation_premium_pct"])
-            sbc = ley.salario_base_de_cotizacion(diario, factor, parametros["minimum_wage_daily"],
-                                                 parametros["uma_daily"], parametros["sbc_cap_umas"])
             # Dias que cotizan al IMSS: los pagados y, si la empresa lo eligio, las faltas.
-            dias_imss = trabajados + (faltas if parametros[OPCION_IMSS_EN_FALTAS] else 0)
-            imss = ley.cuota_obrera_imss(sbc, dias_imss, diario, parametros["minimum_wage_daily"],
-                                         parametros["uma_daily"], parametros)
+            dias_imss, imss = 0, _dinero(0)
+            for desde, hasta, cifras in tramos_de_cifras:
+                if len(tramos_de_cifras) == 1:
+                    pagados, faltas_del_tramo = trabajados, faltas
+                else:
+                    del_tramo = resumen_de_asistencia(
+                        d for d in asistencia.get(empleado.id_user, []) if desde <= d.fecha <= hasta)
+                    pagados, faltas_del_tramo = del_tramo["paid_days"], del_tramo["absences"]
+                dias_del_tramo = pagados + (faltas_del_tramo if parametros[OPCION_IMSS_EN_FALTAS] else 0)
+                sbc = ley.salario_base_de_cotizacion(diario, factor, cifras["minimum_wage_daily"],
+                                                     cifras["uma_daily"], cifras["sbc_cap_umas"])
+                imss += ley.cuota_obrera_imss(sbc, dias_del_tramo, diario, cifras["minimum_wage_daily"],
+                                              cifras["uma_daily"], cifras)
+                dias_imss += dias_del_tramo
             movimientos.reemplazar(detalle, conceptos["IMSS"], imss, user_id)
 
             percepciones, deducciones = movimientos.totales(detalle)
@@ -381,6 +451,7 @@ def calcular_periodo(id_payroll_period, user_id: int) -> dict:
                 "full_name": empleado.full_name or "",
                 "days_worked": trabajados,
                 "absences": faltas,
+                "pending_justification": totales["pending_justification"],
                 **ausencias,
                 "daily_salary": float(diario),
                 "salary": float(sueldo),
@@ -390,6 +461,8 @@ def calcular_periodo(id_payroll_period, user_id: int) -> dict:
                 "vacation_premium": float(prima),
                 "vacation_premium_taxable": float(prima_gravada),
                 "vacation_premium_days": dias_vacaciones,
+                "unused_vacation_days_paid": vacaciones_pagadas,
+                "unused_vacation_pay": float(monto_vacaciones),
                 "taxable_income": float(gravable),
                 "isr_before_subsidy": float(isr_tarifa),
                 "employment_subsidy": float(subsidio),
@@ -443,13 +516,40 @@ def _dias_que_bajan_el_aguinaldo(db, empleados, al_dia) -> dict[int, int]:
     return dias
 
 
-def cerrar_periodo(id_payroll_period, user_id: int) -> dict:
-    """Congela un periodo ya calculado."""
+def _pendientes_de_justificar(db, periodo: PayrollPeriod) -> list[dict]:
+    """Empleados del periodo con dias de una sola checada (no se pagaron)."""
+    from app.services.attendance_record_service import asistencia_por_empleado
+    ids = list(db.scalars(select(PayrollDetail.id_user)
+                          .where(PayrollDetail.id_payroll_period == periodo.id_payroll_period)
+                          .where(PayrollDetail.deletion_date.is_(None))))
+    if not ids:
+        return []
+    nombres = dict(db.execute(select(User.id_user, User.full_name).where(User.id_user.in_(ids))).all())
+    salida = []
+    for id_user, dias in asistencia_por_empleado(db, periodo.period_start, periodo.period_end, ids=ids).items():
+        fechas = [d.fecha.isoformat() for d in dias if d.pendiente]
+        if fechas:
+            salida.append({"id_user": id_user, "full_name": nombres.get(id_user) or f"#{id_user}", "dates": fechas})
+    return sorted(salida, key=lambda e: e["full_name"])
+
+
+def cerrar_periodo(id_payroll_period, user_id: int, confirmar_pendientes: bool = False) -> dict:
+    """Congela un periodo ya calculado.
+
+    Antes de cerrar avisa si quedan dias pendientes de justificar (una sola
+    checada: no se pagaron). Se cierra igual solo si RH lo confirma: asi un
+    olvido de checar no se vuelve descuento sin que nadie lo vea.
+    """
     with transaction_context() as db:
         periodo = _periodo(db, id_payroll_period)
         if periodo.period_state != CALCULADO:
             raise AppError("errors.payroll_period_not_calculated", 409,
                            {"id_payroll_period": periodo.id_payroll_period, "period_state": periodo.period_state})
+        if not confirmar_pendientes:
+            pendientes = _pendientes_de_justificar(db, periodo)
+            if pendientes:
+                raise AppError("errors.payroll_period_pending_justification", 409,
+                               {"id_payroll_period": periodo.id_payroll_period, "employees": pendientes})
         periodo.period_state = CERRADO
         periodo.closed_at = ahora_utc()
         periodo.closed_by = user_id

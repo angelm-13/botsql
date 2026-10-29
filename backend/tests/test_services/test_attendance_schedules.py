@@ -96,6 +96,9 @@ class TestHorariosEnLaNomina(_ConPeriodoDePrueba):
         with transaction_context() as db:
             db.add(AttendanceRecord(id_user=71, employee_no="71", check_time=datetime(2026, 10, 6, 9, 25),
                                     source="kronos", source_ref="t:tarde", created_by=1))
+            # Con su salida: un dia con una sola checada queda pendiente y no se paga.
+            db.add(AttendanceRecord(id_user=71, employee_no="71", check_time=datetime(2026, 10, 6, 18, 0),
+                                    source="kronos", source_ref="t:tarde-salida", created_by=1))
         ana = calcular_periodo(5, 1)["employees"][0]
         # El 6 ya no es falta (checo, aunque tarde): 7 faltas, 8 dias pagados.
         self.assertEqual(7, ana["absences"])

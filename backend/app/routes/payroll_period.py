@@ -6,7 +6,7 @@ from app.utils.errors import AppError
 from app.utils.field_access import COLUMNAS_DE_AUDITORIA
 
 bp_payroll_period = Blueprint('payroll_period', __name__, url_prefix='/payroll_period')
-ALLOWED_FIELDS = ['id_payroll_period', 'period_start', 'period_end', 'payment_date', 'id_status', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'period_state', 'closed_at', 'closed_by', 'reopened_at', 'reopened_by', 'includes_aguinaldo']
+ALLOWED_FIELDS = ['id_payroll_period', 'period_start', 'period_end', 'payment_date', 'id_status', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'period_state', 'closed_at', 'closed_by', 'reopened_at', 'reopened_by', 'includes_aguinaldo', 'id_payroll_group']
 
 TECHNICAL_RESPONSE_FIELDS = {'id_payroll_period'}
 FIELD_READ_BIT = 2
@@ -166,9 +166,12 @@ def calculate_payroll_period(user_data, id_payroll_period):
 @token_required
 @require_entity_permission('payroll_period', 'update')
 def close_payroll_period(user_data, id_payroll_period):
-    """Congela un periodo ya calculado (ver payroll_calculation_service)."""
+    """Congela un periodo ya calculado (ver payroll_calculation_service). Si quedan
+    dias pendientes de justificar responde 409 con la lista; con
+    {"confirm_pending": true} se cierra de todos modos."""
     from app.services.payroll_calculation_service import cerrar_periodo
-    return jsonify(cerrar_periodo(id_payroll_period, user_data.get('id_user')))
+    confirmar = bool((request.get_json(silent=True) or {}).get('confirm_pending'))
+    return jsonify(cerrar_periodo(id_payroll_period, user_data.get('id_user'), confirmar))
 
 
 @bp_payroll_period.route('/<id_payroll_period>/reopen', methods=['POST'])

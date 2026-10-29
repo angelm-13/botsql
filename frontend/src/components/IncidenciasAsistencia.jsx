@@ -1,12 +1,19 @@
 import { Fragment, useState } from "react";
-import { RefreshCw } from "lucide-react";
-import { getAttendanceIncidences } from "../api";
+import PropTypes from "prop-types";
+import { Pencil, RefreshCw } from "lucide-react";
+import { createAttendanceCorrection, getAttendanceCorrections, getAttendanceIncidences } from "../api";
 
 // Pestaña "Incidencias" de Asistencias: retardos, faltas y checadas incompletas
 // por empleado segun su horario, y los dias de vacaciones, permisos e
 // incapacidades (employee_leave), que no son falta. Es solo un reporte para que los
 // administrativos tomen sus medidas: los retardos no cambian la nomina. La regla
 // vive en el backend (services/attendance_rules.py).
+//
+// El supervisor del empleado o RH corrigen aqui una checada o agregan la que
+// falta, con motivo. Un dia con una sola checada queda pendiente de justificar
+// (no se paga). Hay un limite de correcciones por mes; despues solo RH, como
+// excepcion (services/attendance_correction_service.py). El contador solo lo ve
+// quien puede corregir: al empleado el backend no se lo da.
 
 function fechaLocal(d) {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
@@ -19,6 +26,49 @@ export default function IncidenciasAsistencia({ t, describirError }) {
   const [error, setError] = useState("");
   const [cargando, setCargando] = useState(false);
   const [abierto, setAbierto] = useState(null);
+  const [contador, setContador] = useState(null);
+  const [correccion, setCorreccion] = useState(null);
+  const [aviso, setAviso] = useState("");
+  const mes = periodo.startDate.slice(0, 7);
+
+  async function cargarContador(idUser) {
+    try {
+      setContador(await getAttendanceCorrections(idUser, mes));
+    } catch {
+      setContador(null);   // no es su supervisor ni RH: no corrige ni ve el contador
+    }
+  }
+
+  function abrir(idUser) {
+    setCorreccion(null);
+    setAviso("");
+    if (abierto === idUser) { setAbierto(null); return; }
+    setAbierto(idUser);
+    setContador(null);
+    cargarContador(idUser);
+  }
+
+  async function recargar() {
+    const data = await getAttendanceIncidences(periodo);
+    setEmpleados(data.employees || []);
+  }
+
+  async function guardarCorreccion(event) {
+    event.preventDefault();
+    setError("");
+    const c = correccion;
+    const cuerpo = { new_time: `${c.date}T${c.time}`, reason: c.reason,
+      ...(c.id_attendance_record ? { id_attendance_record: Number(c.id_attendance_record) } : { id_user: c.id_user }) };
+    try {
+      const hecha = await createAttendanceCorrection(cuerpo);
+      setCorreccion(null);
+      setAviso(hecha.is_exception ? t("kronos.corrections.saved_exception") : t("kronos.corrections.saved"));
+      await recargar();
+      await cargarContador(c.id_user);
+    } catch (e) {
+      setError(describirError(e));
+    }
+  }
 
   async function generar(event) {
     event.preventDefault();
@@ -39,7 +89,7 @@ export default function IncidenciasAsistencia({ t, describirError }) {
     d.checked_during_leave && t("kronos.incidences.checked_during_leave"),
     d.absence && t("kronos.incidences.absence"),
     d.late && `${t("kronos.incidences.late")} (${d.late_minutes} min)`,
-    d.incomplete && t("kronos.incidences.incomplete"),
+    d.pending_justification ? t("kronos.corrections.pending") : d.incomplete && t("kronos.incidences.incomplete"),
     d.worked_on_rest_day && t("kronos.incidences.rest_day_worked"),
     d.holiday && t("kronos.incidences.holiday"),
   ].filter(Boolean);
@@ -71,7 +121,7 @@ export default function IncidenciasAsistencia({ t, describirError }) {
               <tbody>
                 {empleados.length ? empleados.map((e) => (
                   <Fragment key={e.id_user}>
-                    <tr onClick={() => setAbierto(abierto === e.id_user ? null : e.id_user)} style={{ cursor: "pointer" }}>
+                    <tr onClick={() => abrir(e.id_user)} style={{ cursor: "pointer" }}>
                       <td><strong>{e.full_name}</strong>{!e.has_schedule && <small>{t("kronos.incidences.no_schedule")}</small>}</td>
                       <td>{e.workdays}</td><td>{e.attended}</td>
                       <td>{e.absences ? <strong>{e.absences}</strong> : 0}</td>
@@ -82,17 +132,70 @@ export default function IncidenciasAsistencia({ t, describirError }) {
                     {abierto === e.id_user && (
                       <tr>
                         <td colSpan="11">
+                          {contador && (
+                            <p className={contador.remaining ? "muted" : "field-error"}>
+                              {t("kronos.corrections.counter")} {contador.month}: {contador.used} / {contador.limit}
+                              {!contador.remaining && ` · ${t("kronos.corrections.limit_reached")}`}
+                            </p>
+                          )}
+                          {aviso && <div className="alert success" role="status">{aviso}</div>}
+                          {correccion && (
+                            <form className="form-card" onSubmit={guardarCorreccion}>
+                              <h3>{t("kronos.corrections.title")} · {correccion.date}</h3>
+                              <div className="form-grid">
+                                <label className="field">{t("kronos.corrections.which")}
+                                  <select value={correccion.id_attendance_record} onChange={(ev) => setCorreccion((c) => ({ ...c, id_attendance_record: ev.target.value }))}>
+                                    {correccion.checks.map((ch) => <option key={ch.id} value={ch.id}>{t("kronos.corrections.check_at")} {ch.time}</option>)}
+                                    <option value="">{t("kronos.corrections.add_missing")}</option>
+                                  </select>
+                                </label>
+                                <label className="field">{t("kronos.corrections.new_time")}
+                                  <input required type="time" value={correccion.time} onChange={(ev) => setCorreccion((c) => ({ ...c, time: ev.target.value }))} />
+                                </label>
+                                <label className="field">{t("kronos.corrections.reason")}
+                                  <input required maxLength={300} value={correccion.reason} onChange={(ev) => setCorreccion((c) => ({ ...c, reason: ev.target.value }))} />
+                                </label>
+                              </div>
+                              <p className="muted">{t("kronos.corrections.hint")}</p>
+                              <div className="form-actions">
+                                <button className="button primary" type="submit">{t("common.save")}</button>
+                                <button className="button" type="button" onClick={() => setCorreccion(null)}>{t("common.cancel")}</button>
+                              </div>
+                            </form>
+                          )}
                           <table>
-                            <thead><tr><th>{t("kronos.csv.headers.date")}</th><th>{t("kronos.incidences.schedule")}</th><th>{t("kronos.csv.headers.first")}</th><th>{t("kronos.csv.headers.last")}</th><th>{t("kronos.incidences.what")}</th></tr></thead>
+                            <thead><tr><th>{t("kronos.csv.headers.date")}</th><th>{t("kronos.incidences.schedule")}</th><th>{t("kronos.csv.headers.first")}</th><th>{t("kronos.csv.headers.last")}</th><th>{t("kronos.incidences.what")}</th>{contador && <th>{t("common.actions")}</th>}</tr></thead>
                             <tbody>{e.days.filter((d) => etiquetasDelDia(d).length).map((d) => (
                               <tr key={d.date}>
                                 <td>{d.date}</td>
                                 <td>{d.start ? `${d.start}–${d.end}` : "—"}</td>
                                 <td>{d.first || "—"}</td><td>{d.last || "—"}</td>
                                 <td>{etiquetasDelDia(d).join(" · ")}</td>
+                                {contador && (
+                                  <td className="row-actions">
+                                    <button type="button" title={t("kronos.corrections.title")} aria-label={`${t("kronos.corrections.title")} ${d.date}`}
+                                      onClick={() => setCorreccion({ id_user: e.id_user, date: d.date, checks: d.checks || [],
+                                        id_attendance_record: d.checks?.length ? String(d.checks[0].id) : "",
+                                        time: d.checks?.[0]?.time || d.start || "09:00", reason: "" })}><Pencil size={15} /></button>
+                                  </td>
+                                )}
                               </tr>
                             ))}</tbody>
                           </table>
+                          {contador?.corrections?.length > 0 && (
+                            <table>
+                              <thead><tr><th>{t("kronos.csv.headers.date")}</th><th>{t("kronos.corrections.before")}</th><th>{t("kronos.corrections.after")}</th><th>{t("kronos.corrections.reason")}</th><th>{t("kronos.corrections.by")}</th></tr></thead>
+                              <tbody>{contador.corrections.map((c) => (
+                                <tr key={c.id_attendance_correction}>
+                                  <td>{c.check_date}</td>
+                                  <td>{c.previous_time ? c.previous_time.slice(11, 16) : t("kronos.corrections.added")}</td>
+                                  <td>{c.new_time.slice(11, 16)}</td>
+                                  <td><small>{c.reason}</small></td>
+                                  <td><small>{c.created_by_name}{c.is_exception && ` · ${t("kronos.corrections.exception")}`}</small></td>
+                                </tr>
+                              ))}</tbody>
+                            </table>
+                          )}
                         </td>
                       </tr>
                     )}
@@ -106,3 +209,8 @@ export default function IncidenciasAsistencia({ t, describirError }) {
     </>
   );
 }
+
+IncidenciasAsistencia.propTypes = {
+  t: PropTypes.func.isRequired,
+  describirError: PropTypes.func.isRequired,
+};

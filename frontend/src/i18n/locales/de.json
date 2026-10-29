@@ -154,7 +154,8 @@
     "mfa_reset_success": "MFA erfolgreich zurückgesetzt",
     "mfa_reset_error": "MFA konnte nicht zurückgesetzt werden",
     "select": "Auswählen",
-    "serie_csd_hint": "Wird als Standardserie beim Ausstellen von Rechnungen dieses Unternehmens verwendet; eine Rechnung kann eine andere erfassen."
+    "serie_csd_hint": "Wird als Standardserie beim Ausstellen von Rechnungen dieses Unternehmens verwendet; eine Rechnung kann eine andere erfassen.",
+    "close": "Schließen"
   },
   "entities": {
     "bank": {
@@ -1087,7 +1088,8 @@
       "payment_date": "Zahlung Datum",
       "period_end": "Periode Ende",
       "period_start": "Periode Start",
-      "includes_aguinaldo": "Mit Weihnachtsgeld"
+      "includes_aguinaldo": "Mit Weihnachtsgeld",
+      "id_payroll_group": "Abrechnungsgruppe"
     },
     "permission": {
       "authorized_by": "Autorisiert Von",
@@ -1415,7 +1417,8 @@
     "payroll_settings": "Amtliche Werte",
     "work_schedules": "Arbeitszeiten",
     "employee_leaves": "Urlaub und Abwesenheit",
-    "my_leaves": "Mein Urlaub"
+    "my_leaves": "Mein Urlaub",
+    "payroll_groups": "Abrechnungsgruppen"
   },
   "placeholders": {
     "bank": {
@@ -2586,7 +2589,13 @@
     "employee_leave_needs_schedule": "For vacation the employee needs a schedule over the whole range.",
     "employee_leave_no_workdays": "There are no workdays of the schedule on those dates.",
     "employee_leave_insufficient_balance": "Nicht genug Urlaubstage",
-    "employee_leave_not_pending": "Der Antrag ist nicht mehr offen."
+    "employee_leave_not_pending": "Der Antrag ist nicht mehr offen.",
+    "payroll_group_default_required": "Es muss immer eine Standardgruppe geben. Um sie zu ändern, markieren Sie eine andere Gruppe als Standard.",
+    "payroll_group_in_use": "Der Gruppe sind Mitarbeitende zugeordnet. Entfernen oder verschieben Sie sie vor dem Löschen.",
+    "employee_payroll_group_overlap": "Die Person hat in diesem Zeitraum bereits eine Gruppe. Schließen Sie die vorherige Zuordnung mit einem Enddatum.",
+    "payroll_period_length": "Die Daten passen nicht zur Abrechnungsfrequenz der Gruppe: eine Woche hat 7 Tage, ein 14-Tage-Zeitraum 14, ein Halbmonat 13 bis 16 und ein Monat 28 bis 31.",
+    "attendance_correction_limit_reached": "Die Korrekturen dieses Monats für diese Person sind aufgebraucht. Nur die Personalabteilung kann als Ausnahme korrigieren.",
+    "payroll_period_pending_justification": "Im Zeitraum gibt es offene Tage."
   },
   "logistics": {
     "module": "Logistik",
@@ -3482,6 +3491,25 @@
       "allow_self_signed": "Selbstsigniertes Zertifikat zulassen",
       "saved_status": "Konfiguration für diese Sitzung gespeichert.",
       "save_button": "Verbindung speichern"
+    },
+    "corrections": {
+      "title": "Stempelung korrigieren",
+      "counter": "Korrekturen im",
+      "limit_reached": "Limit erreicht: nur Personalabteilung, als Ausnahme",
+      "which": "Stempelung",
+      "check_at": "Die um",
+      "add_missing": "Fehlende hinzufügen",
+      "new_time": "Richtige Uhrzeit",
+      "reason": "Grund",
+      "hint": "Ändert die Stempelung selbst; die vorherige Uhrzeit, wer sie geändert hat und der Grund bleiben im Verlauf. Jede korrigierte Uhrzeit zählt 1.",
+      "saved": "Stempelung korrigiert.",
+      "saved_exception": "Stempelung als Ausnahme der Personalabteilung korrigiert.",
+      "pending": "Offen (nur eine Stempelung, nicht bezahlt)",
+      "before": "Vorher",
+      "after": "Jetzt",
+      "by": "Korrigiert von",
+      "added": "Hinzugefügt",
+      "exception": "Ausnahme"
     }
   },
   "task_fase": {
@@ -3551,7 +3579,10 @@
     "vacation_premium": "Urlaubsprämie",
     "without_hire_date": "Ohne Eintrittsdatum (volles Weihnachtsgeld, keine Urlaubsprämie)",
     "aguinaldo_hint": "Weihnachtsgeld: nur wenn im Zeitraum das Kästchen markiert ist. Urlaubsprämie: im Zeitraum des Eintrittsjubiläums. Besteuert wird nur, was 30 UMA (Weihnachtsgeld) bzw. 15 UMA (Prämie) übersteigt.",
-    "leaves": "Abwesenheit"
+    "leaves": "Abwesenheit",
+    "pending": "offen",
+    "pending_hint": "Tage mit nur einer Stempelung: werden erst nach Korrektur bezahlt.",
+    "pending_close": "Es gibt offene Tage (nur eine Stempelung, nicht bezahlt). Trotzdem abschließen?"
   },
   "payroll_settings": {
     "eyebrow": "PERSONAL",
@@ -3617,7 +3648,14 @@
       "vacation_days_years_16_20": "Jahre 16 bis 20",
       "vacation_days_years_21_25": "Jahre 21 bis 25",
       "vacation_days_years_26_30": "Jahre 26 bis 30",
-      "vacation_days_years_31_plus": "Ab Jahr 31"
+      "vacation_days_years_31_plus": "Ab Jahr 31",
+      "vacation_accrual_monthly": "Monatlich erworben (Ja) oder voll zum Jahrestag (Nein)",
+      "vacation_advance_max_days": "Tage, die vorgezogen werden können (0 = nicht erlaubt)",
+      "vacation_expiry_months": "Frist zur Nutzung",
+      "vacation_unused_policy": "Ungenutzte Tage bei Verfall",
+      "vacation_warning_days_1": "Erste Warnung vor Verfall (Tage; 0 = keine)",
+      "vacation_warning_days_2": "Zweite Warnung vor Verfall (Tage; 0 = keine)",
+      "attendance_correction_limit": "Stempelkorrekturen pro Person und Monat"
     },
     "tab_options": "Berechnungsoptionen",
     "tab_vacations": "Urlaubstabelle",
@@ -3629,7 +3667,16 @@
     "option_no": "Nein",
     "option_default": "Ohne Wert: Nein (gesetzlicher Standard).",
     "vacation_default": "Ohne Wert: es gilt das Gesetz",
-    "below_law": "weniger als das Gesetz; es gilt das Gesetz"
+    "below_law": "weniger als das Gesetz; es gilt das Gesetz",
+    "tab_vacation_policy": "Urlaubsregelung",
+    "vacation_policy_title": "Wie dieses Unternehmen Urlaub handhabt",
+    "vacation_policy_hint": "Wie Tage erworben werden, ob sie vorgezogen werden können, wie lange sie gelten und was mit ungenutzten passiert. Ohne Wert gilt das Gesetz: volle Tage zu jedem Jahrestag, Verfall nach 12 Monaten.",
+    "policy_default": "Nicht erfasst",
+    "choice_vacation_expiry_months_12": "12 Monate nach dem Jahrestag",
+    "choice_vacation_expiry_months_18": "18 Monate nach dem Jahrestag",
+    "choice_vacation_unused_policy_0": "Verfallen",
+    "choice_vacation_unused_policy_1": "Werden übertragen",
+    "choice_vacation_unused_policy_2": "Werden ausgezahlt"
   },
   "work_schedules": {
     "eyebrow": "HUMAN RESOURCES",
@@ -3725,7 +3772,10 @@
     "disability_none": "Nicht angegeben",
     "disability_general_illness": "Allgemeine Krankheit",
     "disability_work_risk": "Arbeitsunfall",
-    "disability_maternity": "Mutterschaft"
+    "disability_maternity": "Mutterschaft",
+    "expiring": "Verfallen bald",
+    "days_until": "Tage verfallen am",
+    "advanced": "Vorgezogen"
   },
   "my_leaves": {
     "title": "Mein Urlaub",
@@ -3756,6 +3806,54 @@
     "requested_done": "Request sent.",
     "cancelled_done": "Request cancelled.",
     "approved_done": "Request approved.",
-    "rejected_done": "Request rejected."
+    "rejected_done": "Request rejected.",
+    "can_advance": "Sie können vorziehen bis zu"
+  },
+  "payroll_groups": {
+    "eyebrow": "Personalwesen",
+    "title": "Abrechnungsgruppen",
+    "subtitle": "Jede Gruppe wird in ihrer eigenen Frequenz bezahlt. Die Abrechnung einer Gruppe berechnet nur ihre Mitarbeitenden mit der passenden ISR-Tabelle.",
+    "tab_groups": "Gruppen",
+    "tab_assignments": "Mitarbeitende je Gruppe",
+    "groups_title": "Gruppen und ihre Frequenz",
+    "assignments_title": "Wer in welcher Gruppe bezahlt wird",
+    "new_group": "Neue Gruppe",
+    "new_assignment": "Person zuordnen",
+    "name": "Name",
+    "frequency": "Frequenz",
+    "frequency_weekly": "Wöchentlich",
+    "frequency_biweekly": "Alle 14 Tage",
+    "frequency_semimonthly": "Halbmonatlich",
+    "frequency_monthly": "Monatlich",
+    "is_default": "Standardgruppe",
+    "default_badge": "Standard",
+    "default_hint": "Die Standardgruppe erhält alle ohne zugeordnete Gruppe. Es gibt nur eine: eine andere zu markieren entfernt die Markierung der vorherigen.",
+    "employees": "Mitarbeitende heute",
+    "employee": "Mitarbeitende",
+    "group": "Gruppe",
+    "from": "Von",
+    "to": "Bis",
+    "no_end": "Ohne Ende",
+    "no_groups": "Keine Gruppen.",
+    "no_assignments": "Niemand hat eine Gruppe: alle werden in der Standardgruppe bezahlt.",
+    "assignments_hint": "Um jemanden zu versetzen, setzen Sie ein Enddatum und legen ab dem Folgetag eine neue Zuordnung an: so bleibt der Verlauf erhalten.",
+    "saved": "Gespeichert.",
+    "deleted": "Gelöscht.",
+    "confirm_delete": "Diesen Eintrag löschen?",
+    "no_group": "Ohne Gruppe (früherer Zeitraum)"
+  },
+  "leave_sheet": {
+    "eyebrow": "Arbeitsunfähigkeit",
+    "title": "Arbeitsunfähigkeitsbescheinigung",
+    "privacy": "Das sind medizinische Daten: nur Sie und die Personalabteilung sehen sie. Ihre Vorgesetzten sehen nur die Daten.",
+    "file": "Datei",
+    "uploaded_by": "Hochgeladen von",
+    "date": "Datum",
+    "view": "Bescheinigung ansehen",
+    "none": "Noch keine Bescheinigung.",
+    "choose": "Datei wählen",
+    "upload": "Bescheinigung hochladen",
+    "types_hint": "Foto (JPG oder PNG) oder PDF, höchstens 10 MB.",
+    "request_hint": "Fügen Sie die IMSS-Bescheinigung bei. Die Arbeitsunfähigkeit zählt in der Abrechnung, sobald die Personalabteilung sie genehmigt."
   }
 }

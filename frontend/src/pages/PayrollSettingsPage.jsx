@@ -6,6 +6,7 @@ import {
 } from "../api";
 import { useI18n } from "../i18n";
 import PageHeader from "../components/PageHeader.jsx";
+import { useDialogo } from "../dialogo/useDialogo.js";
 import "../styles/kronos.css";
 
 // Cifras oficiales que usa el calculo de nomina (payroll_calculation_service.py):
@@ -25,6 +26,8 @@ const PARAMETROS = [
   // Opciones de calculo de la empresa (1 = si, 0 = no); sin capturar, "no".
   ["option_imss_on_absences", "option", "options"], ["option_aguinaldo_discounts", "option", "options"],
   ["option_subsidy_month_days", "option", "options"],
+  // Correcciones de checadas por empleado y mes (services/attendance_correction_service.py).
+  ["attendance_correction_limit", "count", "options"],
   // Tabla de vacaciones de la empresa; sin capturar, la de la ley.
   ["vacation_days_year_1", "days", "vacations"], ["vacation_days_year_2", "days", "vacations"],
   ["vacation_days_year_3", "days", "vacations"], ["vacation_days_year_4", "days", "vacations"],
@@ -32,6 +35,10 @@ const PARAMETROS = [
   ["vacation_days_years_11_15", "days", "vacations"], ["vacation_days_years_16_20", "days", "vacations"],
   ["vacation_days_years_21_25", "days", "vacations"], ["vacation_days_years_26_30", "days", "vacations"],
   ["vacation_days_years_31_plus", "days", "vacations"],
+  // Politica de vacaciones (services/politica_de_vacaciones.py); sin capturar, la de la ley.
+  ["vacation_accrual_monthly", "option", "vacation_policy"], ["vacation_advance_max_days", "days", "vacation_policy"],
+  ["vacation_expiry_months", "choice", "vacation_policy"], ["vacation_unused_policy", "choice", "vacation_policy"],
+  ["vacation_warning_days_1", "days", "vacation_policy"], ["vacation_warning_days_2", "days", "vacation_policy"],
 ].map(([clave, unidad, grupo = "parameters"]) => ({ clave, unidad, grupo }));
 // Dias de la ley (LFT art. 76) al empezar cada renglon de la tabla; el backend
 // nunca da menos que esto aunque se capture menos.
@@ -41,7 +48,15 @@ const DIAS_DE_LEY = {
   vacation_days_years_16_20: 26, vacation_days_years_21_25: 28, vacation_days_years_26_30: 30,
   vacation_days_years_31_plus: 32,
 };
-const PESTANAS = ["parameters", "options", "vacations", "isr"];
+// Valores que acepta cada clave de "eleccion", y lo que vale la politica sin
+// capturar. Espejo de POLITICA en services/politica_de_vacaciones.py.
+const ELECCIONES = { vacation_expiry_months: [12, 18], vacation_unused_policy: [0, 1, 2] };
+const POLITICA_POR_OMISION = {
+  vacation_accrual_monthly: 0, vacation_advance_max_days: 0, vacation_expiry_months: 12,
+  vacation_unused_policy: 0, vacation_warning_days_1: 60, vacation_warning_days_2: 30,
+  attendance_correction_limit: 2,
+};
+const PESTANAS = ["parameters", "options", "vacations", "vacation_policy", "isr"];
 const PERIODICIDADES = [1, 7, 10, 15, 30];
 const PARAMETRO_VACIO = { value: "", valid_from: "", valid_to: "", source: "" };
 const TRAMO_VACIO = { lower_limit: "", upper_limit: "", fixed_fee: "", rate_pct: "", source: "" };
@@ -57,6 +72,7 @@ function hoy() {
 
 export default function PayrollSettingsPage() {
   const { lang, t } = useI18n();
+  const dialogo = useDialogo();
   const [view, setView] = useState("parameters");
   const [parametros, setParametros] = useState([]);
   const [tramos, setTramos] = useState([]);
@@ -75,7 +91,8 @@ export default function PayrollSettingsPage() {
     || Number(permisos.find((p) => p.entity_name === entidad)?.[campo] || 0) !== 0;
 
   const money = (v) => new Intl.NumberFormat(lang, { style: "currency", currency: "MXN" }).format(Number(v || 0));
-  const formato = (unidad, v) => {
+  const formato = (unidad, v, clave) => {
+    if (unidad === "choice") return t(`payroll_settings.choice_${clave}_${Number(v)}`);
     if (unidad === "money") return money(v);
     if (unidad === "pct") return `${Number(v)} %`;
     if (unidad === "uma") return `${Number(v)} UMA`;
@@ -130,8 +147,10 @@ export default function PayrollSettingsPage() {
     return grupos;
   }, [parametros, view]);
   const sinCapturar = (clave) => {
+    if (clave in POLITICA_POR_OMISION && grupoDe(clave) === "options") return `${t("payroll_settings.policy_default")}: ${POLITICA_POR_OMISION[clave]}`;
     if (grupoDe(clave) === "options") return t("payroll_settings.option_default");
     if (grupoDe(clave) === "vacations") return `${t("payroll_settings.vacation_default")} (${DIAS_DE_LEY[clave]} ${t("payroll_settings.days")})`;
+    if (grupoDe(clave) === "vacation_policy") return `${t("payroll_settings.policy_default")}: ${formato(unidadDe(clave), POLITICA_POR_OMISION[clave], clave)}`;
     return t("payroll_settings.missing");
   };
   const vigente = (fila) => fila.valid_from <= fechaHoy && (!fila.valid_to || fila.valid_to >= fechaHoy);
@@ -177,7 +196,7 @@ export default function PayrollSettingsPage() {
   }
 
   async function borrar(accion) {
-    if (!window.confirm(t("payroll_settings.confirm_delete"))) return;
+    if (!(await dialogo.confirmar(t("payroll_settings.confirm_delete")))) return;
     await guardar(accion, "payroll_settings.deleted");
   }
 
@@ -213,14 +232,19 @@ export default function PayrollSettingsPage() {
                   </select>
                 </label>
                 <label className="field">{t("payroll_settings.field_value")}
-                  {unidadDe(formParametro.parameter_key) === "option" ? (
+                  {unidadDe(formParametro.parameter_key) === "choice" ? (
+                    <select required value={String(formParametro.value)} onChange={(e) => setFormParametro((f) => ({ ...f, value: e.target.value }))}>
+                      <option value="">{t("common.select_option", "Selecciona una opción")}</option>
+                      {ELECCIONES[formParametro.parameter_key].map((v) => <option key={v} value={v}>{formato("choice", v, formParametro.parameter_key)}</option>)}
+                    </select>
+                  ) : unidadDe(formParametro.parameter_key) === "option" ? (
                     <select required value={String(formParametro.value)} onChange={(e) => setFormParametro((f) => ({ ...f, value: e.target.value }))}>
                       <option value="">{t("common.select_option", "Selecciona una opción")}</option>
                       <option value="1">{t("payroll_settings.option_yes")}</option>
                       <option value="0">{t("payroll_settings.option_no")}</option>
                     </select>
                   ) : campo(formParametro, setFormParametro, "value", { required: true, type: "number", min: 0,
-                    step: grupoDe(formParametro.parameter_key) === "vacations" ? 1 : "any" })}
+                    step: ["vacations", "vacation_policy"].includes(grupoDe(formParametro.parameter_key)) || unidadDe(formParametro.parameter_key) === "count" ? 1 : "any" })}
                 </label>
                 <label className="field">{t("payroll_settings.field_from")}{campo(formParametro, setFormParametro, "valid_from", { required: true, type: "date" })}</label>
                 <label className="field">{t("payroll_settings.field_to")}{campo(formParametro, setFormParametro, "valid_to", { type: "date" })}</label>
@@ -250,7 +274,7 @@ export default function PayrollSettingsPage() {
                     {fila ? (
                       <>
                         <td>
-                          {formato(unidadDe(clave), fila.value)} {vigente(fila) && <span className="quotation-status-badge status-approved">{t("payroll_settings.current")}</span>}
+                          {formato(unidadDe(clave), fila.value, clave)} {vigente(fila) && <span className="quotation-status-badge status-approved">{t("payroll_settings.current")}</span>}
                           {DIAS_DE_LEY[clave] > Number(fila.value) && <small className="muted"> · {t("payroll_settings.below_law")} ({DIAS_DE_LEY[clave]} {t("payroll_settings.days")})</small>}
                         </td>
                         <td>{fila.valid_from}</td>

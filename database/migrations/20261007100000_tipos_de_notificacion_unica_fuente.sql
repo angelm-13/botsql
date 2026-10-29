@@ -56,6 +56,8 @@ ALTER TABLE notification ADD CONSTRAINT notification_type_check CHECK (
         -- Solicitudes de vacaciones y permisos (RH, 2026-10-22): por autorizar y ya revisada.
         'leave_requested',
         'leave_reviewed',
+        -- Vacaciones por vencer (politica de vacaciones, 2026-10-28).
+        'vacation_expiring',
         'custom'
     )
 );

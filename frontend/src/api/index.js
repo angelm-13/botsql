@@ -621,6 +621,16 @@ export const getAllEmployeeSchedule = (params = {}) => request("/employee_schedu
 export const createEmployeeSchedule = (payload) => request("/employee_schedule/", { method: "POST", body: payload });
 export const updateEmployeeSchedule = (id, payload) => request(`/employee_schedule/${id}`, { method: "PUT", body: payload });
 export const deleteEmployeeSchedule = (id) => request(`/employee_schedule/${id}`, { method: "DELETE" });
+// Grupos de pago (semanal, catorcenal, quincenal, mensual) y quien pertenece a cada uno.
+export const getAllPayrollGroup = (params = {}) => request("/payroll_group/", { params });
+export const createPayrollGroup = (payload) => request("/payroll_group/", { method: "POST", body: payload });
+export const updatePayrollGroup = (id, payload) => request(`/payroll_group/${id}`, { method: "PUT", body: payload });
+export const deletePayrollGroup = (id) => request(`/payroll_group/${id}`, { method: "DELETE" });
+export const getNextPayrollPeriod = (id) => request(`/payroll_group/${id}/next_period`);
+export const getAllEmployeePayrollGroup = (params = {}) => request("/employee_payroll_group/", { params });
+export const createEmployeePayrollGroup = (payload) => request("/employee_payroll_group/", { method: "POST", body: payload });
+export const updateEmployeePayrollGroup = (id, payload) => request(`/employee_payroll_group/${id}`, { method: "PUT", body: payload });
+export const deleteEmployeePayrollGroup = (id) => request(`/employee_payroll_group/${id}`, { method: "DELETE" });
 export const getAllPayrollHoliday = (params = {}) => request("/payroll_holiday/", { params });
 export const createPayrollHoliday = (payload) => request("/payroll_holiday/", { method: "POST", body: payload });
 export const updatePayrollHoliday = (id, payload) => request(`/payroll_holiday/${id}`, { method: "PUT", body: payload });
@@ -632,10 +642,21 @@ export const deleteEmployeeLeave = (id) => request(`/employee_leave/${id}`, { me
 export const getEmployeeLeaveBalances = () => request("/employee_leave/balances");
 export const getMyEmployeeLeaves = () => request("/employee_leave/mine");
 export const requestEmployeeLeave = (payload) => request("/employee_leave/request", { method: "POST", body: payload });
+// Hoja de incapacidad (solo el propio empleado y RH la ven).
+export const getEmployeeLeaveDocuments = (id) => request(`/employee_leave/${id}/documents`);
+export const uploadEmployeeLeaveDocument = (id, file) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  return request(`/employee_leave/${id}/documents`, { method: "POST", body: formData });
+};
+export const openEmployeeLeaveDocument = (id, version) => requestBlob(`/employee_leave/${id}/documents/${version}/content`);
 export const cancelEmployeeLeave = (id) => request(`/employee_leave/${id}/cancel`, { method: "POST" });
 export const getPendingEmployeeLeaves = () => request("/employee_leave/pending");
 export const approveEmployeeLeave = (id, payload = {}) => request(`/employee_leave/${id}/approve`, { method: "POST", body: payload });
 export const rejectEmployeeLeave = (id, payload = {}) => request(`/employee_leave/${id}/reject`, { method: "POST", body: payload });
+// Correcciones de checadas (su supervisor o RH; limite por mes).
+export const getAttendanceCorrections = (idUser, month) => request("/attendance_correction/", { params: { id_user: idUser, month } });
+export const createAttendanceCorrection = (payload) => request("/attendance_correction/", { method: "POST", body: payload });
 export const getAttendanceIncidences = ({ startDate, endDate }) => request(`/kronos/attendance/incidences?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`);
 export const getAllPayrollParameter = (params = {}) => request("/payroll_parameter/", { params });
 export const createPayrollParameter = (payload) => request("/payroll_parameter/", { method: "POST", body: payload });
@@ -665,7 +686,7 @@ export const deletePayrollMovement = (id) => request(`/payroll_movement/${id}`, 
 export const getAllPayrollPeriod = (params = {}) => request("/payroll_period/", { params });
 export const getPayrollPeriod = (id) => request(`/payroll_period/${id}`);
 export const calculatePayrollPeriod = (id) => request(`/payroll_period/${id}/calculate`, { method: "POST" });
-export const closePayrollPeriod = (id) => request(`/payroll_period/${id}/close`, { method: "POST" });
+export const closePayrollPeriod = (id, payload = {}) => request(`/payroll_period/${id}/close`, { method: "POST", body: payload });
 export const reopenPayrollPeriod = (id) => request(`/payroll_period/${id}/reopen`, { method: "POST" });
 export const getPayrollPeriodSummary = (id) => request(`/payroll_period/${id}/summary`);
 export const downloadPayrollReceipt = (id, idUser) => requestBlob(`/payroll_period/${id}/receipt/${idUser}`);

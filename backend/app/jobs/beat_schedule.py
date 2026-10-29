@@ -48,4 +48,9 @@ BEAT_SCHEDULE = {
         "task": "app.jobs.tasks_warehouse.notify_overdue_vouchers",
         "schedule": crontab(minute=0, hour="*/6"),
     },
+    # RH: vacaciones que vencen en los dias de aviso de la politica de la empresa.
+    "rh-expiring-vacations-daily": {
+        "task": "app.jobs.tasks_rh.notify_expiring_vacations",
+        "schedule": crontab(hour=8, minute=0),
+    },
 }

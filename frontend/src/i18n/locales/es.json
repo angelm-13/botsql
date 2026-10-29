@@ -1133,7 +1133,8 @@
       "payment_date": "Pago Fecha",
       "period_end": "Periodo Fin",
       "period_start": "Periodo Inicio",
-      "includes_aguinaldo": "Incluye aguinaldo"
+      "includes_aguinaldo": "Incluye aguinaldo",
+      "id_payroll_group": "Grupo de pago"
     },
     "permission": {
       "authorized_by": "Autorizado Por",
@@ -1497,7 +1498,8 @@
     "payroll_settings": "Cifras oficiales",
     "work_schedules": "Horarios",
     "employee_leaves": "Vacaciones y permisos",
-    "my_leaves": "Mis vacaciones"
+    "my_leaves": "Mis vacaciones",
+    "payroll_groups": "Grupos de pago"
   },
   "placeholders": {
     "bank": {
@@ -2809,7 +2811,13 @@
     "employee_leave_needs_schedule": "Para vacaciones el empleado necesita horario asignado en todo el rango.",
     "employee_leave_no_workdays": "En esas fechas no hay días laborables de su horario.",
     "employee_leave_insufficient_balance": "No le alcanzan los días de vacaciones",
-    "employee_leave_not_pending": "La solicitud ya no está pendiente."
+    "employee_leave_not_pending": "La solicitud ya no está pendiente.",
+    "payroll_group_default_required": "Siempre debe haber un grupo por omisión. Para cambiarlo, marca otro grupo como por omisión.",
+    "payroll_group_in_use": "El grupo tiene empleados asignados. Quítalos o muévelos antes de borrarlo.",
+    "employee_payroll_group_overlap": "El empleado ya tiene un grupo en esas fechas. Cierra la asignación anterior con una fecha final.",
+    "payroll_period_length": "Las fechas no cuadran con la periodicidad del grupo: una semana dura 7 días, una catorcena 14, una quincena de 13 a 16 y un mes de 28 a 31.",
+    "attendance_correction_limit_reached": "Ya se usaron las correcciones de este mes para este empleado. Solo RH puede corregir, como excepción.",
+    "payroll_period_pending_justification": "Hay días pendientes de justificar en el periodo."
   },
   "logistics": {
     "module": "Logística",
@@ -3865,6 +3873,25 @@
       "allow_self_signed": "Permitir certificado autofirmado",
       "saved_status": "Configuración guardada para esta sesión.",
       "save_button": "Guardar conexión"
+    },
+    "corrections": {
+      "title": "Corregir checada",
+      "counter": "Correcciones de",
+      "limit_reached": "límite alcanzado: solo RH, como excepción",
+      "which": "Checada",
+      "check_at": "La de las",
+      "add_missing": "Agregar la que falta",
+      "new_time": "Hora correcta",
+      "reason": "Motivo",
+      "hint": "Cambia la checada misma; la hora anterior, quién la cambió y el motivo quedan en el historial. Cada hora corregida cuenta 1.",
+      "saved": "Checada corregida.",
+      "saved_exception": "Checada corregida como excepción de RH.",
+      "pending": "Pendiente de justificar (una sola checada, no se paga)",
+      "before": "Antes",
+      "after": "Ahora",
+      "by": "Corrigió",
+      "added": "Agregada",
+      "exception": "excepción"
     }
   },
   "invoice": {
@@ -4923,7 +4950,10 @@
     "vacation_premium": "Prima vacacional",
     "without_hire_date": "Sin fecha de ingreso (aguinaldo de año completo y sin prima vacacional)",
     "aguinaldo_hint": "Aguinaldo: solo si el periodo tiene marcada la casilla. Prima vacacional: en el periodo de su aniversario de ingreso. Solo grava ISR lo que pasa de 30 UMA (aguinaldo) y 15 UMA (prima).",
-    "leaves": "Ausencias"
+    "leaves": "Ausencias",
+    "pending": "pendientes",
+    "pending_hint": "Días con una sola checada: no se pagan hasta que se corrijan.",
+    "pending_close": "Hay días pendientes de justificar (una sola checada, no se pagaron). ¿Cerrar de todos modos?"
   },
   "payroll_settings": {
     "eyebrow": "RECURSOS HUMANOS",
@@ -4989,7 +5019,14 @@
       "vacation_days_years_16_20": "Años 16 a 20",
       "vacation_days_years_21_25": "Años 21 a 25",
       "vacation_days_years_26_30": "Años 26 a 30",
-      "vacation_days_years_31_plus": "Años 31 en adelante"
+      "vacation_days_years_31_plus": "Años 31 en adelante",
+      "vacation_accrual_monthly": "Se ganan mes a mes (Sí) o completas al aniversario (No)",
+      "vacation_advance_max_days": "Días que se pueden adelantar (0 = no se permite)",
+      "vacation_expiry_months": "Plazo para usarlas",
+      "vacation_unused_policy": "Días no usados al vencer",
+      "vacation_warning_days_1": "Primer aviso antes de vencer (días; 0 = sin aviso)",
+      "vacation_warning_days_2": "Segundo aviso antes de vencer (días; 0 = sin aviso)",
+      "attendance_correction_limit": "Correcciones de checadas por empleado al mes"
     },
     "tab_options": "Opciones de cálculo",
     "tab_vacations": "Tabla de vacaciones",
@@ -5001,7 +5038,16 @@
     "option_no": "No",
     "option_default": "Sin capturar: No (como la ley lo permite por omisión).",
     "vacation_default": "Sin capturar: se usa la ley",
-    "below_law": "menos que la ley; se usa la ley"
+    "below_law": "menos que la ley; se usa la ley",
+    "tab_vacation_policy": "Política de vacaciones",
+    "vacation_policy_title": "Cómo maneja las vacaciones esta empresa",
+    "vacation_policy_hint": "Cómo se ganan los días, si se pueden adelantar, cuánto duran y qué pasa con los que no se usan. Sin capturar, se sigue la ley: días completos al cumplir el año, vencen en 12 meses y se pierden.",
+    "policy_default": "Sin capturar",
+    "choice_vacation_expiry_months_12": "12 meses después del aniversario",
+    "choice_vacation_expiry_months_18": "18 meses después del aniversario",
+    "choice_vacation_unused_policy_0": "Se pierden",
+    "choice_vacation_unused_policy_1": "Pasan al siguiente año",
+    "choice_vacation_unused_policy_2": "Se pagan en la nómina"
   },
   "work_schedules": {
     "eyebrow": "RECURSOS HUMANOS",
@@ -5097,7 +5143,10 @@
     "disability_none": "Sin especificar",
     "disability_general_illness": "Enfermedad general",
     "disability_work_risk": "Riesgo de trabajo",
-    "disability_maternity": "Maternidad"
+    "disability_maternity": "Maternidad",
+    "expiring": "Por vencer",
+    "days_until": "días vencen el",
+    "advanced": "Adelantados"
   },
   "my_leaves": {
     "title": "Mis vacaciones",
@@ -5128,6 +5177,54 @@
     "requested_done": "Solicitud enviada.",
     "cancelled_done": "Solicitud cancelada.",
     "approved_done": "Solicitud aprobada.",
-    "rejected_done": "Solicitud rechazada."
+    "rejected_done": "Solicitud rechazada.",
+    "can_advance": "Puedes adelantar hasta"
+  },
+  "payroll_groups": {
+    "eyebrow": "Recursos humanos",
+    "title": "Grupos de pago",
+    "subtitle": "Cada grupo cobra con su periodicidad. La nómina de un grupo calcula solo a sus empleados con la tarifa de ISR que le toca.",
+    "tab_groups": "Grupos",
+    "tab_assignments": "Empleados por grupo",
+    "groups_title": "Grupos y su periodicidad",
+    "assignments_title": "Quién cobra en cada grupo",
+    "new_group": "Nuevo grupo",
+    "new_assignment": "Asignar empleado",
+    "name": "Nombre",
+    "frequency": "Periodicidad",
+    "frequency_weekly": "Semanal",
+    "frequency_biweekly": "Catorcenal",
+    "frequency_semimonthly": "Quincenal",
+    "frequency_monthly": "Mensual",
+    "is_default": "Grupo por omisión",
+    "default_badge": "Por omisión",
+    "default_hint": "El grupo por omisión recibe a quien no tiene grupo asignado. Solo hay uno: marcar otro le quita la marca al anterior.",
+    "employees": "Empleados hoy",
+    "employee": "Empleado",
+    "group": "Grupo",
+    "from": "Desde",
+    "to": "Hasta",
+    "no_end": "Sin fin",
+    "no_groups": "No hay grupos.",
+    "no_assignments": "Nadie tiene grupo asignado: todos cobran en el grupo por omisión.",
+    "assignments_hint": "Para cambiar a alguien de grupo, pon fecha final a su asignación y crea otra desde el día siguiente: así queda el historial.",
+    "saved": "Guardado.",
+    "deleted": "Eliminado.",
+    "confirm_delete": "¿Eliminar este registro?",
+    "no_group": "Sin grupo (periodo anterior)"
+  },
+  "leave_sheet": {
+    "eyebrow": "Incapacidad",
+    "title": "Hoja de incapacidad",
+    "privacy": "Es información médica: solo la ven tú y RH. Tu supervisor solo ve las fechas.",
+    "file": "Archivo",
+    "uploaded_by": "Subida por",
+    "date": "Fecha",
+    "view": "Ver hoja",
+    "none": "Todavía no hay hoja.",
+    "choose": "Elegir archivo",
+    "upload": "Subir hoja",
+    "types_hint": "Foto (JPG o PNG) o PDF, de máximo 10 MB.",
+    "request_hint": "Adjunta la hoja del IMSS. La incapacidad cuenta en tu nómina hasta que RH la aprueba."
   }
 }

@@ -1126,7 +1126,8 @@
       "payment_date": "Payment Date",
       "period_end": "Period End",
       "period_start": "Period Start",
-      "includes_aguinaldo": "Includes Christmas bonus"
+      "includes_aguinaldo": "Includes Christmas bonus",
+      "id_payroll_group": "Pay group"
     },
     "permission": {
       "authorized_by": "Authorized By",
@@ -1461,7 +1462,8 @@
     "payroll_settings": "Official figures",
     "work_schedules": "Schedules",
     "employee_leaves": "Leave and vacations",
-    "my_leaves": "My time off"
+    "my_leaves": "My time off",
+    "payroll_groups": "Pay groups"
   },
   "placeholders": {
     "bank": {
@@ -2765,7 +2767,13 @@
     "employee_leave_needs_schedule": "For vacation the employee needs a schedule over the whole range.",
     "employee_leave_no_workdays": "There are no workdays of the schedule on those dates.",
     "employee_leave_insufficient_balance": "Not enough vacation days",
-    "employee_leave_not_pending": "The request is no longer pending."
+    "employee_leave_not_pending": "The request is no longer pending.",
+    "payroll_group_default_required": "There must always be a default group. To change it, mark another group as default.",
+    "payroll_group_in_use": "The group has employees assigned. Remove or move them before deleting it.",
+    "employee_payroll_group_overlap": "The employee already has a group on those dates. Close the previous assignment with an end date.",
+    "payroll_period_length": "The dates do not match the group's pay frequency: a week lasts 7 days, a biweekly period 14, a semimonthly period 13 to 16 and a month 28 to 31.",
+    "attendance_correction_limit_reached": "This month's corrections for this employee are used up. Only HR can correct, as an exception.",
+    "payroll_period_pending_justification": "There are days pending justification in the period."
   },
   "logistics": {
     "module": "Logistics",
@@ -3812,6 +3820,25 @@
       "allow_self_signed": "Allow self-signed certificate",
       "saved_status": "Configuration saved for this session.",
       "save_button": "Save connection"
+    },
+    "corrections": {
+      "title": "Correct check",
+      "counter": "Corrections in",
+      "limit_reached": "limit reached: HR only, as an exception",
+      "which": "Check",
+      "check_at": "The one at",
+      "add_missing": "Add the missing one",
+      "new_time": "Correct time",
+      "reason": "Reason",
+      "hint": "It changes the check itself; the previous time, who changed it and the reason stay in the history. Each corrected time counts 1.",
+      "saved": "Check corrected.",
+      "saved_exception": "Check corrected as an HR exception.",
+      "pending": "Pending justification (single check, not paid)",
+      "before": "Before",
+      "after": "Now",
+      "by": "Corrected by",
+      "added": "Added",
+      "exception": "exception"
     }
   },
   "invoice": {
@@ -4807,7 +4834,10 @@
     "vacation_premium": "Vacation premium",
     "without_hire_date": "No hire date (full-year Christmas bonus, no vacation premium)",
     "aguinaldo_hint": "Christmas bonus: only if the period has the box checked. Vacation premium: in the period of the hire anniversary. Only the part above 30 UMA (bonus) and 15 UMA (premium) is taxed.",
-    "leaves": "Leave"
+    "leaves": "Leave",
+    "pending": "pending",
+    "pending_hint": "Days with a single check: not paid until corrected.",
+    "pending_close": "There are days pending justification (a single check, not paid). Close anyway?"
   },
   "payroll_settings": {
     "eyebrow": "HUMAN RESOURCES",
@@ -4873,7 +4903,14 @@
       "vacation_days_years_16_20": "Years 16 to 20",
       "vacation_days_years_21_25": "Years 21 to 25",
       "vacation_days_years_26_30": "Years 26 to 30",
-      "vacation_days_years_31_plus": "Years 31 onwards"
+      "vacation_days_years_31_plus": "Years 31 onwards",
+      "vacation_accrual_monthly": "Earned monthly (Yes) or in full at the anniversary (No)",
+      "vacation_advance_max_days": "Days that can be taken in advance (0 = not allowed)",
+      "vacation_expiry_months": "Time to use them",
+      "vacation_unused_policy": "Unused days when they expire",
+      "vacation_warning_days_1": "First warning before expiry (days; 0 = none)",
+      "vacation_warning_days_2": "Second warning before expiry (days; 0 = none)",
+      "attendance_correction_limit": "Check-in corrections per employee per month"
     },
     "tab_options": "Calculation options",
     "tab_vacations": "Vacation table",
@@ -4885,7 +4922,16 @@
     "option_no": "No",
     "option_default": "Not set: No (the law's default).",
     "vacation_default": "Not set: the law applies",
-    "below_law": "less than the law; the law applies"
+    "below_law": "less than the law; the law applies",
+    "tab_vacation_policy": "Vacation policy",
+    "vacation_policy_title": "How this company handles vacations",
+    "vacation_policy_hint": "How days are earned, whether they can be taken in advance, how long they last and what happens to unused ones. If not set, the law applies: full days at each anniversary, they expire in 12 months and are lost.",
+    "policy_default": "Not set",
+    "choice_vacation_expiry_months_12": "12 months after the anniversary",
+    "choice_vacation_expiry_months_18": "18 months after the anniversary",
+    "choice_vacation_unused_policy_0": "They are lost",
+    "choice_vacation_unused_policy_1": "They carry over",
+    "choice_vacation_unused_policy_2": "They are paid in payroll"
   },
   "work_schedules": {
     "eyebrow": "HUMAN RESOURCES",
@@ -4981,7 +5027,10 @@
     "disability_none": "Not specified",
     "disability_general_illness": "General illness",
     "disability_work_risk": "Work risk",
-    "disability_maternity": "Maternity"
+    "disability_maternity": "Maternity",
+    "expiring": "Expiring",
+    "days_until": "days expire on",
+    "advanced": "Advanced"
   },
   "my_leaves": {
     "title": "My time off",
@@ -5012,6 +5061,54 @@
     "requested_done": "Request sent.",
     "cancelled_done": "Request cancelled.",
     "approved_done": "Request approved.",
-    "rejected_done": "Request rejected."
+    "rejected_done": "Request rejected.",
+    "can_advance": "You can take in advance up to"
+  },
+  "payroll_groups": {
+    "eyebrow": "Human resources",
+    "title": "Pay groups",
+    "subtitle": "Each group is paid with its own frequency. A group's payroll calculates only its employees with the right ISR table.",
+    "tab_groups": "Groups",
+    "tab_assignments": "Employees by group",
+    "groups_title": "Groups and their frequency",
+    "assignments_title": "Who is paid in each group",
+    "new_group": "New group",
+    "new_assignment": "Assign employee",
+    "name": "Name",
+    "frequency": "Frequency",
+    "frequency_weekly": "Weekly",
+    "frequency_biweekly": "Biweekly (14 days)",
+    "frequency_semimonthly": "Semimonthly",
+    "frequency_monthly": "Monthly",
+    "is_default": "Default group",
+    "default_badge": "Default",
+    "default_hint": "The default group receives anyone without an assigned group. There is only one: marking another removes the mark from the previous one.",
+    "employees": "Employees today",
+    "employee": "Employee",
+    "group": "Group",
+    "from": "From",
+    "to": "To",
+    "no_end": "No end",
+    "no_groups": "There are no groups.",
+    "no_assignments": "Nobody has a group assigned: everyone is paid in the default group.",
+    "assignments_hint": "To move someone to another group, set an end date on their assignment and create a new one from the next day: the history is kept.",
+    "saved": "Saved.",
+    "deleted": "Deleted.",
+    "confirm_delete": "Delete this record?",
+    "no_group": "No group (earlier period)"
+  },
+  "leave_sheet": {
+    "eyebrow": "Disability",
+    "title": "Disability certificate",
+    "privacy": "This is medical information: only you and HR can see it. Your supervisor only sees the dates.",
+    "file": "File",
+    "uploaded_by": "Uploaded by",
+    "date": "Date",
+    "view": "View certificate",
+    "none": "No certificate yet.",
+    "choose": "Choose file",
+    "upload": "Upload certificate",
+    "types_hint": "Photo (JPG or PNG) or PDF, up to 10 MB.",
+    "request_hint": "Attach the IMSS certificate. The disability counts in your payroll once HR approves it."
   }
 }

@@ -2,8 +2,10 @@
 
 Ana (71): salario 500, horario L-V desde el 1 de octubre, ingreso 2024-03-01 (le
 tocan 14 dias); su jefe es Beto (80). Periodo 5 = 1 al 15 de octubre de 2026.
-Decisiones de RH (2026-10-22): el empleado pide vacaciones y permisos (no
-incapacidad); autoriza su supervisor o RH; lo pedido aparta dias del saldo.
+Decisiones de RH (2026-10-22): el empleado pide vacaciones y permisos; autoriza
+su supervisor o RH; lo pedido aparta dias del saldo. Desde la revision contable
+(2026-10-28) tambien reporta su incapacidad, que solo RH revisa (ver
+test_hoja_de_incapacidad.py).
 """
 from __future__ import annotations
 
@@ -64,8 +66,7 @@ class TestSolicitar(_ConEquipo):
             aviso = db.query(Notification).filter_by(id_user_recipient=BETO).one()
             self.assertEqual(("employee_leave", "leave_requested"), (aviso.target_entity, aviso.notification_type))
 
-    def test_no_pide_incapacidad_ni_mas_de_su_saldo(self):
-        self.assertEqual(400, self.pedir(tipo="disability").status_code)
+    def test_no_pide_mas_de_su_saldo(self):
         self.assertEqual(201, self.pedir("2026-10-01", "2026-10-09").status_code)   # 7 laborables
         r = self.pedir("2026-10-12", "2026-10-21")                                   # 8 mas: pasa de 14
         self.assertEqual(409, r.status_code)

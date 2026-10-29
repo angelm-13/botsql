@@ -155,7 +155,8 @@
     "mfa_reset_error": "Não foi possível redefinir o MFA",
     "select": "Selecionar",
     "serie_csd_hint": "Usada como série padrão ao emitir faturas desta empresa; uma fatura pode registrar outra diferente.",
-    "field_required": "obrigatório"
+    "field_required": "obrigatório",
+    "close": "Fechar"
   },
   "entities": {
     "bank": {
@@ -1088,7 +1089,8 @@
       "payment_date": "Pagamento Data",
       "period_end": "Período Fim",
       "period_start": "Período Início",
-      "includes_aguinaldo": "Inclui abono de Natal"
+      "includes_aguinaldo": "Inclui abono de Natal",
+      "id_payroll_group": "Grupo de pagamento"
     },
     "permission": {
       "authorized_by": "Autorizado Por",
@@ -1416,7 +1418,8 @@
     "payroll_settings": "Valores oficiais",
     "work_schedules": "Horários",
     "employee_leaves": "Férias e licenças",
-    "my_leaves": "Minhas férias"
+    "my_leaves": "Minhas férias",
+    "payroll_groups": "Grupos de pagamento"
   },
   "placeholders": {
     "bank": {
@@ -2588,7 +2591,13 @@
     "employee_leave_needs_schedule": "For vacation the employee needs a schedule over the whole range.",
     "employee_leave_no_workdays": "There are no workdays of the schedule on those dates.",
     "employee_leave_insufficient_balance": "Não há dias de férias suficientes",
-    "employee_leave_not_pending": "A solicitação não está mais pendente."
+    "employee_leave_not_pending": "A solicitação não está mais pendente.",
+    "payroll_group_default_required": "Sempre deve haver um grupo padrão. Para mudá-lo, marque outro grupo como padrão.",
+    "payroll_group_in_use": "O grupo tem funcionários atribuídos. Remova-os ou mova-os antes de excluí-lo.",
+    "employee_payroll_group_overlap": "O funcionário já tem um grupo nessas datas. Feche a atribuição anterior com uma data final.",
+    "payroll_period_length": "As datas não correspondem à periodicidade do grupo: uma semana dura 7 dias, um período catorzenal 14, uma quinzena de 13 a 16 e um mês de 28 a 31.",
+    "attendance_correction_limit_reached": "As correções deste mês para este funcionário acabaram. Só o RH pode corrigir, como exceção.",
+    "payroll_period_pending_justification": "Há dias pendentes de justificar no período."
   },
   "logistics": {
     "module": "Logística",
@@ -3488,6 +3497,25 @@
       "allow_self_signed": "Permitir certificado autoassinado",
       "saved_status": "Configuração salva para esta sessão.",
       "save_button": "Salvar conexão"
+    },
+    "corrections": {
+      "title": "Corrigir marcação",
+      "counter": "Correções de",
+      "limit_reached": "limite atingido: só RH, como exceção",
+      "which": "Marcação",
+      "check_at": "A das",
+      "add_missing": "Adicionar a que falta",
+      "new_time": "Hora correta",
+      "reason": "Motivo",
+      "hint": "Muda a própria marcação; a hora anterior, quem mudou e o motivo ficam no histórico. Cada hora corrigida conta 1.",
+      "saved": "Marcação corrigida.",
+      "saved_exception": "Marcação corrigida como exceção do RH.",
+      "pending": "Pendente de justificar (uma só marcação, não é paga)",
+      "before": "Antes",
+      "after": "Agora",
+      "by": "Corrigiu",
+      "added": "Adicionada",
+      "exception": "exceção"
     }
   },
   "task_fase": {
@@ -3557,7 +3585,10 @@
     "vacation_premium": "Prêmio de férias",
     "without_hire_date": "Sem data de admissão (abono do ano inteiro, sem prêmio de férias)",
     "aguinaldo_hint": "Abono de Natal: só se o período tiver a caixa marcada. Prêmio de férias: no período do aniversário de admissão. Só é tributado o que passa de 30 UMA (abono) e 15 UMA (prêmio).",
-    "leaves": "Ausências"
+    "leaves": "Ausências",
+    "pending": "pendentes",
+    "pending_hint": "Dias com uma só marcação: não são pagos até serem corrigidos.",
+    "pending_close": "Há dias pendentes de justificar (uma só marcação, não pagos). Fechar mesmo assim?"
   },
   "payroll_settings": {
     "eyebrow": "RECURSOS HUMANOS",
@@ -3623,7 +3654,14 @@
       "vacation_days_years_16_20": "Anos 16 a 20",
       "vacation_days_years_21_25": "Anos 21 a 25",
       "vacation_days_years_26_30": "Anos 26 a 30",
-      "vacation_days_years_31_plus": "Anos 31 em diante"
+      "vacation_days_years_31_plus": "Anos 31 em diante",
+      "vacation_accrual_monthly": "Ganhas mês a mês (Sim) ou completas no aniversário (Não)",
+      "vacation_advance_max_days": "Dias que podem ser antecipados (0 = não permitido)",
+      "vacation_expiry_months": "Prazo para usá-las",
+      "vacation_unused_policy": "Dias não usados ao vencer",
+      "vacation_warning_days_1": "Primeiro aviso antes de vencer (dias; 0 = sem aviso)",
+      "vacation_warning_days_2": "Segundo aviso antes de vencer (dias; 0 = sem aviso)",
+      "attendance_correction_limit": "Correções de ponto por funcionário ao mês"
     },
     "tab_options": "Opções de cálculo",
     "tab_vacations": "Tabela de férias",
@@ -3635,7 +3673,16 @@
     "option_no": "Não",
     "option_default": "Sem valor: Não (padrão da lei).",
     "vacation_default": "Sem valor: vale a lei",
-    "below_law": "menos que a lei; vale a lei"
+    "below_law": "menos que a lei; vale a lei",
+    "tab_vacation_policy": "Política de férias",
+    "vacation_policy_title": "Como esta empresa trata as férias",
+    "vacation_policy_hint": "Como os dias são ganhos, se podem ser antecipados, quanto duram e o que acontece com os não usados. Sem valor, segue a lei: dias completos a cada aniversário, vencem em 12 meses e se perdem.",
+    "policy_default": "Sem valor",
+    "choice_vacation_expiry_months_12": "12 meses após o aniversário",
+    "choice_vacation_expiry_months_18": "18 meses após o aniversário",
+    "choice_vacation_unused_policy_0": "Se perdem",
+    "choice_vacation_unused_policy_1": "Passam para o ano seguinte",
+    "choice_vacation_unused_policy_2": "São pagas na folha"
   },
   "work_schedules": {
     "eyebrow": "HUMAN RESOURCES",
@@ -3731,7 +3778,10 @@
     "disability_none": "Não especificado",
     "disability_general_illness": "Doença geral",
     "disability_work_risk": "Acidente de trabalho",
-    "disability_maternity": "Maternidade"
+    "disability_maternity": "Maternidade",
+    "expiring": "A vencer",
+    "days_until": "dias vencem em",
+    "advanced": "Antecipados"
   },
   "my_leaves": {
     "title": "Minhas férias",
@@ -3762,6 +3812,54 @@
     "requested_done": "Request sent.",
     "cancelled_done": "Request cancelled.",
     "approved_done": "Request approved.",
-    "rejected_done": "Request rejected."
+    "rejected_done": "Request rejected.",
+    "can_advance": "Você pode antecipar até"
+  },
+  "payroll_groups": {
+    "eyebrow": "Recursos humanos",
+    "title": "Grupos de pagamento",
+    "subtitle": "Cada grupo recebe com sua periodicidade. A folha de um grupo calcula só os seus funcionários com a tabela de ISR correspondente.",
+    "tab_groups": "Grupos",
+    "tab_assignments": "Funcionários por grupo",
+    "groups_title": "Grupos e sua periodicidade",
+    "assignments_title": "Quem recebe em cada grupo",
+    "new_group": "Novo grupo",
+    "new_assignment": "Atribuir funcionário",
+    "name": "Nome",
+    "frequency": "Periodicidade",
+    "frequency_weekly": "Semanal",
+    "frequency_biweekly": "Catorzenal",
+    "frequency_semimonthly": "Quinzenal",
+    "frequency_monthly": "Mensal",
+    "is_default": "Grupo padrão",
+    "default_badge": "Padrão",
+    "default_hint": "O grupo padrão recebe quem não tem grupo atribuído. Só existe um: marcar outro tira a marca do anterior.",
+    "employees": "Funcionários hoje",
+    "employee": "Funcionário",
+    "group": "Grupo",
+    "from": "Desde",
+    "to": "Até",
+    "no_end": "Sem fim",
+    "no_groups": "Não há grupos.",
+    "no_assignments": "Ninguém tem grupo atribuído: todos recebem no grupo padrão.",
+    "assignments_hint": "Para mudar alguém de grupo, ponha data final na atribuição e crie outra a partir do dia seguinte: o histórico fica guardado.",
+    "saved": "Salvo.",
+    "deleted": "Excluído.",
+    "confirm_delete": "Excluir este registro?",
+    "no_group": "Sem grupo (período anterior)"
+  },
+  "leave_sheet": {
+    "eyebrow": "Afastamento",
+    "title": "Atestado de afastamento",
+    "privacy": "É informação médica: só você e o RH podem vê-la. Seu supervisor só vê as datas.",
+    "file": "Arquivo",
+    "uploaded_by": "Enviado por",
+    "date": "Data",
+    "view": "Ver atestado",
+    "none": "Ainda não há atestado.",
+    "choose": "Escolher arquivo",
+    "upload": "Enviar atestado",
+    "types_hint": "Foto (JPG ou PNG) ou PDF, de até 10 MB.",
+    "request_hint": "Anexe o atestado do IMSS. O afastamento conta na folha quando o RH o aprovar."
   }
 }

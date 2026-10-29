@@ -8,6 +8,7 @@ import {
 } from "../api";
 import { useI18n } from "../i18n";
 import PageHeader from "../components/PageHeader.jsx";
+import { useDialogo } from "../dialogo/useDialogo.js";
 import "../styles/kronos.css";
 
 // Horarios de trabajo, su asignacion a empleados y los dias festivos. Con ellos
@@ -35,6 +36,7 @@ function horarioVacio() {
 
 export default function WorkSchedulesPage() {
   const { t } = useI18n();
+  const dialogo = useDialogo();
   const traducir = useRef(t);
   traducir.current = t;
   const [view, setView] = useState("schedules");
@@ -149,7 +151,7 @@ export default function WorkSchedulesPage() {
   }
 
   async function borrar(accion) {
-    if (!window.confirm(t("work_schedules.confirm_delete"))) return;
+    if (!(await dialogo.confirmar(t("work_schedules.confirm_delete")))) return;
     await guardar(accion, "work_schedules.deleted");
   }
 

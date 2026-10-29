@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Calculator, Eye, FileDown, Lock, Unlock, RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
-import { calculatePayrollPeriod, closePayrollPeriod, downloadPayrollReceipt, getPayrollPeriodSummary, reopenPayrollPeriod, getAllPayrollPeriod, createPayrollPeriod, updatePayrollPeriod, deletePayrollPeriod, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllStatus } from "../api";
+import { calculatePayrollPeriod, closePayrollPeriod, downloadPayrollReceipt, getPayrollPeriodSummary, reopenPayrollPeriod, getAllPayrollPeriod, createPayrollPeriod, updatePayrollPeriod, deletePayrollPeriod, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllStatus, getAllPayrollGroup, getNextPayrollPeriod } from "../api";
 import { fetchAllPages } from "../utils/fetchAllPages";
 import Pagination from "../components/Pagination.jsx";
 import PageHeader from "../components/PageHeader.jsx";
@@ -11,7 +11,7 @@ import { CAMPOS_DE_AUDITORIA } from "../utils/camposDeAuditoria";
 import { formatearFechaHora } from "../utils/fechas";
 import { useDialogo } from "../dialogo/useDialogo.js";
 
-const emptyForm = { period_start: "", period_end: "", payment_date: "", id_status: "", includes_aguinaldo: false };
+const emptyForm = { id_payroll_group: "", period_start: "", period_end: "", payment_date: "", id_status: "", includes_aguinaldo: false };
 const validationRules = allValidationRules["payroll_period"] || {};
 const ENTITY_KEY = "payroll_period";
 const ACTION_CREATE = 1;
@@ -20,7 +20,7 @@ const ACTION_UPDATE = 4;
 const ACTION_DELETE = 8;
 const SCOPE_FIELD_BY_BIT = { [ACTION_CREATE]: "scope_create", [ACTION_READ]: "scope_read", [ACTION_UPDATE]: "scope_update", [ACTION_DELETE]: "scope_delete" };
 const FIELD_VISIBLE_BIT = 2;
-const ALL_FIELD_NAMES = ['id_payroll_period', 'period_start', 'period_end', 'payment_date', 'id_status', 'includes_aguinaldo', 'created_by', 'creation_date', 'last_update_date', 'deletion_date'];
+const ALL_FIELD_NAMES = ['id_payroll_period', 'period_start', 'period_end', 'payment_date', 'id_status', 'includes_aguinaldo', 'id_payroll_group', 'created_by', 'creation_date', 'last_update_date', 'deletion_date'];
 
 function hasBit(value, bit) {
   return (Number(value || 0) & bit) === bit;
@@ -67,6 +67,7 @@ export default function PayrollPeriodPage() {
   // Tambien para quien solo consulta: ve el estado del periodo y su resultado.
   const showRowActions = canRead;
   const [statusOptions, setStatusOptions] = useState([]);
+  const [groupOptions, setGroupOptions] = useState([]);
 
   async function loadData() {
     if (!permissionReady || !canRead) {
@@ -112,6 +113,14 @@ export default function PayrollPeriodPage() {
           setStatusOptions(Array.isArray(statusData) ? statusData : (statusData.items || []));
         } catch (_) {
           setStatusOptions([]);
+        }
+      }
+      if (canSeeField("id_payroll_group")) {
+        try {
+          const grupos = await getAllPayrollGroup({ page: 1, per_page: 200 });
+          setGroupOptions((grupos.items || []).filter((g) => !g.deletion_date));
+        } catch (_) {
+          setGroupOptions([]);
         }
       }
     }
@@ -175,6 +184,12 @@ export default function PayrollPeriodPage() {
     return Number(modulePermission?.[SCOPE_FIELD_BY_BIT[bit]] || 0) !== 0;
   }
 
+  function nombreDeGrupo(id) {
+    if (!id) return <small className="muted">{t("payroll_groups.no_group")}</small>;
+    const grupo = groupOptions.find((g) => g.id_payroll_group === id);
+    return grupo ? `${grupo.group_name} · ${t(`payroll_groups.frequency_${grupo.pay_frequency}`)}` : `#${id}`;
+  }
+
   function canSeeField(fieldName) {
     if (isSuperUser) return true;
     if (!permissionReady) return false;
@@ -185,6 +200,14 @@ export default function PayrollPeriodPage() {
   function handleChange(event) {
     const { name, type, checked, value } = event.target;
     setFormData((prev) => ({ ...prev, [name]: type === "checkbox" ? checked : value }));
+    // Al elegir el grupo de un periodo nuevo se proponen sus fechas: el dia
+    // despues de su ultimo periodo, con el largo de su periodicidad. Se pueden cambiar.
+    if (name === "id_payroll_group" && value && !editingId) {
+      getNextPayrollPeriod(value)
+        .then((p) => setFormData((prev) => (String(prev.id_payroll_group) === String(value)
+          ? { ...prev, period_start: p.period_start, period_end: p.period_end, payment_date: p.payment_date } : prev)))
+        .catch(() => {});
+    }
     setFieldErrors((prev) => {
       if (!prev[name]) return prev;
       const next = { ...prev };
@@ -199,6 +222,7 @@ export default function PayrollPeriodPage() {
 
   function buildSubmitPayload() {
     const payload = { ...formData };
+    payload.id_payroll_group = payload.id_payroll_group ? Number(payload.id_payroll_group) : null;
     if (ENTITY_KEY === "user" && editingId && isBlankValue(payload.password)) {
       delete payload.password;
     }
@@ -403,12 +427,13 @@ export default function PayrollPeriodPage() {
   // (payroll_calculation_service.py); aqui solo se ofrecen los botones que
   // tienen sentido para cada estado.
   async function periodAction(action, { confirmKey, doneKey, reload } = {}) {
-    if (confirmKey && !window.confirm(t(confirmKey))) return;
+    if (confirmKey && !(await dialogo.confirmar(t(confirmKey)))) return;
     setErrorKey("");
     setErrorMeta(null);
     setNotice("");
     try {
       const result = await action();
+      if (result === null) return null;   // la accion se cancelo a medio camino
       if (doneKey) setNotice(t(doneKey));
       if (reload) await loadData();
       return result;
@@ -432,9 +457,20 @@ export default function PayrollPeriodPage() {
   }
 
   async function closePeriod(item) {
-    await periodAction(() => closePayrollPeriod(item.id_payroll_period),
-      { confirmKey: "payroll_calc.confirm_close", doneKey: "payroll_calc.closed_done", reload: true });
-    if (calculation?.id_payroll_period === item.id_payroll_period) setCalculation({ ...calculation, period_state: "closed" });
+    // Si quedan dias pendientes de justificar (una sola checada, no se pagaron),
+    // el backend no cierra sin que RH lo vea y lo confirme.
+    const cerrar = async () => {
+      try {
+        return await closePayrollPeriod(item.id_payroll_period);
+      } catch (error) {
+        if (error.message !== "errors.payroll_period_pending_justification") throw error;
+        const quienes = (error.payload?.meta?.employees || []).map((e) => `${e.full_name} (${e.dates.join(", ")})`).join(" · ");
+        if (!(await dialogo.confirmar(`${t("payroll_calc.pending_close")} ${quienes}`))) return null;
+        return closePayrollPeriod(item.id_payroll_period, { confirm_pending: true });
+      }
+    };
+    const cerrado = await periodAction(cerrar, { confirmKey: "payroll_calc.confirm_close", doneKey: "payroll_calc.closed_done", reload: true });
+    if (cerrado && calculation?.id_payroll_period === item.id_payroll_period) setCalculation({ ...calculation, period_state: "closed" });
   }
 
   async function reopenPeriod(item) {
@@ -491,6 +527,18 @@ export default function PayrollPeriodPage() {
         onSubmit={handleSubmit}
       >
         <div className="form-grid">
+          {canSeeField("id_payroll_group") && (
+          <label className="field">
+            <span>{t("fields.payroll_period.id_payroll_group")}</span>
+            <select name="id_payroll_group" value={formData.id_payroll_group ?? ""} onChange={handleChange} required={!editingId} aria-invalid={Boolean(fieldErrors["id_payroll_group"])}>
+              <option value="">{editingId ? t("payroll_groups.no_group") : t("common.select_option", "Selecciona una opción")}</option>
+              {groupOptions.map((g) => (
+                <option key={g.id_payroll_group} value={g.id_payroll_group}>{g.group_name} · {t(`payroll_groups.frequency_${g.pay_frequency}`)}</option>
+              ))}
+            </select>
+            {fieldErrors["id_payroll_group"] && <span className="field-error">{formatFieldError("id_payroll_group")}</span>}
+          </label>
+          )}
           {canSeeField("period_start") && (
           <label className="field">
             <span>{t("fields.payroll_period.period_start")}</span>
@@ -567,7 +615,7 @@ export default function PayrollPeriodPage() {
               </tr></thead>
               <tbody>{calculation.employees.map((row) => (
                 <tr key={row.id_user}>
-                  <td>{row.full_name}</td><td>{row.days_worked}</td><td>{row.absences || 0}</td>{conAusencias && <td><small>{ausenciasDe(row)}</small></td>}<td>{money(row.daily_salary)}</td>
+                  <td>{row.full_name}</td><td>{row.days_worked}</td><td>{row.absences || 0}{row.pending_justification ? <small title={t("payroll_calc.pending_hint")}> · {t("payroll_calc.pending")}: {row.pending_justification}</small> : null}</td>{conAusencias && <td><small>{ausenciasDe(row)}</small></td>}<td>{money(row.daily_salary)}</td>
                   <td>{money(row.salary)}</td>{conPrestaciones && <><td>{money(row.aguinaldo)}</td><td title={row.vacation_premium_days ? `${row.vacation_premium_days} d` : undefined}>{money(row.vacation_premium)}</td></>}<td>{money(row.total_earnings)}</td><td title={row.employment_subsidy ? `${t("payroll_calc.isr_hint")}: ${money(row.isr_before_subsidy)} - ${money(row.employment_subsidy)}` : undefined}>{money(row.isr)}</td><td title={row.sbc ? `SBC ${money(row.sbc)}` : undefined}>{money(row.imss)}</td><td>{money(row.total_deductions)}</td><td><strong>{money(row.net_pay)}</strong></td>
                   <td><button type="button" className="button ghost" onClick={() => openReceipt(row.id_user)} aria-label={`${t("payroll_calc.receipt")} ${row.full_name}`}><FileDown size={15} /> PDF</button></td>
                 </tr>
@@ -589,6 +637,7 @@ export default function PayrollPeriodPage() {
 
       {canRead && view === "table" && filtered.length > 0 && <div className="table-card"><table><thead><tr>{showRowActions && <th>{t("common.actions")}</th>}
               {canSeeField("id_payroll_period") && <th>{t("fields.payroll_period.id_payroll_period")}</th>}
+              {canSeeField("id_payroll_group") && <th>{t("fields.payroll_period.id_payroll_group")}</th>}
               {canSeeField("period_start") && <th>{t("fields.payroll_period.period_start")}</th>}
               {canSeeField("period_end") && <th>{t("fields.payroll_period.period_end")}</th>}
               {canSeeField("payment_date") && <th>{t("fields.payroll_period.payment_date")}</th>}
@@ -599,6 +648,7 @@ export default function PayrollPeriodPage() {
               {canSeeField("deletion_date") && <th>{t("fields.payroll_period.deletion_date")}</th>}
         </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_payroll_period}>{showRowActions && <td className="row-actions">{stateBadge(item.period_state)}{canUpdate && item.period_state !== "closed" && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && item.period_state !== "closed" && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{canUpdate && item.period_state !== "closed" && <button type="button" onClick={() => runCalculation(item)} title={t("payroll_calc.button")} aria-label={`${t("payroll_calc.button")} #${item.id_payroll_period}`}><Calculator size={15} /></button>}{item.period_state && item.period_state !== "open" && <button type="button" onClick={() => viewCalculation(item)} title={t("payroll_calc.view")} aria-label={`${t("payroll_calc.view")} #${item.id_payroll_period}`}><Eye size={15} /></button>}{canUpdate && item.period_state === "calculated" && <button type="button" onClick={() => closePeriod(item)} title={t("payroll_calc.close")} aria-label={`${t("payroll_calc.close")} #${item.id_payroll_period}`}><Lock size={15} /></button>}{canDelete && item.period_state === "closed" && <button type="button" onClick={() => reopenPeriod(item)} title={t("payroll_calc.reopen")} aria-label={`${t("payroll_calc.reopen")} #${item.id_payroll_period}`}><Unlock size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</td>}
               {canSeeField("id_payroll_period") && <td><pre className="cell-value">{formatTableValue(item.id_payroll_period)}</pre></td>}
+              {canSeeField("id_payroll_group") && <td>{nombreDeGrupo(item.id_payroll_group)}</td>}
               {canSeeField("period_start") && <td><pre className="cell-value">{formatTableValue(item.period_start)}</pre></td>}
               {canSeeField("period_end") && <td><pre className="cell-value">{formatTableValue(item.period_end)}</pre></td>}
               {canSeeField("payment_date") && <td><pre className="cell-value">{formatTableValue(item.payment_date)}</pre></td>}
