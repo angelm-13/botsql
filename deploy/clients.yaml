@@ -41,3 +41,8 @@ clients:
     # Un solo origen (comala.torredigital.mx con /api) -- mismo patron que
     # adser/prod.
     api_base_url: ""
+  - name: aai
+    env: prod
+    # Un solo origen (aai.torredigital.mx con /api) -- mismo patron que
+    # comala/prod.
+    api_base_url: ""
