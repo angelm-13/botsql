@@ -46,3 +46,8 @@ clients:
     # Un solo origen (aai.torredigital.mx con /api) -- mismo patron que
     # comala/prod.
     api_base_url: ""
+  - name: nissi
+    env: prod
+    # Un solo origen (nissi.torredigital.mx con /api) -- mismo patron que
+    # aai/prod.
+    api_base_url: ""
