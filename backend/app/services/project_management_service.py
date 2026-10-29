@@ -1797,10 +1797,12 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
                     409,
                     {"open_tasks": tareas_abiertas},
                 )
-            pendientes = _vales_con_material_pendiente(db, project.id_proyect)
-            if pendientes:
-                raise AppError("errors.project_open_vouchers", 409,
-                               {"open_vouchers": pendientes})
+            # Los vales abiertos YA NO bloquean recolectar ni completar (2026-10-29):
+            # un proyecto puede ser solo la fabricacion, y la instalacion se hace
+            # dias o semanas despues con la herramienta todavia fuera. El vale sigue
+            # su vida -vence, se devuelve o se cancela por su cuenta-. Cancelar el
+            # proyecto si sigue exigiendo que no quede material pendiente
+            # (`transition_management`): ahi el material si queda sin dueno.
 
         project.proyect_status = validated_target
         if validated_target == "authorized":
