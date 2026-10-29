@@ -4956,6 +4956,8 @@
     "updated_at": "Actualizado:",
     "updated_late": "más de un día de retraso",
     "updated_hint": "Última vez que se calculó una fila de este KPI en este rango. Un KPI que solo se calcula cuando hay movimientos puede tener una fecha vieja sin que nada falle.",
+    "chart_aria_points": "puntos de datos",
+    "chart_aria_max": "Mayor",
     "kpi_variables_group": "Variables",
     "kpi_search_placeholder": "Buscar KPI…",
     "kpi_search_empty": "Ningún KPI coincide con la búsqueda.",

@@ -10,6 +10,7 @@ import {
   COLOR_OTHERS, CATEGORICAL, buildMultiSeriesData, buildPieData, buildSeriesData,
   colorDeCategoriaEstado, colorEfectivoDeKpi, formatConUnidad, kpiSeriesLabel, ordenarPorCategorias,
 } from "./kpiDatos.js";
+import { anchoDelEje, formatoDeEje, unidadDeLaGrafica } from "./kpiAccesibilidad.js";
 
 // Opacidad de la serie del periodo de comparacion (B): mismo color que la A,
 // distinta opacidad -- no hay un segundo color fijo (ver colorDeKpi).
@@ -83,7 +84,11 @@ export function propsSeries({
     const colorPorFila = esBarras && coloresPorCategoria
       ? (fila) => colorDeCategoriaEstado(fila.id, coloresPorCategoria, colorKpi)
       : null;
-    return { datos, series, campoEtiqueta: "name", colorPorFila };
+    const unidad = unidadDeLaGrafica([kpiInfo]);
+    return {
+      datos, series, campoEtiqueta: "name", colorPorFila,
+      conPatrones: Boolean(colorPorFila), formatearEje: formatoDeEje(unidad, formatNumber), anchoEje: anchoDelEje(unidad),
+    };
   }
 
   // Varios KPIs combinados: una serie por KPI, coloreada por identidad del
@@ -109,7 +114,11 @@ export function propsSeries({
       });
     });
   }
-  return { datos, series, campoEtiqueta: "name", colorPorFila: null };
+  const unidadComun = unidadDeLaGrafica(kpiInfos);
+  return {
+    datos, series, campoEtiqueta: "name", colorPorFila: null,
+    conPatrones: false, formatearEje: formatoDeEje(unidadComun, formatNumber), anchoEje: anchoDelEje(unidadComun),
+  };
 }
 
 /** Props de DonaWidget. */
@@ -125,7 +134,7 @@ export function propsDona({ snapshot, kpiInfo, labelForId, agruparPorPeriodo, fo
       ? colorDeCategoriaEstado(entrada.id, coloresCategoria, COLOR_OTHERS)
       : (indice < CATEGORICAL.length ? CATEGORICAL[indice] : COLOR_OTHERS),
   }));
-  return { datos, formatearValor: (valor) => formatConUnidad(formatNumber(valor), kpiInfo?.unidad) };
+  return { datos, conPatrones: Boolean(coloresCategoria), formatearValor: (valor) => formatConUnidad(formatNumber(valor), kpiInfo?.unidad) };
 }
 
 /** Filas de TablaWidget a partir de los renglones del KPI "vivo". */

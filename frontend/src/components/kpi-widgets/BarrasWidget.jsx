@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import PropTypes from "prop-types";
 import {
   Bar, BarChart, CartesianGrid, Cell, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
+import { DefinicionDePatrones } from "./PatronesSvg";
+import { rellenoConPatron } from "../../kpi/kpiAccesibilidad";
 
 export function TooltipRico({ active, payload, label, series }) {
   if (!active || !payload || !payload.length) return null;
@@ -39,17 +41,23 @@ TooltipRico.defaultProps = { active: false, payload: null, label: "", series: []
  * resaltar la tabla de material prestado (interaccion entre widgets). */
 export default function BarrasWidget({
   datos, series, campoEtiqueta, animar, onBarClick, barraResaltada, colorPorFila,
+  conPatrones, formatearEje, anchoEje, descripcion,
 }) {
+  const idBase = useId().replace(/:/g, "");
+  // Con categorias de color fijo (rojo/verde...) cada barra lleva ademas un patron: el color no es la unica senal.
+  const coloresDeFila = conPatrones && colorPorFila ? datos.map((fila) => colorPorFila(fila)) : null;
   // Las barras se dibujan UNA vez. Recharts las vuelve a animar cada vez que le llega un `datos` nuevo
   // (aqui se recalcula en cada render de la tarjeta), y con un filtro entre tarjetas eso hacia que las
   // barras "crecieran" de nuevo a cada clic.
   const [yaAnimo, setYaAnimo] = useState(false);
   return (
+    <div role={descripcion ? "img" : undefined} aria-label={descripcion || undefined} title={descripcion || undefined}>
     <ResponsiveContainer width="100%" height={220}>
       <BarChart data={datos} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+        {coloresDeFila && <DefinicionDePatrones idBase={idBase} colores={coloresDeFila} />}
         <CartesianGrid strokeDasharray="3 3" stroke="var(--kpi-grid)" vertical={false} />
         <XAxis dataKey={campoEtiqueta} tick={{ fontSize: 11, fill: "var(--kpi-texto-suave)" }} axisLine={false} tickLine={false} />
-        <YAxis tick={{ fontSize: 11, fill: "var(--kpi-texto-suave)" }} axisLine={false} tickLine={false} />
+        <YAxis tick={{ fontSize: 11, fill: "var(--kpi-texto-suave)" }} axisLine={false} tickLine={false} tickFormatter={formatearEje || undefined} width={anchoEje} />
         <Tooltip content={<TooltipRico series={series} />} cursor={{ fill: "var(--kpi-hover-barra)" }} />
         {series.length > 1 && <Legend wrapperStyle={{ fontSize: 12 }} />}
         {series.map((serie) => (
@@ -65,10 +73,10 @@ export default function BarrasWidget({
             cursor={onBarClick ? "pointer" : "default"}
             onClick={onBarClick}
           >
-            {datos.map((fila) => (
+            {datos.map((fila, indice) => (
               <Cell
                 key={fila.id ?? fila[campoEtiqueta]}
-                fill={colorPorFila ? colorPorFila(fila) : serie.color}
+                fill={coloresDeFila ? rellenoConPatron(idBase, indice) : (colorPorFila ? colorPorFila(fila) : serie.color)}
                 fillOpacity={barraResaltada && fila[campoEtiqueta] !== barraResaltada ? 0.35 : (serie.opacidad ?? 1)}
               />
             ))}
@@ -76,6 +84,7 @@ export default function BarrasWidget({
         ))}
       </BarChart>
     </ResponsiveContainer>
+    </div>
   );
 }
 
@@ -95,6 +104,16 @@ BarrasWidget.propTypes = {
   // fila -> color: para categorias fijas (estado), donde cada barra lleva SU
   // color en vez del de la serie.
   colorPorFila: PropTypes.func,
+  // Agrega un patron por barra a las categorias de color fijo (segundo canal ademas del color).
+  conPatrones: PropTypes.bool,
+  // Marcas del eje Y con la unidad; sin ella, el numero crudo de siempre.
+  formatearEje: PropTypes.func,
+  anchoEje: PropTypes.number,
+  // Lo que lee un lector de pantalla (y el tooltip del navegador) en lugar de una imagen sin nombre.
+  descripcion: PropTypes.string,
 };
 
-BarrasWidget.defaultProps = { animar: true, onBarClick: null, barraResaltada: null, colorPorFila: null };
+BarrasWidget.defaultProps = {
+  animar: true, onBarClick: null, barraResaltada: null, colorPorFila: null,
+  conPatrones: false, formatearEje: null, anchoEje: 60, descripcion: "",
+};

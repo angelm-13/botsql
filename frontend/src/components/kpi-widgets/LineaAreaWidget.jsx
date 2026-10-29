@@ -10,14 +10,15 @@ const EJE = { fontSize: 11, fill: "var(--kpi-texto-suave)" };
  * series -- solo cambia si se rellena debajo del trazo. Una serie con
  * `punteada` (la del periodo de comparacion) se dibuja con trazo discontinuo
  * y, en area, con menos relleno: el color nunca es la unica senal. */
-export default function LineaAreaWidget({ tipo, datos, series, campoEtiqueta, animar }) {
+export default function LineaAreaWidget({ tipo, datos, series, campoEtiqueta, animar, formatearEje, anchoEje, descripcion }) {
   const Grafica = tipo === "area" ? AreaChart : LineChart;
   return (
+    <div role={descripcion ? "img" : undefined} aria-label={descripcion || undefined} title={descripcion || undefined}>
     <ResponsiveContainer width="100%" height={220}>
       <Grafica data={datos} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="var(--kpi-grid)" vertical={false} />
         <XAxis dataKey={campoEtiqueta} tick={EJE} axisLine={false} tickLine={false} />
-        <YAxis tick={EJE} axisLine={false} tickLine={false} />
+        <YAxis tick={EJE} axisLine={false} tickLine={false} tickFormatter={formatearEje || undefined} width={anchoEje} />
         <Tooltip content={<TooltipRico series={series} />} />
         {series.length > 1 && <Legend wrapperStyle={{ fontSize: 12 }} />}
         {series.map((serie) => (tipo === "area" ? (
@@ -50,6 +51,7 @@ export default function LineaAreaWidget({ tipo, datos, series, campoEtiqueta, an
         )))}
       </Grafica>
     </ResponsiveContainer>
+    </div>
   );
 }
 
@@ -66,6 +68,9 @@ LineaAreaWidget.propTypes = {
   })).isRequired,
   campoEtiqueta: PropTypes.string.isRequired,
   animar: PropTypes.bool,
+  formatearEje: PropTypes.func,
+  anchoEje: PropTypes.number,
+  descripcion: PropTypes.string,
 };
 
-LineaAreaWidget.defaultProps = { animar: true };
+LineaAreaWidget.defaultProps = { animar: true, formatearEje: null, anchoEje: 60, descripcion: "" };

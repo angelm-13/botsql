@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import PropTypes from "prop-types";
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import { DefinicionDePatrones, MuestraDePatron } from "./PatronesSvg";
+import { rellenoConPatron } from "../../kpi/kpiAccesibilidad";
 
 function TooltipDona({ active, payload, formatearValor }) {
   if (!active || !payload || !payload.length) return null;
@@ -23,13 +25,15 @@ TooltipDona.defaultProps = { active: false, payload: null };
  * dimension abierta a una dona de estado con catalogo cerrado. El color
  * nunca es la unica senal: la leyenda siempre trae el nombre de la
  * categoria en texto junto al punto de color. */
-export default function DonaWidget({ datos, animar, formatearValor }) {
+export default function DonaWidget({ datos, animar, formatearValor, conPatrones, descripcion }) {
   const [resaltado, setResaltado] = useState(null);
+  const idBase = useId().replace(/:/g, "");
 
   return (
-    <div className="kpi-preview-dona-wrap">
+    <div className="kpi-preview-dona-wrap" role={descripcion ? "img" : undefined} aria-label={descripcion || undefined} title={descripcion || undefined}>
       <ResponsiveContainer width="100%" height={190}>
         <PieChart>
+          {conPatrones && <DefinicionDePatrones idBase={idBase} colores={datos.map((entrada) => entrada.color)} />}
           <Pie
             data={datos}
             dataKey="valor"
@@ -45,7 +49,7 @@ export default function DonaWidget({ datos, animar, formatearValor }) {
             {datos.map((entrada, indice) => (
               <Cell
                 key={entrada.categoria}
-                fill={entrada.color}
+                fill={conPatrones ? rellenoConPatron(idBase, indice) : entrada.color}
                 fillOpacity={resaltado === null || resaltado === indice ? 1 : 0.35}
               />
             ))}
@@ -61,7 +65,9 @@ export default function DonaWidget({ datos, animar, formatearValor }) {
             onMouseEnter={() => setResaltado(indice)}
             onMouseLeave={() => setResaltado(null)}
           >
-            <span className="kpi-preview-tooltip-dot" style={{ background: entrada.color }} />
+            {conPatrones
+              ? <MuestraDePatron idBase={idBase} color={entrada.color} indice={indice} />
+              : <span className="kpi-preview-tooltip-dot" style={{ background: entrada.color }} />}
             <span>{entrada.categoria}</span>
             <strong>{formatearValor(entrada.valor)}</strong>
           </li>
@@ -79,5 +85,8 @@ DonaWidget.propTypes = {
   })).isRequired,
   animar: PropTypes.bool,
   formatearValor: PropTypes.func,
+  // Un patron por rebanada y en la leyenda (segundo canal ademas del color).
+  conPatrones: PropTypes.bool,
+  descripcion: PropTypes.string,
 };
-DonaWidget.defaultProps = { animar: true, formatearValor: (valor) => String(valor) };
+DonaWidget.defaultProps = { animar: true, formatearValor: (valor) => String(valor), conPatrones: false, descripcion: "" };

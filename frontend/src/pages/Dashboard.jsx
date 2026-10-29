@@ -44,6 +44,7 @@ import {
 import { puedeIrAlPaso } from "../kpi/kpiPasos.js";
 import { NO_CALCULADO, SIN_DATOS, estadoDeDatos } from "../kpi/kpiEstado.js";
 import { frescuraDeWidget } from "../kpi/kpiFrescura.js";
+import { descripcionDeGrafica } from "../kpi/kpiAccesibilidad.js";
 import {
   DESFASES_DE_COMPARACION, ETIQUETA_RANGO_POR_OMISION, RANGOS_RELATIVOS, RANGO_PERSONALIZADO, fechaLocalIso,
   parametrosEfectivos, periodoAnterior, rangoDesfasado, resolverRangoRelativo,
@@ -1590,6 +1591,14 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, fo
   const umbralBajoStock = Number(parametros.umbral_bajo_stock);
   const esBajoStock = kpiInfos.length <= 1 && kpiInfo?.clave === "articulos_bajo_stock" && Number.isFinite(umbralBajoStock);
 
+  // Lo que lee un lector de pantalla en lugar de la grafica: tipo, KPI(s), cuantos puntos y el mayor.
+  const nombresDeLaGrafica = parametros.titulo || kpiInfos.map((info) => info?.etiqueta || info?.clave).filter(Boolean).join(" + ");
+  const textosDescripcion = {
+    tipo: tx(`chart_type_${widget.tipo_grafica}`, CHART_TYPES.find((opt) => opt.value === widget.tipo_grafica)?.label || widget.tipo_grafica),
+    puntos: tx("chart_aria_points", "puntos de datos"),
+    mayor: tx("chart_aria_max", "Mayor"),
+  };
+
   if (widget.tipo_grafica === "numero") {
     if (esBajoStock) {
       return (
@@ -1611,7 +1620,11 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, fo
       snapshot, kpiInfo, labelForId, agruparPorPeriodo, formatNumber, textos: { otros: tx("others", "Otros") },
     });
     if (!props.datos.length) return mensajeSinDatos;
-    return <Componente {...props} animar={animar} />;
+    const descripcion = descripcionDeGrafica({
+      nombres: nombresDeLaGrafica, datos: props.datos, claveValor: "valor", campoEtiqueta: "categoria",
+      formatear: props.formatearValor, textos: textosDescripcion,
+    });
+    return <Componente {...props} descripcion={descripcion} animar={animar} />;
   }
 
   const props = propsSeries({
@@ -1646,7 +1659,11 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, fo
       barraResaltada: filtroResponsable?.nombre || null,
     }
     : {};
-  return <Componente {...props} {...interaccion} tipo={widget.tipo_grafica} animar={animar} />;
+  const descripcion = descripcionDeGrafica({
+    nombres: nombresDeLaGrafica, datos: props.datos, claveValor: props.series[0]?.clave, campoEtiqueta: props.campoEtiqueta,
+    formatear: props.series[0]?.formatear, textos: textosDescripcion,
+  });
+  return <Componente {...props} {...interaccion} descripcion={descripcion} tipo={widget.tipo_grafica} animar={animar} />;
 }
 
 function tiposDeGraficaPermitidos(kpiInfos) {

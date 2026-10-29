@@ -4840,6 +4840,8 @@
     "updated_at": "Updated:",
     "updated_late": "more than a day old",
     "updated_hint": "Last time a row of this KPI was calculated in this range. A KPI that is only calculated when there is activity can show an old date with nothing wrong.",
+    "chart_aria_points": "data points",
+    "chart_aria_max": "Highest",
     "kpi_variables_group": "Variables",
     "kpi_search_placeholder": "Search KPIs…",
     "kpi_search_empty": "No KPI matches your search.",
