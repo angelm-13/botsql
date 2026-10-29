@@ -49,8 +49,10 @@ hablarlo con Alan. Cada quien toca solo su carpeta de overlay.
    todas las imágenes, incluida la de tu frontend.
 3. **Crea el overlay**: `cp -r k8s/overlays/_template k8s/overlays/<cliente>-<env>`
    y reemplaza `CLIENTE-ENV`, `DOMINIO` y `REEMPLAZAR_SHA` en sus dos archivos.
-   Verifica el dominio con `nslookup`; el DNS (registro A a master1) lo pide
-   Tanya. Los comentarios de la plantilla explican cada bloque.
+   Los clientes del ERP usan un solo dominio, `<cliente>.torredigital.mx` (por
+   ejemplo `comala.torredigital.mx`); confírmalo con Alan. Verifica el dominio
+   con `nslookup`; el DNS (registro A a master1) lo pide Tanya. Los comentarios
+   de la plantilla explican cada bloque.
 4. **Valida que compila**: `kubectl kustomize k8s/overlays/<cliente>-<env>`
    (debe terminar sin error; revisa que salga tu namespace y tu dominio).
 5. **Commit y push a tu rama** (no a `initAlan`), solo de tu overlay y de
@@ -96,7 +98,18 @@ nodo por sus fotos).
   `RABBITMQ_DEFAULT_PASS`, `CELERY_BROKER_URL`, `JWT_SECRET`, `SECRET_KEY`,
   `MFA_ENCRYPTION_KEY`, `PAC_ENCRYPTION_KEY` y `BOOTSTRAP_ADMIN_PASSWORD`. Si
   falta una, el error de conexión es distinto por cada llave. Los secretos se
-  generan en el servidor con `openssl rand`. Para contrastar con un cliente
+  generan en el servidor con `openssl rand`.
+  Con `APP_ENV=production` (lo fija el base) el backend **no arranca sin
+  `CORS_ORIGINS`** (el dominio completo, `https://<dominio>`). Además,
+  `JWT_SECRET` y `SECRET_KEY` deben tener 32 o más caracteres, y
+  `BOOTSTRAP_ADMIN_PASSWORD`, 12 o más (con `openssl rand -hex 16` y `-hex 32`
+  se cumple).
+  Opcionales: `DEPLOYMENT_LABEL` (el nombre que sale como badge en la barra
+  superior; si no se pone, no hay badge) y `STAMPING_PROVIDER`. Esta última
+  **no la pongas vacía**: una variable definida pero vacía rompe el timbrado con
+  `Unsupported STAMPING_PROVIDER` en vez del 503 limpio; si no se va a usar, no
+  la incluyas. La cuenta del PAC se puede configurar después desde el sistema,
+  y esa configuración manda sobre la variable. Para contrastar con un cliente
   real, copia los **nombres**: `kubectl -n comala-prod describe secret
   app-secrets` (solo nombres y tamaños; nunca `get secret -o yaml`). Detalle y
   trampas en el Runbook, secciones «Secretos» y «Primer despliegue».
