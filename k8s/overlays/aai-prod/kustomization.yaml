@@ -53,7 +53,9 @@ patches:
         name: tyakxa-tny
       $patch: delete
 
-  # 4) Dónde cae el cliente. Producción y servicios pesados en tier=big
+  # 4) Dónde cae el cliente. Fijo en master4: master1 ya es el único ingress de
+  #    todo el clúster y la producción se reparte entre master1 y master4.
+  #    (texto de la plantilla:) Producción y servicios pesados en tier=big
   #    (master1 o master4); nunca volúmenes nuevos en master2/master3 (discos de
   #    50 GB casi llenos). El base no fija nodo: sin este parche el scheduler
   #    decide y un PVC local-path queda atado ahí para siempre. Si el cliente es
@@ -66,6 +68,7 @@ patches:
         path: /spec/template/spec/nodeSelector
         value:
           tier: big
+          kubernetes.io/hostname: k3s-master4
   - target:
       kind: StatefulSet
     patch: |-
@@ -73,6 +76,7 @@ patches:
         path: /spec/template/spec/nodeSelector
         value:
           tier: big
+          kubernetes.io/hostname: k3s-master4
 
   # 5) PriorityClass (OPCIONAL, decide Alan). Descomenta los tres parches SOLO
   #    si la clase ya existe en el clúster (kubectl get priorityclass); si no
