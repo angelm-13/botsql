@@ -41,6 +41,7 @@ import {
   rangoInicialDelBorrador, tiposDeGraficaPermitidos as tiposPermitidosPorKpi, tituloConHtml, tituloDeWidget, unidadDeKpi,
   widgetDeBorrador,
 } from "../kpi/kpiParametros.js";
+import { puedeIrAlPaso } from "../kpi/kpiPasos.js";
 import {
   DESFASES_DE_COMPARACION, ETIQUETA_RANGO_POR_OMISION, RANGOS_RELATIVOS, RANGO_PERSONALIZADO, fechaLocalIso,
   parametrosEfectivos, periodoAnterior, rangoDesfasado, resolverRangoRelativo,
@@ -1941,6 +1942,9 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
                 </div>
               </div>
             )}
+            {esTabla && (
+              <p className="kpi-editor-ayuda">{tx("table_no_period_filters", "Las tablas muestran los datos de ahora: no tienen periodo ni filtros.")}</p>
+            )}
 
             <div className="kpi-picker-section">
               <span>
@@ -2228,7 +2232,7 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
                   <button
                     type="button"
                     className={`kpi-editor-paso ${indice === pasoActual ? "activo" : ""} ${indice < pasoActual ? "completo" : ""}`}
-                    onClick={() => (indice <= pasoActual || puedeAvanzar) && irAPaso(indice)}
+                    onClick={() => puedeIrAlPaso({ indice, pasoActual, puedeAvanzar }) && irAPaso(indice)}
                     aria-current={indice === pasoActual ? "step" : undefined}
                   >
                     <span className="kpi-editor-paso-numero">{indice < pasoActual ? <Check size={13} /> : indice + 1}</span>
