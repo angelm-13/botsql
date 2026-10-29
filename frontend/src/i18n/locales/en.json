@@ -2679,6 +2679,8 @@
     "project_status_requires_transition": "Status can only be changed through workflow actions.",
     "project_not_editable": "The project can no longer be edited in its current status.",
     "project_open_tasks": "The project cannot be delivered: there are still open tasks.",
+    "project_open_vouchers": "The project has vouchers with material not yet returned. Return or cancel the open vouchers before closing or cancelling the project.",
+    "project_open_orders": "The project has active purchase orders. Cancel or receive them before cancelling the project.",
     "project_material_pending": "The project still has material that has not been received. To start anyway, enter a reason.",
     "project_material_incomplete": "Some material has not arrived yet. The project cannot be completed until it does, or until the needs that no longer apply are cancelled.",
     "project_tasks_not_completed": "The project cannot be completed: there are still open tasks.",

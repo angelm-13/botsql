@@ -2569,6 +2569,8 @@
     "project_status_requires_transition": "Der Status kann nur über die Workflow-Aktionen geändert werden.",
     "project_not_editable": "Das Projekt kann im aktuellen Status nicht mehr bearbeitet werden.",
     "project_open_tasks": "Das Projekt kann nicht ausgeliefert werden: es gibt noch offene Aufgaben.",
+    "project_open_vouchers": "Das Projekt hat Belege mit nicht zurückgegebenem Material. Geben Sie die offenen Belege zurück oder stornieren Sie sie, bevor Sie das Projekt abschließen oder stornieren.",
+    "project_open_orders": "Das Projekt hat aktive Bestellungen. Stornieren oder empfangen Sie sie, bevor Sie das Projekt stornieren.",
     "project_material_pending": "Das Projekt hat noch nicht eingegangenes Material. Um trotzdem zu starten, geben Sie einen Grund an.",
     "project_material_incomplete": "Es fehlt noch Material. Das Projekt kann erst abgeschlossen werden, wenn es eingetroffen ist oder die nicht mehr benötigten Bedarfe storniert wurden.",
     "project_tasks_not_completed": "Das Projekt kann nicht abgeschlossen werden: es gibt noch offene Aufgaben.",

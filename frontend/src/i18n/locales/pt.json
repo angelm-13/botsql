@@ -2571,6 +2571,8 @@
     "project_status_requires_transition": "O status só pode ser alterado pelas ações do fluxo.",
     "project_not_editable": "O projeto não pode mais ser editado no status atual.",
     "project_open_tasks": "Não é possível entregar o projeto: ainda há tarefas em aberto.",
+    "project_open_vouchers": "O projeto tem vales com material não devolvido. Devolva ou cancele os vales abertos antes de encerrar ou cancelar o projeto.",
+    "project_open_orders": "O projeto tem ordens de compra ativas. Cancele-as ou receba-as antes de cancelar o projeto.",
     "project_material_pending": "O projeto ainda tem material não recebido. Para iniciar mesmo assim, informe um motivo.",
     "project_material_incomplete": "Ainda falta material a receber. O projeto não pode ser concluído até que chegue, ou até cancelar as necessidades que não se aplicam mais.",
     "project_tasks_not_completed": "Não é possível concluir o projeto: ainda há tarefas em aberto.",
