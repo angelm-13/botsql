@@ -43,6 +43,7 @@ import {
 } from "../kpi/kpiParametros.js";
 import { puedeIrAlPaso } from "../kpi/kpiPasos.js";
 import { NO_CALCULADO, SIN_DATOS, estadoDeDatos } from "../kpi/kpiEstado.js";
+import { frescuraDeWidget } from "../kpi/kpiFrescura.js";
 import {
   DESFASES_DE_COMPARACION, ETIQUETA_RANGO_POR_OMISION, RANGOS_RELATIVOS, RANGO_PERSONALIZADO, fechaLocalIso,
   parametrosEfectivos, periodoAnterior, rangoDesfasado, resolverRangoRelativo,
@@ -1328,6 +1329,8 @@ export function KpiWidgetCard({
   const fechaInicioB = parametros.fecha_inicio_b;
   const fechaFinB = parametros.fecha_fin_b;
 
+  // Una tabla en vivo no sale de `kpi_snapshot`: ya dice "En vivo" y no tiene `computed_at`.
+  const frescura = esTablaVivo ? null : frescuraDeWidget(datos.snapshots);
   const chartTypeLabel = CHART_TYPES.find((opt) => opt.value === widget.tipo_grafica)?.label || widget.tipo_grafica;
   // "30 días · 2026-08-31 → 2026-09-29": el nombre del rango solo si el widget
   // lo trae; uno de fechas fijas se ve como siempre. Va ANTES de rangoTexto:
@@ -1363,6 +1366,15 @@ export function KpiWidgetCard({
           <p className="kpi-widget-meta">{tx(`chart_type_${widget.tipo_grafica}`, chartTypeLabel)}</p>
           <p className="kpi-widget-meta">{rangoTexto}</p>
           {rangoBTexto && <p className="kpi-widget-meta">{tx("vs_label", "vs.")} {rangoBTexto}</p>}
+          {frescura && (
+            <p
+              className={`kpi-widget-meta kpi-widget-actualizado ${frescura.atrasado ? "atrasado" : ""}`.trim()}
+              title={tx("updated_hint", "Última vez que se calculó una fila de este KPI en este rango. Un KPI que solo se calcula cuando hay movimientos puede tener una fecha vieja sin que nada falle.")}
+            >
+              {tx("updated_at", "Actualizado:")} {frescura.fecha}
+              {frescura.atrasado && ` · ${tx("updated_late", "más de un día de retraso")}`}
+            </p>
+          )}
         </div>
         <div className="kpi-widget-card-actions">
           <button

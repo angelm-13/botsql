@@ -71,6 +71,7 @@
 .kpi-drag-handle{cursor:grab;touch-action:none}
 .kpi-drag-handle:active{cursor:grabbing}
 .kpi-widget-meta{color:#8a96a5;font-size:12px;font-weight:700;line-height:1.35;margin:0;overflow-wrap:anywhere}
+.kpi-widget-actualizado.atrasado{color:#b45309}
 .kpi-chart-box{flex:none;min-height:0;min-width:0;max-width:100%;display:flex;flex-direction:column;justify-content:center}
 
 .kpi-number-widget{display:flex;flex-direction:column;gap:8px;padding:14px 4px 6px}
