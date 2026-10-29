@@ -151,15 +151,24 @@ def _estado_de_datos(db, id_kpi_definition, condiciones):
 
     * `n_filas`: cuantas filas de `kpi_snapshot` cumplen las condiciones del rango. 0 = "Sin datos en el periodo".
     * `calculado`: el KPI tiene alguna fila en cualquier fecha. False = nunca se calculo ("No calculado").
+    * `computed_at`: la ultima vez que se escribio una de esas filas (None sin filas), tal como esta guardada en
+      `kpi_snapshot`: fecha y hora SIN zona, en la hora que tenia la base al escribirla (`func.now()`). No se le
+      pone zona: el frontend la lee como hora de pared del negocio.
 
-    Un KPI que solo escribe cuando hay un evento (ver `tasks_kpis.py`) deja dias sin fila aunque el job corra: por eso
-    "Sin datos en el periodo" no quiere decir que el job haya fallado.
+    Un KPI que solo escribe cuando hay un evento (ver `tasks_kpis.py`) deja dias sin fila aunque el job corra: su
+    `computed_at` puede ser viejo sin que nada falle, y "Sin datos en el periodo" no quiere decir que el job haya fallado.
     """
-    n_filas = db.execute(select(func.count()).select_from(KpiSnapshot).where(*condiciones)).scalar() or 0
+    n_filas, computed_at = db.execute(
+        select(func.count(), func.max(KpiSnapshot.computed_at)).select_from(KpiSnapshot).where(*condiciones)
+    ).one()
     calculado = bool(n_filas) or bool(db.execute(
         select(exists().where(KpiSnapshot.id_kpi_definition == id_kpi_definition))
     ).scalar())
-    return {'n_filas': int(n_filas), 'calculado': calculado}
+    return {
+        'n_filas': int(n_filas or 0),
+        'calculado': calculado,
+        'computed_at': computed_at.isoformat() if computed_at else None,
+    }
 
 
 def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo=False, limite=None, sin_asignar=False, ocultar_ceros=False, condiciones_extra=None):

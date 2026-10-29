@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import unittest
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -162,11 +162,34 @@ class TestKpiApi(BackendTestCase):
         con_filas = self.json(self._request(ACTOR_CON_KPI, self._query_url()))["rango_a"]
         # Solo las dos filas de PROYECTO_A: la de PROYECTO_B no cuenta para este actor.
         self.assertEqual((2, True), (con_filas["n_filas"], con_filas["calculado"]))
+        self.assertIsNotNone(con_filas["computed_at"])
 
         # Un rango sin filas devuelve total 0, pero el KPI si tiene filas en otras fechas: "Sin datos en el periodo".
         sin_filas = self.json(self._request(
             ACTOR_CON_KPI, self._query_url(fecha_inicio="2026-05-01", fecha_fin="2026-05-02")))["rango_a"]
         self.assertEqual((0.0, 0, True), (sin_filas["total"], sin_filas["n_filas"], sin_filas["calculado"]))
+        self.assertIsNone(sin_filas["computed_at"])
+
+    def test_computed_at_is_the_latest_write_of_the_rows_in_the_range_without_a_time_zone(self):
+        with transaction_context() as db:
+            db.add_all([
+                KpiSnapshot(
+                    id_kpi_definition=self.id_kpi, dimension_key={"id_user": 950, "id_proyect": PROYECTO_A},
+                    periodo=date(2026, 6, 10), valor=Decimal("1.00"), computed_at=datetime(2026, 6, 11, 0, 5, 30),
+                ),
+                KpiSnapshot(
+                    id_kpi_definition=self.id_kpi, dimension_key={"id_user": 951, "id_proyect": PROYECTO_A},
+                    periodo=date(2026, 6, 10), valor=Decimal("2.00"), computed_at=datetime(2026, 6, 12, 22, 15),
+                ),
+                # Otro proyecto: no es del actor, no entra en el maximo aunque sea mas reciente.
+                KpiSnapshot(
+                    id_kpi_definition=self.id_kpi, dimension_key={"id_user": 950, "id_proyect": PROYECTO_B},
+                    periodo=date(2026, 6, 10), valor=Decimal("3.00"), computed_at=datetime(2026, 7, 1, 8, 0),
+                ),
+            ])
+        rango = self.json(self._request(
+            ACTOR_CON_KPI, self._query_url(fecha_inicio="2026-06-10", fecha_fin="2026-06-10")))["rango_a"]
+        self.assertEqual("2026-06-12T22:15:00", rango["computed_at"])
 
     def test_a_kpi_without_any_snapshot_is_not_calculated_and_the_comparison_range_says_so_too(self):
         with transaction_context() as db:
