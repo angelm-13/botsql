@@ -14,7 +14,7 @@ kind: Ingress
 metadata:
   name: aai-prod-app
   annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-staging # cambiar a letsencrypt-prod
+    cert-manager.io/cluster-issuer: letsencrypt-prod
 spec:
   ingressClassName: nginx
   tls:
