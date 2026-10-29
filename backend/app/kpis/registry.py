@@ -48,6 +48,7 @@ from app.services.warehouse_voucher_service import (
 )
 from app.modules.registry import MODULO_POR_CLAVE
 from app.utils.tiempo import ahora_negocio, hoy_negocio
+from app.kpis.criterios import no_es_checada
 from app.kpis.dimensiones import CATALOGO as CATALOGO_DE_DIMENSIONES, DIMENSION_POR_CLAVE as CATALOGO_POR_CLAVE
 
 # Que llave de `dimension_key` (JSONB, en `kpi_snapshot`) le corresponde a cada
@@ -393,6 +394,7 @@ def incidentes_resueltos_por_empleado_query(session, fecha_inicio, fecha_fin, fi
     fecha_col = func.date(Incident.incident_date)
     condiciones = [
         Incident.deletion_date.is_(None),
+        no_es_checada(),
         Incident.incident_date.isnot(None),
         fecha_col >= fecha_inicio,
         fecha_col <= fecha_fin,
@@ -454,6 +456,7 @@ def cancelaciones_por_empleado_query(session, fecha_inicio, fecha_fin, filtros_d
     fecha_col = func.date(Incident.close_date)
     condiciones = [
         Incident.deletion_date.is_(None),
+        no_es_checada(),
         Incident.incident_status == "cancelada",
         Incident.close_date.isnot(None),
         Incident.close_date != CIERRE_SENTINELA,
@@ -899,6 +902,7 @@ def incidencias_abiertas_por_empleado_query(session, fecha_inicio, fecha_fin, fi
     fecha_col = func.date(Incident.incident_date)
     condiciones = [
         Incident.deletion_date.is_(None),
+        no_es_checada(),
         Incident.incident_date.isnot(None),
         fecha_col >= fecha_inicio,
         fecha_col <= fecha_fin,
@@ -955,6 +959,7 @@ def incidencias_pendientes_query(session, fecha_inicio, fecha_fin, filtros_dimen
     )
     condicion_pendiente = and_(
         Incident.deletion_date.is_(None),
+        no_es_checada(),
         Incident.incident_date.isnot(None),
         func.date(Incident.incident_date) <= dias.c.dia,
         or_(
@@ -1227,6 +1232,7 @@ def incidencias_abiertas_vs_cerradas_query(session, fecha_inicio, fecha_fin, fil
         select(literal("abierta").label("estado"), fecha_apertura.label("fecha"), func.count())
         .where(
             Incident.deletion_date.is_(None),
+            no_es_checada(),
             Incident.incident_date.isnot(None),
             fecha_apertura >= fecha_inicio,
             fecha_apertura <= fecha_fin,
@@ -1238,6 +1244,7 @@ def incidencias_abiertas_vs_cerradas_query(session, fecha_inicio, fecha_fin, fil
         select(literal("cerrada").label("estado"), fecha_cierre.label("fecha"), func.count())
         .where(
             Incident.deletion_date.is_(None),
+            no_es_checada(),
             Incident.close_date.isnot(None),
             Incident.close_date != CIERRE_SENTINELA,
             fecha_cierre >= fecha_inicio,
