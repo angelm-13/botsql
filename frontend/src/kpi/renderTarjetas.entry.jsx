@@ -71,7 +71,7 @@ export function pintarPanel({ kpiCatalog, idsKpiSeleccionados = [], traducir } =
   const panelState = {
     editingWidgetId: null, colapsado: false, paso: 0, idsKpiSeleccionados, tipoGrafica: "barras",
     ...rangoInicialDelBorrador(), comparar: false, desfaseComparacion: null,
-    fechaInicioB: "", fechaFinB: "", empleadosSeleccionados: [], departamentosSeleccionados: [], coloresKpi: {},
+    fechaInicioB: "", fechaFinB: "", empleadosSeleccionados: [], coloresKpi: {},
     agruparPor: "entidad", umbralBajoStock: "", filas: 1,
   };
   return renderToStaticMarkup(
@@ -80,7 +80,6 @@ export function pintarPanel({ kpiCatalog, idsKpiSeleccionados = [], traducir } =
       onChangePanelState={() => {}}
       kpiCatalog={kpiCatalog}
       users={[]}
-      departments={[]}
       userLabel={userLabel}
       productLabel={productLabel}
       formatNumber={formatNumber}

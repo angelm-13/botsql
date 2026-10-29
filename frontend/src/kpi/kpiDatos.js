@@ -150,7 +150,7 @@ export function enriquecerCatalogo(catalogo, dimensiones) {
   });
 }
 
-/** Si el filtro por empleados (y el de departamentos) tiene sentido: solo cuando alguno de los
+/** Si el filtro por empleados tiene sentido: solo cuando alguno de los
  * KPIs elegidos desglosa por PERSONA (ids de usuario). Con un KPI por estado, por mesero o por
  * unidad el filtro compararia ids de otra cosa y devolveria vacio. */
 export function muestraFiltroDePersonas(kpiInfos) {

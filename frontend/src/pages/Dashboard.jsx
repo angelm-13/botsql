@@ -22,7 +22,7 @@ import useReordenarTarjetas, { sinColision } from "../components/kpi-widgets/use
 import {
   getAllKpiDashboard, createKpiDashboard, updateKpiDashboard, deleteKpiDashboard,
   getAllKpiDashboardWidget, createKpiDashboardWidget, updateKpiDashboardWidget, deleteKpiDashboardWidget, saveKpiWidgetOrdenTabla,
-  getAllKpiDefinition, getKpiDimensions, queryKpiSnapshot, queryKpiVivo, getUserOptions, getAllDepartment, getTeamOptions,
+  getAllKpiDefinition, getKpiDimensions, queryKpiSnapshot, queryKpiVivo, getUserOptions, getTeamOptions,
 } from "../api";
 import "../styles/kpi-widgets.css";
 import "../styles/kpi-editor.css";
@@ -156,8 +156,7 @@ function EmployeeAvatar({ size = "regular", color }) {
 // Reemplaza la caja siempre-abierta que tenian antes tanto el picker de
 // empleados como las variables sueltas -- mismo componente en los dos
 // lugares para que se vean y se comporten igual (ver su uso en
-// KpiWidgetPanel). El picker de departamento deliberadamente NO usa este
-// patron por ahora, se dejo tal cual estaba (chips simples siempre visibles).
+// KpiWidgetPanel).
 // `renderOptions(filtro)` (filtro ya normalizado via normalizarBusqueda, o ""
 // sin busqueda activa) es quien decide que mostrar -- cada uso filtra su
 // propia lista y arma el mensaje de "sin resultados", este componente solo
@@ -218,15 +217,6 @@ function todayIso() {
   return fechaLocalIso(new Date());
 }
 
-// SOLO VISUAL -- exhibicion, no filtra nada todavia. `departments` (el prop
-// real, via getAllDepartment) no trae mas que "General" en la practica hoy;
-// esta lista fija es puramente de aparador para que el picker no se vea
-// vacio, NO esta conectada a Permission.id_department ni a ninguna tabla real.
-// No confundir con una fila de `department`: no hay migracion, no hay
-// id_department real detras de estos nombres. Cuando haya un pedido real de
-// filtrar por departamento, esto se reemplaza por datos de verdad.
-const DEPARTAMENTOS_VISUALES = ["RRHH", "Contabilidad", "Producción", "Ventas", "Sistemas/TI", "Administración", "Logística"];
-
 // El panel "Agregar grafico" es permanente (ya no se monta/desmonta al
 // abrir/cerrar), asi que su borrador ya no puede vivir en un useState propio
 // -se perderia entero al cambiar de tablero-. Dashboard() guarda uno de
@@ -252,7 +242,6 @@ function defaultPanelState() {
     fechaInicioB: "",
     fechaFinB: "",
     empleadosSeleccionados: [],
-    departamentosSeleccionados: [],
     // Ids de `team` (como texto). Filtra los equipos de un KPI por equipo y, en uno por persona, deja a quienes
     // estaban en esos equipos cada dia. Con equipos elegidos desaparece la fila "Sin equipo".
     equiposSeleccionados: [],
@@ -412,7 +401,6 @@ export default function Dashboard() {
 
   const [kpiCatalog, setKpiCatalog] = useState([]);
   const [users, setUsers] = useState([]);
-  const [departments, setDepartments] = useState([]);
   const [teams, setTeams] = useState([]);
 
   // Borrador del panel "Agregar grafico", uno por tablero (`id_kpi_dashboard`):
@@ -728,7 +716,6 @@ export default function Dashboard() {
     // Solo id+nombre, sin pedir el catalogo de RH completo (`GET /user/` exige permiso de seguridad):
     // sirve al filtro por empleados. Los nombres de las graficas los manda el backend.
     getUserOptions().then((data) => { if (!cancelado) setUsers(listOf(data)); }).catch(() => { if (!cancelado) setUsers([]); });
-    getAllDepartment({ per_page: 500 }).then((data) => { if (!cancelado) setDepartments(listOf(data)); }).catch(() => { if (!cancelado) setDepartments([]); });
     // Solo id+nombre de los equipos vigentes, sin pedir `GET /team/` (exige el modulo de seguridad).
     getTeamOptions().then((data) => { if (!cancelado) setTeams(listOf(data)); }).catch(() => { if (!cancelado) setTeams([]); });
     return () => { cancelado = true; };
@@ -993,7 +980,6 @@ export default function Dashboard() {
               onChangePanelState={(patch) => updatePanelState(activeId, patch)}
               kpiCatalog={kpiCatalog}
               users={users}
-              departments={departments}
               teams={teams}
               userLabel={userLabel}
               productLabel={productLabel}
@@ -1109,7 +1095,6 @@ function useDatosDeWidget({ widget, kpiCatalog, onReady }) {
   const fechaInicioB = parametros.fecha_inicio_b;
   const fechaFinB = parametros.fecha_fin_b;
   const empleadosKey = Array.isArray(parametros.empleados) ? parametros.empleados.join(",") : "";
-  const departamentosKey = Array.isArray(parametros.id_departments) ? parametros.id_departments.join(",") : "";
   const equiposKey = Array.isArray(parametros.id_teams) ? parametros.id_teams.join(",") : "";
   const agruparPor = parametros.agrupar_por === "periodo" ? "periodo" : "entidad";
   // Un widget "tabla" solo tiene sentido con un unico KPI "vivo" (hoy,
@@ -1172,7 +1157,6 @@ function useDatosDeWidget({ widget, kpiCatalog, onReady }) {
           paramsComunes.fecha_fin_b = fechaFinB;
         }
         if (empleadosKey) paramsComunes.empleados = empleadosKey;
-        if (departamentosKey) paramsComunes.id_departments = departamentosKey;
         if (equiposKey) paramsComunes.id_teams = equiposKey;
         if (agruparPor === "periodo") paramsComunes.agrupar_por = agruparPor;
         const resultados = await Promise.all(
@@ -1192,7 +1176,7 @@ function useDatosDeWidget({ widget, kpiCatalog, onReady }) {
   // `idsKey` es el proxy estable de `idsUsados` (un array nuevo cada
   // render); `idsUsados` en si mismo nunca deberia ir en las dependencias.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idsKey, esTabla, esTablaVivo, fechaInicio, fechaFin, fechaInicioB, fechaFinB, empleadosKey, departamentosKey, equiposKey, agruparPor]);
+  }, [idsKey, esTabla, esTablaVivo, fechaInicio, fechaFin, fechaInicioB, fechaFinB, empleadosKey, equiposKey, agruparPor]);
 
   return { snapshots, loading, error, vivoItems: SIN_RENGLONES, vivoTotal: 0, cargarVivo, onListoVivo, guardarOrdenTabla, kpiInfos, idsUsados, esTablaVivo };
 }
@@ -1422,10 +1406,9 @@ export function KpiWidgetCard({
 // acompana al valor principal, no la comparacion en si (esa ya la muestra el
 // delta de al lado). Devuelve una serie de numeros lista para NumeroWidget, o
 // null mientras carga / si no hay al menos 2 puntos que dibujar.
-function useTendenciaKpi({ activo, idKpiDefinition, fechaInicio, fechaFin, empleados, idDepartments, idTeams }) {
+function useTendenciaKpi({ activo, idKpiDefinition, fechaInicio, fechaFin, empleados, idTeams }) {
   const [serie, setSerie] = useState(null);
   const empleadosKey = Array.isArray(empleados) ? empleados.join(",") : "";
-  const idDepartmentsKey = Array.isArray(idDepartments) ? idDepartments.join(",") : "";
   const idTeamsKey = Array.isArray(idTeams) ? idTeams.join(",") : "";
 
   useEffect(() => {
@@ -1433,13 +1416,12 @@ function useTendenciaKpi({ activo, idKpiDefinition, fechaInicio, fechaFin, emple
     if (!activo || !idKpiDefinition || !fechaInicio || !fechaFin) { setSerie(null); return undefined; }
     const params = { id_kpi_definition: idKpiDefinition, fecha_inicio: fechaInicio, fecha_fin: fechaFin, agrupar_por: "periodo" };
     if (empleadosKey) params.empleados = empleadosKey;
-    if (idDepartmentsKey) params.id_departments = idDepartmentsKey;
     if (idTeamsKey) params.id_teams = idTeamsKey;
     queryKpiSnapshot(params)
       .then((resultado) => { if (!cancelado) setSerie(tendenciaDeSnapshot(resultado)); })
       .catch(() => { if (!cancelado) setSerie([]); });
     return () => { cancelado = true; };
-  }, [activo, idKpiDefinition, fechaInicio, fechaFin, empleadosKey, idDepartmentsKey, idTeamsKey]);
+  }, [activo, idKpiDefinition, fechaInicio, fechaFin, empleadosKey, idTeamsKey]);
 
   return serie && serie.length >= 2 ? serie : null;
 }
@@ -1457,7 +1439,6 @@ function KpiNumero({ widget, snapshot, kpiInfo, formatNumber, tx, animar }) {
     fechaInicio: parametros.fecha_inicio,
     fechaFin: parametros.fecha_fin,
     empleados: parametros.empleados,
-    idDepartments: parametros.id_departments,
     idTeams: parametros.id_teams,
   });
   const props = propsNumero({
@@ -1640,7 +1621,7 @@ function tiposDeGraficaPermitidos(kpiInfos) {
   return tiposPermitidosPorKpi(kpiInfos, CHART_TYPES.map((opt) => opt.value));
 }
 
-export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, departments, teams = [], userLabel, productLabel, formatNumber, onCancel, onSave, onAbierto, t, tx }) {
+export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, users, teams = [], userLabel, productLabel, formatNumber, onCancel, onSave, onAbierto, t, tx }) {
   const {
     editingWidgetId,
     colapsado,
@@ -1654,7 +1635,6 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
     fechaInicioB,
     fechaFinB,
     empleadosSeleccionados,
-    departamentosSeleccionados,
     equiposSeleccionados = [],
     titulo = "",
     coloresKpi,
@@ -1686,13 +1666,13 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
     .map((id) => kpiCatalog.find((kpi) => String(kpi.id_kpi_definition) === id))
     .filter(Boolean);
   const primeraDimension = kpisSeleccionadosInfo[0]?.dimensiones?.[0];
-  // El filtro por empleados/departamentos solo aplica a KPIs que desglosan por persona (ids de usuario).
+  // El filtro por empleados solo aplica a KPIs que desglosan por persona (ids de usuario).
   const mostrarFiltroDePersonas = muestraFiltroDePersonas(kpisSeleccionadosInfo);
   // El de equipos aplica a KPIs por equipo y por persona; el mensaje de la fila "Sin equipo" solo a los por equipo.
   const mostrarFiltroDeEquipos = muestraFiltroDeEquipos(kpisSeleccionadosInfo) && teams.length > 0;
   const kpiPorEquipoElegido = desglosaPorEquipo(kpisSeleccionadosInfo);
   // Si ningun filtro aplica a lo elegido (un KPI por estado, por mesero o global), el paso no se queda en blanco.
-  const hayAlgunFiltro = (mostrarFiltroDePersonas && (users.length > 0 || departments.length > 0)) || mostrarFiltroDeEquipos;
+  const hayAlgunFiltro = (mostrarFiltroDePersonas && users.length > 0) || mostrarFiltroDeEquipos;
   // Lo que se desglosa, con el nombre que le da cada KPI ("Responsable", "Tecnico"...).
   // Las dos etiquetas de siempre conservan su traduccion.
   const etiquetaDeAgrupar = etiquetasDeDimension(kpisSeleccionadosInfo)
@@ -1809,14 +1789,6 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
       equiposSeleccionados: equiposSeleccionados.includes(idEquipo)
         ? equiposSeleccionados.filter((item) => item !== idEquipo)
         : [...equiposSeleccionados, idEquipo],
-    });
-  }
-
-  function toggleDepartamento(idDepartamento) {
-    onChangePanelState({
-      departamentosSeleccionados: departamentosSeleccionados.includes(idDepartamento)
-        ? departamentosSeleccionados.filter((item) => item !== idDepartamento)
-        : [...departamentosSeleccionados, idDepartamento],
     });
   }
 
@@ -2171,36 +2143,6 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
                     );
                   }}
                 />
-              </div>
-            )}
-
-            {mostrarFiltroDePersonas && departments.length > 0 && (
-              <div className="kpi-department-picker">
-                <span className="kpi-department-picker-label">{tx("departments_filter", "Filtrar por departamento (opcional)")}</span>
-                <div className="kpi-department-list">
-                  {departments.map((department) => (
-                    <label className="kpi-department-chip" key={department.id_department}>
-                      <input
-                        type="checkbox"
-                        checked={departamentosSeleccionados.includes(String(department.id_department))}
-                        onChange={() => toggleDepartamento(String(department.id_department))}
-                      />
-                      <span>{department.department_description || `#${department.id_department}`}</span>
-                    </label>
-                  ))}
-                  {/* SOLO VISUAL: ver DEPARTAMENTOS_VISUALES arriba -- no
-                      filtran nada, no estan conectados a
-                      Permission.id_department ni a ninguna tabla real. */}
-                  {DEPARTAMENTOS_VISUALES.map((nombre) => (
-                    <span
-                      className="kpi-department-chip visual-only"
-                      key={nombre}
-                      title={tx("department_visual_only", "Próximamente: todavía no filtra datos reales")}
-                    >
-                      {nombre}
-                    </span>
-                  ))}
-                </div>
               </div>
             )}
 

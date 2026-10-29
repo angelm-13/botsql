@@ -398,7 +398,7 @@ const BORRADOR = {
   tipoGrafica: "barras", idsKpiSeleccionados: ["3", "4"],
   fechaInicio: "2026-08-01", fechaFin: "2026-08-31",
   comparar: true, fechaInicioB: "2026-07-01", fechaFinB: "2026-07-31",
-  empleadosSeleccionados: ["5", "7"], departamentosSeleccionados: ["2"],
+  empleadosSeleccionados: ["5", "7"],
   coloresKpi: { 3: "#111111", 99: "#222222" }, agruparPor: "periodo", umbralBajoStock: "12",
   rangoRelativo: "personalizado",
 };
@@ -407,12 +407,12 @@ test("armarParametros: lo mismo que guardaba el editor antes (numeros, colores v
   assert.deepEqual(armarParametros(BORRADOR, { tieneBajoStock: true }), {
     fecha_inicio: "2026-08-01", fecha_fin: "2026-08-31",
     fecha_inicio_b: "2026-07-01", fecha_fin_b: "2026-07-31",
-    empleados: [5, 7], id_departments: [2],
+    empleados: [5, 7],
     colores_kpi: { 3: "#111111" }, // el 99 ya no esta seleccionado: no se guarda huerfano
     agrupar_por: "periodo", umbral_bajo_stock: 12,
   });
   // Sin bajo stock el umbral no se guarda; sin comparar no hay rango B.
-  const simple = armarParametros({ ...BORRADOR, comparar: false, agruparPor: "entidad", empleadosSeleccionados: [], departamentosSeleccionados: [], coloresKpi: {} }, {});
+  const simple = armarParametros({ ...BORRADOR, comparar: false, agruparPor: "entidad", empleadosSeleccionados: [], coloresKpi: {} }, {});
   assert.deepEqual(simple, { fecha_inicio: "2026-08-01", fecha_fin: "2026-08-31" });
 });
 
@@ -470,7 +470,7 @@ const WIDGETS_VIEJOS = [
     id_kpi_dashboard_widget: 2, tipo_grafica: "linea", ids_kpi_definition: [3, 4],
     parametros: {
       fecha_inicio: "2026-06-01", fecha_fin: "2026-06-30", fecha_inicio_b: "2026-05-01", fecha_fin_b: "2026-05-31",
-      empleados: [5, 7], id_departments: [2], colores_kpi: { 3: "#2a78d6", 4: "#eb6834" }, agrupar_por: "periodo",
+      empleados: [5, 7], colores_kpi: { 3: "#2a78d6", 4: "#eb6834" }, agrupar_por: "periodo",
     },
   },
   { id_kpi_dashboard_widget: 3, tipo_grafica: "numero", ids_kpi_definition: [1], parametros: { fecha_inicio: "2026-09-01", fecha_fin: "2026-09-15", umbral_bajo_stock: 10 } },

@@ -9,7 +9,7 @@ import { armarParametros, estadoDeWidget, widgetDeBorrador } from "./kpiParametr
 const BORRADOR = {
   tipoGrafica: "barras", idsKpiSeleccionados: ["3"],
   fechaInicio: "2026-08-01", fechaFin: "2026-08-31", comparar: false, fechaInicioB: "", fechaFinB: "",
-  empleadosSeleccionados: [], departamentosSeleccionados: [], equiposSeleccionados: [],
+  empleadosSeleccionados: [], equiposSeleccionados: [],
   coloresKpi: {}, agruparPor: "entidad", umbralBajoStock: "", rangoRelativo: "personalizado",
 };
 const HOY = new Date(2026, 8, 29);
@@ -75,11 +75,11 @@ test("un id_teams guardado que no es una lista se ignora en vez de romper el edi
   assert.deepEqual(estadoDeWidget(raro, [], HOY).equiposSeleccionados, []);
 });
 
-test("conservar el filtro no pisa los otros: empleados, departamentos y equipos conviven", () => {
+test("conservar el filtro no pisa al otro: empleados y equipos conviven", () => {
   const parametros = armarParametros({
-    ...BORRADOR, empleadosSeleccionados: ["5"], departamentosSeleccionados: ["2"], equiposSeleccionados: ["4"],
+    ...BORRADOR, empleadosSeleccionados: ["5"], equiposSeleccionados: ["4"],
   }, { hoy: HOY });
-  assert.deepEqual([parametros.empleados, parametros.id_departments, parametros.id_teams], [[5], [2], [4]]);
+  assert.deepEqual([parametros.empleados, parametros.id_teams], [[5], [4]]);
 });
 
 test("una tabla (KPI vivo) son datos de ahora: no guarda ni inventa un filtro de equipos", () => {
@@ -122,7 +122,7 @@ test("Dashboard.jsx manda id_teams en cada llamada a /kpi_snapshot/query", () =>
   assert.match(fuente, /paramsComunes\.id_teams = equiposKey/);
   assert.match(fuente, /params\.id_teams = idTeamsKey/);
   // El efecto de la tarjeta se vuelve a correr si cambia el filtro.
-  assert.match(fuente, /departamentosKey, equiposKey, agruparPor\]/);
+  assert.match(fuente, /empleadosKey, equiposKey, agruparPor\]/);
 });
 
 // --- textos en los cuatro idiomas -----------------------------------------------------------

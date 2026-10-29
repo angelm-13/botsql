@@ -152,9 +152,7 @@
 .kpi-shortcut-button:hover{background:#eef2f6;border-color:#173b66}
 .kpi-shortcut-button.active{background:#eef4fb;border-color:#173b66;color:#173b66}
 
-.kpi-employee-picker,.kpi-department-picker,.kpi-team-picker{display:flex;flex-direction:column;gap:8px;margin-top:6px}
-.kpi-department-picker-label{font-weight:800;color:#334155;font-size:13px}
-.kpi-department-list{display:flex;flex-wrap:wrap;gap:6px;max-height:160px;overflow:auto;padding:4px}
+.kpi-employee-picker,.kpi-team-picker{display:flex;flex-direction:column;gap:8px;margin-top:6px}
 .kpi-employee-list{display:flex;flex-wrap:wrap;gap:6px}
 
 /* Barra desplegable reutilizable (KpiDropdownPicker en Dashboard.jsx): boton
@@ -176,12 +174,9 @@
    fuera de este popover se quedan como flex-wrap normal. */
 .kpi-dropdown-picker-menu .kpi-employee-list,
 .kpi-dropdown-picker-menu .kpi-chip-option-group{flex-direction:column;flex-wrap:nowrap;align-items:flex-start}
-.kpi-department-chip{display:flex;align-items:center;gap:6px;border:1px solid #cbd5e1;border-radius:999px;padding:6px 12px;font-size:13px;font-weight:700;color:#334155;cursor:pointer}
-.kpi-department-chip input{margin:0}
 /* Solo exhibicion (ver DEPARTAMENTOS_VISUALES en Dashboard.jsx): atenuado y
    sin cursor de interaccion, para que se note a simple vista que no es un
    filtro real todavia. */
-.kpi-department-chip.visual-only{cursor:default;color:#94a3b8;border-style:dashed}
 
 /* Chip de empleado: pildora compacta (sin checkbox visible, boton simple) --
    varias por fila en vez de una columna apilada. El acento de color por

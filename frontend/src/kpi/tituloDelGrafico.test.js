@@ -10,7 +10,7 @@ import {
 const BORRADOR = {
   tipoGrafica: "barras", idsKpiSeleccionados: ["3"],
   fechaInicio: "2026-08-01", fechaFin: "2026-08-31", comparar: false, fechaInicioB: "", fechaFinB: "",
-  empleadosSeleccionados: [], departamentosSeleccionados: [], equiposSeleccionados: [],
+  empleadosSeleccionados: [], equiposSeleccionados: [],
   coloresKpi: {}, agruparPor: "entidad", umbralBajoStock: "", rangoRelativo: "personalizado", titulo: "",
 };
 const HOY = new Date(2026, 8, 29);
