@@ -46,6 +46,9 @@ import { NO_CALCULADO, SIN_DATOS, estadoDeDatos } from "../kpi/kpiEstado.js";
 import { frescuraDeWidget } from "../kpi/kpiFrescura.js";
 import { descripcionDeGrafica } from "../kpi/kpiAccesibilidad.js";
 import {
+  cambiaLaComparacion, esDeFechasFijas, parametrosConRangoRelativo, rangoRelativoPorDuracion,
+} from "../kpi/kpiFechasFijas.js";
+import {
   DESFASES_DE_COMPARACION, ETIQUETA_RANGO_POR_OMISION, RANGOS_RELATIVOS, RANGO_PERSONALIZADO, fechaLocalIso,
   parametrosEfectivos, periodoAnterior, rangoDesfasado, resolverRangoRelativo,
 } from "../kpi/kpiRango.js";
@@ -801,6 +804,25 @@ export default function Dashboard() {
     abrirEditor(activeId, estadoDeWidget(widget, kpiCatalog));
   }
 
+  // Pasa un widget de fechas fijas a un rango relativo, a pedido de la persona y solo ese widget: el resto de sus
+  // parametros se conserva (ver kpi/kpiFechasFijas.js).
+  async function handleConvertirARelativo(widget, clave) {
+    const nombreRango = tx(`range_${clave}`, ETIQUETA_RANGO_POR_OMISION[clave]);
+    const aviso = cambiaLaComparacion(widget.parametros)
+      ? ` ${tx("convert_comparison_note", "Su comparación de fechas fijas pasará a ser contra el periodo anterior.")}`
+      : "";
+    const pregunta = `${tx("convert_to_relative_confirm", "¿Cambiar este gráfico a")} «${nombreRango}»? ${tx("convert_to_relative_confirm_tail", "Se calculará siempre hasta hoy.")}${aviso}`;
+    if (!(await dialogo.confirmar(pregunta))) return;
+    try {
+      await updateKpiDashboardWidget(widget.id_kpi_dashboard_widget, {
+        parametros: parametrosConRangoRelativo(widget.parametros, clave),
+      });
+      await loadWidgets(activeId, { silencioso: true });
+    } catch (error) {
+      notifyError(error);
+    }
+  }
+
   async function handleSaveWidget(payload, editingWidgetId) {
     let creado = null;
     if (editingWidgetId) {
@@ -924,6 +946,7 @@ export default function Dashboard() {
                   formatNumber={formatNumber}
                   onEdit={() => handleEditWidget(widget)}
                   onDelete={() => handleDeleteWidget(widget)}
+                  onConvertirARelativo={(clave) => handleConvertirARelativo(widget, clave)}
                   onReady={handleWidgetReady}
                   esNuevo={widget.id_kpi_dashboard_widget === idWidgetNuevo}
                   animar={animarWidgets}
@@ -1319,7 +1342,7 @@ export function MarcoDeEjemplo({ tx, children }) {
 
 // eslint-disable-next-line react-refresh/only-export-components
 export function KpiWidgetCard({
-  widget, kpiCatalog, userLabel, productLabel, formatNumber, onEdit, onDelete, onReady, t, tx, dragHandleProps, isDragging, animar, esNuevo,
+  widget, kpiCatalog, userLabel, productLabel, formatNumber, onEdit, onDelete, onConvertirARelativo, onReady, t, tx, dragHandleProps, isDragging, animar, esNuevo,
   filtroResponsable, onFiltrarResponsable, onQuitarFiltroResponsable,
 }) {
   const datos = useDatosDeWidget({ widget, kpiCatalog, onReady });
@@ -1332,6 +1355,9 @@ export function KpiWidgetCard({
 
   // Una tabla en vivo no sale de `kpi_snapshot`: ya dice "En vivo" y no tiene `computed_at`.
   const frescura = esTablaVivo ? null : frescuraDeWidget(datos.snapshots);
+  // Un widget guardado con fechas absolutas no se mueve con el tiempo: se marca y se ofrece pasarlo a relativo.
+  const fechasFijas = esDeFechasFijas(widget, kpiInfos);
+  const rangoDeducido = fechasFijas ? rangoRelativoPorDuracion(parametros.fecha_inicio, parametros.fecha_fin) : null;
   const chartTypeLabel = CHART_TYPES.find((opt) => opt.value === widget.tipo_grafica)?.label || widget.tipo_grafica;
   // "30 días · 2026-08-31 → 2026-09-29": el nombre del rango solo si el widget
   // lo trae; uno de fechas fijas se ve como siempre. Va ANTES de rangoTexto:
@@ -1367,6 +1393,30 @@ export function KpiWidgetCard({
           <p className="kpi-widget-meta">{tx(`chart_type_${widget.tipo_grafica}`, chartTypeLabel)}</p>
           <p className="kpi-widget-meta">{rangoTexto}</p>
           {rangoBTexto && <p className="kpi-widget-meta">{tx("vs_label", "vs.")} {rangoBTexto}</p>}
+          {fechasFijas && (
+            <p className="kpi-widget-meta kpi-widget-fechas-fijas">
+              <span title={tx("fixed_dates_hint", "Este gráfico se quedó con las fechas con las que se guardó: no se mueve con el tiempo.")}>
+                {tx("fixed_dates", "Fechas fijas")}
+              </span>
+              {onConvertirARelativo && (rangoDeducido ? (
+                <button type="button" className="kpi-fechas-fijas-accion" onClick={() => onConvertirARelativo(rangoDeducido)}>
+                  {tx("convert_to_relative", "Hacer relativo")}: {tx(`range_${rangoDeducido}`, ETIQUETA_RANGO_POR_OMISION[rangoDeducido])}
+                </button>
+              ) : (
+                <select
+                  className="kpi-fechas-fijas-accion"
+                  value=""
+                  aria-label={tx("convert_to_relative_pick", "Convertir a relativo…")}
+                  onChange={(event) => event.target.value && onConvertirARelativo(event.target.value)}
+                >
+                  <option value="">{tx("convert_to_relative_pick", "Convertir a relativo…")}</option>
+                  {RANGOS_RELATIVOS.map((clave) => (
+                    <option key={clave} value={clave}>{tx(`range_${clave}`, ETIQUETA_RANGO_POR_OMISION[clave])}</option>
+                  ))}
+                </select>
+              ))}
+            </p>
+          )}
           {frescura && (
             <p
               className={`kpi-widget-meta kpi-widget-actualizado ${frescura.atrasado ? "atrasado" : ""}`.trim()}

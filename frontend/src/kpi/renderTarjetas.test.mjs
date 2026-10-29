@@ -87,6 +87,15 @@ test("el encabezado dice el rango: fechas tal cual en un widget viejo, y el nomb
   assert.ok(tabla.includes("En vivo"));
 });
 
+test("un widget de fechas fijas se marca; uno relativo, una tabla en vivo y uno sin fechas no", () => {
+  const marca = (widget) => pintarTarjeta({ widget, kpiCatalog: CATALOGO }).includes("Fechas fijas");
+  assert.equal(marca(widgetDe("barras", PARAMETROS["viejo, fechas absolutas"])), true);
+  assert.equal(marca(widgetDe("barras", PARAMETROS["viejo, con comparacion"])), true);
+  assert.equal(marca(widgetDe("barras", PARAMETROS["rango relativo"])), false);
+  assert.equal(marca(widgetDe("tabla", {})), false);
+  assert.equal(marca(widgetDe("barras", PARAMETROS["sin fechas"])), false);
+});
+
 // --- cuerpo con datos ---------------------------------------------------
 const SNAPSHOT = { rango_a: { total: 14, por_empleado: { 5: 10, 7: 4 }, por_periodo: {} }, rango_b: null };
 const SNAPSHOT_COMPARADO = { rango_a: { total: 14, por_empleado: { 5: 10, 7: 4 }, por_periodo: {} }, rango_b: { total: 20, por_empleado: { 5: 8, 9: 12 }, por_periodo: {} } };
