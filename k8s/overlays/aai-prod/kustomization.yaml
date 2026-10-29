@@ -1,9 +1,8 @@
 # Overlay de aai-prod (ERP, instalación limpia). Dominio: aai.torredigital.mx
 # (A -> master1, verificado con nslookup 2026-10-29).
 #
-# PENDIENTE: REEMPLAZAR_SHA -> el SHA del commit del bot
-# `deploy(tyakxa-dev): actualizar a <sha>` posterior al build que ya incluya a
-# aai/prod en deploy/clients.yaml (el frontend lleva <sha>-aai-prod).
+# Tags: 4a0dba7 (build en verde que ya incluye aai/prod en deploy/clients.yaml;
+# el frontend lleva 4a0dba7-aai-prod).
 #
 # UN SOLO origen: front + API bajo /api en el mismo dominio; por eso el Ingress
 # del base se elimina (primer parche) y se usa ingress-single-origin.yaml.
@@ -21,16 +20,16 @@ namespace: aai-prod
 images:
   - name: DB_INIT_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-db-init
-    newTag: REEMPLAZAR_SHA
+    newTag: 4a0dba7
   - name: BACKEND_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-backend
-    newTag: REEMPLAZAR_SHA
+    newTag: 4a0dba7
   - name: WORKER_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-worker
-    newTag: REEMPLAZAR_SHA
+    newTag: 4a0dba7
   - name: FRONTEND_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-frontend
-    newTag: REEMPLAZAR_SHA-aai-prod
+    newTag: 4a0dba7-aai-prod
 
 resources:
   - ../../base
