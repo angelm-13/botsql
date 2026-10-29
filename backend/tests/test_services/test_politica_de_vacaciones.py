@@ -120,6 +120,10 @@ class TestAvisos(_ConPolitica):
         self.assertEqual(2, avisar_vacaciones_por_vencer(date(2026, 12, 31)))   # 60 dias antes del 2027-03-01
         self.assertEqual(2, avisar_vacaciones_por_vencer(date(2027, 1, 30)))    # 30 dias antes
         self.assertEqual([ANA, ANA, 80, 80], self._avisos())
+        # created_by es llave a user en Postgres (SQLite no la revisa): sin el, el aviso no se guarda.
+        with transaction_context() as db:
+            self.assertTrue(all(n.created_by == n.id_user_recipient for n in db.query(Notification)
+                                .filter_by(notification_type="vacation_expiring")))
 
     def test_sin_avisos_si_se_acumulan(self):
         self.politica("vacation_unused_policy", 1)

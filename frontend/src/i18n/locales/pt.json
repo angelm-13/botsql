@@ -3664,7 +3664,10 @@
       "vacation_unused_policy": "Dias não usados ao vencer",
       "vacation_warning_days_1": "Primeiro aviso antes de vencer (dias; 0 = sem aviso)",
       "vacation_warning_days_2": "Segundo aviso antes de vencer (dias; 0 = sem aviso)",
-      "attendance_correction_limit": "Correções de ponto por funcionário ao mês"
+      "attendance_correction_limit": "Correções de ponto por funcionário ao mês",
+      "attendance_warning_entry_minutes": "Aviso ao funcionário sem marcação de entrada (minutos depois)",
+      "attendance_warning_supervisor_minutes": "Aviso ao supervisor se continuar sem entrada (minutos)",
+      "attendance_warning_exit_minutes": "Aviso ao funcionário sem marcação de saída (minutos depois)"
     },
     "tab_options": "Opções de cálculo",
     "tab_vacations": "Tabela de férias",

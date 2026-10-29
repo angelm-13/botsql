@@ -58,6 +58,7 @@ from app.models import (PayrollConcept, PayrollDetail, PayrollIsrBracket, Payrol
                         PayrollParameter, PayrollPeriod, User)
 from app.services import payroll_tax_rules as ley
 from app.services.attendance_correction_service import POLITICA_DE_CHECADAS
+from app.services.avisos_de_checada import POLITICA_DE_AVISOS
 from app.services.politica_de_vacaciones import POLITICA as POLITICA_DE_VACACIONES
 from app.models.session import transaction_context
 from app.utils.errors import AppError
@@ -114,9 +115,10 @@ TABLA_DE_VACACIONES = {
 }
 # Politica de vacaciones (services/politica_de_vacaciones.py): como se ganan, si
 # se adelantan, cuanto duran, que pasa con lo no usado y cuando se avisa.
-# y el limite de correcciones de checadas (services/attendance_correction_service.py).
+# el limite de correcciones de checadas (services/attendance_correction_service.py) y
+# los minutos de los avisos de checada (services/avisos_de_checada.py).
 # clave -> (valor por omision, valores permitidos); los valida payroll_parameter_service.
-POLITICAS = {**POLITICA_DE_VACACIONES, **POLITICA_DE_CHECADAS}
+POLITICAS = {**POLITICA_DE_VACACIONES, **POLITICA_DE_CHECADAS, **POLITICA_DE_AVISOS}
 PARAMETROS_OPCIONALES = OPCIONES + tuple(TABLA_DE_VACACIONES) + tuple(POLITICAS)
 
 

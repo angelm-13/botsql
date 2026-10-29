@@ -58,6 +58,10 @@ ALTER TABLE notification ADD CONSTRAINT notification_type_check CHECK (
         'leave_reviewed',
         -- Vacaciones por vencer (politica de vacaciones, 2026-10-28).
         'vacation_expiring',
+        -- Avisos de checada que falta (punto 3 de la revision contable, 2026-10-29).
+        'attendance_missing_check_in',
+        'attendance_missing_check_in_team',
+        'attendance_missing_check_out',
         'custom'
     )
 );

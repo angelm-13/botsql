@@ -380,8 +380,11 @@ def avisar_vacaciones_por_vencer(hoy: date | None = None) -> int:
                    f"{bloque['expires_on']} (en {faltan} días). Si no se toman, se {que}.")
         for destinatario in {saldo["id_user"], jefes.get(saldo["id_user"])} - {None}:
             try:
+                # created_by es llave a user: sin el, Postgres rechaza el aviso (SQLite no lo
+                # revisa). Lo escribe el sistema; queda a nombre de quien lo recibe, como el
+                # aviso de vales vencidos.
                 create_notification(id_user_recipient=destinatario, notification_type="vacation_expiring",
-                                    title="Vacaciones por vencer", message=mensaje,
+                                    title="Vacaciones por vencer", message=mensaje, created_by=destinatario,
                                     target_entity="employee_leave", target_id=None)
                 enviados += 1
             except Exception:

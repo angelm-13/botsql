@@ -53,4 +53,9 @@ BEAT_SCHEDULE = {
         "task": "app.jobs.tasks_rh.notify_expiring_vacations",
         "schedule": crontab(hour=8, minute=0),
     },
+    # RH: quien no ha checado entrada o salida (minutos de aviso en Ajustes de nomina).
+    "rh-missing-checks-every-five-minutes": {
+        "task": "app.jobs.tasks_rh.notify_missing_checks",
+        "schedule": crontab(minute="*/5"),
+    },
 }

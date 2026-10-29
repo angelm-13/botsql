@@ -3658,7 +3658,10 @@
       "vacation_unused_policy": "Ungenutzte Tage bei Verfall",
       "vacation_warning_days_1": "Erste Warnung vor Verfall (Tage; 0 = keine)",
       "vacation_warning_days_2": "Zweite Warnung vor Verfall (Tage; 0 = keine)",
-      "attendance_correction_limit": "Stempelkorrekturen pro Person und Monat"
+      "attendance_correction_limit": "Stempelkorrekturen pro Person und Monat",
+      "attendance_warning_entry_minutes": "Hinweis an die Person ohne Kommen-Stempel (Minuten danach)",
+      "attendance_warning_supervisor_minutes": "Hinweis an Vorgesetzte, wenn weiter kein Kommen-Stempel (Minuten)",
+      "attendance_warning_exit_minutes": "Hinweis an die Person ohne Gehen-Stempel (Minuten danach)"
     },
     "tab_options": "Berechnungsoptionen",
     "tab_vacations": "Urlaubstabelle",

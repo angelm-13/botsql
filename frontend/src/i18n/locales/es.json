@@ -5091,7 +5091,10 @@
       "vacation_unused_policy": "Días no usados al vencer",
       "vacation_warning_days_1": "Primer aviso antes de vencer (días; 0 = sin aviso)",
       "vacation_warning_days_2": "Segundo aviso antes de vencer (días; 0 = sin aviso)",
-      "attendance_correction_limit": "Correcciones de checadas por empleado al mes"
+      "attendance_correction_limit": "Correcciones de checadas por empleado al mes",
+      "attendance_warning_entry_minutes": "Aviso al empleado si no checa entrada (minutos después)",
+      "attendance_warning_supervisor_minutes": "Aviso al supervisor si sigue sin checar entrada (minutos)",
+      "attendance_warning_exit_minutes": "Aviso al empleado si no checa salida (minutos después)"
     },
     "tab_options": "Opciones de cálculo",
     "tab_vacations": "Tabla de vacaciones",

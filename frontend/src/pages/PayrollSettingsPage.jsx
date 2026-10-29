@@ -28,6 +28,9 @@ const PARAMETROS = [
   ["option_subsidy_month_days", "option", "options"],
   // Correcciones de checadas por empleado y mes (services/attendance_correction_service.py).
   ["attendance_correction_limit", "count", "options"],
+  // Minutos de los avisos de checada que falta (services/avisos_de_checada.py); 0 = sin aviso.
+  ["attendance_warning_entry_minutes", "minutes", "options"], ["attendance_warning_supervisor_minutes", "minutes", "options"],
+  ["attendance_warning_exit_minutes", "minutes", "options"],
   // Tabla de vacaciones de la empresa; sin capturar, la de la ley.
   ["vacation_days_year_1", "days", "vacations"], ["vacation_days_year_2", "days", "vacations"],
   ["vacation_days_year_3", "days", "vacations"], ["vacation_days_year_4", "days", "vacations"],
@@ -55,6 +58,7 @@ const POLITICA_POR_OMISION = {
   vacation_accrual_monthly: 0, vacation_advance_max_days: 0, vacation_expiry_months: 12,
   vacation_unused_policy: 0, vacation_warning_days_1: 60, vacation_warning_days_2: 30,
   attendance_correction_limit: 2,
+  attendance_warning_entry_minutes: 15, attendance_warning_supervisor_minutes: 30, attendance_warning_exit_minutes: 30,
 };
 const PESTANAS = ["parameters", "options", "vacations", "vacation_policy", "isr"];
 const PERIODICIDADES = [1, 7, 10, 15, 30];
@@ -92,6 +96,7 @@ export default function PayrollSettingsPage() {
 
   const money = (v) => new Intl.NumberFormat(lang, { style: "currency", currency: "MXN" }).format(Number(v || 0));
   const formato = (unidad, v, clave) => {
+    if (unidad === "minutes") return `${Number(v)} min`;
     if (unidad === "choice") return t(`payroll_settings.choice_${clave}_${Number(v)}`);
     if (unidad === "money") return money(v);
     if (unidad === "pct") return `${Number(v)} %`;
@@ -147,7 +152,7 @@ export default function PayrollSettingsPage() {
     return grupos;
   }, [parametros, view]);
   const sinCapturar = (clave) => {
-    if (clave in POLITICA_POR_OMISION && grupoDe(clave) === "options") return `${t("payroll_settings.policy_default")}: ${POLITICA_POR_OMISION[clave]}`;
+    if (clave in POLITICA_POR_OMISION && grupoDe(clave) === "options") return `${t("payroll_settings.policy_default")}: ${formato(unidadDe(clave), POLITICA_POR_OMISION[clave], clave)}`;
     if (grupoDe(clave) === "options") return t("payroll_settings.option_default");
     if (grupoDe(clave) === "vacations") return `${t("payroll_settings.vacation_default")} (${DIAS_DE_LEY[clave]} ${t("payroll_settings.days")})`;
     if (grupoDe(clave) === "vacation_policy") return `${t("payroll_settings.policy_default")}: ${formato(unidadDe(clave), POLITICA_POR_OMISION[clave], clave)}`;
@@ -244,7 +249,7 @@ export default function PayrollSettingsPage() {
                       <option value="0">{t("payroll_settings.option_no")}</option>
                     </select>
                   ) : campo(formParametro, setFormParametro, "value", { required: true, type: "number", min: 0,
-                    step: ["vacations", "vacation_policy"].includes(grupoDe(formParametro.parameter_key)) || unidadDe(formParametro.parameter_key) === "count" ? 1 : "any" })}
+                    step: ["vacations", "vacation_policy"].includes(grupoDe(formParametro.parameter_key)) || ["count", "minutes"].includes(unidadDe(formParametro.parameter_key)) ? 1 : "any" })}
                 </label>
                 <label className="field">{t("payroll_settings.field_from")}{campo(formParametro, setFormParametro, "valid_from", { required: true, type: "date" })}</label>
                 <label className="field">{t("payroll_settings.field_to")}{campo(formParametro, setFormParametro, "valid_to", { type: "date" })}</label>

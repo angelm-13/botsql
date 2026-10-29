@@ -4975,7 +4975,10 @@
       "vacation_unused_policy": "Unused days when they expire",
       "vacation_warning_days_1": "First warning before expiry (days; 0 = none)",
       "vacation_warning_days_2": "Second warning before expiry (days; 0 = none)",
-      "attendance_correction_limit": "Check-in corrections per employee per month"
+      "attendance_correction_limit": "Check-in corrections per employee per month",
+      "attendance_warning_entry_minutes": "Warn the employee if no check-in (minutes after)",
+      "attendance_warning_supervisor_minutes": "Warn the supervisor if still no check-in (minutes)",
+      "attendance_warning_exit_minutes": "Warn the employee if no check-out (minutes after)"
     },
     "tab_options": "Calculation options",
     "tab_vacations": "Vacation table",
