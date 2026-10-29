@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 
 from flask import Blueprint, jsonify, request
-from sqlalchemy import Integer, cast, func, select
+from sqlalchemy import Integer, cast, exists, func, select
 from sqlalchemy.dialects.postgresql import JSONB
 
 from app.kpis.dimensiones import (
@@ -124,6 +124,44 @@ def _dimension_entity_expr(campo_json):
     return cast(KpiSnapshot.dimension_key, JSONB)[campo_json].astext
 
 
+def _condiciones_del_rango(id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, condiciones_extra=None):
+    """Las condiciones de `kpi_snapshot` que comparten `_totales` y `_estado_de_datos`: el KPI, el rango, el alcance
+    de proyecto, las entidades pedidas y las condiciones extra (equipos)."""
+    condiciones = [
+        KpiSnapshot.id_kpi_definition == id_kpi_definition,
+        KpiSnapshot.periodo >= fecha_inicio,
+        KpiSnapshot.periodo <= fecha_fin,
+    ]
+    if actor_project is not None:
+        condiciones.append(cast(KpiSnapshot.dimension_key, JSONB).contains({'id_proyect': actor_project}))
+
+    entidad_expr = _dimension_entity_expr(campo_json) if campo_json else None
+    # `is not None`, no truthy: una lista vacia (departamento sin empleados,
+    # ver `_empleados_de_departamentos`) tiene que filtrar a "nadie", no
+    # saltarse el filtro por completo. SQLAlchemy compila `IN (())` como una
+    # condicion siempre falsa, asi que es seguro.
+    if entidad_expr is not None and entidades is not None:
+        condiciones.append(entidad_expr.in_([str(entidad) for entidad in entidades]))
+    condiciones.extend(condiciones_extra or [])
+    return condiciones
+
+
+def _estado_de_datos(db, id_kpi_definition, condiciones):
+    """Lo que `_totales` no distingue: un `total` de 0 puede ser un cero calculado o la ausencia de filas.
+
+    * `n_filas`: cuantas filas de `kpi_snapshot` cumplen las condiciones del rango. 0 = "Sin datos en el periodo".
+    * `calculado`: el KPI tiene alguna fila en cualquier fecha. False = nunca se calculo ("No calculado").
+
+    Un KPI que solo escribe cuando hay un evento (ver `tasks_kpis.py`) deja dias sin fila aunque el job corra: por eso
+    "Sin datos en el periodo" no quiere decir que el job haya fallado.
+    """
+    n_filas = db.execute(select(func.count()).select_from(KpiSnapshot).where(*condiciones)).scalar() or 0
+    calculado = bool(n_filas) or bool(db.execute(
+        select(exists().where(KpiSnapshot.id_kpi_definition == id_kpi_definition))
+    ).scalar())
+    return {'n_filas': int(n_filas), 'calculado': calculado}
+
+
 def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo=False, limite=None, sin_asignar=False, ocultar_ceros=False, condiciones_extra=None):
     """Combina `kpi_snapshot` en el rango, en uno de tres modos:
 
@@ -161,22 +199,10 @@ def _totales(db, id_kpi_definition, fecha_inicio, fecha_fin, actor_project, enti
     El corte va DESPUES de combinar el rango -- el top depende del rango pedido -- y el
     `total` sigue siendo el de TODAS las entidades, no el de las que se muestran.
     """
-    condiciones = [
-        KpiSnapshot.id_kpi_definition == id_kpi_definition,
-        KpiSnapshot.periodo >= fecha_inicio,
-        KpiSnapshot.periodo <= fecha_fin,
-    ]
-    if actor_project is not None:
-        condiciones.append(cast(KpiSnapshot.dimension_key, JSONB).contains({'id_proyect': actor_project}))
-
+    condiciones = _condiciones_del_rango(
+        id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, condiciones_extra,
+    )
     entidad_expr = _dimension_entity_expr(campo_json) if campo_json else None
-    # `is not None`, no truthy: una lista vacia (departamento sin empleados,
-    # ver `_empleados_de_departamentos`) tiene que filtrar a "nadie", no
-    # saltarse el filtro por completo. SQLAlchemy compila `IN (())` como una
-    # condicion siempre falsa, asi que es seguro.
-    if entidad_expr is not None and entidades is not None:
-        condiciones.append(entidad_expr.in_([str(entidad) for entidad in entidades]))
-    condiciones.extend(condiciones_extra or [])
 
     base = {'inicio': fecha_inicio.isoformat(), 'fin': fecha_fin.isoformat()}
 
@@ -479,6 +505,12 @@ def query_kpi_snapshot(user_data):
         rango_b = None
         if fecha_inicio_b and fecha_fin_b:
             rango_b = _totales(db, id_kpi_definition, fecha_inicio_b, fecha_fin_b, actor_project, entidades, campo_json, agregacion, agrupar_por_periodo, tope_categorias, con_sin_asignar, sin_ceros, condiciones_extra)
+        # `total` 0 no distingue "0 calculado" de "sin filas": `n_filas` y `calculado` lo dicen (ver `_estado_de_datos`).
+        rango_a.update(_estado_de_datos(db, id_kpi_definition, _condiciones_del_rango(
+            id_kpi_definition, fecha_inicio, fecha_fin, actor_project, entidades, campo_json, condiciones_extra)))
+        if rango_b:
+            rango_b.update(_estado_de_datos(db, id_kpi_definition, _condiciones_del_rango(
+                id_kpi_definition, fecha_inicio_b, fecha_fin_b, actor_project, entidades, campo_json, condiciones_extra)))
         # El snapshot guarda ids; los nombres viajan aparte (`etiquetas`) para que el Dashboard no tenga
         # que cargar catalogos enteros solo para ponerlos. Cada dimension declara quien los resuelve
         # (`app/kpis/dimensiones.py`); estado y global no llevan.

@@ -158,6 +158,24 @@ class TestKpiApi(BackendTestCase):
                 EntityPermission.entity_name == "kpi_definition",
             ).update({"scope_read": valor})
 
+    def test_the_range_says_how_many_rows_it_had_and_whether_the_kpi_was_ever_calculated(self):
+        con_filas = self.json(self._request(ACTOR_CON_KPI, self._query_url()))["rango_a"]
+        # Solo las dos filas de PROYECTO_A: la de PROYECTO_B no cuenta para este actor.
+        self.assertEqual((2, True), (con_filas["n_filas"], con_filas["calculado"]))
+
+        # Un rango sin filas devuelve total 0, pero el KPI si tiene filas en otras fechas: "Sin datos en el periodo".
+        sin_filas = self.json(self._request(
+            ACTOR_CON_KPI, self._query_url(fecha_inicio="2026-05-01", fecha_fin="2026-05-02")))["rango_a"]
+        self.assertEqual((0.0, 0, True), (sin_filas["total"], sin_filas["n_filas"], sin_filas["calculado"]))
+
+    def test_a_kpi_without_any_snapshot_is_not_calculated_and_the_comparison_range_says_so_too(self):
+        with transaction_context() as db:
+            id_sin_filas = db.scalar(select(KpiDefinition.id_kpi_definition).where(KpiDefinition.clave == "ingresos_totales"))
+        payload = self.json(self._request(ADMIN, self._query_url(
+            id_kpi_definition=id_sin_filas, fecha_inicio_b="2026-03-01", fecha_fin_b="2026-03-02")))
+        for rango in ("rango_a", "rango_b"):
+            self.assertEqual((0.0, 0, False), (payload[rango]["total"], payload[rango]["n_filas"], payload[rango]["calculado"]), rango)
+
     def test_propios_only_covers_the_actors_own_figures(self):
         self._alcance_de_kpi(1)
         payload = self.json(self._request(ACTOR_CON_KPI, self._query_url()))["rango_a"]
