@@ -4,7 +4,8 @@
 #
 # y luego reemplaza, en ESTE archivo y en ingress-single-origin.yaml:
 #   CLIENTE-ENV     -> <cliente>-<env>   (ej. acme-prod)
-#   DOMINIO         -> el dominio real del cliente (verifícalo con nslookup)
+#   DOMINIO         -> el dominio real del cliente, <cliente>.torredigital.mx
+#                      (verifícalo con nslookup y confírmalo con Alan)
 #   REEMPLAZAR_SHA  -> el SHA de un build en verde que ya incluya a este
 #                      cliente en deploy/clients.yaml (ver k8s/README.md)
 #
