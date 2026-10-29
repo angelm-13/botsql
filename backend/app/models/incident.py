@@ -73,8 +73,21 @@ class Incident(Base):
     latitude: Mapped[Decimal | None] = mapped_column(Numeric(10, 7), nullable=True)
     longitude: Mapped[Decimal | None] = mapped_column(Numeric(10, 7), nullable=True)
     distance_m: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    # Foto en base64 (n8n la descifra y la manda como texto). Es grande: el
+    # listado no la carga, solo avisa con `has_photo`; el detalle si la trae.
+    photo_base64: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    def serialize(self) -> dict:
+    def serialize(self, *, con_foto: bool = True, tiene_foto: bool | None = None) -> dict:
+        """`con_foto=False` es para listados: no toca la columna de la foto (que el
+        listado difiere para no leerla) y `tiene_foto` dice solo si existe."""
+        foto = self.photo_base64 if con_foto else None
+        datos = self._serialize_base()
+        if con_foto:
+            datos['photo_base64'] = foto
+        datos['has_photo'] = bool(foto) if con_foto else bool(tiene_foto)
+        return datos
+
+    def _serialize_base(self) -> dict:
         return {
             'id_incident': to_json_value(self.id_incident),
             'incident_date': to_json_value(self.incident_date),

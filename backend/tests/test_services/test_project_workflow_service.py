@@ -1211,6 +1211,23 @@ class TestElSupervisorTomaElProyecto(TestProjectWorkflowService):
         self.assertEqual("errors.permission_denied", raised.exception.message_key)
         self.assertIsNone(assign_project(proyecto, None, self.manager)["id_supervisor"])
 
+    def test_authorizing_assigns_the_only_workshop_head_to_a_project_left_unassigned(self):
+        """Se levanto con dos jefes (no se adivina); cuando queda uno, al autorizar es suyo."""
+        from app.models.user import User
+
+        self._con_un_solo_jefe_de_taller()
+        with transaction_context() as db:
+            db.add(User(id_user=32, created_by=1, full_name="Otro jefe", id_permission=301,
+                        id_proyect=1, id_status=1, supervisor=1, username="jefe-taller-2-prueba"))
+        proyecto = self._create()["id_proyect"]
+        self.assertIsNone(get_project_detail(proyecto, self.manager)["id_supervisor"])
+        with transaction_context() as db:                 # el segundo jefe se da de baja
+            db.get(User, 32).deletion_date = datetime.utcnow()
+
+        self._autorizar(proyecto)
+
+        self.assertEqual(31, get_project_detail(proyecto, self.manager)["id_supervisor"])
+
     def test_a_project_without_maquila_cannot_be_assigned_to_a_workshop_head(self):
         from app.services.project_management_service import assign_project
 

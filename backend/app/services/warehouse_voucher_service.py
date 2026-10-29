@@ -51,7 +51,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import func, or_, select
 
 from app.models.customer_supplier import CustomerSupplier
 from app.models.entity_permission import EntityPermission
@@ -492,13 +492,16 @@ def _renglones(db, id_incident, *, solo_abiertos=False) -> list[NmIncidentProduc
     return db.scalars(consulta.order_by(NmIncidentProduct.id_nm_incident_product)).all()
 
 
-def _validar_renglon(db, carga: dict) -> dict:
+def _validar_renglon(db, carga: dict, *, origen_obligatorio: bool = True) -> dict:
     """Comprueba un renglon antes de escribirlo, y resuelve su forma.
 
     La regla de fondo: la pieza se exige cuando el producto se rastrea una por
     una, y se rechaza cuando no. Sin eso se puede capturar un vale de "una
     pieza" de cemento -que no tiene piezas- o un prestamo de herramienta sin
     decir cual, que es el vale que despues nadie puede cerrar.
+
+    `origen_obligatorio=False` es para la baja de algo que esta PRESTADO: se cierra el
+    prestamo y no sale nada de ningun sitio, asi que no hay "de donde".
     """
     id_producto = _entero(carga.get("id_product"), "id_product")
     producto = db.scalars(
@@ -582,7 +585,7 @@ def _validar_renglon(db, carga: dict) -> dict:
     # fungible hay que decirlo: descontar 5 sacos "del almacen" sin decir de
     # cual deja el saldo por ubicacion mintiendo, y ese es el dato con el que
     # alguien va a buscarlos.
-    origen = ubicacion("id_location_from", pieza is None)
+    origen = ubicacion("id_location_from", pieza is None and origen_obligatorio)
     if pieza is not None and origen is None:
         origen = pieza.id_location
     # El destino de una salida es una persona, no un sitio, asi que va nulo. Lo
@@ -706,7 +709,8 @@ def _comprobar_existencia_del_borrador(db, validados: list[dict], *, solo_lo_apa
     """
     pedido: dict[tuple[int, int], int] = {}
     for renglon in validados:
-        if renglon["id_inventory_asset"] is not None:
+        # Sin sitio de origen es la baja de algo prestado: no sale nada del almacen.
+        if renglon["id_inventory_asset"] is not None or renglon["id_location_from"] is None:
             continue
         clave = (int(renglon["id_product"]), int(renglon["id_location_from"]))
         pedido[clave] = pedido.get(clave, 0) + int(renglon["quantity"])
@@ -884,7 +888,8 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
         raise AppError("errors.voucher_lines_required", 400, {"field": "lines"})
 
     id_tipo = _entero(payload.get("id_incident_type"), "id_incident_type")
-    id_responsable = _entero(payload.get("id_user"), "id_user")
+    # Obligatorio salvo en un reporte de suceso, donde el responsable lo pone el servidor.
+    id_responsable = _entero(payload.get("id_user"), "id_user", obligatorio=False)
     # A que proyecto va el material. Opcional: no todo prestamo es de un
     # proyecto -- una herramienta para el taller no lo es --, y exigirlo
     # obligaria a inventar un proyecto para cada vale suelto.
@@ -917,6 +922,18 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
 
         # Validar que el usuario tenga permiso para crear este tipo de vale.
         _validar_permiso_tipo_vale(db, user_data, id_tipo, como_borrador)
+
+        # Un reporte de suceso (dañado, extraviado, destruccion, reparacion) es de quien lo
+        # levanta: responde por lo que reporta y no se le puede poner a nombre de otro. Lo
+        # impone el servidor y no la pantalla, para que nadie cargue un extravio a un
+        # supervisor que nunca tuvo la pieza. Quien la tenia queda en cada renglon
+        # (`held_by_user`), sacado de los prestamos abiertos.
+        es_reporte = _es_reporte_de_incidente(db, id_tipo)
+        if es_reporte:
+            id_responsable = actor
+            id_supervisor_proyecto = None
+        elif id_responsable is None:
+            raise AppError("errors.required_field", 400, {"field": "id_user"})
 
         # El responsable, comprobado. `incident.id_user` tiene llave ajena
         # DIFERIDA, asi que un identificador inventado no falla al asignarlo:
@@ -954,7 +971,7 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
             # aplica a quien levanta su propio prevale -- Supervisor, Almacen--
             # ni pisa a quien eligio a alguien: `proyect.id_supervisor` es el
             # Jefe de taller que lo tomo, no el supervisor del proyecto.
-            if (id_supervisor_proyecto is None and id_responsable == actor
+            if (not es_reporte and id_supervisor_proyecto is None and id_responsable == actor
                     and has_capability(db, user_data, "project_authorization")
                     and not _sin_restriccion(user_data)):
                 id_supervisor_proyecto = proyecto.leader or proyecto.created_by
@@ -976,7 +993,13 @@ def crear_vale(payload: dict, user_data: dict, *, como_borrador: bool = False) -
         if id_padre is not None:
             _validar_vale_padre(db, id_padre, id_proyecto, user_data)
 
-        validados = [_validar_renglon(db, linea) for linea in renglones]
+        validados = []
+        baja_del_vale = _clave_de_baja(db, id_tipo)
+        for linea in renglones:
+            titular, hay_prestamo = _titular_del_renglon(db, linea, baja_del_vale)
+            datos = _validar_renglon(db, linea, origen_obligatorio=not hay_prestamo)
+            datos["held_by_user"] = titular
+            validados.append(datos)
 
         # Un prevale es una peticion, no una salida, pero pedir mas de lo que
         # hay en esa ubicacion no es una peticion que alguien pueda surtir:
@@ -1180,6 +1203,66 @@ def _bajar_salida_obsoleta(db, id_producto) -> None:
     db.flush()
 
 
+def _condiciones_de_prestamo_abierto(id_producto):
+    """Lo que hace "abierto" un prestamo de un producto por cantidad.
+
+    Salidas sin cerrar de un vale que ya salio del almacen: un prevale o un vale en espera
+    sigue en el almacen (apartado) y nadie lo "tiene" todavia, y una baja no esta con nadie.
+    Es la misma regla de `_prestado_en_lote` (lo que Localizar muestra como "fuera").
+    Se usa con un `join` a `Incident`.
+    """
+    return (
+        NmIncidentProduct.id_product == id_producto,
+        NmIncidentProduct.deletion_date.is_(None),
+        NmIncidentProduct.direction == SALIDA,
+        NmIncidentProduct.id_inventory_asset.is_(None),
+        or_(NmIncidentProduct.close_date.is_(None),
+            NmIncidentProduct.close_date == CIERRE_SENTINELA),
+        NmIncidentProduct.id_incident.notin_(_vales_de_baja()),
+        Incident.deletion_date.is_(None),
+        func.coalesce(func.lower(Incident.incident_status), "").notin_(
+            (BORRADOR, EN_ESPERA, CANCELADO)),
+    )
+
+
+def _titulares_de_prestamos(db, id_producto) -> list[int]:
+    """Quienes tienen ahora el producto: el responsable de cada vale con una salida abierta."""
+    filas = db.execute(
+        select(Incident.id_user)
+        .join(NmIncidentProduct, NmIncidentProduct.id_incident == Incident.id_incident)
+        .where(*_condiciones_de_prestamo_abierto(id_producto))
+        .distinct()
+    ).all()
+    return sorted(int(f[0]) for f in filas if f[0] is not None)
+
+
+def _titular_del_renglon(db, linea: dict, clave_de_baja) -> tuple[int | None, bool]:
+    """A quien tiene la pieza que se da de baja, y si tiene un prestamo abierto.
+
+    Solo destruccion y extravio (`clave_de_baja`) y solo lo que se cuenta por cantidad: una
+    pieza con serie sigue su propio camino. Se saca de los prestamos abiertos y no se
+    teclea: con uno solo se asigna solo; con varios, quien reporta elige entre ELLOS
+    (`held_by_user`) y no se acepta a nadie mas, para no cargarle la baja a quien nunca la
+    tuvo. Sin prestamo la pieza estaba en el almacen y no hay a quien senalar.
+    """
+    if not clave_de_baja or linea.get("id_inventory_asset") not in (None, ""):
+        return None, False
+    id_producto = _entero(linea.get("id_product"), "id_product")
+    titulares = _titulares_de_prestamos(db, id_producto)
+    elegido = _entero(linea.get("held_by_user"), "held_by_user", obligatorio=False)
+    if elegido is not None and elegido not in titulares:
+        raise AppError("errors.voucher_held_by_invalid", 409,
+                       {"id_product": id_producto, "held_by_user": elegido,
+                        "holders": titulares})
+    if elegido is None and len(titulares) > 1:
+        raise AppError("errors.voucher_held_by_required", 400,
+                       {"field": "held_by_user", "id_product": id_producto,
+                        "holders": titulares})
+    if elegido is None and titulares:
+        elegido = titulares[0]
+    return elegido, bool(titulares)
+
+
 def _registrar_baja(db, renglon, user_data, *, clave, id_responsable, vence, motivo):
     """Registra que una herramienta se destruyo o se extravio, sin exigir que
     este en el almacen.
@@ -1197,8 +1280,9 @@ def _registrar_baja(db, renglon, user_data, *, clave, id_responsable, vence, mot
     1. Si el producto esta prestado -renglones de salida sin cerrar de vales que no
        son de baja-, ese prestamo se CIERRA: la herramienta ya no esta con esa
        persona. No mueve la existencia, porque una pieza prestada ya no cuenta en
-       el almacen. Se prefiere el prestamo del mismo responsable, y despues el mas
-       antiguo. Solo se cierran renglones completos.
+       el almacen. Es el prestamo de quien la tenia (`held_by_user`, que queda en el
+       renglon del reporte), y entre los suyos el mas antiguo. Solo se cierran renglones
+       completos.
     2. Lo que quede por dar de baja -la herramienta si estaba en el almacen- sale
        con el movimiento de baja del libro (`destroy` o `loss`), con su motivo.
     3. Lo destruido cierra su renglon al registrarse; lo extraviado lo deja abierto
@@ -1215,25 +1299,25 @@ def _registrar_baja(db, renglon, user_data, *, clave, id_responsable, vence, mot
     ahora = _ahora()
     restante = int(renglon.quantity)
 
-    prestamos = db.scalars(
+    # El prestamo que se cierra es el de quien la tenia (`held_by_user`, resuelto al levantar
+    # el reporte), no el del responsable del reporte: ese es quien lo levanta.
+    titular = renglon.held_by_user
+    consulta = (
         select(NmIncidentProduct)
         .join(Incident, Incident.id_incident == NmIncidentProduct.id_incident)
         .where(
-            NmIncidentProduct.id_product == renglon.id_product,
+            *_condiciones_de_prestamo_abierto(renglon.id_product),
             NmIncidentProduct.id_nm_incident_product != renglon.id_nm_incident_product,
-            NmIncidentProduct.deletion_date.is_(None),
-            NmIncidentProduct.direction == SALIDA,
-            NmIncidentProduct.id_inventory_asset.is_(None),
-            or_(NmIncidentProduct.close_date.is_(None),
-                NmIncidentProduct.close_date == CIERRE_SENTINELA),
-            NmIncidentProduct.id_incident.notin_(_vales_de_baja()),
-            Incident.deletion_date.is_(None),
         )
-        .order_by(case((Incident.id_user == id_responsable, 0), else_=1),
-                  NmIncidentProduct.start_date, NmIncidentProduct.id_nm_incident_product)
-        .with_for_update()
+    )
+    if titular is not None:
+        consulta = consulta.where(Incident.id_user == titular)
+    prestamos = db.scalars(
+        consulta.order_by(NmIncidentProduct.start_date,
+                          NmIncidentProduct.id_nm_incident_product).with_for_update()
     ).all()
     vales_tocados = set()
+    a_cargo_de = None
     for prestamo in prestamos:
         if restante <= 0:
             break
@@ -1242,11 +1326,25 @@ def _registrar_baja(db, renglon, user_data, *, clave, id_responsable, vence, mot
         prestamo.close_date = ahora
         restante -= int(prestamo.quantity)
         vales_tocados.add(int(prestamo.id_incident))
+        if a_cargo_de is None:
+            a_cargo_de = db.get(Incident, prestamo.id_incident).id_user
+    # Lo que quedo dicho es lo que paso: si no se cerro ningun prestamo, la pieza no la
+    # tenia nadie (salio del almacen) y no hay a quien senalar.
+    renglon.held_by_user = a_cargo_de
     db.flush()
     for id_vale in vales_tocados:
         _sincronizar_estado(db, _vale(db, id_vale, para_actualizar=True))
 
     if restante > 0:
+        if renglon.id_location_from is None:
+            # Lo prestado no se cerro completo (se reporta menos de lo que tiene a su
+            # cargo) y no hay almacen del que sacar el resto.
+            if titular is not None:
+                raise AppError("errors.voucher_report_partial_loan", 409,
+                               {"id_product": renglon.id_product, "held_by_user": titular,
+                                "requested": int(renglon.quantity)})
+            raise AppError("errors.inventory_insufficient_stock", 409,
+                           {"id_product": renglon.id_product, "requested": restante})
         apply_movement_in_session(
             db, renglon.id_product, user_data,
             movement_type=MOVIMIENTO_DE_BAJA[clave],

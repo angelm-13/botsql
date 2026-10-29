@@ -67,6 +67,11 @@ class NmIncidentProduct(Base):
     returned_by_user: Mapped[int | None] = mapped_column(
         Integer, ForeignKey('user.id_user'), nullable=True)
     returned_by_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # En un reporte de destruccion o extravio: a quien se le cerro el prestamo, o sea
+    # quien tenia la pieza. Lo pone el sistema desde los prestamos abiertos del producto,
+    # no se escribe a mano; nulo si la pieza estaba en el almacen.
+    held_by_user: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('user.id_user'), nullable=True)
     # Cuando se avisó por última vez (campanita) que este renglón ya debió
     # volver y no ha vuelto. Deduplica el job periódico que revisa vales
     # vencidos -- sin esto, cada corrida repetiría el mismo aviso.
@@ -102,6 +107,7 @@ class NmIncidentProduct(Base):
             'delivered_to_name': to_json_value(self.delivered_to_name),
             'returned_by_user': to_json_value(self.returned_by_user),
             'returned_by_name': to_json_value(self.returned_by_name),
+            'held_by_user': to_json_value(self.held_by_user),
             'overdue_notified_date': to_json_value(self.overdue_notified_date),
             'start_date': to_json_value(self.start_date),
             'due_date': to_json_value(self.due_date),

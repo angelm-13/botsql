@@ -1,3 +1,4 @@
+import { LLAVE_BORRADO_BLOQUEADO, mensajeDeBorradoBloqueado } from "../utils/registrosRelacionados.js";
 import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
@@ -416,7 +417,7 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
     if (errorKey === "errors.invalid_field" && errorMeta?.field) {
       return `${t(errorKey, errorKey)}: ${fieldLabel}`;
     }
-    return t(errorKey, errorKey);
+    return errorKey === LLAVE_BORRADO_BLOQUEADO ? mensajeDeBorradoBloqueado(t, errorMeta) : t(errorKey, errorKey);
   }
 
   const filtered = useMemo(() => {

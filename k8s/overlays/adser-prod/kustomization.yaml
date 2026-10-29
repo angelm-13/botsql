@@ -20,6 +20,12 @@ images:
 resources:
   - ../../base
   - ingress-single-origin.yaml
+# Respaldo diario de Postgres (ensayado en tyakxa-dev, activo en torredigital-prod
+# y comala-prod). Se aplica SOLO este componente, con `kubectl apply -k <overlay>
+# -l app.kubernetes.io/component=respaldo-postgres`. Cae en master4: el componente
+# exige tier=big y nunca el nodo de postgres (que ahora es master1).
+components:
+  - ../../components/respaldo-postgres
 patches:
   - patch: |-
       apiVersion: networking.k8s.io/v1
@@ -90,3 +96,25 @@ patches:
       - op: add
         path: /spec/template/spec/priorityClassName
         value: p2-adser-prod
+  # Los dos patches de arriba no alcanzan a un CronJob: su pod vive en
+  # jobTemplate.
+  - target:
+      kind: CronJob
+    patch: |-
+      - op: add
+        path: /spec/jobTemplate/spec/template/spec/priorityClassName
+        value: p2-adser-prod
+  # La base de adser vive en master1 junto a su backend (2026-10-28): master2 (1 vCPU,
+  # 4 GB, 76 % de disco) compartia nodo con otras bases. nodeSelector obligatorio porque
+  # el volumen local-path de este PVC nace en master1; sin esto, el siguiente
+  # `apply -k` quitaria el nodeSelector que se puso a mano y reiniciaria postgres.
+  - patch: |-
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: postgres
+      spec:
+        template:
+          spec:
+            nodeSelector:
+              kubernetes.io/hostname: k3s-master1

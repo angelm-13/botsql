@@ -84,11 +84,27 @@ import PageHeader from "../components/PageHeader.jsx";
 // Dañado, extraviado, destruccion y reparacion reportan un SUCESO: no llevan "se necesita el" ni
 // quien recoge, que son del prestamo. Misma lista que `ESTADO_POR_TIPO` del servidor.
 const CLAVES_DE_REPORTE = ["danado", "extraviado", "destruccion", "reparacion"];
-const esReporteDeIncidente = (tipos, idTipo) => {
+const claveDeTipo = (tipos, idTipo) => {
   const tipo = (tipos || []).find((x) => String(x.id_incident_type) === String(idTipo));
-  const clave = String(tipo?.incident_type_description || "").trim().toLowerCase()
+  return String(tipo?.incident_type_description || "").trim().toLowerCase()
     .normalize("NFD").replace(/[̀-ͯ]/g, "");
-  return CLAVES_DE_REPORTE.includes(clave);
+};
+const esReporteDeIncidente = (tipos, idTipo) => CLAVES_DE_REPORTE.includes(claveDeTipo(tipos, idTipo));
+// Destruccion y extravio dan de baja la pieza: si estaba prestada se le cierra el prestamo a
+// quien la tenia (`held_by_user`). Dañado y reparacion no cierran nada.
+const esBajaDeIncidente = (tipos, idTipo) => ["destruccion", "extraviado"].includes(claveDeTipo(tipos, idTipo));
+// Quienes tienen fuera un producto por cantidad, juntando sus vales: lo que trae Localizar
+// en `on_loan.holders`, una persona por renglon.
+const titularesDe = (producto) => {
+  const porUsuario = new Map();
+  (producto.on_loan?.holders || []).forEach((h) => {
+    if (h.id_user == null) return;
+    const previo = porUsuario.get(h.id_user);
+    porUsuario.set(h.id_user, previo
+      ? { ...previo, quantity: previo.quantity + Number(h.quantity || 0) }
+      : { id_user: h.id_user, holder_name: h.holder_name, quantity: Number(h.quantity || 0) });
+  });
+  return [...porUsuario.values()];
 };
 
 function actorGuardado() {
@@ -387,19 +403,26 @@ export default function WarehouseVoucherPage() {
     const alta = comoPrevale ? createWarehousePrevoucher : createWarehouseVoucher;
     try {
       const reporte = esReporteDeIncidente(tipos, borrador.id_incident_type);
+      const baja = esBajaDeIncidente(tipos, borrador.id_incident_type);
       const creado = await alta({
         ...borrador,
         id_proyect: borrador.id_proyect || undefined,
         needed_date: reporte ? undefined : borrador.needed_date,
         pickup_name: reporte ? undefined : (borrador.pickup_name || undefined),
         id_incident_parent: borrador.id_incident_parent || undefined,
-        lines: borrador.lines.map((l) => ({
-          id_product: l.id_product,
-          id_inventory_asset: l.id_inventory_asset || undefined,
-          quantity: l.id_inventory_asset ? undefined : l.quantity,
-          id_location_from: l.id_location_from || undefined,
-          note: l.note || undefined,
-        })),
+        lines: borrador.lines.map((l) => {
+          // La baja de algo prestado cierra el prestamo de quien lo tenia: no sale de
+          // ningun sitio, asi que no manda "de donde".
+          const dePrestamo = baja && !l.serializado && (l.en_prestamo || []).length > 0;
+          return {
+            id_product: l.id_product,
+            id_inventory_asset: l.id_inventory_asset || undefined,
+            quantity: l.id_inventory_asset ? undefined : l.quantity,
+            id_location_from: dePrestamo ? undefined : (l.id_location_from || undefined),
+            held_by_user: dePrestamo ? (l.held_by_user || undefined) : undefined,
+            note: l.note || undefined,
+          };
+        }),
       });
       setBorrador(null);
       setConsultado(await getWarehouseVoucher(creado.voucher.id_incident));
@@ -1095,6 +1118,11 @@ function Vale({ vale, onCerrar, onAutorizar, onCancelar, onImprimir, imprimiendo
                                    : t("history.returned", "devuelto")}
                       </span>
                     )}
+                    {linea.held_by_user && (
+                      <span className="muted">
+                        {" "}{t("voucher.held_by", "Estaba a cargo de")}: {nombreDe(linea.held_by_user)}
+                      </span>
+                    )}
                     {entrada && (entrada.returned_by_user || entrada.returned_by_name) && (
                       <span className="muted">
                         {" "}{t("voucher.returned_by_label", "Devuelto por")}:{" "}
@@ -1430,8 +1458,25 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
     const obra = proyectos.find((p) => String(p.id_proyect) === String(id));
     const cambios = { id_proyect: id };
     const aCargo = obra?.id_in_charge || obra?.id_supervisor;
-    if (!soloPuedeSolicitar && aCargo && usuarios.some((u) => String(u.id_user) === String(aCargo))) {
+    // Un reporte es de quien lo levanta: la obra no le cambia el responsable.
+    if (!soloPuedeSolicitar && !esReporteAhora && aCargo
+        && usuarios.some((u) => String(u.id_user) === String(aCargo))) {
       cambios.id_user = String(aCargo);
+    }
+    setBorrador({ ...borrador, ...cambios });
+  };
+  // Un reporte de suceso (dañado, extraviado, destruccion, reparacion) es de quien lo
+  // levanta -responde por lo que reporta-: el responsable sale fijo, sin desplegable, y el
+  // servidor lo impone igual. Destruccion y extravio ademas cierran el prestamo de quien
+  // tenia la pieza.
+  const esReporteAhora = esReporteDeIncidente(tipos, borrador.id_incident_type);
+  const esBaja = esBajaDeIncidente(tipos, borrador.id_incident_type);
+  const cambiarTipo = (id) => {
+    const cambios = { id_incident_type: id };
+    if (esReporteDeIncidente(tipos, id)) {
+      cambios.id_user = String(actorIdUser || "");
+    } else if (esReporteAhora && !soloPuedeSolicitar) {
+      cambios.id_user = "";   // volvio a un prestamo: otra vez se elige a quien se le entrega
     }
     setBorrador({ ...borrador, ...cambios });
   };
@@ -1464,31 +1509,43 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
             return (producto.pieces || []).length > 0;
           } else {
             // Para productos fungibles, debe haber existencia en alguna ubicación
-            return (producto.locations || []).some(loc => Number(loc.available ?? loc.quantity) > 0);
+            return (producto.locations || []).some(loc => Number(loc.available ?? loc.quantity) > 0)
+              // Una baja tambien se levanta sobre lo que esta prestado: sin existencia
+              // en el almacen, pero con alguien que lo tiene.
+              || (esBaja && titularesDe(producto).length > 0);
           }
         });
         setCandidatos(conExistencia);
       } catch { setCandidatos([]); } finally { setBuscando(false); }
     }, 350);
     return () => clearTimeout(temporizador);
-  }, [busqueda]);
+  }, [busqueda, esBaja]);
 
   const agregar = (producto, pieza) => {
     const serializado = producto.tracking_mode === "serializado";
+    const enPrestamo = serializado ? [] : titularesDe(producto);
     setBorrador({
       ...borrador,
       lines: [...borrador.lines, {
         clave: `${producto.id_product}-${pieza?.id_inventory_asset || Date.now()}`,
         id_product: producto.id_product,
+        // Quienes lo tienen fuera. En una baja (destruccion, extravio) es de donde sale: con
+        // uno solo se asigna solo, con varios hay que elegir entre ELLOS.
+        en_prestamo: enPrestamo,
+        held_by_user: enPrestamo.length === 1 ? String(enPrestamo[0].id_user) : "",
         etiqueta: producto.product_code || `#${producto.id_product}`,
         descripcion: producto.descripcion || "",
         id_inventory_asset: pieza?.id_inventory_asset || null,
         asset_tag: pieza?.asset_tag || null,
         // Lo que se pidio desde la lista de necesidades, sin pasar de lo que hay en
         // el sitio de donde sale: el prevale no puede pedir mas que la existencia.
-        quantity: serializado ? 1 : Math.max(1, Math.min(
-          Number(borrador.cantidad_sugerida) || 1,
-          Number(producto.locations?.[0]?.available ?? producto.locations?.[0]?.quantity) || 1)),
+        // En la baja de algo prestado, la cantidad que tiene quien lo tenia: se cierra su
+        // prestamo completo, no a pedazos.
+        quantity: serializado ? 1 : (esBaja && enPrestamo.length === 1
+          ? Math.max(1, enPrestamo[0].quantity)
+          : Math.max(1, Math.min(
+            Number(borrador.cantidad_sugerida) || 1,
+            Number(producto.locations?.[0]?.available ?? producto.locations?.[0]?.quantity) || 1))),
         serializado,
         id_location_from: pieza?.id_location
           || producto.locations?.[0]?.id_location || "",
@@ -1509,8 +1566,16 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
   // la que sale, menos lo que ya piden los otros renglones del mismo producto y
   // sitio. Lo serializado no cuenta -una pieza es una pieza-. El buscador ya
   // trae la existencia por sitio, asi que no hace falta otra consulta.
+  // La baja de algo prestado no sale de ningun sitio: cierra el prestamo de quien lo tenia.
+  const esDePrestamo = (linea) => esBaja && !linea.serializado && (linea.en_prestamo || []).length > 0;
+  const cantidadDeQuienLaTenia = (linea) => {
+    const titular = (linea.en_prestamo || []).find(
+      (h) => String(h.id_user) === String(linea.held_by_user));
+    return titular ? titular.quantity : 0;
+  };
   const disponibleDe = (linea, indice) => {
     if (linea.serializado) return null;
+    if (esDePrestamo(linea)) return cantidadDeQuienLaTenia(linea);
     const sitio = (linea.sitios || []).find(
       (s) => String(s.id_location) === String(linea.id_location_from));
     const hay = Number(sitio?.available ?? sitio?.quantity) || 0;
@@ -1534,11 +1599,13 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
   // La fecha en que se necesita y el motivo van siempre, y el origen en lo fungible.
   // Se comprueba aqui para decirlo antes de mandar, no despues de que el
   // servidor conteste; el servidor lo exige igual, que es lo que cuenta.
-  const esReporte = esReporteDeIncidente(tipos, borrador.id_incident_type);
+  const esReporte = esReporteAhora;
   const listo = borrador.lines.length > 0 && borrador.id_incident_type
     && borrador.id_user && (esReporte || borrador.needed_date) && borrador.note.trim()
     && borrador.lines.every((l, i) => l.serializado || (
-      l.id_location_from && Number(l.quantity) >= 1
+      // De prestamo: hay que saber quien la tenia (con varios, lo elige quien reporta).
+      (esDePrestamo(l) ? Boolean(l.held_by_user) : Boolean(l.id_location_from))
+      && Number(l.quantity) >= 1
       && Number(l.quantity) <= disponibleDe(l, i)));
 
   return (
@@ -1559,8 +1626,7 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
         <label className="field">
           <span>{t("voucher.type", "Tipo de vale")}</span>
           <select value={borrador.id_incident_type}
-                  onChange={(e) => setBorrador(
-                    { ...borrador, id_incident_type: e.target.value })}>
+                  onChange={(e) => cambiarTipo(e.target.value)}>
             {tipos.map((x) => (
               <option key={x.id_incident_type} value={x.id_incident_type}>
                 {x.incident_type_description}
@@ -1574,7 +1640,8 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
               pide -mismo criterio que "el responsable es quien crea el
               proyecto"-: no hay a quien mas elegir, asi que no se ofrece un
               desplegable que solo tendria una opcion util. */}
-          {soloPuedeSolicitar ? (
+          {/* Un reporte de suceso tambien: es de quien lo levanta. */}
+          {soloPuedeSolicitar || esReporte ? (
             <span className="vale-responsable-fijo">
               {nombreDelActor}
               <em className="muted">{t("voucher.holder_is_you", "(tú)")}</em>
@@ -1685,6 +1752,8 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
                   {p.tracking_mode === "serializado"
                     ? t("voucher.by_piece", "por pieza")
                     : `${(p.locations || []).reduce((n, l) => n + (Number(l.available ?? l.quantity) || 0), 0)} ${t("voucher.available", "disponibles")}`}
+                  {esBaja && p.tracking_mode !== "serializado" && titularesDe(p).length > 0
+                    && ` · ${t("voucher.out_with", "fuera con")} ${titularesDe(p).map((h) => h.holder_name || `#${h.id_user}`).join(", ")}`}
                 </em>
                 {/* Lo fungible se agrega directo; lo serializado obliga a
                     elegir la pieza, porque devolver "un desarmador" no cierra
@@ -1751,10 +1820,13 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
                              Number(e.target.value) || 1,
                              Math.max(1, disponibleDe(linea, indice))),
                          })} />
-                  <small className={disponibleDe(linea, indice) === 0 ? "vale-sin-existencia" : "muted"}>
-                    {disponibleDe(linea, indice) === 0
-                      ? t("voucher.no_stock_here", "Sin existencia aquí")
-                      : `${t("voucher.available", "Disponible")}: ${disponibleDe(linea, indice)}`}
+                  <small className={disponibleDe(linea, indice) === 0 && !esDePrestamo(linea) ? "vale-sin-existencia" : "muted"}>
+                    {esDePrestamo(linea)
+                      ? (linea.held_by_user
+                        ? `${t("voucher.holds", "Tiene a su cargo")}: ${disponibleDe(linea, indice)}` : "")
+                      : disponibleDe(linea, indice) === 0
+                        ? t("voucher.no_stock_here", "Sin existencia aquí")
+                        : `${t("voucher.available", "Disponible")}: ${disponibleDe(linea, indice)}`}
                   </small>
                 </label>
               )}
@@ -1767,7 +1839,31 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
                   eso ya esta definido por donde esta el producto, y se le
                   muestra. Solo si el producto esta repartido en varios sitios
                   se le ofrecen ESOS sitios -no todas las ubicaciones-. */}
-              {soloPuedeSolicitar
+              {esDePrestamo(linea) ? (
+                /* La baja de algo que esta prestado: no sale de ningun sitio, se le cierra
+                   el prestamo a quien lo tenia. Con uno solo se dice y ya; con varios, se
+                   elige entre ELLOS y nadie mas, para no cargarle la baja a quien no la tuvo. */
+                <label className={`vale-mini ${linea.held_by_user ? "" : "vale-falta"}`}>
+                  <span>{t("voucher.held_by", "Estaba a cargo de")}{linea.en_prestamo.length > 1 && " *"}</span>
+                  {linea.en_prestamo.length === 1 ? (
+                    <strong>{linea.en_prestamo[0].holder_name || `#${linea.en_prestamo[0].id_user}`}</strong>
+                  ) : (
+                    <select value={linea.held_by_user}
+                            onChange={(e) => cambiar(indice, {
+                              held_by_user: e.target.value,
+                              quantity: Math.max(1, (linea.en_prestamo.find(
+                                (h) => String(h.id_user) === String(e.target.value))?.quantity) || 1),
+                            })}>
+                      <option value="">{t("voucher.held_by_pick", "¿Quién la tenía?")}</option>
+                      {linea.en_prestamo.map((h) => (
+                        <option key={h.id_user} value={h.id_user}>
+                          {h.holder_name || `#${h.id_user}`} ({h.quantity})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </label>
+              ) : soloPuedeSolicitar
                 && (linea.serializado || (linea.sitios || []).length === 1) ? (
                 <div className="vale-mini">
                   <span>{t("voucher.from", "Sale de")}</span>

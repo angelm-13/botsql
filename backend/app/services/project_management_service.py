@@ -595,7 +595,8 @@ def _asignar_jefe_de_taller(db, project) -> None:
     """Un proyecto con maquila le toca al Jefe de taller, sin botón de "tomar".
 
     Solo se asigna cuando hay UN solo Jefe de taller. Con varios no se adivina a cuál: el
-    proyecto queda libre y quien autoriza lo asigna (`assign_project`).
+    proyecto queda libre y quien autoriza lo asigna (`assign_project`). Se intenta al crear,
+    al editar y al autorizar el proyecto.
     """
     if not project.requires_maquila or project.id_supervisor is not None:
         return
@@ -1784,6 +1785,10 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
                                {"open_vouchers": pendientes})
 
         project.proyect_status = validated_target
+        if validated_target == "authorized":
+            # Un proyecto que se levanto cuando habia cero o varios jefes de taller no se
+            # queda sin asignar para siempre: al autorizarlo, si ya hay uno solo, es suyo.
+            _asignar_jefe_de_taller(db, project)
         _append_event(
             db,
             project,

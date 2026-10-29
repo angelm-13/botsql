@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError, StatementError
 import bcrypt
 from app.models.session import transaction_context
 from app.utils.errors import AppError
+from app.services.related_records import delete_has_related_records_error
 from app.validations.validator import validate_payload
 
 
@@ -314,15 +315,11 @@ class CrudService:
         return str(error.orig) if getattr(error, 'orig', None) else str(error)
 
     @classmethod
-    def _raise_database_constraint_error(cls, error, *, action: str):
+    def _raise_database_constraint_error(cls, error, *, action: str, item_id=None):
         detail = cls._database_constraint_detail(error)
         normalized = detail.lower()
         if action == 'delete' and 'violates foreign key constraint' in normalized and 'is still referenced from table' in normalized:
-            raise AppError(
-                'errors.delete_has_related_records',
-                status_code=409,
-                meta={'entity': cls.entity_name, 'action': action},
-            )
+            raise delete_has_related_records_error(cls.entity_name, cls.model.__tablename__, item_id)
         if cls.entity_name == 'user' and ('uq_user_username' in normalized or 'user_username_key' in normalized or ('duplicate key' in normalized and 'username' in normalized)):
             raise AppError('errors.username_already_exists', status_code=409)
         # El mensaje crudo de la base (tablas, valores, SQL) no sale al cliente: va al log.
@@ -537,4 +534,4 @@ class CrudService:
                 session.flush()
                 return {'message_key': 'success.deleted'}
         except (IntegrityError, StatementError) as error:
-            cls._raise_database_constraint_error(error, action='delete')
+            cls._raise_database_constraint_error(error, action='delete', item_id=item_id)

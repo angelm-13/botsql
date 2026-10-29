@@ -101,9 +101,9 @@ class MaterialService(CrudService):
         return super().update(item_id, payload, user_id)
 
     @classmethod
-    def _raise_database_constraint_error(cls, error, *, action: str):
+    def _raise_database_constraint_error(cls, error, *, action: str, **kwargs):
         # Carrera entre dos capturas iguales: las dos pasaron la comprobacion y
         # la segunda en escribir la para el indice.
         if INDICE_DE_IDENTIDAD in cls._database_constraint_detail(error).lower():
             raise AppError('errors.material_already_exists', 409, {'entity': 'material'})
-        return super()._raise_database_constraint_error(error, action=action)
+        return super()._raise_database_constraint_error(error, action=action, **kwargs)

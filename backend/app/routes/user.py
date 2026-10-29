@@ -1,9 +1,10 @@
 from __future__ import annotations
-from datetime import datetime
+from datetime import datetime, timezone
 import re
 from flask import Blueprint, jsonify, request
 import bcrypt
 from app.services.user_service import UserService
+from app.services.related_records import delete_has_related_records_error
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
 import os
@@ -344,15 +345,11 @@ def _update_user_protected(user_data, target_user_id, payload, service_cls):
     return _jsonify_projected_record(user_data, service_cls.update(target_user_id, payload, user_id=user_data.get('id_user')))
 
 
-def _raise_user_delete_constraint_error(error):
+def _raise_user_delete_constraint_error(error, target_user_id=None):
     detail = str(error.orig) if getattr(error, 'orig', None) else str(error)
     normalized = detail.lower()
     if 'violates foreign key constraint' in normalized and 'is still referenced from table' in normalized:
-        raise AppError(
-            'errors.delete_has_related_records',
-            status_code=409,
-            meta={'entity': 'user', 'action': 'delete'},
-        )
+        raise delete_has_related_records_error('user', 'user', target_user_id)
     raise AppError('errors.database_constraint', status_code=400, meta={'detail': detail})
 
 
@@ -369,14 +366,16 @@ def _delete_user_or_retire_bootstrap(user_data, target_user_id, service_cls):
             if not _can_manage_user_row(user_data, target):
                 return _hierarchy_denied_response()
             item = session.get(service_cls.model, target_user_id)
-            if not item:
+            if not item or item.deletion_date is not None:
                 raise AppError('errors.resource_not_found', status_code=404)
-            # User MFA is a technical dependent record. Remove it in the same
-            # transaction before deleting regular users so admins can remove
-            # users that already completed MFA without violating FK constraints.
+            # Baja logica, igual que el resto de las entidades: un usuario tiene
+            # vales, equipos, eventos y autorias colgando, y el borrado fisico lo
+            # frenaba con un 409 en cuanto habia historial. Con `deletion_date` ya
+            # no entra (login), su token vivo deja de servir (`sesion_vigente`) y
+            # no sale en listados ni selectores; la fila y su historia se quedan.
+            # Su `username` sigue reservado: el indice unico no distingue bajas.
             before = item.serialize()
-            session.execute(text('DELETE FROM user_mfa WHERE id_user = :id_user'), {'id_user': target_user_id})
-            session.delete(item)
+            item.deletion_date = datetime.now(timezone.utc).replace(tzinfo=None)
             try:
                 from app.models import EventLog
                 session.add(EventLog(
@@ -394,7 +393,7 @@ def _delete_user_or_retire_bootstrap(user_data, target_user_id, service_cls):
     except AppError:
         raise
     except (IntegrityError, StatementError) as error:
-        _raise_user_delete_constraint_error(error)
+        _raise_user_delete_constraint_error(error, target_user_id)
 
 
 @bp_user.route('/options', methods=['GET'])

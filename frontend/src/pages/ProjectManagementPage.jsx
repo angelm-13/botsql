@@ -290,7 +290,8 @@ export default function ProjectManagementPage() {
   const customerById = useMemo(() => Object.fromEntries(customers.map((item) => [item.id_customer_supplier, item])), [customers]);
   const userById = useMemo(() => Object.fromEntries(users.map((item) => [item.id_user, item])), [users]);
   const canEditManagement = mode === "manager" || mode === "unrestricted";
-  // Con varios jefes de taller el proyecto no se asigna solo: lo asigna quien autoriza.
+  // Con varios jefes de taller el proyecto no se asigna solo: lo asigna quien autoriza. Con uno
+  // solo se le asigna solo y el desplegable no se ofrece.
   const [jefesDeTaller, setJefesDeTaller] = useState([]);
   useEffect(() => {
     if (!canEditManagement) return;
@@ -628,7 +629,7 @@ export default function ProjectManagementPage() {
               || (Number(projectPermission?.scope_update || 0) & 6) !== 0))
          ) && ["draft", "blocked"].includes(project.proyect_status)) || canEditManagement) && <button className="icon-button" type="button" title={projectText("edit")} onClick={() => openEdit(project)}><Pencil size={16} /></button>}
       {canDelete && project.proyect_status === "draft" && <button className="icon-button danger" type="button" title={projectText("delete")} onClick={() => removeProject(project)}><Trash2 size={16} /></button>}
-      {canEditManagement && project.requires_maquila && jefesDeTaller.length > 0
+      {canEditManagement && project.requires_maquila && jefesDeTaller.length > 1
         && !["denied", "collected", "completed"].includes(project.proyect_status)
         && <label className="project-transition"><Wrench size={15} /><select value={project.id_supervisor ?? ""} disabled={busyId === project.id_proyect} onChange={(event) => asignarJefe(project, event.target.value)} aria-label={`${projectText("assign_workshop_head")}: ${project.title}`}><option value="">{projectText("assign_workshop_head")}</option>{jefesDeTaller.map((jefe) => <option value={jefe.id_user} key={jefe.id_user}>{jefe.full_name}</option>)}</select></label>}
       {pasoDeMaterial && <button className="button primary small" type="button" disabled={busyId === project.id_proyect} onClick={() => setTransition({ project, target: pasoDeMaterial, reason: "", content: "", reviewDate: "" })}>{projectText(pasoDeMaterial === "waiting_material" ? "material_en_camino" : (materialPendiente(project)?.received > 0 ? "material_parcial" : "material_recibido"))}</button>}
