@@ -142,3 +142,17 @@ patches:
       - op: add
         path: /spec/jobTemplate/spec/template/spec/priorityClassName
         value: p5-tyakxa-dev
+  # La base de dev vive en master4 (2026-10-22, ensayo de la mudanza de adser): master2
+  # (1 vCPU, 4 GB, disco casi lleno) compartia nodo con otras bases. nodeSelector
+  # obligatorio porque el volumen local-path de este PVC nace en master4; sin esto, el
+  # siguiente `apply -k` quitaria el nodeSelector que se puso a mano y reiniciaria postgres.
+  - patch: |-
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: postgres
+      spec:
+        template:
+          spec:
+            nodeSelector:
+              kubernetes.io/hostname: k3s-master4

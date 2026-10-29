@@ -37,6 +37,20 @@ patches:
       metadata:
         name: tyakxa-tny
       $patch: delete
+  # celery-beat sin nodeSelector cayo en k3s-worker1 (VPS temporal que se va a
+  # retirar, 2026-10-29). No tiene volumen: moverlo es solo reprogramar el pod. tier=big
+  # lo deja en master1/master4. Se aplico en vivo con `kubectl patch` (el resto del
+  # overlay tiene cambios de base pendientes que un `apply -k` completo arrastraria).
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: celery-beat
+      spec:
+        template:
+          spec:
+            nodeSelector:
+              tier: big
   # PriorityClass del cliente ERP #1 (ver p1-torredigital-prod, aplicada al
   # clúster con kubectl apply -f priority-classes.yaml). target sin `name`
   # aplica a los 5 Deployments del base (backend, celery-worker, celery-beat,
