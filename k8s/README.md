@@ -65,7 +65,13 @@ hablarlo con Alan. Cada quien toca solo su carpeta de overlay.
    `kubectl apply -k k8s/overlays/<cliente>-<env>`. Confirma
    con `kubectl -n <cliente>-<env> rollout status` de `backend`, `celery-worker`,
    `celery-beat` y `frontend`.
-8. **Certificado**: empieza con `letsencrypt-staging` (ya viene así en la
+8. **Activa la contraseña real del admin, antes de exponer el dominio.**
+   `init.sql` siembra `admin1` con un hash temporal público y `init_db.py` lo
+   reemplaza por `BOOTSTRAP_ADMIN_PASSWORD` del Secret:
+   `kubectl -n <cliente>-<env> exec -it deploy/backend -- python init_db.py`.
+   Confirma en los logs del primer arranque que se aplicó (en imágenes
+   anteriores al 20 oct el hash público se quedaba tal cual).
+9. **Certificado**: empieza con `letsencrypt-staging` (ya viene así en la
    plantilla); cuando el certificado salga `READY=True`, cambia a
    `letsencrypt-prod`, commitea y vuelve a aplicar.
 
@@ -84,10 +90,16 @@ nodo por sus fotos).
   (`read:packages`), de una cuenta que vea los paquetes `tyakxa-tny-*`; con una
   cuenta que no los ve da 403. Los tokens vencen: anota la fecha.
 - `app-secrets`: se escribe en el servidor con `nano`, nunca por chat ni
-  copiado desde Windows (los saltos de línea CRLF rompen contraseñas). Para ver
-  qué claves lleva, copia los **nombres** de un cliente existente:
-  `kubectl -n comala-prod describe secret app-secrets` (solo nombres y tamaños;
-  nunca `get secret -o yaml`).
+  copiado desde Windows (los saltos de línea CRLF rompen contraseñas). Claves
+  confirmadas en la práctica (según el Runbook): `DB_HOST` (= `postgres`),
+  `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `RABBITMQ_DEFAULT_USER`,
+  `RABBITMQ_DEFAULT_PASS`, `CELERY_BROKER_URL`, `JWT_SECRET`, `SECRET_KEY`,
+  `MFA_ENCRYPTION_KEY`, `PAC_ENCRYPTION_KEY` y `BOOTSTRAP_ADMIN_PASSWORD`. Si
+  falta una, el error de conexión es distinto por cada llave. Los secretos se
+  generan en el servidor con `openssl rand`. Para contrastar con un cliente
+  real, copia los **nombres**: `kubectl -n comala-prod describe secret
+  app-secrets` (solo nombres y tamaños; nunca `get secret -o yaml`). Detalle y
+  trampas en el Runbook, secciones «Secretos» y «Primer despliegue».
 - Namespace nuevo: engancha el pull secret al ServiceAccount `default` o los
   pods quedan en `ImagePullBackOff`:
   `kubectl patch serviceaccount default -n <ns> -p '{"imagePullSecrets":[{"name":"ghcr-pull-secret"}]}'`
