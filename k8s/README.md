@@ -16,7 +16,7 @@ errores comunes). Esto cubre solo lo propio de este repo.
   commitea y se aplica en el VPS. Ahí está el freno real de producción.
 - Después de cada push el bot agrega un commit `deploy(tyakxa-dev): actualizar
   a <sha>`. No es un conflicto: al trabajar en tu rama, trae `origin/initAlan`
-  (`git fetch` y `git rebase origin/initAlan`) antes de seguir.
+  (`git fetch` y `git merge origin/initAlan`) antes de seguir.
 - El clúster solo hace `pull` de imágenes (`ghcr.io/tyakxa`). No hay código
   fuente en el servidor, solo estos manifiestos.
 
@@ -39,11 +39,17 @@ hablarlo con Alan. Cada quien toca solo su carpeta de overlay.
 ## Dar de alta un cliente nuevo
 
 1. **Registra el cliente en `deploy/clients.yaml`** (`name`, `env`,
-   `api_base_url: ""`) en tu rama y avisa a Alan. Él la integra a `initAlan` y
-   hace push (con varios clientes, una sola vez), porque las imágenes solo se
-   construyen desde ahí. Se construye una imagen de frontend por cliente
-   (`<sha>-<cliente>-<env>`), y solo existe para commits que ya incluyen su
-   entrada. Espera a que el Actions termine en verde.
+   `api_base_url: ""`): **solo agrega una entrada al final**, sin tocar las
+   demás. Un YAML mal formado ahí hace fallar el workflow para todos, tyakxa-dev
+   incluido; comprueba que sigue siendo válido
+   (`python -c "import yaml; yaml.safe_load(open('deploy/clients.yaml'))"`).
+   Las imágenes solo se construyen desde `initAlan`, así que **este commit sí se
+   pushea a `initAlan`**, avisando antes a Alan (basta el aviso, no hace falta su
+   OK) y solo si toca únicamente ese archivo (`git diff --stat origin/initAlan`).
+   Trae `origin/initAlan` a tu rama (`git fetch` y `git merge origin/initAlan`) y
+   `git push origin HEAD:initAlan`. Se construye una imagen de frontend por
+   cliente (`<sha>-<cliente>-<env>`), y solo existe para commits que ya incluyen
+   su entrada. Espera a que el Actions termine en verde.
 2. **Toma el SHA** del commit del bot `deploy(tyakxa-dev): actualizar a <sha>`
    que aparece después de ese build. El bot solo lo publica cuando terminaron
    todas las imágenes, incluida la de tu frontend.
@@ -55,14 +61,16 @@ hablarlo con Alan. Cada quien toca solo su carpeta de overlay.
    de la plantilla explican cada bloque.
 4. **Valida que compila**: `kubectl kustomize k8s/overlays/<cliente>-<env>`
    (debe terminar sin error; revisa que salga tu namespace y tu dominio).
-5. **Commit y push a tu rama** (no a `initAlan`), solo de tu overlay y de
-   `deploy/clients.yaml`: `git add k8s/overlays/<cliente>-<env> deploy/clients.yaml`.
-   Nunca `git add -A`. Avisa a Alan: revisa el diff (debe ser solo tu overlay) y
-   decide si lo integra a `initAlan`.
+5. **Commit y push de tu overlay a `initAlan`**, avisando antes a Alan:
+   `git add k8s/overlays/<cliente>-<env>`. Nunca `git add -A`: el diff contra
+   `origin/initAlan` debe ser **solo tu carpeta de overlay**. Trae
+   `origin/initAlan` (`git fetch` y `git merge origin/initAlan`) y
+   `git push origin HEAD:initAlan`. Si el bot pushea mientras tanto y te rechaza,
+   repite el `merge` y el `push`; no fuerces.
 6. **En el VPS**, antes del primer `apply` (ver "Secrets" más abajo): crea el
    namespace, el `ghcr-pull-secret`, parchea el ServiceAccount `default` y crea
    `app-secrets`.
-7. **Cuando Alan lo haya integrado**, trae `origin/initAlan` a tu rama y copia
+7. **Con el overlay ya en `initAlan`**, trae `origin/initAlan` a tu rama y copia
    al VPS `base/`, `components/` y tu overlay. Copia también `base/` y
    `components/`: el pipeline no los sincroniza, y una copia vieja ahí aplica
    manifiestos desactualizados. Desde PowerShell **en tu máquina** (no en la
@@ -195,13 +203,17 @@ siguiente `apply` revierte la versión.
 ## Reglas para trabajar en equipo
 
 - **Trabaja en tu propia rama, creada desde `initAlan`**
-  (`git switch -c <tu-rama> origin/initAlan`). No pushees a `initAlan`: Alan
-  revisa y decide qué integra, como con cualquier otro cambio. Commits chicos y
-  solo de despliegue (tu overlay y tu entrada en `deploy/clients.yaml`). Si
-  necesitas cambiar código de la app, `base/` o `components/`, no lo mezcles con
-  los commits de despliegue y avisa a Alan.
-- Antes de aplicar, trae `origin/initAlan` a tu rama (`git fetch` y `git rebase
-  origin/initAlan`), para no aplicar manifiestos desactualizados.
+  (`git switch -c <tu-rama> origin/initAlan`). **Excepción: el alta de un
+  ambiente nuevo sí se pushea a `initAlan`** (`git push origin HEAD:initAlan`),
+  avisando antes a Alan, y solo con commits que toquen únicamente
+  `deploy/clients.yaml` (una entrada nueva al final) y
+  `k8s/overlays/<tu-cliente-nuevo>/`. Cualquier otra cosa (código de la app,
+  `base/`, `components/`, overlays de clientes que ya existen) **no se pushea a
+  `initAlan`**: Alan revisa y decide qué integra. Commits chicos y solo de
+  despliegue; no los mezcles con cambios de otro tipo.
+- Antes de pushear o aplicar, trae `origin/initAlan` a tu rama (`git fetch` y
+  `git merge origin/initAlan`; evita `rebase`, que reabre conflictos ya
+  resueltos), para no aplicar manifiestos desactualizados.
 - Tu trabajo es dar de alta ambientes nuevos. No cambies ni apliques versiones en
   clientes que ya existen: eso lo hace Alan.
 - Aplica solo tu overlay. El clúster no te impide aplicar sobre el de otro
