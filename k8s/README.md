@@ -62,20 +62,38 @@ hablarlo con Alan. Cada quien toca solo su carpeta de overlay.
 6. **En el VPS**, antes del primer `apply` (ver "Secrets" más abajo): crea el
    namespace, el `ghcr-pull-secret`, parchea el ServiceAccount `default` y crea
    `app-secrets`.
-7. **Cuando Alan lo haya integrado**, trae `origin/initAlan` a tu rama, copia tu
-   `k8s/` a tu home en el VPS con `scp` y aplica:
-   `kubectl apply -k k8s/overlays/<cliente>-<env>`. Confirma
-   con `kubectl -n <cliente>-<env> rollout status` de `backend`, `celery-worker`,
-   `celery-beat` y `frontend`.
-8. **Activa la contraseña real del admin, antes de exponer el dominio.**
-   `init.sql` siembra `admin1` con un hash temporal público y `init_db.py` lo
-   reemplaza por `BOOTSTRAP_ADMIN_PASSWORD` del Secret:
-   `kubectl -n <cliente>-<env> exec -it deploy/backend -- python init_db.py`.
-   Confirma en los logs del primer arranque que se aplicó (en imágenes
-   anteriores al 20 oct el hash público se quedaba tal cual).
+7. **Cuando Alan lo haya integrado**, trae `origin/initAlan` a tu rama y copia
+   al VPS `base/`, `components/` y tu overlay. Copia también `base/` y
+   `components/`: el pipeline no los sincroniza, y una copia vieja ahí aplica
+   manifiestos desactualizados. Desde PowerShell **en tu máquina** (no en la
+   sesión SSH; el destino es tu copia de `k8s/` en el VPS, `tyakxa_tny/k8s/`
+   en el home de Alan):
+   ```powershell
+   scp -r k8s\base k8s\components <usuario>@168.231.67.33:tyakxa_tny/k8s/
+   scp -r k8s\overlays\<cliente>-<env> <usuario>@168.231.67.33:tyakxa_tny/k8s/overlays/
+   ```
+   En el VPS: `kubectl apply -k ~/tyakxa_tny/k8s/overlays/<cliente>-<env>`.
+   Confirma con `kubectl -n <cliente>-<env> rollout status` de `backend`,
+   `celery-worker`, `celery-beat` y `frontend`. Es normal que `postgres-0` muestre
+   **un reinicio** en una base nueva (ver "Comprobaciones finales").
+8. **Confirma que la contraseña real del admin se aplicó, antes de exponer el
+   dominio.** `init.sql` siembra `admin1` con un hash temporal público y el
+   backend lo reemplaza por `BOOTSTRAP_ADMIN_PASSWORD` del Secret en su primer
+   arranque; no hace falta correr `init_db.py` a mano. Compruébalo en los logs:
+   `kubectl -n <cliente>-<env> logs deploy/backend | grep -i bootstrap` debe
+   decir `set from BOOTSTRAP_ADMIN_PASSWORD (admin1)` (en imágenes anteriores
+   al 20 oct el hash público se quedaba tal cual).
 9. **Certificado**: empieza con `letsencrypt-staging` (ya viene así en la
-   plantilla); cuando el certificado salga `READY=True`, cambia a
-   `letsencrypt-prod`, commitea y vuelve a aplicar.
+   plantilla). `kubectl -n <cliente>-<env> get certificate` con `READY=True`
+   **solo dice que el de staging se emitió**: no distingue staging de prod. Cambia
+   a `letsencrypt-prod` en `ingress-single-origin.yaml`, commitea, copia ese
+   archivo con `scp` y vuelve a aplicar. Cert-manager reemite solo en uno o dos
+   minutos. Verifica desde Windows, **sin `-k`**:
+   `curl.exe -sI https://<dominio>`. Si contesta `200` sin error de certificado,
+   ya es el real; si falla por certificado, sigue siendo staging. Solo si tras
+   unos 5 minutos sigue así, borra el Secret del certificado
+   (`kubectl -n <cliente>-<env> delete secret <cliente>-<env>-tls`) y
+   cert-manager lo regenera.
 
 ### Dónde cae el cliente
 
@@ -86,11 +104,25 @@ parche un volumen `local-path` queda atado al nodo donde nazca. Los overlays
 anteriores a esta plantilla no lo traen todavía (`adser-prod` fija su propio
 nodo por sus fotos).
 
+**Decide el nodo al dar de alta, no después.** Con `tier: big` el scheduler elige
+entre master1 y master4, y suele caer en master1, que ya es la única puerta de
+todo el tráfico (ingress) y aloja a otros clientes. La regla del clúster es
+repartir la producción entre los dos. Para fijar uno, agrega la línea
+`kubernetes.io/hostname: k3s-master4` junto a `tier: big` en **los dos** parches
+de nodo del overlay (Deployment y StatefulSet); `aai-prod` es el ejemplo.
+Cambiarlo más tarde exige migrar datos (dump y un
+PVC nuevo), porque un volumen `local-path` queda atado al nodo donde nació.
+Antes de elegir, mira cuánto hay: `kubectl top nodes` (uso real) y
+`kubectl describe node k3s-master4 | grep -A8 "Allocated resources"` (reserva).
+
 ### Secrets (no viven en el repo)
 
 - `ghcr-pull-secret`: lo crea cada quien con **su** token clásico de GitHub
   (`read:packages`), de una cuenta que vea los paquetes `tyakxa-tny-*`; con una
-  cuenta que no los ve da 403. Los tokens vencen: anota la fecha.
+  cuenta que no los ve da 403. Los tokens vencen: anota la fecha. Alternativa
+  más simple, sin tocar ningún token: **cópialo de un namespace que ya lo tenga**
+  (necesita `jq` en el VPS; hereda el vencimiento de ese token):
+  `kubectl -n comala-prod get secret ghcr-pull-secret -o json | jq 'del(.metadata.namespace,.metadata.resourceVersion,.metadata.uid,.metadata.creationTimestamp,.metadata.ownerReferences,.metadata.annotations)' | kubectl -n <ns> apply -f -`
 - `app-secrets`: se escribe en el servidor con `nano`, nunca por chat ni
   copiado desde Windows (los saltos de línea CRLF rompen contraseñas). Claves
   confirmadas en la práctica (según el Runbook): `DB_HOST` (= `postgres`),
@@ -105,7 +137,10 @@ nodo por sus fotos).
   `BOOTSTRAP_ADMIN_PASSWORD`, 12 o más (con `openssl rand -hex 16` y `-hex 32`
   se cumple).
   Opcionales: `DEPLOYMENT_LABEL` (el nombre que sale como badge en la barra
-  superior; si no se pone, no hay badge) y `STAMPING_PROVIDER`. Esta última
+  superior; si no se pone, no hay badge) y `STAMPING_PROVIDER`. El badge se
+  agrega con `kubectl -n <ns> patch secret app-secrets -p
+  '{"stringData":{"DEPLOYMENT_LABEL":"<Nombre>"}}'` y, si ya había pods,
+  `kubectl -n <ns> rollout restart deploy/backend`. `STAMPING_PROVIDER`
   **no la pongas vacía**: una variable definida pero vacía rompe el timbrado con
   `Unsupported STAMPING_PROVIDER` en vez del 503 limpio; si no se va a usar, no
   la incluyas. La cuenta del PAC se puede configurar después desde el sistema,
@@ -116,6 +151,28 @@ nodo por sus fotos).
 - Namespace nuevo: engancha el pull secret al ServiceAccount `default` o los
   pods quedan en `ImagePullBackOff`:
   `kubectl patch serviceaccount default -n <ns> -p '{"imagePullSecrets":[{"name":"ghcr-pull-secret"}]}'`
+
+## Comprobaciones finales de un alta
+
+- `kubectl -n <ns> get pods -o wide`: los seis (`backend`, `celery-beat`,
+  `celery-worker`, `frontend`, `postgres-0`, `rabbitmq`) en `1/1 Running` y en el
+  nodo que elegiste.
+- Volúmenes en el nodo correcto (el filtro por namespace; la columna `CLAIM` solo
+  trae el nombre del PVC): `kubectl get pv -o custom-columns=CLAIM:.spec.claimRef.name,NS:.spec.claimRef.namespace,NODO:.spec.nodeAffinity.required.nodeSelectorTerms[0].matchExpressions[0].values[0] | grep -E "NS|<ns>"`.
+- Entra al dominio como `admin1` con `BOOTSTRAP_ADMIN_PASSWORD` y confirma el
+  badge si pusiste `DEPLOYMENT_LABEL` (Ctrl+F5 si no sale).
+
+**Es normal, no es una falla**:
+- `postgres-0` con **1 reinicio** en una base nueva: `02-sync-fields.sql` (de la
+  imagen `db-init`) falla con `column "data_type" of relation "field" does not
+  exist` y el contenedor sale; al volver, el volumen ya no está vacío y arranca.
+  El catálogo `field` lo siembra después el backend (`init_db.py`). Si el reinicio
+  se repite o el pod no llega a `Running`, entonces sí hay un problema: revisa
+  `kubectl -n <ns> logs postgres-0 --previous`.
+- El PVC `pg-backups` en `Pending`: `local-path` no crea el volumen hasta que un
+  pod lo usa, y el primer uso es el CronJob de las 03:30. Confirma al día
+  siguiente que pasó a `Bound` y que el job terminó. Ese respaldo vive dentro del
+  mismo clúster.
 
 ## Promover una versión a un cliente que ya existe
 
