@@ -27,11 +27,11 @@ from .schema_linking import ddl_para_pregunta
 EJEMPLOS_BASE = """EJEMPLOS (mismo esquema; copia el estilo, no los nombres si la pregunta es otra):
 P: cuantos productos hay -> SELECT COUNT(*) AS total_productos FROM product WHERE deletion_date IS NULL
 P: top 8 productos por existencias -> SELECT descripcion AS producto, cantidad AS existencias FROM product WHERE deletion_date IS NULL ORDER BY cantidad DESC LIMIT 8
-P: facturado por cliente -> SELECT c.name AS cliente, SUM(i.total) AS total_facturado FROM invoice i JOIN customer_supplier c ON c.id_customer_supplier = i.id_customer_supplier WHERE i.deletion_date IS NULL GROUP BY c.name ORDER BY total_facturado DESC LIMIT 10
-P: incidencias por tipo -> SELECT t.incident_type_description AS tipo, COUNT(*) AS incidencias FROM incident n JOIN incident_type t ON t.id_incident_type = n.id_incident_type WHERE n.deletion_date IS NULL GROUP BY t.incident_type_description ORDER BY incidencias DESC LIMIT 20
-P: herramientas del vale 140 -> SELECT p.descripcion AS herramienta, SUM(n.quantity) AS cantidad FROM nm_incident_product n JOIN product p ON p.id_product = n.id_product WHERE n.id_incident = 140 AND n.deletion_date IS NULL GROUP BY p.descripcion ORDER BY cantidad DESC LIMIT 10
-P: incidencias abiertas por responsable -> SELECT u.full_name AS responsable, COUNT(*) AS abiertas FROM incident n JOIN "user" u ON u.id_user = n.id_user WHERE n.incident_status = 'abierta' AND n.deletion_date IS NULL GROUP BY u.full_name ORDER BY abiertas DESC LIMIT 10
-P: facturas por mes -> SELECT date_trunc('month', date_emision) AS mes, SUM(total) AS total FROM invoice WHERE deletion_date IS NULL GROUP BY 1 ORDER BY 1 LIMIT 24
+P: facturado por cliente -> SELECT c.name AS cliente, SUM(i.total) AS total_facturado FROM invoice i JOIN customer_supplier c ON c.id_customer_supplier = i.id_customer_supplier WHERE i.deletion_date IS NULL GROUP BY c.name ORDER BY total_facturado DESC
+P: incidencias por tipo -> SELECT t.incident_type_description AS tipo, COUNT(*) AS incidencias FROM incident n JOIN incident_type t ON t.id_incident_type = n.id_incident_type WHERE n.deletion_date IS NULL GROUP BY t.incident_type_description ORDER BY incidencias DESC
+P: herramientas del vale 140 -> SELECT p.descripcion AS herramienta, SUM(n.quantity) AS cantidad FROM nm_incident_product n JOIN product p ON p.id_product = n.id_product WHERE n.id_incident = 140 AND n.deletion_date IS NULL GROUP BY p.descripcion ORDER BY cantidad DESC
+P: incidencias abiertas por responsable -> SELECT u.full_name AS responsable, COUNT(*) AS abiertas FROM incident n JOIN "user" u ON u.id_user = n.id_user WHERE n.incident_status = 'abierta' AND n.deletion_date IS NULL GROUP BY u.full_name ORDER BY abiertas DESC
+P: facturas por mes -> SELECT date_trunc('month', date_emision) AS mes, SUM(total) AS total FROM invoice WHERE deletion_date IS NULL GROUP BY 1 ORDER BY 1
 
 """
 
@@ -41,7 +41,7 @@ REGLAS:
 1. Solo SELECT. Prohibido INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE, GRANT. Si piden modificar o borrar datos responde {{"error": "Accion no permitida por seguridad"}}.
 2. Usa unicamente tablas y columnas del ESQUEMA de abajo, con sus nombres exactos. No inventes campos. Cada tabla tiene su llave como id_<tabla>; las llaves foraneas se llaman id_<otra_tabla>.
 3. Agrega con SUM, COUNT, AVG, GROUP BY y ordena con ORDER BY. Si una tabla trae deletion_date, filtra deletion_date IS NULL. Al ordenar DESC agrega NULLS LAST. Alias de tabla de una o dos letras que NO sean palabras reservadas (usa p, i, n, st, c; nunca is, in, on, or, to, by).
-4. Acota las filas. Sintaxis en este motor: {limit_syntax}. Nunca mas de {row_limit} filas.
+4. El sistema ya acota el resultado a {row_limit} filas: NO escribas LIMIT salvo que la pregunta pida un top N, "el mayor" o "el primero" (entonces LIMIT con ese numero exacto). Sintaxis en este motor: {limit_syntax}.
 5. Hoy es {today}. Resuelve con esa fecha "este mes", "el ano pasado", "ultimos 30 dias".
 6. Da un alias a cada columna calculada y usa ese mismo alias en x_axis, y_axis y metric_label.
 7. Usa chart_type table por omision. Solo si el usuario pide una grafica usa bar, line, pie o area (bar para categorias, line para fechas). Un conteo o total unico usa kpi_card.
@@ -60,6 +60,7 @@ GLOSARIO DEL NEGOCIO (usa estas tablas y valores, son los reales):
 - producto/herramienta = product (descripcion, cantidad, product_code, product_status: ENTRADA, SALIDA, DAÑADO, EXTRAVIADO...). Existencias por ubicacion: inventory_stock (id_product, id_location, quantity) con location.location_description.
 - cliente/proveedor = customer_supplier (name). factura = invoice (date_emision, total, invoice_status, id_customer_supplier).
 - existencias de un producto = product.cantidad; "total de existencias" = SUM(product.cantidad). product.id_marca -> brand(brand_description), product.id_familia -> product_family(product_family_description). inventory_stock es solo por ubicacion.
+- rol de un usuario = permission.permission_description, unido por "user".id_permission = permission.id_permission (NO uses user_type). usuarios por rol = COUNT(*) agrupado por permission_description.
 - empleado = "user" con is_employee = true. Estatus de proyecto en espanol: borrador=draft, autorizado=authorized, en proceso=in_progress, esperando material=waiting_material, bloqueado=blocked, completado=completed, entregado=delivered, rechazado=denied.
 - proyecto/orden de trabajo = proyect (title, proyect_status: draft, authorized, in_progress, waiting_material, blocked, completed, delivered, denied; total_cost). tarea = task (id_proyect, task_status, title).
 - empleado/usuario/responsable = "user" (first_name, last_name_father, full_name). Escribe SIEMPRE "user" entre comillas dobles: sin comillas es una palabra reservada.

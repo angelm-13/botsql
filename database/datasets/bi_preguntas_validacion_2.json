@@ -1,0 +1,155 @@
+{
+ "descripcion": "Segundo conjunto de VALIDACION: preguntas nuevas, escritas antes de medir las correcciones derivadas del primer conjunto. No se usa para ajustar nada.",
+ "preguntas": [
+  {
+   "id": "w01",
+   "conjunto": "validacion2",
+   "pregunta": "cuantos productos hay por estatus",
+   "oro": "SELECT product_status, COUNT(*) FROM product WHERE deletion_date IS NULL GROUP BY product_status"
+  },
+  {
+   "id": "w02",
+   "conjunto": "validacion2",
+   "pregunta": "cuantas marcas tienen productos registrados",
+   "oro": "SELECT COUNT(DISTINCT id_marca) FROM product WHERE deletion_date IS NULL"
+  },
+  {
+   "id": "w03",
+   "conjunto": "validacion2",
+   "pregunta": "cual es la suma de las existencias de todos los productos",
+   "oro": "SELECT SUM(cantidad) FROM product WHERE deletion_date IS NULL"
+  },
+  {
+   "id": "w04",
+   "conjunto": "validacion2",
+   "pregunta": "cuantos vales estan en espera",
+   "oro": "SELECT COUNT(*) FROM incident WHERE deletion_date IS NULL AND incident_status = 'en_espera'"
+  },
+  {
+   "id": "w05",
+   "conjunto": "validacion2",
+   "pregunta": "cuantos vales estan en transito",
+   "oro": "SELECT COUNT(*) FROM incident WHERE deletion_date IS NULL AND incident_status = 'en_transito'"
+  },
+  {
+   "id": "w06",
+   "conjunto": "validacion2",
+   "pregunta": "cuantos vales hay de cada tipo",
+   "oro": "SELECT t.incident_type_description, COUNT(*) FROM incident i JOIN incident_type t ON t.id_incident_type = i.id_incident_type WHERE i.deletion_date IS NULL GROUP BY t.incident_type_description"
+  },
+  {
+   "id": "w07",
+   "conjunto": "validacion2",
+   "pregunta": "cual es el tipo de vale mas frecuente",
+   "oro": "SELECT t.incident_type_description FROM incident i JOIN incident_type t ON t.id_incident_type = i.id_incident_type WHERE i.deletion_date IS NULL GROUP BY t.incident_type_description ORDER BY COUNT(*) DESC LIMIT 1"
+  },
+  {
+   "id": "w08",
+   "conjunto": "validacion2",
+   "pregunta": "cuantas herramientas ya fueron devueltas",
+   "oro": "SELECT COUNT(*) FROM nm_incident_product WHERE deletion_date IS NULL AND close_date IS NOT NULL"
+  },
+  {
+   "id": "w09",
+   "conjunto": "validacion2",
+   "pregunta": "cuantos vales se crearon este anio",
+   "oro": "SELECT COUNT(*) FROM incident WHERE deletion_date IS NULL AND incident_date >= date_trunc('year', now())"
+  },
+  {
+   "id": "w10",
+   "conjunto": "validacion2",
+   "pregunta": "cuantos proyectos estan en borrador",
+   "oro": "SELECT COUNT(*) FROM proyect WHERE deletion_date IS NULL AND proyect_status = 'draft'"
+  },
+  {
+   "id": "w11",
+   "conjunto": "validacion2",
+   "pregunta": "cual es el costo total de todos los proyectos",
+   "oro": "SELECT SUM(total_cost) FROM proyect WHERE deletion_date IS NULL"
+  },
+  {
+   "id": "w12",
+   "conjunto": "validacion2",
+   "pregunta": "cuantos proyectos hay por prioridad",
+   "oro": "SELECT priority, COUNT(*) FROM proyect WHERE deletion_date IS NULL GROUP BY priority"
+  },
+  {
+   "id": "w13",
+   "conjunto": "validacion2",
+   "pregunta": "cuantas tareas estan en proceso",
+   "oro": "SELECT COUNT(*) FROM task WHERE deletion_date IS NULL AND task_status = 'en_proceso'"
+  },
+  {
+   "id": "w14",
+   "conjunto": "validacion2",
+   "pregunta": "cuantas tareas hay por estatus",
+   "oro": "SELECT task_status, COUNT(*) FROM task WHERE deletion_date IS NULL GROUP BY task_status"
+  },
+  {
+   "id": "w15",
+   "conjunto": "validacion2",
+   "pregunta": "cuantos clientes distintos tienen proyectos",
+   "oro": "SELECT COUNT(DISTINCT id_customer_supplier) FROM proyect WHERE deletion_date IS NULL"
+  },
+  {
+   "id": "w16",
+   "conjunto": "validacion2",
+   "pregunta": "cuantas ordenes de compra estan autorizadas",
+   "oro": "SELECT COUNT(*) FROM purchase_order WHERE deletion_date IS NULL AND order_status = 'authorized'"
+  },
+  {
+   "id": "w17",
+   "conjunto": "validacion2",
+   "pregunta": "cuanto suma lo autorizado en ordenes de compra",
+   "oro": "SELECT SUM(authorized_total) FROM purchase_order WHERE deletion_date IS NULL"
+  },
+  {
+   "id": "w18",
+   "conjunto": "validacion2",
+   "pregunta": "cual es el importe promedio de las facturas",
+   "oro": "SELECT AVG(total) FROM invoice WHERE deletion_date IS NULL"
+  },
+  {
+   "id": "w19",
+   "conjunto": "validacion2",
+   "pregunta": "cuantas facturas hay por moneda",
+   "oro": "SELECT currency, COUNT(*) FROM invoice WHERE deletion_date IS NULL GROUP BY currency"
+  },
+  {
+   "id": "w20",
+   "conjunto": "validacion2",
+   "pregunta": "cuantas facturas se emitieron este anio",
+   "oro": "SELECT COUNT(*) FROM invoice WHERE deletion_date IS NULL AND date_emision >= date_trunc('year', now())"
+  },
+  {
+   "id": "w21",
+   "conjunto": "validacion2",
+   "pregunta": "cuantos usuarios no son empleados",
+   "oro": "SELECT COUNT(*) FROM \"user\" WHERE deletion_date IS NULL AND is_employee = false"
+  },
+  {
+   "id": "w22",
+   "conjunto": "validacion2",
+   "pregunta": "cuantos usuarios tienen el rol de supervisor",
+   "oro": "SELECT COUNT(*) FROM \"user\" u JOIN permission p ON p.id_permission = u.id_permission WHERE u.deletion_date IS NULL AND p.permission_description = 'Supervisor'"
+  },
+  {
+   "id": "w23",
+   "conjunto": "validacion2",
+   "pregunta": "cuantos documentos estan vencidos",
+   "oro": "SELECT COUNT(*) FROM document WHERE deletion_date IS NULL AND expiration_date < now()"
+  },
+  {
+   "id": "w24",
+   "conjunto": "validacion2",
+   "pregunta": "cuantos renglones de vale son de salida",
+   "oro": "SELECT COUNT(*) FROM nm_incident_product WHERE deletion_date IS NULL AND direction = 'salida'"
+  },
+  {
+   "id": "w25",
+   "conjunto": "validacion2",
+   "pregunta": "cual es el cliente con mas proyectos",
+   "oro": "SELECT c.name FROM proyect p JOIN customer_supplier c ON c.id_customer_supplier = p.id_customer_supplier WHERE p.deletion_date IS NULL GROUP BY c.name ORDER BY COUNT(*) DESC LIMIT 1"
+  }
+ ]
+}

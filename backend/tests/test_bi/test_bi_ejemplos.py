@@ -38,3 +38,11 @@ def test_aprende_una_consulta_buena_una_sola_vez(tmp_path, monkeypatch):
     E.aprender("nada", "SELECT 1", [], 0)       # sin filas: no se guarda
     lineas = [json.loads(x) for x in ruta.read_text(encoding="utf-8").splitlines()]
     assert len(lineas) == 1 and lineas[0]["origen"] == "aprendido"
+
+
+def test_el_limit_de_un_ejemplo_sin_top_n_no_se_copia_al_prompt():
+    from app.bi import ejemplos
+    e = [{"preguntas": ["materiales por marca"], "sql": "SELECT 1 FROM x GROUP BY 1 LIMIT 200"},
+         {"preguntas": ["top 5 productos"], "sql": "SELECT 1 FROM y LIMIT 5"}]
+    out = ejemplos.formatear(e, "materiales por marca")
+    assert "GROUP BY 1\n" in out and "LIMIT 200" not in out and "LIMIT 5" in out

@@ -564,6 +564,27 @@ def _auditar(pregunta, r, acceso, usuario) -> None:
         "desde_cache": r.meta.get("desde_cache"),
     }, ensure_ascii=False))
 
+    _guardar_bitacora(pregunta, r, acceso, usuario)
+
+
+def _guardar_bitacora(pregunta, r, acceso, usuario) -> None:
+    """RF-17: una fila por consulta en `bi_query_log`. Nunca debe romper la respuesta."""
+    try:
+        from sqlalchemy import text
+        from app.models.session import transaction_context
+        uid = (usuario or {}).get("id_user") or (usuario or {}).get("user_id")
+        with transaction_context() as s:
+            s.execute(text(
+                "INSERT INTO bi_query_log (id_user, rol, pregunta, sql_ejecutado, ok, http, error_tipo, filas, ms_total, desde_cache) "
+                "VALUES (:u, :rol, :p, :sql, :ok, :http, :err, :filas, :ms, :cache)"),
+                {"u": int(uid) if str(uid).isdigit() else None, "rol": getattr(acceso, "rol", None),
+                 "p": pregunta[:1000], "sql": " ;; ".join(w.sql for w in r.widgets if w.sql)[:4000] or None,
+                 "ok": bool(r.ok), "http": r.http, "err": (r.error or {}).get("tipo"),
+                 "filas": sum(w.total_filas or 0 for w in r.widgets), "ms": r.meta.get("ms_total"),
+                 "cache": bool(r.meta.get("desde_cache"))})
+    except Exception as exc:  # la bitacora es un registro, no parte de la respuesta
+        _log.warning("BI bitacora no guardada: %s", str(exc)[:200])
+
 
 def _widget_manual(titulo, explicacion, columnas, filas, tipo="table", x="", y="", avisos=None, ms=0,
                    exponer_sql=False, sql=""):
@@ -701,6 +722,12 @@ def _responder_con_documentacion(pregunta, *, proveedor, cache_preguntas, acceso
     return RespuestaBI(ok=True, pregunta=pregunta, widgets=[widget], meta=meta, http=200)
 
 
+_SOLO_UNA_CONSULTA = (
+    "\n\nIMPORTANTE: la pregunta es simple. Responde UN solo objeto JSON con "
+    '"is_dashboard": false y UNA sola consulta en "sql_query". Sin widgets.'
+)
+
+
 def _responder(
     pregunta: str,
     *,
@@ -791,13 +818,28 @@ def _responder(
     try:
         dir_ = directive.parsear_directiva(salida.texto, max_widgets=ajustes.max_widgets)
     except directive.DirectivaInvalida as exc:
-        meta["ms_total"] = int((time.monotonic() - inicio) * 1000)
-        return RespuestaBI(
-            ok=False, pregunta=pregunta, http=502, meta=meta,
-            error={"tipo": "directiva_invalida", "motivo": exc.motivo,
-                   "mensaje": "El modelo no devolvio el JSON del contrato.",
-                   **({"respuesta_cruda": exc.crudo} if exponer_sql else {})},
-        )
+        dir_ = None
+        # Un modelo chico a veces contesta una pregunta simple con un tablero y se corta a
+        # medio JSON (num_predict). Se reintenta UNA vez pidiendo una sola consulta.
+        if receta is None and not desde_cache and not re.search(
+                r"(?i)\b(dashboard|tablero|resumen|panorama)\b", pregunta):
+            try:
+                segunda = proveedor.generar(texto_prompt + _SOLO_UNA_CONSULTA, pregunta)
+                dir_ = directive.parsear_directiva(segunda.texto, max_widgets=ajustes.max_widgets)
+                salida = segunda
+                meta["ms_modelo"] += segunda.ms
+                meta["tokens_respuesta"] = segunda.tokens_respuesta
+                meta["reintento"] = True
+            except (directive.DirectivaInvalida, ProveedorNoDisponible):
+                dir_ = None
+        if dir_ is None:
+            meta["ms_total"] = int((time.monotonic() - inicio) * 1000)
+            return RespuestaBI(
+                ok=False, pregunta=pregunta, http=502, meta=meta,
+                error={"tipo": "directiva_invalida", "motivo": exc.motivo,
+                       "mensaje": "El modelo no devolvio el JSON del contrato.",
+                       **({"respuesta_cruda": exc.crudo} if exponer_sql else {})},
+            )
 
     if dir_.rechazada_por_el_modelo:
         meta["ms_total"] = int((time.monotonic() - inicio) * 1000)

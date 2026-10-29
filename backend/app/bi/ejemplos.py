@@ -134,7 +134,11 @@ def formatear(ejemplos: list[dict], pregunta: str) -> str:
     lineas = ["EJEMPLOS REALES de este esquema (copia el estilo y los nombres de columna exactos):"]
     for e in ejemplos:
         variante = max(e["preguntas"], key=lambda p: len(q & _tokens(p)))
-        lineas.append(f"P: {variante} -> {e['sql']}")
+        sql = e["sql"]
+        if not re.search(r"\d|\b(top|mayor|menor|primer\w*|ultim\w*)\b", variante, re.I):
+            # El LIMIT de un ejemplo sin "top N" se lo copiaria el modelo a preguntas que no lo piden.
+            sql = re.sub(r"\s+LIMIT\s+\d+\s*$", "", sql, flags=re.I)
+        lineas.append(f"P: {variante} -> {sql}")
     return "\n".join(lineas) + "\n\n"
 
 

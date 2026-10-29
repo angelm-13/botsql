@@ -186,7 +186,13 @@ RECETAS: list[tuple[re.Pattern, Callable]] = [
                   "Promedio de existencias por producto", "kpi_card", y="promedio_existencias",
                   etiqueta="Promedio por producto")),
 
-    (re.compile(r"^cuantos (usuarios|personas) (son )?empleados$|^cuantos empleados hay$"),
+    (re.compile(r"^(cuantos )?usuarios (hay )?por (rol|perfil|permiso)$"),
+     lambda m: _d('SELECT p.permission_description AS rol, COUNT(*) AS usuarios FROM "user" u '
+                  "JOIN permission p ON p.id_permission = u.id_permission WHERE u.deletion_date IS NULL "
+                  "GROUP BY p.permission_description ORDER BY usuarios DESC",
+                  "Usuarios por rol", "bar", "rol", "usuarios")),
+
+    (re.compile(r"^cuantos (usuarios|personas) (son )?empleados$|^cuantos empleados (hay|tenemos|existen|tiene la empresa)$"),
      lambda m: _d('SELECT COUNT(*) AS total_empleados FROM "user" WHERE is_employee = true AND deletion_date IS NULL',
                   "Empleados", "kpi_card", y="total_empleados", etiqueta="Empleados")),
 
@@ -196,7 +202,7 @@ RECETAS: list[tuple[re.Pattern, Callable]] = [
                   "Incidencias de este mes", "kpi_card", y="total_mes", etiqueta="Este mes")),
 
     # El tipo se compara contra la descripcion del catalogo, no contra el id.
-    (re.compile(r"^cuantos vales (?:son |hay )?(?:de |del tipo |de tipo )(?P<t>[a-z ]{3,40})$"),
+    (re.compile(r"^cuantos vales (?:son |hay )?(?:de |del tipo |de tipo )(?P<t>(?!(?:cada|por|todos|todas)\b)[a-z ]{3,40})$"),
      lambda m: _d("SELECT COUNT(*) AS total FROM incident i JOIN incident_type t ON t.id_incident_type = i.id_incident_type "
                   "WHERE i.deletion_date IS NULL AND t.incident_type_description ILIKE '%%%s%%'"
                   % "%".join(w for w in re.sub(r"[^a-z ]", "", m.group("t")).split() if w not in ("de", "del", "la", "el", "por")),
