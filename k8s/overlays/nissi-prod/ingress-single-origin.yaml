@@ -1,0 +1,60 @@
+# Ingress de nissi-prod con UN SOLO dominio (mismo patrón que aai-prod,
+# comala-prod y adser-prod).
+#
+# Son DOS objetos Ingress a propósito: nginx.ingress.kubernetes.io/rewrite-target
+# aplica a TODO el Ingress, así que /api necesita su propio objeto separado de
+# /auth, /graphql y /.
+#
+# Empieza con letsencrypt-staging (no gasta el límite de emisión de Let's
+# Encrypt; su certificado no es válido para el navegador) y cambia a
+# letsencrypt-prod cuando el DNS ya apunte a master1 y el certificado de
+# staging salga READY=True. Nunca al revés.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nissi-prod-app
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-staging # cambiar a letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: ["nissi.torredigital.mx"]
+      secretName: nissi-prod-tls
+  rules:
+    - host: nissi.torredigital.mx
+      http:
+        paths:
+          - path: /auth
+            pathType: Prefix
+            backend: { service: { name: backend, port: { number: 5001 } } }
+          - path: /graphql
+            pathType: Prefix
+            backend: { service: { name: backend, port: { number: 5001 } } }
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: frontend, port: { number: 80 } } }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nissi-prod-api-prefix
+  annotations:
+    # Sin cert-manager.io/cluster-issuer aquí a propósito: el Ingress de
+    # arriba ya pide el certificado para este dominio; pedirlo dos veces
+    # duplicaría la solicitud a Let's Encrypt.
+    # Subidas de documentos hasta 12 MB (default de nginx: 1 MB); la app limita a 10 MB.
+    nginx.ingress.kubernetes.io/proxy-body-size: "12m"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: ["nissi.torredigital.mx"]
+      secretName: nissi-prod-tls # mismo Secret que ya gestiona el otro Ingress
+  rules:
+    - host: nissi.torredigital.mx
+      http:
+        paths:
+          - path: /api(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend: { service: { name: backend, port: { number: 5001 } } }
