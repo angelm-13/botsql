@@ -42,6 +42,7 @@ import {
   widgetDeBorrador,
 } from "../kpi/kpiParametros.js";
 import { puedeIrAlPaso } from "../kpi/kpiPasos.js";
+import { NO_CALCULADO, SIN_DATOS, estadoDeDatos } from "../kpi/kpiEstado.js";
 import {
   DESFASES_DE_COMPARACION, ETIQUETA_RANGO_POR_OMISION, RANGOS_RELATIVOS, RANGO_PERSONALIZADO, fechaLocalIso,
   parametrosEfectivos, periodoAnterior, rangoDesfasado, resolverRangoRelativo,
@@ -1549,8 +1550,26 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, fo
     ? (id) => id
     : labelForDimension(kpiInfo?.dimensiones?.[0], userLabel, productLabel, etiquetasDeSnapshots(snapshots));
   const Componente = TIPO_GRAFICA_COMPONENTE[widget.tipo_grafica];
-  const sinDatos = <p className="kpi-empty-inline">{tx("no_data", "Sin datos en el rango seleccionado.")}</p>;
+  const mensajeSinDatos = (
+    <p className="kpi-empty-inline">
+      <strong>{tx("state_no_data", "Sin datos en el periodo")}</strong>{" "}
+      {tx("state_no_data_help", "Prueba con otro rango de fechas: este KPI no tuvo movimientos en este.")}
+    </p>
+  );
+
   if (!Componente) return null;
+
+  // Un `total` de 0 no distingue un 0 calculado de "sin filas": el servidor manda `n_filas` y `calculado`.
+  const estadoDelRango = estadoDeDatos(snapshots);
+  if (estadoDelRango === NO_CALCULADO) {
+    return (
+      <p className="kpi-empty-inline">
+        <strong>{tx("state_not_calculated", "No calculado")}</strong>{" "}
+        {tx("state_not_calculated_help", "Este KPI todavía no tiene ningún dato calculado.")}
+      </p>
+    );
+  }
+  if (estadoDelRango === SIN_DATOS) return mensajeSinDatos;
 
   // Umbral manual de "artículos bajo stock" (decision de Aurora: se captura
   // en el widget, no en una columna nueva de base de datos -- ver
@@ -1579,7 +1598,7 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, fo
     const props = propsDona({
       snapshot, kpiInfo, labelForId, agruparPorPeriodo, formatNumber, textos: { otros: tx("others", "Otros") },
     });
-    if (!props.datos.length) return sinDatos;
+    if (!props.datos.length) return mensajeSinDatos;
     return <Componente {...props} animar={animar} />;
   }
 
@@ -1600,7 +1619,7 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, fo
       comparacionCorta: tx("vs_compare_short", "comparación"),
     },
   });
-  if (!props.datos.length) return sinDatos;
+  if (!props.datos.length) return mensajeSinDatos;
   // Clic en la barra de un responsable: filtra la tabla de material prestado (ver
   // `filtroResponsable` en Dashboard()). Solo "Incidencias abiertas por responsable", en barras.
   const filtraLaTabla = Boolean(onFiltrarResponsable)

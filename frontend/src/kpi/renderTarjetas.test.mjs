@@ -116,8 +116,27 @@ test("el cuerpo se pinta con datos, con comparacion y vacio para cada tipo de gr
     const vacio = pintarCuerpo({ widget, datos: datosDe(widget, { snapshot: SNAPSHOT_VACIO }) });
     // "numero" con total 0 se pinta como un 0; el resto dice que no hay datos.
     if (tipo === "numero") assert.ok(vacio.includes("0"), "numero vacio");
-    else assert.ok(vacio.includes("Sin datos en el rango seleccionado."), `${tipo} vacio`);
+    else assert.ok(vacio.includes("Sin datos en el periodo"), `${tipo} vacio`);
   }
+});
+
+test("un 0 calculado, 'sin datos en el periodo' y 'no calculado' se ven distintos, tambien en el numero", () => {
+  const rango = (extra) => ({ rango_a: { total: 0, por_empleado: {}, por_periodo: {}, ...extra }, rango_b: null });
+  for (const tipo of ["numero", "barras", "dona"]) {
+    const widget = widgetDe(tipo, PARAMETROS["viejo, fechas absolutas"]);
+    const pintar = (extra) => pintarCuerpo({ widget, datos: datosDe(widget, { snapshot: rango(extra) }) });
+    const sinDatos = pintar({ n_filas: 0, calculado: true });
+    assert.ok(sinDatos.includes("Sin datos en el periodo"), `${tipo}: sin filas en el rango`);
+    assert.ok(!sinDatos.includes("No calculado"), `${tipo}: no es 'no calculado'`);
+    const noCalculado = pintar({ n_filas: 0, calculado: false });
+    assert.ok(noCalculado.includes("No calculado"), `${tipo}: el KPI nunca se calculo`);
+    assert.ok(!noCalculado.includes("Sin datos en el periodo"), `${tipo}: no es 'sin datos'`);
+  }
+  // Con filas, un total de 0 es un 0: el numero lo muestra, no lo reemplaza por un aviso.
+  const widget = widgetDe("numero", PARAMETROS["viejo, fechas absolutas"]);
+  const cero = pintarCuerpo({ widget, datos: datosDe(widget, { snapshot: rango({ n_filas: 4, calculado: true }) }) });
+  assert.ok(!cero.includes("Sin datos en el periodo") && !cero.includes("No calculado"));
+  assert.ok(cero.includes("0"));
 });
 
 test("el numero muestra la unidad, la comparacion y la ayuda cuando no se compara", () => {
