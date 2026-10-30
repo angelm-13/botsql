@@ -12,10 +12,17 @@ import {
   kpiSeriesLabel, ordenarPorCategorias, unidadInfo,
 } from "./kpiDatos.js";
 import { anchoDelEje, formatoDeEje, unidadDeLaGrafica } from "./kpiAccesibilidad.js";
+import { etiquetasDePersonas } from "./kpiNombreCorto.js";
 
 // Opacidad de la serie del periodo de comparacion (B): mismo color que la A,
 // distinta opacidad -- no hay un segundo color fijo (ver colorDeKpi).
 export const OPACIDAD_COMPARACION = 0.45;
+
+/** `{ nombreCompleto: nombreCorto }` para el eje o la leyenda de una grafica POR PERSONA (null en cualquier otra dimension: productos,
+ * estados y fechas no se acortan). Los datos conservan el nombre completo: solo cambia lo que se rotula. */
+function etiquetasCortasDePersonas(nombres, esPorPersona) {
+  return esPorPersona ? etiquetasDePersonas(nombres) : null;
+}
 
 /** Props de NumeroWidget para un widget "numero" de un solo KPI. */
 export function propsNumero({ snapshot, kpiInfo, formatNumber, textos }) {
@@ -98,6 +105,7 @@ export function propsSeries({
     const unidad = unidadDeLaGrafica([kpiInfo]);
     return {
       datos, series, campoEtiqueta: "name", colorPorFila, porPeriodo: Boolean(agruparPorPeriodo),
+      etiquetasCortas: etiquetasCortasDePersonas(datos.map((fila) => fila.name), !agruparPorPeriodo && esKpiPorPersona(kpiInfo)),
       conPatrones, formatearEje: formatoDeEje(unidad, formatNumber), anchoEje: anchoDelEje(unidad),
     };
   }
@@ -128,6 +136,7 @@ export function propsSeries({
   const unidadComun = unidadDeLaGrafica(kpiInfos);
   return {
     datos, series, campoEtiqueta: "name", colorPorFila: null, porPeriodo: Boolean(agruparPorPeriodo),
+    etiquetasCortas: etiquetasCortasDePersonas(datos.map((fila) => fila.name), !agruparPorPeriodo && kpiInfos.every(esKpiPorPersona)),
     conPatrones: false, formatearEje: formatoDeEje(unidadComun, formatNumber), anchoEje: anchoDelEje(unidadComun),
   };
 }
@@ -166,12 +175,15 @@ export function propsDona({ snapshot, kpiInfo, labelForId, agruparPorPeriodo, fo
   const coloresCategoria = kpiInfo?.colores_categoria;
   // Dimension "persona": cada rebanada lleva el color de SU persona; "Otros" (id null) y "Sin asignar" en gris.
   const porPersona = !agruparPorPeriodo && !coloresCategoria && esKpiPorPersona(kpiInfo);
+  const cortas = etiquetasCortasDePersonas(rebanadas.filter((entrada) => entrada.id !== null).map((entrada) => entrada.name), porPersona);
   const datos = rebanadas.map((entrada, indice) => {
     let color;
     if (coloresCategoria) color = colorDeCategoriaEstado(entrada.id, coloresCategoria, COLOR_OTHERS);
     else if (porPersona) color = colorDePersona(entrada.id);
     else color = indice < CATEGORICAL.length ? CATEGORICAL[indice] : COLOR_OTHERS;
-    return { categoria: entrada.name, valor: entrada.value, color };
+    // `categoria` sigue siendo el nombre completo (tooltip, descripcion, clave); `etiqueta` (solo si es distinta) es lo que rotula la leyenda.
+    const etiqueta = cortas?.[entrada.name];
+    return { categoria: entrada.name, ...(etiqueta && etiqueta !== entrada.name ? { etiqueta } : {}), valor: entrada.value, color };
   });
   const conPatrones = Boolean(coloresCategoria) || (porPersona && hayColoresRepetidos(datos.map((entrada) => entrada.color)));
   return {

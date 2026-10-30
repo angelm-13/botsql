@@ -76,7 +76,7 @@ export default function DonaWidget({ datos, animar, formatearValor, conPatrones,
             {conPatrones
               ? <MuestraDePatron idBase={idBase} color={entrada.color} indice={indice} />
               : <span className="kpi-preview-tooltip-dot" style={{ background: entrada.color }} />}
-            <span>{entrada.categoria}</span>
+            <span title={entrada.etiqueta && entrada.etiqueta !== entrada.categoria ? entrada.categoria : undefined}>{entrada.etiqueta ?? entrada.categoria}</span>
             <strong>{formatearValor(entrada.valor)}</strong>
           </li>
         ))}
@@ -88,6 +88,7 @@ export default function DonaWidget({ datos, animar, formatearValor, conPatrones,
 DonaWidget.propTypes = {
   datos: PropTypes.arrayOf(PropTypes.shape({
     categoria: PropTypes.string.isRequired,
+    etiqueta: PropTypes.string,
     valor: PropTypes.number.isRequired,
     color: PropTypes.string.isRequired,
   })).isRequired,

@@ -42,12 +42,14 @@ TooltipRico.defaultProps = { active: false, payload: null, label: "", series: []
  * resaltar la tabla de material prestado (interaccion entre widgets). */
 export default function BarrasWidget({
   datos, series, campoEtiqueta, animar, onBarClick, barraResaltada, colorPorFila,
-  conPatrones, formatearEje, anchoEje, descripcion, porPeriodo, textoRecorte,
+  conPatrones, formatearEje, anchoEje, descripcion, porPeriodo, textoRecorte, etiquetasCortas,
 }) {
   const idBase = useId().replace(/:/g, "");
   // Cuantas categorias caben y como (ver kpiEtiquetasEje): muchas pasan a horizontal, con varias series se corta a 12.
+  // En una grafica por persona el eje rotula el nombre corto; `datos`, el tooltip y la descripcion conservan el completo.
+  const rotulo = (nombre) => etiquetasCortas?.[nombre] ?? nombre;
   const diseno = disenoDeBarras({
-    etiquetas: datos.map((fila) => String(fila[campoEtiqueta] ?? "")), cantidadSeries: series.length, porPeriodo, anchoEje,
+    etiquetas: datos.map((fila) => rotulo(String(fila[campoEtiqueta] ?? ""))), cantidadSeries: series.length, porPeriodo, anchoEje,
   });
   const visibles = datos.slice(0, diseno.mostradas);
   const horizontal = diseno.modo === "horizontal";
@@ -58,7 +60,7 @@ export default function BarrasWidget({
   // barras "crecieran" de nuevo a cada clic.
   const [yaAnimo, setYaAnimo] = useState(false);
   const marcaDeEje = { fontSize: 11, fill: "var(--kpi-texto-suave)" };
-  const recortar = (valor) => recortarEtiqueta(valor, diseno.maxCaracteres);
+  const recortar = (valor) => recortarEtiqueta(rotulo(valor), diseno.maxCaracteres);
   return (
     <>
       <div role={descripcion ? "img" : undefined} aria-label={descripcion || undefined} title={descripcion || undefined}>
@@ -147,10 +149,12 @@ BarrasWidget.propTypes = {
   porPeriodo: PropTypes.bool,
   // (mostradas, total) -> "Mostrando 12 de 30"; lo pone la pantalla para poder traducirlo.
   textoRecorte: PropTypes.func,
+  // nombre completo -> nombre corto, solo para rotular el eje (grafica por persona).
+  etiquetasCortas: PropTypes.objectOf(PropTypes.string),
 };
 
 BarrasWidget.defaultProps = {
   animar: true, onBarClick: null, barraResaltada: null, colorPorFila: null,
-  conPatrones: false, formatearEje: null, anchoEje: 60, descripcion: "", porPeriodo: false,
+  conPatrones: false, formatearEje: null, anchoEje: 60, descripcion: "", porPeriodo: false, etiquetasCortas: null,
   textoRecorte: (mostradas, total) => `Mostrando ${mostradas} de ${total}`,
 };
