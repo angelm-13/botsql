@@ -9,8 +9,8 @@ export const MAX_CATEGORIAS_HORIZONTAL = 20;
 export const RECORTE_VERTICAL = 18;
 export const RECORTE_HORIZONTAL = 28;
 export const ANGULO_ETIQUETA = -40;
-// Con una sola categoria por barra y mas de 3 en el eje, el texto recto se encima: se inclina.
-export const CATEGORIAS_PARA_INCLINAR = 4;
+// Ancho de la grafica mientras no se ha medido (primer pintado, o render en servidor): el de una tarjeta de dos columnas.
+export const ANCHO_GRAFICA_POR_OMISION = 340;
 
 const ANCHO_CARACTER = 6.2; // px a 11 px de fuente
 const ALTO_FILA_HORIZONTAL = 24;
@@ -20,6 +20,8 @@ const ALTO_EJE_PLANO = 28;
 const ALTO_FILA_LEYENDA = 24;
 const SERIES_POR_FILA_DE_LEYENDA = 3;
 const ANCHO_MAX_EJE_Y = 190;
+const HOLGURA_ENTRE_ETIQUETAS = 6;
+const MARGEN_DERECHO = 8;
 const SENO = Math.sin((Math.abs(ANGULO_ETIQUETA) * Math.PI) / 180);
 const COSENO = Math.cos((Math.abs(ANGULO_ETIQUETA) * Math.PI) / 180);
 
@@ -32,9 +34,12 @@ export function recortarEtiqueta(texto, maximo) {
 
 /**
  * Decide modo, categorias visibles, alturas y margenes.
- * `etiquetas` son los nombres completos, ya en el orden en que se dibujan; `anchoEje` es el ancho del eje de valores.
+ * `etiquetas` son los rotulos ya en el orden en que se dibujan (los cortos, si los hay); `anchoEje` es el ancho del eje de valores y
+ * `anchoGrafica` el ancho medido de la grafica: las etiquetas solo se inclinan cuando NO caben rectas en su banda.
  */
-export function disenoDeBarras({ etiquetas, cantidadSeries = 1, porPeriodo = false, anchoEje = 60 }) {
+export function disenoDeBarras({
+  etiquetas, cantidadSeries = 1, porPeriodo = false, anchoEje = 60, anchoGrafica = ANCHO_GRAFICA_POR_OMISION,
+}) {
   const total = etiquetas.length;
   const horizontal = !porPeriodo && cantidadSeries <= 1 && total > MAX_CATEGORIAS_VERTICAL;
   let mostradas = total;
@@ -53,7 +58,9 @@ export function disenoDeBarras({ etiquetas, cantidadSeries = 1, porPeriodo = fal
     };
   }
 
-  const inclinar = mostradas >= CATEGORIAS_PARA_INCLINAR;
+  // El area de barras empieza donde termina el eje de valores (el margen izquierdo base es -16) y deja un margen a la derecha.
+  const banda = (anchoGrafica - anchoEje + 16 - MARGEN_DERECHO) / Math.max(1, mostradas);
+  const inclinar = mostradas > 1 && largo * ANCHO_CARACTER + HOLGURA_ENTRE_ETIQUETAS > banda;
   const altoEjeX = inclinar ? Math.ceil(largo * ANCHO_CARACTER * SENO) + 12 : ALTO_EJE_PLANO;
   const filasDeLeyenda = cantidadSeries > 1 ? Math.ceil(cantidadSeries / SERIES_POR_FILA_DE_LEYENDA) : 0;
   // La etiqueta inclinada termina en el tick y se extiende hacia la izquierda: si el eje de valores no le da ese

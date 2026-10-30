@@ -63,3 +63,20 @@ test("propsSeries da nombres cortos solo en graficas por persona y por nombre, n
   const producto = { ...base, kpiInfos: [{ ...CATALOGO_UN_KPI[0], dimensiones: ["producto"], dimension_tipo: "catalogo" }] };
   assert.equal(propsSeries({ ...producto, agruparPorPeriodo: false }).etiquetasCortas, null);
 });
+
+test("menos saturacion: lineas guia tenues, aviso discreto y pie con contraste suficiente", () => {
+  const css = leer("../styles/kpi-dashboard.css");
+  // el texto del pie ya no es #8a96a5 (3:1 sobre blanco, no pasa AA): #64748b da 4.76:1
+  assert.match(css, /\.kpi-widget-meta\{color:#64748b;/);
+  assert.match(css, /\.kpi-barras-recorte\{margin:2px 0 0;font-size:11px;font-weight:500;text-align:right;/);
+  assert.match(css, /\.kpi-widget-rango\{color:#475569;font-weight:600\}/);
+  assert.match(leer("../styles/kpi-widgets.css"), /--kpi-grid: #eef1f6;/);
+  assert.match(leer("../components/kpi-widgets/BarrasWidget.jsx"), /<CartesianGrid strokeDasharray="2 4"/);
+  assert.match(leer("../components/kpi-widgets/LineaAreaWidget.jsx"), /<CartesianGrid strokeDasharray="2 4"/);
+});
+
+test("BarrasWidget mide el ancho de la grafica para decidir si inclina", () => {
+  const barras = leer("../components/kpi-widgets/BarrasWidget.jsx");
+  assert.match(barras, /onResize=\{\(ancho\) =>/);
+  assert.match(barras, /anchoEje, anchoGrafica,/);
+});

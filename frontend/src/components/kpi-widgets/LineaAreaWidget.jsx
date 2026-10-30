@@ -18,7 +18,7 @@ export default function LineaAreaWidget({
     <div role={descripcion ? "img" : undefined} aria-label={descripcion || undefined} title={descripcion || undefined}>
     <ResponsiveContainer width="100%" height={220}>
       <Grafica data={datos} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="var(--kpi-grid)" vertical={false} />
+        <CartesianGrid strokeDasharray="2 4" stroke="var(--kpi-grid)" vertical={false} />
         <XAxis
           dataKey={campoEtiqueta} tick={EJE} axisLine={false} tickLine={false}
           tickFormatter={etiquetasCortas ? (valor) => etiquetasCortas[valor] ?? valor : undefined}

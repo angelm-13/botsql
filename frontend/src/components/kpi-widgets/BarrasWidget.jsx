@@ -5,7 +5,9 @@ import {
 } from "recharts";
 import { DefinicionDePatrones } from "./PatronesSvg";
 import { rellenoConPatron } from "../../kpi/kpiAccesibilidad";
-import { ANGULO_ETIQUETA, disenoDeBarras, recortarEtiqueta } from "../../kpi/kpiEtiquetasEje";
+import {
+  ANCHO_GRAFICA_POR_OMISION, ANGULO_ETIQUETA, disenoDeBarras, recortarEtiqueta,
+} from "../../kpi/kpiEtiquetasEje";
 
 export function TooltipRico({ active, payload, label, series }) {
   if (!active || !payload || !payload.length) return null;
@@ -45,11 +47,13 @@ export default function BarrasWidget({
   conPatrones, formatearEje, anchoEje, descripcion, porPeriodo, textoRecorte, etiquetasCortas,
 }) {
   const idBase = useId().replace(/:/g, "");
+  // Ancho real de la grafica: las etiquetas solo se inclinan cuando no caben rectas (ver kpiEtiquetasEje).
+  const [anchoGrafica, setAnchoGrafica] = useState(ANCHO_GRAFICA_POR_OMISION);
   // Cuantas categorias caben y como (ver kpiEtiquetasEje): muchas pasan a horizontal, con varias series se corta a 12.
   // En una grafica por persona el eje rotula el nombre corto; `datos`, el tooltip y la descripcion conservan el completo.
   const rotulo = (nombre) => etiquetasCortas?.[nombre] ?? nombre;
   const diseno = disenoDeBarras({
-    etiquetas: datos.map((fila) => rotulo(String(fila[campoEtiqueta] ?? ""))), cantidadSeries: series.length, porPeriodo, anchoEje,
+    etiquetas: datos.map((fila) => rotulo(String(fila[campoEtiqueta] ?? ""))), cantidadSeries: series.length, porPeriodo, anchoEje, anchoGrafica,
   });
   const visibles = datos.slice(0, diseno.mostradas);
   const horizontal = diseno.modo === "horizontal";
@@ -64,14 +68,17 @@ export default function BarrasWidget({
   return (
     <>
       <div role={descripcion ? "img" : undefined} aria-label={descripcion || undefined} title={descripcion || undefined}>
-        <ResponsiveContainer width="100%" height={diseno.alto}>
+        <ResponsiveContainer
+          width="100%" height={diseno.alto}
+          onResize={(ancho) => { if (ancho > 0) setAnchoGrafica((previo) => (Math.abs(previo - ancho) >= 2 ? Math.round(ancho) : previo)); }}
+        >
           <BarChart
             data={visibles}
             layout={horizontal ? "vertical" : "horizontal"}
             margin={horizontal ? { top: 4, right: 16, left: 0, bottom: 0 } : { top: 4, right: 8, left: diseno.margenIzquierdo, bottom: 0 }}
           >
             {coloresDeFila && <DefinicionDePatrones idBase={idBase} colores={coloresDeFila} />}
-            <CartesianGrid strokeDasharray="3 3" stroke="var(--kpi-grid)" vertical={horizontal} horizontal={!horizontal} />
+            <CartesianGrid strokeDasharray="2 4" stroke="var(--kpi-grid)" vertical={horizontal} horizontal={!horizontal} />
             {horizontal ? (
               <>
                 <XAxis type="number" tick={marcaDeEje} axisLine={false} tickLine={false} tickFormatter={formatearEje || undefined} />

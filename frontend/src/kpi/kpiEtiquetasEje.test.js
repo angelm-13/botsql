@@ -80,6 +80,23 @@ test("el eje y el alto crecen con la etiqueta mas larga, y la leyenda de series 
   assert.ok(sieteSeries.alto > dosSeries.alto);
 });
 
+test("las etiquetas solo se inclinan cuando no caben rectas en su banda (se mide el ancho)", () => {
+  const cortas = nombres(6, 3); // 4 caracteres: 31 px
+  assert.equal(disenoDeBarras({ etiquetas: cortas, anchoGrafica: 340 }).inclinar, false);
+  // la misma lista en una grafica muy angosta ya no cabe recta
+  assert.equal(disenoDeBarras({ etiquetas: cortas, anchoGrafica: 140 }).inclinar, true);
+  // nombres cortos de persona (14 caracteres) en 5 categorias: caben en 700 px, no en 340
+  const personas = ["Carlos Mendoza", "Luis Fernando Torres", "Miguel Hidalgo y Costilla", "Ana Perez", "Maria Jose Ramirez"];
+  assert.equal(disenoDeBarras({ etiquetas: personas, anchoGrafica: 340 }).inclinar, true);
+  assert.equal(disenoDeBarras({ etiquetas: personas, anchoGrafica: 900 }).inclinar, false);
+  // una sola categoria nunca se inclina
+  assert.equal(disenoDeBarras({ etiquetas: ["Un nombre bastante largo"], anchoGrafica: 100 }).inclinar, false);
+  // recto: el eje vuelve a su alto plano y el margen no crece
+  const recto = disenoDeBarras({ etiquetas: cortas, anchoGrafica: 900 });
+  assert.equal(recto.altoEjeX, 28);
+  assert.equal(recto.margenIzquierdo, -16);
+});
+
 test("con pocas categorias el texto va recto y la grafica conserva su alto de siempre (220)", () => {
   const diseno = disenoDeBarras({ etiquetas: nombres(3) });
   assert.equal(diseno.inclinar, false);
