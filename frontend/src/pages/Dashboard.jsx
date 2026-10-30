@@ -42,6 +42,7 @@ import {
   widgetDeBorrador,
 } from "../kpi/kpiParametros.js";
 import { puedeIrAlPaso } from "../kpi/kpiPasos.js";
+import { detallesDePersonas, nombreDePersona } from "../kpi/kpiPersonas.js";
 import { NO_CALCULADO, SIN_DATOS, estadoDeDatos } from "../kpi/kpiEstado.js";
 import { avisoDeDatosAtrasados, frescuraDeWidget } from "../kpi/kpiFrescura.js";
 import {
@@ -1788,6 +1789,8 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
   const mostrarFiltroDeEquipos = muestraFiltroDeEquipos(kpisSeleccionadosInfo) && teams.length > 0;
   const kpiPorEquipoElegido = desglosaPorEquipo(kpisSeleccionadosInfo);
   // Si ningun filtro aplica a lo elegido (un KPI por estado, por mesero o global), el paso no se queda en blanco.
+  // Quienes se confunden con otra persona (mismo nombre, o uno cortado) llevan el rol como texto secundario.
+  const detalleDe = useMemo(() => detallesDePersonas(users), [users]);
   const hayAlgunFiltro = (mostrarFiltroDePersonas && users.length > 0) || mostrarFiltroDeEquipos;
   // Lo que se desglosa, con el nombre que le da cada KPI ("Responsable", "Tecnico"...).
   // Las dos etiquetas de siempre conservan su traduccion.
@@ -2264,10 +2267,13 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
                               style={{ "--employee-color": colorEmpleado }}
                               onClick={() => toggleEmpleado(String(user.id_user))}
                               aria-pressed={activo}
-                              title={user.full_name || user.username || `#${user.id_user}`}
+                              title={detalleDe.get(String(user.id_user)) ? `${nombreDePersona(user)} · ${detalleDe.get(String(user.id_user))}` : nombreDePersona(user)}
                             >
                               <EmployeeAvatar size="small" color={colorEmpleado} />
-                              <span>{user.full_name || user.username || `#${user.id_user}`}</span>
+                              <span className="kpi-employee-chip-texto">
+                                <span>{nombreDePersona(user)}</span>
+                                {detalleDe.get(String(user.id_user)) && <small>{detalleDe.get(String(user.id_user))}</small>}
+                              </span>
                             </button>
                           );
                         })}

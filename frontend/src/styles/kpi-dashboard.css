@@ -192,7 +192,11 @@ body.kpi-pdf-exporting .kpi-fechas-fijas-accion{display:none}
 .kpi-employee-chip{display:inline-flex;align-items:center;gap:5px;border:1.5px solid var(--employee-color);border-radius:999px;padding:3px 10px 3px 4px;font-size:12px;font-weight:700;color:#334155;cursor:pointer;background:#fff;font:inherit}
 .kpi-employee-chip:hover{background:#f4f6f9}
 .kpi-employee-chip.active{background:color-mix(in srgb, var(--employee-color) 16%, #fff);color:#173b66}
-.kpi-employee-chip span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px}
+/* El nombre completo, en varias lineas si no cabe (el title trae el nombre y el rol); el texto secundario va debajo. */
+.kpi-employee-chip{border-radius:14px;text-align:left;max-width:100%}
+.kpi-employee-chip-texto{display:flex;flex-direction:column;min-width:0;max-width:220px}
+.kpi-employee-chip-texto span{white-space:normal;overflow-wrap:anywhere;line-height:1.25}
+.kpi-employee-chip-texto small{font-size:10px;font-weight:600;color:#64748b;line-height:1.2}
 
 /* Categoria/KPI y tipo de grafica: iconos fijos en vez de <select>. Mismo
    tratamiento "active" que ya usan las pestanas del tablero (.kpi-tab.active),
