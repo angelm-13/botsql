@@ -25,6 +25,7 @@ from app.modules.plan import limite
 from app.services.invoice_service import InvoiceService
 from app.services.kpi_dashboard_service import KpiDashboardService
 from app.services.kpi_dashboard_widget_service import KpiDashboardWidgetService
+from app.services.kpi_recalculo_service import KpiRecalculoService
 from app.utils.auth import has_kpi_permission, require_entity_permission, token_required
 from app.utils.errors import AppError
 from app.utils.scope import owner_ids, scope_bits
@@ -688,6 +689,15 @@ def update_kpi_dashboard(user_data, id_kpi_dashboard):
 @require_entity_permission('kpi_dashboard', 'delete')
 def delete_kpi_dashboard(user_data, id_kpi_dashboard):
     return jsonify(KpiDashboardService.delete_own(user_data, id_kpi_dashboard))
+
+
+@bp_kpi_dashboard.route('/<id_kpi_dashboard>/recalcular', methods=['POST'])
+@token_required
+@require_entity_permission('kpi_dashboard', 'read')
+def recalculate_kpi_dashboard(user_data, id_kpi_dashboard):
+    """Recalcula los indicadores pedidos (uno o varios) del tablero del actor: ver `KpiRecalculoService`."""
+    payload = request.get_json(silent=True) or {}
+    return jsonify(KpiRecalculoService.recalcular(user_data, id_kpi_dashboard, payload.get('items')))
 
 
 @bp_kpi_dashboard.route('/<id_kpi_dashboard>/widgets/', methods=['GET'])
