@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AreaChart as AreaChartIcon, BarChart2, Boxes, ChevronDown, ChevronUp,
   Check, ClipboardList, FileDown, FileText, FlaskConical, GripVertical, Hash, LineChart as LineChartIcon,
-  Loader2, Pencil, PieChart as PieChartIcon, Plus, Receipt,
+  Loader2, Pencil, Plus, Receipt,
   RefreshCw, SlidersHorizontal, Table as TableIcon, Trash2, User, UserCheck, Utensils,
 } from "lucide-react";
 import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
@@ -41,6 +41,7 @@ import {
   rangoInicialDelBorrador, tiposDeGraficaPermitidos as tiposPermitidosPorKpi, tituloConHtml, tituloDeWidget, unidadDeKpi,
   widgetDeBorrador,
 } from "../kpi/kpiParametros.js";
+import IconoDona from "../components/kpi-widgets/IconoDona.jsx";
 import { accionDeEnter, kpiAdmiteFiltros, puedeAgregar, puedeIrAlPaso } from "../kpi/kpiPasos.js";
 import { claveDeGrupo, colorDeModulo } from "../kpi/kpiSelector.js";
 import { detallesDePersonas, nombreDePersona } from "../kpi/kpiPersonas.js";
@@ -109,7 +110,7 @@ const CHART_TYPE_ICONS = {
   barras: BarChart2,
   linea: LineChartIcon,
   area: AreaChartIcon,
-  dona: PieChartIcon,
+  dona: IconoDona,
   tabla: TableIcon,
 };
 
