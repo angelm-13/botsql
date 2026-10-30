@@ -219,6 +219,11 @@
 
 /* --- dona ---------------------------------------------------------------- */
 .kpi-preview-dona-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+/* El total va en un div encima del hueco de la dona (190 px de alto, igual que el grafico), sin tapar el tooltip. */
+.kpi-preview-dona-grafica { position: relative; width: 100%; }
+.kpi-preview-dona-total { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; pointer-events: none; text-align: center; }
+.kpi-preview-dona-total strong { color: var(--kpi-ink); font-weight: 800; line-height: 1.05; max-width: 88px; white-space: nowrap; }
+.kpi-preview-dona-total span { color: var(--kpi-texto-suave); font-size: 11px; font-weight: 700; line-height: 1.1; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .kpi-preview-dona-leyenda { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 14px; justify-content: center; }
 .kpi-preview-dona-leyenda li { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; transition: opacity .15s ease; }
 .kpi-preview-leyenda-atenuada { opacity: .4; }

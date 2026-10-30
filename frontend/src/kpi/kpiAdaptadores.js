@@ -9,7 +9,7 @@
 import {
   COLOR_OTHERS, CATEGORICAL, buildMultiSeriesData, buildPieData, buildSeriesData,
   colorDeCategoriaEstado, colorDePersona, colorEfectivoDeKpi, esKpiPorPersona, formatConUnidad, hayColoresRepetidos,
-  kpiSeriesLabel, ordenarPorCategorias,
+  kpiSeriesLabel, ordenarPorCategorias, unidadInfo,
 } from "./kpiDatos.js";
 import { anchoDelEje, formatoDeEje, unidadDeLaGrafica } from "./kpiAccesibilidad.js";
 
@@ -132,6 +132,32 @@ export function propsSeries({
   };
 }
 
+// Ancho util (px) del hueco de la dona (radio interior 50): el total tiene que caber dentro.
+const ANCHO_DEL_HUECO_DE_DONA = 84;
+const FUENTE_MAXIMA_DEL_TOTAL = 26;
+const FUENTE_MINIMA_DEL_TOTAL = 11;
+
+/** Tamano de letra (px) para que `texto` quepa en el hueco de la dona: el maximo para un numero corto y menos conforme
+ * crece (cada caracter ocupa cerca de 0.62 de la letra). */
+export function fuenteDelTotalDeDona(texto) {
+  const largo = Math.max(1, String(texto ?? "").length);
+  return Math.max(FUENTE_MINIMA_DEL_TOTAL, Math.min(FUENTE_MAXIMA_DEL_TOTAL, Math.floor(ANCHO_DEL_HUECO_DE_DONA / (0.62 * largo))));
+}
+
+/** El total al centro de la dona, o `null` cuando no tiene sentido. Solo si las rebanadas SUMAN un total: el KPI declara
+ * `agregacion: "suma"` (un promedio, un porcentaje o una foto "ultimo" no se suman entre categorias). Incluye "Otros".
+ * `texto` es el numero (con el prefijo de su unidad, "$1,200"), `detalle` lo que cuenta: el sufijo de la unidad
+ * ("piezas", "min") y, para una cantidad sin unidad, "registros". `textos`: { registros, total }. */
+export function totalCentroDeDona(datos, kpiInfo, formatNumber, textos = {}) {
+  if (kpiInfo?.agregacion !== "suma" || kpiInfo?.unidad === "porcentaje") return null;
+  const total = (datos || []).reduce((suma, entrada) => suma + (Number(entrada.valor) || 0), 0);
+  if (!Number.isFinite(total)) return null;
+  const { prefijo, sufijo } = unidadInfo(kpiInfo?.unidad);
+  const detalle = sufijo.trim() || (prefijo ? (textos.total ?? "total") : (textos.registros ?? "registros"));
+  const texto = `${prefijo}${formatNumber(total)}`;
+  return { texto, detalle, fuente: fuenteDelTotalDeDona(texto) };
+}
+
 /** Props de DonaWidget. */
 export function propsDona({ snapshot, kpiInfo, labelForId, agruparPorPeriodo, formatNumber, textos }) {
   const dimension = kpiInfo?.dimensiones?.[0];
@@ -148,7 +174,10 @@ export function propsDona({ snapshot, kpiInfo, labelForId, agruparPorPeriodo, fo
     return { categoria: entrada.name, valor: entrada.value, color };
   });
   const conPatrones = Boolean(coloresCategoria) || (porPersona && hayColoresRepetidos(datos.map((entrada) => entrada.color)));
-  return { datos, conPatrones, formatearValor: (valor) => formatConUnidad(formatNumber(valor), kpiInfo?.unidad) };
+  return {
+    datos, conPatrones, formatearValor: (valor) => formatConUnidad(formatNumber(valor), kpiInfo?.unidad),
+    totalCentro: totalCentroDeDona(datos, kpiInfo, formatNumber, textos),
+  };
 }
 
 /** Filas de TablaWidget a partir de los renglones del KPI "vivo". */

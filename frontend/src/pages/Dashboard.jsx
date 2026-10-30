@@ -1684,7 +1684,8 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, fo
 
   if (widget.tipo_grafica === "dona") {
     const props = propsDona({
-      snapshot, kpiInfo, labelForId, agruparPorPeriodo, formatNumber, textos: { otros: tx("others", "Otros") },
+      snapshot, kpiInfo, labelForId, agruparPorPeriodo, formatNumber,
+      textos: { otros: tx("others", "Otros"), registros: tx("donut_total_records", "registros"), total: tx("donut_total", "total") },
     });
     if (!props.datos.length) return mensajeSinDatos;
     const descripcion = descripcionDeGrafica({

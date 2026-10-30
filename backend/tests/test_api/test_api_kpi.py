@@ -123,6 +123,8 @@ class TestKpiApi(BackendTestCase):
         # migracion para exponerlos.
         self.assertEqual("alto_es_mejor", fila["direccion"])
         self.assertEqual("snapshot", fila["modo"])
+        # Como se combinan los dias: lo lee el dashboard para el total del centro de una dona.
+        self.assertEqual("suma", fila["agregacion"])
         self.assertIn(fila["grafica_default"], fila["graficas_permitidas"])
         self.assertIsNone(fila["colores_categoria"])
         # `grupo` (pestana del selector) viaja siempre, vacio para casi todos: no es del modulo.

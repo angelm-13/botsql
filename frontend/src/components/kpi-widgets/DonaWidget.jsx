@@ -25,12 +25,13 @@ TooltipDona.defaultProps = { active: false, payload: null };
  * dimension abierta a una dona de estado con catalogo cerrado. El color
  * nunca es la unica senal: la leyenda siempre trae el nombre de la
  * categoria en texto junto al punto de color. */
-export default function DonaWidget({ datos, animar, formatearValor, conPatrones, descripcion }) {
+export default function DonaWidget({ datos, animar, formatearValor, conPatrones, descripcion, totalCentro }) {
   const [resaltado, setResaltado] = useState(null);
   const idBase = useId().replace(/:/g, "");
 
   return (
     <div className="kpi-preview-dona-wrap" role={descripcion ? "img" : undefined} aria-label={descripcion || undefined} title={descripcion || undefined}>
+      <div className="kpi-preview-dona-grafica">
       <ResponsiveContainer width="100%" height={190}>
         <PieChart>
           {conPatrones && <DefinicionDePatrones idBase={idBase} colores={datos.map((entrada) => entrada.color)} />}
@@ -57,6 +58,13 @@ export default function DonaWidget({ datos, animar, formatearValor, conPatrones,
           <Tooltip content={<TooltipDona formatearValor={formatearValor} />} />
         </PieChart>
       </ResponsiveContainer>
+      {totalCentro && (
+        <div className="kpi-preview-dona-total" aria-hidden="true">
+          <strong style={{ fontSize: `${totalCentro.fuente}px` }}>{totalCentro.texto}</strong>
+          <span>{totalCentro.detalle}</span>
+        </div>
+      )}
+      </div>
       <ul className="kpi-preview-dona-leyenda">
         {datos.map((entrada, indice) => (
           <li
@@ -88,5 +96,7 @@ DonaWidget.propTypes = {
   // Un patron por rebanada y en la leyenda (segundo canal ademas del color).
   conPatrones: PropTypes.bool,
   descripcion: PropTypes.string,
+  // El total al centro (`totalCentroDeDona`): solo cuando las rebanadas suman un total con sentido.
+  totalCentro: PropTypes.shape({ texto: PropTypes.string.isRequired, detalle: PropTypes.string.isRequired, fuente: PropTypes.number.isRequired }),
 };
-DonaWidget.defaultProps = { animar: true, formatearValor: (valor) => String(valor), conPatrones: false, descripcion: "" };
+DonaWidget.defaultProps = { animar: true, formatearValor: (valor) => String(valor), conPatrones: false, descripcion: "", totalCentro: null };

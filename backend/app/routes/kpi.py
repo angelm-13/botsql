@@ -331,6 +331,9 @@ def _con_metadatos_del_registry(kpi_row: KpiDefinition) -> dict:
         'graficas_permitidas': list(definicion.graficas_permitidas) if definicion else [],
         'grafica_default': definicion.grafica_default if definicion else None,
         'modo': definicion.modo if definicion else 'snapshot',
+        # Como se combinan varios dias en un numero ('suma', 'ultimo', 'promedio_ponderado'); None en un KPI en vivo o sin
+        # registro. El dashboard lo usa para decidir si el total de una dona tiene sentido (solo con 'suma').
+        'agregacion': definicion.agregacion if definicion else None,
         'colores_categoria': definicion.colores_categoria if definicion else None,
         'orden_categorias': list(definicion.orden_categorias) if definicion and definicion.orden_categorias else None,
         'etiquetas_categoria': definicion.etiquetas_categoria if definicion else None,
