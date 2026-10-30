@@ -1,24 +1,18 @@
 import PropTypes from "prop-types";
 import { ArrowDown, ArrowUp, Minus } from "lucide-react";
 import useCountUp from "./useCountUp";
+import { TRAZO_SPARKLINE, puntosDeSparkline } from "../../kpi/kpiSparkline.js";
 
 function Sparkline({ valores, color }) {
   if (!valores || valores.length < 2) return null;
-  const minimo = Math.min(...valores);
-  const maximo = Math.max(...valores);
-  const rango = maximo - minimo || 1;
   const ancho = 96;
   const alto = 28;
-  const puntos = valores
-    .map((valor, indice) => {
-      const x = (indice / (valores.length - 1)) * ancho;
-      const y = alto - ((valor - minimo) / rango) * alto;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
+  const puntos = puntosDeSparkline(valores, ancho, alto)
+    .map(({ x, y }) => `${x.toFixed(1)},${y.toFixed(1)}`)
     .join(" ");
   return (
     <svg className="kpi-preview-sparkline" width={ancho} height={alto} viewBox={`0 0 ${ancho} ${alto}`} aria-hidden="true">
-      <polyline points={puntos} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <polyline points={puntos} fill="none" stroke={color} strokeWidth={TRAZO_SPARKLINE} strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
