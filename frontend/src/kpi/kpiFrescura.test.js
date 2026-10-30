@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { computedAtDeSnapshots, frescuraDeWidget, paredDeInstante, paredDeTexto } from "./kpiFrescura.js";
+import { avisoDeDatosAtrasados, computedAtDeSnapshots, frescuraDeWidget, paredDeInstante, paredDeTexto } from "./kpiFrescura.js";
 
 const ZONA = "America/Mexico_City";
 const snap = (computedAt) => ({ rango_a: { total: 1, computed_at: computedAt } });
@@ -24,24 +24,35 @@ test("de varios KPIs se toma el computed_at mas reciente", () => {
 });
 
 test("sin computed_at no hay etiqueta", () => {
-  assert.equal(frescuraDeWidget([{ rango_a: { total: 1 } }], new Date("2026-10-29T18:00:00Z"), ZONA), null);
+  assert.equal(frescuraDeWidget([{ rango_a: { total: 1 } }]), null);
 });
 
-test("hasta 24 horas no es atraso; mas de 24 horas si", () => {
-  // Ahora: 2026-10-29 12:00 en Mexico (18:00 UTC).
-  const ahora = new Date("2026-10-29T18:00:00Z");
-  assert.equal(frescuraDeWidget([snap("2026-10-29T00:22:00")], ahora, ZONA).atrasado, false);
-  assert.equal(frescuraDeWidget([snap("2026-10-28T12:00:00")], ahora, ZONA).atrasado, false, "justo 24 h");
-  assert.equal(frescuraDeWidget([snap("2026-10-28T11:59:00")], ahora, ZONA).atrasado, true);
-  assert.equal(frescuraDeWidget([snap("2026-10-02T12:07:57")], ahora, ZONA).atrasado, true);
+test("la etiqueta de un KPI es neutra: no juzga el atraso", () => {
+  const frescura = frescuraDeWidget([snap("2026-10-02T12:07:57")]);
+  assert.deepEqual(Object.keys(frescura), ["fecha"]);
 });
 
-test("el atraso cuenta en hora del negocio: a las 20:00 locales (02:00 UTC) un dato de las 19:00 no esta atrasado", () => {
-  const ahora = new Date("2026-10-29T02:00:00Z");
-  assert.equal(frescuraDeWidget([snap("2026-10-28T19:00:00")], ahora, ZONA).atrasado, false);
+test("el aviso global: hasta 24 horas no avisa; mas de 24 horas si", () => {
+  const ahora = "2026-10-29T18:00:00Z";
+  assert.equal(avisoDeDatosAtrasados("2026-10-29T06:22:00Z", ahora, ZONA), null);
+  assert.equal(avisoDeDatosAtrasados("2026-10-28T18:00:00Z", ahora, ZONA), null, "justo 24 h");
+  assert.match(avisoDeDatosAtrasados("2026-10-28T17:59:00Z", ahora, ZONA).fecha, /2026/);
+  assert.ok(avisoDeDatosAtrasados("2026-10-02T12:07:57Z", ahora, ZONA));
+});
+
+test("el aviso global no avisa sin ultimo calculo ni con una fecha ilegible", () => {
+  assert.equal(avisoDeDatosAtrasados(null, "2026-10-29T18:00:00Z", ZONA), null);
+  assert.equal(avisoDeDatosAtrasados("no es fecha", "2026-10-29T18:00:00Z", ZONA), null);
+  assert.equal(avisoDeDatosAtrasados(undefined, undefined, ZONA), null);
+});
+
+test("el aviso global usa el reloj del servidor, y sin el, el del navegador", () => {
+  assert.equal(avisoDeDatosAtrasados("2026-10-29T10:00:00Z", "2026-10-29T12:00:00Z", ZONA), null);
+  const haceTresDias = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+  assert.ok(avisoDeDatosAtrasados(haceTresDias, null, ZONA));
 });
 
 test("la etiqueta trae la fecha formateada", () => {
-  const frescura = frescuraDeWidget([snap("2026-10-29T00:22:00")], new Date("2026-10-29T18:00:00Z"), ZONA);
+  const frescura = frescuraDeWidget([snap("2026-10-29T00:22:00")]);
   assert.match(frescura.fecha, /2026/);
 });

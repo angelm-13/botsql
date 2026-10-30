@@ -4954,7 +4954,7 @@
     "state_not_calculated_help": "Este KPI todavía no tiene ningún dato calculado.",
     "table_no_period_filters": "Las tablas muestran los datos de ahora: no tienen periodo ni filtros.",
     "updated_at": "Actualizado:",
-    "updated_late": "más de un día de retraso",
+    "data_stale_notice": "Los datos de los KPIs no se actualizan desde hace más de 24 horas. Último cálculo:",
     "updated_hint": "Última vez que se calculó una fila de este KPI en este rango. Un KPI que solo se calcula cuando hay movimientos puede tener una fecha vieja sin que nada falle.",
     "chart_aria_points": "puntos de datos",
     "chart_aria_max": "Mayor",

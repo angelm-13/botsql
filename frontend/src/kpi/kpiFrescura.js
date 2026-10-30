@@ -47,12 +47,26 @@ export function computedAtDeSnapshots(snapshots) {
   return marcas.reduce((mayor, marca) => (paredDeTexto(marca) > paredDeTexto(mayor) ? marca : mayor));
 }
 
-// `null` si no hay `computed_at`; si no, el texto de la fecha y si lleva mas de un dia (24 h) de atraso.
-export function frescuraDeWidget(snapshots, ahora = new Date(), zona = ZONA_DE_NEGOCIO) {
+// `null` si no hay `computed_at`; si no, el texto de la fecha. Es informativo y neutro: un KPI que solo escribe cuando
+// hay un evento puede tener una fecha vieja con el job sano, asi que el atraso no se juzga aqui sino con el ultimo
+// calculo de TODOS los KPIs (`avisoDeDatosAtrasados`).
+export function frescuraDeWidget(snapshots) {
   const computedAt = computedAtDeSnapshots(snapshots);
   if (!computedAt) return null;
   const fecha = formatearFechaHora(computedAt);
-  if (!fecha) return null;
-  const atraso = paredDeInstante(ahora, zona) - paredDeTexto(computedAt, zona);
-  return { fecha, atrasado: atraso > UN_DIA_MS };
+  return fecha ? { fecha } : null;
+}
+
+// El aviso global del tablero: `ultimoCalculo` es el `max(computed_at)` de `kpi_snapshot` que manda
+// `GET /kpi_definition/` (de los KPIs de serie que ve la persona) y `ahora` el reloj del servidor, ambos con zona.
+// Se restan entre si, sin depender del reloj del navegador; sin `ahora` valido se usa el del navegador.
+// `null` si no hay ultimo calculo (nada que avisar: cada tarjeta dice "No calculado") o si va al dia; si no, la fecha
+// formateada. Justo 24 h no es atraso.
+export function avisoDeDatosAtrasados(ultimoCalculo, ahora, zona = ZONA_DE_NEGOCIO) {
+  const ultimo = paredDeTexto(ultimoCalculo, zona);
+  if (ultimo === null) return null;
+  const ahoraPared = paredDeTexto(ahora, zona) ?? paredDeInstante(new Date(), zona);
+  if (ahoraPared - ultimo <= UN_DIA_MS) return null;
+  const fecha = formatearFechaHora(ultimoCalculo);
+  return fecha ? { fecha } : null;
 }

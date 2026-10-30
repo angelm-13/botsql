@@ -43,7 +43,7 @@ import {
 } from "../kpi/kpiParametros.js";
 import { puedeIrAlPaso } from "../kpi/kpiPasos.js";
 import { NO_CALCULADO, SIN_DATOS, estadoDeDatos } from "../kpi/kpiEstado.js";
-import { frescuraDeWidget } from "../kpi/kpiFrescura.js";
+import { avisoDeDatosAtrasados, frescuraDeWidget } from "../kpi/kpiFrescura.js";
 import {
   guardarTableroActivo, idDeUsuarioActual, leerTableroActivo, resolverTableroActivo,
 } from "../kpi/kpiTableroActivo.js";
@@ -410,6 +410,9 @@ export default function Dashboard() {
   const [widgetsError, setWidgetsError] = useState("");
 
   const [kpiCatalog, setKpiCatalog] = useState([]);
+  // `ultimo_calculo` y `ahora` de GET /kpi_definition/ (UTC con zona): el aviso global de datos atrasados.
+  const [calculo, setCalculo] = useState({ ultimo: null, ahora: null });
+  const avisoAtrasado = useMemo(() => avisoDeDatosAtrasados(calculo.ultimo, calculo.ahora), [calculo]);
   const [users, setUsers] = useState([]);
   const [teams, setTeams] = useState([]);
 
@@ -727,6 +730,7 @@ export default function Dashboard() {
       .then(([definiciones, dimensiones]) => {
         if (cancelado) return;
         setKpiCatalog(enriquecerCatalogo(listOf(definiciones), listOf(dimensiones)));
+        setCalculo({ ultimo: definiciones?.ultimo_calculo ?? null, ahora: definiciones?.ahora ?? null });
       })
       .catch(() => { if (!cancelado) setKpiCatalog([]); });
     // Solo id+nombre, sin pedir el catalogo de RH completo (`GET /user/` exige permiso de seguridad):
@@ -899,6 +903,11 @@ export default function Dashboard() {
       )}
 
       {dashboardsError && <div className="alert error">{t(dashboardsError, dashboardsError)}</div>}
+      {avisoAtrasado && (
+        <p className="kpi-aviso-datos-atrasados" role="status">
+          {tx("data_stale_notice", "Los datos de los KPIs no se actualizan desde hace más de 24 horas. Último cálculo:")} {avisoAtrasado.fecha}
+        </p>
+      )}
 
       {!loadingDashboards && dashboards.length > 0 && (
         <div className="kpi-tabs" role="tablist">
@@ -1428,11 +1437,10 @@ export function KpiWidgetCard({
           )}
           {frescura && (
             <p
-              className={`kpi-widget-meta kpi-widget-actualizado ${frescura.atrasado ? "atrasado" : ""}`.trim()}
+              className="kpi-widget-meta kpi-widget-actualizado"
               title={tx("updated_hint", "Última vez que se calculó una fila de este KPI en este rango. Un KPI que solo se calcula cuando hay movimientos puede tener una fecha vieja sin que nada falle.")}
             >
               {tx("updated_at", "Actualizado:")} {frescura.fecha}
-              {frescura.atrasado && ` · ${tx("updated_late", "más de un día de retraso")}`}
             </p>
           )}
         </div>

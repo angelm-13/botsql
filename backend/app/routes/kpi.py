@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 
 from flask import Blueprint, jsonify, request
-from sqlalchemy import Integer, cast, exists, func, select
+from sqlalchemy import Integer, and_, cast, exists, func, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
 
 from app.kpis.dimensiones import (
@@ -28,6 +28,7 @@ from app.services.kpi_dashboard_widget_service import KpiDashboardWidgetService
 from app.utils.auth import has_kpi_permission, require_entity_permission, token_required
 from app.utils.errors import AppError
 from app.utils.scope import owner_ids, scope_bits
+from app.utils.tiempo import a_iso_utc, ahora_utc
 
 # Salvo que el plan del cliente declare otro valor en `limites.kpi_rango_dias_max`
 # (ver `app/modules/plan.py`), una consulta no puede pedir mas de un anio de
@@ -151,9 +152,9 @@ def _estado_de_datos(db, id_kpi_definition, condiciones):
 
     * `n_filas`: cuantas filas de `kpi_snapshot` cumplen las condiciones del rango. 0 = "Sin datos en el periodo".
     * `calculado`: el KPI tiene alguna fila en cualquier fecha. False = nunca se calculo ("No calculado").
-    * `computed_at`: la ultima vez que se escribio una de esas filas (None sin filas), tal como esta guardada en
-      `kpi_snapshot`: fecha y hora SIN zona, en la hora que tenia la base al escribirla (`func.now()`). No se le
-      pone zona: el frontend la lee como hora de pared del negocio.
+    * `computed_at`: la ultima vez que se escribio una de esas filas (None sin filas). La base la escribe en UTC
+      (`func.now()` con la sesion en UTC), asi que sale con zona explicita (`...Z`) y el frontend la convierte a la
+      hora del negocio al mostrarla.
 
     Un KPI que solo escribe cuando hay un evento (ver `tasks_kpis.py`) deja dias sin fila aunque el job corra: su
     `computed_at` puede ser viejo sin que nada falle, y "Sin datos en el periodo" no quiere decir que el job haya fallado.
@@ -167,7 +168,8 @@ def _estado_de_datos(db, id_kpi_definition, condiciones):
     return {
         'n_filas': int(n_filas or 0),
         'calculado': calculado,
-        'computed_at': computed_at.isoformat() if computed_at else None,
+        # Con zona explicita (`...Z`): la base escribe `computed_at` en UTC (ver `app/utils/tiempo.py`).
+        'computed_at': a_iso_utc(computed_at),
     }
 
 
@@ -358,6 +360,33 @@ def list_kpi_dimensions(user_data):
     return jsonify({'items': [dimension.serializar() for dimension in CATALOGO_DE_DIMENSIONES]})
 
 
+def _ultimo_calculo(db, user_data, kpis):
+    """La ultima vez que el job escribio un `kpi_snapshot` de los KPIs que el actor ve (UTC con `Z`), o None.
+
+    Es lo que decide el aviso global de datos atrasados del dashboard. Se ignoran los KPIs en vivo (`modo='vivo'`):
+    se consultan "ahora" y no escriben snapshots, asi que no dicen nada de la salud del job. Mismo alcance de
+    proyecto que `/kpi_snapshot/query` (`ALCANCE_PROYECTO_POR_CLAVE`): un KPI sin alcance de proyecto cuenta entero.
+    """
+    con_alcance, sin_alcance = [], []
+    for kpi in kpis:
+        definicion = KPI_POR_CLAVE.get(kpi.clave)
+        if definicion is not None and definicion.modo == 'vivo':
+            continue
+        (con_alcance if ALCANCE_PROYECTO_POR_CLAVE.get(kpi.clave, True) else sin_alcance).append(kpi.id_kpi_definition)
+    condiciones = []
+    if sin_alcance:
+        condiciones.append(KpiSnapshot.id_kpi_definition.in_(sin_alcance))
+    if con_alcance:
+        actor_project = InvoiceService.actor_project(user_data)
+        condicion = KpiSnapshot.id_kpi_definition.in_(con_alcance)
+        if actor_project is not None:
+            condicion = and_(condicion, cast(KpiSnapshot.dimension_key, JSONB).contains({'id_proyect': actor_project}))
+        condiciones.append(condicion)
+    if not condiciones:
+        return None
+    return a_iso_utc(db.scalar(select(func.max(KpiSnapshot.computed_at)).where(or_(*condiciones))))
+
+
 @bp_kpi.route('/kpi_definition/', methods=['GET'])
 @token_required
 @require_entity_permission('kpi_definition', 'read')
@@ -366,12 +395,12 @@ def list_kpi_definitions(user_data):
         kpis = db.scalars(
             select(KpiDefinition).where(KpiDefinition.deletion_date.is_(None))
         ).all()
-        items = [
-            _con_metadatos_del_registry(kpi)
-            for kpi in kpis
-            if has_kpi_permission(db, user_data, kpi.id_kpi_definition)
-        ]
-    return jsonify({'items': items})
+        visibles = [kpi for kpi in kpis if has_kpi_permission(db, user_data, kpi.id_kpi_definition)]
+        items = [_con_metadatos_del_registry(kpi) for kpi in visibles]
+        ultimo_calculo = _ultimo_calculo(db, user_data, visibles)
+    # `ultimo_calculo` y `ahora` (ambos UTC con `Z`) van juntos: el frontend resta uno del otro y no depende del
+    # reloj del navegador.
+    return jsonify({'items': items, 'ultimo_calculo': ultimo_calculo, 'ahora': a_iso_utc(ahora_utc())})
 
 
 @bp_kpi.route('/kpi_definition/all', methods=['GET'])

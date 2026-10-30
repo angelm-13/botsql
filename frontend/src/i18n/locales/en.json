@@ -4838,7 +4838,7 @@
     "state_not_calculated_help": "This KPI has no calculated data yet.",
     "table_no_period_filters": "Tables show current data: they have no period or filters.",
     "updated_at": "Updated:",
-    "updated_late": "more than a day old",
+    "data_stale_notice": "KPI data has not been updated in more than 24 hours. Last calculation:",
     "updated_hint": "Last time a row of this KPI was calculated in this range. A KPI that is only calculated when there is activity can show an old date with nothing wrong.",
     "chart_aria_points": "data points",
     "chart_aria_max": "Highest",

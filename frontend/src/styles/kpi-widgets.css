@@ -30,7 +30,7 @@
   --kpi-bueno: #12a06a;
   --kpi-malo: #e5484d;
   --kpi-neutral: #8a96a5;
-  /* Ambar vivo: SOLO para "atrasado" en la tabla de material prestado. */
+  /* Ambar vivo: SOLO para "atrasado" (tabla de material prestado, aviso global de datos atrasados). */
   --kpi-atrasado: #f08a00;
   --kpi-atrasado-fondo: #fff3dc;
   /* Gravedad de un prestamo por dias: hasta 30 verde, 31 a 90 ambar, mas de 90 coral.

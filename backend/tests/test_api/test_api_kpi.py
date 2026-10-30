@@ -189,7 +189,46 @@ class TestKpiApi(BackendTestCase):
             ])
         rango = self.json(self._request(
             ACTOR_CON_KPI, self._query_url(fecha_inicio="2026-06-10", fecha_fin="2026-06-10")))["rango_a"]
-        self.assertEqual("2026-06-12T22:15:00", rango["computed_at"])
+        # La base lo escribe en UTC: sale con zona explicita.
+        self.assertEqual("2026-06-12T22:15:00Z", rango["computed_at"])
+
+    def _fijar_computed_at(self, fecha_hora):
+        with transaction_context() as db:
+            db.execute(text("UPDATE kpi_snapshot SET computed_at = :f"), {"f": fecha_hora})
+
+    def test_the_catalog_carries_the_latest_calculation_of_the_actors_project_with_the_server_clock(self):
+        self._fijar_computed_at(datetime(2026, 6, 1, 3, 0))
+        with transaction_context() as db:
+            db.add_all([
+                KpiSnapshot(
+                    id_kpi_definition=self.id_kpi, dimension_key={"id_user": 950, "id_proyect": PROYECTO_A},
+                    periodo=date(2026, 6, 2), valor=Decimal("1.00"), computed_at=datetime(2026, 6, 2, 4, 30),
+                ),
+                # Otro proyecto: no es del actor, no cuenta aunque sea mas reciente.
+                KpiSnapshot(
+                    id_kpi_definition=self.id_kpi, dimension_key={"id_user": 950, "id_proyect": PROYECTO_B},
+                    periodo=date(2026, 6, 3), valor=Decimal("1.00"), computed_at=datetime(2026, 7, 1, 8, 0),
+                ),
+            ])
+        cuerpo = self.json(self._request(ACTOR_CON_KPI, "/kpi_definition/"))
+        self.assertEqual("2026-06-02T04:30:00Z", cuerpo["ultimo_calculo"])
+        self.assertTrue(cuerpo["ahora"].endswith("Z"))
+
+    def test_the_latest_calculation_ignores_live_kpis_and_is_none_without_snapshots(self):
+        self._fijar_computed_at(datetime(2026, 6, 1, 3, 0))
+        with transaction_context() as db:
+            id_vivo = db.scalar(select(KpiDefinition.id_kpi_definition)
+                                .where(KpiDefinition.clave == "material_prestado_actual"))
+            db.add(KpiSnapshot(
+                id_kpi_definition=id_vivo, dimension_key={"id_user": 950}, periodo=date(2026, 6, 3),
+                valor=Decimal("1.00"), computed_at=datetime(2030, 1, 1, 0, 0),
+            ))
+        self.assertEqual("2026-06-01T03:00:00Z", self.json(self._request(ADMIN, "/kpi_definition/"))["ultimo_calculo"])
+
+        with transaction_context() as db:
+            db.execute(text("DELETE FROM kpi_snapshot"))
+        self.assertIsNone(self.json(self._request(ADMIN, "/kpi_definition/"))["ultimo_calculo"])
+        self.assertIsNone(self.json(self._request(ACTOR_CON_KPI, "/kpi_definition/"))["ultimo_calculo"])
 
     def test_a_kpi_without_any_snapshot_is_not_calculated_and_the_comparison_range_says_so_too(self):
         with transaction_context() as db:
