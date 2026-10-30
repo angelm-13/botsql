@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import bcrypt
 from app.models import PublicApiKey
 from app.models.session import transaction_context
+from app.utils.tiempo import a_iso_utc
 
 
 class PublicApiKeyManager:
@@ -81,6 +82,6 @@ class PublicApiKeyManager:
             'is_active': bool(record.is_active),
             'last_used_at': record.last_used_at.isoformat() if record.last_used_at else None,
             'created_by': record.created_by,
-            'creation_date': record.creation_date.isoformat() if record.creation_date else None,
-            'last_update_date': record.last_update_date.isoformat() if record.last_update_date else None,
+            'creation_date': a_iso_utc(record.creation_date),
+            'last_update_date': a_iso_utc(record.last_update_date),
         }

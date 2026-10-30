@@ -285,6 +285,15 @@ def test_stamp_rules(changes, expected):
             b'<!DOCTYPE x [<!ENTITY e SYSTEM "file:///etc/passwd">]><Comprobante/>',
             "cfdi.xml_con_dtd_o_entidades",
         ),
+        # El DTD no se esconde tras un comentario largo ni cambiando la codificacion.
+        (
+            b"<!--" + b"x" * 9000 + b'--><!DOCTYPE x [<!ENTITY e "a">]><Comprobante/>',
+            "cfdi.xml_con_dtd_o_entidades",
+        ),
+        (
+            '<!DOCTYPE x [<!ENTITY e "a">]><Comprobante/>'.encode("utf-16"),
+            "cfdi.xml_con_dtd_o_entidades",
+        ),
     ],
 )
 def test_malformed_input_is_rejected_without_raising(payload, expected):

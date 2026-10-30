@@ -19,9 +19,13 @@ RATE = Decimal('0.0001')
 
 def _decimal(value, field: str) -> Decimal:
     try:
-        return Decimal(str(value if value not in (None, '') else '0'))
+        number = Decimal(str(value if value not in (None, '') else '0'))
     except InvalidOperation as exc:
         raise AppError('errors.invalid_field', 400, {'field': field}) from exc
+    # NaN e Infinity no son importes: revientan mas adelante con un 500.
+    if not number.is_finite():
+        raise AppError('errors.invalid_field', 400, {'field': field})
+    return number
 
 
 def _percentage(value, field: str) -> Decimal:
@@ -67,6 +71,8 @@ def _tipo_de_cambio_por_omision(payload: dict):
     """
     capturado = payload.get('type_exchange_rate') or payload.get('tipo_cambio')
     if capturado not in (None, ''):
+        if _decimal(capturado, 'type_exchange_rate') < 0:
+            raise AppError('errors.invalid_field', 400, {'field': 'type_exchange_rate'})
         return capturado
     moneda = str(payload.get('currency') or payload.get('moneda') or 'MXN').strip().upper()
     return 1 if moneda in ('MXN', 'XXX', '') else 0
@@ -163,6 +169,8 @@ def preview_manual_invoice(payload: dict) -> dict:
         })
 
     total = subtotal - discount_total + iva_total - isr_retention_total - iva_retention_total
+    if total < 0:
+        errors.append('manual_invoice.total_negative')
     return {
         'concepts': normalized,
         'errors': errors,

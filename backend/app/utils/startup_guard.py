@@ -39,11 +39,20 @@ INSECURE_SECRETS = {
 REQUIRED_SECRETS = ("JWT_SECRET", "SECRET_KEY")
 
 PRODUCTION_ENVIRONMENTS = {"production", "produccion", "prod"}
+# Entornos que dicen SER de desarrollo. Todo lo demas -incluido no decir nada- es
+# produccion: una variable olvidada debe cerrar el sistema, no abrirlo.
+NON_PRODUCTION_ENVIRONMENTS = {"development", "dev", "local", "test", "testing", "staging"}
 
 
 def is_production() -> bool:
+    """Produccion salvo que se declare lo contrario (falla cerrado).
+
+    Antes solo era produccion si `APP_ENV`/`FLASK_ENV` decian exactamente
+    "production": un despliegue sin esa variable arrancaba con secretos de
+    ejemplo, CORS abierto y contrasenas en claro aceptadas, sin avisar.
+    """
     entorno = str(os.getenv("APP_ENV") or os.getenv("FLASK_ENV") or "").strip().lower()
-    return entorno in PRODUCTION_ENVIRONMENTS
+    return entorno not in NON_PRODUCTION_ENVIRONMENTS
 
 
 def collect_configuration_problems() -> list[str]:
@@ -74,7 +83,9 @@ def collect_configuration_problems() -> list[str]:
 
 
 def _bootstrap_admin_is_weak() -> bool:
-    if str(os.getenv("BOOTSTRAP_ADMIN_ENABLED") or "").strip().lower() not in {"1", "true", "yes", "si"}:
+    # El administrador inicial viene ENCENDIDO salvo que se apague (igual que en
+    # init_db.py): sin la variable tambien cuenta, y su contrasena de reserva es debil.
+    if str(os.getenv("BOOTSTRAP_ADMIN_ENABLED", "true") or "").strip().lower() not in {"1", "true", "yes", "si"}:
         return False
     clave = str(os.getenv("BOOTSTRAP_ADMIN_PASSWORD") or "").strip()
     return not clave or clave.lower() in INSECURE_SECRETS or len(clave) < 12

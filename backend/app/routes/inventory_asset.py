@@ -21,7 +21,9 @@ from app.services.inventory_asset_service import (
     register_asset, report_lost, resumen_de_estatus, retire_asset, return_asset,
     send_to_repair,
 )
-from app.utils.auth import require_entity_permission, token_required
+from functools import wraps
+
+from app.utils.auth import _has_entity_permission, require_entity_permission, token_required
 
 
 bp_inventory_asset = Blueprint("inventory_asset", __name__)
@@ -31,11 +33,42 @@ def _cuerpo():
     return request.get_json(silent=True) or {}
 
 
+def _puede_buscar_en_almacen(fn):
+    """Busca en el almacen quien lee `product` O quien levanta vales/prevales.
+
+    El buscador del prevale (`inventoryTrace`) es lo que deja a un Supervisor
+    teclear "taladro" y elegir la pieza. Con solo `require_entity_permission(
+    "product", "read")`, quitarle el modulo Productos al Supervisor -que es
+    lo correcto: no administra el almacen- le apagaba tambien el buscador, y
+    el desplegable de sugerencias se quedaba vacio sin decir por que (el 403
+    se atrapa en la pantalla). Quien puede pedir material tiene que poder
+    buscarlo, sin que eso le abra el modulo de Productos ni su menu.
+    """
+    from app.models.session import transaction_context
+    from app.services.inventory_service import has_capability
+
+    @wraps(fn)
+    def wrapper(user_data, *args, **kwargs):
+        if not _has_entity_permission(user_data, "product", "read"):
+            with transaction_context() as db:
+                permitido = (
+                    has_capability(db, user_data, "warehouse_voucher")
+                    or has_capability(db, user_data, "warehouse_prevoucher")
+                )
+            if not permitido:
+                return jsonify({
+                    "error_key": "errors.permission_denied",
+                    "meta": {"entity": "product", "action": "read"},
+                }), 403
+        return fn(user_data, *args, **kwargs)
+    return wrapper
+
+
 # --- consultas ----------------------------------------------------------
 
 @bp_inventory_asset.route("/inventory/trace", methods=["GET"])
 @token_required
-@require_entity_permission("product", "read")
+@_puede_buscar_en_almacen
 def localizar_en_almacen(user_data):
     """Buscar cualquier cosa del almacen y ver donde esta y que le paso.
 
@@ -60,6 +93,7 @@ def localizar_en_almacen(user_data):
         id_material=request.args.get("id_material"),
         id_ubicacion=request.args.get("id_location"),
         estado_pieza=request.args.get("asset_status"),
+        clase=request.args.get("item_class"),
         # Paginado. Antes se cortaba en cuarenta resultados y se avisaba "afina
         # la busqueda", que no es una respuesta cuando el filtro ya esta puesto
         # y aun quedan doscientas coincidencias.

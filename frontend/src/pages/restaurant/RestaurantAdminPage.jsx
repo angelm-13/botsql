@@ -5,6 +5,7 @@ import { createRestaurantCategory, createRestaurantDish, createRestaurantGuisado
 import { useI18n } from "../../i18n";
 import { EmptyState, money, Notice, RestaurantHeader, Status } from "./RestaurantUi";
 import "../../styles/restaurant.css";
+import { formatearFechaHora } from "../../utils/fechas";
 
 const tabs = [
   { key: "dishes", icon: Utensils }, { key: "categories", icon: Tags }, { key: "tables", icon: Table2 },
@@ -178,7 +179,7 @@ function AuditAdmin() {
   }, []);
   return <AdminSection title={t("restaurant.audit_title")} detail={t("restaurant.audit_detail")} form={<div><h2>{t("restaurant.summary")}</h2><p className="rest-muted">{t("restaurant.audit_hint")}</p></div>}>
     <Notice error={error} />
-    {events.length ? events.map((row) => <div className="rest-catalog-row" key={row.id_audit_log}><div><strong>{String(row.entity_name || "").replace("restaurant_", "").replaceAll("_", " ")}</strong><span>{row.action}</span></div><span>{row.creation_date ? new Date(row.creation_date).toLocaleString() : ""}</span></div>) : <EmptyState>{t("restaurant.audit_empty")}</EmptyState>}
+    {events.length ? events.map((row) => <div className="rest-catalog-row" key={row.id_audit_log}><div><strong>{String(row.entity_name || "").replace("restaurant_", "").replaceAll("_", " ")}</strong><span>{row.action}</span></div><span>{row.creation_date ? formatearFechaHora(row.creation_date, "es-MX") : ""}</span></div>) : <EmptyState>{t("restaurant.audit_empty")}</EmptyState>}
   </AdminSection>;
 }
 

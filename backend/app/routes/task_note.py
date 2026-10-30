@@ -8,6 +8,7 @@ from app.services.project_management_service import require_task_access, visible
 from app.services.task_note_service import TaskNoteService
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
+from app.utils.field_access import COLUMNAS_DE_AUDITORIA
 
 bp_task_note = Blueprint('task_note', __name__, url_prefix='/task_note')
 ALLOWED_FIELDS = ['id_task_note', 'date', 'id_task', 'task_note_description', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
@@ -23,7 +24,6 @@ def _actor_has_unrestricted_field_access(user_data: dict) -> bool:
     return bool(
         user_data.get('is_superuser')
         or user_data.get('is_bootstrap_admin')
-        or user_data.get('user_type') == 'admin'
     )
 
 
@@ -72,7 +72,7 @@ def _field_sets_for_actor(user_data: dict) -> tuple[set[str], set[str]]:
     # La llave primaria puede viajar en la respuesta para navegacion interna,
     # acciones de fila y rutas REST, aunque el frontend no la pinte si no fue
     # marcada como visible en el gestor.
-    return visible | set(TECHNICAL_RESPONSE_FIELDS), writable
+    return visible | set(TECHNICAL_RESPONSE_FIELDS) | COLUMNAS_DE_AUDITORIA, writable
 
 
 def _visible_response_fields_for_actor(user_data: dict) -> set[str]:
@@ -154,9 +154,20 @@ def get_task_note(user_data, id_task_note):
 @token_required
 @require_entity_permission('task_note', 'create')
 def create_task_note(user_data):
+    """Da de alta la nota por el mismo camino que `/task/<id>/notes`.
+
+    Antes llamaba a `TaskNoteService.create` directo -el CRUD generico, sin
+    `_validate`-, lo que dejaba crear una nota con `task_note_description`
+    vacia y que NUNCA quedaba reflejada en `proyect_event` (el expediente
+    del proyecto no se enteraba, aunque la tarea si la tuviera). Hallazgo de
+    la auditoria de seguridad del 2026-10-06: dos caminos para el mismo
+    dato, con comportamiento distinto, para los mismos roles.
+    """
+    from app.services.task_service import add_task_note
+
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
-    require_task_access(payload.get('id_task'), user_data)
-    return _jsonify_projected_record(user_data, TaskNoteService.create(payload, user_id=user_data.get('id_user')), status=201)
+    note = add_task_note(payload.get('id_task'), payload, user_data)
+    return _jsonify_projected_record(user_data, note, status=201)
 
 
 @bp_task_note.route('/<id_task_note>', methods=['PUT'])
@@ -165,9 +176,9 @@ def create_task_note(user_data):
 def update_task_note(user_data, id_task_note):
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
     current = TaskNoteService.get(id_task_note)
-    require_task_access(current.get('id_task'), user_data)
+    require_task_access(current.get('id_task'), user_data, escribe=True)
     if payload.get('id_task') is not None:
-        require_task_access(payload.get('id_task'), user_data)
+        require_task_access(payload.get('id_task'), user_data, escribe=True)
     return _jsonify_projected_record(user_data, TaskNoteService.update(id_task_note, payload, user_id=user_data.get('id_user')))
 
 
@@ -176,5 +187,5 @@ def update_task_note(user_data, id_task_note):
 @require_entity_permission('task_note', 'delete')
 def delete_task_note(user_data, id_task_note):
     record = TaskNoteService.get(id_task_note)
-    require_task_access(record.get('id_task'), user_data)
+    require_task_access(record.get('id_task'), user_data, escribe=True)
     return jsonify(TaskNoteService.delete(id_task_note, user_id=user_data.get('id_user')))

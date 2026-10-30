@@ -4,6 +4,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import String, Integer, BigInteger, SmallInteger, Boolean, Date, DateTime, Float, Numeric, ForeignKey, Text, JSON, Enum, LargeBinary, UniqueConstraint, func, text
 from app.models.base import Base
+from app.utils.tiempo import a_iso_utc
 
 
 def to_json_value(value):
@@ -30,6 +31,11 @@ class Proyect(Base):
     title: Mapped[object] = mapped_column(String(50), nullable=True)
     # El recorrido del TALLER. Ver PROJECT_STATUSES en project_management_service.
     proyect_status: Mapped[object] = mapped_column(String(20), nullable=False, default='draft', server_default=text("'draft'"))
+    # Si el proyecto pasa por el taller (maquila) o no (pinturas, drenaje,
+    # cimientos, etc). Recorre los mismos estatus que uno con maquila, pero lo
+    # lleva el supervisor que lo lidera y queda fuera de las pantallas de Jefe
+    # de taller (_scoped_query, scope "execution").
+    requires_maquila: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text('true'))
     # --- la orden de trabajo (migracion 20260911180000) ---
     folio: Mapped[object] = mapped_column(String(40), nullable=True)
     # Quien lo pidio: una empresa tiene varios ingenieros pidiendo cosas
@@ -55,6 +61,13 @@ class Proyect(Base):
     management_status: Mapped[object] = mapped_column(
         String(40), nullable=True, default='pendiente_orden_compra',
         server_default=text("'pendiente_orden_compra'"))
+    # Prioridad y costo total: solo los captura/ve Gerencia (candado real en
+    # project_management_service, no solo de UI -- ver PROJECT_PRIORITIES y
+    # _tiene_alcance_comercial). No son parte del recorrido de taller ni del
+    # comercial (proyect_status/management_status): son datos sueltos que
+    # Gerencia quiso capturar aparte.
+    priority: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    total_cost: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     created_by: Mapped[int] = mapped_column(Integer, ForeignKey('user.id_user'), nullable=False)
     creation_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now())
     last_update_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
@@ -69,7 +82,10 @@ class Proyect(Base):
             'proyect_description': to_json_value(self.proyect_description),
             'title': to_json_value(self.title),
             'proyect_status': to_json_value(self.proyect_status),
+            'requires_maquila': to_json_value(self.requires_maquila),
             'management_status': to_json_value(self.management_status),
+            'priority': to_json_value(self.priority),
+            'total_cost': to_json_value(self.total_cost),
             'id_drawing_document': to_json_value(self.id_drawing_document),
             'delivery_date': to_json_value(self.delivery_date),
             'id_supervisor': to_json_value(self.id_supervisor),
@@ -80,9 +96,9 @@ class Proyect(Base):
             'requested_by': to_json_value(self.requested_by),
             'folio': to_json_value(self.folio),
             'created_by': to_json_value(self.created_by),
-            'creation_date': to_json_value(self.creation_date),
-            'last_update_date': to_json_value(self.last_update_date),
-            'deletion_date': to_json_value(self.deletion_date),
+            'creation_date': a_iso_utc(self.creation_date),
+            'last_update_date': a_iso_utc(self.last_update_date),
+            'deletion_date': a_iso_utc(self.deletion_date),
         }
 
     def serialize_summary(self) -> dict:

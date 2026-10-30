@@ -88,9 +88,14 @@ class ProjectScopeMatrix(BackendTestCase):
                      measurement_system="metric", created_by=1),
                 IncidentType(id_incident_type=1, incident_type_description="Falla", created_by=1),
             ])
+            # Lo que ve y edita un responsable de proyecto lo manda el Gestor
+            # (`proyect.scope_read`/`scope_update`): Propios. Con Todos veria
+            # los proyectos de los demas -desde 2026-10-16 el codigo respeta
+            # esa celda-, que es justo la fuga que esta matriz vigila.
             db.add_all([
                 EntityPermission(id_permission=PERFIL, entity_name=nombre,
-                                 scope_create=4, scope_read=4, scope_update=4, scope_delete=4,
+                                 scope_create=4, scope_read=1 if nombre == "proyect" else 4,
+                                 scope_update=1 if nombre == "proyect" else 4, scope_delete=4,
                                  created_by=1)
                 for nombre in ENTIDADES
             ])

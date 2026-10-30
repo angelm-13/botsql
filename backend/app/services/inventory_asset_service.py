@@ -36,7 +36,7 @@ from decimal import Decimal, InvalidOperation
 from sqlalchemy import func, select
 
 from app.models.inventory_asset import (
-    DISPONIBLE, EN_REPARACION, EN_USO, ESTADOS, ESTADOS_EN_EXISTENCIA,
+    DISPONIBLE, EN_REPARACION, EN_USO, ESTADOS, ESTADOS_EN_EXISTENCIA, ESTADOS_EN_SALDO,
     ESTADOS_TERMINALES, EXTRAVIADA, InventoryAsset, PRESTADA, RETIRADA,
 )
 from app.models.inventory_asset_event import (
@@ -216,17 +216,25 @@ def _validar_transicion(pieza, destino):
         )
 
 
-def _mover_existencia(db, pieza, evento, user_data, *, id_location, reason, referencia):
+def _mover_existencia(db, pieza, evento, user_data, *, id_location, reason, referencia,
+                      status_antes=None):
     """Escribe el movimiento de existencia que corresponde al evento.
 
     Devuelve el renglon del libro, o None si el evento no mueve el saldo.
+
+    El signo sale de si la pieza entra al saldo del libro, sale de el o ninguno
+    (`ESTADOS_EN_SALDO`), y no del nombre del evento: devolver una pieza que
+    estaba en uso no suma nada, porque nunca salio del saldo.
     """
     tipo = MOVIMIENTO_POR_EVENTO.get(evento)
     if tipo is None or id_location is None:
         return None
 
     # Una pieza es una unidad: nunca media herramienta.
-    signo = 1 if evento in (ALTA, DEVOLUCION, REGRESO_REPARACION) else -1
+    signo = (int(pieza.status in ESTADOS_EN_SALDO)
+             - int(status_antes in ESTADOS_EN_SALDO))
+    if signo == 0:
+        return None
     movimiento, _ = apply_movement_in_session(
         db,
         pieza.id_product,
@@ -434,6 +442,7 @@ def transicion_en_sesion(db, id_asset, payload, user_data, *, evento, destino,
         id_location=ubicacion_del_movimiento,
         reason=reason,
         referencia=payload.get("idempotency_key") or pieza.last_update_date,
+        status_antes=antes["status"],
     )
     registro = _asentar(
         db, pieza, evento, antes=antes, user_data=user_data, ledger=ledger,
@@ -511,12 +520,16 @@ def move_asset(id_asset, payload, user_data) -> dict:
         antes = _foto(pieza)
         reason = _texto(payload.get("reason"), "reason", obligatorio=True)
 
-        # El traslado se hace con la maquinaria de traspaso del inventario, que
-        # escribe la salida y la entrada en la misma transaccion. Repetirlo aqui
-        # a mano seria un segundo camino que toca existencias.
-        from app.services.inventory_service import transfer_inventory
+        # El traslado se hace con la maquinaria de traspaso del inventario, en
+        # la MISMA sesion -`transfer_in_session`, no `transfer_inventory`-:
+        # esta ultima abre su propia transaccion, y si algo fallaba despues
+        # de que ya hubiera comprometido el traspaso, el rollback de aqui no
+        # revertia nada (hallazgo de la auditoria de seguridad del
+        # 2026-10-06). Escribe la salida y la entrada en la misma transaccion
+        # que el evento de la pieza: todo o nada de verdad.
+        from app.services.inventory_service import transfer_in_session
 
-        transfer_inventory(pieza.id_product, {
+        transfer_in_session(db, pieza.id_product, {
             "id_location_from": antes["id_location"],
             "id_location_to": destino,
             "quantity": 1,
@@ -754,7 +767,7 @@ def product_asset_summary(id_product, user_data) -> dict:
 
         en_existencia = sum(
             cuantas for estado, cuantas in por_estado.items()
-            if estado in ESTADOS_EN_EXISTENCIA
+            if estado in ESTADOS_EN_SALDO
         )
 
         from app.services.inventory_service import _product_total

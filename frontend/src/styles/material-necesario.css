@@ -1,0 +1,107 @@
+/* Lo que un proyecto necesita de material, y la vista de lo que falta comprar. */
+
+.material-necesario { margin-top: 18px; }
+.material-necesario h4 { margin: 0 0 4px; }
+.material-necesario-ayuda { margin: 0 0 10px; font-size: 12.5px; }
+
+.necesidades-lista { list-style: none; margin: 0 0 12px; padding: 0; }
+.necesidades-lista li {
+  display: grid; align-items: center; gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
+  padding: 9px 10px; margin-bottom: 5px;
+  border: 1px solid #e8eeeb; border-radius: 9px; background: #fff; font-size: 13px;
+}
+.necesidad-material { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.necesidad-material small { font-size: 11.5px; }
+.necesidad-cantidad { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: #64748b; }
+.necesidad-cantidad input { width: 66px; }
+.necesidad-estado {
+  padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; white-space: nowrap;
+}
+.necesidad-estado.cubierta { background: #dcfce7; color: #14532d; }
+.necesidad-estado.falta { background: #fef3c7; color: #78350f; }
+.necesidad-fecha { font-size: 11.5px; white-space: nowrap; }
+.necesidad-quitar { justify-self: end; }
+
+.necesidad-formulario {
+  display: grid; gap: 10px; align-items: end;
+  grid-template-columns: minmax(0, 2fr) 90px 150px;
+  padding: 12px; border: 1px dashed #cbd5e1; border-radius: 10px; background: #f8faf9;
+}
+.necesidad-campo-nota { grid-column: 1 / -1; }
+.necesidad-formulario .button { justify-self: start; }
+
+/* Por comprar */
+.por-comprar-filtro {
+  display: inline-flex; align-items: center; gap: 7px; margin: 4px 0 12px;
+  font-size: 13px; cursor: pointer;
+}
+.por-comprar-falta { color: #b45309; font-weight: 800; }
+.por-comprar-cubierto { color: #15803d; font-weight: 600; }
+.por-comprar-casilla { margin-right: 7px; vertical-align: middle; }
+.por-comprar-en-orden { margin-left: 8px; font-size: 11px; }
+/* Cada proyecto es una ficha con su cantidad, en lugar de renglones pegados. */
+.por-comprar-proyectos { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.por-comprar-proyectos li, .por-comprar-chip {
+  display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 3px 9px;
+  border: 1px solid #e3eae6; border-radius: 999px; background: #f8faf9;
+}
+.por-comprar-cantidad { font-weight: 700; }
+
+@media (max-width: 760px) {
+  .necesidades-lista li { grid-template-columns: 1fr auto; }
+  .necesidad-formulario { grid-template-columns: 1fr; }
+}
+
+/* Texto libre: que se necesita y quien lo revisa */
+.necesidad-estado.revisar { background: #fff7ed; color: #9a3412; border: 1px solid #fdba74; }
+.necesidad-estado.compra { background: #dbeafe; color: #1e3a8a; }
+.necesidad-vinculo {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 7px 10px; border: 1px solid #86efac; border-radius: 8px; background: #f0fdf4; font-size: 13px;
+}
+.necesidad-sugerencias, .por-comprar-sugerencias {
+  margin-top: 8px; padding: 8px 10px; border: 1px solid #fde68a; border-radius: 8px; background: #fffbeb;
+}
+.necesidad-sugerencias p, .por-comprar-sugerencias p { margin: 0 0 6px; font-size: 12px; }
+.necesidad-sugerencias ul, .por-comprar-sugerencias ul { list-style: none; margin: 0; padding: 0; }
+.necesidad-sugerencias li, .por-comprar-sugerencias li {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 3px 0; font-size: 13px;
+}
+.por-comprar-barra {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 4px 0 12px;
+  position: sticky; top: 0; z-index: 5; padding: 8px 0; background: var(--page-bg, #fff);
+}
+.por-comprar-barra .por-comprar-filtro { margin: 0; }
+.por-comprar-origen { display: block; font-size: 11px; }
+.por-comprar-revisar td { background: #fffdf7; }
+.por-comprar-revision td { padding-top: 0; border-top: none; background: #fffdf7; }
+.por-comprar-revision .button.primary { margin-top: 8px; }
+
+/* Devolver lo que no se entiende, y pedir en almacen lo que ya hay */
+.necesidad-estado.devuelto { background: #fee2e2; color: #991b1b; }
+.necesidad-accion, .necesidad-devuelto { grid-column: 1 / -1; }
+.necesidad-accion { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding-top: 6px; border-top: 1px dashed #e2e8f0; }
+.necesidad-accion p { margin: 0; font-size: 12px; }
+.necesidad-devuelto { padding: 8px 10px; border: 1px solid #fecaca; border-radius: 8px; background: #fef2f2; font-size: 13px; }
+.necesidad-devuelto p { margin: 0 0 6px; }
+.necesidad-correccion { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.necesidad-correccion input { flex: 1; min-width: 160px; }
+.por-comprar-acciones { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.por-comprar-devolver { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin-top: 8px; }
+.por-comprar-devolver label { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 220px; font-size: 12px; color: #475569; }
+
+.necesidad-estado.en-orden { background: #dbeafe; color: #1e40af; }
+
+/* Por comprar: secciones y urgencia */
+.por-comprar-seccion { display: flex; align-items: center; gap: 8px; margin: 18px 0 4px; font-size: 15px; }
+.por-comprar-seccion-ayuda { margin: 0 0 8px; font-size: 12.5px; }
+.por-comprar-vencida td:first-child { box-shadow: inset 3px 0 0 #dc2626; }
+.por-comprar-proxima td:first-child { box-shadow: inset 3px 0 0 #f59e0b; }
+.por-comprar-plazo {
+  display: block; width: fit-content; margin-top: 3px; padding: 1px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 700;
+}
+.por-comprar-plazo.vencida { background: #fee2e2; color: #7f1d1d; }
+.por-comprar-plazo.proxima { background: #fef3c7; color: #78350f; }

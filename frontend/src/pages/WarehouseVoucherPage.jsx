@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { idAAbrir } from "../notifications/destino";
 import PropTypes from "prop-types";
 import VisorDeFoto from "../components/VisorDeFoto";
 import EmployeeVoucherHistory from "../components/EmployeeVoucherHistory.jsx";
@@ -8,12 +10,16 @@ import {
 } from "lucide-react";
 import {
   authorizeWarehouseVoucher,
+  cancelWarehouseVoucher,
+  confirmWarehouseVoucherLineCustody,
   downloadWarehouseVoucherPdf,
   closeWarehouseVoucherLine,
+  deliverWarehouseVoucher,
+  confirmWarehouseVoucherReceipt,
   createWarehousePrevoucher,
   createWarehouseVoucher,
-  getAllIncidentType,
-  getAllLocation,
+  getIncidentTypeOptions,
+  getLocationOptions,
   getMyPermissions,
   getUserOptions,
   getOverdueVoucherLines,
@@ -24,8 +30,10 @@ import {
   inventoryTrace,
 } from "../api";
 import Pagination from "../components/Pagination.jsx";
+import PersonaCombobox from "../components/PersonaCombobox.jsx";
 import { agruparRenglones } from "../utils/renglonesDelVale";
 import { useI18n } from "../i18n";
+import { useDialogo } from "../dialogo/useDialogo.js";
 import "../styles/warehouse-voucher.css";
 import PageHeader from "../components/PageHeader.jsx";
 
@@ -73,6 +81,32 @@ import PageHeader from "../components/PageHeader.jsx";
 // vuelve a comprobar la capacidad exacta-, pero un boton que el servidor
 // siempre va a rechazar no debe estar ahi para empezar: confunde mas de lo
 // que "cuida" un permiso que la pantalla ya conoce.
+// Dañado, extraviado, destruccion y reparacion reportan un SUCESO: no llevan "se necesita el" ni
+// quien recoge, que son del prestamo. Misma lista que `ESTADO_POR_TIPO` del servidor.
+const CLAVES_DE_REPORTE = ["danado", "extraviado", "destruccion", "reparacion"];
+const claveDeTipo = (tipos, idTipo) => {
+  const tipo = (tipos || []).find((x) => String(x.id_incident_type) === String(idTipo));
+  return String(tipo?.incident_type_description || "").trim().toLowerCase()
+    .normalize("NFD").replace(/[̀-ͯ]/g, "");
+};
+const esReporteDeIncidente = (tipos, idTipo) => CLAVES_DE_REPORTE.includes(claveDeTipo(tipos, idTipo));
+// Destruccion y extravio dan de baja la pieza: si estaba prestada se le cierra el prestamo a
+// quien la tenia (`held_by_user`). Dañado y reparacion no cierran nada.
+const esBajaDeIncidente = (tipos, idTipo) => ["destruccion", "extraviado"].includes(claveDeTipo(tipos, idTipo));
+// Quienes tienen fuera un producto por cantidad, juntando sus vales: lo que trae Localizar
+// en `on_loan.holders`, una persona por renglon.
+const titularesDe = (producto) => {
+  const porUsuario = new Map();
+  (producto.on_loan?.holders || []).forEach((h) => {
+    if (h.id_user == null) return;
+    const previo = porUsuario.get(h.id_user);
+    porUsuario.set(h.id_user, previo
+      ? { ...previo, quantity: previo.quantity + Number(h.quantity || 0) }
+      : { id_user: h.id_user, holder_name: h.holder_name, quantity: Number(h.quantity || 0) });
+  });
+  return [...porUsuario.values()];
+};
+
 function actorGuardado() {
   try { return JSON.parse(localStorage.getItem("user") || "{}"); } catch { return {}; }
 }
@@ -92,10 +126,32 @@ const ESTADOS_DE_VALE = [
   { valor: "borrador", clave: "draft", texto: "Por autorizar" },
   { valor: "abierto", clave: "open", texto: "Abiertos" },
   { valor: "cerrado", clave: "closed", texto: "Cerrados" },
+  // Las colas de entrega: no son un estado del vale sino en que punto va su
+  // entrega. `entrega:` las distingue de un estado al armar la peticion.
+  { valor: "entrega:por_entregar", clave: "to_deliver", texto: "Por entregar" },
+  { valor: "entrega:por_confirmar", clave: "to_confirm", texto: "Por confirmar recibido" },
 ];
+
+// El punto en que va la entrega de un vale con seguimiento. Los vales
+// anteriores no traen estado (`null`) y no se pintan.
+const ENTREGA_TEXTO = {
+  por_autorizar: ["to_authorize", "Por autorizar"],
+  por_entregar: ["to_deliver", "Por entregar"],
+  entregado: ["delivered", "Entregado, falta confirmar"],
+  recibido: ["received", "Recibido"],
+  recibido_con_observaciones: ["received_obs", "Recibido con observaciones"],
+};
+
+// El vale directo nace abierto y con el material ya fuera: mientras nadie
+// registre la entrega, su etiqueta de entrega dice "por entregar" aunque no
+// haya nada que sacar. Un prevale autorizado, en cambio, esta en espera.
+function valeDirectoSinEntregar(estadoDelVale, estadoDeEntrega) {
+  return String(estadoDelVale || "") === "abierto" && estadoDeEntrega === "por_entregar";
+}
 
 export default function WarehouseVoucherPage() {
   const { t } = useI18n();
+  const dialogo = useDialogo();
   const actor = useMemo(actorGuardado, []);
   const privilegiado = esPrivilegiado(actor);
   const [permisos, setPermisos] = useState([]);
@@ -113,11 +169,16 @@ export default function WarehouseVoucherPage() {
   // material, nunca surtirlo. Es el caso de Supervisor -y de Administrator
   // real, que tiene la misma separacion-, nunca el de Almacenista.
   const soloPuedeSolicitar = !puedeAbrirValeDirecto
-    && (privilegiado || tieneCapacidad(permisos, "warehouse_prevoucher", "scope_create"));
+    && (privilegiado || tieneCapacidad(permisos, "warehouse_prevoucher", "scope_create")
+      // Gerente Comercial: solo levanta reportes de suceso, como borrador.
+      || tieneCapacidad(permisos, "warehouse_incident_report", "scope_read"));
   const [vencidos, setVencidos] = useState([]);
   const [tipos, setTipos] = useState([]);
   const [ubicaciones, setUbicaciones] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
+  // Los que el Gestor de roles y permisos designo como posibles responsables de un
+  // vale (`warehouse_voucher_holder`): lo que ofrece el desplegable "Responsable".
+  const [responsables, setResponsables] = useState([]);
   // Las obras a las que se le puede ligar un vale. Se pide con `/options`,
   // que no exige el modulo `operaciones` -- el Almacenista no lo tiene.
   const [proyectos, setProyectos] = useState([]);
@@ -161,22 +222,28 @@ export default function WarehouseVoucherPage() {
     try {
       // Cada llamada se atrapa por separado: un rol de almacen no lee todas
       // estas entidades por igual (ej. antes de hoy, ninguno tenia lectura
-      // de incident_type), y un solo 403 aqui tumbaba las demas tambien --
+      // de incident_type -- por eso los tipos vienen de `/incident_type/options`,
+      // sin permiso de entidad, como usuarios y proyectos), y un solo 403 aqui tumbaba las demas tambien --
       // dejaba "Levantar vale" deshabilitado por falta de tipos aunque
       // ubicaciones/usuarios si hubieran cargado bien.
-      const [venc, tip, ubi, usr, permisosPayload] = await Promise.all([
+      const [venc, tip, ubi, usr, resp, permisosPayload] = await Promise.all([
         getOverdueVoucherLines().catch(() => ({ items: [] })),
-        getAllIncidentType({ per_page: 100 }).catch(() => ({ items: [] })),
-        getAllLocation({ per_page: 200 }).catch(() => ({ items: [] })),
+        getIncidentTypeOptions().catch(() => []),
+        // `/location/options`, no `/location/`: la lista completa exige leer
+        // `location` (modulo de inventario) y un Supervisor, que solo pide
+        // material, se quedaba sin nombres -- el "Sale de" salia en blanco.
+        getLocationOptions().catch(() => []),
         getUserOptions().catch(() => []),
+        getUserOptions({ para: "vale_responsable" }).catch(() => []),
         privilegiado
           ? Promise.resolve({ entity_permissions: [] })
           : getMyPermissions().catch(() => ({ entity_permissions: [] })),
       ]);
       setVencidos(venc?.items || []);
-      setTipos(tip?.items || []);
-      setUbicaciones(ubi?.items || []);
+      setTipos(Array.isArray(tip) ? tip : tip?.items || []);
+      setUbicaciones(Array.isArray(ubi) ? ubi : ubi?.items || []);
       setUsuarios(Array.isArray(usr) ? usr : usr?.items || []);
+      setResponsables(Array.isArray(resp) ? resp : resp?.items || []);
       const filasPermiso = permisosPayload.entity_permissions || [];
       setPermisos(filasPermiso);
 
@@ -200,20 +267,53 @@ export default function WarehouseVoucherPage() {
 
   useEffect(() => { cargar(); }, [cargar]);
 
-  const abrirBorrador = () => setBorrador({
-    id_incident_type: tipos[0]?.id_incident_type || "",
+  const abrirBorrador = (extra = {}) => setBorrador({
+    id_incident_type: (tipos.find((x) => /pr[eé]stamo/i.test(x.incident_type_description || ""))
+      || tipos[0])?.id_incident_type || "",
     // Quien solo puede solicitar es SIEMPRE el responsable de lo que pide --
     // mismo criterio que ya rige en Proyectos ("el responsable es quien crea
     // el proyecto"): no tiene sentido que Supervisor levante un prevale a
     // nombre de otra persona si el es quien va a tener que devolverlo.
     id_user: soloPuedeSolicitar ? String(actor.id_user || "") : "",
+    // Quien va a RECOGER el material, si no es el responsable de arriba y no
+    // tiene usuario en el sistema (chofer, mensajero): solo su nombre. Vacio
+    // por omision: el responsable es quien recoge.
+    pickup_name: "",
+    // Vale complementario: el vale anterior, del mismo proyecto, al que este
+    // agrega herramienta. Vacio por omision.
+    id_incident_parent: "",
     // El proyecto al que va el material. Vacio por opcion: no todo prestamo
     // es de un proyecto -- una herramienta para el propio taller no lo es.
     id_proyect: "",
-    due_date: "",
+    // Para cuando se necesita la herramienta (no la fecha de regreso: el prestamo no
+    // tiene una fija).
+    needed_date: "",
     note: "",
     lines: [],
+    // Lo que trae quien llega desde "Material necesario" con "Pedir en almacen":
+    // el proyecto, lo que busca y cuanto necesita.
+    ...extra,
   });
+
+  // "Pedir en almacen" desde la lista de necesidades de un proyecto: abre el
+  // prevale con el proyecto y la busqueda ya puestos, para que solo falte elegir la
+  // pieza. Se consume una vez: el estado de la navegacion se limpia para que
+  // recargar la pagina no vuelva a abrirlo.
+  const ubicacion = useLocation();
+  const navegar = useNavigate();
+  const pendienteDeAbrir = useRef(ubicacion.state?.prevale || null);
+  useEffect(() => {
+    const p = pendienteDeAbrir.current;
+    if (!p || cargando || !tipos.length) return;
+    pendienteDeAbrir.current = null;
+    abrirBorrador({
+      id_proyect: p.id_proyect ? String(p.id_proyect) : "",
+      buscar_inicial: p.buscar || "",
+      cantidad_sugerida: Number(p.cantidad) || 1,
+    });
+    navegar(ubicacion.pathname, { replace: true, state: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cargando, tipos]);
 
   const listar = useCallback(async () => {
     setError("");
@@ -224,7 +324,8 @@ export default function WarehouseVoucherPage() {
         // que pedir "borrador" y "solo con material fuera" a la vez no
         // devolveria nada. Al elegir un estado, el otro filtro se ignora.
         only_open: (soloAbiertos && !estado) ? 1 : undefined,
-        status: estado || undefined,
+        status: (estado && !estado.startsWith("entrega:")) ? estado : undefined,
+        delivery: estado.startsWith("entrega:") ? estado.slice(8) : undefined,
         page: pagina,
         per_page: 15,
       }));
@@ -257,6 +358,33 @@ export default function WarehouseVoucherPage() {
     }
   };
 
+  // Llegar desde una notificacion: `/vouchers?abrir=<id>` abre ese vale. Se
+  // espera a que termine de cargar la pantalla (permisos y catalogos) y se
+  // consume una vez: el parametro se limpia para que recargar no lo reabra.
+  const [parametros, setParametros] = useSearchParams();
+  const idPorAbrir = idAAbrir(parametros);
+  // El aviso de "no se pudo abrir" tiene su PROPIO estado: `listar()` y
+  // `cargar()` limpian `error` al arrancar y, segun quien gane la carrera,
+  // borraban este mensaje antes de que se leyera.
+  const [noSeAbrio, setNoSeAbrio] = useState("");
+  useEffect(() => {
+    if (!idPorAbrir || cargando) return;
+    setParametros({}, { replace: true });
+    setNoSeAbrio("");
+    (async () => {
+      try {
+        setConsultado(await getWarehouseVoucher(String(idPorAbrir)));
+      } catch {
+        // 403/404: el aviso apunta a un vale que ya no existe o que este
+        // usuario no puede ver.
+        setConsultado(null);
+        setNoSeAbrio(traducir.current("errors.not_found"));
+      }
+    })();
+    // Solo importan el id y que la pantalla ya haya cargado.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idPorAbrir, cargando]);
+
   /**
    * Guarda el vale, o lo deja en borrador.
    *
@@ -274,16 +402,27 @@ export default function WarehouseVoucherPage() {
     setAviso("");
     const alta = comoPrevale ? createWarehousePrevoucher : createWarehouseVoucher;
     try {
+      const reporte = esReporteDeIncidente(tipos, borrador.id_incident_type);
+      const baja = esBajaDeIncidente(tipos, borrador.id_incident_type);
       const creado = await alta({
         ...borrador,
         id_proyect: borrador.id_proyect || undefined,
-        lines: borrador.lines.map((l) => ({
-          id_product: l.id_product,
-          id_inventory_asset: l.id_inventory_asset || undefined,
-          quantity: l.id_inventory_asset ? undefined : l.quantity,
-          id_location_from: l.id_location_from || undefined,
-          note: l.note || undefined,
-        })),
+        needed_date: reporte ? undefined : borrador.needed_date,
+        pickup_name: reporte ? undefined : (borrador.pickup_name || undefined),
+        id_incident_parent: borrador.id_incident_parent || undefined,
+        lines: borrador.lines.map((l) => {
+          // La baja de algo prestado cierra el prestamo de quien lo tenia: no sale de
+          // ningun sitio, asi que no manda "de donde".
+          const dePrestamo = baja && !l.serializado && (l.en_prestamo || []).length > 0;
+          return {
+            id_product: l.id_product,
+            id_inventory_asset: l.id_inventory_asset || undefined,
+            quantity: l.id_inventory_asset ? undefined : l.quantity,
+            id_location_from: dePrestamo ? undefined : (l.id_location_from || undefined),
+            held_by_user: dePrestamo ? (l.held_by_user || undefined) : undefined,
+            note: l.note || undefined,
+          };
+        }),
       });
       setBorrador(null);
       setConsultado(await getWarehouseVoucher(creado.voucher.id_incident));
@@ -313,10 +452,25 @@ export default function WarehouseVoucherPage() {
     }
   };
 
-  const cerrar = async (idLinea) => {
+  const cancelar = async (idVale) => {
+    const motivo = await dialogo.pedirTexto(t("voucher.cancel_reason", "Motivo de la cancelación"));
+    if (!motivo || !motivo.trim()) return;
+    setError("");
+    setAviso("");
+    try {
+      const r = await cancelWarehouseVoucher(idVale, motivo.trim());
+      setConsultado(await getWarehouseVoucher(r.voucher.id_incident));
+      setAviso(t("voucher.cancelled", "Vale cancelado: el material apartado se liberó."));
+      await cargar();
+    } catch (e) {
+      decirError(e, "No se pudo cancelar el vale.");
+    }
+  };
+
+  const cerrar = async (idLinea, payload = {}) => {
     setError("");
     try {
-      const r = await closeWarehouseVoucherLine(idLinea);
+      const r = await closeWarehouseVoucherLine(idLinea, payload);
       setConsultado(await getWarehouseVoucher(r.voucher.id_incident));
       setAviso(r.closed_the_voucher
         ? t("voucher.closed_all", "Era el último renglón: el vale queda cerrado.")
@@ -324,6 +478,47 @@ export default function WarehouseVoucherPage() {
       await cargar();
     } catch (e) {
       decirError(e, "No se pudo cerrar el renglón.");
+    }
+  };
+
+  // Almacen marca el vale COMPLETO como entregado (a quien se designo, o a
+  // otra persona con su nota).
+  // El supervisor dueño del vale confirma que ya recupero la pieza de manos
+  // del operador al que se la habia entregado.
+  const confirmarCustodia = async (idLinea) => {
+    setError("");
+    try {
+      const r = await confirmWarehouseVoucherLineCustody(idLinea);
+      setConsultado(await getWarehouseVoucher(r.id_incident));
+    } catch (e) {
+      decirError(e, "No se pudo confirmar la recepción.");
+    }
+  };
+
+  const entregarVale = async (idVale, payload) => {
+    setError("");
+    setAviso("");
+    try {
+      await deliverWarehouseVoucher(idVale, payload);
+      setConsultado(await getWarehouseVoucher(idVale));
+      setAviso(t("voucher.delivered_ok", "Entrega registrada."));
+      await cargar();
+    } catch (e) {
+      decirError(e, "No se pudo registrar la entrega.");
+    }
+  };
+
+  // El supervisor responsable confirma que recibio el vale completo.
+  const confirmarRecibido = async (idVale, payload) => {
+    setError("");
+    setAviso("");
+    try {
+      await confirmWarehouseVoucherReceipt(idVale, payload);
+      setConsultado(await getWarehouseVoucher(idVale));
+      setAviso(t("voucher.received_ok", "Recibido confirmado."));
+      await cargar();
+    } catch (e) {
+      decirError(e, "No se pudo confirmar el recibido.");
     }
   };
 
@@ -366,7 +561,7 @@ export default function WarehouseVoucherPage() {
         <RefreshCw size={16} />
         {cargando ? t("common.loading", "Cargando…") : t("common.refresh", "Actualizar")}
         </button>
-        <button className="button button-primary" onClick={abrirBorrador}
+        <button className="button button-primary" onClick={() => abrirBorrador()}
         disabled={cargando || !tipos.length}>
         <Plus size={16} />
         {soloPuedeSolicitar
@@ -377,17 +572,18 @@ export default function WarehouseVoucherPage() {
       </PageHeader>
 
       {error && <p className="error">{error}</p>}
+      {noSeAbrio && <p className="error">{noSeAbrio}</p>}
       {aviso && <p className="vale-aviso"><Check size={15} />{aviso}</p>}
 
       {/* Lo vencido primero: es la razon de llevar vales. Si no hay nada, la
           seccion no aparece en vez de decir "0 vencidos", que es ruido. */}
       {vencidos.length > 0 && (
-        <section className="vale-vencidos">
-          <h2>
+        <details className="vale-vencidos">
+          <summary>
             <AlertTriangle size={16} />
             {t("voucher.overdue", "Ya debió volver y no ha vuelto")}
             <span>{vencidos.length}</span>
-          </h2>
+          </summary>
           <ul>
             {vencidos.map((linea) => (
               <li key={linea.id_nm_incident_product}>
@@ -401,10 +597,12 @@ export default function WarehouseVoucherPage() {
                     ? `${t("voucher.piece", "pieza")} #${linea.id_inventory_asset}`
                     : `${linea.quantity} ${t("voucher.units", "unidades")}`}
                 </span>
-                <span className="muted">
-                  {t("voucher.was_due", "vencía")}{" "}
-                  {new Date(linea.due_date).toLocaleDateString("es-MX")}
-                </span>
+                {linea.due_date && (
+                  <span className="muted">
+                    {t("voucher.was_due", "vencía")}{" "}
+                    {new Date(linea.due_date).toLocaleDateString("es-MX")}
+                  </span>
+                )}
                 {/* Quien solo puede pedir material (Supervisor) no lo recibe
                     ni lo suelta: marcarlo devuelto es lo mismo derecho de
                     `warehouse_voucher` que abrir el vale. */}
@@ -418,7 +616,7 @@ export default function WarehouseVoucherPage() {
               </li>
             ))}
           </ul>
-        </section>
+        </details>
       )}
 
       {borrador && (
@@ -427,7 +625,7 @@ export default function WarehouseVoucherPage() {
           setBorrador={setBorrador}
           tipos={tipos}
           ubicaciones={ubicaciones}
-          usuarios={usuarios}
+          usuarios={responsables}
           proyectos={proyectos}
           onGuardar={guardar}
           onCancelar={() => setBorrador(null)}
@@ -435,6 +633,7 @@ export default function WarehouseVoucherPage() {
           puedeAbrirValeDirecto={puedeAbrirValeDirecto}
           soloPuedeSolicitar={soloPuedeSolicitar}
           nombreDelActor={nombreDe(actor.id_user) || actor.username}
+          actorIdUser={actor.id_user}
           t={t}
         />
       )}
@@ -513,15 +712,36 @@ export default function WarehouseVoucherPage() {
                       <span className="vale-lista-quien">
                         {v.holder_name || t("voucher.no_holder", "sin responsable")}
                       </span>
+                      {/* La obra, como la nombra el resto de la pantalla: el
+                          proyecto ligado si lo hay; si no, la nota del vale,
+                          que es donde los vales migrados de Adser guardan su
+                          obra (lo mismo que agrupa el historial del empleado). */}
+                      <span className="vale-lista-proyecto"
+                            title={v.proyect?.title || v.note || undefined}>
+                        {v.proyect
+                          ? `${v.proyect.folio ? `#${v.proyect.folio}` : `#${v.proyect.id_proyect}`}${v.proyect.title ? ` — ${v.proyect.title}` : ""}`
+                          : (v.note || "").trim()
+                            || t("voucher.no_project", "Sin proyecto asignado")}
+                      </span>
                       <span className={`vale-lista-estado ${v.incident_status}`}>
                         {t(`voucher.status_${v.incident_status}`, v.incident_status)}
                       </span>
                       <span className="vale-lista-cuenta">
-                        <span className={`vale-marca-mini ${v.open_lines > 0 ? "fuera" : "devuelto"}`}>
-                          {v.open_lines > 0
-                            ? `${v.open_lines} ${t("voucher.out", "fuera")}`
-                            : t("voucher.all_back", "todo devuelto")}
+                        <span className={`vale-marca-mini ${v.open_lines > 0 && !["borrador", "en_espera"].includes(v.incident_status) ? "fuera" : "devuelto"}`}>
+                          {["borrador", "en_espera"].includes(v.incident_status)
+                            ? t("voucher.reserved", "apartado")
+                            : v.open_lines > 0
+                              ? `${v.open_lines} ${t("voucher.out", "fuera")}`
+                              : t("voucher.all_back", "todo devuelto")}
                         </span>
+                        {ENTREGA_TEXTO[v.delivery_status] && (
+                          <span className={`vale-marca-mini entrega-${v.delivery_status}`}>
+                            {valeDirectoSinEntregar(v.incident_status, v.delivery_status)
+                              ? t("voucher.delivery_direct_out", "Material ya salió")
+                              : t(`voucher.delivery_${ENTREGA_TEXTO[v.delivery_status][0]}`,
+                                ENTREGA_TEXTO[v.delivery_status][1])}
+                          </span>
+                        )}
                       </span>
                       {v.incident_date && (
                         <span className="muted">
@@ -552,12 +772,16 @@ export default function WarehouseVoucherPage() {
               <ArrowLeft size={15} />
               {t("voucher.back_to_list", "Volver a la lista")}
             </button>
-            <Vale vale={consultado} onCerrar={cerrar} onAutorizar={autorizar}
+            <Vale vale={consultado} onCerrar={cerrar} onAutorizar={autorizar} onCancelar={cancelar}
                   onImprimir={imprimir} imprimiendo={imprimiendo}
                   onAmpliar={setFotoAmpliada}
                   onVerHistorial={(idUser, nombre) => setHistorialEmpleado({ idUser, nombre })}
                   puedeAutorizar={puedeAutorizar}
                   puedeCerrarRenglon={puedeCerrarRenglon}
+                  onConfirmarCustodia={confirmarCustodia}
+                  onEntregarVale={entregarVale} onConfirmarRecibido={confirmarRecibido}
+                  privilegiado={privilegiado} actorIdUser={actor.id_user}
+                  usuarios={usuarios}
                   nombreDe={nombreDe} sitioDe={sitioDe} t={t} />
           </>
         )}
@@ -588,13 +812,29 @@ export default function WarehouseVoucherPage() {
 }
 
 /** El vale con sus renglones, y el estado derivado bien visible. */
-function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
-               onVerHistorial, puedeAutorizar, puedeCerrarRenglon, nombreDe, sitioDe, t }) {
+function Vale({ vale, onCerrar, onAutorizar, onCancelar, onImprimir, imprimiendo, onAmpliar,
+               onVerHistorial, puedeAutorizar, puedeCerrarRenglon,
+               onConfirmarCustodia, onEntregarVale, onConfirmarRecibido,
+               privilegiado, actorIdUser, usuarios,
+               nombreDe, sitioDe, t }) {
   const cabecera = vale.voucher || {};
   const estado = String(cabecera.incident_status || "");
   const cerrado = estado === "cerrado";
   // El borrador es el prevale: material pedido, todavia en el almacen.
   const borrador = estado === "borrador";
+  // Hasta que almacen lo marca como salido, el material sigue en el almacen:
+  // esta apartado, no fuera.
+  const sinSalir = ["borrador", "en_espera"].includes(estado);
+  const cancelado = estado === "cancelado";
+  // Quien puede entregar una pieza a un operador o confirmar que la
+  // recupero: el responsable DE ESTE vale (normalmente Supervisor, que solo
+  // tiene `warehouse_prevoucher`, nunca `warehouse_voucher`) o quien opera
+  // el almacen.
+  const puedeGestionarCustodia = privilegiado
+    || Number(cabecera.id_user) === Number(actorIdUser)
+    || puedeCerrarRenglon;
+  const [devuelvePor, setDevuelvePor] = useState({});
+  const [devuelveNombre, setDevuelveNombre] = useState({});
 
   // Un prestamo real por renglon, no una fila de tabla: la devolucion agrega
   // un renglon de ENTRADA en vez de reescribir el de SALIDA (asi queda el
@@ -669,20 +909,33 @@ function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
             una excepcion, el borrador, que no habla de los renglones sino de
             que todavia nadie autorizo la salida. */}
         <span className={`vale-estado ${
-          borrador ? "es-borrador" : (cerrado ? "es-cerrado" : "es-abierto")}`}>
-          {borrador
+          borrador ? "es-borrador" : (cerrado || cancelado ? "es-cerrado" : "es-abierto")}`}>
+          {cancelado
+            ? t("voucher.status_cancelado", "Cancelado")
+            : borrador
             ? t("voucher.status_draft", "Borrador")
             : (cerrado
               ? t("voucher.status_closed", "Cerrado")
-              : t("voucher.status_open", "Abierto"))}
+              : estado === "en_espera" || estado === "en_transito"
+                ? t(`voucher.status_${estado}`, estado)
+                : t("voucher.status_open", "Abierto"))}
           <em>
-            {borrador
+            {cancelado
+              ? t("voucher.cancelled_short", "sin material")
+              : sinSalir
               ? t("voucher.nothing_left_yet", "nada ha salido todavía")
               : `${fueraReal} ${t("voucher.of", "de")} ${totalReal} ${
                 t("voucher.open_lines", "sin devolver")}`}
           </em>
         </span>
       </header>
+
+      <SeguimientoDeEntrega
+        vale={vale} onEntregarVale={onEntregarVale}
+        onConfirmarRecibido={onConfirmarRecibido}
+        puedeEntregar={puedeCerrarRenglon}
+        esResponsable={privilegiado || Number(cabecera.id_user) === Number(actorIdUser)}
+        usuarios={usuarios} nombreDe={nombreDe} actorIdUser={actorIdUser} t={t} />
 
       {/* Autorizar es lo que saca el material, asi que va arriba y solo cuando
           hay algo que autorizar -y solo a quien de verdad puede: Supervisor
@@ -698,6 +951,15 @@ function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
             {t("voucher.authorize_help",
               "Al autorizar sale el material del almacén. Lo hace el jefe de almacén, y no puede ser quien pidió el vale.")}
           </span>
+        </p>
+      )}
+
+      {sinSalir && (
+        <p className="vale-cancelar">
+          <button className="button button-quiet"
+                  onClick={() => onCancelar(cabecera.id_incident)}>
+            {t("voucher.cancel", "Cancelar vale")}
+          </button>
         </p>
       )}
 
@@ -734,9 +996,19 @@ function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
               const origen = salida?.id_location_from ?? linea.id_location_from;
               const mostrarDestino = destino && String(destino) !== String(origen);
 
+              // Lo recogio alguien distinto del responsable: el renglon quedo a
+              // nombre de otro usuario o de un externo al autorizar el vale.
+              const recogeOtro = abierto && Boolean(salida.delivered_to_name
+                || (salida.id_user_delivered_to
+                  && Number(salida.id_user_delivered_to) !== Number(cabecera.id_user)));
+              const idSalida = salida?.id_nm_incident_product;
+              const quien = devuelvePor[idSalida] ?? (salida?.delivered_to_name
+                ? "externo" : String(salida?.id_user_delivered_to || ""));
+              const nombreExterno = devuelveNombre[idSalida] ?? (salida?.delivered_to_name || "");
+
               return (
                 <tr key={linea.id_nm_incident_product}
-                    className={abierto ? "vale-renglon-fuera" : "vale-renglon-devuelto"}>
+                    className={abierto && !sinSalir ? "vale-renglon-fuera" : "vale-renglon-devuelto"}>
                   <td className="mono muted">{linea.id_nm_incident_product}</td>
                   <td className="mono">
                     {linea.product?.product_code || `#${linea.id_product}`}
@@ -759,25 +1031,104 @@ function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
                       aprender, y el objetivo es que se entienda sin
                       explicacion. */}
                   <td className="vale-tabla-estado">
-                    {abierto ? (
+                    {abierto && sinSalir ? (
+                      <span className="vale-marca devuelto">
+                        <Package size={13} />
+                        {t("voucher.reserved", "apartado")}
+                      </span>
+                    ) : abierto ? (
                       <>
                         <span className={`vale-marca fuera ${vencido ? "vencida" : ""}`}>
                           <AlertTriangle size={13} />
                           {t("voucher.out", "fuera")}
                           {vencido && <> · {t("history.overdue", "vencido")}</>}
                         </span>
-                        {puedeCerrarRenglon && (
+                        {/* Quien la trae de vuelta, al cerrar. Solo si el
+                            supervisor dijo al pedirlo que lo recogeria otra
+                            persona (el renglon quedo a nombre de alguien que
+                            no es el responsable, o de un externo): viene
+                            preseleccionada esa persona y se puede corregir.
+                            Si el responsable lo saco el mismo, no hay nada
+                            que elegir y almacen no puede asignarlo a otro. */}
+                        {puedeCerrarRenglon && !recogeOtro && (
                           <button className="button button-quiet"
                                   onClick={() => onCerrar(salida.id_nm_incident_product)}>
                             <Check size={14} />
                             {t("voucher.close_line", "Marcar devuelto")}
                           </button>
                         )}
+                        {puedeCerrarRenglon && recogeOtro && (
+                          <span className="vale-custodia">
+                            <select
+                              value={quien}
+                              onChange={(e) => setDevuelvePor({ ...devuelvePor, [idSalida]: e.target.value })}
+                              aria-label={t("voucher.returned_by", "Devuelve")}
+                            >
+                              {usuarios.map((u) => (
+                                <option key={u.id_user} value={u.id_user}>
+                                  {u.full_name || u.username}
+                                </option>
+                              ))}
+                              <option value="externo">{t("voucher.returned_by_external", "Otra persona (externo)…")}</option>
+                            </select>
+                            {quien === "externo" && (
+                              <input
+                                type="text" maxLength={120}
+                                placeholder={t("voucher.returned_by_name", "Nombre de quien devuelve")}
+                                value={nombreExterno}
+                                onChange={(e) => setDevuelveNombre({ ...devuelveNombre, [idSalida]: e.target.value })}
+                              />
+                            )}
+                            <button className="button button-quiet"
+                                    disabled={quien === "externo" && !nombreExterno.trim()}
+                                    onClick={() => onCerrar(idSalida, quien === "externo"
+                                      ? { returned_by_name: nombreExterno.trim() }
+                                      : { returned_by: Number(quien) })}>
+                              <Check size={14} />
+                              {t("voucher.close_line", "Marcar devuelto")}
+                            </button>
+                          </span>
+                        )}
+                        {(linea.id_user_delivered_to || linea.delivered_to_name) && !linea.custody_confirmed_date && (
+                          <span className="vale-custodia">
+                            <span className="muted">
+                              {t("voucher.delivered_to", "Con")}: {linea.delivered_to_name
+                                ? `${linea.delivered_to_name} (${t("voucher.external", "externo")})`
+                                : nombreDe(linea.id_user_delivered_to)}
+                            </span>
+                            {puedeGestionarCustodia && (
+                              <button className="button button-quiet"
+                                      onClick={() => onConfirmarCustodia(linea.id_nm_incident_product)}>
+                                <Check size={14} />
+                                {t("voucher.confirm_custody", "Confirmar recepción")}
+                              </button>
+                            )}
+                          </span>
+                        )}
+                        {(linea.id_user_delivered_to || linea.delivered_to_name) && linea.custody_confirmed_date && (
+                          <span className="vale-custodia muted">
+                            {t("voucher.custody_confirmed", "Recuperado de")} {linea.delivered_to_name || nombreDe(linea.id_user_delivered_to)}
+                          </span>
+                        )}
                       </>
                     ) : (
                       <span className="vale-marca devuelto">
                         <Check size={13} />
-                        {t("history.returned", "devuelto")}
+                        {cancelado ? t("voucher.status_cancelado", "cancelado")
+                                   : t("history.returned", "devuelto")}
+                      </span>
+                    )}
+                    {linea.held_by_user && (
+                      <span className="muted">
+                        {" "}{t("voucher.held_by", "Estaba a cargo de")}: {nombreDe(linea.held_by_user)}
+                      </span>
+                    )}
+                    {entrada && (entrada.returned_by_user || entrada.returned_by_name) && (
+                      <span className="muted">
+                        {" "}{t("voucher.returned_by_label", "Devuelto por")}:{" "}
+                        {entrada.returned_by_name
+                          ? `${entrada.returned_by_name} (${t("voucher.external", "externo")})`
+                          : nombreDe(entrada.returned_by_user)}
                       </span>
                     )}
                   </td>
@@ -823,6 +1174,7 @@ function Vale({ vale, onCerrar, onAutorizar, onImprimir, imprimiendo, onAmpliar,
 
 Vale.propTypes = {
   onAutorizar: PropTypes.func.isRequired,
+  onCancelar: PropTypes.func.isRequired,
   vale: PropTypes.shape({
     voucher: PropTypes.object,
     proyect: PropTypes.shape({
@@ -833,12 +1185,19 @@ Vale.propTypes = {
     lines: PropTypes.array,
     open_lines: PropTypes.number,
     total_lines: PropTypes.number,
+    delivery_status: PropTypes.string,
   }).isRequired,
   onCerrar: PropTypes.func.isRequired,
   onImprimir: PropTypes.func.isRequired,
   imprimiendo: PropTypes.bool,
   onAmpliar: PropTypes.func,
   onVerHistorial: PropTypes.func.isRequired,
+  onConfirmarCustodia: PropTypes.func.isRequired,
+  onEntregarVale: PropTypes.func.isRequired,
+  onConfirmarRecibido: PropTypes.func.isRequired,
+  privilegiado: PropTypes.bool,
+  actorIdUser: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  usuarios: PropTypes.arrayOf(PropTypes.object).isRequired,
   puedeAutorizar: PropTypes.bool,
   puedeCerrarRenglon: PropTypes.bool,
   nombreDe: PropTypes.func.isRequired,
@@ -918,6 +1277,139 @@ FichaDeProducto.propTypes = {
 FichaDeProducto.defaultProps = { producto: null, onAmpliar: null };
 
 /**
+ * En que punto va la entrega del vale -- pedir, surtir, entregar, recibir -- y
+ * lo que le toca hacer a quien lo esta viendo: almacen marca "entregado a X";
+ * el supervisor responsable confirma que lo recibio (o lo recibio con
+ * observaciones). Los vales anteriores no traen seguimiento y no se pintan.
+ */
+function SeguimientoDeEntrega({ vale, onEntregarVale, onConfirmarRecibido,
+                                puedeEntregar, esResponsable, usuarios, nombreDe,
+                                actorIdUser, t }) {
+  const cab = vale.voucher || {};
+  const estado = vale.delivery_status;
+  const [quien, setQuien] = useState({ id_user: "", name: "" });
+  const [notaEntrega, setNotaEntrega] = useState("");
+  const [conObservaciones, setConObservaciones] = useState(false);
+  const [notaRecibido, setNotaRecibido] = useState("");
+  if (!estado) return null;
+
+  const designado = cab.pickup_name
+    || (vale.lines || []).find((l) => l.id_user_delivered_to && l.direction === "salida")
+      ?.delivered_to_name
+    || nombreDe((vale.lines || []).find(
+      (l) => l.direction === "salida" && l.id_user_delivered_to)?.id_user_delivered_to)
+    || "";
+  const paso = (hecho, texto, detalle) => (
+    <li className={hecho ? "hecho" : ""}>
+      <span>{texto}</span>{detalle && <em className="muted"> {detalle}</em>}
+    </li>
+  );
+  const fecha = (f) => (f ? new Date(f).toLocaleString("es-MX") : "");
+  const autorizado = estado !== "por_autorizar";
+  const entregado = Boolean(cab.delivered_date);
+  const recibido = Boolean(cab.received_confirmed_date);
+  const receptor = cab.delivered_to_name
+    || (cab.delivered_to_user ? nombreDe(cab.delivered_to_user) : "");
+
+  const entregar = () => onEntregarVale(cab.id_incident, {
+    id_user: quien.id_user || undefined,
+    name: quien.name || undefined,
+    note: notaEntrega || undefined,
+  });
+
+  return (
+    <section className="vale-seguimiento">
+      <ol className="vale-linea-tiempo">
+        {paso(true, t("voucher.step_requested", "Solicitado"), fecha(cab.incident_date))}
+        {cab.needed_date && paso(false, t("voucher.step_needed", "Se necesita el"),
+          new Date(`${String(cab.needed_date).slice(0, 10)}T12:00:00`).toLocaleDateString("es-MX"))}
+        {paso(autorizado, t("voucher.step_authorized", "Autorizado"))}
+        {paso(entregado, t("voucher.step_delivered", "Entregado"),
+          entregado ? `${receptor ? `a ${receptor} · ` : ""}${fecha(cab.delivered_date)}` : (
+            designado ? `${t("voucher.step_pickup", "recoge")}: ${designado}` : ""))}
+        {paso(recibido, t("voucher.step_received", "Recibido por el responsable"),
+          recibido ? fecha(cab.received_confirmed_date) : "")}
+      </ol>
+      {cab.delivery_note && (
+        <p className="muted">{t("voucher.delivery_note", "Nota de entrega")}: {cab.delivery_note}</p>
+      )}
+      {cab.receipt_ok === false && (
+        <p className="vale-observaciones">
+          {t("voucher.receipt_obs", "Recibido con observaciones")}: {cab.receipt_note}
+        </p>
+      )}
+
+      {estado === "por_entregar" && valeDirectoSinEntregar(cab.incident_status, estado) && (
+        <p className="muted">
+          {t("voucher.direct_out_note",
+            "El material ya salió del almacén al abrir este vale. Registra la entrega solo para dejar a quién se le dio; no vuelve a descontar existencia.")}
+        </p>
+      )}
+
+      {estado === "por_entregar" && puedeEntregar && (
+        <div className="vale-accion-entrega">
+          <label className="field">
+            <span>{t("voucher.deliver_who", "Entregar a")}</span>
+            <PersonaCombobox
+              usuarios={usuarios} valor={quien} onChange={setQuien}
+              vacio={designado || t("voucher.pickup_is_holder", "El responsable (por omisión)")}
+              etiquetaExterno={t("voucher.external_person", "Persona externa")}
+              etiquetaYo={t("voucher.holder_is_you", "(tú)")} idYo={actorIdUser} />
+          </label>
+          <label className="field">
+            <span>{t("voucher.delivery_note", "Nota de entrega")}</span>
+            <input value={notaEntrega} maxLength={300}
+                   placeholder={t("voucher.delivery_note_help",
+                     "Obligatoria si recibe alguien distinto del designado")}
+                   onChange={(e) => setNotaEntrega(e.target.value)} />
+          </label>
+          <button className="button button-primary" onClick={entregar}>
+            {t("voucher.mark_delivered", "Marcar entregado")}
+          </button>
+        </div>
+      )}
+
+      {estado === "entregado" && esResponsable && (
+        <div className="vale-accion-entrega">
+          <label className="vale-solo-abiertos">
+            <input type="checkbox" checked={conObservaciones}
+                   onChange={(e) => setConObservaciones(e.target.checked)} />
+            {t("voucher.with_observations", "Con observaciones (faltó algo o venía mal)")}
+          </label>
+          {conObservaciones && (
+            <input value={notaRecibido} maxLength={300} required
+                   placeholder={t("voucher.receipt_note", "¿Qué faltó o qué venía mal?")}
+                   onChange={(e) => setNotaRecibido(e.target.value)} />
+          )}
+          <button className="button button-primary"
+                  disabled={conObservaciones && !notaRecibido.trim()}
+                  onClick={() => onConfirmarRecibido(cab.id_incident, conObservaciones
+                    ? { ok: false, note: notaRecibido } : { ok: true })}>
+            <Check size={14} />
+            {t("voucher.confirm_receipt", "Confirmar que lo recibí")}
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+SeguimientoDeEntrega.propTypes = {
+  vale: PropTypes.object.isRequired,
+  onEntregarVale: PropTypes.func.isRequired,
+  onConfirmarRecibido: PropTypes.func.isRequired,
+  puedeEntregar: PropTypes.bool,
+  esResponsable: PropTypes.bool,
+  usuarios: PropTypes.arrayOf(PropTypes.object).isRequired,
+  nombreDe: PropTypes.func.isRequired,
+  actorIdUser: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  t: PropTypes.func.isRequired,
+};
+SeguimientoDeEntrega.defaultProps = {
+  puedeEntregar: false, esResponsable: false, actorIdUser: null,
+};
+
+/**
  * Adapta un resultado de `inventoryTrace` (Localizar) a lo que `FichaDeProducto`
  * espera. Son dos formas distintas del mismo dato: el vale ya resuelto trae
  * `brand`/`material`/`unit` planos (`_fichas_de_producto` en el backend), y el
@@ -943,45 +1435,156 @@ function comoFichaDeProducto(candidato) {
 /** La captura de un vale: cabecera y renglones. */
 function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
                     proyectos, onGuardar, onCancelar, onAmpliar,
-                    puedeAbrirValeDirecto, soloPuedeSolicitar, nombreDelActor, t }) {
-  const [busqueda, setBusqueda] = useState("");
+                    puedeAbrirValeDirecto, soloPuedeSolicitar, nombreDelActor,
+                    actorIdUser, t }) {
+  const [busqueda, setBusqueda] = useState(borrador.buscar_inicial || "");
   const [candidatos, setCandidatos] = useState([]);
   const [buscando, setBuscando] = useState(false);
+  // Los vales del proyecto elegido, para ofrecer "Complementario de…".
+  const [valesDelProyecto, setValesDelProyecto] = useState([]);
+  // "Lo recogera otra persona": el caso normal es que recoja el responsable, asi
+  // que el campo de quien recoge no se muestra hasta marcar esto. Desmarcarlo
+  // limpia lo elegido y el vale vuelve a ser uno normal.
+  const [otraPersona, setOtraPersona] = useState(Boolean(borrador.pickup_name));
+  const alternarOtraPersona = (marcada) => {
+    setOtraPersona(marcada);
+    if (!marcada) {
+      setBorrador({ ...borrador, pickup_name: "" });
+    }
+  };
+  // Al elegir la obra el responsable es el supervisor de esa obra. Solo quien no
+  // es el solicitante lo cambia (el supervisor siempre responde por si mismo).
+  const elegirProyecto = (id) => {
+    const obra = proyectos.find((p) => String(p.id_proyect) === String(id));
+    const cambios = { id_proyect: id };
+    const aCargo = obra?.id_in_charge || obra?.id_supervisor;
+    // Un reporte es de quien lo levanta: la obra no le cambia el responsable.
+    if (!soloPuedeSolicitar && !esReporteAhora && aCargo
+        && usuarios.some((u) => String(u.id_user) === String(aCargo))) {
+      cambios.id_user = String(aCargo);
+    }
+    setBorrador({ ...borrador, ...cambios });
+  };
+  // Un reporte de suceso (dañado, extraviado, destruccion, reparacion) es de quien lo
+  // levanta -responde por lo que reporta-: el responsable sale fijo, sin desplegable, y el
+  // servidor lo impone igual. Destruccion y extravio ademas cierran el prestamo de quien
+  // tenia la pieza.
+  const esReporteAhora = esReporteDeIncidente(tipos, borrador.id_incident_type);
+  const esBaja = esBajaDeIncidente(tipos, borrador.id_incident_type);
+  const cambiarTipo = (id) => {
+    const cambios = { id_incident_type: id };
+    if (esReporteDeIncidente(tipos, id)) {
+      cambios.id_user = String(actorIdUser || "");
+    } else if (esReporteAhora && !soloPuedeSolicitar) {
+      cambios.id_user = "";   // volvio a un prestamo: otra vez se elige a quien se le entrega
+    }
+    setBorrador({ ...borrador, ...cambios });
+  };
+  // `usuarios` ya es la lista de quienes pueden ser responsables de un vale (la
+  // designacion se hace en el Gestor de roles y permisos).
+  const candidatosAResponsable = usuarios;
+  useEffect(() => {
+    if (!borrador.id_proyect) { setValesDelProyecto([]); return undefined; }
+    let vivo = true;
+    listWarehouseVouchers({ id_proyect: borrador.id_proyect, per_page: 50 })
+      .then((r) => { if (vivo) setValesDelProyecto(r?.items || []); })
+      .catch(() => { if (vivo) setValesDelProyecto([]); });
+    return () => { vivo = false; };
+  }, [borrador.id_proyect]);
 
   // Se busca en el almacen con el mismo rastreo de la pantalla de Localizar:
   // devuelve el producto, su modo de rastreo y sus piezas, que es exactamente
   // lo que el renglon necesita para saber si pedir pieza o cantidad.
+  // Se filtran los productos sin existencia (0 stock en todas las ubicaciones).
   useEffect(() => {
     if (busqueda.trim().length < 2) { setCandidatos([]); return undefined; }
     const temporizador = setTimeout(async () => {
       setBuscando(true);
       try {
         const r = await inventoryTrace({ q: busqueda, per_page: 8 });
-        setCandidatos(r?.items || []);
+        // Filtrar productos que tengan existencia en al menos una ubicación
+        const conExistencia = (r?.items || []).filter(producto => {
+          if (producto.tracking_mode === "serializado") {
+            // Para productos serializados, debe haber piezas disponibles
+            return (producto.pieces || []).length > 0;
+          } else {
+            // Para productos fungibles, debe haber existencia en alguna ubicación
+            return (producto.locations || []).some(loc => Number(loc.available ?? loc.quantity) > 0)
+              // Una baja tambien se levanta sobre lo que esta prestado: sin existencia
+              // en el almacen, pero con alguien que lo tiene.
+              || (esBaja && titularesDe(producto).length > 0);
+          }
+        });
+        setCandidatos(conExistencia);
       } catch { setCandidatos([]); } finally { setBuscando(false); }
     }, 350);
     return () => clearTimeout(temporizador);
-  }, [busqueda]);
+  }, [busqueda, esBaja]);
 
   const agregar = (producto, pieza) => {
     const serializado = producto.tracking_mode === "serializado";
+    const enPrestamo = serializado ? [] : titularesDe(producto);
     setBorrador({
       ...borrador,
       lines: [...borrador.lines, {
         clave: `${producto.id_product}-${pieza?.id_inventory_asset || Date.now()}`,
         id_product: producto.id_product,
+        // Quienes lo tienen fuera. En una baja (destruccion, extravio) es de donde sale: con
+        // uno solo se asigna solo, con varios hay que elegir entre ELLOS.
+        en_prestamo: enPrestamo,
+        held_by_user: enPrestamo.length === 1 ? String(enPrestamo[0].id_user) : "",
         etiqueta: producto.product_code || `#${producto.id_product}`,
         descripcion: producto.descripcion || "",
         id_inventory_asset: pieza?.id_inventory_asset || null,
         asset_tag: pieza?.asset_tag || null,
-        quantity: serializado ? 1 : 1,
+        // Lo que se pidio desde la lista de necesidades, sin pasar de lo que hay en
+        // el sitio de donde sale: el prevale no puede pedir mas que la existencia.
+        // En la baja de algo prestado, la cantidad que tiene quien lo tenia: se cierra su
+        // prestamo completo, no a pedazos.
+        quantity: serializado ? 1 : (esBaja && enPrestamo.length === 1
+          ? Math.max(1, enPrestamo[0].quantity)
+          : Math.max(1, Math.min(
+            Number(borrador.cantidad_sugerida) || 1,
+            Number(producto.locations?.[0]?.available ?? producto.locations?.[0]?.quantity) || 1))),
         serializado,
         id_location_from: pieza?.id_location
           || producto.locations?.[0]?.id_location || "",
+        // Donde hay existencia de este producto, con su ruta. Es lo que se
+        // ofrece a quien solo pide material: no elige "de donde" entre todas
+        // las ubicaciones, sale de donde el producto esta.
+        sitios: producto.locations || [],
+        sitio_etiqueta: pieza
+          ? (pieza.location_path_label || pieza.location_description || "")
+          : "",
       }],
     });
     setBusqueda("");
     setCandidatos([]);
+  };
+
+  // Cuanto hay para ESTE renglon: la existencia del producto en la ubicacion de
+  // la que sale, menos lo que ya piden los otros renglones del mismo producto y
+  // sitio. Lo serializado no cuenta -una pieza es una pieza-. El buscador ya
+  // trae la existencia por sitio, asi que no hace falta otra consulta.
+  // La baja de algo prestado no sale de ningun sitio: cierra el prestamo de quien lo tenia.
+  const esDePrestamo = (linea) => esBaja && !linea.serializado && (linea.en_prestamo || []).length > 0;
+  const cantidadDeQuienLaTenia = (linea) => {
+    const titular = (linea.en_prestamo || []).find(
+      (h) => String(h.id_user) === String(linea.held_by_user));
+    return titular ? titular.quantity : 0;
+  };
+  const disponibleDe = (linea, indice) => {
+    if (linea.serializado) return null;
+    if (esDePrestamo(linea)) return cantidadDeQuienLaTenia(linea);
+    const sitio = (linea.sitios || []).find(
+      (s) => String(s.id_location) === String(linea.id_location_from));
+    const hay = Number(sitio?.available ?? sitio?.quantity) || 0;
+    const yaPedido = borrador.lines.reduce((suma, otra, i) => (
+      i !== indice && !otra.serializado
+        && otra.id_product === linea.id_product
+        && String(otra.id_location_from) === String(linea.id_location_from)
+        ? suma + (Number(otra.quantity) || 0) : suma), 0);
+    return Math.max(0, hay - yaPedido);
   };
 
   const cambiar = (indice, cambios) => setBorrador({
@@ -993,12 +1596,17 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
     lines: borrador.lines.filter((_, i) => i !== indice),
   });
 
-  // La fecha de regreso y el motivo van siempre, y el origen en lo fungible.
+  // La fecha en que se necesita y el motivo van siempre, y el origen en lo fungible.
   // Se comprueba aqui para decirlo antes de mandar, no despues de que el
   // servidor conteste; el servidor lo exige igual, que es lo que cuenta.
+  const esReporte = esReporteAhora;
   const listo = borrador.lines.length > 0 && borrador.id_incident_type
-    && borrador.id_user && borrador.due_date && borrador.note.trim()
-    && borrador.lines.every((l) => l.serializado || l.id_location_from);
+    && borrador.id_user && (esReporte || borrador.needed_date) && borrador.note.trim()
+    && borrador.lines.every((l, i) => l.serializado || (
+      // De prestamo: hay que saber quien la tenia (con varios, lo elige quien reporta).
+      (esDePrestamo(l) ? Boolean(l.held_by_user) : Boolean(l.id_location_from))
+      && Number(l.quantity) >= 1
+      && Number(l.quantity) <= disponibleDe(l, i)));
 
   return (
     <section className="vale-borrador">
@@ -1018,8 +1626,7 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
         <label className="field">
           <span>{t("voucher.type", "Tipo de vale")}</span>
           <select value={borrador.id_incident_type}
-                  onChange={(e) => setBorrador(
-                    { ...borrador, id_incident_type: e.target.value })}>
+                  onChange={(e) => cambiarTipo(e.target.value)}>
             {tipos.map((x) => (
               <option key={x.id_incident_type} value={x.id_incident_type}>
                 {x.incident_type_description}
@@ -1033,7 +1640,8 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
               pide -mismo criterio que "el responsable es quien crea el
               proyecto"-: no hay a quien mas elegir, asi que no se ofrece un
               desplegable que solo tendria una opcion util. */}
-          {soloPuedeSolicitar ? (
+          {/* Un reporte de suceso tambien: es de quien lo levanta. */}
+          {soloPuedeSolicitar || esReporte ? (
             <span className="vale-responsable-fijo">
               {nombreDelActor}
               <em className="muted">{t("voucher.holder_is_you", "(tú)")}</em>
@@ -1042,7 +1650,7 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
             <select value={borrador.id_user}
                     onChange={(e) => setBorrador({ ...borrador, id_user: e.target.value })}>
               <option value="">{t("voucher.pick_holder", "Elige a quién se le entrega")}</option>
-              {usuarios.map((u) => (
+              {candidatosAResponsable.map((u) => (
                 <option key={u.id_user} value={u.id_user}>
                   {u.full_name || u.username || `#${u.id_user}`}
                 </option>
@@ -1050,27 +1658,65 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
             </select>
           )}
         </label>
+        {!esReporte && (
+        <div className="field vale-recoge">
+          <label className="vale-solo-abiertos">
+            <input type="checkbox" checked={otraPersona}
+                   onChange={(e) => alternarOtraPersona(e.target.checked)} />
+            {t("voucher.pickup_other", "Lo recogerá otra persona (no puedo ir)")}
+          </label>
+          {otraPersona && (
+          <label className="field">
+          <span>{t("voucher.pickup", "¿Quién recoge el material?")}</span>
+          {/* Sin usuario del sistema (chofer, mensajero): solo el nombre. Si
+              se deja en blanco, el responsable es quien recoge -- sin cambio
+              de comportamiento. */}
+          <input type="text" value={borrador.pickup_name}
+                 onChange={(e) => setBorrador({ ...borrador, pickup_name: e.target.value })}
+                 placeholder={t("voucher.pickup_is_holder", "El responsable (por omisión)")} />
+          </label>
+          )}
+        </div>
+        )}
+        {/* Vale complementario: solo con proyecto, y solo de ese proyecto. */}
+        {borrador.id_proyect && (
+          <label className="field">
+            <span>{t("voucher.parent", "Complementario de")}</span>
+            <select value={borrador.id_incident_parent}
+                    onChange={(e) => setBorrador({ ...borrador, id_incident_parent: e.target.value })}>
+              <option value="">{t("voucher.parent_none", "Ninguno (vale nuevo)")}</option>
+              {valesDelProyecto.map((v) => (
+                <option key={v.id_incident} value={v.id_incident}>
+                  #{v.folio || v.id_incident}
+                  {v.note ? ` — ${v.note}` : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label className="field">
           <span>{t("voucher.project", "Proyecto")}</span>
           <select value={borrador.id_proyect}
-                  onChange={(e) => setBorrador({ ...borrador, id_proyect: e.target.value })}>
+                  onChange={(e) => elegirProyecto(e.target.value)}>
             <option value="">{t("voucher.no_project", "Sin proyecto asignado")}</option>
             {proyectos.map((p) => (
               <option key={p.id_proyect} value={p.id_proyect}>
                 {p.folio ? `#${p.folio}` : `#${p.id_proyect}`}
                 {p.title ? ` — ${p.title}` : ""}
+                {p.in_charge_name ? ` · ${t("voucher.in_charge", "a cargo")}: ${p.in_charge_name}` : ""}
               </option>
             ))}
           </select>
         </label>
+        {!esReporte && (
         <label className="field">
-          {/* Sin fecha de regreso el vale nunca esta vencido, asi que nadie lo
-              reclama: un prestamo sin fecha es una baja disfrazada. */}
-          <span>{t("voucher.due", "Debe volver el")}</span>
-          <input type="date" value={borrador.due_date} required
+          {/* Para cuando se necesita la herramienta; la de regreso ya no se pide. */}
+          <span>{t("voucher.needed", "Se necesita el")}</span>
+          <input type="date" value={borrador.needed_date} required
                  min={new Date().toISOString().slice(0, 10)}
-                 onChange={(e) => setBorrador({ ...borrador, due_date: e.target.value })} />
+                 onChange={(e) => setBorrador({ ...borrador, needed_date: e.target.value })} />
         </label>
+        )}
         <label className="field field-ancho">
           <span>{t("voucher.note", "Motivo")} *</span>
           <input value={borrador.note} maxLength={300} required
@@ -1105,7 +1751,9 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
                 <em className="muted">
                   {p.tracking_mode === "serializado"
                     ? t("voucher.by_piece", "por pieza")
-                    : `${p.total} ${t("voucher.in_stock", "en existencia")}`}
+                    : `${(p.locations || []).reduce((n, l) => n + (Number(l.available ?? l.quantity) || 0), 0)} ${t("voucher.available", "disponibles")}`}
+                  {esBaja && p.tracking_mode !== "serializado" && titularesDe(p).length > 0
+                    && ` · ${t("voucher.out_with", "fuera con")} ${titularesDe(p).map((h) => h.holder_name || `#${h.id_user}`).join(", ")}`}
                 </em>
                 {/* Lo fungible se agrega directo; lo serializado obliga a
                     elegir la pieza, porque devolver "un desarmador" no cierra
@@ -1162,9 +1810,24 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
               {!linea.serializado && (
                 <label className="vale-mini">
                   <span>{t("voucher.quantity", "Cantidad")}</span>
-                  <input type="number" min="1" value={linea.quantity}
-                         onChange={(e) => cambiar(indice,
-                           { quantity: Number(e.target.value) || 1 })} />
+                  <input type="number" min="1"
+                         max={Math.max(1, disponibleDe(linea, indice))}
+                         value={linea.quantity}
+                         onChange={(e) => cambiar(indice, {
+                           // Sin pasarse de lo que hay: el servidor lo rechaza
+                           // igual, esto evita llegar hasta el error.
+                           quantity: Math.min(
+                             Number(e.target.value) || 1,
+                             Math.max(1, disponibleDe(linea, indice))),
+                         })} />
+                  <small className={disponibleDe(linea, indice) === 0 && !esDePrestamo(linea) ? "vale-sin-existencia" : "muted"}>
+                    {esDePrestamo(linea)
+                      ? (linea.held_by_user
+                        ? `${t("voucher.holds", "Tiene a su cargo")}: ${disponibleDe(linea, indice)}` : "")
+                      : disponibleDe(linea, indice) === 0
+                        ? t("voucher.no_stock_here", "Sin existencia aquí")
+                        : `${t("voucher.available", "Disponible")}: ${disponibleDe(linea, indice)}`}
+                  </small>
                 </label>
               )}
 
@@ -1172,23 +1835,71 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
                   lo fungible hay que decirlo: descontar 5 sacos "del almacen"
                   sin decir de cual deja el saldo por ubicacion mintiendo, y ese
                   es el dato con el que alguien va a buscarlos. */}
-              <label className={`vale-mini ${!linea.serializado
-                && !linea.id_location_from ? "vale-falta" : ""}`}>
-                <span>
-                  {t("voucher.from", "Sale de")}
-                  {!linea.serializado && " *"}
-                </span>
-                <select value={linea.id_location_from}
-                        onChange={(e) => cambiar(indice,
-                          { id_location_from: e.target.value })}>
-                  <option value="">—</option>
-                  {ubicaciones.map((u) => (
-                    <option key={u.id_location} value={u.id_location}>
-                      {u.location_description}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              {/* Quien solo PIDE material (Supervisor) no elige de donde sale:
+                  eso ya esta definido por donde esta el producto, y se le
+                  muestra. Solo si el producto esta repartido en varios sitios
+                  se le ofrecen ESOS sitios -no todas las ubicaciones-. */}
+              {esDePrestamo(linea) ? (
+                /* La baja de algo que esta prestado: no sale de ningun sitio, se le cierra
+                   el prestamo a quien lo tenia. Con uno solo se dice y ya; con varios, se
+                   elige entre ELLOS y nadie mas, para no cargarle la baja a quien no la tuvo. */
+                <label className={`vale-mini ${linea.held_by_user ? "" : "vale-falta"}`}>
+                  <span>{t("voucher.held_by", "Estaba a cargo de")}{linea.en_prestamo.length > 1 && " *"}</span>
+                  {linea.en_prestamo.length === 1 ? (
+                    <strong>{linea.en_prestamo[0].holder_name || `#${linea.en_prestamo[0].id_user}`}</strong>
+                  ) : (
+                    <select value={linea.held_by_user}
+                            onChange={(e) => cambiar(indice, {
+                              held_by_user: e.target.value,
+                              quantity: Math.max(1, (linea.en_prestamo.find(
+                                (h) => String(h.id_user) === String(e.target.value))?.quantity) || 1),
+                            })}>
+                      <option value="">{t("voucher.held_by_pick", "¿Quién la tenía?")}</option>
+                      {linea.en_prestamo.map((h) => (
+                        <option key={h.id_user} value={h.id_user}>
+                          {h.holder_name || `#${h.id_user}`} ({h.quantity})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </label>
+              ) : soloPuedeSolicitar
+                && (linea.serializado || (linea.sitios || []).length === 1) ? (
+                <div className="vale-mini">
+                  <span>{t("voucher.from", "Sale de")}</span>
+                  <strong>
+                    {linea.sitio_etiqueta
+                      || linea.sitios?.[0]?.path_label
+                      || linea.sitios?.[0]?.location_description
+                      || ubicaciones.find((u) => Number(u.id_location)
+                        === Number(linea.id_location_from))?.location_description
+                      || "—"}
+                  </strong>
+                </div>
+              ) : (
+                <label className={`vale-mini ${!linea.serializado
+                  && !linea.id_location_from ? "vale-falta" : ""}`}>
+                  <span>
+                    {t("voucher.from", "Sale de")}
+                    {!linea.serializado && " *"}
+                  </span>
+                  <select value={linea.id_location_from}
+                          onChange={(e) => cambiar(indice,
+                            { id_location_from: e.target.value })}>
+                    <option value="">—</option>
+                    {(soloPuedeSolicitar && (linea.sitios || []).length > 1
+                      ? (linea.sitios || []).map((s) => ({
+                        id_location: s.id_location,
+                        location_description: s.path_label || s.location_description,
+                      }))
+                      : ubicaciones).map((u) => (
+                      <option key={u.id_location} value={u.id_location}>
+                        {u.location_description}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
 
               <button className="vale-icono vale-icono-borrar" onClick={() => quitar(indice)}
                       aria-label={t("common.delete", "Quitar")}>
@@ -1240,8 +1951,13 @@ Borrador.propTypes = {
   borrador: PropTypes.shape({
     id_incident_type: PropTypes.any,
     id_user: PropTypes.any,
+    pickup_name: PropTypes.string,
+    id_incident_parent: PropTypes.any,
+    // Lo que trae "Pedir en almacen" desde la lista de necesidades.
+    buscar_inicial: PropTypes.string,
+    cantidad_sugerida: PropTypes.number,
     id_proyect: PropTypes.any,
-    due_date: PropTypes.string,
+    needed_date: PropTypes.string,
     note: PropTypes.string,
     lines: PropTypes.array,
   }).isRequired,
@@ -1256,5 +1972,6 @@ Borrador.propTypes = {
   puedeAbrirValeDirecto: PropTypes.bool,
   soloPuedeSolicitar: PropTypes.bool,
   nombreDelActor: PropTypes.string,
+  actorIdUser: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
   t: PropTypes.func.isRequired,
 };

@@ -1,13 +1,17 @@
+import { LLAVE_BORRADO_BLOQUEADO, mensajeDeBorradoBloqueado } from "../utils/registrosRelacionados.js";
 import { useEffect, useMemo, useState } from "react";
-import { RefreshCw, Search, Trash2, Pencil } from "lucide-react";
+import { RefreshCw, Search, Trash2, Pencil, Image } from "lucide-react";
 import { useI18n } from "../i18n";
-import { getAllIncident, createIncident, updateIncident, deleteIncident, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllIncidentType, getAllUser } from "../api";
+import { getIncident, getAllIncident, createIncident, updateIncident, deleteIncident, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllIncidentType, getAllUser } from "../api";
 import { fetchAllPages } from "../utils/fetchAllPages";
 import Pagination from "../components/Pagination.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 import "../styles/incident.css";
+import { CAMPOS_DE_AUDITORIA } from "../utils/camposDeAuditoria";
+import { formatearFechaHora } from "../utils/fechas";
+import { useDialogo } from "../dialogo/useDialogo.js";
 
 // Abierta o cerrada, sin importar el texto exacto que traiga cada tipo de
 // incidencia -un prestamo dice "abierta", pero nada obliga a que una
@@ -29,7 +33,46 @@ const ACTION_UPDATE = 4;
 const ACTION_DELETE = 8;
 const SCOPE_FIELD_BY_BIT = { [ACTION_CREATE]: "scope_create", [ACTION_READ]: "scope_read", [ACTION_UPDATE]: "scope_update", [ACTION_DELETE]: "scope_delete" };
 const FIELD_VISIBLE_BIT = 2;
-const ALL_FIELD_NAMES = ['id_incident', 'incident_date', 'id_incident_type', 'note', 'id_user', 'incident_status', 'close_date', 'created_by', 'creation_date', 'last_update_date'];
+const ALL_FIELD_NAMES = ['id_incident', 'incident_date', 'id_incident_type', 'note', 'id_user', 'incident_status', 'close_date', 'created_by', 'creation_date', 'last_update_date', 'latitude', 'longitude', 'distance_m', 'photo_base64'];
+
+// n8n manda la foto como base64 pelado (sin "data:"): el tipo se reconoce por los
+// primeros caracteres de la cadena, que son la firma del archivo. Solo se arma el
+// src con texto que ya paso la validacion de la API (alfabeto base64).
+function srcDeFoto(base64) {
+  if (!base64) return "";
+  if (base64.startsWith("data:image/")) return base64;
+  const tipo = base64.startsWith("iVBOR") ? "image/png"
+    : base64.startsWith("R0lGOD") ? "image/gif"
+    : base64.startsWith("UklGR") ? "image/webp"
+    : "image/jpeg";
+  return `data:${tipo};base64,${base64}`;
+}
+
+// Los renglones de checada (n8n por WhatsApp) traen donde estaba la persona y a
+// cuantos metros del punto. Las demas incidencias no, asi que las columnas solo
+// aparecen cuando la pagina tiene al menos una checada; no se ata a un nombre de
+// tipo porque el catalogo de tipos lo escribe cada cliente.
+const CAMPOS_DE_CHECADA = ['latitude', 'longitude', 'distance_m'];
+
+function tieneDatosDeChecada(item) {
+  return CAMPOS_DE_CHECADA.some((campo) => item?.[campo] !== null && item?.[campo] !== undefined && item?.[campo] !== "");
+}
+
+// Latitud y longitud con 6 decimales (~10 cm): el formato numerico general
+// recortaba a 3 y dejaba la coordenada a ~100 m de donde era.
+function formatearCoordenada(valor, locale) {
+  if (valor === null || valor === undefined || valor === "") return "";
+  const numero = Number(valor);
+  if (!Number.isFinite(numero)) return String(valor);
+  return new Intl.NumberFormat(locale, { minimumFractionDigits: 6, maximumFractionDigits: 6 }).format(numero);
+}
+
+function formatearDistancia(valor, locale) {
+  if (valor === null || valor === undefined || valor === "") return "";
+  const numero = Number(valor);
+  if (!Number.isFinite(numero)) return String(valor);
+  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(numero)} m`;
+}
 
 function hasBit(value, bit) {
   return (Number(value || 0) & bit) === bit;
@@ -45,6 +88,7 @@ function readCurrentUser() {
 
 export default function IncidentPage() {
   const { lang, t } = useI18n();
+  const dialogo = useDialogo();
   const [items, setItems] = useState([]);
   const [formData, setFormData] = useState(emptyForm);
   const [fieldErrors, setFieldErrors] = useState({});
@@ -72,6 +116,18 @@ export default function IncidentPage() {
   const showRowActions = canRead && (canUpdate || canDelete);
   const [incidentTypeOptions, setIncidentTypeOptions] = useState([]);
   const [userOptions, setUserOptions] = useState([]);
+  // La foto no viene en el listado (pesa megas): se pide al abrirla.
+  const [foto, setFoto] = useState(null);
+
+  async function verFoto(item) {
+    setFoto({ id: item.id_incident, src: "", cargando: true, error: false });
+    try {
+      const detalle = await getIncident(item.id_incident);
+      setFoto({ id: item.id_incident, src: srcDeFoto(detalle?.photo_base64), cargando: false, error: !detalle?.photo_base64 });
+    } catch (_) {
+      setFoto({ id: item.id_incident, src: "", cargando: false, error: true });
+    }
+  }
 
   async function loadData() {
     if (!permissionReady || !canRead) {
@@ -189,7 +245,7 @@ export default function IncidentPage() {
   function canSeeField(fieldName) {
     if (isSuperUser) return true;
     if (!permissionReady) return false;
-    return visibleFieldNames.has(fieldName);
+    return CAMPOS_DE_AUDITORIA.has(fieldName) || visibleFieldNames.has(fieldName);
   }
 
 
@@ -291,7 +347,7 @@ export default function IncidentPage() {
 
   async function removeItem(item) {
     if (!canDelete) return;
-    if (!window.confirm(t("common.confirm_delete"))) return;
+    if (!(await dialogo.confirmar(t("common.confirm_delete")))) return;
     try { await deleteIncident(item.id_incident); await loadData(); } catch (error) { setErrorKey(error.message || "errors.request_failed"); setErrorMeta(error.payload?.meta || null); }
   }
 
@@ -301,7 +357,7 @@ export default function IncidentPage() {
     if (ENTITY_KEY !== "user") return;
     const targetId = item.id_user ?? item.id;
     if (!targetId) return;
-    if (!window.confirm(t("common.mfa_reset_confirm", "¿Restablecer MFA de este usuario?"))) return;
+    if (!(await dialogo.confirmar(t("common.mfa_reset_confirm", "¿Restablecer MFA de este usuario?")))) return;
     setErrorKey("");
     setErrorMeta(null);
     try {
@@ -329,11 +385,8 @@ export default function IncidentPage() {
     }
     if (typeof value === "number") return new Intl.NumberFormat(locale).format(value);
     if (typeof value === "string" && /^[0-9]{4}-[0-9]{2}-[0-9]{2}T/.test(value)) {
-      const date = new Date(value);
-      if (!Number.isNaN(date.getTime())) {
-        const hasTime = !/T00:00(?::00)?/.test(value);
-        return new Intl.DateTimeFormat(locale, hasTime ? { dateStyle: "medium", timeStyle: "short" } : { dateStyle: "medium" }).format(date);
-      }
+      const formateada = formatearFechaHora(value, locale);
+      if (formateada) return formateada;
     }
     if (Array.isArray(value)) return value.map((item) => formatTableValue(item)).filter(Boolean).join(", ");
     if (typeof value === "object") {
@@ -414,7 +467,7 @@ export default function IncidentPage() {
     if (errorKey === "errors.invalid_field" && errorMeta?.field) {
       return `${t(errorKey, errorKey)}: ${fieldLabel}`;
     }
-    return t(errorKey, errorKey);
+    return errorKey === LLAVE_BORRADO_BLOQUEADO ? mensajeDeBorradoBloqueado(t, errorMeta) : t(errorKey, errorKey);
   }
 
   const filtered = useMemo(() => {
@@ -426,6 +479,10 @@ export default function IncidentPage() {
       return right - left;
     });
   }, [items, query, incidentTypeOptions, userOptions]);
+
+  const localeDeNumeros = lang === "ja" ? "ja-JP" : lang === "en" ? "en-US" : lang === "pt" ? "pt-BR" : lang === "de" ? "de-DE" : "es-MX";
+  const mostrarChecada = useMemo(() => filtered.some(tieneDatosDeChecada), [filtered]);
+  const mostrarFoto = useMemo(() => filtered.some((item) => item?.has_photo), [filtered]);
 
   const groups = useMemo(() => filtered.reduce((acc, item) => {
     const key = String(item.incident_status ?? t("common.unclassified"));
@@ -540,6 +597,10 @@ export default function IncidentPage() {
               {canSeeField("incident_date") && <th>{t("fields.incident.incident_date")}</th>}
               {canSeeField("id_incident_type") && <th>{t("fields.incident.id_incident_type")}</th>}
               {canSeeField("note") && <th>{t("fields.incident.note")}</th>}
+              {mostrarChecada && canSeeField("latitude") && <th>{t("fields.incident.latitude")}</th>}
+              {mostrarChecada && canSeeField("longitude") && <th>{t("fields.incident.longitude")}</th>}
+              {mostrarChecada && canSeeField("distance_m") && <th>{t("fields.incident.distance_m")}</th>}
+              {mostrarFoto && canSeeField("photo_base64") && <th>{t("fields.incident.photo_base64")}</th>}
               {canSeeField("id_user") && <th>{t("fields.incident.id_user")}</th>}
               {canSeeField("incident_status") && <th>{t("fields.incident.incident_status")}</th>}
               {canSeeField("close_date") && <th>{t("fields.incident.close_date")}</th>}
@@ -551,6 +612,10 @@ export default function IncidentPage() {
               {canSeeField("incident_date") && <td><pre className="cell-value">{formatTableValue(item.incident_date)}</pre></td>}
               {canSeeField("id_incident_type") && <td><pre className="cell-value">{incidentDisplayLabel(incidentTypeOptions, "id_incident_type", "incident_type", item.id_incident_type)}</pre></td>}
               {canSeeField("note") && <td><pre className="cell-value">{formatTableValue(item.note)}</pre></td>}
+              {mostrarChecada && canSeeField("latitude") && <td><pre className="cell-value">{formatearCoordenada(item.latitude, localeDeNumeros)}</pre></td>}
+              {mostrarChecada && canSeeField("longitude") && <td><pre className="cell-value">{formatearCoordenada(item.longitude, localeDeNumeros)}</pre></td>}
+              {mostrarChecada && canSeeField("distance_m") && <td><pre className="cell-value">{formatearDistancia(item.distance_m, localeDeNumeros)}</pre></td>}
+              {mostrarFoto && canSeeField("photo_base64") && <td>{item.has_photo && <button type="button" className="button ghost" onClick={() => verFoto(item)}><Image size={15} />{t("fields.incident.view_photo")}</button>}</td>}
               {canSeeField("id_user") && <td><pre className="cell-value">{incidentDisplayLabel(userOptions, "id_user", "user", item.id_user)}</pre></td>}
               {canSeeField("incident_status") && <td>{item.incident_status
                 ? <span className={`incident-estado ${tonoDeIncidencia(item.incident_status)}`}>
@@ -570,6 +635,19 @@ export default function IncidentPage() {
           {canSeeField("close_date") && item.close_date && <p><span>{t("fields.incident.close_date", "Cierre")}:</span> <strong>{formatTableValue(item.close_date)}</strong></p>}
           {canSeeField("note") && item.note && <p className="wide"><span>{t("fields.incident.note", "Nota")}:</span> <strong>{formatTableValue(item.note)}</strong></p>}
         </div>{showRowActions && <div>{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</div>}</article>)}</div>)}</div>}
+
+      {foto && (
+        <div className="dialogo-fondo" role="dialog" aria-modal="true" onClick={() => setFoto(null)}>
+          <div className="dialogo incident-foto" onClick={(e) => e.stopPropagation()}>
+            {foto.cargando && <p className="dialogo-mensaje">{t("common.loading")}</p>}
+            {foto.error && <p className="dialogo-mensaje">{t("fields.incident.photo_unavailable")}</p>}
+            {foto.src && <img src={foto.src} alt={`${t("fields.incident.photo_base64")} #${foto.id}`} />}
+            <div className="dialogo-acciones">
+              <button type="button" className="button" onClick={() => setFoto(null)}>{t("common.close", "Cerrar")}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <Pagination
         page={page}

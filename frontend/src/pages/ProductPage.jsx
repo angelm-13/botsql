@@ -1,18 +1,32 @@
+import { LLAVE_BORRADO_BLOQUEADO, mensajeDeBorradoBloqueado } from "../utils/registrosRelacionados.js";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowUpRight, RefreshCw, Search, Tags, Trash2, Pencil, History} from "lucide-react";
+import { ArrowUpRight, RefreshCw, Search, Tags, Trash2, Pencil, History, PackagePlus, SlidersHorizontal } from "lucide-react";
 import { Link } from "react-router-dom";
 import FiltroBuscable from "../components/FiltroBuscable.jsx";
 import { useI18n } from "../i18n";
-import { getAllProduct, createProduct, updateProduct, deleteProduct, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, uploadProductImage, getAllBrand, getAllProductFamily, getAllInventoryStatus, getAllLocation, getAllMaterial } from "../api";
+import VisorDeFoto from "../components/VisorDeFoto";
+import { getAllProduct, createProduct, updateProduct, deleteProduct, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, uploadProductImage, getAllBrand, getAllProductFamily, getAllInventoryStatus, getAllLocation, getAllMaterial, urlDeArchivo } from "../api";
 import { fetchAllPages } from "../utils/fetchAllPages";
+import { colorDeEstatus } from "../utils/estatusDePieza";
 import Pagination from "../components/Pagination.jsx";
 import ProductHistory from "../components/ProductHistory.jsx";
+import EntradaDeExistencia from "../components/EntradaDeExistencia.jsx";
+import AjusteDeExistencia from "../components/AjusteDeExistencia.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
+import { CAMPOS_DE_AUDITORIA } from "../utils/camposDeAuditoria";
+import { descripcionValida, sugerirDescripcion } from "../utils/productDescription";
+import { formatearFechaHora } from "../utils/fechas";
+import { useDialogo } from "../dialogo/useDialogo.js";
+import { etiquetaDeClase } from "../utils/clasesDeProducto";
 
 const emptyForm = { id_location: "", id_material: "", gross_price: "", color: "", is_directly_related_to_product_service: false, product_status: "", path_imagen: "", product_code: "", note: "", descripcion: "", cantidad: "", id_marca: "", id_familia: "" };
 const validationRules = allValidationRules["product"] || {};
+// Los nombres con que el catalogo marca "el material no dice": no se ofrecen como valor de partida
+// al elegir material. Son los de `MARCA_SIN_DATO` / `FAMILIA_SIN_DATO` (inventory_trace_service.py).
+const MARCA_SIN_DATO = "Sin marca específica";
+const FAMILIA_SIN_DATO = "Sin categoría";
 const ENTITY_KEY = "product";
 const ACTION_CREATE = 1;
 const ACTION_READ = 2;
@@ -36,12 +50,17 @@ function readCurrentUser() {
 
 export default function ProductPage() {
   const { lang, t } = useI18n();
+  const dialogo = useDialogo();
   const [items, setItems] = useState([]);
   const [formData, setFormData] = useState(emptyForm);
   const [fieldErrors, setFieldErrors] = useState({});
   const [editingId, setEditingId] = useState(null);
   // El producto cuya ficha de historial esta abierta, o null.
   const [ficha, setFicha] = useState(null);
+  // El producto al que se le esta registrando una entrada de existencia, o null.
+  const [entrada, setEntrada] = useState(null);
+  // El producto al que se le esta ajustando la existencia (quitar o corregir), o null.
+  const [ajuste, setAjuste] = useState(null);
   const [query, setQuery] = useState("");
   const [view, setView] = useState("table");
   const [page, setPage] = useState(1);
@@ -52,6 +71,17 @@ export default function ProductPage() {
   const [errorMeta, setErrorMeta] = useState(null);
   const [selectedImageFile, setSelectedImageFile] = useState(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState("");
+  // Los productos cuya foto no cargo (archivo que no existe): se recuerdan para
+  // pintar el marcador en lugar del icono de imagen rota.
+  const [fotosRotas, setFotosRotas] = useState(() => new Set());
+  // La foto que se esta mirando en grande, o null.
+  const [fotoAmpliada, setFotoAmpliada] = useState(null);
+  const ampliarFoto = (item) => setFotoAmpliada({
+    src: urlDeArchivo(item.path_imagen),
+    titulo: item.descripcion || item.product_code || `#${item.id_product}`,
+    descripcion: item.product_code || "",
+  });
+  const marcarFotoRota = (idProduct) => setFotosRotas((antes) => new Set(antes).add(idProduct));
   const currentUser = useMemo(() => readCurrentUser(), []);
   const isSuperUser = Boolean(currentUser?.is_superuser || currentUser?.is_bootstrap_admin || currentUser?.username === "admin1");
   const currentRoleId = currentUser?.id_permission;
@@ -116,15 +146,18 @@ export default function ProductPage() {
       }
       if (canSeeField("id_material")) {
         try {
-          const materialData = await getAllMaterial({ page: 1, per_page: 100 });
-          setMaterialOptions(Array.isArray(materialData) ? materialData : (materialData.items || []));
+          // Todos los materiales, no solo los primeros 100: el selector busca
+          // sobre lo que tiene cargado, y con mas de 100 los materiales
+          // nuevos (ids altos) no se podian ni encontrar ni elegir.
+          const materialData = await fetchAllPages(getAllMaterial, { sort: "material_description" });
+          setMaterialOptions(materialData.items);
         } catch (_) {
           setMaterialOptions([]);
         }
       }
       if (canSeeField("id_marca")) {
         try {
-          const brandData = await getAllBrand({ page: 1, per_page: 500 });
+          const brandData = await getAllBrand({ page: 1, per_page: 1000, sort: "brand_description" });
           setBrandOptions(Array.isArray(brandData) ? brandData : (brandData.items || []));
         } catch (_) {
           setBrandOptions([]);
@@ -214,17 +247,9 @@ export default function ProductPage() {
   function canSeeField(fieldName) {
     if (isSuperUser) return true;
     if (!permissionReady) return false;
-    return visibleFieldNames.has(fieldName);
+    return CAMPOS_DE_AUDITORIA.has(fieldName) || visibleFieldNames.has(fieldName);
   }
 
-
-  function buildImageUrl(value) {
-    if (!value) return "";
-    const text = String(value);
-    if (/^https?:\/\//i.test(text)) return text;
-    const base = import.meta.env.VITE_API_BASE_URL || "http://localhost:5001";
-    return `${base.replace(/\/+$/, "")}/${text.replace(/^\/+/, "")}`;
-  }
 
   function clearProductImageSelection() {
     setSelectedImageFile(null);
@@ -256,6 +281,22 @@ export default function ProductPage() {
     return [description, department].filter(Boolean).join(" - ");
   }
 
+  // La familia y la marca las define el producto (es su material mas su familia y su marca). Al
+  // elegir el material se propone la suya si trae una real; la clase si es del material.
+  const materialElegido = materialOptions.find((m) => String(m.id_material) === String(formData.id_material ?? ""));
+
+  function elegirMaterial(valor) {
+    const material = materialOptions.find((m) => String(m.id_material) === String(valor));
+    const marca = brandOptions.find((b) => String(b.id_brand) === String(material?.id_brand));
+    const familia = productFamilyOptions.find((f) => String(f.id_product_family) === String(material?.id_product_family));
+    setFormData((prev) => ({
+      ...prev,
+      id_material: valor,
+      id_marca: prev.id_marca || (marca && marca.brand_description !== MARCA_SIN_DATO ? marca.id_brand : ""),
+      id_familia: prev.id_familia || (familia && familia.product_family_description !== FAMILIA_SIN_DATO ? familia.id_product_family : ""),
+    }));
+  }
+
   function productStatusMeta(value) {
     if (value === null || value === undefined || value === "") return null;
     const target = String(value).trim().toLowerCase();
@@ -266,15 +307,27 @@ export default function ProductPage() {
     }) || null;
   }
 
+  // El estado que se pinta: el del servidor (`effective_status`, la misma regla de
+  // Localizar) y, si no vino, el texto guardado. `product_status` se sigue usando
+  // para editar: ahi se cambia lo que esta guardado.
+  function estadoQueSePinta(item) {
+    return item?.effective_status ?? item?.product_status;
+  }
+
   function productStatusDisplayLabel(value) {
     if (value === null || value === undefined || value === "") return "";
+    if (String(value).trim().toUpperCase() === "ENTRADA") return t("product.status_in_warehouse", "En almacén");
     const match = productStatusMeta(value);
     return match ? productInventoryStatusLabel(match) : formatTableValue(value);
   }
 
   function productStatusColor(value) {
+    // El color que el administrador le puso al estado en el catalogo manda; si el
+    // texto no coincide con ninguna fila (ENTRADA, SALIDA, DESTRUCCION... no la
+    // tienen), se cae a la paleta por gravedad de `estatusDePieza.js`.
     const color = String(productStatusMeta(value)?.color || "").trim();
-    return /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(color) ? color : "";
+    if (/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(color)) return color;
+    return colorDeEstatus(value);
   }
 
   function productHexToRgba(hex, alpha) {
@@ -339,6 +392,9 @@ export default function ProductPage() {
       delete payload.password;
     }
     delete payload.path_imagen;
+    // La existencia no se escribe desde aqui al editar: se mueve con la entrada
+    // de existencia, el vale o el ajuste (la cantidad inicial solo al dar de alta).
+    if (editingId) delete payload.cantidad;
     return payload;
   }
 
@@ -366,6 +422,12 @@ export default function ProductPage() {
     const submitPayload = buildSubmitPayload();
     const validation = validateForm("product", submitPayload, validationRules);
     const nextFieldErrors = { ...validation.errors };
+    // El formato de oracion se exige al capturar o al CAMBIAR la descripcion; un
+    // producto migrado en mayusculas se puede seguir editando sin tocarla.
+    const descripcionOriginal = editingId ? items.find((it) => it.id_product === editingId)?.descripcion : undefined;
+    if (!descripcionValida(submitPayload.descripcion) && submitPayload.descripcion !== descripcionOriginal) {
+      nextFieldErrors.descripcion = "errors.product_description_format";
+    }
     if (ENTITY_KEY === "user" && !editingId) {
       if (isBlankValue(submitPayload.username)) nextFieldErrors.username = "validations.user.username.required";
       if (isBlankValue(submitPayload.password)) nextFieldErrors.password = "validations.user.password.required";
@@ -408,14 +470,14 @@ export default function ProductPage() {
     if (ENTITY_KEY === "user") editData.password = "";
     setFormData(editData);
     setSelectedImageFile(null);
-    setImagePreviewUrl(item.path_imagen ? buildImageUrl(item.path_imagen) : "");
+    setImagePreviewUrl(item.path_imagen ? urlDeArchivo(item.path_imagen) : "");
     setFieldErrors({});
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function removeItem(item) {
     if (!canDelete) return;
-    if (!window.confirm(t("common.confirm_delete"))) return;
+    if (!(await dialogo.confirmar(t("common.confirm_delete")))) return;
     try { await deleteProduct(item.id_product); await loadData(); } catch (error) { setErrorKey(error.message || "errors.request_failed"); setErrorMeta(error.payload?.meta || null); }
   }
 
@@ -425,7 +487,7 @@ export default function ProductPage() {
     if (ENTITY_KEY !== "user") return;
     const targetId = item.id_user ?? item.id;
     if (!targetId) return;
-    if (!window.confirm(t("common.mfa_reset_confirm", "¿Restablecer MFA de este usuario?"))) return;
+    if (!(await dialogo.confirmar(t("common.mfa_reset_confirm", "¿Restablecer MFA de este usuario?")))) return;
     setErrorKey("");
     setErrorMeta(null);
     try {
@@ -453,11 +515,8 @@ export default function ProductPage() {
     }
     if (typeof value === "number") return new Intl.NumberFormat(locale).format(value);
     if (typeof value === "string" && /^[0-9]{4}-[0-9]{2}-[0-9]{2}T/.test(value)) {
-      const date = new Date(value);
-      if (!Number.isNaN(date.getTime())) {
-        const hasTime = !/T00:00(?::00)?/.test(value);
-        return new Intl.DateTimeFormat(locale, hasTime ? { dateStyle: "medium", timeStyle: "short" } : { dateStyle: "medium" }).format(date);
-      }
+      const formateada = formatearFechaHora(value, locale);
+      if (formateada) return formateada;
     }
     if (Array.isArray(value)) return value.map((item) => formatTableValue(item)).filter(Boolean).join(", ");
     if (typeof value === "object") {
@@ -538,7 +597,7 @@ export default function ProductPage() {
     if (errorKey === "errors.invalid_field" && errorMeta?.field) {
       return `${t(errorKey, errorKey)}: ${fieldLabel}`;
     }
-    return t(errorKey, errorKey);
+    return errorKey === LLAVE_BORRADO_BLOQUEADO ? mensajeDeBorradoBloqueado(t, errorMeta) : t(errorKey, errorKey);
   }
 
   const filtered = useMemo(() => {
@@ -546,7 +605,7 @@ export default function ProductPage() {
     if (!needle) return items;
     return items.filter((item) => {
       const values = Object.values(item || {}).map((value) => String(value ?? ""));
-      if (canSeeField("product_status")) values.push(productStatusDisplayLabel(item.product_status));
+      if (canSeeField("product_status")) values.push(productStatusDisplayLabel(estadoQueSePinta(item)));
       if (canSeeField("id_location")) values.push(productKanbanDisplayLabel(locationOptions, "id_location", "location", item.id_location));
       if (canSeeField("id_material")) values.push(productKanbanDisplayLabel(materialOptions, "id_material", "material", item.id_material));
       if (canSeeField("id_marca")) values.push(productKanbanDisplayLabel(brandOptions, "id_brand", "brand", item.id_marca));
@@ -556,7 +615,7 @@ export default function ProductPage() {
   }, [items, query, inventoryStatusOptions, locationOptions, materialOptions, brandOptions, productFamilyOptions]);
 
   const groups = useMemo(() => filtered.reduce((acc, item) => {
-    const key = String(item.product_status ?? t("common.unclassified"));
+    const key = String(estadoQueSePinta(item) ?? t("common.unclassified"));
     acc[key] = acc[key] || []; acc[key].push(item); return acc;
   }, {}), [filtered, lang]);
 
@@ -617,12 +676,15 @@ export default function ProductPage() {
             <span>{t("fields.product.product_status")}</span>
             <select name="product_status" value={formData.product_status ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors["product_status"])} {...inputPropsForField("product_status", validationRules["product_status"], "select")}>
               <option value="">{t("common.select_option", "Selecciona una opción")}</option>
-              {inventoryStatusOptions.map((item) => (
-                <option key={item.id_inventory_status ?? item.inventory_status_code ?? JSON.stringify(item)} value={item.inventory_status_code ?? ""}>
-                  {productInventoryStatusLabel(item)}
-                </option>
-              ))}
+              {/* A mano solo se marca "En almacen" (la pieza regresa o se encuentra). Danado, extraviado,
+                  retirado y en reparacion los pone UNICAMENTE el vale correspondiente; si el producto ya
+                  trae uno de esos estados se muestra, pero no se puede elegir. */}
+              <option value="ENTRADA">{t("product.status_in_warehouse", "En almacén")}</option>
+              {formData.product_status && String(formData.product_status).toUpperCase() !== "ENTRADA" && (
+                <option value={formData.product_status} disabled>{formData.product_status}</option>
+              )}
             </select>
+            <small className="muted">{t("product.status_manual_help", "A mano solo se marca «En almacén» cuando la pieza regresa o se encuentra y no está en un vale. Dañado, extraviado, retirado y en reparación se ponen levantando el vale correspondiente.")}</small>
             {fieldErrors["product_status"] && <span className="field-error">{formatFieldError("product_status")}</span>}
           </label>
           )}
@@ -653,14 +715,26 @@ export default function ProductPage() {
           {canSeeField("descripcion") && (
           <label className="field">
             <span>{t("fields.product.descripcion")}</span>
-            <input name="descripcion" type="text" maxLength={250} value={formData.descripcion ?? ""} onChange={handleChange} placeholder={t("fields.product.descripcion")} aria-invalid={Boolean(fieldErrors["descripcion"])} {...inputPropsForField("descripcion", validationRules["descripcion"], "text")} />
+            <input name="descripcion" type="text" maxLength={250} list="product-descripcion-sugeridas" autoComplete="off" value={formData.descripcion ?? ""} onChange={handleChange} placeholder={t("fields.product.descripcion_ejemplo", "Ej. Pulidor chico 3/4")} aria-invalid={Boolean(fieldErrors["descripcion"])} {...inputPropsForField("descripcion", validationRules["descripcion"], "text")} />
+            <datalist id="product-descripcion-sugeridas">
+              {[...new Set(items.map((it) => it.descripcion).filter(Boolean))].map((d) => <option key={d} value={d} />)}
+            </datalist>
+            {formData.descripcion && !descripcionValida(formData.descripcion) && (
+              <button type="button" className="button-link" onClick={() => handleChange({ target: { name: "descripcion", type: "text", value: sugerirDescripcion(formData.descripcion) } })}>
+                {t("fields.product.descripcion_sugerencia", "¿Quisiste decir")} «{sugerirDescripcion(formData.descripcion)}»?
+              </button>
+            )}
             {fieldErrors["descripcion"] && <span className="field-error">{formatFieldError("descripcion")}</span>}
           </label>
           )}
-          {canSeeField("cantidad") && (
+          {/* Solo un producto que se lleva por cantidad (fungible) tiene cantidad; el
+              que se rastrea pieza por pieza tiene una fila por unidad. Al editar es de
+              solo lectura: lo que entra va por "Registrar entrada". */}
+          {canSeeField("cantidad") && (formData.tracking_mode || "fungible") === "fungible" && (
           <label className="field">
             <span>{t("fields.product.cantidad")}</span>
-            <input name="cantidad" type="number" value={formData.cantidad ?? ""} onChange={handleChange} placeholder={t("fields.product.cantidad")} aria-invalid={Boolean(fieldErrors["cantidad"])} {...inputPropsForField("cantidad", validationRules["cantidad"], "number")} />
+            <input name="cantidad" type="number" min="0" step="1" value={formData.cantidad ?? ""} onChange={handleChange} readOnly={Boolean(editingId)} placeholder={t("fields.product.cantidad")} aria-invalid={Boolean(fieldErrors["cantidad"])} {...inputPropsForField("cantidad", validationRules["cantidad"], "number")} />
+            {editingId && <span className="field-hint">{t("stock_entry.edit_hint", "Para sumar usa «Registrar entrada»; para quitar o corregir, «Ajustar existencia». Los dos están en la fila del producto.")}</span>}
             {fieldErrors["cantidad"] && <span className="field-error">{formatFieldError("cantidad")}</span>}
           </label>
           )}
@@ -696,7 +770,7 @@ export default function ProductPage() {
                       value: m.id_material ?? m.id ?? "",
                       label: getOptionLabel(m, "material"),
                     }))}
-                    onChange={(v) => setFormData((prev) => ({ ...prev, id_material: v }))}
+                    onChange={elegirMaterial}
                     etiqueta={t("fields.product.id_material")}
                     todas={t("common.select_option", "Selecciona una opción")}
                   />
@@ -704,6 +778,12 @@ export default function ProductPage() {
                     <span className="field-error">{formatFieldError("id_material")}</span>
                   )}
                 </label>
+              )}
+              {materialElegido?.item_class && (
+                <p className="muted clasificacion-ayuda">
+                  {t("fields.material.item_class", "Clase")}: <strong>{etiquetaDeClase(materialElegido.item_class, t)}</strong>
+                  {" · "}{t("product.class_from_material", "la define su material")}
+                </p>
               )}
               {canSeeField("id_familia") && (
                 <label className="field">
@@ -777,20 +857,20 @@ export default function ProductPage() {
               {canSeeField("product_status") && <th>{t("fields.product.product_status")}</th>}
               {canSeeField("path_imagen") && <th>{t("fields.product.path_imagen")}</th>}
               {canSeeField("product_code") && <th>{t("fields.product.product_code")}</th>}
-        </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_product}>{showRowActions && <td className="row-actions">{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}<button type="button" onClick={() => setFicha(item)} title={t("history.title", "Historial del producto")}><History size={15} /></button>{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</td>}
+        </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_product}>{showRowActions && <td className="row-actions">{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{canUpdate && <button type="button" onClick={() => setEntrada(item)} title={t("stock_entry.title", "Registrar entrada")}><PackagePlus size={15} /></button>}{canUpdate && <button type="button" onClick={() => setAjuste(item)} title={t("stock_adjust.title", "Ajustar existencia")}><SlidersHorizontal size={15} /></button>}<button type="button" onClick={() => setFicha(item)} title={t("history.title", "Historial del producto")}><History size={15} /></button>{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</td>}
               {canSeeField("id_product") && <td><pre className="cell-value">{formatTableValue(item.id_product)}</pre></td>}
               {canSeeField("id_location") && <td><pre className="cell-value">{productKanbanDisplayLabel(locationOptions, "id_location", "location", item.id_location)}</pre></td>}
               {canSeeField("id_material") && <td><pre className="cell-value">{productKanbanDisplayLabel(materialOptions, "id_material", "material", item.id_material)}</pre></td>}
               {canSeeField("gross_price") && <td><pre className="cell-value">{formatTableValue(item.gross_price)}</pre></td>}
               {canSeeField("color") && <td><pre className="cell-value">{formatTableValue(item.color)}</pre></td>}
               {canSeeField("is_directly_related_to_product_service") && <td><pre className="cell-value">{formatTableValue(item.is_directly_related_to_product_service)}</pre></td>}
-              {canSeeField("product_status") && <td><span style={productStatusBadgeStyle(item.product_status)}>{productStatusDisplayLabel(item.product_status)}</span></td>}
-              {canSeeField("path_imagen") && <td>{item.path_imagen ? <img className="table-image" src={buildImageUrl(item.path_imagen)} alt={t("common.image", "Imagen")} /> : <span className="muted">-</span>}</td>}
+              {canSeeField("product_status") && <td><span style={productStatusBadgeStyle(estadoQueSePinta(item))}>{productStatusDisplayLabel(estadoQueSePinta(item))}</span></td>}
+              {canSeeField("path_imagen") && <td>{item.path_imagen && !fotosRotas.has(item.id_product) ? <img className="table-image foto-ampliable" src={urlDeArchivo(item.path_imagen)} alt={t("common.image", "Imagen")} title={t("photo.click_to_zoom", "Clic para verla en grande")} onClick={() => ampliarFoto(item)} onError={() => marcarFotoRota(item.id_product)} /> : <span className="muted">-</span>}</td>}
               {canSeeField("product_code") && <td><pre className="cell-value">{formatTableValue(item.product_code)}</pre></td>}
         </tr>)}</tbody></table></div>}
 
-      {canRead && view === "kanban" && filtered.length > 0 && <div className="kanban">{Object.entries(groups).map(([key, groupItems]) => <div className="kanban-column" key={key}><h3>{key} <span>{groupItems.length}</span></h3>{groupItems.map((item) => <article className="kanban-card product-kanban-card" style={productStatusCardStyle(item.product_status)} key={item.id_product}>{canSeeField("path_imagen") && item.path_imagen && <img className="kanban-image" src={buildImageUrl(item.path_imagen)} alt={t("common.image", "Imagen")} />}<strong>{String(item.product_code ?? item.id_product)}</strong><small>#{item.id_product}</small><div className="product-kanban-details product-kanban-compact">
-          {canSeeField("product_status") && item.product_status && <p><span>{t("fields.product.product_status", "Estado")}:</span> <strong style={productStatusBadgeStyle(item.product_status)}>{productStatusDisplayLabel(item.product_status)}</strong></p>}
+      {canRead && view === "kanban" && filtered.length > 0 && <div className="kanban">{Object.entries(groups).map(([key, groupItems]) => <div className="kanban-column" key={key}><h3>{key} <span>{groupItems.length}</span></h3>{groupItems.map((item) => <article className="kanban-card product-kanban-card" style={productStatusCardStyle(item.product_status)} key={item.id_product}>{canSeeField("path_imagen") && item.path_imagen && !fotosRotas.has(item.id_product) && <img className="kanban-image foto-ampliable" src={urlDeArchivo(item.path_imagen)} alt={t("common.image", "Imagen")} title={t("photo.click_to_zoom", "Clic para verla en grande")} onClick={() => ampliarFoto(item)} onError={() => marcarFotoRota(item.id_product)} />}<strong>{String(item.product_code ?? item.id_product)}</strong><small>#{item.id_product}</small><div className="product-kanban-details product-kanban-compact">
+          {canSeeField("product_status") && estadoQueSePinta(item) && <p><span>{t("fields.product.product_status", "Estado")}:</span> <strong style={productStatusBadgeStyle(estadoQueSePinta(item))}>{productStatusDisplayLabel(estadoQueSePinta(item))}</strong></p>}
           {canSeeField("descripcion") && item.descripcion && <p className="wide"><span>{t("fields.product.descripcion", "Descripcion")}:</span> <strong>{formatTableValue(item.descripcion)}</strong></p>}
           {canSeeField("id_location") && item.id_location && <p><span>{t("fields.product.id_location", "Ubicacion")}:</span> <strong>{productKanbanDisplayLabel(locationOptions, "id_location", "location", item.id_location)}</strong></p>}
           {canSeeField("id_material") && item.id_material && <p><span>{t("fields.product.id_material", "Material")}:</span> <strong>{productKanbanDisplayLabel(materialOptions, "id_material", "material", item.id_material)}</strong></p>}
@@ -801,7 +881,16 @@ export default function ProductPage() {
           {canSeeField("cantidad") && item.cantidad !== null && item.cantidad !== undefined && item.cantidad !== "" && <p><span>{t("fields.product.cantidad", "Cantidad")}:</span> <strong>{formatTableValue(item.cantidad)}</strong></p>}
           {canSeeField("last_update_date") && item.last_update_date && <p><span>{t("fields.product.last_update_date", "Actualizacion")}:</span> <strong>{formatTableValue(item.last_update_date)}</strong></p>}
           {canSeeField("note") && item.note && <p className="wide"><span>{t("fields.product.note", "Nota")}:</span> <strong>{formatTableValue(item.note)}</strong></p>}
-        </div>{showRowActions && <div>{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}<button type="button" onClick={() => setFicha(item)} title={t("history.title", "Historial del producto")}><History size={15} /></button>{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</div>}</article>)}</div>)}</div>}
+        </div>{showRowActions && <div>{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{canUpdate && <button type="button" onClick={() => setEntrada(item)} title={t("stock_entry.title", "Registrar entrada")}><PackagePlus size={15} /></button>}{canUpdate && <button type="button" onClick={() => setAjuste(item)} title={t("stock_adjust.title", "Ajustar existencia")}><SlidersHorizontal size={15} /></button>}<button type="button" onClick={() => setFicha(item)} title={t("history.title", "Historial del producto")}><History size={15} /></button>{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</div>}</article>)}</div>)}</div>}
+
+      {fotoAmpliada && (
+        <VisorDeFoto
+          src={fotoAmpliada.src}
+          titulo={fotoAmpliada.titulo}
+          descripcion={fotoAmpliada.descripcion}
+          onCerrar={() => setFotoAmpliada(null)}
+        />
+      )}
 
       <Pagination
         page={page}
@@ -811,6 +900,20 @@ export default function ProductPage() {
         loading={loading}
         onChange={setPage}
       />
+      {entrada && (
+        <EntradaDeExistencia
+          producto={entrada}
+          onCerrar={() => setEntrada(null)}
+          onRegistrada={() => loadData()}
+        />
+      )}
+      {ajuste && (
+        <AjusteDeExistencia
+          producto={ajuste}
+          onCerrar={() => setAjuste(null)}
+          onRegistrada={() => loadData()}
+        />
+      )}
       {ficha && (
         <ProductHistory
           idProduct={ficha.id_product}

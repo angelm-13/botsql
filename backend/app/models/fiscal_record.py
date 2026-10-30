@@ -4,6 +4,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import String, Integer, BigInteger, SmallInteger, Boolean, Date, DateTime, Float, Numeric, ForeignKey, Text, JSON, Enum, LargeBinary, UniqueConstraint, func
 from app.models.base import Base
+from app.utils.tiempo import a_iso_utc
 
 
 def to_json_value(value):
@@ -39,9 +40,9 @@ class FiscalRecord(Base):
             'type': to_json_value(self.type),
             'id_fiscal_stamp': to_json_value(self.id_fiscal_stamp),
             'created_by': to_json_value(self.created_by),
-            'creation_date': to_json_value(self.creation_date),
-            'last_update_date': to_json_value(self.last_update_date),
-            'deletion_date': to_json_value(self.deletion_date),
+            'creation_date': a_iso_utc(self.creation_date),
+            'last_update_date': a_iso_utc(self.last_update_date),
+            'deletion_date': a_iso_utc(self.deletion_date),
         }
 
     def serialize_summary(self) -> dict:

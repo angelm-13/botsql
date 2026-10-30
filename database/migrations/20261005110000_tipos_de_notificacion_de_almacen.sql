@@ -1,0 +1,29 @@
+-- `notification.notification_type_check` solo se escribe al CREAR la tabla
+-- (`20260925120000_notificaciones_y_bitacoras.sql`), asi que un tipo nuevo
+-- hay que agregarlo aqui -- sin esto, `create_notification` revienta con
+-- `CheckViolation` en silencio (el aviso es "best effort", envuelto en
+-- try/except) y la notificacion simplemente nunca aparece, sin error visible
+-- en ningun lado. Detectado probando el flujo de custodia de vales en vivo.
+--
+-- Tres tipos nuevos, todos de `warehouse_voucher_service.py`/
+-- `tasks_warehouse.py`:
+--   * warehouse_voucher_custody_assigned: al responsable, cuando el vale
+--     queda en manos de alguien mas (recoger o `/deliver-to`).
+--   * warehouse_voucher_pickup_assigned: a esa persona, que le toca pasar
+--     por el material.
+--   * warehouse_voucher_overdue: lo que ya debio volver y no ha vuelto
+--     (job periodico, antes solo visible al abrir la pantalla de vales).
+--
+--
+-- 2026-10-07: ESTA MIGRACION YA NO TOCA LA RESTRICCION. Se reaplica en cada
+-- arranque y recreaba `notification_type_check` con una lista MAS CORTA que la
+-- vigente: en cuanto existia una notificacion de un tipo posterior (por ejemplo
+-- `warehouse_voucher_delivered`), el `ADD CONSTRAINT` fallaba contra esa fila y,
+-- con `set -e` + `ON_ERROR_STOP=1`, el initContainer impedia que el backend
+-- arrancara. La unica dueña de la restriccion es ahora la migracion mas nueva
+-- (`20261007100000_tipos_de_notificacion_unica_fuente.sql`), con la lista completa.
+-- Un tipo nuevo se agrega ALLI, no aqui.
+--
+-- Se deja el archivo (sin sentencias) para no renumerar migraciones ya aplicadas.
+BEGIN;
+COMMIT;

@@ -47,6 +47,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.utils.tiempo import a_iso_utc
 
 
 # Estados de una pieza. El nombre dice donde esta y de quien es la
@@ -65,6 +66,13 @@ ESTADOS = (DISPONIBLE, EN_USO, PRESTADA, EN_REPARACION, EXTRAVIADA, RETIRADA)
 # que reflejarlo, porque si no el almacen dice que tiene diez taladros y en el
 # estante hay tres.
 ESTADOS_EN_EXISTENCIA = frozenset({DISPONIBLE})
+
+# Lo que cuenta el LIBRO de existencias (`inventory_stock`): ademas de lo
+# disponible, la pieza asignada dentro de la empresa, porque asignarla no
+# escribe movimiento -sigue siendo de la empresa y de su ubicacion-. Con esto un
+# retiro, una reparacion o un extravio descuenta la unidad exactamente una vez,
+# venga la pieza de `disponible` o de `en_uso`.
+ESTADOS_EN_SALDO = frozenset({DISPONIBLE, EN_USO})
 
 # Desde estos estados ya no se sale. Una pieza retirada no revive; si vuelve a
 # aparecer se da de alta como pieza nueva, para que su historia anterior quede
@@ -167,5 +175,5 @@ class InventoryAsset(Base):
             "note": self.note,
             "counts_as_stock": self.cuenta_como_existencia,
             "created_by": self.created_by,
-            "creation_date": self.creation_date.isoformat() if self.creation_date else None,
+            "creation_date": a_iso_utc(self.creation_date),
         }

@@ -101,6 +101,12 @@ class TestPaymentRules(PaymentTestCase):
         self.assertEqual("400.00", abono["amount"])
         self.assertEqual("600.00", abono["outstanding_balance"])
 
+    def test_a_payment_in_another_currency_is_refused(self):
+        with self.assertRaises(AppError) as caja:
+            self.pay("50.00", "usd-1", currency="USD")
+
+        self.assertEqual("errors.payment_currency_mismatch", caja.exception.message_key)
+
     def test_a_cash_invoice_does_not_take_payments(self):
         """En PUE el cobro ya quedo acreditado con la factura misma."""
         with self.assertRaises(AppError) as raised:
@@ -248,10 +254,14 @@ class TestPaymentComplement(PaymentTestCase):
         self.assertEqual("TRANSF-9911", pago["operation_number"])
 
     def test_an_unstamped_invoice_has_no_complement(self):
-        """El documento relacionado se identifica por su folio fiscal."""
+        """El documento relacionado se identifica por su folio fiscal.
+
+        Un abono ya no se registra sobre una factura sin timbrar, asi que se simula uno
+        anterior a ese control: se registra con la factura timbrada y se le quita el folio.
+        """
+        abono = self.pay("400.00", "p1")["payment"]
         with transaction_context() as db:
             db.get(Invoice, PPD).folio_fiscal = None
-        abono = self.pay("400.00", "p1")["payment"]
 
         with self.assertRaises(AppError) as raised:
             build_payment_complement(abono["id_invoice_payment"], ACTOR)

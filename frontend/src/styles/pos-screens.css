@@ -127,7 +127,6 @@
 .pos-bar-track { height: 8px; background: #f1f5f9; border-radius: 999px; overflow: hidden; }
 .pos-bar-fill { height: 100%; background: #1b7a60; border-radius: 999px; }
 
-.pos-screen :focus-visible { outline: 2px solid #1b7a60; outline-offset: 2px; }
 
 @media (prefers-reduced-motion: reduce) {
   .pos-screen * { transition: none !important; animation: none !important; }
@@ -166,7 +165,6 @@
 }
 .pos-fields input[type="color"] { padding: 3px; height: 38px; cursor: pointer; }
 .pos-fields label.casilla input { width: auto; }
-.pos-fields input:focus, .pos-fields select:focus { outline: 2px solid #1b7a60; outline-offset: 1px; }
 
 .pos-screen .button.primary { background: #1b7a60; border-color: #1b7a60; color: #fff; }
 .pos-screen .button.primary:disabled { opacity: .5; cursor: not-allowed; }

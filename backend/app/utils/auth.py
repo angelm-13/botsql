@@ -17,18 +17,80 @@ ADMIN_PERMISSION_ENTITIES = {'permission', 'entity_permission', 'nm_field_permis
 ADMIN_PERMISSION_READ_ENTITIES = ADMIN_PERMISSION_ENTITIES | {'user', 'department', 'subdepartment', 'level'}
 
 
+# Cuanto se recuerda que un usuario sigue vigente. Es el retraso maximo con que un
+# despido o un cambio de rol surte efecto sobre una sesion ya abierta (por proceso).
+VIGENCIA_DE_SESION_SEGUNDOS = int(os.getenv('SESSION_REVALIDATE_SECONDS', '30'))
+_vigencia: dict[int, tuple[float, bool, int | None]] = {}
+
+
+def olvidar_vigencias() -> None:
+    _vigencia.clear()
+
+
+def sesion_vigente(user_data: dict) -> bool:
+    """El token es una foto de hace hasta 8 horas: sin esto, dar de baja a alguien o
+    quitarle un rol no hacia nada hasta que el token expiraba. Se revisa contra la
+    base (con una cache corta) que el usuario exista, no este dado de baja y siga
+    con el rol del token."""
+    import time
+
+    if str(os.getenv('TESTING') or '').strip().lower() in {'1', 'true', 'yes'}:
+        return True
+    try:
+        id_user = int(user_data.get('id_user') or user_data.get('user_id') or 0)
+    except (TypeError, ValueError):
+        return False
+    if not id_user:
+        return False
+    ahora = time.monotonic()
+    guardado = _vigencia.get(id_user)
+    if guardado is None or guardado[0] < ahora:
+        from sqlalchemy import select
+        from app.models.session import transaction_context
+        from app.models.user import User
+
+        with transaction_context() as db:
+            fila = db.execute(select(User.deletion_date, User.id_permission)
+                              .where(User.id_user == id_user)).first()
+        guardado = (ahora + VIGENCIA_DE_SESION_SEGUNDOS,
+                    fila is not None and fila[0] is None,
+                    fila[1] if fila is not None else None)
+        _vigencia[id_user] = guardado
+    _, vivo, permiso_actual = guardado
+    if not vivo:
+        return False
+    permiso_token = _get_permission_id(user_data)
+    return permiso_token is None or permiso_actual is None or int(permiso_actual) == permiso_token
+
+
+def decode_session(token: str):
+    """(user_data, None) si el token es una sesion de personal vigente; si no,
+    (None, clave_de_error). Una sola regla para `token_required` y para toda ruta
+    que lea el token por su cuenta (ej. la descarga de `/documents`): antes esa
+    ruta aceptaba el token de MFA a medias y no miraba la revocacion."""
+    if not token:
+        return None, 'errors.auth_required'
+    try:
+        user_data = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
+    except Exception:
+        return None, 'errors.invalid_token'
+    if str(user_data.get('scope') or '').strip().lower() == str(PUBLIC_JWT_SCOPE).strip().lower():
+        return None, 'errors.invalid_token'
+    # El token del paso 1 del login con MFA (solo contrasena) no es una
+    # sesion: solo `/auth/mfa/verify-login` lo acepta, y lo decodifica aparte.
+    if user_data.get('mfa_step'):
+        return None, 'errors.invalid_token'
+    if not sesion_vigente(user_data):
+        return None, 'errors.session_revoked'
+    return user_data, None
+
+
 def token_required(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
-        token = request.headers.get('Authorization', '').replace('Bearer ', '')
-        if not token:
-            return jsonify({'error_key': 'errors.auth_required'}), 401
-        try:
-            user_data = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
-        except Exception:
-            return jsonify({'error_key': 'errors.invalid_token'}), 401
-        if str(user_data.get('scope') or '').strip().lower() == str(PUBLIC_JWT_SCOPE).strip().lower():
-            return jsonify({'error_key': 'errors.invalid_token'}), 401
+        user_data, error_key = decode_session(request.headers.get('Authorization', '').replace('Bearer ', ''))
+        if error_key:
+            return jsonify({'error_key': error_key}), 401
         return fn(user_data, *args, **kwargs)
     return wrapper
 
@@ -147,6 +209,25 @@ def has_kpi_permission(session, user_data: dict, id_kpi_definition) -> bool:
         .first()
     )
     return bool(record) and bool(record.puede_ver)
+
+
+def require_any_entity_permission(*requisitos: tuple[str, str]):
+    """Pasa quien cumple CUALQUIERA de los pares (entidad, accion).
+
+    Para una ruta que abre una capacidad estrecha ademas del permiso general: el
+    error, si nadie cumple, es el del primer par.
+    """
+    def decorator(fn):
+        @wraps(fn)
+        def wrapper(user_data, *args, **kwargs):
+            if any(_has_entity_permission(user_data, entidad, accion) for entidad, accion in requisitos):
+                return fn(user_data, *args, **kwargs)
+            entidad, accion = requisitos[0]
+            if not _plan_permite(entidad):
+                return jsonify({'error_key': 'errors.module_not_in_plan', 'meta': {'entity': entidad}}), 403
+            return jsonify({'error_key': 'errors.permission_denied', 'meta': {'entity': entidad, 'action': accion}}), 403
+        return wrapper
+    return decorator
 
 
 def require_entity_permission(entity_name: str, action: str):

@@ -1,17 +1,21 @@
+import { LLAVE_BORRADO_BLOQUEADO, mensajeDeBorradoBloqueado } from "../utils/registrosRelacionados.js";
 import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
-import { getAllCustomerSupplier, createCustomerSupplier, updateCustomerSupplier, deleteCustomerSupplier, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllUser, getInvoiceCatalogs } from "../api";
+import { getAllCustomerSupplier, createCustomerSupplier, updateCustomerSupplier, deleteCustomerSupplier, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getInvoiceCatalogs } from "../api";
 import { fetchAllPages } from "../utils/fetchAllPages";
 import Pagination from "../components/Pagination.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 import PageHeader from "../components/PageHeader.jsx";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import CustomerContactsPanel from "../components/CustomerContactsPanel.jsx";
+import { CAMPOS_DE_AUDITORIA } from "../utils/camposDeAuditoria";
+import { formatearFechaHora } from "../utils/fechas";
+import { useDialogo } from "../dialogo/useDialogo.js";
 
 /* eslint-disable react/prop-types */
 
-const baseEmptyForm = { postal_code: "", name: "", title: "", contact_name: "", phone: "", email: "", web_site: "", street: "", number_ext: "", number_int: "", neighborhood: "", city: "", geographic_state: "", fiscal_type: "", last_fiscal_certification_date: "", tax_id: "", type: "", sla_level: "standard", credit_limit: "0", logistics_notes: "", is_principal: false, id_user: "", path_logo: "", serie_csd: "" };
+const baseEmptyForm = { postal_code: "", name: "", contact_name: "", phone: "", email: "", web_site: "", street: "", number_ext: "", number_int: "", neighborhood: "", city: "", geographic_state: "", fiscal_type: "", tax_id: "", type: "", sla_level: "standard", credit_limit: "0", is_principal: false, id_user: "", path_logo: "", serie_csd: "" };
 const validationRules = allValidationRules["customer_supplier"] || {};
 const ENTITY_KEY = "customer_supplier";
 const ACTION_CREATE = 1;
@@ -36,9 +40,16 @@ function readCurrentUser() {
 
 export default function CustomerSupplierPage({ clientsOnly = false, mode = "all", entityType = "" }) {
   const { lang, t } = useI18n();
+  const dialogo = useDialogo();
   const forcedType = entityType || (mode === "suppliersOnly" ? "supplier" : clientsOnly || mode === "clientsOnly" ? "client" : "");
   const entityLabel = forcedType === "client" ? "Clientes" : forcedType === "supplier" ? "Proveedores" : t("menu.customer_supplier");
-  const emptyForm = useMemo(() => ({ ...baseEmptyForm, type: forcedType }), [forcedType]);
+  const currentUser = useMemo(() => readCurrentUser(), []);
+  // Vendedor precargado con quien esta dando de alta al cliente: es el unico
+  // otro campo obligatorio ademas de Nombre (NOT NULL sin default en la
+  // base), y casi siempre es la misma persona que abre el formulario. Sigue
+  // siendo editable -- un vendedor puede dar de alta un cliente a nombre de
+  // otro -- pero ya no hay que elegirlo a mano cada vez.
+  const emptyForm = useMemo(() => ({ ...baseEmptyForm, type: forcedType, id_user: currentUser?.id_user ?? "" }), [forcedType, currentUser]);
   const [items, setItems] = useState([]);
   const [formData, setFormData] = useState(emptyForm);
   const [fieldErrors, setFieldErrors] = useState({});
@@ -53,7 +64,6 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
   const [errorMeta, setErrorMeta] = useState(null);
   const [noticeKey, setNoticeKey] = useState("");
 
-  const currentUser = useMemo(() => readCurrentUser(), []);
   const isSuperUser = Boolean(currentUser?.is_superuser || currentUser?.is_bootstrap_admin || currentUser?.username === "admin1");
   const currentRoleId = currentUser?.id_permission;
   const [modulePermission, setModulePermission] = useState(null);
@@ -65,7 +75,6 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
   const canDelete = canUseAction(ACTION_DELETE);
   const canSubmitForm = editingId ? canUpdate : canCreate;
   const showRowActions = canRead && (canUpdate || canDelete);
-  const [userOptions, setUserOptions] = useState([]);
   const [fiscalRegimeCatalog, setFiscalRegimeCatalog] = useState({ regimen_fiscal: {}, persona_fisica: [], persona_moral: [] });
   const proyectOptions = [];
 
@@ -114,14 +123,6 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
   useEffect(() => {
     async function loadFormOptions() {
       if (!permissionReady || (!canSubmitForm && !canRead)) return;
-      if (canSeeField("id_user")) {
-        try {
-          const userData = await getAllUser({ page: 1, per_page: 100 });
-          setUserOptions(Array.isArray(userData) ? userData : (userData.items || []));
-        } catch (_) {
-          setUserOptions([]);
-        }
-      }
       if (canSeeField("fiscal_type")) {
         try {
           const catalogs = await getInvoiceCatalogs();
@@ -198,7 +199,7 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
   function canSeeField(fieldName) {
     if (isSuperUser) return true;
     if (!permissionReady) return false;
-    return visibleFieldNames.has(fieldName);
+    return CAMPOS_DE_AUDITORIA.has(fieldName) || visibleFieldNames.has(fieldName);
   }
 
 
@@ -267,8 +268,11 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
     try {
       if (editingId && !canUpdate) return;
       if (!editingId && !canCreate) return;
-      if (editingId) await updateCustomerSupplier(editingId, submitPayload);
-      else await createCustomerSupplier(submitPayload);
+      // El vendedor ya no se captura a mano: en el alta lo asigna el servidor (quien
+      // captura) y en la edicion se deja el que ya tenia. Se valida con el, pero no viaja.
+      const { id_user: _vendedor, ...cuerpo } = submitPayload;
+      if (editingId) await updateCustomerSupplier(editingId, cuerpo);
+      else await createCustomerSupplier(cuerpo);
       setFormData(emptyForm); setEditingId(null); await loadData();
     } catch (error) {
       const meta = error.payload?.meta || null;
@@ -291,7 +295,7 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
 
   async function removeItem(item) {
     if (!canDelete) return;
-    if (!window.confirm(t("common.confirm_delete"))) return;
+    if (!(await dialogo.confirmar(t("common.confirm_delete")))) return;
     try { await deleteCustomerSupplier(item.id_customer_supplier); await loadData(); } catch (error) { setErrorKey(error.message || "errors.request_failed"); setErrorMeta(error.payload?.meta || null); }
   }
 
@@ -301,7 +305,7 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
     if (ENTITY_KEY !== "user") return;
     const targetId = item.id_user ?? item.id;
     if (!targetId) return;
-    if (!window.confirm(t("common.mfa_reset_confirm", "¿Restablecer MFA de este usuario?"))) return;
+    if (!(await dialogo.confirmar(t("common.mfa_reset_confirm", "¿Restablecer MFA de este usuario?")))) return;
     setErrorKey("");
     setErrorMeta(null);
     setNoticeKey("");
@@ -331,11 +335,8 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
     }
     if (typeof value === "number") return new Intl.NumberFormat(locale).format(value);
     if (typeof value === "string" && /^[0-9]{4}-[0-9]{2}-[0-9]{2}T/.test(value)) {
-      const date = new Date(value);
-      if (!Number.isNaN(date.getTime())) {
-        const hasTime = !/T00:00(?::00)?/.test(value);
-        return new Intl.DateTimeFormat(locale, hasTime ? { dateStyle: "medium", timeStyle: "short" } : { dateStyle: "medium" }).format(date);
-      }
+      const formateada = formatearFechaHora(value, locale);
+      if (formateada) return formateada;
     }
     if (Array.isArray(value)) return value.map((item) => formatTableValue(item)).filter(Boolean).join(", ");
     if (typeof value === "object") {
@@ -416,7 +417,7 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
     if (errorKey === "errors.invalid_field" && errorMeta?.field) {
       return `${t(errorKey, errorKey)}: ${fieldLabel}`;
     }
-    return t(errorKey, errorKey);
+    return errorKey === LLAVE_BORRADO_BLOQUEADO ? mensajeDeBorradoBloqueado(t, errorMeta) : t(errorKey, errorKey);
   }
 
   const filtered = useMemo(() => {
@@ -435,6 +436,7 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
       <PageHeader
         eyebrow={forcedType === "client" ? "CRM" : forcedType ? "Logística" : t("common.module")}
         titulo={entityLabel}
+        subtitulo={forcedType === "client" ? t("page.customer_client.subtitle", "Aquí se registran las empresas a las que les vendes o das servicio: su razón social, RFC y dirección. Da de alta primero la empresa; después, en Contactos (más abajo), agrega a las personas con quienes tratas en ella.") : undefined}
       >
         <button className="button ghost" onClick={loadData} disabled={!canRead}><RefreshCw size={16} />{loading ? t("common.loading") : t("common.refresh")}</button>
       </PageHeader>
@@ -459,13 +461,6 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
             <span>{t("fields.customer_supplier.name")}</span>
             <input name="name" type="text" maxLength={150} value={formData.name ?? ""} onChange={handleChange} placeholder={t("fields.customer_supplier.name")} aria-invalid={Boolean(fieldErrors["name"])} {...inputPropsForField("name", validationRules["name"], "text")} />
             {fieldErrors["name"] && <span className="field-error">{formatFieldError("name")}</span>}
-          </label>
-          )}
-          {canSeeField("title") && (
-          <label className="field">
-            <span>{t("fields.customer_supplier.title")}</span>
-            <input name="title" type="text" maxLength={50} value={formData.title ?? ""} onChange={handleChange} placeholder={t("fields.customer_supplier.title")} aria-invalid={Boolean(fieldErrors["title"])} {...inputPropsForField("title", validationRules["title"], "text")} />
-            {fieldErrors["title"] && <span className="field-error">{formatFieldError("title")}</span>}
           </label>
           )}
           {canSeeField("contact_name") && (
@@ -550,13 +545,6 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
             {fieldErrors["fiscal_type"] && <span className="field-error">{formatFieldError("fiscal_type")}</span>}
           </label>
           )}
-          {canSeeField("last_fiscal_certification_date") && (
-          <label className="field">
-            <span>{t("fields.customer_supplier.last_fiscal_certification_date")}</span>
-            <input name="last_fiscal_certification_date" type="datetime-local" value={formData.last_fiscal_certification_date ?? ""} onChange={handleChange} placeholder={t("fields.customer_supplier.last_fiscal_certification_date")} aria-invalid={Boolean(fieldErrors["last_fiscal_certification_date"])} {...inputPropsForField("last_fiscal_certification_date", validationRules["last_fiscal_certification_date"], "datetime-local")} />
-            {fieldErrors["last_fiscal_certification_date"] && <span className="field-error">{formatFieldError("last_fiscal_certification_date")}</span>}
-          </label>
-          )}
           {canSeeField("tax_id") && (
           <label className="field">
             <span>{t("fields.customer_supplier.tax_id")}</span>
@@ -575,29 +563,14 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
             {fieldErrors["type"] && <span className="field-error">{formatFieldError("type")}</span>}
           </label>
           )}
-          {canSeeField("sla_level") && (
-          <label className="field">
-            <span>Nivel SLA</span>
-            <select name="sla_level" value={formData.sla_level ?? "standard"} onChange={handleChange} aria-invalid={Boolean(fieldErrors.sla_level)}>
-              <option value="standard">Standard</option>
-              <option value="premium">Premium</option>
-            </select>
-            {fieldErrors.sla_level && <span className="field-error">{formatFieldError("sla_level")}</span>}
-          </label>
-          )}
-          {canSeeField("credit_limit") && (
-          <label className="field">
-            <span>Límite de crédito</span>
-            <input name="credit_limit" type="number" min="0" step="0.01" value={formData.credit_limit ?? "0"} onChange={handleChange} aria-invalid={Boolean(fieldErrors.credit_limit)} />
-            {fieldErrors.credit_limit && <span className="field-error">{formatFieldError("credit_limit")}</span>}
-          </label>
-          )}
-          {canSeeField("logistics_notes") && (
-          <label className="field wide-field">
-            <span>Notas logísticas</span>
-            <textarea name="logistics_notes" value={formData.logistics_notes ?? ""} onChange={handleChange} rows="3" />
-          </label>
-          )}
+          {/* sla_level y credit_limit: escondidos a proposito (2026-09-29).
+              Son NOT NULL con DEFAULT en la base ('standard' / 0), pero
+              ningun modulo de negocio real los lee -- ni facturacion/POS
+              (que tiene su propio credit_limit en `pos`) ni logistica (que
+              tiene su propio sla_level en `logistics_contract`). Se dejan en
+              `baseEmptyForm` con su valor por omision para que el alta siga
+              funcionando sin pedirselos a nadie; si algun dia un modulo real
+              los necesita, aqui es donde se vuelven a mostrar. */}
           {canSeeField("is_principal") && (
           <label className="checkbox-inline principal-company-field">
             <input name="is_principal" type="checkbox" checked={Boolean(formData.is_principal)} onChange={handleChange} />
@@ -611,20 +584,6 @@ export default function CustomerSupplierPage({ clientsOnly = false, mode = "all"
             <input name="serie_csd" type="text" maxLength={25} value={formData.serie_csd ?? ""} onChange={handleChange} placeholder={t("fields.customer_supplier.serie_csd", "Serie del CFDI (opcional)")} aria-invalid={Boolean(fieldErrors["serie_csd"])} />
             <small>{t("common.serie_csd_hint", "Se usa como serie por defecto al emitir facturas de esta empresa; una factura puede capturar otra distinta.")}</small>
             {fieldErrors["serie_csd"] && <span className="field-error">{formatFieldError("serie_csd")}</span>}
-          </label>
-          )}
-          {canSeeField("id_user") && (
-          <label className="field">
-            <span>{t("fields.user.vendor", "Vendedor")}</span>
-            <select name="id_user" value={formData.id_user ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors["id_user"])} {...inputPropsForField("id_user", validationRules["id_user"], "select")}>
-              <option value="">{t("common.select_option", "Selecciona una opción")}</option>
-              {userOptions.map((item) => (
-                <option key={item.id_user ?? item.id ?? JSON.stringify(item)} value={item.id_user ?? item.id ?? ""}>
-                  {getOptionLabel(item, "user")}
-                </option>
-              ))}
-            </select>
-            {fieldErrors["id_user"] && <span className="field-error">{formatFieldError("id_user")}</span>}
           </label>
           )}
           {canSeeField("path_logo") && (

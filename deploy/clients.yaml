@@ -36,8 +36,18 @@ clients:
     # Un solo origen (adser.torredigital.mx con /api) — mismo patrón que
     # torredigital/prod.
     api_base_url: ""
-  - name: vidrioyaluminios
+  - name: comala
     env: prod
-    # Un solo origen (vidrioyaluminios.torredigital.mx con /api) — mismo
-    # patrón que adser/prod y torredigital/prod.
+    # Un solo origen (comala.torredigital.mx con /api) -- mismo patron que
+    # adser/prod.
+    api_base_url: ""
+  - name: aai
+    env: prod
+    # Un solo origen (aai.torredigital.mx con /api) -- mismo patron que
+    # comala/prod.
+    api_base_url: ""
+  - name: nissi
+    env: prod
+    # Un solo origen (nissi.torredigital.mx con /api) -- mismo patron que
+    # aai/prod.
     api_base_url: ""

@@ -6,14 +6,14 @@ from flask import Blueprint, jsonify, request, send_file
 from app.models import Invoice
 from app.services.invoice_service import InvoiceService
 from app.services.cfdi_xml import parse_cfdi
-from app.services.invoice_artifacts import invoice_xml_path
+from app.services.cfdi_xml_store import load_cfdi_xml, save_cfdi_xml
 from app.services.invoice_xml_classification import classify_invoice_direction, normalize_rfc
 from app.services.invoice_xml_lines import persist_xml_lines
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
 from datetime import datetime
 from app.services.invoice_material_service_service import InvoiceMaterialServiceService
-from app.services.quotation_service import calculate_totals, ensure_not_expired, normalize_status, validate_transition
+from app.services.quotation_service import calculate_totals, totals_from_priced_lines, ensure_not_expired, normalize_status, validate_transition
 from app.services.manual_invoice_service import create_manual_invoice, preview_manual_invoice, validate_manual_invoice_context
 from app.services.invoice_catalogs import catalogs_payload
 from app.services.invoice_inventory_service import apply_invoice_to_inventory, preview_invoice_inventory
@@ -32,9 +32,63 @@ from app.services.invoice_cancellation_service import (
     refresh_cancellation,
     request_cancellation,
 )
+from app.utils.field_access import COLUMNAS_DE_AUDITORIA
 
 
 bp_invoice = Blueprint('invoice', __name__, url_prefix='/invoice')
+# Una vez timbrada, el comprobante ya existe ante el SAT: sus importes y datos
+# fiscales no se reescriben (se corrige con nota de credito o cancelacion).
+CAMPOS_FISCALES_CONGELADOS = (
+    'subtotal', 'tax', 'total', 'descuento', 'tax_rate', 'apply_tax', 'currency',
+    'type_exchange_rate', 'rfc_receptor', 'nombre_receptor', 'regimen_fiscal_receptor',
+    'tipo_de_comprobante', 'metodo_pago', 'payment_method', 'folio_fiscal', 'folio',
+)
+def _datos_fiscales_del_cliente(invoice: dict) -> dict:
+    """Receptor del CFDI tomado del cliente cuando la cotizacion no lo traia.
+
+    Una cotizacion convertida quedaba con RFC/nombre/regimen/CP del receptor en
+    blanco: el preflight fallaba y el complemento de pago salia con receptor
+    vacio. Solo se llena lo que esta vacio; nunca se pisa lo capturado."""
+    from app.models import CustomerSupplier
+    from app.models.session import transaction_context
+
+    if not invoice.get('id_customer_supplier'):
+        return {}
+    with transaction_context() as db:
+        cliente = db.get(CustomerSupplier, int(invoice['id_customer_supplier']))
+        if cliente is None:
+            return {}
+        candidatos = {
+            'rfc_receptor': cliente.tax_id, 'nombre_receptor': cliente.name,
+            'regimen_fiscal_receptor': cliente.fiscal_type,
+            'domicilio_fiscal_receptor': cliente.postal_code,
+        }
+    return {campo: str(valor).strip() for campo, valor in candidatos.items()
+            if valor and not str(invoice.get(campo) or '').strip()}
+
+
+def _cambia(actual, nuevo) -> bool:
+    """Distinto de verdad: '' y None son lo mismo, y 100 == '100.00'."""
+    vacio = (None, '')
+    if actual in vacio and nuevo in vacio:
+        return False
+    try:
+        from decimal import Decimal
+        return Decimal(str(actual)) != Decimal(str(nuevo))
+    except Exception:
+        return str(actual).strip().lower() != str(nuevo).strip().lower()
+
+
+def _lineas_de(id_invoice) -> int:
+    from app.models import InvoiceMaterialService
+    from app.models.session import transaction_context
+    with transaction_context() as db:
+        return db.query(InvoiceMaterialService).filter(
+            InvoiceMaterialService.id_invoice == int(id_invoice),
+            InvoiceMaterialService.deletion_date.is_(None)).count()
+
+
+ESTATUS_AL_CREAR = {'captura', 'cotizacion', 'pendiente', 'draft'}
 ALLOWED_FIELDS = ['id_invoice', 'date_emision', 'date_expiration', 'subtotal', 'tax', 'total', 'invoice_status', 'invoice_direction', 'payment_method', 'note', 'id_customer_supplier', 'fiscal_reference', 'serie_csd', 'internationalization', 'currency', 'type_exchange_rate', 'tax_certification_supplier', 'fiscal_certify_serie', 'certification_date', 'cfdi_code', 'sat_code', 'sat_certification_code', 'id_status', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'nombre_emisor', 'lugar_expedicion', 'tipo_de_comprobante', 'rfc_receptor', 'nombre_receptor', 'regimen_fiscal_receptor', 'domicilio_fiscal_receptor', 'id_proveedor_de_sello', 'folio_fiscal', 'exportacion', 'folio', 'no_certificado_sat', 'sello_sat', 'sello_certificacion_sat', 'no_certificado', 'descuento', 'metodo_pago', 'condiciones_pago', 'id_issuer_customer_supplier', 'id_proyect', 'apply_tax', 'tax_rate', 'commercial_terms']
 
 TECHNICAL_RESPONSE_FIELDS = {'id_invoice'}
@@ -48,7 +102,6 @@ def _actor_has_unrestricted_field_access(user_data: dict) -> bool:
     return bool(
         user_data.get('is_superuser')
         or user_data.get('is_bootstrap_admin')
-        or user_data.get('user_type') == 'admin'
     )
 
 
@@ -97,7 +150,7 @@ def _field_sets_for_actor(user_data: dict) -> tuple[set[str], set[str]]:
     # La llave primaria puede viajar en la respuesta para navegacion interna,
     # acciones de fila y rutas REST, aunque el frontend no la pinte si no fue
     # marcada como visible en el gestor.
-    return visible | set(TECHNICAL_RESPONSE_FIELDS), writable
+    return visible | set(TECHNICAL_RESPONSE_FIELDS) | COLUMNAS_DE_AUDITORIA, writable
 
 
 def _visible_response_fields_for_actor(user_data: dict) -> set[str]:
@@ -233,10 +286,10 @@ def _invoice_document_access(id_invoice, user_data):
 @require_entity_permission('invoice', 'read')
 def download_invoice_xml(user_data, id_invoice):
     _invoice_document_access(id_invoice, user_data)
-    path = invoice_xml_path(id_invoice, _current_app.config.get('UPLOAD_ROOT'))
-    if not path.is_file():
+    xml_bytes = load_cfdi_xml(id_invoice, _current_app.config.get('UPLOAD_ROOT'))
+    if xml_bytes is None:
         raise AppError('invoice.xml_not_available', 404)
-    return send_file(path, mimetype='application/xml', as_attachment=True, download_name=f'CFDI-{id_invoice}.xml')
+    return send_file(BytesIO(xml_bytes), mimetype='application/xml', as_attachment=True, download_name=f'CFDI-{id_invoice}.xml')
 
 
 @bp_invoice.route('/<id_invoice>/pdf', methods=['GET'])
@@ -266,6 +319,10 @@ def download_invoice_pdf(user_data, id_invoice):
 @require_entity_permission('invoice', 'create')
 def create_invoice(user_data):
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
+    estatus = str(payload.get('invoice_status') or '').strip().lower()
+    if estatus and estatus not in ESTATUS_AL_CREAR:
+        raise AppError('errors.invoice_status_not_editable', 400,
+                       {'field': 'invoice_status', 'allowed': sorted(ESTATUS_AL_CREAR)})
     InvoiceService.require_project_for_write(payload.get('id_proyect'), user_data)
     return _jsonify_projected_record(user_data, InvoiceService.create(payload, user_id=user_data.get('id_user')), status=201)
 
@@ -437,6 +494,19 @@ def _apply_inventory_after_stamp(invoice_id, payload, user_data):
 def update_invoice(user_data, id_invoice):
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
     InvoiceService.require_scope(id_invoice, user_data)
+    # El estatus no es un campo que se escriba: lo mueven la transicion de la
+    # cotizacion, la conversion y el timbrado. Un PUT con "timbrada" fabricaba
+    # una factura timbrada sin timbrar. Reenviar el mismo valor (la pantalla
+    # manda todos los campos) no es un cambio.
+    actual = InvoiceService.get(id_invoice)
+    if 'invoice_status' in payload and _cambia(actual.get('invoice_status'), payload['invoice_status']):
+        raise AppError('errors.invoice_status_not_editable', 409, {'field': 'invoice_status'})
+    if actual.get('folio_fiscal'):
+        congelados = [c for c in CAMPOS_FISCALES_CONGELADOS
+                      if c in payload and _cambia(actual.get(c), payload[c])]
+        if congelados:
+            raise AppError('errors.invoice_already_stamped', 409,
+                           {'id_invoice': id_invoice, 'fields': congelados})
     if payload.get('id_proyect') is not None:
         # Mover la factura a otro proyecto exige poder ver el destino; si no, se
         # podria sacar una factura del alcance ajeno hacia el propio, o meter la
@@ -454,6 +524,9 @@ def transition_quotation(user_data, id_invoice):
     if not invoice:
         raise AppError('errors.resource_not_found', 404)
     target_status = validate_transition(invoice.get('invoice_status'), (request.get_json(silent=True) or {}).get('status'))
+    if target_status in ('sent', 'approved', 'partially_approved') and not _lineas_de(id_invoice):
+        # Una cotizacion sin renglones no se envia ni se aprueba: no hay que convertir.
+        raise AppError('errors.quotation_without_lines', 409, {'id_invoice': id_invoice})
     updated = InvoiceService.update(
         id_invoice,
         {'invoice_status': target_status},
@@ -467,6 +540,12 @@ def transition_quotation(user_data, id_invoice):
 @require_entity_permission('invoice', 'delete')
 def delete_invoice(user_data, id_invoice):
     InvoiceService.require_scope(id_invoice, user_data)
+    factura = InvoiceService.get(id_invoice) or {}
+    # Un CFDI timbrado (o ya cancelado) es un documento fiscal: se cancela ante
+    # el SAT, no se borra de la base.
+    if factura.get('folio_fiscal') or str(factura.get('invoice_status') or '').strip().lower() in {
+            'timbrada', 'cancelada', 'pagada', 'parcial'}:
+        raise AppError('errors.invoice_cannot_delete_stamped', 409, {'id_invoice': id_invoice})
     return jsonify(InvoiceService.delete(id_invoice, user_id=user_data.get('id_user')))
 
 
@@ -474,6 +553,16 @@ def delete_invoice(user_data, id_invoice):
 @token_required
 @require_entity_permission('invoice', 'update')
 def update_invoice_line_authorization(user_data, id_invoice_material_service):
+    from app.models import InvoiceMaterialService
+    from app.models.session import transaction_context
+
+    with transaction_context() as db_session:
+        linea = db_session.get(InvoiceMaterialService, int(id_invoice_material_service))
+        id_factura_de_la_linea = linea.id_invoice if linea is not None else None
+    if id_factura_de_la_linea is None:
+        raise AppError('errors.resource_not_found', 404)
+    InvoiceService.require_scope(id_factura_de_la_linea, user_data)
+
     data = request.get_json(silent=True) or {}
     authorization_status = str(data.get('authorization_status') or '').strip().lower()
     allowed_statuses = {'pending', 'authorized', 'rejected'}
@@ -516,6 +605,7 @@ def update_invoice_line_authorization(user_data, id_invoice_material_service):
 @require_entity_permission('invoice', 'update')
 def convert_quotation_invoice(user_data, id_invoice):
     data = request.get_json(silent=True) or {}
+    InvoiceService.require_scope(id_invoice, user_data)
     invoice = InvoiceService.get(id_invoice)
     if not invoice:
         raise AppError('errors.resource_not_found', 404)
@@ -551,6 +641,7 @@ def convert_quotation_invoice(user_data, id_invoice):
         line_rows = (
             db_session.query(InvoiceMaterialService)
             .filter(InvoiceMaterialService.id_invoice == invoice_id_value)
+            .filter(InvoiceMaterialService.deletion_date.is_(None))
             .order_by(InvoiceMaterialService.id_invoice_material_service.asc())
             .all()
         )
@@ -611,7 +702,14 @@ def convert_quotation_invoice(user_data, id_invoice):
             if line['id_invoice_material_service'] in set(pending_ids):
                 line['authorization_status'] = 'authorized'
 
-    totals = calculate_totals(authorized_lines, invoice.get('tax_rate') if invoice.get('apply_tax') else 0)
+    # totals_from_priced_lines y no calculate_totals: este segundo ignora por
+    # completo tax_applicable/line_tax/tax_rate de cada renglon y aplica una
+    # sola tasa (la del encabezado) a todo el subtotal. Bug real medido: con
+    # tax_rate sin capturar en el encabezado (no es obligatorio), el IVA que
+    # el cliente ya vio y aprobo en la cotizacion desaparecia sin error
+    # visible. Ver docstring de totals_from_priced_lines.
+    totals = totals_from_priced_lines(
+        authorized_lines, invoice.get('tax_rate') if invoice.get('apply_tax') else 0)
     conversion_note = str(
         data.get('conversion_note')
         or 'Convertida desde cotizacion usando solo partidas autorizadas.'
@@ -628,8 +726,19 @@ def convert_quotation_invoice(user_data, id_invoice):
         # su descuento tampoco debe seguir contando en la factura resultante.
         'descuento': str(totals['discount']),
         'note': note,
+        # La fecha de emision debe ser la del timbrado real, no la del dia en
+        # que se capturo la cotizacion -- pueden pasar semanas entre cotizar
+        # y que el cliente apruebe. Bug real medido: convertir dejaba
+        # date_emision congelada en la fecha vieja, lo que arriesga rechazo
+        # del SAT (la Fecha del CFDI debe ser cercana al momento real del
+        # timbrado). date_expiration no se toca aqui a proposito: paso a
+        # significar otra cosa (vigencia de la cotizacion, no vencimiento de
+        # la factura) y cambiar su semantica es una decision de negocio
+        # aparte, no un bug de fecha congelada.
+        'date_emision': datetime.utcnow().isoformat(),
     }
 
+    payload.update(_datos_fiscales_del_cliente(invoice))
     updated = InvoiceService.update(id_invoice, payload, user_id=user_data.get('id_user'))
 
     return jsonify({
@@ -727,22 +836,6 @@ def _resolve_cfdi_parties(cfdi_data, principal, direction, user_id=None):
 
 
 
-# issue_12_phase7_save_original_cfdi_xml
-def _cfdi_xml_storage_path(invoice_id):
-    upload_root = _current_app.config.get('UPLOAD_ROOT') or _os.path.abspath(_os.path.join(_os.path.dirname(__file__), '..', '..', '..', 'uploads'))
-    folder = _os.path.join(upload_root, 'cfdi_xml')
-    _os.makedirs(folder, exist_ok=True)
-    return _os.path.join(folder, 'invoice_' + str(invoice_id) + '.xml')
-
-
-def _save_original_cfdi_xml(invoice_id, xml_bytes):
-    if not invoice_id or not xml_bytes:
-        return None
-    path = _cfdi_xml_storage_path(invoice_id)
-    with open(path, 'wb') as handle:
-        handle.write(xml_bytes)
-    return path
-
 @bp_invoice.route('/upload-xml', methods=['POST'])
 @token_required
 @require_entity_permission('invoice', 'create')
@@ -805,7 +898,6 @@ def upload_xml_invoice(user_data):
             payload['no_certificado'] = cfdi_data.get('no_certificado')
             payload['condiciones_pago'] = cfdi_data.get('condiciones_pago')
             payload['date_emision'] = cfdi_data.get('fecha')
-            payload['date_expiration'] = cfdi_data.get('fecha')
             payload['apply_tax'] = True
             payload['tax_rate'] = request.form.get('tax_rate') or 16
             payload['no_certificado_sat'] = cfdi_data.get('no_certificado_sat')
@@ -824,8 +916,9 @@ def upload_xml_invoice(user_data):
             invoice = InvoiceService.create(payload, user_id=user_id)
             invoice_id = invoice.get('id_invoice')
             lines = persist_xml_lines(invoice, cfdi_data.get('conceptos', []), user_id=user_id)
-            xml_path = _save_original_cfdi_xml(invoice_id, xml_bytes)
-            results.append({'file': filename, 'status': 'created', 'id_invoice': invoice_id, 'invoice_direction': direction, 'items_count': len(lines), 'xml_saved': bool(xml_path), 'data': invoice})
+            with _transaction_context() as db:
+                save_cfdi_xml(db, invoice_id, xml_bytes, _current_app.config.get('UPLOAD_ROOT'))
+            results.append({'file': filename, 'status': 'created', 'id_invoice': invoice_id, 'invoice_direction': direction, 'items_count': len(lines), 'xml_saved': True, 'data': invoice})
         except ValueError as exc:
             results.append({'file': filename, 'status': 'error', 'message': str(exc)})
         except AppError as exc:
@@ -838,3 +931,41 @@ def upload_xml_invoice(user_data):
     if errors:
         response['message'] = '; '.join([f"{r.get('file')}: {r.get('message')} {r.get('meta', '')}" for r in errors])
     return jsonify(response), (201 if created else 422)
+
+
+@bp_invoice.route('/<id_invoice>/xml', methods=['POST'])
+@token_required
+@require_entity_permission('invoice', 'update')
+def attach_invoice_xml(user_data, id_invoice):
+    """Adjunta el XML original a una factura ya importada que se quedo sin archivo.
+
+    Subir el XML otra vez por /upload-xml no sirve para esto: el UUID ya existe
+    y se rechaza como duplicado. Aqui el UUID del XML tiene que coincidir con el
+    de la factura, para que nadie cuelgue el XML de otro comprobante.
+    """
+    from app.services.storage_service import exigir_espacio
+
+    InvoiceService.require_scope(id_invoice, user_data)
+    uploaded = request.files.get('file')
+    if not uploaded:
+        raise AppError('errors.no_files_provided', 400)
+    exigir_espacio(request.content_length or 0)
+
+    xml_bytes = uploaded.read()
+    try:
+        cfdi_data = parse_cfdi(xml_bytes)
+    except Exception as exc:
+        raise AppError('invoice.xml_invalid', 422, {'reason': str(exc)}) from exc
+
+    with _transaction_context() as db:
+        invoice = db.get(Invoice, _safe_int_value(id_invoice))
+        if not invoice or invoice.deletion_date is not None:
+            raise AppError('errors.resource_not_found', 404)
+        invoice_uuid = str(invoice.folio_fiscal or '').strip().upper()
+    xml_uuid = str(cfdi_data.get('uuid') or '').strip().upper()
+    if not invoice_uuid or xml_uuid != invoice_uuid:
+        raise AppError('invoice.xml_uuid_mismatch', 422, {'expected': invoice_uuid, 'received': xml_uuid})
+
+    with _transaction_context() as db:
+        save_cfdi_xml(db, id_invoice, xml_bytes, _current_app.config.get('UPLOAD_ROOT'))
+    return jsonify({'id_invoice': int(id_invoice), 'xml_saved': True, 'uuid': xml_uuid}), 200

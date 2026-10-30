@@ -42,7 +42,7 @@ class TestQuantityValidation(unittest.TestCase):
         self.assertEqual(_integer_quantity("3"), 3)
 
     def test_rejects_zero_negative_boolean_and_fractional_quantity(self):
-        for value in (0, -1, True, "1.5", None):
+        for value in (0, -1, True, "1.5", 1.5, None):
             with self.subTest(value=value), self.assertRaises(AppError):
                 _integer_quantity(value)
 
@@ -97,6 +97,10 @@ class InventoryTestCase(BackendTestCase):
         )
 
     def _move(self, **payload):
+        # Una entrada por la puerta publica exige motivo; las pruebas que no son
+        # sobre eso lo dan por omision.
+        if payload.get("movement_type") in ("receive", "return"):
+            payload.setdefault("reason", "Compra")
         return apply_inventory_movement(60, payload, ACTOR)
 
     def _balance(self):
@@ -134,6 +138,7 @@ class TestInventoryMovements(InventoryTestCase):
         with self.assertRaises(AppError) as raised:
             apply_inventory_movement(61, {
                 "movement_type": "receive", "quantity": 1, "idempotency_key": "shared",
+                "reason": "Compra",
             }, ACTOR)
         self.assertEqual(raised.exception.status_code, 409)
 
@@ -198,6 +203,7 @@ class TestInventoryMovements(InventoryTestCase):
         with self.assertRaises(AppError) as raised:
             apply_inventory_movement(60, {
                 "movement_type": "receive", "quantity": 1, "idempotency_key": "foreign",
+                "reason": "Compra",
             }, OUTSIDER)
         self.assertEqual(raised.exception.status_code, 403)
         self.assertEqual(self._balance(), 10)

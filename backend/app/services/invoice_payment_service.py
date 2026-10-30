@@ -19,7 +19,7 @@ quedo acreditado con la factura misma.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from sqlalchemy import func, select
@@ -29,6 +29,7 @@ from app.models.invoice import Invoice
 from app.models.invoice_payment import InvoicePayment
 from app.models.session import transaction_context
 from app.services.invoice_catalogs import FORMA_PAGO
+from app.services.invoice_credit_note_service import credited_amount
 from app.utils.errors import AppError
 
 
@@ -48,6 +49,10 @@ CANCELLED = "cancelado"
 
 # El SAT no admite "por definir" en un pago: si ya se cobro, se sabe como.
 UNDEFINED_PAYMENT_FORM = "99"
+
+# Un dia de holgura por el huso horario: el servidor cuenta en UTC y quien captura
+# esta seis horas atras, asi que "hoy" para el puede ser "manana" para la base.
+PAYMENT_DATE_TOLERANCE = timedelta(days=1)
 
 
 def _money(value) -> Decimal:
@@ -100,9 +105,22 @@ def _parse_amount(value, field) -> Decimal:
         amount = Decimal(str(value))
     except (InvalidOperation, TypeError, ValueError) as exc:
         raise AppError("errors.invalid_field", 400, {"field": field}) from exc
-    if amount <= 0:
+    if not amount.is_finite():
+        raise AppError("errors.invalid_field", 400, {"field": field})
+    # Se mide ya redondeado: 0.001 es positivo pero se guardaria como 0.00.
+    if _money(amount) <= 0:
         raise AppError("errors.payment_amount_must_be_positive", 400, {"field": field})
     return _money(amount)
+
+
+def _parse_exchange_rate(value) -> Decimal:
+    try:
+        rate = Decimal(str(value or 1))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise AppError("errors.invalid_field", 400, {"field": "exchange_rate"}) from exc
+    if not rate.is_finite() or rate <= 0:
+        raise AppError("errors.invalid_field", 400, {"field": "exchange_rate"})
+    return rate
 
 
 def _parse_date(value, field):
@@ -115,6 +133,10 @@ def _parse_date(value, field):
 
 
 def _require_deferred_invoice(invoice):
+    # Los abonos son de un ingreso PPD, no de una nota de credito ni de un REP.
+    if str(invoice.tipo_de_comprobante or "").strip().upper() in {"E", "P", "T"}:
+        raise AppError("errors.payment_invoice_status_not_allowed", 409,
+                       {"tipo_de_comprobante": invoice.tipo_de_comprobante})
     metodo = str(invoice.metodo_pago or "").strip().upper()
     if metodo != DEFERRED_METHOD:
         raise AppError(
@@ -122,6 +144,13 @@ def _require_deferred_invoice(invoice):
             409,
             {"metodo_pago": metodo or None, "expected": DEFERRED_METHOD},
         )
+    # No se cobra un CFDI que todavia no existe. Antes el abono se aceptaba sobre una
+    # factura `pendiente` y la dejaba `pagada` sin folio fiscal: `stamp_invoice` no timbra
+    # una pagada, asi que el cobro quedaba registrado contra una factura que ya no podia
+    # emitirse, y sin ella no hay complemento de pago.
+    if not str(invoice.folio_fiscal or "").strip():
+        raise AppError("errors.payment_requires_stamped_invoice", 409,
+                       {"invoice_status": invoice.invoice_status})
     if str(invoice.invoice_status or "").strip().lower() not in PAYABLE_STATUSES:
         raise AppError(
             "errors.payment_invoice_status_not_allowed",
@@ -155,6 +184,9 @@ def invoice_statement(invoice_id, user_data) -> dict:
         abonos = _payments(db, invoice.id_invoice)
         total = _money(invoice.total)
         pagado = _paid_so_far(db, invoice.id_invoice)
+        # Lo acreditado por notas de credito ya no se cobra: el saldo es neto de ello.
+        acreditado = credited_amount(db, invoice)
+        neto = total - acreditado
         metodo = str(invoice.metodo_pago or "").strip().upper()
         return {
             "id_invoice": invoice.id_invoice,
@@ -162,9 +194,12 @@ def invoice_statement(invoice_id, user_data) -> dict:
             "metodo_pago": metodo or None,
             "requires_payment_complement": metodo == DEFERRED_METHOD,
             "total": format(total, "f"),
+            "credited": format(acreditado, "f"),
             "paid": format(pagado, "f"),
-            "outstanding": format(total - pagado, "f"),
-            "is_settled": pagado >= total > 0,
+            "outstanding": format(max(neto - pagado, Decimal("0")), "f"),
+            # Lo pagado de mas por una nota emitida despues: es saldo a favor del cliente.
+            "credit_balance": format(max(pagado - neto, Decimal("0")), "f"),
+            "is_settled": total > 0 and pagado >= neto,
             "next_instalment": len(abonos) + 1,
             "payments": [abono.serialize() for abono in abonos],
         }
@@ -185,6 +220,9 @@ def register_payment(invoice_id, payload, user_data) -> dict:
     amount = _parse_amount(payload.get("amount"), "amount")
     payment_form = _validate_payment_form(payload.get("payment_form"))
     paid_at = _parse_date(payload.get("paid_at"), "paid_at")
+    # La fecha del pago va al complemento: un pago fechado en el futuro no ha ocurrido.
+    if paid_at > _now() + PAYMENT_DATE_TOLERANCE:
+        raise AppError("errors.invalid_field", 400, {"field": "paid_at"})
     # La moneda se normaliza aqui porque el guardia de idempotencia la compara,
     # y sin normalizar "mxn" y "MXN" pareceria dos peticiones distintas. Queda
     # en None cuando la peticion no la trae: entonces el abono hereda la de la
@@ -197,6 +235,7 @@ def register_payment(invoice_id, payload, user_data) -> dict:
             select(InvoicePayment).where(InvoicePayment.idempotency_key == key)
         ).first()
         if previo:
+            _load_invoice(db, invoice_id, user_data)  # el reintento tambien se autoriza
             # Una llave de idempotencia promete que repetir la MISMA peticion no
             # cobra dos veces. No promete nada sobre repetir la llave con otros
             # datos, y el guardia anterior solo comparaba la factura: abonar 100
@@ -244,15 +283,27 @@ def register_payment(invoice_id, payload, user_data) -> dict:
             raise AppError("errors.payment_invoice_without_total", 409, {"total": format(total, "f")})
 
         pagado = _paid_so_far(db, invoice.id_invoice)
+        # El saldo del CFDI -total menos lo pagado- es el que encadena los abonos y valida el
+        # SAT en el complemento. Lo que se puede COBRAR es menos: lo acreditado por notas de
+        # credito vigentes ya no se debe.
         saldo_anterior = total - pagado
-        if saldo_anterior <= 0:
+        por_cobrar = saldo_anterior - credited_amount(db, invoice)
+        if por_cobrar <= 0:
             raise AppError("errors.payment_invoice_already_settled", 409, {"total": format(total, "f")})
-        if amount > saldo_anterior:
+        if amount > por_cobrar:
             raise AppError(
                 "errors.payment_exceeds_outstanding",
                 409,
-                {"amount": format(amount, "f"), "outstanding": format(saldo_anterior, "f")},
+                {"amount": format(amount, "f"), "outstanding": format(por_cobrar, "f")},
             )
+
+        # Un abono en otra moneda restaba su importe tal cual del saldo (50 MXN
+        # contra una factura de 116 USD bajaba el saldo en 50). Sin una regla de
+        # conversion definida, se exige la moneda de la factura.
+        moneda_factura = str(invoice.currency or "MXN")[:3].upper()
+        if moneda is not None and moneda != moneda_factura:
+            raise AppError("errors.payment_currency_mismatch", 409,
+                           {"payment_currency": moneda, "invoice_currency": moneda_factura})
 
         parcialidad = len(_payments(db, invoice.id_invoice)) + 1
         abono = InvoicePayment(
@@ -261,7 +312,7 @@ def register_payment(invoice_id, payload, user_data) -> dict:
             paid_at=paid_at,
             payment_form=payment_form,
             currency=moneda or str(invoice.currency or "MXN")[:3].upper(),
-            exchange_rate=Decimal(str(payload.get("exchange_rate") or 1)),
+            exchange_rate=_parse_exchange_rate(payload.get("exchange_rate")),
             instalment=parcialidad,
             previous_balance=saldo_anterior,
             amount=amount,
@@ -276,7 +327,7 @@ def register_payment(invoice_id, payload, user_data) -> dict:
         db.flush()
 
         # La factura refleja si ya quedo saldada o va en parcialidades.
-        invoice.invoice_status = "pagada" if abono.outstanding_balance == 0 else "parcial"
+        invoice.invoice_status = "pagada" if por_cobrar - amount == 0 else "parcial"
         db.flush()
         return {"payment": abono.serialize(), "created": True}
 

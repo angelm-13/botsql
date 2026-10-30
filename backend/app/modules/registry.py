@@ -130,13 +130,33 @@ MODULOS = (
         ),
         almacen=("location", "inventory_stock", "inventory_ledger"),
     ),
+    # La orden de compra y la evidencia de que se compro. Es modulo aparte de
+    # `inventario` porque los bits de un modulo son parejos para todas sus
+    # entidades: Compras necesita CAPTURAR ordenes y solo CONSULTAR el almacen, y
+    # con las dos cosas en un mismo modulo no hay forma de decirlo.
+    #
+    # Se ve en el mismo apartado del menu que "Por comprar" (el de Inventario):
+    # es un solo flujo -de lo que falta a la compra hecha- y partirlo en dos
+    # apartados obligaba a ir y venir.
+    #
+    # Sin las tablas de renglones, comprobantes ni bitacora: no son pantallas ni
+    # se conceden por separado, se editan desde la orden, igual que
+    # `nm_incident_product` desde el vale.
+    Modulo(
+        "compras", "Compras", "purchasing", 250,
+        ("purchase_order", "purchase_policy"),
+        grupo_de_menu="Inventario", icono_de_menu="inventory",
+    ),
     Modulo(
         "operaciones", "Operaciones", "operations", 300,
         (
             "proyect", "task", "task_note", "task_type", "incident",
             "incident_detail", "incident_type", "nm_incident_product",
             "template", "nm_template_task",
-            "notification", "supervisor_activity_log", "supervisor_daily_attachment",
+            # Lo que un proyecto necesita de material. La captura el supervisor
+            # desde su proyecto, asi que va en este modulo: Supervisor ya tiene
+            # CAPTURA aqui y no hace falta concederle nada aparte.
+            "proyect_material_need",
         ),
     ),
     Modulo(
@@ -200,7 +220,19 @@ MODULOS = (
     ),
     Modulo(
         "rh", "Recursos humanos", "hr", 700,
-        ("payroll_concept", "payroll_detail", "payroll_movement", "payroll_period"),
+        # attendance_record (las checadas guardadas) y attendance_employee_link
+        # (que empleado es cada numero del checador) no tienen entrada en MENU:
+        # se ven dentro de Asistencias (/kronos), asi que quedan "hidden".
+        # payroll_isr_bracket y payroll_parameter: tarifas del ISR y cifras
+        # oficiales (UMA, salario minimo, IMSS) que usa el calculo de nomina.
+        ("payroll_concept", "payroll_detail", "payroll_movement", "payroll_period",
+         "attendance_record", "attendance_employee_link",
+         "payroll_isr_bracket", "payroll_parameter",
+         # Horarios, su asignacion a empleados y dias festivos: retardos, faltas
+         # y dias pagados (pantalla propia /work_schedules).
+         "work_schedule", "work_schedule_day", "employee_schedule", "payroll_holiday",
+         # Vacaciones, permisos e incapacidades (pantalla propia /employee_leaves).
+         "employee_leave"),
     ),
     # Sus pantallas no tienen apartado propio en el menu lateral: viven dentro
     # del Home/Dashboard actual (ruta "/"), que ya es de acceso libre para
@@ -271,6 +303,21 @@ class Capacidad:
 CAPACIDADES = (
     Capacidad("project_authorization", "Autorizar proyectos", "operaciones", menu="hidden"),
     Capacidad("project_execution", "Ejecutar proyectos en taller", "operaciones", menu="hidden"),
+    # Ver TODOS los proyectos -con prioridad, costo y estado de cobro- sin poder
+    # autorizarlos ni escribirlos: el Gerente Comercial. Es el "ver" de
+    # `project_authorization` dicho aparte, para conceder uno sin el otro; quien
+    # autoriza ya ve todo y no necesita esta.
+    Capacidad("project_oversight", "Ver todos los proyectos", "operaciones", menu="hidden"),
+    # Confirmar que el material de un proyecto autorizado esta por llegar o ya
+    # llego: los dos pasos `authorized -> waiting_material` y
+    # `waiting_material -> in_progress`. Quien COMPRA sabe cuando llega lo que
+    # pidio, no el taller; `project_authorization` (Gerente) conserva esos pasos
+    # como respaldo sin necesitar esta (ver `transition_project`). No se concede
+    # por omision a ningun rol: el Gestor de roles y permisos decide a quien
+    # (hoy, Compras en adser). Da los dos pasos y nada mas -no edita el
+    # proyecto ni lo autoriza-; ver cuales proyectos se ven lo decide la celda
+    # `proyect.scope_read` del mismo rol.
+    Capacidad("project_supply", "Confirmar material de proyectos", "operaciones", menu="hidden"),
     Capacidad("incident_supervision", "Supervisar incidencias ajenas", "operaciones"),
     # El ajuste es el unico movimiento sin documento detras y sin tope: crea o
     # destruye existencia por cualquier cantidad. Es la operacion con la que se
@@ -298,6 +345,24 @@ CAPACIDADES = (
               "inventario"),
     Capacidad("warehouse_voucher", "Vales de almacen", "inventario",
               bits=CAPTURA, menu="sidebar"),
+    # Quien puede ser el RESPONSABLE de un vale o prevale de material: el que firma
+    # lo que se lleva y responde por devolverlo. Es una designacion, no una pantalla:
+    # el desplegable "Responsable" del vale ofrece solo a quien la tiene, y se
+    # concede o se quita en el Gestor de roles y permisos. Por omision la llevan los
+    # roles que piden herramienta -Supervisor, Gerente, Jefe de taller y Compras-,
+    # pero un vale puede levantarse a nombre de cualquiera de ellos, no solo del
+    # supervisor del proyecto.
+    Capacidad("warehouse_voucher_holder", "Puede ser responsable de vales de material",
+              "inventario"),
+    # Levantar el reporte de un SUCESO -danado, extraviado, destruccion o reparacion-:
+    # no se presta nada, se deja constancia de lo que paso con una pieza. Capacidad
+    # aparte de `warehouse_voucher` a proposito: ese es el permiso de OPERAR el almacen
+    # (surtir, devolver, cancelar) y concederlo para esto dejaria a Gerencia operando
+    # el almacen. Quien solo tiene esta levanta el reporte como borrador (prevale) y
+    # el almacen lo autoriza. Se concede o se quita en el Gestor de roles y permisos;
+    # por omision la llevan Almacenista y Gerente Comercial.
+    Capacidad("warehouse_incident_report", "Levantar reportes de suceso de material",
+              "inventario"),
     # Convertir un borrador en un vale, que es el acto que saca el material.
     #
     # Aparte de `warehouse_voucher` por el mismo motivo que el prevale esta
@@ -311,6 +376,42 @@ CAPACIDADES = (
     # capacidad por omision el jefe de almacen recibiria un 403 en la puerta.
     Capacidad("warehouse_voucher_authorize", "Autorizar vales de material",
               "inventario", bits=CAPTURA, menu="hidden"),
+    # Ver lo que hace falta comprar: lo que los proyectos necesitan contra lo que
+    # hay en el almacen, junto, de todos los proyectos. Es de LECTURA y REVISION -quien
+    # compra no escribe en los proyectos de otros, pero si decide si un renglon de
+    # texto libre ya existe en el almacen o hay que comprarlo- y va como capacidad
+    # porque su pantalla no es el CRUD de una tabla: cruza necesidades con
+    # existencias. En `inventario` y no en `operaciones` porque Almacenista, que
+    # tambien la necesita, tiene aquel modulo y no este.
+    Capacidad("purchase_planning", "Por comprar", "inventario",
+              bits=EDITAR, menu="sidebar"),
+    # Autorizar una compra antes de hacerla. Aparte de poder CAPTURAR la orden
+    # porque son dos personas: quien pide el dinero no se lo autoriza. Va como
+    # capacidad y no como bit de `purchase_order` por lo mismo que
+    # `warehouse_voucher_authorize` no es un bit de `warehouse_voucher`: con una
+    # sola clave, quien escribe la orden y quien la autoriza tendrian el mismo
+    # permiso. Tambien es quien puede COMPRAR una orden que la politica reserva a
+    # la gerencia (ver `purchase_policy`).
+    Capacidad("purchase_authorize", "Autorizar compras", "compras",
+              bits=EDITAR, menu="hidden"),
+    # Confirmar que lo comprado LLEGO. Capacidad aparte de `purchase_order` porque
+    # recibir es cosa del almacen y el almacen solo CONSULTA las ordenes: darle el bit
+    # de actualizar le habria dado tambien editar, enviar y cancelar. Quien compra no
+    # recibe (lo hace cumplir el servicio), asi que Compras no la lleva.
+    Capacidad("purchase_receive", "Recibir compras", "compras",
+              bits=EDITAR, menu="hidden"),
+    # La bitacora diaria del taller. Solo Jefe de taller la sube -- pidio
+    # negocio explicito (2026-09-28): el supervisor levanta el proyecto y pide
+    # material, pero quien reporta el avance del dia en el piso es Jefe de
+    # taller, que es tambien quien tiene a su cargo la plantilla de obreros
+    # (via `team`/`nm_team_user`, sin inventar un rol nuevo para el obrero).
+    #
+    # Va como capacidad y no como bit de la entidad `proyect`/`task` porque no
+    # es un CRUD de una tabla generico. `menu="sidebar"` (2026-09-30): la
+    # pantalla propia (`ActivityLogPage.jsx`) ya existe, antes se quedaba sin
+    # entrada de menu y Jefe de taller no tenia como llegar a ella.
+    Capacidad("daily_activity_log", "Bitacora diaria de taller", "operaciones",
+              bits=CAPTURA, menu="sidebar"),
     # Va en el engrane del encabezado, no en el menu vertical.
     #
     # Se habia movido a `sidebar` al retirar el engrane, razonando que habia
@@ -368,8 +469,9 @@ class Rol:
 ROLES = (
     # `documentos` y `laboratorio` solo los recibe Administrator por ahora: los
     # modulos se integraron desde la rama tny_docs, que los concedia a los 12
-    # perfiles por igual -incluidos Mesero y Cocina-, y que perfiles los operan
-    # de verdad es una decision de negocio que todavia no se tomo. Ampliarlo es
+    # perfiles por igual -incluidos los del restaurante, que ya no existen-, y
+    # que perfiles los operan de verdad es una decision de negocio que todavia
+    # no se tomo. Ampliarlo es
     # agregar la clave a los roles que correspondan; dejarlo abierto era lo que
     # hacia que un mesero pudiera leer expedientes de empleados.
     # `kpis`, igual que `documentos`/`laboratorio` arriba: solo Administrator
@@ -391,6 +493,7 @@ ROLES = (
         "facturacion": TOTAL, "inventario": TOTAL, "operaciones": TOTAL,
         "logistica": TOTAL, "restaurante": TOTAL, "pos": TOTAL, "crm": TOTAL, "rh": TOTAL,
         "documentos": TOTAL, "laboratorio": TOTAL, "kpis": TOTAL,
+        "compras": TOTAL,
         "configuracion": TOTAL, "seguridad": TOTAL,
     # Todas las capacidades MENOS las dos que sacan material del almacen.
     #
@@ -402,9 +505,13 @@ ROLES = (
     # comprobaciones de capacidad por completo (`_sin_restriccion`). Esto
     # gobierna a cualquier OTRO usuario que lleve el rol Administrator.
     }, [c.clave for c in CAPACIDADES
-        if c.clave not in ("warehouse_voucher", "warehouse_voucher_authorize")]),
+        if c.clave not in ("warehouse_voucher", "warehouse_voucher_authorize",
+                           # Quien administra el sistema no responde por material:
+                           # se designa a gerentes, supervisores, jefes de taller o
+                           # Compras, y el Gestor puede concederlo a quien haga falta.
+                           "warehouse_voucher_holder")]),
 
-    # Los cinco roles del negocio, en los identificadores que tiene la BASE.
+    # Los cuatro roles del negocio, en los identificadores que tiene la BASE.
     #
     # Estaban declarados en los ids 14..18 mientras la base los tiene en 2..6, y
     # en los ids 2 y 3 este registro declaraba dos roles que la base no tiene
@@ -436,7 +543,7 @@ ROLES = (
     # por instalacion, una vez.
     Rol(2, "Supervisor", {
         "operaciones": CAPTURA, "inventario": CONSULTA, "configuracion": CONSULTA,
-    }, ["incident_supervision", "warehouse_prevoucher"],
+    }, ["incident_supervision", "warehouse_prevoucher", "warehouse_voucher_holder"],
         excepciones={"task": CONSULTA, "incident": CONSULTA}),
 
     # Ve y busca el almacen sin modificarlo -`inventario` en CONSULTA- y
@@ -448,16 +555,43 @@ ROLES = (
     # asi que agregarla a esta lista le daria a Gerente de mas. Se siembra
     # aparte, solo con `scope_read`, en
     # 20260921120000_fusionar_jefe_de_almacen_en_almacenista.sql.
-    Rol(3, "Gerente", {
-        "operaciones": EDITAR, "facturacion": CAPTURA, "crm": CAPTURA,
+    #
+    # Autoriza las compras y, por la politica de montos, puede ser quien las haga:
+    # captura en `compras` para poder fijar esos montos y comprar lo que Compras no
+    # puede. La separacion con quien pide la orden la hace el servicio -autorizar la
+    # propia no se puede-, no el permiso.
+    #
+    # Gerencia son DOS roles (2026-10-21). El general es de REVISION: ve el estado
+    # de los proyectos, los vales, el almacen y lo comercial, todo en consulta, y
+    # solo aprueba las compras (por eso `compras` en CAPTURA: autorizar una orden
+    # la escribe). No autoriza proyectos, no surte ni pide material. Los vales los
+    # lee con una fila de solo lectura (ver 20261021110000): `Capacidad.bits` es
+    # uno solo para todo el que la tenga y daria de mas.
+    #
+    # Las filas de quien ya era "Gerente" no se tocan -el Gestor manda-: esa
+    # cuenta pasa a ser el tecnico (ver 20261021090000) y el general se siembra
+    # nuevo.
+    Rol(9, "Gerente Comercial", {
+        "operaciones": CONSULTA, "facturacion": CONSULTA, "crm": CONSULTA,
         "inventario": CONSULTA, "rh": CONSULTA, "logistica": CONSULTA,
+        "compras": CAPTURA, "configuracion": CONSULTA,
+    }, ["project_oversight", "incident_supervision", "purchase_authorize",
+        "warehouse_voucher_holder", "warehouse_incident_report"]),
+
+    # El tecnico es de CAMPO: autoriza, deniega y bloquea proyectos y los edita, y
+    # pide material con prevales (`warehouse_prevoucher`). De compras y almacen solo
+    # consulta; sin facturacion, CRM, RH ni logistica.
+    Rol(3, "Gerente Tecnico", {
+        "operaciones": EDITAR, "inventario": CONSULTA, "compras": CONSULTA,
         "configuracion": CONSULTA,
-    }, ["project_authorization", "incident_supervision", "pos_admin", "pos_terminal"]),
+    }, ["project_authorization", "incident_supervision", "warehouse_prevoucher",
+        "warehouse_voucher_holder"]),
 
     # Ve los proyectos autorizados y mueve su estatus en el taller.
     Rol(4, "Jefe de taller", {
         "operaciones": CAPTURA, "inventario": CONSULTA, "configuracion": CONSULTA,
-    }, ["project_execution", "incident_supervision"]),
+    }, ["project_execution", "incident_supervision", "daily_activity_log",
+        "warehouse_voucher_holder"]),
 
     # Opera el almacen entero: da de alta productos, levanta vales, los
     # asigna, autoriza/entrega, confirma devoluciones y ajusta inventario.
@@ -465,18 +599,51 @@ ROLES = (
     # deberes); se fusiono aqui por decision de negocio -- un solo rol de
     # almacen, sin ese segundo nivel. Ver
     # 20260921120000_fusionar_jefe_de_almacen_en_almacenista.sql.
+    #
+    # Ve las ordenes de compra para saber que va a llegar; no las escribe.
     Rol(5, "Almacenista", {
-        "inventario": TOTAL, "logistica": CAPTURA, "configuracion": CONSULTA,
+        "inventario": TOTAL, "logistica": CAPTURA, "compras": CONSULTA,
+        "configuracion": CONSULTA,
     }, ["inventory_adjustment", "warehouse_voucher",
-        "warehouse_voucher_authorize", "warehouse_voucher_confirm"]),
+        "warehouse_voucher_authorize", "warehouse_voucher_confirm",
+        "warehouse_incident_report",
+        "purchase_planning", "purchase_receive"]),
 
-    Rol(10, "Mesero", {"configuracion": CONSULTA}, ["restaurant_waiter"]),
-    Rol(11, "Cocina", {"configuracion": CONSULTA}, ["restaurant_kitchen"]),
-    Rol(12, "Caja Restaurante", {"configuracion": CONSULTA}, ["restaurant_cashier"]),
-    Rol(13, "Admin Restaurante", {"configuracion": CONSULTA}, [
-        "restaurant_admin", "restaurant_cashier", "restaurant_kitchen", "restaurant_waiter",
-    ]),
+    # Quien compra. Ve los proyectos y el almacen para saber que hay que comprar,
+    # y no escribe en ninguno de los dos: todo en CONSULTA. Lo que hace es
+    # convertir las necesidades en ordenes de compra y, ya autorizadas, comprarlas
+    # y subir el comprobante.
+    #
+    # NO fija los montos de la politica de autorizacion (`purchase_policy` en
+    # CONSULTA): quien compra no decide desde que monto necesita permiso. Y no
+    # autoriza (no tiene `purchase_authorize`).
+    #
+    # Adser ya tenia un perfil "Compras" vacio (0 permisos, 0 usuarios), traido
+    # del sistema anterior. El sembrado resuelve por NOMBRE, asi que esto se lo
+    # llena en lugar de crear uno aparte; en una instalacion que no lo tiene, lo
+    # crea vacio de usuarios.
+    Rol(8, "Compras", {
+        "operaciones": CONSULTA, "inventario": CONSULTA, "compras": CAPTURA,
+        "configuracion": CONSULTA,
+    }, ["purchase_planning", "warehouse_voucher_holder"],
+        excepciones={"purchase_policy": CONSULTA}),
 
+    # Cuatro roles retirados, y por que
+    # --------------------------------
+    # `Mesero` (10), `Cocina` (11), `Caja Restaurante` (12) y
+    # `Admin Restaurante` (13) llegaron con el restaurante desde `seed.sql`,
+    # que los escribia a mano junto con sus filas de `entity_permission`. Cada
+    # uno existia para cargar UNA capacidad -`restaurant_waiter`,
+    # `restaurant_kitchen`, `restaurant_cashier`- que este registro ya declara
+    # y que el gestor de roles ya ofrece por separado. Eran el mismo derecho
+    # dicho dos veces, y dicho distinto: la base los tenia en 15 (administrar)
+    # donde aqui dicen 7 y 6, porque el `seed.sql` los sembraba con sus propios
+    # numeros.
+    #
+    # Retirar el rol NO retira la funcion: las cuatro capacidades del
+    # restaurante siguen declaradas abajo en CAPACIDADES y se conceden a
+    # cualquier rol -uno nuevo, o uno existente- desde el gestor. Lo que
+    # desaparece es el rol vacio que no concedia nada mas.
 )
 
 
@@ -529,6 +696,10 @@ MENU = {
     "movement": ("Movimientos", 50),
     "material_component": ("Componentes", 60),
     "inventory_status": ("Estado de inventario", 70),
+    # Junto a "Por comprar" (capacidad del mismo grupo): de lo que falta a la
+    # compra hecha. `purchase_policy` no tiene entrada: son tres numeros que se
+    # editan dentro de la propia pantalla de ordenes, no una pantalla aparte.
+    "purchase_order": ("Ordenes de compra", 280),
     # Operaciones. El orden es el del flujo, no el alfabetico: primero el
     # proyecto, luego las tareas en que se parte, y aparte las incidencias con
     # su catalogo de tipos. El menu se leia "Detalle de incidencias,
@@ -557,10 +728,44 @@ MENU = {
     # queda en el menu -el permiso existe y la pantalla captura- pero al final
     # del grupo, para que no se lea como un paso del flujo.
     "task_type": ("Tipos de tarea", 42),
-    # `supervisor_daily_attachment` no tiene entrada: los adjuntos se suben y se
-    # leen dentro de la bitacora del dia, como `task_note` dentro de la tarea.
-    "supervisor_activity_log": ("Bitacora de actividades", 44),
-    "notification": ("Notificaciones", 46),
+    # Logistica. Las 21 pantallas EXISTEN y la base las tenia en la barra con su
+    # etiqueta -se la puso la migracion de tny_logistics a mano-, pero aqui no
+    # habia ni una entrada. Consecuencia medida: `filas_de_permisos()` las
+    # sembraba en `hidden`, asi que una instalacion NUEVA se quedaba con el
+    # modulo entero sin menu -las rutas responden, pero solo se llega
+    # escribiendo la direccion-, y la etiqueta escrita a mano se perdia en la
+    # primera resiembra. Es el mismo descuido que ya habia pasado con la
+    # conexion al dispositivo Kronos.
+    #
+    # El orden es el del trabajo, no el alfabetico, igual que en inventario y
+    # operaciones: primero con quien se trabaja, luego donde se guarda, luego
+    # lo que se mueve, luego con que se mueve, y al final la cobranza.
+    "logistics_branch": ("Sucursales", 10),
+    "logistics_address": ("Direcciones", 12),
+    "logistics_contact": ("Contactos", 14),
+    "logistics_contract": ("Contratos", 16),
+    "logistics_rate": ("Tarifas", 18),
+    "logistics_quotation": ("Cotizaciones", 20),
+    "logistics_warehouse": ("Almacenes", 30),
+    "logistics_location": ("Ubicaciones", 32),
+    "logistics_rack": ("Racks", 34),
+    "logistics_inventory": ("Inventario", 36),
+    "logistics_service_request": ("Solicitudes de servicio", 40),
+    "logistics_trip": ("Viajes", 42),
+    "logistics_shipment": ("Embarques", 44),
+    "logistics_evidence": ("Evidencias", 46),
+    "logistics_incident": ("Incidencias", 48),
+    "logistics_unit": ("Unidades", 50),
+    "logistics_trailer": ("Remolques", 52),
+    "logistics_operator": ("Operadores", 54),
+    "logistics_maintenance": ("Mantenimientos", 56),
+    "logistics_receivable": ("Cuentas por cobrar", 60),
+    "logistics_file": ("Expedientes", 62),
+    # El calendario de citas. Misma historia: la pantalla existe y la base la
+    # tenia en la barra, pero bajo el grupo "Operaciones" -- y `appointment`
+    # pertenece a CRM, que es de donde sale la cita. Declararlo aqui lo pone en
+    # su propio grupo y deja de aparecer en dos sitios segun quien resiembre.
+    "appointment": ("Calendario", 30),
     "payroll_period": ("Periodos de nomina", 10),
     "payroll_concept": ("Conceptos", 20),
     "payroll_movement": ("Movimientos", 30),

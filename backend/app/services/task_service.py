@@ -210,7 +210,14 @@ class TaskService(CrudService):
     def create(cls, payload: dict, user_id: int | None = None):
         payload = dict(payload or {})
         payload.setdefault('task_status', DEFAULT_STATUS)
-        payload.setdefault('fase', DEFAULT_FASE)
+        # `setdefault` no alcanza: el formulario de alta (TaskPage.jsx) SIEMPRE
+        # manda la llave 'fase' -vacia si nadie toco el select-, asi que
+        # `setdefault` nunca se disparaba y la tarea nacia con `fase=NULL` en
+        # vez del default documentado. El tablero kanban del taller agrupa por
+        # fase, y NULL no entra en ninguna columna esperada. Hallazgo de la
+        # auditoria de seguridad del 2026-10-06.
+        if not payload.get('fase'):
+            payload['fase'] = DEFAULT_FASE
         return super().create(cls._validate(payload), user_id=user_id)
 
     @classmethod
@@ -221,6 +228,42 @@ class TaskService(CrudService):
                 raise AppError("errors.resource_not_found", 404)
             db.expunge(current)
         return super().update(item_id, cls._validate(payload, current=current), user_id=user_id)
+
+
+def with_status_reasons(items: list[dict]) -> list[dict]:
+    """Agrega `status_reason`: el motivo con que se bloqueo o cancelo la tarea.
+
+    No es columna de `task` a proposito: el motivo ya se guarda en
+    `proyect_event.reason` (ver `transition_task`), y una columna propia se
+    quedaria vieja en cuanto la tarea regresara a "en proceso". Se toma del
+    ultimo cambio de estatus de cada tarea, y solo mientras siga bloqueada o
+    cancelada.
+    """
+    from app.models.proyect_event import ProyectEvent
+
+    pending = {
+        item['id_task']: item
+        for item in items
+        if normalize_task_status(item.get('task_status')) in TASK_REASON_REQUIRED
+    }
+    for item in items:
+        item['status_reason'] = None
+    if not pending:
+        return items
+    with transaction_context() as db:
+        events = (
+            db.query(ProyectEvent.id_task, ProyectEvent.reason)
+            .filter(
+                ProyectEvent.id_task.in_(list(pending)),
+                ProyectEvent.event_type == 'task_status_changed',
+            )
+            .order_by(ProyectEvent.id_task, ProyectEvent.creation_date.asc(), ProyectEvent.id_proyect_event.asc())
+            .all()
+        )
+    # Orden ascendente: el ultimo evento de cada tarea es el que se queda.
+    for id_task, reason in events:
+        pending[id_task]['status_reason'] = reason
+    return items
 
 
 def task_is_closed(task) -> bool:
@@ -239,7 +282,7 @@ def transition_task(task_id, payload: dict, user_data: dict) -> dict:
     """
     from app.services.project_management_service import _append_event, require_task_access
 
-    require_task_access(task_id, user_data)
+    require_task_access(task_id, user_data, escribe=True)
     target = normalize_task_status((payload or {}).get("status"))
     reason = (payload or {}).get("reason")
     content = (payload or {}).get("content")
@@ -274,7 +317,8 @@ def transition_task(task_id, payload: dict, user_data: dict) -> dict:
             content=content,
         )
         db.flush()
-        return task.serialize()
+        record = task.serialize()
+    return with_status_reasons([record])[0]
 
 
 def add_task_note(task_id, payload: dict, user_data: dict) -> dict:
@@ -287,7 +331,7 @@ def add_task_note(task_id, payload: dict, user_data: dict) -> dict:
     from app.services.project_management_service import _append_event, require_task_access
     from app.services.task_note_service import TaskNoteService
 
-    require_task_access(task_id, user_data)
+    require_task_access(task_id, user_data, escribe=True)
     description = str((payload or {}).get("task_note_description") or "").strip()
     if not description:
         raise AppError("errors.required_field", 400, {"field": "task_note_description"})

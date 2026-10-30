@@ -7,19 +7,25 @@ namespace: adser-prod
 images:
   - name: DB_INIT_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-db-init
-    newTag: "916d1a7"
+    newTag: "2c8ba33"
   - name: BACKEND_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-backend
-    newTag: "916d1a7"
+    newTag: "2c8ba33"
   - name: WORKER_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-worker
-    newTag: "916d1a7"
+    newTag: "2c8ba33"
   - name: FRONTEND_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-frontend
-    newTag: 916d1a7-adser-prod
+    newTag: 2c8ba33-adser-prod
 resources:
   - ../../base
   - ingress-single-origin.yaml
+# Respaldo diario de Postgres (ensayado en tyakxa-dev, activo en torredigital-prod
+# y comala-prod). Se aplica SOLO este componente, con `kubectl apply -k <overlay>
+# -l app.kubernetes.io/component=respaldo-postgres`. Cae en master4: el componente
+# exige tier=big y nunca el nodo de postgres (que ahora es master1).
+components:
+  - ../../components/respaldo-postgres
 patches:
   - patch: |-
       apiVersion: networking.k8s.io/v1
@@ -54,6 +60,42 @@ patches:
                 hostPath:
                   path: /home/infra-k8s/imagenes/producto
                   type: Directory
+  # Memoria del backend de adser: con el limite de base (512Mi) el pod llego a
+  # 446Mi tras 4 dias en marcha (2026-10-26), solo 66Mi de margen. Si lo pasa, el
+  # kernel lo mata (OOMKilled) y, al ser Recreate, la API cae unos segundos.
+  # Se sube el limite a 768Mi y el request a 384Mi (cerca del uso real, para que
+  # el scheduler cuente lo que de verdad ocupa). Va solo aqui, no en base.
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: backend
+      spec:
+        template:
+          spec:
+            containers:
+              - name: backend
+                resources:
+                  requests:
+                    cpu: 100m
+                    memory: 384Mi
+                  limits:
+                    cpu: 500m
+                    memory: 768Mi
+  # RabbitMQ sin nodeSelector cayo en k3s-worker1 (VPS temporal que se va a retirar,
+  # 2026-10-29). No tiene volumen (ni PVC ni emptyDir): moverlo es solo reprogramar el
+  # pod. tier=big lo deja en master1/master4; no se fija un nodo para no atarlo sin
+  # necesidad.
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: rabbitmq
+      spec:
+        template:
+          spec:
+            nodeSelector:
+              tier: big
   # PriorityClass del cliente ERP #2 (ver p2-adser-prod, aplicada al clúster
   # con kubectl apply -f priority-classes.yaml).
   - target:
@@ -68,3 +110,25 @@ patches:
       - op: add
         path: /spec/template/spec/priorityClassName
         value: p2-adser-prod
+  # Los dos patches de arriba no alcanzan a un CronJob: su pod vive en
+  # jobTemplate.
+  - target:
+      kind: CronJob
+    patch: |-
+      - op: add
+        path: /spec/jobTemplate/spec/template/spec/priorityClassName
+        value: p2-adser-prod
+  # La base de adser vive en master1 junto a su backend (2026-10-28): master2 (1 vCPU,
+  # 4 GB, 76 % de disco) compartia nodo con otras bases. nodeSelector obligatorio porque
+  # el volumen local-path de este PVC nace en master1; sin esto, el siguiente
+  # `apply -k` quitaria el nodeSelector que se puso a mano y reiniciaria postgres.
+  - patch: |-
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata:
+        name: postgres
+      spec:
+        template:
+          spec:
+            nodeSelector:
+              kubernetes.io/hostname: k3s-master1

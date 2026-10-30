@@ -3,9 +3,10 @@ from flask import Blueprint, jsonify, request
 from app.services.payroll_detail_service import PayrollDetailService
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
+from app.utils.field_access import COLUMNAS_DE_AUDITORIA
 
 bp_payroll_detail = Blueprint('payroll_detail', __name__, url_prefix='/payroll_detail')
-ALLOWED_FIELDS = ['id_payroll_detail', 'id_payroll_period', 'id_user', 'gross_salary', 'total_earnings', 'total_deductions', 'net_pay', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
+ALLOWED_FIELDS = ['id_payroll_detail', 'id_payroll_period', 'id_user', 'gross_salary', 'total_earnings', 'total_deductions', 'net_pay', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'days_worked', 'absences', 'vacation_days', 'paid_leave_days', 'unpaid_leave_days', 'disability_days']
 
 TECHNICAL_RESPONSE_FIELDS = {'id_payroll_detail'}
 FIELD_READ_BIT = 2
@@ -18,7 +19,6 @@ def _actor_has_unrestricted_field_access(user_data: dict) -> bool:
     return bool(
         user_data.get('is_superuser')
         or user_data.get('is_bootstrap_admin')
-        or user_data.get('user_type') == 'admin'
     )
 
 
@@ -67,7 +67,7 @@ def _field_sets_for_actor(user_data: dict) -> tuple[set[str], set[str]]:
     # La llave primaria puede viajar en la respuesta para navegacion interna,
     # acciones de fila y rutas REST, aunque el frontend no la pinte si no fue
     # marcada como visible en el gestor.
-    return visible | set(TECHNICAL_RESPONSE_FIELDS), writable
+    return visible | set(TECHNICAL_RESPONSE_FIELDS) | COLUMNAS_DE_AUDITORIA, writable
 
 
 def _visible_response_fields_for_actor(user_data: dict) -> set[str]:

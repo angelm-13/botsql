@@ -1,14 +1,20 @@
+import { LLAVE_BORRADO_BLOQUEADO, mensajeDeBorradoBloqueado } from "../utils/registrosRelacionados.js";
 import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
-import { getAllMaterial, createMaterial, updateMaterial, deleteMaterial, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllUnit, getAllBrand, getAllProductFamily } from "../api";
+import { getAllMaterial, createMaterial, updateMaterial, deleteMaterial, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllUnit, getAllBrand, getAllProductFamily, uploadMaterialImage, urlDeArchivo } from "../api";
 import { fetchAllPages } from "../utils/fetchAllPages";
 import Pagination from "../components/Pagination.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
+import VisorDeFoto from "../components/VisorDeFoto";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
+import { CAMPOS_DE_AUDITORIA } from "../utils/camposDeAuditoria";
+import { formatearFechaHora } from "../utils/fechas";
+import { useDialogo } from "../dialogo/useDialogo.js";
+import { CLASES_DE_ARTICULO } from "../utils/clasesDeProducto";
 
-const emptyForm = { material_description: "", id_unit: "", id_brand: "", id_product_family: "" };
+const emptyForm = { material_description: "", id_unit: "", id_brand: "", id_product_family: "", item_class: "" };
 const validationRules = allValidationRules["material"] || {};
 const ENTITY_KEY = "material";
 const ACTION_CREATE = 1;
@@ -17,7 +23,7 @@ const ACTION_UPDATE = 4;
 const ACTION_DELETE = 8;
 const SCOPE_FIELD_BY_BIT = { [ACTION_CREATE]: "scope_create", [ACTION_READ]: "scope_read", [ACTION_UPDATE]: "scope_update", [ACTION_DELETE]: "scope_delete" };
 const FIELD_VISIBLE_BIT = 2;
-const ALL_FIELD_NAMES = ['id_material', 'material_description', 'id_unit', 'id_brand', 'id_product_family', 'created_by', 'creation_date', 'last_update_date', 'deletion_date'];
+const ALL_FIELD_NAMES = ['id_material', 'material_description', 'id_unit', 'id_brand', 'id_product_family', 'path_imagen', 'created_by', 'creation_date', 'last_update_date', 'deletion_date'];
 
 function hasBit(value, bit) {
   return (Number(value || 0) & bit) === bit;
@@ -33,6 +39,7 @@ function readCurrentUser() {
 
 export default function MaterialPage() {
   const { lang, t } = useI18n();
+  const dialogo = useDialogo();
   const [items, setItems] = useState([]);
   const [formData, setFormData] = useState(emptyForm);
   const [fieldErrors, setFieldErrors] = useState({});
@@ -45,6 +52,12 @@ export default function MaterialPage() {
   const [loading, setLoading] = useState(false);
   const [errorKey, setErrorKey] = useState("");
   const [errorMeta, setErrorMeta] = useState(null);
+  const [selectedImageFile, setSelectedImageFile] = useState(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState("");
+  // La foto que se esta mirando en grande, o null.
+  const [fotoAmpliada, setFotoAmpliada] = useState(null);
+  // Las fotos que fallaron al cargar: se recuerdan para no reintentar en cada render.
+  const [fotosRotas, setFotosRotas] = useState(() => new Set());
 
   const currentUser = useMemo(() => readCurrentUser(), []);
   const isSuperUser = Boolean(currentUser?.is_superuser || currentUser?.is_bootstrap_admin || currentUser?.username === "admin1");
@@ -110,7 +123,7 @@ export default function MaterialPage() {
       }
       if (canSeeField("id_brand")) {
         try {
-          const brandData = await getAllBrand({ page: 1, per_page: 100 });
+          const brandData = await getAllBrand({ page: 1, per_page: 1000, sort: "brand_description" });
           setBrandOptions(Array.isArray(brandData) ? brandData : (brandData.items || []));
         } catch (_) {
           setBrandOptions([]);
@@ -118,8 +131,19 @@ export default function MaterialPage() {
       }
       if (canSeeField("id_product_family")) {
         try {
-          const productFamilyData = await getAllProductFamily({ page: 1, per_page: 100 });
-          setProductFamilyOptions(Array.isArray(productFamilyData) ? productFamilyData : (productFamilyData.items || []));
+          // Todas las familias, no solo la primera página: con más de 100 el
+          // selector dejaba fuera las más nuevas y no había forma de elegirlas.
+          const todas = [];
+          let paginaFamilias = 1;
+          let totalPaginas = 1;
+          do {
+            const datos = await getAllProductFamily({ page: paginaFamilias, per_page: 500, sort: "product_family_description" });
+            if (Array.isArray(datos)) { todas.push(...datos); break; }
+            todas.push(...(datos.items || []));
+            totalPaginas = datos.pages || 1;
+            paginaFamilias += 1;
+          } while (paginaFamilias <= totalPaginas);
+          setProductFamilyOptions(todas);
         } catch (_) {
           setProductFamilyOptions([]);
         }
@@ -188,7 +212,7 @@ export default function MaterialPage() {
   function canSeeField(fieldName) {
     if (isSuperUser) return true;
     if (!permissionReady) return false;
-    return visibleFieldNames.has(fieldName);
+    return CAMPOS_DE_AUDITORIA.has(fieldName) || visibleFieldNames.has(fieldName);
   }
 
 
@@ -212,7 +236,20 @@ export default function MaterialPage() {
     if (ENTITY_KEY === "user" && editingId && isBlankValue(payload.password)) {
       delete payload.password;
     }
+    // La foto no viaja en el PUT/POST: se sube aparte, por /material/<id>/image.
+    delete payload.path_imagen;
     return payload;
+  }
+
+  function clearImageSelection() {
+    setSelectedImageFile(null);
+    setImagePreviewUrl("");
+  }
+
+  function handleImageFileChange(event) {
+    const file = event.target.files?.[0] || null;
+    setSelectedImageFile(file);
+    setImagePreviewUrl(file ? URL.createObjectURL(file) : "");
   }
 
   function formatFieldError(fieldName) {
@@ -252,9 +289,18 @@ export default function MaterialPage() {
     try {
       if (editingId && !canUpdate) return;
       if (!editingId && !canCreate) return;
+      let savedId = editingId;
       if (editingId) await updateMaterial(editingId, submitPayload);
-      else await createMaterial(submitPayload);
-      setFormData(emptyForm); setEditingId(null); await loadData();
+      else {
+        const creado = await createMaterial(submitPayload);
+        savedId = creado?.id_material ?? creado?.id;
+      }
+      if (selectedImageFile && canSeeField("path_imagen") && savedId) {
+        await uploadMaterialImage(savedId, selectedImageFile);
+        // Misma ruta, otro contenido: sin esto el navegador sigue mostrando la foto vieja.
+        setFotosRotas(new Set());
+      }
+      setFormData(emptyForm); setEditingId(null); clearImageSelection(); await loadData();
     } catch (error) {
       const meta = error.payload?.meta || null;
       setErrorKey(error.message || "errors.request_failed");
@@ -263,20 +309,39 @@ export default function MaterialPage() {
     }
   }
 
+  // Miniatura de la foto del material; al pulsarla se abre en grande. Sin foto (o si
+  // fallo al cargar) no se pinta nada, igual que en Productos.
+  function renderFoto(item, className) {
+    if (!item.path_imagen || fotosRotas.has(item.id_material)) return <span className="muted">-</span>;
+    const src = urlDeArchivo(item.path_imagen);
+    return (
+      <img
+        className={`${className} foto-ampliable`}
+        src={src}
+        alt={item.material_description || t("common.image", "Imagen")}
+        loading="lazy"
+        title={t("photo.click_to_zoom", "Clic para verla en grande")}
+        onClick={() => setFotoAmpliada({ src, titulo: item.material_description || "", descripcion: `#${item.id_material}` })}
+        onError={() => setFotosRotas((antes) => new Set(antes).add(item.id_material))}
+      />
+    );
+  }
+
   function startEdit(item) {
     if (!canUpdate) return;
     setEditingId(item.id_material);
     const editData = { ...emptyForm, ...item };
     if (ENTITY_KEY === "user") editData.password = "";
     setFormData(editData);
-
+    setSelectedImageFile(null);
+    setImagePreviewUrl(item.path_imagen ? urlDeArchivo(item.path_imagen) : "");
     setFieldErrors({});
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function removeItem(item) {
     if (!canDelete) return;
-    if (!window.confirm(t("common.confirm_delete"))) return;
+    if (!(await dialogo.confirmar(t("common.confirm_delete")))) return;
     try { await deleteMaterial(item.id_material); await loadData(); } catch (error) { setErrorKey(error.message || "errors.request_failed"); setErrorMeta(error.payload?.meta || null); }
   }
 
@@ -286,7 +351,7 @@ export default function MaterialPage() {
     if (ENTITY_KEY !== "user") return;
     const targetId = item.id_user ?? item.id;
     if (!targetId) return;
-    if (!window.confirm(t("common.mfa_reset_confirm", "¿Restablecer MFA de este usuario?"))) return;
+    if (!(await dialogo.confirmar(t("common.mfa_reset_confirm", "¿Restablecer MFA de este usuario?")))) return;
     setErrorKey("");
     setErrorMeta(null);
     try {
@@ -314,11 +379,8 @@ export default function MaterialPage() {
     }
     if (typeof value === "number") return new Intl.NumberFormat(locale).format(value);
     if (typeof value === "string" && /^[0-9]{4}-[0-9]{2}-[0-9]{2}T/.test(value)) {
-      const date = new Date(value);
-      if (!Number.isNaN(date.getTime())) {
-        const hasTime = !/T00:00(?::00)?/.test(value);
-        return new Intl.DateTimeFormat(locale, hasTime ? { dateStyle: "medium", timeStyle: "short" } : { dateStyle: "medium" }).format(date);
-      }
+      const formateada = formatearFechaHora(value, locale);
+      if (formateada) return formateada;
     }
     if (Array.isArray(value)) return value.map((item) => formatTableValue(item)).filter(Boolean).join(", ");
     if (typeof value === "object") {
@@ -399,7 +461,7 @@ export default function MaterialPage() {
     if (errorKey === "errors.invalid_field" && errorMeta?.field) {
       return `${t(errorKey, errorKey)}: ${fieldLabel}`;
     }
-    return t(errorKey, errorKey);
+    return errorKey === LLAVE_BORRADO_BLOQUEADO ? mensajeDeBorradoBloqueado(t, errorMeta) : t(errorKey, errorKey);
   }
 
   // El buscador pregunta al SERVIDOR, asi que lo que llega ya viene filtrado.
@@ -483,12 +545,32 @@ export default function MaterialPage() {
             {fieldErrors["id_product_family"] && <span className="field-error">{formatFieldError("id_product_family")}</span>}
           </label>
           )}
+          {canSeeField("item_class") && (
+          <label className="field">
+            <span>{t("fields.material.item_class", "Clase")}</span>
+            <select name="item_class" value={formData.item_class ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors["item_class"])}>
+              <option value="">{t("item_class.none", "Sin clase")}</option>
+              {CLASES_DE_ARTICULO.map((c) => (
+                <option key={c.clave} value={c.clave}>{t(`item_class.${c.clave}`, c.etiqueta)}</option>
+              ))}
+            </select>
+            {fieldErrors["item_class"] && <span className="field-error">{formatFieldError("item_class")}</span>}
+          </label>
+          )}
+          {canSeeField("path_imagen") && (
+          <label className="field image-field">
+            <span>{t("common.image", "Imagen")}</span>
+            <input name="path_imagen_file" type="file" accept="image/png,image/jpeg,image/webp" onChange={handleImageFileChange} />
+            <small>{t("common.select_image", "Selecciona una imagen JPG, PNG o WEBP")}</small>
+            {imagePreviewUrl && <img className="image-preview" src={imagePreviewUrl} alt={t("common.image", "Imagen")} />}
+          </label>
+          )}
         </div>
 
 
         <div className="form-actions">
           <button className="button primary" type="submit">{t("common.save")}</button>
-          <button className="button" type="button" onClick={() => { setFormData(emptyForm); setEditingId(null); setFieldErrors({}); }}>{t("common.cancel")}</button>
+          <button className="button" type="button" onClick={() => { setFormData(emptyForm); setEditingId(null); setFieldErrors({}); clearImageSelection(); }}>{t("common.cancel")}</button>
         </div>
       </FormularioPlegable>
       )}
@@ -514,6 +596,7 @@ export default function MaterialPage() {
               {canSeeField("id_unit") && <th>{t("fields.material.id_unit")}</th>}
               {canSeeField("id_brand") && <th>{t("fields.material.id_brand")}</th>}
               {canSeeField("id_product_family") && <th>{t("fields.material.id_product_family")}</th>}
+              {canSeeField("path_imagen") && <th>{t("fields.material.path_imagen", "Imagen")}</th>}
               {canSeeField("created_by") && <th>{t("fields.material.created_by")}</th>}
               {canSeeField("creation_date") && <th>{t("fields.material.creation_date")}</th>}
               {canSeeField("last_update_date") && <th>{t("fields.material.last_update_date")}</th>}
@@ -524,13 +607,23 @@ export default function MaterialPage() {
               {canSeeField("id_unit") && <td><pre className="cell-value">{formatTableValue(item.id_unit)}</pre></td>}
               {canSeeField("id_brand") && <td><pre className="cell-value">{formatTableValue(item.id_brand)}</pre></td>}
               {canSeeField("id_product_family") && <td><pre className="cell-value">{formatTableValue(item.id_product_family)}</pre></td>}
+              {canSeeField("path_imagen") && <td>{renderFoto(item, "table-image")}</td>}
               {canSeeField("created_by") && <td><pre className="cell-value">{formatTableValue(item.created_by)}</pre></td>}
               {canSeeField("creation_date") && <td><pre className="cell-value">{formatTableValue(item.creation_date)}</pre></td>}
               {canSeeField("last_update_date") && <td><pre className="cell-value">{formatTableValue(item.last_update_date)}</pre></td>}
               {canSeeField("deletion_date") && <td><pre className="cell-value">{formatTableValue(item.deletion_date)}</pre></td>}
         </tr>)}</tbody></table></div>}
 
-      {canRead && view === "kanban" && filtered.length > 0 && <div className="kanban">{Object.entries(groups).map(([key, groupItems]) => <div className="kanban-column" key={key}><h3>{key} <span>{groupItems.length}</span></h3>{groupItems.map((item) => <article className="kanban-card" key={item.id_material}><strong>{String(item.material_description ?? item.id_material)}</strong><small>#{item.id_material}</small>{showRowActions && <div>{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</div>}</article>)}</div>)}</div>}
+      {canRead && view === "kanban" && filtered.length > 0 && <div className="kanban">{Object.entries(groups).map(([key, groupItems]) => <div className="kanban-column" key={key}><h3>{key} <span>{groupItems.length}</span></h3>{groupItems.map((item) => <article className="kanban-card" key={item.id_material}>{canSeeField("path_imagen") && renderFoto(item, "kanban-image")}<strong>{String(item.material_description ?? item.id_material)}</strong><small>#{item.id_material}</small>{showRowActions && <div>{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</div>}</article>)}</div>)}</div>}
+
+      {fotoAmpliada && (
+        <VisorDeFoto
+          src={fotoAmpliada.src}
+          titulo={fotoAmpliada.titulo}
+          descripcion={fotoAmpliada.descripcion}
+          onCerrar={() => setFotoAmpliada(null)}
+        />
+      )}
 
       <Pagination
         page={page}

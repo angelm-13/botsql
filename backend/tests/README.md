@@ -17,3 +17,77 @@ cd backend
 - Celery imports
 
 Los tests están diseñados para correr con `pytest` y `TESTING=1`.
+
+## Pruebas que solo corren en PostgreSQL (KPIs, concurrencia de inventario, documentos/laboratorio)
+
+`./run_tests.sh` corre en SQLite en memoria. Todo archivo que mira
+`engine.dialect.name == "postgresql"` (o `!=`) se **salta en silencio** ahí
+— entre ellos todas las pruebas de KPIs. Ningún CI las corre: el workflow de
+GitHub (`.github/workflows/build-images.yml`) solo construye imágenes.
+
+Para correrlas contra el Postgres del `docker-compose` local (stack arriba y
+migrado):
+
+```bash
+backend/ci/run_postgres_tests.sh            # todas, con base_real LIMPIA
+backend/ci/run_postgres_tests.sh -k kpi     # filtra como pytest -k
+backend/ci/run_postgres_tests.sh --copiar-base-local   # base_real = copia de tu base local
+CONSERVAR_BASES=1 backend/ci/run_postgres_tests.sh   # no borra las bases al terminar
+```
+
+**La base de `base_real` es limpia por omisión**: el script la crea vacía con
+`database/init.sql` (que trae el bootstrap) y todas las migraciones, en el mismo
+orden que el servicio `db-migrate` del compose. Así el resultado no depende de lo
+que tengas en tu base local.
+
+> **`--copiar-base-local` puede fallar con datos demo.** Con esa opción `base_real`
+> es una copia (`pg_dump`) de la base del stack. Si esa base tiene datos de prueba
+> (vales, usuarios de prueba, empleados demo), las pruebas que cuentan filas fallan
+> porque esperan ver solo lo que ellas crean: el 2026-09-30, con 15 vales demo,
+> fallaron 13 pruebas de `base_real` (KPIs de incidentes y de material prestado, y el
+> selector de empleados de documentos) que con base limpia pasan. Esas fallas son
+> del dato, no del código. Úsala solo para probar contra datos reales.
+
+### Por qué en dos grupos
+
+Hay dos tipos de prueba de Postgres, incompatibles en una misma base:
+
+| Grupo | Clase base | Qué necesita | Base que usa el script |
+|---|---|---|---|
+| `base_real` | `unittest.TestCase` | El esquema **real** (`init.sql` + migraciones, con sus FK diferibles) y el bootstrap de siempre (`user=1`, `proyect=1`, `status=1`, `customer_supplier=1`). No reinicia el esquema. | `tyakxa_pgtest_base_real`, limpia (`init.sql` + migraciones); con `--copiar-base-local`, copia (`pg_dump`) de la base del stack |
+| `esquema_orm` | `BackendTestCase` | Nada previo: cada prueba hace `DROP SCHEMA public CASCADE` y recrea solo lo que declara el ORM (`reset_test_database` en `conftest.py`). | `tyakxa_pgtest_esquema_orm`, vacía |
+
+Juntas en una base, las de `esquema_orm` borran lo que las de `base_real`
+necesitan: con las pruebas de KPI, 33 de 60 fallaban solo por el orden
+(2026-09-25). El script clasifica cada archivo por su clase base (no hay
+lista que mantener) y rechaza un archivo que mezcle las dos. La base del
+stack (`tyakxa_erp`) nunca se modifica; las dos de prueba se borran al final.
+
+Un archivo nuevo de `base_real` no puede heredar de `BackendTestCase`: su
+`reset_test_database()` tiraría el esquema real. Ver el comentario al inicio
+de `tests/test_services/test_kpi_ventas_por_empleado.py`.
+
+### Falla conocida (pendiente, no relacionada con KPIs)
+
+`tests/test_services/test_inventory_concurrency.py` (4 pruebas) falla en
+`esquema_orm`: inserta `customer_supplier` con `id_user=1` antes de que
+exista ese usuario, sin `SET CONSTRAINTS ALL DEFERRED`. Existía antes de
+este script; nunca se había detectado porque nada corría estas pruebas en
+Postgres.
+
+## Pruebas que leen archivos de fuera de `backend/`
+
+El contenedor del backend solo ve `./backend`; el resto llega por montajes de solo lectura de
+`docker-compose.yml`: `./database` en `/database` (migraciones e `init.sql`) y
+`./frontend/src/kpi/fixtures` en `/frontend/src/kpi/fixtures` (la copia del catálogo de KPIs que
+usan las pruebas del front). Las rutas se calculan igual en el repo y en el contenedor
+(`Path(__file__).parents[3]`). Si una de estas pruebas no encuentra su archivo después de
+actualizar el compose, el contenedor en marcha es anterior al montaje: `docker compose up -d backend`.
+La excepción es `test_kpi_catalogo_del_registry.py`: sin la carpeta montada **se salta** (con el motivo en
+el mensaje; pytest `-rs` lo muestra) en vez de fallar. Una prueba saltada no comprobó nada. Ver
+`docs/despliegues/2026-10-16_montaje_de_fixtures_de_kpi_en_el_compose.md`.
+
+`tests/test_services/test_kpi_catalogo_del_registry.py` falla si esa copia no coincide con
+`KPI_REGISTRY` (KPI nuevo, o cambio de módulo, unidad o nombre). El mensaje trae el comando para
+regenerarla con `scripts/exportar_catalogo_kpis.py`; después hay que correr las pruebas del front,
+porque un KPI nuevo puede cambiar los conteos que fijan.

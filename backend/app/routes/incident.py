@@ -4,13 +4,17 @@ from app.services.incident_service import (
     IncidentService,
     list_incidents,
     require_incident_access,
+    require_voucher_flow,
     transition_incident,
 )
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
+from app.utils.field_access import COLUMNAS_DE_AUDITORIA
 
 bp_incident = Blueprint('incident', __name__, url_prefix='/incident')
-ALLOWED_FIELDS = ['id_incident', 'incident_date', 'id_incident_type', 'note', 'id_user', 'incident_status', 'close_date', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'id_lider']
+ALLOWED_FIELDS = ['id_incident', 'incident_date', 'id_incident_type', 'note', 'id_user', 'incident_status', 'close_date', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'id_lider', 'latitude', 'longitude', 'distance_m', 'photo_base64']
+# Campos que no se filtran por igualdad desde la URL (un base64 de megas no es filtro).
+NON_FILTERABLE_FIELDS = {'photo_base64'}
 
 TECHNICAL_RESPONSE_FIELDS = {'id_incident'}
 FIELD_READ_BIT = 2
@@ -23,7 +27,6 @@ def _actor_has_unrestricted_field_access(user_data: dict) -> bool:
     return bool(
         user_data.get('is_superuser')
         or user_data.get('is_bootstrap_admin')
-        or user_data.get('user_type') == 'admin'
     )
 
 
@@ -72,11 +75,15 @@ def _field_sets_for_actor(user_data: dict) -> tuple[set[str], set[str]]:
     # La llave primaria puede viajar en la respuesta para navegacion interna,
     # acciones de fila y rutas REST, aunque el frontend no la pinte si no fue
     # marcada como visible en el gestor.
-    return visible | set(TECHNICAL_RESPONSE_FIELDS), writable
+    return visible | set(TECHNICAL_RESPONSE_FIELDS) | COLUMNAS_DE_AUDITORIA, writable
 
 
 def _visible_response_fields_for_actor(user_data: dict) -> set[str]:
-    return _field_sets_for_actor(user_data)[0]
+    visibles = _field_sets_for_actor(user_data)[0]
+    # `has_photo` es solo el aviso de que hay foto: lo ve quien puede ver la foto.
+    if 'photo_base64' in visibles:
+        visibles = visibles | {'has_photo'}
+    return visibles
 
 
 def _writable_request_fields_for_actor(user_data: dict) -> set[str]:
@@ -124,7 +131,7 @@ def list_incident(user_data):
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 20))
     sort = request.args.get('sort')
-    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort', 'q'} and k in ALLOWED_FIELDS}
+    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort', 'q'} and k in ALLOWED_FIELDS and k not in NON_FILTERABLE_FIELDS}
     return _jsonify_projected_list(user_data, list_incidents(user_data, page=page, per_page=per_page, filters=filters, sort=sort))
 
 
@@ -140,6 +147,7 @@ def get_incident(user_data, id_incident):
 @token_required
 @require_entity_permission('incident', 'create')
 def create_incident(user_data):
+    require_voucher_flow(user_data)
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
     return _jsonify_projected_record(user_data, IncidentService.create(payload, user_id=user_data.get('id_user')), status=201)
 
@@ -148,6 +156,7 @@ def create_incident(user_data):
 @token_required
 @require_entity_permission('incident', 'update')
 def update_incident(user_data, id_incident):
+    require_voucher_flow(user_data)
     require_incident_access(id_incident, user_data)
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
     return _jsonify_projected_record(user_data, IncidentService.update(id_incident, payload, user_id=user_data.get('id_user')))
@@ -157,6 +166,7 @@ def update_incident(user_data, id_incident):
 @token_required
 @require_entity_permission('incident', 'update')
 def transition_incident_status(user_data, id_incident):
+    require_voucher_flow(user_data)
     """Cambio de estatus guiado, como en proyectos y tareas."""
     return _jsonify_projected_record(user_data, transition_incident(id_incident, request.get_json() or {}, user_data))
 
@@ -165,5 +175,6 @@ def transition_incident_status(user_data, id_incident):
 @token_required
 @require_entity_permission('incident', 'delete')
 def delete_incident(user_data, id_incident):
+    require_voucher_flow(user_data)
     require_incident_access(id_incident, user_data)
     return jsonify(IncidentService.delete(id_incident, user_id=user_data.get('id_user')))

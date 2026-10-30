@@ -1,0 +1,103 @@
+# Overlay de aai-prod (ERP, instalación limpia). Dominio: aai.torredigital.mx
+# (A -> master1, verificado con nslookup 2026-10-29).
+#
+# Tags: 4a0dba7 (build en verde que ya incluye aai/prod en deploy/clients.yaml;
+# el frontend lleva 4a0dba7-aai-prod).
+#
+# UN SOLO origen: front + API bajo /api en el mismo dominio; por eso el Ingress
+# del base se elimina (primer parche) y se usa ingress-single-origin.yaml.
+# Pasos completos y secrets: k8s/README.md.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# 1) Namespace: <cliente>-<env>. Sí puede terminar en -prod/-test: el ERP tiene
+#    excepción explícita a la regla general de nombrado de namespaces.
+namespace: aai-prod
+
+# 2) Tags de imagen. backend, worker y db-init llevan el SHA corto; el frontend
+#    lleva <sha>-<cliente>-<env> porque se construye UNO POR CLIENTE
+#    (VITE_API_BASE_URL queda horneado en el build; ver deploy/clients.yaml).
+images:
+  - name: DB_INIT_IMAGE_PLACEHOLDER
+    newName: ghcr.io/tyakxa/tyakxa-tny-db-init
+    newTag: 4a0dba7
+  - name: BACKEND_IMAGE_PLACEHOLDER
+    newName: ghcr.io/tyakxa/tyakxa-tny-backend
+    newTag: 4a0dba7
+  - name: WORKER_IMAGE_PLACEHOLDER
+    newName: ghcr.io/tyakxa/tyakxa-tny-worker
+    newTag: 4a0dba7
+  - name: FRONTEND_IMAGE_PLACEHOLDER
+    newName: ghcr.io/tyakxa/tyakxa-tny-frontend
+    newTag: 4a0dba7-aai-prod
+
+resources:
+  - ../../base
+  - ingress-single-origin.yaml
+
+# 3) Respaldo diario de Postgres (CronJob a las 03:30, solo en nodos tier=big).
+#    En un alta nueva se aplica junto con todo lo demás. En un cliente que YA
+#    está en producción se activa aplicando SOLO este componente, para no
+#    arrastrar otros cambios pendientes del base:
+#      kubectl apply -k <overlay> -l app.kubernetes.io/component=respaldo-postgres
+components:
+  - ../../components/respaldo-postgres
+
+patches:
+  # Quita el Ingress del base (patrón de dos subdominios): este cliente usa
+  # ingress-single-origin.yaml.
+  - patch: |-
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: tyakxa-tny
+      $patch: delete
+
+  # 4) Dónde cae el cliente. Fijo en master4: master1 ya es el único ingress de
+  #    todo el clúster y la producción se reparte entre master1 y master4.
+  #    (texto de la plantilla:) Producción y servicios pesados en tier=big
+  #    (master1 o master4); nunca volúmenes nuevos en master2/master3 (discos de
+  #    50 GB casi llenos). El base no fija nodo: sin este parche el scheduler
+  #    decide y un PVC local-path queda atado ahí para siempre. Si el cliente es
+  #    una demo liviana sin datos que importen, puede ir en tier: small.
+  #    El CronJob de respaldo ya trae su propia afinidad a tier=big.
+  - target:
+      kind: Deployment
+    patch: |-
+      - op: add
+        path: /spec/template/spec/nodeSelector
+        value:
+          tier: big
+          kubernetes.io/hostname: k3s-master4
+  - target:
+      kind: StatefulSet
+    patch: |-
+      - op: add
+        path: /spec/template/spec/nodeSelector
+        value:
+          tier: big
+          kubernetes.io/hostname: k3s-master4
+
+  # 5) PriorityClass (OPCIONAL, decide Alan). Descomenta los tres parches SOLO
+  #    si la clase ya existe en el clúster (kubectl get priorityclass); si no
+  #    existe, los pods no se programan. Las clases no viven en este repo (se
+  #    crearon a mano con kubectl apply -f). Ver p3-comala-prod en el overlay de
+  #    comala-prod para el ejemplo real.
+  # - target:
+  #     kind: Deployment
+  #   patch: |-
+  #     - op: add
+  #       path: /spec/template/spec/priorityClassName
+  #       value: pN-aai-prod
+  # - target:
+  #     kind: StatefulSet
+  #   patch: |-
+  #     - op: add
+  #       path: /spec/template/spec/priorityClassName
+  #       value: pN-aai-prod
+  # - target:
+  #     kind: CronJob
+  #   patch: |-
+  #     - op: add
+  #       path: /spec/jobTemplate/spec/template/spec/priorityClassName
+  #       value: pN-aai-prod

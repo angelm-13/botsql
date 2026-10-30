@@ -140,3 +140,17 @@ def sembrar_actor(db, *, id_proyect, id_status, ids=(1,)):
     ])
     db.flush()
     return primero
+
+
+def dar_capacidad(db, id_permission, capacidad="inventory_adjustment"):
+    """Le concede una capacidad a un permiso, como lo hace el Gestor de roles.
+
+    Una entrada de existencia por la puerta publica sin orden ni vale exige la
+    capacidad de ajustar; las pruebas cuyo actor registra entradas de preparacion
+    se la dan aqui en lugar de volverlo superusuario, que cambiaria el alcance
+    que esas mismas pruebas verifican.
+    """
+    from app.models.entity_permission import EntityPermission
+
+    db.add(EntityPermission(id_permission=id_permission, entity_name=capacidad,
+                            scope_read=4, created_by=1))

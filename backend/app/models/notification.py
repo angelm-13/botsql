@@ -1,9 +1,10 @@
 from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
-from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import String, Integer, DateTime, Text, ForeignKey, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import String, Integer, BigInteger, SmallInteger, Boolean, Date, DateTime, Float, Numeric, ForeignKey, Text, JSON, Enum, LargeBinary, UniqueConstraint, func
 from app.models.base import Base
+from app.utils.tiempo import a_iso_utc
 
 
 def to_json_value(value):
@@ -20,31 +21,50 @@ class Notification(Base):
     __tablename__ = 'notification'
 
     id_notification: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, nullable=False)
-    # El destinatario. Nunca se lista "de todos" -- una notificacion es del
-    # usuario que la recibe, no un dato de negocio compartido.
-    id_user: Mapped[int] = mapped_column(Integer, ForeignKey('user.id_user'), nullable=False)
-    id_proyect: Mapped[object] = mapped_column(Integer, ForeignKey('proyect.id_proyect'), nullable=True)
-    id_proyect_event: Mapped[object] = mapped_column(Integer, ForeignKey('proyect_event.id_proyect_event'), nullable=True)
-    notification_type: Mapped[object] = mapped_column(String(40), nullable=False)
-    title: Mapped[object] = mapped_column(String(160), nullable=False)
-    content: Mapped[object] = mapped_column(Text, nullable=True)
-    read_at: Mapped[object] = mapped_column(DateTime, nullable=True)
-    created_by: Mapped[int] = mapped_column(Integer, nullable=False)
-    creation_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    id_user_recipient: Mapped[int] = mapped_column(Integer, ForeignKey('user.id_user'), nullable=False, index=True)
+    id_user_sender: Mapped[int | None] = mapped_column(Integer, ForeignKey('user.id_user'), nullable=True)
+    id_proyect: Mapped[int | None] = mapped_column(Integer, ForeignKey('proyect.id_proyect'), nullable=True, index=True)
+    notification_type: Mapped[str] = mapped_column(
+        String(50), nullable=False, default='custom',
+        server_default='custom')
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default='false', index=True)
+    read_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    metadata_data: Mapped[dict] = mapped_column('metadata', JSON, nullable=False, default={}, server_default='{}')
+    # A que registro lleva el aviso ('proyect', 'voucher'): lo que la campana
+    # usa para abrirlo con un clic. Nulo = el aviso no lleva a ningun lado.
+    target_entity: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    target_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_by: Mapped[int] = mapped_column(Integer, ForeignKey('user.id_user'), nullable=False)
+    creation_date: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    last_update_date: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+    deletion_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     def serialize(self) -> dict:
         return {
             'id_notification': to_json_value(self.id_notification),
-            'id_user': to_json_value(self.id_user),
+            'id_user_recipient': to_json_value(self.id_user_recipient),
+            'id_user_sender': to_json_value(self.id_user_sender),
             'id_proyect': to_json_value(self.id_proyect),
-            'id_proyect_event': to_json_value(self.id_proyect_event),
             'notification_type': to_json_value(self.notification_type),
             'title': to_json_value(self.title),
-            'content': to_json_value(self.content),
-            'read_at': to_json_value(self.read_at),
+            'message': to_json_value(self.message),
+            'is_read': to_json_value(self.is_read),
+            'read_date': to_json_value(self.read_date),
+            'metadata': to_json_value(self.metadata_data),
+            'target_entity': to_json_value(self.target_entity),
+            'target_id': to_json_value(self.target_id),
             'created_by': to_json_value(self.created_by),
-            'creation_date': to_json_value(self.creation_date),
+            'creation_date': a_iso_utc(self.creation_date),
+            'last_update_date': a_iso_utc(self.last_update_date),
+            'deletion_date': a_iso_utc(self.deletion_date),
         }
 
     def serialize_summary(self) -> dict:
-        return {'id_notification': self.id_notification}
+        return {
+            'id_notification': self.id_notification,
+            'title': self.title,
+            'is_read': self.is_read,
+            'creation_date': a_iso_utc(self.creation_date),
+        }

@@ -44,6 +44,10 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from sqlalchemy import func, select
+
+from app.models import InventoryLedger
+
 from app.services.inventory_service import apply_movement_in_session
 
 MODULO = "logistica"
@@ -81,7 +85,19 @@ def reflejar_cambio(db, fila, cantidad_anterior, user_data, *, motivo=None) -> d
         return {"id_logistics_inventory": fila.id_logistics_inventory,
                 "motivo": "cantidad fraccionaria, el nucleo lleva piezas"}
 
-    delta = ahora - antes
+    # Lo que el libro ya refleja de esta fila manda sobre `cantidad_anterior`: si
+    # un movimiento se perdio, la fila y el libro se desfasan y la siguiente
+    # diferencia debe cerrar la brecha. Un reintento tampoco duplica: la fila ya
+    # esta al dia con el libro y la diferencia es cero. Sin movimientos todavia
+    # (fila anterior al puente) se parte de `cantidad_anterior`.
+    ya_reflejado, movimientos = db.execute(
+        select(func.coalesce(func.sum(InventoryLedger.quantity_delta), 0), func.count())
+        .where(InventoryLedger.reference_type == "logistics_inventory",
+               InventoryLedger.reference_id == str(fila.id_logistics_inventory),
+               InventoryLedger.source_module == MODULO)
+    ).one()
+    base = int(ya_reflejado) if movimientos else antes
+    delta = ahora - base
     if delta == 0:
         return None
 
@@ -96,11 +112,11 @@ def reflejar_cambio(db, fila, cantidad_anterior, user_data, *, motivo=None) -> d
             user_data,
             movement_type=tipo,
             quantity_delta=delta,
-            # La llave lleva la fila Y el saldo resultante: reintentar la misma
-            # operacion no vuelve a mover, pero una operacion posterior sobre la
-            # misma fila si -- que es lo correcto, es otro movimiento.
+            # Fila + cuantos movimientos lleva + saldo resultante: distinta en cada
+            # movimiento real (el saldo puede volver a un valor anterior: 10 -> 5 ->
+            # 8 -> 5) y la misma en dos envios simultaneos del mismo cambio.
             idempotency_key=(
-                "logistica-%s-%s" % (fila.id_logistics_inventory, ahora))[:90],
+                "logistica-%s-%s-%s" % (fila.id_logistics_inventory, movimientos, ahora))[:90],
             id_location=getattr(fila, "id_core_location", None),
             reference_type="logistics_inventory",
             reference_id=str(fila.id_logistics_inventory),

@@ -6,9 +6,12 @@ cerrada antes de haber ocurrido, y el estatus "cerrada" sin fecha de cierre.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import re
+from datetime import datetime
+from decimal import Decimal, InvalidOperation
 
 from sqlalchemy import or_
+from sqlalchemy.orm import defer
 
 from app.models import Incident, IncidentType, User
 from app.models.entity_permission import EntityPermission
@@ -22,6 +25,7 @@ from app.services.operations_workflow import (
     validate_transition,
 )
 from app.utils.errors import AppError
+from app.utils.tiempo import ZONA_NEGOCIO, ahora_negocio
 
 
 DEFAULT_STATUS = "abierta"
@@ -31,6 +35,14 @@ DEFAULT_STATUS = "abierta"
 # Antes cualquiera con permiso de lectura veia las de toda la empresa.
 SUPERVISION_CAPABILITY = "incident_supervision"
 READ_BIT = 2
+
+# Tope de la foto en base64 (caracteres): ~12 MB de texto, por debajo del limite
+# de cuerpo del ingress (proxy-body-size 12m) para que el rechazo lo de la API
+# con un error claro y no el proxy con un 413 sin cuerpo.
+FOTO_MAX_CARACTERES = 11_000_000
+# Prefijo opcional "data:image/jpeg;base64," y luego solo alfabeto base64.
+_FOTO_PREFIJO = re.compile(r'^data:image/[a-zA-Z0-9.+-]+;base64,')
+_FOTO_BASE64 = re.compile(r'^[A-Za-z0-9+/]*={0,2}$')
 
 
 def _is_unrestricted(user_data) -> bool:
@@ -66,16 +78,19 @@ def supervises_incidents(db, user_data) -> bool:
         return False
 
 
-def _involves_actor(incident, user_data) -> bool:
-    """La incidencia es de quien la reporto, la atiende o la lidera."""
+def _involves_actor(incident, user_data, gente=None) -> bool:
+    """La incidencia es de quien la reporto, la atiende o la lidera.
+
+    `gente` son las personas cubiertas (el actor y, con Mis grupos, su equipo).
+    """
     actor = _actor_id(user_data)
     if actor is None:
         return False
-    return actor in {
+    return bool({
         _safe(incident.id_user),
         _safe(incident.id_lider),
         _safe(incident.created_by),
-    }
+    } & (set(gente) if gente else {actor}))
 
 
 def _safe(value):
@@ -94,11 +109,23 @@ def scoped_incident_query(db, user_data):
     if actor is None:
         # Sin identidad no se devuelve nada, en lugar de devolverlo todo.
         return query.filter(Incident.id_incident.is_(None))
+    from app.utils.scope import companeros
+
+    gente = companeros(db, user_data, "incident") or {actor}
     return query.filter(or_(
-        Incident.id_user == actor,
-        Incident.id_lider == actor,
-        Incident.created_by == actor,
+        Incident.id_user.in_(gente),
+        Incident.id_lider.in_(gente),
+        Incident.created_by.in_(gente),
     ))
+
+
+def require_voucher_flow(user_data) -> None:
+    """`incident` y `nm_incident_product` SON el vale y sus renglones. Escribirlos
+    por el CRUD generico salta el libro de inventario, el candado de que quien pide
+    no surte y el registro de eventos del vale: solo se mueven por `/vouchers`.
+    Queda abierto para el administrador, que corrige datos."""
+    if not (user_data.get("is_superuser") or user_data.get("is_bootstrap_admin")):
+        raise AppError("errors.voucher_use_voucher_flow", 403)
 
 
 def require_incident_access(incident_id, user_data) -> Incident:
@@ -106,7 +133,10 @@ def require_incident_access(incident_id, user_data) -> Incident:
         incident = db.get(Incident, int(incident_id))
         if not incident or incident.deletion_date is not None:
             raise AppError("errors.resource_not_found", 404)
-        if not supervises_incidents(db, user_data) and not _involves_actor(incident, user_data):
+        from app.utils.scope import companeros
+
+        if not supervises_incidents(db, user_data) and not _involves_actor(
+                incident, user_data, companeros(db, user_data, "incident")):
             # Se responde "no existe" y no "no puedes": quien no participa
             # tampoco debe enterarse de que la incidencia existe.
             raise AppError("errors.resource_not_found", 404)
@@ -115,18 +145,30 @@ def require_incident_access(incident_id, user_data) -> Incident:
 
 
 def _as_datetime(value, field):
+    """La fecha como hora de pared del negocio, sin zona.
+
+    `incident_date` y los cierres son fechas de negocio: se guardan en la hora
+    local del cliente. Si el llamador manda una con zona -n8n con `-06:00`, un
+    `...Z`- se convierte a esa hora; antes se le quitaba la zona sin convertir,
+    y una hora en UTC quedaba guardada como si fuera local.
+    """
     if value in (None, ""):
         return None
-    if isinstance(value, datetime):
-        return value.replace(tzinfo=None)
     try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).replace(tzinfo=None)
+        fecha = value if isinstance(value, datetime) else datetime.fromisoformat(
+            str(value).replace("Z", "+00:00"))
     except ValueError as exc:
         raise AppError("errors.invalid_field", 400, {"field": field}) from exc
+    if fecha.tzinfo is not None:
+        fecha = fecha.astimezone(ZONA_NEGOCIO)
+    return fecha.replace(tzinfo=None)
 
 
 def _now():
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    # Contra esta hora se compara `incident_date` y con ella se completa un
+    # cierre, y ambas son hora de pared del negocio: con la hora UTC, una
+    # incidencia podia fecharse hasta 6 horas en el futuro sin rechazarse.
+    return ahora_negocio()
 
 
 class IncidentService(CrudService):
@@ -150,7 +192,61 @@ class IncidentService(CrudService):
             payload['incident_status'] = cls._resolve_status(payload, current)
 
         cls._validate_dates(payload, current)
+        cls._validate_geo(payload)
+        cls._validate_foto(payload)
         return payload
+
+    @staticmethod
+    def _redact_audit_value(field_name: str, value):
+        # La foto en base64 pesa megas: el registro de eventos guarda que cambio
+        # y de que tamano, no la imagen entera (dos veces, antes y despues).
+        if field_name == 'photo_base64':
+            return f'[imagen: {len(value)} caracteres]' if value else value
+        return CrudService._redact_audit_value(field_name, value)
+
+    @staticmethod
+    def _validate_foto(payload):
+        """La foto llega de n8n como texto base64, con o sin prefijo `data:`.
+
+        Se guarda sin saltos de linea ni espacios (n8n a veces parte la cadena) y
+        solo si es base64 de verdad: la pantalla la pone en un `<img src>`, asi que
+        no se acepta cualquier texto en esa columna.
+        """
+        if 'photo_base64' not in payload:
+            return
+        valor = payload['photo_base64']
+        if valor in (None, ''):
+            payload['photo_base64'] = None
+            return
+        if not isinstance(valor, str):
+            raise AppError("errors.invalid_field", 400, {"field": "photo_base64"})
+        limpio = re.sub(r'\s+', '', valor)
+        if len(limpio) > FOTO_MAX_CARACTERES:
+            raise AppError("errors.invalid_field", 400, {"field": "photo_base64"})
+        cuerpo = _FOTO_PREFIJO.sub('', limpio, count=1)
+        if not cuerpo or not _FOTO_BASE64.match(cuerpo):
+            raise AppError("errors.invalid_field", 400, {"field": "photo_base64"})
+        payload['photo_base64'] = limpio
+
+    @staticmethod
+    def _validate_geo(payload):
+        """Latitud, longitud y distancia: numeros dentro de su rango real.
+
+        Llegan de n8n como texto o numero; un valor fuera de rango (latitud 200,
+        distancia negativa) es un error del flujo que conviene rechazar aqui y
+        no guardarlo para que el reporte lo muestre como si fuera cierto.
+        """
+        limites = {'latitude': (-90, 90), 'longitude': (-180, 180), 'distance_m': (0, None)}
+        for campo, (minimo, maximo) in limites.items():
+            valor = payload.get(campo)
+            if valor in (None, ''):
+                continue
+            try:
+                numero = Decimal(str(valor).strip())
+            except InvalidOperation as exc:
+                raise AppError("errors.invalid_field", 400, {"field": campo}) from exc
+            if not numero.is_finite() or numero < minimo or (maximo is not None and numero > maximo):
+                raise AppError("errors.invalid_field", 400, {"field": campo})
 
     @staticmethod
     def _existing_id(value, model, field):
@@ -205,6 +301,11 @@ class IncidentService(CrudService):
         status = payload.get('incident_status') or normalize_incident_status(
             getattr(current, 'incident_status', None)
         )
+        # Lo que se guarda es la hora de pared ya normalizada, no el texto que
+        # mando el llamador (que puede traer zona).
+        for campo, valor in (('incident_date', incident_date), ('close_date', close_date)):
+            if campo in payload and payload[campo] not in (None, ''):
+                payload[campo] = valor
 
         if incident_date and incident_date > _now():
             raise AppError(
@@ -332,10 +433,26 @@ def list_incidents(user_data, *, page=1, per_page=20, filters=None, sort=None) -
         query = query.order_by(columna.desc() if descendente else columna.asc(), Incident.id_incident.desc())
 
         total = query.count()
-        filas = query.offset((page - 1) * per_page).limit(per_page).all()
+        # La foto en base64 pesa megas: el listado no la lee (defer), solo averigua
+        # cuales filas la tienen. La imagen se pide con el detalle de la incidencia.
+        filas = (
+            query.options(defer(Incident.photo_base64))
+            .offset((page - 1) * per_page).limit(per_page).all()
+        )
+        ids = [fila.id_incident for fila in filas]
+        con_foto = set()
+        if ids:
+            con_foto = {
+                fila_id for (fila_id,) in db.query(Incident.id_incident)
+                .filter(Incident.id_incident.in_(ids), Incident.photo_base64.isnot(None))
+            }
         return {
-            "items": [fila.serialize() for fila in filas],
+            "items": [
+                fila.serialize(con_foto=False, tiene_foto=fila.id_incident in con_foto)
+                for fila in filas
+            ],
             "page": page,
             "per_page": per_page,
             "total": total,
+            "pages": (total + per_page - 1) // per_page,
         }

@@ -4,6 +4,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import String, Integer, BigInteger, SmallInteger, Boolean, Date, DateTime, Float, Numeric, ForeignKey, Text, JSON, Enum, LargeBinary, UniqueConstraint, func
 from app.models.base import Base
+from app.utils.tiempo import a_iso_utc
 
 
 def to_json_value(value):
@@ -26,6 +27,15 @@ class PayrollDetail(Base):
     total_earnings: Mapped[float] = mapped_column(Numeric(12,2), nullable=True)
     total_deductions: Mapped[float] = mapped_column(Numeric(12,2), nullable=True)
     net_pay: Mapped[float] = mapped_column(Numeric(12,2), nullable=True)
+    # Dias con checada que uso el calculo de nomina; los muestra el recibo.
+    days_worked: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Faltas del periodo (dias laborales de su horario sin checada).
+    absences: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Dias de ausencia justificada por tipo (ver services/attendance_rules.py).
+    vacation_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    paid_leave_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    unpaid_leave_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    disability_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_by: Mapped[int] = mapped_column(Integer, nullable=False)
     creation_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now())
     last_update_date: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
@@ -40,10 +50,16 @@ class PayrollDetail(Base):
             'total_earnings': to_json_value(self.total_earnings),
             'total_deductions': to_json_value(self.total_deductions),
             'net_pay': to_json_value(self.net_pay),
+            'days_worked': to_json_value(self.days_worked),
+            'absences': to_json_value(self.absences),
+            'vacation_days': to_json_value(self.vacation_days),
+            'paid_leave_days': to_json_value(self.paid_leave_days),
+            'unpaid_leave_days': to_json_value(self.unpaid_leave_days),
+            'disability_days': to_json_value(self.disability_days),
             'created_by': to_json_value(self.created_by),
-            'creation_date': to_json_value(self.creation_date),
-            'last_update_date': to_json_value(self.last_update_date),
-            'deletion_date': to_json_value(self.deletion_date),
+            'creation_date': a_iso_utc(self.creation_date),
+            'last_update_date': a_iso_utc(self.last_update_date),
+            'deletion_date': a_iso_utc(self.deletion_date),
         }
 
     def serialize_summary(self) -> dict:

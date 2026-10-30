@@ -56,6 +56,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.utils.tiempo import a_iso_utc
 
 
 # Como se lee el valor de una caracteristica.
@@ -109,11 +110,11 @@ class MaterialAttribute(Base):
             "is_required": bool(self.is_required),
             "sort_order": self.sort_order,
             "created_by": self.created_by,
-            "creation_date": self.creation_date.isoformat() if self.creation_date else None,
+            "creation_date": a_iso_utc(self.creation_date),
             "last_update_date": (
-                self.last_update_date.isoformat() if self.last_update_date else None
+                a_iso_utc(self.last_update_date)
             ),
-            "deletion_date": self.deletion_date.isoformat() if self.deletion_date else None,
+            "deletion_date": a_iso_utc(self.deletion_date),
         }
 
 
@@ -156,7 +157,7 @@ class MaterialAttributeOption(Base):
             "id_material_attribute": self.id_material_attribute,
             "option_value": self.option_value,
             "sort_order": self.sort_order,
-            "deletion_date": self.deletion_date.isoformat() if self.deletion_date else None,
+            "deletion_date": a_iso_utc(self.deletion_date),
         }
 
 
@@ -212,5 +213,5 @@ class NmMaterialAttribute(Base):
                 float(self.value_number) if self.value_number is not None else None
             ),
             "id_material_attribute_option": self.id_material_attribute_option,
-            "deletion_date": self.deletion_date.isoformat() if self.deletion_date else None,
+            "deletion_date": a_iso_utc(self.deletion_date),
         }

@@ -5,31 +5,73 @@
 .kpi-tab.active .kpi-tab-label{color:#173b66}
 .kpi-tab-icon{border:0;background:transparent;color:#8a96a5;padding:6px;margin-right:2px;cursor:pointer;border-radius:8px;display:grid;place-items:center}
 .kpi-tab-icon:hover{background:#eef2f6;color:#173b66}
-.kpi-tab-icon.danger:hover{background:#fae5e5;color:#9b3030}
+.kpi-tab-icon.danger:hover{background:#fee2e2;color:#c62828}
 .kpi-tab-add{border:1px dashed #a9b7c6;background:#fff;color:#173b66;border-radius:12px;width:38px;height:38px;display:grid;place-items:center;cursor:pointer}
 .kpi-tab-add:hover{background:#d8efe8;border-color:#1b7a60;color:#1b7a60}
 
 .kpi-dashboard-body{display:flex;flex-direction:column;gap:16px}
 
-.kpi-widget-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px}
-.kpi-widget-placeholder{border:1px dashed #c3c2b7;border-radius:22px;min-height:240px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:#fbfaf7;color:#a6a49a;cursor:pointer;font:inherit}
+/* La cuadricula del tablero: MASONRY con grid, sin libreria.
+   * Columnas: tantas como quepan de 340px, con TOPE de 4 (el minimo de cada columna es lo mayor entre
+     340px y una cuarta parte del ancho, asi que nunca caben mas de 4).
+   * Filas: de 4px (`--kpi-fila`). Cada tarjeta ocupa las filas que mide (`grid-row-end: span N`, lo
+     escribe `useMasonryRef` en components/kpi-widgets/useMasonry.js), asi que conserva su ALTURA
+     NATURAL: no se estira para igualar a las vecinas.
+   * `dense`: cada tarjeta, en orden, cae en el primer hueco donde cabe (la fila mas alta, y en ella la
+     columna mas a la izquierda), que en la practica es la columna mas corta. Por eso las tarjetas
+     chicas se apilan a la derecha de la tabla, cada una a su alto, hasta llenar lo que ella mide.
+   * ORDEN: `posicion_orden` es el orden en que se colocan (el del DOM); el orden visual es por
+     columnas, no por renglones. Ver docs/despliegues/2026-09-29_kpis_dashboard_adser.md. */
+.kpi-widget-grid{--kpi-fila:4px;--kpi-hueco:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(max(340px,calc((100% - 3 * var(--kpi-hueco)) / 4)),1fr));grid-auto-rows:var(--kpi-fila);grid-auto-flow:row dense;column-gap:var(--kpi-hueco);row-gap:0;align-items:start;container-type:inline-size;container-name:kpi-cuadricula}
+/* Ancho doble (parametros.columnas = 2, hoy solo tablas). Con menos de dos columnas de 340px + el hueco
+   (696px) un `span 2` inventaria una columna implicita, asi que ahi vuelve a ocupar una. */
+.kpi-widget-doble{grid-column:span 2}
+@container kpi-cuadricula (max-width:695px){.kpi-widget-doble{grid-column:auto}}
+/* Un hijo de una cuadricula no baja de su ancho minimo de contenido (min-width: auto): una tabla
+   o un grafico ancho lo ensanchaba y se salia de su columna, quedando bajo el recuadro vecino.
+   Con min-width: 0 la columna manda y el contenido se ajusta a ella. */
+.kpi-widget-grid>*{min-width:0}
+.kpi-widget-grid>div{display:flex;flex-direction:column}
+.kpi-widget-grid>div>.kpi-widget-card{flex:none}
+/* Reordenar arrastrando (components/kpi-widgets/useReordenarTarjetas.js).
+   * `.kpi-widget-hueco`: la tarjeta arrastrada, ya en su lugar de destino del masonry, escondida pero con su
+     tamano real: es el hueco donde caera.
+   * `.kpi-widget-superpuesta`: la copia que sigue al puntero (DragOverlay), elevada. */
+.kpi-widget-hueco{border-radius:22px;outline:2px dashed #1b7a60;outline-offset:-2px;background:rgba(27,122,96,.07)}
+.kpi-widget-hueco>.kpi-widget-card{visibility:hidden}
+.kpi-widget-superpuesta{cursor:grabbing}
+.kpi-widget-superpuesta>.kpi-widget-card{box-shadow:0 22px 45px rgba(15,23,42,.28);transform:scale(1.02)}
+@media(prefers-reduced-motion:reduce){.kpi-widget-superpuesta>.kpi-widget-card{transform:none}}
+/* Recuadro de relleno: una columna, 240px de alto (64 filas de 4px con el hueco de 16px). Va despues de todas
+   las tarjetas, asi que `dense` lo mete debajo de las columnas mas cortas sin mover ninguna. */
+.kpi-widget-placeholder{grid-row-end:span 64;border:1px dashed #c3c2b7;border-radius:22px;min-height:240px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:#fbfaf7;color:#a6a49a;cursor:pointer;font:inherit}
+.kpi-widget-grid-arrastrando .kpi-widget-placeholder{visibility:hidden}
 .kpi-widget-placeholder span{font-size:12px;font-weight:700}
 .kpi-widget-placeholder:hover{background:#eef2f6;border-color:#173b66;color:#173b66}
-.kpi-widget-card{background:#fff;border:1px solid #e2e8f0;border-radius:22px;padding:18px;display:flex;flex-direction:column;gap:10px;box-shadow:0 12px 30px rgba(15,23,42,.05);min-width:0}
+.kpi-widget-card{background:#fff;border:1px solid #e2e8f0;border-left:4px solid var(--kpi-acento,#e2e8f0);border-radius:22px;padding:18px;display:flex;flex-direction:column;gap:10px;box-shadow:0 12px 30px rgba(15,23,42,.05);min-width:0;overflow-x:clip;transition:transform .18s ease,box-shadow .18s ease}
+/* Elevacion mientras se arrastra -- reemplaza el desvanecido (opacity) de
+   antes, que apagaba la tarjeta justo cuando mas se necesita verla bien. */
+.kpi-widget-dragging{box-shadow:0 22px 45px rgba(15,23,42,.22);transform:scale(1.02);cursor:grabbing}
+@media(prefers-reduced-motion:reduce){.kpi-widget-card{transition:none}.kpi-widget-dragging{transform:none}}
+/* La cabecera CRECE con su contenido: sin alturas fijas, sin posicionamiento
+   absoluto y sin margenes negativos (el -6px de antes montaba una linea
+   subtitulo sobre la otra en cuanto el rango o el titulo ocupaban dos
+   renglones). Titulo y subtitulos van en una columna con separacion propia
+   (gap), y ambos rompen palabras largas en vez de desbordar. */
 .kpi-widget-card-header{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
-.kpi-widget-card-header h4{margin:0;font-size:16px;color:#173b66;line-height:1.25}
+.kpi-widget-card-titulos{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1 1 auto}
+.kpi-widget-card-header h4{margin:0 0 2px;font-size:16px;color:#173b66;line-height:1.3;overflow-wrap:anywhere}
 .kpi-widget-card-actions{display:flex;gap:6px;flex-shrink:0}
 .kpi-icon-button{border:0;background:#eef2f6;color:#526273;border-radius:8px;padding:7px;cursor:pointer;display:grid;place-items:center}
 .kpi-icon-button:hover{background:#d8efe8;color:#1b7a60}
-.kpi-icon-button.danger:hover{background:#fae5e5;color:#9b3030}
+.kpi-icon-button.danger:hover{background:#fee2e2;color:#c62828}
 /* touch-action:none -- sin esto, arrastrar el handle en una pantalla tactil
    compite con el scroll de la pagina (ver docs de dnd-kit sobre PointerSensor
    en touch devices). */
 .kpi-drag-handle{cursor:grab;touch-action:none}
 .kpi-drag-handle:active{cursor:grabbing}
-.kpi-widget-meta{color:#8a96a5;font-size:12px;font-weight:700;margin:0}
-.kpi-widget-meta+.kpi-widget-meta{margin-top:-6px}
-.kpi-chart-box{min-height:240px;display:flex;flex-direction:column;justify-content:center}
+.kpi-widget-meta{color:#8a96a5;font-size:12px;font-weight:700;line-height:1.35;margin:0;overflow-wrap:anywhere}
+.kpi-chart-box{flex:none;min-height:0;min-width:0;max-width:100%;display:flex;flex-direction:column;justify-content:center}
 
 .kpi-number-widget{display:flex;flex-direction:column;gap:8px;padding:14px 4px 6px}
 .kpi-number-widget strong{font-size:38px;color:#0b0b0b;line-height:1.1}
@@ -42,11 +84,17 @@
 .kpi-number-module-icon{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:34px;height:34px;border-radius:50%}
 .kpi-number-sparkline{flex-shrink:0}
 .kpi-delta{display:inline-flex;align-items:center;gap:4px;font-weight:800;font-size:13px}
-.kpi-delta.up{color:#006300}
-.kpi-delta.down{color:#d03b3b}
+/* Vivo, no oscuro -- reemplaza el verde/rojo apagados de antes. La flecha
+   (Arriba/Abajo) siempre muestra la direccion real del cambio; este color
+   dice si esa direccion es buena o mala segun `direccion` del KPI -- dos
+   senales independientes, nunca solo el color. */
+.kpi-delta.bueno{color:#1f9d5c}
+.kpi-delta.malo{color:#ef6f5c}
+.kpi-delta.neutral{color:#8a96a5;font-weight:700}
+.kpi-number-range-hint{font-size:11px;color:#8a96a5;white-space:nowrap}
 
 .kpi-empty-inline{color:#8a96a5;text-align:center;padding:24px 8px;font-size:13px}
-.kpi-error-inline{color:#991b1b;background:#fff5f5;border:1px solid #fecaca;border-radius:12px;padding:12px 14px;font-size:13px}
+.kpi-error-inline{color:#c62828;background:#fff5f5;border:1px solid #fecaca;border-radius:12px;padding:12px 14px;font-size:13px}
 
 /* Panel fijo arriba de la cuadricula (ya no modal con backdrop): nunca
    bloquea el resto de la pantalla, se cierra con el boton de cancelar del
@@ -83,7 +131,7 @@
 .kpi-panel-col{display:flex;flex-direction:column;min-width:0}
 
 .kpi-picker-count{font-style:normal;font-weight:700;color:#173b66}
-.kpi-inline-notice{background:#fff8e6;border:1px solid #f2d492;color:#7a5b00;border-radius:10px;padding:8px 12px;font-size:12px;margin:0 0 4px}
+.kpi-inline-notice{background:#eaf3ff;border:1px solid #b9d5fb;color:#1d5fb3;border-radius:10px;padding:8px 12px;font-size:12px;margin:0 0 4px}
 .kpi-chip-badge{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#173b66;color:#fff;font-size:10px;font-weight:800;margin-right:6px}
 
 /* Swatch de color por KPI: siempre un tono de la paleta CATEGORICAL cerrada,
@@ -104,7 +152,7 @@
 .kpi-shortcut-button:hover{background:#eef2f6;border-color:#173b66}
 .kpi-shortcut-button.active{background:#eef4fb;border-color:#173b66;color:#173b66}
 
-.kpi-employee-picker,.kpi-department-picker{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+.kpi-employee-picker,.kpi-department-picker,.kpi-team-picker{display:flex;flex-direction:column;gap:8px;margin-top:6px}
 .kpi-department-picker-label{font-weight:800;color:#334155;font-size:13px}
 .kpi-department-list{display:flex;flex-wrap:wrap;gap:6px;max-height:160px;overflow:auto;padding:4px}
 .kpi-employee-list{display:flex;flex-wrap:wrap;gap:6px}
@@ -152,11 +200,6 @@
 .kpi-picker-section{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
 .kpi-picker-section>span{font-weight:800;color:#334155;font-size:13px}
 
-.kpi-icon-option-group{display:flex;flex-wrap:wrap;gap:8px}
-.kpi-icon-option{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:78px;border:1px solid #d7e0ea;background:#f4f6f9;color:#526273;border-radius:12px;padding:10px 12px;cursor:pointer;font:inherit}
-.kpi-icon-option span{font-size:11px;font-weight:700;white-space:nowrap}
-.kpi-icon-option:hover{background:#eef2f6;color:#173b66}
-.kpi-icon-option.active{background:#fff;border-color:#173b66;color:#173b66;box-shadow:0 1px 4px rgba(15,23,42,.12)}
 
 .kpi-chip-option-group{display:flex;flex-wrap:wrap;gap:8px}
 .kpi-chip-option{border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:999px;padding:7px 14px;font-size:13px;font-weight:700;cursor:pointer;font:inherit}
@@ -207,3 +250,13 @@
    foto de la pantalla de administracion. */
 body.kpi-pdf-exporting .kpi-widget-placeholder{display:none}
 body.kpi-pdf-exporting .kpi-widget-card-actions{display:none}
+
+
+/* --- Tarjeta recien agregada: entra desde abajo con un halo que se apaga --- */
+@keyframes kpi-widget-entrada{
+  from{opacity:0;transform:translateY(16px) scale(.97);box-shadow:0 0 0 0 transparent}
+  60%{opacity:1;transform:none;box-shadow:0 0 0 4px color-mix(in srgb,var(--kpi-acento,#2a78d6) 35%,transparent)}
+  to{opacity:1;transform:none;box-shadow:0 0 0 0 transparent}
+}
+.kpi-widget-entrada{animation:kpi-widget-entrada .9s cubic-bezier(.2,.8,.2,1) both}
+@media(prefers-reduced-motion:reduce){.kpi-widget-entrada{animation:none}}

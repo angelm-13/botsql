@@ -1,0 +1,170 @@
+/* Ordenes de compra: lista, orden abierta, editor y reglas de autorizacion. */
+
+.oc-layout {
+  display: grid; gap: 18px; align-items: start;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+}
+/* Resumen: cuantas ordenes hay por atender; cada tarjeta filtra la lista. */
+.oc-resumen { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 0 0 14px; }
+.oc-resumen-tarjeta {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 14px;
+  border: 1px solid #e3eae6; border-left-width: 4px; border-radius: 10px; background: #fff;
+  text-align: left; cursor: pointer;
+}
+.oc-resumen-tarjeta strong { font-size: 24px; line-height: 1.1; }
+.oc-resumen-tarjeta span { font-size: 12.5px; color: #475569; }
+.oc-resumen-tarjeta:hover { border-color: #86b99a; }
+.oc-resumen-tarjeta.activa { box-shadow: 0 0 0 2px #bbf7d0; }
+.oc-resumen-tarjeta.vacia strong { color: #94a3b8; }
+.oc-tono-alerta { border-left-color: #f59e0b; }
+.oc-tono-info { border-left-color: #3b82f6; }
+.oc-tono-ok { border-left-color: #16a34a; }
+.oc-tono-neutro { border-left-color: #94a3b8; }
+
+/* Sin orden abierta la lista es una tabla a todo lo ancho. */
+.oc-layout-tabla { grid-template-columns: minmax(0, 1fr); }
+.oc-tabla-lista .num { text-align: right; }
+.oc-fila { cursor: pointer; }
+.oc-fila:hover td, .oc-fila:focus td { background: #f4faf6; }
+.oc-creador { display: block; }
+.oc-todas { align-self: flex-start; }
+
+.oc-lista { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.oc-filtros { display: flex; flex-wrap: wrap; gap: 6px; }
+.oc-filtro {
+  padding: 5px 11px; border: 1px solid #d5ddd9; border-radius: 999px; background: #fff;
+  font-size: 12.5px; cursor: pointer;
+}
+.oc-filtro.activo { background: #14532d; border-color: #14532d; color: #fff; font-weight: 700; }
+.oc-busqueda { width: 100%; }
+.oc-ordenes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.oc-orden {
+  width: 100%; display: flex; flex-direction: column; gap: 3px; text-align: left;
+  padding: 10px 12px; border: 1px solid #e3eae6; border-radius: 10px; background: #fff; cursor: pointer;
+}
+.oc-orden:hover { border-color: #86b99a; }
+.oc-orden.activa { border-color: #14532d; box-shadow: 0 0 0 2px #bbf7d0; }
+.oc-orden-linea { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; }
+.oc-orden-proveedor { font-size: 13px; }
+
+.oc-estado {
+  padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; white-space: nowrap;
+}
+.oc-estado-borrador { background: #e2e8f0; color: #334155; }
+.oc-estado-por-autorizar { background: #fef3c7; color: #78350f; }
+.oc-estado-autorizada { background: #dbeafe; color: #1e3a8a; }
+.oc-estado-rechazada { background: #fee2e2; color: #7f1d1d; }
+.oc-estado-comprada { background: #dcfce7; color: #14532d; }
+.oc-estado-recibida { background: #d1fae5; color: #065f46; }
+.oc-estado-cerrada { background: #e2e8f0; color: #475569; }
+.oc-estado-cancelada { background: #f1f5f9; color: #64748b; text-decoration: line-through; }
+
+.oc-panel { min-width: 0; padding: 16px 18px; border: 1px solid #e3eae6; border-radius: 12px; background: #fff; }
+.oc-detalle h3, .oc-editor h3 { margin: 0 0 2px; }
+.oc-detalle h4, .oc-editor h4 { margin: 18px 0 8px; }
+.oc-detalle-cabecera { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.oc-detalle-cabecera p { margin: 2px 0; }
+
+.oc-cifras {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 14px 0 6px;
+}
+.oc-cifras > div { padding: 10px 12px; border: 1px solid #e8eeeb; border-radius: 10px; background: #f8faf9; }
+.oc-cifras dt { font-size: 11.5px; color: #64748b; text-transform: uppercase; letter-spacing: .04em; }
+.oc-cifras dd { margin: 2px 0 0; font-size: 18px; font-weight: 800; }
+.oc-cifras small { display: block; font-size: 11.5px; }
+.oc-excede { color: #b91c1c; }
+.oc-meta { margin: 4px 0 0; font-size: 12.5px; }
+.oc-exceso { display: flex; align-items: center; gap: 8px; }
+
+.oc-tabla-renglones input.oc-numero { width: 72px; }
+.oc-tabla-renglones input.oc-numero-ancho { width: 110px; }
+.oc-tabla-renglones .oc-grupo td {
+  background: #f1f5f4; font-size: 12.5px; font-weight: 700; color: #334155;
+}
+.oc-tabla-renglones tfoot td { font-weight: 800; border-top: 2px solid #e3eae6; }
+.oc-total-etiqueta { text-align: right; }
+.oc-total { font-size: 15px; }
+.oc-etiqueta {
+  margin-left: 8px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700;
+}
+.oc-etiqueta-propio { background: #ede9fe; color: #4c1d95; }
+
+.oc-form-grid {
+  display: grid; gap: 10px 14px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 10px 0;
+}
+.oc-form-grid label { display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; min-width: 0; }
+.oc-form-grid label span { color: #475569; }
+.oc-campo-ancho { grid-column: 1 / -1; }
+.oc-casilla { flex-direction: row !important; align-items: center; gap: 8px !important; align-self: end; }
+
+.oc-agregar { margin: 12px 0; padding: 8px 12px; border: 1px dashed #cbd5e1; border-radius: 10px; }
+.oc-agregar summary { cursor: pointer; font-weight: 700; font-size: 13px; }
+.oc-disponibles { list-style: none; margin: 10px 0 0; padding: 0; max-height: 260px; overflow: auto; }
+.oc-disponibles li {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 7px 4px; border-bottom: 1px solid #eef2f0; font-size: 13px;
+}
+.oc-libre {
+  display: grid; gap: 10px; align-items: end; margin-top: 10px;
+  grid-template-columns: minmax(0, 2fr) 90px 120px 130px auto;
+}
+.oc-libre label { display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; }
+.oc-libre .oc-campo-ancho { grid-column: auto; }
+.oc-error-libre { grid-column: 1 / -1; margin: 0; color: #b91c1c; font-size: 12.5px; }
+
+.oc-comprobantes { list-style: none; margin: 0 0 10px; padding: 0; }
+.oc-comprobantes li {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 8px 10px; margin-bottom: 5px; border: 1px solid #e8eeeb; border-radius: 9px; font-size: 13px;
+}
+.oc-comprobante-acciones { display: inline-flex; gap: 4px; flex-shrink: 0; }
+.oc-uuid { display: block; font-family: ui-monospace, monospace; }
+.oc-subir {
+  display: grid; gap: 10px; align-items: end; margin: 8px 0 14px; padding: 12px;
+  border: 1px dashed #cbd5e1; border-radius: 10px; background: #f8faf9;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+.oc-subir label { display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; min-width: 0; }
+.oc-ayuda-xml { grid-column: 1 / -1; margin: 0; font-size: 12.5px; }
+.oc-compra {
+  margin: 14px 0; padding: 12px 14px; border: 1px solid #86efac; border-radius: 10px; background: #f0fdf4;
+}
+.oc-compra h4 { margin-top: 0; }
+.oc-ayuda { margin: 6px 0 0; font-size: 12.5px; }
+
+.oc-acciones { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 6px; }
+.oc-motivo {
+  display: flex; flex-wrap: wrap; align-items: end; gap: 8px; margin: 8px 0; padding: 10px 12px;
+  border: 1px solid #fde68a; border-radius: 10px; background: #fffbeb;
+}
+.oc-motivo label { flex: 1 1 260px; display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; }
+
+.oc-bitacora { margin: 0; padding-left: 18px; font-size: 13px; }
+.oc-bitacora li { margin-bottom: 7px; }
+.oc-bitacora-nota { margin: 2px 0 0; padding: 4px 8px; background: #f8faf9; border-left: 3px solid #cbd5e1; font-size: 12.5px; }
+
+.oc-politica {
+  margin-bottom: 14px; padding: 8px 12px; border: 1px solid #e3eae6; border-radius: 10px; background: #fff;
+}
+.oc-politica summary { cursor: pointer; font-weight: 700; font-size: 13px; display: flex; align-items: center; gap: 6px; }
+.oc-politica-reglas { margin: 8px 0; padding-left: 18px; font-size: 13px; }
+.oc-politica-form { margin-top: 8px; }
+
+@media (max-width: 900px) {
+  .oc-resumen { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .oc-layout { grid-template-columns: 1fr; }
+  .oc-cifras { grid-template-columns: 1fr; }
+  .oc-form-grid { grid-template-columns: 1fr; }
+  .oc-libre { grid-template-columns: 1fr 1fr; }
+  .oc-libre .oc-campo-ancho { grid-column: 1 / -1; }
+}
+
+/* Recepcion: lo que llego de cada renglon, en parcialidades. */
+.oc-recepcion { list-style: none; margin: 0 0 0.75rem; padding: 0; display: grid; gap: 0.5rem; }
+.oc-recepcion li { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.oc-completo { color: var(--success, #1f7a4d); font-weight: 600; }
+
+.oc-presupuesto { width: 100%; font-size: 13px; margin: 8px 0; border-collapse: collapse; }
+.oc-presupuesto th, .oc-presupuesto td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #e3eae6; }
+.oc-presupuesto input[type="number"] { width: 110px; }
+.oc-sobregiro td { color: #b3261e; font-weight: 600; }

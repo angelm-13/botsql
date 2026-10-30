@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 
 from app.models.entity_permission import EntityPermission
 from app.models.permission import Permission
@@ -12,8 +12,12 @@ from app.models.proyect_event import ProyectEvent
 from app.models.proyect_payment import ProyectPayment
 from app.models.session import transaction_context
 from app.models.task import Task
+from app.models.user import User
+from app.services.notification_service import create_notification
 from app.services.operations_workflow import TASK_CLOSED_STATUSES
 from app.utils.errors import AppError
+from app.utils.scope import SCOPE_ALL, owner_ids, scope_bits
+from app.utils.tiempo import a_iso_utc
 
 
 # El recorrido del TALLER. Los dos ultimos se agregaron con la orden de trabajo
@@ -24,6 +28,21 @@ from app.utils.errors import AppError
 # detuvo y hay que explicar por que; en espera de material es que el trabajo
 # esta bien y falta que llegue algo. Mezclarlos haria que la unica lista de
 # "por que no avanza esto" tuviera un motivo escrito a mano en cada renglon.
+#
+# `waiting_material` es un paso OBLIGATORIO entre `authorized` y
+# `in_progress`, no un desvio opcional a medio trabajo (decision de negocio,
+# 2026-09-25): una orden de compra puede surtir a varios proyectos a la vez
+# (ej. los mismos costales de cemento), asi que autorizar el proyecto no
+# significa que el taller ya tenga en mano lo que necesita. Por eso
+# `authorized` ya NO tiene salida directa a `in_progress` -- ver
+# PROJECT_TRANSITIONS. La entrada a esta espera y la salida hacia
+# `in_progress` las da quien confirma el material, no el taller: quien tiene la
+# capacidad `project_supply` (Compras, que sabe si la compra ya llego) o, de
+# respaldo, `project_authorization` (Gerente). Antes (2026-09-25) eran solo de
+# quien autoriza; cambio del 2026-10-16. Tener una tarea capturada ya no es
+# condicion para arrancar. El taller SI conserva su propio
+# `in_progress -> waiting_material` para cuando el trabajo ya arranco y el
+# material se acaba a medias -- ese caso no cambia.
 PROJECT_STATUSES = (
     "draft",
     "submitted",
@@ -33,36 +52,47 @@ PROJECT_STATUSES = (
     "in_progress",
     "waiting_material",
     "stopped",
+    "collected",
     "completed",
-    "delivered",
 )
 
 PROJECT_TRANSITIONS = {
-    # Gerente mueve el proyecto directo desde Borrador -- al recibir la
-    # orden de compra del cliente -- sin que Supervisor tenga que "enviarlo
-    # a revision" primero. `submitted` se deja alcanzable por compatibilidad
-    # con lo que ya se hubiera capturado antes de este cambio, pero ya nadie
-    # tiene permiso para pedirlo (ver `transition_project`).
-    "draft": {"submitted", "authorized", "denied", "blocked"},
+    # Supervisor levanta el proyecto; Gerencia lo pasa a "en revision" y de ahi
+    # a autorizado -- o lo deniega/bloquea desde cualquiera de los dos. Ya no
+    # hay salto directo de Borrador a Autorizado (decision de negocio,
+    # 2026-10-19): la revision es un paso real.
+    "draft": {"submitted", "denied", "blocked"},
     "submitted": {"authorized", "denied", "blocked"},
     "blocked": {"submitted", "authorized", "denied"},
-    "authorized": {"in_progress"},
-    # `blocked` tambien es destino valido desde aqui: Jefe de taller puede
-    # bloquear un proyecto que ya esta en curso, no solo Gerente rechazandolo
-    # antes de iniciar (desde `submitted`). Ver el candado de rol en
-    # `transition_project`. Volver de un bloqueo en curso pasa por Gerente
-    # (blocked -> authorized -> in_progress), a proposito: quien bloquea no
-    # se autoriza solo de vuelta.
-    "in_progress": {"waiting_material", "stopped", "completed", "blocked"},
-    # De la espera se vuelve al trabajo: el material llego. No se salta a
-    # terminado porque lo que faltaba era justo para poder terminarlo.
+    # Ya NO hay salida directa a `in_progress`: todo proyecto autorizado pasa
+    # primero por `waiting_material` (ver el comentario de PROJECT_STATUSES).
+    "authorized": {"waiting_material"},
+    # `blocked` tambien es destino valido desde aqui: quien lidera el
+    # proyecto (o quien autoriza) puede bloquear uno que ya esta en curso, no
+    # solo Gerente rechazandolo antes de iniciar (desde `submitted`). Jefe de
+    # taller NO entra aqui -- para taller lo equivalente es "detenido"
+    # (`stopped`). Ver el candado de rol en `transition_project`. Volver de
+    # un bloqueo en curso pasa por Gerente (blocked -> authorized ->
+    # in_progress), a proposito: quien bloquea no se autoriza solo de vuelta.
+    #
+    # El final es el mismo con o sin maquila: se RECOLECTA (`collected`) y de ahi
+    # se completa. Quien lo pide cambia (ver `transition_project`).
+    "in_progress": {"waiting_material", "stopped", "collected", "blocked"},
+    # `waiting_material` sirve DOS momentos distintos con el mismo estatus:
+    # la espera obligatoria de entrada (desde `authorized`, la controla
+    # Gerente) y la pausa a medio trabajo (desde `in_progress`, la controla
+    # el taller). La salida siempre es la misma transicion tecnica
+    # (`waiting_material -> in_progress`), pero `transition_project` distingue
+    # quien puede pedirla mirando de donde viene el proyecto -- no hay forma
+    # de saber aqui si el material que se esperaba era el de arranque o el de
+    # una pausa a medias. No se salta a terminado porque lo que faltaba era
+    # justo para poder terminarlo.
     "waiting_material": {"in_progress", "stopped"},
     "stopped": {"in_progress"},
-    # Terminado es que el taller acabo; entregado, que salio hacia el cliente.
-    # Son dos hechos con dias de diferencia y alguien pregunta por los dos.
-    "completed": {"delivered"},
+    "collected": {"completed"},
+    # `completed` es el final: de ahi el proyecto ya no se mueve.
+    "completed": set(),
     "denied": set(),
-    "delivered": set(),
 }
 
 REASON_REQUIRED_TARGETS = {"denied", "blocked", "stopped"}
@@ -71,16 +101,26 @@ REASON_REQUIRED_TARGETS = {"denied", "blocked", "stopped"}
 # Se DERIVABA de `PROJECT_TRANSITIONS` -- "los que no tienen salida" -- y
 # funcionaba mientras terminar fuera el final. Dejo de funcionar al agregar
 # `delivered`: `completed` paso a tener salida y, con la regla vieja, un
-# proyecto terminado volvia a aceptar tareas nuevas. Lo detecto
+# proyecto terminado volvia a aceptar tareas nuevas. (`delivered` ya no existe:
+# 2026-10-19 se retiro y quedo solo `collected`; el aviso sigue valido.) Lo detecto
 # `test_no_new_task_in_a_closed_project`.
 #
 # La leccion es que eran dos cosas distintas que coincidian: "no avanza mas" y
 # "no acepta mas trabajo". Un proyecto TERMINADO todavia avanza -- falta
 # entregarlo -- pero el trabajo ya se hizo. Asi que se declara, y el aviso
 # original sigue vigente: una sola lista, aqui, no una copia en `task_service`.
-PROJECT_CLOSED_STATUSES = frozenset({"completed", "delivered", "denied"})
+PROJECT_CLOSED_STATUSES = frozenset({"collected", "completed", "denied"})
 WORKSHOP_VISIBLE_STATUSES = {"authorized", "in_progress", "waiting_material",
-                             "stopped", "completed", "delivered"}
+                             "stopped", "collected", "completed"}
+# Los estatus que ve quien confirma el material (`project_supply`): de
+# autorizado en adelante. Ver `_scoped_query`.
+SUPPLY_VISIBLE_STATUSES = WORKSHOP_VISIBLE_STATUSES
+
+# Mientras el proyecto esta en estos estatus se lleva la cuenta del material que
+# falta (indicador en la lista y aviso de "material completo"). Antes de la
+# espera todavia no se ha empezado a abastecer; despues de completado, ya no
+# hay nada que esperar.
+MATERIAL_TRACKED_STATUSES = ("waiting_material", "in_progress", "stopped")
 PROJECT_MUTABLE_FIELDS = {
     "id_customer_supplier", "id_customer_contact", "proyect_description", "title",
     # Los de la orden de trabajo. El estado NO esta aqui: se mueve por
@@ -100,7 +140,28 @@ PROJECT_MUTABLE_FIELDS = {
     "folio", "purchase_order",
     "purchase_order_item", "delivery_date",
     "id_drawing_document",
+    # El checkbox de "requiere maquila". Se captura al crear (por omision
+    # True, el comportamiento de siempre) y se puede corregir despues por si
+    # se marco mal -- no se bloquea al autorizar porque no hay ningun dato
+    # que dependa de eso todavia en ese momento.
+    "requires_maquila",
+    # `priority`/`total_cost` tampoco estan aqui a proposito: son exclusivos
+    # de Gerencia y se filtran/validan aparte, en `_apply_management_only_fields`
+    # -- meterlos aqui dejaria pasar el valor crudo del payload sin validar
+    # para cualquier actor sin alcance comercial (`_apply_management_only_fields`
+    # no hace nada si no lo tiene, en vez de sobreescribir con lo ya validado).
 }
+
+# Campos de `proyect` que existen en la tabla y que el formulario YA NO escribe.
+# Se dejan documentados aqui porque su ausencia de `PROJECT_MUTABLE_FIELDS` es
+# una decision, no un olvido:
+#
+#   * `leader`    -- el responsable es SIEMPRE quien crea el proyecto. Elegirlo
+#                    de una lista permitia levantar un proyecto a nombre de otra
+#                    persona, y el responsable dejaba de ser quien respondia.
+#   * `id_supervisor` -- ya no se ASIGNA: el supervisor TOMA el proyecto
+#                    (`take_project`). Asignarlo desde el formulario hacia que
+#                    quien captura repartiera el trabajo del taller.
 
 # El recorrido COMERCIAL, que corre en paralelo al de taller: un proyecto puede
 # estar entregado y sin cobrar.
@@ -113,10 +174,27 @@ MANAGEMENT_STATUSES = (
 
 MANAGEMENT_TRANSITIONS = {
     "pendiente_orden_compra": {"autorizado", "cancelado"},
-    "autorizado": {"cobrado", "cancelado"},
+    # "cobrado" YA NO es un destino manual (decision de negocio, 2026-09-25):
+    # Gerencia lo podia marcar a mano sin que hubiera entrado un solo peso,
+    # mientras la columna de "estado de cobro" (ver `_collection_status`) lo
+    # calculaba solo contra las parcialidades -- dos "cobrado" independientes
+    # que se podian contradecir. Ahora lo mueve `_sync_management_status_with_collection`,
+    # en automatico, en los dos sentidos.
+    "autorizado": {"cancelado"},
     "cobrado": set(),
     "cancelado": set(),
 }
+
+# Prioridad del proyecto -- pedido explicito de 3 niveles, no 4: a diferencia
+# de `Task.priority`/`Laboratory.priority` (que si tienen "urgente"), aqui se
+# dejo en 3 porque asi se pidio, no por descuido.
+PROJECT_PRIORITIES = ("baja", "media", "alta")
+
+# Campos exclusivos de Gerencia (candado real, no solo de UI): quien no tiene
+# la capacidad `project_authorization` (ver `_tiene_alcance_comercial`) los ve
+# recortados de la respuesta y cualquier intento de escribirlos se ignora en
+# silencio, igual que un campo que no le pertenece.
+PROJECT_MANAGEMENT_ONLY_FIELDS = {"priority", "total_cost"}
 
 
 def normalize_project_status(value) -> str:
@@ -127,7 +205,15 @@ def normalize_project_status(value) -> str:
 def validate_project_transition(current_status, target_status, reason=None) -> str:
     current = normalize_project_status(current_status)
     target = normalize_project_status(target_status)
-    if current not in PROJECT_TRANSITIONS or target not in PROJECT_TRANSITIONS[current]:
+    allowed_targets = PROJECT_TRANSITIONS.get(current, set())
+    # Un proyecto sin maquila (pinturas, drenaje, cimientos) recorre los MISMOS
+    # estatus que uno con maquila: autorizado -> en espera de material (Compras)
+    # -> en proceso (Compras confirma que llego el material) -> completado. Lo
+    # unico que cambia es QUIEN lo lleva despues: no el Jefe de taller, que ni lo
+    # ve, sino el supervisor que lo lidera (ver `_scoped_query` y
+    # `transition_project`). Hasta 2026-10-16 saltaba directo de autorizado a
+    # completado; ese atajo se retiro.
+    if current not in PROJECT_TRANSITIONS or target not in allowed_targets:
         raise AppError(
             "errors.project_invalid_transition",
             409,
@@ -160,6 +246,29 @@ def validate_management_transition(current_status, target_status) -> str:
     return destino
 
 
+def _tiene_alcance_comercial(db, user_data: dict) -> bool:
+    """Mismo criterio que `_require_management_scope`, sin lanzar excepcion.
+
+    `priority`/`total_cost` no deben tronar con 403 si alguien sin el alcance
+    los manda -- se descartan en silencio, igual que un campo que no le
+    pertenece al formulario -- pero SI deben negarse de verdad, no solo
+    esconderse en la UI. `_scope_name` ya vive mas abajo en este archivo;
+    Python resuelve la referencia al llamar, no al definir, asi que el orden
+    de las funciones en el archivo no importa aqui.
+    """
+    return _scope_name(db, user_data) in {"authorization", "unrestricted"}
+
+
+def _ve_lo_comercial(db, user_data: dict) -> bool:
+    """Ve `priority`, `total_cost` y el estado de cobro (sin poder escribirlos).
+
+    Quien autoriza los ve y los escribe (`_tiene_alcance_comercial`); quien solo
+    supervisa (`project_oversight`, Gerente Comercial) los ve y nada mas.
+    """
+    return (_tiene_alcance_comercial(db, user_data)
+            or _scope_name(db, user_data) == "oversight")
+
+
 def _require_management_scope(db, user_data: dict) -> None:
     """Candado de rol compartido por todo el recorrido de GERENCIA.
 
@@ -171,6 +280,143 @@ def _require_management_scope(db, user_data: dict) -> None:
     scope = _scope_name(db, user_data)
     if scope not in {"authorization", "unrestricted"}:
         raise AppError("errors.permission_denied", 403, {"scope": scope})
+
+
+def _vales_con_material_pendiente(db, id_proyect) -> int:
+    """Vales vivos del proyecto con renglones de salida sin devolver.
+
+    Incluye lo apartado (prevale y vale en espera): un proyecto que se cierra o
+    se cancela con material pedido, entregado o prestado deja una deuda de
+    almacen sin dueno.
+    """
+    from app.models.incident import Incident
+    from app.models.nm_incident_product import NmIncidentProduct
+
+    return db.query(Incident.id_incident).join(
+        NmIncidentProduct, NmIncidentProduct.id_incident == Incident.id_incident
+    ).filter(
+        Incident.id_proyect == id_proyect,
+        Incident.deletion_date.is_(None),
+        func.lower(func.coalesce(Incident.incident_status, "")).notin_(("cerrada", "cerrado", "cancelado")),
+        NmIncidentProduct.deletion_date.is_(None),
+        NmIncidentProduct.direction == "salida",
+        NmIncidentProduct.close_date.is_(None),
+    ).distinct().count()
+
+
+def _ordenes_de_compra_vivas(db, id_proyect) -> list[str]:
+    """Folios de las ordenes de compra que todavia incluyen renglones de este
+    proyecto (no canceladas ni rechazadas): comprar para un proyecto cancelado."""
+    from app.models.purchase_order import PurchaseOrder, PurchaseOrderLine
+    from app.services.proyect_material_need_service import ORDER_STATES_THAT_RELEASE_NEEDS
+
+    filas = db.query(PurchaseOrder.folio).join(
+        PurchaseOrderLine, PurchaseOrderLine.id_purchase_order == PurchaseOrder.id_purchase_order
+    ).filter(
+        PurchaseOrderLine.id_proyect == id_proyect,
+        PurchaseOrderLine.deletion_date.is_(None),
+        PurchaseOrder.deletion_date.is_(None),
+        PurchaseOrder.order_status.notin_(ORDER_STATES_THAT_RELEASE_NEEDS),
+    ).distinct().all()
+    return [f[0] for f in filas]
+
+
+def material_readiness_por_proyecto(db, ids_proyect) -> dict:
+    """`material_readiness` de varios proyectos en dos consultas (la lista lo pide
+    por pagina; uno por uno eran dos consultas por fila)."""
+    from app.models.proyect_material_need import ProyectMaterialNeed
+    from app.models.purchase_order import PurchaseOrder, PurchaseOrderLine
+    from app.services.proyect_material_need_service import ORDER_STATES_THAT_RELEASE_NEEDS
+
+    ids = [int(i) for i in ids_proyect]
+    resultado = {i: {"total": 0, "received": 0, "on_order": 0, "not_ordered": 0, "ready": True}
+                 for i in ids}
+    if not ids:
+        return resultado
+    proyecto_de = dict(db.query(
+        ProyectMaterialNeed.id_proyect_material_need, ProyectMaterialNeed.id_proyect).filter(
+        ProyectMaterialNeed.id_proyect.in_(ids),
+        ProyectMaterialNeed.need_status == "open",
+        ProyectMaterialNeed.deletion_date.is_(None)).all())
+    renglones = {}
+    if proyecto_de:
+        for need, ordenado, recibido in db.query(
+                PurchaseOrderLine.id_proyect_material_need,
+                PurchaseOrderLine.quantity, PurchaseOrderLine.quantity_received
+        ).join(PurchaseOrder, PurchaseOrder.id_purchase_order == PurchaseOrderLine.id_purchase_order
+               ).filter(
+            PurchaseOrderLine.id_proyect_material_need.in_(list(proyecto_de)),
+            PurchaseOrderLine.deletion_date.is_(None),
+            PurchaseOrder.deletion_date.is_(None),
+            PurchaseOrder.order_status.notin_(ORDER_STATES_THAT_RELEASE_NEEDS)).all():
+            renglones[need] = (ordenado, recibido)
+    for need, id_proyect in proyecto_de.items():
+        cuenta = resultado[int(id_proyect)]
+        cuenta["total"] += 1
+        if need not in renglones:
+            cuenta["not_ordered"] += 1
+        elif renglones[need][1] >= renglones[need][0]:
+            cuenta["received"] += 1
+        else:
+            cuenta["on_order"] += 1
+    for cuenta in resultado.values():
+        cuenta["ready"] = cuenta["received"] == cuenta["total"]
+    return resultado
+
+
+def material_readiness(db, id_proyect) -> dict:
+    """Como va el material que el proyecto pidio: cuantas necesidades abiertas
+    ya llegaron, cuales vienen en una orden y cuales ni siquiera se han pedido.
+
+    Una necesidad llego cuando su renglon de orden ya recibio todo lo ordenado.
+    Sin necesidades abiertas no hay nada que esperar (`ready` True).
+    """
+    return material_readiness_por_proyecto(db, [id_proyect])[int(id_proyect)]
+
+
+def avisar_material_completo(ids_proyect, actor_id) -> None:
+    """Avisa que a un proyecto ya le llego TODO el material que pidio.
+
+    Se llama desde la recepcion de una orden, ya cerrada su transaccion (misma
+    razon que `_notificar_proyecto`). Solo avisa de proyectos con control de
+    material que ya pasaron a la espera, con al menos una necesidad, y no repite
+    el aviso: una recepcion parcial de una orden con renglones de varios
+    proyectos pasa por aqui otra vez con los que ya estaban completos.
+    """
+    from app.models.notification import Notification
+
+    pendientes = []
+    try:
+        with transaction_context() as db:
+            proyectos = db.query(Proyect).filter(
+                Proyect.id_proyect.in_([int(i) for i in ids_proyect]),
+                Proyect.deletion_date.is_(None),
+                Proyect.proyect_status.in_(MATERIAL_TRACKED_STATUSES),
+            ).all()
+            avance = material_readiness_por_proyecto(db, [p.id_proyect for p in proyectos])
+            compras = _users_with_capability(db, "project_supply")
+            for proyecto in proyectos:
+                material = avance[proyecto.id_proyect]
+                if not material["total"] or not material["ready"]:
+                    continue
+                mensaje = "ya llego todo el material pedido (%d)" % material["total"]
+                ya_avisado = db.query(Notification.id_notification).filter(
+                    Notification.id_proyect == proyecto.id_proyect,
+                    Notification.title == "Material completo",
+                    Notification.message.like("%" + mensaje),
+                ).first()
+                if ya_avisado:
+                    continue
+                pendientes.append(dict(
+                    id_proyect=proyecto.id_proyect,
+                    nombre_proyecto=proyecto.title or proyecto.proyect_description
+                    or f"Proyecto {proyecto.id_proyect}",
+                    destinatarios=[proyecto.leader, proyecto.id_supervisor, *compras],
+                    titulo="Material completo", mensaje=mensaje))
+    except Exception:
+        return
+    for aviso in pendientes:
+        _notificar_proyecto(actor_id=actor_id, **aviso)
 
 
 def transition_management(project_id, payload: dict, user_data: dict) -> dict:
@@ -185,6 +431,14 @@ def transition_management(project_id, payload: dict, user_data: dict) -> dict:
         destino = validate_management_transition(
             project.management_status, (payload or {}).get("management_status"))
         anterior = project.management_status
+        if destino == "cancelado":
+            pendientes = _vales_con_material_pendiente(db, project.id_proyect)
+            if pendientes:
+                raise AppError("errors.project_open_vouchers", 409,
+                               {"open_vouchers": pendientes})
+            ordenes = _ordenes_de_compra_vivas(db, project.id_proyect)
+            if ordenes:
+                raise AppError("errors.project_open_orders", 409, {"open_orders": ordenes})
         project.management_status = destino
         # Queda en la MISMA bitacora que el recorrido de taller: quien mira la
         # historia de un proyecto quiere los dos hilos en orden, no dos listas.
@@ -215,7 +469,7 @@ def project_options(*, id_leader: int | None = None) -> list[dict]:
     """
     with transaction_context() as db:
         consulta = db.query(Proyect.id_proyect, Proyect.folio, Proyect.title,
-                            Proyect.proyect_description)
+                            Proyect.proyect_description, Proyect.id_supervisor, Proyect.leader)
         if id_leader is not None:
             consulta = consulta.filter(Proyect.leader == id_leader)
         filas = (
@@ -223,8 +477,16 @@ def project_options(*, id_leader: int | None = None) -> list[dict]:
             .order_by(Proyect.id_proyect.desc())
             .all()
         )
+        # A cargo de la obra: quien la lleva (supervisor) o, sin el, quien la lidera.
+        a_cargo = {f[0]: f[4] or f[5] for f in filas}
+        nombres = dict(db.query(User.id_user, User.full_name).filter(
+            User.id_user.in_({i for i in a_cargo.values() if i})).all()) if any(a_cargo.values()) else {}
         return [
-            {"id_proyect": f[0], "folio": f[1], "title": f[2], "description": f[3]}
+            {"id_proyect": f[0], "folio": f[1], "title": f[2], "description": f[3],
+             # Quien responde por la obra: el vale la propone como responsable.
+             "id_supervisor": f[4],
+             # Y el nombre de quien esta a cargo, para verlo en el selector.
+             "id_in_charge": a_cargo[f[0]], "in_charge_name": nombres.get(a_cargo[f[0]])}
             for f in filas
         ]
 
@@ -296,11 +558,118 @@ def _actor_role(db, user_data: dict) -> str | None:
     return permission.permission_description if permission else None
 
 
+def _users_with_capability(db, capability: str) -> list[int]:
+    """Todos los usuarios cuyo rol tiene esta capacidad concedida (scope_read>0).
+
+    Reusa el mismo criterio que `_has_capability`, pero al reves: en vez de
+    preguntar por UN actor, junta a todos los que la tienen -- para saber a
+    quien avisar, no a quien dejar pasar.
+    """
+    permission_ids = [
+        row[0] for row in db.query(EntityPermission.id_permission).filter(
+            EntityPermission.entity_name == capability,
+            EntityPermission.scope_read > 0,
+            EntityPermission.deletion_date.is_(None),
+        ).all()
+    ]
+    if not permission_ids:
+        return []
+    return [
+        row[0] for row in db.query(User.id_user).filter(
+            User.id_permission.in_(permission_ids),
+            User.deletion_date.is_(None),
+        ).all()
+    ]
+
+
+def _jefes_de_taller(db) -> list[int]:
+    """Quien ejecuta (`project_execution`) y no autoriza (`project_authorization`).
+
+    Los roles de administracion tienen las dos capacidades y no son jefes de taller.
+    """
+    return sorted(set(_users_with_capability(db, "project_execution"))
+                  - set(_users_with_capability(db, "project_authorization")))
+
+
+def _asignar_jefe_de_taller(db, project) -> None:
+    """Un proyecto con maquila le toca al Jefe de taller, sin botón de "tomar".
+
+    Solo se asigna cuando hay UN solo Jefe de taller. Con varios no se adivina a cuál: el
+    proyecto queda libre y quien autoriza lo asigna (`assign_project`). Se intenta al crear,
+    al editar y al autorizar el proyecto.
+    """
+    if not project.requires_maquila or project.id_supervisor is not None:
+        return
+    jefes = _jefes_de_taller(db)
+    if len(jefes) == 1:
+        project.id_supervisor = jefes[0]
+
+
+def _notificar_proyecto(*, destinatarios, actor_id, id_proyect, nombre_proyecto, titulo, mensaje) -> None:
+    """Dispara una notificacion por proyecto, sin tronar la operacion real.
+
+    SIEMPRE se llama DESPUES de que el `with transaction_context()` de la
+    operacion real (crear/tomar/transicionar) ya cerro -- `create_notification`
+    abre su PROPIA transaccion, y llamarla con otra ya abierta en la misma
+    peticion se queda esperando una conexion libre del pool para siempre
+    (medido: un `docker exec` de prueba nunca regreso). Por eso recibe
+    valores sueltos (`id_proyect`, `nombre_proyecto`) y no el objeto ORM del
+    proyecto -- ese objeto pertenece a una sesion que para entonces ya cerro.
+
+    Un fallo al notificar (destinatario invalido, lo que sea) no debe
+    revertir la transicion/toma/creacion que ya paso: la notificacion es un
+    aviso, no una condicion del cambio. Se excluye al propio actor -- nadie
+    necesita que le avisen de lo que acaba de hacer el mismo.
+    """
+    for id_destinatario in {int(d) for d in destinatarios if d is not None}:
+        if id_destinatario == actor_id:
+            continue
+        try:
+            create_notification(
+                id_user_recipient=id_destinatario,
+                id_user_sender=actor_id,
+                notification_type="project_status_change",
+                title=titulo,
+                message=f"{nombre_proyecto}: {mensaje}",
+                id_proyect=id_proyect,
+                target_entity="proyect", target_id=id_proyect,
+                created_by=actor_id,
+            )
+        except Exception:
+            pass
+
+
+def _puede_ejecutar(db, user_data: dict) -> bool:
+    """Tiene la capacidad `project_execution` en el Gestor, junto con cualquier otra.
+
+    `_scope_name` devuelve UNA sola etiqueta (primero autoriza), asi que quien
+    tiene autorizar Y ejecutar quedaba como "autoriza" y la capacidad de
+    ejecutar que el Gestor le concede no hacia nada. Las capacidades suman: lo
+    que decide ejecutar se pregunta directo, no por la etiqueta.
+    """
+    return _has_capability(db, user_data, "project_execution")
+
+
+def _puede_dar_el_material(db, user_data: dict) -> bool:
+    """Puede dar los dos pasos de material: a "en espera" y de ahi a "en proceso".
+
+    Quien tiene `project_supply` en el Gestor (hoy Compras: sabe cuando llega lo
+    que pidio) o, de respaldo, quien autoriza proyectos (`project_authorization`,
+    Gerente), que ya daba estos pasos antes. Las dos son capacidades que el
+    Gestor concede; el codigo solo dice QUE pasos abre cada una, no a QUIEN se
+    le concede.
+    """
+    return (_has_capability(db, user_data, "project_supply")
+            or _has_capability(db, user_data, "project_authorization"))
+
+
 def _scope_name(db, user_data: dict) -> str:
     if _is_unrestricted(user_data):
         return "unrestricted"
     if _has_capability(db, user_data, "project_authorization"):
         return "authorization"
+    if _has_capability(db, user_data, "project_oversight"):
+        return "oversight"
     if _has_capability(db, user_data, "project_execution"):
         return "execution"
     return "ownership"
@@ -318,41 +687,104 @@ def is_project_leader(project, user_data: dict) -> bool:
 
 def _scoped_query(db, user_data: dict):
     query = db.query(Proyect).filter(Proyect.deletion_date.is_(None))
+    from app.utils.scope import companeros
+
     scope = _scope_name(db, user_data)
     actor_id = _actor_id(user_data)
+    # Con Mis grupos en `proyect`, tambien lo de los companeros de equipo; sin el,
+    # solo el actor (la regla de siempre).
+    gente = companeros(db, user_data, "proyect")
     if scope == "ownership":
-        # El lider ve su proyecto aunque no lo haya creado. Sin esto, un
-        # proyecto asignado a alguien mas quedaba invisible para su propio
-        # responsable, que no podia ni consultarlo.
-        query = query.filter(or_(Proyect.created_by == actor_id, Proyect.leader == actor_id))
+        # Lo que se ve lo manda el Gestor: la celda `proyect.scope_read`. Con
+        # Todos no hay filtro; con Mis grupos, lo de los companeros; con
+        # Propios, solo lo propio. Antes esta rama ignoraba "Todos" -un rol sin
+        # capacidad de proyecto con Todos en el Gestor solo veia lo que el
+        # mismo creaba (medido: Compras en adser veia 1 proyecto de 11)-, asi
+        # que ajustar la celda no cambiaba nada.
+        if not scope_bits(db, user_data, "proyect", "read") & SCOPE_ALL:
+            # El lider ve su proyecto aunque no lo haya creado. Sin esto, un
+            # proyecto asignado a alguien mas quedaba invisible para su propio
+            # responsable, que no podia ni consultarlo.
+            query = query.filter(or_(Proyect.created_by.in_(gente), Proyect.leader.in_(gente)))
+        # Quien confirma el material (`project_supply`, Compras) solo trabaja
+        # con proyectos YA autorizados: un borrador, uno en revision, bloqueado
+        # o denegado no le toca. Es una regla de etapa del flujo, que el Gestor
+        # no puede expresar (su celda dice CUANTO ve, no en que etapa), asi que
+        # se suma a la celda en vez de reemplazarla. Lo que el mismo creo o
+        # lidera lo ve siempre, aunque este en borrador.
+        if _has_capability(db, user_data, "project_supply"):
+            query = query.filter(or_(
+                Proyect.proyect_status.in_(SUPPLY_VISIBLE_STATUSES),
+                Proyect.created_by.in_(gente), Proyect.leader.in_(gente),
+            ))
     elif scope == "execution":
+        # Correccion de negocio explicita (2026-09-30): antes cualquier Jefe
+        # de taller veia TODOS los proyectos en un estatus de taller activo,
+        # sin importar quien ya lo hubiera tomado -- un Jefe de taller podia
+        # ver (y, peor, potencialmente sacar tareas/bitacora de) el proyecto
+        # que otro compañero ya tenia asignado. Ahora solo ve lo que puede
+        # tomar (libre, `id_supervisor IS NULL`) o lo que ya es suyo
+        # (lo tomo el, o lo lidera -- caso raro pero posible via `leader`).
+        # Lo que tomo OTRO Jefe de taller queda fuera por completo.
         query = query.filter(
             or_(
-                Proyect.proyect_status.in_(WORKSHOP_VISIBLE_STATUSES),
-                Proyect.leader == actor_id,
+                Proyect.leader.in_(gente),
+                Proyect.id_supervisor.in_(gente),
+                and_(
+                    Proyect.proyect_status.in_(WORKSHOP_VISIBLE_STATUSES),
+                    Proyect.id_supervisor.is_(None),
+                    # Un proyecto sin maquila no pasa por el taller: Compras
+                    # confirma el material y lo lleva el supervisor que lo
+                    # lidera, sin que Jefe de taller participe en ningun
+                    # momento. Sin este filtro aparecia como "libre para
+                    # tomar" un proyecto que nunca le va a tocar.
+                    Proyect.requires_maquila.is_(True),
+                ),
             )
         )
-    elif scope == "authorization":
-        # Quien autoriza ve todo, y ademas lo que lidera.
+    elif scope in {"authorization", "oversight"}:
+        # Quien autoriza (o supervisa sin autorizar) ve todo.
         return query
     return query
 
 
-def _project_payload(project: Proyect, events=None) -> dict:
+def _collection_status(total_cost, collected_total) -> str | None:
+    """Pendiente/cobrado/excedido, contra lo YA COBRADO en `proyect_payment`.
+
+    Sin costo total capturado no hay contra que comparar -- no es "pendiente",
+    es que la pregunta todavia no aplica.
+    """
+    if total_cost in (None, ""):
+        return None
+    total = Decimal(str(total_cost))
+    cobrado = Decimal(str(collected_total or 0))
+    if cobrado < total:
+        return "pendiente"
+    if cobrado == total:
+        return "cobrado"
+    return "excedido"
+
+
+def _project_payload(project: Proyect, events=None, *, gerente_visible: bool = True, collected_total=None) -> dict:
     payload = project.serialize()
-    # Solo se INVENTA un folio cuando el proyecto no trae el suyo. Antes se
-    # sobreescribia siempre: un proyecto capturado con folio "OT-2026-0042" -el
-    # de la orden de trabajo, migracion 20260911180000- se veia como
-    # "PRJ-000006" en cuanto alguien abria su detalle, porque esta funcion lo
-    # pisaba sin mirar si ya tenia uno. El folio de PRJ- sigue existiendo para
-    # los proyectos viejos que nunca tuvieron folio propio.
-    if not payload.get("folio"):
-        payload["folio"] = f"PRJ-{project.id_proyect:06d}"
+    # El folio ("Partida" en pantalla) es una referencia libre de quien captura:
+    # opcional, puede repetirse y NO se inventa. Antes se rellenaba con
+    # "PRJ-000006" cuando venia vacio -un numero que no existia en la base- y
+    # una migracion lo cambiaba a "OT-..." en el siguiente despliegue. Vacio se
+    # queda vacio.
     submitted_event = next(
         (event for event in (events or []) if event.event_type == "status_changed" and event.new_status == "submitted"),
         None,
     )
-    payload["submitted_date"] = submitted_event.creation_date.isoformat() if submitted_event else None
+    payload["submitted_date"] = a_iso_utc(submitted_event.creation_date) if submitted_event else None
+    # Candado real, no solo de UI: quien no tiene el alcance comercial no ve
+    # `priority`/`total_cost` ni el estado de cobro derivado, aunque el
+    # proyecto ya los tenga capturados por Gerencia.
+    if gerente_visible:
+        payload["collection_status"] = _collection_status(payload.get("total_cost"), collected_total)
+    else:
+        for campo in PROJECT_MANAGEMENT_ONLY_FIELDS:
+            payload.pop(campo, None)
     return payload
 
 
@@ -368,22 +800,71 @@ def _get_visible_project(db, project_id, user_data: dict, *, for_update=False) -
 
 def visible_project_ids(user_data: dict) -> list[int] | None:
     with transaction_context() as db:
-        if _scope_name(db, user_data) in {"unrestricted", "authorization"}:
+        if _scope_name(db, user_data) in {"unrestricted", "authorization", "oversight"}:
             return None
         return [row[0] for row in _scoped_query(db, user_data).with_entities(Proyect.id_proyect).all()]
 
 
 def require_project_access(project_id, user_data: dict) -> None:
+    # Sin proyecto no hay "no encontrado": falta el dato (antes daba 404).
+    if project_id in (None, ""):
+        raise AppError("errors.required_field", 400, {"field": "id_proyect"})
     with transaction_context() as db:
         _get_visible_project(db, project_id, user_data)
 
 
-def require_task_access(task_id, user_data: dict) -> None:
+def require_task_access(task_id, user_data: dict, *, escribe: bool = False) -> None:
+    """La tarea es visible para el actor; con `escribe`, ademas Jefe de taller
+    solo escribe en las de un proyecto que TOMO (misma regla que al crearlas:
+    ver `require_project_taken_by_actor`). Ver una tarea de un proyecto libre
+    no autoriza a moverla."""
     with transaction_context() as db:
-        task = db.get(Task, task_id)
+        task = db.get(Task, int(task_id))
         if not task or task.deletion_date is not None:
             raise AppError("errors.resource_not_found", 404)
-        _get_visible_project(db, task.id_proyect, user_data)
+        project = _get_visible_project(db, task.id_proyect, user_data)
+        if (escribe and _scope_name(db, user_data) == "execution"
+                and _safe_int(project.id_supervisor) != _actor_id(user_data)):
+            raise AppError("errors.project_not_taken_by_actor", 403,
+                           {"id_proyect": task.id_proyect})
+
+
+def require_project_open(project_id) -> None:
+    """No se capturan tareas ni bitacora en un proyecto que ya no trabaja:
+    denegado, completado, entregado o cancelado por gerencia."""
+    id_proyecto = _safe_int(project_id)
+    if id_proyecto is None:
+        raise AppError("errors.invalid_field", 400, {"field": "id_proyect"})
+    with transaction_context() as db:
+        project = db.get(Proyect, id_proyecto)
+        if not project or project.deletion_date is not None:
+            raise AppError("errors.resource_not_found", 404)
+        if (normalize_project_status(project.proyect_status) in {"denied", "collected", "completed"}
+                or str(project.management_status or "").lower() == "cancelado"):
+            raise AppError("errors.project_closed", 409,
+                           {"id_proyect": project.id_proyect,
+                            "status": project.proyect_status,
+                            "management_status": project.management_status})
+
+
+def require_project_taken_by_actor(project_id, user_data: dict) -> None:
+    """El proyecto debe estar TOMADO por este actor (`take_project`).
+
+    Correccion de negocio explicita (2026-09-28): Jefe de taller sube tareas
+    y bitacora del proyecto al que se asigno, no de cualquier proyecto
+    visible del taller. `_scoped_query` (scope "execution") es mas ancha a
+    proposito -- deja ver todo lo autorizado para poder tomarlo -- asi que no
+    alcanza para esta regla; hace falta el candado aparte.
+    """
+    if _is_unrestricted(user_data):
+        return
+    with transaction_context() as db:
+        project = db.get(Proyect, project_id)
+        if not project or project.deletion_date is not None:
+            raise AppError("errors.resource_not_found", 404)
+        if _safe_int(project.id_supervisor) != _actor_id(user_data):
+            raise AppError("errors.project_not_taken_by_actor", 403,
+                           {"id_proyect": project_id})
 
 
 def _parse_review_date(value):
@@ -456,14 +937,18 @@ def list_projects(user_data: dict, *, page=1, per_page=20, filters=None, sort=No
                 raise AppError("errors.invalid_field", 400, {"field": "proyect_status"})
             query = query.filter(Proyect.proyect_status == status)
         owner = _safe_int(filters.get("created_by"))
-        if owner and _scope_name(db, user_data) in {"unrestricted", "authorization"}:
+        if owner and _scope_name(db, user_data) in {"unrestricted", "authorization", "oversight"}:
             query = query.filter(Proyect.created_by == owner)
         customer = _safe_int(filters.get("id_customer_supplier"))
         if customer:
             query = query.filter(Proyect.id_customer_supplier == customer)
         search = str(filters.get("search") or "").strip()
         if search:
-            query = query.filter(or_(Proyect.title.ilike(f"%{search}%"), Proyect.proyect_description.ilike(f"%{search}%")))
+            # La partida tambien se busca: es la referencia con la que la gente
+            # conoce el proyecto (y puede repetirse, asi que no basta con el id).
+            query = query.filter(or_(Proyect.title.ilike(f"%{search}%"),
+                                     Proyect.proyect_description.ilike(f"%{search}%"),
+                                     Proyect.folio.ilike(f"%{search}%")))
         creation_date_from = _parse_filter_date(filters.get("creation_date_from"), "creation_date_from")
         creation_date_to = _parse_filter_date(filters.get("creation_date_to"), "creation_date_to")
         if creation_date_from:
@@ -495,11 +980,45 @@ def list_projects(user_data: dict, *, page=1, per_page=20, filters=None, sort=No
             )
             for event in rows:
                 submitted_events.setdefault(event.id_proyect, event)
+        # El estado de cobro es Gerencia-only, igual que `priority`/`total_cost`
+        # (ver `_project_payload`): sin ese alcance, ni se molesta en sumar lo
+        # cobrado de cada proyecto de la pagina.
+        gerente_visible = _ve_lo_comercial(db, user_data)
+        collected_by_project: dict = {}
+        if gerente_visible and project_ids:
+            collected_by_project = dict(db.execute(
+                select(ProyectPayment.id_proyect, func.coalesce(func.sum(ProyectPayment.amount), 0))
+                .where(
+                    ProyectPayment.id_proyect.in_(project_ids),
+                    ProyectPayment.paid_at.isnot(None),
+                    ProyectPayment.deletion_date.is_(None),
+                )
+                .group_by(ProyectPayment.id_proyect)
+            ).all())
         payloads = [
-            _project_payload(item, [submitted_events[item.id_proyect]] if item.id_proyect in submitted_events else [])
+            _project_payload(
+                item,
+                [submitted_events[item.id_proyect]] if item.id_proyect in submitted_events else [],
+                gerente_visible=gerente_visible,
+                collected_total=collected_by_project.get(item.id_proyect),
+            )
             for item in items
         ]
-        return {"items": payloads, "page": page, "per_page": per_page, "total": total}
+        # Cuanto material falta, solo de los proyectos que ya estan en la espera o
+        # en curso (una consulta para toda la pagina).
+        en_seguimiento = [
+            item.id_proyect for item in items
+            if normalize_project_status(item.proyect_status) in MATERIAL_TRACKED_STATUSES
+        ]
+        if en_seguimiento:
+            avance = material_readiness_por_proyecto(db, en_seguimiento)
+            for item, payload_item in zip(items, payloads):
+                if item.id_proyect in avance:
+                    payload_item["material_readiness"] = avance[item.id_proyect]
+        return {
+            "items": payloads, "page": page, "per_page": per_page, "total": total,
+            "pages": (total + per_page - 1) // per_page,
+        }
 
 
 def get_project_detail(project_id, user_data: dict) -> dict:
@@ -547,14 +1066,25 @@ def get_project_detail(project_id, user_data: dict) -> dict:
             .all()
         )
 
-        payload = _project_payload(project, events)
+        resumen_pagos = _resumen_de_pagos(pagos)
+        payload = _project_payload(
+            project, events,
+            gerente_visible=_ve_lo_comercial(db, user_data),
+            collected_total=resumen_pagos["collected_total"],
+        )
         payload["tasks"] = [task.serialize() for task in tasks]
         payload["events"] = [event.serialize() for event in events]
         payload["incidents"] = _vales_con_material(db, incidencias)
         payload["material_summary"] = _material_del_proyecto(db, project.id_proyect)
+        payload["material_readiness"] = material_readiness(db, project.id_proyect)
+        vivas = [t for t in tasks if (t.task_status or "") != "cancelada"]
+        payload["task_progress"] = {
+            "total": len(vivas),
+            "done": sum(1 for t in vivas if t.task_status == "terminada"),
+        }
         payload["appointments"] = [c.serialize() for c in citas]
         payload["payments"] = [p.serialize() for p in pagos]
-        payload["payment_summary"] = _resumen_de_pagos(pagos)
+        payload["payment_summary"] = resumen_pagos
         return payload
 
 
@@ -620,6 +1150,12 @@ def _material_del_proyecto(db, id_proyect) -> dict:
         .join(Product, Product.id_product == NmIncidentProduct.id_product)
         .where(Incident.id_proyect == id_proyect,
                Incident.deletion_date.is_(None),
+               # Un prevale (borrador) es una peticion y un vale cancelado no
+               # llego a salir: ninguno movio el almacen, asi que no son material
+               # que "se llevo" la obra. Un estado nulo es un vale de antes y si
+               # cuenta -- por eso el coalesce: sin el, NOT IN descarta los NULL.
+               func.coalesce(func.lower(Incident.incident_status), "")
+               .notin_(("borrador", "en_espera", "cancelado")),
                NmIncidentProduct.deletion_date.is_(None),
                NmIncidentProduct.direction == "salida")
         .group_by(Product.id_product, Product.descripcion, Product.product_code)
@@ -662,6 +1198,49 @@ def _resumen_de_pagos(pagos) -> dict:
     }
 
 
+def _collected_total(db, id_proyect) -> Decimal:
+    total = db.scalar(
+        select(func.coalesce(func.sum(ProyectPayment.amount), 0))
+        .where(
+            ProyectPayment.id_proyect == id_proyect,
+            ProyectPayment.paid_at.isnot(None),
+            ProyectPayment.deletion_date.is_(None),
+        )
+    )
+    return Decimal(str(total or 0))
+
+
+def _sync_management_status_with_collection(db, project: Proyect, user_data: dict) -> None:
+    """El estatus comercial "cobrado" ya no lo pone Gerencia con un clic --
+    se sigue solo del costo total contra lo REALMENTE cobrado en las
+    parcialidades (decision de negocio, 2026-09-25). Antes convivian dos
+    "cobrado" independientes -este boton y la columna de estado de cobro de
+    la tabla (ver `_collection_status`)- que se podian contradecir: Gerencia
+    marcaba "cobrado" a mano sin haber registrado ni una parcialidad pagada.
+
+    Se mueve en los DOS sentidos -- incluye revertir a "autorizado" si se
+    deshace un cobro que ya lo habia completado, para que el estatus nunca
+    se quede mintiendo. `pendiente_orden_compra` y `cancelado` se dejan
+    intactos a proposito: saltarse la autorizacion o revivir un proyecto
+    cancelado porque le entro un pago no es lo que nadie pidio.
+    """
+    if project.total_cost is None:
+        return
+    completo = _collection_status(project.total_cost, _collected_total(db, project.id_proyect)) in {"cobrado", "excedido"}
+    if completo and project.management_status == "autorizado":
+        anterior = project.management_status
+        project.management_status = "cobrado"
+        _append_event(db, project, user_data, "management_transition",
+                      new_status="cobrado", previous_status=anterior,
+                      reason="Cobro completo (automatico)")
+    elif not completo and project.management_status == "cobrado":
+        anterior = project.management_status
+        project.management_status = "autorizado"
+        _append_event(db, project, user_data, "management_transition",
+                      new_status="autorizado", previous_status=anterior,
+                      reason="Cobro incompleto tras modificar una parcialidad (automatico)")
+
+
 def _parsear_fecha_de_la_orden(values: dict) -> None:
     """`delivery_date` como objeto `date`, no como texto.
 
@@ -678,6 +1257,72 @@ def _parsear_fecha_de_la_orden(values: dict) -> None:
         except ValueError as fallo:
             raise AppError("errors.invalid_field", 400,
                            {"field": "delivery_date"}) from fallo
+
+
+def _normalizar_partida(values: dict) -> None:
+    """La partida (`folio`) sin espacios sobrantes; vacia es NULL, no "".
+
+    Es una referencia libre: no se valida contra nada ni se exige que sea unica
+    (puede repetirse entre proyectos). Solo se distingue "no la puso" -NULL- de
+    un texto, para que buscar y mostrar no tropiecen con cadenas en blanco.
+    """
+    if "folio" not in values:
+        return
+    texto = str(values["folio"] or "").strip()
+    values["folio"] = texto[:40] or None
+
+
+def _validar_prioridad(valor):
+    if valor in (None, ""):
+        return None
+    texto = str(valor).strip().lower()
+    if texto not in PROJECT_PRIORITIES:
+        raise AppError("errors.invalid_field", 400, {"field": "priority"})
+    return texto
+
+
+def _validar_costo_total(valor):
+    if valor in (None, ""):
+        return None
+    try:
+        monto = Decimal(str(valor))
+    except (InvalidOperation, TypeError, ValueError) as fallo:
+        raise AppError("errors.invalid_field", 400, {"field": "total_cost"}) from fallo
+    if monto < 0:
+        raise AppError("errors.invalid_field", 400, {"field": "total_cost"})
+    return monto
+
+
+def _redact_management_only_fields(payload: dict, gerente_visible: bool) -> dict:
+    """Recorta `priority`/`total_cost` de una respuesta cruda (`serialize()`).
+
+    `_project_payload` ya hace esto para listar/consultar; `create_project` y
+    `update_project` devuelven `serialize()` directo, sin pasar por ahi, asi
+    que necesitan el mismo recorte por su cuenta.
+    """
+    if not gerente_visible:
+        for campo in PROJECT_MANAGEMENT_ONLY_FIELDS:
+            payload.pop(campo, None)
+    return payload
+
+
+def _apply_management_only_fields(db, user_data: dict, payload: dict, values: dict) -> None:
+    """Filtra y valida `priority`/`total_cost`, exclusivos de Gerencia.
+
+    Quien no tiene el alcance comercial los manda igual desde un cliente HTTP
+    directo -no solo desde esta pantalla-, y aqui se descartan en silencio en
+    vez de tronar: es el mismo trato que ya reciben los campos que no
+    pertenecen al formulario (`values` ya los filtra por PROJECT_MUTABLE_FIELDS
+    antes de llegar aqui). El candado real es que, sin el alcance, nunca se
+    llega a validar ni a escribir el valor.
+    """
+    payload = payload or {}
+    if not _tiene_alcance_comercial(db, user_data):
+        return
+    if "priority" in payload:
+        values["priority"] = _validar_prioridad(payload.get("priority"))
+    if "total_cost" in payload:
+        values["total_cost"] = _validar_costo_total(payload.get("total_cost"))
 
 
 def _resolver_cotizacion(db, valor_bruto) -> tuple:
@@ -744,28 +1389,191 @@ def _validar_referencias_de_la_orden(db, values: dict, id_proyecto_actual=None) 
 
 
 def create_project(payload: dict, user_data: dict) -> dict:
+    """Levanta el proyecto a nombre de quien lo esta creando.
+
+    **El responsable.** Es siempre el actor. Antes el formulario ofrecia la
+    lista completa de usuarios y `leader` solo caia en el actor cuando venia
+    vacio, asi que se podia levantar un proyecto a nombre de otra persona --
+    y esa persona aparecia como responsable de algo que no sabia que existia.
+    """
     actor_id = _actor_id(user_data)
     values = {key: value for key, value in (payload or {}).items() if key in PROJECT_MUTABLE_FIELDS}
+    # Un texto de solo espacios no es un dato: se recorta y cuenta como vacio.
+    for campo in ("title", "proyect_description"):
+        if isinstance(values.get(campo), str):
+            values[campo] = values[campo].strip()
+    _booleano_estricto(values, "requires_maquila")
     if values.get("id_customer_contact") in (None, "") and values.get("id_customer_supplier") in (None, ""):
         raise AppError("errors.required_field", 400, {"field": "id_customer_contact"})
     if values.get("proyect_description") in (None, ""):
         raise AppError("errors.required_field", 400, {"field": "proyect_description"})
     values["created_by"] = actor_id
-    # El responsable es siempre quien crea el proyecto -- solo Supervisor (y
-    # roles sin restriccion) pueden crear, y no hace falta que nadie elija a
-    # otro responsable. Ignora cualquier `leader` que venga en el payload
+    # El responsable es siempre quien crea el proyecto, y no hace falta que
+    # nadie elija a otro responsable. Ignora cualquier `leader` que venga en el payload
     # (ya no llega: no esta en PROJECT_MUTABLE_FIELDS).
     values["leader"] = actor_id
     values["proyect_status"] = "draft"
     _parsear_fecha_de_la_orden(values)
+    _normalizar_partida(values)
     with transaction_context() as db:
+        # Decision de Alan (2026-10-15): quien puede crear lo manda el Gestor de
+        # roles y permisos (`scope_create` de `proyect`, que ya valida la ruta
+        # con `require_entity_permission`), no el ambito. Antes un candado
+        # aqui (2026-09-28) dejaba crear solo a Supervisor aunque el Gestor
+        # se lo concediera a Gerente o Jefe de taller: la pantalla ofrecia el
+        # boton y el servidor respondia 403.
         values["id_quotation"], values["quotation_reference"] = _resolver_cotizacion(
             db, (payload or {}).get("id_quotation"))
         _validar_referencias_de_la_orden(db, values)
+        _apply_management_only_fields(db, user_data, payload, values)
         project = Proyect(**values)
         db.add(project)
         db.flush()
+        _asignar_jefe_de_taller(db, project)  # tras el flush: ahi toma el default de la maquila
         _append_event(db, project, user_data, "created", new_status="draft")
+        db.flush()
+        destinatarios = _users_with_capability(db, "project_authorization")
+        payload_creado = _redact_management_only_fields(project.serialize(), _tiene_alcance_comercial(db, user_data))
+        id_proyect = project.id_proyect
+        nombre_proyecto = project.title or project.proyect_description or f"Proyecto {id_proyect}"
+
+    # Fuera del `with`: `create_notification` abre su propia transaccion, y
+    # llamarla con esta todavia abierta se queda esperando conexion del pool
+    # para siempre (ver docstring de `_notificar_proyecto`).
+    _notificar_proyecto(
+        destinatarios=destinatarios, actor_id=actor_id,
+        id_proyect=id_proyect, nombre_proyecto=nombre_proyecto,
+        titulo="Nuevo proyecto pendiente de autorizacion",
+        mensaje="fue capturado y espera tu autorizacion",
+    )
+    return payload_creado
+
+
+def take_project(project_id, user_data: dict) -> dict:
+    """Jefe de taller TOMA el proyecto; nadie se lo asigna.
+
+    Antes `id_supervisor` era un desplegable del formulario, o sea que quien
+    captura la orden repartia el trabajo del taller desde su escritorio. Se
+    invierte: el proyecto sale sin tomar y lo toma quien lo va a sacar.
+
+    Quien puede tomarlo es quien tiene la capacidad `project_execution` -- hoy
+    el rol Jefe de taller -- y no se comprueba por NOMBRE de rol: los roles se
+    renombran y se crean desde el gestor, y un permiso amarrado a la cadena
+    "Jefe de taller" deja de funcionar el dia que alguien escriba "Jefe de
+    planta". La capacidad es lo que el registro declara y lo que el gestor
+    concede. Supervisor (quien LEVANTA el proyecto, ver `create_project`) no
+    tiene esta capacidad, asi que no puede tomarlo -- solo verlo y pedir
+    material via prevale.
+
+    Solo se toma lo que esta libre. Quitarselo a otro Jefe de taller
+    seria una reasignacion, y eso no es tomar: el que lo tiene lo suelta
+    (`release_project`) o lo mueve la administracion.
+    """
+    with transaction_context() as db:
+        project = _get_visible_project(db, project_id, user_data, for_update=True)
+        scope = _scope_name(db, user_data)
+        if not _puede_ejecutar(db, user_data):
+            raise AppError("errors.permission_denied", 403,
+                           {"action": "take_project", "scope": scope})
+        actual = _safe_int(project.id_supervisor)
+        actor_id = _actor_id(user_data)
+        if actual is not None and actual != actor_id:
+            raise AppError("errors.project_already_taken", 409,
+                           {"id_supervisor": actual})
+        project.id_supervisor = actor_id
+        _append_event(db, project, user_data, "taken")
+        db.flush()
+        payload_tomado = project.serialize()
+        destinatarios = [project.leader]
+        id_proyect = project.id_proyect
+        nombre_proyecto = project.title or project.proyect_description or f"Proyecto {id_proyect}"
+
+    _notificar_proyecto(
+        destinatarios=destinatarios, actor_id=actor_id,
+        id_proyect=id_proyect, nombre_proyecto=nombre_proyecto,
+        titulo="Jefe de taller tomo tu proyecto",
+        mensaje="ya esta trabajando en el",
+    )
+    return payload_tomado
+
+
+def _require_can_assign(db, user_data: dict) -> None:
+    """Asignar el proyecto a un jefe de taller es de quien autoriza (y del administrador)."""
+    if not _has_capability(db, user_data, "project_authorization"):
+        raise AppError("errors.permission_denied", 403, {"action": "assign_project"})
+
+
+def workshop_heads(user_data: dict) -> list[dict]:
+    """Los jefes de taller a quienes se puede asignar un proyecto."""
+    with transaction_context() as db:
+        _require_can_assign(db, user_data)
+        ids = _jefes_de_taller(db)
+        filas = db.query(User.id_user, User.full_name).filter(
+            User.id_user.in_(ids)).order_by(User.full_name).all() if ids else []
+    return [{"id_user": i, "full_name": nombre} for i, nombre in filas]
+
+
+def assign_project(project_id, id_user, user_data: dict) -> dict:
+    """Quien autoriza asigna el proyecto con maquila a un jefe de taller, o lo deja libre.
+
+    Existe porque ya no hay boton de "tomar": con un solo jefe de taller el proyecto se le
+    asigna solo (`_asignar_jefe_de_taller`); con varios, o con ninguno, lo asigna Gerencia o el
+    administrador. `id_user` vacío lo deja sin asignar.
+    """
+    destino = _safe_int(id_user)
+    with transaction_context() as db:
+        project = _get_visible_project(db, project_id, user_data, for_update=True)
+        _require_can_assign(db, user_data)
+        if (normalize_project_status(project.proyect_status) in {"denied", "collected", "completed"}
+                or str(project.management_status or "").lower() == "cancelado"):
+            raise AppError("errors.project_closed", 409, {"id_proyect": project.id_proyect})
+        if not project.requires_maquila:
+            raise AppError("errors.invalid_field", 400, {"field": "requires_maquila"})
+        if destino is None:
+            if project.id_supervisor is not None:
+                project.id_supervisor = None
+                _append_event(db, project, user_data, "released")
+            db.flush()
+            return project.serialize()
+        if destino not in _jefes_de_taller(db):
+            raise AppError("errors.invalid_field", 400, {"field": "id_user"})
+        actor_id = _actor_id(user_data)
+        id_proyect = project.id_proyect
+        nombre_proyecto = project.title or project.proyect_description or f"Proyecto {id_proyect}"
+        cambia = _safe_int(project.id_supervisor) != destino
+        if cambia:
+            project.id_supervisor = destino
+            _append_event(db, project, user_data, "taken")
+        db.flush()
+        payload = project.serialize()
+
+    if cambia:
+        _notificar_proyecto(
+            destinatarios=[destino], actor_id=actor_id, id_proyect=id_proyect,
+            nombre_proyecto=nombre_proyecto, titulo="Te asignaron un proyecto",
+            mensaje="quedó a tu cargo",
+        )
+    return payload
+
+
+def release_project(project_id, user_data: dict) -> dict:
+    """Soltarlo, para que otro lo tome.
+
+    Existe porque tomar es irreversible sin esto: quien se equivoco de proyecto
+    lo dejaria ocupado para siempre. Lo suelta el que lo tiene, o la
+    administracion; nadie mas, porque entonces "tomar" no reservaria nada.
+    """
+    with transaction_context() as db:
+        project = _get_visible_project(db, project_id, user_data, for_update=True)
+        actual = _safe_int(project.id_supervisor)
+        if actual is None:
+            return project.serialize()
+        es_suyo = actual == _actor_id(user_data)
+        if not es_suyo and _scope_name(db, user_data) != "unrestricted":
+            raise AppError("errors.permission_denied", 403,
+                           {"action": "release_project"})
+        project.id_supervisor = None
+        _append_event(db, project, user_data, "released")
         db.flush()
         return project.serialize()
 
@@ -774,34 +1582,55 @@ def update_project(project_id, payload: dict, user_data: dict) -> dict:
     if "proyect_status" in (payload or {}):
         raise AppError("errors.project_status_requires_transition", 409)
     values = {key: value for key, value in (payload or {}).items() if key in PROJECT_MUTABLE_FIELDS}
+    _booleano_estricto(values, "requires_maquila")
     with transaction_context() as db:
         project = _get_visible_project(db, project_id, user_data, for_update=True)
         scope = _scope_name(db, user_data)
         leads_it = is_project_leader(project, user_data)
         if scope == "execution" and not leads_it:
             raise AppError("errors.permission_denied", 403)
+        if scope == "ownership":
+            # De quien es el proyecto que se puede editar lo manda la celda
+            # `proyect.scope_update` del Gestor (igual que `delete_project`):
+            # Propios = lo que el actor creo o lidera; Mis grupos suma a su
+            # equipo; Todos no filtra. Hace falta porque ver un proyecto ya no
+            # implica poder editarlo: con `scope_read` en Todos se ven los
+            # ajenos, y sin esta comprobacion un borrador ajeno se editaba.
+            duenos = owner_ids(db, user_data, scope_bits(db, user_data, "proyect", "update"))
+            if (duenos is not None
+                    and _safe_int(project.created_by) not in duenos
+                    and _safe_int(project.leader) not in duenos):
+                raise AppError("errors.permission_denied", 403)
         if (scope == "ownership" or leads_it) and normalize_project_status(project.proyect_status) not in {"draft", "blocked"}:
             raise AppError("errors.project_not_editable", 409, {"status": project.proyect_status})
         _parsear_fecha_de_la_orden(values)
+        _normalizar_partida(values)
         if payload and "id_quotation" in payload:
             values["id_quotation"], values["quotation_reference"] = _resolver_cotizacion(
                 db, payload.get("id_quotation"))
         _validar_referencias_de_la_orden(db, values, id_proyecto_actual=project.id_proyect)
+        _apply_management_only_fields(db, user_data, payload, values)
         for field, value in values.items():
             setattr(project, field, value)
+        _asignar_jefe_de_taller(db, project)
+        # Si el costo total cambio, el estado de cobro que se sigue de el
+        # puede haber cambiado tambien -- se resincroniza aqui, no solo
+        # cuando se toca una parcialidad.
+        _sync_management_status_with_collection(db, project, user_data)
         db.flush()
-        return project.serialize()
+        return _redact_management_only_fields(project.serialize(), _tiene_alcance_comercial(db, user_data))
 
 
 def delete_project(project_id, user_data: dict) -> dict:
     with transaction_context() as db:
         project = _get_visible_project(db, project_id, user_data, for_update=True)
-        scope = _scope_name(db, user_data)
-        # Borrar queda con quien lo creo: el lider saca el proyecto adelante,
-        # pero no lo elimina.
-        if scope not in {"ownership", "unrestricted"} or (
-            scope == "ownership" and _safe_int(project.created_by) != _actor_id(user_data)
-        ):
+        # Quien puede borrar y a quien lo manda el Gestor: `scope_delete` de
+        # `proyect`. Propios = lo que el actor creo (el lider saca el proyecto
+        # adelante, pero no lo elimina); Mis grupos suma a su equipo; Todos no
+        # filtra. Antes un candado por ambito dejaba borrar solo a Supervisor
+        # aunque el Gestor se lo concediera a Gerente.
+        duenos = owner_ids(db, user_data, scope_bits(db, user_data, "proyect", "delete"))
+        if duenos is not None and _safe_int(project.created_by) not in duenos:
             raise AppError("errors.permission_denied", 403)
         if normalize_project_status(project.proyect_status) != "draft":
             raise AppError("errors.project_not_editable", 409, {"status": project.proyect_status})
@@ -810,7 +1639,22 @@ def delete_project(project_id, user_data: dict) -> dict:
         return {"deleted": True, "id_proyect": project.id_proyect}
 
 
+def _booleano_estricto(values: dict, campo: str) -> None:
+    """Un booleano que llega como texto raro es un 400, no un 500 al insertar."""
+    if campo not in values:
+        return
+    crudo = values[campo]
+    validos = {True: True, False: False, 1: True, 0: False,
+               "true": True, "false": False, "1": True, "0": False}
+    clave = crudo.strip().lower() if isinstance(crudo, str) else crudo
+    if clave not in validos:
+        raise AppError("errors.invalid_field", 400, {"field": campo})
+    values[campo] = validos[clave]
+
+
 def transition_project(project_id, payload: dict, user_data: dict) -> dict:
+    if payload is not None and not isinstance(payload, dict):
+        raise AppError("errors.invalid_field", 400, {"field": "body"})
     target = normalize_project_status((payload or {}).get("status"))
     reason = (payload or {}).get("reason")
     with transaction_context() as db:
@@ -820,11 +1664,8 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
         scope = _scope_name(db, user_data)
         leads_it = is_project_leader(project, user_data)
 
-        # Enviar a revision ya no lo pide nadie a proposito: Gerente mueve el
-        # proyecto directo desde Borrador (al recibir la orden de compra), y
-        # ni Supervisor ni el lider tienen esta puerta -- decision de negocio.
-        # `submitted` se queda en PROJECT_TRANSITIONS por compatibilidad con
-        # lo que ya se hubiera capturado antes, pero nadie puede pedirlo.
+        # Pasar a revision, autorizar, denegar o bloquear: solo la capacidad
+        # de autorizacion. Supervisor levanta el proyecto y ahi se queda.
         #
         # Quien autoriza, deniega o bloquea: solo la capacidad de autorizacion.
         # El lider NO entra aqui a proposito: quien ejecuta el trabajo no debe
@@ -832,23 +1673,48 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
         # apruebe y cierre su propio proyecto.
         puede_autorizar = scope in {"authorization", "unrestricted"}
         # Quien lo ejecuta: el taller, o el lider sobre el proyecto que lidera.
-        puede_ejecutar = scope in {"execution", "unrestricted"} or leads_it
-        # Entregar al cliente es responsabilidad de quien lidera el proyecto
-        # (normalmente Supervisor, quien lo crea), no del taller: "completado"
-        # es que el trabajo esta hecho, "entregado" es un hecho comercial
-        # aparte, con el cliente de por medio.
-        puede_entregar = leads_it or scope == "unrestricted"
+        puede_ejecutar = _puede_ejecutar(db, user_data) or leads_it
+        # Dar los dos pasos de material: `project_supply` (Compras) o, de
+        # respaldo, quien autoriza.
+        puede_dar_material = _puede_dar_el_material(db, user_data)
+        # Recolectar: con maquila lo cambia el Jefe de taller; sin ella, el
+        # supervisor responsable (el taller ni ve ese proyecto). Completar lo
+        # recolectado (fase final) es del responsable o de Gerencia.
+        puede_recolectar = (_puede_ejecutar(db, user_data) if project.requires_maquila
+                            else leads_it) or scope == "unrestricted"
+        puede_cerrar_el_ciclo = leads_it or puede_autorizar
 
         allowed_scope = (
-            (validated_target in {"authorized", "denied", "blocked"} and puede_autorizar)
-            or (validated_target in {"in_progress", "stopped", "completed"} and puede_ejecutar)
-            # Bloquear un proyecto que ya esta en curso tambien lo puede
-            # pedir quien lo ejecuta (taller), no solo quien autoriza -- a
-            # diferencia de bloquear ANTES de iniciar (desde `submitted`),
-            # que sigue siendo exclusivo de `puede_autorizar` en la regla de
-            # arriba.
-            or (validated_target == "blocked" and current == "in_progress" and puede_ejecutar)
-            or (validated_target == "delivered" and puede_entregar)
+            (validated_target in {"submitted", "authorized", "denied", "blocked"} and puede_autorizar)
+            # El material de una orden de compra puede surtir a varios
+            # proyectos a la vez (ver el comentario en PROJECT_STATUSES):
+            # entrar a la espera obligatoria (desde `authorized`) y salir de
+            # ella hacia el arranque real (`in_progress`) las decide quien da
+            # el material -Compras, que sabe si la compra ya llego, o Gerente
+            # de respaldo-, no el taller. Cambio del 2026-10-16: antes eran
+            # solo de quien autoriza.
+            or (validated_target == "waiting_material" and current == "authorized" and puede_dar_material)
+            or (validated_target == "in_progress" and current == "waiting_material" and puede_dar_material)
+            # El resto de "en proceso" (reanudar tras un paro) y
+            # "detenido"/"terminado" los sigue controlando quien ejecuta.
+            or (validated_target == "in_progress" and current == "stopped" and puede_ejecutar)
+            or (validated_target == "stopped" and puede_ejecutar)
+            or (validated_target == "collected" and puede_recolectar)
+            or (validated_target == "completed" and current == "collected" and puede_cerrar_el_ciclo)
+            # La pausa a medio trabajo (`in_progress -> waiting_material`, el
+            # material se acaba ya arrancado) SI es del taller -- a
+            # diferencia de la espera de entrada de arriba. Antes esta
+            # transicion no tenia ningun candado que de verdad la permitiera
+            # salvo "unrestricted" (bug preexistente sin cobertura de
+            # pruebas: ningun target del set de puede_ejecutar incluia
+            # "waiting_material").
+            or (validated_target == "waiting_material" and current == "in_progress" and puede_ejecutar)
+            # Bloquear un proyecto que ya esta en curso lo pide quien lo
+            # lidera (o quien autoriza, ya cubierto arriba), no el taller: a
+            # taller le queda "detenido" (`stopped`) para lo mismo. Antes
+            # `puede_ejecutar` alcanzaba para esto y el taller si podia
+            # bloquear -- se separo a proposito.
+            or (validated_target == "blocked" and current == "in_progress" and (leads_it or scope == "unrestricted"))
         )
         if not allowed_scope:
             raise AppError(
@@ -857,10 +1723,47 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
                 {"target_status": validated_target, "scope": scope, "is_leader": leads_it},
             )
 
-        if validated_target == "delivered":
-            # No se entrega con tareas todavia abiertas -- "completado" es el
-            # estatus del proyecto, no garantiza que cada tarea individual ya
-            # se haya cerrado en el taller.
+        if validated_target == "denied":
+            # Igual que cancelar por gerencia: no se niega un proyecto con compras vivas.
+            ordenes = _ordenes_de_compra_vivas(db, project.id_proyect)
+            if ordenes:
+                raise AppError("errors.project_open_orders", 409, {"open_orders": ordenes})
+
+        if validated_target == "in_progress" and current == "waiting_material":
+            # Tener al menos una tarea YA NO es condicion para arrancar
+            # (2026-10-16): quien confirma el material es Compras, que no
+            # captura tareas, y el taller las va definiendo cuando le toca.
+            # En cuanto llega UNA pieza de lo pedido se puede empezar a
+            # trabajar aunque falte el resto (2026-10-19). Sin que haya llegado
+            # nada, arrancar lo decide quien da el paso, dejando el motivo: queda
+            # en la bitacora del proyecto.
+            material = material_readiness(db, project.id_proyect)
+            arranca_parcial = False
+            if not material["ready"]:
+                # Material incompleto: si ya llego ALGO se puede
+                # arrancar con eso sin dar motivo -el sistema deja asentado
+                # cuanto falta- y el resto se espera mientras se trabaja. Si no
+                # ha llegado nada, sigue pidiendo el motivo de siempre.
+                arranca_parcial = material["received"] > 0
+                if arranca_parcial and not str(reason or "").strip():
+                    reason = "Arranca con material parcial: %d de %d recibido" % (
+                        material["received"], material["total"])
+                elif not str(reason or "").strip():
+                    raise AppError("errors.project_material_pending", 409, material)
+
+        if validated_target == "completed":
+            # El material que falta es necesario para terminar: no se completa un
+            # proyecto con necesidades que todavia no llegan. Las que ya no
+            # apliquen se cancelan en la lista de necesidades.
+            material = material_readiness(db, project.id_proyect)
+            if not material["ready"]:
+                raise AppError("errors.project_material_incomplete", 409, material)
+
+        if validated_target in {"completed", "collected"}:
+            # No se completa ni se recolecta con tareas todavia abiertas --
+            # "completado"/"recolectado" es el estatus del proyecto, no
+            # garantiza que cada tarea individual ya se haya cerrado en el
+            # taller.
             tareas_abiertas = (
                 db.query(Task)
                 .filter(Task.id_proyect == project.id_proyect, Task.deletion_date.is_(None))
@@ -872,12 +1775,20 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
             )
             if tareas_abiertas:
                 raise AppError(
-                    "errors.project_open_tasks",
+                    "errors.project_tasks_not_completed" if validated_target == "completed" else "errors.project_open_tasks",
                     409,
                     {"open_tasks": tareas_abiertas},
                 )
+            pendientes = _vales_con_material_pendiente(db, project.id_proyect)
+            if pendientes:
+                raise AppError("errors.project_open_vouchers", 409,
+                               {"open_vouchers": pendientes})
 
         project.proyect_status = validated_target
+        if validated_target == "authorized":
+            # Un proyecto que se levanto cuando habia cero o varios jefes de taller no se
+            # queda sin asignar para siempre: al autorizarlo, si ya hay uno solo, es suyo.
+            _asignar_jefe_de_taller(db, project)
         _append_event(
             db,
             project,
@@ -890,7 +1801,82 @@ def transition_project(project_id, payload: dict, user_data: dict) -> dict:
             review_date=(payload or {}).get("review_date"),
         )
         db.flush()
-        return project.serialize()
+
+        actor_id = _actor_id(user_data)
+        id_proyect = project.id_proyect
+        nombre_proyecto = project.title or project.proyect_description or f"Proyecto {id_proyect}"
+        payload_transicion = project.serialize()
+
+        # Que notificar y a quien, decidido AQUI (todavia con `db` abierta,
+        # para poder consultar `_users_with_capability`) pero disparado
+        # DESPUES de cerrar el `with` -- ver docstring de `_notificar_proyecto`.
+        avisos = []
+        if validated_target in {"submitted", "authorized", "denied", "blocked"}:
+            etiqueta = {
+                "submitted": "paso a revision de gerencia",
+                "authorized": "fue autorizado por gerencia",
+                "denied": "fue denegado por gerencia",
+                "blocked": "quedo bloqueado",
+            }[validated_target]
+            avisos.append(dict(
+                destinatarios=[project.leader],
+                titulo="Proyecto autorizado" if validated_target == "authorized" else "Cambio de estatus del proyecto",
+                mensaje=etiqueta,
+            ))
+            if validated_target == "authorized":
+                # Quien confirma el material se entera de que ya hay un
+                # proyecto por abastecer (Compras no ve a Gerente autorizar),
+                # lleve o no maquila: los dos pasan por Compras.
+                avisos.append(dict(
+                    destinatarios=_users_with_capability(db, "project_supply"),
+                    titulo="Proyecto autorizado: falta conseguir el material",
+                    mensaje="fue autorizado; cuando llegue el material, pasalo a en proceso",
+                ))
+        elif validated_target == "in_progress" and current == "waiting_material":
+            # El taller sabe que ya puede arrancar: avisa al Jefe de taller que
+            # lo tomo y al responsable del proyecto.
+            avisos.append(dict(
+                destinatarios=[project.leader, project.id_supervisor],
+                titulo="Proyecto en proceso",
+                mensaje=("arranca con material parcial (%d de %d recibido); falta el resto"
+                         % (material["received"], material["total"]))
+                if arranca_parcial else "ya se confirmo el material; puede arrancar",
+            ))
+        elif validated_target == "completed":
+            avisos.append(dict(
+                destinatarios=[project.leader],
+                titulo="Proyecto completado", mensaje="el taller termino el trabajo",
+            ))
+        elif validated_target == "collected":
+            avisos.append(dict(
+                destinatarios=[project.leader] + _users_with_capability(db, "project_authorization"),
+                titulo="Proyecto recolectado", mensaje="el trabajo salio del taller",
+            ))
+
+    for aviso in avisos:
+        _notificar_proyecto(
+            actor_id=actor_id, id_proyect=id_proyect, nombre_proyecto=nombre_proyecto,
+            **aviso,
+        )
+    return payload_transicion
+
+
+def avisar_material_solicitado(id_proyect, que_se_pidio: str, destinatarios, user_data: dict) -> None:
+    """Avisa a `destinatarios` (quien compra) que se pidio material para el proyecto.
+
+    Llamar DESPUES de cerrar la transaccion de quien pide (ver
+    `_notificar_proyecto`). Quien es "quien compra" lo decide quien llama; el
+    propio solicitante no se avisa a si mismo.
+    """
+    with transaction_context() as db:
+        project = db.get(Proyect, id_proyect)
+        if project is None:
+            return
+        nombre = project.title or project.proyect_description or f"Proyecto {id_proyect}"
+    _notificar_proyecto(
+        destinatarios=destinatarios, actor_id=_actor_id(user_data), id_proyect=id_proyect,
+        nombre_proyecto=nombre, titulo="Material solicitado",
+        mensaje=f"se solicito material: {que_se_pidio}")
 
 
 def add_project_message(project_id, payload: dict, user_data: dict) -> dict:
@@ -1052,6 +2038,11 @@ def add_project_payment(project_id, payload: dict, user_data: dict) -> dict:
         db.flush()
         _append_event(db, project, user_data, "payment_agreed",
                       content="%s el %s" % (pago.amount, pago.payment_date))
+        # Una parcialidad puede nacer ya cobrada (`paid_at` capturado desde el
+        # alta) -- si eso completa el costo total, el estatus comercial se
+        # sigue solo.
+        _sync_management_status_with_collection(db, project, user_data)
+        db.flush()
         return pago.serialize()
 
 
@@ -1083,6 +2074,10 @@ def settle_project_payment(payment_id, payload: dict, user_data: dict) -> dict:
         _append_event(db, project, user_data, "payment_settled",
                       content="%s cobrado el %s" % (pago.amount, pago.paid_at)
                       if pago.paid_at else "%s sin cobrar" % pago.amount)
+        # Marcar o desmarcar un cobro puede completar el costo total o
+        # deshacer que ya estuviera completo -- en los dos sentidos.
+        _sync_management_status_with_collection(db, project, user_data)
+        db.flush()
         return pago.serialize()
 
 
@@ -1091,8 +2086,12 @@ def delete_project_payment(payment_id, user_data: dict) -> dict:
         pago = db.get(ProyectPayment, int(payment_id))
         if pago is None or pago.deletion_date is not None:
             raise AppError("errors.not_found", 404, {"entity": "proyect_payment"})
-        _get_visible_project(db, pago.id_proyect, user_data, for_update=True)
+        project = _get_visible_project(db, pago.id_proyect, user_data, for_update=True)
         _require_management_scope(db, user_data)
         pago.deletion_date = datetime.now()
+        db.flush()
+        # Borrar una parcialidad ya cobrada puede deshacer un costo total que
+        # ya estaba completo.
+        _sync_management_status_with_collection(db, project, user_data)
         db.flush()
         return {"id_proyect_payment": pago.id_proyect_payment}

@@ -67,6 +67,7 @@ from app.models.session import transaction_context
 from app.services.inventory_service import apply_movement_in_session
 from app.services.invoice_xml_classification import classify_invoice_direction, normalize_rfc
 from app.utils.errors import AppError
+from app.utils.tiempo import a_iso_utc
 
 
 REFERENCE_TYPE = "invoice_line"
@@ -308,7 +309,7 @@ def _movimientos_de_la_venta(db, invoice) -> list[dict]:
             "id_location": fila.id_location,
             "movement_type": fila.movement_type,
             "quantity_delta": int(fila.quantity_delta or 0),
-            "creation_date": fila.creation_date.isoformat() if fila.creation_date else None,
+            "creation_date": a_iso_utc(fila.creation_date),
         }
         for fila in filas
     ]

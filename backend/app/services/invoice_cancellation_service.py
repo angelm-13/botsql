@@ -30,7 +30,7 @@ from app.models.inventory_ledger import InventoryLedger
 from app.models.invoice import Invoice
 from app.models.invoice_cancellation import InvoiceCancellation
 from app.models.session import transaction_context
-from app.services.inventory_service import apply_movement_in_session
+from app.services.inventory_service import apply_movement_in_session, reponer_en_sus_lotes
 from app.utils.errors import AppError
 
 
@@ -276,22 +276,50 @@ def _reverse_inventory(db, invoice, user_data, cancellation) -> list[dict]:
     revertidos = []
     for original in originales:
         contrario = -int(original.quantity_delta)
-        movimiento, _ = apply_movement_in_session(
-            db,
-            original.id_product,
-            user_data,
-            # Lo que salio por una venta vuelve como devolucion; lo que entro
-            # por una compra sale como salida.
+        movimiento = dict(
             movement_type="return" if contrario > 0 else "issue",
-            quantity_delta=contrario,
-            idempotency_key=f"cancel-{cancellation.id_invoice_cancellation}-ledger-{original.id_inventory_ledger}",
             id_location=original.id_location,
             reference_type="invoice_line",
             reference_id=original.reference_id,
             reason=f"Reverso por cancelacion de la factura {invoice.id_invoice}",
         )
-        revertidos.append(movimiento)
+        llave = f"cancel-{cancellation.id_invoice_cancellation}-ledger-{original.id_inventory_ledger}"
+        if contrario > 0:
+            # Lo que salio por una venta vuelve como devolucion, a los lotes de los
+            # que salio cuando el producto los lleva.
+            revertidos.extend(reponer_en_sus_lotes(
+                db, original.id_product, user_data,
+                de_la_salida=original.idempotency_key, quantity=contrario,
+                idempotency_key=llave, **movimiento))
+        else:
+            # Lo que entro por una compra sale como salida.
+            registro, _ = apply_movement_in_session(
+                db, original.id_product, user_data, quantity_delta=contrario,
+                idempotency_key=llave, **movimiento)
+            revertidos.append(registro)
     return revertidos
+
+
+def _documentos_vivos_que_dependen(db, id_invoice) -> list[int]:
+    """Complementos de pago y notas de credito no cancelados de esta factura.
+
+    La sustitucion (relacion 04) no cuenta: la factura que sustituye a la
+    cancelada es justo la que se espera que exista."""
+    from app.models.cfdi_relation import CfdiRelation
+    from app.models.invoice import Invoice
+    from app.models.invoice_payment import InvoicePayment
+
+    vivos = Invoice.invoice_status.is_distinct_from("cancelada")
+    complementos = db.scalars(
+        select(Invoice.id_invoice).join(
+            InvoicePayment, InvoicePayment.id_payment_invoice == Invoice.id_invoice
+        ).where(InvoicePayment.id_invoice == int(id_invoice), vivos)).all()
+    notas = db.scalars(
+        select(Invoice.id_invoice).join(
+            CfdiRelation, CfdiRelation.id_invoice == Invoice.id_invoice
+        ).where(CfdiRelation.id_related_invoice == int(id_invoice),
+                CfdiRelation.relation_type != "04", vivos)).all()
+    return sorted({int(i) for i in (*complementos, *notas)})
 
 
 def request_cancellation(invoice_id, payload, user_data, provider=None) -> dict:
@@ -318,6 +346,12 @@ def request_cancellation(invoice_id, payload, user_data, provider=None) -> dict:
 
         invoice = _load_invoice(db, invoice_id, user_data)
         _require_stamped(invoice)
+        dependientes = _documentos_vivos_que_dependen(db, invoice.id_invoice)
+        if dependientes:
+            # Cancelar la factura dejaba timbrados sus complementos de pago y sus
+            # notas de credito: documentos vivos que apuntan a un CFDI cancelado.
+            raise AppError("errors.cancellation_has_dependents", 409,
+                           {"id_invoice": invoice.id_invoice, "dependents": dependientes})
 
         vigente = _blocking_cancellation(db, invoice.id_invoice)
         if vigente is not None:

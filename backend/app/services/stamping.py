@@ -23,7 +23,8 @@ from app.services.cfdi_validation import validate_cfdi_xml
 from app.services.cfdi_xml import parse_cfdi
 from app.services.invoice_builder import build_draft, inspect_draft
 from app.services.invoice_catalogs import CLAVE_UNIDAD_FRECUENTES, OBJETO_IMP_CON_DESGLOSE, RFC_PUBLICO_GENERAL
-from app.services.invoice_artifacts import build_fake_cfdi_xml, save_invoice_xml
+from app.services.cfdi_xml_store import save_cfdi_xml
+from app.services.invoice_artifacts import build_fake_cfdi_xml
 from app.utils.errors import AppError
 
 
@@ -375,7 +376,12 @@ class FacturamaSandboxProvider(StampingProvider):
                 result = json.loads(response.read().decode("utf-8"))
             stamp = result.get("Complement", {}).get("TaxStamp", {})
             reference = stamp.get("Uuid") or result.get("Uuid") or result.get("Id")
-            return StampingResult("stamped", reference, {"http_status": response.status, "facturama_id": result.get("Id")}, xml=result.get("Xml"))
+            # La respuesta del timbrado trae el Id pero no el XML: hay que
+            # pedirlo aparte. Si la descarga falla el CFDI ya esta timbrado en
+            # el PAC, asi que no se convierte en error; queda recuperable con
+            # download_xml() usando el facturama_id guardado en la operacion.
+            xml = result.get("Xml") or self.download_xml(result.get("Id"))
+            return StampingResult("stamped", reference, {"http_status": response.status, "facturama_id": result.get("Id")}, xml=xml)
         except HTTPError as exc:
             # El motivo del rechazo viaja en el cuerpo de la respuesta: sin el,
             # un 400 de validacion no dice que corregir.
@@ -390,6 +396,27 @@ class FacturamaSandboxProvider(StampingProvider):
             )
         except (TimeoutError, socket.timeout, URLError):
             return StampingResult("uncertain", error_code="provider_timeout")
+
+    DOWNLOAD_TYPE = "issued"
+
+    def download_xml(self, facturama_id):
+        """XML timbrado de un CFDI emitido (GET /api/Cfdi/xml/<tipo>/<id>); None si no se pudo."""
+        if not facturama_id:
+            return None
+        request = Request(
+            f"{self.base_url}/api/Cfdi/xml/{self.DOWNLOAD_TYPE}/{facturama_id}",
+            headers={"Authorization": self._authorization_header()},
+            method="GET",
+        )
+        try:
+            with urlopen(request, timeout=self.timeout) as response:
+                body = json.loads(response.read().decode("utf-8"))
+            content = body.get("Content") if isinstance(body, dict) else None
+            if not content:
+                return None
+            return base64.urlsafe_b64decode(content.encode("utf-8")).decode("utf-8")
+        except (HTTPError, TimeoutError, socket.timeout, URLError, ValueError):
+            return None
 
     def reconcile(self, reference):
         return StampingResult("uncertain", reference, error_code="reconciliation_required")
@@ -474,6 +501,7 @@ class FacturamaMultiemisorProvider(FacturamaSandboxProvider):
 
     name = "facturama_multiemisor"
     CFDIS_PATH = "/api-lite/3/cfdis"
+    DOWNLOAD_TYPE = "issuedLite"
     CSDS_PATH = "/api-lite/csds"
 
     def build_request_body(self, payload):
@@ -588,6 +616,11 @@ def configured_provider():
     credentials = provider_credentials()
     provider_name = credentials["provider"]
     if provider_name == "fake":
+        # Un proveedor de mentiras "timbra" CFDI que no existen: en produccion
+        # una instalacion sin STAMPING_PROVIDER no debe caer aqui en silencio.
+        from app.utils.startup_guard import is_production
+        if is_production():
+            raise AppError("stamping.fake_provider_not_allowed", 503)
         return FakeStampingProvider()
     if provider_name in {"facturama_sandbox", "facturama"}:
         provider = FacturamaSandboxProvider(
@@ -670,7 +703,7 @@ def next_folio_if_missing(db, invoice) -> None:
 def _load_draft(db, invoice_id, user_data):
     """Carga la factura, sus partidas autorizadas y arma el borrador CFDI."""
     invoice = db.get(Invoice, invoice_id)
-    if not invoice or not invoice.id_proyect:
+    if not invoice or invoice.deletion_date is not None or not invoice.id_proyect:
         raise AppError("errors.resource_not_found", 404)
     actor_project = user_data.get("id_proyect") or user_data.get("project_id")
     unrestricted = bool(user_data.get("is_superuser") or user_data.get("is_bootstrap_admin"))
@@ -750,6 +783,10 @@ def preflight_invoice(invoice_id, user_data) -> dict:
         }
 
 
+NO_SE_TIMBRA = {"timbrada", "cancelada", "pagada", "draft", "sent", "approved",
+                "partially_approved", "rejected", "cotizacion", "cotización"}
+
+
 def stamp_invoice(invoice_id, idempotency_key, user_data, provider=None):
     key = str(idempotency_key or "").strip()
     if not key or len(key) > 100:
@@ -764,8 +801,16 @@ def stamp_invoice(invoice_id, idempotency_key, user_data, provider=None):
             return previous.serialize(), False
 
         pending_invoice = db.get(Invoice, invoice_id)
-        if not pending_invoice:
+        if not pending_invoice or pending_invoice.deletion_date is not None:
             raise AppError("errors.resource_not_found", 404)
+        # Timbrar de nuevo con otra llave de idempotencia generaba un segundo UUID
+        # sobre la misma factura (y revivia una cancelada). Una factura ya
+        # timbrada o cancelada no se timbra otra vez, y una cotizacion que no se
+        # ha convertido todavia no es una factura.
+        estatus = str(pending_invoice.invoice_status or "").strip().lower()
+        if pending_invoice.folio_fiscal or estatus in NO_SE_TIMBRA:
+            raise AppError("errors.invoice_not_stampable", 409,
+                           {"id_invoice": pending_invoice.id_invoice, "status": estatus})
         next_folio_if_missing(db, pending_invoice)
 
         invoice, draft = _load_draft(db, invoice_id, user_data)
@@ -812,7 +857,7 @@ def stamp_invoice(invoice_id, idempotency_key, user_data, provider=None):
                     operation.error_code = "cfdi_document_invalid"
                     operation.response_metadata = {**(result.metadata or {}), "cfdi_errors": document_errors}
                     raise AppError("invoice.stamped_document_invalid", 502, {"errors": document_errors})
-                save_invoice_xml(invoice.id_invoice, result.xml)
+                save_cfdi_xml(db, invoice.id_invoice, result.xml)
                 invoice.cfdi_code = fiscal_data["uuid"]
                 invoice.no_certificado = fiscal_data.get("no_certificado")
                 invoice.no_certificado_sat = fiscal_data.get("no_certificado_sat")

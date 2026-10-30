@@ -6,6 +6,8 @@ from app.utils.auth import require_entity_permission, token_required
 
 bp_document_management = Blueprint("document_management", __name__, url_prefix="/document")
 
+PREVIEWABLE_MIME_TYPES = {"application/pdf", "image/png", "image/jpeg"}
+
 
 def _storage():
     return SecureDocumentStorage(current_app.config["UPLOAD_ROOT"])
@@ -23,6 +25,13 @@ def categories(user_data):
 @require_entity_permission("document", "read")
 def employees(user_data):
     return jsonify(DocumentManagementService.employees(user_data))
+
+
+@bp_document_management.get("/uploaders")
+@token_required
+@require_entity_permission("document", "read")
+def uploaders(user_data):
+    return jsonify(DocumentManagementService.uploaders(user_data))
 
 
 @bp_document_management.get("/")
@@ -71,7 +80,13 @@ def add_document_version(user_data, document_id):
     uploaded = request.files.get("file")
     if not uploaded or not uploaded.filename:
         return jsonify({"error_key": "errors.invalid_field", "meta": {"field": "file"}}), 400
-    return jsonify(DocumentManagementService.add_version(document_id, user_data, uploaded.read(), uploaded.filename, _storage(), source=request.form.get("source", "uploaded"), status=request.form.get("status"))), 201
+    # Esta ruta solo recibe subidas a mano. `generated` y `signed_scan` los
+    # pone el sistema desde sus propios flujos (vale, laboratorio): si el cliente
+    # pudiera elegirlos, cualquiera marcaria como "del sistema" -y con eso
+    # impediria borrar- un documento que no lo es.
+    if request.form.get("source", "uploaded") != "uploaded":
+        return jsonify({"error_key": "errors.invalid_field", "meta": {"field": "source"}}), 400
+    return jsonify(DocumentManagementService.add_version(document_id, user_data, uploaded.read(), uploaded.filename, _storage(), source="uploaded", status=request.form.get("status"))), 201
 
 
 @bp_document_management.get("/<int:document_id>/versions/<int:version>/content")
@@ -79,4 +94,10 @@ def add_document_version(user_data, document_id):
 @require_entity_permission("document_version", "read")
 def document_content(user_data, document_id, version):
     path, mime_type, filename = DocumentManagementService.content(document_id, version, user_data, _storage())
-    return send_file(path, mimetype=mime_type, as_attachment=request.args.get("download") == "1", download_name=filename)
+    # En linea solo lo que el navegador sabe mostrar sin ejecutar nada (PDF e
+    # imagenes); el resto -DOCX- se baja siempre. `nosniff` evita que el
+    # navegador reinterprete el archivo por su contenido.
+    inline = request.args.get("download") != "1" and mime_type in PREVIEWABLE_MIME_TYPES
+    response = send_file(path, mimetype=mime_type, as_attachment=not inline, download_name=filename)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response

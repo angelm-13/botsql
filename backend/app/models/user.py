@@ -4,6 +4,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import String, Integer, BigInteger, SmallInteger, Boolean, Date, DateTime, Float, Numeric, ForeignKey, Text, JSON, Enum, LargeBinary, UniqueConstraint, func
 from app.models.base import Base
+from app.utils.tiempo import a_iso_utc
 
 
 def to_json_value(value):
@@ -55,10 +56,10 @@ class User(Base):
         return {
             'id_user': to_json_value(self.id_user),
             'created_by': to_json_value(self.created_by),
-            'creation_date': to_json_value(self.creation_date),
+            'creation_date': a_iso_utc(self.creation_date),
             'date_born': to_json_value(self.date_born),
             'date_start': to_json_value(self.date_start),
-            'deletion_date': to_json_value(self.deletion_date),
+            'deletion_date': a_iso_utc(self.deletion_date),
             'email': to_json_value(self.email),
             'first_name': to_json_value(self.first_name),
             'id_permission': to_json_value(self.id_permission),
@@ -66,7 +67,7 @@ class User(Base):
             'id_proyect': to_json_value(self.id_proyect),
             'last_name_father': to_json_value(self.last_name_father),
             'last_name_mother': to_json_value(self.last_name_mother),
-            'last_update_date': to_json_value(self.last_update_date),
+            'last_update_date': a_iso_utc(self.last_update_date),
             'national_id': to_json_value(self.national_id),
             'principal_phone': to_json_value(self.principal_phone),
             'secundary_phone': to_json_value(self.secundary_phone),

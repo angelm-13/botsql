@@ -11,6 +11,7 @@ import {
 import { useI18n } from "../i18n";
 import PageHeader from "./PageHeader.jsx";
 import FormularioPlegable from "./FormularioPlegable.jsx";
+import { useDialogo } from "../dialogo/useDialogo.js";
 
 /* eslint-disable react/prop-types */
 
@@ -33,6 +34,7 @@ function listItems(payload) {
 // `logistics_contact` dentro de Logística.
 export default function CustomerContactsPanel() {
   const { t } = useI18n();
+  const dialogo = useDialogo();
   const [contacts, setContacts] = useState([]);
   const [clients, setClients] = useState([]);
   const [form, setForm] = useState(emptyForm);
@@ -105,7 +107,7 @@ export default function CustomerContactsPanel() {
   }
 
   async function removeContact(contact) {
-    if (!window.confirm(`${etiqueta("confirm_delete", "¿Eliminar este contacto?")} ${contact.full_name}`)) return;
+    if (!(await dialogo.confirmar(`${etiqueta("confirm_delete", "¿Eliminar este contacto?")} ${contact.full_name}`))) return;
     try {
       await deleteCustomerContact(contact.id_customer_contact);
       await loadData();
@@ -116,7 +118,7 @@ export default function CustomerContactsPanel() {
 
   return (
     <section className="entity-page customer-contact-panel">
-      <PageHeader eyebrow="CRM" titulo={etiqueta("title", "Contactos")} subtitulo={etiqueta("subtitle", "Personas de contacto por empresa cliente")}>
+      <PageHeader eyebrow="CRM" titulo={etiqueta("title", "Contactos")} subtitulo={etiqueta("subtitle", "Las personas con quienes tratas en cada empresa cliente. Elige la empresa a la que pertenece el contacto (debe estar registrada antes en Clientes); después podrás elegir ese contacto al crear un proyecto.")}>
         <button className="button ghost" type="button" onClick={loadData}><RefreshCw size={16} /> {t("common.refresh")}</button>
       </PageHeader>
 

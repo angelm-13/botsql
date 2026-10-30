@@ -21,16 +21,20 @@
   margin: 0 0 20px; padding: 16px 18px;
   background: #fff1f2; border: 1px solid #fecdd3; border-radius: 10px;
 }
-.vale-vencidos h2 {
-  display: flex; align-items: center; gap: 9px;
-  margin: 0 0 12px; font-size: 1.02rem; color: #9f1239;
+/* Cerrada por omision y con la lista acotada: unos cuantos vencidos no deben empujar
+   el resto de la pantalla hacia abajo. */
+.vale-vencidos summary {
+  display: flex; align-items: center; gap: 9px; cursor: pointer;
+  font-size: 1.02rem; font-weight: 600; color: #9f1239;
 }
-.vale-vencidos h2 span {
+.vale-vencidos[open] summary { margin-bottom: 12px; }
+.vale-vencidos summary span {
   margin-left: auto; padding: 1px 9px; border-radius: 999px;
   background: #9f1239; color: #fff; font-size: 12px;
 }
 .vale-vencidos ul { list-style: none; margin: 0; padding: 0;
-  display: flex; flex-direction: column; gap: 7px; }
+  display: flex; flex-direction: column; gap: 7px;
+  max-height: 320px; overflow-y: auto; }
 .vale-vencidos li {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
   padding: 9px 12px; background: #fff; border-radius: 8px; font-size: 13.5px;
@@ -144,6 +148,8 @@
   border: 1px solid #cbd5e1; border-radius: 7px; background: #fff;
 }
 .vale-mini input[type="number"] { width: 84px; }
+.vale-mini small { font-size: 11px; }
+.vale-sin-existencia { color: #b42318; font-weight: 600; }
 /* Lo que falta para poder abrir el vale. Ambar y no rojo: no es un error, es
    un dato pendiente. */
 .vale-falta select { border-color: #b45309; background: #fffbeb; }
@@ -184,7 +190,6 @@
 .vale-estado.es-abierto { background: #fef3c7; color: #78350f; }
 .vale-estado.es-cerrado { background: #dcfce7; color: #14532d; }
 
-.vale-page :focus-visible { outline: 2px solid #1b7a60; outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) {
   .vale-page * { transition: none !important; animation: none !important; }
 }
@@ -277,7 +282,7 @@
 .vale-lista li { margin-bottom: 5px; }
 .vale-lista button {
   display: grid; align-items: center; gap: 12px; width: 100%;
-  grid-template-columns: 68px minmax(0, 1fr) auto auto auto;
+  grid-template-columns: 68px minmax(0, 1fr) minmax(0, 1fr) auto auto auto;
   padding: 10px 12px; text-align: left;
   border: 1px solid #e8eeeb; border-radius: 9px; background: #fff;
   font: inherit; font-size: 13px; cursor: pointer;
@@ -286,6 +291,8 @@
 .vale-lista .mono { font-variant-numeric: tabular-nums; }
 .vale-lista-quien { font-weight: 600; overflow: hidden; text-overflow: ellipsis;
   white-space: nowrap; }
+.vale-lista-proyecto { overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: #475569; }
 .vale-lista-estado {
   padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 700;
 }
@@ -298,6 +305,7 @@
 
 @media (max-width: 760px) {
   .vale-lista button { grid-template-columns: 60px 1fr; }
+  .vale-lista-proyecto { grid-column: 1 / -1; }
   .vale-lista-cuenta, .vale-lista button > span:last-child { grid-column: 1 / -1; }
 }
 
@@ -375,3 +383,31 @@
   margin: 2px 0 0; font-size: 13px; color: #475569;
 }
 .vale-obra svg { color: #94a3b8; }
+
+
+/* --- entrega y recibido del vale, y el combobox de persona ------------------ */
+.vale-marca-mini.entrega-por_entregar { background: #dbeafe; color: #1e40af; }
+.vale-marca-mini.entrega-por_autorizar { background: #fef3c7; color: #92400e; }
+.vale-marca-mini.entrega-entregado { background: #ffedd5; color: #9a3412; }
+.vale-marca-mini.entrega-recibido { background: #dcfce7; color: #166534; }
+.vale-marca-mini.entrega-recibido_con_observaciones { background: #fee2e2; color: #991b1b; }
+
+.vale-seguimiento { margin: 12px 0; }
+.vale-linea-tiempo { list-style: none; display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 0 0 8px; padding: 0; }
+.vale-linea-tiempo li { position: relative; padding-left: 18px; opacity: .55; }
+.vale-linea-tiempo li::before { content: "○"; position: absolute; left: 0; }
+.vale-linea-tiempo li.hecho { opacity: 1; }
+.vale-linea-tiempo li.hecho::before { content: "●"; color: #166534; }
+.vale-accion-entrega { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-top: 8px; }
+.vale-observaciones { color: #991b1b; font-weight: 600; }
+
+.persona-combobox { position: relative; min-width: 220px; }
+.persona-combobox input { width: 100%; }
+.persona-elegida { display: inline-flex; align-items: center; gap: 6px; }
+.persona-opciones { position: absolute; z-index: 20; left: 0; right: 0; margin: 2px 0 0; padding: 4px 0;
+  list-style: none; background: var(--surface, #fff); border: 1px solid var(--border, #d1d5db);
+  border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,.12); max-height: 260px; overflow-y: auto; }
+.persona-opciones button { display: block; width: 100%; text-align: left; padding: 6px 10px;
+  background: none; border: 0; cursor: pointer; font: inherit; color: inherit; }
+.persona-opciones button:hover, .persona-opciones button:focus { background: var(--hover, #f3f4f6); }
+.persona-externo { border-top: 1px solid var(--border, #e5e7eb); font-style: italic; }

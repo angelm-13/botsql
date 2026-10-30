@@ -889,15 +889,6 @@ export const validationRules = {
     ]
   },
   "product": {
-    "id_invoice": [
-      {
-        "validation_type": "required",
-        "rule": "value is not null and value != \"\"",
-        "message_key": "validations.product.id_invoice.required",
-        "severity": "error",
-        "graphql_error_code": "REQUIRED_FIELD"
-      }
-    ],
     "id_location": [
       {
         "validation_type": "required",

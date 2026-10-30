@@ -164,9 +164,11 @@ class TestUncertainResultIsKeptForReconciliation(PaymentComplementTestCase):
 
 class TestGuards(PaymentComplementTestCase):
     def test_cannot_stamp_a_payment_whose_invoice_never_stamped(self):
+        # Un abono ya no se registra sobre una factura sin timbrar: se simula uno anterior a
+        # ese control, registrado con la factura timbrada y despues sin su folio.
+        abono = self.pay("400.00", "pay-5")["payment"]
         with transaction_context() as db:
             db.query(Invoice).filter(Invoice.id_invoice == PPD).update({"folio_fiscal": None, "invoice_status": "pendiente"})
-        abono = self.pay("400.00", "pay-5")["payment"]
 
         with self.assertRaises(AppError) as raised:
             stamp_payment_complement(abono["id_invoice_payment"], "stamp-5", ACTOR, provider=FakeStampingProvider())

@@ -1,3 +1,4 @@
+import { LLAVE_BORRADO_BLOQUEADO, mensajeDeBorradoBloqueado } from "../utils/registrosRelacionados.js";
 import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
@@ -7,6 +8,9 @@ import Pagination from "../components/Pagination.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
+import { CAMPOS_DE_AUDITORIA } from "../utils/camposDeAuditoria";
+import { formatearFechaHora } from "../utils/fechas";
+import { useDialogo } from "../dialogo/useDialogo.js";
 
 const emptyForm = { unit_code: "", unit_name: "", unit_category: "", is_active: false, symbol: "", measurement_system: "" };
 const validationRules = allValidationRules["unit"] || {};
@@ -33,6 +37,7 @@ function readCurrentUser() {
 
 export default function UnitPage() {
   const { lang, t } = useI18n();
+  const dialogo = useDialogo();
   const [items, setItems] = useState([]);
   const [formData, setFormData] = useState(emptyForm);
   const [fieldErrors, setFieldErrors] = useState({});
@@ -163,7 +168,7 @@ export default function UnitPage() {
   function canSeeField(fieldName) {
     if (isSuperUser) return true;
     if (!permissionReady) return false;
-    return visibleFieldNames.has(fieldName);
+    return CAMPOS_DE_AUDITORIA.has(fieldName) || visibleFieldNames.has(fieldName);
   }
 
 
@@ -251,7 +256,7 @@ export default function UnitPage() {
 
   async function removeItem(item) {
     if (!canDelete) return;
-    if (!window.confirm(t("common.confirm_delete"))) return;
+    if (!(await dialogo.confirmar(t("common.confirm_delete")))) return;
     try { await deleteUnit(item.id_unit); await loadData(); } catch (error) { setErrorKey(error.message || "errors.request_failed"); setErrorMeta(error.payload?.meta || null); }
   }
 
@@ -261,7 +266,7 @@ export default function UnitPage() {
     if (ENTITY_KEY !== "user") return;
     const targetId = item.id_user ?? item.id;
     if (!targetId) return;
-    if (!window.confirm(t("common.mfa_reset_confirm", "¿Restablecer MFA de este usuario?"))) return;
+    if (!(await dialogo.confirmar(t("common.mfa_reset_confirm", "¿Restablecer MFA de este usuario?")))) return;
     setErrorKey("");
     setErrorMeta(null);
     try {
@@ -289,11 +294,8 @@ export default function UnitPage() {
     }
     if (typeof value === "number") return new Intl.NumberFormat(locale).format(value);
     if (typeof value === "string" && /^[0-9]{4}-[0-9]{2}-[0-9]{2}T/.test(value)) {
-      const date = new Date(value);
-      if (!Number.isNaN(date.getTime())) {
-        const hasTime = !/T00:00(?::00)?/.test(value);
-        return new Intl.DateTimeFormat(locale, hasTime ? { dateStyle: "medium", timeStyle: "short" } : { dateStyle: "medium" }).format(date);
-      }
+      const formateada = formatearFechaHora(value, locale);
+      if (formateada) return formateada;
     }
     if (Array.isArray(value)) return value.map((item) => formatTableValue(item)).filter(Boolean).join(", ");
     if (typeof value === "object") {
@@ -319,7 +321,7 @@ export default function UnitPage() {
     if (errorKey === "errors.invalid_field" && errorMeta?.field) {
       return `${t(errorKey, errorKey)}: ${fieldLabel}`;
     }
-    return t(errorKey, errorKey);
+    return errorKey === LLAVE_BORRADO_BLOQUEADO ? mensajeDeBorradoBloqueado(t, errorMeta) : t(errorKey, errorKey);
   }
 
   // El buscador pregunta al SERVIDOR, asi que lo que llega ya viene filtrado.

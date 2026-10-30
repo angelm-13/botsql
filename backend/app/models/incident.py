@@ -4,6 +4,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import String, Integer, BigInteger, SmallInteger, Boolean, Date, DateTime, Float, Numeric, ForeignKey, Text, JSON, Enum, LargeBinary, UniqueConstraint, func
 from app.models.base import Base
+from app.utils.tiempo import a_iso_utc
 
 
 def to_json_value(value):
@@ -40,8 +41,53 @@ class Incident(Base):
     external_folio: Mapped[str | None] = mapped_column(String(40), nullable=True)
     # De donde vino. Un folio "140" no significa lo mismo en dos origenes.
     external_source: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # Vale complementario: el vale anterior, del mismo proyecto, al que este
+    # agrega herramienta. Solo trazabilidad.
+    id_incident_parent: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('incident.id_incident'), nullable=True)
+    # Para cuando se necesita la herramienta. Informativa: no marca vencidos
+    # (eso es `nm_incident_product.due_date`, que ya no se pide).
+    needed_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Quien recoge cuando no tiene usuario (externo). Excluyente con
+    # `nm_incident_product.id_user_delivered_to`.
+    pickup_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # true solo en los vales nuevos: de ellos se espera entrega y confirmacion.
+    # Los anteriores quedan en false ("sin seguimiento"), sin confirmaciones
+    # inventadas.
+    tracks_delivery: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default='false')
+    # Almacen marca "entregado a X", acto aparte de autorizar.
+    delivered_date: Mapped[object] = mapped_column(DateTime, nullable=True)
+    delivered_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    delivered_to_user: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    delivered_to_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    delivery_note: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    # El supervisor responsable confirma el recibido (con o sin observaciones).
+    received_confirmed_date: Mapped[object] = mapped_column(DateTime, nullable=True)
+    received_confirmed_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    receipt_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    receipt_note: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    # Donde estaba la persona al checar asistencia (n8n por WhatsApp) y a
+    # cuantos metros del punto de checada. Solo las incidencias tipo "checador"
+    # las traen; en el resto quedan nulas.
+    latitude: Mapped[Decimal | None] = mapped_column(Numeric(10, 7), nullable=True)
+    longitude: Mapped[Decimal | None] = mapped_column(Numeric(10, 7), nullable=True)
+    distance_m: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), nullable=True)
+    # Foto en base64 (n8n la descifra y la manda como texto). Es grande: el
+    # listado no la carga, solo avisa con `has_photo`; el detalle si la trae.
+    photo_base64: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    def serialize(self) -> dict:
+    def serialize(self, *, con_foto: bool = True, tiene_foto: bool | None = None) -> dict:
+        """`con_foto=False` es para listados: no toca la columna de la foto (que el
+        listado difiere para no leerla) y `tiene_foto` dice solo si existe."""
+        foto = self.photo_base64 if con_foto else None
+        datos = self._serialize_base()
+        if con_foto:
+            datos['photo_base64'] = foto
+        datos['has_photo'] = bool(foto) if con_foto else bool(tiene_foto)
+        return datos
+
+    def _serialize_base(self) -> dict:
         return {
             'id_incident': to_json_value(self.id_incident),
             'incident_date': to_json_value(self.incident_date),
@@ -51,13 +97,29 @@ class Incident(Base):
             'incident_status': to_json_value(self.incident_status),
             'close_date': to_json_value(self.close_date),
             'created_by': to_json_value(self.created_by),
-            'creation_date': to_json_value(self.creation_date),
-            'last_update_date': to_json_value(self.last_update_date),
-            'deletion_date': to_json_value(self.deletion_date),
+            'creation_date': a_iso_utc(self.creation_date),
+            'last_update_date': a_iso_utc(self.last_update_date),
+            'deletion_date': a_iso_utc(self.deletion_date),
             'id_proyect': to_json_value(self.id_proyect),
             'id_lider': to_json_value(self.id_lider),
             'external_folio': to_json_value(self.external_folio),
             'external_source': to_json_value(self.external_source),
+            'id_incident_parent': to_json_value(self.id_incident_parent),
+            'needed_date': to_json_value(self.needed_date),
+            'pickup_name': to_json_value(self.pickup_name),
+            'tracks_delivery': bool(self.tracks_delivery),
+            'delivered_date': to_json_value(self.delivered_date),
+            'delivered_by': to_json_value(self.delivered_by),
+            'delivered_to_user': to_json_value(self.delivered_to_user),
+            'delivered_to_name': to_json_value(self.delivered_to_name),
+            'delivery_note': to_json_value(self.delivery_note),
+            'received_confirmed_date': to_json_value(self.received_confirmed_date),
+            'received_confirmed_by': to_json_value(self.received_confirmed_by),
+            'receipt_ok': to_json_value(self.receipt_ok),
+            'receipt_note': to_json_value(self.receipt_note),
+            'latitude': to_json_value(self.latitude),
+            'longitude': to_json_value(self.longitude),
+            'distance_m': to_json_value(self.distance_m),
         }
 
     def serialize_summary(self) -> dict:

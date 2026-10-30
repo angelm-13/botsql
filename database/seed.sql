@@ -171,13 +171,14 @@ INSERT INTO "permission" ("id_permission", "created_by", "creation_date", "last_
 VALUES (1, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', 1, 'admin', 1, 1, 1)
 ON CONFLICT ("id_permission") DO NOTHING;
 
-INSERT INTO "permission" ("id_permission", "created_by", "creation_date", "last_update_date", "authorized_by", "permission_description", "id_department", "id_subdepartment", "id_level")
-VALUES (2, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', 1, 'gerente_administrativo', 1, 1, 1)
-ON CONFLICT ("id_permission") DO NOTHING;
-
-INSERT INTO "permission" ("id_permission", "created_by", "creation_date", "last_update_date", "authorized_by", "permission_description", "id_department", "id_subdepartment", "id_level")
-VALUES (3, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', 1, 'vendedor', 1, 1, 1)
-ON CONFLICT ("id_permission") DO NOTHING;
+-- Los ids 2 y 3 sembraban aqui 'gerente_administrativo' y 'vendedor', dos
+-- perfiles que el negocio no reconoce. En una instalacion nueva ocupaban esos
+-- numeros y empujaban a Supervisor y Gerente -- los roles de verdad, creados
+-- mas abajo sin id fijo -- a identificadores altos. Ese es el cruce que
+-- documenta 20260908100000_roles_con_los_ids_de_la_base.sql, y que dejo a
+-- Supervisor con la concesion del gerente administrativo en clientes reales.
+-- Los roles del negocio los declara `app/modules/registry.py` y los siembra la
+-- matriz generada; aqui ya no se escribe ninguno.
 
 INSERT INTO "nm_field_permission" ("id_nm_field_permission", "id_field", "id_permission", "control_type", "created_by", "creation_date", "last_update_date", "deletion_date")
 VALUES (1, 1, 1, '1', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00', '2026-01-01 00:00:00')
@@ -231,35 +232,12 @@ VALUES (1002, 1, 'public_api_key', '15', 1, '2026-01-01 00:00:00', '2026-01-01 0
 -- las facturas que el inventario necesita para funcionar.
 ON CONFLICT DO NOTHING;
 
-INSERT INTO "entity_permission" ("id_entity_permission", "id_permission", "entity_name", "control_type", "created_by", "creation_date", "last_update_date")
-VALUES (1003, 2, 'product_sale_config', '15', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00')
--- Sin objetivo: la colision real es en (id_permission, entity_name), la
--- restriccion unica que agrega 20260822122000, no en la llave primaria.
--- Vigilando solo la primaria, este INSERT abortaba seed.sql ENTERO en una
--- instalacion nueva -las migraciones corren antes y ya habian sembrado esa
--- fila- y con el se quedaban sin sembrar las ubicaciones, los materiales y
--- las facturas que el inventario necesita para funcionar.
-ON CONFLICT DO NOTHING;
-
-INSERT INTO "entity_permission" ("id_entity_permission", "id_permission", "entity_name", "control_type", "created_by", "creation_date", "last_update_date")
-VALUES (1004, 2, 'public_api_key', '15', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00')
--- Sin objetivo: la colision real es en (id_permission, entity_name), la
--- restriccion unica que agrega 20260822122000, no en la llave primaria.
--- Vigilando solo la primaria, este INSERT abortaba seed.sql ENTERO en una
--- instalacion nueva -las migraciones corren antes y ya habian sembrado esa
--- fila- y con el se quedaban sin sembrar las ubicaciones, los materiales y
--- las facturas que el inventario necesita para funcionar.
-ON CONFLICT DO NOTHING;
-
-INSERT INTO "entity_permission" ("id_entity_permission", "id_permission", "entity_name", "control_type", "created_by", "creation_date", "last_update_date")
-VALUES (1005, 3, 'product_sale_config', '2', 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00')
--- Sin objetivo: la colision real es en (id_permission, entity_name), la
--- restriccion unica que agrega 20260822122000, no en la llave primaria.
--- Vigilando solo la primaria, este INSERT abortaba seed.sql ENTERO en una
--- instalacion nueva -las migraciones corren antes y ya habian sembrado esa
--- fila- y con el se quedaban sin sembrar las ubicaciones, los materiales y
--- las facturas que el inventario necesita para funcionar.
-ON CONFLICT DO NOTHING;
+-- Las filas 1003/1004/1005 (id_permission 2 y 3, 'gerente_administrativo' y
+-- 'vendedor') se retiraron aqui: esos dos permisos ya no se siembran arriba
+-- (ver el comentario junto al INSERT de "permission"), asi que estas filas
+-- violaban `fk_entity_permission_id_permission` en cuanto se corria este
+-- archivo contra un volumen realmente limpio -no contra uno que ya traia
+-- esos ids de una corrida vieja-. Confirmado con `docker compose down -v`.
 
 INSERT INTO "inventory_status" ("id_inventory_status", "inventory_status_code", "inventory_status_description", "color", "entity_scope", "flow_scope", "id_department", "id_subdepartment", "id_minimum_level", "is_active", "is_terminal", "visible_to_other_departments", "sort_order", "created_by", "creation_date", "last_update_date")
 VALUES (1, 'ENTRADA', 'Entrada', '#22c55e', 'product', 'inventory', 1, 1, 1, TRUE, FALSE, FALSE, 100, 1, '2026-01-01 00:00:00', '2026-01-01 00:00:00')
@@ -289,77 +267,93 @@ INSERT INTO "password_reset_token" ("id_password_reset_token", "id_user", "token
 VALUES (1, 1, 'disabled_token_hash', '2026-01-01 00:00:00', '2026-01-01 00:00:00', '127.0.0.1', '2026-01-01 00:00:00')
 ON CONFLICT ("id_password_reset_token") DO NOTHING;
 
--- Device connection is a virtual module and defaults to the settings gear.
-INSERT INTO "entity_permission" ("id_permission", "entity_name", "control_type", "menu_location", "menu_group", "menu_label", "menu_order", "created_by")
-VALUES (1, 'kronos_device', 2, 'settings', 'Recursos humanos', 'Conexión al dispositivo', 30, 1)
-ON CONFLICT ("id_permission", "entity_name") DO UPDATE SET
-  "menu_location" = EXCLUDED."menu_location",
-  "menu_group" = EXCLUDED."menu_group",
-  "menu_label" = EXCLUDED."menu_label",
-  "menu_order" = EXCLUDED."menu_order",
-  "deletion_date" = NULL;
+-- La conexion al dispositivo Kronos se sembraba aqui a mano, en 15
+-- (administrar), cuando es una capacidad de si-o-no que el registro declara en
+-- 2. La declara `app/modules/registry.py` y la siembra la matriz generada.
+--
+-- `entity_permission.control_type` ya no existe en una base migrada: la
+-- elimino 20260914110000_equipos_y_alcance_por_accion.sql, que antes copia
+-- sus bits a scope_create/read/update/delete. Los demas INSERT de este archivo
+-- (y init.sql) la siguen usando porque en un volumen nuevo corren en initdb,
+-- ANTES de las migraciones, cuando la columna todavia existe -- y funcionan
+-- solo porque esa migracion convierte despues lo que sembraron aqui. Si
+-- alguien quita esa conversion, esta siembra deja de funcionar.
+--
+-- En docker-compose este archivo ADEMAS vuelve a correr en cada arranque:
+-- ./database se monta en /database del backend y `init_db.py` lo reaplica
+-- (`execute_sql_file`), ya sobre la base migrada. Ahi estos INSERT truenan
+-- con "column control_type does not exist" y, como todo el archivo es una
+-- sola transaccion, se revierte completo cada vez: init_db lo registra como
+-- aviso no fatal y ningun cambio a este archivo llega a un volumen ya
+-- existente. En k8s no pasa: el backend no monta /database.
+-- Pasar estos INSERT a scope_* exige que init.sql declare esas columnas primero.
 
--- Restaurant profiles. Users are assigned through the existing Tyakxa user/role UI.
-INSERT INTO "permission" ("id_permission", "created_by", "authorized_by", "permission_description", "id_department", "id_subdepartment", "id_level") VALUES
-  (10, 1, 1, 'Mesero', 1, 1, 1),
-  (11, 1, 1, 'Cocina', 1, 1, 1),
-  (12, 1, 1, 'Caja Restaurante', 1, 1, 1),
-  (13, 1, 1, 'Admin Restaurante', 1, 1, 1)
-ON CONFLICT ("id_permission") DO NOTHING;
+-- Los cuatro perfiles del restaurante -Mesero, Cocina, Caja Restaurante y
+-- Admin Restaurante- se creaban aqui con sus filas de `entity_permission`
+-- escritas a mano. Cada uno existia para cargar UNA capacidad que el registro
+-- de modulos ya declara y que el gestor de roles ya ofrece por separado, y las
+-- sembraba con sus propios numeros -15 donde el registro dice 7 y 6-, que es
+-- de donde salia el desfase entre lo que la pantalla ensenaba y lo que el
+-- registro declara. Se retiraron en
+-- 20260918100000_roles_redundantes_retirados.sql. Las capacidades siguen
+-- existiendo: se conceden a cualquier rol desde el gestor.
 
-INSERT INTO "entity_permission" ("id_permission", "entity_name", "control_type", "menu_location", "menu_group", "menu_label", "menu_order", "created_by") VALUES
-  (1, 'restaurant_waiter', 15, 'sidebar', 'Restaurante', 'Meseros', 10, 1),
-  (1, 'restaurant_cashier', 15, 'sidebar', 'Restaurante', 'Caja', 20, 1),
-  (1, 'restaurant_kitchen', 15, 'sidebar', 'Restaurante', 'Cocina', 30, 1),
-  (1, 'restaurant_admin', 15, 'sidebar', 'Restaurante', 'Admin', 40, 1),
-  (10, 'restaurant_waiter', 15, 'sidebar', 'Restaurante', 'Meseros', 10, 1),
-  (11, 'restaurant_kitchen', 6, 'sidebar', 'Restaurante', 'Cocina', 30, 1),
-  (12, 'restaurant_cashier', 7, 'sidebar', 'Restaurante', 'Caja', 20, 1),
-  (13, 'restaurant_waiter', 15, 'sidebar', 'Restaurante', 'Meseros', 10, 1),
-  (13, 'restaurant_cashier', 15, 'sidebar', 'Restaurante', 'Caja', 20, 1),
-  (13, 'restaurant_kitchen', 15, 'sidebar', 'Restaurante', 'Cocina', 30, 1),
-  (13, 'restaurant_admin', 15, 'sidebar', 'Restaurante', 'Admin', 40, 1)
-ON CONFLICT ("id_permission", "entity_name") DO UPDATE SET
-  "control_type" = EXCLUDED."control_type",
-  "menu_location" = EXCLUDED."menu_location",
-  "menu_group" = EXCLUDED."menu_group",
-  "menu_label" = EXCLUDED."menu_label",
-  "menu_order" = EXCLUDED."menu_order",
-  "deletion_date" = NULL;
+-- Demo del restaurante: solo si sus tablas ya existen.
+--
+-- En un volumen nuevo este archivo lo ejecuta Postgres desde
+-- docker-entrypoint-initdb.d, ANTES de que db-migrate
+-- aplique database/migrations -- y las tablas restaurant_* las crea una
+-- migracion (20260817120000_restaurant_module.sql), no init.sql. Sin esta
+-- guarda el primer INSERT truena, y como todo el archivo es una sola
+-- transaccion se revierte la siembra completa -- entre otras cosas los
+-- perfiles Mesero/Cocina/Caja/Admin Restaurante-- y Postgres aborta su
+-- inicializacion.
+--
+-- Dentro de un DO, plpgsql no resuelve las tablas hasta ejecutar cada
+-- sentencia, asi que el IF basta para que la ausencia no sea un error.
+DO $$
+BEGIN
+  IF to_regclass('public.restaurant_table') IS NULL
+     OR to_regclass('public.restaurant_guisado') IS NULL
+     OR to_regclass('public.restaurant_dish') IS NULL THEN
+    RAISE NOTICE 'seed.sql: tablas del restaurante todavia no existen, se omite su demo';
+    RETURN;
+  END IF;
 
-INSERT INTO "restaurant_table" ("id_restaurant_table", "id_proyect", "number", "capacity", "location_description", "is_active", "created_by")
-SELECT number, 1, number, 4, CASE WHEN number <= 8 THEN 'Salón principal' ELSE 'Terraza' END, TRUE, 1
-FROM generate_series(1, 15) AS number
-ON CONFLICT ("id_restaurant_table") DO NOTHING;
-
-INSERT INTO "restaurant_guisado" ("id_restaurant_guisado", "id_proyect", "name", "is_active", "created_by") VALUES
-  (1, 1, 'Picadillo', TRUE, 1),
-  (2, 1, 'Rajas con crema', TRUE, 1),
-  (3, 1, 'Frijoles con chorizo', TRUE, 1),
-  (4, 1, 'Chicharrón en salsa verde', TRUE, 1),
-  (5, 1, 'Papa con chorizo', TRUE, 1),
-  (6, 1, 'Mole', TRUE, 1),
-  (7, 1, 'Tinga de pollo', TRUE, 1),
-  (8, 1, 'Chicharrón prensado', TRUE, 1)
-ON CONFLICT ("id_restaurant_guisado") DO NOTHING;
-
-INSERT INTO "restaurant_dish" ("id_restaurant_dish", "id_proyect", "title", "description", "icon", "category", "price", "production_cost", "requires_guisado", "schedule", "is_active", "created_by") VALUES
-  (1, 1, 'Taco de guisado', 'Tortilla y guisado a elegir', 'taco', 'taco', 18.00, 7.00, TRUE, 'all', TRUE, 1),
-  (2, 1, 'Gordita de guisado', 'Gordita de maíz y guisado', 'sandwich', 'gordita', 22.00, 9.00, TRUE, 'all', TRUE, 1),
-  (3, 1, 'Quesadilla de guisado', 'Quesadilla con guisado a elegir', 'sandwich', 'quesadilla', 25.00, 11.00, TRUE, 'all', TRUE, 1),
-  (4, 1, 'Pozole', 'Platillo del día', 'soup', 'platillo_dia', 85.00, 36.00, FALSE, 'weekend', TRUE, 1),
-  (5, 1, 'Flan', 'Flan de la casa', 'cake', 'postre', 45.00, 16.00, FALSE, 'all', TRUE, 1),
-  (6, 1, 'Pastel', 'Rebanada de pastel', 'cake', 'postre', 50.00, 20.00, FALSE, 'all', TRUE, 1),
-  (7, 1, 'Arroz con leche', 'Postre tradicional', 'cake', 'postre', 40.00, 14.00, FALSE, 'all', TRUE, 1),
-  (8, 1, 'Gelatina', 'Gelatina del día', 'cake', 'postre', 35.00, 10.00, FALSE, 'all', TRUE, 1),
-  (9, 1, 'Agua de jamaica', 'Vaso de agua fresca', 'glass-water', 'agua', 25.00, 6.00, FALSE, 'weekday', TRUE, 1),
-  (10, 1, 'Agua de horchata', 'Vaso de agua fresca', 'glass-water', 'agua', 25.00, 7.00, FALSE, 'weekend', TRUE, 1),
-  (11, 1, 'Coca-Cola', 'Refresco', 'cup-soda', 'refresco', 30.00, 14.00, FALSE, 'all', TRUE, 1),
-  (12, 1, 'Sprite', 'Refresco', 'cup-soda', 'refresco', 28.00, 13.00, FALSE, 'all', TRUE, 1),
-  (13, 1, 'Café de olla', 'Café tradicional', 'coffee', 'cafe', 30.00, 8.00, FALSE, 'all', TRUE, 1),
-  (14, 1, 'Paleta', 'Dulce', 'candy', 'dulce', 12.00, 5.00, FALSE, 'all', TRUE, 1),
-  (15, 1, 'Cocada', 'Dulce tradicional', 'candy', 'dulce', 18.00, 7.00, FALSE, 'all', TRUE, 1)
-ON CONFLICT ("id_restaurant_dish") DO NOTHING;
+  INSERT INTO "restaurant_table" ("id_restaurant_table", "id_proyect", "number", "capacity", "location_description", "is_active", "created_by")
+  SELECT number, 1, number, 4, CASE WHEN number <= 8 THEN 'Salón principal' ELSE 'Terraza' END, TRUE, 1
+  FROM generate_series(1, 15) AS number
+  ON CONFLICT ("id_restaurant_table") DO NOTHING;
+  
+  INSERT INTO "restaurant_guisado" ("id_restaurant_guisado", "id_proyect", "name", "is_active", "created_by") VALUES
+    (1, 1, 'Picadillo', TRUE, 1),
+    (2, 1, 'Rajas con crema', TRUE, 1),
+    (3, 1, 'Frijoles con chorizo', TRUE, 1),
+    (4, 1, 'Chicharrón en salsa verde', TRUE, 1),
+    (5, 1, 'Papa con chorizo', TRUE, 1),
+    (6, 1, 'Mole', TRUE, 1),
+    (7, 1, 'Tinga de pollo', TRUE, 1),
+    (8, 1, 'Chicharrón prensado', TRUE, 1)
+  ON CONFLICT ("id_restaurant_guisado") DO NOTHING;
+  
+  INSERT INTO "restaurant_dish" ("id_restaurant_dish", "id_proyect", "title", "description", "icon", "category", "price", "production_cost", "requires_guisado", "schedule", "is_active", "created_by") VALUES
+    (1, 1, 'Taco de guisado', 'Tortilla y guisado a elegir', 'taco', 'taco', 18.00, 7.00, TRUE, 'all', TRUE, 1),
+    (2, 1, 'Gordita de guisado', 'Gordita de maíz y guisado', 'sandwich', 'gordita', 22.00, 9.00, TRUE, 'all', TRUE, 1),
+    (3, 1, 'Quesadilla de guisado', 'Quesadilla con guisado a elegir', 'sandwich', 'quesadilla', 25.00, 11.00, TRUE, 'all', TRUE, 1),
+    (4, 1, 'Pozole', 'Platillo del día', 'soup', 'platillo_dia', 85.00, 36.00, FALSE, 'weekend', TRUE, 1),
+    (5, 1, 'Flan', 'Flan de la casa', 'cake', 'postre', 45.00, 16.00, FALSE, 'all', TRUE, 1),
+    (6, 1, 'Pastel', 'Rebanada de pastel', 'cake', 'postre', 50.00, 20.00, FALSE, 'all', TRUE, 1),
+    (7, 1, 'Arroz con leche', 'Postre tradicional', 'cake', 'postre', 40.00, 14.00, FALSE, 'all', TRUE, 1),
+    (8, 1, 'Gelatina', 'Gelatina del día', 'cake', 'postre', 35.00, 10.00, FALSE, 'all', TRUE, 1),
+    (9, 1, 'Agua de jamaica', 'Vaso de agua fresca', 'glass-water', 'agua', 25.00, 6.00, FALSE, 'weekday', TRUE, 1),
+    (10, 1, 'Agua de horchata', 'Vaso de agua fresca', 'glass-water', 'agua', 25.00, 7.00, FALSE, 'weekend', TRUE, 1),
+    (11, 1, 'Coca-Cola', 'Refresco', 'cup-soda', 'refresco', 30.00, 14.00, FALSE, 'all', TRUE, 1),
+    (12, 1, 'Sprite', 'Refresco', 'cup-soda', 'refresco', 28.00, 13.00, FALSE, 'all', TRUE, 1),
+    (13, 1, 'Café de olla', 'Café tradicional', 'coffee', 'cafe', 30.00, 8.00, FALSE, 'all', TRUE, 1),
+    (14, 1, 'Paleta', 'Dulce', 'candy', 'dulce', 12.00, 5.00, FALSE, 'all', TRUE, 1),
+    (15, 1, 'Cocada', 'Dulce tradicional', 'candy', 'dulce', 18.00, 7.00, FALSE, 'all', TRUE, 1)
+  ON CONFLICT ("id_restaurant_dish") DO NOTHING;
+END $$;
 
 INSERT INTO "proyect_event" ("id_proyect", "created_by", "event_type", "new_status", "content", "creation_date")
 SELECT project."id_proyect", project."created_by", 'created', project."proyect_status",
@@ -393,66 +387,20 @@ BEGIN
   END LOOP;
 END $$;
 
--- Project workflow roles are created without assigning existing users.
-WITH role_names(role_name) AS (
-  VALUES ('Supervisor'), ('Gerente'), ('Jefe de taller')
-)
-INSERT INTO "permission" ("created_by", "authorized_by", "permission_description", "id_department", "id_subdepartment", "id_level")
-SELECT 1, 1, role_names.role_name, 1, 1, 1
-FROM role_names
-WHERE NOT EXISTS (
-  SELECT 1 FROM "permission"
-  WHERE lower("permission_description") = lower(role_names.role_name)
-    AND "deletion_date" IS NULL
-);
-
-INSERT INTO "entity_permission" ("id_permission", "entity_name", "control_type", "menu_location", "menu_group", "menu_group_icon", "menu_label", "menu_order", "created_by")
-SELECT role."id_permission", capability.entity_name, capability.control_type,
-       capability.menu_location, capability.menu_group, capability.menu_group_icon,
-       capability.menu_label, capability.menu_order, 1
-FROM "permission" role
-JOIN (VALUES
-  ('Supervisor', 'proyect', 7, 'sidebar', 'Operaciones', 'briefcase-business', 'Proyectos', 80),
-  ('Supervisor', 'task', 15, 'sidebar', 'Operaciones', 'briefcase-business', 'Tareas', 90),
-  ('Supervisor', 'task_note', 15, 'sidebar', 'Operaciones', 'briefcase-business', 'Notas de tarea', 100),
-  ('Supervisor', 'task_type', 15, 'sidebar', 'Operaciones', 'briefcase-business', 'Tipos de tarea', 110),
-  ('Gerente', 'proyect', 6, 'sidebar', 'Operaciones', 'briefcase-business', 'Proyectos', 80),
-  ('Gerente', 'project_authorization', 2, 'hidden', NULL, NULL, NULL, 100),
-  ('Jefe de taller', 'proyect', 6, 'sidebar', 'Operaciones', 'briefcase-business', 'Proyectos', 80),
-  ('Jefe de taller', 'task', 15, 'sidebar', 'Operaciones', 'briefcase-business', 'Tareas', 90),
-  ('Jefe de taller', 'task_note', 15, 'sidebar', 'Operaciones', 'briefcase-business', 'Notas de tarea', 100),
-  ('Jefe de taller', 'task_type', 2, 'sidebar', 'Operaciones', 'briefcase-business', 'Tipos de tarea', 110),
-  ('Jefe de taller', 'project_execution', 2, 'hidden', NULL, NULL, NULL, 100)
-) AS capability(role_name, entity_name, control_type, menu_location, menu_group, menu_group_icon, menu_label, menu_order)
-  ON lower(role."permission_description") = lower(capability.role_name)
-WHERE role."deletion_date" IS NULL
-ON CONFLICT ("id_permission", "entity_name") DO UPDATE SET
-  "control_type" = EXCLUDED."control_type",
-  "menu_location" = EXCLUDED."menu_location",
-  "menu_group" = EXCLUDED."menu_group",
-  "menu_group_icon" = EXCLUDED."menu_group_icon",
-  "menu_label" = EXCLUDED."menu_label",
-  "menu_order" = EXCLUDED."menu_order",
-  "deletion_date" = NULL;
-
-INSERT INTO "nm_field_permission" ("id_field", "id_permission", "control_type", "created_by")
-SELECT field_row."id_field", role."id_permission",
-       CASE WHEN role."permission_description" = 'Gerente' THEN '2'
-            WHEN role."permission_description" = 'Jefe de taller' AND field_row."table_name" IN ('proyect', 'task_type') THEN '2'
-            ELSE '15' END,
-       1
-FROM "field" field_row
-JOIN "permission" role ON role."permission_description" IN ('Supervisor', 'Gerente', 'Jefe de taller')
-WHERE field_row."table_name" IN ('proyect', 'task', 'task_note', 'task_type')
-  AND field_row."deletion_date" IS NULL
-  AND role."deletion_date" IS NULL
-  AND (role."permission_description" <> 'Gerente' OR field_row."table_name" = 'proyect')
-  AND NOT EXISTS (
-    SELECT 1 FROM "nm_field_permission" existing
-    WHERE existing."id_field" = field_row."id_field"
-      AND existing."id_permission" = role."id_permission"
-      AND existing."deletion_date" IS NULL
-  );
+-- Supervisor, Gerente y Jefe de taller se creaban aqui, con sus filas de
+-- `entity_permission` y de `nm_field_permission` escritas a mano.
+--
+-- Es el origen medido de buena parte del desfase entre la base y el registro:
+-- sembraba `task`, `task_note` y `task_type` en 15 donde el registro dice 7,
+-- `proyect` en 6 para Jefe de taller donde dice 7, y daba a `task_note` una
+-- etiqueta de menu -"Notas de tarea"- que el registro retiro a proposito
+-- (una nota no existe sin su tarea; se captura dentro de ella).
+--
+-- Los roles del negocio los declara `app/modules/registry.py` y los siembra la
+-- matriz generada por `backend/scripts/seed_module_permissions.py`, que
+-- ademas puebla `field` con las columnas reales de cada tabla y deriva de ahi
+-- los permisos por campo. `Jefe de taller` ya no existe: lo absorbio
+-- Supervisor.
 
 -- Keep PostgreSQL SERIAL sequences aligned after deterministic seed IDs
 DO $$

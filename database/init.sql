@@ -147,7 +147,7 @@ CREATE TABLE IF NOT EXISTS "proyect" (
   "title" VARCHAR(50) NULL,
   "proyect_status" VARCHAR(20) NOT NULL DEFAULT 'draft' CHECK ("proyect_status" IN ('draft', 'submitted', 'authorized', 'denied', 'blocked', 'in_progress', 'stopped', 'completed')),
   "created_by" INTEGER NOT NULL DEFAULT 1,
-  "creation_date" TIMESTAMP NULL,
+  "creation_date" TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "last_update_date" TIMESTAMP NULL,
   "deletion_date" TIMESTAMP NULL,
   PRIMARY KEY ("id_proyect")
@@ -1827,9 +1827,10 @@ CREATE INDEX IF NOT EXISTS "ix_logistics_incident_status" ON "logistics_incident
 --
 -- Password TEMPORAL (hash de "test password", el mismo default documentado
 -- en init_db.py). `python init_db.py` la reemplaza por el valor real de
--- BOOTSTRAP_ADMIN_PASSWORD la primera vez que corre -- correrlo cuanto
--- antes despues del primer deploy, porque hasta entonces el admin1 real
--- queda con esta password conocida.
+-- BOOTSTRAP_ADMIN_PASSWORD la primera vez que corre (reconoce este hash
+-- exacto, SEEDED_DEFAULT_HASH; un hash distinto lo trata como cambio de una
+-- persona y no lo toca) -- correrlo cuanto antes despues del primer deploy,
+-- porque hasta entonces el admin1 real queda con esta password conocida.
 --
 -- Todo con ON CONFLICT DO NOTHING: si estas filas ya existen (porque el
 -- volumen no estaba realmente vacio), no se tocan.

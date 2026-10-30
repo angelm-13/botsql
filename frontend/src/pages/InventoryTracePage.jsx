@@ -16,6 +16,8 @@ import ProductHistory from "../components/ProductHistory.jsx";
 import { useI18n } from "../i18n";
 import VisorDeFoto from "../components/VisorDeFoto";
 import "../styles/inventory-trace.css";
+import { formatearFechaHora } from "../utils/fechas";
+import { CLASES_DE_ARTICULO, etiquetaDeClase } from "../utils/clasesDeProducto";
 import PageHeader from "../components/PageHeader.jsx";
 
 /**
@@ -132,6 +134,13 @@ function normalizarEstatus(valor) {
     .trim();
 }
 
+// El estatus que se pinta lo calcula el backend (`effective_status`): el texto
+// viejo de `product_status` corregido con las salidas abiertas. La regla vive
+// alli para que cualquier pantalla la lea igual.
+function estatusPintado(it) {
+  return normalizarEstatus(it.effective_status ?? it.product_status);
+}
+
 const TONO_DE_ESTADO = {
   disponible: "ok",
   en_uso: "info",
@@ -200,7 +209,7 @@ function Pieza({ pieza, destacada, t }) {
           {pieza.timeline.map((e) => (
             <li key={e.id_inventory_asset_event}>
               <span className="trace-when">
-                {e.creation_date ? new Date(e.creation_date).toLocaleString("es-MX") : ""}
+                {e.creation_date ? formatearFechaHora(e.creation_date, "es-MX") : ""}
               </span>
               <span className="trace-what">
                 {t(`trace.event_${e.event_type}`, e.etiqueta)}
@@ -249,6 +258,7 @@ const SIN_FILTROS = {
   id_location: "",
   asset_status: "",
   id_material: "",
+  item_class: "",
 };
 
 export default function InventoryTracePage() {
@@ -406,6 +416,19 @@ export default function InventoryTracePage() {
           >
             {Icono && <Icono size={15} />}
             {t(`trace.${clave}`, texto)}
+          </button>
+        ))}
+      </div>
+
+      {/* La clase del articulo -herramienta, consumible, sobrante, recargable-:
+          otro recorte, independiente de la naturaleza de arriba. */}
+      <div className="trace-naturalezas" role="group"
+           aria-label={t("item_class.label", "Clase")}>
+        {[{ clave: "", etiqueta: "Todas" }, ...CLASES_DE_ARTICULO].map((c) => (
+          <button key={c.clave || "todas"} type="button"
+                  className={`trace-naturaleza ${filtros.item_class === c.clave ? "activa" : ""}`}
+                  onClick={() => cambiarFiltro("item_class", c.clave)}>
+            {c.clave ? t(`item_class.${c.clave}`, c.etiqueta) : t("item_class.all", "Todas las clases")}
           </button>
         ))}
       </div>
@@ -607,7 +630,7 @@ export default function InventoryTracePage() {
           return (
             <article
               className={`trace-card estatus-${
-                TONO_DE_ESTATUS[normalizarEstatus(it.product_status)] || "sin"}`}
+                TONO_DE_ESTATUS[estatusPintado(it)] || "sin"}`}
               key={it.id_product}
             >
               <div className="trace-photo">
@@ -654,6 +677,7 @@ export default function InventoryTracePage() {
                       {it.product_code || `#${it.id_product}`}
                       {" · "}
                       {t(`trace.purpose_${it.stock_purpose}`, it.stock_purpose)}
+                      {it.item_class && <> · {etiquetaDeClase(it.item_class, t)}</>}
                       {it.tracking_mode === "serializado" && (
                         <> · <Wrench size={12} /> {t("trace.serialized", "pieza por pieza")}</>
                       )}
@@ -666,13 +690,22 @@ export default function InventoryTracePage() {
                         ambar con en reparacion. Y hay quien no distingue esos
                         tonos: el color nunca puede ser el unico portador del
                         dato. */}
-                    {it.product_status && (
+                    {(it.effective_status || it.product_status) && (
                       <p className="trace-estatus">
                         <span className={`trace-chip ${
-                          TONO_DE_ESTATUS[normalizarEstatus(it.product_status)] || "muted"}`}>
-                          {t(`trace.status_${normalizarEstatus(it.product_status)
-                            .toLowerCase().replace(/[^a-z]+/g, "_")}`, it.product_status)}
+                          TONO_DE_ESTATUS[estatusPintado(it)] || "muted"}`}>
+                          {t(`trace.status_${estatusPintado(it)
+                            .toLowerCase().replace(/[^a-z]+/g, "_")}`,
+                          it.effective_status || it.product_status)}
                         </span>
+                        {/* La condicion (nuevo / usado) no pinta el color -ese lo
+                            decide donde esta la pieza-, pero se sigue diciendo. */}
+                        {["NUEVO", "USADO"].includes(normalizarEstatus(it.product_status)) && (
+                          <span className="trace-chip muted">
+                            {t(`trace.condition_${normalizarEstatus(it.product_status).toLowerCase()}`,
+                              normalizarEstatus(it.product_status) === "NUEVO" ? "Nuevo" : "Usado")}
+                          </span>
+                        )}
                       </p>
                     )}
 
@@ -752,15 +785,36 @@ export default function InventoryTracePage() {
                         Cuando discrepan se dice: es un dato mal capturado, y
                         esconderlo es como no tenerlo. */}
                     {it.classification?.catalog_mismatch && (
-                      <p className="trace-mismatch">
-                        <AlertTriangle size={13} />
-                        {t("trace.catalog_mismatch",
-                          "El catálogo público lo clasifica distinto:")}{" "}
+                      <>
+                        {/* Un aviso por eje, diciendo cual es: antes decia solo
+                            "lo clasifica distinto" junto a la marca aunque el
+                            problema fuera la familia. */}
                         {[
-                          it.classification.catalog_mismatch.family?.family,
-                          it.classification.catalog_mismatch.brand?.brand,
-                        ].filter(Boolean).join(" · ")}
-                      </p>
+                          ["family", "familia", it.classification.catalog_mismatch.family,
+                            it.classification.catalog_mismatch.family?.family,
+                            it.classification.catalog_mismatch.family?.id_product_family],
+                          ["brand", "marca", it.classification.catalog_mismatch.brand,
+                            it.classification.catalog_mismatch.brand?.brand,
+                            it.classification.catalog_mismatch.brand?.id_brand],
+                        ].filter(([, , dato]) => dato).map(([eje, , , nombre, id]) => {
+                          const texto = nombre
+                            ? t(`trace.catalog_other_${eje}`,
+                                eje === "family"
+                                  ? "El catálogo público tiene otra familia: {name}. Si no es la correcta, puedes cambiarla editando el producto."
+                                  : "El catálogo público tiene otra marca: {name}. Si no es la correcta, puedes cambiarla editando el producto.")
+                                .replace("{name}", nombre)
+                            : t(`trace.catalog_missing_${eje}`,
+                                eje === "family"
+                                  ? "La familia del catálogo público (id {id}) ya no existe. Puedes elegir otra editando el producto."
+                                  : "La marca del catálogo público (id {id}) ya no existe. Puedes elegir otra editando el producto.")
+                                .replace("{id}", id);
+                          return (
+                            <p key={eje} className="trace-mismatch">
+                              <AlertTriangle size={13} /> {texto}
+                            </p>
+                          );
+                        })}
+                      </>
                     )}
                   </div>
                   <div className="trace-total">
@@ -855,7 +909,7 @@ export default function InventoryTracePage() {
                             || t("trace.unknown_holder", "sin responsable")}</strong>
                           <span className="muted">
                             {" · "}{t("trace.voucher", "vale")}{" "}
-                            <span className="mono">{h.voucher_folio}</span>
+                            <Link className="mono" to={`/vouchers?abrir=${h.id_incident}`}>{h.voucher_folio}</Link>
                             {h.quantity > 1 && ` · ${h.quantity}`}
                             {h.due_date && (
                               <>
@@ -908,6 +962,11 @@ export default function InventoryTracePage() {
                           {u.id_module && <em className="trace-module">{u.id_module}</em>}
                         </span>
                         <strong className="mono">{u.quantity}</strong>
+                        {u.reserved > 0 && (
+                          <em className="muted">
+                            {" "}({u.reserved} {t("trace.reserved", "apartado(s) en un vale")})
+                          </em>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -974,7 +1033,7 @@ export default function InventoryTracePage() {
                     {t(`trace.kind_${it.last_movement.clasificacion}`, it.last_movement.clasificacion)}
                     {" "}({it.last_movement.quantity_delta}){" "}
                     {it.last_movement.reason && <>· {it.last_movement.reason} </>}
-                    · {new Date(it.last_movement.creation_date).toLocaleString("es-MX")}
+                    · {formatearFechaHora(it.last_movement.creation_date, "es-MX")}
                   </p>
                 )}
               </div>

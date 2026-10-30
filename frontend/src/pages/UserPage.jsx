@@ -1,12 +1,16 @@
+import { LLAVE_BORRADO_BLOQUEADO, mensajeDeBorradoBloqueado } from "../utils/registrosRelacionados.js";
 import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
-import { getAllUser, createUser, updateUser, deleteUser, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllPermission, getAllProyect, getAllStatus } from "../api";
+import { getAllUser, createUser, updateUser, deleteUser, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getPermissionOptions, getAllProyect, getAllStatus } from "../api";
 import { fetchAllPages } from "../utils/fetchAllPages";
 import Pagination from "../components/Pagination.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
+import { CAMPOS_DE_AUDITORIA } from "../utils/camposDeAuditoria";
+import { formatearFechaHora } from "../utils/fechas";
+import { useDialogo } from "../dialogo/useDialogo.js";
 
 const emptyForm = { date_born: "", date_start: "", email: "", first_name: "", id_permission: "", full_name: "", id_proyect: "", last_name_father: "", last_name_mother: "", national_id: "", password: "", principal_phone: "", secundary_phone: "", ssn: "", supervisor: "", base_salary: "", hire_date: "", id_status: "", tax_id: "", title: "", user_type: "", username: "", puesto: "", is_employee: false, accepts_marketing: false };
 const validationRules = allValidationRules["user"] || {};
@@ -33,6 +37,7 @@ function readCurrentUser() {
 
 export default function UserPage() {
   const { lang, t } = useI18n();
+  const dialogo = useDialogo();
   const [items, setItems] = useState([]);
   const [formData, setFormData] = useState(emptyForm);
   const [fieldErrors, setFieldErrors] = useState({});
@@ -103,7 +108,7 @@ export default function UserPage() {
       if (!permissionReady || (!canSubmitForm && !canRead)) return;
       if (canSeeField("id_permission")) {
         try {
-          const permissionData = await getAllPermission({ page: 1, per_page: 100 });
+          const permissionData = await getPermissionOptions();
           setPermissionOptions(Array.isArray(permissionData) ? permissionData : (permissionData.items || []));
         } catch (_) {
           setPermissionOptions([]);
@@ -197,7 +202,7 @@ export default function UserPage() {
   function canSeeField(fieldName) {
     if (isSuperUser) return true;
     if (!permissionReady) return false;
-    return visibleFieldNames.has(fieldName);
+    return CAMPOS_DE_AUDITORIA.has(fieldName) || visibleFieldNames.has(fieldName);
   }
 
 
@@ -292,7 +297,7 @@ export default function UserPage() {
 
   async function removeItem(item) {
     if (!canDelete) return;
-    if (!window.confirm(t("common.confirm_delete"))) return;
+    if (!(await dialogo.confirmar(t("common.confirm_delete")))) return;
     try { await deleteUser(item.id_user); await loadData(); } catch (error) { setErrorKey(error.message || "errors.request_failed"); setErrorMeta(error.payload?.meta || null); }
   }
 
@@ -302,7 +307,7 @@ export default function UserPage() {
     if (ENTITY_KEY !== "user") return;
     const targetId = item.id_user ?? item.id;
     if (!targetId) return;
-    if (!window.confirm(t("common.mfa_reset_confirm", "¿Restablecer MFA de este usuario?"))) return;
+    if (!(await dialogo.confirmar(t("common.mfa_reset_confirm", "¿Restablecer MFA de este usuario?")))) return;
     setErrorKey("");
     setErrorMeta(null);
     try {
@@ -330,11 +335,8 @@ export default function UserPage() {
     }
     if (typeof value === "number") return new Intl.NumberFormat(locale).format(value);
     if (typeof value === "string" && /^[0-9]{4}-[0-9]{2}-[0-9]{2}T/.test(value)) {
-      const date = new Date(value);
-      if (!Number.isNaN(date.getTime())) {
-        const hasTime = !/T00:00(?::00)?/.test(value);
-        return new Intl.DateTimeFormat(locale, hasTime ? { dateStyle: "medium", timeStyle: "short" } : { dateStyle: "medium" }).format(date);
-      }
+      const formateada = formatearFechaHora(value, locale);
+      if (formateada) return formateada;
     }
     if (Array.isArray(value)) return value.map((item) => formatTableValue(item)).filter(Boolean).join(", ");
     if (typeof value === "object") {
@@ -415,7 +417,7 @@ export default function UserPage() {
     if (errorKey === "errors.invalid_field" && errorMeta?.field) {
       return `${t(errorKey, errorKey)}: ${fieldLabel}`;
     }
-    return t(errorKey, errorKey);
+    return errorKey === LLAVE_BORRADO_BLOQUEADO ? mensajeDeBorradoBloqueado(t, errorMeta) : t(errorKey, errorKey);
   }
 
   // El buscador pregunta al SERVIDOR, asi que lo que llega ya viene filtrado.
@@ -623,7 +625,9 @@ export default function UserPage() {
             <span>{t("fields.user.user_type")}</span>
             <select name="user_type" value={formData.user_type ?? ""} onChange={handleChange} aria-invalid={Boolean(fieldErrors["user_type"])} {...inputPropsForField("user_type", validationRules["user_type"], "select")}>
               <option value="">{t("common.select_option", "Selecciona una opción")}</option>
-              <option key="admin" value="admin">admin</option>
+              {/* `admin` ya no da ningun acceso (lo da el rol en el Gestor): solo se ofrece
+                  para no borrarlo a quien ya lo tiene. */}
+              {formData.user_type === "admin" && <option key="admin" value="admin">admin</option>}
               <option key="client" value="client">client</option>
               <option key="supplier" value="supplier">supplier</option>
               <option key="employee" value="employee">employee</option>

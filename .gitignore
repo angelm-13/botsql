@@ -225,3 +225,5 @@ infra/backups/
 # Las bitacoras son entregables, no codigo: se sacaron del repositorio el
 # 10 de septiembre a peticion. Se siguen generando, pero fuera de git.
 Bitacora_*.docx
+.DS_Store
+backups/

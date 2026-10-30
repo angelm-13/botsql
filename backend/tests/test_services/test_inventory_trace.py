@@ -37,12 +37,14 @@ from app.models import (
 )
 from app.models.session import transaction_context
 from app.services.inventory_service import apply_inventory_movement
-from app.services.inventory_trace_service import _clasificar, localizar
+from app.services.inventory_trace_service import (
+    _clasificar, estatus_efectivo, localizar,
+)
 from tests.conftest import BackendTestCase
-from tests.model_factory import sembrar_actor
+from tests.model_factory import dar_capacidad, sembrar_actor
 
 
-ACTOR = {"id_user": 1, "id_proyect": 70}
+ACTOR = {"id_user": 1, "id_proyect": 70, "id_permission": 910}
 AJENO = {"id_user": 2, "id_proyect": 99}
 
 EMPRESA = 10
@@ -147,11 +149,59 @@ class TestComoSeClasificaCadaMovimiento(unittest.TestCase):
         self.assertEqual(4, len(nombres), f"se solaparon: {nombres}")
 
 
+class TestElEstatusQueSePinta(unittest.TestCase):
+    """El verde de una tarjeta no puede contradecir lo que esta fuera."""
+
+    SALIDAS = {"quantity": 1}
+
+    def test_open_loans_and_nothing_in_stock_override_a_stale_entrada(self):
+        self.assertEqual("SALIDA", estatus_efectivo("ENTRADA", self.SALIDAS, []))
+        self.assertEqual("SALIDA", estatus_efectivo(None, self.SALIDAS, []))
+
+    def test_stock_still_in_the_warehouse_keeps_the_stored_status(self):
+        self.assertEqual("ENTRADA", estatus_efectivo(
+            "ENTRADA", self.SALIDAS, [{"quantity": 3}]))
+
+    def test_nothing_out_keeps_the_stored_status(self):
+        self.assertEqual("ENTRADA", estatus_efectivo("ENTRADA", None, []))
+
+    def test_a_decision_is_never_overridden(self):
+        for estatus in ("EXTRAVIADO", "DESTRUCCION", "DAÑADO", "EN REPARACION"):
+            self.assertEqual(estatus, estatus_efectivo(estatus, self.SALIDAS, []))
+
+    def test_a_stale_salida_with_everything_back_is_shown_as_entrada(self):
+        """Todas las salidas cerradas y existencia en el almacen: el azul de
+        "salio del almacen" que dejo el sistema anterior es mentira."""
+        self.assertEqual("ENTRADA", estatus_efectivo("SALIDA", None, [{"quantity": 1}]))
+
+    def test_salida_stays_while_something_is_still_out(self):
+        self.assertEqual("SALIDA", estatus_efectivo("SALIDA", self.SALIDAS, []))
+        # Caso mixto: algo fuera y algo en el almacen. No se adivina.
+        self.assertEqual("SALIDA", estatus_efectivo(
+            "SALIDA", self.SALIDAS, [{"quantity": 3}]))
+
+    def test_nuevo_and_usado_are_condition_not_location(self):
+        """Quien marca "usado" desde el selector del producto no puede escoger
+        ENTRADA (no esta en el catalogo): con existencia en el almacen se ve verde."""
+        for estado in ("usado", "nuevo", "Usado"):
+            with self.subTest(estado=estado):
+                self.assertEqual("ENTRADA", estatus_efectivo(estado, None, [{"quantity": 1}]))
+                self.assertEqual("ENTRADA", estatus_efectivo(
+                    estado, self.SALIDAS, [{"quantity": 1}]))
+                self.assertEqual("SALIDA", estatus_efectivo(estado, self.SALIDAS, []))
+                # Sin existencia ni salidas no hay de donde concluir.
+                self.assertEqual(estado, estatus_efectivo(estado, None, []))
+
+    def test_salida_with_nothing_anywhere_is_left_alone(self):
+        self.assertEqual("SALIDA", estatus_efectivo("SALIDA", None, []))
+
+
 class TestLocalizar(BackendTestCase):
 
     def setUp(self):
         super().setUp()
         with transaction_context() as db:
+            dar_capacidad(db, 910)
             db.add_all([
                 CustomerSupplier(
                     id_customer_supplier=EMPRESA, name="Mi Empresa", tax_id="AAA010101AA1",
@@ -207,7 +257,7 @@ class TestLocalizar(BackendTestCase):
         apply_inventory_movement(MERCANCIA, {
             "movement_type": "receive", "quantity": 50, "id_location": ALMACEN,
             "reference_type": "purchase", "reference_id": str(COMPRA),
-            "idempotency_key": "compra-inicial",
+            "reason": "Compra", "idempotency_key": "compra-inicial",
         }, ACTOR)
         apply_inventory_movement(MERCANCIA, {
             "movement_type": "issue", "quantity": 6, "id_location": ALMACEN,
@@ -408,7 +458,7 @@ class TestLosDosNivelesDeBusqueda(BackendTestCase):
         # La fecha de regreso es obligatoria: un prestamo sin ella es una baja
         # disfrazada, porque nunca esta vencido y nadie lo reclama.
         lend_asset(self._pieza_llamada("TAL-CFG-A"),
-                   {"id_holder": 1, "due_date": "2026-09-30",
+                   {"id_holder": 1, "due_date": "2027-01-01",
                     "reason": "Obra Norte"}, ACTOR)
 
         pieza = self._item("TAL-CFG-A")["assets"][0]
@@ -451,6 +501,7 @@ class TestElTrasladoNoCuentaDoble(BackendTestCase):
     def setUp(self):
         super().setUp()
         with transaction_context() as db:
+            dar_capacidad(db, 910)
             _sembrar_lo_minimo(db, id_invoice=self.COMPRA3, ubicaciones={
                 self.ALMACEN_A: "Nave A", self.ALMACEN_B: "Nave B",
             })
@@ -465,7 +516,7 @@ class TestElTrasladoNoCuentaDoble(BackendTestCase):
         apply_inventory_movement(self.PRODUCTO, {
             "movement_type": "receive", "quantity": 30, "id_location": self.ALMACEN_A,
             "reference_type": "purchase", "reference_id": "1",
-            "idempotency_key": "tor-compra",
+            "reason": "Compra", "idempotency_key": "tor-compra",
         }, ACTOR)
 
     def _trasladar(self, llave):
@@ -545,6 +596,7 @@ class TestLaCadenaDeClasificacionYElSitio(BackendTestCase):
     def setUp(self):
         super().setUp()
         with transaction_context() as db:
+            dar_capacidad(db, 910)
             db.add_all([
                 CustomerSupplier(
                     id_customer_supplier=EMPRESA, name="Mi Empresa",
@@ -622,12 +674,12 @@ class TestLaCadenaDeClasificacionYElSitio(BackendTestCase):
         apply_inventory_movement(self.TALADRO, {
             "movement_type": "receive", "quantity": 4, "id_location": self.RACK_A,
             "reference_type": "purchase", "reference_id": str(self.COMPRA),
-            "idempotency_key": "tal-compra",
+            "reason": "Compra", "idempotency_key": "tal-compra",
         }, ACTOR)
         apply_inventory_movement(self.CEMENTO, {
             "movement_type": "receive", "quantity": 80, "id_location": self.NAVE_B,
             "reference_type": "purchase", "reference_id": str(self.COMPRA),
-            "idempotency_key": "cem-compra",
+            "reason": "Compra", "idempotency_key": "cem-compra",
         }, ACTOR)
 
     def _codigos(self, **kwargs):
@@ -649,17 +701,14 @@ class TestLaCadenaDeClasificacionYElSitio(BackendTestCase):
         self.assertEqual(self.FAM_HERRAMIENTA, item["classification"]["id_product_family"])
         self.assertEqual(self.MARCA_BOSCH, item["classification"]["id_brand"])
 
-    def test_a_disagreeing_public_catalogue_is_reported_not_hidden(self):
-        """`product.id_familia` es la familia de la tienda, no la del material."""
+    def test_the_family_of_the_product_defines_it_over_its_material(self):
         with transaction_context() as db:
             db.get(Product, self.TALADRO).id_familia = self.FAM_OBRA
 
         clasificacion = localizar("TAL-900", ACTOR)["items"][0]["classification"]
-        # Manda la del material: es la que el almacen usa y la unica obligatoria.
-        self.assertEqual("Herramienta", clasificacion["family"])
-        # Y la otra se dice, en vez de elegir una en silencio.
-        self.assertEqual("Material de obra",
-                         clasificacion["catalog_mismatch"]["family"]["family"])
+        # La familia es del producto: es su material mas su familia y su marca.
+        self.assertEqual("Material de obra", clasificacion["family"])
+        self.assertIsNone(clasificacion["catalog_mismatch"])
 
     def test_no_mismatch_is_reported_when_they_agree(self):
         """El aviso solo aparece cuando hay algo que avisar."""
@@ -668,6 +717,114 @@ class TestLaCadenaDeClasificacionYElSitio(BackendTestCase):
 
         self.assertIsNone(
             localizar("TAL-900", ACTOR)["items"][0]["classification"]["catalog_mismatch"])
+
+    # Un material sin marca/familia ("no se sabe") y el producto que si la trae.
+    SIN_MARCA, PRETUL, SIN_FAMILIA = 8861, 8862, 8863
+
+    def _material_sin_clasificar(self):
+        with transaction_context() as db:
+            db.add_all([
+                Brand(id_brand=self.SIN_MARCA, brand_description="Sin marca específica",
+                      created_by=1),
+                Brand(id_brand=self.PRETUL, brand_description="Pretul", created_by=1),
+                ProductFamily(id_product_family=self.SIN_FAMILIA,
+                              product_family_description="Sin categoría", created_by=1),
+            ])
+            db.flush()
+            material = db.get(Material, self.MAT_TALADRO)
+            material.id_brand = self.SIN_MARCA
+            material.id_product_family = self.SIN_FAMILIA
+
+    def test_an_unclassified_material_takes_the_brand_and_family_of_the_product(self):
+        """La marca vive en el producto; el material es solo el tipo de pieza."""
+        self._material_sin_clasificar()
+        with transaction_context() as db:
+            taladro = db.get(Product, self.TALADRO)
+            taladro.id_marca = self.PRETUL
+            taladro.id_familia = self.FAM_OBRA
+
+        clasificacion = localizar("TAL-900", ACTOR)["items"][0]["classification"]
+        self.assertEqual("Pretul", clasificacion["brand"])
+        self.assertEqual(self.PRETUL, clasificacion["id_brand"])
+        self.assertEqual("Material de obra", clasificacion["family"])
+        self.assertIsNone(clasificacion["catalog_mismatch"])
+
+    def test_an_unclassified_material_and_product_just_say_nothing(self):
+        self._material_sin_clasificar()
+        clasificacion = localizar("TAL-900", ACTOR)["items"][0]["classification"]
+        self.assertEqual("Sin marca específica", clasificacion["brand"])
+        self.assertIsNone(clasificacion["catalog_mismatch"])
+
+    def test_filtering_by_brand_and_family_uses_the_ones_the_card_shows(self):
+        """Un producto no sale bajo una marca o familia que su tarjeta no dice."""
+        with transaction_context() as db:
+            taladro = db.get(Product, self.TALADRO)
+            taladro.id_marca = self.MARCA_CEMEX  # la del producto, no la de su material
+            taladro.id_familia = self.FAM_OBRA
+
+        self.assertEqual([], self._codigos(id_marca=self.MARCA_BOSCH))
+        self.assertEqual(["CEM-500", "TAL-900"], self._codigos(id_marca=self.MARCA_CEMEX))
+        self.assertEqual([], self._codigos(id_familia=self.FAM_HERRAMIENTA))
+        self.assertEqual(["CEM-500", "TAL-900"], self._codigos(id_familia=self.FAM_OBRA))
+
+    def test_the_brand_of_a_product_in_an_unclassified_material_is_filterable_and_offered(self):
+        self._material_sin_clasificar()
+        with transaction_context() as db:
+            db.get(Product, self.TALADRO).id_marca = self.PRETUL
+
+        self.assertEqual(["TAL-900"], self._codigos(id_marca=self.PRETUL))
+        self.assertEqual([], self._codigos(id_marca=self.SIN_MARCA))
+        marcas = [b["brand"] for b in localizar("", ACTOR)["catalog"]["brands"]]
+        self.assertIn("Pretul", marcas)
+
+    def test_a_product_keeps_its_own_brand_and_family_and_borrows_the_material_ones_only_when_missing(self):
+        from app.services.product_service import ProductService
+
+        propio = {"id_material": self.MAT_TALADRO, "id_marca": self.MARCA_CEMEX, "id_familia": self.FAM_OBRA}
+        resuelto = ProductService._clasificacion_del_material(dict(propio))
+        self.assertEqual((self.MARCA_CEMEX, self.FAM_OBRA),
+                         (resuelto["id_marca"], resuelto["id_familia"]))
+
+        vacio = ProductService._clasificacion_del_material({"id_material": self.MAT_TALADRO})
+        self.assertEqual((self.MARCA_BOSCH, self.FAM_HERRAMIENTA),
+                         (vacio["id_marca"], vacio["id_familia"]))
+
+        self._material_sin_clasificar()
+        vacio = ProductService._clasificacion_del_material({"id_material": self.MAT_TALADRO})
+        self.assertNotIn("id_marca", vacio)  # "Sin marca especifica" no se propone
+
+    def test_the_brand_of_the_product_wins_over_the_one_of_its_material(self):
+        with transaction_context() as db:
+            db.get(Product, self.TALADRO).id_marca = self.MARCA_CEMEX
+
+        clasificacion = localizar("TAL-900", ACTOR)["items"][0]["classification"]
+        self.assertEqual("Cemex", clasificacion["brand"])
+        self.assertIsNone(clasificacion["catalog_mismatch"])
+
+    def test_an_id_that_no_longer_exists_is_reported_with_its_id(self):
+        """Sin nombre que mostrar, el aviso tiene que dar al menos el id."""
+        with transaction_context() as db:
+            db.get(Product, self.TALADRO).id_familia = 987654
+
+        mismatch = localizar("TAL-900", ACTOR)["items"][0]["classification"]["catalog_mismatch"]
+        self.assertEqual(987654, mismatch["family"]["id_product_family"])
+        self.assertIsNone(mismatch["family"]["family"])
+
+    def test_an_orphan_id_does_not_replace_an_unclassified_material(self):
+        self._material_sin_clasificar()
+        with transaction_context() as db:
+            db.get(Product, self.TALADRO).id_marca = 987654
+
+        clasificacion = localizar("TAL-900", ACTOR)["items"][0]["classification"]
+        self.assertEqual("Sin marca específica", clasificacion["brand"])
+        self.assertEqual(987654, clasificacion["catalog_mismatch"]["brand"]["id_brand"])
+
+    def test_filtering_by_a_brand_finds_it_on_the_product_when_the_material_has_none(self):
+        self._material_sin_clasificar()
+        with transaction_context() as db:
+            db.get(Product, self.TALADRO).id_marca = self.PRETUL
+
+        self.assertEqual(["TAL-900"], self._codigos(id_marca=self.PRETUL))
 
     # --- el sitio ----------------------------------------------------------
 

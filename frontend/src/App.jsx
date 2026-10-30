@@ -2,6 +2,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Shell from "./layouts/Shell";
 import Dashboard from "./pages/Dashboard";
+import DashboardPreviewPage from "./pages/DashboardPreviewPage.jsx";
+import ErrorBoundaryPreview from "./components/kpi-widgets/ErrorBoundaryPreview.jsx";
 import MfaSetupPage from "./pages/MfaSetupPage";
 import ChangePasswordPage from "./pages/ChangePasswordPage.jsx";
 import RolePermissionManagerPage from "./pages/RolePermissionManagerPage.jsx";
@@ -9,9 +11,7 @@ import KpiPermissionManagerPage from "./pages/KpiPermissionManagerPage.jsx";
 import TeamManagerPage from "./pages/TeamManagerPage.jsx";
 import QuotationPage from "./pages/QuotationPage.jsx";
 import AuthorizationTrackingPage from "./pages/AuthorizationTrackingPage.jsx";
-import CatalogoWebPage from "./pages/CatalogoWebPage.jsx";
 import ClientPortalPage from "./pages/ClientPortalPage.jsx";
-import WebShoppersPage from "./pages/WebShoppersPage.jsx";
 import BankPage from "./pages/BankPage.jsx";
 import BankAccountPage from "./pages/BankAccountPage.jsx";
 import BrandPage from "./pages/BrandPage.jsx";
@@ -49,9 +49,16 @@ import PayrollConceptPage from "./pages/PayrollConceptPage.jsx";
 import PayrollDetailPage from "./pages/PayrollDetailPage.jsx";
 import PayrollMovementPage from "./pages/PayrollMovementPage.jsx";
 import PayrollPeriodPage from "./pages/PayrollPeriodPage.jsx";
+import PayrollSettingsPage from "./pages/PayrollSettingsPage.jsx";
+import WorkSchedulesPage from "./pages/WorkSchedulesPage.jsx";
+import EmployeeLeavesPage from "./pages/EmployeeLeavesPage.jsx";
+import MyLeavesPage from "./pages/MyLeavesPage.jsx";
 import PermissionPage from "./pages/PermissionPage.jsx";
 import ProductPage from "./pages/ProductPage.jsx";
 import WarehouseVoucherPage from "./pages/WarehouseVoucherPage.jsx";
+import PorComprarPage from "./pages/PorComprarPage.jsx";
+import OrdenesDeCompraPage from "./pages/OrdenesDeCompraPage.jsx";
+import ActivityLogPage from "./pages/ActivityLogPage.jsx";
 import ProductFamilyPage from "./pages/ProductFamilyPage.jsx";
 import ProductSaleConfigPage from "./pages/ProductSaleConfigPage.jsx";
 import ProjectManagementPage from "./pages/ProjectManagementPage.jsx";
@@ -74,7 +81,6 @@ import KronosPage from "./pages/KronosPage.jsx";
 import KronosDevicePage from "./pages/KronosDevicePage.jsx";
 import LogisticsAddressesPage from "./pages/logistics/LogisticsAddressesPage.jsx";
 import LogisticsBranchesPage from "./pages/logistics/LogisticsBranchesPage.jsx";
-import LogisticsContactsPage from "./pages/logistics/LogisticsContactsPage.jsx";
 import LogisticsContractsPage from "./pages/logistics/LogisticsContractsPage.jsx";
 import LogisticsInventoryPage from "./pages/logistics/LogisticsInventoryPage.jsx";
 import LogisticsEvidencesPage from "./pages/logistics/LogisticsEvidencesPage.jsx";
@@ -98,16 +104,17 @@ import RestaurantKitchenPage from "./pages/restaurant/RestaurantKitchenPage.jsx"
 import RestaurantCashierPage from "./pages/restaurant/RestaurantCashierPage.jsx";
 import RestaurantAdminPage from "./pages/restaurant/RestaurantAdminPage.jsx";
 import AppointmentsPage from "./pages/AppointmentsPage.jsx";
-import BiPage from "./pages/BiPage.jsx";
 import DocumentManagementPage from "./pages/DocumentManagementPage.jsx";
 import LaboratoryManagementPage from "./pages/LaboratoryManagementPage.jsx";
 import PublicCalendarPage from "./pages/PublicCalendarPage.jsx";
+import BiPage from "./pages/BiPage.jsx";
 import Kanban from './components/Kanban.jsx';
 import LoginPage from "./auth/LoginPage";
 import ProtectedRoute from "./auth/ProtectedRoute";
 import { useEffect, useState } from "react";
 import { getAllEntityPermission } from "./api";
 import "./styles/app.css";
+import "./styles/foco.css";
 import "./styles/sat-key.css";
 
 function isBootstrapUser() {
@@ -116,17 +123,8 @@ function isBootstrapUser() {
   return Boolean(currentUser?.username === bootstrapUsername && (currentUser?.is_bootstrap_admin || currentUser?.is_superuser || currentUser?.username === bootstrapUsername));
 }
 
-function isAdminUser() {
-  const currentUser = JSON.parse(localStorage.getItem("user") || "null");
-  return isBootstrapUser() || String(currentUser?.user_type || "").toLowerCase() === "admin" || Boolean(currentUser?.is_superuser);
-}
-
 function TechnicalRoute({ children }) {
   return isBootstrapUser() ? children : <Navigate to="/" replace />;
-}
-
-function AdminRoute({ children }) {
-  return isAdminUser() ? children : <Navigate to="/" replace />;
 }
 
 // Referencia estable para que <RoleAccessRoute> no la reciba como un arreglo
@@ -179,22 +177,29 @@ export default function App() {
         <Route path="/calendar/:code" element={<PublicCalendarPage />} />
         <Route path="/" element={<ProtectedRoute><Shell /></ProtectedRoute>}>
           <Route index element={<Dashboard />} />
-          <Route path="/bi" element={<BiPage />} />
+          {/* Vista previa aislada del rediseno del Dashboard de KPIs (datos
+              fijos, no toca la API ni la base) -- ver docs de la tarea.
+              Cualquier usuario autenticado la puede abrir, sin gate de
+              modulo/rol: no es una pantalla real todavia. */}
+          <Route
+            path="/dashboard-preview"
+            element={<ErrorBoundaryPreview><DashboardPreviewPage /></ErrorBoundaryPreview>}
+          />
           <Route path="/mfa-setup" element={<MfaSetupPage />} />
           <Route path="/change-password" element={<ChangePasswordPage />} />
-          <Route path="/role_permissions" element={<AdminRoute><RolePermissionManagerPage /></AdminRoute>} />
-          <Route path="/kpi_permissions" element={<AdminRoute><KpiPermissionManagerPage /></AdminRoute>} />
-          <Route path="/facturama-config" element={<AdminRoute><FacturamaConfigPage /></AdminRoute>} />
+          {/* Como /change-password: cualquier usuario con sesion; el backend decide que ve. */}
+          <Route path="/my_leaves" element={<MyLeavesPage />} />
+          <Route path="/role_permissions" element={<RoleAccessRoute entityName="entity_permission"><RolePermissionManagerPage /></RoleAccessRoute>} />
+          <Route path="/kpi_permissions" element={<RoleAccessRoute entityName="nm_permission_kpi"><KpiPermissionManagerPage /></RoleAccessRoute>} />
+          <Route path="/facturama-config" element={<RoleAccessRoute entityName="fiscal_stamp"><FacturamaConfigPage /></RoleAccessRoute>} />
           <Route path="/quotation" element={<RoleAccessRoute entityName="invoice"><QuotationPage /></RoleAccessRoute>} />
           <Route path="/authorization_tracking" element={<RoleAccessRoute entityName="invoice"><AuthorizationTrackingPage /></RoleAccessRoute>} />
-          <Route path="/catalogo-web" element={<RoleAccessRoute entityName="product_sale_config"><CatalogoWebPage /></RoleAccessRoute>} />
-          <Route path="/compradores-web" element={<RoleAccessRoute entityName="user"><WebShoppersPage /></RoleAccessRoute>} />
           <Route path="/bank" element={<RoleAccessRoute entityName="bank"><BankPage /></RoleAccessRoute>} />
           <Route path="/bank_account" element={<RoleAccessRoute entityName="bank_account"><BankAccountPage /></RoleAccessRoute>} />
           <Route path="/brand" element={<RoleAccessRoute entityName="brand"><BrandPage /></RoleAccessRoute>} />
           <Route path="/customer_supplier" element={<RoleAccessRoute entityName="customer_supplier"><CustomerSupplierPage /></RoleAccessRoute>} />
           <Route path="/department" element={<RoleAccessRoute entityName="department"><DepartmentPage /></RoleAccessRoute>} />
-          <Route path="/entity_permission" element={<AdminRoute><EntityPermissionPage /></AdminRoute>} />
+          <Route path="/entity_permission" element={<RoleAccessRoute entityName="entity_permission"><EntityPermissionPage /></RoleAccessRoute>} />
           <Route path="/event_log" element={<TechnicalRoute><EventLogPage /></TechnicalRoute>} />
           <Route path="/field" element={<RoleAccessRoute entityName="field"><FieldPage /></RoleAccessRoute>} />
           <Route path="/fiscal_account" element={<RoleAccessRoute entityName="fiscal_account"><FiscalAccountPage /></RoleAccessRoute>} />
@@ -218,7 +223,7 @@ export default function App() {
           <Route path="/location" element={<RoleAccessRoute entityName="location"><LocationPage /></RoleAccessRoute>} />
           <Route path="/location_type" element={<RoleAccessRoute entityName="location_type"><LocationTypePage /></RoleAccessRoute>} />
           <Route path="/material" element={<RoleAccessRoute entityName="material"><MaterialPage /></RoleAccessRoute>} />
-          <Route path="/nm_field_permission" element={<AdminRoute><NmFieldPermissionPage /></AdminRoute>} />
+          <Route path="/nm_field_permission" element={<RoleAccessRoute entityName="nm_field_permission"><NmFieldPermissionPage /></RoleAccessRoute>} />
           <Route path="/nm_incident_product" element={<RoleAccessRoute entityName="nm_incident_product"><NmIncidentProductPage /></RoleAccessRoute>} />
           <Route path="/nm_survey_user" element={<RoleAccessRoute entityName="nm_survey_user"><NmSurveyUserPage /></RoleAccessRoute>} />
           <Route path="/nm_template_task" element={<RoleAccessRoute entityName="nm_template_task"><NmTemplateTaskPage /></RoleAccessRoute>} />
@@ -226,11 +231,13 @@ export default function App() {
           <Route path="/payroll_detail" element={<RoleAccessRoute entityName="payroll_detail"><PayrollDetailPage /></RoleAccessRoute>} />
           <Route path="/payroll_movement" element={<RoleAccessRoute entityName="payroll_movement"><PayrollMovementPage /></RoleAccessRoute>} />
           <Route path="/payroll_period" element={<RoleAccessRoute entityName="payroll_period"><PayrollPeriodPage /></RoleAccessRoute>} />
+          <Route path="/payroll_settings" element={<RoleAccessRoute entityName="payroll_parameter"><PayrollSettingsPage /></RoleAccessRoute>} />
+          <Route path="/work_schedules" element={<RoleAccessRoute entityName="work_schedule"><WorkSchedulesPage /></RoleAccessRoute>} />
+          <Route path="/employee_leaves" element={<RoleAccessRoute entityName="employee_leave"><EmployeeLeavesPage /></RoleAccessRoute>} />
           <Route path="/kronos" element={<RoleAccessRoute entityName="payroll_period"><KronosPage /></RoleAccessRoute>} />
           <Route path="/kronos/device" element={<RoleAccessRoute entityName="kronos_device"><KronosDevicePage /></RoleAccessRoute>} />
           <Route path="/logistica/clientes" element={<RoleAccessRoute entityName="customer_supplier"><CustomerSupplierPage clientsOnly /></RoleAccessRoute>} />
           <Route path="/logistica/proveedores" element={<RoleAccessRoute entityName="customer_supplier"><CustomerSupplierPage mode="suppliersOnly" /></RoleAccessRoute>} />
-          <Route path="/logistica/contactos" element={<RoleAccessRoute entityName="logistics_contact"><LogisticsContactsPage /></RoleAccessRoute>} />
           <Route path="/logistica/direcciones" element={<RoleAccessRoute entityName="logistics_address"><LogisticsAddressesPage /></RoleAccessRoute>} />
           <Route path="/logistica/contratos" element={<RoleAccessRoute entityName="logistics_contract"><LogisticsContractsPage /></RoleAccessRoute>} />
           <Route path="/logistica/tarifas" element={<RoleAccessRoute entityName="logistics_rate"><LogisticsRatesPage /></RoleAccessRoute>} />
@@ -281,6 +288,13 @@ export default function App() {
               dejarle usar; sin la segunda clave aqui, Supervisor nunca
               llegaba a la puerta. */}
           <Route path="/vouchers" element={<RoleAccessRoute entityName={VOUCHER_ENTITY_NAMES}><WarehouseVoucherPage /></RoleAccessRoute>} />
+          {/* Lo que falta comprar: la guarda la capacidad `purchase_planning`. */}
+          <Route path="/por-comprar" element={<RoleAccessRoute entityName="purchase_planning"><PorComprarPage /></RoleAccessRoute>} />
+          {/* Las ordenes de compra: la guarda la entidad `purchase_order`; autorizar y
+              comprar lo reservado a gerencia lo exige ademas el servidor. */}
+          <Route path="/ordenes-de-compra" element={<RoleAccessRoute entityName="purchase_order"><OrdenesDeCompraPage /></RoleAccessRoute>} />
+          <Route path="/activity-log" element={<RoleAccessRoute entityName="daily_activity_log"><ActivityLogPage /></RoleAccessRoute>} />
+          <Route path="/bi" element={<BiPage />} />
           <Route path="/product_sale_config" element={<RoleAccessRoute entityName="product_sale_config"><ProductSaleConfigPage /></RoleAccessRoute>} />
           <Route path="/proyect" element={<RoleAccessRoute entityName="proyect"><ProjectManagementPage /></RoleAccessRoute>} />
           <Route path="/appointments" element={<RoleAccessRoute entityName="appointment"><AppointmentsPage /></RoleAccessRoute>} />

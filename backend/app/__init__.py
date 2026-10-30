@@ -1,5 +1,7 @@
 from __future__ import annotations
+import decimal
 import os
+import re
 import sys
 import jwt
 from flask import Flask, jsonify, request, send_from_directory
@@ -7,6 +9,7 @@ from flask_cors import CORS
 
 from app.utils.startup_guard import allowed_cors_origins, enforce_secure_configuration, is_production
 from flask_babel import Babel
+from sqlalchemy.exc import DBAPIError, IntegrityError, StatementError
 from werkzeug.exceptions import HTTPException
 from app.utils.errors import AppError
 from app.routes.health import bp_health
@@ -22,6 +25,13 @@ from app.routes.user_mfa import bp_user_mfa
 from app.routes.payroll_period import bp_payroll_period
 from app.routes.payroll_detail import bp_payroll_detail
 from app.routes.payroll_concept import bp_payroll_concept
+from app.routes.payroll_isr_bracket import bp_payroll_isr_bracket
+from app.routes.payroll_parameter import bp_payroll_parameter
+from app.routes.work_schedule import bp_work_schedule
+from app.routes.work_schedule_day import bp_work_schedule_day
+from app.routes.employee_schedule import bp_employee_schedule
+from app.routes.payroll_holiday import bp_payroll_holiday
+from app.routes.employee_leave import bp_employee_leave
 from app.routes.payroll_movement import bp_payroll_movement
 from app.routes.customer_contact import bp_customer_contact
 from app.routes.customer_supplier import bp_customer_supplier
@@ -86,9 +96,6 @@ from app.routes.permission import bp_permission
 from app.routes.nm_field_permission import bp_nm_field_permission
 from app.routes.team import bp_team
 from app.routes.nm_team_user import bp_nm_team_user
-from app.routes.notification import bp_notification
-from app.routes.supervisor_activity_log import bp_supervisor_activity_log
-from app.routes.supervisor_daily_attachment import bp as bp_supervisor_daily_attachment
 from app.routes.event_log import bp_event_log
 from app.routes.task_type import bp_task_type
 from app.routes.template import bp_template
@@ -101,6 +108,8 @@ from app.routes.inventory_asset import bp_inventory_asset
 from app.routes.inventory_lot import bp_inventory_lot
 from app.routes.material_attribute import bp_material_attribute
 from app.routes.warehouse_voucher import bp_warehouse_voucher
+from app.routes.proyect_material_need import bp_proyect_material_need
+from app.routes.purchase_order import bp_purchase_order
 from app.routes.inventory_status import bp_inventory_status
 from app.routes.product_sale_config import bp_product_sale_config
 from app.routes.public_api_key import bp_public_api_key
@@ -115,6 +124,8 @@ from app.routes.appointments import bp_appointments
 from app.routes.public_calendar import bp_public_appointments, bp_public_calendar
 from app.routes.kpi import bp_kpi, bp_kpi_dashboard, bp_kpi_dashboard_widget
 from app.routes.permission_kpi import bp_permission_kpi
+from app.routes.notifications import bp_notifications
+from app.routes.activity_logs import bp_activity_logs
 
 def _documents_reports_app_path() -> str:
     return os.getenv('DOCUMENTS_REPORTS_APP_PATH', '/documents-reports/app')
@@ -162,26 +173,23 @@ def _doc_join(parts) -> str:
 
 
 def _doc_logo_uri(path_value) -> str:
+    """El logo es texto libre que escribe quien da de alta al cliente y el motor de PDF
+    lo descarga: solo se acepta una imagen en `data:` o un archivo DENTRO de
+    UPLOAD_ROOT. Antes pasaba cualquier http(s) (SSRF) y cualquier ruta, incluso con
+    `../` o absoluta (lectura de archivos del servidor al dibujarlos en el PDF)."""
     raw = str(path_value or '').strip()
     if not raw:
         return ''
-    if raw.startswith(('http://', 'https://', 'data:')):
-        return raw
-    normalized = raw.replace('\\', '/').lstrip('/')
-    candidates = []
-    if os.path.isabs(raw):
-        candidates.append(raw)
-    if normalized.startswith('uploads/'):
-        candidates.append('/' + normalized)
-    upload_root = os.getenv('UPLOAD_ROOT', '/uploads').rstrip('/') or '/uploads'
-    if normalized.startswith('uploads/'):
-        candidates.append(os.path.join(os.path.dirname(upload_root), normalized))
-    else:
-        candidates.append(os.path.join(upload_root, normalized))
-    candidates.append(os.path.join(os.getcwd(), normalized))
-    for candidate in candidates:
-        if candidate and os.path.isfile(candidate):
-            return 'file://' + os.path.abspath(candidate)
+    if raw.lower().startswith('data:'):
+        return raw if re.match(r'data:image/(png|jpe?g|gif|webp)[;,]', raw, re.I) else ''
+    if '://' in raw:
+        return ''
+    upload_root = os.path.realpath(os.getenv('UPLOAD_ROOT', '/uploads'))
+    relative = raw.replace('\\', '/').lstrip('/')
+    relative = relative[len('uploads/'):] if relative.startswith('uploads/') else relative
+    candidate = os.path.realpath(os.path.join(upload_root, relative))
+    if os.path.commonpath([upload_root, candidate]) == upload_root and os.path.isfile(candidate):
+        return 'file://' + candidate
     return ''
 
 
@@ -299,16 +307,21 @@ def _load_quotation_document_record(record_id: str) -> dict:
         from app.services.amount_in_words import importe_a_letras
         data['amount_in_words'] = importe_a_letras(data.get('total'), currency)
         # issue_12_phase7_cfdi_original_xml_path
+        # El XML timbrado manda sobre las columnas de `invoice`: de el salen el
+        # sello del emisor, el RFC del PAC, la cadena original y el QR. Se lee
+        # de la base y, si no esta, del archivo (cfdi_xml_store).
+        from app.services.cfdi_xml_store import load_cfdi_xml
+        xml_original = load_cfdi_xml(invoice_id_value, db=db_session)
         data['_xml_original_path'] = _cfdi_xml_original_path(invoice_id_value)
-        if data['_xml_original_path']:
+        if xml_original:
+            data['_xml_original_text'] = xml_original.decode('utf-8', errors='replace')
             try:
                 from app.services.cfdi_xml import parse_cfdi
-                with open(data['_xml_original_path'], 'rb') as xml_file:
-                    cfdi_data = parse_cfdi(xml_file.read())
+                cfdi_data = parse_cfdi(xml_original)
                 for field_name, value in cfdi_data.items():
                     if field_name != 'conceptos' and value not in (None, ''):
                         data[field_name] = value
-            except (OSError, ValueError):
+            except ValueError:
                 pass
 
         if data.get('uuid'):
@@ -601,16 +614,10 @@ def _register_documents_blueprint(app: Flask) -> None:
             from sqlalchemy import inspect as sqlalchemy_inspect
             from app.models.invoice import Invoice
             from app.models.session import transaction_context
-            from app.utils.auth import PUBLIC_JWT_SCOPE, SECRET_KEY, _has_entity_permission
+            from app.utils.auth import _has_entity_permission, decode_session
 
-            token = request.headers.get('Authorization', '').replace('Bearer ', '')
-            if not token:
-                return False, 401
-            try:
-                user_data = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
-            except Exception:
-                return False, 401
-            if str(user_data.get('scope') or '').strip().lower() == str(PUBLIC_JWT_SCOPE).strip().lower():
+            user_data, error_key = decode_session(request.headers.get('Authorization', '').replace('Bearer ', ''))
+            if error_key:
                 return False, 401
             entity = str(doc.get('entity') or '').strip()
             if not entity or not _has_entity_permission(user_data, entity, 'read'):
@@ -661,6 +668,12 @@ def _register_documents_blueprint(app: Flask) -> None:
 
 def create_app(testing: bool = False) -> Flask:
     app = Flask(__name__)
+    # `/user` y `/user/` responden lo mismo. Con la regla estricta (default de
+    # Flask), pedir una coleccion sin la barra final devolvia un 308 a una
+    # ruta SIN el prefijo `/api` -- el Ingress lo reescribe antes de llegar
+    # aqui --, que cae en el frontend y contesta HTML: n8n, Postman o un script
+    # recibian la pagina de React en vez de JSON. Antes de registrar rutas.
+    app.url_map.strict_slashes = False
     app.config['TESTING'] = testing
     app.config['BABEL_DEFAULT_LOCALE'] = os.getenv('DEFAULT_LOCALE', 'es')
     app.config['JSON_SORT_KEYS'] = False
@@ -695,6 +708,13 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_payroll_period)
     app.register_blueprint(bp_payroll_detail)
     app.register_blueprint(bp_payroll_concept)
+    app.register_blueprint(bp_payroll_isr_bracket)
+    app.register_blueprint(bp_payroll_parameter)
+    app.register_blueprint(bp_work_schedule)
+    app.register_blueprint(bp_work_schedule_day)
+    app.register_blueprint(bp_employee_schedule)
+    app.register_blueprint(bp_payroll_holiday)
+    app.register_blueprint(bp_employee_leave)
     app.register_blueprint(bp_payroll_movement)
     app.register_blueprint(bp_customer_supplier)
     app.register_blueprint(bp_customer_contact)
@@ -757,9 +777,6 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_permission)
     app.register_blueprint(bp_team)
     app.register_blueprint(bp_nm_team_user)
-    app.register_blueprint(bp_notification)
-    app.register_blueprint(bp_supervisor_activity_log)
-    app.register_blueprint(bp_supervisor_daily_attachment)
     app.register_blueprint(bp_nm_field_permission)
     app.register_blueprint(bp_event_log)
     app.register_blueprint(bp_task_type)
@@ -773,6 +790,8 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_inventory_lot)
     app.register_blueprint(bp_material_attribute)
     app.register_blueprint(bp_warehouse_voucher)
+    app.register_blueprint(bp_proyect_material_need)
+    app.register_blueprint(bp_purchase_order)
     app.register_blueprint(bp_inventory_status)
     app.register_blueprint(bp_product_sale_config)
     app.register_blueprint(bp_public_api_key)
@@ -783,7 +802,29 @@ def create_app(testing: bool = False) -> Flask:
     app.register_blueprint(bp_kronos)
     app.register_blueprint(bp_pos)
     app.register_blueprint(bp_restaurant)
+    app.register_blueprint(bp_notifications)
+    app.register_blueprint(bp_activity_logs)
     _register_documents_blueprint(app)
+
+    # El catalogo de documentos solo lo ve quien tiene sesion: no hay motivo para que
+    # sea publico (lista que documentos y entidades existen).
+    from app.utils.auth import token_required as _token_required
+    _manifiesto = app.view_functions.get('documents.manifest')
+    if _manifiesto is not None:
+        app.view_functions['documents.manifest'] = _token_required(lambda user_data: _manifiesto())
+
+    @app.after_request
+    def _cabeceras_de_seguridad(respuesta):
+        # Baratas y sin efectos laterales: el navegador no adivina tipos, no deja
+        # incrustar el sitio en otro (los PDF propios si, mismo origen), y no filtra la URL.
+        respuesta.headers.setdefault('X-Content-Type-Options', 'nosniff')
+        respuesta.headers.setdefault('X-Frame-Options', 'SAMEORIGIN')
+        respuesta.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+        respuesta.headers.setdefault('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+        from app.utils.startup_guard import is_production
+        if is_production() and (request.is_secure or request.headers.get('X-Forwarded-Proto') == 'https'):
+            respuesta.headers.setdefault('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+        return respuesta
 
     @app.route('/uploads/products/<path:filename>')
     def uploaded_product_image(filename):
@@ -799,6 +840,49 @@ def create_app(testing: bool = False) -> Flask:
             'error_key': f'errors.http_{error.code}',
             'meta': {'description': error.description},
         }), error.code
+
+    # Entrada del cliente que la base o el parseo rechazan: es del cliente, no un
+    # fallo del servidor. Se registra igual para que un bug real no se esconda.
+    @app.errorhandler(IntegrityError)
+    def handle_integrity(error: IntegrityError):
+        app.logger.warning("integridad rechazada: %s", error.orig)
+        codigo = getattr(error.orig, 'pgcode', None)
+        if codigo == '23503':
+            return jsonify({'error_key': 'errors.invalid_reference'}), 409
+        if codigo in ('23502', '23514'):
+            return jsonify({'error_key': 'errors.invalid_field'}), 400
+        return handle_unexpected(error)
+
+    @app.errorhandler(DBAPIError)
+    @app.errorhandler(StatementError)
+    @app.errorhandler(ValueError)
+    def handle_bad_input(error: Exception):
+        if isinstance(error, DBAPIError) and getattr(error.orig, 'pgcode', None) is None:
+            return handle_unexpected(error)
+        app.logger.warning("entrada invalida: %s", error)
+        return jsonify({'error_key': 'errors.invalid_field'}), 400
+
+    # NaN/Infinity en un Decimal y un cuerpo JSON que no es objeto (`[1]`, `"x"`)
+    # son entrada del cliente: antes salian como 500 desde decenas de rutas.
+    @app.errorhandler(decimal.InvalidOperation)
+    def handle_bad_decimal(error: Exception):
+        app.logger.warning("decimal invalido: %s", error)
+        return jsonify({'error_key': 'errors.invalid_field'}), 400
+
+    @app.errorhandler(AttributeError)
+    def handle_attribute_error(error: AttributeError):
+        if re.search(r"'(list|str|int|float|bool)' object has no attribute '(get|items|keys|pop)'", str(error)):
+            app.logger.warning("cuerpo con forma inesperada: %s", error)
+            return jsonify({'error_key': 'errors.invalid_field'}), 400
+        return handle_unexpected(error)
+
+    @app.errorhandler(TypeError)
+    def handle_type_error(error: TypeError):
+        # `dict([1])` al volcar un cuerpo JSON que no es objeto.
+        if 'cannot convert dictionary update sequence' in str(error):
+            app.logger.warning("cuerpo con forma inesperada: %s", error)
+            return jsonify({'error_key': 'errors.invalid_field'}), 400
+        return handle_unexpected(error)
 
     @app.errorhandler(Exception)
     def handle_unexpected(error: Exception):

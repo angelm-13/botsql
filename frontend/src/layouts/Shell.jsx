@@ -2,7 +2,9 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Boxes, Briefcase, CalendarDays, BarChart as ChartBar, ChevronDown, ClipboardList, Contact, FileText, FlaskConical, Landmark, LayoutDashboard, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Receipt, Settings, ShieldCheck, ShoppingCart, SlidersHorizontal, Truck, UserCog, Users, Utensils, Warehouse } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { deploymentPlan, getMyPermissions } from "../api";
+import { etiquetaParaMostrar, grupoParaMostrar } from "./etiquetasMenu.js";
 import LanguagePicker from "../components/LanguagePicker";
+import NotificationBell from "../components/NotificationBell";
 import { useI18n } from "../i18n";
 import { moduleSectionsEnPlan } from "./moduleSections";
 
@@ -20,15 +22,14 @@ const navItems = [
   // importar su rol -- no hay fila de entity_permission que la gatee, ver
   // el caso especial en canSeeNavItem.
   { path: "/change-password", key: "common.change_password", group: "Configuracion", groupIcon: "settings", location: "settings", order: 920 },
-  { path: "/role_permissions", key: "common.role_permission_manager", adminOnly: true, groupIcon: "settings", location: "settings" },
-  { path: "/kpi_permissions", key: "common.kpi_permission_manager", adminOnly: true, groupIcon: "settings", location: "settings" },
-  { path: "/facturama-config", key: "menu.facturama_config", adminOnly: true, groupIcon: "settings", location: "settings" },
+  { path: "/role_permissions", entityName: "entity_permission", key: "common.role_permission_manager", adminOnly: true, groupIcon: "settings", location: "settings" },
+  { path: "/kpi_permissions", entityName: "nm_permission_kpi", key: "common.kpi_permission_manager", adminOnly: true, groupIcon: "settings", location: "settings" },
+  { path: "/facturama-config", entityName: "fiscal_stamp", key: "menu.facturama_config", adminOnly: true, groupIcon: "settings", location: "settings" },
   { path: "/bank", key: "menu.bank" },
   { path: "/bank_account", key: "menu.bank_account" },
   { path: "/brand", key: "menu.brand" },
-  { path: "/customer_supplier", key: "menu.customer_supplier" },
+  { path: "/customer_supplier", key: "menu.customer_supplier", location: "none" },
   { path: "/logistica/clientes", label: "Clientes", entityName: "customer_supplier", group: "CRM", groupIcon: "users", location: "sidebar", order: 10 },
-  { path: "/logistica/contactos", label: "Contactos", entityName: "logistics_contact", group: "CRM", groupIcon: "users", location: "sidebar", order: 20 },
   { path: "/logistica/direcciones", label: "Direcciones", entityName: "logistics_address", group: "CRM", groupIcon: "users", location: "sidebar", order: 30 },
   { path: "/logistica/contratos", label: "Contratos", entityName: "logistics_contract", group: "CRM", groupIcon: "users", location: "sidebar", order: 40 },
   { path: "/logistica/tarifas", label: "Tarifas", entityName: "logistics_rate", group: "CRM", groupIcon: "users", location: "sidebar", order: 50 },
@@ -75,12 +76,29 @@ const navItems = [
   // se quedaba sin entrada de menu -tenia el permiso en la base, pero la
   // pantalla nunca aparecia para llegar a usarlo.
   { path: "/vouchers", key: "menu.warehouse_voucher", label: "Vales de almacén", entityName: ["warehouse_voucher", "warehouse_prevoucher"] },
+  // Lo que falta comprar. Capacidad de lectura (`purchase_planning`): la etiqueta,
+  // el grupo y el orden los da su fila en el backend.
+  { path: "/por-comprar", key: "menu.purchase_planning", label: "Por comprar", entityName: "purchase_planning" },
+  // De lo que falta a la compra hecha. Entidad `purchase_order`: la etiqueta, el grupo
+  // y el orden los da su fila en el backend (modulo `compras`, que se ve en Inventario).
+  { path: "/ordenes-de-compra", key: "menu.purchase_order", label: "Órdenes de compra", entityName: "purchase_order" },
+  { path: "/activity-log", key: "menu.daily_activity_log", label: "Bitácora diaria", entityName: "daily_activity_log", group: "Operaciones", groupIcon: "operations", location: "sidebar", order: 78 },
   { path: "/nm_survey_user", key: "menu.nm_survey_user" },
   { path: "/nm_template_task", key: "menu.nm_template_task" },
   { path: "/payroll_concept", key: "menu.payroll_concept" },
   { path: "/payroll_detail", key: "menu.payroll_detail" },
   { path: "/payroll_movement", key: "menu.payroll_movement" },
   { path: "/payroll_period", key: "menu.payroll_period" },
+  // payroll_parameter esta sembrada "hidden" (no tiene pantalla generica); esta
+  // pantalla propia se declara en la barra, como /activity-log.
+  { path: "/payroll_settings", key: "menu.payroll_settings", label: "Cifras oficiales", entityName: "payroll_parameter", group: "Recursos humanos", location: "sidebar", order: 705 },
+  // work_schedule tambien esta sembrada "hidden": pantalla propia en la barra.
+  { path: "/work_schedules", key: "menu.work_schedules", label: "Horarios", entityName: "work_schedule", group: "Recursos humanos", location: "sidebar", order: 706 },
+  // employee_leave igual: sembrada "hidden", pantalla propia en la barra.
+  // Autoservicio, como /mfa-setup: cualquier usuario la ve; el backend solo le
+  // muestra lo suyo (o lo de su equipo si es jefe).
+  { path: "/my_leaves", key: "menu.my_leaves", label: "Mis vacaciones", group: "Recursos humanos", location: "sidebar", order: 708 },
+  { path: "/employee_leaves", key: "menu.employee_leaves", label: "Vacaciones y permisos", entityName: "employee_leave", group: "Recursos humanos", location: "sidebar", order: 707 },
   { path: "/kronos", key: "menu.kronos", label: "Asistencias", entityName: "payroll_period" },
   { path: "/kronos/device", key: "menu.kronos_device", label: "Conexión al dispositivo", entityName: "kronos_device" },
   { path: "/restaurant/waiter", key: "menu.restaurant_waiter", label: "Meseros", entityName: "restaurant_waiter" },
@@ -113,11 +131,6 @@ const navItems = [
   // la pantalla donde el propio usuario activa su MFA -esta es la de
   // administracion, para ver el estado de MFA de otros usuarios.
   { path: "/user_mfa", key: "menu.user_mfa", groupIcon: "settings", location: "settings" }
-];
-
-const quickNavItems = [
-  { path: "/catalogo-web", key: "menu.catalogo_web", label: "Catálogo Web", entityName: "product_sale_config" },
-  { path: "/compradores-web", key: "menu.web_shoppers", label: "Compradores Web", entityName: "user" }
 ];
 
 
@@ -220,11 +233,15 @@ export default function Shell() {
   const location = useLocation();
   const { t } = useI18n();
   const shellText = (key) => t(`shell.${key}`);
-  const groupLabel = (label) => groupTranslationKeys[label] ? shellText(groupTranslationKeys[label]) : label;
+  // El grupo viene de la base sin acento ("Facturacion"): se acentua solo para
+  // mostrarlo, la llave con la que se agrupa no cambia (ver etiquetasMenu.js).
+  const groupLabel = (label) => {
+    const visible = grupoParaMostrar(label);
+    return groupTranslationKeys[visible] ? shellText(groupTranslationKeys[visible]) : visible;
+  };
   const currentUser = JSON.parse(localStorage.getItem("user") || "null");
   const bootstrapUsername = import.meta.env.VITE_BOOTSTRAP_ADMIN_USERNAME || "admin1";
   const isBootstrapAdmin = Boolean(currentUser?.username === bootstrapUsername && (currentUser?.is_bootstrap_admin || currentUser?.is_superuser || currentUser?.username === bootstrapUsername));
-  const isAdminUser = Boolean(isBootstrapAdmin || currentUser?.is_superuser || String(currentUser?.user_type || "").toLowerCase() === "admin");
   const technicalPaths = ["/user_mfa", "/event_log"];
 
   useEffect(() => {
@@ -308,9 +325,8 @@ export default function Shell() {
   }
 
   function canSeeNavItem(item) {
-    if (item.exact || item.path === "/mfa-setup" || item.path === "/change-password") return true;
+    if (item.exact || item.path === "/mfa-setup" || item.path === "/change-password" || item.path === "/my_leaves") return true;
     if (technicalPaths.includes(item.path)) return isBootstrapAdmin;
-    if (item.adminOnly) return isAdminUser;
     if (isBootstrapAdmin) return true;
     if (!rolePermissionsLoaded) return false;
     const entityNames = entityNamesFor(item);
@@ -322,7 +338,7 @@ export default function Shell() {
 
   function canSeeSectionItem(item) {
     const entityName = item[2];
-    if (item[3] === "admin") return isAdminUser;
+    if (item[3] === "admin") return isBootstrapAdmin || permissionByEntity.has(entityName);
     if (item[3] === "technical") return isBootstrapAdmin;
     return !entityName || isBootstrapAdmin || permissionByEntity.has(entityName);
   }
@@ -360,7 +376,7 @@ export default function Shell() {
       group: item.group || permission?.menu_group || defaultGroup(item),
       groupIcon: item.groupIcon || permission?.menu_group_icon || defaultGroupIcons[item.group || permission?.menu_group || defaultGroup(item)] || "sliders-horizontal",
       order: Number(item.order ?? permission?.menu_order ?? 100),
-      displayLabel: isCanonicalPath && permission?.menu_label ? permission.menu_label : item.key ? t(item.key, item.label || item.key) : item.label
+      displayLabel: etiquetaParaMostrar(isCanonicalPath && permission?.menu_label ? permission.menu_label : item.key ? t(item.key, item.label || item.key) : item.label)
     };
   }
 
@@ -556,6 +572,7 @@ export default function Shell() {
           </div>
           <div className="topbar-actions">
             <span className="session-pill">{t("common.secure_session", "Sesión protegida")}{currentUser?.username ? ` · ${currentUser.username}` : ""}</span>
+            <NotificationBell />
             <LanguagePicker />
             <NavLink to="/bi" className={({ isActive }) => isActive ? "button primary bi-button" : "button bi-button"} title={t("menu.bi_analysis", "Análisis BI")}>
               <ChartBar size={16} />
@@ -614,13 +631,6 @@ export default function Shell() {
             </div>
           </div>
         </header>
-        <nav className="quick-nav" aria-label={shellText("quick_access")}>
-          {quickNavItems.filter(canSeeNavItem).map((item) => (
-            <NavLink key={item.path} to={item.path} className={({ isActive }) => isActive ? "quick-nav-link active" : "quick-nav-link"}>
-              {t(item.key, item.label || item.key)}
-            </NavLink>
-          ))}
-        </nav>
         <Outlet />
       </main>
     </div>

@@ -14,12 +14,17 @@ from app.services.project_management_service import (
     list_projects,
     project_document_content,
     project_options,
+    release_project,
     settle_project_payment,
+    take_project,
+    assign_project,
+    workshop_heads,
     transition_management,
     transition_project,
     update_project,
 )
-from app.utils.auth import token_required, require_entity_permission
+from app.utils.auth import token_required, require_any_entity_permission, require_entity_permission
+from app.utils.field_access import COLUMNAS_DE_AUDITORIA
 
 
 def _storage():
@@ -51,7 +56,6 @@ def _actor_has_unrestricted_field_access(user_data: dict) -> bool:
     return bool(
         user_data.get('is_superuser')
         or user_data.get('is_bootstrap_admin')
-        or user_data.get('user_type') == 'admin'
     )
 
 
@@ -100,7 +104,7 @@ def _field_sets_for_actor(user_data: dict) -> tuple[set[str], set[str]]:
     # La llave primaria puede viajar en la respuesta para navegacion interna,
     # acciones de fila y rutas REST, aunque el frontend no la pinte si no fue
     # marcada como visible en el gestor.
-    return visible | set(TECHNICAL_RESPONSE_FIELDS), writable
+    return visible | set(TECHNICAL_RESPONSE_FIELDS) | COLUMNAS_DE_AUDITORIA, writable
 
 
 def _visible_response_fields_for_actor(user_data: dict) -> set[str]:
@@ -204,9 +208,46 @@ def update_proyect(user_data, id_proyect):
 
 @bp_proyect.route('/<id_proyect>/transition', methods=['POST'])
 @token_required
-@require_entity_permission('proyect', 'update')
+# `project_supply` (Compras) da los pasos de material sin editar el proyecto; el
+# servicio decide cuales transiciones le tocan a cada quien.
+@require_any_entity_permission(('proyect', 'update'), ('project_supply', 'read'))
 def transition_proyect(user_data, id_proyect):
     return jsonify(transition_project(id_proyect, request.get_json() or {}, user_data))
+
+
+@bp_proyect.route('/<id_proyect>/take', methods=['POST'])
+@token_required
+@require_entity_permission('proyect', 'update')
+def take_proyect(user_data, id_proyect):
+    """El supervisor se hace cargo del proyecto.
+
+    Pide el permiso de ACTUALIZAR proyecto, igual que las transiciones: tomarlo
+    cambia el proyecto. Quien puede tomarlo de verdad -- la capacidad
+    `project_execution` -- lo decide el servicio, que es donde vive el resto de
+    las reglas de alcance.
+    """
+    return jsonify(take_project(id_proyect, user_data))
+
+
+@bp_proyect.route('/workshop-heads', methods=['GET'])
+@token_required
+def list_workshop_heads(user_data):
+    """Los jefes de taller a quienes se puede asignar un proyecto (solo quien autoriza)."""
+    return jsonify(workshop_heads(user_data))
+
+
+@bp_proyect.route('/<id_proyect>/assign', methods=['POST'])
+@token_required
+def assign_proyect(user_data, id_proyect):
+    """Asigna el proyecto a un jefe de taller (`id_user`) o lo deja libre (`id_user` vacío)."""
+    return jsonify(assign_project(id_proyect, (request.get_json() or {}).get('id_user'), user_data))
+
+
+@bp_proyect.route('/<id_proyect>/release', methods=['POST'])
+@token_required
+@require_entity_permission('proyect', 'update')
+def release_proyect(user_data, id_proyect):
+    return jsonify(release_project(id_proyect, user_data))
 
 
 @bp_proyect.route('/<id_proyect>/management-transition', methods=['POST'])

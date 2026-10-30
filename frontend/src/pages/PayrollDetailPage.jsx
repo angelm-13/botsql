@@ -1,12 +1,17 @@
+import { LLAVE_BORRADO_BLOQUEADO, mensajeDeBorradoBloqueado } from "../utils/registrosRelacionados.js";
 import { useEffect, useMemo, useState } from "react";
 import { RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
-import { getAllPayrollDetail, createPayrollDetail, updatePayrollDetail, deletePayrollDetail, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllPayrollPeriod, getAllUser } from "../api";
+import { getAllPayrollDetail, createPayrollDetail, updatePayrollDetail, deletePayrollDetail, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getAllPayrollPeriod, getUserOptions } from "../api";
+import { crearEtiquetas } from "../utils/etiquetasNomina";
 import { fetchAllPages } from "../utils/fetchAllPages";
 import Pagination from "../components/Pagination.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
+import { CAMPOS_DE_AUDITORIA } from "../utils/camposDeAuditoria";
+import { formatearFechaHora } from "../utils/fechas";
+import { useDialogo } from "../dialogo/useDialogo.js";
 
 const emptyForm = { id_payroll_period: "", id_user: "", gross_salary: "", total_earnings: "", total_deductions: "", net_pay: "" };
 const validationRules = allValidationRules["payroll_detail"] || {};
@@ -33,6 +38,7 @@ function readCurrentUser() {
 
 export default function PayrollDetailPage() {
   const { lang, t } = useI18n();
+  const dialogo = useDialogo();
   const [items, setItems] = useState([]);
   const [formData, setFormData] = useState(emptyForm);
   const [fieldErrors, setFieldErrors] = useState({});
@@ -60,6 +66,9 @@ export default function PayrollDetailPage() {
   const showRowActions = canRead && (canUpdate || canDelete);
   const [payrollPeriodOptions, setPayrollPeriodOptions] = useState([]);
   const [userOptions, setUserOptions] = useState([]);
+  // Nombres en lugar de ids en la tabla (ver utils/etiquetasNomina.js).
+  const etiquetas = useMemo(() => crearEtiquetas({ periodos: payrollPeriodOptions, usuarios: userOptions }),
+    [payrollPeriodOptions, userOptions]);
 
   async function loadData() {
     if (!permissionReady || !canRead) {
@@ -101,16 +110,17 @@ export default function PayrollDetailPage() {
       if (!permissionReady || (!canSubmitForm && !canRead)) return;
       if (canSeeField("id_payroll_period")) {
         try {
-          const payrollPeriodData = await getAllPayrollPeriod({ page: 1, per_page: 100 });
-          setPayrollPeriodOptions(Array.isArray(payrollPeriodData) ? payrollPeriodData : (payrollPeriodData.items || []));
+          setPayrollPeriodOptions((await fetchAllPages(getAllPayrollPeriod)).items || []);
         } catch (_) {
           setPayrollPeriodOptions([]);
         }
       }
       if (canSeeField("id_user")) {
         try {
-          const userData = await getAllUser({ page: 1, per_page: 100 });
-          setUserOptions(Array.isArray(userData) ? userData : (userData.items || []));
+          // /user/options (id y nombre) y no /user/: la lista completa de
+          // usuarios es de Seguridad, y sin ella el Gerente veia el selector vacio.
+          const userData = await getUserOptions();
+          setUserOptions(Array.isArray(userData) ? userData : []);
         } catch (_) {
           setUserOptions([]);
         }
@@ -179,7 +189,7 @@ export default function PayrollDetailPage() {
   function canSeeField(fieldName) {
     if (isSuperUser) return true;
     if (!permissionReady) return false;
-    return visibleFieldNames.has(fieldName);
+    return CAMPOS_DE_AUDITORIA.has(fieldName) || visibleFieldNames.has(fieldName);
   }
 
 
@@ -267,7 +277,7 @@ export default function PayrollDetailPage() {
 
   async function removeItem(item) {
     if (!canDelete) return;
-    if (!window.confirm(t("common.confirm_delete"))) return;
+    if (!(await dialogo.confirmar(t("common.confirm_delete")))) return;
     try { await deletePayrollDetail(item.id_payroll_detail); await loadData(); } catch (error) { setErrorKey(error.message || "errors.request_failed"); setErrorMeta(error.payload?.meta || null); }
   }
 
@@ -277,7 +287,7 @@ export default function PayrollDetailPage() {
     if (ENTITY_KEY !== "user") return;
     const targetId = item.id_user ?? item.id;
     if (!targetId) return;
-    if (!window.confirm(t("common.mfa_reset_confirm", "¿Restablecer MFA de este usuario?"))) return;
+    if (!(await dialogo.confirmar(t("common.mfa_reset_confirm", "¿Restablecer MFA de este usuario?")))) return;
     setErrorKey("");
     setErrorMeta(null);
     try {
@@ -305,11 +315,8 @@ export default function PayrollDetailPage() {
     }
     if (typeof value === "number") return new Intl.NumberFormat(locale).format(value);
     if (typeof value === "string" && /^[0-9]{4}-[0-9]{2}-[0-9]{2}T/.test(value)) {
-      const date = new Date(value);
-      if (!Number.isNaN(date.getTime())) {
-        const hasTime = !/T00:00(?::00)?/.test(value);
-        return new Intl.DateTimeFormat(locale, hasTime ? { dateStyle: "medium", timeStyle: "short" } : { dateStyle: "medium" }).format(date);
-      }
+      const formateada = formatearFechaHora(value, locale);
+      if (formateada) return formateada;
     }
     if (Array.isArray(value)) return value.map((item) => formatTableValue(item)).filter(Boolean).join(", ");
     if (typeof value === "object") {
@@ -390,7 +397,7 @@ export default function PayrollDetailPage() {
     if (errorKey === "errors.invalid_field" && errorMeta?.field) {
       return `${t(errorKey, errorKey)}: ${fieldLabel}`;
     }
-    return t(errorKey, errorKey);
+    return errorKey === LLAVE_BORRADO_BLOQUEADO ? mensajeDeBorradoBloqueado(t, errorMeta) : t(errorKey, errorKey);
   }
 
   // El buscador pregunta al SERVIDOR, asi que lo que llega ya viene filtrado.
@@ -432,7 +439,7 @@ export default function PayrollDetailPage() {
               <option value="">{t("common.select_option", "Selecciona una opción")}</option>
               {payrollPeriodOptions.map((item) => (
                 <option key={item.id_payroll_period ?? item.id ?? JSON.stringify(item)} value={item.id_payroll_period ?? item.id ?? ""}>
-                  {getOptionLabel(item, "payroll_period")}
+                  {etiquetas.periodo(item.id_payroll_period)}
                 </option>
               ))}
             </select>
@@ -517,13 +524,13 @@ export default function PayrollDetailPage() {
               {canSeeField("last_update_date") && <th>{t("fields.payroll_detail.last_update_date")}</th>}
         </tr></thead><tbody>{filtered.map((item) => <tr key={item.id_payroll_detail}>{showRowActions && <td className="row-actions">{canUpdate && <button onClick={() => startEdit(item)} title={t("common.edit")}><Pencil size={15} /></button>}{canDelete && <button onClick={() => removeItem(item)} title={t("common.delete")}><Trash2 size={15} /></button>}{ENTITY_KEY === "user" && canUpdate && <button type="button" onClick={() => resetMfaForItem(item)} title={t("common.mfa_reset", "Restablecer MFA")}>{t("common.mfa_reset", "MFA")}</button>}</td>}
               {canSeeField("id_payroll_detail") && <td><pre className="cell-value">{formatTableValue(item.id_payroll_detail)}</pre></td>}
-              {canSeeField("id_payroll_period") && <td><pre className="cell-value">{formatTableValue(item.id_payroll_period)}</pre></td>}
-              {canSeeField("id_user") && <td><pre className="cell-value">{formatTableValue(item.id_user)}</pre></td>}
+              {canSeeField("id_payroll_period") && <td><pre className="cell-value">{etiquetas.periodo(item.id_payroll_period)}</pre></td>}
+              {canSeeField("id_user") && <td><pre className="cell-value">{etiquetas.usuario(item.id_user)}</pre></td>}
               {canSeeField("gross_salary") && <td><pre className="cell-value">{formatTableValue(item.gross_salary)}</pre></td>}
               {canSeeField("total_earnings") && <td><pre className="cell-value">{formatTableValue(item.total_earnings)}</pre></td>}
               {canSeeField("total_deductions") && <td><pre className="cell-value">{formatTableValue(item.total_deductions)}</pre></td>}
               {canSeeField("net_pay") && <td><pre className="cell-value">{formatTableValue(item.net_pay)}</pre></td>}
-              {canSeeField("created_by") && <td><pre className="cell-value">{formatTableValue(item.created_by)}</pre></td>}
+              {canSeeField("created_by") && <td><pre className="cell-value">{etiquetas.usuario(item.created_by)}</pre></td>}
               {canSeeField("creation_date") && <td><pre className="cell-value">{formatTableValue(item.creation_date)}</pre></td>}
               {canSeeField("last_update_date") && <td><pre className="cell-value">{formatTableValue(item.last_update_date)}</pre></td>}
         </tr>)}</tbody></table></div>}

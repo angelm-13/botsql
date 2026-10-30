@@ -3,6 +3,7 @@ from flask import Blueprint, jsonify, request
 from app.services.team_service import TeamService
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
+from app.utils.field_access import COLUMNAS_DE_AUDITORIA
 
 bp_team = Blueprint('team', __name__, url_prefix='/team')
 ALLOWED_FIELDS = ['id_team', 'team_description', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
@@ -18,7 +19,6 @@ def _actor_has_unrestricted_field_access(user_data: dict) -> bool:
     return bool(
         user_data.get('is_superuser')
         or user_data.get('is_bootstrap_admin')
-        or user_data.get('user_type') == 'admin'
     )
 
 
@@ -67,7 +67,7 @@ def _field_sets_for_actor(user_data: dict) -> tuple[set[str], set[str]]:
     # La llave primaria puede viajar en la respuesta para navegacion interna,
     # acciones de fila y rutas REST, aunque el frontend no la pinte si no fue
     # marcada como visible en el gestor.
-    return visible | set(TECHNICAL_RESPONSE_FIELDS), writable
+    return visible | set(TECHNICAL_RESPONSE_FIELDS) | COLUMNAS_DE_AUDITORIA, writable
 
 
 def _visible_response_fields_for_actor(user_data: dict) -> set[str]:
@@ -109,6 +109,17 @@ def _jsonify_projected_record(user_data: dict, record: dict | None, status: int 
 
 def _jsonify_projected_list(user_data: dict, payload: dict):
     return jsonify(_project_list_payload(payload, _visible_response_fields_for_actor(user_data)))
+
+
+@bp_team.route('/options', methods=['GET'])
+@token_required
+def list_team_options(user_data):
+    """Solo id+nombre de los equipos vigentes, para el selector de equipos de un grafico.
+
+    Sin permiso de entidad a proposito -- igual que `/user/options` y `/incident_type/options` --: quien arma un
+    grafico en el Dashboard elige equipos sin tener el modulo `seguridad`, al que pertenece `team`. Exige sesion.
+    """
+    return jsonify(TeamService.options())
 
 
 @bp_team.route('/', methods=['GET'])

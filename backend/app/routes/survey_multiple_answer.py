@@ -3,6 +3,7 @@ from flask import Blueprint, jsonify, request
 from app.services.survey_multiple_answer_service import SurveyMultipleAnswerService
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
+from app.utils.field_access import COLUMNAS_DE_AUDITORIA
 
 bp_survey_multiple_answer = Blueprint('survey_multiple_answer', __name__, url_prefix='/survey_multiple_answer')
 ALLOWED_FIELDS = ['id_survey_multiple_answer', 'id_survey_question', 'survey_answer_description', 'score', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
@@ -18,7 +19,6 @@ def _actor_has_unrestricted_field_access(user_data: dict) -> bool:
     return bool(
         user_data.get('is_superuser')
         or user_data.get('is_bootstrap_admin')
-        or user_data.get('user_type') == 'admin'
     )
 
 
@@ -67,7 +67,7 @@ def _field_sets_for_actor(user_data: dict) -> tuple[set[str], set[str]]:
     # La llave primaria puede viajar en la respuesta para navegacion interna,
     # acciones de fila y rutas REST, aunque el frontend no la pinte si no fue
     # marcada como visible en el gestor.
-    return visible | set(TECHNICAL_RESPONSE_FIELDS), writable
+    return visible | set(TECHNICAL_RESPONSE_FIELDS) | COLUMNAS_DE_AUDITORIA, writable
 
 
 def _visible_response_fields_for_actor(user_data: dict) -> set[str]:

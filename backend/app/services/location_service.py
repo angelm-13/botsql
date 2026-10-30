@@ -34,6 +34,27 @@ class LocationService(CrudService):
     entity_name = 'location'
 
     @classmethod
+    def options(cls) -> list[dict]:
+        """Solo id+descripcion, para poner nombre a una ubicacion en un vale.
+
+        A proposito sin el permiso de lectura de `location` (modulo de
+        inventario): quien solo SOLICITA material -Supervisor- no administra
+        ubicaciones, pero en su prevale tiene que ver de donde sale lo que pide,
+        y sin esto la lista llegaba vacia y el campo se quedaba en "-".
+        """
+        with transaction_context() as session:
+            filas = (
+                session.query(Location.id_location, Location.location_description)
+                .filter(Location.deletion_date.is_(None))
+                .order_by(Location.location_description)
+                .all()
+            )
+            return [
+                {'id_location': fila[0], 'location_description': fila[1]}
+                for fila in filas
+            ]
+
+    @classmethod
     def _validate(cls, payload: dict, *, location_id=None) -> dict:
         payload = dict(payload or {})
 

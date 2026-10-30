@@ -96,4 +96,8 @@ class LogisticsInventoryService(CrudService):
             # con `errors.permission_denied` -- medido.
             actor = dict(user_data or {})
             actor.setdefault("id_user", user_id or 1)
-            reflejar_cambio(db, fila, anterior, actor, motivo=motivo)
+            fallo = reflejar_cambio(db, fila, anterior, actor, motivo=motivo)
+            if fallo:  # el puente nunca lanza, pero un movimiento perdido no puede ser silencioso
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Logistica no pudo reflejar el movimiento en el nucleo: %s", fallo)

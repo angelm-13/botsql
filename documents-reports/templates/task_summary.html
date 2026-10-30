@@ -35,20 +35,32 @@
         <span class="field-value">{{ format_value(record.get('type'), 'text') }}</span>
       </section>
       <section class="field-card">
+        <span class="field-label">{{ t('fields.task.title') }}</span>
+        <span class="field-value">{{ format_value(record.get('title'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.task.id_proyect') }}</span>
+        <span class="field-value">{{ format_value(record.get('id_proyect'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.task.task_status') }}</span>
+        <span class="field-value">{{ format_value(record.get('task_status'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.task.fase') }}</span>
+        <span class="field-value">{{ format_value(record.get('fase'), 'text') }}</span>
+      </section>
+      <section class="field-card">
+        <span class="field-label">{{ t('fields.task.priority') }}</span>
+        <span class="field-value">{{ format_value(record.get('priority'), 'text') }}</span>
+      </section>
+      <section class="field-card">
         <span class="field-label">{{ t('fields.task.owner') }}</span>
         <span class="field-value">{{ format_value(record.get('owner'), 'text') }}</span>
       </section>
       <section class="field-card">
-        <span class="field-label">{{ t('fields.task.analyst') }}</span>
-        <span class="field-value">{{ format_value(record.get('analyst'), 'text') }}</span>
-      </section>
-      <section class="field-card">
         <span class="field-label">{{ t('fields.task.dependency') }}</span>
         <span class="field-value">{{ format_value(record.get('dependency'), 'text') }}</span>
-      </section>
-      <section class="field-card">
-        <span class="field-label">{{ t('fields.task.leader') }}</span>
-        <span class="field-value">{{ format_value(record.get('leader'), 'text') }}</span>
       </section>
       <section class="field-card">
         <span class="field-label">{{ t('fields.task.validation') }}</span>

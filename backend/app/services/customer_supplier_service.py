@@ -1,5 +1,7 @@
 from decimal import Decimal, InvalidOperation
 
+from sqlalchemy import func
+
 from app.models import CustomerSupplier
 from app.services.base_service import CrudService
 from app.models.session import transaction_context
@@ -50,6 +52,12 @@ class CustomerSupplierService(CrudService):
                     status_code=400,
                     meta={'field': 'credit_limit'},
                 ) from exc
+            if not credit_limit.is_finite():
+                raise AppError(
+                    'validations.customer_supplier.credit_limit.invalid',
+                    status_code=400,
+                    meta={'field': 'credit_limit'},
+                )
             if credit_limit < 0:
                 raise AppError(
                     'validations.customer_supplier.credit_limit.negative',
@@ -64,6 +72,15 @@ class CustomerSupplierService(CrudService):
         if isinstance(value, str):
             return value.strip().lower() in {'1', 'true', 'yes', 'on'}
         return bool(value)
+
+    @staticmethod
+    def _exigir_rfc_para_principal(tax_id) -> None:
+        if not str(tax_id or '').strip():
+            raise AppError(
+                'validations.customer_supplier.principal_tax_id.required',
+                status_code=400,
+                meta={'field': 'tax_id'},
+            )
 
     @classmethod
     def _set_principal_state(cls, item_id, enabled: bool):
@@ -86,10 +103,30 @@ class CustomerSupplierService(CrudService):
             session.flush()
             return item.serialize()
 
+    # El RFC se guarda en mayusculas y sin espacios, para que la busqueda y la
+    # importacion por XML lo encuentren sin importar como se capturo.
+    #
+    # A proposito NO se rechaza un RFC repetido: en multiemisor una misma razon
+    # social puede tener varias fichas emisoras (torredigital-prod: fichas 1 y 31,
+    # las dos con facturas, folios y CSD propios). La regla de unicidad (95c5e64 de
+    # initAngm) queda pendiente de decidir con Tanya si se acota a quien no emite.
+    @classmethod
+    def _normalizar_rfc(cls, payload: dict) -> dict:
+        if 'tax_id' not in payload or payload.get('tax_id') in (None, ''):
+            return payload
+        payload = dict(payload)
+        payload['tax_id'] = ''.join(str(payload['tax_id']).split()).upper()
+        return payload
+
     @classmethod
     def create(cls, payload: dict, user_id: int | None = None):
+        if not str((payload or {}).get('type') or '').strip():
+            raise AppError('validations.customer_supplier.type.required', 400, meta={'field': 'type'})
+        payload = cls._normalizar_rfc(payload)
         payload = cls._validate_logistics_fields(payload)
         is_principal = cls._as_boolean(payload.pop('is_principal', False))
+        if is_principal:  # antes de escribir: un 400 no puede dejar el registro guardado
+            cls._exigir_rfc_para_principal(payload.get('tax_id'))
         created = super().create(payload, user_id=user_id)
         if is_principal:
             return cls._set_principal_state(created['id_customer_supplier'], True)
@@ -97,9 +134,18 @@ class CustomerSupplierService(CrudService):
 
     @classmethod
     def update(cls, item_id, payload: dict, user_id: int | None = None):
+        payload = cls._normalizar_rfc(payload)
         payload = cls._validate_logistics_fields(payload)
         has_principal_value = 'is_principal' in payload
         is_principal = cls._as_boolean(payload.pop('is_principal', False))
+        if has_principal_value and is_principal:
+            if 'tax_id' in payload:
+                rfc = payload.get('tax_id')
+            else:
+                with transaction_context() as session:
+                    actual = session.get(CustomerSupplier, item_id)
+                    rfc = actual.tax_id if actual else None
+            cls._exigir_rfc_para_principal(rfc)
         updated = super().update(item_id, payload, user_id=user_id)
         if has_principal_value:
             return cls._set_principal_state(item_id, is_principal)

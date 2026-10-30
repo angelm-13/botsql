@@ -3,6 +3,7 @@ from flask import Blueprint, jsonify, request
 from app.services.nm_incident_product_service import NmIncidentProductService
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
+from app.utils.field_access import COLUMNAS_DE_AUDITORIA
 
 bp_nm_incident_product = Blueprint('nm_incident_product', __name__, url_prefix='/nm_incident_product')
 ALLOWED_FIELDS = ['id_nm_incident_product', 'id_incident', 'id_product', 'note', 'quantity', 'close_date', 'created_by', 'creation_date', 'last_update_date', 'deletion_date']
@@ -18,7 +19,6 @@ def _actor_has_unrestricted_field_access(user_data: dict) -> bool:
     return bool(
         user_data.get('is_superuser')
         or user_data.get('is_bootstrap_admin')
-        or user_data.get('user_type') == 'admin'
     )
 
 
@@ -67,7 +67,7 @@ def _field_sets_for_actor(user_data: dict) -> tuple[set[str], set[str]]:
     # La llave primaria puede viajar en la respuesta para navegacion interna,
     # acciones de fila y rutas REST, aunque el frontend no la pinte si no fue
     # marcada como visible en el gestor.
-    return visible | set(TECHNICAL_RESPONSE_FIELDS), writable
+    return visible | set(TECHNICAL_RESPONSE_FIELDS) | COLUMNAS_DE_AUDITORIA, writable
 
 
 def _visible_response_fields_for_actor(user_data: dict) -> set[str]:
@@ -184,6 +184,9 @@ def get_nm_incident_product(user_data, id_nm_incident_product):
 @token_required
 @require_entity_permission('nm_incident_product', 'create')
 def create_nm_incident_product(user_data):
+    from app.services.incident_service import require_voucher_flow
+
+    require_voucher_flow(user_data)
     from app.services.incident_service import require_incident_access
 
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
@@ -195,6 +198,9 @@ def create_nm_incident_product(user_data):
 @token_required
 @require_entity_permission('nm_incident_product', 'update')
 def update_nm_incident_product(user_data, id_nm_incident_product):
+    from app.services.incident_service import require_voucher_flow
+
+    require_voucher_flow(user_data)
     from app.services.incident_service import require_incident_access
 
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
@@ -208,5 +214,8 @@ def update_nm_incident_product(user_data, id_nm_incident_product):
 @token_required
 @require_entity_permission('nm_incident_product', 'delete')
 def delete_nm_incident_product(user_data, id_nm_incident_product):
+    from app.services.incident_service import require_voucher_flow
+
+    require_voucher_flow(user_data)
     _require_incident_scope(id_nm_incident_product, user_data)
     return jsonify(NmIncidentProductService.delete(id_nm_incident_product, user_id=user_data.get('id_user')))

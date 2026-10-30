@@ -14,6 +14,11 @@
 .incident-estado.cerrada { background: #dcfce7; color: #14532d; }
 .incident-estado.otro    { background: #f1f5f9; color: #475569; }
 
+/* Foto de la checada (base64 de n8n) en la ventana de dialogo, mas ancha que la
+   de confirmar para que la imagen se vea; no rebasa la pantalla. */
+.dialogo.incident-foto { width: min(720px, 100%); max-height: 90vh; overflow: auto; }
+.incident-foto img { display: block; max-width: 100%; max-height: 70vh; margin: 0 auto 16px; border-radius: 8px; }
+
 /* La ficha del kanban ya agrupa por estado -es su columna-, asi que el color
    va en el filo de la tarjeta: repetirlo en cada tarjeta con una pastilla
    seria decir lo mismo que ya dice la columna en la que esta. */

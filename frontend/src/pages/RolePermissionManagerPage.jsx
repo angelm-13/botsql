@@ -24,6 +24,7 @@ import {
 import { useI18n } from "../i18n";
 import PageHeader from "../components/PageHeader.jsx";
 import { fetchAllPages } from "../utils/fetchAllPages";
+import { useDialogo } from "../dialogo/useDialogo.js";
 
 // Alcance por accion: reemplaza el viejo booleano por 4 niveles. Los valores
 // son bits (1/2/4) para poder combinarlos a futuro (3/5/6/7) sin volver a
@@ -52,6 +53,27 @@ const ENTITY_ACTIONS = [
   { key: "delete", scopeField: "scope_delete", label: "Eliminar" }
 ];
 
+// Propios y Mis grupos solo significan algo para un registro con dueno. Una
+// capacidad (catalogo "actions_only") y las pantallas de administracion solo
+// admiten Sin acceso o Todos; el backend lo valida tambien.
+// Solo los modulos con `supports_owner_scope` filtran de verdad por Propios /
+// Mis grupos; en los demas 1 y 2 se comportarian como Todos, asi que no se
+// ofrecen. Un 1 o 2 que ya estaba guardado se conserva a la vista (marcado "sin
+// efecto") para no cambiarlo en silencio al guardar el rol.
+const ONLY_ALL_OPTIONS = SCOPE_OPTIONS.filter((option) => option.value === SCOPE_NONE || option.value === SCOPE_ALL);
+
+function supportsOwnerScope(entity) {
+  return Boolean(entity && entity.supports_owner_scope);
+}
+
+function scopeOptionsFor(entity, currentValue) {
+  if (supportsOwnerScope(entity)) return SCOPE_OPTIONS;
+  const current = Number(currentValue || 0);
+  if (current === SCOPE_NONE || current === SCOPE_ALL) return ONLY_ALL_OPTIONS;
+  const legacy = SCOPE_OPTIONS.find((option) => option.value === current);
+  return legacy ? [...ONLY_ALL_OPTIONS, { ...legacy, noEffect: true }] : ONLY_ALL_OPTIONS;
+}
+
 const EMPTY_ENTITY_SCOPES = { create: SCOPE_NONE, read: SCOPE_NONE, update: SCOPE_NONE, delete: SCOPE_NONE };
 
 function entityScopeValue(entityScopes, actionKey) {
@@ -63,6 +85,16 @@ function hasAnyScope(entityScopes) {
 }
 
 const FIELD_VISIBLE_BIT = 2;
+// Los mismos bits que el backend consulta para permitir escribir un campo
+// (FIELD_WRITE_BITS en app/routes/task.py) y los mismos que deriva la
+// resiembra de permisos (backend/scripts/seed_module_permissions.py) para
+// una fila nueva. Un campo visible hereda "escribible" del alcance de la
+// ENTIDAD (Crear/Actualizar de la tabla de arriba) -- no hay, ni tiene
+// sentido que haya, un control aparte de "editable" por campo: si el rol
+// puede crear/actualizar la entidad, puede escribir cualquier campo que
+// tenga marcado como visible.
+const FIELD_CREATE_BIT = 1;
+const FIELD_UPDATE_BIT = 4;
 const INTERNAL_PERMISSION_ENTITIES = new Set(["entity_permission", "nm_field_permission", "user_mfa", "event_log", "nm_team_user"]);
 const SYSTEM_FIELD_NAMES = new Set(["created_by", "creation_date", "last_update_date", "deletion_date"]);
 const GROUP_ICON_OPTIONS = [
@@ -150,6 +182,7 @@ async function runInBatches(items, worker, batchSize = SAVE_BATCH_SIZE) {
 
 export default function RolePermissionManagerPage() {
   const { t } = useI18n();
+  const dialogo = useDialogo();
   const currentUser = JSON.parse(localStorage.getItem("user") || "null");
   const [catalog, setCatalog] = useState([]);
   const [roles, setRoles] = useState([]);
@@ -174,6 +207,8 @@ export default function RolePermissionManagerPage() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [moduleFilter, setModuleFilter] = useState("");
+  const [bulkAction, setBulkAction] = useState("");
+  const [bulkScope, setBulkScope] = useState(SCOPE_ALL);
   const [groupFilter, setGroupFilter] = useState("");
 
   useEffect(() => {
@@ -453,7 +488,7 @@ export default function RolePermissionManagerPage() {
     }
     const selected = roles.find((role) => Number(role.id_permission) === Number(selectedRoleId));
     const label = selected ? roleLabel(selected) : selectedRoleId;
-    if (!window.confirm(t("common.confirm_delete_role", `¿Eliminar rol ${label}? Se eliminarán también sus permisos configurados.`))) return;
+    if (!(await dialogo.confirmar(t("common.confirm_delete_role", `¿Eliminar rol ${label}? Se eliminarán también sus permisos configurados.`)))) return;
     setSavingRole(true); setError(""); setNotice("");
     try {
       const roleId = Number(selectedRoleId);
@@ -551,37 +586,46 @@ export default function RolePermissionManagerPage() {
     });
   }
 
-  function applyBulkEntityAction(actionKey) {
+  function applyBulkEntityAction() {
+    const actionKey = bulkAction;
     if (!selectedRoleId || !actionKey) return;
-    // Mismas 6 opciones que ya ofrecia el bulk de antes, reinterpretadas con
-    // "Todos" (SCOPE_ALL) como el nivel que aplican -- paridad con el
-    // comportamiento anterior, sin explotar a una variante por cada nivel de
-    // alcance en esta entrega.
-    const actionScopes = {
-      all_crud: { create: SCOPE_ALL, read: SCOPE_ALL, update: SCOPE_ALL, delete: SCOPE_ALL },
-      clear_everything: { create: SCOPE_NONE, read: SCOPE_NONE, update: SCOPE_NONE, delete: SCOPE_NONE },
-      only_read: { create: SCOPE_NONE, read: SCOPE_ALL, update: SCOPE_NONE, delete: SCOPE_NONE },
-      only_create: { create: SCOPE_ALL, read: SCOPE_NONE, update: SCOPE_NONE, delete: SCOPE_NONE },
-      only_update: { create: SCOPE_NONE, read: SCOPE_NONE, update: SCOPE_ALL, delete: SCOPE_NONE },
-      only_delete: { create: SCOPE_NONE, read: SCOPE_NONE, update: SCOPE_NONE, delete: SCOPE_ALL }
+    // Cada accion se aplica con el NIVEL elegido (Propios, Mis grupos o Todos).
+    // Una capacidad o pantalla de administracion no admite Propios/Mis grupos:
+    // ahi el nivel elegido se aplica como Todos.
+    const level = Number(bulkScope) || SCOPE_ALL;
+    const shape = {
+      all_crud: { create: true, read: true, update: true, delete: true },
+      clear_everything: { create: false, read: false, update: false, delete: false },
+      only_read: { create: false, read: true, update: false, delete: false },
+      only_create: { create: true, read: false, update: false, delete: false },
+      only_update: { create: false, read: false, update: true, delete: false },
+      only_delete: { create: false, read: false, update: false, delete: true }
     };
-    if (!(actionKey in actionScopes)) return;
-    const nextScopes = actionScopes[actionKey];
+    if (!(actionKey in shape)) return;
+    const active = shape[actionKey];
     setEntityMatrix((prev) => {
       const next = { ...prev };
       catalog.forEach((entity) => {
         const entityName = getEntityName(entity);
-        if (entityName) next[entityName] = { ...nextScopes };
+        if (!entityName) return;
+        const allowed = supportsOwnerScope(entity) ? level : SCOPE_ALL;
+        next[entityName] = {
+          create: active.create ? allowed : SCOPE_NONE,
+          read: active.read ? allowed : SCOPE_NONE,
+          update: active.update ? allowed : SCOPE_NONE,
+          delete: active.delete ? allowed : SCOPE_NONE
+        };
       });
       return next;
     });
-    if (!hasAnyScope(nextScopes)) {
+    if (actionKey === "clear_everything") {
       setFieldMatrix((prev) => {
         const next = { ...prev };
         allManagedFields.forEach((field) => { delete next[getFieldKey(field)]; });
         return next;
       });
     }
+    setBulkAction("");
   }
 
   function validateVisibleFieldsBeforeSave() {
@@ -651,7 +695,7 @@ export default function RolePermissionManagerPage() {
     if (!fieldId) return;
     const existing = fieldPermissions.find((row) => Number(row.id_permission) === roleId && Number(row.id_field) === Number(fieldId));
     if (controlType > 0) {
-      const payload = { id_permission: roleId, id_field: Number(fieldId), control_type: String(FIELD_VISIBLE_BIT) };
+      const payload = { id_permission: roleId, id_field: Number(fieldId), control_type: String(controlType) };
       if (existing?.id_nm_field_permission) await updateNmFieldPermission(existing.id_nm_field_permission, payload);
       else await createNmFieldPermission(payload);
     } else if (existing?.id_nm_field_permission) {
@@ -674,9 +718,19 @@ export default function RolePermissionManagerPage() {
       const createdFields = new Map();
       await runInBatches(allManagedFields, async (field) => {
         const entityName = field.entity_name || field.table_name;
-        const entityEnabled = hasAnyScope(entityMatrix[entityName]);
+        const entityScopes = entityMatrix[entityName] || EMPTY_ENTITY_SCOPES;
+        const entityEnabled = hasAnyScope(entityScopes);
         const fieldKey = getFieldKey(field);
-        const controlType = entityEnabled ? Number(fieldMatrix[fieldKey] || 0) : 0;
+        const isVisible = entityEnabled && hasBit(fieldMatrix[fieldKey], FIELD_VISIBLE_BIT);
+        // Escribible se deriva del alcance de la ENTIDAD, igual que en la
+        // resiembra del backend -- no del checkbox, que solo dice si el
+        // campo se ve. Un campo oculto no lleva bits de escritura tampoco:
+        // sin fila de permiso no hay ni lectura ni escritura para el
+        // formulario generico (ver `_field_sets_for_actor` en
+        // app/routes/task.py), y asi se mantiene igual que antes.
+        const writeBits = (entityScopeValue(entityScopes, "create") > 0 ? FIELD_CREATE_BIT : 0)
+          | (entityScopeValue(entityScopes, "update") > 0 ? FIELD_UPDATE_BIT : 0);
+        const controlType = isVisible ? (FIELD_VISIBLE_BIT | writeBits) : 0;
         if (controlType > 0 || getFieldId(field)) {
           const fieldId = await resolveFieldRecord(field, createdFields);
           if (fieldId) await saveFieldPermission(fieldId, controlType);
@@ -701,6 +755,20 @@ export default function RolePermissionManagerPage() {
   function entityLabel(entity) {
     const name = getEntityName(entity);
     return t(`menu.${name}`, entity?.label || humanizeLabel(name));
+  }
+
+  // Lo que el campo ES en la base, no solo como se llama: a que tabla apunta
+  // cuando es llave foranea, y si la tabla lo exige. Sin esto, decidir si un
+  // rol ve `id_location_from` obliga a abrir el esquema para saber que es una
+  // ubicacion -- y el catalogo ya lo sabe, porque se deriva de los modelos.
+  function fieldMeta(field) {
+    const partes = [];
+    if (field?.is_foreign && field?.reference_table) {
+      const destino = t(`menu.${field.reference_table}`, humanizeLabel(field.reference_table));
+      partes.push(`→ ${destino}`);
+    }
+    if (field?.is_required) partes.push(t("common.field_required", "obligatorio"));
+    return partes.join(" · ");
   }
 
   function fieldLabel(field) {
@@ -777,17 +845,33 @@ export default function RolePermissionManagerPage() {
             <div className="permission-toolbar">
               <label className="field compact-field">
                 <span>{t("common.bulk_module_actions", "Acciones masivas de módulos")}</span>
-                <select value="" onChange={(event) => { applyBulkEntityAction(event.target.value); event.target.value = ""; }} disabled={!selectedRoleId}>
+                <select value={bulkAction} onChange={(event) => setBulkAction(event.target.value)} disabled={!selectedRoleId}>
                   <option value="">{t("common.select_bulk_action", "Selecciona una acción")}</option>
-                  <option value="all_crud">{t("common.mark_all_crud", "Marcar todo CRUD (Todos)")}</option>
-                  <option value="clear_everything">{t("common.clear_everything", "Desmarcar todo (Sin acceso)")}</option>
-                  <option value="only_read">{t("common.mark_only_read", "Marcar solo Leer (Todos)")}</option>
-                  <option value="only_create">{t("common.mark_only_create", "Marcar solo Crear (Todos)")}</option>
-                  <option value="only_update">{t("common.mark_only_update", "Marcar solo Actualizar (Todos)")}</option>
-                  <option value="only_delete">{t("common.mark_only_delete", "Marcar solo Eliminar (Todos)")}</option>
+                  <option value="all_crud">{t("common.mark_all_crud", "Todo CRUD")}</option>
+                  <option value="clear_everything">{t("common.clear_everything", "Quitar todo (Sin acceso)")}</option>
+                  <option value="only_read">{t("common.mark_only_read", "Solo Leer")}</option>
+                  <option value="only_create">{t("common.mark_only_create", "Solo Crear")}</option>
+                  <option value="only_update">{t("common.mark_only_update", "Solo Actualizar")}</option>
+                  <option value="only_delete">{t("common.mark_only_delete", "Solo Eliminar")}</option>
                 </select>
-                <small className="muted-text">{t("common.bulk_actions_all_modules_hint", "Se aplican a todos los módulos, aunque haya filtros activos.")}</small>
               </label>
+              <label className="field compact-field">
+                <span>{t("common.bulk_scope_level", "Alcance a aplicar")}</span>
+                <select value={bulkScope} onChange={(event) => setBulkScope(Number(event.target.value))} disabled={!selectedRoleId || bulkAction === "clear_everything"}>
+                  {SCOPE_OPTIONS.filter((option) => option.value !== SCOPE_NONE).map((option) => (
+                    <option key={option.value} value={option.value}>{t(`common.scope_${option.key}`, option.label)}</option>
+                  ))}
+                </select>
+              </label>
+              <button className="button primary" type="button" onClick={applyBulkEntityAction} disabled={!selectedRoleId || !bulkAction}>{t("common.apply_bulk_scope", "Aplicar alcance masivo")}</button>
+              <small className="muted-text">{t("common.bulk_actions_all_modules_hint", "Se aplican a todos los módulos, aunque haya filtros activos.")} {t("common.bulk_scope_only_all_hint", "Propios y Mis grupos solo se aplican a los módulos que los soportan; en los demás se aplica Todos.")}</small>
+            </div>
+            <div className="scope-legend" aria-label={t("common.scope_legend", "Alcance")}>
+              <strong>{t("common.scope_legend", "Alcance")}:</strong>
+              {SCOPE_OPTIONS.map((option) => (
+                <span key={option.value} className={`scope-select ${option.dotClass}`}><span className="scope-dot" aria-hidden="true" />{t(`common.scope_${option.key}`, option.label)}</span>
+              ))}
+              <small className="muted-text">{t("common.scope_groups_hint", "Mis grupos usa los equipos de Seguridad > Equipos; quien no está en ningún equipo solo ve lo propio.")}</small>
             </div>
             <div className="permission-module-filters" role="search" aria-label={t("common.module_filters", "Filtros de módulos")}>
               <label className="field permission-module-search">
@@ -807,6 +891,9 @@ export default function RolePermissionManagerPage() {
                 {(moduleFilter || groupFilter) && <button className="button ghost" type="button" onClick={() => { setModuleFilter(""); setGroupFilter(""); }}><X size={15} />{t("common.clear_filters", "Limpiar filtros")}</button>}
               </div>
             </div>
+            <datalist id="menu-group-options">
+              {moduleGroupOptions.groups.map((groupName) => <option key={groupName} value={groupName} />)}
+            </datalist>
             <div className="permission-matrix-scroll">
               <table>
                 <thead>
@@ -835,8 +922,8 @@ export default function RolePermissionManagerPage() {
                                 onChange={(event) => setEntityScope(entityName, action.key, event.target.value)}
                                 disabled={!selectedRoleId}
                               >
-                                {SCOPE_OPTIONS.map((option) => (
-                                  <option key={option.value} value={option.value}>{t(`common.scope_${option.key}`, option.label)}</option>
+                                {scopeOptionsFor(entity, value).map((option) => (
+                                  <option key={option.value} value={option.value}>{t(`common.scope_${option.key}`, option.label)}{option.noEffect ? ` (${t("common.scope_no_effect", "sin efecto")})` : ""}</option>
                                 ))}
                               </select>
                             </span>
@@ -844,7 +931,7 @@ export default function RolePermissionManagerPage() {
                         );
                       })}
                       <td><select aria-label={`${t("common.location", "Ubicación")} ${entityLabel(entity)}`} value={navigation.menu_location || "sidebar"} onChange={(event) => setNavigationValue(entityName, "menu_location", event.target.value)} onClick={(event) => event.stopPropagation()} disabled={navigationDisabled}><option value="sidebar">{t("common.vertical_menu", "Menú vertical")}</option><option value="settings">{t("common.settings_menu", "Engrane")}</option><option value="hidden">{t("common.do_not_show", "No mostrar")}</option></select></td>
-                      <td><input aria-label={`${t("common.group", "Grupo")} ${entityLabel(entity)}`} placeholder={t("common.group_placeholder", "Ej. Contabilidad")} value={navigation.menu_group || ""} onChange={(event) => setNavigationValue(entityName, "menu_group", event.target.value)} onClick={(event) => event.stopPropagation()} disabled={navigationDisabled} /></td>
+                      <td><input list="menu-group-options" aria-label={`${t("common.group", "Grupo")} ${entityLabel(entity)}`} placeholder={t("common.group_placeholder", "Ej. Contabilidad")} value={navigation.menu_group || ""} onChange={(event) => setNavigationValue(entityName, "menu_group", event.target.value)} onClick={(event) => event.stopPropagation()} disabled={navigationDisabled} /></td>
                       <td><input aria-label={`${t("common.label", "Etiqueta")} ${entityLabel(entity)}`} placeholder={entityLabel(entity)} value={navigation.menu_label || ""} onChange={(event) => setNavigationValue(entityName, "menu_label", event.target.value)} onClick={(event) => event.stopPropagation()} disabled={navigationDisabled} /></td>
                       <td><input className="menu-order-input" aria-label={`${t("common.order", "Orden")} ${entityLabel(entity)}`} type="number" min="0" value={navigation.menu_order ?? 100} onChange={(event) => setNavigationValue(entityName, "menu_order", event.target.value)} onClick={(event) => event.stopPropagation()} disabled={navigationDisabled} /></td>
                     </tr>
@@ -873,7 +960,10 @@ export default function RolePermissionManagerPage() {
                   const entityEnabled = hasAnyScope(entityMatrix[selectedEntity]);
                   return (
                     <div className="field-permission-row" key={fieldKey}>
-                      <span>{fieldLabel(field)}</span>
+                      <span className="field-permission-name">
+                        {fieldLabel(field)}
+                        {fieldMeta(field) && <small className="field-permission-meta">{fieldMeta(field)}</small>}
+                      </span>
                       <label className="checkbox-inline"><input type="checkbox" checked={hasBit(value, FIELD_VISIBLE_BIT)} onChange={() => setFieldVisible(fieldKey)} disabled={!selectedRoleId || !entityEnabled} /></label>
                     </div>
                   );

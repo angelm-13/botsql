@@ -1,4 +1,5 @@
 from app.models.base import Base
+from app.models.activity_log_worker import ActivityLogWorker
 from app.models.bank import Bank
 from app.models.bank_account import BankAccount
 from app.models.bank_statement import BankStatement, BankStatementMovement
@@ -73,12 +74,19 @@ from app.models.nm_incident_product import NmIncidentProduct
 from app.models.nm_permission_kpi import NmPermissionKpi
 from app.models.nm_survey_user import NmSurveyUser
 from app.models.nm_template_task import NmTemplateTask
+from app.models.notification import Notification
 from app.models.pac_config import PacConfig
 from app.models.password_reset_token import PasswordResetToken
 from app.models.payroll_concept import PayrollConcept
 from app.models.payroll_detail import PayrollDetail
 from app.models.payroll_movement import PayrollMovement
 from app.models.payroll_period import PayrollPeriod
+from app.models.attendance_record import AttendanceRecord
+from app.models.attendance_employee_link import AttendanceEmployeeLink
+from app.models.payroll_isr_bracket import PayrollIsrBracket
+from app.models.payroll_parameter import PayrollParameter
+from app.models.work_schedule import EmployeeSchedule, PayrollHoliday, WorkSchedule, WorkScheduleDay
+from app.models.employee_leave import EmployeeLeave
 from app.models.permission import Permission
 from app.models.pos import (
 	PosCashSession,
@@ -104,6 +112,11 @@ from app.models.product_sale_config import ProductSaleConfig
 from app.models.proyect import Proyect
 from app.models.proyect_document import ProyectDocument
 from app.models.proyect_event import ProyectEvent
+from app.models.proyect_material_need import ProyectMaterialNeed
+from app.models.purchase_order import (
+    PurchaseBudget, PurchaseBudgetEvent, PurchaseEvent, PurchaseOrder, PurchaseOrderLine,
+    PurchasePolicy, PurchaseVoucher,
+)
 from app.models.proyect_payment import ProyectPayment
 from app.models.quotation_comment import QuotationComment
 from app.models.restaurant import (
@@ -127,14 +140,13 @@ from app.models.status import Status
 from app.models.sat_product_key import SatProductKey
 from app.models.stamping_operation import StampingOperation
 from app.models.subdepartment import Subdepartment
+from app.models.supervisor_activity_log import SupervisorActivityLog
 from app.models.survey_multiple_answer import SurveyMultipleAnswer
 from app.models.survey_question import SurveyQuestion
 from app.models.task import Task
 from app.models.team import Team
 from app.models.nm_team_user import NmTeamUser
-from app.models.notification import Notification
-from app.models.supervisor_activity_log import SupervisorActivityLog
-from app.models.supervisor_daily_attachment import SupervisorDailyAttachment
+from app.models.invoice_cfdi_xml import InvoiceCfdiXml
 from app.models.task_note import TaskNote
 from app.models.task_type import TaskType
 from app.models.template import Template
@@ -144,7 +156,7 @@ from app.models.unit import Unit
 from app.models.user import User
 from app.models.user_mfa import UserMfa
 
-__all__ = ['Base', 'Appointment', 'AppointmentType', 'AvailabilityOverride', 'AvailabilityRule', 'Bank', 'BankAccount', 'BankStatement', 'BankStatementMovement', 'Brand', 'CalendarProfile', 'CfdiRelation', 'CustomerContact', 'CustomerSupplier', 'Department', 'Document', 'DocumentCategory', 'DocumentRelation', 'DocumentVersion', 'EntityPermission', 'EventLog', 'Field', 'FiscalAccount', 'FiscalRecord', 'FiscalStamp', 'Incident', 'IncidentDetail', 'IncidentType', 'InventoryAsset', 'InventoryAssetEvent', 'InventoryLedger', 'InventoryLot', 'InventoryLotBalance', 'NmInventoryLedgerLot', 'InventoryStatus', 'InventoryStock', 'Invoice', 'InvoiceCancellation', 'InvoiceFolioCounter', 'InvoiceMaterialService', 'InvoicePayment', 'KpiDashboard', 'KpiDashboardWidget', 'KpiDashboardWidgetKpi', 'KpiDefinition', 'KpiSnapshot', 'LaboratoryEquipment', 'LaboratoryServiceOrder', 'LaboratoryServiceOrderStatusHistory', 'Level', 'Location', 'LocationType', 'LogisticsAddress', 'LogisticsBranch', 'LogisticsContact', 'LogisticsContract', 'LogisticsEvidence', 'LogisticsFile', 'LogisticsIncident', 'LogisticsInventory', 'LogisticsLocation', 'LogisticsMaintenance', 'LogisticsOperator', 'LogisticsQuotation', 'LogisticsRack', 'LogisticsRate', 'LogisticsReceivable', 'LogisticsServiceRequest', 'LogisticsShipment', 'LogisticsTrailer', 'LogisticsTrip', 'LogisticsUnit', 'LogisticsWarehouse', 'Material', 'MaterialAttribute', 'MaterialAttributeOption', 'MaterialComponent', 'MaterialType', 'NmMaterialAttribute', 'Movement', 'NmFieldPermission', 'NmIncidentProduct', 'NmPermissionKpi', 'NmSurveyUser', 'NmTemplateTask', 'PacConfig', 'PasswordResetToken', 'PayrollConcept', 'PayrollDetail', 'PayrollMovement', 'PayrollPeriod', 'Permission', 'PosCashSession', 'PosCashWithdrawal', 'PosCreditAccount', 'PosCreditMovement', 'PosExpense', 'PosExpenseCategory', 'PosLoyaltyAccount', 'PosLoyaltyMovement', 'PosPayment', 'PosProductVariant', 'PosPromotion', 'PosPromotionRedemption', 'PosPurchaseOrder', 'PosPurchaseOrderItem', 'PosSale', 'PosSaleItem', 'Product', 'ProductFamily', 'ProductSaleConfig', 'Proyect', 'ProyectDocument', 'ProyectEvent', 'ProyectPayment', 'PublicApiKey', 'QuotationComment', 'RestaurantCashSession', 'RestaurantCategory', 'RestaurantDish', 'RestaurantGuisado', 'RestaurantInventoryItem', 'RestaurantInventoryMovement', 'RestaurantOrder', 'RestaurantOrderItem', 'RestaurantRecipeItem', 'RestaurantReservation', 'RestaurantTable', 'RestaurantVisit', 'RestaurantWaiter', 'SatProductKey', 'Service', 'StampingOperation', 'Status', 'Subdepartment', 'SurveyMultipleAnswer', 'SurveyQuestion', 'Task', 'TaskNote', 'TaskType', 'Team', 'NmTeamUser', 'Notification', 'SupervisorActivityLog', 'SupervisorDailyAttachment', 'Template', 'Theme', 'Ticket', 'Unit', 'User', 'UserMfa']
+__all__ = ['Base', 'ActivityLogWorker', 'Appointment', 'AppointmentType', 'AvailabilityOverride', 'AvailabilityRule', 'Bank', 'BankAccount', 'BankStatement', 'BankStatementMovement', 'Brand', 'CalendarProfile', 'CfdiRelation', 'CustomerContact', 'CustomerSupplier', 'Department', 'Document', 'DocumentCategory', 'DocumentRelation', 'DocumentVersion', 'EntityPermission', 'EventLog', 'Field', 'FiscalAccount', 'FiscalRecord', 'FiscalStamp', 'Incident', 'IncidentDetail', 'IncidentType', 'InventoryAsset', 'InventoryAssetEvent', 'InventoryLedger', 'InventoryLot', 'InventoryLotBalance', 'NmInventoryLedgerLot', 'InventoryStatus', 'InventoryStock', 'Invoice', 'InvoiceCancellation', 'InvoiceCfdiXml', 'InvoiceFolioCounter', 'InvoiceMaterialService', 'InvoicePayment', 'KpiDashboard', 'KpiDashboardWidget', 'KpiDashboardWidgetKpi', 'KpiDefinition', 'KpiSnapshot', 'LaboratoryEquipment', 'LaboratoryServiceOrder', 'LaboratoryServiceOrderStatusHistory', 'Level', 'Location', 'LocationType', 'LogisticsAddress', 'LogisticsBranch', 'LogisticsContact', 'LogisticsContract', 'LogisticsEvidence', 'LogisticsFile', 'LogisticsIncident', 'LogisticsInventory', 'LogisticsLocation', 'LogisticsMaintenance', 'LogisticsOperator', 'LogisticsQuotation', 'LogisticsRack', 'LogisticsRate', 'LogisticsReceivable', 'LogisticsServiceRequest', 'LogisticsShipment', 'LogisticsTrailer', 'LogisticsTrip', 'LogisticsUnit', 'LogisticsWarehouse', 'Material', 'MaterialAttribute', 'MaterialAttributeOption', 'MaterialComponent', 'MaterialType', 'NmMaterialAttribute', 'Movement', 'NmFieldPermission', 'NmIncidentProduct', 'NmPermissionKpi', 'NmSurveyUser', 'NmTemplateTask', 'Notification', 'PacConfig', 'PasswordResetToken', 'PayrollConcept', 'PayrollDetail', 'PayrollMovement', 'PayrollPeriod', 'AttendanceRecord', 'AttendanceEmployeeLink', 'PayrollIsrBracket', 'PayrollParameter', 'WorkSchedule', 'WorkScheduleDay', 'EmployeeSchedule', 'PayrollHoliday', 'EmployeeLeave', 'Permission', 'PosCashSession', 'PosCashWithdrawal', 'PosCreditAccount', 'PosCreditMovement', 'PosExpense', 'PosExpenseCategory', 'PosLoyaltyAccount', 'PosLoyaltyMovement', 'PosPayment', 'PosProductVariant', 'PosPromotion', 'PosPromotionRedemption', 'PosPurchaseOrder', 'PosPurchaseOrderItem', 'PosSale', 'PosSaleItem', 'Product', 'ProductFamily', 'ProductSaleConfig', 'Proyect', 'ProyectDocument', 'ProyectEvent', 'ProyectMaterialNeed', 'ProyectPayment', 'PurchaseBudget', 'PurchaseBudgetEvent', 'PurchaseEvent', 'PurchaseOrder', 'PurchaseOrderLine', 'PurchasePolicy', 'PurchaseVoucher', 'PublicApiKey', 'QuotationComment', 'RestaurantCashSession', 'RestaurantCategory', 'RestaurantDish', 'RestaurantGuisado', 'RestaurantInventoryItem', 'RestaurantInventoryMovement', 'RestaurantOrder', 'RestaurantOrderItem', 'RestaurantRecipeItem', 'RestaurantReservation', 'RestaurantTable', 'RestaurantVisit', 'RestaurantWaiter', 'SatProductKey', 'Service', 'StampingOperation', 'Status', 'Subdepartment', 'SupervisorActivityLog', 'SurveyMultipleAnswer', 'SurveyQuestion', 'Task', 'TaskNote', 'TaskType', 'Team', 'NmTeamUser', 'Template', 'Theme', 'Ticket', 'Unit', 'User', 'UserMfa']
 
 def _make_foreign_keys_deferrable() -> int:
     """Marca todas las llaves foraneas como diferibles, comprobadas de inmediato.

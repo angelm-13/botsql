@@ -360,6 +360,60 @@ Ademas del CRUD estandar, las superficies principales son:
   nocion de dueno, y tratara "Propios" como "Todos" en los modulos que no
   tienen ningun concepto de dueno (la mayoria de los catalogos). No asumir
   que ya filtra solo porque el gestor ya ofrece la opcion.
+- **Regla de negocio del alcance (Fase 2 minima, 2026-10-07)** -- `app/utils/scope.py`:
+  - El valor es una MASCARA DE BITS (la validacion admite 0..7): `1` Propios,
+    `2` Mis grupos, `4` Todos; 3 = Propios + Mis grupos; cualquier valor con
+    el bit 4 ve todo.
+  - **Propios** = el registro cuyo dueno es el actor. **Mis grupos** = el dueno
+    es miembro de algun equipo (`team`/`nm_team_user`, sin bajas) del que el
+    actor tambien es miembro (union de todos sus equipos); quien no esta en
+    ningun equipo solo se tiene a si mismo. **Todos** = sin filtro.
+  - Quien es el "dueno" lo define cada modulo. Vales de almacen: responsable
+    (`id_user`), capturista (`created_by`) o quien recoge la herramienta de un
+    renglon (`id_user_delivered_to`); con Mis grupos en `warehouse_prevoucher`,
+    tambien los companeros de equipo (`warehouse_voucher_service._del_solicitante`).
+    Incidencias y bitacora conservan su filtro propio (`scoped_incident_query`),
+    que NO lee `scope_*`. **Proyectos si lo lee, desde 2026-10-16**: para un rol
+    sin capacidad de proyecto (ni `project_authorization` ni `project_execution`),
+    `_scoped_query` respeta `proyect.scope_read` (Todos = sin filtro, Mis grupos =
+    su equipo, Propios = lo propio) y `update_project` filtra por dueno con
+    `scope_update`, igual que `delete_project`. Quien autoriza o ejecuta conserva
+    sus reglas de flujo (ver todo / ver lo libre y lo tomado).
+  - **Solo esta conectado en vales.** En el resto de modulos 1/2/4 siguen
+    permitiendo por igual (el guardia es booleano). No ofrecer Propios/Mis
+    grupos en un rol de relevo (Gerente, Almacenista, Compras, Jefe de taller):
+    autorizar, entregar, devolver, aprobar y recibir las hace alguien que no es
+    el dueno del registro.
+  - **Que modulos ofrecen Propios/Mis grupos**: solo los de
+    `ENTIDADES_CON_ALCANCE_DE_DUENO` (`utils/scope.py`: `warehouse_prevoucher` y
+    `kpi_definition`, `proyect`, `incident`, `daily_activity_log`); en estos tres
+    ultimos, que ya tenian su regla de dueno por capacidad, la celda AMPLIA:
+    Mis grupos suma lo de los companeros de equipo (`utils/scope.companeros`).
+    En `incident` y `daily_activity_log` Propios y Todos dejan la regla como
+    estaba; en `proyect` (rol sin capacidad de proyecto) Todos ya SI quita el
+    filtro -un Supervisor en Todos ve todos los proyectos: antes de promover hay
+    que medir con `scripts/medir_alcance_de_proyectos.py` y pasar a Propios en el
+    Gestor a quien no deba-; el catalogo lo expone como `supports_owner_scope` y el
+    Gestor solo ofrece Sin acceso/Todos en los demas (un 1/2 ya guardado se
+    muestra "sin efecto" y no se cambia en silencio). Para sumar un modulo hay
+    que declarar su columna de dueno en el servicio y agregarlo a esa lista.
+    Capacidades (`actions_only`) y pantallas de administracion (`permission`,
+    `entity_permission`, `nm_field_permission`, `field`, `team`, `nm_team_user`)
+    solo admiten Sin acceso o Todos; lo valida `EntityPermissionService` (400
+    `errors.permission_scope_only_all`, solo sobre valores que CAMBIAN).
+    Anti-bloqueo: un administrador no puede quitar a su propio rol Leer/Actualizar
+    sobre `entity_permission` (409 `errors.permission_manager_lockout`).
+  - Tambien conectado: **KPIs** (`routes/kpi.py`; con Propios/Mis grupos en
+    `kpi_definition` solo se ven las cifras de las personas cubiertas, y un KPI
+    sin dimension de empleado exige Todos), **expedientes de vale archivados como
+    `document`** (`DocumentManagementService._sin_vales_ajenos`, sigue el alcance
+    del vale). La **baja de usuario** (bloquear login y token de quien tiene
+    `deletion_date`) sigue en desarrollo y no esta en esta entrega.
+  - Pendiente: filtrado generico en `CrudService` (ni `list` ni `get` reciben
+    actor; cada modulo con dueno debe declararlo), definicion de dueno para
+    facturas/clientes, comprobantes de compra (sin filtro por fila en
+    `purchase_order`, igual que su listado), y que `DELETE /user` sigue siendo
+    fisico (la baja logica no tiene ruta propia todavia).
 - **`Team`/`NmTeamUser`** (equipo de usuarios, modulo `seguridad`): entidad
   nueva para agrupar usuarios, pensada como base de "Mis grupos" de arriba.
   Distinta de la columna `entity_permission.menu_group`, que es solo

@@ -13,6 +13,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 os.environ.setdefault("TESTING", "1")
+# Las pruebas son un entorno que NO es produccion (is_production falla cerrado).
+os.environ.setdefault("APP_ENV", "testing")
 os.environ.setdefault("JWT_SECRET", "test-secret")
 os.environ.setdefault("JWT_SS", "test-secret")
 os.environ.setdefault("MFA_ISSUER", "TYAKXA Test")

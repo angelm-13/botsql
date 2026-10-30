@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError, StatementError
 import bcrypt
 from app.models.session import transaction_context
 from app.utils.errors import AppError
+from app.services.related_records import delete_has_related_records_error
 from app.validations.validator import validate_payload
 
 
@@ -116,9 +117,17 @@ class CrudService:
                 payload[name] = now
 
 
+    # Acciones de CRUD de esta entidad que NO dejan asiento. El registro de
+    # eventos se salta solo el alta (ver EventLogService): editar o borrar un
+    # asiento si tiene que quedar asentado.
+    acciones_sin_asiento: frozenset = frozenset()
+
+    # Orden del listado cuando la pantalla no pide uno (p. ej. '-creation_date').
+    orden_por_omision: str | None = None
+
     @classmethod
     def _audit_enabled(cls) -> bool:
-        return cls.entity_name != 'event_log'
+        return True
 
     @staticmethod
     def _redact_audit_value(field_name: str, value):
@@ -185,7 +194,7 @@ class CrudService:
 
     @classmethod
     def _write_event_log(cls, session, *, action: str, actor_id: int | None, before=None, after=None, field_name: str = '*') -> None:
-        if not cls._audit_enabled():
+        if not cls._audit_enabled() or action in cls.acciones_sin_asiento:
             return
         try:
             from app.models import EventLog
@@ -306,21 +315,24 @@ class CrudService:
         return str(error.orig) if getattr(error, 'orig', None) else str(error)
 
     @classmethod
-    def _raise_database_constraint_error(cls, error, *, action: str):
+    def _raise_database_constraint_error(cls, error, *, action: str, item_id=None):
         detail = cls._database_constraint_detail(error)
         normalized = detail.lower()
         if action == 'delete' and 'violates foreign key constraint' in normalized and 'is still referenced from table' in normalized:
-            raise AppError(
-                'errors.delete_has_related_records',
-                status_code=409,
-                meta={'entity': cls.entity_name, 'action': action},
-            )
+            raise delete_has_related_records_error(cls.entity_name, cls.model.__tablename__, item_id)
         if cls.entity_name == 'user' and ('uq_user_username' in normalized or 'user_username_key' in normalized or ('duplicate key' in normalized and 'username' in normalized)):
             raise AppError('errors.username_already_exists', status_code=409)
-        raise AppError('errors.database_constraint', status_code=400, meta={'detail': detail})
+        # El mensaje crudo de la base (tablas, valores, SQL) no sale al cliente: va al log.
+        # Solo el nombre de la restriccion, que algunas pantallas usan para explicar el error.
+        import logging
+        import re
+        logging.getLogger(__name__).warning("restriccion de base de datos: %s", detail)
+        nombre = re.search(r'constraint "?([A-Za-z0-9_]+)"?', detail)
+        raise AppError('errors.database_constraint', status_code=400,
+                       meta={'detail': nombre.group(1) if nombre else None})
 
     @classmethod
-    def _busqueda_libre(cls, texto):
+    def _busqueda_libre(cls, texto, campos=None):
         """Una sola caja de texto que busca por lo que sea.
 
         Por que hace falta
@@ -357,6 +369,14 @@ class CrudService:
             tipo = columna.type
             if isinstance(tipo, (Enum, Date, DateTime, Boolean)):
                 continue
+            # La caja de busqueda no es un oraculo sobre secretos: sin esto
+            # `?q=$2b$12$` encontraba usuarios por el prefijo de su hash.
+            if "password" in nombre.lower():
+                continue
+            # `campos`: solo lo que el actor puede ver; sin esto la busqueda era
+            # un oraculo sobre columnas ocultas (RFC, SSN, salario...).
+            if campos is not None and nombre not in campos:
+                continue
             atributo = getattr(cls.model, nombre, None)
             if atributo is None:
                 continue
@@ -367,27 +387,63 @@ class CrudService:
                 condiciones.append(atributo.ilike("%" + limpio + "%"))
         return or_(*condiciones) if condiciones else None
 
+    # Si el listado esconde lo que esta de baja. Como borrar es una baja logica
+    # (`deletion_date`), lo borrado no debe volver a salir en pantalla.
+    solo_vigentes = True
+
+    @classmethod
+    def _tiene_baja_logica(cls) -> bool:
+        return 'deletion_date' in cls._columns()
+
+    @classmethod
+    def _esta_de_baja(cls, item) -> bool:
+        return cls._tiene_baja_logica() and getattr(item, 'deletion_date', None) is not None
+
     @classmethod
     def list(cls, page: int = 1, per_page: int = 20, filters: dict | None = None,
-             sort: str | None = None, q: str | None = None):
+             sort: str | None = None, q: str | None = None, search_fields=None):
         filters = filters or {}
+        # Sin tope, per_page=100000 trae la tabla entera; el techo deja pasar a
+        # los selectores que cargan catalogos completos (per_page=5000).
+        page = max(1, int(page))
+        per_page = min(max(1, int(per_page)), 5000)
         with transaction_context() as session:
             stmt = select(cls.model)
-            busqueda = cls._busqueda_libre(q)
+            if cls.solo_vigentes and hasattr(cls.model, 'deletion_date'):
+                # En SQL y no descartando despues lo que llego: con paginacion,
+                # recortar en memoria da un total que no coincide con lo que se
+                # ve, y en una pantalla de permisos esa mentira pequena cuesta
+                # una hora a quien la cree.
+                stmt = stmt.where(cls.model.deletion_date.is_(None))
+            busqueda = cls._busqueda_libre(q, search_fields)
             if busqueda is not None:
                 stmt = stmt.where(busqueda)
             for key, value in filters.items():
-                if not hasattr(cls.model, key) or value in (None, ''):
+                model_column = cls._columns().get(key)
+                # Solo columnas reales: un atributo cualquiera del modelo
+                # (metadata, registry...) no es un filtro valido.
+                if model_column is None or value in (None, '') or 'password' in key.lower():
                     continue
                 column = getattr(cls.model, key)
-                model_column = cls._columns().get(key)
-                if isinstance(value, str) and not isinstance(model_column.type, Enum):
+                # Buscar por coincidencia parcial solo tiene sentido en texto:
+                # `id_customer_supplier ILIKE '%10%'` revienta en Postgres.
+                if (isinstance(value, str) and isinstance(model_column.type, String)
+                        and not isinstance(model_column.type, Enum)):
                     stmt = stmt.where(column.ilike(f'%{value}%'))
                 else:
                     stmt = stmt.where(column == value)
-            if sort and hasattr(cls.model, sort.lstrip('-')):
+            sort = sort or cls.orden_por_omision
+            if sort and sort.lstrip('-') in cls._columns():
                 col = getattr(cls.model, sort.lstrip('-'))
-                stmt = stmt.order_by(col.desc() if sort.startswith('-') else col.asc())
+                descendente = sort.startswith('-')
+                # La llave primaria desempata: varias filas comparten fecha (un
+                # mismo guardado escribe varias) y, sin desempate, una fila puede
+                # caer en dos paginas o en ninguna.
+                orden = [col.desc() if descendente else col.asc()]
+                for llave in cls.model.__table__.primary_key.columns:
+                    if llave.name != sort.lstrip('-'):
+                        orden.append(llave.desc() if descendente else llave.asc())
+                stmt = stmt.order_by(*orden)
             total = session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
             items = session.scalars(stmt.offset((page - 1) * per_page).limit(per_page)).all()
             return {'items': [item.serialize() for item in items], 'total': total, 'page': page, 'per_page': per_page, 'pages': (total + per_page - 1) // per_page}
@@ -396,7 +452,7 @@ class CrudService:
     def get(cls, item_id):
         with transaction_context() as session:
             item = session.get(cls.model, item_id)
-            if not item:
+            if not item or (cls.solo_vigentes and cls._esta_de_baja(item)):
                 raise AppError('errors.resource_not_found', status_code=404)
             return item.serialize()
 
@@ -432,11 +488,13 @@ class CrudService:
         try:
             with transaction_context() as session:
                 item = session.get(cls.model, item_id)
-                if not item:
+                if not item or cls._esta_de_baja(item):
                     raise AppError('errors.resource_not_found', status_code=404)
                 before = item.serialize()
+                llaves = {c.name for c in cls.model.__table__.primary_key.columns}
                 for key, value in payload.items():
-                    if hasattr(item, key):
+                    # La llave primaria no se reescribe por un PUT.
+                    if hasattr(item, key) and key not in llaves:
                         setattr(item, key, value)
                 session.flush()
                 after = item.serialize()
@@ -456,10 +514,15 @@ class CrudService:
         try:
             with transaction_context() as session:
                 item = session.get(cls.model, item_id)
-                if not item:
+                if not item or cls._esta_de_baja(item):
                     raise AppError('errors.resource_not_found', status_code=404)
                 before = item.serialize()
-                session.delete(item)
+                if cls._tiene_baja_logica():
+                    # Baja logica: la fila se queda en la base (con su historia y
+                    # lo que la referencia) y solo deja de salir en pantalla.
+                    item.deletion_date = datetime.now(timezone.utc).replace(tzinfo=None)
+                else:
+                    session.delete(item)
                 cls._write_event_log(
                     session,
                     action='delete',
@@ -471,4 +534,4 @@ class CrudService:
                 session.flush()
                 return {'message_key': 'success.deleted'}
         except (IntegrityError, StatementError) as error:
-            cls._raise_database_constraint_error(error, action='delete')
+            cls._raise_database_constraint_error(error, action='delete', item_id=item_id)

@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from app.models.entity_permission import EntityPermission
 from app.models.session import transaction_context
+from app.models.task import Task
 from tests.conftest import BackendTestCase
 
 
@@ -17,13 +18,24 @@ class TestProjectWorkflowApi(BackendTestCase):
         self.workshop = {"id_user": 31, "id_permission": 301}
         with transaction_context() as db:
             db.add_all([
-                EntityPermission(id_permission=101, entity_name="proyect", scope_create=4, scope_read=4, scope_update=4, created_by=11),
-                EntityPermission(id_permission=102, entity_name="proyect", scope_create=4, scope_read=4, scope_update=4, created_by=12),
+                # Lo que ve y edita un Supervisor lo manda el Gestor: Propios.
+                # Con "Todos" vería (y editaría) los proyectos de los demás;
+                # antes de 2026-10-16 el código ignoraba "Todos" aquí.
+                EntityPermission(id_permission=101, entity_name="proyect", scope_create=4, scope_read=1, scope_update=1, created_by=11),
+                EntityPermission(id_permission=102, entity_name="proyect", scope_create=4, scope_read=1, scope_update=1, created_by=12),
                 EntityPermission(id_permission=201, entity_name="proyect", scope_read=4, scope_update=4, created_by=21),
                 EntityPermission(id_permission=201, entity_name="project_authorization", scope_read=4, created_by=21),
                 EntityPermission(id_permission=301, entity_name="proyect", scope_read=4, scope_update=4, created_by=31),
                 EntityPermission(id_permission=301, entity_name="project_execution", scope_read=4, created_by=31),
+                # Compras con `project_supply`: ve los proyectos y da los pasos de
+                # material sin poder editarlos (`proyect` solo en lectura).
+                EntityPermission(id_permission=401, entity_name="proyect", scope_read=4, created_by=41),
+                EntityPermission(id_permission=401, entity_name="project_supply", scope_read=4, created_by=41),
+                # El mismo rol sin la capacidad: leer no basta para mover el estatus.
+                EntityPermission(id_permission=402, entity_name="proyect", scope_read=4, created_by=42),
             ])
+        self.buyer = {"id_user": 41, "id_permission": 401}
+        self.reader = {"id_user": 42, "id_permission": 402}
 
     def _request(self, actor, method, path, payload=None):
         with patch("app.utils.auth.jwt.decode", return_value=actor):
@@ -65,7 +77,8 @@ class TestProjectWorkflowApi(BackendTestCase):
         # test_supervisor_cannot_submit_or_authorize_through_http).
         manager_list = self._request(self.manager, "GET", "/proyect/?page=1&per_page=20")
         manager_project = self.json(manager_list)["items"][0]
-        self.assertEqual(manager_project["folio"], f"PRJ-{project_id:06d}")
+        # La partida es opcional y no se inventa: sin capturarla, queda vacia.
+        self.assertIsNone(manager_project["folio"])
 
         tomorrow = (datetime.fromisoformat(manager_project["creation_date"]) + timedelta(days=1)).date().isoformat()
         future_list = self._request(
@@ -75,17 +88,32 @@ class TestProjectWorkflowApi(BackendTestCase):
         )
         self.assertEqual(self.json(future_list)["total"], 0)
 
-        authorized = self._request(self.manager, "POST", f"/proyect/{project_id}/transition", {"status": "authorized"})
-        self.assertEqual(authorized.status_code, 200)
+        for status in ("submitted", "authorized"):
+            authorized = self._request(self.manager, "POST", f"/proyect/{project_id}/transition", {"status": status})
+            self.assertEqual(authorized.status_code, 200)
 
         workshop_after = self._request(self.workshop, "GET", "/proyect/?page=1&per_page=20")
         self.assertEqual(self.json(workshop_after)["total"], 1)
 
+        with transaction_context() as db:
+            db.add(Task(
+                id_proyect=project_id, task_description="Tarea", task_status="terminada",
+                owner=self.workshop["id_user"], validation=self.workshop["id_user"], dependency=0,
+                created_by=self.workshop["id_user"],
+            ))
+
+        # La espera de material es obligatoria y la abre/cierra Gerente, no
+        # el taller -- una orden de compra puede surtir a varios proyectos a
+        # la vez, asi que autorizar no significa que ya haya material a la
+        # mano.
+        for status in ("waiting_material", "in_progress"):
+            response = self._request(self.manager, "POST", f"/proyect/{project_id}/transition", {"status": status})
+            self.assertEqual(response.status_code, 200)
+
         for status, reason in (
-            ("in_progress", None),
             ("stopped", "Espera de material"),
             ("in_progress", None),
-            ("completed", None),
+            ("collected", None),
         ):
             payload = {"status": status}
             if reason:
@@ -93,12 +121,18 @@ class TestProjectWorkflowApi(BackendTestCase):
             response = self._request(self.workshop, "POST", f"/proyect/{project_id}/transition", payload)
             self.assertEqual(response.status_code, 200)
 
+        # Con maquila recolecta el taller; completa el responsable (quien lo levanto).
+        response = self._request(self.supervisor, "POST", f"/proyect/{project_id}/transition", {"status": "completed"})
+        self.assertEqual(response.status_code, 200)
+
         detail = self._request(self.workshop, "GET", f"/proyect/{project_id}")
         detail_payload = self.json(detail)
         self.assertEqual(detail.status_code, 200)
         self.assertEqual(detail_payload["proyect_status"], "completed")
-        self.assertEqual(len(detail_payload["events"]), 6)
-        self.assertEqual(detail_payload["events"][3]["reason"], "Espera de material")
+        # created, submitted, authorized, waiting_material, in_progress,
+        # stopped, in_progress, collected, completed.
+        self.assertEqual(len(detail_payload["events"]), 9)
+        self.assertEqual(detail_payload["events"][5]["reason"], "Espera de material")
 
     def test_http_rejects_manual_status_and_wrong_role_transition(self):
         project = self._create_project()
@@ -119,13 +153,38 @@ class TestProjectWorkflowApi(BackendTestCase):
         project = self._create_project()
         project_id = project["id_proyect"]
 
-        for destino in ("submitted", "authorized"):
+        for destino in ("submitted", "denied"):
             response = self._request(
                 self.supervisor, "POST", f"/proyect/{project_id}/transition",
                 {"status": destino, "reason": "Motivo"},
             )
             self.assertEqual(403, response.status_code)
             self.assertEqual("errors.permission_denied", self.json(response)["error_key"])
+
+    def test_project_supply_gives_the_material_steps_without_editing_projects(self):
+        """Compras da los dos pasos de material con `project_supply` y `proyect` en consulta.
+
+        Antes la ruta exigia `proyect` + actualizar, asi que la capacidad no
+        servia de nada para un rol que solo consulta: 403 aunque el servicio la
+        reconociera.
+        """
+        project_id = self._create_project()["id_proyect"]
+        for status in ("submitted", "authorized"):
+            self.assertEqual(200, self._request(
+                self.manager, "POST", f"/proyect/{project_id}/transition", {"status": status}).status_code)
+        ruta = f"/proyect/{project_id}/transition"
+
+        sin_capacidad = self._request(self.reader, "POST", ruta, {"status": "waiting_material"})
+        self.assertEqual(403, sin_capacidad.status_code)
+
+        for status in ("waiting_material", "in_progress"):
+            self.assertEqual(200, self._request(self.buyer, "POST", ruta, {"status": status}).status_code)
+
+        # Y nada mas: ni detiene el proyecto ni lo edita.
+        self.assertEqual(403, self._request(
+            self.buyer, "POST", ruta, {"status": "stopped", "reason": "x"}).status_code)
+        self.assertEqual(403, self._request(
+            self.buyer, "PUT", f"/proyect/{project_id}", {"title": "Cambiado por Compras"}).status_code)
 
     def test_http_requires_reason_for_blocking(self):
         project = self._create_project()

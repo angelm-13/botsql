@@ -6,6 +6,7 @@ from sqlalchemy import DateTime, Integer, LargeBinary, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
+from app.utils.tiempo import a_iso_utc
 
 
 class PacConfig(Base):
@@ -27,5 +28,5 @@ class PacConfig(Base):
             "facturama_base_url": self.facturama_base_url or "",
             "name_id": self.name_id or "1",
             "has_password": bool(self.facturama_password_cipher and self.facturama_password_nonce),
-            "last_update_date": self.last_update_date.isoformat() if self.last_update_date else None,
+            "last_update_date": a_iso_utc(self.last_update_date),
         }

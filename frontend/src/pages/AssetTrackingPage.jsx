@@ -7,6 +7,7 @@ import {
 import { useI18n } from "../i18n";
 import "../styles/asset-tracking.css";
 import PageHeader from "../components/PageHeader.jsx";
+import { formatearFechaHora } from "../utils/fechas";
 import {
   assignAsset, backAssetFromRepair, createAsset, getAssetByTag, getAssetHistory,
   getAssets, getOverdueAssets, lendAsset, moveAsset, reportAssetLost,
@@ -390,7 +391,7 @@ export default function AssetTrackingPage() {
                   <div>
                     <p className="asset-timeline-title">
                       <strong>{t(`assets.event_${evento.event_type}`, evento.event_type)}</strong>
-                      <span className="muted mono"> {(evento.creation_date || "").slice(0, 19).replace("T", " ")}</span>
+                      <span className="muted mono"> {formatearFechaHora(evento.creation_date || "", "es-MX")}</span>
                     </p>
                     <p className="muted">
                       {evento.status_before ? `${evento.status_before} → ` : ""}

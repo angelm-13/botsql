@@ -5,6 +5,7 @@ from flask import Blueprint, jsonify, request
 from app.services.customer_supplier_service import CustomerSupplierService
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
+from app.utils.field_access import COLUMNAS_DE_AUDITORIA
 
 bp_customer_supplier = Blueprint('customer_supplier', __name__, url_prefix='/customer_supplier')
 ALLOWED_FIELDS = ['id_customer_supplier', 'postal_code', 'name', 'title', 'contact_name', 'phone', 'email', 'web_site', 'street', 'number_ext', 'number_int', 'neighborhood', 'city', 'geographic_state', 'fiscal_type', 'last_fiscal_certification_date', 'tax_id', 'type', 'sla_level', 'credit_limit', 'logistics_notes', 'is_principal', 'csd_status', 'csd_uploaded_at', 'id_user', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'path_logo']
@@ -20,7 +21,6 @@ def _actor_has_unrestricted_field_access(user_data: dict) -> bool:
     return bool(
         user_data.get('is_superuser')
         or user_data.get('is_bootstrap_admin')
-        or user_data.get('user_type') == 'admin'
     )
 
 
@@ -69,7 +69,7 @@ def _field_sets_for_actor(user_data: dict) -> tuple[set[str], set[str]]:
     # La llave primaria puede viajar en la respuesta para navegacion interna,
     # acciones de fila y rutas REST, aunque el frontend no la pinte si no fue
     # marcada como visible en el gestor.
-    return visible | set(TECHNICAL_RESPONSE_FIELDS), writable
+    return visible | set(TECHNICAL_RESPONSE_FIELDS) | COLUMNAS_DE_AUDITORIA, writable
 
 
 def _visible_response_fields_for_actor(user_data: dict) -> set[str]:
@@ -139,8 +139,12 @@ def list_customer_supplier(user_data):
     page = int(request.args.get('page', 1))
     per_page = int(request.args.get('per_page', 20))
     sort = request.args.get('sort')
-    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort', 'q'} and k in ALLOWED_FIELDS}
-    return _jsonify_projected_list(user_data, CustomerSupplierService.list(page=page, per_page=per_page, filters=filters, sort=sort, q=request.args.get('q')))
+    # Filtrar, ordenar o buscar por un campo equivale a leerlo: solo los que el rol ve.
+    visible = _visible_response_fields_for_actor(user_data)
+    filters = {k: v for k, v in request.args.items() if k not in {'page', 'per_page', 'sort', 'q'} and k in visible and k in ALLOWED_FIELDS}
+    if sort and sort.lstrip('-') not in visible:
+        sort = None
+    return _jsonify_projected_list(user_data, CustomerSupplierService.list(page=page, per_page=per_page, filters=filters, sort=sort, q=request.args.get('q'), search_fields=visible))
 
 
 @bp_customer_supplier.route('/<id_customer_supplier>', methods=['GET'])
@@ -155,6 +159,11 @@ def get_customer_supplier(user_data, id_customer_supplier):
 @require_entity_permission('customer_supplier', 'create')
 def create_customer_supplier(user_data):
     payload = _filter_payload_for_actor(request.get_json() or {}, user_data)
+    # `id_user` (vendedor) es NOT NULL pero ya no se captura en el formulario, y a un
+    # rol sin permiso de campo sobre el se le filtra del payload: sin esto el alta
+    # fallaba pidiendo un vendedor que nadie podia elegir. Por omision, quien captura.
+    if not payload.get('id_user'):
+        payload['id_user'] = user_data.get('id_user')
     return _jsonify_projected_record(user_data, CustomerSupplierService.create(payload, user_id=user_data.get('id_user')), status=201)
 
 

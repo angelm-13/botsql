@@ -146,7 +146,11 @@ def _validate_business(entity: str, field: str, payload: dict[str, Any], rule: d
         right = _to_decimal(payload.get(right_field))
         if target is None or left is None or right is None:
             return
-        if target != left + right:
+        esperado = left + right
+        # En una factura el descuento sale del subtotal: total = subtotal - descuento + impuesto.
+        if entity == "invoice" and target_field == "total":
+            esperado -= _to_decimal(payload.get("descuento")) or Decimal("0")
+        if target != esperado:
             _fail(entity, field, rule)
         return
 

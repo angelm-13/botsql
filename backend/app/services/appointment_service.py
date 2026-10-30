@@ -7,6 +7,7 @@ import secrets
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import or_
 
 from app.models.appointment import Appointment, AppointmentType, AvailabilityOverride, AvailabilityRule, CalendarProfile
@@ -68,9 +69,13 @@ def _parse_date(value, field: str) -> date:
 
 def _parse_time(value, field: str) -> time:
     try:
-        return time.fromisoformat(str(value))
+        parsed = time.fromisoformat(str(value))
     except ValueError as exc:
         raise AppError("errors.invalid_field", 400, {"field": field}) from exc
+    # Una hora con zona no se compara con una sin zona: daba TypeError (500).
+    if parsed.tzinfo is not None:
+        raise AppError("errors.invalid_field", 400, {"field": field})
+    return parsed
 
 
 def _parse_datetime(value, field: str) -> datetime:
@@ -107,7 +112,8 @@ def _profile_for_actor(db, profile_id, user_data: dict) -> CalendarProfile:
 def create_profile(payload: dict, user_data: dict) -> dict:
     actor_id, project_id = _actor(user_data)
     code = re.sub(r"[^a-z0-9-]", "-", str(payload.get("calendar_code") or "").strip().lower()).strip("-")
-    if not code or not payload.get("display_name"):
+    nombre = payload.get("display_name")
+    if not code or not isinstance(nombre, str) or not nombre.strip():
         raise AppError("errors.invalid_field", 400, {"field": "calendar_code" if not code else "display_name"})
     zone_name = str(payload.get("timezone") or "UTC")
     _zone(zone_name)
@@ -179,7 +185,12 @@ def create_appointment_type(profile_id, payload: dict, user_data: dict) -> dict:
             created_by=profile.id_user,
         )
         db.add(record)
-        db.flush()
+        try:
+            db.flush()
+        except IntegrityError as error:
+            # Dos reservas del mismo horario a la vez: la restriccion de la base
+            # (ex_appointment_no_overlap) la rechaza, y eso es un 409, no un 500.
+            raise AppError("errors.appointment_slot_unavailable", 409) from error
         return record.serialize()
 
 
@@ -206,7 +217,9 @@ def create_availability_rule(profile_id, payload: dict, user_data: dict) -> dict
 def create_availability_override(profile_id, payload: dict, user_data: dict) -> dict:
     with transaction_context() as db:
         profile = _profile_for_actor(db, profile_id, user_data)
-        is_available = bool(payload.get("is_available", False))
+        is_available = payload.get("is_available", False)
+        if not isinstance(is_available, bool):  # "false" (texto) se guardaba como True
+            raise AppError("errors.invalid_field", 400, {"field": "is_available"})
         start = _parse_time(payload.get("start_time"), "start_time") if is_available else None
         end = _parse_time(payload.get("end_time"), "end_time") if is_available else None
         if is_available and start >= end:
@@ -282,6 +295,13 @@ def _appointment_type(db, profile: CalendarProfile, type_id) -> AppointmentType:
     return record
 
 
+def _a_utc(valor: datetime) -> datetime:
+    """UTC de un instante. Si la base lo devuelve con su zona (America/Mexico_City)
+    se CONVIERTE; solo uno sin zona se asume UTC. `replace(tzinfo=utc)` sobre uno
+    con zona lo corria horas y los horarios ya agendados seguian ofreciendose."""
+    return valor.replace(tzinfo=timezone.utc) if valor.tzinfo is None else valor.astimezone(timezone.utc)
+
+
 def _slots(db, profile: CalendarProfile, appointment_type: AppointmentType, start_date: date, end_date: date, now: datetime) -> list[datetime]:
     if end_date < start_date or (end_date - start_date).days > 31:
         raise AppError("errors.invalid_field", 400, {"field": "date_to"})
@@ -334,7 +354,7 @@ def _slots(db, profile: CalendarProfile, appointment_type: AppointmentType, star
     after = timedelta(minutes=appointment_type.buffer_after_minutes)
     return [
         slot for slot in slots
-        if not any(slot - before < item.blocked_ends_at.replace(tzinfo=timezone.utc) and slot + duration + after > item.blocked_starts_at.replace(tzinfo=timezone.utc) for item in appointments)
+        if not any(slot - before < _a_utc(item.blocked_ends_at) and slot + duration + after > _a_utc(item.blocked_starts_at) for item in appointments)
     ]
 
 

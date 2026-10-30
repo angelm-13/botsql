@@ -4,6 +4,7 @@ from app.services.invoice_material_service_service import InvoiceMaterialService
 from app.services.quotation_service import link_line_to_task
 from app.utils.auth import token_required, require_entity_permission
 from app.utils.errors import AppError
+from app.utils.field_access import COLUMNAS_DE_AUDITORIA
 
 bp_invoice_material_service = Blueprint('invoice_material_service', __name__, url_prefix='/invoice_material_service')
 ALLOWED_FIELDS = ['id_invoice_material_service', 'id_invoice', 'id_material', 'id_service', 'invoice_material_service_description', 'max_requirement_date', 'is_directly_related_to_product_service_creation', 'id_authorized', 'id_status', 'id_buyer', 'id_customer_supplier', 'gross_price', 'quantity', 'created_by', 'creation_date', 'last_update_date', 'deletion_date', 'id_product', 'line_type', 'tax_applicable', 'line_tax', 'line_total', 'id_unit', 'authorization_status', 'authorization_note', 'authorization_date', 'id_task', 'discount', 'sat_product_key', 'sat_unit_key', 'tax_object', 'tax_rate', 'isr_retention_rate', 'iva_retention_rate']
@@ -19,7 +20,6 @@ def _actor_has_unrestricted_field_access(user_data: dict) -> bool:
     return bool(
         user_data.get('is_superuser')
         or user_data.get('is_bootstrap_admin')
-        or user_data.get('user_type') == 'admin'
     )
 
 
@@ -68,7 +68,7 @@ def _field_sets_for_actor(user_data: dict) -> tuple[set[str], set[str]]:
     # La llave primaria puede viajar en la respuesta para navegacion interna,
     # acciones de fila y rutas REST, aunque el frontend no la pinte si no fue
     # marcada como visible en el gestor.
-    return visible | set(TECHNICAL_RESPONSE_FIELDS), writable
+    return visible | set(TECHNICAL_RESPONSE_FIELDS) | COLUMNAS_DE_AUDITORIA, writable
 
 
 def _visible_response_fields_for_actor(user_data: dict) -> set[str]:

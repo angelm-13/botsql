@@ -128,6 +128,18 @@ spec:
             # valor que .env usa en desarrollo local.
             - name: TZ
               value: America/Mexico_City
+            # Produccion por defecto: la guarda de arranque exige secretos fuertes,
+            # CORS definido y proveedor de timbrado real (ver startup_guard.py).
+            # Un ambiente que NO es de verdad lo baja en su overlay (APP_ENV=staging).
+            - name: APP_ENV
+              value: production
+          # Endurecimiento sin cambiar de usuario: el backend sigue como root porque en
+          # adser-prod escribe en un hostPath del nodo cuyo dueno es root (ver CLAUDE.md);
+          # pasar a no-root exige antes cambiar ese dueno, y es una decision por cliente.
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
           envFrom:
             - secretRef:
                 name: app-secrets
@@ -200,21 +212,46 @@ spec:
       containers:
         - name: celery-worker
           image: WORKER_IMAGE_PLACEHOLDER
-          command: ["celery", "-A", "celery_worker.celery", "worker", "--loglevel=INFO"]
+          # --concurrency=2: sin esta bandera celery autodetecta el numero
+          # de CPUs del NODO (no el 0.4 real que el pod tiene asignado abajo)
+          # y forkeaba 4 procesos hijo, cada uno con la app completa cargada
+          # -- funciono mientras la app era mas chica, y el crecimiento
+          # normal (notificaciones, bitacoras de actividad) lo tumbo con
+          # OOMKilled real en el primer task recibido (medido en tyakxa-dev
+          # y torredigital-prod, 2026-09-28). 2 procesos es proporcional al
+          # limite de CPU real de este pod.
+          command: ["celery", "-A", "celery_worker.celery", "worker", "--loglevel=INFO", "--concurrency=2"]
           env:
             # Ver nota de TZ en el Deployment "backend": misma app, mismo reloj.
             - name: TZ
               value: America/Mexico_City
+            # Produccion por defecto: la guarda de arranque exige secretos fuertes,
+            # CORS definido y proveedor de timbrado real (ver startup_guard.py).
+            # Un ambiente que NO es de verdad lo baja en su overlay (APP_ENV=staging).
+            - name: APP_ENV
+              value: production
+          # Endurecimiento sin cambiar de usuario: el backend sigue como root porque en
+          # adser-prod escribe en un hostPath del nodo cuyo dueno es root (ver CLAUDE.md);
+          # pasar a no-root exige antes cambiar ese dueno, y es una decision por cliente.
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
           envFrom:
             - secretRef:
                 name: app-secrets
+          # Memoria: 320Mi se quedaba corto. El livenessProbe de abajo arranca un
+          # segundo interprete de Python (inspect ping) DENTRO del contenedor y,
+          # sumado a los 3 procesos del worker, rebasaba el limite: OOMKilled cada
+          # pocas horas (2026-10-20: 8 reinicios en adser-prod, 18 en comala-prod,
+          # 23 en torredigital-prod; Last State OOMKilled en los tres).
           resources:
             requests:
               cpu: 100m
-              memory: 128Mi
+              memory: 256Mi
             limits:
               cpu: 400m
-              memory: 256Mi
+              memory: 512Mi
           livenessProbe:
             # No hay endpoint HTTP en un worker de Celery — "inspect ping"
             # confirma que el proceso sigue respondiendo a control commands
@@ -278,6 +315,18 @@ spec:
             # Ver nota de TZ en el Deployment "backend": misma app, mismo reloj.
             - name: TZ
               value: America/Mexico_City
+            # Produccion por defecto: la guarda de arranque exige secretos fuertes,
+            # CORS definido y proveedor de timbrado real (ver startup_guard.py).
+            # Un ambiente que NO es de verdad lo baja en su overlay (APP_ENV=staging).
+            - name: APP_ENV
+              value: production
+          # Endurecimiento sin cambiar de usuario: el backend sigue como root porque en
+          # adser-prod escribe en un hostPath del nodo cuyo dueno es root (ver CLAUDE.md);
+          # pasar a no-root exige antes cambiar ese dueno, y es una decision por cliente.
+          securityContext:
+            allowPrivilegeEscalation: false
+            seccompProfile:
+              type: RuntimeDefault
           envFrom:
             - secretRef:
                 name: app-secrets

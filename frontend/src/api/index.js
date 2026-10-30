@@ -23,6 +23,7 @@ export const getDocuments = (params = {}) => request("/document/", { params });
 export const getDocument = (id) => request(`/document/${id}`);
 export const getDocumentCategories = () => request("/document/categories");
 export const getDocumentEmployees = () => request("/document/employees");
+export const getDocumentUploaders = () => request("/document/uploaders");
 export const uploadDocument = (payload, file) => {
   const formData = new FormData();
   Object.entries(payload).forEach(([key, value]) => { if (value !== undefined && value !== null && value !== "") formData.append(key, value); });
@@ -71,8 +72,7 @@ function isPrivilegedPermissionUser() {
   return Boolean(
     user?.is_superuser ||
     user?.is_bootstrap_admin ||
-    user?.username === bootstrapUsername ||
-    String(user?.user_type || "").toLowerCase() === "admin"
+    user?.username === bootstrapUsername
   );
 }
 
@@ -133,10 +133,6 @@ export const createCustomerContact = (payload) => request("/customer_contact/", 
 export const updateCustomerContact = (id, payload) => request(`/customer_contact/${id}`, { method: "PUT", body: payload });
 export const deleteCustomerContact = (id) => request(`/customer_contact/${id}`, { method: "DELETE" });
 
-export const getAllLogisticsContact = (params = {}) => request("/logistics_contact/", { params });
-export const createLogisticsContact = (payload) => request("/logistics_contact/", { method: "POST", body: payload });
-export const updateLogisticsContact = (id, payload) => request(`/logistics_contact/${id}`, { method: "PUT", body: payload });
-export const deleteLogisticsContact = (id) => request(`/logistics_contact/${id}`, { method: "DELETE" });
 
 export const getAllLogisticsAddress = (params = {}) => request("/logistics_address/", { params });
 export const getLogisticsAddress = (id) => request(`/logistics_address/${id}`);
@@ -331,6 +327,7 @@ export const updateIncidentDetail = (id, payload) => request(`/incident_detail/$
 export const deleteIncidentDetail = (id) => request(`/incident_detail/${id}`, { method: "DELETE" });
 
 export const getAllIncidentType = (params = {}) => request("/incident_type/", { params });
+export const getIncidentTypeOptions = () => request("/incident_type/options?para=vale");
 export const getIncidentType = (id) => request(`/incident_type/${id}`);
 export const createIncidentType = (payload) => request("/incident_type/", { method: "POST", body: payload });
 export const updateIncidentType = (id, payload) => request(`/incident_type/${id}`, { method: "PUT", body: payload });
@@ -364,7 +361,12 @@ export const getStampingConfig = () => request("/stamping/config");
 export const saveStampingConfig = (payload) => request("/stamping/config", { method: "PUT", body: payload });
 export const testStampingConfig = (payload) => request("/stamping/config/test", { method: "POST", body: payload });
 export const downloadInvoiceXml = (id) => requestBlob(`/invoice/${id}/xml`);
-export const downloadInvoicePdf = (id, document = "") => requestBlob(`/invoice/${id}/pdf`, { params: { document } });
+export const attachInvoiceXml = (id, file) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  return request(`/invoice/${id}/xml`, { method: "POST", body: formData });
+};
+export const downloadInvoicePdf =(id, document = "") => requestBlob(`/invoice/${id}/pdf`, { params: { document } });
 
 export const getInventoryMovements = (id, params = {}) => request(`/product/${id}/inventory-movements`, { params });
 export const createInventoryMovement = (id, payload) => request(`/product/${id}/inventory-movements`, { method: "POST", body: { idempotency_key: crypto.randomUUID(), ...payload } });
@@ -474,7 +476,13 @@ export const updateInvoiceMaterialService = (id, payload) => request(`/invoice_m
 export const deleteInvoiceMaterialService = (id) => request(`/invoice_material_service/${id}`, { method: "DELETE" });
 
 export const getAllKpiDefinition = () => request("/kpi_definition/");
+// Catalogo de dimensiones (empleado, mesero, platillo...): clave, etiqueta, tipo y si es abierta.
+export const getKpiDimensions = () => request("/kpi_dimension/");
 export const queryKpiSnapshot = (params = {}) => request("/kpi_snapshot/query", { params });
+// KPI "vivo" (modo === "vivo", ej. material_prestado_actual): no pasa por
+// kpi_snapshot, se llama directo cada vez -- ver GET /kpi_definition/<id>/vivo
+// en backend/app/routes/kpi.py.
+export const queryKpiVivo = (idKpiDefinition, params = {}) => request(`/kpi_definition/${idKpiDefinition}/vivo`, { params });
 
 // Catalogo completo de KPIs, sin el filtro de permiso puntual -- para poblar
 // el selector del gestor de permisos por KPI, no el dashboard.
@@ -491,6 +499,8 @@ export const deleteKpiDashboard = (id) => request(`/kpi_dashboard/${id}`, { meth
 export const getAllKpiDashboardWidget = (idDashboard) => request(`/kpi_dashboard/${idDashboard}/widgets/`);
 export const createKpiDashboardWidget = (idDashboard, payload) => request(`/kpi_dashboard/${idDashboard}/widgets/`, { method: "POST", body: payload });
 export const updateKpiDashboardWidget = (id, payload) => request(`/kpi_dashboard_widget/${id}`, { method: "PUT", body: payload });
+// Guarda SOLO el orden de la tabla ({campo, direccion}); el servidor lo fusiona en `parametros` sin pisar lo demas.
+export const saveKpiWidgetOrdenTabla = (id, orden) => request(`/kpi_dashboard_widget/${id}/orden_tabla`, { method: "PUT", body: orden });
 export const deleteKpiDashboardWidget = (id) => request(`/kpi_dashboard_widget/${id}`, { method: "DELETE" });
 
 export const getAllLevel = (params = {}) => request("/level/", { params });
@@ -500,6 +510,7 @@ export const updateLevel = (id, payload) => request(`/level/${id}`, { method: "P
 export const deleteLevel = (id) => request(`/level/${id}`, { method: "DELETE" });
 
 export const getAllLocation = (params = {}) => request("/location/", { params });
+export const getLocationOptions = () => request("/location/options");
 export const getLocation = (id) => request(`/location/${id}`);
 export const createLocation = (payload) => request("/location/", { method: "POST", body: payload });
 export const updateLocation = (id, payload) => request(`/location/${id}`, { method: "PUT", body: payload });
@@ -526,6 +537,8 @@ export const createWarehousePrevoucher = (payload) => request("/prevouchers", { 
 // Lo guarda `warehouse_voucher_authorize`, que solo tiene el jefe de almacen.
 export const authorizeWarehouseVoucher = (id, payload = {}) =>
   request(`/vouchers/${id}/authorize`, { method: "POST", body: payload });
+export const cancelWarehouseVoucher = (id, note) =>
+  request(`/vouchers/${id}/cancel`, { method: "POST", body: { note } });
 export const getWarehouseVoucher = (id) => request(`/vouchers/${id}`);
 
 // El vale para imprimir y firmar. Pide `read`, la misma que ver el vale en
@@ -537,11 +550,26 @@ export const getOverdueVoucherLines = () => request("/vouchers/overdue");
 export const getAssetStatusSummary = (params = {}) => request("/assets/summary", { params });
 export const closeWarehouseVoucherLine = (idLine, payload = {}) =>
   request(`/vouchers/lines/${idLine}/close`, { method: "POST", body: payload });
+// El dueno del vale confirma que recupero la pieza de quien la recogio -- paso
+// intermedio, no la devolucion al almacen (esa es `closeWarehouseVoucherLine`).
+export const confirmWarehouseVoucherLineCustody = (idLine) =>
+  request(`/vouchers/lines/${idLine}/confirm-custody`, { method: "POST" });
+// El vale COMPLETO: almacen marca "entregado a X" (acto aparte de autorizar) y
+// el supervisor responsable confirma que lo recibio, con o sin observaciones.
+export const deliverWarehouseVoucher = (id, payload = {}) =>
+  request(`/vouchers/${id}/deliver`, { method: "POST", body: payload });
+export const confirmWarehouseVoucherReceipt = (id, payload = {}) =>
+  request(`/vouchers/${id}/confirm-receipt`, { method: "POST", body: payload });
 
 export const getAllMaterial = (params = {}) => request("/material/", { params });
 export const getMaterial = (id) => request(`/material/${id}`);
 export const createMaterial = (payload) => request("/material/", { method: "POST", body: payload });
 export const updateMaterial = (id, payload) => request(`/material/${id}`, { method: "PUT", body: payload });
+export const uploadMaterialImage = (id, file) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  return request(`/material/${id}/image`, { method: "POST", body: formData });
+};
 export const deleteMaterial = (id) => request(`/material/${id}`, { method: "DELETE" });
 
 export const getAllMaterialComponent = (params = {}) => request("/material_component/", { params });
@@ -581,6 +609,42 @@ export const updateNmTemplateTask = (id, payload) => request(`/nm_template_task/
 export const deleteNmTemplateTask = (id) => request(`/nm_template_task/${id}`, { method: "DELETE" });
 
 export const getAllPayrollConcept = (params = {}) => request("/payroll_concept/", { params });
+export const getAllWorkSchedule = (params = {}) => request("/work_schedule/", { params });
+export const createWorkSchedule = (payload) => request("/work_schedule/", { method: "POST", body: payload });
+export const updateWorkSchedule = (id, payload) => request(`/work_schedule/${id}`, { method: "PUT", body: payload });
+export const deleteWorkSchedule = (id) => request(`/work_schedule/${id}`, { method: "DELETE" });
+export const getAllWorkScheduleDay = (params = {}) => request("/work_schedule_day/", { params });
+export const createWorkScheduleDay = (payload) => request("/work_schedule_day/", { method: "POST", body: payload });
+export const updateWorkScheduleDay = (id, payload) => request(`/work_schedule_day/${id}`, { method: "PUT", body: payload });
+export const deleteWorkScheduleDay = (id) => request(`/work_schedule_day/${id}`, { method: "DELETE" });
+export const getAllEmployeeSchedule = (params = {}) => request("/employee_schedule/", { params });
+export const createEmployeeSchedule = (payload) => request("/employee_schedule/", { method: "POST", body: payload });
+export const updateEmployeeSchedule = (id, payload) => request(`/employee_schedule/${id}`, { method: "PUT", body: payload });
+export const deleteEmployeeSchedule = (id) => request(`/employee_schedule/${id}`, { method: "DELETE" });
+export const getAllPayrollHoliday = (params = {}) => request("/payroll_holiday/", { params });
+export const createPayrollHoliday = (payload) => request("/payroll_holiday/", { method: "POST", body: payload });
+export const updatePayrollHoliday = (id, payload) => request(`/payroll_holiday/${id}`, { method: "PUT", body: payload });
+export const deletePayrollHoliday = (id) => request(`/payroll_holiday/${id}`, { method: "DELETE" });
+export const getAllEmployeeLeave = (params = {}) => request("/employee_leave/", { params });
+export const createEmployeeLeave = (payload) => request("/employee_leave/", { method: "POST", body: payload });
+export const updateEmployeeLeave = (id, payload) => request(`/employee_leave/${id}`, { method: "PUT", body: payload });
+export const deleteEmployeeLeave = (id) => request(`/employee_leave/${id}`, { method: "DELETE" });
+export const getEmployeeLeaveBalances = () => request("/employee_leave/balances");
+export const getMyEmployeeLeaves = () => request("/employee_leave/mine");
+export const requestEmployeeLeave = (payload) => request("/employee_leave/request", { method: "POST", body: payload });
+export const cancelEmployeeLeave = (id) => request(`/employee_leave/${id}/cancel`, { method: "POST" });
+export const getPendingEmployeeLeaves = () => request("/employee_leave/pending");
+export const approveEmployeeLeave = (id, payload = {}) => request(`/employee_leave/${id}/approve`, { method: "POST", body: payload });
+export const rejectEmployeeLeave = (id, payload = {}) => request(`/employee_leave/${id}/reject`, { method: "POST", body: payload });
+export const getAttendanceIncidences = ({ startDate, endDate }) => request(`/kronos/attendance/incidences?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`);
+export const getAllPayrollParameter = (params = {}) => request("/payroll_parameter/", { params });
+export const createPayrollParameter = (payload) => request("/payroll_parameter/", { method: "POST", body: payload });
+export const updatePayrollParameter = (id, payload) => request(`/payroll_parameter/${id}`, { method: "PUT", body: payload });
+export const deletePayrollParameter = (id) => request(`/payroll_parameter/${id}`, { method: "DELETE" });
+export const getAllPayrollIsrBracket = (params = {}) => request("/payroll_isr_bracket/", { params });
+export const createPayrollIsrBracket = (payload) => request("/payroll_isr_bracket/", { method: "POST", body: payload });
+export const updatePayrollIsrBracket = (id, payload) => request(`/payroll_isr_bracket/${id}`, { method: "PUT", body: payload });
+export const deletePayrollIsrBracket = (id) => request(`/payroll_isr_bracket/${id}`, { method: "DELETE" });
 export const getPayrollConcept = (id) => request(`/payroll_concept/${id}`);
 export const createPayrollConcept = (payload) => request("/payroll_concept/", { method: "POST", body: payload });
 export const updatePayrollConcept = (id, payload) => request(`/payroll_concept/${id}`, { method: "PUT", body: payload });
@@ -600,11 +664,19 @@ export const deletePayrollMovement = (id) => request(`/payroll_movement/${id}`, 
 
 export const getAllPayrollPeriod = (params = {}) => request("/payroll_period/", { params });
 export const getPayrollPeriod = (id) => request(`/payroll_period/${id}`);
+export const calculatePayrollPeriod = (id) => request(`/payroll_period/${id}/calculate`, { method: "POST" });
+export const closePayrollPeriod = (id) => request(`/payroll_period/${id}/close`, { method: "POST" });
+export const reopenPayrollPeriod = (id) => request(`/payroll_period/${id}/reopen`, { method: "POST" });
+export const getPayrollPeriodSummary = (id) => request(`/payroll_period/${id}/summary`);
+export const downloadPayrollReceipt = (id, idUser) => requestBlob(`/payroll_period/${id}/receipt/${idUser}`);
 export const createPayrollPeriod = (payload) => request("/payroll_period/", { method: "POST", body: payload });
 export const updatePayrollPeriod = (id, payload) => request(`/payroll_period/${id}`, { method: "PUT", body: payload });
 export const deletePayrollPeriod = (id) => request(`/payroll_period/${id}`, { method: "DELETE" });
 
 export const getAllPermission = (params = {}) => request("/permission/", { params });
+// Solo id+nombre del rol, sin permiso de entidad -- igual que `getUserOptions` --:
+// quien da de alta usuarios elige un rol sin poder administrar el catalogo.
+export const getPermissionOptions = () => request("/permission/options");
 export const getPermission = (id) => request(`/permission/${id}`);
 export const createPermission = (payload) => request("/permission/", { method: "POST", body: payload });
 export const updatePermission = (id, payload) => request(`/permission/${id}`, { method: "PUT", body: payload });
@@ -634,12 +706,57 @@ export const getAllProyect = (params = {}) => request("/proyect/", { params });
 // para que el selector de "Obra" en un vale funcione con roles que no tienen
 // el modulo operaciones (Almacenista).
 export const getProyectOptions = (params = {}) => request("/proyect/options", { params });
+// La lista de necesidades de material de un proyecto, y lo que falta comprar.
+export const getProyectMaterialNeeds = (idProyect, params = {}) => request(`/proyect/${idProyect}/material-needs`, { params });
+export const createProyectMaterialNeed = (idProyect, payload) => request(`/proyect/${idProyect}/material-needs`, { method: "POST", body: payload });
+export const updateMaterialNeed = (idNeed, payload) => request(`/material-needs/${idNeed}`, { method: "PUT", body: payload });
+export const cancelMaterialNeed = (idNeed) => request(`/material-needs/${idNeed}`, { method: "DELETE" });
+export const getMaterialNeedSuggestions = (q) => request("/material-needs/suggestions", { params: { q } });
+export const linkMaterialNeed = (idNeed, idMaterial) => request(`/material-needs/${idNeed}/link`, { method: "POST", body: { id_material: idMaterial } });
+export const confirmMaterialNeedBuy = (idNeed) => request(`/material-needs/${idNeed}/confirm-buy`, { method: "POST" });
+export const returnMaterialNeed = (idNeed, note) => request(`/material-needs/${idNeed}/return`, { method: "POST", body: { note } });
+export const getMaterialNeedsToBuy = (params = {}) => request("/material-needs/to-buy", { params });
+
+// Ordenes de compra: de lo que falta a la compra hecha, con su comprobante.
+export const getPurchaseOrders = (params = {}) => request("/purchase-orders", { params });
+export const getPurchaseOrder = (id) => request(`/purchase-orders/${id}`);
+export const getPurchaseSuppliers = (q) => request("/purchase-orders/suppliers", { params: { q } });
+export const createPurchaseOrder = (payload) => request("/purchase-orders", { method: "POST", body: payload });
+export const updatePurchaseOrder = (id, payload) => request(`/purchase-orders/${id}`, { method: "PUT", body: payload });
+export const submitPurchaseOrder = (id) => request(`/purchase-orders/${id}/submit`, { method: "POST" });
+export const authorizePurchaseOrder = (id, note) => request(`/purchase-orders/${id}/authorize`, { method: "POST", body: { note } });
+export const rejectPurchaseOrder = (id, note) => request(`/purchase-orders/${id}/reject`, { method: "POST", body: { note } });
+export const cancelPurchaseOrder = (id, note) => request(`/purchase-orders/${id}/cancel`, { method: "POST", body: { note } });
+export const buyPurchaseOrder = (id, payload) => request(`/purchase-orders/${id}/purchase`, { method: "POST", body: payload });
+export const receivePurchaseOrder = (id, payload) => request(`/purchase-orders/${id}/receive`, { method: "POST", body: payload });
+export const uploadPurchaseVoucher = (id, file, campos = {}) => {
+  const formData = new FormData();
+  Object.entries(campos).forEach(([clave, valor]) => {
+    if (valor !== undefined && valor !== null && valor !== "") formData.append(clave, valor);
+  });
+  formData.append("file", file);
+  return request(`/purchase-orders/${id}/vouchers`, { method: "POST", body: formData });
+};
+export const removePurchaseVoucher = (idVoucher, note) => request(`/purchase-vouchers/${idVoucher}/remove`, { method: "POST", body: { note } });
+export const downloadPurchaseVoucher = (idVoucher) => requestBlob(`/purchase-vouchers/${idVoucher}/content`);
+export const getPurchasePolicy = () => request("/purchase-policy");
+export const getPurchaseBudgets = (params = {}) => request("/purchase-budgets", { params });
+export const setPurchaseBudget = (idProyect, payload) => request(`/purchase-budgets/${idProyect}`, { method: "PUT", body: payload });
+export const updatePurchasePolicy = (payload) => request("/purchase-policy", { method: "PUT", body: payload });
 export const getProyect = (id) => request(`/proyect/${id}`);
 export const createProyect = (payload) => request("/proyect/", { method: "POST", body: payload });
 export const updateProyect = (id, payload) => request(`/proyect/${id}`, { method: "PUT", body: payload });
 export const deleteProyect = (id) => request(`/proyect/${id}`, { method: "DELETE" });
 export const transitionProyect = (id, payload) => request(`/proyect/${id}/transition`, { method: "POST", body: payload });
 export const addProyectMessage = (id, payload) => request(`/proyect/${id}/messages`, { method: "POST", body: payload });
+// El supervisor se hace cargo del proyecto, y lo suelta. No es un PUT sobre
+// `id_supervisor` a proposito: el servidor pone al actor, nunca a quien diga el
+// cuerpo, que es lo que hace que sea TOMAR y no asignar.
+export const takeProyect = (id) => request(`/proyect/${id}/take`, { method: "POST" });
+export const releaseProyect = (id) => request(`/proyect/${id}/release`, { method: "POST" });
+// Quien autoriza asigna el proyecto con maquila a un jefe de taller (`id_user` vacio lo deja libre).
+export const getWorkshopHeads = () => request("/proyect/workshop-heads");
+export const assignProyect = (id, id_user) => request(`/proyect/${id}/assign`, { method: "POST", body: { id_user: id_user || null } });
 
 // Adjuntos de requerimientos (PDF/DOCX), aparte del modulo /document generico
 // -- ver el comentario de `add_project_document` en el backend.
@@ -750,7 +867,10 @@ export const getAllUser = (params = {}) => request("/user/", { params });
 // Solo id+nombre, para selectores (ej. "Responsable" en un vale de almacen
 // o el lider de un proyecto) -- cualquier usuario autenticado puede
 // llamarlo, sin exigir el permiso de lectura completo de user.
-export const getUserOptions = () => request("/user/options");
+export const getUserOptions = (params = {}) => request("/user/options", { params });
+// Solo id+nombre de los equipos vigentes, sin permiso de entidad -- igual que `getUserOptions` --: el editor de
+// graficos del Dashboard elige equipos sin tener el modulo de seguridad (`GET /team/` se lo negaria).
+export const getTeamOptions = () => request("/team/options");
 export const getUser = (id) => request(`/user/${id}`);
 export const createUser = (payload) => request("/user/", { method: "POST", body: payload });
 export const updateUser = (id, payload) => request(`/user/${id}`, { method: "PUT", body: payload });
@@ -762,20 +882,13 @@ export const createUserMfa = (payload) => request("/user_mfa/", { method: "POST"
 export const updateUserMfa = (id, payload) => request(`/user_mfa/${id}`, { method: "PUT", body: payload });
 export const deleteUserMfa = (id) => request(`/user_mfa/${id}`, { method: "DELETE" });
 export const updateInvoiceLineAuthorization = (id, payload) => request(`/invoice/line-authorization/${id}`, { method: "PATCH", body: payload });
-export const getSalesCatalogProducts = (params = {}) => request("/sales-catalog/products", { params });
-export const previewSalesCatalogProductPrice = (id) => request(`/sales-catalog/products/${id}/preview-price`);
-export const upsertSalesCatalogProductConfig = (id, payload) => request(`/sales-catalog/products/${id}/config`, { method: "PATCH", body: payload });
-export const bulkSalesCatalogMargin = (payload) => request("/sales-catalog/products/bulk-margin", { method: "POST", body: payload });
-export const bulkSalesCatalogPublish = (payload) => request("/sales-catalog/products/bulk-publish", { method: "POST", body: payload });
-export const getSalesCatalogApiKeys = () => request("/sales-catalog/api-keys");
-export const createSalesCatalogApiKey = (payload) => request("/sales-catalog/api-keys", { method: "POST", body: payload });
-export const updateSalesCatalogApiKey = (id, payload) => request(`/sales-catalog/api-keys/${id}`, { method: "PATCH", body: payload });
-export const revokeSalesCatalogApiKey = (id) => request(`/sales-catalog/api-keys/${id}/revoke`, { method: "POST" });
-export const getWebShoppers = (params = {}) => request("/web-shoppers", { params });
-export const getWebShopper = (id) => request(`/web-shoppers/${id}`);
-export const deactivateWebShopper = (id) => request(`/web-shoppers/${id}/deactivate`, { method: "PATCH" });
-export const reactivateWebShopper = (id) => request(`/web-shoppers/${id}/reactivate`, { method: "PATCH" });
 export const getKronosAttendance = (payload) => request("/kronos/attendance", { method: "POST", body: payload });
+export const importKronosAttendance = (payload) => request("/kronos/attendance/import", { method: "POST", body: payload });
+export const getSavedAttendance = ({ startDate, endDate }) => request(`/kronos/attendance/saved?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`);
+export const getEmployeeLinks = () => request("/kronos/employee-links");
+export const getAttendanceEmployeeOptions = () => request("/kronos/employee-options");
+export const linkEmployee = (employeeNo, idUser) => request(`/kronos/employee-links/${encodeURIComponent(employeeNo)}`, { method: "PUT", body: { id_user: idUser } });
+export const unlinkEmployee = (employeeNo) => request(`/kronos/employee-links/${encodeURIComponent(employeeNo)}`, { method: "DELETE" });
 export const getKronosPeople = (payload) => request("/kronos/people", { method: "POST", body: payload });
 export const saveKronosPerson = (payload) => request("/kronos/people", { method: "PUT", body: payload });
 export const deleteKronosPerson = (employeeNo, payload) => request(`/kronos/people/${encodeURIComponent(employeeNo)}`, { method: "DELETE", body: payload });
@@ -817,6 +930,24 @@ export const disableLotControl = (idProduct) =>
 // numero con el que la gente conoce el papel: el del sistema anterior cuando lo
 // trae, y si no el identificador.
 export const listWarehouseVouchers = (params = {}) => request("/vouchers", { params });
+
+// --- Notificaciones ---
+export const getNotifications = (params = {}) => request("/notifications", { params });
+export const getUnreadCount = () => request("/notifications/unread-count");
+export const markNotificationAsRead = (id) => request(`/notifications/${id}/read`, { method: "PUT" });
+export const markAllNotificationsAsRead = () => request("/notifications/read-all", { method: "PUT" });
+export const deleteNotification = (id) => request(`/notifications/${id}`, { method: "DELETE" });
+
+// --- Bitácoras de Supervisores ---
+export const createActivityLog = (payload) => request("/activity-logs", { method: "POST", body: payload });
+export const getActivityLogs = (params = {}) => request("/activity-logs", { params });
+export const getActivityLog = (id) => request(`/activity-logs/${id}`);
+export const updateActivityLog = (id, payload) => request(`/activity-logs/${id}`, { method: "PUT", body: payload });
+export const deleteActivityLog = (id) => request(`/activity-logs/${id}`, { method: "DELETE" });
+export const getPendingActivities = (params = {}) => request("/activity-logs/pending", { params });
+export const getMyTeamWorkers = () => request("/activity-logs/my-team");
+export const getActivityLogWorkers = (id) => request(`/activity-logs/${id}/workers`);
+export const getProjectActivityReport = (id, params = {}) => request(`/activity-logs/project/${id}/report`, { params });
 
 // Modulo BI: pregunta en lenguaje natural -> datos + grafica. Tarda: el modelo
 // local puede pensar 1-2 minutos en CPU, por eso el cliente no corta antes.

@@ -475,6 +475,18 @@ class TestIncidentScope(OperationsTestCase):
 
         self.assertEqual(2, list_incidents(self.SUPERVISA)["total"])
 
+    def test_the_listing_says_how_many_pages_there_are(self):
+        """Sin `pages` la pantalla asume una sola y deshabilita Siguiente."""
+        for _ in range(3):
+            self._incident(id_user=7, created_by=7)
+
+        primera = list_incidents(self.SUPERVISA, per_page=2)
+        segunda = list_incidents(self.SUPERVISA, page=2, per_page=2)
+
+        self.assertEqual(2, primera["pages"])
+        self.assertEqual(2, len(primera["items"]))
+        self.assertEqual(1, len(segunda["items"]))
+
     def test_reading_someone_elses_incident_says_it_does_not_exist(self):
         """No se responde 'no puedes': quien no participa tampoco debe saber
         que la incidencia existe."""

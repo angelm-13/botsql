@@ -36,9 +36,11 @@ from app.models.user import User
 from app.models.product import Product
 from app.models.session import transaction_context
 from app.services.inventory_lot_service import (
+    LOTE_DE_APERTURA,
     asentar_desglose as asentar_desglose_de_lotes,
     entrada_en_sesion as entrada_de_lote,
     lleva_lotes,
+    lotes_de_un_movimiento,
     salida_en_sesion as salida_de_lote,
 )
 from app.utils.errors import AppError
@@ -66,7 +68,17 @@ DEFAULT_SOURCE_MODULE = "nucleo"
 
 # Movimientos que exigen un motivo escrito: cambian la existencia sin un
 # documento detras, asi que sin motivo el inventario deja de ser auditable.
-REASON_REQUIRED_MOVEMENTS = {"adjustment", "damage", "destroy", "loss", "expiry", "transfer"}
+# `receive` y `return` entran por la puerta publica sin documento, igual que un
+# ajuste; los flujos internos (vale, factura, compra) no pasan por aqui y traen
+# su propio documento.
+REASON_REQUIRED_MOVEMENTS = {
+    "adjustment", "damage", "destroy", "loss", "expiry", "transfer",
+    "receive", "return",
+}
+
+# Entradas de la puerta publica: suman existencia, y por eso valen lo mismo que
+# un ajuste salvo que citen un documento que las respalde.
+ENTRY_MOVEMENTS = {"receive", "return"}
 
 REFERENCE_TYPES = {
     "invoice", "invoice_line", "purchase", "project", "task", "incident",
@@ -86,11 +98,13 @@ REFERENCE_TYPES = {
 # Es una red contra datos ciclicos, no un limite de dise~no.
 MAX_LOCATION_DEPTH = 20
 
-# El ajuste es el unico movimiento sin documento detras y sin tope: puede
-# crear o destruir existencia por cualquier cantidad. Es justo la operacion con
-# la que se tapa un faltante, asi que exige una capacidad aparte en lugar de
-# bastar con el permiso de editar productos. Los demas movimientos estan
-# acotados por un documento o por la existencia disponible.
+# El ajuste puede crear o destruir existencia por cualquier cantidad sin
+# documento detras. Es justo la operacion con la que se tapa un faltante, asi
+# que exige una capacidad aparte en lugar de bastar con el permiso de editar
+# productos. Lo mismo vale para una entrada (`receive`/`return`) por la puerta
+# publica que no cite un documento verificable: ver `_exigir_respaldo_de_entrada`.
+# Los demas movimientos estan acotados por un documento o por la existencia
+# disponible.
 ADJUSTMENT_CAPABILITY = "inventory_adjustment"
 READ_BIT = 2
 
@@ -100,9 +114,15 @@ def _integer_quantity(value, field="quantity"):
         raise AppError("errors.invalid_field", 400, {"field": field})
     try:
         quantity = int(value)
+        # 1.5 o "1.5" no es una cantidad entera: truncarlo movia 1 en silencio.
+        if isinstance(value, float) and value != quantity:
+            raise ValueError(value)
+        if isinstance(value, str) and str(quantity) != value.strip():
+            raise ValueError(value)
     except (TypeError, ValueError) as exc:
         raise AppError("errors.invalid_field", 400, {"field": field}) from exc
-    if quantity <= 0:
+    # Tope del entero de la base: mas alla desbordaba con un 500.
+    if quantity <= 0 or quantity > 2**31 - 1:
         raise AppError("errors.invalid_field", 400, {"field": field})
     return quantity
 
@@ -150,6 +170,70 @@ def _require_adjustment_capability(db, user_data):
             403,
             {"capability": ADJUSTMENT_CAPABILITY},
         )
+
+
+def _referencia_respalda_la_entrada(db, product_id, reference_type, reference_id) -> bool:
+    """Si el documento citado existe y de verdad involucra a este producto.
+
+    Solo `purchase` -una orden ya recibida con un renglon de su material- e
+    `incident` -un vale con una salida de este producto- se verifican. Cualquier
+    otra referencia (`manual`, `count`, ninguna) es texto que alguien escribio y
+    no respalda nada.
+    """
+    from app.models import Incident, PurchaseOrder, PurchaseOrderLine
+    from app.models.nm_incident_product import NmIncidentProduct
+
+    try:
+        id_documento = int(str(reference_id).strip())
+    except (TypeError, ValueError):
+        return False
+    if reference_type == "purchase":
+        orden = db.get(PurchaseOrder, id_documento)
+        if orden is None or orden.deletion_date is not None \
+                or orden.order_status not in ("received", "partially_received"):
+            return False
+        return db.scalar(
+            select(PurchaseOrderLine.id_purchase_order_line)
+            .join(Product, Product.id_material == PurchaseOrderLine.id_material)
+            .where(PurchaseOrderLine.id_purchase_order == id_documento,
+                   Product.id_product == int(product_id))
+            .limit(1)
+        ) is not None
+    if reference_type == "incident":
+        vale = db.get(Incident, id_documento)
+        if vale is None or vale.deletion_date is not None:
+            return False
+        return db.scalar(
+            select(NmIncidentProduct.id_nm_incident_product)
+            .where(NmIncidentProduct.id_incident == id_documento,
+                   NmIncidentProduct.id_product == int(product_id),
+                   NmIncidentProduct.direction == "salida",
+                   NmIncidentProduct.deletion_date.is_(None))
+            .limit(1)
+        ) is not None
+    return False
+
+
+def _exigir_respaldo_de_entrada(db, user_data, product_id, movement_type,
+                                reference_type, reference_id):
+    """Una entrada sin documento verificable vale lo mismo que un ajuste.
+
+    `receive` y `return` por la puerta publica no tenian tope ni documento: con
+    solo el permiso de editar productos se podia inflar el saldo sin dejar de
+    ser un "movimiento normal". Se exige la misma capacidad que el ajuste, salvo
+    que la entrada cite una orden de compra recibida o un vale de este producto.
+    """
+    if movement_type not in ENTRY_MOVEMENTS:
+        return
+    if has_capability(db, user_data, ADJUSTMENT_CAPABILITY):
+        return
+    if _referencia_respalda_la_entrada(db, product_id, reference_type, reference_id):
+        return
+    raise AppError(
+        "errors.inventory_entry_not_authorized",
+        403,
+        {"capability": ADJUSTMENT_CAPABILITY, "movement_type": movement_type},
+    )
 
 
 def _actor_project_id(user_data):
@@ -412,6 +496,9 @@ def apply_inventory_movement(product_id, payload, user_data):
 
     try:
         with transaction_context() as db:
+            _exigir_respaldo_de_entrada(
+                db, user_data, product_id, movement_type,
+                reference_type, payload.get("reference_id"))
             return apply_movement_in_session(
                 db,
                 product_id,
@@ -626,6 +713,204 @@ def apply_movement_in_session(
     return ledger.serialize(), True
 
 
+def reponer_en_sus_lotes(db, product_id, user_data, *, quantity, idempotency_key,
+                         de_la_salida=None, lotes=None, **movimiento) -> list[dict]:
+    """Repone lo que una salida saco, en los lotes de los que salio.
+
+    Una entrada a un producto con lotes tiene que nombrar su lote, y quien devuelve
+    -un vale, una cancelacion, una nota de credito- no lo escribe: ya lo dijo la
+    salida, que dejo su desglose por lote. `de_la_salida` es la llave de idempotencia
+    del renglon del libro de esa salida; o `lotes`, `[(id_lote, cantidad)]` ya
+    calculado cuando la devolucion no corresponde a una sola salida. Cada lote recibe
+    lo que dio, por la misma puerta de siempre (`apply_movement_in_session`), con la
+    llave `<idempotency_key>:lot<id>`.
+
+    Lo que la salida no explica -no tiene desglose, es anterior al control por lote o
+    el lote ya se dio de baja- entra al lote de apertura, que no lleva fecha: es el
+    ultimo en salir, y ninguna fecha inventada. Un producto sin lotes se repone con un
+    solo movimiento, igual que antes. `movimiento` lleva el resto del movimiento
+    (`movement_type`, `id_location`, `reference_type`, `reference_id`, `reason`).
+    Devuelve los renglones del libro escritos.
+    """
+    quantity = int(quantity)
+    producto = db.get(Product, int(product_id))
+    if producto is None or not lleva_lotes(producto):
+        return [apply_movement_in_session(
+            db, product_id, user_data, quantity_delta=quantity,
+            idempotency_key=idempotency_key, **movimiento)[0]]
+
+    if lotes is None:
+        lotes = lotes_de_un_movimiento(db, llave=de_la_salida)
+    partes, restante = [], quantity
+    for id_lote, dado in lotes:
+        tomado = min(dado, restante)
+        if tomado > 0:
+            partes.append((f"lot{id_lote}", {"id_inventory_lot": id_lote}, tomado))
+            restante -= tomado
+    if restante > 0:
+        partes.append(("apertura", {"lot_code": LOTE_DE_APERTURA}, restante))
+
+    return [apply_movement_in_session(
+        db, product_id, user_data, quantity_delta=cantidad,
+        idempotency_key=f"{idempotency_key}:{sufijo}", lot=lote, **movimiento)[0]
+        for sufijo, lote, cantidad in partes]
+
+
+def transfer_in_session(db, product_id, payload, user_data):
+    """Nucleo de un traspaso, dentro de una transaccion que abre el llamador.
+
+    Existe aparte para que un traslado de pieza serializada (`move_asset`,
+    en `inventory_asset_service.py`) pueda escribir el movimiento de
+    existencia Y el evento de la pieza en la MISMA transaccion -mismo
+    motivo que separa `apply_movement_in_session` de `apply_inventory_
+    movement`-. Antes de que existiera esta version, `move_asset` llamaba a
+    la entrada publica `transfer_inventory`, que abre su PROPIA transaccion
+    independiente: si algo fallaba despues de que esa segunda transaccion ya
+    habia hecho COMMIT del traspaso, el rollback de la primera no revertia
+    nada, y el saldo quedaba movido mientras la pieza seguia apuntando a la
+    ubicacion vieja -exactamente lo que este modulo existe para impedir.
+    Hallazgo de la auditoria de seguridad del 2026-10-06.
+
+    Los validadores de la entrada publica ya corrieron cuando se llega aqui.
+    """
+    key = _idempotency_key(payload)
+    quantity = _integer_quantity(payload.get("quantity"))
+    reason = _required_reason(payload, "transfer")
+    outbound_key = f"{key}:out"
+
+    previous = db.scalars(
+        select(InventoryLedger).where(InventoryLedger.idempotency_key == outbound_key)
+    ).first()
+    if previous:
+        # Del traslado se compara la salida: mismo producto, misma cantidad
+        # y mismo origen. Trasladar 10 y despues 99 con la misma llave
+        # devolvia el par de 10 y contestaba que se habia hecho.
+        if not (
+            previous.id_product == int(product_id)
+            and int(previous.quantity_delta or 0) == -quantity
+            and int(previous.id_location or 0) == int(
+                payload.get("id_location_from") or previous.id_location or 0)
+        ):
+            raise AppError(
+                "errors.idempotency_conflict",
+                409,
+                {
+                    "idempotency_key": key,
+                    "stored": {
+                        "quantity": abs(int(previous.quantity_delta or 0)),
+                        "id_location_from": previous.id_location,
+                        "id_location_to": previous.id_location_target,
+                    },
+                },
+            )
+        pair = db.scalars(
+            select(InventoryLedger)
+            .where(InventoryLedger.transfer_group == previous.transfer_group)
+            .order_by(InventoryLedger.id_inventory_ledger)
+        ).all()
+        return {"movements": [row.serialize() for row in pair]}, False
+
+    product = _locked_product(db, product_id)
+    project_id = _authorize(db, product, user_data)
+    _ensure_stock_seeded(db, product)
+    origin = _location(db, payload.get("id_location_from"), "id_location_from")
+    target = _location(db, payload.get("id_location_to"), "id_location_to")
+    if origin.id_location == target.id_location:
+        raise AppError(
+            "errors.inventory_transfer_same_location",
+            400,
+            {"field": "id_location_to"},
+        )
+
+    actor_id = int(user_data.get("id_user") or 0)
+    # Se bloquean las dos filas en orden de identificador: si dos traspasos
+    # cruzados corren a la vez, tomar los candados siempre en el mismo
+    # orden evita que se queden esperando uno al otro.
+    first, second = sorted([origin.id_location, target.id_location])
+    rows = {
+        location_id: _stock_row(db, product.id_product, location_id, actor_id, for_update=True)
+        for location_id in (first, second)
+    }
+    origin_stock = rows[origin.id_location]
+    target_stock = rows[target.id_location]
+
+    available = int(origin_stock.quantity or 0)
+    if available < quantity:
+        raise AppError(
+            "errors.inventory_insufficient_stock",
+            409,
+            {
+                "available": available,
+                "requested": quantity,
+                "id_location": origin.id_location,
+                "location_description": origin.location_description,
+            },
+        )
+
+    origin_stock.quantity = available - quantity
+    target_stock.quantity = int(target_stock.quantity or 0) + quantity
+    db.flush()
+    # El total del producto no cambia en un traspaso, pero se recalcula
+    # para no dar por hecho el estado previo.
+    product.cantidad = _product_total(db, product.id_product)
+
+    # Los lotes viajan con la existencia: sale de los del origen -el que vence
+    # primero, o el que nombre `lot`- y los MISMOS lotes entran al destino. Sin esto el
+    # saldo por lote se quedaba en el origen y una salida desde el destino fallaba con
+    # existencia que el stock decia que habia.
+    sacados, recibidos = [], []
+    if lleva_lotes(product):
+        sacados = salida_de_lote(
+            db, product=product, id_location=origin.id_location,
+            cantidad=quantity, lote_pedido=payload.get("lot"), actor=actor_id)
+        for lote, delta in sacados:
+            recibidos += entrada_de_lote(
+                db, product=product, id_location=target.id_location,
+                cantidad=-int(delta), lote_pedido={"id_inventory_lot": lote.id_inventory_lot},
+                actor=actor_id)
+    elif payload.get("lot"):
+        # Igual que en `apply_movement_in_session`: nombrar un lote de algo que no
+        # los lleva casi siempre es el producto equivocado.
+        raise AppError("errors.lot_not_applicable", 400,
+                       {"field": "lot", "id_product": product.id_product})
+
+    group = str(uuid.uuid4())
+    reference_id = str(payload.get("reference_id") or "").strip()[:100] or None
+    common = {
+        "id_product": product.id_product,
+        "id_proyect": project_id,
+        "movement_type": "transfer",
+        "balance_after": product.cantidad,
+        "reference_type": _reference_type(payload) or "transfer",
+        "reference_id": reference_id,
+        "reason": reason,
+        "created_by": actor_id,
+        "transfer_group": group,
+    }
+    outbound = _append_ledger(
+        db,
+        **common,
+        quantity_delta=-quantity,
+        id_location=origin.id_location,
+        id_location_target=target.id_location,
+        location_balance_after=origin_stock.quantity,
+        idempotency_key=outbound_key,
+    )
+    inbound = _append_ledger(
+        db,
+        **common,
+        quantity_delta=quantity,
+        id_location=target.id_location,
+        id_location_target=origin.id_location,
+        location_balance_after=target_stock.quantity,
+        idempotency_key=f"{key}:in",
+    )
+    if sacados:
+        asentar_desglose_de_lotes(db, outbound, sacados, actor_id)
+        asentar_desglose_de_lotes(db, inbound, recibidos, actor_id)
+    return {"movements": [outbound.serialize(), inbound.serialize()]}, True
+
+
 def transfer_inventory(product_id, payload, user_data):
     """Mueve existencia de una ubicacion a otra en una sola transaccion.
 
@@ -633,120 +918,45 @@ def transfer_inventory(product_id, payload, user_data):
     del origen y la entrada al destino. Si algo falla, no se mueve ninguna de
     las dos puntas.
     """
-    key = _idempotency_key(payload)
-    quantity = _integer_quantity(payload.get("quantity"))
-    reason = _required_reason(payload, "transfer")
+    try:
+        with transaction_context() as db:
+            return transfer_in_session(db, product_id, payload, user_data)
+    except IntegrityError:
+        # Misma carrera que ya resolvia `apply_inventory_movement` y que
+        # aqui no se resolvia hasta ahora (hallazgo de la auditoria de
+        # seguridad del 2026-10-06): dos reintentos con la misma llave de
+        # idempotencia pueden pasar los dos la comprobacion de "no existe
+        # todavia" antes de que ninguno comprometa, y el que pierde chocaba
+        # contra el indice unico con un 500 crudo -justo el cliente que
+        # reintenta por la llave, viendo fallar su reintento.
+        key = _idempotency_key(payload)
+        movimientos = _existing_transfer(f"{key}:out", product_id)
+        if movimientos is None:
+            raise
+        return movimientos, False
 
+
+def _existing_transfer(outbound_key, product_id):
+    """El par de renglones que otra llamada ya escribio con esta misma llave.
+
+    Se abre una transaccion nueva a proposito: la que perdio la carrera quedo
+    abortada por el error de integridad y no puede seguir consultando.
+    """
     with transaction_context() as db:
-        outbound_key = f"{key}:out"
         previous = db.scalars(
             select(InventoryLedger).where(InventoryLedger.idempotency_key == outbound_key)
         ).first()
-        if previous:
-            # Del traslado se compara la salida: mismo producto, misma cantidad
-            # y mismo origen. Trasladar 10 y despues 99 con la misma llave
-            # devolvia el par de 10 y contestaba que se habia hecho.
-            if not (
-                previous.id_product == int(product_id)
-                and int(previous.quantity_delta or 0) == -quantity
-                and int(previous.id_location or 0) == int(
-                    payload.get("id_location_from") or previous.id_location or 0)
-            ):
-                raise AppError(
-                    "errors.idempotency_conflict",
-                    409,
-                    {
-                        "idempotency_key": key,
-                        "stored": {
-                            "quantity": abs(int(previous.quantity_delta or 0)),
-                            "id_location_from": previous.id_location,
-                            "id_location_to": previous.id_location_target,
-                        },
-                    },
-                )
-            pair = db.scalars(
-                select(InventoryLedger)
-                .where(InventoryLedger.transfer_group == previous.transfer_group)
-                .order_by(InventoryLedger.id_inventory_ledger)
-            ).all()
-            return {"movements": [row.serialize() for row in pair]}, False
-
-        product = _locked_product(db, product_id)
-        project_id = _authorize(db, product, user_data)
-        _ensure_stock_seeded(db, product)
-        origin = _location(db, payload.get("id_location_from"), "id_location_from")
-        target = _location(db, payload.get("id_location_to"), "id_location_to")
-        if origin.id_location == target.id_location:
-            raise AppError(
-                "errors.inventory_transfer_same_location",
-                400,
-                {"field": "id_location_to"},
-            )
-
-        actor_id = int(user_data.get("id_user") or 0)
-        # Se bloquean las dos filas en orden de identificador: si dos traspasos
-        # cruzados corren a la vez, tomar los candados siempre en el mismo
-        # orden evita que se queden esperando uno al otro.
-        first, second = sorted([origin.id_location, target.id_location])
-        rows = {
-            location_id: _stock_row(db, product.id_product, location_id, actor_id, for_update=True)
-            for location_id in (first, second)
-        }
-        origin_stock = rows[origin.id_location]
-        target_stock = rows[target.id_location]
-
-        available = int(origin_stock.quantity or 0)
-        if available < quantity:
-            raise AppError(
-                "errors.inventory_insufficient_stock",
-                409,
-                {
-                    "available": available,
-                    "requested": quantity,
-                    "id_location": origin.id_location,
-                    "location_description": origin.location_description,
-                },
-            )
-
-        origin_stock.quantity = available - quantity
-        target_stock.quantity = int(target_stock.quantity or 0) + quantity
-        db.flush()
-        # El total del producto no cambia en un traspaso, pero se recalcula
-        # para no dar por hecho el estado previo.
-        product.cantidad = _product_total(db, product.id_product)
-
-        group = str(uuid.uuid4())
-        reference_id = str(payload.get("reference_id") or "").strip()[:100] or None
-        common = {
-            "id_product": product.id_product,
-            "id_proyect": project_id,
-            "movement_type": "transfer",
-            "balance_after": product.cantidad,
-            "reference_type": _reference_type(payload) or "transfer",
-            "reference_id": reference_id,
-            "reason": reason,
-            "created_by": actor_id,
-            "transfer_group": group,
-        }
-        outbound = _append_ledger(
-            db,
-            **common,
-            quantity_delta=-quantity,
-            id_location=origin.id_location,
-            id_location_target=target.id_location,
-            location_balance_after=origin_stock.quantity,
-            idempotency_key=outbound_key,
-        )
-        inbound = _append_ledger(
-            db,
-            **common,
-            quantity_delta=quantity,
-            id_location=target.id_location,
-            id_location_target=origin.id_location,
-            location_balance_after=target_stock.quantity,
-            idempotency_key=f"{key}:in",
-        )
-        return {"movements": [outbound.serialize(), inbound.serialize()]}, True
+        if previous is None:
+            return None
+        if previous.id_product != int(product_id):
+            raise AppError("errors.idempotency_conflict", 409,
+                           {"idempotency_key": outbound_key})
+        pair = db.scalars(
+            select(InventoryLedger)
+            .where(InventoryLedger.transfer_group == previous.transfer_group)
+            .order_by(InventoryLedger.id_inventory_ledger)
+        ).all()
+        return {"movements": [row.serialize() for row in pair]}
 
 
 def product_stock(product_id, user_data) -> dict:
@@ -845,7 +1055,7 @@ def warehouse_stock(location_id, user_data) -> dict:
                 # almacen es una tabla de texto -mismo reclamo que ya se
                 # resolvio en Localizar-, y aqui es donde mas se nota, porque
                 # es la lista mas larga del almacen.
-                "path_imagen": getattr(product, "path_imagen", None),
+                "path_imagen": getattr(product, "path_imagen", None) or getattr(material, "path_imagen", None),
                 "tracking_mode": getattr(product, "tracking_mode", None),
                 # El estatus heredado del sistema anterior (ENTRADA, SALIDA,
                 # DAÑADO, EXTRAVIADO...) y el color, para la misma tarjeta que

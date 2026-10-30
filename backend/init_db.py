@@ -75,11 +75,41 @@ def bootstrap_admin_username() -> str:
 
 
 def bootstrap_admin_password() -> str:
-    return os.getenv("BOOTSTRAP_ADMIN_PASSWORD") or "test password"
+    clave = os.getenv("BOOTSTRAP_ADMIN_PASSWORD")
+    if clave:
+        return clave
+    # La contrasena de reserva existe solo para desarrollo: en produccion un
+    # administrador con "test password" es una puerta abierta.
+    from app.utils.startup_guard import is_production
+    if is_production():
+        raise RuntimeError("BOOTSTRAP_ADMIN_PASSWORD no esta definida: en produccion no se "
+                           "crea el administrador inicial con una contrasena de ejemplo.")
+    return DEFAULT_BOOTSTRAP_PASSWORD
 
 
 def bootstrap_admin_email() -> str:
     return os.getenv("BOOTSTRAP_ADMIN_EMAIL") or "admin1@tyakxa.local"
+
+
+# Contrasena por defecto del bootstrap y su hash, tal como lo siembra
+# database/init.sql al crear admin1 en una base limpia. Sin reconocerlo, una
+# instalacion nueva dejaba a admin1 con esta contrasena publica aunque el Secret
+# trajera BOOTSTRAP_ADMIN_PASSWORD, porque "ya hay hash" parecia un cambio hecho
+# por una persona (visto en comala-prod, 2026-10-12).
+DEFAULT_BOOTSTRAP_PASSWORD = "test password"
+SEEDED_DEFAULT_HASH = "$2b$12$RxTtZtblFwu6ZsmtfNP9Meg6tYSZOCsVIZQLMe260W9seWcdrUma6"
+
+
+def password_hash_needs_reset(current_hash: str | None, configured_password: str) -> bool:
+    """Decide si el hash de admin1 se reemplaza por BOOTSTRAP_ADMIN_PASSWORD.
+
+    Solo cuando esta vacio (volumen roto) o sigue siendo el hash sembrado por
+    init.sql y el Secret define una contrasena distinta de la de por defecto.
+    Cualquier otro hash, incluido el de un cambio hecho desde la app, no se toca.
+    """
+    if not current_hash:
+        return True
+    return current_hash == SEEDED_DEFAULT_HASH and configured_password != DEFAULT_BOOTSTRAP_PASSWORD
 
 
 def admin_mfa_enabled() -> bool:
@@ -382,8 +412,8 @@ def init_database():
                 # columns populated. Only update columns that exist.
                 #
                 # The password column(s) are the one exception: they are only
-                # restored to the bootstrap default when empty/NULL (a broken
-                # volume). If admin1 already has a real hash -- including one
+                # replaced by BOOTSTRAP_ADMIN_PASSWORD when empty/NULL (a broken
+                # volume) or still the hash seeded by init.sql ("test password"). If admin1 already has a real hash -- including one
                 # set via POST /user/me/password -- it is left untouched, so a
                 # legitimate self-service password change survives a
                 # container restart instead of getting silently reverted.
@@ -403,18 +433,20 @@ def init_database():
 
                     password_columns = [c for c in ("password", "password_hash") if c in user_columns]
                     if password_columns:
-                        empty_check = " OR ".join(f"({c} IS NULL OR {c} = '')" for c in password_columns)
                         with engine.connect() as conn:
-                            needs_password = conn.execute(
-                                text(f"SELECT COUNT(*) FROM \"user\" WHERE username = :username AND ({empty_check})"),
+                            current = conn.execute(
+                                text(f"SELECT {', '.join(password_columns)} FROM \"user\" WHERE username = :username"),
                                 {"username": bootstrap_username},
-                            ).scalar()
+                            ).first()
+                        needs_password = current is not None and any(
+                            password_hash_needs_reset(value, bootstrap_password) for value in current
+                        )
                         if needs_password:
                             hashed = bcrypt.hashpw(bootstrap_password.encode(), bcrypt.gensalt(rounds=12)).decode()
                             pwd_updates = ", ".join(f"{c} = :hashed" for c in password_columns)
                             with engine.begin() as conn:
                                 conn.execute(text(f"UPDATE \"user\" SET {pwd_updates} WHERE username = :username"), {"username": bootstrap_username, "hashed": hashed})
-                            print(f"⚠️  Bootstrap admin already exists; password column(s) were empty, restored default ({bootstrap_username})")
+                            print(f"⚠️  Bootstrap admin already exists; password column(s) were empty or the seeded default, set from BOOTSTRAP_ADMIN_PASSWORD ({bootstrap_username})")
                         else:
                             print(f"⚠️  Bootstrap admin already exists; credentials verified, existing password left untouched ({bootstrap_username})")
                     else:

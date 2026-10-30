@@ -4,6 +4,7 @@ from decimal import Decimal
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import String, Integer, BigInteger, SmallInteger, Boolean, Date, DateTime, Float, Numeric, ForeignKey, Text, JSON, Enum, LargeBinary, UniqueConstraint, func
 from app.models.base import Base
+from app.utils.tiempo import a_iso_utc
 
 
 def to_json_value(value):
@@ -48,6 +49,37 @@ class NmIncidentProduct(Base):
     # que el libro de inventario necesita para saber si descontar, devolver o
     # solo cambiar de sitio.
     direction: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # A que operador u otro supervisor se le entrega esta pieza -- distinto
+    # del responsable del vale completo (`incident.id_user`): el vale puede
+    # salir a nombre de un supervisor y la herramienta pasar de mano en mano
+    # hasta quien de verdad la va a usar. `custody_confirmed_date` es cuando
+    # el supervisor dueño del vale confirma que la recupero de manos de esa
+    # persona -- un paso INTERMEDIO, no la devolucion al almacen (esa sigue
+    # siendo `close_date`). Ver `warehouse_voucher_service.py`.
+    id_user_delivered_to: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('user.id_user'), nullable=True)
+    custody_confirmed_date: Mapped[object] = mapped_column(DateTime, nullable=True)
+    # A quien se entrego la pieza cuando NO es un usuario (chofer, mensajero).
+    # Excluyente con `id_user_delivered_to`.
+    delivered_to_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # Quien trajo la pieza de vuelta cuando no es el responsable del vale
+    # (usuario, o nombre libre si es externo). Vive en el renglon de ENTRADA.
+    returned_by_user: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('user.id_user'), nullable=True)
+    returned_by_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # En un reporte de destruccion o extravio: a quien se le cerro el prestamo, o sea
+    # quien tenia la pieza. Lo pone el sistema desde los prestamos abiertos del producto,
+    # no se escribe a mano; nulo si la pieza estaba en el almacen.
+    held_by_user: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey('user.id_user'), nullable=True)
+    # Cuando se avisó por última vez (campanita) que este renglón ya debió
+    # volver y no ha vuelto. Deduplica el job periódico que revisa vales
+    # vencidos -- sin esto, cada corrida repetiría el mismo aviso.
+    overdue_notified_date: Mapped[object] = mapped_column(DateTime, nullable=True)
+    # Estado de la herramienta en el vale: disponible, apartada, entregada,
+    # en_transito, devuelta, dañada, extraviada, destruida. Rastrea si está
+    # comprometida en otro vale.
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default='disponible', server_default='disponible')
     # Desde cuando y hasta cuando. `close_date` ya decia cuando se cerro, pero
     # sin `due_date` no se podia listar lo vencido, que es la razon de llevar
     # vales.
@@ -70,13 +102,21 @@ class NmIncidentProduct(Base):
             'id_location_from': to_json_value(self.id_location_from),
             'id_location_to': to_json_value(self.id_location_to),
             'direction': to_json_value(self.direction),
+            'id_user_delivered_to': to_json_value(self.id_user_delivered_to),
+            'custody_confirmed_date': to_json_value(self.custody_confirmed_date),
+            'delivered_to_name': to_json_value(self.delivered_to_name),
+            'returned_by_user': to_json_value(self.returned_by_user),
+            'returned_by_name': to_json_value(self.returned_by_name),
+            'held_by_user': to_json_value(self.held_by_user),
+            'overdue_notified_date': to_json_value(self.overdue_notified_date),
             'start_date': to_json_value(self.start_date),
             'due_date': to_json_value(self.due_date),
             'close_date': to_json_value(self.close_date),
             'created_by': to_json_value(self.created_by),
-            'creation_date': to_json_value(self.creation_date),
-            'last_update_date': to_json_value(self.last_update_date),
-            'deletion_date': to_json_value(self.deletion_date),
+            'creation_date': a_iso_utc(self.creation_date),
+            'last_update_date': a_iso_utc(self.last_update_date),
+            'deletion_date': a_iso_utc(self.deletion_date),
+            'status': to_json_value(self.status),
         }
 
     def serialize_summary(self) -> dict:

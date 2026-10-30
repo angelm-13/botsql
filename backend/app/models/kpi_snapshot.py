@@ -48,6 +48,10 @@ class KpiSnapshot(Base):
     dimension_key: Mapped[dict] = mapped_column(JSON().with_variant(JSONB, "postgresql"), nullable=False)
     periodo: Mapped[object] = mapped_column(Date, nullable=False)
     valor: Mapped[float] = mapped_column(Numeric, nullable=False)
+    # Solo lo escriben los KPIs con `agregacion="promedio_ponderado"` (ver
+    # AGREGACIONES en app/kpis/registry.py): cuantos casos hay detras de
+    # `valor`. NULL para "suma"/"ultimo".
+    peso: Mapped[float | None] = mapped_column(Numeric, nullable=True)
     computed_at: Mapped[object] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
     def serialize(self) -> dict:
@@ -57,6 +61,7 @@ class KpiSnapshot(Base):
             'dimension_key': to_json_value(self.dimension_key),
             'periodo': to_json_value(self.periodo),
             'valor': to_json_value(self.valor),
+            'peso': to_json_value(self.peso),
             'computed_at': to_json_value(self.computed_at),
         }
 
