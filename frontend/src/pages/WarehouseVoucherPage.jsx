@@ -93,6 +93,14 @@ const esReporteDeIncidente = (tipos, idTipo) => CLAVES_DE_REPORTE.includes(clave
 // Destruccion y extravio dan de baja la pieza: si estaba prestada se le cierra el prestamo a
 // quien la tenia (`held_by_user`). Dañado y reparacion no cierran nada.
 const esBajaDeIncidente = (tipos, idTipo) => ["destruccion", "extraviado"].includes(claveDeTipo(tipos, idTipo));
+// "a, b y c" en el idioma de la pantalla; si el navegador no sabe armarlo, comas.
+const unirFaltantes = (frases, idioma) => {
+  try {
+    return new Intl.ListFormat(idioma, { style: "long", type: "conjunction" }).format(frases);
+  } catch {
+    return frases.join(", ");
+  }
+};
 // Quienes tienen fuera un producto por cantidad, juntando sus vales: lo que trae Localizar
 // en `on_loan.holders`, una persona por renglon.
 const titularesDe = (producto) => {
@@ -1600,13 +1608,32 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
   // Se comprueba aqui para decirlo antes de mandar, no despues de que el
   // servidor conteste; el servidor lo exige igual, que es lo que cuenta.
   const esReporte = esReporteAhora;
-  const listo = borrador.lines.length > 0 && borrador.id_incident_type
-    && borrador.id_user && (esReporte || borrador.needed_date) && borrador.note.trim()
-    && borrador.lines.every((l, i) => l.serializado || (
-      // De prestamo: hay que saber quien la tenia (con varios, lo elige quien reporta).
-      (esDePrestamo(l) ? Boolean(l.held_by_user) : Boolean(l.id_location_from))
-      && Number(l.quantity) >= 1
-      && Number(l.quantity) <= disponibleDe(l, i)));
+  // Lo que falta para poder guardar, en el orden en que se llena el formulario. Es la
+  // unica fuente de `listo` y del aviso de abajo: lo que bloquea el boton es
+  // exactamente lo que el aviso dice, sin dos listas que se descuadren.
+  const faltantes = [];
+  const falta = (clave, porOmision) => {
+    if (!faltantes.some((f) => f.clave === clave)) faltantes.push({ clave, porOmision });
+  };
+  if (!borrador.id_user) falta("missing_responsible", "elegir el responsable");
+  if (!esReporte && !borrador.needed_date) falta("missing_needed_date", "indicar cuándo se necesita");
+  if (!borrador.note.trim()) falta("missing_note", "escribir el motivo");
+  borrador.lines.forEach((l, i) => {
+    if (l.serializado) return;
+    // De prestamo: hay que saber quien la tenia (con varios, lo elige quien reporta).
+    if (esDePrestamo(l)) {
+      if (!l.held_by_user) { falta("missing_held_by", "elegir quién la tenía en cada renglón"); return; }
+    } else if (!l.id_location_from) {
+      falta("missing_origin", "elegir de dónde sale cada renglón");
+      return;
+    }
+    if (!(Number(l.quantity) >= 1 && Number(l.quantity) <= disponibleDe(l, i))) {
+      falta("missing_quantity", "revisar la cantidad: no hay tanto disponible");
+    }
+  });
+  const listo = borrador.lines.length > 0 && Boolean(borrador.id_incident_type)
+    && faltantes.length === 0;
+  const idioma = document.documentElement.lang || "es";
 
   return (
     <section className="vale-borrador">
@@ -1936,10 +1963,10 @@ function Borrador({ borrador, setBorrador, tipos, ubicaciones, usuarios,
         <button className="button button-quiet" onClick={onCancelar}>
           {t("common.cancel", "Cancelar")}
         </button>
-        {!listo && borrador.lines.length > 0 && (
+        {!listo && borrador.lines.length > 0 && faltantes.length > 0 && (
           <span className="muted">
-            {t("voucher.missing",
-              "Falta el responsable, o el destino de un renglón que cambia de ubicación.")}
+            {t("voucher.missing_prefix", "Falta:")}{" "}
+            {unirFaltantes(faltantes.map((f) => t(`voucher.${f.clave}`, f.porOmision)), idioma)}.
           </span>
         )}
       </footer>
