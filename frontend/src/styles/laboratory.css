@@ -10,6 +10,8 @@
 .lab-form label { display: grid; gap: 5px; color: #4d5f66; font-size: 12px; font-weight: 700; }
 .lab-form input, .lab-form select, .lab-form textarea, .lab-toolbar input, .lab-toolbar select, .workflow-row input, .workflow-row select { width: 100%; min-height: 38px; border: 1px solid #b8c6ca; border-radius: 4px; padding: 8px 10px; background: #fff; color: var(--lab-ink); font: inherit; }
 .lab-form textarea { min-height: 74px; resize: vertical; }
+.lab-form .doc-no-expiration { display: flex; align-items: center; gap: 8px; }
+.lab-form .doc-no-expiration input { width: auto; min-height: 0; }
 .primary-command, .secondary-command, .lab-toolbar button, .workflow-row button, .signed-row button { min-height: 38px; border: 0; border-radius: 4px; padding: 0 14px; background: var(--lab-teal); color: white; font-weight: 750; cursor: pointer; }
 .secondary-command { display: inline-flex; gap: 7px; align-items: center; background: #263f47; }
 .icon-command { display: inline-grid; width: 38px; height: 38px; place-items: center; border: 1px solid #b8c6ca; border-radius: 4px; background: white; color: var(--lab-teal); cursor: pointer; }
