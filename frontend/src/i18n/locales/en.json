@@ -4831,7 +4831,7 @@
     "teams_selected": "team(s) selected",
     "teams_filter_help": "If you pick teams, the “No team” row is no longer shown.",
     "teams_filter_history_help": "Each day counts in the team the person was in that day.",
-    "no_filters": "This KPI has no filters",
+    "no_filters": "This indicator has no filters",
     "state_no_data": "No data in this period",
     "state_no_data_help": "Try another date range: this KPI had no activity in this one.",
     "state_not_calculated": "Not calculated",

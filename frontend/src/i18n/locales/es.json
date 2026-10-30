@@ -4947,7 +4947,7 @@
     "teams_selected": "equipo(s) seleccionado(s)",
     "teams_filter_help": "Si eliges equipos, la fila «Sin equipo» deja de mostrarse.",
     "teams_filter_history_help": "Cada día cuenta en el equipo que la persona tenía ese día.",
-    "no_filters": "Este KPI no tiene filtros",
+    "no_filters": "Este indicador no tiene filtros",
     "state_no_data": "Sin datos en el periodo",
     "state_no_data_help": "Prueba con otro rango de fechas: este KPI no tuvo movimientos en este.",
     "state_not_calculated": "No calculado",

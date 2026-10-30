@@ -145,6 +145,7 @@ export function estadoDeWidget(widget, kpiCatalog, hoy = new Date()) {
   return {
     editingWidgetId: widget.id_kpi_dashboard_widget,
     paso: 0,
+    visitados: [],
     idsKpiSeleccionados: ids,
     tipoGrafica: widget.tipo_grafica || "numero",
     rangoRelativo: relativo ? guardados.rango_relativo : RANGO_PERSONALIZADO,

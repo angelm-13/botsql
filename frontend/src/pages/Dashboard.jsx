@@ -41,7 +41,7 @@ import {
   rangoInicialDelBorrador, tiposDeGraficaPermitidos as tiposPermitidosPorKpi, tituloConHtml, tituloDeWidget, unidadDeKpi,
   widgetDeBorrador,
 } from "../kpi/kpiParametros.js";
-import { puedeIrAlPaso } from "../kpi/kpiPasos.js";
+import { accionDeEnter, kpiAdmiteFiltros, puedeAgregar, puedeIrAlPaso } from "../kpi/kpiPasos.js";
 import { claveDeGrupo, colorDeModulo } from "../kpi/kpiSelector.js";
 import { detallesDePersonas, nombreDePersona } from "../kpi/kpiPersonas.js";
 import { NO_CALCULADO, SIN_DATOS, estadoDeDatos } from "../kpi/kpiEstado.js";
@@ -242,6 +242,8 @@ function defaultPanelState() {
     // Paso del asistente (0 = Que medir); vive aqui, no en el panel, para que
     // el borrador sobreviva a cambiar de tablero.
     paso: 0,
+    // Claves de los pasos ya vistos: Agregar exige haber pasado por "filtros" si el indicador los admite.
+    visitados: [],
     idsKpiSeleccionados: [],
     tipoGrafica: "numero",
     // Rango: por omision "ultimos 30 dias" como chip (se recalcula cada vez que
@@ -1744,6 +1746,7 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
     editingWidgetId,
     colapsado,
     paso,
+    visitados = [],
     idsKpiSeleccionados,
     tipoGrafica,
     rangoRelativo,
@@ -1817,13 +1820,15 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
   const esTabla = tipoGrafica === "tabla";
 
   // Un widget "tabla" (KPI vivo) no tiene periodo ni filtros: son datos de
-  // "ahora". Su asistente es de un solo paso.
+  // "ahora". Su asistente es de un solo paso. Sin filtros aplicables el paso
+  // "Filtros" no existe (la nota va en "Periodo").
+  const admiteFiltros = kpiAdmiteFiltros({ hayAlgunFiltro, tipo: tipoGrafica });
   const pasos = esTabla
     ? [{ clave: "medir", etiqueta: tx("step_measure", "Qué medir") }]
     : [
       { clave: "medir", etiqueta: tx("step_measure", "Qué medir") },
       { clave: "periodo", etiqueta: tx("step_period", "Periodo") },
-      { clave: "filtros", etiqueta: tx("step_filters", "Filtros") },
+      ...(admiteFiltros ? [{ clave: "filtros", etiqueta: tx("step_filters", "Filtros") }] : []),
     ];
   const pasoActual = Math.min(paso || 0, pasos.length - 1);
   const esUltimoPaso = pasoActual === pasos.length - 1;
@@ -1941,7 +1946,19 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
 
   function irAPaso(indice) {
     setError("");
-    onChangePanelState({ paso: Math.max(0, Math.min(indice, pasos.length - 1)) });
+    const destino = Math.max(0, Math.min(indice, pasos.length - 1));
+    const clave = pasos[destino].clave;
+    onChangePanelState({ paso: destino, visitados: visitados.includes(clave) ? visitados : [...visitados, clave] });
+  }
+
+  // Enter dentro de un campo nunca guarda (ver accionDeEnter): avanza de paso o no hace nada.
+  function alTeclear(evento) {
+    if (evento.key !== "Enter") return;
+    const etiqueta = evento.target.tagName;
+    if (etiqueta !== "INPUT" && etiqueta !== "SELECT") return;
+    evento.preventDefault();
+    const accion = accionDeEnter({ esUltimoPaso, puedeAvanzar, enBuscador: Boolean(evento.target.closest(".kpi-editor-buscador")) });
+    if (accion === "avanzar") irAPaso(pasoActual + 1);
   }
 
   // FormularioPlegable (cerrarAlEnviar) cierra el panel cuando esta funcion
@@ -1962,6 +1979,11 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
     // ahi lo esperable es pasar al siguiente paso, no guardar a medias.
     if (!esUltimoPaso) {
       if (puedeAvanzar) irAPaso(pasoActual + 1);
+      throw NO_CERRAR;
+    }
+    // Candado final: sin haber visto "Filtros" no se guarda, llegue el envio por donde llegue.
+    if (!puedeAgregar({ admiteFiltros, visitados })) {
+      irAPaso(pasos.length - 1);
       throw NO_CERRAR;
     }
     if (idsKpiSeleccionados.length === 0) rechazar(tx("kpi_required", "Elige al menos un KPI."));
@@ -2243,6 +2265,10 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
                 </label>
               </div>
             )}
+
+            {!admiteFiltros && !esTabla && (
+              <p className="kpi-editor-sin-filtros">{tx("no_filters", "Este indicador no tiene filtros")}</p>
+            )}
       </>
     ),
     filtros: (
@@ -2340,10 +2366,6 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
                 )}
               </div>
             )}
-
-            {!hayAlgunFiltro && (
-              <p className="kpi-editor-sin-filtros">{tx("no_filters", "Este KPI no tiene filtros")}</p>
-            )}
       </>
     ),
   };
@@ -2387,7 +2409,7 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
           )}
 
           <div className="kpi-editor-cuerpo">
-            <div className="kpi-editor-paso-contenido kpi-panel-col">
+            <div className="kpi-editor-paso-contenido kpi-panel-col" onKeyDown={alTeclear}>
               {contenidoDelPaso[pasos[pasoActual].clave]}
             </div>
             <aside className="kpi-editor-vista-previa">
@@ -2432,11 +2454,12 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
                 </button>
               </div>
               {!esUltimoPaso ? (
-                <button type="button" className="button primary" disabled={!puedeAvanzar} onClick={() => irAPaso(pasoActual + 1)}>
+                <button key="paso-siguiente" type="button" className="button primary" disabled={!puedeAvanzar} onClick={() => irAPaso(pasoActual + 1)}>
                   {tx("step_next", "Siguiente")}
                 </button>
               ) : (
                 <button
+                  key="paso-agregar"
                   type="submit"
                   className="button primary"
                   disabled={saving || idsKpiSeleccionados.length === 0}
