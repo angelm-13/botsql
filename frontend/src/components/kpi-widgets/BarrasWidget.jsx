@@ -5,6 +5,7 @@ import {
 } from "recharts";
 import { DefinicionDePatrones } from "./PatronesSvg";
 import { rellenoConPatron } from "../../kpi/kpiAccesibilidad";
+import { ANGULO_ETIQUETA, disenoDeBarras, recortarEtiqueta } from "../../kpi/kpiEtiquetasEje";
 
 export function TooltipRico({ active, payload, label, series }) {
   if (!active || !payload || !payload.length) return null;
@@ -41,50 +42,81 @@ TooltipRico.defaultProps = { active: false, payload: null, label: "", series: []
  * resaltar la tabla de material prestado (interaccion entre widgets). */
 export default function BarrasWidget({
   datos, series, campoEtiqueta, animar, onBarClick, barraResaltada, colorPorFila,
-  conPatrones, formatearEje, anchoEje, descripcion,
+  conPatrones, formatearEje, anchoEje, descripcion, porPeriodo, textoRecorte,
 }) {
   const idBase = useId().replace(/:/g, "");
+  // Cuantas categorias caben y como (ver kpiEtiquetasEje): muchas pasan a horizontal, con varias series se corta a 12.
+  const diseno = disenoDeBarras({
+    etiquetas: datos.map((fila) => String(fila[campoEtiqueta] ?? "")), cantidadSeries: series.length, porPeriodo, anchoEje,
+  });
+  const visibles = datos.slice(0, diseno.mostradas);
+  const horizontal = diseno.modo === "horizontal";
   // Con categorias de color fijo (rojo/verde...) cada barra lleva ademas un patron: el color no es la unica senal.
-  const coloresDeFila = conPatrones && colorPorFila ? datos.map((fila) => colorPorFila(fila)) : null;
+  const coloresDeFila = conPatrones && colorPorFila ? visibles.map((fila) => colorPorFila(fila)) : null;
   // Las barras se dibujan UNA vez. Recharts las vuelve a animar cada vez que le llega un `datos` nuevo
   // (aqui se recalcula en cada render de la tarjeta), y con un filtro entre tarjetas eso hacia que las
   // barras "crecieran" de nuevo a cada clic.
   const [yaAnimo, setYaAnimo] = useState(false);
+  const marcaDeEje = { fontSize: 11, fill: "var(--kpi-texto-suave)" };
+  const recortar = (valor) => recortarEtiqueta(valor, diseno.maxCaracteres);
   return (
-    <div role={descripcion ? "img" : undefined} aria-label={descripcion || undefined} title={descripcion || undefined}>
-    <ResponsiveContainer width="100%" height={220}>
-      <BarChart data={datos} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
-        {coloresDeFila && <DefinicionDePatrones idBase={idBase} colores={coloresDeFila} />}
-        <CartesianGrid strokeDasharray="3 3" stroke="var(--kpi-grid)" vertical={false} />
-        <XAxis dataKey={campoEtiqueta} tick={{ fontSize: 11, fill: "var(--kpi-texto-suave)" }} axisLine={false} tickLine={false} />
-        <YAxis tick={{ fontSize: 11, fill: "var(--kpi-texto-suave)" }} axisLine={false} tickLine={false} tickFormatter={formatearEje || undefined} width={anchoEje} />
-        <Tooltip content={<TooltipRico series={series} />} cursor={{ fill: "var(--kpi-hover-barra)" }} />
-        {series.length > 1 && <Legend wrapperStyle={{ fontSize: 12 }} />}
-        {series.map((serie) => (
-          <Bar
-            key={serie.clave}
-            dataKey={serie.clave}
-            name={serie.nombre}
-            fill={serie.color}
-            radius={[4, 4, 0, 0]}
-            isAnimationActive={animar && !yaAnimo}
-            animationDuration={700}
-            onAnimationEnd={() => setYaAnimo(true)}
-            cursor={onBarClick ? "pointer" : "default"}
-            onClick={onBarClick}
+    <>
+      <div role={descripcion ? "img" : undefined} aria-label={descripcion || undefined} title={descripcion || undefined}>
+        <ResponsiveContainer width="100%" height={diseno.alto}>
+          <BarChart
+            data={visibles}
+            layout={horizontal ? "vertical" : "horizontal"}
+            margin={horizontal ? { top: 4, right: 16, left: 0, bottom: 0 } : { top: 4, right: 8, left: diseno.margenIzquierdo, bottom: 0 }}
           >
-            {datos.map((fila, indice) => (
-              <Cell
-                key={fila.id ?? fila[campoEtiqueta]}
-                fill={coloresDeFila ? rellenoConPatron(idBase, indice) : (colorPorFila ? colorPorFila(fila) : serie.color)}
-                fillOpacity={barraResaltada && fila[campoEtiqueta] !== barraResaltada ? 0.35 : (serie.opacidad ?? 1)}
-              />
+            {coloresDeFila && <DefinicionDePatrones idBase={idBase} colores={coloresDeFila} />}
+            <CartesianGrid strokeDasharray="3 3" stroke="var(--kpi-grid)" vertical={horizontal} horizontal={!horizontal} />
+            {horizontal ? (
+              <>
+                <XAxis type="number" tick={marcaDeEje} axisLine={false} tickLine={false} tickFormatter={formatearEje || undefined} />
+                <YAxis
+                  type="category" dataKey={campoEtiqueta} width={diseno.anchoEjeCategorias} interval={0}
+                  tick={marcaDeEje} axisLine={false} tickLine={false} tickFormatter={recortar}
+                />
+              </>
+            ) : (
+              <>
+                <XAxis
+                  dataKey={campoEtiqueta} tick={marcaDeEje} axisLine={false} tickLine={false} tickFormatter={recortar}
+                  interval={diseno.todasLasEtiquetas ? 0 : undefined} height={diseno.altoEjeX}
+                  angle={diseno.inclinar ? ANGULO_ETIQUETA : 0} textAnchor={diseno.inclinar ? "end" : "middle"}
+                />
+                <YAxis tick={marcaDeEje} axisLine={false} tickLine={false} tickFormatter={formatearEje || undefined} width={anchoEje} />
+              </>
+            )}
+            <Tooltip content={<TooltipRico series={series} />} cursor={{ fill: "var(--kpi-hover-barra)" }} />
+            {series.length > 1 && <Legend wrapperStyle={{ fontSize: 12 }} />}
+            {series.map((serie) => (
+              <Bar
+                key={serie.clave}
+                dataKey={serie.clave}
+                name={serie.nombre}
+                fill={serie.color}
+                radius={horizontal ? [0, 4, 4, 0] : [4, 4, 0, 0]}
+                isAnimationActive={animar && !yaAnimo}
+                animationDuration={700}
+                onAnimationEnd={() => setYaAnimo(true)}
+                cursor={onBarClick ? "pointer" : "default"}
+                onClick={onBarClick}
+              >
+                {visibles.map((fila, indice) => (
+                  <Cell
+                    key={fila.id ?? fila[campoEtiqueta]}
+                    fill={coloresDeFila ? rellenoConPatron(idBase, indice) : (colorPorFila ? colorPorFila(fila) : serie.color)}
+                    fillOpacity={barraResaltada && fila[campoEtiqueta] !== barraResaltada ? 0.35 : (serie.opacidad ?? 1)}
+                  />
+                ))}
+              </Bar>
             ))}
-          </Bar>
-        ))}
-      </BarChart>
-    </ResponsiveContainer>
-    </div>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+      {diseno.recortado && <p className="kpi-barras-recorte">{textoRecorte(diseno.mostradas, diseno.total)}</p>}
+    </>
   );
 }
 
@@ -111,9 +143,14 @@ BarrasWidget.propTypes = {
   anchoEje: PropTypes.number,
   // Lo que lee un lector de pantalla (y el tooltip del navegador) en lugar de una imagen sin nombre.
   descripcion: PropTypes.string,
+  // El eje son fechas (agrupado por periodo): no se recorta ni pasa a horizontal.
+  porPeriodo: PropTypes.bool,
+  // (mostradas, total) -> "Mostrando 12 de 30"; lo pone la pantalla para poder traducirlo.
+  textoRecorte: PropTypes.func,
 };
 
 BarrasWidget.defaultProps = {
   animar: true, onBarClick: null, barraResaltada: null, colorPorFila: null,
-  conPatrones: false, formatearEje: null, anchoEje: 60, descripcion: "",
+  conPatrones: false, formatearEje: null, anchoEje: 60, descripcion: "", porPeriodo: false,
+  textoRecorte: (mostradas, total) => `Mostrando ${mostradas} de ${total}`,
 };

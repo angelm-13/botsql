@@ -97,7 +97,7 @@ export function propsSeries({
     }
     const unidad = unidadDeLaGrafica([kpiInfo]);
     return {
-      datos, series, campoEtiqueta: "name", colorPorFila,
+      datos, series, campoEtiqueta: "name", colorPorFila, porPeriodo: Boolean(agruparPorPeriodo),
       conPatrones, formatearEje: formatoDeEje(unidad, formatNumber), anchoEje: anchoDelEje(unidad),
     };
   }
@@ -127,7 +127,7 @@ export function propsSeries({
   }
   const unidadComun = unidadDeLaGrafica(kpiInfos);
   return {
-    datos, series, campoEtiqueta: "name", colorPorFila: null,
+    datos, series, campoEtiqueta: "name", colorPorFila: null, porPeriodo: Boolean(agruparPorPeriodo),
     conPatrones: false, formatearEje: formatoDeEje(unidadComun, formatNumber), anchoEje: anchoDelEje(unidadComun),
   };
 }

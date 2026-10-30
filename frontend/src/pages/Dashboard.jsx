@@ -1810,7 +1810,14 @@ function KpiChartBody({ widget, snapshots, kpiInfos, userLabel, productLabel, fo
     nombres: nombresDeLaGrafica, datos: props.datos, claveValor: props.series[0]?.clave, campoEtiqueta: props.campoEtiqueta,
     formatear: props.series[0]?.formatear, textos: textosDescripcion,
   });
-  return <Componente {...props} {...interaccion} descripcion={descripcion} tipo={widget.tipo_grafica} animar={animar} />;
+  const textoRecorte = (mostradas, total) => tx("showing_n_of_total", "Mostrando {n} de {total}")
+    .replace("{n}", mostradas).replace("{total}", total);
+  return (
+    <Componente
+      {...props} {...interaccion} descripcion={descripcion} tipo={widget.tipo_grafica} animar={animar}
+      textoRecorte={textoRecorte}
+    />
+  );
 }
 
 function tiposDeGraficaPermitidos(kpiInfos) {

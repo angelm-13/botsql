@@ -280,3 +280,4 @@ body.kpi-pdf-exporting .kpi-widget-card-actions{display:none}
 /* Pie de la tarjeta: rango, etiquetas de fechas fijas y chip de datos. Va debajo de la grafica. */
 .kpi-widget-pie{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;margin-top:2px}
 .kpi-widget-rango{color:#475569}
+.kpi-barras-recorte{margin:4px 0 0;font-size:12px;color:var(--kpi-texto-suave)}
