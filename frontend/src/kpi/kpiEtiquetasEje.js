@@ -25,11 +25,22 @@ const MARGEN_DERECHO = 8;
 const SENO = Math.sin((Math.abs(ANGULO_ETIQUETA) * Math.PI) / 180);
 const COSENO = Math.cos((Math.abs(ANGULO_ETIQUETA) * Math.PI) / 180);
 
-/** Recorta a `maximo` caracteres (contando el "..."), sin partir un caracter compuesto. */
+const PARTICULA_FINAL = /\s+(?:y|de|del|la|las|los|san|santa|da|van|von)$/i;
+const INICIAL_DE_DESEMPATE = /\s\p{L}\.$/u;
+
+/**
+ * Recorta a `maximo` caracteres (contando el "..."), sin partir un caracter compuesto.
+ * - Una inicial de desempate al final («Luis Fernando Torres V.», ver kpiNombreCorto) se conserva: es lo unico que distingue a dos personas.
+ * - El corte no deja una particula colgando («Miguel Hidalgo y...» queda «Miguel Hidalgo...»).
+ */
 export function recortarEtiqueta(texto, maximo) {
-  const letras = Array.from(String(texto ?? "").trim());
-  if (letras.length <= maximo) return letras.join("");
-  return `${letras.slice(0, Math.max(1, maximo - 1)).join("").trimEnd()}…`;
+  const limpio = String(texto ?? "").trim();
+  if (Array.from(limpio).length <= maximo) return limpio;
+  const inicial = limpio.match(INICIAL_DE_DESEMPATE)?.[0] ?? "";
+  const cuerpo = Array.from(inicial ? limpio.slice(0, -inicial.length) : limpio);
+  const cabe = Math.max(1, maximo - Array.from(inicial).length - 1);
+  const corte = cuerpo.slice(0, cabe).join("").trimEnd().replace(PARTICULA_FINAL, "");
+  return `${corte}…${inicial}`;
 }
 
 /**

@@ -20,8 +20,24 @@ test("recortarEtiqueta tolera vacios, numeros y caracteres compuestos", () => {
   assert.equal(recortarEtiqueta(12345, 3), "12…");
   assert.equal(recortarEtiqueta("  Jose  ", 18), "Jose");
   assert.equal(recortarEtiqueta("😀".repeat(20), 18), `${"😀".repeat(17)}…`);
-  // sin espacio colgando antes de los puntos
-  assert.equal(recortarEtiqueta("Maria del Carmen Lopez", 11), "Maria del…");
+  // sin espacio ni particula colgando antes de los puntos
+  assert.equal(recortarEtiqueta("Maria del Carmen Lopez", 11), "Maria…");
+  assert.equal(recortarEtiqueta("Maria Elena Carmen Lopez", 13), "Maria Elena…");
+});
+
+test("recortarEtiqueta conserva la inicial de desempate y no deja una particula colgando", () => {
+  // sin esto las dos «Luis Fernando Torres» quedarian iguales: «Luis Fernando Torr…»
+  const vega = recortarEtiqueta("Luis Fernando Torres V.", 18);
+  const rios = recortarEtiqueta("Luis Fernando Torres R.", 18);
+  assert.equal(vega, "Luis Fernando… V.");
+  assert.equal(rios, "Luis Fernando… R.");
+  assert.notEqual(vega, rios);
+  assert.ok(Array.from(vega).length <= 18);
+  assert.equal(recortarEtiqueta("Luis Fernando Torres V.", 28), "Luis Fernando Torres V.");
+  assert.equal(recortarEtiqueta("Miguel Hidalgo y Costilla", 18), "Miguel Hidalgo…");
+  assert.equal(recortarEtiqueta("Ana Pérez de la Torre Soto", 14), "Ana Pérez…");
+  // un punto final que no es inicial de desempate no se trata como tal
+  assert.equal(recortarEtiqueta("Compañia Ejemplo Sociedad Ltda.", 18), "Compañia Ejemplo…");
 });
 
 test("hasta 12 categorias con una serie: vertical, todas visibles, sin recorte", () => {
