@@ -28,9 +28,13 @@ solo en una demo:
 
 from __future__ import annotations
 
+import logging
+import os
+import threading
+
 from flask import Blueprint, current_app, jsonify, request
 
-from . import service
+from . import prompt as prompt_mod, service
 from .schema_extractor import CacheDeEsquema
 from .security import advertencias_de_despliegue
 
@@ -53,6 +57,27 @@ def crear_blueprint(
     cache = cache_esquema or CacheDeEsquema(engine, ajustes)
     cache_preg = (cache_preguntas if cache_preguntas is not None
                   else service.CacheDePreguntas(ajustes.ttl_preguntas_s))
+
+    def _precalentar():
+        """Deja listo lo caro antes de la primera pregunta: el esquema inspeccionado y, en
+        Ollama, el modelo en memoria con la parte fija del prompt ya leida."""
+        log = logging.getLogger(__name__)  # en un hilo no hay contexto de Flask: current_app no sirve
+        try:
+            esquema = cache.obtener()
+            if hasattr(proveedor, "calentar"):
+                ms = proveedor.calentar(prompt_mod.prefijo_estable(esquema, limite_filas=ajustes.limite_filas))
+                if ms is None:
+                    log.info("[BI] no se pudo precalentar el modelo (se cargara con la primera pregunta)")
+                else:
+                    log.info("[BI] modelo precalentado en %s ms", ms)
+        except Exception as exc:  # una cortesia: nunca debe tumbar el arranque
+            log.info("[BI] precalentamiento omitido: %s", str(exc)[:200])
+
+    # Solo con un modelo que se pueda calentar, fuera de pruebas (TESTING) y de quien lo
+    # apague (BI_WARMUP=0), en un hilo aparte.
+    if (hasattr(proveedor, "calentar") and os.environ.get("TESTING") != "1"
+            and os.environ.get("BI_WARMUP", "1") != "0"):
+        threading.Thread(target=_precalentar, daemon=True, name="bi-warmup").start()
 
     def _contexto() -> dict:
         return contexto() if contexto is not None else {}

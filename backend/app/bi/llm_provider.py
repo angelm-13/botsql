@@ -52,7 +52,7 @@ class ProveedorLLM:
 
     nombre = "ninguno"
 
-    def generar(self, prompt: str, pregunta: str = "") -> RespuestaLLM:
+    def generar(self, prompt: str, pregunta: str = "", formato=None) -> RespuestaLLM:
         """`prompt` es el contrato completo; `pregunta` es solo lo que
         escribio la persona. Se pasan por separado porque un proveedor
         de chat las mandaria en roles distintos (sistema / usuario), y
@@ -82,7 +82,7 @@ class ProveedorDeGuion(ProveedorLLM):
     # algo aparenta entender preguntas que no entiende.
     mensaje_sin_guion: str = "El guion no tiene respuesta para esta pregunta."
 
-    def generar(self, prompt: str, pregunta: str = "") -> RespuestaLLM:
+    def generar(self, prompt: str, pregunta: str = "", formato=None) -> RespuestaLLM:
         self.llamadas.append(prompt)
         # Se busca en la PREGUNTA, no en el prompt: el prompt trae el
         # contrato entero y cualquier clave coincidiria siempre.
@@ -140,6 +140,15 @@ ESQUEMA_DE_RESPUESTA = {
     "required": ["is_dashboard"],
 }
 
+# Contrato de una pregunta normal: solo el SQL. Titulo, explicacion y grafica los decide el
+# servidor, asi que no se le pide nada de eso al modelo: cada token de salida cuesta entre
+# 0.25 y 1 s en CPU. Los dos campos son opcionales para que pueda negarse con
+# {"error": ...} (regla 1 del prompt).
+ESQUEMA_CONSULTA = {
+    "type": "object",
+    "properties": {"sql_query": {"type": "string"}, "error": {"type": "string"}},
+}
+
 
 class ProveedorOllama(ProveedorLLM):
     """Habla con un Ollama local por HTTP.
@@ -185,6 +194,42 @@ class ProveedorOllama(ProveedorLLM):
         self.num_ctx = num_ctx
         self.num_hilos = num_hilos
 
+    def _opciones(self, num_predict: int) -> dict:
+        # Las mismas en toda llamada, incluido el precalentamiento: si `num_ctx` o
+        # `num_thread` cambian entre dos peticiones, Ollama recarga el modelo y pierde
+        # la memoria del prefijo que se queria reutilizar.
+        return {
+            "temperature": self.temperatura,
+            # El DDL de un ERP mediano ya son varios miles de tokens; con
+            # la ventana por omision de Ollama (2048) el esquema se
+            # trunca en silencio y el modelo inventa columnas.
+            "num_ctx": self.num_ctx,
+            "num_predict": num_predict,
+            **({"num_thread": self.num_hilos} if self.num_hilos else {}),
+        }
+
+    def calentar(self, prefijo: str) -> int | None:
+        """Carga el modelo y deja leido `prefijo` (la parte fija del prompt).
+
+        Se llama una vez al arrancar, en un hilo. Sin esto la primera pregunta del dia
+        paga la carga del modelo a RAM (10-20 s) y la lectura de todo el prompt; con
+        esto solo paga lo que cambia. Devuelve los ms que tardo, o None si Ollama no
+        contesto -- calentar es una cortesia, nunca debe tumbar el arranque.
+        """
+        cuerpo = json.dumps({
+            "model": self.modelo, "prompt": prefijo, "stream": False,
+            "keep_alive": -1, "options": self._opciones(1),
+        }).encode("utf-8")
+        peticion = urllib.request.Request(f"{self.url}/api/generate", data=cuerpo,
+                                          headers={"Content-Type": "application/json"})
+        inicio = time.monotonic()
+        try:
+            with urllib.request.urlopen(peticion, timeout=self.timeout) as r:
+                r.read()
+        except Exception:
+            return None
+        return int((time.monotonic() - inicio) * 1000)
+
     def generar(self, prompt: str, pregunta: str = "", formato=None) -> RespuestaLLM:
         cuerpo = json.dumps({
             "model": self.modelo,
@@ -192,15 +237,7 @@ class ProveedorOllama(ProveedorLLM):
             "stream": False,
             "format": formato or ESQUEMA_DE_RESPUESTA,
             "keep_alive": -1,
-            "options": {
-                "temperature": self.temperatura,
-                # El DDL de un ERP mediano ya son varios miles de tokens; con
-                # la ventana por omision de Ollama (2048) el esquema se
-                # trunca en silencio y el modelo inventa columnas.
-                "num_ctx": self.num_ctx,
-                "num_predict": 500,
-                **({"num_thread": self.num_hilos} if self.num_hilos else {}),
-            },
+            "options": self._opciones(500),
         }).encode("utf-8")
 
         peticion = urllib.request.Request(

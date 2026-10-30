@@ -81,6 +81,13 @@ _ESTATUS["incidencias"] = (_ESTATUS["vales"][0], _ESTATUS["vales"][1], {
     k.replace("os", "as"): v for k, v in _ESTATUS["vales"][2].items()} | _ESTATUS["vales"][2])
 
 
+def _tablero(titulo, *partes):
+    """Un dashboard hecho de varias directivas de `_d`: es lo mas lento de pedirle al modelo
+    (un JSON largo con varias consultas) y lo primero que se enseña, asi que va resuelto."""
+    return {"is_dashboard": True, "dashboard_title": titulo,
+            "widgets": [{k: p[k] for k in ("sql_query", "explanation", "visualization")} for p in partes]}
+
+
 class _SinReceta(Exception):
     pass
 
@@ -96,6 +103,29 @@ def _por_estatus(m):
 
 
 RECETAS: list[tuple[re.Pattern, Callable]] = [
+    # "dashboard general de operaciones": `buscar` ya le quita el "dashboard" del principio.
+    (re.compile(r"^(general|operaciones)( de (las )?operaciones)?$|^(resumen|panorama)( general)?( de (las )?operaciones)?$"),
+     lambda m: _tablero(
+         "Panorama general de operaciones",
+         _d("SELECT COUNT(*) AS total_productos FROM product WHERE deletion_date IS NULL",
+            "Productos registrados", "kpi_card", y="total_productos", etiqueta="Productos"),
+         _d("SELECT COUNT(*) AS total FROM incident WHERE incident_status = 'abierta' AND deletion_date IS NULL",
+            "Vales abiertos", "kpi_card", y="total", etiqueta="Vales abiertos"),
+         _d("SELECT COUNT(DISTINCT n.id_incident) AS vales_vencidos " + VENC,
+            "Vales vencidos", "kpi_card", y="vales_vencidos", etiqueta="Vales vencidos",
+            explicacion="Vales abiertos con alguna herramienta cuya fecha de devolucion ya paso."),
+         _d("SELECT t.incident_type_description AS tipo, COUNT(*) AS incidencias FROM incident n "
+            "JOIN incident_type t ON t.id_incident_type = n.id_incident_type "
+            "WHERE n.deletion_date IS NULL GROUP BY t.incident_type_description "
+            "ORDER BY incidencias DESC LIMIT 20",
+            "Incidencias por tipo", "bar", "tipo", "incidencias"),
+         _d("SELECT descripcion AS producto, cantidad AS existencias FROM product "
+            "WHERE deletion_date IS NULL ORDER BY cantidad DESC NULLS LAST LIMIT 8",
+            "Top 8 productos por existencias", "bar", "producto", "existencias"),
+         _d("SELECT date_trunc('month', date_emision) AS mes, SUM(total) AS total FROM invoice "
+            "WHERE deletion_date IS NULL GROUP BY 1 ORDER BY 1 LIMIT 24",
+            "Facturacion por mes", "line", "mes", "total"))),
+
     (re.compile(r"^cuantos productos (hay|existen|tenemos)( registrados)?$|^total de productos$"),
      lambda m: _d("SELECT COUNT(*) AS total_productos FROM product WHERE deletion_date IS NULL",
                   "Productos registrados", "kpi_card", y="total_productos", etiqueta="Productos")),

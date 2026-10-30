@@ -36,7 +36,7 @@ from datetime import date
 from . import auditor, busqueda, conocimiento, directive, ejemplos as banco_ej, prediccion, prompt as prompt_mod, recetas, security
 from .acceso import acotar_sql
 from .executor import ejecutar
-from .llm_provider import ProveedorNoDisponible, RespuestaLLM, _normalizar
+from .llm_provider import ESQUEMA_CONSULTA, ProveedorNoDisponible, RespuestaLLM, _normalizar
 
 _log = logging.getLogger(__name__)
 _audit = logging.getLogger("bi.audit")
@@ -724,8 +724,16 @@ def _responder_con_documentacion(pregunta, *, proveedor, cache_preguntas, acceso
 
 _SOLO_UNA_CONSULTA = (
     "\n\nIMPORTANTE: la pregunta es simple. Responde UN solo objeto JSON con "
-    '"is_dashboard": false y UNA sola consulta en "sql_query". Sin widgets.'
+    'UNA sola consulta en "sql_query". Sin widgets.'
 )
+
+
+def _titulo_de(pregunta: str) -> str:
+    """Titulo de un resultado cuando el modelo no lo dio (el formato compacto no lo pide):
+    la propia pregunta, sin signos de apertura/cierre y con la primera en mayuscula."""
+    t = re.sub(r"\s+", " ", pregunta or "").strip().strip("¿?¡!. ")
+    t = (t[:1].upper() + t[1:]) if t else "Resultados"
+    return t if len(t) <= 90 else t[:89].rstrip() + "…"
 
 
 def _responder(
@@ -778,12 +786,17 @@ def _responder(
 
     similares = banco_ej.buscar(pregunta, acceso)
     bloque_ej = banco_ej.formatear(similares, pregunta) if similares else ""
+    # Salvo un tablero, al modelo solo se le pide el SQL (ver prompt.FORMATO_COMPACTO): salen
+    # menos tokens y en CPU cada uno cuesta segundos.
+    compacto = not prompt_mod.pide_tablero(pregunta)
+    formato = {"formato": ESQUEMA_CONSULTA} if compacto else {}
     texto_prompt = prompt_mod.construir_prompt(
         pregunta, esquema,
         ejemplos=bloque_ej,
         limite_filas=ajustes.limite_filas,
         hoy=hoy,
         max_widgets=ajustes.max_widgets,
+        compacto=compacto,
     )
 
     desde_cache = False
@@ -799,7 +812,7 @@ def _responder(
         desde_cache = True
     else:
         try:
-            salida = proveedor.generar(texto_prompt, pregunta)
+            salida = proveedor.generar(texto_prompt, pregunta, **formato)
         except ProveedorNoDisponible as exc:
             return RespuestaBI(ok=False, pregunta=pregunta, http=503,
                                error={"tipo": "modelo_no_disponible", "mensaje": str(exc)})
@@ -821,10 +834,9 @@ def _responder(
         dir_ = None
         # Un modelo chico a veces contesta una pregunta simple con un tablero y se corta a
         # medio JSON (num_predict). Se reintenta UNA vez pidiendo una sola consulta.
-        if receta is None and not desde_cache and not re.search(
-                r"(?i)\b(dashboard|tablero|resumen|panorama)\b", pregunta):
+        if receta is None and not desde_cache and compacto:
             try:
-                segunda = proveedor.generar(texto_prompt + _SOLO_UNA_CONSULTA, pregunta)
+                segunda = proveedor.generar(texto_prompt + _SOLO_UNA_CONSULTA, pregunta, **formato)
                 dir_ = directive.parsear_directiva(segunda.texto, max_widgets=ajustes.max_widgets)
                 salida = segunda
                 meta["ms_modelo"] += segunda.ms
@@ -847,6 +859,11 @@ def _responder(
             ok=False, pregunta=pregunta, http=403, meta=meta,
             error={"tipo": "rechazada_por_el_modelo", "mensaje": dir_.error},
         )
+
+    # El formato compacto no trae titulo: la pregunta hace de titulo.
+    for w in dir_.widgets:
+        if not w.visualization.title and not dir_.is_dashboard:
+            w.visualization.title = _titulo_de(pregunta)
 
     # Para distinguir "no tienes permiso" de "esa tabla no existe".
     existentes = (cache_esquema.obtener().nombres if acceso is not None and not acceso.es_admin else None)

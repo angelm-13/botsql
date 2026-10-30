@@ -35,7 +35,14 @@ P: facturas por mes -> SELECT date_trunc('month', date_emision) AS mes, SUM(tota
 
 """
 
-PLANTILLA = """Eres un asistente de BI experto en SQL. Conviertes preguntas en lenguaje natural en UNA consulta SQL de solo lectura y la directiva de visualizacion. Responde SOLO con JSON.
+# El prompt se arma en este orden a proposito: lo que NO cambia entre preguntas va primero
+# (intro, reglas, glosario) y lo que si cambia (formato, esquema recortado, ejemplos, pregunta)
+# va al final. Ollama reutiliza la memoria de atencion del prefijo identico del prompt
+# anterior, asi que cada pregunta solo "lee" lo que cambio en vez de las ~1000 palabras
+# fijas -- en CPU, donde leer el prompt corre a ~10 tokens/s, son decenas de segundos.
+# Cualquier dato variable (la pregunta, el esquema, los ejemplos) escrito antes del glosario
+# invalida ese ahorro: se puede reordenar, pero no meter nada variable en la cabeza.
+PLANTILLA = """Eres un asistente de BI experto en SQL. Conviertes preguntas en lenguaje natural en consultas SQL de solo lectura. Responde SOLO con JSON.
 
 REGLAS:
 1. Solo SELECT. Prohibido INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE, GRANT. Si piden modificar o borrar datos responde {{"error": "Accion no permitida por seguridad"}}.
@@ -43,15 +50,7 @@ REGLAS:
 3. Agrega con SUM, COUNT, AVG, GROUP BY y ordena con ORDER BY. Si una tabla trae deletion_date, filtra deletion_date IS NULL. Al ordenar DESC agrega NULLS LAST. Alias de tabla de una o dos letras que NO sean palabras reservadas (usa p, i, n, st, c; nunca is, in, on, or, to, by).
 4. El sistema ya acota el resultado a {row_limit} filas: NO escribas LIMIT salvo que la pregunta pida un top N, "el mayor" o "el primero" (entonces LIMIT con ese numero exacto). Sintaxis en este motor: {limit_syntax}.
 5. Hoy es {today}. Resuelve con esa fecha "este mes", "el ano pasado", "ultimos 30 dias".
-6. Da un alias a cada columna calculada y usa ese mismo alias en x_axis, y_axis y metric_label.
-7. Usa chart_type table por omision. Solo si el usuario pide una grafica usa bar, line, pie o area (bar para categorias, line para fechas). Un conteo o total unico usa kpi_card.
-
-FORMATO (JSON estricto, sin markdown):
-Una grafica o KPI:
-{{"is_dashboard": false, "sql_query": "SELECT ...", "explanation": "que calcula, en una frase", "visualization": {{"recommended": true, "chart_type": "bar | line | pie | kpi_card | table", "title": "titulo", "x_axis": "columna_x", "y_axis": "columna_y", "metric_label": "etiqueta si es kpi_card"}}}}
-
-Si piden un "Dashboard" o analisis general:
-{{"is_dashboard": true, "dashboard_title": "titulo", "widgets": [{{"sql_query": "...", "explanation": "...", "visualization": {{"chart_type": "kpi_card", "title": "...", "metric_label": "..."}}}}, {{"sql_query": "...", "explanation": "...", "visualization": {{"chart_type": "bar", "title": "...", "x_axis": "...", "y_axis": "..."}}}}]}}
+6. Da un alias a cada columna calculada.
 
 GLOSARIO DEL NEGOCIO (usa estas tablas y valores, son los reales):
 - vale = incidencia: tabla incident (id_incident, incident_date, incident_status, id_user, id_incident_type). incident_status vale: abierta, borrador, cancelado, cerrada, en_espera, en_transito. Tipo en incident_type.incident_type_description (Prestamo Material, Jornada, Comida, Reparacion, Destruccion, Dañado, Extraviado...).
@@ -65,13 +64,37 @@ GLOSARIO DEL NEGOCIO (usa estas tablas y valores, son los reales):
 - proyecto/orden de trabajo = proyect (title, proyect_status: draft, authorized, in_progress, waiting_material, blocked, completed, delivered, denied; total_cost). tarea = task (id_proyect, task_status, title).
 - empleado/usuario/responsable = "user" (first_name, last_name_father, full_name). Escribe SIEMPRE "user" entre comillas dobles: sin comillas es una palabra reservada.
 
-{ejemplos}### MOTOR: {db_engine_name}
+{formato}
+
+### MOTOR: {db_engine_name}
 
 ### ESQUEMA:
 {dynamic_db_schema}
 
-### PREGUNTA DEL USUARIO:
+{ejemplos}### PREGUNTA DEL USUARIO:
 {user_query}"""
+
+# Una pregunta normal solo necesita el SQL. Titulo, explicacion y tipo de grafica ya los
+# decide el servidor (service.py: titulo desde la pregunta, `_ajustar_visualizacion` y
+# `_aplicar_preferencia_de_grafica` para el tipo y los ejes), de modo que pedirselos al
+# modelo era gastar tokens de salida -- que en CPU salen a ~1-4 por segundo -- en campos que
+# luego se descartaban o corregian. Solo un tablero necesita el contrato completo.
+FORMATO_COMPACTO = """FORMATO (JSON estricto, sin markdown): un solo objeto con la consulta.
+{"sql_query": "SELECT ..."}"""
+
+FORMATO_COMPLETO = """FORMATO (JSON estricto, sin markdown). Usa chart_type table por omision; kpi_card para un conteo o total unico; bar, line, pie o area solo si el usuario pide una grafica (bar para categorias, line para fechas). Usa el alias de cada columna en x_axis, y_axis y metric_label.
+Una grafica o KPI:
+{"is_dashboard": false, "sql_query": "SELECT ...", "explanation": "que calcula, en una frase", "visualization": {"recommended": true, "chart_type": "bar | line | pie | kpi_card | table", "title": "titulo", "x_axis": "columna_x", "y_axis": "columna_y", "metric_label": "etiqueta si es kpi_card"}}
+
+Si piden un "Dashboard" o analisis general:
+{"is_dashboard": true, "dashboard_title": "titulo", "widgets": [{"sql_query": "...", "explanation": "...", "visualization": {"chart_type": "kpi_card", "title": "...", "metric_label": "..."}}, {"sql_query": "...", "explanation": "...", "visualization": {"chart_type": "bar", "title": "...", "x_axis": "...", "y_axis": "..."}}]}"""
+
+_TABLERO = re.compile(r"(?i)\b(dashboard|tablero|resumen|panorama)\b")
+
+
+def pide_tablero(pregunta: str) -> bool:
+    """Si la pregunta pide varias consultas a la vez (necesita el contrato completo)."""
+    return bool(_TABLERO.search(pregunta or ""))
 
 
 _TOP_N = re.compile(
@@ -104,12 +127,16 @@ def construir_prompt(
     hoy: date | None = None,
     max_widgets: int = 8,
     ejemplos: str = "",
+    compacto: bool = False,
 ) -> str:
     """Arma el prompt final para una pregunta concreta.
 
     `esquema` es un `EsquemaDB`; se pide el objeto y no el texto para que el
     motor y la sintaxis de acotamiento salgan de la misma fuente que el DDL y
     no puedan quedar desalineados.
+
+    `compacto` pide solo `{"sql_query": ...}` (ver FORMATO_COMPACTO); sin el, el
+    modelo devuelve el contrato completo con visualizacion y tableros.
     """
     texto = PLANTILLA.format(
         db_engine_name=esquema.motor_legible,
@@ -119,10 +146,27 @@ def construir_prompt(
         today=(hoy or date.today()).isoformat(),
         user_query=pregunta,
         ejemplos=ejemplos or EJEMPLOS_BASE,
+        formato=FORMATO_COMPACTO if compacto else FORMATO_COMPLETO,
     )
-    texto += f"\n\n(Un dashboard no puede tener mas de {max_widgets} widgets.)"
+    if not compacto:
+        texto += f"\n\n(Un dashboard no puede tener mas de {max_widgets} widgets.)"
     n = detectar_top_n(pregunta)
     if n:
         texto += (f"\n(El usuario pidio EXACTAMENTE {n} resultados: usa ORDER BY y "
                   f"LIMIT {n}; ni mas ni menos.)")
     return texto
+
+
+def prefijo_estable(esquema, *, limite_filas: int, hoy: date | None = None) -> str:
+    """La parte del prompt que es identica en TODAS las preguntas del dia.
+
+    Sirve para precalentar el modelo al arrancar (ver `ProveedorOllama.calentar`): si el
+    primer prompt real empieza con estos mismos caracteres, Ollama no vuelve a leerlos.
+    Sale de la propia PLANTILLA, cortada donde empieza lo variable, para que no pueda
+    desalinearse de `construir_prompt`.
+    """
+    return PLANTILLA.split("{formato}")[0].format(
+        limit_syntax=esquema.sintaxis_de_limite,
+        row_limit=limite_filas,
+        today=(hoy or date.today()).isoformat(),
+    )
