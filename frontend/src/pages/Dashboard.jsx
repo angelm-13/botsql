@@ -44,6 +44,9 @@ import {
 import { puedeIrAlPaso } from "../kpi/kpiPasos.js";
 import { NO_CALCULADO, SIN_DATOS, estadoDeDatos } from "../kpi/kpiEstado.js";
 import { frescuraDeWidget } from "../kpi/kpiFrescura.js";
+import {
+  guardarTableroActivo, idDeUsuarioActual, leerTableroActivo, resolverTableroActivo,
+} from "../kpi/kpiTableroActivo.js";
 import { descripcionDeGrafica } from "../kpi/kpiAccesibilidad.js";
 import {
   cambiaLaComparacion, esDeFechasFijas, parametrosConRangoRelativo, rangoRelativoPorDuracion,
@@ -492,6 +495,10 @@ export default function Dashboard() {
   const [filtroResponsable, setFiltroResponsable] = useState(null);
   const quitarFiltroResponsable = useCallback(() => setFiltroResponsable(null), []);
   useEffect(() => { setFiltroResponsable(null); }, [activeId]);
+  // Recordar el tablero abierto, por usuario, para volver a el al recargar o al volver a entrar.
+  useEffect(() => {
+    if (activeId !== null) guardarTableroActivo(window.localStorage, idDeUsuarioActual(window.localStorage), activeId);
+  }, [activeId]);
   const hayTablaDePrestamos = widgets.some((widget) => widget.tipo_grafica === "tabla");
   const alFiltrarResponsable = useCallback((nuevo) => {
     setFiltroResponsable((actual) => (actual && String(actual.id) === String(nuevo.id) ? null : nuevo));
@@ -504,11 +511,13 @@ export default function Dashboard() {
       const data = await getAllKpiDashboard({ per_page: 200 });
       const items = listOf(data);
       setDashboards(items);
-      setActiveId((current) => {
-        const target = preferredId !== undefined ? preferredId : current;
-        if (target && items.some((item) => item.id_kpi_dashboard === target)) return target;
-        return items[0]?.id_kpi_dashboard ?? null;
-      });
+      // El que se pidio o el que ya esta abierto; si no hay ninguno (carga inicial) o ya no existe, el que esta
+      // persona dejo la ultima vez, y si tampoco, el primero.
+      setActiveId((current) => resolverTableroActivo(
+        items,
+        preferredId !== undefined ? preferredId : current,
+        leerTableroActivo(window.localStorage, idDeUsuarioActual(window.localStorage)),
+      ));
     } catch (error) {
       setDashboardsError(error.message || "errors.request_failed");
     } finally {
