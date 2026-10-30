@@ -42,6 +42,7 @@ import {
   widgetDeBorrador,
 } from "../kpi/kpiParametros.js";
 import { puedeIrAlPaso } from "../kpi/kpiPasos.js";
+import { claveDeGrupo, colorDeModulo } from "../kpi/kpiSelector.js";
 import { detallesDePersonas, nombreDePersona } from "../kpi/kpiPersonas.js";
 import { NO_CALCULADO, SIN_DATOS, estadoDeDatos } from "../kpi/kpiEstado.js";
 import { avisoDeDatosAtrasados, frescuraDeWidget } from "../kpi/kpiFrescura.js";
@@ -1767,6 +1768,12 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [avisoKpi, setAvisoKpi] = useState("");
+  // El modulo que se ve en el selector de KPI: los iconos del tipo de grafico toman su color.
+  // Abre con el modulo del primer KPI ya elegido (el mismo con el que abre el selector) y despues lo manda el selector.
+  const [moduloDelSelector, setModuloDelSelector] = useState(() => {
+    const primero = kpiCatalog.find((kpi) => String(kpi.id_kpi_definition) === String(idsKpiSeleccionados[0]));
+    return primero ? claveDeGrupo(primero) : null;
+  });
   const multiKpiPermitido = esTipoMultiKpi(tipoGrafica);
   // Palabras genericas de los datos de ejemplo, traducidas ("Ejemplo 1", "Categoría 1"...).
   const textosEjemplo = useMemo(() => ({
@@ -2018,7 +2025,8 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
                     <button
                       type="button"
                       key={opt.value}
-                      className={`kpi-icon-option ${activo ? "active" : ""}`}
+                      className={`kpi-icon-option kpi-icon-option-modulo ${activo ? "active" : ""}`}
+                      style={moduloDelSelector ? { "--tinte": colorDeModulo(moduloDelSelector) } : undefined}
                       onClick={() => aplicarTipoGrafica(opt.value)}
                       disabled={!permitido}
                       title={permitido ? etiqueta : tx("chart_type_not_allowed", "El KPI elegido no admite este tipo de gráfico")}
@@ -2095,6 +2103,7 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
                 seleccionados={idsKpiSeleccionados}
                 multiple={multiKpiPermitido}
                 onAlternar={toggleKpi}
+                onModuloActivo={setModuloDelSelector}
                 metaDeModulo={(clave) => kpiPestanaMeta(clave, tx)}
                 textoDeBloqueo={textoDeBloqueo}
                 coloresKpi={coloresKpi}

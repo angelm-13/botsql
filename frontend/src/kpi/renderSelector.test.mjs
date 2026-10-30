@@ -426,3 +426,21 @@ test("el icono de cada boton de modulo lleva la clase que lo pinta con su color"
   assert.ok(botones.length > 0);
   for (const boton of botones) assert.ok(boton.html.includes("--tinte"), boton.clave);
 });
+
+// --- tipo de grafica con el color del modulo ---------------------------------
+const botonesDeTipo = (html) => [...html.matchAll(/<button[^>]*kpi-icon-option-modulo[^>]*>.*?<\/button>/gs)].map((m) => m[0]);
+
+test("los iconos del tipo de grafico toman el color del modulo del KPI elegido", async () => {
+  const { colorDeModulo } = await import("./kpiSelector.js");
+  const operaciones = botonesDeTipo(pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: ["1"] }));
+  assert.ok(operaciones.length >= 4, "uno por tipo de grafico");
+  for (const boton of operaciones) assert.ok(boton.includes(`--tinte:${colorDeModulo("operaciones")}`));
+  const inventario = botonesDeTipo(pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: ["4"] }));
+  for (const boton of inventario) assert.ok(boton.includes(`--tinte:${colorDeModulo("inventario")}`));
+});
+
+test("sin KPI elegido el tipo de grafico no lleva color de modulo (lo manda el selector al abrir)", () => {
+  const botones = botonesDeTipo(pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: [] }));
+  assert.ok(botones.length > 0);
+  for (const boton of botones) assert.ok(!boton.includes("--tinte"));
+});

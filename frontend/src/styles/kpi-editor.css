@@ -174,6 +174,11 @@
   padding: 10px 10px 10px 12px; border-left: 3px solid var(--tinte-modulo); border-radius: 10px;
   background: color-mix(in srgb, var(--tinte-modulo) 5%, transparent);
 }
+/* Tipo de grafica con el color del modulo elegido en el selector: tenue en reposo, completo al elegirlo; un tipo
+   deshabilitado se queda gris. Sin modulo elegido no hay --tinte y se ve como siempre. */
+.kpi-icon-option-modulo:not(:disabled):not(.active) svg:first-child { color: color-mix(in srgb, var(--tinte, #526273) 45%, #8a96a5); }
+.kpi-icon-option-modulo.active svg:first-child { color: var(--tinte, #173b66); }
+.kpi-icon-option-modulo:disabled svg { color: #94a3b8; }
 
 /* --- Fila de modulos del selector de KPI --------------------------------------- */
 .kpi-selector-modulos { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
