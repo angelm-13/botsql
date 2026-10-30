@@ -314,7 +314,7 @@ def list_proyect_documents(user_data, id_proyect):
 
 @bp_proyect.route('/<id_proyect>/documents', methods=['POST'])
 @token_required
-@require_entity_permission('proyect', 'update')
+@require_any_entity_permission(('proyect', 'update'), ('project_document_upload', 'read'))
 def create_proyect_document(user_data, id_proyect):
     uploaded = request.files.get('file')
     if not uploaded or not uploaded.filename:
@@ -334,7 +334,7 @@ def get_proyect_document_content(user_data, id_document):
 
 @bp_proyect.route('/documents/<id_document>', methods=['DELETE'])
 @token_required
-@require_entity_permission('proyect', 'update')
+@require_any_entity_permission(('proyect', 'update'), ('project_document_delete', 'read'))
 def remove_proyect_document(user_data, id_document):
     return jsonify(delete_project_document(id_document, user_data))
 

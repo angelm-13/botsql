@@ -639,6 +639,24 @@ def _notificar_proyecto(*, destinatarios, actor_id, id_proyect, nombre_proyecto,
             pass
 
 
+def _aviso_a_involucrados(db, project, titulo: str, mensaje: str) -> dict:
+    """Argumentos de `_notificar_proyecto` para quien tiene que enterarse.
+
+    Involucrado = responsable, quien lleva el taller y cualquiera que ya haya
+    dejado algo en el historial del proyecto (quien autorizo, quien tomo, etc.).
+    Son valores sueltos porque la notificacion se manda con la transaccion cerrada.
+    """
+    autores = db.query(ProyectEvent.created_by).filter(
+        ProyectEvent.id_proyect == project.id_proyect).distinct().all()
+    return {
+        "destinatarios": {project.leader, project.id_supervisor, *(a[0] for a in autores)},
+        "id_proyect": project.id_proyect,
+        "nombre_proyecto": project.title or f"#{project.id_proyect}",
+        "titulo": titulo,
+        "mensaje": mensaje,
+    }
+
+
 def _puede_ejecutar(db, user_data: dict) -> bool:
     """Tiene la capacidad `project_execution` en el Gestor, junto con cualquier otra.
 
@@ -1887,7 +1905,14 @@ def add_project_message(project_id, payload: dict, user_data: dict) -> dict:
         project = _get_visible_project(db, project_id, user_data)
         event = _append_event(db, project, user_data, "message", content=content)
         db.flush()
-        return event.serialize()
+        aviso = _aviso_a_involucrados(
+            db, project, "Nuevo mensaje",
+            content if len(content) <= 140 else content[:137] + "...",
+        )
+        resultado = event.serialize()
+    # Fuera del `with`: ver docstring de `_notificar_proyecto`.
+    _notificar_proyecto(actor_id=_actor_id(user_data), **aviso)
+    return resultado
 
 
 # --- adjuntos de requerimientos (PDF/DOCX) -------------------------------
@@ -1919,6 +1944,11 @@ def add_project_document(project_id, payload, raw, original_filename, user_data,
 
     with transaction_context() as db:
         project = _get_visible_project(db, project_id, user_data, for_update=True)
+        # Sube el responsable del proyecto (regla de dueno: depende de cada
+        # proyecto) o quien tenga `project_document_upload` en el Gestor.
+        if not (is_project_leader(project, user_data)
+                or _has_capability(db, user_data, "project_document_upload")):
+            raise AppError("errors.project_attachment_leader_only", 403)
         from app.services.document_service import PROJECT_ATTACHMENT_FILE_TYPES
         extension, mime_type = storage.validate(raw, original_filename, allowed_types=PROJECT_ATTACHMENT_FILE_TYPES)
         documento = ProyectDocument(
@@ -1941,7 +1971,11 @@ def add_project_document(project_id, payload, raw, original_filename, user_data,
         db.flush()
         _append_event(db, project, user_data, "document_attached",
                       content=documento.original_filename)
-        return documento.serialize_summary()
+        aviso = _aviso_a_involucrados(db, project, "Archivo adjunto",
+                                      documento.original_filename)
+        resultado = documento.serialize_summary()
+    _notificar_proyecto(actor_id=_actor_id(user_data), **aviso)
+    return resultado
 
 
 def delete_project_document(document_id, user_data: dict) -> dict:
@@ -1952,11 +1986,19 @@ def delete_project_document(document_id, user_data: dict) -> dict:
         if documento is None or documento.deletion_date is not None:
             raise AppError("errors.not_found", 404, {"entity": "proyect_document"})
         project = _get_visible_project(db, documento.id_proyect, user_data, for_update=True)
+        # Un archivo no se quita por error: solo quien tiene
+        # `project_document_delete` en el Gestor, ni siquiera quien lo subio.
+        if not _has_capability(db, user_data, "project_document_delete"):
+            raise AppError("errors.project_attachment_delete_denied", 403)
         documento.deletion_date = datetime.utcnow()
         _append_event(db, project, user_data, "document_removed",
                       content=documento.original_filename)
         db.flush()
-        return {"deleted": True, "id_proyect_document": documento.id_proyect_document}
+        aviso = _aviso_a_involucrados(db, project, "Archivo eliminado",
+                                      documento.original_filename)
+        resultado = {"deleted": True, "id_proyect_document": documento.id_proyect_document}
+    _notificar_proyecto(actor_id=_actor_id(user_data), **aviso)
+    return resultado
 
 
 def project_document_content(document_id, user_data: dict, storage):
