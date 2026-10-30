@@ -114,3 +114,64 @@ export function parametrosEfectivos(parametros, hoy = new Date()) {
   else if (guardados.comparar_anterior) Object.assign(efectivos, periodoAnterior(rango));
   return efectivos;
 }
+
+// --- como se ve el rango en una tarjeta ---------------------------------------------------------------------------------
+// Nunca en ISO ni con flechas: "Ultimos 30 dias" si el widget es relativo, y si no "1 – 30 oct 2026". Las fechas exactas
+// van en el tooltip. Son fechas de calendario (AAAA-MM-DD), asi que se formatean en UTC para que la zona no las mueva.
+
+/** Texto de cada rango relativo EN UNA TARJETA (distinto del nombre corto del chip del editor). */
+export const ETIQUETA_DE_RANGO_EN_TARJETA = {
+  hoy: "Hoy",
+  "7_dias": "Últimos 7 días",
+  "30_dias": "Últimos 30 días",
+  "90_dias": "Últimos 90 días",
+  este_mes: "Este mes",
+  mes_anterior: "Mes anterior",
+  este_anio: "Este año",
+};
+
+function partesDeFecha(iso) {
+  const encontrada = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ""));
+  if (!encontrada) return null;
+  return { anio: Number(encontrada[1]), mes: Number(encontrada[2]) - 1, dia: Number(encontrada[3]) };
+}
+
+function nombreDeMes(mes, anio, estilo, locale) {
+  return new Intl.DateTimeFormat(locale, { month: estilo, timeZone: "UTC" }).format(new Date(Date.UTC(anio, mes, 1)));
+}
+
+/** "30 oct 2026", "1 – 30 oct 2026", "28 sep – 30 oct 2026" o "28 dic 2025 – 3 ene 2026". "" si una fecha no es valida. */
+export function formatoDeRango(inicio, fin, { locale = "es-MX" } = {}) {
+  const a = partesDeFecha(inicio);
+  const b = partesDeFecha(fin);
+  if (!a || !b) return "";
+  const mesA = nombreDeMes(a.mes, a.anio, "short", locale);
+  const mesB = nombreDeMes(b.mes, b.anio, "short", locale);
+  if (a.anio === b.anio && a.mes === b.mes) {
+    return a.dia === b.dia ? `${a.dia} ${mesA} ${a.anio}` : `${a.dia} – ${b.dia} ${mesA} ${a.anio}`;
+  }
+  if (a.anio === b.anio) return `${a.dia} ${mesA} – ${b.dia} ${mesB} ${a.anio}`;
+  return `${a.dia} ${mesA} ${a.anio} – ${b.dia} ${mesB} ${b.anio}`;
+}
+
+/** "1 de octubre de 2026 al 30 de octubre de 2026": para el tooltip. */
+export function formatoDeRangoLargo(inicio, fin, { locale = "es-MX", al = "al" } = {}) {
+  const a = partesDeFecha(inicio);
+  const b = partesDeFecha(fin);
+  if (!a || !b) return "";
+  const dar = (fecha) => new Intl.DateTimeFormat(locale, { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })
+    .format(new Date(Date.UTC(fecha.anio, fecha.mes, fecha.dia)));
+  return `${dar(a)} ${al} ${dar(b)}`;
+}
+
+/** Lo que dice el pie de una tarjeta sobre su rango: `{ texto, detalle }`. `etiquetaRelativa` es el nombre traducido del
+ * rango relativo del widget (o `null` si sus fechas son fijas); `detalle` trae las fechas exactas y, si compara, contra que. */
+export function textoDeRango({ inicio, fin, inicioB, finB, etiquetaRelativa = null, locale = "es-MX", palabras = {} }) {
+  const corto = formatoDeRango(inicio, fin, { locale });
+  const detalleA = formatoDeRangoLargo(inicio, fin, { locale, al: palabras.al });
+  const detalleB = inicioB && finB ? formatoDeRangoLargo(inicioB, finB, { locale, al: palabras.al }) : "";
+  return {
+    texto: etiquetaRelativa || corto,
+    detalle: detalleB ? `${detalleA} (${palabras.vs || "vs."} ${detalleB})` : detalleA,
+  };
+}

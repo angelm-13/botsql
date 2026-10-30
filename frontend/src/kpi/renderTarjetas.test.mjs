@@ -66,18 +66,19 @@ test("la tarjeta se pinta para los 6 tipos de grafica en toda combinacion de par
   assert.equal(combinaciones, TIPOS.length * Object.keys(PARAMETROS).length);
 });
 
-test("el encabezado dice el rango: fechas tal cual en un widget viejo, y el nombre del rango en uno relativo", () => {
+test("el pie dice el rango legible: fechas cortas en un widget viejo, 'Ultimos 30 dias' en uno relativo, sin ISO", () => {
   const viejo = pintarTarjeta({ widget: widgetDe("barras", PARAMETROS["viejo, fechas absolutas"]), kpiCatalog: CATALOGO });
-  assert.ok(viejo.includes("2026-08-01 → 2026-08-31"), "un widget viejo muestra SUS fechas");
-  assert.ok(!viejo.includes(" · 20"), "y sin nombre de rango");
+  assert.ok(viejo.includes("1 – 31 ago 2026"), "un widget viejo muestra SUS fechas, cortas");
+  assert.ok(viejo.includes('title="1 de agosto de 2026 al 31 de agosto de 2026"'), "las fechas exactas van en el tooltip");
+  assert.ok(!/\d{4}-\d{2}-\d{2}|→/.test(viejo), "nada de ISO ni flechas");
 
   const comparado = pintarTarjeta({ widget: widgetDe("barras", PARAMETROS["viejo, con comparacion"]), kpiCatalog: CATALOGO });
-  assert.ok(comparado.includes("vs.") && comparado.includes("2026-07-01 → 2026-07-31"));
+  assert.ok(comparado.includes("(vs. 1 de julio de 2026 al 31 de julio de 2026)"), "el periodo comparado va en el tooltip");
 
-  // Un rango relativo se recalcula al dia de hoy: el nombre legible + fechas de hoy.
+  // Un rango relativo se recalcula al dia de hoy: el nombre legible, sin la clave interna.
   const relativo = pintarTarjeta({ widget: widgetDe("barras", PARAMETROS["rango relativo"]), kpiCatalog: CATALOGO });
-  assert.match(relativo, /30 días · \d{4}-\d{2}-\d{2} → \d{4}-\d{2}-\d{2}/, "nombre del rango, no la clave cruda");
-  assert.ok(!relativo.includes("30_dias"), "la clave interna no se le muestra a nadie");
+  assert.ok(relativo.includes("Últimos 30 días"));
+  assert.ok(!relativo.includes("30_dias") && !/\d{4}-\d{2}-\d{2}/.test(relativo));
 
   const sinFechas = pintarTarjeta({ widget: widgetDe("barras", PARAMETROS["sin fechas"]), kpiCatalog: CATALOGO });
   assert.ok(sinFechas.includes("Sin rango de fechas configurado"));
@@ -85,6 +86,17 @@ test("el encabezado dice el rango: fechas tal cual en un widget viejo, y el nomb
   // Una tabla de un KPI vivo no tiene periodo: dice que es en vivo.
   const tabla = pintarTarjeta({ widget: widgetDe("tabla", {}), kpiCatalog: CATALOGO });
   assert.ok(tabla.includes("En vivo"));
+});
+
+test("la tarjeta ordena titulo, grafica y pie, y ya no dice el tipo de grafico", () => {
+  for (const tipo of ["numero", "barras", "dona"]) {
+    const html = pintarTarjeta({ widget: widgetDe(tipo, PARAMETROS["viejo, fechas absolutas"]), kpiCatalog: CATALOGO });
+    const titulo = html.indexOf("<h4>");
+    const grafica = html.indexOf("kpi-chart-box");
+    const pie = html.indexOf("kpi-widget-pie");
+    assert.ok(titulo >= 0 && titulo < grafica && grafica < pie, `${tipo}: titulo, grafica, pie`);
+    assert.ok(!/>(Número|Barras|Dona|Línea|Área|Tabla)<\/p>/.test(html), `${tipo}: sin el tipo en la tarjeta`);
+  }
 });
 
 test("un widget de fechas fijas se marca; uno relativo, una tabla en vivo y uno sin fechas no", () => {

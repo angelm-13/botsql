@@ -56,7 +56,7 @@ import {
   cambiaLaComparacion, esDeFechasFijas, parametrosConRangoRelativo, rangoRelativoPorDuracion,
 } from "../kpi/kpiFechasFijas.js";
 import {
-  DESFASES_DE_COMPARACION, ETIQUETA_RANGO_POR_OMISION, RANGOS_RELATIVOS, RANGO_PERSONALIZADO, fechaLocalIso,
+  DESFASES_DE_COMPARACION, ETIQUETA_DE_RANGO_EN_TARJETA, ETIQUETA_RANGO_POR_OMISION, RANGOS_RELATIVOS, RANGO_PERSONALIZADO, fechaLocalIso, textoDeRango,
   parametrosEfectivos, periodoAnterior, rangoDesfasado, resolverRangoRelativo,
 } from "../kpi/kpiRango.js";
 import { datosDeEjemplo } from "../kpi/datosDeEjemplo.js";
@@ -1442,18 +1442,25 @@ export function KpiWidgetCard({
   // Un widget guardado con fechas absolutas no se mueve con el tiempo: se marca y se ofrece pasarlo a relativo.
   const fechasFijas = esDeFechasFijas(widget, kpiInfos);
   const rangoDeducido = fechasFijas ? rangoRelativoPorDuracion(parametros.fecha_inicio, parametros.fecha_fin) : null;
-  const chartTypeLabel = CHART_TYPES.find((opt) => opt.value === widget.tipo_grafica)?.label || widget.tipo_grafica;
-  // "30 días · 2026-08-31 → 2026-09-29": el nombre del rango solo si el widget
-  // lo trae; uno de fechas fijas se ve como siempre. Va ANTES de rangoTexto:
-  // usarlo antes de declararlo lanzaba ReferenceError y tumbaba la app entera.
+  // Rango de la tarjeta: "Ultimos 30 dias" si el widget es relativo y, si no, "1 – 30 oct 2026"; las fechas exactas (y el
+  // periodo con el que se compara) van en el tooltip. Nada en ISO.
   const claveRango = widget.parametros?.rango_relativo;
-  const etiquetaRango = RANGOS_RELATIVOS.includes(claveRango)
-    ? `${tx(`range_${claveRango}`, ETIQUETA_RANGO_POR_OMISION[claveRango])} · `
-    : "";
+  const rango = !esTablaVivo && fechaInicio && fechaFin
+    ? textoDeRango({
+      inicio: fechaInicio,
+      fin: fechaFin,
+      inicioB: fechaInicioB,
+      finB: fechaFinB,
+      etiquetaRelativa: RANGOS_RELATIVOS.includes(claveRango)
+        ? tx(`card_range_${claveRango}`, ETIQUETA_DE_RANGO_EN_TARJETA[claveRango])
+        : null,
+      locale: locale || "es-MX",
+      palabras: { al: tx("range_to", "al"), vs: tx("vs_label", "vs.") },
+    })
+    : null;
   const rangoTexto = esTablaVivo
     ? tx("live_data", "En vivo · actualizado ahora")
-    : (fechaInicio && fechaFin ? `${etiquetaRango}${fechaInicio} → ${fechaFin}` : tx("missing_range", "Sin rango de fechas configurado"));
-  const rangoBTexto = fechaInicioB && fechaFinB ? `${fechaInicioB} → ${fechaFinB}` : "";
+    : (rango ? rango.texto : tx("missing_range", "Sin rango de fechas configurado"));
   const nombreDeLosKpis = kpiInfos.length > 1
     ? kpiInfos.map((info, index) => info?.etiqueta || `KPI #${idsUsados[index]}`).join(" + ")
     : (kpiInfos[0]?.etiqueta || tx("unknown_kpi", `KPI #${idsUsados[0] ?? "?"}`));
@@ -1474,9 +1481,40 @@ export function KpiWidgetCard({
       <div className="kpi-widget-card-header">
         <div className="kpi-widget-card-titulos">
           <h4>{titulo}</h4>
-          <p className="kpi-widget-meta">{tx(`chart_type_${widget.tipo_grafica}`, chartTypeLabel)}</p>
-          <p className="kpi-widget-meta">{rangoTexto}</p>
-          {rangoBTexto && <p className="kpi-widget-meta">{tx("vs_label", "vs.")} {rangoBTexto}</p>}
+        </div>
+        <div className="kpi-widget-card-actions">
+          <button
+            type="button"
+            className="kpi-icon-button kpi-drag-handle"
+            title={tx("drag_to_reorder", "Arrastrar para reordenar")}
+            aria-label={tx("drag_to_reorder", "Arrastrar para reordenar")}
+            {...dragHandleProps}
+          >
+            <GripVertical size={15} />
+          </button>
+          <button type="button" className="kpi-icon-button" title={t("common.edit")} onClick={onEdit}><Pencil size={15} /></button>
+          <button type="button" className="kpi-icon-button danger" title={t("common.delete")} onClick={onDelete}><Trash2 size={15} /></button>
+        </div>
+      </div>
+
+      <div className="kpi-chart-box">
+        <CuerpoDeWidget
+          widget={widget}
+          datos={datos}
+          userLabel={userLabel}
+          productLabel={productLabel}
+          formatNumber={formatNumber}
+          t={t}
+          tx={tx}
+          animar={animar}
+          filtroResponsable={filtroResponsable}
+          onFiltrarResponsable={onFiltrarResponsable}
+          onQuitarFiltroResponsable={onQuitarFiltroResponsable}
+        />
+      </div>
+
+      <footer className="kpi-widget-pie">
+        <p className="kpi-widget-meta kpi-widget-rango" title={rango?.detalle || undefined}>{rangoTexto}</p>
           {fechasFijas && (
             <p className="kpi-widget-meta kpi-widget-fechas-fijas">
               <span title={tx("fixed_dates_hint", "Este gráfico se quedó con las fechas con las que se guardó: no se mueve con el tiempo.")}>
@@ -1514,37 +1552,7 @@ export function KpiWidgetCard({
               </span>
             </p>
           )}
-        </div>
-        <div className="kpi-widget-card-actions">
-          <button
-            type="button"
-            className="kpi-icon-button kpi-drag-handle"
-            title={tx("drag_to_reorder", "Arrastrar para reordenar")}
-            aria-label={tx("drag_to_reorder", "Arrastrar para reordenar")}
-            {...dragHandleProps}
-          >
-            <GripVertical size={15} />
-          </button>
-          <button type="button" className="kpi-icon-button" title={t("common.edit")} onClick={onEdit}><Pencil size={15} /></button>
-          <button type="button" className="kpi-icon-button danger" title={t("common.delete")} onClick={onDelete}><Trash2 size={15} /></button>
-        </div>
-      </div>
-
-      <div className="kpi-chart-box">
-        <CuerpoDeWidget
-          widget={widget}
-          datos={datos}
-          userLabel={userLabel}
-          productLabel={productLabel}
-          formatNumber={formatNumber}
-          t={t}
-          tx={tx}
-          animar={animar}
-          filtroResponsable={filtroResponsable}
-          onFiltrarResponsable={onFiltrarResponsable}
-          onQuitarFiltroResponsable={onQuitarFiltroResponsable}
-        />
-      </div>
+      </footer>
     </article>
   );
 }
@@ -1613,7 +1621,6 @@ function KpiNumero({ widget, snapshot, kpiInfo, formatNumber, tx, animar }) {
       icono={kpiModuleMeta(kpiInfo?.modulo).icon}
       colorAcento={colorEfectivoDeKpi(kpiInfo?.id_kpi_definition, parametros.colores_kpi)}
       tendencia={tendencia}
-      pistaRango={hayComparacion ? null : `${parametros.fecha_inicio} → ${parametros.fecha_fin}`}
     />
   );
 }

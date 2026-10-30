@@ -276,3 +276,7 @@ body.kpi-pdf-exporting .kpi-widget-card-actions{display:none}
 /* Chip de tarjeta: neutral, con icono. */
 .kpi-widget-actualizado{display:flex;align-items:center;gap:5px;color:var(--kpi-chip-texto,#475569)}
 .kpi-chip-al_dia{color:var(--kpi-estado-ok-texto)}
+
+/* Pie de la tarjeta: rango, etiquetas de fechas fijas y chip de datos. Va debajo de la grafica. */
+.kpi-widget-pie{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;margin-top:2px}
+.kpi-widget-rango{color:#475569}
