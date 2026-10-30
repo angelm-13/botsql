@@ -2836,7 +2836,8 @@
     "employee_payroll_group_overlap": "The employee already has a group on those dates. Close the previous assignment with an end date.",
     "payroll_period_length": "The dates do not match the group's pay frequency: a week lasts 7 days, a biweekly period 14, a semimonthly period 13 to 16 and a month 28 to 31.",
     "attendance_correction_limit_reached": "This month's corrections for this employee are used up. Only HR can correct, as an exception.",
-    "payroll_period_pending_justification": "There are days pending justification in the period."
+    "payroll_period_pending_justification": "There are days pending justification in the period.",
+    "overtime_already_paid": "It was already paid in a closed period; it cannot be removed."
   },
   "logistics": {
     "module": "Logistics",
@@ -3702,7 +3703,8 @@
       "aria_label": "Kronos sections",
       "attendance": "Attendance",
       "people": "People",
-      "incidences": "Incidents"
+      "incidences": "Incidents",
+      "overtime": "Overtime"
     },
     "errors": {
       "missing_connection": "Configure the device connection from the settings gear.",
@@ -4904,7 +4906,8 @@
     "leaves": "Leave",
     "pending": "pending",
     "pending_hint": "Days with a single check: not paid until corrected.",
-    "pending_close": "There are days pending justification (a single check, not paid). Close anyway?"
+    "pending_close": "There are days pending justification (a single check, not paid). Close anyway?",
+    "overtime": "Overtime"
   },
   "payroll_settings": {
     "eyebrow": "HUMAN RESOURCES",
@@ -4980,7 +4983,9 @@
       "attendance_correction_limit": "Check-in corrections per employee per month",
       "attendance_warning_entry_minutes": "Warn the employee if no check-in (minutes after)",
       "attendance_warning_supervisor_minutes": "Warn the supervisor if still no check-in (minutes)",
-      "attendance_warning_exit_minutes": "Warn the employee if no check-out (minutes after)"
+      "attendance_warning_exit_minutes": "Warn the employee if no check-out (minutes after)",
+      "overtime_tolerance_minutes": "Tolerance for unauthorized time (minutes)",
+      "overtime_day_hours": "Shift hours for employees without schedule"
     },
     "tab_options": "Calculation options",
     "tab_vacations": "Vacation table",
@@ -5051,7 +5056,8 @@
     "weekday_short_3": "Th",
     "weekday_short_4": "Fr",
     "weekday_short_5": "Sa",
-    "weekday_short_6": "Su"
+    "weekday_short_6": "Su",
+    "meal": "Meal (min)"
   },
   "employee_leaves": {
     "eyebrow": "Human resources",
@@ -5180,5 +5186,41 @@
     "upload": "Upload certificate",
     "types_hint": "Photo (JPG or PNG) or PDF, up to 10 MB.",
     "request_hint": "Attach the IMSS certificate. The disability counts in your payroll once HR approves it."
+  },
+  "overtime": {
+    "eyebrow": "Overtime",
+    "new": "Register overtime",
+    "approve_title": "Approve as overtime",
+    "approve": "Approve as overtime",
+    "hint": "Only the employee's supervisor or HR register it. What is authorized is paid, capped at what the check-ins show; if the check-out is wrong, correct it in Incidences and the real time is paid.",
+    "employee": "Employee",
+    "date": "Day",
+    "hours": "Hours (h:mm)",
+    "origin": "Origin",
+    "origin_authorized": "Authorized beforehand",
+    "origin_detected": "Unauthorized time approved",
+    "origin_manual": "HR capture (no check-ins)",
+    "settlement": "Settlement",
+    "settlement_pay": "Paid",
+    "settlement_compensate": "Time off (not paid)",
+    "notes": "Comment",
+    "form_hint": "HR capture and time off require a comment. The first 9 hours of the week are paid double and the rest triple.",
+    "unauthorized_title": "Unauthorized time",
+    "unauthorized_hint": "They stayed after their shift without authorization. Not paid until approved. Tolerance",
+    "extra_time": "Extra time",
+    "no_unauthorized": "Nobody stayed late without authorization.",
+    "registered_title": "Registered overtime",
+    "authorized": "Authorized",
+    "checked": "Checked",
+    "payable": "Paid",
+    "status": "Status",
+    "status_verified": "Verified",
+    "status_partial": "Partial",
+    "status_not_worked": "Did not stay",
+    "status_manual": "HR capture",
+    "paid_in": "Paid in period",
+    "no_registered": "No overtime in the range.",
+    "saved": "Overtime registered.",
+    "confirm_delete": "Remove this overtime record?"
   }
 }

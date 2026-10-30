@@ -657,6 +657,10 @@ export const rejectEmployeeLeave = (id, payload = {}) => request(`/employee_leav
 // Correcciones de checadas (su supervisor o RH; limite por mes).
 export const getAttendanceCorrections = (idUser, month) => request("/attendance_correction/", { params: { id_user: idUser, month } });
 export const createAttendanceCorrection = (payload) => request("/attendance_correction/", { method: "POST", body: payload });
+// Horas extra (su supervisor o RH; la captura a mano solo RH).
+export const getOvertime = (range) => request("/overtime/", { params: range });
+export const createOvertime = (payload) => request("/overtime/", { method: "POST", body: payload });
+export const deleteOvertime = (id) => request(`/overtime/${id}`, { method: "DELETE" });
 export const getAttendanceIncidences = ({ startDate, endDate }) => request(`/kronos/attendance/incidences?startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}`);
 export const getAllPayrollParameter = (params = {}) => request("/payroll_parameter/", { params });
 export const createPayrollParameter = (payload) => request("/payroll_parameter/", { method: "POST", body: payload });

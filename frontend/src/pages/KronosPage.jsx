@@ -7,6 +7,7 @@ import { useI18n } from "../i18n";
 import PageHeader from "../components/PageHeader.jsx";
 import { useDialogo } from "../dialogo/useDialogo.js";
 import IncidenciasAsistencia from "../components/IncidenciasAsistencia.jsx";
+import HorasExtra from "../components/HorasExtra.jsx";
 
 function localDate(date) {
   const offset = date.getTimezoneOffset() * 60000;
@@ -271,14 +272,16 @@ export default function KronosPage() {
         <button type="button" role="tab" aria-selected={view === 'attendance'} className={view === 'attendance' ? 'active' : ''} onClick={() => { setView('attendance'); setQuery(''); }}>{t('kronos.tabs.attendance')}</button>
         <button type="button" role="tab" aria-selected={view === 'people'} className={view === 'people' ? 'active' : ''} onClick={() => { setView('people'); setQuery(''); }}>{t('kronos.tabs.people')}</button>
         <button type="button" role="tab" aria-selected={view === 'incidences'} className={view === 'incidences' ? 'active' : ''} onClick={() => { setView('incidences'); setQuery(''); }}>{t('kronos.tabs.incidences')}</button>
+        <button type="button" role="tab" aria-selected={view === 'overtime'} className={view === 'overtime' ? 'active' : ''} onClick={() => { setView('overtime'); setQuery(''); }}>{t('kronos.tabs.overtime')}</button>
       </div>
 
       {error && <div className="alert error" role="alert">{error}</div>}
       {notice && <div className="alert success" role="status">{notice}</div>}
 
       {view === 'incidences' && <IncidenciasAsistencia t={t} describirError={describeError} />}
+      {view === 'overtime' && <HorasExtra t={t} describirError={describeError} empleados={userOptions} />}
 
-      {view === 'incidences' ? null : view === 'attendance' ? (
+      {view === 'incidences' || view === 'overtime' ? null : view === 'attendance' ? (
         <>
           <form className="form-card kronos-filter" onSubmit={loadAttendance}>
             <label className="field">{t('kronos.filter.from')}<input required type="date" value={period.startDate} onChange={(event) => setPeriod((current) => ({ ...current, startDate: event.target.value }))} /></label>

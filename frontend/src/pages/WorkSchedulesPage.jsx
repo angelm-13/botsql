@@ -29,7 +29,7 @@ function actorGuardado() {
 
 function horarioVacio() {
   return {
-    schedule_name: "", tolerance_minutes: 10,
+    schedule_name: "", tolerance_minutes: 10, meal_minutes: 60,
     dias: Object.fromEntries(DIAS.map((d) => [d, { on: d < 5, start_time: "09:00", end_time: "18:00" }])),
   };
 }
@@ -112,6 +112,7 @@ export default function WorkSchedulesPage() {
     const actuales = Object.fromEntries(diasDe(h.id_work_schedule).map((d) => [d.weekday, d]));
     setFormHorario({
       id_work_schedule: h.id_work_schedule, schedule_name: h.schedule_name, tolerance_minutes: h.tolerance_minutes,
+      meal_minutes: h.meal_minutes ?? 60,
       dias: Object.fromEntries(DIAS.map((d) => [d, actuales[d]
         ? { on: true, start_time: actuales[d].start_time, end_time: actuales[d].end_time, id: actuales[d].id_work_schedule_day }
         : { on: false, start_time: "09:00", end_time: "18:00" }])),
@@ -122,7 +123,7 @@ export default function WorkSchedulesPage() {
     event.preventDefault();
     const f = formHorario;
     const ok = await guardar(async () => {
-      const datos = { schedule_name: f.schedule_name, tolerance_minutes: Number(f.tolerance_minutes) };
+      const datos = { schedule_name: f.schedule_name, tolerance_minutes: Number(f.tolerance_minutes), meal_minutes: Number(f.meal_minutes) };
       const horario = f.id_work_schedule ? await updateWorkSchedule(f.id_work_schedule, datos) : await createWorkSchedule(datos);
       const id = horario.id_work_schedule;
       // Se sincronizan los dias: los marcados se crean o actualizan, los desmarcados se quitan.
@@ -180,6 +181,7 @@ export default function WorkSchedulesPage() {
               <div className="form-grid">
                 <label className="field">{t("work_schedules.name")}{campo(formHorario, setFormHorario, "schedule_name", { required: true, maxLength: 120 })}</label>
                 <label className="field">{t("work_schedules.tolerance")}{campo(formHorario, setFormHorario, "tolerance_minutes", { required: true, type: "number", min: 0, max: 240 })}</label>
+                <label className="field">{t("work_schedules.meal")}{campo(formHorario, setFormHorario, "meal_minutes", { required: true, type: "number", min: 0, max: 240 })}</label>
               </div>
               <table>
                 <thead><tr><th>{t("work_schedules.day")}</th><th>{t("work_schedules.works")}</th><th>{t("work_schedules.start")}</th><th>{t("work_schedules.end")}</th></tr></thead>
@@ -208,15 +210,16 @@ export default function WorkSchedulesPage() {
               {puede("work_schedule", "scope_create") && <button className="button" type="button" onClick={() => setFormHorario(horarioVacio())}><Plus size={16} /> {t("work_schedules.new_schedule")}</button>}
             </div>
             <table>
-              <thead><tr><th>{t("work_schedules.name")}</th><th>{t("work_schedules.days")}</th><th>{t("work_schedules.tolerance")}</th><th>{t("common.actions")}</th></tr></thead>
+              <thead><tr><th>{t("work_schedules.name")}</th><th>{t("work_schedules.days")}</th><th>{t("work_schedules.tolerance")}</th><th>{t("work_schedules.meal")}</th><th>{t("common.actions")}</th></tr></thead>
               <tbody>{horarios.length ? horarios.map((h) => (
                 <tr key={h.id_work_schedule}>
                   <td><strong>{h.schedule_name}</strong></td>
                   <td><small>{resumenDias(h.id_work_schedule)}</small></td>
                   <td>{h.tolerance_minutes} min</td>
+                  <td>{h.meal_minutes ?? 60} min</td>
                   <td className="row-actions">{puede("work_schedule", "scope_update") && <button type="button" title={t("common.edit")} onClick={() => editarHorario(h)}><Pencil size={15} /></button>}</td>
                 </tr>
-              )) : <tr><td colSpan="4" className="kronos-empty">{t("work_schedules.no_schedules")}</td></tr>}</tbody>
+              )) : <tr><td colSpan="5" className="kronos-empty">{t("work_schedules.no_schedules")}</td></tr>}</tbody>
             </table>
           </div>
         </>

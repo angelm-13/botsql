@@ -2602,7 +2602,8 @@
     "employee_payroll_group_overlap": "O funcionário já tem um grupo nessas datas. Feche a atribuição anterior com uma data final.",
     "payroll_period_length": "As datas não correspondem à periodicidade do grupo: uma semana dura 7 dias, um período catorzenal 14, uma quinzena de 13 a 16 e um mês de 28 a 31.",
     "attendance_correction_limit_reached": "As correções deste mês para este funcionário acabaram. Só o RH pode corrigir, como exceção.",
-    "payroll_period_pending_justification": "Há dias pendentes de justificar no período."
+    "payroll_period_pending_justification": "Há dias pendentes de justificar no período.",
+    "overtime_already_paid": "Já foi paga em um período fechado; não pode ser removida."
   },
   "logistics": {
     "module": "Logística",
@@ -3321,7 +3322,8 @@
       "aria_label": "Seções do Kronos",
       "attendance": "Presenças",
       "people": "Pessoas",
-      "incidences": "Ocorrências"
+      "incidences": "Ocorrências",
+      "overtime": "Horas extras"
     },
     "errors": {
       "missing_connection": "Configure a conexão do dispositivo nas configurações.",
@@ -3593,7 +3595,8 @@
     "leaves": "Ausências",
     "pending": "pendentes",
     "pending_hint": "Dias com uma só marcação: não são pagos até serem corrigidos.",
-    "pending_close": "Há dias pendentes de justificar (uma só marcação, não pagos). Fechar mesmo assim?"
+    "pending_close": "Há dias pendentes de justificar (uma só marcação, não pagos). Fechar mesmo assim?",
+    "overtime": "Horas extras"
   },
   "payroll_settings": {
     "eyebrow": "RECURSOS HUMANOS",
@@ -3669,7 +3672,9 @@
       "attendance_correction_limit": "Correções de ponto por funcionário ao mês",
       "attendance_warning_entry_minutes": "Aviso ao funcionário sem marcação de entrada (minutos depois)",
       "attendance_warning_supervisor_minutes": "Aviso ao supervisor se continuar sem entrada (minutos)",
-      "attendance_warning_exit_minutes": "Aviso ao funcionário sem marcação de saída (minutos depois)"
+      "attendance_warning_exit_minutes": "Aviso ao funcionário sem marcação de saída (minutos depois)",
+      "overtime_tolerance_minutes": "Tolerância para tempo não autorizado (minutos)",
+      "overtime_day_hours": "Horas de jornada para quem não tem horário"
     },
     "tab_options": "Opções de cálculo",
     "tab_vacations": "Tabela de férias",
@@ -3740,7 +3745,8 @@
     "weekday_short_3": "Th",
     "weekday_short_4": "Fr",
     "weekday_short_5": "Sa",
-    "weekday_short_6": "Su"
+    "weekday_short_6": "Su",
+    "meal": "Refeição (min)"
   },
   "employee_leaves": {
     "eyebrow": "Recursos humanos",
@@ -3869,5 +3875,41 @@
     "upload": "Enviar atestado",
     "types_hint": "Foto (JPG ou PNG) ou PDF, de até 10 MB.",
     "request_hint": "Anexe o atestado do IMSS. O afastamento conta na folha quando o RH o aprovar."
+  },
+  "overtime": {
+    "eyebrow": "Horas extras",
+    "new": "Registrar horas extras",
+    "approve_title": "Aprovar como horas extras",
+    "approve": "Aprovar como horas extras",
+    "hint": "Só o supervisor do funcionário ou o RH as registram. Paga-se o autorizado com teto no que as marcações mostram; se a saída estiver errada, corrija em Incidências e paga-se o real.",
+    "employee": "Funcionário",
+    "date": "Dia",
+    "hours": "Horas (h:mm)",
+    "origin": "Origem",
+    "origin_authorized": "Autorizada antes",
+    "origin_detected": "Tempo não autorizado aprovado",
+    "origin_manual": "Lançamento do RH (sem marcações)",
+    "settlement": "Liquidação",
+    "settlement_pay": "É paga",
+    "settlement_compensate": "Folga (não é paga)",
+    "notes": "Comentário",
+    "form_hint": "O lançamento do RH e a folga exigem comentário. As primeiras 9 horas da semana são pagas em dobro e as demais em triplo.",
+    "unauthorized_title": "Tempo não autorizado",
+    "unauthorized_hint": "Ficaram depois da saída sem autorização. Não é pago até ser aprovado. Tolerância",
+    "extra_time": "Tempo a mais",
+    "no_unauthorized": "Ninguém ficou a mais sem autorização.",
+    "registered_title": "Horas extras registradas",
+    "authorized": "Autorizado",
+    "checked": "Marcado",
+    "payable": "É pago",
+    "status": "Estado",
+    "status_verified": "Verificada",
+    "status_partial": "Parcial",
+    "status_not_worked": "Não ficou",
+    "status_manual": "Lançamento do RH",
+    "paid_in": "Paga no período",
+    "no_registered": "Não há horas extras no intervalo.",
+    "saved": "Horas extras registradas.",
+    "confirm_delete": "Remover este registro de horas extras?"
   }
 }

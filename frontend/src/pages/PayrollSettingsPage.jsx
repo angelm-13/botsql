@@ -31,6 +31,9 @@ const PARAMETROS = [
   // Minutos de los avisos de checada que falta (services/avisos_de_checada.py); 0 = sin aviso.
   ["attendance_warning_entry_minutes", "minutes", "options"], ["attendance_warning_supervisor_minutes", "minutes", "options"],
   ["attendance_warning_exit_minutes", "minutes", "options"],
+  // Horas extra (services/overtime_service.py): tolerancia para el tiempo no
+  // autorizado y jornada para el precio de la hora de quien no tiene horario.
+  ["overtime_tolerance_minutes", "minutes", "options"], ["overtime_day_hours", "count", "options"],
   // Tabla de vacaciones de la empresa; sin capturar, la de la ley.
   ["vacation_days_year_1", "days", "vacations"], ["vacation_days_year_2", "days", "vacations"],
   ["vacation_days_year_3", "days", "vacations"], ["vacation_days_year_4", "days", "vacations"],
@@ -58,6 +61,7 @@ const POLITICA_POR_OMISION = {
   vacation_accrual_monthly: 0, vacation_advance_max_days: 0, vacation_expiry_months: 12,
   vacation_unused_policy: 0, vacation_warning_days_1: 60, vacation_warning_days_2: 30,
   attendance_correction_limit: 2,
+  overtime_tolerance_minutes: 15, overtime_day_hours: 8,
   attendance_warning_entry_minutes: 15, attendance_warning_supervisor_minutes: 30, attendance_warning_exit_minutes: 30,
 };
 const PESTANAS = ["parameters", "options", "vacations", "vacation_policy", "isr"];

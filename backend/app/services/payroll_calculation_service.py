@@ -59,6 +59,7 @@ from app.models import (PayrollConcept, PayrollDetail, PayrollIsrBracket, Payrol
 from app.services import payroll_tax_rules as ley
 from app.services.attendance_correction_service import POLITICA_DE_CHECADAS
 from app.services.avisos_de_checada import POLITICA_DE_AVISOS
+from app.services.overtime_service import POLITICA_DE_HORAS_EXTRA
 from app.services.politica_de_vacaciones import POLITICA as POLITICA_DE_VACACIONES
 from app.models.session import transaction_context
 from app.utils.errors import AppError
@@ -68,6 +69,9 @@ CODIGO_SUELDO = "SUELDO"
 CODIGO_AGUINALDO, CODIGO_PRIMA = "AGUINALDO", "PRIMA_VAC"
 # Vacaciones no usadas que se pagan al vencer (politica de la empresa).
 CODIGO_VACACIONES_PAGADAS = "VAC_PAGADAS"
+# Horas extra (services/overtime_service.py): no se marca gravable porque solo
+# grava una parte; esa la suma este calculo a la base del ISR.
+CODIGO_HORAS_EXTRA = "HORAS_EXTRA"
 ABIERTO, CALCULADO, CERRADO = "open", "calculated", "closed"
 # Columnas que solo mueven calcular/cerrar/reabrir; la captura generica no.
 CAMPOS_DEL_ESTADO = ("period_state", "closed_at", "closed_by", "reopened_at", "reopened_by")
@@ -86,6 +90,7 @@ CONCEPTOS_DEL_CALCULO = {
     CODIGO_AGUINALDO: ("Aguinaldo", "earning", False, False),
     CODIGO_PRIMA: ("Prima vacacional", "earning", False, False),
     CODIGO_VACACIONES_PAGADAS: ("Vacaciones no disfrutadas pagadas", "earning", True, False),
+    CODIGO_HORAS_EXTRA: ("Horas extra", "earning", False, False),
     "ISR": ("ISR retenido (subsidio para el empleo aplicado)", "deduction", False, False),
     "IMSS": ("Cuota obrera IMSS", "deduction", False, False),
 }
@@ -118,7 +123,7 @@ TABLA_DE_VACACIONES = {
 # el limite de correcciones de checadas (services/attendance_correction_service.py) y
 # los minutos de los avisos de checada (services/avisos_de_checada.py).
 # clave -> (valor por omision, valores permitidos); los valida payroll_parameter_service.
-POLITICAS = {**POLITICA_DE_VACACIONES, **POLITICA_DE_CHECADAS, **POLITICA_DE_AVISOS}
+POLITICAS = {**POLITICA_DE_VACACIONES, **POLITICA_DE_CHECADAS, **POLITICA_DE_AVISOS, **POLITICA_DE_HORAS_EXTRA}
 PARAMETROS_OPCIONALES = OPCIONES + tuple(TABLA_DE_VACACIONES) + tuple(POLITICAS)
 
 
@@ -361,6 +366,8 @@ def calcular_periodo(id_payroll_period, user_id: int) -> dict:
         tabla_vacaciones = parametros["vacation_table"]
         from app.services.employee_leave_service import vacaciones_no_usadas_que_vencen
         por_pagar = vacaciones_no_usadas_que_vencen(db, empleados, periodo.period_start, periodo.period_end)
+        from app.services.overtime_service import horas_extra_del_periodo
+        horas_extra = horas_extra_del_periodo(db, empleados, periodo, parametros)
 
         calculados, sin_sueldo, sin_ingreso = [], [], []
         for empleado in empleados:
@@ -382,6 +389,10 @@ def calcular_periodo(id_payroll_period, user_id: int) -> dict:
             vacaciones_pagadas = por_pagar.get(empleado.id_user, 0)
             monto_vacaciones = _dinero(diario * vacaciones_pagadas)
             movimientos.reemplazar(detalle, conceptos[CODIGO_VACACIONES_PAGADAS], monto_vacaciones, user_id)
+            # Horas extra autorizadas y verificadas (dobles y triples); grava solo su parte gravada.
+            extra = horas_extra.get(empleado.id_user, {})
+            monto_extra, extra_gravado = extra.get("amount", _dinero(0)), extra.get("taxable", _dinero(0))
+            movimientos.reemplazar(detalle, conceptos[CODIGO_HORAS_EXTRA], monto_extra, user_id)
 
             if not empleado.hire_date:
                 sin_ingreso.append({"id_user": empleado.id_user, "full_name": empleado.full_name or ""})
@@ -404,7 +415,7 @@ def calcular_periodo(id_payroll_period, user_id: int) -> dict:
                                                   parametros["aguinaldo_exempt_umas"])
             prima_gravada = ley.parte_gravada(prima, parametros["uma_daily"],
                                               parametros["vacation_premium_exempt_umas"])
-            gravable = movimientos.percepciones_gravables(detalle) + aguinaldo_gravado + prima_gravada
+            gravable = movimientos.percepciones_gravables(detalle) + aguinaldo_gravado + prima_gravada + extra_gravado
             isr_tarifa = ley.isr_por_tarifa(gravable, tramos, factor_tarifa)
             if len(tramos_de_cifras) == 1:
                 subsidio = ley.subsidio_para_el_empleo(
@@ -465,6 +476,10 @@ def calcular_periodo(id_payroll_period, user_id: int) -> dict:
                 "vacation_premium_days": dias_vacaciones,
                 "unused_vacation_days_paid": vacaciones_pagadas,
                 "unused_vacation_pay": float(monto_vacaciones),
+                "overtime_double_hours": round(extra.get("double_minutes", 0) / 60, 2),
+                "overtime_triple_hours": round(extra.get("triple_minutes", 0) / 60, 2),
+                "overtime_pay": float(monto_extra),
+                "overtime_taxable": float(extra_gravado),
                 "taxable_income": float(gravable),
                 "isr_before_subsidy": float(isr_tarifa),
                 "employment_subsidy": float(subsidio),
@@ -552,6 +567,15 @@ def cerrar_periodo(id_payroll_period, user_id: int, confirmar_pendientes: bool =
             if pendientes:
                 raise AppError("errors.payroll_period_pending_justification", 409,
                                {"id_payroll_period": periodo.id_payroll_period, "employees": pendientes})
+        # Las horas extra que paga este periodo quedan marcadas: ningun otro las vuelve a pagar.
+        from app.models import Overtime
+        from app.services.overtime_service import horas_extra_del_periodo
+        empleados = db.scalars(select(User).where(User.id_user.in_(select(PayrollDetail.id_user).where(
+            PayrollDetail.id_payroll_period == periodo.id_payroll_period).where(PayrollDetail.deletion_date.is_(None))))).all()
+        pagadas = [i for fila in horas_extra_del_periodo(db, empleados, periodo, _parametros(db, periodo.period_end)).values()
+                   for i in fila["ids"]]
+        for registro in db.scalars(select(Overtime).where(Overtime.id_overtime.in_(pagadas or [0]))):
+            registro.id_payroll_period = periodo.id_payroll_period
         periodo.period_state = CERRADO
         periodo.closed_at = ahora_utc()
         periodo.closed_by = user_id
@@ -566,6 +590,10 @@ def reabrir_periodo(id_payroll_period, user_id: int) -> dict:
         if periodo.period_state != CERRADO:
             raise AppError("errors.payroll_period_not_closed", 409,
                            {"id_payroll_period": periodo.id_payroll_period, "period_state": periodo.period_state})
+        # Reabierto, sus horas extra vuelven a quedar libres para recalcularlo.
+        from app.models import Overtime
+        for registro in db.scalars(select(Overtime).where(Overtime.id_payroll_period == periodo.id_payroll_period)):
+            registro.id_payroll_period = None
         periodo.period_state = CALCULADO
         periodo.reopened_at = ahora_utc()
         periodo.reopened_by = user_id

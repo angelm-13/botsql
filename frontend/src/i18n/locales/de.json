@@ -2600,7 +2600,8 @@
     "employee_payroll_group_overlap": "Die Person hat in diesem Zeitraum bereits eine Gruppe. Schließen Sie die vorherige Zuordnung mit einem Enddatum.",
     "payroll_period_length": "Die Daten passen nicht zur Abrechnungsfrequenz der Gruppe: eine Woche hat 7 Tage, ein 14-Tage-Zeitraum 14, ein Halbmonat 13 bis 16 und ein Monat 28 bis 31.",
     "attendance_correction_limit_reached": "Die Korrekturen dieses Monats für diese Person sind aufgebraucht. Nur die Personalabteilung kann als Ausnahme korrigieren.",
-    "payroll_period_pending_justification": "Im Zeitraum gibt es offene Tage."
+    "payroll_period_pending_justification": "Im Zeitraum gibt es offene Tage.",
+    "overtime_already_paid": "Bereits in einem abgeschlossenen Zeitraum bezahlt; kann nicht entfernt werden."
   },
   "logistics": {
     "module": "Logistik",
@@ -3315,7 +3316,8 @@
       "aria_label": "Kronos-Bereiche",
       "attendance": "Anwesenheiten",
       "people": "Personen",
-      "incidences": "Vorfälle"
+      "incidences": "Vorfälle",
+      "overtime": "Überstunden"
     },
     "errors": {
       "missing_connection": "Konfigurieren Sie die Geräteverbindung über das Zahnradsymbol in den Einstellungen.",
@@ -3587,7 +3589,8 @@
     "leaves": "Abwesenheit",
     "pending": "offen",
     "pending_hint": "Tage mit nur einer Stempelung: werden erst nach Korrektur bezahlt.",
-    "pending_close": "Es gibt offene Tage (nur eine Stempelung, nicht bezahlt). Trotzdem abschließen?"
+    "pending_close": "Es gibt offene Tage (nur eine Stempelung, nicht bezahlt). Trotzdem abschließen?",
+    "overtime": "Überstunden"
   },
   "payroll_settings": {
     "eyebrow": "PERSONAL",
@@ -3663,7 +3666,9 @@
       "attendance_correction_limit": "Stempelkorrekturen pro Person und Monat",
       "attendance_warning_entry_minutes": "Hinweis an die Person ohne Kommen-Stempel (Minuten danach)",
       "attendance_warning_supervisor_minutes": "Hinweis an Vorgesetzte, wenn weiter kein Kommen-Stempel (Minuten)",
-      "attendance_warning_exit_minutes": "Hinweis an die Person ohne Gehen-Stempel (Minuten danach)"
+      "attendance_warning_exit_minutes": "Hinweis an die Person ohne Gehen-Stempel (Minuten danach)",
+      "overtime_tolerance_minutes": "Toleranz für ungenehmigte Zeit (Minuten)",
+      "overtime_day_hours": "Arbeitsstunden ohne Arbeitszeitplan"
     },
     "tab_options": "Berechnungsoptionen",
     "tab_vacations": "Urlaubstabelle",
@@ -3734,7 +3739,8 @@
     "weekday_short_3": "Th",
     "weekday_short_4": "Fr",
     "weekday_short_5": "Sa",
-    "weekday_short_6": "Su"
+    "weekday_short_6": "Su",
+    "meal": "Pause (Min.)"
   },
   "employee_leaves": {
     "eyebrow": "Personal",
@@ -3863,5 +3869,41 @@
     "upload": "Bescheinigung hochladen",
     "types_hint": "Foto (JPG oder PNG) oder PDF, höchstens 10 MB.",
     "request_hint": "Fügen Sie die IMSS-Bescheinigung bei. Die Arbeitsunfähigkeit zählt in der Abrechnung, sobald die Personalabteilung sie genehmigt."
+  },
+  "overtime": {
+    "eyebrow": "Überstunden",
+    "new": "Überstunden erfassen",
+    "approve_title": "Als Überstunden genehmigen",
+    "approve": "Als Überstunden genehmigen",
+    "hint": "Nur Vorgesetzte der Person oder die Personalabteilung erfassen sie. Bezahlt wird das Genehmigte, begrenzt auf das Gestempelte; ist das Gehen falsch gestempelt, in Vorfälle korrigieren.",
+    "employee": "Person",
+    "date": "Tag",
+    "hours": "Stunden (h:mm)",
+    "origin": "Herkunft",
+    "origin_authorized": "Vorher genehmigt",
+    "origin_detected": "Ungenehmigte Zeit genehmigt",
+    "origin_manual": "Erfassung Personal (ohne Stempel)",
+    "settlement": "Ausgleich",
+    "settlement_pay": "Wird bezahlt",
+    "settlement_compensate": "Freizeit (nicht bezahlt)",
+    "notes": "Kommentar",
+    "form_hint": "Erfassung durch die Personalabteilung und Freizeit brauchen einen Kommentar. Die ersten 9 Stunden pro Woche werden doppelt, die übrigen dreifach bezahlt.",
+    "unauthorized_title": "Ungenehmigte Zeit",
+    "unauthorized_hint": "Nach Schichtende ohne Genehmigung geblieben. Wird erst nach Genehmigung bezahlt. Toleranz",
+    "extra_time": "Mehrzeit",
+    "no_unauthorized": "Niemand ist ohne Genehmigung länger geblieben.",
+    "registered_title": "Erfasste Überstunden",
+    "authorized": "Genehmigt",
+    "checked": "Gestempelt",
+    "payable": "Wird bezahlt",
+    "status": "Status",
+    "status_verified": "Bestätigt",
+    "status_partial": "Teilweise",
+    "status_not_worked": "Nicht geblieben",
+    "status_manual": "Erfassung Personal",
+    "paid_in": "Bezahlt im Zeitraum",
+    "no_registered": "Keine Überstunden im Zeitraum.",
+    "saved": "Überstunden erfasst.",
+    "confirm_delete": "Diesen Überstundeneintrag entfernen?"
   }
 }
