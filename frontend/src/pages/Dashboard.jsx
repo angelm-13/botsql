@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AreaChart as AreaChartIcon, BarChart2, Boxes, ChevronDown, ChevronUp,
-  Check, ClipboardList, FileDown, FileText, FlaskConical, GripVertical, Hash, LineChart as LineChartIcon,
+  Check, ClipboardList, Clock, FileDown, FileText, FlaskConical, GripVertical, Hash, LineChart as LineChartIcon,
   Loader2, Pencil, Plus, Receipt,
   RefreshCw, SlidersHorizontal, Table as TableIcon, Trash2, User, UserCheck, Utensils,
 } from "lucide-react";
@@ -47,7 +47,7 @@ import { accionDeEnter, kpiAdmiteFiltros, puedeAgregar, puedeIrAlPaso } from "..
 import { claveDeGrupo, colorDeModulo } from "../kpi/kpiSelector.js";
 import { detallesDePersonas, nombreDePersona } from "../kpi/kpiPersonas.js";
 import { NO_CALCULADO, SIN_DATOS, estadoDeDatos } from "../kpi/kpiEstado.js";
-import { avisoDeDatosAtrasados, frescuraDeWidget } from "../kpi/kpiFrescura.js";
+import { chipDeTarjeta, computedAtDeSnapshots, estadoGlobalDeDatos, ultimoCalculoEfectivo } from "../kpi/kpiFrescura.js";
 import {
   guardarTableroActivo, idDeUsuarioActual, leerTableroActivo, resolverTableroActivo,
 } from "../kpi/kpiTableroActivo.js";
@@ -428,9 +428,8 @@ export default function Dashboard() {
   const [widgetsError, setWidgetsError] = useState("");
 
   const [kpiCatalog, setKpiCatalog] = useState([]);
-  // `ultimo_calculo` y `ahora` de GET /kpi_definition/ (UTC con zona): el aviso global de datos atrasados.
+  // `ultimo_calculo` y `ahora` de GET /kpi_definition/ (UTC con zona): la linea global del estado de los datos.
   const [calculo, setCalculo] = useState({ ultimo: null, ahora: null });
-  const avisoAtrasado = useMemo(() => avisoDeDatosAtrasados(calculo.ultimo, calculo.ahora), [calculo]);
   // Sube cada vez que "Actualizar datos" termina: las tarjetas vuelven a pedir sus datos sin desmontarse.
   const [refresco, setRefresco] = useState(0);
   const alTerminarActualizar = useCallback(() => {
@@ -439,9 +438,15 @@ export default function Dashboard() {
       .then((definiciones) => setCalculo({ ultimo: definiciones?.ultimo_calculo ?? null, ahora: definiciones?.ahora ?? null }))
       .catch(() => {});
   }, []);
-  const { estado: estadoActualizacion, enEspera, actualizar: actualizarDatos } = useActualizarDatos({
+  const { estado: estadoActualizacion, enEspera, recalculados, actualizar: actualizarDatos } = useActualizarDatos({
     idTablero: activeId, widgets, kpiCatalog, alTerminar: alTerminarActualizar,
   });
+  const palabrasDeFecha = useMemo(() => ({ hoy: tx("today", "hoy"), ayer: tx("yesterday", "ayer") }), [tx]);
+  // Lo que esta sesion recalculo cuenta aunque el servidor no haya escrito filas (un indicador sin eventos no las escribe).
+  const estadoGlobal = useMemo(
+    () => estadoGlobalDeDatos(ultimoCalculoEfectivo(calculo.ultimo, recalculados), calculo.ahora, { locale, palabras: palabrasDeFecha }),
+    [calculo, recalculados, locale, palabrasDeFecha],
+  );
   const [users, setUsers] = useState([]);
   const [teams, setTeams] = useState([]);
 
@@ -913,6 +918,17 @@ export default function Dashboard() {
             : tx("update_data", "Actualizar datos")}
         </button>
         <span className="kpi-actualizar-estado" role="status">{textoDeActualizacion(estadoActualizacion, tx)}</span>
+        {estadoGlobal && (
+          <span
+            className={`kpi-estado-global kpi-estado-global-${estadoGlobal.tipo === "al_dia" ? "ok" : "atrasado"}`}
+            title={`${tx("last_calculation", "Último cálculo:")} ${estadoGlobal.cuando}`}
+          >
+            {estadoGlobal.tipo === "al_dia" ? <Check size={14} aria-hidden="true" /> : <Clock size={14} aria-hidden="true" />}
+            {estadoGlobal.tipo === "al_dia"
+              ? `${tx("data_up_to_date", "Datos al día")} · ${estadoGlobal.cuando}`
+              : `${tx("data_old_prefix", "Datos de hace")} ${estadoGlobal.dias} ${estadoGlobal.dias === 1 ? tx("day_one", "día") : tx("day_many", "días")}`}
+          </span>
+        )}
       </PageHeader>
 
       {mostrarDialogoExportarPdf && (
@@ -943,11 +959,6 @@ export default function Dashboard() {
       )}
 
       {dashboardsError && <div className="alert error">{t(dashboardsError, dashboardsError)}</div>}
-      {avisoAtrasado && (
-        <p className="kpi-aviso-datos-atrasados" role="status">
-          {tx("data_stale_notice", "Los datos de los KPIs no se actualizan desde hace más de 24 horas. Último cálculo:")} {avisoAtrasado.fecha}
-        </p>
-      )}
 
       {!loadingDashboards && dashboards.length > 0 && (
         <div className="kpi-tabs" role="tablist">
@@ -1008,6 +1019,10 @@ export default function Dashboard() {
                   onReady={handleWidgetReady}
                   esNuevo={widget.id_kpi_dashboard_widget === idWidgetNuevo}
                   refresco={refresco}
+                  recalculados={recalculados}
+                  ahoraServidor={calculo.ahora}
+                  locale={locale}
+                  palabrasDeFecha={palabrasDeFecha}
                   animar={animarWidgets}
                   reducirMovimiento={reducirMovimiento}
                   esHueco={String(widget.id_kpi_dashboard_widget) === reorden.activoId}
@@ -1405,7 +1420,7 @@ export function MarcoDeEjemplo({ tx, children }) {
 
 // eslint-disable-next-line react-refresh/only-export-components
 export function KpiWidgetCard({
-  widget, kpiCatalog, userLabel, productLabel, formatNumber, onEdit, onDelete, onConvertirARelativo, onReady, t, tx, dragHandleProps, isDragging, animar, esNuevo, refresco,
+  widget, kpiCatalog, userLabel, productLabel, formatNumber, onEdit, onDelete, onConvertirARelativo, onReady, t, tx, dragHandleProps, isDragging, animar, esNuevo, refresco, recalculados, ahoraServidor, locale, palabrasDeFecha,
   filtroResponsable, onFiltrarResponsable, onQuitarFiltroResponsable,
 }) {
   const datos = useDatosDeWidget({ widget, kpiCatalog, onReady, refresco });
@@ -1417,7 +1432,13 @@ export function KpiWidgetCard({
   const fechaFinB = parametros.fecha_fin_b;
 
   // Una tabla en vivo no sale de `kpi_snapshot`: ya dice "En vivo" y no tiene `computed_at`.
-  const frescura = esTablaVivo ? null : frescuraDeWidget(datos.snapshots);
+  // Chip de la tarjeta: solo si su ultimo dato pasa del umbral de atraso, o si esta sesion la dejo al dia.
+  const recalculadoEn = idsUsados.length > 0 && idsUsados.every((id) => recalculados?.[id])
+    ? idsUsados.map((id) => recalculados[id]).sort()[0]
+    : null;
+  const chip = esTablaVivo ? null : chipDeTarjeta({
+    computedAt: computedAtDeSnapshots(datos.snapshots), recalculadoEn, ahora: ahoraServidor, locale: locale || "es-MX", palabras: palabrasDeFecha,
+  });
   // Un widget guardado con fechas absolutas no se mueve con el tiempo: se marca y se ofrece pasarlo a relativo.
   const fechasFijas = esDeFechasFijas(widget, kpiInfos);
   const rangoDeducido = fechasFijas ? rangoRelativoPorDuracion(parametros.fecha_inicio, parametros.fecha_fin) : null;
@@ -1480,12 +1501,17 @@ export function KpiWidgetCard({
               ))}
             </p>
           )}
-          {frescura && (
+          {chip && (
             <p
-              className="kpi-widget-meta kpi-widget-actualizado"
+              className={`kpi-widget-meta kpi-widget-actualizado kpi-chip-${chip.tipo}`}
               title={tx("updated_hint", "Última vez que se calculó una fila de este KPI en este rango. Un KPI que solo se calcula cuando hay movimientos puede tener una fecha vieja sin que nada falle.")}
             >
-              {tx("updated_at", "Actualizado:")} {frescura.fecha}
+              {chip.tipo === "al_dia" ? <Check size={13} aria-hidden="true" /> : <Clock size={13} aria-hidden="true" />}
+              <span>
+                {chip.tipo === "al_dia"
+                  ? (chip.reciente ? tx("card_up_to_date_now", "Al día · actualizado ahora") : `${tx("card_up_to_date", "Al día · actualizado")} ${chip.cuando}`)
+                  : `${tx("last_data", "Último dato:")} ${chip.cuando}`}
+              </span>
             </p>
           )}
         </div>

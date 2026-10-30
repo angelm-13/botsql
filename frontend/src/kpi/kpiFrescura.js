@@ -9,6 +9,13 @@ import { ZONA_DE_NEGOCIO, formatearFechaHora } from "../utils/fechas.js";
 
 export const UN_DIA_MS = 24 * 60 * 60 * 1000;
 
+// Pasadas estas horas sin un calculo, los datos se consideran atrasados: es la UNICA constante del umbral, la usan
+// la linea global del tablero y el chip de cada tarjeta. 36 y no 24 para no avisar por la corrida de una sola noche.
+export const UMBRAL_DATOS_ATRASADOS_HORAS = 36;
+export const UMBRAL_DATOS_ATRASADOS_MS = UMBRAL_DATOS_ATRASADOS_HORAS * 60 * 60 * 1000;
+// "Actualizado ahora" mientras la ultima actualizacion de esta sesion tenga menos de esto.
+export const RECIENTE_MS = 10 * 60 * 1000;
+
 const CON_ZONA = /(Z|[+-]\d{2}:?\d{2})$/i;
 const COMPONENTES = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/;
 
@@ -49,7 +56,7 @@ export function computedAtDeSnapshots(snapshots) {
 
 // `null` si no hay `computed_at`; si no, el texto de la fecha. Es informativo y neutro: un KPI que solo escribe cuando
 // hay un evento puede tener una fecha vieja con el job sano, asi que el atraso no se juzga aqui sino con el ultimo
-// calculo de TODOS los KPIs (`avisoDeDatosAtrasados`).
+// calculo de TODOS los KPIs (`estadoGlobalDeDatos`) y el chip de cada tarjeta (`chipDeTarjeta`).
 export function frescuraDeWidget(snapshots) {
   const computedAt = computedAtDeSnapshots(snapshots);
   if (!computedAt) return null;
@@ -57,16 +64,64 @@ export function frescuraDeWidget(snapshots) {
   return fecha ? { fecha } : null;
 }
 
-// El aviso global del tablero: `ultimoCalculo` es el `max(computed_at)` de `kpi_snapshot` que manda
-// `GET /kpi_definition/` (de los KPIs de serie que ve la persona) y `ahora` el reloj del servidor, ambos con zona.
-// Se restan entre si, sin depender del reloj del navegador; sin `ahora` valido se usa el del navegador.
-// `null` si no hay ultimo calculo (nada que avisar: cada tarjeta dice "No calculado") o si va al dia; si no, la fecha
-// formateada. Justo 24 h no es atraso.
-export function avisoDeDatosAtrasados(ultimoCalculo, ahora, zona = ZONA_DE_NEGOCIO) {
+const ES_DE_ZONA = "UTC";
+
+function ahoraDePared(ahora, zona) {
+  return paredDeTexto(ahora, zona) ?? paredDeInstante(new Date(), zona);
+}
+
+// El calculo mas reciente entre el que manda el servidor y lo que esta sesion recalculo (`recalculados`: id -> fecha con
+// zona). Un indicador sin eventos no escribe filas, asi que recalcularlo no mueve el del servidor.
+export function ultimoCalculoEfectivo(ultimoCalculo, recalculados = {}, zona = ZONA_DE_NEGOCIO) {
+  const candidatos = [ultimoCalculo, ...Object.values(recalculados || {})].filter((texto) => paredDeTexto(texto, zona) !== null);
+  if (candidatos.length === 0) return null;
+  return candidatos.reduce((mayor, texto) => (paredDeTexto(texto, zona) > paredDeTexto(mayor, zona) ? texto : mayor));
+}
+
+/** "28 oct" (con el anio si no es el actual). `null` si el texto no es fecha. */
+export function fechaCorta(texto, ahora, { zona = ZONA_DE_NEGOCIO, locale = "es-MX" } = {}) {
+  const pared = paredDeTexto(texto, zona);
+  if (pared === null) return null;
+  const actual = typeof ahora === "number" ? ahora : ahoraDePared(ahora, zona);
+  const mismoAnio = new Date(pared).getUTCFullYear() === new Date(actual).getUTCFullYear();
+  return new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", ...(mismoAnio ? {} : { year: "numeric" }), timeZone: ES_DE_ZONA }).format(new Date(pared));
+}
+
+/** "hoy 1:00 a.m.", "ayer 8:00 p.m." o "28 oct 1:00 a.m." (con el anio si no es el actual). `null` si el texto no es fecha. */
+export function etiquetaDeCuando(texto, ahora, { zona = ZONA_DE_NEGOCIO, locale = "es-MX", palabras = {} } = {}) {
+  const pared = paredDeTexto(texto, zona);
+  if (pared === null) return null;
+  const actual = ahoraDePared(ahora, zona);
+  const hora = new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit", hour12: true, timeZone: ES_DE_ZONA }).format(new Date(pared));
+  const diferenciaDeDias = Math.floor(actual / UN_DIA_MS) - Math.floor(pared / UN_DIA_MS);
+  if (diferenciaDeDias === 0) return `${palabras.hoy || "hoy"} ${hora}`;
+  if (diferenciaDeDias === 1) return `${palabras.ayer || "ayer"} ${hora}`;
+  return `${fechaCorta(texto, actual, { zona, locale })} ${hora}`;
+}
+
+/** La linea global del tablero. `ultimoCalculo` es el `max(computed_at)` de `GET /kpi_definition/` (todos los
+ * indicadores de serie que ve la persona), no el de una tarjeta: con UN solo indicador reciente la linea sigue "al dia"
+ * aunque otro, que solo escribe cuando hay eventos, tenga una fecha vieja; eso lo dice el chip de su tarjeta.
+ * `null` sin ultimo calculo; si no, `{ tipo: "al_dia" | "atrasado", cuando, dias }` (`dias` solo si esta atrasado). */
+export function estadoGlobalDeDatos(ultimoCalculo, ahora, { zona = ZONA_DE_NEGOCIO, locale = "es-MX", palabras = {} } = {}) {
   const ultimo = paredDeTexto(ultimoCalculo, zona);
   if (ultimo === null) return null;
-  const ahoraPared = paredDeTexto(ahora, zona) ?? paredDeInstante(new Date(), zona);
-  if (ahoraPared - ultimo <= UN_DIA_MS) return null;
-  const fecha = formatearFechaHora(ultimoCalculo);
-  return fecha ? { fecha } : null;
+  const edad = ahoraDePared(ahora, zona) - ultimo;
+  const cuando = etiquetaDeCuando(ultimoCalculo, ahora, { zona, locale, palabras });
+  if (edad <= UMBRAL_DATOS_ATRASADOS_MS) return { tipo: "al_dia", cuando };
+  return { tipo: "atrasado", cuando, dias: Math.max(1, Math.floor(edad / UN_DIA_MS)) };
+}
+
+/** El chip de una tarjeta, o `null` si no hace falta. `recalculadoEn`: cuando esta sesion dejo al dia TODOS sus
+ * indicadores (o `null`). Con eso es `{ tipo: "al_dia", reciente, cuando }`; si no, solo pasadas las 36 h
+ * `{ tipo: "ultimo_dato", cuando }` con la fecha corta de su ultimo calculo. */
+export function chipDeTarjeta({ computedAt, recalculadoEn, ahora, ahoraNavegador = new Date(), zona = ZONA_DE_NEGOCIO, locale = "es-MX", palabras = {} }) {
+  if (recalculadoEn && paredDeTexto(recalculadoEn, zona) !== null) {
+    const reciente = paredDeInstante(ahoraNavegador, zona) - paredDeTexto(recalculadoEn, zona) < RECIENTE_MS;
+    return { tipo: "al_dia", reciente, cuando: etiquetaDeCuando(recalculadoEn, ahoraNavegador.toISOString(), { zona, locale, palabras }) };
+  }
+  const ultimo = paredDeTexto(computedAt, zona);
+  if (ultimo === null) return null;
+  if (ahoraDePared(ahora, zona) - ultimo <= UMBRAL_DATOS_ATRASADOS_MS) return null;
+  return { tipo: "ultimo_dato", cuando: fechaCorta(computedAt, ahoraDePared(ahora, zona), { zona, locale }) };
 }

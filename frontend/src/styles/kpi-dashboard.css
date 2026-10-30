@@ -72,7 +72,6 @@
 .kpi-drag-handle:active{cursor:grabbing}
 .kpi-widget-meta{color:#8a96a5;font-size:12px;font-weight:700;line-height:1.35;margin:0;overflow-wrap:anywhere}
 /* Aviso global de datos atrasados (mas de 24 h sin calcular): el unico lugar donde el atraso va en ambar. */
-.kpi-aviso-datos-atrasados{margin:0 0 12px;padding:8px 12px;border:1px solid var(--kpi-atrasado);border-radius:8px;background:var(--kpi-atrasado-fondo);color:var(--kpi-ink);font-size:13px;line-height:1.4}
 .kpi-widget-fechas-fijas{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
 .kpi-fechas-fijas-accion{font:inherit;font-size:12px;font-weight:700;color:#173b66;background:#eef4fb;border:1px solid #cbd5e1;border-radius:999px;padding:2px 10px;cursor:pointer}
 .kpi-fechas-fijas-accion:hover{background:#e1ebf7}
@@ -269,3 +268,11 @@ body.kpi-pdf-exporting .kpi-widget-card-actions{display:none}
 /* Linea de estado junto a "Actualizar datos": lo que paso con la ultima corrida. */
 .kpi-actualizar-estado{align-self:center;font-size:13px;font-weight:700;color:#334155}
 .kpi-actualizar-estado:empty{display:none}
+
+/* Linea global del estado de los datos, junto a "Actualizar datos". Texto + icono, no solo color. */
+.kpi-estado-global{display:inline-flex;align-items:center;gap:6px;align-self:center;padding:5px 10px;border-radius:999px;font-size:13px;font-weight:700;line-height:1.2}
+.kpi-estado-global-ok{background:var(--kpi-estado-ok-fondo);color:var(--kpi-estado-ok-texto)}
+.kpi-estado-global-atrasado{background:var(--kpi-estado-atrasado-fondo);color:var(--kpi-ink);border:1px solid var(--kpi-atrasado)}
+/* Chip de tarjeta: neutral, con icono. */
+.kpi-widget-actualizado{display:flex;align-items:center;gap:5px;color:var(--kpi-chip-texto,#475569)}
+.kpi-chip-al_dia{color:var(--kpi-estado-ok-texto)}

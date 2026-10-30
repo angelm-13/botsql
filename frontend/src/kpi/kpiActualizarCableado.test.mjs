@@ -20,3 +20,11 @@ test("el hook llama al endpoint una vez por indicador, en secuencia", () => {
   assert.match(hook, /recalcularKpiDashboard\(idTablero, \{ items: \[item\] \}\)/);
   assert.match(leer("../api/index.js"), /\/kpi_dashboard\/\$\{id\}\/recalcular/);
 });
+
+test("la linea global reemplaza al aviso de 24 h y el chip de tarjeta usa la regla de 36 h", () => {
+  const dashboard = leer("../pages/Dashboard.jsx");
+  assert.match(dashboard, /estadoGlobalDeDatos\(ultimoCalculoEfectivo\(calculo\.ultimo, recalculados\)/);
+  assert.match(dashboard, /chipDeTarjeta\(\{/);
+  assert.doesNotMatch(dashboard, /kpi-aviso-datos-atrasados|avisoDeDatosAtrasados|data_stale_notice/);
+  assert.doesNotMatch(leer("../kpi/kpiFrescura.js"), /avisoDeDatosAtrasados/);
+});

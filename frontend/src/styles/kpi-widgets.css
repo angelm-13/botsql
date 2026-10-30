@@ -33,6 +33,11 @@
   /* Ambar vivo: SOLO para "atrasado" (tabla de material prestado, aviso global de datos atrasados). */
   --kpi-atrasado: #f08a00;
   --kpi-atrasado-fondo: #fff3dc;
+  /* Linea global y chip de datos: verde = al dia (texto sobre fondo >= 7:1), ambar = atrasado (fondo ambar, texto de tinta: no hay ambar de texto que no sea marron), gris = neutro. */
+  --kpi-estado-ok-texto: #166534;
+  --kpi-estado-ok-fondo: #dcfce7;
+  --kpi-estado-atrasado-fondo: #fef3c7;
+  --kpi-chip-texto: #475569;
   /* Gravedad de un prestamo por dias: hasta 30 verde, 31 a 90 ambar, mas de 90 coral.
      Siempre con icono y texto ademas del color. Nada oscuro ni cafe. */
   --kpi-nivel-ok: #12a06a;
@@ -65,6 +70,10 @@
   --kpi-neutral: #94a3b8;
   --kpi-atrasado: #ffb020;
   --kpi-atrasado-fondo: rgba(255, 176, 32, .14);
+  --kpi-estado-ok-texto: #6ee7b7;
+  --kpi-estado-ok-fondo: rgba(52, 211, 153, .16);
+  --kpi-estado-atrasado-fondo: rgba(255, 176, 32, .18);
+  --kpi-chip-texto: #cbd5e1;
   --kpi-nivel-ok: #34d399;
   --kpi-nivel-atencion: #ffb020;
   --kpi-nivel-critico: #ff8a7a;
