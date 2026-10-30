@@ -167,6 +167,14 @@
 .kpi-icon-option:disabled { opacity: .4; cursor: not-allowed; }
 .kpi-icon-option .kpi-editor-tipo-check { position: absolute; top: 6px; right: 6px; }
 
+/* El icono del modulo lleva SU color siempre; el texto sigue neutro y la seleccion la marcan borde, fondo y check. */
+.kpi-selector-modulos .kpi-selector-modulo-icono { color: var(--tinte); }
+/* El resto de la seccion del selector toma el color del modulo elegido: borde izquierdo y fondo muy tenues. */
+.kpi-selector-tintado {
+  padding: 10px 10px 10px 12px; border-left: 3px solid var(--tinte-modulo); border-radius: 10px;
+  background: color-mix(in srgb, var(--tinte-modulo) 5%, transparent);
+}
+
 /* --- Fila de modulos del selector de KPI --------------------------------------- */
 .kpi-selector-modulos { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
 .kpi-selector-modulos .kpi-icon-option { min-width: 0; padding-top: 12px; }

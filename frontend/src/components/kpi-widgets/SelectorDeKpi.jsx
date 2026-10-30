@@ -61,6 +61,8 @@ export default function SelectorDeKpi({
     return hayBusqueda ? todos : todos.filter((grupo) => grupo.clave === moduloActivo);
   }, [catalogo, busqueda, hayBusqueda, moduloActivo]);
   const hayFilaDeModulos = resumen.length > 1;
+  // Con una busqueda se ven los resultados de varios modulos: no hay un color de modulo con el que teñir.
+  const tinteDeLaSeccion = !hayBusqueda && moduloActivo ? colorDeModulo(moduloActivo) : null;
   const metaDe = (modulo) => (modulo.esVariables ? { icon: Hash, label: t.variables } : metaDeModulo(modulo.modulo));
 
   // El popover de color se cierra al hacer clic fuera de el, no solo al elegir.
@@ -188,7 +190,7 @@ export default function SelectorDeKpi({
                     {modulo.elegidos}
                   </span>
                 )}
-                <Icono size={20} aria-hidden="true" />
+                <Icono size={20} className="kpi-selector-modulo-icono" aria-hidden="true" />
                 <span className="kpi-selector-modulo-etiqueta">
                   {meta.label}
                   <em className="kpi-selector-modulo-cuenta">{hayBusqueda ? modulo.coincidencias : modulo.total}</em>
@@ -200,6 +202,12 @@ export default function SelectorDeKpi({
         </div>
       )}
 
+      {/* El resto de la seccion toma el color del modulo elegido (borde y fondo tenues: el color no es la unica senal). */}
+      <div
+        className={`kpi-selector-cuerpo${tinteDeLaSeccion ? " kpi-selector-tintado" : ""}`}
+        style={tinteDeLaSeccion ? { "--tinte-modulo": tinteDeLaSeccion } : undefined}
+        data-modulo-activo={tinteDeLaSeccion ? moduloActivo : undefined}
+      >
       {grupos.length === 0 && <p className="kpi-selector-vacio">{t.sinResultados}</p>}
 
       {grupos.map((grupo) => {
@@ -237,6 +245,7 @@ export default function SelectorDeKpi({
           </div>
         );
       })}
+      </div>
     </div>
   );
 }

@@ -402,3 +402,27 @@ test("el panel «Agregar grafico» pinta la pestana Asistencias con su icono y s
   const uno = pintarPanel({ kpiCatalog: delRegistry("checadas_en_turno_por_equipo"), traducir }).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
   assert.match(uno, /Attendance 1/);
 });
+
+// --- color del modulo: el icono y el resto de la seccion ----------------------
+test("el resto de la seccion se tiñe con el color del modulo elegido", async () => {
+  const { colorDeModulo } = await import("./kpiSelector.js");
+  const operaciones = pintar({});
+  assert.match(operaciones, new RegExp(`class="kpi-selector-cuerpo kpi-selector-tintado"[^>]*--tinte-modulo:${colorDeModulo("operaciones")}`));
+  assert.match(operaciones, /data-modulo-activo="operaciones"/);
+  const inventario = pintar({ moduloInicial: "inventario" });
+  assert.match(inventario, new RegExp(`--tinte-modulo:${colorDeModulo("inventario")}`));
+  assert.notEqual(colorDeModulo("operaciones"), colorDeModulo("inventario"));
+});
+
+test("con una busqueda (resultados de varios modulos) no hay color de modulo con el que teñir", () => {
+  const html = pintar({ busquedaInicial: "total" });
+  assert.ok(html.includes('class="kpi-selector-cuerpo"'), "el cuerpo existe pero sin tinte");
+  assert.ok(!html.includes("--tinte-modulo"));
+  assert.ok(!html.includes("data-modulo-activo"));
+});
+
+test("el icono de cada boton de modulo lleva la clase que lo pinta con su color", () => {
+  const botones = botonesDeModulo(pintar({}));
+  assert.ok(botones.length > 0);
+  for (const boton of botones) assert.ok(boton.html.includes("--tinte"), boton.clave);
+});
