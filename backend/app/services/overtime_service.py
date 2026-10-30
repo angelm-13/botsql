@@ -125,12 +125,14 @@ def _registros(db, ids, desde: date, hasta: date):
                       .where(Overtime.work_date >= desde).where(Overtime.work_date <= hasta)).all()
 
 
-def horas_extra_del_periodo(db, empleados, periodo, parametros) -> dict:
+def horas_extra_del_periodo(db, empleados, periodo, parametros, diarios=None, horas=None) -> dict:
     """{id_user: {double_minutes, triple_minutes, amount, taxable, ids}} de lo que paga este periodo.
 
     Entran las horas extra a pagar con dia hasta el fin del periodo que no pago
     otro periodo cerrado. Dobles y triples se cuentan por semana con TODAS las
     pagadas de esa semana, aunque otra parte se haya pagado en otro periodo.
+    `diarios`: diario equivalente de cada uno (salary_service); `horas`: la hora
+    de quien gana por hora. Sin ellos, `user.base_salary` / su jornada.
     """
     ids = [e.id_user for e in empleados]
     if not ids:
@@ -147,7 +149,8 @@ def horas_extra_del_periodo(db, empleados, periodo, parametros) -> dict:
     pagables = _verificar(todas, _extra_checado(db, ids, desde, hasta))
     jornada = _minutos_de_jornada(db, ids, desde, hasta)
     politica = _politica(db, periodo.period_end)
-    diarios = {e.id_user: Decimal(str(e.base_salary or 0)) for e in empleados}
+    diarios = diarios or {e.id_user: Decimal(str(e.base_salary or 0)) for e in empleados}
+    horas = horas or {}
     de_este = {r.id_overtime for r in candidatas}
     resultado = {}
     por_semana = defaultdict(list)
@@ -162,7 +165,7 @@ def horas_extra_del_periodo(db, empleados, periodo, parametros) -> dict:
             dobles = max(min(minutos, LIMITE_DOBLES - acumulado), 0)
             triples = minutos - dobles
             acumulado += minutos
-            hora = diario / (Decimal(jornada.get((id_user, r.work_date), politica[JORNADA] * 60)) / 60)
+            hora = horas.get(id_user) or diario / (Decimal(jornada.get((id_user, r.work_date), politica[JORNADA] * 60)) / 60)
             monto_doble = hora * 2 * dobles / 60
             dobles_semana += monto_doble
             filas.append((r, dobles, triples, monto_doble + hora * 3 * triples / 60, monto_doble))

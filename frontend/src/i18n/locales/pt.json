@@ -2603,7 +2603,8 @@
     "payroll_period_length": "As datas não correspondem à periodicidade do grupo: uma semana dura 7 dias, um período catorzenal 14, uma quinzena de 13 a 16 e um mês de 28 a 31.",
     "attendance_correction_limit_reached": "As correções deste mês para este funcionário acabaram. Só o RH pode corrigir, como exceção.",
     "payroll_period_pending_justification": "Há dias pendentes de justificar no período.",
-    "overtime_already_paid": "Já foi paga em um período fechado; não pode ser removida."
+    "overtime_already_paid": "Já foi paga em um período fechado; não pode ser removida.",
+    "employee_salary_overlap": "Esse funcionário já tem salário nessas datas. Ponha data final no anterior."
   },
   "logistics": {
     "module": "Logística",
@@ -3860,7 +3861,8 @@
     "saved": "Salvo.",
     "deleted": "Excluído.",
     "confirm_delete": "Excluir este registro?",
-    "no_group": "Sem grupo (período anterior)"
+    "no_group": "Sem grupo (período anterior)",
+    "tab_salaries": "Salários"
   },
   "leave_sheet": {
     "eyebrow": "Afastamento",
@@ -3911,5 +3913,29 @@
     "no_registered": "Não há horas extras no intervalo.",
     "saved": "Horas extras registradas.",
     "confirm_delete": "Remover este registro de horas extras?"
+  },
+  "salaries": {
+    "title": "Como cada funcionário recebe",
+    "new": "Lançar salário",
+    "type": "Forma",
+    "how": "Quanto",
+    "type_daily": "Por dia",
+    "type_hourly": "Por hora",
+    "type_fixed": "Fixo por período",
+    "amount_daily": "Salário diário",
+    "amount_hourly": "Valor da hora",
+    "amount_fixed": "Valor do período",
+    "frequency": "Periodicidade",
+    "per_daily": "por dia",
+    "per_hourly": "por hora",
+    "per_weekly": "por semana",
+    "per_biweekly": "a cada 14 dias",
+    "per_semimonthly": "por quinzena",
+    "per_monthly": "por mês",
+    "hint_daily": "Paga-se o salário diário por dia pago, como sempre.",
+    "hint_hourly": "Cada dia é pago da primeira à última marcação (a refeição é paga), com teto no horário; o que passar é hora extra com autorização. Descansos, feriados e férias são pagos com o diário: valor da hora × horas do horário.",
+    "hint_fixed": "Se o período tem a mesma periodicidade, paga-se o valor menos cada dia não pago; senão, o diário por dia pago.",
+    "list_hint": "Para um aumento, ponha data final no salário atual e lance o novo a partir do dia seguinte. Quem não aparece recebe pelo salário diário do usuário.",
+    "empty": "Ninguém tem forma de salário lançada: todos recebem pelo salário diário."
   }
 }

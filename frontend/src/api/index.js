@@ -631,6 +631,11 @@ export const getAllEmployeePayrollGroup = (params = {}) => request("/employee_pa
 export const createEmployeePayrollGroup = (payload) => request("/employee_payroll_group/", { method: "POST", body: payload });
 export const updateEmployeePayrollGroup = (id, payload) => request(`/employee_payroll_group/${id}`, { method: "PUT", body: payload });
 export const deleteEmployeePayrollGroup = (id) => request(`/employee_payroll_group/${id}`, { method: "DELETE" });
+// Forma de salario de cada empleado (por dia, por hora o fijo), con vigencia.
+export const getAllEmployeeSalary = (params = {}) => request("/employee_salary/", { params });
+export const createEmployeeSalary = (payload) => request("/employee_salary/", { method: "POST", body: payload });
+export const updateEmployeeSalary = (id, payload) => request(`/employee_salary/${id}`, { method: "PUT", body: payload });
+export const deleteEmployeeSalary = (id) => request(`/employee_salary/${id}`, { method: "DELETE" });
 export const getAllPayrollHoliday = (params = {}) => request("/payroll_holiday/", { params });
 export const createPayrollHoliday = (payload) => request("/payroll_holiday/", { method: "POST", body: payload });
 export const updatePayrollHoliday = (id, payload) => request(`/payroll_holiday/${id}`, { method: "PUT", body: payload });

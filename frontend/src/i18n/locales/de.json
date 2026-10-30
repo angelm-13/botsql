@@ -2601,7 +2601,8 @@
     "payroll_period_length": "Die Daten passen nicht zur Abrechnungsfrequenz der Gruppe: eine Woche hat 7 Tage, ein 14-Tage-Zeitraum 14, ein Halbmonat 13 bis 16 und ein Monat 28 bis 31.",
     "attendance_correction_limit_reached": "Die Korrekturen dieses Monats für diese Person sind aufgebraucht. Nur die Personalabteilung kann als Ausnahme korrigieren.",
     "payroll_period_pending_justification": "Im Zeitraum gibt es offene Tage.",
-    "overtime_already_paid": "Bereits in einem abgeschlossenen Zeitraum bezahlt; kann nicht entfernt werden."
+    "overtime_already_paid": "Bereits in einem abgeschlossenen Zeitraum bezahlt; kann nicht entfernt werden.",
+    "employee_salary_overlap": "Diese Person hat in diesem Zeitraum bereits ein Gehalt. Das vorherige mit Enddatum versehen."
   },
   "logistics": {
     "module": "Logistik",
@@ -3854,7 +3855,8 @@
     "saved": "Gespeichert.",
     "deleted": "Gelöscht.",
     "confirm_delete": "Diesen Eintrag löschen?",
-    "no_group": "Ohne Gruppe (früherer Zeitraum)"
+    "no_group": "Ohne Gruppe (früherer Zeitraum)",
+    "tab_salaries": "Gehälter"
   },
   "leave_sheet": {
     "eyebrow": "Arbeitsunfähigkeit",
@@ -3905,5 +3907,29 @@
     "no_registered": "Keine Überstunden im Zeitraum.",
     "saved": "Überstunden erfasst.",
     "confirm_delete": "Diesen Überstundeneintrag entfernen?"
+  },
+  "salaries": {
+    "title": "Wie jede Person bezahlt wird",
+    "new": "Gehalt erfassen",
+    "type": "Art",
+    "how": "Betrag",
+    "type_daily": "Pro Tag",
+    "type_hourly": "Pro Stunde",
+    "type_fixed": "Fest pro Zeitraum",
+    "amount_daily": "Tagessatz",
+    "amount_hourly": "Stundensatz",
+    "amount_fixed": "Betrag pro Zeitraum",
+    "frequency": "Rhythmus",
+    "per_daily": "pro Tag",
+    "per_hourly": "pro Stunde",
+    "per_weekly": "pro Woche",
+    "per_biweekly": "pro 14 Tage",
+    "per_semimonthly": "pro Halbmonat",
+    "per_monthly": "pro Monat",
+    "hint_daily": "Der Tagessatz wird für jeden bezahlten Tag gezahlt, wie bisher.",
+    "hint_hourly": "Jeder Tag wird vom ersten bis zum letzten Stempel bezahlt (die Pause wird bezahlt), begrenzt auf den Arbeitszeitplan; darüber hinaus sind es genehmigungspflichtige Überstunden. Ruhetage, Feiertage und Urlaub mit dem Tageswert: Satz × Planstunden.",
+    "hint_fixed": "Hat der Zeitraum denselben Rhythmus, wird der Betrag abzüglich jedes unbezahlten Tages gezahlt; sonst der Tageswert pro bezahltem Tag.",
+    "list_hint": "Für eine Erhöhung das aktuelle Gehalt mit Enddatum versehen und das neue ab dem Folgetag erfassen. Wer hier fehlt, wird mit dem Tagessatz des Benutzers bezahlt.",
+    "empty": "Keine Gehaltsart erfasst: alle werden mit ihrem Tagessatz bezahlt."
   }
 }

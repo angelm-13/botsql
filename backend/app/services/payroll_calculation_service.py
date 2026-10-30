@@ -9,7 +9,9 @@ el sueldo se escribia a mano. Aqui vive la primera regla de calculo:
   existieran los horarios). Los retardos no afectan la nomina. Vacaciones,
   permisos e incapacidades (employee_leave) no son falta; cuales se pagan lo
   decide la misma regla.
-* Sueldo del periodo: `user.base_salary` (salario DIARIO) x dias pagados.
+* Sueldo del periodo: segun la forma de salario del empleado (por dia, por hora o
+  fijo por periodo; services/salary_service.py). Sin forma capturada,
+  `user.base_salary` (salario DIARIO) x dias pagados, como siempre.
   Se guarda como un movimiento con el concepto SUELDO.
 * ISR (con el subsidio para el empleo ya restado) e IMSS (cuota del
   trabajador): dos movimientos de deduccion, ISR e IMSS. Las reglas estan en
@@ -351,8 +353,15 @@ def calcular_periodo(id_payroll_period, user_id: int) -> dict:
                             .where(PayrollDetail.deletion_date.is_(None))
                             .order_by(PayrollDetail.id_payroll_detail)):
             detalles.setdefault(d.id_user, d)
+        # Forma de salario vigente al ultimo dia; con ella, el diario equivalente de cada quien.
+        from app.services import salary_service as salarios
+        sueldos = salarios.sueldos_vigentes(db, [e.id_user for e in empleados], al_dia)
+        horas_sin_horario = int(_vigentes(db, ("overtime_day_hours",), al_dia).get("overtime_day_hours", 8))
+        diarios = {e.id_user: (salarios.diario_equivalente(sueldos[e.id_user], asistencia.get(e.id_user, []),
+                                                          horas_sin_horario)
+                               if e.id_user in sueldos else _dinero(e.base_salary)) for e in empleados}
         nuevos = [PayrollDetail(id_payroll_period=periodo.id_payroll_period, id_user=e.id_user, created_by=user_id)
-                  for e in empleados if _dinero(e.base_salary) > 0 and e.id_user not in detalles]
+                  for e in empleados if diarios[e.id_user] > 0 and e.id_user not in detalles]
         if nuevos:
             db.add_all(nuevos)
             db.flush()
@@ -367,18 +376,22 @@ def calcular_periodo(id_payroll_period, user_id: int) -> dict:
         from app.services.employee_leave_service import vacaciones_no_usadas_que_vencen
         por_pagar = vacaciones_no_usadas_que_vencen(db, empleados, periodo.period_start, periodo.period_end)
         from app.services.overtime_service import horas_extra_del_periodo
-        horas_extra = horas_extra_del_periodo(db, empleados, periodo, parametros)
+        horas_extra = horas_extra_del_periodo(
+            db, empleados, periodo, parametros, diarios=diarios,
+            horas={i: salarios.precio_de_hora(s) for i, s in sueldos.items() if salarios.precio_de_hora(s)})
 
         calculados, sin_sueldo, sin_ingreso = [], [], []
         for empleado in empleados:
-            diario = _dinero(empleado.base_salary)
+            diario = diarios[empleado.id_user]
             if diario <= 0:
                 sin_sueldo.append({"id_user": empleado.id_user, "full_name": empleado.full_name or ""})
                 continue
             totales = resumen_de_asistencia(asistencia.get(empleado.id_user, []))
             trabajados, faltas = totales["paid_days"], totales["absences"]
             ausencias = {k: totales[k] for k in CAMPOS_DE_AUSENCIA}
-            sueldo = _dinero(diario * trabajados)
+            sueldo = salarios.sueldo_del_periodo(sueldos.get(empleado.id_user), diario,
+                                                 asistencia.get(empleado.id_user, []),
+                                                 grupo.pay_frequency if grupo else None)
 
             detalle = detalles[empleado.id_user]
 
@@ -467,6 +480,7 @@ def calcular_periodo(id_payroll_period, user_id: int) -> dict:
                 "pending_justification": totales["pending_justification"],
                 **ausencias,
                 "daily_salary": float(diario),
+                "salary_type": sueldos[empleado.id_user].salary_type if empleado.id_user in sueldos else "daily",
                 "salary": float(sueldo),
                 "aguinaldo": float(monto_aguinaldo),
                 "aguinaldo_discounted_days": descontados,
@@ -623,6 +637,19 @@ def _movimientos(db, detalle: PayrollDetail) -> list[dict]:
     return _movimientos_por_detalle(db, [detalle.id_payroll_detail])[detalle.id_payroll_detail]
 
 
+def _diarios_mostrados(db, periodo, empleados) -> dict:
+    """{id_user: diario equivalente} para mostrar en el resumen y el recibo (salary_service)."""
+    from app.services import salary_service as salarios
+    from app.services.attendance_record_service import asistencia_por_empleado
+    ids = [e.id_user for e in empleados]
+    sueldos = salarios.sueldos_vigentes(db, ids, periodo.period_end)
+    calendario = asistencia_por_empleado(db, periodo.period_start, periodo.period_end, ids=list(sueldos),
+                                         con_checadas=False) if sueldos else {}
+    horas = int(_vigentes(db, ("overtime_day_hours",), periodo.period_end).get("overtime_day_hours", 8))
+    return {e.id_user: (salarios.diario_equivalente(sueldos[e.id_user], calendario.get(e.id_user, []), horas)
+                        if e.id_user in sueldos else _dinero(e.base_salary)) for e in empleados}
+
+
 def resumen_periodo(id_payroll_period) -> dict:
     """Lo ya calculado del periodo, sin recalcular (sirve tambien si esta cerrado)."""
     with transaction_context() as db:
@@ -636,6 +663,7 @@ def resumen_periodo(id_payroll_period) -> dict:
         ).all()
         empleados = []
         de_cada_uno = _movimientos_por_detalle(db, [detalle.id_payroll_detail for detalle, _ in filas])
+        diarios = _diarios_mostrados(db, periodo, [empleado for _, empleado in filas])
         for detalle, empleado in filas:
             por_codigo = {m["code"]: m["amount"] for m in de_cada_uno[detalle.id_payroll_detail]}
             empleados.append({
@@ -644,7 +672,7 @@ def resumen_periodo(id_payroll_period) -> dict:
                 "days_worked": detalle.days_worked or 0,
                 "absences": detalle.absences or 0,
                 **{campo: getattr(detalle, campo) or 0 for campo in CAMPOS_DE_AUSENCIA},
-                "daily_salary": float(_dinero(empleado.base_salary)),
+                "daily_salary": float(diarios[empleado.id_user]),
                 "salary": float(_dinero(detalle.gross_salary)),
                 "aguinaldo": por_codigo.get(CODIGO_AGUINALDO, 0.0),
                 "vacation_premium": por_codigo.get(CODIGO_PRIMA, 0.0),
@@ -705,7 +733,7 @@ def datos_del_recibo(id_payroll_period, id_user) -> dict:
             "days_worked": detalle.days_worked or 0,
             "absences": detalle.absences or 0,
             **{campo: getattr(detalle, campo) or 0 for campo in CAMPOS_DE_AUSENCIA},
-            "daily_salary": float(_dinero(empleado.base_salary)),
+            "daily_salary": float(_diarios_mostrados(db, periodo, [empleado])[empleado.id_user]),
             "earnings": [m for m in movimientos if m["type"] == "earning"],
             "deductions": [m for m in movimientos if m["type"] == "deduction"],
             "total_earnings": float(_dinero(detalle.total_earnings)),

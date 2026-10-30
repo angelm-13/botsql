@@ -235,7 +235,9 @@ MODULOS = (
          "employee_leave",
          # Grupos de pago (semanal, catorcenal, quincenal, mensual) y quien
          # pertenece a cada uno (pantalla propia /payroll_groups).
-         "payroll_group", "employee_payroll_group"),
+         "payroll_group", "employee_payroll_group",
+         # Forma de salario de cada empleado (por dia, por hora o fijo), con vigencia.
+         "employee_salary"),
     ),
     # Sus pantallas no tienen apartado propio en el menu lateral: viven dentro
     # del Home/Dashboard actual (ruta "/"), que ya es de acceso libre para

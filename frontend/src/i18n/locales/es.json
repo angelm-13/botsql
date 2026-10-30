@@ -2881,7 +2881,8 @@
     "payroll_period_length": "Las fechas no cuadran con la periodicidad del grupo: una semana dura 7 días, una catorcena 14, una quincena de 13 a 16 y un mes de 28 a 31.",
     "attendance_correction_limit_reached": "Ya se usaron las correcciones de este mes para este empleado. Solo RH puede corregir, como excepción.",
     "payroll_period_pending_justification": "Hay días pendientes de justificar en el periodo.",
-    "overtime_already_paid": "Ya se pagó en un periodo cerrado; no se puede quitar."
+    "overtime_already_paid": "Ya se pagó en un periodo cerrado; no se puede quitar.",
+    "employee_salary_overlap": "Ese empleado ya tiene un sueldo en esas fechas. Pon fecha final al anterior."
   },
   "logistics": {
     "module": "Logística",
@@ -5287,7 +5288,8 @@
     "saved": "Guardado.",
     "deleted": "Eliminado.",
     "confirm_delete": "¿Eliminar este registro?",
-    "no_group": "Sin grupo (periodo anterior)"
+    "no_group": "Sin grupo (periodo anterior)",
+    "tab_salaries": "Sueldos"
   },
   "leave_sheet": {
     "eyebrow": "Incapacidad",
@@ -5338,5 +5340,29 @@
     "no_registered": "No hay horas extra en el rango.",
     "saved": "Horas extra registradas.",
     "confirm_delete": "¿Quitar este registro de horas extra?"
+  },
+  "salaries": {
+    "title": "Cómo gana cada empleado",
+    "new": "Capturar sueldo",
+    "type": "Forma",
+    "how": "Cuánto",
+    "type_daily": "Por día",
+    "type_hourly": "Por hora",
+    "type_fixed": "Fijo por periodo",
+    "amount_daily": "Salario diario",
+    "amount_hourly": "Pago por hora",
+    "amount_fixed": "Monto del periodo",
+    "frequency": "Cada cuándo",
+    "per_daily": "al día",
+    "per_hourly": "la hora",
+    "per_weekly": "a la semana",
+    "per_biweekly": "la catorcena",
+    "per_semimonthly": "la quincena",
+    "per_monthly": "al mes",
+    "hint_daily": "Se paga el salario diario por cada día pagado, como siempre.",
+    "hint_hourly": "Cada día se paga de su primera a su última checada (la comida se paga), con tope en su horario; lo que pase es hora extra con autorización. Descansos, festivos y vacaciones se pagan con su diario: pago por hora × horas de su horario.",
+    "hint_fixed": "Si el periodo es de la misma periodicidad se paga el monto menos cada día no pagado; si no, el monto llevado a día por cada día pagado.",
+    "list_hint": "Para un aumento, pon fecha final al sueldo actual y captura el nuevo desde el día siguiente. Quien no aparece aquí cobra con su salario diario del usuario.",
+    "empty": "Nadie tiene forma de salario capturada: todos cobran con su salario diario."
   }
 }
