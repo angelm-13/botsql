@@ -206,6 +206,19 @@ export function mezclaUnidades(kpiInfos) {
   return new Set(kpiInfos.map(unidadDeKpi)).size > 1;
 }
 
+/** En que se desglosa un KPI (su primera dimension: "empleado", "estado", "producto", "global"...), o null si la
+ * fila no la declara. */
+export function dimensionDeKpi(info) {
+  return info?.dimensiones?.[0] ?? null;
+}
+
+/** Si el grafico ya mezcla desgloses distintos (un widget guardado antes de la regla de dimension: "abiertas vs.
+ * cerradas" con "abiertas por responsable" deja "cerrada" y nombres de personas en el mismo eje). Solo informativo:
+ * esos widgets se siguen viendo igual. */
+export function mezclaDimensiones(kpiInfos) {
+  return new Set(kpiInfos.map(dimensionDeKpi).filter((dimension) => dimension !== null)).size > 1;
+}
+
 /** Por que `candidato` NO se puede sumar a un grafico que ya lleva
  * `seleccionados`, o null si se puede.
  *
@@ -213,6 +226,9 @@ export function mezclaUnidades(kpiInfos) {
  *   cantidad) comparten el eje Y del grafico y el de escala menor queda
  *   invisible.
  * - "modo": un KPI en vivo (tabla) y uno de serie no comparten ninguna grafica.
+ * - "dimension": otro desglose. Las series comparten el eje X: un KPI por estado ("cerrada") y uno por persona
+ *   pondrian categorias que no son comparables en el mismo eje. Un KPI sin dimension declarada (fila huerfana) no
+ *   se bloquea por esto.
  */
 export function motivoParaNoCombinar(seleccionados, candidato) {
   if (!seleccionados.length) return null;
@@ -220,5 +236,7 @@ export function motivoParaNoCombinar(seleccionados, candidato) {
   if (seleccionados.some((info) => (info.modo === "vivo") !== esVivo)) return "modo";
   const unidad = unidadDeKpi(candidato);
   if (seleccionados.some((info) => unidadDeKpi(info) !== unidad)) return "unidad";
+  const dimension = dimensionDeKpi(candidato);
+  if (dimension !== null && seleccionados.some((info) => dimensionDeKpi(info) !== null && dimensionDeKpi(info) !== dimension)) return "dimension";
   return null;
 }

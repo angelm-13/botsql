@@ -37,7 +37,7 @@ import {
   muestraFiltroDeEquipos, muestraFiltroDePersonas, normalizarBusqueda, unidadInfo,
 } from "../kpi/kpiDatos.js";
 import {
-  armarParametros, columnasDeWidget, estadoDeWidget, filasDeWidget, mezclaUnidades, motivoParaNoCombinar,
+  armarParametros, columnasDeWidget, dimensionDeKpi, estadoDeWidget, filasDeWidget, mezclaDimensiones, mezclaUnidades, motivoParaNoCombinar,
   rangoInicialDelBorrador, tiposDeGraficaPermitidos as tiposPermitidosPorKpi, tituloConHtml, tituloDeWidget, unidadDeKpi,
   widgetDeBorrador,
 } from "../kpi/kpiParametros.js";
@@ -1844,6 +1844,14 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
 
   function textoDeBloqueo(kpi, motivo) {
     if (motivo === "modo") return tx("kpi_mode_mismatch", "No se puede combinar: un KPI en vivo (tabla) no comparte gráfico con uno de serie.");
+    if (motivo === "dimension") {
+      const dimensionElegida = etiquetasDeDimension(kpisSeleccionadosInfo).join(" / ") || dimensionDeKpi(kpisSeleccionadosInfo[0]);
+      const dimensionKpi = etiquetasDeDimension([kpi]).join(" / ") || dimensionDeKpi(kpi);
+      return tx(
+        "kpi_dimension_mismatch",
+        `No se puede combinar: este KPI desglosa por ${dimensionKpi} y los elegidos por ${dimensionElegida}. Con desgloses distintos el eje mezclaría categorías que no son comparables.`,
+      );
+    }
     const unidadElegida = unidadInfo(unidadDeKpi(kpisSeleccionadosInfo[0])).etiquetaSelector;
     const unidadKpi = unidadInfo(unidadDeKpi(kpi)).etiquetaSelector;
     return tx(
@@ -2072,6 +2080,11 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
               {mezclaUnidades(kpisSeleccionadosInfo) && (
                 <p className="kpi-inline-notice">
                   {tx("kpi_units_mixed_legacy", "Este gráfico combina KPIs de unidades distintas (se armó antes de que el editor lo impidiera): sigue viéndose igual, pero una barra puede quedar muy pequeña. Quita un KPI para separarlos.")}
+                </p>
+              )}
+              {mezclaDimensiones(kpisSeleccionadosInfo) && (
+                <p className="kpi-inline-notice">
+                  {tx("kpi_dimensions_mixed_legacy", "Este gráfico combina KPIs con desgloses distintos (se armó antes de que el editor lo impidiera): sigue viéndose igual, pero el eje mezcla categorías que no son comparables. Quita un KPI para separarlos.")}
                 </p>
               )}
               <SelectorDeKpi

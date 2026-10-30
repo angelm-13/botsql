@@ -22,7 +22,7 @@ import {
   agruparKpis, claveDeGrupo, colorDeModulo, COLOR_DE_MODULO, estadoDeOpcion, esVariable, grupoInicial, resumenDeModulos,
 } from "./kpiSelector.js";
 import {
-  armarParametros, columnasDeWidget, estadoDeWidget, filasDeWidget, mezclaUnidades, motivoParaNoCombinar, rangoInicialDelBorrador,
+  armarParametros, columnasDeWidget, estadoDeWidget, filasDeWidget, mezclaDimensiones, mezclaUnidades, motivoParaNoCombinar, rangoInicialDelBorrador,
   tiposDeGraficaPermitidos, unidadDeKpi, widgetDeBorrador,
 } from "./kpiParametros.js";
 import {
@@ -1004,4 +1004,38 @@ test("masonry: una tarjeta ocupa las filas de 4px que mide, mas el hueco de abaj
     const ocupado = filasQueOcupa(alto) * 4 - 16;
     assert.ok(ocupado >= alto && ocupado - alto < 4, `alto ${alto} -> ${ocupado}`);
   }
+});
+
+// --- dimension: solo se combinan KPIs con el mismo desglose ------------------
+const POR_ESTADO = { id_kpi_definition: 20, clave: "incidencias_abiertas_vs_cerradas", unidad: "numero", modo: "snapshot", dimensiones: ["estado"] };
+const POR_RESPONSABLE = { id_kpi_definition: 21, clave: "incidencias_abiertas_por_empleado", unidad: "numero", modo: "snapshot", dimensiones: ["empleado"] };
+const OTRO_POR_RESPONSABLE = { id_kpi_definition: 22, clave: "cancelaciones_por_empleado", unidad: "numero", modo: "snapshot", dimensiones: ["empleado"] };
+const GLOBAL_A = { id_kpi_definition: 23, clave: "ingresos_totales", unidad: "numero", modo: "snapshot", dimensiones: ["global"] };
+const GLOBAL_B = { id_kpi_definition: 24, clave: "egresos_totales", unidad: "numero", modo: "snapshot", dimensiones: ["global"] };
+
+test("un KPI por estado y uno por responsable NO se combinan (mezclarian 'Cerrada' con nombres de personas)", () => {
+  assert.equal(motivoParaNoCombinar([POR_ESTADO], POR_RESPONSABLE), "dimension");
+  assert.equal(motivoParaNoCombinar([POR_RESPONSABLE], POR_ESTADO), "dimension");
+  assert.equal(motivoParaNoCombinar([POR_RESPONSABLE, OTRO_POR_RESPONSABLE], POR_ESTADO), "dimension");
+});
+
+test("mismo desglose si se combina; los globales entre si tambien, pero no con otro desglose", () => {
+  assert.equal(motivoParaNoCombinar([POR_RESPONSABLE], OTRO_POR_RESPONSABLE), null);
+  assert.equal(motivoParaNoCombinar([GLOBAL_A], GLOBAL_B), null);
+  assert.equal(motivoParaNoCombinar([GLOBAL_A], POR_RESPONSABLE), "dimension");
+});
+
+test("una fila sin dimension declarada no se bloquea por desglose, y la unidad sigue mandando primero", () => {
+  assert.equal(motivoParaNoCombinar([POR_RESPONSABLE], { ...OTRO_POR_RESPONSABLE, dimensiones: undefined }), null);
+  assert.equal(motivoParaNoCombinar([PORCENTAJE], POR_RESPONSABLE), "unidad");
+});
+
+test("un widget viejo con desgloses mezclados se detecta, pero no se le cambia nada", () => {
+  assert.equal(mezclaDimensiones([POR_ESTADO, POR_RESPONSABLE]), true);
+  assert.equal(mezclaDimensiones([POR_RESPONSABLE, OTRO_POR_RESPONSABLE]), false);
+  assert.equal(mezclaDimensiones([POR_RESPONSABLE, { ...OTRO_POR_RESPONSABLE, dimensiones: undefined }]), false);
+  const viejo = { id_kpi_dashboard_widget: 9, tipo_grafica: "barras", ids_kpi_definition: [20, 21], parametros: { fecha_inicio: "2026-08-01", fecha_fin: "2026-08-31" } };
+  const estado = estadoDeWidget(viejo, [POR_ESTADO, POR_RESPONSABLE], HOY);
+  assert.deepEqual(estado.idsKpiSeleccionados, ["20", "21"]);
+  assert.deepEqual(armarParametros(estado, { hoy: HOY }), viejo.parametros);
 });
