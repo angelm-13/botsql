@@ -122,7 +122,7 @@ test("Dashboard.jsx manda id_teams en cada llamada a /kpi_snapshot/query", () =>
   assert.match(fuente, /paramsComunes\.id_teams = equiposKey/);
   assert.match(fuente, /params\.id_teams = idTeamsKey/);
   // El efecto de la tarjeta se vuelve a correr si cambia el filtro.
-  assert.match(fuente, /empleadosKey, equiposKey, agruparPor\]/);
+  assert.match(fuente, /empleadosKey, equiposKey, agruparPor(, refresco)?\]/);
 });
 
 // --- textos en los cuatro idiomas -----------------------------------------------------------

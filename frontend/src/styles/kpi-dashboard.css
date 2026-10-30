@@ -265,3 +265,7 @@ body.kpi-pdf-exporting .kpi-widget-card-actions{display:none}
 }
 .kpi-widget-entrada{animation:kpi-widget-entrada .9s cubic-bezier(.2,.8,.2,1) both}
 @media(prefers-reduced-motion:reduce){.kpi-widget-entrada{animation:none}}
+
+/* Linea de estado junto a "Actualizar datos": lo que paso con la ultima corrida. */
+.kpi-actualizar-estado{align-self:center;font-size:13px;font-weight:700;color:#334155}
+.kpi-actualizar-estado:empty{display:none}

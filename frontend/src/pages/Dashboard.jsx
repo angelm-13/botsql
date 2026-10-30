@@ -16,6 +16,7 @@ import TituloEditable from "../components/kpi-widgets/TituloEditable.jsx";
 import { useDialogo } from "../dialogo/useDialogo.js";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
 import useReducedMotion from "../components/kpi-widgets/useReducedMotion";
+import useActualizarDatos from "../components/kpi-widgets/useActualizarDatos.js";
 import useMasonryRef from "../components/kpi-widgets/useMasonry";
 import useRellenoDelGrid from "../components/kpi-widgets/useRellenoDelGrid";
 import useReordenarTarjetas, { sinColision } from "../components/kpi-widgets/useReordenarTarjetas";
@@ -397,6 +398,19 @@ function agregarSeccionAlPdf({ pdf, canvas, filas, margin, tituloSeccion, estado
 // con ese orden (ver useReordenarTarjetas.js).
 const sinDesplazarVecinas = () => null;
 
+// Lo que dice la linea de estado junto a "Actualizar datos" cuando termina una corrida ("" mientras corre o sin corrida).
+function textoDeActualizacion(estado, tx) {
+  if (estado.fase !== "final") return "";
+  const { tipo, alDia } = estado.resultado;
+  if (tipo === "listo") {
+    return `${tx("update_done", "Listo:")} ${alDia} ${alDia === 1 ? tx("update_done_one", "indicador al día") : tx("update_done_many", "indicadores al día")}`;
+  }
+  if (tipo === "ya_al_dia") return tx("update_already", "Ya estaba al día");
+  if (tipo === "nada") return tx("update_nothing", "Este tablero no tiene indicadores que se puedan actualizar.");
+  if (tipo === "en_curso") return tx("update_in_progress", "Ya se está actualizando este tablero. Espera un momento.");
+  return tx("update_failed", "No se pudo actualizar. Intenta de nuevo.");
+}
+
 export default function Dashboard() {
   const { lang, t } = useI18n();
   const dialogo = useDialogo();
@@ -417,6 +431,17 @@ export default function Dashboard() {
   // `ultimo_calculo` y `ahora` de GET /kpi_definition/ (UTC con zona): el aviso global de datos atrasados.
   const [calculo, setCalculo] = useState({ ultimo: null, ahora: null });
   const avisoAtrasado = useMemo(() => avisoDeDatosAtrasados(calculo.ultimo, calculo.ahora), [calculo]);
+  // Sube cada vez que "Actualizar datos" termina: las tarjetas vuelven a pedir sus datos sin desmontarse.
+  const [refresco, setRefresco] = useState(0);
+  const alTerminarActualizar = useCallback(() => {
+    setRefresco((n) => n + 1);
+    getAllKpiDefinition()
+      .then((definiciones) => setCalculo({ ultimo: definiciones?.ultimo_calculo ?? null, ahora: definiciones?.ahora ?? null }))
+      .catch(() => {});
+  }, []);
+  const { estado: estadoActualizacion, enEspera, actualizar: actualizarDatos } = useActualizarDatos({
+    idTablero: activeId, widgets, kpiCatalog, alTerminar: alTerminarActualizar,
+  });
   const [users, setUsers] = useState([]);
   const [teams, setTeams] = useState([]);
 
@@ -874,9 +899,20 @@ export default function Dashboard() {
         >
           <FileDown size={16} />{tx("pdf_report_button", "Generar reporte PDF")}
         </button>
-        <button className="button ghost" onClick={() => loadDashboards()} disabled={loadingDashboards}>
-        <RefreshCw size={16} />{loadingDashboards ? t("common.loading") : t("common.refresh")}
+        <button
+          type="button"
+          className="button ghost"
+          onClick={actualizarDatos}
+          disabled={loadingDashboards || !activeDashboard || estadoActualizacion.fase === "corriendo" || enEspera}
+        >
+          {estadoActualizacion.fase === "corriendo"
+            ? <Loader2 size={16} className="kpi-spin" />
+            : <RefreshCw size={16} />}
+          {estadoActualizacion.fase === "corriendo"
+            ? `${tx("updating_progress", "Actualizando")} ${estadoActualizacion.hechos} ${tx("updating_progress_of", "de")} ${estadoActualizacion.total}…`
+            : tx("update_data", "Actualizar datos")}
         </button>
+        <span className="kpi-actualizar-estado" role="status">{textoDeActualizacion(estadoActualizacion, tx)}</span>
       </PageHeader>
 
       {mostrarDialogoExportarPdf && (
@@ -971,6 +1007,7 @@ export default function Dashboard() {
                   onConvertirARelativo={(clave) => handleConvertirARelativo(widget, clave)}
                   onReady={handleWidgetReady}
                   esNuevo={widget.id_kpi_dashboard_widget === idWidgetNuevo}
+                  refresco={refresco}
                   animar={animarWidgets}
                   reducirMovimiento={reducirMovimiento}
                   esHueco={String(widget.id_kpi_dashboard_widget) === reorden.activoId}
@@ -1124,10 +1161,12 @@ function useGuardarOrdenTabla(idWidget) {
   return guardar;
 }
 
-function useDatosDeWidget({ widget, kpiCatalog, onReady }) {
+function useDatosDeWidget({ widget, kpiCatalog, onReady, refresco = 0 }) {
   const [snapshots, setSnapshots] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // Una recarga por "Actualizar datos" no esconde la grafica detras de un skeleton: se queda lo que habia hasta que llega lo nuevo.
+  const refrescoVisto = useRef(refresco);
 
   const idsKpiDefinition = Array.isArray(widget.ids_kpi_definition) ? widget.ids_kpi_definition : [];
   // "numero" y "dona" solo grafican un KPI (ver reglas en KpiWidgetPanel): si
@@ -1197,7 +1236,9 @@ function useDatosDeWidget({ widget, kpiCatalog, onReady }) {
         onReady?.(idWidget);
         return;
       }
-      setLoading(true);
+      const esRecarga = refrescoVisto.current !== refresco;
+      refrescoVisto.current = refresco;
+      if (!esRecarga) setLoading(true);
       setError("");
       try {
         const paramsComunes = { fecha_inicio: fechaInicio, fecha_fin: fechaFin };
@@ -1225,7 +1266,7 @@ function useDatosDeWidget({ widget, kpiCatalog, onReady }) {
   // `idsKey` es el proxy estable de `idsUsados` (un array nuevo cada
   // render); `idsUsados` en si mismo nunca deberia ir en las dependencias.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idsKey, esTabla, esTablaVivo, fechaInicio, fechaFin, fechaInicioB, fechaFinB, empleadosKey, equiposKey, agruparPor]);
+  }, [idsKey, esTabla, esTablaVivo, fechaInicio, fechaFin, fechaInicioB, fechaFinB, empleadosKey, equiposKey, agruparPor, refresco]);
 
   return { snapshots, loading, error, vivoItems: SIN_RENGLONES, vivoTotal: 0, cargarVivo, onListoVivo, guardarOrdenTabla, kpiInfos, idsUsados, esTablaVivo };
 }
@@ -1364,10 +1405,10 @@ export function MarcoDeEjemplo({ tx, children }) {
 
 // eslint-disable-next-line react-refresh/only-export-components
 export function KpiWidgetCard({
-  widget, kpiCatalog, userLabel, productLabel, formatNumber, onEdit, onDelete, onConvertirARelativo, onReady, t, tx, dragHandleProps, isDragging, animar, esNuevo,
+  widget, kpiCatalog, userLabel, productLabel, formatNumber, onEdit, onDelete, onConvertirARelativo, onReady, t, tx, dragHandleProps, isDragging, animar, esNuevo, refresco,
   filtroResponsable, onFiltrarResponsable, onQuitarFiltroResponsable,
 }) {
-  const datos = useDatosDeWidget({ widget, kpiCatalog, onReady });
+  const datos = useDatosDeWidget({ widget, kpiCatalog, onReady, refresco });
   const { kpiInfos, idsUsados, esTablaVivo } = datos;
   const parametros = parametrosEfectivos(widget.parametros);
   const fechaInicio = parametros.fecha_inicio;
@@ -1492,7 +1533,8 @@ export function KpiWidgetCard({
 // acompana al valor principal, no la comparacion en si (esa ya la muestra el
 // delta de al lado). Devuelve una serie de numeros lista para NumeroWidget, o
 // null mientras carga / si no hay al menos 2 puntos que dibujar.
-function useTendenciaKpi({ activo, idKpiDefinition, fechaInicio, fechaFin, empleados, idTeams }) {
+// `version` es el snapshot del widget: cuando "Actualizar datos" trae uno nuevo, la tendencia tambien se vuelve a pedir.
+function useTendenciaKpi({ activo, idKpiDefinition, fechaInicio, fechaFin, empleados, idTeams, version }) {
   const [serie, setSerie] = useState(null);
   const empleadosKey = Array.isArray(empleados) ? empleados.join(",") : "";
   const idTeamsKey = Array.isArray(idTeams) ? idTeams.join(",") : "";
@@ -1507,7 +1549,7 @@ function useTendenciaKpi({ activo, idKpiDefinition, fechaInicio, fechaFin, emple
       .then((resultado) => { if (!cancelado) setSerie(tendenciaDeSnapshot(resultado)); })
       .catch(() => { if (!cancelado) setSerie([]); });
     return () => { cancelado = true; };
-  }, [activo, idKpiDefinition, fechaInicio, fechaFin, empleadosKey, idTeamsKey]);
+  }, [activo, idKpiDefinition, fechaInicio, fechaFin, empleadosKey, idTeamsKey, version]);
 
   return serie && serie.length >= 2 ? serie : null;
 }
@@ -1526,6 +1568,7 @@ function KpiNumero({ widget, snapshot, kpiInfo, formatNumber, tx, animar }) {
     fechaFin: parametros.fecha_fin,
     empleados: parametros.empleados,
     idTeams: parametros.id_teams,
+    version: snapshot,
   });
   const props = propsNumero({
     snapshot,
