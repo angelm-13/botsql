@@ -82,6 +82,20 @@ patches:
                   limits:
                     cpu: 500m
                     memory: 768Mi
+  # RabbitMQ sin nodeSelector cayo en k3s-worker1 (VPS temporal que se va a retirar,
+  # 2026-10-29). No tiene volumen (ni PVC ni emptyDir): moverlo es solo reprogramar el
+  # pod. tier=big lo deja en master1/master4; no se fija un nodo para no atarlo sin
+  # necesidad.
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: rabbitmq
+      spec:
+        template:
+          spec:
+            nodeSelector:
+              tier: big
   # PriorityClass del cliente ERP #2 (ver p2-adser-prod, aplicada al clúster
   # con kubectl apply -f priority-classes.yaml).
   - target:
