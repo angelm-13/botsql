@@ -186,7 +186,7 @@ body.kpi-pdf-exporting .kpi-fechas-fijas-accion{display:none}
 
 /* Chip de empleado: pildora compacta (sin checkbox visible, boton simple) --
    varias por fila en vez de una columna apilada. El acento de color por
-   persona (--employee-color, colorDeKpi(id_user)) se ve en el borde siempre
+   persona (--employee-color, colorDePersona(id_user)) se ve en el borde siempre
    y se refuerza con fondo tenue del mismo color solo cuando esta activo, para
    que no compita visualmente con el resto de chips cuando no esta elegido. */
 .kpi-employee-chip{display:inline-flex;align-items:center;gap:5px;border:1.5px solid var(--employee-color);border-radius:999px;padding:3px 10px 3px 4px;font-size:12px;font-weight:700;color:#334155;cursor:pointer;background:#fff;font:inherit}

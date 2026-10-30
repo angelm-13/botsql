@@ -11,7 +11,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   CATEGORICAL, COLOR_OTHERS, buildMultiSeriesData, etiquetasDeDimension, buildPieData, buildSeriesData,
-  colorDeKpi, colorEfectivoDeKpi, etiquetasDeSnapshots, formatConUnidad, labelForDimension, ordenarPorCategorias,
+  colorDeKpi, colorDePersona, colorEfectivoDeKpi, etiquetasDeSnapshots, formatConUnidad, labelForDimension, ordenarPorCategorias,
 } from "./kpiDatos.js";
 import {
   agruparPorResponsable, duracionLegible, etiquetaDeDias, filtrarPorResponsable, gravedadDeDias, ordenarFilas,
@@ -72,7 +72,9 @@ test("widget viejo de barras (un KPI, fechas absolutas): mismos datos que antes"
   assert.equal(props.series.length, 1);
   assert.equal(props.series[0].clave, "a");
   assert.equal(props.series[0].color, colorDeKpi(3));
-  assert.equal(props.colorPorFila, null);
+  // KPI por persona: cada barra lleva el color de SU persona; la serie conserva el del KPI (leyenda, comparacion).
+  assert.deepEqual(props.datos.map((fila) => props.colorPorFila(fila)), [colorDePersona(5), colorDePersona(7)]);
+  assert.equal(props.conPatrones, false);
 });
 
 test("barras con comparacion: serie B con el MISMO color y menos opacidad", () => {
@@ -257,7 +259,8 @@ test("dona: categorias fijas con su color, abiertas con la paleta y 'Otros' al f
   });
   assert.equal(abierta.datos.length, CATEGORICAL.length + 1);
   assert.deepEqual(abierta.datos.at(-1), { categoria: "Otros", valor: (100 - 9) + (100 - 10), color: COLOR_OTHERS });
-  assert.equal(abierta.datos[0].color, CATEGORICAL[0]);
+  // Dimension "persona": el color es el de cada persona (por su id), no el de su posicion.
+  assert.deepEqual(abierta.datos.slice(0, 3).map((d) => d.color), [colorDePersona(1), colorDePersona(2), colorDePersona(3)]);
 });
 
 // --- categorias ORDINALES: prestamos_abiertos_por_antiguedad ---------------------------------------

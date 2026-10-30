@@ -8,7 +8,8 @@
 // es QUIEN los pinta.
 import {
   COLOR_OTHERS, CATEGORICAL, buildMultiSeriesData, buildPieData, buildSeriesData,
-  colorDeCategoriaEstado, colorEfectivoDeKpi, formatConUnidad, kpiSeriesLabel, ordenarPorCategorias,
+  colorDeCategoriaEstado, colorDePersona, colorEfectivoDeKpi, esKpiPorPersona, formatConUnidad, hayColoresRepetidos,
+  kpiSeriesLabel, ordenarPorCategorias,
 } from "./kpiDatos.js";
 import { anchoDelEje, formatoDeEje, unidadDeLaGrafica } from "./kpiAccesibilidad.js";
 
@@ -81,13 +82,23 @@ export function propsSeries({
     // cada categoria lleva SU color declarado (colores_categoria), no el
     // color unico del KPI para todas las barras.
     const coloresPorCategoria = kpiInfo?.dimensiones?.[0] === "estado" ? kpiInfo?.colores_categoria : null;
-    const colorPorFila = esBarras && coloresPorCategoria
-      ? (fila) => colorDeCategoriaEstado(fila.id, coloresPorCategoria, colorKpi)
-      : null;
+    // Dimension "persona": cada barra lleva el color de SU persona (`colorDePersona`), no el del KPI. Por periodo las
+    // filas son fechas, no personas. Una linea o un area siguen con el color del KPI: una serie no tiene color por persona.
+    const porPersona = esBarras && !agruparPorPeriodo && !coloresPorCategoria && esKpiPorPersona(kpiInfo);
+    let colorPorFila = null;
+    let conPatrones = false;
+    if (esBarras && coloresPorCategoria) {
+      colorPorFila = (fila) => colorDeCategoriaEstado(fila.id, coloresPorCategoria, colorKpi);
+      conPatrones = true;
+    } else if (porPersona) {
+      colorPorFila = (fila) => colorDePersona(fila.id);
+      // Dos personas con el mismo color en esta grafica: patron por barra, para que el color no sea la unica senal.
+      conPatrones = hayColoresRepetidos(datos.map((fila) => colorDePersona(fila.id)));
+    }
     const unidad = unidadDeLaGrafica([kpiInfo]);
     return {
       datos, series, campoEtiqueta: "name", colorPorFila,
-      conPatrones: Boolean(colorPorFila), formatearEje: formatoDeEje(unidad, formatNumber), anchoEje: anchoDelEje(unidad),
+      conPatrones, formatearEje: formatoDeEje(unidad, formatNumber), anchoEje: anchoDelEje(unidad),
     };
   }
 
@@ -127,14 +138,17 @@ export function propsDona({ snapshot, kpiInfo, labelForId, agruparPorPeriodo, fo
   const crudas = buildPieData(snapshot, labelForId, textos.otros, agruparPorPeriodo, dimension, kpiInfo?.dimension_abierta);
   const rebanadas = agruparPorPeriodo ? crudas : ordenarPorCategorias(crudas, kpiInfo?.orden_categorias);
   const coloresCategoria = kpiInfo?.colores_categoria;
-  const datos = rebanadas.map((entrada, indice) => ({
-    categoria: entrada.name,
-    valor: entrada.value,
-    color: coloresCategoria
-      ? colorDeCategoriaEstado(entrada.id, coloresCategoria, COLOR_OTHERS)
-      : (indice < CATEGORICAL.length ? CATEGORICAL[indice] : COLOR_OTHERS),
-  }));
-  return { datos, conPatrones: Boolean(coloresCategoria), formatearValor: (valor) => formatConUnidad(formatNumber(valor), kpiInfo?.unidad) };
+  // Dimension "persona": cada rebanada lleva el color de SU persona; "Otros" (id null) y "Sin asignar" en gris.
+  const porPersona = !agruparPorPeriodo && !coloresCategoria && esKpiPorPersona(kpiInfo);
+  const datos = rebanadas.map((entrada, indice) => {
+    let color;
+    if (coloresCategoria) color = colorDeCategoriaEstado(entrada.id, coloresCategoria, COLOR_OTHERS);
+    else if (porPersona) color = colorDePersona(entrada.id);
+    else color = indice < CATEGORICAL.length ? CATEGORICAL[indice] : COLOR_OTHERS;
+    return { categoria: entrada.name, valor: entrada.value, color };
+  });
+  const conPatrones = Boolean(coloresCategoria) || (porPersona && hayColoresRepetidos(datos.map((entrada) => entrada.color)));
+  return { datos, conPatrones, formatearValor: (valor) => formatConUnidad(formatNumber(valor), kpiInfo?.unidad) };
 }
 
 /** Filas de TablaWidget a partir de los renglones del KPI "vivo". */

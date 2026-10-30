@@ -82,6 +82,44 @@ export function colorDeKpi(idKpiDefinition) {
   return CATEGORICAL[((id % CATEGORICAL.length) + CATEGORICAL.length) % CATEGORICAL.length];
 }
 
+// Color fijo por PERSONA, por su id de usuario: el mismo en el filtro de empleados, en las barras y en las rebanadas
+// de los KPIs que desglosan por persona. Es la FUENTE UNICA: nadie mas calcula el color de una persona.
+//
+// El tono base sale de `id % 8` (la paleta CATEGORICAL, igual que `colorDeKpi`): con mas de 8 personas es inevitable
+// que dos compartan tono, asi que un segundo canal estable, `floor(id / 8) % 3`, lo aclara o lo oscurece:
+// variante 0 = el tono tal cual, 1 = aclarado, 2 = oscurecido. Son 24 colores distintos y cada persona conserva el
+// suyo en todos los tableros. Si aun asi dos personas visibles de un mismo grafico chocan (ids a 24 de distancia), la
+// grafica agrega patrones (`hayColoresRepetidos`) y el nombre va siempre en el eje, la leyenda y el tooltip.
+export const VARIANTES_DE_PERSONA = 3;
+const MEZCLA_DE_VARIANTE = [null, { con: [255, 255, 255], parte: 0.35 }, { con: [0, 0, 0], parte: 0.25 }];
+
+function mezclarHex(hex, { con, parte }) {
+  const canales = [1, 3, 5].map((inicio) => parseInt(hex.slice(inicio, inicio + 2), 16));
+  return `#${canales.map((canal, i) => Math.round(canal * (1 - parte) + con[i] * parte).toString(16).padStart(2, "0")).join("")}`;
+}
+
+export function colorDePersona(idUsuario) {
+  // `Number(null)` y `Number("")` son 0: "Otros" (id null) no es la persona 0.
+  if (idUsuario === null || idUsuario === undefined || idUsuario === "") return COLOR_OTHERS;
+  const id = Number(idUsuario);
+  if (!Number.isFinite(id)) return COLOR_OTHERS;
+  const base = colorDeKpi(id);
+  const variante = ((Math.floor(id / CATEGORICAL.length) % VARIANTES_DE_PERSONA) + VARIANTES_DE_PERSONA) % VARIANTES_DE_PERSONA;
+  return MEZCLA_DE_VARIANTE[variante] ? mezclarHex(base, MEZCLA_DE_VARIANTE[variante]) : base;
+}
+
+/** Si dos de los colores de una grafica son el mismo (sin contar el gris de "Otros"/"Sin asignar", que se espera
+ * repetido). */
+export function hayColoresRepetidos(colores) {
+  const vistos = new Set();
+  return (colores || []).some((color) => {
+    if (color === COLOR_OTHERS) return false;
+    if (vistos.has(color)) return true;
+    vistos.add(color);
+    return false;
+  });
+}
+
 // Color EFECTIVO de un KPI dentro de un widget ya guardado: el override manual
 // (`parametros.colores_kpi`, `{ [id_kpi_definition]: '#hex' }`) gana sobre el
 // determinista de `colorDeKpi` cuando existe. Las llaves de un objeto JSON
@@ -148,6 +186,11 @@ export function enriquecerCatalogo(catalogo, dimensiones) {
       ...(declarada ? { dimension_abierta: declarada.abierta } : {}),
     };
   });
+}
+
+/** Si el KPI desglosa por PERSONA (los ids son de usuario): segun el catalogo enriquecido o, sin el, la dimension. */
+export function esKpiPorPersona(kpiInfo) {
+  return (kpiInfo?.dimension_tipo ?? tipoDeDimension(kpiInfo?.dimensiones?.[0])) === "persona";
 }
 
 /** Si el filtro por empleados tiene sentido: solo cuando alguno de los

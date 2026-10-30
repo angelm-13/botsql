@@ -33,7 +33,7 @@ import Skeleton from "../components/kpi-widgets/Skeleton";
 import { resolverColoresModernosParaPdf } from "../kpi/colorParaPdf";
 import SelectorDeKpi from "../components/kpi-widgets/SelectorDeKpi";
 import {
-  colorDeKpi, colorEfectivoDeKpi, desglosaPorEquipo, enriquecerCatalogo, etiquetasDeDimension, etiquetasDeSnapshots, labelForDimension,
+  colorDeKpi, colorDePersona, colorEfectivoDeKpi, desglosaPorEquipo, enriquecerCatalogo, etiquetasDeDimension, etiquetasDeSnapshots, labelForDimension,
   muestraFiltroDeEquipos, muestraFiltroDePersonas, normalizarBusqueda, unidadInfo,
 } from "../kpi/kpiDatos.js";
 import {
@@ -150,9 +150,8 @@ function kpiPestanaMeta(clave, tx) {
 // Avatar por omision para un empleado: no hay fotos de perfil reales, asi que
 // este icono neutro sobre fondo circular es el placeholder en todos lados
 // donde se muestra un nombre de empleado. `color` (opcional) es el acento
-// determinista por persona del picker de empleados -- ver colorDeKpi, mismo
-// patron `id % CATEGORICAL.length`, reusado aqui para id_user en vez de
-// id_kpi_definition.
+// determinista por persona del picker de empleados -- ver colorDePersona, la
+// fuente unica del color de una persona (tambien en barras y rebanadas).
 function EmployeeAvatar({ size = "regular", color }) {
   return (
     <span className={`kpi-avatar ${size === "small" ? "small" : ""}`} style={color ? { background: color } : undefined}>
@@ -2258,7 +2257,7 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
                       <div className="kpi-employee-list">
                         {usuariosFiltrados.map((user) => {
                           const activo = empleadosSeleccionados.includes(String(user.id_user));
-                          const colorEmpleado = colorDeKpi(user.id_user);
+                          const colorEmpleado = colorDePersona(user.id_user);
                           return (
                             <button
                               type="button"
