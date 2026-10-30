@@ -55,12 +55,27 @@ def is_production() -> bool:
     return entorno not in NON_PRODUCTION_ENVIRONMENTS
 
 
-def collect_configuration_problems() -> list[str]:
-    """Problemas de configuracion que harian insegura la instalacion."""
+def _valor(entorno, nombre: str) -> str:
+    return str((entorno if entorno is not None else os.environ).get(nombre) or "").strip()
+
+
+def collect_configuration_problems(entorno=None) -> list[str]:
+    """Problemas que HACEN INSEGURA la instalacion: en produccion impiden arrancar.
+
+    Solo entra lo que de verdad se puede explotar. Un backend que no arranca
+    deja sin servicio a un cliente real (el backend lleva volumen y se despliega
+    con `Recreate`: el pod viejo ya murio), asi que bloquear por algo que no es
+    un riesgo cuesta mas de lo que protege. Lo que solo conviene saber va en
+    `collect_configuration_warnings`.
+
+    `entorno` es un mapeo nombre -> valor; por omision, `os.environ`. Se acepta
+    para poder revisar un Secret ANTES de desplegarlo (backend/scripts/
+    preflight_secrets.py) con exactamente las mismas reglas que usa el arranque.
+    """
     problemas: list[str] = []
 
     for variable in REQUIRED_SECRETS:
-        valor = str(os.getenv(variable) or "").strip()
+        valor = _valor(entorno, variable)
         if not valor:
             problemas.append(f"{variable} no esta definida; se usaria un secreto de desarrollo publico.")
         elif valor.lower() in INSECURE_SECRETS:
@@ -70,35 +85,54 @@ def collect_configuration_problems() -> list[str]:
             # fuerza bruta sobre un token capturado.
             problemas.append(f"{variable} es demasiado corta: usa al menos 32 caracteres.")
 
-    if not str(os.getenv("CORS_ORIGINS") or "").strip():
-        problemas.append("CORS_ORIGINS no esta definida; el API aceptaria peticiones de cualquier sitio.")
-
-    if str(os.getenv("FLASK_ENV") or "").strip().lower() == "development":
+    if _valor(entorno, "FLASK_ENV").lower() == "development":
         problemas.append("FLASK_ENV sigue en development; el arranque expondria el depurador de Flask.")
-
-    if _bootstrap_admin_is_weak():
-        problemas.append("La contrasena del administrador inicial es la de ejemplo o esta vacia.")
 
     return problemas
 
 
-def _bootstrap_admin_is_weak() -> bool:
+def collect_configuration_warnings(entorno=None) -> list[str]:
+    """Cosas que conviene corregir pero que NO justifican dejar sin servicio.
+
+    * `CORS_ORIGINS` vacio no abre nada: `allowed_cors_origins()` devuelve la
+      lista vacia y Flask-CORS no permite ningun origen cruzado, que es lo mas
+      restrictivo. Los ambientes con la app y la API en el mismo origen ni
+      siquiera lo necesitan.
+    * La contrasena del administrador inicial solo importa AL CREARLO (ver
+      `init_db.py`); en una instalacion que ya lo tiene, revisarla en cada
+      arranque no protege nada.
+    """
+    avisos: list[str] = []
+    if not _valor(entorno, "CORS_ORIGINS"):
+        avisos.append("CORS_ORIGINS no esta definida; el API no aceptara peticiones de otros origenes "
+                      "(correcto si la app y la API comparten dominio).")
+    if bootstrap_admin_is_weak(entorno):
+        avisos.append("La contrasena del administrador inicial es la de ejemplo o esta vacia.")
+    return avisos
+
+
+def bootstrap_admin_is_weak(entorno=None) -> bool:
     # El administrador inicial viene ENCENDIDO salvo que se apague (igual que en
     # init_db.py): sin la variable tambien cuenta, y su contrasena de reserva es debil.
-    if str(os.getenv("BOOTSTRAP_ADMIN_ENABLED", "true") or "").strip().lower() not in {"1", "true", "yes", "si"}:
+    if _valor(entorno, "BOOTSTRAP_ADMIN_ENABLED").lower() not in {"", "1", "true", "yes", "si"}:
         return False
-    clave = str(os.getenv("BOOTSTRAP_ADMIN_PASSWORD") or "").strip()
+    clave = _valor(entorno, "BOOTSTRAP_ADMIN_PASSWORD")
     return not clave or clave.lower() in INSECURE_SECRETS or len(clave) < 12
 
 
 def enforce_secure_configuration(*, testing: bool = False) -> list[str]:
     """Detiene el arranque en produccion si la configuracion es insegura.
 
-    Devuelve los problemas encontrados. En produccion levanta `RuntimeError`
-    antes de que la aplicacion atienda una sola peticion.
+    Devuelve los problemas graves encontrados. En produccion levanta
+    `RuntimeError` antes de que la aplicacion atienda una sola peticion. Los
+    avisos (`collect_configuration_warnings`) nunca detienen el arranque: solo
+    quedan en la bitacora.
     """
     if testing:
         return []
+
+    for aviso in collect_configuration_warnings():
+        logger.warning("Configuracion mejorable: %s", aviso)
 
     problemas = collect_configuration_problems()
     if not problemas:

@@ -24,8 +24,14 @@ class TestProyectDocumentsApi(BackendTestCase):
         super().setUp()
         self.supervisor = {"id_user": 11, "id_permission": 101}
         self.other_supervisor = {"id_user": 12, "id_permission": 102}
+        self.admin = {"id_user": 1, "is_superuser": True, "id_proyect": 1}
+        # Ve todos los proyectos y tiene las dos capacidades de adjuntos en el Gestor.
+        self.manager = {"id_user": 13, "id_permission": 103}
         with transaction_context() as db:
             db.add_all([
+                EntityPermission(id_permission=103, entity_name="proyect", scope_read=4, scope_update=4, created_by=13),
+                EntityPermission(id_permission=103, entity_name="project_document_upload", scope_read=4, created_by=13),
+                EntityPermission(id_permission=103, entity_name="project_document_delete", scope_read=4, created_by=13),
                 # Propios: ver lo ajeno lo da "Todos" en el Gestor (2026-10-16).
                 EntityPermission(id_permission=101, entity_name="proyect", scope_create=4, scope_read=1, scope_update=1, created_by=11),
                 EntityPermission(id_permission=102, entity_name="proyect", scope_create=4, scope_read=1, scope_update=1, created_by=12),
@@ -206,10 +212,83 @@ class TestProyectDocumentsApi(BackendTestCase):
         self.assertEqual(200, download.status_code)
         self.assertEqual(PDF_BYTES, download.data)
 
-        delete = self._request(self.supervisor, "DELETE", f"/proyect/documents/{document_id}")
+        delete = self._request(self.manager, "DELETE", f"/proyect/documents/{document_id}")
         self.assertEqual(200, delete.status_code)
         listado = self._request(self.supervisor, "GET", f"/proyect/{project_id}/documents")
         self.assertEqual(0, len(self.json(listado)["items"]))
+
+    def _sube(self, actor, project_id):
+        return self._request(
+            actor, "POST", f"/proyect/{project_id}/documents",
+            data={"file": (BytesIO(PDF_BYTES), "requisitos.pdf")},
+            content_type="multipart/form-data",
+        )
+
+    def test_the_uploader_cannot_delete_without_the_capability(self):
+        project_id = self._create_project()
+        document_id = self.json(self._sube(self.supervisor, project_id))["id_proyect_document"]
+
+        borrar = self._request(self.supervisor, "DELETE", f"/proyect/documents/{document_id}")
+
+        self.assertEqual(403, borrar.status_code)
+        self.assertEqual("errors.project_attachment_delete_denied", self.json(borrar)["error_key"])
+        listado = self._request(self.supervisor, "GET", f"/proyect/{project_id}/documents")
+        self.assertEqual(1, len(self.json(listado)["items"]))
+
+    def test_the_super_user_deletes_without_a_row_in_the_manager(self):
+        project_id = self._create_project()
+        document_id = self.json(self._sube(self.supervisor, project_id))["id_proyect_document"]
+        self.assertEqual(200, self._request(
+            self.admin, "DELETE", f"/proyect/documents/{document_id}").status_code)
+
+    def test_only_the_responsible_uploads_unless_the_manager_grants_it(self):
+        project_id = self._create_project()
+        # Ve y edita todo (Todos), pero no es el responsable y no tiene la capacidad.
+        with transaction_context() as db:
+            db.add(EntityPermission(id_permission=104, entity_name="proyect", scope_read=4,
+                                    scope_update=4, created_by=14))
+        sin_capacidad = {"id_user": 14, "id_permission": 104}
+
+        rechazo = self._sube(sin_capacidad, project_id)
+        self.assertEqual(403, rechazo.status_code)
+        self.assertEqual("errors.project_attachment_leader_only", self.json(rechazo)["error_key"])
+
+        self.assertEqual(201, self._sube(self.supervisor, project_id).status_code)   # el responsable
+        self.assertEqual(201, self._sube(self.manager, project_id).status_code)      # la capacidad
+
+    def test_a_capability_without_project_update_still_reaches_the_upload(self):
+        """Gerente Comercial solo CONSULTA proyectos: la capacidad abre la puerta sola."""
+        project_id = self._create_project()
+        with transaction_context() as db:
+            db.add_all([
+                EntityPermission(id_permission=105, entity_name="proyect", scope_read=4, created_by=15),
+                EntityPermission(id_permission=105, entity_name="project_document_upload",
+                                 scope_read=4, created_by=15),
+                EntityPermission(id_permission=105, entity_name="project_document_delete",
+                                 scope_read=4, created_by=15),
+            ])
+        solo_consulta = {"id_user": 15, "id_permission": 105}
+
+        subida = self._sube(solo_consulta, project_id)
+        self.assertEqual(201, subida.status_code)
+        borrar = self._request(solo_consulta, "DELETE",
+                               f"/proyect/documents/{self.json(subida)['id_proyect_document']}")
+        self.assertEqual(200, borrar.status_code)
+
+    def test_a_message_or_attachment_notifies_the_involved(self):
+        from app.models.notification import Notification
+
+        project_id = self._create_project()
+        response = self._request(self.admin, "POST", f"/proyect/{project_id}/messages",
+                                 json={"content": "Instalar la malla al marco"})
+        self.assertEqual(201, response.status_code)
+        self._sube(self.manager, project_id)
+        with transaction_context() as db:
+            avisos = db.query(Notification).filter(Notification.id_proyect == project_id).all()
+            # El responsable (11) se entera de las dos cosas; quien las hizo, no.
+            self.assertEqual([11, 11], sorted(a.id_user_recipient for a in avisos
+                                              if a.id_user_recipient == 11))
+            self.assertNotIn(13, [a.id_user_recipient for a in avisos])
 
     def test_an_actor_without_scope_cannot_see_the_attachment(self):
         project_id = self._create_project()

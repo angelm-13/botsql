@@ -1,23 +1,31 @@
-# Plantilla para dar de alta un cliente nuevo. NO se aplica tal cual:
+# Plantilla para dar de alta un cliente nuevo del ERP. NO se aplica tal cual:
 #
 #   cp -r k8s/overlays/_template k8s/overlays/<cliente>-<env>
 #
-# y luego reemplaza los 4 bloques marcados abajo (namespace, tags de
-# imagen, y los 5 valores del patch de Ingress). El runbook completo
-# está en el artefacto "Runbook multi-cliente".
+# y luego reemplaza, en ESTE archivo y en ingress-single-origin.yaml:
+#   CLIENTE-ENV     -> <cliente>-<env>   (ej. acme-prod)
+#   DOMINIO         -> el dominio real del cliente, <cliente>.torredigital.mx
+#                      (verifícalo con nslookup y confírmalo con Alan)
+#   REEMPLAZAR_SHA  -> el SHA de un build en verde que ya incluya a este
+#                      cliente en deploy/clients.yaml (ver k8s/README.md)
+#
+# Sigue el patrón de los clientes reales (adser-prod, comala-prod,
+# torredigital-prod, tyakxa-dev): UN SOLO origen, front + API bajo /api en el
+# mismo dominio. Por eso el Ingress del base se elimina (primer parche) y se
+# usa ingress-single-origin.yaml. Si algún cliente necesita DOS subdominios
+# (app + api-app), el base/ingress.yaml sí lo soporta: ver k8s/README.md.
+#
+# Pasos completos, reglas y lo que va fuera del repo (secrets): k8s/README.md.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-# 1) Nombre real del namespace: <cliente>-<env>
-#    (sí puede terminar en -prod/-test: el ERP tiene excepción explícita
-#    a esa regla general de nombrado de namespaces).
+# 1) Namespace: <cliente>-<env>. Sí puede terminar en -prod/-test: el ERP tiene
+#    excepción explícita a la regla general de nombrado de namespaces.
 namespace: CLIENTE-ENV
 
-resources:
-  - ../../base
-
-# 2) Tags de imagen: el SHA corto lo da el workflow build-images.yml
-#    en su output "sha_short" cada vez que hace push a ghcr.io/tyakxa.
+# 2) Tags de imagen. backend, worker y db-init llevan el SHA corto; el frontend
+#    lleva <sha>-<cliente>-<env> porque se construye UNO POR CLIENTE
+#    (VITE_API_BASE_URL queda horneado en el build; ver deploy/clients.yaml).
 images:
   - name: DB_INIT_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-db-init
@@ -32,26 +40,69 @@ images:
     newName: ghcr.io/tyakxa/tyakxa-tny-frontend
     newTag: REEMPLAZAR_SHA-CLIENTE-ENV
 
-# 3) Dominios reales y el ClusterIssuer correcto (letsencrypt-prod en
-#    producción, letsencrypt-staging para probar sin gastar el límite
-#    de emisión de Let's Encrypt).
+resources:
+  - ../../base
+  - ingress-single-origin.yaml
+
+# 3) Respaldo diario de Postgres (CronJob a las 03:30, solo en nodos tier=big).
+#    En un alta nueva se aplica junto con todo lo demás. En un cliente que YA
+#    está en producción se activa aplicando SOLO este componente, para no
+#    arrastrar otros cambios pendientes del base:
+#      kubectl apply -k <overlay> -l app.kubernetes.io/component=respaldo-postgres
+components:
+  - ../../components/respaldo-postgres
+
 patches:
-  - target:
+  # Quita el Ingress del base (patrón de dos subdominios): este cliente usa
+  # ingress-single-origin.yaml.
+  - patch: |-
+      apiVersion: networking.k8s.io/v1
       kind: Ingress
-      name: tyakxa-tny
+      metadata:
+        name: tyakxa-tny
+      $patch: delete
+
+  # 4) Dónde cae el cliente. Producción y servicios pesados en tier=big
+  #    (master1 o master4); nunca volúmenes nuevos en master2/master3 (discos de
+  #    50 GB casi llenos). El base no fija nodo: sin este parche el scheduler
+  #    decide y un PVC local-path queda atado ahí para siempre. Si el cliente es
+  #    una demo liviana sin datos que importen, puede ir en tier: small.
+  #    El CronJob de respaldo ya trae su propia afinidad a tier=big.
+  - target:
+      kind: Deployment
     patch: |-
-      - op: replace
-        path: /metadata/annotations/cert-manager.io~1cluster-issuer
-        value: letsencrypt-prod
-      - op: replace
-        path: /spec/tls/0/hosts/0
-        value: CLIENTE-ENV.tyakxa.com.mx
-      - op: replace
-        path: /spec/tls/1/hosts/0
-        value: api-CLIENTE-ENV.tyakxa.com.mx
-      - op: replace
-        path: /spec/rules/0/host
-        value: CLIENTE-ENV.tyakxa.com.mx
-      - op: replace
-        path: /spec/rules/1/host
-        value: api-CLIENTE-ENV.tyakxa.com.mx
+      - op: add
+        path: /spec/template/spec/nodeSelector
+        value:
+          tier: big
+  - target:
+      kind: StatefulSet
+    patch: |-
+      - op: add
+        path: /spec/template/spec/nodeSelector
+        value:
+          tier: big
+
+  # 5) PriorityClass (OPCIONAL, decide Alan). Descomenta los tres parches SOLO
+  #    si la clase ya existe en el clúster (kubectl get priorityclass); si no
+  #    existe, los pods no se programan. Las clases no viven en este repo (se
+  #    crearon a mano con kubectl apply -f). Ver p3-comala-prod en el overlay de
+  #    comala-prod para el ejemplo real.
+  # - target:
+  #     kind: Deployment
+  #   patch: |-
+  #     - op: add
+  #       path: /spec/template/spec/priorityClassName
+  #       value: pN-CLIENTE-ENV
+  # - target:
+  #     kind: StatefulSet
+  #   patch: |-
+  #     - op: add
+  #       path: /spec/template/spec/priorityClassName
+  #       value: pN-CLIENTE-ENV
+  # - target:
+  #     kind: CronJob
+  #   patch: |-
+  #     - op: add
+  #       path: /spec/jobTemplate/spec/template/spec/priorityClassName
+  #       value: pN-CLIENTE-ENV

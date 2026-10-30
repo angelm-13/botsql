@@ -2692,6 +2692,22 @@ class TestUnProyectoNoSeCierraConMaterialPendiente(BaseVale):
 
         self.assertEqual("errors.project_open_vouchers", caja.exception.message_key)
 
+    def test_collecting_and_completing_are_allowed_with_a_voucher_still_open(self):
+        # Un proyecto puede ser solo la fabricacion y la instalacion, semanas despues:
+        # la herramienta sigue fuera y el vale sigue su vida.
+        from app.services.project_management_service import transition_project
+
+        self.surtir(5, RACK)
+        self._prevale([{"id_product": CEMENTO, "quantity": 1, "id_location_from": RACK}],
+                      id_proyect=PROYECTO)
+        with transaction_context() as db:
+            db.get(Proyect, PROYECTO).proyect_status = "in_progress"
+
+        recolectado = transition_project(PROYECTO, {"status": "collected"}, ACTOR)
+        completado = transition_project(PROYECTO, {"status": "completed"}, ACTOR)
+
+        self.assertEqual(("collected", "completed"), (recolectado["proyect_status"], completado["proyect_status"]))
+
 
 class TestCancelarUnVale(BaseVale):
     def _prevale_con_stock(self, **extra):

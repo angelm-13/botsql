@@ -15,6 +15,7 @@ from app.utils import login_throttle
 from app.utils.startup_guard import (
     allowed_cors_origins,
     collect_configuration_problems,
+    collect_configuration_warnings,
     enforce_secure_configuration,
     is_production,
 )
@@ -79,12 +80,13 @@ class TestStartupGuard(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 enforce_secure_configuration()
 
-    def test_production_without_cors_origins_is_refused(self):
-        with entorno(APP_ENV="production", JWT_SECRET=SECRETO_VALIDO, SECRET_KEY=SECRETO_VALIDO):
-            with self.assertRaises(RuntimeError) as raised:
-                enforce_secure_configuration()
-
-        self.assertIn("CORS_ORIGINS", str(raised.exception))
+    def test_production_without_cors_origins_still_starts_but_warns(self):
+        """Sin CORS_ORIGINS el API no acepta otros origenes: es lo mas restrictivo,
+        no un riesgo. Tumbar el backend por eso dejaba sin servicio sin proteger nada."""
+        with entorno(**produccion_segura(CORS_ORIGINS=None)):
+            self.assertEqual([], enforce_secure_configuration())
+            self.assertTrue(any("CORS_ORIGINS" in a for a in collect_configuration_warnings()))
+            self.assertEqual([], allowed_cors_origins())
 
     def test_production_with_the_flask_debugger_is_refused(self):
         """El depurador de Flask permite ejecutar codigo desde el navegador."""
@@ -94,12 +96,11 @@ class TestStartupGuard(unittest.TestCase):
 
         self.assertIn("depurador", str(raised.exception))
 
-    def test_a_weak_bootstrap_password_is_refused(self):
+    def test_a_weak_bootstrap_password_warns_but_does_not_stop_the_start(self):
+        """Solo importa al CREAR el administrador (ver init_db.exigir_clave_de_bootstrap_fuerte)."""
         with entorno(**produccion_segura(BOOTSTRAP_ADMIN_ENABLED="true", BOOTSTRAP_ADMIN_PASSWORD="admin")):
-            with self.assertRaises(RuntimeError) as raised:
-                enforce_secure_configuration()
-
-        self.assertIn("administrador inicial", str(raised.exception))
+            self.assertEqual([], enforce_secure_configuration())
+            self.assertTrue(any("administrador inicial" in a for a in collect_configuration_warnings()))
 
     def test_a_well_configured_production_starts(self):
         with entorno(**produccion_segura()):
@@ -231,16 +232,57 @@ if __name__ == "__main__":
 
 class TestAdministradorInicial(unittest.TestCase):
     def test_the_default_bootstrap_admin_counts_as_weak_when_the_variable_is_unset(self):
-        from app.utils.startup_guard import collect_configuration_problems
-
         with entorno(APP_ENV="production", JWT_SECRET="x" * 40, SECRET_KEY="y" * 40,
                      CORS_ORIGINS="https://a.mx"):
-            problemas = collect_configuration_problems()
-        self.assertTrue(any("administrador inicial" in p for p in problemas))
+            avisos = collect_configuration_warnings()
+        self.assertTrue(any("administrador inicial" in p for p in avisos))
 
     def test_a_strong_password_clears_it(self):
-        from app.utils.startup_guard import collect_configuration_problems
-
         with entorno(APP_ENV="production", JWT_SECRET="x" * 40, SECRET_KEY="y" * 40,
                      CORS_ORIGINS="https://a.mx", BOOTSTRAP_ADMIN_PASSWORD="una-clave-larga-y-unica-1"):
             self.assertEqual([], collect_configuration_problems())
+            self.assertEqual([], collect_configuration_warnings())
+
+    def test_creating_the_admin_in_production_demands_a_strong_password(self):
+        import init_db
+
+        with entorno(APP_ENV="production", BOOTSTRAP_ADMIN_PASSWORD="corta"):
+            with self.assertRaises(RuntimeError):
+                init_db.exigir_clave_de_bootstrap_fuerte()
+        with entorno(APP_ENV="production"):
+            with self.assertRaises(RuntimeError):
+                init_db.exigir_clave_de_bootstrap_fuerte()
+        with entorno(APP_ENV="production", BOOTSTRAP_ADMIN_PASSWORD="una-clave-larga-y-unica-1"):
+            init_db.exigir_clave_de_bootstrap_fuerte()
+
+    def test_outside_production_the_default_password_is_tolerated(self):
+        import init_db
+
+        with entorno(APP_ENV="staging"):
+            init_db.exigir_clave_de_bootstrap_fuerte()
+            self.assertEqual(init_db.DEFAULT_BOOTSTRAP_PASSWORD,
+                             init_db.bootstrap_admin_password(estricto=False))
+
+
+class TestRevisionPreviaDeSecrets(unittest.TestCase):
+    """`preflight_secrets.py` aplica las MISMAS reglas que el arranque, sobre un Secret."""
+
+    @staticmethod
+    def _secret(**datos):
+        import base64
+        return {"data": {k: base64.b64encode(v.encode()).decode() for k, v in datos.items()}}
+
+    def test_a_good_secret_passes_even_without_cors_origins(self):
+        from scripts.preflight_secrets import entorno_del_secret
+
+        env = entorno_del_secret(self._secret(JWT_SECRET="k" * 44, SECRET_KEY="k" * 44,
+                                              BOOTSTRAP_ADMIN_PASSWORD="una-clave-larga-y-unica-1"))
+        self.assertEqual([], collect_configuration_problems(env))
+        self.assertTrue(any("CORS_ORIGINS" in a for a in collect_configuration_warnings(env)))
+
+    def test_a_weak_jwt_secret_blocks(self):
+        from scripts.preflight_secrets import entorno_del_secret
+
+        env = entorno_del_secret(self._secret(JWT_SECRET="corto", SECRET_KEY="k" * 44))
+        problemas = collect_configuration_problems(env)
+        self.assertTrue(any("JWT_SECRET" in p for p in problemas))

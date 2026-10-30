@@ -32,7 +32,9 @@ import { useDialogo } from "../dialogo/useDialogo.js";
  * columna eso no se podría ni representar. Las transiciones válidas las manda
  * el servidor en el catálogo; esta pantalla no lleva su propia copia.
  */
-export default function ProyectoExpediente({ detalle, catalogo, modo, onCambio }) {
+export default function ProyectoExpediente({
+  detalle, catalogo, modo, idUsuario, puedeSubirAjenos, puedeBorrarAdjuntos, onCambio,
+}) {
   const { t } = useI18n();
   const dialogo = useDialogo();
   const [ocupado, setOcupado] = useState(false);
@@ -51,6 +53,11 @@ export default function ProyectoExpediente({ detalle, catalogo, modo, onCambio }
   // candado real vive en el backend (`transition_management`), esto solo
   // evita ofrecer un boton que el servidor va a rechazar.
   const puedeGestionarComercial = modo === "manager" || modo === "unrestricted";
+  // Adjuntos: sube el responsable del proyecto o quien tenga `project_document_upload`
+  // en el Gestor; borra solo quien tenga `project_document_delete`. El servidor lo
+  // vuelve a comprobar; esto solo evita ofrecer botones que va a rechazar.
+  const puedeSubirAdjuntos = modo === "unrestricted" || puedeSubirAjenos
+    || (idUsuario != null && Number(detalle.leader) === Number(idUsuario));
 
   // Del servidor, nunca de una copia local: una lista escrita aquí ofrecería
   // transiciones que el servidor rechaza.
@@ -97,6 +104,9 @@ export default function ProyectoExpediente({ detalle, catalogo, modo, onCambio }
       setArchivoNuevo(null);
       setTituloAdjunto("");
       await cargarAdjuntos();
+      // El expediente anota "archivo adjunto" en el historial: sin recargar el
+      // detalle, esa linea no aparece hasta reabrir el proyecto.
+      await onCambio();
     } catch (e) {
       setError(e?.payload?.error_key || e?.message || "errors.request_failed");
     } finally {
@@ -110,6 +120,7 @@ export default function ProyectoExpediente({ detalle, catalogo, modo, onCambio }
     try {
       await deleteProyectDocument(documento.id_proyect_document);
       await cargarAdjuntos();
+      await onCambio();
     } catch (e) {
       setError(e?.payload?.error_key || e?.message || "errors.request_failed");
     } finally {
@@ -295,13 +306,18 @@ export default function ProyectoExpediente({ detalle, catalogo, modo, onCambio }
               {documento.title || documento.original_filename}
             </button>
             <span className="muted">{documento.original_filename}</span>
-            <button type="button" className="icon-button" disabled={ocupado}
-                    title={etiqueta("delete", "Quitar")}
-                    onClick={() => borrarAdjunto(documento)}>×</button>
+            {puedeBorrarAdjuntos && (
+              <button type="button" className="icon-button" disabled={ocupado}
+                      title={etiqueta("delete", "Quitar")}
+                      onClick={() => borrarAdjunto(documento)}>×</button>
+            )}
           </div>
         ))}
       </div>
-      <form className="project-attachment-upload" onSubmit={subirAdjunto}>
+      {!puedeBorrarAdjuntos && adjuntos.length > 0 && (
+        <p className="muted">{etiqueta("attachments_delete_hint", "Si un archivo está mal, pide a Gerencia que lo elimine.")}</p>
+      )}
+      {puedeSubirAdjuntos && <form className="project-attachment-upload" onSubmit={subirAdjunto}>
         <input type="file" accept=".pdf,.docx,.dxf,.dwg,.xlsx,.xls,.step,.stp,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
                onChange={(e) => setArchivoNuevo(e.target.files?.[0] || null)} />
         <input type="text" maxLength={200} placeholder={etiqueta("attachment_title", "Título (opcional)")}
@@ -309,7 +325,7 @@ export default function ProyectoExpediente({ detalle, catalogo, modo, onCambio }
         <button className="button" type="submit" disabled={ocupado || !archivoNuevo}>
           {etiqueta("upload_attachment", "Subir archivo")}
         </button>
-      </form>
+      </form>}
 
       {/* --- el material que se llevo esta obra --- */}
       {/* Se cuenta desde los renglones de los vales, no desde el libro del
@@ -422,6 +438,11 @@ ProyectoExpediente.propTypes = {
   detalle: PropTypes.object.isRequired,
   catalogo: PropTypes.object,
   modo: PropTypes.string,
+  idUsuario: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  puedeSubirAjenos: PropTypes.bool,
+  puedeBorrarAdjuntos: PropTypes.bool,
   onCambio: PropTypes.func.isRequired,
 };
-ProyectoExpediente.defaultProps = { catalogo: null, modo: "supervisor" };
+ProyectoExpediente.defaultProps = {
+  catalogo: null, modo: "supervisor", idUsuario: null, puedeSubirAjenos: false, puedeBorrarAdjuntos: false,
+};
