@@ -59,8 +59,7 @@ import {
   DESFASES_DE_COMPARACION, ETIQUETA_DE_RANGO_EN_TARJETA, ETIQUETA_RANGO_POR_OMISION, RANGOS_RELATIVOS, RANGO_PERSONALIZADO, fechaLocalIso, textoDeRango,
   parametrosEfectivos, periodoAnterior, rangoDesfasado, resolverRangoRelativo,
 } from "../kpi/kpiRango.js";
-import { datosDeEjemplo } from "../kpi/datosDeEjemplo.js";
-import { ofreceVerEjemplo } from "../kpi/vistaPreviaDeEjemplo.js";
+import { ofreceVerEjemplo, snapshotsDeEjemplo } from "../kpi/vistaPreviaDeEjemplo.js";
 import {
   filasTablaPrestamo, propsDona, propsNumero,
   propsNumeroBajoStock, propsSeries, tendenciaDeSnapshot,
@@ -1360,18 +1359,18 @@ function VistaPreviaEditor({ widget, kpiCatalog, userLabel, productLabel, format
   const widgetRetrasado = useValorRetrasado(widget, 400);
   const datos = useDatosDeWidget({ widget: widgetRetrasado, kpiCatalog });
   const pendiente = JSON.stringify(widget) !== JSON.stringify(widgetRetrasado);
-  // "Sin datos": deteccion perezosa. Si la consulta REAL del rango vuelve vacia, se ofrece «Ver ejemplo»; el
-  // ejemplo es solo de pantalla y no cambia el borrador (que sigue siendo el KPI real).
-  const [verEjemplo, setVerEjemplo] = useState(false);
+  // "Sin datos": si la consulta REAL del rango vuelve vacia (de uno o de varios indicadores), la vista previa dibuja
+  // datos de ejemplo SOLA, con la marca EJEMPLO, y se puede volver a ver lo real. El ejemplo es solo de pantalla y no
+  // cambia el borrador (que sigue siendo el indicador real).
+  const [verReal, setVerReal] = useState(false);
   const claveBorrador = JSON.stringify(widget);
-  useEffect(() => { setVerEjemplo(false); }, [claveBorrador]);
-  const kpiReal = datos.kpiInfos.length === 1 ? datos.kpiInfos[0] : null;
+  useEffect(() => { setVerReal(false); }, [claveBorrador]);
   const sinDatos = ofreceVerEjemplo({
-    kpiReal, esTablaVivo: datos.esTablaVivo, loading: datos.loading, pendiente, error: datos.error, snapshots: datos.snapshots,
+    kpiInfos: datos.kpiInfos, esTablaVivo: datos.esTablaVivo, loading: datos.loading, pendiente, error: datos.error, snapshots: datos.snapshots,
   });
-  const mostrandoEjemplo = verEjemplo && sinDatos;
+  const mostrandoEjemplo = sinDatos && !verReal;
   const datosDeVista = mostrandoEjemplo
-    ? { ...datos, snapshots: [datosDeEjemplo(kpiReal, { textos: textosEjemplo })] }
+    ? { ...datos, snapshots: snapshotsDeEjemplo(datos.kpiInfos, { textos: textosEjemplo }) }
     : datos;
   const cuerpo = (
     <CuerpoDeWidget
@@ -1391,8 +1390,8 @@ function VistaPreviaEditor({ widget, kpiCatalog, userLabel, productLabel, format
       {sinDatos && (
         <div className="kpi-ejemplo-sin-datos">
           <span className="muted">{tx("example_no_data_hint", "Sin datos en el rango elegido.")}</span>
-          <button type="button" className="button ghost" onClick={() => setVerEjemplo((actual) => !actual)}>
-            {verEjemplo ? tx("example_hide", "Ocultar ejemplo") : tx("example_view", "Ver ejemplo")}
+          <button type="button" className="button ghost" onClick={() => setVerReal((actual) => !actual)}>
+            {verReal ? tx("example_view", "Ver ejemplo") : tx("example_hide", "Ocultar ejemplo")}
           </button>
         </div>
       )}
