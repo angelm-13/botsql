@@ -93,7 +93,7 @@ class DefinicionDeEnTurnoPorEmpleadoTest(unittest.TestCase):
 
     def test_solo_este_kpi_de_checadas_oculta_ceros(self):
         # Los equipos en cero SI se pintan (un parque sin nadie es un dato); solo la foto por persona los oculta.
-        con_ceros_ocultos = [k.clave for k in KPI_POR_CLAVE.values() if k.ocultar_ceros]
+        con_ceros_ocultos = [k.clave for k in KPI_POR_CLAVE.values() if k.ocultar_ceros and k.grupo == "asistencias"]
         self.assertEqual(["checadas_en_turno_por_empleado"], con_ceros_ocultos)
 
 

@@ -240,15 +240,15 @@ test("al buscar un sin desglose sale en su modulo y en Variables (con etiqueta s
   assert.equal(apariciones.filter((fila) => fila.includes("kpi-selector-modulo-tag")).length, 1, "solo la de Variables lleva la etiqueta");
 });
 
-// --- con los 49 KPIs del registry ----------------------------------------------------------------
+// --- con los 51 KPIs del registry ----------------------------------------------------------------
 const REGISTRY = JSON.parse(readFileSync(new URL("./fixtures/catalogo_del_registry.json", import.meta.url), "utf8"))
   .map((kpi) => ({ ...kpi, descripcion: `Descripcion de ${kpi.etiqueta}` }));
 const SIN_DESGLOSE_DE_RESTAURANTE = ["Ventas del restaurante", "Ticket promedio", "Propinas del restaurante", "Propina como % de la venta", "Tiempo de entrega", "Cuentas sin cobrar"];
 
-test("con los 49 KPIs del registry: conteos por pestana y los 6 sin desglose de restaurante dentro de Restaurante", () => {
+test("con los 51 KPIs del registry: conteos por pestana y los 6 sin desglose de restaurante dentro de Restaurante", () => {
   const botones = botonesDeModulo(pintarSelector({ catalogo: REGISTRY, seleccionados: [], multiple: false }));
   assert.deepEqual(botones.map((b) => [b.clave, b.texto.match(/(\d+)$/)[1]]), [
-    ["operaciones", "12"], ["crm", "4"], ["asistencias", "7"], ["inventario", "4"], ["facturacion", "4"], ["laboratorio", "3"], ["documentos", "1"], ["restaurante", "14"], ["variables", "12"],
+    ["operaciones", "12"], ["crm", "6"], ["asistencias", "7"], ["inventario", "4"], ["facturacion", "4"], ["laboratorio", "3"], ["documentos", "1"], ["restaurante", "14"], ["variables", "12"],
   ]);
   const restaurante = pintarSelector({ catalogo: REGISTRY, seleccionados: [], multiple: false, moduloInicial: "restaurante" });
   assert.equal(filas(restaurante).length, 14, "la pestana Restaurante trae TODOS sus KPIs");
@@ -299,7 +299,7 @@ test("las pestanas sin KPIs permitidos no aparecen y los contadores son solo de 
   assert.ok(!botones.some((b) => b.clave === "inventario"), "sin KPIs permitidos de inventario no hay pestana");
 });
 
-test("el superusuario ve todo: los 49 KPIs en 7 modulos, mas Asistencias (junto a Operaciones) y Variables", () => {
+test("el superusuario ve todo: los 51 KPIs en 7 modulos, mas Asistencias (junto a Operaciones) y Variables", () => {
   // Un superusuario lo tiene todo permitido: el catalogo es el registry completo.
   const html = pintarSelector({ catalogo: REGISTRY, seleccionados: [], multiple: false });
   assert.deepEqual(botonesDeModulo(html).map((b) => b.clave), ["operaciones", "crm", "asistencias", "inventario", "facturacion", "laboratorio", "documentos", "restaurante", "variables"]);

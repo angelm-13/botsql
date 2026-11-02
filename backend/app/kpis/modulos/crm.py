@@ -20,6 +20,8 @@ from sqlalchemy import case, func, or_, select
 
 from app.models.customer_supplier import CustomerSupplier
 from app.models.proyect import Proyect
+from app.models.task import Task
+from app.services.operations_workflow import TASK_STATUSES
 from app.services.project_management_service import MANAGEMENT_STATUSES
 from app.utils.tiempo import dia_local, hoy_negocio
 
@@ -190,6 +192,81 @@ def proyectos_con_entrega_vencida_query(session, fecha_inicio, fecha_fin, filtro
     return [(None, fecha_fin, session.scalar(stmt) or 0)]
 
 
+# --- tareas ------------------------------------------------------------------------------------
+
+# `task.task_status` (el catalogo de `TASK_STATUSES`) en el orden del flujo. La columna no tiene CHECK en la base: puede traer
+# NULL o un valor viejo, y eso cae en `sin_estado`.
+TAREAS_CATEGORIAS = (*TASK_STATUSES, SIN_ESTADO)
+TAREAS_ETIQUETAS = {
+    "pendiente": "Pendiente",
+    "en_proceso": "En proceso",
+    "bloqueada": "Bloqueada",
+    "en_revision": "En revisión",
+    "terminada": "Terminada",
+    "cancelada": "Cancelada",
+    SIN_ESTADO: ETIQUETA_SIN_ESTADO,
+}
+# Ambar (por empezar), azul (en marcha), coral (atorada), violeta (esperando revision), verde (lista), gris oscuro
+# (descartada) y gris azulado claro para lo sin estado.
+TAREAS_COLORES = {
+    "pendiente": "#f0a93b",
+    "en_proceso": "#2f8fe0",
+    "bloqueada": "#ef6f5c",
+    "en_revision": "#8b6cf6",
+    "terminada": "#22b573",
+    "cancelada": "#6b7a90",
+    SIN_ESTADO: COLOR_SIN_ESTADO,
+}
+
+ESTATUS_DE_TAREA_BLOQUEADA = "bloqueada"
+
+
+def tareas_por_estado_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
+    """Foto de hoy: tareas vigentes por estado (`task.task_status`).
+
+    * Vigencia: `Task.deletion_date IS NULL`, igual que `desarrollo_por_empleado_query` y el resto del modulo de operaciones.
+    * Siempre regresa las seis categorias del catalogo (`TASK_STATUSES`), con 0 cuando no hay: el agregado "ultimo" toma el
+      ultimo dia con filas, y una categoria ausente se lee como "no calculada", no como cero.
+    * `task_status` NULL o fuera del catalogo se cuenta en `sin_estado`, que solo sale cuando hay alguna.
+    * Foto de AHORA: solo se emite si `fecha_fin` es hoy (`_es_hoy`).
+
+    Dimension "estado" (categoria). Sin alcance de proyecto: una tarea pertenece a un proyecto, pero aqui se cuentan las de todos.
+    """
+    if not _es_hoy(fecha_fin):
+        return []
+    categoria = case((Task.task_status.in_(TASK_STATUSES), Task.task_status), else_=SIN_ESTADO)
+    stmt = (
+        select(categoria.label("categoria"), func.count(Task.id_task))
+        .where(Task.deletion_date.is_(None))
+        .group_by(categoria)
+    )
+    conteos = dict(session.execute(stmt).all())
+    categorias = [*TASK_STATUSES, *([SIN_ESTADO] if conteos.get(SIN_ESTADO) else [])]
+    return [(categoria, fecha_fin, conteos.get(categoria, 0)) for categoria in categorias]
+
+
+def tareas_bloqueadas_por_responsable_query(session, fecha_inicio, fecha_fin, filtros_dimension, actor_project):
+    """Foto de hoy: tareas vigentes en estado `bloqueada`, por responsable (`Task.owner`), de todos los proyectos.
+
+    Escribe una fila por cada responsable con alguna tarea vigente, con 0 si ninguna esta bloqueada, para que el valor de
+    ayer no se quede pegado cuando se desbloquea (el KPI declara `ocultar_ceros`: la API no pinta una barra vacia por cada
+    responsable sin bloqueos). Si no hay ninguna tarea, escribe una fila sin responsable y en 0: la API ignora esa fila
+    pero cuenta su fecha, asi "ultimo" no recoge un dia anterior.
+
+    Foto de AHORA: solo si `fecha_fin` es hoy (`_es_hoy`). Dimension "empleado". Sin alcance de proyecto.
+    """
+    if not _es_hoy(fecha_fin):
+        return []
+    condiciones = [Task.deletion_date.is_(None)]
+    empleados = (filtros_dimension or {}).get("empleados")
+    if empleados:
+        condiciones.append(Task.owner.in_(empleados))
+    bloqueadas = func.sum(case((Task.task_status == ESTATUS_DE_TAREA_BLOQUEADA, 1), else_=0))
+    stmt = select(Task.owner, bloqueadas).where(*condiciones).group_by(Task.owner).order_by(Task.owner)
+    filas = [(owner, fecha_fin, int(total or 0)) for owner, total in session.execute(stmt).all()]
+    return filas or [(None, fecha_fin, 0)]
+
+
 # --- definiciones ------------------------------------------------------------------------------
 
 def definiciones():
@@ -271,5 +348,44 @@ def definiciones():
                 "Foto de hoy: proyectos cuya fecha de entrega ya pasó y siguen abiertos. No cuentan los terminados, "
                 "recolectados, rechazados ni cancelados; uno bloqueado o detenido sí."
             ),
+        ),
+        KpiDefinition(
+            clave="tareas_por_estado",
+            etiqueta="Tareas por estado",
+            modulo="operaciones",
+            grupo="crm",
+            dimensiones=("estado",),
+            etiqueta_dimension="Estado de la tarea",
+            query_builder=tareas_por_estado_query,
+            agregacion="ultimo",
+            unidad="numero",
+            alcance_proyecto=False,
+            direccion="neutral",
+            graficas_permitidas=("dona", "barras"),
+            grafica_default="dona",
+            colores_categoria=TAREAS_COLORES,
+            orden_categorias=TAREAS_CATEGORIAS,
+            etiquetas_categoria=TAREAS_ETIQUETAS,
+            descripcion=(
+                "Foto de hoy: cuántas tareas hay pendientes, en proceso, bloqueadas, en revisión, terminadas y "
+                "canceladas, de todos los proyectos. «Sin estado» solo sale si alguna tarea no lo tiene o trae uno desconocido."
+            ),
+        ),
+        KpiDefinition(
+            clave="tareas_bloqueadas_por_responsable",
+            etiqueta="Tareas bloqueadas por responsable",
+            modulo="operaciones",
+            grupo="crm",
+            dimensiones=("empleado",),
+            etiqueta_dimension="Responsable",
+            query_builder=tareas_bloqueadas_por_responsable_query,
+            agregacion="ultimo",
+            unidad="numero",
+            alcance_proyecto=False,
+            ocultar_ceros=True,
+            direccion="bajo_es_mejor",
+            graficas_permitidas=("barras",),
+            grafica_default="barras",
+            descripcion="Foto de hoy: tareas bloqueadas de todos los proyectos, por responsable. Quien no tiene ninguna no sale.",
         ),
     )

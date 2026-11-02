@@ -586,5 +586,29 @@
   ],
   "unidad": "numero",
   "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 50,
+  "clave": "tareas_por_estado",
+  "etiqueta": "Tareas por estado",
+  "modulo": "operaciones",
+  "grupo": "crm",
+  "dimensiones": [
+   "estado"
+  ],
+  "unidad": "numero",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 51,
+  "clave": "tareas_bloqueadas_por_responsable",
+  "etiqueta": "Tareas bloqueadas por responsable",
+  "modulo": "operaciones",
+  "grupo": "crm",
+  "dimensiones": [
+   "empleado"
+  ],
+  "unidad": "numero",
+  "modo": "snapshot"
  }
 ]

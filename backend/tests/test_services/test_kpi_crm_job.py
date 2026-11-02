@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from app.jobs import tasks_kpis
 from app.kpis.registry import seed_kpi_definitions
-from app.models import KpiDefinition, KpiSnapshot
+from app.models import KpiDefinition, KpiSnapshot, Task
 from app.models.session import engine, transaction_context
 from tests.conftest import BackendTestCase
 from tests.kpi_crm_base import Siembra, sembrar_admin
@@ -30,6 +30,7 @@ class JobDeCrmTest(BackendTestCase):
         sembrar_admin()
         siembra = Siembra()
         self._cliente, self._proyecto = siembra.cliente, siembra.proyecto
+        self._usuario, self._tarea = siembra.usuario, siembra.tarea
         seed_kpi_definitions(engine)
 
     def _correr(self, claves):
@@ -87,6 +88,32 @@ class JobDeCrmTest(BackendTestCase):
             self._proyecto(inquilino, entrega=date(2026, 10, 1))
         self._correr(("proyectos_con_entrega_vencida",))
         self.assertEqual([(HOY, {}, Decimal("3"))], [tuple(f) for f in self._snapshots("proyectos_con_entrega_vencida")])
+
+    def test_tareas_por_estado_cuenta_cada_tarea_una_vez_aunque_haya_muchos_proyectos(self):
+        ana = self._usuario("Ana")
+        proyectos = [self._proyecto(self._cliente(f"Inquilino {n}")) for n in range(3)]
+        for proyecto in proyectos:
+            self._tarea(ana, proyecto, "bloqueada")
+        self._correr(("tareas_por_estado",))
+        filas = {tuple(f[1].items())[0][1]: (f[0], f[2]) for f in self._snapshots("tareas_por_estado")}
+        self.assertEqual((HOY, Decimal("3")), filas["bloqueada"], "3 tareas, no 3 x N proyectos")
+        self.assertEqual({"pendiente", "en_proceso", "bloqueada", "en_revision", "terminada", "cancelada"}, set(filas))
+
+    def test_tareas_bloqueadas_por_responsable_suma_los_proyectos_y_deja_en_cero_al_que_se_desbloquea(self):
+        ana, beto = self._usuario("Ana"), self._usuario("Beto")
+        proyectos = [self._proyecto(self._cliente(f"Inquilino {n}")) for n in range(3)]
+        for proyecto in proyectos:
+            self._tarea(ana, proyecto, "bloqueada")
+        id_beto = self._tarea(beto, proyectos[0], "bloqueada")
+        self._correr(("tareas_bloqueadas_por_responsable",))
+        por_responsable = {f[1]["id_user"]: f[2] for f in self._snapshots("tareas_bloqueadas_por_responsable")}
+        self.assertEqual({ana: Decimal("3"), beto: Decimal("1")}, por_responsable)
+        # Beto desbloquea su tarea: la corrida siguiente lo deja en 0, no en el 1 de antes.
+        with transaction_context() as db:
+            db.get(Task, id_beto).task_status = "en_proceso"
+        self._correr(("tareas_bloqueadas_por_responsable",))
+        por_responsable = {f[1]["id_user"]: f[2] for f in self._snapshots("tareas_bloqueadas_por_responsable")}
+        self.assertEqual({ana: Decimal("3"), beto: Decimal("0")}, por_responsable)
 
 
 if __name__ == "__main__":

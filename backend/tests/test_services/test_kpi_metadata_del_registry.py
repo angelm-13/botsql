@@ -68,7 +68,7 @@ class ConMetadatosDelRegistryTest(unittest.TestCase):
         # estados de la pieza (de lo normal a lo grave) y los de proyectos de la pestana CRM.
         self.assertEqual(
             ["prestamos_abiertos_por_antiguedad", "piezas_por_estado", "pedidos_del_dia", "mesas_ocupadas",
-             "proyectos_por_estado_comercial"],
+             "proyectos_por_estado_comercial", "tareas_por_estado"],
             [kpi.clave for kpi in KPI_REGISTRY if kpi.orden_categorias is not None],
         )
 

@@ -12,9 +12,13 @@ from datetime import date, datetime
 from app.kpis.modulos import crm
 from app.kpis.modulos.crm import (
     clientes_activos_query, clientes_nuevos_query, proyectos_con_entrega_vencida_query, proyectos_por_estado_comercial_query,
+    tareas_bloqueadas_por_responsable_query, tareas_por_estado_query,
 )
 from app.kpis.registry import KPI_POR_CLAVE
+from app.kpis.registry import KPI_REGISTRY
+from app.models.kpi_definition import KpiDefinition
 from app.models.session import transaction_context
+from app.routes.kpi import _con_metadatos_del_registry
 from tests.kpi_crm_base import CrmBase
 from tests.reloj import ahora_local
 
@@ -242,6 +246,160 @@ class DefinicionesDeProyectosTest(unittest.TestCase):
         self.assertEqual(("global",), kpi.dimensiones)
         self.assertEqual("bajo_es_mejor", kpi.direccion)
         self.assertEqual("numero", kpi.grafica_default)
+
+
+class TareasPorEstadoTest(CrmBase):
+    def _por_estado(self, fecha_fin=HOY, actor_project=None):
+        with ahora_local(AHORA), transaction_context() as db:
+            return [tuple(f) for f in tareas_por_estado_query(db, fecha_fin, fecha_fin, {}, actor_project)]
+
+    def test_sin_tareas_regresa_las_seis_categorias_del_catalogo_en_cero_y_en_orden(self):
+        self.assertEqual(
+            [(estado, HOY, 0) for estado in ("pendiente", "en_proceso", "bloqueada", "en_revision", "terminada", "cancelada")],
+            self._por_estado(),
+        )
+
+    def test_cuenta_las_tareas_vigentes_de_todos_los_proyectos_por_estado(self):
+        ana = self._usuario("Ana (recepcion)")
+        oficina_4 = self._proyecto(self._cliente("Inquilino 4"))
+        oficina_12 = self._proyecto(self._cliente("Inquilino 12"))
+        for proyecto, estado in (
+            (oficina_4, "pendiente"), (oficina_4, "pendiente"), (oficina_12, "pendiente"),
+            (oficina_4, "en_proceso"), (oficina_12, "bloqueada"), (oficina_12, "en_revision"),
+            (oficina_4, "terminada"), (oficina_12, "terminada"), (oficina_4, "cancelada"),
+        ):
+            self._tarea(ana, proyecto, estado)
+        self._tarea(ana, oficina_4, "pendiente", baja=datetime(2026, 5, 1))       # de baja: no cuenta
+        self.assertEqual([
+            ("pendiente", HOY, 3), ("en_proceso", HOY, 1), ("bloqueada", HOY, 1),
+            ("en_revision", HOY, 1), ("terminada", HOY, 2), ("cancelada", HOY, 1),
+        ], self._por_estado())
+
+    def test_un_estado_nulo_o_desconocido_sale_como_sin_estado_y_solo_cuando_hay(self):
+        ana = self._usuario("Ana")
+        oficina = self._proyecto(self._cliente("Inquilino 4"))
+        self._tarea(ana, oficina, None)
+        self._tarea(ana, oficina, "estatus_viejo")
+        self._tarea(ana, oficina, "terminada")
+        resultado = self._por_estado()
+        self.assertEqual(("sin_estado", HOY, 2), resultado[-1], "al final, despues de las seis del catalogo")
+        self.assertEqual(("terminada", HOY, 1), resultado[4])
+        self.assertEqual(7, len(resultado))
+
+    def test_actor_project_se_ignora(self):
+        self._tarea(self._usuario("Ana"), self._proyecto(self._cliente("Inquilino 4")), "en_proceso")
+        self.assertEqual(self._por_estado(actor_project=None), self._por_estado(actor_project=999))
+
+    def test_es_una_foto_de_hoy_un_rango_pasado_no_inventa_filas(self):
+        self._tarea(self._usuario("Ana"), self._proyecto(self._cliente("Inquilino 4")))
+        self.assertEqual([], self._por_estado(fecha_fin=date(2026, 10, 20)))
+
+
+class TareasBloqueadasPorResponsableTest(CrmBase):
+    def _bloqueadas(self, fecha_fin=HOY, actor_project=None, empleados=None):
+        filtros = {"empleados": empleados} if empleados else {}
+        with ahora_local(AHORA), transaction_context() as db:
+            return [tuple(f) for f in tareas_bloqueadas_por_responsable_query(db, fecha_fin, fecha_fin, filtros, actor_project)]
+
+    def test_cuenta_las_bloqueadas_por_responsable_sumando_todos_los_proyectos(self):
+        ana, beto = self._usuario("Ana"), self._usuario("Beto")
+        oficina_4 = self._proyecto(self._cliente("Inquilino 4"))
+        oficina_12 = self._proyecto(self._cliente("Inquilino 12"))
+        for proyecto in (oficina_4, oficina_4, oficina_12):
+            self._tarea(ana, proyecto, "bloqueada")
+        self._tarea(beto, oficina_12, "bloqueada")
+        self._tarea(beto, oficina_12, "en_proceso")                               # no bloqueada
+        self._tarea(ana, oficina_4, "bloqueada", baja=datetime(2026, 5, 1))       # de baja: no cuenta
+        self.assertEqual([(ana, HOY, 3), (beto, HOY, 1)], self._bloqueadas())
+
+    def test_un_responsable_sin_bloqueadas_sale_en_cero_para_que_el_valor_de_ayer_no_se_quede_pegado(self):
+        ana, beto = self._usuario("Ana"), self._usuario("Beto")
+        oficina = self._proyecto(self._cliente("Inquilino 4"))
+        self._tarea(ana, oficina, "terminada")
+        self._tarea(beto, oficina, "bloqueada")
+        self.assertEqual([(ana, HOY, 0), (beto, HOY, 1)], self._bloqueadas())
+
+    def test_sin_ninguna_tarea_escribe_una_fila_sin_responsable_en_cero(self):
+        self.assertEqual([(None, HOY, 0)], self._bloqueadas())
+
+    def test_filtra_por_empleados_cuando_la_api_lo_pide(self):
+        ana, beto = self._usuario("Ana"), self._usuario("Beto")
+        oficina = self._proyecto(self._cliente("Inquilino 4"))
+        self._tarea(ana, oficina, "bloqueada")
+        self._tarea(beto, oficina, "bloqueada")
+        self.assertEqual([(beto, HOY, 1)], self._bloqueadas(empleados=[beto]))
+
+    def test_actor_project_se_ignora(self):
+        self._tarea(self._usuario("Ana"), self._proyecto(self._cliente("Inquilino 4")), "bloqueada")
+        self.assertEqual(self._bloqueadas(actor_project=None), self._bloqueadas(actor_project=999))
+
+    def test_es_una_foto_de_hoy_un_rango_pasado_no_inventa_filas(self):
+        self._tarea(self._usuario("Ana"), self._proyecto(self._cliente("Inquilino 4")), "bloqueada")
+        self.assertEqual([], self._bloqueadas(fecha_fin=date(2026, 10, 20)))
+
+
+class DefinicionesDeTareasTest(unittest.TestCase):
+    def test_son_de_operaciones_con_grupo_crm_y_sin_alcance_de_proyecto(self):
+        for clave in ("tareas_por_estado", "tareas_bloqueadas_por_responsable"):
+            kpi = KPI_POR_CLAVE[clave]
+            self.assertEqual("operaciones", kpi.modulo, f"{clave}: el modulo real no cambia (licencias, permisos, job)")
+            self.assertEqual("crm", kpi.grupo, clave)
+            self.assertFalse(kpi.alcance_proyecto, clave)
+            self.assertEqual("ultimo", kpi.agregacion, f"{clave}: es una foto, sumar las noches la multiplicaria")
+            self.assertEqual("snapshot", kpi.modo, clave)
+
+    def test_la_dona_de_tareas_es_neutral_y_cubre_cada_estado_del_catalogo(self):
+        kpi = KPI_POR_CLAVE["tareas_por_estado"]
+        self.assertEqual(("estado",), kpi.dimensiones)
+        self.assertEqual("dona", kpi.grafica_default)
+        self.assertEqual("neutral", kpi.direccion)
+        categorias = {*crm.TASK_STATUSES, "sin_estado"}
+        self.assertEqual(categorias, set(kpi.colores_categoria))
+        self.assertEqual(categorias, set(kpi.etiquetas_categoria))
+        self.assertEqual(crm.TAREAS_CATEGORIAS, kpi.orden_categorias)
+        self.assertEqual("Sin estado", kpi.etiquetas_categoria["sin_estado"])
+
+    def test_las_bloqueadas_por_responsable_son_barras_donde_menos_es_mejor_y_ocultan_los_ceros(self):
+        kpi = KPI_POR_CLAVE["tareas_bloqueadas_por_responsable"]
+        self.assertEqual(("empleado",), kpi.dimensiones)
+        self.assertEqual(("barras",), kpi.graficas_permitidas)
+        self.assertEqual("bajo_es_mejor", kpi.direccion)
+        self.assertTrue(kpi.ocultar_ceros)
+        self.assertEqual("Responsable", kpi.etiqueta_dimension)
+
+
+SEIS_DE_CRM = {
+    "clientes_nuevos": "crm", "clientes_activos": "crm",
+    "proyectos_por_estado_comercial": "operaciones", "proyectos_con_entrega_vencida": "operaciones",
+    "tareas_por_estado": "operaciones", "tareas_bloqueadas_por_responsable": "operaciones",
+}
+
+
+class PestanaCrmTest(unittest.TestCase):
+    def test_los_seis_salen_en_la_pestana_crm_y_cada_uno_conserva_su_modulo_real(self):
+        con_grupo_crm = {kpi.clave: kpi.modulo for kpi in KPI_REGISTRY if kpi.grupo == "crm"}
+        self.assertEqual(SEIS_DE_CRM, con_grupo_crm)
+
+    def test_ninguno_de_los_seis_tiene_alcance_de_proyecto_y_todos_son_de_serie_de_snapshots(self):
+        for clave in SEIS_DE_CRM:
+            kpi = KPI_POR_CLAVE[clave]
+            self.assertFalse(kpi.alcance_proyecto, f"{clave}: en un coworking cada inquilino es un proyecto y recepcion los ve todos")
+            self.assertEqual("snapshot", kpi.modo, clave)
+
+    def test_la_api_entrega_el_grupo_junto_al_modulo_real(self):
+        for numero, (clave, modulo) in enumerate(SEIS_DE_CRM.items(), start=900):
+            fila = KpiDefinition(clave=clave, etiqueta=clave, modulo=modulo, dimensiones=["global"], unidad="numero")
+            fila.id_kpi_definition = numero
+            resultado = _con_metadatos_del_registry(fila)
+            self.assertEqual("crm", resultado["grupo"], clave)
+            self.assertEqual(modulo, resultado["modulo"], f"{clave}: licencias y permisos siguen leyendo el modulo")
+
+    def test_las_direcciones_pedidas(self):
+        self.assertEqual("alto_es_mejor", KPI_POR_CLAVE["clientes_nuevos"].direccion)
+        for clave in ("proyectos_por_estado_comercial", "tareas_por_estado"):
+            self.assertEqual("neutral", KPI_POR_CLAVE[clave].direccion, clave)
+        for clave in ("proyectos_con_entrega_vencida", "tareas_bloqueadas_por_responsable"):
+            self.assertEqual("bajo_es_mejor", KPI_POR_CLAVE[clave].direccion, clave)
 
 
 class DefinicionesDeClientesTest(unittest.TestCase):

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from sqlalchemy import text, update
 
-from app.models import CustomerSupplier, Department, Level, Permission, Proyect, Status, Subdepartment, User
+from app.models import CustomerSupplier, Department, Level, Permission, Proyect, Status, Subdepartment, Task, User
 from app.models.session import engine, transaction_context
 from tests.conftest import BackendTestCase
 
@@ -71,6 +71,25 @@ class Siembra:
         return self._siguiente
 
 
+    def usuario(self, nombre):
+        self._siguiente += 1
+        with transaction_context() as db:
+            db.add(User(
+                id_user=self._siguiente, created_by=1, full_name=nombre, id_permission=1, id_proyect=1,
+                id_status=1, supervisor=1, user_type="employee", username=f"crm-{self._siguiente}",
+            ))
+        return self._siguiente
+
+    def tarea(self, owner, id_proyect, estado="pendiente", baja=None):
+        self._siguiente += 1
+        with transaction_context() as db:
+            db.add(Task(
+                id_task=self._siguiente, owner=owner, dependency=0, validation=1, task_description=f"Tarea {self._siguiente}",
+                task_status=estado, id_proyect=id_proyect, created_by=1, deletion_date=baja,
+            ))
+        return self._siguiente
+
+
 class CrmBase(BackendTestCase):
     """Para pruebas que corren tambien en SQLite: cada prueba arranca de un esquema vacio, con el admin sembrado."""
 
@@ -84,3 +103,9 @@ class CrmBase(BackendTestCase):
 
     def _proyecto(self, *args, **kwargs):
         return self._siembra.proyecto(*args, **kwargs)
+
+    def _usuario(self, *args, **kwargs):
+        return self._siembra.usuario(*args, **kwargs)
+
+    def _tarea(self, *args, **kwargs):
+        return self._siembra.tarea(*args, **kwargs)
