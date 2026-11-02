@@ -38,7 +38,7 @@ import {
   muestraFiltroDeEquipos, muestraFiltroDePersonas, normalizarBusqueda, unidadInfo,
 } from "../kpi/kpiDatos.js";
 import {
-  agruparPorEfectivo, armarParametros, columnasDeWidget, rellenoEfectivo, dimensionDeKpi, estadoDeWidget, filasDeWidget, mezclaDimensiones, mezclaUnidades, motivoParaNoCombinar,
+  admiteRelleno, agruparPorEfectivo, armarParametros, columnasDeWidget, rellenoEfectivo, dimensionDeKpi, estadoDeWidget, filasDeWidget, mezclaDimensiones, mezclaUnidades, motivoParaNoCombinar,
   rangoInicialDelBorrador, tiposDeGraficaPermitidos as tiposPermitidosPorKpi, tituloConHtml, tituloDeWidget, unidadDeKpi,
   widgetDeBorrador,
 } from "../kpi/kpiParametros.js";
@@ -1899,6 +1899,9 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
     .map((etiqueta) => (etiqueta === "Empleado" ? tx("group_by_employee", etiqueta) : etiqueta === "Producto" ? tx("group_by_product", etiqueta) : etiqueta))
     .join(" / ");
   const tieneBajoStockSeleccionado = kpisSeleccionadosInfo.some((kpi) => kpi.clave === "articulos_bajo_stock");
+  // El relleno (solido o con texturas) solo aplica a barras o dona con un KPI que desglosa; sin la llave, o con basura, es solido.
+  const admiteRellenoElegido = admiteRelleno(tipoGrafica, kpisSeleccionadosInfo);
+  const rellenoElegido = panelState.relleno === "textura" ? "textura" : "solido";
 
   // Que tipos de grafica admite lo elegido: la interseccion de las
   // `graficas_permitidas` de cada KPI (las declara el registry del backend).
@@ -2233,6 +2236,28 @@ export function KpiWidgetPanel({ panelState, onChangePanelState, kpiCatalog, use
                 }}
               />
             </div>
+
+            {/* Como se rellenan las marcas: solo barras o dona con un KPI que desglosa (ver admiteRelleno). La vista previa de la derecha
+                ya lee el borrador, asi que el cambio se ve al momento. */}
+            {admiteRellenoElegido && (
+              <div className="kpi-picker-section">
+                <span>{tx("fill", "Relleno")}</span>
+                <div className="kpi-editor-chips" role="group" aria-label={tx("fill", "Relleno")}>
+                  {[["solido", tx("fill_solid", "Sólido")], ["textura", tx("fill_texture", "Con texturas")]].map(([valor, etiqueta]) => (
+                    <button
+                      type="button"
+                      key={valor}
+                      className={`kpi-editor-chip ${rellenoElegido === valor ? "activo" : ""}`}
+                      aria-pressed={rellenoElegido === valor}
+                      onClick={() => onChangePanelState({ relleno: valor })}
+                    >
+                      {etiqueta}
+                    </button>
+                  ))}
+                </div>
+                <p className="kpi-editor-ayuda">{tx("fill_help", "Las texturas agregan un patrón sobre cada color: ayudan al imprimir en blanco y negro o cuando dos colores se parecen.")}</p>
+              </div>
+            )}
 
       </>
     ),

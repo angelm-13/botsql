@@ -67,9 +67,9 @@ export function pintarSelector(props) {
 /** El panel "Agregar grafico" abierto en su primer paso («Que medir»), con su selector de KPI cableado como en la pantalla
  * real: sirve para comprobar lo que el Dashboard le pasa al selector (iconos y nombres de pestana, traducciones).
  * `traducir` (opcional) reemplaza al `tx` de prueba, que devuelve el texto de respaldo. */
-export function pintarPanel({ kpiCatalog, idsKpiSeleccionados = [], traducir } = {}) {
+export function pintarPanel({ kpiCatalog, idsKpiSeleccionados = [], traducir, tipoGrafica = "barras", relleno } = {}) {
   const panelState = {
-    editingWidgetId: null, colapsado: false, paso: 0, idsKpiSeleccionados, tipoGrafica: "barras",
+    editingWidgetId: null, colapsado: false, paso: 0, idsKpiSeleccionados, tipoGrafica, ...(relleno ? { relleno } : {}),
     ...rangoInicialDelBorrador(), comparar: false, desfaseComparacion: null,
     fechaInicioB: "", fechaFinB: "", empleadosSeleccionados: [], coloresKpi: {},
     agruparPor: "entidad", umbralBajoStock: "", filas: 1,

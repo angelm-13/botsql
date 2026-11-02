@@ -458,3 +458,32 @@ test("sin KPI elegido el tipo de grafico no lleva color de modulo (lo manda el s
   assert.ok(botones.length > 0);
   for (const boton of botones) assert.ok(!boton.includes("--tinte"));
 });
+
+// --- relleno (solido | con texturas) en el paso "Que medir" ---------------------------------------------------------------
+const seccionDeRelleno = (html) => (html.match(/<span>Relleno<\/span>.*?<\/p>/s) || [null])[0];
+const chip = (seccion, etiqueta) => (seccion.match(new RegExp(`<button[^>]*>${etiqueta}</button>`)) || [""])[0];
+
+test("el selector de relleno sale con barras o dona y un KPI que desglosa: Solido | Con texturas, con Solido activo por omision", () => {
+  for (const tipoGrafica of ["barras", "dona"]) {
+    const seccion = seccionDeRelleno(pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: ["1"], tipoGrafica }));
+    assert.ok(seccion, `${tipoGrafica}: falta la seccion Relleno`);
+    assert.match(chip(seccion, "Sólido"), /aria-pressed="true"/);
+    assert.match(chip(seccion, "Con texturas"), /aria-pressed="false"/);
+    assert.match(seccion, /patrón sobre cada color/, "con su ayuda");
+  }
+});
+
+test("con relleno textura en el borrador, 'Con texturas' es el activo", () => {
+  const seccion = seccionDeRelleno(pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: ["1"], relleno: "textura" }));
+  assert.match(chip(seccion, "Con texturas"), /aria-pressed="true"/);
+  assert.match(chip(seccion, "Sólido"), /aria-pressed="false"/);
+});
+
+test("el selector de relleno NO sale con linea, area, numero o tabla, con un KPI global, con varios KPIs ni sin KPI", () => {
+  for (const tipoGrafica of ["linea", "area", "numero", "tabla"]) {
+    assert.equal(seccionDeRelleno(pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: ["1"], tipoGrafica })), null, tipoGrafica);
+  }
+  assert.equal(seccionDeRelleno(pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: ["5"], tipoGrafica: "barras" })), null, "KPI global");
+  assert.equal(seccionDeRelleno(pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: ["1", "2"], tipoGrafica: "barras" })), null, "varios KPIs");
+  assert.equal(seccionDeRelleno(pintarPanel({ kpiCatalog: CATALOGO, idsKpiSeleccionados: [], tipoGrafica: "barras" })), null, "sin KPI");
+});
