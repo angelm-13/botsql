@@ -538,5 +538,29 @@
   ],
   "unidad": "numero",
   "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 46,
+  "clave": "clientes_nuevos",
+  "etiqueta": "Clientes nuevos",
+  "modulo": "crm",
+  "grupo": "crm",
+  "dimensiones": [
+   "global"
+  ],
+  "unidad": "numero",
+  "modo": "snapshot"
+ },
+ {
+  "id_kpi_definition": 47,
+  "clave": "clientes_activos",
+  "etiqueta": "Clientes activos",
+  "modulo": "crm",
+  "grupo": "crm",
+  "dimensiones": [
+   "global"
+  ],
+  "unidad": "numero",
+  "modo": "snapshot"
  }
 ]

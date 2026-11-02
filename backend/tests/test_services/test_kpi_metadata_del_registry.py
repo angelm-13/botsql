@@ -261,8 +261,9 @@ class GrupoDelSelectorTest(unittest.TestCase):
             self.assertEqual("asistencias", kpi.grupo, clave)
             self.assertEqual("operaciones", kpi.modulo, f"{clave}: el modulo real no cambia (licencias, permisos, job)")
 
-    def test_ningun_otro_kpi_declara_grupo(self):
-        self.assertEqual(set(CHECADAS), {kpi.clave for kpi in KPI_REGISTRY if kpi.grupo is not None})
+    def test_asistencias_son_solo_los_de_checadas_y_no_hay_otro_grupo_que_crm(self):
+        self.assertEqual(set(CHECADAS), {kpi.clave for kpi in KPI_REGISTRY if kpi.grupo == "asistencias"})
+        self.assertEqual({"asistencias", "crm"}, {kpi.grupo for kpi in KPI_REGISTRY if kpi.grupo is not None})
 
     def test_la_api_entrega_el_grupo_junto_al_modulo_real(self):
         agrupado = KpiDefinition(clave="checadas_en_turno_por_equipo", etiqueta="x", modulo="operaciones",

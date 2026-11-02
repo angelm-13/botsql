@@ -2113,8 +2113,9 @@ KPI_REGISTRY = (
 # definida `KpiDefinition`, porque cada archivo la pide dentro de `definiciones()`.
 from app.kpis.modulos import checadas as _checadas  # noqa: E402
 from app.kpis.modulos import restaurante as _restaurante  # noqa: E402
+from app.kpis.modulos import crm as _crm  # noqa: E402
 
-KPI_REGISTRY = KPI_REGISTRY + _restaurante.definiciones() + _checadas.definiciones()
+KPI_REGISTRY = KPI_REGISTRY + _restaurante.definiciones() + _checadas.definiciones() + _crm.definiciones()
 
 
 # `id_kpi_definition` en `kpi_snapshot`/las rutas es un entero de BD -- este

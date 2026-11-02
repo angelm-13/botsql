@@ -2,7 +2,7 @@
 // cada pestaña de módulo trae TODOS los KPIs de su módulo (los sin desglose, al final, como
 // "combinables") y "Variables" es la vista transversal de todos los sin desglose.
 //
-// El catálogo es una copia de los 45 KPIs del registry (fixtures/catalogo_del_registry.json:
+// El catálogo es una copia de los 47 KPIs del registry (fixtures/catalogo_del_registry.json:
 // clave, módulo, dimensiones y unidad tal como los siembra `kpi_definition`). Si cambia el
 // registry, se actualiza esa copia.
 import assert from "node:assert/strict";
@@ -32,9 +32,9 @@ const SIN_DESGLOSE_DE_RESTAURANTE = [
   "ventas_restaurante", "ticket_promedio", "propinas_restaurante", "propina_pct_de_venta", "tiempo_de_entrega", "cuentas_sin_cobrar",
 ];
 
-test("el catálogo de la prueba son los 45 KPIs del registry: 9 sin desglose, 6 de ellos de restaurante", () => {
-  assert.equal(CATALOGO.length, 45);
-  assert.equal(CATALOGO.filter(esVariable).length, 9);
+test("el catálogo de la prueba son los 47 KPIs del registry: 11 sin desglose, 6 de ellos de restaurante", () => {
+  assert.equal(CATALOGO.length, 47);
+  assert.equal(CATALOGO.filter(esVariable).length, 11);
   assert.deepEqual(claves(CATALOGO.filter((k) => k.modulo === "restaurante" && esVariable(k))).sort(), [...SIN_DESGLOSE_DE_RESTAURANTE].sort());
 });
 
@@ -51,8 +51,8 @@ test("los siete KPIs de checadas salen en la pestaña Asistencias, ya no en Oper
     assert.equal(pestanaDeKpi(kpi), "asistencias");
   }
   assert.deepEqual(claves(grupoDe(grupos, "variables").kpis).filter((clave) => CHECADAS.includes(clave)), [], "ninguno es sin desglose");
-  assert.equal(CATALOGO.filter(esVariable).length, 9, "las Variables siguen siendo las mismas 9");
-  assert.equal(grupoDe(grupos, "variables").kpis.length, 9, "y su pestaña no cambia");
+  assert.equal(CATALOGO.filter(esVariable).length, 11, "las Variables no cambian por agrupar checadas");
+  assert.equal(grupoDe(grupos, "variables").kpis.length, 11, "y su pestaña no cambia");
 });
 
 test("cada KPI está en SU pestaña (su grupo si lo tiene, si no su módulo), con todos los de esa pestaña (también los sin desglose)", () => {
@@ -64,7 +64,7 @@ test("cada KPI está en SU pestaña (su grupo si lo tiene, si no su módulo), co
     assert.ok(ids(grupo.kpis).includes(kpi.id_kpi_definition), `${kpi.clave} no está en ${pestana}`);
   }
   const totales = Object.fromEntries(grupos.filter((g) => !g.esVariables).map((g) => [g.clave, g.kpis.length]));
-  assert.deepEqual(totales, { operaciones: 12, asistencias: 7, inventario: 4, facturacion: 4, laboratorio: 3, documentos: 1, restaurante: 14 });
+  assert.deepEqual(totales, { operaciones: 12, crm: 2, asistencias: 7, inventario: 4, facturacion: 4, laboratorio: 3, documentos: 1, restaurante: 14 });
   assert.deepEqual(grupos.map((g) => g.clave), [...ORDEN_PRESENTE, "variables"], "orden fijo y Variables al final");
 });
 
@@ -81,12 +81,12 @@ test("los sin desglose van al final de su pestaña, como combinables; los de res
   assert.deepEqual(grupoDe(agruparKpis(CATALOGO), "laboratorio").combinables, []);
 });
 
-test("«Variables» es la vista transversal: los 9 sin desglose de todos los módulos, cada uno con su módulo", () => {
+test("«Variables» es la vista transversal: los 11 sin desglose de todos los módulos, cada uno con su módulo", () => {
   const variables = grupoDe(agruparKpis(CATALOGO), "variables");
   assert.equal(variables.esVariables, true);
-  assert.equal(variables.kpis.length, 9);
+  assert.equal(variables.kpis.length, 11);
   assert.ok(variables.kpis.every((k) => esVariable(k) && k.modulo), "todos son sin desglose y traen su módulo (la etiqueta de la tarjeta)");
-  assert.deepEqual([...new Set(variables.kpis.map((k) => k.modulo))].sort(), ["facturacion", "operaciones", "restaurante"]);
+  assert.deepEqual([...new Set(variables.kpis.map((k) => k.modulo))].sort(), ["crm", "facturacion", "operaciones", "restaurante"]);
   assert.equal(variables.kpis.filter((k) => k.modulo === "restaurante").length, 6);
 });
 
@@ -120,7 +120,7 @@ test("un KPI que sale en dos pestañas es el mismo: mismo id, mismo objeto y mis
 test("los conteos de las pestañas son el total del módulo (con sus combinables) y Variables cuenta los sin desglose", () => {
   const resumen = resumenDeModulos(CATALOGO, "", []);
   assert.deepEqual(resumen.map((m) => [m.clave, m.total]), [
-    ["operaciones", 12], ["asistencias", 7], ["inventario", 4], ["facturacion", 4], ["laboratorio", 3], ["documentos", 1], ["restaurante", 14], ["variables", 9],
+    ["operaciones", 12], ["crm", 2], ["asistencias", 7], ["inventario", 4], ["facturacion", 4], ["laboratorio", 3], ["documentos", 1], ["restaurante", 14], ["variables", 11],
   ]);
   // Elegir un sin desglose cuenta en su módulo y en Variables (la selección es la misma).
   const ventas = CATALOGO.find((k) => k.clave === "ventas_restaurante");
@@ -137,7 +137,7 @@ test("buscar un sin desglose lo encuentra en su módulo y en Variables; buscar u
   assert.deepEqual(conDesglose.map((g) => g.clave), ["restaurante"]);
   const resumen = Object.fromEntries(resumenDeModulos(CATALOGO, "ticket promedio", []).map((m) => [m.clave, [m.total, m.coincidencias]]));
   assert.deepEqual(resumen.restaurante, [14, 1], "el total no cambia al buscar; las coincidencias sí");
-  assert.deepEqual(resumen.variables, [9, 1]);
+  assert.deepEqual(resumen.variables, [11, 1]);
 });
 
 test("abre en el módulo del primer KPI elegido, también si es un sin desglose (ahí están todos sus KPIs)", () => {
@@ -162,7 +162,7 @@ test("un módulo nuevo (logística, RH, POS) cae solo en su pestaña, sin tocar 
   assert.equal(grupoDe(grupos, "pos").conDesglose.length, 0);
   const variables = grupoDe(grupos, "variables");
   assert.deepEqual(ids(variables.kpis.filter((k) => k.modulo === "pos" || k.modulo === "rh")), [102, 103], "y aparecen en Variables con su módulo");
-  assert.equal(variables.kpis.length, 11);
+  assert.equal(variables.kpis.length, 13);
   assert.deepEqual(resumenDeModulos([...CATALOGO, ...nuevos], "", []).map((m) => m.clave).slice(-4), ["logistica", "pos", "rh", "variables"]);
 });
 
@@ -230,7 +230,7 @@ test("un rol con solo UNO o DOS de los siete ve solo la pestaña Asistencias, co
 
 test("un rol sin ninguno de los siete no ve la pestaña Asistencias", () => {
   const sinChecadas = CATALOGO.filter((k) => !CHECADAS.includes(k.clave));
-  assert.equal(sinChecadas.length, 38);
+  assert.equal(sinChecadas.length, 40);
   assert.equal(agruparKpis(sinChecadas).some((g) => g.clave === "asistencias"), false);
   assert.equal(resumenDeModulos(sinChecadas, "", []).some((m) => m.clave === "asistencias"), false);
   assert.equal(grupoDe(agruparKpis(sinChecadas), "operaciones").kpis.length, 12);
