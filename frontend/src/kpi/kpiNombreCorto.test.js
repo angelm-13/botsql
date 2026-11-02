@@ -127,3 +127,33 @@ test("sin distinguir acentos para detectar la colision", () => {
   assert.equal(etiquetas["Jose Luis Gomez Vega"], "Jose Luis Gomez V.");
   assert.equal(etiquetas["José Luis Gómez Ríos"], "José Luis Gómez R.");
 });
+
+test("una aclaracion entre parentesis al final no cuenta como nombre: PRUEBA Persona 10 (cambia de equipo) ya no sale 'PRUEBA (cambia'", () => {
+  assert.equal(nombreCorto("PRUEBA Persona 10 (cambia de equipo)"), "PRUEBA Persona 10");
+  assert.equal(nombreCorto("PRUEBA Persona 11 (sin equipo)"), "PRUEBA Persona 11");
+  assert.equal(nombreCorto("PRUEBA Persona 12 (dos equipos)"), "PRUEBA Persona 12");
+  assert.equal(partesDeNombre("PRUEBA Persona 12 (dos equipos)").acortado, false);
+  // Sin parentesis, o con el parentesis en medio, la regla de siempre.
+  assert.equal(nombreCorto("PRUEBA Persona 08"), "PRUEBA Persona 08");
+  assert.equal(nombreCorto("Carlos Alberto Mendoza Ruiz (suplente)"), "Carlos Mendoza");
+  assert.equal(nombreCorto("Ana (Anita) Pérez"), "Ana (Anita) Pérez");
+  // Un nombre que es solo un parentesis no queda vacio.
+  assert.equal(nombreCorto("(sin nombre)"), "(sin nombre)");
+});
+
+test("etiquetasDePersonas: los nombres con aclaracion entre parentesis no pierden el nombre en el eje", () => {
+  const nombres = ["PRUEBA Persona 09", "PRUEBA Persona 10 (cambia de equipo)", "PRUEBA Persona 11 (sin equipo)", "PRUEBA Persona 12 (dos equipos)"];
+  const etiquetas = etiquetasDePersonas(nombres);
+  assert.deepEqual(Object.values(etiquetas), ["PRUEBA Persona 09", "PRUEBA Persona 10", "PRUEBA Persona 11", "PRUEBA Persona 12"]);
+  // Dos personas que solo se distinguen por la aclaracion no se pueden separar con el nombre: conservan el nombre completo.
+  const iguales = etiquetasDePersonas(["PRUEBA Persona 11 (sin equipo)", "PRUEBA Persona 11 (dos equipos)"]);
+  assert.deepEqual(Object.values(iguales).sort(), ["PRUEBA Persona 11 (dos equipos)", "PRUEBA Persona 11 (sin equipo)"]);
+});
+
+test("la inicial de una unidad numerica no deja un punto sobrante: 'Empleado incidencias 1', no 'Empleado incidencias 1.'", () => {
+  const etiquetas = etiquetasDePersonas(["Empleado demo incidencias 1", "Empleado demo incidencias 2", "Empleado demo incidencias 3"]);
+  assert.deepEqual(Object.values(etiquetas), ["Empleado incidencias 1", "Empleado incidencias 2", "Empleado incidencias 3"]);
+  // Con letras, la inicial lleva su punto como siempre.
+  const letras = etiquetasDePersonas(["Luis Fernando Torres Vega", "Luis Fernando Torres Ríos"]);
+  assert.deepEqual(Object.values(letras), ["Luis Fernando Torres V.", "Luis Fernando Torres R."]);
+});

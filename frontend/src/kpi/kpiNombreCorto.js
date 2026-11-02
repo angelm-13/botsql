@@ -27,6 +27,15 @@ const COMPUESTOS_NORMALES = new Set(NOMBRES_COMPUESTOS.map(sinAcentos));
 
 const palabrasDe = (nombre) => String(nombre ?? "").trim().split(/\s+/).filter(Boolean);
 
+// Una aclaracion entre parentesis al final ("PRUEBA Persona 11 (sin equipo)") no es parte del nombre: sus palabras no cuentan
+// como unidades y el eje no la rotula. Si el nombre ENTERO es un parentesis se deja como esta, para no quedar vacio.
+const PARENTESIS_FINAL = /\s*\([^)]*\)\s*$/;
+const sinParentesisFinal = (nombre) => {
+  const texto = String(nombre ?? "").trim();
+  const sinAclaracion = texto.replace(PARENTESIS_FINAL, "");
+  return sinAclaracion ? sinAclaracion : texto;
+};
+
 /** Las unidades del nombre: particulas pegadas a lo que sigue y «y» uniendo a los vecinos. */
 export function unidadesDeNombre(nombre) {
   const palabras = palabrasDe(nombre);
@@ -62,7 +71,7 @@ export function unidadesDeNombre(nombre) {
 
 /** Lo que se ve y lo que se omitio: `{ corto, primerNombre, apellido, segundoNombre, apellidoMaterno, acortado }`. */
 export function partesDeNombre(nombre) {
-  const completo = palabrasDe(nombre).join(" ");
+  const completo = palabrasDe(sinParentesisFinal(nombre)).join(" ");
   const unidades = unidadesDeNombre(completo);
   if (unidades.length <= 3) {
     return { corto: completo, primerNombre: null, apellido: null, segundoNombre: null, apellidoMaterno: null, acortado: false };
@@ -85,9 +94,13 @@ export function nombreCorto(nombre) {
   return partesDeNombre(nombre).corto;
 }
 
+// La inicial de una unidad con su punto ("Ruiz" -> "R."). Una unidad que empieza con numero ("1") no tiene inicial: se deja
+// completa, porque "1." seria un punto sobrante.
 const inicial = (unidad) => {
-  const letra = Array.from(String(unidad ?? "").replace(/^(?:(?:de|del|la|las|los|san|santa|da|das|do|dos|van|von|der|di|le)\s+)+/i, ""))[0];
-  return letra ? `${letra.toLocaleUpperCase("es")}.` : "";
+  const sinParticulas = String(unidad ?? "").replace(/^(?:(?:de|del|la|las|los|san|santa|da|das|do|dos|van|von|der|di|le)\s+)+/i, "");
+  const letra = Array.from(sinParticulas)[0];
+  if (!letra) return "";
+  return /\p{L}/u.test(letra) ? `${letra.toLocaleUpperCase("es")}.` : sinParticulas;
 };
 
 // De lo mas discreto a lo mas completo: cada nivel agrega un dato extra SOLO a quien se confunde con otra persona.
