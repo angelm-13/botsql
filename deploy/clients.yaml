@@ -56,3 +56,8 @@ clients:
     # Un solo origen (halcones.torredigital.mx con /api) -- mismo patron que
     # nissi/prod.
     api_base_url: ""
+  - name: sumac
+    env: prod
+    # Un solo origen (sumac.torredigital.mx con /api) -- mismo patron que
+    # halcones/prod.
+    api_base_url: ""
