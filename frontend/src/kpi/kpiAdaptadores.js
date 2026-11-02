@@ -11,7 +11,7 @@ import {
   colorDeCategoriaEstado, colorDePersona, colorEfectivoDeKpi, esKpiPorPersona, formatConUnidad, hayColoresRepetidos,
   kpiSeriesLabel, ordenarPorCategorias, unidadInfo,
 } from "./kpiDatos.js";
-import { anchoDelEje, formatoDeEje, unidadDeLaGrafica } from "./kpiAccesibilidad.js";
+import { anchoDelEje, ejeSoloEnteros, formatoDeEje, unidadDeLaGrafica } from "./kpiAccesibilidad.js";
 import { etiquetasDePersonas } from "./kpiNombreCorto.js";
 
 // Opacidad de la serie del periodo de comparacion (B): mismo color que la A,
@@ -106,7 +106,7 @@ export function propsSeries({
     return {
       datos, series, campoEtiqueta: "name", colorPorFila, porPeriodo: Boolean(agruparPorPeriodo),
       etiquetasCortas: etiquetasCortasDePersonas(datos.map((fila) => fila.name), !agruparPorPeriodo && esKpiPorPersona(kpiInfo)),
-      conPatrones, formatearEje: formatoDeEje(unidad, formatNumber), anchoEje: anchoDelEje(unidad),
+      conPatrones, formatearEje: formatoDeEje(unidad, formatNumber), anchoEje: anchoDelEje(unidad), soloEnteros: ejeSoloEnteros(unidad),
     };
   }
 
@@ -137,7 +137,7 @@ export function propsSeries({
   return {
     datos, series, campoEtiqueta: "name", colorPorFila: null, porPeriodo: Boolean(agruparPorPeriodo),
     etiquetasCortas: etiquetasCortasDePersonas(datos.map((fila) => fila.name), !agruparPorPeriodo && kpiInfos.every(esKpiPorPersona)),
-    conPatrones: false, formatearEje: formatoDeEje(unidadComun, formatNumber), anchoEje: anchoDelEje(unidadComun),
+    conPatrones: false, formatearEje: formatoDeEje(unidadComun, formatNumber), anchoEje: anchoDelEje(unidadComun), soloEnteros: ejeSoloEnteros(unidadComun),
   };
 }
 

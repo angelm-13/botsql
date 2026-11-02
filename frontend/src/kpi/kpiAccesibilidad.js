@@ -21,6 +21,16 @@ export function unidadDeLaGrafica(kpiInfos) {
   return unidades.size === 1 ? [...unidades][0] : null;
 }
 
+// Unidades que SIEMPRE son conteos (piezas, registros): su eje no tiene marcas con decimales ("1,5 tareas" no existe). La unidad
+// "numero" es la que el selector rotula "Cantidad". Porcentajes, pesos, dias y minutos pueden traer decimales: no entran.
+const UNIDADES_DE_CONTEO = ["numero", "piezas"];
+
+// Si el eje numerico de una grafica debe marcar solo enteros: la unidad compartida (`unidadDeLaGrafica`) es un conteo. Varias
+// unidades distintas en un mismo eje (unidad `null`) no se fuerza.
+export function ejeSoloEnteros(unidad) {
+  return UNIDADES_DE_CONTEO.includes(unidad);
+}
+
 // Formato de las marcas del eje Y con la unidad ("50%", "$1,200", "30 min"), o null cuando no hay unidad que mostrar
 // ("numero", o varias unidades en un mismo eje).
 export function formatoDeEje(unidad, formatNumber) {

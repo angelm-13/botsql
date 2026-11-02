@@ -11,7 +11,7 @@ const EJE = { fontSize: 11, fill: "var(--kpi-texto-suave)" };
  * `punteada` (la del periodo de comparacion) se dibuja con trazo discontinuo
  * y, en area, con menos relleno: el color nunca es la unica senal. */
 export default function LineaAreaWidget({
-  tipo, datos, series, campoEtiqueta, animar, formatearEje, anchoEje, descripcion, etiquetasCortas,
+  tipo, datos, series, campoEtiqueta, animar, formatearEje, anchoEje, descripcion, etiquetasCortas, soloEnteros,
 }) {
   const Grafica = tipo === "area" ? AreaChart : LineChart;
   return (
@@ -23,7 +23,10 @@ export default function LineaAreaWidget({
           dataKey={campoEtiqueta} tick={EJE} axisLine={false} tickLine={false}
           tickFormatter={etiquetasCortas ? (valor) => etiquetasCortas[valor] ?? valor : undefined}
         />
-        <YAxis tick={EJE} axisLine={false} tickLine={false} tickFormatter={formatearEje || undefined} width={anchoEje} />
+        <YAxis
+          tick={EJE} axisLine={false} tickLine={false} tickFormatter={formatearEje || undefined} width={anchoEje}
+          {...(soloEnteros ? { allowDecimals: false, domain: [0, "dataMax"] } : {})}
+        />
         <Tooltip content={<TooltipRico series={series} />} />
         {series.length > 1 && <Legend wrapperStyle={{ fontSize: 12 }} />}
         {series.map((serie) => (tipo === "area" ? (
@@ -78,6 +81,8 @@ LineaAreaWidget.propTypes = {
   descripcion: PropTypes.string,
   // nombre completo -> nombre corto, solo para rotular el eje (grafica por persona).
   etiquetasCortas: PropTypes.objectOf(PropTypes.string),
+  // El eje Y marca solo enteros (la unidad es un conteo).
+  soloEnteros: PropTypes.bool,
 };
 
-LineaAreaWidget.defaultProps = { animar: true, formatearEje: null, anchoEje: 60, descripcion: "", etiquetasCortas: null };
+LineaAreaWidget.defaultProps = { animar: true, formatearEje: null, anchoEje: 60, descripcion: "", etiquetasCortas: null, soloEnteros: false };

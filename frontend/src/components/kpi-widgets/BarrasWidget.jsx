@@ -44,7 +44,7 @@ TooltipRico.defaultProps = { active: false, payload: null, label: "", series: []
  * resaltar la tabla de material prestado (interaccion entre widgets). */
 export default function BarrasWidget({
   datos, series, campoEtiqueta, animar, onBarClick, barraResaltada, colorPorFila,
-  conPatrones, formatearEje, anchoEje, descripcion, porPeriodo, textoRecorte, etiquetasCortas,
+  conPatrones, formatearEje, anchoEje, descripcion, porPeriodo, textoRecorte, etiquetasCortas, soloEnteros,
 }) {
   const idBase = useId().replace(/:/g, "");
   // Ancho real de la grafica: las etiquetas solo se inclinan cuando no caben rectas (ver kpiEtiquetasEje).
@@ -64,6 +64,8 @@ export default function BarrasWidget({
   // barras "crecieran" de nuevo a cada clic.
   const [yaAnimo, setYaAnimo] = useState(false);
   const marcaDeEje = { fontSize: 11, fill: "var(--kpi-texto-suave)" };
+  // Un conteo no tiene marcas con decimales: el eje numerico solo marca enteros y arranca en 0.
+  const ejeNumerico = soloEnteros ? { allowDecimals: false, domain: [0, "dataMax"] } : {};
   const recortar = (valor) => recortarEtiqueta(rotulo(valor), diseno.maxCaracteres);
   return (
     <>
@@ -81,7 +83,7 @@ export default function BarrasWidget({
             <CartesianGrid strokeDasharray="2 4" stroke="var(--kpi-grid)" vertical={horizontal} horizontal={!horizontal} />
             {horizontal ? (
               <>
-                <XAxis type="number" tick={marcaDeEje} axisLine={false} tickLine={false} tickFormatter={formatearEje || undefined} />
+                <XAxis type="number" tick={marcaDeEje} axisLine={false} tickLine={false} tickFormatter={formatearEje || undefined} {...ejeNumerico} />
                 <YAxis
                   type="category" dataKey={campoEtiqueta} width={diseno.anchoEjeCategorias} interval={0}
                   tick={marcaDeEje} axisLine={false} tickLine={false} tickFormatter={recortar}
@@ -94,7 +96,7 @@ export default function BarrasWidget({
                   interval={diseno.todasLasEtiquetas ? 0 : undefined} height={diseno.altoEjeX}
                   angle={diseno.inclinar ? ANGULO_ETIQUETA : 0} textAnchor={diseno.inclinar ? "end" : "middle"}
                 />
-                <YAxis tick={marcaDeEje} axisLine={false} tickLine={false} tickFormatter={formatearEje || undefined} width={anchoEje} />
+                <YAxis tick={marcaDeEje} axisLine={false} tickLine={false} tickFormatter={formatearEje || undefined} width={anchoEje} {...ejeNumerico} />
               </>
             )}
             <Tooltip content={<TooltipRico series={series} />} cursor={{ fill: "var(--kpi-hover-barra)" }} />
@@ -158,10 +160,12 @@ BarrasWidget.propTypes = {
   textoRecorte: PropTypes.func,
   // nombre completo -> nombre corto, solo para rotular el eje (grafica por persona).
   etiquetasCortas: PropTypes.objectOf(PropTypes.string),
+  // El eje numerico marca solo enteros (la unidad es un conteo).
+  soloEnteros: PropTypes.bool,
 };
 
 BarrasWidget.defaultProps = {
   animar: true, onBarClick: null, barraResaltada: null, colorPorFila: null,
-  conPatrones: false, formatearEje: null, anchoEje: 60, descripcion: "", porPeriodo: false, etiquetasCortas: null,
+  conPatrones: false, formatearEje: null, anchoEje: 60, descripcion: "", porPeriodo: false, etiquetasCortas: null, soloEnteros: false,
   textoRecorte: (mostradas, total) => `Mostrando ${mostradas} de ${total}`,
 };
