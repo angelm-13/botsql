@@ -242,14 +242,35 @@ class TestMatrizDePermisos(unittest.TestCase):
         nombre: al integrar el punto de venta esta prueba fallo porque eximia al
         restaurante a mano, y el criterio real no era el nombre sino la
         naturaleza del modulo.
+
+        La otra excepcion es una capacidad de autoservicio: se ejerce sobre lo
+        propio -mis vacaciones-, no sobre las tablas del modulo.
         """
         for rol in registry.ROLES:
             for clave in rol.capacidades:
-                modulo = registry.MODULO_POR_CLAVE[registry.CAPACIDAD_POR_CLAVE[clave].modulo]
-                if not modulo.entidades:
+                capacidad = registry.CAPACIDAD_POR_CLAVE[clave]
+                modulo = registry.MODULO_POR_CLAVE[capacidad.modulo]
+                if not modulo.entidades or capacidad.autoservicio:
                     continue
                 with self.subTest(rol=rol.nombre, capacidad=clave):
                     self.assertIn(modulo.clave, rol.modulos)
+
+    def test_my_leaves_is_a_self_service_capability_every_role_carries(self):
+        """Antes se mostraba fija a todo usuario; ahora la gobierna el Gestor.
+
+        Por omision la llevan todos los roles -era lo que ya veian- y viaja con
+        la licencia de RH, aunque el rol no tenga el modulo.
+        """
+        capacidad = registry.CAPACIDAD_POR_CLAVE["my_leaves"]
+        self.assertTrue(capacidad.autoservicio)
+        self.assertEqual("rh", capacidad.modulo)
+        self.assertEqual("sidebar", capacidad.menu)
+        for rol in registry.ROLES:
+            with self.subTest(rol=rol.nombre):
+                self.assertIn("my_leaves", rol.capacidades)
+        filas = [f for f in registry.filas_de_permisos() if f[1] == "my_leaves"]
+        self.assertEqual({"rh"}, {f[11] for f in filas})
+        self.assertEqual({"Recursos humanos"}, {f[7] for f in filas})
 
     def test_a_capability_only_module_has_no_core_entities(self):
         """Lo que hace valida la excepcion de arriba."""

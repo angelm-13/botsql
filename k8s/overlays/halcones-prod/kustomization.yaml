@@ -1,8 +1,8 @@
 # Overlay de halcones-prod (ERP, instalación limpia). Dominio: halcones.torredigital.mx
 # (A -> 168.231.67.33, verificado con nslookup 2026-10-30).
 #
-# Tags: 0197e06 (build en verde que ya incluye halcones/prod en deploy/clients.yaml;
-# el frontend lleva 0197e06-halcones-prod).
+# Tags: 037bc25 (build en verde que ya incluye halcones/prod en deploy/clients.yaml;
+# el frontend lleva 037bc25-halcones-prod).
 #
 # UN SOLO origen: front + API bajo /api en el mismo dominio; por eso el Ingress
 # del base se elimina (primer parche) y se usa ingress-single-origin.yaml.
@@ -21,16 +21,16 @@ namespace: halcones-prod
 images:
   - name: DB_INIT_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-db-init
-    newTag: "0197e06"
+    newTag: "037bc25"
   - name: BACKEND_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-backend
-    newTag: "0197e06"
+    newTag: "037bc25"
   - name: WORKER_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-worker
-    newTag: "0197e06"
+    newTag: "037bc25"
   - name: FRONTEND_IMAGE_PLACEHOLDER
     newName: ghcr.io/tyakxa/tyakxa-tny-frontend
-    newTag: 0197e06-halcones-prod
+    newTag: 037bc25-halcones-prod
 
 resources:
   - ../../base

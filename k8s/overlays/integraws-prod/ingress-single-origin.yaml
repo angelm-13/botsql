@@ -1,0 +1,58 @@
+# Ingress de integraws-prod: UN SOLO origen en integraws.torredigital.mx
+# (front en /, API bajo /api), mismo patron que comala-prod y adser-prod.
+# Confirma con Alan que el DNS del dominio ya apunta a master1.
+#
+# Son DOS objetos Ingress a proposito: nginx.ingress.kubernetes.io/rewrite-target
+# aplica a TODO el Ingress, asi que /api necesita su propio objeto separado de
+# /auth, /graphql y /.
+#
+# El certificado ya usa letsencrypt-prod (valido para el navegador).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: integraws-prod-app
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod # emisor de produccion
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: ["integraws.torredigital.mx"]
+      secretName: integraws-prod-tls
+  rules:
+    - host: integraws.torredigital.mx
+      http:
+        paths:
+          - path: /auth
+            pathType: Prefix
+            backend: { service: { name: backend, port: { number: 5001 } } }
+          - path: /graphql
+            pathType: Prefix
+            backend: { service: { name: backend, port: { number: 5001 } } }
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: frontend, port: { number: 80 } } }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: integraws-prod-api-prefix
+  annotations:
+    # Sin cert-manager.io/cluster-issuer aquí a propósito: el Ingress de
+    # arriba ya pide el certificado para este dominio; pedirlo dos veces
+    # duplicaría la solicitud a Let's Encrypt.
+    # Subidas de documentos hasta 12 MB (default de nginx: 1 MB); la app limita a 10 MB.
+    nginx.ingress.kubernetes.io/proxy-body-size: "12m"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: ["integraws.torredigital.mx"]
+      secretName: integraws-prod-tls # mismo Secret que ya gestiona el otro Ingress
+  rules:
+    - host: integraws.torredigital.mx
+      http:
+        paths:
+          - path: /api(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend: { service: { name: backend, port: { number: 5001 } } }

@@ -7,12 +7,20 @@
 # el pod. El original sigue en el clúster; esto solo saca una copia.
 #
 # Uso:  bash bajar_respaldos.sh [ambiente ...]
-#       (sin argumentos: los cuatro ambientes con respaldo)
+#       (sin argumentos: todos los namespaces con un CronJob pg-backup)
 set -u
 export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
 DEST="$HOME/respaldos_para_bajar"
 POD=pg-backups-bajar
-if [ "$#" -gt 0 ]; then AMBIENTES=("$@"); else AMBIENTES=(tyakxa-dev torredigital-prod comala-prod adser-prod); fi
+if [ "$#" -gt 0 ]; then
+  AMBIENTES=("$@")
+else
+  # Sin argumentos: todo namespace que tenga un CronJob pg-backup. Asi un ambiente
+  # nuevo entra solo, sin tocar este script.
+  mapfile -t AMBIENTES < <(kubectl get cronjob -A --no-headers -o custom-columns='NS:.metadata.namespace,NAME:.metadata.name' 2>/dev/null | awk '$2=="pg-backup"{print $1}' | sort)
+  if [ "${#AMBIENTES[@]}" -eq 0 ]; then echo "No encontre ningun CronJob pg-backup en el cluster."; exit 1; fi
+  echo "Ambientes con respaldo: ${AMBIENTES[*]}"
+fi
 
 rm -rf "$DEST"; mkdir -p "$DEST"
 fallas=0

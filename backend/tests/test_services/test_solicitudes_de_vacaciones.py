@@ -36,9 +36,13 @@ class _ConEquipo(_ConPeriodoDePrueba):
                             base_salary=Decimal("400.00"), username=f"u{id_user}"))
             db.add(EntityPermission(id_permission=961, entity_name="employee_leave", scope_create=4,
                                     scope_read=4, scope_update=4, scope_delete=4, created_by=1))
+            # "Mis vacaciones" la guarda la capacidad `my_leaves` del Gestor.
+            for permiso in (2, 961):
+                db.add(EntityPermission(id_permission=permiso, entity_name="my_leaves", scope_create=4,
+                                        scope_read=4, scope_update=4, scope_delete=0, created_by=1))
 
-    def h(self, id_user):
-        permiso = 961 if id_user == RH else 2
+    def h(self, id_user, permiso=None):
+        permiso = permiso or (961 if id_user == RH else 2)
         token = jwt.encode({"id_user": id_user, "id_permission": permiso}, SECRET_KEY, algorithm="HS256")
         return {"Authorization": f"Bearer {token}"}
 
@@ -149,3 +153,28 @@ class TestCancelarYCapturaDeRh(_ConEquipo):
             EmployeeLeaveService.create({"id_user": ANA, "leave_type": "disability", "start_date": "2026-10-08",
                                          "end_date": "2026-10-08"}, user_id=RH)
         self.assertEqual("errors.employee_leave_overlap", error.exception.message_key)
+
+
+class TestElGestorDecideQuienVeMisVacaciones(_ConEquipo):
+    SIN_MIS_VACACIONES = 962
+
+    def test_un_rol_sin_la_capacidad_no_entra_por_ningun_camino(self):
+        ident = self.json(self.pedir())["id_employee_leave"]
+        h = self.h(ANA, permiso=self.SIN_MIS_VACACIONES)
+        for metodo, ruta in (("get", "/employee_leave/mine"), ("post", "/employee_leave/request"),
+                             ("post", f"/employee_leave/{ident}/cancel"), ("get", "/employee_leave/pending"),
+                             ("post", f"/employee_leave/{ident}/approve"), ("post", f"/employee_leave/{ident}/reject")):
+            with self.subTest(ruta=ruta):
+                r = getattr(self.client, metodo)(ruta, headers=h, json={})
+                self.assertEqual(403, r.status_code)
+                self.assertEqual("my_leaves", self.json(r)["meta"]["entity"])
+
+    def test_en_solo_ver_consulta_pero_no_pide(self):
+        with transaction_context() as db:
+            db.add(EntityPermission(id_permission=self.SIN_MIS_VACACIONES, entity_name="my_leaves", scope_create=0,
+                                    scope_read=4, scope_update=0, scope_delete=0, created_by=1))
+        h = self.h(ANA, permiso=self.SIN_MIS_VACACIONES)
+        self.assertEqual(200, self.client.get("/employee_leave/mine", headers=h).status_code)
+        self.assertEqual(403, self.client.post("/employee_leave/request", headers=h,
+                                               json={"leave_type": "vacation", "start_date": "2026-10-06",
+                                                     "end_date": "2026-10-06"}).status_code)
