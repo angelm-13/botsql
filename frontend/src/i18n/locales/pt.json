@@ -3997,5 +3997,16 @@
     "code_isr": "ISR",
     "code_isr_severance": "ISR da separação",
     "code_imss": "IMSS"
+  },
+  "user_payroll": {
+    "title": "Folha e frequência",
+    "hint": "O que vale hoje. Se mudar, é salvo a partir da data escolhida e o anterior é encerrado no dia anterior. O histórico completo está em «Horários» e «Grupos de pagamento».",
+    "schedule": "Horário",
+    "group": "Grupo de pagamento",
+    "from": "A partir de",
+    "current": "Hoje",
+    "none": "sem atribuição",
+    "starts": "começa em",
+    "scheduled": "a partir de"
   }
 }

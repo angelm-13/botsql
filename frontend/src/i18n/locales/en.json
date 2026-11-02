@@ -5325,5 +5325,16 @@
     "code_isr": "ISR",
     "code_isr_severance": "Separation ISR",
     "code_imss": "IMSS"
+  },
+  "user_payroll": {
+    "title": "Payroll and attendance",
+    "hint": "What applies today. If you change it, it is saved from the date you choose and the previous one closes the day before. The full history is in «Schedules» and «Pay groups».",
+    "schedule": "Schedule",
+    "group": "Pay group",
+    "from": "Starting",
+    "current": "Today",
+    "none": "not assigned",
+    "starts": "starts on",
+    "scheduled": "from"
   }
 }

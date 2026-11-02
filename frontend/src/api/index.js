@@ -619,6 +619,8 @@ export const updateWorkScheduleDay = (id, payload) => request(`/work_schedule_da
 export const deleteWorkScheduleDay = (id) => request(`/work_schedule_day/${id}`, { method: "DELETE" });
 export const getAllEmployeeSchedule = (params = {}) => request("/employee_schedule/", { params });
 export const createEmployeeSchedule = (payload) => request("/employee_schedule/", { method: "POST", body: payload });
+// Cambio "a partir de" una fecha (cierra la vigente el dia anterior): perfil del usuario.
+export const changeEmployeeSchedule = (payload) => request("/employee_schedule/change", { method: "POST", body: payload });
 export const updateEmployeeSchedule = (id, payload) => request(`/employee_schedule/${id}`, { method: "PUT", body: payload });
 export const deleteEmployeeSchedule = (id) => request(`/employee_schedule/${id}`, { method: "DELETE" });
 // Grupos de pago (semanal, catorcenal, quincenal, mensual) y quien pertenece a cada uno.
@@ -629,6 +631,8 @@ export const deletePayrollGroup = (id) => request(`/payroll_group/${id}`, { meth
 export const getNextPayrollPeriod = (id) => request(`/payroll_group/${id}/next_period`);
 export const getAllEmployeePayrollGroup = (params = {}) => request("/employee_payroll_group/", { params });
 export const createEmployeePayrollGroup = (payload) => request("/employee_payroll_group/", { method: "POST", body: payload });
+// Cambio "a partir de" una fecha (cierra la vigente el dia anterior): perfil del usuario.
+export const changeEmployeePayrollGroup = (payload) => request("/employee_payroll_group/change", { method: "POST", body: payload });
 export const updateEmployeePayrollGroup = (id, payload) => request(`/employee_payroll_group/${id}`, { method: "PUT", body: payload });
 export const deleteEmployeePayrollGroup = (id) => request(`/employee_payroll_group/${id}`, { method: "DELETE" });
 // Forma de salario de cada empleado (por dia, por hora o fijo), con vigencia.
@@ -640,6 +644,8 @@ export const getTerminationSettlement = (id) => request(`/employee_termination/$
 export const downloadTerminationSettlement = (id) => requestBlob(`/employee_termination/${id}/settlement/pdf`);
 export const getAllEmployeeSalary = (params = {}) => request("/employee_salary/", { params });
 export const createEmployeeSalary = (payload) => request("/employee_salary/", { method: "POST", body: payload });
+// Cambio "a partir de" una fecha (cierra la vigente el dia anterior): perfil del usuario.
+export const changeEmployeeSalary = (payload) => request("/employee_salary/change", { method: "POST", body: payload });
 export const updateEmployeeSalary = (id, payload) => request(`/employee_salary/${id}`, { method: "PUT", body: payload });
 export const deleteEmployeeSalary = (id) => request(`/employee_salary/${id}`, { method: "DELETE" });
 export const getAllPayrollHoliday = (params = {}) => request("/payroll_holiday/", { params });

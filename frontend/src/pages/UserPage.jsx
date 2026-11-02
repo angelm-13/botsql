@@ -1,5 +1,5 @@
 import { LLAVE_BORRADO_BLOQUEADO, mensajeDeBorradoBloqueado } from "../utils/registrosRelacionados.js";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw, Search, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "../i18n";
 import { getAllUser, createUser, updateUser, deleteUser, getAllEntityPermission, getAllNmFieldPermission, getAllField, resetUserMfa, getPermissionOptions, getAllProyect, getAllStatus } from "../api";
@@ -7,6 +7,7 @@ import { fetchAllPages } from "../utils/fetchAllPages";
 import Pagination from "../components/Pagination.jsx";
 import PageHeader from "../components/PageHeader.jsx";
 import FormularioPlegable from "../components/FormularioPlegable.jsx";
+import NominaDelPerfil from "../components/NominaDelPerfil.jsx";
 import { inputPropsForField, validateForm, validationRules as allValidationRules } from "../utils/validation";
 import { CAMPOS_DE_AUDITORIA } from "../utils/camposDeAuditoria";
 import { formatearFechaHora } from "../utils/fechas";
@@ -67,6 +68,8 @@ export default function UserPage() {
   const [proyectOptions, setProyectOptions] = useState([]);
   const [userOptions, setUserOptions] = useState([]);
   const [statusOptions, setStatusOptions] = useState([]);
+  // Horario, grupo de pago y sueldo del empleado: se guardan despues del usuario.
+  const nominaRef = useRef(null);
 
   async function loadData() {
     if (!permissionReady || !canRead) {
@@ -273,8 +276,14 @@ export default function UserPage() {
     try {
       if (editingId && !canUpdate) return;
       if (!editingId && !canCreate) return;
+      let idGuardado = editingId;
       if (editingId) await updateUser(editingId, submitPayload);
-      else await createUser(submitPayload);
+      else idGuardado = (await createUser(submitPayload))?.id_user ?? null;
+      if (idGuardado && submitPayload.is_employee) {
+        // Si falla, el usuario ya quedo creado: el siguiente Guardar lo edita, no lo duplica.
+        try { await nominaRef.current?.guardar(idGuardado); }
+        catch (error) { if (!editingId) setEditingId(idGuardado); throw error; }
+      }
       setFormData(emptyForm); setEditingId(null); await loadData();
     } catch (error) {
       const meta = error.payload?.meta || null;
@@ -664,6 +673,7 @@ export default function UserPage() {
           </label>
           )}
         </div>
+        {formData.is_employee && <NominaDelPerfil ref={nominaRef} idUser={editingId} />}
         <div className="form-actions">
           <button className="button primary" type="submit">{t("common.save")}</button>
           <button className="button" type="button" onClick={() => { setFormData(emptyForm); setEditingId(null); setFieldErrors({}); }}>{t("common.cancel")}</button>

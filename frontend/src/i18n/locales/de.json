@@ -3991,5 +3991,16 @@
     "code_isr": "ISR",
     "code_isr_severance": "ISR der Trennung",
     "code_imss": "IMSS"
+  },
+  "user_payroll": {
+    "title": "Lohn und Anwesenheit",
+    "hint": "Was heute gilt. Bei einer Änderung wird sie ab dem gewählten Datum gespeichert und die vorherige endet am Vortag. Der vollständige Verlauf ist unter «Arbeitszeiten» und «Lohngruppen».",
+    "schedule": "Arbeitszeit",
+    "group": "Lohngruppe",
+    "from": "Ab",
+    "current": "Heute",
+    "none": "nicht zugewiesen",
+    "starts": "beginnt am",
+    "scheduled": "ab"
   }
 }

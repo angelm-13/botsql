@@ -5441,5 +5441,16 @@
     "code_isr": "ISR",
     "code_isr_severance": "ISR de la separación",
     "code_imss": "IMSS"
+  },
+  "user_payroll": {
+    "title": "Nómina y asistencia",
+    "hint": "Lo que tiene hoy. Si lo cambias, se guarda a partir de la fecha que elijas y lo anterior se cierra solo el día antes. El historial completo está en «Horarios» y «Grupos de pago».",
+    "schedule": "Horario",
+    "group": "Grupo de pago",
+    "from": "A partir de",
+    "current": "Hoy",
+    "none": "sin asignar",
+    "starts": "empieza el",
+    "scheduled": "desde el"
   }
 }
